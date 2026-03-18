@@ -4,8 +4,8 @@ slug: design-auth-schema
 title: Design Auth Database Schema
 status: completed
 priority: high
-created: 2026-03-15T09:30:00Z
-updated: 2026-03-17T10:00:00Z
+created: "2026-03-15T09:30:00Z"
+updated: "2026-03-17T10:00:00Z"
 assignee: claude-2
 externalIds: []
 dependsOn: []

@@ -1,7 +1,7 @@
 ---
 version: "1.0"
 mission: build-auth-system
-generated: 2026-03-18T14:30:00Z
+generated: "2026-03-18T14:30:00Z"
 ---
 
 # Mission: build-auth-system

@@ -1,6 +1,6 @@
 ---
 mission: build-auth-system
-updated: 2026-03-15T09:00:00Z
+updated: "2026-03-15T09:00:00Z"
 ---
 
 # Agent Instructions

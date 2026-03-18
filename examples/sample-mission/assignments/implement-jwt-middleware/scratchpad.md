@@ -1,6 +1,6 @@
 ---
 assignment: implement-jwt-middleware
-updated: 2026-03-18T14:30:00Z
+updated: "2026-03-18T14:30:00Z"
 ---
 
 # Scratchpad

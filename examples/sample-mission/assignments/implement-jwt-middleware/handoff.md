@@ -1,6 +1,6 @@
 ---
 assignment: implement-jwt-middleware
-updated: 2026-03-15T09:30:00Z
+updated: "2026-03-15T09:30:00Z"
 handoffCount: 0
 ---
 

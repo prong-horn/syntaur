@@ -4,8 +4,8 @@ slug: implement-jwt-middleware
 title: Implement JWT Authentication Middleware
 status: in_progress
 priority: high
-created: 2026-03-15T09:30:00Z
-updated: 2026-03-18T14:30:00Z
+created: "2026-03-15T09:30:00Z"
+updated: "2026-03-18T14:30:00Z"
 assignee: claude-1
 externalIds:
   - system: jira

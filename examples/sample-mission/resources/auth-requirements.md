@@ -8,8 +8,8 @@ sourceAssignment: null
 relatedAssignments:
   - design-auth-schema
   - implement-jwt-middleware
-created: 2026-03-15T09:00:00Z
-updated: 2026-03-15T09:00:00Z
+created: "2026-03-15T09:00:00Z"
+updated: "2026-03-15T09:00:00Z"
 ---
 
 # Auth Requirements

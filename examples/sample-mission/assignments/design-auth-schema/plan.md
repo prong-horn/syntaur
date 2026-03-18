@@ -1,8 +1,8 @@
 ---
 assignment: design-auth-schema
 status: completed
-created: 2026-03-15T09:30:00Z
-updated: 2026-03-17T10:00:00Z
+created: "2026-03-15T09:30:00Z"
+updated: "2026-03-17T10:00:00Z"
 ---
 
 # Plan: Design Auth Database Schema

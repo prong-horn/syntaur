@@ -5,8 +5,8 @@ title: Build Authentication System
 archived: false
 archivedAt: null
 archivedReason: null
-created: 2026-03-15T09:00:00Z
-updated: 2026-03-15T09:00:00Z
+created: "2026-03-15T09:00:00Z"
+updated: "2026-03-15T09:00:00Z"
 externalIds:
   - system: jira
     id: AUTH-42

@@ -4,8 +4,8 @@ slug: write-auth-tests
 title: Write Auth System Tests
 status: pending
 priority: medium
-created: 2026-03-15T09:30:00Z
-updated: 2026-03-15T09:30:00Z
+created: "2026-03-15T09:30:00Z"
+updated: "2026-03-15T09:30:00Z"
 assignee: null
 externalIds: []
 dependsOn:

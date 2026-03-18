@@ -1,8 +1,8 @@
 ---
 assignment: implement-jwt-middleware
 status: approved
-created: 2026-03-15T09:30:00Z
-updated: 2026-03-17T10:30:00Z
+created: "2026-03-15T09:30:00Z"
+updated: "2026-03-17T10:30:00Z"
 ---
 
 # Plan: Implement JWT Authentication Middleware

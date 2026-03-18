@@ -1,6 +1,6 @@
 ---
 assignment: implement-jwt-middleware
-updated: 2026-03-17T11:00:00Z
+updated: "2026-03-17T11:00:00Z"
 decisionCount: 1
 ---
 

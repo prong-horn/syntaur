@@ -7,8 +7,8 @@ relatedAssignments:
   - design-auth-schema
   - implement-jwt-middleware
 scope: mission
-created: 2026-03-17T09:00:00Z
-updated: 2026-03-17T09:00:00Z
+created: "2026-03-17T09:00:00Z"
+updated: "2026-03-17T09:00:00Z"
 tags:
   - postgresql
   - performance

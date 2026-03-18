@@ -267,7 +267,9 @@ This applies to every timestamp field in frontmatter (`created`, `updated`, `gen
 
 ### Filesystem Paths
 
-**Frontmatter path fields** (`workspace.repository`, `workspace.worktreePath`, `defaultMissionDir`, and any other path stored in YAML frontmatter or config) use the **absolute expanded form**. Never store `~` literally — always expand to the full path at write time.
+**Local filesystem path fields** (`workspace.worktreePath`, `defaultMissionDir`, and any other local path stored in YAML frontmatter or config) use the **absolute expanded form**. Never store `~` literally — always expand to the full path at write time.
+
+**Note:** `workspace.repository` is exempt from this rule — it may be either a local absolute path or a remote URL (e.g., `https://github.com/org/repo.git`, `git@github.com:org/repo.git`). Only local filesystem paths require absolute expansion.
 
 ```yaml
 # Correct
