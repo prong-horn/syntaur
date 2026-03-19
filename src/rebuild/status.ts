@@ -22,9 +22,8 @@ export function computeStatusCounts(
     failed: 0,
   };
   for (const a of assignments) {
-    const s = a.status as keyof Omit<StatusCounts, 'total'>;
-    if (s in counts && s !== 'total') {
-      (counts as Record<string, number>)[s]++;
+    if (a.status in counts && a.status !== 'total') {
+      counts[a.status as keyof Omit<StatusCounts, 'total'>]++;
     }
   }
   return counts;
