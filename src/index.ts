@@ -2,6 +2,7 @@ import { Command } from 'commander';
 import { initCommand } from './commands/init.js';
 import { createMissionCommand } from './commands/create-mission.js';
 import { createAssignmentCommand } from './commands/create-assignment.js';
+import { rebuildCommand } from './commands/rebuild.js';
 
 const program = new Command();
 
@@ -61,6 +62,26 @@ program
   .action(async (title, options) => {
     try {
       await createAssignmentCommand(title, options);
+    } catch (error) {
+      console.error(
+        'Error:',
+        error instanceof Error ? error.message : String(error),
+      );
+      process.exit(1);
+    }
+  });
+
+program
+  .command('rebuild')
+  .description(
+    'Rebuild all derived index files for a mission by scanning canonical data',
+  )
+  .option('--mission <slug>', 'Rebuild a specific mission')
+  .option('--all', 'Rebuild all missions in the mission directory')
+  .option('--dir <path>', 'Override default mission directory')
+  .action(async (options) => {
+    try {
+      await rebuildCommand(options);
     } catch (error) {
       console.error(
         'Error:',
