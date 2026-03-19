@@ -21,8 +21,11 @@ export function computeStatusCounts(
     completed: 0,
     failed: 0,
   };
+  const validStatuses = new Set<string>([
+    'pending', 'in_progress', 'blocked', 'review', 'completed', 'failed',
+  ]);
   for (const a of assignments) {
-    if (a.status in counts && a.status !== 'total') {
+    if (validStatuses.has(a.status)) {
       counts[a.status as keyof Omit<StatusCounts, 'total'>]++;
     }
   }

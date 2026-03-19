@@ -290,28 +290,30 @@ export function countUnansweredQuestions(body: string): number {
 export function parseLatestDecision(
   body: string,
 ): { title: string; status: string } | null {
-  const decisionRegex = /## Decision \d+:\s*(.+)/g;
-  const statusRegex = /\*\*Status:\*\*\s*(\w+)/g;
+  // Parse sequentially: each **Status:** is associated with the most recent ## Decision heading
+  const decisions: Array<{ title: string; status: string }> = [];
+  let currentTitle: string | null = null;
 
-  const titles: string[] = [];
-  const statuses: string[] = [];
+  const lines = body.split('\n');
+  for (const line of lines) {
+    const headingMatch = line.match(/^## Decision \d+:\s*(.+)/);
+    if (headingMatch) {
+      currentTitle = headingMatch[1].trim();
+      continue;
+    }
 
-  let match: RegExpExecArray | null;
-
-  while ((match = decisionRegex.exec(body)) !== null) {
-    titles.push(match[1].trim());
+    if (currentTitle) {
+      const statusMatch = line.match(/\*\*Status:\*\*\s*(\w+)/);
+      if (statusMatch) {
+        decisions.push({
+          title: currentTitle,
+          status: statusMatch[1].trim(),
+        });
+        currentTitle = null; // Only take the first **Status:** per decision
+      }
+    }
   }
 
-  while ((match = statusRegex.exec(body)) !== null) {
-    statuses.push(match[1].trim());
-  }
-
-  if (titles.length === 0) return null;
-
-  // Return the last decision
-  const lastIndex = titles.length - 1;
-  return {
-    title: titles[lastIndex],
-    status: statuses[lastIndex] || 'unknown',
-  };
+  if (decisions.length === 0) return null;
+  return decisions[decisions.length - 1];
 }
