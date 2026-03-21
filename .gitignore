@@ -3,3 +3,5 @@ dist/
 *.tsbuildinfo
 .worktrees/
 firebase-debug.log
+dashboard/dist/
+dashboard/node_modules/

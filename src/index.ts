@@ -2,6 +2,7 @@ import { Command } from 'commander';
 import { initCommand } from './commands/init.js';
 import { createMissionCommand } from './commands/create-mission.js';
 import { createAssignmentCommand } from './commands/create-assignment.js';
+import { dashboardCommand } from './commands/dashboard.js';
 
 const program = new Command();
 
@@ -61,6 +62,24 @@ program
   .action(async (title, options) => {
     try {
       await createAssignmentCommand(title, options);
+    } catch (error) {
+      console.error(
+        'Error:',
+        error instanceof Error ? error.message : String(error),
+      );
+      process.exit(1);
+    }
+  });
+
+program
+  .command('dashboard')
+  .description('Start the local Syntaur dashboard web UI')
+  .option('--port <number>', 'Port to run the dashboard on', '4800')
+  .option('--dev', 'Run in development mode (API only, use with Vite dev server)', false)
+  .option('--no-open', 'Do not automatically open the browser')
+  .action(async (options) => {
+    try {
+      await dashboardCommand(options);
     } catch (error) {
       console.error(
         'Error:',
