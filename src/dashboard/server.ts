@@ -108,7 +108,8 @@ export function createDashboardServer(options: DashboardServerOptions) {
     app.use(express.static(dashboardDistPath));
 
     // SPA fallback: serve index.html for all non-API routes
-    app.get('*', async (_req, res) => {
+    // Express 5 requires named wildcards; use '{*path}' instead of '*'
+    app.get('{*path}', async (_req, res) => {
       const indexPath = resolve(dashboardDistPath, 'index.html');
       if (await fileExists(indexPath)) {
         res.sendFile(indexPath);
