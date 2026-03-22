@@ -10,6 +10,7 @@
   "files": [
     "dist",
     "bin",
+    "plugin",
     "dashboard/dist"
   ],
   "scripts": {
@@ -20,7 +21,8 @@
     "dashboard:install": "cd dashboard && npm install",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "prepublishOnly": "npm run build:dashboard"
   },
   "engines": {
     "node": ">=20.0.0"
@@ -36,8 +38,10 @@
     "@types/express": "^5.0.6",
     "@types/node": "^20.0.0",
     "@types/ws": "^8.0.0",
+    "@vitejs/plugin-react": "^6.0.1",
     "tsup": "^8.0.0",
     "typescript": "^5.7.0",
+    "vite": "^8.0.1",
     "vitest": "^3.0.0"
   }
 }

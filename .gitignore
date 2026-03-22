@@ -5,3 +5,4 @@ dist/
 firebase-debug.log
 dashboard/dist/
 dashboard/node_modules/
+.claude/syntaur.local.json

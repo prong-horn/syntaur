@@ -38,3 +38,12 @@ export {
   renderMemoriesIndex,
 } from './index-stubs.js';
 export type { IndexStubParams } from './index-stubs.js';
+
+export { renderCursorProtocol, renderCursorAssignment } from './cursor-rules.js';
+export type { CursorAssignmentParams } from './cursor-rules.js';
+
+export { renderCodexAgents } from './codex-agents.js';
+export type { CodexAgentsParams } from './codex-agents.js';
+
+export { renderOpenCodeConfig } from './opencode-config.js';
+export type { OpenCodeConfigParams } from './opencode-config.js';
