@@ -195,6 +195,12 @@ export interface OverviewResponse {
   attention: AttentionItem[];
   recentMissions: MissionSummary[];
   recentActivity: RecentActivityItem[];
+  serverStats?: {
+    trackedSessions: number;
+    aliveSessions: number;
+    deadSessions: number;
+    totalPorts: number;
+  };
 }
 
 export interface HelpCommand {

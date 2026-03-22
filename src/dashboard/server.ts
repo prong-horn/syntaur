@@ -74,7 +74,7 @@ export function createDashboardServer(options: DashboardServerOptions) {
   // --- API Routes ---
   app.get('/api/overview', async (_req, res) => {
     try {
-      const overview = await getOverview(missionsDir);
+      const overview = await getOverview(missionsDir, serversDir);
       res.json(overview);
     } catch (error) {
       console.error('Error getting overview:', error);
@@ -84,7 +84,7 @@ export function createDashboardServer(options: DashboardServerOptions) {
 
   app.get('/api/attention', async (_req, res) => {
     try {
-      const attention = await getAttention(missionsDir);
+      const attention = await getAttention(missionsDir, serversDir);
       res.json(attention);
     } catch (error) {
       console.error('Error getting attention queue:', error);
