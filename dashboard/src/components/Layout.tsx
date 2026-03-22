@@ -1,62 +1,85 @@
-import { Outlet, Link, useLocation } from 'react-router-dom';
-
-export function Layout() {
-  const location = useLocation();
-  const breadcrumbs = buildBreadcrumbs(location.pathname);
-
-  return (
-    <div className="min-h-screen bg-background">
-      <header className="border-b border-border bg-card">
-        <div className="mx-auto flex max-w-7xl items-center gap-4 px-6 py-4">
-          <Link to="/" className="text-lg font-semibold text-foreground hover:text-primary">
-            Syntaur
-          </Link>
-          {breadcrumbs.length > 0 && (
-            <nav className="flex items-center gap-1 text-sm text-muted-foreground">
-              {breadcrumbs.map((crumb, i) => (
-                <span key={crumb.path} className="flex items-center gap-1">
-                  <span>/</span>
-                  {i === breadcrumbs.length - 1 ? (
-                    <span className="text-foreground">{crumb.label}</span>
-                  ) : (
-                    <Link to={crumb.path} className="hover:text-foreground">
-                      {crumb.label}
-                    </Link>
-                  )}
-                </span>
-              ))}
-            </nav>
-          )}
-        </div>
-      </header>
-      <main className="mx-auto max-w-7xl px-6 py-6">
-        <Outlet />
-      </main>
-    </div>
-  );
-}
+import { Outlet, useLocation } from 'react-router-dom';
+import { AppShell } from './AppShell';
 
 interface Breadcrumb {
   label: string;
   path: string;
 }
 
-function buildBreadcrumbs(pathname: string): Breadcrumb[] {
+export function Layout() {
+  const location = useLocation();
+  const { title, breadcrumbs, missionSlug } = buildShellMeta(location.pathname);
+
+  return (
+    <AppShell title={title} breadcrumbs={breadcrumbs} missionSlug={missionSlug}>
+      <Outlet />
+    </AppShell>
+  );
+}
+
+function buildShellMeta(pathname: string): {
+  title: string;
+  breadcrumbs: Breadcrumb[];
+  missionSlug: string | null;
+} {
   const parts = pathname.split('/').filter(Boolean);
-  const crumbs: Breadcrumb[] = [];
+  const breadcrumbs: Breadcrumb[] = [];
+  let title = 'Overview';
+  let missionSlug: string | null = null;
 
-  // /missions/:slug
-  if (parts[0] === 'missions' && parts[1]) {
-    crumbs.push({ label: parts[1], path: `/missions/${parts[1]}` });
+  if (parts.length === 0) {
+    return { title, breadcrumbs, missionSlug };
   }
 
-  // /missions/:slug/assignments/:aslug
-  if (parts[0] === 'missions' && parts[2] === 'assignments' && parts[3]) {
-    crumbs.push({
-      label: parts[3],
-      path: `/missions/${parts[1]}/assignments/${parts[3]}`,
-    });
+  if (parts[0] === 'missions') {
+    breadcrumbs.push({ label: 'Missions', path: '/missions' });
+    title = 'Missions';
+
+    if (parts[1]) {
+      missionSlug = parts[1];
+      breadcrumbs.push({ label: parts[1], path: `/missions/${parts[1]}` });
+      title = parts[1];
+    }
+
+    if (parts[2] === 'edit') {
+      title = 'Edit Mission';
+    } else if (parts[2] === 'create' && parts[3] === 'assignment') {
+      title = 'Create Assignment';
+    } else if (parts[2] === 'assignments' && parts[3]) {
+      breadcrumbs.push({
+        label: parts[3],
+        path: `/missions/${parts[1]}/assignments/${parts[3]}`,
+      });
+      title = parts[3];
+
+      if (parts[4] === 'edit') {
+        title = 'Edit Assignment';
+      } else if (parts[4] === 'plan' && parts[5] === 'edit') {
+        title = 'Edit Plan';
+      } else if (parts[4] === 'scratchpad' && parts[5] === 'edit') {
+        title = 'Edit Scratchpad';
+      } else if (parts[4] === 'handoff' && parts[5] === 'edit') {
+        title = 'Append Handoff';
+      } else if (parts[4] === 'decision-record' && parts[5] === 'edit') {
+        title = 'Append Decision';
+      }
+    }
+  } else if (parts[0] === 'servers') {
+    title = 'Servers';
+    breadcrumbs.push({ label: 'Servers', path: '/servers' });
+  } else if (parts[0] === 'attention') {
+    title = 'Attention';
+    breadcrumbs.push({ label: 'Attention', path: '/attention' });
+  } else if (parts[0] === 'assignments') {
+    title = 'Assignments';
+    breadcrumbs.push({ label: 'Assignments', path: '/assignments' });
+  } else if (parts[0] === 'help') {
+    title = 'Help';
+    breadcrumbs.push({ label: 'Help', path: '/help' });
+  } else if (parts[0] === 'create' && parts[1] === 'mission') {
+    title = 'Create Mission';
+    breadcrumbs.push({ label: 'Create Mission', path: '/create/mission' });
   }
 
-  return crumbs;
+  return { title, breadcrumbs, missionSlug };
 }
