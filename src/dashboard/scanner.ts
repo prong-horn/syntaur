@@ -1,0 +1,405 @@
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
+import { resolve } from 'node:path';
+import { realpath, readdir, readFile } from 'node:fs/promises';
+import { listMissions } from './api.js';
+import {
+  readSessionFile,
+  listSessionFiles,
+} from './servers.js';
+import { extractFrontmatter, getField, getNestedField } from './parser.js';
+import type {
+  TrackedSession,
+  TrackedWindow,
+  TrackedPane,
+  ServersResponse,
+  SessionFileData,
+} from './types.js';
+
+const exec = promisify(execFile);
+
+// --- Cache ---
+let cache: { data: ServersResponse; expiry: number } | null = null;
+const CACHE_TTL_MS = 10_000;
+
+export function clearScanCache(): void {
+  cache = null;
+}
+
+// --- Pure parsing functions (exported for testing) ---
+
+export interface RawPane {
+  windowIndex: number;
+  windowName: string;
+  paneIndex: number;
+  command: string;
+  cwd: string;
+  pid: number;
+}
+
+export function parseTmuxPaneOutput(output: string): RawPane[] {
+  return output
+    .trim()
+    .split('\n')
+    .filter((line) => line.length > 0)
+    .map((line) => {
+      const [wi, wn, pi, cmd, cwd, pid] = line.split('|');
+      return {
+        windowIndex: parseInt(wi, 10),
+        windowName: wn,
+        paneIndex: parseInt(pi, 10),
+        command: cmd,
+        cwd,
+        pid: parseInt(pid, 10),
+      };
+    });
+}
+
+export function findListeningPorts(lsofOutput: string, pids: Set<number>): number[] {
+  const ports: number[] = [];
+  for (const line of lsofOutput.split('\n')) {
+    const parts = line.trim().split(/\s+/);
+    if (parts.length < 9) continue;
+    const pid = parseInt(parts[1], 10);
+    if (!pids.has(pid)) continue;
+    const tcpAddr = parts.find((p) => p.includes(':') && /:\d+$/.test(p));
+    if (tcpAddr) {
+      const port = parseInt(tcpAddr.split(':').pop()!, 10);
+      if (!isNaN(port) && !ports.includes(port)) {
+        ports.push(port);
+      }
+    }
+  }
+  return ports;
+}
+
+// --- Shell helpers ---
+
+async function execQuiet(cmd: string, args: string[]): Promise<string> {
+  try {
+    const { stdout } = await exec(cmd, args);
+    return stdout.trim();
+  } catch {
+    return '';
+  }
+}
+
+export async function checkTmuxAvailable(): Promise<boolean> {
+  const result = await execQuiet('which', ['tmux']);
+  return result.length > 0;
+}
+
+async function sessionAlive(name: string): Promise<boolean> {
+  try {
+    await exec('tmux', ['has-session', '-t', name]);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function listTmuxPanes(sessionName: string): Promise<RawPane[]> {
+  const output = await execQuiet('tmux', [
+    'list-panes', '-s', '-t', sessionName,
+    '-F', '#{window_index}|#{window_name}|#{pane_index}|#{pane_current_command}|#{pane_current_path}|#{pane_pid}',
+  ]);
+  return parseTmuxPaneOutput(output);
+}
+
+export async function getDescendantPids(rootPid: number, maxDepth: number = 4): Promise<Set<number>> {
+  const all = new Set<number>([rootPid]);
+  let frontier = [rootPid];
+
+  for (let depth = 0; depth < maxDepth && frontier.length > 0; depth++) {
+    const nextFrontier: number[] = [];
+    for (const pid of frontier) {
+      const output = await execQuiet('pgrep', ['-P', String(pid)]);
+      for (const line of output.split('\n')) {
+        const child = parseInt(line, 10);
+        if (!isNaN(child) && !all.has(child)) {
+          all.add(child);
+          nextFrontier.push(child);
+        }
+      }
+    }
+    frontier = nextFrontier;
+  }
+
+  return all;
+}
+
+async function getLsofOutput(): Promise<string> {
+  return execQuiet('lsof', ['-i', '-P', '-n', '-sTCP:LISTEN']);
+}
+
+export async function getGitInfo(cwd: string): Promise<{ branch: string | null; worktree: boolean }> {
+  const branch = await execQuiet('git', ['-C', cwd, 'rev-parse', '--abbrev-ref', 'HEAD']);
+  if (!branch) return { branch: null, worktree: false };
+
+  const commonDir = await execQuiet('git', ['-C', cwd, 'rev-parse', '--git-common-dir']);
+  const gitDir = await execQuiet('git', ['-C', cwd, 'rev-parse', '--git-dir']);
+
+  let isWorktree = false;
+  if (commonDir && gitDir && commonDir !== gitDir) {
+    try {
+      const resolvedCommon = await realpath(resolve(cwd, commonDir));
+      const resolvedGit = await realpath(resolve(cwd, gitDir));
+      isWorktree = resolvedCommon !== resolvedGit;
+    } catch {
+      isWorktree = false;
+    }
+  }
+
+  return { branch: branch || null, worktree: isWorktree };
+}
+
+// --- Auto-linking ---
+
+interface AssignmentLink {
+  mission: string;
+  slug: string;
+  title: string;
+}
+
+interface WorkspaceRecord {
+  missionSlug: string;
+  assignmentSlug: string;
+  assignmentTitle: string;
+  worktreePath: string | null;
+  branch: string | null;
+}
+
+async function loadWorkspaceRecords(missionsDir: string): Promise<WorkspaceRecord[]> {
+  const records: WorkspaceRecord[] = [];
+  try {
+    const missions = await listMissions(missionsDir);
+
+    for (const mission of missions) {
+      const assignmentsDir = resolve(missionsDir, mission.slug, 'assignments');
+      let slugs: string[];
+      try {
+        slugs = await readdir(assignmentsDir);
+      } catch {
+        continue;
+      }
+      for (const aslug of slugs) {
+        const aFile = resolve(assignmentsDir, aslug, 'assignment.md');
+        try {
+          const raw = await readFile(aFile, 'utf-8');
+          const [fm] = extractFrontmatter(raw);
+          if (!fm) continue;
+          records.push({
+            missionSlug: mission.slug,
+            assignmentSlug: aslug,
+            assignmentTitle: getField(fm, 'title') ?? aslug,
+            worktreePath: getNestedField(fm, 'workspace', 'worktreePath') ?? null,
+            branch: getNestedField(fm, 'workspace', 'branch') ?? null,
+          });
+        } catch {
+          continue;
+        }
+      }
+    }
+  } catch {
+    // If missions can't be loaded, auto-linking just returns no matches
+  }
+  return records;
+}
+
+async function resolveAndNormalize(p: string): Promise<string> {
+  try {
+    const resolved = await realpath(p);
+    return resolved.replace(/\/+$/, '');
+  } catch {
+    return p.replace(/\/+$/, '');
+  }
+}
+
+async function autoLinkPane(
+  cwd: string,
+  branch: string | null,
+  records: WorkspaceRecord[],
+): Promise<AssignmentLink | null> {
+  const normalizedCwd = await resolveAndNormalize(cwd);
+  for (const rec of records) {
+    if (rec.worktreePath) {
+      const normalizedWt = await resolveAndNormalize(rec.worktreePath);
+      if (normalizedCwd === normalizedWt) {
+        return { mission: rec.missionSlug, slug: rec.assignmentSlug, title: rec.assignmentTitle };
+      }
+    }
+  }
+  if (branch) {
+    for (const rec of records) {
+      if (rec.branch && rec.branch === branch) {
+        return { mission: rec.missionSlug, slug: rec.assignmentSlug, title: rec.assignmentTitle };
+      }
+    }
+  }
+  return null;
+}
+
+// --- Main scan function ---
+
+async function scanSession(
+  sessionData: SessionFileData,
+  lsofOutput: string,
+  workspaceRecords: WorkspaceRecord[],
+): Promise<TrackedSession> {
+  const now = new Date().toISOString();
+  const alive = await sessionAlive(sessionData.session);
+
+  if (!alive) {
+    return {
+      name: sessionData.session,
+      registered: sessionData.registered,
+      lastRefreshed: sessionData.lastRefreshed,
+      scannedAt: now,
+      alive: false,
+      windows: [],
+    };
+  }
+
+  const rawPanes = await listTmuxPanes(sessionData.session);
+
+  // Group panes by window
+  const windowMap = new Map<number, { name: string; panes: RawPane[] }>();
+  for (const rp of rawPanes) {
+    if (!windowMap.has(rp.windowIndex)) {
+      windowMap.set(rp.windowIndex, { name: rp.windowName, panes: [] });
+    }
+    windowMap.get(rp.windowIndex)!.panes.push(rp);
+  }
+
+  // Get git info per unique cwd
+  const cwdSet = new Set(rawPanes.map((p) => p.cwd));
+  const gitInfoCache = new Map<string, { branch: string | null; worktree: boolean }>();
+  for (const cwd of cwdSet) {
+    gitInfoCache.set(cwd, await getGitInfo(cwd));
+  }
+
+  // Get all descendant PIDs for port lookup
+  const pidToPaneKey = new Map<number, string>();
+  for (const rp of rawPanes) {
+    const descendants = await getDescendantPids(rp.pid);
+    const key = `${rp.windowIndex}:${rp.paneIndex}`;
+    for (const pid of descendants) {
+      pidToPaneKey.set(pid, key);
+    }
+  }
+
+  // Find ports per pane
+  const panePorts = new Map<string, number[]>();
+  for (const line of lsofOutput.split('\n')) {
+    const parts = line.trim().split(/\s+/);
+    if (parts.length < 9) continue;
+    const pid = parseInt(parts[1], 10);
+    const paneKey = pidToPaneKey.get(pid);
+    if (!paneKey) continue;
+    const tcpAddr = parts.find((p) => p.includes(':') && /:\d+$/.test(p));
+    if (tcpAddr) {
+      const port = parseInt(tcpAddr.split(':').pop()!, 10);
+      if (!isNaN(port)) {
+        if (!panePorts.has(paneKey)) panePorts.set(paneKey, []);
+        const existing = panePorts.get(paneKey)!;
+        if (!existing.includes(port)) existing.push(port);
+      }
+    }
+  }
+
+  // Build windows — use for-of loop, NOT .map() with async callback
+  const windows: TrackedWindow[] = [];
+  for (const [windowIndex, { name, panes: rawPanesInWindow }] of windowMap) {
+    const panes: TrackedPane[] = [];
+    for (const rp of rawPanesInWindow) {
+      const key = `${rp.windowIndex}:${rp.paneIndex}`;
+      const gitInfo = gitInfoCache.get(rp.cwd) ?? { branch: null, worktree: false };
+      const ports = panePorts.get(key) ?? [];
+      const urls = ports.map((p) => `http://localhost:${p}`);
+
+      const override = sessionData.overrides[key];
+      let assignment: AssignmentLink | null = null;
+      if (override) {
+        const rec = workspaceRecords.find(
+          (r) => r.missionSlug === override.mission && r.assignmentSlug === override.assignment,
+        );
+        assignment = {
+          mission: override.mission,
+          slug: override.assignment,
+          title: rec?.assignmentTitle ?? override.assignment,
+        };
+      } else {
+        assignment = await autoLinkPane(rp.cwd, gitInfo.branch, workspaceRecords);
+      }
+
+      panes.push({
+        index: rp.paneIndex,
+        command: rp.command,
+        cwd: rp.cwd,
+        branch: gitInfo.branch,
+        worktree: gitInfo.worktree,
+        ports,
+        urls,
+        assignment,
+      });
+    }
+
+    windows.push({ index: windowIndex, name, panes });
+  }
+
+  windows.sort((a, b) => a.index - b.index);
+
+  return {
+    name: sessionData.session,
+    registered: sessionData.registered,
+    lastRefreshed: sessionData.lastRefreshed,
+    scannedAt: now,
+    alive: true,
+    windows,
+  };
+}
+
+export async function scanAllSessions(
+  serversDir: string,
+  missionsDir: string,
+  options?: { bypassCache?: boolean },
+): Promise<ServersResponse> {
+  if (!options?.bypassCache && cache && Date.now() < cache.expiry) {
+    return cache.data;
+  }
+
+  const tmuxAvailable = await checkTmuxAvailable();
+  if (!tmuxAvailable) {
+    const result = { sessions: [], tmuxAvailable: false };
+    cache = { data: result, expiry: Date.now() + CACHE_TTL_MS };
+    return result;
+  }
+
+  const names = await listSessionFiles(serversDir);
+  const lsofOutput = await getLsofOutput();
+  const workspaceRecords = await loadWorkspaceRecords(missionsDir);
+
+  const sessions: TrackedSession[] = [];
+  for (const name of names) {
+    const data = await readSessionFile(serversDir, name);
+    if (!data) continue;
+    sessions.push(await scanSession(data, lsofOutput, workspaceRecords));
+  }
+
+  const result: ServersResponse = { sessions, tmuxAvailable: true };
+  cache = { data: result, expiry: Date.now() + CACHE_TTL_MS };
+  return result;
+}
+
+export async function scanSingleSession(
+  serversDir: string,
+  missionsDir: string,
+  name: string,
+): Promise<TrackedSession | null> {
+  const data = await readSessionFile(serversDir, name);
+  if (!data) return null;
+
+  const lsofOutput = await getLsofOutput();
+  const workspaceRecords = await loadWorkspaceRecords(missionsDir);
+  return scanSession(data, lsofOutput, workspaceRecords);
+}
