@@ -39,7 +39,7 @@ function parseSimpleValue(raw: string): string | null {
 /**
  * Extract a top-level scalar field from frontmatter text.
  */
-function getField(frontmatter: string, key: string): string | null {
+export function getField(frontmatter: string, key: string): string | null {
   const match = frontmatter.match(new RegExp(`^${key}:\\s*(.*)$`, 'm'));
   if (!match) return null;
   return parseSimpleValue(match[1]);
@@ -48,7 +48,7 @@ function getField(frontmatter: string, key: string): string | null {
 /**
  * Extract an indented scalar field (one level deep) from frontmatter text.
  */
-function getNestedField(frontmatter: string, parent: string, key: string): string | null {
+export function getNestedField(frontmatter: string, parent: string, key: string): string | null {
   const parentRegex = new RegExp(`^${parent}:\\s*\\n((?:\\s+.*\\n?)*)`, 'm');
   const parentMatch = frontmatter.match(parentRegex);
   if (!parentMatch) return null;
@@ -86,6 +86,9 @@ export interface ParsedMission {
   slug: string;
   title: string;
   archived: boolean;
+  archivedAt: string | null;
+  archivedReason: string | null;
+  statusOverride: string | null;
   created: string;
   updated: string;
   tags: string[];
@@ -99,6 +102,9 @@ export function parseMission(fileContent: string): ParsedMission {
     slug: getField(fm, 'slug') ?? '',
     title: getField(fm, 'title') ?? '',
     archived: getField(fm, 'archived') === 'true',
+    archivedAt: getField(fm, 'archivedAt'),
+    archivedReason: getField(fm, 'archivedReason'),
+    statusOverride: getField(fm, 'statusOverride'),
     created: getField(fm, 'created') ?? '',
     updated: getField(fm, 'updated') ?? '',
     tags: parseListField(fm, 'tags'),
@@ -264,6 +270,8 @@ export function parseAssignmentFull(fileContent: string): ParsedAssignmentFull {
 export interface ParsedPlan {
   assignment: string;
   status: string;
+  created: string;
+  updated: string;
   body: string;
 }
 
@@ -272,6 +280,8 @@ export function parsePlan(fileContent: string): ParsedPlan {
   return {
     assignment: getField(fm, 'assignment') ?? '',
     status: getField(fm, 'status') ?? '',
+    created: getField(fm, 'created') ?? '',
+    updated: getField(fm, 'updated') ?? '',
     body,
   };
 }
@@ -280,6 +290,7 @@ export function parsePlan(fileContent: string): ParsedPlan {
 
 export interface ParsedScratchpad {
   assignment: string;
+  updated: string;
   body: string;
 }
 
@@ -287,6 +298,7 @@ export function parseScratchpad(fileContent: string): ParsedScratchpad {
   const [fm, body] = extractFrontmatter(fileContent);
   return {
     assignment: getField(fm, 'assignment') ?? '',
+    updated: getField(fm, 'updated') ?? '',
     body,
   };
 }
@@ -296,6 +308,7 @@ export function parseScratchpad(fileContent: string): ParsedScratchpad {
 export interface ParsedHandoff {
   assignment: string;
   handoffCount: number;
+  updated: string;
   body: string;
 }
 
@@ -304,6 +317,7 @@ export function parseHandoff(fileContent: string): ParsedHandoff {
   return {
     assignment: getField(fm, 'assignment') ?? '',
     handoffCount: parseInt(getField(fm, 'handoffCount') ?? '0', 10),
+    updated: getField(fm, 'updated') ?? '',
     body,
   };
 }
@@ -313,6 +327,7 @@ export function parseHandoff(fileContent: string): ParsedHandoff {
 export interface ParsedDecisionRecord {
   assignment: string;
   decisionCount: number;
+  updated: string;
   body: string;
 }
 
@@ -321,6 +336,7 @@ export function parseDecisionRecord(fileContent: string): ParsedDecisionRecord {
   return {
     assignment: getField(fm, 'assignment') ?? '',
     decisionCount: parseInt(getField(fm, 'decisionCount') ?? '0', 10),
+    updated: getField(fm, 'updated') ?? '',
     body,
   };
 }

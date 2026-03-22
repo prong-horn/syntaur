@@ -15,3 +15,7 @@ export function syntaurRoot(): string {
 export function defaultMissionDir(): string {
   return resolve(syntaurRoot(), 'missions');
 }
+
+export function serversDir(): string {
+  return resolve(syntaurRoot(), 'servers');
+}

@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react';
 
 export interface WsMessage {
-  type: 'mission-updated' | 'assignment-updated' | 'connected';
+  type: 'mission-updated' | 'assignment-updated' | 'servers-updated' | 'connected';
   missionSlug?: string;
   assignmentSlug?: string;
   timestamp: string;
@@ -15,6 +15,12 @@ let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 
 function getWsUrl(): string {
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+  const apiPort = import.meta.env.DEV ? import.meta.env.VITE_API_PORT : undefined;
+
+  if (apiPort && window.location.port !== apiPort) {
+    return `${protocol}//${window.location.hostname}:${apiPort}/ws`;
+  }
+
   return `${protocol}//${window.location.host}/ws`;
 }
 
