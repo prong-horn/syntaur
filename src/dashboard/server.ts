@@ -3,9 +3,19 @@ import { createServer } from 'node:http';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { WebSocketServer, WebSocket } from 'ws';
-import { listMissions, getMissionDetail, getAssignmentDetail } from './api.js';
+import {
+  listMissions,
+  listAssignmentsBoard,
+  getMissionDetail,
+  getAssignmentDetail,
+  getOverview,
+  getAttention,
+  getHelp,
+} from './api.js';
 import { createWatcher } from './watcher.js';
 import { fileExists } from '../utils/fs.js';
+import { createWriteRouter } from './api-write.js';
+import { createServersRouter } from './api-servers.js';
 import type { WsMessage } from './types.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -13,11 +23,12 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 export interface DashboardServerOptions {
   port: number;
   missionsDir: string;
+  serversDir: string;
   devMode: boolean;
 }
 
 export function createDashboardServer(options: DashboardServerOptions) {
-  const { port, missionsDir, devMode } = options;
+  const { port, missionsDir, serversDir, devMode } = options;
   const app = express();
   const server = createServer(app);
 
@@ -57,7 +68,40 @@ export function createDashboardServer(options: DashboardServerOptions) {
     }
   }
 
+  // --- JSON body parsing ---
+  app.use(express.json());
+
   // --- API Routes ---
+  app.get('/api/overview', async (_req, res) => {
+    try {
+      const overview = await getOverview(missionsDir);
+      res.json(overview);
+    } catch (error) {
+      console.error('Error getting overview:', error);
+      res.status(500).json({ error: 'Failed to get overview' });
+    }
+  });
+
+  app.get('/api/attention', async (_req, res) => {
+    try {
+      const attention = await getAttention(missionsDir);
+      res.json(attention);
+    } catch (error) {
+      console.error('Error getting attention queue:', error);
+      res.status(500).json({ error: 'Failed to get attention queue' });
+    }
+  });
+
+  app.get('/api/help', async (_req, res) => {
+    try {
+      const help = await getHelp();
+      res.json(help);
+    } catch (error) {
+      console.error('Error getting help content:', error);
+      res.status(500).json({ error: 'Failed to get help content' });
+    }
+  });
+
   app.get('/api/missions', async (_req, res) => {
     try {
       const missions = await listMissions(missionsDir);
@@ -65,6 +109,16 @@ export function createDashboardServer(options: DashboardServerOptions) {
     } catch (error) {
       console.error('Error listing missions:', error);
       res.status(500).json({ error: 'Failed to list missions' });
+    }
+  });
+
+  app.get('/api/assignments', async (_req, res) => {
+    try {
+      const assignments = await listAssignmentsBoard(missionsDir);
+      res.json(assignments);
+    } catch (error) {
+      console.error('Error listing assignments:', error);
+      res.status(500).json({ error: 'Failed to list assignments' });
     }
   });
 
@@ -102,6 +156,12 @@ export function createDashboardServer(options: DashboardServerOptions) {
     }
   });
 
+  // --- Write API (create missions/assignments) ---
+  app.use(createWriteRouter(missionsDir));
+
+  // --- Servers API ---
+  app.use('/api/servers', createServersRouter(serversDir, missionsDir));
+
   // --- Static files (production only) ---
   if (!devMode) {
     const dashboardDistPath = resolve(__dirname, '..', '..', 'dashboard', 'dist');
@@ -109,7 +169,7 @@ export function createDashboardServer(options: DashboardServerOptions) {
 
     // SPA fallback: serve index.html for all non-API routes
     // Express 5 requires named wildcards; use '{*path}' instead of '*'
-    app.get('{*path}', async (_req, res) => {
+    app.get('{*path}', async (_req: any, res: any) => {
       const indexPath = resolve(dashboardDistPath, 'index.html');
       if (await fileExists(indexPath)) {
         res.sendFile(indexPath);
@@ -128,6 +188,7 @@ export function createDashboardServer(options: DashboardServerOptions) {
     async start(): Promise<void> {
       watcherHandle = createWatcher({
         missionsDir,
+        serversDir,
         onMessage: broadcast,
       });
 
