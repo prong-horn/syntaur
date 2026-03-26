@@ -1,0 +1,11 @@
+# Syntaur Protocol -- Agent Instructions
+
+This is a reference template for the Codex and OpenCode adapters.
+
+The `syntaur setup-adapter codex` or `syntaur setup-adapter opencode`
+command generates `AGENTS.md` dynamically in your workspace with
+mission and assignment context filled in.
+
+See the rendered output by running:
+  syntaur setup-adapter codex --mission <slug> --assignment <slug>
+  syntaur setup-adapter opencode --mission <slug> --assignment <slug>

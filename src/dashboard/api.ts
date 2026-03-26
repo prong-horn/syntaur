@@ -420,6 +420,7 @@ export async function getAssignmentDetail(
   }
 
   return {
+    id: assignment.id,
     missionSlug,
     slug: assignment.slug || assignmentSlug,
     title: assignment.title,
@@ -656,6 +657,7 @@ function buildMissionRollup(
 
 function toAssignmentSummary(assignment: AssignmentRecord): AssignmentSummary {
   return {
+    id: assignment.id,
     slug: assignment.slug,
     title: assignment.title,
     status: assignment.status as AssignmentSummary['status'],

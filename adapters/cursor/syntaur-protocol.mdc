@@ -1,0 +1,15 @@
+---
+description: Syntaur protocol rules for multi-agent coordination
+globs:
+alwaysApply: true
+---
+
+# Syntaur Protocol
+
+This is a reference template for the Cursor adapter.
+
+The `syntaur setup-adapter cursor` command generates this file
+dynamically at `.cursor/rules/syntaur-protocol.mdc` in your workspace.
+
+See the rendered output by running:
+  syntaur setup-adapter cursor --mission <slug> --assignment <slug>

@@ -1,6 +1,8 @@
 import express from 'express';
 import { createServer } from 'node:http';
 import { resolve, dirname } from 'node:path';
+import { homedir } from 'node:os';
+import { writeFile, unlink } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { WebSocketServer, WebSocket } from 'ws';
 import {
@@ -16,9 +18,15 @@ import { createWatcher } from './watcher.js';
 import { fileExists } from '../utils/fs.js';
 import { createWriteRouter } from './api-write.js';
 import { createServersRouter } from './api-servers.js';
+import { createAgentSessionsRouter } from './api-agent-sessions.js';
 import type { WsMessage } from './types.js';
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
+// When tsup bundles with splitting:false, import.meta.url resolves to the
+// final bundle (dist/index.js), not the original file location. Use one level
+// up from the dist/ directory to find the package root reliably.
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+const packageRoot = resolve(__dirname, '..');
 
 export interface DashboardServerOptions {
   port: number;
@@ -162,9 +170,12 @@ export function createDashboardServer(options: DashboardServerOptions) {
   // --- Servers API ---
   app.use('/api/servers', createServersRouter(serversDir, missionsDir));
 
+  // --- Agent Sessions API ---
+  app.use('/api/agent-sessions', createAgentSessionsRouter(missionsDir));
+
   // --- Static files (production only) ---
   if (!devMode) {
-    const dashboardDistPath = resolve(__dirname, '..', '..', 'dashboard', 'dist');
+    const dashboardDistPath = resolve(packageRoot, 'dashboard', 'dist');
     app.use(express.static(dashboardDistPath));
 
     // SPA fallback: serve index.html for all non-API routes
@@ -203,6 +214,8 @@ export function createDashboardServer(options: DashboardServerOptions) {
           }
         });
         server.listen(port, () => {
+          const portFile = resolve(homedir(), '.syntaur', 'dashboard-port');
+          writeFile(portFile, String(port), 'utf-8').catch(() => {});
           resolvePromise();
         });
       });
@@ -216,6 +229,8 @@ export function createDashboardServer(options: DashboardServerOptions) {
         client.close();
       }
       clients.clear();
+      const portFile = resolve(homedir(), '.syntaur', 'dashboard-port');
+      await unlink(portFile).catch(() => {});
       return new Promise<void>((resolvePromise) => {
         server.close(() => resolvePromise());
       });

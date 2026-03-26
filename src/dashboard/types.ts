@@ -37,6 +37,7 @@ export interface MissionSummary {
 }
 
 export interface AssignmentSummary {
+  id: string;
   slug: string;
   title: string;
   status: AssignmentStatus;
@@ -105,6 +106,7 @@ export interface ExternalIdInfo {
 }
 
 export interface AssignmentDetail {
+  id: string;
   missionSlug: string;
   slug: string;
   title: string;
@@ -287,6 +289,7 @@ export type WsMessageType =
   | 'mission-updated'
   | 'assignment-updated'
   | 'servers-updated'
+  | 'agent-sessions-updated'
   | 'connected';
 
 export interface WsMessage {
@@ -338,4 +341,23 @@ export interface SessionFileData {
   registered: string;
   lastRefreshed: string;
   overrides: Record<string, { mission: string; assignment: string }>;
+}
+
+// --- Agent Session Types ---
+
+export type AgentSessionStatus = 'active' | 'completed' | 'stopped';
+
+export interface AgentSession {
+  missionSlug: string;
+  assignmentSlug: string;
+  agent: string;
+  sessionId: string;
+  started: string;
+  status: AgentSessionStatus;
+  path: string;
+}
+
+export interface AgentSessionsResponse {
+  sessions: AgentSession[];
+  generatedAt: string;
 }

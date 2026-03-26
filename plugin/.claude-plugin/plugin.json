@@ -1,0 +1,9 @@
+{
+  "name": "syntaur",
+  "description": "Syntaur protocol adapter for Claude Code. Provides skills for grabbing, planning, and completing assignments, plus write boundary enforcement via hooks.",
+  "author": {
+    "name": "Brennen",
+    "email": ""
+  },
+  "version": "0.1.0"
+}

@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
-import { AlertTriangle, Compass, FolderKanban, LifeBuoy, ListTodo, Monitor, X } from 'lucide-react';
+import { Activity, AlertTriangle, Compass, FolderKanban, LifeBuoy, ListTodo, Monitor, X } from 'lucide-react';
 import { SidebarNav, type SidebarNavItem } from './SidebarNav';
 import { TopBar } from './TopBar';
 
@@ -21,6 +21,7 @@ const NAV_ITEMS: SidebarNavItem[] = [
   { to: '/missions', label: 'Missions', icon: FolderKanban },
   { to: '/assignments', label: 'Assignments', icon: ListTodo },
   { to: '/servers', label: 'Servers', icon: Monitor },
+  { to: '/agent-sessions', label: 'Agent Sessions', icon: Activity },
   { to: '/attention', label: 'Attention', icon: AlertTriangle },
   { to: '/help', label: 'Help', icon: LifeBuoy },
 ];

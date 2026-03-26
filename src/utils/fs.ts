@@ -1,5 +1,5 @@
-import { mkdir, writeFile, access } from 'node:fs/promises';
-import { dirname } from 'node:path';
+import { mkdir, writeFile, access, rename } from 'node:fs/promises';
+import { dirname, join } from 'node:path';
 
 export async function ensureDir(dir: string): Promise<void> {
   await mkdir(dir, { recursive: true });
@@ -30,6 +30,12 @@ export async function writeFileForce(
   filePath: string,
   content: string,
 ): Promise<void> {
-  await ensureDir(dirname(filePath));
-  await writeFile(filePath, content, 'utf-8');
+  const dir = dirname(filePath);
+  const tempPath = join(
+    dir,
+    `.${Math.random().toString(36).slice(2)}.${Date.now()}.tmp`,
+  );
+  await ensureDir(dir);
+  await writeFile(tempPath, content, 'utf-8');
+  await rename(tempPath, filePath);
 }

@@ -1,77 +1,391 @@
+import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { useMissions } from '../hooks/useMissions';
-import { StatusBadge } from '../components/StatusBadge';
+import { Info, Plus } from 'lucide-react';
+import { useMissions, type MissionSummary } from '../hooks/useMissions';
+import { PageHeader } from '../components/PageHeader';
+import { LoadingState } from '../components/LoadingState';
+import { ErrorState } from '../components/ErrorState';
+import { EmptyState } from '../components/EmptyState';
+import { FilterBar } from '../components/FilterBar';
+import { SearchInput } from '../components/SearchInput';
+import { ViewToggle } from '../components/ViewToggle';
+import { SectionCard } from '../components/SectionCard';
+import { KanbanBoard, type KanbanColumn } from '../components/KanbanBoard';
+import { StatusBadge, getStatusDescription } from '../components/StatusBadge';
 import { ProgressBar } from '../components/ProgressBar';
+import { formatDate } from '../lib/format';
+import { MISSION_BOARD_COLUMNS, moveItem } from '../lib/kanban';
 
 export function MissionList() {
   const { data: missions, loading, error } = useMissions();
+  const [search, setSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [archivedFilter, setArchivedFilter] = useState('active');
+  const [tagFilter, setTagFilter] = useState('all');
+  const [sortBy, setSortBy] = useState('updated');
+  const [view, setView] = useState<'cards' | 'table' | 'kanban'>('cards');
+  const [missionOrder, setMissionOrder] = useState<Record<string, string[]>>({});
+
+  const filtered = useMemo(() => {
+    if (!missions) {
+      return [];
+    }
+    return missions
+      .filter((mission) => {
+        if (archivedFilter === 'active' && mission.archived) {
+          return false;
+        }
+        if (archivedFilter === 'archived' && !mission.archived) {
+          return false;
+        }
+        if (statusFilter !== 'all' && mission.status !== statusFilter) {
+          return false;
+        }
+        if (tagFilter !== 'all' && !mission.tags.includes(tagFilter)) {
+          return false;
+        }
+        if (!search.trim()) {
+          return true;
+        }
+
+        const haystack = `${mission.title} ${mission.tags.join(' ')} ${mission.slug}`.toLowerCase();
+        return haystack.includes(search.toLowerCase());
+      })
+      .sort((left, right) => sortMissions(left, right, sortBy));
+  }, [missions, search, statusFilter, archivedFilter, tagFilter, sortBy]);
+
+  const filteredKey = filtered.map((mission) => `${mission.slug}:${mission.status}`).join('|');
+
+  useEffect(() => {
+    setMissionOrder(buildMissionColumnOrder(filtered));
+  }, [filteredKey, sortBy]);
+
+  const orderedBoardMissions = useMemo(() => {
+    const bySlug = new Map(filtered.map((mission) => [mission.slug, mission]));
+
+    return MISSION_BOARD_COLUMNS.flatMap((status) => {
+      const orderedSlugs = missionOrder[status] ?? filtered
+        .filter((mission) => mission.status === status)
+        .map((mission) => mission.slug);
+
+      return orderedSlugs
+        .map((slug) => bySlug.get(slug))
+        .filter((mission): mission is MissionSummary => Boolean(mission));
+    });
+  }, [filtered, missionOrder]);
 
   if (loading) {
-    return (
-      <div className="flex items-center justify-center py-20">
-        <p className="text-muted-foreground">Loading missions...</p>
-      </div>
-    );
+    return <LoadingState label="Loading missions…" />;
   }
 
-  if (error) {
-    return (
-      <div className="flex items-center justify-center py-20">
-        <p className="text-red-400">Failed to load missions: {error}</p>
-      </div>
-    );
+  if (error || !missions) {
+    return <ErrorState error={error || 'Mission list is unavailable.'} />;
   }
 
-  if (!missions || missions.length === 0) {
-    return (
-      <div className="flex flex-col items-center justify-center py-20 gap-2">
-        <p className="text-muted-foreground text-lg">No missions found.</p>
-        <p className="text-muted-foreground text-sm">
-          Create a mission with <code className="text-foreground">syntaur create-mission</code>
-        </p>
-      </div>
-    );
-  }
+  const tags = Array.from(new Set(missions.flatMap((mission) => mission.tags))).sort();
 
   return (
-    <div>
-      <h1 className="mb-6 text-2xl font-bold text-foreground">Missions</h1>
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {missions.map((mission) => (
-          <Link
-            key={mission.slug}
-            to={`/missions/${mission.slug}`}
-            className="group rounded-lg border border-border bg-card p-5 transition-colors hover:border-primary/50"
-          >
-            <div className="mb-3 flex items-start justify-between gap-2">
-              <h2 className="font-semibold text-foreground group-hover:text-primary">
-                {mission.title}
-              </h2>
-              <StatusBadge status={mission.status} />
-            </div>
-
-            <ProgressBar progress={mission.progress} className="mb-3" />
-
-            <div className="flex items-center justify-between text-xs text-muted-foreground">
-              <span>
-                {mission.progress.completed}/{mission.progress.total} complete
-              </span>
-              {(mission.needsAttention.blockedCount > 0 ||
-                mission.needsAttention.failedCount > 0 ||
-                mission.needsAttention.unansweredQuestions > 0) && (
-                <span className="text-amber-400">
-                  Needs attention
-                </span>
-              )}
-            </div>
-
-            <div className="mt-2 text-xs text-muted-foreground">
-              {mission.tags.length > 0 && (
-                <span>{mission.tags.join(', ')}</span>
-              )}
-            </div>
+    <div className="space-y-5">
+      <PageHeader
+        eyebrow="Directory"
+        title="Missions"
+        description="Search, filter, and sort the mission set without losing the distinction between human-authored mission data and derived status."
+        actions={
+          <Link className="shell-action bg-foreground text-background hover:opacity-90" to="/create/mission">
+            <Plus className="h-4 w-4" />
+            <span>New Mission</span>
           </Link>
+        }
+      />
+
+      <FilterBar>
+        <SearchInput
+          value={search}
+          onChange={setSearch}
+          placeholder="Search by mission title or tag"
+        />
+        <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)} className="editor-input max-w-[180px]">
+          <option value="all">All statuses</option>
+          <option value="pending">Pending</option>
+          <option value="active">Active</option>
+          <option value="blocked">Blocked</option>
+          <option value="failed">Failed</option>
+          <option value="completed">Completed</option>
+          <option value="archived">Archived</option>
+        </select>
+        <select value={archivedFilter} onChange={(event) => setArchivedFilter(event.target.value)} className="editor-input max-w-[180px]">
+          <option value="active">Hide archived</option>
+          <option value="all">All missions</option>
+          <option value="archived">Archived only</option>
+        </select>
+        <select value={tagFilter} onChange={(event) => setTagFilter(event.target.value)} className="editor-input max-w-[180px]">
+          <option value="all">All tags</option>
+          {tags.map((tag) => (
+            <option key={tag} value={tag}>
+              {tag}
+            </option>
+          ))}
+        </select>
+        <select value={sortBy} onChange={(event) => setSortBy(event.target.value)} className="editor-input max-w-[180px]">
+          <option value="updated">Sort: Updated</option>
+          <option value="created">Sort: Created</option>
+          <option value="title">Sort: Title</option>
+          <option value="attention">Sort: Attention</option>
+        </select>
+        <ViewToggle
+          value={view}
+          onChange={(value) => setView(value as 'cards' | 'table' | 'kanban')}
+          options={[
+            { value: 'cards', label: 'Cards' },
+            { value: 'table', label: 'Table' },
+            { value: 'kanban', label: 'Kanban' },
+          ]}
+        />
+      </FilterBar>
+
+      {filtered.length === 0 ? (
+        <EmptyState
+          title={missions.length === 0 ? 'No missions yet' : 'No missions match these filters'}
+          description={
+            missions.length === 0
+              ? 'A mission is the high-level objective that groups assignments, resources, and memories. Create one to start the dashboard flow.'
+              : 'Adjust the current search and filters or create a new mission.'
+          }
+          actions={
+            <Link className="shell-action bg-foreground text-background hover:opacity-90" to="/create/mission">
+              Create Mission
+            </Link>
+          }
+        />
+      ) : view === 'cards' ? (
+        <div className="grid gap-3 lg:grid-cols-2 2xl:grid-cols-3">
+          {filtered.map((mission) => (
+            <Link
+              key={mission.slug}
+              to={`/missions/${mission.slug}`}
+              className="block rounded-lg border border-border/60 bg-card/90 p-3 shadow-sm transition hover:border-primary/40 hover:shadow-md"
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div className="space-y-1">
+                  <h2 className="text-lg font-semibold text-foreground">{mission.title}</h2>
+                  <p className="text-sm text-muted-foreground">
+                    Updated {formatDate(mission.updated)}
+                  </p>
+                </div>
+                <StatusBadge status={mission.status} />
+              </div>
+
+              <div className="mt-4 space-y-3">
+                <ProgressBar progress={mission.progress} showLegend />
+                <div className="flex flex-wrap gap-2">
+                  {mission.tags.map((tag) => (
+                    <span key={tag} className="rounded-full border border-border/60 bg-background/80 px-2.5 py-1 text-xs text-foreground">
+                      {tag}
+                    </span>
+                  ))}
+                </div>
+                <div className="grid grid-cols-2 gap-3 text-sm">
+                  <div className="rounded-md border border-border/60 bg-background/80 p-3">
+                    <p className="text-muted-foreground">Needs attention</p>
+                    <p className="mt-1 font-semibold text-foreground">
+                      {mission.needsAttention.blockedCount + mission.needsAttention.failedCount}
+                    </p>
+                  </div>
+                  <div className="rounded-md border border-border/60 bg-background/80 p-3">
+                    <p className="text-muted-foreground">Assignments</p>
+                    <p className="mt-1 font-semibold text-foreground">{mission.progress.total}</p>
+                  </div>
+                </div>
+              </div>
+            </Link>
+          ))}
+        </div>
+      ) : view === 'table' ? (
+        <SectionCard title={`${filtered.length} mission${filtered.length === 1 ? '' : 's'}`}>
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[760px] text-left text-sm">
+              <thead>
+                <tr className="border-b border-border/60 text-muted-foreground">
+                  <th className="pb-3 font-medium">Mission</th>
+                  <th className="pb-3 font-medium">Status</th>
+                  <th className="pb-3 font-medium">Progress</th>
+                  <th className="pb-3 font-medium">Attention</th>
+                  <th className="pb-3 font-medium">Updated</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.map((mission) => (
+                  <tr key={mission.slug} className="border-b border-border/50 last:border-0">
+                    <td className="py-4 pr-4">
+                      <Link to={`/missions/${mission.slug}`} className="font-semibold text-foreground hover:text-primary">
+                        {mission.title}
+                      </Link>
+                      <div className="mt-1 flex flex-wrap gap-2">
+                        {mission.tags.map((tag) => (
+                          <span key={tag} className="rounded-full border border-border/60 px-2 py-0.5 text-xs text-muted-foreground">
+                            {tag}
+                          </span>
+                        ))}
+                      </div>
+                    </td>
+                    <td className="py-4 pr-4">
+                      <StatusBadge status={mission.status} />
+                    </td>
+                    <td className="py-4 pr-4">
+                      <div className="min-w-[220px]">
+                        <ProgressBar progress={mission.progress} />
+                      </div>
+                    </td>
+                    <td className="py-4 pr-4 text-muted-foreground">
+                      {mission.needsAttention.blockedCount + mission.needsAttention.failedCount}
+                    </td>
+                    <td className="py-4 text-muted-foreground">{formatDate(mission.updated)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </SectionCard>
+      ) : (
+        <KanbanBoard
+          columns={MISSION_COLUMNS}
+          items={orderedBoardMissions}
+          getItemId={(mission) => mission.slug}
+          getColumnId={(mission) => mission.status}
+          canDrop={({ fromColumnId, toColumnId }) => ({
+            allowed: true,
+            reason:
+              fromColumnId === toColumnId
+                ? undefined
+                : 'This will set a manual status override on the mission.',
+          })}
+          onMove={({ item, fromColumnId, toColumnId, fromIndex, toIndex }) => {
+            if (fromColumnId === toColumnId) {
+              const currentColumnOrder = missionOrder[fromColumnId] ?? filtered
+                .filter((mission) => mission.status === fromColumnId)
+                .map((mission) => mission.slug);
+
+              setMissionOrder((current) => ({
+                ...current,
+                [fromColumnId]: moveItem(currentColumnOrder, fromIndex, toIndex),
+              }));
+              return;
+            }
+
+            fetch(`/api/missions/${item.slug}/status-override`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ status: toColumnId }),
+            }).then(() => {
+              window.location.reload();
+            });
+          }}
+          emptyMessage={(column) => `No ${column.title.toLowerCase()} missions.`}
+          renderCard={(mission, { dragging }) => (
+            <MissionBoardCard mission={mission} dragging={dragging} />
+          )}
+        />
+      )}
+
+      <div className="rounded-lg border border-border/60 bg-card/80 p-3 text-sm text-muted-foreground">
+        <div className="flex items-start gap-3">
+          <Info className="mt-0.5 h-4 w-4" />
+          <p>
+            Mission status is derived from assignment state by default. Drag missions between columns or use the status override on the mission detail page to set a manual status.
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const MISSION_COLUMN_LABELS: Record<(typeof MISSION_BOARD_COLUMNS)[number], string> = {
+  pending: 'Pending',
+  active: 'Active',
+  blocked: 'Blocked',
+  failed: 'Failed',
+  completed: 'Completed',
+  archived: 'Archived',
+};
+
+const MISSION_COLUMNS: KanbanColumn[] = MISSION_BOARD_COLUMNS.map((status) => ({
+  id: status,
+  title: MISSION_COLUMN_LABELS[status],
+  description: getStatusDescription(status),
+}));
+
+function sortMissions(left: MissionSummary, right: MissionSummary, sortBy: string): number {
+  switch (sortBy) {
+    case 'created':
+      return right.created.localeCompare(left.created);
+    case 'title':
+      return left.title.localeCompare(right.title);
+    case 'attention':
+      return getAttentionScore(right) - getAttentionScore(left);
+    case 'updated':
+    default:
+      return right.updated.localeCompare(left.updated);
+  }
+}
+
+function getAttentionScore(mission: MissionSummary): number {
+  return (
+    mission.needsAttention.failedCount * 10 +
+    mission.needsAttention.blockedCount * 5 +
+    mission.needsAttention.unansweredQuestions
+  );
+}
+
+function buildMissionColumnOrder(missions: MissionSummary[]): Record<string, string[]> {
+  return Object.fromEntries(
+    MISSION_BOARD_COLUMNS.map((status) => [
+      status,
+      missions
+        .filter((mission) => mission.status === status)
+        .map((mission) => mission.slug),
+    ]),
+  );
+}
+
+function MissionBoardCard({
+  mission,
+  dragging,
+}: {
+  mission: MissionSummary;
+  dragging: boolean;
+}) {
+  return (
+    <div className="rounded-lg border border-border/60 bg-background/85 p-3 shadow-sm">
+      <div className="flex items-start justify-between gap-3">
+        <div className="space-y-1">
+          <Link to={`/missions/${mission.slug}`} className="text-base font-semibold text-foreground hover:text-primary">
+            {mission.title}
+          </Link>
+          <p className="text-sm text-muted-foreground">Updated {formatDate(mission.updated)}</p>
+        </div>
+        <StatusBadge status={mission.status} />
+      </div>
+
+      <div className="mt-4">
+        <ProgressBar progress={mission.progress} />
+      </div>
+
+      <div className="mt-4 flex flex-wrap gap-2">
+        {mission.tags.map((tag) => (
+          <span key={tag} className="rounded-full border border-border/60 bg-background/80 px-2.5 py-1 text-xs text-foreground">
+            {tag}
+          </span>
         ))}
+        <span className="rounded-full border border-border/60 px-2.5 py-1 text-xs text-muted-foreground">
+          {mission.progress.total} assignments
+        </span>
+        <span className="rounded-full border border-border/60 px-2.5 py-1 text-xs text-muted-foreground">
+          {mission.needsAttention.blockedCount + mission.needsAttention.failedCount} needs attention
+        </span>
+      </div>
+
+      <div className="mt-4 text-xs uppercase tracking-[0.08em] text-muted-foreground">
+        {dragging ? 'Reordering within status' : 'Derived mission lane'}
       </div>
     </div>
   );

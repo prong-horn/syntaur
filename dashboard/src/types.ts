@@ -39,3 +39,22 @@ export interface OverviewServerStats {
   deadSessions: number;
   totalPorts: number;
 }
+
+// --- Agent Session Types ---
+
+export type AgentSessionStatus = 'active' | 'completed' | 'stopped';
+
+export interface AgentSession {
+  missionSlug: string;
+  assignmentSlug: string;
+  agent: string;
+  sessionId: string;
+  started: string;
+  status: AgentSessionStatus;
+  path: string;
+}
+
+export interface AgentSessionsResponse {
+  sessions: AgentSession[];
+  generatedAt: string;
+}

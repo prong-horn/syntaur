@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import {
+  Activity,
   ArrowUpRight,
   BookOpenText,
   ExternalLink,
@@ -9,7 +10,7 @@ import {
   NotebookPen,
   SendToBack,
 } from 'lucide-react';
-import { useAssignment, useServers, type AssignmentTransitionAction } from '../hooks/useMissions';
+import { useAssignment, useServers, useAssignmentSessions, type AssignmentTransitionAction } from '../hooks/useMissions';
 import { formatDateTime } from '../lib/format';
 import { PageHeader } from '../components/PageHeader';
 import { LoadingState } from '../components/LoadingState';
@@ -29,6 +30,7 @@ export function AssignmentDetail() {
   const tab = searchParams.get('tab') ?? 'summary';
   const { data: assignment, loading, error, refetch } = useAssignment(slug, aslug);
   const { data: serversData } = useServers();
+  const { data: sessionsData } = useAssignmentSessions(slug, aslug);
 
   if (loading) {
     return <LoadingState label="Loading assignment workspace…" />;
@@ -295,6 +297,7 @@ export function AssignmentDetail() {
         <div className="space-y-5">
           <SectionCard title="Metadata">
             <dl className="space-y-3 text-sm">
+              <DetailRow label="ID" value={assignment.id} />
               <DetailRow label="Priority" value={assignment.priority} />
               <DetailRow label="Assignee" value={assignment.assignee ?? 'Unassigned'} />
               <DetailRow label="Created" value={formatDateTime(assignment.created)} />
@@ -340,6 +343,26 @@ export function AssignmentDetail() {
                         <ExternalLink className="h-2.5 w-2.5" />
                       </a>
                     ))}
+                  </div>
+                ))}
+              </div>
+            </SectionCard>
+          )}
+
+          {sessionsData && sessionsData.sessions.length > 0 && (
+            <SectionCard title="Agent Sessions">
+              <div className="space-y-2">
+                {sessionsData.sessions.map((session) => (
+                  <div key={session.sessionId} className="flex items-center gap-2 text-sm">
+                    <Activity className="h-3 w-3 text-muted-foreground" />
+                    <span className="font-medium text-foreground">{session.agent}</span>
+                    <span className="font-mono text-xs text-muted-foreground" title={session.sessionId}>
+                      {session.sessionId.slice(0, 8)}
+                    </span>
+                    <StatusBadge status={session.status} />
+                    <span className="text-xs text-muted-foreground">
+                      {formatDateTime(session.started)}
+                    </span>
                   </div>
                 ))}
               </div>

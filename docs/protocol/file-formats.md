@@ -195,7 +195,7 @@ The core unit of work and the **single source of truth** for assignment state. T
 
 **Q&A write boundaries:** The Q&A section is the one exception to the single-writer rule for assignment folders. Answers are written by humans or other agents, but always **mediated through the CLI** (e.g., `syntaur answer`), never by directly editing the file. This preserves the single-writer guarantee at the file-system level.
 
-**Sessions table:** Sessions are informational and help the dashboard show active work. The `assignee` field is the authoritative owner, not the sessions table. Multiple sessions are allowed (e.g., agent restarts). The `Ended` column and `abandoned` status handle stale sessions.
+**Sessions table:** Sessions are informational and help the dashboard show active work. The `assignee` field is the authoritative owner, not the sessions table. Multiple sessions are allowed (e.g., agent restarts). The `Ended` column and `stopped` status handle stale sessions.
 
 ### Example
 

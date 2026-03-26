@@ -160,6 +160,7 @@ export function parseStatus(fileContent: string): ParsedStatus {
 // --- Assignment Summary Parser ---
 
 export interface ParsedAssignmentSummary {
+  id: string;
   slug: string;
   title: string;
   status: string;
@@ -172,6 +173,7 @@ export interface ParsedAssignmentSummary {
 export function parseAssignmentSummary(fileContent: string): ParsedAssignmentSummary {
   const [fm] = extractFrontmatter(fileContent);
   return {
+    id: getField(fm, 'id') ?? '',
     slug: getField(fm, 'slug') ?? '',
     title: getField(fm, 'title') ?? '',
     status: getField(fm, 'status') ?? 'pending',

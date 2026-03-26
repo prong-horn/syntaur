@@ -5,4 +5,6 @@ dist/
 firebase-debug.log
 dashboard/dist/
 dashboard/node_modules/
-.claude/syntaur.local.json
+.syntaur/context.json
+.claude/
+.playwright-mcp/

@@ -16,6 +16,7 @@ import { EditAssignmentScratchpad } from './pages/EditAssignmentScratchpad';
 import { AppendAssignmentHandoff } from './pages/AppendAssignmentHandoff';
 import { AppendAssignmentDecisionRecord } from './pages/AppendAssignmentDecisionRecord';
 import { ServersPage } from './pages/ServersPage';
+import { AgentSessionsPage } from './pages/AgentSessionsPage';
 
 export function App() {
   return (
@@ -27,6 +28,7 @@ export function App() {
           <Route path="/assignments" element={<AssignmentsPage />} />
           <Route path="/attention" element={<AttentionPage />} />
           <Route path="/servers" element={<ServersPage />} />
+          <Route path="/agent-sessions" element={<AgentSessionsPage />} />
           <Route path="/help" element={<HelpPage />} />
           <Route path="/create/mission" element={<CreateMission />} />
           <Route path="/missions/:slug" element={<MissionDetail />} />

@@ -10,6 +10,7 @@ export function DependencyGraph({ definition, className }: DependencyGraphProps)
   const containerRef = useRef<HTMLDivElement>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const theme = document.documentElement.classList.contains('dark') ? 'dark' : 'default';
 
   useEffect(() => {
     let cancelled = false;
@@ -21,10 +22,7 @@ export function DependencyGraph({ definition, className }: DependencyGraphProps)
         const mermaid = (await import('mermaid')).default;
         mermaid.initialize({
           startOnLoad: false,
-          theme: 'dark',
-          themeVariables: {
-            darkMode: true,
-          },
+          theme,
         });
 
         if (cancelled) return;
@@ -50,7 +48,7 @@ export function DependencyGraph({ definition, className }: DependencyGraphProps)
     return () => {
       cancelled = true;
     };
-  }, [definition]);
+  }, [definition, theme]);
 
   if (error) {
     return (

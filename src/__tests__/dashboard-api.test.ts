@@ -2,7 +2,16 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdtemp, rm, mkdir, writeFile } from 'node:fs/promises';
 import { resolve, join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { listMissions, getMissionDetail, getAssignmentDetail } from '../dashboard/api.js';
+import {
+  listMissions,
+  listAssignmentsBoard,
+  getMissionDetail,
+  getAssignmentDetail,
+  getOverview,
+  getAttention,
+  getEditableDocument,
+  getHelp,
+} from '../dashboard/api.js';
 
 let testDir: string;
 
@@ -18,7 +27,14 @@ async function createMissionFiles(
   missionsDir: string,
   missionSlug: string,
   missionMd: string,
-  assignments: Array<{ slug: string; assignmentMd: string; planMd?: string }> = [],
+  assignments: Array<{
+    slug: string;
+    assignmentMd: string;
+    planMd?: string;
+    scratchpadMd?: string;
+    handoffMd?: string;
+    decisionMd?: string;
+  }> = [],
   statusMd?: string,
 ): Promise<void> {
   const missionPath = resolve(missionsDir, missionSlug);
@@ -29,12 +45,22 @@ async function createMissionFiles(
     await writeFile(resolve(missionPath, '_status.md'), statusMd, 'utf-8');
   }
 
-  for (const a of assignments) {
-    const aDir = resolve(missionPath, 'assignments', a.slug);
-    await mkdir(aDir, { recursive: true });
-    await writeFile(resolve(aDir, 'assignment.md'), a.assignmentMd, 'utf-8');
-    if (a.planMd) {
-      await writeFile(resolve(aDir, 'plan.md'), a.planMd, 'utf-8');
+  for (const assignment of assignments) {
+    const assignmentDir = resolve(missionPath, 'assignments', assignment.slug);
+    await mkdir(assignmentDir, { recursive: true });
+    await writeFile(resolve(assignmentDir, 'assignment.md'), assignment.assignmentMd, 'utf-8');
+
+    if (assignment.planMd) {
+      await writeFile(resolve(assignmentDir, 'plan.md'), assignment.planMd, 'utf-8');
+    }
+    if (assignment.scratchpadMd) {
+      await writeFile(resolve(assignmentDir, 'scratchpad.md'), assignment.scratchpadMd, 'utf-8');
+    }
+    if (assignment.handoffMd) {
+      await writeFile(resolve(assignmentDir, 'handoff.md'), assignment.handoffMd, 'utf-8');
+    }
+    if (assignment.decisionMd) {
+      await writeFile(resolve(assignmentDir, 'decision-record.md'), assignment.decisionMd, 'utf-8');
     }
   }
 }
@@ -44,6 +70,8 @@ id: test-123
 slug: test-mission
 title: Test Mission
 archived: false
+archivedAt: null
+archivedReason: null
 created: "2026-03-20T10:00:00Z"
 updated: "2026-03-20T10:00:00Z"
 tags: []
@@ -59,7 +87,7 @@ status: in_progress
 priority: high
 created: "2026-03-20T10:00:00Z"
 updated: "2026-03-20T10:00:00Z"
-assignee: claude-1
+assignee: codex-1
 externalIds: []
 dependsOn: []
 blockedReason: null
@@ -71,7 +99,34 @@ workspace:
 tags: []
 ---
 
-# Test Assignment`;
+# Test Assignment
+
+## Questions & Answers
+
+### Q: Waiting on approval?
+**A:** pending`;
+
+const BLOCKED_ASSIGNMENT_MD = `---
+id: a-456
+slug: blocked-assignment
+title: Blocked Assignment
+status: blocked
+priority: medium
+created: "2026-03-20T10:00:00Z"
+updated: "2026-03-10T10:00:00Z"
+assignee: codex-2
+externalIds: []
+dependsOn: []
+blockedReason: Waiting on API credentials
+workspace:
+  repository: null
+  worktreePath: null
+  branch: null
+  parentBranch: null
+tags: []
+---
+
+# Blocked Assignment`;
 
 const PLAN_MD = `---
 assignment: test-assignment
@@ -84,39 +139,54 @@ updated: "2026-03-20T10:00:00Z"
 
 - [ ] Do something`;
 
+const SCRATCHPAD_MD = `---
+assignment: test-assignment
+updated: "2026-03-20T11:00:00Z"
+---
+
+# Scratchpad
+
+Some notes`;
+
+const HANDOFF_MD = `---
+assignment: test-assignment
+updated: "2026-03-20T12:00:00Z"
+handoffCount: 1
+---
+
+# Handoff Log
+
+## Handoff 1
+
+Initial handoff`;
+
+const DECISION_MD = `---
+assignment: test-assignment
+updated: "2026-03-20T13:00:00Z"
+decisionCount: 1
+---
+
+# Decision Record
+
+## Decision 1
+
+Keep it simple`;
+
 describe('listMissions', () => {
-  it('returns empty array for non-existent directory', async () => {
-    const result = await listMissions(resolve(testDir, 'nonexistent'));
+  it('returns empty array for a missing directory', async () => {
+    const result = await listMissions(resolve(testDir, 'missing'));
     expect(result).toEqual([]);
   });
 
-  it('returns empty array for empty directory', async () => {
-    const result = await listMissions(testDir);
-    expect(result).toEqual([]);
-  });
-
-  it('lists missions with computed progress when _status.md is missing', async () => {
-    await createMissionFiles(testDir, 'test-mission', MISSION_MD, [
-      { slug: 'test-assignment', assignmentMd: ASSIGNMENT_MD },
-    ]);
-
-    const result = await listMissions(testDir);
-    expect(result).toHaveLength(1);
-    expect(result[0].slug).toBe('test-mission');
-    expect(result[0].title).toBe('Test Mission');
-    expect(result[0].progress.total).toBe(1);
-    expect(result[0].progress.in_progress).toBe(1);
-  });
-
-  it('uses _status.md when available', async () => {
+  it('uses source-first assignment state even when _status.md disagrees', async () => {
     const statusMd = `---
 mission: test-mission
 generated: "2026-03-20T10:00:00Z"
-status: active
+status: completed
 progress:
-  total: 2
+  total: 1
   completed: 1
-  in_progress: 1
+  in_progress: 0
   blocked: 0
   pending: 0
   review: 0
@@ -129,63 +199,162 @@ needsAttention:
 
 # Status`;
 
-    await createMissionFiles(testDir, 'test-mission', MISSION_MD, [], statusMd);
+    await createMissionFiles(testDir, 'test-mission', MISSION_MD, [
+      { slug: 'test-assignment', assignmentMd: ASSIGNMENT_MD },
+    ], statusMd);
 
     const result = await listMissions(testDir);
     expect(result).toHaveLength(1);
     expect(result[0].status).toBe('active');
-    expect(result[0].progress.total).toBe(2);
-    expect(result[0].progress.completed).toBe(1);
+    expect(result[0].progress.in_progress).toBe(1);
+    expect(result[0].needsAttention.unansweredQuestions).toBe(1);
   });
 });
 
 describe('getMissionDetail', () => {
-  it('returns null for non-existent mission', async () => {
-    const result = await getMissionDetail(testDir, 'nonexistent');
+  it('returns null for a missing mission', async () => {
+    const result = await getMissionDetail(testDir, 'missing');
     expect(result).toBeNull();
   });
 
-  it('returns full mission detail with assignments', async () => {
+  it('returns mission detail with source-first assignments and derived graph fallback', async () => {
     await createMissionFiles(testDir, 'test-mission', MISSION_MD, [
       { slug: 'test-assignment', assignmentMd: ASSIGNMENT_MD },
     ]);
 
     const result = await getMissionDetail(testDir, 'test-mission');
     expect(result).not.toBeNull();
-    expect(result!.slug).toBe('test-mission');
-    expect(result!.assignments).toHaveLength(1);
+    expect(result!.status).toBe('active');
     expect(result!.assignments[0].slug).toBe('test-assignment');
-    expect(result!.assignments[0].status).toBe('in_progress');
+    expect(result!.dependencyGraph).toBeNull();
   });
 });
 
 describe('getAssignmentDetail', () => {
-  it('returns null for non-existent assignment', async () => {
-    const result = await getAssignmentDetail(testDir, 'test-mission', 'nonexistent');
+  it('returns null for a missing assignment', async () => {
+    const result = await getAssignmentDetail(testDir, 'test-mission', 'missing');
     expect(result).toBeNull();
   });
 
-  it('returns full assignment detail with plan', async () => {
+  it('returns assignment detail with companion document metadata and transitions', async () => {
     await createMissionFiles(testDir, 'test-mission', MISSION_MD, [
-      { slug: 'test-assignment', assignmentMd: ASSIGNMENT_MD, planMd: PLAN_MD },
+      {
+        slug: 'test-assignment',
+        assignmentMd: ASSIGNMENT_MD,
+        planMd: PLAN_MD,
+        scratchpadMd: SCRATCHPAD_MD,
+        handoffMd: HANDOFF_MD,
+        decisionMd: DECISION_MD,
+      },
     ]);
 
     const result = await getAssignmentDetail(testDir, 'test-mission', 'test-assignment');
     expect(result).not.toBeNull();
-    expect(result!.slug).toBe('test-assignment');
-    expect(result!.status).toBe('in_progress');
-    expect(result!.plan).not.toBeNull();
-    expect(result!.plan!.status).toBe('in_progress');
-    expect(result!.plan!.body).toContain('Do something');
+    expect(result!.plan?.status).toBe('in_progress');
+    expect(result!.scratchpad?.updated).toBe('2026-03-20T11:00:00Z');
+    expect(result!.handoff?.handoffCount).toBe(1);
+    expect(result!.decisionRecord?.decisionCount).toBe(1);
+    expect(result!.availableTransitions.map((action) => action.command)).toContain('review');
+  });
+});
+
+describe('listAssignmentsBoard', () => {
+  it('returns assignments from every mission with mission context and transitions', async () => {
+    await createMissionFiles(testDir, 'test-mission', MISSION_MD, [
+      { slug: 'test-assignment', assignmentMd: ASSIGNMENT_MD },
+    ]);
+    await createMissionFiles(testDir, 'second-mission', `---
+id: mission-2
+slug: second-mission
+title: Second Mission
+archived: false
+archivedAt: null
+archivedReason: null
+created: "2026-03-19T10:00:00Z"
+updated: "2026-03-19T10:00:00Z"
+tags: []
+---
+
+# Second Mission`, [
+      { slug: 'blocked-assignment', assignmentMd: BLOCKED_ASSIGNMENT_MD },
+    ]);
+
+    const result = await listAssignmentsBoard(testDir);
+
+    expect(result.assignments).toHaveLength(2);
+    expect(result.assignments.map((assignment) => assignment.missionSlug).sort()).toEqual([
+      'second-mission',
+      'test-mission',
+    ]);
+    expect(result.assignments.find((assignment) => assignment.slug === 'blocked-assignment'))
+      .toMatchObject({
+        missionTitle: 'Second Mission',
+        blockedReason: 'Waiting on API credentials',
+        status: 'blocked',
+      });
+    expect(
+      result.assignments.find((assignment) => assignment.slug === 'test-assignment')
+        ?.availableTransitions.map((action) => action.command),
+    ).toContain('review');
+  });
+});
+
+describe('overview and attention', () => {
+  it('returns first-run onboarding state for an empty workspace', async () => {
+    const result = await getOverview(testDir);
+    expect(result.firstRun).toBe(true);
+    expect(result.stats.activeMissions).toBe(0);
+    expect(result.attention).toHaveLength(0);
   });
 
-  it('returns null plan when plan.md does not exist', async () => {
+  it('builds overview stats, recent activity, and attention items from source files', async () => {
+    await createMissionFiles(testDir, 'test-mission', MISSION_MD, [
+      { slug: 'test-assignment', assignmentMd: ASSIGNMENT_MD, planMd: PLAN_MD },
+      { slug: 'blocked-assignment', assignmentMd: BLOCKED_ASSIGNMENT_MD },
+    ]);
+
+    const overview = await getOverview(testDir);
+    const attention = await getAttention(testDir);
+
+    expect(overview.firstRun).toBe(false);
+    expect(overview.stats.activeMissions).toBe(1);
+    expect(overview.stats.inProgressAssignments).toBe(1);
+    expect(overview.stats.blockedAssignments).toBe(1);
+    expect(overview.stats.staleAssignments).toBe(1);
+    expect(overview.recentActivity[0].href).toContain('/missions/test-mission');
+
+    expect(attention.items[0].severity).toBe('high');
+    expect(attention.items.some((item) => item.reason.includes('7 days'))).toBe(true);
+  });
+});
+
+describe('help and editable documents', () => {
+  it('returns the structured help model with only implemented commands', async () => {
+    const help = await getHelp();
+    const commandNames = help.commands.map((command) => command.command);
+
+    expect(commandNames).toContain('syntaur dashboard');
+    expect(commandNames).toContain('syntaur create-mission');
+    expect(commandNames).not.toContain('syntaur rebuild');
+    expect(help.coreConcepts.some((concept) => concept.term === 'Mission')).toBe(true);
+  });
+
+  it('returns editable document payloads for mission and assignment files', async () => {
     await createMissionFiles(testDir, 'test-mission', MISSION_MD, [
       { slug: 'test-assignment', assignmentMd: ASSIGNMENT_MD },
     ]);
 
-    const result = await getAssignmentDetail(testDir, 'test-mission', 'test-assignment');
-    expect(result).not.toBeNull();
-    expect(result!.plan).toBeNull();
+    const missionDoc = await getEditableDocument(testDir, 'mission', 'test-mission');
+    const assignmentDoc = await getEditableDocument(
+      testDir,
+      'assignment',
+      'test-mission',
+      'test-assignment',
+    );
+
+    expect(missionDoc?.documentType).toBe('mission');
+    expect(missionDoc?.content).toContain('Test Mission');
+    expect(assignmentDoc?.documentType).toBe('assignment');
+    expect(assignmentDoc?.content).toContain('Test Assignment');
   });
 });

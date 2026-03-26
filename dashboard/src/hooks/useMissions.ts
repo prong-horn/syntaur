@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useWebSocket } from './useWebSocket';
 import type { WsMessage } from './useWebSocket';
-import type { ServersResponse, TrackedSession } from '../types';
+import type { ServersResponse, TrackedSession, AgentSessionsResponse } from '../types';
 
 export interface ProgressCounts {
   total: number;
@@ -35,6 +35,7 @@ export interface MissionSummary {
 }
 
 export interface AssignmentSummary {
+  id: string;
   slug: string;
   title: string;
   status: 'pending' | 'in_progress' | 'blocked' | 'review' | 'completed' | 'failed';
@@ -114,6 +115,7 @@ export interface AssignmentTransitionAction {
 }
 
 export interface AssignmentDetail {
+  id: string;
   missionSlug: string;
   slug: string;
   title: string;
@@ -279,7 +281,7 @@ interface FetchState<T> {
   refetch: () => void;
 }
 
-function useFetch<T>(url: string | null, websocketScope?: 'missions' | 'mission' | 'assignment' | 'assignments' | 'overview' | 'attention' | 'servers'): FetchState<T> {
+function useFetch<T>(url: string | null, websocketScope?: 'missions' | 'mission' | 'assignment' | 'assignments' | 'overview' | 'attention' | 'servers' | 'agent-sessions'): FetchState<T> {
   const [data, setData] = useState<T | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -338,6 +340,10 @@ function useFetch<T>(url: string | null, websocketScope?: 'missions' | 'mission'
     if (message.type === 'servers-updated' && websocketScope === 'servers') {
       refetch();
     }
+
+    if (message.type === 'agent-sessions-updated' && websocketScope === 'agent-sessions') {
+      refetch();
+    }
   });
 
   return { data, loading, error, refetch };
@@ -394,4 +400,19 @@ export function useServer(name: string | null): FetchState<TrackedSession> {
     name ? `/api/servers/${encodeURIComponent(name)}` : null,
     'servers',
   );
+}
+
+export function useAgentSessions(): FetchState<AgentSessionsResponse> {
+  return useFetch<AgentSessionsResponse>('/api/agent-sessions', 'agent-sessions');
+}
+
+export function useAssignmentSessions(
+  missionSlug: string | undefined,
+  assignmentSlug: string | undefined,
+): FetchState<AgentSessionsResponse> {
+  const url =
+    missionSlug && assignmentSlug
+      ? `/api/agent-sessions/${missionSlug}?assignment=${assignmentSlug}`
+      : null;
+  return useFetch<AgentSessionsResponse>(url, 'agent-sessions');
 }

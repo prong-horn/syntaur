@@ -4,10 +4,11 @@ import { fileURLToPath } from 'node:url';
 import { readConfig } from '../utils/config.js';
 import { createDashboardServer } from '../dashboard/server.js';
 import { serversDir as getServersDir } from '../utils/paths.js';
+import { fileExists } from '../utils/fs.js';
 
 export interface DashboardOptions {
   port: string;
-  dev: boolean;
+  apiOnly: boolean;
   open: boolean;
 }
 
@@ -20,27 +21,36 @@ export async function dashboardCommand(options: DashboardOptions): Promise<void>
     throw new Error(`Invalid port "${options.port}". Must be a number between 1 and 65535.`);
   }
 
+  // Always run Express in dev mode (API only) — Vite serves the UI.
+  // With --api-only, skip the Vite dev server (useful for custom setups).
   const server = createDashboardServer({
     port,
     missionsDir,
     serversDir: getServersDir(),
-    devMode: options.dev,
+    devMode: !options.apiOnly,
   });
 
   await server.start();
 
   let viteProcess: ChildProcess | null = null;
 
-  if (options.dev) {
-    // Resolve the dashboard directory relative to this file's compiled location (dist/)
+  if (!options.apiOnly) {
     const thisFile = fileURLToPath(import.meta.url);
     const packageRoot = resolve(dirname(thisFile), '..');
     const dashboardDir = resolve(packageRoot, 'dashboard');
+    const viteBin = resolve(dashboardDir, 'node_modules', '.bin', 'vite');
+
+    if (!(await fileExists(viteBin))) {
+      console.error(
+        'Vite not found. Run "cd dashboard && npm install" first, or use --api-only.',
+      );
+      await server.stop();
+      process.exit(1);
+    }
 
     console.log(`API server running on http://localhost:${port}`);
     console.log('Starting Vite dev server...');
 
-    const viteBin = resolve(dashboardDir, 'node_modules', '.bin', 'vite');
     viteProcess = spawn(viteBin, [], {
       cwd: dashboardDir,
       env: {
@@ -55,7 +65,7 @@ export async function dashboardCommand(options: DashboardOptions): Promise<void>
     });
   } else {
     const url = `http://localhost:${port}`;
-    console.log(`Syntaur Dashboard running at ${url}`);
+    console.log(`Syntaur Dashboard API running at ${url}`);
 
     if (options.open) {
       try {

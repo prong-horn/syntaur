@@ -13,6 +13,7 @@ import { failCommand } from './commands/fail.js';
 import { reopenCommand } from './commands/reopen.js';
 import { installPluginCommand } from './commands/install-plugin.js';
 import { setupAdapterCommand } from './commands/setup-adapter.js';
+import { trackSessionCommand } from './commands/track-session.js';
 
 const program = new Command();
 
@@ -85,7 +86,7 @@ program
   .command('dashboard')
   .description('Start the local Syntaur dashboard web UI')
   .option('--port <number>', 'Port to run the dashboard on', '4800')
-  .option('--dev', 'Run in development mode (API only, use with Vite dev server)', false)
+  .option('--api-only', 'Run only the API server (skip Vite UI)', false)
   .option('--no-open', 'Do not automatically open the browser')
   .action(async (options) => {
     try {
@@ -281,5 +282,31 @@ program
       process.exit(1);
     }
   });
+
+program
+  .command('track-session')
+  .description('Register an agent session for an assignment')
+  .option('--mission <slug>', 'Target mission slug (required)')
+  .option('--assignment <slug>', 'Assignment slug (required)')
+  .option('--agent <name>', 'Agent name, e.g. claude, codex, cursor (required)')
+  .option('--session-id <id>', 'Session ID (auto-generated if omitted)')
+  .option('--path <path>', 'Full path to session on disk (defaults to cwd)')
+  .option('--dir <path>', 'Override default mission directory')
+  .action(async (options) => {
+    try {
+      await trackSessionCommand(options);
+    } catch (error) {
+      console.error(
+        'Error:',
+        error instanceof Error ? error.message : String(error),
+      );
+      process.exit(1);
+    }
+  });
+
+// Default to dashboard when no command is given
+if (process.argv.length <= 2) {
+  process.argv.push('dashboard');
+}
 
 program.parse();

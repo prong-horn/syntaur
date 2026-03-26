@@ -1,5 +1,5 @@
 import { watch } from 'chokidar';
-import { relative, sep } from 'node:path';
+import { relative, sep, basename } from 'node:path';
 import type { WsMessage } from './types.js';
 
 export interface WatcherOptions {
@@ -41,12 +41,20 @@ export function createWatcher(options: WatcherOptions): { close: () => Promise<v
     const existing = pendingEvents.get(debounceKey);
     if (existing) clearTimeout(existing);
 
+    // Determine message type — _index-sessions.md changes get their own event
+    const isSessionsIndex = basename(filePath) === '_index-sessions.md';
+    const messageType = isSessionsIndex
+      ? 'agent-sessions-updated'
+      : assignmentSlug
+        ? 'assignment-updated'
+        : 'mission-updated';
+
     pendingEvents.set(
       debounceKey,
       setTimeout(() => {
         pendingEvents.delete(debounceKey);
         const message: WsMessage = {
-          type: assignmentSlug ? 'assignment-updated' : 'mission-updated',
+          type: messageType,
           missionSlug,
           assignmentSlug,
           timestamp: new Date().toISOString(),

@@ -60,8 +60,8 @@ activeSessions: 0
 
 # Active Sessions
 
-| Assignment | Agent | Session ID | Started | Status |
-|------------|-------|------------|---------|--------|
+| Assignment | Agent | Session ID | Started | Status | Path |
+|------------|-------|------------|---------|--------|------|
 `;
 }
 
