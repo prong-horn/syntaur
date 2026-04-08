@@ -125,6 +125,45 @@ export function createTodosRouter(
     }
   });
 
+  // POST /:workspace/reorder — reorder items
+  // Must be before /:workspace/:id to avoid param capture
+  router.post('/:workspace/reorder', async (req, res) => {
+    try {
+      const { ids } = req.body;
+      if (!Array.isArray(ids) || !ids.every((id: unknown) => typeof id === 'string')) {
+        res.status(400).json({ error: 'ids must be an array of strings' });
+        return;
+      }
+
+      const items = await withLock(req.params.workspace, async () => {
+        const checklist = await readChecklist(todosDir, req.params.workspace);
+        const itemMap = new Map(checklist.items.map((i) => [i.id, i]));
+
+        // Build reordered list: requested order first, then any items not in the ids array
+        const reordered: TodoItem[] = [];
+        for (const id of ids) {
+          const item = itemMap.get(id);
+          if (item) {
+            reordered.push(item);
+            itemMap.delete(id);
+          }
+        }
+        // Append any remaining items not mentioned in ids
+        for (const item of itemMap.values()) {
+          reordered.push(item);
+        }
+
+        checklist.items = reordered;
+        await writeChecklist(todosDir, checklist);
+        return reordered;
+      });
+      broadcastUpdate();
+      res.json({ items });
+    } catch (error) {
+      res.status(500).json({ error: error instanceof Error ? error.message : 'Failed to reorder todos' });
+    }
+  });
+
   // GET /:workspace/log — full log
   // Must be before /:workspace/:id to avoid param capture
   router.get('/:workspace/log', async (req, res) => {

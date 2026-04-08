@@ -141,6 +141,14 @@ export async function unblockTodo(workspace: string, id: string): Promise<void> 
   });
 }
 
+export async function reorderTodos(workspace: string, ids: string[]): Promise<void> {
+  await fetch(`/api/todos/${encodeURIComponent(workspace)}/reorder`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ids }),
+  });
+}
+
 export async function deleteTodo(workspace: string, id: string): Promise<void> {
   await fetch(`/api/todos/${encodeURIComponent(workspace)}/${id}`, {
     method: 'DELETE',

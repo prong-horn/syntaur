@@ -7,7 +7,24 @@ import {
   AlertTriangle,
   Copy,
   Check,
+  GripVertical,
 } from 'lucide-react';
+import {
+  DndContext,
+  closestCenter,
+  PointerSensor,
+  KeyboardSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from '@dnd-kit/core';
+import {
+  SortableContext,
+  verticalListSortingStrategy,
+  useSortable,
+  arrayMove,
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 import {
   useTodos,
   addTodo,
@@ -15,12 +32,114 @@ import {
   blockTodo,
   startTodo,
   reopenTodo,
+  reorderTodos,
 } from '../hooks/useTodos';
 import { LoadingState } from '../components/LoadingState';
 import { ErrorState } from '../components/ErrorState';
 import { EmptyState } from '../components/EmptyState';
 import { StatCard } from '../components/StatCard';
 import { StatusMenu } from '../components/StatusMenu';
+import type { TodoItem } from '../types';
+
+interface SortableTodoRowProps {
+  item: TodoItem;
+  copiedId: string | null;
+  onCycleStatus: (id: string, status: string) => void;
+  onStatusChange: (id: string, status: string) => void;
+  onCopyId: (e: React.MouseEvent, id: string) => void;
+  disabled: boolean;
+}
+
+function SortableTodoRow({
+  item,
+  copiedId,
+  onCycleStatus,
+  onStatusChange,
+  onCopyId,
+  disabled,
+}: SortableTodoRowProps) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    setActivatorNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: item.id, disabled });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    zIndex: isDragging ? 50 : undefined,
+    position: isDragging ? 'relative' as const : undefined,
+  };
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      className={`surface-panel flex items-center gap-3 px-3 py-2 cursor-pointer hover:bg-foreground/[0.03] transition ${
+        isDragging ? 'opacity-50 shadow-lg' : ''
+      }`}
+      onClick={() => onCycleStatus(item.id, item.status)}
+    >
+      {!disabled && (
+        <button
+          ref={setActivatorNodeRef}
+          {...attributes}
+          {...listeners}
+          className="cursor-grab active:cursor-grabbing text-muted-foreground/40 hover:text-muted-foreground transition touch-none"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <GripVertical className="h-4 w-4" />
+        </button>
+      )}
+      <StatusMenu
+        status={item.status as any}
+        onChange={(s) => onStatusChange(item.id, s)}
+      />
+      <div className="flex-1 min-w-0">
+        <span
+          className={`text-sm ${item.status === 'completed' ? 'line-through text-muted-foreground' : 'text-foreground'}`}
+        >
+          {item.description}
+        </span>
+        {item.tags.length > 0 && (
+          <span className="ml-2 text-xs text-muted-foreground">
+            {item.tags.map((t) => `#${t}`).join(' ')}
+          </span>
+        )}
+        {item.session && (
+          <span className="ml-2 text-xs text-blue-400/60 font-mono">
+            session:{item.session.slice(0, 8)}
+          </span>
+        )}
+      </div>
+      {copiedId === item.id ? (
+        <span className="text-xs text-emerald-400 flex items-center gap-1">
+          <Check className="h-3 w-3" /> Copied to clipboard
+        </span>
+      ) : (
+        <>
+          <button
+            className="text-xs text-muted-foreground/60 font-mono hover:text-foreground transition"
+            onClick={(e) => onCopyId(e, item.id)}
+          >
+            t:{item.id}
+          </button>
+          <button
+            className="text-muted-foreground/40 hover:text-foreground transition"
+            title="Copy ID"
+            onClick={(e) => onCopyId(e, item.id)}
+          >
+            <Copy className="h-3 w-3" />
+          </button>
+        </>
+      )}
+    </div>
+  );
+}
 
 export function WorkspaceTodosPage() {
   const { workspace } = useParams<{ workspace: string }>();
@@ -31,6 +150,14 @@ export function WorkspaceTodosPage() {
   const [tagFilter, setTagFilter] = useState<string>('');
   const [newTodoText, setNewTodoText] = useState('');
   const [copiedId, setCopiedId] = useState<string | null>(null);
+
+  const isFiltered = !!(search.trim() || statusFilter || tagFilter);
+
+  // dnd-kit sensors: require 8px movement before drag starts (prevents accidental drags)
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
+    useSensor(KeyboardSensor),
+  );
 
   function copyId(e: React.MouseEvent, id: string) {
     e.stopPropagation();
@@ -101,6 +228,18 @@ export function WorkspaceTodosPage() {
     refetch();
   }
 
+  async function handleDragEnd(event: DragEndEvent) {
+    const { active, over } = event;
+    if (!over || active.id === over.id || !data?.items) return;
+
+    const oldIndex = data.items.findIndex((i) => i.id === active.id);
+    const newIndex = data.items.findIndex((i) => i.id === over.id);
+    if (oldIndex === -1 || newIndex === -1) return;
+
+    const reordered = arrayMove(data.items, oldIndex, newIndex);
+    await reorderTodos(ws, reordered.map((i) => i.id));
+    refetch();
+  }
 
   if (loading) return <LoadingState label="Loading todos..." />;
   if (error) return <ErrorState error={error} />;
@@ -185,58 +324,30 @@ export function WorkspaceTodosPage() {
           description="Add your first todo above."
         />
       ) : (
-        <div className="space-y-1">
-          {filtered.map((item) => (
-            <div
-              key={item.id}
-              className="surface-panel flex items-center gap-3 px-3 py-2 cursor-pointer hover:bg-foreground/[0.03] transition"
-              onClick={() => handleCycleStatus(item.id, item.status)}
-            >
-              <StatusMenu
-                status={item.status as any}
-                onChange={(s) => handleStatusChange(item.id, s)}
-              />
-              <div className="flex-1 min-w-0">
-                <span
-                  className={`text-sm ${item.status === 'completed' ? 'line-through text-muted-foreground' : 'text-foreground'}`}
-                >
-                  {item.description}
-                </span>
-                {item.tags.length > 0 && (
-                  <span className="ml-2 text-xs text-muted-foreground">
-                    {item.tags.map((t) => `#${t}`).join(' ')}
-                  </span>
-                )}
-                {item.session && (
-                  <span className="ml-2 text-xs text-blue-400/60 font-mono">
-                    session:{item.session.slice(0, 8)}
-                  </span>
-                )}
-              </div>
-              {copiedId === item.id ? (
-                <span className="text-xs text-emerald-400 flex items-center gap-1">
-                  <Check className="h-3 w-3" /> Copied to clipboard
-                </span>
-              ) : (
-                <>
-                  <button
-                    className="text-xs text-muted-foreground/60 font-mono hover:text-foreground transition"
-                    onClick={(e) => copyId(e, item.id)}
-                  >
-                    t:{item.id}
-                  </button>
-                  <button
-                    className="text-muted-foreground/40 hover:text-foreground transition"
-                    title="Copy ID"
-                    onClick={(e) => copyId(e, item.id)}
-                  >
-                    <Copy className="h-3 w-3" />
-                  </button>
-                </>
-              )}
+        <DndContext
+          sensors={sensors}
+          collisionDetection={closestCenter}
+          onDragEnd={handleDragEnd}
+        >
+          <SortableContext
+            items={filtered.map((i) => i.id)}
+            strategy={verticalListSortingStrategy}
+          >
+            <div className="space-y-1">
+              {filtered.map((item) => (
+                <SortableTodoRow
+                  key={item.id}
+                  item={item}
+                  copiedId={copiedId}
+                  onCycleStatus={handleCycleStatus}
+                  onStatusChange={handleStatusChange}
+                  onCopyId={copyId}
+                  disabled={isFiltered}
+                />
+              ))}
             </div>
-          ))}
-        </div>
+          </SortableContext>
+        </DndContext>
       )}
     </div>
   );
