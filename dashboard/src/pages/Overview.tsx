@@ -2,6 +2,7 @@ import { Link } from 'react-router-dom';
 import {
   Activity,
   AlertTriangle,
+  CheckSquare,
   ClipboardCheck,
   FolderKanban,
   Gauge,
@@ -9,9 +10,9 @@ import {
   OctagonX,
 } from 'lucide-react';
 import { useHelp, useOverview } from '../hooks/useMissions';
-import { formatDateTime } from '../lib/format';
+import { useAllTodos } from '../hooks/useTodos';
+import { formatDateTime, toTitleCase } from '../lib/format';
 import { StatusBadge } from '../components/StatusBadge';
-import { PageHeader } from '../components/PageHeader';
 import { StatCard } from '../components/StatCard';
 import { SectionCard } from '../components/SectionCard';
 import { LoadingState } from '../components/LoadingState';
@@ -22,6 +23,11 @@ import { GettingStartedCard } from '../components/GettingStartedCard';
 export function Overview() {
   const { data: overview, loading, error } = useOverview();
   const { data: help } = useHelp();
+  const { data: todosData } = useAllTodos();
+
+  const openTodos = todosData?.workspaces
+    ? todosData.workspaces.reduce((sum, ws) => sum + ws.counts.open + ws.counts.in_progress, 0)
+    : 0;
 
   if (loading) {
     return <LoadingState label="Loading overview…" />;
@@ -33,35 +39,22 @@ export function Overview() {
 
   return (
     <div className="space-y-5">
-      <PageHeader
-        eyebrow="Command Center"
-        title="Overview"
-        description="A source-first view of the work on disk, built for triage, onboarding, and keeping first-time users oriented."
-        actions={
-          <Link className="shell-action bg-foreground text-background hover:opacity-90" to="/create/mission">
-            New Mission
-          </Link>
-        }
-      />
-
-      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
-        <StatCard label="Active Missions" value={overview.stats.activeMissions} icon={FolderKanban} />
-        <StatCard label="In Progress" value={overview.stats.inProgressAssignments} icon={Gauge} tone="info" />
-        <StatCard label="Blocked" value={overview.stats.blockedAssignments} icon={AlertTriangle} tone="warn" />
-        <StatCard label="Review" value={overview.stats.reviewAssignments} icon={ClipboardCheck} tone="info" />
-        <StatCard label="Failed" value={overview.stats.failedAssignments} icon={OctagonX} tone="danger" />
-        <StatCard label="Stale" value={overview.stats.staleAssignments} icon={Activity} />
-        {overview.serverStats && (
-          <Link to="/servers">
-            <StatCard
-              label="Active Servers"
-              value={overview.serverStats.aliveSessions}
-              description={`${overview.serverStats.totalPorts} ports · ${overview.serverStats.deadSessions > 0 ? `${overview.serverStats.deadSessions} dead` : 'all healthy'}`}
-              icon={Monitor}
-              tone={overview.serverStats.deadSessions > 0 ? 'warn' : 'default'}
-            />
-          </Link>
-        )}
+      <div className="grid gap-3 grid-cols-[repeat(auto-fill,minmax(160px,1fr))]">
+        <StatCard label="Active Missions" value={overview.stats.activeMissions} icon={FolderKanban} to="/missions" />
+        <StatCard label="In Progress" value={overview.stats.inProgressAssignments} icon={Gauge} tone="info" to="/assignments?status=in_progress" />
+        <StatCard label="Blocked" value={overview.stats.blockedAssignments} icon={AlertTriangle} tone="warn" to="/assignments?status=blocked" />
+        <StatCard label="Review" value={overview.stats.reviewAssignments} icon={ClipboardCheck} tone="info" to="/assignments?status=review" />
+        <StatCard label="Failed" value={overview.stats.failedAssignments} icon={OctagonX} tone="danger" to="/assignments?status=failed" />
+        <StatCard label="Stale" value={overview.stats.staleAssignments} icon={Activity} to="/assignments?stale=1" />
+        <StatCard label="Open Todos" value={openTodos} icon={CheckSquare} to="/todos" />
+        <StatCard
+          label="Active Servers"
+          value={overview.serverStats ? overview.serverStats.aliveSessions : '…'}
+          description={overview.serverStats ? `${overview.serverStats.totalPorts} ports · ${overview.serverStats.deadSessions > 0 ? `${overview.serverStats.deadSessions} dead` : 'all healthy'}` : 'connecting'}
+          icon={Monitor}
+          tone={overview.serverStats?.deadSessions ? 'warn' : 'default'}
+          to="/servers"
+        />
       </div>
 
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1.1fr)_minmax(360px,0.9fr)]">
@@ -153,7 +146,7 @@ export function Overview() {
                           <p className="text-sm text-muted-foreground">{item.summary}</p>
                         </div>
                         <span className="text-xs font-medium uppercase tracking-[0.1em] text-muted-foreground">
-                          {item.type}
+                          {toTitleCase(item.type)}
                         </span>
                       </div>
                       <p className="mt-3 text-xs text-muted-foreground">{formatDateTime(item.updated)}</p>

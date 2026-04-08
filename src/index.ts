@@ -12,8 +12,13 @@ import { reviewCommand } from './commands/review.js';
 import { failCommand } from './commands/fail.js';
 import { reopenCommand } from './commands/reopen.js';
 import { installPluginCommand } from './commands/install-plugin.js';
+import { installCodexPluginCommand } from './commands/install-codex-plugin.js';
 import { setupAdapterCommand } from './commands/setup-adapter.js';
 import { trackSessionCommand } from './commands/track-session.js';
+import { browseCommand } from './commands/browse.js';
+import { createPlaybookCommand } from './commands/create-playbook.js';
+import { listPlaybooksCommand } from './commands/list-playbooks.js';
+import { todoCommand } from './commands/todo.js';
 
 const program = new Command();
 
@@ -44,6 +49,7 @@ program
   .argument('<title>', 'Mission title')
   .option('--slug <slug>', 'Override auto-generated slug')
   .option('--dir <path>', 'Override default mission directory')
+  .option('--workspace <workspace>', 'Workspace for organizational grouping')
   .action(async (title, options) => {
     try {
       await createMissionCommand(title, options);
@@ -264,6 +270,22 @@ program
   });
 
 program
+  .command('install-codex-plugin')
+  .description('Install the Syntaur Codex plugin and home marketplace entry')
+  .option('--force', 'Overwrite existing plugin installation or marketplace entry')
+  .action(async (options) => {
+    try {
+      await installCodexPluginCommand(options);
+    } catch (error) {
+      console.error(
+        'Error:',
+        error instanceof Error ? error.message : String(error),
+      );
+      process.exit(1);
+    }
+  });
+
+program
   .command('setup-adapter')
   .description('Generate adapter instruction files for a framework in the current directory')
   .argument('<framework>', 'Target framework (cursor, codex, opencode)')
@@ -285,13 +307,14 @@ program
 
 program
   .command('track-session')
-  .description('Register an agent session for an assignment')
-  .option('--mission <slug>', 'Target mission slug (required)')
-  .option('--assignment <slug>', 'Assignment slug (required)')
+  .description('Register an agent session (optionally linked to a mission/assignment)')
+  .option('--mission <slug>', 'Target mission slug')
+  .option('--assignment <slug>', 'Assignment slug')
   .option('--agent <name>', 'Agent name, e.g. claude, codex, cursor (required)')
   .option('--session-id <id>', 'Session ID (auto-generated if omitted)')
   .option('--path <path>', 'Full path to session on disk (defaults to cwd)')
   .option('--dir <path>', 'Override default mission directory')
+  .option('--description <text>', 'Description of what this session is for')
   .action(async (options) => {
     try {
       await trackSessionCommand(options);
@@ -303,6 +326,57 @@ program
       process.exit(1);
     }
   });
+
+program
+  .command('browse')
+  .description('Interactive TUI browser for missions and assignments')
+  .option('--agent <type>', 'Agent to launch: claude or codex', 'claude')
+  .action(async (options) => {
+    try {
+      await browseCommand(options);
+    } catch (error) {
+      console.error(
+        'Error:',
+        error instanceof Error ? error.message : String(error),
+      );
+      process.exit(1);
+    }
+  });
+
+program
+  .command('create-playbook')
+  .description('Create a new playbook')
+  .argument('<name>', 'Playbook name')
+  .option('--slug <slug>', 'Override auto-generated slug')
+  .option('--description <desc>', 'Playbook description')
+  .action(async (name, options) => {
+    try {
+      await createPlaybookCommand(name, options);
+    } catch (error) {
+      console.error(
+        'Error:',
+        error instanceof Error ? error.message : String(error),
+      );
+      process.exit(1);
+    }
+  });
+
+program
+  .command('list-playbooks')
+  .description('List all playbooks')
+  .action(async () => {
+    try {
+      await listPlaybooksCommand();
+    } catch (error) {
+      console.error(
+        'Error:',
+        error instanceof Error ? error.message : String(error),
+      );
+      process.exit(1);
+    }
+  });
+
+program.addCommand(todoCommand);
 
 // Default to dashboard when no command is given
 if (process.argv.length <= 2) {

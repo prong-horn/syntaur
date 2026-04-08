@@ -19,3 +19,11 @@ export function defaultMissionDir(): string {
 export function serversDir(): string {
   return resolve(syntaurRoot(), 'servers');
 }
+
+export function playbooksDir(): string {
+  return resolve(syntaurRoot(), 'playbooks');
+}
+
+export function todosDir(): string {
+  return resolve(syntaurRoot(), 'todos');
+}

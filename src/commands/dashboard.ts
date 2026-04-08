@@ -3,7 +3,7 @@ import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { readConfig } from '../utils/config.js';
 import { createDashboardServer } from '../dashboard/server.js';
-import { serversDir as getServersDir } from '../utils/paths.js';
+import { serversDir as getServersDir, playbooksDir as getPlaybooksDir, todosDir as getTodosDir } from '../utils/paths.js';
 import { fileExists } from '../utils/fs.js';
 
 export interface DashboardOptions {
@@ -27,6 +27,8 @@ export async function dashboardCommand(options: DashboardOptions): Promise<void>
     port,
     missionsDir,
     serversDir: getServersDir(),
+    playbooksDir: getPlaybooksDir(),
+    todosDir: getTodosDir(),
     devMode: !options.apiOnly,
   });
 

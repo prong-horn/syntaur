@@ -5,15 +5,7 @@ export type { AssignmentStatus, TransitionCommand } from '../lifecycle/types.js'
 
 // --- API Response Types ---
 
-export interface ProgressCounts {
-  total: number;
-  completed: number;
-  in_progress: number;
-  blocked: number;
-  pending: number;
-  review: number;
-  failed: number;
-}
+export type ProgressCounts = Record<string, number> & { total: number };
 
 export interface NeedsAttention {
   blockedCount: number;
@@ -34,13 +26,14 @@ export interface MissionSummary {
   tags: string[];
   progress: ProgressCounts;
   needsAttention: NeedsAttention;
+  workspace: string | null;
 }
 
 export interface AssignmentSummary {
   id: string;
   slug: string;
   title: string;
-  status: AssignmentStatus;
+  status: string;
   priority: 'low' | 'medium' | 'high' | 'critical';
   assignee: string | null;
   dependsOn: string[];
@@ -52,6 +45,7 @@ export interface AssignmentBoardItem extends AssignmentSummary {
   missionTitle: string;
   blockedReason: string | null;
   availableTransitions: AssignmentTransitionAction[];
+  missionWorkspace: string | null;
 }
 
 export interface ResourceSummary {
@@ -90,6 +84,7 @@ export interface MissionDetail {
   resources: ResourceSummary[];
   memories: MemorySummary[];
   dependencyGraph: string | null;
+  workspace: string | null;
 }
 
 export interface WorkspaceInfo {
@@ -110,7 +105,7 @@ export interface AssignmentDetail {
   missionSlug: string;
   slug: string;
   title: string;
-  status: AssignmentStatus;
+  status: string;
   priority: 'low' | 'medium' | 'high' | 'critical';
   assignee: string | null;
   dependsOn: string[];
@@ -129,10 +124,10 @@ export interface AssignmentDetail {
 }
 
 export interface AssignmentTransitionAction {
-  command: Exclude<TransitionCommand, 'assign'>;
+  command: string;
   label: string;
   description: string;
-  targetStatus: AssignmentStatus;
+  targetStatus: string;
   disabled: boolean;
   disabledReason: string | null;
   warning: string | null;
@@ -146,7 +141,7 @@ export interface AttentionItem {
   missionTitle: string;
   assignmentSlug: string;
   assignmentTitle: string;
-  status: AssignmentStatus;
+  status: string;
   reason: string;
   updated: string;
   href: string;
@@ -222,7 +217,7 @@ export interface HelpConcept {
 }
 
 export interface HelpStatusGuideEntry {
-  status: AssignmentStatus;
+  status: string;
   meaning: string;
   useWhen: string;
 }
@@ -266,13 +261,35 @@ export interface HelpResponse {
   links: HelpSectionLink[];
 }
 
+// --- Playbook Types ---
+
+export interface PlaybookSummary {
+  slug: string;
+  name: string;
+  description: string;
+  whenToUse: string;
+  tags: string[];
+  created: string;
+  updated: string;
+}
+
+export interface PlaybookDetail extends PlaybookSummary {
+  body: string;
+}
+
+export interface PlaybooksResponse {
+  generatedAt: string;
+  playbooks: PlaybookSummary[];
+}
+
 export type EditableDocumentType =
   | 'mission'
   | 'assignment'
   | 'plan'
   | 'scratchpad'
   | 'handoff'
-  | 'decision-record';
+  | 'decision-record'
+  | 'playbook';
 
 export interface EditableDocumentResponse {
   documentType: EditableDocumentType;
@@ -290,6 +307,8 @@ export type WsMessageType =
   | 'assignment-updated'
   | 'servers-updated'
   | 'agent-sessions-updated'
+  | 'playbooks-updated'
+  | 'todos-updated'
   | 'connected';
 
 export interface WsMessage {
@@ -303,6 +322,7 @@ export interface WsMessage {
 
 export interface TrackedSession {
   name: string;
+  kind?: SessionKind;
   registered: string;
   lastRefreshed: string;
   scannedAt: string;
@@ -336,11 +356,18 @@ export interface ServersResponse {
   tmuxAvailable: boolean;
 }
 
+export type SessionKind = 'tmux' | 'process';
+
 export interface SessionFileData {
   session: string;
   registered: string;
   lastRefreshed: string;
   overrides: Record<string, { mission: string; assignment: string }>;
+  auto?: boolean;
+  kind?: SessionKind;
+  pid?: number;
+  ports?: number[];
+  cwd?: string;
 }
 
 // --- Agent Session Types ---
@@ -348,13 +375,15 @@ export interface SessionFileData {
 export type AgentSessionStatus = 'active' | 'completed' | 'stopped';
 
 export interface AgentSession {
-  missionSlug: string;
-  assignmentSlug: string;
+  missionSlug: string | null;
+  assignmentSlug: string | null;
   agent: string;
   sessionId: string;
   started: string;
+  ended?: string | null;
   status: AgentSessionStatus;
   path: string;
+  description?: string | null;
 }
 
 export interface AgentSessionsResponse {

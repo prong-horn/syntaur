@@ -1,16 +1,18 @@
 import { watch } from 'chokidar';
-import { relative, sep, basename } from 'node:path';
+import { relative, sep } from 'node:path';
 import type { WsMessage } from './types.js';
 
 export interface WatcherOptions {
   missionsDir: string;
   serversDir?: string;
+  playbooksDir?: string;
+  todosDir?: string;
   onMessage: (message: WsMessage) => void;
   debounceMs?: number;
 }
 
 export function createWatcher(options: WatcherOptions): { close: () => Promise<void> } {
-  const { missionsDir, serversDir, onMessage, debounceMs = 300 } = options;
+  const { missionsDir, serversDir, playbooksDir, todosDir, onMessage, debounceMs = 300 } = options;
   const pendingEvents = new Map<string, NodeJS.Timeout>();
 
   // --- Missions watcher (existing logic) ---
@@ -41,13 +43,10 @@ export function createWatcher(options: WatcherOptions): { close: () => Promise<v
     const existing = pendingEvents.get(debounceKey);
     if (existing) clearTimeout(existing);
 
-    // Determine message type — _index-sessions.md changes get their own event
-    const isSessionsIndex = basename(filePath) === '_index-sessions.md';
-    const messageType = isSessionsIndex
-      ? 'agent-sessions-updated'
-      : assignmentSlug
-        ? 'assignment-updated'
-        : 'mission-updated';
+    // Session events are now emitted by the API write path, not the file watcher
+    const messageType = assignmentSlug
+      ? 'assignment-updated'
+      : 'mission-updated';
 
     pendingEvents.set(
       debounceKey,
@@ -102,6 +101,74 @@ export function createWatcher(options: WatcherOptions): { close: () => Promise<v
     serversWatcher.on('unlink', handleServerChange);
   }
 
+  // --- Playbooks watcher ---
+  let playbooksWatcher: ReturnType<typeof watch> | null = null;
+
+  if (playbooksDir) {
+    playbooksWatcher = watch(playbooksDir, {
+      ignoreInitial: true,
+      persistent: true,
+      depth: 1,
+      ignored: /(^|[\/\\])\../,
+    });
+
+    function handlePlaybookChange(): void {
+      const debounceKey = '__playbooks__';
+      const existing = pendingEvents.get(debounceKey);
+      if (existing) clearTimeout(existing);
+
+      pendingEvents.set(
+        debounceKey,
+        setTimeout(() => {
+          pendingEvents.delete(debounceKey);
+          const message: WsMessage = {
+            type: 'playbooks-updated',
+            timestamp: new Date().toISOString(),
+          };
+          onMessage(message);
+        }, debounceMs),
+      );
+    }
+
+    playbooksWatcher.on('change', handlePlaybookChange);
+    playbooksWatcher.on('add', handlePlaybookChange);
+    playbooksWatcher.on('unlink', handlePlaybookChange);
+  }
+
+  // --- Todos watcher ---
+  let todosWatcher: ReturnType<typeof watch> | null = null;
+
+  if (todosDir) {
+    todosWatcher = watch(todosDir, {
+      ignoreInitial: true,
+      persistent: true,
+      depth: 1,
+      ignored: /(^|[\/\\])\../,
+    });
+
+    function handleTodoChange(): void {
+      const debounceKey = '__todos__';
+      const existing = pendingEvents.get(debounceKey);
+      if (existing) clearTimeout(existing);
+
+      pendingEvents.set(
+        debounceKey,
+        setTimeout(() => {
+          pendingEvents.delete(debounceKey);
+          const message: WsMessage = {
+            type: 'todos-updated',
+            timestamp: new Date().toISOString(),
+          };
+          onMessage(message);
+        }, debounceMs),
+      );
+    }
+
+    todosWatcher.on('change', handleTodoChange);
+    todosWatcher.on('add', handleTodoChange);
+    todosWatcher.on('unlink', handleTodoChange);
+  }
+
   return {
     close: async () => {
       pendingEvents.forEach((timeout) => {
@@ -110,6 +177,8 @@ export function createWatcher(options: WatcherOptions): { close: () => Promise<v
       pendingEvents.clear();
       await missionsWatcher.close();
       if (serversWatcher) await serversWatcher.close();
+      if (playbooksWatcher) await playbooksWatcher.close();
+      if (todosWatcher) await todosWatcher.close();
     },
   };
 }
