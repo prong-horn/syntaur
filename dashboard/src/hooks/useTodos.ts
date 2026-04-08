@@ -2,13 +2,6 @@ import { useState, useEffect, useCallback } from 'react';
 import { useWebSocket } from './useWebSocket';
 import type { TodoListResponse, TodoAggregateResponse, TodoLogEntry } from '../types';
 
-function getApiBase(): string {
-  if (import.meta.env.DEV && import.meta.env.VITE_API_PORT) {
-    return `http://localhost:${import.meta.env.VITE_API_PORT}`;
-  }
-  return '';
-}
-
 export function useTodos(workspace: string) {
   const [data, setData] = useState<TodoListResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -16,7 +9,7 @@ export function useTodos(workspace: string) {
 
   const fetchData = useCallback(async () => {
     try {
-      const res = await fetch(`${getApiBase()}/api/todos/${encodeURIComponent(workspace)}`);
+      const res = await fetch(`/api/todos/${encodeURIComponent(workspace)}`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       setData(await res.json());
       setError(null);
@@ -45,7 +38,7 @@ export function useAllTodos() {
 
   const fetchData = useCallback(async () => {
     try {
-      const res = await fetch(`${getApiBase()}/api/todos`);
+      const res = await fetch('/api/todos');
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       setData(await res.json());
       setError(null);
@@ -74,8 +67,8 @@ export function useTodoLog(workspace: string, id?: string) {
   const fetchData = useCallback(async () => {
     try {
       const url = id
-        ? `${getApiBase()}/api/todos/${encodeURIComponent(workspace)}/log/${encodeURIComponent(id)}`
-        : `${getApiBase()}/api/todos/${encodeURIComponent(workspace)}/log`;
+        ? `/api/todos/${encodeURIComponent(workspace)}/log/${encodeURIComponent(id)}`
+        : `/api/todos/${encodeURIComponent(workspace)}/log`;
       const res = await fetch(url);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
@@ -101,7 +94,7 @@ export function useTodoLog(workspace: string, id?: string) {
 // --- Mutation helpers ---
 
 export async function addTodo(workspace: string, description: string, tags?: string[]): Promise<void> {
-  await fetch(`${getApiBase()}/api/todos/${encodeURIComponent(workspace)}`, {
+  await fetch(`/api/todos/${encodeURIComponent(workspace)}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ description, tags }),
@@ -109,15 +102,15 @@ export async function addTodo(workspace: string, description: string, tags?: str
 }
 
 export async function completeTodo(workspace: string, id: string, summary?: string): Promise<void> {
-  await fetch(`${getApiBase()}/api/todos/${encodeURIComponent(workspace)}/${id}/complete`, {
+  await fetch(`/api/todos/${encodeURIComponent(workspace)}/${id}/complete`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ summary: summary || 'Completed.' }),
   });
 }
 
-export async function blockTodo(workspace: string, id: string, reason: string): Promise<void> {
-  await fetch(`${getApiBase()}/api/todos/${encodeURIComponent(workspace)}/${id}/block`, {
+export async function blockTodo(workspace: string, id: string, reason?: string): Promise<void> {
+  await fetch(`/api/todos/${encodeURIComponent(workspace)}/${id}/block`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ reason }),
@@ -125,15 +118,23 @@ export async function blockTodo(workspace: string, id: string, reason: string): 
 }
 
 export async function startTodo(workspace: string, id: string, session?: string): Promise<void> {
-  await fetch(`${getApiBase()}/api/todos/${encodeURIComponent(workspace)}/${id}/start`, {
+  await fetch(`/api/todos/${encodeURIComponent(workspace)}/${id}/start`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ session }),
   });
 }
 
+export async function reopenTodo(workspace: string, id: string): Promise<void> {
+  await fetch(`/api/todos/${encodeURIComponent(workspace)}/${id}/reopen`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({}),
+  });
+}
+
 export async function unblockTodo(workspace: string, id: string): Promise<void> {
-  await fetch(`${getApiBase()}/api/todos/${encodeURIComponent(workspace)}/${id}/unblock`, {
+  await fetch(`/api/todos/${encodeURIComponent(workspace)}/${id}/unblock`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({}),
@@ -141,7 +142,7 @@ export async function unblockTodo(workspace: string, id: string): Promise<void> 
 }
 
 export async function deleteTodo(workspace: string, id: string): Promise<void> {
-  await fetch(`${getApiBase()}/api/todos/${encodeURIComponent(workspace)}/${id}`, {
+  await fetch(`/api/todos/${encodeURIComponent(workspace)}/${id}`, {
     method: 'DELETE',
   });
 }

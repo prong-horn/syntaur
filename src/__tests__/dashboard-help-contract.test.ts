@@ -13,8 +13,8 @@ describe('dashboard help contract', () => {
     }
   });
 
-  it('does not advertise speculative rebuild behavior', () => {
-    const help = getDashboardHelp();
+  it('does not advertise speculative rebuild behavior', async () => {
+    const help = await getDashboardHelp();
     expect(help.commands.some((command) => command.command.includes('rebuild'))).toBe(false);
   });
 });

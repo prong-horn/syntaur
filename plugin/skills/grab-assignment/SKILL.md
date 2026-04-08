@@ -42,6 +42,8 @@ Read the mission files, starting with the manifest (the protocol-defined entry p
 - Read `~/.syntaur/missions/<mission-slug>/agent.md` for agent instructions
 - Read `~/.syntaur/missions/<mission-slug>/claude.md` if it exists for Claude-specific instructions
 
+Note the `workspace` field in `mission.md` frontmatter if present. This indicates which project/codebase grouping the mission belongs to. When writing context to `.syntaur/context.json` (Step 5), include `"workspace": "<value>"` if the mission has a workspace.
+
 ## Step 2: Find Pending Assignments
 
 List assignment directories and check their status:
@@ -141,25 +143,32 @@ Use absolute paths (expand `~` to the actual home directory). Note: `workspace.r
 
 After creating the context file, register this session in the mission's agent session log so it appears in the dashboard.
 
-1. Generate a session ID:
+1. Find the current Claude Code session ID by reading from `~/.claude/sessions/`. These are JSON files keyed by PID containing `sessionId`, `cwd`, etc. Find the most recently modified file whose `cwd` matches the current working directory:
 ```bash
-python3 -c "import uuid; print(uuid.uuid4())"
+ls -t ~/.claude/sessions/*.json | head -5
 ```
+Read the most recent file(s) and find the one whose `cwd` matches `$(pwd)`. Extract the `sessionId` field — this is the real Claude Code session ID that can be used with `claude --resume <sessionId>` to resume this exact conversation.
+
+If you cannot find a matching session file (e.g., no file matches the cwd, or the sessions directory is empty), ask the user to run `/rename <assignment-slug>` to name the current session after the assignment. Then store the assignment slug as the session name in context.json (`"sessionName": "<assignment-slug>"`) instead of `sessionId`. The user can later resume with `claude --resume <assignment-slug>`.
 
 2. Run the track-session command (use `dangerouslyDisableSandbox: true` since it writes to `~/.syntaur/`):
 ```bash
-syntaur track-session --mission <missionSlug> --assignment <assignmentSlug> --agent claude --session-id <generated-id> --path $(pwd)
+syntaur track-session --mission <missionSlug> --assignment <assignmentSlug> --agent claude --session-id <claude-session-id> --path $(pwd)
 ```
 
-3. Update the `.syntaur/context.json` context file to include the session ID. Add `"sessionId": "<generated-id>"` to the JSON object you wrote in Step 5.
+3. Update the `.syntaur/context.json` context file to include the session ID. Add `"sessionId": "<claude-session-id>"` to the JSON object you wrote in Step 5.
 
-4. **Add a session row to the assignment's Sessions table.** Open `<assignmentDir>/assignment.md` and find the `## Sessions` markdown table. Append a new row with the session details:
+## Step 5.6: Load Playbooks
 
-```markdown
-| <session-id> | claude | <ISO 8601 start timestamp> | | active |
+Read all playbook files from `~/.syntaur/playbooks/` and treat their content as active behavioral rules for this assignment:
+
+```bash
+ls ~/.syntaur/playbooks/*.md 2>/dev/null
 ```
 
-Leave the "Ended" column empty — it will be filled when the assignment is completed. This is critical: the `track-session` CLI registers the session in the mission-level index, but the assignment's own Sessions table must also be updated so it renders correctly in the dashboard and in the assignment file itself.
+For each `.md` file found, read it and internalize the rules in its body section. These are user-defined behavioral policies that you must follow throughout your work on this assignment. Playbooks take precedence over default conventions when they conflict.
+
+If no playbook files exist, skip this step.
 
 ## Step 6: Report to User
 

@@ -12,7 +12,6 @@
       _index-assignments.md  # Derived (read-only)
       _index-plans.md        # Derived (read-only)
       _index-decisions.md    # Derived (read-only)
-      _index-sessions.md     # Derived (read-only)
       _status.md             # Derived (read-only)
       claude.md              # Human-authored: Claude-specific instructions (read-only)
       agent.md               # Human-authored: universal agent instructions (read-only)
@@ -29,6 +28,9 @@
       memories/
         _index.md            # Derived (read-only)
         <memory-slug>.md     # Shared-writable
+  playbooks/
+    manifest.md              # Derived: playbook listing (read-only)
+    <slug>.md                # User-authored: behavioral rules for agents
 ```
 
 ## Assignment Lifecycle
@@ -65,3 +67,4 @@
 4. **Slugs** are lowercase, hyphen-separated.
 5. **Dependencies** are declared via `dependsOn` in assignment frontmatter.
 6. An assignment cannot transition from `pending` to `in_progress` while any dependency is not `completed`.
+7. **Playbooks** in `~/.syntaur/playbooks/` define behavioral rules agents must follow. Read `manifest.md` for a summary, then read each referenced playbook before starting work.

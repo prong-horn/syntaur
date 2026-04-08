@@ -36,12 +36,6 @@ Design the PostgreSQL database schema for the authentication system. This includ
 
 This is the foundational data layer for the auth system. The schema must support the JWT middleware (implement-jwt-middleware) and be testable (write-auth-tests). See [Auth Requirements](../../resources/auth-requirements.md) for functional specs.
 
-## Sessions
-
-| Session ID | Agent | Started | Ended | Status |
-|------------|-------|---------|-------|--------|
-| tmux:syntaur-schema-1 | claude-2 | 2026-03-16T09:00:00Z | 2026-03-17T10:00:00Z | completed |
-
 ## Questions & Answers
 
 ### Q: Should we use UUIDs or auto-incrementing integers for user IDs?

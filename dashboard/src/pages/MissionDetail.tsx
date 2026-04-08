@@ -1,9 +1,9 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { BookOpenText, GitBranch, Plus, SquarePen } from 'lucide-react';
-import { useMission, type AssignmentSummary } from '../hooks/useMissions';
+import { CopyButton } from '../components/CopyButton';
+import { useMission, useWorkspaces, useWorkspacePrefix, type AssignmentSummary } from '../hooks/useMissions';
 import { formatDate, formatDateTime } from '../lib/format';
-import { PageHeader } from '../components/PageHeader';
 import { LoadingState } from '../components/LoadingState';
 import { ErrorState } from '../components/ErrorState';
 import { StatusBadge } from '../components/StatusBadge';
@@ -15,21 +15,47 @@ import { ViewToggle } from '../components/ViewToggle';
 import { EmptyState } from '../components/EmptyState';
 import { DependencyGraph } from '../components/DependencyGraph';
 import { MarkdownRenderer } from '../components/MarkdownRenderer';
+import { useStatusConfig } from '../hooks/useStatusConfig';
 
 export function MissionDetail() {
   const { slug } = useParams<{ slug: string }>();
+  const wsPrefix = useWorkspacePrefix();
   const { data: mission, loading, error, refetch } = useMission(slug);
+  const statusConfig = useStatusConfig();
+  const { data: workspacesData } = useWorkspaces();
   const [tab, setTab] = useState('overview');
   const [assignmentView, setAssignmentView] = useState<'board' | 'table'>('board');
   const [statusFilter, setStatusFilter] = useState('all');
   const [assigneeFilter, setAssigneeFilter] = useState('all');
   const [priorityFilter, setPriorityFilter] = useState('all');
 
+  const dependencyRoutes = useMemo(
+    () => mission ? Object.fromEntries(
+      mission.assignments.flatMap((assignment) => {
+        const route = `${wsPrefix}/missions/${mission.slug}/assignments/${assignment.slug}`;
+        return [
+          [assignment.slug, route],
+          [assignment.title, route],
+        ];
+      }),
+    ) : {},
+    [mission],
+  );
+
   async function handleStatusOverride(status: string | null) {
     await fetch(`/api/missions/${slug}/status-override`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ status }),
+    });
+    refetch();
+  }
+
+  async function handleMoveWorkspace(workspace: string | null) {
+    await fetch(`/api/missions/${slug}/move-workspace`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ workspace }),
     });
     refetch();
   }
@@ -60,55 +86,68 @@ export function MissionDetail() {
 
   return (
     <div className="space-y-5">
-      <PageHeader
-        eyebrow="Mission Workspace"
-        title={mission.title}
-        description={`Created ${formatDate(mission.created)}. Last source update ${formatDateTime(mission.updated)}.`}
-        actions={
-          <>
-            <StatusBadge status={mission.status} />
-            {mission.statusOverride && (
-              <button
-                type="button"
-                className="shell-action border-amber-300 text-amber-700 dark:border-amber-700 dark:text-amber-300"
-                onClick={() => handleStatusOverride(null)}
-                title="Clear manual status override and return to derived status"
-              >
-                Clear Override
-              </button>
-            )}
-            <select
-              className="shell-action appearance-none bg-transparent text-sm"
-              value=""
-              onChange={(e) => {
-                if (e.target.value) handleStatusOverride(e.target.value);
-              }}
-              title="Override mission status"
-            >
-              <option value="">Set Status…</option>
-              <option value="pending">Pending</option>
-              <option value="active">Active</option>
-              <option value="blocked">Blocked</option>
-              <option value="completed">Completed</option>
-              <option value="failed">Failed</option>
-            </select>
-            <Link className="shell-action" to={`/missions/${mission.slug}/edit`}>
-              <SquarePen className="h-4 w-4" />
-              <span>Edit Mission</span>
-            </Link>
-            <Link className="shell-action bg-foreground text-background hover:opacity-90" to={`/missions/${mission.slug}/create/assignment`}>
-              <Plus className="h-4 w-4" />
-              <span>New Assignment</span>
-            </Link>
-          </>
-        }
-      />
+      <div className="flex flex-wrap items-center gap-3">
+        <StatusBadge status={mission.status} />
+        {mission.statusOverride && (
+          <button
+            type="button"
+            className="shell-action border-amber-300 text-amber-700 dark:border-amber-700 dark:text-amber-300"
+            onClick={() => handleStatusOverride(null)}
+            title="Clear manual status override and return to derived status"
+          >
+            Clear Override
+          </button>
+        )}
+        <select
+          className="shell-action appearance-none bg-transparent text-sm"
+          value=""
+          onChange={(e) => {
+            if (e.target.value) handleStatusOverride(e.target.value);
+          }}
+          title="Override mission status"
+        >
+          <option value="">Set Status…</option>
+          {statusConfig.statuses.map((s) => (
+            <option key={s.id} value={s.id}>{s.label}</option>
+          ))}
+          <option value="active">Active</option>
+        </select>
+        {workspacesData && workspacesData.workspaces.length > 0 && (
+          <select
+            className="shell-action appearance-none bg-transparent text-sm"
+            value=""
+            onChange={(e) => {
+              if (e.target.value === '_ungrouped') handleMoveWorkspace(null);
+              else if (e.target.value) handleMoveWorkspace(e.target.value);
+            }}
+            title="Move mission to a different workspace"
+          >
+            <option value="">Move to Workspace…</option>
+            {workspacesData.workspaces
+              .filter((w) => w !== mission.workspace)
+              .map((w) => (
+                <option key={w} value={w}>{w}</option>
+              ))}
+            {mission.workspace && <option value="_ungrouped">Ungrouped</option>}
+          </select>
+        )}
+        <Link className="shell-action" to={`${wsPrefix}/missions/${mission.slug}/edit`}>
+          <SquarePen className="h-4 w-4" />
+          <span>Edit Mission</span>
+        </Link>
+        <Link className="shell-action bg-foreground text-background hover:opacity-90" to={`${wsPrefix}/missions/${mission.slug}/create/assignment`}>
+          <Plus className="h-4 w-4" />
+          <span>New Assignment</span>
+        </Link>
+        <span className="text-xs text-muted-foreground">Created {formatDate(mission.created)}. Last source update {formatDateTime(mission.updated)}.</span>
+      </div>
 
-      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
         <StatCard label="Assignments" value={mission.progress.total} />
-        <StatCard label="In Progress" value={mission.progress.in_progress} tone="info" />
-        <StatCard label="Blocked" value={mission.progress.blocked} tone="warn" />
-        <StatCard label="Completed" value={mission.progress.completed} tone="success" />
+        <StatCard label="In Progress" value={mission.progress['in_progress'] ?? 0} tone="info" />
+        <StatCard label="Review" value={mission.progress['review'] ?? 0} tone="info" />
+        <StatCard label="Blocked" value={mission.progress['blocked'] ?? 0} tone="warn" />
+        <StatCard label="Completed" value={mission.progress['completed'] ?? 0} tone="success" />
       </div>
 
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_280px]">
@@ -144,12 +183,9 @@ export function MissionDetail() {
                         <div className="flex flex-wrap items-center gap-2">
                           <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)} className="editor-input max-w-[170px]">
                             <option value="all">All statuses</option>
-                            <option value="pending">Pending</option>
-                            <option value="in_progress">In progress</option>
-                            <option value="blocked">Blocked</option>
-                            <option value="review">Review</option>
-                            <option value="completed">Completed</option>
-                            <option value="failed">Failed</option>
+                            {statusConfig.statuses.map((s) => (
+                              <option key={s.id} value={s.id}>{s.label}</option>
+                            ))}
                           </select>
                           <select value={assigneeFilter} onChange={(event) => setAssigneeFilter(event.target.value)} className="editor-input max-w-[170px]">
                             <option value="all">All assignees</option>
@@ -182,7 +218,7 @@ export function MissionDetail() {
                           title="No assignments match these filters"
                           description="Clear the current filters or create a new assignment for this mission."
                           actions={
-                            <Link className="shell-action bg-foreground text-background hover:opacity-90" to={`/missions/${mission.slug}/create/assignment`}>
+                            <Link className="shell-action bg-foreground text-background hover:opacity-90" to={`${wsPrefix}/missions/${mission.slug}/create/assignment`}>
                               Create Assignment
                             </Link>
                           }
@@ -210,7 +246,7 @@ export function MissionDetail() {
                                 <tr key={assignment.slug} className="border-b border-border/50 last:border-0">
                                   <td className="py-4">
                                     <Link
-                                      to={`/missions/${mission.slug}/assignments/${assignment.slug}`}
+                                      to={`${wsPrefix}/missions/${mission.slug}/assignments/${assignment.slug}`}
                                       className="font-semibold text-foreground hover:text-primary"
                                     >
                                       {assignment.title}
@@ -238,7 +274,7 @@ export function MissionDetail() {
                     title="Dependency Graph"
                     description="Rendered from the derived graph when available, with a source-based fallback."
                   >
-                    <DependencyGraph definition={mission.dependencyGraph} />
+                    <DependencyGraph definition={mission.dependencyGraph} nodeRoutes={dependencyRoutes} />
                   </SectionCard>
                 ) : (
                   <EmptyState
@@ -322,11 +358,11 @@ export function MissionDetail() {
 
           <SectionCard title="Quick Links">
             <div className="space-y-2 text-sm">
-              <Link className="flex items-center gap-2 text-primary hover:underline" to={`/missions/${mission.slug}/edit`}>
+              <Link className="flex items-center gap-2 text-primary hover:underline" to={`${wsPrefix}/missions/${mission.slug}/edit`}>
                 <SquarePen className="h-4 w-4" />
                 Edit mission source
               </Link>
-              <Link className="flex items-center gap-2 text-primary hover:underline" to={`/missions/${mission.slug}/create/assignment`}>
+              <Link className="flex items-center gap-2 text-primary hover:underline" to={`${wsPrefix}/missions/${mission.slug}/create/assignment`}>
                 <Plus className="h-4 w-4" />
                 Create assignment
               </Link>
@@ -368,15 +404,21 @@ function AssignmentCard({
   missionSlug: string;
   assignment: AssignmentSummary;
 }) {
+  const wsPrefix = useWorkspacePrefix();
   return (
     <Link
-      to={`/missions/${missionSlug}/assignments/${assignment.slug}`}
+      to={`${wsPrefix}/missions/${missionSlug}/assignments/${assignment.slug}`}
       className="block rounded-lg border border-border/60 bg-background/80 p-3 transition hover:border-primary/40"
     >
       <div className="flex items-start justify-between gap-3">
         <div className="space-y-1">
           <h3 className="font-semibold text-foreground">{assignment.title}</h3>
-          <p className="font-mono text-xs text-muted-foreground/70" title={assignment.id}>{assignment.id.slice(0, 8)}</p>
+          <p className="inline-flex items-center gap-1.5 font-mono text-xs text-muted-foreground/70" title={assignment.id}>
+            {assignment.id.slice(0, 8)}
+            <span onClick={(e) => { e.preventDefault(); e.stopPropagation(); }}>
+              <CopyButton value={assignment.id} />
+            </span>
+          </p>
           <p className="text-sm text-muted-foreground">Updated {formatDate(assignment.updated)}</p>
         </div>
         <StatusBadge status={assignment.status} />

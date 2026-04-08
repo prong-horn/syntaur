@@ -1,7 +1,6 @@
 import { Link } from 'react-router-dom';
 import { AlertTriangle, Flame, Hourglass, ShieldX } from 'lucide-react';
 import { useAttention } from '../hooks/useMissions';
-import { PageHeader } from '../components/PageHeader';
 import { StatCard } from '../components/StatCard';
 import { LoadingState } from '../components/LoadingState';
 import { ErrorState } from '../components/ErrorState';
@@ -23,12 +22,6 @@ export function AttentionPage() {
 
   return (
     <div className="space-y-5">
-      <PageHeader
-        eyebrow="Queue"
-        title="Attention"
-        description="The work that needs intervention, review, or a freshness check."
-      />
-
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
         <StatCard label="Critical" value={data.summary.critical} icon={Flame} tone="danger" />
         <StatCard label="High" value={data.summary.high} icon={AlertTriangle} tone="warn" />

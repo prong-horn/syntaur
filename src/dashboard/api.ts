@@ -1,7 +1,8 @@
-import { readdir, readFile } from 'node:fs/promises';
-import { resolve } from 'node:path';
-import { canTransition, getTargetStatus } from '../lifecycle/index.js';
+import { readdir, readFile, writeFile } from 'node:fs/promises';
+import { resolve, dirname } from 'node:path';
+import { getTargetStatus, DEFAULT_STATUSES, DEFAULT_TRANSITION_TABLE, buildTransitionTable } from '../lifecycle/index.js';
 import { fileExists } from '../utils/fs.js';
+import { readConfig, type StatusConfig, type StatusTransition } from '../utils/config.js';
 import {
   parseMission,
   parseStatus,
@@ -12,13 +13,13 @@ import {
   parseDecisionRecord,
   parseResource,
   parseMemory,
+  parsePlaybook,
   extractMermaidGraph,
 } from './parser.js';
 import { getDashboardHelp } from './help.js';
 import type {
   AssignmentBoardItem,
   AssignmentDetail,
-  AssignmentStatus,
   AssignmentSummary,
   AssignmentsBoardResponse,
   AssignmentTransitionAction,
@@ -34,7 +35,8 @@ import type {
   NeedsAttention,
   RecentActivityItem,
   ResourceSummary,
-  TransitionCommand,
+  PlaybookSummary,
+  PlaybookDetail,
 } from './types.js';
 
 const STALE_ASSIGNMENT_MS = 7 * 24 * 60 * 60 * 1000;
@@ -60,8 +62,8 @@ interface AttentionSeverityCounts {
   low: number;
 }
 
-const TRANSITION_DEFINITIONS: Array<{
-  command: Exclude<TransitionCommand, 'assign'>;
+const DEFAULT_TRANSITION_DEFINITIONS: Array<{
+  command: string;
   label: string;
   description: string;
   requiresReason: boolean;
@@ -88,7 +90,7 @@ const TRANSITION_DEFINITIONS: Array<{
     command: 'block',
     label: 'Block',
     description: 'Record an exceptional blocker and pause work.',
-    requiresReason: false,
+    requiresReason: true,
   },
   {
     command: 'unblock',
@@ -110,6 +112,91 @@ const TRANSITION_DEFINITIONS: Array<{
   },
 ];
 
+const DEFAULT_STATUS_COLORS: Record<string, string> = {
+  pending: 'slate',
+  in_progress: 'teal',
+  blocked: 'amber',
+  review: 'violet',
+  completed: 'emerald',
+  failed: 'rose',
+};
+
+function toTitleCase(s: string): string {
+  return s.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+function getTransitionDefinitions(config: ResolvedStatusConfig) {
+  if (!config.custom) return DEFAULT_TRANSITION_DEFINITIONS;
+  // Deduplicate commands from transitions
+  const seen = new Set<string>();
+  return config.transitions
+    .filter((t) => {
+      if (seen.has(t.command)) return false;
+      seen.add(t.command);
+      return true;
+    })
+    .map((t) => ({
+      command: t.command,
+      label: t.label ?? toTitleCase(t.command),
+      description: t.description ?? `Transition via ${t.command}.`,
+      requiresReason: t.requiresReason ?? false,
+    }));
+}
+
+interface ResolvedStatusConfig {
+  custom: boolean;
+  statuses: Array<{ id: string; label: string; description?: string; color?: string; terminal?: boolean }>;
+  order: string[];
+  transitions: StatusTransition[];
+  transitionTable: Map<string, string>;
+  terminalStatuses: ReadonlySet<string>;
+}
+
+let _cachedConfig: ResolvedStatusConfig | null = null;
+
+export async function getStatusConfig(): Promise<ResolvedStatusConfig> {
+  if (_cachedConfig) return _cachedConfig;
+
+  const config = await readConfig();
+
+  if (config.statuses) {
+    const terminalSet = new Set(
+      config.statuses.statuses.filter((s) => s.terminal).map((s) => s.id),
+    );
+    _cachedConfig = {
+      custom: true,
+      statuses: config.statuses.statuses,
+      order: config.statuses.order,
+      transitions: config.statuses.transitions,
+      transitionTable: buildTransitionTable(config.statuses.transitions),
+      terminalStatuses: terminalSet.size > 0 ? terminalSet : new Set(['completed', 'failed']),
+    };
+  } else {
+    _cachedConfig = {
+      custom: false,
+      statuses: DEFAULT_STATUSES.map((id) => ({
+        id,
+        label: toTitleCase(id),
+        color: DEFAULT_STATUS_COLORS[id] ?? 'gray',
+        terminal: id === 'completed' || id === 'failed',
+      })),
+      order: [...DEFAULT_STATUSES],
+      transitions: Array.from(DEFAULT_TRANSITION_TABLE.entries()).map(([key, to]) => {
+        const [from, command] = key.split(':');
+        return { from, command, to };
+      }),
+      transitionTable: DEFAULT_TRANSITION_TABLE,
+      terminalStatuses: new Set(['completed', 'failed']),
+    };
+  }
+
+  return _cachedConfig;
+}
+
+export function clearStatusConfigCache(): void {
+  _cachedConfig = null;
+}
+
 /**
  * List all missions with source-first summary data.
  * GET /api/missions
@@ -117,6 +204,71 @@ const TRANSITION_DEFINITIONS: Array<{
 export async function listMissions(missionsDir: string): Promise<MissionSummary[]> {
   const missionRecords = await listMissionRecords(missionsDir);
   return missionRecords.map((record) => record.summary);
+}
+
+/**
+ * Read the workspace registry file (~/.syntaur/workspaces.json).
+ * Returns an array of explicitly registered workspace names.
+ */
+async function readWorkspaceRegistry(missionsDir: string): Promise<string[]> {
+  const registryPath = resolve(dirname(missionsDir), 'workspaces.json');
+  try {
+    const raw = await readFile(registryPath, 'utf-8');
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed.filter((w): w is string => typeof w === 'string') : [];
+  } catch {
+    return [];
+  }
+}
+
+async function writeWorkspaceRegistry(missionsDir: string, workspaces: string[]): Promise<void> {
+  const registryPath = resolve(dirname(missionsDir), 'workspaces.json');
+  await writeFile(registryPath, JSON.stringify(workspaces, null, 2) + '\n', 'utf-8');
+}
+
+/**
+ * List all workspaces: merge registry (explicit) with discovered (from missions).
+ * GET /api/workspaces
+ */
+export async function listWorkspaces(missionsDir: string): Promise<{ workspaces: string[]; hasUngrouped: boolean }> {
+  const [missionRecords, registered] = await Promise.all([
+    listMissionRecords(missionsDir),
+    readWorkspaceRegistry(missionsDir),
+  ]);
+  const workspaceSet = new Set<string>(registered);
+  let hasUngrouped = false;
+  for (const record of missionRecords) {
+    if (record.mission.workspace) {
+      workspaceSet.add(record.mission.workspace);
+    } else {
+      hasUngrouped = true;
+    }
+  }
+  const workspaces = Array.from(workspaceSet).sort();
+  return { workspaces, hasUngrouped };
+}
+
+/**
+ * Create an empty workspace by registering it.
+ * POST /api/workspaces
+ */
+export async function createWorkspace(missionsDir: string, name: string): Promise<void> {
+  const registered = await readWorkspaceRegistry(missionsDir);
+  if (!registered.includes(name)) {
+    registered.push(name);
+    registered.sort();
+    await writeWorkspaceRegistry(missionsDir, registered);
+  }
+}
+
+/**
+ * Delete a workspace from the registry.
+ * DELETE /api/workspaces/:name
+ */
+export async function deleteWorkspace(missionsDir: string, name: string): Promise<void> {
+  const registered = await readWorkspaceRegistry(missionsDir);
+  const filtered = registered.filter((w) => w !== name);
+  await writeWorkspaceRegistry(missionsDir, filtered);
 }
 
 /**
@@ -156,19 +308,19 @@ export async function getOverview(missionsDir: string, serversDir?: string): Pro
     stats: {
       activeMissions: missionRecords.filter((record) => record.summary.status === 'active').length,
       inProgressAssignments: missionRecords.reduce(
-        (total, record) => total + record.summary.progress.in_progress,
+        (total, record) => total + (record.summary.progress['in_progress'] ?? 0),
         0,
       ),
       blockedAssignments: missionRecords.reduce(
-        (total, record) => total + record.summary.progress.blocked,
+        (total, record) => total + (record.summary.progress['blocked'] ?? 0),
         0,
       ),
       reviewAssignments: missionRecords.reduce(
-        (total, record) => total + record.summary.progress.review,
+        (total, record) => total + (record.summary.progress['review'] ?? 0),
         0,
       ),
       failedAssignments: missionRecords.reduce(
-        (total, record) => total + record.summary.progress.failed,
+        (total, record) => total + (record.summary.progress['failed'] ?? 0),
         0,
       ),
       staleAssignments: missionRecords.reduce(
@@ -208,7 +360,7 @@ export async function getAttention(missionsDir: string, serversDir?: string): Pr
             missionTitle: '',
             assignmentSlug: '',
             assignmentTitle: `tmux: ${session.name}`,
-            status: 'failed' as AssignmentStatus,
+            status: 'failed',
             reason: 'Tmux session no longer exists but is still registered',
             updated: session.lastRefreshed,
             href: '/servers',
@@ -350,6 +502,7 @@ export async function getMissionDetail(
     resources,
     memories,
     dependencyGraph,
+    workspace: mission.workspace,
   };
 }
 
@@ -424,7 +577,7 @@ export async function getAssignmentDetail(
     missionSlug,
     slug: assignment.slug || assignmentSlug,
     title: assignment.title,
-    status: assignment.status as AssignmentDetail['status'],
+    status: assignment.status,
     priority: assignment.priority as AssignmentDetail['priority'],
     assignee: assignment.assignee,
     dependsOn: assignment.dependsOn,
@@ -489,6 +642,7 @@ async function listMissionRecords(missionsDir: string): Promise<MissionRecord[]>
         tags: mission.tags,
         progress: rollup.progress,
         needsAttention: rollup.needsAttention,
+        workspace: mission.workspace,
       },
     });
   }
@@ -611,25 +765,18 @@ function buildMissionRollup(
   needsAttention: NeedsAttention;
   status: string;
 } {
-  const progress: ProgressCounts = {
-    total: assignments.length,
-    completed: 0,
-    in_progress: 0,
-    blocked: 0,
-    pending: 0,
-    review: 0,
-    failed: 0,
-  };
+  const progress: ProgressCounts = { total: assignments.length };
 
   let unansweredQuestions = 0;
   for (const assignment of assignments) {
-    progress[assignment.status as keyof ProgressCounts]++;
+    const s = assignment.status;
+    progress[s] = (progress[s] ?? 0) + 1;
     unansweredQuestions += countPendingAnswers(assignment.body);
   }
 
   const needsAttention: NeedsAttention = {
-    blockedCount: progress.blocked,
-    failedCount: progress.failed,
+    blockedCount: progress['blocked'] ?? 0,
+    failedCount: progress['failed'] ?? 0,
     unansweredQuestions,
   };
 
@@ -638,15 +785,15 @@ function buildMissionRollup(
     status = mission.statusOverride;
   } else if (mission.archived) {
     status = 'archived';
-  } else if (progress.total > 0 && progress.completed === progress.total) {
+  } else if (progress.total > 0 && (progress['completed'] ?? 0) === progress.total) {
     status = 'completed';
-  } else if (progress.in_progress > 0 || progress.review > 0) {
+  } else if ((progress['in_progress'] ?? 0) > 0 || (progress['review'] ?? 0) > 0) {
     status = 'active';
-  } else if (progress.failed > 0) {
+  } else if ((progress['failed'] ?? 0) > 0) {
     status = 'failed';
-  } else if (progress.blocked > 0) {
+  } else if ((progress['blocked'] ?? 0) > 0) {
     status = 'blocked';
-  } else if (progress.total === 0 || progress.pending === progress.total) {
+  } else if (progress.total === 0 || (progress['pending'] ?? 0) === progress.total) {
     status = 'pending';
   } else {
     status = 'active';
@@ -660,7 +807,7 @@ function toAssignmentSummary(assignment: AssignmentRecord): AssignmentSummary {
     id: assignment.id,
     slug: assignment.slug,
     title: assignment.title,
-    status: assignment.status as AssignmentSummary['status'],
+    status: assignment.status,
     priority: assignment.priority as AssignmentSummary['priority'],
     assignee: assignment.assignee,
     dependsOn: assignment.dependsOn,
@@ -678,6 +825,7 @@ async function toAssignmentBoardItem(
     missionSlug: missionRecord.summary.slug,
     missionTitle: missionRecord.summary.title,
     blockedReason: assignment.blockedReason,
+    missionWorkspace: missionRecord.mission.workspace,
     availableTransitions: await getAvailableTransitions(
       missionsDir,
       missionRecord.summary.slug,
@@ -687,13 +835,26 @@ async function toAssignmentBoardItem(
   };
 }
 
+const DEFAULT_GRAPH_COLORS: Record<string, string> = {
+  completed: 'fill:#4ea84f,stroke:#1f6b29,color:#ffffff',
+  in_progress: 'fill:#1e6fd9,stroke:#0f3f8f,color:#ffffff',
+  pending: 'fill:#c0ccd9,stroke:#738399,color:#163047',
+  blocked: 'fill:#db5a3f,stroke:#8d2815,color:#ffffff',
+  failed: 'fill:#9f2d2d,stroke:#651616,color:#ffffff',
+  review: 'fill:#c6911e,stroke:#7a5a10,color:#ffffff',
+};
+
 function buildDependencyGraph(assignments: AssignmentRecord[]): string | null {
   const edges: string[] = [];
+  const usedStatuses = new Set<string>();
 
   for (const assignment of assignments) {
     for (const dependency of assignment.dependsOn) {
+      const depStatus = findAssignmentStatus(assignments, dependency);
+      usedStatuses.add(depStatus);
+      usedStatuses.add(assignment.status);
       edges.push(
-        `    ${dependency}:::${findAssignmentStatus(assignments, dependency)} --> ${assignment.slug}:::${assignment.status}`,
+        `    ${dependency}:::${depStatus} --> ${assignment.slug}:::${assignment.status}`,
       );
     }
   }
@@ -702,21 +863,17 @@ function buildDependencyGraph(assignments: AssignmentRecord[]): string | null {
     return null;
   }
 
-  return [
-    'graph TD',
-    ...edges,
-    '    classDef completed fill:#4ea84f,stroke:#1f6b29,color:#ffffff',
-    '    classDef in_progress fill:#1e6fd9,stroke:#0f3f8f,color:#ffffff',
-    '    classDef pending fill:#c0ccd9,stroke:#738399,color:#163047',
-    '    classDef blocked fill:#db5a3f,stroke:#8d2815,color:#ffffff',
-    '    classDef failed fill:#9f2d2d,stroke:#651616,color:#ffffff',
-    '    classDef review fill:#c6911e,stroke:#7a5a10,color:#ffffff',
-  ].join('\n');
+  const classDefs: string[] = [];
+  for (const status of usedStatuses) {
+    const colors = DEFAULT_GRAPH_COLORS[status] ?? 'fill:#94a3b8,stroke:#64748b,color:#ffffff';
+    classDefs.push(`    classDef ${status} ${colors}`);
+  }
+
+  return ['graph TD', ...edges, ...classDefs].join('\n');
 }
 
-function findAssignmentStatus(assignments: AssignmentRecord[], slug: string): AssignmentStatus {
-  return (assignments.find((assignment) => assignment.slug === slug)?.status ??
-    'pending') as AssignmentStatus;
+function findAssignmentStatus(assignments: AssignmentRecord[], slug: string): string {
+  return assignments.find((assignment) => assignment.slug === slug)?.status ?? 'pending';
 }
 
 async function getAvailableTransitions(
@@ -725,14 +882,12 @@ async function getAvailableTransitions(
   assignmentSlug: string,
   assignment: AssignmentRecord,
 ): Promise<AssignmentTransitionAction[]> {
+  const config = await getStatusConfig();
+  const transitionDefs = getTransitionDefinitions(config);
   const actions: AssignmentTransitionAction[] = [];
   const missionPath = resolve(missionsDir, missionSlug);
 
-  for (const definition of TRANSITION_DEFINITIONS) {
-    if (!canTransition(assignment.status as AssignmentStatus, definition.command)) {
-      continue;
-    }
-
+  for (const definition of transitionDefs) {
     let warning: string | null = null;
 
     if (definition.command === 'start' && !assignment.assignee) {
@@ -740,20 +895,19 @@ async function getAvailableTransitions(
     }
 
     if (definition.command === 'start' && assignment.dependsOn.length > 0) {
-      const unmetDependencies = await getUnmetDependencies(missionPath, assignment.dependsOn);
+      const unmetDependencies = await getUnmetDependencies(missionPath, assignment.dependsOn, config.terminalStatuses);
       if (unmetDependencies.length > 0) {
         warning = `Unmet dependencies: ${unmetDependencies.join(', ')}.`;
       }
     }
 
+    const target = getTargetStatus(assignment.status, definition.command, config.transitionTable);
+
     actions.push({
       command: definition.command,
       label: definition.label,
       description: definition.description,
-      targetStatus: getTargetStatus(
-        assignment.status as AssignmentStatus,
-        definition.command,
-      ) as AssignmentStatus,
+      targetStatus: target ?? definition.command,
       disabled: false,
       disabledReason: null,
       warning,
@@ -764,7 +918,8 @@ async function getAvailableTransitions(
   return actions;
 }
 
-async function getUnmetDependencies(missionPath: string, dependsOn: string[]): Promise<string[]> {
+async function getUnmetDependencies(missionPath: string, dependsOn: string[], terminalStatuses?: ReadonlySet<string>): Promise<string[]> {
+  const terminals = terminalStatuses ?? new Set(['completed']);
   const unmet: string[] = [];
 
   for (const dependency of dependsOn) {
@@ -776,7 +931,7 @@ async function getUnmetDependencies(missionPath: string, dependsOn: string[]): P
 
     const content = await readFile(dependencyPath, 'utf-8');
     const parsed = parseAssignmentFull(content);
-    if (parsed.status !== 'completed') {
+    if (!terminals.has(parsed.status)) {
       unmet.push(`${dependency} (${parsed.status})`);
     }
   }
@@ -795,7 +950,7 @@ function buildAttentionItems(missionRecords: MissionRecord[]): AttentionItem[] {
         missionTitle: record.summary.title,
         assignmentSlug: assignment.slug,
         assignmentTitle: assignment.title,
-        status: assignment.status as AssignmentStatus,
+        status: assignment.status,
         updated: assignment.updated,
         href: `/missions/${record.summary.slug}/assignments/${assignment.slug}`,
         blockedReason: assignment.blockedReason,
@@ -971,7 +1126,61 @@ function getEditableDocumentTitle(
       return `Append Handoff: ${assignmentSlug || 'assignment'}`;
     case 'decision-record':
       return `Append Decision: ${assignmentSlug || 'assignment'}`;
+    case 'playbook':
+      return `Edit Playbook: ${missionSlug}`;
     default:
       return missionSlug;
   }
+}
+
+// --- Playbook API ---
+
+export async function listPlaybooks(playbooksDir: string): Promise<PlaybookSummary[]> {
+  if (!(await fileExists(playbooksDir))) return [];
+
+  const entries = await readdir(playbooksDir, { withFileTypes: true });
+  const playbooks: PlaybookSummary[] = [];
+
+  for (const entry of entries) {
+    if (!entry.isFile() || !entry.name.endsWith('.md') || entry.name.startsWith('_') || entry.name === 'manifest.md') continue;
+
+    const filePath = resolve(playbooksDir, entry.name);
+    const raw = await readFile(filePath, 'utf-8');
+    const parsed = parsePlaybook(raw);
+
+    const slug = parsed.slug || entry.name.replace(/\.md$/, '');
+    playbooks.push({
+      slug,
+      name: parsed.name || slug,
+      description: parsed.description,
+      whenToUse: parsed.whenToUse,
+      tags: parsed.tags,
+      created: parsed.created,
+      updated: parsed.updated,
+    });
+  }
+
+  return playbooks.sort((a, b) => (b.updated || b.created).localeCompare(a.updated || a.created));
+}
+
+export async function getPlaybookDetail(
+  playbooksDir: string,
+  slug: string,
+): Promise<PlaybookDetail | null> {
+  const filePath = resolve(playbooksDir, `${slug}.md`);
+  if (!(await fileExists(filePath))) return null;
+
+  const raw = await readFile(filePath, 'utf-8');
+  const parsed = parsePlaybook(raw);
+
+  return {
+    slug: parsed.slug || slug,
+    name: parsed.name || slug,
+    description: parsed.description,
+    whenToUse: parsed.whenToUse,
+    tags: parsed.tags,
+    created: parsed.created,
+    updated: parsed.updated,
+    body: parsed.body,
+  };
 }

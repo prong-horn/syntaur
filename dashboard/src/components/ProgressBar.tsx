@@ -1,17 +1,25 @@
+import { useMemo } from 'react';
 import type { ProgressCounts } from '../hooks/useMissions';
 import { cn } from '../lib/utils';
 import { toTitleCase } from '../lib/format';
+import { useStatusConfig } from '../hooks/useStatusConfig';
 
-const SEGMENTS: Array<{
-  key: keyof Omit<ProgressCounts, 'total'>;
-  className: string;
-}> = [
-  { key: 'completed', className: 'bg-emerald-500' },
-  { key: 'in_progress', className: 'bg-sky-500' },
-  { key: 'review', className: 'bg-violet-500' },
-  { key: 'blocked', className: 'bg-amber-500' },
-  { key: 'failed', className: 'bg-rose-500' },
-  { key: 'pending', className: 'bg-slate-400' },
+const DEFAULT_SEGMENT_COLORS: Record<string, string> = {
+  completed: 'bg-emerald-500',
+  in_progress: 'bg-sky-500',
+  review: 'bg-violet-500',
+  blocked: 'bg-amber-500',
+  failed: 'bg-rose-500',
+  pending: 'bg-slate-400',
+};
+
+const FALLBACK_COLORS = [
+  'bg-cyan-500',
+  'bg-indigo-500',
+  'bg-orange-500',
+  'bg-pink-500',
+  'bg-lime-500',
+  'bg-fuchsia-500',
 ];
 
 interface ProgressBarProps {
@@ -25,7 +33,22 @@ export function ProgressBar({
   className,
   showLegend = false,
 }: ProgressBarProps) {
-  const visibleSegments = SEGMENTS.filter((segment) => progress[segment.key] > 0);
+  const config = useStatusConfig();
+
+  const segments = useMemo(() => {
+    let fallbackIdx = 0;
+    // Use config order to determine segment ordering
+    const keys = config.order.length > 0
+      ? config.order
+      : Object.keys(progress).filter((k) => k !== 'total');
+
+    return keys.map((key) => ({
+      key,
+      className: DEFAULT_SEGMENT_COLORS[key] ?? FALLBACK_COLORS[fallbackIdx++ % FALLBACK_COLORS.length],
+    }));
+  }, [config.order, progress]);
+
+  const visibleSegments = segments.filter((segment) => (progress[segment.key] ?? 0) > 0);
 
   return (
     <div className={cn('space-y-2', className)}>
@@ -37,8 +60,8 @@ export function ProgressBar({
             <div
               key={segment.key}
               className={segment.className}
-              style={{ width: `${(progress[segment.key] / progress.total) * 100}%` }}
-              title={`${toTitleCase(segment.key)}: ${progress[segment.key]}`}
+              style={{ width: `${((progress[segment.key] ?? 0) / progress.total) * 100}%` }}
+              title={`${toTitleCase(segment.key)}: ${progress[segment.key] ?? 0}`}
             />
           ))
         )}
@@ -46,14 +69,14 @@ export function ProgressBar({
 
       {showLegend ? (
         <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
-          {SEGMENTS.map((segment) => (
+          {segments.map((segment) => (
             <span
               key={segment.key}
               className="inline-flex items-center gap-2 rounded-full border border-border/60 bg-background/80 px-2 py-1"
             >
               <span className={cn('h-2 w-2 rounded-full', segment.className)} />
               <span>{toTitleCase(segment.key)}</span>
-              <span className="font-medium text-foreground">{progress[segment.key]}</span>
+              <span className="font-medium text-foreground">{progress[segment.key] ?? 0}</span>
             </span>
           ))}
         </div>

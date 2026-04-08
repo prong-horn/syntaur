@@ -324,10 +324,7 @@ export function createTodosRouter(
   // POST /:workspace/:id/block
   router.post('/:workspace/:id/block', async (req, res) => {
     try {
-      if (!req.body.reason) {
-        res.status(400).json({ error: 'reason is required' });
-        return;
-      }
+      const reason = req.body.reason || null;
       const result = await withLock(req.params.workspace, async () => {
         const checklist = await readChecklist(todosDir, req.params.workspace);
         const item = checklist.items.find((i) => i.id === req.params.id);
@@ -342,8 +339,8 @@ export function createTodosRouter(
           items: item.description,
           session: req.body.session || null,
           branch: null,
-          summary: req.body.reason,
-          blockers: req.body.reason,
+          summary: reason || 'Blocked.',
+          blockers: reason,
           status: 'blocked',
         };
         await appendLogEntry(todosDir, req.params.workspace, entry);
@@ -354,6 +351,26 @@ export function createTodosRouter(
       res.json(result);
     } catch (error) {
       res.status(500).json({ error: error instanceof Error ? error.message : 'Failed to block todo' });
+    }
+  });
+
+  // POST /:workspace/:id/reopen — move completed back to open
+  router.post('/:workspace/:id/reopen', async (req, res) => {
+    try {
+      const result = await withLock(req.params.workspace, async () => {
+        const checklist = await readChecklist(todosDir, req.params.workspace);
+        const item = checklist.items.find((i) => i.id === req.params.id);
+        if (!item) return null;
+        item.status = 'open';
+        item.session = null;
+        await writeChecklist(todosDir, checklist);
+        return { ...item };
+      });
+      if (!result) { res.status(404).json({ error: `Todo "${req.params.id}" not found` }); return; }
+      broadcastUpdate();
+      res.json(result);
+    } catch (error) {
+      res.status(500).json({ error: error instanceof Error ? error.message : 'Failed to reopen todo' });
     }
   });
 

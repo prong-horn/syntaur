@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom';
 import type { LucideIcon } from 'lucide-react';
 import { cn } from '../lib/utils';
 
@@ -7,6 +8,7 @@ interface StatCardProps {
   description?: string;
   icon?: LucideIcon;
   tone?: 'default' | 'info' | 'warn' | 'danger' | 'success';
+  to?: string;
 }
 
 const TONE_STYLES = {
@@ -23,9 +25,10 @@ export function StatCard({
   description,
   icon: Icon,
   tone = 'default',
+  to,
 }: StatCardProps) {
-  return (
-    <article className={cn('rounded-lg border p-3 shadow-sm', TONE_STYLES[tone])}>
+  const content = (
+    <>
       <div className="flex items-start justify-between gap-4">
         <div className="space-y-1">
           <p className="text-xs font-semibold uppercase tracking-[0.1em] text-muted-foreground">
@@ -42,6 +45,24 @@ export function StatCard({
       {description ? (
         <p className="mt-2 text-sm leading-5 text-muted-foreground">{description}</p>
       ) : null}
-    </article>
+    </>
   );
+
+  const cardClassName = cn(
+    'rounded-lg border p-3 shadow-sm',
+    TONE_STYLES[tone],
+    to
+      ? 'block transition hover:-translate-y-0.5 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40'
+      : '',
+  );
+
+  if (to) {
+    return (
+      <Link to={to} className={cardClassName}>
+        {content}
+      </Link>
+    );
+  }
+
+  return <article className={cardClassName}>{content}</article>;
 }

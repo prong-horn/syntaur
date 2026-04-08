@@ -1,16 +1,17 @@
 import { type DragEvent, useEffect, useMemo, useState, useCallback } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { Link, useSearchParams, useParams } from 'react-router-dom';
 import { ChevronDown, ChevronUp, FolderKanban } from 'lucide-react';
+import { CopyButton } from '../components/CopyButton';
 import { cn } from '../lib/utils';
 import {
   useAssignmentsBoard,
+  useWorkspacePrefix,
   type AssignmentBoardItem,
   type AssignmentTransitionAction,
 } from '../hooks/useMissions';
 import { runAssignmentTransition, overrideAssignmentStatus } from '../lib/assignments';
-import { ASSIGNMENT_BOARD_COLUMNS } from '../lib/kanban';
+import { getAssignmentColumns } from '../lib/kanban';
 import { formatDate } from '../lib/format';
-import { PageHeader } from '../components/PageHeader';
 import { SearchInput } from '../components/SearchInput';
 import { FilterBar } from '../components/FilterBar';
 import { ViewToggle } from '../components/ViewToggle';
@@ -19,30 +20,50 @@ import { LoadingState } from '../components/LoadingState';
 import { ErrorState } from '../components/ErrorState';
 import { EmptyState } from '../components/EmptyState';
 import { KanbanBoard, type KanbanColumn } from '../components/KanbanBoard';
+import { AssignmentTransitionDialog } from '../components/AssignmentTransitionDialog';
 import { StatusBadge, STATUS_META, getStatusDescription } from '../components/StatusBadge';
-
-const ASSIGNMENT_COLUMN_LABELS: Record<(typeof ASSIGNMENT_BOARD_COLUMNS)[number], string> = {
-  pending: 'Pending',
-  in_progress: 'In Progress',
-  blocked: 'Blocked',
-  review: 'Review',
-  completed: 'Completed',
-  failed: 'Failed',
-};
-
-const ASSIGNMENT_COLUMNS: KanbanColumn[] = ASSIGNMENT_BOARD_COLUMNS.map((status) => ({
-  id: status,
-  title: ASSIGNMENT_COLUMN_LABELS[status],
-  description: getStatusDescription(status),
-}));
+import { transitionNeedsReason } from '../lib/assignments';
+import { useStatusConfig, getStatusLabel } from '../hooks/useStatusConfig';
 
 type ViewMode = 'table' | 'list' | 'kanban';
 const VALID_VIEWS: ViewMode[] = ['table', 'list', 'kanban'];
+type ActivityFilter = 'all' | 'stale' | 'fresh';
 
 type SortField = 'title' | 'status' | 'priority' | 'assignee' | 'dependencies' | 'updated';
 type SortDirection = 'asc' | 'desc';
 
+interface PendingAssignmentMove {
+  item: AssignmentBoardItem;
+  toColumnId: string;
+  action: AssignmentTransitionAction;
+}
+
 const PRIORITY_ORDER: Record<string, number> = { critical: 0, high: 1, medium: 2, low: 3 };
+
+function normalizeActivityFilter(value: string | null): ActivityFilter {
+  if (value === '1') {
+    return 'stale';
+  }
+
+  if (value === '0') {
+    return 'fresh';
+  }
+
+  return 'all';
+}
+
+function areSearchParamsEqual(left: URLSearchParams, right: URLSearchParams): boolean {
+  return left.toString() === right.toString();
+}
+
+function isAssignmentStale(updated: string): boolean {
+  const timestamp = Date.parse(updated);
+  if (Number.isNaN(timestamp)) {
+    return false;
+  }
+
+  return Date.now() - timestamp > 7 * 24 * 60 * 60 * 1000;
+}
 
 function sortAssignments(
   items: AssignmentBoardItem[],
@@ -77,11 +98,39 @@ function sortAssignments(
 }
 
 export function AssignmentsPage() {
+  const { workspace } = useParams<{ workspace?: string }>();
+  const wsPrefix = useWorkspacePrefix();
   const { data, loading, error, refetch } = useAssignmentsBoard();
+  const statusConfig = useStatusConfig();
   const [searchParams, setSearchParams] = useSearchParams();
 
+  const COLUMNS = useMemo(() => getAssignmentColumns(statusConfig.order), [statusConfig]);
+  const COLUMN_LABELS = useMemo(() => {
+    const labels: Record<string, string> = {};
+    for (const id of COLUMNS) {
+      labels[id] = getStatusLabel(statusConfig, id);
+    }
+    return labels;
+  }, [COLUMNS, statusConfig]);
+  const KANBAN_COLUMNS: KanbanColumn[] = useMemo(
+    () => COLUMNS.map((status) => ({
+      id: status,
+      title: COLUMN_LABELS[status] ?? status,
+      description: getStatusDescription(status),
+    })),
+    [COLUMNS, COLUMN_LABELS],
+  );
+  const VALID_STATUS_SET = useMemo(() => new Set<string>(['all', ...COLUMNS]), [COLUMNS]);
+
   const viewParam = searchParams.get('view') as ViewMode | null;
+  const statusParam = searchParams.get('status');
+  const staleParam = searchParams.get('stale');
   const view: ViewMode = viewParam && VALID_VIEWS.includes(viewParam) ? viewParam : 'kanban';
+
+  function normalizeStatusFilter(value: string | null): string {
+    if (!value || !VALID_STATUS_SET.has(value)) return 'all';
+    return value;
+  }
 
   const setView = useCallback(
     (v: ViewMode) => {
@@ -99,33 +148,113 @@ export function AssignmentsPage() {
   );
 
   const [search, setSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState<string>(
+    () => normalizeStatusFilter(statusParam),
+  );
+  const [priorityFilter, setPriorityFilter] = useState('all');
+  const [assigneeFilter, setAssigneeFilter] = useState('all');
+  const [missionFilter, setMissionFilter] = useState('all');
+  const [activityFilter, setActivityFilter] = useState<ActivityFilter>(
+    () => normalizeActivityFilter(staleParam),
+  );
   const [sortField, setSortField] = useState<SortField>('updated');
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
   const [expandedStatuses, setExpandedStatuses] = useState<Set<string>>(
-    () => new Set(ASSIGNMENT_BOARD_COLUMNS),
+    () => new Set(COLUMNS),
   );
   const [boardItems, setBoardItems] = useState<AssignmentBoardItem[]>([]);
   const [transitionError, setTransitionError] = useState<string | null>(null);
   const [transitioningId, setTransitioningId] = useState<string | null>(null);
   const [draggedId, setDraggedId] = useState<string | null>(null);
   const [dropTargetStatus, setDropTargetStatus] = useState<string | null>(null);
+  const [pendingMove, setPendingMove] = useState<PendingAssignmentMove | null>(null);
 
   useEffect(() => {
     setBoardItems(data?.assignments ?? []);
   }, [data]);
 
-  const filteredItems = useMemo(() => {
-    const query = search.trim().toLowerCase();
-    if (!query) {
-      return boardItems;
+  useEffect(() => {
+    const nextStatus = normalizeStatusFilter(statusParam);
+    if (nextStatus !== statusFilter) {
+      setStatusFilter(nextStatus);
     }
 
-    return boardItems.filter((assignment) =>
-      `${assignment.title} ${assignment.slug} ${assignment.missionTitle} ${assignment.missionSlug}`
-        .toLowerCase()
-        .includes(query),
-    );
-  }, [boardItems, search]);
+    const nextActivity = normalizeActivityFilter(staleParam);
+    if (nextActivity !== activityFilter) {
+      setActivityFilter(nextActivity);
+    }
+  }, [activityFilter, staleParam, statusFilter, statusParam]);
+
+  useEffect(() => {
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+
+      if (statusFilter === 'all') {
+        next.delete('status');
+      } else {
+        next.set('status', statusFilter);
+      }
+
+      if (activityFilter === 'all') {
+        next.delete('stale');
+      } else if (activityFilter === 'stale') {
+        next.set('stale', '1');
+      } else {
+        next.set('stale', '0');
+      }
+
+      return areSearchParamsEqual(prev, next) ? prev : next;
+    });
+  }, [activityFilter, setSearchParams, statusFilter]);
+
+  const uniqueStatuses = useMemo(
+    () => Array.from(new Set(boardItems.map((a) => a.status))).sort(),
+    [boardItems],
+  );
+  const uniquePriorities = useMemo(
+    () => Array.from(new Set(boardItems.map((a) => a.priority))).sort(),
+    [boardItems],
+  );
+  const uniqueAssignees = useMemo(
+    () => Array.from(new Set(boardItems.map((a) => a.assignee ?? '__unassigned__'))).sort(),
+    [boardItems],
+  );
+  const uniqueMissions = useMemo(
+    () =>
+      Array.from(
+        new Map(boardItems.map((a) => [a.missionSlug, a.missionTitle])),
+      ).sort(([, a], [, b]) => a.localeCompare(b)),
+    [boardItems],
+  );
+
+  const filteredItems = useMemo(() => {
+    return boardItems.filter((assignment) => {
+      if (workspace) {
+        if (workspace === '_ungrouped') {
+          if (assignment.missionWorkspace !== null) return false;
+        } else {
+          if (assignment.missionWorkspace !== workspace) return false;
+        }
+      }
+      if (statusFilter !== 'all' && assignment.status !== statusFilter) return false;
+      if (priorityFilter !== 'all' && assignment.priority !== priorityFilter) return false;
+      if (activityFilter === 'stale' && !isAssignmentStale(assignment.updated)) return false;
+      if (activityFilter === 'fresh' && isAssignmentStale(assignment.updated)) return false;
+      if (assigneeFilter !== 'all') {
+        const val = assignment.assignee ?? '__unassigned__';
+        if (val !== assigneeFilter) return false;
+      }
+      if (missionFilter !== 'all' && assignment.missionSlug !== missionFilter) return false;
+
+      const query = search.trim().toLowerCase();
+      if (query) {
+        const haystack = `${assignment.title} ${assignment.slug} ${assignment.missionTitle} ${assignment.missionSlug}`.toLowerCase();
+        if (!haystack.includes(query)) return false;
+      }
+
+      return true;
+    });
+  }, [activityFilter, boardItems, search, statusFilter, priorityFilter, assigneeFilter, missionFilter, workspace]);
 
   const sortedItems = useMemo(
     () => sortAssignments(filteredItems, sortField, sortDirection),
@@ -140,28 +269,17 @@ export function AssignmentsPage() {
     return <ErrorState error={error || 'Assignments board is unavailable.'} />;
   }
 
-  async function handleMove({
+  async function applyMove({
     item,
     toColumnId,
+    action,
+    reason,
   }: {
     item: AssignmentBoardItem;
     toColumnId: string;
+    action?: AssignmentTransitionAction;
+    reason?: string;
   }) {
-    if (item.status === toColumnId) {
-      return;
-    }
-
-    const action = getAssignmentAction(item, toColumnId);
-    if (action?.disabled) {
-      setTransitionError(action.disabledReason || `Cannot move this assignment to ${toColumnId}.`);
-      return;
-    }
-
-    let reason: string | undefined;
-    if (action?.command === 'block') {
-      reason = window.prompt('Reason for blocking (optional)')?.trim() || undefined;
-    }
-
     setTransitionError(null);
     setTransitioningId(getAssignmentKey(item));
 
@@ -171,7 +289,7 @@ export function AssignmentsPage() {
         getAssignmentKey(candidate) === getAssignmentKey(item)
           ? {
               ...candidate,
-              status: toColumnId as AssignmentBoardItem['status'],
+              status: toColumnId,
               blockedReason: toColumnId === 'blocked' ? reason ?? candidate.blockedReason : null,
             }
           : candidate,
@@ -197,12 +315,39 @@ export function AssignmentsPage() {
         ),
       );
       refetch();
+      return true;
     } catch (mutationError) {
       setBoardItems(previous);
       setTransitionError((mutationError as Error).message);
+      return false;
     } finally {
       setTransitioningId(null);
     }
+  }
+
+  async function handleMove({
+    item,
+    toColumnId,
+  }: {
+    item: AssignmentBoardItem;
+    toColumnId: string;
+  }) {
+    if (item.status === toColumnId) {
+      return;
+    }
+
+    const action = getAssignmentAction(item, toColumnId);
+    if (action?.disabled) {
+      setTransitionError(action.disabledReason || `Cannot move this assignment to ${toColumnId}.`);
+      return;
+    }
+
+    if (action && transitionNeedsReason(action)) {
+      setPendingMove({ item, toColumnId, action });
+      return;
+    }
+
+    await applyMove({ item, toColumnId, action });
   }
 
   function toggleStatus(status: string) {
@@ -290,11 +435,6 @@ export function AssignmentsPage() {
 
   return (
     <div className="space-y-5">
-      <PageHeader
-        eyebrow="Execution Queue"
-        title="Assignments"
-        description="A cross-mission view of every assignment on disk. Switch views to see assignments as a table, list, or kanban board."
-      />
 
       <FilterBar>
         <SearchInput
@@ -302,6 +442,39 @@ export function AssignmentsPage() {
           onChange={setSearch}
           placeholder="Search assignments or missions"
         />
+        <select
+          value={statusFilter}
+          onChange={(e) => setStatusFilter(normalizeStatusFilter(e.target.value))}
+          className="editor-input max-w-[180px]"
+        >
+          <option value="all">All statuses</option>
+          {uniqueStatuses.map((s) => (
+            <option key={s} value={s}>{COLUMN_LABELS[s] ?? s}</option>
+          ))}
+        </select>
+        <select value={priorityFilter} onChange={(e) => setPriorityFilter(e.target.value)} className="editor-input max-w-[180px]">
+          <option value="all">All priorities</option>
+          {uniquePriorities.map((p) => (
+            <option key={p} value={p} className="capitalize">{p}</option>
+          ))}
+        </select>
+        <select value={assigneeFilter} onChange={(e) => setAssigneeFilter(e.target.value)} className="editor-input max-w-[180px]">
+          <option value="all">All assignees</option>
+          {uniqueAssignees.map((a) => (
+            <option key={a} value={a}>{a === '__unassigned__' ? 'Unassigned' : a}</option>
+          ))}
+        </select>
+        <select value={missionFilter} onChange={(e) => setMissionFilter(e.target.value)} className="editor-input max-w-[180px]">
+          <option value="all">All missions</option>
+          {uniqueMissions.map(([slug, title]) => (
+            <option key={slug} value={slug}>{title}</option>
+          ))}
+        </select>
+        <select value={activityFilter} onChange={(e) => setActivityFilter(e.target.value as ActivityFilter)} className="editor-input max-w-[180px]">
+          <option value="all">All activity</option>
+          <option value="stale">Stale only</option>
+          <option value="fresh">Fresh only</option>
+        </select>
         <ViewToggle
           value={view}
           onChange={(value) => setView(value as ViewMode)}
@@ -324,7 +497,7 @@ export function AssignmentsPage() {
           title="No assignments yet"
           description="Assignments appear here once missions contain concrete work items."
           actions={
-            <Link className="shell-action bg-foreground text-background hover:opacity-90" to="/missions">
+            <Link className="shell-action bg-foreground text-background hover:opacity-90" to={`${wsPrefix}/missions`}>
               <FolderKanban className="h-4 w-4" />
               <span>Browse Missions</span>
             </Link>
@@ -332,8 +505,8 @@ export function AssignmentsPage() {
         />
       ) : filteredItems.length === 0 ? (
         <EmptyState
-          title="No assignments match this search"
-          description="Adjust the search term to show assignments across all missions again."
+          title="No assignments match these filters"
+          description="Adjust the search term or filters to show assignments across all missions again."
         />
       ) : view === 'table' ? (
         <SectionCard title={`${sortedItems.length} assignment${sortedItems.length === 1 ? '' : 's'}`}>
@@ -354,14 +527,15 @@ export function AssignmentsPage() {
                   <tr key={getAssignmentKey(assignment)} className="border-b border-border/50 last:border-0">
                     <td className="py-4 pr-4">
                       <Link
-                        to={`/missions/${assignment.missionSlug}/assignments/${assignment.slug}`}
+                        to={`${wsPrefix}/missions/${assignment.missionSlug}/assignments/${assignment.slug}`}
                         className="font-semibold text-foreground hover:text-primary"
                       >
                         {assignment.title}
                       </Link>
                       <p className="mt-1 text-xs text-muted-foreground">{assignment.missionTitle}</p>
-                      <p className="mt-0.5 font-mono text-xs text-muted-foreground/70" title={assignment.id}>
+                      <p className="mt-0.5 inline-flex items-center gap-1.5 font-mono text-xs text-muted-foreground/70" title={assignment.id}>
                         {assignment.id.slice(0, 8)}
+                        <CopyButton value={assignment.id} />
                       </p>
                     </td>
                     <td className="py-4 pr-4">
@@ -379,7 +553,7 @@ export function AssignmentsPage() {
                           transitioningId === getAssignmentKey(assignment) && 'animate-pulse opacity-60',
                         )}
                       >
-                        {ASSIGNMENT_BOARD_COLUMNS.map((targetStatus) => {
+                        {COLUMNS.map((targetStatus) => {
                           const action = assignment.status === targetStatus
                             ? undefined
                             : getAssignmentAction(assignment, targetStatus);
@@ -391,7 +565,7 @@ export function AssignmentsPage() {
                               disabled={disabled}
                               title={disabled ? action?.disabledReason ?? undefined : undefined}
                             >
-                              {ASSIGNMENT_COLUMN_LABELS[targetStatus]}
+                              {COLUMN_LABELS[targetStatus]}
                             </option>
                           );
                         })}
@@ -409,7 +583,7 @@ export function AssignmentsPage() {
         </SectionCard>
       ) : view === 'list' ? (
         <div className="space-y-3">
-          {ASSIGNMENT_BOARD_COLUMNS.map((status) => {
+          {COLUMNS.map((status) => {
             const items = filteredItems.filter((item) => item.status === status);
             if (items.length === 0 && !draggedItem) return null;
             const expanded = expandedStatuses.has(status);
@@ -439,7 +613,7 @@ export function AssignmentsPage() {
                     className={`h-4 w-4 text-muted-foreground transition-transform ${expanded ? '' : '-rotate-90'}`}
                   />
                   <span className="font-semibold text-foreground">
-                    {ASSIGNMENT_COLUMN_LABELS[status]}
+                    {COLUMN_LABELS[status]}
                   </span>
                   <span className="rounded-full border border-border/60 px-2 py-0.5 text-xs text-muted-foreground">
                     {items.length}
@@ -477,7 +651,7 @@ export function AssignmentsPage() {
         </div>
       ) : (
         <KanbanBoard
-          columns={ASSIGNMENT_COLUMNS}
+          columns={KANBAN_COLUMNS}
           items={filteredItems}
           getItemId={getAssignmentKey}
           getColumnId={(item) => item.status}
@@ -509,6 +683,35 @@ export function AssignmentsPage() {
           )}
         />
       )}
+
+      <AssignmentTransitionDialog
+        open={pendingMove !== null}
+        action={pendingMove?.action ?? null}
+        assignmentTitle={pendingMove?.item.title ?? 'Assignment'}
+        loading={transitioningId === (pendingMove ? getAssignmentKey(pendingMove.item) : null)}
+        onOpenChange={(open) => {
+          if (!open) {
+            setPendingMove(null);
+          }
+        }}
+        onConfirm={async (reason) => {
+          if (!pendingMove) {
+            return;
+          }
+
+          const move = pendingMove;
+          const succeeded = await applyMove({
+            item: move.item,
+            toColumnId: move.toColumnId,
+            action: move.action,
+            reason,
+          });
+
+          if (succeeded) {
+            setPendingMove(null);
+          }
+        }}
+      />
     </div>
   );
 }
@@ -522,19 +725,21 @@ function AssignmentBoardCard({
   dragging: boolean;
   transitioning: boolean;
 }) {
+  const wsPrefix = useWorkspacePrefix();
   return (
     <div className="rounded-lg border border-border/60 bg-background/85 p-3 shadow-sm">
       <div className="flex items-start justify-between gap-3">
         <div className="space-y-1">
           <Link
-            to={`/missions/${assignment.missionSlug}/assignments/${assignment.slug}`}
+            to={`${wsPrefix}/missions/${assignment.missionSlug}/assignments/${assignment.slug}`}
             className="text-base font-semibold text-foreground hover:text-primary"
           >
             {assignment.title}
           </Link>
           <p className="text-sm text-muted-foreground">{assignment.missionTitle}</p>
-          <p className="font-mono text-xs text-muted-foreground/70" title={assignment.id ?? ''}>
+          <p className="inline-flex items-center gap-1.5 font-mono text-xs text-muted-foreground/70" title={assignment.id ?? ''}>
             {assignment.id?.slice(0, 8)}
+            {assignment.id && <CopyButton value={assignment.id} />}
           </p>
         </div>
         <StatusBadge status={assignment.status} />

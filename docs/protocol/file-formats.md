@@ -94,6 +94,7 @@ The mission overview containing the goal, context, and success criteria. This fi
 | `externalIds[].id` | string | any | required (per entry) | — | Identifier in the external system. |
 | `externalIds[].url` | string or null | URL | optional (per entry) | `null` | Direct link to the item in the external system. |
 | `tags` | array of strings | any | optional | `[]` | Freeform tags for categorization. |
+| `workspace` | string or null | any | optional | `null` | Organizational grouping label. Groups missions by codebase or project context in the dashboard. Not related to the assignment-level `workspace` object. |
 
 ### Body Sections
 
@@ -124,6 +125,7 @@ externalIds:
 tags:
   - security
   - backend
+workspace: auth-project
 ---
 
 # Build Authentication System
@@ -188,14 +190,13 @@ The core unit of work and the **single source of truth** for assignment state. T
 | Objective | Clear description of what needs to be done and why | Human (initial), agent may refine |
 | Acceptance Criteria | Checklist of requirements for completion | Human (initial), agent checks off |
 | Context | Links to relevant docs, code, or other assignments | Human or agent |
-| Sessions | Table tracking agent session history | Agent |
 | Questions & Answers | Agent asks questions, humans/other agents answer via CLI | Agent writes questions; answers mediated via `syntaur answer` CLI command |
 | Progress | Reverse-chronological log of work done | Agent |
 | Links | Links to supporting files (plan, scratchpad, handoff, decisions) | Scaffolding (initial) |
 
 **Q&A write boundaries:** The Q&A section is the one exception to the single-writer rule for assignment folders. Answers are written by humans or other agents, but always **mediated through the CLI** (e.g., `syntaur answer`), never by directly editing the file. This preserves the single-writer guarantee at the file-system level.
 
-**Sessions table:** Sessions are informational and help the dashboard show active work. The `assignee` field is the authoritative owner, not the sessions table. Multiple sessions are allowed (e.g., agent restarts). The `Ended` column and `stopped` status handle stale sessions.
+**Sessions:** Agent sessions are tracked in a SQLite database (`~/.syntaur/syntaur.db`), not in the assignment file. The `assignee` field in frontmatter is the authoritative owner. See Section 11 for session storage details.
 
 ### Example
 
@@ -248,13 +249,6 @@ both access tokens (15min TTL) and refresh token rotation (7-day TTL).
   user table schema and key storage approach
 - See [auth-requirements](../../resources/auth-requirements.md) for product specs
 - JWT library: `jose` (chosen in Decision 1)
-
-## Sessions
-
-| Session ID | Agent | Started | Ended | Status |
-|------------|-------|---------|-------|--------|
-| tmux:syntaur-auth-1 | claude-1 | 2026-03-18T14:00:00Z | | active |
-| tmux:syntaur-auth-0 | claude-1 | 2026-03-17T16:00:00Z | 2026-03-17T18:30:00Z | completed |
 
 ## Questions & Answers
 
@@ -660,42 +654,50 @@ generated: "2026-03-18T15:00:00Z"
 
 ---
 
-## 11. _index-sessions.md
+## 11. Agent Sessions (SQLite)
 
-**Ownership:** Derived (rebuild script only)
+**Storage:** `~/.syntaur/syntaur.db` — `sessions` table
 
-Summary of active sessions across all assignments.
+Agent sessions are stored in a SQLite database rather than markdown files. This provides proper querying, atomic updates, and scales well as session counts grow. Sessions are operational/node-local data — agents write them via the `syntaur track-session` CLI or the dashboard API, and humans consume them through the dashboard UI.
 
-### Frontmatter Schema
+### Schema
 
-| Field | Type | Valid Values | Required | Default | Description |
-|-------|------|-------------|----------|---------|-------------|
-| `mission` | string | mission slug | required | — | The parent mission. |
-| `generated` | string (RFC 3339) | RFC 3339 datetime | required | — | When this file was last rebuilt. |
-| `activeSessions` | number (integer) | >= 0 | required | — | Count of currently active sessions. |
+```sql
+CREATE TABLE sessions (
+  session_id TEXT PRIMARY KEY,
+  mission_slug TEXT NOT NULL,
+  assignment_slug TEXT NOT NULL,
+  agent TEXT NOT NULL,
+  started TEXT NOT NULL,
+  ended TEXT,
+  status TEXT NOT NULL DEFAULT 'active',
+  path TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+```
 
-### Body Sections
+### Status Values
 
-| Section | Purpose | Who Writes |
-|---------|---------|------------|
-| Sessions table | Active sessions across all assignments | Rebuild script |
+| Status | Meaning |
+|--------|---------|
+| `active` | Session is currently running |
+| `completed` | Session finished successfully |
+| `stopped` | Session was terminated or failed |
 
-**Table columns:** Assignment (linked to assignment.md), Agent, Session ID, Started, Status.
+### API Endpoints
 
-### Example
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/agent-sessions` | List all sessions across all missions |
+| `GET` | `/api/agent-sessions/:missionSlug` | List sessions for a mission (optional `?assignment=` filter) |
+| `POST` | `/api/agent-sessions` | Register a new session |
+| `PATCH` | `/api/agent-sessions/:sessionId/status` | Update session status |
 
-```markdown
----
-mission: build-auth-system
-generated: "2026-03-18T15:00:00Z"
-activeSessions: 1
----
+### CLI
 
-# Active Sessions
-
-| Assignment | Agent | Session ID | Started | Status |
-|------------|-------|------------|---------|--------|
-| [implement-jwt-middleware](./assignments/implement-jwt-middleware/assignment.md) | claude-1 | tmux:syntaur-auth-1 | 2026-03-18T14:00:00Z | active |
+```bash
+syntaur track-session --mission <slug> --assignment <slug> --agent <name> [--session-id <id>] [--path <path>]
 ```
 
 ---
@@ -1208,4 +1210,60 @@ sync:
 
 Personal development machine. Missions stored in default location.
 Sync disabled until v2 is available.
+```
+
+---
+
+## 11. Playbooks (`~/.syntaur/playbooks/<slug>.md`)
+
+**Ownership:** Human-authored (read-only to agents)
+**Purpose:** Define behavioral rules, workflows, and conventions that agents must follow.
+
+Playbooks are global — they apply across all missions and assignments. They are composable, short markdown files with imperative rules that get injected into agent context at decision points (grabbing assignments, planning, completing work).
+
+### Frontmatter Schema
+
+| Field | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `name` | string | yes | — | Display name |
+| `slug` | string | yes | — | Filename-safe identifier (lowercase, hyphenated) |
+| `description` | string | no | `""` | One-line summary of what the playbook does |
+| `when_to_use` | string | no | `null` | Describes when agents should apply this playbook |
+| `created` | RFC 3339 | yes | — | Creation timestamp |
+| `updated` | RFC 3339 | yes | — | Last update timestamp |
+| `tags` | string[] | no | `[]` | Categorization tags |
+
+### Body
+
+The body contains imperative rules and workflows in markdown. Guidelines:
+
+- Keep playbooks short — ideally under 50 lines
+- Use imperative language ("Do X", "Never do Y")
+- Focus each playbook on a single concern
+- Rules in playbooks take precedence over default conventions when they conflict
+
+### Example
+
+```markdown
+---
+name: "Test Before Done"
+slug: test-before-done
+description: "Agents must run tests and verify acceptance criteria before marking assignments complete"
+when_to_use: "Before transitioning an assignment to review or completed"
+created: "2026-04-02T00:00:00Z"
+updated: "2026-04-02T00:00:00Z"
+tags:
+  - quality
+  - testing
+---
+
+# Test Before Done
+
+Before transitioning an assignment to `review` or `completed`:
+
+1. **Run the test suite.** If the project has tests, run them. All must pass.
+2. **Check every acceptance criterion.** Go through them one by one.
+3. **Build the project.** If there's a build step, run it. No build errors allowed.
+
+Do NOT mark an assignment complete just because you wrote the code.
 ```

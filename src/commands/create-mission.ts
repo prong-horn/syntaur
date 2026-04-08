@@ -13,7 +13,6 @@ import {
   renderIndexAssignments,
   renderIndexPlans,
   renderIndexDecisions,
-  renderIndexSessions,
   renderStatus,
   renderResourcesIndex,
   renderMemoriesIndex,
@@ -22,6 +21,7 @@ import {
 export interface CreateMissionOptions {
   slug?: string;
   dir?: string;
+  workspace?: string;
 }
 
 export async function createMissionCommand(
@@ -65,7 +65,7 @@ export async function createMissionCommand(
     ],
     [
       resolve(missionDir, 'mission.md'),
-      renderMission({ id, slug, title, timestamp }),
+      renderMission({ id, slug, title, timestamp, workspace: options.workspace }),
     ],
     [
       resolve(missionDir, 'agent.md'),
@@ -86,10 +86,6 @@ export async function createMissionCommand(
     [
       resolve(missionDir, '_index-decisions.md'),
       renderIndexDecisions({ slug, title, timestamp }),
-    ],
-    [
-      resolve(missionDir, '_index-sessions.md'),
-      renderIndexSessions({ slug, title, timestamp }),
     ],
     [
       resolve(missionDir, '_status.md'),
@@ -119,7 +115,6 @@ export async function createMissionCommand(
   console.log(`    _index-assignments.md`);
   console.log(`    _index-plans.md`);
   console.log(`    _index-decisions.md`);
-  console.log(`    _index-sessions.md`);
   console.log(`    _status.md`);
   console.log(`    resources/_index.md`);
   console.log(`    memories/_index.md`);

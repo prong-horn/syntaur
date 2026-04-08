@@ -27,6 +27,16 @@ If the file does not exist, tell the user: "No active assignment found. Run `/gr
 
 Extract: `missionSlug`, `assignmentSlug`, `assignmentDir`, `missionDir`.
 
+## Step 1.5: Load Playbooks
+
+Read all playbook files from `~/.syntaur/playbooks/` — verify your work complies with their rules:
+
+```bash
+ls ~/.syntaur/playbooks/*.md 2>/dev/null
+```
+
+For each file found, read it and check that your work follows its directives. If any playbook has completion-related rules (e.g., "run tests before done"), follow them before proceeding.
+
 ## Step 2: Verify Acceptance Criteria
 
 Read `<assignmentDir>/assignment.md` and find the `## Acceptance Criteria` section.
@@ -78,29 +88,9 @@ In `<assignmentDir>/assignment.md`, update the acceptance criteria checkboxes to
 
 **Note:** Ideally, criteria should have been checked off incrementally during implementation. If they are already checked, verify they are still accurate. If some were missed, check them off now with a note in the handoff about which were verified at completion time vs. during development.
 
-## Step 4.5: Close Session in Assignment and Mission Index
+## Step 4.5: Close Session
 
-Read the context file (`.syntaur/context.json`) to get the `sessionId` and `missionSlug`. Then:
-
-### 4.5a: Update the assignment-level Sessions table
-
-In `<assignmentDir>/assignment.md`, find the Sessions table row matching the session ID and update it:
-
-- Set the **Ended** column to the current ISO 8601 timestamp
-- Set the **Status** column to `completed`
-
-For example, change:
-```
-| <session-id> | claude | 2026-03-25T14:01:00Z | | active |
-```
-to:
-```
-| <session-id> | claude | 2026-03-25T14:01:00Z | 2026-03-25T15:30:00Z | completed |
-```
-
-### 4.5b: Update the mission-level session index
-
-Also mark the session as completed in the mission's `_index-sessions.md` so the dashboard reflects the correct status. If the dashboard server is running, use the API:
+Read the context file (`.syntaur/context.json`) to get the `sessionId` and `missionSlug`. Then mark the session as completed via the dashboard API:
 
 ```bash
 curl -s -X PATCH "http://localhost:$(cat ~/.syntaur/dashboard-port 2>/dev/null || echo 4800)/api/agent-sessions/<session-id>/status" \
@@ -108,7 +98,7 @@ curl -s -X PATCH "http://localhost:$(cat ~/.syntaur/dashboard-port 2>/dev/null |
   -d '{"status": "completed", "missionSlug": "<mission-slug>"}'
 ```
 
-If the API is not available, manually edit `~/.syntaur/missions/<mission-slug>/_index-sessions.md` and change the session's status column from `active` to `completed`.
+If the API call fails (e.g., dashboard not running), this is non-critical — the session will be reconciled automatically on the next dashboard load.
 
 ## Step 5: Transition Assignment State
 

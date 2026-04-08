@@ -38,11 +38,6 @@ Write comprehensive unit and integration tests for the authentication system, co
 
 This assignment depends on [implement-jwt-middleware](../implement-jwt-middleware/assignment.md) being completed. Tests will cover both the schema layer (from design-auth-schema) and the middleware/endpoint layer (from implement-jwt-middleware). Use Jest as the test framework with `supertest` for HTTP integration tests.
 
-## Sessions
-
-| Session ID | Agent | Started | Ended | Status |
-|------------|-------|---------|-------|--------|
-
 ## Questions & Answers
 
 No questions yet.

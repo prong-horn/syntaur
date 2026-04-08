@@ -1,6 +1,5 @@
 import { Link } from 'react-router-dom';
 import { useHelp } from '../hooks/useMissions';
-import { PageHeader } from '../components/PageHeader';
 import { LoadingState } from '../components/LoadingState';
 import { ErrorState } from '../components/ErrorState';
 import { SectionCard } from '../components/SectionCard';
@@ -21,11 +20,6 @@ export function HelpPage() {
 
   return (
     <div className="space-y-5">
-      <PageHeader
-        eyebrow="Guide"
-        title="Help And Getting Started"
-        description="Everything in this page is grounded in the current CLI surface and protocol rules implemented in the repository."
-      />
 
       <SectionCard title="What Syntaur Is" description={help.whatIsSyntaur.summary}>
         <div className="grid gap-3 md:grid-cols-3">

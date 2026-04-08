@@ -107,6 +107,16 @@ describe('renderCodexAgents', () => {
     expect(out).toContain(TEST_PARAMS.assignmentDir);
   });
 
+  it('contains preferred plugin workflows', () => {
+    const out = renderCodexAgents(TEST_PARAMS);
+    expect(out).toContain('syntaur-operator');
+    expect(out).toContain('syntaur-protocol');
+    expect(out).toContain('grab-assignment');
+    expect(out).toContain('plan-assignment');
+    expect(out).toContain('complete-assignment');
+    expect(out).toContain('track-session');
+  });
+
   it('contains protocol directory structure', () => {
     const out = renderCodexAgents(TEST_PARAMS);
     expect(out).toContain('~/.syntaur/');
@@ -118,6 +128,12 @@ describe('renderCodexAgents', () => {
     expect(out).toContain('Write Boundary Rules');
     expect(out).toContain('Files you may WRITE');
     expect(out).toContain('Files you must NEVER write');
+  });
+
+  it('contains context file guidance', () => {
+    const out = renderCodexAgents(TEST_PARAMS);
+    expect(out).toContain('.syntaur/context.json');
+    expect(out).toContain('workspace boundary');
   });
 
   it('contains lifecycle states and commands', () => {
@@ -135,6 +151,11 @@ describe('renderCodexAgents', () => {
     expect(out).toContain(
       `syntaur start ${TEST_PARAMS.assignmentSlug} --mission ${TEST_PARAMS.missionSlug}`,
     );
+  });
+
+  it('includes the manifest in reading order', () => {
+    const out = renderCodexAgents(TEST_PARAMS);
+    expect(out).toContain(`${TEST_PARAMS.missionDir}/manifest.md`);
   });
 });
 

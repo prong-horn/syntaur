@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useParams } from 'react-router-dom';
 import {
   Monitor,
   RefreshCw,
@@ -11,18 +11,37 @@ import {
   ServerOff,
   Terminal,
 } from 'lucide-react';
-import { useServers } from '../hooks/useMissions';
-import { PageHeader } from '../components/PageHeader';
+import { CopyButton } from '../components/CopyButton';
+import { useServers, useMissions, useWorkspacePrefix } from '../hooks/useMissions';
 import { LoadingState } from '../components/LoadingState';
 import { ErrorState } from '../components/ErrorState';
 import { EmptyState } from '../components/EmptyState';
 import type { TrackedSession, TrackedPane } from '../types';
 
 export function ServersPage() {
+  const { workspace } = useParams<{ workspace?: string }>();
+  const { data: missionsData } = useMissions();
   const { data, loading, error, refetch } = useServers();
   const [registering, setRegistering] = useState(false);
   const [newSessionName, setNewSessionName] = useState('');
   const [refreshingAll, setRefreshingAll] = useState(false);
+
+  const filteredSessions = (() => {
+    if (!workspace || !data) return data?.sessions ?? [];
+    if (!missionsData) return [];
+    const workspaceMissions = new Set(
+      missionsData
+        .filter((m) => workspace === '_ungrouped' ? m.workspace === null : m.workspace === workspace)
+        .map((m) => m.slug),
+    );
+    return data.sessions.filter((session) =>
+      session.windows.some((win) =>
+        win.panes.some((pane) =>
+          pane.assignment && workspaceMissions.has(pane.assignment.mission),
+        ),
+      ),
+    );
+  })();
 
   async function handleRegister(e: React.FormEvent) {
     e.preventDefault();
@@ -68,7 +87,6 @@ export function ServersPage() {
   if (!data.tmuxAvailable) {
     return (
       <>
-        <PageHeader eyebrow="Infrastructure" title="Servers" />
         <div className="surface-panel mt-4 flex flex-col items-center gap-3 py-12 text-center">
           <Terminal className="h-10 w-10 text-muted-foreground/40" />
           <p className="text-sm font-medium text-foreground">tmux is not installed</p>
@@ -82,50 +100,44 @@ export function ServersPage() {
 
   return (
     <>
-      <PageHeader
-        eyebrow="Infrastructure"
-        title="Servers"
-        actions={
-          <div className="flex items-center gap-2">
-            {registering ? (
-              <form onSubmit={handleRegister} className="flex items-center gap-2">
-                <input
-                  type="text"
-                  value={newSessionName}
-                  onChange={(e) => setNewSessionName(e.target.value)}
-                  placeholder="tmux session name"
-                  className="editor-input text-sm"
-                  autoFocus
-                />
-                <button type="submit" className="shell-action">Add</button>
-                <button type="button" className="shell-action" onClick={() => setRegistering(false)}>Cancel</button>
-              </form>
-            ) : (
-              <button className="shell-action" onClick={() => setRegistering(true)}>
-                <Plus className="h-3.5 w-3.5" />
-                Track Session
-              </button>
-            )}
-            <button
-              className="shell-action"
-              onClick={handleRefreshAll}
-              disabled={refreshingAll}
-            >
-              <RefreshCw className={`h-3.5 w-3.5 ${refreshingAll ? 'animate-spin' : ''}`} />
-              Refresh All
-            </button>
-          </div>
-        }
-      />
+      <div className="flex flex-wrap items-center gap-2">
+        {registering ? (
+          <form onSubmit={handleRegister} className="flex items-center gap-2">
+            <input
+              type="text"
+              value={newSessionName}
+              onChange={(e) => setNewSessionName(e.target.value)}
+              placeholder="tmux session name"
+              className="editor-input text-sm"
+              autoFocus
+            />
+            <button type="submit" className="shell-action">Add</button>
+            <button type="button" className="shell-action" onClick={() => setRegistering(false)}>Cancel</button>
+          </form>
+        ) : (
+          <button className="shell-action" onClick={() => setRegistering(true)}>
+            <Plus className="h-3.5 w-3.5" />
+            Track Session
+          </button>
+        )}
+        <button
+          className="shell-action"
+          onClick={handleRefreshAll}
+          disabled={refreshingAll}
+        >
+          <RefreshCw className={`h-3.5 w-3.5 ${refreshingAll ? 'animate-spin' : ''}`} />
+          Refresh All
+        </button>
+      </div>
 
-      {data.sessions.length === 0 ? (
+      {filteredSessions.length === 0 ? (
         <EmptyState
           title="No sessions tracked"
           description="Register a tmux session to start tracking your dev servers."
         />
       ) : (
         <div className="mt-4 space-y-4">
-          {data.sessions.map((session) => (
+          {filteredSessions.map((session) => (
             <SessionCard
               key={session.name}
               session={session}
@@ -206,7 +218,7 @@ function SessionCard({
       {!session.alive && (
         <div className="mt-3 flex items-center gap-2 text-sm text-muted-foreground">
           <ServerOff className="h-4 w-4" />
-          <span>tmux session no longer exists</span>
+          <span>{session.kind === 'process' ? 'Process no longer running' : 'Session no longer exists'}</span>
         </div>
       )}
     </div>
@@ -224,13 +236,17 @@ function PaneRow({
   windowIndex: number;
   onRefetch: () => void;
 }) {
+  const wsPrefix = useWorkspacePrefix();
   const shortCwd = pane.cwd.replace(/^\/Users\/[^/]+/, '~');
 
   return (
     <div className="flex items-center gap-3 rounded-md border border-border/40 bg-background/60 px-3 py-2 text-sm">
       <span className="shrink-0 font-mono text-xs text-muted-foreground/60">:{pane.index}</span>
       <span className="shrink-0 rounded bg-muted/60 px-1.5 py-0.5 font-mono text-xs">{pane.command}</span>
-      <span className="min-w-0 truncate text-xs text-muted-foreground" title={pane.cwd}>{shortCwd}</span>
+      <span className="inline-flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
+        <span className="truncate" title={pane.cwd}>{shortCwd}</span>
+        <CopyButton value={pane.cwd} />
+      </span>
       {pane.branch && (
         <span className="flex shrink-0 items-center gap-1 text-xs text-muted-foreground">
           <GitBranch className="h-3 w-3" />
@@ -261,7 +277,7 @@ function PaneRow({
       <div className="ml-auto shrink-0">
         {pane.assignment ? (
           <Link
-            to={`/missions/${pane.assignment.mission}/assignments/${pane.assignment.slug}`}
+            to={`${wsPrefix}/missions/${pane.assignment.mission}/assignments/${pane.assignment.slug}`}
             className="inline-flex items-center gap-1 rounded border border-primary/30 bg-primary/10 px-1.5 py-0.5 text-xs font-medium text-primary hover:bg-primary/20"
           >
             <LinkIcon className="h-2.5 w-2.5" />

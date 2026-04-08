@@ -12,7 +12,9 @@ export function MarkdownRenderer({
   className,
   emptyState = 'No markdown content yet.',
 }: MarkdownRendererProps) {
-  if (!content.trim()) {
+  const stripped = content.replace(/<!--[\s\S]*?-->/g, '');
+
+  if (!stripped.trim()) {
     return (
       <div className="rounded-md border border-dashed border-border/80 bg-muted/30 px-3 py-4 text-sm text-muted-foreground">
         {emptyState}
@@ -22,7 +24,7 @@ export function MarkdownRenderer({
 
   return (
     <div className={cn('prose-syntaur max-w-none', className)}>
-      <ReactMarkdown>{content}</ReactMarkdown>
+      <ReactMarkdown>{stripped}</ReactMarkdown>
     </div>
   );
 }

@@ -14,10 +14,12 @@ import {
   parsePlan,
   parseScratchpad,
 } from './parser.js';
+import { toggleAcceptanceCriterion } from './acceptance-criteria.js';
 import {
   getAssignmentDetail,
   getEditableDocument,
   getMissionDetail,
+  getStatusConfig,
 } from './api.js';
 import {
   renderMission,
@@ -27,7 +29,6 @@ import {
   renderIndexAssignments,
   renderIndexPlans,
   renderIndexDecisions,
-  renderIndexSessions,
   renderStatus,
   renderResourcesIndex,
   renderMemoriesIndex,
@@ -313,7 +314,6 @@ export function createWriteRouter(missionsDir: string): Router {
           [resolve(missionDir, '_index-assignments.md'), renderIndexAssignments({ slug, title, timestamp })],
           [resolve(missionDir, '_index-plans.md'), renderIndexPlans({ slug, title, timestamp })],
           [resolve(missionDir, '_index-decisions.md'), renderIndexDecisions({ slug, title, timestamp })],
-          [resolve(missionDir, '_index-sessions.md'), renderIndexSessions({ slug, title, timestamp })],
           [resolve(missionDir, '_status.md'), renderStatus({ slug, title, timestamp })],
           [resolve(missionDir, 'resources', '_index.md'), renderResourcesIndex({ slug, title, timestamp })],
           [resolve(missionDir, 'memories', '_index.md'), renderMemoriesIndex({ slug, title, timestamp })],
@@ -509,6 +509,45 @@ export function createWriteRouter(missionsDir: string): Router {
     }
   });
 
+  router.patch('/api/missions/:slug/assignments/:aslug/acceptance-criteria/:index', async (req: Request, res: Response) => {
+    try {
+      const assignmentPath = resolve(
+        missionsDir,
+        req.params.slug,
+        'assignments',
+        req.params.aslug,
+        'assignment.md',
+      );
+      const currentContent = await readCurrentDocument(assignmentPath);
+      if (!currentContent) {
+        res.status(404).json({ error: 'Assignment not found' });
+        return;
+      }
+
+      const { checked } = req.body || {};
+      if (typeof checked !== 'boolean') {
+        res.status(400).json({ error: 'checked must be a boolean' });
+        return;
+      }
+
+      const index = Number.parseInt(req.params.index, 10);
+      const result = toggleAcceptanceCriterion(currentContent, index, checked);
+      if ('error' in result) {
+        res.status(400).json({ error: result.error });
+        return;
+      }
+
+      const nextContent = setTopLevelField(result.content, 'updated', nowTimestamp());
+      await writeFileForce(assignmentPath, nextContent);
+
+      const assignment = await getAssignmentDetail(missionsDir, req.params.slug, req.params.aslug);
+      res.json({ assignment, content: nextContent });
+    } catch (error) {
+      console.error('Error toggling acceptance criterion:', error);
+      res.status(500).json({ error: `Failed to toggle acceptance criterion: ${(error as Error).message}` });
+    }
+  });
+
   router.patch('/api/missions/:slug/assignments/:aslug/plan', async (req: Request, res: Response) => {
     try {
       const planPath = resolve(
@@ -673,6 +712,35 @@ export function createWriteRouter(missionsDir: string): Router {
     }
   });
 
+  // --- Move Workspace Endpoint ---
+
+  router.post('/api/missions/:slug/move-workspace', async (req: Request, res: Response) => {
+    try {
+      const missionPath = resolve(missionsDir, req.params.slug, 'mission.md');
+      if (!(await fileExists(missionPath))) {
+        res.status(404).json({ error: `Mission "${req.params.slug}" not found` });
+        return;
+      }
+
+      const { workspace } = req.body || {};
+      if (workspace !== null && (typeof workspace !== 'string' || !workspace.trim())) {
+        res.status(400).json({ error: 'workspace must be a non-empty string or null (for ungrouped).' });
+        return;
+      }
+
+      let content = await readFile(missionPath, 'utf-8');
+      content = setTopLevelField(content, 'workspace', workspace ?? null);
+      content = setTopLevelField(content, 'updated', nowTimestamp());
+      await writeFileForce(missionPath, content);
+
+      const mission = await getMissionDetail(missionsDir, req.params.slug);
+      res.json({ mission });
+    } catch (error) {
+      console.error('Error moving mission workspace:', error);
+      res.status(500).json({ error: `Failed to move workspace: ${(error as Error).message}` });
+    }
+  });
+
   // --- Status Override Endpoints ---
 
   router.post('/api/missions/:slug/status-override', async (req: Request, res: Response) => {
@@ -684,7 +752,8 @@ export function createWriteRouter(missionsDir: string): Router {
       }
 
       const { status } = req.body || {};
-      const validStatuses = ['pending', 'active', 'blocked', 'failed', 'completed'];
+      const config = await getStatusConfig();
+      const validStatuses = ['active', 'archived', ...config.statuses.map((s) => s.id)];
       if (status !== null && (typeof status !== 'string' || !validStatuses.includes(status))) {
         res.status(400).json({ error: `Invalid status. Must be one of: ${validStatuses.join(', ')}, or null to clear.` });
         return;
@@ -718,7 +787,8 @@ export function createWriteRouter(missionsDir: string): Router {
       }
 
       const { status } = req.body || {};
-      const validStatuses = ['pending', 'in_progress', 'blocked', 'review', 'completed', 'failed'];
+      const config = await getStatusConfig();
+      const validStatuses = config.statuses.map((s) => s.id);
       if (typeof status !== 'string' || !validStatuses.includes(status)) {
         res.status(400).json({ error: `Invalid status. Must be one of: ${validStatuses.join(', ')}.` });
         return;
@@ -748,7 +818,9 @@ export function createWriteRouter(missionsDir: string): Router {
   router.post('/api/missions/:slug/assignments/:aslug/transitions/:command', async (req: Request, res: Response) => {
     try {
       const command = req.params.command as Parameters<typeof executeTransition>[2];
-      if (!['start', 'complete', 'block', 'unblock', 'review', 'fail', 'reopen'].includes(command)) {
+      const config = await getStatusConfig();
+      const validCommands = [...new Set(config.transitions.map((t) => t.command))];
+      if (!validCommands.includes(command)) {
         res.status(400).json({ error: `Unsupported transition command "${req.params.command}"` });
         return;
       }
@@ -763,6 +835,8 @@ export function createWriteRouter(missionsDir: string): Router {
       const { reason } = req.body || {};
       const result = await executeTransition(missionDir, req.params.aslug, command, {
         reason: typeof reason === 'string' ? reason : undefined,
+        transitionTable: config.custom ? config.transitionTable : undefined,
+        terminalStatuses: config.custom ? config.terminalStatuses : undefined,
       });
 
       if (!result.success) {

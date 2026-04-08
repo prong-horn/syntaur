@@ -32,12 +32,14 @@ export {
   renderIndexAssignments,
   renderIndexPlans,
   renderIndexDecisions,
-  renderIndexSessions,
   renderStatus,
   renderResourcesIndex,
   renderMemoriesIndex,
 } from './index-stubs.js';
 export type { IndexStubParams } from './index-stubs.js';
+
+export { renderPlaybook } from './playbook.js';
+export type { PlaybookParams } from './playbook.js';
 
 export { renderCursorProtocol, renderCursorAssignment } from './cursor-rules.js';
 export type { CursorAssignmentParams } from './cursor-rules.js';

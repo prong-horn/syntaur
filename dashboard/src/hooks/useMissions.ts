@@ -1,17 +1,10 @@
 import { useState, useEffect, useCallback } from 'react';
+import { useParams } from 'react-router-dom';
 import { useWebSocket } from './useWebSocket';
 import type { WsMessage } from './useWebSocket';
-import type { ServersResponse, TrackedSession, AgentSessionsResponse } from '../types';
+import type { ServersResponse, TrackedSession, AgentSessionsResponse, PlaybooksResponse, PlaybookDetail } from '../types';
 
-export interface ProgressCounts {
-  total: number;
-  completed: number;
-  in_progress: number;
-  blocked: number;
-  pending: number;
-  review: number;
-  failed: number;
-}
+export type ProgressCounts = Record<string, number> & { total: number };
 
 export interface NeedsAttention {
   blockedCount: number;
@@ -32,13 +25,14 @@ export interface MissionSummary {
   tags: string[];
   progress: ProgressCounts;
   needsAttention: NeedsAttention;
+  workspace: string | null;
 }
 
 export interface AssignmentSummary {
   id: string;
   slug: string;
   title: string;
-  status: 'pending' | 'in_progress' | 'blocked' | 'review' | 'completed' | 'failed';
+  status: string;
   priority: 'low' | 'medium' | 'high' | 'critical';
   assignee: string | null;
   dependsOn: string[];
@@ -50,6 +44,7 @@ export interface AssignmentBoardItem extends AssignmentSummary {
   missionTitle: string;
   blockedReason: string | null;
   availableTransitions: AssignmentTransitionAction[];
+  missionWorkspace: string | null;
 }
 
 export interface ResourceSummary {
@@ -88,6 +83,7 @@ export interface MissionDetail {
   resources: ResourceSummary[];
   memories: MemorySummary[];
   dependencyGraph: string | null;
+  workspace: string | null;
 }
 
 export interface WorkspaceInfo {
@@ -104,10 +100,10 @@ export interface ExternalIdInfo {
 }
 
 export interface AssignmentTransitionAction {
-  command: 'start' | 'complete' | 'block' | 'unblock' | 'review' | 'fail' | 'reopen';
+  command: string;
   label: string;
   description: string;
-  targetStatus: AssignmentSummary['status'];
+  targetStatus: string;
   disabled: boolean;
   disabledReason: string | null;
   warning: string | null;
@@ -119,7 +115,7 @@ export interface AssignmentDetail {
   missionSlug: string;
   slug: string;
   title: string;
-  status: AssignmentSummary['status'];
+  status: string;
   priority: AssignmentSummary['priority'];
   assignee: string | null;
   dependsOn: string[];
@@ -144,7 +140,7 @@ export interface AttentionItem {
   missionTitle: string;
   assignmentSlug: string;
   assignmentTitle: string;
-  status: AssignmentSummary['status'];
+  status: string;
   reason: string;
   updated: string;
   href: string;
@@ -226,7 +222,7 @@ export interface HelpResponse {
     href?: string;
   }>;
   statusGuide: Array<{
-    status: AssignmentSummary['status'];
+    status: string;
     meaning: string;
     useWhen: string;
   }>;
@@ -263,7 +259,8 @@ export type EditableDocumentType =
   | 'plan'
   | 'scratchpad'
   | 'handoff'
-  | 'decision-record';
+  | 'decision-record'
+  | 'playbook';
 
 export interface EditableDocumentResponse {
   documentType: EditableDocumentType;
@@ -281,7 +278,7 @@ interface FetchState<T> {
   refetch: () => void;
 }
 
-function useFetch<T>(url: string | null, websocketScope?: 'missions' | 'mission' | 'assignment' | 'assignments' | 'overview' | 'attention' | 'servers' | 'agent-sessions'): FetchState<T> {
+function useFetch<T>(url: string | null, websocketScope?: 'missions' | 'mission' | 'assignment' | 'assignments' | 'overview' | 'attention' | 'servers' | 'agent-sessions' | 'playbooks'): FetchState<T> {
   const [data, setData] = useState<T | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -344,6 +341,10 @@ function useFetch<T>(url: string | null, websocketScope?: 'missions' | 'mission'
     if (message.type === 'agent-sessions-updated' && websocketScope === 'agent-sessions') {
       refetch();
     }
+
+    if (message.type === 'playbooks-updated' && websocketScope === 'playbooks') {
+      refetch();
+    }
   });
 
   return { data, loading, error, refetch };
@@ -351,6 +352,16 @@ function useFetch<T>(url: string | null, websocketScope?: 'missions' | 'mission'
 
 export function useMissions(): FetchState<MissionSummary[]> {
   return useFetch<MissionSummary[]>('/api/missions', 'missions');
+}
+
+export function useWorkspaces(): FetchState<{ workspaces: string[]; hasUngrouped: boolean }> {
+  return useFetch<{ workspaces: string[]; hasUngrouped: boolean }>('/api/workspaces', 'missions');
+}
+
+/** Returns the URL prefix for workspace-scoped links: '/w/syntaur' or '' */
+export function useWorkspacePrefix(): string {
+  const { workspace } = useParams<{ workspace?: string }>();
+  return workspace ? `/w/${workspace}` : '';
 }
 
 export function useOverview(): FetchState<OverviewResponse> {
@@ -415,4 +426,13 @@ export function useAssignmentSessions(
       ? `/api/agent-sessions/${missionSlug}?assignment=${assignmentSlug}`
       : null;
   return useFetch<AgentSessionsResponse>(url, 'agent-sessions');
+}
+
+export function usePlaybooks(): FetchState<PlaybooksResponse> {
+  return useFetch<PlaybooksResponse>('/api/playbooks', 'playbooks');
+}
+
+export function usePlaybook(slug: string | undefined): FetchState<PlaybookDetail> {
+  const url = slug ? `/api/playbooks/${slug}` : null;
+  return useFetch<PlaybookDetail>(url, 'playbooks');
 }

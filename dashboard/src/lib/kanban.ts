@@ -1,4 +1,4 @@
-export const MISSION_BOARD_COLUMNS = [
+export const DEFAULT_MISSION_BOARD_COLUMNS = [
   'pending',
   'active',
   'blocked',
@@ -7,7 +7,9 @@ export const MISSION_BOARD_COLUMNS = [
   'archived',
 ] as const;
 
-export const ASSIGNMENT_BOARD_COLUMNS = [
+export const MISSION_BOARD_COLUMNS = DEFAULT_MISSION_BOARD_COLUMNS;
+
+export const DEFAULT_ASSIGNMENT_BOARD_COLUMNS = [
   'pending',
   'in_progress',
   'blocked',
@@ -15,6 +17,14 @@ export const ASSIGNMENT_BOARD_COLUMNS = [
   'completed',
   'failed',
 ] as const;
+
+export const ASSIGNMENT_BOARD_COLUMNS = DEFAULT_ASSIGNMENT_BOARD_COLUMNS;
+
+export function getAssignmentColumns(configOrder?: string[]): string[] {
+  return configOrder && configOrder.length > 0
+    ? configOrder
+    : [...DEFAULT_ASSIGNMENT_BOARD_COLUMNS];
+}
 
 export function moveItem<T>(
   items: T[],

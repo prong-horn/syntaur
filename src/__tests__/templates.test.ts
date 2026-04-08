@@ -31,7 +31,6 @@ describe('renderManifest', () => {
     expect(out).toContain('(./_index-assignments.md)');
     expect(out).toContain('(./_index-plans.md)');
     expect(out).toContain('(./_index-decisions.md)');
-    expect(out).toContain('(./_index-sessions.md)');
     expect(out).toContain('(./_status.md)');
     expect(out).toContain('(./resources/_index.md)');
     expect(out).toContain('(./memories/_index.md)');
@@ -152,7 +151,6 @@ describe('renderAssignment', () => {
     expect(out).toContain('## Objective');
     expect(out).toContain('## Acceptance Criteria');
     expect(out).toContain('## Context');
-    expect(out).toContain('## Sessions');
     expect(out).toContain('## Questions & Answers');
     expect(out).toContain('## Progress');
     expect(out).toContain('## Links');

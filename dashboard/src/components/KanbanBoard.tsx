@@ -1,4 +1,4 @@
-import { Fragment, type DragEvent, type ReactNode, useMemo, useState } from 'react';
+import { Fragment, type DragEvent, type ReactNode, useMemo, useRef, useState } from 'react';
 import { cn } from '../lib/utils';
 
 export interface KanbanColumn {
@@ -48,6 +48,7 @@ export function KanbanBoard<T>({
 }: KanbanBoardProps<T>) {
   const [draggedId, setDraggedId] = useState<string | null>(null);
   const [dropTarget, setDropTarget] = useState<DropTarget | null>(null);
+  const mouseDownTarget = useRef<EventTarget | null>(null);
 
   const itemsById = useMemo(
     () => new Map(items.map((item) => [getItemId(item), item])),
@@ -142,7 +143,13 @@ export function KanbanBoard<T>({
   }
 
   return (
-    <div className="overflow-x-auto pb-2">
+    <div
+      className="relative overflow-x-auto pb-2"
+      style={{
+        scrollbarColor: 'hsl(var(--border)) transparent',
+        scrollbarWidth: 'thin',
+      }}
+    >
       <div className="grid min-w-max auto-cols-[minmax(260px,320px)] grid-flow-col gap-4">
         {groupedColumns.map(({ column, items: columnItems }) => {
           const validation = getDropValidation(column.id);
@@ -205,7 +212,17 @@ export function KanbanBoard<T>({
                       />
                       <div
                         draggable={Boolean(onMove)}
-                        onDragStart={(event) => handleDragStart(event, itemId)}
+                        onMouseDown={(e) => {
+                          mouseDownTarget.current = e.target;
+                        }}
+                        onDragStart={(event) => {
+                          const target = mouseDownTarget.current as HTMLElement | null;
+                          if (target?.closest('a, button')) {
+                            event.preventDefault();
+                            return;
+                          }
+                          handleDragStart(event, itemId);
+                        }}
                         onDragEnd={clearDragState}
                         className={cn(
                           'transition',

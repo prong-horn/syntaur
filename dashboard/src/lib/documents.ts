@@ -9,6 +9,7 @@ interface FrontmatterModel {
 export interface MissionEditorState {
   title: string;
   slug: string;
+  workspace: string;
   archived: boolean;
   archivedAt: string;
   archivedReason: string;
@@ -36,6 +37,15 @@ export interface PlanEditorState {
 
 export interface ScratchpadEditorState {
   assignment: string;
+  body: string;
+}
+
+export interface PlaybookEditorState {
+  name: string;
+  slug: string;
+  description: string;
+  whenToUse: string;
+  tags: string;
   body: string;
 }
 
@@ -186,6 +196,7 @@ export function parseMissionEditorState(content: string): MissionEditorState {
   return {
     title: getScalar(model, 'title'),
     slug: getScalar(model, 'slug'),
+    workspace: getScalar(model, 'workspace'),
     archived: getBoolean(model, 'archived'),
     archivedAt: getScalar(model, 'archivedAt'),
     archivedReason: getScalar(model, 'archivedReason'),
@@ -203,6 +214,7 @@ export function updateMissionContent(
 
   setScalar(model, 'title', next.title);
   setScalar(model, 'slug', next.slug);
+  setScalar(model, 'workspace', next.workspace || null);
   setScalar(model, 'archived', next.archived);
   setScalar(model, 'archivedAt', next.archivedAt || null);
   setScalar(model, 'archivedReason', next.archivedReason || null);
@@ -291,6 +303,35 @@ export function updateScratchpadContent(
   return serializeFrontmatterModel(model);
 }
 
+export function parsePlaybookEditorState(content: string): PlaybookEditorState {
+  const model = parseFrontmatterModel(content);
+  return {
+    name: getScalar(model, 'name'),
+    slug: getScalar(model, 'slug'),
+    description: getScalar(model, 'description'),
+    whenToUse: getScalar(model, 'when_to_use'),
+    tags: getStringList(model, 'tags').join(', '),
+    body: model.body,
+  };
+}
+
+export function updatePlaybookContent(
+  content: string,
+  updates: Partial<PlaybookEditorState>,
+): string {
+  const model = parseFrontmatterModel(content);
+  const next = { ...parsePlaybookEditorState(content), ...updates };
+
+  setScalar(model, 'name', next.name);
+  setScalar(model, 'slug', next.slug);
+  setScalar(model, 'description', next.description || null);
+  setScalar(model, 'when_to_use', next.whenToUse || null);
+  setStringList(model, 'tags', commaListToArray(next.tags));
+  model.body = next.body;
+
+  return serializeFrontmatterModel(model);
+}
+
 export function normalizeEditorContent(
   type: EditableDocumentType,
   content: string,
@@ -305,6 +346,8 @@ export function normalizeEditorContent(
       return updatePlanContent(content, updates as Partial<PlanEditorState>);
     case 'scratchpad':
       return updateScratchpadContent(content, updates as Partial<ScratchpadEditorState>);
+    case 'playbook':
+      return updatePlaybookContent(content, updates as Partial<PlaybookEditorState>);
     default:
       return content;
   }

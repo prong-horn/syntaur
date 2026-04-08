@@ -6,6 +6,11 @@ The `syntaur setup-adapter codex` or `syntaur setup-adapter opencode`
 command generates `AGENTS.md` dynamically in your workspace with
 mission and assignment context filled in.
 
+The generated file now does two things:
+
+1. embeds the assignment-specific Syntaur protocol context
+2. points Codex at the reusable Syntaur Codex plugin workflows (`syntaur-protocol`, `grab-assignment`, `plan-assignment`, `complete-assignment`, and related helpers) when that plugin is installed globally
+
 See the rendered output by running:
   syntaur setup-adapter codex --mission <slug> --assignment <slug>
   syntaur setup-adapter opencode --mission <slug> --assignment <slug>

@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom';
 import { MoonStar, Plus, SunMedium, Menu } from 'lucide-react';
 import { useTheme } from '../theme';
+import { useWorkspacePrefix } from '../hooks/useMissions';
 
 interface Breadcrumb {
   label: string;
@@ -20,6 +21,7 @@ export function TopBar({
   missionSlug,
   onOpenMobileNav,
 }: TopBarProps) {
+  const wsPrefix = useWorkspacePrefix();
   const { resolvedTheme, toggleTheme } = useTheme();
 
   return (
@@ -34,32 +36,35 @@ export function TopBar({
           <Menu className="h-4 w-4" />
         </button>
 
-        <div className="min-w-0 flex-1 space-y-1">
-          {breadcrumbs.length > 0 ? (
-            <nav className="flex flex-wrap items-center gap-2 text-xs font-medium uppercase tracking-[0.1em] text-muted-foreground">
-              {breadcrumbs.map((breadcrumb, index) => (
-                <span key={breadcrumb.path} className="flex items-center gap-2">
-                  {index > 0 ? <span>/</span> : null}
-                  <Link to={breadcrumb.path} className="hover:text-foreground">
-                    {breadcrumb.label}
-                  </Link>
-                </span>
-              ))}
-            </nav>
-          ) : null}
-          <h1 className="truncate text-lg font-semibold text-foreground">{title}</h1>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2">
+            {breadcrumbs.length > 1 ? (
+              <nav className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-[0.1em] text-muted-foreground">
+                {breadcrumbs.slice(0, -1).map((breadcrumb, index) => (
+                  <span key={breadcrumb.path} className="flex items-center gap-1.5">
+                    {index > 0 ? <span>/</span> : null}
+                    <Link to={breadcrumb.path} className="hover:text-foreground">
+                      {breadcrumb.label}
+                    </Link>
+                  </span>
+                ))}
+                <span>/</span>
+              </nav>
+            ) : null}
+            <h1 className="truncate text-base font-semibold text-foreground">{title}</h1>
+          </div>
         </div>
 
         <div className="flex items-center gap-2">
-          <Link className="shell-action" to="/help">
+          <Link className="shell-action" to={`${wsPrefix}/help`}>
             Help
           </Link>
-          <Link className="shell-action" to="/create/mission">
+          <Link className="shell-action" to={`${wsPrefix}/create/mission`}>
             <Plus className="h-4 w-4" />
             <span>New Mission</span>
           </Link>
           {missionSlug ? (
-            <Link className="shell-action" to={`/missions/${missionSlug}/create/assignment`}>
+            <Link className="shell-action" to={`${wsPrefix}/missions/${missionSlug}/create/assignment`}>
               <Plus className="h-4 w-4" />
               <span>New Assignment</span>
             </Link>

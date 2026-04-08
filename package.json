@@ -10,6 +10,8 @@
   "files": [
     "dist",
     "bin",
+    ".agents",
+    "plugins",
     "plugin",
     "dashboard/dist"
   ],
@@ -28,15 +30,22 @@
     "node": ">=20.0.0"
   },
   "dependencies": {
+    "better-sqlite3": "^11.0.0",
     "chokidar": "^4.0.0",
     "commander": "^13.0.0",
     "express": "^5.0.1",
+    "fuse.js": "^7.1.0",
+    "ink": "^6.8.0",
+    "ink-text-input": "^6.0.0",
     "open": "^10.0.0",
+    "react": "^19.2.4",
     "ws": "^8.0.0"
   },
   "devDependencies": {
+    "@types/better-sqlite3": "^7.6.0",
     "@types/express": "^5.0.6",
     "@types/node": "^20.0.0",
+    "@types/react": "^19.2.14",
     "@types/ws": "^8.0.0",
     "@vitejs/plugin-react": "^6.0.1",
     "tsup": "^8.0.0",

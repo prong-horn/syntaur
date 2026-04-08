@@ -1,7 +1,31 @@
 import { readFile } from 'node:fs/promises';
 import { resolve, isAbsolute } from 'node:path';
 import { syntaurRoot, defaultMissionDir, expandHome } from './paths.js';
-import { fileExists } from './fs.js';
+import { fileExists, writeFileForce } from './fs.js';
+
+export interface StatusDefinition {
+  id: string;
+  label: string;
+  description?: string;
+  color?: string;
+  icon?: string;
+  terminal?: boolean;
+}
+
+export interface StatusTransition {
+  from: string;
+  command: string;
+  to: string;
+  label?: string;
+  description?: string;
+  requiresReason?: boolean;
+}
+
+export interface StatusConfig {
+  statuses: StatusDefinition[];
+  order: string[];
+  transitions: StatusTransition[];
+}
 
 export interface SyntaurConfig {
   version: string;
@@ -10,6 +34,7 @@ export interface SyntaurConfig {
     trustLevel: 'low' | 'medium' | 'high';
     autoApprove: boolean;
   };
+  statuses: StatusConfig | null;
 }
 
 const DEFAULT_CONFIG: SyntaurConfig = {
@@ -19,6 +44,7 @@ const DEFAULT_CONFIG: SyntaurConfig = {
     trustLevel: 'medium',
     autoApprove: false,
   },
+  statuses: null,
 };
 
 function parseFrontmatter(content: string): Record<string, string> {
@@ -46,6 +72,233 @@ function parseFrontmatter(content: string): Record<string, string> {
     }
   }
   return result;
+}
+
+function parseStatusConfig(content: string): StatusConfig | null {
+  const match = content.match(/^---\n([\s\S]*?)\n---/);
+  if (!match) return null;
+  const fmBlock = match[1];
+
+  // Check if there's a top-level statuses: section
+  const statusesStart = fmBlock.match(/^statuses:\s*$/m);
+  if (!statusesStart) return null;
+
+  // Extract the statuses block (everything indented after "statuses:")
+  const startIdx = fmBlock.indexOf(statusesStart[0]) + statusesStart[0].length;
+  const remaining = fmBlock.slice(startIdx);
+
+  const statuses: StatusDefinition[] = [];
+  const order: string[] = [];
+  const transitions: StatusTransition[] = [];
+
+  // Parse sub-sections: definitions, order, transitions
+  let currentSection: 'definitions' | 'order' | 'transitions' | null = null;
+  const lines = remaining.split('\n');
+
+  function parseListEntry(lineIdx: number, baseIndent: number): { entry: Record<string, string>; consumed: number } {
+    const entry: Record<string, string> = {};
+    const firstLine = lines[lineIdx].trimStart().slice(2).trim();
+    const colonIdx = firstLine.indexOf(':');
+    if (colonIdx > 0) {
+      entry[firstLine.slice(0, colonIdx).trim()] = firstLine.slice(colonIdx + 1).trim();
+    }
+    let consumed = 1;
+    for (let i = lineIdx + 1; i < lines.length; i++) {
+      const next = lines[i];
+      const nextTrimmed = next.trimStart();
+      const nextIndent = next.length - nextTrimmed.length;
+      if (nextIndent <= baseIndent || nextTrimmed.startsWith('- ')) break;
+      const ci = nextTrimmed.indexOf(':');
+      if (ci > 0) {
+        entry[nextTrimmed.slice(0, ci).trim()] = nextTrimmed.slice(ci + 1).trim();
+      }
+      consumed++;
+    }
+    return { entry, consumed };
+  }
+
+  for (let lineIdx = 0; lineIdx < lines.length; lineIdx++) {
+    const line = lines[lineIdx];
+    const trimmed = line.trimStart();
+    const indent = line.length - trimmed.length;
+
+    // Top-level key under statuses (indent 2)
+    if (indent === 2 && trimmed.endsWith(':')) {
+      const key = trimmed.slice(0, -1).trim();
+      if (key === 'definitions') currentSection = 'definitions';
+      else if (key === 'order') currentSection = 'order';
+      else if (key === 'transitions') currentSection = 'transitions';
+      else currentSection = null;
+      continue;
+    }
+
+    // Stop if we hit a new top-level key (no indent)
+    if (indent === 0 && trimmed.includes(':')) break;
+
+    if (currentSection === 'order' && indent >= 4 && trimmed.startsWith('- ')) {
+      order.push(trimmed.slice(2).trim());
+      continue;
+    }
+
+    if (currentSection === 'definitions' && indent >= 4 && trimmed.startsWith('- ')) {
+      const { entry, consumed } = parseListEntry(lineIdx, indent);
+      if (entry['id']) {
+        statuses.push({
+          id: entry['id'],
+          label: entry['label'] ?? entry['id'],
+          description: entry['description'],
+          color: entry['color'],
+          icon: entry['icon'],
+          terminal: entry['terminal'] === 'true',
+        });
+      }
+      lineIdx += consumed - 1; // skip consumed continuation lines
+      continue;
+    }
+
+    if (currentSection === 'transitions' && indent >= 4 && trimmed.startsWith('- ')) {
+      const { entry, consumed } = parseListEntry(lineIdx, indent);
+      if (entry['from'] && entry['command'] && entry['to']) {
+        transitions.push({
+          from: entry['from'],
+          command: entry['command'],
+          to: entry['to'],
+          label: entry['label'],
+          description: entry['description'],
+          requiresReason: entry['requiresReason'] === 'true',
+        });
+      }
+      lineIdx += consumed - 1;
+      continue;
+    }
+  }
+
+  if (statuses.length === 0) return null;
+
+  return {
+    statuses,
+    order: order.length > 0 ? order : statuses.map((s) => s.id),
+    transitions,
+  };
+}
+
+function serializeStatusConfig(statuses: StatusConfig): string {
+  const lines: string[] = [];
+  lines.push('statuses:');
+
+  // definitions
+  lines.push('  definitions:');
+  for (const s of statuses.statuses) {
+    lines.push(`    - id: ${s.id}`);
+    lines.push(`      label: ${s.label}`);
+    if (s.description) lines.push(`      description: ${s.description}`);
+    if (s.color) lines.push(`      color: ${s.color}`);
+    if (s.icon) lines.push(`      icon: ${s.icon}`);
+    if (s.terminal) lines.push(`      terminal: true`);
+  }
+
+  // order
+  lines.push('  order:');
+  for (const id of statuses.order) {
+    lines.push(`    - ${id}`);
+  }
+
+  // transitions
+  if (statuses.transitions.length > 0) {
+    lines.push('  transitions:');
+    for (const t of statuses.transitions) {
+      lines.push(`    - from: ${t.from}`);
+      lines.push(`      command: ${t.command}`);
+      lines.push(`      to: ${t.to}`);
+      if (t.label) lines.push(`      label: ${t.label}`);
+      if (t.description) lines.push(`      description: ${t.description}`);
+      if (t.requiresReason) lines.push(`      requiresReason: true`);
+    }
+  }
+
+  return lines.join('\n');
+}
+
+export async function writeStatusConfig(statuses: StatusConfig): Promise<void> {
+  const configPath = resolve(syntaurRoot(), 'config.md');
+  const statusBlock = serializeStatusConfig(statuses);
+
+  if (!(await fileExists(configPath))) {
+    // Create new config file with defaults + statuses
+    const content = `---\nversion: "1.0"\ndefaultMissionDir: ~/missions\n${statusBlock}\n---\n`;
+    await writeFileForce(configPath, content);
+    return;
+  }
+
+  const existing = await readFile(configPath, 'utf-8');
+  const fmMatch = existing.match(/^(---\n)([\s\S]*?)\n(---)/);
+  if (!fmMatch) {
+    // No frontmatter — wrap in new frontmatter
+    const content = `---\nversion: "1.0"\n${statusBlock}\n---\n${existing}`;
+    await writeFileForce(configPath, content);
+    return;
+  }
+
+  const fmBlock = fmMatch[2];
+  const afterFrontmatter = existing.slice(fmMatch[0].length);
+
+  // Remove existing statuses: block from frontmatter
+  const statusesStart = fmBlock.match(/^statuses:\s*$/m);
+  let cleanedFm: string;
+  if (statusesStart) {
+    const startIdx = fmBlock.indexOf(statusesStart[0]);
+    const before = fmBlock.slice(0, startIdx);
+    const after = fmBlock.slice(startIdx + statusesStart[0].length);
+    // Skip all indented lines (belonging to statuses block)
+    const remaining = after.split('\n');
+    let endIdx = 0;
+    for (let i = 0; i < remaining.length; i++) {
+      const line = remaining[i];
+      if (line.trim() === '') { endIdx = i + 1; continue; }
+      if (line.length > 0 && line[0] !== ' ') break;
+      endIdx = i + 1;
+    }
+    cleanedFm = before + remaining.slice(endIdx).join('\n');
+  } else {
+    cleanedFm = fmBlock;
+  }
+
+  // Trim trailing whitespace/newlines from cleaned frontmatter
+  cleanedFm = cleanedFm.replace(/\n+$/, '');
+
+  const newContent = `---\n${cleanedFm}\n${statusBlock}\n---${afterFrontmatter}`;
+  await writeFileForce(configPath, newContent);
+}
+
+export async function deleteStatusConfig(): Promise<void> {
+  const configPath = resolve(syntaurRoot(), 'config.md');
+  if (!(await fileExists(configPath))) return;
+
+  const existing = await readFile(configPath, 'utf-8');
+  const fmMatch = existing.match(/^(---\n)([\s\S]*?)\n(---)/);
+  if (!fmMatch) return;
+
+  const fmBlock = fmMatch[2];
+  const afterFrontmatter = existing.slice(fmMatch[0].length);
+
+  const statusesStart = fmBlock.match(/^statuses:\s*$/m);
+  if (!statusesStart) return;
+
+  const startIdx = fmBlock.indexOf(statusesStart[0]);
+  const before = fmBlock.slice(0, startIdx);
+  const after = fmBlock.slice(startIdx + statusesStart[0].length);
+  const remaining = after.split('\n');
+  let endIdx = 0;
+  for (let i = 0; i < remaining.length; i++) {
+    const line = remaining[i];
+    if (line.trim() === '') { endIdx = i + 1; continue; }
+    if (line.length > 0 && line[0] !== ' ') break;
+    endIdx = i + 1;
+  }
+  const cleanedFm = (before + remaining.slice(endIdx).join('\n')).replace(/\n+$/, '');
+
+  const newContent = `---\n${cleanedFm}\n---${afterFrontmatter}`;
+  await writeFileForce(configPath, newContent);
 }
 
 export async function readConfig(): Promise<SyntaurConfig> {
@@ -82,5 +335,6 @@ export async function readConfig(): Promise<SyntaurConfig> {
         fm['agentDefaults.autoApprove'] === 'true' ||
         DEFAULT_CONFIG.agentDefaults.autoApprove,
     },
+    statuses: parseStatusConfig(content),
   };
 }

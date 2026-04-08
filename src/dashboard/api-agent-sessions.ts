@@ -6,12 +6,16 @@ import {
   listMissionSessions,
   appendSession,
   updateSessionStatus,
+  deleteSessions,
   reconcileActiveSessions,
 } from './agent-sessions.js';
 import { fileExists } from '../utils/fs.js';
-import type { AgentSessionStatus } from './types.js';
+import type { AgentSessionStatus, WsMessage } from './types.js';
 
-export function createAgentSessionsRouter(missionsDir: string): Router {
+export function createAgentSessionsRouter(
+  missionsDir: string,
+  broadcast?: (msg: WsMessage) => void,
+): Router {
   const router = Router();
 
   // GET /api/agent-sessions — all sessions across all missions
@@ -46,31 +50,35 @@ export function createAgentSessionsRouter(missionsDir: string): Router {
   // POST /api/agent-sessions — register a new session
   router.post('/', async (req, res) => {
     try {
-      const { missionSlug, assignmentSlug, agent, sessionId, path } = req.body;
+      const { missionSlug, assignmentSlug, agent, sessionId, path, description } = req.body;
 
-      if (!missionSlug || !assignmentSlug || !agent) {
-        res.status(400).json({ error: 'missionSlug, assignmentSlug, and agent are required' });
+      if (!agent) {
+        res.status(400).json({ error: 'agent is required' });
         return;
       }
 
-      const missionDir = resolve(missionsDir, missionSlug);
-      if (!(await fileExists(missionDir))) {
-        res.status(404).json({ error: `Mission "${missionSlug}" not found` });
-        return;
+      if (missionSlug) {
+        const missionDir = resolve(missionsDir, missionSlug);
+        if (!(await fileExists(missionDir))) {
+          res.status(404).json({ error: `Mission "${missionSlug}" not found` });
+          return;
+        }
       }
 
       const id = sessionId || randomUUID();
       const session = {
-        missionSlug,
-        assignmentSlug,
+        missionSlug: missionSlug || null,
+        assignmentSlug: assignmentSlug || null,
         agent,
         sessionId: id,
         started: new Date().toISOString(),
         status: 'active' as AgentSessionStatus,
         path: path || '',
+        description: description || null,
       };
 
-      await appendSession(missionDir, session);
+      await appendSession('', session);
+      broadcast?.({ type: 'agent-sessions-updated', timestamp: new Date().toISOString() });
       res.status(201).json({ sessionId: id });
     } catch (error) {
       res.status(500).json({ error: error instanceof Error ? error.message : 'Registration failed' });
@@ -81,10 +89,10 @@ export function createAgentSessionsRouter(missionsDir: string): Router {
   router.patch('/:sessionId/status', async (req, res) => {
     try {
       const { sessionId } = req.params;
-      const { status, missionSlug } = req.body;
+      const { status } = req.body;
 
-      if (!status || !missionSlug) {
-        res.status(400).json({ error: 'status and missionSlug are required' });
+      if (!status) {
+        res.status(400).json({ error: 'status is required' });
         return;
       }
 
@@ -93,21 +101,34 @@ export function createAgentSessionsRouter(missionsDir: string): Router {
         return;
       }
 
-      const missionDir = resolve(missionsDir, missionSlug);
-      if (!(await fileExists(missionDir))) {
-        res.status(404).json({ error: `Mission "${missionSlug}" not found` });
-        return;
-      }
-
-      const updated = await updateSessionStatus(missionDir, sessionId, status);
+      const updated = await updateSessionStatus('', sessionId, status);
       if (!updated) {
         res.status(404).json({ error: `Session "${sessionId}" not found` });
         return;
       }
 
+      broadcast?.({ type: 'agent-sessions-updated', timestamp: new Date().toISOString() });
       res.json({ updated: true });
     } catch (error) {
       res.status(500).json({ error: error instanceof Error ? error.message : 'Update failed' });
+    }
+  });
+
+  // DELETE /api/agent-sessions — delete one or more sessions
+  router.delete('/', async (req, res) => {
+    try {
+      const { sessionIds } = req.body;
+
+      if (!Array.isArray(sessionIds) || sessionIds.length === 0) {
+        res.status(400).json({ error: 'sessionIds must be a non-empty array' });
+        return;
+      }
+
+      const deleted = await deleteSessions(sessionIds);
+      broadcast?.({ type: 'agent-sessions-updated', timestamp: new Date().toISOString() });
+      res.json({ deleted });
+    } catch (error) {
+      res.status(500).json({ error: error instanceof Error ? error.message : 'Delete failed' });
     }
   });
 

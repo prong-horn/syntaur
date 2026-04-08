@@ -40,12 +40,6 @@ Implement Express.js middleware that validates JWT access tokens on protected ro
 
 Depends on the database schema from [design-auth-schema](../design-auth-schema/assignment.md). The schema is complete — see the [handoff notes](../design-auth-schema/handoff.md) for integration details. Key table: `sessions` with `jti` column for token validation. See [Auth Requirements](../../resources/auth-requirements.md) for full specs.
 
-## Sessions
-
-| Session ID | Agent | Started | Ended | Status |
-|------------|-------|---------|-------|--------|
-| tmux:syntaur-jwt-1 | claude-1 | 2026-03-17T10:30:00Z | null | active |
-
 ## Questions & Answers
 
 ### Q: Should the refresh token endpoint require the old access token or just the refresh token?

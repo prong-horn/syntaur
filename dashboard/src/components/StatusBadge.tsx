@@ -77,14 +77,19 @@ export function StatusBadge({
   className,
   showIcon = true,
 }: StatusBadgeProps) {
-  const meta = STATUS_META[status as keyof typeof STATUS_META] ?? STATUS_META.pending;
+  const meta = STATUS_META[status as keyof typeof STATUS_META] ?? {
+    label: status.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()),
+    description: `Status: ${status}`,
+    className: 'border-slate-300 bg-slate-100 text-slate-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-400',
+    icon: CircleDot,
+  };
   const Icon = meta.icon;
 
   return (
     <span
       title={meta.description}
       className={cn(
-        'inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-xs font-semibold tracking-wide',
+        'inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border px-2 py-0.5 text-xs font-semibold tracking-wide',
         meta.className,
         className,
       )}
@@ -96,5 +101,5 @@ export function StatusBadge({
 }
 
 export function getStatusDescription(status: string): string {
-  return (STATUS_META[status as keyof typeof STATUS_META] ?? STATUS_META.pending).description;
+  return (STATUS_META[status as keyof typeof STATUS_META])?.description ?? `Status: ${status}`;
 }

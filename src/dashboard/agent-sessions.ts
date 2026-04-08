@@ -1,184 +1,148 @@
-import { readdir, readFile } from 'node:fs/promises';
+import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
-import { fileExists, writeFileForce } from '../utils/fs.js';
+import { fileExists } from '../utils/fs.js';
+import { getSessionDb } from './session-db.js';
 import type { AgentSession, AgentSessionStatus } from './types.js';
 
-/**
- * Parse the markdown table rows from a mission's _index-sessions.md file.
- */
-export async function parseSessionsIndex(
-  missionDir: string,
-  missionSlug: string,
-): Promise<AgentSession[]> {
-  const filePath = resolve(missionDir, '_index-sessions.md');
-  if (!(await fileExists(filePath))) return [];
+interface SessionRow {
+  session_id: string;
+  mission_slug: string | null;
+  assignment_slug: string | null;
+  agent: string;
+  started: string;
+  ended: string | null;
+  status: string;
+  path: string | null;
+  description: string | null;
+}
 
-  const raw = await readFile(filePath, 'utf-8');
-  const sessions: AgentSession[] = [];
-
-  // Find the table body (skip frontmatter, heading, header row, separator row)
-  const lines = raw.split('\n');
-  let inTable = false;
-  let headerSeen = false;
-
-  for (const line of lines) {
-    const trimmed = line.trim();
-    if (!trimmed) continue;
-
-    // Detect table header
-    if (trimmed.startsWith('| Assignment') || trimmed.startsWith('|Assignment')) {
-      inTable = true;
-      headerSeen = false;
-      continue;
-    }
-
-    // Skip separator row
-    if (inTable && !headerSeen && trimmed.match(/^\|[-\s|]+\|$/)) {
-      headerSeen = true;
-      continue;
-    }
-
-    // Parse data rows
-    if (inTable && headerSeen && trimmed.startsWith('|')) {
-      const cells = trimmed
-        .split('|')
-        .slice(1, -1) // remove leading/trailing empty from split
-        .map((c) => c.trim());
-
-      if (cells.length >= 6) {
-        sessions.push({
-          assignmentSlug: cells[0],
-          agent: cells[1],
-          sessionId: cells[2],
-          started: cells[3],
-          status: (cells[4] as AgentSessionStatus) || 'active',
-          path: cells[5],
-          missionSlug,
-        });
-      }
-    }
-  }
-
-  return sessions;
+function rowToSession(row: SessionRow): AgentSession {
+  return {
+    sessionId: row.session_id,
+    missionSlug: row.mission_slug ?? null,
+    assignmentSlug: row.assignment_slug ?? null,
+    agent: row.agent,
+    started: row.started,
+    ended: row.ended ?? null,
+    status: row.status as AgentSessionStatus,
+    path: row.path ?? '',
+    description: row.description ?? null,
+  };
 }
 
 /**
- * Append a new session row to a mission's _index-sessions.md.
+ * Query sessions for a specific mission.
+ */
+export async function parseSessionsIndex(
+  _missionDir: string,
+  missionSlug: string,
+): Promise<AgentSession[]> {
+  const db = getSessionDb();
+  const rows = db
+    .prepare('SELECT * FROM sessions WHERE mission_slug = ? ORDER BY started DESC')
+    .all(missionSlug) as SessionRow[];
+  return rows.map(rowToSession);
+}
+
+/**
+ * Insert a new session into the database.
  */
 export async function appendSession(
-  missionDir: string,
+  _missionDir: string,
   session: AgentSession,
 ): Promise<void> {
-  const filePath = resolve(missionDir, '_index-sessions.md');
-  if (!(await fileExists(filePath))) {
-    throw new Error(`Sessions index not found at ${filePath}`);
-  }
-
-  const raw = await readFile(filePath, 'utf-8');
-  const row = `| ${session.assignmentSlug} | ${session.agent} | ${session.sessionId} | ${session.started} | ${session.status} | ${session.path} |`;
-  const updated = raw.trimEnd() + '\n' + row + '\n';
-
-  // Update activeSessions count in frontmatter
-  const sessions = await parseSessionsIndex(missionDir, session.missionSlug);
-  const activeCount = sessions.filter((s) => s.status === 'active').length + 1;
-  const final = updated.replace(
-    /^activeSessions:\s*\d+/m,
-    `activeSessions: ${activeCount}`,
+  const db = getSessionDb();
+  db.prepare(`
+    INSERT INTO sessions (session_id, mission_slug, assignment_slug, agent, started, status, path, description)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    session.sessionId,
+    session.missionSlug ?? null,
+    session.assignmentSlug ?? null,
+    session.agent,
+    session.started,
+    session.status,
+    session.path,
+    session.description ?? null,
   );
-
-  await writeFileForce(filePath, final);
 }
 
 /**
  * Update a session's status by sessionId.
+ * Sets `ended` timestamp for terminal statuses (completed, stopped).
  */
 export async function updateSessionStatus(
-  missionDir: string,
+  _missionDir: string,
   sessionId: string,
   status: AgentSessionStatus,
 ): Promise<boolean> {
-  const filePath = resolve(missionDir, '_index-sessions.md');
-  if (!(await fileExists(filePath))) return false;
+  const db = getSessionDb();
+  const isTerminal = status === 'completed' || status === 'stopped';
 
-  const raw = await readFile(filePath, 'utf-8');
-  const lines = raw.split('\n');
-  let found = false;
+  const result = isTerminal
+    ? db
+        .prepare(
+          'UPDATE sessions SET status = ?, ended = datetime(\'now\'), updated_at = datetime(\'now\') WHERE session_id = ?',
+        )
+        .run(status, sessionId)
+    : db
+        .prepare(
+          'UPDATE sessions SET status = ?, updated_at = datetime(\'now\') WHERE session_id = ?',
+        )
+        .run(status, sessionId);
 
-  for (let i = 0; i < lines.length; i++) {
-    const trimmed = lines[i].trim();
-    if (!trimmed.startsWith('|')) continue;
-
-    const cells = trimmed
-      .split('|')
-      .slice(1, -1)
-      .map((c) => c.trim());
-
-    if (cells.length >= 5 && cells[2] === sessionId) {
-      cells[4] = status;
-      lines[i] = '| ' + cells.join(' | ') + ' |';
-      found = true;
-      break;
-    }
-  }
-
-  if (found) {
-    // Recount active sessions
-    const missionSlug = ''; // not needed for count
-    const allSessions = await parseSessionsIndex(missionDir, missionSlug);
-    // Account for the update we're about to write
-    let activeCount = 0;
-    for (const s of allSessions) {
-      activeCount += (s.sessionId === sessionId ? status : s.status) === 'active' ? 1 : 0;
-    }
-    const content = lines
-      .join('\n')
-      .replace(/^activeSessions:\s*\d+/m, `activeSessions: ${activeCount}`);
-    await writeFileForce(filePath, content);
-  }
-
-  return found;
+  return result.changes > 0;
 }
 
 /**
  * List all sessions across all missions.
  */
-export async function listAllSessions(missionsDir: string): Promise<AgentSession[]> {
-  if (!(await fileExists(missionsDir))) return [];
-
-  const entries = await readdir(missionsDir, { withFileTypes: true });
-  const allSessions: AgentSession[] = [];
-
-  for (const entry of entries) {
-    if (!entry.isDirectory()) continue;
-    const missionDir = resolve(missionsDir, entry.name);
-    const indexPath = resolve(missionDir, '_index-sessions.md');
-    if (!(await fileExists(indexPath))) continue;
-
-    const sessions = await parseSessionsIndex(missionDir, entry.name);
-    allSessions.push(...sessions);
-  }
-
-  return allSessions;
+export async function listAllSessions(_missionsDir: string): Promise<AgentSession[]> {
+  const db = getSessionDb();
+  const rows = db
+    .prepare('SELECT * FROM sessions ORDER BY started DESC')
+    .all() as SessionRow[];
+  return rows.map(rowToSession);
 }
 
 /**
  * List sessions for a specific mission, optionally filtered by assignment.
  */
 export async function listMissionSessions(
-  missionsDir: string,
+  _missionsDir: string,
   missionSlug: string,
   assignmentSlug?: string,
 ): Promise<AgentSession[]> {
-  const missionDir = resolve(missionsDir, missionSlug);
-  const sessions = await parseSessionsIndex(missionDir, missionSlug);
+  const db = getSessionDb();
+
   if (assignmentSlug) {
-    return sessions.filter((s) => s.assignmentSlug === assignmentSlug);
+    const rows = db
+      .prepare(
+        'SELECT * FROM sessions WHERE mission_slug = ? AND assignment_slug = ? ORDER BY started DESC',
+      )
+      .all(missionSlug, assignmentSlug) as SessionRow[];
+    return rows.map(rowToSession);
   }
-  return sessions;
+
+  const rows = db
+    .prepare('SELECT * FROM sessions WHERE mission_slug = ? ORDER BY started DESC')
+    .all(missionSlug) as SessionRow[];
+  return rows.map(rowToSession);
 }
 
-// Terminal assignment statuses where sessions cannot still be active
-const TERMINAL_ASSIGNMENT_STATUSES = new Set(['completed', 'failed']);
+/**
+ * Delete sessions by their IDs. Returns the number of rows deleted.
+ */
+export async function deleteSessions(sessionIds: string[]): Promise<number> {
+  if (sessionIds.length === 0) return 0;
+  const db = getSessionDb();
+  const placeholders = sessionIds.map(() => '?').join(', ');
+  const result = db
+    .prepare(`DELETE FROM sessions WHERE session_id IN (${placeholders})`)
+    .run(...sessionIds);
+  return result.changes;
+}
+
 // Statuses that imply the working session is done (review means agent finished)
 const DONE_ASSIGNMENT_STATUSES = new Set(['completed', 'failed', 'review']);
 
@@ -206,39 +170,45 @@ async function readAssignmentStatus(
 export async function reconcileActiveSessions(
   missionsDir: string,
 ): Promise<number> {
-  if (!(await fileExists(missionsDir))) return 0;
+  const db = getSessionDb();
 
-  const entries = await readdir(missionsDir, { withFileTypes: true });
-  let totalUpdated = 0;
+  // Get active sessions that are linked to a mission/assignment (standalone sessions have nothing to reconcile)
+  const activeSessions = db
+    .prepare('SELECT * FROM sessions WHERE status = \'active\' AND mission_slug IS NOT NULL AND assignment_slug IS NOT NULL')
+    .all() as SessionRow[];
 
-  for (const entry of entries) {
-    if (!entry.isDirectory()) continue;
-    const missionDir = resolve(missionsDir, entry.name);
-    const indexPath = resolve(missionDir, '_index-sessions.md');
-    if (!(await fileExists(indexPath))) continue;
+  if (activeSessions.length === 0) return 0;
 
-    const sessions = await parseSessionsIndex(missionDir, entry.name);
-    const activeSessions = sessions.filter((s) => s.status === 'active');
-    if (activeSessions.length === 0) continue;
+  // Dedupe assignment slugs per mission for status checks
+  // mission_slug and assignment_slug are guaranteed non-null by the query filter above
+  const toCheck = new Map<string, Set<string>>();
+  for (const session of activeSessions) {
+    const slugs = toCheck.get(session.mission_slug!) ?? new Set();
+    slugs.add(session.assignment_slug!);
+    toCheck.set(session.mission_slug!, slugs);
+  }
 
-    // Check assignment statuses for active sessions (dedupe by assignment slug)
-    const assignmentStatuses = new Map<string, string>();
-    const slugs = new Set(activeSessions.map((s) => s.assignmentSlug));
+  // Read assignment statuses from disk
+  const assignmentStatuses = new Map<string, string>();
+  for (const [missionSlug, slugs] of toCheck) {
+    const missionDir = resolve(missionsDir, missionSlug);
     for (const slug of slugs) {
       const status = await readAssignmentStatus(missionDir, slug);
-      if (status) assignmentStatuses.set(slug, status);
+      if (status) assignmentStatuses.set(`${missionSlug}/${slug}`, status);
     }
+  }
 
-    // Update stale sessions
-    for (const session of activeSessions) {
-      const assignmentStatus = assignmentStatuses.get(session.assignmentSlug);
-      if (!assignmentStatus || !DONE_ASSIGNMENT_STATUSES.has(assignmentStatus)) continue;
+  // Update stale sessions
+  let totalUpdated = 0;
+  for (const session of activeSessions) {
+    const key = `${session.mission_slug}/${session.assignment_slug}`;
+    const assignmentStatus = assignmentStatuses.get(key);
+    if (!assignmentStatus || !DONE_ASSIGNMENT_STATUSES.has(assignmentStatus)) continue;
 
-      const newStatus: AgentSessionStatus =
-        assignmentStatus === 'failed' ? 'stopped' : 'completed';
-      await updateSessionStatus(missionDir, session.sessionId, newStatus);
-      totalUpdated++;
-    }
+    const newStatus: AgentSessionStatus =
+      assignmentStatus === 'failed' ? 'stopped' : 'completed';
+    await updateSessionStatus('', session.session_id, newStatus);
+    totalUpdated++;
   }
 
   return totalUpdated;

@@ -28,7 +28,6 @@ You are working within the Syntaur protocol for multi-agent mission coordination
       _index-assignments.md  # Derived (read-only)
       _index-plans.md        # Derived (read-only)
       _index-decisions.md    # Derived (read-only)
-      _index-sessions.md     # Derived (read-only)
       _status.md             # Derived (read-only)
       claude.md              # Human-authored: Claude-specific instructions (read-only)
       agent.md               # Human-authored: universal agent instructions (read-only)
@@ -103,6 +102,16 @@ Use the \`syntaur\` CLI for state transitions:
 - \`syntaur block <slug> --mission <mission> --reason <text>\` -- block an assignment
 - \`syntaur unblock <slug> --mission <mission>\` -- unblock
 - \`syntaur fail <slug> --mission <mission>\` -- mark as failed
+
+## Playbooks
+
+Playbooks are user-defined behavioral rules stored in \`~/.syntaur/playbooks/\`. Read the playbook manifest before starting work:
+
+\`\`\`bash
+cat ~/.syntaur/playbooks/manifest.md
+\`\`\`
+
+Follow the rules in each playbook. They take precedence over default conventions when they conflict.
 
 ## Conventions
 

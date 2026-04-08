@@ -2,9 +2,12 @@ import type {
   HelpChecklistItem,
   HelpCommand,
   HelpResponse,
+  HelpStatusGuideEntry,
 } from './types.js';
+import { getStatusConfig } from './api.js';
 
 const CLI_COMMANDS: HelpCommand[] = [
+  // --- Core setup & scaffolding (indices 0-3) ---
   {
     command: 'syntaur init',
     description: 'Initialize the local Syntaur home directory and config scaffolding.',
@@ -25,9 +28,11 @@ const CLI_COMMANDS: HelpCommand[] = [
     description: 'Set the assignee for an assignment before work begins.',
     example: 'syntaur assign implement-overview --mission ui-overhaul --agent codex-1',
   },
+
+  // --- Lifecycle transitions (indices 4-10) ---
   {
     command: 'syntaur start',
-    description: 'Transition an assignment from pending to in_progress when dependencies are satisfied.',
+    description: 'Transition an assignment to in_progress.',
     example: 'syntaur start implement-overview --mission ui-overhaul',
   },
   {
@@ -56,9 +61,57 @@ const CLI_COMMANDS: HelpCommand[] = [
     example: 'syntaur fail implement-overview --mission ui-overhaul',
   },
   {
+    command: 'syntaur reopen',
+    description: 'Reopen a completed or failed assignment back to in_progress.',
+    example: 'syntaur reopen implement-overview --mission ui-overhaul',
+  },
+
+  // --- Dashboard (index 11) ---
+  {
     command: 'syntaur dashboard',
     description: 'Start the local dashboard UI over the mission files on disk.',
     example: 'syntaur dashboard --port 4800',
+  },
+
+  // --- Plugin & adapter setup (indices 12-14) ---
+  {
+    command: 'syntaur install-plugin',
+    description: 'Install the Syntaur Claude Code plugin via symlink.',
+    example: 'syntaur install-plugin',
+  },
+  {
+    command: 'syntaur install-codex-plugin',
+    description: 'Install the Syntaur Codex plugin and home marketplace entry.',
+    example: 'syntaur install-codex-plugin',
+  },
+  {
+    command: 'syntaur setup-adapter',
+    description: 'Generate adapter instruction files for cursor, codex, or opencode in the current directory.',
+    example: 'syntaur setup-adapter cursor --mission ui-overhaul --assignment implement-overview',
+  },
+
+  // --- Session & server tracking (index 15) ---
+  {
+    command: 'syntaur track-session',
+    description: 'Register an agent session, optionally linked to a mission and assignment.',
+    example: 'syntaur track-session --agent claude --mission ui-overhaul --assignment implement-overview',
+  },
+
+  // --- Browsing & playbooks (indices 16-18) ---
+  {
+    command: 'syntaur browse',
+    description: 'Interactive TUI browser for missions and assignments.',
+    example: 'syntaur browse',
+  },
+  {
+    command: 'syntaur create-playbook',
+    description: 'Create a new playbook with behavioral rules for agents.',
+    example: 'syntaur create-playbook "Code Review Standards"',
+  },
+  {
+    command: 'syntaur list-playbooks',
+    description: 'List all playbooks in the Syntaur home directory.',
+    example: 'syntaur list-playbooks',
   },
 ];
 
@@ -92,12 +145,52 @@ const WORKFLOW: HelpChecklistItem[] = [
   {
     title: 'Use the dashboard for triage and context',
     detail: 'Overview shows the current queue, mission pages show health, assignment pages show the execution surface.',
-    command: CLI_COMMANDS[10],
+    command: CLI_COMMANDS[11],
     href: '/',
   },
 ];
 
-export function getDashboardHelp(): HelpResponse {
+const DEFAULT_STATUS_GUIDE: Record<string, { meaning: string; useWhen: string }> = {
+  pending: {
+    meaning: 'The assignment has not started yet.',
+    useWhen: 'Use pending while waiting to start. If dependencies are unmet, pending is the normal waiting state.',
+  },
+  in_progress: {
+    meaning: 'An assigned agent is actively working the assignment.',
+    useWhen: 'Use in_progress once the work has started and dependencies are satisfied.',
+  },
+  blocked: {
+    meaning: 'The assignment hit a manual or runtime obstacle.',
+    useWhen: 'Use blocked when work hits an obstacle. Adding a blockedReason is recommended for traceability.',
+  },
+  review: {
+    meaning: 'Implementation is ready for inspection or validation.',
+    useWhen: 'Use review after active work is ready to be checked before completion.',
+  },
+  completed: {
+    meaning: 'The assignment is done.',
+    useWhen: 'Use completed when the acceptance criteria are satisfied.',
+  },
+  failed: {
+    meaning: 'The assignment could not be completed as planned.',
+    useWhen: 'Use failed when the work cannot be recovered within the current assignment.',
+  },
+};
+
+async function buildStatusGuide(): Promise<HelpStatusGuideEntry[]> {
+  const config = await getStatusConfig();
+
+  return config.statuses.map((s) => {
+    const defaults = DEFAULT_STATUS_GUIDE[s.id];
+    return {
+      status: s.id,
+      meaning: s.description ?? defaults?.meaning ?? `The assignment is in the "${s.label}" state.`,
+      useWhen: defaults?.useWhen ?? `Use ${s.id} when appropriate for the "${s.label}" workflow state.`,
+    };
+  });
+}
+
+export async function getDashboardHelp(): Promise<HelpResponse> {
   return {
     generatedAt: new Date().toISOString(),
     whatIsSyntaur: {
@@ -150,42 +243,29 @@ export function getDashboardHelp(): HelpResponse {
         description:
           'An append-only record of important decisions, rationale, and follow-up consequences.',
       },
+      {
+        term: 'Playbook',
+        description:
+          'A behavioral rule set stored in ~/.syntaur/playbooks/. Playbooks define constraints and conventions that agents must follow during execution. Manage them via the CLI or the Playbooks page.',
+      },
+      {
+        term: 'Workspace',
+        description:
+          'The repository context for an assignment, including the repository path, worktree path, branch, and parent branch. Workspace fields connect an assignment to the code being worked on and define write boundaries.',
+      },
+      {
+        term: 'Agent Session',
+        description:
+          'A tracked AI session tied to assignment work. Sessions are registered via the track-session CLI command or the Claude Code plugin and visible on the Agent Sessions page.',
+      },
+      {
+        term: 'Server',
+        description:
+          'A tracked tmux session with automatic port discovery, branch detection, and assignment linking. The Servers page shows all tracked sessions with their windows, panes, and discovered services.',
+      },
     ],
     workflow: WORKFLOW,
-    statusGuide: [
-      {
-        status: 'pending',
-        meaning: 'The assignment has not started yet.',
-        useWhen:
-          'Use pending while waiting to start. If dependencies are unmet, pending is the normal waiting state.',
-      },
-      {
-        status: 'in_progress',
-        meaning: 'An assigned agent is actively working the assignment.',
-        useWhen: 'Use in_progress once the work has started and dependencies are satisfied.',
-      },
-      {
-        status: 'blocked',
-        meaning: 'The assignment hit a manual or runtime obstacle.',
-        useWhen:
-          'Use blocked when work hits an obstacle. Adding a blockedReason is recommended for traceability.',
-      },
-      {
-        status: 'review',
-        meaning: 'Implementation is ready for inspection or validation.',
-        useWhen: 'Use review after active work is ready to be checked before completion.',
-      },
-      {
-        status: 'completed',
-        meaning: 'The assignment is done.',
-        useWhen: 'Use completed when the acceptance criteria are satisfied.',
-      },
-      {
-        status: 'failed',
-        meaning: 'The assignment could not be completed as planned.',
-        useWhen: 'Use failed when the work cannot be recovered within the current assignment.',
-      },
-    ],
+    statusGuide: await buildStatusGuide(),
     ownershipRules: [
       {
         label: 'Human-authored files',
@@ -216,33 +296,58 @@ export function getDashboardHelp(): HelpResponse {
     navigation: [
       {
         label: 'Overview',
-        description: 'Use Overview for triage, current attention items, recent activity, and first-run setup guidance.',
+        description: 'Triage hub showing current attention items, recent activity, progress stats, and first-run setup guidance.',
         href: '/',
       },
       {
         label: 'Missions',
-        description: 'Use the mission directory to browse, search, filter, and sort the work.',
+        description: 'Browse, search, filter, and sort the mission directory. Create new missions and drill into mission workspaces.',
         href: '/missions',
       },
       {
+        label: 'Assignments',
+        description: 'Cross-mission kanban board of all assignments. Drag cards between columns to change status, or filter by mission, assignee, or status.',
+        href: '/assignments',
+      },
+      {
+        label: 'Servers',
+        description: 'Tracked tmux sessions with auto-discovered ports, URLs, git branches, and links to related assignments. Register sessions manually or let autodiscovery find them.',
+        href: '/servers',
+      },
+      {
+        label: 'Agent Sessions',
+        description: 'Monitor which AI agents are currently working, what assignments they are linked to, and session duration. Sessions are registered via the Claude Code plugin or track-session CLI command.',
+        href: '/agent-sessions',
+      },
+      {
+        label: 'Playbooks',
+        description: 'Create, browse, and edit behavioral rules that agents must follow. The playbook manifest at ~/.syntaur/playbooks/manifest.md is auto-generated for inclusion in agent instructions.',
+        href: '/playbooks',
+      },
+      {
         label: 'Attention',
-        description: 'Use the attention queue to focus on blocked, failed, review, or stale assignments.',
+        description: 'Focused queue of assignments that need action: blocked, failed, in review, stale, or with unmet dependencies.',
         href: '/attention',
       },
       {
+        label: 'Help',
+        description: 'This page. Status guide, CLI quick reference, core concepts, and FAQ.',
+        href: '/help',
+      },
+      {
+        label: 'Settings',
+        description: 'Customize status definitions, labels, colors, display order, and done states. Changes apply globally across the dashboard and CLI.',
+        href: '/settings',
+      },
+      {
         label: 'Mission page',
-        description: 'Use the mission workspace for health, assignments, dependencies, and shared knowledge.',
+        description: 'The mission workspace shows health stats, assignment list, dependency graph, shared resources, and memories.',
         href: '/missions',
       },
       {
         label: 'Assignment page',
-        description: 'Use the assignment workspace for lifecycle actions, plan, scratchpad, handoff, and decisions.',
+        description: 'The assignment workspace shows lifecycle actions, plan editor, scratchpad, handoff log, decision records, and agent sessions.',
         href: '/missions',
-      },
-      {
-        label: 'Help',
-        description: 'Use Help for a model refresh, status guide, and CLI quick reference.',
-        href: '/help',
       },
     ],
     faq: [
@@ -257,9 +362,34 @@ export function getDashboardHelp(): HelpResponse {
           'Pending often just means the work has not started yet or it is waiting on declared dependencies. Blocked is reserved for exceptional runtime obstacles that need intervention.',
       },
       {
-        question: 'Why can I not edit assignment status directly in the editor?',
+        question: 'How do I change an assignment\'s status?',
         answer:
-          'Assignment status can be changed through lifecycle actions, kanban drag, or the Override Status dropdown. Lifecycle actions apply dependency and assignee checks as warnings.',
+          'Use lifecycle CLI commands (syntaur start, syntaur complete, etc.), drag cards on the kanban board, or use the Override Status dropdown on the assignment page. Any status can be set from any other status.',
+      },
+      {
+        question: 'How do I customize statuses?',
+        answer:
+          'Open the Settings page from the sidebar. You can add, remove, rename, recolor, and reorder statuses. You can also mark statuses as done states. Changes are saved to ~/.syntaur/config.md and take effect immediately across the dashboard.',
+      },
+      {
+        question: 'What is a done state?',
+        answer:
+          'A done state (also called terminal status) means the assignment is finished. Done states fill the completed portion of progress bars and satisfy dependency requirements. By default, "completed" and "failed" are done states. You can configure which statuses are done states in Settings.',
+      },
+      {
+        question: 'What are playbooks and how do I use them?',
+        answer:
+          'Playbooks are markdown files in ~/.syntaur/playbooks/ that define behavioral rules agents must follow. Create them via the CLI (syntaur create-playbook) or the Playbooks page. The auto-generated manifest at ~/.syntaur/playbooks/manifest.md can be included in your CLAUDE.md so agents pick up the rules.',
+      },
+      {
+        question: 'How does agent session tracking work?',
+        answer:
+          'When an AI agent starts working on an assignment, it can register a session via the track-session CLI command or the Claude Code plugin\'s /track-session command. The Agent Sessions page shows active and completed sessions with their linked assignments and duration.',
+      },
+      {
+        question: 'How does server tracking work?',
+        answer:
+          'Syntaur tracks tmux sessions to discover running dev servers, their ports, git branches, and linked assignments. Register sessions on the Servers page or let autodiscovery find them. Pane info refreshes automatically.',
       },
     ],
     firstMissionChecklist: [
@@ -297,7 +427,12 @@ export function getDashboardHelp(): HelpResponse {
     links: [
       { label: 'Overview', href: '/' },
       { label: 'Mission Directory', href: '/missions' },
+      { label: 'Assignments Board', href: '/assignments' },
       { label: 'Attention Queue', href: '/attention' },
+      { label: 'Servers', href: '/servers' },
+      { label: 'Agent Sessions', href: '/agent-sessions' },
+      { label: 'Playbooks', href: '/playbooks' },
+      { label: 'Settings', href: '/settings' },
       { label: 'Create Mission', href: '/create/mission' },
     ],
   };

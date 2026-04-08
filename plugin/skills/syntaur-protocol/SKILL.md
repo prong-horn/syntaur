@@ -55,6 +55,14 @@ Use the `syntaur` CLI for state transitions. Available commands:
 - `syntaur unblock <slug> --mission <mission>` -- unblock
 - `syntaur fail <slug> --mission <mission>` -- mark as failed
 
+## Playbooks
+
+Playbooks are user-defined behavioral rules stored in `~/.syntaur/playbooks/`. Each playbook is a markdown file with imperative rules that agents must follow. When you begin work on any assignment, read all playbook files and follow their directives. Playbooks take precedence over default conventions when they conflict.
+
+```bash
+ls ~/.syntaur/playbooks/*.md 2>/dev/null
+```
+
 ## Conventions
 
 - Assignment frontmatter is the single source of truth for state

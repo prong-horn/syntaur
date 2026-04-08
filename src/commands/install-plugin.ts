@@ -1,8 +1,8 @@
-import { resolve, dirname } from 'node:path';
+import { resolve } from 'node:path';
 import { homedir } from 'node:os';
 import { symlink, readlink, lstat, rm } from 'node:fs/promises';
-import { fileURLToPath } from 'node:url';
 import { ensureDir, fileExists } from '../utils/fs.js';
+import { findPackageRoot } from '../utils/package-root.js';
 
 export interface InstallPluginOptions {
   force?: boolean;
@@ -12,11 +12,7 @@ export async function installPluginCommand(
   options: InstallPluginOptions,
 ): Promise<void> {
   // Resolve the plugin source directory relative to this package's root
-  const packageRoot = resolve(
-    dirname(fileURLToPath(import.meta.url)),
-    '..',
-    '..',
-  );
+  const packageRoot = await findPackageRoot('plugin');
   const pluginSource = resolve(packageRoot, 'plugin');
 
   if (!(await fileExists(pluginSource))) {

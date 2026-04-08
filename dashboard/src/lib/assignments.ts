@@ -48,3 +48,7 @@ export async function overrideAssignmentStatus(
 
   return (payload as { assignment: AssignmentDetail }).assignment;
 }
+
+export function transitionNeedsReason(action: AssignmentTransitionAction): boolean {
+  return action.requiresReason || action.command === 'block';
+}

@@ -2,7 +2,7 @@ import { resolve } from 'node:path';
 import { readFile } from 'node:fs/promises';
 import { fileExists, writeFileForce } from '../utils/fs.js';
 import { nowTimestamp } from '../utils/timestamp.js';
-import { canTransition, getTargetStatus } from './state-machine.js';
+import { getTargetStatus } from './state-machine.js';
 import { parseAssignmentFrontmatter, updateAssignmentFile } from './frontmatter.js';
 import type { TransitionCommand, TransitionResult, AssignmentFrontmatter } from './types.js';
 
@@ -24,7 +24,9 @@ async function readAssignment(
 async function checkDependencies(
   missionDir: string,
   dependsOn: string[],
+  terminalStatuses?: ReadonlySet<string>,
 ): Promise<{ satisfied: boolean; unmet: string[] }> {
+  const terminals = terminalStatuses ?? new Set(['completed']);
   const unmet: string[] = [];
   for (const depSlug of dependsOn) {
     const depPath = resolveAssignmentPath(missionDir, depSlug);
@@ -34,7 +36,7 @@ async function checkDependencies(
     }
     const depContent = await readFile(depPath, 'utf-8');
     const depFrontmatter = parseAssignmentFrontmatter(depContent);
-    if (depFrontmatter.status !== 'completed') {
+    if (!terminals.has(depFrontmatter.status)) {
       unmet.push(`${depSlug} (status: ${depFrontmatter.status})`);
     }
   }
@@ -44,6 +46,8 @@ async function checkDependencies(
 export interface TransitionOptions {
   reason?: string;
   agent?: string;
+  transitionTable?: Map<string, string>;
+  terminalStatuses?: ReadonlySet<string>;
 }
 
 export async function executeTransition(
@@ -55,20 +59,20 @@ export async function executeTransition(
   const filePath = resolveAssignmentPath(missionDir, assignmentSlug);
   const { content, frontmatter } = await readAssignment(filePath);
 
-  if (!canTransition(frontmatter.status, command)) {
+  const targetStatus = getTargetStatus(frontmatter.status, command, options.transitionTable);
+
+  if (!targetStatus) {
     return {
       success: false,
-      message: `Cannot '${command}' assignment "${assignmentSlug}": current status is '${frontmatter.status}'. This transition is not allowed.`,
+      message: `Unknown command '${command}' for assignment "${assignmentSlug}".`,
       fromStatus: frontmatter.status,
     };
   }
 
-  const targetStatus = getTargetStatus(frontmatter.status, command)!;
-
   const warnings: string[] = [];
 
   if (command === 'start' && frontmatter.dependsOn.length > 0) {
-    const depCheck = await checkDependencies(missionDir, frontmatter.dependsOn);
+    const depCheck = await checkDependencies(missionDir, frontmatter.dependsOn, options.terminalStatuses);
     if (!depCheck.satisfied) {
       warnings.push(`Starting with unmet dependencies: ${depCheck.unmet.join(', ')}`);
     }

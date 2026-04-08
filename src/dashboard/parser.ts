@@ -92,6 +92,7 @@ export interface ParsedMission {
   created: string;
   updated: string;
   tags: string[];
+  workspace: string | null;
   body: string;
 }
 
@@ -108,6 +109,7 @@ export function parseMission(fileContent: string): ParsedMission {
     created: getField(fm, 'created') ?? '',
     updated: getField(fm, 'updated') ?? '',
     tags: parseListField(fm, 'tags'),
+    workspace: getField(fm, 'workspace'),
     body,
   };
 }
@@ -117,15 +119,7 @@ export function parseMission(fileContent: string): ParsedMission {
 export interface ParsedStatus {
   mission: string;
   status: string;
-  progress: {
-    total: number;
-    completed: number;
-    in_progress: number;
-    blocked: number;
-    pending: number;
-    review: number;
-    failed: number;
-  };
+  progress: Record<string, number> & { total: number };
   needsAttention: {
     blockedCount: number;
     failedCount: number;
@@ -136,18 +130,24 @@ export interface ParsedStatus {
 
 export function parseStatus(fileContent: string): ParsedStatus {
   const [fm, body] = extractFrontmatter(fileContent);
+
+  // Dynamically parse progress fields
+  const progress: Record<string, number> & { total: number } = { total: 0 };
+  const progressMatch = fm.match(/^progress:\s*\n((?:\s+.*\n?)*)/m);
+  if (progressMatch) {
+    const lines = progressMatch[1].split('\n');
+    for (const line of lines) {
+      const kv = line.match(/^\s+(\w+):\s*(\d+)/);
+      if (kv) {
+        progress[kv[1]] = parseInt(kv[2], 10);
+      }
+    }
+  }
+
   return {
     mission: getField(fm, 'mission') ?? '',
     status: getField(fm, 'status') ?? 'pending',
-    progress: {
-      total: parseInt(getNestedField(fm, 'progress', 'total') ?? '0', 10),
-      completed: parseInt(getNestedField(fm, 'progress', 'completed') ?? '0', 10),
-      in_progress: parseInt(getNestedField(fm, 'progress', 'in_progress') ?? '0', 10),
-      blocked: parseInt(getNestedField(fm, 'progress', 'blocked') ?? '0', 10),
-      pending: parseInt(getNestedField(fm, 'progress', 'pending') ?? '0', 10),
-      review: parseInt(getNestedField(fm, 'progress', 'review') ?? '0', 10),
-      failed: parseInt(getNestedField(fm, 'progress', 'failed') ?? '0', 10),
-    },
+    progress,
     needsAttention: {
       blockedCount: parseInt(getNestedField(fm, 'needsAttention', 'blockedCount') ?? '0', 10),
       failedCount: parseInt(getNestedField(fm, 'needsAttention', 'failedCount') ?? '0', 10),
@@ -391,6 +391,33 @@ export function parseMemory(fileContent: string): ParsedMemory {
     relatedAssignments: parseListField(fm, 'relatedAssignments'),
     created: getField(fm, 'created') ?? '',
     updated: getField(fm, 'updated') ?? '',
+    body,
+  };
+}
+
+// --- Playbook Parser ---
+
+export interface ParsedPlaybook {
+  slug: string;
+  name: string;
+  description: string;
+  whenToUse: string;
+  created: string;
+  updated: string;
+  tags: string[];
+  body: string;
+}
+
+export function parsePlaybook(fileContent: string): ParsedPlaybook {
+  const [fm, body] = extractFrontmatter(fileContent);
+  return {
+    slug: getField(fm, 'slug') ?? '',
+    name: getField(fm, 'name') ?? '',
+    description: getField(fm, 'description') ?? '',
+    whenToUse: getField(fm, 'when_to_use') ?? '',
+    created: getField(fm, 'created') ?? '',
+    updated: getField(fm, 'updated') ?? '',
+    tags: parseListField(fm, 'tags'),
     body,
   };
 }

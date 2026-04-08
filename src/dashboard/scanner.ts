@@ -75,7 +75,7 @@ export function findListeningPorts(lsofOutput: string, pids: Set<number>): numbe
 
 // --- Shell helpers ---
 
-async function execQuiet(cmd: string, args: string[]): Promise<string> {
+export async function execQuiet(cmd: string, args: string[]): Promise<string> {
   try {
     const { stdout } = await exec(cmd, args);
     return stdout.trim();
@@ -89,7 +89,7 @@ export async function checkTmuxAvailable(): Promise<boolean> {
   return result.length > 0;
 }
 
-async function sessionAlive(name: string): Promise<boolean> {
+export async function sessionAlive(name: string): Promise<boolean> {
   try {
     await exec('tmux', ['has-session', '-t', name]);
     return true;
@@ -98,7 +98,7 @@ async function sessionAlive(name: string): Promise<boolean> {
   }
 }
 
-async function listTmuxPanes(sessionName: string): Promise<RawPane[]> {
+export async function listTmuxPanes(sessionName: string): Promise<RawPane[]> {
   const output = await execQuiet('tmux', [
     'list-panes', '-s', '-t', sessionName,
     '-F', '#{window_index}|#{window_name}|#{pane_index}|#{pane_current_command}|#{pane_current_path}|#{pane_pid}',
@@ -128,7 +128,7 @@ export async function getDescendantPids(rootPid: number, maxDepth: number = 4): 
   return all;
 }
 
-async function getLsofOutput(): Promise<string> {
+export async function getLsofOutput(): Promise<string> {
   return execQuiet('lsof', ['-i', '-P', '-n', '-sTCP:LISTEN']);
 }
 
@@ -155,13 +155,13 @@ export async function getGitInfo(cwd: string): Promise<{ branch: string | null; 
 
 // --- Auto-linking ---
 
-interface AssignmentLink {
+export interface AssignmentLink {
   mission: string;
   slug: string;
   title: string;
 }
 
-interface WorkspaceRecord {
+export interface WorkspaceRecord {
   missionSlug: string;
   assignmentSlug: string;
   assignmentTitle: string;
@@ -169,7 +169,7 @@ interface WorkspaceRecord {
   branch: string | null;
 }
 
-async function loadWorkspaceRecords(missionsDir: string): Promise<WorkspaceRecord[]> {
+export async function loadWorkspaceRecords(missionsDir: string): Promise<WorkspaceRecord[]> {
   const records: WorkspaceRecord[] = [];
   try {
     const missions = await listMissions(missionsDir);
@@ -206,7 +206,7 @@ async function loadWorkspaceRecords(missionsDir: string): Promise<WorkspaceRecor
   return records;
 }
 
-async function resolveAndNormalize(p: string): Promise<string> {
+export async function resolveAndNormalize(p: string): Promise<string> {
   try {
     const resolved = await realpath(p);
     return resolved.replace(/\/+$/, '');
@@ -215,7 +215,7 @@ async function resolveAndNormalize(p: string): Promise<string> {
   }
 }
 
-async function autoLinkPane(
+export async function autoLinkPane(
   cwd: string,
   branch: string | null,
   records: WorkspaceRecord[],
@@ -252,6 +252,7 @@ async function scanSession(
   if (!alive) {
     return {
       name: sessionData.session,
+      kind: 'tmux',
       registered: sessionData.registered,
       lastRefreshed: sessionData.lastRefreshed,
       scannedAt: now,
@@ -351,11 +352,85 @@ async function scanSession(
 
   return {
     name: sessionData.session,
+    kind: 'tmux' as const,
     registered: sessionData.registered,
     lastRefreshed: sessionData.lastRefreshed,
     scannedAt: now,
     alive: true,
     windows,
+  };
+}
+
+async function scanProcessSession(
+  sessionData: SessionFileData,
+  lsofOutput: string,
+  workspaceRecords: WorkspaceRecord[],
+): Promise<TrackedSession> {
+  const now = new Date().toISOString();
+
+  // Check if the process is still alive
+  let alive = false;
+  if (sessionData.pid) {
+    try {
+      process.kill(sessionData.pid, 0);
+      alive = true;
+    } catch {
+      alive = false;
+    }
+  }
+
+  if (!alive || !sessionData.cwd) {
+    return {
+      name: sessionData.session,
+      kind: 'process',
+      registered: sessionData.registered,
+      lastRefreshed: sessionData.lastRefreshed,
+      scannedAt: now,
+      alive: false,
+      windows: [],
+    };
+  }
+
+  // Re-resolve ports from lsof for the PID
+  const ports = findListeningPorts(lsofOutput, new Set([sessionData.pid!]));
+
+  const gitInfo = await getGitInfo(sessionData.cwd);
+
+  // Honor manual overrides (process sessions use key "0:0")
+  const override = sessionData.overrides['0:0'];
+  let assignment: AssignmentLink | null = null;
+  if (override) {
+    const rec = workspaceRecords.find(
+      (r) => r.missionSlug === override.mission && r.assignmentSlug === override.assignment,
+    );
+    assignment = {
+      mission: override.mission,
+      slug: override.assignment,
+      title: rec?.assignmentTitle ?? override.assignment,
+    };
+  } else {
+    assignment = await autoLinkPane(sessionData.cwd, gitInfo.branch, workspaceRecords);
+  }
+
+  const pane: TrackedPane = {
+    index: 0,
+    command: sessionData.session,
+    cwd: sessionData.cwd,
+    branch: gitInfo.branch,
+    worktree: gitInfo.worktree,
+    ports,
+    urls: ports.map((p) => `http://localhost:${p}`),
+    assignment,
+  };
+
+  return {
+    name: sessionData.session,
+    kind: 'process' as const,
+    registered: sessionData.registered,
+    lastRefreshed: sessionData.lastRefreshed,
+    scannedAt: now,
+    alive: true,
+    windows: [{ index: 0, name: 'process', panes: [pane] }],
   };
 }
 
@@ -369,12 +444,6 @@ export async function scanAllSessions(
   }
 
   const tmuxAvailable = await checkTmuxAvailable();
-  if (!tmuxAvailable) {
-    const result = { sessions: [], tmuxAvailable: false };
-    cache = { data: result, expiry: Date.now() + CACHE_TTL_MS };
-    return result;
-  }
-
   const names = await listSessionFiles(serversDir);
   const lsofOutput = await getLsofOutput();
   const workspaceRecords = await loadWorkspaceRecords(missionsDir);
@@ -383,10 +452,16 @@ export async function scanAllSessions(
   for (const name of names) {
     const data = await readSessionFile(serversDir, name);
     if (!data) continue;
-    sessions.push(await scanSession(data, lsofOutput, workspaceRecords));
+
+    if (data.kind === 'process') {
+      sessions.push(await scanProcessSession(data, lsofOutput, workspaceRecords));
+    } else if (tmuxAvailable) {
+      sessions.push(await scanSession(data, lsofOutput, workspaceRecords));
+    }
+    // Skip tmux-kind entries when tmux is unavailable
   }
 
-  const result: ServersResponse = { sessions, tmuxAvailable: true };
+  const result: ServersResponse = { sessions, tmuxAvailable };
   cache = { data: result, expiry: Date.now() + CACHE_TTL_MS };
   return result;
 }
@@ -401,5 +476,9 @@ export async function scanSingleSession(
 
   const lsofOutput = await getLsofOutput();
   const workspaceRecords = await loadWorkspaceRecords(missionsDir);
+
+  if (data.kind === 'process') {
+    return scanProcessSession(data, lsofOutput, workspaceRecords);
+  }
   return scanSession(data, lsofOutput, workspaceRecords);
 }

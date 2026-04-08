@@ -52,11 +52,6 @@ tags: []
 
 <!-- Links to relevant docs, code, or other assignments. -->
 
-## Sessions
-
-| Session ID | Agent | Started | Ended | Status |
-|------------|-------|---------|-------|--------|
-
 ## Questions & Answers
 
 No questions yet.

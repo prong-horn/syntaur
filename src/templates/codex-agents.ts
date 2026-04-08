@@ -17,14 +17,37 @@ This project uses the Syntaur protocol for multi-agent mission coordination.
 - **Mission directory:** ${params.missionDir}
 - **Assignment directory:** ${params.assignmentDir}
 
+## Preferred Workflow
+
+If the global Syntaur Codex plugin is installed, prefer these workflows instead of ad hoc protocol edits:
+
+- \`syntaur-operator\` agent -- use for broad Syntaur protocol work or when a task spans multiple lifecycle steps
+- \`syntaur-protocol\` -- background protocol and write-boundary rules
+- \`create-mission\` -- scaffold a mission
+- \`create-assignment\` -- create a new assignment
+- \`grab-assignment\` -- claim work, create \`.syntaur/context.json\`, and register a session
+- \`plan-assignment\` -- write or refresh \`plan.md\`
+- \`complete-assignment\` -- append the handoff, close the session, and transition state
+- \`track-session\` -- manage tracked tmux sessions for the dashboard
+
+If the plugin is unavailable, follow the same workflow manually with the \`syntaur\` CLI and keep the protocol files current yourself.
+
 ## Reading Order
 
 Before starting work, read these files in order:
-1. \`${params.missionDir}/agent.md\` -- universal agent instructions and boundaries
-2. \`${params.missionDir}/mission.md\` -- mission overview and goals
-3. \`${params.assignmentDir}/assignment.md\` -- your assignment details, acceptance criteria, current status
-4. \`${params.assignmentDir}/plan.md\` -- your implementation plan
-5. \`${params.assignmentDir}/handoff.md\` -- previous session handoff notes
+1. \`${params.missionDir}/manifest.md\` -- root navigation entry point
+2. \`${params.missionDir}/agent.md\` -- universal agent instructions and boundaries
+3. \`${params.missionDir}/mission.md\` -- mission overview and goals
+4. \`${params.missionDir}/claude.md\` if it exists -- extra mission context that may still be relevant
+5. \`${params.assignmentDir}/assignment.md\` -- your assignment details, acceptance criteria, current status
+6. \`${params.assignmentDir}/plan.md\` -- your implementation plan
+7. \`${params.assignmentDir}/handoff.md\` -- previous session handoff notes
+
+## Context File
+
+- Treat \`.syntaur/context.json\` in the current working directory as the active assignment context when it exists.
+- Use that file to resolve the workspace boundary, assignment path, mission path, and active session ID.
+- If there is no context file yet and you are supposed to work on an assignment, claim or set up the assignment before editing code.
 
 ## Directory Structure
 
@@ -38,7 +61,6 @@ Before starting work, read these files in order:
       _index-assignments.md  # Derived (read-only)
       _index-plans.md        # Derived (read-only)
       _index-decisions.md    # Derived (read-only)
-      _index-sessions.md     # Derived (read-only)
       _status.md             # Derived (read-only)
       claude.md              # Human-authored: Claude-specific instructions (read-only)
       agent.md               # Human-authored: universal agent instructions (read-only)
@@ -114,11 +136,23 @@ Use the \`syntaur\` CLI for state transitions:
 - \`syntaur unblock ${params.assignmentSlug} --mission ${params.missionSlug}\` -- unblock
 - \`syntaur fail ${params.assignmentSlug} --mission ${params.missionSlug}\` -- mark as failed
 
+## Playbooks
+
+Playbooks are user-defined behavioral rules stored in \`~/.syntaur/playbooks/\`. Before starting work, read the playbook manifest and then each referenced playbook:
+
+\`\`\`bash
+cat ~/.syntaur/playbooks/manifest.md
+\`\`\`
+
+Read each linked playbook and follow the rules in its body section. The \`when_to_use\` field tells you when each playbook applies. Playbooks take precedence over default conventions when they conflict.
+
 ## Conventions
 
 - Assignment frontmatter is the single source of truth for state
 - Slugs are lowercase, hyphen-separated
 - Always read \`agent.md\` at the mission level before starting work
+- Keep \`assignment.md\` progress and acceptance criteria updated as work lands
+- Keep \`plan.md\` current after planning changes and \`handoff.md\` current before leaving the task
 - Add unanswered questions to the Q&A section of assignment.md
 - Commit frequently with messages referencing the assignment slug
 `;

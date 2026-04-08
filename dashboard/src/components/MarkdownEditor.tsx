@@ -1,11 +1,12 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { ArrowLeft, Eye, FileCode2, Save } from 'lucide-react';
-import type { EditableDocumentType } from '../hooks/useMissions';
+import { useWorkspaces, type EditableDocumentType } from '../hooks/useMissions';
 import {
   normalizeEditorContent,
   parseAssignmentEditorState,
   parseMissionEditorState,
   parsePlanEditorState,
+  parsePlaybookEditorState,
   parseScratchpadEditorState,
 } from '../lib/documents';
 import { isValidSlug, slugify } from '../lib/slug';
@@ -14,6 +15,7 @@ import { MarkdownRenderer } from './MarkdownRenderer';
 interface MarkdownEditorProps {
   initialContent: string;
   documentType: Exclude<EditableDocumentType, 'handoff' | 'decision-record'>;
+  mode?: 'create' | 'edit';
   onSave: (content: string) => Promise<void>;
   saving: boolean;
   error: string | null;
@@ -30,6 +32,7 @@ type MobilePane = 'edit' | 'preview';
 export function MarkdownEditor({
   initialContent,
   documentType,
+  mode = 'edit',
   onSave,
   saving,
   error,
@@ -51,6 +54,7 @@ export function MarkdownEditor({
   const validationErrors = getValidationErrors(documentType, content);
   const hasChanges = content !== initialContent;
   const previewBody = getBodyContent(documentType, content);
+  const statusLabel = hasChanges ? 'Unsaved changes' : mode === 'create' ? 'Draft' : 'Saved';
 
   return (
     <div className="space-y-3">
@@ -60,7 +64,7 @@ export function MarkdownEditor({
             <div className="flex items-center gap-3">
               <h1 className="text-lg font-semibold text-foreground">{title}</h1>
               <span className="rounded-full border border-border/70 bg-background/80 px-2.5 py-1 text-xs font-medium text-muted-foreground">
-                {hasChanges ? 'Unsaved changes' : 'Saved'}
+                {statusLabel}
               </span>
             </div>
             {description ? <p className="max-w-3xl text-sm leading-6 text-muted-foreground">{description}</p> : null}
@@ -206,7 +210,7 @@ function StructuredEditor({
               </p>
             </div>
           </Field>
-          <Field label="Tags" className="md:col-span-2">
+          <Field label="Tags">
             <input
               value={state.tags}
               onChange={(event) => onChange(normalizeEditorContent(documentType, content, { tags: event.target.value }))}
@@ -214,6 +218,10 @@ function StructuredEditor({
               className="editor-input"
             />
           </Field>
+          <WorkspaceField
+            value={state.workspace}
+            onChange={(value) => onChange(normalizeEditorContent(documentType, content, { workspace: value }))}
+          />
         </FormGrid>
 
         <Field label="Mission body">
@@ -369,15 +377,88 @@ function StructuredEditor({
     );
   }
 
-  const state = parseScratchpadEditorState(content);
+  if (documentType === 'scratchpad') {
+    const state = parseScratchpadEditorState(content);
+    return (
+      <div className="space-y-3">
+        <FormGrid>
+          <Field label="Assignment">
+            <input value={state.assignment} disabled className="editor-input editor-input-disabled" />
+          </Field>
+        </FormGrid>
+        <Field label="Scratchpad body">
+          <textarea
+            value={state.body}
+            onChange={(event) => onChange(normalizeEditorContent(documentType, content, { body: event.target.value }))}
+            className="editor-textarea"
+            spellCheck={false}
+          />
+        </Field>
+      </div>
+    );
+  }
+
+  // playbook
+  const state = parsePlaybookEditorState(content);
   return (
     <div className="space-y-3">
       <FormGrid>
-        <Field label="Assignment">
-          <input value={state.assignment} disabled className="editor-input editor-input-disabled" />
+        <Field label="Playbook name">
+          <input
+            value={state.name}
+            onChange={(event) => {
+              const nextName = event.target.value;
+              const updates: Record<string, string | boolean> = { name: nextName };
+              if (allowSlugEdit && (state.slug === slugify(state.name) || !state.slug.trim())) {
+                updates.slug = slugify(nextName);
+              }
+              onChange(normalizeEditorContent(documentType, content, updates));
+            }}
+            className="editor-input"
+          />
+        </Field>
+        <Field label="Slug">
+          <div className="space-y-2">
+            <input
+              value={state.slug}
+              disabled={!allowSlugEdit}
+              onChange={(event) => onChange(normalizeEditorContent(documentType, content, { slug: slugify(event.target.value) }))}
+              className={`editor-input ${allowSlugEdit ? '' : 'editor-input-disabled'}`}
+            />
+            <p className="text-xs leading-5 text-muted-foreground">
+              {allowSlugEdit
+                ? 'The slug becomes the filename. It is auto-generated from the name until you change it.'
+                : 'The slug is locked after creation because it is the filename.'}
+            </p>
+          </div>
+        </Field>
+        <Field label="Description" className="md:col-span-2">
+          <input
+            value={state.description}
+            onChange={(event) => onChange(normalizeEditorContent(documentType, content, { description: event.target.value }))}
+            placeholder="One-line description of what this playbook does"
+            className="editor-input"
+          />
+        </Field>
+        <Field label="Tags" className="md:col-span-2">
+          <input
+            value={state.tags}
+            onChange={(event) => onChange(normalizeEditorContent(documentType, content, { tags: event.target.value }))}
+            placeholder="Comma-separated tags"
+            className="editor-input"
+          />
+        </Field>
+        <Field label="When to use" className="md:col-span-2">
+          <input
+            value={state.whenToUse}
+            onChange={(event) => onChange(normalizeEditorContent(documentType, content, { whenToUse: event.target.value }))}
+            placeholder="Describe when agents should apply this playbook"
+            className="editor-input"
+          />
         </Field>
       </FormGrid>
-      <Field label="Scratchpad body">
+
+      <Field label="Playbook rules">
         <textarea
           value={state.body}
           onChange={(event) => onChange(normalizeEditorContent(documentType, content, { body: event.target.value }))}
@@ -410,6 +491,26 @@ function Field({
   );
 }
 
+function WorkspaceField({ value, onChange }: { value: string; onChange: (value: string) => void }) {
+  const { data } = useWorkspaces();
+  const workspaces = data?.workspaces ?? [];
+
+  return (
+    <Field label="Workspace">
+      <select
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        className="editor-input"
+      >
+        <option value="">Ungrouped</option>
+        {workspaces.map((w) => (
+          <option key={w} value={w}>{w}</option>
+        ))}
+      </select>
+    </Field>
+  );
+}
+
 function getBodyContent(
   documentType: MarkdownEditorProps['documentType'],
   content: string,
@@ -423,6 +524,8 @@ function getBodyContent(
       return parsePlanEditorState(content).body;
     case 'scratchpad':
       return parseScratchpadEditorState(content).body;
+    case 'playbook':
+      return parsePlaybookEditorState(content).body;
   }
 }
 
@@ -454,6 +557,14 @@ function getValidationErrors(
     case 'scratchpad': {
       const state = parseScratchpadEditorState(content);
       return !state.assignment.trim() ? ['Scratchpad assignment is required.'] : [];
+    }
+    case 'playbook': {
+      const state = parsePlaybookEditorState(content);
+      return [
+        !state.name.trim() ? 'Playbook name is required.' : null,
+        !state.slug.trim() ? 'Playbook slug is required.' : null,
+        state.slug.trim() && !isValidSlug(state.slug) ? 'Playbook slug must be lowercase letters, numbers, and hyphens only.' : null,
+      ].filter((value): value is string => Boolean(value));
     }
   }
 }

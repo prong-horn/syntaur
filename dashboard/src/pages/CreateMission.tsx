@@ -1,11 +1,14 @@
 import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
+import { useWorkspacePrefix } from '../hooks/useMissions';
 import { MarkdownEditor } from '../components/MarkdownEditor';
 import { LoadingState } from '../components/LoadingState';
 import { ErrorState } from '../components/ErrorState';
 
 export function CreateMission() {
   const navigate = useNavigate();
+  const { workspace } = useParams<{ workspace?: string }>();
+  const wsPrefix = useWorkspacePrefix();
   const [content, setContent] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -15,14 +18,21 @@ export function CreateMission() {
     fetch('/api/templates/mission')
       .then((response) => response.json())
       .then((payload) => {
-        setContent(payload.content);
+        let templateContent = payload.content as string;
+        if (workspace && workspace !== '_ungrouped') {
+          templateContent = templateContent.replace(
+            /^(tags: \[\])$/m,
+            `$1\nworkspace: ${workspace}`,
+          );
+        }
+        setContent(templateContent);
         setLoading(false);
       })
       .catch((loadError: Error) => {
         setError(loadError.message);
         setLoading(false);
       });
-  }, []);
+  }, [workspace]);
 
   async function handleSave(markdownContent: string) {
     setSaving(true);
@@ -42,7 +52,7 @@ export function CreateMission() {
         return;
       }
 
-      navigate(`/missions/${payload.slug}`);
+      navigate(`${wsPrefix}/missions/${payload.slug}`);
     } catch (saveError) {
       setError((saveError as Error).message);
       setSaving(false);
@@ -64,12 +74,13 @@ export function CreateMission() {
     <MarkdownEditor
       initialContent={content || ''}
       documentType="mission"
+      mode="create"
       onSave={handleSave}
       saving={saving}
       error={error}
       title="Create Mission"
       description="Missions hold the high-level objective, shared context, and human-authored overview. Put execution details in assignments instead of overloading mission.md."
-      onCancel={() => navigate('/')}
+      onCancel={() => navigate(`${wsPrefix}/missions`)}
       helpTitle="Mission editing rules"
       helpBody="Use this form for mission intent, slug, tags, and overview content. If you ever need less common metadata, raw markdown mode still exposes the full file."
       allowSlugEdit

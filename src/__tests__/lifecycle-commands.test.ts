@@ -118,20 +118,25 @@ describe('lifecycle integration', () => {
     expect(content).toContain('status: completed');
   });
 
-  it('rejects invalid transitions', async () => {
+  it('allows any known command regardless of current status (guards removed)', async () => {
     const missionDir = resolve(testDir, missionSlug);
 
-    // Cannot complete a pending assignment
+    // Complete a pending assignment directly — no guard
     const result1 = await executeTransition(missionDir, 'task-b', 'complete');
-    expect(result1.success).toBe(false);
-    expect(result1.message).toContain('not allowed');
+    expect(result1.success).toBe(true);
+    expect(result1.toStatus).toBe('completed');
 
-    // Start and complete task-b, then try to start it again
-    await executeTransition(missionDir, 'task-b', 'start', { agent: 'claude-2' });
-    await executeTransition(missionDir, 'task-b', 'complete');
+    // Start a completed assignment — no guard
     const result2 = await executeTransition(missionDir, 'task-b', 'start');
-    expect(result2.success).toBe(false);
-    expect(result2.message).toContain('not allowed');
+    expect(result2.success).toBe(true);
+    expect(result2.toStatus).toBe('in_progress');
+  });
+
+  it('rejects unknown commands', async () => {
+    const missionDir = resolve(testDir, missionSlug);
+    const result = await executeTransition(missionDir, 'task-b', 'nonexistent' as any);
+    expect(result.success).toBe(false);
+    expect(result.message).toContain('Unknown command');
   });
 
   it('assign succeeds on terminal statuses', async () => {
@@ -200,6 +205,5 @@ describe('lifecycle integration', () => {
     const finalContent = await readAssignmentContent(missionSlug, 'task-b');
     expect(finalContent).toContain('## Objective');
     expect(finalContent).toContain('## Acceptance Criteria');
-    expect(finalContent).toContain('## Sessions');
   });
 });

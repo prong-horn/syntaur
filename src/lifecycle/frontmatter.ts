@@ -1,4 +1,4 @@
-import type { AssignmentFrontmatter, AssignmentStatus, ExternalId, Workspace } from './types.js';
+import type { AssignmentFrontmatter, ExternalId, Workspace } from './types.js';
 
 function extractFrontmatter(fileContent: string): [string, string] {
   const match = fileContent.match(/^---\n([\s\S]*?)\n---/);
@@ -117,7 +117,7 @@ export function parseAssignmentFrontmatter(fileContent: string): AssignmentFront
     id: getField('id') ?? '',
     slug: getField('slug') ?? '',
     title: getField('title') ?? '',
-    status: (getField('status') ?? 'pending') as AssignmentStatus,
+    status: getField('status') ?? 'pending',
     priority: (getField('priority') ?? 'medium') as AssignmentFrontmatter['priority'],
     created: getField('created') ?? '',
     updated: getField('updated') ?? '',

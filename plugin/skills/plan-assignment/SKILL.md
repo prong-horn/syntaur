@@ -32,6 +32,16 @@ Extract from the context file:
 - `missionDir` -- absolute path to the mission folder
 - `workspaceRoot` -- absolute path to the workspace (may be null)
 
+## Step 1.5: Load Playbooks
+
+Read all playbook files from `~/.syntaur/playbooks/` — these contain user-defined behavioral rules you must follow:
+
+```bash
+ls ~/.syntaur/playbooks/*.md 2>/dev/null
+```
+
+For each file found, read it and follow its directives. Playbooks may contain rules about planning conventions, required steps, or quality expectations that apply to this plan.
+
 ## Step 2: Read Assignment Details
 
 Read the following files to understand the assignment:

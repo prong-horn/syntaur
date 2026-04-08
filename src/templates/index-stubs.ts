@@ -51,20 +51,6 @@ generated: "${params.timestamp}"
 `;
 }
 
-export function renderIndexSessions(params: IndexStubParams): string {
-  return `---
-mission: ${params.slug}
-generated: "${params.timestamp}"
-activeSessions: 0
----
-
-# Active Sessions
-
-| Assignment | Agent | Session ID | Started | Status | Path |
-|------------|-------|------------|---------|--------|------|
-`;
-}
-
 export function renderStatus(params: IndexStubParams): string {
   return `---
 mission: ${params.slug}

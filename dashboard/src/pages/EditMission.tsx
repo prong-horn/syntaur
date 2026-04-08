@@ -1,15 +1,17 @@
 import { useParams } from 'react-router-dom';
 import { DocumentEditorPage } from '../components/DocumentEditorPage';
+import { useWorkspacePrefix } from '../hooks/useMissions';
 
 export function EditMission() {
   const { slug } = useParams<{ slug: string }>();
+  const wsPrefix = useWorkspacePrefix();
   const missionSlug = slug ?? '';
 
   return (
     <DocumentEditorPage
       loadUrl={`/api/missions/${missionSlug}/edit`}
       saveUrl={`/api/missions/${missionSlug}`}
-      redirectTo={`/missions/${missionSlug}`}
+      redirectTo={`${wsPrefix}/missions/${missionSlug}`}
       title="Edit Mission"
       description="Mission edits change the human-authored source document. The structured form stays focused on title, slug, tags, and overview content."
       documentType="mission"

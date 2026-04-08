@@ -1,7 +1,7 @@
 ---
 name: create-mission
 description: Create a new Syntaur mission with all scaffolding files (manifest, agent instructions, indexes)
-argument-hint: <title> [--slug <slug>] [--dir <path>]
+argument-hint: <title> [--slug <slug>] [--dir <path>] [--workspace <workspace>]
 allowed-tools:
   - Bash
   - Read
@@ -19,6 +19,7 @@ Parse the arguments:
 - First argument (required): the mission title (e.g., `"Build Auth System"`)
 - `--slug` (optional): override the auto-generated slug
 - `--dir` (optional): override the default mission directory
+- `--workspace` (optional): workspace grouping label (e.g., `syntaur`, `reeva`)
 
 If no title was provided, ask the user what the mission should be called.
 
@@ -27,7 +28,7 @@ If no title was provided, ask the user what the mission should be called.
 Build the command from the parsed arguments. Use `dangerouslyDisableSandbox: true` since the CLI writes to `~/.syntaur/` which is outside the project sandbox.
 
 ```bash
-syntaur create-mission "<title>" [--slug <slug>] [--dir <path>]
+syntaur create-mission "<title>" [--slug <slug>] [--dir <path>] [--workspace <workspace>]
 ```
 
 If the command fails (e.g., slug collision, empty title), report the error and suggest fixes.

@@ -38,7 +38,6 @@ All files prefixed with `_` are derived and rebuilt by tooling:
 - `_index-assignments.md`
 - `_index-plans.md`
 - `_index-decisions.md`
-- `_index-sessions.md`
 - `_status.md`
 - `resources/_index.md`
 - `memories/_index.md`

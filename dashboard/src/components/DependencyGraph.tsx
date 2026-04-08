@@ -1,15 +1,18 @@
 import { useEffect, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { cn } from '../lib/utils';
 
 interface DependencyGraphProps {
   definition: string;
   className?: string;
+  nodeRoutes?: Record<string, string>;
 }
 
-export function DependencyGraph({ definition, className }: DependencyGraphProps) {
+export function DependencyGraph({ definition, className, nodeRoutes = {} }: DependencyGraphProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const navigate = useNavigate();
   const theme = document.documentElement.classList.contains('dark') ? 'dark' : 'default';
 
   useEffect(() => {
@@ -32,6 +35,7 @@ export function DependencyGraph({ definition, className }: DependencyGraphProps)
 
         if (cancelled || !containerRef.current) return;
         containerRef.current.innerHTML = svg;
+        wireNodeLinks(containerRef.current, nodeRoutes, navigate);
         setLoading(false);
       } catch (err) {
         if (!cancelled) {
@@ -48,7 +52,7 @@ export function DependencyGraph({ definition, className }: DependencyGraphProps)
     return () => {
       cancelled = true;
     };
-  }, [definition, theme]);
+  }, [definition, navigate, nodeRoutes, theme]);
 
   if (error) {
     return (
@@ -67,4 +71,32 @@ export function DependencyGraph({ definition, className }: DependencyGraphProps)
       <div ref={containerRef} className="overflow-auto" />
     </div>
   );
+}
+
+function wireNodeLinks(
+  container: HTMLDivElement,
+  nodeRoutes: Record<string, string>,
+  navigate: (to: string) => void,
+) {
+  for (const node of container.querySelectorAll<SVGGElement>('.node')) {
+    const label = node.textContent?.replace(/\s+/g, ' ').trim() ?? '';
+    const route = nodeRoutes[label];
+    if (!route) {
+      continue;
+    }
+
+    node.style.cursor = 'pointer';
+    node.setAttribute('role', 'link');
+    node.setAttribute('tabindex', '0');
+    node.setAttribute('aria-label', `Open ${label}`);
+
+    const handleActivate = () => navigate(route);
+    node.addEventListener('click', handleActivate);
+    node.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault();
+        handleActivate();
+      }
+    });
+  }
 }

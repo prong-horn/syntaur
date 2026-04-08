@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Syntaur SessionEnd Hook
-# Marks agent sessions as "stopped" when a Claude Code session exits.
+# Logs and marks agent sessions as "stopped" when a Claude Code session exits.
+# If the session was never registered but has an active assignment, registers it first.
 # Reads JSON from stdin, always exits 0.
 
 # --- Safety: never fail ---
@@ -28,52 +29,46 @@ if [ ! -f "$CONTEXT_FILE" ]; then
   exit 0
 fi
 
-# --- Step 4: Extract session info ---
+# --- Step 4: Extract context info ---
 SESSION_ID=$(jq -r '.sessionId // empty' "$CONTEXT_FILE" 2>/dev/null)
 MISSION_SLUG=$(jq -r '.missionSlug // empty' "$CONTEXT_FILE" 2>/dev/null)
-MISSION_DIR=$(jq -r '.missionDir // empty' "$CONTEXT_FILE" 2>/dev/null)
-ASSIGNMENT_DIR=$(jq -r '.assignmentDir // empty' "$CONTEXT_FILE" 2>/dev/null)
+ASSIGNMENT_SLUG=$(jq -r '.assignmentSlug // empty' "$CONTEXT_FILE" 2>/dev/null)
 
-if [ -z "$SESSION_ID" ] || [ -z "$MISSION_SLUG" ]; then
-  exit 0
-fi
-
-NOW=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-
-# --- Step 5: Try dashboard API first ---
 PORT=$(cat "$HOME/.syntaur/dashboard-port" 2>/dev/null || echo "4800")
-API_OK=false
-if curl -sf -X PATCH "http://localhost:${PORT}/api/agent-sessions/${SESSION_ID}/status" \
+
+# --- Step 5: If no session was registered, try to auto-register (requires mission+assignment) ---
+if [ -z "$SESSION_ID" ]; then
+  # Can only auto-register if we have mission and assignment context
+  if [ -z "$MISSION_SLUG" ] || [ -z "$ASSIGNMENT_SLUG" ]; then
+    exit 0
+  fi
+
+  # Generate a session ID for the log entry
+  SESSION_ID=$(uuidgen 2>/dev/null || cat /proc/sys/kernel/random/uuid 2>/dev/null || echo "ses-$(date +%s)")
+  # Lowercase the UUID (uuidgen on macOS outputs uppercase)
+  SESSION_ID=$(echo "$SESSION_ID" | tr '[:upper:]' '[:lower:]')
+
+  RESPONSE=$(curl -sf -X POST "http://localhost:${PORT}/api/agent-sessions" \
+    -H "Content-Type: application/json" \
+    -d "{\"missionSlug\": \"${MISSION_SLUG}\", \"assignmentSlug\": \"${ASSIGNMENT_SLUG}\", \"agent\": \"claude\", \"sessionId\": \"${SESSION_ID}\", \"path\": \"${CWD}\"}" \
+    2>/dev/null) || true
+
+  # If registration succeeded, update the context file with the session ID
+  if [ -n "$RESPONSE" ]; then
+    jq --arg sid "$SESSION_ID" '. + {sessionId: $sid}' "$CONTEXT_FILE" > "${CONTEXT_FILE}.tmp" 2>/dev/null \
+      && mv "${CONTEXT_FILE}.tmp" "$CONTEXT_FILE" 2>/dev/null || true
+  fi
+fi
+
+# --- Step 6: Mark session as stopped via dashboard API ---
+BODY="{\"status\": \"stopped\"}"
+if [ -n "$MISSION_SLUG" ]; then
+  BODY="{\"status\": \"stopped\", \"missionSlug\": \"${MISSION_SLUG}\"}"
+fi
+
+curl -sf -X PATCH "http://localhost:${PORT}/api/agent-sessions/${SESSION_ID}/status" \
   -H "Content-Type: application/json" \
-  -d "{\"status\": \"stopped\", \"missionSlug\": \"${MISSION_SLUG}\"}" \
-  -o /dev/null 2>/dev/null; then
-  API_OK=true
-fi
-
-# --- Step 6: Fall back to direct file edit ---
-if [ "$API_OK" = false ] && [ -n "$MISSION_DIR" ]; then
-  INDEX_FILE="$MISSION_DIR/_index-sessions.md"
-  if [ -f "$INDEX_FILE" ]; then
-    # Replace status for the matching session ID line
-    if grep -q "$SESSION_ID" "$INDEX_FILE"; then
-      sed -i '' "/$SESSION_ID/s/| active |/| stopped |/" "$INDEX_FILE" 2>/dev/null ||
-        sed -i "/$SESSION_ID/s/| active |/| stopped |/" "$INDEX_FILE" 2>/dev/null
-      # Update activeSessions count
-      ACTIVE_COUNT=$(grep -c "| active |" "$INDEX_FILE" 2>/dev/null || echo "0")
-      sed -i '' "s/^activeSessions:.*/activeSessions: ${ACTIVE_COUNT}/" "$INDEX_FILE" 2>/dev/null ||
-        sed -i "s/^activeSessions:.*/activeSessions: ${ACTIVE_COUNT}/" "$INDEX_FILE" 2>/dev/null
-    fi
-  fi
-fi
-
-# --- Step 7: Update assignment-level Sessions table ---
-if [ -n "$ASSIGNMENT_DIR" ]; then
-  ASSIGNMENT_FILE="$ASSIGNMENT_DIR/assignment.md"
-  if [ -f "$ASSIGNMENT_FILE" ] && grep -q "$SESSION_ID" "$ASSIGNMENT_FILE"; then
-    # Fill in Ended timestamp and set status to stopped
-    sed -i '' "/$SESSION_ID/s/| *| active |/| ${NOW} | stopped |/" "$ASSIGNMENT_FILE" 2>/dev/null ||
-      sed -i "/$SESSION_ID/s/| *| active |/| ${NOW} | stopped |/" "$ASSIGNMENT_FILE" 2>/dev/null
-  fi
-fi
+  -d "$BODY" \
+  -o /dev/null 2>/dev/null || true
 
 exit 0

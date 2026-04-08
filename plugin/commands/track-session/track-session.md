@@ -1,56 +1,65 @@
 ---
 name: track-session
-description: Register, refresh, or remove a tmux session for server tracking in the Syntaur dashboard
+description: Register this Claude Code session as an agent session in the Syntaur dashboard
 arguments:
-  - name: session
-    description: "Tmux session name to track (or --refresh/--remove/--list flags)"
+  - name: args
+    description: "Optional flags: --description, --mission, --assignment"
     required: false
 ---
 
 # /track-session
 
-Track a tmux session so its dev servers appear in the Syntaur dashboard.
+Register the current Claude Code session as an agent session in the Syntaur dashboard. Works standalone or linked to a mission/assignment.
 
 ## Usage
 
-- `/track-session <session-name>` — Register a session and scan it
-- `/track-session --refresh [session-name]` — Refresh one or all sessions
-- `/track-session --remove <session-name>` — Stop tracking a session
-- `/track-session --list` — List all tracked sessions
+- `/track-session` — register a standalone session
+- `/track-session --description "exploring auth patterns"` — with a description
+- `/track-session --mission <slug> --assignment <slug>` — linked to a mission
+- `/track-session --description "auth work" --mission <slug> --assignment <slug>` — both
 
 ## Instructions
 
-When the user runs this command, follow these steps based on the argument:
+When the user runs this command:
 
-### Register (default — argument is a session name)
+### Step 1: Parse arguments
 
-1. Verify the tmux session exists: run `tmux has-session -t <name>` via Bash
-2. If it doesn't exist, tell the user and list available sessions with `tmux list-sessions -F '#{session_name}'`
-3. Create the registration file at `~/.syntaur/servers/<sanitized-name>.md`:
-   - Sanitize the name: replace any character that isn't alphanumeric, hyphen, or underscore with a hyphen
-   - Write this content:
-   ```
-   ---
-   session: <original-name>
-   registered: <ISO timestamp>
-   last_refreshed: <ISO timestamp>
-   ---
-   ```
-4. Tell the user the session is now tracked and they can view it at the `/servers` page in the dashboard
+Extract optional flags from the argument string:
+- `--description "<text>"` or `--description <text>` — session description
+- `--mission <slug>` — mission to link to
+- `--assignment <slug>` — assignment to link to
 
-### --refresh [session-name]
+### Step 2: Run the CLI command
 
-1. If a session name is given, update its `last_refreshed` timestamp in `~/.syntaur/servers/<name>.md`
-2. If no session name, update all `.md` files in `~/.syntaur/servers/`
-3. Tell the user to check the dashboard for updated scan data
+Run the track-session CLI command via Bash (use `dangerouslyDisableSandbox: true` since it writes to `~/.syntaur/`):
 
-### --remove <session-name>
+```bash
+syntaur track-session --agent claude --path $(pwd) [--description "<text>"] [--mission <slug>] [--assignment <slug>]
+```
 
-1. Delete the file `~/.syntaur/servers/<sanitized-name>.md`
-2. Confirm removal to the user
+### Step 3: Parse the session ID
 
-### --list
+The CLI output will be one of:
+- `Registered standalone agent session <sessionId>.`
+- `Registered agent session <sessionId> for <assignment> in <mission>.`
 
-1. List all `.md` files in `~/.syntaur/servers/`
-2. For each, read the `session` field from frontmatter and display it
-3. If none exist, tell the user no sessions are being tracked
+Extract the session ID from the output.
+
+### Step 4: Write context file
+
+Write the session ID to `.syntaur/context.json` so the SessionEnd hook can mark it stopped when this conversation ends:
+
+- If `.syntaur/context.json` already exists, read it and add `"sessionId": "<id>"` to the existing JSON
+- If it doesn't exist, create the `.syntaur/` directory and write:
+  ```json
+  {
+    "sessionId": "<id>"
+  }
+  ```
+
+### Step 5: Confirm
+
+Tell the user:
+- The session was registered (include the short session ID)
+- It will be auto-stopped when this conversation ends
+- If linked to a mission, mention which mission/assignment

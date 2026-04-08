@@ -1,26 +1,13 @@
 import { useState, useMemo } from 'react';
 import { Link } from 'react-router-dom';
-import { CheckSquare, Plus, Search, AlertTriangle, Loader2 } from 'lucide-react';
-import { useAllTodos, addTodo, completeTodo, deleteTodo } from '../hooks/useTodos';
+import { CheckSquare, Plus, Search, AlertTriangle, Loader2, Copy, Check } from 'lucide-react';
+import { useAllTodos, addTodo, completeTodo, startTodo, blockTodo, reopenTodo, deleteTodo } from '../hooks/useTodos';
 import { LoadingState } from '../components/LoadingState';
 import { ErrorState } from '../components/ErrorState';
 import { EmptyState } from '../components/EmptyState';
 import { StatCard } from '../components/StatCard';
+import { StatusMenu } from '../components/StatusMenu';
 import type { TodoItem } from '../types';
-
-const STATUS_ICONS: Record<string, string> = {
-  open: '○',
-  in_progress: '◉',
-  completed: '✓',
-  blocked: '✕',
-};
-
-const STATUS_COLORS: Record<string, string> = {
-  open: 'text-muted-foreground',
-  in_progress: 'text-blue-400',
-  completed: 'text-emerald-400',
-  blocked: 'text-amber-400',
-};
 
 export function TodosPage() {
   const { data, loading, error, refetch } = useAllTodos();
@@ -29,6 +16,14 @@ export function TodosPage() {
   const [tagFilter, setTagFilter] = useState<string>('');
   const [newTodoText, setNewTodoText] = useState('');
   const [newTodoWorkspace, setNewTodoWorkspace] = useState('_global');
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+
+  function copyId(e: React.MouseEvent, id: string) {
+    e.stopPropagation();
+    navigator.clipboard.writeText(id);
+    setCopiedId(id);
+    setTimeout(() => setCopiedId((c) => (c === id ? null : c)), 1500);
+  }
 
   const allItems = useMemo(() => {
     if (!data?.workspaces) return [];
@@ -89,8 +84,32 @@ export function TodosPage() {
     refetch();
   }
 
-  async function handleComplete(workspace: string, id: string) {
-    await completeTodo(workspace, id);
+  const NEXT_STATUS: Record<string, string> = {
+    open: 'in_progress',
+    in_progress: 'completed',
+    completed: 'open',
+    blocked: 'open',
+  };
+
+  function handleCycleStatus(workspace: string, id: string, currentStatus: string) {
+    handleStatusChange(workspace, id, NEXT_STATUS[currentStatus] || 'open');
+  }
+
+  async function handleStatusChange(workspace: string, id: string, newStatus: string) {
+    switch (newStatus) {
+      case 'open':
+        await reopenTodo(workspace, id);
+        break;
+      case 'in_progress':
+        await startTodo(workspace, id);
+        break;
+      case 'completed':
+        await completeTodo(workspace, id);
+        break;
+      case 'blocked':
+        await blockTodo(workspace, id);
+        break;
+    }
     refetch();
   }
 
@@ -198,19 +217,13 @@ export function TodosPage() {
           {filtered.map((item) => (
             <div
               key={`${item.workspace}-${item.id}`}
-              className="surface-panel flex items-center gap-3 px-3 py-2 group"
+              className="surface-panel flex items-center gap-3 px-3 py-2 group cursor-pointer hover:bg-foreground/[0.03] transition"
+              onClick={() => handleCycleStatus(item.workspace, item.id, item.status)}
             >
-              <button
-                onClick={() =>
-                  item.status !== 'completed'
-                    ? handleComplete(item.workspace, item.id)
-                    : undefined
-                }
-                className={`text-lg leading-none ${STATUS_COLORS[item.status]} hover:opacity-70 transition`}
-                title={item.status === 'completed' ? 'Completed' : 'Click to complete'}
-              >
-                {STATUS_ICONS[item.status]}
-              </button>
+              <StatusMenu
+                status={item.status as any}
+                onChange={(s) => handleStatusChange(item.workspace, item.id, s)}
+              />
               <div className="flex-1 min-w-0">
                 <span
                   className={`text-sm ${item.status === 'completed' ? 'line-through text-muted-foreground' : 'text-foreground'}`}
@@ -228,12 +241,33 @@ export function TodosPage() {
                   <Link
                     to={`/w/${item.workspace}/todos`}
                     className="hover:text-foreground transition mr-2"
+                    onClick={(e) => e.stopPropagation()}
                   >
                     {item.workspace}
                   </Link>
                 )}
-                t:{item.id}
               </span>
+              {copiedId === item.id ? (
+                <span className="text-xs text-emerald-400 flex items-center gap-1">
+                  <Check className="h-3 w-3" /> Copied to clipboard
+                </span>
+              ) : (
+                <>
+                  <button
+                    className="text-xs text-muted-foreground/60 font-mono hover:text-foreground transition"
+                    onClick={(e) => copyId(e, item.id)}
+                  >
+                    t:{item.id}
+                  </button>
+                  <button
+                    className="text-muted-foreground/40 hover:text-foreground transition"
+                    title="Copy ID"
+                    onClick={(e) => copyId(e, item.id)}
+                  >
+                    <Copy className="h-3 w-3" />
+                  </button>
+                </>
+              )}
               <button
                 onClick={() => handleDelete(item.workspace, item.id)}
                 className="text-xs text-muted-foreground/40 hover:text-red-400 transition opacity-0 group-hover:opacity-100"

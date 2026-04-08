@@ -1,8 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
-import { Info, Plus } from 'lucide-react';
-import { useMissions, type MissionSummary } from '../hooks/useMissions';
-import { PageHeader } from '../components/PageHeader';
+import { Link, useSearchParams, useParams } from 'react-router-dom';
+import { Info } from 'lucide-react';
+import { useMissions, useWorkspacePrefix, type MissionSummary } from '../hooks/useMissions';
 import { LoadingState } from '../components/LoadingState';
 import { ErrorState } from '../components/ErrorState';
 import { EmptyState } from '../components/EmptyState';
@@ -17,13 +16,29 @@ import { formatDate } from '../lib/format';
 import { MISSION_BOARD_COLUMNS, moveItem } from '../lib/kanban';
 
 export function MissionList() {
+  const { workspace } = useParams<{ workspace?: string }>();
+  const wsPrefix = useWorkspacePrefix();
   const { data: missions, loading, error } = useMissions();
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [archivedFilter, setArchivedFilter] = useState('active');
   const [tagFilter, setTagFilter] = useState('all');
   const [sortBy, setSortBy] = useState('updated');
-  const [view, setView] = useState<'cards' | 'table' | 'kanban'>('cards');
+  const [searchParams, setSearchParams] = useSearchParams();
+  const viewParam = searchParams.get('view');
+  const view: 'cards' | 'table' | 'kanban' =
+    viewParam === 'table' || viewParam === 'kanban' ? viewParam : 'cards';
+  const setView = (v: 'cards' | 'table' | 'kanban') => {
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      if (v === 'cards') {
+        next.delete('view');
+      } else {
+        next.set('view', v);
+      }
+      return next;
+    });
+  };
   const [missionOrder, setMissionOrder] = useState<Record<string, string[]>>({});
 
   const filtered = useMemo(() => {
@@ -32,6 +47,13 @@ export function MissionList() {
     }
     return missions
       .filter((mission) => {
+        if (workspace) {
+          if (workspace === '_ungrouped') {
+            if (mission.workspace !== null) return false;
+          } else {
+            if (mission.workspace !== workspace) return false;
+          }
+        }
         if (archivedFilter === 'active' && mission.archived) {
           return false;
         }
@@ -52,7 +74,7 @@ export function MissionList() {
         return haystack.includes(search.toLowerCase());
       })
       .sort((left, right) => sortMissions(left, right, sortBy));
-  }, [missions, search, statusFilter, archivedFilter, tagFilter, sortBy]);
+  }, [missions, search, statusFilter, archivedFilter, tagFilter, sortBy, workspace]);
 
   const filteredKey = filtered.map((mission) => `${mission.slug}:${mission.status}`).join('|');
 
@@ -86,18 +108,6 @@ export function MissionList() {
 
   return (
     <div className="space-y-5">
-      <PageHeader
-        eyebrow="Directory"
-        title="Missions"
-        description="Search, filter, and sort the mission set without losing the distinction between human-authored mission data and derived status."
-        actions={
-          <Link className="shell-action bg-foreground text-background hover:opacity-90" to="/create/mission">
-            <Plus className="h-4 w-4" />
-            <span>New Mission</span>
-          </Link>
-        }
-      />
-
       <FilterBar>
         <SearchInput
           value={search}
@@ -152,7 +162,7 @@ export function MissionList() {
               : 'Adjust the current search and filters or create a new mission.'
           }
           actions={
-            <Link className="shell-action bg-foreground text-background hover:opacity-90" to="/create/mission">
+            <Link className="shell-action bg-foreground text-background hover:opacity-90" to={`${wsPrefix}/create/mission`}>
               Create Mission
             </Link>
           }
@@ -162,7 +172,7 @@ export function MissionList() {
           {filtered.map((mission) => (
             <Link
               key={mission.slug}
-              to={`/missions/${mission.slug}`}
+              to={`${wsPrefix}/missions/${mission.slug}`}
               className="block rounded-lg border border-border/60 bg-card/90 p-3 shadow-sm transition hover:border-primary/40 hover:shadow-md"
             >
               <div className="flex items-start justify-between gap-3">
@@ -217,7 +227,7 @@ export function MissionList() {
                 {filtered.map((mission) => (
                   <tr key={mission.slug} className="border-b border-border/50 last:border-0">
                     <td className="py-4 pr-4">
-                      <Link to={`/missions/${mission.slug}`} className="font-semibold text-foreground hover:text-primary">
+                      <Link to={`${wsPrefix}/missions/${mission.slug}`} className="font-semibold text-foreground hover:text-primary">
                         {mission.title}
                       </Link>
                       <div className="mt-1 flex flex-wrap gap-2">
@@ -291,7 +301,7 @@ export function MissionList() {
         <div className="flex items-start gap-3">
           <Info className="mt-0.5 h-4 w-4" />
           <p>
-            Mission status is derived from assignment state by default. Drag missions between columns or use the status override on the mission detail page to set a manual status.
+            Mission status is derived from assignment state by default.{view === 'kanban' ? ' Drag missions between columns or use' : ' Use'} the status override on the mission detail page to set a manual status.
           </p>
         </div>
       </div>
@@ -354,11 +364,12 @@ function MissionBoardCard({
   mission: MissionSummary;
   dragging: boolean;
 }) {
+  const wsPrefix = useWorkspacePrefix();
   return (
     <div className="rounded-lg border border-border/60 bg-background/85 p-3 shadow-sm">
       <div className="flex items-start justify-between gap-3">
         <div className="space-y-1">
-          <Link to={`/missions/${mission.slug}`} className="text-base font-semibold text-foreground hover:text-primary">
+          <Link to={`${wsPrefix}/missions/${mission.slug}`} className="text-base font-semibold text-foreground hover:text-primary">
             {mission.title}
           </Link>
           <p className="text-sm text-muted-foreground">Updated {formatDate(mission.updated)}</p>

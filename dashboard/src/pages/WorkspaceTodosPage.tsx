@@ -5,60 +5,22 @@ import {
   Plus,
   Search,
   AlertTriangle,
-  ChevronDown,
-  ChevronRight,
+  Copy,
+  Check,
 } from 'lucide-react';
 import {
   useTodos,
-  useTodoLog,
   addTodo,
   completeTodo,
   blockTodo,
   startTodo,
-  unblockTodo,
-  deleteTodo,
+  reopenTodo,
 } from '../hooks/useTodos';
 import { LoadingState } from '../components/LoadingState';
 import { ErrorState } from '../components/ErrorState';
 import { EmptyState } from '../components/EmptyState';
 import { StatCard } from '../components/StatCard';
-import { formatDateTime } from '../lib/format';
-
-const STATUS_ICONS: Record<string, string> = {
-  open: '○',
-  in_progress: '◉',
-  completed: '✓',
-  blocked: '✕',
-};
-
-const STATUS_COLORS: Record<string, string> = {
-  open: 'text-muted-foreground',
-  in_progress: 'text-blue-400',
-  completed: 'text-emerald-400',
-  blocked: 'text-amber-400',
-};
-
-function LogPanel({ workspace, id }: { workspace: string; id: string }) {
-  const { entries, loading } = useTodoLog(workspace, id);
-
-  if (loading) return <div className="text-xs text-muted-foreground py-1">Loading log...</div>;
-  if (entries.length === 0)
-    return <div className="text-xs text-muted-foreground py-1">No log entries.</div>;
-
-  return (
-    <div className="space-y-2 py-1">
-      {entries.map((entry, i) => (
-        <div key={i} className="text-xs text-muted-foreground border-l-2 border-border/50 pl-3">
-          <div className="font-mono text-muted-foreground/60">{formatDateTime(entry.timestamp)}</div>
-          {entry.summary && <div>{entry.summary}</div>}
-          {entry.session && <div>Session: {entry.session}</div>}
-          {entry.branch && <div>Branch: {entry.branch}</div>}
-          {entry.blockers && <div className="text-amber-400">Blocker: {entry.blockers}</div>}
-        </div>
-      ))}
-    </div>
-  );
-}
+import { StatusMenu } from '../components/StatusMenu';
 
 export function WorkspaceTodosPage() {
   const { workspace } = useParams<{ workspace: string }>();
@@ -68,9 +30,14 @@ export function WorkspaceTodosPage() {
   const [statusFilter, setStatusFilter] = useState<string>('');
   const [tagFilter, setTagFilter] = useState<string>('');
   const [newTodoText, setNewTodoText] = useState('');
-  const [expandedLog, setExpandedLog] = useState<string | null>(null);
-  const [blockingId, setBlockingId] = useState<string | null>(null);
-  const [blockReason, setBlockReason] = useState('');
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+
+  function copyId(e: React.MouseEvent, id: string) {
+    e.stopPropagation();
+    navigator.clipboard.writeText(id);
+    setCopiedId(id);
+    setTimeout(() => setCopiedId((c) => (c === id ? null : c)), 1500);
+  }
 
   const allTags = useMemo(() => {
     if (!data?.items) return [];
@@ -105,33 +72,35 @@ export function WorkspaceTodosPage() {
     refetch();
   }
 
-  async function handleStatusToggle(id: string, currentStatus: string) {
-    switch (currentStatus) {
+  const NEXT_STATUS: Record<string, string> = {
+    open: 'in_progress',
+    in_progress: 'completed',
+    completed: 'open',
+    blocked: 'open',
+  };
+
+  function handleCycleStatus(id: string, currentStatus: string) {
+    handleStatusChange(id, NEXT_STATUS[currentStatus] || 'open');
+  }
+
+  async function handleStatusChange(id: string, newStatus: string) {
+    switch (newStatus) {
       case 'open':
-        await startTodo(ws, id);
+        await reopenTodo(ws, id);
         break;
       case 'in_progress':
+        await startTodo(ws, id);
+        break;
+      case 'completed':
         await completeTodo(ws, id);
         break;
       case 'blocked':
-        await unblockTodo(ws, id);
+        await blockTodo(ws, id);
         break;
     }
     refetch();
   }
 
-  async function handleBlock(id: string) {
-    if (!blockReason.trim()) return;
-    await blockTodo(ws, id, blockReason.trim());
-    setBlockingId(null);
-    setBlockReason('');
-    refetch();
-  }
-
-  async function handleDelete(id: string) {
-    await deleteTodo(ws, id);
-    refetch();
-  }
 
   if (loading) return <LoadingState label="Loading todos..." />;
   if (error) return <ErrorState error={error} />;
@@ -218,95 +187,52 @@ export function WorkspaceTodosPage() {
       ) : (
         <div className="space-y-1">
           {filtered.map((item) => (
-            <div key={item.id}>
-              <div className="surface-panel flex items-center gap-3 px-3 py-2 group">
-                <button
-                  onClick={() =>
-                    item.status !== 'completed' && handleStatusToggle(item.id, item.status)
-                  }
-                  className={`text-lg leading-none ${STATUS_COLORS[item.status]} hover:opacity-70 transition`}
-                  title={
-                    item.status === 'open'
-                      ? 'Start'
-                      : item.status === 'in_progress'
-                        ? 'Complete'
-                        : item.status === 'blocked'
-                          ? 'Unblock'
-                          : 'Done'
-                  }
+            <div
+              key={item.id}
+              className="surface-panel flex items-center gap-3 px-3 py-2 cursor-pointer hover:bg-foreground/[0.03] transition"
+              onClick={() => handleCycleStatus(item.id, item.status)}
+            >
+              <StatusMenu
+                status={item.status as any}
+                onChange={(s) => handleStatusChange(item.id, s)}
+              />
+              <div className="flex-1 min-w-0">
+                <span
+                  className={`text-sm ${item.status === 'completed' ? 'line-through text-muted-foreground' : 'text-foreground'}`}
                 >
-                  {STATUS_ICONS[item.status]}
-                </button>
-                <div className="flex-1 min-w-0">
-                  <span
-                    className={`text-sm ${item.status === 'completed' ? 'line-through text-muted-foreground' : 'text-foreground'}`}
-                  >
-                    {item.description}
+                  {item.description}
+                </span>
+                {item.tags.length > 0 && (
+                  <span className="ml-2 text-xs text-muted-foreground">
+                    {item.tags.map((t) => `#${t}`).join(' ')}
                   </span>
-                  {item.tags.length > 0 && (
-                    <span className="ml-2 text-xs text-muted-foreground">
-                      {item.tags.map((t) => `#${t}`).join(' ')}
-                    </span>
-                  )}
-                  {item.session && (
-                    <span className="ml-2 text-xs text-blue-400/60 font-mono">
-                      session:{item.session.slice(0, 8)}
-                    </span>
-                  )}
-                </div>
-                <span className="text-xs text-muted-foreground/60 font-mono">t:{item.id}</span>
-                <button
-                  onClick={() => setExpandedLog(expandedLog === item.id ? null : item.id)}
-                  className="text-muted-foreground/40 hover:text-foreground transition"
-                  title="Toggle log"
-                >
-                  {expandedLog === item.id ? (
-                    <ChevronDown className="h-4 w-4" />
-                  ) : (
-                    <ChevronRight className="h-4 w-4" />
-                  )}
-                </button>
-                <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition">
-                  {item.status !== 'blocked' && item.status !== 'completed' && (
-                    <button
-                      onClick={() => setBlockingId(blockingId === item.id ? null : item.id)}
-                      className="text-xs text-muted-foreground/40 hover:text-amber-400 transition"
-                    >
-                      block
-                    </button>
-                  )}
-                  <button
-                    onClick={() => handleDelete(item.id)}
-                    className="text-xs text-muted-foreground/40 hover:text-red-400 transition"
-                  >
-                    delete
-                  </button>
-                </div>
+                )}
+                {item.session && (
+                  <span className="ml-2 text-xs text-blue-400/60 font-mono">
+                    session:{item.session.slice(0, 8)}
+                  </span>
+                )}
               </div>
-              {blockingId === item.id && (
-                <div className="surface-panel border-t-0 px-3 py-2 flex gap-2">
-                  <input
-                    type="text"
-                    placeholder="Reason for blocking..."
-                    value={blockReason}
-                    onChange={(e) => setBlockReason(e.target.value)}
-                    onKeyDown={(e) => e.key === 'Enter' && handleBlock(item.id)}
-                    className="h-8 flex-1 rounded-md border border-border/70 bg-background px-3 text-xs text-foreground focus:border-foreground/30 focus:outline-none"
-                    autoFocus
-                  />
+              {copiedId === item.id ? (
+                <span className="text-xs text-emerald-400 flex items-center gap-1">
+                  <Check className="h-3 w-3" /> Copied to clipboard
+                </span>
+              ) : (
+                <>
                   <button
-                    onClick={() => handleBlock(item.id)}
-                    disabled={!blockReason.trim()}
-                    className="h-8 rounded-md bg-amber-500/20 px-2 text-xs text-amber-400 hover:bg-amber-500/30 disabled:opacity-40"
+                    className="text-xs text-muted-foreground/60 font-mono hover:text-foreground transition"
+                    onClick={(e) => copyId(e, item.id)}
                   >
-                    Block
+                    t:{item.id}
                   </button>
-                </div>
-              )}
-              {expandedLog === item.id && (
-                <div className="surface-panel border-t-0 px-3 py-2 pl-10">
-                  <LogPanel workspace={ws} id={item.id} />
-                </div>
+                  <button
+                    className="text-muted-foreground/40 hover:text-foreground transition"
+                    title="Copy ID"
+                    onClick={(e) => copyId(e, item.id)}
+                  >
+                    <Copy className="h-3 w-3" />
+                  </button>
+                </>
               )}
             </div>
           ))}

@@ -32,7 +32,6 @@ describe('createMissionCommand', () => {
     expect(files).toContain('_index-assignments.md');
     expect(files).toContain('_index-plans.md');
     expect(files).toContain('_index-decisions.md');
-    expect(files).toContain('_index-sessions.md');
     expect(files).toContain('_status.md');
     expect(files).toContain('assignments');
     expect(files).toContain('resources');

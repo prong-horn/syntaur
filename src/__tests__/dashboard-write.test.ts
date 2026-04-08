@@ -233,6 +233,66 @@ tags: []
     expect((response.payload as any).assignment.status).toBe('completed');
   });
 
+  it('toggles acceptance criteria and refreshes the assignment timestamp', async () => {
+    await createAssignmentFixture();
+    const assignmentPath = resolve(
+      testDir,
+      'test-mission',
+      'assignments',
+      'test-assignment',
+      'assignment.md',
+    );
+
+    await writeFile(assignmentPath, `---
+id: assignment-1
+slug: test-assignment
+title: Test Assignment
+status: pending
+priority: medium
+created: "2026-03-20T10:00:00Z"
+updated: "2026-03-20T10:00:00Z"
+assignee: codex-1
+externalIds: []
+dependsOn: []
+blockedReason: null
+workspace:
+  repository: null
+  worktreePath: null
+  branch: null
+  parentBranch: null
+tags: []
+---
+
+# Test Assignment
+
+## Acceptance Criteria
+
+- [ ] First criterion
+- [x] Second criterion
+
+## Context
+
+Keep this paragraph.`, 'utf-8');
+
+    const router = createWriteRouter(testDir);
+    const response = await invokeRoute(
+      router,
+      'patch',
+      '/api/missions/:slug/assignments/:aslug/acceptance-criteria/:index',
+      { slug: 'test-mission', aslug: 'test-assignment', index: '0' },
+      { checked: true },
+    );
+
+    expect(response.statusCode).toBe(200);
+    expect((response.payload as any).content).toContain('- [x] First criterion');
+    expect((response.payload as any).content).toContain('updated:');
+
+    const fileContent = await readFile(assignmentPath, 'utf-8');
+    expect(fileContent).toContain('- [x] First criterion');
+    expect(fileContent).toContain('Keep this paragraph.');
+    expect(fileContent).not.toContain('updated: "2026-03-20T10:00:00Z"');
+  });
+
   it('appends handoff entries without rewriting prior history', async () => {
     await createAssignmentFixture();
     const router = createWriteRouter(testDir);

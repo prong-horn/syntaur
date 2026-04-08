@@ -1,25 +1,33 @@
-export type AssignmentStatus =
-  | 'pending'
-  | 'in_progress'
-  | 'blocked'
-  | 'review'
-  | 'completed'
-  | 'failed';
+export type AssignmentStatus = string;
 
-export type TransitionCommand =
-  | 'start'
-  | 'complete'
-  | 'block'
-  | 'unblock'
-  | 'review'
-  | 'fail'
-  | 'reopen'
-  | 'assign';
+export type TransitionCommand = string;
 
-export const TERMINAL_STATUSES: ReadonlySet<AssignmentStatus> = new Set([
+export const DEFAULT_STATUSES = [
+  'pending',
+  'in_progress',
+  'blocked',
+  'review',
+  'completed',
+  'failed',
+] as const;
+
+export const DEFAULT_COMMANDS = [
+  'start',
+  'complete',
+  'block',
+  'unblock',
+  'review',
+  'fail',
+  'reopen',
+  'assign',
+] as const;
+
+export const DEFAULT_TERMINAL_STATUSES: ReadonlySet<string> = new Set([
   'completed',
   'failed',
 ]);
+
+export const TERMINAL_STATUSES: ReadonlySet<string> = DEFAULT_TERMINAL_STATUSES;
 
 export interface ExternalId {
   system: string;
