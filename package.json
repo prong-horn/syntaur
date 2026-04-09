@@ -1,7 +1,23 @@
 {
   "name": "syntaur",
   "version": "0.1.1",
-  "description": "CLI scaffolding tool for the Syntaur protocol",
+  "description": "Mission workflow CLI with dashboard, Claude Code plugin, and Codex plugin",
+  "homepage": "https://github.com/prong-horn/syntaur#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/prong-horn/syntaur.git"
+  },
+  "bugs": {
+    "url": "https://github.com/prong-horn/syntaur/issues"
+  },
+  "keywords": [
+    "agents",
+    "cli",
+    "codex",
+    "claude",
+    "workflow",
+    "missions"
+  ],
   "type": "module",
   "bin": {
     "syntaur": "./bin/syntaur.js"
