@@ -7,10 +7,15 @@ import type {
 import { getStatusConfig } from './api.js';
 
 const CLI_COMMANDS: HelpCommand[] = [
-  // --- Core setup & scaffolding (indices 0-3) ---
+  // --- Core setup & scaffolding (indices 0-4) ---
+  {
+    command: 'syntaur setup',
+    description: 'Initialize Syntaur and optionally install plugins or launch the dashboard.',
+    example: 'syntaur setup',
+  },
   {
     command: 'syntaur init',
-    description: 'Initialize the local Syntaur home directory and config scaffolding.',
+    description: 'Initialize the local Syntaur home directory and config scaffolding without any prompts.',
     example: 'syntaur init',
   },
   {
@@ -29,7 +34,7 @@ const CLI_COMMANDS: HelpCommand[] = [
     example: 'syntaur assign implement-overview --mission ui-overhaul --agent codex-1',
   },
 
-  // --- Lifecycle transitions (indices 4-10) ---
+  // --- Lifecycle transitions (indices 5-11) ---
   {
     command: 'syntaur start',
     description: 'Transition an assignment to in_progress.',
@@ -66,23 +71,28 @@ const CLI_COMMANDS: HelpCommand[] = [
     example: 'syntaur reopen implement-overview --mission ui-overhaul',
   },
 
-  // --- Dashboard (index 11) ---
+  // --- Dashboard (index 12) ---
   {
     command: 'syntaur dashboard',
     description: 'Start the local dashboard UI over the mission files on disk.',
     example: 'syntaur dashboard --port 4800',
   },
 
-  // --- Plugin & adapter setup (indices 12-14) ---
+  // --- Plugin & adapter setup (indices 13-16) ---
   {
     command: 'syntaur install-plugin',
-    description: 'Install the Syntaur Claude Code plugin via symlink.',
-    example: 'syntaur install-plugin',
+    description: 'Install the Syntaur Claude Code plugin, prompting for the target directory when interactive.',
+    example: 'syntaur install-plugin --target-dir ~/.claude/plugins/syntaur',
   },
   {
     command: 'syntaur install-codex-plugin',
-    description: 'Install the Syntaur Codex plugin and home marketplace entry.',
-    example: 'syntaur install-codex-plugin',
+    description: 'Install the Syntaur Codex plugin and register its marketplace entry, prompting for both paths when interactive.',
+    example: 'syntaur install-codex-plugin --target-dir ~/plugins/syntaur --marketplace-path ~/.agents/plugins/marketplace.json',
+  },
+  {
+    command: 'syntaur uninstall',
+    description: 'Remove Syntaur plugins and optionally local ~/.syntaur data.',
+    example: 'syntaur uninstall --all',
   },
   {
     command: 'syntaur setup-adapter',
@@ -90,14 +100,14 @@ const CLI_COMMANDS: HelpCommand[] = [
     example: 'syntaur setup-adapter cursor --mission ui-overhaul --assignment implement-overview',
   },
 
-  // --- Session & server tracking (index 15) ---
+  // --- Session & server tracking (index 17) ---
   {
     command: 'syntaur track-session',
     description: 'Register an agent session, optionally linked to a mission and assignment.',
     example: 'syntaur track-session --agent claude --mission ui-overhaul --assignment implement-overview',
   },
 
-  // --- Browsing & playbooks (indices 16-18) ---
+  // --- Browsing & playbooks (indices 18-20) ---
   {
     command: 'syntaur browse',
     description: 'Interactive TUI browser for missions and assignments.',
@@ -118,34 +128,34 @@ const CLI_COMMANDS: HelpCommand[] = [
 const WORKFLOW: HelpChecklistItem[] = [
   {
     title: 'Initialize the workspace',
-    detail: 'Run the init command once so Syntaur has its local home directory and config scaffolding.',
+    detail: 'Run setup once so Syntaur can initialize its local home directory and offer plugin installation.',
     command: CLI_COMMANDS[0],
   },
   {
     title: 'Create a mission',
     detail: 'Use a mission for a higher-level objective. Missions group assignments, shared resources, and memories.',
-    command: CLI_COMMANDS[1],
+    command: CLI_COMMANDS[2],
     href: '/create/mission',
   },
   {
     title: 'Create the first assignment',
     detail: 'Assignments are the execution unit. Create one for each concrete chunk of work inside the mission.',
-    command: CLI_COMMANDS[2],
+    command: CLI_COMMANDS[3],
   },
   {
     title: 'Assign the work',
     detail: 'Setting an assignee before starting is recommended for clarity, but not required.',
-    command: CLI_COMMANDS[3],
+    command: CLI_COMMANDS[4],
   },
   {
     title: 'Start, review, complete, or block through lifecycle actions',
     detail: 'Status changes happen through lifecycle actions, kanban drag-and-drop, or the status override controls.',
-    command: CLI_COMMANDS[4],
+    command: CLI_COMMANDS[5],
   },
   {
     title: 'Use the dashboard for triage and context',
     detail: 'Overview shows the current queue, mission pages show health, assignment pages show the execution surface.',
-    command: CLI_COMMANDS[11],
+    command: CLI_COMMANDS[12],
     href: '/',
   },
 ];

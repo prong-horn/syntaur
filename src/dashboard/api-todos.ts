@@ -14,6 +14,13 @@ import type { WsMessage } from './types.js';
 
 const WORKSPACE_REGEX = /^[a-z0-9_][a-z0-9-]*$/;
 
+function getWorkspaceParam(value: string | string[] | undefined): string {
+  if (Array.isArray(value)) {
+    return value[0] ?? '';
+  }
+  return value ?? '';
+}
+
 // Per-workspace write lock to prevent concurrent read-modify-write races
 const writeLocks = new Map<string, Promise<void>>();
 function withLock<T>(workspace: string, fn: () => Promise<T>): Promise<T> {
@@ -35,8 +42,9 @@ export function createTodosRouter(
 
   // Validate workspace name on all routes that use :workspace
   function validateWorkspace(req: Request, res: Response, next: NextFunction): void {
-    if (req.params.workspace && !WORKSPACE_REGEX.test(req.params.workspace)) {
-      res.status(400).json({ error: `Invalid workspace name: "${req.params.workspace}". Use lowercase letters, numbers, hyphens, and underscores.` });
+    const workspace = getWorkspaceParam(req.params.workspace);
+    if (workspace && !WORKSPACE_REGEX.test(workspace)) {
+      res.status(400).json({ error: `Invalid workspace name: "${workspace}". Use lowercase letters, numbers, hyphens, and underscores.` });
       return;
     }
     next();
@@ -79,7 +87,7 @@ export function createTodosRouter(
   // GET /:workspace — list items for one workspace
   router.get('/:workspace', async (req, res) => {
     try {
-      const { workspace } = req.params;
+      const workspace = getWorkspaceParam(req.params.workspace);
       const checklist = await readChecklist(todosDir, workspace);
       res.json({
         workspace: checklist.workspace,
@@ -95,7 +103,7 @@ export function createTodosRouter(
   // POST /:workspace — add item
   router.post('/:workspace', async (req, res) => {
     try {
-      const { workspace } = req.params;
+      const workspace = getWorkspaceParam(req.params.workspace);
       const { description, tags } = req.body;
       if (!description || typeof description !== 'string') {
         res.status(400).json({ error: 'description is required' });
@@ -129,14 +137,15 @@ export function createTodosRouter(
   // Must be before /:workspace/:id to avoid param capture
   router.post('/:workspace/reorder', async (req, res) => {
     try {
+      const workspace = getWorkspaceParam(req.params.workspace);
       const { ids } = req.body;
       if (!Array.isArray(ids) || !ids.every((id: unknown) => typeof id === 'string')) {
         res.status(400).json({ error: 'ids must be an array of strings' });
         return;
       }
 
-      const items = await withLock(req.params.workspace, async () => {
-        const checklist = await readChecklist(todosDir, req.params.workspace);
+      const items = await withLock(workspace, async () => {
+        const checklist = await readChecklist(todosDir, workspace);
         const itemMap = new Map(checklist.items.map((i) => [i.id, i]));
 
         // Build reordered list: requested order first, then any items not in the ids array
@@ -168,7 +177,7 @@ export function createTodosRouter(
   // Must be before /:workspace/:id to avoid param capture
   router.get('/:workspace/log', async (req, res) => {
     try {
-      const log = await readLog(todosDir, req.params.workspace);
+      const log = await readLog(todosDir, getWorkspaceParam(req.params.workspace));
       res.json(log);
     } catch (error) {
       res.status(500).json({ error: error instanceof Error ? error.message : 'Failed to get log' });
@@ -184,7 +193,7 @@ export function createTodosRouter(
       const { readFile } = await import('node:fs/promises');
       const { writeFileForce } = await import('../utils/fs.js');
 
-      const { workspace } = req.params;
+      const workspace = getWorkspaceParam(req.params.workspace);
       const checklist = await readChecklist(todosDir, workspace);
       const log = await readLog(todosDir, workspace);
 
@@ -240,7 +249,7 @@ export function createTodosRouter(
   // GET /:workspace/log/:id — log for specific item
   router.get('/:workspace/log/:id', async (req, res) => {
     try {
-      const log = await readLog(todosDir, req.params.workspace);
+      const log = await readLog(todosDir, getWorkspaceParam(req.params.workspace));
       const entries = log.entries.filter((e) => e.itemIds.includes(req.params.id));
       res.json({ workspace: log.workspace, entries });
     } catch (error) {
@@ -251,13 +260,14 @@ export function createTodosRouter(
   // GET /:workspace/:id — single item with log
   router.get('/:workspace/:id', async (req, res) => {
     try {
-      const checklist = await readChecklist(todosDir, req.params.workspace);
+      const workspace = getWorkspaceParam(req.params.workspace);
+      const checklist = await readChecklist(todosDir, workspace);
       const item = checklist.items.find((i) => i.id === req.params.id);
       if (!item) {
         res.status(404).json({ error: `Todo "${req.params.id}" not found` });
         return;
       }
-      const log = await readLog(todosDir, req.params.workspace);
+      const log = await readLog(todosDir, workspace);
       const logEntries = log.entries.filter((e) => e.itemIds.includes(req.params.id));
       res.json({ ...item, log: logEntries });
     } catch (error) {
@@ -268,8 +278,9 @@ export function createTodosRouter(
   // PATCH /:workspace/:id — update description or tags
   router.patch('/:workspace/:id', async (req, res) => {
     try {
-      const result = await withLock(req.params.workspace, async () => {
-        const checklist = await readChecklist(todosDir, req.params.workspace);
+      const workspace = getWorkspaceParam(req.params.workspace);
+      const result = await withLock(workspace, async () => {
+        const checklist = await readChecklist(todosDir, workspace);
         const item = checklist.items.find((i) => i.id === req.params.id);
         if (!item) return null;
         if (req.body.description !== undefined) item.description = req.body.description;
@@ -288,8 +299,9 @@ export function createTodosRouter(
   // DELETE /:workspace/:id
   router.delete('/:workspace/:id', async (req, res) => {
     try {
-      const deleted = await withLock(req.params.workspace, async () => {
-        const checklist = await readChecklist(todosDir, req.params.workspace);
+      const workspace = getWorkspaceParam(req.params.workspace);
+      const deleted = await withLock(workspace, async () => {
+        const checklist = await readChecklist(todosDir, workspace);
         const idx = checklist.items.findIndex((i) => i.id === req.params.id);
         if (idx === -1) return false;
         checklist.items.splice(idx, 1);
@@ -307,8 +319,9 @@ export function createTodosRouter(
   // POST /:workspace/:id/start
   router.post('/:workspace/:id/start', async (req, res) => {
     try {
-      const result = await withLock(req.params.workspace, async () => {
-        const checklist = await readChecklist(todosDir, req.params.workspace);
+      const workspace = getWorkspaceParam(req.params.workspace);
+      const result = await withLock(workspace, async () => {
+        const checklist = await readChecklist(todosDir, workspace);
         const item = checklist.items.find((i) => i.id === req.params.id);
         if (!item) return { error: 'not_found' as const };
         if (item.status === 'in_progress') return { error: 'conflict' as const, session: item.session };
@@ -331,8 +344,9 @@ export function createTodosRouter(
   // POST /:workspace/:id/complete
   router.post('/:workspace/:id/complete', async (req, res) => {
     try {
-      const result = await withLock(req.params.workspace, async () => {
-        const checklist = await readChecklist(todosDir, req.params.workspace);
+      const workspace = getWorkspaceParam(req.params.workspace);
+      const result = await withLock(workspace, async () => {
+        const checklist = await readChecklist(todosDir, workspace);
         const item = checklist.items.find((i) => i.id === req.params.id);
         if (!item) return null;
         item.status = 'completed';
@@ -349,7 +363,7 @@ export function createTodosRouter(
           blockers: null,
           status: null,
         };
-        await appendLogEntry(todosDir, req.params.workspace, entry);
+        await appendLogEntry(todosDir, workspace, entry);
         return { ...item };
       });
       if (!result) { res.status(404).json({ error: `Todo "${req.params.id}" not found` }); return; }
@@ -364,8 +378,9 @@ export function createTodosRouter(
   router.post('/:workspace/:id/block', async (req, res) => {
     try {
       const reason = req.body.reason || null;
-      const result = await withLock(req.params.workspace, async () => {
-        const checklist = await readChecklist(todosDir, req.params.workspace);
+      const workspace = getWorkspaceParam(req.params.workspace);
+      const result = await withLock(workspace, async () => {
+        const checklist = await readChecklist(todosDir, workspace);
         const item = checklist.items.find((i) => i.id === req.params.id);
         if (!item) return null;
         item.status = 'blocked';
@@ -382,7 +397,7 @@ export function createTodosRouter(
           blockers: reason,
           status: 'blocked',
         };
-        await appendLogEntry(todosDir, req.params.workspace, entry);
+        await appendLogEntry(todosDir, workspace, entry);
         return { ...item };
       });
       if (!result) { res.status(404).json({ error: `Todo "${req.params.id}" not found` }); return; }
@@ -396,8 +411,9 @@ export function createTodosRouter(
   // POST /:workspace/:id/reopen — move completed back to open
   router.post('/:workspace/:id/reopen', async (req, res) => {
     try {
-      const result = await withLock(req.params.workspace, async () => {
-        const checklist = await readChecklist(todosDir, req.params.workspace);
+      const workspace = getWorkspaceParam(req.params.workspace);
+      const result = await withLock(workspace, async () => {
+        const checklist = await readChecklist(todosDir, workspace);
         const item = checklist.items.find((i) => i.id === req.params.id);
         if (!item) return null;
         item.status = 'open';
@@ -416,8 +432,9 @@ export function createTodosRouter(
   // POST /:workspace/:id/unblock
   router.post('/:workspace/:id/unblock', async (req, res) => {
     try {
-      const result = await withLock(req.params.workspace, async () => {
-        const checklist = await readChecklist(todosDir, req.params.workspace);
+      const workspace = getWorkspaceParam(req.params.workspace);
+      const result = await withLock(workspace, async () => {
+        const checklist = await readChecklist(todosDir, workspace);
         const item = checklist.items.find((i) => i.id === req.params.id);
         if (!item) return null;
         item.status = 'open';

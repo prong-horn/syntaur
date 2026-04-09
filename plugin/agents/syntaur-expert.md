@@ -12,19 +12,13 @@ When answering questions, read the actual source files rather than relying solel
 
 ## Key Source Files
 
-- **Protocol spec:** `${CLAUDE_PLUGIN_ROOT}/../docs/protocol/spec.md`
-- **File formats:** `${CLAUDE_PLUGIN_ROOT}/../docs/protocol/file-formats.md`
 - **Protocol summary:** `${CLAUDE_PLUGIN_ROOT}/references/protocol-summary.md`
 - **File ownership:** `${CLAUDE_PLUGIN_ROOT}/references/file-ownership.md`
 - **Plugin manifest:** `${CLAUDE_PLUGIN_ROOT}/.claude-plugin/plugin.json`
-- **CLI entry point:** `${CLAUDE_PLUGIN_ROOT}/../src/index.ts`
-- **CLI commands:** `${CLAUDE_PLUGIN_ROOT}/../src/commands/`
-- **Templates:** `${CLAUDE_PLUGIN_ROOT}/../src/templates/`
-- **Dashboard server:** `${CLAUDE_PLUGIN_ROOT}/../src/dashboard/server.ts`
-- **Lifecycle engine:** `${CLAUDE_PLUGIN_ROOT}/../src/lifecycle/`
-- **Example mission:** `${CLAUDE_PLUGIN_ROOT}/../examples/sample-mission/`
 - **Skills:** `${CLAUDE_PLUGIN_ROOT}/skills/`
 - **Hooks:** `${CLAUDE_PLUGIN_ROOT}/hooks/`
+
+For the live CLI surface, run `syntaur --help` in the user environment.
 
 ---
 
@@ -151,9 +145,11 @@ Only the assigned agent may write to its own assignment folder.
 | Command | Description |
 |---------|-------------|
 | `syntaur init` | Initialize `~/.syntaur/` directory and global config |
-| `syntaur install-plugin` | Symlink plugin to `~/.claude/plugins/syntaur` |
+| `syntaur setup` | Guided first-run setup and optional plugin install |
+| `syntaur install-plugin` | Install the Claude Code plugin, prompting for the target path when interactive |
 | `syntaur dashboard [--port N]` | Start dashboard web UI (default port 4800) |
 | `syntaur setup-adapter <framework>` | Generate adapter files for cursor, codex, or opencode |
+| `syntaur uninstall [--all]` | Remove plugins and optionally `~/.syntaur` data |
 
 ### Mission & Assignment Creation
 | Command | Description |
@@ -185,7 +181,7 @@ All commands support `--dir <path>` to override the default `~/.syntaur/missions
 
 ## Plugin Structure
 
-The Syntaur Claude Code plugin lives at `plugin/` in the repo and gets symlinked to `~/.claude/plugins/syntaur` via `syntaur install-plugin`.
+The Syntaur Claude Code plugin is installed by `syntaur install-plugin`, which recommends a target path and lets the user choose the final location during interactive setup.
 
 ```
 plugin/
@@ -325,23 +321,17 @@ Adapters embed protocol knowledge (write boundaries, lifecycle states, CLI comma
 
 ### First-Time Setup
 ```bash
-# 1. Install Syntaur globally
-npm install -g syntaur
+# 1. Run guided setup
+npx syntaur@latest setup
 
-# 2. Initialize the ~/.syntaur/ directory
-syntaur init
-
-# 3. Install the Claude Code plugin
-syntaur install-plugin
-
-# 4. Create your first mission
+# 2. Create your first mission
 syntaur create-mission "My First Mission"
 
-# 5. Create assignments
+# 3. Create assignments
 syntaur create-assignment "Design the schema" --mission my-first-mission --priority high
 syntaur create-assignment "Implement the API" --mission my-first-mission --depends-on design-the-schema
 
-# 6. Start the dashboard
+# 4. Start the dashboard
 syntaur dashboard
 ```
 

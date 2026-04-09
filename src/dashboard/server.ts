@@ -44,11 +44,11 @@ export interface DashboardServerOptions {
   serversDir: string;
   playbooksDir: string;
   todosDir: string;
-  devMode: boolean;
+  serveStaticUi: boolean;
 }
 
 export function createDashboardServer(options: DashboardServerOptions) {
-  const { port, missionsDir, serversDir, playbooksDir, todosDir, devMode } = options;
+  const { port, missionsDir, serversDir, playbooksDir, todosDir, serveStaticUi } = options;
   const app = express();
   const server = createServer(app);
 
@@ -305,7 +305,7 @@ export function createDashboardServer(options: DashboardServerOptions) {
   app.use('/api/todos', createTodosRouter(todosDir, broadcast));
 
   // --- Static files (production only) ---
-  if (!devMode) {
+  if (serveStaticUi) {
     const dashboardDistPath = resolve(packageRoot, 'dashboard', 'dist');
     app.use(express.static(dashboardDistPath));
 

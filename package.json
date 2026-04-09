@@ -13,18 +13,19 @@
     ".agents",
     "plugins",
     "plugin",
+    "examples",
     "dashboard/dist"
   ],
   "scripts": {
     "build": "tsup",
-    "build:dashboard": "npm run build && cd dashboard && npm install && npm run build",
+    "build:dashboard": "npm run build && npm run build --prefix dashboard",
     "dev": "tsup --watch",
     "dev:dashboard": "cd dashboard && npm run dev",
     "dashboard:install": "cd dashboard && npm install",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "prepublishOnly": "npm run build:dashboard"
+    "prepublishOnly": "npm run build && npm ci --prefix dashboard && npm run build --prefix dashboard"
   },
   "engines": {
     "node": ">=20.0.0"

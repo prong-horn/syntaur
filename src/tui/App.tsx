@@ -10,7 +10,7 @@ import type { LaunchOptions } from './launch.js';
 
 interface AppProps {
   missionsDir: string;
-  onLaunch: (options: LaunchOptions) => void;
+  onLaunch: (options: Omit<LaunchOptions, 'agent'>) => void;
 }
 
 export function App({ missionsDir, onLaunch }: AppProps) {

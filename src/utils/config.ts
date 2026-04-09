@@ -2,6 +2,7 @@ import { readFile } from 'node:fs/promises';
 import { resolve, isAbsolute } from 'node:path';
 import { syntaurRoot, defaultMissionDir, expandHome } from './paths.js';
 import { fileExists, writeFileForce } from './fs.js';
+import { renderConfig } from '../templates/config.js';
 
 export interface StatusDefinition {
   id: string;
@@ -27,6 +28,12 @@ export interface StatusConfig {
   transitions: StatusTransition[];
 }
 
+export interface IntegrationConfig {
+  claudePluginDir: string | null;
+  codexPluginDir: string | null;
+  codexMarketplacePath: string | null;
+}
+
 export interface SyntaurConfig {
   version: string;
   defaultMissionDir: string;
@@ -34,6 +41,7 @@ export interface SyntaurConfig {
     trustLevel: 'low' | 'medium' | 'high';
     autoApprove: boolean;
   };
+  integrations: IntegrationConfig;
   statuses: StatusConfig | null;
 }
 
@@ -43,6 +51,11 @@ const DEFAULT_CONFIG: SyntaurConfig = {
   agentDefaults: {
     trustLevel: 'medium',
     autoApprove: false,
+  },
+  integrations: {
+    claudePluginDir: null,
+    codexPluginDir: null,
+    codexMarketplacePath: null,
   },
   statuses: null,
 };
@@ -219,6 +232,72 @@ function serializeStatusConfig(statuses: StatusConfig): string {
   return lines.join('\n');
 }
 
+function serializeIntegrationConfig(integrations: IntegrationConfig): string | null {
+  const lines: string[] = [];
+
+  if (integrations.claudePluginDir) {
+    lines.push(`  claudePluginDir: ${integrations.claudePluginDir}`);
+  }
+  if (integrations.codexPluginDir) {
+    lines.push(`  codexPluginDir: ${integrations.codexPluginDir}`);
+  }
+  if (integrations.codexMarketplacePath) {
+    lines.push(`  codexMarketplacePath: ${integrations.codexMarketplacePath}`);
+  }
+
+  if (lines.length === 0) {
+    return null;
+  }
+
+  return ['integrations:', ...lines].join('\n');
+}
+
+function stripTopLevelBlock(fmBlock: string, key: string): string {
+  const blockStart = fmBlock.match(new RegExp(`^${key}:\\s*$`, 'm'));
+  if (!blockStart) {
+    return fmBlock.replace(/\n+$/, '');
+  }
+
+  const startIdx = fmBlock.indexOf(blockStart[0]);
+  const before = fmBlock.slice(0, startIdx);
+  const after = fmBlock.slice(startIdx + blockStart[0].length);
+  const remaining = after.split('\n');
+  let endIdx = 0;
+
+  for (let i = 0; i < remaining.length; i++) {
+    const line = remaining[i];
+    if (line.trim() === '') {
+      endIdx = i + 1;
+      continue;
+    }
+    if (line.length > 0 && line[0] !== ' ') {
+      break;
+    }
+    endIdx = i + 1;
+  }
+
+  return (before + remaining.slice(endIdx).join('\n')).replace(/\n+$/, '');
+}
+
+function parseOptionalAbsolutePath(
+  value: string | undefined,
+  fieldName: string,
+): string | null {
+  if (!value) {
+    return null;
+  }
+
+  const expanded = expandHome(String(value));
+  if (!isAbsolute(expanded)) {
+    console.warn(
+      `Warning: config.md ${fieldName} is not an absolute path ("${value}"), ignoring it`,
+    );
+    return null;
+  }
+
+  return resolve(expanded);
+}
+
 export async function writeStatusConfig(statuses: StatusConfig): Promise<void> {
   const configPath = resolve(syntaurRoot(), 'config.md');
   const statusBlock = serializeStatusConfig(statuses);
@@ -280,24 +359,41 @@ export async function deleteStatusConfig(): Promise<void> {
 
   const fmBlock = fmMatch[2];
   const afterFrontmatter = existing.slice(fmMatch[0].length);
-
-  const statusesStart = fmBlock.match(/^statuses:\s*$/m);
-  if (!statusesStart) return;
-
-  const startIdx = fmBlock.indexOf(statusesStart[0]);
-  const before = fmBlock.slice(0, startIdx);
-  const after = fmBlock.slice(startIdx + statusesStart[0].length);
-  const remaining = after.split('\n');
-  let endIdx = 0;
-  for (let i = 0; i < remaining.length; i++) {
-    const line = remaining[i];
-    if (line.trim() === '') { endIdx = i + 1; continue; }
-    if (line.length > 0 && line[0] !== ' ') break;
-    endIdx = i + 1;
-  }
-  const cleanedFm = (before + remaining.slice(endIdx).join('\n')).replace(/\n+$/, '');
+  const cleanedFm = stripTopLevelBlock(fmBlock, 'statuses');
 
   const newContent = `---\n${cleanedFm}\n---${afterFrontmatter}`;
+  await writeFileForce(configPath, newContent);
+}
+
+export async function updateIntegrationConfig(
+  integrations: Partial<IntegrationConfig>,
+): Promise<void> {
+  const configPath = resolve(syntaurRoot(), 'config.md');
+  const nextIntegrations: IntegrationConfig = {
+    ...(await readConfig()).integrations,
+    ...integrations,
+  };
+
+  const integrationBlock = serializeIntegrationConfig(nextIntegrations);
+  const existing = await fileExists(configPath)
+    ? await readFile(configPath, 'utf-8')
+    : renderConfig({ defaultMissionDir: defaultMissionDir() });
+
+  const fmMatch = existing.match(/^(---\n)([\s\S]*?)\n(---)/);
+  if (!fmMatch) {
+    const content = `---\nversion: "1.0"\ndefaultMissionDir: ${defaultMissionDir()}\n${integrationBlock ?? ''}\n---\n${existing}`;
+    await writeFileForce(configPath, content.replace(/\n\n---/, '\n---'));
+    return;
+  }
+
+  const fmBlock = fmMatch[2];
+  const afterFrontmatter = existing.slice(fmMatch[0].length);
+  const cleanedFm = stripTopLevelBlock(fmBlock, 'integrations');
+  const newFm = integrationBlock
+    ? `${cleanedFm}\n${integrationBlock}`.replace(/^\n+/, '')
+    : cleanedFm;
+  const normalizedFm = newFm.replace(/\n+$/, '');
+  const newContent = `---\n${normalizedFm}\n---${afterFrontmatter}`;
   await writeFileForce(configPath, newContent);
 }
 
@@ -334,6 +430,20 @@ export async function readConfig(): Promise<SyntaurConfig> {
       autoApprove:
         fm['agentDefaults.autoApprove'] === 'true' ||
         DEFAULT_CONFIG.agentDefaults.autoApprove,
+    },
+    integrations: {
+      claudePluginDir: parseOptionalAbsolutePath(
+        fm['integrations.claudePluginDir'],
+        'integrations.claudePluginDir',
+      ),
+      codexPluginDir: parseOptionalAbsolutePath(
+        fm['integrations.codexPluginDir'],
+        'integrations.codexPluginDir',
+      ),
+      codexMarketplacePath: parseOptionalAbsolutePath(
+        fm['integrations.codexMarketplacePath'],
+        'integrations.codexMarketplacePath',
+      ),
     },
     statuses: parseStatusConfig(content),
   };

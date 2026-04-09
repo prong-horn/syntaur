@@ -86,7 +86,7 @@ title: Test Assignment
 status: in_progress
 priority: high
 created: "2026-03-20T10:00:00Z"
-updated: "2026-03-20T10:00:00Z"
+updated: "2026-04-07T10:00:00Z"
 assignee: codex-1
 externalIds: []
 dependsOn: []
@@ -132,7 +132,7 @@ const PLAN_MD = `---
 assignment: test-assignment
 status: in_progress
 created: "2026-03-20T10:00:00Z"
-updated: "2026-03-20T10:00:00Z"
+updated: "2026-04-07T10:00:00Z"
 ---
 
 # Plan
@@ -141,7 +141,7 @@ updated: "2026-03-20T10:00:00Z"
 
 const SCRATCHPAD_MD = `---
 assignment: test-assignment
-updated: "2026-03-20T11:00:00Z"
+updated: "2026-04-07T11:00:00Z"
 ---
 
 # Scratchpad
@@ -150,7 +150,7 @@ Some notes`;
 
 const HANDOFF_MD = `---
 assignment: test-assignment
-updated: "2026-03-20T12:00:00Z"
+updated: "2026-04-07T12:00:00Z"
 handoffCount: 1
 ---
 
@@ -162,7 +162,7 @@ Initial handoff`;
 
 const DECISION_MD = `---
 assignment: test-assignment
-updated: "2026-03-20T13:00:00Z"
+updated: "2026-04-07T13:00:00Z"
 decisionCount: 1
 ---
 
@@ -251,7 +251,7 @@ describe('getAssignmentDetail', () => {
     const result = await getAssignmentDetail(testDir, 'test-mission', 'test-assignment');
     expect(result).not.toBeNull();
     expect(result!.plan?.status).toBe('in_progress');
-    expect(result!.scratchpad?.updated).toBe('2026-03-20T11:00:00Z');
+    expect(result!.scratchpad?.updated).toBe('2026-04-07T11:00:00Z');
     expect(result!.handoff?.handoffCount).toBe(1);
     expect(result!.decisionRecord?.decisionCount).toBe(1);
     expect(result!.availableTransitions.map((action) => action.command)).toContain('review');

@@ -72,6 +72,7 @@ Use these commands directly when needed:
 - `syntaur create-mission "<title>" [--slug <slug>] [--dir <path>]`
 - `syntaur create-assignment "<title>" --mission <slug> [--slug <slug>] [--priority <level>] [--depends-on <slugs>] [--dir <path>]`
 - `syntaur create-assignment "<title>" --one-off [--slug <slug>] [--priority <level>] [--dir <path>]`
+- `syntaur setup [--yes] [--claude] [--codex] [--claude-dir <path>] [--codex-dir <path>] [--codex-marketplace-path <path>] [--dashboard]`
 - `syntaur assign <assignment-slug> --agent codex --mission <mission-slug>`
 - `syntaur start <assignment-slug> --mission <mission-slug>`
 - `syntaur review <assignment-slug> --mission <mission-slug>`
@@ -79,6 +80,7 @@ Use these commands directly when needed:
 - `syntaur block <assignment-slug> --mission <mission-slug> --reason <text>`
 - `syntaur unblock <assignment-slug> --mission <mission-slug>`
 - `syntaur fail <assignment-slug> --mission <mission-slug>`
+- `syntaur uninstall [--all] [--yes]`
 - `syntaur track-session --mission <mission-slug> --assignment <assignment-slug> --agent codex --session-id <id> --path <cwd>`
 - `syntaur setup-adapter codex --mission <mission-slug> --assignment <assignment-slug>`
 
@@ -123,5 +125,3 @@ Read these when you need schema-level detail:
 
 - `../references/protocol-summary.md`
 - `../references/file-ownership.md`
-- `/Users/brennen/syntaur/docs/protocol/spec.md`
-- `/Users/brennen/syntaur/docs/protocol/file-formats.md`

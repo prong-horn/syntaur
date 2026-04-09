@@ -13,12 +13,15 @@ import { failCommand } from './commands/fail.js';
 import { reopenCommand } from './commands/reopen.js';
 import { installPluginCommand } from './commands/install-plugin.js';
 import { installCodexPluginCommand } from './commands/install-codex-plugin.js';
+import { setupCommand } from './commands/setup.js';
+import { uninstallCommand } from './commands/uninstall.js';
 import { setupAdapterCommand } from './commands/setup-adapter.js';
 import { trackSessionCommand } from './commands/track-session.js';
 import { browseCommand } from './commands/browse.js';
 import { createPlaybookCommand } from './commands/create-playbook.js';
 import { listPlaybooksCommand } from './commands/list-playbooks.js';
 import { todoCommand } from './commands/todo.js';
+import { getDefaultCommandName } from './cli-default-command.js';
 
 const program = new Command();
 
@@ -92,7 +95,9 @@ program
   .command('dashboard')
   .description('Start the local Syntaur dashboard web UI')
   .option('--port <number>', 'Port to run the dashboard on', '4800')
-  .option('--api-only', 'Run only the API server (skip Vite UI)', false)
+  .option('--dev', 'Run the dashboard with the Vite dev server', false)
+  .option('--server-only', 'Run only the API server without any UI', false)
+  .option('--api-only', 'Deprecated alias for --server-only', false)
   .option('--no-open', 'Do not automatically open the browser')
   .action(async (options) => {
     try {
@@ -254,12 +259,36 @@ program
   });
 
 program
-  .command('install-plugin')
-  .description('Install the Syntaur Claude Code plugin via symlink')
-  .option('--force', 'Overwrite existing plugin installation')
+  .command('setup')
+  .description('Initialize Syntaur and optionally install plugins or launch the dashboard')
+  .option('--yes', 'Skip interactive prompts and perform only the requested flags')
+  .option('--claude', 'Install the Claude Code plugin')
+  .option('--codex', 'Install the Codex plugin')
+  .option('--claude-dir <path>', 'Install the Claude Code plugin at a specific path')
+  .option('--codex-dir <path>', 'Install the Codex plugin at a specific path')
+  .option('--codex-marketplace-path <path>', 'Write the Codex marketplace entry to a specific file')
+  .option('--dashboard', 'Launch the dashboard after setup')
   .action(async (options) => {
     try {
-      await installPluginCommand(options);
+      await setupCommand(options);
+    } catch (error) {
+      console.error(
+        'Error:',
+        error instanceof Error ? error.message : String(error),
+      );
+      process.exit(1);
+    }
+  });
+
+program
+  .command('install-plugin')
+  .description('Install the Syntaur Claude Code plugin')
+  .option('--force', 'Overwrite an existing Syntaur-managed install')
+  .option('--target-dir <path>', 'Install the plugin at a specific directory')
+  .option('--link', 'Use a symlink instead of copying files (repo-local dev only)')
+  .action(async (options) => {
+    try {
+      await installPluginCommand({ ...options, promptForTarget: true });
     } catch (error) {
       console.error(
         'Error:',
@@ -271,11 +300,34 @@ program
 
 program
   .command('install-codex-plugin')
-  .description('Install the Syntaur Codex plugin and home marketplace entry')
-  .option('--force', 'Overwrite existing plugin installation or marketplace entry')
+  .description('Install the Syntaur Codex plugin and marketplace entry')
+  .option('--force', 'Overwrite an existing Syntaur-managed install')
+  .option('--target-dir <path>', 'Install the plugin at a specific directory')
+  .option('--marketplace-path <path>', 'Write the marketplace entry to a specific file')
+  .option('--link', 'Use a symlink instead of copying files (repo-local dev only)')
   .action(async (options) => {
     try {
-      await installCodexPluginCommand(options);
+      await installCodexPluginCommand({ ...options, promptForTarget: true });
+    } catch (error) {
+      console.error(
+        'Error:',
+        error instanceof Error ? error.message : String(error),
+      );
+      process.exit(1);
+    }
+  });
+
+program
+  .command('uninstall')
+  .description('Remove Syntaur integrations and optionally local data')
+  .option('--claude', 'Remove only the Claude Code plugin')
+  .option('--codex', 'Remove only the Codex plugin and marketplace entry')
+  .option('--data', 'Remove ~/.syntaur data')
+  .option('--all', 'Remove plugins and ~/.syntaur data')
+  .option('--yes', 'Skip confirmation prompts')
+  .action(async (options) => {
+    try {
+      await uninstallCommand(options);
     } catch (error) {
       console.error(
         'Error:',
@@ -380,7 +432,7 @@ program.addCommand(todoCommand);
 
 // Default to dashboard when no command is given
 if (process.argv.length <= 2) {
-  process.argv.push('dashboard');
+  process.argv.push(getDefaultCommandName());
 }
 
-program.parse();
+await program.parseAsync();

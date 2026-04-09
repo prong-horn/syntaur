@@ -1,74 +1,94 @@
-import { resolve } from 'node:path';
-import { homedir } from 'node:os';
-import { symlink, readlink, lstat, rm } from 'node:fs/promises';
-import { ensureDir, fileExists } from '../utils/fs.js';
-import { findPackageRoot } from '../utils/package-root.js';
+import { updateIntegrationConfig } from '../utils/config.js';
+import {
+  getConfiguredOrLegacyManagedPluginDir,
+  inspectInstallPath,
+  installManagedPlugin,
+  normalizeAbsoluteInstallPath,
+  recommendPluginTargetDir,
+  uninstallManagedPlugin,
+} from '../utils/install.js';
+import { confirmPrompt, isInteractiveTerminal, textPrompt } from '../utils/prompt.js';
 
 export interface InstallPluginOptions {
   force?: boolean;
+  link?: boolean;
+  targetDir?: string;
+  promptForTarget?: boolean;
+}
+
+async function promptForInstallPath(
+  question: string,
+  recommendedPath: string,
+): Promise<string> {
+  while (true) {
+    const answer = await textPrompt(question, recommendedPath);
+    try {
+      return normalizeAbsoluteInstallPath(answer, question);
+    } catch (error) {
+      console.error(error instanceof Error ? error.message : String(error));
+    }
+  }
 }
 
 export async function installPluginCommand(
   options: InstallPluginOptions,
 ): Promise<void> {
-  // Resolve the plugin source directory relative to this package's root
-  const packageRoot = await findPackageRoot('plugin');
-  const pluginSource = resolve(packageRoot, 'plugin');
+  const shouldPromptForTarget = Boolean(
+    options.promptForTarget !== false &&
+      isInteractiveTerminal() &&
+      !options.targetDir,
+  );
+  const recommendedTargetDir = await recommendPluginTargetDir('claude');
+  const targetDir = options.targetDir
+    ? normalizeAbsoluteInstallPath(options.targetDir, 'Claude plugin target')
+    : shouldPromptForTarget
+      ? await promptForInstallPath('Claude plugin directory', recommendedTargetDir)
+      : recommendedTargetDir;
 
-  if (!(await fileExists(pluginSource))) {
+  const previousTargetDir = await getConfiguredOrLegacyManagedPluginDir('claude');
+  const migrating = Boolean(previousTargetDir && previousTargetDir !== targetDir);
+  let previousInstall = previousTargetDir
+    ? await inspectInstallPath('claude', previousTargetDir)
+    : null;
+
+  if (migrating && previousInstall?.exists && !previousInstall.managed) {
     throw new Error(
-      `Plugin source directory not found at ${pluginSource}. Are you running from the syntaur repo?`,
+      `${previousTargetDir} exists but is not a Syntaur-managed install. Remove it manually before changing the Claude plugin location.`,
     );
   }
 
-  const pluginsDir = resolve(homedir(), '.claude', 'plugins');
-  const targetLink = resolve(pluginsDir, 'syntaur');
-
-  // Ensure ~/.claude/plugins/ exists
-  await ensureDir(pluginsDir);
-
-  // Check if target already exists
-  let targetExists = false;
-  try {
-    await lstat(targetLink);
-    targetExists = true;
-  } catch {
-    // Does not exist, which is fine
+  if (migrating && previousInstall?.exists && previousInstall.managed && isInteractiveTerminal()) {
+    const confirmed = await confirmPrompt(
+      `Move the Claude Code plugin from ${previousTargetDir} to ${targetDir} and remove the old install?`,
+      true,
+    );
+    if (!confirmed) {
+      throw new Error('Install cancelled.');
+    }
   }
 
-  if (targetExists) {
-    // Check if it's already a symlink to the right place
-    try {
-      const existingTarget = await readlink(targetLink);
-      const resolvedExisting = resolve(dirname(targetLink), existingTarget);
-      if (resolvedExisting === pluginSource) {
-        console.log(
-          `Syntaur plugin already installed at ${targetLink} -> ${pluginSource}`,
-        );
-        return;
-      }
-    } catch {
-      // Not a symlink, it's a regular file/directory
-    }
+  const result = await installManagedPlugin({
+    pluginKind: 'claude',
+    force: options.force,
+    link: options.link,
+    targetDir,
+  });
+  await updateIntegrationConfig({ claudePluginDir: result.targetDir });
 
-    if (!options.force) {
-      throw new Error(
-        `${targetLink} already exists and points elsewhere. Use --force to overwrite.`,
-      );
+  if (migrating && previousInstall?.exists && previousInstall.managed && previousTargetDir) {
+    const removed = await uninstallManagedPlugin('claude', previousTargetDir);
+    if (removed.removed) {
+      console.log(`Removed previous Claude Code plugin from ${removed.targetDir}`);
     }
-
-    // Remove existing
-    await rm(targetLink, { recursive: true, force: true });
-    console.log(`Removed existing ${targetLink}`);
+    previousInstall = null;
   }
 
-  // Create symlink
-  await symlink(pluginSource, targetLink, 'dir');
-
-  console.log(`Installed Syntaur plugin:`);
-  console.log(`  ${targetLink} -> ${pluginSource}`);
-  console.log(`\nThe plugin is now available in Claude Code.`);
-  console.log(`  Skills: /grab-assignment, /plan-assignment, /complete-assignment`);
-  console.log(`  Background: syntaur-protocol (auto-invoked)`);
-  console.log(`  Hook: write boundary enforcement (PreToolUse)`);
+  console.log('Installed Syntaur plugin:');
+  console.log(`  target: ${result.targetDir}`);
+  console.log(`  source: ${result.sourceDir}`);
+  console.log(`  mode: ${result.mode}`);
+  console.log('\nThe plugin is now available in Claude Code.');
+  console.log('  Skills: /grab-assignment, /plan-assignment, /complete-assignment');
+  console.log('  Background: syntaur-protocol (auto-invoked)');
+  console.log('  Hook: write boundary enforcement (PreToolUse)');
 }

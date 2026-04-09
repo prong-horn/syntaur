@@ -8,8 +8,31 @@ import { fileExists } from '../utils/fs.js';
 
 export interface DashboardOptions {
   port: string;
+  dev?: boolean;
+  serverOnly?: boolean;
   apiOnly: boolean;
   open: boolean;
+}
+
+export type DashboardRuntimeMode = 'static' | 'dev' | 'server-only';
+
+export function resolveDashboardMode(options: DashboardOptions): DashboardRuntimeMode {
+  const devMode = Boolean(options.dev);
+  const serverOnly = Boolean(options.serverOnly || options.apiOnly);
+
+  if (devMode && serverOnly) {
+    throw new Error('Use either --dev or --server-only, not both.');
+  }
+
+  if (devMode) {
+    return 'dev';
+  }
+
+  if (serverOnly) {
+    return 'server-only';
+  }
+
+  return 'static';
 }
 
 export async function dashboardCommand(options: DashboardOptions): Promise<void> {
@@ -21,22 +44,22 @@ export async function dashboardCommand(options: DashboardOptions): Promise<void>
     throw new Error(`Invalid port "${options.port}". Must be a number between 1 and 65535.`);
   }
 
-  // Always run Express in dev mode (API only) — Vite serves the UI.
-  // With --api-only, skip the Vite dev server (useful for custom setups).
+  const mode = resolveDashboardMode(options);
+
   const server = createDashboardServer({
     port,
     missionsDir,
     serversDir: getServersDir(),
     playbooksDir: getPlaybooksDir(),
     todosDir: getTodosDir(),
-    devMode: !options.apiOnly,
+    serveStaticUi: mode === 'static',
   });
 
   await server.start();
 
   let viteProcess: ChildProcess | null = null;
 
-  if (!options.apiOnly) {
+  if (mode === 'dev') {
     const thisFile = fileURLToPath(import.meta.url);
     const packageRoot = resolve(dirname(thisFile), '..');
     const dashboardDir = resolve(packageRoot, 'dashboard');
@@ -44,7 +67,7 @@ export async function dashboardCommand(options: DashboardOptions): Promise<void>
 
     if (!(await fileExists(viteBin))) {
       console.error(
-        'Vite not found. Run "cd dashboard && npm install" first, or use --api-only.',
+        'Vite not found. Run "npm ci --prefix dashboard" first, or use the default bundled dashboard mode.',
       );
       await server.stop();
       process.exit(1);
@@ -65,9 +88,12 @@ export async function dashboardCommand(options: DashboardOptions): Promise<void>
     viteProcess.on('error', (err) => {
       console.error('Failed to start Vite dev server:', err.message);
     });
-  } else {
+  } else if (mode === 'server-only') {
     const url = `http://localhost:${port}`;
     console.log(`Syntaur Dashboard API running at ${url}`);
+  } else {
+    const url = `http://localhost:${port}`;
+    console.log(`Syntaur Dashboard running at ${url}`);
 
     if (options.open) {
       try {
