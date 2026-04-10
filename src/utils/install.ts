@@ -157,7 +157,7 @@ export interface ClaudeMarketplaceLocation {
 }
 
 function getPluginRelativePath(pluginKind: PluginKind): string {
-  return pluginKind === 'claude' ? 'plugin' : 'plugins/syntaur';
+  return pluginKind === 'claude' ? 'platforms/claude-code' : 'platforms/codex';
 }
 
 function getPluginManifestRelativePath(pluginKind: PluginKind): string {

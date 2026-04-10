@@ -1,3 +1,4 @@
+import { execSync } from 'node:child_process';
 import { initCommand } from './init.js';
 import { dashboardCommand, findAvailablePort } from './dashboard.js';
 import { installPluginCommand } from './install-plugin.js';
@@ -5,6 +6,15 @@ import { installCodexPluginCommand } from './install-codex-plugin.js';
 import { isSyntaurDataInstalled, getPluginInstallCommand } from '../utils/install.js';
 import { confirmPrompt, isInteractiveTerminal } from '../utils/prompt.js';
 import { updateOnboardingConfig } from '../utils/config.js';
+
+function isCliInstalled(command: string): boolean {
+  try {
+    execSync(`which ${command}`, { stdio: 'ignore' });
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 export interface SetupOptions {
   yes?: boolean;
@@ -46,10 +56,22 @@ export async function setupCommand(options: SetupOptions): Promise<void> {
 
   if (interactive && !options.yes) {
     if (!options.claude) {
-      installClaude = await confirmPrompt('Install the Claude Code plugin?');
+      const claudeAvailable = isCliInstalled('claude');
+      if (!claudeAvailable) {
+        console.log('Claude Code CLI not detected. Install it from https://claude.ai/download');
+        installClaude = await confirmPrompt('Install the Claude Code plugin anyway?', false);
+      } else {
+        installClaude = await confirmPrompt('Install the Claude Code plugin?');
+      }
     }
     if (!options.codex) {
-      installCodex = await confirmPrompt('Install the Codex plugin?');
+      const codexAvailable = isCliInstalled('codex');
+      if (!codexAvailable) {
+        console.log('Codex CLI not detected. Install it from https://platform.openai.com/docs/codex');
+        installCodex = await confirmPrompt('Install the Codex plugin anyway?', false);
+      } else {
+        installCodex = await confirmPrompt('Install the Codex plugin?');
+      }
     }
     if (!options.dashboard) {
       launchDashboard = await confirmPrompt('Launch the dashboard now?', true);

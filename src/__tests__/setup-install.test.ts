@@ -300,7 +300,7 @@ describe('setup and install flows', () => {
     const files = result[0].files.map((file) => file.path);
 
     expect(files).toContain('examples/playbooks/commit-discipline.md');
-    expect(files).toContain('plugin/.claude-plugin/plugin.json');
-    expect(files).toContain('plugins/syntaur/.codex-plugin/plugin.json');
+    expect(files).toContain('platforms/claude-code/.claude-plugin/plugin.json');
+    expect(files).toContain('platforms/codex/.codex-plugin/plugin.json');
   });
 });
