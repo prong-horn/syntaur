@@ -114,3 +114,31 @@ Repo-local plugin linking for development:
 npx syntaur@latest install-plugin --link
 npx syntaur@latest install-codex-plugin --link
 ```
+
+## Release Publishing
+
+This repo is set up for npm trusted publishing from GitHub Actions.
+
+Release flow:
+
+```bash
+npm version patch
+git push origin main
+git push origin v$(node -p "require('./package.json').version")
+```
+
+The publish workflow lives at `.github/workflows/publish.yml` and only runs on version tags like `v0.1.4`. It checks that the tag matches `package.json`, runs the repo validation, and then publishes to npm using GitHub OIDC instead of a long-lived npm token.
+
+One-time npm setup:
+
+- package: `syntaur`
+- GitHub repo: `prong-horn/syntaur`
+- workflow filename: `publish.yml`
+
+You can configure the trusted publisher either in the npm package settings UI or with npm CLI `11.10+`:
+
+```bash
+npx npm@^11.10.0 trust github syntaur --repo prong-horn/syntaur --file publish.yml -y
+```
+
+After trusted publishing is working, npm recommends switching the package publishing access to `Require two-factor authentication and disallow tokens`.
