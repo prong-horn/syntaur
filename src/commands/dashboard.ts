@@ -18,6 +18,10 @@ export interface DashboardOptions {
 
 export type DashboardRuntimeMode = 'static' | 'dev' | 'server-only';
 
+export function didUserSpecifyDashboardPort(argv: string[] = process.argv): boolean {
+  return argv.some((arg) => arg === '--port' || arg.startsWith('--port='));
+}
+
 export function resolveDashboardMode(options: DashboardOptions): DashboardRuntimeMode {
   const devMode = Boolean(options.dev);
   const serverOnly = Boolean(options.serverOnly || options.apiOnly);
@@ -49,7 +53,7 @@ async function isPortAvailable(port: number): Promise<boolean> {
       tester.close(() => resolveAvailability(true));
     });
 
-    tester.listen(port, '127.0.0.1');
+    tester.listen(port);
   });
 }
 

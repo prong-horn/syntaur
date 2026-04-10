@@ -2,7 +2,7 @@ import { Command } from 'commander';
 import { initCommand } from './commands/init.js';
 import { createMissionCommand } from './commands/create-mission.js';
 import { createAssignmentCommand } from './commands/create-assignment.js';
-import { dashboardCommand } from './commands/dashboard.js';
+import { dashboardCommand, didUserSpecifyDashboardPort } from './commands/dashboard.js';
 import { assignCommand } from './commands/assign.js';
 import { startCommand } from './commands/start.js';
 import { completeCommand } from './commands/complete.js';
@@ -99,9 +99,9 @@ program
   .option('--server-only', 'Run only the API server without any UI', false)
   .option('--api-only', 'Deprecated alias for --server-only', false)
   .option('--no-open', 'Do not automatically open the browser')
-  .action(async (options, command) => {
+  .action(async (options) => {
     try {
-      const autoPort = command.getOptionValueSource('port') !== 'cli';
+      const autoPort = !didUserSpecifyDashboardPort();
       await dashboardCommand({
         ...options,
         autoPort,
