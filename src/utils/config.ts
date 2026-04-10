@@ -34,9 +34,14 @@ export interface IntegrationConfig {
   codexMarketplacePath: string | null;
 }
 
+export interface OnboardingConfig {
+  completed: boolean;
+}
+
 export interface SyntaurConfig {
   version: string;
   defaultMissionDir: string;
+  onboarding: OnboardingConfig;
   agentDefaults: {
     trustLevel: 'low' | 'medium' | 'high';
     autoApprove: boolean;
@@ -48,6 +53,9 @@ export interface SyntaurConfig {
 const DEFAULT_CONFIG: SyntaurConfig = {
   version: '1.0',
   defaultMissionDir: defaultMissionDir(),
+  onboarding: {
+    completed: false,
+  },
   agentDefaults: {
     trustLevel: 'medium',
     autoApprove: false,
@@ -252,6 +260,10 @@ function serializeIntegrationConfig(integrations: IntegrationConfig): string | n
   return ['integrations:', ...lines].join('\n');
 }
 
+function serializeOnboardingConfig(onboarding: OnboardingConfig): string {
+  return ['onboarding:', `  completed: ${onboarding.completed ? 'true' : 'false'}`].join('\n');
+}
+
 function stripTopLevelBlock(fmBlock: string, key: string): string {
   const blockStart = fmBlock.match(new RegExp(`^${key}:\\s*$`, 'm'));
   if (!blockStart) {
@@ -397,6 +409,36 @@ export async function updateIntegrationConfig(
   await writeFileForce(configPath, newContent);
 }
 
+export async function updateOnboardingConfig(
+  onboarding: Partial<OnboardingConfig>,
+): Promise<void> {
+  const configPath = resolve(syntaurRoot(), 'config.md');
+  const nextOnboarding: OnboardingConfig = {
+    ...(await readConfig()).onboarding,
+    ...onboarding,
+  };
+
+  const onboardingBlock = serializeOnboardingConfig(nextOnboarding);
+  const existing = await fileExists(configPath)
+    ? await readFile(configPath, 'utf-8')
+    : renderConfig({ defaultMissionDir: defaultMissionDir() });
+
+  const fmMatch = existing.match(/^(---\n)([\s\S]*?)\n(---)/);
+  if (!fmMatch) {
+    const content = `---\nversion: "1.0"\ndefaultMissionDir: ${defaultMissionDir()}\n${onboardingBlock}\n---\n${existing}`;
+    await writeFileForce(configPath, content.replace(/\n\n---/, '\n---'));
+    return;
+  }
+
+  const fmBlock = fmMatch[2];
+  const afterFrontmatter = existing.slice(fmMatch[0].length);
+  const cleanedFm = stripTopLevelBlock(fmBlock, 'onboarding');
+  const newFm = `${cleanedFm}\n${onboardingBlock}`.replace(/^\n+/, '');
+  const normalizedFm = newFm.replace(/\n+$/, '');
+  const newContent = `---\n${normalizedFm}\n---${afterFrontmatter}`;
+  await writeFileForce(configPath, newContent);
+}
+
 export async function readConfig(): Promise<SyntaurConfig> {
   const configPath = resolve(syntaurRoot(), 'config.md');
   if (!(await fileExists(configPath))) {
@@ -423,6 +465,9 @@ export async function readConfig(): Promise<SyntaurConfig> {
   return {
     version: fm['version'] || DEFAULT_CONFIG.version,
     defaultMissionDir: missionDir,
+    onboarding: {
+      completed: fm['onboarding.completed'] === 'true',
+    },
     agentDefaults: {
       trustLevel:
         (fm['agentDefaults.trustLevel'] as SyntaurConfig['agentDefaults']['trustLevel']) ||

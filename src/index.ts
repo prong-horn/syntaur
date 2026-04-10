@@ -436,7 +436,7 @@ program.addCommand(todoCommand);
 
 // Default to dashboard when no command is given
 if (process.argv.length <= 2) {
-  process.argv.push(getDefaultCommandName());
+  process.argv.push(await getDefaultCommandName());
 }
 
 await program.parseAsync();

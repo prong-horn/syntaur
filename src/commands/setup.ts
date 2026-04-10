@@ -4,6 +4,7 @@ import { installPluginCommand } from './install-plugin.js';
 import { installCodexPluginCommand } from './install-codex-plugin.js';
 import { isSyntaurDataInstalled, getPluginInstallCommand } from '../utils/install.js';
 import { confirmPrompt, isInteractiveTerminal } from '../utils/prompt.js';
+import { updateOnboardingConfig } from '../utils/config.js';
 
 export interface SetupOptions {
   yes?: boolean;
@@ -85,6 +86,7 @@ export async function setupCommand(options: SetupOptions): Promise<void> {
     if (port !== preferredPort) {
       console.log(`Port ${preferredPort} is busy. Launching the dashboard on port ${port} instead.`);
     }
+    await updateOnboardingConfig({ completed: true });
     await dashboardCommand({
       port: String(port),
       dev: false,
@@ -94,6 +96,8 @@ export async function setupCommand(options: SetupOptions): Promise<void> {
     });
     return;
   }
+
+  await updateOnboardingConfig({ completed: true });
 
   if (!initialized) {
     console.log('\nNext steps:');
