@@ -63,4 +63,13 @@ describe('resolveDashboardMode', () => {
       });
     }
   });
+
+  it('supports autoPort in the dashboard options shape', () => {
+    expect(resolveDashboardMode({
+      port: '4800',
+      apiOnly: false,
+      open: true,
+      autoPort: true,
+    })).toBe('static');
+  });
 });

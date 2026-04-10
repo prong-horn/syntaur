@@ -99,9 +99,13 @@ program
   .option('--server-only', 'Run only the API server without any UI', false)
   .option('--api-only', 'Deprecated alias for --server-only', false)
   .option('--no-open', 'Do not automatically open the browser')
-  .action(async (options) => {
+  .action(async (options, command) => {
     try {
-      await dashboardCommand(options);
+      const autoPort = command.getOptionValueSource('port') !== 'cli';
+      await dashboardCommand({
+        ...options,
+        autoPort,
+      });
     } catch (error) {
       console.error(
         'Error:',

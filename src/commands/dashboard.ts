@@ -13,6 +13,7 @@ export interface DashboardOptions {
   serverOnly?: boolean;
   apiOnly: boolean;
   open: boolean;
+  autoPort?: boolean;
 }
 
 export type DashboardRuntimeMode = 'static' | 'dev' | 'server-only';
@@ -71,13 +72,27 @@ export async function findAvailablePort(
 export async function dashboardCommand(options: DashboardOptions): Promise<void> {
   const config = await readConfig();
   const missionsDir = config.defaultMissionDir;
-  const port = parseInt(options.port, 10);
+  const requestedPort = parseInt(options.port, 10);
 
-  if (isNaN(port) || port < 1 || port > 65535) {
+  if (isNaN(requestedPort) || requestedPort < 1 || requestedPort > 65535) {
     throw new Error(`Invalid port "${options.port}". Must be a number between 1 and 65535.`);
   }
 
   const mode = resolveDashboardMode(options);
+  let port = requestedPort;
+
+  if (options.autoPort) {
+    const availablePort = await findAvailablePort(requestedPort);
+    if (availablePort === null) {
+      throw new Error(
+        `Could not find an available dashboard port starting at ${requestedPort}. Run "syntaur dashboard --port <number>" to choose one manually.`,
+      );
+    }
+    if (availablePort !== requestedPort) {
+      console.log(`Port ${requestedPort} is busy. Launching the dashboard on port ${availablePort} instead.`);
+    }
+    port = availablePort;
+  }
 
   const server = createDashboardServer({
     port,
