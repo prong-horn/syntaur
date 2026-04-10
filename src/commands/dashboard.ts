@@ -1,4 +1,5 @@
 import { spawn, type ChildProcess } from 'node:child_process';
+import { createServer as createNetServer } from 'node:net';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { readConfig } from '../utils/config.js';
@@ -33,6 +34,38 @@ export function resolveDashboardMode(options: DashboardOptions): DashboardRuntim
   }
 
   return 'static';
+}
+
+async function isPortAvailable(port: number): Promise<boolean> {
+  return new Promise((resolveAvailability) => {
+    const tester = createNetServer();
+
+    tester.once('error', () => {
+      resolveAvailability(false);
+    });
+
+    tester.once('listening', () => {
+      tester.close(() => resolveAvailability(true));
+    });
+
+    tester.listen(port, '127.0.0.1');
+  });
+}
+
+export async function findAvailablePort(
+  startPort: number,
+  maxAttempts: number = 20,
+): Promise<number | null> {
+  for (let offset = 0; offset < maxAttempts; offset += 1) {
+    const candidate = startPort + offset;
+    if (candidate > 65535) {
+      break;
+    }
+    if (await isPortAvailable(candidate)) {
+      return candidate;
+    }
+  }
+  return null;
 }
 
 export async function dashboardCommand(options: DashboardOptions): Promise<void> {

@@ -1,5 +1,5 @@
 import { initCommand } from './init.js';
-import { dashboardCommand } from './dashboard.js';
+import { dashboardCommand, findAvailablePort } from './dashboard.js';
 import { installPluginCommand } from './install-plugin.js';
 import { installCodexPluginCommand } from './install-codex-plugin.js';
 import { isSyntaurDataInstalled, getPluginInstallCommand } from '../utils/install.js';
@@ -60,7 +60,7 @@ export async function setupCommand(options: SetupOptions): Promise<void> {
       targetDir: options.claudeDir,
       promptForTarget: !options.yes,
     });
-  } else if (!interactive && !options.yes && !initialized) {
+  } else {
     console.log(`Skip Claude plugin for now. Install later with: ${getPluginInstallCommand('claude')}`);
   }
 
@@ -70,13 +70,23 @@ export async function setupCommand(options: SetupOptions): Promise<void> {
       marketplacePath: options.codexMarketplacePath,
       promptForTarget: !options.yes,
     });
-  } else if (!interactive && !options.yes && !initialized) {
+  } else {
     console.log(`Skip Codex plugin for now. Install later with: ${getPluginInstallCommand('codex')}`);
   }
 
   if (launchDashboard) {
+    const preferredPort = 4800;
+    const port = await findAvailablePort(preferredPort);
+    if (port === null) {
+      throw new Error(
+        `Could not find an available dashboard port starting at ${preferredPort}. Run "syntaur dashboard --port <number>" to choose one manually.`,
+      );
+    }
+    if (port !== preferredPort) {
+      console.log(`Port ${preferredPort} is busy. Launching the dashboard on port ${port} instead.`);
+    }
     await dashboardCommand({
-      port: '4800',
+      port: String(port),
       dev: false,
       serverOnly: false,
       apiOnly: false,

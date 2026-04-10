@@ -5,6 +5,23 @@ export function isInteractiveTerminal(): boolean {
   return Boolean(input.isTTY && output.isTTY);
 }
 
+export function parseConfirmAnswer(
+  answer: string,
+  defaultValue: boolean = false,
+): boolean | null {
+  const normalized = answer.trim().toLowerCase();
+  if (normalized === '') {
+    return defaultValue;
+  }
+  if (normalized === 'y' || normalized === 'yes') {
+    return true;
+  }
+  if (normalized === 'n' || normalized === 'no') {
+    return false;
+  }
+  return null;
+}
+
 export async function confirmPrompt(
   question: string,
   defaultValue: boolean = false,
@@ -17,11 +34,14 @@ export async function confirmPrompt(
   const rl = createInterface({ input, output });
 
   try {
-    const answer = (await rl.question(`${question}${suffix}`)).trim().toLowerCase();
-    if (answer === '') {
-      return defaultValue;
+    while (true) {
+      const answer = await rl.question(`${question}${suffix}`);
+      const parsed = parseConfirmAnswer(answer, defaultValue);
+      if (parsed !== null) {
+        return parsed;
+      }
+      console.log('Enter y, yes, n, no, or press Enter for the default.');
     }
-    return answer === 'y' || answer === 'yes';
   } finally {
     rl.close();
   }

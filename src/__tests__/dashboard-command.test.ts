@@ -1,5 +1,6 @@
+import { createServer } from 'node:net';
 import { describe, expect, it } from 'vitest';
-import { resolveDashboardMode } from '../commands/dashboard.js';
+import { findAvailablePort, resolveDashboardMode } from '../commands/dashboard.js';
 
 describe('resolveDashboardMode', () => {
   it('uses bundled static UI by default', () => {
@@ -35,5 +36,31 @@ describe('resolveDashboardMode', () => {
       apiOnly: false,
       open: false,
     })).toThrow('Use either --dev or --server-only');
+  });
+
+  it('finds the starting port when it is available', async () => {
+    expect(await findAvailablePort(4800, 2)).toBe(4800);
+  });
+
+  it('finds the next available port when the preferred port is in use', async () => {
+    const server = createServer();
+    await new Promise<void>((resolve, reject) => {
+      server.once('error', reject);
+      server.listen(4800, '127.0.0.1', () => resolve());
+    });
+
+    try {
+      expect(await findAvailablePort(4800, 3)).toBe(4801);
+    } finally {
+      await new Promise<void>((resolve, reject) => {
+        server.close((error) => {
+          if (error) {
+            reject(error);
+            return;
+          }
+          resolve();
+        });
+      });
+    }
   });
 });
