@@ -1,8 +1,10 @@
 import { resolve } from 'node:path';
 import {
+  detectClaudeMarketplaceForTarget,
   getConfiguredOrLegacyManagedPluginDir,
   getConfiguredOrLegacyMarketplacePath,
   getConfiguredMissionDir,
+  removeClaudeMarketplaceEntry,
   removeSyntaurData,
   removeMarketplaceEntry,
   uninstallManagedPlugin,
@@ -64,6 +66,9 @@ export async function uninstallCommand(options: UninstallOptions): Promise<void>
 
   if (targets.claude) {
     const claudeTargetDir = await getConfiguredOrLegacyManagedPluginDir('claude');
+    const claudeMarketplace = claudeTargetDir
+      ? await detectClaudeMarketplaceForTarget(claudeTargetDir)
+      : null;
     const result = await uninstallManagedPlugin(
       'claude',
       claudeTargetDir ?? undefined,
@@ -73,6 +78,16 @@ export async function uninstallCommand(options: UninstallOptions): Promise<void>
         ? `Removed Claude Code plugin from ${result.targetDir}`
         : `Claude Code plugin not installed at ${result.targetDir}`,
     );
+    if (claudeMarketplace) {
+      const removedMarketplaceEntry = await removeClaudeMarketplaceEntry({
+        manifestPath: claudeMarketplace.manifestPath,
+        marketplaceRootDir: claudeMarketplace.rootDir,
+        pluginTargetDir: claudeTargetDir ?? undefined,
+      });
+      if (removedMarketplaceEntry.removed) {
+        console.log(`Removed Claude marketplace entry from ${removedMarketplaceEntry.manifestPath}`);
+      }
+    }
   }
 
   if (targets.codex) {

@@ -44,6 +44,8 @@ npx syntaur@latest setup --yes --dashboard
 
 Syntaur remembers the plugin install locations you choose in `~/.syntaur/config.md`.
 
+For Claude Code, Syntaur will detect the machine's local plugin marketplace when one exists and recommend installing into that marketplace's `plugins/` directory.
+
 Interactive commands will prompt for install locations:
 
 ```bash
@@ -54,7 +56,7 @@ npx syntaur@latest install-codex-plugin
 You can also set paths explicitly:
 
 ```bash
-npx syntaur@latest install-plugin --target-dir ~/.claude/plugins/syntaur
+npx syntaur@latest install-plugin --target-dir ~/.claude/plugins/marketplaces/user-plugins/plugins/syntaur
 npx syntaur@latest install-codex-plugin \
   --target-dir ~/plugins/syntaur \
   --marketplace-path ~/.agents/plugins/marketplace.json
@@ -65,7 +67,7 @@ Setup supports the same path overrides:
 ```bash
 npx syntaur@latest setup \
   --claude \
-  --claude-dir ~/.claude/plugins/syntaur \
+  --claude-dir ~/.claude/plugins/marketplaces/user-plugins/plugins/syntaur \
   --codex \
   --codex-dir ~/plugins/syntaur \
   --codex-marketplace-path ~/.agents/plugins/marketplace.json

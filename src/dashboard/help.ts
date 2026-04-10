@@ -81,8 +81,8 @@ const CLI_COMMANDS: HelpCommand[] = [
   // --- Plugin & adapter setup (indices 13-16) ---
   {
     command: 'syntaur install-plugin',
-    description: 'Install the Syntaur Claude Code plugin, prompting for the target directory when interactive.',
-    example: 'syntaur install-plugin --target-dir ~/.claude/plugins/syntaur',
+    description: 'Install the Syntaur Claude Code plugin, detecting the local Claude marketplace when available and prompting for the target directory when interactive.',
+    example: 'syntaur install-plugin --target-dir ~/.claude/plugins/marketplaces/user-plugins/plugins/syntaur',
   },
   {
     command: 'syntaur install-codex-plugin',

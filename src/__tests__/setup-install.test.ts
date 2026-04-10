@@ -8,7 +8,11 @@ import { installPluginCommand } from '../commands/install-plugin.js';
 import { installCodexPluginCommand } from '../commands/install-codex-plugin.js';
 import { setupCommand } from '../commands/setup.js';
 import { uninstallCommand } from '../commands/uninstall.js';
-import { buildMarketplaceSourcePath, installManagedPlugin } from '../utils/install.js';
+import {
+  buildMarketplaceSourcePath,
+  installManagedPlugin,
+  recommendPluginTargetDir,
+} from '../utils/install.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -18,11 +22,57 @@ describe('setup and install flows', () => {
   let stdinTty: boolean | undefined;
   let stdoutTty: boolean | undefined;
 
+  async function seedClaudeUserMarketplace(): Promise<string> {
+    const marketplaceRoot = resolve(homeDir, '.claude', 'plugins', 'marketplaces', 'user-plugins');
+    await mkdir(resolve(marketplaceRoot, '.claude-plugin'), { recursive: true });
+    await writeFile(
+      resolve(marketplaceRoot, '.claude-plugin', 'marketplace.json'),
+      `${JSON.stringify({
+        name: 'user-plugins',
+        description: 'Local user plugins',
+        owner: { name: 'Test User', email: '' },
+        plugins: [],
+      }, null, 2)}\n`,
+    );
+    await mkdir(resolve(homeDir, '.claude', 'plugins'), { recursive: true });
+    await writeFile(
+      resolve(homeDir, '.claude', 'plugins', 'known_marketplaces.json'),
+      `${JSON.stringify({
+        'user-plugins': {
+          source: {
+            source: 'directory',
+            path: marketplaceRoot,
+          },
+          installLocation: marketplaceRoot,
+        },
+      }, null, 2)}\n`,
+    );
+    await writeFile(
+      resolve(homeDir, '.claude', 'plugins', 'installed_plugins.json'),
+      `${JSON.stringify({
+        version: 2,
+        plugins: {
+          'example@user-plugins': [
+            {
+              scope: 'user',
+              installPath: resolve(homeDir, '.claude', 'plugins', 'cache', 'user-plugins', 'example', '1.0.0'),
+              version: '1.0.0',
+              installedAt: '2026-04-10T00:00:00.000Z',
+              lastUpdated: '2026-04-10T00:00:00.000Z',
+            },
+          ],
+        },
+      }, null, 2)}\n`,
+    );
+    return marketplaceRoot;
+  }
+
   beforeEach(async () => {
     homeDir = await mkdtemp(join(tmpdir(), 'syntaur-home-'));
     process.env.HOME = homeDir;
     stdinTty = process.stdin.isTTY;
     stdoutTty = process.stdout.isTTY;
+    await seedClaudeUserMarketplace();
   });
 
   afterEach(async () => {
@@ -52,11 +102,25 @@ describe('setup and install flows', () => {
   it('installs the Claude plugin by copying files by default', async () => {
     await installPluginCommand({});
 
-    const targetDir = resolve(homeDir, '.claude', 'plugins', 'syntaur');
+    const targetDir = resolve(
+      homeDir,
+      '.claude',
+      'plugins',
+      'marketplaces',
+      'user-plugins',
+      'plugins',
+      'syntaur',
+    );
     const info = await lstat(targetDir);
     expect(info.isSymbolicLink()).toBe(false);
     expect(await readFile(resolve(targetDir, '.syntaur-install.json'), 'utf-8')).toContain('"pluginKind": "claude"');
     expect(await readFile(resolve(homeDir, '.syntaur', 'config.md'), 'utf-8')).toContain(`claudePluginDir: ${targetDir}`);
+    expect(
+      await readFile(
+        resolve(homeDir, '.claude', 'plugins', 'marketplaces', 'user-plugins', '.claude-plugin', 'marketplace.json'),
+        'utf-8',
+      ),
+    ).toContain('"source": "./plugins/syntaur"');
   });
 
   it('installs the Codex plugin and marketplace entry by copy', async () => {
@@ -74,7 +138,15 @@ describe('setup and install flows', () => {
   it('supports explicit link installs for repo-local development', async () => {
     await installPluginCommand({ link: true });
 
-    const targetDir = resolve(homeDir, '.claude', 'plugins', 'syntaur');
+    const targetDir = resolve(
+      homeDir,
+      '.claude',
+      'plugins',
+      'marketplaces',
+      'user-plugins',
+      'plugins',
+      'syntaur',
+    );
     expect((await lstat(targetDir)).isSymbolicLink()).toBe(true);
   });
 
@@ -110,16 +182,30 @@ describe('setup and install flows', () => {
     expect(forced.changed).toBe(true);
   });
 
-  it('migrates a managed Claude install when the target path changes', async () => {
+  it('auto-migrates a managed legacy Claude install to the detected marketplace path', async () => {
     const originalTarget = resolve(homeDir, '.claude', 'plugins', 'syntaur');
-    const newTarget = resolve(homeDir, 'claude-custom', 'syntaur');
+    const newTarget = resolve(
+      homeDir,
+      '.claude',
+      'plugins',
+      'marketplaces',
+      'user-plugins',
+      'plugins',
+      'syntaur',
+    );
 
+    await installPluginCommand({ targetDir: originalTarget });
     await installPluginCommand({});
-    await installPluginCommand({ targetDir: newTarget });
 
     await expect(lstat(originalTarget)).rejects.toThrow();
     expect((await lstat(newTarget)).isDirectory()).toBe(true);
     expect(await readFile(resolve(homeDir, '.syntaur', 'config.md'), 'utf-8')).toContain(`claudePluginDir: ${newTarget}`);
+    expect(
+      await readFile(
+        resolve(homeDir, '.claude', 'plugins', 'marketplaces', 'user-plugins', '.claude-plugin', 'marketplace.json'),
+        'utf-8',
+      ),
+    ).toContain('"source": "./plugins/syntaur"');
   });
 
   it('migrates a managed Codex install and marketplace entry when paths change', async () => {
@@ -148,8 +234,16 @@ describe('setup and install flows', () => {
 
     await uninstallCommand({ yes: true });
 
-    await expect(lstat(resolve(homeDir, '.claude', 'plugins', 'syntaur'))).rejects.toThrow();
+    await expect(
+      lstat(resolve(homeDir, '.claude', 'plugins', 'marketplaces', 'user-plugins', 'plugins', 'syntaur')),
+    ).rejects.toThrow();
     await expect(lstat(resolve(homeDir, 'plugins', 'syntaur'))).rejects.toThrow();
+    expect(
+      await readFile(
+        resolve(homeDir, '.claude', 'plugins', 'marketplaces', 'user-plugins', '.claude-plugin', 'marketplace.json'),
+        'utf-8',
+      ),
+    ).not.toContain('"name": "syntaur"');
     expect(await readFile(resolve(homeDir, '.syntaur', 'config.md'), 'utf-8')).toContain('defaultMissionDir');
   });
 
@@ -184,6 +278,18 @@ describe('setup and install flows', () => {
 
     await expect(lstat(resolve(homeDir, '.syntaur'))).rejects.toThrow();
     await expect(lstat(resolve(homeDir, '.agents', 'plugins', 'marketplace.json'))).rejects.toThrow();
+  });
+
+  it('falls back to the legacy Claude plugin path when no marketplace is present', async () => {
+    await rm(resolve(homeDir, '.claude', 'plugins', 'marketplaces'), { recursive: true, force: true });
+    await rm(resolve(homeDir, '.claude', 'plugins', 'known_marketplaces.json'), { force: true });
+    await rm(resolve(homeDir, '.claude', 'plugins', 'installed_plugins.json'), { force: true });
+
+    expect(await recommendPluginTargetDir('claude')).toBe(resolve(homeDir, '.claude', 'plugins', 'syntaur'));
+
+    await installPluginCommand({});
+
+    expect((await lstat(resolve(homeDir, '.claude', 'plugins', 'syntaur'))).isDirectory()).toBe(true);
   });
 
   it('npm pack dry-run includes packaged playbooks and plugin assets', async () => {
