@@ -49,6 +49,21 @@ export async function overrideAssignmentStatus(
   return (payload as { assignment: AssignmentDetail }).assignment;
 }
 
+export async function deleteAssignment(
+  missionSlug: string,
+  assignmentSlug: string,
+): Promise<void> {
+  const response = await fetch(
+    `/api/missions/${missionSlug}/assignments/${assignmentSlug}`,
+    { method: 'DELETE' },
+  );
+
+  const payload = await response.json().catch(() => null);
+  if (!response.ok) {
+    throw new Error(payload?.error || `HTTP ${response.status}`);
+  }
+}
+
 export function transitionNeedsReason(action: AssignmentTransitionAction): boolean {
   return action.requiresReason || action.command === 'block';
 }
