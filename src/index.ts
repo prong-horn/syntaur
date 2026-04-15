@@ -78,6 +78,7 @@ program
     'medium',
   )
   .option('--depends-on <slugs>', 'Comma-separated dependency slugs')
+  .option('--links <slugs>', 'Comma-separated linked assignment slugs (missionSlug/assignmentSlug format)')
   .option('--dir <path>', 'Override default mission directory')
   .action(async (title, options) => {
     try {

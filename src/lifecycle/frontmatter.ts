@@ -37,6 +37,21 @@ function parseDependsOn(frontmatter: string): string[] {
   return results;
 }
 
+function parseLinks(frontmatter: string): string[] {
+  const inlineMatch = frontmatter.match(/^links:\s*\[\s*\]/m);
+  if (inlineMatch) return [];
+
+  const results: string[] = [];
+  const blockMatch = frontmatter.match(/^links:\s*\n((?:\s+-\s+.*\n?)*)/m);
+  if (blockMatch) {
+    const items = blockMatch[1].matchAll(/^\s+-\s+(.+)$/gm);
+    for (const item of items) {
+      results.push(item[1].trim());
+    }
+  }
+  return results;
+}
+
 function parseExternalIds(frontmatter: string): ExternalId[] {
   const inlineMatch = frontmatter.match(/^externalIds:\s*\[\s*\]/m);
   if (inlineMatch) return [];
@@ -124,6 +139,7 @@ export function parseAssignmentFrontmatter(fileContent: string): AssignmentFront
     assignee: getField('assignee'),
     externalIds: parseExternalIds(frontmatter),
     dependsOn: parseDependsOn(frontmatter),
+    links: parseLinks(frontmatter),
     blockedReason: getField('blockedReason'),
     workspace: parseWorkspace(frontmatter),
     tags: parseTags(frontmatter),

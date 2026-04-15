@@ -117,6 +117,7 @@ updated: "2026-03-17T10:00:00Z"
 assignee: claude-2
 externalIds: []
 dependsOn: []
+links: []
 blockedReason: null
 workspace:
   repository: /Users/test/repo
@@ -136,6 +137,7 @@ tags: []
     expect(summary.priority).toBe('high');
     expect(summary.assignee).toBe('claude-2');
     expect(summary.dependsOn).toEqual([]);
+    expect(summary.links).toEqual([]);
   });
 });
 
@@ -155,6 +157,8 @@ externalIds:
     url: https://jira.example.com/browse/AUTH-43
 dependsOn:
   - design-auth-schema
+links:
+  - other-mission/some-task
 blockedReason: null
 workspace:
   repository: /Users/test/projects/auth-service
@@ -174,6 +178,7 @@ Body here.`;
     expect(assignment.status).toBe('in_progress');
     expect(assignment.assignee).toBe('claude-1');
     expect(assignment.dependsOn).toEqual(['design-auth-schema']);
+    expect(assignment.links).toEqual(['other-mission/some-task']);
     expect(assignment.workspace.branch).toBe('feat/jwt-middleware');
     expect(assignment.workspace.repository).toBe('/Users/test/projects/auth-service');
   });

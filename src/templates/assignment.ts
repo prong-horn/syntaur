@@ -7,6 +7,7 @@ export interface AssignmentParams {
   timestamp: string;
   priority: 'low' | 'medium' | 'high' | 'critical';
   dependsOn: string[];
+  links: string[];
 }
 
 export function renderAssignment(params: AssignmentParams): string {
@@ -15,6 +16,10 @@ export function renderAssignment(params: AssignmentParams): string {
     params.dependsOn.length === 0
       ? 'dependsOn: []'
       : `dependsOn:\n  - ${params.dependsOn.join('\n  - ')}`;
+  const linksYaml =
+    params.links.length === 0
+      ? 'links: []'
+      : `links:\n  - ${params.links.join('\n  - ')}`;
 
   return `---
 id: ${params.id}
@@ -27,6 +32,7 @@ updated: "${params.timestamp}"
 assignee: null
 externalIds: []
 ${dependsOnYaml}
+${linksYaml}
 blockedReason: null
 workspace:
   repository: null

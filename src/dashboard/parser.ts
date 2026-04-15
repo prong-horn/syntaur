@@ -167,6 +167,7 @@ export interface ParsedAssignmentSummary {
   priority: string;
   assignee: string | null;
   dependsOn: string[];
+  links: string[];
   updated: string;
 }
 
@@ -180,6 +181,7 @@ export function parseAssignmentSummary(fileContent: string): ParsedAssignmentSum
     priority: getField(fm, 'priority') ?? 'medium',
     assignee: getField(fm, 'assignee'),
     dependsOn: parseListField(fm, 'dependsOn'),
+    links: parseListField(fm, 'links'),
     updated: getField(fm, 'updated') ?? '',
   };
 }
@@ -194,6 +196,7 @@ export interface ParsedAssignmentFull {
   priority: string;
   assignee: string | null;
   dependsOn: string[];
+  links: string[];
   blockedReason: string | null;
   workspace: {
     repository: string | null;
@@ -252,6 +255,7 @@ export function parseAssignmentFull(fileContent: string): ParsedAssignmentFull {
     priority: getField(fm, 'priority') ?? 'medium',
     assignee: getField(fm, 'assignee'),
     dependsOn: parseListField(fm, 'dependsOn'),
+    links: parseListField(fm, 'links'),
     blockedReason: getField(fm, 'blockedReason'),
     workspace: {
       repository: getNestedField(fm, 'workspace', 'repository'),

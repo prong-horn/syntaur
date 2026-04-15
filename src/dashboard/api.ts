@@ -26,6 +26,7 @@ import type {
   AttentionItem,
   AttentionResponse,
   EditableDocumentResponse,
+  EnrichedLink,
   HelpResponse,
   MemorySummary,
   MissionDetail,
@@ -572,7 +573,7 @@ export async function getAssignmentDetail(
     };
   }
 
-  return {
+  const detail: AssignmentDetail = {
     id: assignment.id,
     missionSlug,
     slug: assignment.slug || assignmentSlug,
@@ -581,6 +582,9 @@ export async function getAssignmentDetail(
     priority: assignment.priority as AssignmentDetail['priority'],
     assignee: assignment.assignee,
     dependsOn: assignment.dependsOn,
+    links: assignment.links,
+    reverseLinks: [],
+    enrichedLinks: [],
     blockedReason: assignment.blockedReason,
     workspace: assignment.workspace,
     externalIds: assignment.externalIds,
@@ -599,6 +603,77 @@ export async function getAssignmentDetail(
       assignment,
     ),
   };
+
+  // Compute reverse links and enrich all links
+  const selfSlug = `${missionSlug}/${detail.slug}`;
+  const missionRecords = await listMissionRecords(missionsDir);
+
+  // Find reverse links: assignments across all missions whose links contain this assignment
+  const reverseLinks: string[] = [];
+  for (const mr of missionRecords) {
+    for (const a of mr.assignments) {
+      const qualifiedSlug = `${mr.summary.slug}/${a.slug}`;
+      if (qualifiedSlug === selfSlug) continue; // skip self
+      if (a.links.includes(selfSlug)) {
+        reverseLinks.push(qualifiedSlug);
+      }
+    }
+  }
+
+  // Filter self-links and malformed links from forward links
+  const isValidLinkFormat = (l: string) => {
+    const parts = l.split('/');
+    return parts.length === 2 && parts[0].length > 0 && parts[1].length > 0;
+  };
+  const forwardLinks = assignment.links.filter((l) => l !== selfSlug && isValidLinkFormat(l));
+
+  // Deduplicate: if a slug is in both forward and reverse, keep in forward only
+  const forwardSet = new Set(forwardLinks);
+  const dedupedReverseLinks = reverseLinks.filter((l) => !forwardSet.has(l));
+
+  detail.links = forwardLinks;
+  detail.reverseLinks = dedupedReverseLinks;
+
+  // Build enriched links for the frontend
+  const allMissionAssignments = new Map<string, { title: string; status: string }>();
+  for (const mr of missionRecords) {
+    for (const a of mr.assignments) {
+      allMissionAssignments.set(`${mr.summary.slug}/${a.slug}`, {
+        title: a.title,
+        status: a.status,
+      });
+    }
+  }
+
+  const enrichedLinks: EnrichedLink[] = [];
+  for (const linkSlug of forwardLinks) {
+    const [ms, as] = linkSlug.split('/');
+    const info = allMissionAssignments.get(linkSlug);
+    enrichedLinks.push({
+      slug: linkSlug,
+      missionSlug: ms,
+      assignmentSlug: as,
+      title: info?.title ?? linkSlug,
+      status: info?.status ?? 'pending',
+      isReverse: false,
+    });
+  }
+  for (const linkSlug of dedupedReverseLinks) {
+    const [ms, as] = linkSlug.split('/');
+    const info = allMissionAssignments.get(linkSlug);
+    enrichedLinks.push({
+      slug: linkSlug,
+      missionSlug: ms,
+      assignmentSlug: as,
+      title: info?.title ?? linkSlug,
+      status: info?.status ?? 'pending',
+      isReverse: true,
+    });
+  }
+
+  detail.enrichedLinks = enrichedLinks;
+
+  return detail;
 }
 
 async function listMissionRecords(missionsDir: string): Promise<MissionRecord[]> {
@@ -811,6 +886,7 @@ function toAssignmentSummary(assignment: AssignmentRecord): AssignmentSummary {
     priority: assignment.priority as AssignmentSummary['priority'],
     assignee: assignment.assignee,
     dependsOn: assignment.dependsOn,
+    links: assignment.links,
     updated: assignment.updated,
   };
 }

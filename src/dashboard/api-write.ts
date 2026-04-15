@@ -190,6 +190,7 @@ export function createWriteRouter(missionsDir: string): Router {
       timestamp: nowTimestamp(),
       priority: 'medium',
       dependsOn: [],
+      links: [],
     });
     res.json({ content });
   });
@@ -886,6 +887,26 @@ export function createWriteRouter(missionsDir: string): Router {
     } catch (error) {
       console.error('Error running assignment transition:', error);
       res.status(500).json({ error: `Failed to transition assignment: ${(error as Error).message}` });
+    }
+  });
+
+  router.delete('/api/missions/:slug/assignments/:aslug', async (req: Request, res: Response) => {
+    try {
+      const missionSlug = getParam(req.params.slug);
+      const assignmentSlug = getParam(req.params.aslug);
+      const assignmentDir = resolve(missionsDir, missionSlug, 'assignments', assignmentSlug);
+      const assignmentPath = resolve(assignmentDir, 'assignment.md');
+
+      if (!(await fileExists(assignmentPath))) {
+        res.status(404).json({ error: `Assignment "${assignmentSlug}" not found in mission "${missionSlug}"` });
+        return;
+      }
+
+      await rm(assignmentDir, { recursive: true, force: true });
+      res.json({ deleted: assignmentSlug, missionSlug });
+    } catch (error) {
+      console.error('Error deleting assignment:', error);
+      res.status(500).json({ error: `Failed to delete assignment: ${(error as Error).message}` });
     }
   });
 

@@ -108,6 +108,7 @@ describe('renderAssignment', () => {
       timestamp: TIMESTAMP,
       priority: 'medium',
       dependsOn: [],
+      links: [],
     });
     expect(out).toContain('id: uuid-1');
     expect(out).toContain('slug: test-assignment');
@@ -124,6 +125,35 @@ describe('renderAssignment', () => {
     expect(out).toContain('tags: []');
   });
 
+  it('renders empty links as inline YAML', () => {
+    const out = renderAssignment({
+      id: 'id',
+      slug: 's',
+      title: 'T',
+      timestamp: TIMESTAMP,
+      priority: 'medium',
+      dependsOn: [],
+      links: [],
+    });
+    expect(out).toContain('links: []');
+  });
+
+  it('renders non-empty links as YAML list', () => {
+    const out = renderAssignment({
+      id: 'id',
+      slug: 's',
+      title: 'T',
+      timestamp: TIMESTAMP,
+      priority: 'medium',
+      dependsOn: [],
+      links: ['mission-a/task-1', 'mission-b/task-2'],
+    });
+    expect(out).toContain('links:');
+    expect(out).toContain('  - mission-a/task-1');
+    expect(out).toContain('  - mission-b/task-2');
+    expect(out).not.toContain('links: []');
+  });
+
   it('renders non-empty dependsOn as YAML list', () => {
     const out = renderAssignment({
       id: 'id',
@@ -132,6 +162,7 @@ describe('renderAssignment', () => {
       timestamp: TIMESTAMP,
       priority: 'high',
       dependsOn: ['dep-one', 'dep-two'],
+      links: [],
     });
     expect(out).toContain('dependsOn:');
     expect(out).toContain('  - dep-one');
@@ -147,6 +178,7 @@ describe('renderAssignment', () => {
       timestamp: TIMESTAMP,
       priority: 'medium',
       dependsOn: [],
+      links: [],
     });
     expect(out).toContain('## Objective');
     expect(out).toContain('## Acceptance Criteria');

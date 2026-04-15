@@ -53,6 +53,7 @@ export interface AssignmentFrontmatter {
   assignee: string | null;
   externalIds: ExternalId[];
   dependsOn: string[];
+  links: string[];
   blockedReason: string | null;
   workspace: Workspace;
   tags: string[];

@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Link, useParams, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
   Activity,
   ArrowUpRight,
@@ -9,6 +9,7 @@ import {
   Hammer,
   NotebookPen,
   SendToBack,
+  Trash2,
 } from 'lucide-react';
 import { CopyButton } from '../components/CopyButton';
 import { useAssignment, useMission, useServers, useAssignmentSessions, useWorkspacePrefix, type AssignmentTransitionAction } from '../hooks/useMissions';
@@ -22,16 +23,20 @@ import { SectionCard } from '../components/SectionCard';
 import { MarkdownRenderer } from '../components/MarkdownRenderer';
 import { EmptyState } from '../components/EmptyState';
 import { AssignmentTransitionDialog } from '../components/AssignmentTransitionDialog';
+import { ConfirmDialog } from '../components/ConfirmDialog';
 import {
+  deleteAssignment,
   runAssignmentTransition,
   overrideAssignmentStatus,
   transitionNeedsReason,
 } from '../lib/assignments';
 import { splitAssignmentSummary } from '../lib/acceptanceCriteria';
 import { DependencyPanel } from '../components/DependencyPanel';
+import { LinksPanel } from '../components/LinksPanel';
 
 export function AssignmentDetail() {
   const { slug, aslug } = useParams<{ slug: string; aslug: string }>();
+  const navigate = useNavigate();
   const wsPrefix = useWorkspacePrefix();
   const [searchParams, setSearchParams] = useSearchParams();
   const [transitionError, setTransitionError] = useState<string | null>(null);
@@ -39,6 +44,8 @@ export function AssignmentDetail() {
   const [pendingTransition, setPendingTransition] = useState<AssignmentTransitionAction | null>(null);
   const [criteriaError, setCriteriaError] = useState<string | null>(null);
   const [savingCriterionIndex, setSavingCriterionIndex] = useState<number | null>(null);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deleteLoading, setDeleteLoading] = useState(false);
   const tab = searchParams.get('tab') ?? 'summary';
   const statusConfig = useStatusConfig();
   const { data: assignment, loading, error, refetch } = useAssignment(slug, aslug);
@@ -101,6 +108,18 @@ export function AssignmentDetail() {
       refetch();
     } catch (err) {
       setTransitionError((err as Error).message);
+    }
+  }
+
+  async function handleDeleteAssignment() {
+    setDeleteLoading(true);
+    try {
+      await deleteAssignment(missionSlug, assignmentSlug);
+      navigate(`${wsPrefix}/missions/${missionSlug}`);
+    } catch (err) {
+      setTransitionError((err as Error).message);
+      setDeleteLoading(false);
+      setShowDeleteConfirm(false);
     }
   }
 
@@ -228,6 +247,10 @@ export function AssignmentDetail() {
           dependencies={enrichedDeps}
           blockedReason={assignment.blockedReason}
         />
+      )}
+
+      {assignment.enrichedLinks && assignment.enrichedLinks.length > 0 && (
+        <LinksPanel links={assignment.enrichedLinks} />
       )}
 
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_280px]">
@@ -487,6 +510,15 @@ export function AssignmentDetail() {
                 <Hammer className="h-4 w-4" />
                 Append decision
               </Link>
+              <hr className="border-border/40" />
+              <button
+                type="button"
+                onClick={() => setShowDeleteConfirm(true)}
+                className="flex items-center gap-2 text-destructive hover:underline"
+              >
+                <Trash2 className="h-4 w-4" />
+                Delete assignment
+              </button>
             </div>
           </SectionCard>
 
@@ -525,6 +557,19 @@ export function AssignmentDetail() {
             setPendingTransition(null);
           }
         }}
+      />
+
+      <ConfirmDialog
+        open={showDeleteConfirm}
+        title="Delete assignment?"
+        description={`This will permanently delete "${assignment.title}" and all its files (plan, scratchpad, handoff, decision record). This cannot be undone.`}
+        confirmLabel="Delete Assignment"
+        destructive
+        loading={deleteLoading}
+        onOpenChange={(open) => {
+          if (!open) setShowDeleteConfirm(false);
+        }}
+        onConfirm={handleDeleteAssignment}
       />
     </div>
   );

@@ -24,6 +24,7 @@ export interface AssignmentEditorState {
   priority: 'low' | 'medium' | 'high' | 'critical';
   assignee: string;
   dependsOn: string;
+  links: string;
   blockedReason: string;
   tags: string;
   body: string;
@@ -233,6 +234,7 @@ export function parseAssignmentEditorState(content: string): AssignmentEditorSta
     priority: (getScalar(model, 'priority') || 'medium') as AssignmentEditorState['priority'],
     assignee: getScalar(model, 'assignee'),
     dependsOn: getStringList(model, 'dependsOn').join(', '),
+    links: getStringList(model, 'links').join(', '),
     blockedReason: getScalar(model, 'blockedReason'),
     tags: getStringList(model, 'tags').join(', '),
     body: model.body,
@@ -252,6 +254,7 @@ export function updateAssignmentContent(
   setScalar(model, 'priority', next.priority);
   setScalar(model, 'assignee', next.assignee || null);
   setStringList(model, 'dependsOn', commaListToArray(next.dependsOn));
+  setStringList(model, 'links', commaListToArray(next.links));
   setScalar(model, 'blockedReason', next.blockedReason || null);
   setStringList(model, 'tags', commaListToArray(next.tags));
   model.body = next.body;

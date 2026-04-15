@@ -207,3 +207,54 @@ describe('lifecycle integration', () => {
     expect(finalContent).toContain('## Acceptance Criteria');
   });
 });
+
+describe('assignment links', () => {
+  const missionSlug = 'test-mission';
+
+  beforeEach(async () => {
+    await createMissionCommand('Test Mission', { dir: testDir });
+  });
+
+  it('creates assignment with links in missionSlug/assignmentSlug format', async () => {
+    await createAssignmentCommand('Task With Links', {
+      mission: missionSlug,
+      dir: testDir,
+      links: 'other-mission/task-one,another-mission/task-two',
+    });
+
+    const content = await readAssignmentContent(missionSlug, 'task-with-links');
+    expect(content).toContain('links:');
+    expect(content).toContain('  - other-mission/task-one');
+    expect(content).toContain('  - another-mission/task-two');
+  });
+
+  it('creates assignment with empty links', async () => {
+    await createAssignmentCommand('Task No Links', {
+      mission: missionSlug,
+      dir: testDir,
+    });
+
+    const content = await readAssignmentContent(missionSlug, 'task-no-links');
+    expect(content).toContain('links: []');
+  });
+
+  it('rejects invalid link format (missing slash)', async () => {
+    await expect(
+      createAssignmentCommand('Bad Links', {
+        mission: missionSlug,
+        dir: testDir,
+        links: 'no-slash-here',
+      }),
+    ).rejects.toThrow('Invalid link');
+  });
+
+  it('rejects invalid link format (too many slashes)', async () => {
+    await expect(
+      createAssignmentCommand('Bad Links', {
+        mission: missionSlug,
+        dir: testDir,
+        links: 'too/many/slashes',
+      }),
+    ).rejects.toThrow('Invalid link');
+  });
+});

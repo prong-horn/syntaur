@@ -312,6 +312,14 @@ function StructuredEditor({
               className="editor-input"
             />
           </Field>
+          <Field label="Links" className="md:col-span-2">
+            <input
+              value={state.links}
+              onChange={(event) => onChange(normalizeEditorContent(documentType, content, { links: event.target.value }))}
+              placeholder="Comma-separated: missionSlug/assignmentSlug"
+              className="editor-input"
+            />
+          </Field>
           <Field label="Blocked reason" className="md:col-span-2">
             <input
               value={state.blockedReason}

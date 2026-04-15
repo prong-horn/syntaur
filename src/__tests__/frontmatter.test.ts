@@ -12,6 +12,7 @@ updated: "2026-03-18T10:00:00Z"
 assignee: null
 externalIds: []
 dependsOn: []
+links: []
 blockedReason: null
 workspace:
   repository: null
@@ -41,6 +42,9 @@ externalIds:
     url: https://jira.example.com/browse/AUTH-43
 dependsOn:
   - design-auth-schema
+links:
+  - other-mission/some-assignment
+  - my-mission/another-task
 blockedReason: null
 workspace:
   repository: /Users/brennen/projects/auth-service
@@ -68,6 +72,7 @@ describe('parseAssignmentFrontmatter', () => {
     expect(fm.assignee).toBeNull();
     expect(fm.externalIds).toEqual([]);
     expect(fm.dependsOn).toEqual([]);
+    expect(fm.links).toEqual([]);
     expect(fm.blockedReason).toBeNull();
     expect(fm.workspace.repository).toBeNull();
     expect(fm.workspace.worktreePath).toBeNull();
@@ -81,6 +86,7 @@ describe('parseAssignmentFrontmatter', () => {
     expect(fm.status).toBe('in_progress');
     expect(fm.assignee).toBe('claude-1');
     expect(fm.dependsOn).toEqual(['design-auth-schema']);
+    expect(fm.links).toEqual(['other-mission/some-assignment', 'my-mission/another-task']);
     expect(fm.workspace.repository).toBe('/Users/brennen/projects/auth-service');
     expect(fm.workspace.branch).toBe('feat/complex-task');
     expect(fm.workspace.parentBranch).toBe('main');

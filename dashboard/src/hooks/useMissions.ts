@@ -28,6 +28,15 @@ export interface MissionSummary {
   workspace: string | null;
 }
 
+export interface EnrichedLink {
+  slug: string;
+  missionSlug: string;
+  assignmentSlug: string;
+  title: string;
+  status: string;
+  isReverse: boolean;
+}
+
 export interface AssignmentSummary {
   id: string;
   slug: string;
@@ -36,6 +45,7 @@ export interface AssignmentSummary {
   priority: 'low' | 'medium' | 'high' | 'critical';
   assignee: string | null;
   dependsOn: string[];
+  links: string[];
   updated: string;
 }
 
@@ -119,6 +129,9 @@ export interface AssignmentDetail {
   priority: AssignmentSummary['priority'];
   assignee: string | null;
   dependsOn: string[];
+  links: string[];
+  reverseLinks: string[];
+  enrichedLinks: EnrichedLink[];
   blockedReason: string | null;
   workspace: WorkspaceInfo;
   externalIds: ExternalIdInfo[];

@@ -20,6 +20,7 @@ export interface CreateAssignmentOptions {
   slug?: string;
   priority?: 'low' | 'medium' | 'high' | 'critical';
   dependsOn?: string;
+  links?: string;
   dir?: string;
 }
 
@@ -62,6 +63,18 @@ export async function createAssignmentCommand(
     if (!isValidSlug(dep)) {
       throw new Error(
         `Invalid dependency slug "${dep}". Slugs must be lowercase, hyphen-separated, with no special characters.`,
+      );
+    }
+  }
+
+  const links = options.links
+    ? options.links.split(',').map((s) => s.trim()).filter(Boolean)
+    : [];
+  for (const link of links) {
+    const parts = link.split('/');
+    if (parts.length !== 2 || !parts.every(isValidSlug)) {
+      throw new Error(
+        `Invalid link "${link}". Links must be in missionSlug/assignmentSlug format (e.g., "my-mission/my-assignment").`,
       );
     }
   }
@@ -139,6 +152,7 @@ export async function createAssignmentCommand(
         timestamp,
         priority,
         dependsOn,
+        links,
       }),
     ],
     [
@@ -183,6 +197,9 @@ export async function createAssignmentCommand(
   console.log(`  Priority: ${priority}`);
   if (dependsOn.length > 0) {
     console.log(`  Depends on: ${dependsOn.join(', ')}`);
+  }
+  if (links.length > 0) {
+    console.log(`  Links: ${links.join(', ')}`);
   }
   console.log(`  Files created:`);
   console.log(`    assignment.md`);
