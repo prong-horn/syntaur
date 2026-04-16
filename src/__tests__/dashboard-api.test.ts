@@ -79,6 +79,9 @@ tags: []
 
 # Test Mission`;
 
+// Use a recent date so this assignment is never stale (within the 7-day window)
+const RECENT_DATE = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString().replace(/\.\d+Z$/, 'Z');
+
 const ASSIGNMENT_MD = `---
 id: a-123
 slug: test-assignment
@@ -86,7 +89,7 @@ title: Test Assignment
 status: in_progress
 priority: high
 created: "2026-03-20T10:00:00Z"
-updated: "2026-04-07T10:00:00Z"
+updated: "${RECENT_DATE}"
 assignee: codex-1
 externalIds: []
 dependsOn: []
@@ -132,7 +135,7 @@ const PLAN_MD = `---
 assignment: test-assignment
 status: in_progress
 created: "2026-03-20T10:00:00Z"
-updated: "2026-04-07T10:00:00Z"
+updated: "${RECENT_DATE}"
 ---
 
 # Plan
