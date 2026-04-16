@@ -98,6 +98,13 @@ export async function dashboardCommand(options: DashboardOptions): Promise<void>
     port = availablePort;
   }
 
+  // Compute the dashboard dist path relative to this file's location.
+  // After tsup bundling, import.meta.url resolves to dist/index.js so we
+  // go one level up to the package root, then into dashboard/dist.
+  const thisFile = fileURLToPath(import.meta.url);
+  const packageRoot = resolve(dirname(thisFile), '..');
+  const dashboardDist = resolve(packageRoot, 'dashboard', 'dist');
+
   const server = createDashboardServer({
     port,
     missionsDir,
@@ -105,6 +112,7 @@ export async function dashboardCommand(options: DashboardOptions): Promise<void>
     playbooksDir: getPlaybooksDir(),
     todosDir: getTodosDir(),
     serveStaticUi: mode === 'static',
+    dashboardDistPath: dashboardDist,
   });
 
   await server.start();
@@ -112,8 +120,6 @@ export async function dashboardCommand(options: DashboardOptions): Promise<void>
   let viteProcess: ChildProcess | null = null;
 
   if (mode === 'dev') {
-    const thisFile = fileURLToPath(import.meta.url);
-    const packageRoot = resolve(dirname(thisFile), '..');
     const dashboardDir = resolve(packageRoot, 'dashboard');
     const viteBin = resolve(dashboardDir, 'node_modules', '.bin', 'vite');
 

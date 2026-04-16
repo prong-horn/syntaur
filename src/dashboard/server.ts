@@ -1,9 +1,8 @@
 import express from 'express';
 import { createServer } from 'node:http';
-import { resolve, dirname } from 'node:path';
+import { resolve } from 'node:path';
 import { homedir } from 'node:os';
 import { writeFile, unlink } from 'node:fs/promises';
-import { fileURLToPath } from 'node:url';
 import { WebSocketServer, WebSocket } from 'ws';
 import {
   listMissions,
@@ -31,13 +30,6 @@ import { initSessionDb, migrateFromMarkdown, closeSessionDb } from './session-db
 import { startAutodiscovery, stopAutodiscovery } from './autodiscovery.js';
 import type { WsMessage } from './types.js';
 
-// When tsup bundles with splitting:false, import.meta.url resolves to the
-// final bundle (dist/index.js), not the original file location. Use one level
-// up from the dist/ directory to find the package root reliably.
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
-const packageRoot = resolve(__dirname, '..');
-
 export interface DashboardServerOptions {
   port: number;
   missionsDir: string;
@@ -45,10 +37,12 @@ export interface DashboardServerOptions {
   playbooksDir: string;
   todosDir: string;
   serveStaticUi: boolean;
+  /** Absolute path to the built dashboard UI (dashboard/dist). Required when serveStaticUi is true. */
+  dashboardDistPath?: string;
 }
 
 export function createDashboardServer(options: DashboardServerOptions) {
-  const { port, missionsDir, serversDir, playbooksDir, todosDir, serveStaticUi } = options;
+  const { port, missionsDir, serversDir, playbooksDir, todosDir, serveStaticUi, dashboardDistPath } = options;
   const app = express();
   const server = createServer(app);
 
@@ -305,8 +299,7 @@ export function createDashboardServer(options: DashboardServerOptions) {
   app.use('/api/todos', createTodosRouter(todosDir, broadcast));
 
   // --- Static files (production only) ---
-  if (serveStaticUi) {
-    const dashboardDistPath = resolve(packageRoot, 'dashboard', 'dist');
+  if (serveStaticUi && dashboardDistPath) {
     app.use(express.static(dashboardDistPath));
 
     // SPA fallback: serve index.html for all non-API routes
