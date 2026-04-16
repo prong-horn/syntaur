@@ -49,3 +49,15 @@ jobs:
 
       - name: Publish to npm with OIDC
         run: npm publish
+
+      - name: Extract version
+        id: extract
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Notify syntaur-app
+        uses: peter-evans/repository-dispatch@v3
+        with:
+          token: ${{ secrets.SYNTAUR_APP_DISPATCH_PAT }}
+          repository: prong-horn/syntaur-app
+          event-type: syntaur-published
+          client-payload: '{"version": "${{ steps.extract.outputs.version }}"}'
