@@ -13,6 +13,7 @@ import { LoadingState } from '../components/LoadingState';
 import { ErrorState } from '../components/ErrorState';
 import { ColorPicker } from '../components/ColorPicker';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../components/ui/tooltip';
+import { BackupSection } from '../components/BackupSection';
 import type { StatusConfigResponse } from '../hooks/useStatusConfig';
 import { invalidateStatusConfigCache } from '../hooks/useStatusConfig';
 
@@ -365,6 +366,9 @@ export function SettingsPage() {
           </>
         )}
       </div>
+
+      {/* GitHub Backup */}
+      <BackupSection />
     </div>
     </TooltipProvider>
   );

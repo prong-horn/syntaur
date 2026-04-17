@@ -38,6 +38,13 @@ export interface OnboardingConfig {
   completed: boolean;
 }
 
+export interface BackupConfig {
+  repo: string | null;
+  categories: string;
+  lastBackup: string | null;
+  lastRestore: string | null;
+}
+
 export interface SyntaurConfig {
   version: string;
   defaultMissionDir: string;
@@ -47,6 +54,7 @@ export interface SyntaurConfig {
     autoApprove: boolean;
   };
   integrations: IntegrationConfig;
+  backup: BackupConfig | null;
   statuses: StatusConfig | null;
 }
 
@@ -65,6 +73,7 @@ const DEFAULT_CONFIG: SyntaurConfig = {
     codexPluginDir: null,
     codexMarketplacePath: null,
   },
+  backup: null,
   statuses: null,
 };
 
@@ -264,6 +273,15 @@ function serializeOnboardingConfig(onboarding: OnboardingConfig): string {
   return ['onboarding:', `  completed: ${onboarding.completed ? 'true' : 'false'}`].join('\n');
 }
 
+function serializeBackupConfig(backup: BackupConfig): string {
+  const lines: string[] = ['backup:'];
+  lines.push(`  repo: ${backup.repo ?? 'null'}`);
+  lines.push(`  categories: ${backup.categories}`);
+  lines.push(`  lastBackup: ${backup.lastBackup ?? 'null'}`);
+  lines.push(`  lastRestore: ${backup.lastRestore ?? 'null'}`);
+  return lines.join('\n');
+}
+
 function stripTopLevelBlock(fmBlock: string, key: string): string {
   const blockStart = fmBlock.match(new RegExp(`^${key}:\\s*$`, 'm'));
   if (!blockStart) {
@@ -439,6 +457,40 @@ export async function updateOnboardingConfig(
   await writeFileForce(configPath, newContent);
 }
 
+export async function updateBackupConfig(
+  backup: Partial<BackupConfig>,
+): Promise<void> {
+  const configPath = resolve(syntaurRoot(), 'config.md');
+  const current = (await readConfig()).backup;
+  const nextBackup: BackupConfig = {
+    repo: current?.repo ?? null,
+    categories: current?.categories ?? 'missions, playbooks, todos, servers, config',
+    lastBackup: current?.lastBackup ?? null,
+    lastRestore: current?.lastRestore ?? null,
+    ...backup,
+  };
+
+  const backupBlock = serializeBackupConfig(nextBackup);
+  const existing = await fileExists(configPath)
+    ? await readFile(configPath, 'utf-8')
+    : renderConfig({ defaultMissionDir: defaultMissionDir() });
+
+  const fmMatch = existing.match(/^(---\n)([\s\S]*?)\n(---)/);
+  if (!fmMatch) {
+    const content = `---\nversion: "1.0"\ndefaultMissionDir: ${defaultMissionDir()}\n${backupBlock}\n---\n${existing}`;
+    await writeFileForce(configPath, content.replace(/\n\n---/, '\n---'));
+    return;
+  }
+
+  const fmBlock = fmMatch[2];
+  const afterFrontmatter = existing.slice(fmMatch[0].length);
+  const cleanedFm = stripTopLevelBlock(fmBlock, 'backup');
+  const newFm = `${cleanedFm}\n${backupBlock}`.replace(/^\n+/, '');
+  const normalizedFm = newFm.replace(/\n+$/, '');
+  const newContent = `---\n${normalizedFm}\n---${afterFrontmatter}`;
+  await writeFileForce(configPath, newContent);
+}
+
 export async function readConfig(): Promise<SyntaurConfig> {
   const configPath = resolve(syntaurRoot(), 'config.md');
   if (!(await fileExists(configPath))) {
@@ -490,6 +542,14 @@ export async function readConfig(): Promise<SyntaurConfig> {
         'integrations.codexMarketplacePath',
       ),
     },
+    backup: fm['backup.repo'] || fm['backup.categories']
+      ? {
+          repo: fm['backup.repo'] && fm['backup.repo'] !== 'null' ? fm['backup.repo'] : null,
+          categories: fm['backup.categories'] || 'missions, playbooks, todos, servers, config',
+          lastBackup: fm['backup.lastBackup'] && fm['backup.lastBackup'] !== 'null' ? fm['backup.lastBackup'] : null,
+          lastRestore: fm['backup.lastRestore'] && fm['backup.lastRestore'] !== 'null' ? fm['backup.lastRestore'] : null,
+        }
+      : null,
     statuses: parseStatusConfig(content),
   };
 }
