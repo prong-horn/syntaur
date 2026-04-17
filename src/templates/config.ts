@@ -11,10 +11,11 @@ onboarding:
 agentDefaults:
   trustLevel: medium
   autoApprove: false
-sync:
-  enabled: false
-  endpoint: null
-  interval: 300
+backup:
+  repo: null
+  categories: missions, playbooks, todos, servers, config
+  lastBackup: null
+  lastRestore: null
 ---
 
 # Syntaur Configuration

@@ -26,6 +26,7 @@ import { createServersRouter } from './api-servers.js';
 import { createAgentSessionsRouter } from './api-agent-sessions.js';
 import { createPlaybooksRouter } from './api-playbooks.js';
 import { createTodosRouter } from './api-todos.js';
+import { createBackupRouter } from './api-backup.js';
 import { initSessionDb, migrateFromMarkdown, closeSessionDb } from './session-db.js';
 import { startAutodiscovery, stopAutodiscovery } from './autodiscovery.js';
 import type { WsMessage } from './types.js';
@@ -297,6 +298,9 @@ export function createDashboardServer(options: DashboardServerOptions) {
 
   // --- Todos API ---
   app.use('/api/todos', createTodosRouter(todosDir, broadcast));
+
+  // --- Backup API ---
+  app.use('/api/backup', createBackupRouter());
 
   // --- Static files (production only) ---
   if (serveStaticUi && dashboardDistPath) {
