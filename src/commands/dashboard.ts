@@ -164,12 +164,29 @@ export async function dashboardCommand(options: DashboardOptions): Promise<void>
   }
 
   // Keep the process running
+  let shuttingDown = false;
+  const forceExit = () => {
+    console.log('\nForce exit.');
+    if (viteProcess) {
+      try { viteProcess.kill('SIGKILL'); } catch {}
+    }
+    process.exit(1);
+  };
   const shutdown = async () => {
-    console.log('\nShutting down dashboard...');
+    if (shuttingDown) {
+      forceExit();
+      return;
+    }
+    shuttingDown = true;
+    console.log('\nShutting down dashboard... (press Ctrl+C again to force)');
     if (viteProcess) {
       viteProcess.kill();
     }
-    await server.stop();
+    try {
+      await server.stop();
+    } catch (err) {
+      console.error('Error during shutdown:', err);
+    }
     process.exit(0);
   };
 

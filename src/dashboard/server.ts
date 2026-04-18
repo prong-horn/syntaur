@@ -360,11 +360,12 @@ export function createDashboardServer(options: DashboardServerOptions) {
       }
       closeSessionDb();
       for (const client of clients) {
-        client.close();
+        client.terminate();
       }
       clients.clear();
       const portFile = resolve(homedir(), '.syntaur', 'dashboard-port');
       await unlink(portFile).catch(() => {});
+      server.closeAllConnections?.();
       return new Promise<void>((resolvePromise) => {
         server.close(() => resolvePromise());
       });
