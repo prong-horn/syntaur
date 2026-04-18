@@ -70,12 +70,14 @@ interface StatusBadgeProps {
   status: string;
   className?: string;
   showIcon?: boolean;
+  progress?: { checked: number; total: number };
 }
 
 export function StatusBadge({
   status,
   className,
   showIcon = true,
+  progress,
 }: StatusBadgeProps) {
   const meta = STATUS_META[status as keyof typeof STATUS_META] ?? {
     label: status.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()),
@@ -85,9 +87,15 @@ export function StatusBadge({
   };
   const Icon = meta.icon;
 
-  return (
+  const hasProgress = progress && progress.total > 0;
+  const pct = hasProgress ? Math.min(1, Math.max(0, progress.checked / progress.total)) : 0;
+  const description = hasProgress
+    ? `${meta.description} (${progress.checked}/${progress.total} criteria)`
+    : meta.description;
+
+  const badge = (
     <span
-      title={meta.description}
+      title={description}
       className={cn(
         'inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border px-2 py-0.5 text-xs font-semibold tracking-wide',
         meta.className,
@@ -96,6 +104,40 @@ export function StatusBadge({
     >
       {showIcon ? <Icon className="h-3.5 w-3.5" /> : null}
       <span>{meta.label}</span>
+    </span>
+  );
+
+  if (!hasProgress) {
+    return badge;
+  }
+
+  // Ring wraps the badge. Use --primary directly so the progress arc reads as "progress"
+  // across all badge states (not tinted to match the badge's own status color).
+  const r = 12;
+  const c = 2 * Math.PI * r;
+  const ringStroke = 'hsl(var(--primary))';
+  return (
+    <span className="relative inline-flex items-center">
+      <svg
+        aria-hidden="true"
+        viewBox="0 0 28 28"
+        className="pointer-events-none absolute inset-[-4px] h-[calc(100%+8px)] w-[calc(100%+8px)] overflow-visible"
+      >
+        <circle cx="14" cy="14" r={r} fill="none" stroke={ringStroke} strokeWidth="1.5" strokeOpacity="0.2" />
+        <circle
+          cx="14"
+          cy="14"
+          r={r}
+          fill="none"
+          stroke={ringStroke}
+          strokeWidth="1.5"
+          strokeLinecap="round"
+          strokeDasharray={c}
+          strokeDashoffset={c - c * pct}
+          transform="rotate(-90 14 14)"
+        />
+      </svg>
+      {badge}
     </span>
   );
 }

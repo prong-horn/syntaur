@@ -34,6 +34,69 @@ export function formatDateTime(value: string | null | undefined): string {
   });
 }
 
+export function formatShortDate(value: string | null | undefined): string {
+  if (!value) {
+    return '\u2014';
+  }
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+
+  return date.toLocaleDateString(undefined, {
+    month: 'short',
+    day: 'numeric',
+  });
+}
+
+export function formatShortDateTime(value: string | null | undefined): string {
+  if (!value) {
+    return '\u2014';
+  }
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+
+  return date.toLocaleString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+}
+
+export function formatRelativeTime(value: string | null | undefined): string {
+  if (!value) {
+    return '\u2014';
+  }
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+
+  const totalSeconds = Math.floor((Date.now() - date.getTime()) / 1000);
+  if (totalSeconds < 60) {
+    return 'just now';
+  }
+
+  const totalMinutes = Math.floor(totalSeconds / 60);
+  if (totalMinutes < 60) {
+    return `${totalMinutes}m ago`;
+  }
+
+  const totalHours = Math.floor(totalMinutes / 60);
+  if (totalHours < 24) {
+    return `${totalHours}h ago`;
+  }
+
+  const totalDays = Math.floor(totalHours / 24);
+  return `${totalDays}d ago`;
+}
+
 export function formatCount(value: number, singular: string, plural = `${singular}s`): string {
   return `${value} ${value === 1 ? singular : plural}`;
 }

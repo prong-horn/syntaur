@@ -1,9 +1,8 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
   Activity,
   ArrowUpRight,
-  BookOpenText,
   ExternalLink,
   FilePenLine,
   Hammer,
@@ -14,7 +13,7 @@ import {
 import { CopyButton } from '../components/CopyButton';
 import { useAssignment, useMission, useServers, useAssignmentSessions, useWorkspacePrefix, type AssignmentTransitionAction } from '../hooks/useMissions';
 import { useStatusConfig } from '../hooks/useStatusConfig';
-import { formatDateTime } from '../lib/format';
+import { formatDateTime, formatRelativeTime, formatShortDate, formatShortDateTime } from '../lib/format';
 import { LoadingState } from '../components/LoadingState';
 import { ErrorState } from '../components/ErrorState';
 import { StatusBadge } from '../components/StatusBadge';
@@ -24,6 +23,7 @@ import { MarkdownRenderer } from '../components/MarkdownRenderer';
 import { EmptyState } from '../components/EmptyState';
 import { AssignmentTransitionDialog } from '../components/AssignmentTransitionDialog';
 import { ConfirmDialog } from '../components/ConfirmDialog';
+import { OverflowMenu, type OverflowMenuItem } from '../components/OverflowMenu';
 import {
   deleteAssignment,
   runAssignmentTransition,
@@ -33,6 +33,9 @@ import {
 import { splitAssignmentSummary } from '../lib/acceptanceCriteria';
 import { DependencyPanel } from '../components/DependencyPanel';
 import { LinksPanel } from '../components/LinksPanel';
+import { cn } from '../lib/utils';
+
+const TRANSITION_PRECEDENCE = ['review', 'complete', 'unblock', 'start', 'block', 'fail', 'reopen'] as const;
 
 export function AssignmentDetail() {
   const { slug, aslug } = useParams<{ slug: string; aslug: string }>();
@@ -46,6 +49,7 @@ export function AssignmentDetail() {
   const [savingCriterionIndex, setSavingCriterionIndex] = useState<number | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleteLoading, setDeleteLoading] = useState(false);
+  const [reviewGlowKey, setReviewGlowKey] = useState(0);
   const tab = searchParams.get('tab') ?? 'summary';
   const statusConfig = useStatusConfig();
   const { data: assignment, loading, error, refetch } = useAssignment(slug, aslug);
@@ -72,6 +76,33 @@ export function AssignmentDetail() {
     (d) => d.status !== 'completed' && d.status !== 'review',
   );
 
+  const summarySections = useMemo(
+    () => (assignment ? splitAssignmentSummary(assignment.body) : { acceptanceCriteria: [], summaryBody: '' }),
+    [assignment],
+  );
+  const criteria = summarySections.acceptanceCriteria;
+  const checkedCount = criteria.filter((c) => c.checked).length;
+  const allChecked = criteria.length > 0 && checkedCount === criteria.length;
+  const prevAllCheckedRef = useRef(allChecked);
+  const initialSyncDoneRef = useRef(false);
+
+  useEffect(() => {
+    // Wait until the assignment payload has loaded before treating any state as a transition.
+    // Without this guard, the initial empty-criteria render (allChecked === false) followed by
+    // the post-fetch render (allChecked === true) reads as a "just became all-checked" event
+    // and fires the glow on page load for already-complete assignments.
+    if (!assignment) return;
+    if (!initialSyncDoneRef.current) {
+      prevAllCheckedRef.current = allChecked;
+      initialSyncDoneRef.current = true;
+      return;
+    }
+    if (allChecked && !prevAllCheckedRef.current) {
+      setReviewGlowKey((n) => n + 1);
+    }
+    prevAllCheckedRef.current = allChecked;
+  }, [allChecked, assignment]);
+
   if (loading) {
     return <LoadingState label="Loading assignment workspace…" />;
   }
@@ -82,7 +113,20 @@ export function AssignmentDetail() {
 
   const missionSlug = slug;
   const assignmentSlug = aslug;
-  const summarySections = splitAssignmentSummary(assignment.body);
+  const progress = criteria.length > 0 ? { checked: checkedCount, total: criteria.length } : undefined;
+
+  const transitions = assignment.availableTransitions ?? [];
+  // Exclude same-target transitions: the backend currently returns every command as enabled
+  // even when the targetStatus equals the current status, which would produce a meaningless
+  // idempotent primary action. Filter those out for the primary slot; they still surface in
+  // the overflow menu as disabled with "Already in this status".
+  const enabledTransitions = transitions.filter(
+    (a) => !a.disabled && a.targetStatus !== assignment.status,
+  );
+  const primaryTransition =
+    TRANSITION_PRECEDENCE.map((cmd) => enabledTransitions.find((a) => a.command === cmd)).find(Boolean) ??
+    enabledTransitions[0] ??
+    null;
 
   const linkedPanes: Array<{ sessionName: string; command: string; urls: string[] }> = [];
   if (serversData?.sessions) {
@@ -175,47 +219,109 @@ export function AssignmentDetail() {
     }
   }
 
+  const overflowItems: OverflowMenuItem[] = [
+    ...enabledTransitions
+      .filter((a) => a !== primaryTransition)
+      .map<OverflowMenuItem>((action) => ({
+        key: `transition-${action.command}`,
+        label: action.label,
+        onSelect: () => handleTransitionClick(action),
+        disabled: transitioning === action.command,
+      })),
+    ...transitions
+      .filter((a) => a.disabled || a.targetStatus === assignment.status)
+      .map<OverflowMenuItem>((action) => ({
+        key: `transition-${action.command}`,
+        label: action.label,
+        disabled: true,
+        disabledReason:
+          action.targetStatus === assignment.status
+            ? `Already ${assignment.status.replace(/_/g, ' ')}`
+            : action.disabledReason ?? action.warning ?? action.description,
+      })),
+    ...statusConfig.statuses.map<OverflowMenuItem>((s) => ({
+      key: `override-${s.id}`,
+      label: `Override → ${s.label}`,
+      onSelect: () => handleStatusOverride(s.id),
+      disabled: s.id === assignment.status,
+      disabledReason: s.id === assignment.status ? 'Already in this status' : undefined,
+    })),
+    {
+      key: 'edit-assignment',
+      label: 'Edit assignment source',
+      icon: FilePenLine,
+      href: `${wsPrefix}/missions/${slug}/assignments/${aslug}/edit`,
+    },
+    {
+      key: 'edit-plan',
+      label: 'Edit plan',
+      icon: SendToBack,
+      href: `${wsPrefix}/missions/${slug}/assignments/${aslug}/plan/edit`,
+    },
+    {
+      key: 'edit-scratchpad',
+      label: 'Edit scratchpad',
+      icon: NotebookPen,
+      href: `${wsPrefix}/missions/${slug}/assignments/${aslug}/scratchpad/edit`,
+    },
+    {
+      key: 'append-handoff',
+      label: 'Append handoff',
+      icon: ArrowUpRight,
+      href: `${wsPrefix}/missions/${slug}/assignments/${aslug}/handoff/edit`,
+    },
+    {
+      key: 'append-decision',
+      label: 'Append decision',
+      icon: Hammer,
+      href: `${wsPrefix}/missions/${slug}/assignments/${aslug}/decision-record/edit`,
+    },
+    {
+      key: 'delete',
+      label: 'Delete assignment',
+      icon: Trash2,
+      destructive: true,
+      onSelect: () => setShowDeleteConfirm(true),
+    },
+  ];
+
+  const primaryIsReview = primaryTransition?.command === 'review';
+
   return (
     <div className="space-y-5">
       <div className="sticky top-12 z-20 rounded-lg border border-border/60 bg-card/90 p-3 shadow-sm backdrop-blur">
         <div className="flex flex-wrap items-center gap-3">
-          <StatusBadge status={assignment.status} />
-          <Link className="shell-action" to={`${wsPrefix}/missions/${slug}`}>
-            Mission
-          </Link>
-          <Link className="shell-action" to={`${wsPrefix}/missions/${slug}/assignments/${aslug}/edit`}>
-            <FilePenLine className="h-4 w-4" />
-            <span>Edit Assignment</span>
-          </Link>
-          <span className="text-xs text-muted-foreground">Mission {slug} · Updated {formatDateTime(assignment.updated)}</span>
-        </div>
-
-        <div className="mt-5 flex flex-wrap gap-2">
-          {(assignment.availableTransitions ?? []).map((action) => (
-            <button
-              key={action.command}
-              type="button"
-              title={action.warning || action.disabledReason || action.description}
-              disabled={action.disabled || transitioning === action.command}
-              onClick={() => handleTransitionClick(action)}
-              className={`shell-action disabled:cursor-not-allowed disabled:opacity-50 ${action.warning ? 'border-amber-300 dark:border-amber-700' : ''}`}
-            >
-              <span>{transitioning === action.command ? 'Working…' : action.label}</span>
-            </button>
-          ))}
-          <select
-            className="shell-action appearance-none bg-transparent text-sm text-muted-foreground"
-            value=""
-            onChange={(e) => {
-              if (e.target.value) handleStatusOverride(e.target.value);
-            }}
-            title="Override assignment status directly"
-          >
-            <option value="">Override Status…</option>
-            {statusConfig.statuses.map((s) => (
-              <option key={s.id} value={s.id}>{s.label}</option>
-            ))}
-          </select>
+          <StatusBadge status={assignment.status} progress={progress} />
+          <h1 className="text-lg font-semibold text-foreground">{assignment.title}</h1>
+          <span className="text-xs text-muted-foreground">
+            Updated {formatRelativeTime(assignment.updated)}
+          </span>
+          {unmetDeps.length > 0 && (
+            <span className="text-xs text-amber-700 dark:text-amber-300">
+              ⚠ {unmetDeps.length} unmet dep{unmetDeps.length === 1 ? '' : 's'}
+            </span>
+          )}
+          <span className="ml-auto flex items-center gap-2">
+            {primaryTransition && (
+              <button
+                key={primaryIsReview ? `review-${reviewGlowKey}` : primaryTransition.command}
+                type="button"
+                title={primaryTransition.warning || primaryTransition.description}
+                disabled={transitioning === primaryTransition.command}
+                onClick={() => handleTransitionClick(primaryTransition)}
+                className={cn(
+                  'shell-action disabled:cursor-not-allowed disabled:opacity-50',
+                  primaryTransition.warning && 'border-amber-300 dark:border-amber-700',
+                  primaryIsReview && reviewGlowKey > 0 && 'send-to-review-glow',
+                )}
+              >
+                <span>
+                  {transitioning === primaryTransition.command ? 'Working…' : primaryTransition.label}
+                </span>
+              </button>
+            )}
+            <OverflowMenu items={overflowItems} align="end" />
+          </span>
         </div>
 
         {transitionError ? (
@@ -229,16 +335,6 @@ export function AssignmentDetail() {
             <strong>Blocked reason:</strong> {assignment.blockedReason}
           </div>
         ) : null}
-
-        <div className="mt-5 flex flex-wrap gap-2">
-          <Chip label={`Priority ${assignment.priority}`} />
-          <Chip label={assignment.assignee ? `Assignee ${assignment.assignee}` : 'Unassigned'} />
-          <Chip label={`${assignment.dependsOn.length} dependencies`} variant={unmetDeps.length > 0 ? 'warning' : enrichedDeps.length > 0 ? 'success' : 'default'} />
-          <Chip label={assignment.plan ? `Plan ${assignment.plan.status}` : 'No plan'} />
-          <Chip label={`${assignment.handoff?.handoffCount ?? 0} handoffs`} />
-          <Chip label={`${assignment.decisionRecord?.decisionCount ?? 0} decisions`} />
-          <Chip label={isStale(assignment.updated) ? 'Stale' : 'Fresh'} />
-        </div>
       </div>
 
       {enrichedDeps.length > 0 && (
@@ -289,7 +385,10 @@ export function AssignmentDetail() {
                                   onChange={(event) => toggleAcceptanceCriterion(index, event.target.checked)}
                                   className="mt-1 h-4 w-4 rounded border-border text-primary"
                                 />
-                                <span className={`text-sm leading-6 ${criterion.checked ? 'text-muted-foreground line-through' : 'text-foreground'}`}>
+                                <span
+                                  className="criterion-label text-sm leading-6"
+                                  data-checked={criterion.checked}
+                                >
                                   {criterion.text}
                                 </span>
                               </label>
@@ -308,23 +407,6 @@ export function AssignmentDetail() {
                             : 'This assignment does not have summary markdown yet.'
                         }
                       />
-                    </SectionCard>
-
-                    <SectionCard title="Latest Log Context">
-                      <div className="grid gap-3 lg:grid-cols-2">
-                        <div className="rounded-md border border-border/60 bg-background/80 p-3">
-                          <h3 className="font-semibold text-foreground">Latest handoff</h3>
-                          <p className="mt-2 text-sm leading-6 text-muted-foreground">
-                            {assignment.handoff ? extractLead(assignment.handoff.body) : 'No handoff entries yet.'}
-                          </p>
-                        </div>
-                        <div className="rounded-md border border-border/60 bg-background/80 p-3">
-                          <h3 className="font-semibold text-foreground">Latest decision</h3>
-                          <p className="mt-2 text-sm leading-6 text-muted-foreground">
-                            {assignment.decisionRecord ? extractLead(assignment.decisionRecord.body) : 'No decision entries yet.'}
-                          </p>
-                        </div>
-                      </div>
                     </SectionCard>
                   </div>
                 ),
@@ -376,7 +458,7 @@ export function AssignmentDetail() {
                 ) : (
                   <EmptyState
                     title="No scratchpad yet"
-                    description="Scratchpad notes appear here when the assignment has working notes."
+                    description="Scratchpad notes appear here when you use the Edit Scratchpad action."
                   />
                 ),
               },
@@ -393,7 +475,7 @@ export function AssignmentDetail() {
                     ) : (
                       <EmptyState
                         title="No handoff log yet"
-                        description="Add a handoff entry when work changes hands or needs a restart point."
+                        description="Handoffs appear here when an agent runs /complete-assignment or you append one manually."
                       />
                     )}
                   </div>
@@ -412,7 +494,7 @@ export function AssignmentDetail() {
                     ) : (
                       <EmptyState
                         title="No decision record yet"
-                        description="Add a decision entry when the assignment makes a notable implementation choice."
+                        description="Decision records appear here when you append one via the Append Decision action."
                       />
                     )}
                   </div>
@@ -423,23 +505,27 @@ export function AssignmentDetail() {
         </div>
 
         <div className="space-y-5">
-          <SectionCard title="Metadata">
+          <SectionCard title="Details">
             <dl className="space-y-3 text-sm">
               <DetailRow label="ID" value={assignment.id} copyable />
               <DetailRow label="Priority" value={assignment.priority} />
-              <DetailRow label="Assignee" value={assignment.assignee ?? 'Unassigned'} />
-              <DetailRow label="Created" value={formatDateTime(assignment.created)} />
-              <DetailRow label="Updated" value={formatDateTime(assignment.updated)} />
-              <DetailRow label="Status" value={assignment.status} />
-            </dl>
-          </SectionCard>
-
-          <SectionCard title="Workspace Info">
-            <dl className="space-y-3 text-sm">
-              <DetailRow label="Repository" value={assignment.workspace.repository ?? '\u2014'} copyable />
-              <DetailRow label="Worktree" value={assignment.workspace.worktreePath ?? '\u2014'} copyable />
-              <DetailRow label="Branch" value={assignment.workspace.branch ?? '\u2014'} copyable />
-              <DetailRow label="Parent branch" value={assignment.workspace.parentBranch ?? '\u2014'} copyable />
+              {assignment.assignee && <DetailRow label="Assignee" value={assignment.assignee} />}
+              <DetailRow
+                label="Updated"
+                value={`${formatShortDateTime(assignment.updated)} · Created ${formatShortDate(assignment.created)}`}
+              />
+              {assignment.workspace.repository && (
+                <DetailRow label="Repository" value={assignment.workspace.repository} copyable />
+              )}
+              {assignment.workspace.worktreePath && (
+                <DetailRow label="Worktree" value={assignment.workspace.worktreePath} copyable />
+              )}
+              {assignment.workspace.branch && (
+                <DetailRow label="Branch" value={assignment.workspace.branch} copyable />
+              )}
+              {assignment.workspace.parentBranch && (
+                <DetailRow label="Parent branch" value={assignment.workspace.parentBranch} copyable />
+              )}
             </dl>
           </SectionCard>
 
@@ -487,52 +573,6 @@ export function AssignmentDetail() {
               </div>
             </SectionCard>
           )}
-
-          <SectionCard title="Edit Actions">
-            <div className="space-y-2 text-sm">
-              <Link className="flex items-center gap-2 text-primary hover:underline" to={`${wsPrefix}/missions/${slug}/assignments/${aslug}/edit`}>
-                <FilePenLine className="h-4 w-4" />
-                Edit assignment source
-              </Link>
-              <Link className="flex items-center gap-2 text-primary hover:underline" to={`${wsPrefix}/missions/${slug}/assignments/${aslug}/plan/edit`}>
-                <SendToBack className="h-4 w-4" />
-                Edit plan
-              </Link>
-              <Link className="flex items-center gap-2 text-primary hover:underline" to={`${wsPrefix}/missions/${slug}/assignments/${aslug}/scratchpad/edit`}>
-                <NotebookPen className="h-4 w-4" />
-                Edit scratchpad
-              </Link>
-              <Link className="flex items-center gap-2 text-primary hover:underline" to={`${wsPrefix}/missions/${slug}/assignments/${aslug}/handoff/edit`}>
-                <ArrowUpRight className="h-4 w-4" />
-                Append handoff
-              </Link>
-              <Link className="flex items-center gap-2 text-primary hover:underline" to={`${wsPrefix}/missions/${slug}/assignments/${aslug}/decision-record/edit`}>
-                <Hammer className="h-4 w-4" />
-                Append decision
-              </Link>
-              <hr className="border-border/40" />
-              <button
-                type="button"
-                onClick={() => setShowDeleteConfirm(true)}
-                className="flex items-center gap-2 text-destructive hover:underline"
-              >
-                <Trash2 className="h-4 w-4" />
-                Delete assignment
-              </button>
-            </div>
-          </SectionCard>
-
-          <SectionCard title="Status Guidance">
-            <div className="space-y-3 text-sm leading-6 text-muted-foreground">
-              <p><strong className="text-foreground">Pending</strong> means the work has not started or is structurally waiting on dependencies.</p>
-              <p><strong className="text-foreground">Blocked</strong> means there is an active obstacle that needs intervention, which is why blocking requires a reason.</p>
-              <p><strong className="text-foreground">Review</strong> means implementation is ready to inspect before completion.</p>
-              <Link className="inline-flex items-center gap-2 text-primary hover:underline" to="/help">
-                <BookOpenText className="h-4 w-4" />
-                Open the full status guide
-              </Link>
-            </div>
-          </SectionCard>
         </div>
       </div>
 
@@ -575,19 +615,6 @@ export function AssignmentDetail() {
   );
 }
 
-function Chip({ label, variant = 'default' }: { label: string; variant?: 'default' | 'warning' | 'success' }) {
-  const cls = {
-    default: 'border-border/60 bg-background/80 text-muted-foreground',
-    warning: 'border-amber-300 bg-amber-50 text-amber-800 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-300',
-    success: 'border-emerald-300 bg-emerald-50 text-emerald-800 dark:border-emerald-800 dark:bg-emerald-950/30 dark:text-emerald-300',
-  }[variant];
-  return (
-    <span className={`rounded-full border px-3 py-1 text-xs font-medium ${cls}`}>
-      {label}
-    </span>
-  );
-}
-
 function DetailRow({ label, value, copyable }: { label: string; value: string; copyable?: boolean }) {
   return (
     <div className="flex items-start justify-between gap-3">
@@ -598,17 +625,4 @@ function DetailRow({ label, value, copyable }: { label: string; value: string; c
       </dd>
     </div>
   );
-}
-
-function extractLead(content: string): string {
-  const normalized = content.replace(/^#+\s+/gm, '').trim();
-  return normalized.split('\n').find((line) => line.trim()) ?? 'No detail recorded yet.';
-}
-
-function isStale(updated: string): boolean {
-  const timestamp = Date.parse(updated);
-  if (Number.isNaN(timestamp)) {
-    return false;
-  }
-  return Date.now() - timestamp > 7 * 24 * 60 * 60 * 1000;
 }
