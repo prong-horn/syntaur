@@ -54,7 +54,7 @@ export function OverflowMenu({ items, align = 'end' }: OverflowMenuProps) {
         onClick={() => setOpen((v) => !v)}
         className="shell-action"
         title="More actions"
-        aria-haspopup="menu"
+        aria-haspopup="true"
         aria-expanded={open}
       >
         <MoreHorizontal className="h-4 w-4" />
