@@ -1,6 +1,6 @@
 ---
 name: grab-assignment
-description: Discover and claim a pending Syntaur assignment from a mission
+description: Load a Syntaur assignment into the current working context
 argument-hint: <mission-slug> [assignment-slug]
 allowed-tools:
   - Bash
@@ -12,7 +12,9 @@ allowed-tools:
 
 # Grab Assignment
 
-Claim a pending assignment from a Syntaur mission and set up your working context.
+Load a Syntaur assignment into the current working context so you can work on it.
+
+**Grabbing is non-destructive.** It never fails because of status. An assignment in `pending`, `in_progress`, `blocked`, `review`, `completed`, or `failed` can all be grabbed — grabbing just sets up context (`.syntaur/context.json`), registers the session, and reads the assignment. Only a `pending` assignment will additionally be transitioned to `in_progress`; any other status is left untouched.
 
 ## Arguments
 
@@ -20,7 +22,7 @@ The user provided: $ARGUMENTS
 
 Parse the arguments:
 - First argument (required): the mission slug (e.g., `build-auth-system`)
-- Second argument (optional): a specific assignment slug to grab. If omitted, you will list pending assignments and pick one.
+- Second argument (optional): a specific assignment slug to grab. If omitted, you will list the mission's assignments and pick one (preferring `pending` when multiple exist).
 
 ## Pre-flight Check
 
@@ -44,54 +46,45 @@ Read the mission files, starting with the manifest (the protocol-defined entry p
 
 Note the `workspace` field in `mission.md` frontmatter if present. This indicates which project/codebase grouping the mission belongs to. When writing context to `.syntaur/context.json` (Step 5), include `"workspace": "<value>"` if the mission has a workspace.
 
-## Step 2: Find Pending Assignments
+## Step 2: Find Assignments
 
-List assignment directories and check their status:
+List assignment directories:
 
 ```bash
 ls ~/.syntaur/missions/<mission-slug>/assignments/
 ```
 
-For each assignment directory, read the `assignment.md` frontmatter and look for `status: pending`. You can use grep:
+If the user specified an assignment slug as the second argument, verify that directory exists. Its status does **not** matter — grab it regardless. If it doesn't exist, report that and stop.
 
-```bash
-grep -l "status: pending" ~/.syntaur/missions/<mission-slug>/assignments/*/assignment.md
-```
-
-If no pending assignments exist, tell the user and stop.
-
-If the user specified an assignment slug as the second argument, verify it exists and is pending. If it is not pending, report its current status and stop.
-
-If no specific assignment was requested, present the list of pending assignments with their titles and priorities, and ask the user which one to grab. If there is only one pending assignment, grab it automatically.
+If no specific assignment was requested, read each `assignment.md` frontmatter and present the list with title, priority, and current status. Prefer `pending` assignments when presenting options (they're the most likely default), but show non-terminal assignments too so the user can pick one to resume. Ask the user which to grab unless there is exactly one obvious candidate (single `pending` assignment).
 
 ## Step 3: Claim the Assignment
 
-Run the Syntaur CLI commands to assign and start the assignment. Use `dangerouslyDisableSandbox: true` for these bash commands since the CLI writes to `~/.syntaur/` which is outside the project sandbox.
-
-```bash
-syntaur assign <assignment-slug> --agent claude --mission <mission-slug>
-```
-
-Then:
-
-```bash
-syntaur start <assignment-slug> --mission <mission-slug>
-```
-
-If either command fails, report the error and stop. Common failures:
-- Assignment has unmet dependencies (cannot start until dependencies are `completed`)
-- Assignment is not in `pending` status
-- Mission not found
-
-## Step 4: Read Assignment Context and Set Workspace
-
-After successfully starting the assignment, read the full assignment details:
+Read the assignment frontmatter first to learn its current `status`:
 
 ```bash
 cat ~/.syntaur/missions/<mission-slug>/assignments/<assignment-slug>/assignment.md
 ```
 
-Extract from the frontmatter:
+Then run the Syntaur CLI to set the assignee. This is safe at any status and does not transition state. Use `dangerouslyDisableSandbox: true` for these bash commands since the CLI writes to `~/.syntaur/` which is outside the project sandbox.
+
+```bash
+syntaur assign <assignment-slug> --agent claude --mission <mission-slug>
+```
+
+**Only if the current status is `pending`**, also run `syntaur start` to transition it to `in_progress`:
+
+```bash
+syntaur start <assignment-slug> --mission <mission-slug>
+```
+
+For any other status (`in_progress`, `blocked`, `review`, `completed`, `failed`), **skip `syntaur start`** — the assignment has already been advanced past pending and grabbing should not rewind it. Tell the user which status the assignment is in and continue with context setup.
+
+If `syntaur assign` fails (e.g., mission not found, invalid slug), report the error and stop. Do not treat a non-pending status as a failure.
+
+## Step 4: Read Assignment Context and Set Workspace
+
+You have already read the assignment file in Step 3. Extract from the frontmatter:
 - `title` -- the assignment title
 - `workspace.repository` -- the code repository path (may be null)
 - `workspace.worktreePath` -- the worktree path (may be null)
@@ -174,7 +167,12 @@ If no playbook files exist, skip this step.
 
 Summarize what was done:
 - Which assignment was grabbed
+- Its current status (note if it was already past `pending` — e.g., "already in `review`, status unchanged")
 - The objective (first paragraph from assignment.md body)
 - The acceptance criteria (the checkbox list)
 - The workspace path (if set)
-- Suggest next step: "Run `/plan-assignment` to create an implementation plan."
+- Suggest an appropriate next step based on status:
+  - `pending` / `in_progress`: `/plan-assignment` to plan implementation
+  - `blocked`: investigate the blocker recorded in `blockedReason`
+  - `review`: inspect the implementation and help verify acceptance criteria
+  - `completed` / `failed`: read the handoff; grab is probably for reference or reopen
