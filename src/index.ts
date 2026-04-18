@@ -24,13 +24,18 @@ import { todoCommand } from './commands/todo.js';
 import { backupCommand } from './commands/backup.js';
 import { doctorCommand } from './commands/doctor.js';
 import { getDefaultCommandName } from './cli-default-command.js';
+import { maybePromptInstall } from './utils/npx-prompt.js';
+import { readPackageVersion } from './utils/version.js';
+
+await maybePromptInstall(import.meta.url);
 
 const program = new Command();
+const version = (await readPackageVersion(import.meta.url)) ?? '0.0.0';
 
 program
   .name('syntaur')
   .description('CLI scaffolding tool for the Syntaur protocol')
-  .version('0.1.0');
+  .version(version);
 
 program
   .command('init')
