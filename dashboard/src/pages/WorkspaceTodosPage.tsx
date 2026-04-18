@@ -1,5 +1,5 @@
-import { useState, useMemo } from 'react';
-import { useParams } from 'react-router-dom';
+import { useState, useMemo, useEffect, useRef } from 'react';
+import { useParams, useSearchParams } from 'react-router-dom';
 import {
   CheckSquare,
   Plus,
@@ -40,6 +40,7 @@ import { EmptyState } from '../components/EmptyState';
 import { StatCard } from '../components/StatCard';
 import { StatusMenu } from '../components/StatusMenu';
 import type { TodoItem } from '../types';
+import { useHotkey, useHotkeyScope, useListSelection } from '../hotkeys';
 
 interface SortableTodoRowProps {
   item: TodoItem;
@@ -48,6 +49,8 @@ interface SortableTodoRowProps {
   onStatusChange: (id: string, status: string) => void;
   onCopyId: (e: React.MouseEvent, id: string) => void;
   disabled: boolean;
+  hotkeyRowProps?: Record<string, string | number | boolean>;
+  rowIndex?: number;
 }
 
 function SortableTodoRow({
@@ -57,6 +60,7 @@ function SortableTodoRow({
   onStatusChange,
   onCopyId,
   disabled,
+  hotkeyRowProps,
 }: SortableTodoRowProps) {
   const {
     attributes,
@@ -79,6 +83,8 @@ function SortableTodoRow({
     <div
       ref={setNodeRef}
       style={style}
+      data-todo-id={item.id}
+      {...(hotkeyRowProps ?? {})}
       className={`surface-panel flex items-center gap-3 px-3 py-2 cursor-pointer hover:bg-foreground/[0.03] transition ${
         isDragging ? 'opacity-50 shadow-lg' : ''
       }`}
@@ -150,6 +156,8 @@ export function WorkspaceTodosPage() {
   const [tagFilter, setTagFilter] = useState<string>('');
   const [newTodoText, setNewTodoText] = useState('');
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
+  useHotkeyScope('list:todos');
 
   const isFiltered = !!(search.trim() || statusFilter || tagFilter);
 
@@ -228,6 +236,47 @@ export function WorkspaceTodosPage() {
     refetch();
   }
 
+  // Hotkey wiring (R3 + R5d).
+  const { hotkeyRowProps } = useListSelection(filtered, {
+    scope: 'list:todos',
+    bindO: false,
+    onOpen: (todo) => handleCycleStatus(todo.id, todo.status),
+  });
+  useHotkey({
+    keys: '/',
+    scope: 'list:todos',
+    description: 'Focus filter',
+    handler: () => searchRef.current?.focus(),
+  });
+  useHotkey({
+    keys: 'r',
+    scope: 'list:todos',
+    description: 'Refresh',
+    handler: () => refetch(),
+  });
+
+  // ?focus=<id> handler — retries until target row renders.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const focusId = searchParams.get('focus');
+  useEffect(() => {
+    if (!focusId) return;
+    const node = document.querySelector<HTMLElement>(
+      `[data-todo-id="${window.CSS.escape(focusId)}"]`,
+    );
+    if (!node) return; // will retry when filtered.length changes (data arrives)
+    node.scrollIntoView({ block: 'nearest' });
+    node.classList.add('ring-2', 'ring-primary/60');
+    const t = window.setTimeout(() => {
+      node.classList.remove('ring-2', 'ring-primary/60');
+      setSearchParams((prev) => {
+        const n = new URLSearchParams(prev);
+        n.delete('focus');
+        return n;
+      });
+    }, 1500);
+    return () => window.clearTimeout(t);
+  }, [focusId, filtered.length, setSearchParams]);
+
   async function handleDragEnd(event: DragEndEvent) {
     const { active, over } = event;
     if (!over || active.id === over.id || !data?.items) return;
@@ -283,6 +332,7 @@ export function WorkspaceTodosPage() {
         <div className="relative flex-1 max-w-sm">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <input
+            ref={searchRef}
             type="text"
             placeholder="Search..."
             value={search}
@@ -334,7 +384,7 @@ export function WorkspaceTodosPage() {
             strategy={verticalListSortingStrategy}
           >
             <div className="space-y-1">
-              {filtered.map((item) => (
+              {filtered.map((item, i) => (
                 <SortableTodoRow
                   key={item.id}
                   item={item}
@@ -343,6 +393,7 @@ export function WorkspaceTodosPage() {
                   onStatusChange={handleStatusChange}
                   onCopyId={copyId}
                   disabled={isFiltered}
+                  hotkeyRowProps={hotkeyRowProps(i)}
                 />
               ))}
             </div>

@@ -6,9 +6,11 @@ import { SectionCard } from '../components/SectionCard';
 import { CommandSnippet } from '../components/CommandSnippet';
 import { GlossaryTooltip } from '../components/GlossaryTooltip';
 import { StatusBadge } from '../components/StatusBadge';
+import { useHotkeyContext, formatPatternForDisplay } from '../hotkeys';
 
 export function HelpPage() {
   const { data: help, loading, error } = useHelp();
+  const { openCheatsheet } = useHotkeyContext();
 
   if (loading) {
     return <LoadingState label="Loading help…" />;
@@ -20,6 +22,22 @@ export function HelpPage() {
 
   return (
     <div className="space-y-5">
+
+      <SectionCard title="Keyboard Shortcuts" description="Navigate the dashboard without reaching for the mouse.">
+        <div className="flex flex-wrap items-center gap-3">
+          <button
+            type="button"
+            onClick={openCheatsheet}
+            className="inline-flex items-center gap-2 rounded-md border border-border/70 bg-background/80 px-3 py-1.5 text-sm font-medium text-foreground hover:bg-accent"
+          >
+            Open shortcuts cheatsheet
+          </button>
+          <span className="text-xs text-muted-foreground">
+            or press <kbd className="rounded border border-border/70 bg-muted px-1.5 py-0.5 font-mono text-[11px]">?</kbd>{' '}
+            anywhere. {formatPatternForDisplay('Mod+k')} opens the command palette.
+          </span>
+        </div>
+      </SectionCard>
 
       <SectionCard title="What Syntaur Is" description={help.whatIsSyntaur.summary}>
         <div className="grid gap-3 md:grid-cols-3">

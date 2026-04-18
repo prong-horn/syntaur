@@ -128,4 +128,9 @@
   .prose-syntaur blockquote {
     @apply rounded-r-lg border-l-4 border-primary/50 bg-accent/50 py-1 pr-3;
   }
+
+  /* Hotkey selection ring — applied to rows via data-hotkey-selected="true" */
+  [data-hotkey-selected="true"] {
+    @apply ring-2 ring-primary/60 ring-offset-0;
+  }
 }

@@ -1,5 +1,5 @@
-import { type DragEvent, useEffect, useMemo, useState, useCallback } from 'react';
-import { Link, useSearchParams, useParams } from 'react-router-dom';
+import { type DragEvent, useEffect, useMemo, useRef, useState, useCallback } from 'react';
+import { Link, useNavigate, useSearchParams, useParams } from 'react-router-dom';
 import { ChevronDown, ChevronUp, FolderKanban } from 'lucide-react';
 import { CopyButton } from '../components/CopyButton';
 import { cn } from '../lib/utils';
@@ -24,6 +24,7 @@ import { AssignmentTransitionDialog } from '../components/AssignmentTransitionDi
 import { StatusBadge, STATUS_META, getStatusDescription } from '../components/StatusBadge';
 import { transitionNeedsReason } from '../lib/assignments';
 import { useStatusConfig, getStatusLabel } from '../hooks/useStatusConfig';
+import { useHotkey, useHotkeyScope, useListSelection } from '../hotkeys';
 
 type ViewMode = 'table' | 'list' | 'kanban';
 const VALID_VIEWS: ViewMode[] = ['table', 'list', 'kanban'];
@@ -100,6 +101,9 @@ function sortAssignments(
 export function AssignmentsPage() {
   const { workspace } = useParams<{ workspace?: string }>();
   const wsPrefix = useWorkspacePrefix();
+  const navigate = useNavigate();
+  const searchRef = useRef<HTMLInputElement>(null);
+  useHotkeyScope('list:assignments');
   const { data, loading, error, refetch } = useAssignmentsBoard();
   const statusConfig = useStatusConfig();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -260,6 +264,38 @@ export function AssignmentsPage() {
     () => sortAssignments(filteredItems, sortField, sortDirection),
     [filteredItems, sortField, sortDirection],
   );
+
+  // Flat visible order depends on view. In list/kanban the user sees items grouped by
+  // status column (in COLUMNS order); that's the j/k traversal order.
+  const { visibleItems, visibleIndexByKey } = useMemo(() => {
+    const items =
+      view === 'table'
+        ? sortedItems
+        : COLUMNS.flatMap((status) => filteredItems.filter((it) => it.status === status));
+    const byKey = new Map<string, number>();
+    items.forEach((it, i) => byKey.set(getAssignmentKey(it), i));
+    return { visibleItems: items, visibleIndexByKey: byKey };
+  }, [view, sortedItems, filteredItems, COLUMNS]);
+
+  const { hotkeyRowProps } = useListSelection(visibleItems, {
+    scope: 'list:assignments',
+    onOpen: (assignment) => {
+      const assignWs = assignment.missionWorkspace ? `/w/${assignment.missionWorkspace}` : wsPrefix;
+      navigate(`${assignWs}/missions/${assignment.missionSlug}/assignments/${assignment.slug}`);
+    },
+  });
+  useHotkey({
+    keys: '/',
+    scope: 'list:assignments',
+    description: 'Focus filter',
+    handler: () => searchRef.current?.focus(),
+  });
+  useHotkey({
+    keys: 'r',
+    scope: 'list:assignments',
+    description: 'Refresh',
+    handler: () => refetch(),
+  });
 
   if (loading) {
     return <LoadingState label="Loading assignments board…" />;
@@ -438,6 +474,7 @@ export function AssignmentsPage() {
 
       <FilterBar>
         <SearchInput
+          ref={searchRef}
           value={search}
           onChange={setSearch}
           placeholder="Search assignments or missions"
@@ -523,8 +560,12 @@ export function AssignmentsPage() {
                 </tr>
               </thead>
               <tbody>
-                {sortedItems.map((assignment) => (
-                  <tr key={getAssignmentKey(assignment)} className="border-b border-border/50 last:border-0">
+                {sortedItems.map((assignment, i) => (
+                  <tr
+                    key={getAssignmentKey(assignment)}
+                    className="border-b border-border/50 last:border-0"
+                    {...hotkeyRowProps(i)}
+                  >
                     <td className="py-4 pr-4">
                       <Link
                         to={`${wsPrefix}/missions/${assignment.missionSlug}/assignments/${assignment.slug}`}
@@ -624,12 +665,14 @@ export function AssignmentsPage() {
                     {items.map((item) => {
                       const itemKey = getAssignmentKey(item);
                       const isDragging = draggedId === itemKey;
+                      const flatIdx = visibleIndexByKey.get(itemKey) ?? -1;
                       return (
                         <div
                           key={itemKey}
                           draggable
                           onDragStart={(event) => handleDragStart(event, itemKey)}
                           onDragEnd={handleDragEnd}
+                          {...(flatIdx >= 0 ? hotkeyRowProps(flatIdx) : {})}
                           className={cn(
                             'cursor-grab transition active:cursor-grabbing',
                             isDragging && 'scale-[0.98] opacity-50',
@@ -674,13 +717,18 @@ export function AssignmentsPage() {
           }}
           onMove={({ item, toColumnId }) => handleMove({ item, toColumnId })}
           emptyMessage={(column) => `No ${column.title.toLowerCase()} assignments.`}
-          renderCard={(item, { dragging }) => (
-            <AssignmentBoardCard
-              assignment={item}
-              dragging={dragging}
-              transitioning={transitioningId === getAssignmentKey(item)}
-            />
-          )}
+          renderCard={(item, { dragging }) => {
+            const flatIdx = visibleIndexByKey.get(getAssignmentKey(item)) ?? -1;
+            return (
+              <div {...(flatIdx >= 0 ? hotkeyRowProps(flatIdx) : {})}>
+                <AssignmentBoardCard
+                  assignment={item}
+                  dragging={dragging}
+                  transitioning={transitioningId === getAssignmentKey(item)}
+                />
+              </div>
+            );
+          }}
         />
       )}
 

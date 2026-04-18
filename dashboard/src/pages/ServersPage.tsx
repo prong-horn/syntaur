@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { useEffect, useState } from 'react';
+import { Link, useLocation, useParams } from 'react-router-dom';
 import {
   Monitor,
   RefreshCw,
@@ -25,6 +25,25 @@ export function ServersPage() {
   const [registering, setRegistering] = useState(false);
   const [newSessionName, setNewSessionName] = useState('');
   const [refreshingAll, setRefreshingAll] = useState(false);
+  const location = useLocation();
+
+  // Palette → servers: navigate with #server-<name> hash; scroll + highlight.
+  useEffect(() => {
+    const m = location.hash.match(/^#server-(.+)/);
+    if (!m) return;
+    const name = decodeURIComponent(m[1]);
+    const node = document.querySelector<HTMLElement>(
+      `[data-server-name="${window.CSS.escape(name)}"]`,
+    );
+    if (!node) return;
+    node.scrollIntoView({ block: 'nearest' });
+    node.classList.add('ring-2', 'ring-primary/60');
+    const t = window.setTimeout(
+      () => node.classList.remove('ring-2', 'ring-primary/60'),
+      1500,
+    );
+    return () => window.clearTimeout(t);
+  }, [location.hash, data]);
 
   const filteredSessions = (() => {
     if (!workspace || !data) return data?.sessions ?? [];
@@ -164,7 +183,7 @@ function SessionCard({
   onRefetch: () => void;
 }) {
   return (
-    <div className="surface-panel">
+    <div className="surface-panel" data-server-name={session.name}>
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <Monitor className="h-4 w-4 text-muted-foreground" />

@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from 'react';
-import { Link, useSearchParams, useParams } from 'react-router-dom';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Link, useNavigate, useSearchParams, useParams } from 'react-router-dom';
 import { Info } from 'lucide-react';
 import { useMissions, useWorkspacePrefix, type MissionSummary } from '../hooks/useMissions';
 import { LoadingState } from '../components/LoadingState';
@@ -14,11 +14,15 @@ import { StatusBadge, getStatusDescription } from '../components/StatusBadge';
 import { ProgressBar } from '../components/ProgressBar';
 import { formatDate } from '../lib/format';
 import { MISSION_BOARD_COLUMNS, moveItem } from '../lib/kanban';
+import { useHotkey, useHotkeyScope, useListSelection } from '../hotkeys';
 
 export function MissionList() {
   const { workspace } = useParams<{ workspace?: string }>();
   const wsPrefix = useWorkspacePrefix();
-  const { data: missions, loading, error } = useMissions();
+  const navigate = useNavigate();
+  const { data: missions, loading, error, refetch } = useMissions();
+  const searchRef = useRef<HTMLInputElement>(null);
+  useHotkeyScope('list:missions');
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [archivedFilter, setArchivedFilter] = useState('active');
@@ -96,6 +100,31 @@ export function MissionList() {
     });
   }, [filtered, missionOrder]);
 
+  // Flat visible order: kanban traverses columns top-to-bottom, cards/table use `filtered`.
+  const { visibleItems, visibleIndexByKey } = useMemo(() => {
+    const items = view === 'kanban' ? orderedBoardMissions : filtered;
+    const byKey = new Map<string, number>();
+    items.forEach((m, i) => byKey.set(m.slug, i));
+    return { visibleItems: items, visibleIndexByKey: byKey };
+  }, [view, filtered, orderedBoardMissions]);
+
+  const { hotkeyRowProps } = useListSelection(visibleItems, {
+    scope: 'list:missions',
+    onOpen: (mission) => navigate(`${wsPrefix}/missions/${mission.slug}`),
+  });
+  useHotkey({
+    keys: '/',
+    scope: 'list:missions',
+    description: 'Focus filter',
+    handler: () => searchRef.current?.focus(),
+  });
+  useHotkey({
+    keys: 'r',
+    scope: 'list:missions',
+    description: 'Refresh',
+    handler: () => refetch(),
+  });
+
   if (loading) {
     return <LoadingState label="Loading missions…" />;
   }
@@ -110,6 +139,7 @@ export function MissionList() {
     <div className="space-y-5">
       <FilterBar>
         <SearchInput
+          ref={searchRef}
           value={search}
           onChange={setSearch}
           placeholder="Search by mission title or tag"
@@ -169,11 +199,12 @@ export function MissionList() {
         />
       ) : view === 'cards' ? (
         <div className="grid gap-3 lg:grid-cols-2 2xl:grid-cols-3">
-          {filtered.map((mission) => (
+          {filtered.map((mission, i) => (
             <Link
               key={mission.slug}
               to={`${wsPrefix}/missions/${mission.slug}`}
               className="block rounded-lg border border-border/60 bg-card/90 p-3 shadow-sm transition hover:border-primary/40 hover:shadow-md"
+              {...hotkeyRowProps(i)}
             >
               <div className="flex items-start justify-between gap-3">
                 <div className="space-y-1">
@@ -224,8 +255,12 @@ export function MissionList() {
                 </tr>
               </thead>
               <tbody>
-                {filtered.map((mission) => (
-                  <tr key={mission.slug} className="border-b border-border/50 last:border-0">
+                {filtered.map((mission, i) => (
+                  <tr
+                    key={mission.slug}
+                    className="border-b border-border/50 last:border-0"
+                    {...hotkeyRowProps(i)}
+                  >
                     <td className="py-4 pr-4">
                       <Link to={`${wsPrefix}/missions/${mission.slug}`} className="font-semibold text-foreground hover:text-primary">
                         {mission.title}
@@ -291,9 +326,14 @@ export function MissionList() {
             });
           }}
           emptyMessage={(column) => `No ${column.title.toLowerCase()} missions.`}
-          renderCard={(mission, { dragging }) => (
-            <MissionBoardCard mission={mission} dragging={dragging} />
-          )}
+          renderCard={(mission, { dragging }) => {
+            const flatIdx = visibleIndexByKey.get(mission.slug) ?? -1;
+            return (
+              <div {...(flatIdx >= 0 ? hotkeyRowProps(flatIdx) : {})}>
+                <MissionBoardCard mission={mission} dragging={dragging} />
+              </div>
+            );
+          }}
         />
       )}
 

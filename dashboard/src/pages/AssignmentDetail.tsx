@@ -33,6 +33,7 @@ import {
 import { splitAssignmentSummary } from '../lib/acceptanceCriteria';
 import { DependencyPanel } from '../components/DependencyPanel';
 import { LinksPanel } from '../components/LinksPanel';
+import { useHotkey, useHotkeyScope } from '../hotkeys';
 
 export function AssignmentDetail() {
   const { slug, aslug } = useParams<{ slug: string; aslug: string }>();
@@ -71,6 +72,67 @@ export function AssignmentDetail() {
   const unmetDeps = enrichedDeps.filter(
     (d) => d.status !== 'completed' && d.status !== 'review',
   );
+
+  // Hotkey wiring — scoped to 'assignment'.
+  useHotkeyScope('assignment');
+  const siblingSlugs = useMemo(
+    () => (mission?.assignments ?? []).map((a) => a.slug),
+    [mission],
+  );
+  const currentIndex = aslug ? siblingSlugs.indexOf(aslug) : -1;
+  const prevSlug = currentIndex > 0 ? siblingSlugs[currentIndex - 1] : null;
+  const nextSlug =
+    currentIndex >= 0 && currentIndex < siblingSlugs.length - 1
+      ? siblingSlugs[currentIndex + 1]
+      : null;
+  const baseRoute = `${wsPrefix}/missions/${slug}/assignments/${aslug}`;
+
+  useHotkey({
+    keys: 'e',
+    scope: 'assignment',
+    description: 'Edit assignment',
+    handler: () => navigate(`${baseRoute}/edit`),
+  });
+  useHotkey({
+    keys: 'p',
+    scope: 'assignment',
+    description: 'Edit plan',
+    handler: () => navigate(`${baseRoute}/plan/edit`),
+  });
+  useHotkey({
+    keys: 'h',
+    scope: 'assignment',
+    description: 'Append handoff',
+    handler: () => navigate(`${baseRoute}/handoff/edit`),
+  });
+  useHotkey({
+    keys: 'd',
+    scope: 'assignment',
+    description: 'Append decision record',
+    handler: () => navigate(`${baseRoute}/decision-record/edit`),
+  });
+  useHotkey({
+    keys: 's',
+    scope: 'assignment',
+    description: 'Edit scratchpad',
+    handler: () => navigate(`${baseRoute}/scratchpad/edit`),
+  });
+  useHotkey({
+    keys: '[',
+    scope: 'assignment',
+    description: 'Previous assignment in mission',
+    enabled: !!prevSlug,
+    handler: () =>
+      prevSlug && navigate(`${wsPrefix}/missions/${slug}/assignments/${prevSlug}`),
+  });
+  useHotkey({
+    keys: ']',
+    scope: 'assignment',
+    description: 'Next assignment in mission',
+    enabled: !!nextSlug,
+    handler: () =>
+      nextSlug && navigate(`${wsPrefix}/missions/${slug}/assignments/${nextSlug}`),
+  });
 
   if (loading) {
     return <LoadingState label="Loading assignment workspace…" />;

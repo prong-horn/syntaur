@@ -1,7 +1,8 @@
 import { Link } from 'react-router-dom';
-import { MoonStar, Plus, SunMedium, Menu } from 'lucide-react';
+import { MoonStar, Plus, SunMedium, Menu, Search } from 'lucide-react';
 import { useTheme } from '../theme';
 import { useWorkspacePrefix } from '../hooks/useMissions';
+import { useHotkeyContext, formatPatternForDisplay } from '../hotkeys';
 
 interface Breadcrumb {
   label: string;
@@ -23,6 +24,7 @@ export function TopBar({
 }: TopBarProps) {
   const wsPrefix = useWorkspacePrefix();
   const { resolvedTheme, toggleTheme } = useTheme();
+  const { openPalette } = useHotkeyContext();
 
   return (
     <header className="sticky top-0 z-30 border-b border-border/70 bg-background/85 backdrop-blur">
@@ -56,7 +58,18 @@ export function TopBar({
         </div>
 
         <div className="flex items-center gap-2">
-          <Link className="shell-action" to={`${wsPrefix}/help`}>
+          <button
+            type="button"
+            onClick={openPalette}
+            className="shell-action"
+            aria-label="Open command palette"
+          >
+            <Search className="h-4 w-4" />
+            <span className="hidden sm:inline font-mono text-xs">
+              {formatPatternForDisplay('Mod+k')}
+            </span>
+          </button>
+          <Link className="shell-action" to="/help">
             Help
           </Link>
           <Link className="shell-action" to={`${wsPrefix}/create/mission`}>

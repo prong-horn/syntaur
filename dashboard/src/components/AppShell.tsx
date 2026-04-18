@@ -7,6 +7,7 @@ import { TopBar } from './TopBar';
 import { useWorkspaces } from '../hooks/useMissions';
 import { toTitleCase } from '../lib/format';
 import { isSidebarItemActive, type SidebarSection } from '../lib/routes';
+import { useHotkey } from '../hotkeys';
 
 interface Breadcrumb {
   label: string;
@@ -51,6 +52,16 @@ export function AppShell({
   children,
 }: AppShellProps) {
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+
+  // R6: Esc closes the non-Radix mobile nav overlay.
+  useHotkey({
+    keys: 'Escape',
+    scope: 'global',
+    description: 'Close mobile navigation',
+    enabled: mobileNavOpen,
+    handler: () => setMobileNavOpen(false),
+  });
+
   const [sourceNoticeDismissed, setSourceNoticeDismissed] = useState(() => {
     if (typeof window === 'undefined') return false;
     try {

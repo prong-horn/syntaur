@@ -1,5 +1,5 @@
-import { useState, useMemo } from 'react';
-import { Link } from 'react-router-dom';
+import { useState, useMemo, useEffect, useRef } from 'react';
+import { Link, useSearchParams } from 'react-router-dom';
 import { CheckSquare, Plus, Search, AlertTriangle, Loader2, Copy, Check } from 'lucide-react';
 import { useAllTodos, addTodo, completeTodo, startTodo, blockTodo, reopenTodo, deleteTodo } from '../hooks/useTodos';
 import { LoadingState } from '../components/LoadingState';
@@ -8,10 +8,13 @@ import { EmptyState } from '../components/EmptyState';
 import { StatCard } from '../components/StatCard';
 import { StatusMenu } from '../components/StatusMenu';
 import type { TodoItem } from '../types';
+import { useHotkey, useHotkeyScope, useListSelection } from '../hotkeys';
 
 export function TodosPage() {
   const { data, loading, error, refetch } = useAllTodos();
   const [search, setSearch] = useState('');
+  const searchRef = useRef<HTMLInputElement>(null);
+  useHotkeyScope('list:todos');
   const [statusFilter, setStatusFilter] = useState<string>('');
   const [tagFilter, setTagFilter] = useState<string>('');
   const [newTodoText, setNewTodoText] = useState('');
@@ -118,6 +121,48 @@ export function TodosPage() {
     refetch();
   }
 
+  // Hotkey wiring (R5d: Enter cycles status, o is no-op).
+  const { hotkeyRowProps } = useListSelection(filtered, {
+    scope: 'list:todos',
+    bindO: false,
+    onOpen: (todo) => handleCycleStatus(todo.workspace, todo.id, todo.status),
+  });
+  useHotkey({
+    keys: '/',
+    scope: 'list:todos',
+    description: 'Focus filter',
+    handler: () => searchRef.current?.focus(),
+  });
+  useHotkey({
+    keys: 'r',
+    scope: 'list:todos',
+    description: 'Refresh',
+    handler: () => refetch(),
+  });
+
+  // R3: ?focus=<id> scroll + highlight. Retries on each render until the target
+  // row appears in the DOM (common case: palette navigates before data loads).
+  const [searchParams, setSearchParams] = useSearchParams();
+  const focusId = searchParams.get('focus');
+  useEffect(() => {
+    if (!focusId) return;
+    const node = document.querySelector<HTMLElement>(
+      `[data-todo-id="${CSS.escape(focusId)}"]`,
+    );
+    if (!node) return; // will retry when filtered.length changes (data arrives)
+    node.scrollIntoView({ block: 'nearest' });
+    node.classList.add('ring-2', 'ring-primary/60');
+    const t = window.setTimeout(() => {
+      node.classList.remove('ring-2', 'ring-primary/60');
+      setSearchParams((prev) => {
+        const n = new URLSearchParams(prev);
+        n.delete('focus');
+        return n;
+      });
+    }, 1500);
+    return () => window.clearTimeout(t);
+  }, [focusId, filtered.length, setSearchParams]);
+
   if (loading) return <LoadingState label="Loading todos..." />;
   if (error) return <ErrorState error={error} />;
 
@@ -172,6 +217,7 @@ export function TodosPage() {
         <div className="relative flex-1 max-w-sm">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <input
+            ref={searchRef}
             type="text"
             placeholder="Search todos..."
             value={search}
@@ -214,9 +260,11 @@ export function TodosPage() {
         />
       ) : (
         <div className="space-y-1">
-          {filtered.map((item) => (
+          {filtered.map((item, i) => (
             <div
               key={`${item.workspace}-${item.id}`}
+              data-todo-id={item.id}
+              {...hotkeyRowProps(i)}
               className="surface-panel flex items-center gap-3 px-3 py-2 group cursor-pointer hover:bg-foreground/[0.03] transition"
               onClick={() => handleCycleStatus(item.workspace, item.id, item.status)}
             >

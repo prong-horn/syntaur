@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import { BookOpenText, GitBranch, Plus, SquarePen } from 'lucide-react';
 import { CopyButton } from '../components/CopyButton';
 import { useMission, useWorkspaces, useWorkspacePrefix, type AssignmentSummary } from '../hooks/useMissions';
@@ -16,10 +16,25 @@ import { EmptyState } from '../components/EmptyState';
 import { DependencyGraph } from '../components/DependencyGraph';
 import { MarkdownRenderer } from '../components/MarkdownRenderer';
 import { useStatusConfig } from '../hooks/useStatusConfig';
+import { useHotkey, useHotkeyScope } from '../hotkeys';
 
 export function MissionDetail() {
   const { slug } = useParams<{ slug: string }>();
   const wsPrefix = useWorkspacePrefix();
+  const navigate = useNavigate();
+  useHotkeyScope('mission');
+  useHotkey({
+    keys: 'a',
+    scope: 'mission',
+    description: 'Create assignment',
+    handler: () => navigate(`${wsPrefix}/missions/${slug}/create/assignment`),
+  });
+  useHotkey({
+    keys: 'e',
+    scope: 'mission',
+    description: 'Edit mission',
+    handler: () => navigate(`${wsPrefix}/missions/${slug}/edit`),
+  });
   const { data: mission, loading, error, refetch } = useMission(slug);
   const statusConfig = useStatusConfig();
   const { data: workspacesData } = useWorkspaces();
