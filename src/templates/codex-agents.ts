@@ -136,6 +136,10 @@ Use the \`syntaur\` CLI for state transitions:
 - \`syntaur unblock ${params.assignmentSlug} --mission ${params.missionSlug}\` -- unblock
 - \`syntaur fail ${params.assignmentSlug} --mission ${params.missionSlug}\` -- mark as failed
 
+## Troubleshooting
+
+If Syntaur state looks inconsistent (missing files, stale manifests, unexpected hook blocks), run \`syntaur doctor\` to diagnose. Use \`--json\` for structured output.
+
 ## Playbooks
 
 Playbooks are user-defined behavioral rules stored in \`~/.syntaur/playbooks/\`. Before starting work, read the playbook manifest and then each referenced playbook:

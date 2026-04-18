@@ -55,6 +55,10 @@ Use the `syntaur` CLI for state transitions. Available commands:
 - `syntaur unblock <slug> --mission <mission>` -- unblock
 - `syntaur fail <slug> --mission <mission>` -- mark as failed
 
+## Troubleshooting
+
+If Syntaur state looks inconsistent (missing files, stale manifests, unexpected hook blocks), run `syntaur doctor` to diagnose. The `/doctor-syntaur` slash command wraps it and helps interpret results.
+
 ## Playbooks
 
 Playbooks are user-defined behavioral rules stored in `~/.syntaur/playbooks/`. Each playbook is a markdown file with imperative rules that agents must follow. When you begin work on any assignment, read all playbook files and follow their directives. Playbooks take precedence over default conventions when they conflict.

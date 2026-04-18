@@ -22,6 +22,7 @@ import { createPlaybookCommand } from './commands/create-playbook.js';
 import { listPlaybooksCommand } from './commands/list-playbooks.js';
 import { todoCommand } from './commands/todo.js';
 import { backupCommand } from './commands/backup.js';
+import { doctorCommand } from './commands/doctor.js';
 import { getDefaultCommandName } from './cli-default-command.js';
 
 const program = new Command();
@@ -436,6 +437,7 @@ program
 
 program.addCommand(todoCommand);
 program.addCommand(backupCommand);
+program.addCommand(doctorCommand);
 
 // Default to dashboard when no command is given
 if (process.argv.length <= 2) {

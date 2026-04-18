@@ -79,9 +79,14 @@ npx syntaur@latest setup \
 npx syntaur@latest dashboard
 npx syntaur@latest create-mission "My First Mission"
 npx syntaur@latest create-assignment "Implement feature" --mission my-first-mission
+npx syntaur@latest doctor
 npx syntaur@latest uninstall
 npx syntaur@latest uninstall --all
 ```
+
+## Troubleshooting
+
+If Syntaur state looks inconsistent (missing files, stale manifests, hook blocks, etc.), run `syntaur doctor` to diagnose. Pass `--json` for structured output suitable for agents; the `/doctor-syntaur` slash command in the Claude Code plugin wraps it with interactive remediation.
 
 ## Uninstall
 

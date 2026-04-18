@@ -68,6 +68,10 @@ Use the `syntaur` CLI for state transitions:
 - `syntaur unblock <slug> --mission <mission>`
 - `syntaur fail <slug> --mission <mission>`
 
+## Troubleshooting
+
+If Syntaur state looks inconsistent (missing files, stale manifests, unexpected hook blocks), run `syntaur doctor` to diagnose. Use `--json` for structured output.
+
 ## Conventions
 
 - Assignment frontmatter is the single source of truth.
