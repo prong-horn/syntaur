@@ -70,12 +70,14 @@ interface StatusBadgeProps {
   status: string;
   className?: string;
   showIcon?: boolean;
+  progress?: { checked: number; total: number };
 }
 
 export function StatusBadge({
   status,
   className,
   showIcon = true,
+  progress,
 }: StatusBadgeProps) {
   const meta = STATUS_META[status as keyof typeof STATUS_META] ?? {
     label: status.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()),
@@ -85,16 +87,50 @@ export function StatusBadge({
   };
   const Icon = meta.icon;
 
+  const hasProgress = progress && progress.total > 0;
+  const pct = hasProgress ? Math.min(1, Math.max(0, progress.checked / progress.total)) : 0;
+  const description = hasProgress
+    ? `${meta.description} (${progress.checked}/${progress.total} criteria)`
+    : meta.description;
+
+  const iconNode = showIcon ? (
+    hasProgress ? (
+      <span className="relative inline-flex h-3.5 w-3.5 items-center justify-center">
+        <svg
+          aria-hidden="true"
+          viewBox="0 0 16 16"
+          className="absolute inset-0 h-full w-full -rotate-90"
+        >
+          <circle cx="8" cy="8" r="7" fill="none" stroke="currentColor" strokeOpacity="0.25" strokeWidth="1.5" />
+          <circle
+            cx="8"
+            cy="8"
+            r="7"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.5"
+            strokeLinecap="round"
+            strokeDasharray={2 * Math.PI * 7}
+            strokeDashoffset={2 * Math.PI * 7 * (1 - pct)}
+          />
+        </svg>
+        <Icon className="h-2.5 w-2.5" />
+      </span>
+    ) : (
+      <Icon className="h-3.5 w-3.5" />
+    )
+  ) : null;
+
   return (
     <span
-      title={meta.description}
+      title={description}
       className={cn(
         'inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border px-2 py-0.5 text-xs font-semibold tracking-wide',
         meta.className,
         className,
       )}
     >
-      {showIcon ? <Icon className="h-3.5 w-3.5" /> : null}
+      {iconNode}
       <span>{meta.label}</span>
     </span>
   );
