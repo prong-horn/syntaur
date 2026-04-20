@@ -17,8 +17,8 @@
       agent.md               # Human-authored: universal agent instructions (read-only)
       assignments/
         <assignment-slug>/
-          assignment.md      # Agent-writable: source of truth for state
-          plan.md            # Agent-writable: implementation plan
+          assignment.md      # Agent-writable: source of truth for state (includes ## Todos checklist)
+          plan*.md           # Agent-writable: versioned implementation plans (optional, 0 or more: plan.md, plan-v2.md, ...)
           scratchpad.md      # Agent-writable: working notes
           handoff.md         # Agent-writable: append-only handoff log
           decision-record.md # Agent-writable: append-only decision log
@@ -68,3 +68,4 @@
 5. **Dependencies** are declared via `dependsOn` in assignment frontmatter.
 6. An assignment cannot transition from `pending` to `in_progress` while any dependency is not `completed`.
 7. **Playbooks** in `~/.syntaur/playbooks/` define behavioral rules agents must follow. Read `manifest.md` for a summary, then read each referenced playbook before starting work.
+8. **Todos** in the `## Todos` section of `assignment.md` are an informal markdown checklist. Items may be simple tasks or link to plan files. When a plan is superseded, mark the old todo: `- [x] ~~Execute [plan](./plan.md)~~ (superseded by plan-v2)` — never delete it.

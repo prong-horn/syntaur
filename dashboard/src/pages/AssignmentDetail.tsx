@@ -30,7 +30,7 @@ import {
   overrideAssignmentStatus,
   transitionNeedsReason,
 } from '../lib/assignments';
-import { splitAssignmentSummary } from '../lib/acceptanceCriteria';
+import { splitAssignmentSummary, splitTodosSection } from '../lib/acceptanceCriteria';
 import { DependencyPanel } from '../components/DependencyPanel';
 import { LinksPanel } from '../components/LinksPanel';
 import { useHotkey, useHotkeyScope } from '../hotkeys';
@@ -141,6 +141,10 @@ export function AssignmentDetail() {
   const summarySections = useMemo(
     () => (assignment ? splitAssignmentSummary(assignment.body) : { acceptanceCriteria: [], summaryBody: '' }),
     [assignment],
+  );
+  const todosSection = useMemo(
+    () => splitTodosSection(summarySections.summaryBody),
+    [summarySections.summaryBody],
   );
   const criteria = summarySections.acceptanceCriteria;
   const checkedCount = criteria.filter((c) => c.checked).length;
@@ -460,12 +464,24 @@ export function AssignmentDetail() {
                       </SectionCard>
                     ) : null}
 
+                    {todosSection.hasSection ? (
+                      <SectionCard
+                        title="Todos"
+                        description="Checklist of work items from assignment.md. Links point to plan files."
+                      >
+                        <MarkdownRenderer
+                          content={todosSection.todosMarkdown}
+                          emptyState="No todos yet."
+                        />
+                      </SectionCard>
+                    ) : null}
+
                     <SectionCard title="Assignment Summary">
                       <MarkdownRenderer
-                        content={summarySections.summaryBody}
+                        content={todosSection.remaining}
                         emptyState={
-                          summarySections.acceptanceCriteria.length > 0
-                            ? 'No additional summary markdown beyond the acceptance criteria.'
+                          summarySections.acceptanceCriteria.length > 0 || todosSection.hasSection
+                            ? 'No additional summary markdown beyond the acceptance criteria and todos.'
                             : 'This assignment does not have summary markdown yet.'
                         }
                       />
@@ -481,6 +497,7 @@ export function AssignmentDetail() {
                   <div className="space-y-5">
                     <SectionCard
                       title="Plan"
+                      description="Shows plan.md only. Versioned plans (plan-v2.md, ...) linked from the Todos section are not yet rendered here — open them from the filesystem."
                       actions={
                         <Link className="shell-action" to={`${wsPrefix}/missions/${slug}/assignments/${aslug}/plan/edit`}>
                           <NotebookPen className="h-4 w-4" />
@@ -497,7 +514,7 @@ export function AssignmentDetail() {
                 ) : (
                   <EmptyState
                     title="No plan yet"
-                    description="This assignment does not have a plan document yet."
+                    description="Plan files are optional and versioned. Run /plan-assignment to create plan.md (or plan-v2.md, ...) and link it from the Todos section."
                   />
                 ),
               },

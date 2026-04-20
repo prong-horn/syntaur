@@ -33,8 +33,8 @@ You are working within the Syntaur protocol for multi-agent mission coordination
       agent.md               # Human-authored: universal agent instructions (read-only)
       assignments/
         <assignment-slug>/
-          assignment.md      # Agent-writable: source of truth for state
-          plan.md            # Agent-writable: implementation plan
+          assignment.md      # Agent-writable: source of truth for state (includes ## Todos)
+          plan*.md           # Agent-writable: versioned implementation plans (optional, one per ## Todos entry)
           scratchpad.md      # Agent-writable: working notes
           handoff.md         # Agent-writable: append-only handoff log
           decision-record.md # Agent-writable: append-only decision log
@@ -50,7 +50,7 @@ You are working within the Syntaur protocol for multi-agent mission coordination
 
 ### Files you may WRITE:
 1. **Your assignment folder** -- only the assignment you are currently working on:
-   - \`assignment.md\`, \`plan.md\`, \`scratchpad.md\`, \`handoff.md\`, \`decision-record.md\`
+   - \`assignment.md\`, \`plan*.md\` (0 or more versioned plan files), \`scratchpad.md\`, \`handoff.md\`, \`decision-record.md\`
    - Path: \`~/.syntaur/missions/<mission>/assignments/<your-assignment>/\`
 2. **Shared resources and memories** at the mission level:
    - \`~/.syntaur/missions/<mission>/resources/<slug>.md\`
@@ -142,15 +142,15 @@ alwaysApply: true
 Before starting work, read these files in order:
 1. \`${params.missionDir}/agent.md\` -- universal agent instructions and boundaries
 2. \`${params.missionDir}/mission.md\` -- mission overview and goals
-3. \`${params.assignmentDir}/assignment.md\` -- your assignment details, acceptance criteria, current status
-4. \`${params.assignmentDir}/plan.md\` -- your implementation plan
+3. \`${params.assignmentDir}/assignment.md\` -- your assignment details, acceptance criteria, todos, current status
+4. any \`${params.assignmentDir}/plan*.md\` files linked from active todos in the \`## Todos\` section (may be 0, 1, or many)
 5. \`${params.assignmentDir}/handoff.md\` -- previous session handoff notes
 
 ## Your Writable Files
 
 You may ONLY write to files inside your assignment folder:
 - \`${params.assignmentDir}/assignment.md\`
-- \`${params.assignmentDir}/plan.md\`
+- \`${params.assignmentDir}/plan*.md\` (0 or more versioned plan files, e.g., \`plan.md\`, \`plan-v2.md\`)
 - \`${params.assignmentDir}/scratchpad.md\`
 - \`${params.assignmentDir}/handoff.md\`
 - \`${params.assignmentDir}/decision-record.md\`

@@ -2,7 +2,7 @@
 name: "Read Before You Plan"
 slug: read-before-plan
 description: "Agents must read all mission context files before creating or modifying a plan"
-when_to_use: "Before creating or modifying plan.md"
+when_to_use: "Before creating or modifying any plan file (plan.md, plan-v2.md, ...)"
 created: "2026-04-02T00:00:00Z"
 updated: "2026-04-02T00:00:00Z"
 tags:
@@ -12,7 +12,7 @@ tags:
 
 # Read Before You Plan
 
-Before creating or modifying plan.md, read these files in order:
+Before creating or modifying any plan file (plan.md, plan-v2.md, ...), read these files in order:
 
 1. `manifest.md` -- understand the mission structure
 2. `mission.md` -- understand the goal and scope

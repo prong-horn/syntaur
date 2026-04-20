@@ -26,7 +26,7 @@ If the global Syntaur Codex plugin is installed, prefer these workflows instead 
 - \`create-mission\` -- scaffold a mission
 - \`create-assignment\` -- create a new assignment
 - \`grab-assignment\` -- claim work, create \`.syntaur/context.json\`, and register a session
-- \`plan-assignment\` -- write or refresh \`plan.md\`
+- \`plan-assignment\` -- write a versioned plan file (\`plan.md\`, \`plan-v2.md\`, ...) and link it from the \`## Todos\` section of \`assignment.md\`
 - \`complete-assignment\` -- append the handoff, close the session, and transition state
 - \`track-session\` -- manage tracked tmux sessions for the dashboard
 
@@ -39,8 +39,8 @@ Before starting work, read these files in order:
 2. \`${params.missionDir}/agent.md\` -- universal agent instructions and boundaries
 3. \`${params.missionDir}/mission.md\` -- mission overview and goals
 4. \`${params.missionDir}/claude.md\` if it exists -- extra mission context that may still be relevant
-5. \`${params.assignmentDir}/assignment.md\` -- your assignment details, acceptance criteria, current status
-6. \`${params.assignmentDir}/plan.md\` -- your implementation plan
+5. \`${params.assignmentDir}/assignment.md\` -- your assignment details, acceptance criteria, todos, current status
+6. any \`${params.assignmentDir}/plan*.md\` files linked from active todos in the \`## Todos\` section (may be 0, 1, or many)
 7. \`${params.assignmentDir}/handoff.md\` -- previous session handoff notes
 
 ## Context File
@@ -66,8 +66,8 @@ Before starting work, read these files in order:
       agent.md               # Human-authored: universal agent instructions (read-only)
       assignments/
         <assignment-slug>/
-          assignment.md      # Agent-writable: source of truth for state
-          plan.md            # Agent-writable: implementation plan
+          assignment.md      # Agent-writable: source of truth for state (includes ## Todos)
+          plan*.md           # Agent-writable: versioned implementation plans (optional, one per ## Todos entry)
           scratchpad.md      # Agent-writable: working notes
           handoff.md         # Agent-writable: append-only handoff log
           decision-record.md # Agent-writable: append-only decision log
@@ -83,7 +83,7 @@ Before starting work, read these files in order:
 
 ### Files you may WRITE:
 1. **Your assignment folder** -- only the assignment you are currently working on:
-   - \`assignment.md\`, \`plan.md\`, \`scratchpad.md\`, \`handoff.md\`, \`decision-record.md\`
+   - \`assignment.md\`, \`plan*.md\` (0 or more versioned plan files), \`scratchpad.md\`, \`handoff.md\`, \`decision-record.md\`
    - Path: \`${params.assignmentDir}/\`
 2. **Shared resources and memories** at the mission level:
    - \`${params.missionDir}/resources/<slug>.md\`
@@ -155,8 +155,9 @@ Read each linked playbook and follow the rules in its body section. The \`when_t
 - Assignment frontmatter is the single source of truth for state
 - Slugs are lowercase, hyphen-separated
 - Always read \`agent.md\` at the mission level before starting work
-- Keep \`assignment.md\` progress and acceptance criteria updated as work lands
-- Keep \`plan.md\` current after planning changes and \`handoff.md\` current before leaving the task
+- Keep \`assignment.md\` progress, acceptance criteria, and \`## Todos\` updated as work lands
+- Keep active plan file(s) current after planning changes and \`handoff.md\` current before leaving the task
+- When requirements shift, supersede the prior plan todo (\`- [x] ~~...~~ (superseded by plan-v<N>)\`) and write a new plan file instead of rewriting the old one
 - Add unanswered questions to the Q&A section of assignment.md
 - Commit frequently with messages referencing the assignment slug
 `;

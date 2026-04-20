@@ -92,7 +92,7 @@ You have already read the assignment file in Step 3. Extract from the frontmatte
 - `dependsOn` -- list of dependency slugs
 - `priority` -- priority level
 
-Read the objective and acceptance criteria from the markdown body.
+Read the objective, acceptance criteria, and the `## Todos` section (if present) from the markdown body. Active (unchecked) todos indicate outstanding work and may link to plan files to execute.
 
 ### Set workspace if not configured
 
@@ -170,6 +170,7 @@ Summarize what was done:
 - Its current status (note if it was already past `pending` — e.g., "already in `review`, status unchanged")
 - The objective (first paragraph from assignment.md body)
 - The acceptance criteria (the checkbox list)
+- Active todos from the `## Todos` section (if any), with links to any referenced plan files
 - The workspace path (if set)
 - Suggest an appropriate next step based on status:
   - `pending` / `in_progress`: `/plan-assignment` to plan implementation

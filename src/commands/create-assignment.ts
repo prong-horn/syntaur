@@ -7,7 +7,6 @@ import { ensureDir, writeFileForce, fileExists } from '../utils/fs.js';
 import { readConfig } from '../utils/config.js';
 import {
   renderAssignment,
-  renderPlan,
   renderScratchpad,
   renderHandoff,
   renderDecisionRecord,
@@ -156,14 +155,6 @@ export async function createAssignmentCommand(
       }),
     ],
     [
-      resolve(assignmentDir, 'plan.md'),
-      renderPlan({
-        assignmentSlug,
-        title,
-        timestamp,
-      }),
-    ],
-    [
       resolve(assignmentDir, 'scratchpad.md'),
       renderScratchpad({
         assignmentSlug,
@@ -203,8 +194,10 @@ export async function createAssignmentCommand(
   }
   console.log(`  Files created:`);
   console.log(`    assignment.md`);
-  console.log(`    plan.md`);
   console.log(`    scratchpad.md`);
   console.log(`    handoff.md`);
   console.log(`    decision-record.md`);
+  console.log(
+    `  Plan files (plan.md, plan-v2.md, ...) are created on demand by /plan-assignment.`,
+  );
 }

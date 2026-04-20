@@ -23,7 +23,7 @@ tags:
 
 ## When starting work:
 - Add a progress entry noting you've begun and what your approach is
-- If a plan.md exists, update its task checkboxes as you complete steps
+- If any plan files exist (plan.md, plan-v2.md, ...), update their task checkboxes as you complete steps
 
 ## When stopping or handing off:
 - Write a final progress entry summarizing current state

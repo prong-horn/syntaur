@@ -285,7 +285,7 @@ export async function getDashboardHelp(): Promise<HelpResponse> {
       },
       {
         label: 'Assignment working files',
-        files: ['assignment.md', 'plan.md', 'scratchpad.md'],
+        files: ['assignment.md', 'plan*.md (optional, versioned)', 'scratchpad.md'],
         description:
           'These are agent-writable files. The dashboard lets you edit the source markdown while preserving unsupported frontmatter keys.',
       },
@@ -421,7 +421,7 @@ export async function getDashboardHelp(): Promise<HelpResponse> {
       },
       {
         title: 'Use the assignment workspace for execution',
-        detail: 'Keep the objective in assignment.md, the implementation plan in plan.md, and transient notes in scratchpad.md.',
+        detail: 'Keep the objective and todos in assignment.md, implementation plans in optional versioned plan files (plan.md, plan-v2.md, ...), and transient notes in scratchpad.md.',
         href: '/missions',
       },
       {

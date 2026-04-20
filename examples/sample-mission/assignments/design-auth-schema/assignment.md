@@ -32,6 +32,10 @@ Design the PostgreSQL database schema for the authentication system. This includ
 - [x] All tables have appropriate indexes for query patterns
 - [x] Migration scripts are idempotent and backward-compatible
 
+## Todos
+
+- [x] Execute [plan](./plan.md)
+
 ## Context
 
 This is the foundational data layer for the auth system. The schema must support the JWT middleware (implement-jwt-middleware) and be testable (write-auth-tests). See [Auth Requirements](../../resources/auth-requirements.md) for functional specs.
@@ -55,7 +59,6 @@ Started schema design. Reviewed auth requirements document. Planning three table
 
 ## Links
 
-- [Plan](./plan.md)
 - [Scratchpad](./scratchpad.md)
 - [Handoff](./handoff.md)
 - [Decision Record](./decision-record.md)

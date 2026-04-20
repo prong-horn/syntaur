@@ -54,8 +54,8 @@ Syntaur is a **markdown-based, filesystem-hosted protocol** that coordinates wor
       _status.md                     # Derived: mission status rollup
       assignments/
         <assignment-slug>/
-          assignment.md              # Agent-writable: source of truth for state
-          plan.md                    # Agent-writable: implementation plan
+          assignment.md              # Agent-writable: source of truth for state (includes ## Todos)
+          plan*.md                   # Agent-writable: versioned implementation plans (0+, optional)
           scratchpad.md              # Agent-writable: working notes
           handoff.md                 # Agent-writable: append-only handoff log
           decision-record.md         # Agent-writable: append-only decision log
@@ -77,8 +77,8 @@ Syntaur is a **markdown-based, filesystem-hosted protocol** that coordinates wor
 - `claude.md` — Claude Code-specific instructions
 
 ### Agent-Writable (single-writer per assignment)
-- `assignment.md` — source of truth for assignment state
-- `plan.md` — implementation plan
+- `assignment.md` — source of truth for assignment state (includes `## Todos` checklist)
+- `plan*.md` — versioned implementation plans (optional, one per `## Todos` entry: `plan.md`, `plan-v2.md`, ...)
 - `scratchpad.md` — unstructured working notes
 - `handoff.md` — append-only handoff log
 - `decision-record.md` — append-only decision log
@@ -215,14 +215,14 @@ plugin/
 | `/grab-assignment` | User says "grab assignment" or starts work on a mission | Discover pending assignments, claim one, create context.json |
 | `/create-mission` | User wants to create a new mission | Run CLI scaffolding, guide through editing mission files |
 | `/create-assignment` | User wants to add an assignment to a mission | Create assignment with all supporting files |
-| `/plan-assignment` | User wants to plan current assignment | Explore workspace, write detailed plan.md |
+| `/plan-assignment` | User wants to plan current assignment | Explore workspace, write the next `plan-v<N>.md`, append a linked todo to `## Todos` (supersede prior plan todo) |
 | `/complete-assignment` | User is done with assignment work | Verify criteria, write handoff, transition state, close session |
 
 ### Hooks
 
 | Hook | Event | Behavior |
 |------|-------|----------|
-| PostToolUse: ExitPlanMode | User exits plan mode | Prompts to update plan.md with the plan just created |
+| PostToolUse: ExitPlanMode | User exits plan mode | Prompts to write the plan to the next unused `plan-v<N>.md` (or `plan.md` if none exists) and append a linked todo in the `## Todos` section of `assignment.md` |
 | SessionEnd | Claude Code session exits | Runs session-cleanup.sh to mark session as stopped |
 | PreToolUse: enforce-boundaries | Edit/Write/MultiEdit | Validates target path is within assignment boundaries |
 
@@ -247,7 +247,7 @@ syntaur                    # Dashboard is the default command
 - **Agent sessions:** Track active/completed/stopped agent sessions
 - **Server tracking:** Discover running dev servers via tmux session scanning
 - **Real-time updates:** WebSocket pushes file changes to the browser
-- **Markdown editing:** Edit mission.md, assignment.md, plan.md, scratchpad.md in-browser
+- **Markdown editing:** Edit mission.md, assignment.md, plan files, scratchpad.md in-browser
 - **Attention queue:** Highlights blocked, failed, and review-pending items
 
 ### API Endpoints
@@ -297,7 +297,7 @@ Adapters embed protocol knowledge (write boundaries, lifecycle states, CLI comma
 
 **assignment.md:** id, slug, title, status, priority, created, updated, assignee, externalIds, dependsOn, blockedReason, workspace (repository, worktreePath, branch, parentBranch), tags
 
-**plan.md:** assignment, status (draft/approved/in_progress/completed), created, updated
+**plan files (plan.md, plan-v2.md, ...):** assignment, status (draft/approved/in_progress/completed), created, updated — zero or more per assignment, each linked from a todo in `assignment.md`'s `## Todos` section
 
 **handoff.md:** assignment, updated, handoffCount
 

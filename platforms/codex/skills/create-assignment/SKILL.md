@@ -37,7 +37,8 @@ If neither `--mission` nor `--one-off` was provided, look for `.syntaur/context.
    - mission slug
    - priority
    - location
-   - created files: `assignment.md`, `plan.md`, `scratchpad.md`, `handoff.md`, `decision-record.md`
+   - created files: `assignment.md`, `scratchpad.md`, `handoff.md`, `decision-record.md` (plan files are NOT scaffolded — they are created on demand by `plan-assignment`)
 5. Suggest next steps:
-   - fill in the objective, context, and acceptance criteria
+   - fill in the objective, context, acceptance criteria, and any initial todos in the `## Todos` section
+   - or run `plan-assignment` to create a plan file and auto-append a linked todo to `## Todos`
    - run `grab-assignment` to claim it if work should begin now

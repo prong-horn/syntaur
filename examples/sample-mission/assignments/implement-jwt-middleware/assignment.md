@@ -36,6 +36,10 @@ Implement Express.js middleware that validates JWT access tokens on protected ro
 - [ ] Token revocation endpoint (logout)
 - [ ] Role-based route guards (admin vs user)
 
+## Todos
+
+- [ ] Execute [plan](./plan.md)
+
 ## Context
 
 Depends on the database schema from [design-auth-schema](../design-auth-schema/assignment.md). The schema is complete — see the [handoff notes](../design-auth-schema/handoff.md) for integration details. Key table: `sessions` with `jti` column for token validation. See [Auth Requirements](../../resources/auth-requirements.md) for full specs.
@@ -59,7 +63,6 @@ Started implementation. Set up RS256 key pair loading from environment variables
 
 ## Links
 
-- [Plan](./plan.md)
 - [Scratchpad](./scratchpad.md)
 - [Handoff](./handoff.md)
 - [Decision Record](./decision-record.md)

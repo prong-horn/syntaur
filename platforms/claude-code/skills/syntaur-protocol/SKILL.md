@@ -14,7 +14,7 @@ You MUST respect file ownership boundaries. Violations will be blocked by the Pr
 
 ### Files you may WRITE:
 1. **Your assignment folder** -- only the assignment you are currently working on:
-   - `assignment.md`, `plan.md`, `scratchpad.md`, `handoff.md`, `decision-record.md`
+   - `assignment.md`, `plan*.md` (0 or more versioned plan files), `scratchpad.md`, `handoff.md`, `decision-record.md`
    - Path: `~/.syntaur/missions/<mission>/assignments/<your-assignment>/`
 2. **Shared resources and memories** at the mission level:
    - `~/.syntaur/missions/<mission>/resources/<slug>.md`

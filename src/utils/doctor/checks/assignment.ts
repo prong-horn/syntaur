@@ -7,7 +7,6 @@ import type { CheckContext, Check, CheckResult } from '../types.js';
 
 const CATEGORY = 'assignment';
 
-const STATUSES_REQUIRING_PLAN = new Set(['in_progress', 'review', 'completed']);
 const STATUSES_REQUIRING_HANDOFF = new Set(['review', 'completed']);
 
 interface AssignmentEntry {
@@ -184,7 +183,7 @@ const workspaceMissing: Check = {
 const requiredFilesByStatus: Check = {
   id: 'assignment.required-files-by-status',
   category: CATEGORY,
-  title: 'Plan and handoff files match assignment status',
+  title: 'Handoff file matches assignment status',
   async run(ctx) {
     const allowed = configuredStatuses(ctx);
     const defaultsCovered = Array.from(DEFAULT_STATUSES).every((s) => allowed.has(s));
@@ -205,10 +204,6 @@ const requiredFilesByStatus: Check = {
       const parsed = await parseSafe(assignmentPath);
       if (!parsed) continue;
       const missing: string[] = [];
-      if (STATUSES_REQUIRING_PLAN.has(parsed.status)) {
-        const planPath = resolve(a.assignmentDir, 'plan.md');
-        if (!(await fileExists(planPath))) missing.push('plan.md');
-      }
       if (STATUSES_REQUIRING_HANDOFF.has(parsed.status)) {
         const handoffPath = resolve(a.assignmentDir, 'handoff.md');
         if (!(await fileExists(handoffPath))) missing.push('handoff.md');

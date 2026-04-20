@@ -17,7 +17,7 @@ Write a handoff for your current assignment and transition it to review (or comp
 
 User provided: $ARGUMENTS
 
-If the user passed `--complete`, transition directly to `completed` instead of `review`. However, `--complete` is ONLY allowed if ALL acceptance criteria are met. If any criteria are unmet, always transition to `review` regardless of the `--complete` flag, and inform the user why.
+If the user passed `--complete`, transition directly to `completed` instead of `review`. However, `--complete` is ONLY allowed if ALL acceptance criteria are met AND every `## Todos` item is either checked or marked superseded. If any criterion or todo is unresolved, always transition to `review` regardless of the `--complete` flag, and inform the user why.
 
 ## Step 1: Load Context
 
@@ -37,15 +37,17 @@ ls ~/.syntaur/playbooks/*.md 2>/dev/null
 
 For each file found, read it and check that your work follows its directives. If any playbook has completion-related rules (e.g., "run tests before done"), follow them before proceeding.
 
-## Step 2: Verify Acceptance Criteria
+## Step 2: Verify Acceptance Criteria and Todos
 
-Read `<assignmentDir>/assignment.md` and find the `## Acceptance Criteria` section.
+Read `<assignmentDir>/assignment.md` and find the `## Acceptance Criteria` and `## Todos` sections.
 
-Review each criterion (checkbox item). For each:
-- If you believe it is met, note why (what was implemented, where)
-- If it is NOT met, flag it clearly
+Review each acceptance criterion (checkbox item) and each todo. For each:
+- If you believe it is met/done, note why (what was implemented, where)
+- If it is NOT met/done, flag it clearly
 
-If any criteria are not met, warn the user: "The following acceptance criteria are not yet met: [list]. Do you want to proceed with the handoff anyway?"
+Superseded todos (marked `- [x] ~~...~~ (superseded by ...)`) count as resolved — they do not need to be done again.
+
+If any acceptance criteria are unmet OR any todo is still `- [ ]` and not superseded, warn the user: "The following are not yet done: [list]. Do you want to proceed with the handoff anyway?"
 
 If the user says no, stop.
 
@@ -82,11 +84,13 @@ Use the Edit tool to append this entry to handoff.md (do not overwrite existing 
 
 Also update the handoff.md frontmatter: set `updated` to the current timestamp and increment the `handoffCount` by 1.
 
-## Step 4: Update Acceptance Criteria Checkboxes
+## Step 4: Update Checkboxes (Criteria + Todos)
 
-In `<assignmentDir>/assignment.md`, update the acceptance criteria checkboxes to reflect the current state. Use the Edit tool to check off criteria that were met (change `- [ ]` to `- [x]`).
+In `<assignmentDir>/assignment.md`, update checkboxes in both the `## Acceptance Criteria` and `## Todos` sections to reflect the current state. Use the Edit tool to check off items that were completed (change `- [ ]` to `- [x]`).
 
-**Note:** Ideally, criteria should have been checked off incrementally during implementation. If they are already checked, verify they are still accurate. If some were missed, check them off now with a note in the handoff about which were verified at completion time vs. during development.
+**Note:** Ideally, these should have been checked off incrementally during implementation. If they are already checked, verify they are still accurate. If some were missed, check them off now with a note in the handoff about which were verified at completion time vs. during development.
+
+Do NOT uncheck or rewrite superseded todo lines (those matching `- [x] ~~...~~ (superseded by ...)`) — leave that history intact.
 
 ## Step 4.5: Close Session
 

@@ -33,7 +33,6 @@ import {
   renderResourcesIndex,
   renderMemoriesIndex,
   renderAssignment,
-  renderPlan,
   renderScratchpad,
   renderHandoff,
   renderDecisionRecord,
@@ -406,7 +405,6 @@ export function createWriteRouter(missionsDir: string): Router {
         return;
       }
 
-      const title = fields.title;
       const timestamp = fields.created || nowTimestamp();
 
       await ensureDir(assignmentDir);
@@ -414,7 +412,6 @@ export function createWriteRouter(missionsDir: string): Router {
 
       try {
         const companions: Array<[string, string]> = [
-          [resolve(assignmentDir, 'plan.md'), renderPlan({ assignmentSlug, title, timestamp })],
           [resolve(assignmentDir, 'scratchpad.md'), renderScratchpad({ assignmentSlug, timestamp })],
           [resolve(assignmentDir, 'handoff.md'), renderHandoff({ assignmentSlug, timestamp })],
           [resolve(assignmentDir, 'decision-record.md'), renderDecisionRecord({ assignmentSlug, timestamp })],

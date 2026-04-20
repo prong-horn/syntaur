@@ -1,11 +1,11 @@
 ---
 name: plan-assignment
-description: Use when the user wants a detailed implementation plan written to plan.md for the current Syntaur assignment.
+description: Use when the user wants a detailed implementation plan written as a versioned plan file for the current Syntaur assignment.
 ---
 
 # Plan Assignment
 
-Create an implementation plan for the current Syntaur assignment.
+Create an implementation plan for the current Syntaur assignment. Plans are versioned files: the first is `plan.md`, later ones are `plan-v2.md`, `plan-v3.md`, etc. Each plan gets a linked entry in the `## Todos` section of `assignment.md`, and any prior active plan todo is marked superseded.
 
 ## Arguments
 
@@ -24,11 +24,16 @@ Optional notes from the user: `$ARGUMENTS`
    - inspect project structure
    - find likely implementation files
    - note conventions and architecture
-5. Update `<assignmentDir>/plan.md`:
-   - preserve the existing YAML frontmatter
-   - set `status` to `in_progress` if it is still `draft`
-   - refresh the `updated` timestamp
-   - replace the body with a concrete plan
+5. Determine the next plan filename:
+   - List `<assignmentDir>/plan*.md`.
+   - If none exist, target is `plan.md` (version label: "plan").
+   - Otherwise pick the smallest `N >= 2` such that `plan-v<N>.md` does not exist (version label: `plan v<N>`).
+6. Write `<assignmentDir>/<planFilename>` with standard plan frontmatter (`assignment`, `status: draft`, `created`, `updated`) and a body containing the sections below. If the file already exists (only possible for `plan.md` on first re-run), preserve frontmatter, flip `status` from `draft` to `in_progress`, update `updated`, and replace only the body.
+7. Update `<assignmentDir>/assignment.md`:
+   - Find unchecked todos matching `- [ ] Execute [<label>](./plan*.md)`. Rewrite each as `- [x] ~~Execute [<label>](./<old-filename>)~~ (superseded by <versionLabel>)`. Never delete the old line.
+   - Append a new todo: `- [ ] Execute [<versionLabel>](./<planFilename>)`.
+   - If `## Todos` is missing (legacy assignment), insert it right after `## Acceptance Criteria` with a short guidance comment and the new todo line.
+   - Refresh the assignment frontmatter `updated` timestamp.
 
 ## Plan Contents
 
@@ -46,4 +51,5 @@ After writing the plan:
 
 - summarize the number of tasks and key decisions
 - call out open questions or risks
-- remind yourself to keep `assignment.md` progress and acceptance criteria current during implementation
+- note which plan filename was written and which prior plan (if any) was superseded
+- remind yourself to keep `assignment.md` progress, acceptance criteria, and todos current during implementation

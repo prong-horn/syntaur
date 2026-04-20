@@ -77,7 +77,7 @@ describe('renderCursorAssignment', () => {
     expect(out).toContain('agent.md');
     expect(out).toContain('mission.md');
     expect(out).toContain('assignment.md');
-    expect(out).toContain('plan.md');
+    expect(out).toContain('plan*.md');
     expect(out).toContain('handoff.md');
   });
 

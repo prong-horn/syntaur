@@ -189,10 +189,19 @@ The core unit of work and the **single source of truth** for assignment state. T
 |---------|---------|------------|
 | Objective | Clear description of what needs to be done and why | Human (initial), agent may refine |
 | Acceptance Criteria | Checklist of requirements for completion | Human (initial), agent checks off |
+| Todos | Checklist of work items; items may be simple tasks or link to plan files (`plan.md`, `plan-v2.md`, ...) | Agent (appended by `/plan-assignment` and manual edits) |
 | Context | Links to relevant docs, code, or other assignments | Human or agent |
 | Questions & Answers | Agent asks questions, humans/other agents answer via CLI | Agent writes questions; answers mediated via `syntaur answer` CLI command |
 | Progress | Reverse-chronological log of work done | Agent |
-| Links | Links to supporting files (plan, scratchpad, handoff, decisions) | Scaffolding (initial) |
+| Links | Links to supporting files (scratchpad, handoff, decisions) | Scaffolding (initial) |
+
+**Todos supersede convention:** When a plan is replaced by a newer version, do not delete the old todo. Mark it as:
+
+```
+- [x] ~~Execute [old plan](./plan.md)~~ (superseded by plan-v2)
+```
+
+Checked, strikethrough, and with a parenthetical pointer to the replacement. This preserves the history of planning decisions on the assignment.
 
 **Q&A write boundaries:** The Q&A section is the one exception to the single-writer rule for assignment folders. Answers are written by humans or other agents, but always **mediated through the CLI** (e.g., `syntaur answer`), never by directly editing the file. This preserves the single-writer guarantee at the file-system level.
 
@@ -243,6 +252,12 @@ both access tokens (15min TTL) and refresh token rotation (7-day TTL).
 - [ ] Refresh token rotation endpoint
 - [ ] Rate limiting on token refresh
 
+## Todos
+
+- [x] ~~Execute [plan](./plan.md)~~ (superseded by plan-v2)
+- [ ] Execute [plan v2](./plan-v2.md)
+- [ ] Double-check rate limit thresholds with product before finalizing
+
 ## Context
 
 - Depends on [design-auth-schema](../design-auth-schema/assignment.md) for the
@@ -272,7 +287,6 @@ worktree and branch. Reviewed the auth schema from the dependency assignment.
 
 ## Links
 
-- [Plan](./plan.md)
 - [Scratchpad](./scratchpad.md)
 - [Handoff](./handoff.md)
 - [Decision Record](./decision-record.md)
@@ -280,11 +294,15 @@ worktree and branch. Reviewed the auth schema from the dependency assignment.
 
 ---
 
-## 4. plan.md
+## 4. plan\*.md (`plan.md`, `plan-v2.md`, ...)
 
 **Ownership:** Agent-writable
 
-The implementation plan for an assignment. Created as an empty template by scaffolding, populated by the agent when planning work. Has its own status independent of the assignment status (a plan can be drafted and approved before work begins).
+Zero or more implementation plan files per assignment. Plans are **not scaffolded** — they are created on demand by `/plan-assignment`. Each plan file corresponds to an entry in the `## Todos` section of `assignment.md`.
+
+**Filename versioning:** The first plan for an assignment is `plan.md`. Subsequent plans use `plan-v2.md`, `plan-v3.md`, etc. — the smallest unused `plan-v<N>.md` where `N >= 2`. When requirements shift, create a new versioned plan and mark the old todo superseded in `assignment.md` instead of rewriting the old plan file.
+
+Each plan has its own status independent of the assignment status.
 
 ### Frontmatter Schema
 
@@ -591,9 +609,9 @@ Summary table of all plans across assignments.
 
 | Section | Purpose | Who Writes |
 |---------|---------|------------|
-| Plans table | Tabular summary of every assignment's plan | Rebuild script |
+| Plans table | Tabular summary of every plan file across assignments | Rebuild script |
 
-**Table columns:** Assignment (linked to plan.md), Plan Status, Updated.
+**Table columns:** Assignment, Plan File (linked to `plan.md`, `plan-v2.md`, ...), Plan Status, Updated. Assignments with zero plan files are omitted; assignments with multiple plans contribute one row per plan.
 
 ### Example
 
@@ -605,11 +623,12 @@ generated: "2026-03-18T15:00:00Z"
 
 # Plans
 
-| Assignment | Plan Status | Updated |
-|------------|-------------|---------|
-| [design-auth-schema](./assignments/design-auth-schema/plan.md) | completed | 2026-03-17T10:00:00Z |
-| [implement-jwt-middleware](./assignments/implement-jwt-middleware/plan.md) | in_progress | 2026-03-18T14:30:00Z |
-| [write-auth-tests](./assignments/write-auth-tests/plan.md) | draft | 2026-03-16T10:00:00Z |
+| Assignment | Plan File | Plan Status | Updated |
+|------------|-----------|-------------|---------|
+| design-auth-schema | [plan.md](./assignments/design-auth-schema/plan.md) | completed | 2026-03-17T10:00:00Z |
+| implement-jwt-middleware | [plan.md](./assignments/implement-jwt-middleware/plan.md) | superseded | 2026-03-17T22:00:00Z |
+| implement-jwt-middleware | [plan-v2.md](./assignments/implement-jwt-middleware/plan-v2.md) | in_progress | 2026-03-18T14:30:00Z |
+| write-auth-tests | [plan.md](./assignments/write-auth-tests/plan.md) | draft | 2026-03-16T10:00:00Z |
 ```
 
 ---

@@ -7,7 +7,7 @@
         "hooks": [
           {
             "type": "prompt",
-            "prompt": "You just exited plan mode. If there is an active Syntaur assignment (check for a workspace field in assignment.md), update the assignment's plan.md with the plan you just created and update assignment.md to reflect that planning is complete."
+            "prompt": "You just exited plan mode. If there is an active Syntaur assignment (check for a workspace field in assignment.md), pick the next unused `plan-v<N>.md` filename (or `plan.md` if no plan*.md exists yet) under the assignment dir, write the plan you just created there, and append a `- [ ] Execute [plan](./plan.md)` (or versioned equivalent, e.g. `- [ ] Execute [plan v2](./plan-v2.md)`) entry to the `## Todos` section of assignment.md — marking any prior active plan todo as superseded (`- [x] ~~...~~ (superseded by plan-v<N>)`). Never delete superseded todos."
           }
         ]
       }

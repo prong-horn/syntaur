@@ -182,11 +182,12 @@ describe('renderAssignment', () => {
     });
     expect(out).toContain('## Objective');
     expect(out).toContain('## Acceptance Criteria');
+    expect(out).toContain('## Todos');
     expect(out).toContain('## Context');
     expect(out).toContain('## Questions & Answers');
     expect(out).toContain('## Progress');
     expect(out).toContain('## Links');
-    expect(out).toContain('(./plan.md)');
+    expect(out).not.toContain('- [Plan](./plan.md)');
     expect(out).toContain('(./scratchpad.md)');
     expect(out).toContain('(./handoff.md)');
     expect(out).toContain('(./decision-record.md)');

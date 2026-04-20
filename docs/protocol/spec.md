@@ -67,8 +67,8 @@ The root of all Syntaur data is `~/.syntaur/`. Below is the full directory tree 
       agent.md                       # Human-authored: universal agent instructions (all frameworks)
       assignments/
         <assignment-slug>/
-          assignment.md              # Agent-writable: the assignment record (source of truth for state)
-          plan.md                    # Agent-writable: implementation plan
+          assignment.md              # Agent-writable: the assignment record (source of truth for state; includes ## Todos)
+          plan*.md                   # Agent-writable: versioned implementation plans (optional, 0 or more: plan.md, plan-v2.md, ...)
           scratchpad.md              # Agent-writable: unstructured working memory
           handoff.md                 # Agent-writable: append-only handoff log
           decision-record.md         # Agent-writable: append-only decision log
@@ -113,8 +113,8 @@ Files inside assignment folders. Only the assigned agent writes to its own assig
 
 | File | Purpose |
 |------|---------|
-| `assignment.md` | Assignment record and source of truth for state |
-| `plan.md` | Implementation plan |
+| `assignment.md` | Assignment record and source of truth for state (includes `## Todos` checklist) |
+| `plan*.md` | Versioned implementation plans (optional, 0 or more: `plan.md`, `plan-v2.md`, ...) — each linked from a todo in `assignment.md` |
 | `scratchpad.md` | Unstructured working notes |
 | `handoff.md` | Append-only handoff log |
 | `decision-record.md` | Append-only decision log |
@@ -290,8 +290,10 @@ workspace:
 **Intra-mission markdown links** (links between files within the same mission folder) use **relative paths** for portability. If a mission folder is moved or renamed, relative links remain valid.
 
 ```markdown
+## Todos
+- [ ] Execute [plan](./plan.md)
+
 ## Links
-- [Plan](./plan.md)
 - [Assignment](./assignments/implement-jwt-middleware/assignment.md)
 - [Status](./_status.md)
 ```

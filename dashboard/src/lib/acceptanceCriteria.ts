@@ -46,3 +46,48 @@ export function splitAssignmentSummary(body: string): AssignmentSummarySections 
     summaryBody,
   };
 }
+
+export interface TodosSection {
+  hasSection: boolean;
+  todosMarkdown: string;
+  remaining: string;
+}
+
+export function splitTodosSection(body: string): TodosSection {
+  const lines = body.split('\n');
+  const sectionStart = lines.findIndex((line) => /^##\s+Todos\s*$/i.test(line.trim()));
+
+  if (sectionStart === -1) {
+    return {
+      hasSection: false,
+      todosMarkdown: '',
+      remaining: body,
+    };
+  }
+
+  let sectionEnd = lines.length;
+  for (let index = sectionStart + 1; index < lines.length; index += 1) {
+    if (/^#{1,2}\s+\S/.test(lines[index].trim())) {
+      sectionEnd = index;
+      break;
+    }
+  }
+
+  const todosMarkdown = lines
+    .slice(sectionStart + 1, sectionEnd)
+    .join('\n')
+    .replace(/<!--[\s\S]*?-->/g, '')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+
+  const remaining = [...lines.slice(0, sectionStart), ...lines.slice(sectionEnd)]
+    .join('\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+
+  return {
+    hasSection: true,
+    todosMarkdown,
+    remaining,
+  };
+}

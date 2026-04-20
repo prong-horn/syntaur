@@ -58,7 +58,8 @@ cat ~/.syntaur/missions/<mission-slug>/assignments/<assignment-slug>/assignment.
 
 Tell the user:
 - The assignment was created with its slug, priority, and location
-- List the files created (assignment.md, plan.md, scratchpad.md, handoff.md, decision-record.md)
-- Suggest they edit `assignment.md` to fill in the objective, acceptance criteria, and context
+- List the files created (assignment.md, scratchpad.md, handoff.md, decision-record.md). Note that `plan.md` is NOT scaffolded — plan files are optional and created on demand by `/plan-assignment`.
+- Suggest they edit `assignment.md` to fill in the objective, acceptance criteria, context, and any initial todos. The `## Todos` section accepts simple tasks or markdown links to plan files.
+- Or suggest running `/plan-assignment` after grabbing — it creates a plan file and auto-appends a linked todo to `## Todos`.
 - If dependencies were set, note them
 - Suggest running `/grab-assignment <mission-slug> <assignment-slug>` to claim and start working on it

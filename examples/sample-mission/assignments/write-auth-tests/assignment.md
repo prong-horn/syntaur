@@ -34,6 +34,10 @@ Write comprehensive unit and integration tests for the authentication system, co
 - [ ] Edge case tests: expired tokens, revoked sessions, refresh token reuse detection
 - [ ] Coverage report showing 80%+ line coverage
 
+## Todos
+
+- [ ] Execute [plan](./plan.md)
+
 ## Context
 
 This assignment depends on [implement-jwt-middleware](../implement-jwt-middleware/assignment.md) being completed. Tests will cover both the schema layer (from design-auth-schema) and the middleware/endpoint layer (from implement-jwt-middleware). Use Jest as the test framework with `supertest` for HTTP integration tests.
@@ -48,7 +52,6 @@ No progress yet.
 
 ## Links
 
-- [Plan](./plan.md)
 - [Scratchpad](./scratchpad.md)
 - [Handoff](./handoff.md)
 - [Decision Record](./decision-record.md)

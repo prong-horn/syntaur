@@ -15,7 +15,7 @@ Respect file ownership boundaries.
 
 1. Your assignment folder only:
    - `assignment.md`
-   - `plan.md`
+   - `plan*.md` (0 or more versioned plan files, e.g., `plan.md`, `plan-v2.md`)
    - `scratchpad.md`
    - `handoff.md`
    - `decision-record.md`
@@ -53,7 +53,7 @@ When you are working on an existing assignment, read these in order:
 3. `<missionDir>/mission.md`
 4. `<missionDir>/claude.md` if it exists
 5. `<assignmentDir>/assignment.md`
-6. `<assignmentDir>/plan.md`
+6. any `<assignmentDir>/plan*.md` files linked from active todos in the `## Todos` section
 7. `<assignmentDir>/handoff.md`
 
 ## Lifecycle Commands
@@ -76,8 +76,9 @@ If Syntaur state looks inconsistent (missing files, stale manifests, unexpected 
 
 - Assignment frontmatter is the single source of truth.
 - Slugs are lowercase and hyphen-separated.
-- Update acceptance criteria checkboxes as work lands, not only at the end.
+- Update acceptance criteria and `## Todos` checkboxes as work lands, not only at the end.
 - Keep the `## Progress` section in `assignment.md` current after meaningful milestones.
+- When requirements shift, supersede the prior plan todo (`- [x] ~~...~~ (superseded by plan-v<N>)`) instead of rewriting the old plan file.
 - Write handoffs with enough context for another agent or human to continue cleanly.
 
 ## References

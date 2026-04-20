@@ -32,7 +32,7 @@ Parse:
    - list assignments with title, priority, and current status (highlight `pending` ones as the default candidates)
    - ask the user to choose unless there is exactly one obvious candidate
    If a slug *was* provided, verify the directory exists. Its status does not matter; do not block on it.
-5. Read the chosen assignment's `assignment.md` frontmatter to determine its current `status`.
+5. Read the chosen assignment's `assignment.md` — its frontmatter for `status`, and its markdown body for the objective, acceptance criteria, and `## Todos` section (active todos indicate outstanding work and may link to plan files to execute).
 6. Claim the assignment:
    - Always: `syntaur assign <assignment-slug> --agent codex --mission <mission-slug>` (safe at any status; does not transition state)
    - **Only if current status is `pending`**: `syntaur start <assignment-slug> --mission <mission-slug>` to transition it to `in_progress`. Skip this command for any other status — grabbing must not rewind a `review`, `completed`, or `failed` assignment.
@@ -62,6 +62,7 @@ Parse:
    - current status (call it out if the assignment was already past `pending` — e.g., "already in `review`, status unchanged")
    - objective
    - acceptance criteria
+   - active todos from the `## Todos` section (if any), including any plan files they link to
    - workspace path
 11. Suggest a next step appropriate to status:
    - `pending` / `in_progress`: `plan-assignment`

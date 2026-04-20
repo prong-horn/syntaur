@@ -72,9 +72,32 @@ If `workspaceRoot` is null, skip this step and note in the plan that no workspac
 
 ## Step 4: Write the Plan
 
-Read the existing `<assignmentDir>/plan.md` to see its current frontmatter structure. Preserve the YAML frontmatter fields (`assignment`, `status`, `created`, `updated`) and update the `updated` timestamp. Change the `status` field from `draft` to `in_progress` if it is still `draft`.
+Plans are versioned. The first plan for an assignment is `plan.md`; subsequent plans are `plan-v2.md`, `plan-v3.md`, etc. Each plan gets a linked entry in the `## Todos` section of `assignment.md`, and any prior active plan todo is marked superseded (never deleted).
 
-Replace the markdown body with a detailed implementation plan. The plan should include:
+### 4a. Determine the next plan filename
+
+Use Glob to list `<assignmentDir>/plan*.md`. Then:
+
+- If no plan files exist, the target is `plan.md` and the version label is "plan".
+- If `plan.md` exists but no `plan-v<N>.md`, the target is `plan-v2.md` and the version label is "plan v2".
+- Otherwise, pick the smallest `N >= 2` such that `plan-v<N>.md` does not exist. The version label is `plan v<N>`.
+
+Remember this `planFilename` and `versionLabel` for the remaining substeps.
+
+### 4b. Write the plan file
+
+Write `<assignmentDir>/<planFilename>` with standard plan frontmatter:
+
+```yaml
+---
+assignment: <assignmentSlug>
+status: draft
+created: "<nowTimestamp>"
+updated: "<nowTimestamp>"
+---
+```
+
+Then the markdown body should include:
 
 1. **Overview** -- one paragraph summarizing the approach
 2. **Tasks** -- numbered list of implementation tasks, each with:
@@ -86,7 +109,29 @@ Replace the markdown body with a detailed implementation plan. The plan should i
 4. **Risks and Open Questions** -- anything that might block or complicate implementation
 5. **Testing Strategy** -- how to verify the implementation works
 
-Write the plan using the Edit tool to update `<assignmentDir>/plan.md`. Preserve the existing frontmatter and replace only the body content.
+If the target file already exists (only possible for `plan.md` on first re-run against a scaffolded-but-empty plan), preserve the frontmatter and replace only the body, flipping `status` from `draft` to `in_progress` and updating `updated`.
+
+### 4c. Update assignment.md Todos
+
+Read `<assignmentDir>/assignment.md` and locate the `## Todos` section.
+
+1. **Supersede prior plan todos.** Scan unchecked todo lines for any that match the pattern `- [ ] Execute [<label>](./plan.md)` or `- [ ] Execute [<label>](./plan-v<N>.md)`. For each match, rewrite the line as:
+
+   ```
+   - [x] ~~Execute [<label>](./<old-plan-filename>)~~ (superseded by <versionLabel>)
+   ```
+
+   Never delete the old line — preserve history.
+
+2. **Append the new plan todo.** Append a new line to the end of the `## Todos` section:
+
+   ```
+   - [ ] Execute [<versionLabel>](./<planFilename>)
+   ```
+
+3. **Missing section fallback.** If the `## Todos` section does not exist (legacy assignment predating this convention), insert it immediately after `## Acceptance Criteria` with a short guidance HTML comment followed by the new todo line. Match the template used by `/create-assignment`.
+
+Also update the assignment frontmatter `updated` timestamp.
 
 ## Step 5: Report to User
 

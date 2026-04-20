@@ -11,12 +11,12 @@ Write a handoff for the current Syntaur assignment and transition it to `review`
 
 User arguments: `$ARGUMENTS`
 
-If the user passed `--complete`, transition directly to `completed` only when all acceptance criteria are met. Otherwise transition to `review`.
+If the user passed `--complete`, transition directly to `completed` only when all acceptance criteria are met AND all todos are either checked or marked superseded. Otherwise transition to `review`.
 
 ## Workflow
 
 1. Read `.syntaur/context.json`. If it does not exist, tell the user there is no active assignment.
-2. Read `<assignmentDir>/assignment.md` and evaluate every item in the `## Acceptance Criteria` section.
+2. Read `<assignmentDir>/assignment.md` and evaluate every item in the `## Acceptance Criteria` section AND every item in the `## Todos` section. Superseded todos (marked `- [x] ~~...~~ (superseded by ...)`) count as resolved. If any acceptance criterion is unmet OR any todo is still `- [ ]` and not superseded, warn the user before proceeding.
 3. Read `<assignmentDir>/handoff.md` and append a new handoff entry using the protocol format:
 
 ```markdown
@@ -44,7 +44,7 @@ If the user passed `--complete`, transition directly to `completed` only when al
 4. Update the handoff frontmatter:
    - set `updated` to the current timestamp
    - increment `handoffCount`
-5. Update acceptance criteria checkboxes in `assignment.md` to match reality.
+5. Update acceptance criteria and todo checkboxes in `assignment.md` to match reality. Do NOT modify superseded todo lines (those matching `- [x] ~~...~~ (superseded by ...)`).
 6. If `.syntaur/context.json` includes `sessionId`, mark that session as completed through the dashboard API:
 
 ```bash

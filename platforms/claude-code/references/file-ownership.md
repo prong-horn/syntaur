@@ -16,8 +16,8 @@ You may ONLY write to files inside your assigned assignment folder:
 
 | File | Purpose |
 |------|---------|
-| `assignment.md` | Assignment record, source of truth for state |
-| `plan.md` | Your implementation plan |
+| `assignment.md` | Assignment record, source of truth for state (includes `## Todos` checklist) |
+| `plan*.md` | Versioned implementation plans (optional, 0 or more: `plan.md`, `plan-v2.md`, ...) — each linked from a todo in `assignment.md` |
 | `scratchpad.md` | Working notes |
 | `handoff.md` | Append-only handoff log |
 | `decision-record.md` | Append-only decision log |

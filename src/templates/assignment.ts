@@ -54,6 +54,16 @@ tags: []
 - [ ] <!-- criterion 2 -->
 - [ ] <!-- criterion 3 -->
 
+## Todos
+
+<!--
+Checklist of work items for this assignment. Items may be simple tasks
+or a markdown link to a plan file (e.g., "- [ ] Execute [plan](./plan.md)").
+When a plan is superseded by a new one, mark the old todo as:
+  - [x] ~~Execute [old plan](./plan.md)~~ (superseded by plan-v2)
+Never delete superseded todos — preserve the history.
+-->
+
 ## Context
 
 <!-- Links to relevant docs, code, or other assignments. -->
@@ -68,7 +78,6 @@ No progress yet.
 
 ## Links
 
-- [Plan](./plan.md)
 - [Scratchpad](./scratchpad.md)
 - [Handoff](./handoff.md)
 - [Decision Record](./decision-record.md)
