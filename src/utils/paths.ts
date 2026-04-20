@@ -9,6 +9,10 @@ export function expandHome(p: string): string {
 }
 
 export function syntaurRoot(): string {
+  const override = process.env.SYNTAUR_HOME;
+  if (override && override.length > 0) {
+    return resolve(expandHome(override));
+  }
   return resolve(homedir(), '.syntaur');
 }
 

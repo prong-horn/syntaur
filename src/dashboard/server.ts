@@ -1,8 +1,8 @@
 import express from 'express';
 import { createServer } from 'node:http';
 import { resolve } from 'node:path';
-import { homedir } from 'node:os';
 import { writeFile, unlink } from 'node:fs/promises';
+import { syntaurRoot } from '../utils/paths.js';
 import { WebSocketServer, WebSocket } from 'ws';
 import {
   listMissions,
@@ -346,7 +346,7 @@ export function createDashboardServer(options: DashboardServerOptions) {
           }
         });
         server.listen(port, () => {
-          const portFile = resolve(homedir(), '.syntaur', 'dashboard-port');
+          const portFile = resolve(syntaurRoot(), 'dashboard-port');
           writeFile(portFile, String(port), 'utf-8').catch(() => {});
           resolvePromise();
         });
@@ -363,7 +363,7 @@ export function createDashboardServer(options: DashboardServerOptions) {
         client.terminate();
       }
       clients.clear();
-      const portFile = resolve(homedir(), '.syntaur', 'dashboard-port');
+      const portFile = resolve(syntaurRoot(), 'dashboard-port');
       await unlink(portFile).catch(() => {});
       server.closeAllConnections?.();
       return new Promise<void>((resolvePromise) => {
