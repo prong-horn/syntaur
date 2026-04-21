@@ -97,6 +97,7 @@ const [search, setSearch] = useState('');
         session.sessionId,
         session.path,
         session.description ?? '',
+        session.transcriptPath ?? '',
       ]
         .join(' ')
         .toLowerCase();
@@ -252,6 +253,7 @@ const [search, setSearch] = useState('');
                 <th className="pb-2 pr-3">Session ID</th>
                 <th className="pb-2 pr-3">Started</th>
                 <th className="pb-2 pr-3">Path</th>
+                <th className="pb-2 pr-3">Transcript</th>
                 <th className="w-8 pb-2"></th>
               </tr>
             </thead>
@@ -319,6 +321,9 @@ function SessionRow({
   const shortPath = session.path
     ? session.path.replace(/^\/Users\/[^/]+/, '~')
     : '\u2014';
+  const shortTranscript = session.transcriptPath
+    ? session.transcriptPath.replace(/^\/Users\/[^/]+/, '~')
+    : '\u2014';
 
   return (
     <tr className="border-b border-border/20 last:border-0">
@@ -332,6 +337,10 @@ function SessionRow({
           <Link to={`${wsPrefix}/projects/${session.projectSlug}`} className="text-primary hover:underline">
             {toTitleCase(session.projectSlug)}
           </Link>
+        ) : session.assignmentSlug ? (
+          <span className="rounded bg-neutral-800 px-1.5 py-0.5 text-[10px] font-mono uppercase tracking-wide text-neutral-300">
+            Standalone
+          </span>
         ) : (
           <span className="text-muted-foreground">&mdash;</span>
         )}
@@ -345,7 +354,12 @@ function SessionRow({
             {toTitleCase(session.assignmentSlug)}
           </Link>
         ) : session.assignmentSlug ? (
-          <span>{toTitleCase(session.assignmentSlug)}</span>
+          <Link
+            to={`/assignments/${session.assignmentSlug}`}
+            className="text-primary hover:underline font-mono"
+          >
+            {session.assignmentSlug}
+          </Link>
         ) : (
           <span className="text-muted-foreground">&mdash;</span>
         )}
@@ -383,6 +397,21 @@ function SessionRow({
           </span>
           {session.path && <CopyButton value={session.path} />}
         </span>
+      </td>
+      <td className="max-w-[260px] py-2 pr-3">
+        {session.transcriptPath ? (
+          <span className="inline-flex items-center gap-1.5">
+            <span
+              className="truncate font-mono text-xs text-muted-foreground"
+              title={session.transcriptPath}
+            >
+              {shortTranscript}
+            </span>
+            <CopyButton value={session.transcriptPath} />
+          </span>
+        ) : (
+          <span className="text-muted-foreground">&mdash;</span>
+        )}
       </td>
       <td className="py-2">
         <button

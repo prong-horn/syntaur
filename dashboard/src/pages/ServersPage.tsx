@@ -56,7 +56,9 @@ export function ServersPage() {
     return data.sessions.filter((session) =>
       session.windows.some((win) =>
         win.panes.some((pane) =>
-          pane.assignment && workspaceProjects.has(pane.assignment.project),
+          pane.assignment
+          && pane.assignment.project !== null
+          && workspaceProjects.has(pane.assignment.project),
         ),
       ),
     );
@@ -296,11 +298,20 @@ function PaneRow({
       <div className="ml-auto shrink-0">
         {pane.assignment ? (
           <Link
-            to={`${wsPrefix}/projects/${pane.assignment.project}/assignments/${pane.assignment.slug}`}
+            to={
+              pane.assignment.project === null
+                ? `/assignments/${pane.assignment.slug}`
+                : `${wsPrefix}/projects/${pane.assignment.project}/assignments/${pane.assignment.slug}`
+            }
             className="inline-flex items-center gap-1 rounded border border-primary/30 bg-primary/10 px-1.5 py-0.5 text-xs font-medium text-primary hover:bg-primary/20"
           >
             <LinkIcon className="h-2.5 w-2.5" />
             {pane.assignment.title}
+            {pane.assignment.project === null ? (
+              <span className="ml-1 rounded bg-neutral-800/70 px-1 py-0.5 text-[9px] uppercase tracking-wide text-neutral-400">
+                Standalone
+              </span>
+            ) : null}
           </Link>
         ) : (
           <span className="text-xs text-muted-foreground/40">unlinked</span>

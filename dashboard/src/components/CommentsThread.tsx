@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { CheckCircle2, Circle, Reply } from 'lucide-react';
 import { MarkdownRenderer } from './MarkdownRenderer';
 import { SectionCard } from './SectionCard';
@@ -8,7 +8,9 @@ import type { AssignmentCommentEntry } from '../hooks/useProjects';
 type CommentType = 'note' | 'question' | 'feedback';
 
 interface CommentsThreadProps {
-  projectSlug: string;
+  /** `null` for standalone assignments — uses the /api/assignments/:id/comments route. */
+  projectSlug: string | null;
+  /** Project-nested: the assignment slug. Standalone: the UUID. */
   assignmentSlug: string;
   entries: AssignmentCommentEntry[];
 }
@@ -35,8 +37,19 @@ function buildThread(entries: AssignmentCommentEntry[]): ThreadNode[] {
   return roots;
 }
 
+function buildCommentBase(projectSlug: string | null, assignmentSlug: string): string {
+  return projectSlug === null
+    ? `/api/assignments/${encodeURIComponent(assignmentSlug)}/comments`
+    : `/api/projects/${encodeURIComponent(projectSlug)}/assignments/${encodeURIComponent(assignmentSlug)}/comments`;
+}
+
 export function CommentsThread({ projectSlug, assignmentSlug, entries }: CommentsThreadProps) {
-  const tree = useMemo(() => buildThread(entries), [entries]);
+  const [localEntries, setLocalEntries] = useState<AssignmentCommentEntry[]>(entries);
+  useEffect(() => {
+    setLocalEntries(entries);
+  }, [entries]);
+
+  const tree = useMemo(() => buildThread(localEntries), [localEntries]);
   const [newBody, setNewBody] = useState('');
   const [newType, setNewType] = useState<CommentType>('note');
   const [submitting, setSubmitting] = useState(false);
@@ -47,45 +60,74 @@ export function CommentsThread({ projectSlug, assignmentSlug, entries }: Comment
     if (!newBody.trim()) return;
     setSubmitting(true);
     setError(null);
+
+    // Optimistic append.
+    const tempId = `tmp-${Date.now()}`;
+    const optimistic: AssignmentCommentEntry = {
+      id: tempId,
+      timestamp: new Date().toISOString(),
+      author: 'human',
+      type: newType,
+      body: newBody,
+      resolved: newType === 'question' ? false : undefined,
+    };
+    setLocalEntries((prev) => [...prev, optimistic]);
+
     try {
-      const res = await fetch(
-        `/api/projects/${encodeURIComponent(projectSlug)}/assignments/${encodeURIComponent(assignmentSlug)}/comments`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ body: newBody, type: newType }),
-        },
-      );
+      const res = await fetch(buildCommentBase(projectSlug, assignmentSlug), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ body: newBody, type: newType }),
+      });
       if (!res.ok) {
         const msg = await res.text();
         throw new Error(msg || `HTTP ${res.status}`);
       }
+      const payload = (await res.json().catch(() => null)) as
+        | { comment?: { id?: string } }
+        | null;
+      const realId = payload?.comment?.id;
+
+      // Replace optimistic entry's id with the server's, if returned.
+      setLocalEntries((prev) =>
+        prev.map((e) => (e.id === tempId ? { ...e, id: realId ?? e.id } : e)),
+      );
       setNewBody('');
-      // Force a refetch of the assignment detail
+      // Hint the outer page to refetch for canonical state (timestamp, entryCount).
       window.dispatchEvent(new CustomEvent('syntaur-refresh'));
-      // Fallback: reload the page so the new comment appears
-      window.location.reload();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
+      // Roll back the optimistic entry on error.
+      setLocalEntries((prev) => prev.filter((entry) => entry.id !== tempId));
     } finally {
       setSubmitting(false);
     }
   }
 
   async function toggleResolved(commentId: string, next: boolean) {
+    // Optimistic flip.
+    setLocalEntries((prev) =>
+      prev.map((e) => (e.id === commentId ? { ...e, resolved: next } : e)),
+    );
+
     try {
-      const res = await fetch(
-        `/api/projects/${encodeURIComponent(projectSlug)}/assignments/${encodeURIComponent(assignmentSlug)}/comments/${encodeURIComponent(commentId)}/resolved`,
-        {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ resolved: next }),
-        },
-      );
+      const url =
+        projectSlug === null
+          ? `/api/assignments/${encodeURIComponent(assignmentSlug)}/comments/${encodeURIComponent(commentId)}/resolved`
+          : `/api/projects/${encodeURIComponent(projectSlug)}/assignments/${encodeURIComponent(assignmentSlug)}/comments/${encodeURIComponent(commentId)}/resolved`;
+      const res = await fetch(url, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ resolved: next }),
+      });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      window.location.reload();
+      window.dispatchEvent(new CustomEvent('syntaur-refresh'));
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
+      // Roll back on error.
+      setLocalEntries((prev) =>
+        prev.map((entry) => (entry.id === commentId ? { ...entry, resolved: !next } : entry)),
+      );
     }
   }
 

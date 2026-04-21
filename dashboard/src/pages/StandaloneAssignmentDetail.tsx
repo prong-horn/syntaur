@@ -7,6 +7,7 @@ import { ContentTabs } from '../components/ContentTabs';
 import { SectionCard } from '../components/SectionCard';
 import { MarkdownRenderer } from '../components/MarkdownRenderer';
 import { EmptyState } from '../components/EmptyState';
+import { CommentsThread } from '../components/CommentsThread';
 
 /**
  * Read-and-edit view for standalone assignments (those at
@@ -124,16 +125,11 @@ export function StandaloneAssignmentDetail() {
             count: assignment.comments?.entryCount ?? 0,
             content: (
               <div className="space-y-5">
-                {assignment.comments && assignment.comments.entries.length > 0 ? (
-                  // For standalone assignments the CommentsThread component currently
-                  // builds project-nested URLs; use the minimal list view here.
-                  <StandaloneCommentsList entries={assignment.comments.entries} />
-                ) : (
-                  <EmptyState
-                    title="No comments yet"
-                    description={'Use `syntaur comment <uuid> "body" --type ...` to post.'}
-                  />
-                )}
+                <CommentsThread
+                  projectSlug={null}
+                  assignmentSlug={assignment.id}
+                  entries={assignment.comments?.entries ?? []}
+                />
               </div>
             ),
           },
@@ -249,38 +245,3 @@ export function StandaloneAssignmentDetail() {
   );
 }
 
-function StandaloneCommentsList({ entries }: { entries: any[] }) {
-  return (
-    <SectionCard title="Comments">
-      <ul className="space-y-3">
-        {entries.map((c) => (
-          <li key={c.id} className="border-l-2 border-neutral-700 pl-3">
-            <div className="flex flex-wrap items-center gap-2 text-xs text-neutral-400">
-              <span className="font-mono">{c.id}</span>
-              <span>·</span>
-              <span>{c.timestamp}</span>
-              <span>·</span>
-              <span className="font-medium text-neutral-200">{c.author}</span>
-              <span>·</span>
-              <span className="rounded bg-neutral-800 px-1.5 py-0.5 font-mono text-[10px] uppercase">
-                {c.type}
-              </span>
-              {c.type === 'question' ? (
-                <span
-                  className={
-                    c.resolved
-                      ? 'rounded bg-emerald-900/40 px-1.5 py-0.5 text-[10px] text-emerald-200'
-                      : 'rounded bg-amber-900/40 px-1.5 py-0.5 text-[10px] text-amber-200'
-                  }
-                >
-                  {c.resolved ? 'resolved' : 'open'}
-                </span>
-              ) : null}
-            </div>
-            <MarkdownRenderer content={c.body} />
-          </li>
-        ))}
-      </ul>
-    </SectionCard>
-  );
-}

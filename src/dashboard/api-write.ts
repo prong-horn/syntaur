@@ -848,7 +848,7 @@ export function createWriteRouter(projectsDir: string, assignmentsDir?: string):
 
       // Toggle the `**Resolved:**` line in the entry's block.
       const entryBlockRegex = new RegExp(
-        `(^## ${commentId.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\$&')}[\\s\\S]*?)(\\*\\*Resolved:\\*\\*\\s*(?:true|false))`,
+        `(^## ${commentId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}[\\s\\S]*?)(\\*\\*Resolved:\\*\\*\\s*(?:true|false))`,
         'm',
       );
       const next = content.replace(
@@ -1646,7 +1646,7 @@ async function toggleCommentResolvedAt(
     return;
   }
   const entryBlockRegex = new RegExp(
-    `(^## ${commentId.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\$&')}[\\s\\S]*?)(\\*\\*Resolved:\\*\\*\\s*(?:true|false))`,
+    `(^## ${commentId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}[\\s\\S]*?)(\\*\\*Resolved:\\*\\*\\s*(?:true|false))`,
     'm',
   );
   const next = content.replace(entryBlockRegex, (_m, preamble) => `${preamble}**Resolved:** ${desired ? 'true' : 'false'}`);

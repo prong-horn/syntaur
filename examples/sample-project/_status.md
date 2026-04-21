@@ -44,4 +44,4 @@ graph TD
 
 - **0 blocked** assignments
 - **0 failed** assignments
-- **1 unanswered** question in [implement-jwt-middleware](./assignments/implement-jwt-middleware/assignment.md)
+- **1 open** question in [implement-jwt-middleware/comments.md](./assignments/implement-jwt-middleware/comments.md)

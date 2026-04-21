@@ -8,3 +8,7 @@ dashboard/node_modules/
 .syntaur/context.json
 .claude/
 .playwright-mcp/
+
+# Ad-hoc screenshots and pack artifacts at repo root
+/*.png
+/*.tgz
