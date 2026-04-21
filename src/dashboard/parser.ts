@@ -351,6 +351,41 @@ export function parseDecisionRecord(fileContent: string): ParsedDecisionRecord {
   };
 }
 
+// --- Progress Parser ---
+
+export interface ProgressEntry {
+  timestamp: string;
+  body: string;
+}
+
+export interface ParsedProgress {
+  assignment: string;
+  entryCount: number;
+  updated: string;
+  entries: ProgressEntry[];
+  body: string;
+}
+
+export function parseProgress(fileContent: string): ParsedProgress {
+  const [fm, body] = extractFrontmatter(fileContent);
+  const entries: ProgressEntry[] = [];
+  const sections = body.split(/^## /m).slice(1);
+  for (const section of sections) {
+    const newlineIdx = section.indexOf('\n');
+    if (newlineIdx === -1) continue;
+    const timestamp = section.slice(0, newlineIdx).trim();
+    const entryBody = section.slice(newlineIdx + 1).trim();
+    entries.push({ timestamp, body: entryBody });
+  }
+  return {
+    assignment: getField(fm, 'assignment') ?? '',
+    entryCount: parseInt(getField(fm, 'entryCount') ?? '0', 10),
+    updated: getField(fm, 'updated') ?? '',
+    entries,
+    body,
+  };
+}
+
 // --- Resource Parser ---
 
 export interface ParsedResource {

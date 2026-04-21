@@ -10,6 +10,7 @@ import {
   renderScratchpad,
   renderHandoff,
   renderDecisionRecord,
+  renderProgress,
 } from '../templates/index.js';
 
 export interface CreateAssignmentOptions {
@@ -181,6 +182,13 @@ export async function createAssignmentCommand(
         timestamp,
       }),
     ],
+    [
+      resolve(assignmentDir, 'progress.md'),
+      renderProgress({
+        assignment: companionAssignmentRef,
+        timestamp,
+      }),
+    ],
   ];
 
   for (const [filePath, content] of files) {
@@ -214,6 +222,7 @@ export async function createAssignmentCommand(
   console.log(`    scratchpad.md`);
   console.log(`    handoff.md`);
   console.log(`    decision-record.md`);
+  console.log(`    progress.md`);
   console.log(
     `  Plan files (plan.md, plan-v2.md, ...) are created on demand by /plan-assignment.`,
   );

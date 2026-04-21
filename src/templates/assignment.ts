@@ -78,12 +78,9 @@ Never delete superseded todos — preserve the history.
 
 No questions yet.
 
-## Progress
-
-No progress yet.
-
 ## Links
 
+- [Progress](./progress.md)
 - [Scratchpad](./scratchpad.md)
 - [Handoff](./handoff.md)
 - [Decision Record](./decision-record.md)

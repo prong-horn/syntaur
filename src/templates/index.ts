@@ -19,6 +19,9 @@ export type { ScratchpadParams } from './scratchpad.js';
 export { renderHandoff } from './handoff.js';
 export type { HandoffParams } from './handoff.js';
 
+export { renderProgress, formatProgressEntry } from './progress.js';
+export type { ProgressParams } from './progress.js';
+
 export { renderDecisionRecord } from './decision-record.js';
 export type { DecisionRecordParams } from './decision-record.js';
 
