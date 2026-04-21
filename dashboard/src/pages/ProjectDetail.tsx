@@ -366,7 +366,7 @@ export function ProjectDetail() {
               </div>
               <div className="flex items-center justify-between">
                 <dt className="text-muted-foreground">Unanswered questions</dt>
-                <dd className="font-semibold text-foreground">{project.needsAttention.unansweredQuestions}</dd>
+                <dd className="font-semibold text-foreground">{project.needsAttention.openQuestions}</dd>
               </div>
             </dl>
           </SectionCard>

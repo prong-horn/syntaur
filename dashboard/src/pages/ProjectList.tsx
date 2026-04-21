@@ -382,7 +382,7 @@ function getAttentionScore(project: ProjectSummary): number {
   return (
     project.needsAttention.failedCount * 10 +
     project.needsAttention.blockedCount * 5 +
-    project.needsAttention.unansweredQuestions
+    project.needsAttention.openQuestions
   );
 }
 

@@ -22,6 +22,9 @@ export type { HandoffParams } from './handoff.js';
 export { renderProgress, formatProgressEntry } from './progress.js';
 export type { ProgressParams } from './progress.js';
 
+export { renderComments, formatCommentEntry } from './comments.js';
+export type { CommentsParams, Comment, CommentType } from './comments.js';
+
 export { renderDecisionRecord } from './decision-record.js';
 export type { DecisionRecordParams } from './decision-record.js';
 

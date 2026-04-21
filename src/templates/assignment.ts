@@ -74,13 +74,10 @@ Never delete superseded todos — preserve the history.
 
 <!-- Links to relevant docs, code, or other assignments. -->
 
-## Questions & Answers
-
-No questions yet.
-
 ## Links
 
 - [Progress](./progress.md)
+- [Comments](./comments.md)
 - [Scratchpad](./scratchpad.md)
 - [Handoff](./handoff.md)
 - [Decision Record](./decision-record.md)

@@ -9,7 +9,7 @@ export type ProgressCounts = Record<string, number> & { total: number };
 export interface NeedsAttention {
   blockedCount: number;
   failedCount: number;
-  unansweredQuestions: number;
+  openQuestions: number;
 }
 
 export interface ProjectSummary {

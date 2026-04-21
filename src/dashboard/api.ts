@@ -842,17 +842,17 @@ function buildProjectRollup(
 } {
   const progress: ProgressCounts = { total: assignments.length };
 
-  let unansweredQuestions = 0;
+  let openQuestions = 0;
   for (const assignment of assignments) {
     const s = assignment.status;
     progress[s] = (progress[s] ?? 0) + 1;
-    unansweredQuestions += countPendingAnswers(assignment.body);
+    openQuestions += countPendingAnswers(assignment.body);
   }
 
   const needsAttention: NeedsAttention = {
     blockedCount: progress['blocked'] ?? 0,
     failedCount: progress['failed'] ?? 0,
-    unansweredQuestions,
+    openQuestions,
   };
 
   let status = 'pending';

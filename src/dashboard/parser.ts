@@ -123,7 +123,7 @@ export interface ParsedStatus {
   needsAttention: {
     blockedCount: number;
     failedCount: number;
-    unansweredQuestions: number;
+    openQuestions: number;
   };
   body: string;
 }
@@ -151,7 +151,7 @@ export function parseStatus(fileContent: string): ParsedStatus {
     needsAttention: {
       blockedCount: parseInt(getNestedField(fm, 'needsAttention', 'blockedCount') ?? '0', 10),
       failedCount: parseInt(getNestedField(fm, 'needsAttention', 'failedCount') ?? '0', 10),
-      unansweredQuestions: parseInt(getNestedField(fm, 'needsAttention', 'unansweredQuestions') ?? '0', 10),
+      openQuestions: parseInt(getNestedField(fm, 'needsAttention', 'openQuestions') ?? '0', 10),
     },
     body,
   };
@@ -347,6 +347,60 @@ export function parseDecisionRecord(fileContent: string): ParsedDecisionRecord {
     assignment: getField(fm, 'assignment') ?? '',
     decisionCount: parseInt(getField(fm, 'decisionCount') ?? '0', 10),
     updated: getField(fm, 'updated') ?? '',
+    body,
+  };
+}
+
+// --- Comments Parser ---
+
+export interface ParsedComment {
+  id: string;
+  timestamp: string;
+  author: string;
+  type: 'question' | 'note' | 'feedback';
+  body: string;
+  replyTo?: string;
+  resolved?: boolean;
+}
+
+export interface ParsedComments {
+  assignment: string;
+  entryCount: number;
+  updated: string;
+  entries: ParsedComment[];
+  body: string;
+}
+
+export function parseComments(fileContent: string): ParsedComments {
+  const [fm, body] = extractFrontmatter(fileContent);
+  const entries: ParsedComment[] = [];
+  const sections = body.split(/^## /m).slice(1);
+  for (const section of sections) {
+    const newlineIdx = section.indexOf('\n');
+    if (newlineIdx === -1) continue;
+    const id = section.slice(0, newlineIdx).trim();
+    const rest = section.slice(newlineIdx + 1);
+    const headerMatch = rest.match(
+      /^\s*\*\*Recorded:\*\*\s*(.*)\n\*\*Author:\*\*\s*(.*)\n\*\*Type:\*\*\s*(question|note|feedback)(?:\n\*\*Reply to:\*\*\s*(.*))?(?:\n\*\*Resolved:\*\*\s*(true|false))?\n+([\s\S]*)$/,
+    );
+    if (!headerMatch) continue;
+    const [, timestamp, author, type, replyTo, resolvedStr, entryBody] = headerMatch;
+    const entry: ParsedComment = {
+      id,
+      timestamp: timestamp.trim(),
+      author: author.trim(),
+      type: type as 'question' | 'note' | 'feedback',
+      body: entryBody.trim(),
+    };
+    if (replyTo) entry.replyTo = replyTo.trim();
+    if (resolvedStr) entry.resolved = resolvedStr === 'true';
+    entries.push(entry);
+  }
+  return {
+    assignment: getField(fm, 'assignment') ?? '',
+    entryCount: parseInt(getField(fm, 'entryCount') ?? '0', 10),
+    updated: getField(fm, 'updated') ?? '',
+    entries,
     body,
   };
 }

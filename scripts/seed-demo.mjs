@@ -169,7 +169,7 @@ progress:
 needsAttention:
   blockedCount: ${blockedCount}
   failedCount: ${failedCount}
-  unansweredQuestions: 0
+  openQuestions: 0
 ---
 
 # Project Status: ${project.title}

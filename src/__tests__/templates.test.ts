@@ -156,10 +156,11 @@ describe('renderAssignment', () => {
     expect(out).toContain('## Acceptance Criteria');
     expect(out).toContain('## Todos');
     expect(out).toContain('## Context');
-    expect(out).toContain('## Questions & Answers');
+    expect(out).not.toContain('## Questions & Answers');
     expect(out).not.toContain('## Progress');
     expect(out).toContain('## Links');
     expect(out).toContain('(./progress.md)');
+    expect(out).toContain('(./comments.md)');
     expect(out).not.toContain('- [Plan](./plan.md)');
     expect(out).toContain('(./scratchpad.md)');
     expect(out).toContain('(./handoff.md)');
@@ -242,7 +243,7 @@ describe('renderStatus', () => {
     expect(out).toContain('total: 0');
     expect(out).toContain('blockedCount: 0');
     expect(out).toContain('failedCount: 0');
-    expect(out).toContain('unansweredQuestions: 0');
+    expect(out).toContain('openQuestions: 0');
   });
 
   it('uses title in heading, not slug', () => {

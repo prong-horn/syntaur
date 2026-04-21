@@ -745,7 +745,7 @@ The project status rollup. Contains the computed overall status, progress counte
 | `needsAttention` | object | see sub-fields | required | — | Items requiring human action. |
 | `needsAttention.blockedCount` | number (integer) | >= 0 | required | — | Assignments currently blocked. |
 | `needsAttention.failedCount` | number (integer) | >= 0 | required | — | Assignments that have failed. |
-| `needsAttention.unansweredQuestions` | number (integer) | >= 0 | required | — | Total unanswered Q&A entries across all assignments. |
+| `needsAttention.openQuestions` | number (integer) | >= 0 | required | — | Total unanswered Q&A entries across all assignments. |
 
 ### Project Status Rollup Algorithm
 
@@ -800,7 +800,7 @@ progress:
 needsAttention:
   blockedCount: 0
   failedCount: 0
-  unansweredQuestions: 1
+  openQuestions: 1
 ---
 
 # Project Status: Build Authentication System

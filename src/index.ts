@@ -23,6 +23,7 @@ import { listPlaybooksCommand } from './commands/list-playbooks.js';
 import { todoCommand } from './commands/todo.js';
 import { backupCommand } from './commands/backup.js';
 import { doctorCommand } from './commands/doctor.js';
+import { commentCommand } from './commands/comment.js';
 import { getDefaultCommandName } from './cli-default-command.js';
 import { maybePromptInstall } from './utils/npx-prompt.js';
 import { readPackageVersion } from './utils/version.js';
@@ -91,6 +92,28 @@ program
   .action(async (title, options) => {
     try {
       await createAssignmentCommand(title, options);
+    } catch (error) {
+      console.error(
+        'Error:',
+        error instanceof Error ? error.message : String(error),
+      );
+      process.exit(1);
+    }
+  });
+
+program
+  .command('comment')
+  .description('Add a comment to an assignment (CLI-mediated, append-only)')
+  .argument('<assignment>', 'Target assignment slug (with --project) or UUID (standalone)')
+  .argument('<text>', 'Comment body')
+  .option('--project <slug>', 'Project slug if the target is project-nested')
+  .option('--reply-to <id>', 'ID of the comment this replies to')
+  .option('--type <type>', 'Comment type: question | note | feedback', 'note')
+  .option('--author <name>', 'Override author (default: $USER or "unknown")')
+  .option('--dir <path>', 'Override default project directory')
+  .action(async (assignment, text, options) => {
+    try {
+      await commentCommand(assignment, text, options);
     } catch (error) {
       console.error(
         'Error:',

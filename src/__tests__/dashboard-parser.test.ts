@@ -83,7 +83,7 @@ progress:
 needsAttention:
   blockedCount: 0
   failedCount: 0
-  unansweredQuestions: 1
+  openQuestions: 1
 ---
 
 # Project Status`;
@@ -101,7 +101,7 @@ needsAttention:
   it('parses needsAttention counts', () => {
     const status = parseStatus(STATUS_MD);
     expect(status.needsAttention.blockedCount).toBe(0);
-    expect(status.needsAttention.unansweredQuestions).toBe(1);
+    expect(status.needsAttention.openQuestions).toBe(1);
   });
 });
 

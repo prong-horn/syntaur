@@ -114,7 +114,8 @@ describe('createAssignmentCommand', () => {
     expect(files).toContain('handoff.md');
     expect(files).toContain('decision-record.md');
     expect(files).toContain('progress.md');
-    expect(files.length).toBe(5);
+    expect(files).toContain('comments.md');
+    expect(files.length).toBe(6);
 
     const content = await readFile(
       resolve(assignmentDir, 'assignment.md'),

@@ -197,7 +197,7 @@ progress:
 needsAttention:
   blockedCount: 0
   failedCount: 0
-  unansweredQuestions: 0
+  openQuestions: 0
 ---
 
 # Status`;
@@ -210,7 +210,7 @@ needsAttention:
     expect(result).toHaveLength(1);
     expect(result[0].status).toBe('active');
     expect(result[0].progress.in_progress).toBe(1);
-    expect(result[0].needsAttention.unansweredQuestions).toBe(1);
+    expect(result[0].needsAttention.openQuestions).toBe(1);
   });
 });
 

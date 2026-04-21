@@ -67,7 +67,7 @@ progress:
 needsAttention:
   blockedCount: 0
   failedCount: 0
-  unansweredQuestions: 0
+  openQuestions: 0
 ---
 
 # Project Status: ${params.title}

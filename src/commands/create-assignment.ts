@@ -11,6 +11,7 @@ import {
   renderHandoff,
   renderDecisionRecord,
   renderProgress,
+  renderComments,
 } from '../templates/index.js';
 
 export interface CreateAssignmentOptions {
@@ -189,6 +190,13 @@ export async function createAssignmentCommand(
         timestamp,
       }),
     ],
+    [
+      resolve(assignmentDir, 'comments.md'),
+      renderComments({
+        assignment: companionAssignmentRef,
+        timestamp,
+      }),
+    ],
   ];
 
   for (const [filePath, content] of files) {
@@ -223,6 +231,7 @@ export async function createAssignmentCommand(
   console.log(`    handoff.md`);
   console.log(`    decision-record.md`);
   console.log(`    progress.md`);
+  console.log(`    comments.md`);
   console.log(
     `  Plan files (plan.md, plan-v2.md, ...) are created on demand by /plan-assignment.`,
   );

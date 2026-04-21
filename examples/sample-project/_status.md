@@ -13,7 +13,7 @@ progress:
 needsAttention:
   blockedCount: 0
   failedCount: 0
-  unansweredQuestions: 1
+  openQuestions: 1
 ---
 
 # Project Status: Build Authentication System
