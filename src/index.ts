@@ -24,6 +24,7 @@ import { todoCommand } from './commands/todo.js';
 import { backupCommand } from './commands/backup.js';
 import { doctorCommand } from './commands/doctor.js';
 import { commentCommand } from './commands/comment.js';
+import { requestCommand } from './commands/request.js';
 import { getDefaultCommandName } from './cli-default-command.js';
 import { maybePromptInstall } from './utils/npx-prompt.js';
 import { readPackageVersion } from './utils/version.js';
@@ -114,6 +115,26 @@ program
   .action(async (assignment, text, options) => {
     try {
       await commentCommand(assignment, text, options);
+    } catch (error) {
+      console.error(
+        'Error:',
+        error instanceof Error ? error.message : String(error),
+      );
+      process.exit(1);
+    }
+  });
+
+program
+  .command('request')
+  .description('Append a todo to another assignment (cross-assignment work request)')
+  .argument('<target>', 'Target assignment slug (with --project) or UUID (standalone)')
+  .argument('<text>', 'Todo text')
+  .option('--project <slug>', 'Project slug if the target is project-nested')
+  .option('--from <source>', 'Source assignment (default: $SYNTAUR_ASSIGNMENT)')
+  .option('--dir <path>', 'Override default project directory')
+  .action(async (target, text, options) => {
+    try {
+      await requestCommand(target, text, options);
     } catch (error) {
       console.error(
         'Error:',
