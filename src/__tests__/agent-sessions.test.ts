@@ -87,6 +87,23 @@ describe('appendSession + listAllSessions', () => {
     expect(all[0].description).toBeNull();
   });
 
+  it('stores and returns transcriptPath on round-trip', async () => {
+    const session = makeSession({ transcriptPath: '/tmp/agent-transcript.jsonl' });
+    await appendSession('', session);
+
+    const all = await listAllSessions('');
+    expect(all).toHaveLength(1);
+    expect(all[0].transcriptPath).toBe('/tmp/agent-transcript.jsonl');
+  });
+
+  it('returns null transcriptPath when not provided', async () => {
+    const session = makeSession();
+    await appendSession('', session);
+
+    const all = await listAllSessions('');
+    expect(all[0].transcriptPath).toBeNull();
+  });
+
   it('returns sessions ordered by started DESC', async () => {
     await appendSession('', makeSession({ sessionId: 's1', started: '2026-03-26T09:00:00Z' }));
     await appendSession('', makeSession({ sessionId: 's2', started: '2026-03-26T11:00:00Z' }));
@@ -312,5 +329,117 @@ activeSessions: 1
 
     const all = await listAllSessions('');
     expect(all).toHaveLength(1); // only the original session
+  });
+});
+
+describe('v2 -> v3 schema migration (adds transcript_path)', () => {
+  it('preserves existing rows and exposes transcriptPath as null; table has transcript_path column', async () => {
+    // beforeEach already created a v3 db at dbPath. Tear it down and reseed
+    // from scratch as if this were an older v2 installation.
+    closeSessionDb();
+    resetSessionDb();
+    await rm(dbPath, { force: true });
+    const { default: Database } = await import('better-sqlite3');
+    const seedDb = new Database(dbPath);
+    seedDb.pragma('journal_mode = WAL');
+    seedDb.exec(`
+      CREATE TABLE sessions (
+        session_id TEXT PRIMARY KEY,
+        project_slug TEXT,
+        assignment_slug TEXT,
+        agent TEXT NOT NULL,
+        started TEXT NOT NULL,
+        ended TEXT,
+        status TEXT NOT NULL DEFAULT 'active',
+        path TEXT,
+        description TEXT,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+      CREATE INDEX idx_sessions_project ON sessions(project_slug);
+      CREATE INDEX idx_sessions_assignment ON sessions(project_slug, assignment_slug);
+      CREATE INDEX idx_sessions_status ON sessions(status);
+      CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT);
+      INSERT INTO meta (key, value) VALUES ('schema_version', '2');
+      INSERT INTO sessions (session_id, project_slug, assignment_slug, agent, started, status, path, description)
+      VALUES
+        ('legacy-1', 'p1', 'a1', 'claude', '2026-03-26T10:00:00Z', 'active', '/tmp/p1', 'first legacy'),
+        ('legacy-2', 'p2', 'a2', 'codex',  '2026-03-26T11:00:00Z', 'completed', '/tmp/p2', NULL);
+    `);
+    seedDb.close();
+
+    // Re-open via the migration path.
+    initSessionDb(dbPath);
+
+    const all = await listAllSessions('');
+    expect(all).toHaveLength(2);
+    const legacy1 = all.find((s) => s.sessionId === 'legacy-1');
+    const legacy2 = all.find((s) => s.sessionId === 'legacy-2');
+    expect(legacy1?.projectSlug).toBe('p1');
+    expect(legacy1?.description).toBe('first legacy');
+    expect(legacy1?.transcriptPath).toBeNull();
+    expect(legacy2?.agent).toBe('codex');
+    expect(legacy2?.transcriptPath).toBeNull();
+
+    const { getSessionDb } = await import('../dashboard/session-db.js');
+    const db = getSessionDb();
+    const columns = db.prepare('PRAGMA table_info(sessions)').all() as Array<{ name: string }>;
+    const names = columns.map((c) => c.name);
+    expect(names).toContain('transcript_path');
+
+    const version = db
+      .prepare("SELECT value FROM meta WHERE key = 'schema_version'")
+      .get() as { value: string };
+    expect(version.value).toBe('3');
+  });
+});
+
+describe('appendSession upsert semantics', () => {
+  it('second call with same session_id enriches existing row without resetting started', async () => {
+    const base = makeSession({
+      sessionId: 'real-session-123',
+      projectSlug: null,
+      assignmentSlug: null,
+      description: null,
+      transcriptPath: null,
+      started: '2026-03-26T10:00:00Z',
+    });
+    await appendSession('', base);
+
+    const enrich = makeSession({
+      sessionId: 'real-session-123',
+      projectSlug: 'p1',
+      assignmentSlug: 'a1',
+      description: 'attached later',
+      transcriptPath: '/tmp/t.jsonl',
+      started: '2099-12-31T23:59:59Z', // should be ignored by upsert
+    });
+    await appendSession('', enrich);
+
+    const all = await listAllSessions('');
+    expect(all).toHaveLength(1);
+    const row = all[0];
+    expect(row.sessionId).toBe('real-session-123');
+    expect(row.projectSlug).toBe('p1');
+    expect(row.assignmentSlug).toBe('a1');
+    expect(row.description).toBe('attached later');
+    expect(row.transcriptPath).toBe('/tmp/t.jsonl');
+    expect(row.started).toBe('2026-03-26T10:00:00Z'); // preserved from first insert
+  });
+
+  it('does not revive a terminal session via re-registration', async () => {
+    const sid = 'terminal-session-xyz';
+    await appendSession('', makeSession({ sessionId: sid }));
+    await updateSessionStatus('', sid, 'completed');
+
+    await appendSession(
+      '',
+      makeSession({ sessionId: sid, status: 'active' as AgentSessionStatus, description: 'late-arriving' }),
+    );
+
+    const all = await listAllSessions('');
+    expect(all).toHaveLength(1);
+    expect(all[0].status).toBe('completed');
+    expect(all[0].description).toBe('late-arriving'); // fields still merged
   });
 });
