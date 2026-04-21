@@ -51,7 +51,7 @@ if [ ! -f "$CONTEXT_FILE" ]; then
 fi
 
 ASSIGNMENT_DIR=$(jq -r '.assignmentDir // empty' "$CONTEXT_FILE" 2>/dev/null)
-MISSION_DIR=$(jq -r '.missionDir // empty' "$CONTEXT_FILE" 2>/dev/null)
+MISSION_DIR=$(jq -r '.projectDir // empty' "$CONTEXT_FILE" 2>/dev/null)
 WORKSPACE_ROOT=$(jq -r '.workspaceRoot // empty' "$CONTEXT_FILE" 2>/dev/null)
 
 if [ -z "$ASSIGNMENT_DIR" ] || [ -z "$MISSION_DIR" ]; then
@@ -93,7 +93,7 @@ if [ -n "$WORKSPACE_ROOT" ] && [[ "$FILE_PATH" == "$WORKSPACE_ROOT"/* ]]; then
   allow_and_exit
 fi
 
-REASON="Syntaur write boundary violation: Cannot write to '$FILE_PATH'. Allowed paths: assignment dir ($ASSIGNMENT_DIR), mission resources/memories, workspace ($WORKSPACE_ROOT)."
+REASON="Syntaur write boundary violation: Cannot write to '$FILE_PATH'. Allowed paths: assignment dir ($ASSIGNMENT_DIR), project resources/memories, workspace ($WORKSPACE_ROOT)."
 REASON_ESCAPED=$(echo "$REASON" | jq -Rs '.' 2>/dev/null)
 if [ -z "$REASON_ESCAPED" ]; then
   REASON_ESCAPED="\"Syntaur write boundary violation\""

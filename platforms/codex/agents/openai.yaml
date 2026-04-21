@@ -1,7 +1,7 @@
 interface:
   display_name: "Syntaur"
-  short_description: "Mission and assignment workflows for Codex"
-  default_prompt: "Use Syntaur to create missions and assignments, claim work, plan an assignment, or complete a handoff in the current workspace."
+  short_description: "Project and assignment workflows for Codex"
+  default_prompt: "Use Syntaur to create projects and assignments, claim work, plan an assignment, or complete a handoff in the current workspace."
 
 policy:
   allow_implicit_invocation: true

@@ -1,9 +1,9 @@
 import { useState, useEffect } from 'react';
-import { listMissions, getMissionDetail } from '../../dashboard/api.js';
-import type { MissionSummary, MissionDetail } from '../../dashboard/types.js';
+import { listProjects, getProjectDetail } from '../../dashboard/api.js';
+import type { ProjectSummary, ProjectDetail } from '../../dashboard/types.js';
 import type { TreeNode } from '../types.js';
 
-export function useMissions(missionsDir: string) {
+export function useProjects(projectsDir: string) {
   const [nodes, setNodes] = useState<TreeNode[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -13,21 +13,21 @@ export function useMissions(missionsDir: string) {
 
     async function load() {
       try {
-        const missions = await listMissions(missionsDir);
+        const projects = await listProjects(projectsDir);
         const details = await Promise.all(
-          missions.map((m) => getMissionDetail(missionsDir, m.slug)),
+          projects.map((m) => getProjectDetail(projectsDir, m.slug)),
         );
 
         if (cancelled) return;
 
-        const tree: TreeNode[] = missions.map((m, i) => {
+        const tree: TreeNode[] = projects.map((m, i) => {
           const detail = details[i];
           const children: TreeNode[] = (detail?.assignments ?? []).map((a) => ({
             id: `a:${m.slug}:${a.slug}`,
             kind: 'assignment' as const,
             label: a.title,
             slug: a.slug,
-            missionSlug: m.slug,
+            projectSlug: m.slug,
             status: a.status,
             priority: a.priority,
             assignee: a.assignee,
@@ -35,10 +35,10 @@ export function useMissions(missionsDir: string) {
 
           return {
             id: `m:${m.slug}`,
-            kind: 'mission' as const,
+            kind: 'project' as const,
             label: m.title,
             slug: m.slug,
-            missionSlug: m.slug,
+            projectSlug: m.slug,
             status: m.status,
             progress: {
               completed: m.progress.completed,
@@ -62,7 +62,7 @@ export function useMissions(missionsDir: string) {
     return () => {
       cancelled = true;
     };
-  }, [missionsDir]);
+  }, [projectsDir]);
 
   return { nodes, loading, error };
 }

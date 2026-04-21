@@ -12,4 +12,4 @@ The `syntaur setup-adapter cursor` command generates this file
 dynamically at `.cursor/rules/syntaur-protocol.mdc` in your workspace.
 
 See the rendered output by running:
-  syntaur setup-adapter cursor --mission <slug> --assignment <slug>
+  syntaur setup-adapter cursor --project <slug> --assignment <slug>

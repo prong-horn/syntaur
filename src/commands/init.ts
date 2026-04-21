@@ -1,7 +1,7 @@
 import { resolve, dirname } from 'node:path';
 import { readdir, readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
-import { syntaurRoot, defaultMissionDir } from '../utils/paths.js';
+import { syntaurRoot, defaultProjectDir } from '../utils/paths.js';
 import { ensureDir, writeFileSafe, writeFileForce, fileExists } from '../utils/fs.js';
 import { renderConfig } from '../templates/config.js';
 import { rebuildPlaybookManifest } from '../utils/playbooks.js';
@@ -12,29 +12,29 @@ export interface InitOptions {
 
 export async function initCommand(options: InitOptions): Promise<void> {
   const root = syntaurRoot();
-  const missionsDir = defaultMissionDir();
+  const projectsDir = defaultProjectDir();
   const configPath = resolve(root, 'config.md');
 
   const playbooksDir = resolve(root, 'playbooks');
 
   await ensureDir(root);
-  await ensureDir(missionsDir);
+  await ensureDir(projectsDir);
   await ensureDir(playbooksDir);
 
   const configContent = renderConfig({
-    defaultMissionDir: missionsDir,
+    defaultProjectDir: projectsDir,
   });
 
   if (options.force) {
     await writeFileForce(configPath, configContent);
     console.log(`Created ${root}/`);
-    console.log(`Created ${missionsDir}/`);
+    console.log(`Created ${projectsDir}/`);
     console.log(`Created ${playbooksDir}/`);
     console.log(`Wrote ${configPath} (overwritten)`);
   } else {
     const written = await writeFileSafe(configPath, configContent);
     console.log(`Created ${root}/`);
-    console.log(`Created ${missionsDir}/`);
+    console.log(`Created ${projectsDir}/`);
     console.log(`Created ${playbooksDir}/`);
     if (written) {
       console.log(`Wrote ${configPath}`);

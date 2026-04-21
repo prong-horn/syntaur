@@ -12,7 +12,7 @@ export function TreeItem({ node, isSelected }: TreeItemProps) {
   const indent = '  '.repeat(node.depth);
   const statusColor = statusColors[node.status] ?? 'white';
 
-  if (node.kind === 'mission') {
+  if (node.kind === 'project') {
     const chevron = node.expanded ? '▾' : '▸';
     const progressText = node.progress
       ? `${node.progress.completed}/${node.progress.total}`

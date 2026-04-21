@@ -11,10 +11,10 @@ import {
   renderHandoff,
   renderDecisionRecord,
 } from '../templates/index.js';
-import { createMissionCommand } from './create-mission.js';
+import { createProjectCommand } from './create-project.js';
 
 export interface CreateAssignmentOptions {
-  mission?: string;
+  project?: string;
   oneOff?: boolean;
   slug?: string;
   priority?: 'low' | 'medium' | 'high' | 'critical';
@@ -31,20 +31,20 @@ export async function createAssignmentCommand(
     throw new Error('Assignment title cannot be empty.');
   }
 
-  if (!options.mission && !options.oneOff) {
+  if (!options.project && !options.oneOff) {
     throw new Error(
-      'Either --mission <slug> or --one-off is required.',
+      'Either --project <slug> or --one-off is required.',
     );
   }
-  if (options.mission && options.oneOff) {
+  if (options.project && options.oneOff) {
     throw new Error(
-      'Cannot use both --mission and --one-off. Use --mission to add to an existing mission, or --one-off to create a standalone assignment.',
+      'Cannot use both --project and --one-off. Use --project to add to an existing project, or --one-off to create a standalone assignment.',
     );
   }
 
-  if (options.mission && !isValidSlug(options.mission)) {
+  if (options.project && !isValidSlug(options.project)) {
     throw new Error(
-      `Invalid mission slug "${options.mission}". Slugs must be lowercase, hyphen-separated, with no special characters.`,
+      `Invalid project slug "${options.project}". Slugs must be lowercase, hyphen-separated, with no special characters.`,
     );
   }
 
@@ -73,7 +73,7 @@ export async function createAssignmentCommand(
     const parts = link.split('/');
     if (parts.length !== 2 || !parts.every(isValidSlug)) {
       throw new Error(
-        `Invalid link "${link}". Links must be in missionSlug/assignmentSlug format (e.g., "my-mission/my-assignment").`,
+        `Invalid link "${link}". Links must be in projectSlug/assignmentSlug format (e.g., "my-project/my-assignment").`,
       );
     }
   }
@@ -86,38 +86,38 @@ export async function createAssignmentCommand(
     );
   }
 
-  let missionSlug: string;
-  let missionDir: string;
+  let projectSlug: string;
+  let projectDir: string;
 
   const config = await readConfig();
   const baseDir = options.dir
     ? expandHome(options.dir)
-    : config.defaultMissionDir;
+    : config.defaultProjectDir;
 
   if (options.oneOff) {
-    missionSlug = await createMissionCommand(title, {
+    projectSlug = await createProjectCommand(title, {
       slug: assignmentSlug,
       dir: baseDir,
     });
-    missionDir = resolve(baseDir, missionSlug);
+    projectDir = resolve(baseDir, projectSlug);
   } else {
-    missionSlug = options.mission!;
-    missionDir = resolve(baseDir, missionSlug);
+    projectSlug = options.project!;
+    projectDir = resolve(baseDir, projectSlug);
 
-    const missionMdPath = resolve(missionDir, 'mission.md');
-    if (!(await fileExists(missionDir)) || !(await fileExists(missionMdPath))) {
+    const projectMdPath = resolve(projectDir, 'project.md');
+    if (!(await fileExists(projectDir)) || !(await fileExists(projectMdPath))) {
       throw new Error(
-        `Mission "${missionSlug}" not found at ${missionDir}.\nRun 'syntaur create-mission' first or use --one-off.`,
+        `Project "${projectSlug}" not found at ${projectDir}.\nRun 'syntaur create-project' first or use --one-off.`,
       );
     }
 
     if (dependsOn.length > 0) {
-      const assignmentsDir = resolve(missionDir, 'assignments');
+      const assignmentsDir = resolve(projectDir, 'assignments');
       for (const dep of dependsOn) {
         const depDir = resolve(assignmentsDir, dep);
         if (!(await fileExists(depDir))) {
           console.warn(
-            `Warning: dependency "${dep}" does not exist in mission "${missionSlug}" yet.`,
+            `Warning: dependency "${dep}" does not exist in project "${projectSlug}" yet.`,
           );
         }
       }
@@ -125,7 +125,7 @@ export async function createAssignmentCommand(
   }
 
   const assignmentDir = resolve(
-    missionDir,
+    projectDir,
     'assignments',
     assignmentSlug,
   );
@@ -182,7 +182,7 @@ export async function createAssignmentCommand(
   }
 
   console.log(
-    `Created assignment "${title}" in mission "${missionSlug}" at ${assignmentDir}/`,
+    `Created assignment "${title}" in project "${projectSlug}" at ${assignmentDir}/`,
   );
   console.log(`  Slug: ${assignmentSlug}`);
   console.log(`  Priority: ${priority}`);

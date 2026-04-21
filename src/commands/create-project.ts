@@ -7,9 +7,7 @@ import { ensureDir, writeFileForce, fileExists } from '../utils/fs.js';
 import { readConfig } from '../utils/config.js';
 import {
   renderManifest,
-  renderMission,
-  renderAgent,
-  renderClaude,
+  renderProject,
   renderIndexAssignments,
   renderIndexPlans,
   renderIndexDecisions,
@@ -18,18 +16,18 @@ import {
   renderMemoriesIndex,
 } from '../templates/index.js';
 
-export interface CreateMissionOptions {
+export interface CreateProjectOptions {
   slug?: string;
   dir?: string;
   workspace?: string;
 }
 
-export async function createMissionCommand(
+export async function createProjectCommand(
   title: string,
-  options: CreateMissionOptions,
+  options: CreateProjectOptions,
 ): Promise<string> {
   if (!title.trim()) {
-    throw new Error('Mission title cannot be empty.');
+    throw new Error('Project title cannot be empty.');
   }
 
   const slug = options.slug || slugify(title);
@@ -42,61 +40,53 @@ export async function createMissionCommand(
   const config = await readConfig();
   const baseDir = options.dir
     ? expandHome(options.dir)
-    : config.defaultMissionDir;
-  const missionDir = resolve(baseDir, slug);
+    : config.defaultProjectDir;
+  const projectDir = resolve(baseDir, slug);
 
-  if (await fileExists(missionDir)) {
+  if (await fileExists(projectDir)) {
     throw new Error(
-      `Mission folder already exists: ${missionDir}\nUse --slug to specify a different slug.`,
+      `Project folder already exists: ${projectDir}\nUse --slug to specify a different slug.`,
     );
   }
 
   const timestamp = nowTimestamp();
   const id = generateId();
 
-  await ensureDir(resolve(missionDir, 'assignments'));
-  await ensureDir(resolve(missionDir, 'resources'));
-  await ensureDir(resolve(missionDir, 'memories'));
+  await ensureDir(resolve(projectDir, 'assignments'));
+  await ensureDir(resolve(projectDir, 'resources'));
+  await ensureDir(resolve(projectDir, 'memories'));
 
   const files: Array<[string, string]> = [
     [
-      resolve(missionDir, 'manifest.md'),
+      resolve(projectDir, 'manifest.md'),
       renderManifest({ slug, timestamp }),
     ],
     [
-      resolve(missionDir, 'mission.md'),
-      renderMission({ id, slug, title, timestamp, workspace: options.workspace }),
+      resolve(projectDir, 'project.md'),
+      renderProject({ id, slug, title, timestamp, workspace: options.workspace }),
     ],
     [
-      resolve(missionDir, 'agent.md'),
-      renderAgent({ slug, timestamp }),
-    ],
-    [
-      resolve(missionDir, 'claude.md'),
-      renderClaude({ slug }),
-    ],
-    [
-      resolve(missionDir, '_index-assignments.md'),
+      resolve(projectDir, '_index-assignments.md'),
       renderIndexAssignments({ slug, title, timestamp }),
     ],
     [
-      resolve(missionDir, '_index-plans.md'),
+      resolve(projectDir, '_index-plans.md'),
       renderIndexPlans({ slug, title, timestamp }),
     ],
     [
-      resolve(missionDir, '_index-decisions.md'),
+      resolve(projectDir, '_index-decisions.md'),
       renderIndexDecisions({ slug, title, timestamp }),
     ],
     [
-      resolve(missionDir, '_status.md'),
+      resolve(projectDir, '_status.md'),
       renderStatus({ slug, title, timestamp }),
     ],
     [
-      resolve(missionDir, 'resources', '_index.md'),
+      resolve(projectDir, 'resources', '_index.md'),
       renderResourcesIndex({ slug, title, timestamp }),
     ],
     [
-      resolve(missionDir, 'memories', '_index.md'),
+      resolve(projectDir, 'memories', '_index.md'),
       renderMemoriesIndex({ slug, title, timestamp }),
     ],
   ];
@@ -105,13 +95,11 @@ export async function createMissionCommand(
     await writeFileForce(filePath, content);
   }
 
-  console.log(`Created mission "${title}" at ${missionDir}/`);
+  console.log(`Created project "${title}" at ${projectDir}/`);
   console.log(`  Slug: ${slug}`);
   console.log(`  Files created:`);
   console.log(`    manifest.md`);
-  console.log(`    mission.md`);
-  console.log(`    agent.md`);
-  console.log(`    claude.md`);
+  console.log(`    project.md`);
   console.log(`    _index-assignments.md`);
   console.log(`    _index-plans.md`);
   console.log(`    _index-decisions.md`);

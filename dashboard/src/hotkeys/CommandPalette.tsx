@@ -11,7 +11,7 @@ interface CommandPaletteProps {
 
 const TYPE_LABEL: Record<string, string> = {
   page: 'Page',
-  mission: 'Mission',
+  project: 'Project',
   assignment: 'Assignment',
   playbook: 'Playbook',
   server: 'Server',
@@ -73,7 +73,7 @@ export function CommandPalette({ entries }: CommandPaletteProps) {
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           onKeyDown={handleKeyDown}
-          placeholder="Search missions, assignments, playbooks, servers, todos…"
+          placeholder="Search projects, assignments, playbooks, servers, todos…"
           className="w-full rounded-t-xl border-0 border-b border-border/70 bg-transparent px-4 py-3 text-sm text-foreground outline-none focus:ring-0"
         />
         <div ref={listRef} className="max-h-[60vh] overflow-y-auto p-1">

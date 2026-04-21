@@ -1,11 +1,11 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { useWorkspacePrefix } from '../hooks/useMissions';
+import { useWorkspacePrefix } from '../hooks/useProjects';
 import { MarkdownEditor } from '../components/MarkdownEditor';
 import { LoadingState } from '../components/LoadingState';
 import { ErrorState } from '../components/ErrorState';
 
-export function CreateMission() {
+export function CreateProject() {
   const navigate = useNavigate();
   const { workspace } = useParams<{ workspace?: string }>();
   const wsPrefix = useWorkspacePrefix();
@@ -15,7 +15,7 @@ export function CreateMission() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    fetch('/api/templates/mission')
+    fetch('/api/templates/project')
       .then((response) => response.json())
       .then((payload) => {
         let templateContent = payload.content as string;
@@ -39,7 +39,7 @@ export function CreateMission() {
     setError(null);
 
     try {
-      const response = await fetch('/api/missions', {
+      const response = await fetch('/api/projects', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ content: markdownContent }),
@@ -52,7 +52,7 @@ export function CreateMission() {
         return;
       }
 
-      navigate(`${wsPrefix}/missions/${payload.slug}`);
+      navigate(`${wsPrefix}/projects/${payload.slug}`);
     } catch (saveError) {
       setError((saveError as Error).message);
       setSaving(false);
@@ -63,7 +63,7 @@ export function CreateMission() {
   }
 
   if (loading) {
-    return <LoadingState label="Loading mission template…" />;
+    return <LoadingState label="Loading project template…" />;
   }
 
   if (error && !content) {
@@ -73,16 +73,16 @@ export function CreateMission() {
   return (
     <MarkdownEditor
       initialContent={content || ''}
-      documentType="mission"
+      documentType="project"
       mode="create"
       onSave={handleSave}
       saving={saving}
       error={error}
-      title="Create Mission"
-      description="Missions hold the high-level objective, shared context, and human-authored overview. Put execution details in assignments instead of overloading mission.md."
-      onCancel={() => navigate(`${wsPrefix}/missions`)}
-      helpTitle="Mission editing rules"
-      helpBody="Use this form for mission intent, slug, tags, and overview content. If you ever need less common metadata, raw markdown mode still exposes the full file."
+      title="Create Project"
+      description="Projects hold the high-level objective, shared context, and human-authored overview. Put execution details in assignments instead of overloading project.md."
+      onCancel={() => navigate(`${wsPrefix}/projects`)}
+      helpTitle="Project editing rules"
+      helpBody="Use this form for project intent, slug, tags, and overview content. If you ever need less common metadata, raw markdown mode still exposes the full file."
       allowSlugEdit
     />
   );

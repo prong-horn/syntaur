@@ -24,7 +24,7 @@ describe('config integrations', () => {
     const configPath = resolve(homeDir, '.syntaur', 'config.md');
     await writeFile(
       configPath,
-      '---\nversion: "1.0"\ndefaultMissionDir: ~/.syntaur/missions\nintegrations:\n  claudePluginDir: ~/.claude/plugins/syntaur\n  codexPluginDir: ~/plugins/syntaur\n  codexMarketplacePath: ~/.agents/plugins/marketplace.json\n---\n',
+      '---\nversion: "1.0"\ndefaultProjectDir: ~/.syntaur/projects\nintegrations:\n  claudePluginDir: ~/.claude/plugins/syntaur\n  codexPluginDir: ~/plugins/syntaur\n  codexMarketplacePath: ~/.agents/plugins/marketplace.json\n---\n',
     );
 
     const config = await readConfig();
@@ -39,7 +39,7 @@ describe('config integrations', () => {
     const configPath = resolve(homeDir, '.syntaur', 'config.md');
     await writeFile(
       configPath,
-      '---\nversion: "1.0"\ndefaultMissionDir: ~/.syntaur/missions\nintegrations:\n  claudePluginDir: relative/path\n---\n',
+      '---\nversion: "1.0"\ndefaultProjectDir: ~/.syntaur/projects\nintegrations:\n  claudePluginDir: relative/path\n---\n',
     );
 
     const config = await readConfig();

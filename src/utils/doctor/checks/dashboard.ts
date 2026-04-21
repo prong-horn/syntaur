@@ -63,33 +63,33 @@ const ghostSessions: Check = {
     if (!ctx.db) {
       return skipped(this, 'skipped: db not reachable');
     }
-    let rows: Array<{ session_id: string; mission_slug: string | null; assignment_slug: string | null }>;
+    let rows: Array<{ session_id: string; project_slug: string | null; assignment_slug: string | null }>;
     try {
       rows = ctx.db
         .prepare(
-          'SELECT session_id, mission_slug, assignment_slug FROM sessions WHERE mission_slug IS NOT NULL',
+          'SELECT session_id, project_slug, assignment_slug FROM sessions WHERE project_slug IS NOT NULL',
         )
         .all() as typeof rows;
     } catch {
       return skipped(this, 'skipped: sessions table unreadable');
     }
 
-    const missionsDir = ctx.config.defaultMissionDir;
+    const projectsDir = ctx.config.defaultProjectDir;
     const results: CheckResult[] = [];
     for (const row of rows) {
-      if (!row.mission_slug) continue;
-      const missionPath = resolve(missionsDir, row.mission_slug, 'mission.md');
-      if (!(await fileExists(missionPath))) {
+      if (!row.project_slug) continue;
+      const projectPath = resolve(projectsDir, row.project_slug, 'project.md');
+      if (!(await fileExists(projectPath))) {
         results.push({
           id: this.id,
           category: this.category,
           title: this.title,
           status: 'warn',
-          detail: `session ${row.session_id} references missing mission "${row.mission_slug}"`,
-          affected: [missionPath],
+          detail: `session ${row.session_id} references missing project "${row.project_slug}"`,
+          affected: [projectPath],
           remediation: {
             kind: 'manual',
-            suggestion: 'Remove the session row or restore the mission',
+            suggestion: 'Remove the session row or restore the project',
             command: null,
           },
           autoFixable: false,
@@ -98,8 +98,8 @@ const ghostSessions: Check = {
       }
       if (row.assignment_slug) {
         const assignmentPath = resolve(
-          missionsDir,
-          row.mission_slug,
+          projectsDir,
+          row.project_slug,
           'assignments',
           row.assignment_slug,
           'assignment.md',
@@ -110,7 +110,7 @@ const ghostSessions: Check = {
             category: this.category,
             title: this.title,
             status: 'warn',
-            detail: `session ${row.session_id} references missing assignment "${row.mission_slug}/${row.assignment_slug}"`,
+            detail: `session ${row.session_id} references missing assignment "${row.project_slug}/${row.assignment_slug}"`,
             affected: [assignmentPath],
             remediation: {
               kind: 'manual',

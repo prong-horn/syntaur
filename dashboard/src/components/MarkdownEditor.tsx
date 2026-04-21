@@ -1,10 +1,10 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { ArrowLeft, Eye, FileCode2, Save } from 'lucide-react';
-import { useWorkspaces, type EditableDocumentType } from '../hooks/useMissions';
+import { useWorkspaces, type EditableDocumentType } from '../hooks/useProjects';
 import {
   normalizeEditorContent,
   parseAssignmentEditorState,
-  parseMissionEditorState,
+  parseProjectEditorState,
   parsePlanEditorState,
   parsePlaybookEditorState,
   parseScratchpadEditorState,
@@ -176,12 +176,12 @@ function StructuredEditor({
   onChange: (content: string) => void;
   allowSlugEdit: boolean;
 }) {
-  if (documentType === 'mission') {
-    const state = parseMissionEditorState(content);
+  if (documentType === 'project') {
+    const state = parseProjectEditorState(content);
     return (
       <div className="space-y-3">
         <FormGrid>
-          <Field label="Mission title">
+          <Field label="Project title">
             <input
               value={state.title}
               onChange={(event) => {
@@ -224,7 +224,7 @@ function StructuredEditor({
           />
         </FormGrid>
 
-        <Field label="Mission body">
+        <Field label="Project body">
           <textarea
             value={state.body}
             onChange={(event) => onChange(normalizeEditorContent(documentType, content, { body: event.target.value }))}
@@ -316,7 +316,7 @@ function StructuredEditor({
             <input
               value={state.links}
               onChange={(event) => onChange(normalizeEditorContent(documentType, content, { links: event.target.value }))}
-              placeholder="Comma-separated: missionSlug/assignmentSlug"
+              placeholder="Comma-separated: projectSlug/assignmentSlug"
               className="editor-input"
             />
           </Field>
@@ -524,8 +524,8 @@ function getBodyContent(
   content: string,
 ): string {
   switch (documentType) {
-    case 'mission':
-      return parseMissionEditorState(content).body;
+    case 'project':
+      return parseProjectEditorState(content).body;
     case 'assignment':
       return parseAssignmentEditorState(content).body;
     case 'plan':
@@ -542,12 +542,12 @@ function getValidationErrors(
   content: string,
 ): string[] {
   switch (documentType) {
-    case 'mission': {
-      const state = parseMissionEditorState(content);
+    case 'project': {
+      const state = parseProjectEditorState(content);
       return [
-        !state.title.trim() ? 'Mission title is required.' : null,
-        !state.slug.trim() ? 'Mission slug is required.' : null,
-        state.slug.trim() && !isValidSlug(state.slug) ? 'Mission slug must be lowercase letters, numbers, and hyphens only.' : null,
+        !state.title.trim() ? 'Project title is required.' : null,
+        !state.slug.trim() ? 'Project slug is required.' : null,
+        state.slug.trim() && !isValidSlug(state.slug) ? 'Project slug must be lowercase letters, numbers, and hyphens only.' : null,
       ].filter((value): value is string => Boolean(value));
     }
     case 'assignment': {

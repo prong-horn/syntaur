@@ -4,14 +4,8 @@ export type { ConfigParams } from './config.js';
 export { renderManifest } from './manifest.js';
 export type { ManifestParams } from './manifest.js';
 
-export { renderMission } from './mission.js';
-export type { MissionParams } from './mission.js';
-
-export { renderAgent } from './agent.js';
-export type { AgentParams } from './agent.js';
-
-export { renderClaude } from './claude.js';
-export type { ClaudeParams } from './claude.js';
+export { renderProject } from './project.js';
+export type { ProjectParams } from './project.js';
 
 export { renderAssignment } from './assignment.js';
 export type { AssignmentParams } from './assignment.js';

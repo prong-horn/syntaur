@@ -11,19 +11,19 @@ const AGENT_COMMANDS: Record<AgentType, string> = {
 };
 
 export interface LaunchOptions {
-  missionsDir: string;
-  missionSlug: string;
+  projectsDir: string;
+  projectSlug: string;
   assignmentSlug: string;
   agent: AgentType;
 }
 
 export async function launchAgent(options: LaunchOptions): Promise<void> {
-  const { missionsDir, missionSlug, assignmentSlug, agent } = options;
+  const { projectsDir, projectSlug, assignmentSlug, agent } = options;
   const command = AGENT_COMMANDS[agent];
 
-  const detail = await getAssignmentDetail(missionsDir, missionSlug, assignmentSlug);
+  const detail = await getAssignmentDetail(projectsDir, projectSlug, assignmentSlug);
   if (!detail) {
-    console.error(`Assignment not found: ${missionSlug}/${assignmentSlug}`);
+    console.error(`Assignment not found: ${projectSlug}/${assignmentSlug}`);
     process.exit(1);
   }
 
@@ -32,16 +32,16 @@ export async function launchAgent(options: LaunchOptions): Promise<void> {
     (detail.workspace.repository?.startsWith('/') ? detail.workspace.repository : null) ??
     process.cwd();
 
-  const missionDir = resolve(missionsDir, missionSlug);
-  const assignmentDir = resolve(missionDir, 'assignments', assignmentSlug);
+  const projectDir = resolve(projectsDir, projectSlug);
+  const assignmentDir = resolve(projectDir, 'assignments', assignmentSlug);
 
   const contextDir = resolve(workspaceDir, '.syntaur');
   await mkdir(contextDir, { recursive: true });
 
   const context = {
-    missionSlug,
+    projectSlug,
     assignmentSlug,
-    missionDir,
+    projectDir,
     assignmentDir,
     workspaceRoot: workspaceDir,
     title: detail.title,

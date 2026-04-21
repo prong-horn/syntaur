@@ -62,20 +62,20 @@ const codexPluginLinked: Check = {
 const backupConfigured: Check = {
   id: 'integrations.backup-configured',
   category: CATEGORY,
-  title: 'GitHub backup is configured (if user has missions)',
+  title: 'GitHub backup is configured (if user has projects)',
   async run(ctx) {
     if (ctx.config.backup?.repo) return pass(this);
-    const missionsDir = ctx.config.defaultMissionDir;
-    if (!(await fileExists(missionsDir))) return skipped(this, 'no missions dir');
-    const entries = await readdir(missionsDir, { withFileTypes: true });
-    const hasMissions = entries.some((e) => e.isDirectory() && !e.name.startsWith('.') && !e.name.startsWith('_'));
-    if (!hasMissions) return skipped(this, 'no missions yet');
+    const projectsDir = ctx.config.defaultProjectDir;
+    if (!(await fileExists(projectsDir))) return skipped(this, 'no projects dir');
+    const entries = await readdir(projectsDir, { withFileTypes: true });
+    const hasProjects = entries.some((e) => e.isDirectory() && !e.name.startsWith('.') && !e.name.startsWith('_'));
+    if (!hasProjects) return skipped(this, 'no projects yet');
     return {
       id: this.id,
       category: this.category,
       title: this.title,
       status: 'warn',
-      detail: 'you have missions but no GitHub backup repo configured',
+      detail: 'you have projects but no GitHub backup repo configured',
       remediation: {
         kind: 'manual',
         suggestion: 'Run `syntaur backup config --repo <url>` to configure',

@@ -75,7 +75,7 @@ export async function findAvailablePort(
 
 export async function dashboardCommand(options: DashboardOptions): Promise<void> {
   const config = await readConfig();
-  const missionsDir = config.defaultMissionDir;
+  const projectsDir = config.defaultProjectDir;
   const requestedPort = parseInt(options.port, 10);
 
   if (isNaN(requestedPort) || requestedPort < 1 || requestedPort > 65535) {
@@ -107,7 +107,7 @@ export async function dashboardCommand(options: DashboardOptions): Promise<void>
 
   const server = createDashboardServer({
     port,
-    missionsDir,
+    projectsDir,
     serversDir: getServersDir(),
     playbooksDir: getPlaybooksDir(),
     todosDir: getTodosDir(),

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { Activity, CheckSquare, Square, Trash2 } from 'lucide-react';
 import { CopyButton } from '../components/CopyButton';
-import { useAgentSessions, useMissions, useWorkspacePrefix } from '../hooks/useMissions';
+import { useAgentSessions, useProjects, useWorkspacePrefix } from '../hooks/useProjects';
 import { LoadingState } from '../components/LoadingState';
 import { ErrorState } from '../components/ErrorState';
 import { EmptyState } from '../components/EmptyState';
@@ -29,7 +29,7 @@ interface PendingDelete {
 
 export function AgentSessionsPage() {
   const { workspace } = useParams<{ workspace?: string }>();
-  const { data: missionsData } = useMissions();
+  const { data: projectsData } = useProjects();
   const { data, loading, error } = useAgentSessions();
 const [search, setSearch] = useState('');
   const [startedFrom, setStartedFrom] = useState('');
@@ -65,16 +65,16 @@ const [search, setSearch] = useState('');
     if (!data) {
       return [];
     }
-    if (workspace && !missionsData) return [];
+    if (workspace && !projectsData) return [];
 
     const query = search.trim().toLowerCase();
     const sessions = data.sessions.filter((session) => {
-      if (workspace && missionsData) {
-        const missionWorkspace = missionsData.find((m) => m.slug === session.missionSlug)?.workspace ?? null;
+      if (workspace && projectsData) {
+        const projectWorkspace = projectsData.find((m) => m.slug === session.projectSlug)?.workspace ?? null;
         if (workspace === '_ungrouped') {
-          if (missionWorkspace !== null) return false;
+          if (projectWorkspace !== null) return false;
         } else {
-          if (missionWorkspace !== workspace) return false;
+          if (projectWorkspace !== workspace) return false;
         }
       }
 
@@ -91,7 +91,7 @@ const [search, setSearch] = useState('');
       }
 
       const haystack = [
-        session.missionSlug ?? '',
+        session.projectSlug ?? '',
         session.assignmentSlug ?? '',
         session.agent,
         session.sessionId,
@@ -105,7 +105,7 @@ const [search, setSearch] = useState('');
     });
 
     return [...sessions].sort((left, right) => compareSessions(left, right, sort));
-  }, [data, search, sort, startedFrom, startedTo, tick, workspace, missionsData]);
+  }, [data, search, sort, startedFrom, startedTo, tick, workspace, projectsData]);
 
   function toggleSelection(sessionId: string) {
     setSelectedIds((prev) => {
@@ -160,7 +160,7 @@ const [search, setSearch] = useState('');
         <SearchInput
           value={search}
           onChange={setSearch}
-          placeholder="Search mission, assignment, agent, session ID, path, or description"
+          placeholder="Search project, assignment, agent, session ID, path, or description"
         />
         <label className="flex min-w-[150px] flex-col gap-1 text-xs font-medium uppercase tracking-[0.08em] text-muted-foreground">
           Started From
@@ -245,7 +245,7 @@ const [search, setSearch] = useState('');
                       : <Square className="h-4 w-4" />}
                   </button>
                 </th>
-                <th className="pb-2 pr-3">Mission</th>
+                <th className="pb-2 pr-3">Project</th>
                 <th className="pb-2 pr-3">Assignment</th>
                 <th className="pb-2 pr-3">Description</th>
                 <th className="pb-2 pr-3">Agent</th>
@@ -328,18 +328,18 @@ function SessionRow({
         </button>
       </td>
       <td className="py-2 pr-3">
-        {session.missionSlug ? (
-          <Link to={`${wsPrefix}/missions/${session.missionSlug}`} className="text-primary hover:underline">
-            {toTitleCase(session.missionSlug)}
+        {session.projectSlug ? (
+          <Link to={`${wsPrefix}/projects/${session.projectSlug}`} className="text-primary hover:underline">
+            {toTitleCase(session.projectSlug)}
           </Link>
         ) : (
           <span className="text-muted-foreground">&mdash;</span>
         )}
       </td>
       <td className="py-2 pr-3">
-        {session.missionSlug && session.assignmentSlug ? (
+        {session.projectSlug && session.assignmentSlug ? (
           <Link
-            to={`${wsPrefix}/missions/${session.missionSlug}/assignments/${session.assignmentSlug}`}
+            to={`${wsPrefix}/projects/${session.projectSlug}/assignments/${session.assignmentSlug}`}
             className="text-primary hover:underline"
           >
             {toTitleCase(session.assignmentSlug)}
@@ -431,7 +431,7 @@ function compareSessions(left: AgentSession, right: AgentSession, sort: SessionS
       return getDurationMinutes(right) - getDurationMinutes(left);
     case 'assignment_asc':
       return (left.assignmentSlug ?? '').localeCompare(right.assignmentSlug ?? '')
-        || (left.missionSlug ?? '').localeCompare(right.missionSlug ?? '');
+        || (left.projectSlug ?? '').localeCompare(right.projectSlug ?? '');
     case 'agent_asc':
       return left.agent.localeCompare(right.agent)
         || (left.assignmentSlug ?? '').localeCompare(right.assignmentSlug ?? '');

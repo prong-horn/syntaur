@@ -19,62 +19,62 @@ const CLI_COMMANDS: HelpCommand[] = [
     example: 'syntaur init',
   },
   {
-    command: 'syntaur create-mission',
-    description: 'Create a new mission folder with the required source and derived files.',
-    example: 'syntaur create-mission "Ship dashboard overhaul"',
+    command: 'syntaur create-project',
+    description: 'Create a new project folder with the required source and derived files.',
+    example: 'syntaur create-project "Ship dashboard overhaul"',
   },
   {
     command: 'syntaur create-assignment',
-    description: 'Create a new assignment inside a mission.',
-    example: 'syntaur create-assignment "Implement overview API" --mission ui-overhaul',
+    description: 'Create a new assignment inside a project.',
+    example: 'syntaur create-assignment "Implement overview API" --project ui-overhaul',
   },
   {
     command: 'syntaur assign',
     description: 'Set the assignee for an assignment before work begins.',
-    example: 'syntaur assign implement-overview --mission ui-overhaul --agent codex-1',
+    example: 'syntaur assign implement-overview --project ui-overhaul --agent codex-1',
   },
 
   // --- Lifecycle transitions (indices 5-11) ---
   {
     command: 'syntaur start',
     description: 'Transition an assignment to in_progress.',
-    example: 'syntaur start implement-overview --mission ui-overhaul',
+    example: 'syntaur start implement-overview --project ui-overhaul',
   },
   {
     command: 'syntaur review',
     description: 'Move active work into review once implementation is ready for inspection.',
-    example: 'syntaur review implement-overview --mission ui-overhaul',
+    example: 'syntaur review implement-overview --project ui-overhaul',
   },
   {
     command: 'syntaur complete',
     description: 'Mark an assignment completed after review or direct completion.',
-    example: 'syntaur complete implement-overview --mission ui-overhaul',
+    example: 'syntaur complete implement-overview --project ui-overhaul',
   },
   {
     command: 'syntaur block',
     description: 'Mark an assignment blocked and record the explicit reason.',
-    example: 'syntaur block implement-overview --mission ui-overhaul --reason "Waiting on API spec"',
+    example: 'syntaur block implement-overview --project ui-overhaul --reason "Waiting on API spec"',
   },
   {
     command: 'syntaur unblock',
     description: 'Move a blocked assignment back to in_progress after the blocker is cleared.',
-    example: 'syntaur unblock implement-overview --mission ui-overhaul',
+    example: 'syntaur unblock implement-overview --project ui-overhaul',
   },
   {
     command: 'syntaur fail',
     description: 'Mark an assignment failed when it cannot be completed as planned.',
-    example: 'syntaur fail implement-overview --mission ui-overhaul',
+    example: 'syntaur fail implement-overview --project ui-overhaul',
   },
   {
     command: 'syntaur reopen',
     description: 'Reopen a completed or failed assignment back to in_progress.',
-    example: 'syntaur reopen implement-overview --mission ui-overhaul',
+    example: 'syntaur reopen implement-overview --project ui-overhaul',
   },
 
   // --- Dashboard (index 12) ---
   {
     command: 'syntaur dashboard',
-    description: 'Start the local dashboard UI over the mission files on disk.',
+    description: 'Start the local dashboard UI over the project files on disk.',
     example: 'syntaur dashboard --port 4800',
   },
 
@@ -97,20 +97,20 @@ const CLI_COMMANDS: HelpCommand[] = [
   {
     command: 'syntaur setup-adapter',
     description: 'Generate adapter instruction files for cursor, codex, or opencode in the current directory.',
-    example: 'syntaur setup-adapter cursor --mission ui-overhaul --assignment implement-overview',
+    example: 'syntaur setup-adapter cursor --project ui-overhaul --assignment implement-overview',
   },
 
   // --- Session & server tracking (index 17) ---
   {
     command: 'syntaur track-session',
-    description: 'Register an agent session, optionally linked to a mission and assignment.',
-    example: 'syntaur track-session --agent claude --mission ui-overhaul --assignment implement-overview',
+    description: 'Register an agent session, optionally linked to a project and assignment.',
+    example: 'syntaur track-session --agent claude --project ui-overhaul --assignment implement-overview',
   },
 
   // --- Browsing & playbooks (indices 18-20) ---
   {
     command: 'syntaur browse',
-    description: 'Interactive TUI browser for missions and assignments.',
+    description: 'Interactive TUI browser for projects and assignments.',
     example: 'syntaur browse',
   },
   {
@@ -132,14 +132,14 @@ const WORKFLOW: HelpChecklistItem[] = [
     command: CLI_COMMANDS[0],
   },
   {
-    title: 'Create a mission',
-    detail: 'Use a mission for a higher-level objective. Missions group assignments, shared resources, and memories.',
+    title: 'Create a project',
+    detail: 'Use a project for a higher-level objective. Projects group assignments, shared resources, and memories.',
     command: CLI_COMMANDS[2],
-    href: '/create/mission',
+    href: '/create/project',
   },
   {
     title: 'Create the first assignment',
-    detail: 'Assignments are the execution unit. Create one for each concrete chunk of work inside the mission.',
+    detail: 'Assignments are the execution unit. Create one for each concrete chunk of work inside the project.',
     command: CLI_COMMANDS[3],
   },
   {
@@ -154,7 +154,7 @@ const WORKFLOW: HelpChecklistItem[] = [
   },
   {
     title: 'Use the dashboard for triage and context',
-    detail: 'Overview shows the current queue, mission pages show health, assignment pages show the execution surface.',
+    detail: 'Overview shows the current queue, project pages show health, assignment pages show the execution surface.',
     command: CLI_COMMANDS[12],
     href: '/',
   },
@@ -205,18 +205,18 @@ export async function getDashboardHelp(): Promise<HelpResponse> {
     generatedAt: new Date().toISOString(),
     whatIsSyntaur: {
       summary:
-        'Syntaur is a local-first, markdown-backed agent work system. The dashboard is a live view over mission folders and files on disk.',
+        'Syntaur is a local-first, markdown-backed agent work system. The dashboard is a live view over project folders and files on disk.',
       bullets: [
         'Markdown files are the source of truth.',
-        'The UI reads mission folders, assignment files, and derived indexes from the local filesystem.',
+        'The UI reads project folders, assignment files, and derived indexes from the local filesystem.',
         'Derived underscore-prefixed files are projections, not the canonical edit target.',
       ],
     },
     coreConcepts: [
       {
-        term: 'Mission',
+        term: 'Project',
         description:
-          'A mission is the higher-level objective. It owns assignments, shared resources, and mission memories.',
+          'A project is the higher-level objective. It owns assignments, shared resources, and project memories.',
       },
       {
         term: 'Assignment',
@@ -226,17 +226,17 @@ export async function getDashboardHelp(): Promise<HelpResponse> {
       {
         term: 'Resource',
         description:
-          'A mission-level shared reference file that provides source material or constraints for the work.',
+          'A project-level shared reference file that provides source material or constraints for the work.',
       },
       {
         term: 'Memory',
         description:
-          'A mission-level learning or pattern captured during execution so future assignments can reuse it.',
+          'A project-level learning or pattern captured during execution so future assignments can reuse it.',
       },
       {
         term: 'Manifest',
         description:
-          'A derived navigation file that points agents at the mission overview, indexes, and agent instructions.',
+          'A derived navigation file that points agents at the project overview, indexes, and agent instructions.',
       },
       {
         term: 'Derived file',
@@ -279,9 +279,9 @@ export async function getDashboardHelp(): Promise<HelpResponse> {
     ownershipRules: [
       {
         label: 'Human-authored files',
-        files: ['mission.md', 'agent.md', 'claude.md'],
+        files: ['project.md', 'agent.md', 'claude.md'],
         description:
-          'These files define mission intent and instructions. The dashboard treats mission status as derived except for the archive fields.',
+          'These files define project intent and instructions. The dashboard treats project status as derived except for the archive fields.',
       },
       {
         label: 'Assignment working files',
@@ -310,13 +310,13 @@ export async function getDashboardHelp(): Promise<HelpResponse> {
         href: '/',
       },
       {
-        label: 'Missions',
-        description: 'Browse, search, filter, and sort the mission directory. Create new missions and drill into mission workspaces.',
-        href: '/missions',
+        label: 'Projects',
+        description: 'Browse, search, filter, and sort the project directory. Create new projects and drill into project workspaces.',
+        href: '/projects',
       },
       {
         label: 'Assignments',
-        description: 'Cross-mission kanban board of all assignments. Drag cards between columns to change status, or filter by mission, assignee, or status.',
+        description: 'Cross-project kanban board of all assignments. Drag cards between columns to change status, or filter by project, assignee, or status.',
         href: '/assignments',
       },
       {
@@ -350,14 +350,14 @@ export async function getDashboardHelp(): Promise<HelpResponse> {
         href: '/settings',
       },
       {
-        label: 'Mission page',
-        description: 'The mission workspace shows health stats, assignment list, dependency graph, shared resources, and memories.',
-        href: '/missions',
+        label: 'Project page',
+        description: 'The project workspace shows health stats, assignment list, dependency graph, shared resources, and memories.',
+        href: '/projects',
       },
       {
         label: 'Assignment page',
         description: 'The assignment workspace shows lifecycle actions, plan editor, scratchpad, handoff log, decision records, and agent sessions.',
-        href: '/missions',
+        href: '/projects',
       },
     ],
     faq: [
@@ -402,16 +402,16 @@ export async function getDashboardHelp(): Promise<HelpResponse> {
           'Syntaur tracks tmux sessions to discover running dev servers, their ports, git branches, and linked assignments. Register sessions on the Servers page or let autodiscovery find them. Pane info refreshes automatically.',
       },
     ],
-    firstMissionChecklist: [
+    firstProjectChecklist: [
       {
-        title: 'Create the mission',
-        detail: 'Describe the overall objective in mission.md, then add tags and archive metadata only when needed.',
+        title: 'Create the project',
+        detail: 'Describe the overall objective in project.md, then add tags and archive metadata only when needed.',
         command: CLI_COMMANDS[1],
-        href: '/create/mission',
+        href: '/create/project',
       },
       {
         title: 'Create at least one assignment',
-        detail: 'Break the mission into executable work units with explicit priority and dependencies.',
+        detail: 'Break the project into executable work units with explicit priority and dependencies.',
         command: CLI_COMMANDS[2],
       },
       {
@@ -422,7 +422,7 @@ export async function getDashboardHelp(): Promise<HelpResponse> {
       {
         title: 'Use the assignment workspace for execution',
         detail: 'Keep the objective and todos in assignment.md, implementation plans in optional versioned plan files (plan.md, plan-v2.md, ...), and transient notes in scratchpad.md.',
-        href: '/missions',
+        href: '/projects',
       },
       {
         title: 'Record handoffs and decisions without rewriting history',
@@ -436,14 +436,14 @@ export async function getDashboardHelp(): Promise<HelpResponse> {
     ],
     links: [
       { label: 'Overview', href: '/' },
-      { label: 'Mission Directory', href: '/missions' },
+      { label: 'Project Directory', href: '/projects' },
       { label: 'Assignments Board', href: '/assignments' },
       { label: 'Attention Queue', href: '/attention' },
       { label: 'Servers', href: '/servers' },
       { label: 'Agent Sessions', href: '/agent-sessions' },
       { label: 'Playbooks', href: '/playbooks' },
       { label: 'Settings', href: '/settings' },
-      { label: 'Create Mission', href: '/create/mission' },
+      { label: 'Create Project', href: '/create/project' },
     ],
   };
 }

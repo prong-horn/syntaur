@@ -1,6 +1,6 @@
 ---
 name: syntaur-protocol
-description: Use when the user mentions Syntaur, missions, assignments, files under ~/.syntaur/, assignment.md, plan.md, handoff.md, .syntaur/context.json, lifecycle states, or write boundaries.
+description: Use when the user mentions Syntaur, projects, assignments, files under ~/.syntaur/, assignment.md, plan.md, handoff.md, .syntaur/context.json, lifecycle states, or write boundaries.
 ---
 
 # Syntaur Protocol
@@ -19,15 +19,15 @@ Respect file ownership boundaries.
    - `scratchpad.md`
    - `handoff.md`
    - `decision-record.md`
-2. Mission-level shared files:
-   - `~/.syntaur/missions/<mission>/resources/<slug>.md`
-   - `~/.syntaur/missions/<mission>/memories/<slug>.md`
+2. Project-level shared files:
+   - `~/.syntaur/projects/<project>/resources/<slug>.md`
+   - `~/.syntaur/projects/<project>/memories/<slug>.md`
 3. Workspace files inside the assignment's configured workspace root
 4. `.syntaur/context.json` in the current working directory
 
 ### Files you must never write
 
-1. `mission.md`, `agent.md`, `claude.md`
+1. `project.md`, `agent.md`, `claude.md`
 2. `manifest.md`
 3. Any file prefixed with `_`
 4. Other agents' assignment folders
@@ -37,9 +37,9 @@ Respect file ownership boundaries.
 
 If `.syntaur/context.json` exists in the current working directory, read it before making changes. Use it to determine:
 
-- `missionSlug`
+- `projectSlug`
 - `assignmentSlug`
-- `missionDir`
+- `projectDir`
 - `assignmentDir`
 - `workspaceRoot`
 - `sessionId` if present
@@ -48,10 +48,10 @@ If `.syntaur/context.json` exists in the current working directory, read it befo
 
 When you are working on an existing assignment, read these in order:
 
-1. `<missionDir>/manifest.md`
-2. `<missionDir>/agent.md`
-3. `<missionDir>/mission.md`
-4. `<missionDir>/claude.md` if it exists
+1. `<projectDir>/manifest.md`
+2. `<projectDir>/agent.md`
+3. `<projectDir>/project.md`
+4. `<projectDir>/claude.md` if it exists
 5. `<assignmentDir>/assignment.md`
 6. any `<assignmentDir>/plan*.md` files linked from active todos in the `## Todos` section
 7. `<assignmentDir>/handoff.md`
@@ -60,13 +60,13 @@ When you are working on an existing assignment, read these in order:
 
 Use the `syntaur` CLI for state transitions:
 
-- `syntaur assign <slug> --agent <name> --mission <mission>`
-- `syntaur start <slug> --mission <mission>`
-- `syntaur review <slug> --mission <mission>`
-- `syntaur complete <slug> --mission <mission>`
-- `syntaur block <slug> --mission <mission> --reason <text>`
-- `syntaur unblock <slug> --mission <mission>`
-- `syntaur fail <slug> --mission <mission>`
+- `syntaur assign <slug> --agent <name> --project <project>`
+- `syntaur start <slug> --project <project>`
+- `syntaur review <slug> --project <project>`
+- `syntaur complete <slug> --project <project>`
+- `syntaur block <slug> --project <project> --reason <text>`
+- `syntaur unblock <slug> --project <project>`
+- `syntaur fail <slug> --project <project>`
 
 ## Troubleshooting
 

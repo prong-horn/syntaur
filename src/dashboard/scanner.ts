@@ -2,7 +2,7 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { resolve } from 'node:path';
 import { realpath, readdir, readFile } from 'node:fs/promises';
-import { listMissions } from './api.js';
+import { listProjects } from './api.js';
 import {
   readSessionFile,
   listSessionFiles,
@@ -156,26 +156,26 @@ export async function getGitInfo(cwd: string): Promise<{ branch: string | null; 
 // --- Auto-linking ---
 
 export interface AssignmentLink {
-  mission: string;
+  project: string;
   slug: string;
   title: string;
 }
 
 export interface WorkspaceRecord {
-  missionSlug: string;
+  projectSlug: string;
   assignmentSlug: string;
   assignmentTitle: string;
   worktreePath: string | null;
   branch: string | null;
 }
 
-export async function loadWorkspaceRecords(missionsDir: string): Promise<WorkspaceRecord[]> {
+export async function loadWorkspaceRecords(projectsDir: string): Promise<WorkspaceRecord[]> {
   const records: WorkspaceRecord[] = [];
   try {
-    const missions = await listMissions(missionsDir);
+    const projects = await listProjects(projectsDir);
 
-    for (const mission of missions) {
-      const assignmentsDir = resolve(missionsDir, mission.slug, 'assignments');
+    for (const project of projects) {
+      const assignmentsDir = resolve(projectsDir, project.slug, 'assignments');
       let slugs: string[];
       try {
         slugs = await readdir(assignmentsDir);
@@ -189,7 +189,7 @@ export async function loadWorkspaceRecords(missionsDir: string): Promise<Workspa
           const [fm] = extractFrontmatter(raw);
           if (!fm) continue;
           records.push({
-            missionSlug: mission.slug,
+            projectSlug: project.slug,
             assignmentSlug: aslug,
             assignmentTitle: getField(fm, 'title') ?? aslug,
             worktreePath: getNestedField(fm, 'workspace', 'worktreePath') ?? null,
@@ -201,7 +201,7 @@ export async function loadWorkspaceRecords(missionsDir: string): Promise<Workspa
       }
     }
   } catch {
-    // If missions can't be loaded, auto-linking just returns no matches
+    // If projects can't be loaded, auto-linking just returns no matches
   }
   return records;
 }
@@ -225,14 +225,14 @@ export async function autoLinkPane(
     if (rec.worktreePath) {
       const normalizedWt = await resolveAndNormalize(rec.worktreePath);
       if (normalizedCwd === normalizedWt) {
-        return { mission: rec.missionSlug, slug: rec.assignmentSlug, title: rec.assignmentTitle };
+        return { project: rec.projectSlug, slug: rec.assignmentSlug, title: rec.assignmentTitle };
       }
     }
   }
   if (branch) {
     for (const rec of records) {
       if (rec.branch && rec.branch === branch) {
-        return { mission: rec.missionSlug, slug: rec.assignmentSlug, title: rec.assignmentTitle };
+        return { project: rec.projectSlug, slug: rec.assignmentSlug, title: rec.assignmentTitle };
       }
     }
   }
@@ -322,10 +322,10 @@ async function scanSession(
       let assignment: AssignmentLink | null = null;
       if (override) {
         const rec = workspaceRecords.find(
-          (r) => r.missionSlug === override.mission && r.assignmentSlug === override.assignment,
+          (r) => r.projectSlug === override.project && r.assignmentSlug === override.assignment,
         );
         assignment = {
-          mission: override.mission,
+          project: override.project,
           slug: override.assignment,
           title: rec?.assignmentTitle ?? override.assignment,
         };
@@ -401,10 +401,10 @@ async function scanProcessSession(
   let assignment: AssignmentLink | null = null;
   if (override) {
     const rec = workspaceRecords.find(
-      (r) => r.missionSlug === override.mission && r.assignmentSlug === override.assignment,
+      (r) => r.projectSlug === override.project && r.assignmentSlug === override.assignment,
     );
     assignment = {
-      mission: override.mission,
+      project: override.project,
       slug: override.assignment,
       title: rec?.assignmentTitle ?? override.assignment,
     };
@@ -436,7 +436,7 @@ async function scanProcessSession(
 
 export async function scanAllSessions(
   serversDir: string,
-  missionsDir: string,
+  projectsDir: string,
   options?: { bypassCache?: boolean },
 ): Promise<ServersResponse> {
   if (!options?.bypassCache && cache && Date.now() < cache.expiry) {
@@ -446,7 +446,7 @@ export async function scanAllSessions(
   const tmuxAvailable = await checkTmuxAvailable();
   const names = await listSessionFiles(serversDir);
   const lsofOutput = await getLsofOutput();
-  const workspaceRecords = await loadWorkspaceRecords(missionsDir);
+  const workspaceRecords = await loadWorkspaceRecords(projectsDir);
 
   const sessions: TrackedSession[] = [];
   for (const name of names) {
@@ -468,14 +468,14 @@ export async function scanAllSessions(
 
 export async function scanSingleSession(
   serversDir: string,
-  missionsDir: string,
+  projectsDir: string,
   name: string,
 ): Promise<TrackedSession | null> {
   const data = await readSessionFile(serversDir, name);
   if (!data) return null;
 
   const lsofOutput = await getLsofOutput();
-  const workspaceRecords = await loadWorkspaceRecords(missionsDir);
+  const workspaceRecords = await loadWorkspaceRecords(projectsDir);
 
   if (data.kind === 'process') {
     return scanProcessSession(data, lsofOutput, workspaceRecords);

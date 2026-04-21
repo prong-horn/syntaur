@@ -50,12 +50,12 @@ If the user passed `--complete`, transition directly to `completed` only when al
 ```bash
 curl -s -X PATCH "http://localhost:$(cat ~/.syntaur/dashboard-port 2>/dev/null || echo 4800)/api/agent-sessions/<session-id>/status" \
   -H "Content-Type: application/json" \
-  -d '{"status":"completed","missionSlug":"<mission-slug>"}'
+  -d '{"status":"completed","projectSlug":"<project-slug>"}'
 ```
 
 7. Transition the assignment:
-   - `syntaur complete <assignment-slug> --mission <mission-slug>` when `--complete` is allowed
-   - otherwise `syntaur review <assignment-slug> --mission <mission-slug>`
+   - `syntaur complete <assignment-slug> --project <project-slug>` when `--complete` is allowed
+   - otherwise `syntaur review <assignment-slug> --project <project-slug>`
 8. Delete `.syntaur/context.json`.
 9. Summarize:
    - new status

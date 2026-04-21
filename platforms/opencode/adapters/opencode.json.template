@@ -1,6 +1,6 @@
 {
   "instructions": [
     "Read AGENTS.md in this directory for Syntaur protocol instructions.",
-    "Also read <missionDir>/agent.md for universal agent conventions."
+    "Also read <projectDir>/agent.md for universal agent conventions."
   ]
 }

@@ -9,7 +9,7 @@ import {
   Monitor,
   OctagonX,
 } from 'lucide-react';
-import { useHelp, useOverview } from '../hooks/useMissions';
+import { useHelp, useOverview } from '../hooks/useProjects';
 import { useAllTodos } from '../hooks/useTodos';
 import { formatDateTime, toTitleCase } from '../lib/format';
 import { StatusBadge } from '../components/StatusBadge';
@@ -40,7 +40,7 @@ export function Overview() {
   return (
     <div className="space-y-5">
       <div className="grid gap-3 grid-cols-[repeat(auto-fill,minmax(160px,1fr))]">
-        <StatCard label="Active Missions" value={overview.stats.activeMissions} icon={FolderKanban} to="/missions" />
+        <StatCard label="Active Projects" value={overview.stats.activeProjects} icon={FolderKanban} to="/projects" />
         <StatCard label="In Progress" value={overview.stats.inProgressAssignments} icon={Gauge} tone="info" to="/assignments?status=in_progress" />
         <StatCard label="Blocked" value={overview.stats.blockedAssignments} icon={AlertTriangle} tone="warn" to="/assignments?status=blocked" />
         <StatCard label="Review" value={overview.stats.reviewAssignments} icon={ClipboardCheck} tone="info" to="/assignments?status=review" />
@@ -79,7 +79,7 @@ export function Overview() {
                     <div className="flex flex-wrap items-start justify-between gap-3">
                       <div className="space-y-1">
                         <p className="text-sm font-semibold text-foreground">{item.assignmentTitle}</p>
-                        <p className="text-sm text-muted-foreground">{item.missionTitle}</p>
+                        <p className="text-sm text-muted-foreground">{item.projectTitle}</p>
                       </div>
                       <StatusBadge status={item.status} />
                     </div>
@@ -94,31 +94,31 @@ export function Overview() {
           </SectionCard>
 
           <div className="grid gap-4 lg:grid-cols-2">
-            <SectionCard title="Recently Updated Missions">
-              {overview.recentMissions.length === 0 ? (
+            <SectionCard title="Recently Updated Projects">
+              {overview.recentProjects.length === 0 ? (
                 <EmptyState
-                  title="No missions yet"
-                  description="Create your first mission to populate the mission directory, recent activity, and attention queue."
+                  title="No projects yet"
+                  description="Create your first project to populate the project directory, recent activity, and attention queue."
                   actions={
-                    <Link className="shell-action bg-foreground text-background hover:opacity-90" to="/create/mission">
-                      Create Mission
+                    <Link className="shell-action bg-foreground text-background hover:opacity-90" to="/create/project">
+                      Create Project
                     </Link>
                   }
                 />
               ) : (
                 <div className="space-y-3">
-                  {overview.recentMissions.map((mission) => (
+                  {overview.recentProjects.map((project) => (
                     <Link
-                      key={mission.slug}
-                      to={`/missions/${mission.slug}`}
+                      key={project.slug}
+                      to={`/projects/${project.slug}`}
                       className="block rounded-md border border-border/60 bg-background/80 p-3 transition hover:border-primary/40"
                     >
                       <div className="flex items-start justify-between gap-3">
                         <div>
-                          <h3 className="font-semibold text-foreground">{mission.title}</h3>
-                          <p className="mt-1 text-sm text-muted-foreground">{formatDateTime(mission.updated)}</p>
+                          <h3 className="font-semibold text-foreground">{project.title}</h3>
+                          <p className="mt-1 text-sm text-muted-foreground">{formatDateTime(project.updated)}</p>
                         </div>
-                        <StatusBadge status={mission.status} />
+                        <StatusBadge status={project.status} />
                       </div>
                     </Link>
                   ))}
@@ -130,7 +130,7 @@ export function Overview() {
               {overview.recentActivity.length === 0 ? (
                 <EmptyState
                   title="No activity yet"
-                  description="Once missions and assignments exist, Overview will show activity based on parsed source timestamps instead of file mtimes."
+                  description="Once projects and assignments exist, Overview will show activity based on parsed source timestamps instead of file mtimes."
                 />
               ) : (
                 <div className="space-y-3">

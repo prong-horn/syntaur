@@ -6,9 +6,9 @@ Agents must never modify these files:
 
 | File | Location |
 |------|----------|
-| `mission.md` | `<mission>/mission.md` |
-| `agent.md` | `<mission>/agent.md` |
-| `claude.md` | `<mission>/claude.md` |
+| `project.md` | `<project>/project.md` |
+| `agent.md` | `<project>/agent.md` |
+| `claude.md` | `<project>/claude.md` |
 
 ## Agent-Writable (Your Assignment Folder Only)
 
@@ -22,14 +22,14 @@ You may only write to files inside your assigned assignment folder:
 | `handoff.md` | Append-only handoff log |
 | `decision-record.md` | Append-only decision log |
 
-Path pattern: `~/.syntaur/missions/<mission>/assignments/<your-assignment>/`
+Path pattern: `~/.syntaur/projects/<project>/assignments/<your-assignment>/`
 
 ## Shared-Writable
 
 | Location | Purpose |
 |----------|---------|
-| `<mission>/resources/<slug>.md` | Reference material |
-| `<mission>/memories/<slug>.md` | Learnings and reusable patterns |
+| `<project>/resources/<slug>.md` | Reference material |
+| `<project>/memories/<slug>.md` | Learnings and reusable patterns |
 
 ## Derived (Never Edit)
 

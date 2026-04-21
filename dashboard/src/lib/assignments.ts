@@ -1,17 +1,17 @@
-import type { AssignmentDetail, AssignmentTransitionAction } from '../hooks/useMissions';
+import type { AssignmentDetail, AssignmentTransitionAction } from '../hooks/useProjects';
 
 interface TransitionResponse {
   assignment: AssignmentDetail;
 }
 
 export async function runAssignmentTransition(
-  missionSlug: string,
+  projectSlug: string,
   assignmentSlug: string,
   action: AssignmentTransitionAction,
   reason?: string,
 ): Promise<AssignmentDetail> {
   const response = await fetch(
-    `/api/missions/${missionSlug}/assignments/${assignmentSlug}/transitions/${action.command}`,
+    `/api/projects/${projectSlug}/assignments/${assignmentSlug}/transitions/${action.command}`,
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -28,12 +28,12 @@ export async function runAssignmentTransition(
 }
 
 export async function overrideAssignmentStatus(
-  missionSlug: string,
+  projectSlug: string,
   assignmentSlug: string,
   status: string,
 ): Promise<AssignmentDetail> {
   const response = await fetch(
-    `/api/missions/${missionSlug}/assignments/${assignmentSlug}/status-override`,
+    `/api/projects/${projectSlug}/assignments/${assignmentSlug}/status-override`,
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -50,11 +50,11 @@ export async function overrideAssignmentStatus(
 }
 
 export async function deleteAssignment(
-  missionSlug: string,
+  projectSlug: string,
   assignmentSlug: string,
 ): Promise<void> {
   const response = await fetch(
-    `/api/missions/${missionSlug}/assignments/${assignmentSlug}`,
+    `/api/projects/${projectSlug}/assignments/${assignmentSlug}`,
     { method: 'DELETE' },
   );
 

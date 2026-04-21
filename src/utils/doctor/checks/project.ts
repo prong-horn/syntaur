@@ -3,13 +3,11 @@ import { readdir, stat } from 'node:fs/promises';
 import { fileExists } from '../../fs.js';
 import type { Check, CheckResult } from '../types.js';
 
-const CATEGORY = 'mission';
+const CATEGORY = 'project';
 
-const REQUIRED_MISSION_FILES = [
-  'mission.md',
+const REQUIRED_PROJECT_FILES = [
+  'project.md',
   'manifest.md',
-  'agent.md',
-  'claude.md',
   '_status.md',
   '_index-assignments.md',
   '_index-plans.md',
@@ -18,51 +16,49 @@ const REQUIRED_MISSION_FILES = [
   'memories/_index.md',
 ] as const;
 
-const KNOWN_MISSION_TOP_LEVEL = new Set<string>([
-  'mission.md',
+const KNOWN_PROJECT_TOP_LEVEL = new Set<string>([
+  'project.md',
   'manifest.md',
-  'agent.md',
-  'claude.md',
   '_status.md',
   'assignments',
   'resources',
   'memories',
 ]);
 
-const MISSION_MARKERS = ['mission.md', 'manifest.md', 'agent.md', 'assignments'] as const;
+const PROJECT_MARKERS = ['project.md', 'manifest.md', 'assignments'] as const;
 
-async function listMissions(ctx: { config: { defaultMissionDir: string } }): Promise<string[]> {
-  const dir = ctx.config.defaultMissionDir;
+async function listProjects(ctx: { config: { defaultProjectDir: string } }): Promise<string[]> {
+  const dir = ctx.config.defaultProjectDir;
   if (!(await fileExists(dir))) return [];
   const entries = await readdir(dir, { withFileTypes: true });
   const result: string[] = [];
   for (const e of entries) {
     if (!e.isDirectory()) continue;
     if (e.name.startsWith('.') || e.name.startsWith('_')) continue;
-    const missionDir = resolve(dir, e.name);
-    let looksLikeMission = false;
-    for (const marker of MISSION_MARKERS) {
-      if (await fileExists(resolve(missionDir, marker))) {
-        looksLikeMission = true;
+    const projectDir = resolve(dir, e.name);
+    let looksLikeProject = false;
+    for (const marker of PROJECT_MARKERS) {
+      if (await fileExists(resolve(projectDir, marker))) {
+        looksLikeProject = true;
         break;
       }
     }
-    if (looksLikeMission) result.push(missionDir);
+    if (looksLikeProject) result.push(projectDir);
   }
   return result;
 }
 
 const requiredFiles: Check = {
-  id: 'mission.required-files-present',
+  id: 'project.required-files-present',
   category: CATEGORY,
-  title: 'Each mission has the full required scaffold',
+  title: 'Each project has the full required scaffold',
   async run(ctx) {
-    const missions = await listMissions(ctx);
+    const projects = await listProjects(ctx);
     const results: CheckResult[] = [];
-    for (const missionDir of missions) {
+    for (const projectDir of projects) {
       const missing: string[] = [];
-      for (const rel of REQUIRED_MISSION_FILES) {
-        const p = resolve(missionDir, rel);
+      for (const rel of REQUIRED_PROJECT_FILES) {
+        const p = resolve(projectDir, rel);
         if (!(await fileExists(p))) missing.push(rel);
       }
       if (missing.length === 0) continue;
@@ -71,8 +67,8 @@ const requiredFiles: Check = {
         category: this.category,
         title: this.title,
         status: 'error',
-        detail: `mission at ${missionDir} is missing: ${missing.join(', ')}`,
-        affected: missing.map((m) => resolve(missionDir, m)),
+        detail: `project at ${projectDir} is missing: ${missing.join(', ')}`,
+        affected: missing.map((m) => resolve(projectDir, m)),
         remediation: {
           kind: 'manual',
           suggestion: 'Recreate the missing scaffold files from templates',
@@ -89,17 +85,17 @@ const requiredFiles: Check = {
 };
 
 const manifestStale: Check = {
-  id: 'mission.manifest-stale',
+  id: 'project.manifest-stale',
   category: CATEGORY,
   title: 'manifest.md is not older than any assignment change',
   async run(ctx) {
-    const missions = await listMissions(ctx);
+    const projects = await listProjects(ctx);
     const results: CheckResult[] = [];
-    for (const missionDir of missions) {
-      const manifestPath = resolve(missionDir, 'manifest.md');
+    for (const projectDir of projects) {
+      const manifestPath = resolve(projectDir, 'manifest.md');
       if (!(await fileExists(manifestPath))) continue;
       const manifestMtime = (await stat(manifestPath)).mtimeMs;
-      const newestAssignment = await newestAssignmentMtime(missionDir);
+      const newestAssignment = await newestAssignmentMtime(projectDir);
       if (newestAssignment === 0) continue;
       if (newestAssignment > manifestMtime) {
         results.push({
@@ -107,7 +103,7 @@ const manifestStale: Check = {
           category: this.category,
           title: this.title,
           status: 'warn',
-          detail: `manifest.md in ${missionDir} is older than the newest assignment.md`,
+          detail: `manifest.md in ${projectDir} is older than the newest assignment.md`,
           affected: [manifestPath],
           remediation: {
             kind: 'manual',
@@ -124,18 +120,18 @@ const manifestStale: Check = {
 };
 
 const orphanFiles: Check = {
-  id: 'mission.orphan-files',
+  id: 'project.orphan-files',
   category: CATEGORY,
-  title: 'No unexpected files at mission top level',
+  title: 'No unexpected files at project top level',
   async run(ctx) {
-    const missions = await listMissions(ctx);
+    const projects = await listProjects(ctx);
     const results: CheckResult[] = [];
-    for (const missionDir of missions) {
-      const entries = await readdir(missionDir, { withFileTypes: true });
+    for (const projectDir of projects) {
+      const entries = await readdir(projectDir, { withFileTypes: true });
       const orphans: string[] = [];
       for (const e of entries) {
         if (e.name.startsWith('.')) continue;
-        if (KNOWN_MISSION_TOP_LEVEL.has(e.name)) continue;
+        if (KNOWN_PROJECT_TOP_LEVEL.has(e.name)) continue;
         if (e.name.startsWith('_index-') && e.name.endsWith('.md')) continue;
         orphans.push(e.name);
       }
@@ -145,8 +141,8 @@ const orphanFiles: Check = {
         category: this.category,
         title: this.title,
         status: 'warn',
-        detail: `mission at ${missionDir} has unexpected entries: ${orphans.join(', ')}`,
-        affected: orphans.map((o) => resolve(missionDir, o)),
+        detail: `project at ${projectDir} has unexpected entries: ${orphans.join(', ')}`,
+        affected: orphans.map((o) => resolve(projectDir, o)),
         autoFixable: false,
       });
     }
@@ -155,10 +151,10 @@ const orphanFiles: Check = {
   },
 };
 
-export const missionChecks: Check[] = [requiredFiles, manifestStale, orphanFiles];
+export const projectChecks: Check[] = [requiredFiles, manifestStale, orphanFiles];
 
-async function newestAssignmentMtime(missionDir: string): Promise<number> {
-  const assignmentsRoot = resolve(missionDir, 'assignments');
+async function newestAssignmentMtime(projectDir: string): Promise<number> {
+  const assignmentsRoot = resolve(projectDir, 'assignments');
   if (!(await fileExists(assignmentsRoot))) return 0;
   let newest = 0;
   let entries;

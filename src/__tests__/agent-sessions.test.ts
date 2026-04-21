@@ -11,7 +11,7 @@ import {
 import {
   appendSession,
   listAllSessions,
-  listMissionSessions,
+  listProjectSessions,
   updateSessionStatus,
   reconcileActiveSessions,
 } from '../dashboard/agent-sessions.js';
@@ -22,7 +22,7 @@ let dbPath: string;
 
 function makeSession(overrides: Partial<AgentSession> = {}): AgentSession {
   return {
-    missionSlug: 'test-mission',
+    projectSlug: 'test-project',
     assignmentSlug: 'test-assignment',
     agent: 'claude',
     sessionId: `session-${Math.random().toString(36).slice(2, 10)}`,
@@ -53,19 +53,19 @@ describe('appendSession + listAllSessions', () => {
     const all = await listAllSessions('');
     expect(all).toHaveLength(1);
     expect(all[0].sessionId).toBe(session.sessionId);
-    expect(all[0].missionSlug).toBe('test-mission');
+    expect(all[0].projectSlug).toBe('test-project');
     expect(all[0].assignmentSlug).toBe('test-assignment');
     expect(all[0].agent).toBe('claude');
     expect(all[0].status).toBe('active');
   });
 
-  it('inserts and retrieves a standalone session (null mission/assignment)', async () => {
-    const session = makeSession({ missionSlug: null, assignmentSlug: null, description: 'standalone test' });
+  it('inserts and retrieves a standalone session (null project/assignment)', async () => {
+    const session = makeSession({ projectSlug: null, assignmentSlug: null, description: 'standalone test' });
     await appendSession('', session);
 
     const all = await listAllSessions('');
     expect(all).toHaveLength(1);
-    expect(all[0].missionSlug).toBeNull();
+    expect(all[0].projectSlug).toBeNull();
     expect(all[0].assignmentSlug).toBeNull();
     expect(all[0].description).toBe('standalone test');
   });
@@ -142,30 +142,30 @@ describe('updateSessionStatus', () => {
   });
 });
 
-describe('listMissionSessions', () => {
-  it('filters by mission slug', async () => {
-    await appendSession('', makeSession({ missionSlug: 'mission-a', sessionId: 's1' }));
-    await appendSession('', makeSession({ missionSlug: 'mission-b', sessionId: 's2' }));
+describe('listProjectSessions', () => {
+  it('filters by project slug', async () => {
+    await appendSession('', makeSession({ projectSlug: 'project-a', sessionId: 's1' }));
+    await appendSession('', makeSession({ projectSlug: 'project-b', sessionId: 's2' }));
 
-    const sessions = await listMissionSessions('', 'mission-a');
+    const sessions = await listProjectSessions('', 'project-a');
     expect(sessions).toHaveLength(1);
     expect(sessions[0].sessionId).toBe('s1');
   });
 
-  it('excludes standalone sessions when filtering by mission', async () => {
-    await appendSession('', makeSession({ missionSlug: 'mission-a', sessionId: 's1' }));
-    await appendSession('', makeSession({ missionSlug: null, assignmentSlug: null, sessionId: 's2' }));
+  it('excludes standalone sessions when filtering by project', async () => {
+    await appendSession('', makeSession({ projectSlug: 'project-a', sessionId: 's1' }));
+    await appendSession('', makeSession({ projectSlug: null, assignmentSlug: null, sessionId: 's2' }));
 
-    const sessions = await listMissionSessions('', 'mission-a');
+    const sessions = await listProjectSessions('', 'project-a');
     expect(sessions).toHaveLength(1);
     expect(sessions[0].sessionId).toBe('s1');
   });
 
-  it('filters by mission and assignment slug', async () => {
+  it('filters by project and assignment slug', async () => {
     await appendSession('', makeSession({ assignmentSlug: 'task-a', sessionId: 's1' }));
     await appendSession('', makeSession({ assignmentSlug: 'task-b', sessionId: 's2' }));
 
-    const sessions = await listMissionSessions('', 'test-mission', 'task-a');
+    const sessions = await listProjectSessions('', 'test-project', 'task-a');
     expect(sessions).toHaveLength(1);
     expect(sessions[0].sessionId).toBe('s1');
   });
@@ -173,9 +173,9 @@ describe('listMissionSessions', () => {
 
 describe('reconcileActiveSessions', () => {
   it('marks sessions as completed when assignment is completed', async () => {
-    const missionsDir = resolve(testDir, 'missions');
-    const missionDir = resolve(missionsDir, 'test-mission');
-    const assignmentDir = resolve(missionDir, 'assignments', 'test-assignment');
+    const projectsDir = resolve(testDir, 'projects');
+    const projectDir = resolve(projectsDir, 'test-project');
+    const assignmentDir = resolve(projectDir, 'assignments', 'test-assignment');
     await mkdir(assignmentDir, { recursive: true });
     await writeFile(
       resolve(assignmentDir, 'assignment.md'),
@@ -184,7 +184,7 @@ describe('reconcileActiveSessions', () => {
 
     await appendSession('', makeSession());
 
-    const updated = await reconcileActiveSessions(missionsDir);
+    const updated = await reconcileActiveSessions(projectsDir);
     expect(updated).toBe(1);
 
     const all = await listAllSessions('');
@@ -192,9 +192,9 @@ describe('reconcileActiveSessions', () => {
   });
 
   it('marks sessions as stopped when assignment is failed', async () => {
-    const missionsDir = resolve(testDir, 'missions');
-    const missionDir = resolve(missionsDir, 'test-mission');
-    const assignmentDir = resolve(missionDir, 'assignments', 'test-assignment');
+    const projectsDir = resolve(testDir, 'projects');
+    const projectDir = resolve(projectsDir, 'test-project');
+    const assignmentDir = resolve(projectDir, 'assignments', 'test-assignment');
     await mkdir(assignmentDir, { recursive: true });
     await writeFile(
       resolve(assignmentDir, 'assignment.md'),
@@ -203,17 +203,17 @@ describe('reconcileActiveSessions', () => {
 
     await appendSession('', makeSession());
 
-    const updated = await reconcileActiveSessions(missionsDir);
+    const updated = await reconcileActiveSessions(projectsDir);
     expect(updated).toBe(1);
 
     const all = await listAllSessions('');
     expect(all[0].status).toBe('stopped');
   });
 
-  it('skips standalone sessions (null mission/assignment)', async () => {
-    const missionsDir = resolve(testDir, 'missions');
-    const missionDir = resolve(missionsDir, 'test-mission');
-    const assignmentDir = resolve(missionDir, 'assignments', 'test-assignment');
+  it('skips standalone sessions (null project/assignment)', async () => {
+    const projectsDir = resolve(testDir, 'projects');
+    const projectDir = resolve(projectsDir, 'test-project');
+    const assignmentDir = resolve(projectDir, 'assignments', 'test-assignment');
     await mkdir(assignmentDir, { recursive: true });
     await writeFile(
       resolve(assignmentDir, 'assignment.md'),
@@ -222,9 +222,9 @@ describe('reconcileActiveSessions', () => {
 
     // One attached session (should be reconciled) and one standalone (should be skipped)
     await appendSession('', makeSession({ sessionId: 'attached-1' }));
-    await appendSession('', makeSession({ sessionId: 'standalone-1', missionSlug: null, assignmentSlug: null }));
+    await appendSession('', makeSession({ sessionId: 'standalone-1', projectSlug: null, assignmentSlug: null }));
 
-    const updated = await reconcileActiveSessions(missionsDir);
+    const updated = await reconcileActiveSessions(projectsDir);
     expect(updated).toBe(1);
 
     const all = await listAllSessions('');
@@ -235,9 +235,9 @@ describe('reconcileActiveSessions', () => {
   });
 
   it('does not update sessions for in-progress assignments', async () => {
-    const missionsDir = resolve(testDir, 'missions');
-    const missionDir = resolve(missionsDir, 'test-mission');
-    const assignmentDir = resolve(missionDir, 'assignments', 'test-assignment');
+    const projectsDir = resolve(testDir, 'projects');
+    const projectDir = resolve(projectsDir, 'test-project');
+    const assignmentDir = resolve(projectDir, 'assignments', 'test-assignment');
     await mkdir(assignmentDir, { recursive: true });
     await writeFile(
       resolve(assignmentDir, 'assignment.md'),
@@ -246,7 +246,7 @@ describe('reconcileActiveSessions', () => {
 
     await appendSession('', makeSession());
 
-    const updated = await reconcileActiveSessions(missionsDir);
+    const updated = await reconcileActiveSessions(projectsDir);
     expect(updated).toBe(0);
 
     const all = await listAllSessions('');
@@ -256,13 +256,13 @@ describe('reconcileActiveSessions', () => {
 
 describe('migrateFromMarkdown', () => {
   it('imports sessions from _index-sessions.md files', async () => {
-    const missionsDir = resolve(testDir, 'missions');
-    const missionDir = resolve(missionsDir, 'my-mission');
-    await mkdir(missionDir, { recursive: true });
+    const projectsDir = resolve(testDir, 'projects');
+    const projectDir = resolve(projectsDir, 'my-project');
+    await mkdir(projectDir, { recursive: true });
     await writeFile(
-      resolve(missionDir, '_index-sessions.md'),
+      resolve(projectDir, '_index-sessions.md'),
       `---
-mission: my-mission
+project: my-project
 generated: "2026-03-26T00:00:00Z"
 activeSessions: 1
 ---
@@ -276,7 +276,7 @@ activeSessions: 1
 `,
     );
 
-    const count = await migrateFromMarkdown(missionsDir);
+    const count = await migrateFromMarkdown(projectsDir);
     expect(count).toBe(2);
 
     const all = await listAllSessions('');
@@ -288,13 +288,13 @@ activeSessions: 1
   it('skips migration if sessions already exist', async () => {
     await appendSession('', makeSession());
 
-    const missionsDir = resolve(testDir, 'missions');
-    const missionDir = resolve(missionsDir, 'my-mission');
-    await mkdir(missionDir, { recursive: true });
+    const projectsDir = resolve(testDir, 'projects');
+    const projectDir = resolve(projectsDir, 'my-project');
+    await mkdir(projectDir, { recursive: true });
     await writeFile(
-      resolve(missionDir, '_index-sessions.md'),
+      resolve(projectDir, '_index-sessions.md'),
       `---
-mission: my-mission
+project: my-project
 generated: "2026-03-26T00:00:00Z"
 activeSessions: 1
 ---
@@ -307,7 +307,7 @@ activeSessions: 1
 `,
     );
 
-    const count = await migrateFromMarkdown(missionsDir);
+    const count = await migrateFromMarkdown(projectsDir);
     expect(count).toBe(0);
 
     const all = await listAllSessions('');

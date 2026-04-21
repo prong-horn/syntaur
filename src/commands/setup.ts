@@ -123,7 +123,7 @@ export async function setupCommand(options: SetupOptions): Promise<void> {
 
   if (!initialized) {
     console.log('\nNext steps:');
-    console.log('  npx syntaur@latest create-mission "My First Mission"');
+    console.log('  npx syntaur@latest create-project "My First Project"');
     console.log('  npx syntaur@latest dashboard');
   }
 }

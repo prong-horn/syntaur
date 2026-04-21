@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { MarkdownRenderer } from './MarkdownRenderer';
-import { useEditableDocument } from '../hooks/useMissions';
+import { useEditableDocument } from '../hooks/useProjects';
 import { LoadingState } from './LoadingState';
 import { ErrorState } from './ErrorState';
 import { SectionCard } from './SectionCard';

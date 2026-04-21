@@ -1,6 +1,6 @@
 import { escapeYamlString } from '../utils/yaml.js';
 
-export interface MissionParams {
+export interface ProjectParams {
   id: string;
   slug: string;
   title: string;
@@ -8,7 +8,7 @@ export interface MissionParams {
   workspace?: string;
 }
 
-export function renderMission(params: MissionParams): string {
+export function renderProject(params: ProjectParams): string {
   const safeTitle = escapeYamlString(params.title);
   const workspaceLine = params.workspace ? `\nworkspace: ${params.workspace}` : '';
   return `---
@@ -28,7 +28,7 @@ tags: []${workspaceLine}
 
 ## Overview
 
-<!-- Describe the mission goal, context, and success criteria here. -->
+<!-- Describe the project goal, context, and success criteria here. -->
 
 ## Notes
 

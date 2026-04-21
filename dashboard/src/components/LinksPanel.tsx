@@ -2,8 +2,8 @@ import { Link } from 'react-router-dom';
 import { ArrowUpRight, ArrowLeft, ArrowRight } from 'lucide-react';
 import { StatusBadge } from './StatusBadge';
 import { SectionCard } from './SectionCard';
-import { useWorkspacePrefix } from '../hooks/useMissions';
-import type { EnrichedLink } from '../hooks/useMissions';
+import { useWorkspacePrefix } from '../hooks/useProjects';
+import type { EnrichedLink } from '../hooks/useProjects';
 
 interface LinksPanelProps {
   links: EnrichedLink[];
@@ -26,7 +26,7 @@ export function LinksPanel({ links }: LinksPanelProps) {
         {forwardLinks.map((link) => (
           <Link
             key={`fwd-${link.slug}`}
-            to={`${wsPrefix}/missions/${link.missionSlug}/assignments/${link.assignmentSlug}`}
+            to={`${wsPrefix}/projects/${link.projectSlug}/assignments/${link.assignmentSlug}`}
             className="flex items-center gap-3 px-1 py-2.5 transition hover:bg-muted/40 first:pt-0 last:pb-0"
           >
             <ArrowRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
@@ -43,7 +43,7 @@ export function LinksPanel({ links }: LinksPanelProps) {
         {reverseLinks.map((link) => (
           <Link
             key={`rev-${link.slug}`}
-            to={`${wsPrefix}/missions/${link.missionSlug}/assignments/${link.assignmentSlug}`}
+            to={`${wsPrefix}/projects/${link.projectSlug}/assignments/${link.assignmentSlug}`}
             className="flex items-center gap-3 px-1 py-2.5 transition hover:bg-muted/40 first:pt-0 last:pb-0"
           >
             <ArrowLeft className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />

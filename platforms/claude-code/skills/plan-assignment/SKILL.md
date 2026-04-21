@@ -23,13 +23,13 @@ Optional notes from the user: $ARGUMENTS
 
 Read `.syntaur/context.json` from the current working directory.
 
-If the file does not exist, tell the user: "No active assignment found. Run `/grab-assignment <mission-slug>` first to claim an assignment."
+If the file does not exist, tell the user: "No active assignment found. Run `/grab-assignment <project-slug>` first to claim an assignment."
 
 Extract from the context file:
-- `missionSlug` -- the mission slug
+- `projectSlug` -- the project slug
 - `assignmentSlug` -- the assignment slug
 - `assignmentDir` -- absolute path to the assignment folder
-- `missionDir` -- absolute path to the mission folder
+- `projectDir` -- absolute path to the project folder
 - `workspaceRoot` -- absolute path to the workspace (may be null)
 
 ## Step 1.5: Load Playbooks
@@ -47,12 +47,12 @@ For each file found, read it and follow its directives. Playbooks may contain ru
 Read the following files to understand the assignment:
 
 1. Read `<assignmentDir>/assignment.md` -- extract the objective, acceptance criteria, context section, and any Q&A
-2. Read `<missionDir>/agent.md` -- extract conventions and boundaries
-3. Read `<missionDir>/claude.md` if it exists -- extract Claude-specific instructions
-4. Read `<missionDir>/mission.md` -- extract the mission goal for broader context
+2. Read `<projectDir>/agent.md` -- extract conventions and boundaries
+3. Read `<projectDir>/claude.md` if it exists -- extract Claude-specific instructions
+4. Read `<projectDir>/project.md` -- extract the project goal for broader context
 
 If the assignment has dependencies (`dependsOn` in frontmatter), read the handoff.md from each dependency's assignment folder for integration context:
-- `<missionDir>/assignments/<dep-slug>/handoff.md`
+- `<projectDir>/assignments/<dep-slug>/handoff.md`
 
 ## Step 3: Explore Workspace (if set)
 

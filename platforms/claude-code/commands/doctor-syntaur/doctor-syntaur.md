@@ -67,7 +67,7 @@ Format each issue like:
 Doctor reports issues from anywhere under `~/.syntaur/`. You are NOT allowed to edit most of those files. Before offering any remediation edit, compute your current write boundary:
 
 1. Read `.syntaur/context.json` in the current working directory (the same `cwd` you ran the CLI from).
-2. If the file does not exist, or exists but has no assignment fields (`missionSlug`, `assignmentSlug`, `missionDir`, `assignmentDir`):
+2. If the file does not exist, or exists but has no assignment fields (`projectSlug`, `assignmentSlug`, `projectDir`, `assignmentDir`):
    - You have NO assignment context.
    - Your only permitted edit target is the literal file `<cwd>/.syntaur/context.json` itself.
    - For every other issue, show the `suggestion` text verbatim and do NOT offer to edit.
@@ -95,10 +95,10 @@ For each error or warning, determine what kind of offer is appropriate.
 
 **Hard stop list — never write to these regardless of what doctor reports:**
 
-- `mission.md`, `agent.md`, `claude.md`, `manifest.md`, `_status.md`
+- `project.md`, `agent.md`, `claude.md`, `manifest.md`, `_status.md`
 - Any file starting with `_index-` or ending in `_index.md`
-- Any file in a mission's `resources/` or `memories/` directory
-- Any file inside a different assignment's folder (i.e. `missions/<m>/assignments/<other>/...` where `<other> !== assignmentSlug`)
+- Any file in a project's `resources/` or `memories/` directory
+- Any file inside a different assignment's folder (i.e. `projects/<m>/assignments/<other>/...` where `<other> !== assignmentSlug`)
 
 ### Step 7: Suggest a follow-up
 

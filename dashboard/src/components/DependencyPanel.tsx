@@ -13,12 +13,12 @@ interface DependencyInfo {
 }
 
 interface DependencyPanelProps {
-  missionSlug: string;
+  projectSlug: string;
   dependencies: DependencyInfo[];
   blockedReason: string | null;
 }
 
-export function DependencyPanel({ missionSlug, dependencies, blockedReason }: DependencyPanelProps) {
+export function DependencyPanel({ projectSlug, dependencies, blockedReason }: DependencyPanelProps) {
   const [expanded, setExpanded] = useState(false);
 
   if (dependencies.length === 0) return null;
@@ -81,7 +81,7 @@ export function DependencyPanel({ missionSlug, dependencies, blockedReason }: De
           {dependencies.map((dep) => (
             <Link
               key={dep.slug}
-              to={`/missions/${missionSlug}/assignments/${dep.slug}`}
+              to={`/projects/${projectSlug}/assignments/${dep.slug}`}
               className="flex items-center gap-3 px-1 py-2.5 transition hover:bg-muted/40 first:pt-0 last:pb-0"
             >
               <StatusBadge status={dep.status} />

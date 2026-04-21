@@ -5,9 +5,9 @@ import { writeFile, unlink } from 'node:fs/promises';
 import { syntaurRoot } from '../utils/paths.js';
 import { WebSocketServer, WebSocket } from 'ws';
 import {
-  listMissions,
+  listProjects,
   listAssignmentsBoard,
-  getMissionDetail,
+  getProjectDetail,
   getAssignmentDetail,
   getOverview,
   getAttention,
@@ -33,7 +33,7 @@ import type { WsMessage } from './types.js';
 
 export interface DashboardServerOptions {
   port: number;
-  missionsDir: string;
+  projectsDir: string;
   serversDir: string;
   playbooksDir: string;
   todosDir: string;
@@ -43,7 +43,7 @@ export interface DashboardServerOptions {
 }
 
 export function createDashboardServer(options: DashboardServerOptions) {
-  const { port, missionsDir, serversDir, playbooksDir, todosDir, serveStaticUi, dashboardDistPath } = options;
+  const { port, projectsDir, serversDir, playbooksDir, todosDir, serveStaticUi, dashboardDistPath } = options;
   const app = express();
   const server = createServer(app);
 
@@ -85,7 +85,7 @@ export function createDashboardServer(options: DashboardServerOptions) {
 
   // --- Initialize session database ---
   initSessionDb();
-  migrateFromMarkdown(missionsDir).catch((err) => {
+  migrateFromMarkdown(projectsDir).catch((err) => {
     console.error('Session migration from markdown failed:', err);
   });
 
@@ -95,7 +95,7 @@ export function createDashboardServer(options: DashboardServerOptions) {
   // --- API Routes ---
   app.get('/api/overview', async (_req, res) => {
     try {
-      const overview = await getOverview(missionsDir, serversDir);
+      const overview = await getOverview(projectsDir, serversDir);
       res.json(overview);
     } catch (error) {
       console.error('Error getting overview:', error);
@@ -105,7 +105,7 @@ export function createDashboardServer(options: DashboardServerOptions) {
 
   app.get('/api/attention', async (_req, res) => {
     try {
-      const attention = await getAttention(missionsDir, serversDir);
+      const attention = await getAttention(projectsDir, serversDir);
       res.json(attention);
     } catch (error) {
       console.error('Error getting attention queue:', error);
@@ -177,27 +177,27 @@ export function createDashboardServer(options: DashboardServerOptions) {
     }
   });
 
-  app.get('/api/missions', async (req, res) => {
+  app.get('/api/projects', async (req, res) => {
     try {
-      let missions = await listMissions(missionsDir);
+      let projects = await listProjects(projectsDir);
       const workspaceParam = req.query.workspace as string | undefined;
       if (workspaceParam) {
         if (workspaceParam === '_ungrouped') {
-          missions = missions.filter((m) => m.workspace === null);
+          projects = projects.filter((m) => m.workspace === null);
         } else {
-          missions = missions.filter((m) => m.workspace === workspaceParam);
+          projects = projects.filter((m) => m.workspace === workspaceParam);
         }
       }
-      res.json(missions);
+      res.json(projects);
     } catch (error) {
-      console.error('Error listing missions:', error);
-      res.status(500).json({ error: 'Failed to list missions' });
+      console.error('Error listing projects:', error);
+      res.status(500).json({ error: 'Failed to list projects' });
     }
   });
 
   app.get('/api/workspaces', async (_req, res) => {
     try {
-      const result = await listWorkspaces(missionsDir);
+      const result = await listWorkspaces(projectsDir);
       res.json(result);
     } catch (error) {
       console.error('Error listing workspaces:', error);
@@ -212,8 +212,8 @@ export function createDashboardServer(options: DashboardServerOptions) {
         res.status(400).json({ error: 'Invalid workspace name. Use lowercase letters, numbers, and hyphens.' });
         return;
       }
-      await createWorkspace(missionsDir, name);
-      broadcast({ type: 'mission-updated', missionSlug: '', timestamp: new Date().toISOString() });
+      await createWorkspace(projectsDir, name);
+      broadcast({ type: 'project-updated', projectSlug: '', timestamp: new Date().toISOString() });
       res.json({ name });
     } catch (error) {
       console.error('Error creating workspace:', error);
@@ -223,8 +223,8 @@ export function createDashboardServer(options: DashboardServerOptions) {
 
   app.delete('/api/workspaces/:name', async (req, res) => {
     try {
-      await deleteWorkspace(missionsDir, req.params.name);
-      broadcast({ type: 'mission-updated', missionSlug: '', timestamp: new Date().toISOString() });
+      await deleteWorkspace(projectsDir, req.params.name);
+      broadcast({ type: 'project-updated', projectSlug: '', timestamp: new Date().toISOString() });
       res.json({ ok: true });
     } catch (error) {
       console.error('Error deleting workspace:', error);
@@ -234,13 +234,13 @@ export function createDashboardServer(options: DashboardServerOptions) {
 
   app.get('/api/assignments', async (req, res) => {
     try {
-      const result = await listAssignmentsBoard(missionsDir);
+      const result = await listAssignmentsBoard(projectsDir);
       const workspaceParam = req.query.workspace as string | undefined;
       if (workspaceParam) {
         if (workspaceParam === '_ungrouped') {
-          result.assignments = result.assignments.filter((a) => a.missionWorkspace === null);
+          result.assignments = result.assignments.filter((a) => a.projectWorkspace === null);
         } else {
-          result.assignments = result.assignments.filter((a) => a.missionWorkspace === workspaceParam);
+          result.assignments = result.assignments.filter((a) => a.projectWorkspace === workspaceParam);
         }
       }
       res.json(result);
@@ -250,30 +250,30 @@ export function createDashboardServer(options: DashboardServerOptions) {
     }
   });
 
-  app.get('/api/missions/:slug', async (req, res) => {
+  app.get('/api/projects/:slug', async (req, res) => {
     try {
-      const detail = await getMissionDetail(missionsDir, req.params.slug);
+      const detail = await getProjectDetail(projectsDir, req.params.slug);
       if (!detail) {
-        res.status(404).json({ error: `Mission "${req.params.slug}" not found` });
+        res.status(404).json({ error: `Project "${req.params.slug}" not found` });
         return;
       }
       res.json(detail);
     } catch (error) {
-      console.error('Error getting mission detail:', error);
-      res.status(500).json({ error: 'Failed to get mission detail' });
+      console.error('Error getting project detail:', error);
+      res.status(500).json({ error: 'Failed to get project detail' });
     }
   });
 
-  app.get('/api/missions/:slug/assignments/:aslug', async (req, res) => {
+  app.get('/api/projects/:slug/assignments/:aslug', async (req, res) => {
     try {
       const detail = await getAssignmentDetail(
-        missionsDir,
+        projectsDir,
         req.params.slug,
         req.params.aslug,
       );
       if (!detail) {
         res.status(404).json({
-          error: `Assignment "${req.params.aslug}" not found in mission "${req.params.slug}"`,
+          error: `Assignment "${req.params.aslug}" not found in project "${req.params.slug}"`,
         });
         return;
       }
@@ -284,14 +284,14 @@ export function createDashboardServer(options: DashboardServerOptions) {
     }
   });
 
-  // --- Write API (create missions/assignments) ---
-  app.use(createWriteRouter(missionsDir));
+  // --- Write API (create projects/assignments) ---
+  app.use(createWriteRouter(projectsDir));
 
   // --- Servers API ---
-  app.use('/api/servers', createServersRouter(serversDir, missionsDir));
+  app.use('/api/servers', createServersRouter(serversDir, projectsDir));
 
   // --- Agent Sessions API ---
-  app.use('/api/agent-sessions', createAgentSessionsRouter(missionsDir, broadcast));
+  app.use('/api/agent-sessions', createAgentSessionsRouter(projectsDir, broadcast));
 
   // --- Playbooks API ---
   app.use('/api/playbooks', createPlaybooksRouter(playbooksDir));
@@ -326,14 +326,14 @@ export function createDashboardServer(options: DashboardServerOptions) {
   return {
     async start(): Promise<void> {
       watcherHandle = createWatcher({
-        missionsDir,
+        projectsDir,
         serversDir,
         playbooksDir,
         todosDir,
         onMessage: broadcast,
       });
 
-      startAutodiscovery({ serversDir, missionsDir, excludePids: new Set([process.pid]) });
+      startAutodiscovery({ serversDir, projectsDir, excludePids: new Set([process.pid]) });
 
       return new Promise<void>((resolvePromise, reject) => {
         server.on('error', (err: NodeJS.ErrnoException) => {

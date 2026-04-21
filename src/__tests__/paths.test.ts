@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { homedir } from 'node:os';
-import { expandHome, syntaurRoot, defaultMissionDir } from '../utils/paths.js';
+import { expandHome, syntaurRoot, defaultProjectDir } from '../utils/paths.js';
 
 describe('expandHome', () => {
   it('expands ~ to home directory', () => {
@@ -32,11 +32,11 @@ describe('syntaurRoot', () => {
   });
 });
 
-describe('defaultMissionDir', () => {
-  it('returns absolute path ending with missions', () => {
-    const dir = defaultMissionDir();
+describe('defaultProjectDir', () => {
+  it('returns absolute path ending with projects', () => {
+    const dir = defaultProjectDir();
     expect(dir).not.toContain('~');
-    expect(dir.endsWith('missions')).toBe(true);
+    expect(dir.endsWith('projects')).toBe(true);
     expect(dir).toContain('.syntaur');
   });
 });

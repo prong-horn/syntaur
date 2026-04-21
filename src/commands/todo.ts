@@ -467,7 +467,7 @@ todoCommand
   .command('promote')
   .description('Promote a todo to a full assignment')
   .argument('<id>', 'Todo short ID')
-  .requiredOption('--mission <slug>', 'Target mission slug')
+  .requiredOption('--project <slug>', 'Target project slug')
   .option('--workspace <slug>', 'Workspace slug')
   .option('--global', 'Use global todos')
   .action(async (id: string, options) => {
@@ -492,14 +492,14 @@ todoCommand
         items: item.description,
         session: null,
         branch: null,
-        summary: `Promoted to assignment in mission: ${options.mission}`,
+        summary: `Promoted to assignment in project: ${options.project}`,
         blockers: null,
         status: null,
       };
       await appendLogEntry(todosPath, workspace, entry);
 
-      console.log(`Promoted [t:${id}] to assignment in mission "${options.mission}".`);
-      console.log(`Run: syntaur create-assignment --mission ${options.mission} "${item.description}"`);
+      console.log(`Promoted [t:${id}] to assignment in project "${options.project}".`);
+      console.log(`Run: syntaur create-assignment --project ${options.project} "${item.description}"`);
     } catch (error) {
       console.error('Error:', error instanceof Error ? error.message : String(error));
       process.exit(1);

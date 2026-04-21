@@ -27,7 +27,7 @@ describe('getDefaultCommandName', () => {
     await mkdir(syntaurDir, { recursive: true });
     await writeFile(
       resolve(syntaurDir, 'config.md'),
-      '---\ndefaultMissionDir: ~/.syntaur/missions\nonboarding:\n  completed: false\n---\n',
+      '---\ndefaultProjectDir: ~/.syntaur/projects\nonboarding:\n  completed: false\n---\n',
     );
 
     await expect(getDefaultCommandName()).resolves.toBe('setup');
@@ -38,19 +38,19 @@ describe('getDefaultCommandName', () => {
     await mkdir(syntaurDir, { recursive: true });
     await writeFile(
       resolve(syntaurDir, 'config.md'),
-      '---\ndefaultMissionDir: ~/.syntaur/missions\nonboarding:\n  completed: true\n---\n',
+      '---\ndefaultProjectDir: ~/.syntaur/projects\nonboarding:\n  completed: true\n---\n',
     );
 
     await expect(getDefaultCommandName()).resolves.toBe('dashboard');
   });
 
-  it('treats legacy installs with mission content as complete', async () => {
+  it('treats legacy installs with project content as complete', async () => {
     const syntaurDir = resolve(homeDir, '.syntaur');
-    const missionsDir = resolve(syntaurDir, 'missions');
-    await mkdir(resolve(missionsDir, 'existing-mission'), { recursive: true });
+    const projectsDir = resolve(syntaurDir, 'projects');
+    await mkdir(resolve(projectsDir, 'existing-project'), { recursive: true });
     await writeFile(
       resolve(syntaurDir, 'config.md'),
-      `---\ndefaultMissionDir: ${missionsDir}\n---\n`,
+      `---\ndefaultProjectDir: ${projectsDir}\n---\n`,
     );
 
     await expect(getDefaultCommandName()).resolves.toBe('dashboard');

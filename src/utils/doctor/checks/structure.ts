@@ -6,7 +6,7 @@ import type { Check, CheckResult } from '../types.js';
 const CATEGORY = 'structure';
 
 const KNOWN_TOP_LEVEL = new Set<string>([
-  'missions',
+  'projects',
   'playbooks',
   'todos',
   'servers',
@@ -18,19 +18,19 @@ const KNOWN_TOP_LEVEL = new Set<string>([
   'workspaces.json',
 ]);
 
-const missionsDir: Check = {
-  id: 'structure.missions-dir',
+const projectsDir: Check = {
+  id: 'structure.projects-dir',
   category: CATEGORY,
-  title: 'missions/ directory exists',
+  title: 'projects/ directory exists',
   async run(ctx) {
-    const p = resolve(ctx.syntaurRoot, 'missions');
+    const p = resolve(ctx.syntaurRoot, 'projects');
     if (!(await fileExists(p))) {
       return {
         id: this.id,
         category: this.category,
         title: this.title,
         status: 'error',
-        detail: 'missions/ missing under ~/.syntaur/',
+        detail: 'projects/ missing under ~/.syntaur/',
         affected: [p],
         remediation: {
           kind: 'manual',
@@ -165,7 +165,7 @@ const knownFilesRecognized: Check = {
 };
 
 export const structureChecks: Check[] = [
-  missionsDir,
+  projectsDir,
   playbooksDir,
   todosDirValid,
   serversDirValid,

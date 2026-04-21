@@ -6,7 +6,7 @@ import { isValidSlug } from '../utils/slug.js';
 import { executeTransition } from '../lifecycle/index.js';
 
 export interface StartOptions {
-  mission: string;
+  project: string;
   agent?: string;
   dir?: string;
 }
@@ -15,12 +15,12 @@ export async function startCommand(
   assignment: string,
   options: StartOptions,
 ): Promise<void> {
-  if (!options.mission) {
-    throw new Error('--mission <slug> is required.');
+  if (!options.project) {
+    throw new Error('--project <slug> is required.');
   }
-  if (!isValidSlug(options.mission)) {
+  if (!isValidSlug(options.project)) {
     throw new Error(
-      `Invalid mission slug "${options.mission}". Slugs must be lowercase, hyphen-separated, with no special characters.`,
+      `Invalid project slug "${options.project}". Slugs must be lowercase, hyphen-separated, with no special characters.`,
     );
   }
   if (!isValidSlug(assignment)) {
@@ -32,17 +32,17 @@ export async function startCommand(
   const config = await readConfig();
   const baseDir = options.dir
     ? expandHome(options.dir)
-    : config.defaultMissionDir;
-  const missionDir = resolve(baseDir, options.mission);
+    : config.defaultProjectDir;
+  const projectDir = resolve(baseDir, options.project);
 
-  const missionMdPath = resolve(missionDir, 'mission.md');
-  if (!(await fileExists(missionDir)) || !(await fileExists(missionMdPath))) {
+  const projectMdPath = resolve(projectDir, 'project.md');
+  if (!(await fileExists(projectDir)) || !(await fileExists(projectMdPath))) {
     throw new Error(
-      `Mission "${options.mission}" not found at ${missionDir}.`,
+      `Project "${options.project}" not found at ${projectDir}.`,
     );
   }
 
-  const result = await executeTransition(missionDir, assignment, 'start', {
+  const result = await executeTransition(projectDir, assignment, 'start', {
     agent: options.agent,
   });
 

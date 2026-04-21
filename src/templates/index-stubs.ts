@@ -6,7 +6,7 @@ export interface IndexStubParams {
 
 export function renderIndexAssignments(params: IndexStubParams): string {
   return `---
-mission: ${params.slug}
+project: ${params.slug}
 generated: "${params.timestamp}"
 total: 0
 by_status:
@@ -27,7 +27,7 @@ by_status:
 
 export function renderIndexPlans(params: IndexStubParams): string {
   return `---
-mission: ${params.slug}
+project: ${params.slug}
 generated: "${params.timestamp}"
 ---
 
@@ -40,7 +40,7 @@ generated: "${params.timestamp}"
 
 export function renderIndexDecisions(params: IndexStubParams): string {
   return `---
-mission: ${params.slug}
+project: ${params.slug}
 generated: "${params.timestamp}"
 ---
 
@@ -53,7 +53,7 @@ generated: "${params.timestamp}"
 
 export function renderStatus(params: IndexStubParams): string {
   return `---
-mission: ${params.slug}
+project: ${params.slug}
 generated: "${params.timestamp}"
 status: pending
 progress:
@@ -70,7 +70,7 @@ needsAttention:
   unansweredQuestions: 0
 ---
 
-# Mission Status: ${params.title}
+# Project Status: ${params.title}
 
 **Status:** pending
 **Progress:** 0/0 assignments complete
@@ -93,7 +93,7 @@ No dependencies yet.
 
 export function renderResourcesIndex(params: IndexStubParams): string {
   return `---
-mission: ${params.slug}
+project: ${params.slug}
 generated: "${params.timestamp}"
 total: 0
 ---
@@ -107,7 +107,7 @@ total: 0
 
 export function renderMemoriesIndex(params: IndexStubParams): string {
   return `---
-mission: ${params.slug}
+project: ${params.slug}
 generated: "${params.timestamp}"
 total: 0
 ---

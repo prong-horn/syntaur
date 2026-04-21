@@ -6,7 +6,7 @@ sourceAssignment: design-auth-schema
 relatedAssignments:
   - design-auth-schema
   - implement-jwt-middleware
-scope: mission
+scope: project
 created: "2026-03-17T09:00:00Z"
 updated: "2026-03-17T09:00:00Z"
 tags:

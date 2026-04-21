@@ -89,7 +89,7 @@ describe('setup and install flows', () => {
     await setupCommand({ yes: true });
 
     const configPath = resolve(homeDir, '.syntaur', 'config.md');
-    expect(await readFile(configPath, 'utf-8')).toContain('defaultMissionDir');
+    expect(await readFile(configPath, 'utf-8')).toContain('defaultProjectDir');
   });
 
   it('non-interactive setup without flags fails with guidance', async () => {
@@ -228,7 +228,7 @@ describe('setup and install flows', () => {
 
   it('default uninstall removes plugins but keeps ~/.syntaur data', async () => {
     await mkdir(resolve(homeDir, '.syntaur'), { recursive: true });
-    await writeFile(resolve(homeDir, '.syntaur', 'config.md'), '---\ndefaultMissionDir: ~/.syntaur/missions\n---\n');
+    await writeFile(resolve(homeDir, '.syntaur', 'config.md'), '---\ndefaultProjectDir: ~/.syntaur/projects\n---\n');
     await installPluginCommand({});
     await installCodexPluginCommand({});
 
@@ -244,7 +244,7 @@ describe('setup and install flows', () => {
         'utf-8',
       ),
     ).not.toContain('"name": "syntaur"');
-    expect(await readFile(resolve(homeDir, '.syntaur', 'config.md'), 'utf-8')).toContain('defaultMissionDir');
+    expect(await readFile(resolve(homeDir, '.syntaur', 'config.md'), 'utf-8')).toContain('defaultProjectDir');
   });
 
   it('uninstall removes plugins from remembered custom locations', async () => {
@@ -270,7 +270,7 @@ describe('setup and install flows', () => {
     await mkdir(resolve(homeDir, '.syntaur'), { recursive: true });
     await writeFile(
       resolve(homeDir, '.syntaur', 'config.md'),
-      '---\ndefaultMissionDir: /tmp/custom-missions\n---\n',
+      '---\ndefaultProjectDir: /tmp/custom-projects\n---\n',
     );
     await installCodexPluginCommand({});
 

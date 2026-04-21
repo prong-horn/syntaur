@@ -12,7 +12,7 @@ const SCHEMA_VERSION = '2';
 const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS sessions (
   session_id TEXT PRIMARY KEY,
-  mission_slug TEXT,
+  project_slug TEXT,
   assignment_slug TEXT,
   agent TEXT NOT NULL,
   started TEXT NOT NULL,
@@ -23,8 +23,8 @@ CREATE TABLE IF NOT EXISTS sessions (
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
-CREATE INDEX IF NOT EXISTS idx_sessions_mission ON sessions(mission_slug);
-CREATE INDEX IF NOT EXISTS idx_sessions_assignment ON sessions(mission_slug, assignment_slug);
+CREATE INDEX IF NOT EXISTS idx_sessions_project ON sessions(project_slug);
+CREATE INDEX IF NOT EXISTS idx_sessions_assignment ON sessions(project_slug, assignment_slug);
 CREATE INDEX IF NOT EXISTS idx_sessions_status ON sessions(status);
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT);
 `;
@@ -48,7 +48,7 @@ export function initSessionDb(dbPath?: string): Database.Database {
     SCHEMA_VERSION,
   );
 
-  // Migrate from v1 to v2: make mission/assignment nullable, add description
+  // Migrate from v1 to v2: make project/assignment nullable, add description
   const currentVersion = db
     .prepare("SELECT value FROM meta WHERE key = 'schema_version'")
     .get() as { value: string } | undefined;
@@ -57,7 +57,7 @@ export function initSessionDb(dbPath?: string): Database.Database {
     db.exec(`
       CREATE TABLE sessions_v2 (
         session_id TEXT PRIMARY KEY,
-        mission_slug TEXT,
+        project_slug TEXT,
         assignment_slug TEXT,
         agent TEXT NOT NULL,
         started TEXT NOT NULL,
@@ -68,11 +68,11 @@ export function initSessionDb(dbPath?: string): Database.Database {
         created_at TEXT NOT NULL DEFAULT (datetime('now')),
         updated_at TEXT NOT NULL DEFAULT (datetime('now'))
       );
-      INSERT INTO sessions_v2 SELECT session_id, mission_slug, assignment_slug, agent, started, ended, status, path, NULL, created_at, updated_at FROM sessions;
+      INSERT INTO sessions_v2 SELECT session_id, project_slug, assignment_slug, agent, started, ended, status, path, NULL, created_at, updated_at FROM sessions;
       DROP TABLE sessions;
       ALTER TABLE sessions_v2 RENAME TO sessions;
-      CREATE INDEX IF NOT EXISTS idx_sessions_mission ON sessions(mission_slug);
-      CREATE INDEX IF NOT EXISTS idx_sessions_assignment ON sessions(mission_slug, assignment_slug);
+      CREATE INDEX IF NOT EXISTS idx_sessions_project ON sessions(project_slug);
+      CREATE INDEX IF NOT EXISTS idx_sessions_assignment ON sessions(project_slug, assignment_slug);
       CREATE INDEX IF NOT EXISTS idx_sessions_status ON sessions(status);
       UPDATE meta SET value = '2' WHERE key = 'schema_version';
     `);
@@ -115,22 +115,22 @@ export function resetSessionDb(): void {
  * One-time migration: import sessions from markdown _index-sessions.md files into SQLite.
  * Only runs if the sessions table is empty and markdown files exist.
  */
-export async function migrateFromMarkdown(missionsDir: string): Promise<number> {
+export async function migrateFromMarkdown(projectsDir: string): Promise<number> {
   const database = getSessionDb();
 
   // Skip if sessions already exist in the database
   const count = database.prepare('SELECT COUNT(*) as count FROM sessions').get() as { count: number };
   if (count.count > 0) return 0;
 
-  if (!(await fileExists(missionsDir))) return 0;
+  if (!(await fileExists(projectsDir))) return 0;
 
-  const entries = await readdir(missionsDir, { withFileTypes: true });
+  const entries = await readdir(projectsDir, { withFileTypes: true });
   const allSessions: AgentSession[] = [];
 
   for (const entry of entries) {
     if (!entry.isDirectory()) continue;
-    const missionDir = resolve(missionsDir, entry.name);
-    const indexPath = resolve(missionDir, '_index-sessions.md');
+    const projectDir = resolve(projectsDir, entry.name);
+    const indexPath = resolve(projectDir, '_index-sessions.md');
     if (!(await fileExists(indexPath))) continue;
 
     const sessions = await parseMarkdownSessionsIndex(indexPath, entry.name);
@@ -140,13 +140,13 @@ export async function migrateFromMarkdown(missionsDir: string): Promise<number> 
   if (allSessions.length === 0) return 0;
 
   const insert = database.prepare(`
-    INSERT OR IGNORE INTO sessions (session_id, mission_slug, assignment_slug, agent, started, status, path)
+    INSERT OR IGNORE INTO sessions (session_id, project_slug, assignment_slug, agent, started, status, path)
     VALUES (?, ?, ?, ?, ?, ?, ?)
   `);
 
   const insertAll = database.transaction((sessions: AgentSession[]) => {
     for (const s of sessions) {
-      insert.run(s.sessionId, s.missionSlug, s.assignmentSlug, s.agent, s.started, s.status, s.path);
+      insert.run(s.sessionId, s.projectSlug, s.assignmentSlug, s.agent, s.started, s.status, s.path);
     }
   });
 
@@ -161,7 +161,7 @@ export async function migrateFromMarkdown(missionsDir: string): Promise<number> 
  */
 async function parseMarkdownSessionsIndex(
   filePath: string,
-  missionSlug: string,
+  projectSlug: string,
 ): Promise<AgentSession[]> {
   const { readFile } = await import('node:fs/promises');
   const raw = await readFile(filePath, 'utf-8');
@@ -200,7 +200,7 @@ async function parseMarkdownSessionsIndex(
           started: cells[3],
           status: (cells[4] as AgentSessionStatus) || 'active',
           path: cells[5],
-          missionSlug,
+          projectSlug,
         });
       }
     }

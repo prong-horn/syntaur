@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import type { AssignmentTransitionAction } from '../hooks/useMissions';
+import type { AssignmentTransitionAction } from '../hooks/useProjects';
 import {
   Dialog,
   DialogContent,

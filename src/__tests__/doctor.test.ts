@@ -10,13 +10,13 @@ import type { DoctorReport } from '../utils/doctor/types.js';
 const originalHome = process.env.HOME;
 let homeDir: string;
 let syntaurDir: string;
-let missionsDir: string;
+let projectsDir: string;
 
 beforeEach(async () => {
   homeDir = await mkdtemp(join(tmpdir(), 'syntaur-doctor-'));
   process.env.HOME = homeDir;
   syntaurDir = resolve(homeDir, '.syntaur');
-  missionsDir = resolve(syntaurDir, 'missions');
+  projectsDir = resolve(syntaurDir, 'projects');
 });
 
 afterEach(async () => {
@@ -26,33 +26,33 @@ afterEach(async () => {
 
 async function initBaseline(): Promise<void> {
   await mkdir(syntaurDir, { recursive: true });
-  await mkdir(missionsDir, { recursive: true });
+  await mkdir(projectsDir, { recursive: true });
   await mkdir(resolve(syntaurDir, 'playbooks'), { recursive: true });
   await writeFile(
     resolve(syntaurDir, 'config.md'),
-    `---\nversion: "1.0"\ndefaultMissionDir: ${missionsDir}\n---\n`,
+    `---\nversion: "1.0"\ndefaultProjectDir: ${projectsDir}\n---\n`,
   );
 }
 
-async function writeMissionScaffold(slug: string): Promise<string> {
-  const missionDir = resolve(missionsDir, slug);
-  await mkdir(resolve(missionDir, 'assignments'), { recursive: true });
-  await mkdir(resolve(missionDir, 'resources'), { recursive: true });
-  await mkdir(resolve(missionDir, 'memories'), { recursive: true });
+async function writeProjectScaffold(slug: string): Promise<string> {
+  const projectDir = resolve(projectsDir, slug);
+  await mkdir(resolve(projectDir, 'assignments'), { recursive: true });
+  await mkdir(resolve(projectDir, 'resources'), { recursive: true });
+  await mkdir(resolve(projectDir, 'memories'), { recursive: true });
   const files: Array<[string, string]> = [
-    [resolve(missionDir, 'mission.md'), `# ${slug}\n`],
-    [resolve(missionDir, 'manifest.md'), `# ${slug} manifest\n`],
-    [resolve(missionDir, 'agent.md'), `# agent\n`],
-    [resolve(missionDir, 'claude.md'), `# claude\n`],
-    [resolve(missionDir, '_status.md'), `# status\n`],
-    [resolve(missionDir, '_index-assignments.md'), `# index\n`],
-    [resolve(missionDir, '_index-plans.md'), `# index\n`],
-    [resolve(missionDir, '_index-decisions.md'), `# index\n`],
-    [resolve(missionDir, 'resources', '_index.md'), `# index\n`],
-    [resolve(missionDir, 'memories', '_index.md'), `# index\n`],
+    [resolve(projectDir, 'project.md'), `# ${slug}\n`],
+    [resolve(projectDir, 'manifest.md'), `# ${slug} manifest\n`],
+    [resolve(projectDir, 'agent.md'), `# agent\n`],
+    [resolve(projectDir, 'claude.md'), `# claude\n`],
+    [resolve(projectDir, '_status.md'), `# status\n`],
+    [resolve(projectDir, '_index-assignments.md'), `# index\n`],
+    [resolve(projectDir, '_index-plans.md'), `# index\n`],
+    [resolve(projectDir, '_index-decisions.md'), `# index\n`],
+    [resolve(projectDir, 'resources', '_index.md'), `# index\n`],
+    [resolve(projectDir, 'memories', '_index.md'), `# index\n`],
   ];
   for (const [p, c] of files) await writeFile(p, c);
-  return missionDir;
+  return projectDir;
 }
 
 function assignmentMd(status: string, workspace?: { repository?: string | null; worktreePath?: string | null }): string {
@@ -92,8 +92,8 @@ describe('syntaur doctor', () => {
     expect(report.summary.error).toBeGreaterThanOrEqual(1);
     const root = byId(report, 'env.syntaur-root-exists');
     expect(root[0]?.status).toBe('error');
-    const missions = byId(report, 'structure.missions-dir');
-    expect(missions[0]?.status).toBe('skipped');
+    const projects = byId(report, 'structure.projects-dir');
+    expect(projects[0]?.status).toBe('skipped');
   });
 
   it('passes all structure checks on a freshly initialized root', async () => {
@@ -101,14 +101,14 @@ describe('syntaur doctor', () => {
     const report = await runChecks();
     expect(byId(report, 'env.syntaur-root-exists')[0]?.status).toBe('pass');
     expect(byId(report, 'env.config-valid')[0]?.status).toBe('pass');
-    expect(byId(report, 'structure.missions-dir')[0]?.status).toBe('pass');
+    expect(byId(report, 'structure.projects-dir')[0]?.status).toBe('pass');
     expect(byId(report, 'structure.playbooks-dir')[0]?.status).toBe('pass');
     expect(byId(report, 'structure.known-files-recognized')[0]?.status).toBe('pass');
   });
 
   it('detects missing config.md', async () => {
     await mkdir(syntaurDir, { recursive: true });
-    await mkdir(missionsDir, { recursive: true });
+    await mkdir(projectsDir, { recursive: true });
     await mkdir(resolve(syntaurDir, 'playbooks'), { recursive: true });
     const report = await runChecks();
     const configCheck = byId(report, 'env.config-valid')[0];
@@ -127,8 +127,8 @@ describe('syntaur doctor', () => {
 
   it('flags workspace-missing for in_progress assignment with null workspace', async () => {
     await initBaseline();
-    const missionDir = await writeMissionScaffold('m1');
-    const assignmentDir = resolve(missionDir, 'assignments', 'a1');
+    const projectDir = await writeProjectScaffold('m1');
+    const assignmentDir = resolve(projectDir, 'assignments', 'a1');
     await mkdir(assignmentDir, { recursive: true });
     await writeFile(resolve(assignmentDir, 'assignment.md'), assignmentMd('in_progress'));
     const report = await runChecks();
@@ -140,9 +140,9 @@ describe('syntaur doctor', () => {
 
   it('does not flag workspace-missing for pending or completed assignments', async () => {
     await initBaseline();
-    const missionDir = await writeMissionScaffold('m1');
-    const pendingDir = resolve(missionDir, 'assignments', 'p');
-    const completedDir = resolve(missionDir, 'assignments', 'c');
+    const projectDir = await writeProjectScaffold('m1');
+    const pendingDir = resolve(projectDir, 'assignments', 'p');
+    const completedDir = resolve(projectDir, 'assignments', 'c');
     await mkdir(pendingDir, { recursive: true });
     await mkdir(completedDir, { recursive: true });
     await writeFile(resolve(pendingDir, 'assignment.md'), assignmentMd('pending'));
@@ -154,8 +154,8 @@ describe('syntaur doctor', () => {
 
   it('detects invalid status values', async () => {
     await initBaseline();
-    const missionDir = await writeMissionScaffold('m1');
-    const assignmentDir = resolve(missionDir, 'assignments', 'bad');
+    const projectDir = await writeProjectScaffold('m1');
+    const assignmentDir = resolve(projectDir, 'assignments', 'bad');
     await mkdir(assignmentDir, { recursive: true });
     await writeFile(resolve(assignmentDir, 'assignment.md'), assignmentMd('not_a_real_status'));
     const report = await runChecks();
@@ -166,47 +166,47 @@ describe('syntaur doctor', () => {
 
   it('detects orphaned assignment folders (no assignment.md)', async () => {
     await initBaseline();
-    const missionDir = await writeMissionScaffold('m1');
-    await mkdir(resolve(missionDir, 'assignments', 'orphan'), { recursive: true });
+    const projectDir = await writeProjectScaffold('m1');
+    await mkdir(resolve(projectDir, 'assignments', 'orphan'), { recursive: true });
     const report = await runChecks();
     const issues = byId(report, 'assignment.orphaned-folder').filter((c) => c.status === 'error');
     expect(issues.length).toBe(1);
   });
 
-  it('detects an incomplete mission scaffold', async () => {
+  it('detects an incomplete project scaffold', async () => {
     await initBaseline();
-    const missionDir = resolve(missionsDir, 'half-built');
-    await mkdir(resolve(missionDir, 'assignments'), { recursive: true });
-    await writeFile(resolve(missionDir, 'mission.md'), '# partial\n');
+    const projectDir = resolve(projectsDir, 'half-built');
+    await mkdir(resolve(projectDir, 'assignments'), { recursive: true });
+    await writeFile(resolve(projectDir, 'project.md'), '# partial\n');
     const report = await runChecks();
-    const issues = byId(report, 'mission.required-files-present').filter((c) => c.status === 'error');
+    const issues = byId(report, 'project.required-files-present').filter((c) => c.status === 'error');
     expect(issues.length).toBe(1);
     expect(issues[0].detail).toMatch(/manifest\.md|agent\.md|claude\.md/);
   });
 
-  it('detects a mission folder that has no mission.md at all', async () => {
+  it('detects a project folder that has no project.md at all', async () => {
     await initBaseline();
-    const missionDir = resolve(missionsDir, 'only-assignments');
-    await mkdir(resolve(missionDir, 'assignments'), { recursive: true });
+    const projectDir = resolve(projectsDir, 'only-assignments');
+    await mkdir(resolve(projectDir, 'assignments'), { recursive: true });
     const report = await runChecks();
-    const issues = byId(report, 'mission.required-files-present').filter((c) => c.status === 'error');
+    const issues = byId(report, 'project.required-files-present').filter((c) => c.status === 'error');
     expect(issues.length).toBe(1);
-    expect(issues[0].detail).toContain('mission.md');
+    expect(issues[0].detail).toContain('project.md');
   });
 
-  it('does not falsely report manifest-stale for a fresh mission', async () => {
+  it('does not falsely report manifest-stale for a fresh project', async () => {
     await initBaseline();
-    await writeMissionScaffold('fresh');
+    await writeProjectScaffold('fresh');
     const report = await runChecks();
-    const issues = byId(report, 'mission.manifest-stale').filter((c) => c.status === 'warn');
+    const issues = byId(report, 'project.manifest-stale').filter((c) => c.status === 'warn');
     expect(issues.length).toBe(0);
   });
 
-  it('detects a silent fallback when defaultMissionDir is relative', async () => {
+  it('detects a silent fallback when defaultProjectDir is relative', async () => {
     await mkdir(syntaurDir, { recursive: true });
     await writeFile(
       resolve(syntaurDir, 'config.md'),
-      '---\nversion: "1.0"\ndefaultMissionDir: relative/path\n---\n',
+      '---\nversion: "1.0"\ndefaultProjectDir: relative/path\n---\n',
     );
     const report = await runChecks();
     const configCheck = byId(report, 'env.config-valid')[0];
@@ -220,7 +220,7 @@ describe('syntaur doctor', () => {
     // but parseFrontmatter in config.ts drops it because it's preceded by a non-empty parent value.
     await writeFile(
       resolve(syntaurDir, 'config.md'),
-      `---\nversion: "1.0"\ndefaultMissionDir: ${missionsDir}\nintegrations: brokenvalue\n  claudePluginDir: /some/path\n---\n`,
+      `---\nversion: "1.0"\ndefaultProjectDir: ${projectsDir}\nintegrations: brokenvalue\n  claudePluginDir: /some/path\n---\n`,
     );
     const report = await runChecks();
     const configCheck = byId(report, 'env.config-valid')[0];

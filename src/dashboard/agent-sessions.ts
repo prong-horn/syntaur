@@ -6,7 +6,7 @@ import type { AgentSession, AgentSessionStatus } from './types.js';
 
 interface SessionRow {
   session_id: string;
-  mission_slug: string | null;
+  project_slug: string | null;
   assignment_slug: string | null;
   agent: string;
   started: string;
@@ -19,7 +19,7 @@ interface SessionRow {
 function rowToSession(row: SessionRow): AgentSession {
   return {
     sessionId: row.session_id,
-    missionSlug: row.mission_slug ?? null,
+    projectSlug: row.project_slug ?? null,
     assignmentSlug: row.assignment_slug ?? null,
     agent: row.agent,
     started: row.started,
@@ -31,16 +31,16 @@ function rowToSession(row: SessionRow): AgentSession {
 }
 
 /**
- * Query sessions for a specific mission.
+ * Query sessions for a specific project.
  */
 export async function parseSessionsIndex(
-  _missionDir: string,
-  missionSlug: string,
+  _projectDir: string,
+  projectSlug: string,
 ): Promise<AgentSession[]> {
   const db = getSessionDb();
   const rows = db
-    .prepare('SELECT * FROM sessions WHERE mission_slug = ? ORDER BY started DESC')
-    .all(missionSlug) as SessionRow[];
+    .prepare('SELECT * FROM sessions WHERE project_slug = ? ORDER BY started DESC')
+    .all(projectSlug) as SessionRow[];
   return rows.map(rowToSession);
 }
 
@@ -48,16 +48,16 @@ export async function parseSessionsIndex(
  * Insert a new session into the database.
  */
 export async function appendSession(
-  _missionDir: string,
+  _projectDir: string,
   session: AgentSession,
 ): Promise<void> {
   const db = getSessionDb();
   db.prepare(`
-    INSERT INTO sessions (session_id, mission_slug, assignment_slug, agent, started, status, path, description)
+    INSERT INTO sessions (session_id, project_slug, assignment_slug, agent, started, status, path, description)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     session.sessionId,
-    session.missionSlug ?? null,
+    session.projectSlug ?? null,
     session.assignmentSlug ?? null,
     session.agent,
     session.started,
@@ -72,7 +72,7 @@ export async function appendSession(
  * Sets `ended` timestamp for terminal statuses (completed, stopped).
  */
 export async function updateSessionStatus(
-  _missionDir: string,
+  _projectDir: string,
   sessionId: string,
   status: AgentSessionStatus,
 ): Promise<boolean> {
@@ -95,9 +95,9 @@ export async function updateSessionStatus(
 }
 
 /**
- * List all sessions across all missions.
+ * List all sessions across all projects.
  */
-export async function listAllSessions(_missionsDir: string): Promise<AgentSession[]> {
+export async function listAllSessions(_projectsDir: string): Promise<AgentSession[]> {
   const db = getSessionDb();
   const rows = db
     .prepare('SELECT * FROM sessions ORDER BY started DESC')
@@ -106,11 +106,11 @@ export async function listAllSessions(_missionsDir: string): Promise<AgentSessio
 }
 
 /**
- * List sessions for a specific mission, optionally filtered by assignment.
+ * List sessions for a specific project, optionally filtered by assignment.
  */
-export async function listMissionSessions(
-  _missionsDir: string,
-  missionSlug: string,
+export async function listProjectSessions(
+  _projectsDir: string,
+  projectSlug: string,
   assignmentSlug?: string,
 ): Promise<AgentSession[]> {
   const db = getSessionDb();
@@ -118,15 +118,15 @@ export async function listMissionSessions(
   if (assignmentSlug) {
     const rows = db
       .prepare(
-        'SELECT * FROM sessions WHERE mission_slug = ? AND assignment_slug = ? ORDER BY started DESC',
+        'SELECT * FROM sessions WHERE project_slug = ? AND assignment_slug = ? ORDER BY started DESC',
       )
-      .all(missionSlug, assignmentSlug) as SessionRow[];
+      .all(projectSlug, assignmentSlug) as SessionRow[];
     return rows.map(rowToSession);
   }
 
   const rows = db
-    .prepare('SELECT * FROM sessions WHERE mission_slug = ? ORDER BY started DESC')
-    .all(missionSlug) as SessionRow[];
+    .prepare('SELECT * FROM sessions WHERE project_slug = ? ORDER BY started DESC')
+    .all(projectSlug) as SessionRow[];
   return rows.map(rowToSession);
 }
 
@@ -150,10 +150,10 @@ const DONE_ASSIGNMENT_STATUSES = new Set(['completed', 'failed', 'review']);
  * Read the status field from an assignment.md frontmatter without full parsing.
  */
 async function readAssignmentStatus(
-  missionDir: string,
+  projectDir: string,
   assignmentSlug: string,
 ): Promise<string | null> {
-  const assignmentPath = resolve(missionDir, 'assignments', assignmentSlug, 'assignment.md');
+  const assignmentPath = resolve(projectDir, 'assignments', assignmentSlug, 'assignment.md');
   if (!(await fileExists(assignmentPath))) return null;
 
   const raw = await readFile(assignmentPath, 'utf-8');
@@ -168,40 +168,40 @@ async function readAssignmentStatus(
  * Returns the number of sessions that were updated.
  */
 export async function reconcileActiveSessions(
-  missionsDir: string,
+  projectsDir: string,
 ): Promise<number> {
   const db = getSessionDb();
 
-  // Get active sessions that are linked to a mission/assignment (standalone sessions have nothing to reconcile)
+  // Get active sessions that are linked to a project/assignment (standalone sessions have nothing to reconcile)
   const activeSessions = db
-    .prepare('SELECT * FROM sessions WHERE status = \'active\' AND mission_slug IS NOT NULL AND assignment_slug IS NOT NULL')
+    .prepare('SELECT * FROM sessions WHERE status = \'active\' AND project_slug IS NOT NULL AND assignment_slug IS NOT NULL')
     .all() as SessionRow[];
 
   if (activeSessions.length === 0) return 0;
 
-  // Dedupe assignment slugs per mission for status checks
-  // mission_slug and assignment_slug are guaranteed non-null by the query filter above
+  // Dedupe assignment slugs per project for status checks
+  // project_slug and assignment_slug are guaranteed non-null by the query filter above
   const toCheck = new Map<string, Set<string>>();
   for (const session of activeSessions) {
-    const slugs = toCheck.get(session.mission_slug!) ?? new Set();
+    const slugs = toCheck.get(session.project_slug!) ?? new Set();
     slugs.add(session.assignment_slug!);
-    toCheck.set(session.mission_slug!, slugs);
+    toCheck.set(session.project_slug!, slugs);
   }
 
   // Read assignment statuses from disk
   const assignmentStatuses = new Map<string, string>();
-  for (const [missionSlug, slugs] of toCheck) {
-    const missionDir = resolve(missionsDir, missionSlug);
+  for (const [projectSlug, slugs] of toCheck) {
+    const projectDir = resolve(projectsDir, projectSlug);
     for (const slug of slugs) {
-      const status = await readAssignmentStatus(missionDir, slug);
-      if (status) assignmentStatuses.set(`${missionSlug}/${slug}`, status);
+      const status = await readAssignmentStatus(projectDir, slug);
+      if (status) assignmentStatuses.set(`${projectSlug}/${slug}`, status);
     }
   }
 
   // Update stale sessions
   let totalUpdated = 0;
   for (const session of activeSessions) {
-    const key = `${session.mission_slug}/${session.assignment_slug}`;
+    const key = `${session.project_slug}/${session.assignment_slug}`;
     const assignmentStatus = assignmentStatuses.get(key);
     if (!assignmentStatus || !DONE_ASSIGNMENT_STATUSES.has(assignmentStatus)) continue;
 

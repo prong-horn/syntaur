@@ -1,6 +1,6 @@
 import React, { useState, useCallback } from 'react';
 import { Box, Text, useApp, useInput, useStdout } from 'ink';
-import { useMissions } from './hooks/useMissions.js';
+import { useProjects } from './hooks/useProjects.js';
 import { useTreeState } from './hooks/useTreeState.js';
 import { useSearch } from './hooks/useSearch.js';
 import { TreeView } from './components/TreeView.js';
@@ -9,17 +9,17 @@ import { StatusBar } from './components/StatusBar.js';
 import type { LaunchOptions } from './launch.js';
 
 interface AppProps {
-  missionsDir: string;
+  projectsDir: string;
   onLaunch: (options: Omit<LaunchOptions, 'agent'>) => void;
 }
 
-export function App({ missionsDir, onLaunch }: AppProps) {
+export function App({ projectsDir, onLaunch }: AppProps) {
   const { exit } = useApp();
   const { stdout } = useStdout();
   const terminalHeight = stdout?.rows ?? 24;
   const viewportHeight = Math.max(5, terminalHeight - 6);
 
-  const { nodes, loading, error } = useMissions(missionsDir);
+  const { nodes, loading, error } = useProjects(projectsDir);
   const { query, setQuery, searchActive, setSearchActive, filteredIds } = useSearch(nodes);
   const {
     flatList,
@@ -69,17 +69,17 @@ export function App({ missionsDir, onLaunch }: AppProps) {
       return;
     }
 
-    if (key.rightArrow && currentNode?.kind === 'mission') {
+    if (key.rightArrow && currentNode?.kind === 'project') {
       expandNode(currentNode.id);
       return;
     }
 
     if (key.leftArrow) {
-      if (currentNode?.kind === 'mission') {
+      if (currentNode?.kind === 'project') {
         collapseNode(currentNode.id);
       } else if (currentNode?.kind === 'assignment') {
-        // Jump to parent mission
-        const parentId = `m:${currentNode.missionSlug}`;
+        // Jump to parent project
+        const parentId = `m:${currentNode.projectSlug}`;
         const parentIndex = flatList.findIndex((n) => n.id === parentId);
         if (parentIndex >= 0) {
           setCursor(parentIndex);
@@ -89,12 +89,12 @@ export function App({ missionsDir, onLaunch }: AppProps) {
     }
 
     if (key.return && currentNode) {
-      if (currentNode.kind === 'mission') {
+      if (currentNode.kind === 'project') {
         toggle(currentNode.id);
       } else if (currentNode.kind === 'assignment') {
         onLaunch({
-          missionsDir,
-          missionSlug: currentNode.missionSlug,
+          projectsDir,
+          projectSlug: currentNode.projectSlug,
           assignmentSlug: currentNode.slug,
         });
       }
@@ -105,7 +105,7 @@ export function App({ missionsDir, onLaunch }: AppProps) {
   if (loading) {
     return (
       <Box paddingLeft={1}>
-        <Text>Loading missions...</Text>
+        <Text>Loading projects...</Text>
       </Box>
     );
   }
@@ -118,14 +118,14 @@ export function App({ missionsDir, onLaunch }: AppProps) {
     );
   }
 
-  const missionCount = nodes.length;
+  const projectCount = nodes.length;
   const matchCount = filteredIds?.size ?? flatList.length;
 
   return (
     <Box flexDirection="column">
       <Box paddingLeft={1} marginBottom={0}>
         <Text bold color="cyan">Syntaur</Text>
-        <Text dimColor> {missionCount} mission{missionCount !== 1 ? 's' : ''}</Text>
+        <Text dimColor> {projectCount} project{projectCount !== 1 ? 's' : ''}</Text>
       </Box>
       <SearchBar
         active={searchActive}

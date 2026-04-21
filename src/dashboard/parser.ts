@@ -79,9 +79,9 @@ function parseListField(frontmatter: string, fieldName: string): string[] {
   return results;
 }
 
-// --- Mission Parser ---
+// --- Project Parser ---
 
-export interface ParsedMission {
+export interface ParsedProject {
   id: string;
   slug: string;
   title: string;
@@ -96,7 +96,7 @@ export interface ParsedMission {
   body: string;
 }
 
-export function parseMission(fileContent: string): ParsedMission {
+export function parseProject(fileContent: string): ParsedProject {
   const [fm, body] = extractFrontmatter(fileContent);
   return {
     id: getField(fm, 'id') ?? '',
@@ -117,7 +117,7 @@ export function parseMission(fileContent: string): ParsedMission {
 // --- Status Parser (for _status.md) ---
 
 export interface ParsedStatus {
-  mission: string;
+  project: string;
   status: string;
   progress: Record<string, number> & { total: number };
   needsAttention: {
@@ -145,7 +145,7 @@ export function parseStatus(fileContent: string): ParsedStatus {
   }
 
   return {
-    mission: getField(fm, 'mission') ?? '',
+    project: getField(fm, 'project') ?? '',
     status: getField(fm, 'status') ?? 'pending',
     progress,
     needsAttention: {

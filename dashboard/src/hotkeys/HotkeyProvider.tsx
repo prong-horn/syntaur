@@ -12,11 +12,11 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { useTheme } from '../theme';
 import { matchesPattern } from './match';
 import {
-  useMissions,
+  useProjects,
   useAssignmentsBoard,
   usePlaybooks,
   useServers,
-} from '../hooks/useMissions';
+} from '../hooks/useProjects';
 import { useAllTodos } from '../hooks/useTodos';
 import { buildIndex, resolveRoute, type PaletteEntry } from './paletteIndex';
 import { CommandPalette } from './CommandPalette';
@@ -24,11 +24,11 @@ import { CheatsheetDialog } from './CheatsheetDialog';
 
 export type HotkeyScope =
   | 'global'
-  | 'list:missions'
+  | 'list:projects'
   | 'list:assignments'
   | 'list:todos'
   | 'assignment'
-  | 'mission';
+  | 'project';
 
 export interface HotkeyBinding {
   id: number;
@@ -74,14 +74,14 @@ export function HotkeyProvider({ children }: { children: ReactNode }) {
   const wsPrefix = getWorkspaceFromPathname(location.pathname);
 
   // Eager data hooks for the palette index.
-  const missionsState = useMissions();
+  const projectsState = useProjects();
   const assignmentsState = useAssignmentsBoard();
   const playbooksState = usePlaybooks();
   const serversState = useServers();
   const todosState = useAllTodos();
 
   const paletteEntries = useMemo<PaletteEntry[]>(() => {
-    const missions = missionsState.data ?? [];
+    const projects = projectsState.data ?? [];
     const assignments = assignmentsState.data?.assignments ?? [];
     const playbooks = playbooksState.data?.playbooks ?? [];
     const servers = serversState.data?.sessions ?? [];
@@ -89,9 +89,9 @@ export function HotkeyProvider({ children }: { children: ReactNode }) {
     const todos = todoList.flatMap((w) =>
       w.items.map((it) => ({ ...it, workspace: w.workspace })),
     );
-    return buildIndex({ missions, assignments, playbooks, servers, todos, wsPrefix });
+    return buildIndex({ projects, assignments, playbooks, servers, todos, wsPrefix });
   }, [
-    missionsState.data,
+    projectsState.data,
     assignmentsState.data,
     playbooksState.data,
     serversState.data,
@@ -310,7 +310,7 @@ export function HotkeyProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const chords: Array<{ suffix: string; basePath: string; desc: string }> = [
       { suffix: 'o', basePath: '/',            desc: 'Go to Overview' },
-      { suffix: 'm', basePath: '/missions',    desc: 'Go to Missions' },
+      { suffix: 'm', basePath: '/projects',    desc: 'Go to Projects' },
       { suffix: 'a', basePath: '/assignments', desc: 'Go to Assignments' },
       { suffix: 't', basePath: '/todos',       desc: 'Go to Todos' },
       { suffix: 's', basePath: '/servers',     desc: 'Go to Servers' },

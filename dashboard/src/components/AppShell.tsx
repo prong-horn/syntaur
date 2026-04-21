@@ -4,7 +4,7 @@ import type { LucideIcon } from 'lucide-react';
 import { Activity, AlertTriangle, BookOpen, CheckSquare, Compass, FolderKanban, LifeBuoy, ListTodo, Monitor, Plus, Settings, X, ChevronDown } from 'lucide-react';
 import { SidebarNav, type SidebarNavItem } from './SidebarNav';
 import { TopBar } from './TopBar';
-import { useWorkspaces } from '../hooks/useMissions';
+import { useWorkspaces } from '../hooks/useProjects';
 import { toTitleCase } from '../lib/format';
 import { isSidebarItemActive, type SidebarSection } from '../lib/routes';
 import { useHotkey } from '../hotkeys';
@@ -17,7 +17,7 @@ interface Breadcrumb {
 interface AppShellProps {
   title: string;
   breadcrumbs: Breadcrumb[];
-  missionSlug: string | null;
+  projectSlug: string | null;
   workspace: string | null;
   children: ReactNode;
 }
@@ -30,7 +30,7 @@ const GLOBAL_NAV_ITEMS: SidebarNavItem[] = [
 ];
 
 const WORKSPACE_SCOPED_LABELS: Array<{ suffix: string; label: string; icon: LucideIcon }> = [
-  { suffix: '/missions', label: 'Missions', icon: FolderKanban },
+  { suffix: '/projects', label: 'Projects', icon: FolderKanban },
   { suffix: '/assignments', label: 'Assignments', icon: ListTodo },
   { suffix: '/servers', label: 'Servers', icon: Monitor },
   { suffix: '/agent-sessions', label: 'Agent Sessions', icon: Activity },
@@ -47,7 +47,7 @@ const SOURCE_FIRST_NOTICE_KEY = 'syntaur.dashboard.sourceFirstNoticeDismissed';
 export function AppShell({
   title,
   breadcrumbs,
-  missionSlug,
+  projectSlug,
   workspace,
   children,
 }: AppShellProps) {
@@ -124,7 +124,7 @@ export function AppShell({
           <TopBar
             title={title}
             breadcrumbs={breadcrumbs}
-            missionSlug={missionSlug}
+            projectSlug={projectSlug}
             onOpenMobileNav={() => setMobileNavOpen(true)}
           />
           <main className="mx-auto w-full max-w-[1480px] px-4 py-4 lg:px-6 lg:py-5">
@@ -168,7 +168,7 @@ function ShellSidebar({
     });
   }
 
-  // Build workspace sections: named workspaces + ungrouped (only if missions without workspace exist)
+  // Build workspace sections: named workspaces + ungrouped (only if projects without workspace exist)
   const allSections = [...workspaces, ...(hasUngrouped ? ['_ungrouped'] : [])];
 
   return (
@@ -180,7 +180,7 @@ function ShellSidebar({
           </span>
           <div>
             <p className="text-sm font-semibold text-foreground">Syntaur</p>
-            <p className="text-xs text-muted-foreground/60">Local-first mission control</p>
+            <p className="text-xs text-muted-foreground/60">Local-first project control</p>
           </div>
         </Link>
       </div>
@@ -261,7 +261,7 @@ function ShellSidebar({
                   body: JSON.stringify({ name: slug }),
                 }).then(() => {
                   onNavigate?.();
-                  navigate(`/w/${slug}/missions`);
+                  navigate(`/w/${slug}/projects`);
                 });
               }
             }}
@@ -311,7 +311,7 @@ function ShellSidebar({
             <div>
               <p className="text-sm font-semibold text-foreground">Source-first dashboard</p>
               <p className="mt-2 text-sm leading-6 text-muted-foreground">
-                Mission and assignment markdown files stay authoritative. Derived files are read-only projections.
+                Project and assignment markdown files stay authoritative. Derived files are read-only projections.
               </p>
             </div>
             <button

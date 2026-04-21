@@ -16,7 +16,7 @@ export interface BuildSessionOptions {
   session: string;
   registered: string;
   lastRefreshed: string;
-  overrides: Record<string, { mission: string; assignment: string }>;
+  overrides: Record<string, { project: string; assignment: string }>;
   auto?: boolean;
   kind?: SessionKind;
   pid?: number;
@@ -51,7 +51,7 @@ export function buildSessionContent(opts: BuildSessionOptions): string {
   if (Object.keys(opts.overrides).length > 0) {
     lines.push('overrides:');
     for (const [key, val] of Object.entries(opts.overrides)) {
-      lines.push(`  "${key}": { mission: "${val.mission}", assignment: "${val.assignment}" }`);
+      lines.push(`  "${key}": { project: "${val.project}", assignment: "${val.assignment}" }`);
     }
   }
 
@@ -91,14 +91,14 @@ export async function readSessionFile(dir: string, name: string): Promise<Sessio
   const lastRefreshed = getField(frontmatter, 'last_refreshed') ?? '';
 
   // Parse overrides block
-  const overrides: Record<string, { mission: string; assignment: string }> = {};
+  const overrides: Record<string, { project: string; assignment: string }> = {};
   const overridesMatch = frontmatter.match(/^overrides:\n((?:\s+".+\n?)*)/m);
   if (overridesMatch) {
     const overrideLines = overridesMatch[1].matchAll(
-      /^\s+"([^"]+)":\s*\{\s*mission:\s*"([^"]+)",\s*assignment:\s*"([^"]+)"\s*\}/gm,
+      /^\s+"([^"]+)":\s*\{\s*project:\s*"([^"]+)",\s*assignment:\s*"([^"]+)"\s*\}/gm,
     );
     for (const m of overrideLines) {
-      overrides[m[1]] = { mission: m[2], assignment: m[3] };
+      overrides[m[1]] = { project: m[2], assignment: m[3] };
     }
   }
 
@@ -144,7 +144,7 @@ export async function setOverride(
   sessionName: string,
   windowIndex: number,
   paneIndex: number,
-  assignment: { mission: string; assignment: string } | null,
+  assignment: { project: string; assignment: string } | null,
 ): Promise<void> {
   const data = await readSessionFile(dir, sessionName);
   if (!data) return;

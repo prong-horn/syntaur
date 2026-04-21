@@ -3,20 +3,20 @@ name: track-session
 description: Register this Claude Code session as an agent session in the Syntaur dashboard
 arguments:
   - name: args
-    description: "Optional flags: --description, --mission, --assignment"
+    description: "Optional flags: --description, --project, --assignment"
     required: false
 ---
 
 # /track-session
 
-Register the current Claude Code session as an agent session in the Syntaur dashboard. Works standalone or linked to a mission/assignment.
+Register the current Claude Code session as an agent session in the Syntaur dashboard. Works standalone or linked to a project/assignment.
 
 ## Usage
 
 - `/track-session` — register a standalone session
 - `/track-session --description "exploring auth patterns"` — with a description
-- `/track-session --mission <slug> --assignment <slug>` — linked to a mission
-- `/track-session --description "auth work" --mission <slug> --assignment <slug>` — both
+- `/track-session --project <slug> --assignment <slug>` — linked to a project
+- `/track-session --description "auth work" --project <slug> --assignment <slug>` — both
 
 ## Instructions
 
@@ -26,7 +26,7 @@ When the user runs this command:
 
 Extract optional flags from the argument string:
 - `--description "<text>"` or `--description <text>` — session description
-- `--mission <slug>` — mission to link to
+- `--project <slug>` — project to link to
 - `--assignment <slug>` — assignment to link to
 
 ### Step 2: Run the CLI command
@@ -34,14 +34,14 @@ Extract optional flags from the argument string:
 Run the track-session CLI command via Bash (use `dangerouslyDisableSandbox: true` since it writes to `~/.syntaur/`):
 
 ```bash
-syntaur track-session --agent claude --path $(pwd) [--description "<text>"] [--mission <slug>] [--assignment <slug>]
+syntaur track-session --agent claude --path $(pwd) [--description "<text>"] [--project <slug>] [--assignment <slug>]
 ```
 
 ### Step 3: Parse the session ID
 
 The CLI output will be one of:
 - `Registered standalone agent session <sessionId>.`
-- `Registered agent session <sessionId> for <assignment> in <mission>.`
+- `Registered agent session <sessionId> for <assignment> in <project>.`
 
 Extract the session ID from the output.
 
@@ -62,4 +62,4 @@ Write the session ID to `.syntaur/context.json` so the SessionEnd hook can mark 
 Tell the user:
 - The session was registered (include the short session ID)
 - It will be auto-stopped when this conversation ends
-- If linked to a mission, mention which mission/assignment
+- If linked to a project, mention which project/assignment

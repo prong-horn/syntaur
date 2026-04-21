@@ -25,7 +25,7 @@ export function TreeView({ nodes, cursor, viewportHeight }: TreeViewProps) {
   if (nodes.length === 0) {
     return (
       <Box flexDirection="column" paddingLeft={1}>
-        <Text dimColor>No missions found. Run `syntaur create-mission` to get started.</Text>
+        <Text dimColor>No projects found. Run `syntaur create-project` to get started.</Text>
       </Box>
     );
   }

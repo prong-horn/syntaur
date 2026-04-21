@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { Cloud, Download, Upload, Save } from 'lucide-react';
 import { SectionCard } from './SectionCard';
 
-const VALID_CATEGORIES = ['missions', 'playbooks', 'todos', 'servers', 'config'] as const;
+const VALID_CATEGORIES = ['projects', 'playbooks', 'todos', 'servers', 'config'] as const;
 type Category = (typeof VALID_CATEGORIES)[number];
 
 interface BackupStatus {

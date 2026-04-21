@@ -103,8 +103,8 @@ describe('github-backup validation helpers', () => {
 
   describe('validateCategories', () => {
     it('returns valid categories unchanged', () => {
-      const result = validateCategories(['missions', 'playbooks']);
-      expect(result).toEqual(['missions', 'playbooks']);
+      const result = validateCategories(['projects', 'playbooks']);
+      expect(result).toEqual(['projects', 'playbooks']);
     });
 
     it('filters out unknown categories', () => {
@@ -112,8 +112,8 @@ describe('github-backup validation helpers', () => {
       const originalWarn = console.warn;
       console.warn = (msg: string) => warnings.push(msg);
       try {
-        const result = validateCategories(['missions', 'bogus', 'todos']);
-        expect(result).toEqual(['missions', 'todos']);
+        const result = validateCategories(['projects', 'bogus', 'todos']);
+        expect(result).toEqual(['projects', 'todos']);
         expect(warnings.some((w) => w.includes('bogus'))).toBe(true);
       } finally {
         console.warn = originalWarn;
@@ -133,19 +133,19 @@ describe('github-backup validation helpers', () => {
 
   describe('parseCategories', () => {
     it('parses comma-separated string', () => {
-      expect(parseCategories('missions, playbooks, todos')).toEqual([
-        'missions',
+      expect(parseCategories('projects, playbooks, todos')).toEqual([
+        'projects',
         'playbooks',
         'todos',
       ]);
     });
 
     it('filters invalid entries', () => {
-      expect(parseCategories('missions, fake, playbooks')).toEqual(['missions', 'playbooks']);
+      expect(parseCategories('projects, fake, playbooks')).toEqual(['projects', 'playbooks']);
     });
 
     it('handles extra whitespace', () => {
-      expect(parseCategories('  missions  ,  todos  ')).toEqual(['missions', 'todos']);
+      expect(parseCategories('  projects  ,  todos  ')).toEqual(['projects', 'todos']);
     });
 
     it('returns empty array for empty string', () => {
@@ -154,7 +154,7 @@ describe('github-backup validation helpers', () => {
   });
 
   it('VALID_CATEGORIES lists expected entries', () => {
-    expect(VALID_CATEGORIES).toEqual(['missions', 'playbooks', 'todos', 'servers', 'config']);
+    expect(VALID_CATEGORIES).toEqual(['projects', 'playbooks', 'todos', 'servers', 'config']);
   });
 });
 
@@ -173,16 +173,16 @@ describe('github-backup category path resolution', () => {
     await rm(homeDir, { recursive: true, force: true });
   });
 
-  it('resolves missions path from configured defaultMissionDir', async () => {
-    const customMissions = resolve(homeDir, 'custom-missions');
+  it('resolves projects path from configured defaultProjectDir', async () => {
+    const customProjects = resolve(homeDir, 'custom-projects');
     await writeFile(
       resolve(homeDir, '.syntaur', 'config.md'),
-      `---\nversion: "1.0"\ndefaultMissionDir: ${customMissions}\n---\n`,
+      `---\nversion: "1.0"\ndefaultProjectDir: ${customProjects}\n---\n`,
     );
 
-    const result = await resolveCategoryPath('missions');
-    expect(result.sourcePath).toBe(customMissions);
-    expect(result.repoPath).toBe('missions');
+    const result = await resolveCategoryPath('projects');
+    expect(result.sourcePath).toBe(customProjects);
+    expect(result.repoPath).toBe('projects');
     expect(result.isFile).toBe(false);
   });
 
@@ -226,18 +226,18 @@ describe('backup config round-trip', () => {
   it('persists repo URL and categories', async () => {
     await writeFile(
       resolve(homeDir, '.syntaur', 'config.md'),
-      '---\nversion: "1.0"\ndefaultMissionDir: ~/missions\n---\n',
+      '---\nversion: "1.0"\ndefaultProjectDir: ~/projects\n---\n',
     );
 
     await updateBackupConfig({
       repo: 'git@github.com:foo/bar.git',
-      categories: 'missions, playbooks',
+      categories: 'projects, playbooks',
     });
 
     const config = await readConfig();
     expect(config.backup).not.toBeNull();
     expect(config.backup?.repo).toBe('git@github.com:foo/bar.git');
-    expect(config.backup?.categories).toBe('missions, playbooks');
+    expect(config.backup?.categories).toBe('projects, playbooks');
     expect(config.backup?.lastBackup).toBeNull();
     expect(config.backup?.lastRestore).toBeNull();
   });
@@ -245,28 +245,28 @@ describe('backup config round-trip', () => {
   it('updates lastBackup without losing other fields', async () => {
     await writeFile(
       resolve(homeDir, '.syntaur', 'config.md'),
-      '---\nversion: "1.0"\ndefaultMissionDir: ~/missions\n---\n',
+      '---\nversion: "1.0"\ndefaultProjectDir: ~/projects\n---\n',
     );
 
-    await updateBackupConfig({ repo: 'https://github.com/foo/bar.git', categories: 'missions' });
+    await updateBackupConfig({ repo: 'https://github.com/foo/bar.git', categories: 'projects' });
     const timestamp = '2026-04-16T12:00:00.000Z';
     await updateBackupConfig({ lastBackup: timestamp });
 
     const config = await readConfig();
     expect(config.backup?.repo).toBe('https://github.com/foo/bar.git');
-    expect(config.backup?.categories).toBe('missions');
+    expect(config.backup?.categories).toBe('projects');
     expect(config.backup?.lastBackup).toBe(timestamp);
   });
 
   it('getBackupStatus returns defaults when no backup config set', async () => {
     await writeFile(
       resolve(homeDir, '.syntaur', 'config.md'),
-      '---\nversion: "1.0"\ndefaultMissionDir: ~/missions\n---\n',
+      '---\nversion: "1.0"\ndefaultProjectDir: ~/projects\n---\n',
     );
 
     const status = await getBackupStatus();
     expect(status.repo).toBeNull();
-    expect(status.categories).toBe('missions, playbooks, todos, servers, config');
+    expect(status.categories).toBe('projects, playbooks, todos, servers, config');
     expect(status.lastBackup).toBeNull();
     expect(status.lastRestore).toBeNull();
     expect(status.locked).toBe(false);
@@ -275,7 +275,7 @@ describe('backup config round-trip', () => {
   it('getBackupStatus detects lock file', async () => {
     await writeFile(
       resolve(homeDir, '.syntaur', 'config.md'),
-      '---\nversion: "1.0"\ndefaultMissionDir: ~/missions\n---\n',
+      '---\nversion: "1.0"\ndefaultProjectDir: ~/projects\n---\n',
     );
     await writeFile(resolve(homeDir, '.syntaur', '.backup-lock'), '12345');
 
@@ -286,17 +286,17 @@ describe('backup config round-trip', () => {
 
 describe('parseCategoriesStrict', () => {
   it('throws on unknown category with valid list in the message', () => {
-    expect(() => parseCategoriesStrict(['missions', 'bogus'])).toThrowError(
-      /Unknown category.*"bogus".*Valid:.*missions/,
+    expect(() => parseCategoriesStrict(['projects', 'bogus'])).toThrowError(
+      /Unknown category.*"bogus".*Valid:.*projects/,
     );
   });
 
   it('returns valid categories when all are known', () => {
-    expect(parseCategoriesStrict(['missions', 'todos'])).toEqual(['missions', 'todos']);
+    expect(parseCategoriesStrict(['projects', 'todos'])).toEqual(['projects', 'todos']);
   });
 
   it('throws even if some entries are valid', () => {
-    expect(() => parseCategoriesStrict(['missions', 'unknown1', 'unknown2'])).toThrow(
+    expect(() => parseCategoriesStrict(['projects', 'unknown1', 'unknown2'])).toThrow(
       /unknown1.*unknown2/,
     );
   });
@@ -318,7 +318,7 @@ describe('backupToGithub flow', () => {
     await mkdir(resolve(homeDir, '.syntaur'), { recursive: true });
     await writeFile(
       resolve(homeDir, '.syntaur', 'config.md'),
-      '---\nversion: "1.0"\ndefaultMissionDir: ~/missions\n---\n',
+      '---\nversion: "1.0"\ndefaultProjectDir: ~/projects\n---\n',
     );
     gitCalls.length = 0;
     // Default handler: git --version succeeds; other commands return empty.
@@ -336,23 +336,23 @@ describe('backupToGithub flow', () => {
   });
 
   it('throws when repo URL is invalid', async () => {
-    await updateBackupConfig({ repo: 'bogus-url', categories: 'missions' });
+    await updateBackupConfig({ repo: 'bogus-url', categories: 'projects' });
     await expect(backupToGithub()).rejects.toThrow(/Invalid repo URL/);
   });
 
   it('throws when categories override is empty', async () => {
-    await updateBackupConfig({ repo: 'git@github.com:x/y.git', categories: 'missions' });
+    await updateBackupConfig({ repo: 'git@github.com:x/y.git', categories: 'projects' });
     await expect(backupToGithub({ categories: [] })).rejects.toThrow(/No valid backup categories/);
   });
 
   it('is blocked by existing lock file', async () => {
-    await updateBackupConfig({ repo: 'git@github.com:x/y.git', categories: 'missions' });
+    await updateBackupConfig({ repo: 'git@github.com:x/y.git', categories: 'projects' });
     await writeFile(resolve(homeDir, '.syntaur', '.backup-lock'), '99999');
     await expect(backupToGithub()).rejects.toThrow(/Backup operation already in progress/);
   });
 
   it('returns committed:false when git status shows no changes and persists lastBackup', async () => {
-    await updateBackupConfig({ repo: 'git@github.com:x/y.git', categories: 'missions' });
+    await updateBackupConfig({ repo: 'git@github.com:x/y.git', categories: 'projects' });
 
     gitHandler = async (args, cwd) => {
       if (args[0] === '--version') return { stdout: 'git version 2', stderr: '' };
@@ -387,7 +387,7 @@ describe('backupToGithub flow', () => {
   });
 
   it('commits and pushes when there are changes', async () => {
-    await updateBackupConfig({ repo: 'git@github.com:x/y.git', categories: 'missions' });
+    await updateBackupConfig({ repo: 'git@github.com:x/y.git', categories: 'projects' });
 
     gitHandler = async (args, cwd) => {
       if (args[0] === '--version') return { stdout: 'git version 2', stderr: '' };
@@ -396,7 +396,7 @@ describe('backupToGithub flow', () => {
         return { stdout: '', stderr: '' };
       }
       if (args[0] === 'status' && args[1] === '--porcelain') {
-        return { stdout: ' M missions/file.md\n', stderr: '' };
+        return { stdout: ' M projects/file.md\n', stderr: '' };
       }
       return { stdout: '', stderr: '' };
     };
@@ -418,7 +418,7 @@ describe('backupToGithub flow', () => {
   it('reverts lastBackup when push fails', async () => {
     await updateBackupConfig({
       repo: 'git@github.com:x/y.git',
-      categories: 'missions',
+      categories: 'projects',
       lastBackup: '2020-01-01T00:00:00.000Z',
     });
 
@@ -429,7 +429,7 @@ describe('backupToGithub flow', () => {
         return { stdout: '', stderr: '' };
       }
       if (args[0] === 'status' && args[1] === '--porcelain') {
-        return { stdout: ' M missions/x.md\n', stderr: '' };
+        return { stdout: ' M projects/x.md\n', stderr: '' };
       }
       if (args[0] === 'push') {
         throw new Error('remote rejected: non-fast-forward');
@@ -454,7 +454,7 @@ describe('restoreFromGithub flow', () => {
     await mkdir(resolve(homeDir, '.syntaur'), { recursive: true });
     await writeFile(
       resolve(homeDir, '.syntaur', 'config.md'),
-      '---\nversion: "1.0"\ndefaultMissionDir: ~/missions\n---\n',
+      '---\nversion: "1.0"\ndefaultProjectDir: ~/projects\n---\n',
     );
     gitCalls.length = 0;
     gitHandler = async () => ({ stdout: '', stderr: '' });
@@ -492,20 +492,20 @@ describe('restoreFromGithub flow', () => {
     // but the "bogus: overwrite" content from the fake repo should NOT be present).
     const after = await readFile(configPath, 'utf-8');
     expect(after).not.toContain('bogus: overwrite');
-    // Before content should largely be preserved (defaultMissionDir still there)
-    expect(after).toContain('defaultMissionDir:');
+    // Before content should largely be preserved (defaultProjectDir still there)
+    expect(after).toContain('defaultProjectDir:');
     // Original version should still match
-    expect(before).toContain('defaultMissionDir:');
+    expect(before).toContain('defaultProjectDir:');
   });
 
   it('handles missing category in backup repo without throwing', async () => {
-    await updateBackupConfig({ repo: 'git@github.com:x/y.git', categories: 'missions' });
+    await updateBackupConfig({ repo: 'git@github.com:x/y.git', categories: 'projects' });
 
     gitHandler = async (args, cwd) => {
       if (args[0] === '--version') return { stdout: 'git version 2', stderr: '' };
       if (args[0] === 'clone') {
         await mkdir(resolve(String(cwd ?? args[args.length - 1]), '.git'), { recursive: true });
-        // Intentionally do not create 'missions/' in the clone
+        // Intentionally do not create 'projects/' in the clone
         return { stdout: '', stderr: '' };
       }
       return { stdout: '', stderr: '' };
@@ -516,22 +516,22 @@ describe('restoreFromGithub flow', () => {
   });
 
   it('persists lastRestore even on partial failure', async () => {
-    await updateBackupConfig({ repo: 'git@github.com:x/y.git', categories: 'missions' });
+    await updateBackupConfig({ repo: 'git@github.com:x/y.git', categories: 'projects' });
 
     gitHandler = async (args, cwd) => {
       if (args[0] === '--version') return { stdout: 'git version 2', stderr: '' };
       if (args[0] === 'clone') {
         const dest = String(cwd ?? args[args.length - 1]);
         await mkdir(resolve(dest, '.git'), { recursive: true });
-        await mkdir(resolve(dest, 'missions'), { recursive: true });
-        await writeFile(resolve(dest, 'missions', 'readme.md'), '# hi\n');
+        await mkdir(resolve(dest, 'projects'), { recursive: true });
+        await writeFile(resolve(dest, 'projects', 'readme.md'), '# hi\n');
         return { stdout: '', stderr: '' };
       }
       return { stdout: '', stderr: '' };
     };
 
     const result = await restoreFromGithub();
-    // Should succeed in copying the missions dir
+    // Should succeed in copying the projects dir
     expect(result.success).toBe(true);
 
     const config = await readConfig();
@@ -539,15 +539,15 @@ describe('restoreFromGithub flow', () => {
   });
 
   it('leaves no staging/backup sibling dirs after successful restore', async () => {
-    await updateBackupConfig({ repo: 'git@github.com:x/y.git', categories: 'missions' });
+    await updateBackupConfig({ repo: 'git@github.com:x/y.git', categories: 'projects' });
 
     gitHandler = async (args, cwd) => {
       if (args[0] === '--version') return { stdout: 'git version 2', stderr: '' };
       if (args[0] === 'clone') {
         const dest = String(cwd ?? args[args.length - 1]);
         await mkdir(resolve(dest, '.git'), { recursive: true });
-        await mkdir(resolve(dest, 'missions', 'sub'), { recursive: true });
-        await writeFile(resolve(dest, 'missions', 'sub', 'x.md'), 'data\n');
+        await mkdir(resolve(dest, 'projects', 'sub'), { recursive: true });
+        await writeFile(resolve(dest, 'projects', 'sub', 'x.md'), 'data\n');
         return { stdout: '', stderr: '' };
       }
       return { stdout: '', stderr: '' };
@@ -556,15 +556,15 @@ describe('restoreFromGithub flow', () => {
     await restoreFromGithub();
 
     const config = await readConfig();
-    const missionsPath = config.defaultMissionDir;
-    const stagingPath = `${missionsPath}.syntaur-restore-staging`;
-    const backupPath = `${missionsPath}.syntaur-restore-backup`;
+    const projectsPath = config.defaultProjectDir;
+    const stagingPath = `${projectsPath}.syntaur-restore-staging`;
+    const backupPath = `${projectsPath}.syntaur-restore-backup`;
 
     const { access } = await import('node:fs/promises');
     await expect(access(stagingPath)).rejects.toThrow();
     await expect(access(backupPath)).rejects.toThrow();
     // The restored data should be present
-    await expect(access(resolve(missionsPath, 'sub', 'x.md'))).resolves.toBeUndefined();
+    await expect(access(resolve(projectsPath, 'sub', 'x.md'))).resolves.toBeUndefined();
   });
 
 });
@@ -665,10 +665,10 @@ describe('readSanitizedConfig', () => {
       configPath,
       `---
 version: "1.0"
-defaultMissionDir: ~/missions
+defaultProjectDir: ~/projects
 backup:
   repo: git@github.com:x/y.git
-  categories: missions, playbooks
+  categories: projects, playbooks
   lastBackup: 2026-04-16T12:00:00.000Z
   lastRestore: 2026-04-15T10:00:00.000Z
 ---
@@ -686,8 +686,8 @@ backup:
 
     // Other fields preserved
     expect(sanitized).toContain('repo: git@github.com:x/y.git');
-    expect(sanitized).toContain('categories: missions, playbooks');
-    expect(sanitized).toContain('defaultMissionDir: ~/missions');
+    expect(sanitized).toContain('categories: projects, playbooks');
+    expect(sanitized).toContain('defaultProjectDir: ~/projects');
     expect(sanitized).toContain('# body');
   });
 
@@ -699,7 +699,7 @@ backup:
 version: "1.0"
 backup:
   repo: git@github.com:x/y.git
-  categories: missions
+  categories: projects
   lastBackup: 2026-01-01T00:00:00.000Z
   lastRestore: null
 ---
@@ -738,7 +738,7 @@ describe('backup self-diff prevention', () => {
       resolve(homeDir, '.syntaur', 'config.md'),
       `---
 version: "1.0"
-defaultMissionDir: ~/missions
+defaultProjectDir: ~/projects
 backup:
   repo: git@github.com:x/y.git
   categories: config
@@ -797,7 +797,7 @@ describe('deletion propagation', () => {
     await mkdir(resolve(homeDir, '.syntaur'), { recursive: true });
     await writeFile(
       resolve(homeDir, '.syntaur', 'config.md'),
-      '---\nversion: "1.0"\ndefaultMissionDir: ~/missions\n---\n',
+      '---\nversion: "1.0"\ndefaultProjectDir: ~/projects\n---\n',
     );
     gitCalls.length = 0;
     gitHandler = async () => ({ stdout: '', stderr: '' });
@@ -879,10 +879,10 @@ describe('strict validation at runtime', () => {
       resolve(homeDir, '.syntaur', 'config.md'),
       `---
 version: "1.0"
-defaultMissionDir: ${resolve(homeDir, 'missions')}
+defaultProjectDir: ${resolve(homeDir, 'projects')}
 backup:
   repo: git@github.com:x/y.git
-  categories: missions, bogus
+  categories: projects, bogus
   lastBackup: null
   lastRestore: null
 ---
@@ -897,10 +897,10 @@ backup:
       resolve(homeDir, '.syntaur', 'config.md'),
       `---
 version: "1.0"
-defaultMissionDir: ${resolve(homeDir, 'missions')}
+defaultProjectDir: ${resolve(homeDir, 'projects')}
 backup:
   repo: git@github.com:x/y.git
-  categories: missions, wrongcat
+  categories: projects, wrongcat
   lastBackup: null
   lastRestore: null
 ---
@@ -913,10 +913,10 @@ backup:
   it('backupToGithub trims whitespace-padded repo URL before clone', async () => {
     await writeFile(
       resolve(homeDir, '.syntaur', 'config.md'),
-      '---\nversion: "1.0"\ndefaultMissionDir: ~/missions\n---\n',
+      '---\nversion: "1.0"\ndefaultProjectDir: ~/projects\n---\n',
     );
     // Manually persist a padded URL (simulate a pre-existing misconfiguration)
-    await updateBackupConfig({ repo: '  git@github.com:x/y.git  ', categories: 'missions' });
+    await updateBackupConfig({ repo: '  git@github.com:x/y.git  ', categories: 'projects' });
 
     let cloneUrl: string | null = null;
     gitHandler = async (args, cwd) => {

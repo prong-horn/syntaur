@@ -14,9 +14,9 @@ describe('fuzzy.rankAll (R5c)', () => {
     expect(r[0].title).toBe('Draft');
   });
 
-  it('"mis" prefers Missions over Prime Mission', () => {
-    const r = rankAll('mis', [entry('page', 'Prime Mission'), entry('page', 'Missions')]);
-    expect(r[0].title).toBe('Missions');
+  it('"mis" prefers Projects over Prime Project', () => {
+    const r = rankAll('mis', [entry('page', 'Prime Project'), entry('page', 'Projects')]);
+    expect(r[0].title).toBe('Projects');
   });
 
   it('empty query keeps original order', () => {
@@ -25,7 +25,7 @@ describe('fuzzy.rankAll (R5c)', () => {
   });
 
   it('no match returns empty', () => {
-    const r = rankAll('zzz', [entry('page', 'Missions')]);
+    const r = rankAll('zzz', [entry('page', 'Projects')]);
     expect(r).toHaveLength(0);
   });
 
@@ -36,9 +36,9 @@ describe('fuzzy.rankAll (R5c)', () => {
   });
 
   it('case-insensitive matching', () => {
-    const r = rankAll('MIS', [entry('page', 'Missions')]);
+    const r = rankAll('MIS', [entry('page', 'Projects')]);
     expect(r).toHaveLength(1);
-    expect(r[0].title).toBe('Missions');
+    expect(r[0].title).toBe('Projects');
   });
 });
 

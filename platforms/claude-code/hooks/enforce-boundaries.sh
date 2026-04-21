@@ -64,7 +64,7 @@ fi
 
 # --- Step 8: Read context ---
 ASSIGNMENT_DIR=$(jq -r '.assignmentDir // empty' "$CONTEXT_FILE" 2>/dev/null)
-MISSION_DIR=$(jq -r '.missionDir // empty' "$CONTEXT_FILE" 2>/dev/null)
+MISSION_DIR=$(jq -r '.projectDir // empty' "$CONTEXT_FILE" 2>/dev/null)
 WORKSPACE_ROOT=$(jq -r '.workspaceRoot // empty' "$CONTEXT_FILE" 2>/dev/null)
 
 if [ -z "$ASSIGNMENT_DIR" ] || [ -z "$MISSION_DIR" ]; then
@@ -88,7 +88,7 @@ if [[ "$FILE_PATH" == "$ASSIGNMENT_DIR"/* ]]; then
   allow_and_exit
 fi
 
-# Allow: files in mission resources/ directory (but NOT derived _index.md)
+# Allow: files in project resources/ directory (but NOT derived _index.md)
 if [[ "$FILE_PATH" == "$MISSION_DIR/resources/"* ]]; then
   BASENAME=$(basename "$FILE_PATH")
   if [[ "$BASENAME" == _* ]]; then
@@ -99,7 +99,7 @@ if [[ "$FILE_PATH" == "$MISSION_DIR/resources/"* ]]; then
   fi
 fi
 
-# Allow: files in mission memories/ directory (but NOT derived _index.md)
+# Allow: files in project memories/ directory (but NOT derived _index.md)
 if [[ "$FILE_PATH" == "$MISSION_DIR/memories/"* ]]; then
   BASENAME=$(basename "$FILE_PATH")
   if [[ "$BASENAME" == _* ]]; then
@@ -122,7 +122,7 @@ if [ -n "$WORKSPACE_ROOT" ] && [[ "$FILE_PATH" == "$WORKSPACE_ROOT"/* ]]; then
 fi
 
 # --- Step 11: Block the write ---
-REASON="Syntaur write boundary violation: Cannot write to '$FILE_PATH'. Allowed paths: assignment dir ($ASSIGNMENT_DIR), mission resources/memories, workspace ($WORKSPACE_ROOT)."
+REASON="Syntaur write boundary violation: Cannot write to '$FILE_PATH'. Allowed paths: assignment dir ($ASSIGNMENT_DIR), project resources/memories, workspace ($WORKSPACE_ROOT)."
 
 # Escape for JSON
 REASON_ESCAPED=$(echo "$REASON" | jq -Rs '.' 2>/dev/null)

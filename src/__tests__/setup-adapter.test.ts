@@ -6,17 +6,17 @@ import { setupAdapterCommand } from '../commands/setup-adapter.js';
 
 describe('setup-adapter command', () => {
   let tempDir: string;
-  let missionDir: string;
+  let projectDir: string;
   let assignmentDir: string;
   let originalCwd: string;
   let cwdDir: string;
 
   beforeEach(async () => {
     tempDir = await mkdtemp(join(tmpdir(), 'syntaur-test-'));
-    missionDir = join(tempDir, 'missions', 'test-mission');
-    assignmentDir = join(missionDir, 'assignments', 'test-assignment');
+    projectDir = join(tempDir, 'projects', 'test-project');
+    assignmentDir = join(projectDir, 'assignments', 'test-assignment');
     await mkdir(assignmentDir, { recursive: true });
-    await writeFile(join(missionDir, 'mission.md'), '---\ntitle: Test\n---\n');
+    await writeFile(join(projectDir, 'project.md'), '---\ntitle: Test\n---\n');
     await writeFile(join(assignmentDir, 'assignment.md'), '---\nstatus: pending\n---\n');
 
     cwdDir = join(tempDir, 'workspace');
@@ -31,9 +31,9 @@ describe('setup-adapter command', () => {
   });
 
   const baseOptions = (dir: string) => ({
-    mission: 'test-mission',
+    project: 'test-project',
     assignment: 'test-assignment',
-    dir: join(dir, 'missions'),
+    dir: join(dir, 'projects'),
   });
 
   it('generates Cursor adapter files', async () => {
@@ -44,7 +44,7 @@ describe('setup-adapter command', () => {
     const assignment = await readFile(assignmentPath, 'utf-8');
     expect(protocol).toContain('alwaysApply: true');
     expect(protocol).toContain('Syntaur Protocol');
-    expect(assignment).toContain('test-mission');
+    expect(assignment).toContain('test-project');
     expect(assignment).toContain('test-assignment');
   });
 
@@ -53,7 +53,7 @@ describe('setup-adapter command', () => {
     const agentsPath = resolve(cwdDir, 'AGENTS.md');
     const agents = await readFile(agentsPath, 'utf-8');
     expect(agents).toContain('Syntaur Protocol');
-    expect(agents).toContain('test-mission');
+    expect(agents).toContain('test-project');
     expect(agents).toContain('test-assignment');
   });
 
@@ -91,11 +91,11 @@ describe('setup-adapter command', () => {
     ).rejects.toThrow('Unsupported framework');
   });
 
-  it('throws on missing mission', async () => {
+  it('throws on missing project', async () => {
     await expect(
       setupAdapterCommand('codex', {
         ...baseOptions(tempDir),
-        mission: 'nonexistent',
+        project: 'nonexistent',
       }),
     ).rejects.toThrow('not found');
   });

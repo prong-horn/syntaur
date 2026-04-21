@@ -11,7 +11,7 @@ import {
   Trash2,
 } from 'lucide-react';
 import { CopyButton } from '../components/CopyButton';
-import { useAssignment, useMission, useServers, useAssignmentSessions, useWorkspacePrefix, type AssignmentTransitionAction } from '../hooks/useMissions';
+import { useAssignment, useProject, useServers, useAssignmentSessions, useWorkspacePrefix, type AssignmentTransitionAction } from '../hooks/useProjects';
 import { useStatusConfig } from '../hooks/useStatusConfig';
 import { formatDateTime, formatRelativeTime, formatShortDate, formatShortDateTime } from '../lib/format';
 import { LoadingState } from '../components/LoadingState';
@@ -54,13 +54,13 @@ export function AssignmentDetail() {
   const tab = searchParams.get('tab') ?? 'summary';
   const statusConfig = useStatusConfig();
   const { data: assignment, loading, error, refetch } = useAssignment(slug, aslug);
-  const { data: mission } = useMission(slug);
+  const { data: project } = useProject(slug);
   const { data: serversData } = useServers();
   const { data: sessionsData } = useAssignmentSessions(slug, aslug);
 
   const enrichedDeps = useMemo(() => {
-    if (!assignment || !mission) return [];
-    const map = new Map(mission.assignments.map((a) => [a.slug, a]));
+    if (!assignment || !project) return [];
+    const map = new Map(project.assignments.map((a) => [a.slug, a]));
     return assignment.dependsOn.map((depSlug) => {
       const s = map.get(depSlug);
       return {
@@ -71,7 +71,7 @@ export function AssignmentDetail() {
         assignee: s?.assignee ?? null,
       };
     });
-  }, [assignment, mission]);
+  }, [assignment, project]);
 
   const unmetDeps = enrichedDeps.filter(
     (d) => d.status !== 'completed' && d.status !== 'review',
@@ -80,8 +80,8 @@ export function AssignmentDetail() {
   // Hotkey wiring — scoped to 'assignment'.
   useHotkeyScope('assignment');
   const siblingSlugs = useMemo(
-    () => (mission?.assignments ?? []).map((a) => a.slug),
-    [mission],
+    () => (project?.assignments ?? []).map((a) => a.slug),
+    [project],
   );
   const currentIndex = aslug ? siblingSlugs.indexOf(aslug) : -1;
   const prevSlug = currentIndex > 0 ? siblingSlugs[currentIndex - 1] : null;
@@ -89,7 +89,7 @@ export function AssignmentDetail() {
     currentIndex >= 0 && currentIndex < siblingSlugs.length - 1
       ? siblingSlugs[currentIndex + 1]
       : null;
-  const baseRoute = `${wsPrefix}/missions/${slug}/assignments/${aslug}`;
+  const baseRoute = `${wsPrefix}/projects/${slug}/assignments/${aslug}`;
 
   useHotkey({
     keys: 'e',
@@ -124,18 +124,18 @@ export function AssignmentDetail() {
   useHotkey({
     keys: '[',
     scope: 'assignment',
-    description: 'Previous assignment in mission',
+    description: 'Previous assignment in project',
     enabled: !!prevSlug,
     handler: () =>
-      prevSlug && navigate(`${wsPrefix}/missions/${slug}/assignments/${prevSlug}`),
+      prevSlug && navigate(`${wsPrefix}/projects/${slug}/assignments/${prevSlug}`),
   });
   useHotkey({
     keys: ']',
     scope: 'assignment',
-    description: 'Next assignment in mission',
+    description: 'Next assignment in project',
     enabled: !!nextSlug,
     handler: () =>
-      nextSlug && navigate(`${wsPrefix}/missions/${slug}/assignments/${nextSlug}`),
+      nextSlug && navigate(`${wsPrefix}/projects/${slug}/assignments/${nextSlug}`),
   });
 
   const summarySections = useMemo(
@@ -177,7 +177,7 @@ export function AssignmentDetail() {
     return <ErrorState error={error || 'Assignment not found.'} />;
   }
 
-  const missionSlug = slug;
+  const projectSlug = slug;
   const assignmentSlug = aslug;
   const progress = criteria.length > 0 ? { checked: checkedCount, total: criteria.length } : undefined;
 
@@ -199,7 +199,7 @@ export function AssignmentDetail() {
     for (const session of serversData.sessions) {
       for (const win of session.windows) {
         for (const pane of win.panes) {
-          if (pane.assignment?.mission === slug && pane.assignment?.slug === aslug) {
+          if (pane.assignment?.project === slug && pane.assignment?.slug === aslug) {
             linkedPanes.push({
               sessionName: session.name,
               command: pane.command,
@@ -214,7 +214,7 @@ export function AssignmentDetail() {
   async function handleStatusOverride(status: string) {
     setTransitionError(null);
     try {
-      await overrideAssignmentStatus(missionSlug, assignmentSlug, status);
+      await overrideAssignmentStatus(projectSlug, assignmentSlug, status);
       refetch();
     } catch (err) {
       setTransitionError((err as Error).message);
@@ -224,8 +224,8 @@ export function AssignmentDetail() {
   async function handleDeleteAssignment() {
     setDeleteLoading(true);
     try {
-      await deleteAssignment(missionSlug, assignmentSlug);
-      navigate(`${wsPrefix}/missions/${missionSlug}`);
+      await deleteAssignment(projectSlug, assignmentSlug);
+      navigate(`${wsPrefix}/projects/${projectSlug}`);
     } catch (err) {
       setTransitionError((err as Error).message);
       setDeleteLoading(false);
@@ -238,7 +238,7 @@ export function AssignmentDetail() {
     setTransitioning(action.command);
 
     try {
-      await runAssignmentTransition(missionSlug, assignmentSlug, action, reason);
+      await runAssignmentTransition(projectSlug, assignmentSlug, action, reason);
       refetch();
       return true;
     } catch (mutationError) {
@@ -264,7 +264,7 @@ export function AssignmentDetail() {
 
     try {
       const response = await fetch(
-        `/api/missions/${missionSlug}/assignments/${assignmentSlug}/acceptance-criteria/${index}`,
+        `/api/projects/${projectSlug}/assignments/${assignmentSlug}/acceptance-criteria/${index}`,
         {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
@@ -316,31 +316,31 @@ export function AssignmentDetail() {
       key: 'edit-assignment',
       label: 'Edit assignment source',
       icon: FilePenLine,
-      href: `${wsPrefix}/missions/${slug}/assignments/${aslug}/edit`,
+      href: `${wsPrefix}/projects/${slug}/assignments/${aslug}/edit`,
     },
     {
       key: 'edit-plan',
       label: 'Edit plan',
       icon: SendToBack,
-      href: `${wsPrefix}/missions/${slug}/assignments/${aslug}/plan/edit`,
+      href: `${wsPrefix}/projects/${slug}/assignments/${aslug}/plan/edit`,
     },
     {
       key: 'edit-scratchpad',
       label: 'Edit scratchpad',
       icon: NotebookPen,
-      href: `${wsPrefix}/missions/${slug}/assignments/${aslug}/scratchpad/edit`,
+      href: `${wsPrefix}/projects/${slug}/assignments/${aslug}/scratchpad/edit`,
     },
     {
       key: 'append-handoff',
       label: 'Append handoff',
       icon: ArrowUpRight,
-      href: `${wsPrefix}/missions/${slug}/assignments/${aslug}/handoff/edit`,
+      href: `${wsPrefix}/projects/${slug}/assignments/${aslug}/handoff/edit`,
     },
     {
       key: 'append-decision',
       label: 'Append decision',
       icon: Hammer,
-      href: `${wsPrefix}/missions/${slug}/assignments/${aslug}/decision-record/edit`,
+      href: `${wsPrefix}/projects/${slug}/assignments/${aslug}/decision-record/edit`,
     },
     {
       key: 'delete',
@@ -405,7 +405,7 @@ export function AssignmentDetail() {
 
       {enrichedDeps.length > 0 && (
         <DependencyPanel
-          missionSlug={slug!}
+          projectSlug={slug!}
           dependencies={enrichedDeps}
           blockedReason={assignment.blockedReason}
         />
@@ -499,7 +499,7 @@ export function AssignmentDetail() {
                       title="Plan"
                       description="Shows plan.md only. Versioned plans (plan-v2.md, ...) linked from the Todos section are not yet rendered here — open them from the filesystem."
                       actions={
-                        <Link className="shell-action" to={`${wsPrefix}/missions/${slug}/assignments/${aslug}/plan/edit`}>
+                        <Link className="shell-action" to={`${wsPrefix}/projects/${slug}/assignments/${aslug}/plan/edit`}>
                           <NotebookPen className="h-4 w-4" />
                           <span>Edit Plan</span>
                         </Link>
@@ -526,7 +526,7 @@ export function AssignmentDetail() {
                   <SectionCard
                     title="Scratchpad"
                     actions={
-                      <Link className="shell-action" to={`${wsPrefix}/missions/${slug}/assignments/${aslug}/scratchpad/edit`}>
+                      <Link className="shell-action" to={`${wsPrefix}/projects/${slug}/assignments/${aslug}/scratchpad/edit`}>
                         <NotebookPen className="h-4 w-4" />
                         <span>Edit Scratchpad</span>
                       </Link>

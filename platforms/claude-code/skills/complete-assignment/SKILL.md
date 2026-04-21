@@ -23,9 +23,9 @@ If the user passed `--complete`, transition directly to `completed` instead of `
 
 Read `.syntaur/context.json` from the current working directory.
 
-If the file does not exist, tell the user: "No active assignment found. Run `/grab-assignment <mission-slug>` first."
+If the file does not exist, tell the user: "No active assignment found. Run `/grab-assignment <project-slug>` first."
 
-Extract: `missionSlug`, `assignmentSlug`, `assignmentDir`, `missionDir`.
+Extract: `projectSlug`, `assignmentSlug`, `assignmentDir`, `projectDir`.
 
 ## Step 1.5: Load Playbooks
 
@@ -94,12 +94,12 @@ Do NOT uncheck or rewrite superseded todo lines (those matching `- [x] ~~...~~ (
 
 ## Step 4.5: Close Session
 
-Read the context file (`.syntaur/context.json`) to get the `sessionId` and `missionSlug`. Then mark the session as completed via the dashboard API:
+Read the context file (`.syntaur/context.json`) to get the `sessionId` and `projectSlug`. Then mark the session as completed via the dashboard API:
 
 ```bash
 curl -s -X PATCH "http://localhost:$(cat ~/.syntaur/dashboard-port 2>/dev/null || echo 4800)/api/agent-sessions/<session-id>/status" \
   -H "Content-Type: application/json" \
-  -d '{"status": "completed", "missionSlug": "<mission-slug>"}'
+  -d '{"status": "completed", "projectSlug": "<project-slug>"}'
 ```
 
 If the API call fails (e.g., dashboard not running), this is non-critical — the session will be reconciled automatically on the next dashboard load.
@@ -109,20 +109,20 @@ If the API call fails (e.g., dashboard not running), this is non-critical — th
 If the user passed `--complete`:
 
 ```bash
-syntaur complete <assignment-slug> --mission <mission-slug>
+syntaur complete <assignment-slug> --project <project-slug>
 ```
 
 Otherwise, transition to review:
 
 ```bash
-syntaur review <assignment-slug> --mission <mission-slug>
+syntaur review <assignment-slug> --project <project-slug>
 ```
 
 Use `dangerouslyDisableSandbox: true` since the CLI writes to `~/.syntaur/`.
 
 If the command fails, report the error. Common failures:
 - Assignment is not in `in_progress` status (cannot transition)
-- Mission not found
+- Project not found
 
 ## Step 6: Clean Up Context
 

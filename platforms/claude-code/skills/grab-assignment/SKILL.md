@@ -1,7 +1,7 @@
 ---
 name: grab-assignment
 description: Load a Syntaur assignment into the current working context
-argument-hint: <mission-slug> [assignment-slug]
+argument-hint: <project-slug> [assignment-slug]
 allowed-tools:
   - Bash
   - Read
@@ -21,37 +21,37 @@ Load a Syntaur assignment into the current working context so you can work on it
 The user provided: $ARGUMENTS
 
 Parse the arguments:
-- First argument (required): the mission slug (e.g., `build-auth-system`)
-- Second argument (optional): a specific assignment slug to grab. If omitted, you will list the mission's assignments and pick one (preferring `pending` when multiple exist).
+- First argument (required): the project slug (e.g., `build-auth-system`)
+- Second argument (optional): a specific assignment slug to grab. If omitted, you will list the project's assignments and pick one (preferring `pending` when multiple exist).
 
 ## Pre-flight Check
 
 1. Check if `.syntaur/context.json` already exists in the current working directory.
-   - If it exists, read it and warn the user: "You already have an active assignment: `<assignmentSlug>` in mission `<missionSlug>`. Grabbing a new assignment will replace this context. Proceed?"
+   - If it exists, read it and warn the user: "You already have an active assignment: `<assignmentSlug>` in project `<projectSlug>`. Grabbing a new assignment will replace this context. Proceed?"
    - If the user says no, stop.
 
-## Step 1: Discover the Mission
+## Step 1: Discover the Project
 
-Read the mission directory to understand what is available:
+Read the project directory to understand what is available:
 
 ```bash
-ls ~/.syntaur/missions/<mission-slug>/
+ls ~/.syntaur/projects/<project-slug>/
 ```
 
-Read the mission files, starting with the manifest (the protocol-defined entry point):
-- Read `~/.syntaur/missions/<mission-slug>/manifest.md` first (root navigation file per protocol spec)
-- Read `~/.syntaur/missions/<mission-slug>/mission.md` for goal and context
-- Read `~/.syntaur/missions/<mission-slug>/agent.md` for agent instructions
-- Read `~/.syntaur/missions/<mission-slug>/claude.md` if it exists for Claude-specific instructions
+Read the project files, starting with the manifest (the protocol-defined entry point):
+- Read `~/.syntaur/projects/<project-slug>/manifest.md` first (root navigation file per protocol spec)
+- Read `~/.syntaur/projects/<project-slug>/project.md` for goal and context
+- Read `~/.syntaur/projects/<project-slug>/agent.md` for agent instructions
+- Read `~/.syntaur/projects/<project-slug>/claude.md` if it exists for Claude-specific instructions
 
-Note the `workspace` field in `mission.md` frontmatter if present. This indicates which project/codebase grouping the mission belongs to. When writing context to `.syntaur/context.json` (Step 5), include `"workspace": "<value>"` if the mission has a workspace.
+Note the `workspace` field in `project.md` frontmatter if present. This indicates which project/codebase grouping the project belongs to. When writing context to `.syntaur/context.json` (Step 5), include `"workspace": "<value>"` if the project has a workspace.
 
 ## Step 2: Find Assignments
 
 List assignment directories:
 
 ```bash
-ls ~/.syntaur/missions/<mission-slug>/assignments/
+ls ~/.syntaur/projects/<project-slug>/assignments/
 ```
 
 If the user specified an assignment slug as the second argument, verify that directory exists. Its status does **not** matter — grab it regardless. If it doesn't exist, report that and stop.
@@ -63,24 +63,24 @@ If no specific assignment was requested, read each `assignment.md` frontmatter a
 Read the assignment frontmatter first to learn its current `status`:
 
 ```bash
-cat ~/.syntaur/missions/<mission-slug>/assignments/<assignment-slug>/assignment.md
+cat ~/.syntaur/projects/<project-slug>/assignments/<assignment-slug>/assignment.md
 ```
 
 Then run the Syntaur CLI to set the assignee. This is safe at any status and does not transition state. Use `dangerouslyDisableSandbox: true` for these bash commands since the CLI writes to `~/.syntaur/` which is outside the project sandbox.
 
 ```bash
-syntaur assign <assignment-slug> --agent claude --mission <mission-slug>
+syntaur assign <assignment-slug> --agent claude --project <project-slug>
 ```
 
 **Only if the current status is `pending`**, also run `syntaur start` to transition it to `in_progress`:
 
 ```bash
-syntaur start <assignment-slug> --mission <mission-slug>
+syntaur start <assignment-slug> --project <project-slug>
 ```
 
 For any other status (`in_progress`, `blocked`, `review`, `completed`, `failed`), **skip `syntaur start`** — the assignment has already been advanced past pending and grabbing should not rewind it. Tell the user which status the assignment is in and continue with context setup.
 
-If `syntaur assign` fails (e.g., mission not found, invalid slug), report the error and stop. Do not treat a non-pending status as a failure.
+If `syntaur assign` fails (e.g., project not found, invalid slug), report the error and stop. Do not treat a non-pending status as a failure.
 
 ## Step 4: Read Assignment Context and Set Workspace
 
@@ -117,10 +117,10 @@ Then write the JSON file with this structure:
 
 ```json
 {
-  "missionSlug": "<mission-slug>",
+  "projectSlug": "<project-slug>",
   "assignmentSlug": "<assignment-slug>",
-  "missionDir": "/Users/<username>/.syntaur/missions/<mission-slug>",
-  "assignmentDir": "/Users/<username>/.syntaur/missions/<mission-slug>/assignments/<assignment-slug>",
+  "projectDir": "/Users/<username>/.syntaur/projects/<project-slug>",
+  "assignmentDir": "/Users/<username>/.syntaur/projects/<project-slug>/assignments/<assignment-slug>",
   "workspaceRoot": "<workspace.worktreePath if set, else workspace.repository if it is a local path, else current working directory>",
   "title": "<assignment title>",
   "branch": "<workspace.branch or null>",
@@ -134,7 +134,7 @@ Use absolute paths (expand `~` to the actual home directory). Note: `workspace.r
 
 ## Step 5.5: Register Agent Session
 
-After creating the context file, register this session in the mission's agent session log so it appears in the dashboard.
+After creating the context file, register this session in the project's agent session log so it appears in the dashboard.
 
 1. Find the current Claude Code session ID by reading from `~/.claude/sessions/`. These are JSON files keyed by PID containing `sessionId`, `cwd`, etc. Find the most recently modified file whose `cwd` matches the current working directory:
 ```bash
@@ -146,7 +146,7 @@ If you cannot find a matching session file (e.g., no file matches the cwd, or th
 
 2. Run the track-session command (use `dangerouslyDisableSandbox: true` since it writes to `~/.syntaur/`):
 ```bash
-syntaur track-session --mission <missionSlug> --assignment <assignmentSlug> --agent claude --session-id <claude-session-id> --path $(pwd)
+syntaur track-session --project <projectSlug> --assignment <assignmentSlug> --agent claude --session-id <claude-session-id> --path $(pwd)
 ```
 
 3. Update the `.syntaur/context.json` context file to include the session ID. Add `"sessionId": "<claude-session-id>"` to the JSON object you wrote in Step 5.

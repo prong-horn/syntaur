@@ -3,7 +3,7 @@ import { resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import {
   listAllSessions,
-  listMissionSessions,
+  listProjectSessions,
   appendSession,
   updateSessionStatus,
   deleteSessions,
@@ -13,34 +13,34 @@ import { fileExists } from '../utils/fs.js';
 import type { AgentSessionStatus, WsMessage } from './types.js';
 
 export function createAgentSessionsRouter(
-  missionsDir: string,
+  projectsDir: string,
   broadcast?: (msg: WsMessage) => void,
 ): Router {
   const router = Router();
 
-  // GET /api/agent-sessions — all sessions across all missions
+  // GET /api/agent-sessions — all sessions across all projects
   router.get('/', async (_req, res) => {
     try {
-      await reconcileActiveSessions(missionsDir);
-      const sessions = await listAllSessions(missionsDir);
+      await reconcileActiveSessions(projectsDir);
+      const sessions = await listAllSessions(projectsDir);
       res.json({ sessions, generatedAt: new Date().toISOString() });
     } catch (error) {
       res.status(500).json({ error: error instanceof Error ? error.message : 'Failed to list sessions' });
     }
   });
 
-  // GET /api/agent-sessions/:missionSlug — sessions for one mission
-  router.get('/:missionSlug', async (req, res) => {
+  // GET /api/agent-sessions/:projectSlug — sessions for one project
+  router.get('/:projectSlug', async (req, res) => {
     try {
-      const { missionSlug } = req.params;
+      const { projectSlug } = req.params;
       const assignment = req.query.assignment as string | undefined;
-      const missionDir = resolve(missionsDir, missionSlug);
-      if (!(await fileExists(missionDir))) {
-        res.status(404).json({ error: `Mission "${missionSlug}" not found` });
+      const projectDir = resolve(projectsDir, projectSlug);
+      if (!(await fileExists(projectDir))) {
+        res.status(404).json({ error: `Project "${projectSlug}" not found` });
         return;
       }
-      await reconcileActiveSessions(missionsDir);
-      const sessions = await listMissionSessions(missionsDir, missionSlug, assignment);
+      await reconcileActiveSessions(projectsDir);
+      const sessions = await listProjectSessions(projectsDir, projectSlug, assignment);
       res.json({ sessions, generatedAt: new Date().toISOString() });
     } catch (error) {
       res.status(500).json({ error: error instanceof Error ? error.message : 'Failed to list sessions' });
@@ -50,24 +50,24 @@ export function createAgentSessionsRouter(
   // POST /api/agent-sessions — register a new session
   router.post('/', async (req, res) => {
     try {
-      const { missionSlug, assignmentSlug, agent, sessionId, path, description } = req.body;
+      const { projectSlug, assignmentSlug, agent, sessionId, path, description } = req.body;
 
       if (!agent) {
         res.status(400).json({ error: 'agent is required' });
         return;
       }
 
-      if (missionSlug) {
-        const missionDir = resolve(missionsDir, missionSlug);
-        if (!(await fileExists(missionDir))) {
-          res.status(404).json({ error: `Mission "${missionSlug}" not found` });
+      if (projectSlug) {
+        const projectDir = resolve(projectsDir, projectSlug);
+        if (!(await fileExists(projectDir))) {
+          res.status(404).json({ error: `Project "${projectSlug}" not found` });
           return;
         }
       }
 
       const id = sessionId || randomUUID();
       const session = {
-        missionSlug: missionSlug || null,
+        projectSlug: projectSlug || null,
         assignmentSlug: assignmentSlug || null,
         agent,
         sessionId: id,

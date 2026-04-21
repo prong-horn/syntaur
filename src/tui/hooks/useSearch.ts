@@ -9,7 +9,7 @@ interface SearchableItem {
   status: string;
   assignee: string;
   priority: string;
-  missionSlug: string;
+  projectSlug: string;
 }
 
 export function useSearch(nodes: TreeNode[]) {
@@ -18,18 +18,18 @@ export function useSearch(nodes: TreeNode[]) {
 
   const fuse = useMemo(() => {
     const items: SearchableItem[] = [];
-    for (const mission of nodes) {
+    for (const project of nodes) {
       items.push({
-        id: mission.id,
-        label: mission.label,
-        slug: mission.slug,
-        status: mission.status,
+        id: project.id,
+        label: project.label,
+        slug: project.slug,
+        status: project.status,
         assignee: '',
         priority: '',
-        missionSlug: mission.missionSlug,
+        projectSlug: project.projectSlug,
       });
-      if (mission.children) {
-        for (const child of mission.children) {
+      if (project.children) {
+        for (const child of project.children) {
           items.push({
             id: child.id,
             label: child.label,
@@ -37,7 +37,7 @@ export function useSearch(nodes: TreeNode[]) {
             status: child.status,
             assignee: child.assignee ?? '',
             priority: child.priority ?? '',
-            missionSlug: child.missionSlug,
+            projectSlug: child.projectSlug,
           });
         }
       }

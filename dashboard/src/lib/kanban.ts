@@ -1,4 +1,4 @@
-export const DEFAULT_MISSION_BOARD_COLUMNS = [
+export const DEFAULT_PROJECT_BOARD_COLUMNS = [
   'pending',
   'active',
   'blocked',
@@ -7,7 +7,7 @@ export const DEFAULT_MISSION_BOARD_COLUMNS = [
   'archived',
 ] as const;
 
-export const MISSION_BOARD_COLUMNS = DEFAULT_MISSION_BOARD_COLUMNS;
+export const PROJECT_BOARD_COLUMNS = DEFAULT_PROJECT_BOARD_COLUMNS;
 
 export const DEFAULT_ASSIGNMENT_BOARD_COLUMNS = [
   'pending',
