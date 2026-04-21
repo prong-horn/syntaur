@@ -2,6 +2,9 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdtemp, rm, mkdir, writeFile } from 'node:fs/promises';
 import { resolve, join } from 'node:path';
 import { tmpdir } from 'node:os';
+import express from 'express';
+import type { AddressInfo } from 'node:net';
+import type { Server } from 'node:http';
 import {
   listProjects,
   listAssignmentsBoard,
@@ -12,6 +15,12 @@ import {
   getEditableDocument,
   getHelp,
 } from '../dashboard/api.js';
+import { createAgentSessionsRouter } from '../dashboard/api-agent-sessions.js';
+import {
+  initSessionDb,
+  closeSessionDb,
+  resetSessionDb,
+} from '../dashboard/session-db.js';
 
 let testDir: string;
 
@@ -578,5 +587,106 @@ describe('help and editable documents', () => {
     expect(projectDoc?.content).toContain('Test Project');
     expect(assignmentDoc?.documentType).toBe('assignment');
     expect(assignmentDoc?.content).toContain('Test Assignment');
+  });
+});
+
+
+describe('POST /api/agent-sessions', () => {
+  let server: Server;
+  let port: number;
+  let dbDir: string;
+
+  beforeEach(async () => {
+    resetSessionDb();
+    dbDir = await mkdtemp(join(tmpdir(), 'syntaur-apidb-'));
+    initSessionDb(resolve(dbDir, 'syntaur.db'));
+
+    const app = express();
+    app.use(express.json());
+    app.use('/api/agent-sessions', createAgentSessionsRouter(dbDir));
+
+    await new Promise<void>((ready) => {
+      server = app.listen(0, () => ready());
+    });
+    port = (server.address() as AddressInfo).port;
+  });
+
+  afterEach(async () => {
+    await new Promise<void>((done) => server.close(() => done()));
+    closeSessionDb();
+    await rm(dbDir, { recursive: true, force: true });
+  });
+
+  it('returns 400 when sessionId is missing', async () => {
+    const res = await fetch(`http://127.0.0.1:${port}/api/agent-sessions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ agent: 'claude' }),
+    });
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error).toMatch(/sessionId/);
+  });
+
+  it('returns 400 when agent is missing', async () => {
+    const res = await fetch(`http://127.0.0.1:${port}/api/agent-sessions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sessionId: 'abc' }),
+    });
+    expect(res.status).toBe(400);
+  });
+
+  it('accepts sessionId + transcriptPath and returns 201', async () => {
+    const res = await fetch(`http://127.0.0.1:${port}/api/agent-sessions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        agent: 'claude',
+        sessionId: 'real-id-123',
+        transcriptPath: '/tmp/transcript.jsonl',
+      }),
+    });
+    expect(res.status).toBe(201);
+    const body = await res.json();
+    expect(body.sessionId).toBe('real-id-123');
+
+    const listRes = await fetch(`http://127.0.0.1:${port}/api/agent-sessions`);
+    const listBody = await listRes.json();
+    expect(listBody.sessions).toHaveLength(1);
+    expect(listBody.sessions[0].sessionId).toBe('real-id-123');
+    expect(listBody.sessions[0].transcriptPath).toBe('/tmp/transcript.jsonl');
+  });
+
+  it('re-registering without path does not clobber the existing stored path', async () => {
+    // First registration carries a real path.
+    await fetch(`http://127.0.0.1:${port}/api/agent-sessions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        agent: 'claude',
+        sessionId: 'sid-upsert',
+        path: '/real/cwd',
+      }),
+    });
+
+    // Second registration omits path (SessionStart hook case).
+    const res2 = await fetch(`http://127.0.0.1:${port}/api/agent-sessions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        agent: 'claude',
+        sessionId: 'sid-upsert',
+        transcriptPath: '/tmp/transcript.jsonl',
+      }),
+    });
+    expect(res2.status).toBe(201);
+
+    const listRes = await fetch(`http://127.0.0.1:${port}/api/agent-sessions`);
+    const listBody = await listRes.json();
+    const row = listBody.sessions.find((s: any) => s.sessionId === 'sid-upsert');
+    expect(row).toBeTruthy();
+    expect(row.path).toBe('/real/cwd'); // preserved, not overwritten with ''
+    expect(row.transcriptPath).toBe('/tmp/transcript.jsonl'); // enriched
   });
 });

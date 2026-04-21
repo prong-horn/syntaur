@@ -420,7 +420,14 @@ program
   .option('--project <slug>', 'Target project slug')
   .option('--assignment <slug>', 'Assignment slug')
   .option('--agent <name>', 'Agent name, e.g. claude, codex, cursor (required)')
-  .option('--session-id <id>', 'Session ID (auto-generated if omitted)')
+  .requiredOption(
+    '--session-id <id>',
+    'Session id from the agent runtime (real, not generated). Claude: read from ~/.claude/sessions/<pid>.json or the SessionStart hook payload. Codex: `payload.id` from the first line of the matching ~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl.',
+  )
+  .option(
+    '--transcript-path <path>',
+    'Absolute path to the agent rollout/transcript file (e.g. the Codex rollout jsonl or Claude transcript jsonl).',
+  )
   .option('--path <path>', 'Full path to session on disk (defaults to cwd)')
   .option('--dir <path>', 'Override default project directory')
   .option('--description <text>', 'Description of what this session is for')

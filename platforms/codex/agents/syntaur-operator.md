@@ -93,7 +93,7 @@ Use these commands directly when needed:
 - `syntaur comment <assignment-slug-or-uuid> "body" --type question|note|feedback [--reply-to <id>] [--project <slug>]` — append to `comments.md`
 - `syntaur request <target-slug-or-uuid> "text" [--from <source>] [--project <slug>]` — append to target's `## Todos`, annotated `(from: <source>)`
 - `syntaur uninstall [--all] [--yes]`
-- `syntaur track-session --project <project-slug> --assignment <assignment-slug> --agent codex --session-id <id> --path <cwd>`
+- `syntaur track-session --project <project-slug> --assignment <assignment-slug> --agent codex --session-id <real-id> --transcript-path <rollout-path> --path <cwd>` (both `--session-id` and `--transcript-path` must come from the matching Codex rollout file — never synthesize)
 - `syntaur setup-adapter codex --project <project-slug> --assignment <assignment-slug>`
 
 ## Standard Workflows
@@ -103,9 +103,11 @@ Use these commands directly when needed:
 1. Discover the project and pending assignments.
 2. Run `syntaur assign ... --agent codex`.
 3. Run `syntaur start ...`.
-4. Create `.syntaur/context.json` in the working directory.
-5. Register the session with `syntaur track-session`.
-6. If needed, run `syntaur setup-adapter codex --project <slug> --assignment <slug>`.
+4. Create (or merge into) `.syntaur/context.json` in the working directory. If a prior context file exists, preserve its fields.
+5. Resolve the real Codex session id and rollout path: `bash ./scripts/resolve-session.sh "$(pwd)"` (relative to the plugin root). Parse `session_id=<id>` and `transcript_path=<abs path>`. If the helper exits non-zero, there is no matching Codex rollout in this cwd — start the Codex session first, then retry. Never `uuidgen`.
+6. Merge `sessionId` + `transcriptPath` into `.syntaur/context.json`.
+7. Register the session: `syntaur track-session --project <slug> --assignment <slug> --agent codex --session-id <id> --transcript-path <path> --path "$(pwd)"`.
+8. If needed, run `syntaur setup-adapter codex --project <slug> --assignment <slug>`.
 
 ### Plan an assignment
 

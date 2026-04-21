@@ -38,7 +38,7 @@ Parse:
    - **Only if current status is `pending`**: `syntaur start <assignment-slug> --project <project-slug>` to transition it to `in_progress`. Skip this command for any other status — grabbing must not rewind a `review`, `completed`, or `failed` assignment.
    If `syntaur assign` fails (e.g., project not found, invalid slug), report and stop. Do not treat a non-pending status as a failure.
 7. If the assignment has no workspace configured, set `workspace.repository` and `workspace.worktreePath` to the current working directory so write boundaries are meaningful.
-8. Create `.syntaur/context.json` in the current working directory with:
+8. Create or merge `.syntaur/context.json` in the current working directory. If the file already exists, preserve its contents and layer the new assignment fields on top (never overwrite):
 
 ```json
 {
@@ -50,13 +50,15 @@ Parse:
   "title": "<assignment title>",
   "branch": "<workspace.branch or null>",
   "grabbedAt": "<ISO 8601 timestamp>",
-  "sessionId": "<uuid>"
+  "sessionId": "<real-codex-session-id>",
+  "transcriptPath": "<absolute path to the matching rollout jsonl>"
 }
 ```
 
-9. Register the agent session:
-   - generate a UUID
-   - run `syntaur track-session --project <project-slug> --assignment <assignment-slug> --agent codex --session-id <uuid> --path <cwd>`
+9. Register the agent session using the REAL Codex session id and rollout path — never synthesize a UUID:
+   - Resolve both by running the plugin-shipped helper: `bash ./scripts/resolve-session.sh "$(pwd)"` (script lives at `platforms/codex/scripts/resolve-session.sh`; referenced via the same relative path used by other Codex hooks in `hooks.json`). Parse the two output lines: `session_id=<id>` and `transcript_path=<abs path>`. If the helper exits non-zero, stop and report "no matching Codex rollout for this cwd — aborting registration. Start a Codex session in this cwd first."
+   - Merge `sessionId` + `transcriptPath` into `.syntaur/context.json` (use `jq '. + {sessionId:$sid, transcriptPath:$tp}'` to preserve existing fields).
+   - Run: `syntaur track-session --project <project-slug> --assignment <assignment-slug> --agent codex --session-id <id> --transcript-path <path> --path <cwd>`
 10. Summarize:
    - assignment slug and title
    - current status (call it out if the assignment was already past `pending` — e.g., "already in `review`, status unchanged")

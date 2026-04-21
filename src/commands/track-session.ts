@@ -1,5 +1,4 @@
 import { resolve } from 'node:path';
-import { randomUUID } from 'node:crypto';
 import { expandHome } from '../utils/paths.js';
 import { fileExists } from '../utils/fs.js';
 import { readConfig } from '../utils/config.js';
@@ -15,6 +14,7 @@ export interface TrackSessionOptions {
   path?: string;
   dir?: string;
   description?: string;
+  transcriptPath?: string;
 }
 
 export async function trackSessionCommand(
@@ -22,6 +22,12 @@ export async function trackSessionCommand(
 ): Promise<void> {
   if (!options.agent) {
     throw new Error('--agent <name> is required.');
+  }
+
+  if (!options.sessionId) {
+    throw new Error(
+      '--session-id <id> is required. Pass the real agent-generated session id — do not synthesize one.',
+    );
   }
 
   if (options.project) {
@@ -38,10 +44,9 @@ export async function trackSessionCommand(
     }
   }
 
-  // Ensure the session database is initialized
   initSessionDb();
 
-  const sessionId = options.sessionId || randomUUID();
+  const { sessionId } = options;
 
   await appendSession('', {
     projectSlug: options.project || null,
@@ -52,10 +57,13 @@ export async function trackSessionCommand(
     status: 'active' as AgentSessionStatus,
     path: options.path || process.cwd(),
     description: options.description || null,
+    transcriptPath: options.transcriptPath ?? null,
   });
 
   if (options.project && options.assignment) {
-    console.log(`Registered agent session ${sessionId} for ${options.assignment} in ${options.project}.`);
+    console.log(
+      `Registered agent session ${sessionId} for ${options.assignment} in ${options.project}.`,
+    );
   } else {
     console.log(`Registered standalone agent session ${sessionId}.`);
   }

@@ -787,17 +787,38 @@ Agent sessions are stored in a SQLite database rather than markdown files. This 
 ```sql
 CREATE TABLE sessions (
   session_id TEXT PRIMARY KEY,
-  project_slug TEXT NOT NULL,
-  assignment_slug TEXT NOT NULL,
+  project_slug TEXT,
+  assignment_slug TEXT,
   agent TEXT NOT NULL,
   started TEXT NOT NULL,
   ended TEXT,
   status TEXT NOT NULL DEFAULT 'active',
   path TEXT,
+  description TEXT,
+  transcript_path TEXT,
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 ```
+
+Current schema version: `3`. The schema version is stored in a `meta` table and the DB migrates automatically on `initSessionDb()` — v1→v2 made project/assignment nullable and added `description`; v2→v3 added `transcript_path`.
+
+### Session ID Rule
+
+`session_id` must always be the **real, agent-generated session identifier**. Never synthesize a UUID. The CLI (`syntaur track-session`) and the POST endpoint (`/api/agent-sessions`) both reject requests that omit `session_id`.
+
+Sources of truth by agent:
+
+| Agent | Where to read the real session id |
+|-------|-----------------------------------|
+| Claude Code | SessionStart hook stdin payload (`session_id`), or fallback: the most-recently-modified `~/.claude/sessions/<pid>.json` whose `cwd` matches `$(pwd)`. |
+| Codex | `payload.id` from the first line (`type: "session_meta"`) of the most-recently-modified `~/.codex/sessions/YYYY/MM/DD/rollout-<ts>-<uuid>.jsonl` whose `payload.cwd` matches `$(pwd)`. Helper: `platforms/codex/scripts/resolve-session.sh`. |
+
+`transcript_path` is the absolute path to the agent's rollout/transcript file. Optional — nullable column — but strongly preferred so handoffs and the dashboard can link back to the raw conversation.
+
+### Upsert Semantics
+
+`appendSession` (and the POST endpoint it backs) upserts on `session_id`. Re-registering the same real id is a no-op for identity fields and a COALESCE for other fields, so SessionStart can pre-register a minimal row that grab-assignment or `/track-session` later enrich with project/assignment/description. Sessions already in a terminal status (`completed` / `stopped`) are not revived by re-registration.
 
 ### Status Values
 
@@ -819,8 +840,10 @@ CREATE TABLE sessions (
 ### CLI
 
 ```bash
-syntaur track-session --project <slug> --assignment <slug> --agent <name> [--session-id <id>] [--path <path>]
+syntaur track-session --agent <name> --session-id <real-id> [--transcript-path <path>] [--project <slug>] [--assignment <slug>] [--path <cwd>] [--description <text>]
 ```
+
+`--session-id` is required; it must be the real id from the agent runtime. `--transcript-path` is optional but strongly preferred.
 
 ---
 

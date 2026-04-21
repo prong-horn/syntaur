@@ -66,13 +66,13 @@ export async function appendSession(
     INSERT INTO sessions (session_id, project_slug, assignment_slug, agent, started, status, path, description, transcript_path)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(session_id) DO UPDATE SET
-      project_slug    = COALESCE(excluded.project_slug,    project_slug),
-      assignment_slug = COALESCE(excluded.assignment_slug, assignment_slug),
+      project_slug    = COALESCE(NULLIF(excluded.project_slug, ''),    project_slug),
+      assignment_slug = COALESCE(NULLIF(excluded.assignment_slug, ''), assignment_slug),
       agent           = excluded.agent,
       status          = CASE WHEN status IN ('completed','stopped') THEN status ELSE excluded.status END,
-      path            = COALESCE(excluded.path,            path),
-      description     = COALESCE(excluded.description,     description),
-      transcript_path = COALESCE(excluded.transcript_path, transcript_path),
+      path            = COALESCE(NULLIF(excluded.path, ''),            path),
+      description     = COALESCE(NULLIF(excluded.description, ''),     description),
+      transcript_path = COALESCE(NULLIF(excluded.transcript_path, ''), transcript_path),
       updated_at      = datetime('now')
   `).run(
     session.sessionId,

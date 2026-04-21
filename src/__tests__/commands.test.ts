@@ -1,9 +1,13 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdtemp, rm, readFile, readdir } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { resolve, join } from 'node:path';
+import { resolve, join, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { spawnSync } from 'node:child_process';
 import { createProjectCommand } from '../commands/create-project.js';
 import { createAssignmentCommand } from '../commands/create-assignment.js';
+import { trackSessionCommand } from '../commands/track-session.js';
 
 let testDir: string;
 let origSyntaurHome: string | undefined;
@@ -204,5 +208,44 @@ describe('createAssignmentCommand', () => {
         dependsOn: 'valid-dep,INVALID!',
       }),
     ).rejects.toThrow('Invalid dependency slug');
+  });
+});
+
+describe('trackSessionCommand required flags', () => {
+  it('rejects when sessionId is missing', async () => {
+    // Without --session-id the in-function guard must fire before any DB touch.
+    await expect(
+      trackSessionCommand({ agent: 'claude' } as any),
+    ).rejects.toThrow(/session-id/);
+  });
+
+  it('rejects when agent is missing', async () => {
+    await expect(
+      trackSessionCommand({ sessionId: 'real-id' } as any),
+    ).rejects.toThrow(/--agent/);
+  });
+});
+
+describe('track-session CLI: Commander required-option enforcement', () => {
+  const here = dirname(fileURLToPath(import.meta.url));
+  const cliPath = resolve(here, '../../dist/index.js');
+
+  it('exits non-zero with a session-id error when --session-id omitted', () => {
+    if (!existsSync(cliPath)) {
+      // Verification plan requires a prior `npm run build`. Fail loudly rather
+      // than silently passing so the dev notices.
+      throw new Error(
+        `dist CLI not found at ${cliPath}. Run \`npm run build\` before the test suite.`,
+      );
+    }
+
+    const res = spawnSync(
+      'node',
+      [cliPath, 'track-session', '--agent', 'claude'],
+      { encoding: 'utf-8' },
+    );
+    expect(res.status).not.toBe(0);
+    // Commander emits "required option '--session-id <id>'" on stderr.
+    expect(res.stderr).toMatch(/session-id/);
   });
 });

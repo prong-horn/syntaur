@@ -34,39 +34,29 @@ SESSION_ID=$(jq -r '.sessionId // empty' "$CONTEXT_FILE" 2>/dev/null)
 MISSION_SLUG=$(jq -r '.projectSlug // empty' "$CONTEXT_FILE" 2>/dev/null)
 ASSIGNMENT_SLUG=$(jq -r '.assignmentSlug // empty' "$CONTEXT_FILE" 2>/dev/null)
 
-PORT=$(cat "$HOME/.syntaur/dashboard-port" 2>/dev/null || echo "4800")
-
-# --- Step 5: If no session was registered, try to auto-register (requires project+assignment) ---
+# Fall back to the SessionEnd stdin payload if context.json didn't have the id.
+# Claude Code passes session_id on stdin for SessionEnd.
 if [ -z "$SESSION_ID" ]; then
-  # Can only auto-register if we have project and assignment context
-  if [ -z "$MISSION_SLUG" ] || [ -z "$ASSIGNMENT_SLUG" ]; then
-    exit 0
-  fi
-
-  # Generate a session ID for the log entry
-  SESSION_ID=$(uuidgen 2>/dev/null || cat /proc/sys/kernel/random/uuid 2>/dev/null || echo "ses-$(date +%s)")
-  # Lowercase the UUID (uuidgen on macOS outputs uppercase)
-  SESSION_ID=$(echo "$SESSION_ID" | tr '[:upper:]' '[:lower:]')
-
-  RESPONSE=$(curl -sf -X POST "http://localhost:${PORT}/api/agent-sessions" \
-    -H "Content-Type: application/json" \
-    -d "{\"projectSlug\": \"${MISSION_SLUG}\", \"assignmentSlug\": \"${ASSIGNMENT_SLUG}\", \"agent\": \"claude\", \"sessionId\": \"${SESSION_ID}\", \"path\": \"${CWD}\"}" \
-    2>/dev/null) || true
-
-  # If registration succeeded, update the context file with the session ID
-  if [ -n "$RESPONSE" ]; then
-    jq --arg sid "$SESSION_ID" '. + {sessionId: $sid}' "$CONTEXT_FILE" > "${CONTEXT_FILE}.tmp" 2>/dev/null \
-      && mv "${CONTEXT_FILE}.tmp" "$CONTEXT_FILE" 2>/dev/null || true
-  fi
+  SESSION_ID=$(printf '%s' "$INPUT" | jq -r '.session_id // empty' 2>/dev/null)
 fi
 
-# --- Step 6: Mark session as stopped via dashboard API ---
+# No real session id available — exit quietly. We never synthesize one.
+[ -z "$SESSION_ID" ] && exit 0
+
+# --- Dashboard endpoint resolution (mirror session-start.sh exactly so start
+# and end hooks always target the same host:port) ---
+PORT="${SYNTAUR_DASHBOARD_PORT:-}"
+if [ -z "$PORT" ]; then
+  PORT=$(cat "$HOME/.syntaur/dashboard-port" 2>/dev/null || echo "4800")
+fi
+
+# --- Step 5: Mark session as stopped via dashboard API ---
 BODY="{\"status\": \"stopped\"}"
 if [ -n "$MISSION_SLUG" ]; then
   BODY="{\"status\": \"stopped\", \"projectSlug\": \"${MISSION_SLUG}\"}"
 fi
 
-curl -sf -X PATCH "http://localhost:${PORT}/api/agent-sessions/${SESSION_ID}/status" \
+curl -sf --max-time 3 -X PATCH "http://127.0.0.1:${PORT}/api/agent-sessions/${SESSION_ID}/status" \
   -H "Content-Type: application/json" \
   -d "$BODY" \
   -o /dev/null 2>/dev/null || true

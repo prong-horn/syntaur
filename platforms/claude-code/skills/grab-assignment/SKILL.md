@@ -27,8 +27,9 @@ Parse the arguments:
 ## Pre-flight Check
 
 1. Check if `.syntaur/context.json` already exists in the current working directory.
-   - If it exists, read it and warn the user: "You already have an active assignment: `<assignmentSlug>` in project `<projectSlug>`. Grabbing a new assignment will replace this context. Proceed?"
+   - If it exists AND contains BOTH `projectSlug` and `assignmentSlug`, read it and warn the user: "You already have an active assignment: `<assignmentSlug>` in project `<projectSlug>`. Grabbing a new assignment will replace this context. Proceed?"
    - If the user says no, stop.
+   - If the file exists but only has session fields (`sessionId`, `transcriptPath`) and no project/assignment, do NOT warn — that context was populated by the SessionStart hook and is not an "active assignment" marker. Proceed silently and merge new assignment fields in Step 5.
 
 ## Step 1: Discover the Project
 
@@ -113,15 +114,17 @@ workspace:
   worktreePath: /absolute/path/to/cwd
 ```
 
-## Step 5: Create Context File
+## Step 5: Create or Merge Context File
 
-Write `.syntaur/context.json` in the current working directory with the assignment context. First ensure the directory exists:
+Merge assignment context into `.syntaur/context.json`. Do NOT overwrite: if the file already exists (e.g., the SessionStart hook populated `sessionId` + `transcriptPath`), preserve those fields.
+
+First ensure the directory exists:
 
 ```bash
 mkdir -p .syntaur
 ```
 
-Then write the JSON file with this structure:
+Prepare the assignment payload:
 
 ```json
 {
@@ -136,26 +139,38 @@ Then write the JSON file with this structure:
 }
 ```
 
+Merge it on top of whatever context.json already contains:
+
+```bash
+if [ -f .syntaur/context.json ]; then
+  jq --slurpfile new <(echo "$NEW_CONTEXT_JSON") '. + $new[0]' .syntaur/context.json > .syntaur/context.json.tmp \
+    && mv .syntaur/context.json.tmp .syntaur/context.json
+else
+  echo "$NEW_CONTEXT_JSON" > .syntaur/context.json
+fi
+```
+
+This preserves any `sessionId` / `transcriptPath` the SessionStart hook wrote, while layering assignment fields on top.
+
 Use absolute paths (expand `~` to the actual home directory). Note: `workspace.repository` may be a remote URL (e.g., `https://github.com/...`) -- only use it as `workspaceRoot` if it starts with `/` (local path). If it is a URL, set `workspaceRoot` to the current working directory.
 
 **IMPORTANT:** The `workspaceRoot` must NEVER be null when the agent will be writing code. If no workspace was configured, default to the current working directory.
 
 ## Step 5.5: Register Agent Session
 
-After creating the context file, register this session in the project's agent session log so it appears in the dashboard.
+After merging context, register this session in the dashboard.
 
-1. Find the current Claude Code session ID by reading from `~/.claude/sessions/`. These are JSON files keyed by PID containing `sessionId`, `cwd`, etc. Find the most recently modified file whose `cwd` matches the current working directory:
-```bash
-ls -t ~/.claude/sessions/*.json | head -5
-```
-Read the most recent file(s) and find the one whose `cwd` matches `$(pwd)`. Extract the `sessionId` field — this is the real Claude Code session ID that can be used with `claude --resume <sessionId>` to resume this exact conversation.
+1. **Source the real Claude session_id + transcript_path.** In priority order:
+   1. If `.syntaur/context.json` already has `sessionId` (SessionStart hook populated it), use that ID and read `transcriptPath` from the same file.
+   2. Otherwise, fall back to `~/.claude/sessions/*.json`: `ls -t ~/.claude/sessions/*.json | head -5`, read each, and pick the most recently modified entry whose `cwd` matches `$(pwd)`. Extract `sessionId`. The transcript path for Claude Code lives at `~/.claude/projects/<encoded-cwd>/<sessionId>.jsonl` — construct that path if you need it.
+   3. If neither source yields a real ID, DO NOT synthesize one. Abort with: "Could not resolve a real Claude Code session id. Restart the Claude session so the SessionStart hook can populate `.syntaur/context.json`, or run `/rename <assignment-slug>` and retry."
 
-If you cannot find a matching session file (e.g., no file matches the cwd, or the sessions directory is empty), ask the user to run `/rename <assignment-slug>` to name the current session after the assignment. Then store the assignment slug as the session name in context.json (`"sessionName": "<assignment-slug>"`) instead of `sessionId`. The user can later resume with `claude --resume <assignment-slug>`.
+2. **Merge `sessionId` and `transcriptPath` back into context.json** (safe even if already present — jq merge is idempotent).
 
-2. Run the track-session command (use `dangerouslyDisableSandbox: true` since it writes to `~/.syntaur/`):
-```bash
-syntaur track-session --project <projectSlug> --assignment <assignmentSlug> --agent claude --session-id <claude-session-id> --path $(pwd)
-```
+3. **Run the track-session CLI** (use `dangerouslyDisableSandbox: true` since it writes to `~/.syntaur/`). Both `--session-id` and real path are required:
+   ```bash
+   syntaur track-session --project <projectSlug> --assignment <assignmentSlug> --agent claude --session-id <real-session-id> --transcript-path <transcript-path> --path $(pwd)
+   ```
 
 3. Update the `.syntaur/context.json` context file to include the session ID. Add `"sessionId": "<claude-session-id>"` to the JSON object you wrote in Step 5.
 

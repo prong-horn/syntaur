@@ -103,8 +103,10 @@ const CLI_COMMANDS: HelpCommand[] = [
   // --- Session & server tracking (index 17) ---
   {
     command: 'syntaur track-session',
-    description: 'Register an agent session, optionally linked to a project and assignment.',
-    example: 'syntaur track-session --agent claude --project ui-overhaul --assignment implement-overview',
+    description:
+      'Register an agent session. Requires --session-id from the agent runtime (real, not generated). Pass --transcript-path for the rollout/transcript file. --project and --assignment are optional.',
+    example:
+      'syntaur track-session --agent claude --session-id <real-id> --transcript-path <path> --project ui-overhaul --assignment implement-overview',
   },
 
   // --- Browsing & playbooks (indices 18-20) ---

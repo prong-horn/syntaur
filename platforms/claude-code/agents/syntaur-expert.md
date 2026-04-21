@@ -191,7 +191,7 @@ Only the assigned agent may write to its own assignment folder.
 ### Session Tracking
 | Command | Description |
 |---------|-------------|
-| `syntaur track-session --project M --assignment A --agent N` | Register agent session |
+| `syntaur track-session --project M --assignment A --agent N --session-id <real-id> --transcript-path <path>` | Register agent session. `--session-id` is required and must be the agent runtime's real id (Claude: `~/.claude/sessions/<pid>.json` or SessionStart hook payload; Codex: `payload.id` from `~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl`). Do not synthesize. |
 
 All commands support `--dir <path>` to override the default `~/.syntaur/projects/` directory.
 
@@ -218,6 +218,7 @@ plugin/
     track-session/track-session.md  # Register tmux sessions
   hooks/
     hooks.json                   # Hook definitions
+    session-start.sh             # Merge real session_id + transcript_path into existing .syntaur/context.json
     session-cleanup.sh           # Mark sessions stopped on exit
     enforce-boundaries.sh        # Write boundary enforcement
   references/
@@ -241,6 +242,7 @@ plugin/
 | Hook | Event | Behavior |
 |------|-------|----------|
 | PostToolUse: ExitPlanMode | User exits plan mode | Prompts to write the plan to the next unused `plan-v<N>.md` (or `plan.md` if none exists) and append a linked todo in the `## Todos` section of `assignment.md` |
+| SessionStart | Claude Code session starts | Runs session-start.sh to merge the real `session_id` + `transcript_path` into an EXISTING `.syntaur/context.json`. Does nothing if context.json is absent (no active assignment). |
 | SessionEnd | Claude Code session exits | Runs session-cleanup.sh to mark session as stopped |
 | PreToolUse: enforce-boundaries | Edit/Write/MultiEdit | Validates target path is within assignment boundaries |
 
@@ -370,7 +372,7 @@ syntaur dashboard
 
 ## Context File (.syntaur/context.json)
 
-Created by `/grab-assignment` in the current working directory. Contains:
+Created by `/grab-assignment` in the current working directory. The SessionStart hook merges `sessionId` / `transcriptPath` into this file on each Claude Code session start — it never creates the file, only enriches an existing one. Contents:
 ```json
 {
   "projectSlug": "my-first-project",
@@ -381,7 +383,8 @@ Created by `/grab-assignment` in the current working directory. Contains:
   "title": "Design the schema",
   "branch": "feature/design-the-schema",
   "grabbedAt": "2026-03-18T14:30:00Z",
-  "sessionId": "uuid-v4"
+  "sessionId": "<real-claude-session-id>",
+  "transcriptPath": "/Users/you/.claude/projects/<encoded-cwd>/<session-id>.jsonl"
 }
 ```
 

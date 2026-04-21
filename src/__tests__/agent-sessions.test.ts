@@ -392,6 +392,97 @@ describe('v2 -> v3 schema migration (adds transcript_path)', () => {
       .get() as { value: string };
     expect(version.value).toBe('3');
   });
+
+  it('falls back to mission_slug when a v2 table has both columns but project_slug is null', async () => {
+    closeSessionDb();
+    resetSessionDb();
+    await rm(dbPath, { force: true });
+    const { default: Database } = await import('better-sqlite3');
+    const seedDb = new Database(dbPath);
+    seedDb.pragma('journal_mode = WAL');
+    seedDb.exec(`
+      CREATE TABLE sessions (
+        session_id TEXT PRIMARY KEY,
+        project_slug TEXT,
+        mission_slug TEXT,
+        assignment_slug TEXT,
+        agent TEXT NOT NULL,
+        started TEXT NOT NULL,
+        ended TEXT,
+        status TEXT NOT NULL DEFAULT 'active',
+        path TEXT,
+        description TEXT,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+      CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT);
+      INSERT INTO meta (key, value) VALUES ('schema_version', '2');
+      INSERT INTO sessions (session_id, project_slug, mission_slug, assignment_slug, agent, started, status, path)
+      VALUES
+        ('new-row',   'new-proj', NULL,         'a1', 'claude', '2026-03-26T10:00:00Z', 'active', '/tmp/p1'),
+        ('old-row',   NULL,       'legacy-proj', 'a2', 'claude', '2026-03-26T11:00:00Z', 'active', '/tmp/p2');
+    `);
+    seedDb.close();
+
+    initSessionDb(dbPath);
+
+    const all = await listAllSessions('');
+    const newRow = all.find((s) => s.sessionId === 'new-row');
+    const oldRow = all.find((s) => s.sessionId === 'old-row');
+    expect(newRow?.projectSlug).toBe('new-proj');
+    expect(oldRow?.projectSlug).toBe('legacy-proj'); // COALESCE fallback pulled from mission_slug
+  });
+
+  it('maps legacy v2 mission_slug column into project_slug during v2→v3', async () => {
+    // Older installations have a v2 table whose project column is named
+    // `mission_slug` (from pre-v0.2.0 when the product was called "missions").
+    // The v0.2.0 code rename didn't ship a DB migration, so this test pins
+    // the v2→v3 upgrade as the place where the rename lands.
+    closeSessionDb();
+    resetSessionDb();
+    await rm(dbPath, { force: true });
+    const { default: Database } = await import('better-sqlite3');
+    const seedDb = new Database(dbPath);
+    seedDb.pragma('journal_mode = WAL');
+    seedDb.exec(`
+      CREATE TABLE sessions (
+        session_id TEXT PRIMARY KEY,
+        mission_slug TEXT,
+        assignment_slug TEXT,
+        agent TEXT NOT NULL,
+        started TEXT NOT NULL,
+        ended TEXT,
+        status TEXT NOT NULL DEFAULT 'active',
+        path TEXT,
+        description TEXT,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+      CREATE INDEX idx_sessions_mission ON sessions(mission_slug);
+      CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT);
+      INSERT INTO meta (key, value) VALUES ('schema_version', '2');
+      INSERT INTO sessions (session_id, mission_slug, assignment_slug, agent, started, status, path)
+      VALUES ('legacy-mission', 'legacy-proj', 'legacy-assn', 'claude', '2026-03-26T10:00:00Z', 'active', '/tmp/legacy');
+    `);
+    seedDb.close();
+
+    initSessionDb(dbPath);
+
+    const all = await listAllSessions('');
+    expect(all).toHaveLength(1);
+    expect(all[0].sessionId).toBe('legacy-mission');
+    expect(all[0].projectSlug).toBe('legacy-proj'); // values from mission_slug column survive the rename
+    expect(all[0].transcriptPath).toBeNull();
+
+    const { getSessionDb } = await import('../dashboard/session-db.js');
+    const db = getSessionDb();
+    const cols = (db.prepare('PRAGMA table_info(sessions)').all() as Array<{ name: string }>).map(
+      (c) => c.name,
+    );
+    expect(cols).toContain('project_slug');
+    expect(cols).not.toContain('mission_slug');
+    expect(cols).toContain('transcript_path');
+  });
 });
 
 describe('appendSession upsert semantics', () => {

@@ -9,6 +9,10 @@ let db: Database.Database | null = null;
 
 const SCHEMA_VERSION = '3';
 
+// The base schema deliberately OMITS the project_slug indexes — they are
+// created after any legacy-schema migrations run below. Older installs may
+// have the `mission_slug` column, and creating an index that references
+// `project_slug` before the rename migration runs would fail.
 const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS sessions (
   session_id TEXT PRIMARY KEY,
@@ -24,10 +28,13 @@ CREATE TABLE IF NOT EXISTS sessions (
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
-CREATE INDEX IF NOT EXISTS idx_sessions_project ON sessions(project_slug);
-CREATE INDEX IF NOT EXISTS idx_sessions_assignment ON sessions(project_slug, assignment_slug);
 CREATE INDEX IF NOT EXISTS idx_sessions_status ON sessions(status);
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT);
+`;
+
+const POST_MIGRATION_INDEXES_SQL = `
+CREATE INDEX IF NOT EXISTS idx_sessions_project ON sessions(project_slug);
+CREATE INDEX IF NOT EXISTS idx_sessions_assignment ON sessions(project_slug, assignment_slug);
 `;
 
 /**
@@ -49,66 +56,114 @@ export function initSessionDb(dbPath?: string): Database.Database {
     SCHEMA_VERSION,
   );
 
-  // Migrate from v1 to v2: make project/assignment nullable, add description
-  const currentVersion = db
-    .prepare("SELECT value FROM meta WHERE key = 'schema_version'")
-    .get() as { value: string } | undefined;
+  // Run migrations inside an EXCLUSIVE transaction. This closes two races:
+  //   1. Crash between `DROP TABLE` / `RENAME` / `UPDATE meta` leaves the db
+  //      half-upgraded — the transaction rolls back on failure.
+  //   2. Two processes (e.g. `syntaur dashboard` + `syntaur track-session`)
+  //      both calling initSessionDb() at once — EXCLUSIVE serializes the
+  //      migration and the version is re-checked inside the transaction so
+  //      the second process becomes a no-op once the first commits.
+  // Narrow for the transaction closure — TS doesn't track the module-level
+  // `db` assignment across the closure boundary.
+  const database = db;
+  const runMigrations = database.transaction(() => {
+    // --- v1 → v2: make project/assignment nullable, add description ---
+    const vBeforeV2 = (
+      database
+        .prepare("SELECT value FROM meta WHERE key = 'schema_version'")
+        .get() as { value: string } | undefined
+    )?.value;
 
-  if (currentVersion?.value === '1') {
-    db.exec(`
-      CREATE TABLE sessions_v2 (
-        session_id TEXT PRIMARY KEY,
-        project_slug TEXT,
-        assignment_slug TEXT,
-        agent TEXT NOT NULL,
-        started TEXT NOT NULL,
-        ended TEXT,
-        status TEXT NOT NULL DEFAULT 'active',
-        path TEXT,
-        description TEXT,
-        created_at TEXT NOT NULL DEFAULT (datetime('now')),
-        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-      );
-      INSERT INTO sessions_v2 SELECT session_id, project_slug, assignment_slug, agent, started, ended, status, path, NULL, created_at, updated_at FROM sessions;
-      DROP TABLE sessions;
-      ALTER TABLE sessions_v2 RENAME TO sessions;
-      CREATE INDEX IF NOT EXISTS idx_sessions_project ON sessions(project_slug);
-      CREATE INDEX IF NOT EXISTS idx_sessions_assignment ON sessions(project_slug, assignment_slug);
-      CREATE INDEX IF NOT EXISTS idx_sessions_status ON sessions(status);
-      UPDATE meta SET value = '2' WHERE key = 'schema_version';
-    `);
-  }
+    if (vBeforeV2 === '1') {
+      database.exec(`
+        CREATE TABLE sessions_v2 (
+          session_id TEXT PRIMARY KEY,
+          project_slug TEXT,
+          assignment_slug TEXT,
+          agent TEXT NOT NULL,
+          started TEXT NOT NULL,
+          ended TEXT,
+          status TEXT NOT NULL DEFAULT 'active',
+          path TEXT,
+          description TEXT,
+          created_at TEXT NOT NULL DEFAULT (datetime('now')),
+          updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+        INSERT INTO sessions_v2 SELECT session_id, project_slug, assignment_slug, agent, started, ended, status, path, NULL, created_at, updated_at FROM sessions;
+        DROP TABLE sessions;
+        ALTER TABLE sessions_v2 RENAME TO sessions;
+        CREATE INDEX IF NOT EXISTS idx_sessions_project ON sessions(project_slug);
+        CREATE INDEX IF NOT EXISTS idx_sessions_assignment ON sessions(project_slug, assignment_slug);
+        CREATE INDEX IF NOT EXISTS idx_sessions_status ON sessions(status);
+        UPDATE meta SET value = '2' WHERE key = 'schema_version';
+      `);
+    }
 
-  // Migrate from v2 to v3: add transcript_path column
-  const versionAfterV1 = db
-    .prepare("SELECT value FROM meta WHERE key = 'schema_version'")
-    .get() as { value: string } | undefined;
+    // --- v2 → v3: add transcript_path, normalize legacy mission_slug ---
+    // Re-read the version AFTER v1→v2 may have run.
+    const vBeforeV3 = (
+      database
+        .prepare("SELECT value FROM meta WHERE key = 'schema_version'")
+        .get() as { value: string } | undefined
+    )?.value;
 
-  if (versionAfterV1?.value === '2') {
-    db.exec(`
-      CREATE TABLE sessions_v3 (
-        session_id TEXT PRIMARY KEY,
-        project_slug TEXT,
-        assignment_slug TEXT,
-        agent TEXT NOT NULL,
-        started TEXT NOT NULL,
-        ended TEXT,
-        status TEXT NOT NULL DEFAULT 'active',
-        path TEXT,
-        description TEXT,
-        transcript_path TEXT,
-        created_at TEXT NOT NULL DEFAULT (datetime('now')),
-        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-      );
-      INSERT INTO sessions_v3 SELECT session_id, project_slug, assignment_slug, agent, started, ended, status, path, description, NULL, created_at, updated_at FROM sessions;
-      DROP TABLE sessions;
-      ALTER TABLE sessions_v3 RENAME TO sessions;
-      CREATE INDEX IF NOT EXISTS idx_sessions_project ON sessions(project_slug);
-      CREATE INDEX IF NOT EXISTS idx_sessions_assignment ON sessions(project_slug, assignment_slug);
-      CREATE INDEX IF NOT EXISTS idx_sessions_status ON sessions(status);
-      UPDATE meta SET value = '3' WHERE key = 'schema_version';
-    `);
-  }
+    if (vBeforeV3 === '2') {
+      const v2Columns = database
+        .prepare('PRAGMA table_info(sessions)')
+        .all() as Array<{ name: string }>;
+      const v2ColNames = v2Columns.map((c) => c.name);
+      const hasProject = v2ColNames.includes('project_slug');
+      const hasMission = v2ColNames.includes('mission_slug');
+
+      // If a db somehow has both columns (e.g. a partially-renamed table),
+      // prefer project_slug but fall back to mission_slug so rows that only
+      // populated mission_slug aren't dropped.
+      const projectSlugExpr =
+        hasProject && hasMission
+          ? 'COALESCE(project_slug, mission_slug)'
+          : hasProject
+            ? 'project_slug'
+            : hasMission
+              ? 'mission_slug'
+              : null;
+
+      if (!projectSlugExpr) {
+        throw new Error(
+          'sessions table has neither project_slug nor mission_slug; cannot migrate from v2 to v3',
+        );
+      }
+
+      database.exec(`
+        CREATE TABLE sessions_v3 (
+          session_id TEXT PRIMARY KEY,
+          project_slug TEXT,
+          assignment_slug TEXT,
+          agent TEXT NOT NULL,
+          started TEXT NOT NULL,
+          ended TEXT,
+          status TEXT NOT NULL DEFAULT 'active',
+          path TEXT,
+          description TEXT,
+          transcript_path TEXT,
+          created_at TEXT NOT NULL DEFAULT (datetime('now')),
+          updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+        INSERT INTO sessions_v3
+          SELECT session_id, ${projectSlugExpr}, assignment_slug, agent, started, ended, status, path, description, NULL, created_at, updated_at
+          FROM sessions;
+        DROP TABLE sessions;
+        ALTER TABLE sessions_v3 RENAME TO sessions;
+        CREATE INDEX IF NOT EXISTS idx_sessions_project ON sessions(project_slug);
+        CREATE INDEX IF NOT EXISTS idx_sessions_assignment ON sessions(project_slug, assignment_slug);
+        CREATE INDEX IF NOT EXISTS idx_sessions_status ON sessions(status);
+        UPDATE meta SET value = '3' WHERE key = 'schema_version';
+      `);
+    }
+  });
+  runMigrations.exclusive();
+
+  // Create project-slug-dependent indexes now that we know the column exists.
+  db.exec(POST_MIGRATION_INDEXES_SQL);
 
   return db;
 }
