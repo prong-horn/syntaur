@@ -68,7 +68,7 @@ export async function requestCommand(
   const todosHeading = /^## Todos\s*$/m;
   if (todosHeading.test(content)) {
     content = content.replace(
-      /(^## Todos[\s\S]*?)(\n##\s|\n*$)/,
+      /(^## Todos[\s\S]*?)(\n## |\n*$)/m,
       (_m, section, nextHeading) => {
         return `${section.trimEnd()}\n${todoLine}\n${nextHeading}`;
       },

@@ -226,7 +226,11 @@ export function AssignmentsPage() {
   const uniqueProjects = useMemo(
     () =>
       Array.from(
-        new Map(boardItems.map((a) => [a.projectSlug, a.projectTitle])),
+        new Map(
+          boardItems
+            .filter((a): a is typeof a & { projectSlug: string; projectTitle: string } => a.projectSlug !== null)
+            .map((a) => [a.projectSlug, a.projectTitle]),
+        ),
       ).sort(([, a], [, b]) => a.localeCompare(b)),
     [boardItems],
   );
@@ -248,11 +252,17 @@ export function AssignmentsPage() {
         const val = assignment.assignee ?? '__unassigned__';
         if (val !== assigneeFilter) return false;
       }
-      if (projectFilter !== 'all' && assignment.projectSlug !== projectFilter) return false;
+      if (projectFilter !== 'all') {
+        if (projectFilter === '__standalone__') {
+          if (assignment.projectSlug !== null) return false;
+        } else if (assignment.projectSlug !== projectFilter) {
+          return false;
+        }
+      }
 
       const query = search.trim().toLowerCase();
       if (query) {
-        const haystack = `${assignment.title} ${assignment.slug} ${assignment.projectTitle} ${assignment.projectSlug}`.toLowerCase();
+        const haystack = `${assignment.title} ${assignment.slug} ${assignment.projectTitle ?? 'standalone'} ${assignment.projectSlug ?? ''}`.toLowerCase();
         if (!haystack.includes(query)) return false;
       }
 
@@ -280,6 +290,10 @@ export function AssignmentsPage() {
   const { hotkeyRowProps } = useListSelection(visibleItems, {
     scope: 'list:assignments',
     onOpen: (assignment) => {
+      if (assignment.projectSlug === null) {
+        navigate(`/assignments/${assignment.id}`);
+        return;
+      }
       const assignWs = assignment.projectWorkspace ? `/w/${assignment.projectWorkspace}` : wsPrefix;
       navigate(`${assignWs}/projects/${assignment.projectSlug}/assignments/${assignment.slug}`);
     },
@@ -333,6 +347,29 @@ export function AssignmentsPage() {
     );
 
     try {
+      if (item.projectSlug === null) {
+        // Standalone: use by-id route directly. Skip override (not implemented for standalone).
+        if (!action) throw new Error('Standalone assignments require a transition action, not status override.');
+        const res = await fetch(
+          `/api/assignments/${encodeURIComponent(item.id)}/transitions/${encodeURIComponent(action.command)}`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(reason ? { reason } : {}),
+          },
+        );
+        if (!res.ok) throw new Error((await res.json()).error ?? `HTTP ${res.status}`);
+        const payload = await res.json();
+        const updated = payload.assignment;
+        setBoardItems((current) =>
+          current.map((candidate) =>
+            getAssignmentKey(candidate) === getAssignmentKey(item)
+              ? { ...candidate, status: updated.status, blockedReason: updated.blockedReason, availableTransitions: updated.availableTransitions, updated: updated.updated }
+              : candidate,
+          ),
+        );
+        return;
+      }
       const updated = action
         ? await runAssignmentTransition(item.projectSlug, item.slug, action, reason)
         : await overrideAssignmentStatus(item.projectSlug, item.slug, toColumnId);
@@ -568,12 +605,22 @@ export function AssignmentsPage() {
                   >
                     <td className="py-4 pr-4">
                       <Link
-                        to={`${wsPrefix}/projects/${assignment.projectSlug}/assignments/${assignment.slug}`}
+                        to={
+                          assignment.projectSlug === null
+                            ? `/assignments/${assignment.id}`
+                            : `${wsPrefix}/projects/${assignment.projectSlug}/assignments/${assignment.slug}`
+                        }
                         className="font-semibold text-foreground hover:text-primary"
                       >
                         {assignment.title}
                       </Link>
-                      <p className="mt-1 text-xs text-muted-foreground">{assignment.projectTitle}</p>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        {assignment.projectTitle ?? (
+                          <span className="rounded bg-neutral-800 px-1.5 py-0.5 font-mono text-[10px] uppercase text-neutral-300">
+                            Standalone
+                          </span>
+                        )}
+                      </p>
                       <p className="mt-0.5 inline-flex items-center gap-1.5 font-mono text-xs text-muted-foreground/70" title={assignment.id}>
                         {assignment.id.slice(0, 8)}
                         <CopyButton value={assignment.id} />
@@ -779,12 +826,22 @@ function AssignmentBoardCard({
       <div className="flex items-start justify-between gap-3">
         <div className="space-y-1">
           <Link
-            to={`${wsPrefix}/projects/${assignment.projectSlug}/assignments/${assignment.slug}`}
+            to={
+              assignment.projectSlug === null
+                ? `/assignments/${assignment.id}`
+                : `${wsPrefix}/projects/${assignment.projectSlug}/assignments/${assignment.slug}`
+            }
             className="text-base font-semibold text-foreground hover:text-primary"
           >
             {assignment.title}
           </Link>
-          <p className="text-sm text-muted-foreground">{assignment.projectTitle}</p>
+          <p className="text-sm text-muted-foreground">
+            {assignment.projectTitle ?? (
+              <span className="rounded bg-neutral-800 px-1.5 py-0.5 font-mono text-[10px] uppercase text-neutral-300">
+                Standalone
+              </span>
+            )}
+          </p>
           <p className="inline-flex items-center gap-1.5 font-mono text-xs text-muted-foreground/70" title={assignment.id ?? ''}>
             {assignment.id?.slice(0, 8)}
             {assignment.id && <CopyButton value={assignment.id} />}

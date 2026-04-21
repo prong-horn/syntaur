@@ -33,6 +33,7 @@ import {
 import { splitAssignmentSummary, splitTodosSection } from '../lib/acceptanceCriteria';
 import { DependencyPanel } from '../components/DependencyPanel';
 import { LinksPanel } from '../components/LinksPanel';
+import { CommentsThread } from '../components/CommentsThread';
 import { useHotkey, useHotkeyScope } from '../hotkeys';
 import { cn } from '../lib/utils';
 
@@ -415,6 +416,37 @@ export function AssignmentDetail() {
         <LinksPanel links={assignment.enrichedLinks} />
       )}
 
+      {assignment.referencedBy && assignment.referencedBy.length > 0 && (
+        <SectionCard
+          title="Referenced by"
+          description="Other assignments whose Todos, progress, comments, or handoffs link to this one."
+        >
+          <ul className="space-y-2">
+            {assignment.referencedBy.map((ref) => {
+              const href =
+                ref.sourceProjectSlug === null
+                  ? `/assignments/${ref.sourceId}`
+                  : `${wsPrefix}/projects/${ref.sourceProjectSlug}/assignments/${ref.sourceSlug}`;
+              return (
+                <li key={ref.sourceId} className="flex items-center gap-2 text-sm">
+                  <Link to={href} className="text-foreground hover:text-primary">
+                    {ref.sourceTitle}
+                  </Link>
+                  <span className="text-xs text-muted-foreground">
+                    ({ref.mentions} mention{ref.mentions === 1 ? '' : 's'})
+                  </span>
+                  {ref.sourceProjectSlug === null ? (
+                    <span className="rounded bg-neutral-800 px-1.5 py-0.5 font-mono text-[10px] uppercase text-neutral-300">
+                      Standalone
+                    </span>
+                  ) : null}
+                </li>
+              );
+            })}
+          </ul>
+        </SectionCard>
+      )}
+
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_280px]">
         <div className="space-y-4">
           <ContentTabs
@@ -555,6 +587,56 @@ export function AssignmentDetail() {
                       <EmptyState
                         title="No handoff log yet"
                         description="Handoffs appear here when an agent runs /complete-assignment or you append one manually."
+                      />
+                    )}
+                  </div>
+                ),
+              },
+              {
+                value: 'progress',
+                label: 'Progress',
+                count: assignment.progress?.entryCount ?? 0,
+                content: (
+                  <div className="space-y-5">
+                    {assignment.progress && assignment.progress.entries.length > 0 ? (
+                      <SectionCard
+                        title="Progress"
+                        description="Reverse-chronological log of work done on this assignment. Agents append entries via progress.md."
+                      >
+                        <ol className="space-y-4">
+                          {assignment.progress.entries.map((entry, idx) => (
+                            <li key={`${entry.timestamp}-${idx}`} className="border-l-2 border-neutral-700 pl-3">
+                              <div className="text-xs font-mono text-neutral-400">{entry.timestamp}</div>
+                              <MarkdownRenderer content={entry.body} />
+                            </li>
+                          ))}
+                        </ol>
+                      </SectionCard>
+                    ) : (
+                      <EmptyState
+                        title="No progress entries yet"
+                        description="Progress entries appear here as the agent appends them to progress.md."
+                      />
+                    )}
+                  </div>
+                ),
+              },
+              {
+                value: 'comments',
+                label: 'Comments',
+                count: assignment.comments?.entryCount ?? 0,
+                content: (
+                  <div className="space-y-5">
+                    {assignment.comments && assignment.comments.entries.length > 0 ? (
+                      <CommentsThread
+                        projectSlug={slug!}
+                        assignmentSlug={aslug!}
+                        entries={assignment.comments.entries}
+                      />
+                    ) : (
+                      <EmptyState
+                        title="No comments yet"
+                        description="Comments appear here when agents or humans post via `syntaur comment` or the dashboard."
                       />
                     )}
                   </div>

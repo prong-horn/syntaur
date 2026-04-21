@@ -51,10 +51,13 @@ export interface AssignmentSummary {
 }
 
 export interface AssignmentBoardItem extends AssignmentSummary {
-  projectSlug: string;
-  projectTitle: string;
+  /** `null` for standalone assignments that live outside any project. */
+  projectSlug: string | null;
+  /** `null` for standalone assignments. */
+  projectTitle: string | null;
   blockedReason: string | null;
   availableTransitions: AssignmentTransitionAction[];
+  /** `null` for standalone (not grouped into any workspace). */
   projectWorkspace: string | null;
 }
 
@@ -112,7 +115,8 @@ export interface ExternalIdInfo {
 
 export interface AssignmentDetail {
   id: string;
-  projectSlug: string;
+  /** `null` for standalone assignments that live outside any project. */
+  projectSlug: string | null;
   slug: string;
   title: string;
   status: string;
@@ -133,7 +137,54 @@ export interface AssignmentDetail {
   scratchpad: { updated: string; body: string } | null;
   handoff: { updated: string; handoffCount: number; body: string } | null;
   decisionRecord: { updated: string; decisionCount: number; body: string } | null;
+  progress: AssignmentProgress | null;
+  comments: AssignmentComments | null;
+  referencedBy: AssignmentReference[];
   availableTransitions: AssignmentTransitionAction[];
+}
+
+/**
+ * Reverse link: an assignment that mentions the current one in its Todos, comments,
+ * progress, or handoff body. Populated by the dashboard when returning AssignmentDetail.
+ */
+export interface AssignmentReference {
+  /** UUID of the source assignment. */
+  sourceId: string;
+  /** Slug of the source assignment (folder name or display slug). */
+  sourceSlug: string;
+  /** Title of the source assignment. */
+  sourceTitle: string;
+  /** Project slug of the source, or `null` if source is standalone. */
+  sourceProjectSlug: string | null;
+  /** Number of distinct mentions across the source's searched bodies. */
+  mentions: number;
+}
+
+export interface AssignmentProgressEntry {
+  timestamp: string;
+  body: string;
+}
+
+export interface AssignmentProgress {
+  updated: string;
+  entryCount: number;
+  entries: AssignmentProgressEntry[];
+}
+
+export interface AssignmentCommentEntry {
+  id: string;
+  timestamp: string;
+  author: string;
+  type: 'question' | 'note' | 'feedback';
+  body: string;
+  replyTo?: string;
+  resolved?: boolean;
+}
+
+export interface AssignmentComments {
+  updated: string;
+  entryCount: number;
+  entries: AssignmentCommentEntry[];
 }
 
 export interface AssignmentTransitionAction {
@@ -150,8 +201,10 @@ export interface AssignmentTransitionAction {
 export interface AttentionItem {
   id: string;
   severity: 'critical' | 'high' | 'medium' | 'low';
-  projectSlug: string;
-  projectTitle: string;
+  /** `null` for standalone assignments. */
+  projectSlug: string | null;
+  /** `null` for standalone assignments. */
+  projectTitle: string | null;
   assignmentSlug: string;
   assignmentTitle: string;
   status: string;
@@ -185,8 +238,10 @@ export interface RecentActivityItem {
   title: string;
   updated: string;
   href: string;
-  projectSlug: string;
-  projectTitle: string;
+  /** `null` when the activity is for a standalone assignment. */
+  projectSlug: string | null;
+  /** `null` when the activity is for a standalone assignment. */
+  projectTitle: string | null;
   assignmentSlug: string | null;
   summary: string;
 }

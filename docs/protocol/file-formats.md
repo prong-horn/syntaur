@@ -25,7 +25,7 @@ The root navigation file for a project. An agent reads this first to discover al
 
 | Field | Type | Required | Default | Description |
 |-------|------|----------|---------|-------------|
-| `version` | string | required | — | Protocol version. Currently `"1.0"`. |
+| `version` | string | required | — | Protocol version. Currently `"2.0"`. |
 | `project` | string | required | — | Project slug. Matches the folder name. |
 | `generated` | string (RFC 3339) | required | — | Timestamp of last rebuild. |
 
@@ -35,7 +35,6 @@ The root navigation file for a project. An agent reads this first to discover al
 |---------|---------|------------|
 | Overview | Link to `project.md` | Rebuild script |
 | Indexes | Links to all `_index-*` files and `_status.md` | Rebuild script |
-| Config | Links to `agent.md` and `claude.md` | Rebuild script |
 
 All links are relative paths so the project folder is portable.
 
@@ -43,7 +42,7 @@ All links are relative paths so the project folder is portable.
 
 ```markdown
 ---
-version: "1.0"
+version: "2.0"
 project: build-auth-system
 generated: "2026-03-18T15:00:00Z"
 ---
@@ -57,14 +56,9 @@ generated: "2026-03-18T15:00:00Z"
 - [Assignments](./_index-assignments.md)
 - [Plans](./_index-plans.md)
 - [Decision Records](./_index-decisions.md)
-- [Sessions](./_index-sessions.md)
 - [Status](./_status.md)
 - [Resources](./resources/_index.md)
 - [Memories](./memories/_index.md)
-
-## Config
-- [Agent Instructions](./agent.md)
-- [Claude Code Instructions](./claude.md)
 ```
 
 ---
@@ -157,8 +151,10 @@ The core unit of work and the **single source of truth** for assignment state. T
 | Field | Type | Valid Values | Required | Default | Description |
 |-------|------|-------------|----------|---------|-------------|
 | `id` | string (UUID) | UUID v4 | required | — | Unique identifier for the assignment. |
-| `slug` | string | lowercase, hyphen-separated | required | — | Human-readable identifier. Matches the folder name. |
+| `slug` | string | lowercase, hyphen-separated | required | — | Human-readable identifier. For project-nested assignments, matches the folder name. For standalone assignments, the folder is named by `id` and `slug` is display-only. |
 | `title` | string | any | required | — | Display title for the assignment. |
+| `project` | string or null | project slug or null | required | — | The containing project's slug. `null` for standalone assignments at `~/.syntaur/assignments/<uuid>/`. |
+| `type` | string or null | see `config.md` `types.definitions` | optional | `null` | Free-form classification (e.g., `feature`, `bug`, `chore`). Validated against `config.md` when `types.definitions` is present. |
 | `status` | string (enum) | `pending`, `in_progress`, `blocked`, `review`, `completed`, `failed` | required | — | Current state of the assignment. See dependency semantics below. |
 | `priority` | string (enum) | `low`, `medium`, `high`, `critical` | required | — | Priority level. |
 | `created` | string (RFC 3339) | RFC 3339 datetime | required | — | When the assignment was created. |
@@ -189,11 +185,9 @@ The core unit of work and the **single source of truth** for assignment state. T
 |---------|---------|------------|
 | Objective | Clear description of what needs to be done and why | Human (initial), agent may refine |
 | Acceptance Criteria | Checklist of requirements for completion | Human (initial), agent checks off |
-| Todos | Checklist of work items; items may be simple tasks or link to plan files (`plan.md`, `plan-v2.md`, ...) | Agent (appended by `/plan-assignment` and manual edits) |
+| Todos | Checklist of work items; items may be simple tasks or link to plan files (`plan.md`, `plan-v2.md`, ...). Also the landing spot for cross-assignment requests (see `syntaur request`). | Agent (appended by `/plan-assignment`, `syntaur request`, and manual edits) |
 | Context | Links to relevant docs, code, or other assignments | Human or agent |
-| Questions & Answers | Agent asks questions, humans/other agents answer via CLI | Agent writes questions; answers mediated via `syntaur answer` CLI command |
-| Progress | Reverse-chronological log of work done | Agent |
-| Links | Links to supporting files (scratchpad, handoff, decisions) | Scaffolding (initial) |
+| Links | Links to supporting files (progress, comments, scratchpad, handoff, decisions) | Scaffolding (initial) |
 
 **Todos supersede convention:** When a plan is replaced by a newer version, do not delete the old todo. Mark it as:
 
@@ -203,9 +197,13 @@ The core unit of work and the **single source of truth** for assignment state. T
 
 Checked, strikethrough, and with a parenthetical pointer to the replacement. This preserves the history of planning decisions on the assignment.
 
-**Q&A write boundaries:** The Q&A section is the one exception to the single-writer rule for assignment folders. Answers are written by humans or other agents, but always **mediated through the CLI** (e.g., `syntaur answer`), never by directly editing the file. This preserves the single-writer guarantee at the file-system level.
+**Q&A is now `comments.md`:** The former `## Questions & Answers` body section has moved out of `assignment.md` into a dedicated `comments.md` file. Comments support multiple types (question, note, feedback), reply threading, and a `resolved` flag on questions. All comment writes are CLI-mediated via `syntaur comment`. See section 9 for the full schema.
 
-**Sessions:** Agent sessions are tracked in a SQLite database (`~/.syntaur/syntaur.db`), not in the assignment file. The `assignee` field in frontmatter is the authoritative owner. See Section 11 for session storage details.
+**Progress is now `progress.md`:** The former `## Progress` body section has moved into a dedicated `progress.md` file. The agent appends timestamped entries directly. See section 8.
+
+**Standalone assignments:** An assignment may live outside any project at `~/.syntaur/assignments/<uuid>/` (created via `syntaur create-assignment --one-off`). In that case the folder is named by `id` (the UUID), `project` is `null`, and the `slug` is display-only — it is not guaranteed unique across standalone assignments. Resolve standalone assignments by `id` via `resolveAssignmentById`.
+
+**Sessions:** Agent sessions are tracked in a SQLite database (`~/.syntaur/syntaur.db`), not in the assignment file. The `assignee` field in frontmatter is the authoritative owner. See section 13 for session storage details.
 
 ### Example
 
@@ -214,6 +212,8 @@ Checked, strikethrough, and with a parenthetical pointer to the replacement. Thi
 id: a2b3c4d5-e6f7-8901-abcd-ef2345678901
 slug: implement-jwt-middleware
 title: Implement JWT Authentication Middleware
+project: build-auth-system
+type: feature
 status: in_progress
 priority: high
 created: "2026-03-16T10:00:00Z"
@@ -257,6 +257,7 @@ both access tokens (15min TTL) and refresh token rotation (7-day TTL).
 - [x] ~~Execute [plan](./plan.md)~~ (superseded by plan-v2)
 - [ ] Execute [plan v2](./plan-v2.md)
 - [ ] Double-check rate limit thresholds with product before finalizing
+- [ ] Confirm error-response shape with design-auth-schema (from: write-auth-tests)
 
 ## Context
 
@@ -265,28 +266,10 @@ both access tokens (15min TTL) and refresh token rotation (7-day TTL).
 - See [auth-requirements](../../resources/auth-requirements.md) for product specs
 - JWT library: `jose` (chosen in Decision 1)
 
-## Questions & Answers
-
-### Q: Should refresh tokens be stored in the database or use a stateless approach?
-**Asked:** 2026-03-17T16:30:00Z
-**A:** Store refresh tokens in the database so we can revoke them. Add a `refresh_tokens` table with user_id, token_hash, expires_at, and revoked_at columns.
-
-### Q: What should the rate limit be on the refresh endpoint?
-**Asked:** 2026-03-18T14:15:00Z
-**A:** pending
-
-## Progress
-
-### 2026-03-18T14:30:00Z
-Implemented Bearer token extraction and RS256 signature validation. Both passing
-tests. Moving on to token expiry checking next.
-
-### 2026-03-17T18:00:00Z
-Set up the middleware skeleton and installed the `jose` library. Created the
-worktree and branch. Reviewed the auth schema from the dependency assignment.
-
 ## Links
 
+- [Progress](./progress.md)
+- [Comments](./comments.md)
 - [Scratchpad](./scratchpad.md)
 - [Handoff](./handoff.md)
 - [Decision Record](./decision-record.md)
@@ -536,7 +519,127 @@ since only the public key needs to be distributed.
 
 ---
 
-## 8. _index-assignments.md
+## 8. progress.md
+
+**Ownership:** Agent-writable, append-only
+
+A reverse-chronological log of work the agent has done on the assignment. This replaces the old `## Progress` body section that used to live inside `assignment.md`. The agent writes entries directly (no CLI mediation). Created as an empty template by scaffolding, optional until first use.
+
+### Frontmatter Schema
+
+| Field | Type | Valid Values | Required | Default | Description |
+|-------|------|-------------|----------|---------|-------------|
+| `assignment` | string | assignment slug | required | — | The parent assignment. |
+| `entryCount` | number (integer) | >= 0 | required | `0` | Total number of progress entries. Enables indexing without body parsing. |
+| `generated` | string (RFC 3339) | RFC 3339 datetime | required | — | When the template was scaffolded. |
+| `updated` | string (RFC 3339) | RFC 3339 datetime | required | — | When the last entry was appended. |
+
+### Body Sections
+
+Each entry is a timestamped heading (`## <RFC 3339 timestamp>`) followed by the entry body. Entries are **prepended** — newest first. The empty template contains the heading `# Progress` and the sentinel `No progress yet.` which is replaced on first entry.
+
+### Example
+
+```markdown
+---
+assignment: implement-jwt-middleware
+entryCount: 2
+generated: "2026-03-17T18:00:00Z"
+updated: "2026-03-18T14:30:00Z"
+---
+
+# Progress
+
+## 2026-03-18T14:30:00Z
+
+Implemented Bearer token extraction and RS256 signature validation. Both passing
+tests. Moving on to token expiry checking next.
+
+## 2026-03-17T18:00:00Z
+
+Set up the middleware skeleton and installed the `jose` library. Created the
+worktree and branch. Reviewed the auth schema from the dependency assignment.
+```
+
+---
+
+## 9. comments.md
+
+**Ownership:** CLI-mediated shared-writable (humans and other agents append via `syntaur comment`)
+
+A threaded log of questions, notes, and feedback on the assignment. This replaces the old `## Questions & Answers` body section that used to live inside `assignment.md`. Comments may have a type (`question`, `note`, `feedback`), may reply to another comment, and questions carry a `resolved` flag.
+
+All writes are **mediated by the `syntaur comment` CLI** (or the dashboard write API) — never by directly editing the file. This preserves safe concurrent-write semantics across agents and humans. Created as an empty template by scaffolding, optional until first use.
+
+### Frontmatter Schema
+
+| Field | Type | Valid Values | Required | Default | Description |
+|-------|------|-------------|----------|---------|-------------|
+| `assignment` | string | assignment slug | required | — | The parent assignment. |
+| `entryCount` | number (integer) | >= 0 | required | `0` | Total number of comment entries. |
+| `generated` | string (RFC 3339) | RFC 3339 datetime | required | — | When the template was scaffolded. |
+| `updated` | string (RFC 3339) | RFC 3339 datetime | required | — | When the last comment was appended. |
+
+### Body Sections
+
+Each comment is a heading with a stable id (`## <comment-id>`) followed by structured metadata lines and the body. Entries are appended at the end. The empty template contains the heading `# Comments` and the sentinel `No comments yet.` which is replaced on first entry.
+
+| Field | Purpose | Required | Notes |
+|-------|---------|----------|-------|
+| `**Recorded:**` | RFC 3339 timestamp | yes | When the comment was appended. |
+| `**Author:**` | Agent name or `"human"` | yes | Who wrote the comment. |
+| `**Type:**` | One of `question`, `note`, `feedback` | yes | Classification. |
+| `**Reply to:**` | A previous comment id | no | Present only when the comment replies to another. |
+| `**Resolved:**` | `true` or `false` | conditional | Present **only** when `Type: question`. Toggleable via `PATCH /api/.../comments/:id/resolved`. |
+| Body | Freeform markdown | yes | The comment content. |
+
+### Example
+
+```markdown
+---
+assignment: implement-jwt-middleware
+entryCount: 3
+generated: "2026-03-17T16:00:00Z"
+updated: "2026-03-18T15:00:00Z"
+---
+
+# Comments
+
+## c-1
+
+**Recorded:** 2026-03-17T16:30:00Z
+**Author:** claude-1
+**Type:** question
+**Resolved:** true
+
+Should refresh tokens be stored in the database or use a stateless approach?
+
+## c-2
+
+**Recorded:** 2026-03-17T17:05:00Z
+**Author:** human
+**Type:** note
+**Reply to:** c-1
+
+Store refresh tokens in the database so we can revoke them. Add a `refresh_tokens`
+table with user_id, token_hash, expires_at, revoked_at.
+
+## c-3
+
+**Recorded:** 2026-03-18T15:00:00Z
+**Author:** human
+**Type:** feedback
+
+Great progress on the middleware. Please add rate-limit tests before review.
+```
+
+### Rollup: `openQuestions`
+
+The `_status.md` frontmatter field `needsAttention.openQuestions` is computed by scanning every assignment's `comments.md` for entries where `Type: question` and `Resolved: false` (or absent). Unresolved questions across the project are aggregated into this count.
+
+---
+
+## 10. _index-assignments.md
 
 **Ownership:** Derived (rebuild script only)
 
@@ -592,7 +695,7 @@ by_status:
 
 ---
 
-## 9. _index-plans.md
+## 11. _index-plans.md
 
 **Ownership:** Derived (rebuild script only)
 
@@ -633,7 +736,7 @@ generated: "2026-03-18T15:00:00Z"
 
 ---
 
-## 10. _index-decisions.md
+## 12. _index-decisions.md
 
 **Ownership:** Derived (rebuild script only)
 
@@ -673,7 +776,7 @@ generated: "2026-03-18T15:00:00Z"
 
 ---
 
-## 11. Agent Sessions (SQLite)
+## 13. Agent Sessions (SQLite)
 
 **Storage:** `~/.syntaur/syntaur.db` — `sessions` table
 
@@ -721,7 +824,7 @@ syntaur track-session --project <slug> --assignment <slug> --agent <name> [--ses
 
 ---
 
-## 12. _status.md
+## 14. _status.md
 
 **Ownership:** Derived (rebuild script only)
 
@@ -836,7 +939,7 @@ graph TD
 
 ---
 
-## 13. resources/_index.md
+## 15. resources/_index.md
 
 **Ownership:** Derived (rebuild script only)
 
@@ -876,7 +979,7 @@ total: 1
 
 ---
 
-## 14. memories/_index.md
+## 16. memories/_index.md
 
 **Ownership:** Derived (rebuild script only)
 
@@ -916,7 +1019,7 @@ total: 1
 
 ---
 
-## 15. Resource Files
+## 17. Resource Files
 
 **Ownership:** Shared-writable (humans and agents)
 
@@ -987,7 +1090,7 @@ Product requirements for the authentication system, summarized from the PRD.
 
 ---
 
-## 16. Memory Files
+## 18. Memory Files
 
 **Ownership:** Shared-writable (humans and agents)
 
@@ -1085,24 +1188,28 @@ Global Syntaur configuration file at `~/.syntaur/config.md`. This file is **opti
 
 | Field | Type | Valid Values | Required | Default | Description |
 |-------|------|-------------|----------|---------|-------------|
-| `version` | string | `"1.0"` | required | — | Config schema version. |
+| `version` | string | `"2.0"` | required | — | Config schema version. |
 | `defaultProjectDir` | string | absolute path | optional | `~/.syntaur/projects` (expanded) | Default directory for projects. **Must be absolute path; never use `~`.** |
-| `agentDefaults` | object | see sub-fields | optional | — | Default settings for agent behavior. |
+| `onboarding.completed` | boolean | `true`, `false` | optional | `false` | Whether the first-run onboarding flow has completed. |
 | `agentDefaults.trustLevel` | string (enum) | `low`, `medium`, `high` | optional | `medium` | Default trust level for agents. |
 | `agentDefaults.autoApprove` | boolean | `true`, `false` | optional | `false` | Whether to auto-approve agent actions. |
-| `sync` | object | see sub-fields | optional | — | **v2 placeholder.** Sync settings for future remote sync support. |
-| `sync.enabled` | boolean | `true`, `false` | optional | `false` | Whether remote sync is enabled. **v2 -- not implemented in v1.** |
-| `sync.endpoint` | string or null | URL | optional | `null` | Remote sync endpoint. **v2 -- not implemented in v1.** |
-| `sync.interval` | number (integer) | seconds | optional | `300` | Sync interval in seconds. **v2 -- not implemented in v1.** |
+| `backup.repo` | string or null | repo path or URL | optional | `null` | Backup git repo for `syntaur backup` / `syntaur restore`. |
+| `backup.categories` | string | comma-separated | optional | `"projects, playbooks, todos, servers, config"` | Categories included in backups. |
+| `backup.lastBackup` | string (RFC 3339) or null | | optional | `null` | Last backup timestamp. |
+| `backup.lastRestore` | string (RFC 3339) or null | | optional | `null` | Last restore timestamp. |
+| `integrations.claudePluginDir` | string or null | absolute path | optional | `null` | Override location of the Claude Code plugin directory. |
+| `integrations.codexPluginDir` | string or null | absolute path | optional | `null` | Override location of the Codex plugin directory. |
+| `integrations.codexMarketplacePath` | string or null | absolute path | optional | `null` | Override path to a Codex marketplace manifest. |
+| `types` | object or null | see below | optional | `null` (system defaults apply) | Assignment type taxonomy. |
 
-**Version scope:**
+**`types` structure** (nested via dot-notation in frontmatter):
 
-| Field | Version | Notes |
-|-------|---------|-------|
-| `version` | v1 | Always present. |
-| `defaultProjectDir` | v1 | Active in v1. |
-| `agentDefaults.*` | v1 | Active in v1. |
-| `sync.*` | v2 | Placeholder. Included in schema for forward compatibility but ignored by v1 tooling. |
+| Field | Type | Description |
+|-------|------|-------------|
+| `types.definitions` | array of `{id, label, icon?}` objects | Allowed type ids for the `type` field on `assignment.md`. |
+| `types.default` | string | Default type id used when none is specified on create. |
+
+Built-in defaults apply when `types` is absent: `feature`, `bug`, `refactor`, `research`, `chore`, with default `feature`. Doctor warns when an assignment's `type` is not in the configured definitions.
 
 **Path normalization:** All path fields must use absolute expanded form. The CLI expands `~` to the full home directory at write time. A config file must never contain a literal `~` in any path value.
 
@@ -1114,26 +1221,27 @@ The body is optional and contains human notes about the configuration. No requir
 
 ```markdown
 ---
-version: "1.0"
+version: "2.0"
 defaultProjectDir: /Users/brennen/.syntaur/projects
+onboarding.completed: true
 agentDefaults:
   trustLevel: medium
   autoApprove: false
-sync:
-  enabled: false
-  endpoint: null
-  interval: 300
+backup:
+  repo: null
+  categories: projects, playbooks, todos, servers, config
+  lastBackup: null
+  lastRestore: null
 ---
 
 # Syntaur Configuration
 
 Personal development machine. Projects stored in default location.
-Sync disabled until v2 is available.
 ```
 
 ---
 
-## 11. Playbooks (`~/.syntaur/playbooks/<slug>.md`)
+## 20. Playbooks (`~/.syntaur/playbooks/<slug>.md`)
 
 **Ownership:** Human-authored (read-only to agents)
 **Purpose:** Define behavioral rules, workflows, and conventions that agents must follow.

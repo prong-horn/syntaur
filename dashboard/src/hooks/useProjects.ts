@@ -50,8 +50,10 @@ export interface AssignmentSummary {
 }
 
 export interface AssignmentBoardItem extends AssignmentSummary {
-  projectSlug: string;
-  projectTitle: string;
+  /** `null` for standalone assignments. */
+  projectSlug: string | null;
+  /** `null` for standalone assignments. */
+  projectTitle: string | null;
   blockedReason: string | null;
   availableTransitions: AssignmentTransitionAction[];
   projectWorkspace: string | null;
@@ -122,7 +124,8 @@ export interface AssignmentTransitionAction {
 
 export interface AssignmentDetail {
   id: string;
-  projectSlug: string;
+  /** `null` for standalone assignments. */
+  projectSlug: string | null;
   slug: string;
   title: string;
   status: string;
@@ -143,7 +146,45 @@ export interface AssignmentDetail {
   scratchpad: { updated: string; body: string } | null;
   handoff: { updated: string; handoffCount: number; body: string } | null;
   decisionRecord: { updated: string; decisionCount: number; body: string } | null;
+  progress: AssignmentProgress | null;
+  comments: AssignmentComments | null;
+  referencedBy: AssignmentReference[];
   availableTransitions: AssignmentTransitionAction[];
+}
+
+export interface AssignmentReference {
+  sourceId: string;
+  sourceSlug: string;
+  sourceTitle: string;
+  sourceProjectSlug: string | null;
+  mentions: number;
+}
+
+export interface AssignmentProgressEntry {
+  timestamp: string;
+  body: string;
+}
+
+export interface AssignmentProgress {
+  updated: string;
+  entryCount: number;
+  entries: AssignmentProgressEntry[];
+}
+
+export interface AssignmentCommentEntry {
+  id: string;
+  timestamp: string;
+  author: string;
+  type: 'question' | 'note' | 'feedback';
+  body: string;
+  replyTo?: string;
+  resolved?: boolean;
+}
+
+export interface AssignmentComments {
+  updated: string;
+  entryCount: number;
+  entries: AssignmentCommentEntry[];
 }
 
 export interface AttentionItem {
@@ -406,6 +447,13 @@ export function useAssignment(
     projectSlug && assignmentSlug
       ? `/api/projects/${projectSlug}/assignments/${assignmentSlug}`
       : null;
+  return useFetch<AssignmentDetail>(url, 'assignment');
+}
+
+export function useAssignmentById(
+  id: string | undefined,
+): FetchState<AssignmentDetail> {
+  const url = id ? `/api/assignments/${id}` : null;
   return useFetch<AssignmentDetail>(url, 'assignment');
 }
 

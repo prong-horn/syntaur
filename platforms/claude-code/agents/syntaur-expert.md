@@ -46,8 +46,6 @@ Syntaur is a **markdown-based, filesystem-hosted protocol** that coordinates wor
     <project-slug>/
       manifest.md                    # Derived: root navigation
       project.md                     # Human-authored: goal, context, success criteria
-      agent.md                       # Human-authored: universal agent instructions
-      claude.md                      # Human-authored: Claude Code-specific instructions
       _index-assignments.md          # Derived: assignment summary table
       _index-plans.md                # Derived: plan status summary
       _index-decisions.md            # Derived: decision record summary
@@ -56,6 +54,8 @@ Syntaur is a **markdown-based, filesystem-hosted protocol** that coordinates wor
         <assignment-slug>/
           assignment.md              # Agent-writable: source of truth for state (includes ## Todos)
           plan*.md                   # Agent-writable: versioned implementation plans (0+, optional)
+          progress.md                # Agent-writable, append-only: timestamped progress log
+          comments.md                # CLI-mediated: threaded questions/notes/feedback (via `syntaur comment`)
           scratchpad.md              # Agent-writable: working notes
           handoff.md                 # Agent-writable: append-only handoff log
           decision-record.md         # Agent-writable: append-only decision log
@@ -65,6 +65,15 @@ Syntaur is a **markdown-based, filesystem-hosted protocol** that coordinates wor
       memories/
         _index.md                    # Derived
         <memory-slug>.md             # Shared-writable
+  assignments/
+    <assignment-id>/                 # Standalone assignments — folder = UUID, project: null, slug display-only
+      assignment.md
+      plan*.md
+      progress.md
+      comments.md
+      scratchpad.md
+      handoff.md
+      decision-record.md
 ```
 
 ---
@@ -73,17 +82,20 @@ Syntaur is a **markdown-based, filesystem-hosted protocol** that coordinates wor
 
 ### Human-Authored (READ-ONLY for agents)
 - `project.md` — project overview, goal, context, success criteria
-- `agent.md` — universal agent instructions
-- `claude.md` — Claude Code-specific instructions
 
 ### Agent-Writable (single-writer per assignment)
-- `assignment.md` — source of truth for assignment state (includes `## Todos` checklist)
+- `assignment.md` — source of truth for assignment state (includes `## Todos` checklist). `## Todos` is also the landing spot for cross-assignment requests.
 - `plan*.md` — versioned implementation plans (optional, one per `## Todos` entry: `plan.md`, `plan-v2.md`, ...)
+- `progress.md` — append-only timestamped progress log (newest first). Replaces the old `## Progress` body section.
 - `scratchpad.md` — unstructured working notes
 - `handoff.md` — append-only handoff log
 - `decision-record.md` — append-only decision log
 
 Only the assigned agent may write to its own assignment folder.
+
+### CLI-Mediated Shared-Writable
+- `comments.md` — threaded questions/notes/feedback. Writes via `syntaur comment <slug-or-uuid> "body" --type question|note|feedback [--reply-to <id>]`. Never edit directly.
+- Another assignment's `## Todos` — writes via `syntaur request <source> <target> "text"`. Appends annotated `(from: <source>)`.
 
 ### Shared-Writable (any agent or human)
 - `resources/<slug>.md` — reference material
@@ -155,8 +167,14 @@ Only the assigned agent may write to its own assignment folder.
 | Command | Description |
 |---------|-------------|
 | `syntaur create-project <title> [--slug S] [--dir D]` | Create new project with full scaffolding |
-| `syntaur create-assignment <title> --project M [--priority P] [--depends-on D] [--slug S]` | Create assignment in a project |
-| `syntaur create-assignment <title> --one-off` | Create standalone one-off assignment |
+| `syntaur create-assignment <title> --project M [--priority P] [--depends-on D] [--slug S] [--type T]` | Create assignment in a project |
+| `syntaur create-assignment <title> --one-off [--type T]` | Create standalone assignment at `~/.syntaur/assignments/<uuid>/` (project: null, slug display-only) |
+
+### Coordination (CLI-mediated writes)
+| Command | Description |
+|---------|-------------|
+| `syntaur comment <slug-or-uuid> "body" --type question\|note\|feedback [--reply-to <id>] [--project <slug>]` | Append to `comments.md`. Questions carry a resolve flag toggleable in the dashboard. |
+| `syntaur request <target> "text" [--from <source>] [--project <slug>]` | Append a todo to another assignment's `## Todos`, annotated `(from: <source>)`. |
 
 ### State Transitions
 | Command | Description |
@@ -295,9 +313,13 @@ Adapters embed protocol knowledge (write boundaries, lifecycle states, CLI comma
 
 ### Frontmatter Fields by File Type
 
-**assignment.md:** id, slug, title, status, priority, created, updated, assignee, externalIds, dependsOn, blockedReason, workspace (repository, worktreePath, branch, parentBranch), tags
+**assignment.md:** id, slug, title, **project (slug or null)**, **type (string or null)**, status, priority, created, updated, assignee, externalIds, dependsOn, blockedReason, workspace (repository, worktreePath, branch, parentBranch), tags
 
 **plan files (plan.md, plan-v2.md, ...):** assignment, status (draft/approved/in_progress/completed), created, updated — zero or more per assignment, each linked from a todo in `assignment.md`'s `## Todos` section
+
+**progress.md:** assignment, entryCount, generated, updated — body is reverse-chron `## <timestamp>` entries
+
+**comments.md:** assignment, entryCount, generated, updated — body entries are `## <id>` with structured metadata lines (Recorded, Author, Type, optional Reply to, optional Resolved)
 
 **handoff.md:** assignment, updated, handoffCount
 
@@ -307,13 +329,13 @@ Adapters embed protocol knowledge (write boundaries, lifecycle states, CLI comma
 
 **manifest.md:** version, project, generated
 
-**_status.md:** project, generated, status, progress (total/completed/in_progress/blocked/pending/review/failed), needsAttention (blockedCount/failedCount/unansweredQuestions)
+**_status.md:** project, generated, status, progress (total/completed/in_progress/blocked/pending/review/failed), needsAttention (blockedCount/failedCount/**openQuestions**). `openQuestions` is counted from every assignment's `comments.md` (entries where `Type: question` and `Resolved: false` or absent).
 
 ### Conventions
 - **Timestamps:** RFC 3339 / ISO 8601 with UTC: `2026-03-18T14:30:00Z`
 - **Paths:** Absolute expanded form in YAML (never `~`), relative in markdown links
-- **Slugs:** Lowercase, hyphen-separated, match folder names
-- **Protocol version:** `"1.0"` (string, not number)
+- **Slugs:** Lowercase, hyphen-separated, match folder names (project-nested). For standalone assignments, the folder is named by UUID and `slug` is display-only.
+- **Protocol version:** `"2.0"` (string, not number)
 
 ---
 
@@ -376,7 +398,13 @@ A: Use `/grab-assignment <project-slug>` — it lists pending assignments. Or ch
 A: No. Single-writer guarantee — one agent per assignment folder. Use separate assignments for parallel work.
 
 **Q: What if I need to ask the human a question?**
-A: Add it to the Q&A section of assignment.md. Do NOT set status to `blocked` for questions — `blocked` is for runtime obstacles only.
+A: Run `syntaur comment <slug> "question text" --type question`. It appends to `comments.md`, which replaces the old `## Questions & Answers` body section. The question rolls up into `_status.md`'s `openQuestions` counter and shows on the dashboard. Do NOT set status to `blocked` for questions — `blocked` is for runtime obstacles only.
+
+**Q: What goes in `progress.md` vs `handoff.md`?**
+A: `progress.md` is a continuous reverse-chron log of what you've done — append an entry per meaningful work unit. `handoff.md` is only written when you hand off work (to another agent or human), and summarizes the state at that transition.
+
+**Q: How do I route work to another assignment without breaking the single-writer rule?**
+A: Run `syntaur request <target> "text"` — it appends a todo to the target's `## Todos` annotated `(from: <source>)`. This is a CLI-mediated exception to the single-writer rule.
 
 **Q: How do indexes get updated?**
 A: Derived files are rebuilt by tooling. They are projections of assignment frontmatter. When divergence occurs, re-run rebuild.

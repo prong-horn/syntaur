@@ -51,6 +51,20 @@ If any acceptance criteria are unmet OR any todo is still `- [ ]` and not supers
 
 If the user says no, stop.
 
+## Step 2.5: Append a Final Progress Entry
+
+Before writing the handoff, append a final entry to `<assignmentDir>/progress.md` summarizing what was completed. The entry goes at the **top** of the body (reverse-chron order) under a new `## <RFC 3339 timestamp>` heading:
+
+```markdown
+## <ISO 8601 timestamp>
+
+<One paragraph summarizing the final state of work: what was implemented, what verifications passed, and any deliberate scope exclusions.>
+```
+
+Update `progress.md`'s frontmatter: bump `entryCount` and set `updated` to the current timestamp.
+
+Do NOT add a `## Progress` section to `assignment.md` — progress entries live exclusively in `progress.md` as of protocol v2.0.
+
 ## Step 3: Write Handoff Entry
 
 Read `<assignmentDir>/handoff.md` to see its current content and frontmatter.

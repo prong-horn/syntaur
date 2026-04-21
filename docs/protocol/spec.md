@@ -1,6 +1,6 @@
 # Syntaur Protocol Specification
 
-**Version:** 1.0
+**Version:** 2.0
 
 ---
 
@@ -57,18 +57,18 @@ The root of all Syntaur data is `~/.syntaur/`. Below is the full directory tree 
   config.md                          # Global Syntaur configuration (optional)
   projects/
     <project-slug>/
-      manifest.md                    # Derived: root navigation file linking all indexes and config
+      manifest.md                    # Derived: root navigation file linking all indexes
       project.md                     # Human-authored: project overview, goal, context, success criteria
       _index-assignments.md          # Derived: assignment summary table with status counts
       _index-plans.md                # Derived: plan status summary table
       _index-decisions.md            # Derived: decision record summary table
       _status.md                     # Derived: computed project status, assignment rollup, dependency graph
-      claude.md                      # Human-authored: Claude Code-specific agent instructions
-      agent.md                       # Human-authored: universal agent instructions (all frameworks)
       assignments/
         <assignment-slug>/
           assignment.md              # Agent-writable: the assignment record (source of truth for state; includes ## Todos)
           plan*.md                   # Agent-writable: versioned implementation plans (optional, 0 or more: plan.md, plan-v2.md, ...)
+          progress.md                # Agent-writable, append-only: timestamped progress log
+          comments.md                # CLI-mediated shared-writable: threaded questions/notes/feedback
           scratchpad.md              # Agent-writable: unstructured working memory
           handoff.md                 # Agent-writable: append-only handoff log
           decision-record.md         # Agent-writable: append-only decision log
@@ -78,24 +78,35 @@ The root of all Syntaur data is `~/.syntaur/`. Below is the full directory tree 
       memories/
         _index.md                    # Derived: memory listing
         <memory-slug>.md             # Shared-writable: learnings discovered during the project
+  assignments/
+    <assignment-id>/                 # Standalone assignments (folder named by UUID, not slug)
+      assignment.md                  # Same agent-writable schema; `project: null`, `slug` display-only
+      plan*.md                       # Same as project-nested
+      progress.md                    # Same as project-nested
+      comments.md                    # Same as project-nested
+      scratchpad.md                  # Same as project-nested
+      handoff.md                     # Same as project-nested
+      decision-record.md             # Same as project-nested
   playbooks/
-    manifest.md                        # Derived: playbook listing with descriptions and when_to_use
-    <slug>.md                          # User-authored: behavioral rules and workflows for agents
+    manifest.md                      # Derived: playbook listing with descriptions and when_to_use
+    <slug>.md                        # User-authored: behavioral rules and workflows for agents
+  syntaur.db                         # SQLite: agent sessions, servers
 ```
 
 ### Key structural observations
 
 - **One folder per project.** The folder name is the project slug and matches the `slug` field in `project.md` frontmatter.
-- **One subfolder per assignment.** The folder name is the assignment slug and matches the `slug` field in `assignment.md` frontmatter.
+- **Project-nested assignments** live at `projects/<project-slug>/assignments/<assignment-slug>/`. The folder name equals the assignment's `slug`.
+- **Standalone assignments** live at `assignments/<assignment-id>/` under `~/.syntaur/`. The folder name equals the assignment's `id` (a UUID), because `slug` is not guaranteed unique across standalone assignments. In standalone assignments, `project: null` in frontmatter and `slug` is display-only. Resolve by id via `resolveAssignmentById`.
 - **Derived files use an underscore prefix** (`_index-*`, `_status.md`, `_index.md`). This sorts them to the top of directory listings and signals "do not edit manually."
-- **`manifest.md` is the entry point.** An agent starting work on a project reads `manifest.md` first to discover all other files.
-- **Resources and memories live at the project level**, not inside assignments. They are shared context available to all assignments in the project.
+- **`manifest.md` is the entry point for a project.** An agent starting work on a project reads `manifest.md` first to discover all other files. Standalone assignments have no manifest — the agent starts directly from `assignment.md`.
+- **Resources and memories live at the project level**, not inside assignments. They are shared context available to all assignments in the project. Standalone assignments carry no resources/memories.
 
 ---
 
 ## 4. File Ownership Rules
 
-Every file in the protocol belongs to exactly one of four ownership categories. These categories determine who may write to a file and how conflicts are avoided.
+Every file in the protocol belongs to exactly one of five ownership categories. These categories determine who may write to a file and how conflicts are avoided.
 
 ### Human-Authored
 
@@ -104,26 +115,33 @@ Files written and maintained exclusively by humans. Agents read these but never 
 | File | Purpose |
 |------|---------|
 | `project.md` | Project overview, goal, context, success criteria |
-| `agent.md` | Universal agent instructions for the project |
-| `claude.md` | Claude Code-specific instructions |
 
 ### Agent-Writable
 
-Files inside assignment folders. Only the assigned agent writes to its own assignment folder. This single-writer guarantee prevents conflicts between concurrent agents.
+Files inside assignment folders. Only the assigned agent writes to its own assignment folder. This single-writer guarantee prevents conflicts between concurrent agents. The single exception is `comments.md`, which is CLI-mediated so other agents and humans can append.
 
 | File | Purpose |
 |------|---------|
-| `assignment.md` | Assignment record and source of truth for state (includes `## Todos` checklist) |
+| `assignment.md` | Assignment record and source of truth for state (includes `## Todos` checklist). `## Todos` is also the landing spot for cross-assignment requests (see `syntaur request`). |
 | `plan*.md` | Versioned implementation plans (optional, 0 or more: `plan.md`, `plan-v2.md`, ...) — each linked from a todo in `assignment.md` |
+| `progress.md` | Append-only timestamped progress log (replaces the old `## Progress` body section) |
 | `scratchpad.md` | Unstructured working notes |
 | `handoff.md` | Append-only handoff log |
 | `decision-record.md` | Append-only decision log |
 
-**Exception:** The Questions & Answers section of `assignment.md` accepts answers from humans or other agents. These writes are mediated through CLI tooling (e.g., `syntaur answer`), not by directly editing the file, to preserve the single-writer guarantee.
+### CLI-Mediated Shared-Writable
+
+Inside an assignment folder but writable by anyone through the CLI/API — never via direct editing. This preserves safe concurrency without abandoning the single-writer guarantee at the filesystem level.
+
+| File | Purpose | Mediator |
+|------|---------|----------|
+| `comments.md` | Threaded questions/notes/feedback (replaces the old `## Questions & Answers` body section). Questions carry a `resolved` flag. | `syntaur comment` CLI and dashboard write API |
+
+Cross-assignment **requests** (`syntaur request`) write to another assignment's `## Todos` section in `assignment.md`, annotated with `(from: <source>)`. This is a bounded exception to the single-writer rule, also CLI-mediated.
 
 ### Shared-Writable
 
-Files in the `resources/` and `memories/` folders. Both humans and agents can create and update files here. There is no single-owner constraint — these are shared project context.
+Files in the `resources/` and `memories/` folders. Both humans and agents can create and update files here directly. There is no single-owner constraint — these are shared project context.
 
 | File | Purpose |
 |------|---------|
@@ -307,14 +325,49 @@ The protocol version is tracked in two places:
 - **`manifest.md` frontmatter** — the `version` field in each project's manifest indicates which protocol version the project was created with.
 - **`config.md` frontmatter** — the `version` field in the global config indicates the installed protocol version.
 
-The current protocol version is **`"1.0"`**.
+The current protocol version is **`"2.0"`**.
+
+### Changes in 2.0
+
+- **`project` and `type` added to `assignment.md` frontmatter.** `project: string | null` makes the containing project explicit (`null` for standalone) and `type: string | null` provides a free-form classification validated against `config.md` `types.definitions` when present.
+- **`progress.md` and `comments.md`** replace the old `## Progress` and `## Questions & Answers` body sections in `assignment.md`. See sections 3 and 4.
+- **Standalone assignments** at `~/.syntaur/assignments/<uuid>/` — assignments that don't belong to any project. Folder is named by UUID.
+- **Cross-assignment requests** — `syntaur request <source> <target>` writes a todo into the target's `## Todos` with a `(from: <source>)` annotation. Read-side backlinks (`Referenced by`) surface the reverse direction in the dashboard.
+- **`_status.md` field rename** — `needsAttention.unansweredQuestions` → `needsAttention.openQuestions`, now computed from `comments.md` (question entries with `resolved !== true`).
 
 ### Forward Compatibility
 
-Protocol version `"1.0"` establishes the baseline. Future versions will follow these principles:
-
-- **Additive changes** (new optional fields, new file types) will increment the minor version and remain backward compatible. A tool that understands version `1.0` can safely ignore fields it does not recognize.
+- **Additive changes** (new optional fields, new file types) will increment the minor version and remain backward compatible. A tool that understands version `2.0` can safely ignore fields it does not recognize.
 - **Breaking changes** (removed fields, changed semantics, restructured directories) will increment the major version. Tooling should check the version field and warn if it encounters a version it does not support.
-- **The `version` field is a string**, not a number, to support semver-style versioning (e.g., `"1.0"`, `"1.1"`, `"2.0"`).
+- **The `version` field is a string**, not a number, to support semver-style versioning (e.g., `"2.0"`, `"2.1"`, `"3.0"`).
 
 Tooling should always write the version it supports and should handle unknown versions gracefully — logging a warning rather than failing silently or crashing.
+
+---
+
+## 10. Cross-Assignment References
+
+Assignments frequently need to reference each other — a newly-created assignment may depend on an older one, a question may cross a boundary, or a decision in one assignment may affect another.
+
+### Declared Dependencies
+
+The `dependsOn` field in `assignment.md` frontmatter is the structural form of a cross-assignment reference. It holds an array of assignment slugs this one depends on. The lifecycle engine blocks transitions out of `pending` while any dependency is not `completed`. Dependencies are only valid between assignments within the **same project** — standalone assignments may not declare `dependsOn` entries (the dashboard write API validates this).
+
+### Markdown Links
+
+Any markdown body (assignment, progress, comments, handoff) may reference another assignment with a normal markdown link. Two link forms resolve to an assignment:
+
+- **Relative path** — `[title](../other-slug/assignment.md)` for project-nested peers.
+- **Absolute route** — `[title](/projects/<slug>/assignments/<aslug>/assignment.md)` for project-nested cross-project links, or `[title](/assignments/<id>/assignment.md)` for standalone assignments.
+
+Tooling can resolve these links in both directions. The **forward** direction is explicit in the link. The **backward** direction (`Referenced by`) is computed by the dashboard when it loads an assignment detail — it scans other assignments' Todos, comments, progress, and handoff bodies for links that resolve to the current assignment. Results are capped at 50 mentions to bound work.
+
+### Cross-Assignment Requests
+
+When an agent on assignment A discovers work that belongs to assignment B, it runs:
+
+```
+syntaur request <source-slug-or-uuid> <target-slug-or-uuid> "Do the thing"
+```
+
+This appends a todo to B's `## Todos` section, annotated `(from: <source>)`. If the target has no `## Todos` section, it is created. The target's `updated` timestamp is bumped. This is the write-side counterpart to the read-side `Referenced by` panel.

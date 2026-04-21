@@ -15,10 +15,11 @@ Parse:
 
 - First positional argument: assignment title
 - `--project <slug>` required unless `--one-off`
-- `--one-off` optional
+- `--one-off` optional — creates a **standalone** assignment at `~/.syntaur/assignments/<uuid>/` with `project: null`. Folder named by UUID; `slug` is display-only. `--depends-on` is not permitted for standalone assignments.
 - `--slug <slug>` optional
 - `--priority <level>` optional, default `medium`
-- `--depends-on <slug[,slug...]>` optional
+- `--type <type>` optional — classification such as `feature`, `bug`, `refactor`, `research`, `chore`. Defaults to `feature`. When `~/.syntaur/config.md` defines `types.definitions`, the CLI validates against that list.
+- `--depends-on <slug[,slug...]>` optional (project-nested only)
 - `--dir <path>` optional
 
 If no title was provided, ask the user for it.
@@ -28,17 +29,21 @@ If neither `--project` nor `--one-off` was provided, look for `.syntaur/context.
 ## Workflow
 
 1. Run one of:
-   - `syntaur create-assignment "<title>" --project <slug> [--slug <slug>] [--priority <level>] [--depends-on <slugs>] [--dir <path>]`
-   - `syntaur create-assignment "<title>" --one-off [--slug <slug>] [--priority <level>] [--dir <path>]`
+   - `syntaur create-assignment "<title>" --project <slug> [--slug <slug>] [--priority <level>] [--depends-on <slugs>] [--type <type>] [--dir <path>]`
+   - `syntaur create-assignment "<title>" --one-off [--slug <slug>] [--priority <level>] [--type <type>] [--dir <path>]`
 2. If the command fails, report the error and stop.
 3. Read the generated `assignment.md`.
 4. Summarize:
-   - assignment slug
-   - project slug
+   - assignment slug (for standalone assignments, also report the UUID — the folder is named by UUID, not slug)
+   - project slug (or `null` for standalone)
    - priority
+   - type
    - location
-   - created files: `assignment.md`, `scratchpad.md`, `handoff.md`, `decision-record.md` (plan files are NOT scaffolded — they are created on demand by `plan-assignment`)
-5. Suggest next steps:
+   - created files: `assignment.md`, `progress.md`, `comments.md`, `scratchpad.md`, `handoff.md`, `decision-record.md` (plan files are NOT scaffolded — they are created on demand by `plan-assignment`)
+5. Remind the user:
+   - Progress entries go into `progress.md` via direct appends (not into `assignment.md`).
+   - Comments are appended via `syntaur comment <slug-or-uuid> "body" --type question|note|feedback` — never edit `comments.md` directly.
+6. Suggest next steps:
    - fill in the objective, context, acceptance criteria, and any initial todos in the `## Todos` section
    - or run `plan-assignment` to create a plan file and auto-append a linked todo to `## Todos`
    - run `grab-assignment` to claim it if work should begin now

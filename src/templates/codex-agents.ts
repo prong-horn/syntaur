@@ -24,10 +24,10 @@ If the global Syntaur Codex plugin is installed, prefer these workflows instead 
 - \`syntaur-operator\` agent -- use for broad Syntaur protocol work or when a task spans multiple lifecycle steps
 - \`syntaur-protocol\` -- background protocol and write-boundary rules
 - \`create-project\` -- scaffold a project
-- \`create-assignment\` -- create a new assignment
+- \`create-assignment\` -- create a new assignment (use \`--type <bug|feature|chore|...>\` to classify; use \`--one-off\` to create a standalone assignment at \`~/.syntaur/assignments/<uuid>/\` with no parent project)
 - \`grab-assignment\` -- claim work, create \`.syntaur/context.json\`, and register a session
 - \`plan-assignment\` -- write a versioned plan file (\`plan.md\`, \`plan-v2.md\`, ...) and link it from the \`## Todos\` section of \`assignment.md\`
-- \`complete-assignment\` -- append the handoff, close the session, and transition state
+- \`complete-assignment\` -- append the handoff, append a final entry to \`progress.md\`, close the session, and transition state
 - \`track-session\` -- manage tracked tmux sessions for the dashboard
 
 If the plugin is unavailable, follow the same workflow manually with the \`syntaur\` CLI and keep the protocol files current yourself.
@@ -35,12 +35,12 @@ If the plugin is unavailable, follow the same workflow manually with the \`synta
 ## Reading Order
 
 Before starting work, read these files in order:
-1. \`${params.projectDir}/manifest.md\` -- root navigation entry point
-2. \`${params.projectDir}/agent.md\` -- universal agent instructions and boundaries
-3. \`${params.projectDir}/project.md\` -- project overview and goals
-4. \`${params.projectDir}/claude.md\` if it exists -- extra project context that may still be relevant
-5. \`${params.assignmentDir}/assignment.md\` -- your assignment details, acceptance criteria, todos, current status
-6. any \`${params.assignmentDir}/plan*.md\` files linked from active todos in the \`## Todos\` section (may be 0, 1, or many)
+1. \`${params.projectDir}/manifest.md\` -- root navigation entry point (project-nested assignments only)
+2. \`${params.projectDir}/project.md\` -- project overview and goals (project-nested assignments only)
+3. \`${params.assignmentDir}/assignment.md\` -- your assignment details, acceptance criteria, todos, current status. Frontmatter now includes \`project: <slug> | null\` (null for standalone) and \`type: <classification> | null\`.
+4. any \`${params.assignmentDir}/plan*.md\` files linked from active todos in the \`## Todos\` section (may be 0, 1, or many)
+5. \`${params.assignmentDir}/progress.md\` -- reverse-chron progress log (if present)
+6. \`${params.assignmentDir}/comments.md\` -- threaded questions/notes/feedback (if present)
 7. \`${params.assignmentDir}/handoff.md\` -- previous session handoff notes
 
 ## Context File
@@ -62,12 +62,12 @@ Before starting work, read these files in order:
       _index-plans.md        # Derived (read-only)
       _index-decisions.md    # Derived (read-only)
       _status.md             # Derived (read-only)
-      claude.md              # Human-authored: Claude-specific instructions (read-only)
-      agent.md               # Human-authored: universal agent instructions (read-only)
       assignments/
         <assignment-slug>/
           assignment.md      # Agent-writable: source of truth for state (includes ## Todos)
           plan*.md           # Agent-writable: versioned implementation plans (optional, one per ## Todos entry)
+          progress.md        # Agent-writable, append-only: timestamped progress log
+          comments.md        # CLI-mediated: threaded questions/notes/feedback (via \`syntaur comment\`)
           scratchpad.md      # Agent-writable: working notes
           handoff.md         # Agent-writable: append-only handoff log
           decision-record.md # Agent-writable: append-only decision log
@@ -77,13 +77,22 @@ Before starting work, read these files in order:
       memories/
         _index.md            # Derived (read-only)
         <memory-slug>.md     # Shared-writable
+  assignments/
+    <assignment-id>/         # Standalone assignments — folder = UUID, \`project: null\`, slug display-only
+      assignment.md
+      plan*.md
+      progress.md
+      comments.md
+      scratchpad.md
+      handoff.md
+      decision-record.md
 \`\`\`
 
 ## Write Boundary Rules (CRITICAL)
 
 ### Files you may WRITE:
 1. **Your assignment folder** -- only the assignment you are currently working on:
-   - \`assignment.md\`, \`plan*.md\` (0 or more versioned plan files), \`scratchpad.md\`, \`handoff.md\`, \`decision-record.md\`
+   - \`assignment.md\`, \`plan*.md\` (0 or more versioned plan files), \`progress.md\`, \`scratchpad.md\`, \`handoff.md\`, \`decision-record.md\`
    - Path: \`${params.assignmentDir}/\`
 2. **Shared resources and memories** at the project level:
    - \`${params.projectDir}/resources/<slug>.md\`
@@ -92,11 +101,15 @@ Before starting work, read these files in order:
 
 > **Note:** Workspace boundaries are resolved by the agent at runtime by reading \`assignment.md\` frontmatter. If no \`workspace\` field is set, treat the current working directory as your workspace.
 
+### Files written only via CLI (never edit directly):
+- \`comments.md\` (any assignment) -- use \`syntaur comment <slug-or-uuid> "body" [--type question|note|feedback] [--reply-to <id>]\`
+- Another assignment's \`## Todos\` section -- use \`syntaur request <source> <target> "text"\` to request cross-assignment work
+
 ### Files you must NEVER write:
-1. \`project.md\`, \`agent.md\`, \`claude.md\` -- human-authored, read-only
+1. \`project.md\` -- human-authored, read-only
 2. \`manifest.md\` -- derived, rebuilt by tooling
 3. Any file prefixed with \`_\` -- derived
-4. Other agents' assignment folders
+4. Other agents' assignment folders (except via the CLI-mediated channels above)
 5. Any files outside your workspace boundary
 
 ## Assignment Lifecycle
@@ -127,7 +140,7 @@ Before starting work, read these files in order:
 
 ## Lifecycle Commands
 
-Use the \`syntaur\` CLI for state transitions:
+Use the \`syntaur\` CLI for state transitions and coordination:
 - \`syntaur assign ${params.assignmentSlug} --agent <name> --project ${params.projectSlug}\` -- set assignee
 - \`syntaur start ${params.assignmentSlug} --project ${params.projectSlug}\` -- pending -> in_progress
 - \`syntaur review ${params.assignmentSlug} --project ${params.projectSlug}\` -- in_progress -> review
@@ -135,6 +148,8 @@ Use the \`syntaur\` CLI for state transitions:
 - \`syntaur block ${params.assignmentSlug} --project ${params.projectSlug} --reason <text>\` -- block
 - \`syntaur unblock ${params.assignmentSlug} --project ${params.projectSlug}\` -- unblock
 - \`syntaur fail ${params.assignmentSlug} --project ${params.projectSlug}\` -- mark as failed
+- \`syntaur comment ${params.assignmentSlug} "body" --type question|note|feedback [--reply-to <id>]\` -- append to \`comments.md\` (use for all Q&A; questions support resolve toggle)
+- \`syntaur request ${params.assignmentSlug} <target-slug-or-uuid> "text"\` -- append a todo to another assignment's \`## Todos\` annotated \`(from: ${params.assignmentSlug})\`
 
 ## Troubleshooting
 
@@ -152,13 +167,14 @@ Read each linked playbook and follow the rules in its body section. The \`when_t
 
 ## Conventions
 
-- Assignment frontmatter is the single source of truth for state
-- Slugs are lowercase, hyphen-separated
-- Always read \`agent.md\` at the project level before starting work
-- Keep \`assignment.md\` progress, acceptance criteria, and \`## Todos\` updated as work lands
-- Keep active plan file(s) current after planning changes and \`handoff.md\` current before leaving the task
-- When requirements shift, supersede the prior plan todo (\`- [x] ~~...~~ (superseded by plan-v<N>)\`) and write a new plan file instead of rewriting the old one
-- Add unanswered questions to the Q&A section of assignment.md
-- Commit frequently with messages referencing the assignment slug
+- Assignment frontmatter is the single source of truth for state. \`project\` is the containing project slug (\`null\` for standalone); \`type\` is a classification validated against \`config.md\` \`types.definitions\` when present.
+- Slugs are lowercase, hyphen-separated. For standalone assignments, \`slug\` is display-only; the folder is named by the UUID.
+- Always read \`project.md\` at the project level (when project-nested) before starting work.
+- Keep \`assignment.md\` acceptance criteria and \`## Todos\` updated as work lands; append timestamped entries to \`progress.md\` (never to \`assignment.md\`).
+- Keep active plan file(s) current after planning changes and \`handoff.md\` current before leaving the task.
+- When requirements shift, supersede the prior plan todo (\`- [x] ~~...~~ (superseded by plan-v<N>)\`) and write a new plan file instead of rewriting the old one.
+- Record questions, notes, and feedback via \`syntaur comment\`. Never edit \`comments.md\` directly. Resolve questions via the dashboard UI (toggle on the question entry).
+- To route work to another assignment, use \`syntaur request\`.
+- Commit frequently with messages referencing the assignment slug.
 `;
 }

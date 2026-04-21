@@ -75,11 +75,13 @@ export function buildIndex(input: BuildInput): PaletteEntry[] {
     const assignWs = a.projectWorkspace ? `/w/${a.projectWorkspace}` : '';
     out.push({
       type: 'assignment',
-      id: `assignment-${a.projectSlug}-${a.slug}`,
+      id: a.projectSlug === null ? `assignment-standalone-${a.id}` : `assignment-${a.projectSlug}-${a.slug}`,
       title: a.title,
       subtitle: `${a.projectTitle} \u00B7 ${a.status}`,
-      keywords: [a.projectSlug, a.assignee ?? ''].filter(Boolean),
-      route: `${assignWs}/projects/${a.projectSlug}/assignments/${a.slug}`,
+      keywords: [a.projectSlug ?? 'standalone', a.assignee ?? ''].filter((s): s is string => Boolean(s)),
+      route: a.projectSlug === null
+        ? `/assignments/${a.id}`
+        : `${assignWs}/projects/${a.projectSlug}/assignments/${a.slug}`,
     });
   }
 

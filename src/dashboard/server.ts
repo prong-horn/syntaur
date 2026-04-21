@@ -9,6 +9,7 @@ import {
   listAssignmentsBoard,
   getProjectDetail,
   getAssignmentDetail,
+  getAssignmentDetailById,
   getOverview,
   getAttention,
   getHelp,
@@ -34,6 +35,11 @@ import type { WsMessage } from './types.js';
 export interface DashboardServerOptions {
   port: number;
   projectsDir: string;
+  /**
+   * Absolute path to the standalone assignments directory (`~/.syntaur/assignments/`).
+   * Standalone assignments have `project: null` and live in folders named by UUID.
+   */
+  assignmentsDir: string;
   serversDir: string;
   playbooksDir: string;
   todosDir: string;
@@ -43,7 +49,7 @@ export interface DashboardServerOptions {
 }
 
 export function createDashboardServer(options: DashboardServerOptions) {
-  const { port, projectsDir, serversDir, playbooksDir, todosDir, serveStaticUi, dashboardDistPath } = options;
+  const { port, projectsDir, assignmentsDir, serversDir, playbooksDir, todosDir, serveStaticUi, dashboardDistPath } = options;
   const app = express();
   const server = createServer(app);
 
@@ -95,7 +101,7 @@ export function createDashboardServer(options: DashboardServerOptions) {
   // --- API Routes ---
   app.get('/api/overview', async (_req, res) => {
     try {
-      const overview = await getOverview(projectsDir, serversDir);
+      const overview = await getOverview(projectsDir, serversDir, assignmentsDir);
       res.json(overview);
     } catch (error) {
       console.error('Error getting overview:', error);
@@ -105,7 +111,7 @@ export function createDashboardServer(options: DashboardServerOptions) {
 
   app.get('/api/attention', async (_req, res) => {
     try {
-      const attention = await getAttention(projectsDir, serversDir);
+      const attention = await getAttention(projectsDir, serversDir, assignmentsDir);
       res.json(attention);
     } catch (error) {
       console.error('Error getting attention queue:', error);
@@ -234,7 +240,7 @@ export function createDashboardServer(options: DashboardServerOptions) {
 
   app.get('/api/assignments', async (req, res) => {
     try {
-      const result = await listAssignmentsBoard(projectsDir);
+      const result = await listAssignmentsBoard(projectsDir, assignmentsDir);
       const workspaceParam = req.query.workspace as string | undefined;
       if (workspaceParam) {
         if (workspaceParam === '_ungrouped') {
@@ -264,6 +270,20 @@ export function createDashboardServer(options: DashboardServerOptions) {
     }
   });
 
+  app.get('/api/assignments/:id', async (req, res) => {
+    try {
+      const detail = await getAssignmentDetailById(projectsDir, assignmentsDir, req.params.id);
+      if (!detail) {
+        res.status(404).json({ error: `Assignment "${req.params.id}" not found` });
+        return;
+      }
+      res.json(detail);
+    } catch (error) {
+      console.error('Error getting assignment by id:', error);
+      res.status(500).json({ error: 'Failed to get assignment' });
+    }
+  });
+
   app.get('/api/projects/:slug/assignments/:aslug', async (req, res) => {
     try {
       const detail = await getAssignmentDetail(
@@ -285,7 +305,7 @@ export function createDashboardServer(options: DashboardServerOptions) {
   });
 
   // --- Write API (create projects/assignments) ---
-  app.use(createWriteRouter(projectsDir));
+  app.use(createWriteRouter(projectsDir, assignmentsDir));
 
   // --- Servers API ---
   app.use('/api/servers', createServersRouter(serversDir, projectsDir));

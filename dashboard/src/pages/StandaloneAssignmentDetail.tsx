@@ -1,0 +1,213 @@
+import { Link, useParams, useSearchParams } from 'react-router-dom';
+import { useAssignmentById } from '../hooks/useProjects';
+import { LoadingState } from '../components/LoadingState';
+import { ErrorState } from '../components/ErrorState';
+import { StatusBadge } from '../components/StatusBadge';
+import { ContentTabs } from '../components/ContentTabs';
+import { SectionCard } from '../components/SectionCard';
+import { MarkdownRenderer } from '../components/MarkdownRenderer';
+import { EmptyState } from '../components/EmptyState';
+
+/**
+ * Minimal read-mostly view for standalone assignments (those at
+ * `~/.syntaur/assignments/<uuid>/`). Full edit UI is deferred — use the
+ * `syntaur` CLI for transitions and to edit companion docs.
+ */
+export function StandaloneAssignmentDetail() {
+  const { id } = useParams<{ id: string }>();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const tab = searchParams.get('tab') ?? 'summary';
+  const { data: assignment, loading, error } = useAssignmentById(id);
+
+  if (loading) return <LoadingState />;
+  if (error) return <ErrorState error={error} />;
+  if (!assignment) return <ErrorState error="Assignment not found" />;
+
+  return (
+    <div className="space-y-6">
+      <header className="space-y-2">
+        <div className="flex flex-wrap items-center gap-3">
+          <span className="rounded bg-neutral-800 px-2 py-0.5 font-mono text-xs uppercase tracking-wide text-neutral-300">
+            Standalone
+          </span>
+          <StatusBadge status={assignment.status} />
+          <span className="text-xs font-mono text-neutral-500">{assignment.id}</span>
+        </div>
+        <h1 className="text-2xl font-semibold text-neutral-100">{assignment.title}</h1>
+        {assignment.blockedReason ? (
+          <p className="text-sm text-amber-300">Blocked: {assignment.blockedReason}</p>
+        ) : null}
+      </header>
+
+      {assignment.referencedBy && assignment.referencedBy.length > 0 ? (
+        <SectionCard
+          title="Referenced by"
+          description="Other assignments whose bodies link to this one."
+        >
+          <ul className="space-y-2">
+            {assignment.referencedBy.map((ref) => (
+              <li key={ref.sourceId} className="flex items-center gap-2 text-sm">
+                <Link
+                  to={
+                    ref.sourceProjectSlug === null
+                      ? `/assignments/${ref.sourceId}`
+                      : `/projects/${ref.sourceProjectSlug}/assignments/${ref.sourceSlug}`
+                  }
+                  className="text-foreground hover:text-primary"
+                >
+                  {ref.sourceTitle}
+                </Link>
+                <span className="text-xs text-muted-foreground">
+                  ({ref.mentions} mention{ref.mentions === 1 ? '' : 's'})
+                </span>
+              </li>
+            ))}
+          </ul>
+        </SectionCard>
+      ) : null}
+
+      <ContentTabs
+        value={tab}
+        onValueChange={(value) => setSearchParams({ tab: value })}
+        items={[
+          {
+            value: 'summary',
+            label: 'Summary',
+            content: (
+              <div className="space-y-5">
+                <SectionCard title="Assignment">
+                  <MarkdownRenderer
+                    content={assignment.body}
+                    emptyState="This assignment does not have summary markdown yet."
+                  />
+                </SectionCard>
+              </div>
+            ),
+          },
+          {
+            value: 'progress',
+            label: 'Progress',
+            count: assignment.progress?.entryCount ?? 0,
+            content: (
+              <div className="space-y-5">
+                {assignment.progress && assignment.progress.entries.length > 0 ? (
+                  <SectionCard
+                    title="Progress"
+                    description="Reverse-chronological log of work done on this assignment."
+                  >
+                    <ol className="space-y-4">
+                      {assignment.progress.entries.map((entry, idx) => (
+                        <li key={`${entry.timestamp}-${idx}`} className="border-l-2 border-neutral-700 pl-3">
+                          <div className="text-xs font-mono text-neutral-400">{entry.timestamp}</div>
+                          <MarkdownRenderer content={entry.body} />
+                        </li>
+                      ))}
+                    </ol>
+                  </SectionCard>
+                ) : (
+                  <EmptyState
+                    title="No progress entries yet"
+                    description="Progress entries appear here as the agent appends them to progress.md."
+                  />
+                )}
+              </div>
+            ),
+          },
+          {
+            value: 'comments',
+            label: 'Comments',
+            count: assignment.comments?.entryCount ?? 0,
+            content: (
+              <div className="space-y-5">
+                {assignment.comments && assignment.comments.entries.length > 0 ? (
+                  // For standalone assignments the CommentsThread component currently
+                  // builds project-nested URLs; use the minimal list view here.
+                  <StandaloneCommentsList entries={assignment.comments.entries} />
+                ) : (
+                  <EmptyState
+                    title="No comments yet"
+                    description={'Use `syntaur comment <uuid> "body" --type ...` to post.'}
+                  />
+                )}
+              </div>
+            ),
+          },
+          {
+            value: 'handoff',
+            label: 'Handoff',
+            count: assignment.handoff?.handoffCount ?? 0,
+            content: (
+              <div className="space-y-5">
+                {assignment.handoff ? (
+                  <SectionCard>
+                    <MarkdownRenderer content={assignment.handoff.body} emptyState="No handoff history yet." />
+                  </SectionCard>
+                ) : (
+                  <EmptyState
+                    title="No handoff log yet"
+                    description="Handoffs appear here when an agent appends one."
+                  />
+                )}
+              </div>
+            ),
+          },
+          {
+            value: 'decisions',
+            label: 'Decisions',
+            count: assignment.decisionRecord?.decisionCount ?? 0,
+            content: (
+              <div className="space-y-5">
+                {assignment.decisionRecord ? (
+                  <SectionCard>
+                    <MarkdownRenderer content={assignment.decisionRecord.body} emptyState="No decision history yet." />
+                  </SectionCard>
+                ) : (
+                  <EmptyState
+                    title="No decision record yet"
+                    description="Decision records appear here once appended."
+                  />
+                )}
+              </div>
+            ),
+          },
+        ]}
+      />
+    </div>
+  );
+}
+
+function StandaloneCommentsList({ entries }: { entries: any[] }) {
+  return (
+    <SectionCard title="Comments">
+      <ul className="space-y-3">
+        {entries.map((c) => (
+          <li key={c.id} className="border-l-2 border-neutral-700 pl-3">
+            <div className="flex flex-wrap items-center gap-2 text-xs text-neutral-400">
+              <span className="font-mono">{c.id}</span>
+              <span>·</span>
+              <span>{c.timestamp}</span>
+              <span>·</span>
+              <span className="font-medium text-neutral-200">{c.author}</span>
+              <span>·</span>
+              <span className="rounded bg-neutral-800 px-1.5 py-0.5 font-mono text-[10px] uppercase">
+                {c.type}
+              </span>
+              {c.type === 'question' ? (
+                <span
+                  className={
+                    c.resolved
+                      ? 'rounded bg-emerald-900/40 px-1.5 py-0.5 text-[10px] text-emerald-200'
+                      : 'rounded bg-amber-900/40 px-1.5 py-0.5 text-[10px] text-amber-200'
+                  }
+                >
+                  {c.resolved ? 'resolved' : 'open'}
+                </span>
+              ) : null}
+            </div>
+            <MarkdownRenderer content={c.body} />
+          </li>
+        ))}
+      </ul>
+    </SectionCard>
+  );
+}

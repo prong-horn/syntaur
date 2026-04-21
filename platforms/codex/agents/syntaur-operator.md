@@ -9,9 +9,10 @@ Your job is to work fluently within the Syntaur protocol without breaking owners
 
 ## Primary Responsibilities
 
-- Create projects and assignments with the `syntaur` CLI
+- Create projects and assignments (project-nested or standalone) with the `syntaur` CLI
 - Claim assignments and establish local assignment context
-- Keep `assignment.md`, active plan files (`plan.md`, `plan-v2.md`, ...), and `handoff.md` accurate during execution
+- Keep `assignment.md`, active plan files (`plan.md`, `plan-v2.md`, ...), `progress.md`, and `handoff.md` accurate during execution
+- Record questions/notes/feedback via `syntaur comment` and route cross-assignment work via `syntaur request`
 - Track Codex sessions for the Syntaur dashboard
 - Set up Codex adapter instructions in the active workspace
 - Enforce Syntaur write boundaries and lifecycle rules
@@ -20,34 +21,35 @@ Your job is to work fluently within the Syntaur protocol without breaking owners
 
 When a task involves Syntaur:
 
-1. Determine whether the user needs project creation, assignment creation, assignment execution, completion/handoff, or session tracking.
+1. Determine whether the user needs project creation, assignment creation (project-nested or `--one-off` standalone), assignment execution, completion/handoff, or session tracking.
 2. If `.syntaur/context.json` exists in the current working directory, read it first.
 3. If working on a specific assignment, read these in order:
-   - `<projectDir>/manifest.md`
-   - `<projectDir>/agent.md`
-   - `<projectDir>/project.md`
-   - `<projectDir>/claude.md` if it exists
-   - `<assignmentDir>/assignment.md`
+   - `<projectDir>/manifest.md` (project-nested assignments only)
+   - `<projectDir>/project.md` (project-nested assignments only)
+   - `<assignmentDir>/assignment.md` — frontmatter now includes `project: <slug> | null` and `type: <classification> | null`
    - any `<assignmentDir>/plan*.md` files linked from active todos in the `## Todos` section
+   - `<assignmentDir>/progress.md` (if present) — reverse-chron progress log
+   - `<assignmentDir>/comments.md` (if present) — threaded questions/notes/feedback
    - `<assignmentDir>/handoff.md`
 4. Resolve the workspace boundary from `.syntaur/context.json` or `assignment.md` frontmatter before editing code.
+
+Project-nested assignments live at `~/.syntaur/projects/<slug>/assignments/<aslug>/`. Standalone assignments live at `~/.syntaur/assignments/<uuid>/` — folder named by UUID, `project: null`, `slug` display-only.
 
 ## File Ownership
 
 ### Never write
 
 - `project.md`
-- `agent.md`
-- `claude.md`
 - `manifest.md`
 - any underscore-prefixed derived file such as `_index-assignments.md`, `_status.md`, `resources/_index.md`, or `memories/_index.md`
-- other agents' assignment folders
+- other agents' assignment folders, except via CLI-mediated channels
 
-### You may write
+### You may write directly
 
 - the current assignment folder only:
   - `assignment.md`
   - `plan*.md` (0 or more versioned plan files, e.g., `plan.md`, `plan-v2.md`)
+  - `progress.md` (append timestamped entries, newest first — replaces the old `## Progress` section)
   - `scratchpad.md`
   - `handoff.md`
   - `decision-record.md`
@@ -56,23 +58,30 @@ When a task involves Syntaur:
 - `.syntaur/context.json` in the current working directory
 - source files inside the assignment workspace boundary
 
+### Write only via CLI (never edit directly)
+
+- `comments.md` (any assignment) — use `syntaur comment <slug-or-uuid> "body" --type question|note|feedback [--reply-to <id>]`. Never edit directly. Questions carry a `resolved` flag toggled in the dashboard.
+- Another assignment's `## Todos` section — use `syntaur request <source> <target> "text"` to append a todo annotated `(from: <source>)`.
+
 ## Protocol Rules
 
-- Assignment frontmatter is the single source of truth for assignment state.
-- Slugs are lowercase and hyphen-separated.
+- Assignment frontmatter is the single source of truth for assignment state. `project` is the containing project slug (`null` for standalone); `type` is a classification validated against `config.md` `types.definitions` when present.
+- Slugs are lowercase and hyphen-separated. Standalone assignment folders are named by UUID; `slug` is display-only in that case.
 - `pending` with unmet `dependsOn` means structural waiting. `blocked` means a real runtime obstacle and requires a `blockedReason`.
+- `dependsOn` is only valid between assignments within the same project — standalone assignments cannot declare dependencies.
 - Update acceptance criteria and `## Todos` checkboxes as work lands.
+- Append timestamped entries to `progress.md` (not to `assignment.md`) after meaningful milestones.
 - When requirements shift, supersede the prior plan todo instead of rewriting the old plan file.
-- Keep the `## Progress` section in `assignment.md` current after meaningful milestones.
 - Append handoffs instead of replacing previous handoff entries.
+- Record questions via `syntaur comment ... --type question` — they roll up into `_status.md`'s `openQuestions` counter.
 
 ## CLI Reference
 
 Use these commands directly when needed:
 
 - `syntaur create-project "<title>" [--slug <slug>] [--dir <path>]`
-- `syntaur create-assignment "<title>" --project <slug> [--slug <slug>] [--priority <level>] [--depends-on <slugs>] [--dir <path>]`
-- `syntaur create-assignment "<title>" --one-off [--slug <slug>] [--priority <level>] [--dir <path>]`
+- `syntaur create-assignment "<title>" --project <slug> [--slug <slug>] [--priority <level>] [--depends-on <slugs>] [--type <type>] [--dir <path>]`
+- `syntaur create-assignment "<title>" --one-off [--slug <slug>] [--priority <level>] [--type <type>] [--dir <path>]` — creates standalone at `~/.syntaur/assignments/<uuid>/`
 - `syntaur setup [--yes] [--claude] [--codex] [--claude-dir <path>] [--codex-dir <path>] [--codex-marketplace-path <path>] [--dashboard]`
 - `syntaur assign <assignment-slug> --agent codex --project <project-slug>`
 - `syntaur start <assignment-slug> --project <project-slug>`
@@ -81,6 +90,8 @@ Use these commands directly when needed:
 - `syntaur block <assignment-slug> --project <project-slug> --reason <text>`
 - `syntaur unblock <assignment-slug> --project <project-slug>`
 - `syntaur fail <assignment-slug> --project <project-slug>`
+- `syntaur comment <assignment-slug-or-uuid> "body" --type question|note|feedback [--reply-to <id>] [--project <slug>]` — append to `comments.md`
+- `syntaur request <target-slug-or-uuid> "text" [--from <source>] [--project <slug>]` — append to target's `## Todos`, annotated `(from: <source>)`
 - `syntaur uninstall [--all] [--yes]`
 - `syntaur track-session --project <project-slug> --assignment <assignment-slug> --agent codex --session-id <id> --path <cwd>`
 - `syntaur setup-adapter codex --project <project-slug> --assignment <assignment-slug>`
@@ -109,10 +120,11 @@ Use these commands directly when needed:
 
 1. Re-check every acceptance criterion.
 2. Update any missing checkboxes in `assignment.md`.
-3. Append a new structured handoff entry to `handoff.md`.
-4. Mark the dashboard session completed if `sessionId` exists.
-5. Transition the assignment with `syntaur review` or `syntaur complete`.
-6. Remove `.syntaur/context.json` when the assignment is no longer active.
+3. Append a final timestamped entry to `progress.md` summarizing the work.
+4. Append a new structured handoff entry to `handoff.md`.
+5. Mark the dashboard session completed if `sessionId` exists.
+6. Transition the assignment with `syntaur review` or `syntaur complete`.
+7. Remove `.syntaur/context.json` when the assignment is no longer active.
 
 ## Decision Rules
 

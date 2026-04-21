@@ -17,10 +17,14 @@ import {
 import { toggleAcceptanceCriterion } from './acceptance-criteria.js';
 import {
   getAssignmentDetail,
+  getAssignmentDetailById,
   getEditableDocument,
   getProjectDetail,
   getStatusConfig,
 } from './api.js';
+import { resolveAssignmentById } from '../utils/assignment-resolver.js';
+import { renderProgress } from '../templates/index.js';
+import { executeTransitionByDir } from '../lifecycle/index.js';
 import {
   renderProject,
   renderManifest,
@@ -34,7 +38,12 @@ import {
   renderScratchpad,
   renderHandoff,
   renderDecisionRecord,
+  renderComments,
+  formatCommentEntry,
+  type Comment,
+  type CommentType,
 } from '../templates/index.js';
+import { parseComments } from './parser.js';
 
 function extractFrontmatter(content: string): Record<string, string> | null {
   const trimmed = content.trimStart();
@@ -166,7 +175,7 @@ async function readCurrentDocument(filePath: string): Promise<string | null> {
   return readFile(filePath, 'utf-8');
 }
 
-export function createWriteRouter(projectsDir: string): Router {
+export function createWriteRouter(projectsDir: string, assignmentsDir?: string): Router {
   const router = Router();
 
   router.get('/api/templates/project', (_req: Request, res: Response) => {
@@ -737,6 +746,129 @@ export function createWriteRouter(projectsDir: string): Router {
     }
   });
 
+  // --- Comments Endpoints ---
+
+  router.post('/api/projects/:slug/assignments/:aslug/comments', async (req: Request, res: Response) => {
+    try {
+      const projectSlug = getParam(req.params.slug);
+      const assignmentSlug = getParam(req.params.aslug);
+      const commentsPath = resolve(
+        projectsDir,
+        projectSlug,
+        'assignments',
+        assignmentSlug,
+        'comments.md',
+      );
+
+      const { body, author, type, replyTo } = req.body || {};
+      if (!body || typeof body !== 'string' || !body.trim()) {
+        res.status(400).json({ error: 'body is required' });
+        return;
+      }
+      const commentType: CommentType = type && ['question', 'note', 'feedback'].includes(type)
+        ? type
+        : 'note';
+      const timestamp = nowTimestamp();
+      const entryAuthor = (typeof author === 'string' && author.trim()) ? author.trim() : 'human';
+
+      let currentContent: string;
+      let currentCount = 0;
+      if (await fileExists(commentsPath)) {
+        currentContent = await readFile(commentsPath, 'utf-8');
+        const countMatch = currentContent.match(/^entryCount:\s*(\d+)/m);
+        if (countMatch) currentCount = parseInt(countMatch[1], 10);
+      } else {
+        currentContent = renderComments({
+          assignment: assignmentSlug,
+          timestamp,
+        });
+      }
+
+      const comment: Comment = {
+        id: generateId().split('-')[0],
+        timestamp,
+        author: entryAuthor,
+        type: commentType,
+        body,
+        replyTo: typeof replyTo === 'string' && replyTo.trim() ? replyTo.trim() : undefined,
+        resolved: commentType === 'question' ? false : undefined,
+      };
+      const entry = formatCommentEntry(comment);
+      let next = setTopLevelField(currentContent, 'entryCount', String(currentCount + 1));
+      next = setTopLevelField(next, 'updated', `"${timestamp}"`);
+      if (next.includes('No comments yet.')) {
+        next = next.replace('No comments yet.', entry.trimEnd());
+      } else {
+        next = `${next.trimEnd()}\n\n${entry}`;
+      }
+
+      await writeFileForce(commentsPath, next);
+      const assignment = await getAssignmentDetail(projectsDir, projectSlug, assignmentSlug);
+      res.status(201).json({ assignment, comment: { id: comment.id } });
+    } catch (error) {
+      console.error('Error appending comment:', error);
+      res.status(500).json({ error: `Failed to append comment: ${(error as Error).message}` });
+    }
+  });
+
+  router.patch('/api/projects/:slug/assignments/:aslug/comments/:commentId/resolved', async (req: Request, res: Response) => {
+    try {
+      const projectSlug = getParam(req.params.slug);
+      const assignmentSlug = getParam(req.params.aslug);
+      const commentId = getParam(req.params.commentId);
+      const commentsPath = resolve(
+        projectsDir,
+        projectSlug,
+        'assignments',
+        assignmentSlug,
+        'comments.md',
+      );
+      if (!(await fileExists(commentsPath))) {
+        res.status(404).json({ error: 'Comments file not found' });
+        return;
+      }
+      const { resolved } = req.body || {};
+      if (typeof resolved !== 'boolean') {
+        res.status(400).json({ error: 'resolved (boolean) is required' });
+        return;
+      }
+
+      const content = await readFile(commentsPath, 'utf-8');
+      const parsed = parseComments(content);
+      const target = parsed.entries.find((e) => e.id === commentId);
+      if (!target) {
+        res.status(404).json({ error: `Comment ${commentId} not found` });
+        return;
+      }
+      if (target.type !== 'question') {
+        res.status(400).json({ error: 'Only questions can be resolved' });
+        return;
+      }
+
+      // Toggle the `**Resolved:**` line in the entry's block.
+      const entryBlockRegex = new RegExp(
+        `(^## ${commentId.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\$&')}[\\s\\S]*?)(\\*\\*Resolved:\\*\\*\\s*(?:true|false))`,
+        'm',
+      );
+      const next = content.replace(
+        entryBlockRegex,
+        (_m, preamble) => `${preamble}**Resolved:** ${resolved ? 'true' : 'false'}`,
+      );
+      if (next === content) {
+        res.status(500).json({ error: 'Failed to update resolved flag' });
+        return;
+      }
+
+      const withUpdated = setTopLevelField(next, 'updated', `"${nowTimestamp()}"`);
+      await writeFileForce(commentsPath, withUpdated);
+      const assignment = await getAssignmentDetail(projectsDir, projectSlug, assignmentSlug);
+      res.json({ assignment });
+    } catch (error) {
+      console.error('Error toggling comment resolved flag:', error);
+      res.status(500).json({ error: `Failed to toggle resolved: ${(error as Error).message}` });
+    }
+  });
+
   // --- Move Workspace Endpoint ---
 
   router.post('/api/projects/:slug/move-workspace', async (req: Request, res: Response) => {
@@ -903,5 +1035,266 @@ export function createWriteRouter(projectsDir: string): Router {
     }
   });
 
+  // =========================================================================
+  // Standalone (by-id) routes — `~/.syntaur/assignments/<uuid>/`
+  // Active only when the write router was constructed with an assignmentsDir.
+  // =========================================================================
+
+  router.post('/api/assignments', async (req: Request, res: Response) => {
+    try {
+      if (!assignmentsDir) {
+        res.status(501).json({ error: 'Standalone assignments not configured on this server' });
+        return;
+      }
+      const { title, slug, priority, type } = req.body || {};
+      if (!title || typeof title !== 'string' || !title.trim()) {
+        res.status(400).json({ error: 'title is required' });
+        return;
+      }
+      const { dependsOn } = req.body || {};
+      if (Array.isArray(dependsOn) && dependsOn.length > 0) {
+        res.status(400).json({ error: 'Standalone assignments cannot declare dependsOn.' });
+        return;
+      }
+
+      const id = generateId();
+      const assignmentDir = resolve(assignmentsDir, id);
+      if (await fileExists(assignmentDir)) {
+        res.status(500).json({ error: 'UUID collision — try again' });
+        return;
+      }
+
+      const timestamp = nowTimestamp();
+      const resolvedSlug = typeof slug === 'string' && slug.trim() ? slug.trim() : slugifyLocal(title);
+      const resolvedPriority = (typeof priority === 'string' && ['low', 'medium', 'high', 'critical'].includes(priority))
+        ? (priority as 'low' | 'medium' | 'high' | 'critical')
+        : 'medium';
+
+      await ensureDir(assignmentDir);
+      const assignmentContent = renderAssignment({
+        id,
+        slug: resolvedSlug,
+        title: title.trim(),
+        timestamp,
+        priority: resolvedPriority,
+        dependsOn: [],
+        links: [],
+        project: null,
+        type: typeof type === 'string' ? type : undefined,
+      });
+      await writeFileForce(resolve(assignmentDir, 'assignment.md'), assignmentContent);
+      await writeFileForce(
+        resolve(assignmentDir, 'scratchpad.md'),
+        renderScratchpad({ assignmentSlug: id, timestamp }),
+      );
+      await writeFileForce(
+        resolve(assignmentDir, 'handoff.md'),
+        renderHandoff({ assignmentSlug: id, timestamp }),
+      );
+      await writeFileForce(
+        resolve(assignmentDir, 'decision-record.md'),
+        renderDecisionRecord({ assignmentSlug: id, timestamp }),
+      );
+      await writeFileForce(
+        resolve(assignmentDir, 'progress.md'),
+        renderProgress({ assignment: id, timestamp }),
+      );
+      await writeFileForce(
+        resolve(assignmentDir, 'comments.md'),
+        renderComments({ assignment: id, timestamp }),
+      );
+
+      const detail = await getAssignmentDetailById(projectsDir, assignmentsDir, id);
+      res.status(201).json({ assignment: detail });
+    } catch (error) {
+      console.error('Error creating standalone assignment:', error);
+      res.status(500).json({ error: `Failed to create standalone assignment: ${(error as Error).message}` });
+    }
+  });
+
+  router.post('/api/assignments/:id/comments', async (req: Request, res: Response) => {
+    try {
+      if (!assignmentsDir) {
+        res.status(501).json({ error: 'Standalone assignments not configured on this server' });
+        return;
+      }
+      const id = getParam(req.params.id);
+      const resolved = await resolveAssignmentById(projectsDir, assignmentsDir, id);
+      if (!resolved) {
+        res.status(404).json({ error: `Assignment "${id}" not found` });
+        return;
+      }
+      await appendCommentTo(resolved.assignmentDir, resolved.standalone ? resolved.id : resolved.assignmentSlug, req, res, async () => {
+        return resolved.standalone
+          ? getAssignmentDetailById(projectsDir, assignmentsDir, id)
+          : getAssignmentDetail(projectsDir, resolved.projectSlug!, resolved.assignmentSlug);
+      });
+    } catch (error) {
+      console.error('Error appending comment (by id):', error);
+      res.status(500).json({ error: `Failed to append comment: ${(error as Error).message}` });
+    }
+  });
+
+  router.patch('/api/assignments/:id/comments/:commentId/resolved', async (req: Request, res: Response) => {
+    try {
+      if (!assignmentsDir) {
+        res.status(501).json({ error: 'Standalone assignments not configured on this server' });
+        return;
+      }
+      const id = getParam(req.params.id);
+      const commentId = getParam(req.params.commentId);
+      const resolved = await resolveAssignmentById(projectsDir, assignmentsDir, id);
+      if (!resolved) {
+        res.status(404).json({ error: `Assignment "${id}" not found` });
+        return;
+      }
+      await toggleCommentResolvedAt(resolved.assignmentDir, commentId, req, res, async () => {
+        return resolved.standalone
+          ? getAssignmentDetailById(projectsDir, assignmentsDir, id)
+          : getAssignmentDetail(projectsDir, resolved.projectSlug!, resolved.assignmentSlug);
+      });
+    } catch (error) {
+      console.error('Error toggling comment resolved (by id):', error);
+      res.status(500).json({ error: `Failed to toggle resolved: ${(error as Error).message}` });
+    }
+  });
+
+  router.post('/api/assignments/:id/transitions/:command', async (req: Request, res: Response) => {
+    try {
+      if (!assignmentsDir) {
+        res.status(501).json({ error: 'Standalone assignments not configured on this server' });
+        return;
+      }
+      const id = getParam(req.params.id);
+      const command = getParam(req.params.command);
+      const resolved = await resolveAssignmentById(projectsDir, assignmentsDir, id);
+      if (!resolved) {
+        res.status(404).json({ error: `Assignment "${id}" not found` });
+        return;
+      }
+
+      const { reason } = req.body || {};
+      const transitionResult = await executeTransitionByDir(
+        resolved.assignmentDir,
+        command as any,
+        {
+          standalone: resolved.standalone,
+          reason: typeof reason === 'string' ? reason : undefined,
+        },
+      );
+      if (!transitionResult.success) {
+        res.status(400).json({ error: transitionResult.message, fromStatus: transitionResult.fromStatus });
+        return;
+      }
+
+      const detail = resolved.standalone
+        ? await getAssignmentDetailById(projectsDir, assignmentsDir, id)
+        : await getAssignmentDetail(projectsDir, resolved.projectSlug!, resolved.assignmentSlug);
+      res.json({ assignment: detail, warnings: transitionResult.warnings ?? [] });
+    } catch (error) {
+      console.error('Error transitioning by id:', error);
+      res.status(500).json({ error: `Failed to transition: ${(error as Error).message}` });
+    }
+  });
+
   return router;
+}
+
+function slugifyLocal(input: string): string {
+  return input
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '') || 'untitled';
+}
+
+async function appendCommentTo(
+  assignmentDir: string,
+  assignmentRef: string,
+  req: Request,
+  res: Response,
+  reloadDetail: () => Promise<unknown>,
+): Promise<void> {
+  const commentsPath = resolve(assignmentDir, 'comments.md');
+  const { body, author, type, replyTo } = req.body || {};
+  if (!body || typeof body !== 'string' || !body.trim()) {
+    res.status(400).json({ error: 'body is required' });
+    return;
+  }
+  const commentType: CommentType = type && ['question', 'note', 'feedback'].includes(type) ? type : 'note';
+  const timestamp = nowTimestamp();
+  const entryAuthor = (typeof author === 'string' && author.trim()) ? author.trim() : 'human';
+
+  let currentContent: string;
+  let currentCount = 0;
+  if (await fileExists(commentsPath)) {
+    currentContent = await readFile(commentsPath, 'utf-8');
+    const countMatch = currentContent.match(/^entryCount:\s*(\d+)/m);
+    if (countMatch) currentCount = parseInt(countMatch[1], 10);
+  } else {
+    currentContent = renderComments({ assignment: assignmentRef, timestamp });
+  }
+
+  const comment: Comment = {
+    id: generateId().split('-')[0],
+    timestamp,
+    author: entryAuthor,
+    type: commentType,
+    body,
+    replyTo: typeof replyTo === 'string' && replyTo.trim() ? replyTo.trim() : undefined,
+    resolved: commentType === 'question' ? false : undefined,
+  };
+  const entry = formatCommentEntry(comment);
+  let next = setTopLevelField(currentContent, 'entryCount', String(currentCount + 1));
+  next = setTopLevelField(next, 'updated', `"${timestamp}"`);
+  if (next.includes('No comments yet.')) {
+    next = next.replace('No comments yet.', entry.trimEnd());
+  } else {
+    next = `${next.trimEnd()}\n\n${entry}`;
+  }
+  await writeFileForce(commentsPath, next);
+  const assignment = await reloadDetail();
+  res.status(201).json({ assignment, comment: { id: comment.id } });
+}
+
+async function toggleCommentResolvedAt(
+  assignmentDir: string,
+  commentId: string,
+  req: Request,
+  res: Response,
+  reloadDetail: () => Promise<unknown>,
+): Promise<void> {
+  const commentsPath = resolve(assignmentDir, 'comments.md');
+  if (!(await fileExists(commentsPath))) {
+    res.status(404).json({ error: 'Comments file not found' });
+    return;
+  }
+  const { resolved: desired } = req.body || {};
+  if (typeof desired !== 'boolean') {
+    res.status(400).json({ error: 'resolved (boolean) is required' });
+    return;
+  }
+  const content = await readFile(commentsPath, 'utf-8');
+  const parsed = parseComments(content);
+  const target = parsed.entries.find((e) => e.id === commentId);
+  if (!target) {
+    res.status(404).json({ error: `Comment ${commentId} not found` });
+    return;
+  }
+  if (target.type !== 'question') {
+    res.status(400).json({ error: 'Only questions can be resolved' });
+    return;
+  }
+  const entryBlockRegex = new RegExp(
+    `(^## ${commentId.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\$&')}[\\s\\S]*?)(\\*\\*Resolved:\\*\\*\\s*(?:true|false))`,
+    'm',
+  );
+  const next = content.replace(entryBlockRegex, (_m, preamble) => `${preamble}**Resolved:** ${desired ? 'true' : 'false'}`);
+  if (next === content) {
+    res.status(500).json({ error: 'Failed to update resolved flag' });
+    return;
+  }
+  const withUpdated = setTopLevelField(next, 'updated', `"${nowTimestamp()}"`);
+  await writeFileForce(commentsPath, withUpdated);
+  const assignment = await reloadDetail();
+  res.json({ assignment });
 }

@@ -2,6 +2,8 @@
 id: d1e2f3a4-b5c6-7890-abcd-333333333333
 slug: write-auth-tests
 title: Write Auth System Tests
+project: build-auth-system
+type: feature
 status: pending
 priority: medium
 created: "2026-03-15T09:30:00Z"
@@ -42,16 +44,10 @@ Write comprehensive unit and integration tests for the authentication system, co
 
 This assignment depends on [implement-jwt-middleware](../implement-jwt-middleware/assignment.md) being completed. Tests will cover both the schema layer (from design-auth-schema) and the middleware/endpoint layer (from implement-jwt-middleware). Use Jest as the test framework with `supertest` for HTTP integration tests.
 
-## Questions & Answers
-
-No questions yet.
-
-## Progress
-
-No progress yet.
-
 ## Links
 
+- [Progress](./progress.md)
+- [Comments](./comments.md)
 - [Scratchpad](./scratchpad.md)
 - [Handoff](./handoff.md)
 - [Decision Record](./decision-record.md)

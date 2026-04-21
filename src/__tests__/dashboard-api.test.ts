@@ -34,6 +34,8 @@ async function createProjectFiles(
     scratchpadMd?: string;
     handoffMd?: string;
     decisionMd?: string;
+    progressMd?: string;
+    commentsMd?: string;
   }> = [],
   statusMd?: string,
 ): Promise<void> {
@@ -62,8 +64,33 @@ async function createProjectFiles(
     if (assignment.decisionMd) {
       await writeFile(resolve(assignmentDir, 'decision-record.md'), assignment.decisionMd, 'utf-8');
     }
+    if (assignment.progressMd) {
+      await writeFile(resolve(assignmentDir, 'progress.md'), assignment.progressMd, 'utf-8');
+    }
+    if (assignment.commentsMd) {
+      await writeFile(resolve(assignmentDir, 'comments.md'), assignment.commentsMd, 'utf-8');
+    }
   }
 }
+
+const COMMENTS_MD_ONE_OPEN_QUESTION = `---
+assignment: test-assignment
+entryCount: 1
+generated: "2026-04-07T10:00:00Z"
+updated: "2026-04-07T10:00:00Z"
+---
+
+# Comments
+
+## q-1
+
+**Recorded:** 2026-04-07T10:00:00Z
+**Author:** codex-1
+**Type:** question
+**Resolved:** false
+
+Waiting on approval?
+`;
 
 const PROJECT_MD = `---
 id: test-123
@@ -203,7 +230,11 @@ needsAttention:
 # Status`;
 
     await createProjectFiles(testDir, 'test-project', PROJECT_MD, [
-      { slug: 'test-assignment', assignmentMd: ASSIGNMENT_MD },
+      {
+        slug: 'test-assignment',
+        assignmentMd: ASSIGNMENT_MD,
+        commentsMd: COMMENTS_MD_ONE_OPEN_QUESTION,
+      },
     ], statusMd);
 
     const result = await listProjects(testDir);
@@ -258,6 +289,194 @@ describe('getAssignmentDetail', () => {
     expect(result!.handoff?.handoffCount).toBe(1);
     expect(result!.decisionRecord?.decisionCount).toBe(1);
     expect(result!.availableTransitions.map((action) => action.command)).toContain('review');
+  });
+
+  it('attaches progress and comments when the files exist', async () => {
+    const progressMd = `---
+assignment: test-assignment
+entryCount: 2
+generated: "2026-04-07T10:00:00Z"
+updated: "2026-04-07T14:00:00Z"
+---
+
+# Progress
+
+## 2026-04-07T14:00:00Z
+
+Second entry.
+
+## 2026-04-07T12:00:00Z
+
+First entry.
+`;
+
+    await createProjectFiles(testDir, 'test-project', PROJECT_MD, [
+      {
+        slug: 'test-assignment',
+        assignmentMd: ASSIGNMENT_MD,
+        progressMd,
+        commentsMd: COMMENTS_MD_ONE_OPEN_QUESTION,
+      },
+    ]);
+
+    const result = await getAssignmentDetail(testDir, 'test-project', 'test-assignment');
+    expect(result).not.toBeNull();
+    expect(result!.progress).not.toBeNull();
+    expect(result!.progress!.entryCount).toBe(2);
+    expect(result!.progress!.entries).toHaveLength(2);
+    expect(result!.progress!.entries[0].timestamp).toBe('2026-04-07T14:00:00Z');
+    expect(result!.comments).not.toBeNull();
+    expect(result!.comments!.entries[0].type).toBe('question');
+    expect(result!.comments!.entries[0].resolved).toBe(false);
+  });
+
+  it('leaves progress and comments null when the files are absent', async () => {
+    await createProjectFiles(testDir, 'test-project', PROJECT_MD, [
+      { slug: 'test-assignment', assignmentMd: ASSIGNMENT_MD },
+    ]);
+    const result = await getAssignmentDetail(testDir, 'test-project', 'test-assignment');
+    expect(result).not.toBeNull();
+    expect(result!.progress).toBeNull();
+    expect(result!.comments).toBeNull();
+  });
+});
+
+describe('listAssignmentsBoard standalone support', () => {
+  it('includes standalone assignments with projectSlug: null', async () => {
+    const { getAssignmentDetailById, listAssignmentsBoard } = await import('../dashboard/api.js');
+    const assignmentsDir = resolve(testDir, 'standalone');
+    await mkdir(assignmentsDir, { recursive: true });
+    const uuid = 'aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb';
+    const dir = resolve(assignmentsDir, uuid);
+    await mkdir(dir, { recursive: true });
+    await writeFile(
+      resolve(dir, 'assignment.md'),
+      `---
+id: ${uuid}
+slug: my-standalone
+title: My Standalone
+project: null
+type: feature
+status: pending
+priority: medium
+created: "2026-04-20T10:00:00Z"
+updated: "2026-04-20T10:00:00Z"
+assignee: null
+externalIds: []
+dependsOn: []
+blockedReason: null
+workspace:
+  repository: null
+  worktreePath: null
+  branch: null
+  parentBranch: null
+tags: []
+---
+
+# My Standalone`,
+      'utf-8',
+    );
+
+    const board = await listAssignmentsBoard(testDir, assignmentsDir);
+    const item = board.assignments.find((a) => a.id === uuid);
+    expect(item).toBeTruthy();
+    expect(item!.projectSlug).toBeNull();
+    expect(item!.projectTitle).toBeNull();
+    expect(item!.projectWorkspace).toBeNull();
+    expect(item!.slug).toBe('my-standalone');
+
+    const detail = await getAssignmentDetailById(testDir, assignmentsDir, uuid);
+    expect(detail).not.toBeNull();
+    expect(detail!.projectSlug).toBeNull();
+    expect(detail!.dependsOn).toEqual([]);
+  });
+
+  it('returns null from getAssignmentDetailById for an unknown id', async () => {
+    const { getAssignmentDetailById } = await import('../dashboard/api.js');
+    const assignmentsDir = resolve(testDir, 'standalone');
+    await mkdir(assignmentsDir, { recursive: true });
+    const detail = await getAssignmentDetailById(testDir, assignmentsDir, 'no-such-id');
+    expect(detail).toBeNull();
+  });
+});
+
+describe('referencedBy backlinks', () => {
+  it('lists A under B.referencedBy when A links to B via relative path in its comments', async () => {
+    const { getAssignmentDetail } = await import('../dashboard/api.js');
+    const commentsWithLink = `---
+assignment: source-a
+entryCount: 1
+generated: "2026-04-20T10:00:00Z"
+updated: "2026-04-20T10:00:00Z"
+---
+
+# Comments
+
+## c-1
+
+**Recorded:** 2026-04-20T10:00:00Z
+**Author:** claude-1
+**Type:** note
+
+See [target](../target-b/assignment.md) for context.
+`;
+
+    await createProjectFiles(testDir, 'test-project', PROJECT_MD, [
+      {
+        slug: 'source-a',
+        assignmentMd: ASSIGNMENT_MD.replace('slug: test-assignment', 'slug: source-a').replace('id: a-123', 'id: a-111'),
+        commentsMd: commentsWithLink,
+      },
+      {
+        slug: 'target-b',
+        assignmentMd: ASSIGNMENT_MD.replace('slug: test-assignment', 'slug: target-b').replace('id: a-123', 'id: a-222'),
+      },
+    ]);
+
+    const detail = await getAssignmentDetail(testDir, 'test-project', 'target-b');
+    expect(detail).not.toBeNull();
+    const refs = detail!.referencedBy;
+    const ref = refs.find((r) => r.sourceSlug === 'source-a');
+    expect(ref).toBeTruthy();
+    expect(ref!.mentions).toBeGreaterThanOrEqual(1);
+    expect(ref!.sourceProjectSlug).toBe('test-project');
+  });
+
+  it('caps referencedBy at 50 entries', async () => {
+    const { getAssignmentDetail } = await import('../dashboard/api.js');
+    const target: Array<{ slug: string; assignmentMd: string; commentsMd?: string }> = [
+      {
+        slug: 'target',
+        assignmentMd: ASSIGNMENT_MD.replace('slug: test-assignment', 'slug: target').replace('id: a-123', 'id: t-id'),
+      },
+    ];
+    for (let i = 0; i < 60; i++) {
+      target.push({
+        slug: `src-${i}`,
+        assignmentMd: ASSIGNMENT_MD.replace('slug: test-assignment', `slug: src-${i}`).replace('id: a-123', `id: src-${i}`),
+        commentsMd: `---
+assignment: src-${i}
+entryCount: 1
+generated: "2026-04-20T10:00:00Z"
+updated: "2026-04-20T10:00:00Z"
+---
+
+# Comments
+
+## c-1
+
+**Recorded:** 2026-04-20T10:00:00Z
+**Author:** a
+**Type:** note
+
+link: [t](../target/assignment.md)
+`,
+      });
+    }
+    await createProjectFiles(testDir, 'test-project', PROJECT_MD, target);
+
+    const detail = await getAssignmentDetail(testDir, 'test-project', 'target');
+    expect(detail!.referencedBy.length).toBe(50);
   });
 });
 

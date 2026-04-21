@@ -2,6 +2,8 @@
 id: d1e2f3a4-b5c6-7890-abcd-222222222222
 slug: implement-jwt-middleware
 title: Implement JWT Authentication Middleware
+project: build-auth-system
+type: feature
 status: in_progress
 priority: high
 created: "2026-03-15T09:30:00Z"
@@ -44,25 +46,10 @@ Implement Express.js middleware that validates JWT access tokens on protected ro
 
 Depends on the database schema from [design-auth-schema](../design-auth-schema/assignment.md). The schema is complete — see the [handoff notes](../design-auth-schema/handoff.md) for integration details. Key table: `sessions` with `jti` column for token validation. See [Auth Requirements](../../resources/auth-requirements.md) for full specs.
 
-## Questions & Answers
-
-### Q: Should the refresh token endpoint require the old access token or just the refresh token?
-**Asked:** 2026-03-18T11:00:00Z
-**A:** pending
-
-## Progress
-
-### 2026-03-18T14:30:00Z
-Implemented role-based route guard middleware (`requireRole`). Working on the refresh token endpoint next. The token generation and basic validation middleware are working and passing manual tests. Need to wire up the refresh token rotation logic using the `token_family` pattern from the schema design.
-
-### 2026-03-18T10:00:00Z
-JWT validation middleware is functional. It extracts the token from the Authorization header, verifies the RS256 signature, checks expiry, and looks up the `jti` in the sessions table to confirm the session is not revoked. Added proper error responses for expired, invalid, and revoked tokens.
-
-### 2026-03-17T10:30:00Z
-Started implementation. Set up RS256 key pair loading from environment variables. Implemented `generateAccessToken` and `generateRefreshToken` functions. Created the login endpoint that authenticates with bcrypt and returns both tokens.
-
 ## Links
 
+- [Progress](./progress.md)
+- [Comments](./comments.md)
 - [Scratchpad](./scratchpad.md)
 - [Handoff](./handoff.md)
 - [Decision Record](./decision-record.md)

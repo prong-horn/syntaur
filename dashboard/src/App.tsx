@@ -6,6 +6,7 @@ import { HelpPage } from './pages/Help';
 import { ProjectList } from './pages/ProjectList';
 import { ProjectDetail } from './pages/ProjectDetail';
 import { AssignmentDetail } from './pages/AssignmentDetail';
+import { StandaloneAssignmentDetail } from './pages/StandaloneAssignmentDetail';
 import { AssignmentsPage } from './pages/AssignmentsPage';
 import { CreateProject } from './pages/CreateProject';
 import { CreateAssignment } from './pages/CreateAssignment';
@@ -35,6 +36,7 @@ export function App() {
             <Route path="/" element={<Overview />} />
             <Route path="/projects" element={<ProjectList />} />
             <Route path="/assignments" element={<AssignmentsPage />} />
+            <Route path="/assignments/:id" element={<StandaloneAssignmentDetail />} />
             <Route path="/attention" element={<AttentionPage />} />
             <Route path="/servers" element={<ServersPage />} />
             <Route path="/agent-sessions" element={<AgentSessionsPage />} />

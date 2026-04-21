@@ -17,6 +17,7 @@ If the user passed `--complete`, transition directly to `completed` only when al
 
 1. Read `.syntaur/context.json`. If it does not exist, tell the user there is no active assignment.
 2. Read `<assignmentDir>/assignment.md` and evaluate every item in the `## Acceptance Criteria` section AND every item in the `## Todos` section. Superseded todos (marked `- [x] ~~...~~ (superseded by ...)`) count as resolved. If any acceptance criterion is unmet OR any todo is still `- [ ]` and not superseded, warn the user before proceeding.
+2.5. Append a final entry to `<assignmentDir>/progress.md` (reverse-chron, newest first) under a new `## <ISO 8601 timestamp>` heading summarizing the final state of the work. Bump `entryCount` and `updated` in the frontmatter. Do NOT add a `## Progress` section to `assignment.md` — progress entries live exclusively in `progress.md` as of protocol v2.0.
 3. Read `<assignmentDir>/handoff.md` and append a new handoff entry using the protocol format:
 
 ```markdown

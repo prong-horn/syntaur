@@ -54,6 +54,21 @@ describe('renderCursorProtocol', () => {
     expect(out).toContain('syntaur block');
     expect(out).toContain('syntaur unblock');
     expect(out).toContain('syntaur fail');
+    expect(out).toContain('syntaur comment');
+    expect(out).toContain('syntaur request');
+    expect(out).toContain('syntaur create-assignment');
+  });
+
+  it('references v2.0 protocol files', () => {
+    const out = renderCursorProtocol();
+    expect(out).toContain('progress.md');
+    expect(out).toContain('comments.md');
+  });
+
+  it('documents standalone assignments', () => {
+    const out = renderCursorProtocol();
+    expect(out).toContain('standalone');
+    expect(out).toMatch(/~\/\.syntaur\/assignments\//);
   });
 });
 
@@ -74,10 +89,11 @@ describe('renderCursorAssignment', () => {
 
   it('contains reading order', () => {
     const out = renderCursorAssignment(TEST_PARAMS);
-    expect(out).toContain('agent.md');
     expect(out).toContain('project.md');
     expect(out).toContain('assignment.md');
     expect(out).toContain('plan*.md');
+    expect(out).toContain('progress.md');
+    expect(out).toContain('comments.md');
     expect(out).toContain('handoff.md');
   });
 
@@ -85,6 +101,13 @@ describe('renderCursorAssignment', () => {
     const out = renderCursorAssignment(TEST_PARAMS);
     expect(out).toContain('scratchpad.md');
     expect(out).toContain('decision-record.md');
+    expect(out).toContain('progress.md');
+  });
+
+  it('flags comments.md as CLI-mediated', () => {
+    const out = renderCursorAssignment(TEST_PARAMS);
+    expect(out).toContain('syntaur comment');
+    expect(out).toContain('syntaur request');
   });
 });
 
@@ -144,6 +167,8 @@ describe('renderCodexAgents', () => {
     expect(out).toContain('syntaur assign');
     expect(out).toContain('syntaur start');
     expect(out).toContain('syntaur complete');
+    expect(out).toContain('syntaur comment');
+    expect(out).toContain('syntaur request');
   });
 
   it('includes assignment-specific CLI commands', () => {
@@ -151,11 +176,31 @@ describe('renderCodexAgents', () => {
     expect(out).toContain(
       `syntaur start ${TEST_PARAMS.assignmentSlug} --project ${TEST_PARAMS.projectSlug}`,
     );
+    expect(out).toContain(
+      `syntaur comment ${TEST_PARAMS.assignmentSlug}`,
+    );
   });
 
   it('includes the manifest in reading order', () => {
     const out = renderCodexAgents(TEST_PARAMS);
     expect(out).toContain(`${TEST_PARAMS.projectDir}/manifest.md`);
+  });
+
+  it('references v2.0 protocol files', () => {
+    const out = renderCodexAgents(TEST_PARAMS);
+    expect(out).toContain('progress.md');
+    expect(out).toContain('comments.md');
+  });
+
+  it('documents --one-off for standalone assignments', () => {
+    const out = renderCodexAgents(TEST_PARAMS);
+    expect(out).toContain('--one-off');
+    expect(out).toMatch(/~\/\.syntaur\/assignments\//);
+  });
+
+  it('mentions --type flag for create-assignment', () => {
+    const out = renderCodexAgents(TEST_PARAMS);
+    expect(out).toContain('--type');
   });
 });
 
@@ -176,12 +221,22 @@ describe('renderOpenCodeConfig', () => {
     expect(parsed.instructions.length).toBeGreaterThan(0);
   });
 
-  it('references agent.md path', () => {
+  it('references project.md path', () => {
     const out = renderOpenCodeConfig({
       projectDir: TEST_PARAMS.projectDir,
     });
-    expect(out).toContain('agent.md');
+    expect(out).toContain('project.md');
     expect(out).toContain(TEST_PARAMS.projectDir);
+  });
+
+  it('references v2.0 protocol files and CLIs', () => {
+    const out = renderOpenCodeConfig({
+      projectDir: TEST_PARAMS.projectDir,
+    });
+    expect(out).toContain('progress.md');
+    expect(out).toContain('comments.md');
+    expect(out).toContain('syntaur comment');
+    expect(out).toContain('syntaur request');
   });
 
   it('ends with newline', () => {

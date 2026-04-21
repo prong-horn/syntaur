@@ -3,6 +3,7 @@ import { resolve, dirname } from 'node:path';
 import { getTargetStatus, DEFAULT_STATUSES, DEFAULT_TRANSITION_TABLE, buildTransitionTable } from '../lifecycle/index.js';
 import { fileExists } from '../utils/fs.js';
 import { readConfig, type StatusConfig, type StatusTransition } from '../utils/config.js';
+import { resolveAssignmentById, type ResolvedAssignment } from '../utils/assignment-resolver.js';
 import {
   parseProject,
   parseStatus,
@@ -14,12 +15,15 @@ import {
   parseResource,
   parseMemory,
   parsePlaybook,
+  parseProgress,
+  parseComments,
   extractMermaidGraph,
 } from './parser.js';
 import { getDashboardHelp } from './help.js';
 import type {
   AssignmentBoardItem,
   AssignmentDetail,
+  AssignmentReference,
   AssignmentSummary,
   AssignmentsBoardResponse,
   AssignmentTransitionAction,
@@ -54,6 +58,39 @@ interface ProjectRecord {
   assignments: AssignmentRecord[];
   summary: ProjectSummary;
   dependencyGraph: string | null;
+}
+
+/** A standalone assignment lives at `<assignmentsDir>/<uuid>/` and has no containing project. */
+interface StandaloneRecord {
+  assignmentDir: string;
+  /** The UUID (folder name). */
+  id: string;
+  record: AssignmentRecord;
+}
+
+async function listStandaloneRecords(assignmentsDir: string | undefined): Promise<StandaloneRecord[]> {
+  if (!assignmentsDir) return [];
+  if (!(await fileExists(assignmentsDir))) return [];
+
+  const entries = await readdir(assignmentsDir, { withFileTypes: true });
+  const records: StandaloneRecord[] = [];
+
+  for (const entry of entries) {
+    if (!entry.isDirectory() || entry.name.startsWith('.') || entry.name.startsWith('_')) continue;
+    const assignmentDir = resolve(assignmentsDir, entry.name);
+    const assignmentMdPath = resolve(assignmentDir, 'assignment.md');
+    if (!(await fileExists(assignmentMdPath))) continue;
+    try {
+      const content = await readFile(assignmentMdPath, 'utf-8');
+      const record = parseAssignmentFull(content);
+      records.push({ assignmentDir, id: entry.name, record });
+    } catch {
+      // skip unreadable
+    }
+  }
+
+  records.sort((left, right) => compareTimestamps(right.record.updated, left.record.updated));
+  return records;
 }
 
 interface AttentionSeverityCounts {
@@ -276,10 +313,15 @@ export async function deleteWorkspace(projectsDir: string, name: string): Promis
  * Get overview data used by the app landing page.
  * GET /api/overview
  */
-export async function getOverview(projectsDir: string, serversDir?: string): Promise<OverviewResponse> {
+export async function getOverview(
+  projectsDir: string,
+  serversDir?: string,
+  assignmentsDir?: string,
+): Promise<OverviewResponse> {
   const projectRecords = await listProjectRecords(projectsDir);
-  const attention = buildAttentionItems(projectRecords);
-  const recentActivity = buildRecentActivity(projectRecords);
+  const standaloneRecords = await listStandaloneRecords(assignmentsDir);
+  const attention = buildAttentionItems(projectRecords, standaloneRecords);
+  const recentActivity = buildRecentActivity(projectRecords, standaloneRecords);
 
   let serverStats: OverviewResponse['serverStats'];
   if (serversDir) {
@@ -305,7 +347,7 @@ export async function getOverview(projectsDir: string, serversDir?: string): Pro
 
   return {
     generatedAt: new Date().toISOString(),
-    firstRun: projectRecords.length === 0,
+    firstRun: projectRecords.length === 0 && standaloneRecords.length === 0,
     stats: {
       activeProjects: projectRecords.filter((record) => record.summary.status === 'active').length,
       inProgressAssignments: projectRecords.reduce(
@@ -328,7 +370,7 @@ export async function getOverview(projectsDir: string, serversDir?: string): Pro
         (total, record) =>
           total + record.assignments.filter((assignment) => isStale(assignment.updated)).length,
         0,
-      ),
+      ) + standaloneRecords.filter((sr) => isStale(sr.record.updated)).length,
     },
     attention: attention.slice(0, OVERVIEW_ATTENTION_LIMIT),
     recentProjects: projectRecords
@@ -344,9 +386,14 @@ export async function getOverview(projectsDir: string, serversDir?: string): Pro
  * Get the explicit attention queue.
  * GET /api/attention
  */
-export async function getAttention(projectsDir: string, serversDir?: string): Promise<AttentionResponse> {
+export async function getAttention(
+  projectsDir: string,
+  serversDir?: string,
+  assignmentsDir?: string,
+): Promise<AttentionResponse> {
   const projectRecords = await listProjectRecords(projectsDir);
-  const items = buildAttentionItems(projectRecords);
+  const standaloneRecords = await listStandaloneRecords(assignmentsDir);
+  const items = buildAttentionItems(projectRecords, standaloneRecords);
 
   if (serversDir) {
     try {
@@ -404,9 +451,12 @@ export async function getAttention(projectsDir: string, serversDir?: string): Pr
  * Get all assignments across all projects for the global kanban board.
  * GET /api/assignments
  */
-export async function listAssignmentsBoard(projectsDir: string): Promise<AssignmentsBoardResponse> {
+export async function listAssignmentsBoard(
+  projectsDir: string,
+  assignmentsDir?: string,
+): Promise<AssignmentsBoardResponse> {
   const projectRecords = await listProjectRecords(projectsDir);
-  const assignments = await Promise.all(
+  const projectItems = await Promise.all(
     projectRecords.flatMap(async (record) =>
       Promise.all(
         record.assignments.map(async (assignment) =>
@@ -416,12 +466,56 @@ export async function listAssignmentsBoard(projectsDir: string): Promise<Assignm
     ),
   );
 
+  const standaloneRecords = await listStandaloneRecords(assignmentsDir);
+  const standaloneItems = await Promise.all(
+    standaloneRecords.map(async (sr) => toStandaloneBoardItem(sr)),
+  );
+
   return {
     generatedAt: new Date().toISOString(),
-    assignments: assignments
-      .flat()
+    assignments: [...projectItems.flat(), ...standaloneItems]
       .sort((left, right) => compareTimestamps(right.updated, left.updated)),
   };
+}
+
+async function toStandaloneBoardItem(sr: StandaloneRecord): Promise<AssignmentBoardItem> {
+  return {
+    ...toAssignmentSummary(sr.record),
+    projectSlug: null,
+    projectTitle: null,
+    blockedReason: sr.record.blockedReason,
+    projectWorkspace: null,
+    availableTransitions: await getStandaloneAvailableTransitions(sr.record),
+  };
+}
+
+async function getStandaloneAvailableTransitions(
+  assignment: AssignmentRecord,
+): Promise<AssignmentTransitionAction[]> {
+  // Standalone assignments have no dependencies, so skip dependency gating.
+  const config = await getStatusConfig();
+  const transitionDefs = getTransitionDefinitions(config);
+  const actions: AssignmentTransitionAction[] = [];
+
+  for (const definition of transitionDefs) {
+    let warning: string | null = null;
+    if (definition.command === 'start' && !assignment.assignee) {
+      warning = 'No assignee set — consider assigning before starting.';
+    }
+    const target = getTargetStatus(assignment.status, definition.command, config.transitionTable);
+    actions.push({
+      command: definition.command,
+      label: definition.label,
+      description: definition.description,
+      targetStatus: target ?? definition.command,
+      disabled: false,
+      disabledReason: null,
+      warning,
+      requiresReason: definition.requiresReason,
+    });
+  }
+
+  return actions;
 }
 
 /**
@@ -477,7 +571,7 @@ export async function getProjectDetail(
   const projectContent = await readFile(projectMdPath, 'utf-8');
   const project = parseProject(projectContent);
   const assignments = await listAssignmentRecords(projectPath);
-  const rollup = buildProjectRollup(project, assignments);
+  const rollup = await buildProjectRollup(projectPath, project, assignments);
   const dependencyGraph = await loadDependencyGraph(projectPath, assignments);
   const resources = await listResources(projectPath);
   const memories = await listMemories(projectPath);
@@ -573,6 +667,30 @@ export async function getAssignmentDetail(
     };
   }
 
+  let progress: AssignmentDetail['progress'] = null;
+  const progressPath = resolve(assignmentDir, 'progress.md');
+  if (await fileExists(progressPath)) {
+    const progressContent = await readFile(progressPath, 'utf-8');
+    const parsed = parseProgress(progressContent);
+    progress = {
+      updated: parsed.updated,
+      entryCount: parsed.entryCount,
+      entries: parsed.entries,
+    };
+  }
+
+  let comments: AssignmentDetail['comments'] = null;
+  const commentsPath = resolve(assignmentDir, 'comments.md');
+  if (await fileExists(commentsPath)) {
+    const commentsContent = await readFile(commentsPath, 'utf-8');
+    const parsed = parseComments(commentsContent);
+    comments = {
+      updated: parsed.updated,
+      entryCount: parsed.entryCount,
+      entries: parsed.entries,
+    };
+  }
+
   const detail: AssignmentDetail = {
     id: assignment.id,
     projectSlug,
@@ -596,6 +714,9 @@ export async function getAssignmentDetail(
     scratchpad,
     handoff,
     decisionRecord,
+    progress,
+    comments,
+    referencedBy: [],
     availableTransitions: await getAvailableTransitions(
       projectsDir,
       projectSlug,
@@ -673,6 +794,263 @@ export async function getAssignmentDetail(
 
   detail.enrichedLinks = enrichedLinks;
 
+  // Populate referencedBy — assignments that mention this one.
+  detail.referencedBy = await computeReferencedBy(
+    { id: assignment.id, projectSlug, slug: detail.slug },
+    projectsDir,
+    undefined,
+  );
+
+  return detail;
+}
+
+const REFERENCED_BY_LIMIT = 50;
+
+interface ReferenceTarget {
+  id: string;
+  projectSlug: string | null;
+  slug: string;
+}
+
+/**
+ * Scan every *other* assignment's Todos, progress, comments, and handoff bodies
+ * for markdown links that resolve to `target`, and return an aggregated per-source
+ * count (capped at 50).
+ */
+async function computeReferencedBy(
+  target: ReferenceTarget,
+  projectsDir: string,
+  assignmentsDir: string | undefined,
+): Promise<AssignmentReference[]> {
+  const sources: Array<{
+    id: string;
+    slug: string;
+    title: string;
+    projectSlug: string | null;
+    assignmentDir: string;
+  }> = [];
+
+  // project-nested
+  const projectRecords = await listProjectRecords(projectsDir);
+  for (const rec of projectRecords) {
+    for (const a of rec.assignments) {
+      sources.push({
+        id: a.id,
+        slug: a.slug,
+        title: a.title,
+        projectSlug: rec.summary.slug,
+        assignmentDir: resolve(rec.projectPath, 'assignments', a.slug),
+      });
+    }
+  }
+  // standalone
+  const standaloneRecords = await listStandaloneRecords(assignmentsDir);
+  for (const sr of standaloneRecords) {
+    sources.push({
+      id: sr.id,
+      slug: sr.record.slug || sr.id,
+      title: sr.record.title,
+      projectSlug: null,
+      assignmentDir: sr.assignmentDir,
+    });
+  }
+
+  const references: AssignmentReference[] = [];
+  for (const source of sources) {
+    if (source.id === target.id) continue; // skip self
+    const mentions = await countMentionsInAssignment(source.assignmentDir, target);
+    if (mentions > 0) {
+      references.push({
+        sourceId: source.id,
+        sourceSlug: source.slug,
+        sourceTitle: source.title,
+        sourceProjectSlug: source.projectSlug,
+        mentions,
+      });
+    }
+    if (references.length >= REFERENCED_BY_LIMIT) break;
+  }
+
+  return references.slice(0, REFERENCED_BY_LIMIT);
+}
+
+async function countMentionsInAssignment(
+  sourceDir: string,
+  target: ReferenceTarget,
+): Promise<number> {
+  const bodies: string[] = [];
+
+  // Todos section (from assignment.md)
+  const assignmentMd = resolve(sourceDir, 'assignment.md');
+  if (await fileExists(assignmentMd)) {
+    const content = await readFile(assignmentMd, 'utf-8');
+    const todosMatch = content.match(/^## Todos\s*$([\s\S]*?)(?=^## |$(?![\r\n]))/m);
+    if (todosMatch) bodies.push(todosMatch[1]);
+  }
+
+  for (const filename of ['progress.md', 'comments.md', 'handoff.md']) {
+    const path = resolve(sourceDir, filename);
+    if (await fileExists(path)) {
+      try {
+        bodies.push(await readFile(path, 'utf-8'));
+      } catch {
+        // ignore
+      }
+    }
+  }
+
+  let total = 0;
+  const patterns = buildLinkPatternsForTarget(target);
+  for (const body of bodies) {
+    for (const pattern of patterns) {
+      const matches = body.match(pattern);
+      if (matches) total += matches.length;
+    }
+  }
+  return total;
+}
+
+function buildLinkPatternsForTarget(target: ReferenceTarget): RegExp[] {
+  const patterns: RegExp[] = [];
+  // Standalone absolute route
+  patterns.push(new RegExp(`/assignments/${escapeRegExpLocal(target.id)}(?:/|\\b)`, 'g'));
+  if (target.projectSlug) {
+    // Project-nested absolute route
+    patterns.push(
+      new RegExp(
+        `/projects/${escapeRegExpLocal(target.projectSlug)}/assignments/${escapeRegExpLocal(target.slug)}(?:/|\\b)`,
+        'g',
+      ),
+    );
+    // Project-nested relative route
+    patterns.push(
+      new RegExp(`\\.\\./${escapeRegExpLocal(target.slug)}(?:/|\\b)`, 'g'),
+    );
+  }
+  return patterns;
+}
+
+function escapeRegExpLocal(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
+ * Resolve an assignment by UUID (standalone or project-nested) and return its full detail payload.
+ * GET /api/assignments/:id
+ */
+export async function getAssignmentDetailById(
+  projectsDir: string,
+  assignmentsDir: string,
+  id: string,
+): Promise<AssignmentDetail | null> {
+  const resolved = await resolveAssignmentById(projectsDir, assignmentsDir, id);
+  if (!resolved) return null;
+
+  if (!resolved.standalone && resolved.projectSlug) {
+    // Use the standard detail fetcher, then also scan standalone assignments
+    // for backlinks.
+    const detail = await getAssignmentDetail(projectsDir, resolved.projectSlug, resolved.assignmentSlug);
+    if (!detail) return null;
+    detail.referencedBy = await computeReferencedBy(
+      { id: detail.id, projectSlug: detail.projectSlug, slug: detail.slug },
+      projectsDir,
+      assignmentsDir,
+    );
+    return detail;
+  }
+
+  // Standalone path — load companion docs directly from the resolved dir.
+  const standaloneDetail = await buildStandaloneAssignmentDetail(resolved);
+  if (!standaloneDetail) return null;
+  standaloneDetail.referencedBy = await computeReferencedBy(
+    { id: standaloneDetail.id, projectSlug: null, slug: standaloneDetail.slug },
+    projectsDir,
+    assignmentsDir,
+  );
+  return standaloneDetail;
+}
+
+async function buildStandaloneAssignmentDetail(
+  resolved: ResolvedAssignment,
+): Promise<AssignmentDetail | null> {
+  const assignmentDir = resolved.assignmentDir;
+  const assignmentMdPath = resolve(assignmentDir, 'assignment.md');
+  if (!(await fileExists(assignmentMdPath))) return null;
+
+  const assignmentContent = await readFile(assignmentMdPath, 'utf-8');
+  const assignment = parseAssignmentFull(assignmentContent);
+
+  let plan: AssignmentDetail['plan'] = null;
+  const planPath = resolve(assignmentDir, 'plan.md');
+  if (await fileExists(planPath)) {
+    const parsed = parsePlan(await readFile(planPath, 'utf-8'));
+    plan = { status: parsed.status, updated: parsed.updated, body: parsed.body };
+  }
+
+  let scratchpad: AssignmentDetail['scratchpad'] = null;
+  const scratchpadPath = resolve(assignmentDir, 'scratchpad.md');
+  if (await fileExists(scratchpadPath)) {
+    const parsed = parseScratchpad(await readFile(scratchpadPath, 'utf-8'));
+    scratchpad = { updated: parsed.updated, body: parsed.body };
+  }
+
+  let handoff: AssignmentDetail['handoff'] = null;
+  const handoffPath = resolve(assignmentDir, 'handoff.md');
+  if (await fileExists(handoffPath)) {
+    const parsed = parseHandoff(await readFile(handoffPath, 'utf-8'));
+    handoff = { updated: parsed.updated, handoffCount: parsed.handoffCount, body: parsed.body };
+  }
+
+  let decisionRecord: AssignmentDetail['decisionRecord'] = null;
+  const decisionRecordPath = resolve(assignmentDir, 'decision-record.md');
+  if (await fileExists(decisionRecordPath)) {
+    const parsed = parseDecisionRecord(await readFile(decisionRecordPath, 'utf-8'));
+    decisionRecord = { updated: parsed.updated, decisionCount: parsed.decisionCount, body: parsed.body };
+  }
+
+  let progress: AssignmentDetail['progress'] = null;
+  const progressPath = resolve(assignmentDir, 'progress.md');
+  if (await fileExists(progressPath)) {
+    const parsed = parseProgress(await readFile(progressPath, 'utf-8'));
+    progress = { updated: parsed.updated, entryCount: parsed.entryCount, entries: parsed.entries };
+  }
+
+  let comments: AssignmentDetail['comments'] = null;
+  const commentsPath = resolve(assignmentDir, 'comments.md');
+  if (await fileExists(commentsPath)) {
+    const parsed = parseComments(await readFile(commentsPath, 'utf-8'));
+    comments = { updated: parsed.updated, entryCount: parsed.entryCount, entries: parsed.entries };
+  }
+
+  const detail: AssignmentDetail = {
+    id: assignment.id,
+    projectSlug: null,
+    slug: assignment.slug || resolved.id,
+    title: assignment.title,
+    status: assignment.status,
+    priority: assignment.priority as AssignmentDetail['priority'],
+    assignee: assignment.assignee,
+    dependsOn: [], // standalone cannot declare dependencies
+    links: [],
+    reverseLinks: [],
+    enrichedLinks: [],
+    blockedReason: assignment.blockedReason,
+    workspace: assignment.workspace,
+    externalIds: assignment.externalIds,
+    tags: assignment.tags,
+    created: assignment.created,
+    updated: assignment.updated,
+    body: assignment.body,
+    plan,
+    scratchpad,
+    handoff,
+    decisionRecord,
+    progress,
+    comments,
+    referencedBy: [],
+    availableTransitions: await getStandaloneAvailableTransitions(assignment),
+  };
+
   return detail;
 }
 
@@ -696,7 +1074,7 @@ async function listProjectRecords(projectsDir: string): Promise<ProjectRecord[]>
     const projectContent = await readFile(projectMdPath, 'utf-8');
     const project = parseProject(projectContent);
     const assignments = await listAssignmentRecords(projectPath);
-    const rollup = buildProjectRollup(project, assignments);
+    const rollup = await buildProjectRollup(projectPath, project, assignments);
     const updated = getProjectActivityTimestamp(project.updated, assignments);
 
     records.push({
@@ -832,21 +1210,22 @@ async function loadDependencyGraph(
   return buildDependencyGraph(assignments);
 }
 
-function buildProjectRollup(
+async function buildProjectRollup(
+  projectPath: string,
   project: ReturnType<typeof parseProject>,
   assignments: AssignmentRecord[],
-): {
+): Promise<{
   progress: ProgressCounts;
   needsAttention: NeedsAttention;
   status: string;
-} {
+}> {
   const progress: ProgressCounts = { total: assignments.length };
 
   let openQuestions = 0;
   for (const assignment of assignments) {
     const s = assignment.status;
     progress[s] = (progress[s] ?? 0) + 1;
-    openQuestions += countPendingAnswers(assignment.body);
+    openQuestions += await countOpenQuestions(projectPath, assignment.slug);
   }
 
   const needsAttention: NeedsAttention = {
@@ -1015,7 +1394,10 @@ async function getUnmetDependencies(projectPath: string, dependsOn: string[], te
   return unmet;
 }
 
-function buildAttentionItems(projectRecords: ProjectRecord[]): AttentionItem[] {
+function buildAttentionItems(
+  projectRecords: ProjectRecord[],
+  standaloneRecords: StandaloneRecord[] = [],
+): AttentionItem[] {
   const items: AttentionItem[] = [];
 
   for (const record of projectRecords) {
@@ -1071,10 +1453,42 @@ function buildAttentionItems(projectRecords: ProjectRecord[]): AttentionItem[] {
     }
   }
 
+  for (const sr of standaloneRecords) {
+    const assignment = sr.record;
+    const stale = isStale(assignment.updated);
+    const base = {
+      projectSlug: null,
+      projectTitle: null,
+      assignmentSlug: assignment.slug || sr.id,
+      assignmentTitle: assignment.title,
+      status: assignment.status,
+      updated: assignment.updated,
+      href: `/assignments/${sr.id}`,
+      blockedReason: assignment.blockedReason,
+      stale,
+    };
+
+    if (assignment.status === 'failed') {
+      items.push({ id: `standalone:${sr.id}:failed`, severity: 'critical', reason: 'Marked failed and needs a recovery decision.', ...base });
+    }
+    if (assignment.status === 'blocked') {
+      items.push({ id: `standalone:${sr.id}:blocked`, severity: 'high', reason: assignment.blockedReason || 'Blocked and waiting for intervention.', ...base });
+    }
+    if (assignment.status === 'review') {
+      items.push({ id: `standalone:${sr.id}:review`, severity: 'medium', reason: 'Ready for review.', ...base });
+    }
+    if (stale) {
+      items.push({ id: `standalone:${sr.id}:stale`, severity: 'low', reason: 'No source updates have been recorded in the last 7 days.', ...base });
+    }
+  }
+
   return items.sort(compareAttentionItems);
 }
 
-function buildRecentActivity(projectRecords: ProjectRecord[]): RecentActivityItem[] {
+function buildRecentActivity(
+  projectRecords: ProjectRecord[],
+  standaloneRecords: StandaloneRecord[] = [],
+): RecentActivityItem[] {
   const activity: RecentActivityItem[] = [];
 
   for (const record of projectRecords) {
@@ -1103,6 +1517,21 @@ function buildRecentActivity(projectRecords: ProjectRecord[]): RecentActivityIte
         summary: `Assignment is ${assignment.status} with ${assignment.priority} priority.`,
       });
     }
+  }
+
+  for (const sr of standaloneRecords) {
+    const assignment = sr.record;
+    activity.push({
+      id: `standalone-assignment:${sr.id}`,
+      type: 'assignment',
+      title: assignment.title,
+      updated: assignment.updated,
+      href: `/assignments/${sr.id}`,
+      projectSlug: null,
+      projectTitle: null,
+      assignmentSlug: assignment.slug || sr.id,
+      summary: `Standalone assignment is ${assignment.status} with ${assignment.priority} priority.`,
+    });
   }
 
   activity.sort((left, right) => compareTimestamps(right.updated, left.updated));
@@ -1138,6 +1567,30 @@ function isStale(updated: string): boolean {
 function countPendingAnswers(body: string): number {
   const matches = body.match(/^\*\*A:\*\*\s+pending\s*$/gim);
   return matches ? matches.length : 0;
+}
+
+async function countOpenQuestions(
+  projectPath: string,
+  assignmentSlug: string,
+): Promise<number> {
+  const commentsPath = resolve(
+    projectPath,
+    'assignments',
+    assignmentSlug,
+    'comments.md',
+  );
+  if (!(await fileExists(commentsPath))) {
+    return 0;
+  }
+  try {
+    const content = await readFile(commentsPath, 'utf-8');
+    const parsed = parseComments(content);
+    return parsed.entries.filter(
+      (e) => e.type === 'question' && e.resolved !== true,
+    ).length;
+  } catch {
+    return 0;
+  }
 }
 
 function getProjectActivityTimestamp(projectUpdated: string, assignments: AssignmentRecord[]): string {

@@ -361,4 +361,198 @@ Keep this paragraph.`, 'utf-8');
     expect((blocked.payload as any).assignment.status).toBe('blocked');
     expect((blocked.payload as any).assignment.blockedReason).toBe('Waiting on design review');
   });
+
+  it('POST /api/projects/:slug/assignments/:aslug/comments appends a comment', async () => {
+    await createAssignmentFixture();
+    const router = createWriteRouter(testDir);
+
+    const response = await invokeRoute(
+      router,
+      'post',
+      '/api/projects/:slug/assignments/:aslug/comments',
+      { slug: 'test-project', aslug: 'test-assignment' },
+      { body: 'Is the migration reversible?', type: 'question', author: 'alice' },
+    );
+
+    expect(response.statusCode).toBe(201);
+    const commentsPath = resolve(
+      testDir,
+      'test-project',
+      'assignments',
+      'test-assignment',
+      'comments.md',
+    );
+    const content = await readFile(commentsPath, 'utf-8');
+    expect(content).toContain('**Type:** question');
+    expect(content).toContain('**Author:** alice');
+    expect(content).toContain('**Resolved:** false');
+    expect(content).toContain('Is the migration reversible?');
+    expect(content).toContain('entryCount: 1');
+  });
+
+  it('PATCH comments/:commentId/resolved toggles the resolved flag on a question', async () => {
+    await createAssignmentFixture();
+    const router = createWriteRouter(testDir);
+
+    const add = await invokeRoute(
+      router,
+      'post',
+      '/api/projects/:slug/assignments/:aslug/comments',
+      { slug: 'test-project', aslug: 'test-assignment' },
+      { body: 'Q?', type: 'question', author: 'a' },
+    );
+    expect(add.statusCode).toBe(201);
+    const commentId = (add.payload as any).comment.id as string;
+
+    const toggle = await invokeRoute(
+      router,
+      'patch',
+      '/api/projects/:slug/assignments/:aslug/comments/:commentId/resolved',
+      { slug: 'test-project', aslug: 'test-assignment', commentId },
+      { resolved: true },
+    );
+    expect(toggle.statusCode).toBe(200);
+
+    const commentsPath = resolve(
+      testDir,
+      'test-project',
+      'assignments',
+      'test-assignment',
+      'comments.md',
+    );
+    const content = await readFile(commentsPath, 'utf-8');
+    expect(content).toMatch(/^## [a-z0-9]+\n\n[\s\S]*\*\*Resolved:\*\* true/m);
+  });
+
+  it('POST /api/assignments creates a standalone assignment at <assignmentsDir>/<uuid>/', async () => {
+    const assignmentsDir = resolve(testDir, 'standalone');
+    await mkdir(assignmentsDir, { recursive: true });
+    const router = createWriteRouter(testDir, assignmentsDir);
+
+    const response = await invokeRoute(
+      router,
+      'post',
+      '/api/assignments',
+      {},
+      { title: 'Standalone one-off', priority: 'high' },
+    );
+
+    expect(response.statusCode).toBe(201);
+    const payload = response.payload as any;
+    expect(payload.assignment.projectSlug).toBeNull();
+    expect(payload.assignment.title).toBe('Standalone one-off');
+    expect(payload.assignment.slug).toBe('standalone-one-off');
+    expect(payload.assignment.priority).toBe('high');
+    expect(payload.assignment.id).toMatch(/^[0-9a-f-]{36}$/);
+  });
+
+  it('rejects standalone create with dependsOn', async () => {
+    const assignmentsDir = resolve(testDir, 'standalone');
+    await mkdir(assignmentsDir, { recursive: true });
+    const router = createWriteRouter(testDir, assignmentsDir);
+
+    const response = await invokeRoute(
+      router,
+      'post',
+      '/api/assignments',
+      {},
+      { title: 'nope', dependsOn: ['something'] },
+    );
+    expect(response.statusCode).toBe(400);
+    expect((response.payload as any).error).toContain('dependsOn');
+  });
+
+  it('POST /api/assignments/:id/comments appends for a standalone assignment', async () => {
+    const assignmentsDir = resolve(testDir, 'standalone');
+    await mkdir(assignmentsDir, { recursive: true });
+    const router = createWriteRouter(testDir, assignmentsDir);
+
+    const create = await invokeRoute(
+      router,
+      'post',
+      '/api/assignments',
+      {},
+      { title: 'Task' },
+    );
+    const id = (create.payload as any).assignment.id as string;
+
+    const comment = await invokeRoute(
+      router,
+      'post',
+      '/api/assignments/:id/comments',
+      { id },
+      { body: 'Why?', type: 'question', author: 'alice' },
+    );
+    expect(comment.statusCode).toBe(201);
+
+    const content = await readFile(
+      resolve(assignmentsDir, id, 'comments.md'),
+      'utf-8',
+    );
+    expect(content).toContain('**Type:** question');
+    expect(content).toContain('**Author:** alice');
+    expect(content).toContain('Why?');
+  });
+
+  it('POST /api/assignments/:id/transitions/start moves standalone pending → in_progress', async () => {
+    const assignmentsDir = resolve(testDir, 'standalone');
+    await mkdir(assignmentsDir, { recursive: true });
+    const router = createWriteRouter(testDir, assignmentsDir);
+
+    const create = await invokeRoute(
+      router,
+      'post',
+      '/api/assignments',
+      {},
+      { title: 'Task' },
+    );
+    const id = (create.payload as any).assignment.id as string;
+
+    const start = await invokeRoute(
+      router,
+      'post',
+      '/api/assignments/:id/transitions/:command',
+      { id, command: 'start' },
+      {},
+    );
+    expect(start.statusCode).toBe(200);
+    expect((start.payload as any).assignment.status).toBe('in_progress');
+  });
+
+  it('GET /api/assignments is routable only when router constructed with assignmentsDir', async () => {
+    // Without assignmentsDir the POST /api/assignments route returns 501.
+    const router = createWriteRouter(testDir);
+    const response = await invokeRoute(
+      router,
+      'post',
+      '/api/assignments',
+      {},
+      { title: 'Task' },
+    );
+    expect(response.statusCode).toBe(501);
+  });
+
+  it('rejects resolve toggle for a non-question comment', async () => {
+    await createAssignmentFixture();
+    const router = createWriteRouter(testDir);
+
+    const add = await invokeRoute(
+      router,
+      'post',
+      '/api/projects/:slug/assignments/:aslug/comments',
+      { slug: 'test-project', aslug: 'test-assignment' },
+      { body: 'note body', type: 'note', author: 'a' },
+    );
+    const commentId = (add.payload as any).comment.id as string;
+
+    const toggle = await invokeRoute(
+      router,
+      'patch',
+      '/api/projects/:slug/assignments/:aslug/comments/:commentId/resolved',
+      { slug: 'test-project', aslug: 'test-assignment', commentId },
+      { resolved: true },
+    );
+    expect(toggle.statusCode).toBe(400);
+    expect((toggle.payload as any).error).toContain('Only questions');
+  });
 });
