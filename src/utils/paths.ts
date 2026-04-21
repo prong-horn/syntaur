@@ -20,6 +20,10 @@ export function defaultProjectDir(): string {
   return resolve(syntaurRoot(), 'projects');
 }
 
+export function assignmentsDir(): string {
+  return resolve(syntaurRoot(), 'assignments');
+}
+
 export function serversDir(): string {
   return resolve(syntaurRoot(), 'servers');
 }

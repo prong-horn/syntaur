@@ -132,6 +132,8 @@ export function parseAssignmentFrontmatter(fileContent: string): AssignmentFront
     id: getField('id') ?? '',
     slug: getField('slug') ?? '',
     title: getField('title') ?? '',
+    project: getField('project'),
+    type: getField('type'),
     status: getField('status') ?? 'pending',
     priority: (getField('priority') ?? 'medium') as AssignmentFrontmatter['priority'],
     created: getField('created') ?? '',

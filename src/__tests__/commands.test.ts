@@ -6,12 +6,17 @@ import { createProjectCommand } from '../commands/create-project.js';
 import { createAssignmentCommand } from '../commands/create-assignment.js';
 
 let testDir: string;
+let origSyntaurHome: string | undefined;
 
 beforeEach(async () => {
   testDir = await mkdtemp(join(tmpdir(), 'syntaur-test-'));
+  origSyntaurHome = process.env.SYNTAUR_HOME;
+  process.env.SYNTAUR_HOME = testDir;
 });
 
 afterEach(async () => {
+  if (origSyntaurHome === undefined) delete process.env.SYNTAUR_HOME;
+  else process.env.SYNTAUR_HOME = origSyntaurHome;
   await rm(testDir, { recursive: true, force: true });
 });
 
@@ -91,18 +96,17 @@ describe('createProjectCommand', () => {
 });
 
 describe('createAssignmentCommand', () => {
-  it('creates all expected assignment files via --one-off', async () => {
+  it('creates a standalone assignment via --one-off at ~/.syntaur/assignments/<uuid>/', async () => {
     await createAssignmentCommand('Write Tests', {
       oneOff: true,
-      dir: testDir,
     });
 
-    const assignmentDir = resolve(
-      testDir,
-      'write-tests',
-      'assignments',
-      'write-tests',
-    );
+    const standaloneRoot = resolve(testDir, 'assignments');
+    const folders = await readdir(standaloneRoot);
+    expect(folders.length).toBe(1);
+    const uuid = folders[0];
+    const assignmentDir = resolve(standaloneRoot, uuid);
+
     const files = await readdir(assignmentDir);
     expect(files).toContain('assignment.md');
     expect(files).not.toContain('plan.md');
@@ -116,9 +120,20 @@ describe('createAssignmentCommand', () => {
       'utf-8',
     );
     expect(content).toContain('slug: write-tests');
+    expect(content).toContain(`id: ${uuid}`);
+    expect(content).toContain('project: null');
     expect(content).toContain('status: pending');
     expect(content).toContain('priority: medium');
     expect(content).toContain('assignee: null');
+  });
+
+  it('rejects --one-off with --depends-on', async () => {
+    await expect(
+      createAssignmentCommand('Test', {
+        oneOff: true,
+        dependsOn: 'foo',
+      }),
+    ).rejects.toThrow('Standalone assignments cannot have dependencies');
   });
 
   it('creates assignment with --project in specified dir', async () => {

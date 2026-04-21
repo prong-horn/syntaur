@@ -2,7 +2,7 @@ import { resolve } from 'node:path';
 import { slugify, isValidSlug } from '../utils/slug.js';
 import { nowTimestamp } from '../utils/timestamp.js';
 import { generateId } from '../utils/uuid.js';
-import { expandHome } from '../utils/paths.js';
+import { expandHome, assignmentsDir as assignmentsDirFn } from '../utils/paths.js';
 import { ensureDir, writeFileForce, fileExists } from '../utils/fs.js';
 import { readConfig } from '../utils/config.js';
 import {
@@ -11,7 +11,6 @@ import {
   renderHandoff,
   renderDecisionRecord,
 } from '../templates/index.js';
-import { createProjectCommand } from './create-project.js';
 
 export interface CreateAssignmentOptions {
   project?: string;
@@ -21,6 +20,7 @@ export interface CreateAssignmentOptions {
   dependsOn?: string;
   links?: string;
   dir?: string;
+  type?: string;
 }
 
 export async function createAssignmentCommand(
@@ -46,6 +46,10 @@ export async function createAssignmentCommand(
     throw new Error(
       `Invalid project slug "${options.project}". Slugs must be lowercase, hyphen-separated, with no special characters.`,
     );
+  }
+
+  if (options.oneOff && options.dependsOn) {
+    throw new Error('Standalone assignments cannot have dependencies (--depends-on is not allowed with --one-off).');
   }
 
   const assignmentSlug = options.slug || slugify(title);
@@ -86,23 +90,27 @@ export async function createAssignmentCommand(
     );
   }
 
-  let projectSlug: string;
-  let projectDir: string;
-
   const config = await readConfig();
-  const baseDir = options.dir
-    ? expandHome(options.dir)
-    : config.defaultProjectDir;
+  const timestamp = nowTimestamp();
+  const id = generateId();
+
+  let assignmentDir: string;
+  let projectSlug: string | null;
+  let folderName: string;
 
   if (options.oneOff) {
-    projectSlug = await createProjectCommand(title, {
-      slug: assignmentSlug,
-      dir: baseDir,
-    });
-    projectDir = resolve(baseDir, projectSlug);
+    // Standalone: folder name = UUID, project: null
+    const standaloneRoot = assignmentsDirFn();
+    folderName = id;
+    assignmentDir = resolve(standaloneRoot, folderName);
+    projectSlug = null;
+    await ensureDir(standaloneRoot);
   } else {
+    const baseDir = options.dir
+      ? expandHome(options.dir)
+      : config.defaultProjectDir;
     projectSlug = options.project!;
-    projectDir = resolve(baseDir, projectSlug);
+    const projectDir = resolve(baseDir, projectSlug);
 
     const projectMdPath = resolve(projectDir, 'project.md');
     if (!(await fileExists(projectDir)) || !(await fileExists(projectMdPath))) {
@@ -112,9 +120,9 @@ export async function createAssignmentCommand(
     }
 
     if (dependsOn.length > 0) {
-      const assignmentsDir = resolve(projectDir, 'assignments');
+      const depDirBase = resolve(projectDir, 'assignments');
       for (const dep of dependsOn) {
-        const depDir = resolve(assignmentsDir, dep);
+        const depDir = resolve(depDirBase, dep);
         if (!(await fileExists(depDir))) {
           console.warn(
             `Warning: dependency "${dep}" does not exist in project "${projectSlug}" yet.`,
@@ -122,13 +130,10 @@ export async function createAssignmentCommand(
         }
       }
     }
-  }
 
-  const assignmentDir = resolve(
-    projectDir,
-    'assignments',
-    assignmentSlug,
-  );
+    folderName = assignmentSlug;
+    assignmentDir = resolve(projectDir, 'assignments', folderName);
+  }
 
   if (await fileExists(assignmentDir)) {
     throw new Error(
@@ -138,8 +143,7 @@ export async function createAssignmentCommand(
 
   await ensureDir(assignmentDir);
 
-  const timestamp = nowTimestamp();
-  const id = generateId();
+  const companionAssignmentRef = projectSlug === null ? id : assignmentSlug;
 
   const files: Array<[string, string]> = [
     [
@@ -152,26 +156,28 @@ export async function createAssignmentCommand(
         priority,
         dependsOn,
         links,
+        project: projectSlug,
+        type: options.type,
       }),
     ],
     [
       resolve(assignmentDir, 'scratchpad.md'),
       renderScratchpad({
-        assignmentSlug,
+        assignmentSlug: companionAssignmentRef,
         timestamp,
       }),
     ],
     [
       resolve(assignmentDir, 'handoff.md'),
       renderHandoff({
-        assignmentSlug,
+        assignmentSlug: companionAssignmentRef,
         timestamp,
       }),
     ],
     [
       resolve(assignmentDir, 'decision-record.md'),
       renderDecisionRecord({
-        assignmentSlug,
+        assignmentSlug: companionAssignmentRef,
         timestamp,
       }),
     ],
@@ -181,11 +187,22 @@ export async function createAssignmentCommand(
     await writeFileForce(filePath, content);
   }
 
-  console.log(
-    `Created assignment "${title}" in project "${projectSlug}" at ${assignmentDir}/`,
-  );
-  console.log(`  Slug: ${assignmentSlug}`);
+  if (projectSlug === null) {
+    console.log(
+      `Created standalone assignment "${title}" at ${assignmentDir}/`,
+    );
+    console.log(`  UUID: ${id}`);
+    console.log(`  Slug: ${assignmentSlug} (display only)`);
+  } else {
+    console.log(
+      `Created assignment "${title}" in project "${projectSlug}" at ${assignmentDir}/`,
+    );
+    console.log(`  Slug: ${assignmentSlug}`);
+  }
   console.log(`  Priority: ${priority}`);
+  if (options.type) {
+    console.log(`  Type: ${options.type}`);
+  }
   if (dependsOn.length > 0) {
     console.log(`  Depends on: ${dependsOn.join(', ')}`);
   }

@@ -127,3 +127,88 @@ export async function executeAssign(
     fromStatus: frontmatter.status,
   };
 }
+
+export interface TransitionByDirOptions extends TransitionOptions {
+  standalone?: boolean;
+}
+
+export async function executeTransitionByDir(
+  assignmentDir: string,
+  command: Exclude<TransitionCommand, 'assign'>,
+  options: TransitionByDirOptions = {},
+): Promise<TransitionResult> {
+  const filePath = resolve(assignmentDir, 'assignment.md');
+  const { content, frontmatter } = await readAssignment(filePath);
+
+  const targetStatus = getTargetStatus(frontmatter.status, command, options.transitionTable);
+  if (!targetStatus) {
+    return {
+      success: false,
+      message: `Unknown command '${command}' for assignment "${frontmatter.slug || assignmentDir}".`,
+      fromStatus: frontmatter.status,
+    };
+  }
+
+  const warnings: string[] = [];
+
+  if (command === 'start' && !options.standalone && frontmatter.dependsOn.length > 0) {
+    // Dependency check requires a project context — skip for standalone
+    const projectDir = resolve(assignmentDir, '..', '..');
+    const depCheck = await checkDependencies(
+      projectDir,
+      frontmatter.dependsOn,
+      options.terminalStatuses,
+    );
+    if (!depCheck.satisfied) {
+      warnings.push(`Starting with unmet dependencies: ${depCheck.unmet.join(', ')}`);
+    }
+  }
+
+  const updates: Partial<Pick<AssignmentFrontmatter, 'status' | 'assignee' | 'blockedReason' | 'updated'>> = {
+    status: targetStatus,
+    updated: nowTimestamp(),
+  };
+
+  if (command === 'start' && options.agent && !frontmatter.assignee) {
+    updates.assignee = options.agent;
+  }
+  if (command === 'block') {
+    updates.blockedReason = options.reason ?? null;
+  }
+  if (command === 'unblock') {
+    updates.blockedReason = null;
+  }
+
+  const updatedContent = updateAssignmentFile(content, updates);
+  await writeFileForce(filePath, updatedContent);
+
+  return {
+    success: true,
+    message: `Assignment "${frontmatter.slug || assignmentDir}" transitioned: ${frontmatter.status} -> ${targetStatus}`,
+    fromStatus: frontmatter.status,
+    toStatus: targetStatus,
+    warnings: warnings.length > 0 ? warnings : undefined,
+  };
+}
+
+export async function executeAssignByDir(
+  assignmentDir: string,
+  agent: string,
+): Promise<TransitionResult> {
+  const filePath = resolve(assignmentDir, 'assignment.md');
+  const { content, frontmatter } = await readAssignment(filePath);
+
+  const updates: Partial<Pick<AssignmentFrontmatter, 'status' | 'assignee' | 'blockedReason' | 'updated'>> = {
+    assignee: agent,
+    updated: nowTimestamp(),
+  };
+
+  const updatedContent = updateAssignmentFile(content, updates);
+  await writeFileForce(filePath, updatedContent);
+
+  return {
+    success: true,
+    message: `Assignment "${frontmatter.slug || assignmentDir}" assigned to '${agent}'.`,
+    fromStatus: frontmatter.status,
+  };
+}
