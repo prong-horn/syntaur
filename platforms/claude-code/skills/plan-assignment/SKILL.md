@@ -109,6 +109,8 @@ Then the markdown body should include:
 4. **Risks and Open Questions** -- anything that might block or complicate implementation
 5. **Testing Strategy** -- how to verify the implementation works
 
+**Decision capture:** While planning, note any meaningful choices you make (library picks, schema design, architectural calls, rejected alternatives). Record each as a numbered entry in `<assignmentDir>/decision-record.md` with the format `## Decision N: <short title>` — fields: Status (proposed/accepted), Context, Decision, Consequences. Downstream assignments that depend on this one auto-load these decisions during `/grab-assignment`, so they pay off over time.
+
 If the target file already exists (only possible for `plan.md` on first re-run against a scaffolded-but-empty plan), preserve the frontmatter and replace only the body, flipping `status` from `draft` to `in_progress` and updating `updated`.
 
 ### 4c. Update assignment.md Todos

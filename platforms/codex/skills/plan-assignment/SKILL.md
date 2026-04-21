@@ -45,6 +45,8 @@ Write these sections:
 4. Risks and Open Questions
 5. Testing Strategy
 
+**Decision capture:** While planning, record meaningful choices (library picks, schema design, architectural calls, rejected alternatives) as numbered entries in `<assignmentDir>/decision-record.md` using `## Decision N: <short title>` with Status (proposed/accepted), Context, Decision, Consequences. Downstream assignments that depend on this one auto-load these on grab.
+
 ## Reporting
 
 After writing the plan:

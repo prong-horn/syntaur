@@ -94,6 +94,14 @@ You have already read the assignment file in Step 3. Extract from the frontmatte
 
 Read the objective, acceptance criteria, and the `## Todos` section (if present) from the markdown body. Active (unchecked) todos indicate outstanding work and may link to plan files to execute.
 
+### Auto-load upstream decision records
+
+If `dependsOn` is non-empty, for each dependency slug `<dep>`, read:
+- `<projectDir>/assignments/<dep>/handoff.md` (if it exists) for integration context
+- `<projectDir>/assignments/<dep>/decision-record.md` (if it exists) for upstream decisions
+
+Surface those upstream decisions in the Step 6 report — downstream work should inherit prior decisions without the user having to ask.
+
 ### Set workspace if not configured
 
 If `workspace.repository` and `workspace.worktreePath` are both null, set them to the current working directory (`$(pwd)`). This is critical because the write boundary hook uses the workspace path to determine which files the agent is allowed to edit. Without it, all code edits outside the assignment directory will be blocked.
