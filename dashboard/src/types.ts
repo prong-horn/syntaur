@@ -76,6 +76,7 @@ export interface AgentSession {
   status: AgentSessionStatus;
   path: string;
   description?: string | null;
+  transcriptPath?: string | null;
 }
 
 export interface AgentSessionsResponse {
