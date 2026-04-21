@@ -540,6 +540,7 @@ export function AssignmentsPage() {
         </select>
         <select value={projectFilter} onChange={(e) => setProjectFilter(e.target.value)} className="editor-input max-w-[180px]">
           <option value="all">All projects</option>
+          <option value="__standalone__">Standalone</option>
           {uniqueProjects.map(([slug, title]) => (
             <option key={slug} value={slug}>{title}</option>
           ))}

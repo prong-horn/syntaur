@@ -156,34 +156,38 @@ export async function getGitInfo(cwd: string): Promise<{ branch: string | null; 
 // --- Auto-linking ---
 
 export interface AssignmentLink {
-  project: string;
+  project: string | null;
   slug: string;
   title: string;
 }
 
 export interface WorkspaceRecord {
-  projectSlug: string;
+  projectSlug: string | null;
+  /** For project-nested, the slug. For standalone, the UUID. */
   assignmentSlug: string;
   assignmentTitle: string;
   worktreePath: string | null;
   branch: string | null;
 }
 
-export async function loadWorkspaceRecords(projectsDir: string): Promise<WorkspaceRecord[]> {
+export async function loadWorkspaceRecords(
+  projectsDir: string,
+  assignmentsDir?: string,
+): Promise<WorkspaceRecord[]> {
   const records: WorkspaceRecord[] = [];
   try {
     const projects = await listProjects(projectsDir);
 
     for (const project of projects) {
-      const assignmentsDir = resolve(projectsDir, project.slug, 'assignments');
+      const projectAssignmentsDir = resolve(projectsDir, project.slug, 'assignments');
       let slugs: string[];
       try {
-        slugs = await readdir(assignmentsDir);
+        slugs = await readdir(projectAssignmentsDir);
       } catch {
         continue;
       }
       for (const aslug of slugs) {
-        const aFile = resolve(assignmentsDir, aslug, 'assignment.md');
+        const aFile = resolve(projectAssignmentsDir, aslug, 'assignment.md');
         try {
           const raw = await readFile(aFile, 'utf-8');
           const [fm] = extractFrontmatter(raw);
@@ -203,6 +207,33 @@ export async function loadWorkspaceRecords(projectsDir: string): Promise<Workspa
   } catch {
     // If projects can't be loaded, auto-linking just returns no matches
   }
+
+  if (assignmentsDir) {
+    try {
+      const entries = await readdir(assignmentsDir);
+      for (const id of entries) {
+        if (id.startsWith('.') || id.startsWith('_')) continue;
+        const aFile = resolve(assignmentsDir, id, 'assignment.md');
+        try {
+          const raw = await readFile(aFile, 'utf-8');
+          const [fm] = extractFrontmatter(raw);
+          if (!fm) continue;
+          records.push({
+            projectSlug: null,
+            assignmentSlug: id,
+            assignmentTitle: getField(fm, 'title') ?? id,
+            worktreePath: getNestedField(fm, 'workspace', 'worktreePath') ?? null,
+            branch: getNestedField(fm, 'workspace', 'branch') ?? null,
+          });
+        } catch {
+          continue;
+        }
+      }
+    } catch {
+      // standalone dir missing is fine
+    }
+  }
+
   return records;
 }
 
@@ -437,7 +468,7 @@ async function scanProcessSession(
 export async function scanAllSessions(
   serversDir: string,
   projectsDir: string,
-  options?: { bypassCache?: boolean },
+  options?: { bypassCache?: boolean; assignmentsDir?: string },
 ): Promise<ServersResponse> {
   if (!options?.bypassCache && cache && Date.now() < cache.expiry) {
     return cache.data;
@@ -446,7 +477,7 @@ export async function scanAllSessions(
   const tmuxAvailable = await checkTmuxAvailable();
   const names = await listSessionFiles(serversDir);
   const lsofOutput = await getLsofOutput();
-  const workspaceRecords = await loadWorkspaceRecords(projectsDir);
+  const workspaceRecords = await loadWorkspaceRecords(projectsDir, options?.assignmentsDir);
 
   const sessions: TrackedSession[] = [];
   for (const name of names) {
@@ -470,12 +501,13 @@ export async function scanSingleSession(
   serversDir: string,
   projectsDir: string,
   name: string,
+  options?: { assignmentsDir?: string },
 ): Promise<TrackedSession | null> {
   const data = await readSessionFile(serversDir, name);
   if (!data) return null;
 
   const lsofOutput = await getLsofOutput();
-  const workspaceRecords = await loadWorkspaceRecords(projectsDir);
+  const workspaceRecords = await loadWorkspaceRecords(projectsDir, options?.assignmentsDir);
 
   if (data.kind === 'process') {
     return scanProcessSession(data, lsofOutput, workspaceRecords);

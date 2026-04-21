@@ -14,6 +14,7 @@ interface SessionRow {
   status: string;
   path: string | null;
   description: string | null;
+  transcript_path: string | null;
 }
 
 function rowToSession(row: SessionRow): AgentSession {
@@ -27,6 +28,7 @@ function rowToSession(row: SessionRow): AgentSession {
     status: row.status as AgentSessionStatus,
     path: row.path ?? '',
     description: row.description ?? null,
+    transcriptPath: row.transcript_path ?? null,
   };
 }
 
@@ -45,7 +47,15 @@ export async function parseSessionsIndex(
 }
 
 /**
- * Insert a new session into the database.
+ * Upsert a session keyed on `session_id`.
+ *
+ * On conflict, non-null fields in the new payload fill in missing values on the
+ * existing row (COALESCE). `started` / `created_at` from the first insert are
+ * preserved. A session already in a terminal state (`completed` / `stopped`)
+ * is NOT revived by re-registration — status only moves forward.
+ *
+ * Makes registration idempotent across SessionStart hooks, `/track-session`,
+ * and grab-assignment all touching the same real session ID.
  */
 export async function appendSession(
   _projectDir: string,
@@ -53,8 +63,17 @@ export async function appendSession(
 ): Promise<void> {
   const db = getSessionDb();
   db.prepare(`
-    INSERT INTO sessions (session_id, project_slug, assignment_slug, agent, started, status, path, description)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO sessions (session_id, project_slug, assignment_slug, agent, started, status, path, description, transcript_path)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(session_id) DO UPDATE SET
+      project_slug    = COALESCE(excluded.project_slug,    project_slug),
+      assignment_slug = COALESCE(excluded.assignment_slug, assignment_slug),
+      agent           = excluded.agent,
+      status          = CASE WHEN status IN ('completed','stopped') THEN status ELSE excluded.status END,
+      path            = COALESCE(excluded.path,            path),
+      description     = COALESCE(excluded.description,     description),
+      transcript_path = COALESCE(excluded.transcript_path, transcript_path),
+      updated_at      = datetime('now')
   `).run(
     session.sessionId,
     session.projectSlug ?? null,
@@ -64,6 +83,7 @@ export async function appendSession(
     session.status,
     session.path,
     session.description ?? null,
+    session.transcriptPath ?? null,
   );
 }
 
@@ -149,59 +169,75 @@ const DONE_ASSIGNMENT_STATUSES = new Set(['completed', 'failed', 'review']);
 /**
  * Read the status field from an assignment.md frontmatter without full parsing.
  */
+async function readAssignmentStatusFromPath(
+  assignmentMdPath: string,
+): Promise<string | null> {
+  if (!(await fileExists(assignmentMdPath))) return null;
+  const raw = await readFile(assignmentMdPath, 'utf-8');
+  const match = raw.match(/^status:\s*(.+)$/m);
+  return match ? match[1].trim() : null;
+}
+
 async function readAssignmentStatus(
   projectDir: string,
   assignmentSlug: string,
 ): Promise<string | null> {
-  const assignmentPath = resolve(projectDir, 'assignments', assignmentSlug, 'assignment.md');
-  if (!(await fileExists(assignmentPath))) return null;
-
-  const raw = await readFile(assignmentPath, 'utf-8');
-  const match = raw.match(/^status:\s*(.+)$/m);
-  return match ? match[1].trim() : null;
+  return readAssignmentStatusFromPath(
+    resolve(projectDir, 'assignments', assignmentSlug, 'assignment.md'),
+  );
 }
 
 /**
  * Reconcile active sessions against assignment statuses.
  * Sessions whose assignments have moved to completed/failed/review are
  * marked as completed (or stopped for failed assignments).
+ * Standalone sessions (project_slug NULL) are resolved via assignmentsDir.
  * Returns the number of sessions that were updated.
  */
 export async function reconcileActiveSessions(
   projectsDir: string,
+  assignmentsDir?: string,
 ): Promise<number> {
   const db = getSessionDb();
 
-  // Get active sessions that are linked to a project/assignment (standalone sessions have nothing to reconcile)
+  // Include standalone sessions (project_slug NULL) when assignmentsDir is provided.
   const activeSessions = db
-    .prepare('SELECT * FROM sessions WHERE status = \'active\' AND project_slug IS NOT NULL AND assignment_slug IS NOT NULL')
+    .prepare('SELECT * FROM sessions WHERE status = \'active\' AND assignment_slug IS NOT NULL')
     .all() as SessionRow[];
 
   if (activeSessions.length === 0) return 0;
 
-  // Dedupe assignment slugs per project for status checks
-  // project_slug and assignment_slug are guaranteed non-null by the query filter above
-  const toCheck = new Map<string, Set<string>>();
-  for (const session of activeSessions) {
-    const slugs = toCheck.get(session.project_slug!) ?? new Set();
-    slugs.add(session.assignment_slug!);
-    toCheck.set(session.project_slug!, slugs);
-  }
-
-  // Read assignment statuses from disk
+  // Read assignment statuses from disk. Key is `${projectSlug ?? '__standalone__'}/${slug}`.
   const assignmentStatuses = new Map<string, string>();
-  for (const [projectSlug, slugs] of toCheck) {
-    const projectDir = resolve(projectsDir, projectSlug);
-    for (const slug of slugs) {
-      const status = await readAssignmentStatus(projectDir, slug);
-      if (status) assignmentStatuses.set(`${projectSlug}/${slug}`, status);
+  const seen = new Set<string>();
+  for (const session of activeSessions) {
+    const aslug = session.assignment_slug;
+    if (!aslug) continue;
+
+    const projectKey = session.project_slug ?? '__standalone__';
+    const key = `${projectKey}/${aslug}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+
+    if (session.project_slug) {
+      const status = await readAssignmentStatus(
+        resolve(projectsDir, session.project_slug),
+        aslug,
+      );
+      if (status) assignmentStatuses.set(key, status);
+    } else if (assignmentsDir) {
+      const status = await readAssignmentStatusFromPath(
+        resolve(assignmentsDir, aslug, 'assignment.md'),
+      );
+      if (status) assignmentStatuses.set(key, status);
     }
   }
 
   // Update stale sessions
   let totalUpdated = 0;
   for (const session of activeSessions) {
-    const key = `${session.project_slug}/${session.assignment_slug}`;
+    const projectKey = session.project_slug ?? '__standalone__';
+    const key = `${projectKey}/${session.assignment_slug}`;
     const assignmentStatus = assignmentStatuses.get(key);
     if (!assignmentStatus || !DONE_ASSIGNMENT_STATUSES.has(assignmentStatus)) continue;
 
@@ -212,4 +248,28 @@ export async function reconcileActiveSessions(
   }
 
   return totalUpdated;
+}
+
+/**
+ * List sessions for a resolved assignment (standalone or project-nested).
+ * Standalone: filter by assignment_slug = id AND project_slug IS NULL.
+ * Project-nested: filter by project_slug + assignment_slug.
+ */
+export async function listSessionsByAssignment(
+  projectSlug: string | null,
+  assignmentSlug: string,
+): Promise<AgentSession[]> {
+  const db = getSessionDb();
+  const rows = projectSlug === null
+    ? (db
+        .prepare(
+          'SELECT * FROM sessions WHERE assignment_slug = ? AND project_slug IS NULL ORDER BY started DESC',
+        )
+        .all(assignmentSlug) as SessionRow[])
+    : (db
+        .prepare(
+          'SELECT * FROM sessions WHERE project_slug = ? AND assignment_slug = ? ORDER BY started DESC',
+        )
+        .all(projectSlug, assignmentSlug) as SessionRow[]);
+  return rows.map(rowToSession);
 }

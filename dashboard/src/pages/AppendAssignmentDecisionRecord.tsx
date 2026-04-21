@@ -3,16 +3,24 @@ import { AppendEntryPage } from '../components/AppendEntryPage';
 import { useWorkspacePrefix } from '../hooks/useProjects';
 
 export function AppendAssignmentDecisionRecord() {
-  const { slug, aslug } = useParams<{ slug: string; aslug: string }>();
+  const { slug, aslug, id } = useParams<{ slug?: string; aslug?: string; id?: string }>();
   const wsPrefix = useWorkspacePrefix();
-  const projectSlug = slug ?? '';
-  const assignmentSlug = aslug ?? '';
+  const isStandalone = Boolean(id);
+  const loadUrl = isStandalone
+    ? `/api/assignments/${id}/decision-record/edit`
+    : `/api/projects/${slug}/assignments/${aslug}/decision-record/edit`;
+  const saveUrl = isStandalone
+    ? `/api/assignments/${id}/decision-record/entries`
+    : `/api/projects/${slug}/assignments/${aslug}/decision-record/entries`;
+  const redirectTo = isStandalone
+    ? `/assignments/${id}?tab=decisions`
+    : `${wsPrefix}/projects/${slug}/assignments/${aslug}?tab=decisions`;
 
   return (
     <AppendEntryPage
-      loadUrl={`/api/projects/${projectSlug}/assignments/${assignmentSlug}/decision-record/edit`}
-      saveUrl={`/api/projects/${projectSlug}/assignments/${assignmentSlug}/decision-record/entries`}
-      redirectTo={`${wsPrefix}/projects/${projectSlug}/assignments/${assignmentSlug}?tab=decisions`}
+      loadUrl={loadUrl}
+      saveUrl={saveUrl}
+      redirectTo={redirectTo}
       title="Append Decision Entry"
       description="Record a new decision and rationale without editing prior entries."
       helpTitle="Append-only decision history"

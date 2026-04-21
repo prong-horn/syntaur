@@ -363,8 +363,10 @@ export interface EditableDocumentResponse {
   documentType: EditableDocumentType;
   title: string;
   content: string;
-  projectSlug: string;
+  projectSlug: string | null;
   assignmentSlug?: string;
+  /** For standalone assignments, the UUID (routes use /assignments/:id/...). */
+  assignmentId?: string;
   appendOnly: boolean;
 }
 
@@ -381,7 +383,7 @@ export type WsMessageType =
 
 export interface WsMessage {
   type: WsMessageType;
-  projectSlug?: string;
+  projectSlug?: string | null;
   assignmentSlug?: string;
   timestamp: string;
 }
@@ -413,7 +415,7 @@ export interface TrackedPane {
   ports: number[];
   urls: string[];
   assignment: {
-    project: string;
+    project: string | null;
     slug: string;
     title: string;
   } | null;
@@ -452,6 +454,7 @@ export interface AgentSession {
   status: AgentSessionStatus;
   path: string;
   description?: string | null;
+  transcriptPath?: string | null;
 }
 
 export interface AgentSessionsResponse {

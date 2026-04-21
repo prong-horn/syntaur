@@ -9,9 +9,8 @@ import { MarkdownRenderer } from '../components/MarkdownRenderer';
 import { EmptyState } from '../components/EmptyState';
 
 /**
- * Minimal read-mostly view for standalone assignments (those at
- * `~/.syntaur/assignments/<uuid>/`). Full edit UI is deferred — use the
- * `syntaur` CLI for transitions and to edit companion docs.
+ * Read-and-edit view for standalone assignments (those at
+ * `~/.syntaur/assignments/<uuid>/`). Edit links route to the shared editor pages.
  */
 export function StandaloneAssignmentDetail() {
   const { id } = useParams<{ id: string }>();
@@ -32,6 +31,12 @@ export function StandaloneAssignmentDetail() {
           </span>
           <StatusBadge status={assignment.status} />
           <span className="text-xs font-mono text-neutral-500">{assignment.id}</span>
+          <Link
+            to={`/assignments/${assignment.id}/edit`}
+            className="ml-auto rounded border border-neutral-700 px-2 py-1 text-xs text-neutral-300 hover:border-neutral-500 hover:text-neutral-100"
+          >
+            Edit
+          </Link>
         </div>
         <h1 className="text-2xl font-semibold text-neutral-100">{assignment.title}</h1>
         {assignment.blockedReason ? (
@@ -133,6 +138,58 @@ export function StandaloneAssignmentDetail() {
             ),
           },
           {
+            value: 'plan',
+            label: 'Plan',
+            content: (
+              <div className="space-y-5">
+                {assignment.plan ? (
+                  <SectionCard>
+                    <MarkdownRenderer content={assignment.plan.body} emptyState="Plan file exists but is empty." />
+                    <div className="mt-3 flex justify-end">
+                      <Link
+                        to={`/assignments/${assignment.id}/plan/edit`}
+                        className="rounded border border-neutral-700 px-2 py-1 text-xs text-neutral-300 hover:border-neutral-500 hover:text-neutral-100"
+                      >
+                        Edit plan
+                      </Link>
+                    </div>
+                  </SectionCard>
+                ) : (
+                  <EmptyState
+                    title="No plan file yet"
+                    description="Create one via the CLI or `/plan-assignment`."
+                  />
+                )}
+              </div>
+            ),
+          },
+          {
+            value: 'scratchpad',
+            label: 'Scratchpad',
+            content: (
+              <div className="space-y-5">
+                {assignment.scratchpad ? (
+                  <SectionCard>
+                    <MarkdownRenderer content={assignment.scratchpad.body} emptyState="Scratchpad is empty." />
+                    <div className="mt-3 flex justify-end">
+                      <Link
+                        to={`/assignments/${assignment.id}/scratchpad/edit`}
+                        className="rounded border border-neutral-700 px-2 py-1 text-xs text-neutral-300 hover:border-neutral-500 hover:text-neutral-100"
+                      >
+                        Edit scratchpad
+                      </Link>
+                    </div>
+                  </SectionCard>
+                ) : (
+                  <EmptyState
+                    title="No scratchpad yet"
+                    description="Scratchpad is scaffolded at assignment creation time."
+                  />
+                )}
+              </div>
+            ),
+          },
+          {
             value: 'handoff',
             label: 'Handoff',
             count: assignment.handoff?.handoffCount ?? 0,
@@ -141,6 +198,14 @@ export function StandaloneAssignmentDetail() {
                 {assignment.handoff ? (
                   <SectionCard>
                     <MarkdownRenderer content={assignment.handoff.body} emptyState="No handoff history yet." />
+                    <div className="mt-3 flex justify-end">
+                      <Link
+                        to={`/assignments/${assignment.id}/handoff/edit`}
+                        className="rounded border border-neutral-700 px-2 py-1 text-xs text-neutral-300 hover:border-neutral-500 hover:text-neutral-100"
+                      >
+                        Append handoff
+                      </Link>
+                    </div>
                   </SectionCard>
                 ) : (
                   <EmptyState
@@ -160,6 +225,14 @@ export function StandaloneAssignmentDetail() {
                 {assignment.decisionRecord ? (
                   <SectionCard>
                     <MarkdownRenderer content={assignment.decisionRecord.body} emptyState="No decision history yet." />
+                    <div className="mt-3 flex justify-end">
+                      <Link
+                        to={`/assignments/${assignment.id}/decision-record/edit`}
+                        className="rounded border border-neutral-700 px-2 py-1 text-xs text-neutral-300 hover:border-neutral-500 hover:text-neutral-100"
+                      >
+                        Append decision
+                      </Link>
+                    </div>
                   </SectionCard>
                 ) : (
                   <EmptyState

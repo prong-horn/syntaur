@@ -4,6 +4,7 @@ import type { WsMessage } from './types.js';
 
 export interface WatcherOptions {
   projectsDir: string;
+  assignmentsDir?: string;
   serversDir?: string;
   playbooksDir?: string;
   todosDir?: string;
@@ -12,7 +13,7 @@ export interface WatcherOptions {
 }
 
 export function createWatcher(options: WatcherOptions): { close: () => Promise<void> } {
-  const { projectsDir, serversDir, playbooksDir, todosDir, onMessage, debounceMs = 300 } = options;
+  const { projectsDir, assignmentsDir, serversDir, playbooksDir, todosDir, onMessage, debounceMs = 300 } = options;
   const pendingEvents = new Map<string, NodeJS.Timeout>();
 
   // --- Projects watcher (existing logic) ---
@@ -66,6 +67,48 @@ export function createWatcher(options: WatcherOptions): { close: () => Promise<v
   projectsWatcher.on('change', handleProjectChange);
   projectsWatcher.on('add', handleProjectChange);
   projectsWatcher.on('unlink', handleProjectChange);
+
+  // --- Standalone assignments watcher ---
+  let standaloneWatcher: ReturnType<typeof watch> | null = null;
+
+  if (assignmentsDir) {
+    standaloneWatcher = watch(assignmentsDir, {
+      ignoreInitial: true,
+      persistent: true,
+      depth: 5,
+      ignored: /(^|[\/\\])\../,
+    });
+
+    function handleStandaloneChange(filePath: string): void {
+      const rel = relative(assignmentsDir!, filePath);
+      const parts = rel.split(sep);
+      if (parts.length === 0) return;
+      const assignmentId = parts[0];
+      if (!assignmentId) return;
+
+      const debounceKey = `__standalone__/${assignmentId}`;
+      const existing = pendingEvents.get(debounceKey);
+      if (existing) clearTimeout(existing);
+
+      pendingEvents.set(
+        debounceKey,
+        setTimeout(() => {
+          pendingEvents.delete(debounceKey);
+          const message: WsMessage = {
+            type: 'assignment-updated',
+            projectSlug: null,
+            assignmentSlug: assignmentId,
+            timestamp: new Date().toISOString(),
+          };
+          onMessage(message);
+        }, debounceMs),
+      );
+    }
+
+    standaloneWatcher.on('change', handleStandaloneChange);
+    standaloneWatcher.on('add', handleStandaloneChange);
+    standaloneWatcher.on('unlink', handleStandaloneChange);
+  }
 
   // --- Servers watcher (new) ---
   let serversWatcher: ReturnType<typeof watch> | null = null;
@@ -176,6 +219,7 @@ export function createWatcher(options: WatcherOptions): { close: () => Promise<v
       });
       pendingEvents.clear();
       await projectsWatcher.close();
+      if (standaloneWatcher) await standaloneWatcher.close();
       if (serversWatcher) await serversWatcher.close();
       if (playbooksWatcher) await playbooksWatcher.close();
       if (todosWatcher) await todosWatcher.close();

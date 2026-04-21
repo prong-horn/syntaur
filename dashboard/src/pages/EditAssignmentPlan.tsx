@@ -3,16 +3,24 @@ import { DocumentEditorPage } from '../components/DocumentEditorPage';
 import { useWorkspacePrefix } from '../hooks/useProjects';
 
 export function EditAssignmentPlan() {
-  const { slug, aslug } = useParams<{ slug: string; aslug: string }>();
+  const { slug, aslug, id } = useParams<{ slug?: string; aslug?: string; id?: string }>();
   const wsPrefix = useWorkspacePrefix();
-  const projectSlug = slug ?? '';
-  const assignmentSlug = aslug ?? '';
+  const isStandalone = Boolean(id);
+  const loadUrl = isStandalone
+    ? `/api/assignments/${id}/plan/edit`
+    : `/api/projects/${slug}/assignments/${aslug}/plan/edit`;
+  const saveUrl = isStandalone
+    ? `/api/assignments/${id}/plan`
+    : `/api/projects/${slug}/assignments/${aslug}/plan`;
+  const redirectTo = isStandalone
+    ? `/assignments/${id}?tab=plan`
+    : `${wsPrefix}/projects/${slug}/assignments/${aslug}?tab=plan`;
 
   return (
     <DocumentEditorPage
-      loadUrl={`/api/projects/${projectSlug}/assignments/${assignmentSlug}/plan/edit`}
-      saveUrl={`/api/projects/${projectSlug}/assignments/${assignmentSlug}/plan`}
-      redirectTo={`${wsPrefix}/projects/${projectSlug}/assignments/${assignmentSlug}?tab=plan`}
+      loadUrl={loadUrl}
+      saveUrl={saveUrl}
+      redirectTo={redirectTo}
       title="Edit Plan"
       description="Plans are separate from assignment status, so keep implementation steps here instead of overloading the assignment body."
       documentType="plan"

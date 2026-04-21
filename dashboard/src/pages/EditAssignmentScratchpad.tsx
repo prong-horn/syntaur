@@ -3,16 +3,24 @@ import { DocumentEditorPage } from '../components/DocumentEditorPage';
 import { useWorkspacePrefix } from '../hooks/useProjects';
 
 export function EditAssignmentScratchpad() {
-  const { slug, aslug } = useParams<{ slug: string; aslug: string }>();
+  const { slug, aslug, id } = useParams<{ slug?: string; aslug?: string; id?: string }>();
   const wsPrefix = useWorkspacePrefix();
-  const projectSlug = slug ?? '';
-  const assignmentSlug = aslug ?? '';
+  const isStandalone = Boolean(id);
+  const loadUrl = isStandalone
+    ? `/api/assignments/${id}/scratchpad/edit`
+    : `/api/projects/${slug}/assignments/${aslug}/scratchpad/edit`;
+  const saveUrl = isStandalone
+    ? `/api/assignments/${id}/scratchpad`
+    : `/api/projects/${slug}/assignments/${aslug}/scratchpad`;
+  const redirectTo = isStandalone
+    ? `/assignments/${id}?tab=scratchpad`
+    : `${wsPrefix}/projects/${slug}/assignments/${aslug}?tab=scratchpad`;
 
   return (
     <DocumentEditorPage
-      loadUrl={`/api/projects/${projectSlug}/assignments/${assignmentSlug}/scratchpad/edit`}
-      saveUrl={`/api/projects/${projectSlug}/assignments/${assignmentSlug}/scratchpad`}
-      redirectTo={`${wsPrefix}/projects/${projectSlug}/assignments/${assignmentSlug}?tab=scratchpad`}
+      loadUrl={loadUrl}
+      saveUrl={saveUrl}
+      redirectTo={redirectTo}
       title="Edit Scratchpad"
       description="Scratchpad is the assignment’s working memory surface for notes, experiments, and temporary context."
       documentType="scratchpad"

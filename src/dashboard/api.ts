@@ -327,7 +327,7 @@ export async function getOverview(
   if (serversDir) {
     try {
       const { scanAllSessions } = await import('./scanner.js');
-      const servers = await scanAllSessions(serversDir, projectsDir);
+      const servers = await scanAllSessions(serversDir, projectsDir, { assignmentsDir });
       if (servers.tmuxAvailable) {
         const alive = servers.sessions.filter(s => s.alive).length;
         const totalPorts = servers.sessions.reduce((sum, s) =>
@@ -398,7 +398,7 @@ export async function getAttention(
   if (serversDir) {
     try {
       const { scanAllSessions } = await import('./scanner.js');
-      const servers = await scanAllSessions(serversDir, projectsDir);
+      const servers = await scanAllSessions(serversDir, projectsDir, { assignmentsDir });
       for (const session of servers.sessions) {
         if (!session.alive) {
           items.push({
@@ -549,6 +549,68 @@ export async function getEditableDocument(
     content,
     projectSlug,
     assignmentSlug,
+    appendOnly: documentType === 'handoff' || documentType === 'decision-record',
+  };
+}
+
+/**
+ * Resolve an assignment by UUID (standalone or project-nested) and return its
+ * editable document payload for the given type.
+ */
+export async function getEditableDocumentById(
+  projectsDir: string,
+  assignmentsDir: string,
+  documentType: EditableDocumentResponse['documentType'],
+  id: string,
+): Promise<EditableDocumentResponse | null> {
+  const resolved = await resolveAssignmentById(projectsDir, assignmentsDir, id);
+  if (!resolved) return null;
+
+  if (!resolved.standalone && resolved.projectSlug) {
+    return getEditableDocument(
+      projectsDir,
+      documentType,
+      resolved.projectSlug,
+      resolved.assignmentSlug,
+    );
+  }
+
+  const fileName =
+    documentType === 'assignment'
+      ? 'assignment.md'
+      : documentType === 'plan'
+        ? 'plan.md'
+        : documentType === 'scratchpad'
+          ? 'scratchpad.md'
+          : documentType === 'handoff'
+            ? 'handoff.md'
+            : documentType === 'decision-record'
+              ? 'decision-record.md'
+              : null;
+  if (!fileName) return null;
+  const filePath = resolve(resolved.assignmentDir, fileName);
+  if (!(await fileExists(filePath))) return null;
+
+  const content = await readFile(filePath, 'utf-8');
+  const label = resolved.id;
+  const title =
+    documentType === 'assignment'
+      ? `Edit Assignment: ${label}`
+      : documentType === 'plan'
+        ? `Edit Plan: ${label}`
+        : documentType === 'scratchpad'
+          ? `Edit Scratchpad: ${label}`
+          : documentType === 'handoff'
+            ? `Append Handoff: ${label}`
+            : `Append Decision: ${label}`;
+
+  return {
+    documentType,
+    title,
+    content,
+    projectSlug: null,
+    assignmentSlug: undefined,
+    assignmentId: resolved.id,
     appendOnly: documentType === 'handoff' || documentType === 'decision-record',
   };
 }

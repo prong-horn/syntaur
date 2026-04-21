@@ -14,13 +14,17 @@ import {
   clearScanCache,
 } from './scanner.js';
 
-export function createServersRouter(serversDir: string, projectsDir: string): Router {
+export function createServersRouter(
+  serversDir: string,
+  projectsDir: string,
+  assignmentsDir?: string,
+): Router {
   const router = Router();
 
   // GET /api/servers — all sessions with cached scan data
   router.get('/', async (_req, res) => {
     try {
-      const result = await scanAllSessions(serversDir, projectsDir);
+      const result = await scanAllSessions(serversDir, projectsDir, { assignmentsDir });
       res.json(result);
     } catch (error) {
       res.status(500).json({ error: error instanceof Error ? error.message : 'Scan failed' });
@@ -30,7 +34,7 @@ export function createServersRouter(serversDir: string, projectsDir: string): Ro
   // GET /api/servers/:name — single session
   router.get('/:name', async (req, res) => {
     try {
-      const session = await scanSingleSession(serversDir, projectsDir, req.params.name);
+      const session = await scanSingleSession(serversDir, projectsDir, req.params.name, { assignmentsDir });
       if (!session) {
         res.status(404).json({ error: 'Session not found' });
         return;
@@ -87,7 +91,7 @@ export function createServersRouter(serversDir: string, projectsDir: string): Ro
         await updateLastRefreshed(serversDir, name);
       }
       clearScanCache();
-      const result = await scanAllSessions(serversDir, projectsDir, { bypassCache: true });
+      const result = await scanAllSessions(serversDir, projectsDir, { bypassCache: true, assignmentsDir });
       res.json(result);
     } catch (error) {
       res.status(500).json({ error: error instanceof Error ? error.message : 'Refresh failed' });
@@ -104,7 +108,7 @@ export function createServersRouter(serversDir: string, projectsDir: string): Ro
       }
       await updateLastRefreshed(serversDir, req.params.name);
       clearScanCache();
-      const session = await scanSingleSession(serversDir, projectsDir, req.params.name);
+      const session = await scanSingleSession(serversDir, projectsDir, req.params.name, { assignmentsDir });
       res.json(session);
     } catch (error) {
       res.status(500).json({ error: error instanceof Error ? error.message : 'Refresh failed' });

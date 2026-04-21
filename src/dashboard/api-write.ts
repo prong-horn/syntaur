@@ -19,6 +19,7 @@ import {
   getAssignmentDetail,
   getAssignmentDetailById,
   getEditableDocument,
+  getEditableDocumentById,
   getProjectDetail,
   getStatusConfig,
 } from './api.js';
@@ -1156,6 +1157,366 @@ export function createWriteRouter(projectsDir: string, assignmentsDir?: string):
     } catch (error) {
       console.error('Error toggling comment resolved (by id):', error);
       res.status(500).json({ error: `Failed to toggle resolved: ${(error as Error).message}` });
+    }
+  });
+
+  router.get('/api/assignments/:id/edit', async (req: Request, res: Response) => {
+    if (!assignmentsDir) {
+      res.status(501).json({ error: 'Standalone assignments not configured on this server' });
+      return;
+    }
+    const id = getParam(req.params.id);
+    const doc = await getEditableDocumentById(projectsDir, assignmentsDir, 'assignment', id);
+    if (!doc) {
+      res.status(404).json({ error: 'Assignment not found' });
+      return;
+    }
+    res.json(doc);
+  });
+
+  router.get('/api/assignments/:id/plan/edit', async (req: Request, res: Response) => {
+    if (!assignmentsDir) {
+      res.status(501).json({ error: 'Standalone assignments not configured on this server' });
+      return;
+    }
+    const id = getParam(req.params.id);
+    const doc = await getEditableDocumentById(projectsDir, assignmentsDir, 'plan', id);
+    if (!doc) {
+      res.status(404).json({ error: 'Plan not found' });
+      return;
+    }
+    res.json(doc);
+  });
+
+  router.get('/api/assignments/:id/scratchpad/edit', async (req: Request, res: Response) => {
+    if (!assignmentsDir) {
+      res.status(501).json({ error: 'Standalone assignments not configured on this server' });
+      return;
+    }
+    const id = getParam(req.params.id);
+    const doc = await getEditableDocumentById(projectsDir, assignmentsDir, 'scratchpad', id);
+    if (!doc) {
+      res.status(404).json({ error: 'Scratchpad not found' });
+      return;
+    }
+    res.json(doc);
+  });
+
+  router.get('/api/assignments/:id/handoff/edit', async (req: Request, res: Response) => {
+    if (!assignmentsDir) {
+      res.status(501).json({ error: 'Standalone assignments not configured on this server' });
+      return;
+    }
+    const id = getParam(req.params.id);
+    const doc = await getEditableDocumentById(projectsDir, assignmentsDir, 'handoff', id);
+    if (!doc) {
+      res.status(404).json({ error: 'Handoff log not found' });
+      return;
+    }
+    res.json(doc);
+  });
+
+  router.get('/api/assignments/:id/decision-record/edit', async (req: Request, res: Response) => {
+    if (!assignmentsDir) {
+      res.status(501).json({ error: 'Standalone assignments not configured on this server' });
+      return;
+    }
+    const id = getParam(req.params.id);
+    const doc = await getEditableDocumentById(projectsDir, assignmentsDir, 'decision-record', id);
+    if (!doc) {
+      res.status(404).json({ error: 'Decision record not found' });
+      return;
+    }
+    res.json(doc);
+  });
+
+  router.patch('/api/assignments/:id', async (req: Request, res: Response) => {
+    try {
+      if (!assignmentsDir) {
+        res.status(501).json({ error: 'Standalone assignments not configured on this server' });
+        return;
+      }
+      const id = getParam(req.params.id);
+      const resolved = await resolveAssignmentById(projectsDir, assignmentsDir, id);
+      if (!resolved) {
+        res.status(404).json({ error: `Assignment "${id}" not found` });
+        return;
+      }
+
+      const assignmentPath = resolve(resolved.assignmentDir, 'assignment.md');
+      const currentContent = await readCurrentDocument(assignmentPath);
+      if (!currentContent) {
+        res.status(404).json({ error: 'Assignment not found' });
+        return;
+      }
+
+      const nextContentRaw = requireContent(req, res);
+      if (!nextContentRaw) return;
+
+      const current = parseAssignmentFull(currentContent);
+      const next = parseAssignmentFull(nextContentRaw);
+
+      if (!next.title) {
+        res.status(400).json({ error: 'Assignment content must include a title.' });
+        return;
+      }
+
+      // Standalone: restore id + project + slug frontmatter (all immutable after create).
+      let nextContent = nextContentRaw;
+      if (current.id) nextContent = setTopLevelField(nextContent, 'id', current.id);
+      nextContent = setTopLevelField(nextContent, 'project', null);
+      if (current.slug) nextContent = setTopLevelField(nextContent, 'slug', current.slug);
+
+      if (next.status !== current.status && current.status === 'blocked' && next.status !== 'blocked') {
+        nextContent = setTopLevelField(nextContent, 'blockedReason', null);
+      }
+
+      nextContent = setTopLevelField(nextContent, 'updated', nowTimestamp());
+      await writeFileForce(assignmentPath, nextContent);
+
+      const assignment = await getAssignmentDetailById(projectsDir, assignmentsDir, id);
+      res.json({ assignment, content: nextContent });
+    } catch (error) {
+      console.error('Error updating standalone assignment:', error);
+      res.status(500).json({ error: `Failed to update assignment: ${(error as Error).message}` });
+    }
+  });
+
+  router.patch('/api/assignments/:id/plan', async (req: Request, res: Response) => {
+    try {
+      if (!assignmentsDir) {
+        res.status(501).json({ error: 'Standalone assignments not configured on this server' });
+        return;
+      }
+      const id = getParam(req.params.id);
+      const resolved = await resolveAssignmentById(projectsDir, assignmentsDir, id);
+      if (!resolved) {
+        res.status(404).json({ error: `Assignment "${id}" not found` });
+        return;
+      }
+
+      const planPath = resolve(resolved.assignmentDir, 'plan.md');
+      const currentContent = await readCurrentDocument(planPath);
+      if (!currentContent) {
+        res.status(404).json({ error: 'Plan not found' });
+        return;
+      }
+      const nextContentRaw = requireContent(req, res);
+      if (!nextContentRaw) return;
+
+      const parsed = parsePlan(nextContentRaw);
+      if (!parsed.assignment) {
+        res.status(400).json({ error: 'Plan content must include the assignment field.' });
+        return;
+      }
+
+      const nextContent = setTopLevelField(nextContentRaw, 'updated', nowTimestamp());
+      await writeFileForce(planPath, nextContent);
+
+      const assignment = await getAssignmentDetailById(projectsDir, assignmentsDir, id);
+      res.json({ assignment, content: nextContent });
+    } catch (error) {
+      console.error('Error updating standalone plan:', error);
+      res.status(500).json({ error: `Failed to update plan: ${(error as Error).message}` });
+    }
+  });
+
+  router.patch('/api/assignments/:id/scratchpad', async (req: Request, res: Response) => {
+    try {
+      if (!assignmentsDir) {
+        res.status(501).json({ error: 'Standalone assignments not configured on this server' });
+        return;
+      }
+      const id = getParam(req.params.id);
+      const resolved = await resolveAssignmentById(projectsDir, assignmentsDir, id);
+      if (!resolved) {
+        res.status(404).json({ error: `Assignment "${id}" not found` });
+        return;
+      }
+
+      const scratchpadPath = resolve(resolved.assignmentDir, 'scratchpad.md');
+      const currentContent = await readCurrentDocument(scratchpadPath);
+      if (!currentContent) {
+        res.status(404).json({ error: 'Scratchpad not found' });
+        return;
+      }
+      const nextContentRaw = requireContent(req, res);
+      if (!nextContentRaw) return;
+
+      const parsed = parseScratchpad(nextContentRaw);
+      if (!parsed.assignment) {
+        res.status(400).json({ error: 'Scratchpad content must include the assignment field.' });
+        return;
+      }
+
+      const nextContent = setTopLevelField(nextContentRaw, 'updated', nowTimestamp());
+      await writeFileForce(scratchpadPath, nextContent);
+
+      const assignment = await getAssignmentDetailById(projectsDir, assignmentsDir, id);
+      res.json({ assignment, content: nextContent });
+    } catch (error) {
+      console.error('Error updating standalone scratchpad:', error);
+      res.status(500).json({ error: `Failed to update scratchpad: ${(error as Error).message}` });
+    }
+  });
+
+  router.post('/api/assignments/:id/handoff/entries', async (req: Request, res: Response) => {
+    try {
+      if (!assignmentsDir) {
+        res.status(501).json({ error: 'Standalone assignments not configured on this server' });
+        return;
+      }
+      const id = getParam(req.params.id);
+      const resolved = await resolveAssignmentById(projectsDir, assignmentsDir, id);
+      if (!resolved) {
+        res.status(404).json({ error: `Assignment "${id}" not found` });
+        return;
+      }
+      const handoffPath = resolve(resolved.assignmentDir, 'handoff.md');
+      const currentContent = await readCurrentDocument(handoffPath);
+      if (!currentContent) {
+        res.status(404).json({ error: 'Handoff log not found' });
+        return;
+      }
+      const { title, body } = req.body || {};
+      if (!body || typeof body !== 'string' || !body.trim()) {
+        res.status(400).json({ error: 'body is required' });
+        return;
+      }
+      const parsed = parseHandoff(currentContent);
+      const nextContent = appendLogEntry(
+        currentContent,
+        'handoffCount',
+        parsed.handoffCount + 1,
+        title && typeof title === 'string' && title.trim() ? title.trim() : `Handoff ${parsed.handoffCount + 1}`,
+        body,
+        'No handoffs recorded yet.',
+      );
+      await writeFileForce(handoffPath, nextContent);
+      const assignment = await getAssignmentDetailById(projectsDir, assignmentsDir, id);
+      res.status(201).json({ assignment, content: nextContent });
+    } catch (error) {
+      console.error('Error appending standalone handoff entry:', error);
+      res.status(500).json({ error: `Failed to append handoff entry: ${(error as Error).message}` });
+    }
+  });
+
+  router.post('/api/assignments/:id/decision-record/entries', async (req: Request, res: Response) => {
+    try {
+      if (!assignmentsDir) {
+        res.status(501).json({ error: 'Standalone assignments not configured on this server' });
+        return;
+      }
+      const id = getParam(req.params.id);
+      const resolved = await resolveAssignmentById(projectsDir, assignmentsDir, id);
+      if (!resolved) {
+        res.status(404).json({ error: `Assignment "${id}" not found` });
+        return;
+      }
+      const decisionPath = resolve(resolved.assignmentDir, 'decision-record.md');
+      const currentContent = await readCurrentDocument(decisionPath);
+      if (!currentContent) {
+        res.status(404).json({ error: 'Decision record not found' });
+        return;
+      }
+      const { title, body } = req.body || {};
+      if (!body || typeof body !== 'string' || !body.trim()) {
+        res.status(400).json({ error: 'body is required' });
+        return;
+      }
+      const parsed = parseDecisionRecord(currentContent);
+      const nextContent = appendLogEntry(
+        currentContent,
+        'decisionCount',
+        parsed.decisionCount + 1,
+        title && typeof title === 'string' && title.trim() ? title.trim() : `Decision ${parsed.decisionCount + 1}`,
+        body,
+        'No decisions recorded yet.',
+      );
+      await writeFileForce(decisionPath, nextContent);
+      const assignment = await getAssignmentDetailById(projectsDir, assignmentsDir, id);
+      res.status(201).json({ assignment, content: nextContent });
+    } catch (error) {
+      console.error('Error appending standalone decision entry:', error);
+      res.status(500).json({ error: `Failed to append decision entry: ${(error as Error).message}` });
+    }
+  });
+
+  router.post('/api/assignments/:id/status-override', async (req: Request, res: Response) => {
+    try {
+      if (!assignmentsDir) {
+        res.status(501).json({ error: 'Standalone assignments not configured on this server' });
+        return;
+      }
+      const id = getParam(req.params.id);
+      const resolved = await resolveAssignmentById(projectsDir, assignmentsDir, id);
+      if (!resolved) {
+        res.status(404).json({ error: `Assignment "${id}" not found` });
+        return;
+      }
+      const assignmentPath = resolve(resolved.assignmentDir, 'assignment.md');
+      if (!(await fileExists(assignmentPath))) {
+        res.status(404).json({ error: 'Assignment not found' });
+        return;
+      }
+      const { status } = req.body || {};
+      const config = await getStatusConfig();
+      const validStatuses = config.statuses.map((s) => s.id);
+      if (typeof status !== 'string' || !validStatuses.includes(status)) {
+        res.status(400).json({ error: `Invalid status. Must be one of: ${validStatuses.join(', ')}.` });
+        return;
+      }
+      let content = await readFile(assignmentPath, 'utf-8');
+      content = setTopLevelField(content, 'status', status);
+      content = setTopLevelField(content, 'updated', nowTimestamp());
+      if (status !== 'blocked') {
+        content = setTopLevelField(content, 'blockedReason', null);
+      }
+      await writeFileForce(assignmentPath, content);
+      const assignment = await getAssignmentDetailById(projectsDir, assignmentsDir, id);
+      res.json({ assignment });
+    } catch (error) {
+      console.error('Error overriding standalone status:', error);
+      res.status(500).json({ error: `Failed to override status: ${(error as Error).message}` });
+    }
+  });
+
+  router.patch('/api/assignments/:id/acceptance-criteria/:index', async (req: Request, res: Response) => {
+    try {
+      if (!assignmentsDir) {
+        res.status(501).json({ error: 'Standalone assignments not configured on this server' });
+        return;
+      }
+      const id = getParam(req.params.id);
+      const resolved = await resolveAssignmentById(projectsDir, assignmentsDir, id);
+      if (!resolved) {
+        res.status(404).json({ error: `Assignment "${id}" not found` });
+        return;
+      }
+      const assignmentPath = resolve(resolved.assignmentDir, 'assignment.md');
+      const currentContent = await readCurrentDocument(assignmentPath);
+      if (!currentContent) {
+        res.status(404).json({ error: 'Assignment not found' });
+        return;
+      }
+      const { checked } = req.body || {};
+      if (typeof checked !== 'boolean') {
+        res.status(400).json({ error: 'checked must be a boolean' });
+        return;
+      }
+      const index = Number.parseInt(getParam(req.params.index), 10);
+      const result = toggleAcceptanceCriterion(currentContent, index, checked);
+      if ('error' in result) {
+        res.status(400).json({ error: result.error });
+        return;
+      }
+      const nextContent = setTopLevelField(result.content, 'updated', nowTimestamp());
+      await writeFileForce(assignmentPath, nextContent);
+      const assignment = await getAssignmentDetailById(projectsDir, assignmentsDir, id);
+      res.json({ assignment, content: nextContent });
+    } catch (error) {
+      console.error('Error toggling standalone acceptance criterion:', error);
+      res.status(500).json({ error: `Failed to toggle acceptance criterion: ${(error as Error).message}` });
     }
   });
 

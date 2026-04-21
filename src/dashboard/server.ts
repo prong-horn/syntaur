@@ -19,6 +19,8 @@ import {
   createWorkspace,
   deleteWorkspace,
 } from './api.js';
+import { resolveAssignmentById } from '../utils/assignment-resolver.js';
+import { listSessionsByAssignment, reconcileActiveSessions } from './agent-sessions.js';
 import { createWatcher } from './watcher.js';
 import { fileExists } from '../utils/fs.js';
 import { writeStatusConfig, deleteStatusConfig } from '../utils/config.js';
@@ -284,6 +286,25 @@ export function createDashboardServer(options: DashboardServerOptions) {
     }
   });
 
+  app.get('/api/assignments/:id/sessions', async (req, res) => {
+    try {
+      const resolved = await resolveAssignmentById(projectsDir, assignmentsDir, req.params.id);
+      if (!resolved) {
+        res.status(404).json({ error: `Assignment "${req.params.id}" not found` });
+        return;
+      }
+      await reconcileActiveSessions(projectsDir, assignmentsDir);
+      const sessions = await listSessionsByAssignment(
+        resolved.standalone ? null : resolved.projectSlug,
+        resolved.standalone ? resolved.id : resolved.assignmentSlug,
+      );
+      res.json({ sessions, generatedAt: new Date().toISOString() });
+    } catch (error) {
+      console.error('Error listing sessions by id:', error);
+      res.status(500).json({ error: 'Failed to list sessions' });
+    }
+  });
+
   app.get('/api/projects/:slug/assignments/:aslug', async (req, res) => {
     try {
       const detail = await getAssignmentDetail(
@@ -308,10 +329,10 @@ export function createDashboardServer(options: DashboardServerOptions) {
   app.use(createWriteRouter(projectsDir, assignmentsDir));
 
   // --- Servers API ---
-  app.use('/api/servers', createServersRouter(serversDir, projectsDir));
+  app.use('/api/servers', createServersRouter(serversDir, projectsDir, assignmentsDir));
 
   // --- Agent Sessions API ---
-  app.use('/api/agent-sessions', createAgentSessionsRouter(projectsDir, broadcast));
+  app.use('/api/agent-sessions', createAgentSessionsRouter(projectsDir, broadcast, assignmentsDir));
 
   // --- Playbooks API ---
   app.use('/api/playbooks', createPlaybooksRouter(playbooksDir));
@@ -347,13 +368,14 @@ export function createDashboardServer(options: DashboardServerOptions) {
     async start(): Promise<void> {
       watcherHandle = createWatcher({
         projectsDir,
+        assignmentsDir,
         serversDir,
         playbooksDir,
         todosDir,
         onMessage: broadcast,
       });
 
-      startAutodiscovery({ serversDir, projectsDir, excludePids: new Set([process.pid]) });
+      startAutodiscovery({ serversDir, projectsDir, assignmentsDir, excludePids: new Set([process.pid]) });
 
       return new Promise<void>((resolvePromise, reject) => {
         server.on('error', (err: NodeJS.ErrnoException) => {

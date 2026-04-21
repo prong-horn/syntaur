@@ -489,6 +489,13 @@ export function useAssignmentSessions(
   return useFetch<AgentSessionsResponse>(url, 'agent-sessions');
 }
 
+export function useAssignmentSessionsById(
+  id: string | undefined,
+): FetchState<AgentSessionsResponse> {
+  const url = id ? `/api/assignments/${id}/sessions` : null;
+  return useFetch<AgentSessionsResponse>(url, 'agent-sessions');
+}
+
 export function usePlaybooks(): FetchState<PlaybooksResponse> {
   return useFetch<PlaybooksResponse>('/api/playbooks', 'playbooks');
 }

@@ -37,6 +37,11 @@ export function App() {
             <Route path="/projects" element={<ProjectList />} />
             <Route path="/assignments" element={<AssignmentsPage />} />
             <Route path="/assignments/:id" element={<StandaloneAssignmentDetail />} />
+            <Route path="/assignments/:id/edit" element={<EditAssignment />} />
+            <Route path="/assignments/:id/plan/edit" element={<EditAssignmentPlan />} />
+            <Route path="/assignments/:id/scratchpad/edit" element={<EditAssignmentScratchpad />} />
+            <Route path="/assignments/:id/handoff/edit" element={<AppendAssignmentHandoff />} />
+            <Route path="/assignments/:id/decision-record/edit" element={<AppendAssignmentDecisionRecord />} />
             <Route path="/attention" element={<AttentionPage />} />
             <Route path="/servers" element={<ServersPage />} />
             <Route path="/agent-sessions" element={<AgentSessionsPage />} />
