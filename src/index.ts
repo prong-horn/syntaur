@@ -77,16 +77,17 @@ program
   .description('Create a new assignment within a project')
   .argument('<title>', 'Assignment title')
   .option('--project <slug>', 'Target project slug (required unless --one-off)')
-  .option('--one-off', 'Auto-wrap in a new single-assignment project')
-  .option('--slug <slug>', 'Override auto-generated slug')
+  .option('--one-off', 'Create a standalone assignment at ~/.syntaur/assignments/<uuid>/')
+  .option('--slug <slug>', 'Override auto-generated slug (display only for standalone; folder name for project-nested)')
   .option(
     '--priority <level>',
     'Priority level (low|medium|high|critical)',
     'medium',
   )
-  .option('--depends-on <slugs>', 'Comma-separated dependency slugs')
+  .option('--type <type>', 'Assignment type (e.g. feature, bug, refactor)')
+  .option('--depends-on <slugs>', 'Comma-separated dependency slugs (not allowed with --one-off)')
   .option('--links <slugs>', 'Comma-separated linked assignment slugs (projectSlug/assignmentSlug format)')
-  .option('--dir <path>', 'Override default project directory')
+  .option('--dir <path>', 'Override default project directory (ignored for --one-off)')
   .action(async (title, options) => {
     try {
       await createAssignmentCommand(title, options);

@@ -28,6 +28,30 @@ export interface StatusConfig {
   transitions: StatusTransition[];
 }
 
+export interface TypeDefinition {
+  id: string;
+  label?: string;
+  description?: string;
+  color?: string;
+  icon?: string;
+}
+
+export interface TypesConfig {
+  definitions: TypeDefinition[];
+  default: string;
+}
+
+export const DEFAULT_ASSIGNMENT_TYPES: TypesConfig = {
+  definitions: [
+    { id: 'feature', label: 'Feature' },
+    { id: 'bug', label: 'Bug' },
+    { id: 'refactor', label: 'Refactor' },
+    { id: 'research', label: 'Research' },
+    { id: 'chore', label: 'Chore' },
+  ],
+  default: 'feature',
+};
+
 export interface IntegrationConfig {
   claudePluginDir: string | null;
   codexPluginDir: string | null;
@@ -56,6 +80,7 @@ export interface SyntaurConfig {
   integrations: IntegrationConfig;
   backup: BackupConfig | null;
   statuses: StatusConfig | null;
+  types: TypesConfig | null;
 }
 
 const DEFAULT_CONFIG: SyntaurConfig = {
@@ -75,6 +100,7 @@ const DEFAULT_CONFIG: SyntaurConfig = {
   },
   backup: null,
   statuses: null,
+  types: null,
 };
 
 function parseFrontmatter(content: string): Record<string, string> {
@@ -551,5 +577,10 @@ export async function readConfig(): Promise<SyntaurConfig> {
         }
       : null,
     statuses: parseStatusConfig(content),
+    types: null,
   };
+}
+
+export function getAssignmentTypes(config: SyntaurConfig): TypesConfig {
+  return config.types ?? DEFAULT_ASSIGNMENT_TYPES;
 }
