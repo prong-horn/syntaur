@@ -16,8 +16,12 @@ export function syntaurRoot(): string {
   return resolve(homedir(), '.syntaur');
 }
 
-export function defaultMissionDir(): string {
-  return resolve(syntaurRoot(), 'missions');
+export function defaultProjectDir(): string {
+  return resolve(syntaurRoot(), 'projects');
+}
+
+export function assignmentsDir(): string {
+  return resolve(syntaurRoot(), 'assignments');
 }
 
 export function serversDir(): string {

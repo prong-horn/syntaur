@@ -9,7 +9,7 @@ import { readConfig, updateBackupConfig, type BackupConfig } from './config.js';
 
 const exec = promisify(execFile);
 
-export const VALID_CATEGORIES = ['missions', 'playbooks', 'todos', 'servers', 'config'] as const;
+export const VALID_CATEGORIES = ['projects', 'playbooks', 'todos', 'servers', 'config'] as const;
 export type BackupCategory = (typeof VALID_CATEGORIES)[number];
 
 const LOCK_FILE_NAME = '.backup-lock';
@@ -61,9 +61,9 @@ export async function resolveCategoryPath(
   category: BackupCategory,
 ): Promise<{ sourcePath: string; repoPath: string; isFile: boolean }> {
   switch (category) {
-    case 'missions': {
+    case 'projects': {
       const config = await readConfig();
-      return { sourcePath: config.defaultMissionDir, repoPath: 'missions', isFile: false };
+      return { sourcePath: config.defaultProjectDir, repoPath: 'projects', isFile: false };
     }
     case 'playbooks':
       return { sourcePath: playbooksDir(), repoPath: 'playbooks', isFile: false };
@@ -181,7 +181,7 @@ export async function backupToGithub(overrides?: {
     throw new Error(`Invalid repo URL: "${rawRepo}". Must start with https:// or git@.`);
   }
 
-  const categoriesCsv = config.backup?.categories ?? 'missions, playbooks, todos, servers, config';
+  const categoriesCsv = config.backup?.categories ?? 'projects, playbooks, todos, servers, config';
   const categories = overrides?.categories ?? resolveCategoriesStrict(categoriesCsv);
   if (categories.length === 0) {
     throw new Error('No valid backup categories selected.');
@@ -356,7 +356,7 @@ export async function restoreFromGithub(overrides?: {
     throw new Error(`Invalid repo URL: "${rawRepo}".`);
   }
 
-  const categoriesCsv = config.backup?.categories ?? 'missions, playbooks, todos, servers, config';
+  const categoriesCsv = config.backup?.categories ?? 'projects, playbooks, todos, servers, config';
   const categories = overrides?.categories ?? resolveCategoriesStrict(categoriesCsv);
   if (categories.length === 0) {
     throw new Error('No valid restore categories selected.');
@@ -427,7 +427,7 @@ export async function getBackupStatus(): Promise<{
   const locked = await fileExists(lockPath);
   return {
     repo: config.backup?.repo ?? null,
-    categories: config.backup?.categories ?? 'missions, playbooks, todos, servers, config',
+    categories: config.backup?.categories ?? 'projects, playbooks, todos, servers, config',
     lastBackup: config.backup?.lastBackup ?? null,
     lastRestore: config.backup?.lastRestore ?? null,
     locked,

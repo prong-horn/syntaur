@@ -8,6 +8,8 @@ export interface AssignmentParams {
   priority: 'low' | 'medium' | 'high' | 'critical';
   dependsOn: string[];
   links: string[];
+  project?: string | null;
+  type?: string;
 }
 
 export function renderAssignment(params: AssignmentParams): string {
@@ -20,11 +22,15 @@ export function renderAssignment(params: AssignmentParams): string {
     params.links.length === 0
       ? 'links: []'
       : `links:\n  - ${params.links.join('\n  - ')}`;
+  const projectYaml = `project: ${params.project == null ? 'null' : params.project}`;
+  const typeYaml = `type: ${params.type ?? 'feature'}`;
 
   return `---
 id: ${params.id}
 slug: ${params.slug}
 title: ${safeTitle}
+${projectYaml}
+${typeYaml}
 status: pending
 priority: ${params.priority}
 created: "${params.timestamp}"
@@ -68,16 +74,10 @@ Never delete superseded todos — preserve the history.
 
 <!-- Links to relevant docs, code, or other assignments. -->
 
-## Questions & Answers
-
-No questions yet.
-
-## Progress
-
-No progress yet.
-
 ## Links
 
+- [Progress](./progress.md)
+- [Comments](./comments.md)
 - [Scratchpad](./scratchpad.md)
 - [Handoff](./handoff.md)
 - [Decision Record](./decision-record.md)

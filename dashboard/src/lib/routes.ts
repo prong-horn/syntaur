@@ -8,12 +8,12 @@ export interface Breadcrumb {
 export interface ShellMeta {
   title: string;
   breadcrumbs: Breadcrumb[];
-  missionSlug: string | null;
+  projectSlug: string | null;
 }
 
 const SIDEBAR_SECTIONS = [
   '/',
-  '/missions',
+  '/projects',
   '/assignments',
   '/servers',
   '/agent-sessions',
@@ -47,11 +47,11 @@ export function getSidebarSection(pathname: string): SidebarSection | null {
     return '/';
   }
 
-  if (normalized.startsWith('/missions')) {
-    if (/^\/missions\/[^/]+\/assignments\//.test(normalized)) {
+  if (normalized.startsWith('/projects')) {
+    if (/^\/projects\/[^/]+\/assignments\//.test(normalized)) {
       return '/assignments';
     }
-    return '/missions';
+    return '/projects';
   }
 
   if (normalized.startsWith('/assignments')) {
@@ -98,38 +98,38 @@ export function buildShellMeta(pathname: string): ShellMeta {
   let parts = normalized.split('/').filter(Boolean);
   const breadcrumbs: Breadcrumb[] = [];
   let title = 'Overview';
-  let missionSlug: string | null = null;
+  let projectSlug: string | null = null;
 
   // Extract workspace prefix if present
   let workspacePrefix = '';
   if (parts[0] === 'w' && parts[1]) {
     workspacePrefix = `/w/${parts[1]}`;
-    breadcrumbs.push({ label: toTitleCase(parts[1]), path: `${workspacePrefix}/missions` });
+    breadcrumbs.push({ label: toTitleCase(parts[1]), path: `${workspacePrefix}/projects` });
     parts = parts.slice(2); // Remove 'w' and workspace name
   }
 
   if (parts.length === 0) {
-    return { title, breadcrumbs, missionSlug };
+    return { title, breadcrumbs, projectSlug };
   }
 
-  if (parts[0] === 'missions') {
-    breadcrumbs.push({ label: 'Missions', path: `${workspacePrefix}/missions` });
-    title = 'Missions';
+  if (parts[0] === 'projects') {
+    breadcrumbs.push({ label: 'Projects', path: `${workspacePrefix}/projects` });
+    title = 'Projects';
 
     if (parts[1]) {
-      missionSlug = parts[1];
-      breadcrumbs.push({ label: toTitleCase(parts[1]), path: `${workspacePrefix}/missions/${parts[1]}` });
+      projectSlug = parts[1];
+      breadcrumbs.push({ label: toTitleCase(parts[1]), path: `${workspacePrefix}/projects/${parts[1]}` });
       title = toTitleCase(parts[1]);
     }
 
     if (parts[2] === 'edit') {
-      title = 'Edit Mission';
+      title = 'Edit Project';
     } else if (parts[2] === 'create' && parts[3] === 'assignment') {
       title = 'Create Assignment';
     } else if (parts[2] === 'assignments' && parts[3]) {
       breadcrumbs.push({
         label: toTitleCase(parts[3]),
-        path: `${workspacePrefix}/missions/${parts[1]}/assignments/${parts[3]}`,
+        path: `${workspacePrefix}/projects/${parts[1]}/assignments/${parts[3]}`,
       });
       title = toTitleCase(parts[3]);
 
@@ -179,10 +179,10 @@ export function buildShellMeta(pathname: string): ShellMeta {
   } else if (parts[0] === 'settings') {
     title = 'Settings';
     breadcrumbs.push({ label: 'Settings', path: '/settings' });
-  } else if (parts[0] === 'create' && parts[1] === 'mission') {
-    title = 'Create Mission';
-    breadcrumbs.push({ label: 'Create Mission', path: `${workspacePrefix}/create/mission` });
+  } else if (parts[0] === 'create' && parts[1] === 'project') {
+    title = 'Create Project';
+    breadcrumbs.push({ label: 'Create Project', path: `${workspacePrefix}/create/project` });
   }
 
-  return { title, breadcrumbs, missionSlug };
+  return { title, breadcrumbs, projectSlug };
 }

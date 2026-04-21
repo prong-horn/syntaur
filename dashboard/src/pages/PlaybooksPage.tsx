@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { BookOpen, Plus, Tag, Search, FileText } from 'lucide-react';
-import { usePlaybooks } from '../hooks/useMissions';
+import { usePlaybooks } from '../hooks/useProjects';
 import { LoadingState } from '../components/LoadingState';
 import { ErrorState } from '../components/ErrorState';
 import { EmptyState } from '../components/EmptyState';

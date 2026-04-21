@@ -1,7 +1,7 @@
-import type { MissionSummary, AssignmentBoardItem } from '../hooks/useMissions';
+import type { ProjectSummary, AssignmentBoardItem } from '../hooks/useProjects';
 import type { PlaybookSummary, TrackedSession, TodoItem } from '../types';
 
-export type PaletteEntryType = 'mission' | 'assignment' | 'playbook' | 'server' | 'todo' | 'page';
+export type PaletteEntryType = 'project' | 'assignment' | 'playbook' | 'server' | 'todo' | 'page';
 
 export interface PaletteEntry {
   type: PaletteEntryType;
@@ -14,7 +14,7 @@ export interface PaletteEntry {
 
 // R2: only these routes have workspace-prefixed variants in App.tsx.
 export const WORKSPACE_CAPABLE_ROUTES = new Set<string>([
-  '/missions',
+  '/projects',
   '/assignments',
   '/servers',
   '/todos',
@@ -26,7 +26,7 @@ export function resolveRoute(basePath: string, wsPrefix: string): string {
 
 export const STATIC_PAGES = [
   { id: 'page-overview',    title: 'Overview',    basePath: '/',            keywords: ['home', 'dashboard'] },
-  { id: 'page-missions',    title: 'Missions',    basePath: '/missions',    keywords: [] },
+  { id: 'page-projects',    title: 'Projects',    basePath: '/projects',    keywords: [] },
   { id: 'page-assignments', title: 'Assignments', basePath: '/assignments', keywords: [] },
   { id: 'page-todos',       title: 'Todos',       basePath: '/todos',       keywords: ['tasks'] },
   { id: 'page-servers',     title: 'Servers',     basePath: '/servers',     keywords: ['sessions'] },
@@ -37,7 +37,7 @@ export const STATIC_PAGES = [
 ] as const;
 
 interface BuildInput {
-  missions?: MissionSummary[];
+  projects?: ProjectSummary[];
   assignments?: AssignmentBoardItem[];
   playbooks?: PlaybookSummary[];
   servers?: TrackedSession[];
@@ -58,28 +58,28 @@ export function buildIndex(input: BuildInput): PaletteEntry[] {
     });
   }
 
-  for (const m of input.missions ?? []) {
-    // Missions keep their own workspace; the route uses the mission's workspace, not current prefix.
-    const missionWs = m.workspace ? `/w/${m.workspace}` : '';
+  for (const m of input.projects ?? []) {
+    // Projects keep their own workspace; the route uses the project's workspace, not current prefix.
+    const projectWs = m.workspace ? `/w/${m.workspace}` : '';
     out.push({
-      type: 'mission',
-      id: `mission-${m.slug}`,
+      type: 'project',
+      id: `project-${m.slug}`,
       title: m.title,
       subtitle: m.slug,
       keywords: m.tags,
-      route: `${missionWs}/missions/${m.slug}`,
+      route: `${projectWs}/projects/${m.slug}`,
     });
   }
 
   for (const a of input.assignments ?? []) {
-    const assignWs = a.missionWorkspace ? `/w/${a.missionWorkspace}` : '';
+    const assignWs = a.projectWorkspace ? `/w/${a.projectWorkspace}` : '';
     out.push({
       type: 'assignment',
-      id: `assignment-${a.missionSlug}-${a.slug}`,
+      id: `assignment-${a.projectSlug}-${a.slug}`,
       title: a.title,
-      subtitle: `${a.missionTitle} \u00B7 ${a.status}`,
-      keywords: [a.missionSlug, a.assignee ?? ''].filter(Boolean),
-      route: `${assignWs}/missions/${a.missionSlug}/assignments/${a.slug}`,
+      subtitle: `${a.projectTitle} \u00B7 ${a.status}`,
+      keywords: [a.projectSlug, a.assignee ?? ''].filter(Boolean),
+      route: `${assignWs}/projects/${a.projectSlug}/assignments/${a.slug}`,
     });
   }
 

@@ -26,7 +26,7 @@ backupCommand
   .command('push')
   .description('Push a backup to the configured GitHub repo')
   .option('--repo <url>', 'Override the configured repo URL')
-  .option('--categories <list>', 'Comma-separated categories to back up (missions, playbooks, todos, servers, config)')
+  .option('--categories <list>', 'Comma-separated categories to back up (projects, playbooks, todos, servers, config)')
   .action(async (options) => {
     try {
       const result = await backupToGithub({

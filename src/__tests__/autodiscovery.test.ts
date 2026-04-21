@@ -80,7 +80,7 @@ describe('auto/kind field roundtrip', () => {
       cwd: '/tmp/test',
     });
     await setOverride(serversDir, 'with-override', 0, 0, {
-      mission: 'my-mission',
+      project: 'my-project',
       assignment: 'my-assignment',
     });
     const data = await readSessionFile(serversDir, 'with-override');
@@ -90,7 +90,7 @@ describe('auto/kind field roundtrip', () => {
     expect(data!.ports).toEqual([8080]);
     expect(data!.cwd).toBe('/tmp/test');
     expect(data!.overrides['0:0']).toEqual({
-      mission: 'my-mission',
+      project: 'my-project',
       assignment: 'my-assignment',
     });
   });
@@ -286,14 +286,14 @@ describe('isProcessAlive', () => {
 // ─── reconcile ───────────────────────────────────────────────────────────────
 
 describe('reconcile', () => {
-  const missionsDir = '/tmp/nonexistent-missions-dir';
+  const projectsDir = '/tmp/nonexistent-projects-dir';
 
   it('does not touch manual sessions', async () => {
     // Register a manual session
     await registerSession(serversDir, 'manual');
 
-    // Run reconcile with an empty missions dir (no workspaces to match)
-    await reconcile(serversDir, missionsDir);
+    // Run reconcile with an empty projects dir (no workspaces to match)
+    await reconcile(serversDir, projectsDir);
 
     // Manual session should still exist
     const files = await listSessionFiles(serversDir);
@@ -314,7 +314,7 @@ describe('reconcile', () => {
     const beforeFiles = await listSessionFiles(serversDir);
     expect(beforeFiles).toContain('dead-process');
 
-    await reconcile(serversDir, missionsDir);
+    await reconcile(serversDir, projectsDir);
 
     const afterFiles = await listSessionFiles(serversDir);
     expect(afterFiles).not.toContain('dead-process');
@@ -329,7 +329,7 @@ describe('reconcile', () => {
       cwd: '/tmp/fake',
     });
 
-    await reconcile(serversDir, missionsDir);
+    await reconcile(serversDir, projectsDir);
 
     const files = await listSessionFiles(serversDir);
     expect(files).toContain('alive-process');
@@ -342,7 +342,7 @@ describe('reconcile', () => {
 
     await registerAutoSession(serversDir, 'tmux-session', { kind: 'tmux' });
 
-    await reconcile(serversDir, missionsDir);
+    await reconcile(serversDir, projectsDir);
 
     // Session should still exist since tmux is unavailable
     const files = await listSessionFiles(serversDir);
@@ -361,7 +361,7 @@ describe('reconcile', () => {
       '---\nsession: unknown-kind\nregistered: 2026-01-01T00:00:00Z\nlast_refreshed: 2026-01-01T00:00:00Z\nauto: true\n---\n',
     );
 
-    await reconcile(serversDir, missionsDir);
+    await reconcile(serversDir, projectsDir);
 
     // Should still exist — unknown kind is left alone
     const files = await listSessionFiles(serversDir);
@@ -378,9 +378,9 @@ describe('reconcile', () => {
     });
 
     // After reconcile, the dead session should be removed
-    // (A real discovery would re-register it, but with an empty missionsDir
+    // (A real discovery would re-register it, but with an empty projectsDir
     //  there's nothing to discover — the point is the file slot is freed)
-    await reconcile(serversDir, missionsDir);
+    await reconcile(serversDir, projectsDir);
 
     const files = await listSessionFiles(serversDir);
     expect(files).not.toContain('proc-node-3000');

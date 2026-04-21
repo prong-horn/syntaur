@@ -6,9 +6,9 @@ import {
   isSyntaurDataInstalled,
 } from './utils/install.js';
 
-async function hasAnyMissionContent(missionsDir: string): Promise<boolean> {
+async function hasAnyProjectContent(projectsDir: string): Promise<boolean> {
   try {
-    const entries = await readdir(missionsDir, { withFileTypes: true });
+    const entries = await readdir(projectsDir, { withFileTypes: true });
     return entries.some((entry) => entry.isDirectory());
   } catch {
     return false;
@@ -25,19 +25,19 @@ async function isSetupComplete(): Promise<boolean> {
     claudePluginDir,
     codexPluginDir,
     codexMarketplacePath,
-    hasMissionContent,
+    hasProjectContent,
   ] = await Promise.all([
     getConfiguredOrLegacyManagedPluginDir('claude'),
     getConfiguredOrLegacyManagedPluginDir('codex'),
     getConfiguredOrLegacyMarketplacePath(),
-    hasAnyMissionContent(config.defaultMissionDir),
+    hasAnyProjectContent(config.defaultProjectDir),
   ]);
 
   return Boolean(
     claudePluginDir ||
       codexPluginDir ||
       codexMarketplacePath ||
-      hasMissionContent,
+      hasProjectContent,
   );
 }
 

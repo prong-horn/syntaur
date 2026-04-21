@@ -82,49 +82,49 @@ const configValid: Check = {
     }
     const fmBlock = fmMatch[1];
 
-    const rawMissionDir = readTopLevelField(fmBlock, 'defaultMissionDir');
-    if (rawMissionDir === null) {
+    const rawProjectDir = readTopLevelField(fmBlock, 'defaultProjectDir');
+    if (rawProjectDir === null) {
       return {
         id: this.id,
         category: this.category,
         title: this.title,
         status: 'error',
-        detail: 'config.md frontmatter is missing required field `defaultMissionDir`',
+        detail: 'config.md frontmatter is missing required field `defaultProjectDir`',
         affected: [configPath],
         remediation: {
           kind: 'manual',
-          suggestion: 'Add `defaultMissionDir: <absolute-path>` to the frontmatter or re-run `syntaur init --force`',
+          suggestion: 'Add `defaultProjectDir: <absolute-path>` to the frontmatter or re-run `syntaur init --force`',
           command: null,
         },
         autoFixable: false,
       } satisfies CheckResult;
     }
 
-    const expanded = expandHome(rawMissionDir);
+    const expanded = expandHome(rawProjectDir);
     if (!isAbsolute(expanded)) {
       return {
         id: this.id,
         category: this.category,
         title: this.title,
         status: 'error',
-        detail: `config.md defaultMissionDir "${rawMissionDir}" is not an absolute path — readConfig() silently fell back to the default`,
+        detail: `config.md defaultProjectDir "${rawProjectDir}" is not an absolute path — readConfig() silently fell back to the default`,
         affected: [configPath],
         remediation: {
           kind: 'manual',
-          suggestion: 'Set `defaultMissionDir` to an absolute path (or a `~/`-prefixed path)',
+          suggestion: 'Set `defaultProjectDir` to an absolute path (or a `~/`-prefixed path)',
           command: null,
         },
         autoFixable: false,
       } satisfies CheckResult;
     }
 
-    if (ctx.config.defaultMissionDir !== expanded) {
+    if (ctx.config.defaultProjectDir !== expanded) {
       return {
         id: this.id,
         category: this.category,
         title: this.title,
         status: 'error',
-        detail: `readConfig() returned defaultMissionDir="${ctx.config.defaultMissionDir}" but config.md declares "${rawMissionDir}" — a silent fallback occurred`,
+        detail: `readConfig() returned defaultProjectDir="${ctx.config.defaultProjectDir}" but config.md declares "${rawProjectDir}" — a silent fallback occurred`,
         affected: [configPath],
         remediation: {
           kind: 'manual',

@@ -2,10 +2,10 @@ import type { WorkspaceInfo } from '../dashboard/types.js';
 
 export interface TreeNode {
   id: string;
-  kind: 'mission' | 'assignment';
+  kind: 'project' | 'assignment';
   label: string;
   slug: string;
-  missionSlug: string;
+  projectSlug: string;
   status: string;
   priority?: 'low' | 'medium' | 'high' | 'critical';
   assignee?: string | null;

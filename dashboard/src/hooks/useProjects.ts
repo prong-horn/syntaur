@@ -9,10 +9,10 @@ export type ProgressCounts = Record<string, number> & { total: number };
 export interface NeedsAttention {
   blockedCount: number;
   failedCount: number;
-  unansweredQuestions: number;
+  openQuestions: number;
 }
 
-export interface MissionSummary {
+export interface ProjectSummary {
   slug: string;
   title: string;
   status: string;
@@ -30,7 +30,7 @@ export interface MissionSummary {
 
 export interface EnrichedLink {
   slug: string;
-  missionSlug: string;
+  projectSlug: string;
   assignmentSlug: string;
   title: string;
   status: string;
@@ -50,11 +50,11 @@ export interface AssignmentSummary {
 }
 
 export interface AssignmentBoardItem extends AssignmentSummary {
-  missionSlug: string;
-  missionTitle: string;
+  projectSlug: string;
+  projectTitle: string;
   blockedReason: string | null;
   availableTransitions: AssignmentTransitionAction[];
-  missionWorkspace: string | null;
+  projectWorkspace: string | null;
 }
 
 export interface ResourceSummary {
@@ -75,7 +75,7 @@ export interface MemorySummary {
   updated: string;
 }
 
-export interface MissionDetail {
+export interface ProjectDetail {
   slug: string;
   title: string;
   status: string;
@@ -122,7 +122,7 @@ export interface AssignmentTransitionAction {
 
 export interface AssignmentDetail {
   id: string;
-  missionSlug: string;
+  projectSlug: string;
   slug: string;
   title: string;
   status: string;
@@ -149,8 +149,8 @@ export interface AssignmentDetail {
 export interface AttentionItem {
   id: string;
   severity: 'critical' | 'high' | 'medium' | 'low';
-  missionSlug: string;
-  missionTitle: string;
+  projectSlug: string;
+  projectTitle: string;
   assignmentSlug: string;
   assignmentTitle: string;
   status: string;
@@ -180,12 +180,12 @@ export interface AssignmentsBoardResponse {
 
 export interface RecentActivityItem {
   id: string;
-  type: 'mission' | 'assignment';
+  type: 'project' | 'assignment';
   title: string;
   updated: string;
   href: string;
-  missionSlug: string;
-  missionTitle: string;
+  projectSlug: string;
+  projectTitle: string;
   assignmentSlug: string | null;
   summary: string;
 }
@@ -194,7 +194,7 @@ export interface OverviewResponse {
   generatedAt: string;
   firstRun: boolean;
   stats: {
-    activeMissions: number;
+    activeProjects: number;
     inProgressAssignments: number;
     blockedAssignments: number;
     reviewAssignments: number;
@@ -202,7 +202,7 @@ export interface OverviewResponse {
     staleAssignments: number;
   };
   attention: AttentionItem[];
-  recentMissions: MissionSummary[];
+  recentProjects: ProjectSummary[];
   recentActivity: RecentActivityItem[];
   serverStats?: {
     trackedSessions: number;
@@ -254,7 +254,7 @@ export interface HelpResponse {
     question: string;
     answer: string;
   }>;
-  firstMissionChecklist: Array<{
+  firstProjectChecklist: Array<{
     title: string;
     detail: string;
     command?: HelpCommand;
@@ -267,7 +267,7 @@ export interface HelpResponse {
 }
 
 export type EditableDocumentType =
-  | 'mission'
+  | 'project'
   | 'assignment'
   | 'plan'
   | 'scratchpad'
@@ -279,7 +279,7 @@ export interface EditableDocumentResponse {
   documentType: EditableDocumentType;
   title: string;
   content: string;
-  missionSlug: string;
+  projectSlug: string;
   assignmentSlug?: string;
   appendOnly: boolean;
 }
@@ -291,7 +291,7 @@ interface FetchState<T> {
   refetch: () => void;
 }
 
-function useFetch<T>(url: string | null, websocketScope?: 'missions' | 'mission' | 'assignment' | 'assignments' | 'overview' | 'attention' | 'servers' | 'agent-sessions' | 'playbooks'): FetchState<T> {
+function useFetch<T>(url: string | null, websocketScope?: 'projects' | 'project' | 'assignment' | 'assignments' | 'overview' | 'attention' | 'servers' | 'agent-sessions' | 'playbooks'): FetchState<T> {
   const [data, setData] = useState<T | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -343,7 +343,7 @@ function useFetch<T>(url: string | null, websocketScope?: 'missions' | 'mission'
       return;
     }
 
-    if (message.type === 'mission-updated' || message.type === 'assignment-updated') {
+    if (message.type === 'project-updated' || message.type === 'assignment-updated') {
       refetch();
     }
 
@@ -363,12 +363,12 @@ function useFetch<T>(url: string | null, websocketScope?: 'missions' | 'mission'
   return { data, loading, error, refetch };
 }
 
-export function useMissions(): FetchState<MissionSummary[]> {
-  return useFetch<MissionSummary[]>('/api/missions', 'missions');
+export function useProjects(): FetchState<ProjectSummary[]> {
+  return useFetch<ProjectSummary[]>('/api/projects', 'projects');
 }
 
 export function useWorkspaces(): FetchState<{ workspaces: string[]; hasUngrouped: boolean }> {
-  return useFetch<{ workspaces: string[]; hasUngrouped: boolean }>('/api/workspaces', 'missions');
+  return useFetch<{ workspaces: string[]; hasUngrouped: boolean }>('/api/workspaces', 'projects');
 }
 
 /** Returns the URL prefix for workspace-scoped links: '/w/syntaur' or '' */
@@ -393,18 +393,18 @@ export function useHelp(): FetchState<HelpResponse> {
   return useFetch<HelpResponse>('/api/help');
 }
 
-export function useMission(slug: string | undefined): FetchState<MissionDetail> {
-  const url = slug ? `/api/missions/${slug}` : null;
-  return useFetch<MissionDetail>(url, 'mission');
+export function useProject(slug: string | undefined): FetchState<ProjectDetail> {
+  const url = slug ? `/api/projects/${slug}` : null;
+  return useFetch<ProjectDetail>(url, 'project');
 }
 
 export function useAssignment(
-  missionSlug: string | undefined,
+  projectSlug: string | undefined,
   assignmentSlug: string | undefined,
 ): FetchState<AssignmentDetail> {
   const url =
-    missionSlug && assignmentSlug
-      ? `/api/missions/${missionSlug}/assignments/${assignmentSlug}`
+    projectSlug && assignmentSlug
+      ? `/api/projects/${projectSlug}/assignments/${assignmentSlug}`
       : null;
   return useFetch<AssignmentDetail>(url, 'assignment');
 }
@@ -431,12 +431,12 @@ export function useAgentSessions(): FetchState<AgentSessionsResponse> {
 }
 
 export function useAssignmentSessions(
-  missionSlug: string | undefined,
+  projectSlug: string | undefined,
   assignmentSlug: string | undefined,
 ): FetchState<AgentSessionsResponse> {
   const url =
-    missionSlug && assignmentSlug
-      ? `/api/agent-sessions/${missionSlug}?assignment=${assignmentSlug}`
+    projectSlug && assignmentSlug
+      ? `/api/agent-sessions/${projectSlug}?assignment=${assignmentSlug}`
       : null;
   return useFetch<AgentSessionsResponse>(url, 'agent-sessions');
 }

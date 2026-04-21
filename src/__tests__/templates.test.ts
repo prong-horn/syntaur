@@ -1,9 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   renderManifest,
-  renderMission,
-  renderAgent,
-  renderClaude,
+  renderProject,
   renderAssignment,
   renderPlan,
   renderScratchpad,
@@ -18,12 +16,12 @@ import {
 const TIMESTAMP = '2026-03-18T14:30:00Z';
 
 describe('renderManifest', () => {
-  it('produces valid frontmatter with version, mission, generated', () => {
-    const out = renderManifest({ slug: 'test-mission', timestamp: TIMESTAMP });
-    expect(out).toContain('version: "1.0"');
-    expect(out).toContain('mission: test-mission');
+  it('produces valid frontmatter with version, project, generated', () => {
+    const out = renderManifest({ slug: 'test-project', timestamp: TIMESTAMP });
+    expect(out).toContain('version: "2.0"');
+    expect(out).toContain('project: test-project');
     expect(out).toContain(`generated: "${TIMESTAMP}"`);
-    expect(out).toContain('# Mission: test-mission');
+    expect(out).toContain('# Project: test-project');
   });
 
   it('includes all index links', () => {
@@ -34,23 +32,23 @@ describe('renderManifest', () => {
     expect(out).toContain('(./_status.md)');
     expect(out).toContain('(./resources/_index.md)');
     expect(out).toContain('(./memories/_index.md)');
-    expect(out).toContain('(./agent.md)');
-    expect(out).toContain('(./claude.md)');
-    expect(out).toContain('(./mission.md)');
+    expect(out).toContain('(./project.md)');
+    expect(out).not.toContain('(./agent.md)');
+    expect(out).not.toContain('(./claude.md)');
   });
 });
 
-describe('renderMission', () => {
+describe('renderProject', () => {
   it('produces correct frontmatter fields', () => {
-    const out = renderMission({
+    const out = renderProject({
       id: 'test-uuid',
-      slug: 'test-mission',
-      title: 'Test Mission',
+      slug: 'test-project',
+      title: 'Test Project',
       timestamp: TIMESTAMP,
     });
     expect(out).toContain('id: test-uuid');
-    expect(out).toContain('slug: test-mission');
-    expect(out).toContain('title: "Test Mission"');
+    expect(out).toContain('slug: test-project');
+    expect(out).toContain('title: "Test Project"');
     expect(out).toContain('archived: false');
     expect(out).toContain('archivedAt: null');
     expect(out).toContain('archivedReason: null');
@@ -61,7 +59,7 @@ describe('renderMission', () => {
   });
 
   it('has correct body sections', () => {
-    const out = renderMission({
+    const out = renderProject({
       id: 'id',
       slug: 's',
       title: 'T',
@@ -70,32 +68,6 @@ describe('renderMission', () => {
     expect(out).toContain('# T');
     expect(out).toContain('## Overview');
     expect(out).toContain('## Notes');
-  });
-});
-
-describe('renderAgent', () => {
-  it('produces correct frontmatter', () => {
-    const out = renderAgent({ slug: 'test', timestamp: TIMESTAMP });
-    expect(out).toContain('mission: test');
-    expect(out).toContain(`updated: "${TIMESTAMP}"`);
-    expect(out).toContain('# Agent Instructions');
-  });
-});
-
-describe('renderClaude', () => {
-  it('has NO frontmatter', () => {
-    const out = renderClaude({ slug: 'test' });
-    expect(out).not.toMatch(/^---/);
-  });
-
-  it('starts with heading referencing slug', () => {
-    const out = renderClaude({ slug: 'my-mission' });
-    expect(out).toContain('# Claude Code Instructions \u2014 my-mission');
-  });
-
-  it('references agent.md', () => {
-    const out = renderClaude({ slug: 'test' });
-    expect(out).toContain('agent.md');
   });
 });
 
@@ -146,11 +118,11 @@ describe('renderAssignment', () => {
       timestamp: TIMESTAMP,
       priority: 'medium',
       dependsOn: [],
-      links: ['mission-a/task-1', 'mission-b/task-2'],
+      links: ['project-a/task-1', 'project-b/task-2'],
     });
     expect(out).toContain('links:');
-    expect(out).toContain('  - mission-a/task-1');
-    expect(out).toContain('  - mission-b/task-2');
+    expect(out).toContain('  - project-a/task-1');
+    expect(out).toContain('  - project-b/task-2');
     expect(out).not.toContain('links: []');
   });
 
@@ -184,9 +156,11 @@ describe('renderAssignment', () => {
     expect(out).toContain('## Acceptance Criteria');
     expect(out).toContain('## Todos');
     expect(out).toContain('## Context');
-    expect(out).toContain('## Questions & Answers');
-    expect(out).toContain('## Progress');
+    expect(out).not.toContain('## Questions & Answers');
+    expect(out).not.toContain('## Progress');
     expect(out).toContain('## Links');
+    expect(out).toContain('(./progress.md)');
+    expect(out).toContain('(./comments.md)');
     expect(out).not.toContain('- [Plan](./plan.md)');
     expect(out).toContain('(./scratchpad.md)');
     expect(out).toContain('(./handoff.md)');
@@ -264,18 +238,18 @@ describe('renderIndexAssignments', () => {
 
 describe('renderStatus', () => {
   it('has initial pending status with zero counts', () => {
-    const out = renderStatus({ slug: 'test', title: 'Test Mission', timestamp: TIMESTAMP });
+    const out = renderStatus({ slug: 'test', title: 'Test Project', timestamp: TIMESTAMP });
     expect(out).toContain('status: pending');
     expect(out).toContain('total: 0');
     expect(out).toContain('blockedCount: 0');
     expect(out).toContain('failedCount: 0');
-    expect(out).toContain('unansweredQuestions: 0');
+    expect(out).toContain('openQuestions: 0');
   });
 
   it('uses title in heading, not slug', () => {
     const out = renderStatus({ slug: 'test-slug', title: 'My Title', timestamp: TIMESTAMP });
-    expect(out).toContain('# Mission Status: My Title');
-    expect(out).not.toContain('# Mission Status: test-slug');
+    expect(out).toContain('# Project Status: My Title');
+    expect(out).not.toContain('# Project Status: test-slug');
   });
 });
 
@@ -286,7 +260,7 @@ describe('renderResourcesIndex', () => {
       title: 'Test',
       timestamp: TIMESTAMP,
     });
-    expect(out).toContain('mission: test');
+    expect(out).toContain('project: test');
     expect(out).toContain('total: 0');
     expect(out).toContain('# Resources');
   });
@@ -299,7 +273,7 @@ describe('renderMemoriesIndex', () => {
       title: 'Test',
       timestamp: TIMESTAMP,
     });
-    expect(out).toContain('mission: test');
+    expect(out).toContain('project: test');
     expect(out).toContain('total: 0');
     expect(out).toContain('# Memories');
   });

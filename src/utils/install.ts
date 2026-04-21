@@ -1064,12 +1064,12 @@ export async function removeSyntaurData(): Promise<void> {
   await rm(syntaurRoot(), { recursive: true, force: true });
 }
 
-export async function getConfiguredMissionDir(): Promise<string | null> {
+export async function getConfiguredProjectDir(): Promise<string | null> {
   if (!(await fileExists(resolve(syntaurRoot(), 'config.md')))) {
     return null;
   }
 
-  return (await readConfig()).defaultMissionDir;
+  return (await readConfig()).defaultProjectDir;
 }
 
 export function getPluginDisplayName(pluginKind: PluginKind): string {

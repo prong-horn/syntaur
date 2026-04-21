@@ -4,14 +4,8 @@ export type { ConfigParams } from './config.js';
 export { renderManifest } from './manifest.js';
 export type { ManifestParams } from './manifest.js';
 
-export { renderMission } from './mission.js';
-export type { MissionParams } from './mission.js';
-
-export { renderAgent } from './agent.js';
-export type { AgentParams } from './agent.js';
-
-export { renderClaude } from './claude.js';
-export type { ClaudeParams } from './claude.js';
+export { renderProject } from './project.js';
+export type { ProjectParams } from './project.js';
 
 export { renderAssignment } from './assignment.js';
 export type { AssignmentParams } from './assignment.js';
@@ -24,6 +18,12 @@ export type { ScratchpadParams } from './scratchpad.js';
 
 export { renderHandoff } from './handoff.js';
 export type { HandoffParams } from './handoff.js';
+
+export { renderProgress, formatProgressEntry } from './progress.js';
+export type { ProgressParams } from './progress.js';
+
+export { renderComments, formatCommentEntry } from './comments.js';
+export type { CommentsParams, Comment, CommentType } from './comments.js';
 
 export { renderDecisionRecord } from './decision-record.js';
 export type { DecisionRecordParams } from './decision-record.js';

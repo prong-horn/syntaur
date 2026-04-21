@@ -1,7 +1,7 @@
 {
   "name": "syntaur",
   "version": "0.1.7",
-  "description": "Run Syntaur mission and assignment workflows from Codex, including claiming work, planning, completing handoffs, session tracking, and write-boundary enforcement.",
+  "description": "Run Syntaur project and assignment workflows from Codex, including claiming work, planning, completing handoffs, session tracking, and write-boundary enforcement.",
   "author": {
     "name": "Brennen"
   },
@@ -9,8 +9,8 @@
   "hooks": "./hooks.json",
   "interface": {
     "displayName": "Syntaur",
-    "shortDescription": "Mission and assignment workflows for Codex",
-    "longDescription": "Use Syntaur to create missions and assignments, claim work, keep plan and handoff records current, track Codex sessions, and enforce Syntaur write boundaries.",
+    "shortDescription": "Project and assignment workflows for Codex",
+    "longDescription": "Use Syntaur to create projects and assignments, claim work, keep plan and handoff records current, track Codex sessions, and enforce Syntaur write boundaries.",
     "developerName": "Brennen",
     "category": "Coding",
     "capabilities": [

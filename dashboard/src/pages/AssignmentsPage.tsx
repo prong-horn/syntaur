@@ -8,7 +8,7 @@ import {
   useWorkspacePrefix,
   type AssignmentBoardItem,
   type AssignmentTransitionAction,
-} from '../hooks/useMissions';
+} from '../hooks/useProjects';
 import { runAssignmentTransition, overrideAssignmentStatus } from '../lib/assignments';
 import { getAssignmentColumns } from '../lib/kanban';
 import { formatDate } from '../lib/format';
@@ -157,7 +157,7 @@ export function AssignmentsPage() {
   );
   const [priorityFilter, setPriorityFilter] = useState('all');
   const [assigneeFilter, setAssigneeFilter] = useState('all');
-  const [missionFilter, setMissionFilter] = useState('all');
+  const [projectFilter, setProjectFilter] = useState('all');
   const [activityFilter, setActivityFilter] = useState<ActivityFilter>(
     () => normalizeActivityFilter(staleParam),
   );
@@ -223,10 +223,10 @@ export function AssignmentsPage() {
     () => Array.from(new Set(boardItems.map((a) => a.assignee ?? '__unassigned__'))).sort(),
     [boardItems],
   );
-  const uniqueMissions = useMemo(
+  const uniqueProjects = useMemo(
     () =>
       Array.from(
-        new Map(boardItems.map((a) => [a.missionSlug, a.missionTitle])),
+        new Map(boardItems.map((a) => [a.projectSlug, a.projectTitle])),
       ).sort(([, a], [, b]) => a.localeCompare(b)),
     [boardItems],
   );
@@ -235,9 +235,9 @@ export function AssignmentsPage() {
     return boardItems.filter((assignment) => {
       if (workspace) {
         if (workspace === '_ungrouped') {
-          if (assignment.missionWorkspace !== null) return false;
+          if (assignment.projectWorkspace !== null) return false;
         } else {
-          if (assignment.missionWorkspace !== workspace) return false;
+          if (assignment.projectWorkspace !== workspace) return false;
         }
       }
       if (statusFilter !== 'all' && assignment.status !== statusFilter) return false;
@@ -248,17 +248,17 @@ export function AssignmentsPage() {
         const val = assignment.assignee ?? '__unassigned__';
         if (val !== assigneeFilter) return false;
       }
-      if (missionFilter !== 'all' && assignment.missionSlug !== missionFilter) return false;
+      if (projectFilter !== 'all' && assignment.projectSlug !== projectFilter) return false;
 
       const query = search.trim().toLowerCase();
       if (query) {
-        const haystack = `${assignment.title} ${assignment.slug} ${assignment.missionTitle} ${assignment.missionSlug}`.toLowerCase();
+        const haystack = `${assignment.title} ${assignment.slug} ${assignment.projectTitle} ${assignment.projectSlug}`.toLowerCase();
         if (!haystack.includes(query)) return false;
       }
 
       return true;
     });
-  }, [activityFilter, boardItems, search, statusFilter, priorityFilter, assigneeFilter, missionFilter, workspace]);
+  }, [activityFilter, boardItems, search, statusFilter, priorityFilter, assigneeFilter, projectFilter, workspace]);
 
   const sortedItems = useMemo(
     () => sortAssignments(filteredItems, sortField, sortDirection),
@@ -280,8 +280,8 @@ export function AssignmentsPage() {
   const { hotkeyRowProps } = useListSelection(visibleItems, {
     scope: 'list:assignments',
     onOpen: (assignment) => {
-      const assignWs = assignment.missionWorkspace ? `/w/${assignment.missionWorkspace}` : wsPrefix;
-      navigate(`${assignWs}/missions/${assignment.missionSlug}/assignments/${assignment.slug}`);
+      const assignWs = assignment.projectWorkspace ? `/w/${assignment.projectWorkspace}` : wsPrefix;
+      navigate(`${assignWs}/projects/${assignment.projectSlug}/assignments/${assignment.slug}`);
     },
   });
   useHotkey({
@@ -334,8 +334,8 @@ export function AssignmentsPage() {
 
     try {
       const updated = action
-        ? await runAssignmentTransition(item.missionSlug, item.slug, action, reason)
-        : await overrideAssignmentStatus(item.missionSlug, item.slug, toColumnId);
+        ? await runAssignmentTransition(item.projectSlug, item.slug, action, reason)
+        : await overrideAssignmentStatus(item.projectSlug, item.slug, toColumnId);
 
       setBoardItems((current) =>
         current.map((candidate) =>
@@ -477,7 +477,7 @@ export function AssignmentsPage() {
           ref={searchRef}
           value={search}
           onChange={setSearch}
-          placeholder="Search assignments or missions"
+          placeholder="Search assignments or projects"
         />
         <select
           value={statusFilter}
@@ -501,9 +501,9 @@ export function AssignmentsPage() {
             <option key={a} value={a}>{a === '__unassigned__' ? 'Unassigned' : a}</option>
           ))}
         </select>
-        <select value={missionFilter} onChange={(e) => setMissionFilter(e.target.value)} className="editor-input max-w-[180px]">
-          <option value="all">All missions</option>
-          {uniqueMissions.map(([slug, title]) => (
+        <select value={projectFilter} onChange={(e) => setProjectFilter(e.target.value)} className="editor-input max-w-[180px]">
+          <option value="all">All projects</option>
+          {uniqueProjects.map(([slug, title]) => (
             <option key={slug} value={slug}>{title}</option>
           ))}
         </select>
@@ -532,18 +532,18 @@ export function AssignmentsPage() {
       {data.assignments.length === 0 ? (
         <EmptyState
           title="No assignments yet"
-          description="Assignments appear here once missions contain concrete work items."
+          description="Assignments appear here once projects contain concrete work items."
           actions={
-            <Link className="shell-action bg-foreground text-background hover:opacity-90" to={`${wsPrefix}/missions`}>
+            <Link className="shell-action bg-foreground text-background hover:opacity-90" to={`${wsPrefix}/projects`}>
               <FolderKanban className="h-4 w-4" />
-              <span>Browse Missions</span>
+              <span>Browse Projects</span>
             </Link>
           }
         />
       ) : filteredItems.length === 0 ? (
         <EmptyState
           title="No assignments match these filters"
-          description="Adjust the search term or filters to show assignments across all missions again."
+          description="Adjust the search term or filters to show assignments across all projects again."
         />
       ) : view === 'table' ? (
         <SectionCard title={`${sortedItems.length} assignment${sortedItems.length === 1 ? '' : 's'}`}>
@@ -568,12 +568,12 @@ export function AssignmentsPage() {
                   >
                     <td className="py-4 pr-4">
                       <Link
-                        to={`${wsPrefix}/missions/${assignment.missionSlug}/assignments/${assignment.slug}`}
+                        to={`${wsPrefix}/projects/${assignment.projectSlug}/assignments/${assignment.slug}`}
                         className="font-semibold text-foreground hover:text-primary"
                       >
                         {assignment.title}
                       </Link>
-                      <p className="mt-1 text-xs text-muted-foreground">{assignment.missionTitle}</p>
+                      <p className="mt-1 text-xs text-muted-foreground">{assignment.projectTitle}</p>
                       <p className="mt-0.5 inline-flex items-center gap-1.5 font-mono text-xs text-muted-foreground/70" title={assignment.id}>
                         {assignment.id.slice(0, 8)}
                         <CopyButton value={assignment.id} />
@@ -779,12 +779,12 @@ function AssignmentBoardCard({
       <div className="flex items-start justify-between gap-3">
         <div className="space-y-1">
           <Link
-            to={`${wsPrefix}/missions/${assignment.missionSlug}/assignments/${assignment.slug}`}
+            to={`${wsPrefix}/projects/${assignment.projectSlug}/assignments/${assignment.slug}`}
             className="text-base font-semibold text-foreground hover:text-primary"
           >
             {assignment.title}
           </Link>
-          <p className="text-sm text-muted-foreground">{assignment.missionTitle}</p>
+          <p className="text-sm text-muted-foreground">{assignment.projectTitle}</p>
           <p className="inline-flex items-center gap-1.5 font-mono text-xs text-muted-foreground/70" title={assignment.id ?? ''}>
             {assignment.id?.slice(0, 8)}
             {assignment.id && <CopyButton value={assignment.id} />}

@@ -3,7 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { MarkdownEditor } from '../components/MarkdownEditor';
 import { LoadingState } from '../components/LoadingState';
 import { ErrorState } from '../components/ErrorState';
-import { useWorkspacePrefix } from '../hooks/useMissions';
+import { useWorkspacePrefix } from '../hooks/useProjects';
 
 export function CreateAssignment() {
   const { slug } = useParams<{ slug: string }>();
@@ -29,7 +29,7 @@ export function CreateAssignment() {
 
   async function handleSave(markdownContent: string) {
     if (!slug) {
-      setError('Mission slug is required.');
+      setError('Project slug is required.');
       return;
     }
 
@@ -37,7 +37,7 @@ export function CreateAssignment() {
     setError(null);
 
     try {
-      const response = await fetch(`/api/missions/${slug}/assignments`, {
+      const response = await fetch(`/api/projects/${slug}/assignments`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ content: markdownContent }),
@@ -50,7 +50,7 @@ export function CreateAssignment() {
         return;
       }
 
-      navigate(`${wsPrefix}/missions/${slug}/assignments/${payload.slug}`);
+      navigate(`${wsPrefix}/projects/${slug}/assignments/${payload.slug}`);
     } catch (saveError) {
       setError((saveError as Error).message);
       setSaving(false);
@@ -78,7 +78,7 @@ export function CreateAssignment() {
       error={error}
       title="Create Assignment"
       description="Assignments are the execution unit. Declare dependencies here, keep status pending until work starts, and use blocked later only for runtime obstacles."
-      onCancel={() => navigate(slug ? `${wsPrefix}/missions/${slug}` : `${wsPrefix}/missions`)}
+      onCancel={() => navigate(slug ? `${wsPrefix}/projects/${slug}` : `${wsPrefix}/projects`)}
       helpTitle="Assignment editing rules"
       helpBody="Use structured fields for priority, assignee, dependencies, and tags. Status can be changed through lifecycle actions, kanban drag, or the status override."
       allowSlugEdit

@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   extractFrontmatter,
-  parseMission,
+  parseProject,
   parseStatus,
   parseAssignmentSummary,
   parseAssignmentFull,
@@ -30,8 +30,8 @@ describe('extractFrontmatter', () => {
   });
 });
 
-describe('parseMission', () => {
-  const MISSION_MD = `---
+describe('parseProject', () => {
+  const PROJECT_MD = `---
 id: a1b2c3d4-e5f6-7890-abcd-ef1234567890
 slug: build-auth-system
 title: Build Authentication System
@@ -51,25 +51,25 @@ tags: []
 
 Overview content.`;
 
-  it('parses mission frontmatter correctly', () => {
-    const mission = parseMission(MISSION_MD);
-    expect(mission.slug).toBe('build-auth-system');
-    expect(mission.title).toBe('Build Authentication System');
-    expect(mission.archived).toBe(false);
-    expect(mission.created).toBe('2026-03-15T09:00:00Z');
-    expect(mission.tags).toEqual([]);
+  it('parses project frontmatter correctly', () => {
+    const project = parseProject(PROJECT_MD);
+    expect(project.slug).toBe('build-auth-system');
+    expect(project.title).toBe('Build Authentication System');
+    expect(project.archived).toBe(false);
+    expect(project.created).toBe('2026-03-15T09:00:00Z');
+    expect(project.tags).toEqual([]);
   });
 
   it('extracts the body content', () => {
-    const mission = parseMission(MISSION_MD);
-    expect(mission.body).toContain('Build Authentication System');
-    expect(mission.body).toContain('Overview content.');
+    const project = parseProject(PROJECT_MD);
+    expect(project.body).toContain('Build Authentication System');
+    expect(project.body).toContain('Overview content.');
   });
 });
 
 describe('parseStatus', () => {
   const STATUS_MD = `---
-mission: build-auth-system
+project: build-auth-system
 generated: "2026-03-18T14:30:00Z"
 status: active
 progress:
@@ -83,14 +83,14 @@ progress:
 needsAttention:
   blockedCount: 0
   failedCount: 0
-  unansweredQuestions: 1
+  openQuestions: 1
 ---
 
-# Mission Status`;
+# Project Status`;
 
   it('parses status and progress counts', () => {
     const status = parseStatus(STATUS_MD);
-    expect(status.mission).toBe('build-auth-system');
+    expect(status.project).toBe('build-auth-system');
     expect(status.status).toBe('active');
     expect(status.progress.total).toBe(3);
     expect(status.progress.completed).toBe(1);
@@ -101,7 +101,7 @@ needsAttention:
   it('parses needsAttention counts', () => {
     const status = parseStatus(STATUS_MD);
     expect(status.needsAttention.blockedCount).toBe(0);
-    expect(status.needsAttention.unansweredQuestions).toBe(1);
+    expect(status.needsAttention.openQuestions).toBe(1);
   });
 });
 
@@ -158,7 +158,7 @@ externalIds:
 dependsOn:
   - design-auth-schema
 links:
-  - other-mission/some-task
+  - other-project/some-task
 blockedReason: null
 workspace:
   repository: /Users/test/projects/auth-service
@@ -178,7 +178,7 @@ Body here.`;
     expect(assignment.status).toBe('in_progress');
     expect(assignment.assignee).toBe('claude-1');
     expect(assignment.dependsOn).toEqual(['design-auth-schema']);
-    expect(assignment.links).toEqual(['other-mission/some-task']);
+    expect(assignment.links).toEqual(['other-project/some-task']);
     expect(assignment.workspace.branch).toBe('feat/jwt-middleware');
     expect(assignment.workspace.repository).toBe('/Users/test/projects/auth-service');
   });
@@ -309,7 +309,7 @@ sourceAssignment: design-auth-schema
 relatedAssignments:
   - design-auth-schema
   - implement-jwt-middleware
-scope: mission
+scope: project
 created: "2026-03-17T09:00:00Z"
 updated: "2026-03-17T09:00:00Z"
 tags:
@@ -325,7 +325,7 @@ Content.`;
     const m = parseMemory(MEMORY_MD);
     expect(m.name).toBe('PostgreSQL Connection Pooling');
     expect(m.source).toBe('claude-2');
-    expect(m.scope).toBe('mission');
+    expect(m.scope).toBe('project');
     expect(m.sourceAssignment).toBe('design-auth-schema');
     expect(m.relatedAssignments).toEqual(['design-auth-schema', 'implement-jwt-middleware']);
   });

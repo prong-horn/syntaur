@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom';
 import { AlertTriangle, Flame, Hourglass, ShieldX } from 'lucide-react';
-import { useAttention } from '../hooks/useMissions';
+import { useAttention } from '../hooks/useProjects';
 import { StatCard } from '../components/StatCard';
 import { LoadingState } from '../components/LoadingState';
 import { ErrorState } from '../components/ErrorState';
@@ -46,7 +46,7 @@ export function AttentionPage() {
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div className="space-y-1">
                     <h3 className="font-semibold text-foreground">{item.assignmentTitle}</h3>
-                    <p className="text-sm text-muted-foreground">{item.missionTitle}</p>
+                    <p className="text-sm text-muted-foreground">{item.projectTitle}</p>
                   </div>
                   <div className="flex items-center gap-2">
                     <span className="rounded-full border border-border/60 bg-card/90 px-2.5 py-1 text-xs font-semibold uppercase tracking-[0.1em] text-muted-foreground">

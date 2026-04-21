@@ -11,7 +11,7 @@ OpenCode discovers skills from `SKILL.md` files in several directories and reads
 Generate adapter files for a specific assignment:
 
 ```bash
-syntaur setup-adapter opencode --mission <mission-slug> --assignment <assignment-slug>
+syntaur setup-adapter opencode --project <project-slug> --assignment <assignment-slug>
 ```
 
 This creates:

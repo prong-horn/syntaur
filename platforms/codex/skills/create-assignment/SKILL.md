@@ -1,6 +1,6 @@
 ---
 name: create-assignment
-description: Use when the user wants to create a new Syntaur assignment inside a mission or as a one-off mission plus assignment.
+description: Use when the user wants to create a new Syntaur assignment inside a project or as a one-off project plus assignment.
 ---
 
 # Create Assignment
@@ -14,7 +14,7 @@ User arguments: `$ARGUMENTS`
 Parse:
 
 - First positional argument: assignment title
-- `--mission <slug>` required unless `--one-off`
+- `--project <slug>` required unless `--one-off`
 - `--one-off` optional
 - `--slug <slug>` optional
 - `--priority <level>` optional, default `medium`
@@ -23,18 +23,18 @@ Parse:
 
 If no title was provided, ask the user for it.
 
-If neither `--mission` nor `--one-off` was provided, look for `.syntaur/context.json` in the current working directory. If present, default the mission to that context's `missionSlug` and tell the user you are using it.
+If neither `--project` nor `--one-off` was provided, look for `.syntaur/context.json` in the current working directory. If present, default the project to that context's `projectSlug` and tell the user you are using it.
 
 ## Workflow
 
 1. Run one of:
-   - `syntaur create-assignment "<title>" --mission <slug> [--slug <slug>] [--priority <level>] [--depends-on <slugs>] [--dir <path>]`
+   - `syntaur create-assignment "<title>" --project <slug> [--slug <slug>] [--priority <level>] [--depends-on <slugs>] [--dir <path>]`
    - `syntaur create-assignment "<title>" --one-off [--slug <slug>] [--priority <level>] [--dir <path>]`
 2. If the command fails, report the error and stop.
 3. Read the generated `assignment.md`.
 4. Summarize:
    - assignment slug
-   - mission slug
+   - project slug
    - priority
    - location
    - created files: `assignment.md`, `scratchpad.md`, `handoff.md`, `decision-record.md` (plan files are NOT scaffolded — they are created on demand by `plan-assignment`)

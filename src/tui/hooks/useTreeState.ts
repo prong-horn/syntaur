@@ -7,25 +7,25 @@ export function useTreeState(nodes: TreeNode[], filteredIds: Set<string> | null)
 
   const flatList = useMemo(() => {
     const result: FlatNode[] = [];
-    for (const mission of nodes) {
-      if (filteredIds && !filteredIds.has(mission.id)) {
-        const hasMatchingChild = mission.children?.some((c) => filteredIds.has(c.id));
+    for (const project of nodes) {
+      if (filteredIds && !filteredIds.has(project.id)) {
+        const hasMatchingChild = project.children?.some((c) => filteredIds.has(c.id));
         if (!hasMatchingChild) continue;
       }
 
-      const isExpanded = expanded.has(mission.id) ||
-        (filteredIds !== null && mission.children?.some((c) => filteredIds.has(c.id)));
+      const isExpanded = expanded.has(project.id) ||
+        (filteredIds !== null && project.children?.some((c) => filteredIds.has(c.id)));
 
       result.push({
-        ...mission,
+        ...project,
         depth: 0,
         expanded: isExpanded,
-        hasChildren: (mission.children?.length ?? 0) > 0,
+        hasChildren: (project.children?.length ?? 0) > 0,
       });
 
-      if (isExpanded && mission.children) {
-        for (const child of mission.children) {
-          if (filteredIds && !filteredIds.has(child.id) && !filteredIds.has(mission.id)) continue;
+      if (isExpanded && project.children) {
+        for (const child of project.children) {
+          if (filteredIds && !filteredIds.has(child.id) && !filteredIds.has(project.id)) continue;
           result.push({
             ...child,
             depth: 1,

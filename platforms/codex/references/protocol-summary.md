@@ -5,10 +5,10 @@
 ```
 ~/.syntaur/
   config.md
-  missions/
-    <mission-slug>/
+  projects/
+    <project-slug>/
       manifest.md            # Derived: root navigation (read-only)
-      mission.md             # Human-authored: mission overview (read-only)
+      project.md             # Human-authored: project overview (read-only)
       _index-assignments.md  # Derived (read-only)
       _index-plans.md        # Derived (read-only)
       _index-decisions.md    # Derived (read-only)
@@ -62,7 +62,7 @@
 ## Key Rules
 
 1. Assignment frontmatter is the single source of truth for assignment state.
-2. One folder per mission and one subfolder per assignment.
+2. One folder per project and one subfolder per assignment.
 3. Derived files are never edited manually.
 4. Slugs are lowercase and hyphen-separated.
 5. Dependencies are declared via `dependsOn` in assignment frontmatter.

@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom';
-import { useHelp } from '../hooks/useMissions';
+import { useHelp } from '../hooks/useProjects';
 import { LoadingState } from '../components/LoadingState';
 import { ErrorState } from '../components/ErrorState';
 import { SectionCard } from '../components/SectionCard';
@@ -179,9 +179,9 @@ export function HelpPage() {
           </div>
         </SectionCard>
 
-        <SectionCard title="First Mission Checklist">
+        <SectionCard title="First Project Checklist">
           <div className="space-y-3">
-            {help.firstMissionChecklist.map((item, index) => (
+            {help.firstProjectChecklist.map((item, index) => (
               <div key={item.title} className="rounded-md border border-border/60 bg-background/80 p-3">
                 <div className="flex items-start gap-3">
                   <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-foreground text-xs font-semibold text-background">

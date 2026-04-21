@@ -4,7 +4,7 @@ import { getTargetStatus, DEFAULT_STATUSES, DEFAULT_TRANSITION_TABLE, buildTrans
 import { fileExists } from '../utils/fs.js';
 import { readConfig, type StatusConfig, type StatusTransition } from '../utils/config.js';
 import {
-  parseMission,
+  parseProject,
   parseStatus,
   parseAssignmentFull,
   parsePlan,
@@ -29,8 +29,8 @@ import type {
   EnrichedLink,
   HelpResponse,
   MemorySummary,
-  MissionDetail,
-  MissionSummary,
+  ProjectDetail,
+  ProjectSummary,
   OverviewResponse,
   ProgressCounts,
   NeedsAttention,
@@ -43,16 +43,16 @@ import type {
 const STALE_ASSIGNMENT_MS = 7 * 24 * 60 * 60 * 1000;
 const ATTENTION_PAGE_LIMIT = 50;
 const OVERVIEW_ATTENTION_LIMIT = 6;
-const RECENT_MISSIONS_LIMIT = 6;
+const RECENT_PROJECTS_LIMIT = 6;
 const RECENT_ACTIVITY_LIMIT = 12;
 
 type AssignmentRecord = ReturnType<typeof parseAssignmentFull>;
 
-interface MissionRecord {
-  missionPath: string;
-  mission: ReturnType<typeof parseMission>;
+interface ProjectRecord {
+  projectPath: string;
+  project: ReturnType<typeof parseProject>;
   assignments: AssignmentRecord[];
-  summary: MissionSummary;
+  summary: ProjectSummary;
   dependencyGraph: string | null;
 }
 
@@ -199,20 +199,20 @@ export function clearStatusConfigCache(): void {
 }
 
 /**
- * List all missions with source-first summary data.
- * GET /api/missions
+ * List all projects with source-first summary data.
+ * GET /api/projects
  */
-export async function listMissions(missionsDir: string): Promise<MissionSummary[]> {
-  const missionRecords = await listMissionRecords(missionsDir);
-  return missionRecords.map((record) => record.summary);
+export async function listProjects(projectsDir: string): Promise<ProjectSummary[]> {
+  const projectRecords = await listProjectRecords(projectsDir);
+  return projectRecords.map((record) => record.summary);
 }
 
 /**
  * Read the workspace registry file (~/.syntaur/workspaces.json).
  * Returns an array of explicitly registered workspace names.
  */
-async function readWorkspaceRegistry(missionsDir: string): Promise<string[]> {
-  const registryPath = resolve(dirname(missionsDir), 'workspaces.json');
+async function readWorkspaceRegistry(projectsDir: string): Promise<string[]> {
+  const registryPath = resolve(dirname(projectsDir), 'workspaces.json');
   try {
     const raw = await readFile(registryPath, 'utf-8');
     const parsed = JSON.parse(raw);
@@ -222,25 +222,25 @@ async function readWorkspaceRegistry(missionsDir: string): Promise<string[]> {
   }
 }
 
-async function writeWorkspaceRegistry(missionsDir: string, workspaces: string[]): Promise<void> {
-  const registryPath = resolve(dirname(missionsDir), 'workspaces.json');
+async function writeWorkspaceRegistry(projectsDir: string, workspaces: string[]): Promise<void> {
+  const registryPath = resolve(dirname(projectsDir), 'workspaces.json');
   await writeFile(registryPath, JSON.stringify(workspaces, null, 2) + '\n', 'utf-8');
 }
 
 /**
- * List all workspaces: merge registry (explicit) with discovered (from missions).
+ * List all workspaces: merge registry (explicit) with discovered (from projects).
  * GET /api/workspaces
  */
-export async function listWorkspaces(missionsDir: string): Promise<{ workspaces: string[]; hasUngrouped: boolean }> {
-  const [missionRecords, registered] = await Promise.all([
-    listMissionRecords(missionsDir),
-    readWorkspaceRegistry(missionsDir),
+export async function listWorkspaces(projectsDir: string): Promise<{ workspaces: string[]; hasUngrouped: boolean }> {
+  const [projectRecords, registered] = await Promise.all([
+    listProjectRecords(projectsDir),
+    readWorkspaceRegistry(projectsDir),
   ]);
   const workspaceSet = new Set<string>(registered);
   let hasUngrouped = false;
-  for (const record of missionRecords) {
-    if (record.mission.workspace) {
-      workspaceSet.add(record.mission.workspace);
+  for (const record of projectRecords) {
+    if (record.project.workspace) {
+      workspaceSet.add(record.project.workspace);
     } else {
       hasUngrouped = true;
     }
@@ -253,12 +253,12 @@ export async function listWorkspaces(missionsDir: string): Promise<{ workspaces:
  * Create an empty workspace by registering it.
  * POST /api/workspaces
  */
-export async function createWorkspace(missionsDir: string, name: string): Promise<void> {
-  const registered = await readWorkspaceRegistry(missionsDir);
+export async function createWorkspace(projectsDir: string, name: string): Promise<void> {
+  const registered = await readWorkspaceRegistry(projectsDir);
   if (!registered.includes(name)) {
     registered.push(name);
     registered.sort();
-    await writeWorkspaceRegistry(missionsDir, registered);
+    await writeWorkspaceRegistry(projectsDir, registered);
   }
 }
 
@@ -266,26 +266,26 @@ export async function createWorkspace(missionsDir: string, name: string): Promis
  * Delete a workspace from the registry.
  * DELETE /api/workspaces/:name
  */
-export async function deleteWorkspace(missionsDir: string, name: string): Promise<void> {
-  const registered = await readWorkspaceRegistry(missionsDir);
+export async function deleteWorkspace(projectsDir: string, name: string): Promise<void> {
+  const registered = await readWorkspaceRegistry(projectsDir);
   const filtered = registered.filter((w) => w !== name);
-  await writeWorkspaceRegistry(missionsDir, filtered);
+  await writeWorkspaceRegistry(projectsDir, filtered);
 }
 
 /**
  * Get overview data used by the app landing page.
  * GET /api/overview
  */
-export async function getOverview(missionsDir: string, serversDir?: string): Promise<OverviewResponse> {
-  const missionRecords = await listMissionRecords(missionsDir);
-  const attention = buildAttentionItems(missionRecords);
-  const recentActivity = buildRecentActivity(missionRecords);
+export async function getOverview(projectsDir: string, serversDir?: string): Promise<OverviewResponse> {
+  const projectRecords = await listProjectRecords(projectsDir);
+  const attention = buildAttentionItems(projectRecords);
+  const recentActivity = buildRecentActivity(projectRecords);
 
   let serverStats: OverviewResponse['serverStats'];
   if (serversDir) {
     try {
       const { scanAllSessions } = await import('./scanner.js');
-      const servers = await scanAllSessions(serversDir, missionsDir);
+      const servers = await scanAllSessions(serversDir, projectsDir);
       if (servers.tmuxAvailable) {
         const alive = servers.sessions.filter(s => s.alive).length;
         const totalPorts = servers.sessions.reduce((sum, s) =>
@@ -305,36 +305,36 @@ export async function getOverview(missionsDir: string, serversDir?: string): Pro
 
   return {
     generatedAt: new Date().toISOString(),
-    firstRun: missionRecords.length === 0,
+    firstRun: projectRecords.length === 0,
     stats: {
-      activeMissions: missionRecords.filter((record) => record.summary.status === 'active').length,
-      inProgressAssignments: missionRecords.reduce(
+      activeProjects: projectRecords.filter((record) => record.summary.status === 'active').length,
+      inProgressAssignments: projectRecords.reduce(
         (total, record) => total + (record.summary.progress['in_progress'] ?? 0),
         0,
       ),
-      blockedAssignments: missionRecords.reduce(
+      blockedAssignments: projectRecords.reduce(
         (total, record) => total + (record.summary.progress['blocked'] ?? 0),
         0,
       ),
-      reviewAssignments: missionRecords.reduce(
+      reviewAssignments: projectRecords.reduce(
         (total, record) => total + (record.summary.progress['review'] ?? 0),
         0,
       ),
-      failedAssignments: missionRecords.reduce(
+      failedAssignments: projectRecords.reduce(
         (total, record) => total + (record.summary.progress['failed'] ?? 0),
         0,
       ),
-      staleAssignments: missionRecords.reduce(
+      staleAssignments: projectRecords.reduce(
         (total, record) =>
           total + record.assignments.filter((assignment) => isStale(assignment.updated)).length,
         0,
       ),
     },
     attention: attention.slice(0, OVERVIEW_ATTENTION_LIMIT),
-    recentMissions: missionRecords
+    recentProjects: projectRecords
       .map((record) => record.summary)
       .sort((left, right) => compareTimestamps(right.updated, left.updated))
-      .slice(0, RECENT_MISSIONS_LIMIT),
+      .slice(0, RECENT_PROJECTS_LIMIT),
     recentActivity: recentActivity.slice(0, RECENT_ACTIVITY_LIMIT),
     serverStats,
   };
@@ -344,21 +344,21 @@ export async function getOverview(missionsDir: string, serversDir?: string): Pro
  * Get the explicit attention queue.
  * GET /api/attention
  */
-export async function getAttention(missionsDir: string, serversDir?: string): Promise<AttentionResponse> {
-  const missionRecords = await listMissionRecords(missionsDir);
-  const items = buildAttentionItems(missionRecords);
+export async function getAttention(projectsDir: string, serversDir?: string): Promise<AttentionResponse> {
+  const projectRecords = await listProjectRecords(projectsDir);
+  const items = buildAttentionItems(projectRecords);
 
   if (serversDir) {
     try {
       const { scanAllSessions } = await import('./scanner.js');
-      const servers = await scanAllSessions(serversDir, missionsDir);
+      const servers = await scanAllSessions(serversDir, projectsDir);
       for (const session of servers.sessions) {
         if (!session.alive) {
           items.push({
             id: `server-dead-${session.name}`,
             severity: 'low',
-            missionSlug: '',
-            missionTitle: '',
+            projectSlug: '',
+            projectTitle: '',
             assignmentSlug: '',
             assignmentTitle: `tmux: ${session.name}`,
             status: 'failed',
@@ -401,16 +401,16 @@ export async function getAttention(missionsDir: string, serversDir?: string): Pr
 }
 
 /**
- * Get all assignments across all missions for the global kanban board.
+ * Get all assignments across all projects for the global kanban board.
  * GET /api/assignments
  */
-export async function listAssignmentsBoard(missionsDir: string): Promise<AssignmentsBoardResponse> {
-  const missionRecords = await listMissionRecords(missionsDir);
+export async function listAssignmentsBoard(projectsDir: string): Promise<AssignmentsBoardResponse> {
+  const projectRecords = await listProjectRecords(projectsDir);
   const assignments = await Promise.all(
-    missionRecords.flatMap(async (record) =>
+    projectRecords.flatMap(async (record) =>
       Promise.all(
         record.assignments.map(async (assignment) =>
-          toAssignmentBoardItem(missionsDir, record, assignment),
+          toAssignmentBoardItem(projectsDir, record, assignment),
         ),
       ),
     ),
@@ -436,65 +436,65 @@ export async function getHelp(): Promise<HelpResponse> {
  * Get a raw editable document for dashboard editor pages.
  */
 export async function getEditableDocument(
-  missionsDir: string,
+  projectsDir: string,
   documentType: EditableDocumentResponse['documentType'],
-  missionSlug: string,
+  projectSlug: string,
   assignmentSlug?: string,
 ): Promise<EditableDocumentResponse | null> {
-  const filePath = getDocumentPath(missionsDir, documentType, missionSlug, assignmentSlug);
+  const filePath = getDocumentPath(projectsDir, documentType, projectSlug, assignmentSlug);
   if (!filePath || !(await fileExists(filePath))) {
     return null;
   }
 
   const content = await readFile(filePath, 'utf-8');
-  const title = getEditableDocumentTitle(documentType, missionSlug, assignmentSlug);
+  const title = getEditableDocumentTitle(documentType, projectSlug, assignmentSlug);
 
   return {
     documentType,
     title,
     content,
-    missionSlug,
+    projectSlug,
     assignmentSlug,
     appendOnly: documentType === 'handoff' || documentType === 'decision-record',
   };
 }
 
 /**
- * Get full mission detail with assignments, resources, and memories.
- * GET /api/missions/:slug
+ * Get full project detail with assignments, resources, and memories.
+ * GET /api/projects/:slug
  */
-export async function getMissionDetail(
-  missionsDir: string,
+export async function getProjectDetail(
+  projectsDir: string,
   slug: string,
-): Promise<MissionDetail | null> {
-  const missionPath = resolve(missionsDir, slug);
-  const missionMdPath = resolve(missionPath, 'mission.md');
+): Promise<ProjectDetail | null> {
+  const projectPath = resolve(projectsDir, slug);
+  const projectMdPath = resolve(projectPath, 'project.md');
 
-  if (!(await fileExists(missionMdPath))) {
+  if (!(await fileExists(projectMdPath))) {
     return null;
   }
 
-  const missionContent = await readFile(missionMdPath, 'utf-8');
-  const mission = parseMission(missionContent);
-  const assignments = await listAssignmentRecords(missionPath);
-  const rollup = buildMissionRollup(mission, assignments);
-  const dependencyGraph = await loadDependencyGraph(missionPath, assignments);
-  const resources = await listResources(missionPath);
-  const memories = await listMemories(missionPath);
-  const updated = getMissionActivityTimestamp(mission.updated, assignments);
+  const projectContent = await readFile(projectMdPath, 'utf-8');
+  const project = parseProject(projectContent);
+  const assignments = await listAssignmentRecords(projectPath);
+  const rollup = buildProjectRollup(project, assignments);
+  const dependencyGraph = await loadDependencyGraph(projectPath, assignments);
+  const resources = await listResources(projectPath);
+  const memories = await listMemories(projectPath);
+  const updated = getProjectActivityTimestamp(project.updated, assignments);
 
   return {
-    slug: mission.slug || slug,
-    title: mission.title,
+    slug: project.slug || slug,
+    title: project.title,
     status: rollup.status,
-    statusOverride: mission.statusOverride,
-    archived: mission.archived,
-    archivedAt: mission.archivedAt,
-    archivedReason: mission.archivedReason,
-    created: mission.created,
+    statusOverride: project.statusOverride,
+    archived: project.archived,
+    archivedAt: project.archivedAt,
+    archivedReason: project.archivedReason,
+    created: project.created,
     updated,
-    tags: mission.tags,
-    body: mission.body,
+    tags: project.tags,
+    body: project.body,
     progress: rollup.progress,
     needsAttention: rollup.needsAttention,
     assignments: assignments
@@ -503,20 +503,20 @@ export async function getMissionDetail(
     resources,
     memories,
     dependencyGraph,
-    workspace: mission.workspace,
+    workspace: project.workspace,
   };
 }
 
 /**
  * Get full assignment detail with plan, scratchpad, handoff, and decision record.
- * GET /api/missions/:slug/assignments/:aslug
+ * GET /api/projects/:slug/assignments/:aslug
  */
 export async function getAssignmentDetail(
-  missionsDir: string,
-  missionSlug: string,
+  projectsDir: string,
+  projectSlug: string,
   assignmentSlug: string,
 ): Promise<AssignmentDetail | null> {
-  const assignmentDir = resolve(missionsDir, missionSlug, 'assignments', assignmentSlug);
+  const assignmentDir = resolve(projectsDir, projectSlug, 'assignments', assignmentSlug);
   const assignmentMdPath = resolve(assignmentDir, 'assignment.md');
 
   if (!(await fileExists(assignmentMdPath))) {
@@ -575,7 +575,7 @@ export async function getAssignmentDetail(
 
   const detail: AssignmentDetail = {
     id: assignment.id,
-    missionSlug,
+    projectSlug,
     slug: assignment.slug || assignmentSlug,
     title: assignment.title,
     status: assignment.status,
@@ -597,20 +597,20 @@ export async function getAssignmentDetail(
     handoff,
     decisionRecord,
     availableTransitions: await getAvailableTransitions(
-      missionsDir,
-      missionSlug,
+      projectsDir,
+      projectSlug,
       assignmentSlug,
       assignment,
     ),
   };
 
   // Compute reverse links and enrich all links
-  const selfSlug = `${missionSlug}/${detail.slug}`;
-  const missionRecords = await listMissionRecords(missionsDir);
+  const selfSlug = `${projectSlug}/${detail.slug}`;
+  const projectRecords = await listProjectRecords(projectsDir);
 
-  // Find reverse links: assignments across all missions whose links contain this assignment
+  // Find reverse links: assignments across all projects whose links contain this assignment
   const reverseLinks: string[] = [];
-  for (const mr of missionRecords) {
+  for (const mr of projectRecords) {
     for (const a of mr.assignments) {
       const qualifiedSlug = `${mr.summary.slug}/${a.slug}`;
       if (qualifiedSlug === selfSlug) continue; // skip self
@@ -635,10 +635,10 @@ export async function getAssignmentDetail(
   detail.reverseLinks = dedupedReverseLinks;
 
   // Build enriched links for the frontend
-  const allMissionAssignments = new Map<string, { title: string; status: string }>();
-  for (const mr of missionRecords) {
+  const allProjectAssignments = new Map<string, { title: string; status: string }>();
+  for (const mr of projectRecords) {
     for (const a of mr.assignments) {
-      allMissionAssignments.set(`${mr.summary.slug}/${a.slug}`, {
+      allProjectAssignments.set(`${mr.summary.slug}/${a.slug}`, {
         title: a.title,
         status: a.status,
       });
@@ -648,10 +648,10 @@ export async function getAssignmentDetail(
   const enrichedLinks: EnrichedLink[] = [];
   for (const linkSlug of forwardLinks) {
     const [ms, as] = linkSlug.split('/');
-    const info = allMissionAssignments.get(linkSlug);
+    const info = allProjectAssignments.get(linkSlug);
     enrichedLinks.push({
       slug: linkSlug,
-      missionSlug: ms,
+      projectSlug: ms,
       assignmentSlug: as,
       title: info?.title ?? linkSlug,
       status: info?.status ?? 'pending',
@@ -660,10 +660,10 @@ export async function getAssignmentDetail(
   }
   for (const linkSlug of dedupedReverseLinks) {
     const [ms, as] = linkSlug.split('/');
-    const info = allMissionAssignments.get(linkSlug);
+    const info = allProjectAssignments.get(linkSlug);
     enrichedLinks.push({
       slug: linkSlug,
-      missionSlug: ms,
+      projectSlug: ms,
       assignmentSlug: as,
       title: info?.title ?? linkSlug,
       status: info?.status ?? 'pending',
@@ -676,48 +676,48 @@ export async function getAssignmentDetail(
   return detail;
 }
 
-async function listMissionRecords(missionsDir: string): Promise<MissionRecord[]> {
-  if (!(await fileExists(missionsDir))) {
+async function listProjectRecords(projectsDir: string): Promise<ProjectRecord[]> {
+  if (!(await fileExists(projectsDir))) {
     return [];
   }
 
-  const entries = await readdir(missionsDir, { withFileTypes: true });
-  const missionDirs = entries.filter((entry) => entry.isDirectory() && !entry.name.startsWith('.'));
-  const records: MissionRecord[] = [];
+  const entries = await readdir(projectsDir, { withFileTypes: true });
+  const projectDirs = entries.filter((entry) => entry.isDirectory() && !entry.name.startsWith('.'));
+  const records: ProjectRecord[] = [];
 
-  for (const entry of missionDirs) {
-    const missionPath = resolve(missionsDir, entry.name);
-    const missionMdPath = resolve(missionPath, 'mission.md');
+  for (const entry of projectDirs) {
+    const projectPath = resolve(projectsDir, entry.name);
+    const projectMdPath = resolve(projectPath, 'project.md');
 
-    if (!(await fileExists(missionMdPath))) {
+    if (!(await fileExists(projectMdPath))) {
       continue;
     }
 
-    const missionContent = await readFile(missionMdPath, 'utf-8');
-    const mission = parseMission(missionContent);
-    const assignments = await listAssignmentRecords(missionPath);
-    const rollup = buildMissionRollup(mission, assignments);
-    const updated = getMissionActivityTimestamp(mission.updated, assignments);
+    const projectContent = await readFile(projectMdPath, 'utf-8');
+    const project = parseProject(projectContent);
+    const assignments = await listAssignmentRecords(projectPath);
+    const rollup = buildProjectRollup(project, assignments);
+    const updated = getProjectActivityTimestamp(project.updated, assignments);
 
     records.push({
-      missionPath,
-      mission,
+      projectPath,
+      project,
       assignments,
-      dependencyGraph: await loadDependencyGraph(missionPath, assignments),
+      dependencyGraph: await loadDependencyGraph(projectPath, assignments),
       summary: {
-        slug: mission.slug || entry.name,
-        title: mission.title,
+        slug: project.slug || entry.name,
+        title: project.title,
         status: rollup.status,
-        statusOverride: mission.statusOverride,
-        archived: mission.archived,
-        archivedAt: mission.archivedAt,
-        archivedReason: mission.archivedReason,
-        created: mission.created,
+        statusOverride: project.statusOverride,
+        archived: project.archived,
+        archivedAt: project.archivedAt,
+        archivedReason: project.archivedReason,
+        created: project.created,
         updated,
-        tags: mission.tags,
+        tags: project.tags,
         progress: rollup.progress,
         needsAttention: rollup.needsAttention,
-        workspace: mission.workspace,
+        workspace: project.workspace,
       },
     });
   }
@@ -726,8 +726,8 @@ async function listMissionRecords(missionsDir: string): Promise<MissionRecord[]>
   return records;
 }
 
-async function listAssignmentRecords(missionPath: string): Promise<AssignmentRecord[]> {
-  const assignmentsDir = resolve(missionPath, 'assignments');
+async function listAssignmentRecords(projectPath: string): Promise<AssignmentRecord[]> {
+  const assignmentsDir = resolve(projectPath, 'assignments');
   if (!(await fileExists(assignmentsDir))) {
     return [];
   }
@@ -753,8 +753,8 @@ async function listAssignmentRecords(missionPath: string): Promise<AssignmentRec
   return records;
 }
 
-async function listResources(missionPath: string): Promise<ResourceSummary[]> {
-  const resourcesDir = resolve(missionPath, 'resources');
+async function listResources(projectPath: string): Promise<ResourceSummary[]> {
+  const resourcesDir = resolve(projectPath, 'resources');
   if (!(await fileExists(resourcesDir))) {
     return [];
   }
@@ -784,8 +784,8 @@ async function listResources(missionPath: string): Promise<ResourceSummary[]> {
   return results;
 }
 
-async function listMemories(missionPath: string): Promise<MemorySummary[]> {
-  const memoriesDir = resolve(missionPath, 'memories');
+async function listMemories(projectPath: string): Promise<MemorySummary[]> {
+  const memoriesDir = resolve(projectPath, 'memories');
   if (!(await fileExists(memoriesDir))) {
     return [];
   }
@@ -816,10 +816,10 @@ async function listMemories(missionPath: string): Promise<MemorySummary[]> {
 }
 
 async function loadDependencyGraph(
-  missionPath: string,
+  projectPath: string,
   assignments: AssignmentRecord[],
 ): Promise<string | null> {
-  const statusPath = resolve(missionPath, '_status.md');
+  const statusPath = resolve(projectPath, '_status.md');
   if (await fileExists(statusPath)) {
     const statusContent = await readFile(statusPath, 'utf-8');
     const parsed = parseStatus(statusContent);
@@ -832,8 +832,8 @@ async function loadDependencyGraph(
   return buildDependencyGraph(assignments);
 }
 
-function buildMissionRollup(
-  mission: ReturnType<typeof parseMission>,
+function buildProjectRollup(
+  project: ReturnType<typeof parseProject>,
   assignments: AssignmentRecord[],
 ): {
   progress: ProgressCounts;
@@ -842,23 +842,23 @@ function buildMissionRollup(
 } {
   const progress: ProgressCounts = { total: assignments.length };
 
-  let unansweredQuestions = 0;
+  let openQuestions = 0;
   for (const assignment of assignments) {
     const s = assignment.status;
     progress[s] = (progress[s] ?? 0) + 1;
-    unansweredQuestions += countPendingAnswers(assignment.body);
+    openQuestions += countPendingAnswers(assignment.body);
   }
 
   const needsAttention: NeedsAttention = {
     blockedCount: progress['blocked'] ?? 0,
     failedCount: progress['failed'] ?? 0,
-    unansweredQuestions,
+    openQuestions,
   };
 
   let status = 'pending';
-  if (mission.statusOverride) {
-    status = mission.statusOverride;
-  } else if (mission.archived) {
+  if (project.statusOverride) {
+    status = project.statusOverride;
+  } else if (project.archived) {
     status = 'archived';
   } else if (progress.total > 0 && (progress['completed'] ?? 0) === progress.total) {
     status = 'completed';
@@ -892,19 +892,19 @@ function toAssignmentSummary(assignment: AssignmentRecord): AssignmentSummary {
 }
 
 async function toAssignmentBoardItem(
-  missionsDir: string,
-  missionRecord: MissionRecord,
+  projectsDir: string,
+  projectRecord: ProjectRecord,
   assignment: AssignmentRecord,
 ): Promise<AssignmentBoardItem> {
   return {
     ...toAssignmentSummary(assignment),
-    missionSlug: missionRecord.summary.slug,
-    missionTitle: missionRecord.summary.title,
+    projectSlug: projectRecord.summary.slug,
+    projectTitle: projectRecord.summary.title,
     blockedReason: assignment.blockedReason,
-    missionWorkspace: missionRecord.mission.workspace,
+    projectWorkspace: projectRecord.project.workspace,
     availableTransitions: await getAvailableTransitions(
-      missionsDir,
-      missionRecord.summary.slug,
+      projectsDir,
+      projectRecord.summary.slug,
       assignment.slug,
       assignment,
     ),
@@ -953,15 +953,15 @@ function findAssignmentStatus(assignments: AssignmentRecord[], slug: string): st
 }
 
 async function getAvailableTransitions(
-  missionsDir: string,
-  missionSlug: string,
+  projectsDir: string,
+  projectSlug: string,
   assignmentSlug: string,
   assignment: AssignmentRecord,
 ): Promise<AssignmentTransitionAction[]> {
   const config = await getStatusConfig();
   const transitionDefs = getTransitionDefinitions(config);
   const actions: AssignmentTransitionAction[] = [];
-  const missionPath = resolve(missionsDir, missionSlug);
+  const projectPath = resolve(projectsDir, projectSlug);
 
   for (const definition of transitionDefs) {
     let warning: string | null = null;
@@ -971,7 +971,7 @@ async function getAvailableTransitions(
     }
 
     if (definition.command === 'start' && assignment.dependsOn.length > 0) {
-      const unmetDependencies = await getUnmetDependencies(missionPath, assignment.dependsOn, config.terminalStatuses);
+      const unmetDependencies = await getUnmetDependencies(projectPath, assignment.dependsOn, config.terminalStatuses);
       if (unmetDependencies.length > 0) {
         warning = `Unmet dependencies: ${unmetDependencies.join(', ')}.`;
       }
@@ -994,12 +994,12 @@ async function getAvailableTransitions(
   return actions;
 }
 
-async function getUnmetDependencies(missionPath: string, dependsOn: string[], terminalStatuses?: ReadonlySet<string>): Promise<string[]> {
+async function getUnmetDependencies(projectPath: string, dependsOn: string[], terminalStatuses?: ReadonlySet<string>): Promise<string[]> {
   const terminals = terminalStatuses ?? new Set(['completed']);
   const unmet: string[] = [];
 
   for (const dependency of dependsOn) {
-    const dependencyPath = resolve(missionPath, 'assignments', dependency, 'assignment.md');
+    const dependencyPath = resolve(projectPath, 'assignments', dependency, 'assignment.md');
     if (!(await fileExists(dependencyPath))) {
       unmet.push(`${dependency} (missing)`);
       continue;
@@ -1015,20 +1015,20 @@ async function getUnmetDependencies(missionPath: string, dependsOn: string[], te
   return unmet;
 }
 
-function buildAttentionItems(missionRecords: MissionRecord[]): AttentionItem[] {
+function buildAttentionItems(projectRecords: ProjectRecord[]): AttentionItem[] {
   const items: AttentionItem[] = [];
 
-  for (const record of missionRecords) {
+  for (const record of projectRecords) {
     for (const assignment of record.assignments) {
       const stale = isStale(assignment.updated);
       const base = {
-        missionSlug: record.summary.slug,
-        missionTitle: record.summary.title,
+        projectSlug: record.summary.slug,
+        projectTitle: record.summary.title,
         assignmentSlug: assignment.slug,
         assignmentTitle: assignment.title,
         status: assignment.status,
         updated: assignment.updated,
-        href: `/missions/${record.summary.slug}/assignments/${assignment.slug}`,
+        href: `/projects/${record.summary.slug}/assignments/${assignment.slug}`,
         blockedReason: assignment.blockedReason,
         stale,
       };
@@ -1074,20 +1074,20 @@ function buildAttentionItems(missionRecords: MissionRecord[]): AttentionItem[] {
   return items.sort(compareAttentionItems);
 }
 
-function buildRecentActivity(missionRecords: MissionRecord[]): RecentActivityItem[] {
+function buildRecentActivity(projectRecords: ProjectRecord[]): RecentActivityItem[] {
   const activity: RecentActivityItem[] = [];
 
-  for (const record of missionRecords) {
+  for (const record of projectRecords) {
     activity.push({
-      id: `mission:${record.summary.slug}`,
-      type: 'mission',
+      id: `project:${record.summary.slug}`,
+      type: 'project',
       title: record.summary.title,
       updated: record.summary.updated,
-      href: `/missions/${record.summary.slug}`,
-      missionSlug: record.summary.slug,
-      missionTitle: record.summary.title,
+      href: `/projects/${record.summary.slug}`,
+      projectSlug: record.summary.slug,
+      projectTitle: record.summary.title,
       assignmentSlug: null,
-      summary: `Mission status is ${record.summary.status}.`,
+      summary: `Project status is ${record.summary.status}.`,
     });
 
     for (const assignment of record.assignments) {
@@ -1096,9 +1096,9 @@ function buildRecentActivity(missionRecords: MissionRecord[]): RecentActivityIte
         type: 'assignment',
         title: assignment.title,
         updated: assignment.updated,
-        href: `/missions/${record.summary.slug}/assignments/${assignment.slug}`,
-        missionSlug: record.summary.slug,
-        missionTitle: record.summary.title,
+        href: `/projects/${record.summary.slug}/assignments/${assignment.slug}`,
+        projectSlug: record.summary.slug,
+        projectTitle: record.summary.title,
         assignmentSlug: assignment.slug,
         summary: `Assignment is ${assignment.status} with ${assignment.priority} priority.`,
       });
@@ -1140,8 +1140,8 @@ function countPendingAnswers(body: string): number {
   return matches ? matches.length : 0;
 }
 
-function getMissionActivityTimestamp(missionUpdated: string, assignments: AssignmentRecord[]): string {
-  let latest = missionUpdated;
+function getProjectActivityTimestamp(projectUpdated: string, assignments: AssignmentRecord[]): string {
+  let latest = projectUpdated;
   for (const assignment of assignments) {
     if (compareTimestamps(assignment.updated, latest) > 0) {
       latest = assignment.updated;
@@ -1151,33 +1151,33 @@ function getMissionActivityTimestamp(missionUpdated: string, assignments: Assign
 }
 
 function getDocumentPath(
-  missionsDir: string,
+  projectsDir: string,
   documentType: EditableDocumentResponse['documentType'],
-  missionSlug: string,
+  projectSlug: string,
   assignmentSlug?: string,
 ): string | null {
   switch (documentType) {
-    case 'mission':
-      return resolve(missionsDir, missionSlug, 'mission.md');
+    case 'project':
+      return resolve(projectsDir, projectSlug, 'project.md');
     case 'assignment':
       return assignmentSlug
-        ? resolve(missionsDir, missionSlug, 'assignments', assignmentSlug, 'assignment.md')
+        ? resolve(projectsDir, projectSlug, 'assignments', assignmentSlug, 'assignment.md')
         : null;
     case 'plan':
       return assignmentSlug
-        ? resolve(missionsDir, missionSlug, 'assignments', assignmentSlug, 'plan.md')
+        ? resolve(projectsDir, projectSlug, 'assignments', assignmentSlug, 'plan.md')
         : null;
     case 'scratchpad':
       return assignmentSlug
-        ? resolve(missionsDir, missionSlug, 'assignments', assignmentSlug, 'scratchpad.md')
+        ? resolve(projectsDir, projectSlug, 'assignments', assignmentSlug, 'scratchpad.md')
         : null;
     case 'handoff':
       return assignmentSlug
-        ? resolve(missionsDir, missionSlug, 'assignments', assignmentSlug, 'handoff.md')
+        ? resolve(projectsDir, projectSlug, 'assignments', assignmentSlug, 'handoff.md')
         : null;
     case 'decision-record':
       return assignmentSlug
-        ? resolve(missionsDir, missionSlug, 'assignments', assignmentSlug, 'decision-record.md')
+        ? resolve(projectsDir, projectSlug, 'assignments', assignmentSlug, 'decision-record.md')
         : null;
     default:
       return null;
@@ -1186,12 +1186,12 @@ function getDocumentPath(
 
 function getEditableDocumentTitle(
   documentType: EditableDocumentResponse['documentType'],
-  missionSlug: string,
+  projectSlug: string,
   assignmentSlug?: string,
 ): string {
   switch (documentType) {
-    case 'mission':
-      return `Edit Mission: ${missionSlug}`;
+    case 'project':
+      return `Edit Project: ${projectSlug}`;
     case 'assignment':
       return `Edit Assignment: ${assignmentSlug || 'assignment'}`;
     case 'plan':
@@ -1203,9 +1203,9 @@ function getEditableDocumentTitle(
     case 'decision-record':
       return `Append Decision: ${assignmentSlug || 'assignment'}`;
     case 'playbook':
-      return `Edit Playbook: ${missionSlug}`;
+      return `Edit Playbook: ${projectSlug}`;
     default:
-      return missionSlug;
+      return projectSlug;
   }
 }
 

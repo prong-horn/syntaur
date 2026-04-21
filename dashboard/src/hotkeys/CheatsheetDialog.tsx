@@ -5,19 +5,19 @@ import { formatPatternForDisplay } from './match';
 
 const SCOPE_LABEL: Record<HotkeyScope, string> = {
   global: 'Global',
-  'list:missions': 'Missions list',
+  'list:projects': 'Projects list',
   'list:assignments': 'Assignments list',
   'list:todos': 'Todos list',
   assignment: 'Assignment detail',
-  mission: 'Mission detail',
+  project: 'Project detail',
 };
 
 const SCOPE_ORDER: HotkeyScope[] = [
   'global',
-  'list:missions',
+  'list:projects',
   'list:assignments',
   'list:todos',
-  'mission',
+  'project',
   'assignment',
 ];
 

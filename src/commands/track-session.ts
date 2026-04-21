@@ -8,7 +8,7 @@ import { appendSession } from '../dashboard/agent-sessions.js';
 import type { AgentSessionStatus } from '../dashboard/types.js';
 
 export interface TrackSessionOptions {
-  mission?: string;
+  project?: string;
   assignment?: string;
   agent: string;
   sessionId?: string;
@@ -24,16 +24,16 @@ export async function trackSessionCommand(
     throw new Error('--agent <name> is required.');
   }
 
-  if (options.mission) {
+  if (options.project) {
     const config = await readConfig();
     const baseDir = options.dir
       ? expandHome(options.dir)
-      : config.defaultMissionDir;
-    const missionDir = resolve(baseDir, options.mission);
+      : config.defaultProjectDir;
+    const projectDir = resolve(baseDir, options.project);
 
-    if (!(await fileExists(missionDir))) {
+    if (!(await fileExists(projectDir))) {
       throw new Error(
-        `Mission "${options.mission}" not found at ${missionDir}.`,
+        `Project "${options.project}" not found at ${projectDir}.`,
       );
     }
   }
@@ -44,7 +44,7 @@ export async function trackSessionCommand(
   const sessionId = options.sessionId || randomUUID();
 
   await appendSession('', {
-    missionSlug: options.mission || null,
+    projectSlug: options.project || null,
     assignmentSlug: options.assignment || null,
     agent: options.agent,
     sessionId,
@@ -54,8 +54,8 @@ export async function trackSessionCommand(
     description: options.description || null,
   });
 
-  if (options.mission && options.assignment) {
-    console.log(`Registered agent session ${sessionId} for ${options.assignment} in ${options.mission}.`);
+  if (options.project && options.assignment) {
+    console.log(`Registered agent session ${sessionId} for ${options.assignment} in ${options.project}.`);
   } else {
     console.log(`Registered standalone agent session ${sessionId}.`);
   }

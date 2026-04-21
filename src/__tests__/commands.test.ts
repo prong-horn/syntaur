@@ -2,33 +2,38 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdtemp, rm, readFile, readdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { resolve, join } from 'node:path';
-import { createMissionCommand } from '../commands/create-mission.js';
+import { createProjectCommand } from '../commands/create-project.js';
 import { createAssignmentCommand } from '../commands/create-assignment.js';
 
 let testDir: string;
+let origSyntaurHome: string | undefined;
 
 beforeEach(async () => {
   testDir = await mkdtemp(join(tmpdir(), 'syntaur-test-'));
+  origSyntaurHome = process.env.SYNTAUR_HOME;
+  process.env.SYNTAUR_HOME = testDir;
 });
 
 afterEach(async () => {
+  if (origSyntaurHome === undefined) delete process.env.SYNTAUR_HOME;
+  else process.env.SYNTAUR_HOME = origSyntaurHome;
   await rm(testDir, { recursive: true, force: true });
 });
 
-describe('createMissionCommand', () => {
-  it('creates all expected mission files', async () => {
-    const slug = await createMissionCommand('Test Mission', {
+describe('createProjectCommand', () => {
+  it('creates all expected project files', async () => {
+    const slug = await createProjectCommand('Test Project', {
       dir: testDir,
     });
-    expect(slug).toBe('test-mission');
+    expect(slug).toBe('test-project');
 
-    const missionDir = resolve(testDir, 'test-mission');
-    const files = await readdir(missionDir);
+    const projectDir = resolve(testDir, 'test-project');
+    const files = await readdir(projectDir);
 
     expect(files).toContain('manifest.md');
-    expect(files).toContain('mission.md');
-    expect(files).toContain('agent.md');
-    expect(files).toContain('claude.md');
+    expect(files).toContain('project.md');
+    expect(files).not.toContain('agent.md');
+    expect(files).not.toContain('claude.md');
     expect(files).toContain('_index-assignments.md');
     expect(files).toContain('_index-plans.md');
     expect(files).toContain('_index-decisions.md');
@@ -39,93 +44,105 @@ describe('createMissionCommand', () => {
   });
 
   it('creates resource and memory index stubs', async () => {
-    await createMissionCommand('Test', { dir: testDir });
-    const missionDir = resolve(testDir, 'test');
+    await createProjectCommand('Test', { dir: testDir });
+    const projectDir = resolve(testDir, 'test');
 
     const resourceIndex = await readFile(
-      resolve(missionDir, 'resources', '_index.md'),
+      resolve(projectDir, 'resources', '_index.md'),
       'utf-8',
     );
-    expect(resourceIndex).toContain('mission: test');
+    expect(resourceIndex).toContain('project: test');
     expect(resourceIndex).toContain('total: 0');
 
     const memoryIndex = await readFile(
-      resolve(missionDir, 'memories', '_index.md'),
+      resolve(projectDir, 'memories', '_index.md'),
       'utf-8',
     );
-    expect(memoryIndex).toContain('mission: test');
+    expect(memoryIndex).toContain('project: test');
     expect(memoryIndex).toContain('total: 0');
   });
 
-  it('slug in mission.md matches folder name', async () => {
-    await createMissionCommand('My Great Mission', { dir: testDir });
+  it('slug in project.md matches folder name', async () => {
+    await createProjectCommand('My Great Project', { dir: testDir });
     const content = await readFile(
-      resolve(testDir, 'my-great-mission', 'mission.md'),
+      resolve(testDir, 'my-great-project', 'project.md'),
       'utf-8',
     );
-    expect(content).toContain('slug: my-great-mission');
+    expect(content).toContain('slug: my-great-project');
   });
 
   it('uses custom slug when provided', async () => {
-    const slug = await createMissionCommand('Test', {
+    const slug = await createProjectCommand('Test', {
       slug: 'custom-slug',
       dir: testDir,
     });
     expect(slug).toBe('custom-slug');
     const files = await readdir(resolve(testDir, 'custom-slug'));
-    expect(files).toContain('mission.md');
+    expect(files).toContain('project.md');
   });
 
-  it('throws if mission folder already exists', async () => {
-    await createMissionCommand('Test', { dir: testDir });
+  it('throws if project folder already exists', async () => {
+    await createProjectCommand('Test', { dir: testDir });
     await expect(
-      createMissionCommand('Test', { dir: testDir }),
+      createProjectCommand('Test', { dir: testDir }),
     ).rejects.toThrow('already exists');
   });
 
   it('throws on empty title', async () => {
     await expect(
-      createMissionCommand('', { dir: testDir }),
+      createProjectCommand('', { dir: testDir }),
     ).rejects.toThrow('cannot be empty');
   });
 });
 
 describe('createAssignmentCommand', () => {
-  it('creates all expected assignment files via --one-off', async () => {
+  it('creates a standalone assignment via --one-off at ~/.syntaur/assignments/<uuid>/', async () => {
     await createAssignmentCommand('Write Tests', {
       oneOff: true,
-      dir: testDir,
     });
 
-    const assignmentDir = resolve(
-      testDir,
-      'write-tests',
-      'assignments',
-      'write-tests',
-    );
+    const standaloneRoot = resolve(testDir, 'assignments');
+    const folders = await readdir(standaloneRoot);
+    expect(folders.length).toBe(1);
+    const uuid = folders[0];
+    const assignmentDir = resolve(standaloneRoot, uuid);
+
     const files = await readdir(assignmentDir);
     expect(files).toContain('assignment.md');
     expect(files).not.toContain('plan.md');
     expect(files).toContain('scratchpad.md');
     expect(files).toContain('handoff.md');
     expect(files).toContain('decision-record.md');
-    expect(files.length).toBe(4);
+    expect(files).toContain('progress.md');
+    expect(files).toContain('comments.md');
+    expect(files.length).toBe(6);
 
     const content = await readFile(
       resolve(assignmentDir, 'assignment.md'),
       'utf-8',
     );
     expect(content).toContain('slug: write-tests');
+    expect(content).toContain(`id: ${uuid}`);
+    expect(content).toContain('project: null');
     expect(content).toContain('status: pending');
     expect(content).toContain('priority: medium');
     expect(content).toContain('assignee: null');
   });
 
-  it('creates assignment with --mission in specified dir', async () => {
-    await createMissionCommand('Test Mission', { dir: testDir });
+  it('rejects --one-off with --depends-on', async () => {
+    await expect(
+      createAssignmentCommand('Test', {
+        oneOff: true,
+        dependsOn: 'foo',
+      }),
+    ).rejects.toThrow('Standalone assignments cannot have dependencies');
+  });
+
+  it('creates assignment with --project in specified dir', async () => {
+    await createProjectCommand('Test Project', { dir: testDir });
 
     await createAssignmentCommand('My Task', {
-      mission: 'test-mission',
+      project: 'test-project',
       dir: testDir,
       priority: 'high',
       dependsOn: 'dep-one,dep-two',
@@ -133,7 +150,7 @@ describe('createAssignmentCommand', () => {
 
     const assignmentDir = resolve(
       testDir,
-      'test-mission',
+      'test-project',
       'assignments',
       'my-task',
     );
@@ -148,16 +165,16 @@ describe('createAssignmentCommand', () => {
     expect(content).toContain('  - dep-two');
   });
 
-  it('throws without --mission or --one-off', async () => {
+  it('throws without --project or --one-off', async () => {
     await expect(
       createAssignmentCommand('Test', {}),
-    ).rejects.toThrow('Either --mission');
+    ).rejects.toThrow('Either --project');
   });
 
-  it('throws with both --mission and --one-off', async () => {
+  it('throws with both --project and --one-off', async () => {
     await expect(
       createAssignmentCommand('Test', {
-        mission: 'some-mission',
+        project: 'some-project',
         oneOff: true,
       }),
     ).rejects.toThrow('Cannot use both');
@@ -165,24 +182,24 @@ describe('createAssignmentCommand', () => {
 
   it('throws on empty title', async () => {
     await expect(
-      createAssignmentCommand('', { mission: 'test' }),
+      createAssignmentCommand('', { project: 'test' }),
     ).rejects.toThrow('cannot be empty');
   });
 
-  it('throws on invalid mission slug', async () => {
+  it('throws on invalid project slug', async () => {
     await expect(
       createAssignmentCommand('Test', {
-        mission: 'INVALID SLUG!',
+        project: 'INVALID SLUG!',
         dir: testDir,
       }),
-    ).rejects.toThrow('Invalid mission slug');
+    ).rejects.toThrow('Invalid project slug');
   });
 
   it('throws on invalid dependency slug', async () => {
-    await createMissionCommand('Test', { dir: testDir });
+    await createProjectCommand('Test', { dir: testDir });
     await expect(
       createAssignmentCommand('Task', {
-        mission: 'test',
+        project: 'test',
         dir: testDir,
         dependsOn: 'valid-dep,INVALID!',
       }),

@@ -48,7 +48,7 @@ export const STATUS_META = {
   },
   active: {
     label: 'Active',
-    description: 'The mission has active or review work in flight.',
+    description: 'The project has active or review work in flight.',
     className: 'border-teal-300 bg-teal-100 text-teal-700 dark:border-teal-800 dark:bg-teal-950 dark:text-teal-300',
     icon: CircleDot,
   },

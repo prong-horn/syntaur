@@ -10,7 +10,7 @@ import {
   parseAssignmentFull,
   parseDecisionRecord,
   parseHandoff,
-  parseMission,
+  parseProject,
   parsePlan,
   parseScratchpad,
 } from './parser.js';
@@ -18,14 +18,12 @@ import { toggleAcceptanceCriterion } from './acceptance-criteria.js';
 import {
   getAssignmentDetail,
   getEditableDocument,
-  getMissionDetail,
+  getProjectDetail,
   getStatusConfig,
 } from './api.js';
 import {
-  renderMission,
+  renderProject,
   renderManifest,
-  renderAgent,
-  renderClaude,
   renderIndexAssignments,
   renderIndexPlans,
   renderIndexDecisions,
@@ -168,14 +166,14 @@ async function readCurrentDocument(filePath: string): Promise<string | null> {
   return readFile(filePath, 'utf-8');
 }
 
-export function createWriteRouter(missionsDir: string): Router {
+export function createWriteRouter(projectsDir: string): Router {
   const router = Router();
 
-  router.get('/api/templates/mission', (_req: Request, res: Response) => {
-    const content = renderMission({
+  router.get('/api/templates/project', (_req: Request, res: Response) => {
+    const content = renderProject({
       id: generateId(),
-      slug: 'my-new-mission',
-      title: 'My New Mission',
+      slug: 'my-new-project',
+      title: 'My New Project',
       timestamp: nowTimestamp(),
     });
     res.json({ content });
@@ -194,21 +192,21 @@ export function createWriteRouter(missionsDir: string): Router {
     res.json({ content });
   });
 
-  router.get('/api/missions/:slug/edit', async (req: Request, res: Response) => {
+  router.get('/api/projects/:slug/edit', async (req: Request, res: Response) => {
     const slug = getParam(req.params.slug);
-    const document = await getEditableDocument(missionsDir, 'mission', slug);
+    const document = await getEditableDocument(projectsDir, 'project', slug);
     if (!document) {
-      res.status(404).json({ error: `Mission "${slug}" not found` });
+      res.status(404).json({ error: `Project "${slug}" not found` });
       return;
     }
     res.json(document);
   });
 
-  router.get('/api/missions/:slug/assignments/:aslug/edit', async (req: Request, res: Response) => {
+  router.get('/api/projects/:slug/assignments/:aslug/edit', async (req: Request, res: Response) => {
     const slug = getParam(req.params.slug);
     const assignmentSlug = getParam(req.params.aslug);
     const document = await getEditableDocument(
-      missionsDir,
+      projectsDir,
       'assignment',
       slug,
       assignmentSlug,
@@ -220,11 +218,11 @@ export function createWriteRouter(missionsDir: string): Router {
     res.json(document);
   });
 
-  router.get('/api/missions/:slug/assignments/:aslug/plan/edit', async (req: Request, res: Response) => {
+  router.get('/api/projects/:slug/assignments/:aslug/plan/edit', async (req: Request, res: Response) => {
     const slug = getParam(req.params.slug);
     const assignmentSlug = getParam(req.params.aslug);
     const document = await getEditableDocument(
-      missionsDir,
+      projectsDir,
       'plan',
       slug,
       assignmentSlug,
@@ -236,11 +234,11 @@ export function createWriteRouter(missionsDir: string): Router {
     res.json(document);
   });
 
-  router.get('/api/missions/:slug/assignments/:aslug/scratchpad/edit', async (req: Request, res: Response) => {
+  router.get('/api/projects/:slug/assignments/:aslug/scratchpad/edit', async (req: Request, res: Response) => {
     const slug = getParam(req.params.slug);
     const assignmentSlug = getParam(req.params.aslug);
     const document = await getEditableDocument(
-      missionsDir,
+      projectsDir,
       'scratchpad',
       slug,
       assignmentSlug,
@@ -252,11 +250,11 @@ export function createWriteRouter(missionsDir: string): Router {
     res.json(document);
   });
 
-  router.get('/api/missions/:slug/assignments/:aslug/handoff/edit', async (req: Request, res: Response) => {
+  router.get('/api/projects/:slug/assignments/:aslug/handoff/edit', async (req: Request, res: Response) => {
     const slug = getParam(req.params.slug);
     const assignmentSlug = getParam(req.params.aslug);
     const document = await getEditableDocument(
-      missionsDir,
+      projectsDir,
       'handoff',
       slug,
       assignmentSlug,
@@ -268,11 +266,11 @@ export function createWriteRouter(missionsDir: string): Router {
     res.json(document);
   });
 
-  router.get('/api/missions/:slug/assignments/:aslug/decision-record/edit', async (req: Request, res: Response) => {
+  router.get('/api/projects/:slug/assignments/:aslug/decision-record/edit', async (req: Request, res: Response) => {
     const slug = getParam(req.params.slug);
     const assignmentSlug = getParam(req.params.aslug);
     const document = await getEditableDocument(
-      missionsDir,
+      projectsDir,
       'decision-record',
       slug,
       assignmentSlug,
@@ -284,7 +282,7 @@ export function createWriteRouter(missionsDir: string): Router {
     res.json(document);
   });
 
-  router.post('/api/missions', async (req: Request, res: Response) => {
+  router.post('/api/projects', async (req: Request, res: Response) => {
     try {
       const content = requireContent(req, res);
       if (!content) {
@@ -309,32 +307,30 @@ export function createWriteRouter(missionsDir: string): Router {
         return;
       }
 
-      const missionDir = resolve(missionsDir, slug);
-      if (await fileExists(missionDir)) {
-        res.status(409).json({ error: `Mission "${slug}" already exists` });
+      const projectDir = resolve(projectsDir, slug);
+      if (await fileExists(projectDir)) {
+        res.status(409).json({ error: `Project "${slug}" already exists` });
         return;
       }
 
       const title = fields.title;
       const timestamp = fields.created || nowTimestamp();
 
-      await ensureDir(resolve(missionDir, 'assignments'));
-      await ensureDir(resolve(missionDir, 'resources'));
-      await ensureDir(resolve(missionDir, 'memories'));
+      await ensureDir(resolve(projectDir, 'assignments'));
+      await ensureDir(resolve(projectDir, 'resources'));
+      await ensureDir(resolve(projectDir, 'memories'));
 
-      await writeFileForce(resolve(missionDir, 'mission.md'), content);
+      await writeFileForce(resolve(projectDir, 'project.md'), content);
 
       try {
         const companions: Array<[string, string]> = [
-          [resolve(missionDir, 'manifest.md'), renderManifest({ slug, timestamp })],
-          [resolve(missionDir, 'agent.md'), renderAgent({ slug, timestamp })],
-          [resolve(missionDir, 'claude.md'), renderClaude({ slug })],
-          [resolve(missionDir, '_index-assignments.md'), renderIndexAssignments({ slug, title, timestamp })],
-          [resolve(missionDir, '_index-plans.md'), renderIndexPlans({ slug, title, timestamp })],
-          [resolve(missionDir, '_index-decisions.md'), renderIndexDecisions({ slug, title, timestamp })],
-          [resolve(missionDir, '_status.md'), renderStatus({ slug, title, timestamp })],
-          [resolve(missionDir, 'resources', '_index.md'), renderResourcesIndex({ slug, title, timestamp })],
-          [resolve(missionDir, 'memories', '_index.md'), renderMemoriesIndex({ slug, title, timestamp })],
+          [resolve(projectDir, 'manifest.md'), renderManifest({ slug, timestamp })],
+          [resolve(projectDir, '_index-assignments.md'), renderIndexAssignments({ slug, title, timestamp })],
+          [resolve(projectDir, '_index-plans.md'), renderIndexPlans({ slug, title, timestamp })],
+          [resolve(projectDir, '_index-decisions.md'), renderIndexDecisions({ slug, title, timestamp })],
+          [resolve(projectDir, '_status.md'), renderStatus({ slug, title, timestamp })],
+          [resolve(projectDir, 'resources', '_index.md'), renderResourcesIndex({ slug, title, timestamp })],
+          [resolve(projectDir, 'memories', '_index.md'), renderMemoriesIndex({ slug, title, timestamp })],
         ];
 
         for (const [filePath, fileContent] of companions) {
@@ -342,7 +338,7 @@ export function createWriteRouter(missionsDir: string): Router {
         }
       } catch (companionError) {
         try {
-          await rm(missionDir, { recursive: true, force: true });
+          await rm(projectDir, { recursive: true, force: true });
         } catch {
           // Best effort cleanup only.
         }
@@ -351,19 +347,19 @@ export function createWriteRouter(missionsDir: string): Router {
 
       res.status(201).json({ slug });
     } catch (error) {
-      console.error('Error creating mission:', error);
-      res.status(500).json({ error: `Failed to create mission: ${(error as Error).message}` });
+      console.error('Error creating project:', error);
+      res.status(500).json({ error: `Failed to create project: ${(error as Error).message}` });
     }
   });
 
-  router.post('/api/missions/:slug/assignments', async (req: Request, res: Response) => {
+  router.post('/api/projects/:slug/assignments', async (req: Request, res: Response) => {
     try {
-      const missionSlug = getParam(req.params.slug);
-      const missionDir = resolve(missionsDir, missionSlug);
-      const missionMdPath = resolve(missionDir, 'mission.md');
+      const projectSlug = getParam(req.params.slug);
+      const projectDir = resolve(projectsDir, projectSlug);
+      const projectMdPath = resolve(projectDir, 'project.md');
 
-      if (!(await fileExists(missionMdPath))) {
-        res.status(404).json({ error: `Mission "${missionSlug}" not found` });
+      if (!(await fileExists(projectMdPath))) {
+        res.status(404).json({ error: `Project "${projectSlug}" not found` });
         return;
       }
 
@@ -397,10 +393,10 @@ export function createWriteRouter(missionsDir: string): Router {
         return;
       }
 
-      const assignmentDir = resolve(missionDir, 'assignments', assignmentSlug);
+      const assignmentDir = resolve(projectDir, 'assignments', assignmentSlug);
       if (await fileExists(assignmentDir)) {
         res.status(409).json({
-          error: `Assignment "${assignmentSlug}" already exists in mission "${missionSlug}"`,
+          error: `Assignment "${assignmentSlug}" already exists in project "${projectSlug}"`,
         });
         return;
       }
@@ -429,20 +425,20 @@ export function createWriteRouter(missionsDir: string): Router {
         throw companionError;
       }
 
-      res.status(201).json({ slug: assignmentSlug, missionSlug });
+      res.status(201).json({ slug: assignmentSlug, projectSlug });
     } catch (error) {
       console.error('Error creating assignment:', error);
       res.status(500).json({ error: `Failed to create assignment: ${(error as Error).message}` });
     }
   });
 
-  router.patch('/api/missions/:slug', async (req: Request, res: Response) => {
+  router.patch('/api/projects/:slug', async (req: Request, res: Response) => {
     try {
-      const missionSlug = getParam(req.params.slug);
-      const missionPath = resolve(missionsDir, missionSlug, 'mission.md');
-      const currentContent = await readCurrentDocument(missionPath);
+      const projectSlug = getParam(req.params.slug);
+      const projectPath = resolve(projectsDir, projectSlug, 'project.md');
+      const currentContent = await readCurrentDocument(projectPath);
       if (!currentContent) {
-        res.status(404).json({ error: `Mission "${missionSlug}" not found` });
+        res.status(404).json({ error: `Project "${projectSlug}" not found` });
         return;
       }
 
@@ -451,37 +447,37 @@ export function createWriteRouter(missionsDir: string): Router {
         return;
       }
 
-      const current = parseMission(currentContent);
-      const next = parseMission(nextContentRaw);
+      const current = parseProject(currentContent);
+      const next = parseProject(nextContentRaw);
 
       if (!next.slug || !next.title) {
-        res.status(400).json({ error: 'Mission content must include slug and title.' });
+        res.status(400).json({ error: 'Project content must include slug and title.' });
         return;
       }
 
       if (next.slug !== current.slug) {
-        res.status(400).json({ error: 'Mission slug cannot be changed once created.' });
+        res.status(400).json({ error: 'Project slug cannot be changed once created.' });
         return;
       }
 
       const nextContent = setTopLevelField(nextContentRaw, 'updated', nowTimestamp());
-      await writeFileForce(missionPath, nextContent);
+      await writeFileForce(projectPath, nextContent);
 
-      const mission = await getMissionDetail(missionsDir, missionSlug);
-      res.json({ mission, content: nextContent });
+      const project = await getProjectDetail(projectsDir, projectSlug);
+      res.json({ project, content: nextContent });
     } catch (error) {
-      console.error('Error updating mission:', error);
-      res.status(500).json({ error: `Failed to update mission: ${(error as Error).message}` });
+      console.error('Error updating project:', error);
+      res.status(500).json({ error: `Failed to update project: ${(error as Error).message}` });
     }
   });
 
-  router.patch('/api/missions/:slug/assignments/:aslug', async (req: Request, res: Response) => {
+  router.patch('/api/projects/:slug/assignments/:aslug', async (req: Request, res: Response) => {
     try {
-      const missionSlug = getParam(req.params.slug);
+      const projectSlug = getParam(req.params.slug);
       const assignmentSlug = getParam(req.params.aslug);
       const assignmentPath = resolve(
-        missionsDir,
-        missionSlug,
+        projectsDir,
+        projectSlug,
         'assignments',
         assignmentSlug,
         'assignment.md',
@@ -520,7 +516,7 @@ export function createWriteRouter(missionsDir: string): Router {
       nextContent = setTopLevelField(nextContent, 'updated', nowTimestamp());
       await writeFileForce(assignmentPath, nextContent);
 
-      const assignment = await getAssignmentDetail(missionsDir, missionSlug, assignmentSlug);
+      const assignment = await getAssignmentDetail(projectsDir, projectSlug, assignmentSlug);
       res.json({ assignment, content: nextContent });
     } catch (error) {
       console.error('Error updating assignment:', error);
@@ -528,13 +524,13 @@ export function createWriteRouter(missionsDir: string): Router {
     }
   });
 
-  router.patch('/api/missions/:slug/assignments/:aslug/acceptance-criteria/:index', async (req: Request, res: Response) => {
+  router.patch('/api/projects/:slug/assignments/:aslug/acceptance-criteria/:index', async (req: Request, res: Response) => {
     try {
-      const missionSlug = getParam(req.params.slug);
+      const projectSlug = getParam(req.params.slug);
       const assignmentSlug = getParam(req.params.aslug);
       const assignmentPath = resolve(
-        missionsDir,
-        missionSlug,
+        projectsDir,
+        projectSlug,
         'assignments',
         assignmentSlug,
         'assignment.md',
@@ -561,7 +557,7 @@ export function createWriteRouter(missionsDir: string): Router {
       const nextContent = setTopLevelField(result.content, 'updated', nowTimestamp());
       await writeFileForce(assignmentPath, nextContent);
 
-      const assignment = await getAssignmentDetail(missionsDir, missionSlug, assignmentSlug);
+      const assignment = await getAssignmentDetail(projectsDir, projectSlug, assignmentSlug);
       res.json({ assignment, content: nextContent });
     } catch (error) {
       console.error('Error toggling acceptance criterion:', error);
@@ -569,13 +565,13 @@ export function createWriteRouter(missionsDir: string): Router {
     }
   });
 
-  router.patch('/api/missions/:slug/assignments/:aslug/plan', async (req: Request, res: Response) => {
+  router.patch('/api/projects/:slug/assignments/:aslug/plan', async (req: Request, res: Response) => {
     try {
-      const missionSlug = getParam(req.params.slug);
+      const projectSlug = getParam(req.params.slug);
       const assignmentSlug = getParam(req.params.aslug);
       const planPath = resolve(
-        missionsDir,
-        missionSlug,
+        projectsDir,
+        projectSlug,
         'assignments',
         assignmentSlug,
         'plan.md',
@@ -605,7 +601,7 @@ export function createWriteRouter(missionsDir: string): Router {
       const nextContent = setTopLevelField(nextContentRaw, 'updated', nowTimestamp());
       await writeFileForce(planPath, nextContent);
 
-      const assignment = await getAssignmentDetail(missionsDir, missionSlug, assignmentSlug);
+      const assignment = await getAssignmentDetail(projectsDir, projectSlug, assignmentSlug);
       res.json({ assignment, content: nextContent });
     } catch (error) {
       console.error('Error updating plan:', error);
@@ -613,13 +609,13 @@ export function createWriteRouter(missionsDir: string): Router {
     }
   });
 
-  router.patch('/api/missions/:slug/assignments/:aslug/scratchpad', async (req: Request, res: Response) => {
+  router.patch('/api/projects/:slug/assignments/:aslug/scratchpad', async (req: Request, res: Response) => {
     try {
-      const missionSlug = getParam(req.params.slug);
+      const projectSlug = getParam(req.params.slug);
       const assignmentSlug = getParam(req.params.aslug);
       const scratchpadPath = resolve(
-        missionsDir,
-        missionSlug,
+        projectsDir,
+        projectSlug,
         'assignments',
         assignmentSlug,
         'scratchpad.md',
@@ -649,7 +645,7 @@ export function createWriteRouter(missionsDir: string): Router {
       const nextContent = setTopLevelField(nextContentRaw, 'updated', nowTimestamp());
       await writeFileForce(scratchpadPath, nextContent);
 
-      const assignment = await getAssignmentDetail(missionsDir, missionSlug, assignmentSlug);
+      const assignment = await getAssignmentDetail(projectsDir, projectSlug, assignmentSlug);
       res.json({ assignment, content: nextContent });
     } catch (error) {
       console.error('Error updating scratchpad:', error);
@@ -657,13 +653,13 @@ export function createWriteRouter(missionsDir: string): Router {
     }
   });
 
-  router.post('/api/missions/:slug/assignments/:aslug/handoff/entries', async (req: Request, res: Response) => {
+  router.post('/api/projects/:slug/assignments/:aslug/handoff/entries', async (req: Request, res: Response) => {
     try {
-      const missionSlug = getParam(req.params.slug);
+      const projectSlug = getParam(req.params.slug);
       const assignmentSlug = getParam(req.params.aslug);
       const handoffPath = resolve(
-        missionsDir,
-        missionSlug,
+        projectsDir,
+        projectSlug,
         'assignments',
         assignmentSlug,
         'handoff.md',
@@ -691,7 +687,7 @@ export function createWriteRouter(missionsDir: string): Router {
       );
 
       await writeFileForce(handoffPath, nextContent);
-      const assignment = await getAssignmentDetail(missionsDir, missionSlug, assignmentSlug);
+      const assignment = await getAssignmentDetail(projectsDir, projectSlug, assignmentSlug);
       res.status(201).json({ assignment, content: nextContent });
     } catch (error) {
       console.error('Error appending handoff entry:', error);
@@ -699,13 +695,13 @@ export function createWriteRouter(missionsDir: string): Router {
     }
   });
 
-  router.post('/api/missions/:slug/assignments/:aslug/decision-record/entries', async (req: Request, res: Response) => {
+  router.post('/api/projects/:slug/assignments/:aslug/decision-record/entries', async (req: Request, res: Response) => {
     try {
-      const missionSlug = getParam(req.params.slug);
+      const projectSlug = getParam(req.params.slug);
       const assignmentSlug = getParam(req.params.aslug);
       const decisionPath = resolve(
-        missionsDir,
-        missionSlug,
+        projectsDir,
+        projectSlug,
         'assignments',
         assignmentSlug,
         'decision-record.md',
@@ -733,7 +729,7 @@ export function createWriteRouter(missionsDir: string): Router {
       );
 
       await writeFileForce(decisionPath, nextContent);
-      const assignment = await getAssignmentDetail(missionsDir, missionSlug, assignmentSlug);
+      const assignment = await getAssignmentDetail(projectsDir, projectSlug, assignmentSlug);
       res.status(201).json({ assignment, content: nextContent });
     } catch (error) {
       console.error('Error appending decision entry:', error);
@@ -743,12 +739,12 @@ export function createWriteRouter(missionsDir: string): Router {
 
   // --- Move Workspace Endpoint ---
 
-  router.post('/api/missions/:slug/move-workspace', async (req: Request, res: Response) => {
+  router.post('/api/projects/:slug/move-workspace', async (req: Request, res: Response) => {
     try {
-      const missionSlug = getParam(req.params.slug);
-      const missionPath = resolve(missionsDir, missionSlug, 'mission.md');
-      if (!(await fileExists(missionPath))) {
-        res.status(404).json({ error: `Mission "${missionSlug}" not found` });
+      const projectSlug = getParam(req.params.slug);
+      const projectPath = resolve(projectsDir, projectSlug, 'project.md');
+      if (!(await fileExists(projectPath))) {
+        res.status(404).json({ error: `Project "${projectSlug}" not found` });
         return;
       }
 
@@ -758,27 +754,27 @@ export function createWriteRouter(missionsDir: string): Router {
         return;
       }
 
-      let content = await readFile(missionPath, 'utf-8');
+      let content = await readFile(projectPath, 'utf-8');
       content = setTopLevelField(content, 'workspace', workspace ?? null);
       content = setTopLevelField(content, 'updated', nowTimestamp());
-      await writeFileForce(missionPath, content);
+      await writeFileForce(projectPath, content);
 
-      const mission = await getMissionDetail(missionsDir, missionSlug);
-      res.json({ mission });
+      const project = await getProjectDetail(projectsDir, projectSlug);
+      res.json({ project });
     } catch (error) {
-      console.error('Error moving mission workspace:', error);
+      console.error('Error moving project workspace:', error);
       res.status(500).json({ error: `Failed to move workspace: ${(error as Error).message}` });
     }
   });
 
   // --- Status Override Endpoints ---
 
-  router.post('/api/missions/:slug/status-override', async (req: Request, res: Response) => {
+  router.post('/api/projects/:slug/status-override', async (req: Request, res: Response) => {
     try {
-      const missionSlug = getParam(req.params.slug);
-      const missionPath = resolve(missionsDir, missionSlug, 'mission.md');
-      if (!(await fileExists(missionPath))) {
-        res.status(404).json({ error: `Mission "${missionSlug}" not found` });
+      const projectSlug = getParam(req.params.slug);
+      const projectPath = resolve(projectsDir, projectSlug, 'project.md');
+      if (!(await fileExists(projectPath))) {
+        res.status(404).json({ error: `Project "${projectSlug}" not found` });
         return;
       }
 
@@ -790,26 +786,26 @@ export function createWriteRouter(missionsDir: string): Router {
         return;
       }
 
-      let content = await readFile(missionPath, 'utf-8');
+      let content = await readFile(projectPath, 'utf-8');
       content = setTopLevelField(content, 'statusOverride', status ?? null);
       content = setTopLevelField(content, 'updated', nowTimestamp());
-      await writeFileForce(missionPath, content);
+      await writeFileForce(projectPath, content);
 
-      const mission = await getMissionDetail(missionsDir, missionSlug);
-      res.json({ mission });
+      const project = await getProjectDetail(projectsDir, projectSlug);
+      res.json({ project });
     } catch (error) {
-      console.error('Error setting mission status override:', error);
+      console.error('Error setting project status override:', error);
       res.status(500).json({ error: `Failed to set status override: ${(error as Error).message}` });
     }
   });
 
-  router.post('/api/missions/:slug/assignments/:aslug/status-override', async (req: Request, res: Response) => {
+  router.post('/api/projects/:slug/assignments/:aslug/status-override', async (req: Request, res: Response) => {
     try {
-      const missionSlug = getParam(req.params.slug);
+      const projectSlug = getParam(req.params.slug);
       const assignmentSlug = getParam(req.params.aslug);
       const assignmentPath = resolve(
-        missionsDir,
-        missionSlug,
+        projectsDir,
+        projectSlug,
         'assignments',
         assignmentSlug,
         'assignment.md',
@@ -838,7 +834,7 @@ export function createWriteRouter(missionsDir: string): Router {
 
       await writeFileForce(assignmentPath, content);
 
-      const assignment = await getAssignmentDetail(missionsDir, missionSlug, assignmentSlug);
+      const assignment = await getAssignmentDetail(projectsDir, projectSlug, assignmentSlug);
       res.json({ assignment });
     } catch (error) {
       console.error('Error overriding assignment status:', error);
@@ -848,9 +844,9 @@ export function createWriteRouter(missionsDir: string): Router {
 
   // --- Lifecycle Transitions ---
 
-  router.post('/api/missions/:slug/assignments/:aslug/transitions/:command', async (req: Request, res: Response) => {
+  router.post('/api/projects/:slug/assignments/:aslug/transitions/:command', async (req: Request, res: Response) => {
     try {
-      const missionSlug = getParam(req.params.slug);
+      const projectSlug = getParam(req.params.slug);
       const assignmentSlug = getParam(req.params.aslug);
       const command = req.params.command as Parameters<typeof executeTransition>[2];
       const config = await getStatusConfig();
@@ -860,15 +856,15 @@ export function createWriteRouter(missionsDir: string): Router {
         return;
       }
 
-      const missionDir = resolve(missionsDir, missionSlug);
-      const assignmentPath = resolve(missionDir, 'assignments', assignmentSlug, 'assignment.md');
+      const projectDir = resolve(projectsDir, projectSlug);
+      const assignmentPath = resolve(projectDir, 'assignments', assignmentSlug, 'assignment.md');
       if (!(await fileExists(assignmentPath))) {
         res.status(404).json({ error: 'Assignment not found' });
         return;
       }
 
       const { reason } = req.body || {};
-      const result = await executeTransition(missionDir, assignmentSlug, command, {
+      const result = await executeTransition(projectDir, assignmentSlug, command, {
         reason: typeof reason === 'string' ? reason : undefined,
         transitionTable: config.custom ? config.transitionTable : undefined,
         terminalStatuses: config.custom ? config.terminalStatuses : undefined,
@@ -879,7 +875,7 @@ export function createWriteRouter(missionsDir: string): Router {
         return;
       }
 
-      const assignment = await getAssignmentDetail(missionsDir, missionSlug, assignmentSlug);
+      const assignment = await getAssignmentDetail(projectsDir, projectSlug, assignmentSlug);
       res.json({ assignment, transition: result });
     } catch (error) {
       console.error('Error running assignment transition:', error);
@@ -887,20 +883,20 @@ export function createWriteRouter(missionsDir: string): Router {
     }
   });
 
-  router.delete('/api/missions/:slug/assignments/:aslug', async (req: Request, res: Response) => {
+  router.delete('/api/projects/:slug/assignments/:aslug', async (req: Request, res: Response) => {
     try {
-      const missionSlug = getParam(req.params.slug);
+      const projectSlug = getParam(req.params.slug);
       const assignmentSlug = getParam(req.params.aslug);
-      const assignmentDir = resolve(missionsDir, missionSlug, 'assignments', assignmentSlug);
+      const assignmentDir = resolve(projectsDir, projectSlug, 'assignments', assignmentSlug);
       const assignmentPath = resolve(assignmentDir, 'assignment.md');
 
       if (!(await fileExists(assignmentPath))) {
-        res.status(404).json({ error: `Assignment "${assignmentSlug}" not found in mission "${missionSlug}"` });
+        res.status(404).json({ error: `Assignment "${assignmentSlug}" not found in project "${projectSlug}"` });
         return;
       }
 
       await rm(assignmentDir, { recursive: true, force: true });
-      res.json({ deleted: assignmentSlug, missionSlug });
+      res.json({ deleted: assignmentSlug, projectSlug });
     } catch (error) {
       console.error('Error deleting assignment:', error);
       res.status(500).json({ error: `Failed to delete assignment: ${(error as Error).message}` });

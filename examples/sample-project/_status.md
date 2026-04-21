@@ -1,5 +1,5 @@
 ---
-mission: build-auth-system
+project: build-auth-system
 generated: "2026-03-18T14:30:00Z"
 status: active
 progress:
@@ -13,10 +13,10 @@ progress:
 needsAttention:
   blockedCount: 0
   failedCount: 0
-  unansweredQuestions: 1
+  openQuestions: 1
 ---
 
-# Mission Status: Build Authentication System
+# Project Status: Build Authentication System
 
 **Status:** active
 **Progress:** 1/3 assignments complete

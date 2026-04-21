@@ -1,18 +1,18 @@
 import { useParams } from 'react-router-dom';
 import { AppendEntryPage } from '../components/AppendEntryPage';
-import { useWorkspacePrefix } from '../hooks/useMissions';
+import { useWorkspacePrefix } from '../hooks/useProjects';
 
 export function AppendAssignmentHandoff() {
   const { slug, aslug } = useParams<{ slug: string; aslug: string }>();
   const wsPrefix = useWorkspacePrefix();
-  const missionSlug = slug ?? '';
+  const projectSlug = slug ?? '';
   const assignmentSlug = aslug ?? '';
 
   return (
     <AppendEntryPage
-      loadUrl={`/api/missions/${missionSlug}/assignments/${assignmentSlug}/handoff/edit`}
-      saveUrl={`/api/missions/${missionSlug}/assignments/${assignmentSlug}/handoff/entries`}
-      redirectTo={`${wsPrefix}/missions/${missionSlug}/assignments/${assignmentSlug}?tab=handoff`}
+      loadUrl={`/api/projects/${projectSlug}/assignments/${assignmentSlug}/handoff/edit`}
+      saveUrl={`/api/projects/${projectSlug}/assignments/${assignmentSlug}/handoff/entries`}
+      redirectTo={`${wsPrefix}/projects/${projectSlug}/assignments/${assignmentSlug}?tab=handoff`}
       title="Append Handoff Entry"
       description="Add a new handoff without rewriting previous history."
       helpTitle="Append-only handoff history"

@@ -9,14 +9,14 @@ const CATEGORY = 'workspace';
 
 interface ContextFile {
   sessionId?: string;
-  missionSlug?: string;
+  projectSlug?: string;
   assignmentSlug?: string;
-  missionDir?: string;
+  projectDir?: string;
   assignmentDir?: string;
   workspaceRoot?: string;
 }
 
-const ASSIGNMENT_FIELDS = ['missionSlug', 'assignmentSlug', 'missionDir', 'assignmentDir'] as const;
+const ASSIGNMENT_FIELDS = ['projectSlug', 'assignmentSlug', 'projectDir', 'assignmentDir'] as const;
 
 function hasAnyAssignmentField(ctx: ContextFile | null): boolean {
   if (!ctx) return false;
@@ -89,7 +89,7 @@ const contextValid: Check = {
       } satisfies CheckResult;
     }
     const missing: string[] = [];
-    for (const key of ['missionSlug', 'assignmentSlug', 'assignmentDir'] as const) {
+    for (const key of ['projectSlug', 'assignmentSlug', 'assignmentDir'] as const) {
       if (!data?.[key]) missing.push(key);
     }
     if (missing.length > 0) {

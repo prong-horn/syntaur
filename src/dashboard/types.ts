@@ -10,10 +10,10 @@ export type ProgressCounts = Record<string, number> & { total: number };
 export interface NeedsAttention {
   blockedCount: number;
   failedCount: number;
-  unansweredQuestions: number;
+  openQuestions: number;
 }
 
-export interface MissionSummary {
+export interface ProjectSummary {
   slug: string;
   title: string;
   status: string;
@@ -31,7 +31,7 @@ export interface MissionSummary {
 
 export interface EnrichedLink {
   slug: string;
-  missionSlug: string;
+  projectSlug: string;
   assignmentSlug: string;
   title: string;
   status: string;
@@ -51,11 +51,11 @@ export interface AssignmentSummary {
 }
 
 export interface AssignmentBoardItem extends AssignmentSummary {
-  missionSlug: string;
-  missionTitle: string;
+  projectSlug: string;
+  projectTitle: string;
   blockedReason: string | null;
   availableTransitions: AssignmentTransitionAction[];
-  missionWorkspace: string | null;
+  projectWorkspace: string | null;
 }
 
 export interface ResourceSummary {
@@ -76,7 +76,7 @@ export interface MemorySummary {
   updated: string;
 }
 
-export interface MissionDetail {
+export interface ProjectDetail {
   slug: string;
   title: string;
   status: string;
@@ -112,7 +112,7 @@ export interface ExternalIdInfo {
 
 export interface AssignmentDetail {
   id: string;
-  missionSlug: string;
+  projectSlug: string;
   slug: string;
   title: string;
   status: string;
@@ -150,8 +150,8 @@ export interface AssignmentTransitionAction {
 export interface AttentionItem {
   id: string;
   severity: 'critical' | 'high' | 'medium' | 'low';
-  missionSlug: string;
-  missionTitle: string;
+  projectSlug: string;
+  projectTitle: string;
   assignmentSlug: string;
   assignmentTitle: string;
   status: string;
@@ -181,12 +181,12 @@ export interface AssignmentsBoardResponse {
 
 export interface RecentActivityItem {
   id: string;
-  type: 'mission' | 'assignment';
+  type: 'project' | 'assignment';
   title: string;
   updated: string;
   href: string;
-  missionSlug: string;
-  missionTitle: string;
+  projectSlug: string;
+  projectTitle: string;
   assignmentSlug: string | null;
   summary: string;
 }
@@ -195,7 +195,7 @@ export interface OverviewResponse {
   generatedAt: string;
   firstRun: boolean;
   stats: {
-    activeMissions: number;
+    activeProjects: number;
     inProgressAssignments: number;
     blockedAssignments: number;
     reviewAssignments: number;
@@ -203,7 +203,7 @@ export interface OverviewResponse {
     staleAssignments: number;
   };
   attention: AttentionItem[];
-  recentMissions: MissionSummary[];
+  recentProjects: ProjectSummary[];
   recentActivity: RecentActivityItem[];
   serverStats?: {
     trackedSessions: number;
@@ -270,7 +270,7 @@ export interface HelpResponse {
     question: string;
     answer: string;
   }>;
-  firstMissionChecklist: HelpChecklistItem[];
+  firstProjectChecklist: HelpChecklistItem[];
   links: HelpSectionLink[];
 }
 
@@ -296,7 +296,7 @@ export interface PlaybooksResponse {
 }
 
 export type EditableDocumentType =
-  | 'mission'
+  | 'project'
   | 'assignment'
   | 'plan'
   | 'scratchpad'
@@ -308,7 +308,7 @@ export interface EditableDocumentResponse {
   documentType: EditableDocumentType;
   title: string;
   content: string;
-  missionSlug: string;
+  projectSlug: string;
   assignmentSlug?: string;
   appendOnly: boolean;
 }
@@ -316,7 +316,7 @@ export interface EditableDocumentResponse {
 // --- WebSocket Message Types ---
 
 export type WsMessageType =
-  | 'mission-updated'
+  | 'project-updated'
   | 'assignment-updated'
   | 'servers-updated'
   | 'agent-sessions-updated'
@@ -326,7 +326,7 @@ export type WsMessageType =
 
 export interface WsMessage {
   type: WsMessageType;
-  missionSlug?: string;
+  projectSlug?: string;
   assignmentSlug?: string;
   timestamp: string;
 }
@@ -358,7 +358,7 @@ export interface TrackedPane {
   ports: number[];
   urls: string[];
   assignment: {
-    mission: string;
+    project: string;
     slug: string;
     title: string;
   } | null;
@@ -375,7 +375,7 @@ export interface SessionFileData {
   session: string;
   registered: string;
   lastRefreshed: string;
-  overrides: Record<string, { mission: string; assignment: string }>;
+  overrides: Record<string, { project: string; assignment: string }>;
   auto?: boolean;
   kind?: SessionKind;
   pid?: number;
@@ -388,7 +388,7 @@ export interface SessionFileData {
 export type AgentSessionStatus = 'active' | 'completed' | 'stopped';
 
 export interface AgentSession {
-  missionSlug: string | null;
+  projectSlug: string | null;
   assignmentSlug: string | null;
   agent: string;
   sessionId: string;

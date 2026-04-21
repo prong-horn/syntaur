@@ -22,7 +22,7 @@ session: my-feature-stack
 registered: 2026-03-22T14:30:00Z
 last_refreshed: 2026-03-22T14:35:00Z
 overrides:
-  "0:1": { mission: "auth-redesign", assignment: "implement-oauth" }
+  "0:1": { project: "auth-redesign", assignment: "implement-oauth" }
 ---
 ```
 
@@ -57,7 +57,7 @@ interface TrackedPane {
   ports: number[];
   urls: string[];             // always http://localhost:<port>
   assignment: {
-    mission: string;
+    project: string;
     slug: string;
     title: string;
   } | null;
@@ -117,7 +117,7 @@ DELETE /api/servers/:name                                      → unregister (d
 POST   /api/servers/refresh                                    → fresh scan all sessions, update cache
 POST   /api/servers/:name/refresh                              → fresh scan one session, update cache
 PATCH  /api/servers/:name/panes/:windowIndex/:paneIndex/assignment → manual assignment link
-       body: { mission: string, assignment: string } | null
+       body: { project: string, assignment: string } | null
 ```
 
 ## Dashboard UI
@@ -158,7 +158,7 @@ Extend the existing file watcher to also watch `~/.syntaur/servers/`. This requi
 
 - Adding an optional `serversDir` to `WatcherOptions` and creating a second chokidar instance (or watching the parent `~/.syntaur/` with path filtering).
 - Adding `'servers-updated'` to the `WsMessageType` union in `types.ts`.
-- The watcher's `handleChange` logic for server files is simpler than mission files — just broadcast `{ type: 'servers-updated' }` on any change, no slug extraction needed.
+- The watcher's `handleChange` logic for server files is simpler than project files — just broadcast `{ type: 'servers-updated' }` on any change, no slug extraction needed.
 - Adding a `serversDir()` helper to `src/utils/paths.ts` (returns `syntaurRoot() + '/servers'`).
 - Adding `serversDir` to `DashboardServerOptions`.
 

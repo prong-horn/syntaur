@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import type { ProgressCounts } from '../hooks/useMissions';
+import type { ProgressCounts } from '../hooks/useProjects';
 import { cn } from '../lib/utils';
 import { toTitleCase } from '../lib/format';
 import { useStatusConfig } from '../hooks/useStatusConfig';

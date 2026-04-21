@@ -11,7 +11,7 @@ Cursor reads `.cursor/rules/*.mdc` files with YAML frontmatter. Syntaur generate
 Generate adapter files for a specific assignment:
 
 ```bash
-syntaur setup-adapter cursor --mission <mission-slug> --assignment <assignment-slug>
+syntaur setup-adapter cursor --project <project-slug> --assignment <assignment-slug>
 ```
 
 This creates:

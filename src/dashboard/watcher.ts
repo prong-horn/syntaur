@@ -3,7 +3,7 @@ import { relative, sep } from 'node:path';
 import type { WsMessage } from './types.js';
 
 export interface WatcherOptions {
-  missionsDir: string;
+  projectsDir: string;
   serversDir?: string;
   playbooksDir?: string;
   todosDir?: string;
@@ -12,24 +12,24 @@ export interface WatcherOptions {
 }
 
 export function createWatcher(options: WatcherOptions): { close: () => Promise<void> } {
-  const { missionsDir, serversDir, playbooksDir, todosDir, onMessage, debounceMs = 300 } = options;
+  const { projectsDir, serversDir, playbooksDir, todosDir, onMessage, debounceMs = 300 } = options;
   const pendingEvents = new Map<string, NodeJS.Timeout>();
 
-  // --- Missions watcher (existing logic) ---
-  const missionsWatcher = watch(missionsDir, {
+  // --- Projects watcher (existing logic) ---
+  const projectsWatcher = watch(projectsDir, {
     ignoreInitial: true,
     persistent: true,
     depth: 10,
     ignored: /(^|[\/\\])\../,
   });
 
-  function handleMissionChange(filePath: string): void {
-    const rel = relative(missionsDir, filePath);
+  function handleProjectChange(filePath: string): void {
+    const rel = relative(projectsDir, filePath);
     const parts = rel.split(sep);
 
     if (parts.length === 0) return;
 
-    const missionSlug = parts[0];
+    const projectSlug = parts[0];
     let assignmentSlug: string | undefined;
 
     if (parts.length >= 3 && parts[1] === 'assignments') {
@@ -37,8 +37,8 @@ export function createWatcher(options: WatcherOptions): { close: () => Promise<v
     }
 
     const debounceKey = assignmentSlug
-      ? `${missionSlug}/${assignmentSlug}`
-      : missionSlug;
+      ? `${projectSlug}/${assignmentSlug}`
+      : projectSlug;
 
     const existing = pendingEvents.get(debounceKey);
     if (existing) clearTimeout(existing);
@@ -46,7 +46,7 @@ export function createWatcher(options: WatcherOptions): { close: () => Promise<v
     // Session events are now emitted by the API write path, not the file watcher
     const messageType = assignmentSlug
       ? 'assignment-updated'
-      : 'mission-updated';
+      : 'project-updated';
 
     pendingEvents.set(
       debounceKey,
@@ -54,7 +54,7 @@ export function createWatcher(options: WatcherOptions): { close: () => Promise<v
         pendingEvents.delete(debounceKey);
         const message: WsMessage = {
           type: messageType,
-          missionSlug,
+          projectSlug,
           assignmentSlug,
           timestamp: new Date().toISOString(),
         };
@@ -63,9 +63,9 @@ export function createWatcher(options: WatcherOptions): { close: () => Promise<v
     );
   }
 
-  missionsWatcher.on('change', handleMissionChange);
-  missionsWatcher.on('add', handleMissionChange);
-  missionsWatcher.on('unlink', handleMissionChange);
+  projectsWatcher.on('change', handleProjectChange);
+  projectsWatcher.on('add', handleProjectChange);
+  projectsWatcher.on('unlink', handleProjectChange);
 
   // --- Servers watcher (new) ---
   let serversWatcher: ReturnType<typeof watch> | null = null;
@@ -175,7 +175,7 @@ export function createWatcher(options: WatcherOptions): { close: () => Promise<v
         clearTimeout(timeout);
       });
       pendingEvents.clear();
-      await missionsWatcher.close();
+      await projectsWatcher.close();
       if (serversWatcher) await serversWatcher.close();
       if (playbooksWatcher) await playbooksWatcher.close();
       if (todosWatcher) await todosWatcher.close();

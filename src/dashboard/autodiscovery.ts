@@ -63,7 +63,7 @@ let activeReconcile: Promise<void> | null = null;
 
 export interface AutodiscoveryOptions {
   serversDir: string;
-  missionsDir: string;
+  projectsDir: string;
   intervalMs?: number;
   excludePids?: Set<number>;
 }
@@ -97,7 +97,7 @@ export async function stopAutodiscovery(): Promise<void> {
 function runReconcile(): void {
   if (activeReconcile || !savedOptions) return;
   const opts = savedOptions;
-  activeReconcile = reconcile(opts.serversDir, opts.missionsDir, opts.excludePids)
+  activeReconcile = reconcile(opts.serversDir, opts.projectsDir, opts.excludePids)
     .catch((err) => {
       console.error('[autodiscovery] reconcile failed:', err);
     })
@@ -116,13 +116,13 @@ export async function listAllTmuxSessions(): Promise<string[]> {
 
 async function discoverTmuxSessions(
   serversDir: string,
-  missionsDir: string,
+  projectsDir: string,
   existingNames: Set<string>,
 ): Promise<boolean> {
   const tmuxAvailable = await checkTmuxAvailable();
   if (!tmuxAvailable) return false;
 
-  const workspaceRecords = await loadWorkspaceRecords(missionsDir);
+  const workspaceRecords = await loadWorkspaceRecords(projectsDir);
   if (workspaceRecords.length === 0) return false;
 
   const sessions = await listAllTmuxSessions();
@@ -186,11 +186,11 @@ async function getProcessCwd(pid: number): Promise<string | null> {
 
 async function discoverProcesses(
   serversDir: string,
-  missionsDir: string,
+  projectsDir: string,
   existingFiles: Map<string, SessionFileData>,
   excludePids?: Set<number>,
 ): Promise<boolean> {
-  const workspaceRecords = await loadWorkspaceRecords(missionsDir);
+  const workspaceRecords = await loadWorkspaceRecords(projectsDir);
   if (workspaceRecords.length === 0) return false;
 
   const lsofOutput = await getLsofOutput();
@@ -283,7 +283,7 @@ export async function isProcessAlive(pid: number): Promise<boolean> {
   }
 }
 
-async function reconcile(serversDir: string, missionsDir: string, excludePids?: Set<number>): Promise<void> {
+async function reconcile(serversDir: string, projectsDir: string, excludePids?: Set<number>): Promise<void> {
   // Load all existing session files
   const names = await listSessionFiles(serversDir);
   const existingFiles = new Map<string, SessionFileData>();
@@ -302,8 +302,8 @@ async function reconcile(serversDir: string, missionsDir: string, excludePids?: 
   const existingNames = new Set(existingFiles.keys());
 
   // Discover new sessions
-  const tmuxChanged = await discoverTmuxSessions(serversDir, missionsDir, existingNames);
-  const processChanged = await discoverProcesses(serversDir, missionsDir, existingFiles, excludePids);
+  const tmuxChanged = await discoverTmuxSessions(serversDir, projectsDir, existingNames);
+  const processChanged = await discoverProcesses(serversDir, projectsDir, existingFiles, excludePids);
 
   // Invalidate scan cache if anything changed
   if (tmuxChanged || processChanged || cleanupChanged) {

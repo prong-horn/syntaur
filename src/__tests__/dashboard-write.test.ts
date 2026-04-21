@@ -81,14 +81,14 @@ async function invokeRoute(
 }
 
 async function createAssignmentFixture(): Promise<void> {
-  const missionDir = resolve(testDir, 'test-mission');
-  const assignmentDir = resolve(missionDir, 'assignments', 'test-assignment');
+  const projectDir = resolve(testDir, 'test-project');
+  const assignmentDir = resolve(projectDir, 'assignments', 'test-assignment');
   await mkdir(assignmentDir, { recursive: true });
 
-  await writeFile(resolve(missionDir, 'mission.md'), `---
-id: mission-1
-slug: test-mission
-title: Test Mission
+  await writeFile(resolve(projectDir, 'project.md'), `---
+id: project-1
+slug: test-project
+title: Test Project
 archived: false
 archivedAt: null
 archivedReason: null
@@ -97,7 +97,7 @@ updated: "2026-03-20T10:00:00Z"
 tags: []
 ---
 
-# Test Mission`, 'utf-8');
+# Test Project`, 'utf-8');
 
   await writeFile(resolve(assignmentDir, 'assignment.md'), `---
 id: assignment-1
@@ -163,20 +163,20 @@ Keep the current layout`, 'utf-8');
 }
 
 describe('dashboard write router', () => {
-  it('rejects mission slug changes', async () => {
+  it('rejects project slug changes', async () => {
     await createAssignmentFixture();
     const router = createWriteRouter(testDir);
 
     const response = await invokeRoute(
       router,
       'patch',
-      '/api/missions/:slug',
-      { slug: 'test-mission' },
+      '/api/projects/:slug',
+      { slug: 'test-project' },
       {
         content: `---
-id: mission-1
-slug: renamed-mission
-title: Test Mission
+id: project-1
+slug: renamed-project
+title: Test Project
 archived: false
 archivedAt: null
 archivedReason: null
@@ -185,13 +185,13 @@ updated: "2026-03-20T10:00:00Z"
 tags: []
 ---
 
-# Test Mission`,
+# Test Project`,
       },
     );
 
     expect(response.statusCode).toBe(400);
     expect(response.payload).toEqual({
-      error: 'Mission slug cannot be changed once created.',
+      error: 'Project slug cannot be changed once created.',
     });
   });
 
@@ -202,8 +202,8 @@ tags: []
     const response = await invokeRoute(
       router,
       'patch',
-      '/api/missions/:slug/assignments/:aslug',
-      { slug: 'test-mission', aslug: 'test-assignment' },
+      '/api/projects/:slug/assignments/:aslug',
+      { slug: 'test-project', aslug: 'test-assignment' },
       {
         content: `---
 id: assignment-1
@@ -237,7 +237,7 @@ tags: []
     await createAssignmentFixture();
     const assignmentPath = resolve(
       testDir,
-      'test-mission',
+      'test-project',
       'assignments',
       'test-assignment',
       'assignment.md',
@@ -278,8 +278,8 @@ Keep this paragraph.`, 'utf-8');
     const response = await invokeRoute(
       router,
       'patch',
-      '/api/missions/:slug/assignments/:aslug/acceptance-criteria/:index',
-      { slug: 'test-mission', aslug: 'test-assignment', index: '0' },
+      '/api/projects/:slug/assignments/:aslug/acceptance-criteria/:index',
+      { slug: 'test-project', aslug: 'test-assignment', index: '0' },
       { checked: true },
     );
 
@@ -300,8 +300,8 @@ Keep this paragraph.`, 'utf-8');
     const response = await invokeRoute(
       router,
       'post',
-      '/api/missions/:slug/assignments/:aslug/handoff/entries',
-      { slug: 'test-mission', aslug: 'test-assignment' },
+      '/api/projects/:slug/assignments/:aslug/handoff/entries',
+      { slug: 'test-project', aslug: 'test-assignment' },
       {
         title: 'Handoff 2',
         body: 'Second handoff entry',
@@ -314,7 +314,7 @@ Keep this paragraph.`, 'utf-8');
     expect((response.payload as any).content).toContain('Second handoff entry');
 
     const fileContent = await readFile(
-      resolve(testDir, 'test-mission', 'assignments', 'test-assignment', 'handoff.md'),
+      resolve(testDir, 'test-project', 'assignments', 'test-assignment', 'handoff.md'),
       'utf-8',
     );
     expect(fileContent).toContain('Initial handoff');
@@ -329,8 +329,8 @@ Keep this paragraph.`, 'utf-8');
     const blockedWithoutReason = await invokeRoute(
       router,
       'post',
-      '/api/missions/:slug/assignments/:aslug/transitions/:command',
-      { slug: 'test-mission', aslug: 'test-assignment', command: 'block' },
+      '/api/projects/:slug/assignments/:aslug/transitions/:command',
+      { slug: 'test-project', aslug: 'test-assignment', command: 'block' },
       {},
     );
 
@@ -342,8 +342,8 @@ Keep this paragraph.`, 'utf-8');
     const unblocked = await invokeRoute(
       router,
       'post',
-      '/api/missions/:slug/assignments/:aslug/transitions/:command',
-      { slug: 'test-mission', aslug: 'test-assignment', command: 'unblock' },
+      '/api/projects/:slug/assignments/:aslug/transitions/:command',
+      { slug: 'test-project', aslug: 'test-assignment', command: 'unblock' },
       {},
     );
     expect(unblocked.statusCode).toBe(200);
@@ -353,8 +353,8 @@ Keep this paragraph.`, 'utf-8');
     const blocked = await invokeRoute(
       router,
       'post',
-      '/api/missions/:slug/assignments/:aslug/transitions/:command',
-      { slug: 'test-mission', aslug: 'test-assignment', command: 'block' },
+      '/api/projects/:slug/assignments/:aslug/transitions/:command',
+      { slug: 'test-project', aslug: 'test-assignment', command: 'block' },
       { reason: 'Waiting on design review' },
     );
     expect(blocked.statusCode).toBe(200);

@@ -3,13 +3,13 @@ import { Layout } from './components/Layout';
 import { Overview } from './pages/Overview';
 import { AttentionPage } from './pages/Attention';
 import { HelpPage } from './pages/Help';
-import { MissionList } from './pages/MissionList';
-import { MissionDetail } from './pages/MissionDetail';
+import { ProjectList } from './pages/ProjectList';
+import { ProjectDetail } from './pages/ProjectDetail';
 import { AssignmentDetail } from './pages/AssignmentDetail';
 import { AssignmentsPage } from './pages/AssignmentsPage';
-import { CreateMission } from './pages/CreateMission';
+import { CreateProject } from './pages/CreateProject';
 import { CreateAssignment } from './pages/CreateAssignment';
-import { EditMission } from './pages/EditMission';
+import { EditProject } from './pages/EditProject';
 import { EditAssignment } from './pages/EditAssignment';
 import { EditAssignmentPlan } from './pages/EditAssignmentPlan';
 import { EditAssignmentScratchpad } from './pages/EditAssignmentScratchpad';
@@ -33,7 +33,7 @@ export function App() {
         <Routes>
           <Route element={<Layout />}>
             <Route path="/" element={<Overview />} />
-            <Route path="/missions" element={<MissionList />} />
+            <Route path="/projects" element={<ProjectList />} />
             <Route path="/assignments" element={<AssignmentsPage />} />
             <Route path="/attention" element={<AttentionPage />} />
             <Route path="/servers" element={<ServersPage />} />
@@ -45,33 +45,33 @@ export function App() {
             <Route path="/todos" element={<TodosPage />} />
             <Route path="/help" element={<HelpPage />} />
             <Route path="/settings" element={<SettingsPage />} />
-            <Route path="/create/mission" element={<CreateMission />} />
-            <Route path="/missions/:slug" element={<MissionDetail />} />
-            <Route path="/missions/:slug/edit" element={<EditMission />} />
-            <Route path="/missions/:slug/create/assignment" element={<CreateAssignment />} />
-            <Route path="/missions/:slug/assignments/:aslug" element={<AssignmentDetail />} />
-            <Route path="/missions/:slug/assignments/:aslug/edit" element={<EditAssignment />} />
-            <Route path="/missions/:slug/assignments/:aslug/plan/edit" element={<EditAssignmentPlan />} />
-            <Route path="/missions/:slug/assignments/:aslug/scratchpad/edit" element={<EditAssignmentScratchpad />} />
-            <Route path="/missions/:slug/assignments/:aslug/handoff/edit" element={<AppendAssignmentHandoff />} />
-            <Route path="/missions/:slug/assignments/:aslug/decision-record/edit" element={<AppendAssignmentDecisionRecord />} />
+            <Route path="/create/project" element={<CreateProject />} />
+            <Route path="/projects/:slug" element={<ProjectDetail />} />
+            <Route path="/projects/:slug/edit" element={<EditProject />} />
+            <Route path="/projects/:slug/create/assignment" element={<CreateAssignment />} />
+            <Route path="/projects/:slug/assignments/:aslug" element={<AssignmentDetail />} />
+            <Route path="/projects/:slug/assignments/:aslug/edit" element={<EditAssignment />} />
+            <Route path="/projects/:slug/assignments/:aslug/plan/edit" element={<EditAssignmentPlan />} />
+            <Route path="/projects/:slug/assignments/:aslug/scratchpad/edit" element={<EditAssignmentScratchpad />} />
+            <Route path="/projects/:slug/assignments/:aslug/handoff/edit" element={<AppendAssignmentHandoff />} />
+            <Route path="/projects/:slug/assignments/:aslug/decision-record/edit" element={<AppendAssignmentDecisionRecord />} />
 
             {/* Workspace-scoped routes */}
-            <Route path="/w/:workspace/missions" element={<MissionList />} />
+            <Route path="/w/:workspace/projects" element={<ProjectList />} />
             <Route path="/w/:workspace/assignments" element={<AssignmentsPage />} />
             <Route path="/w/:workspace/servers" element={<ServersPage />} />
             <Route path="/w/:workspace/agent-sessions" element={<AgentSessionsPage />} />
             <Route path="/w/:workspace/todos" element={<WorkspaceTodosPage />} />
-            <Route path="/w/:workspace/create/mission" element={<CreateMission />} />
-            <Route path="/w/:workspace/missions/:slug" element={<MissionDetail />} />
-            <Route path="/w/:workspace/missions/:slug/edit" element={<EditMission />} />
-            <Route path="/w/:workspace/missions/:slug/create/assignment" element={<CreateAssignment />} />
-            <Route path="/w/:workspace/missions/:slug/assignments/:aslug" element={<AssignmentDetail />} />
-            <Route path="/w/:workspace/missions/:slug/assignments/:aslug/edit" element={<EditAssignment />} />
-            <Route path="/w/:workspace/missions/:slug/assignments/:aslug/plan/edit" element={<EditAssignmentPlan />} />
-            <Route path="/w/:workspace/missions/:slug/assignments/:aslug/scratchpad/edit" element={<EditAssignmentScratchpad />} />
-            <Route path="/w/:workspace/missions/:slug/assignments/:aslug/handoff/edit" element={<AppendAssignmentHandoff />} />
-            <Route path="/w/:workspace/missions/:slug/assignments/:aslug/decision-record/edit" element={<AppendAssignmentDecisionRecord />} />
+            <Route path="/w/:workspace/create/project" element={<CreateProject />} />
+            <Route path="/w/:workspace/projects/:slug" element={<ProjectDetail />} />
+            <Route path="/w/:workspace/projects/:slug/edit" element={<EditProject />} />
+            <Route path="/w/:workspace/projects/:slug/create/assignment" element={<CreateAssignment />} />
+            <Route path="/w/:workspace/projects/:slug/assignments/:aslug" element={<AssignmentDetail />} />
+            <Route path="/w/:workspace/projects/:slug/assignments/:aslug/edit" element={<EditAssignment />} />
+            <Route path="/w/:workspace/projects/:slug/assignments/:aslug/plan/edit" element={<EditAssignmentPlan />} />
+            <Route path="/w/:workspace/projects/:slug/assignments/:aslug/scratchpad/edit" element={<EditAssignmentScratchpad />} />
+            <Route path="/w/:workspace/projects/:slug/assignments/:aslug/handoff/edit" element={<AppendAssignmentHandoff />} />
+            <Route path="/w/:workspace/projects/:slug/assignments/:aslug/decision-record/edit" element={<AppendAssignmentDecisionRecord />} />
           </Route>
         </Routes>
       </HotkeyProvider>

@@ -16,9 +16,9 @@ Optional notes from the user: `$ARGUMENTS`
 1. Read `.syntaur/context.json` from the current working directory. If it does not exist, tell the user to claim an assignment first.
 2. Read:
    - `<assignmentDir>/assignment.md`
-   - `<missionDir>/agent.md`
-   - `<missionDir>/claude.md` if it exists
-   - `<missionDir>/mission.md`
+   - `<projectDir>/agent.md`
+   - `<projectDir>/claude.md` if it exists
+   - `<projectDir>/project.md`
 3. If the assignment depends on other assignments, read each dependency handoff for integration context.
 4. Explore `workspaceRoot` when it exists:
    - inspect project structure
@@ -44,6 +44,8 @@ Write these sections:
 3. Acceptance Criteria Mapping
 4. Risks and Open Questions
 5. Testing Strategy
+
+**Decision capture:** While planning, record meaningful choices (library picks, schema design, architectural calls, rejected alternatives) as numbered entries in `<assignmentDir>/decision-record.md` using `## Decision N: <short title>` with Status (proposed/accepted), Context, Decision, Consequences. Downstream assignments that depend on this one auto-load these on grab.
 
 ## Reporting
 

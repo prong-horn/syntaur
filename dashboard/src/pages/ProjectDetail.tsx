@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { BookOpenText, GitBranch, Plus, SquarePen } from 'lucide-react';
 import { CopyButton } from '../components/CopyButton';
-import { useMission, useWorkspaces, useWorkspacePrefix, type AssignmentSummary } from '../hooks/useMissions';
+import { useProject, useWorkspaces, useWorkspacePrefix, type AssignmentSummary } from '../hooks/useProjects';
 import { formatDate, formatDateTime } from '../lib/format';
 import { LoadingState } from '../components/LoadingState';
 import { ErrorState } from '../components/ErrorState';
@@ -18,24 +18,24 @@ import { MarkdownRenderer } from '../components/MarkdownRenderer';
 import { useStatusConfig } from '../hooks/useStatusConfig';
 import { useHotkey, useHotkeyScope } from '../hotkeys';
 
-export function MissionDetail() {
+export function ProjectDetail() {
   const { slug } = useParams<{ slug: string }>();
   const wsPrefix = useWorkspacePrefix();
   const navigate = useNavigate();
-  useHotkeyScope('mission');
+  useHotkeyScope('project');
   useHotkey({
     keys: 'a',
-    scope: 'mission',
+    scope: 'project',
     description: 'Create assignment',
-    handler: () => navigate(`${wsPrefix}/missions/${slug}/create/assignment`),
+    handler: () => navigate(`${wsPrefix}/projects/${slug}/create/assignment`),
   });
   useHotkey({
     keys: 'e',
-    scope: 'mission',
-    description: 'Edit mission',
-    handler: () => navigate(`${wsPrefix}/missions/${slug}/edit`),
+    scope: 'project',
+    description: 'Edit project',
+    handler: () => navigate(`${wsPrefix}/projects/${slug}/edit`),
   });
-  const { data: mission, loading, error, refetch } = useMission(slug);
+  const { data: project, loading, error, refetch } = useProject(slug);
   const statusConfig = useStatusConfig();
   const { data: workspacesData } = useWorkspaces();
   const [tab, setTab] = useState('overview');
@@ -45,20 +45,20 @@ export function MissionDetail() {
   const [priorityFilter, setPriorityFilter] = useState('all');
 
   const dependencyRoutes = useMemo(
-    () => mission ? Object.fromEntries(
-      mission.assignments.flatMap((assignment) => {
-        const route = `${wsPrefix}/missions/${mission.slug}/assignments/${assignment.slug}`;
+    () => project ? Object.fromEntries(
+      project.assignments.flatMap((assignment) => {
+        const route = `${wsPrefix}/projects/${project.slug}/assignments/${assignment.slug}`;
         return [
           [assignment.slug, route],
           [assignment.title, route],
         ];
       }),
     ) : {},
-    [mission],
+    [project],
   );
 
   async function handleStatusOverride(status: string | null) {
-    await fetch(`/api/missions/${slug}/status-override`, {
+    await fetch(`/api/projects/${slug}/status-override`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ status }),
@@ -67,7 +67,7 @@ export function MissionDetail() {
   }
 
   async function handleMoveWorkspace(workspace: string | null) {
-    await fetch(`/api/missions/${slug}/move-workspace`, {
+    await fetch(`/api/projects/${slug}/move-workspace`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ workspace }),
@@ -76,17 +76,17 @@ export function MissionDetail() {
   }
 
   if (loading) {
-    return <LoadingState label="Loading mission workspace…" />;
+    return <LoadingState label="Loading project workspace…" />;
   }
 
-  if (error || !mission) {
-    return <ErrorState error={error || 'Mission not found.'} />;
+  if (error || !project) {
+    return <ErrorState error={error || 'Project not found.'} />;
   }
 
   const assignees = Array.from(
-    new Set(mission.assignments.map((assignment) => assignment.assignee).filter(Boolean)),
+    new Set(project.assignments.map((assignment) => assignment.assignee).filter(Boolean)),
   ).sort();
-  const filteredAssignments = mission.assignments.filter((assignment) => {
+  const filteredAssignments = project.assignments.filter((assignment) => {
     if (statusFilter !== 'all' && assignment.status !== statusFilter) {
       return false;
     }
@@ -102,8 +102,8 @@ export function MissionDetail() {
   return (
     <div className="space-y-5">
       <div className="flex flex-wrap items-center gap-3">
-        <StatusBadge status={mission.status} />
-        {mission.statusOverride && (
+        <StatusBadge status={project.status} />
+        {project.statusOverride && (
           <button
             type="button"
             className="shell-action border-amber-300 text-amber-700 dark:border-amber-700 dark:text-amber-300"
@@ -119,7 +119,7 @@ export function MissionDetail() {
           onChange={(e) => {
             if (e.target.value) handleStatusOverride(e.target.value);
           }}
-          title="Override mission status"
+          title="Override project status"
         >
           <option value="">Set Status…</option>
           {statusConfig.statuses.map((s) => (
@@ -135,34 +135,34 @@ export function MissionDetail() {
               if (e.target.value === '_ungrouped') handleMoveWorkspace(null);
               else if (e.target.value) handleMoveWorkspace(e.target.value);
             }}
-            title="Move mission to a different workspace"
+            title="Move project to a different workspace"
           >
             <option value="">Move to Workspace…</option>
             {workspacesData.workspaces
-              .filter((w) => w !== mission.workspace)
+              .filter((w) => w !== project.workspace)
               .map((w) => (
                 <option key={w} value={w}>{w}</option>
               ))}
-            {mission.workspace && <option value="_ungrouped">Ungrouped</option>}
+            {project.workspace && <option value="_ungrouped">Ungrouped</option>}
           </select>
         )}
-        <Link className="shell-action" to={`${wsPrefix}/missions/${mission.slug}/edit`}>
+        <Link className="shell-action" to={`${wsPrefix}/projects/${project.slug}/edit`}>
           <SquarePen className="h-4 w-4" />
-          <span>Edit Mission</span>
+          <span>Edit Project</span>
         </Link>
-        <Link className="shell-action bg-foreground text-background hover:opacity-90" to={`${wsPrefix}/missions/${mission.slug}/create/assignment`}>
+        <Link className="shell-action bg-foreground text-background hover:opacity-90" to={`${wsPrefix}/projects/${project.slug}/create/assignment`}>
           <Plus className="h-4 w-4" />
           <span>New Assignment</span>
         </Link>
-        <span className="text-xs text-muted-foreground">Created {formatDate(mission.created)}. Last source update {formatDateTime(mission.updated)}.</span>
+        <span className="text-xs text-muted-foreground">Created {formatDate(project.created)}. Last source update {formatDateTime(project.updated)}.</span>
       </div>
 
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
-        <StatCard label="Assignments" value={mission.progress.total} />
-        <StatCard label="In Progress" value={mission.progress['in_progress'] ?? 0} tone="info" />
-        <StatCard label="Review" value={mission.progress['review'] ?? 0} tone="info" />
-        <StatCard label="Blocked" value={mission.progress['blocked'] ?? 0} tone="warn" />
-        <StatCard label="Completed" value={mission.progress['completed'] ?? 0} tone="success" />
+        <StatCard label="Assignments" value={project.progress.total} />
+        <StatCard label="In Progress" value={project.progress['in_progress'] ?? 0} tone="info" />
+        <StatCard label="Review" value={project.progress['review'] ?? 0} tone="info" />
+        <StatCard label="Blocked" value={project.progress['blocked'] ?? 0} tone="warn" />
+        <StatCard label="Completed" value={project.progress['completed'] ?? 0} tone="success" />
       </div>
 
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_280px]">
@@ -176,10 +176,10 @@ export function MissionDetail() {
                 label: 'Overview',
                 content: (
                   <div className="space-y-5">
-                    <SectionCard title="Mission Overview">
+                    <SectionCard title="Project Overview">
                       <MarkdownRenderer
-                        content={mission.body}
-                        emptyState="This mission does not have overview content yet."
+                        content={project.body}
+                        emptyState="This project does not have overview content yet."
                       />
                     </SectionCard>
                   </div>
@@ -188,7 +188,7 @@ export function MissionDetail() {
               {
                 value: 'assignments',
                 label: 'Assignments',
-                count: mission.assignments.length,
+                count: project.assignments.length,
                 content: (
                   <div className="space-y-5">
                     <SectionCard
@@ -231,9 +231,9 @@ export function MissionDetail() {
                       {filteredAssignments.length === 0 ? (
                         <EmptyState
                           title="No assignments match these filters"
-                          description="Clear the current filters or create a new assignment for this mission."
+                          description="Clear the current filters or create a new assignment for this project."
                           actions={
-                            <Link className="shell-action bg-foreground text-background hover:opacity-90" to={`${wsPrefix}/missions/${mission.slug}/create/assignment`}>
+                            <Link className="shell-action bg-foreground text-background hover:opacity-90" to={`${wsPrefix}/projects/${project.slug}/create/assignment`}>
                               Create Assignment
                             </Link>
                           }
@@ -241,7 +241,7 @@ export function MissionDetail() {
                       ) : assignmentView === 'board' ? (
                         <div className="grid gap-3 lg:grid-cols-2">
                           {filteredAssignments.map((assignment) => (
-                            <AssignmentCard key={assignment.slug} missionSlug={mission.slug} assignment={assignment} />
+                            <AssignmentCard key={assignment.slug} projectSlug={project.slug} assignment={assignment} />
                           ))}
                         </div>
                       ) : (
@@ -261,7 +261,7 @@ export function MissionDetail() {
                                 <tr key={assignment.slug} className="border-b border-border/50 last:border-0">
                                   <td className="py-4">
                                     <Link
-                                      to={`${wsPrefix}/missions/${mission.slug}/assignments/${assignment.slug}`}
+                                      to={`${wsPrefix}/projects/${project.slug}/assignments/${assignment.slug}`}
                                       className="font-semibold text-foreground hover:text-primary"
                                     >
                                       {assignment.title}
@@ -284,12 +284,12 @@ export function MissionDetail() {
               {
                 value: 'dependencies',
                 label: 'Dependencies',
-                content: mission.dependencyGraph ? (
+                content: project.dependencyGraph ? (
                   <SectionCard
                     title="Dependency Graph"
                     description="Rendered from the derived graph when available, with a source-based fallback."
                   >
-                    <DependencyGraph definition={mission.dependencyGraph} nodeRoutes={dependencyRoutes} />
+                    <DependencyGraph definition={project.dependencyGraph} nodeRoutes={dependencyRoutes} />
                   </SectionCard>
                 ) : (
                   <EmptyState
@@ -303,15 +303,15 @@ export function MissionDetail() {
                 label: 'Knowledge',
                 content: (
                   <div className="grid gap-3 lg:grid-cols-2">
-                    <SectionCard title="Resources" description="Shared mission references.">
-                      {mission.resources.length === 0 ? (
+                    <SectionCard title="Resources" description="Shared project references.">
+                      {project.resources.length === 0 ? (
                         <EmptyState
                           title="No resources yet"
-                          description="Resources live at the mission level and stay available to every assignment."
+                          description="Resources live at the project level and stay available to every assignment."
                         />
                       ) : (
                         <div className="space-y-3">
-                          {mission.resources.map((resource) => (
+                          {project.resources.map((resource) => (
                             <div key={resource.slug} className="rounded-md border border-border/60 bg-background/80 p-3">
                               <h3 className="font-semibold text-foreground">{resource.name}</h3>
                               <p className="mt-2 text-sm text-muted-foreground">
@@ -323,15 +323,15 @@ export function MissionDetail() {
                       )}
                     </SectionCard>
 
-                    <SectionCard title="Memories" description="Learnings and patterns captured during the mission.">
-                      {mission.memories.length === 0 ? (
+                    <SectionCard title="Memories" description="Learnings and patterns captured during the project.">
+                      {project.memories.length === 0 ? (
                         <EmptyState
                           title="No memories yet"
                           description="Memories capture patterns discovered during execution so later assignments can reuse them."
                         />
                       ) : (
                         <div className="space-y-3">
-                          {mission.memories.map((memory) => (
+                          {project.memories.map((memory) => (
                             <div key={memory.slug} className="rounded-md border border-border/60 bg-background/80 p-3">
                               <h3 className="font-semibold text-foreground">{memory.name}</h3>
                               <p className="mt-2 text-sm text-muted-foreground">
@@ -351,39 +351,39 @@ export function MissionDetail() {
 
         <div className="space-y-5">
           <SectionCard title="Progress Summary">
-            <ProgressBar progress={mission.progress} showLegend />
+            <ProgressBar progress={project.progress} showLegend />
           </SectionCard>
 
           <SectionCard title="Attention">
             <dl className="space-y-3 text-sm">
               <div className="flex items-center justify-between">
                 <dt className="text-muted-foreground">Blocked</dt>
-                <dd className="font-semibold text-foreground">{mission.needsAttention.blockedCount}</dd>
+                <dd className="font-semibold text-foreground">{project.needsAttention.blockedCount}</dd>
               </div>
               <div className="flex items-center justify-between">
                 <dt className="text-muted-foreground">Failed</dt>
-                <dd className="font-semibold text-foreground">{mission.needsAttention.failedCount}</dd>
+                <dd className="font-semibold text-foreground">{project.needsAttention.failedCount}</dd>
               </div>
               <div className="flex items-center justify-between">
                 <dt className="text-muted-foreground">Unanswered questions</dt>
-                <dd className="font-semibold text-foreground">{mission.needsAttention.unansweredQuestions}</dd>
+                <dd className="font-semibold text-foreground">{project.needsAttention.openQuestions}</dd>
               </div>
             </dl>
           </SectionCard>
 
           <SectionCard title="Quick Links">
             <div className="space-y-2 text-sm">
-              <Link className="flex items-center gap-2 text-primary hover:underline" to={`${wsPrefix}/missions/${mission.slug}/edit`}>
+              <Link className="flex items-center gap-2 text-primary hover:underline" to={`${wsPrefix}/projects/${project.slug}/edit`}>
                 <SquarePen className="h-4 w-4" />
-                Edit mission source
+                Edit project source
               </Link>
-              <Link className="flex items-center gap-2 text-primary hover:underline" to={`${wsPrefix}/missions/${mission.slug}/create/assignment`}>
+              <Link className="flex items-center gap-2 text-primary hover:underline" to={`${wsPrefix}/projects/${project.slug}/create/assignment`}>
                 <Plus className="h-4 w-4" />
                 Create assignment
               </Link>
               <Link className="flex items-center gap-2 text-primary hover:underline" to="/help">
                 <BookOpenText className="h-4 w-4" />
-                Review mission rules
+                Review project rules
               </Link>
               <button
                 type="button"
@@ -396,13 +396,13 @@ export function MissionDetail() {
             </div>
           </SectionCard>
 
-          {mission.archived ? (
+          {project.archived ? (
             <SectionCard title="Archive Metadata">
               <p className="text-sm leading-6 text-muted-foreground">
-                Archived {mission.archivedAt ? formatDateTime(mission.archivedAt) : 'with no timestamp recorded'}.
+                Archived {project.archivedAt ? formatDateTime(project.archivedAt) : 'with no timestamp recorded'}.
               </p>
-              {mission.archivedReason ? (
-                <p className="mt-2 text-sm leading-6 text-muted-foreground">{mission.archivedReason}</p>
+              {project.archivedReason ? (
+                <p className="mt-2 text-sm leading-6 text-muted-foreground">{project.archivedReason}</p>
               ) : null}
             </SectionCard>
           ) : null}
@@ -413,16 +413,16 @@ export function MissionDetail() {
 }
 
 function AssignmentCard({
-  missionSlug,
+  projectSlug,
   assignment,
 }: {
-  missionSlug: string;
+  projectSlug: string;
   assignment: AssignmentSummary;
 }) {
   const wsPrefix = useWorkspacePrefix();
   return (
     <Link
-      to={`${wsPrefix}/missions/${missionSlug}/assignments/${assignment.slug}`}
+      to={`${wsPrefix}/projects/${projectSlug}/assignments/${assignment.slug}`}
       className="block rounded-lg border border-border/60 bg-background/80 p-3 transition hover:border-primary/40"
     >
       <div className="flex items-start justify-between gap-3">

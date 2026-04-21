@@ -12,7 +12,7 @@ import {
   Terminal,
 } from 'lucide-react';
 import { CopyButton } from '../components/CopyButton';
-import { useServers, useMissions, useWorkspacePrefix } from '../hooks/useMissions';
+import { useServers, useProjects, useWorkspacePrefix } from '../hooks/useProjects';
 import { LoadingState } from '../components/LoadingState';
 import { ErrorState } from '../components/ErrorState';
 import { EmptyState } from '../components/EmptyState';
@@ -20,7 +20,7 @@ import type { TrackedSession, TrackedPane } from '../types';
 
 export function ServersPage() {
   const { workspace } = useParams<{ workspace?: string }>();
-  const { data: missionsData } = useMissions();
+  const { data: projectsData } = useProjects();
   const { data, loading, error, refetch } = useServers();
   const [registering, setRegistering] = useState(false);
   const [newSessionName, setNewSessionName] = useState('');
@@ -47,16 +47,16 @@ export function ServersPage() {
 
   const filteredSessions = (() => {
     if (!workspace || !data) return data?.sessions ?? [];
-    if (!missionsData) return [];
-    const workspaceMissions = new Set(
-      missionsData
+    if (!projectsData) return [];
+    const workspaceProjects = new Set(
+      projectsData
         .filter((m) => workspace === '_ungrouped' ? m.workspace === null : m.workspace === workspace)
         .map((m) => m.slug),
     );
     return data.sessions.filter((session) =>
       session.windows.some((win) =>
         win.panes.some((pane) =>
-          pane.assignment && workspaceMissions.has(pane.assignment.mission),
+          pane.assignment && workspaceProjects.has(pane.assignment.project),
         ),
       ),
     );
@@ -296,7 +296,7 @@ function PaneRow({
       <div className="ml-auto shrink-0">
         {pane.assignment ? (
           <Link
-            to={`${wsPrefix}/missions/${pane.assignment.mission}/assignments/${pane.assignment.slug}`}
+            to={`${wsPrefix}/projects/${pane.assignment.project}/assignments/${pane.assignment.slug}`}
             className="inline-flex items-center gap-1 rounded border border-primary/30 bg-primary/10 px-1.5 py-0.5 text-xs font-medium text-primary hover:bg-primary/20"
           >
             <LinkIcon className="h-2.5 w-2.5" />

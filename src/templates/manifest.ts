@@ -5,15 +5,15 @@ export interface ManifestParams {
 
 export function renderManifest(params: ManifestParams): string {
   return `---
-version: "1.0"
-mission: ${params.slug}
+version: "2.0"
+project: ${params.slug}
 generated: "${params.timestamp}"
 ---
 
-# Mission: ${params.slug}
+# Project: ${params.slug}
 
 ## Overview
-- [Mission Overview](./mission.md)
+- [Project Overview](./project.md)
 
 ## Indexes
 - [Assignments](./_index-assignments.md)
@@ -22,9 +22,5 @@ generated: "${params.timestamp}"
 - [Status](./_status.md)
 - [Resources](./resources/_index.md)
 - [Memories](./memories/_index.md)
-
-## Config
-- [Agent Instructions](./agent.md)
-- [Claude Code Instructions](./claude.md)
 `;
 }

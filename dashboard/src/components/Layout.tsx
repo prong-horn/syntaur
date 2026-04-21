@@ -5,10 +5,10 @@ import { buildShellMeta } from '../lib/routes';
 export function Layout() {
   const location = useLocation();
   const { workspace } = useParams<{ workspace?: string }>();
-  const { title, breadcrumbs, missionSlug } = buildShellMeta(location.pathname);
+  const { title, breadcrumbs, projectSlug } = buildShellMeta(location.pathname);
 
   return (
-    <AppShell title={title} breadcrumbs={breadcrumbs} missionSlug={missionSlug} workspace={workspace ?? null}>
+    <AppShell title={title} breadcrumbs={breadcrumbs} projectSlug={projectSlug} workspace={workspace ?? null}>
       <Outlet />
     </AppShell>
   );

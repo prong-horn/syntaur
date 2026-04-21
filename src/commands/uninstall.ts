@@ -3,7 +3,7 @@ import {
   detectClaudeMarketplaceForTarget,
   getConfiguredOrLegacyManagedPluginDir,
   getConfiguredOrLegacyMarketplacePath,
-  getConfiguredMissionDir,
+  getConfiguredProjectDir,
   removeClaudeMarketplaceEntry,
   removeSyntaurData,
   removeMarketplaceEntry,
@@ -115,21 +115,21 @@ export async function uninstallCommand(options: UninstallOptions): Promise<void>
   }
 
   if (targets.data) {
-    const configuredMissionDir = await getConfiguredMissionDir();
+    const configuredProjectDir = await getConfiguredProjectDir();
     await removeSyntaurData();
     console.log(`Removed ${syntaurRoot()}`);
 
     if (
-      configuredMissionDir &&
-      resolve(configuredMissionDir) !== resolve(syntaurRoot(), 'missions')
+      configuredProjectDir &&
+      resolve(configuredProjectDir) !== resolve(syntaurRoot(), 'projects')
     ) {
       console.warn(
-        `Warning: config.md pointed to an external mission directory (${configuredMissionDir}). That directory was not removed automatically.`,
+        `Warning: config.md pointed to an external project directory (${configuredProjectDir}). That directory was not removed automatically.`,
       );
     }
   }
 
   if (!targets.data) {
-    console.log('User mission data in ~/.syntaur was kept.');
+    console.log('User project data in ~/.syntaur was kept.');
   }
 }

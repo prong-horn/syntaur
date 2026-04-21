@@ -2,7 +2,7 @@ import { resolve } from 'node:path';
 import { slugify, isValidSlug } from '../utils/slug.js';
 import { nowTimestamp } from '../utils/timestamp.js';
 import { generateId } from '../utils/uuid.js';
-import { expandHome } from '../utils/paths.js';
+import { expandHome, assignmentsDir as assignmentsDirFn } from '../utils/paths.js';
 import { ensureDir, writeFileForce, fileExists } from '../utils/fs.js';
 import { readConfig } from '../utils/config.js';
 import {
@@ -10,17 +10,19 @@ import {
   renderScratchpad,
   renderHandoff,
   renderDecisionRecord,
+  renderProgress,
+  renderComments,
 } from '../templates/index.js';
-import { createMissionCommand } from './create-mission.js';
 
 export interface CreateAssignmentOptions {
-  mission?: string;
+  project?: string;
   oneOff?: boolean;
   slug?: string;
   priority?: 'low' | 'medium' | 'high' | 'critical';
   dependsOn?: string;
   links?: string;
   dir?: string;
+  type?: string;
 }
 
 export async function createAssignmentCommand(
@@ -31,21 +33,25 @@ export async function createAssignmentCommand(
     throw new Error('Assignment title cannot be empty.');
   }
 
-  if (!options.mission && !options.oneOff) {
+  if (!options.project && !options.oneOff) {
     throw new Error(
-      'Either --mission <slug> or --one-off is required.',
+      'Either --project <slug> or --one-off is required.',
     );
   }
-  if (options.mission && options.oneOff) {
+  if (options.project && options.oneOff) {
     throw new Error(
-      'Cannot use both --mission and --one-off. Use --mission to add to an existing mission, or --one-off to create a standalone assignment.',
+      'Cannot use both --project and --one-off. Use --project to add to an existing project, or --one-off to create a standalone assignment.',
     );
   }
 
-  if (options.mission && !isValidSlug(options.mission)) {
+  if (options.project && !isValidSlug(options.project)) {
     throw new Error(
-      `Invalid mission slug "${options.mission}". Slugs must be lowercase, hyphen-separated, with no special characters.`,
+      `Invalid project slug "${options.project}". Slugs must be lowercase, hyphen-separated, with no special characters.`,
     );
+  }
+
+  if (options.oneOff && options.dependsOn) {
+    throw new Error('Standalone assignments cannot have dependencies (--depends-on is not allowed with --one-off).');
   }
 
   const assignmentSlug = options.slug || slugify(title);
@@ -73,7 +79,7 @@ export async function createAssignmentCommand(
     const parts = link.split('/');
     if (parts.length !== 2 || !parts.every(isValidSlug)) {
       throw new Error(
-        `Invalid link "${link}". Links must be in missionSlug/assignmentSlug format (e.g., "my-mission/my-assignment").`,
+        `Invalid link "${link}". Links must be in projectSlug/assignmentSlug format (e.g., "my-project/my-assignment").`,
       );
     }
   }
@@ -86,49 +92,50 @@ export async function createAssignmentCommand(
     );
   }
 
-  let missionSlug: string;
-  let missionDir: string;
-
   const config = await readConfig();
-  const baseDir = options.dir
-    ? expandHome(options.dir)
-    : config.defaultMissionDir;
+  const timestamp = nowTimestamp();
+  const id = generateId();
+
+  let assignmentDir: string;
+  let projectSlug: string | null;
+  let folderName: string;
 
   if (options.oneOff) {
-    missionSlug = await createMissionCommand(title, {
-      slug: assignmentSlug,
-      dir: baseDir,
-    });
-    missionDir = resolve(baseDir, missionSlug);
+    // Standalone: folder name = UUID, project: null
+    const standaloneRoot = assignmentsDirFn();
+    folderName = id;
+    assignmentDir = resolve(standaloneRoot, folderName);
+    projectSlug = null;
+    await ensureDir(standaloneRoot);
   } else {
-    missionSlug = options.mission!;
-    missionDir = resolve(baseDir, missionSlug);
+    const baseDir = options.dir
+      ? expandHome(options.dir)
+      : config.defaultProjectDir;
+    projectSlug = options.project!;
+    const projectDir = resolve(baseDir, projectSlug);
 
-    const missionMdPath = resolve(missionDir, 'mission.md');
-    if (!(await fileExists(missionDir)) || !(await fileExists(missionMdPath))) {
+    const projectMdPath = resolve(projectDir, 'project.md');
+    if (!(await fileExists(projectDir)) || !(await fileExists(projectMdPath))) {
       throw new Error(
-        `Mission "${missionSlug}" not found at ${missionDir}.\nRun 'syntaur create-mission' first or use --one-off.`,
+        `Project "${projectSlug}" not found at ${projectDir}.\nRun 'syntaur create-project' first or use --one-off.`,
       );
     }
 
     if (dependsOn.length > 0) {
-      const assignmentsDir = resolve(missionDir, 'assignments');
+      const depDirBase = resolve(projectDir, 'assignments');
       for (const dep of dependsOn) {
-        const depDir = resolve(assignmentsDir, dep);
+        const depDir = resolve(depDirBase, dep);
         if (!(await fileExists(depDir))) {
           console.warn(
-            `Warning: dependency "${dep}" does not exist in mission "${missionSlug}" yet.`,
+            `Warning: dependency "${dep}" does not exist in project "${projectSlug}" yet.`,
           );
         }
       }
     }
-  }
 
-  const assignmentDir = resolve(
-    missionDir,
-    'assignments',
-    assignmentSlug,
-  );
+    folderName = assignmentSlug;
+    assignmentDir = resolve(projectDir, 'assignments', folderName);
+  }
 
   if (await fileExists(assignmentDir)) {
     throw new Error(
@@ -138,8 +145,7 @@ export async function createAssignmentCommand(
 
   await ensureDir(assignmentDir);
 
-  const timestamp = nowTimestamp();
-  const id = generateId();
+  const companionAssignmentRef = projectSlug === null ? id : assignmentSlug;
 
   const files: Array<[string, string]> = [
     [
@@ -152,26 +158,42 @@ export async function createAssignmentCommand(
         priority,
         dependsOn,
         links,
+        project: projectSlug,
+        type: options.type,
       }),
     ],
     [
       resolve(assignmentDir, 'scratchpad.md'),
       renderScratchpad({
-        assignmentSlug,
+        assignmentSlug: companionAssignmentRef,
         timestamp,
       }),
     ],
     [
       resolve(assignmentDir, 'handoff.md'),
       renderHandoff({
-        assignmentSlug,
+        assignmentSlug: companionAssignmentRef,
         timestamp,
       }),
     ],
     [
       resolve(assignmentDir, 'decision-record.md'),
       renderDecisionRecord({
-        assignmentSlug,
+        assignmentSlug: companionAssignmentRef,
+        timestamp,
+      }),
+    ],
+    [
+      resolve(assignmentDir, 'progress.md'),
+      renderProgress({
+        assignment: companionAssignmentRef,
+        timestamp,
+      }),
+    ],
+    [
+      resolve(assignmentDir, 'comments.md'),
+      renderComments({
+        assignment: companionAssignmentRef,
         timestamp,
       }),
     ],
@@ -181,11 +203,22 @@ export async function createAssignmentCommand(
     await writeFileForce(filePath, content);
   }
 
-  console.log(
-    `Created assignment "${title}" in mission "${missionSlug}" at ${assignmentDir}/`,
-  );
-  console.log(`  Slug: ${assignmentSlug}`);
+  if (projectSlug === null) {
+    console.log(
+      `Created standalone assignment "${title}" at ${assignmentDir}/`,
+    );
+    console.log(`  UUID: ${id}`);
+    console.log(`  Slug: ${assignmentSlug} (display only)`);
+  } else {
+    console.log(
+      `Created assignment "${title}" in project "${projectSlug}" at ${assignmentDir}/`,
+    );
+    console.log(`  Slug: ${assignmentSlug}`);
+  }
   console.log(`  Priority: ${priority}`);
+  if (options.type) {
+    console.log(`  Type: ${options.type}`);
+  }
   if (dependsOn.length > 0) {
     console.log(`  Depends on: ${dependsOn.join(', ')}`);
   }
@@ -197,6 +230,8 @@ export async function createAssignmentCommand(
   console.log(`    scratchpad.md`);
   console.log(`    handoff.md`);
   console.log(`    decision-record.md`);
+  console.log(`    progress.md`);
+  console.log(`    comments.md`);
   console.log(
     `  Plan files (plan.md, plan-v2.md, ...) are created on demand by /plan-assignment.`,
   );

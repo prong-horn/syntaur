@@ -16,16 +16,16 @@ format expected by the target framework.
 
 ```bash
 # Generate Cursor adapter files in the current directory
-syntaur setup-adapter cursor --mission <mission-slug> --assignment <assignment-slug>
+syntaur setup-adapter cursor --project <project-slug> --assignment <assignment-slug>
 
 # Generate Codex adapter files
-syntaur setup-adapter codex --mission <mission-slug> --assignment <assignment-slug>
+syntaur setup-adapter codex --project <project-slug> --assignment <assignment-slug>
 
 # Generate OpenCode adapter files
-syntaur setup-adapter opencode --mission <mission-slug> --assignment <assignment-slug>
+syntaur setup-adapter opencode --project <project-slug> --assignment <assignment-slug>
 
 # Overwrite existing files
-syntaur setup-adapter cursor --mission my-mission --assignment my-task --force
+syntaur setup-adapter cursor --project my-project --assignment my-task --force
 ```
 
 ## What Gets Generated
@@ -35,8 +35,8 @@ All adapters embed equivalent protocol knowledge:
 - **Write boundary rules** (which files the agent can and cannot modify)
 - **Assignment lifecycle states** and valid transitions
 - **CLI commands** for state transitions (`syntaur start`, `syntaur complete`, etc.)
-- **Reading order** for mission and assignment files
-- **Current assignment context** (mission slug, assignment slug, paths)
+- **Reading order** for project and assignment files
+- **Current assignment context** (project slug, assignment slug, paths)
 
 ## Contributing a New Adapter
 
@@ -46,7 +46,7 @@ To add support for a new framework:
    reference file showing the format. This is documentation, not a runtime asset.
 
 2. **Create a TypeScript renderer** in `src/templates/<framework>.ts`:
-   - Define a params interface with `missionSlug`, `assignmentSlug`, `missionDir`, `assignmentDir`
+   - Define a params interface with `projectSlug`, `assignmentSlug`, `projectDir`, `assignmentDir`
    - Export a render function returning the file content as a string
    - Embed protocol knowledge directly in the template literal (do not read files at runtime)
 

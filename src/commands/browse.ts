@@ -3,7 +3,7 @@ import type { AgentType } from '../tui/launch.js';
 
 export async function browseCommand(options: { agent: AgentType }): Promise<void> {
   const config = await readConfig();
-  const missionsDir = config.defaultMissionDir;
+  const projectsDir = config.defaultProjectDir;
   const agent = options.agent;
 
   const { render } = await import('ink');
@@ -13,7 +13,7 @@ export async function browseCommand(options: { agent: AgentType }): Promise<void
 
   let unmount: (() => void) | null = null;
 
-  const onLaunch = async (launchOpts: { missionsDir: string; missionSlug: string; assignmentSlug: string }) => {
+  const onLaunch = async (launchOpts: { projectsDir: string; projectSlug: string; assignmentSlug: string }) => {
     if (unmount) {
       unmount();
       unmount = null;
@@ -22,7 +22,7 @@ export async function browseCommand(options: { agent: AgentType }): Promise<void
   };
 
   const instance = render(
-    React.createElement(App, { missionsDir, onLaunch }),
+    React.createElement(App, { projectsDir, onLaunch }),
   );
   unmount = instance.unmount;
 

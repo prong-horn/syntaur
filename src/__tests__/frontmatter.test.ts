@@ -43,8 +43,8 @@ externalIds:
 dependsOn:
   - design-auth-schema
 links:
-  - other-mission/some-assignment
-  - my-mission/another-task
+  - other-project/some-assignment
+  - my-project/another-task
 blockedReason: null
 workspace:
   repository: /Users/brennen/projects/auth-service
@@ -86,7 +86,7 @@ describe('parseAssignmentFrontmatter', () => {
     expect(fm.status).toBe('in_progress');
     expect(fm.assignee).toBe('claude-1');
     expect(fm.dependsOn).toEqual(['design-auth-schema']);
-    expect(fm.links).toEqual(['other-mission/some-assignment', 'my-mission/another-task']);
+    expect(fm.links).toEqual(['other-project/some-assignment', 'my-project/another-task']);
     expect(fm.workspace.repository).toBe('/Users/brennen/projects/auth-service');
     expect(fm.workspace.branch).toBe('feat/complex-task');
     expect(fm.workspace.parentBranch).toBe('main');

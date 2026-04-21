@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import { resolve, isAbsolute } from 'node:path';
-import { syntaurRoot, defaultMissionDir, expandHome } from './paths.js';
+import { syntaurRoot, defaultProjectDir, expandHome } from './paths.js';
 import { fileExists, writeFileForce } from './fs.js';
 import { renderConfig } from '../templates/config.js';
 
@@ -28,6 +28,30 @@ export interface StatusConfig {
   transitions: StatusTransition[];
 }
 
+export interface TypeDefinition {
+  id: string;
+  label?: string;
+  description?: string;
+  color?: string;
+  icon?: string;
+}
+
+export interface TypesConfig {
+  definitions: TypeDefinition[];
+  default: string;
+}
+
+export const DEFAULT_ASSIGNMENT_TYPES: TypesConfig = {
+  definitions: [
+    { id: 'feature', label: 'Feature' },
+    { id: 'bug', label: 'Bug' },
+    { id: 'refactor', label: 'Refactor' },
+    { id: 'research', label: 'Research' },
+    { id: 'chore', label: 'Chore' },
+  ],
+  default: 'feature',
+};
+
 export interface IntegrationConfig {
   claudePluginDir: string | null;
   codexPluginDir: string | null;
@@ -47,7 +71,7 @@ export interface BackupConfig {
 
 export interface SyntaurConfig {
   version: string;
-  defaultMissionDir: string;
+  defaultProjectDir: string;
   onboarding: OnboardingConfig;
   agentDefaults: {
     trustLevel: 'low' | 'medium' | 'high';
@@ -56,11 +80,12 @@ export interface SyntaurConfig {
   integrations: IntegrationConfig;
   backup: BackupConfig | null;
   statuses: StatusConfig | null;
+  types: TypesConfig | null;
 }
 
 const DEFAULT_CONFIG: SyntaurConfig = {
-  version: '1.0',
-  defaultMissionDir: defaultMissionDir(),
+  version: '2.0',
+  defaultProjectDir: defaultProjectDir(),
   onboarding: {
     completed: false,
   },
@@ -75,6 +100,7 @@ const DEFAULT_CONFIG: SyntaurConfig = {
   },
   backup: null,
   statuses: null,
+  types: null,
 };
 
 function parseFrontmatter(content: string): Record<string, string> {
@@ -334,7 +360,7 @@ export async function writeStatusConfig(statuses: StatusConfig): Promise<void> {
 
   if (!(await fileExists(configPath))) {
     // Create new config file with defaults + statuses
-    const content = `---\nversion: "1.0"\ndefaultMissionDir: ~/missions\n${statusBlock}\n---\n`;
+    const content = `---\nversion: "2.0"\ndefaultProjectDir: ~/projects\n${statusBlock}\n---\n`;
     await writeFileForce(configPath, content);
     return;
   }
@@ -343,7 +369,7 @@ export async function writeStatusConfig(statuses: StatusConfig): Promise<void> {
   const fmMatch = existing.match(/^(---\n)([\s\S]*?)\n(---)/);
   if (!fmMatch) {
     // No frontmatter — wrap in new frontmatter
-    const content = `---\nversion: "1.0"\n${statusBlock}\n---\n${existing}`;
+    const content = `---\nversion: "2.0"\n${statusBlock}\n---\n${existing}`;
     await writeFileForce(configPath, content);
     return;
   }
@@ -407,11 +433,11 @@ export async function updateIntegrationConfig(
   const integrationBlock = serializeIntegrationConfig(nextIntegrations);
   const existing = await fileExists(configPath)
     ? await readFile(configPath, 'utf-8')
-    : renderConfig({ defaultMissionDir: defaultMissionDir() });
+    : renderConfig({ defaultProjectDir: defaultProjectDir() });
 
   const fmMatch = existing.match(/^(---\n)([\s\S]*?)\n(---)/);
   if (!fmMatch) {
-    const content = `---\nversion: "1.0"\ndefaultMissionDir: ${defaultMissionDir()}\n${integrationBlock ?? ''}\n---\n${existing}`;
+    const content = `---\nversion: "2.0"\ndefaultProjectDir: ${defaultProjectDir()}\n${integrationBlock ?? ''}\n---\n${existing}`;
     await writeFileForce(configPath, content.replace(/\n\n---/, '\n---'));
     return;
   }
@@ -439,11 +465,11 @@ export async function updateOnboardingConfig(
   const onboardingBlock = serializeOnboardingConfig(nextOnboarding);
   const existing = await fileExists(configPath)
     ? await readFile(configPath, 'utf-8')
-    : renderConfig({ defaultMissionDir: defaultMissionDir() });
+    : renderConfig({ defaultProjectDir: defaultProjectDir() });
 
   const fmMatch = existing.match(/^(---\n)([\s\S]*?)\n(---)/);
   if (!fmMatch) {
-    const content = `---\nversion: "1.0"\ndefaultMissionDir: ${defaultMissionDir()}\n${onboardingBlock}\n---\n${existing}`;
+    const content = `---\nversion: "2.0"\ndefaultProjectDir: ${defaultProjectDir()}\n${onboardingBlock}\n---\n${existing}`;
     await writeFileForce(configPath, content.replace(/\n\n---/, '\n---'));
     return;
   }
@@ -464,7 +490,7 @@ export async function updateBackupConfig(
   const current = (await readConfig()).backup;
   const nextBackup: BackupConfig = {
     repo: current?.repo ?? null,
-    categories: current?.categories ?? 'missions, playbooks, todos, servers, config',
+    categories: current?.categories ?? 'projects, playbooks, todos, servers, config',
     lastBackup: current?.lastBackup ?? null,
     lastRestore: current?.lastRestore ?? null,
     ...backup,
@@ -473,11 +499,11 @@ export async function updateBackupConfig(
   const backupBlock = serializeBackupConfig(nextBackup);
   const existing = await fileExists(configPath)
     ? await readFile(configPath, 'utf-8')
-    : renderConfig({ defaultMissionDir: defaultMissionDir() });
+    : renderConfig({ defaultProjectDir: defaultProjectDir() });
 
   const fmMatch = existing.match(/^(---\n)([\s\S]*?)\n(---)/);
   if (!fmMatch) {
-    const content = `---\nversion: "1.0"\ndefaultMissionDir: ${defaultMissionDir()}\n${backupBlock}\n---\n${existing}`;
+    const content = `---\nversion: "2.0"\ndefaultProjectDir: ${defaultProjectDir()}\n${backupBlock}\n---\n${existing}`;
     await writeFileForce(configPath, content.replace(/\n\n---/, '\n---'));
     return;
   }
@@ -504,19 +530,19 @@ export async function readConfig(): Promise<SyntaurConfig> {
     return { ...DEFAULT_CONFIG };
   }
 
-  let missionDir = fm['defaultMissionDir']
-    ? expandHome(String(fm['defaultMissionDir']))
-    : DEFAULT_CONFIG.defaultMissionDir;
-  if (!isAbsolute(missionDir)) {
+  let projectDir = fm['defaultProjectDir']
+    ? expandHome(String(fm['defaultProjectDir']))
+    : DEFAULT_CONFIG.defaultProjectDir;
+  if (!isAbsolute(projectDir)) {
     console.warn(
-      `Warning: config.md defaultMissionDir is not an absolute path ("${fm['defaultMissionDir']}"), using default`,
+      `Warning: config.md defaultProjectDir is not an absolute path ("${fm['defaultProjectDir']}"), using default`,
     );
-    missionDir = DEFAULT_CONFIG.defaultMissionDir;
+    projectDir = DEFAULT_CONFIG.defaultProjectDir;
   }
 
   return {
     version: fm['version'] || DEFAULT_CONFIG.version,
-    defaultMissionDir: missionDir,
+    defaultProjectDir: projectDir,
     onboarding: {
       completed: fm['onboarding.completed'] === 'true',
     },
@@ -545,11 +571,16 @@ export async function readConfig(): Promise<SyntaurConfig> {
     backup: fm['backup.repo'] || fm['backup.categories']
       ? {
           repo: fm['backup.repo'] && fm['backup.repo'] !== 'null' ? fm['backup.repo'] : null,
-          categories: fm['backup.categories'] || 'missions, playbooks, todos, servers, config',
+          categories: fm['backup.categories'] || 'projects, playbooks, todos, servers, config',
           lastBackup: fm['backup.lastBackup'] && fm['backup.lastBackup'] !== 'null' ? fm['backup.lastBackup'] : null,
           lastRestore: fm['backup.lastRestore'] && fm['backup.lastRestore'] !== 'null' ? fm['backup.lastRestore'] : null,
         }
       : null,
     statuses: parseStatusConfig(content),
+    types: null,
   };
+}
+
+export function getAssignmentTypes(config: SyntaurConfig): TypesConfig {
+  return config.types ?? DEFAULT_ASSIGNMENT_TYPES;
 }

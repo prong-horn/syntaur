@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom';
 import { MoonStar, Plus, SunMedium, Menu, Search } from 'lucide-react';
 import { useTheme } from '../theme';
-import { useWorkspacePrefix } from '../hooks/useMissions';
+import { useWorkspacePrefix } from '../hooks/useProjects';
 import { useHotkeyContext, formatPatternForDisplay } from '../hotkeys';
 
 interface Breadcrumb {
@@ -12,14 +12,14 @@ interface Breadcrumb {
 interface TopBarProps {
   title: string;
   breadcrumbs: Breadcrumb[];
-  missionSlug: string | null;
+  projectSlug: string | null;
   onOpenMobileNav: () => void;
 }
 
 export function TopBar({
   title,
   breadcrumbs,
-  missionSlug,
+  projectSlug,
   onOpenMobileNav,
 }: TopBarProps) {
   const wsPrefix = useWorkspacePrefix();
@@ -72,12 +72,12 @@ export function TopBar({
           <Link className="shell-action" to="/help">
             Help
           </Link>
-          <Link className="shell-action" to={`${wsPrefix}/create/mission`}>
+          <Link className="shell-action" to={`${wsPrefix}/create/project`}>
             <Plus className="h-4 w-4" />
-            <span>New Mission</span>
+            <span>New Project</span>
           </Link>
-          {missionSlug ? (
-            <Link className="shell-action" to={`${wsPrefix}/missions/${missionSlug}/create/assignment`}>
+          {projectSlug ? (
+            <Link className="shell-action" to={`${wsPrefix}/projects/${projectSlug}/create/assignment`}>
               <Plus className="h-4 w-4" />
               <span>New Assignment</span>
             </Link>

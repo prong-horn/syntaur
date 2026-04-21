@@ -43,7 +43,7 @@ Expected: FAIL — `serversDir` is not exported
 
 - [ ] **Step 3: Add serversDir to paths.ts**
 
-Add to `src/utils/paths.ts` after `defaultMissionDir()`:
+Add to `src/utils/paths.ts` after `defaultProjectDir()`:
 
 ```typescript
 export function serversDir(): string {
@@ -63,7 +63,7 @@ Add to `src/dashboard/types.ts` — update the WsMessageType union and add new t
 ```typescript
 // Update existing WsMessageType (line 280):
 export type WsMessageType =
-  | 'mission-updated'
+  | 'project-updated'
   | 'assignment-updated'
   | 'servers-updated'
   | 'connected';
@@ -96,7 +96,7 @@ export interface TrackedPane {
   ports: number[];
   urls: string[];
   assignment: {
-    mission: string;
+    project: string;
     slug: string;
     title: string;
   } | null;
@@ -111,7 +111,7 @@ export interface SessionFileData {
   session: string;
   registered: string;
   lastRefreshed: string;
-  overrides: Record<string, { mission: string; assignment: string }>;
+  overrides: Record<string, { project: string; assignment: string }>;
 }
 ```
 
@@ -130,8 +130,8 @@ In `dashboard/src/hooks/useWebSocket.ts` line 3-8, add `'servers-updated'` to th
 
 ```typescript
 export interface WsMessage {
-  type: 'mission-updated' | 'assignment-updated' | 'servers-updated' | 'connected';
-  missionSlug?: string;
+  type: 'project-updated' | 'assignment-updated' | 'servers-updated' | 'connected';
+  projectSlug?: string;
   assignmentSlug?: string;
   timestamp: string;
 }
@@ -256,7 +256,7 @@ function nowTimestamp(): string {
   return new Date().toISOString();
 }
 
-function buildSessionContent(session: string, registered: string, lastRefreshed: string, overrides: Record<string, { mission: string; assignment: string }>): string {
+function buildSessionContent(session: string, registered: string, lastRefreshed: string, overrides: Record<string, { project: string; assignment: string }>): string {
   const lines = [
     '---',
     `session: ${session}`,
@@ -267,7 +267,7 @@ function buildSessionContent(session: string, registered: string, lastRefreshed:
   if (Object.keys(overrides).length > 0) {
     lines.push('overrides:');
     for (const [key, val] of Object.entries(overrides)) {
-      lines.push(`  "${key}": { mission: "${val.mission}", assignment: "${val.assignment}" }`);
+      lines.push(`  "${key}": { project: "${val.project}", assignment: "${val.assignment}" }`);
     }
   }
 
@@ -305,12 +305,12 @@ export async function readSessionFile(dir: string, name: string): Promise<Sessio
   const lastRefreshed = getField(frontmatter, 'last_refreshed') ?? '';
 
   // Parse overrides block
-  const overrides: Record<string, { mission: string; assignment: string }> = {};
+  const overrides: Record<string, { project: string; assignment: string }> = {};
   const overridesMatch = frontmatter.match(/^overrides:\n((?:\s+".+\n?)*)/m);
   if (overridesMatch) {
-    const overrideLines = overridesMatch[1].matchAll(/^\s+"([^"]+)":\s*\{\s*mission:\s*"([^"]+)",\s*assignment:\s*"([^"]+)"\s*\}/gm);
+    const overrideLines = overridesMatch[1].matchAll(/^\s+"([^"]+)":\s*\{\s*project:\s*"([^"]+)",\s*assignment:\s*"([^"]+)"\s*\}/gm);
     for (const m of overrideLines) {
-      overrides[m[1]] = { mission: m[2], assignment: m[3] };
+      overrides[m[1]] = { project: m[2], assignment: m[3] };
     }
   }
 
@@ -336,7 +336,7 @@ export async function setOverride(
   sessionName: string,
   windowIndex: number,
   paneIndex: number,
-  assignment: { mission: string; assignment: string } | null,
+  assignment: { project: string; assignment: string } | null,
 ): Promise<void> {
   const data = await readSessionFile(dir, sessionName);
   if (!data) return;
@@ -451,7 +451,7 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { resolve } from 'node:path';
 import { realpath } from 'node:fs/promises';
-import { listMissions } from './api.js';
+import { listProjects } from './api.js';
 import {
   readSessionFile,
   listSessionFiles,
@@ -607,29 +607,29 @@ export async function getGitInfo(cwd: string): Promise<{ branch: string | null; 
 // --- Auto-linking ---
 
 interface AssignmentLink {
-  mission: string;
+  project: string;
   slug: string;
   title: string;
 }
 
 interface WorkspaceRecord {
-  missionSlug: string;
+  projectSlug: string;
   assignmentSlug: string;
   assignmentTitle: string;
   worktreePath: string | null;
   branch: string | null;
 }
 
-async function loadWorkspaceRecords(missionsDir: string): Promise<WorkspaceRecord[]> {
+async function loadWorkspaceRecords(projectsDir: string): Promise<WorkspaceRecord[]> {
   const records: WorkspaceRecord[] = [];
   try {
-    const missions = await listMissions(missionsDir);
+    const projects = await listProjects(projectsDir);
     // We need full assignment details for workspace info — use a lightweight approach
     const { readdir, readFile: readF } = await import('node:fs/promises');
     const { extractFrontmatter, getField, getNestedField } = await import('./parser.js');
 
-    for (const mission of missions) {
-      const assignmentsDir = resolve(missionsDir, mission.slug, 'assignments');
+    for (const project of projects) {
+      const assignmentsDir = resolve(projectsDir, project.slug, 'assignments');
       let slugs: string[];
       try {
         slugs = await readdir(assignmentsDir);
@@ -643,7 +643,7 @@ async function loadWorkspaceRecords(missionsDir: string): Promise<WorkspaceRecor
           const [fm] = extractFrontmatter(raw);
           if (!fm) continue;
           records.push({
-            missionSlug: mission.slug,
+            projectSlug: project.slug,
             assignmentSlug: aslug,
             assignmentTitle: getField(fm, 'title') ?? aslug,
             worktreePath: getNestedField(fm, 'workspace', 'worktreePath') ?? null,
@@ -655,7 +655,7 @@ async function loadWorkspaceRecords(missionsDir: string): Promise<WorkspaceRecor
       }
     }
   } catch {
-    // If missions can't be loaded, auto-linking just returns no matches
+    // If projects can't be loaded, auto-linking just returns no matches
   }
   return records;
 }
@@ -680,7 +680,7 @@ async function autoLinkPane(
     if (rec.worktreePath) {
       const normalizedWt = await resolveAndNormalize(rec.worktreePath);
       if (normalizedCwd === normalizedWt) {
-        return { mission: rec.missionSlug, slug: rec.assignmentSlug, title: rec.assignmentTitle };
+        return { project: rec.projectSlug, slug: rec.assignmentSlug, title: rec.assignmentTitle };
       }
     }
   }
@@ -688,7 +688,7 @@ async function autoLinkPane(
   if (branch) {
     for (const rec of records) {
       if (rec.branch && rec.branch === branch) {
-        return { mission: rec.missionSlug, slug: rec.assignmentSlug, title: rec.assignmentTitle };
+        return { project: rec.projectSlug, slug: rec.assignmentSlug, title: rec.assignmentTitle };
       }
     }
   }
@@ -778,10 +778,10 @@ async function scanSession(
       if (override) {
         // We have an override but need the title — find it in workspace records
         const rec = workspaceRecords.find(
-          (r) => r.missionSlug === override.mission && r.assignmentSlug === override.assignment,
+          (r) => r.projectSlug === override.project && r.assignmentSlug === override.assignment,
         );
         assignment = {
-          mission: override.mission,
+          project: override.project,
           slug: override.assignment,
           title: rec?.assignmentTitle ?? override.assignment,
         };
@@ -818,7 +818,7 @@ async function scanSession(
 
 export async function scanAllSessions(
   serversDir: string,
-  missionsDir: string,
+  projectsDir: string,
   options?: { bypassCache?: boolean },
 ): Promise<ServersResponse> {
   // Check cache
@@ -835,7 +835,7 @@ export async function scanAllSessions(
 
   const names = await listSessionFiles(serversDir);
   const lsofOutput = await getLsofOutput();
-  const workspaceRecords = await loadWorkspaceRecords(missionsDir);
+  const workspaceRecords = await loadWorkspaceRecords(projectsDir);
 
   const sessions: TrackedSession[] = [];
   for (const name of names) {
@@ -851,14 +851,14 @@ export async function scanAllSessions(
 
 export async function scanSingleSession(
   serversDir: string,
-  missionsDir: string,
+  projectsDir: string,
   name: string,
 ): Promise<TrackedSession | null> {
   const data = await readSessionFile(serversDir, name);
   if (!data) return null;
 
   const lsofOutput = await getLsofOutput();
-  const workspaceRecords = await loadWorkspaceRecords(missionsDir);
+  const workspaceRecords = await loadWorkspaceRecords(projectsDir);
   return scanSession(data, lsofOutput, workspaceRecords);
 }
 ```
@@ -905,13 +905,13 @@ import {
 } from './scanner.js';
 import { ensureDir } from '../utils/fs.js';
 
-export function createServersRouter(serversDir: string, missionsDir: string): Router {
+export function createServersRouter(serversDir: string, projectsDir: string): Router {
   const router = Router();
 
   // GET /api/servers — all sessions with cached scan data
   router.get('/', async (_req, res) => {
     try {
-      const result = await scanAllSessions(serversDir, missionsDir);
+      const result = await scanAllSessions(serversDir, projectsDir);
       res.json(result);
     } catch (error) {
       res.status(500).json({ error: error instanceof Error ? error.message : 'Scan failed' });
@@ -921,7 +921,7 @@ export function createServersRouter(serversDir: string, missionsDir: string): Ro
   // GET /api/servers/:name — single session
   router.get('/:name', async (req, res) => {
     try {
-      const session = await scanSingleSession(serversDir, missionsDir, req.params.name);
+      const session = await scanSingleSession(serversDir, projectsDir, req.params.name);
       if (!session) {
         res.status(404).json({ error: 'Session not found' });
         return;
@@ -978,7 +978,7 @@ export function createServersRouter(serversDir: string, missionsDir: string): Ro
         await updateLastRefreshed(serversDir, name);
       }
       clearScanCache();
-      const result = await scanAllSessions(serversDir, missionsDir, { bypassCache: true });
+      const result = await scanAllSessions(serversDir, projectsDir, { bypassCache: true });
       res.json(result);
     } catch (error) {
       res.status(500).json({ error: error instanceof Error ? error.message : 'Refresh failed' });
@@ -995,7 +995,7 @@ export function createServersRouter(serversDir: string, missionsDir: string): Ro
       }
       await updateLastRefreshed(serversDir, req.params.name);
       clearScanCache();
-      const session = await scanSingleSession(serversDir, missionsDir, req.params.name);
+      const session = await scanSingleSession(serversDir, projectsDir, req.params.name);
       res.json(session);
     } catch (error) {
       res.status(500).json({ error: error instanceof Error ? error.message : 'Refresh failed' });
@@ -1011,8 +1011,8 @@ export function createServersRouter(serversDir: string, missionsDir: string): Ro
         res.status(404).json({ error: 'Session not found' });
         return;
       }
-      const body = req.body; // { mission, assignment } | null
-      if (body === null || (body && body.mission && body.assignment)) {
+      const body = req.body; // { project, assignment } | null
+      if (body === null || (body && body.project && body.assignment)) {
         await setOverride(
           serversDir,
           name,
@@ -1023,7 +1023,7 @@ export function createServersRouter(serversDir: string, missionsDir: string): Ro
         clearScanCache();
         res.json({ updated: true });
       } else {
-        res.status(400).json({ error: 'Body must be { mission, assignment } or null' });
+        res.status(400).json({ error: 'Body must be { project, assignment } or null' });
       }
     } catch (error) {
       res.status(500).json({ error: error instanceof Error ? error.message : 'Update failed' });
@@ -1047,7 +1047,7 @@ import { createServersRouter } from './api-servers.js';
 ```typescript
 export interface DashboardServerOptions {
   port: number;
-  missionsDir: string;
+  projectsDir: string;
   serversDir: string;
   devMode: boolean;
 }
@@ -1055,12 +1055,12 @@ export interface DashboardServerOptions {
 
 3. Destructure `serversDir` in `createDashboardServer` (line 29):
 ```typescript
-const { port, missionsDir, serversDir, devMode } = options;
+const { port, projectsDir, serversDir, devMode } = options;
 ```
 
-4. Mount servers router after the write router (after line 158 `app.use(createWriteRouter(missionsDir))`):
+4. Mount servers router after the write router (after line 158 `app.use(createWriteRouter(projectsDir))`):
 ```typescript
-app.use('/api/servers', createServersRouter(serversDir, missionsDir));
+app.use('/api/servers', createServersRouter(serversDir, projectsDir));
 ```
 
 - [ ] **Step 3: Update dashboard command to pass serversDir**
@@ -1110,18 +1110,18 @@ import { relative, sep } from 'node:path';
 import type { WsMessage } from './types.js';
 
 export interface WatcherOptions {
-  missionsDir: string;
+  projectsDir: string;
   serversDir?: string;
   onMessage: (message: WsMessage) => void;
   debounceMs?: number;
 }
 
 export function createWatcher(options: WatcherOptions): { close: () => Promise<void> } {
-  const { missionsDir, serversDir, onMessage, debounceMs = 300 } = options;
+  const { projectsDir, serversDir, onMessage, debounceMs = 300 } = options;
   const pendingEvents = new Map<string, NodeJS.Timeout>();
 
-  // --- Missions watcher (existing) ---
-  const missionsWatcher = watch(missionsDir, {
+  // --- Projects watcher (existing) ---
+  const missionsWatcher = watch(projectsDir, {
     ignoreInitial: true,
     persistent: true,
     depth: 10,
@@ -1129,12 +1129,12 @@ export function createWatcher(options: WatcherOptions): { close: () => Promise<v
   });
 
   function handleMissionChange(filePath: string): void {
-    const rel = relative(missionsDir, filePath);
+    const rel = relative(projectsDir, filePath);
     const parts = rel.split(sep);
 
     if (parts.length === 0) return;
 
-    const missionSlug = parts[0];
+    const projectSlug = parts[0];
     let assignmentSlug: string | undefined;
 
     if (parts.length >= 3 && parts[1] === 'assignments') {
@@ -1142,8 +1142,8 @@ export function createWatcher(options: WatcherOptions): { close: () => Promise<v
     }
 
     const debounceKey = assignmentSlug
-      ? `${missionSlug}/${assignmentSlug}`
-      : missionSlug;
+      ? `${projectSlug}/${assignmentSlug}`
+      : projectSlug;
 
     const existing = pendingEvents.get(debounceKey);
     if (existing) clearTimeout(existing);
@@ -1153,8 +1153,8 @@ export function createWatcher(options: WatcherOptions): { close: () => Promise<v
       setTimeout(() => {
         pendingEvents.delete(debounceKey);
         const message: WsMessage = {
-          type: assignmentSlug ? 'assignment-updated' : 'mission-updated',
-          missionSlug,
+          type: assignmentSlug ? 'assignment-updated' : 'project-updated',
+          projectSlug,
           assignmentSlug,
           timestamp: new Date().toISOString(),
         };
@@ -1220,7 +1220,7 @@ Update `server.ts` line 184-187 to pass `serversDir`:
 
 ```typescript
 watcherHandle = createWatcher({
-  missionsDir,
+  projectsDir,
   serversDir,
   onMessage: broadcast,
 });
@@ -1243,17 +1243,17 @@ git commit -m "feat(server-tracker): extend file watcher to watch servers direct
 ### Task 6: Frontend Data Hooks
 
 **Files:**
-- Modify: `dashboard/src/hooks/useMissions.ts` (add WebSocket scope, add hooks)
+- Modify: `dashboard/src/hooks/useProjects.ts` (add WebSocket scope, add hooks)
 - Modify: `dashboard/src/hooks/useWebSocket.ts` (extend WsMessage type if needed)
 
 - [ ] **Step 1: Extend useFetch to handle 'servers' scope**
 
-In `dashboard/src/hooks/useMissions.ts`:
+In `dashboard/src/hooks/useProjects.ts`:
 
 1. Update the `websocketScope` parameter type on line 275 to include `'servers'`:
 
 ```typescript
-function useFetch<T>(url: string | null, websocketScope?: 'missions' | 'mission' | 'assignment' | 'assignments' | 'overview' | 'attention' | 'servers'): FetchState<T> {
+function useFetch<T>(url: string | null, websocketScope?: 'projects' | 'project' | 'assignment' | 'assignments' | 'overview' | 'attention' | 'servers'): FetchState<T> {
 ```
 
 2. Update the WebSocket handler (lines 322-330) to also handle `'servers-updated'`:
@@ -1264,7 +1264,7 @@ function useFetch<T>(url: string | null, websocketScope?: 'missions' | 'mission'
       return;
     }
 
-    if (message.type === 'mission-updated' || message.type === 'assignment-updated') {
+    if (message.type === 'project-updated' || message.type === 'assignment-updated') {
       refetch();
     }
     if (message.type === 'servers-updated' && websocketScope === 'servers') {
@@ -1304,7 +1304,7 @@ export interface TrackedPane {
   ports: number[];
   urls: string[];
   assignment: {
-    mission: string;
+    project: string;
     slug: string;
     title: string;
   } | null;
@@ -1329,7 +1329,7 @@ export interface OverviewServerStats {
 
 - [ ] **Step 3: Add useServers and useServer hooks**
 
-Add at the bottom of `dashboard/src/hooks/useMissions.ts`. Import the types from the new types file:
+Add at the bottom of `dashboard/src/hooks/useProjects.ts`. Import the types from the new types file:
 
 ```typescript
 import type { ServersResponse, TrackedSession } from '../types';
@@ -1353,7 +1353,7 @@ export function useServer(name: string | null): FetchState<TrackedSession> {
 - [ ] **Step 4: Commit**
 
 ```bash
-git add dashboard/src/hooks/useMissions.ts dashboard/src/hooks/useWebSocket.ts dashboard/src/types.ts
+git add dashboard/src/hooks/useProjects.ts dashboard/src/hooks/useWebSocket.ts dashboard/src/types.ts
 git commit -m "feat(server-tracker): frontend data hooks for servers"
 ```
 
@@ -1385,7 +1385,7 @@ import {
   ServerOff,
   Terminal,
 } from 'lucide-react';
-import { useServers } from '../hooks/useMissions';
+import { useServers } from '../hooks/useProjects';
 import { PageHeader } from '../components/PageHeader';
 import { StatusBadge } from '../components/StatusBadge';
 import { LoadingState } from '../components/LoadingState';
@@ -1637,7 +1637,7 @@ function PaneRow({
       <div className="ml-auto shrink-0">
         {pane.assignment ? (
           <Link
-            to={`/missions/${pane.assignment.mission}/assignments/${pane.assignment.slug}`}
+            to={`/projects/${pane.assignment.project}/assignments/${pane.assignment.slug}`}
             className="inline-flex items-center gap-1 rounded border border-primary/30 bg-primary/10 px-1.5 py-0.5 text-xs font-medium text-primary hover:bg-primary/20"
           >
             <LinkIcon className="h-2.5 w-2.5" />
@@ -1674,7 +1674,7 @@ import { AlertTriangle, Compass, FolderKanban, LifeBuoy, ListTodo, Monitor, X } 
 
 const NAV_ITEMS: SidebarNavItem[] = [
   { to: '/', label: 'Overview', icon: Compass },
-  { to: '/missions', label: 'Missions', icon: FolderKanban },
+  { to: '/projects', label: 'Projects', icon: FolderKanban },
   { to: '/assignments', label: 'Assignments', icon: ListTodo },
   { to: '/servers', label: 'Servers', icon: Monitor },
   { to: '/attention', label: 'Attention', icon: AlertTriangle },
@@ -1688,7 +1688,7 @@ In the `buildShellMeta` function, add a case for `/servers`:
 
 ```typescript
 if (pathname === '/servers') {
-  return { title: 'Servers', breadcrumbs: [{ label: 'Servers', path: '/servers' }], missionSlug: null };
+  return { title: 'Servers', breadcrumbs: [{ label: 'Servers', path: '/servers' }], projectSlug: null };
 }
 ```
 
@@ -1729,7 +1729,7 @@ serverStats?: {
 In `src/dashboard/api.ts`, update `getOverview()` to accept an optional `serversDir` parameter and include server stats. Add `serversDir` as an optional second parameter:
 
 ```typescript
-export async function getOverview(missionsDir: string, serversDir?: string): Promise<OverviewResponse> {
+export async function getOverview(projectsDir: string, serversDir?: string): Promise<OverviewResponse> {
   // ... existing code unchanged ...
 
   // At the end, before the return statement, add:
@@ -1737,7 +1737,7 @@ export async function getOverview(missionsDir: string, serversDir?: string): Pro
   if (serversDir) {
     try {
       const { scanAllSessions } = await import('./scanner.js');
-      const servers = await scanAllSessions(serversDir, missionsDir);
+      const servers = await scanAllSessions(serversDir, projectsDir);
       if (servers.tmuxAvailable) {
         const alive = servers.sessions.filter(s => s.alive).length;
         const totalPorts = servers.sessions.reduce((sum, s) =>
@@ -1762,12 +1762,12 @@ export async function getOverview(missionsDir: string, serversDir?: string): Pro
 
 Update the call in `server.ts` to pass `serversDir` (the `getOverview` call, around line 74):
 ```typescript
-const data = await getOverview(missionsDir, serversDir);
+const data = await getOverview(projectsDir, serversDir);
 ```
 
 Also update the `getAttention` call in `server.ts` to pass `serversDir`:
 ```typescript
-const data = await getAttention(missionsDir, serversDir);
+const data = await getAttention(projectsDir, serversDir);
 ```
 
 - [ ] **Step 2: Add stat card to Overview page**
@@ -1775,7 +1775,7 @@ const data = await getAttention(missionsDir, serversDir);
 In `dashboard/src/pages/Overview.tsx`:
 
 1. Add `Monitor` to the lucide-react import
-2. The `OverviewResponse` type used by `useOverview()` is defined in `useMissions.ts`. Update that interface to include `serverStats?` matching the backend type. Find the `OverviewResponse` interface in `dashboard/src/hooks/useMissions.ts` and add:
+2. The `OverviewResponse` type used by `useOverview()` is defined in `useProjects.ts`. Update that interface to include `serverStats?` matching the backend type. Find the `OverviewResponse` interface in `dashboard/src/hooks/useProjects.ts` and add:
 ```typescript
 serverStats?: {
   trackedSessions: number;
@@ -1805,7 +1805,7 @@ serverStats?: {
 In `dashboard/src/pages/AssignmentDetail.tsx`:
 
 1. Add `ExternalLink` to the lucide-react import
-2. Add `import { useServers } from '../hooks/useMissions';`
+2. Add `import { useServers } from '../hooks/useProjects';`
 3. Add `import { SectionCard } from '../components/SectionCard';` if not already imported
 4. Inside the component function, add the servers data fetch and linked panes computation:
 
@@ -1819,7 +1819,7 @@ if (serversData?.sessions) {
   for (const session of serversData.sessions) {
     for (const win of session.windows) {
       for (const pane of win.panes) {
-        if (pane.assignment?.mission === slug && pane.assignment?.slug === aslug) {
+        if (pane.assignment?.project === slug && pane.assignment?.slug === aslug) {
           linkedPanes.push({
             sessionName: session.name,
             command: pane.command,
@@ -1861,7 +1861,7 @@ Then in the sidebar, after the Workspace Info section:
 In `src/dashboard/api.ts`, update `getAttention()` to accept optional `serversDir` as a second parameter. After calling `buildAttentionItems()` and before the return, add dead session scanning. The items must conform to `AttentionItem` interface (from `types.ts` lines 140-153):
 
 ```typescript
-export async function getAttention(missionsDir: string, serversDir?: string): Promise<AttentionResponse> {
+export async function getAttention(projectsDir: string, serversDir?: string): Promise<AttentionResponse> {
   // ... existing code that calls buildAttentionItems ...
   // items is the array from buildAttentionItems
 
@@ -1869,14 +1869,14 @@ export async function getAttention(missionsDir: string, serversDir?: string): Pr
   if (serversDir) {
     try {
       const { scanAllSessions } = await import('./scanner.js');
-      const servers = await scanAllSessions(serversDir, missionsDir);
+      const servers = await scanAllSessions(serversDir, projectsDir);
       for (const session of servers.sessions) {
         if (!session.alive) {
           items.push({
             id: `server-dead-${session.name}`,
             severity: 'low',
-            missionSlug: '',
-            missionTitle: '',
+            projectSlug: '',
+            projectTitle: '',
             assignmentSlug: '',
             assignmentTitle: `tmux: ${session.name}`,
             status: 'failed' as AssignmentStatus,

@@ -1,11 +1,11 @@
 export interface ConfigParams {
-  defaultMissionDir: string;
+  defaultProjectDir: string;
 }
 
 export function renderConfig(params: ConfigParams): string {
   return `---
 version: "1.0"
-defaultMissionDir: ${params.defaultMissionDir}
+defaultProjectDir: ${params.defaultProjectDir}
 onboarding:
   completed: false
 agentDefaults:
@@ -13,7 +13,7 @@ agentDefaults:
   autoApprove: false
 backup:
   repo: null
-  categories: missions, playbooks, todos, servers, config
+  categories: projects, playbooks, todos, servers, config
   lastBackup: null
   lastRestore: null
 ---

@@ -31,14 +31,14 @@ fi
 
 # --- Step 4: Extract context info ---
 SESSION_ID=$(jq -r '.sessionId // empty' "$CONTEXT_FILE" 2>/dev/null)
-MISSION_SLUG=$(jq -r '.missionSlug // empty' "$CONTEXT_FILE" 2>/dev/null)
+MISSION_SLUG=$(jq -r '.projectSlug // empty' "$CONTEXT_FILE" 2>/dev/null)
 ASSIGNMENT_SLUG=$(jq -r '.assignmentSlug // empty' "$CONTEXT_FILE" 2>/dev/null)
 
 PORT=$(cat "$HOME/.syntaur/dashboard-port" 2>/dev/null || echo "4800")
 
-# --- Step 5: If no session was registered, try to auto-register (requires mission+assignment) ---
+# --- Step 5: If no session was registered, try to auto-register (requires project+assignment) ---
 if [ -z "$SESSION_ID" ]; then
-  # Can only auto-register if we have mission and assignment context
+  # Can only auto-register if we have project and assignment context
   if [ -z "$MISSION_SLUG" ] || [ -z "$ASSIGNMENT_SLUG" ]; then
     exit 0
   fi
@@ -50,7 +50,7 @@ if [ -z "$SESSION_ID" ]; then
 
   RESPONSE=$(curl -sf -X POST "http://localhost:${PORT}/api/agent-sessions" \
     -H "Content-Type: application/json" \
-    -d "{\"missionSlug\": \"${MISSION_SLUG}\", \"assignmentSlug\": \"${ASSIGNMENT_SLUG}\", \"agent\": \"claude\", \"sessionId\": \"${SESSION_ID}\", \"path\": \"${CWD}\"}" \
+    -d "{\"projectSlug\": \"${MISSION_SLUG}\", \"assignmentSlug\": \"${ASSIGNMENT_SLUG}\", \"agent\": \"claude\", \"sessionId\": \"${SESSION_ID}\", \"path\": \"${CWD}\"}" \
     2>/dev/null) || true
 
   # If registration succeeded, update the context file with the session ID
@@ -63,7 +63,7 @@ fi
 # --- Step 6: Mark session as stopped via dashboard API ---
 BODY="{\"status\": \"stopped\"}"
 if [ -n "$MISSION_SLUG" ]; then
-  BODY="{\"status\": \"stopped\", \"missionSlug\": \"${MISSION_SLUG}\"}"
+  BODY="{\"status\": \"stopped\", \"projectSlug\": \"${MISSION_SLUG}\"}"
 fi
 
 curl -sf -X PATCH "http://localhost:${PORT}/api/agent-sessions/${SESSION_ID}/status" \

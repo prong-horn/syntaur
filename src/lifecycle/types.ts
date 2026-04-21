@@ -46,6 +46,8 @@ export interface AssignmentFrontmatter {
   id: string;
   slug: string;
   title: string;
+  project: string | null;
+  type: string | null;
   status: AssignmentStatus;
   priority: 'low' | 'medium' | 'high' | 'critical';
   created: string;

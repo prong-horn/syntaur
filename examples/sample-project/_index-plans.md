@@ -1,5 +1,5 @@
 ---
-mission: build-auth-system
+project: build-auth-system
 generated: "2026-03-18T14:30:00Z"
 ---
 

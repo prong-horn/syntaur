@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useEditableDocument, type EditableDocumentType } from '../hooks/useMissions';
+import { useEditableDocument, type EditableDocumentType } from '../hooks/useProjects';
 import { LoadingState } from './LoadingState';
 import { ErrorState } from './ErrorState';
 import { MarkdownEditor } from './MarkdownEditor';

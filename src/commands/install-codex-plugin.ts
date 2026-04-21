@@ -137,7 +137,7 @@ export async function installCodexPluginCommand(
   console.log(`  marketplace: ${marketplace.marketplacePath}`);
   console.log('\nThe plugin is now available to Codex.');
   console.log(
-    '  Skills: syntaur-protocol, create-mission, create-assignment, grab-assignment, plan-assignment, complete-assignment, track-session',
+    '  Skills: syntaur-protocol, create-project, create-assignment, grab-assignment, plan-assignment, complete-assignment, track-session',
   );
   console.log('  Command: /track-session');
   console.log('  Hooks: write boundary enforcement, session cleanup');

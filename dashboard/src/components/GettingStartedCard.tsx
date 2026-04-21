@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom';
-import type { HelpResponse } from '../hooks/useMissions';
+import type { HelpResponse } from '../hooks/useProjects';
 import { CommandSnippet } from './CommandSnippet';
 import { SectionCard } from './SectionCard';
 
@@ -13,8 +13,8 @@ export function GettingStartedCard({
   compact = false,
 }: GettingStartedCardProps) {
   const items = compact
-    ? help?.firstMissionChecklist.slice(0, 3) ?? []
-    : help?.firstMissionChecklist ?? [];
+    ? help?.firstProjectChecklist.slice(0, 3) ?? []
+    : help?.firstProjectChecklist ?? [];
 
   return (
     <SectionCard

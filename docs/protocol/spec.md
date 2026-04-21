@@ -6,11 +6,11 @@
 
 ## 1. Introduction
 
-The Syntaur protocol is a markdown-based file structure and format that serves as the "API" for the Syntaur platform. It defines how missions (high-level objectives), assignments (units of work), and their associated metadata are organized on the filesystem.
+The Syntaur protocol is a markdown-based file structure and format that serves as the "API" for the Syntaur platform. It defines how projects (high-level objectives), assignments (units of work), and their associated metadata are organized on the filesystem.
 
 Any agent framework that can read and write files can participate in the Syntaur protocol. There is no proprietary wire format, no database to connect to, and no SDK to install. The protocol is the file system layout itself: a set of markdown files with YAML frontmatter arranged in a specific directory structure under `~/.syntaur/`.
 
-Agents discover work by reading markdown files, report progress by updating markdown files, and coordinate with each other through the structure the protocol defines. Humans oversee and steer missions by editing the files they own. Derived files — rebuilt automatically by tooling — provide at-a-glance dashboards of mission state.
+Agents discover work by reading markdown files, report progress by updating markdown files, and coordinate with each other through the structure the protocol defines. Humans oversee and steer projects by editing the files they own. Derived files — rebuilt automatically by tooling — provide at-a-glance dashboards of project state.
 
 This document is the authoritative conceptual reference for the protocol. For detailed field-level schemas of every file type, see [file-formats.md](./file-formats.md). A reader should be able to understand the entire protocol from this document alone.
 
@@ -36,11 +36,11 @@ YAML frontmatter provides structured fields with defined types and valid values.
 
 ### Workspace Grouping
 
-Missions can optionally declare a `workspace` string in their frontmatter to group related missions by codebase or project context. This is a flat organizational label -- not a directory hierarchy. The dashboard uses workspace values to scope navigation and filtering. Missions without a workspace are treated as "Ungrouped." Note: the mission-level `workspace` (a string) is distinct from the assignment-level `workspace` (an object containing repository, branch, and worktree information).
+Projects can optionally declare a `workspace` string in their frontmatter to group related projects by codebase or project context. This is a flat organizational label -- not a directory hierarchy. The dashboard uses workspace values to scope navigation and filtering. Projects without a workspace are treated as "Ungrouped." Note: the project-level `workspace` (a string) is distinct from the assignment-level `workspace` (an object containing repository, branch, and worktree information).
 
 ### Minimal Nesting
 
-The directory structure is intentionally flat. Missions contain assignments, and that is the deepest nesting goes. Cross-references between assignments use slugs, not deeply nested paths. Index files at the mission level provide navigation without requiring directory traversal.
+The directory structure is intentionally flat. Projects contain assignments, and that is the deepest nesting goes. Cross-references between assignments use slugs, not deeply nested paths. Index files at the project level provide navigation without requiring directory traversal.
 
 ### Derived Indexes
 
@@ -55,14 +55,14 @@ The root of all Syntaur data is `~/.syntaur/`. Below is the full directory tree 
 ```
 ~/.syntaur/
   config.md                          # Global Syntaur configuration (optional)
-  missions/
-    <mission-slug>/
+  projects/
+    <project-slug>/
       manifest.md                    # Derived: root navigation file linking all indexes and config
-      mission.md                     # Human-authored: mission overview, goal, context, success criteria
+      project.md                     # Human-authored: project overview, goal, context, success criteria
       _index-assignments.md          # Derived: assignment summary table with status counts
       _index-plans.md                # Derived: plan status summary table
       _index-decisions.md            # Derived: decision record summary table
-      _status.md                     # Derived: computed mission status, assignment rollup, dependency graph
+      _status.md                     # Derived: computed project status, assignment rollup, dependency graph
       claude.md                      # Human-authored: Claude Code-specific agent instructions
       agent.md                       # Human-authored: universal agent instructions (all frameworks)
       assignments/
@@ -74,10 +74,10 @@ The root of all Syntaur data is `~/.syntaur/`. Below is the full directory tree 
           decision-record.md         # Agent-writable: append-only decision log
       resources/
         _index.md                    # Derived: resource listing
-        <resource-slug>.md           # Shared-writable: reference material for the mission
+        <resource-slug>.md           # Shared-writable: reference material for the project
       memories/
         _index.md                    # Derived: memory listing
-        <memory-slug>.md             # Shared-writable: learnings discovered during the mission
+        <memory-slug>.md             # Shared-writable: learnings discovered during the project
   playbooks/
     manifest.md                        # Derived: playbook listing with descriptions and when_to_use
     <slug>.md                          # User-authored: behavioral rules and workflows for agents
@@ -85,11 +85,11 @@ The root of all Syntaur data is `~/.syntaur/`. Below is the full directory tree 
 
 ### Key structural observations
 
-- **One folder per mission.** The folder name is the mission slug and matches the `slug` field in `mission.md` frontmatter.
+- **One folder per project.** The folder name is the project slug and matches the `slug` field in `project.md` frontmatter.
 - **One subfolder per assignment.** The folder name is the assignment slug and matches the `slug` field in `assignment.md` frontmatter.
 - **Derived files use an underscore prefix** (`_index-*`, `_status.md`, `_index.md`). This sorts them to the top of directory listings and signals "do not edit manually."
-- **`manifest.md` is the entry point.** An agent starting work on a mission reads `manifest.md` first to discover all other files.
-- **Resources and memories live at the mission level**, not inside assignments. They are shared context available to all assignments in the mission.
+- **`manifest.md` is the entry point.** An agent starting work on a project reads `manifest.md` first to discover all other files.
+- **Resources and memories live at the project level**, not inside assignments. They are shared context available to all assignments in the project.
 
 ---
 
@@ -103,8 +103,8 @@ Files written and maintained exclusively by humans. Agents read these but never 
 
 | File | Purpose |
 |------|---------|
-| `mission.md` | Mission overview, goal, context, success criteria |
-| `agent.md` | Universal agent instructions for the mission |
+| `project.md` | Project overview, goal, context, success criteria |
+| `agent.md` | Universal agent instructions for the project |
 | `claude.md` | Claude Code-specific instructions |
 
 ### Agent-Writable
@@ -123,12 +123,12 @@ Files inside assignment folders. Only the assigned agent writes to its own assig
 
 ### Shared-Writable
 
-Files in the `resources/` and `memories/` folders. Both humans and agents can create and update files here. There is no single-owner constraint — these are shared mission context.
+Files in the `resources/` and `memories/` folders. Both humans and agents can create and update files here. There is no single-owner constraint — these are shared project context.
 
 | File | Purpose |
 |------|---------|
 | `resources/<resource-slug>.md` | Reference material (docs, API specs, architecture notes) |
-| `memories/<memory-slug>.md` | Learnings and patterns discovered during the mission |
+| `memories/<memory-slug>.md` | Learnings and patterns discovered during the project |
 
 The `source` field in each file's frontmatter tracks who created it (e.g., `"human"`, `"claude-1"`), providing authorship provenance.
 
@@ -142,7 +142,7 @@ Files generated by the rebuild script. Never edited manually. Always reconstruct
 | `_index-assignments.md` | Assignment summary table |
 | `_index-plans.md` | Plan status summary |
 | `_index-decisions.md` | Decision record summary |
-| `_status.md` | Computed mission status, rollup, and dependency graph |
+| `_status.md` | Computed project status, rollup, and dependency graph |
 | `resources/_index.md` | Resource listing |
 | `memories/_index.md` | Memory listing |
 
@@ -158,13 +158,13 @@ This is the most important rule in the protocol. The `status`, `priority`, `assi
 - The summary table in `_index-assignments.md` is a projection.
 - The Mermaid dependency graph in `_status.md` is a projection.
 - The `by_status` counts in `_index-assignments.md` frontmatter are projections.
-- The mission-level `status` in `_status.md` is a projection (computed from assignment states).
+- The project-level `status` in `_status.md` is a projection (computed from assignment states).
 
 **When there is divergence between assignment frontmatter and any derived file, assignment frontmatter wins.** The correct response to a divergence is to re-run the rebuild script, which will regenerate all derived files from the canonical assignment data.
 
-Similarly, `mission.md` frontmatter is the canonical source for mission-level human-authored fields (`archived`, `archivedAt`, `archivedReason`, `title`, `externalIds`). Mission status, however, is not stored in `mission.md` — it is computed from assignment states and written to `_status.md` by the rebuild script.
+Similarly, `project.md` frontmatter is the canonical source for project-level human-authored fields (`archived`, `archivedAt`, `archivedReason`, `title`, `externalIds`). Project status, however, is not stored in `project.md` — it is computed from assignment states and written to `_status.md` by the rebuild script.
 
-**Workspace naming note:** The term "workspace" has two distinct meanings in the protocol. On `mission.md`, `workspace` is an **optional string** used for organizational grouping (e.g., `workspace: syntaur`). On `assignment.md`, `workspace` is an **object** containing code context fields (`repository`, `worktreePath`, `branch`, `parentBranch`). The YAML types differ (scalar string vs mapping), so there is no parse ambiguity, but implementors should be aware of the distinction.
+**Workspace naming note:** The term "workspace" has two distinct meanings in the protocol. On `project.md`, `workspace` is an **optional string** used for organizational grouping (e.g., `workspace: syntaur`). On `assignment.md`, `workspace` is an **object** containing code context fields (`repository`, `worktreePath`, `branch`, `parentBranch`). The YAML types differ (scalar string vs mapping), so there is no parse ambiguity, but implementors should be aware of the distinction.
 
 ---
 
@@ -193,13 +193,13 @@ Assignments declare dependencies via the `dependsOn` field, which lists assignme
 
 This distinction matters: `pending` with unmet dependencies is a normal, expected state that resolves automatically when dependencies complete. `blocked` is an exceptional state that requires human intervention.
 
-### Mission Status Rollup
+### Project Status Rollup
 
-Mission status is not stored in `mission.md`. It is computed by the rebuild script from the collective state of all assignments and written to `_status.md`. The algorithm evaluates rules top-to-bottom; the first matching rule wins:
+Project status is not stored in `project.md`. It is computed by the rebuild script from the collective state of all assignments and written to `_status.md`. The algorithm evaluates rules top-to-bottom; the first matching rule wins:
 
 | Priority | Condition | Resulting Status |
 |----------|-----------|-----------------|
-| 1 | `mission.md` has `archived: true` | `archived` |
+| 1 | `project.md` has `archived: true` | `archived` |
 | 2 | ALL assignments are `completed` | `completed` |
 | 3 | ANY assignment is `in_progress` or `review` | `active` |
 | 4 | ANY assignment is `failed` | `failed` |
@@ -207,9 +207,9 @@ Mission status is not stored in `mission.md`. It is computed by the rebuild scri
 | 6 | ALL assignments are `pending` | `pending` |
 | 7 | Otherwise | `active` |
 
-**Valid mission statuses:** `pending`, `active`, `blocked`, `completed`, `failed`, `archived`.
+**Valid project statuses:** `pending`, `active`, `blocked`, `completed`, `failed`, `archived`.
 
-Note that `archived` is a **human-authored override** stored in `mission.md` frontmatter (the `archived`, `archivedAt`, and `archivedReason` fields). It is the only mission status that is not computed from assignment states. It signals "this mission is done, regardless of assignment completion state."
+Note that `archived` is a **human-authored override** stored in `project.md` frontmatter (the `archived`, `archivedAt`, and `archivedReason` fields). It is the only project status that is not computed from assignment states. It signals "this project is done, regardless of assignment completion state."
 
 ### Edge Case Examples
 
@@ -219,19 +219,19 @@ These examples illustrate how the first-match-wins algorithm handles non-obvious
 
 - **1 completed + 1 blocked + 1 pending** = `blocked` (rule 5). The blocked assignment takes precedence over pending ones.
 
-- **1 in_progress + 1 failed + 1 completed** = `active` (rule 3). Active work takes precedence over failures — the mission is still being worked on.
+- **1 in_progress + 1 failed + 1 completed** = `active` (rule 3). Active work takes precedence over failures — the project is still being worked on.
 
 - **3 completed** = `completed` (rule 2). All work is done.
 
-- **Human sets `archived: true` on `mission.md`** = `archived` (rule 1). Overrides everything, regardless of assignment states.
+- **Human sets `archived: true` on `project.md`** = `archived` (rule 1). Overrides everything, regardless of assignment states.
 
 ---
 
 ## 7. Naming Conventions
 
-### Mission Slugs
+### Project Slugs
 
-Lowercase, hyphen-separated. The slug is used as the mission folder name and stored in the `slug` field of `mission.md` frontmatter.
+Lowercase, hyphen-separated. The slug is used as the project folder name and stored in the `slug` field of `project.md` frontmatter.
 
 Examples: `build-auth-system`, `migrate-to-postgres`, `q1-performance-audit`
 
@@ -255,7 +255,7 @@ The underscore prefix serves two purposes: it sorts derived files to the top of 
 
 ### Resource and Memory Slugs
 
-Lowercase, hyphen-separated. The filename (slug) is the canonical identifier for resources and memories. Unlike missions and assignments, they do not carry a separate `id`/`slug` in frontmatter — the `name` field is display-only.
+Lowercase, hyphen-separated. The filename (slug) is the canonical identifier for resources and memories. Unlike projects and assignments, they do not carry a separate `id`/`slug` in frontmatter — the `name` field is display-only.
 
 Examples: `auth-requirements.md`, `postgres-connection-pooling.md`
 
@@ -273,7 +273,7 @@ This applies to every timestamp field in frontmatter (`created`, `updated`, `gen
 
 ### Filesystem Paths
 
-**Local filesystem path fields** (`workspace.worktreePath`, `defaultMissionDir`, and any other local path stored in YAML frontmatter or config) use the **absolute expanded form**. Never store `~` literally — always expand to the full path at write time.
+**Local filesystem path fields** (`workspace.worktreePath`, `defaultProjectDir`, and any other local path stored in YAML frontmatter or config) use the **absolute expanded form**. Never store `~` literally — always expand to the full path at write time.
 
 **Note:** `workspace.repository` is exempt from this rule — it may be either a local absolute path or a remote URL (e.g., `https://github.com/org/repo.git`, `git@github.com:org/repo.git`). Only local filesystem paths require absolute expansion.
 
@@ -287,7 +287,7 @@ workspace:
   worktreePath: ~/worktrees/build-auth-system/implement-jwt-middleware
 ```
 
-**Intra-mission markdown links** (links between files within the same mission folder) use **relative paths** for portability. If a mission folder is moved or renamed, relative links remain valid.
+**Intra-project markdown links** (links between files within the same project folder) use **relative paths** for portability. If a project folder is moved or renamed, relative links remain valid.
 
 ```markdown
 ## Todos
@@ -304,7 +304,7 @@ workspace:
 
 The protocol version is tracked in two places:
 
-- **`manifest.md` frontmatter** — the `version` field in each mission's manifest indicates which protocol version the mission was created with.
+- **`manifest.md` frontmatter** — the `version` field in each project's manifest indicates which protocol version the project was created with.
 - **`config.md` frontmatter** — the `version` field in the global config indicates the installed protocol version.
 
 The current protocol version is **`"1.0"`**.

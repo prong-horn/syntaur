@@ -23,7 +23,7 @@ export interface TrackedPane {
   ports: number[];
   urls: string[];
   assignment: {
-    mission: string;
+    project: string;
     slug: string;
     title: string;
   } | null;
@@ -67,7 +67,7 @@ export interface PlaybooksResponse {
 export type AgentSessionStatus = 'active' | 'completed' | 'stopped';
 
 export interface AgentSession {
-  missionSlug: string | null;
+  projectSlug: string | null;
   assignmentSlug: string | null;
   agent: string;
   sessionId: string;

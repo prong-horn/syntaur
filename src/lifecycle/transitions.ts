@@ -6,8 +6,8 @@ import { getTargetStatus } from './state-machine.js';
 import { parseAssignmentFrontmatter, updateAssignmentFile } from './frontmatter.js';
 import type { TransitionCommand, TransitionResult, AssignmentFrontmatter } from './types.js';
 
-function resolveAssignmentPath(missionDir: string, assignmentSlug: string): string {
-  return resolve(missionDir, 'assignments', assignmentSlug, 'assignment.md');
+function resolveAssignmentPath(projectDir: string, assignmentSlug: string): string {
+  return resolve(projectDir, 'assignments', assignmentSlug, 'assignment.md');
 }
 
 async function readAssignment(
@@ -22,14 +22,14 @@ async function readAssignment(
 }
 
 async function checkDependencies(
-  missionDir: string,
+  projectDir: string,
   dependsOn: string[],
   terminalStatuses?: ReadonlySet<string>,
 ): Promise<{ satisfied: boolean; unmet: string[] }> {
   const terminals = terminalStatuses ?? new Set(['completed']);
   const unmet: string[] = [];
   for (const depSlug of dependsOn) {
-    const depPath = resolveAssignmentPath(missionDir, depSlug);
+    const depPath = resolveAssignmentPath(projectDir, depSlug);
     if (!(await fileExists(depPath))) {
       unmet.push(`${depSlug} (file not found)`);
       continue;
@@ -51,12 +51,12 @@ export interface TransitionOptions {
 }
 
 export async function executeTransition(
-  missionDir: string,
+  projectDir: string,
   assignmentSlug: string,
   command: Exclude<TransitionCommand, 'assign'>,
   options: TransitionOptions = {},
 ): Promise<TransitionResult> {
-  const filePath = resolveAssignmentPath(missionDir, assignmentSlug);
+  const filePath = resolveAssignmentPath(projectDir, assignmentSlug);
   const { content, frontmatter } = await readAssignment(filePath);
 
   const targetStatus = getTargetStatus(frontmatter.status, command, options.transitionTable);
@@ -72,7 +72,7 @@ export async function executeTransition(
   const warnings: string[] = [];
 
   if (command === 'start' && frontmatter.dependsOn.length > 0) {
-    const depCheck = await checkDependencies(missionDir, frontmatter.dependsOn, options.terminalStatuses);
+    const depCheck = await checkDependencies(projectDir, frontmatter.dependsOn, options.terminalStatuses);
     if (!depCheck.satisfied) {
       warnings.push(`Starting with unmet dependencies: ${depCheck.unmet.join(', ')}`);
     }
@@ -106,11 +106,11 @@ export async function executeTransition(
 }
 
 export async function executeAssign(
-  missionDir: string,
+  projectDir: string,
   assignmentSlug: string,
   agent: string,
 ): Promise<TransitionResult> {
-  const filePath = resolveAssignmentPath(missionDir, assignmentSlug);
+  const filePath = resolveAssignmentPath(projectDir, assignmentSlug);
   const { content, frontmatter } = await readAssignment(filePath);
 
   const updates: Partial<Pick<AssignmentFrontmatter, 'status' | 'assignee' | 'blockedReason' | 'updated'>> = {
@@ -124,6 +124,91 @@ export async function executeAssign(
   return {
     success: true,
     message: `Assignment "${assignmentSlug}" assigned to '${agent}'.`,
+    fromStatus: frontmatter.status,
+  };
+}
+
+export interface TransitionByDirOptions extends TransitionOptions {
+  standalone?: boolean;
+}
+
+export async function executeTransitionByDir(
+  assignmentDir: string,
+  command: Exclude<TransitionCommand, 'assign'>,
+  options: TransitionByDirOptions = {},
+): Promise<TransitionResult> {
+  const filePath = resolve(assignmentDir, 'assignment.md');
+  const { content, frontmatter } = await readAssignment(filePath);
+
+  const targetStatus = getTargetStatus(frontmatter.status, command, options.transitionTable);
+  if (!targetStatus) {
+    return {
+      success: false,
+      message: `Unknown command '${command}' for assignment "${frontmatter.slug || assignmentDir}".`,
+      fromStatus: frontmatter.status,
+    };
+  }
+
+  const warnings: string[] = [];
+
+  if (command === 'start' && !options.standalone && frontmatter.dependsOn.length > 0) {
+    // Dependency check requires a project context — skip for standalone
+    const projectDir = resolve(assignmentDir, '..', '..');
+    const depCheck = await checkDependencies(
+      projectDir,
+      frontmatter.dependsOn,
+      options.terminalStatuses,
+    );
+    if (!depCheck.satisfied) {
+      warnings.push(`Starting with unmet dependencies: ${depCheck.unmet.join(', ')}`);
+    }
+  }
+
+  const updates: Partial<Pick<AssignmentFrontmatter, 'status' | 'assignee' | 'blockedReason' | 'updated'>> = {
+    status: targetStatus,
+    updated: nowTimestamp(),
+  };
+
+  if (command === 'start' && options.agent && !frontmatter.assignee) {
+    updates.assignee = options.agent;
+  }
+  if (command === 'block') {
+    updates.blockedReason = options.reason ?? null;
+  }
+  if (command === 'unblock') {
+    updates.blockedReason = null;
+  }
+
+  const updatedContent = updateAssignmentFile(content, updates);
+  await writeFileForce(filePath, updatedContent);
+
+  return {
+    success: true,
+    message: `Assignment "${frontmatter.slug || assignmentDir}" transitioned: ${frontmatter.status} -> ${targetStatus}`,
+    fromStatus: frontmatter.status,
+    toStatus: targetStatus,
+    warnings: warnings.length > 0 ? warnings : undefined,
+  };
+}
+
+export async function executeAssignByDir(
+  assignmentDir: string,
+  agent: string,
+): Promise<TransitionResult> {
+  const filePath = resolve(assignmentDir, 'assignment.md');
+  const { content, frontmatter } = await readAssignment(filePath);
+
+  const updates: Partial<Pick<AssignmentFrontmatter, 'status' | 'assignee' | 'blockedReason' | 'updated'>> = {
+    assignee: agent,
+    updated: nowTimestamp(),
+  };
+
+  const updatedContent = updateAssignmentFile(content, updates);
+  await writeFileForce(filePath, updatedContent);
+
+  return {
+    success: true,
+    message: `Assignment "${frontmatter.slug || assignmentDir}" assigned to '${agent}'.`,
     fromStatus: frontmatter.status,
   };
 }

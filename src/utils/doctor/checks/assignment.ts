@@ -10,8 +10,8 @@ const CATEGORY = 'assignment';
 const STATUSES_REQUIRING_HANDOFF = new Set(['review', 'completed']);
 
 interface AssignmentEntry {
-  missionDir: string;
-  missionSlug: string;
+  projectDir: string;
+  projectSlug: string;
   assignmentDir: string;
   assignmentSlug: string;
 }
@@ -21,14 +21,14 @@ async function listAssignments(ctx: CheckContext): Promise<{
   orphanFolders: AssignmentEntry[];
 }> {
   const result = { withAssignmentMd: [] as AssignmentEntry[], orphanFolders: [] as AssignmentEntry[] };
-  const missionsDir = ctx.config.defaultMissionDir;
-  if (!(await fileExists(missionsDir))) return result;
+  const projectsDir = ctx.config.defaultProjectDir;
+  if (!(await fileExists(projectsDir))) return result;
 
-  const missions = await readdir(missionsDir, { withFileTypes: true });
-  for (const m of missions) {
+  const projects = await readdir(projectsDir, { withFileTypes: true });
+  for (const m of projects) {
     if (!m.isDirectory()) continue;
     if (m.name.startsWith('.') || m.name.startsWith('_')) continue;
-    const assignmentsDir = resolve(missionsDir, m.name, 'assignments');
+    const assignmentsDir = resolve(projectsDir, m.name, 'assignments');
     if (!(await fileExists(assignmentsDir))) continue;
 
     const entries = await readdir(assignmentsDir, { withFileTypes: true });
@@ -38,8 +38,8 @@ async function listAssignments(ctx: CheckContext): Promise<{
       const assignmentDir = resolve(assignmentsDir, a.name);
       const assignmentMd = resolve(assignmentDir, 'assignment.md');
       const entry: AssignmentEntry = {
-        missionDir: resolve(missionsDir, m.name),
-        missionSlug: m.name,
+        projectDir: resolve(projectsDir, m.name),
+        projectSlug: m.name,
         assignmentDir,
         assignmentSlug: a.name,
       };
@@ -127,7 +127,7 @@ const invalidStatus: Check = {
           category: this.category,
           title: this.title,
           status: 'error',
-          detail: `${a.missionSlug}/${a.assignmentSlug}: status "${parsed.status}" is not in configured statuses (${[...allowed].join(', ')})`,
+          detail: `${a.projectSlug}/${a.assignmentSlug}: status "${parsed.status}" is not in configured statuses (${[...allowed].join(', ')})`,
           affected: [path],
           remediation: {
             kind: 'manual',
@@ -164,7 +164,7 @@ const workspaceMissing: Check = {
           category: this.category,
           title: this.title,
           status: 'error',
-          detail: `${a.missionSlug}/${a.assignmentSlug} (status: ${parsed.status}) has no workspace.repository or workspace.worktreePath set — the PreToolUse hook will block implementation work`,
+          detail: `${a.projectSlug}/${a.assignmentSlug} (status: ${parsed.status}) has no workspace.repository or workspace.worktreePath set — the PreToolUse hook will block implementation work`,
           affected: [path],
           remediation: {
             kind: 'manual',
@@ -214,7 +214,7 @@ const requiredFilesByStatus: Check = {
         category: this.category,
         title: this.title,
         status: 'warn',
-        detail: `${a.missionSlug}/${a.assignmentSlug} (status: ${parsed.status}) is missing ${missing.join(', ')}`,
+        detail: `${a.projectSlug}/${a.assignmentSlug} (status: ${parsed.status}) is missing ${missing.join(', ')}`,
         affected: missing.map((m) => resolve(a.assignmentDir, m)),
         remediation: {
           kind: 'manual',

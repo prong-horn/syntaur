@@ -2,7 +2,7 @@ export { slugify, isValidSlug } from './slug.js';
 export { escapeYamlString } from './yaml.js';
 export { nowTimestamp } from './timestamp.js';
 export { generateId } from './uuid.js';
-export { expandHome, syntaurRoot, defaultMissionDir } from './paths.js';
+export { expandHome, syntaurRoot, defaultProjectDir } from './paths.js';
 export {
   ensureDir,
   fileExists,

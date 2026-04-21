@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { Pencil, Trash2, Tag } from 'lucide-react';
-import { usePlaybook } from '../hooks/useMissions';
+import { usePlaybook } from '../hooks/useProjects';
 import { LoadingState } from '../components/LoadingState';
 import { ErrorState } from '../components/ErrorState';
 import { MarkdownRenderer } from '../components/MarkdownRenderer';

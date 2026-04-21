@@ -11,7 +11,7 @@ const SUPPORTED_FRAMEWORKS = ['cursor', 'codex', 'opencode'] as const;
 type Framework = (typeof SUPPORTED_FRAMEWORKS)[number];
 
 export interface SetupAdapterOptions {
-  mission: string;
+  project: string;
   assignment: string;
   force?: boolean;
   dir?: string;
@@ -29,15 +29,15 @@ export async function setupAdapterCommand(
   }
 
   // Validate required options
-  if (!options.mission) {
-    throw new Error('--mission <slug> is required.');
+  if (!options.project) {
+    throw new Error('--project <slug> is required.');
   }
   if (!options.assignment) {
     throw new Error('--assignment <slug> is required.');
   }
-  if (!isValidSlug(options.mission)) {
+  if (!isValidSlug(options.project)) {
     throw new Error(
-      `Invalid mission slug "${options.mission}". Slugs must be lowercase, hyphen-separated, with no special characters.`,
+      `Invalid project slug "${options.project}". Slugs must be lowercase, hyphen-separated, with no special characters.`,
     );
   }
   if (!isValidSlug(options.assignment)) {
@@ -50,19 +50,19 @@ export async function setupAdapterCommand(
   const config = await readConfig();
   const baseDir = options.dir
     ? expandHome(options.dir)
-    : config.defaultMissionDir;
-  const missionDir = resolve(baseDir, options.mission);
+    : config.defaultProjectDir;
+  const projectDir = resolve(baseDir, options.project);
   const assignmentDir = resolve(
-    missionDir,
+    projectDir,
     'assignments',
     options.assignment,
   );
 
-  // Verify mission exists
-  const missionMdPath = resolve(missionDir, 'mission.md');
-  if (!(await fileExists(missionDir)) || !(await fileExists(missionMdPath))) {
+  // Verify project exists
+  const projectMdPath = resolve(projectDir, 'project.md');
+  if (!(await fileExists(projectDir)) || !(await fileExists(projectMdPath))) {
     throw new Error(
-      `Mission "${options.mission}" not found at ${missionDir}.`,
+      `Project "${options.project}" not found at ${projectDir}.`,
     );
   }
 
@@ -79,9 +79,9 @@ export async function setupAdapterCommand(
   const skippedFiles: string[] = [];
 
   const rendererParams = {
-    missionSlug: options.mission,
+    projectSlug: options.project,
     assignmentSlug: options.assignment,
-    missionDir,
+    projectDir,
     assignmentDir,
   };
 
@@ -110,7 +110,7 @@ export async function setupAdapterCommand(
 
     if (framework === 'opencode') {
       const configPath = resolve(cwd, 'opencode.json');
-      await writeAdapterFile(configPath, renderOpenCodeConfig({ missionDir }));
+      await writeAdapterFile(configPath, renderOpenCodeConfig({ projectDir }));
     }
   }
 

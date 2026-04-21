@@ -1,4 +1,4 @@
-import type { EditableDocumentType } from '../hooks/useMissions';
+import type { EditableDocumentType } from '../hooks/useProjects';
 
 interface FrontmatterModel {
   order: string[];
@@ -6,7 +6,7 @@ interface FrontmatterModel {
   body: string;
 }
 
-export interface MissionEditorState {
+export interface ProjectEditorState {
   title: string;
   slug: string;
   workspace: string;
@@ -192,7 +192,7 @@ function commaListToArray(value: string): string[] {
     .filter(Boolean);
 }
 
-export function parseMissionEditorState(content: string): MissionEditorState {
+export function parseProjectEditorState(content: string): ProjectEditorState {
   const model = parseFrontmatterModel(content);
   return {
     title: getScalar(model, 'title'),
@@ -206,12 +206,12 @@ export function parseMissionEditorState(content: string): MissionEditorState {
   };
 }
 
-export function updateMissionContent(
+export function updateProjectContent(
   content: string,
-  updates: Partial<MissionEditorState>,
+  updates: Partial<ProjectEditorState>,
 ): string {
   const model = parseFrontmatterModel(content);
-  const next = { ...parseMissionEditorState(content), ...updates };
+  const next = { ...parseProjectEditorState(content), ...updates };
 
   setScalar(model, 'title', next.title);
   setScalar(model, 'slug', next.slug);
@@ -341,8 +341,8 @@ export function normalizeEditorContent(
   updates: Record<string, string | boolean>,
 ): string {
   switch (type) {
-    case 'mission':
-      return updateMissionContent(content, updates as Partial<MissionEditorState>);
+    case 'project':
+      return updateProjectContent(content, updates as Partial<ProjectEditorState>);
     case 'assignment':
       return updateAssignmentContent(content, updates as Partial<AssignmentEditorState>);
     case 'plan':

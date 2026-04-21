@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useSearchParams, useParams } from 'react-router-dom';
 import { Info } from 'lucide-react';
-import { useMissions, useWorkspacePrefix, type MissionSummary } from '../hooks/useMissions';
+import { useProjects, useWorkspacePrefix, type ProjectSummary } from '../hooks/useProjects';
 import { LoadingState } from '../components/LoadingState';
 import { ErrorState } from '../components/ErrorState';
 import { EmptyState } from '../components/EmptyState';
@@ -13,16 +13,16 @@ import { KanbanBoard, type KanbanColumn } from '../components/KanbanBoard';
 import { StatusBadge, getStatusDescription } from '../components/StatusBadge';
 import { ProgressBar } from '../components/ProgressBar';
 import { formatDate } from '../lib/format';
-import { MISSION_BOARD_COLUMNS, moveItem } from '../lib/kanban';
+import { PROJECT_BOARD_COLUMNS, moveItem } from '../lib/kanban';
 import { useHotkey, useHotkeyScope, useListSelection } from '../hotkeys';
 
-export function MissionList() {
+export function ProjectList() {
   const { workspace } = useParams<{ workspace?: string }>();
   const wsPrefix = useWorkspacePrefix();
   const navigate = useNavigate();
-  const { data: missions, loading, error, refetch } = useMissions();
+  const { data: projects, loading, error, refetch } = useProjects();
   const searchRef = useRef<HTMLInputElement>(null);
-  useHotkeyScope('list:missions');
+  useHotkeyScope('list:projects');
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [archivedFilter, setArchivedFilter] = useState('active');
@@ -43,97 +43,97 @@ export function MissionList() {
       return next;
     });
   };
-  const [missionOrder, setMissionOrder] = useState<Record<string, string[]>>({});
+  const [projectOrder, setProjectOrder] = useState<Record<string, string[]>>({});
 
   const filtered = useMemo(() => {
-    if (!missions) {
+    if (!projects) {
       return [];
     }
-    return missions
-      .filter((mission) => {
+    return projects
+      .filter((project) => {
         if (workspace) {
           if (workspace === '_ungrouped') {
-            if (mission.workspace !== null) return false;
+            if (project.workspace !== null) return false;
           } else {
-            if (mission.workspace !== workspace) return false;
+            if (project.workspace !== workspace) return false;
           }
         }
-        if (archivedFilter === 'active' && mission.archived) {
+        if (archivedFilter === 'active' && project.archived) {
           return false;
         }
-        if (archivedFilter === 'archived' && !mission.archived) {
+        if (archivedFilter === 'archived' && !project.archived) {
           return false;
         }
-        if (statusFilter !== 'all' && mission.status !== statusFilter) {
+        if (statusFilter !== 'all' && project.status !== statusFilter) {
           return false;
         }
-        if (tagFilter !== 'all' && !mission.tags.includes(tagFilter)) {
+        if (tagFilter !== 'all' && !project.tags.includes(tagFilter)) {
           return false;
         }
         if (!search.trim()) {
           return true;
         }
 
-        const haystack = `${mission.title} ${mission.tags.join(' ')} ${mission.slug}`.toLowerCase();
+        const haystack = `${project.title} ${project.tags.join(' ')} ${project.slug}`.toLowerCase();
         return haystack.includes(search.toLowerCase());
       })
-      .sort((left, right) => sortMissions(left, right, sortBy));
-  }, [missions, search, statusFilter, archivedFilter, tagFilter, sortBy, workspace]);
+      .sort((left, right) => sortProjects(left, right, sortBy));
+  }, [projects, search, statusFilter, archivedFilter, tagFilter, sortBy, workspace]);
 
-  const filteredKey = filtered.map((mission) => `${mission.slug}:${mission.status}`).join('|');
+  const filteredKey = filtered.map((project) => `${project.slug}:${project.status}`).join('|');
 
   useEffect(() => {
-    setMissionOrder(buildMissionColumnOrder(filtered));
+    setProjectOrder(buildProjectColumnOrder(filtered));
   }, [filteredKey, sortBy]);
 
-  const orderedBoardMissions = useMemo(() => {
-    const bySlug = new Map(filtered.map((mission) => [mission.slug, mission]));
+  const orderedBoardProjects = useMemo(() => {
+    const bySlug = new Map(filtered.map((project) => [project.slug, project]));
 
-    return MISSION_BOARD_COLUMNS.flatMap((status) => {
-      const orderedSlugs = missionOrder[status] ?? filtered
-        .filter((mission) => mission.status === status)
-        .map((mission) => mission.slug);
+    return PROJECT_BOARD_COLUMNS.flatMap((status) => {
+      const orderedSlugs = projectOrder[status] ?? filtered
+        .filter((project) => project.status === status)
+        .map((project) => project.slug);
 
       return orderedSlugs
         .map((slug) => bySlug.get(slug))
-        .filter((mission): mission is MissionSummary => Boolean(mission));
+        .filter((project): project is ProjectSummary => Boolean(project));
     });
-  }, [filtered, missionOrder]);
+  }, [filtered, projectOrder]);
 
   // Flat visible order: kanban traverses columns top-to-bottom, cards/table use `filtered`.
   const { visibleItems, visibleIndexByKey } = useMemo(() => {
-    const items = view === 'kanban' ? orderedBoardMissions : filtered;
+    const items = view === 'kanban' ? orderedBoardProjects : filtered;
     const byKey = new Map<string, number>();
     items.forEach((m, i) => byKey.set(m.slug, i));
     return { visibleItems: items, visibleIndexByKey: byKey };
-  }, [view, filtered, orderedBoardMissions]);
+  }, [view, filtered, orderedBoardProjects]);
 
   const { hotkeyRowProps } = useListSelection(visibleItems, {
-    scope: 'list:missions',
-    onOpen: (mission) => navigate(`${wsPrefix}/missions/${mission.slug}`),
+    scope: 'list:projects',
+    onOpen: (project) => navigate(`${wsPrefix}/projects/${project.slug}`),
   });
   useHotkey({
     keys: '/',
-    scope: 'list:missions',
+    scope: 'list:projects',
     description: 'Focus filter',
     handler: () => searchRef.current?.focus(),
   });
   useHotkey({
     keys: 'r',
-    scope: 'list:missions',
+    scope: 'list:projects',
     description: 'Refresh',
     handler: () => refetch(),
   });
 
   if (loading) {
-    return <LoadingState label="Loading missions…" />;
+    return <LoadingState label="Loading projects…" />;
   }
 
-  if (error || !missions) {
-    return <ErrorState error={error || 'Mission list is unavailable.'} />;
+  if (error || !projects) {
+    return <ErrorState error={error || 'Project list is unavailable.'} />;
   }
 
-  const tags = Array.from(new Set(missions.flatMap((mission) => mission.tags))).sort();
+  const tags = Array.from(new Set(projects.flatMap((project) => project.tags))).sort();
 
   return (
     <div className="space-y-5">
@@ -142,7 +142,7 @@ export function MissionList() {
           ref={searchRef}
           value={search}
           onChange={setSearch}
-          placeholder="Search by mission title or tag"
+          placeholder="Search by project title or tag"
         />
         <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)} className="editor-input max-w-[180px]">
           <option value="all">All statuses</option>
@@ -155,7 +155,7 @@ export function MissionList() {
         </select>
         <select value={archivedFilter} onChange={(event) => setArchivedFilter(event.target.value)} className="editor-input max-w-[180px]">
           <option value="active">Hide archived</option>
-          <option value="all">All missions</option>
+          <option value="all">All projects</option>
           <option value="archived">Archived only</option>
         </select>
         <select value={tagFilter} onChange={(event) => setTagFilter(event.target.value)} className="editor-input max-w-[180px]">
@@ -185,41 +185,41 @@ export function MissionList() {
 
       {filtered.length === 0 ? (
         <EmptyState
-          title={missions.length === 0 ? 'No missions yet' : 'No missions match these filters'}
+          title={projects.length === 0 ? 'No projects yet' : 'No projects match these filters'}
           description={
-            missions.length === 0
-              ? 'A mission is the high-level objective that groups assignments, resources, and memories. Create one to start the dashboard flow.'
-              : 'Adjust the current search and filters or create a new mission.'
+            projects.length === 0
+              ? 'A project is the high-level objective that groups assignments, resources, and memories. Create one to start the dashboard flow.'
+              : 'Adjust the current search and filters or create a new project.'
           }
           actions={
-            <Link className="shell-action bg-foreground text-background hover:opacity-90" to={`${wsPrefix}/create/mission`}>
-              Create Mission
+            <Link className="shell-action bg-foreground text-background hover:opacity-90" to={`${wsPrefix}/create/project`}>
+              Create Project
             </Link>
           }
         />
       ) : view === 'cards' ? (
         <div className="grid gap-3 lg:grid-cols-2 2xl:grid-cols-3">
-          {filtered.map((mission, i) => (
+          {filtered.map((project, i) => (
             <Link
-              key={mission.slug}
-              to={`${wsPrefix}/missions/${mission.slug}`}
+              key={project.slug}
+              to={`${wsPrefix}/projects/${project.slug}`}
               className="block rounded-lg border border-border/60 bg-card/90 p-3 shadow-sm transition hover:border-primary/40 hover:shadow-md"
               {...hotkeyRowProps(i)}
             >
               <div className="flex items-start justify-between gap-3">
                 <div className="space-y-1">
-                  <h2 className="text-lg font-semibold text-foreground">{mission.title}</h2>
+                  <h2 className="text-lg font-semibold text-foreground">{project.title}</h2>
                   <p className="text-sm text-muted-foreground">
-                    Updated {formatDate(mission.updated)}
+                    Updated {formatDate(project.updated)}
                   </p>
                 </div>
-                <StatusBadge status={mission.status} />
+                <StatusBadge status={project.status} />
               </div>
 
               <div className="mt-4 space-y-3">
-                <ProgressBar progress={mission.progress} showLegend />
+                <ProgressBar progress={project.progress} showLegend />
                 <div className="flex flex-wrap gap-2">
-                  {mission.tags.map((tag) => (
+                  {project.tags.map((tag) => (
                     <span key={tag} className="rounded-full border border-border/60 bg-background/80 px-2.5 py-1 text-xs text-foreground">
                       {tag}
                     </span>
@@ -229,12 +229,12 @@ export function MissionList() {
                   <div className="rounded-md border border-border/60 bg-background/80 p-3">
                     <p className="text-muted-foreground">Needs attention</p>
                     <p className="mt-1 font-semibold text-foreground">
-                      {mission.needsAttention.blockedCount + mission.needsAttention.failedCount}
+                      {project.needsAttention.blockedCount + project.needsAttention.failedCount}
                     </p>
                   </div>
                   <div className="rounded-md border border-border/60 bg-background/80 p-3">
                     <p className="text-muted-foreground">Assignments</p>
-                    <p className="mt-1 font-semibold text-foreground">{mission.progress.total}</p>
+                    <p className="mt-1 font-semibold text-foreground">{project.progress.total}</p>
                   </div>
                 </div>
               </div>
@@ -242,12 +242,12 @@ export function MissionList() {
           ))}
         </div>
       ) : view === 'table' ? (
-        <SectionCard title={`${filtered.length} mission${filtered.length === 1 ? '' : 's'}`}>
+        <SectionCard title={`${filtered.length} project${filtered.length === 1 ? '' : 's'}`}>
           <div className="overflow-x-auto">
             <table className="w-full min-w-[760px] text-left text-sm">
               <thead>
                 <tr className="border-b border-border/60 text-muted-foreground">
-                  <th className="pb-3 font-medium">Mission</th>
+                  <th className="pb-3 font-medium">Project</th>
                   <th className="pb-3 font-medium">Status</th>
                   <th className="pb-3 font-medium">Progress</th>
                   <th className="pb-3 font-medium">Attention</th>
@@ -255,18 +255,18 @@ export function MissionList() {
                 </tr>
               </thead>
               <tbody>
-                {filtered.map((mission, i) => (
+                {filtered.map((project, i) => (
                   <tr
-                    key={mission.slug}
+                    key={project.slug}
                     className="border-b border-border/50 last:border-0"
                     {...hotkeyRowProps(i)}
                   >
                     <td className="py-4 pr-4">
-                      <Link to={`${wsPrefix}/missions/${mission.slug}`} className="font-semibold text-foreground hover:text-primary">
-                        {mission.title}
+                      <Link to={`${wsPrefix}/projects/${project.slug}`} className="font-semibold text-foreground hover:text-primary">
+                        {project.title}
                       </Link>
                       <div className="mt-1 flex flex-wrap gap-2">
-                        {mission.tags.map((tag) => (
+                        {project.tags.map((tag) => (
                           <span key={tag} className="rounded-full border border-border/60 px-2 py-0.5 text-xs text-muted-foreground">
                             {tag}
                           </span>
@@ -274,17 +274,17 @@ export function MissionList() {
                       </div>
                     </td>
                     <td className="py-4 pr-4">
-                      <StatusBadge status={mission.status} />
+                      <StatusBadge status={project.status} />
                     </td>
                     <td className="py-4 pr-4">
                       <div className="min-w-[220px]">
-                        <ProgressBar progress={mission.progress} />
+                        <ProgressBar progress={project.progress} />
                       </div>
                     </td>
                     <td className="py-4 pr-4 text-muted-foreground">
-                      {mission.needsAttention.blockedCount + mission.needsAttention.failedCount}
+                      {project.needsAttention.blockedCount + project.needsAttention.failedCount}
                     </td>
-                    <td className="py-4 text-muted-foreground">{formatDate(mission.updated)}</td>
+                    <td className="py-4 text-muted-foreground">{formatDate(project.updated)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -293,31 +293,31 @@ export function MissionList() {
         </SectionCard>
       ) : (
         <KanbanBoard
-          columns={MISSION_COLUMNS}
-          items={orderedBoardMissions}
-          getItemId={(mission) => mission.slug}
-          getColumnId={(mission) => mission.status}
+          columns={PROJECT_COLUMNS}
+          items={orderedBoardProjects}
+          getItemId={(project) => project.slug}
+          getColumnId={(project) => project.status}
           canDrop={({ fromColumnId, toColumnId }) => ({
             allowed: true,
             reason:
               fromColumnId === toColumnId
                 ? undefined
-                : 'This will set a manual status override on the mission.',
+                : 'This will set a manual status override on the project.',
           })}
           onMove={({ item, fromColumnId, toColumnId, fromIndex, toIndex }) => {
             if (fromColumnId === toColumnId) {
-              const currentColumnOrder = missionOrder[fromColumnId] ?? filtered
-                .filter((mission) => mission.status === fromColumnId)
-                .map((mission) => mission.slug);
+              const currentColumnOrder = projectOrder[fromColumnId] ?? filtered
+                .filter((project) => project.status === fromColumnId)
+                .map((project) => project.slug);
 
-              setMissionOrder((current) => ({
+              setProjectOrder((current) => ({
                 ...current,
                 [fromColumnId]: moveItem(currentColumnOrder, fromIndex, toIndex),
               }));
               return;
             }
 
-            fetch(`/api/missions/${item.slug}/status-override`, {
+            fetch(`/api/projects/${item.slug}/status-override`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ status: toColumnId }),
@@ -325,12 +325,12 @@ export function MissionList() {
               window.location.reload();
             });
           }}
-          emptyMessage={(column) => `No ${column.title.toLowerCase()} missions.`}
-          renderCard={(mission, { dragging }) => {
-            const flatIdx = visibleIndexByKey.get(mission.slug) ?? -1;
+          emptyMessage={(column) => `No ${column.title.toLowerCase()} projects.`}
+          renderCard={(project, { dragging }) => {
+            const flatIdx = visibleIndexByKey.get(project.slug) ?? -1;
             return (
               <div {...(flatIdx >= 0 ? hotkeyRowProps(flatIdx) : {})}>
-                <MissionBoardCard mission={mission} dragging={dragging} />
+                <ProjectBoardCard project={project} dragging={dragging} />
               </div>
             );
           }}
@@ -341,7 +341,7 @@ export function MissionList() {
         <div className="flex items-start gap-3">
           <Info className="mt-0.5 h-4 w-4" />
           <p>
-            Mission status is derived from assignment state by default.{view === 'kanban' ? ' Drag missions between columns or use' : ' Use'} the status override on the mission detail page to set a manual status.
+            Project status is derived from assignment state by default.{view === 'kanban' ? ' Drag projects between columns or use' : ' Use'} the status override on the project detail page to set a manual status.
           </p>
         </div>
       </div>
@@ -349,7 +349,7 @@ export function MissionList() {
   );
 }
 
-const MISSION_COLUMN_LABELS: Record<(typeof MISSION_BOARD_COLUMNS)[number], string> = {
+const PROJECT_COLUMN_LABELS: Record<(typeof PROJECT_BOARD_COLUMNS)[number], string> = {
   pending: 'Pending',
   active: 'Active',
   blocked: 'Blocked',
@@ -358,13 +358,13 @@ const MISSION_COLUMN_LABELS: Record<(typeof MISSION_BOARD_COLUMNS)[number], stri
   archived: 'Archived',
 };
 
-const MISSION_COLUMNS: KanbanColumn[] = MISSION_BOARD_COLUMNS.map((status) => ({
+const PROJECT_COLUMNS: KanbanColumn[] = PROJECT_BOARD_COLUMNS.map((status) => ({
   id: status,
-  title: MISSION_COLUMN_LABELS[status],
+  title: PROJECT_COLUMN_LABELS[status],
   description: getStatusDescription(status),
 }));
 
-function sortMissions(left: MissionSummary, right: MissionSummary, sortBy: string): number {
+function sortProjects(left: ProjectSummary, right: ProjectSummary, sortBy: string): number {
   switch (sortBy) {
     case 'created':
       return right.created.localeCompare(left.created);
@@ -378,30 +378,30 @@ function sortMissions(left: MissionSummary, right: MissionSummary, sortBy: strin
   }
 }
 
-function getAttentionScore(mission: MissionSummary): number {
+function getAttentionScore(project: ProjectSummary): number {
   return (
-    mission.needsAttention.failedCount * 10 +
-    mission.needsAttention.blockedCount * 5 +
-    mission.needsAttention.unansweredQuestions
+    project.needsAttention.failedCount * 10 +
+    project.needsAttention.blockedCount * 5 +
+    project.needsAttention.openQuestions
   );
 }
 
-function buildMissionColumnOrder(missions: MissionSummary[]): Record<string, string[]> {
+function buildProjectColumnOrder(projects: ProjectSummary[]): Record<string, string[]> {
   return Object.fromEntries(
-    MISSION_BOARD_COLUMNS.map((status) => [
+    PROJECT_BOARD_COLUMNS.map((status) => [
       status,
-      missions
-        .filter((mission) => mission.status === status)
-        .map((mission) => mission.slug),
+      projects
+        .filter((project) => project.status === status)
+        .map((project) => project.slug),
     ]),
   );
 }
 
-function MissionBoardCard({
-  mission,
+function ProjectBoardCard({
+  project,
   dragging,
 }: {
-  mission: MissionSummary;
+  project: ProjectSummary;
   dragging: boolean;
 }) {
   const wsPrefix = useWorkspacePrefix();
@@ -409,34 +409,34 @@ function MissionBoardCard({
     <div className="rounded-lg border border-border/60 bg-background/85 p-3 shadow-sm">
       <div className="flex items-start justify-between gap-3">
         <div className="space-y-1">
-          <Link to={`${wsPrefix}/missions/${mission.slug}`} className="text-base font-semibold text-foreground hover:text-primary">
-            {mission.title}
+          <Link to={`${wsPrefix}/projects/${project.slug}`} className="text-base font-semibold text-foreground hover:text-primary">
+            {project.title}
           </Link>
-          <p className="text-sm text-muted-foreground">Updated {formatDate(mission.updated)}</p>
+          <p className="text-sm text-muted-foreground">Updated {formatDate(project.updated)}</p>
         </div>
-        <StatusBadge status={mission.status} />
+        <StatusBadge status={project.status} />
       </div>
 
       <div className="mt-4">
-        <ProgressBar progress={mission.progress} />
+        <ProgressBar progress={project.progress} />
       </div>
 
       <div className="mt-4 flex flex-wrap gap-2">
-        {mission.tags.map((tag) => (
+        {project.tags.map((tag) => (
           <span key={tag} className="rounded-full border border-border/60 bg-background/80 px-2.5 py-1 text-xs text-foreground">
             {tag}
           </span>
         ))}
         <span className="rounded-full border border-border/60 px-2.5 py-1 text-xs text-muted-foreground">
-          {mission.progress.total} assignments
+          {project.progress.total} assignments
         </span>
         <span className="rounded-full border border-border/60 px-2.5 py-1 text-xs text-muted-foreground">
-          {mission.needsAttention.blockedCount + mission.needsAttention.failedCount} needs attention
+          {project.needsAttention.blockedCount + project.needsAttention.failedCount} needs attention
         </span>
       </div>
 
       <div className="mt-4 text-xs uppercase tracking-[0.08em] text-muted-foreground">
-        {dragging ? 'Reordering within status' : 'Derived mission lane'}
+        {dragging ? 'Reordering within status' : 'Derived project lane'}
       </div>
     </div>
   );

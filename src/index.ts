@@ -1,6 +1,6 @@
 import { Command } from 'commander';
 import { initCommand } from './commands/init.js';
-import { createMissionCommand } from './commands/create-mission.js';
+import { createProjectCommand } from './commands/create-project.js';
 import { createAssignmentCommand } from './commands/create-assignment.js';
 import { dashboardCommand, didUserSpecifyDashboardPort } from './commands/dashboard.js';
 import { assignCommand } from './commands/assign.js';
@@ -23,6 +23,8 @@ import { listPlaybooksCommand } from './commands/list-playbooks.js';
 import { todoCommand } from './commands/todo.js';
 import { backupCommand } from './commands/backup.js';
 import { doctorCommand } from './commands/doctor.js';
+import { commentCommand } from './commands/comment.js';
+import { requestCommand } from './commands/request.js';
 import { getDefaultCommandName } from './cli-default-command.js';
 import { maybePromptInstall } from './utils/npx-prompt.js';
 import { readPackageVersion } from './utils/version.js';
@@ -54,15 +56,15 @@ program
   });
 
 program
-  .command('create-mission')
-  .description('Create a new mission with all required files')
-  .argument('<title>', 'Mission title')
+  .command('create-project')
+  .description('Create a new project with all required files')
+  .argument('<title>', 'Project title')
   .option('--slug <slug>', 'Override auto-generated slug')
-  .option('--dir <path>', 'Override default mission directory')
+  .option('--dir <path>', 'Override default project directory')
   .option('--workspace <workspace>', 'Workspace for organizational grouping')
   .action(async (title, options) => {
     try {
-      await createMissionCommand(title, options);
+      await createProjectCommand(title, options);
     } catch (error) {
       console.error(
         'Error:',
@@ -74,22 +76,65 @@ program
 
 program
   .command('create-assignment')
-  .description('Create a new assignment within a mission')
+  .description('Create a new assignment within a project')
   .argument('<title>', 'Assignment title')
-  .option('--mission <slug>', 'Target mission slug (required unless --one-off)')
-  .option('--one-off', 'Auto-wrap in a new single-assignment mission')
-  .option('--slug <slug>', 'Override auto-generated slug')
+  .option('--project <slug>', 'Target project slug (required unless --one-off)')
+  .option('--one-off', 'Create a standalone assignment at ~/.syntaur/assignments/<uuid>/')
+  .option('--slug <slug>', 'Override auto-generated slug (display only for standalone; folder name for project-nested)')
   .option(
     '--priority <level>',
     'Priority level (low|medium|high|critical)',
     'medium',
   )
-  .option('--depends-on <slugs>', 'Comma-separated dependency slugs')
-  .option('--links <slugs>', 'Comma-separated linked assignment slugs (missionSlug/assignmentSlug format)')
-  .option('--dir <path>', 'Override default mission directory')
+  .option('--type <type>', 'Assignment type (e.g. feature, bug, refactor)')
+  .option('--depends-on <slugs>', 'Comma-separated dependency slugs (not allowed with --one-off)')
+  .option('--links <slugs>', 'Comma-separated linked assignment slugs (projectSlug/assignmentSlug format)')
+  .option('--dir <path>', 'Override default project directory (ignored for --one-off)')
   .action(async (title, options) => {
     try {
       await createAssignmentCommand(title, options);
+    } catch (error) {
+      console.error(
+        'Error:',
+        error instanceof Error ? error.message : String(error),
+      );
+      process.exit(1);
+    }
+  });
+
+program
+  .command('comment')
+  .description('Add a comment to an assignment (CLI-mediated, append-only)')
+  .argument('<assignment>', 'Target assignment slug (with --project) or UUID (standalone)')
+  .argument('<text>', 'Comment body')
+  .option('--project <slug>', 'Project slug if the target is project-nested')
+  .option('--reply-to <id>', 'ID of the comment this replies to')
+  .option('--type <type>', 'Comment type: question | note | feedback', 'note')
+  .option('--author <name>', 'Override author (default: $USER or "unknown")')
+  .option('--dir <path>', 'Override default project directory')
+  .action(async (assignment, text, options) => {
+    try {
+      await commentCommand(assignment, text, options);
+    } catch (error) {
+      console.error(
+        'Error:',
+        error instanceof Error ? error.message : String(error),
+      );
+      process.exit(1);
+    }
+  });
+
+program
+  .command('request')
+  .description('Append a todo to another assignment (cross-assignment work request)')
+  .argument('<target>', 'Target assignment slug (with --project) or UUID (standalone)')
+  .argument('<text>', 'Todo text')
+  .option('--project <slug>', 'Project slug if the target is project-nested')
+  .option('--from <source>', 'Source assignment (default: $SYNTAUR_ASSIGNMENT)')
+  .option('--dir <path>', 'Override default project directory')
+  .action(async (target, text, options) => {
+    try {
+      await requestCommand(target, text, options);
     } catch (error) {
       console.error(
         'Error:',
@@ -127,9 +172,9 @@ program
   .command('assign')
   .description('Set the assignee on an assignment')
   .argument('<assignment>', 'Assignment slug')
-  .option('--mission <slug>', 'Target mission slug')
+  .option('--project <slug>', 'Target project slug')
   .option('--agent <name>', 'Agent name to assign')
-  .option('--dir <path>', 'Override default mission directory')
+  .option('--dir <path>', 'Override default project directory')
   .action(async (assignment, options) => {
     try {
       await assignCommand(assignment, options);
@@ -146,9 +191,9 @@ program
   .command('start')
   .description('Transition an assignment to in_progress')
   .argument('<assignment>', 'Assignment slug')
-  .option('--mission <slug>', 'Target mission slug')
+  .option('--project <slug>', 'Target project slug')
   .option('--agent <name>', 'Agent name (sets assignee if not already set)')
-  .option('--dir <path>', 'Override default mission directory')
+  .option('--dir <path>', 'Override default project directory')
   .action(async (assignment, options) => {
     try {
       await startCommand(assignment, options);
@@ -165,8 +210,8 @@ program
   .command('complete')
   .description('Transition an assignment to completed')
   .argument('<assignment>', 'Assignment slug')
-  .option('--mission <slug>', 'Target mission slug')
-  .option('--dir <path>', 'Override default mission directory')
+  .option('--project <slug>', 'Target project slug')
+  .option('--dir <path>', 'Override default project directory')
   .action(async (assignment, options) => {
     try {
       await completeCommand(assignment, options);
@@ -183,9 +228,9 @@ program
   .command('block')
   .description('Transition an assignment to blocked')
   .argument('<assignment>', 'Assignment slug')
-  .option('--mission <slug>', 'Target mission slug')
+  .option('--project <slug>', 'Target project slug')
   .option('--reason <text>', 'Reason for blocking')
-  .option('--dir <path>', 'Override default mission directory')
+  .option('--dir <path>', 'Override default project directory')
   .action(async (assignment, options) => {
     try {
       await blockCommand(assignment, options);
@@ -202,8 +247,8 @@ program
   .command('unblock')
   .description('Transition a blocked assignment to in_progress')
   .argument('<assignment>', 'Assignment slug')
-  .option('--mission <slug>', 'Target mission slug')
-  .option('--dir <path>', 'Override default mission directory')
+  .option('--project <slug>', 'Target project slug')
+  .option('--dir <path>', 'Override default project directory')
   .action(async (assignment, options) => {
     try {
       await unblockCommand(assignment, options);
@@ -220,8 +265,8 @@ program
   .command('review')
   .description('Transition an assignment to review')
   .argument('<assignment>', 'Assignment slug')
-  .option('--mission <slug>', 'Target mission slug')
-  .option('--dir <path>', 'Override default mission directory')
+  .option('--project <slug>', 'Target project slug')
+  .option('--dir <path>', 'Override default project directory')
   .action(async (assignment, options) => {
     try {
       await reviewCommand(assignment, options);
@@ -238,8 +283,8 @@ program
   .command('fail')
   .description('Transition an assignment to failed')
   .argument('<assignment>', 'Assignment slug')
-  .option('--mission <slug>', 'Target mission slug')
-  .option('--dir <path>', 'Override default mission directory')
+  .option('--project <slug>', 'Target project slug')
+  .option('--dir <path>', 'Override default project directory')
   .action(async (assignment, options) => {
     try {
       await failCommand(assignment, options);
@@ -256,8 +301,8 @@ program
   .command('reopen')
   .description('Reopen a completed or failed assignment')
   .argument('<assignment>', 'Assignment slug')
-  .option('--mission <slug>', 'Target mission slug')
-  .option('--dir <path>', 'Override default mission directory')
+  .option('--project <slug>', 'Target project slug')
+  .option('--dir <path>', 'Override default project directory')
   .action(async (assignment, options) => {
     try {
       await reopenCommand(assignment, options);
@@ -353,10 +398,10 @@ program
   .command('setup-adapter')
   .description('Generate adapter instruction files for a framework in the current directory')
   .argument('<framework>', 'Target framework (cursor, codex, opencode)')
-  .option('--mission <slug>', 'Target mission slug (required)')
+  .option('--project <slug>', 'Target project slug (required)')
   .option('--assignment <slug>', 'Target assignment slug (required)')
   .option('--force', 'Overwrite existing adapter files')
-  .option('--dir <path>', 'Override default mission directory')
+  .option('--dir <path>', 'Override default project directory')
   .action(async (framework, options) => {
     try {
       await setupAdapterCommand(framework, options);
@@ -371,13 +416,13 @@ program
 
 program
   .command('track-session')
-  .description('Register an agent session (optionally linked to a mission/assignment)')
-  .option('--mission <slug>', 'Target mission slug')
+  .description('Register an agent session (optionally linked to a project/assignment)')
+  .option('--project <slug>', 'Target project slug')
   .option('--assignment <slug>', 'Assignment slug')
   .option('--agent <name>', 'Agent name, e.g. claude, codex, cursor (required)')
   .option('--session-id <id>', 'Session ID (auto-generated if omitted)')
   .option('--path <path>', 'Full path to session on disk (defaults to cwd)')
-  .option('--dir <path>', 'Override default mission directory')
+  .option('--dir <path>', 'Override default project directory')
   .option('--description <text>', 'Description of what this session is for')
   .action(async (options) => {
     try {
@@ -393,7 +438,7 @@ program
 
 program
   .command('browse')
-  .description('Interactive TUI browser for missions and assignments')
+  .description('Interactive TUI browser for projects and assignments')
   .option('--agent <type>', 'Agent to launch: claude or codex', 'claude')
   .action(async (options) => {
     try {

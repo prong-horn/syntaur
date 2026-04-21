@@ -1,20 +1,20 @@
 export interface CodexAgentsParams {
-  missionSlug: string;
+  projectSlug: string;
   assignmentSlug: string;
-  missionDir: string;
+  projectDir: string;
   assignmentDir: string;
 }
 
 export function renderCodexAgents(params: CodexAgentsParams): string {
   return `# Syntaur Protocol -- Agent Instructions
 
-This project uses the Syntaur protocol for multi-agent mission coordination.
+This project uses the Syntaur protocol for multi-agent project coordination.
 
 ## Current Assignment
 
-- **Mission:** ${params.missionSlug}
+- **Project:** ${params.projectSlug}
 - **Assignment:** ${params.assignmentSlug}
-- **Mission directory:** ${params.missionDir}
+- **Project directory:** ${params.projectDir}
 - **Assignment directory:** ${params.assignmentDir}
 
 ## Preferred Workflow
@@ -23,7 +23,7 @@ If the global Syntaur Codex plugin is installed, prefer these workflows instead 
 
 - \`syntaur-operator\` agent -- use for broad Syntaur protocol work or when a task spans multiple lifecycle steps
 - \`syntaur-protocol\` -- background protocol and write-boundary rules
-- \`create-mission\` -- scaffold a mission
+- \`create-project\` -- scaffold a project
 - \`create-assignment\` -- create a new assignment
 - \`grab-assignment\` -- claim work, create \`.syntaur/context.json\`, and register a session
 - \`plan-assignment\` -- write a versioned plan file (\`plan.md\`, \`plan-v2.md\`, ...) and link it from the \`## Todos\` section of \`assignment.md\`
@@ -35,10 +35,10 @@ If the plugin is unavailable, follow the same workflow manually with the \`synta
 ## Reading Order
 
 Before starting work, read these files in order:
-1. \`${params.missionDir}/manifest.md\` -- root navigation entry point
-2. \`${params.missionDir}/agent.md\` -- universal agent instructions and boundaries
-3. \`${params.missionDir}/mission.md\` -- mission overview and goals
-4. \`${params.missionDir}/claude.md\` if it exists -- extra mission context that may still be relevant
+1. \`${params.projectDir}/manifest.md\` -- root navigation entry point
+2. \`${params.projectDir}/agent.md\` -- universal agent instructions and boundaries
+3. \`${params.projectDir}/project.md\` -- project overview and goals
+4. \`${params.projectDir}/claude.md\` if it exists -- extra project context that may still be relevant
 5. \`${params.assignmentDir}/assignment.md\` -- your assignment details, acceptance criteria, todos, current status
 6. any \`${params.assignmentDir}/plan*.md\` files linked from active todos in the \`## Todos\` section (may be 0, 1, or many)
 7. \`${params.assignmentDir}/handoff.md\` -- previous session handoff notes
@@ -46,7 +46,7 @@ Before starting work, read these files in order:
 ## Context File
 
 - Treat \`.syntaur/context.json\` in the current working directory as the active assignment context when it exists.
-- Use that file to resolve the workspace boundary, assignment path, mission path, and active session ID.
+- Use that file to resolve the workspace boundary, assignment path, project path, and active session ID.
 - If there is no context file yet and you are supposed to work on an assignment, claim or set up the assignment before editing code.
 
 ## Directory Structure
@@ -54,10 +54,10 @@ Before starting work, read these files in order:
 \`\`\`
 ~/.syntaur/
   config.md
-  missions/
-    <mission-slug>/
+  projects/
+    <project-slug>/
       manifest.md            # Derived: root navigation (read-only)
-      mission.md             # Human-authored: mission overview (read-only)
+      project.md             # Human-authored: project overview (read-only)
       _index-assignments.md  # Derived (read-only)
       _index-plans.md        # Derived (read-only)
       _index-decisions.md    # Derived (read-only)
@@ -85,15 +85,15 @@ Before starting work, read these files in order:
 1. **Your assignment folder** -- only the assignment you are currently working on:
    - \`assignment.md\`, \`plan*.md\` (0 or more versioned plan files), \`scratchpad.md\`, \`handoff.md\`, \`decision-record.md\`
    - Path: \`${params.assignmentDir}/\`
-2. **Shared resources and memories** at the mission level:
-   - \`${params.missionDir}/resources/<slug>.md\`
-   - \`${params.missionDir}/memories/<slug>.md\`
+2. **Shared resources and memories** at the project level:
+   - \`${params.projectDir}/resources/<slug>.md\`
+   - \`${params.projectDir}/memories/<slug>.md\`
 3. **Your workspace** -- source code files in the current working directory (the directory where this AGENTS.md lives). If your assignment's frontmatter specifies a \`workspace\` field, read it at runtime to determine the exact boundary.
 
 > **Note:** Workspace boundaries are resolved by the agent at runtime by reading \`assignment.md\` frontmatter. If no \`workspace\` field is set, treat the current working directory as your workspace.
 
 ### Files you must NEVER write:
-1. \`mission.md\`, \`agent.md\`, \`claude.md\` -- human-authored, read-only
+1. \`project.md\`, \`agent.md\`, \`claude.md\` -- human-authored, read-only
 2. \`manifest.md\` -- derived, rebuilt by tooling
 3. Any file prefixed with \`_\` -- derived
 4. Other agents' assignment folders
@@ -128,13 +128,13 @@ Before starting work, read these files in order:
 ## Lifecycle Commands
 
 Use the \`syntaur\` CLI for state transitions:
-- \`syntaur assign ${params.assignmentSlug} --agent <name> --mission ${params.missionSlug}\` -- set assignee
-- \`syntaur start ${params.assignmentSlug} --mission ${params.missionSlug}\` -- pending -> in_progress
-- \`syntaur review ${params.assignmentSlug} --mission ${params.missionSlug}\` -- in_progress -> review
-- \`syntaur complete ${params.assignmentSlug} --mission ${params.missionSlug}\` -- in_progress/review -> completed
-- \`syntaur block ${params.assignmentSlug} --mission ${params.missionSlug} --reason <text>\` -- block
-- \`syntaur unblock ${params.assignmentSlug} --mission ${params.missionSlug}\` -- unblock
-- \`syntaur fail ${params.assignmentSlug} --mission ${params.missionSlug}\` -- mark as failed
+- \`syntaur assign ${params.assignmentSlug} --agent <name> --project ${params.projectSlug}\` -- set assignee
+- \`syntaur start ${params.assignmentSlug} --project ${params.projectSlug}\` -- pending -> in_progress
+- \`syntaur review ${params.assignmentSlug} --project ${params.projectSlug}\` -- in_progress -> review
+- \`syntaur complete ${params.assignmentSlug} --project ${params.projectSlug}\` -- in_progress/review -> completed
+- \`syntaur block ${params.assignmentSlug} --project ${params.projectSlug} --reason <text>\` -- block
+- \`syntaur unblock ${params.assignmentSlug} --project ${params.projectSlug}\` -- unblock
+- \`syntaur fail ${params.assignmentSlug} --project ${params.projectSlug}\` -- mark as failed
 
 ## Troubleshooting
 
@@ -154,7 +154,7 @@ Read each linked playbook and follow the rules in its body section. The \`when_t
 
 - Assignment frontmatter is the single source of truth for state
 - Slugs are lowercase, hyphen-separated
-- Always read \`agent.md\` at the mission level before starting work
+- Always read \`agent.md\` at the project level before starting work
 - Keep \`assignment.md\` progress, acceptance criteria, and \`## Todos\` updated as work lands
 - Keep active plan file(s) current after planning changes and \`handoff.md\` current before leaving the task
 - When requirements shift, supersede the prior plan todo (\`- [x] ~~...~~ (superseded by plan-v<N>)\`) and write a new plan file instead of rewriting the old one
