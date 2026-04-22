@@ -6,12 +6,13 @@ import { syntaurRoot } from '../utils/paths.js';
 import { ensureDir, fileExists } from '../utils/fs.js';
 import { isInteractiveTerminal } from '../utils/prompt.js';
 
-export type SegmentName = 'wrap' | 'git' | 'assignment' | 'session' | 'model' | 'ctx' | 'cwd';
+export type SegmentName = 'wrap' | 'git' | 'assignment' | 'external' | 'session' | 'model' | 'ctx' | 'cwd';
 
 export const AVAILABLE_SEGMENTS: ReadonlyArray<{ name: SegmentName; preview: string; description: string }> =
   [
     { name: 'git',        preview: 'syntaur:main* +2',                         description: 'repo:branch (with dirty marker and ahead/behind)' },
     { name: 'assignment', preview: 'my-proj/demo-assn — Demo Assignment',      description: 'active syntaur assignment (project/slug or standalone/uuid)' },
+    { name: 'external',   preview: 'PROJ-123, ENG-456',                        description: 'external tracker IDs from assignment externalIds (Jira, Linear, …)' },
     { name: 'session',    preview: '…ccddeeff',                                description: 'Claude Code session id — last 8 chars prefixed by …' },
     { name: 'model',      preview: 'Opus 4.7',                                 description: 'Claude model display name' },
     { name: 'ctx',        preview: 'ctx:[####------] 42%',                     description: 'context window fill bar' },
@@ -22,8 +23,9 @@ export const AVAILABLE_SEGMENTS: ReadonlyArray<{ name: SegmentName; preview: str
 export const PRESETS: Record<string, { segments: SegmentName[]; separator: string }> = {
   minimal: { segments: ['git', 'session'], separator: ' · ' },
   syntaur: { segments: ['git', 'assignment', 'session'], separator: ' · ' },
-  full:    { segments: ['wrap', 'git', 'assignment', 'model', 'ctx', 'session'], separator: ' · ' },
-  dev:     { segments: ['git', 'assignment', 'ctx', 'session'], separator: ' · ' },
+  full:    { segments: ['wrap', 'git', 'assignment', 'external', 'model', 'ctx', 'session'], separator: ' · ' },
+  dev:     { segments: ['git', 'assignment', 'external', 'ctx', 'session'], separator: ' · ' },
+  tracker: { segments: ['git', 'assignment', 'external', 'session'], separator: ' · ' },
 };
 
 export interface StatuslineConfig {
@@ -83,7 +85,7 @@ async function promptSegmentsInteractive(
   // Canonical left-to-right order shown in the checkbox. The returned array
   // from `checkbox()` preserves this order regardless of which keys users hit,
   // which matches the most common reading-order preference.
-  const canonicalOrder: SegmentName[] = ['wrap', 'git', 'assignment', 'session', 'model', 'ctx', 'cwd'];
+  const canonicalOrder: SegmentName[] = ['wrap', 'git', 'assignment', 'external', 'session', 'model', 'ctx', 'cwd'];
 
   const selectedSet = new Set(current?.segments ?? ['git', 'assignment', 'session']);
   const choices = canonicalOrder.map((name) => {

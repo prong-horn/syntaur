@@ -13,6 +13,7 @@
 #   wrap       stdout of an external script (composes another statusline)
 #   git        repo:branch (+ dirty marker + ahead/behind counts)
 #   assignment active syntaur assignment (project/slug or standalone/uuid — title)
+#   external   external tracker IDs declared by the assignment (Jira, Linear, ...)
 #   session    Claude session id, last 8 chars prefixed by "…"
 #   model      Claude model display name
 #   ctx        context window fill bar, e.g. "ctx:[####------] 42%"
@@ -130,7 +131,9 @@ if [ -d "$CWD" ]; then
 fi
 
 # assignment — project/slug — title  (or standalone/uuid-prefix — title)
+# external   — comma-joined external tracker IDs declared by the assignment
 ASSIGNMENT_SEG=""
+EXTERNAL_SEG=""
 CONTEXT_FILE="$CWD/.syntaur/context.json"
 if [ -f "$CONTEXT_FILE" ]; then
   PROJECT_SLUG=$(jq -r '.projectSlug // empty' "$CONTEXT_FILE" 2>/dev/null)
@@ -139,6 +142,31 @@ if [ -f "$CONTEXT_FILE" ]; then
   TITLE=""
   if [ -n "$ASSIGNMENT_DIR" ] && [ -f "$ASSIGNMENT_DIR/assignment.md" ]; then
     TITLE=$(awk '/^title:/{sub(/^title:[[:space:]]*"?/,""); sub(/"?[[:space:]]*$/,""); print; exit}' "$ASSIGNMENT_DIR/assignment.md" 2>/dev/null)
+    # externalIds parser: walks the YAML block under `externalIds:`, pairs each
+    # `- system: X` with its following `id: Y`, and prints a comma-joined list
+    # of the ids (most terminals don't have width for system prefixes; users
+    # can eyeball PROJ-123 vs ENG-456 by their own project conventions).
+    EXTERNAL_SEG=$(awk '
+      BEGIN { in_block = 0; sys = ""; out = "" }
+      /^externalIds:[[:space:]]*\[[[:space:]]*\]/ { in_block = 0; next }
+      /^externalIds:[[:space:]]*$/ { in_block = 1; next }
+      in_block && /^[^[:space:]]/ { in_block = 0 }
+      in_block && /^[[:space:]]*-[[:space:]]*system:/ {
+        sys = $0
+        sub(/^[[:space:]]*-[[:space:]]*system:[[:space:]]*/, "", sys)
+        gsub(/["\x27]/, "", sys)
+      }
+      in_block && /^[[:space:]]+id:/ {
+        id = $0
+        sub(/^[[:space:]]+id:[[:space:]]*/, "", id)
+        gsub(/["\x27]/, "", id)
+        if (sys != "" && id != "") {
+          if (out == "") out = id; else out = out ", " id
+          sys = ""
+        }
+      }
+      END { print out }
+    ' "$ASSIGNMENT_DIR/assignment.md" 2>/dev/null)
   fi
   LABEL=""
   if [ -n "$PROJECT_SLUG" ] && [ -n "$ASSIGNMENT_SLUG" ]; then
@@ -203,6 +231,7 @@ for name in $SEGMENTS_RAW; do
     wrap)       value="$WRAP_SEG" ;;
     git)        value="$GIT_SEG" ;;
     assignment) value="$ASSIGNMENT_SEG" ;;
+    external)   value="$EXTERNAL_SEG" ;;
     session)    value="$SESSION_SEG" ;;
     model)      value="$MODEL_SEG" ;;
     ctx)        value="$CTX_SEG" ;;

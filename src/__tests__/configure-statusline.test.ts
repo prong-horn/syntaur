@@ -175,6 +175,91 @@ describe('configure-statusline', () => {
     expect(cfg.segments).toEqual(['git', 'assignment', 'session']);
   });
 
+  it('external segment renders Jira/Linear ids from assignment.md', async () => {
+    await writeFile(
+      resolve(installRoot, 'statusline.config.json'),
+      JSON.stringify({ segments: ['external', 'session'], separator: ' · ' }, null, 2),
+      'utf-8',
+    );
+
+    const assignmentDir = resolve(sandbox, 'proj', 'assignments', 'demo');
+    await mkdir(assignmentDir, { recursive: true });
+    await writeFile(
+      resolve(assignmentDir, 'assignment.md'),
+      [
+        '---',
+        'id: demo-id',
+        'slug: demo',
+        'title: "X"',
+        'externalIds:',
+        '  - system: jira',
+        '    id: PROJ-123',
+        '    url: https://jira.example.com/PROJ-123',
+        '  - system: linear',
+        '    id: ENG-456',
+        '    url: https://linear.app/example/issue/ENG-456',
+        'status: in_progress',
+        '---',
+        '',
+      ].join('\n'),
+    );
+    await mkdir(resolve(sandbox, '.syntaur'), { recursive: true });
+    await writeFile(
+      resolve(sandbox, '.syntaur', 'context.json'),
+      JSON.stringify({
+        projectSlug: 'p',
+        assignmentSlug: 'demo',
+        assignmentDir,
+      }),
+    );
+
+    const res = spawnSync('bash', [sourceScript], {
+      input: JSON.stringify({
+        session_id: 'sessionid-xxxxxxxxxxxxxxxx12345678',
+        cwd: sandbox,
+      }),
+      encoding: 'utf-8',
+      env: { ...process.env, HOME: sandbox },
+    });
+    expect(res.status).toBe(0);
+    expect(res.stdout).toContain('PROJ-123');
+    expect(res.stdout).toContain('ENG-456');
+    expect(res.stdout).toContain('…12345678');
+  });
+
+  it('external segment is empty when externalIds is [] or absent', async () => {
+    await writeFile(
+      resolve(installRoot, 'statusline.config.json'),
+      JSON.stringify({ segments: ['external', 'session'], separator: ' · ' }, null, 2),
+      'utf-8',
+    );
+
+    const assignmentDir = resolve(sandbox, 'proj', 'assignments', 'demo');
+    await mkdir(assignmentDir, { recursive: true });
+    await writeFile(
+      resolve(assignmentDir, 'assignment.md'),
+      '---\nid: d\nslug: demo\ntitle: "X"\nexternalIds: []\nstatus: in_progress\n---\n',
+    );
+    await mkdir(resolve(sandbox, '.syntaur'), { recursive: true });
+    await writeFile(
+      resolve(sandbox, '.syntaur', 'context.json'),
+      JSON.stringify({ projectSlug: 'p', assignmentSlug: 'demo', assignmentDir }),
+    );
+
+    const res = spawnSync('bash', [sourceScript], {
+      input: JSON.stringify({
+        session_id: 'xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx',
+        cwd: sandbox,
+      }),
+      encoding: 'utf-8',
+      env: { ...process.env, HOME: sandbox },
+    });
+    expect(res.status).toBe(0);
+    // Only session renders; the empty external segment is suppressed.
+    expect(res.stdout).not.toContain(' · ');
+    expect(res.stdout).toMatch(/…\w{8}/);
+  });
+
   it('supports all segments rendering together', async () => {
     // Config with every segment; syntaur context lets assignment render.
     await writeFile(
