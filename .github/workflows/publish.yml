@@ -44,6 +44,9 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
+      - name: Build CLI (required for subprocess CLI tests)
+        run: npm run build
+
       - name: Run test suite
         run: npm test
 
