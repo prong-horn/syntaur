@@ -4,50 +4,56 @@
 
 @layer base {
   :root {
-    --background: 0 0% 99%;
-    --foreground: 220 14% 10%;
-    --card: 0 0% 100%;
-    --card-foreground: 220 14% 10%;
-    --popover: 0 0% 100%;
-    --popover-foreground: 220 14% 10%;
-    --primary: 172 66% 40%;
-    --primary-foreground: 0 0% 100%;
-    --secondary: 220 10% 94%;
-    --secondary-foreground: 220 14% 10%;
-    --muted: 220 10% 95%;
-    --muted-foreground: 220 10% 46%;
-    --accent: 220 10% 93%;
-    --accent-foreground: 220 14% 10%;
-    --destructive: 0 72% 51%;
-    --destructive-foreground: 0 0% 100%;
-    --border: 220 13% 89%;
-    --input: 220 13% 89%;
-    --ring: 172 66% 40%;
-    --sidebar: 220 12% 96%;
+    --background: 98% 0.005 280;
+    --foreground: 18% 0.01 280;
+    --card: 100% 0 0;
+    --card-foreground: 18% 0.01 280;
+    --popover: 100% 0 0;
+    --popover-foreground: 18% 0.01 280;
+    --primary: 55% 0.22 290;
+    --primary-foreground: 98% 0 0;
+    --secondary: 94% 0.008 280;
+    --secondary-foreground: 18% 0.01 280;
+    --muted: 95% 0.006 280;
+    --muted-foreground: 46% 0.01 280;
+    --accent: 93% 0.01 280;
+    --accent-foreground: 18% 0.01 280;
+    --destructive: 55% 0.20 15;
+    --destructive-foreground: 98% 0 0;
+    --border: 89% 0.008 280;
+    --input: 89% 0.008 280;
+    --ring: 55% 0.22 290;
+    --sidebar: 96% 0.006 280;
+    --accent-coral: 55% 0.20 15;
+    --accent-teal: 50% 0.12 185;
+    --accent-amber: 65% 0.18 75;
     --radius: 0.5rem;
   }
 
   .dark {
-    --background: 224 20% 7%;
-    --foreground: 210 20% 92%;
-    --card: 224 18% 10%;
-    --card-foreground: 210 20% 92%;
-    --popover: 224 18% 10%;
-    --popover-foreground: 210 20% 92%;
-    --primary: 172 66% 50%;
-    --primary-foreground: 224 20% 7%;
-    --secondary: 224 14% 14%;
-    --secondary-foreground: 210 20% 92%;
-    --muted: 224 14% 14%;
-    --muted-foreground: 220 10% 56%;
-    --accent: 224 14% 16%;
-    --accent-foreground: 210 20% 92%;
-    --destructive: 0 63% 54%;
-    --destructive-foreground: 210 20% 92%;
-    --border: 224 14% 18%;
-    --input: 224 14% 18%;
-    --ring: 172 66% 50%;
-    --sidebar: 224 18% 8%;
+    --background: 8% 0.008 280;
+    --foreground: 95% 0.005 280;
+    --card: 13% 0.008 280;
+    --card-foreground: 95% 0.005 280;
+    --popover: 13% 0.008 280;
+    --popover-foreground: 95% 0.005 280;
+    --primary: 70% 0.18 290;
+    --primary-foreground: 8% 0 0;
+    --secondary: 17% 0.01 280;
+    --secondary-foreground: 95% 0.005 280;
+    --muted: 17% 0.01 280;
+    --muted-foreground: 65% 0.01 280;
+    --accent: 17% 0.01 280;
+    --accent-foreground: 95% 0.005 280;
+    --destructive: 72% 0.17 15;
+    --destructive-foreground: 8% 0 0;
+    --border: 22% 0.008 280;
+    --input: 22% 0.008 280;
+    --ring: 70% 0.18 290;
+    --sidebar: 6% 0.008 280;
+    --accent-coral: 72% 0.17 15;
+    --accent-teal: 72% 0.14 185;
+    --accent-amber: 82% 0.16 75;
     --radius: 0.5rem;
   }
 
@@ -61,13 +67,13 @@
 
   body {
     @apply min-h-screen bg-background text-foreground antialiased;
-    font-family: 'Inter', system-ui, -apple-system, sans-serif;
-    font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
+    font-family: 'Space Grotesk', system-ui, -apple-system, sans-serif;
     font-variant-numeric: tabular-nums;
+    letter-spacing: -0.005em;
   }
 
   .dark body {
-    background-image: radial-gradient(circle, hsl(220 10% 20%) 1px, transparent 1px);
+    background-image: radial-gradient(circle, oklch(22% 0.008 280) 1px, transparent 1px);
     background-size: 24px 24px;
   }
 
@@ -77,7 +83,8 @@
   h4,
   h5,
   h6 {
-    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    font-family: 'Space Grotesk', system-ui, -apple-system, sans-serif;
+    letter-spacing: -0.02em;
   }
 
   code,
@@ -135,7 +142,7 @@
   }
 
   .criterion-label {
-    color: hsl(var(--foreground));
+    color: oklch(var(--foreground));
     background-image: linear-gradient(currentColor, currentColor);
     background-position: 0 65%;
     background-repeat: no-repeat;
@@ -144,7 +151,7 @@
   }
 
   .criterion-label[data-checked='true'] {
-    color: hsl(var(--muted-foreground));
+    color: oklch(var(--muted-foreground));
     background-size: 100% 1px;
   }
 
@@ -156,13 +163,13 @@
 
   @keyframes send-to-review-glow {
     0% {
-      box-shadow: 0 0 0 0 hsl(var(--primary) / 0.6);
+      box-shadow: 0 0 0 0 oklch(var(--primary) / 0.6);
     }
     50% {
-      box-shadow: 0 0 0 8px hsl(var(--primary) / 0);
+      box-shadow: 0 0 0 8px oklch(var(--primary) / 0);
     }
     100% {
-      box-shadow: 0 0 0 0 hsl(var(--primary) / 0);
+      box-shadow: 0 0 0 0 oklch(var(--primary) / 0);
     }
   }
 

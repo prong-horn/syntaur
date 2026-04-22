@@ -699,7 +699,7 @@ export function AssignmentDetail() {
                     <span className="text-xs text-muted-foreground">{lp.sessionName}</span>
                     {lp.urls.map(url => (
                       <a key={url} href={url} target="_blank" rel="noopener noreferrer"
-                        className="inline-flex items-center gap-1 text-xs text-teal-600 hover:underline dark:text-teal-400">
+                        className="inline-flex items-center gap-1 text-xs text-primary hover:underline">
                         {url.replace('http://localhost:', ':')}
                         <ExternalLink className="h-2.5 w-2.5" />
                       </a>

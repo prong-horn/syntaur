@@ -146,7 +146,7 @@ export function KanbanBoard<T>({
     <div
       className="relative overflow-x-auto pb-2"
       style={{
-        scrollbarColor: 'hsl(var(--border)) transparent',
+        scrollbarColor: 'oklch(var(--border)) transparent',
         scrollbarWidth: 'thin',
       }}
     >

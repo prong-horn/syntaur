@@ -16,17 +16,17 @@ export function HelpCallout({
   hrefLabel = 'Open Help',
 }: HelpCalloutProps) {
   return (
-    <aside className="rounded-lg border border-teal-200 bg-teal-50/90 p-4 text-sm dark:border-teal-900 dark:bg-teal-950/30">
+    <aside className="rounded-lg border border-primary/30 bg-primary/5 p-4 text-sm dark:border-primary/40 dark:bg-primary/10">
       <div className="flex items-start gap-3">
-        <span className="rounded-md border border-teal-200 bg-white/70 p-2 text-teal-700 dark:border-teal-900 dark:bg-teal-950 dark:text-teal-300">
+        <span className="rounded-md border border-primary/30 bg-background/70 p-2 text-primary dark:border-primary/40 dark:bg-primary/10">
           <LifeBuoy className="h-4 w-4" />
         </span>
         <div className="space-y-2">
-          <h3 className="font-semibold text-teal-900 dark:text-teal-100">{title}</h3>
-          <div className="leading-6 text-teal-800 dark:text-teal-200">{children}</div>
+          <h3 className="font-semibold text-foreground">{title}</h3>
+          <div className="leading-6 text-muted-foreground">{children}</div>
           <Link
             to={href}
-            className="inline-flex text-sm font-semibold text-teal-700 underline-offset-4 hover:underline dark:text-teal-300"
+            className="inline-flex text-sm font-semibold text-primary underline-offset-4 hover:underline"
           >
             {hrefLabel}
           </Link>

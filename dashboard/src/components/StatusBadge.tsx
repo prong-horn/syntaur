@@ -19,37 +19,37 @@ export const STATUS_META = {
   in_progress: {
     label: 'In Progress',
     description: 'Actively being worked on.',
-    className: 'border-teal-300 bg-teal-100 text-teal-700 dark:border-teal-800 dark:bg-teal-950 dark:text-teal-300',
+    className: 'border-violet-300 bg-violet-100 text-violet-800 dark:border-violet-800 dark:bg-violet-950 dark:text-violet-300',
     icon: LoaderCircle,
   },
   blocked: {
     label: 'Blocked',
     description: 'Blocked by an explicit obstacle that needs intervention.',
-    className: 'border-amber-300 bg-amber-100 text-amber-800 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-300',
+    className: 'border-rose-300 bg-rose-100 text-rose-700 dark:border-rose-800 dark:bg-rose-950 dark:text-rose-300',
     icon: AlertCircle,
   },
   review: {
     label: 'Review',
     description: 'Ready for inspection or approval.',
-    className: 'border-violet-300 bg-violet-100 text-violet-800 dark:border-violet-800 dark:bg-violet-950 dark:text-violet-300',
+    className: 'border-amber-300 bg-amber-100 text-amber-800 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-300',
     icon: SearchCheck,
   },
   completed: {
     label: 'Completed',
     description: 'Finished successfully.',
-    className: 'border-emerald-300 bg-emerald-100 text-emerald-800 dark:border-emerald-800 dark:bg-emerald-950 dark:text-emerald-300',
+    className: 'border-teal-300 bg-teal-100 text-teal-700 dark:border-teal-800 dark:bg-teal-950 dark:text-teal-300',
     icon: CheckCircle2,
   },
   failed: {
     label: 'Failed',
     description: 'Could not be completed as planned.',
-    className: 'border-rose-300 bg-rose-100 text-rose-800 dark:border-rose-800 dark:bg-rose-950 dark:text-rose-300',
+    className: 'border-red-300 bg-red-100 text-red-800 dark:border-red-800 dark:bg-red-950 dark:text-red-300',
     icon: AlertCircle,
   },
   active: {
     label: 'Active',
     description: 'The project has active or review work in flight.',
-    className: 'border-teal-300 bg-teal-100 text-teal-700 dark:border-teal-800 dark:bg-teal-950 dark:text-teal-300',
+    className: 'border-violet-300 bg-violet-100 text-violet-800 dark:border-violet-800 dark:bg-violet-950 dark:text-violet-300',
     icon: CircleDot,
   },
   stopped: {
