@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { syntaurRoot } from '../utils/paths.js';
 import { ensureDir, fileExists } from '../utils/fs.js';
 import { confirmPrompt, isInteractiveTerminal, textPrompt } from '../utils/prompt.js';
+import { writeDefaultConfigIfMissing } from './configure-statusline.js';
 
 export type StatuslineMode = 'replace' | 'wrap' | 'skip' | 'ask';
 
@@ -161,6 +162,11 @@ export async function installStatuslineCommand(
   // Copy/symlink the script into ~/.syntaur/statusline.sh.
   await installScript(sourceScript, destScript, Boolean(options.link));
 
+  // Seed a default segment config so the line renders immediately. Users can
+  // customize later via `syntaur configure-statusline`. If a config already
+  // exists (e.g. from a prior install) we preserve it.
+  await writeDefaultConfigIfMissing(installRoot);
+
   // Read existing settings.json.
   const settings = await readSettingsJson(settingsPath);
   const existingStatusLine = extractExistingCommand(settings);
@@ -311,7 +317,8 @@ export async function uninstallStatuslineCommand(
   }
 
   if (!options.keepScript) {
-    for (const path of [destScript, confPath, backupPath, wrapperPath]) {
+    const configPath = resolve(installRoot, 'statusline.config.json');
+    for (const path of [destScript, confPath, backupPath, wrapperPath, configPath]) {
       try {
         await rm(path, { force: true });
       } catch {

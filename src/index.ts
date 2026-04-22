@@ -13,6 +13,7 @@ import { failCommand } from './commands/fail.js';
 import { reopenCommand } from './commands/reopen.js';
 import { installPluginCommand } from './commands/install-plugin.js';
 import { installStatuslineCommand, uninstallStatuslineCommand, type StatuslineMode } from './commands/install-statusline.js';
+import { configureStatuslineCommand, PRESETS as STATUSLINE_PRESETS } from './commands/configure-statusline.js';
 import { installCodexPluginCommand } from './commands/install-codex-plugin.js';
 import { uninstallSkillsCommand } from './commands/uninstall-skills.js';
 import { setupCommand } from './commands/setup.js';
@@ -394,6 +395,31 @@ program
   .action(async (options: { keepScript?: boolean }) => {
     try {
       await uninstallStatuslineCommand({ keepScript: options.keepScript });
+    } catch (error) {
+      console.error('Error:', error instanceof Error ? error.message : String(error));
+      process.exit(1);
+    }
+  });
+
+program
+  .command('configure-statusline')
+  .description(
+    'Configure which segments (git, assignment, session, model, ctx, cwd, wrap) appear in the syntaur statusLine and in what order.',
+  )
+  .option(
+    '--preset <name>',
+    `Preset shortcut. Choices: ${Object.keys(STATUSLINE_PRESETS).join(', ')}.`,
+  )
+  .option(
+    '--segments <list>',
+    'Comma-separated segment list, e.g. "git,assignment,session,model,ctx".',
+  )
+  .option('--separator <string>', 'Segment separator (default " · ")')
+  .option('--wrap <path>', 'Path to an external statusline script to compose as a "wrap" segment')
+  .option('--preview', 'Print the resolved config and a preview line without writing')
+  .action(async (options: { preset?: string; segments?: string; separator?: string; wrap?: string; preview?: boolean }) => {
+    try {
+      await configureStatuslineCommand(options);
     } catch (error) {
       console.error('Error:', error instanceof Error ? error.message : String(error));
       process.exit(1);
