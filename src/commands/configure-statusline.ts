@@ -1,10 +1,10 @@
 import { readFile, writeFile } from 'node:fs/promises';
 import { resolve, dirname } from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { homedir } from 'node:os';
+import { checkbox, input, confirm } from '@inquirer/prompts';
 import { syntaurRoot } from '../utils/paths.js';
 import { ensureDir, fileExists } from '../utils/fs.js';
-import { isInteractiveTerminal, textPrompt, confirmPrompt } from '../utils/prompt.js';
+import { isInteractiveTerminal } from '../utils/prompt.js';
 
 export type SegmentName = 'wrap' | 'git' | 'assignment' | 'session' | 'model' | 'ctx' | 'cwd';
 
@@ -80,58 +80,75 @@ function parseSegmentsFlag(flag: string): SegmentName[] {
 async function promptSegmentsInteractive(
   current: StatuslineConfig | null,
 ): Promise<{ segments: SegmentName[]; separator: string; wrap?: string }> {
-  console.log('\nAvailable segments:');
-  AVAILABLE_SEGMENTS.forEach((seg, idx) => {
-    const selected = current?.segments.includes(seg.name) ? ' [currently selected]' : '';
-    console.log(`  [${idx + 1}] ${seg.name.padEnd(11)} ${seg.description}`);
-    console.log(`       preview: ${seg.preview}${selected}`);
+  // Canonical left-to-right order shown in the checkbox. The returned array
+  // from `checkbox()` preserves this order regardless of which keys users hit,
+  // which matches the most common reading-order preference.
+  const canonicalOrder: SegmentName[] = ['wrap', 'git', 'assignment', 'session', 'model', 'ctx', 'cwd'];
+
+  const selectedSet = new Set(current?.segments ?? ['git', 'assignment', 'session']);
+  const choices = canonicalOrder.map((name) => {
+    const def = AVAILABLE_SEGMENTS.find((s) => s.name === name)!;
+    return {
+      name: `${def.name.padEnd(11)} ${def.description}`,
+      value: name,
+      checked: selectedSet.has(name),
+      description: `preview: ${def.preview}`,
+    };
   });
-  console.log('');
 
-  const defaultOrder = current?.segments?.length
-    ? current.segments
-        .map((name) => AVAILABLE_SEGMENTS.findIndex((s) => s.name === name) + 1)
-        .join(' ')
-    : '1 2 3';
-  const rawOrder = await textPrompt(
-    'Enter segment numbers in the order you want them (space-separated):',
-    defaultOrder,
-  );
+  const selected = (await checkbox({
+    message: 'Pick segments (space to toggle, enter to confirm):',
+    choices,
+    loop: false,
+    pageSize: choices.length,
+    required: true,
+  })) as SegmentName[];
 
-  const nums = rawOrder.split(/\s+/).filter(Boolean);
-  const segments: SegmentName[] = [];
-  for (const n of nums) {
-    const idx = parseInt(n, 10);
-    if (Number.isNaN(idx) || idx < 1 || idx > AVAILABLE_SEGMENTS.length) {
-      throw new Error(
-        `"${n}" is not a valid segment number (expected 1-${AVAILABLE_SEGMENTS.length}).`,
-      );
-    }
-    const seg = AVAILABLE_SEGMENTS[idx - 1];
-    if (!segments.includes(seg.name)) segments.push(seg.name);
+  // Ask whether to customize the canonical order. Most users will say no.
+  const defaultReorderHint = selected.join(', ');
+  let orderedSegments: SegmentName[] = [...selected];
+  const wantReorder = await confirm({
+    message: `Order will be: ${defaultReorderHint}. Customize order?`,
+    default: false,
+  });
+  if (wantReorder) {
+    const raw = await input({
+      message: `Enter the segments in the order you want, comma-separated:`,
+      default: defaultReorderHint,
+      validate: (value) => {
+        const parts = value.split(',').map((s) => s.trim()).filter(Boolean);
+        const invalid = parts.filter((p) => !canonicalOrder.includes(p as SegmentName));
+        if (invalid.length > 0) {
+          return `Unknown: ${invalid.join(', ')}. Valid: ${canonicalOrder.join(', ')}.`;
+        }
+        const missing = selected.filter((s) => !parts.includes(s));
+        if (missing.length > 0) {
+          return `Missing previously-selected segment(s): ${missing.join(', ')}. Include all of them or go back.`;
+        }
+        return true;
+      },
+    });
+    orderedSegments = raw
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean) as SegmentName[];
   }
-  if (segments.length === 0) {
-    throw new Error('Pick at least one segment.');
-  }
 
-  const separator = await textPrompt(
-    'Segment separator (ESC/Enter keeps default):',
-    current?.separator ?? ' · ',
-  );
+  const separator = await input({
+    message: 'Separator between segments:',
+    default: current?.separator ?? ' · ',
+  });
 
   let wrap: string | undefined = current?.wrap;
-  if (segments.includes('wrap')) {
-    const currentWrap = current?.wrap;
-    const prompt = currentWrap
-      ? `Path to external script to wrap:`
-      : `Path to external script to wrap (leave blank to skip):`;
-    const answer = await textPrompt(prompt, currentWrap ?? '');
-    wrap = answer.trim() ? answer.trim() : undefined;
-  } else {
-    wrap = current?.wrap; // preserve even if not selected now
+  if (orderedSegments.includes('wrap')) {
+    wrap = await input({
+      message: 'Path to external script to wrap (leave blank to skip):',
+      default: current?.wrap ?? '',
+    });
+    wrap = wrap.trim() ? wrap.trim() : undefined;
   }
 
-  return { segments, separator, wrap };
+  return { segments: orderedSegments, separator, wrap };
 }
 
 function renderPreview(

@@ -54,6 +54,7 @@
     "node": ">=20.0.0"
   },
   "dependencies": {
+    "@inquirer/prompts": "^8.4.2",
     "better-sqlite3": "^11.0.0",
     "chokidar": "^4.0.0",
     "commander": "^13.0.0",
