@@ -1,0 +1,3 @@
+[submodule "vendor/syntaur-skills"]
+	path = vendor/syntaur-skills
+	url = https://github.com/prong-horn/syntaur-skills.git

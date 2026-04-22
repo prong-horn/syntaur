@@ -14,6 +14,7 @@ import { reopenCommand } from './commands/reopen.js';
 import { installPluginCommand } from './commands/install-plugin.js';
 import { installStatuslineCommand, uninstallStatuslineCommand, type StatuslineMode } from './commands/install-statusline.js';
 import { installCodexPluginCommand } from './commands/install-codex-plugin.js';
+import { uninstallSkillsCommand } from './commands/uninstall-skills.js';
 import { setupCommand } from './commands/setup.js';
 import { uninstallCommand } from './commands/uninstall.js';
 import { setupAdapterCommand } from './commands/setup-adapter.js';
@@ -344,6 +345,8 @@ program
   .option('--force', 'Overwrite an existing Syntaur-managed install')
   .option('--target-dir <path>', 'Install the plugin at a specific directory')
   .option('--link', 'Use a symlink instead of copying files (repo-local dev only)')
+  .option('--force-skills', 'Overwrite user-edited skills in ~/.claude/skills')
+  .option('--skip-skills', 'Do not install protocol skills into ~/.claude/skills')
   .action(async (options) => {
     try {
       await installPluginCommand({ ...options, promptForTarget: true });
@@ -398,12 +401,29 @@ program
   });
 
 program
+  .command('uninstall-skills')
+  .description('Remove Syntaur protocol skills from ~/.claude/skills and/or ~/.codex/skills')
+  .option('--claude', 'Remove from ~/.claude/skills')
+  .option('--codex', 'Remove from ~/.codex/skills')
+  .option('--all', 'Remove from both')
+  .action(async (options: { claude?: boolean; codex?: boolean; all?: boolean }) => {
+    try {
+      await uninstallSkillsCommand(options);
+    } catch (error) {
+      console.error('Error:', error instanceof Error ? error.message : String(error));
+      process.exit(1);
+    }
+  });
+
+program
   .command('install-codex-plugin')
   .description('Install the Syntaur Codex plugin and marketplace entry')
   .option('--force', 'Overwrite an existing Syntaur-managed install')
   .option('--target-dir <path>', 'Install the plugin at a specific directory')
   .option('--marketplace-path <path>', 'Write the marketplace entry to a specific file')
   .option('--link', 'Use a symlink instead of copying files (repo-local dev only)')
+  .option('--force-skills', 'Overwrite user-edited skills in ~/.codex/skills')
+  .option('--skip-skills', 'Do not install protocol skills into ~/.codex/skills')
   .action(async (options) => {
     try {
       await installCodexPluginCommand({ ...options, promptForTarget: true });

@@ -12,10 +12,12 @@ When answering questions, read the actual source files rather than relying solel
 
 ## Key Source Files
 
-- **Protocol summary:** `${CLAUDE_PLUGIN_ROOT}/references/protocol-summary.md`
+- **Protocol summary:** `${CLAUDE_PLUGIN_ROOT}/references/protocol-summary.md` (or `~/.claude/skills/syntaur-protocol/references/protocol-summary.md` for the installed skill version)
 - **File ownership:** `${CLAUDE_PLUGIN_ROOT}/references/file-ownership.md`
 - **Plugin manifest:** `${CLAUDE_PLUGIN_ROOT}/.claude-plugin/plugin.json`
-- **Skills:** `${CLAUDE_PLUGIN_ROOT}/skills/`
+- **Protocol skills (installed by `syntaur install-plugin`):** `~/.claude/skills/{syntaur-protocol,grab-assignment,plan-assignment,complete-assignment,create-assignment,create-project}/`
+- **Protocol skills source (vendored via submodule):** `<syntaur-repo>/vendor/syntaur-skills/skills/` — standalone repo at https://github.com/prong-horn/syntaur-skills
+- **Slash commands (ship in plugin):** `${CLAUDE_PLUGIN_ROOT}/commands/` — thin wrappers that invoke the corresponding installed skill
 - **Hooks:** `${CLAUDE_PLUGIN_ROOT}/hooks/`
 
 For the live CLI surface, run `syntaur --help` in the user environment.
@@ -204,27 +206,37 @@ The Syntaur Claude Code plugin is installed by `syntaur install-plugin`, which r
 ```
 plugin/
   .claude-plugin/
-    plugin.json              # Plugin metadata
+    plugin.json                         # Plugin metadata
   agents/
-    syntaur-expert.md        # This agent
-  skills/
-    syntaur-protocol/SKILL.md    # Core protocol rules (background)
-    grab-assignment/SKILL.md     # Claim a pending assignment
-    create-project/SKILL.md      # Create new project
-    create-assignment/SKILL.md   # Create new assignment
-    plan-assignment/SKILL.md     # Write implementation plan
-    complete-assignment/SKILL.md # Handoff and complete
+    syntaur-expert.md                   # This agent
   commands/
-    track-session/track-session.md  # Register tmux sessions
+    grab-assignment/grab-assignment.md         # Slash wrapper for grab-assignment skill
+    plan-assignment/plan-assignment.md         # Slash wrapper for plan-assignment skill
+    complete-assignment/complete-assignment.md # Slash wrapper for complete-assignment skill
+    create-assignment/create-assignment.md     # Slash wrapper for create-assignment skill
+    create-project/create-project.md           # Slash wrapper for create-project skill
+    track-session/track-session.md             # Claude-specific session registration
+    doctor-syntaur/...                         # Diagnose install
+    track-server/...                           # Register a running server
   hooks/
-    hooks.json                   # Hook definitions
-    session-start.sh             # Merge real session_id + transcript_path into existing .syntaur/context.json
-    session-cleanup.sh           # Mark sessions stopped on exit
-    enforce-boundaries.sh        # Write boundary enforcement
+    hooks.json                  # Hook definitions
+    session-start.sh            # Merge real session_id + transcript_path into existing .syntaur/context.json
+    session-cleanup.sh          # Mark sessions stopped on exit
+    enforce-boundaries.sh       # Write boundary enforcement
   references/
-    protocol-summary.md          # One-page protocol quick reference
-    file-ownership.md            # Write boundary rules
+    protocol-summary.md         # One-page protocol quick reference
+    file-ownership.md           # Write boundary rules
+
+~/.claude/skills/               # Installed by `syntaur install-plugin` (vendored from syntaur-skills repo)
+  syntaur-protocol/SKILL.md     # Auto-activates on Syntaur file contexts
+  grab-assignment/SKILL.md
+  plan-assignment/SKILL.md
+  complete-assignment/SKILL.md
+  create-assignment/SKILL.md
+  create-project/SKILL.md
 ```
+
+Slash commands (`/grab-assignment` etc.) are thin wrappers that delegate to the installed skills. This lets the same protocol skills work in Claude Code (via slash command + auto-activation) and Codex (via auto-activation only).
 
 ### Skills Summary
 

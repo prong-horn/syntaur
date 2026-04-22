@@ -302,5 +302,9 @@ describe('setup and install flows', () => {
     expect(files).toContain('examples/playbooks/commit-discipline.md');
     expect(files).toContain('platforms/claude-code/.claude-plugin/plugin.json');
     expect(files).toContain('platforms/codex/.codex-plugin/plugin.json');
+    // Vendored protocol skills are shipped with the package so `syntaur setup`
+    // can install them into ~/.claude/skills / ~/.codex/skills.
+    expect(files).toContain('vendor/syntaur-skills/skills/syntaur-protocol/SKILL.md');
+    expect(files).toContain('vendor/syntaur-skills/skills/grab-assignment/SKILL.md');
   });
 });

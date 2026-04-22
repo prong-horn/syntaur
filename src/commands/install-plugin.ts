@@ -12,12 +12,15 @@ import {
   uninstallManagedPlugin,
 } from '../utils/install.js';
 import { confirmPrompt, isInteractiveTerminal, textPrompt } from '../utils/prompt.js';
+import { installSkills, formatInstallReport } from '../utils/install-skills.js';
 
 export interface InstallPluginOptions {
   force?: boolean;
   link?: boolean;
   targetDir?: string;
   promptForTarget?: boolean;
+  forceSkills?: boolean;
+  skipSkills?: boolean;
 }
 
 async function promptForInstallPath(
@@ -139,8 +142,25 @@ export async function installPluginCommand(
   if (currentMarketplace) {
     console.log(`  marketplace: ${currentMarketplace.manifestPath}`);
   }
+  if (!options.skipSkills) {
+    try {
+      const skillResults = await installSkills({
+        target: 'claude',
+        force: options.forceSkills,
+      });
+      console.log('');
+      console.log(formatInstallReport(skillResults, 'claude'));
+    } catch (error) {
+      console.warn(
+        `Warning: skill install failed — ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
+  }
+
   console.log('\nThe plugin is now available in Claude Code.');
-  console.log('  Skills: /grab-assignment, /plan-assignment, /complete-assignment');
-  console.log('  Background: syntaur-protocol (auto-invoked)');
-  console.log('  Hook: write boundary enforcement (PreToolUse)');
+  console.log('  Slash commands: /grab-assignment, /plan-assignment, /complete-assignment, /create-assignment, /create-project');
+  console.log('  Background: syntaur-protocol skill (auto-invoked)');
+  console.log('  Hook: write boundary enforcement (PreToolUse) + SessionStart/End');
 }

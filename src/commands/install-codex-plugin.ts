@@ -13,6 +13,7 @@ import {
   uninstallManagedPlugin,
 } from '../utils/install.js';
 import { confirmPrompt, isInteractiveTerminal, textPrompt } from '../utils/prompt.js';
+import { installSkills, formatInstallReport } from '../utils/install-skills.js';
 
 export interface InstallCodexPluginOptions {
   force?: boolean;
@@ -20,6 +21,8 @@ export interface InstallCodexPluginOptions {
   targetDir?: string;
   marketplacePath?: string;
   promptForTarget?: boolean;
+  forceSkills?: boolean;
+  skipSkills?: boolean;
 }
 
 async function promptForInstallPath(
@@ -135,10 +138,27 @@ export async function installCodexPluginCommand(
   console.log(`  source: ${result.sourceDir}`);
   console.log(`  mode: ${result.mode}`);
   console.log(`  marketplace: ${marketplace.marketplacePath}`);
+  if (!options.skipSkills) {
+    try {
+      const skillResults = await installSkills({
+        target: 'codex',
+        force: options.forceSkills,
+      });
+      console.log('');
+      console.log(formatInstallReport(skillResults, 'codex'));
+    } catch (error) {
+      console.warn(
+        `Warning: skill install failed — ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
+  }
+
   console.log('\nThe plugin is now available to Codex.');
   console.log(
-    '  Skills: syntaur-protocol, create-project, create-assignment, grab-assignment, plan-assignment, complete-assignment, track-session',
+    '  Protocol skills: syntaur-protocol, create-project, create-assignment, grab-assignment, plan-assignment, complete-assignment',
   );
-  console.log('  Command: /track-session');
+  console.log('  Codex-specific: track-session skill (rollout path aware)');
   console.log('  Hooks: write boundary enforcement, session cleanup');
 }

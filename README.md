@@ -77,11 +77,31 @@ npx syntaur@latest setup \
 
 ```bash
 npx syntaur@latest dashboard
-npx syntaur@latest create-mission "My First Mission"
-npx syntaur@latest create-assignment "Implement feature" --mission my-first-mission
+npx syntaur@latest create-project "My First Project"
+npx syntaur@latest create-assignment "Implement feature" --project my-first-project
 npx syntaur@latest doctor
 npx syntaur@latest uninstall
 npx syntaur@latest uninstall --all
+```
+
+## Protocol Skills
+
+The six protocol skills (`syntaur-protocol`, `grab-assignment`, `plan-assignment`, `complete-assignment`, `create-assignment`, `create-project`) are maintained in a separate agent-agnostic repo — [`prong-horn/syntaur-skills`](https://github.com/prong-horn/syntaur-skills) — and vendored into this repo as a git submodule at `vendor/syntaur-skills/`.
+
+`syntaur install-plugin` and `syntaur install-codex-plugin` automatically copy them into `~/.claude/skills/` or `~/.codex/skills/` (whichever applies). User-edited skills are preserved unless you pass `--force-skills`. Use `syntaur uninstall-skills --all` to remove just the protocol skills without uninstalling the plugin.
+
+To update the vendored version:
+
+```bash
+git submodule update --remote --merge vendor/syntaur-skills
+git add vendor/syntaur-skills
+git commit -m "chore: bump vendored syntaur-skills"
+```
+
+For non-Claude, non-Codex agents, install the skills directly:
+
+```bash
+npx skills add prong-horn/syntaur-skills
 ```
 
 ## Troubleshooting
@@ -107,7 +127,10 @@ If your config points missions somewhere outside `~/.syntaur`, Syntaur will warn
 ## Development
 
 ```bash
-npm install
+git clone git@github.com:prong-horn/syntaur.git
+cd syntaur
+git submodule update --init --recursive  # clones vendor/syntaur-skills
+npm install                               # postinstall hook re-runs submodule init if needed
 npm run typecheck
 npm test
 npx vitest run src/__tests__/adapter-templates.test.ts
