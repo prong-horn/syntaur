@@ -145,7 +145,7 @@ describe('configure-statusline', () => {
       env: { ...process.env, HOME: sandbox },
     });
     expect(res.status).toBe(0);
-    expect(res.stdout).toBe('Sonnet 4.6 ~ …567890ab');
+    expect(res.stdout).toBe('Sonnet 4.6 ~ aaaaaaaaaaaaaaaaaaaa1234567890ab');
   });
 
   it('script falls back to default segments when config is missing', async () => {
@@ -159,7 +159,7 @@ describe('configure-statusline', () => {
     });
     expect(res.status).toBe(0);
     // Non-git sandbox -> only session renders with defaults.
-    expect(res.stdout).toBe('…567890ab');
+    expect(res.stdout).toBe('aaaaaaaaaaaaaaaaaaaa1234567890ab');
   });
 
   it('install-statusline seeds a default config', async () => {
@@ -224,7 +224,7 @@ describe('configure-statusline', () => {
     expect(res.status).toBe(0);
     expect(res.stdout).toContain('PROJ-123');
     expect(res.stdout).toContain('ENG-456');
-    expect(res.stdout).toContain('…12345678');
+    expect(res.stdout).toContain('sessionid-xxxxxxxxxxxxxxxx12345678');
   });
 
   it('external segment is empty when externalIds is [] or absent', async () => {
@@ -257,7 +257,7 @@ describe('configure-statusline', () => {
     expect(res.status).toBe(0);
     // Only session renders; the empty external segment is suppressed.
     expect(res.stdout).not.toContain(' · ');
-    expect(res.stdout).toMatch(/…\w{8}/);
+    expect(res.stdout).toBe('xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx');
   });
 
   it('supports all segments rendering together', async () => {
@@ -312,6 +312,6 @@ describe('configure-statusline', () => {
     // cwd segment is the tmpdir leaf.
     const leaf = sandbox.split('/').pop()!;
     expect(out).toContain(leaf);
-    expect(out).toMatch(/…\w{8}$/);
+    expect(out).toMatch(/sid-aaaaaaaa-0000-bbbb-ccccdddddddd$/);
   });
 });

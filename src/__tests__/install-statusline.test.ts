@@ -170,7 +170,7 @@ describe('install-statusline', () => {
     });
     expect(res2.status).toBe(0);
     expect(res2.stdout).toContain('USER_STATUS');
-    expect(res2.stdout).toContain('…567890ab');
+    expect(res2.stdout).toContain('aaaaaaaaaaaaaaaaaaaa1234567890ab');
   });
 
   it('skip mode leaves settings.json untouched', async () => {

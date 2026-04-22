@@ -41,7 +41,7 @@ function gitInit(dir: string): void {
 }
 
 describe('claude-code statusline.sh', () => {
-  it('renders only the session id suffix when cwd is not a git repo and no context.json exists', () => {
+  it('renders the full session id when cwd is not a git repo and no context.json exists', () => {
     const res = runHook(
       JSON.stringify({
         session_id: 'aaaaaaaaaaaaaaaaaaaaaaaa99887766',
@@ -49,8 +49,8 @@ describe('claude-code statusline.sh', () => {
       }),
     );
     expect(res.status).toBe(0);
-    // No branch, no worktree, no assignment — just the session suffix.
-    expect(res.stdout).toBe('…99887766');
+    // No branch, no worktree, no assignment — just the full session id.
+    expect(res.stdout).toBe('aaaaaaaaaaaaaaaaaaaaaaaa99887766');
   });
 
   it('renders branch and worktree basename for a git cwd without context.json', () => {
@@ -62,9 +62,9 @@ describe('claude-code statusline.sh', () => {
       }),
     );
     expect(res.status).toBe(0);
-    // Matches: feat/demo · <basename> · …12345678
+    // Matches: feat/demo · <basename> · <full session id>
     expect(res.stdout).toContain('feat/demo');
-    expect(res.stdout).toContain('…12345678');
+    expect(res.stdout).toContain('zzzzzzzzzzzzzzzzzzzzzzzz12345678');
     // Worktree basename is the tmpdir leaf (mkdtemp's prefix).
     const leaf = sandbox.split('/').pop()!;
     expect(res.stdout).toContain(leaf);
@@ -98,7 +98,7 @@ describe('claude-code statusline.sh', () => {
     expect(res.status).toBe(0);
     expect(res.stdout).toContain('feat/demo');
     expect(res.stdout).toContain('my-proj/demo-assn — Demo Assignment');
-    expect(res.stdout).toContain('…0a0b0c0d');
+    expect(res.stdout).toContain('yyyyyyyyyyyyyyyyyyyyyyyy0a0b0c0d');
   });
 
   it('renders a standalone UUID label with title when projectSlug is absent', async () => {
@@ -128,7 +128,7 @@ describe('claude-code statusline.sh', () => {
     );
     expect(res.status).toBe(0);
     expect(res.stdout).toContain(`standalone/${uuid.slice(0, 8)} — Solo Standalone`);
-    expect(res.stdout).toContain('…11223344');
+    expect(res.stdout).toContain('ssssssssssssssssssssssss11223344');
   });
 
   it('degrades to a marker string and still exits 0 when jq is unavailable', async () => {

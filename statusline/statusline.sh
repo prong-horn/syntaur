@@ -14,7 +14,7 @@
 #   git        repo:branch (+ dirty marker + ahead/behind counts)
 #   assignment active syntaur assignment (project/slug or standalone/uuid — title)
 #   external   external tracker IDs declared by the assignment (Jira, Linear, ...)
-#   session    Claude session id, last 8 chars prefixed by "…"
+#   session    Claude session id (full)
 #   model      Claude model display name
 #   ctx        context window fill bar, e.g. "ctx:[####------] 42%"
 #   cwd        basename of the current working directory
@@ -181,16 +181,9 @@ if [ -f "$CONTEXT_FILE" ]; then
   fi
 fi
 
-# session — last 8 chars
+# session — full id
 SESSION_SEG=""
-if [ -n "$SESSION_ID" ]; then
-  LEN=${#SESSION_ID}
-  if [ "$LEN" -gt 8 ]; then
-    SESSION_SEG="…${SESSION_ID: -8}"
-  else
-    SESSION_SEG="$SESSION_ID"
-  fi
-fi
+[ -n "$SESSION_ID" ] && SESSION_SEG="$SESSION_ID"
 
 # model
 MODEL_SEG=""

@@ -13,7 +13,7 @@ export const AVAILABLE_SEGMENTS: ReadonlyArray<{ name: SegmentName; preview: str
     { name: 'git',        preview: 'syntaur:main* +2',                         description: 'repo:branch (with dirty marker and ahead/behind)' },
     { name: 'assignment', preview: 'my-proj/demo-assn — Demo Assignment',      description: 'active syntaur assignment (project/slug or standalone/uuid)' },
     { name: 'external',   preview: 'PROJ-123, ENG-456',                        description: 'external tracker IDs from assignment externalIds (Jira, Linear, …)' },
-    { name: 'session',    preview: '…ccddeeff',                                description: 'Claude Code session id — last 8 chars prefixed by …' },
+    { name: 'session',    preview: '9c3a4d2e-1b7f-4a0c-bb11-ccddeeff0011',     description: 'Claude Code session id (full)' },
     { name: 'model',      preview: 'Opus 4.7',                                 description: 'Claude model display name' },
     { name: 'ctx',        preview: 'ctx:[####------] 42%',                     description: 'context window fill bar' },
     { name: 'cwd',        preview: 'syntaur',                                  description: 'basename of current working directory' },
