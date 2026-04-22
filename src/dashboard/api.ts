@@ -3,6 +3,7 @@ import { resolve, dirname } from 'node:path';
 import { getTargetStatus, DEFAULT_STATUSES, DEFAULT_TRANSITION_TABLE, buildTransitionTable } from '../lifecycle/index.js';
 import { fileExists } from '../utils/fs.js';
 import { readConfig, type StatusConfig, type StatusTransition } from '../utils/config.js';
+import { migrateLegacyProjectFiles } from '../utils/fs-migration.js';
 import { resolveAssignmentById, type ResolvedAssignment } from '../utils/assignment-resolver.js';
 import {
   parseProject,
@@ -1116,9 +1117,19 @@ async function buildStandaloneAssignmentDetail(
   return detail;
 }
 
+// Guard so legacy-file renames run at most once per `projectsDir` per process
+// lifetime. Keyed by absolute path to tolerate test suites that open multiple
+// sandboxes in the same process.
+const migratedProjectsDirs = new Set<string>();
+
 async function listProjectRecords(projectsDir: string): Promise<ProjectRecord[]> {
   if (!(await fileExists(projectsDir))) {
     return [];
+  }
+
+  if (!migratedProjectsDirs.has(projectsDir)) {
+    migratedProjectsDirs.add(projectsDir);
+    await migrateLegacyProjectFiles(projectsDir);
   }
 
   const entries = await readdir(projectsDir, { withFileTypes: true });

@@ -28,6 +28,11 @@ import { createWriteRouter } from './api-write.js';
 import { createServersRouter } from './api-servers.js';
 import { createAgentSessionsRouter } from './api-agent-sessions.js';
 import { createPlaybooksRouter } from './api-playbooks.js';
+import {
+  migrateLegacyProjectFiles,
+  migrateLegacyConfig,
+  summarizeMigration,
+} from '../utils/fs-migration.js';
 import { createTodosRouter } from './api-todos.js';
 import { createBackupRouter } from './api-backup.js';
 import { initSessionDb, migrateFromMarkdown, closeSessionDb } from './session-db.js';
@@ -96,6 +101,22 @@ export function createDashboardServer(options: DashboardServerOptions) {
   migrateFromMarkdown(projectsDir).catch((err) => {
     console.error('Session migration from markdown failed:', err);
   });
+
+  // --- One-shot legacy filesystem migration (pre-v0.2.0 → v0.2.0+) ---
+  // Idempotent, non-destructive, reports what it did. Run in the background
+  // so startup isn't gated on filesystem work.
+  (async () => {
+    try {
+      const configResult = await migrateLegacyConfig(
+        resolve(syntaurRoot(), 'config.md'),
+      );
+      const projectResult = await migrateLegacyProjectFiles(projectsDir);
+      const summary = summarizeMigration(projectResult, configResult);
+      if (summary) console.log(summary);
+    } catch (err) {
+      console.error('Legacy filesystem migration failed:', err);
+    }
+  })();
 
   // --- JSON body parsing ---
   app.use(express.json());

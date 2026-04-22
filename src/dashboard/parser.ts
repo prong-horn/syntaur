@@ -98,9 +98,13 @@ export interface ParsedProject {
 
 export function parseProject(fileContent: string): ParsedProject {
   const [fm, body] = extractFrontmatter(fileContent);
+  // Legacy alias: pre-v0.2.0 installs used `mission` as the slug key. The
+  // fs-migration helper renames the file but doesn't rewrite user-owned
+  // frontmatter. Accept either key.
+  const slug = getField(fm, 'slug') ?? getField(fm, 'mission') ?? '';
   return {
     id: getField(fm, 'id') ?? '',
-    slug: getField(fm, 'slug') ?? '',
+    slug,
     title: getField(fm, 'title') ?? '',
     archived: getField(fm, 'archived') === 'true',
     archivedAt: getField(fm, 'archivedAt'),

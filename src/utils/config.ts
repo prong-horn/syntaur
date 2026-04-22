@@ -3,6 +3,7 @@ import { resolve, isAbsolute } from 'node:path';
 import { syntaurRoot, defaultProjectDir, expandHome } from './paths.js';
 import { fileExists, writeFileForce } from './fs.js';
 import { renderConfig } from '../templates/config.js';
+import { migrateLegacyConfig } from './fs-migration.js';
 
 export interface StatusDefinition {
   id: string;
@@ -517,11 +518,22 @@ export async function updateBackupConfig(
   await writeFileForce(configPath, newContent);
 }
 
+// Guard so the legacy-config migration runs at most once per config path per
+// process lifetime. Keyed by absolute path so tests with multiple sandbox
+// HOMEs still get the migration applied to each.
+const migratedConfigPaths = new Set<string>();
+
 export async function readConfig(): Promise<SyntaurConfig> {
   const configPath = resolve(syntaurRoot(), 'config.md');
   if (!(await fileExists(configPath))) {
     return { ...DEFAULT_CONFIG };
   }
+
+  if (!migratedConfigPaths.has(configPath)) {
+    migratedConfigPaths.add(configPath);
+    await migrateLegacyConfig(configPath);
+  }
+
   const content = await readFile(configPath, 'utf-8');
   const fm = parseFrontmatter(content);
 
