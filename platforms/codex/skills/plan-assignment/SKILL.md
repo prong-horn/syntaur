@@ -16,10 +16,14 @@ Optional notes from the user: `$ARGUMENTS`
 1. Read `.syntaur/context.json` from the current working directory. If it does not exist, tell the user to claim an assignment first.
 2. Read:
    - `<assignmentDir>/assignment.md`
-   - `<projectDir>/agent.md`
-   - `<projectDir>/claude.md` if it exists
+   - `<assignmentDir>/comments.md` (if it exists — inherited questions / notes)
    - `<projectDir>/project.md`
-3. If the assignment depends on other assignments, read each dependency handoff for integration context.
+   - `<projectDir>/manifest.md`
+
+   Per-project `agent.md` / `claude.md` were removed in v0.2.0. Repo-level
+   `CLAUDE.md` / `AGENTS.md` and `~/.syntaur/playbooks/` take their place;
+   read playbooks via `ls ~/.syntaur/playbooks/*.md`.
+3. If the assignment depends on other assignments, read each dependency's `handoff.md` AND `decision-record.md` for upstream integration context and accepted decisions.
 4. Explore `workspaceRoot` when it exists:
    - inspect project structure
    - find likely implementation files
@@ -54,4 +58,4 @@ After writing the plan:
 - summarize the number of tasks and key decisions
 - call out open questions or risks
 - note which plan filename was written and which prior plan (if any) was superseded
-- remind yourself to keep `assignment.md` progress, acceptance criteria, and todos current during implementation
+- remind yourself to keep `assignment.md` acceptance criteria + todos current during implementation, append milestones to `progress.md` (not `assignment.md`), and record comments via `syntaur comment <slug-or-uuid> "body" --type note|question|feedback`

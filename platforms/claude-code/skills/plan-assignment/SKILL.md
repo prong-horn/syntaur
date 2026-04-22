@@ -46,13 +46,20 @@ For each file found, read it and follow its directives. Playbooks may contain ru
 
 Read the following files to understand the assignment:
 
-1. Read `<assignmentDir>/assignment.md` -- extract the objective, acceptance criteria, context section, and any Q&A
-2. Read `<projectDir>/agent.md` -- extract conventions and boundaries
-3. Read `<projectDir>/claude.md` if it exists -- extract Claude-specific instructions
-4. Read `<projectDir>/project.md` -- extract the project goal for broader context
+1. Read `<assignmentDir>/assignment.md` -- extract the objective, acceptance criteria, context section, and the `## Todos` list
+2. Read `<assignmentDir>/comments.md` if it exists -- inherited questions, notes, and feedback
+3. Read `<projectDir>/project.md` -- extract the project goal for broader context
+4. Read `<projectDir>/manifest.md` -- navigation index for the project
 
-If the assignment has dependencies (`dependsOn` in frontmatter), read the handoff.md from each dependency's assignment folder for integration context:
+Per-project `agent.md` and `claude.md` were removed in v0.2.0. The agent-level
+conventions now live in the repo root `CLAUDE.md` / `AGENTS.md` and in
+`~/.syntaur/playbooks/`, which Step 1.5 already loaded.
+
+If the assignment has dependencies (`dependsOn` in frontmatter), read each
+dependency's `handoff.md` and `decision-record.md` for integration context and
+upstream decisions:
 - `<projectDir>/assignments/<dep-slug>/handoff.md`
+- `<projectDir>/assignments/<dep-slug>/decision-record.md`
 
 ## Step 3: Explore Workspace (if set)
 
@@ -144,5 +151,6 @@ After writing the plan:
 
 **Remind the agent about recordkeeping during implementation:**
 - Check off acceptance criteria in `assignment.md` as each one is completed, not in a batch at the end
-- Update the `## Progress` section in `assignment.md` after each meaningful milestone
-- The assignment file is a live document — it should reflect current state at all times
+- Append timestamped milestones to `progress.md` (separate append-only file) — not to `assignment.md`
+- Use `syntaur comment <slug-or-uuid> "body" --type note|question|feedback` to add a comment to `comments.md`
+- `assignment.md` is a live document — keep its status, todos, and acceptance checkboxes reflecting current state at all times
