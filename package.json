@@ -29,7 +29,8 @@
     ".agents",
     "platforms",
     "examples",
-    "dashboard/dist"
+    "dashboard/dist",
+    "statusline"
   ],
   "scripts": {
     "build": "tsup",

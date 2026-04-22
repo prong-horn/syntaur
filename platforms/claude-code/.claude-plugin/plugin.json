@@ -5,9 +5,5 @@
     "name": "Brennen",
     "email": ""
   },
-  "version": "0.1.8",
-  "statusLine": {
-    "type": "command",
-    "command": "bash ${CLAUDE_PLUGIN_ROOT}/hooks/statusline.sh"
-  }
+  "version": "0.1.8"
 }

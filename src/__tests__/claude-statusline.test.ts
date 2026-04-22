@@ -6,10 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 
 const here = dirname(fileURLToPath(import.meta.url));
-const hookPath = resolve(
-  here,
-  '../../platforms/claude-code/hooks/statusline.sh',
-);
+const hookPath = resolve(here, '../../statusline/statusline.sh');
 
 let sandbox: string;
 

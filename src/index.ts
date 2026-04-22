@@ -12,6 +12,7 @@ import { reviewCommand } from './commands/review.js';
 import { failCommand } from './commands/fail.js';
 import { reopenCommand } from './commands/reopen.js';
 import { installPluginCommand } from './commands/install-plugin.js';
+import { installStatuslineCommand, uninstallStatuslineCommand, type StatuslineMode } from './commands/install-statusline.js';
 import { installCodexPluginCommand } from './commands/install-codex-plugin.js';
 import { setupCommand } from './commands/setup.js';
 import { uninstallCommand } from './commands/uninstall.js';
@@ -351,6 +352,47 @@ program
         'Error:',
         error instanceof Error ? error.message : String(error),
       );
+      process.exit(1);
+    }
+  });
+
+program
+  .command('install-statusline')
+  .description(
+    'Install the syntaur statusLine for Claude Code. Augments ~/.claude/settings.json; wraps any existing script by default.',
+  )
+  .option('--mode <mode>', 'replace | wrap | skip | ask (default: ask, wrap in non-TTY)', 'ask')
+  .option('--link', 'Symlink the installed script to the package source (dev mode)')
+  .action(async (options: { mode?: string; link?: boolean }) => {
+    try {
+      const rawMode = (options.mode ?? 'ask').toLowerCase();
+      const valid: StatuslineMode[] = ['replace', 'wrap', 'skip', 'ask'];
+      if (!valid.includes(rawMode as StatuslineMode)) {
+        throw new Error(
+          `Invalid --mode "${rawMode}". Must be one of: ${valid.join(', ')}.`,
+        );
+      }
+      await installStatuslineCommand({
+        mode: rawMode as StatuslineMode,
+        link: options.link,
+      });
+    } catch (error) {
+      console.error('Error:', error instanceof Error ? error.message : String(error));
+      process.exit(1);
+    }
+  });
+
+program
+  .command('uninstall-statusline')
+  .description(
+    'Remove the syntaur statusLine. Restores the previously configured command from backup if present.',
+  )
+  .option('--keep-script', 'Leave ~/.syntaur/statusline.sh on disk (only edit settings.json)')
+  .action(async (options: { keepScript?: boolean }) => {
+    try {
+      await uninstallStatuslineCommand({ keepScript: options.keepScript });
+    } catch (error) {
+      console.error('Error:', error instanceof Error ? error.message : String(error));
       process.exit(1);
     }
   });
