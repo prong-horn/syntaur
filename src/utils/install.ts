@@ -558,6 +558,64 @@ async function getPreferredClaudeMarketplace(): Promise<ClaudeMarketplaceLocatio
   };
 }
 
+async function registerKnownClaudeMarketplace(
+  name: string,
+  rootDir: string,
+): Promise<void> {
+  const manifestPath = getClaudeKnownMarketplacesPath();
+  const existing =
+    (await readJsonFileIfExists<Record<string, KnownClaudeMarketplaceRecord>>(
+      manifestPath,
+    )) ?? {};
+  if (existing[name]?.installLocation === rootDir) {
+    return;
+  }
+  existing[name] = {
+    ...(existing[name] ?? {}),
+    source: { source: 'directory', path: rootDir },
+    installLocation: rootDir,
+  } as KnownClaudeMarketplaceRecord;
+  (existing[name] as Record<string, unknown>).lastUpdated = new Date().toISOString();
+  (existing[name] as Record<string, unknown>).autoUpdate = true;
+  await ensureDir(dirname(manifestPath));
+  await writeFile(manifestPath, `${JSON.stringify(existing, null, 2)}\n`, 'utf-8');
+}
+
+async function ensureClaudeUserMarketplace(): Promise<ClaudeMarketplaceLocation> {
+  const existing = await getPreferredClaudeMarketplace();
+  if (existing) {
+    return existing;
+  }
+
+  const rootDir = resolve(getClaudeMarketplacesRoot(), 'user-plugins');
+  const manifestPath = resolve(rootDir, '.claude-plugin', 'marketplace.json');
+  await ensureDir(resolve(rootDir, 'plugins'));
+
+  if (!(await fileExists(manifestPath))) {
+    const scaffold: ClaudeMarketplaceFile = {
+      plugins: [],
+    };
+    (scaffold as Record<string, unknown>).$schema =
+      'https://anthropic.com/claude-code/marketplace.schema.json';
+    scaffold.name = 'user-plugins';
+    (scaffold as Record<string, unknown>).description = 'Local user plugins';
+    (scaffold as Record<string, unknown>).owner = {
+      name: process.env.USER ?? 'user',
+      email: '',
+    };
+    await writeClaudeMarketplaceFile(manifestPath, scaffold);
+  }
+
+  await registerKnownClaudeMarketplace('user-plugins', rootDir);
+
+  return {
+    name: 'user-plugins',
+    rootDir,
+    manifestPath,
+    targetDir: resolve(rootDir, 'plugins', 'syntaur'),
+  };
+}
+
 export async function detectClaudeMarketplaceForTarget(
   targetDir: string,
 ): Promise<ClaudeMarketplaceLocation | null> {
@@ -1035,16 +1093,14 @@ export async function recommendPluginTargetDir(pluginKind: PluginKind): Promise<
     return configuredOrManaged ?? getDefaultPluginTargetDir(pluginKind);
   }
 
-  const preferredMarketplace = await getPreferredClaudeMarketplace();
   const legacyTarget = getDefaultPluginTargetDir('claude');
 
-  if (configuredOrManaged) {
-    return configuredOrManaged === legacyTarget && preferredMarketplace
-      ? preferredMarketplace.targetDir
-      : configuredOrManaged;
+  if (configuredOrManaged && configuredOrManaged !== legacyTarget) {
+    return configuredOrManaged;
   }
 
-  return preferredMarketplace?.targetDir ?? legacyTarget;
+  const marketplace = await ensureClaudeUserMarketplace();
+  return marketplace.targetDir;
 }
 
 export async function recommendMarketplacePath(): Promise<string> {

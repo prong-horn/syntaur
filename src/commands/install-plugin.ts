@@ -109,6 +109,12 @@ export async function installPluginCommand(
           ? previousTargetDir
           : null,
     });
+  } else {
+    console.warn(
+      `Warning: ${result.targetDir} is not inside a Claude Code marketplace ` +
+        `(expected parent path of the form ~/.claude/plugins/marketplaces/<name>/plugins/syntaur). ` +
+        `The plugin files were copied, but Claude Code will not discover them until you place them inside a marketplace.`,
+    );
   }
   await updateIntegrationConfig({ claudePluginDir: result.targetDir });
 

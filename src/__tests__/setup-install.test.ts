@@ -280,16 +280,46 @@ describe('setup and install flows', () => {
     await expect(lstat(resolve(homeDir, '.agents', 'plugins', 'marketplace.json'))).rejects.toThrow();
   });
 
-  it('falls back to the legacy Claude plugin path when no marketplace is present', async () => {
+  it('bootstraps a user-plugins marketplace when none is present', async () => {
     await rm(resolve(homeDir, '.claude', 'plugins', 'marketplaces'), { recursive: true, force: true });
     await rm(resolve(homeDir, '.claude', 'plugins', 'known_marketplaces.json'), { force: true });
     await rm(resolve(homeDir, '.claude', 'plugins', 'installed_plugins.json'), { force: true });
 
-    expect(await recommendPluginTargetDir('claude')).toBe(resolve(homeDir, '.claude', 'plugins', 'syntaur'));
+    const userPluginsTarget = resolve(
+      homeDir,
+      '.claude',
+      'plugins',
+      'marketplaces',
+      'user-plugins',
+      'plugins',
+      'syntaur',
+    );
+
+    expect(await recommendPluginTargetDir('claude')).toBe(userPluginsTarget);
 
     await installPluginCommand({});
 
-    expect((await lstat(resolve(homeDir, '.claude', 'plugins', 'syntaur'))).isDirectory()).toBe(true);
+    expect((await lstat(userPluginsTarget)).isDirectory()).toBe(true);
+
+    const marketplacePath = resolve(
+      homeDir,
+      '.claude',
+      'plugins',
+      'marketplaces',
+      'user-plugins',
+      '.claude-plugin',
+      'marketplace.json',
+    );
+    const marketplace = JSON.parse(await readFile(marketplacePath, 'utf-8'));
+    expect(marketplace.name).toBe('user-plugins');
+    expect(
+      marketplace.plugins.some((p: { name?: string }) => p.name === 'syntaur'),
+    ).toBe(true);
+
+    const known = JSON.parse(
+      await readFile(resolve(homeDir, '.claude', 'plugins', 'known_marketplaces.json'), 'utf-8'),
+    );
+    expect(known['user-plugins']?.source?.source).toBe('directory');
   });
 
   it('npm pack dry-run includes packaged playbooks and plugin assets', async () => {
