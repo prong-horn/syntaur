@@ -32,33 +32,46 @@ export function createWatcher(options: WatcherOptions): { close: () => Promise<v
 
     const projectSlug = parts[0];
     let assignmentSlug: string | undefined;
+    let isProjectTodos = false;
 
     if (parts.length >= 3 && parts[1] === 'assignments') {
       assignmentSlug = parts[2];
+    } else if (parts.length >= 2 && parts[1] === 'todos') {
+      isProjectTodos = true;
     }
 
-    const debounceKey = assignmentSlug
-      ? `${projectSlug}/${assignmentSlug}`
-      : projectSlug;
+    const debounceKey = isProjectTodos
+      ? `todos:${projectSlug}`
+      : assignmentSlug
+        ? `${projectSlug}/${assignmentSlug}`
+        : projectSlug;
 
     const existing = pendingEvents.get(debounceKey);
     if (existing) clearTimeout(existing);
 
     // Session events are now emitted by the API write path, not the file watcher
-    const messageType = assignmentSlug
-      ? 'assignment-updated'
-      : 'project-updated';
+    const messageType: WsMessage['type'] = isProjectTodos
+      ? 'todos-updated'
+      : assignmentSlug
+        ? 'assignment-updated'
+        : 'project-updated';
 
     pendingEvents.set(
       debounceKey,
       setTimeout(() => {
         pendingEvents.delete(debounceKey);
-        const message: WsMessage = {
-          type: messageType,
-          projectSlug,
-          assignmentSlug,
-          timestamp: new Date().toISOString(),
-        };
+        const message: WsMessage = isProjectTodos
+          ? {
+              type: 'todos-updated',
+              projectSlug,
+              timestamp: new Date().toISOString(),
+            }
+          : {
+              type: messageType,
+              projectSlug,
+              assignmentSlug,
+              timestamp: new Date().toISOString(),
+            };
         onMessage(message);
       }, debounceMs),
     );

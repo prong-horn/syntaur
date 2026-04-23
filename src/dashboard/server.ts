@@ -34,6 +34,7 @@ import {
   summarizeMigration,
 } from '../utils/fs-migration.js';
 import { createTodosRouter } from './api-todos.js';
+import { createProjectTodosRouter } from './api-project-todos.js';
 import { createBackupRouter } from './api-backup.js';
 import { initSessionDb, migrateFromMarkdown, closeSessionDb } from './session-db.js';
 import { startAutodiscovery, stopAutodiscovery } from './autodiscovery.js';
@@ -360,6 +361,7 @@ export function createDashboardServer(options: DashboardServerOptions) {
 
   // --- Todos API ---
   app.use('/api/todos', createTodosRouter(todosDir, broadcast));
+  app.use('/api/projects/:projectId/todos', createProjectTodosRouter(projectsDir, broadcast));
 
   // --- Backup API ---
   app.use('/api/backup', createBackupRouter());
