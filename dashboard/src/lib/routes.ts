@@ -126,6 +126,12 @@ export function buildShellMeta(pathname: string): ShellMeta {
       title = 'Edit Project';
     } else if (parts[2] === 'create' && parts[3] === 'assignment') {
       title = 'Create Assignment';
+    } else if (parts[2] === 'todos') {
+      breadcrumbs.push({
+        label: 'Todos',
+        path: `${workspacePrefix}/projects/${parts[1]}/todos`,
+      });
+      title = 'Todos';
     } else if (parts[2] === 'assignments' && parts[3]) {
       breadcrumbs.push({
         label: toTitleCase(parts[3]),

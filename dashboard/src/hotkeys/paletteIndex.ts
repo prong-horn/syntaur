@@ -69,6 +69,14 @@ export function buildIndex(input: BuildInput): PaletteEntry[] {
       keywords: m.tags,
       route: `${projectWs}/projects/${m.slug}`,
     });
+    out.push({
+      type: 'todo',
+      id: `project-todos-${m.slug}`,
+      title: `${m.title} todos`,
+      subtitle: `${m.slug} · project`,
+      keywords: [...(m.tags ?? []), 'project', 'todos'],
+      route: `${projectWs}/projects/${m.slug}/todos`,
+    });
   }
 
   for (const a of input.assignments ?? []) {

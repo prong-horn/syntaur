@@ -25,6 +25,7 @@ import { EditPlaybook } from './pages/EditPlaybook';
 import { SettingsPage } from './pages/SettingsPage';
 import { TodosPage } from './pages/TodosPage';
 import { WorkspaceTodosPage } from './pages/WorkspaceTodosPage';
+import { ProjectTodosPage } from './pages/ProjectTodosPage';
 import { HotkeyProvider } from './hotkeys';
 
 export function App() {
@@ -62,6 +63,7 @@ export function App() {
             <Route path="/projects/:slug/assignments/:aslug/scratchpad/edit" element={<EditAssignmentScratchpad />} />
             <Route path="/projects/:slug/assignments/:aslug/handoff/edit" element={<AppendAssignmentHandoff />} />
             <Route path="/projects/:slug/assignments/:aslug/decision-record/edit" element={<AppendAssignmentDecisionRecord />} />
+            <Route path="/projects/:slug/todos" element={<ProjectTodosPage />} />
 
             {/* Workspace-scoped routes */}
             <Route path="/w/:workspace/projects" element={<ProjectList />} />
@@ -79,6 +81,7 @@ export function App() {
             <Route path="/w/:workspace/projects/:slug/assignments/:aslug/scratchpad/edit" element={<EditAssignmentScratchpad />} />
             <Route path="/w/:workspace/projects/:slug/assignments/:aslug/handoff/edit" element={<AppendAssignmentHandoff />} />
             <Route path="/w/:workspace/projects/:slug/assignments/:aslug/decision-record/edit" element={<AppendAssignmentDecisionRecord />} />
+            <Route path="/w/:workspace/projects/:slug/todos" element={<ProjectTodosPage />} />
           </Route>
         </Routes>
       </HotkeyProvider>

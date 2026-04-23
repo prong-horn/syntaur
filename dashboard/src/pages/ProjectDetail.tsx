@@ -282,6 +282,23 @@ export function ProjectDetail() {
                 ),
               },
               {
+                value: 'todos',
+                label: 'Todos',
+                content: (
+                  <SectionCard
+                    title="Project Todos"
+                    description="A lightweight checklist scoped to this project, separate from assignment-level todos."
+                  >
+                    <Link
+                      to={`${wsPrefix}/projects/${project.slug}/todos`}
+                      className="inline-flex items-center gap-1.5 text-sm text-foreground underline-offset-2 hover:underline"
+                    >
+                      Open project todos &rarr;
+                    </Link>
+                  </SectionCard>
+                ),
+              },
+              {
                 value: 'dependencies',
                 label: 'Dependencies',
                 content: project.dependencyGraph ? (
