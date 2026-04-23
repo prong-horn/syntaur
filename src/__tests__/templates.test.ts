@@ -154,7 +154,6 @@ describe('renderAssignment', () => {
     });
     expect(out).toContain('## Objective');
     expect(out).toContain('## Acceptance Criteria');
-    expect(out).toContain('## Todos');
     expect(out).toContain('## Context');
     expect(out).not.toContain('## Questions & Answers');
     expect(out).not.toContain('## Progress');
@@ -165,6 +164,33 @@ describe('renderAssignment', () => {
     expect(out).toContain('(./scratchpad.md)');
     expect(out).toContain('(./handoff.md)');
     expect(out).toContain('(./decision-record.md)');
+  });
+
+  it('omits ## Todos by default', () => {
+    const out = renderAssignment({
+      id: 'id',
+      slug: 's',
+      title: 'T',
+      timestamp: TIMESTAMP,
+      priority: 'medium',
+      dependsOn: [],
+      links: [],
+    });
+    expect(out).not.toContain('## Todos');
+  });
+
+  it('includes ## Todos when includeTodos is true', () => {
+    const out = renderAssignment({
+      id: 'id',
+      slug: 's',
+      title: 'T',
+      timestamp: TIMESTAMP,
+      priority: 'medium',
+      dependsOn: [],
+      links: [],
+      includeTodos: true,
+    });
+    expect(out).toContain('## Todos');
   });
 });
 

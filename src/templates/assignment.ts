@@ -10,6 +10,7 @@ export interface AssignmentParams {
   links: string[];
   project?: string | null;
   type?: string;
+  includeTodos?: boolean;
 }
 
 export function renderAssignment(params: AssignmentParams): string {
@@ -24,6 +25,20 @@ export function renderAssignment(params: AssignmentParams): string {
       : `links:\n  - ${params.links.join('\n  - ')}`;
   const projectYaml = `project: ${params.project == null ? 'null' : params.project}`;
   const typeYaml = `type: ${params.type ?? 'feature'}`;
+
+  const todosSection = params.includeTodos
+    ? `## Todos
+
+<!--
+Checklist of work items for this assignment. Items may be simple tasks
+or a markdown link to a plan file (e.g., "- [ ] Execute [plan](./plan.md)").
+When a plan is superseded by a new one, mark the old todo as:
+  - [x] ~~Execute [old plan](./plan.md)~~ (superseded by plan-v2)
+Never delete superseded todos — preserve the history.
+-->
+
+`
+    : '';
 
   return `---
 id: ${params.id}
@@ -60,17 +75,7 @@ tags: []
 - [ ] <!-- criterion 2 -->
 - [ ] <!-- criterion 3 -->
 
-## Todos
-
-<!--
-Checklist of work items for this assignment. Items may be simple tasks
-or a markdown link to a plan file (e.g., "- [ ] Execute [plan](./plan.md)").
-When a plan is superseded by a new one, mark the old todo as:
-  - [x] ~~Execute [old plan](./plan.md)~~ (superseded by plan-v2)
-Never delete superseded todos — preserve the history.
--->
-
-## Context
+${todosSection}## Context
 
 <!-- Links to relevant docs, code, or other assignments. -->
 

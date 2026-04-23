@@ -93,6 +93,7 @@ program
   .option('--depends-on <slugs>', 'Comma-separated dependency slugs (not allowed with --one-off)')
   .option('--links <slugs>', 'Comma-separated linked assignment slugs (projectSlug/assignmentSlug format)')
   .option('--dir <path>', 'Override default project directory (ignored for --one-off)')
+  .option('--with-todos', 'Scaffold a ## Todos section in assignment.md (omitted by default; typically populated by /plan-assignment)')
   .action(async (title, options) => {
     try {
       await createAssignmentCommand(title, options);

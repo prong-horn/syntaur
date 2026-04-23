@@ -23,6 +23,7 @@ export interface CreateAssignmentOptions {
   links?: string;
   dir?: string;
   type?: string;
+  withTodos?: boolean;
 }
 
 export async function createAssignmentCommand(
@@ -160,6 +161,7 @@ export async function createAssignmentCommand(
         links,
         project: projectSlug,
         type: options.type,
+        includeTodos: options.withTodos === true,
       }),
     ],
     [
