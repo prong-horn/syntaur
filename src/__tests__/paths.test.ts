@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { homedir } from 'node:os';
-import { expandHome, syntaurRoot, defaultProjectDir } from '../utils/paths.js';
+import { expandHome, syntaurRoot, defaultProjectDir, projectTodosDir } from '../utils/paths.js';
 
 describe('expandHome', () => {
   it('expands ~ to home directory', () => {
@@ -38,5 +38,22 @@ describe('defaultProjectDir', () => {
     expect(dir).not.toContain('~');
     expect(dir.endsWith('projects')).toBe(true);
     expect(dir).toContain('.syntaur');
+  });
+});
+
+describe('projectTodosDir', () => {
+  it('resolves <projectsDir>/<slug>/todos exactly', () => {
+    expect(projectTodosDir('/custom/root', 'my-proj')).toBe('/custom/root/my-proj/todos');
+  });
+
+  it('ignores SYNTAUR_HOME — uses the projectsDir argument verbatim', () => {
+    const prev = process.env.SYNTAUR_HOME;
+    process.env.SYNTAUR_HOME = '/elsewhere/.syntaur';
+    try {
+      expect(projectTodosDir('/custom/root', 'alpha')).toBe('/custom/root/alpha/todos');
+    } finally {
+      if (prev === undefined) delete process.env.SYNTAUR_HOME;
+      else process.env.SYNTAUR_HOME = prev;
+    }
   });
 });

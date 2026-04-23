@@ -86,7 +86,10 @@ export function createProjectTodosRouter(
     next();
   }
 
-  router.param('projectId', validateProjectId as any);
+  // router.param only fires for params defined in the subrouter's own route
+  // patterns. `:projectId` is on the parent mount path, so run the validator
+  // as generic middleware instead.
+  router.use(validateProjectId);
 
   // GET / — list this project's todos
   router.get('/', async (req, res) => {
