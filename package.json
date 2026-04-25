@@ -1,6 +1,6 @@
 {
   "name": "syntaur",
-  "version": "0.4.4",
+  "version": "0.4.5",
   "description": "Project workflow CLI with dashboard, Claude Code plugin, and Codex plugin",
   "homepage": "https://github.com/prong-horn/syntaur#readme",
   "repository": {
