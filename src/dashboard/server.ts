@@ -226,7 +226,7 @@ export function createDashboardServer(options: DashboardServerOptions) {
 
   app.get('/api/workspaces', async (_req, res) => {
     try {
-      const result = await listWorkspaces(projectsDir);
+      const result = await listWorkspaces(projectsDir, assignmentsDir);
       res.json(result);
     } catch (error) {
       console.error('Error listing workspaces:', error);

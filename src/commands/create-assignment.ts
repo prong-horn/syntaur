@@ -23,6 +23,7 @@ export interface CreateAssignmentOptions {
   links?: string;
   dir?: string;
   type?: string;
+  workspace?: string;
 }
 
 export async function createAssignmentCommand(
@@ -31,6 +32,18 @@ export async function createAssignmentCommand(
 ): Promise<void> {
   if (!title.trim()) {
     throw new Error('Assignment title cannot be empty.');
+  }
+
+  // --workspace guards run before the generic --project/--one-off guard so that
+  // `--workspace <slug>` alone reports the actionable message rather than the
+  // generic "Either --project or --one-off is required." error.
+  if (options.workspace && options.project) {
+    throw new Error(
+      'Cannot use --workspace with --project (projects already carry a workspace via project.workspace).',
+    );
+  }
+  if (options.workspace && !options.oneOff) {
+    throw new Error('--workspace requires --one-off.');
   }
 
   if (!options.project && !options.oneOff) {
@@ -47,6 +60,13 @@ export async function createAssignmentCommand(
   if (options.project && !isValidSlug(options.project)) {
     throw new Error(
       `Invalid project slug "${options.project}". Slugs must be lowercase, hyphen-separated, with no special characters.`,
+    );
+  }
+
+  // Stricter than server.ts:240 / createProjectCommand by design — assignment slugs already use isValidSlug.
+  if (options.workspace && !isValidSlug(options.workspace)) {
+    throw new Error(
+      `Invalid workspace slug "${options.workspace}". Slugs must be lowercase, hyphen-separated, with no special characters.`,
     );
   }
 
@@ -159,6 +179,7 @@ export async function createAssignmentCommand(
         dependsOn,
         links,
         project: projectSlug,
+        workspaceGroup: options.workspace ?? null,
         type: options.type,
       }),
     ],

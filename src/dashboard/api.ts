@@ -266,19 +266,32 @@ async function writeWorkspaceRegistry(projectsDir: string, workspaces: string[])
 }
 
 /**
- * List all workspaces: merge registry (explicit) with discovered (from projects).
+ * List all workspaces: merge registry (explicit) with workspaces discovered from
+ * project `workspace:` fields and standalone-assignment `workspaceGroup` fields.
+ * Standalones with no `workspaceGroup` contribute to `hasUngrouped`.
  * GET /api/workspaces
  */
-export async function listWorkspaces(projectsDir: string): Promise<{ workspaces: string[]; hasUngrouped: boolean }> {
-  const [projectRecords, registered] = await Promise.all([
+export async function listWorkspaces(
+  projectsDir: string,
+  assignmentsDir?: string,
+): Promise<{ workspaces: string[]; hasUngrouped: boolean }> {
+  const [projectRecords, registered, standaloneRecords] = await Promise.all([
     listProjectRecords(projectsDir),
     readWorkspaceRegistry(projectsDir),
+    listStandaloneRecords(assignmentsDir),
   ]);
   const workspaceSet = new Set<string>(registered);
   let hasUngrouped = false;
   for (const record of projectRecords) {
     if (record.project.workspace) {
       workspaceSet.add(record.project.workspace);
+    } else {
+      hasUngrouped = true;
+    }
+  }
+  for (const sr of standaloneRecords) {
+    if (sr.record.workspaceGroup) {
+      workspaceSet.add(sr.record.workspaceGroup);
     } else {
       hasUngrouped = true;
     }
@@ -485,7 +498,7 @@ async function toStandaloneBoardItem(sr: StandaloneRecord): Promise<AssignmentBo
     projectSlug: null,
     projectTitle: null,
     blockedReason: sr.record.blockedReason,
-    projectWorkspace: null,
+    projectWorkspace: sr.record.workspaceGroup ?? null,
     availableTransitions: await getStandaloneAvailableTransitions(sr.record),
   };
 }
