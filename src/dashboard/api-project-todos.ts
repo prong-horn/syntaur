@@ -263,6 +263,10 @@ export function createProjectTodosRouter(
       broadcastUpdate(slug);
       res.json({ archived: completedIds.size, logEntries: toArchive.length });
     } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'PROJECT_GONE') {
+        notFound(res, getProjectIdParam(params(req).projectId));
+        return;
+      }
       res.status(500).json({ error: error instanceof Error ? error.message : 'Failed to archive' });
     }
   });
