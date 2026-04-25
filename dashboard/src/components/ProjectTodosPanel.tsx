@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect, useRef } from 'react';
-import { useParams, useSearchParams } from 'react-router-dom';
+import { useSearchParams } from 'react-router-dom';
 import {
   CheckSquare,
   Plus,
@@ -34,11 +34,11 @@ import {
   reopenProjectTodo,
   reorderProjectTodos,
 } from '../hooks/useProjectTodos';
-import { LoadingState } from '../components/LoadingState';
-import { ErrorState } from '../components/ErrorState';
-import { EmptyState } from '../components/EmptyState';
-import { StatCard } from '../components/StatCard';
-import { StatusMenu } from '../components/StatusMenu';
+import { LoadingState } from './LoadingState';
+import { ErrorState } from './ErrorState';
+import { EmptyState } from './EmptyState';
+import { StatCard } from './StatCard';
+import { StatusMenu } from './StatusMenu';
 import type { TodoItem } from '../types';
 import { useHotkey, useHotkeyScope, useListSelection } from '../hotkeys';
 
@@ -147,9 +147,11 @@ function SortableTodoRow({
   );
 }
 
-export function ProjectTodosPage() {
-  const { slug } = useParams<{ slug: string }>();
-  const projectId = slug || '';
+interface ProjectTodosPanelProps {
+  projectId: string;
+}
+
+export function ProjectTodosPanel({ projectId }: ProjectTodosPanelProps) {
   const { data, loading, error, refetch } = useProjectTodos(projectId);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('');
@@ -161,7 +163,6 @@ export function ProjectTodosPage() {
 
   const isFiltered = !!(search.trim() || statusFilter || tagFilter);
 
-  // dnd-kit sensors: require 8px movement before drag starts (prevents accidental drags)
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
     useSensor(KeyboardSensor),
@@ -236,7 +237,6 @@ export function ProjectTodosPage() {
     refetch();
   }
 
-  // Hotkey wiring (R3 + R5d).
   const { hotkeyRowProps } = useListSelection(filtered, {
     scope: 'list:todos',
     bindO: false,
@@ -263,16 +263,19 @@ export function ProjectTodosPage() {
     const node = document.querySelector<HTMLElement>(
       `[data-todo-id="${window.CSS.escape(focusId)}"]`,
     );
-    if (!node) return; // will retry when filtered.length changes (data arrives)
+    if (!node) return;
     node.scrollIntoView({ block: 'nearest' });
     node.classList.add('ring-2', 'ring-primary/60');
     const t = window.setTimeout(() => {
       node.classList.remove('ring-2', 'ring-primary/60');
-      setSearchParams((prev) => {
-        const n = new URLSearchParams(prev);
-        n.delete('focus');
-        return n;
-      });
+      setSearchParams(
+        (prev) => {
+          const n = new URLSearchParams(prev);
+          n.delete('focus');
+          return n;
+        },
+        { replace: true },
+      );
     }, 1500);
     return () => window.clearTimeout(t);
   }, [focusId, filtered.length, setSearchParams]);

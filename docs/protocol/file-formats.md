@@ -1301,6 +1301,10 @@ Both workspace and project todo files persist the scope key as `workspace: <slug
 
 The project router returns 400 on invalid slugs and 404 when the project's `project.md` is missing. Each router maintains its own scope-prefixed write lock (`ws:<name>` / `proj:<slug>`) so identically-named workspace and project files never collide.
 
+### Dashboard surface
+
+Project todos render inside the **Todos** tab on the project detail page (`/projects/:slug?tab=todos`). There is no standalone `/projects/:slug/todos` route — the panel is hosted directly in the tab so users can add, complete, and reorder project todos alongside the rest of the project view. The command palette deep-links into this tab via `?tab=todos`. Workspace todos still have their own page at `/todos` and `/w/:workspace/todos`.
+
 ### Backup coverage
 
 Project todos are colocated under the project directory, so the existing `projects` backup category (`src/utils/github-backup.ts:64`, backs up `config.defaultProjectDir`) includes them automatically. No separate `project-todos` category exists.

@@ -75,7 +75,7 @@ export function buildIndex(input: BuildInput): PaletteEntry[] {
       title: `${m.title} todos`,
       subtitle: `${m.slug} · project`,
       keywords: [...(m.tags ?? []), 'project', 'todos'],
-      route: `${projectWs}/projects/${m.slug}/todos`,
+      route: `${projectWs}/projects/${m.slug}?tab=todos`,
     });
   }
 

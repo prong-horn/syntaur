@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { BookOpenText, GitBranch, Plus, SquarePen } from 'lucide-react';
 import { CopyButton } from '../components/CopyButton';
 import { useProject, useWorkspaces, useWorkspacePrefix, type AssignmentSummary } from '../hooks/useProjects';
@@ -15,8 +15,11 @@ import { ViewToggle } from '../components/ViewToggle';
 import { EmptyState } from '../components/EmptyState';
 import { DependencyGraph } from '../components/DependencyGraph';
 import { MarkdownRenderer } from '../components/MarkdownRenderer';
+import { ProjectTodosPanel } from '../components/ProjectTodosPanel';
 import { useStatusConfig } from '../hooks/useStatusConfig';
 import { useHotkey, useHotkeyScope } from '../hotkeys';
+
+const VALID_TABS = new Set(['overview', 'assignments', 'todos', 'dependencies', 'knowledge']);
 
 export function ProjectDetail() {
   const { slug } = useParams<{ slug: string }>();
@@ -38,7 +41,24 @@ export function ProjectDetail() {
   const { data: project, loading, error, refetch } = useProject(slug);
   const statusConfig = useStatusConfig();
   const { data: workspacesData } = useWorkspaces();
-  const [tab, setTab] = useState('overview');
+  const [searchParams, setSearchParams] = useSearchParams();
+  const initialTab = (() => {
+    const t = searchParams.get('tab');
+    return t && VALID_TABS.has(t) ? t : 'overview';
+  })();
+  const [tab, setTab] = useState(initialTab);
+  function handleTabChange(value: string) {
+    setTab(value);
+    setSearchParams(
+      (prev) => {
+        const n = new URLSearchParams(prev);
+        if (value === 'overview') n.delete('tab');
+        else n.set('tab', value);
+        return n;
+      },
+      { replace: true },
+    );
+  }
   const [assignmentView, setAssignmentView] = useState<'board' | 'table'>('board');
   const [statusFilter, setStatusFilter] = useState('all');
   const [assigneeFilter, setAssigneeFilter] = useState('all');
@@ -169,7 +189,7 @@ export function ProjectDetail() {
         <div className="space-y-4">
           <ContentTabs
             value={tab}
-            onValueChange={setTab}
+            onValueChange={handleTabChange}
             items={[
               {
                 value: 'overview',
@@ -284,19 +304,7 @@ export function ProjectDetail() {
               {
                 value: 'todos',
                 label: 'Todos',
-                content: (
-                  <SectionCard
-                    title="Project Todos"
-                    description="A lightweight checklist scoped to this project, separate from assignment-level todos."
-                  >
-                    <Link
-                      to={`${wsPrefix}/projects/${project.slug}/todos`}
-                      className="inline-flex items-center gap-1.5 text-sm text-foreground underline-offset-2 hover:underline"
-                    >
-                      Open project todos &rarr;
-                    </Link>
-                  </SectionCard>
-                ),
+                content: <ProjectTodosPanel projectId={project.slug} />,
               },
               {
                 value: 'dependencies',
