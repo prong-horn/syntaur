@@ -3,7 +3,7 @@ name: create-assignment
 description: Create a new Syntaur assignment (project-nested or standalone one-off)
 arguments:
   - name: args
-    description: "Title and flags. See the create-assignment skill for supported forms (e.g. --project <slug>, --one-off, --type <type>)."
+    description: "Title and flags. See the create-assignment skill for supported forms (e.g. --project <slug>, --one-off, --type <type>, --with-todos)."
     required: false
 ---
 

@@ -122,8 +122,21 @@ const CLI_COMMANDS: HelpCommand[] = [
   },
   {
     command: 'syntaur list-playbooks',
-    description: 'List all playbooks in the Syntaur home directory.',
-    example: 'syntaur list-playbooks',
+    description:
+      'List playbooks in the Syntaur home directory. Disabled playbooks are excluded by default; pass --all to include them with a (disabled) tag.',
+    example: 'syntaur list-playbooks --all',
+  },
+  {
+    command: 'syntaur enable-playbook',
+    description:
+      'Re-enable a previously-disabled playbook so agents load it again. Updates config.md and rebuilds manifest.md.',
+    example: 'syntaur enable-playbook commit-discipline',
+  },
+  {
+    command: 'syntaur disable-playbook',
+    description:
+      'Disable a playbook so agents no longer list or load it. Playbook file is untouched; state is tracked in config.md.',
+    example: 'syntaur disable-playbook commit-discipline',
   },
 ];
 

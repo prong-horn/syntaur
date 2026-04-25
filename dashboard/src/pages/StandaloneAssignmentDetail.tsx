@@ -27,9 +27,6 @@ export function StandaloneAssignmentDetail() {
     <div className="space-y-6">
       <header className="space-y-2">
         <div className="flex flex-wrap items-center gap-3">
-          <span className="rounded bg-neutral-800 px-2 py-0.5 font-mono text-xs uppercase tracking-wide text-neutral-300">
-            Standalone
-          </span>
           <StatusBadge status={assignment.status} />
           <span className="text-xs font-mono text-neutral-500">{assignment.id}</span>
           <Link

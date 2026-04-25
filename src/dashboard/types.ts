@@ -57,7 +57,7 @@ export interface AssignmentBoardItem extends AssignmentSummary {
   projectTitle: string | null;
   blockedReason: string | null;
   availableTransitions: AssignmentTransitionAction[];
-  /** `null` for standalone (not grouped into any workspace). */
+  /** Workspace this assignment belongs to. Sourced from `project.workspace` for project-nested assignments, from `workspaceGroup` for standalone assignments. `null` when neither is set. */
   projectWorkspace: string | null;
 }
 
@@ -339,6 +339,7 @@ export interface PlaybookSummary {
   tags: string[];
   created: string;
   updated: string;
+  enabled: boolean;
 }
 
 export interface PlaybookDetail extends PlaybookSummary {

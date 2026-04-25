@@ -1,6 +1,6 @@
 import { type DragEvent, useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { Link, useNavigate, useSearchParams, useParams } from 'react-router-dom';
-import { ChevronDown, ChevronUp, FolderKanban } from 'lucide-react';
+import { ChevronDown, ChevronUp, FolderKanban, Plus } from 'lucide-react';
 import { CopyButton } from '../components/CopyButton';
 import { cn } from '../lib/utils';
 import {
@@ -508,6 +508,15 @@ export function AssignmentsPage() {
 
   return (
     <div className="space-y-5">
+      <div className="flex items-center justify-end">
+        <Link
+          to={`${wsPrefix}/assignments/new`}
+          className="inline-flex h-9 items-center gap-2 rounded-md bg-foreground px-3 text-sm font-medium text-background transition hover:bg-foreground/90"
+        >
+          <Plus className="h-4 w-4" />
+          New Assignment
+        </Link>
+      </div>
 
       <FilterBar>
         <SearchInput

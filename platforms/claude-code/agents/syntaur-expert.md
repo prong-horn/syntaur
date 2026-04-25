@@ -169,8 +169,8 @@ Only the assigned agent may write to its own assignment folder.
 | Command | Description |
 |---------|-------------|
 | `syntaur create-project <title> [--slug S] [--dir D]` | Create new project with full scaffolding |
-| `syntaur create-assignment <title> --project M [--priority P] [--depends-on D] [--slug S] [--type T]` | Create assignment in a project |
-| `syntaur create-assignment <title> --one-off [--type T]` | Create standalone assignment at `~/.syntaur/assignments/<uuid>/` (project: null, slug display-only) |
+| `syntaur create-assignment <title> --project M [--priority P] [--depends-on D] [--slug S] [--type T] [--with-todos]` | Create assignment in a project. `--with-todos` pre-scaffolds a `## Todos` section (omitted by default — usually added later by `plan-assignment`). |
+| `syntaur create-assignment <title> --one-off [--type T] [--with-todos]` | Create standalone assignment at `~/.syntaur/assignments/<uuid>/` (project: null, slug display-only) |
 
 ### Coordination (CLI-mediated writes)
 | Command | Description |

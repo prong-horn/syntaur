@@ -80,8 +80,8 @@ Project-nested assignments live at `~/.syntaur/projects/<slug>/assignments/<aslu
 Use these commands directly when needed:
 
 - `syntaur create-project "<title>" [--slug <slug>] [--dir <path>]`
-- `syntaur create-assignment "<title>" --project <slug> [--slug <slug>] [--priority <level>] [--depends-on <slugs>] [--type <type>] [--dir <path>]`
-- `syntaur create-assignment "<title>" --one-off [--slug <slug>] [--priority <level>] [--type <type>] [--dir <path>]` — creates standalone at `~/.syntaur/assignments/<uuid>/`
+- `syntaur create-assignment "<title>" --project <slug> [--slug <slug>] [--priority <level>] [--depends-on <slugs>] [--type <type>] [--dir <path>] [--with-todos]` — `--with-todos` pre-scaffolds a `## Todos` section (omitted by default; usually added later by `plan-assignment`)
+- `syntaur create-assignment "<title>" --one-off [--slug <slug>] [--priority <level>] [--type <type>] [--dir <path>] [--with-todos]` — creates standalone at `~/.syntaur/assignments/<uuid>/`
 - `syntaur setup [--yes] [--claude] [--codex] [--claude-dir <path>] [--codex-dir <path>] [--codex-marketplace-path <path>] [--dashboard]`
 - `syntaur assign <assignment-slug> --agent codex --project <project-slug>`
 - `syntaur start <assignment-slug> --project <project-slug>`
