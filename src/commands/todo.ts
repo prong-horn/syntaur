@@ -1,7 +1,7 @@
 import { Command } from 'commander';
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
-import { todosDir as getTodosDir } from '../utils/paths.js';
+import { todosDir as getTodosDir, projectTodosDir } from '../utils/paths.js';
 import {
   readChecklist,
   writeChecklist,
@@ -14,19 +14,38 @@ import {
   archivePath,
 } from '../todos/parser.js';
 import { ensureDir, fileExists, writeFileForce } from '../utils/fs.js';
+import { readConfig } from '../utils/config.js';
+import { isValidSlug } from '../utils/slug.js';
 import type { TodoItem, LogEntry } from '../todos/types.js';
 
 const WORKSPACE_REGEX = /^[a-z0-9_][a-z0-9-]*$/;
 
-function resolveWorkspace(options: { workspace?: string; global?: boolean }): string {
-  if (options.global) return '_global';
+type ScopeOptions = { project?: string; workspace?: string; global?: boolean };
+type Scope = { kind: 'workspace'; id: string; todosPath: string } | { kind: 'project'; id: string; todosPath: string };
+
+async function resolveScope(options: ScopeOptions): Promise<Scope> {
+  const flagCount = [Boolean(options.project), Boolean(options.workspace), Boolean(options.global)].filter(Boolean).length;
+  if (flagCount > 1) {
+    throw new Error('Use at most one of --project, --workspace, --global.');
+  }
+  if (options.project) {
+    if (!isValidSlug(options.project)) {
+      throw new Error(`Invalid project slug: "${options.project}".`);
+    }
+    const config = await readConfig();
+    const projectMd = resolve(config.defaultProjectDir, options.project, 'project.md');
+    if (!(await fileExists(projectMd))) {
+      throw new Error(`Project "${options.project}" not found.`);
+    }
+    return { kind: 'project', id: options.project, todosPath: projectTodosDir(config.defaultProjectDir, options.project) };
+  }
   if (options.workspace) {
     if (!WORKSPACE_REGEX.test(options.workspace)) {
       throw new Error(`Invalid workspace name: "${options.workspace}". Use lowercase letters, numbers, hyphens, and underscores.`);
     }
-    return options.workspace;
+    return { kind: 'workspace', id: options.workspace, todosPath: getTodosDir() };
   }
-  return '_global';
+  return { kind: 'workspace', id: '_global', todosPath: getTodosDir() };
 }
 
 function nowISO(): string {
@@ -42,11 +61,13 @@ todoCommand
   .argument('<description>', 'Todo description')
   .option('--tags <tags>', 'Comma-separated tags')
   .option('--workspace <slug>', 'Workspace slug')
+  .option('--project <slug>', 'Project slug (mutually exclusive with --workspace/--global)')
   .option('--global', 'Use global todos')
   .action(async (description: string, options) => {
     try {
-      const todosPath = getTodosDir();
-      const workspace = resolveWorkspace(options);
+      const scope = await resolveScope(options);
+      const todosPath = scope.todosPath;
+      const workspace = scope.id;
       const checklist = await readChecklist(todosPath, workspace);
       const existingIds = new Set(checklist.items.map((i) => i.id));
       const id = generateUniqueId(existingIds);
@@ -68,11 +89,13 @@ todoCommand
   .option('--tag <tag>', 'Filter by tag')
   .option('--status <status>', 'Filter by status (open|in_progress|completed|blocked)')
   .option('--workspace <slug>', 'Workspace slug')
+  .option('--project <slug>', 'Project slug (mutually exclusive with --workspace/--global)')
   .option('--global', 'Use global todos')
   .action(async (options) => {
     try {
-      const todosPath = getTodosDir();
-      const workspace = resolveWorkspace(options);
+      const scope = await resolveScope(options);
+      const todosPath = scope.todosPath;
+      const workspace = scope.id;
       const checklist = await readChecklist(todosPath, workspace);
       let items = checklist.items;
 
@@ -119,11 +142,13 @@ todoCommand
   .argument('<id>', 'Todo short ID (e.g. a3f1)')
   .option('--session <session>', 'Session ID')
   .option('--workspace <slug>', 'Workspace slug')
+  .option('--project <slug>', 'Project slug (mutually exclusive with --workspace/--global)')
   .option('--global', 'Use global todos')
   .action(async (id: string, options) => {
     try {
-      const todosPath = getTodosDir();
-      const workspace = resolveWorkspace(options);
+      const scope = await resolveScope(options);
+      const todosPath = scope.todosPath;
+      const workspace = scope.id;
       const checklist = await readChecklist(todosPath, workspace);
       const item = findItem(checklist.items, id);
       if (!item) {
@@ -152,11 +177,13 @@ todoCommand
   .option('--branch <branch>', 'Git branch name')
   .option('--session <session>', 'Session ID')
   .option('--workspace <slug>', 'Workspace slug')
+  .option('--project <slug>', 'Project slug (mutually exclusive with --workspace/--global)')
   .option('--global', 'Use global todos')
   .action(async (id: string, options) => {
     try {
-      const todosPath = getTodosDir();
-      const workspace = resolveWorkspace(options);
+      const scope = await resolveScope(options);
+      const todosPath = scope.todosPath;
+      const workspace = scope.id;
       const checklist = await readChecklist(todosPath, workspace);
       const item = findItem(checklist.items, id);
       if (!item) {
@@ -192,11 +219,13 @@ todoCommand
   .requiredOption('--reason <reason>', 'Blocking reason')
   .option('--session <session>', 'Session ID')
   .option('--workspace <slug>', 'Workspace slug')
+  .option('--project <slug>', 'Project slug (mutually exclusive with --workspace/--global)')
   .option('--global', 'Use global todos')
   .action(async (id: string, options) => {
     try {
-      const todosPath = getTodosDir();
-      const workspace = resolveWorkspace(options);
+      const scope = await resolveScope(options);
+      const todosPath = scope.todosPath;
+      const workspace = scope.id;
       const checklist = await readChecklist(todosPath, workspace);
       const item = findItem(checklist.items, id);
       if (!item) {
@@ -230,11 +259,13 @@ todoCommand
   .description('Return a blocked todo to open')
   .argument('<id>', 'Todo short ID')
   .option('--workspace <slug>', 'Workspace slug')
+  .option('--project <slug>', 'Project slug (mutually exclusive with --workspace/--global)')
   .option('--global', 'Use global todos')
   .action(async (id: string, options) => {
     try {
-      const todosPath = getTodosDir();
-      const workspace = resolveWorkspace(options);
+      const scope = await resolveScope(options);
+      const todosPath = scope.todosPath;
+      const workspace = scope.id;
       const checklist = await readChecklist(todosPath, workspace);
       const item = findItem(checklist.items, id);
       if (!item) {
@@ -256,11 +287,13 @@ todoCommand
   .description('Delete a todo item (no log entry)')
   .argument('<id>', 'Todo short ID')
   .option('--workspace <slug>', 'Workspace slug')
+  .option('--project <slug>', 'Project slug (mutually exclusive with --workspace/--global)')
   .option('--global', 'Use global todos')
   .action(async (id: string, options) => {
     try {
-      const todosPath = getTodosDir();
-      const workspace = resolveWorkspace(options);
+      const scope = await resolveScope(options);
+      const todosPath = scope.todosPath;
+      const workspace = scope.id;
       const checklist = await readChecklist(todosPath, workspace);
       const idx = checklist.items.findIndex((i) => i.id === id);
       if (idx === -1) {
@@ -283,11 +316,13 @@ todoCommand
   .argument('<id>', 'Todo short ID')
   .argument('<description>', 'New description')
   .option('--workspace <slug>', 'Workspace slug')
+  .option('--project <slug>', 'Project slug (mutually exclusive with --workspace/--global)')
   .option('--global', 'Use global todos')
   .action(async (id: string, description: string, options) => {
     try {
-      const todosPath = getTodosDir();
-      const workspace = resolveWorkspace(options);
+      const scope = await resolveScope(options);
+      const todosPath = scope.todosPath;
+      const workspace = scope.id;
       const checklist = await readChecklist(todosPath, workspace);
       const item = findItem(checklist.items, id);
       if (!item) {
@@ -310,11 +345,13 @@ todoCommand
   .option('--add <tags>', 'Tags to add (comma-separated)')
   .option('--remove <tags>', 'Tags to remove (comma-separated)')
   .option('--workspace <slug>', 'Workspace slug')
+  .option('--project <slug>', 'Project slug (mutually exclusive with --workspace/--global)')
   .option('--global', 'Use global todos')
   .action(async (id: string, options) => {
     try {
-      const todosPath = getTodosDir();
-      const workspace = resolveWorkspace(options);
+      const scope = await resolveScope(options);
+      const todosPath = scope.todosPath;
+      const workspace = scope.id;
       const checklist = await readChecklist(todosPath, workspace);
       const item = findItem(checklist.items, id);
       if (!item) {
@@ -344,11 +381,13 @@ todoCommand
   .description('Show log entries')
   .argument('[id]', 'Optional todo short ID to filter')
   .option('--workspace <slug>', 'Workspace slug')
+  .option('--project <slug>', 'Project slug (mutually exclusive with --workspace/--global)')
   .option('--global', 'Use global todos')
   .action(async (id: string | undefined, options) => {
     try {
-      const todosPath = getTodosDir();
-      const workspace = resolveWorkspace(options);
+      const scope = await resolveScope(options);
+      const todosPath = scope.todosPath;
+      const workspace = scope.id;
       const log = await readLog(todosPath, workspace);
       let entries = log.entries;
 
@@ -379,11 +418,13 @@ todoCommand
   .command('archive')
   .description('Archive completed todos and their log entries')
   .option('--workspace <slug>', 'Workspace slug')
+  .option('--project <slug>', 'Project slug (mutually exclusive with --workspace/--global)')
   .option('--global', 'Use global todos')
   .action(async (options) => {
     try {
-      const todosPath = getTodosDir();
-      const workspace = resolveWorkspace(options);
+      const scope = await resolveScope(options);
+      const todosPath = scope.todosPath;
+      const workspace = scope.id;
       const checklist = await readChecklist(todosPath, workspace);
       const log = await readLog(todosPath, workspace);
 
@@ -467,13 +508,15 @@ todoCommand
   .command('promote')
   .description('Promote a todo to a full assignment')
   .argument('<id>', 'Todo short ID')
-  .requiredOption('--project <slug>', 'Target project slug')
-  .option('--workspace <slug>', 'Workspace slug')
+  .requiredOption('--to-project <slug>', 'Target project slug for the new assignment')
+  .option('--workspace <slug>', 'Source workspace slug')
+  .option('--project <slug>', 'Source project slug (mutually exclusive with --workspace/--global)')
   .option('--global', 'Use global todos')
   .action(async (id: string, options) => {
     try {
-      const todosPath = getTodosDir();
-      const workspace = resolveWorkspace(options);
+      const scope = await resolveScope(options);
+      const todosPath = scope.todosPath;
+      const workspace = scope.id;
       const checklist = await readChecklist(todosPath, workspace);
       const item = findItem(checklist.items, id);
       if (!item) {
@@ -492,14 +535,14 @@ todoCommand
         items: item.description,
         session: null,
         branch: null,
-        summary: `Promoted to assignment in project: ${options.project}`,
+        summary: `Promoted to assignment in project: ${options.toProject}`,
         blockers: null,
         status: null,
       };
       await appendLogEntry(todosPath, workspace, entry);
 
-      console.log(`Promoted [t:${id}] to assignment in project "${options.project}".`);
-      console.log(`Run: syntaur create-assignment --project ${options.project} "${item.description}"`);
+      console.log(`Promoted [t:${id}] to assignment in project "${options.toProject}".`);
+      console.log(`Run: syntaur create-assignment --project ${options.toProject} "${item.description}"`);
     } catch (error) {
       console.error('Error:', error instanceof Error ? error.message : String(error));
       process.exit(1);

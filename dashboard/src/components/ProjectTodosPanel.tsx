@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect, useRef } from 'react';
-import { useParams, useSearchParams } from 'react-router-dom';
+import { useSearchParams } from 'react-router-dom';
 import {
   CheckSquare,
   Plus,
@@ -27,20 +27,20 @@ import {
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import {
-  useTodos,
-  addTodo,
-  completeTodo,
-  blockTodo,
-  startTodo,
-  reopenTodo,
-  reorderTodos,
-  deleteTodo,
-} from '../hooks/useTodos';
-import { LoadingState } from '../components/LoadingState';
-import { ErrorState } from '../components/ErrorState';
-import { EmptyState } from '../components/EmptyState';
-import { StatCard } from '../components/StatCard';
-import { StatusMenu } from '../components/StatusMenu';
+  useProjectTodos,
+  addProjectTodo,
+  completeProjectTodo,
+  blockProjectTodo,
+  startProjectTodo,
+  reopenProjectTodo,
+  reorderProjectTodos,
+  deleteProjectTodo,
+} from '../hooks/useProjectTodos';
+import { LoadingState } from './LoadingState';
+import { ErrorState } from './ErrorState';
+import { EmptyState } from './EmptyState';
+import { StatCard } from './StatCard';
+import { StatusMenu } from './StatusMenu';
 import type { TodoItem } from '../types';
 import { useHotkey, useHotkeyScope, useListSelection } from '../hotkeys';
 
@@ -158,10 +158,12 @@ function SortableTodoRow({
   );
 }
 
-export function WorkspaceTodosPage() {
-  const { workspace } = useParams<{ workspace: string }>();
-  const ws = workspace || '_global';
-  const { data, loading, error, refetch } = useTodos(ws);
+interface ProjectTodosPanelProps {
+  projectId: string;
+}
+
+export function ProjectTodosPanel({ projectId }: ProjectTodosPanelProps) {
+  const { data, loading, error, refetch } = useProjectTodos(projectId);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('');
   const [tagFilter, setTagFilter] = useState<string>('');
@@ -172,7 +174,6 @@ export function WorkspaceTodosPage() {
 
   const isFiltered = !!(search.trim() || statusFilter || tagFilter);
 
-  // dnd-kit sensors: require 8px movement before drag starts (prevents accidental drags)
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
     useSensor(KeyboardSensor),
@@ -213,7 +214,7 @@ export function WorkspaceTodosPage() {
 
   async function handleAdd() {
     if (!newTodoText.trim()) return;
-    await addTodo(ws, newTodoText.trim());
+    await addProjectTodo(projectId, newTodoText.trim());
     setNewTodoText('');
     refetch();
   }
@@ -232,29 +233,28 @@ export function WorkspaceTodosPage() {
   async function handleDelete(e: React.MouseEvent, id: string, description: string) {
     e.stopPropagation();
     if (!window.confirm(`Delete "${description}"? This can't be undone.`)) return;
-    await deleteTodo(ws, id);
+    await deleteProjectTodo(projectId, id);
     refetch();
   }
 
   async function handleStatusChange(id: string, newStatus: string) {
     switch (newStatus) {
       case 'open':
-        await reopenTodo(ws, id);
+        await reopenProjectTodo(projectId, id);
         break;
       case 'in_progress':
-        await startTodo(ws, id);
+        await startProjectTodo(projectId, id);
         break;
       case 'completed':
-        await completeTodo(ws, id);
+        await completeProjectTodo(projectId, id);
         break;
       case 'blocked':
-        await blockTodo(ws, id);
+        await blockProjectTodo(projectId, id);
         break;
     }
     refetch();
   }
 
-  // Hotkey wiring (R3 + R5d).
   const { hotkeyRowProps } = useListSelection(filtered, {
     scope: 'list:todos',
     bindO: false,
@@ -281,16 +281,19 @@ export function WorkspaceTodosPage() {
     const node = document.querySelector<HTMLElement>(
       `[data-todo-id="${window.CSS.escape(focusId)}"]`,
     );
-    if (!node) return; // will retry when filtered.length changes (data arrives)
+    if (!node) return;
     node.scrollIntoView({ block: 'nearest' });
     node.classList.add('ring-2', 'ring-primary/60');
     const t = window.setTimeout(() => {
       node.classList.remove('ring-2', 'ring-primary/60');
-      setSearchParams((prev) => {
-        const n = new URLSearchParams(prev);
-        n.delete('focus');
-        return n;
-      });
+      setSearchParams(
+        (prev) => {
+          const n = new URLSearchParams(prev);
+          n.delete('focus');
+          return n;
+        },
+        { replace: true },
+      );
     }, 1500);
     return () => window.clearTimeout(t);
   }, [focusId, filtered.length, setSearchParams]);
@@ -304,7 +307,7 @@ export function WorkspaceTodosPage() {
     if (oldIndex === -1 || newIndex === -1) return;
 
     const reordered = arrayMove(data.items, oldIndex, newIndex);
-    await reorderTodos(ws, reordered.map((i) => i.id));
+    await reorderProjectTodos(projectId, reordered.map((i) => i.id));
     refetch();
   }
 

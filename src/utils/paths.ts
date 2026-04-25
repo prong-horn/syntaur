@@ -35,3 +35,7 @@ export function playbooksDir(): string {
 export function todosDir(): string {
   return resolve(syntaurRoot(), 'todos');
 }
+
+export function projectTodosDir(projectsDir: string, projectSlug: string): string {
+  return resolve(projectsDir, projectSlug, 'todos');
+}
