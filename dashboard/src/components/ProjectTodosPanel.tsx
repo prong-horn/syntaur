@@ -8,6 +8,7 @@ import {
   Copy,
   Check,
   GripVertical,
+  Trash2,
 } from 'lucide-react';
 import {
   DndContext,
@@ -33,6 +34,7 @@ import {
   startProjectTodo,
   reopenProjectTodo,
   reorderProjectTodos,
+  deleteProjectTodo,
 } from '../hooks/useProjectTodos';
 import { LoadingState } from './LoadingState';
 import { ErrorState } from './ErrorState';
@@ -48,6 +50,7 @@ interface SortableTodoRowProps {
   onCycleStatus: (id: string, status: string) => void;
   onStatusChange: (id: string, status: string) => void;
   onCopyId: (e: React.MouseEvent, id: string) => void;
+  onDelete: (e: React.MouseEvent, id: string, description: string) => void;
   disabled: boolean;
   hotkeyRowProps?: Record<string, string | number | boolean>;
   rowIndex?: number;
@@ -59,6 +62,7 @@ function SortableTodoRow({
   onCycleStatus,
   onStatusChange,
   onCopyId,
+  onDelete,
   disabled,
   hotkeyRowProps,
 }: SortableTodoRowProps) {
@@ -141,6 +145,13 @@ function SortableTodoRow({
           >
             <Copy className="h-3 w-3" />
           </button>
+          <button
+            className="text-muted-foreground/40 hover:text-destructive transition"
+            title="Delete todo"
+            onClick={(e) => onDelete(e, item.id, item.description)}
+          >
+            <Trash2 className="h-3 w-3" />
+          </button>
         </>
       )}
     </div>
@@ -217,6 +228,13 @@ export function ProjectTodosPanel({ projectId }: ProjectTodosPanelProps) {
 
   function handleCycleStatus(id: string, currentStatus: string) {
     handleStatusChange(id, NEXT_STATUS[currentStatus] || 'open');
+  }
+
+  async function handleDelete(e: React.MouseEvent, id: string, description: string) {
+    e.stopPropagation();
+    if (!window.confirm(`Delete "${description}"? This can't be undone.`)) return;
+    await deleteProjectTodo(projectId, id);
+    refetch();
   }
 
   async function handleStatusChange(id: string, newStatus: string) {
@@ -395,6 +413,7 @@ export function ProjectTodosPanel({ projectId }: ProjectTodosPanelProps) {
                   onCycleStatus={handleCycleStatus}
                   onStatusChange={handleStatusChange}
                   onCopyId={copyId}
+                  onDelete={handleDelete}
                   disabled={isFiltered}
                   hotkeyRowProps={hotkeyRowProps(i)}
                 />
