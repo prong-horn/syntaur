@@ -209,6 +209,60 @@ describe('createAssignmentCommand', () => {
       }),
     ).rejects.toThrow('Invalid dependency slug');
   });
+
+  it('writes workspaceGroup line when --one-off --workspace is used', async () => {
+    await createAssignmentCommand('Workspace Task', {
+      oneOff: true,
+      workspace: 'syntaur',
+    });
+
+    const standaloneRoot = resolve(testDir, 'assignments');
+    const folders = await readdir(standaloneRoot);
+    const assignmentDir = resolve(standaloneRoot, folders[0]);
+    const content = await readFile(
+      resolve(assignmentDir, 'assignment.md'),
+      'utf-8',
+    );
+    expect(content).toContain('workspaceGroup: syntaur');
+    expect(content).toContain('project: null');
+  });
+
+  it('omits workspaceGroup line when --one-off has no --workspace', async () => {
+    await createAssignmentCommand('Plain One-off', { oneOff: true });
+
+    const standaloneRoot = resolve(testDir, 'assignments');
+    const folders = await readdir(standaloneRoot);
+    const assignmentDir = resolve(standaloneRoot, folders[0]);
+    const content = await readFile(
+      resolve(assignmentDir, 'assignment.md'),
+      'utf-8',
+    );
+    expect(content).not.toContain('workspaceGroup:');
+  });
+
+  it('rejects --workspace without --one-off', async () => {
+    await expect(
+      createAssignmentCommand('Test', { workspace: 'syntaur' }),
+    ).rejects.toThrow('--workspace requires --one-off');
+  });
+
+  it('rejects --workspace with --project', async () => {
+    await expect(
+      createAssignmentCommand('Test', {
+        project: 'some-project',
+        workspace: 'syntaur',
+      }),
+    ).rejects.toThrow('Cannot use --workspace with --project');
+  });
+
+  it('rejects invalid workspace slug', async () => {
+    await expect(
+      createAssignmentCommand('Test', {
+        oneOff: true,
+        workspace: 'INVALID!',
+      }),
+    ).rejects.toThrow('Invalid workspace slug');
+  });
 });
 
 describe('trackSessionCommand required flags', () => {

@@ -76,6 +76,32 @@ describe('resolveAssignmentById', () => {
     expect(resolved!.assignmentDir).toBe(dir);
   });
 
+  it('reads workspaceGroup from standalone frontmatter', async () => {
+    const id = 'cccccccc-dddd-eeee-ffff-000000000000';
+    const dir = resolve(assignmentsDir, id);
+    await writeAssignment(dir, id, { project: 'null', workspaceGroup: 'syntaur' });
+
+    const resolved = await resolveAssignmentById(projectsDir, assignmentsDir, id);
+
+    expect(resolved).not.toBeNull();
+    expect(resolved!.standalone).toBe(true);
+    expect(resolved!.workspaceGroup).toBe('syntaur');
+  });
+
+  it('returns workspaceGroup as null for project-nested assignments', async () => {
+    const id = 'dddddddd-eeee-ffff-0000-111111111111';
+    const projectSlug = 'nested-proj';
+    const aslug = 'nested-task';
+    const dir = resolve(projectsDir, projectSlug, 'assignments', aslug);
+    await writeAssignment(dir, id, { slug: aslug, project: projectSlug });
+
+    const resolved = await resolveAssignmentById(projectsDir, assignmentsDir, id);
+
+    expect(resolved).not.toBeNull();
+    expect(resolved!.standalone).toBe(false);
+    expect(resolved!.workspaceGroup).toBeNull();
+  });
+
   it('returns null when the id is not found anywhere', async () => {
     const resolved = await resolveAssignmentById(
       projectsDir,

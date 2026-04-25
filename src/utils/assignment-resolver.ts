@@ -9,6 +9,7 @@ export interface ResolvedAssignment {
   assignmentSlug: string;
   id: string;
   standalone: boolean;
+  workspaceGroup: string | null;
 }
 
 export async function resolveAssignmentById(
@@ -23,12 +24,21 @@ export async function resolveAssignmentById(
   const standaloneDir = resolve(assignmentsDir, id);
   const standalonePath = resolve(standaloneDir, 'assignment.md');
   if (await fileExists(standalonePath)) {
+    let workspaceGroup: string | null = null;
+    try {
+      const content = await readFile(standalonePath, 'utf-8');
+      const [fm] = extractFrontmatter(content);
+      workspaceGroup = getField(fm, 'workspaceGroup');
+    } catch {
+      // unreadable — leave null
+    }
     standaloneMatch = {
       assignmentDir: standaloneDir,
       projectSlug: null,
       assignmentSlug: id,
       id,
       standalone: true,
+      workspaceGroup,
     };
   }
 
@@ -59,6 +69,7 @@ export async function resolveAssignmentById(
                 assignmentSlug: a.name,
                 id,
                 standalone: false,
+                workspaceGroup: null,
               };
               break;
             }

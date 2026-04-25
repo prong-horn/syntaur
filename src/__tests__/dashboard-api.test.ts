@@ -407,6 +407,185 @@ tags: []
     const detail = await getAssignmentDetailById(testDir, assignmentsDir, 'no-such-id');
     expect(detail).toBeNull();
   });
+
+  it('surfaces standalone workspaceGroup as projectWorkspace on the board item', async () => {
+    const assignmentsDir = resolve(testDir, 'standalone');
+    await mkdir(assignmentsDir, { recursive: true });
+    const uuid = 'cccccccc-1111-2222-3333-dddddddddddd';
+    const dir = resolve(assignmentsDir, uuid);
+    await mkdir(dir, { recursive: true });
+    await writeFile(
+      resolve(dir, 'assignment.md'),
+      `---
+id: ${uuid}
+slug: workspace-scoped
+title: Workspace Scoped Standalone
+project: null
+workspaceGroup: syntaur
+type: feature
+status: pending
+priority: medium
+created: "2026-04-22T10:00:00Z"
+updated: "2026-04-22T10:00:00Z"
+assignee: null
+externalIds: []
+dependsOn: []
+blockedReason: null
+workspace:
+  repository: null
+  worktreePath: null
+  branch: null
+  parentBranch: null
+tags: []
+---
+
+# Workspace Scoped Standalone`,
+      'utf-8',
+    );
+
+    const board = await listAssignmentsBoard(testDir, assignmentsDir);
+    const item = board.assignments.find((a) => a.id === uuid);
+    expect(item).toBeTruthy();
+    expect(item!.projectWorkspace).toBe('syntaur');
+  });
+});
+
+describe('listWorkspaces standalone discovery', () => {
+  async function writeStandalone(
+    assignmentsDir: string,
+    uuid: string,
+    workspaceGroup: string | null,
+  ): Promise<void> {
+    const dir = resolve(assignmentsDir, uuid);
+    await mkdir(dir, { recursive: true });
+    const wsLine = workspaceGroup ? `\nworkspaceGroup: ${workspaceGroup}` : '';
+    await writeFile(
+      resolve(dir, 'assignment.md'),
+      `---
+id: ${uuid}
+slug: example
+title: Example
+project: null${wsLine}
+type: feature
+status: pending
+priority: medium
+created: "2026-04-22T10:00:00Z"
+updated: "2026-04-22T10:00:00Z"
+assignee: null
+externalIds: []
+dependsOn: []
+blockedReason: null
+workspace:
+  repository: null
+  worktreePath: null
+  branch: null
+  parentBranch: null
+tags: []
+---
+
+# Example`,
+      'utf-8',
+    );
+  }
+
+  it('includes standalone workspaceGroup values when no projects use that workspace', async () => {
+    const { listWorkspaces } = await import('../dashboard/api.js');
+    const assignmentsDir = resolve(testDir, 'standalone');
+    await mkdir(assignmentsDir, { recursive: true });
+    await writeStandalone(
+      assignmentsDir,
+      'eeeeeeee-1111-2222-3333-ffffffffffff',
+      'syntaur',
+    );
+
+    const result = await listWorkspaces(testDir, assignmentsDir);
+    expect(result.workspaces).toContain('syntaur');
+  });
+
+  it('sets hasUngrouped: true when a standalone has no workspaceGroup', async () => {
+    const { listWorkspaces } = await import('../dashboard/api.js');
+    const assignmentsDir = resolve(testDir, 'standalone');
+    await mkdir(assignmentsDir, { recursive: true });
+    await writeStandalone(
+      assignmentsDir,
+      'ffffffff-1111-2222-3333-000000000000',
+      null,
+    );
+
+    const result = await listWorkspaces(testDir, assignmentsDir);
+    expect(result.hasUngrouped).toBe(true);
+  });
+
+  it('locks in the workspace filter contract: items with projectWorkspace === slug or === null', async () => {
+    // Fixture: (a) workspace-scoped standalone, (b) project-nested in syntaur workspace, (c) ungrouped standalone.
+    const assignmentsDir = resolve(testDir, 'standalone');
+    await mkdir(assignmentsDir, { recursive: true });
+    const wsScopedId = '11111111-aaaa-bbbb-cccc-222222222222';
+    const ungroupedId = '33333333-aaaa-bbbb-cccc-444444444444';
+    await writeStandalone(assignmentsDir, wsScopedId, 'syntaur');
+    await writeStandalone(assignmentsDir, ungroupedId, null);
+
+    await createProjectFiles(
+      testDir,
+      'nested-proj',
+      `---
+id: aaaaaaaa-1111-2222-3333-aaaaaaaaaaaa
+slug: nested-proj
+title: Nested Project
+archived: false
+archivedAt: null
+archivedReason: null
+created: "2026-04-22T10:00:00Z"
+updated: "2026-04-22T10:00:00Z"
+externalIds: []
+tags: []
+workspace: syntaur
+---
+
+# Nested Project`,
+      [
+        {
+          slug: 'nested-task',
+          assignmentMd: `---
+id: bbbbbbbb-1111-2222-3333-bbbbbbbbbbbb
+slug: nested-task
+title: Nested Task
+project: nested-proj
+type: feature
+status: pending
+priority: medium
+created: "2026-04-22T10:00:00Z"
+updated: "2026-04-22T10:00:00Z"
+assignee: null
+externalIds: []
+dependsOn: []
+blockedReason: null
+workspace:
+  repository: null
+  worktreePath: null
+  branch: null
+  parentBranch: null
+tags: []
+---
+
+# Nested Task`,
+        },
+      ],
+    );
+
+    const board = await listAssignmentsBoard(testDir, assignmentsDir);
+
+    const inSyntaur = board.assignments.filter((a) => a.projectWorkspace === 'syntaur');
+    const inSyntaurIds = new Set(inSyntaur.map((a) => a.id));
+    expect(inSyntaurIds.has(wsScopedId)).toBe(true);
+    expect(inSyntaurIds.has('bbbbbbbb-1111-2222-3333-bbbbbbbbbbbb')).toBe(true);
+    expect(inSyntaurIds.has(ungroupedId)).toBe(false);
+
+    const ungrouped = board.assignments.filter((a) => a.projectWorkspace === null);
+    const ungroupedIds = new Set(ungrouped.map((a) => a.id));
+    expect(ungroupedIds.has(ungroupedId)).toBe(true);
+    expect(ungroupedIds.has(wsScopedId)).toBe(false);
+  });
 });
 
 describe('referencedBy backlinks', () => {

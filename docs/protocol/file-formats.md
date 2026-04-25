@@ -166,6 +166,7 @@ The core unit of work and the **single source of truth** for assignment state. T
 | `externalIds[].url` | string or null | URL | optional (per entry) | `null` | Direct link to the item. |
 | `dependsOn` | array of strings | assignment slugs | optional | `[]` | Assignment slugs this depends on. |
 | `blockedReason` | string or null | any | conditional | `null` | **Required** when `status` is `blocked`. Explains the manual/runtime block. |
+| `workspaceGroup` | string or null | lowercase, hyphen-separated | optional | omitted | Workspace grouping label for standalone assignments. Mirrors `project.workspace` so workspace-filtered dashboard views can include project-less work. Only applicable when `project` is `null`; omitted entirely (not `null`) when unset. |
 | `workspace` | object | see sub-fields | optional | `null` | Code workspace information. |
 | `workspace.repository` | string or null | repo path or URL | optional | `null` | The repository this assignment works in. |
 | `workspace.worktreePath` | string or null | absolute path | optional | `null` | Absolute path to the git worktree. |
@@ -201,7 +202,7 @@ Checked, strikethrough, and with a parenthetical pointer to the replacement. Thi
 
 **Progress is now `progress.md`:** The former `## Progress` body section has moved into a dedicated `progress.md` file. The agent appends timestamped entries directly. See section 8.
 
-**Standalone assignments:** An assignment may live outside any project at `~/.syntaur/assignments/<uuid>/` (created via `syntaur create-assignment --one-off`). In that case the folder is named by `id` (the UUID), `project` is `null`, and the `slug` is display-only — it is not guaranteed unique across standalone assignments. Resolve standalone assignments by `id` via `resolveAssignmentById`.
+**Standalone assignments:** An assignment may live outside any project at `~/.syntaur/assignments/<uuid>/` (created via `syntaur create-assignment --one-off`). In that case the folder is named by `id` (the UUID), `project` is `null`, and the `slug` is display-only — it is not guaranteed unique across standalone assignments. Resolve standalone assignments by `id` via `resolveAssignmentById`. Standalone assignments may also set `workspaceGroup: <slug>` (via `syntaur create-assignment --one-off --workspace <slug>`) to appear in workspace-filtered dashboard views alongside project-nested-in-workspace assignments.
 
 **Sessions:** Agent sessions are tracked in a SQLite database (`~/.syntaur/syntaur.db`), not in the assignment file. The `assignee` field in frontmatter is the authoritative owner. See section 13 for session storage details.
 
@@ -274,6 +275,27 @@ both access tokens (15min TTL) and refresh token rotation (7-day TTL).
 - [Handoff](./handoff.md)
 - [Decision Record](./decision-record.md)
 ```
+
+### Standalone Example with `workspaceGroup`
+
+A standalone (project-less) assignment that still belongs to the `syntaur` workspace:
+
+```markdown
+---
+id: b3c4d5e6-f7a8-9012-bcde-f34567890123
+slug: rename-cli-flag
+title: Rename --dry-run to --no-write
+project: null
+workspaceGroup: syntaur
+type: chore
+status: pending
+priority: low
+created: "2026-04-23T09:00:00Z"
+updated: "2026-04-23T09:00:00Z"
+---
+```
+
+Omit the `workspaceGroup` line entirely when the standalone is not workspace-scoped.
 
 ---
 

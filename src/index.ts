@@ -96,6 +96,7 @@ program
   .option('--links <slugs>', 'Comma-separated linked assignment slugs (projectSlug/assignmentSlug format)')
   .option('--dir <path>', 'Override default project directory (ignored for --one-off)')
   .option('--with-todos', 'Scaffold a ## Todos section in assignment.md (omitted by default; typically populated by /plan-assignment)')
+  .option('--workspace <slug>', 'Workspace group slug (only valid with --one-off; mutually exclusive with --project)')
   .action(async (title, options) => {
     try {
       await createAssignmentCommand(title, options);
