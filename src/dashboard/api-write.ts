@@ -189,7 +189,15 @@ export function createWriteRouter(projectsDir: string, assignmentsDir?: string):
     res.json({ content });
   });
 
-  router.get('/api/templates/assignment', (_req: Request, res: Response) => {
+  router.get('/api/templates/assignment', (req: Request, res: Response) => {
+    const standalone = req.query.standalone === '1';
+    const workspaceParam = typeof req.query.workspace === 'string' ? req.query.workspace : '';
+    if (workspaceParam && !isValidSlug(workspaceParam)) {
+      res.status(400).json({
+        error: `Invalid workspace slug "${workspaceParam}". Slugs must be lowercase, hyphen-separated, with no special characters.`,
+      });
+      return;
+    }
     const content = renderAssignment({
       id: generateId(),
       slug: 'my-new-assignment',
@@ -198,6 +206,8 @@ export function createWriteRouter(projectsDir: string, assignmentsDir?: string):
       priority: 'medium',
       dependsOn: [],
       links: [],
+      project: standalone ? null : undefined,
+      workspaceGroup: standalone && workspaceParam ? workspaceParam : null,
     });
     res.json({ content });
   });
@@ -1047,6 +1057,90 @@ export function createWriteRouter(projectsDir: string, assignmentsDir?: string):
         res.status(501).json({ error: 'Standalone assignments not configured on this server' });
         return;
       }
+
+      // Two body shapes are supported:
+      //   1) { content: <markdown> } — same shape as POST /api/projects/:slug/assignments. Used by the dashboard UI.
+      //   2) { title, slug?, priority?, type? } — original structured form, retained for back-compat.
+      const rawContent = typeof req.body?.content === 'string' ? req.body.content : '';
+      if (rawContent.trim()) {
+        const fields = extractFrontmatter(rawContent);
+        if (!fields) {
+          res.status(400).json({ error: 'Invalid frontmatter: missing --- delimiters' });
+          return;
+        }
+        const validation = validateRequired(fields, ['slug', 'title']);
+        if (!validation.valid) {
+          res.status(400).json({ error: `Missing required fields: ${validation.missing.join(', ')}` });
+          return;
+        }
+        const submittedSlug = fields.slug;
+        if (!isValidSlug(submittedSlug)) {
+          res.status(400).json({ error: `Invalid slug "${submittedSlug}". Must be lowercase and hyphen-separated.` });
+          return;
+        }
+        const validPriorities = ['low', 'medium', 'high', 'critical'];
+        const submittedPriority = fields.priority || 'medium';
+        if (!validPriorities.includes(submittedPriority)) {
+          res.status(400).json({ error: `Invalid priority "${submittedPriority}". Must be low, medium, high, or critical.` });
+          return;
+        }
+
+        // Standalone-specific guards: no project, optional workspaceGroup.
+        if (fields.project && fields.project !== 'null') {
+          res.status(400).json({
+            error: 'Standalone assignments cannot have a project; remove "project" or set it to null.',
+          });
+          return;
+        }
+        const submittedWorkspaceGroup = fields.workspaceGroup && fields.workspaceGroup !== 'null'
+          ? fields.workspaceGroup
+          : '';
+        if (submittedWorkspaceGroup && !isValidSlug(submittedWorkspaceGroup)) {
+          res.status(400).json({
+            error: `Invalid workspace slug "${submittedWorkspaceGroup}". Slugs must be lowercase, hyphen-separated, with no special characters.`,
+          });
+          return;
+        }
+
+        const id = generateId();
+        const assignmentDir = resolve(assignmentsDir, id);
+        if (await fileExists(assignmentDir)) {
+          res.status(500).json({ error: 'UUID collision — try again' });
+          return;
+        }
+
+        const timestamp = fields.created || nowTimestamp();
+        await ensureDir(assignmentDir);
+        // Normalize the frontmatter id to the freshly-generated UUID — the template ships a placeholder.
+        const normalizedContent = setTopLevelField(rawContent, 'id', id);
+        await writeFileForce(resolve(assignmentDir, 'assignment.md'), normalizedContent);
+        await writeFileForce(
+          resolve(assignmentDir, 'scratchpad.md'),
+          renderScratchpad({ assignmentSlug: id, timestamp }),
+        );
+        await writeFileForce(
+          resolve(assignmentDir, 'handoff.md'),
+          renderHandoff({ assignmentSlug: id, timestamp }),
+        );
+        await writeFileForce(
+          resolve(assignmentDir, 'decision-record.md'),
+          renderDecisionRecord({ assignmentSlug: id, timestamp }),
+        );
+        await writeFileForce(
+          resolve(assignmentDir, 'progress.md'),
+          renderProgress({ assignment: id, timestamp }),
+        );
+        await writeFileForce(
+          resolve(assignmentDir, 'comments.md'),
+          renderComments({ assignment: id, timestamp }),
+        );
+
+        const detail = await getAssignmentDetailById(projectsDir, assignmentsDir, id);
+        res.status(201).json({ assignment: detail });
+        return;
+      }
+
+      // Structured-form path (back-compat).
       const { title, slug, priority, type } = req.body || {};
       if (!title || typeof title !== 'string' || !title.trim()) {
         res.status(400).json({ error: 'title is required' });
