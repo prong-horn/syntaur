@@ -41,14 +41,13 @@ export function ProjectDetail() {
   const { data: project, loading, error, refetch } = useProject(slug);
   const statusConfig = useStatusConfig();
   const { data: workspacesData } = useWorkspaces();
+  // Tab selection lives in the URL (?tab=<value>) so it stays in sync when
+  // react-router reuses this component across project navigations (e.g. the
+  // palette jumping from one project's overview to another's todos tab).
   const [searchParams, setSearchParams] = useSearchParams();
-  const initialTab = (() => {
-    const t = searchParams.get('tab');
-    return t && VALID_TABS.has(t) ? t : 'overview';
-  })();
-  const [tab, setTab] = useState(initialTab);
+  const tabParam = searchParams.get('tab');
+  const tab = tabParam && VALID_TABS.has(tabParam) ? tabParam : 'overview';
   function handleTabChange(value: string) {
-    setTab(value);
     setSearchParams(
       (prev) => {
         const n = new URLSearchParams(prev);
@@ -412,7 +411,7 @@ export function ProjectDetail() {
               </Link>
               <button
                 type="button"
-                onClick={() => setTab('dependencies')}
+                onClick={() => handleTabChange('dependencies')}
                 className="flex items-center gap-2 text-primary hover:underline"
               >
                 <GitBranch className="h-4 w-4" />

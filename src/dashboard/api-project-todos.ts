@@ -59,7 +59,15 @@ async function ensureProjectTodosDir(projectsDir: string, slug: string): Promise
     await mkdir(resolve(todosDir, 'archive'), { recursive: false });
   } catch (err) {
     const code = (err as NodeJS.ErrnoException).code;
-    if (code !== 'EEXIST') throw err;
+    if (code === 'EEXIST') return;
+    if (code === 'ENOENT') {
+      // Project (or its todos/) disappeared between the two mkdirs — map to
+      // the same 404 path the caller already handles for PROJECT_GONE.
+      const e = new Error('PROJECT_GONE');
+      (e as NodeJS.ErrnoException).code = 'PROJECT_GONE';
+      throw e;
+    }
+    throw err;
   }
 }
 

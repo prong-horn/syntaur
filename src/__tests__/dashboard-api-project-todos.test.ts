@@ -38,11 +38,12 @@ async function startServer(projectsDir: string, workspaceTodosDir: string): Prom
   app.use('/api/projects/:projectId/todos', createProjectTodosRouter(projectsDir, broadcast));
 
   await new Promise<void>((resolvePromise) => {
-    server = app.listen(0, () => {
-      const port = (server.address() as AddressInfo).port;
+    const listening = app.listen(0, () => {
+      const port = (listening.address() as AddressInfo).port;
       baseUrl = `http://127.0.0.1:${port}`;
       resolvePromise();
     });
+    server = listening;
   });
 }
 
