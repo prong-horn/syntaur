@@ -23,6 +23,8 @@ import { trackSessionCommand } from './commands/track-session.js';
 import { browseCommand } from './commands/browse.js';
 import { createPlaybookCommand } from './commands/create-playbook.js';
 import { listPlaybooksCommand } from './commands/list-playbooks.js';
+import { enablePlaybookCommand } from './commands/enable-playbook.js';
+import { disablePlaybookCommand } from './commands/disable-playbook.js';
 import { todoCommand } from './commands/todo.js';
 import { backupCommand } from './commands/backup.js';
 import { doctorCommand } from './commands/doctor.js';
@@ -568,10 +570,43 @@ program
 
 program
   .command('list-playbooks')
-  .description('List all playbooks')
-  .action(async () => {
+  .description('List playbooks (disabled playbooks are excluded unless --all is passed)')
+  .option('--all', 'Include disabled playbooks')
+  .action(async (options) => {
     try {
-      await listPlaybooksCommand();
+      await listPlaybooksCommand({ all: Boolean(options?.all) });
+    } catch (error) {
+      console.error(
+        'Error:',
+        error instanceof Error ? error.message : String(error),
+      );
+      process.exit(1);
+    }
+  });
+
+program
+  .command('enable-playbook')
+  .description('Enable a previously-disabled playbook')
+  .argument('<slug>', 'Playbook slug')
+  .action(async (slug) => {
+    try {
+      await enablePlaybookCommand(slug);
+    } catch (error) {
+      console.error(
+        'Error:',
+        error instanceof Error ? error.message : String(error),
+      );
+      process.exit(1);
+    }
+  });
+
+program
+  .command('disable-playbook')
+  .description('Disable a playbook so agents no longer load it')
+  .argument('<slug>', 'Playbook slug')
+  .action(async (slug) => {
+    try {
+      await disablePlaybookCommand(slug);
     } catch (error) {
       console.error(
         'Error:',

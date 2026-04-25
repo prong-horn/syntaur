@@ -3,6 +3,7 @@ import { resolve, dirname } from 'node:path';
 import { getTargetStatus, DEFAULT_STATUSES, DEFAULT_TRANSITION_TABLE, buildTransitionTable } from '../lifecycle/index.js';
 import { fileExists } from '../utils/fs.js';
 import { readConfig, type StatusConfig, type StatusTransition } from '../utils/config.js';
+import { resolvePlaybookSlug } from '../utils/playbooks.js';
 import { migrateLegacyProjectFiles } from '../utils/fs-migration.js';
 import { resolveAssignmentById, type ResolvedAssignment } from '../utils/assignment-resolver.js';
 import {
@@ -1740,6 +1741,9 @@ function getEditableDocumentTitle(
 export async function listPlaybooks(playbooksDir: string): Promise<PlaybookSummary[]> {
   if (!(await fileExists(playbooksDir))) return [];
 
+  const config = await readConfig();
+  const disabledSet = new Set(config.playbooks.disabled);
+
   const entries = await readdir(playbooksDir, { withFileTypes: true });
   const playbooks: PlaybookSummary[] = [];
 
@@ -1759,6 +1763,7 @@ export async function listPlaybooks(playbooksDir: string): Promise<PlaybookSumma
       tags: parsed.tags,
       created: parsed.created,
       updated: parsed.updated,
+      enabled: !disabledSet.has(slug),
     });
   }
 
@@ -1769,20 +1774,22 @@ export async function getPlaybookDetail(
   playbooksDir: string,
   slug: string,
 ): Promise<PlaybookDetail | null> {
-  const filePath = resolve(playbooksDir, `${slug}.md`);
-  if (!(await fileExists(filePath))) return null;
+  const resolved = await resolvePlaybookSlug(playbooksDir, slug);
+  if (!resolved) return null;
 
-  const raw = await readFile(filePath, 'utf-8');
-  const parsed = parsePlaybook(raw);
+  const config = await readConfig();
+  const enabled = !config.playbooks.disabled.includes(resolved.slug);
 
+  const parsed = resolved.parsed;
   return {
-    slug: parsed.slug || slug,
-    name: parsed.name || slug,
+    slug: resolved.slug,
+    name: parsed.name || resolved.slug,
     description: parsed.description,
     whenToUse: parsed.whenToUse,
     tags: parsed.tags,
     created: parsed.created,
     updated: parsed.updated,
     body: parsed.body,
+    enabled,
   };
 }

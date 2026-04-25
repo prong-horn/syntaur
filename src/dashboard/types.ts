@@ -339,6 +339,7 @@ export interface PlaybookSummary {
   tags: string[];
   created: string;
   updated: string;
+  enabled: boolean;
 }
 
 export interface PlaybookDetail extends PlaybookSummary {
