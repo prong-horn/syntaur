@@ -10,9 +10,10 @@ import { formatDateTime } from '../lib/format';
 export function PlaybookDetail() {
   const { slug } = useParams<{ slug: string }>();
   const navigate = useNavigate();
-  const { data, loading, error } = usePlaybook(slug);
+  const { data, loading, error, refetch } = usePlaybook(slug);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [toggling, setToggling] = useState(false);
   const isManifest = slug === 'manifest';
 
   async function handleDelete() {
@@ -25,6 +26,27 @@ export function PlaybookDetail() {
       }
     } finally {
       setDeleting(false);
+    }
+  }
+
+  async function handleToggle() {
+    if (!slug || !data) return;
+    setToggling(true);
+    try {
+      const action = data.enabled ? 'disable' : 'enable';
+      const res = await fetch(`/api/playbooks/${encodeURIComponent(slug)}/${action}`, {
+        method: 'POST',
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error || `Failed to ${action} playbook`);
+      }
+      refetch();
+    } catch (err) {
+      console.error(err);
+      alert(err instanceof Error ? err.message : 'Failed to update playbook');
+    } finally {
+      setToggling(false);
     }
   }
 
@@ -85,7 +107,33 @@ export function PlaybookDetail() {
         </div>
 
         {!isManifest ? (
-          <div className="flex shrink-0 gap-2">
+          <div className="flex shrink-0 items-center gap-3">
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-medium text-muted-foreground">
+                {data.enabled ? 'Enabled' : 'Disabled'}
+              </span>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={data.enabled}
+                aria-label={data.enabled ? 'Disable playbook' : 'Enable playbook'}
+                onClick={handleToggle}
+                disabled={toggling}
+                className={`inline-flex h-5 w-9 items-center rounded-full border transition disabled:opacity-50 ${
+                  data.enabled
+                    ? 'border-emerald-500/60 bg-emerald-500/80'
+                    : 'border-foreground/40 bg-foreground/15'
+                }`}
+              >
+                <span
+                  className={`block h-4 w-4 rounded-full shadow-sm transition-transform ${
+                    data.enabled
+                      ? 'translate-x-[18px] bg-background'
+                      : 'translate-x-[2px] bg-foreground/70'
+                  }`}
+                />
+              </button>
+            </div>
             <Link
               to={`/playbooks/${slug}/edit`}
               className="inline-flex h-8 items-center gap-1.5 rounded-md border border-border/70 bg-background px-3 text-xs font-medium text-foreground transition hover:bg-muted"
