@@ -1238,6 +1238,8 @@ Global Syntaur configuration file at `~/.syntaur/config.md`. This file is **opti
 | `onboarding.completed` | boolean | `true`, `false` | optional | `false` | Whether the first-run onboarding flow has completed. |
 | `agentDefaults.trustLevel` | string (enum) | `low`, `medium`, `high` | optional | `medium` | Default trust level for agents. |
 | `agentDefaults.autoApprove` | boolean | `true`, `false` | optional | `false` | Whether to auto-approve agent actions. |
+| `agentDefaults.autoCreateWorktree` | string (enum) | `skip`, `ask`, `always` | optional | `ask` | Behavior when launching an assignment that has no `workspace.worktreePath`/`branch` set. `skip`: fall back without prompting. `ask`: interactively offer to create a worktree. `always`: create one with inferred defaults, no prompt. The `--no-worktree-prompt` flag on `syntaur browse` always wins over this setting. |
+| `agents` | array or null | list of agent entries | optional | `null` (built-in defaults: `claude`, `codex`) | Ordered list of agents that `syntaur browse` can launch. |
 | `backup.repo` | string or null | repo path or URL | optional | `null` | Backup git repo for `syntaur backup` / `syntaur restore`. |
 | `backup.categories` | string | comma-separated | optional | `"projects, playbooks, todos, servers, config"` | Categories included in backups. |
 | `backup.lastBackup` | string (RFC 3339) or null | | optional | `null` | Last backup timestamp. |
@@ -1256,6 +1258,22 @@ Global Syntaur configuration file at `~/.syntaur/config.md`. This file is **opti
 
 Built-in defaults apply when `types` is absent: `feature`, `bug`, `refactor`, `research`, `chore`, with default `feature`. Doctor warns when an assignment's `type` is not in the configured definitions.
 
+**`agents` structure** (YAML list under the `agents:` key in frontmatter):
+
+| Field | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `id` | string (slug) | yes | — | Unique slug matching `/^[a-z0-9][a-z0-9_-]*$/`. |
+| `label` | string | yes | — | Display label shown in the launch picker. |
+| `command` | string | yes | — | Absolute path to a binary, or a bare binary name resolved via `PATH` at launch. Relative paths (containing `/` without leading `/`) are rejected. |
+| `args` | array of strings | optional | `[]` | Default arguments appended around the injected prompt. |
+| `promptArgPosition` | string (enum) | optional | `first` | Where the injected prompt sits in argv: `first` (default), `last`, or `none` (no prompt argv element — launcher still writes `.syntaur/context.json` and selects cwd). |
+| `default` | boolean | optional | `false` | Pre-selected option in the picker. At most one agent may be marked `default: true`. |
+| `resolveFromShellAliases` | boolean | optional | `false` | When true, launch via `$SHELL -i -c '<quoted command + args>'` so shell aliases resolve. Falls back to `/bin/sh` (with a warning) if `$SHELL` is unset or not absolute. |
+
+Doctor (`syntaur doctor`) verifies every configured agent's `command` resolves: absolute paths must exist, bare names must be on `PATH`, and `resolveFromShellAliases: true` is accepted as-is with an informational detail.
+
+Built-in defaults apply when `agents:` is absent: `claude` (command `claude`, marked default) and `codex` (command `codex`). Manage the list with `syntaur agents {list, add, remove, set, reorder}` (all mutating commands support `--dry-run`).
+
 **Path normalization:** All path fields must use absolute expanded form. The CLI expands `~` to the full home directory at write time. A config file must never contain a literal `~` in any path value.
 
 ### Body Sections
@@ -1272,6 +1290,21 @@ onboarding.completed: true
 agentDefaults:
   trustLevel: medium
   autoApprove: false
+  autoCreateWorktree: ask
+agents:
+  - id: claude
+    label: Claude
+    command: /Users/brennen/.local/bin/claude
+    default: true
+  - id: c
+    label: Claude (alias)
+    command: c
+    resolveFromShellAliases: true
+    args:
+      - --dangerously-skip-permissions
+  - id: codex
+    label: Codex
+    command: codex
 backup:
   repo: null
   categories: projects, playbooks, todos, servers, config

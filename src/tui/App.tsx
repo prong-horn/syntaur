@@ -10,7 +10,7 @@ import type { LaunchOptions } from './launch.js';
 
 interface AppProps {
   projectsDir: string;
-  onLaunch: (options: Omit<LaunchOptions, 'agent'>) => void;
+  onLaunch: (options: Omit<LaunchOptions, 'agent' | 'cwdOverride'>) => void;
 }
 
 export function App({ projectsDir, onLaunch }: AppProps) {

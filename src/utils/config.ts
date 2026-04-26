@@ -70,6 +70,20 @@ export interface BackupConfig {
   lastRestore: string | null;
 }
 
+export type PromptArgPosition = 'first' | 'last' | 'none';
+
+export interface AgentConfig {
+  id: string;
+  label: string;
+  command: string;
+  args?: string[];
+  promptArgPosition?: PromptArgPosition;
+  default?: boolean;
+  resolveFromShellAliases?: boolean;
+}
+
+export type AutoCreateWorktree = 'skip' | 'ask' | 'always';
+
 export interface PlaybooksConfig {
   disabled: string[];
 }
@@ -81,11 +95,13 @@ export interface SyntaurConfig {
   agentDefaults: {
     trustLevel: 'low' | 'medium' | 'high';
     autoApprove: boolean;
+    autoCreateWorktree: AutoCreateWorktree;
   };
   integrations: IntegrationConfig;
   backup: BackupConfig | null;
   statuses: StatusConfig | null;
   types: TypesConfig | null;
+  agents: AgentConfig[] | null;
   playbooks: PlaybooksConfig;
 }
 
@@ -98,6 +114,7 @@ const DEFAULT_CONFIG: SyntaurConfig = {
   agentDefaults: {
     trustLevel: 'medium',
     autoApprove: false,
+    autoCreateWorktree: 'ask',
   },
   integrations: {
     claudePluginDir: null,
@@ -107,10 +124,80 @@ const DEFAULT_CONFIG: SyntaurConfig = {
   backup: null,
   statuses: null,
   types: null,
+  agents: null,
   playbooks: {
     disabled: [],
   },
 };
+
+export const BUILTIN_AGENTS: AgentConfig[] = [
+  { id: 'claude', label: 'Claude', command: 'claude', default: true },
+  { id: 'codex', label: 'Codex', command: 'codex' },
+];
+
+const AGENT_ID_PATTERN = /^[a-z0-9][a-z0-9_-]*$/;
+const PROMPT_ARG_POSITIONS: readonly PromptArgPosition[] = ['first', 'last', 'none'];
+const AUTO_CREATE_WORKTREE_VALUES: readonly AutoCreateWorktree[] = ['skip', 'ask', 'always'];
+
+export class AgentConfigError extends Error {}
+
+/**
+ * Validate an agent command string.
+ * - Absolute paths (after ~ expansion) are accepted verbatim.
+ * - Bare names (no "/" after expansion) are accepted for PATH lookup at launch time.
+ * - Relative paths (contain "/" but not absolute) are rejected.
+ */
+export function parseAgentCommand(value: string, agentId?: string): string {
+  if (typeof value !== 'string' || value.trim() === '') {
+    throw new AgentConfigError(
+      `agent${agentId ? ` "${agentId}"` : ''} has empty command`,
+    );
+  }
+  const expanded = expandHome(value.trim());
+  if (isAbsolute(expanded)) {
+    return resolve(expanded);
+  }
+  if (expanded.includes('/')) {
+    throw new AgentConfigError(
+      `agent${agentId ? ` "${agentId}"` : ''} command "${value}" is a relative path — use an absolute path or a bare binary name`,
+    );
+  }
+  return expanded;
+}
+
+export function validateAgentList(agents: AgentConfig[]): void {
+  const seen = new Set<string>();
+  let defaults = 0;
+  for (const agent of agents) {
+    if (!AGENT_ID_PATTERN.test(agent.id)) {
+      throw new AgentConfigError(
+        `agent id "${agent.id}" is invalid — must match /^[a-z0-9][a-z0-9_-]*$/`,
+      );
+    }
+    if (seen.has(agent.id)) {
+      throw new AgentConfigError(`duplicate agent id "${agent.id}"`);
+    }
+    seen.add(agent.id);
+    if (!agent.label || agent.label.trim() === '') {
+      throw new AgentConfigError(`agent "${agent.id}" has empty label`);
+    }
+    parseAgentCommand(agent.command, agent.id);
+    if (
+      agent.promptArgPosition !== undefined &&
+      !PROMPT_ARG_POSITIONS.includes(agent.promptArgPosition)
+    ) {
+      throw new AgentConfigError(
+        `agent "${agent.id}" has invalid promptArgPosition "${agent.promptArgPosition}" — expected first|last|none`,
+      );
+    }
+    if (agent.default) defaults++;
+  }
+  if (defaults > 1) {
+    throw new AgentConfigError(
+      `more than one agent is marked default: true (only one is allowed)`,
+    );
+  }
+}
 
 function cloneDefaultConfig(): SyntaurConfig {
   return {
@@ -131,6 +218,12 @@ function cloneDefaultConfig(): SyntaurConfig {
           definitions: DEFAULT_CONFIG.types.definitions.map((d) => ({ ...d })),
           default: DEFAULT_CONFIG.types.default,
         }
+      : null,
+    agents: DEFAULT_CONFIG.agents
+      ? DEFAULT_CONFIG.agents.map((a) => ({
+          ...a,
+          ...(a.args ? { args: [...a.args] } : {}),
+        }))
       : null,
     playbooks: {
       disabled: [...DEFAULT_CONFIG.playbooks.disabled],
@@ -482,6 +575,261 @@ function parseOptionalAbsolutePath(
   return resolve(expanded);
 }
 
+function parseAgentsConfig(content: string): AgentConfig[] | null {
+  const match = content.match(/^---\n([\s\S]*?)\n---/);
+  if (!match) return null;
+  const fmBlock = match[1];
+
+  const agentsStart = fmBlock.match(/^agents:\s*$/m);
+  if (!agentsStart) return null;
+
+  const startIdx = fmBlock.indexOf(agentsStart[0]) + agentsStart[0].length;
+  const remaining = fmBlock.slice(startIdx);
+  const lines = remaining.split('\n');
+
+  const agents: AgentConfig[] = [];
+  let current: Partial<AgentConfig> & { args?: string[] } | null = null;
+  let argsCapture: string[] | null = null;
+  let argsBaseIndent = 0;
+
+  function flushCurrent() {
+    if (!current) return;
+    if (!current.id || !current.command || !current.label) {
+      current = null;
+      return;
+    }
+    agents.push({
+      id: current.id,
+      label: current.label,
+      command: current.command,
+      ...(current.args && current.args.length > 0 ? { args: current.args } : {}),
+      ...(current.promptArgPosition
+        ? { promptArgPosition: current.promptArgPosition }
+        : {}),
+      ...(current.default ? { default: true } : {}),
+      ...(current.resolveFromShellAliases ? { resolveFromShellAliases: true } : {}),
+    });
+    current = null;
+    argsCapture = null;
+  }
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const trimmed = line.trimStart();
+    const indent = line.length - trimmed.length;
+
+    if (indent === 0 && trimmed !== '' && !trimmed.startsWith('#')) {
+      break; // new top-level key
+    }
+
+    if (argsCapture) {
+      if (indent > argsBaseIndent && trimmed.startsWith('- ')) {
+        argsCapture.push(decodeYamlScalar(trimmed.slice(2).trim()));
+        continue;
+      } else {
+        argsCapture = null;
+        if (current) current.args = (current.args ?? []);
+      }
+    }
+
+    if (indent === 2 && trimmed.startsWith('- ')) {
+      flushCurrent();
+      current = {};
+      const rest = trimmed.slice(2).trim();
+      const colonIdx = rest.indexOf(':');
+      if (colonIdx > 0) {
+        const k = rest.slice(0, colonIdx).trim();
+        const v = rest.slice(colonIdx + 1).trim();
+        assignAgentField(current, k, v);
+      }
+      continue;
+    }
+
+    if (indent >= 4 && current) {
+      const colonIdx = trimmed.indexOf(':');
+      if (colonIdx <= 0) continue;
+      const k = trimmed.slice(0, colonIdx).trim();
+      const v = trimmed.slice(colonIdx + 1).trim();
+      if (k === 'args' && v === '') {
+        argsCapture = [];
+        argsBaseIndent = indent;
+        current.args = argsCapture;
+        continue;
+      }
+      assignAgentField(current, k, v);
+    }
+  }
+  flushCurrent();
+
+  if (agents.length === 0) return [];
+  return agents;
+}
+
+/**
+ * Normalize and validate an agents list parsed from config.md. On any
+ * AgentConfigError, log a warning and fall back to built-in defaults so a
+ * malformed user config does not brick `syntaur browse`. Returns the
+ * normalized list (with `command` resolved through `parseAgentCommand`).
+ */
+function normalizeAgentsFromConfig(agents: AgentConfig[] | null): AgentConfig[] | null {
+  if (agents === null) return null;
+  try {
+    const normalized = agents.map((agent) => ({
+      ...agent,
+      command: parseAgentCommand(agent.command, agent.id),
+    }));
+    validateAgentList(normalized);
+    return normalized;
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.warn(
+      `Warning: ~/.syntaur/config.md agents block is invalid (${msg}) — using built-in defaults`,
+    );
+    return null;
+  }
+}
+
+/**
+ * Decode a YAML-ish scalar:
+ * - Bare values returned verbatim.
+ * - Single-quoted: strip outer quotes, unescape '' → '.
+ * - Double-quoted: strip outer quotes, unescape \\ \" \n \t \r.
+ * Rejects unterminated quoted scalars (caller should surface as a parse error).
+ */
+function decodeYamlScalar(value: string): string {
+  const trimmed = value.trim();
+  if (trimmed.length >= 2 && trimmed.startsWith('"') && trimmed.endsWith('"')) {
+    const body = trimmed.slice(1, -1);
+    let out = '';
+    for (let i = 0; i < body.length; i++) {
+      const ch = body[i];
+      if (ch === '\\' && i + 1 < body.length) {
+        const next = body[i + 1];
+        switch (next) {
+          case '\\': out += '\\'; break;
+          case '"': out += '"'; break;
+          case 'n': out += '\n'; break;
+          case 't': out += '\t'; break;
+          case 'r': out += '\r'; break;
+          default: out += next; break;
+        }
+        i++;
+        continue;
+      }
+      out += ch;
+    }
+    return out;
+  }
+  if (trimmed.length >= 2 && trimmed.startsWith("'") && trimmed.endsWith("'")) {
+    return trimmed.slice(1, -1).replace(/''/g, "'");
+  }
+  return trimmed;
+}
+
+function assignAgentField(target: Partial<AgentConfig>, key: string, rawValue: string): void {
+  const value = decodeYamlScalar(rawValue);
+  switch (key) {
+    case 'id':
+      target.id = value;
+      break;
+    case 'label':
+      target.label = value;
+      break;
+    case 'command':
+      target.command = value;
+      break;
+    case 'promptArgPosition':
+      target.promptArgPosition = value as PromptArgPosition;
+      break;
+    case 'default':
+      target.default = value === 'true';
+      break;
+    case 'resolveFromShellAliases':
+      target.resolveFromShellAliases = value === 'true';
+      break;
+  }
+}
+
+function yamlQuoteScalar(value: string): string {
+  if (/[\r\n]/.test(value)) {
+    throw new AgentConfigError(
+      `value contains newlines, which the agents config serializer does not support: ${JSON.stringify(value)}`,
+    );
+  }
+  if (value === '' || /[:#{}[\],&*?|>!%@`"'\\\t]/.test(value) || /^\s|\s$/.test(value)) {
+    const escaped = value
+      .replace(/\\/g, '\\\\')
+      .replace(/"/g, '\\"')
+      .replace(/\t/g, '\\t');
+    return `"${escaped}"`;
+  }
+  return value;
+}
+
+function serializeAgentsConfig(agents: AgentConfig[]): string {
+  const lines: string[] = ['agents:'];
+  for (const a of agents) {
+    lines.push(`  - id: ${yamlQuoteScalar(a.id)}`);
+    lines.push(`    label: ${yamlQuoteScalar(a.label)}`);
+    lines.push(`    command: ${yamlQuoteScalar(a.command)}`);
+    if (a.args && a.args.length > 0) {
+      lines.push(`    args:`);
+      for (const arg of a.args) {
+        lines.push(`      - ${yamlQuoteScalar(arg)}`);
+      }
+    }
+    if (a.promptArgPosition && a.promptArgPosition !== 'first') {
+      lines.push(`    promptArgPosition: ${a.promptArgPosition}`);
+    }
+    if (a.default) {
+      lines.push(`    default: true`);
+    }
+    if (a.resolveFromShellAliases) {
+      lines.push(`    resolveFromShellAliases: true`);
+    }
+  }
+  return lines.join('\n');
+}
+
+export async function writeAgentsConfig(agents: AgentConfig[]): Promise<void> {
+  validateAgentList(agents);
+  const configPath = resolve(syntaurRoot(), 'config.md');
+  const agentsBlock = serializeAgentsConfig(agents);
+
+  const existing = (await fileExists(configPath))
+    ? await readFile(configPath, 'utf-8')
+    : renderConfig({ defaultProjectDir: defaultProjectDir() });
+
+  const fmMatch = existing.match(/^(---\n)([\s\S]*?)\n(---)/);
+  if (!fmMatch) {
+    const content = `---\nversion: "2.0"\ndefaultProjectDir: ${defaultProjectDir()}\n${agentsBlock}\n---\n${existing}`;
+    await writeFileForce(configPath, content.replace(/\n\n---/, '\n---'));
+    return;
+  }
+
+  const fmBlock = fmMatch[2];
+  const afterFrontmatter = existing.slice(fmMatch[0].length);
+  const cleanedFm = stripTopLevelBlock(fmBlock, 'agents');
+  const newFm = `${cleanedFm}\n${agentsBlock}`.replace(/^\n+/, '').replace(/\n+$/, '');
+  const newContent = `---\n${newFm}\n---${afterFrontmatter}`;
+  await writeFileForce(configPath, newContent);
+}
+
+export async function deleteAgentsConfig(): Promise<void> {
+  const configPath = resolve(syntaurRoot(), 'config.md');
+  if (!(await fileExists(configPath))) return;
+
+  const existing = await readFile(configPath, 'utf-8');
+  const fmMatch = existing.match(/^(---\n)([\s\S]*?)\n(---)/);
+  if (!fmMatch) return;
+
+  const fmBlock = fmMatch[2];
+  const afterFrontmatter = existing.slice(fmMatch[0].length);
+  const cleanedFm = stripTopLevelBlock(fmBlock, 'agents');
+  const newContent = `---\n${cleanedFm}\n---${afterFrontmatter}`;
+  await writeFileForce(configPath, newContent);
+}
+
 export async function writeStatusConfig(statuses: StatusConfig): Promise<void> {
   const configPath = resolve(syntaurRoot(), 'config.md');
   const statusBlock = serializeStatusConfig(statuses);
@@ -694,6 +1042,11 @@ export async function readConfig(): Promise<SyntaurConfig> {
       autoApprove:
         fm['agentDefaults.autoApprove'] === 'true' ||
         DEFAULT_CONFIG.agentDefaults.autoApprove,
+      autoCreateWorktree: AUTO_CREATE_WORKTREE_VALUES.includes(
+        fm['agentDefaults.autoCreateWorktree'] as AutoCreateWorktree,
+      )
+        ? (fm['agentDefaults.autoCreateWorktree'] as AutoCreateWorktree)
+        : DEFAULT_CONFIG.agentDefaults.autoCreateWorktree,
     },
     integrations: {
       claudePluginDir: parseOptionalAbsolutePath(
@@ -719,10 +1072,41 @@ export async function readConfig(): Promise<SyntaurConfig> {
       : null,
     statuses: parseStatusConfig(content),
     types: null,
+    agents: normalizeAgentsFromConfig(parseAgentsConfig(content)),
     playbooks: parsePlaybooksConfig(fmBlock),
   };
 }
 
 export function getAssignmentTypes(config: SyntaurConfig): TypesConfig {
   return config.types ?? DEFAULT_ASSIGNMENT_TYPES;
+}
+
+export function getAgents(config: SyntaurConfig): AgentConfig[] {
+  return config.agents ?? BUILTIN_AGENTS;
+}
+
+export interface AgentsMutation {
+  kind: 'add' | 'remove' | 'set' | 'reorder';
+  apply: (current: AgentConfig[]) => AgentConfig[];
+}
+
+/**
+ * Apply a mutation to the agents list, validate, and either write or return the
+ * proposed new list (for --dry-run). Always runs full validation.
+ */
+export async function updateAgentsConfig(
+  mutation: AgentsMutation,
+  options: { dryRun?: boolean } = {},
+): Promise<{ previous: AgentConfig[]; next: AgentConfig[]; written: boolean }> {
+  const config = await readConfig();
+  const previous = config.agents ?? [...BUILTIN_AGENTS];
+  const next = mutation.apply(previous);
+  validateAgentList(next);
+
+  if (options.dryRun) {
+    return { previous, next, written: false };
+  }
+
+  await writeAgentsConfig(next);
+  return { previous, next, written: true };
 }
