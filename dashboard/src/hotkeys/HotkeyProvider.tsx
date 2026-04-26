@@ -19,8 +19,11 @@ import {
 } from '../hooks/useProjects';
 import { useAllTodos } from '../hooks/useTodos';
 import { buildIndex, resolveRoute, type PaletteEntry } from './paletteIndex';
+import { buildActionsIndex, type Action } from './actionsIndex';
 import { CommandPalette } from './CommandPalette';
+import { ActionPalette } from './ActionPalette';
 import { CheatsheetDialog } from './CheatsheetDialog';
+import { buildShellMeta } from '../lib/routes';
 
 export type HotkeyScope =
   | 'global'
@@ -58,9 +61,13 @@ interface HotkeyContextValue {
   openCheatsheet: () => void;
   closeCheatsheet: () => void;
   cheatsheetOpen: boolean;
+  openActionsPalette: () => void;
+  closeActionsPalette: () => void;
+  actionsPaletteOpen: boolean;
   listBindings: () => HotkeyBinding[];
   wsPrefix: string;
   paletteEntries: PaletteEntry[];
+  actionEntries: Action[];
 }
 
 const HotkeyContext = createContext<HotkeyContextValue | null>(null);
@@ -99,6 +106,39 @@ export function HotkeyProvider({ children }: { children: ReactNode }) {
     wsPrefix,
   ]);
 
+  const shellMeta = useMemo(() => buildShellMeta(location.pathname), [location.pathname]);
+  const currentProjectSlug = shellMeta.projectSlug;
+  const currentProject = useMemo(() => {
+    if (!currentProjectSlug) return null;
+    return projectsState.data?.find((p) => p.slug === currentProjectSlug) ?? null;
+  }, [projectsState.data, currentProjectSlug]);
+  const currentProjectTitle = currentProject?.title ?? null;
+  const currentProjectWorkspace = currentProject?.workspace ?? null;
+
+  const actionEntries = useMemo<Action[]>(
+    () =>
+      buildActionsIndex({
+        playbooks: playbooksState.data?.playbooks ?? [],
+        projectSlug: currentProjectSlug,
+        currentProjectTitle,
+        currentProjectWorkspace,
+        wsPrefix,
+        refetchPlaybooks: playbooksState.refetch,
+        navigate,
+        toggleTheme,
+      }),
+    [
+      playbooksState.data,
+      playbooksState.refetch,
+      currentProjectSlug,
+      currentProjectTitle,
+      currentProjectWorkspace,
+      wsPrefix,
+      navigate,
+      toggleTheme,
+    ],
+  );
+
   const registryRef = useRef<Map<number, HotkeyBinding>>(new Map());
   const scopeStackRef = useRef<HotkeyScope[]>(['global']);
   const chordRef = useRef<ChordState>({ phase: 'idle' });
@@ -107,6 +147,7 @@ export function HotkeyProvider({ children }: { children: ReactNode }) {
 
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [cheatsheetOpen, setCheatsheetOpen] = useState(false);
+  const [actionsPaletteOpen, setActionsPaletteOpen] = useState(false);
 
   const register = useCallback((b: Omit<HotkeyBinding, 'id'>) => {
     const id = nextIdRef.current++;
@@ -132,6 +173,8 @@ export function HotkeyProvider({ children }: { children: ReactNode }) {
   const closePalette = useCallback(() => setPaletteOpen(false), []);
   const openCheatsheet = useCallback(() => setCheatsheetOpen(true), []);
   const closeCheatsheet = useCallback(() => setCheatsheetOpen(false), []);
+  const openActionsPalette = useCallback(() => setActionsPaletteOpen(true), []);
+  const closeActionsPalette = useCallback(() => setActionsPaletteOpen(false), []);
   const listBindings = useCallback(() => Array.from(registryRef.current.values()), []);
 
   // Clear chord on route change
@@ -174,10 +217,12 @@ export function HotkeyProvider({ children }: { children: ReactNode }) {
 
     function handleKeydown(event: KeyboardEvent) {
       const isCmdK = matchesPattern(event, 'Mod+k');
+      const isCmdShiftK = matchesPattern(event, 'Mod+Shift+k');
       const isEsc = event.key === 'Escape';
+      const isAlwaysAllowed = isCmdK || isCmdShiftK || isEsc;
 
-      if (isOpenDialogPresent() && !isCmdK && !isEsc) return;
-      if (isEditableTarget(event.target) && !isCmdK && !isEsc) return;
+      if (isOpenDialogPresent() && !isAlwaysAllowed) return;
+      if (isEditableTarget(event.target) && !isAlwaysAllowed) return;
 
       // ---- Chord: second-key phase ----
       const chord = chordRef.current;
@@ -306,6 +351,30 @@ export function HotkeyProvider({ children }: { children: ReactNode }) {
     return () => unregister(id);
   }, [register, unregister, openPalette, closePalette, paletteOpen]);
 
+  // Cmd+Shift+K / Ctrl+Shift+K opens the actions palette.
+  useEffect(() => {
+    const id = register({
+      keys: 'Mod+Shift+k',
+      scope: 'global',
+      description: 'Open actions palette',
+      handler: () => {
+        if (actionsPaletteOpen) {
+          closeActionsPalette();
+          return;
+        }
+        if (
+          document.querySelector(
+            '[role="dialog"][data-state="open"], [role="alertdialog"][data-state="open"]',
+          )
+        ) {
+          return;
+        }
+        openActionsPalette();
+      },
+    });
+    return () => unregister(id);
+  }, [register, unregister, openActionsPalette, closeActionsPalette, actionsPaletteOpen]);
+
   // g-chord navigation (R1 + R2).
   useEffect(() => {
     const chords: Array<{ suffix: string; basePath: string; desc: string }> = [
@@ -340,9 +409,13 @@ export function HotkeyProvider({ children }: { children: ReactNode }) {
       openCheatsheet,
       closeCheatsheet,
       cheatsheetOpen,
+      openActionsPalette,
+      closeActionsPalette,
+      actionsPaletteOpen,
       listBindings,
       wsPrefix,
       paletteEntries,
+      actionEntries,
     }),
     [
       register,
@@ -355,9 +428,13 @@ export function HotkeyProvider({ children }: { children: ReactNode }) {
       openCheatsheet,
       closeCheatsheet,
       cheatsheetOpen,
+      openActionsPalette,
+      closeActionsPalette,
+      actionsPaletteOpen,
       listBindings,
       wsPrefix,
       paletteEntries,
+      actionEntries,
     ],
   );
 
@@ -365,6 +442,7 @@ export function HotkeyProvider({ children }: { children: ReactNode }) {
     <HotkeyContext.Provider value={value}>
       {children}
       <CommandPalette entries={paletteEntries} />
+      <ActionPalette entries={actionEntries} />
       <CheatsheetDialog />
     </HotkeyContext.Provider>
   );
