@@ -26,6 +26,7 @@ import { listPlaybooksCommand } from './commands/list-playbooks.js';
 import { todoCommand } from './commands/todo.js';
 import { backupCommand } from './commands/backup.js';
 import { doctorCommand } from './commands/doctor.js';
+import { agentsCommand } from './commands/agents.js';
 import { commentCommand } from './commands/comment.js';
 import { requestCommand } from './commands/request.js';
 import { getDefaultCommandName } from './cli-default-command.js';
@@ -535,7 +536,8 @@ program
 program
   .command('browse')
   .description('Interactive TUI browser for projects and assignments')
-  .option('--agent <type>', 'Agent to launch: claude or codex', 'claude')
+  .option('--agent <id>', 'Bypass the agent picker and launch the given configured agent id')
+  .option('--no-worktree-prompt', 'Skip the prompt to create a worktree when one is missing')
   .action(async (options) => {
     try {
       await browseCommand(options);
@@ -584,6 +586,7 @@ program
 program.addCommand(todoCommand);
 program.addCommand(backupCommand);
 program.addCommand(doctorCommand);
+program.addCommand(agentsCommand);
 
 // Default to dashboard when no command is given
 if (process.argv.length <= 2) {

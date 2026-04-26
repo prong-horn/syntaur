@@ -178,3 +178,84 @@ export function updateAssignmentFile(
 
   return result;
 }
+
+/**
+ * Locate the `workspace:` block inside a frontmatter string and return the
+ * [start, end) byte offsets of the *body* of that block (lines indented under
+ * `workspace:`, excluding the `workspace:` header line itself). Returns null
+ * if no `workspace:` block is present.
+ */
+function findWorkspaceBlock(
+  fmBlock: string,
+): { headerStart: number; bodyStart: number; bodyEnd: number } | null {
+  const headerMatch = fmBlock.match(/^workspace:\s*$/m);
+  if (!headerMatch) return null;
+  const headerStart = fmBlock.indexOf(headerMatch[0]);
+  const bodyStart = headerStart + headerMatch[0].length + 1; // skip the trailing \n
+  const after = fmBlock.slice(bodyStart);
+  const lines = after.split('\n');
+  let consumed = 0;
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    if (line.length === 0) {
+      // blank line — consume but keep scanning; YAML allows blanks inside a block
+      consumed += line.length + 1;
+      continue;
+    }
+    if (line[0] !== ' ') break; // top-level key — block ended
+    consumed += line.length + 1;
+  }
+  // Trim a trailing newline we counted past EOF
+  const bodyEnd = Math.min(bodyStart + consumed, fmBlock.length);
+  return { headerStart, bodyStart, bodyEnd };
+}
+
+/**
+ * Update nested workspace.* fields (repository, worktreePath, branch, parentBranch)
+ * in-place. Edits only inside the `workspace:` block — other indented keys
+ * with the same name elsewhere in frontmatter are not touched. Preserves
+ * field ordering and unknown workspace fields. If the `workspace:` block does
+ * not exist, it is appended to the frontmatter.
+ */
+export function updateAssignmentWorkspace(
+  fileContent: string,
+  partial: Partial<Workspace>,
+): string {
+  const fmMatch = fileContent.match(/^(---\n)([\s\S]*?)(\n---)/);
+  if (!fmMatch) {
+    throw new Error('No frontmatter found in assignment file. Expected --- delimiters.');
+  }
+
+  const fmBlock = fmMatch[2];
+  const fields = ['repository', 'worktreePath', 'branch', 'parentBranch'] as const;
+  const block = findWorkspaceBlock(fmBlock);
+
+  let newFm = fmBlock;
+
+  if (block) {
+    let body = fmBlock.slice(block.bodyStart, block.bodyEnd);
+    for (const field of fields) {
+      if (!(field in partial)) continue;
+      const value = partial[field] ?? null;
+      const formatted = formatYamlValue(value);
+      const lineRegex = new RegExp(`^(\\s+${field}:)\\s*.*$`, 'm');
+      if (lineRegex.test(body)) {
+        body = body.replace(lineRegex, `$1 ${formatted}`);
+      } else {
+        const trimmed = body.replace(/\n+$/, '');
+        body = `${trimmed}${trimmed.length > 0 ? '\n' : ''}  ${field}: ${formatted}\n`;
+      }
+    }
+    newFm =
+      fmBlock.slice(0, block.bodyStart) + body + fmBlock.slice(block.bodyEnd);
+  } else {
+    const lines = ['workspace:'];
+    for (const field of fields) {
+      const value = field in partial ? (partial[field] ?? null) : null;
+      lines.push(`  ${field}: ${formatYamlValue(value)}`);
+    }
+    newFm = `${fmBlock.replace(/\n+$/, '')}\n${lines.join('\n')}`;
+  }
+
+  return `${fmMatch[1]}${newFm}${fmMatch[3]}${fileContent.slice(fmMatch[0].length)}`;
+}
