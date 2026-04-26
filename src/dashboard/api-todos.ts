@@ -21,13 +21,18 @@ function getWorkspaceParam(value: string | string[] | undefined): string {
   return value ?? '';
 }
 
-// Per-workspace write lock to prevent concurrent read-modify-write races
+// Per-scope write lock to prevent concurrent read-modify-write races.
+// Keys are scope-prefixed (e.g. "ws:<workspace>") so the workspace and
+// project-todo routers cannot collide on identical bare names.
 const writeLocks = new Map<string, Promise<void>>();
-function withLock<T>(workspace: string, fn: () => Promise<T>): Promise<T> {
-  const prev = writeLocks.get(workspace) ?? Promise.resolve();
+function withLock<T>(lockKey: string, fn: () => Promise<T>): Promise<T> {
+  const prev = writeLocks.get(lockKey) ?? Promise.resolve();
   const next = prev.then(fn);
-  writeLocks.set(workspace, next.then(() => {}, () => {}));
+  writeLocks.set(lockKey, next.then(() => {}, () => {}));
   return next;
+}
+function wsLock<T>(workspace: string, fn: () => Promise<T>): Promise<T> {
+  return withLock(`ws:${workspace}`, fn);
 }
 
 export function createTodosRouter(
@@ -110,7 +115,7 @@ export function createTodosRouter(
         return;
       }
 
-      const item = await withLock(workspace, async () => {
+      const item = await wsLock(workspace, async () => {
         const checklist = await readChecklist(todosDir, workspace);
         const existingIds = new Set(checklist.items.map((i) => i.id));
         const id = generateUniqueId(existingIds);
@@ -144,7 +149,7 @@ export function createTodosRouter(
         return;
       }
 
-      const items = await withLock(workspace, async () => {
+      const items = await wsLock(workspace, async () => {
         const checklist = await readChecklist(todosDir, workspace);
         const itemMap = new Map(checklist.items.map((i) => [i.id, i]));
 
@@ -279,7 +284,7 @@ export function createTodosRouter(
   router.patch('/:workspace/:id', async (req, res) => {
     try {
       const workspace = getWorkspaceParam(req.params.workspace);
-      const result = await withLock(workspace, async () => {
+      const result = await wsLock(workspace, async () => {
         const checklist = await readChecklist(todosDir, workspace);
         const item = checklist.items.find((i) => i.id === req.params.id);
         if (!item) return null;
@@ -300,7 +305,7 @@ export function createTodosRouter(
   router.delete('/:workspace/:id', async (req, res) => {
     try {
       const workspace = getWorkspaceParam(req.params.workspace);
-      const deleted = await withLock(workspace, async () => {
+      const deleted = await wsLock(workspace, async () => {
         const checklist = await readChecklist(todosDir, workspace);
         const idx = checklist.items.findIndex((i) => i.id === req.params.id);
         if (idx === -1) return false;
@@ -320,7 +325,7 @@ export function createTodosRouter(
   router.post('/:workspace/:id/start', async (req, res) => {
     try {
       const workspace = getWorkspaceParam(req.params.workspace);
-      const result = await withLock(workspace, async () => {
+      const result = await wsLock(workspace, async () => {
         const checklist = await readChecklist(todosDir, workspace);
         const item = checklist.items.find((i) => i.id === req.params.id);
         if (!item) return { error: 'not_found' as const };
@@ -345,7 +350,7 @@ export function createTodosRouter(
   router.post('/:workspace/:id/complete', async (req, res) => {
     try {
       const workspace = getWorkspaceParam(req.params.workspace);
-      const result = await withLock(workspace, async () => {
+      const result = await wsLock(workspace, async () => {
         const checklist = await readChecklist(todosDir, workspace);
         const item = checklist.items.find((i) => i.id === req.params.id);
         if (!item) return null;
@@ -379,7 +384,7 @@ export function createTodosRouter(
     try {
       const reason = req.body.reason || null;
       const workspace = getWorkspaceParam(req.params.workspace);
-      const result = await withLock(workspace, async () => {
+      const result = await wsLock(workspace, async () => {
         const checklist = await readChecklist(todosDir, workspace);
         const item = checklist.items.find((i) => i.id === req.params.id);
         if (!item) return null;
@@ -412,7 +417,7 @@ export function createTodosRouter(
   router.post('/:workspace/:id/reopen', async (req, res) => {
     try {
       const workspace = getWorkspaceParam(req.params.workspace);
-      const result = await withLock(workspace, async () => {
+      const result = await wsLock(workspace, async () => {
         const checklist = await readChecklist(todosDir, workspace);
         const item = checklist.items.find((i) => i.id === req.params.id);
         if (!item) return null;
@@ -433,7 +438,7 @@ export function createTodosRouter(
   router.post('/:workspace/:id/unblock', async (req, res) => {
     try {
       const workspace = getWorkspaceParam(req.params.workspace);
-      const result = await withLock(workspace, async () => {
+      const result = await wsLock(workspace, async () => {
         const checklist = await readChecklist(todosDir, workspace);
         const item = checklist.items.find((i) => i.id === req.params.id);
         if (!item) return null;

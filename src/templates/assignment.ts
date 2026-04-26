@@ -9,6 +9,7 @@ export interface AssignmentParams {
   dependsOn: string[];
   links: string[];
   project?: string | null;
+  workspaceGroup?: string | null;
   type?: string;
   includeTodos?: boolean;
 }
@@ -24,6 +25,9 @@ export function renderAssignment(params: AssignmentParams): string {
       ? 'links: []'
       : `links:\n  - ${params.links.join('\n  - ')}`;
   const projectYaml = `project: ${params.project == null ? 'null' : params.project}`;
+  const workspaceGroupLine = params.workspaceGroup
+    ? `\nworkspaceGroup: ${params.workspaceGroup}`
+    : '';
   const typeYaml = `type: ${params.type ?? 'feature'}`;
 
   const todosSection = params.includeTodos
@@ -44,7 +48,7 @@ Never delete superseded todos — preserve the history.
 id: ${params.id}
 slug: ${params.slug}
 title: ${safeTitle}
-${projectYaml}
+${projectYaml}${workspaceGroupLine}
 ${typeYaml}
 status: pending
 priority: ${params.priority}

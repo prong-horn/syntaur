@@ -84,6 +84,10 @@ export interface AgentConfig {
 
 export type AutoCreateWorktree = 'skip' | 'ask' | 'always';
 
+export interface PlaybooksConfig {
+  disabled: string[];
+}
+
 export interface SyntaurConfig {
   version: string;
   defaultProjectDir: string;
@@ -98,6 +102,7 @@ export interface SyntaurConfig {
   statuses: StatusConfig | null;
   types: TypesConfig | null;
   agents: AgentConfig[] | null;
+  playbooks: PlaybooksConfig;
 }
 
 const DEFAULT_CONFIG: SyntaurConfig = {
@@ -120,6 +125,9 @@ const DEFAULT_CONFIG: SyntaurConfig = {
   statuses: null,
   types: null,
   agents: null,
+  playbooks: {
+    disabled: [],
+  },
 };
 
 export const BUILTIN_AGENTS: AgentConfig[] = [
@@ -189,6 +197,38 @@ export function validateAgentList(agents: AgentConfig[]): void {
       `more than one agent is marked default: true (only one is allowed)`,
     );
   }
+}
+
+function cloneDefaultConfig(): SyntaurConfig {
+  return {
+    ...DEFAULT_CONFIG,
+    onboarding: { ...DEFAULT_CONFIG.onboarding },
+    agentDefaults: { ...DEFAULT_CONFIG.agentDefaults },
+    integrations: { ...DEFAULT_CONFIG.integrations },
+    backup: DEFAULT_CONFIG.backup ? { ...DEFAULT_CONFIG.backup } : null,
+    statuses: DEFAULT_CONFIG.statuses
+      ? {
+          statuses: DEFAULT_CONFIG.statuses.statuses.map((s) => ({ ...s })),
+          order: [...DEFAULT_CONFIG.statuses.order],
+          transitions: DEFAULT_CONFIG.statuses.transitions.map((t) => ({ ...t })),
+        }
+      : null,
+    types: DEFAULT_CONFIG.types
+      ? {
+          definitions: DEFAULT_CONFIG.types.definitions.map((d) => ({ ...d })),
+          default: DEFAULT_CONFIG.types.default,
+        }
+      : null,
+    agents: DEFAULT_CONFIG.agents
+      ? DEFAULT_CONFIG.agents.map((a) => ({
+          ...a,
+          ...(a.args ? { args: [...a.args] } : {}),
+        }))
+      : null,
+    playbooks: {
+      disabled: [...DEFAULT_CONFIG.playbooks.disabled],
+    },
+  };
 }
 
 function parseFrontmatter(content: string): Record<string, string> {
@@ -394,6 +434,99 @@ function serializeBackupConfig(backup: BackupConfig): string {
   lines.push(`  lastBackup: ${backup.lastBackup ?? 'null'}`);
   lines.push(`  lastRestore: ${backup.lastRestore ?? 'null'}`);
   return lines.join('\n');
+}
+
+function serializePlaybooksConfig(playbooks: PlaybooksConfig): string | null {
+  if (!playbooks.disabled || playbooks.disabled.length === 0) {
+    return null;
+  }
+  const lines: string[] = ['playbooks:', '  disabled:'];
+  for (const slug of playbooks.disabled) {
+    lines.push(`    - ${slug}`);
+  }
+  return lines.join('\n');
+}
+
+function parsePlaybooksConfig(fmBlock: string): PlaybooksConfig {
+  const blockStart = fmBlock.match(/^playbooks:\s*$/m);
+  if (!blockStart) {
+    return { disabled: [] };
+  }
+
+  const startIdx = fmBlock.indexOf(blockStart[0]) + blockStart[0].length;
+  const remaining = fmBlock.slice(startIdx).split('\n');
+
+  const disabled: string[] = [];
+  let currentSection: 'disabled' | null = null;
+
+  for (const line of remaining) {
+    const trimmed = line.trimStart();
+    const indent = line.length - trimmed.length;
+
+    // End of playbooks block — next top-level key
+    if (indent === 0 && trimmed.length > 0) break;
+
+    if (trimmed === '') continue;
+
+    if (indent === 2 && trimmed.startsWith('disabled:')) {
+      currentSection = 'disabled';
+      // Support inline form `disabled: []` — treat as empty list.
+      const afterColon = trimmed.slice('disabled:'.length).trim();
+      if (afterColon === '[]' || afterColon === '') {
+        continue;
+      }
+      // Any other inline value is malformed; skip.
+      continue;
+    }
+
+    if (currentSection === 'disabled' && indent >= 4 && trimmed.startsWith('- ')) {
+      const raw = trimmed.slice(2).trim().replace(/^["']|["']$/g, '');
+      if (raw.length === 0) continue;
+      // Defer slug-format validation to callers via isValidSlug where needed;
+      // here we only filter obviously invalid whitespace-containing entries.
+      if (/\s/.test(raw)) {
+        console.warn(`Warning: config.md playbooks.disabled entry "${raw}" contains whitespace, ignoring`);
+        continue;
+      }
+      disabled.push(raw);
+      continue;
+    }
+  }
+
+  return { disabled };
+}
+
+export async function updatePlaybooksConfig(
+  playbooks: Partial<PlaybooksConfig>,
+): Promise<void> {
+  const configPath = resolve(syntaurRoot(), 'config.md');
+  const current = (await readConfig()).playbooks;
+  const nextPlaybooks: PlaybooksConfig = {
+    disabled: Array.from(new Set(playbooks.disabled ?? current.disabled)),
+  };
+
+  const playbooksBlock = serializePlaybooksConfig(nextPlaybooks);
+  const existing = await fileExists(configPath)
+    ? await readFile(configPath, 'utf-8')
+    : renderConfig({ defaultProjectDir: defaultProjectDir() });
+
+  const fmMatch = existing.match(/^(---\n)([\s\S]*?)\n(---)/);
+  if (!fmMatch) {
+    const bodyBlock = playbooksBlock ? `${playbooksBlock}\n` : '';
+    const content = `---\nversion: "2.0"\ndefaultProjectDir: ${defaultProjectDir()}\n${bodyBlock}---\n${existing}`;
+    await writeFileForce(configPath, content);
+    return;
+  }
+
+  const fmBlock = fmMatch[2];
+  const afterFrontmatter = existing.slice(fmMatch[0].length);
+  const cleanedFm = stripTopLevelBlock(fmBlock, 'playbooks');
+  const newFm = playbooksBlock
+    ? `${cleanedFm}\n${playbooksBlock}`.replace(/^\n+/, '')
+    : cleanedFm;
+  const normalizedFm = newFm.replace(/\n+$/, '');
+  const newContent = `---\n${normalizedFm}\n---${afterFrontmatter}`;
+  await writeFileForce(configPath, newContent);
 }
 
 function stripTopLevelBlock(fmBlock: string, key: string): string {
@@ -868,7 +1001,7 @@ const migratedConfigPaths = new Set<string>();
 export async function readConfig(): Promise<SyntaurConfig> {
   const configPath = resolve(syntaurRoot(), 'config.md');
   if (!(await fileExists(configPath))) {
-    return { ...DEFAULT_CONFIG };
+    return cloneDefaultConfig();
   }
 
   if (!migratedConfigPaths.has(configPath)) {
@@ -881,7 +1014,7 @@ export async function readConfig(): Promise<SyntaurConfig> {
 
   if (Object.keys(fm).length === 0) {
     console.warn('Warning: ~/.syntaur/config.md has malformed frontmatter, using defaults');
-    return { ...DEFAULT_CONFIG };
+    return cloneDefaultConfig();
   }
 
   let projectDir = fm['defaultProjectDir']
@@ -893,6 +1026,8 @@ export async function readConfig(): Promise<SyntaurConfig> {
     );
     projectDir = DEFAULT_CONFIG.defaultProjectDir;
   }
+
+  const fmBlock = content.match(/^---\n([\s\S]*?)\n---/)?.[1] ?? '';
 
   return {
     version: fm['version'] || DEFAULT_CONFIG.version,
@@ -938,6 +1073,7 @@ export async function readConfig(): Promise<SyntaurConfig> {
     statuses: parseStatusConfig(content),
     types: null,
     agents: normalizeAgentsFromConfig(parseAgentsConfig(content)),
+    playbooks: parsePlaybooksConfig(fmBlock),
   };
 }
 

@@ -7,7 +7,12 @@ import { isValidSlug } from '../utils/slug.js';
 import { nowTimestamp } from '../utils/timestamp.js';
 import { ensureDir, fileExists, writeFileForce } from '../utils/fs.js';
 import { renderPlaybook } from '../templates/playbook.js';
-import { rebuildPlaybookManifest } from '../utils/playbooks.js';
+import {
+  rebuildPlaybookManifest,
+  resolvePlaybookSlug,
+  setPlaybookEnabled,
+  removeFromDisabledList,
+} from '../utils/playbooks.js';
 
 export function createPlaybooksRouter(playbooksDir: string): Router {
   const router = Router();
@@ -37,6 +42,36 @@ export function createPlaybooksRouter(playbooksDir: string): Router {
     }
   });
 
+  // POST /:slug/enable — re-enable a disabled playbook
+  router.post('/:slug/enable', async (req, res) => {
+    try {
+      const result = await setPlaybookEnabled(playbooksDir, req.params.slug, true);
+      res.json({ slug: result.slug, enabled: result.enabled, changed: result.changed });
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : 'Failed to enable playbook';
+      if (msg.startsWith('Playbook ')) {
+        res.status(404).json({ error: msg });
+        return;
+      }
+      res.status(500).json({ error: msg });
+    }
+  });
+
+  // POST /:slug/disable — disable a playbook so agents no longer load it
+  router.post('/:slug/disable', async (req, res) => {
+    try {
+      const result = await setPlaybookEnabled(playbooksDir, req.params.slug, false);
+      res.json({ slug: result.slug, enabled: result.enabled, changed: result.changed });
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : 'Failed to disable playbook';
+      if (msg.startsWith('Playbook ')) {
+        res.status(404).json({ error: msg });
+        return;
+      }
+      res.status(500).json({ error: msg });
+    }
+  });
+
   // GET /:slug — get playbook detail
   router.get('/:slug', async (req, res) => {
     try {
@@ -54,17 +89,18 @@ export function createPlaybooksRouter(playbooksDir: string): Router {
   // GET /:slug/edit — raw file content for editor
   router.get('/:slug/edit', async (req, res) => {
     try {
-      const filePath = resolve(playbooksDir, `${req.params.slug}.md`);
-      if (!(await fileExists(filePath))) {
+      const resolved = await resolvePlaybookSlug(playbooksDir, req.params.slug);
+      if (!resolved) {
         res.status(404).json({ error: `Playbook "${req.params.slug}" not found` });
         return;
       }
+      const filePath = resolve(playbooksDir, resolved.filename);
       const content = await readFile(filePath, 'utf-8');
       res.json({
         documentType: 'playbook',
-        title: `Edit Playbook: ${req.params.slug}`,
+        title: `Edit Playbook: ${resolved.slug}`,
         content,
-        slug: req.params.slug,
+        slug: resolved.slug,
       });
     } catch (error) {
       res.status(500).json({ error: error instanceof Error ? error.message : 'Failed to get playbook for editing' });
@@ -111,15 +147,16 @@ export function createPlaybooksRouter(playbooksDir: string): Router {
         return;
       }
 
-      const filePath = resolve(playbooksDir, `${req.params.slug}.md`);
-      if (!(await fileExists(filePath))) {
+      const resolved = await resolvePlaybookSlug(playbooksDir, req.params.slug);
+      if (!resolved) {
         res.status(404).json({ error: `Playbook "${req.params.slug}" not found` });
         return;
       }
 
+      const filePath = resolve(playbooksDir, resolved.filename);
       await writeFileForce(filePath, content);
       await rebuildPlaybookManifest(playbooksDir);
-      res.json({ slug: req.params.slug, path: filePath });
+      res.json({ slug: resolved.slug, path: filePath });
     } catch (error) {
       res.status(500).json({ error: error instanceof Error ? error.message : 'Failed to update playbook' });
     }
@@ -133,15 +170,17 @@ export function createPlaybooksRouter(playbooksDir: string): Router {
         return;
       }
 
-      const filePath = resolve(playbooksDir, `${req.params.slug}.md`);
-      if (!(await fileExists(filePath))) {
+      const resolved = await resolvePlaybookSlug(playbooksDir, req.params.slug);
+      if (!resolved) {
         res.status(404).json({ error: `Playbook "${req.params.slug}" not found` });
         return;
       }
 
+      const filePath = resolve(playbooksDir, resolved.filename);
       await unlink(filePath);
+      await removeFromDisabledList(resolved.slug);
       await rebuildPlaybookManifest(playbooksDir);
-      res.json({ deleted: req.params.slug });
+      res.json({ deleted: resolved.slug });
     } catch (error) {
       res.status(500).json({ error: error instanceof Error ? error.message : 'Failed to delete playbook' });
     }

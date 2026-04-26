@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { BookOpenText, GitBranch, Plus, SquarePen } from 'lucide-react';
 import { CopyButton } from '../components/CopyButton';
 import { useProject, useWorkspaces, useWorkspacePrefix, type AssignmentSummary } from '../hooks/useProjects';
@@ -15,8 +15,11 @@ import { ViewToggle } from '../components/ViewToggle';
 import { EmptyState } from '../components/EmptyState';
 import { DependencyGraph } from '../components/DependencyGraph';
 import { MarkdownRenderer } from '../components/MarkdownRenderer';
+import { ProjectTodosPanel } from '../components/ProjectTodosPanel';
 import { useStatusConfig } from '../hooks/useStatusConfig';
 import { useHotkey, useHotkeyScope } from '../hotkeys';
+
+const VALID_TABS = new Set(['overview', 'assignments', 'todos', 'dependencies', 'knowledge']);
 
 export function ProjectDetail() {
   const { slug } = useParams<{ slug: string }>();
@@ -38,7 +41,23 @@ export function ProjectDetail() {
   const { data: project, loading, error, refetch } = useProject(slug);
   const statusConfig = useStatusConfig();
   const { data: workspacesData } = useWorkspaces();
-  const [tab, setTab] = useState('overview');
+  // Tab selection lives in the URL (?tab=<value>) so it stays in sync when
+  // react-router reuses this component across project navigations (e.g. the
+  // palette jumping from one project's overview to another's todos tab).
+  const [searchParams, setSearchParams] = useSearchParams();
+  const tabParam = searchParams.get('tab');
+  const tab = tabParam && VALID_TABS.has(tabParam) ? tabParam : 'overview';
+  function handleTabChange(value: string) {
+    setSearchParams(
+      (prev) => {
+        const n = new URLSearchParams(prev);
+        if (value === 'overview') n.delete('tab');
+        else n.set('tab', value);
+        return n;
+      },
+      { replace: true },
+    );
+  }
   const [assignmentView, setAssignmentView] = useState<'board' | 'table'>('board');
   const [statusFilter, setStatusFilter] = useState('all');
   const [assigneeFilter, setAssigneeFilter] = useState('all');
@@ -169,7 +188,7 @@ export function ProjectDetail() {
         <div className="space-y-4">
           <ContentTabs
             value={tab}
-            onValueChange={setTab}
+            onValueChange={handleTabChange}
             items={[
               {
                 value: 'overview',
@@ -282,6 +301,11 @@ export function ProjectDetail() {
                 ),
               },
               {
+                value: 'todos',
+                label: 'Todos',
+                content: <ProjectTodosPanel projectId={project.slug} />,
+              },
+              {
                 value: 'dependencies',
                 label: 'Dependencies',
                 content: project.dependencyGraph ? (
@@ -387,7 +411,7 @@ export function ProjectDetail() {
               </Link>
               <button
                 type="button"
-                onClick={() => setTab('dependencies')}
+                onClick={() => handleTabChange('dependencies')}
                 className="flex items-center gap-2 text-primary hover:underline"
               >
                 <GitBranch className="h-4 w-4" />

@@ -206,6 +206,36 @@ describe('github-backup category path resolution', () => {
     expect(todos.sourcePath).toBe(resolve(homeDir, '.syntaur', 'todos'));
     expect(servers.sourcePath).toBe(resolve(homeDir, '.syntaur', 'servers'));
   });
+
+  it("projects category covers project-scoped todos (no separate 'project-todos' category)", async () => {
+    const customProjects = resolve(homeDir, 'custom-projects');
+    await writeFile(
+      resolve(homeDir, '.syntaur', 'config.md'),
+      `---\nversion: "1.0"\ndefaultProjectDir: ${customProjects}\n---\n`,
+    );
+
+    // Seed a project with a project-scoped todo file.
+    await mkdir(resolve(customProjects, 'alpha', 'todos'), { recursive: true });
+    await writeFile(
+      resolve(customProjects, 'alpha', 'project.md'),
+      '---\nslug: alpha\n---\n# alpha\n',
+    );
+    await writeFile(
+      resolve(customProjects, 'alpha', 'todos', 'alpha.md'),
+      '---\nworkspace: alpha\n---\n\n- [ ] project-todo\n',
+    );
+
+    // The 'projects' category source path is the configured project dir, so
+    // walking from there finds <slug>/todos/<slug>.md.
+    const result = await resolveCategoryPath('projects');
+    expect(result.sourcePath).toBe(customProjects);
+
+    const contained = await readFile(
+      resolve(result.sourcePath, 'alpha', 'todos', 'alpha.md'),
+      'utf-8',
+    );
+    expect(contained).toContain('project-todo');
+  });
 });
 
 describe('backup config round-trip', () => {

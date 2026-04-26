@@ -166,6 +166,7 @@ The core unit of work and the **single source of truth** for assignment state. T
 | `externalIds[].url` | string or null | URL | optional (per entry) | `null` | Direct link to the item. |
 | `dependsOn` | array of strings | assignment slugs | optional | `[]` | Assignment slugs this depends on. |
 | `blockedReason` | string or null | any | conditional | `null` | **Required** when `status` is `blocked`. Explains the manual/runtime block. |
+| `workspaceGroup` | string or null | lowercase, hyphen-separated | optional | omitted | Workspace grouping label for standalone assignments. Mirrors `project.workspace` so workspace-filtered dashboard views can include project-less work. Only applicable when `project` is `null`; omitted entirely (not `null`) when unset. |
 | `workspace` | object | see sub-fields | optional | `null` | Code workspace information. |
 | `workspace.repository` | string or null | repo path or URL | optional | `null` | The repository this assignment works in. |
 | `workspace.worktreePath` | string or null | absolute path | optional | `null` | Absolute path to the git worktree. |
@@ -201,7 +202,7 @@ Checked, strikethrough, and with a parenthetical pointer to the replacement. Thi
 
 **Progress is now `progress.md`:** The former `## Progress` body section has moved into a dedicated `progress.md` file. The agent appends timestamped entries directly. See section 8.
 
-**Standalone assignments:** An assignment may live outside any project at `~/.syntaur/assignments/<uuid>/` (created via `syntaur create-assignment --one-off`). In that case the folder is named by `id` (the UUID), `project` is `null`, and the `slug` is display-only — it is not guaranteed unique across standalone assignments. Resolve standalone assignments by `id` via `resolveAssignmentById`.
+**Standalone assignments:** An assignment may live outside any project at `~/.syntaur/assignments/<uuid>/` (created via `syntaur create-assignment --one-off`). In that case the folder is named by `id` (the UUID), `project` is `null`, and the `slug` is display-only — it is not guaranteed unique across standalone assignments. Resolve standalone assignments by `id` via `resolveAssignmentById`. Standalone assignments may also set `workspaceGroup: <slug>` (via `syntaur create-assignment --one-off --workspace <slug>`) to appear in workspace-filtered dashboard views alongside project-nested-in-workspace assignments.
 
 **Sessions:** Agent sessions are tracked in a SQLite database (`~/.syntaur/syntaur.db`), not in the assignment file. The `assignee` field in frontmatter is the authoritative owner. See section 13 for session storage details.
 
@@ -274,6 +275,27 @@ both access tokens (15min TTL) and refresh token rotation (7-day TTL).
 - [Handoff](./handoff.md)
 - [Decision Record](./decision-record.md)
 ```
+
+### Standalone Example with `workspaceGroup`
+
+A standalone (project-less) assignment that still belongs to the `syntaur` workspace:
+
+```markdown
+---
+id: b3c4d5e6-f7a8-9012-bcde-f34567890123
+slug: rename-cli-flag
+title: Rename --dry-run to --no-write
+project: null
+workspaceGroup: syntaur
+type: chore
+status: pending
+priority: low
+created: "2026-04-23T09:00:00Z"
+updated: "2026-04-23T09:00:00Z"
+---
+```
+
+Omit the `workspaceGroup` line entirely when the standalone is not workspace-scoped.
 
 ---
 
@@ -1294,6 +1316,59 @@ backup:
 
 Personal development machine. Projects stored in default location.
 ```
+
+---
+
+## 19b. Todos (workspace- and project-scoped)
+
+**Ownership:** Agent- and human-writable. All writes go through `syntaur todo <subcommand>` or the dashboard API.
+
+Syntaur exposes three distinct todo surfaces. The table below summarizes what differs between them:
+
+| Surface | Storage | Scope | Lifecycle | Notes |
+|---------|---------|-------|-----------|-------|
+| Assignment `## Todos` (body section) | Inside `assignment.md` | Single assignment | Tied to the assignment's lifecycle; items may link to plan files | Section 3, body sections table |
+| Workspace todos | `~/.syntaur/todos/<workspace>.md` + `<workspace>-log.md` + `archive/<workspace>-<suffix>.md` | One workspace (or `_global`) | Independent flat checklist | Backed up via the `todos` category |
+| Project todos | `<config.defaultProjectDir>/<slug>/todos/<slug>.md` + `<slug>-log.md` + `archive/<slug>-<suffix>.md` | One project | Independent flat checklist | Backed up via the `projects` category (colocated under the project directory) |
+
+**Project-scoped todos** are a lighter, flat checklist separate from the assignment-level `## Todos` body section. They live under each project so that backup/restore, copy, and archive coverage inherit from the project directory.
+
+### Storage layout (project scope)
+
+```
+<config.defaultProjectDir>/<project-slug>/
+  project.md
+  todos/
+    <project-slug>.md           # active checklist
+    <project-slug>-log.md       # log of state transitions
+    archive/
+      <project-slug>-<suffix>.md   # periodic archives
+```
+
+### Frontmatter field name
+
+Both workspace and project todo files persist the scope key as `workspace: <slug>` in their frontmatter. The parser is scope-agnostic and uses that field regardless of scope — the value is the project slug for project-scoped files and the workspace slug for workspace-scoped files. The field name is retained for backwards compatibility with existing parser code.
+
+### Endpoints
+
+- Workspace: `GET /api/todos` (aggregate), `/api/todos/:workspace/...`
+- Project:   `GET /api/projects/:projectId/todos` (list; no global aggregate), `/api/projects/:projectId/todos/...`
+
+The project router returns 400 on invalid slugs and 404 when the project's `project.md` is missing. Each router maintains its own scope-prefixed write lock (`ws:<name>` / `proj:<slug>`) so identically-named workspace and project files never collide.
+
+### Dashboard surface
+
+Project todos render inside the **Todos** tab on the project detail page (`/projects/:slug?tab=todos`). There is no standalone `/projects/:slug/todos` route — the panel is hosted directly in the tab so users can add, complete, and reorder project todos alongside the rest of the project view. The command palette deep-links into this tab via `?tab=todos`. Workspace todos still have their own page at `/todos` and `/w/:workspace/todos`.
+
+### Backup coverage
+
+Project todos are colocated under the project directory, so the existing `projects` backup category (`src/utils/github-backup.ts:64`, backs up `config.defaultProjectDir`) includes them automatically. No separate `project-todos` category exists.
+
+### CLI scope resolution
+
+`syntaur todo <subcommand>` accepts at most one of `--project <slug>`, `--workspace <slug>`, or `--global`. Combinations are rejected. No flag defaults to `--global` (writes to `_global.md` under `<SYNTAUR_HOME>/todos/`). When `--project` is used, the CLI validates the slug and checks that `<config.defaultProjectDir>/<slug>/project.md` exists before any read or write.
+
+**Breaking change:** `syntaur todo promote` previously used `--project <slug>` for the *target assignment project*. It is now `--to-project <slug>` so that `--project` can mean *source scope* consistent with every other subcommand.
 
 ---
 

@@ -10,6 +10,7 @@ import { StandaloneAssignmentDetail } from './pages/StandaloneAssignmentDetail';
 import { AssignmentsPage } from './pages/AssignmentsPage';
 import { CreateProject } from './pages/CreateProject';
 import { CreateAssignment } from './pages/CreateAssignment';
+import { CreateStandaloneAssignment } from './pages/CreateStandaloneAssignment';
 import { EditProject } from './pages/EditProject';
 import { EditAssignment } from './pages/EditAssignment';
 import { EditAssignmentPlan } from './pages/EditAssignmentPlan';
@@ -36,6 +37,7 @@ export function App() {
             <Route path="/" element={<Overview />} />
             <Route path="/projects" element={<ProjectList />} />
             <Route path="/assignments" element={<AssignmentsPage />} />
+            <Route path="/assignments/new" element={<CreateStandaloneAssignment />} />
             <Route path="/assignments/:id" element={<StandaloneAssignmentDetail />} />
             <Route path="/assignments/:id/edit" element={<EditAssignment />} />
             <Route path="/assignments/:id/plan/edit" element={<EditAssignmentPlan />} />
@@ -66,6 +68,7 @@ export function App() {
             {/* Workspace-scoped routes */}
             <Route path="/w/:workspace/projects" element={<ProjectList />} />
             <Route path="/w/:workspace/assignments" element={<AssignmentsPage />} />
+            <Route path="/w/:workspace/assignments/new" element={<CreateStandaloneAssignment />} />
             <Route path="/w/:workspace/servers" element={<ServersPage />} />
             <Route path="/w/:workspace/agent-sessions" element={<AgentSessionsPage />} />
             <Route path="/w/:workspace/todos" element={<WorkspaceTodosPage />} />

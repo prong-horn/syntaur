@@ -197,6 +197,7 @@ export interface ParsedAssignmentFull {
   slug: string;
   title: string;
   project: string | null;
+  workspaceGroup: string | null;
   type: string | null;
   status: string;
   priority: string;
@@ -258,6 +259,7 @@ export function parseAssignmentFull(fileContent: string): ParsedAssignmentFull {
     slug: getField(fm, 'slug') ?? '',
     title: getField(fm, 'title') ?? '',
     project: getField(fm, 'project'),
+    workspaceGroup: getField(fm, 'workspaceGroup'),
     type: getField(fm, 'type'),
     status: getField(fm, 'status') ?? 'pending',
     priority: getField(fm, 'priority') ?? 'medium',

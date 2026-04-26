@@ -25,7 +25,7 @@ export function useTodos(workspace: string) {
   }, [fetchData]);
 
   useWebSocket((msg) => {
-    if (msg.type === 'todos-updated') fetchData();
+    if (msg.type === 'todos-updated' && !msg.projectSlug) fetchData();
   });
 
   return { data, loading, error, refetch: fetchData };
@@ -54,7 +54,7 @@ export function useAllTodos() {
   }, [fetchData]);
 
   useWebSocket((msg) => {
-    if (msg.type === 'todos-updated') fetchData();
+    if (msg.type === 'todos-updated' && !msg.projectSlug) fetchData();
   });
 
   return { data, loading, error, refetch: fetchData };
@@ -85,7 +85,7 @@ export function useTodoLog(workspace: string, id?: string) {
   }, [fetchData]);
 
   useWebSocket((msg) => {
-    if (msg.type === 'todos-updated') fetchData();
+    if (msg.type === 'todos-updated' && !msg.projectSlug) fetchData();
   });
 
   return { entries, loading, refetch: fetchData };

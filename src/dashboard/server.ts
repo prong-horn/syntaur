@@ -34,6 +34,7 @@ import {
   summarizeMigration,
 } from '../utils/fs-migration.js';
 import { createTodosRouter } from './api-todos.js';
+import { createProjectTodosRouter } from './api-project-todos.js';
 import { createBackupRouter } from './api-backup.js';
 import { initSessionDb, migrateFromMarkdown, closeSessionDb } from './session-db.js';
 import { startAutodiscovery, stopAutodiscovery } from './autodiscovery.js';
@@ -226,7 +227,7 @@ export function createDashboardServer(options: DashboardServerOptions) {
 
   app.get('/api/workspaces', async (_req, res) => {
     try {
-      const result = await listWorkspaces(projectsDir);
+      const result = await listWorkspaces(projectsDir, assignmentsDir);
       res.json(result);
     } catch (error) {
       console.error('Error listing workspaces:', error);
@@ -360,25 +361,42 @@ export function createDashboardServer(options: DashboardServerOptions) {
 
   // --- Todos API ---
   app.use('/api/todos', createTodosRouter(todosDir, broadcast));
+  app.use('/api/projects/:projectId/todos', createProjectTodosRouter(projectsDir, broadcast));
 
   // --- Backup API ---
   app.use('/api/backup', createBackupRouter());
 
   // --- Static files (production only) ---
+  // Only serve the built asset directory as static — never let express.static
+  // try to resolve arbitrary client-side route paths (e.g. /assignments/:id)
+  // as files, which makes `send` emit NotFoundError on every SPA refresh.
   if (serveStaticUi && dashboardDistPath) {
-    app.use(express.static(dashboardDistPath));
+    app.use('/assets', express.static(resolve(dashboardDistPath, 'assets')));
 
-    // SPA fallback: serve index.html for all non-API routes
-    // Express 5 requires named wildcards; use '{*path}' instead of '*'
-    app.get('{*path}', async (_req: any, res: any) => {
+    // SPA fallback: serve index.html for all non-API, non-WS, non-asset routes.
+    // Express 5 requires named wildcards; use '{*path}' instead of '*'.
+    app.get('{*path}', async (req: any, res: any) => {
+      if (
+        req.path.startsWith('/api') ||
+        req.path === '/ws' ||
+        req.path.startsWith('/assets')
+      ) {
+        res.status(404).json({ error: 'Not Found' });
+        return;
+      }
       const indexPath = resolve(dashboardDistPath, 'index.html');
-      if (await fileExists(indexPath)) {
-        res.sendFile(indexPath);
-      } else {
+      if (!(await fileExists(indexPath))) {
         res.status(503).send(
           'Dashboard not built. Run "npm run build:dashboard" first.',
         );
+        return;
       }
+      res.sendFile(indexPath, (err: Error | null) => {
+        if (err) {
+          console.error('Error sending dashboard index.html:', err);
+          if (!res.headersSent) res.status(500).send('Dashboard load error');
+        }
+      });
     });
   }
 
