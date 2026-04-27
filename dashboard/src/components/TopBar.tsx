@@ -39,7 +39,13 @@ export function TopBar({
         </button>
 
         <Link to="/" className="flex shrink-0 items-center" aria-label="Syntaur home">
-          <img src="/syntaur-logo.svg" alt="Syntaur" className="h-7 w-7" />
+          <img
+            src="/syntaur-logo.svg"
+            alt="Syntaur"
+            width={28}
+            height={28}
+            className="h-7 w-7"
+          />
         </Link>
 
         <div className="min-w-0 flex-1">
