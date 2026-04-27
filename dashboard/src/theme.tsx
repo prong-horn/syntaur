@@ -5,6 +5,16 @@ import {
   useState,
   type ReactNode,
 } from 'react';
+import {
+  DEFAULT_THEME_SLUG,
+  isThemeSlug,
+  type ThemeSlug,
+} from './themes';
+import {
+  fetchThemeConfig,
+  saveThemeConfig,
+  resetThemeConfig,
+} from './hooks/useThemeConfig';
 
 type ThemePreference = 'light' | 'dark';
 
@@ -13,17 +23,30 @@ interface ThemeContextValue {
   explicitTheme: ThemePreference | null;
   setTheme: (theme: ThemePreference) => void;
   toggleTheme: () => void;
+  preset: ThemeSlug;
+  setPreset: (slug: ThemeSlug) => Promise<void>;
+  resetPreset: () => Promise<void>;
 }
 
-const STORAGE_KEY = 'syntaur-theme';
+const SCHEME_STORAGE_KEY = 'syntaur-theme';
+const PRESET_STORAGE_KEY = 'syntaur-preset';
 const ThemeContext = createContext<ThemeContextValue | null>(null);
 
-function getStoredTheme(): ThemePreference | null {
+function getStoredScheme(): ThemePreference | null {
   try {
-    const value = window.localStorage.getItem(STORAGE_KEY);
+    const value = window.localStorage.getItem(SCHEME_STORAGE_KEY);
     return value === 'light' || value === 'dark' ? value : null;
   } catch {
     return null;
+  }
+}
+
+function getStoredPreset(): ThemeSlug {
+  try {
+    const value = window.localStorage.getItem(PRESET_STORAGE_KEY);
+    return isThemeSlug(value) ? value : DEFAULT_THEME_SLUG;
+  } catch {
+    return DEFAULT_THEME_SLUG;
   }
 }
 
@@ -34,28 +57,55 @@ function getSystemTheme(): ThemePreference {
   return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
 }
 
-function applyTheme(theme: ThemePreference): void {
-  const root = document.documentElement;
-  root.classList.toggle('dark', theme === 'dark');
-  root.dataset.theme = theme;
+function applyScheme(scheme: ThemePreference): void {
+  document.documentElement.classList.toggle('dark', scheme === 'dark');
+}
+
+function applyPreset(slug: ThemeSlug): void {
+  document.documentElement.dataset.theme = slug;
 }
 
 export function initTheme(): void {
   if (typeof document === 'undefined') {
     return;
   }
-
-  const storedTheme = getStoredTheme();
-  applyTheme(storedTheme ?? getSystemTheme());
+  applyScheme(getStoredScheme() ?? getSystemTheme());
+  applyPreset(getStoredPreset());
 }
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
-  const [explicitTheme, setExplicitTheme] = useState<ThemePreference | null>(() => getStoredTheme());
-  const [resolvedTheme, setResolvedTheme] = useState<ThemePreference>(() => getStoredTheme() ?? getSystemTheme());
+  const [explicitTheme, setExplicitTheme] = useState<ThemePreference | null>(() => getStoredScheme());
+  const [resolvedTheme, setResolvedTheme] = useState<ThemePreference>(() => getStoredScheme() ?? getSystemTheme());
+  const [preset, setPresetState] = useState<ThemeSlug>(() => getStoredPreset());
 
   useEffect(() => {
-    applyTheme(resolvedTheme);
+    applyScheme(resolvedTheme);
   }, [resolvedTheme]);
+
+  useEffect(() => {
+    applyPreset(preset);
+  }, [preset]);
+
+  // Reconcile preset with server on mount; server wins if it differs.
+  useEffect(() => {
+    let cancelled = false;
+    fetchThemeConfig().then((config) => {
+      if (cancelled) return;
+      if (config.preset !== preset) {
+        setPresetState(config.preset);
+        try {
+          window.localStorage.setItem(PRESET_STORAGE_KEY, config.preset);
+        } catch {
+          // ignore
+        }
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+    // intentionally only on mount — server reconciliation is a one-shot bootstrap
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     if (!window.matchMedia) {
@@ -76,20 +126,43 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     };
   }, [explicitTheme]);
 
+  async function setPreset(slug: ThemeSlug): Promise<void> {
+    setPresetState(slug);
+    try {
+      window.localStorage.setItem(PRESET_STORAGE_KEY, slug);
+    } catch {
+      // ignore
+    }
+    await saveThemeConfig(slug);
+  }
+
+  async function resetPreset(): Promise<void> {
+    const config = await resetThemeConfig();
+    setPresetState(config.preset);
+    try {
+      window.localStorage.setItem(PRESET_STORAGE_KEY, config.preset);
+    } catch {
+      // ignore
+    }
+  }
+
   const value: ThemeContextValue = {
     resolvedTheme,
     explicitTheme,
     setTheme: (theme) => {
-      window.localStorage.setItem(STORAGE_KEY, theme);
+      window.localStorage.setItem(SCHEME_STORAGE_KEY, theme);
       setExplicitTheme(theme);
       setResolvedTheme(theme);
     },
     toggleTheme: () => {
       const nextTheme = resolvedTheme === 'dark' ? 'light' : 'dark';
-      window.localStorage.setItem(STORAGE_KEY, nextTheme);
+      window.localStorage.setItem(SCHEME_STORAGE_KEY, nextTheme);
       setExplicitTheme(nextTheme);
       setResolvedTheme(nextTheme);
     },
+    preset,
+    setPreset,
+    resetPreset,
   };
 
   return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;

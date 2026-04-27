@@ -88,6 +88,10 @@ export interface PlaybooksConfig {
   disabled: string[];
 }
 
+export interface ThemeConfig {
+  preset: string;
+}
+
 export interface SyntaurConfig {
   version: string;
   defaultProjectDir: string;
@@ -103,6 +107,7 @@ export interface SyntaurConfig {
   types: TypesConfig | null;
   agents: AgentConfig[] | null;
   playbooks: PlaybooksConfig;
+  theme: ThemeConfig | null;
 }
 
 const DEFAULT_CONFIG: SyntaurConfig = {
@@ -128,6 +133,7 @@ const DEFAULT_CONFIG: SyntaurConfig = {
   playbooks: {
     disabled: [],
   },
+  theme: null,
 };
 
 export const BUILTIN_AGENTS: AgentConfig[] = [
@@ -228,6 +234,7 @@ function cloneDefaultConfig(): SyntaurConfig {
     playbooks: {
       disabled: [...DEFAULT_CONFIG.playbooks.disabled],
     },
+    theme: DEFAULT_CONFIG.theme ? { ...DEFAULT_CONFIG.theme } : null,
   };
 }
 
@@ -526,6 +533,76 @@ export async function updatePlaybooksConfig(
     : cleanedFm;
   const normalizedFm = newFm.replace(/\n+$/, '');
   const newContent = `---\n${normalizedFm}\n---${afterFrontmatter}`;
+  await writeFileForce(configPath, newContent);
+}
+
+function parseThemeConfig(content: string): ThemeConfig | null {
+  const match = content.match(/^---\n([\s\S]*?)\n---/);
+  if (!match) return null;
+  const fmBlock = match[1];
+
+  const blockStart = fmBlock.match(/^theme:\s*$/m);
+  if (!blockStart) return null;
+
+  const startIdx = fmBlock.indexOf(blockStart[0]) + blockStart[0].length;
+  const remaining = fmBlock.slice(startIdx).split('\n');
+
+  let preset: string | null = null;
+  for (const line of remaining) {
+    const trimmed = line.trimStart();
+    const indent = line.length - trimmed.length;
+    if (indent === 0 && trimmed.length > 0) break;
+    if (trimmed === '') continue;
+    if (indent === 2 && trimmed.startsWith('preset:')) {
+      const value = trimmed.slice('preset:'.length).trim().replace(/^["']|["']$/g, '');
+      if (value.length > 0) preset = value;
+    }
+  }
+
+  if (!preset) return null;
+  return { preset };
+}
+
+function serializeThemeConfig(theme: ThemeConfig): string {
+  return ['theme:', `  preset: ${theme.preset}`].join('\n');
+}
+
+export async function writeThemeConfig(theme: ThemeConfig): Promise<void> {
+  const configPath = resolve(syntaurRoot(), 'config.md');
+  const themeBlock = serializeThemeConfig(theme);
+
+  const existing = await fileExists(configPath)
+    ? await readFile(configPath, 'utf-8')
+    : renderConfig({ defaultProjectDir: defaultProjectDir() });
+
+  const fmMatch = existing.match(/^(---\n)([\s\S]*?)\n(---)/);
+  if (!fmMatch) {
+    const content = `---\nversion: "2.0"\ndefaultProjectDir: ${defaultProjectDir()}\n${themeBlock}\n---\n${existing}`;
+    await writeFileForce(configPath, content);
+    return;
+  }
+
+  const fmBlock = fmMatch[2];
+  const afterFrontmatter = existing.slice(fmMatch[0].length);
+  const cleanedFm = stripTopLevelBlock(fmBlock, 'theme');
+  const newFm = `${cleanedFm}\n${themeBlock}`.replace(/^\n+/, '');
+  const normalizedFm = newFm.replace(/\n+$/, '');
+  const newContent = `---\n${normalizedFm}\n---${afterFrontmatter}`;
+  await writeFileForce(configPath, newContent);
+}
+
+export async function deleteThemeConfig(): Promise<void> {
+  const configPath = resolve(syntaurRoot(), 'config.md');
+  if (!(await fileExists(configPath))) return;
+
+  const existing = await readFile(configPath, 'utf-8');
+  const fmMatch = existing.match(/^(---\n)([\s\S]*?)\n(---)/);
+  if (!fmMatch) return;
+
+  const fmBlock = fmMatch[2];
+  const afterFrontmatter = existing.slice(fmMatch[0].length);
+  const cleanedFm = stripTopLevelBlock(fmBlock, 'theme');
+  const newContent = `---\n${cleanedFm}\n---${afterFrontmatter}`;
   await writeFileForce(configPath, newContent);
 }
 
@@ -1074,6 +1151,7 @@ export async function readConfig(): Promise<SyntaurConfig> {
     types: null,
     agents: normalizeAgentsFromConfig(parseAgentsConfig(content)),
     playbooks: parsePlaybooksConfig(fmBlock),
+    theme: parseThemeConfig(content),
   };
 }
 

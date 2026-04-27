@@ -18,6 +18,7 @@ export default {
         foreground: 'oklch(var(--foreground) / <alpha-value>)',
         primary: {
           DEFAULT: 'oklch(var(--primary) / <alpha-value>)',
+          dim: 'oklch(var(--primary-dim) / <alpha-value>)',
           foreground: 'oklch(var(--primary-foreground) / <alpha-value>)',
         },
         secondary: {
@@ -36,7 +37,9 @@ export default {
           DEFAULT: 'oklch(var(--accent) / <alpha-value>)',
           foreground: 'oklch(var(--accent-foreground) / <alpha-value>)',
           coral: 'oklch(var(--accent-coral) / <alpha-value>)',
+          'coral-dim': 'oklch(var(--accent-coral-dim) / <alpha-value>)',
           teal: 'oklch(var(--accent-teal) / <alpha-value>)',
+          'teal-dim': 'oklch(var(--accent-teal-dim) / <alpha-value>)',
           amber: 'oklch(var(--accent-amber) / <alpha-value>)',
         },
         popover: {

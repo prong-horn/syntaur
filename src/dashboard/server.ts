@@ -23,7 +23,7 @@ import { resolveAssignmentById } from '../utils/assignment-resolver.js';
 import { listSessionsByAssignment, reconcileActiveSessions } from './agent-sessions.js';
 import { createWatcher } from './watcher.js';
 import { fileExists } from '../utils/fs.js';
-import { writeStatusConfig, deleteStatusConfig } from '../utils/config.js';
+import { writeStatusConfig, deleteStatusConfig, writeThemeConfig, deleteThemeConfig, readConfig } from '../utils/config.js';
 import { createWriteRouter } from './api-write.js';
 import { createServersRouter } from './api-servers.js';
 import { createAgentSessionsRouter } from './api-agent-sessions.js';
@@ -204,6 +204,48 @@ export function createDashboardServer(options: DashboardServerOptions) {
     } catch (error) {
       console.error('Error resetting status config:', error);
       res.status(500).json({ error: 'Failed to reset status config' });
+    }
+  });
+
+  // Theme presets — keep in sync with PRESETS in dashboard/src/themes.ts (canonical client list).
+  const THEME_PRESET_SLUGS = ['default', 'ocean', 'forest', 'sunset'] as const;
+  const DEFAULT_THEME_PRESET = 'default';
+
+  app.get('/api/config/theme', async (_req, res) => {
+    try {
+      const config = await readConfig();
+      const preset = config.theme?.preset ?? DEFAULT_THEME_PRESET;
+      res.json({ preset, custom: config.theme !== null });
+    } catch (error) {
+      console.error('Error getting theme config:', error);
+      res.status(500).json({ error: 'Failed to get theme config' });
+    }
+  });
+
+  app.post('/api/config/theme', async (req, res) => {
+    try {
+      const { preset } = req.body ?? {};
+      if (typeof preset !== 'string' || !(THEME_PRESET_SLUGS as readonly string[]).includes(preset)) {
+        res.status(400).json({
+          error: `preset must be one of: ${THEME_PRESET_SLUGS.join(', ')}`,
+        });
+        return;
+      }
+      await writeThemeConfig({ preset });
+      res.json({ preset, custom: true });
+    } catch (error) {
+      console.error('Error saving theme config:', error);
+      res.status(500).json({ error: 'Failed to save theme config' });
+    }
+  });
+
+  app.delete('/api/config/theme', async (_req, res) => {
+    try {
+      await deleteThemeConfig();
+      res.json({ preset: DEFAULT_THEME_PRESET, custom: false });
+    } catch (error) {
+      console.error('Error resetting theme config:', error);
+      res.status(500).json({ error: 'Failed to reset theme config' });
     }
   });
 

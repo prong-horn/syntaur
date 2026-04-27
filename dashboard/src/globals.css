@@ -10,9 +10,10 @@
     --card-foreground: 18% 0.01 280;
     --popover: 100% 0 0;
     --popover-foreground: 18% 0.01 280;
-    --primary: 55% 0.22 290;
+    --primary: 70% 0.18 290;
+    --primary-dim: 50% 0.12 290;
     --primary-foreground: 98% 0 0;
-    --secondary: 94% 0.008 280;
+    --secondary: 80% 0.14 75;
     --secondary-foreground: 18% 0.01 280;
     --muted: 95% 0.006 280;
     --muted-foreground: 46% 0.01 280;
@@ -22,11 +23,13 @@
     --destructive-foreground: 98% 0 0;
     --border: 89% 0.008 280;
     --input: 89% 0.008 280;
-    --ring: 55% 0.22 290;
+    --ring: 70% 0.18 290;
     --sidebar: 96% 0.006 280;
-    --accent-coral: 55% 0.20 15;
-    --accent-teal: 50% 0.12 185;
-    --accent-amber: 65% 0.18 75;
+    --accent-coral: 72% 0.17 15;
+    --accent-coral-dim: 50% 0.12 15;
+    --accent-teal: 72% 0.14 185;
+    --accent-teal-dim: 50% 0.10 185;
+    --accent-amber: 82% 0.16 75;
     --radius: 0.5rem;
   }
 
@@ -38,9 +41,10 @@
     --popover: 13% 0.008 280;
     --popover-foreground: 95% 0.005 280;
     --primary: 70% 0.18 290;
+    --primary-dim: 50% 0.12 290;
     --primary-foreground: 8% 0 0;
-    --secondary: 17% 0.01 280;
-    --secondary-foreground: 95% 0.005 280;
+    --secondary: 80% 0.14 75;
+    --secondary-foreground: 18% 0.01 280;
     --muted: 17% 0.01 280;
     --muted-foreground: 65% 0.01 280;
     --accent: 17% 0.01 280;
@@ -52,9 +56,53 @@
     --ring: 70% 0.18 290;
     --sidebar: 6% 0.008 280;
     --accent-coral: 72% 0.17 15;
+    --accent-coral-dim: 50% 0.12 15;
     --accent-teal: 72% 0.14 185;
+    --accent-teal-dim: 50% 0.10 185;
     --accent-amber: 82% 0.16 75;
     --radius: 0.5rem;
+  }
+
+  /* Preset themes — override only the brand-flavored tokens; other tokens
+     (background/foreground/card/muted/border/etc.) cascade from :root or .dark. */
+
+  :root[data-theme='ocean'],
+  .dark[data-theme='ocean'] {
+    --primary: 65% 0.15 230;
+    --primary-dim: 45% 0.10 230;
+    --secondary: 75% 0.10 210;
+    --ring: 65% 0.15 230;
+    --accent-coral: 70% 0.15 350;
+    --accent-coral-dim: 48% 0.10 350;
+    --accent-teal: 75% 0.13 200;
+    --accent-teal-dim: 52% 0.10 200;
+    --accent-amber: 82% 0.14 90;
+  }
+
+  :root[data-theme='forest'],
+  .dark[data-theme='forest'] {
+    --primary: 60% 0.14 150;
+    --primary-dim: 42% 0.10 150;
+    --secondary: 78% 0.10 130;
+    --ring: 60% 0.14 150;
+    --accent-coral: 70% 0.16 20;
+    --accent-coral-dim: 48% 0.11 20;
+    --accent-teal: 70% 0.13 175;
+    --accent-teal-dim: 48% 0.10 175;
+    --accent-amber: 80% 0.14 95;
+  }
+
+  :root[data-theme='sunset'],
+  .dark[data-theme='sunset'] {
+    --primary: 68% 0.18 30;
+    --primary-dim: 48% 0.12 30;
+    --secondary: 78% 0.14 50;
+    --ring: 68% 0.18 30;
+    --accent-coral: 72% 0.18 10;
+    --accent-coral-dim: 50% 0.13 10;
+    --accent-teal: 70% 0.12 180;
+    --accent-teal-dim: 48% 0.09 180;
+    --accent-amber: 84% 0.17 65;
   }
 
   * {
