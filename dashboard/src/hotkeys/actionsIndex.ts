@@ -1,6 +1,5 @@
 import type { NavigateFunction } from 'react-router-dom';
 import type { PlaybookSummary } from '../types';
-import { addTodo } from '../hooks/useTodos';
 
 export interface Action {
   id: string;
@@ -32,18 +31,25 @@ async function togglePlaybook(
   refetch: () => void,
 ): Promise<void> {
   const action = currentlyEnabled ? 'disable' : 'enable';
-  try {
-    const response = await fetch(`/api/playbooks/${encodeURIComponent(slug)}/${action}`, {
-      method: 'POST',
-    });
-    if (!response.ok) {
-      const body = await response.json().catch(() => ({}));
-      throw new Error(body.error || `Failed to ${action} playbook`);
-    }
-    refetch();
-  } catch (err) {
-    console.error(err);
-    alert(err instanceof Error ? err.message : 'Failed to update playbook');
+  const response = await fetch(`/api/playbooks/${encodeURIComponent(slug)}/${action}`, {
+    method: 'POST',
+  });
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({}));
+    throw new Error(body.error || `Failed to ${action} playbook`);
+  }
+  refetch();
+}
+
+async function createTodo(workspace: string, description: string): Promise<void> {
+  const response = await fetch(`/api/todos/${encodeURIComponent(workspace)}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ description }),
+  });
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({}));
+    throw new Error(body.error || `Failed to create todo (HTTP ${response.status})`);
   }
 }
 
@@ -110,7 +116,7 @@ export function buildActionsIndex(input: BuildActionsInput): Action[] {
       runWithInput: async (value) => {
         const desc = value.trim();
         if (!desc) return;
-        await addTodo('_ungrouped', desc);
+        await createTodo('_ungrouped', desc);
       },
     },
   });
@@ -128,7 +134,7 @@ export function buildActionsIndex(input: BuildActionsInput): Action[] {
         runWithInput: async (value) => {
           const desc = value.trim();
           if (!desc) return;
-          await addTodo(wsName, desc);
+          await createTodo(wsName, desc);
         },
       },
     });
@@ -146,7 +152,7 @@ export function buildActionsIndex(input: BuildActionsInput): Action[] {
         runWithInput: async (value) => {
           const desc = value.trim();
           if (!desc) return;
-          await addTodo(currentProjectWorkspace, desc);
+          await createTodo(currentProjectWorkspace, desc);
         },
       },
     });

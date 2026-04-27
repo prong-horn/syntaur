@@ -23,6 +23,7 @@ export function ActionPalette({ entries }: ActionPaletteProps) {
   const [promptAction, setPromptAction] = useState<Action | null>(null);
   const [promptValue, setPromptValue] = useState('');
   const [running, setRunning] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
 
   const rankable: RankableAction[] = useMemo(
@@ -50,6 +51,7 @@ export function ActionPalette({ entries }: ActionPaletteProps) {
       setPromptAction(null);
       setPromptValue('');
       setRunning(false);
+      setErrorMessage(null);
     }
   }, [actionsPaletteOpen]);
 
@@ -62,31 +64,40 @@ export function ActionPalette({ entries }: ActionPaletteProps) {
   }, [selected]);
 
   async function executeAction(action: Action) {
+    if (running) return;
     if (action.requiresInput) {
       setPromptAction(action);
       setPromptValue('');
+      setErrorMessage(null);
       return;
     }
     if (!action.run) return;
     setRunning(true);
+    setErrorMessage(null);
     try {
       await action.run();
+      closeActionsPalette();
+    } catch (err) {
+      setErrorMessage(err instanceof Error ? err.message : 'Action failed');
     } finally {
       setRunning(false);
-      closeActionsPalette();
     }
   }
 
   async function submitPrompt() {
+    if (running) return;
     if (!promptAction?.requiresInput) return;
     const value = promptValue.trim();
     if (!value) return;
     setRunning(true);
+    setErrorMessage(null);
     try {
       await promptAction.requiresInput.runWithInput(value);
+      closeActionsPalette();
+    } catch (err) {
+      setErrorMessage(err instanceof Error ? err.message : 'Action failed');
     } finally {
       setRunning(false);
-      closeActionsPalette();
     }
   }
 
@@ -122,7 +133,19 @@ export function ActionPalette({ entries }: ActionPaletteProps) {
       open={actionsPaletteOpen}
       onOpenChange={(o) => (o ? null : closeActionsPalette())}
     >
-      <DialogContent className="max-w-xl p-0 gap-0">
+      <DialogContent
+        className="max-w-xl p-0 gap-0"
+        onEscapeKeyDown={(e) => {
+          // In prompt mode, Esc steps back to the picker instead of closing the dialog.
+          // Radix handles Escape on document capture, so we must preempt it here.
+          if (inPromptMode && !running) {
+            e.preventDefault();
+            setPromptAction(null);
+            setPromptValue('');
+            setErrorMessage(null);
+          }
+        }}
+      >
         <DialogTitle className="sr-only">Actions palette</DialogTitle>
         {inPromptMode ? (
           <>
@@ -144,6 +167,11 @@ export function ActionPalette({ entries }: ActionPaletteProps) {
               disabled={running}
               className="w-full border-0 border-b border-border/70 bg-transparent px-4 py-3 text-sm text-foreground outline-none focus:ring-0 disabled:opacity-60"
             />
+            {errorMessage ? (
+              <div className="border-b border-border/70 bg-destructive/10 px-4 py-2 text-xs text-destructive">
+                {errorMessage}
+              </div>
+            ) : null}
             <div className="flex items-center justify-between border-t border-border/70 px-3 py-2 text-[11px] text-muted-foreground">
               <span>{'↵'} submit {'·'} Esc back</span>
               <span>{running ? 'Running…' : ''}</span>
@@ -158,8 +186,14 @@ export function ActionPalette({ entries }: ActionPaletteProps) {
               onChange={(e) => setQuery(e.target.value)}
               onKeyDown={handlePickerKeyDown}
               placeholder="Run an action: new project, new todo, toggle…"
-              className="w-full rounded-t-xl border-0 border-b border-border/70 bg-transparent px-4 py-3 text-sm text-foreground outline-none focus:ring-0"
+              disabled={running}
+              className="w-full rounded-t-xl border-0 border-b border-border/70 bg-transparent px-4 py-3 text-sm text-foreground outline-none focus:ring-0 disabled:opacity-60"
             />
+            {errorMessage ? (
+              <div className="border-b border-border/70 bg-destructive/10 px-4 py-2 text-xs text-destructive">
+                {errorMessage}
+              </div>
+            ) : null}
             <div ref={listRef} className="max-h-[60vh] overflow-y-auto p-1">
               {ranked.length === 0 ? (
                 <div className="px-4 py-6 text-center text-sm text-muted-foreground">
@@ -175,7 +209,8 @@ export function ActionPalette({ entries }: ActionPaletteProps) {
                       data-palette-idx={idx}
                       onClick={() => executeAction(entry.action)}
                       onMouseEnter={() => setSelected(idx)}
-                      className={`flex w-full items-center gap-3 rounded-md px-3 py-2 text-left text-sm transition-colors ${
+                      disabled={running}
+                      className={`flex w-full items-center gap-3 rounded-md px-3 py-2 text-left text-sm transition-colors disabled:opacity-60 ${
                         isSelected
                           ? 'bg-accent text-accent-foreground'
                           : 'hover:bg-accent/50 text-foreground'
@@ -197,7 +232,7 @@ export function ActionPalette({ entries }: ActionPaletteProps) {
             </div>
             <div className="flex items-center justify-between border-t border-border/70 px-3 py-2 text-[11px] text-muted-foreground">
               <span>{'↑↓'} navigate {'·'} {'↵'} run {'·'} Esc close</span>
-              <span>{ranked.length} action{ranked.length === 1 ? '' : 's'}</span>
+              <span>{running ? 'Running…' : `${ranked.length} action${ranked.length === 1 ? '' : 's'}`}</span>
             </div>
           </>
         )}
