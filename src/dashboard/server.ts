@@ -414,6 +414,11 @@ export function createDashboardServer(options: DashboardServerOptions) {
   // as files, which makes `send` emit NotFoundError on every SPA refresh.
   if (serveStaticUi && dashboardDistPath) {
     app.use('/assets', express.static(resolve(dashboardDistPath, 'assets')));
+    // Files copied from dashboard/public/ (logo, favicon, etc.) land at the
+    // dist root; serve them with fallthrough so missing paths still hit the
+    // SPA fallback below. `index: false` prevents express.static from serving
+    // index.html for "/" — that's the SPA fallback's job.
+    app.use(express.static(dashboardDistPath, { index: false, fallthrough: true }));
 
     // SPA fallback: serve index.html for all non-API, non-WS, non-asset routes.
     // Express 5 requires named wildcards; use '{*path}' instead of '*'.
