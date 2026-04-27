@@ -175,8 +175,8 @@ function ShellSidebar({
     <div className="flex h-full flex-col gap-3">
       <div className="space-y-3">
         <Link to="/" className="inline-flex items-center gap-3" onClick={onNavigate}>
-          <span className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-foreground text-sm font-semibold text-background shadow-sm">
-            S
+          <span className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-card text-background shadow-sm ring-1 ring-border/60">
+            <img src="/syntaur-logo.svg" alt="Syntaur" width={20} height={20} className="h-5 w-5" />
           </span>
           <div>
             <p className="text-sm font-semibold text-foreground">Syntaur</p>
