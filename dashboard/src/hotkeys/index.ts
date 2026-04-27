@@ -17,4 +17,7 @@ export {
 } from './paletteIndex';
 export type { PaletteEntry, PaletteEntryType } from './paletteIndex';
 export { CommandPalette } from './CommandPalette';
+export { ActionPalette } from './ActionPalette';
+export { buildActionsIndex } from './actionsIndex';
+export type { Action } from './actionsIndex';
 export { CheatsheetDialog } from './CheatsheetDialog';
