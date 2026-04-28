@@ -364,7 +364,7 @@ export function AssignmentDetail() {
             Updated {formatRelativeTime(assignment.updated)}
           </span>
           {unmetDeps.length > 0 && (
-            <span className="text-xs text-amber-700 dark:text-amber-300">
+            <span className="text-xs text-warning-foreground">
               ⚠ {unmetDeps.length} unmet dep{unmetDeps.length === 1 ? '' : 's'}
             </span>
           )}
@@ -378,7 +378,7 @@ export function AssignmentDetail() {
                 onClick={() => handleTransitionClick(primaryTransition)}
                 className={cn(
                   'shell-action disabled:cursor-not-allowed disabled:opacity-50',
-                  primaryTransition.warning && 'border-amber-300 dark:border-amber-700',
+                  primaryTransition.warning && 'border-warning-foreground/40',
                   primaryIsReview && reviewGlowKey > 0 && 'send-to-review-glow',
                 )}
               >
@@ -392,13 +392,13 @@ export function AssignmentDetail() {
         </div>
 
         {transitionError ? (
-          <p className="mt-4 rounded-md border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700 dark:border-rose-900 dark:bg-rose-950/30 dark:text-rose-300">
+          <p className="mt-4 rounded-md border border-error-foreground/30 bg-error px-4 py-3 text-sm text-error-foreground">
             {transitionError}
           </p>
         ) : null}
 
         {assignment.blockedReason ? (
-          <div className="mt-4 rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-300">
+          <div className="mt-4 rounded-md border border-warning-foreground/30 bg-warning px-4 py-3 text-sm text-warning-foreground">
             <strong>Blocked reason:</strong> {assignment.blockedReason}
           </div>
         ) : null}
@@ -436,7 +436,7 @@ export function AssignmentDetail() {
                     ({ref.mentions} mention{ref.mentions === 1 ? '' : 's'})
                   </span>
                   {ref.sourceProjectSlug === null ? (
-                    <span className="rounded bg-neutral-800 px-1.5 py-0.5 font-mono text-[10px] uppercase text-neutral-300">
+                    <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-[10px] uppercase text-muted-foreground">
                       Standalone
                     </span>
                   ) : null}
@@ -465,7 +465,7 @@ export function AssignmentDetail() {
                       >
                         <div className="space-y-3">
                           {criteriaError ? (
-                            <p className="rounded-md border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700 dark:border-rose-900 dark:bg-rose-950/30 dark:text-rose-300">
+                            <p className="rounded-md border border-error-foreground/30 bg-error px-4 py-3 text-sm text-error-foreground">
                               {criteriaError}
                             </p>
                           ) : null}
@@ -605,8 +605,8 @@ export function AssignmentDetail() {
                       >
                         <ol className="space-y-4">
                           {assignment.progress.entries.map((entry, idx) => (
-                            <li key={`${entry.timestamp}-${idx}`} className="border-l-2 border-neutral-700 pl-3">
-                              <div className="text-xs font-mono text-neutral-400">{entry.timestamp}</div>
+                            <li key={`${entry.timestamp}-${idx}`} className="border-l-2 border-border pl-3">
+                              <div className="text-xs font-mono text-muted-foreground">{entry.timestamp}</div>
                               <MarkdownRenderer content={entry.body} />
                             </li>
                           ))}

@@ -571,7 +571,7 @@ export function AssignmentsPage() {
       </FilterBar>
 
       {transitionError ? (
-        <div className="rounded-md border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700 dark:border-rose-900 dark:bg-rose-950/30 dark:text-rose-300">
+        <div className="rounded-md border border-error-foreground/30 bg-error px-4 py-3 text-sm text-error-foreground">
           {transitionError}
         </div>
       ) : null}
@@ -626,7 +626,7 @@ export function AssignmentsPage() {
                       </Link>
                       <p className="mt-1 text-xs text-muted-foreground">
                         {assignment.projectTitle ?? (
-                          <span className="rounded bg-neutral-800 px-1.5 py-0.5 font-mono text-[10px] uppercase text-neutral-300">
+                          <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-[10px] uppercase text-muted-foreground">
                             Standalone
                           </span>
                         )}
@@ -847,7 +847,7 @@ function AssignmentBoardCard({
           </Link>
           <p className="text-sm text-muted-foreground">
             {assignment.projectTitle ?? (
-              <span className="rounded bg-neutral-800 px-1.5 py-0.5 font-mono text-[10px] uppercase text-neutral-300">
+              <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-[10px] uppercase text-muted-foreground">
                 Standalone
               </span>
             )}
@@ -861,7 +861,7 @@ function AssignmentBoardCard({
       </div>
 
       {assignment.blockedReason ? (
-        <p className="mt-3 rounded-md border border-amber-200/70 bg-amber-50/80 px-3 py-2 text-sm text-amber-800 dark:border-amber-900/70 dark:bg-amber-950/20 dark:text-amber-300">
+        <p className="mt-3 rounded-md border border-warning-foreground/30 bg-warning px-3 py-2 text-sm text-warning-foreground">
           {assignment.blockedReason}
         </p>
       ) : null}

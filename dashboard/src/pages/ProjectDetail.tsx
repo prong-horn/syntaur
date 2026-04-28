@@ -125,7 +125,7 @@ export function ProjectDetail() {
         {project.statusOverride && (
           <button
             type="button"
-            className="shell-action border-amber-300 text-amber-700 dark:border-amber-700 dark:text-amber-300"
+            className="shell-action border-warning-foreground/40 text-warning-foreground"
             onClick={() => handleStatusOverride(null)}
             title="Clear manual status override and return to derived status"
           >

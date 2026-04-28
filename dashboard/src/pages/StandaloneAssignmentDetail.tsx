@@ -28,17 +28,17 @@ export function StandaloneAssignmentDetail() {
       <header className="space-y-2">
         <div className="flex flex-wrap items-center gap-3">
           <StatusBadge status={assignment.status} />
-          <span className="text-xs font-mono text-neutral-500">{assignment.id}</span>
+          <span className="text-xs font-mono text-muted-foreground">{assignment.id}</span>
           <Link
             to={`/assignments/${assignment.id}/edit`}
-            className="ml-auto rounded border border-neutral-700 px-2 py-1 text-xs text-neutral-300 hover:border-neutral-500 hover:text-neutral-100"
+            className="ml-auto rounded border border-border px-2 py-1 text-xs text-muted-foreground hover:border-foreground/40 hover:text-foreground"
           >
             Edit
           </Link>
         </div>
-        <h1 className="text-2xl font-semibold text-neutral-100">{assignment.title}</h1>
+        <h1 className="text-2xl font-semibold text-foreground">{assignment.title}</h1>
         {assignment.blockedReason ? (
-          <p className="text-sm text-amber-300">Blocked: {assignment.blockedReason}</p>
+          <p className="text-sm text-warning-foreground">Blocked: {assignment.blockedReason}</p>
         ) : null}
       </header>
 
@@ -100,8 +100,8 @@ export function StandaloneAssignmentDetail() {
                   >
                     <ol className="space-y-4">
                       {assignment.progress.entries.map((entry, idx) => (
-                        <li key={`${entry.timestamp}-${idx}`} className="border-l-2 border-neutral-700 pl-3">
-                          <div className="text-xs font-mono text-neutral-400">{entry.timestamp}</div>
+                        <li key={`${entry.timestamp}-${idx}`} className="border-l-2 border-border pl-3">
+                          <div className="text-xs font-mono text-muted-foreground">{entry.timestamp}</div>
                           <MarkdownRenderer content={entry.body} />
                         </li>
                       ))}
@@ -141,7 +141,7 @@ export function StandaloneAssignmentDetail() {
                     <div className="mt-3 flex justify-end">
                       <Link
                         to={`/assignments/${assignment.id}/plan/edit`}
-                        className="rounded border border-neutral-700 px-2 py-1 text-xs text-neutral-300 hover:border-neutral-500 hover:text-neutral-100"
+                        className="rounded border border-border px-2 py-1 text-xs text-muted-foreground hover:border-foreground/40 hover:text-foreground"
                       >
                         Edit plan
                       </Link>
@@ -167,7 +167,7 @@ export function StandaloneAssignmentDetail() {
                     <div className="mt-3 flex justify-end">
                       <Link
                         to={`/assignments/${assignment.id}/scratchpad/edit`}
-                        className="rounded border border-neutral-700 px-2 py-1 text-xs text-neutral-300 hover:border-neutral-500 hover:text-neutral-100"
+                        className="rounded border border-border px-2 py-1 text-xs text-muted-foreground hover:border-foreground/40 hover:text-foreground"
                       >
                         Edit scratchpad
                       </Link>
@@ -194,7 +194,7 @@ export function StandaloneAssignmentDetail() {
                     <div className="mt-3 flex justify-end">
                       <Link
                         to={`/assignments/${assignment.id}/handoff/edit`}
-                        className="rounded border border-neutral-700 px-2 py-1 text-xs text-neutral-300 hover:border-neutral-500 hover:text-neutral-100"
+                        className="rounded border border-border px-2 py-1 text-xs text-muted-foreground hover:border-foreground/40 hover:text-foreground"
                       >
                         Append handoff
                       </Link>
@@ -221,7 +221,7 @@ export function StandaloneAssignmentDetail() {
                     <div className="mt-3 flex justify-end">
                       <Link
                         to={`/assignments/${assignment.id}/decision-record/edit`}
-                        className="rounded border border-neutral-700 px-2 py-1 text-xs text-neutral-300 hover:border-neutral-500 hover:text-neutral-100"
+                        className="rounded border border-border px-2 py-1 text-xs text-muted-foreground hover:border-foreground/40 hover:text-foreground"
                       >
                         Append decision
                       </Link>

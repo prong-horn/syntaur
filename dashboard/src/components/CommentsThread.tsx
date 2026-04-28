@@ -140,14 +140,14 @@ export function CommentsThread({ projectSlug, assignmentSlug, entries }: Comment
         {tree.map((node) => (
           <CommentNode key={node.entry.id} node={node} onToggleResolved={toggleResolved} depth={0} />
         ))}
-        <form onSubmit={handleSubmit} className="mt-6 space-y-2 border-t border-neutral-800 pt-4">
-          <label className="block text-xs font-medium uppercase tracking-wide text-neutral-400">
+        <form onSubmit={handleSubmit} className="mt-6 space-y-2 border-t border-border pt-4">
+          <label className="block text-xs font-medium uppercase tracking-wide text-muted-foreground">
             Add comment
           </label>
           <textarea
             value={newBody}
             onChange={(e) => setNewBody(e.target.value)}
-            className="w-full rounded border border-neutral-700 bg-neutral-900 p-2 text-sm"
+            className="w-full rounded border border-border bg-background p-2 text-sm"
             rows={3}
             placeholder="Ask a question, leave a note, or give feedback…"
           />
@@ -155,7 +155,7 @@ export function CommentsThread({ projectSlug, assignmentSlug, entries }: Comment
             <select
               value={newType}
               onChange={(e) => setNewType(e.target.value as CommentType)}
-              className="rounded border border-neutral-700 bg-neutral-900 px-2 py-1 text-xs"
+              className="rounded border border-border bg-background px-2 py-1 text-xs"
             >
               <option value="note">note</option>
               <option value="question">question</option>
@@ -168,7 +168,7 @@ export function CommentsThread({ projectSlug, assignmentSlug, entries }: Comment
             >
               {submitting ? 'Posting…' : 'Post comment'}
             </button>
-            {error ? <span className="text-xs text-red-400">{error}</span> : null}
+            {error ? <span className="text-xs text-error-foreground">{error}</span> : null}
           </div>
         </form>
       </div>
@@ -186,20 +186,20 @@ function CommentNode({ node, depth, onToggleResolved }: CommentNodeProps) {
   const { entry, replies } = node;
   const isQuestion = entry.type === 'question';
   return (
-    <div className={cn('space-y-2', depth > 0 && 'ml-4 border-l border-neutral-800 pl-4')}>
-      <div className="flex flex-wrap items-center gap-2 text-xs text-neutral-400">
+    <div className={cn('space-y-2', depth > 0 && 'ml-4 border-l border-border pl-4')}>
+      <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
         <span className="font-mono">{entry.id}</span>
         <span>·</span>
         <span>{entry.timestamp}</span>
         <span>·</span>
-        <span className="font-medium text-neutral-200">{entry.author}</span>
+        <span className="font-medium text-foreground">{entry.author}</span>
         <span>·</span>
         <span
           className={cn(
             'rounded px-1.5 py-0.5 font-mono text-[10px] uppercase',
-            isQuestion && 'bg-amber-900/40 text-amber-200',
-            entry.type === 'feedback' && 'bg-sky-900/40 text-sky-200',
-            entry.type === 'note' && 'bg-neutral-800 text-neutral-300',
+            isQuestion && 'bg-warning text-warning-foreground',
+            entry.type === 'feedback' && 'bg-info text-info-foreground',
+            entry.type === 'note' && 'bg-muted text-muted-foreground',
           )}
         >
           {entry.type}
@@ -211,8 +211,8 @@ function CommentNode({ node, depth, onToggleResolved }: CommentNodeProps) {
             className={cn(
               'inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium',
               entry.resolved
-                ? 'bg-emerald-900/40 text-emerald-200 hover:bg-emerald-900/60'
-                : 'bg-neutral-800 text-neutral-300 hover:bg-neutral-700',
+                ? 'bg-success text-success-foreground hover:bg-success/80'
+                : 'bg-muted text-muted-foreground hover:bg-muted/80',
             )}
             title={entry.resolved ? 'Mark unresolved' : 'Mark resolved'}
           >
@@ -221,7 +221,7 @@ function CommentNode({ node, depth, onToggleResolved }: CommentNodeProps) {
           </button>
         ) : null}
         {entry.replyTo ? (
-          <span className="inline-flex items-center gap-1 text-neutral-500">
+          <span className="inline-flex items-center gap-1 text-muted-foreground">
             <Reply className="h-3 w-3" />
             {entry.replyTo}
           </span>

@@ -121,7 +121,7 @@ export function PlaybookDetail() {
                 disabled={toggling}
                 className={`inline-flex h-5 w-9 items-center rounded-full border transition disabled:opacity-50 ${
                   data.enabled
-                    ? 'border-emerald-500/60 bg-emerald-500/80'
+                    ? 'border-status-completed-foreground/60 bg-status-completed-foreground/80'
                     : 'border-foreground/40 bg-foreground/15'
                 }`}
               >
@@ -148,7 +148,7 @@ export function PlaybookDetail() {
                   type="button"
                   onClick={handleDelete}
                   disabled={deleting}
-                  className="inline-flex h-8 items-center gap-1.5 rounded-md bg-red-600 px-3 text-xs font-medium text-white transition hover:bg-red-700 disabled:opacity-50"
+                  className="inline-flex h-8 items-center gap-1.5 rounded-md bg-destructive px-3 text-xs font-medium text-destructive-foreground transition hover:bg-destructive/90 disabled:opacity-50"
                 >
                   {deleting ? 'Deleting...' : 'Confirm'}
                 </button>
@@ -164,7 +164,7 @@ export function PlaybookDetail() {
               <button
                 type="button"
                 onClick={() => setConfirmDelete(true)}
-                className="inline-flex h-8 items-center gap-1.5 rounded-md border border-border/70 bg-background px-3 text-xs font-medium text-red-600 transition hover:bg-red-50 dark:hover:bg-red-950/30"
+                className="inline-flex h-8 items-center gap-1.5 rounded-md border border-border/70 bg-background px-3 text-xs font-medium text-destructive transition hover:bg-destructive/10"
               >
                 <Trash2 className="h-3 w-3" />
                 Delete

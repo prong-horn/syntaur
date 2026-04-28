@@ -51,6 +51,57 @@ export default {
           foreground: 'oklch(var(--card-foreground) / <alpha-value>)',
         },
         sidebar: 'oklch(var(--sidebar) / <alpha-value>)',
+        overlay: 'oklch(var(--overlay) / <alpha-value>)',
+        code: {
+          DEFAULT: 'oklch(var(--code) / <alpha-value>)',
+          foreground: 'oklch(var(--code-foreground) / <alpha-value>)',
+        },
+        status: {
+          pending: {
+            DEFAULT: 'oklch(var(--status-pending) / <alpha-value>)',
+            foreground: 'oklch(var(--status-pending-foreground) / <alpha-value>)',
+          },
+          'in-progress': {
+            DEFAULT: 'oklch(var(--status-in-progress) / <alpha-value>)',
+            foreground: 'oklch(var(--status-in-progress-foreground) / <alpha-value>)',
+          },
+          blocked: {
+            DEFAULT: 'oklch(var(--status-blocked) / <alpha-value>)',
+            foreground: 'oklch(var(--status-blocked-foreground) / <alpha-value>)',
+          },
+          review: {
+            DEFAULT: 'oklch(var(--status-review) / <alpha-value>)',
+            foreground: 'oklch(var(--status-review-foreground) / <alpha-value>)',
+          },
+          completed: {
+            DEFAULT: 'oklch(var(--status-completed) / <alpha-value>)',
+            foreground: 'oklch(var(--status-completed-foreground) / <alpha-value>)',
+          },
+          failed: {
+            DEFAULT: 'oklch(var(--status-failed) / <alpha-value>)',
+            foreground: 'oklch(var(--status-failed-foreground) / <alpha-value>)',
+          },
+          archived: {
+            DEFAULT: 'oklch(var(--status-archived) / <alpha-value>)',
+            foreground: 'oklch(var(--status-archived-foreground) / <alpha-value>)',
+          },
+        },
+        success: {
+          DEFAULT: 'oklch(var(--success) / <alpha-value>)',
+          foreground: 'oklch(var(--success-foreground) / <alpha-value>)',
+        },
+        warning: {
+          DEFAULT: 'oklch(var(--warning) / <alpha-value>)',
+          foreground: 'oklch(var(--warning-foreground) / <alpha-value>)',
+        },
+        error: {
+          DEFAULT: 'oklch(var(--error) / <alpha-value>)',
+          foreground: 'oklch(var(--error-foreground) / <alpha-value>)',
+        },
+        info: {
+          DEFAULT: 'oklch(var(--info) / <alpha-value>)',
+          foreground: 'oklch(var(--info-foreground) / <alpha-value>)',
+        },
       },
       borderRadius: {
         lg: 'var(--radius)',

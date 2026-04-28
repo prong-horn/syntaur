@@ -169,7 +169,7 @@ export function PlaybooksPage() {
                   disabled={isPending}
                   className={`absolute bottom-3 right-3 z-10 inline-flex h-5 w-9 items-center rounded-full border opacity-100 transition disabled:opacity-50 ${
                     playbook.enabled
-                      ? 'border-emerald-500/60 bg-emerald-500/80'
+                      ? 'border-status-completed-foreground/60 bg-status-completed-foreground/80'
                       : 'border-foreground/40 bg-foreground/15'
                   }`}
                 >

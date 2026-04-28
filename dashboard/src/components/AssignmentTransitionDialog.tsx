@@ -68,7 +68,7 @@ export function AssignmentTransitionDialog({
           </DialogHeader>
 
           {action.warning ? (
-            <div className="rounded-lg border border-amber-300/80 bg-amber-50/80 px-4 py-3 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-200">
+            <div className="rounded-lg border border-warning-foreground/30 bg-warning px-4 py-3 text-sm text-warning-foreground">
               {action.warning}
             </div>
           ) : null}

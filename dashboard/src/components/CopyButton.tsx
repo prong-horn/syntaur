@@ -17,7 +17,7 @@ export function CopyButton({ value }: { value: string }) {
       title={copied ? 'Copied!' : `Copy: ${value}`}
     >
       {copied
-        ? <Check className="h-3 w-3 text-green-500" />
+        ? <Check className="h-3 w-3 text-status-completed-foreground" />
         : <Copy className="h-3 w-3" />}
     </button>
   );

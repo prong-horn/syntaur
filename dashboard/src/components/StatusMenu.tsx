@@ -4,9 +4,9 @@ type TodoStatus = 'open' | 'in_progress' | 'completed' | 'blocked';
 
 const STATUS_OPTIONS: Array<{ value: TodoStatus; icon: string; label: string; color: string }> = [
   { value: 'open', icon: '○', label: 'Open', color: 'text-muted-foreground' },
-  { value: 'in_progress', icon: '◉', label: 'In Progress', color: 'text-blue-400' },
-  { value: 'completed', icon: '✓', label: 'Completed', color: 'text-emerald-400' },
-  { value: 'blocked', icon: '✕', label: 'Blocked', color: 'text-amber-400' },
+  { value: 'in_progress', icon: '◉', label: 'In Progress', color: 'text-status-in-progress-foreground' },
+  { value: 'completed', icon: '✓', label: 'Completed', color: 'text-status-completed-foreground' },
+  { value: 'blocked', icon: '✕', label: 'Blocked', color: 'text-status-blocked-foreground' },
 ];
 
 interface StatusMenuProps {

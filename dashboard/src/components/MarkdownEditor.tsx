@@ -96,13 +96,13 @@ export function MarkdownEditor({
         </div>
 
         {error ? (
-          <p className="mt-4 rounded-md border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700 dark:border-rose-900 dark:bg-rose-950/30 dark:text-rose-300">
+          <p className="mt-4 rounded-md border border-error-foreground/30 bg-error px-4 py-3 text-sm text-error-foreground">
             {error}
           </p>
         ) : null}
 
         {validationErrors.length > 0 ? (
-          <div className="mt-4 rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-300">
+          <div className="mt-4 rounded-md border border-warning-foreground/30 bg-warning px-4 py-3 text-sm text-warning-foreground">
             <ul className="space-y-1">
               {validationErrors.map((message) => (
                 <li key={message}>{message}</li>

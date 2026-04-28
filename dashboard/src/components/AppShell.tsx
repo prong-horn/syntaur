@@ -96,7 +96,7 @@ export function AppShell({
         </aside>
 
         {mobileNavOpen ? (
-          <div className="fixed inset-0 z-40 bg-slate-950/40 lg:hidden">
+          <div className="fixed inset-0 z-40 bg-overlay/40 lg:hidden">
             <div className="h-full max-w-xs border-r border-border/70 bg-sidebar p-4 shadow-2xl">
               <div className="mb-4 flex items-center justify-between">
                 <Link to="/" className="text-lg font-semibold text-foreground" onClick={() => setMobileNavOpen(false)}>

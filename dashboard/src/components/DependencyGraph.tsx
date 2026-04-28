@@ -57,7 +57,7 @@ export function DependencyGraph({ definition, className, nodeRoutes = {} }: Depe
   if (error) {
     return (
       <div className={cn('rounded-lg border border-border bg-card p-4', className)}>
-        <p className="text-sm text-red-400">Failed to render dependency graph: {error}</p>
+        <p className="text-sm text-error-foreground">Failed to render dependency graph: {error}</p>
         <pre className="mt-2 text-xs text-muted-foreground overflow-auto">{definition}</pre>
       </div>
     );

@@ -166,8 +166,8 @@ export function BackupSection() {
           <div
             className={`rounded-lg border px-4 py-2 text-sm ${
               feedback.type === 'success'
-                ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-400'
-                : 'border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-900 dark:bg-rose-950/40 dark:text-rose-400'
+                ? 'border-success-foreground/30 bg-success text-success-foreground'
+                : 'border-error-foreground/30 bg-error text-error-foreground'
             }`}
           >
             {feedback.message}
@@ -231,7 +231,7 @@ export function BackupSection() {
             {formatTimestamp(status?.lastRestore ?? null)}
           </div>
           {status?.locked && (
-            <div className="sm:col-span-2 text-amber-600 dark:text-amber-400">
+            <div className="sm:col-span-2 text-warning-foreground">
               ⚠ A backup operation is in progress or the lock file is stale.
             </div>
           )}

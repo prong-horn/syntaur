@@ -296,7 +296,7 @@ export function TodosPage() {
                 )}
               </span>
               {copiedId === item.id ? (
-                <span className="text-xs text-emerald-400 flex items-center gap-1">
+                <span className="text-xs text-status-completed-foreground flex items-center gap-1">
                   <Check className="h-3 w-3" /> Copied to clipboard
                 </span>
               ) : (
@@ -318,7 +318,7 @@ export function TodosPage() {
               )}
               <button
                 onClick={() => handleDelete(item.workspace, item.id)}
-                className="text-xs text-muted-foreground/40 hover:text-red-400 transition opacity-0 group-hover:opacity-100"
+                className="text-xs text-muted-foreground/40 hover:text-destructive transition opacity-0 group-hover:opacity-100"
               >
                 delete
               </button>

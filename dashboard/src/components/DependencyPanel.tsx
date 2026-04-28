@@ -33,13 +33,13 @@ export function DependencyPanel({ projectSlug, dependencies, blockedReason }: De
       <button
         type="button"
         onClick={() => setExpanded(true)}
-        className="flex w-full items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50/50 px-4 py-2.5 text-left transition hover:bg-emerald-50 dark:border-emerald-900 dark:bg-emerald-950/20 dark:hover:bg-emerald-950/30"
+        className="flex w-full items-center gap-2 rounded-lg border border-success-foreground/30 bg-success/70 px-4 py-2.5 text-left transition hover:bg-success"
       >
-        <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
-        <span className="text-sm font-medium text-emerald-800 dark:text-emerald-300">
+        <CheckCircle2 className="h-4 w-4 shrink-0 text-success-foreground" />
+        <span className="text-sm font-medium text-success-foreground">
           All {dependencies.length} {dependencies.length === 1 ? 'dependency' : 'dependencies'} resolved
         </span>
-        <ChevronDown className="ml-auto h-4 w-4 text-emerald-600 dark:text-emerald-400" />
+        <ChevronDown className="ml-auto h-4 w-4 text-success-foreground" />
       </button>
     );
   }
@@ -47,14 +47,14 @@ export function DependencyPanel({ projectSlug, dependencies, blockedReason }: De
   return (
     <div className="space-y-3">
       {unmetDeps.length > 0 && (
-        <div className="flex items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 dark:border-amber-900 dark:bg-amber-950/30">
-          <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" />
-          <div className="text-sm text-amber-800 dark:text-amber-300">
+        <div className="flex items-start gap-3 rounded-lg border border-warning-foreground/30 bg-warning px-4 py-3">
+          <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-warning-foreground" />
+          <div className="text-sm text-warning-foreground">
             <strong>
               {unmetDeps.length} {unmetDeps.length === 1 ? 'dependency is' : 'dependencies are'} not yet completed.
             </strong>
             {blockedReason && (
-              <p className="mt-1 text-amber-700 dark:text-amber-400">
+              <p className="mt-1 text-warning-foreground/80">
                 Blocked reason: {blockedReason}
               </p>
             )}

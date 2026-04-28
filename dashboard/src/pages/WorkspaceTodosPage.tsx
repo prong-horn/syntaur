@@ -121,13 +121,13 @@ function SortableTodoRow({
           </span>
         )}
         {item.session && (
-          <span className="ml-2 text-xs text-blue-400/60 font-mono">
+          <span className="ml-2 text-xs text-info-foreground/70 font-mono">
             session:{item.session.slice(0, 8)}
           </span>
         )}
       </div>
       {copiedId === item.id ? (
-        <span className="text-xs text-emerald-400 flex items-center gap-1">
+        <span className="text-xs text-status-completed-foreground flex items-center gap-1">
           <Check className="h-3 w-3" /> Copied to clipboard
         </span>
       ) : (

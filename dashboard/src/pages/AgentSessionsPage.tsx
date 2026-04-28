@@ -190,7 +190,7 @@ const [search, setSearch] = useState('');
       </FilterBar>
 
       {deleteError ? (
-        <div className="mt-4 rounded-md border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700 dark:border-rose-900 dark:bg-rose-950/30 dark:text-rose-300">
+        <div className="mt-4 rounded-md border border-error-foreground/30 bg-error px-4 py-3 text-sm text-error-foreground">
           {deleteError}
         </div>
       ) : null}
@@ -338,7 +338,7 @@ function SessionRow({
             {toTitleCase(session.projectSlug)}
           </Link>
         ) : session.assignmentSlug ? (
-          <span className="rounded bg-neutral-800 px-1.5 py-0.5 text-[10px] font-mono uppercase tracking-wide text-neutral-300">
+          <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-mono uppercase tracking-wide text-muted-foreground">
             Standalone
           </span>
         ) : (

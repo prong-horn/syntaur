@@ -193,8 +193,8 @@ function SessionCard({
           <span
             className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${
               session.alive
-                ? 'border border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-400'
-                : 'border border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-900 dark:bg-rose-950/40 dark:text-rose-400'
+                ? 'border border-success-foreground/30 bg-success text-success-foreground'
+                : 'border border-error-foreground/30 bg-error text-error-foreground'
             }`}
           >
             {session.alive ? 'alive' : 'dead'}
@@ -273,7 +273,7 @@ function PaneRow({
           <GitBranch className="h-3 w-3" />
           {pane.branch}
           {pane.worktree && (
-            <span className="rounded bg-violet-100 px-1 py-0.5 text-[10px] font-medium text-violet-700 dark:bg-violet-950/40 dark:text-violet-400">
+            <span className="rounded bg-status-in-progress px-1 py-0.5 text-[10px] font-medium text-status-in-progress-foreground">
               worktree
             </span>
           )}
@@ -308,7 +308,7 @@ function PaneRow({
             <LinkIcon className="h-2.5 w-2.5" />
             {pane.assignment.title}
             {pane.assignment.project === null ? (
-              <span className="ml-1 rounded bg-neutral-800/70 px-1 py-0.5 text-[9px] uppercase tracking-wide text-neutral-400">
+              <span className="ml-1 rounded bg-muted px-1 py-0.5 text-[9px] uppercase tracking-wide text-muted-foreground">
                 Standalone
               </span>
             ) : null}

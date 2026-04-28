@@ -5,21 +5,20 @@ import { toTitleCase } from '../lib/format';
 import { useStatusConfig } from '../hooks/useStatusConfig';
 
 const DEFAULT_SEGMENT_COLORS: Record<string, string> = {
-  completed: 'bg-emerald-500',
-  in_progress: 'bg-sky-500',
-  review: 'bg-violet-500',
-  blocked: 'bg-amber-500',
-  failed: 'bg-rose-500',
-  pending: 'bg-slate-400',
+  completed: 'bg-status-completed-foreground',
+  in_progress: 'bg-status-in-progress-foreground',
+  review: 'bg-status-review-foreground',
+  blocked: 'bg-status-blocked-foreground',
+  failed: 'bg-status-failed-foreground',
+  pending: 'bg-status-pending-foreground',
 };
 
 const FALLBACK_COLORS = [
-  'bg-cyan-500',
-  'bg-indigo-500',
-  'bg-orange-500',
-  'bg-pink-500',
-  'bg-lime-500',
-  'bg-fuchsia-500',
+  'bg-primary',
+  'bg-secondary',
+  'bg-accent-coral',
+  'bg-accent-teal',
+  'bg-accent-amber',
 ];
 
 interface ProgressBarProps {

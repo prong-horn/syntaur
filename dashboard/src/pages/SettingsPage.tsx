@@ -245,8 +245,8 @@ export function SettingsPage() {
         {themeFeedback && (
           <div className={`mb-3 rounded-md border px-3 py-1.5 text-xs ${
             themeFeedback.type === 'success'
-              ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-400'
-              : 'border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-900 dark:bg-rose-950/40 dark:text-rose-400'
+              ? 'border-success-foreground/30 bg-success text-success-foreground'
+              : 'border-error-foreground/30 bg-error text-error-foreground'
           }`}>
             {themeFeedback.message}
           </div>
@@ -330,8 +330,8 @@ export function SettingsPage() {
       {feedback && (
         <div className={`rounded-lg border px-4 py-2 text-sm ${
           feedback.type === 'success'
-            ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-400'
-            : 'border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-900 dark:bg-rose-950/40 dark:text-rose-400'
+            ? 'border-success-foreground/30 bg-success text-success-foreground'
+            : 'border-error-foreground/30 bg-error text-error-foreground'
         }`}>
           {feedback.message}
         </div>
