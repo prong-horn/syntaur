@@ -413,12 +413,18 @@ export function createDashboardServer(options: DashboardServerOptions) {
   // try to resolve arbitrary client-side route paths (e.g. /assignments/:id)
   // as files, which makes `send` emit NotFoundError on every SPA refresh.
   if (serveStaticUi && dashboardDistPath) {
-    app.use('/assets', express.static(resolve(dashboardDistPath, 'assets')));
+    // `dotfiles: 'allow'` is required because the resolved package path may
+    // live under a dot-prefixed directory (npm/npx caches under ~/.npm,
+    // installs under ~/.nvm, ~/.local, etc.). The default 'ignore' makes
+    // `send` 404 every file with a dot-component anywhere in the path.
+    const sendOpts = { dotfiles: 'allow' as const };
+
+    app.use('/assets', express.static(resolve(dashboardDistPath, 'assets'), sendOpts));
     // Files copied from dashboard/public/ (logo, favicon, etc.) land at the
     // dist root; serve them with fallthrough so missing paths still hit the
     // SPA fallback below. `index: false` prevents express.static from serving
     // index.html for "/" — that's the SPA fallback's job.
-    app.use(express.static(dashboardDistPath, { index: false, fallthrough: true }));
+    app.use(express.static(dashboardDistPath, { ...sendOpts, index: false, fallthrough: true }));
 
     // SPA fallback: serve index.html for all non-API, non-WS, non-asset routes.
     // Express 5 requires named wildcards; use '{*path}' instead of '*'.
@@ -438,7 +444,7 @@ export function createDashboardServer(options: DashboardServerOptions) {
         );
         return;
       }
-      res.sendFile(indexPath, (err: Error | null) => {
+      res.sendFile(indexPath, sendOpts, (err: Error | null) => {
         if (err) {
           console.error('Error sending dashboard index.html:', err);
           if (!res.headersSent) res.status(500).send('Dashboard load error');
