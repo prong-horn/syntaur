@@ -24,6 +24,16 @@ import { CommandPalette } from './CommandPalette';
 import { ActionPalette } from './ActionPalette';
 import { CheatsheetDialog } from './CheatsheetDialog';
 import { buildShellMeta } from '../lib/routes';
+import {
+  canonicalizeCombo,
+  isReservedCombo,
+  type BindableActionKind,
+} from './bindableActions';
+import { lookupReservedCombo } from './bindableActions';
+import {
+  useHotkeyBindings,
+  saveHotkeyBindings,
+} from '../hooks/useHotkeyBindings';
 
 export type HotkeyScope =
   | 'global'
@@ -50,6 +60,13 @@ export function getWorkspaceFromPathname(pathname: string): string {
   return m ? `/w/${m[1]}` : '';
 }
 
+export interface HotkeyConflict {
+  /** Set when the combo collides with a built-in shortcut. */
+  description?: string;
+  /** Set when another bindable action already uses the combo. */
+  kind?: BindableActionKind;
+}
+
 interface HotkeyContextValue {
   register: (b: Omit<HotkeyBinding, 'id'>) => number;
   unregister: (id: number) => void;
@@ -68,6 +85,21 @@ interface HotkeyContextValue {
   wsPrefix: string;
   paletteEntries: PaletteEntry[];
   actionEntries: Action[];
+
+  /** User bindings (canonical combos) keyed by BindableActionKind. */
+  customBindings: Partial<Record<BindableActionKind, string>>;
+  /** Bind / rebind a canonical action. Returns the canonicalized combo. */
+  bindAction: (kind: BindableActionKind, combo: string) => Promise<string>;
+  /** Remove a user binding for the given canonical action. */
+  unbindAction: (kind: BindableActionKind) => Promise<void>;
+  /** Returns a conflict descriptor or null. */
+  findConflict: (combo: string, ignoreKind?: BindableActionKind) => HotkeyConflict | null;
+  /** Open the actions palette and pre-execute the action with the given kind. */
+  openActionsPaletteWithAction: (kind: BindableActionKind) => void;
+  /** Action kind queued to be auto-executed after the palette opens, or null. */
+  pendingActionKind: BindableActionKind | null;
+  /** One-shot read: returns the queued kind and clears it. */
+  consumePendingActionKind: () => BindableActionKind | null;
 }
 
 const HotkeyContext = createContext<HotkeyContextValue | null>(null);
@@ -148,6 +180,10 @@ export function HotkeyProvider({ children }: { children: ReactNode }) {
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [cheatsheetOpen, setCheatsheetOpen] = useState(false);
   const [actionsPaletteOpen, setActionsPaletteOpen] = useState(false);
+  const [pendingActionKind, setPendingActionKind] =
+    useState<BindableActionKind | null>(null);
+
+  const { bindings: customBindings } = useHotkeyBindings();
 
   const register = useCallback((b: Omit<HotkeyBinding, 'id'>) => {
     const id = nextIdRef.current++;
@@ -174,8 +210,78 @@ export function HotkeyProvider({ children }: { children: ReactNode }) {
   const openCheatsheet = useCallback(() => setCheatsheetOpen(true), []);
   const closeCheatsheet = useCallback(() => setCheatsheetOpen(false), []);
   const openActionsPalette = useCallback(() => setActionsPaletteOpen(true), []);
-  const closeActionsPalette = useCallback(() => setActionsPaletteOpen(false), []);
+  const closeActionsPalette = useCallback(() => {
+    setActionsPaletteOpen(false);
+    setPendingActionKind(null);
+  }, []);
   const listBindings = useCallback(() => Array.from(registryRef.current.values()), []);
+
+  const consumePendingActionKind = useCallback((): BindableActionKind | null => {
+    let consumed: BindableActionKind | null = null;
+    setPendingActionKind((current) => {
+      consumed = current;
+      return null;
+    });
+    return consumed;
+  }, []);
+
+  const openActionsPaletteWithAction = useCallback(
+    (kind: BindableActionKind) => {
+      setPendingActionKind(kind);
+      setActionsPaletteOpen(true);
+    },
+    [],
+  );
+
+  const findConflict = useCallback(
+    (combo: string, ignoreKind?: BindableActionKind): HotkeyConflict | null => {
+      const canonical = canonicalizeCombo(combo);
+      if (!canonical) return null;
+      if (isReservedCombo(canonical)) {
+        const entry = lookupReservedCombo(canonical);
+        return { description: entry?.description ?? 'Reserved built-in shortcut' };
+      }
+      for (const [kind, bound] of Object.entries(customBindings) as Array<
+        [BindableActionKind, string]
+      >) {
+        if (ignoreKind && kind === ignoreKind) continue;
+        if (bound === canonical) return { kind };
+      }
+      return null;
+    },
+    [customBindings],
+  );
+
+  const bindAction = useCallback(
+    async (kind: BindableActionKind, combo: string): Promise<string> => {
+      const canonical = canonicalizeCombo(combo);
+      if (!canonical) throw new Error('Empty combo');
+      const conflict = findConflict(canonical, kind);
+      if (conflict) {
+        const reason = conflict.description
+          ? `Reserved: ${conflict.description}`
+          : `Already bound to "${conflict.kind}"`;
+        throw new Error(reason);
+      }
+      const next: Partial<Record<BindableActionKind, string>> = {
+        ...customBindings,
+        [kind]: canonical,
+      };
+      await saveHotkeyBindings(next);
+      return canonical;
+    },
+    [customBindings, findConflict],
+  );
+
+  const unbindAction = useCallback(
+    async (kind: BindableActionKind): Promise<void> => {
+      if (!customBindings[kind]) return;
+      const next: Partial<Record<BindableActionKind, string>> = { ...customBindings };
+      delete next[kind];
+      await saveHotkeyBindings(next);
+    },
+    [customBindings],
+  );
 
   // Clear chord on route change
   useEffect(() => {
@@ -397,6 +503,33 @@ export function HotkeyProvider({ children }: { children: ReactNode }) {
     return () => ids.forEach(unregister);
   }, [register, unregister, navigate, wsPrefix]);
 
+  // Register user-bound canonical-action hotkeys. Re-registers whenever the
+  // bindings or the action set changes.
+  useEffect(() => {
+    const ids: number[] = [];
+    for (const [kind, combo] of Object.entries(customBindings) as Array<
+      [BindableActionKind, string]
+    >) {
+      if (!combo) continue;
+      const matchingAction = actionEntries.find((a) => a.bindableKind === kind);
+      const description = matchingAction
+        ? `Custom: ${matchingAction.title}`
+        : `Custom: ${kind}`;
+      ids.push(
+        register({
+          keys: combo,
+          scope: 'global',
+          description,
+          handler: () => {
+            setPendingActionKind(kind);
+            setActionsPaletteOpen(true);
+          },
+        }),
+      );
+    }
+    return () => ids.forEach(unregister);
+  }, [register, unregister, customBindings, actionEntries]);
+
   const value = useMemo<HotkeyContextValue>(
     () => ({
       register,
@@ -416,6 +549,13 @@ export function HotkeyProvider({ children }: { children: ReactNode }) {
       wsPrefix,
       paletteEntries,
       actionEntries,
+      customBindings,
+      bindAction,
+      unbindAction,
+      findConflict,
+      openActionsPaletteWithAction,
+      pendingActionKind,
+      consumePendingActionKind,
     }),
     [
       register,
@@ -435,6 +575,13 @@ export function HotkeyProvider({ children }: { children: ReactNode }) {
       wsPrefix,
       paletteEntries,
       actionEntries,
+      customBindings,
+      bindAction,
+      unbindAction,
+      findConflict,
+      openActionsPaletteWithAction,
+      pendingActionKind,
+      consumePendingActionKind,
     ],
   );
 

@@ -4,10 +4,15 @@ export {
   getWorkspaceFromPathname,
   HOTKEY_CHORD_TIMEOUT_MS,
 } from './HotkeyProvider';
-export type { HotkeyScope, HotkeyBinding } from './HotkeyProvider';
+export type { HotkeyScope, HotkeyBinding, HotkeyConflict } from './HotkeyProvider';
 export { useHotkey, useHotkeyScope } from './useHotkey';
 export { useListSelection } from './useListSelection';
-export { matchesPattern, formatPatternForDisplay, isMac } from './match';
+export {
+  matchesPattern,
+  formatPatternForDisplay,
+  patternFromKeyboardEvent,
+  isMac,
+} from './match';
 export { rankAll, scoreField } from './fuzzy';
 export {
   buildIndex,
@@ -19,5 +24,24 @@ export type { PaletteEntry, PaletteEntryType } from './paletteIndex';
 export { CommandPalette } from './CommandPalette';
 export { ActionPalette } from './ActionPalette';
 export { buildActionsIndex } from './actionsIndex';
-export type { Action } from './actionsIndex';
+export type {
+  Action,
+  PaletteFlow,
+  PaletteFlowStep,
+  TextFlowStep,
+  PickerFlowStep,
+  FlowOption,
+} from './actionsIndex';
 export { CheatsheetDialog } from './CheatsheetDialog';
+export { TextStep, PickerStep, StepHeader } from './CreateActionForms';
+export {
+  BINDABLE_ACTION_KINDS,
+  BUILTIN_RESERVED_COMBOS,
+  BUILTIN_HOTKEY_CATALOG,
+  BINDABLE_ACTION_LABELS,
+  canonicalizeCombo,
+  isBindableActionKind,
+  isReservedCombo,
+  lookupReservedCombo,
+} from './bindableActions';
+export type { BindableActionKind, BuiltinHotkeyEntry } from './bindableActions';

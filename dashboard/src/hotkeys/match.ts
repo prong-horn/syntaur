@@ -1,6 +1,7 @@
 // Platform-aware KeyboardEvent matcher.
 // Pattern syntax: "Mod+k" ("Mod" = Meta on mac, Ctrl elsewhere), "Shift+t", "?", "[",
 // "Enter", "g", "Escape". Uses event.key (not event.code) so non-US layouts work.
+import { canonicalizeCombo } from '@shared/hotkeys-catalog';
 
 export function isMac(): boolean {
   if (typeof navigator === 'undefined') return false;
@@ -51,6 +52,48 @@ export function matchesPattern(event: KeyboardEvent, pattern: string): boolean {
   if (!p.alt && event.altKey) return false;
 
   return true;
+}
+
+/**
+ * Inverse of formatPatternForDisplay: convert a live KeyboardEvent into a
+ * canonical pattern string suitable for storage and conflict detection.
+ *
+ * Examples (mac):
+ *   metaKey + shiftKey + key="K" -> "mod+shift+k"
+ *   shiftKey + key="?"           -> "?"          (Shift folded into the punctuation)
+ *   key="Enter"                  -> "enter"
+ *   key="Escape"                 -> "escape"
+ *   key="["                      -> "["
+ */
+export function patternFromKeyboardEvent(event: KeyboardEvent): string {
+  const mods: string[] = [];
+  const modActive = isMac() ? event.metaKey : event.ctrlKey;
+  if (modActive) mods.push('mod');
+  // Only emit ctrl independently when it's not folded into "mod" (mac uses
+  // metaKey for mod, so ctrl can stand alone there).
+  if (event.ctrlKey && !modActive) mods.push('ctrl');
+  if (event.altKey) mods.push('alt');
+
+  const rawKey = event.key;
+  let key: string;
+  if (rawKey === ' ' || rawKey === 'Spacebar') {
+    key = 'space';
+  } else if (rawKey.length === 1) {
+    key = rawKey.toLowerCase();
+  } else {
+    key = rawKey.toLowerCase();
+  }
+
+  // Shift is folded into printable punctuation (e.g. "?" already implies Shift
+  // on US layouts) — only emit it when the key is a letter/digit and not when
+  // the keystroke produced a shifted glyph.
+  const isPrintableLetterOrDigit = key.length === 1 && /^[a-z0-9]$/.test(key);
+  if (event.shiftKey && isPrintableLetterOrDigit) {
+    mods.push('shift');
+  }
+
+  const combo = [...mods, key].join('+');
+  return canonicalizeCombo(combo);
 }
 
 export function formatPatternForDisplay(pattern: string): string {

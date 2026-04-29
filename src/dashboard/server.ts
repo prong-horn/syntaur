@@ -23,7 +23,22 @@ import { resolveAssignmentById } from '../utils/assignment-resolver.js';
 import { listSessionsByAssignment, reconcileActiveSessions } from './agent-sessions.js';
 import { createWatcher } from './watcher.js';
 import { fileExists } from '../utils/fs.js';
-import { writeStatusConfig, deleteStatusConfig, writeThemeConfig, deleteThemeConfig, readConfig } from '../utils/config.js';
+import {
+  writeStatusConfig,
+  deleteStatusConfig,
+  writeThemeConfig,
+  deleteThemeConfig,
+  writeHotkeyBindingsConfig,
+  deleteHotkeyBindingsConfig,
+  readConfig,
+} from '../utils/config.js';
+import {
+  BINDABLE_ACTION_KINDS,
+  canonicalizeCombo,
+  isBindableActionKind,
+  isReservedCombo,
+  type BindableActionKind,
+} from '../utils/hotkeysCatalog.js';
 import { createWriteRouter } from './api-write.js';
 import { createServersRouter } from './api-servers.js';
 import { createAgentSessionsRouter } from './api-agent-sessions.js';
@@ -246,6 +261,85 @@ export function createDashboardServer(options: DashboardServerOptions) {
     } catch (error) {
       console.error('Error resetting theme config:', error);
       res.status(500).json({ error: 'Failed to reset theme config' });
+    }
+  });
+
+  app.get('/api/config/hotkeys', async (_req, res) => {
+    try {
+      const config = await readConfig();
+      const bindings = config.hotkeys?.bindings ?? {};
+      res.json({ bindings, custom: config.hotkeys !== null });
+    } catch (error) {
+      console.error('Error getting hotkeys config:', error);
+      res.status(500).json({ error: 'Failed to get hotkeys config' });
+    }
+  });
+
+  app.put('/api/config/hotkeys', async (req, res) => {
+    try {
+      const raw = (req.body && typeof req.body === 'object' ? req.body : {}) as {
+        bindings?: unknown;
+      };
+      const incoming = raw.bindings;
+      if (!incoming || typeof incoming !== 'object' || Array.isArray(incoming)) {
+        res.status(400).json({ error: 'bindings must be an object keyed by action kind' });
+        return;
+      }
+      const cleaned: Partial<Record<BindableActionKind, string>> = {};
+      for (const [rawKind, rawValue] of Object.entries(incoming as Record<string, unknown>)) {
+        if (!isBindableActionKind(rawKind)) {
+          res.status(400).json({
+            error: `unknown action kind "${rawKind}" — expected one of: ${BINDABLE_ACTION_KINDS.join(', ')}`,
+          });
+          return;
+        }
+        if (typeof rawValue !== 'string' || rawValue.trim() === '') {
+          res.status(400).json({ error: `binding for "${rawKind}" must be a non-empty string` });
+          return;
+        }
+        const canonical = canonicalizeCombo(rawValue);
+        if (!canonical) {
+          res.status(400).json({ error: `binding for "${rawKind}" is not a valid combo` });
+          return;
+        }
+        if (isReservedCombo(canonical)) {
+          res.status(400).json({
+            error: `combo "${canonical}" is reserved by a built-in shortcut`,
+            kind: rawKind,
+            combo: canonical,
+          });
+          return;
+        }
+        cleaned[rawKind] = canonical;
+      }
+      // Detect duplicate combos across kinds.
+      const seenCombos = new Map<string, BindableActionKind>();
+      for (const [kind, combo] of Object.entries(cleaned) as Array<[BindableActionKind, string]>) {
+        if (seenCombos.has(combo)) {
+          res.status(400).json({
+            error: `combo "${combo}" is bound to multiple actions`,
+            kinds: [seenCombos.get(combo), kind],
+          });
+          return;
+        }
+        seenCombos.set(combo, kind);
+      }
+
+      await writeHotkeyBindingsConfig({ bindings: cleaned });
+      res.json({ bindings: cleaned, custom: Object.keys(cleaned).length > 0 });
+    } catch (error) {
+      console.error('Error saving hotkeys config:', error);
+      res.status(500).json({ error: 'Failed to save hotkeys config' });
+    }
+  });
+
+  app.delete('/api/config/hotkeys', async (_req, res) => {
+    try {
+      await deleteHotkeyBindingsConfig();
+      res.json({ bindings: {}, custom: false });
+    } catch (error) {
+      console.error('Error resetting hotkeys config:', error);
+      res.status(500).json({ error: 'Failed to reset hotkeys config' });
     }
   });
 
