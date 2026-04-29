@@ -454,6 +454,120 @@ export function createTodosRouter(
     }
   });
 
+  // POST /:workspace/promote
+  router.post('/:workspace/promote', async (req, res) => {
+    try {
+      const workspace = getWorkspaceParam(req.params.workspace);
+      const { todoIds, mode, target, title, type, priority, keepSource } = req.body ?? {};
+      if (!Array.isArray(todoIds) || todoIds.length === 0) {
+        res.status(400).json({ error: 'todoIds (non-empty array of strings) is required' });
+        return;
+      }
+      if (mode !== 'new-assignment' && mode !== 'to-assignment') {
+        res.status(400).json({ error: 'mode must be "new-assignment" or "to-assignment"' });
+        return;
+      }
+
+      const result = await wsLock(workspace, async () => {
+        const checklist = await readChecklist(todosDir, workspace);
+        const items: TodoItem[] = [];
+        for (const id of todoIds) {
+          const item = checklist.items.find((i) => i.id === id);
+          if (!item) return { error: `Todo "${id}" not found` };
+          if (item.status === 'completed') return { error: `Todo "${id}" is already completed` };
+          items.push(item);
+        }
+
+        const scopeLabel = workspace === '_global' ? '_global' : `workspace:${workspace}`;
+        const { resolve: resolvePath } = await import('node:path');
+        const { readConfig } = await import('../utils/config.js');
+        const { assignmentsDir: assignmentsDirFn } = await import('../utils/paths.js');
+        const { fileExists, writeFileForce } = await import('../utils/fs.js');
+        const { readFile } = await import('node:fs/promises');
+        const { appendTodosToAssignmentBody, touchAssignmentUpdated } = await import('../utils/assignment-todos.js');
+        const { nowTimestamp } = await import('../utils/timestamp.js');
+
+        let assignmentRef: string;
+        let assignmentDir: string;
+
+        if (mode === 'new-assignment') {
+          const targetProject: string | undefined = target?.project;
+          if (!targetProject) return { error: 'target.project is required for new-assignment mode' };
+          if (items.length > 1 && !title) return { error: 'title is required when promoting multiple todos' };
+          const { createAssignmentCommand } = await import('../commands/create-assignment.js');
+          const created = await createAssignmentCommand(title || items[0].description, {
+            project: targetProject,
+            type,
+            priority,
+            withTodos: true,
+            silent: true,
+          });
+          assignmentDir = created.assignmentDir;
+          assignmentRef = `${created.projectSlug}/${created.slug}`;
+        } else {
+          const tg: string = target?.assignment || '';
+          if (!tg) return { error: 'target.assignment is required for to-assignment mode' };
+          if (tg.includes('/')) {
+            const parts = tg.split('/');
+            if (parts.length !== 2) return { error: `Invalid target.assignment "${tg}"` };
+            const config = await readConfig();
+            assignmentDir = resolvePath(config.defaultProjectDir, parts[0], 'assignments', parts[1]);
+            assignmentRef = `${parts[0]}/${parts[1]}`;
+          } else if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(tg)) {
+            assignmentDir = resolvePath(assignmentsDirFn(), tg);
+            assignmentRef = tg;
+          } else {
+            return { error: `Invalid target.assignment "${tg}"` };
+          }
+          const assignmentMdPath = resolvePath(assignmentDir, 'assignment.md');
+          if (!(await fileExists(assignmentMdPath))) return { error: `Target assignment not found: ${assignmentMdPath}` };
+        }
+
+        const assignmentMdPath = resolvePath(assignmentDir, 'assignment.md');
+        let content = await readFile(assignmentMdPath, 'utf-8');
+        content = appendTodosToAssignmentBody(
+          content,
+          items.map((it) => ({
+            description: it.description,
+            trace: `promoted from t:${it.id} in ${scopeLabel}`,
+          })),
+        );
+        content = touchAssignmentUpdated(content, nowTimestamp());
+        await writeFileForce(assignmentMdPath, content);
+
+        if (!keepSource) {
+          for (const item of items) {
+            item.status = 'completed';
+            item.session = null;
+            touchItem(item);
+          }
+          await writeChecklist(todosDir, checklist);
+          for (const item of items) {
+            const entry: LogEntry = {
+              timestamp: new Date().toISOString(),
+              itemIds: [item.id],
+              items: item.description,
+              session: null,
+              branch: item.branch || null,
+              summary: `Promoted to assignment ${assignmentRef}`,
+              blockers: null,
+              status: null,
+            };
+            await appendLogEntry(todosDir, workspace, entry);
+          }
+        }
+
+        return { assignmentRef, assignmentDir, promoted: items.map((i) => i.id) };
+      });
+
+      if ('error' in result) { res.status(400).json({ error: result.error }); return; }
+      broadcastUpdate();
+      res.json(result);
+    } catch (error) {
+      res.status(500).json({ error: error instanceof Error ? error.message : 'Failed to promote todos' });
+    }
+  });
+
   // POST /:workspace/:id/unblock
   router.post('/:workspace/:id/unblock', async (req, res) => {
     try {
