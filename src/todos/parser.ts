@@ -33,6 +33,77 @@ export function generateUniqueId(existingIds: Set<string>): string {
 const ITEM_REGEX = /^- \[([ x!]|>[^\]]*)\]\s+(.+)$/;
 const ID_REGEX = /\[t:([a-f0-9]{4})\]/;
 const TAG_REGEX = /#([a-zA-Z0-9_-]+)/g;
+// Meta token follows `[t:<id>]` and looks like `<key=value;key=value;...>`.
+// Anchored at end of line. Recognized keys: b (branch), w (worktreePath),
+// c (createdAt), u (updatedAt), p (planDir). Unknown keys are dropped.
+const META_TOKEN_REGEX = /\[t:[a-f0-9]{4}\]\s+<([^>]*)>\s*$/;
+const META_ENCODE_CHARS = ['%', '<', '>', '[', ']', '=', ';', '\n', '\r'];
+
+export function encodeMetaValue(value: string): string {
+  let out = '';
+  for (const ch of value) {
+    if (META_ENCODE_CHARS.includes(ch)) {
+      out += '%' + ch.charCodeAt(0).toString(16).toUpperCase().padStart(2, '0');
+    } else {
+      out += ch;
+    }
+  }
+  return out;
+}
+
+export function decodeMetaValue(value: string): string {
+  return value.replace(/%([0-9A-Fa-f]{2})/g, (_, hex) =>
+    String.fromCharCode(parseInt(hex, 16)),
+  );
+}
+
+interface MetaFields {
+  branch: string | null;
+  worktreePath: string | null;
+  createdAt: string | null;
+  updatedAt: string | null;
+  planDir: string | null;
+}
+
+function emptyMetaFields(): MetaFields {
+  return { branch: null, worktreePath: null, createdAt: null, updatedAt: null, planDir: null };
+}
+
+export function parseMetaToken(line: string): MetaFields {
+  const match = line.match(META_TOKEN_REGEX);
+  if (!match) return emptyMetaFields();
+  const body = match[1];
+  if (!body) return emptyMetaFields();
+  const fields = emptyMetaFields();
+  for (const pair of body.split(';')) {
+    const trimmed = pair.trim();
+    if (!trimmed) continue;
+    const eq = trimmed.indexOf('=');
+    if (eq < 0) continue;
+    const key = trimmed.slice(0, eq).trim();
+    const rawValue = trimmed.slice(eq + 1);
+    const value = decodeMetaValue(rawValue);
+    switch (key) {
+      case 'b': fields.branch = value; break;
+      case 'w': fields.worktreePath = value; break;
+      case 'c': fields.createdAt = value; break;
+      case 'u': fields.updatedAt = value; break;
+      case 'p': fields.planDir = value; break;
+    }
+  }
+  return fields;
+}
+
+export function serializeMetaToken(item: TodoItem): string {
+  const pairs: string[] = [];
+  if (item.branch !== null) pairs.push(`b=${encodeMetaValue(item.branch)}`);
+  if (item.worktreePath !== null) pairs.push(`w=${encodeMetaValue(item.worktreePath)}`);
+  if (item.createdAt !== null) pairs.push(`c=${encodeMetaValue(item.createdAt)}`);
+  if (item.updatedAt !== null) pairs.push(`u=${encodeMetaValue(item.updatedAt)}`);
+  if (item.planDir !== null) pairs.push(`p=${encodeMetaValue(item.planDir)}`);
+  if (pairs.length === 0) return '';
+  return `<${pairs.join(';')}>`;
+}
 
 function parseStatus(marker: string): { status: TodoStatus; session: string | null } {
   if (marker === ' ') return { status: 'open', session: null };
@@ -89,7 +160,20 @@ export function parseChecklistItem(line: string): TodoItem | null {
     description = rest.slice(0, Math.min(...cutPoints)).trim();
   }
 
-  return { id, description, status, tags, session };
+  const meta = parseMetaToken(line);
+
+  return {
+    id,
+    description,
+    status,
+    tags,
+    session,
+    branch: meta.branch,
+    worktreePath: meta.worktreePath,
+    createdAt: meta.createdAt,
+    updatedAt: meta.updatedAt,
+    planDir: meta.planDir,
+  };
 }
 
 export function serializeChecklistItem(item: TodoItem): string {
@@ -98,6 +182,8 @@ export function serializeChecklistItem(item: TodoItem): string {
   const parts = [`- [${marker}] ${item.description}`];
   if (tagStr) parts.push(tagStr);
   parts.push(`[t:${item.id}]`);
+  const meta = serializeMetaToken(item);
+  if (meta) parts.push(meta);
   return parts.join(' ');
 }
 

@@ -27,6 +27,12 @@ function projLock<T>(slug: string, fn: () => Promise<T>): Promise<T> {
   return next;
 }
 
+function touchItem(item: TodoItem): void {
+  const now = new Date().toISOString();
+  if (item.createdAt === null) item.createdAt = now;
+  item.updatedAt = now;
+}
+
 function getProjectIdParam(value: string | string[] | undefined): string {
   if (Array.isArray(value)) return value[0] ?? '';
   return value ?? '';
@@ -135,12 +141,18 @@ export function createProjectTodosRouter(
         const checklist = await readChecklist(todosDir, slug);
         const existingIds = new Set(checklist.items.map((i) => i.id));
         const id = generateUniqueId(existingIds);
+        const now = new Date().toISOString();
         const newItem: TodoItem = {
           id,
           description,
           status: 'open',
           tags: Array.isArray(tags) ? tags : [],
           session: null,
+          branch: null,
+          worktreePath: null,
+          createdAt: now,
+          updatedAt: now,
+          planDir: null,
         };
         checklist.workspace = slug;
         checklist.items.push(newItem);
@@ -316,6 +328,7 @@ export function createProjectTodosRouter(
         if (!item) return null;
         if (req.body.description !== undefined) item.description = req.body.description;
         if (Array.isArray(req.body.tags)) item.tags = req.body.tags;
+        touchItem(item);
         checklist.workspace = slug;
         await writeChecklist(todosDir, checklist);
         return { ...item };
@@ -378,6 +391,9 @@ export function createProjectTodosRouter(
         if (item.status === 'in_progress') return { error: 'conflict' as const, session: item.session };
         item.status = 'in_progress';
         item.session = req.body.session || null;
+        if (req.body.branch) item.branch = req.body.branch;
+        if (req.body.worktreePath) item.worktreePath = req.body.worktreePath;
+        touchItem(item);
         checklist.workspace = slug;
         await writeChecklist(todosDir, checklist);
         return { item: { ...item } };
@@ -413,6 +429,8 @@ export function createProjectTodosRouter(
         if (!item) return null;
         item.status = 'completed';
         item.session = null;
+        const branchForLog = req.body.branch || item.branch || null;
+        touchItem(item);
         checklist.workspace = slug;
         await writeChecklist(todosDir, checklist);
         const entry: LogEntry = {
@@ -420,7 +438,7 @@ export function createProjectTodosRouter(
           itemIds: [item.id],
           items: item.description,
           session: req.body.session || null,
-          branch: req.body.branch || null,
+          branch: branchForLog,
           summary: req.body.summary || 'Completed.',
           blockers: null,
           status: null,
@@ -456,6 +474,7 @@ export function createProjectTodosRouter(
         if (!item) return null;
         item.status = 'blocked';
         item.session = null;
+        touchItem(item);
         checklist.workspace = slug;
         await writeChecklist(todosDir, checklist);
         const entry: LogEntry = {
@@ -498,6 +517,7 @@ export function createProjectTodosRouter(
         if (!item) return null;
         item.status = 'open';
         item.session = null;
+        touchItem(item);
         checklist.workspace = slug;
         await writeChecklist(todosDir, checklist);
         return { ...item };
@@ -529,6 +549,7 @@ export function createProjectTodosRouter(
         if (!item) return null;
         item.status = 'open';
         item.session = null;
+        touchItem(item);
         checklist.workspace = slug;
         await writeChecklist(todosDir, checklist);
         return { ...item };

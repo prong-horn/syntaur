@@ -110,4 +110,220 @@ describe('syntaur todo CLI scope resolution', () => {
     expect(content).toContain('first');
     expect(content).toMatch(/^---\nworkspace: alpha\n/m);
   });
+
+  it('todo add records createdAt/updatedAt meta token on the line', async () => {
+    const res = await runCli(['todo', 'add', 'with-times'], syntaurHome);
+    expect(res.code).toBe(0);
+    const content = await readFile(resolve(syntaurHome, 'todos', '_global.md'), 'utf-8');
+    expect(content).toMatch(/<.*c=\d{4}-\d{2}-\d{2}T.*;u=\d{4}-\d{2}-\d{2}T.*>/);
+  });
+
+  it('todo start --branch foo --worktree /tmp/wt persists branch and worktreePath', async () => {
+    const addRes = await runCli(['todo', 'add', 'start-branch'], syntaurHome);
+    expect(addRes.code).toBe(0);
+    const before = await readFile(resolve(syntaurHome, 'todos', '_global.md'), 'utf-8');
+    const idMatch = before.match(/\[t:([a-f0-9]{4})\]/);
+    expect(idMatch).not.toBeNull();
+    const id = idMatch![1];
+
+    const startRes = await runCli(
+      ['todo', 'start', id, '--branch', 'feat/promote-test', '--worktree', '/tmp/wt'],
+      syntaurHome,
+    );
+    expect(startRes.code).toBe(0);
+    const after = await readFile(resolve(syntaurHome, 'todos', '_global.md'), 'utf-8');
+    expect(after).toContain('b=feat/promote-test');
+    expect(after).toContain('w=/tmp/wt');
+  });
+});
+
+describe('syntaur todo promote --new-assignment', () => {
+  it('creates a new assignment from a single todo and marks it completed', async () => {
+    await seedProject('alpha');
+    const addRes = await runCli(['todo', 'add', 'rewrite the README'], syntaurHome);
+    expect(addRes.code).toBe(0);
+    const before = await readFile(resolve(syntaurHome, 'todos', '_global.md'), 'utf-8');
+    const id = before.match(/\[t:([a-f0-9]{4})\]/)![1];
+
+    const res = await runCli(
+      ['todo', 'promote', id, '--new-assignment', '--to-project', 'alpha', '--type', 'feature'],
+      syntaurHome,
+    );
+    expect(res.code).toBe(0);
+
+    const after = await readFile(resolve(syntaurHome, 'todos', '_global.md'), 'utf-8');
+    expect(after).toMatch(new RegExp(`- \\[x\\] rewrite the README .*\\[t:${id}\\]`));
+
+    const log = await readFile(resolve(syntaurHome, 'todos', '_global-log.md'), 'utf-8');
+    expect(log).toContain('Promoted to assignment alpha/');
+
+    const assignmentsRoot = resolve(projectsDir, 'alpha', 'assignments');
+    const { readdir } = await import('node:fs/promises');
+    const dirs = await readdir(assignmentsRoot);
+    expect(dirs.length).toBe(1);
+    const assignmentMd = await readFile(
+      resolve(assignmentsRoot, dirs[0], 'assignment.md'),
+      'utf-8',
+    );
+    expect(assignmentMd).toContain('## Todos');
+    expect(assignmentMd).toContain('- [ ] rewrite the README');
+    expect(assignmentMd).toContain(`promoted from t:${id}`);
+  });
+
+  it('requires --title when promoting multiple todos', async () => {
+    await seedProject('alpha');
+    await runCli(['todo', 'add', 'one'], syntaurHome);
+    await runCli(['todo', 'add', 'two'], syntaurHome);
+    const list = await readFile(resolve(syntaurHome, 'todos', '_global.md'), 'utf-8');
+    const ids = [...list.matchAll(/\[t:([a-f0-9]{4})\]/g)].map((m) => m[1]);
+    expect(ids.length).toBe(2);
+
+    const res = await runCli(
+      ['todo', 'promote', ids[0], ids[1], '--new-assignment', '--to-project', 'alpha'],
+      syntaurHome,
+    );
+    expect(res.code).not.toBe(0);
+    expect(res.stderr).toMatch(/--title is required/);
+  });
+
+  it('promotes multiple todos to one assignment with --title', async () => {
+    await seedProject('alpha');
+    await runCli(['todo', 'add', 'first task'], syntaurHome);
+    await runCli(['todo', 'add', 'second task'], syntaurHome);
+    const list = await readFile(resolve(syntaurHome, 'todos', '_global.md'), 'utf-8');
+    const ids = [...list.matchAll(/\[t:([a-f0-9]{4})\]/g)].map((m) => m[1]);
+
+    const res = await runCli(
+      ['todo', 'promote', ids[0], ids[1], '--new-assignment', '--to-project', 'alpha', '--title', 'combined work'],
+      syntaurHome,
+    );
+    expect(res.code).toBe(0);
+
+    const assignmentsRoot = resolve(projectsDir, 'alpha', 'assignments');
+    const { readdir } = await import('node:fs/promises');
+    const dirs = await readdir(assignmentsRoot);
+    expect(dirs.length).toBe(1);
+    const assignmentMd = await readFile(
+      resolve(assignmentsRoot, dirs[0], 'assignment.md'),
+      'utf-8',
+    );
+    expect(assignmentMd).toContain('- [ ] first task');
+    expect(assignmentMd).toContain('- [ ] second task');
+  });
+
+  it('--keep-source leaves source todos open', async () => {
+    await seedProject('alpha');
+    await runCli(['todo', 'add', 'keep me'], syntaurHome);
+    const list = await readFile(resolve(syntaurHome, 'todos', '_global.md'), 'utf-8');
+    const id = list.match(/\[t:([a-f0-9]{4})\]/)![1];
+
+    const res = await runCli(
+      ['todo', 'promote', id, '--new-assignment', '--to-project', 'alpha', '--keep-source'],
+      syntaurHome,
+    );
+    expect(res.code).toBe(0);
+    const after = await readFile(resolve(syntaurHome, 'todos', '_global.md'), 'utf-8');
+    expect(after).toMatch(new RegExp(`- \\[ \\] keep me .*\\[t:${id}\\]`));
+  });
+
+  it('rejects when target project does not exist', async () => {
+    await runCli(['todo', 'add', 'orphan'], syntaurHome);
+    const list = await readFile(resolve(syntaurHome, 'todos', '_global.md'), 'utf-8');
+    const id = list.match(/\[t:([a-f0-9]{4})\]/)![1];
+
+    const res = await runCli(
+      ['todo', 'promote', id, '--new-assignment', '--to-project', 'ghost'],
+      syntaurHome,
+    );
+    expect(res.code).not.toBe(0);
+    expect(res.stderr).toMatch(/not found/i);
+  });
+});
+
+describe('syntaur todo plan', () => {
+  it('first call creates plan.md, sets planDir, prints path', async () => {
+    await runCli(['todo', 'add', 'plannable'], syntaurHome);
+    const list = await readFile(resolve(syntaurHome, 'todos', '_global.md'), 'utf-8');
+    const id = list.match(/\[t:([a-f0-9]{4})\]/)![1];
+
+    const res = await runCli(['todo', 'plan', id], syntaurHome);
+    expect(res.code).toBe(0);
+    const expected = resolve(syntaurHome, 'todos', 'plans', '_global', id, 'plan.md');
+    expect(res.stdout.trim()).toBe(expected);
+    expect(await pathExists(expected)).toBe(true);
+
+    const checklist = await readFile(resolve(syntaurHome, 'todos', '_global.md'), 'utf-8');
+    expect(checklist).toContain(`p=${resolve(syntaurHome, 'todos', 'plans', '_global', id)}`);
+  });
+
+  it('second call creates plan-v2.md', async () => {
+    await runCli(['todo', 'add', 'multi-plan'], syntaurHome);
+    const list = await readFile(resolve(syntaurHome, 'todos', '_global.md'), 'utf-8');
+    const id = list.match(/\[t:([a-f0-9]{4})\]/)![1];
+
+    await runCli(['todo', 'plan', id], syntaurHome);
+    const res2 = await runCli(['todo', 'plan', id], syntaurHome);
+    expect(res2.code).toBe(0);
+    const expected2 = resolve(syntaurHome, 'todos', 'plans', '_global', id, 'plan-v2.md');
+    expect(res2.stdout.trim()).toBe(expected2);
+    expect(await pathExists(expected2)).toBe(true);
+  });
+});
+
+describe('syntaur todo promote --to-assignment', () => {
+  async function seedAssignment(projectSlug: string, assignmentSlug: string): Promise<void> {
+    const aDir = resolve(projectsDir, projectSlug, 'assignments', assignmentSlug);
+    await mkdir(aDir, { recursive: true });
+    await writeFile(
+      resolve(aDir, 'assignment.md'),
+      `---\nid: a-id\nslug: ${assignmentSlug}\ntitle: existing\nproject: ${projectSlug}\nstatus: in_progress\nupdated: "2026-01-01T00:00:00Z"\n---\n\n# Existing\n\n## Objective\n\nfoo\n\n## Todos\n\n- [x] already done [t:0001]\n\n## Context\n\nbar\n`,
+    );
+  }
+
+  it('appends todos to an existing assignment by project/slug', async () => {
+    await seedProject('alpha');
+    await seedAssignment('alpha', 'foo');
+    await runCli(['todo', 'add', 'extra work'], syntaurHome);
+    const list = await readFile(resolve(syntaurHome, 'todos', '_global.md'), 'utf-8');
+    const id = list.match(/\[t:([a-f0-9]{4})\]/)![1];
+
+    const res = await runCli(
+      ['todo', 'promote', id, '--to-assignment', 'alpha/foo'],
+      syntaurHome,
+    );
+    expect(res.code).toBe(0);
+    const aMd = await readFile(
+      resolve(projectsDir, 'alpha', 'assignments', 'foo', 'assignment.md'),
+      'utf-8',
+    );
+    expect(aMd).toContain('- [ ] extra work');
+    expect(aMd).toContain(`promoted from t:${id}`);
+    expect(aMd).toContain('- [x] already done [t:0001]');
+  });
+
+  it('rejects re-promotion of an already-completed todo', async () => {
+    await seedProject('alpha');
+    await seedAssignment('alpha', 'foo');
+    await runCli(['todo', 'add', 'once'], syntaurHome);
+    const list = await readFile(resolve(syntaurHome, 'todos', '_global.md'), 'utf-8');
+    const id = list.match(/\[t:([a-f0-9]{4})\]/)![1];
+    const first = await runCli(['todo', 'promote', id, '--to-assignment', 'alpha/foo'], syntaurHome);
+    expect(first.code).toBe(0);
+    const second = await runCli(['todo', 'promote', id, '--to-assignment', 'alpha/foo'], syntaurHome);
+    expect(second.code).not.toBe(0);
+    expect(second.stderr).toMatch(/already completed/i);
+  });
+
+  it('rejects when target syntax is invalid', async () => {
+    await runCli(['todo', 'add', 'x'], syntaurHome);
+    const list = await readFile(resolve(syntaurHome, 'todos', '_global.md'), 'utf-8');
+    const id = list.match(/\[t:([a-f0-9]{4})\]/)![1];
+
+    const res = await runCli(
+      ['todo', 'promote', id, '--to-assignment', 'just-a-string'],
+      syntaurHome,
+    );
+    expect(res.code).not.toBe(0);
+    expect(res.stderr).toMatch(/Invalid --to-assignment target/);
+  });
 });
