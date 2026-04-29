@@ -10,63 +10,78 @@ import {
   generateUniqueId,
   computeCounts,
   archivePath,
+  parseMetaToken,
+  serializeMetaToken,
+  encodeMetaValue,
+  decodeMetaValue,
 } from '../todos/parser.js';
 import type { TodoItem, LogEntry } from '../todos/types.js';
+
+function makeItem(overrides: Partial<TodoItem> & { id: string; description: string; status: TodoItem['status']; tags: string[]; session: string | null }): TodoItem {
+  return {
+    branch: null,
+    worktreePath: null,
+    createdAt: null,
+    updatedAt: null,
+    planDir: null,
+    ...overrides,
+  };
+}
 
 describe('parseChecklistItem', () => {
   it('parses an open item', () => {
     const item = parseChecklistItem('- [ ] Fix broken link in README #docs [t:a3f1]');
-    expect(item).toEqual({
+    expect(item).toEqual(makeItem({
       id: 'a3f1',
       description: 'Fix broken link in README',
       status: 'open',
       tags: ['docs'],
       session: null,
-    });
+    }));
   });
 
   it('parses a completed item', () => {
     const item = parseChecklistItem('- [x] Rename getUserById to findUser #api #refactor [t:d4e8]');
-    expect(item).toEqual({
+    expect(item).toEqual(makeItem({
       id: 'd4e8',
       description: 'Rename getUserById to findUser',
       status: 'completed',
       tags: ['api', 'refactor'],
       session: null,
-    });
+    }));
   });
 
   it('parses a blocked item', () => {
     const item = parseChecklistItem('- [!] Update error messages #cleanup [t:f9a0]');
-    expect(item).toEqual({
+    expect(item).toEqual(makeItem({
       id: 'f9a0',
       description: 'Update error messages',
       status: 'blocked',
       tags: ['cleanup'],
       session: null,
-    });
+    }));
   });
 
   it('parses an in-progress item with session', () => {
     const item = parseChecklistItem('- [>:d4e8f1a9] Add timeout #api [t:b7c2]');
-    expect(item).toEqual({
+    expect(item).toEqual(makeItem({
       id: 'b7c2',
       description: 'Add timeout',
       status: 'in_progress',
       tags: ['api'],
       session: 'd4e8f1a9',
-    });
+    }));
   });
 
   it('parses an item with no tags', () => {
     const item = parseChecklistItem('- [ ] Simple task [t:1234]');
-    expect(item).toEqual({
+    expect(item).toEqual(makeItem({
       id: '1234',
       description: 'Simple task',
       status: 'open',
       tags: [],
       session: null,
-    });
+    }));
   });
 
   it('returns null for non-item lines', () => {
@@ -78,18 +93,108 @@ describe('parseChecklistItem', () => {
 
 describe('serializeChecklistItem', () => {
   it('serializes an open item', () => {
-    const item: TodoItem = { id: 'a3f1', description: 'Fix link', status: 'open', tags: ['docs'], session: null };
+    const item = makeItem({ id: 'a3f1', description: 'Fix link', status: 'open', tags: ['docs'], session: null });
     expect(serializeChecklistItem(item)).toBe('- [ ] Fix link #docs [t:a3f1]');
   });
 
   it('serializes an in-progress item with session', () => {
-    const item: TodoItem = { id: 'b7c2', description: 'Add timeout', status: 'in_progress', tags: [], session: 'abc123' };
+    const item = makeItem({ id: 'b7c2', description: 'Add timeout', status: 'in_progress', tags: [], session: 'abc123' });
     expect(serializeChecklistItem(item)).toBe('- [>:abc123] Add timeout [t:b7c2]');
   });
 
   it('serializes a blocked item', () => {
-    const item: TodoItem = { id: 'f9a0', description: 'Update errors', status: 'blocked', tags: ['api'], session: null };
+    const item = makeItem({ id: 'f9a0', description: 'Update errors', status: 'blocked', tags: ['api'], session: null });
     expect(serializeChecklistItem(item)).toBe('- [!] Update errors #api [t:f9a0]');
+  });
+
+  it('emits no meta token when all meta fields are null', () => {
+    const item = makeItem({ id: 'aaaa', description: 'x', status: 'open', tags: [], session: null });
+    expect(serializeChecklistItem(item)).toBe('- [ ] x [t:aaaa]');
+  });
+
+  it('emits a meta token when meta fields are set', () => {
+    const item = makeItem({
+      id: 'aaaa',
+      description: 'x',
+      status: 'open',
+      tags: [],
+      session: null,
+      branch: 'feat/foo',
+      createdAt: '2026-04-29T12:00:00Z',
+      updatedAt: '2026-04-29T12:30:00Z',
+    });
+    expect(serializeChecklistItem(item)).toBe(
+      '- [ ] x [t:aaaa] <b=feat/foo;c=2026-04-29T12:00:00Z;u=2026-04-29T12:30:00Z>',
+    );
+  });
+});
+
+describe('parseMetaToken / serializeMetaToken', () => {
+  it('parses a full meta token', () => {
+    const m = parseMetaToken('- [ ] x [t:aaaa] <b=feat/foo;w=/tmp/wt;c=2026-04-29T12:00:00Z;u=2026-04-29T12:30:00Z;p=/plans/aaaa>');
+    expect(m).toEqual({
+      branch: 'feat/foo',
+      worktreePath: '/tmp/wt',
+      createdAt: '2026-04-29T12:00:00Z',
+      updatedAt: '2026-04-29T12:30:00Z',
+      planDir: '/plans/aaaa',
+    });
+  });
+
+  it('returns all-null for legacy line without meta token', () => {
+    const m = parseMetaToken('- [ ] x [t:aaaa]');
+    expect(m).toEqual({
+      branch: null,
+      worktreePath: null,
+      createdAt: null,
+      updatedAt: null,
+      planDir: null,
+    });
+  });
+
+  it('round-trips percent-encoded special characters', () => {
+    const original = makeItem({
+      id: 'aaaa',
+      description: 'x',
+      status: 'open',
+      tags: [],
+      session: null,
+      branch: 'feat/has=equals;and<angles>and[brackets]100%',
+    });
+    const line = serializeChecklistItem(original);
+    const parsed = parseChecklistItem(line);
+    expect(parsed?.branch).toBe('feat/has=equals;and<angles>and[brackets]100%');
+  });
+
+  it('is order-insensitive on parse', () => {
+    const m = parseMetaToken('- [ ] x [t:aaaa] <u=2026;b=foo;c=2025>');
+    expect(m.branch).toBe('foo');
+    expect(m.createdAt).toBe('2025');
+    expect(m.updatedAt).toBe('2026');
+  });
+
+  it('drops unknown keys silently', () => {
+    const m = parseMetaToken('- [ ] x [t:aaaa] <b=foo;x=ignored>');
+    expect(m.branch).toBe('foo');
+  });
+
+  it('preserves "<" inside the description (cut still happens at id)', () => {
+    const item = parseChecklistItem('- [ ] add <html> example #web [t:aaaa]');
+    expect(item?.description).toBe('add <html> example');
+  });
+
+  it('encodeMetaValue / decodeMetaValue round-trip', () => {
+    const raw = 'a;b=c<d>e[f]g%h';
+    const encoded = encodeMetaValue(raw);
+    expect(encoded).not.toContain(';');
+    expect(encoded).not.toContain('=');
+    expect(encoded).not.toContain('<');
+    expect(decodeMetaValue(encoded)).toBe(raw);
+  });
+
+  it('serializeMetaToken returns empty string when nothing to emit', () => {
+    const item = makeItem({ id: 'a', description: 'x', status: 'open', tags: [], session: null });
+    expect(serializeMetaToken(item)).toBe('');
   });
 });
 
@@ -212,10 +317,10 @@ describe('generateUniqueId', () => {
 describe('computeCounts', () => {
   it('computes status counts', () => {
     const items: TodoItem[] = [
-      { id: '1', description: 'a', status: 'open', tags: [], session: null },
-      { id: '2', description: 'b', status: 'open', tags: [], session: null },
-      { id: '3', description: 'c', status: 'completed', tags: [], session: null },
-      { id: '4', description: 'd', status: 'blocked', tags: [], session: null },
+      makeItem({ id: '1', description: 'a', status: 'open', tags: [], session: null }),
+      makeItem({ id: '2', description: 'b', status: 'open', tags: [], session: null }),
+      makeItem({ id: '3', description: 'c', status: 'completed', tags: [], session: null }),
+      makeItem({ id: '4', description: 'd', status: 'blocked', tags: [], session: null }),
     ];
     const counts = computeCounts(items);
     expect(counts).toEqual({ open: 2, in_progress: 0, completed: 1, blocked: 1, total: 4 });

@@ -73,7 +73,19 @@ todoCommand
       const id = generateUniqueId(existingIds);
       const tags = options.tags ? options.tags.split(',').map((t: string) => t.trim()) : [];
 
-      const item: TodoItem = { id, description, status: 'open', tags, session: null };
+      const now = nowISO();
+      const item: TodoItem = {
+        id,
+        description,
+        status: 'open',
+        tags,
+        session: null,
+        branch: null,
+        worktreePath: null,
+        createdAt: now,
+        updatedAt: now,
+        planDir: null,
+      };
       checklist.items.push(item);
       await writeChecklist(todosPath, checklist);
       console.log(`Added todo [t:${id}]: ${description}`);
@@ -136,11 +148,19 @@ function findItem(items: TodoItem[], id: string): TodoItem | undefined {
   return items.find((i) => i.id === id);
 }
 
+function touchItem(item: TodoItem): void {
+  const now = nowISO();
+  if (item.createdAt === null) item.createdAt = now;
+  item.updatedAt = now;
+}
+
 todoCommand
   .command('start')
   .description('Mark a todo as in-progress')
   .argument('<id>', 'Todo short ID (e.g. a3f1)')
   .option('--session <session>', 'Session ID')
+  .option('--branch <branch>', 'Git branch the work happens on')
+  .option('--worktree <path>', 'Worktree path the work happens in')
   .option('--workspace <slug>', 'Workspace slug')
   .option('--project <slug>', 'Project slug (mutually exclusive with --workspace/--global)')
   .option('--global', 'Use global todos')
@@ -161,6 +181,9 @@ todoCommand
       }
       item.status = 'in_progress';
       item.session = options.session || null;
+      if (options.branch) item.branch = options.branch;
+      if (options.worktree) item.worktreePath = options.worktree;
+      touchItem(item);
       await writeChecklist(todosPath, checklist);
       console.log(`Started [t:${id}]: ${item.description}`);
     } catch (error) {
@@ -192,6 +215,7 @@ todoCommand
       }
       item.status = 'completed';
       item.session = null;
+      touchItem(item);
       await writeChecklist(todosPath, checklist);
 
       const entry: LogEntry = {
@@ -199,7 +223,7 @@ todoCommand
         itemIds: [id],
         items: item.description,
         session: options.session || null,
-        branch: options.branch || null,
+        branch: options.branch || item.branch || null,
         summary: options.summary || 'Completed.',
         blockers: null,
         status: null,
@@ -234,6 +258,7 @@ todoCommand
       }
       item.status = 'blocked';
       item.session = null;
+      touchItem(item);
       await writeChecklist(todosPath, checklist);
 
       const entry: LogEntry = {
@@ -274,6 +299,7 @@ todoCommand
       }
       item.status = 'open';
       item.session = null;
+      touchItem(item);
       await writeChecklist(todosPath, checklist);
       console.log(`Unblocked [t:${id}]: ${item.description}`);
     } catch (error) {
@@ -330,6 +356,7 @@ todoCommand
         process.exit(1);
       }
       item.description = description;
+      touchItem(item);
       await writeChecklist(todosPath, checklist);
       console.log(`Updated [t:${id}]: ${description}`);
     } catch (error) {
@@ -368,6 +395,7 @@ todoCommand
         const toRemove = options.remove.split(',').map((t: string) => t.trim());
         item.tags = item.tags.filter((t) => !toRemove.includes(t));
       }
+      touchItem(item);
       await writeChecklist(todosPath, checklist);
       console.log(`Tags for [t:${id}]: ${item.tags.map((t) => `#${t}`).join(' ') || '(none)'}`);
     } catch (error) {
@@ -527,6 +555,7 @@ todoCommand
       // Mark as completed with promotion note
       item.status = 'completed';
       item.session = null;
+      touchItem(item);
       await writeChecklist(todosPath, checklist);
 
       const entry: LogEntry = {

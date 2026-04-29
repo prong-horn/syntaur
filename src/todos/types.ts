@@ -7,6 +7,11 @@ export interface TodoItem {
   status: TodoStatus;
   tags: string[];
   session: string | null;
+  branch: string | null;
+  worktreePath: string | null;
+  createdAt: string | null;
+  updatedAt: string | null;
+  planDir: string | null;
 }
 
 export interface TodoChecklist {
