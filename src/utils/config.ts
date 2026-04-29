@@ -4,6 +4,13 @@ import { syntaurRoot, defaultProjectDir, expandHome } from './paths.js';
 import { fileExists, writeFileForce } from './fs.js';
 import { renderConfig } from '../templates/config.js';
 import { migrateLegacyConfig } from './fs-migration.js';
+import {
+  BINDABLE_ACTION_KINDS,
+  canonicalizeCombo,
+  isBindableActionKind,
+  isReservedCombo,
+  type BindableActionKind,
+} from './hotkeysCatalog.js';
 
 export interface StatusDefinition {
   id: string;
@@ -92,6 +99,10 @@ export interface ThemeConfig {
   preset: string;
 }
 
+export interface HotkeyBindingsConfig {
+  bindings: Partial<Record<BindableActionKind, string>>;
+}
+
 export interface SyntaurConfig {
   version: string;
   defaultProjectDir: string;
@@ -108,6 +119,7 @@ export interface SyntaurConfig {
   agents: AgentConfig[] | null;
   playbooks: PlaybooksConfig;
   theme: ThemeConfig | null;
+  hotkeys: HotkeyBindingsConfig | null;
 }
 
 const DEFAULT_CONFIG: SyntaurConfig = {
@@ -134,6 +146,7 @@ const DEFAULT_CONFIG: SyntaurConfig = {
     disabled: [],
   },
   theme: null,
+  hotkeys: null,
 };
 
 export const BUILTIN_AGENTS: AgentConfig[] = [
@@ -235,6 +248,9 @@ function cloneDefaultConfig(): SyntaurConfig {
       disabled: [...DEFAULT_CONFIG.playbooks.disabled],
     },
     theme: DEFAULT_CONFIG.theme ? { ...DEFAULT_CONFIG.theme } : null,
+    hotkeys: DEFAULT_CONFIG.hotkeys
+      ? { bindings: { ...DEFAULT_CONFIG.hotkeys.bindings } }
+      : null,
   };
 }
 
@@ -602,6 +618,116 @@ export async function deleteThemeConfig(): Promise<void> {
   const fmBlock = fmMatch[2];
   const afterFrontmatter = existing.slice(fmMatch[0].length);
   const cleanedFm = stripTopLevelBlock(fmBlock, 'theme');
+  const newContent = `---\n${cleanedFm}\n---${afterFrontmatter}`;
+  await writeFileForce(configPath, newContent);
+}
+
+function parseHotkeyBindingsConfig(content: string): HotkeyBindingsConfig | null {
+  const match = content.match(/^---\n([\s\S]*?)\n---/);
+  if (!match) return null;
+  const fmBlock = match[1];
+
+  const blockStart = fmBlock.match(/^hotkeys:\s*$/m);
+  if (!blockStart) return null;
+
+  const startIdx = fmBlock.indexOf(blockStart[0]) + blockStart[0].length;
+  const remaining = fmBlock.slice(startIdx).split('\n');
+
+  const bindings: Partial<Record<BindableActionKind, string>> = {};
+  let inBindings = false;
+  for (const line of remaining) {
+    const trimmed = line.trimStart();
+    const indent = line.length - trimmed.length;
+    if (indent === 0 && trimmed.length > 0) break;
+    if (trimmed === '') continue;
+    if (indent === 2 && trimmed === 'bindings:') {
+      inBindings = true;
+      continue;
+    }
+    if (inBindings && indent === 4) {
+      const colonIdx = trimmed.indexOf(':');
+      if (colonIdx <= 0) continue;
+      const rawKind = trimmed.slice(0, colonIdx).trim();
+      const rawValue = trimmed
+        .slice(colonIdx + 1)
+        .trim()
+        .replace(/^["']|["']$/g, '');
+      if (!isBindableActionKind(rawKind)) continue;
+      if (rawValue.length === 0) continue;
+      bindings[rawKind] = canonicalizeCombo(rawValue);
+    }
+  }
+
+  if (Object.keys(bindings).length === 0) return null;
+  return { bindings };
+}
+
+function serializeHotkeyBindingsConfig(cfg: HotkeyBindingsConfig): string {
+  const lines: string[] = ['hotkeys:', '  bindings:'];
+  // Emit in the canonical kind order so on-disk diffs are stable.
+  for (const kind of BINDABLE_ACTION_KINDS) {
+    const value = cfg.bindings[kind];
+    if (!value) continue;
+    lines.push(`    ${kind}: "${canonicalizeCombo(value)}"`);
+  }
+  // If no bindings remain, return an empty block (caller will treat as delete).
+  if (lines.length === 2) return '';
+  return lines.join('\n');
+}
+
+export async function writeHotkeyBindingsConfig(
+  cfg: HotkeyBindingsConfig,
+): Promise<void> {
+  // Validate + canonicalize + drop reserved-combo collisions before writing.
+  const cleaned: Partial<Record<BindableActionKind, string>> = {};
+  for (const kind of BINDABLE_ACTION_KINDS) {
+    const raw = cfg.bindings[kind];
+    if (typeof raw !== 'string' || raw.trim() === '') continue;
+    const canonical = canonicalizeCombo(raw);
+    if (!canonical) continue;
+    if (isReservedCombo(canonical)) continue;
+    cleaned[kind] = canonical;
+  }
+
+  if (Object.keys(cleaned).length === 0) {
+    await deleteHotkeyBindingsConfig();
+    return;
+  }
+
+  const configPath = resolve(syntaurRoot(), 'config.md');
+  const block = serializeHotkeyBindingsConfig({ bindings: cleaned });
+
+  const existing = (await fileExists(configPath))
+    ? await readFile(configPath, 'utf-8')
+    : renderConfig({ defaultProjectDir: defaultProjectDir() });
+
+  const fmMatch = existing.match(/^(---\n)([\s\S]*?)\n(---)/);
+  if (!fmMatch) {
+    const content = `---\nversion: "2.0"\ndefaultProjectDir: ${defaultProjectDir()}\n${block}\n---\n${existing}`;
+    await writeFileForce(configPath, content);
+    return;
+  }
+
+  const fmBlock = fmMatch[2];
+  const afterFrontmatter = existing.slice(fmMatch[0].length);
+  const cleanedFm = stripTopLevelBlock(fmBlock, 'hotkeys');
+  const newFm = `${cleanedFm}\n${block}`.replace(/^\n+/, '');
+  const normalizedFm = newFm.replace(/\n+$/, '');
+  const newContent = `---\n${normalizedFm}\n---${afterFrontmatter}`;
+  await writeFileForce(configPath, newContent);
+}
+
+export async function deleteHotkeyBindingsConfig(): Promise<void> {
+  const configPath = resolve(syntaurRoot(), 'config.md');
+  if (!(await fileExists(configPath))) return;
+
+  const existing = await readFile(configPath, 'utf-8');
+  const fmMatch = existing.match(/^(---\n)([\s\S]*?)\n(---)/);
+  if (!fmMatch) return;
+
+  const fmBlock = fmMatch[2];
+  const afterFrontmatter = existing.slice(fmMatch[0].length);
+  const cleanedFm = stripTopLevelBlock(fmBlock, 'hotkeys');
   const newContent = `---\n${cleanedFm}\n---${afterFrontmatter}`;
   await writeFileForce(configPath, newContent);
 }
@@ -1152,6 +1278,7 @@ export async function readConfig(): Promise<SyntaurConfig> {
     agents: normalizeAgentsFromConfig(parseAgentsConfig(content)),
     playbooks: parsePlaybooksConfig(fmBlock),
     theme: parseThemeConfig(content),
+    hotkeys: parseHotkeyBindingsConfig(content),
   };
 }
 

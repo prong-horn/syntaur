@@ -18,8 +18,9 @@
     "forceConsistentCasingInFileNames": true,
     "baseUrl": ".",
     "paths": {
-      "@/*": ["./src/*"]
+      "@/*": ["./src/*"],
+      "@shared/hotkeys-catalog": ["../src/utils/hotkeysCatalog.ts"]
     }
   },
-  "include": ["src"]
+  "include": ["src", "../src/utils/hotkeysCatalog.ts"]
 }
