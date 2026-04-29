@@ -1,7 +1,7 @@
 import { Command } from 'commander';
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
-import { todosDir as getTodosDir, projectTodosDir } from '../utils/paths.js';
+import { todosDir as getTodosDir, projectTodosDir, todoPlanDir } from '../utils/paths.js';
 import {
   readChecklist,
   writeChecklist,
@@ -730,3 +730,61 @@ async function markPromotedComplete(
     await appendLogEntry(todosPath, workspace, entry);
   }
 }
+
+todoCommand
+  .command('plan')
+  .description('Create or open a plan directory for a todo')
+  .argument('<id>', 'Todo short ID')
+  .option('--workspace <slug>', 'Workspace slug')
+  .option('--project <slug>', 'Project slug (mutually exclusive with --workspace/--global)')
+  .option('--global', 'Use global todos')
+  .action(async (id: string, options) => {
+    try {
+      const scope = await resolveScope(options);
+      const todosPath = scope.todosPath;
+      const workspace = scope.id;
+      const checklist = await readChecklist(todosPath, workspace);
+      const item = findItem(checklist.items, id);
+      if (!item) {
+        console.error(`Todo [t:${id}] not found.`);
+        process.exit(1);
+      }
+
+      const planDir = todoPlanDir(todosPath, workspace, id);
+      await ensureDir(planDir);
+
+      const { readdir } = await import('node:fs/promises');
+      const existingFiles = (await readdir(planDir).catch(() => [])).filter((f) =>
+        /^plan(?:-v\d+)?\.md$/.test(f),
+      );
+
+      let target: string;
+      if (existingFiles.length === 0) {
+        target = resolve(planDir, 'plan.md');
+      } else {
+        const versions = new Set<number>();
+        for (const f of existingFiles) {
+          if (f === 'plan.md') versions.add(1);
+          const m = f.match(/^plan-v(\d+)\.md$/);
+          if (m) versions.add(parseInt(m[1], 10));
+        }
+        let n = 2;
+        while (versions.has(n)) n++;
+        target = resolve(planDir, `plan-v${n}.md`);
+      }
+
+      if (!(await fileExists(target))) {
+        const stub = `---\ntodo: t:${id}\nstatus: draft\ncreated: "${nowISO()}"\nupdated: "${nowISO()}"\n---\n\n# Plan for todo t:${id}\n\n${item.description}\n`;
+        await writeFileForce(target, stub);
+      }
+
+      item.planDir = planDir;
+      touchItem(item);
+      await writeChecklist(todosPath, checklist);
+
+      console.log(target);
+    } catch (error) {
+      console.error('Error:', error instanceof Error ? error.message : String(error));
+      process.exit(1);
+    }
+  });

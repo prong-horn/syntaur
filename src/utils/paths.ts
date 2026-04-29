@@ -39,3 +39,7 @@ export function todosDir(): string {
 export function projectTodosDir(projectsDir: string, projectSlug: string): string {
   return resolve(projectsDir, projectSlug, 'todos');
 }
+
+export function todoPlanDir(todosDir: string, workspaceOrProject: string, todoId: string): string {
+  return resolve(todosDir, 'plans', workspaceOrProject, todoId);
+}

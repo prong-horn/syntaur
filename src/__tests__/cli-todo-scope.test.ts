@@ -240,6 +240,36 @@ describe('syntaur todo promote --new-assignment', () => {
   });
 });
 
+describe('syntaur todo plan', () => {
+  it('first call creates plan.md, sets planDir, prints path', async () => {
+    await runCli(['todo', 'add', 'plannable'], syntaurHome);
+    const list = await readFile(resolve(syntaurHome, 'todos', '_global.md'), 'utf-8');
+    const id = list.match(/\[t:([a-f0-9]{4})\]/)![1];
+
+    const res = await runCli(['todo', 'plan', id], syntaurHome);
+    expect(res.code).toBe(0);
+    const expected = resolve(syntaurHome, 'todos', 'plans', '_global', id, 'plan.md');
+    expect(res.stdout.trim()).toBe(expected);
+    expect(await pathExists(expected)).toBe(true);
+
+    const checklist = await readFile(resolve(syntaurHome, 'todos', '_global.md'), 'utf-8');
+    expect(checklist).toContain(`p=${resolve(syntaurHome, 'todos', 'plans', '_global', id)}`);
+  });
+
+  it('second call creates plan-v2.md', async () => {
+    await runCli(['todo', 'add', 'multi-plan'], syntaurHome);
+    const list = await readFile(resolve(syntaurHome, 'todos', '_global.md'), 'utf-8');
+    const id = list.match(/\[t:([a-f0-9]{4})\]/)![1];
+
+    await runCli(['todo', 'plan', id], syntaurHome);
+    const res2 = await runCli(['todo', 'plan', id], syntaurHome);
+    expect(res2.code).toBe(0);
+    const expected2 = resolve(syntaurHome, 'todos', 'plans', '_global', id, 'plan-v2.md');
+    expect(res2.stdout.trim()).toBe(expected2);
+    expect(await pathExists(expected2)).toBe(true);
+  });
+});
+
 describe('syntaur todo promote --to-assignment', () => {
   async function seedAssignment(projectSlug: string, assignmentSlug: string): Promise<void> {
     const aDir = resolve(projectsDir, projectSlug, 'assignments', assignmentSlug);
