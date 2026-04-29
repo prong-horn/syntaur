@@ -8,8 +8,11 @@
 import {
   BINDABLE_ACTION_KINDS,
   BUILTIN_RESERVED_COMBOS,
+  DEFAULT_BINDABLE_HOTKEYS,
   canonicalizeCombo,
+  effectiveBindings,
   isBindableActionKind,
+  isDefaultBinding,
   isReservedCombo,
   type BindableActionKind,
 } from '@shared/hotkeys-catalog';
@@ -17,8 +20,11 @@ import {
 export {
   BINDABLE_ACTION_KINDS,
   BUILTIN_RESERVED_COMBOS,
+  DEFAULT_BINDABLE_HOTKEYS,
   canonicalizeCombo,
+  effectiveBindings,
   isBindableActionKind,
+  isDefaultBinding,
   isReservedCombo,
   type BindableActionKind,
 };
@@ -87,3 +93,4 @@ export const BINDABLE_ACTION_LABELS: Record<BindableActionKind, string> = {
   'new-todo': 'New Todo',
   'new-assignment': 'New Assignment',
 };
+

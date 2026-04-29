@@ -140,3 +140,50 @@ export function isReservedCombo(combo: string): boolean {
   if (!c) return false;
   return (BUILTIN_RESERVED_COMBOS as readonly string[]).includes(c);
 }
+
+/**
+ * Default hotkey bindings shipped with the dashboard. The triple-modifier
+ * `Mod+Shift+Alt+<letter>` namespace is intentionally chosen to avoid common
+ * browser shortcuts (Cmd+Shift+T reopens closed tab, Cmd+Shift+P opens
+ * private mode, Cmd+Shift+W closes window, etc.) while keeping the action
+ * mnemonic. Users can override any of these from Settings → Hotkey Bindings.
+ *
+ * These are EFFECTIVE only when the user has not bound a custom combo for
+ * that action — `effectiveBindings()` overlays the user's custom bindings on
+ * top, so a custom binding always wins.
+ */
+export const DEFAULT_BINDABLE_HOTKEYS: Readonly<Record<BindableActionKind, string>> = {
+  'new-workspace': canonicalizeCombo('Mod+Shift+Alt+w'),
+  'new-project': canonicalizeCombo('Mod+Shift+Alt+p'),
+  'new-todo': canonicalizeCombo('Mod+Shift+Alt+t'),
+  'new-assignment': canonicalizeCombo('Mod+Shift+Alt+a'),
+};
+
+/**
+ * Returns the effective binding map: defaults underneath, user customs on top.
+ * A user-bound combo always wins; if the user has no entry for a kind, the
+ * default is returned (if any).
+ */
+export function effectiveBindings(
+  custom: Partial<Record<BindableActionKind, string>>,
+): Partial<Record<BindableActionKind, string>> {
+  const out: Partial<Record<BindableActionKind, string>> = {
+    ...DEFAULT_BINDABLE_HOTKEYS,
+  };
+  for (const kind of BINDABLE_ACTION_KINDS) {
+    const override = custom[kind];
+    if (typeof override === 'string' && override.length > 0) {
+      out[kind] = override;
+    }
+  }
+  return out;
+}
+
+/** True when the given kind currently uses its default combo (no user override). */
+export function isDefaultBinding(
+  custom: Partial<Record<BindableActionKind, string>>,
+  kind: BindableActionKind,
+): boolean {
+  const override = custom[kind];
+  return typeof override !== 'string' || override.length === 0;
+}

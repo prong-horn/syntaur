@@ -26,10 +26,11 @@ import { CheatsheetDialog } from './CheatsheetDialog';
 import { buildShellMeta } from '../lib/routes';
 import {
   canonicalizeCombo,
+  effectiveBindings,
   isReservedCombo,
+  lookupReservedCombo,
   type BindableActionKind,
 } from './bindableActions';
-import { lookupReservedCombo } from './bindableActions';
 import {
   useHotkeyBindings,
   saveHotkeyBindings,
@@ -86,7 +87,9 @@ interface HotkeyContextValue {
   paletteEntries: PaletteEntry[];
   actionEntries: Action[];
 
-  /** User bindings (canonical combos) keyed by BindableActionKind. */
+  /** User bindings only (server-truth). Empty when the user has not overridden a default. */
+  userBindings: Partial<Record<BindableActionKind, string>>;
+  /** Effective bindings = built-in defaults overlaid by `userBindings`. This is what hotkeys + UI badges reflect. */
   customBindings: Partial<Record<BindableActionKind, string>>;
   /** Bind / rebind a canonical action. Returns the canonicalized combo. */
   bindAction: (kind: BindableActionKind, combo: string) => Promise<string>;
@@ -183,7 +186,11 @@ export function HotkeyProvider({ children }: { children: ReactNode }) {
   const [pendingActionKind, setPendingActionKind] =
     useState<BindableActionKind | null>(null);
 
-  const { bindings: customBindings } = useHotkeyBindings();
+  const { bindings: userBindings } = useHotkeyBindings();
+  const customBindings = useMemo(
+    () => effectiveBindings(userBindings),
+    [userBindings],
+  );
 
   const register = useCallback((b: Omit<HotkeyBinding, 'id'>) => {
     const id = nextIdRef.current++;
@@ -263,24 +270,26 @@ export function HotkeyProvider({ children }: { children: ReactNode }) {
           : `Already bound to "${conflict.kind}"`;
         throw new Error(reason);
       }
+      // Persist into user overrides only (defaults stay implicit).
       const next: Partial<Record<BindableActionKind, string>> = {
-        ...customBindings,
+        ...userBindings,
         [kind]: canonical,
       };
       await saveHotkeyBindings(next);
       return canonical;
     },
-    [customBindings, findConflict],
+    [userBindings, findConflict],
   );
 
   const unbindAction = useCallback(
     async (kind: BindableActionKind): Promise<void> => {
-      if (!customBindings[kind]) return;
-      const next: Partial<Record<BindableActionKind, string>> = { ...customBindings };
+      // Removes the user override; default (if any) re-emerges automatically.
+      if (!userBindings[kind]) return;
+      const next: Partial<Record<BindableActionKind, string>> = { ...userBindings };
       delete next[kind];
       await saveHotkeyBindings(next);
     },
-    [customBindings],
+    [userBindings],
   );
 
   // Clear chord on route change
@@ -549,6 +558,7 @@ export function HotkeyProvider({ children }: { children: ReactNode }) {
       wsPrefix,
       paletteEntries,
       actionEntries,
+      userBindings,
       customBindings,
       bindAction,
       unbindAction,
@@ -575,6 +585,7 @@ export function HotkeyProvider({ children }: { children: ReactNode }) {
       wsPrefix,
       paletteEntries,
       actionEntries,
+      userBindings,
       customBindings,
       bindAction,
       unbindAction,

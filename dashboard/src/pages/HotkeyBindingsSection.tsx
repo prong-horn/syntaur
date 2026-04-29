@@ -22,8 +22,14 @@ interface RecorderState {
 }
 
 export function HotkeyBindingsSection() {
-  const { customBindings, actionEntries, findConflict, bindAction, unbindAction } =
-    useHotkeyContext();
+  const {
+    customBindings,
+    userBindings,
+    actionEntries,
+    findConflict,
+    bindAction,
+    unbindAction,
+  } = useHotkeyContext();
 
   const [recorder, setRecorder] = useState<RecorderState | null>(null);
   const [feedback, setFeedback] = useState<{
@@ -32,7 +38,9 @@ export function HotkeyBindingsSection() {
   } | null>(null);
   const [resetting, setResetting] = useState(false);
 
-  const hasAnyBinding = Object.values(customBindings).some(
+  // Show "Reset all" only when the user has at least one custom override —
+  // resetting clears overrides; defaults remain in effect.
+  const hasAnyOverride = Object.values(userBindings).some(
     (v) => typeof v === 'string' && v.length > 0,
   );
 
@@ -126,16 +134,16 @@ export function HotkeyBindingsSection() {
   return (
     <SectionCard
       title="Hotkey Bindings"
-      description="Bind a custom keyboard shortcut to any of the canonical create actions. Bound combos open the action immediately, skipping the palette."
+      description="Each canonical create action ships with a default hotkey that fires the action without opening the palette. Override any of them below — Clear restores the default."
       actions={
-        hasAnyBinding ? (
+        hasAnyOverride ? (
           <button
             className="shell-action text-xs"
             onClick={() => void handleResetAll()}
             disabled={resetting}
           >
             <RotateCcw className="h-3 w-3" />
-            Reset all
+            Restore defaults
           </button>
         ) : undefined
       }
@@ -156,6 +164,7 @@ export function HotkeyBindingsSection() {
         {BINDABLE_ACTION_KINDS.map((kind) => {
           const action = actionEntries.find((a) => a.bindableKind === kind);
           const combo = customBindings[kind];
+          const isCustom = typeof userBindings[kind] === 'string' && !!userBindings[kind];
           const recording = recorder?.kind === kind;
           return (
             <li
@@ -173,9 +182,18 @@ export function HotkeyBindingsSection() {
               </div>
 
               {combo ? (
-                <kbd className="shrink-0 rounded border border-border/70 bg-muted px-2 py-0.5 font-mono text-xs text-foreground">
-                  {formatPatternForDisplay(combo)}
-                </kbd>
+                <div className="flex shrink-0 items-center gap-1.5">
+                  <kbd className="rounded border border-border/70 bg-muted px-2 py-0.5 font-mono text-xs text-foreground">
+                    {formatPatternForDisplay(combo)}
+                  </kbd>
+                  <span
+                    className={`text-[10px] uppercase tracking-wide ${
+                      isCustom ? 'text-primary' : 'text-muted-foreground'
+                    }`}
+                  >
+                    {isCustom ? 'custom' : 'default'}
+                  </span>
+                </div>
               ) : (
                 <span className="shrink-0 text-xs text-muted-foreground">unbound</span>
               )}
@@ -188,15 +206,15 @@ export function HotkeyBindingsSection() {
                 >
                   {combo ? 'Rebind' : 'Bind'}
                 </button>
-                {combo ? (
+                {isCustom ? (
                   <button
                     type="button"
                     className="shell-action text-xs"
                     onClick={() => void handleClear(kind)}
-                    aria-label={`Clear ${BINDABLE_ACTION_LABELS[kind]} binding`}
+                    aria-label={`Restore default ${BINDABLE_ACTION_LABELS[kind]} binding`}
                   >
                     <X className="h-3 w-3" />
-                    Clear
+                    Restore default
                   </button>
                 ) : null}
               </div>

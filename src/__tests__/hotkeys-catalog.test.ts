@@ -2,9 +2,13 @@ import { describe, it, expect } from 'vitest';
 import {
   BINDABLE_ACTION_KINDS,
   BUILTIN_RESERVED_COMBOS,
+  DEFAULT_BINDABLE_HOTKEYS,
   canonicalizeCombo,
+  effectiveBindings,
   isBindableActionKind,
+  isDefaultBinding,
   isReservedCombo,
+  type BindableActionKind,
 } from '../utils/hotkeysCatalog.js';
 
 describe('canonicalizeCombo', () => {
@@ -72,6 +76,64 @@ describe('BindableActionKind', () => {
     expect(isBindableActionKind('new-frobnicator')).toBe(false);
     expect(isBindableActionKind(42)).toBe(false);
     expect(isBindableActionKind(null)).toBe(false);
+  });
+});
+
+describe('DEFAULT_BINDABLE_HOTKEYS', () => {
+  it('provides a default for every bindable action kind', () => {
+    for (const kind of BINDABLE_ACTION_KINDS) {
+      const combo = DEFAULT_BINDABLE_HOTKEYS[kind];
+      expect(typeof combo).toBe('string');
+      expect(combo.length).toBeGreaterThan(0);
+    }
+  });
+
+  it('uses canonicalized combos', () => {
+    for (const kind of BINDABLE_ACTION_KINDS) {
+      const combo = DEFAULT_BINDABLE_HOTKEYS[kind];
+      expect(canonicalizeCombo(combo)).toBe(combo);
+    }
+  });
+
+  it('does not collide with any reserved built-in combo', () => {
+    for (const kind of BINDABLE_ACTION_KINDS) {
+      expect(isReservedCombo(DEFAULT_BINDABLE_HOTKEYS[kind])).toBe(false);
+    }
+  });
+
+  it('uses unique combos across all kinds', () => {
+    const seen = new Set<string>();
+    for (const kind of BINDABLE_ACTION_KINDS) {
+      const combo = DEFAULT_BINDABLE_HOTKEYS[kind];
+      expect(seen.has(combo)).toBe(false);
+      seen.add(combo);
+    }
+  });
+});
+
+describe('effectiveBindings', () => {
+  it('returns defaults when there are no custom overrides', () => {
+    const out = effectiveBindings({});
+    for (const kind of BINDABLE_ACTION_KINDS) {
+      expect(out[kind]).toBe(DEFAULT_BINDABLE_HOTKEYS[kind]);
+    }
+  });
+
+  it('overlays custom bindings on top of defaults', () => {
+    const custom: Partial<Record<BindableActionKind, string>> = {
+      'new-todo': 'mod+x',
+    };
+    const out = effectiveBindings(custom);
+    expect(out['new-todo']).toBe('mod+x');
+    expect(out['new-project']).toBe(DEFAULT_BINDABLE_HOTKEYS['new-project']);
+  });
+
+  it('isDefaultBinding reports custom vs default correctly', () => {
+    expect(isDefaultBinding({}, 'new-todo')).toBe(true);
+    expect(
+      isDefaultBinding({ 'new-todo': 'mod+x' }, 'new-todo'),
+    ).toBe(false);
+    expect(isDefaultBinding({ 'new-todo': '' }, 'new-todo')).toBe(true);
   });
 });
 
