@@ -6,19 +6,12 @@ import { readConfig } from '../utils/config.js';
 import { isValidSlug } from '../utils/slug.js';
 import { nowTimestamp } from '../utils/timestamp.js';
 import { resolveAssignmentById } from '../utils/assignment-resolver.js';
+import { appendTodosToAssignmentBody, touchAssignmentUpdated } from '../utils/assignment-todos.js';
 
 export interface RequestOptions {
   project?: string;
   dir?: string;
   from?: string;
-}
-
-function setTopLevelField(content: string, key: string, value: string): string {
-  const fieldRegex = new RegExp(`^(${key}:)\\s*.*$`, 'm');
-  if (fieldRegex.test(content)) {
-    return content.replace(fieldRegex, `$1 ${value}`);
-  }
-  return content;
 }
 
 export async function requestCommand(
@@ -63,23 +56,10 @@ export async function requestCommand(
     ?? 'unknown';
 
   let content = await readFile(assignmentMdPath, 'utf-8');
-  const todoLine = `- [ ] ${text.trim()} (from: ${source})`;
-
-  const todosHeading = /^## Todos\s*$/m;
-  if (todosHeading.test(content)) {
-    content = content.replace(
-      /(^## Todos[\s\S]*?)(\n## |\n*$)/m,
-      (_m, section, nextHeading) => {
-        return `${section.trimEnd()}\n${todoLine}\n${nextHeading}`;
-      },
-    );
-  } else {
-    // No Todos section — append one
-    content = `${content.trimEnd()}\n\n## Todos\n\n${todoLine}\n`;
-  }
-
-  const timestamp = nowTimestamp();
-  content = setTopLevelField(content, 'updated', `"${timestamp}"`);
+  content = appendTodosToAssignmentBody(content, [
+    { description: `${text.trim()} (from: ${source})` },
+  ]);
+  content = touchAssignmentUpdated(content, nowTimestamp());
 
   await writeFileForce(assignmentMdPath, content);
 

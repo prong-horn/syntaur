@@ -25,12 +25,20 @@ export interface CreateAssignmentOptions {
   type?: string;
   withTodos?: boolean;
   workspace?: string;
+  silent?: boolean;
+}
+
+export interface CreateAssignmentResult {
+  id: string;
+  slug: string;
+  projectSlug: string | null;
+  assignmentDir: string;
 }
 
 export async function createAssignmentCommand(
   title: string,
   options: CreateAssignmentOptions,
-): Promise<void> {
+): Promise<CreateAssignmentResult> {
   if (!title.trim()) {
     throw new Error('Assignment title cannot be empty.');
   }
@@ -226,36 +234,40 @@ export async function createAssignmentCommand(
     await writeFileForce(filePath, content);
   }
 
-  if (projectSlug === null) {
+  if (!options.silent) {
+    if (projectSlug === null) {
+      console.log(
+        `Created standalone assignment "${title}" at ${assignmentDir}/`,
+      );
+      console.log(`  UUID: ${id}`);
+      console.log(`  Slug: ${assignmentSlug} (display only)`);
+    } else {
+      console.log(
+        `Created assignment "${title}" in project "${projectSlug}" at ${assignmentDir}/`,
+      );
+      console.log(`  Slug: ${assignmentSlug}`);
+    }
+    console.log(`  Priority: ${priority}`);
+    if (options.type) {
+      console.log(`  Type: ${options.type}`);
+    }
+    if (dependsOn.length > 0) {
+      console.log(`  Depends on: ${dependsOn.join(', ')}`);
+    }
+    if (links.length > 0) {
+      console.log(`  Links: ${links.join(', ')}`);
+    }
+    console.log(`  Files created:`);
+    console.log(`    assignment.md`);
+    console.log(`    scratchpad.md`);
+    console.log(`    handoff.md`);
+    console.log(`    decision-record.md`);
+    console.log(`    progress.md`);
+    console.log(`    comments.md`);
     console.log(
-      `Created standalone assignment "${title}" at ${assignmentDir}/`,
+      `  Plan files (plan.md, plan-v2.md, ...) are created on demand by /plan-assignment.`,
     );
-    console.log(`  UUID: ${id}`);
-    console.log(`  Slug: ${assignmentSlug} (display only)`);
-  } else {
-    console.log(
-      `Created assignment "${title}" in project "${projectSlug}" at ${assignmentDir}/`,
-    );
-    console.log(`  Slug: ${assignmentSlug}`);
   }
-  console.log(`  Priority: ${priority}`);
-  if (options.type) {
-    console.log(`  Type: ${options.type}`);
-  }
-  if (dependsOn.length > 0) {
-    console.log(`  Depends on: ${dependsOn.join(', ')}`);
-  }
-  if (links.length > 0) {
-    console.log(`  Links: ${links.join(', ')}`);
-  }
-  console.log(`  Files created:`);
-  console.log(`    assignment.md`);
-  console.log(`    scratchpad.md`);
-  console.log(`    handoff.md`);
-  console.log(`    decision-record.md`);
-  console.log(`    progress.md`);
-  console.log(`    comments.md`);
-  console.log(
-    `  Plan files (plan.md, plan-v2.md, ...) are created on demand by /plan-assignment.`,
-  );
+
+  return { id, slug: assignmentSlug, projectSlug, assignmentDir };
 }
