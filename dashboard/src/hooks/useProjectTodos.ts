@@ -131,3 +131,31 @@ export async function deleteProjectTodo(projectId: string, id: string): Promise<
     method: 'DELETE',
   });
 }
+
+import type { PromoteBody, MoveTarget } from './useTodos';
+
+async function postOrThrow(url: string, body: unknown): Promise<unknown> {
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    let parsed: { error?: string } | null = null;
+    try { parsed = text ? JSON.parse(text) : null; } catch { /* fall through */ }
+    const msg = parsed?.error || text || `HTTP ${res.status}`;
+    const err = new Error(msg) as Error & { status?: number };
+    err.status = res.status;
+    throw err;
+  }
+  return res.json().catch(() => ({}));
+}
+
+export async function promoteProjectTodos(projectId: string, body: PromoteBody): Promise<void> {
+  await postOrThrow(`${base(projectId)}/promote`, body);
+}
+
+export async function moveProjectTodo(projectId: string, id: string, to: MoveTarget): Promise<void> {
+  await postOrThrow(`${base(projectId)}/${id}/move`, { to });
+}

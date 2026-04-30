@@ -496,8 +496,8 @@ export function createDashboardServer(options: DashboardServerOptions) {
   app.use('/api/playbooks', createPlaybooksRouter(playbooksDir));
 
   // --- Todos API ---
-  app.use('/api/todos', createTodosRouter(todosDir, broadcast));
-  app.use('/api/projects/:projectId/todos', createProjectTodosRouter(projectsDir, broadcast));
+  app.use('/api/todos', createTodosRouter(todosDir, broadcast, projectsDir));
+  app.use('/api/projects/:projectId/todos', createProjectTodosRouter(projectsDir, broadcast, todosDir));
 
   // --- Backup API ---
   app.use('/api/backup', createBackupRouter());

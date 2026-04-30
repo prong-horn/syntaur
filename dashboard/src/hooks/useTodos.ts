@@ -154,3 +154,51 @@ export async function deleteTodo(workspace: string, id: string): Promise<void> {
     method: 'DELETE',
   });
 }
+
+export type PromoteBody =
+  | {
+      todoIds: string[];
+      mode: 'new-assignment';
+      target: { project: string };
+      title?: string;
+      type?: string;
+      priority?: string;
+      keepSource?: boolean;
+    }
+  | {
+      todoIds: string[];
+      mode: 'to-assignment';
+      target: { assignment: string };
+      keepSource?: boolean;
+    };
+
+export type MoveTarget =
+  | { workspace: string }
+  | { project: string }
+  | { global: true };
+
+async function postOrThrow(url: string, body: unknown): Promise<unknown> {
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    let parsed: { error?: string } | null = null;
+    try { parsed = text ? JSON.parse(text) : null; } catch { /* fall through */ }
+    const msg = parsed?.error || text || `HTTP ${res.status}`;
+    const err = new Error(msg) as Error & { status?: number };
+    err.status = res.status;
+    throw err;
+  }
+  return res.json().catch(() => ({}));
+}
+
+export async function promoteTodos(workspace: string, body: PromoteBody): Promise<void> {
+  await postOrThrow(`/api/todos/${encodeURIComponent(workspace)}/promote`, body);
+}
+
+export async function moveTodo(workspace: string, id: string, to: MoveTarget): Promise<void> {
+  await postOrThrow(`/api/todos/${encodeURIComponent(workspace)}/${id}/move`, { to });
+}

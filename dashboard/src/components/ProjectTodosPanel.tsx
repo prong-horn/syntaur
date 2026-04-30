@@ -9,6 +9,7 @@ import {
   Check,
   GripVertical,
   Trash2,
+  ArrowRightLeft,
 } from 'lucide-react';
 import {
   DndContext,
@@ -41,12 +42,18 @@ import { ErrorState } from './ErrorState';
 import { EmptyState } from './EmptyState';
 import { StatCard } from './StatCard';
 import { StatusMenu } from './StatusMenu';
+import { TodoPromoteModal } from './TodoPromoteModal';
+import { TodoMoveModal } from './TodoMoveModal';
+import { TodoMetaBadges } from '../pages/WorkspaceTodosPage';
 import type { TodoItem } from '../types';
 import { useHotkey, useHotkeyScope, useListSelection } from '../hotkeys';
 
 interface SortableTodoRowProps {
   item: TodoItem;
   copiedId: string | null;
+  selected: boolean;
+  onToggleSelected: (id: string, e: React.MouseEvent | React.ChangeEvent) => void;
+  onMoveOne: (id: string, e: React.MouseEvent) => void;
   onCycleStatus: (id: string, status: string) => void;
   onStatusChange: (id: string, status: string) => void;
   onCopyId: (e: React.MouseEvent, id: string) => void;
@@ -59,6 +66,9 @@ interface SortableTodoRowProps {
 function SortableTodoRow({
   item,
   copiedId,
+  selected,
+  onToggleSelected,
+  onMoveOne,
   onCycleStatus,
   onStatusChange,
   onCopyId,
@@ -94,6 +104,14 @@ function SortableTodoRow({
       }`}
       onClick={() => onCycleStatus(item.id, item.status)}
     >
+      <input
+        type="checkbox"
+        aria-label={`Select todo ${item.id}`}
+        checked={selected}
+        onChange={(e) => onToggleSelected(item.id, e)}
+        onClick={(e) => e.stopPropagation()}
+        className="h-4 w-4 cursor-pointer accent-foreground"
+      />
       {!disabled && (
         <button
           ref={setActivatorNodeRef}
@@ -125,6 +143,7 @@ function SortableTodoRow({
             session:{item.session.slice(0, 8)}
           </span>
         )}
+        <TodoMetaBadges item={item} />
       </div>
       {copiedId === item.id ? (
         <span className="text-xs text-status-completed-foreground flex items-center gap-1">
@@ -144,6 +163,13 @@ function SortableTodoRow({
             onClick={(e) => onCopyId(e, item.id)}
           >
             <Copy className="h-3 w-3" />
+          </button>
+          <button
+            className="text-muted-foreground/40 hover:text-foreground transition"
+            title="Move to..."
+            onClick={(e) => onMoveOne(item.id, e)}
+          >
+            <ArrowRightLeft className="h-3 w-3" />
           </button>
           <button
             className="text-muted-foreground/40 hover:text-destructive transition"
@@ -169,6 +195,10 @@ export function ProjectTodosPanel({ projectId }: ProjectTodosPanelProps) {
   const [tagFilter, setTagFilter] = useState<string>('');
   const [newTodoText, setNewTodoText] = useState('');
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [promoteOpen, setPromoteOpen] = useState(false);
+  const [moveOpen, setMoveOpen] = useState(false);
+  const [moveSingleId, setMoveSingleId] = useState<string | null>(null);
   const searchRef = useRef<HTMLInputElement>(null);
   useHotkeyScope('list:todos');
 
@@ -211,6 +241,49 @@ export function ProjectTodosPanel({ projectId }: ProjectTodosPanelProps) {
     if (tagFilter) items = items.filter((i) => i.tags.includes(tagFilter));
     return items;
   }, [data, search, statusFilter, tagFilter]);
+
+  useEffect(() => {
+    setSelectedIds(new Set());
+  }, [search, statusFilter, tagFilter, projectId]);
+
+  const visibleSelectedCount = useMemo(
+    () => filtered.filter((i) => selectedIds.has(i.id)).length,
+    [filtered, selectedIds],
+  );
+  const allVisibleSelected = filtered.length > 0 && visibleSelectedCount === filtered.length;
+  const someVisibleSelected = visibleSelectedCount > 0 && !allVisibleSelected;
+
+  function toggleOne(id: string) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+  function toggleAllVisible() {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (allVisibleSelected) {
+        for (const i of filtered) next.delete(i.id);
+      } else {
+        for (const i of filtered) next.add(i.id);
+      }
+      return next;
+    });
+  }
+  function clearSelection() { setSelectedIds(new Set()); }
+
+  const moveSelectedIds = moveSingleId ? [moveSingleId] : Array.from(selectedIds);
+  function onMoveDone() {
+    setSelectedIds(new Set());
+    setMoveSingleId(null);
+    refetch();
+  }
+  function onPromoteDone() {
+    setSelectedIds(new Set());
+    refetch();
+  }
 
   async function handleAdd() {
     if (!newTodoText.trim()) return;
@@ -388,6 +461,36 @@ export function ProjectTodosPanel({ projectId }: ProjectTodosPanelProps) {
         )}
       </div>
 
+      {/* Bulk toolbar */}
+      {selectedIds.size > 0 ? (
+        <div className="surface-panel flex items-center justify-between gap-3 px-3 py-2">
+          <span className="text-sm font-medium">{selectedIds.size} selected</span>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setPromoteOpen(true)}
+              className="shell-action bg-foreground text-background hover:opacity-90"
+            >
+              Promote selected
+            </button>
+            <button
+              type="button"
+              onClick={() => { setMoveSingleId(null); setMoveOpen(true); }}
+              className="shell-action"
+            >
+              Move to…
+            </button>
+            <button
+              type="button"
+              onClick={clearSelection}
+              className="text-xs text-muted-foreground hover:text-foreground"
+            >
+              Clear
+            </button>
+          </div>
+        </div>
+      ) : null}
+
       {/* Items */}
       {filtered.length === 0 ? (
         <EmptyState
@@ -395,33 +498,64 @@ export function ProjectTodosPanel({ projectId }: ProjectTodosPanelProps) {
           description="Add your first todo above."
         />
       ) : (
-        <DndContext
-          sensors={sensors}
-          collisionDetection={closestCenter}
-          onDragEnd={handleDragEnd}
-        >
-          <SortableContext
-            items={filtered.map((i) => i.id)}
-            strategy={verticalListSortingStrategy}
+        <>
+          <div className="flex items-center gap-3 px-3 py-1 text-xs text-muted-foreground">
+            <input
+              type="checkbox"
+              aria-label="Select all visible todos"
+              checked={allVisibleSelected}
+              ref={(el) => { if (el) el.indeterminate = someVisibleSelected; }}
+              onChange={toggleAllVisible}
+              className="h-4 w-4 cursor-pointer accent-foreground"
+            />
+            <span>Select all in current filter ({filtered.length})</span>
+          </div>
+          <DndContext
+            sensors={sensors}
+            collisionDetection={closestCenter}
+            onDragEnd={handleDragEnd}
           >
-            <div className="space-y-1">
-              {filtered.map((item, i) => (
-                <SortableTodoRow
-                  key={item.id}
-                  item={item}
-                  copiedId={copiedId}
-                  onCycleStatus={handleCycleStatus}
-                  onStatusChange={handleStatusChange}
-                  onCopyId={copyId}
-                  onDelete={handleDelete}
-                  disabled={isFiltered}
-                  hotkeyRowProps={hotkeyRowProps(i)}
-                />
-              ))}
-            </div>
-          </SortableContext>
-        </DndContext>
+            <SortableContext
+              items={filtered.map((i) => i.id)}
+              strategy={verticalListSortingStrategy}
+            >
+              <div className="space-y-1">
+                {filtered.map((item, i) => (
+                  <SortableTodoRow
+                    key={item.id}
+                    item={item}
+                    copiedId={copiedId}
+                    selected={selectedIds.has(item.id)}
+                    onToggleSelected={(id) => toggleOne(id)}
+                    onMoveOne={(id, e) => { e.stopPropagation(); setMoveSingleId(id); setMoveOpen(true); }}
+                    onCycleStatus={handleCycleStatus}
+                    onStatusChange={handleStatusChange}
+                    onCopyId={copyId}
+                    onDelete={handleDelete}
+                    disabled={isFiltered}
+                    hotkeyRowProps={hotkeyRowProps(i)}
+                  />
+                ))}
+              </div>
+            </SortableContext>
+          </DndContext>
+        </>
       )}
+
+      <TodoPromoteModal
+        open={promoteOpen}
+        selectedIds={Array.from(selectedIds)}
+        scope={{ kind: 'project', projectId }}
+        onOpenChange={setPromoteOpen}
+        onDone={onPromoteDone}
+      />
+      <TodoMoveModal
+        open={moveOpen}
+        selectedIds={moveSelectedIds}
+        scope={{ kind: 'project', projectId }}
+        onOpenChange={(o) => { setMoveOpen(o); if (!o) setMoveSingleId(null); }}
+        onDone={onMoveDone}
+      />
     </div>
   );
 }

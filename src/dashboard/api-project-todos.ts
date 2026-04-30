@@ -1,6 +1,6 @@
 import { Router, type Request, type Response, type NextFunction } from 'express';
-import { mkdir, readFile } from 'node:fs/promises';
-import { resolve } from 'node:path';
+import { mkdir, readFile, rename } from 'node:fs/promises';
+import { resolve, dirname } from 'node:path';
 import {
   readChecklist,
   writeChecklist,
@@ -11,21 +11,13 @@ import {
   computeCounts,
 } from '../todos/parser.js';
 import { fileExists, writeFileForce } from '../utils/fs.js';
-import { projectTodosDir } from '../utils/paths.js';
+import { projectTodosDir, todoPlanDir } from '../utils/paths.js';
 import { isValidSlug } from '../utils/slug.js';
+import { projLock, wsLock, withTwoLocks } from './todos-locks.js';
 import type { TodoItem, LogEntry } from '../todos/types.js';
 import type { WsMessage } from './types.js';
 
-// Per-project write locks, scope-prefixed to avoid collision with the
-// workspace router's lock map (keys are `proj:<slug>` here, `ws:<name>` there).
-const writeLocks = new Map<string, Promise<void>>();
-function projLock<T>(slug: string, fn: () => Promise<T>): Promise<T> {
-  const key = `proj:${slug}`;
-  const prev = writeLocks.get(key) ?? Promise.resolve();
-  const next = prev.then(fn);
-  writeLocks.set(key, next.then(() => {}, () => {}));
-  return next;
-}
+const WORKSPACE_REGEX = /^[a-z0-9_][a-z0-9-]*$/;
 
 function touchItem(item: TodoItem): void {
   const now = new Date().toISOString();
@@ -84,11 +76,15 @@ function notFound(res: Response, slug: string): void {
 export function createProjectTodosRouter(
   projectsDir: string,
   broadcast: (msg: WsMessage) => void,
+  workspaceTodosDir?: string,
 ): Router {
   const router = Router({ mergeParams: true });
 
   function broadcastUpdate(projectSlug: string): void {
     broadcast({ type: 'todos-updated', projectSlug, timestamp: new Date().toISOString() });
+  }
+  function broadcastWorkspace(): void {
+    broadcast({ type: 'todos-updated', timestamp: new Date().toISOString() });
   }
 
   function validateProjectId(req: Request, res: Response, next: NextFunction): void {
@@ -564,6 +560,280 @@ export function createProjectTodosRouter(
         return;
       }
       res.status(500).json({ error: error instanceof Error ? error.message : 'Failed to unblock todo' });
+    }
+  });
+
+  // POST /promote — mirror of workspace router; promotes selected project todos
+  // to a new or existing assignment.
+  router.post('/promote', async (req, res) => {
+    try {
+      const slug = getProjectIdParam(params(req).projectId);
+      if (!(await projectExists(projectsDir, slug))) { notFound(res, slug); return; }
+
+      const { todoIds, mode, target, title, type, priority, keepSource } = req.body ?? {};
+      if (!Array.isArray(todoIds) || todoIds.length === 0) {
+        res.status(400).json({ error: 'todoIds (non-empty array of strings) is required' });
+        return;
+      }
+      if (mode !== 'new-assignment' && mode !== 'to-assignment') {
+        res.status(400).json({ error: 'mode must be "new-assignment" or "to-assignment"' });
+        return;
+      }
+
+      const result = await projLock(slug, async () => {
+        if (!(await projectExists(projectsDir, slug))) return { gone: true } as const;
+        await ensureProjectTodosDir(projectsDir, slug);
+        const todosDir = projectTodosDir(projectsDir, slug);
+        const checklist = await readChecklist(todosDir, slug);
+
+        const items: TodoItem[] = [];
+        for (const id of todoIds) {
+          const item = checklist.items.find((i) => i.id === id);
+          if (!item) return { error: `Todo "${id}" not found` };
+          if (item.status === 'completed') return { error: `Todo "${id}" is already completed` };
+          items.push(item);
+        }
+
+        const scopeLabel = `project:${slug}`;
+        const { assignmentsDir: assignmentsDirFn } = await import('../utils/paths.js');
+        const { appendTodosToAssignmentBody, touchAssignmentUpdated } = await import(
+          '../utils/assignment-todos.js'
+        );
+        const { nowTimestamp } = await import('../utils/timestamp.js');
+
+        let assignmentRef: string;
+        let assignmentDir: string;
+
+        if (mode === 'new-assignment') {
+          const targetProject: string | undefined = target?.project ?? slug;
+          if (!targetProject) return { error: 'target.project is required for new-assignment mode' };
+          if (items.length > 1 && !title) return { error: 'title is required when promoting multiple todos' };
+          const { createAssignmentCommand } = await import('../commands/create-assignment.js');
+          const created = await createAssignmentCommand(title || items[0].description, {
+            project: targetProject,
+            type,
+            priority,
+            withTodos: true,
+            silent: true,
+          });
+          assignmentDir = created.assignmentDir;
+          assignmentRef = `${created.projectSlug}/${created.slug}`;
+        } else {
+          const tg: string = target?.assignment || '';
+          if (!tg) return { error: 'target.assignment is required for to-assignment mode' };
+          if (tg.includes('/')) {
+            const parts = tg.split('/');
+            if (parts.length !== 2) return { error: `Invalid target.assignment "${tg}"` };
+            assignmentDir = resolve(projectsDir, parts[0], 'assignments', parts[1]);
+            assignmentRef = `${parts[0]}/${parts[1]}`;
+          } else if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(tg)) {
+            assignmentDir = resolve(assignmentsDirFn(), tg);
+            assignmentRef = tg;
+          } else {
+            return { error: `Invalid target.assignment "${tg}"` };
+          }
+          const assignmentMdPath = resolve(assignmentDir, 'assignment.md');
+          if (!(await fileExists(assignmentMdPath))) return { error: `Target assignment not found: ${assignmentMdPath}` };
+        }
+
+        const assignmentMdPath = resolve(assignmentDir, 'assignment.md');
+        let content = await readFile(assignmentMdPath, 'utf-8');
+        content = appendTodosToAssignmentBody(
+          content,
+          items.map((it) => ({
+            description: it.description,
+            trace: `promoted from t:${it.id} in ${scopeLabel}`,
+          })),
+        );
+        content = touchAssignmentUpdated(content, nowTimestamp());
+        await writeFileForce(assignmentMdPath, content);
+
+        if (!keepSource) {
+          for (const item of items) {
+            item.status = 'completed';
+            item.session = null;
+            touchItem(item);
+          }
+          checklist.workspace = slug;
+          await writeChecklist(todosDir, checklist);
+          for (const item of items) {
+            const entry: LogEntry = {
+              timestamp: new Date().toISOString(),
+              itemIds: [item.id],
+              items: item.description,
+              session: null,
+              branch: item.branch || null,
+              summary: `Promoted to assignment ${assignmentRef}`,
+              blockers: null,
+              status: null,
+            };
+            await appendLogEntry(todosDir, slug, entry);
+          }
+        }
+
+        return { assignmentRef, assignmentDir, promoted: items.map((i) => i.id) };
+      });
+
+      if ('gone' in result) { notFound(res, slug); return; }
+      if ('error' in result) { res.status(400).json({ error: result.error }); return; }
+      broadcastUpdate(slug);
+      res.json(result);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'PROJECT_GONE') {
+        notFound(res, getProjectIdParam(params(req).projectId));
+        return;
+      }
+      res.status(500).json({ error: error instanceof Error ? error.message : 'Failed to promote todos' });
+    }
+  });
+
+  // POST /:id/move — cross-scope move from a project to workspace/project/global
+  router.post('/:id/move', async (req, res) => {
+    try {
+      const sourceSlug = getProjectIdParam(params(req).projectId);
+      const id = params(req).id ?? '';
+      if (!(await projectExists(projectsDir, sourceSlug))) { notFound(res, sourceSlug); return; }
+
+      const to = req.body?.to;
+      if (!to || typeof to !== 'object') {
+        res.status(400).json({ error: 'body.to is required' });
+        return;
+      }
+      const targetCount = [Boolean(to.workspace), Boolean(to.project), Boolean(to.global)].filter(Boolean).length;
+      if (targetCount !== 1) {
+        res.status(400).json({ error: 'body.to must specify exactly one of workspace, project, or global' });
+        return;
+      }
+      if (to.project && !isValidSlug(to.project)) {
+        res.status(400).json({ error: `Invalid target project slug: "${to.project}"` });
+        return;
+      }
+      if (to.workspace && !WORKSPACE_REGEX.test(to.workspace)) {
+        res.status(400).json({ error: `Invalid target workspace name: "${to.workspace}"` });
+        return;
+      }
+
+      type Target =
+        | { kind: 'workspace'; id: string; todosPath: string; lockKey: string }
+        | { kind: 'project'; id: string; todosPath: string; lockKey: string };
+
+      let target: Target;
+      if (to.global) {
+        if (!workspaceTodosDir) {
+          res.status(500).json({ error: 'Server not configured with workspaceTodosDir; cannot move to global scope' });
+          return;
+        }
+        target = { kind: 'workspace', id: '_global', todosPath: workspaceTodosDir, lockKey: 'ws:_global' };
+      } else if (to.workspace) {
+        if (!workspaceTodosDir) {
+          res.status(500).json({ error: 'Server not configured with workspaceTodosDir; cannot move to workspace scope' });
+          return;
+        }
+        target = { kind: 'workspace', id: to.workspace, todosPath: workspaceTodosDir, lockKey: `ws:${to.workspace}` };
+      } else {
+        const tslug = to.project as string;
+        if (!(await projectExists(projectsDir, tslug))) {
+          res.status(404).json({ error: `Target project "${tslug}" not found` });
+          return;
+        }
+        target = {
+          kind: 'project',
+          id: tslug,
+          todosPath: projectTodosDir(projectsDir, tslug),
+          lockKey: `proj:${tslug}`,
+        };
+      }
+
+      const sourceLockKey = `proj:${sourceSlug}`;
+      if (sourceLockKey === target.lockKey) {
+        res.status(400).json({ error: 'cannot move to the same scope' });
+        return;
+      }
+
+      const result = await withTwoLocks(sourceLockKey, target.lockKey, async () => {
+        if (!(await projectExists(projectsDir, sourceSlug))) return { status: 'gone' as const };
+        if (target.kind === 'project' && !(await projectExists(projectsDir, target.id))) {
+          return { status: 'targetGone' as const };
+        }
+        await ensureProjectTodosDir(projectsDir, sourceSlug);
+        const sourceTodosDir = projectTodosDir(projectsDir, sourceSlug);
+        const sourceChecklist = await readChecklist(sourceTodosDir, sourceSlug);
+        const targetChecklist = await readChecklist(target.todosPath, target.id);
+
+        const idx = sourceChecklist.items.findIndex((i) => i.id === id);
+        if (idx === -1) return { status: 404 as const, error: `Todo "${id}" not found` };
+
+        if (targetChecklist.items.some((i) => i.id === id)) {
+          return { status: 409 as const, error: 'id already exists in target' };
+        }
+
+        const item = sourceChecklist.items[idx];
+        if (item.planDir) {
+          const newPlanDir = todoPlanDir(target.todosPath, target.id, id);
+          if (await fileExists(newPlanDir)) {
+            return { status: 409 as const, error: 'plan dir already exists in target' };
+          }
+          await mkdir(dirname(newPlanDir), { recursive: true });
+          await rename(item.planDir, newPlanDir);
+          item.planDir = newPlanDir;
+        }
+
+        sourceChecklist.items.splice(idx, 1);
+        targetChecklist.items.push(item);
+
+        sourceChecklist.workspace = sourceSlug;
+        await writeChecklist(sourceTodosDir, sourceChecklist);
+        await writeChecklist(target.todosPath, targetChecklist);
+
+        const sourceLabel = `project:${sourceSlug}`;
+        const targetLabel =
+          target.kind === 'project' ? `project:${target.id}` : target.id === '_global' ? '_global' : `workspace:${target.id}`;
+        const ts = new Date().toISOString();
+        await appendLogEntry(sourceTodosDir, sourceSlug, {
+          timestamp: ts,
+          itemIds: [id],
+          items: item.description,
+          session: null,
+          branch: item.branch || null,
+          summary: `Moved to ${targetLabel}`,
+          blockers: null,
+          status: null,
+        });
+        await appendLogEntry(target.todosPath, target.id, {
+          timestamp: ts,
+          itemIds: [id],
+          items: item.description,
+          session: null,
+          branch: item.branch || null,
+          summary: `Moved from ${sourceLabel}`,
+          blockers: null,
+          status: null,
+        });
+
+        return { status: 200 as const, item };
+      });
+
+      if (result.status === 'gone') { notFound(res, sourceSlug); return; }
+      if (result.status === 'targetGone') {
+        res.status(404).json({ error: `Target project "${(target as { id: string }).id}" not found` });
+        return;
+      }
+      if (result.status !== 200) {
+        res.status(result.status).json({ error: result.error });
+        return;
+      }
+
+      broadcastUpdate(sourceSlug);
+      if (target.kind === 'project') broadcastUpdate(target.id);
+      else broadcastWorkspace();
+
+      res.json({ moved: id, to: target });
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'PROJECT_GONE') {
+        notFound(res, getProjectIdParam(params(req).projectId));
+        return;
+      }
+      res.status(500).json({ error: error instanceof Error ? error.message : 'Failed to move todo' });
     }
   });
 
