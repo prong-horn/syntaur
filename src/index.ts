@@ -25,6 +25,7 @@ import { createPlaybookCommand } from './commands/create-playbook.js';
 import { listPlaybooksCommand } from './commands/list-playbooks.js';
 import { enablePlaybookCommand } from './commands/enable-playbook.js';
 import { disablePlaybookCommand } from './commands/disable-playbook.js';
+import { regenPlaybookManifestCommand } from './commands/regen-playbook-manifest.js';
 import { todoCommand } from './commands/todo.js';
 import { backupCommand } from './commands/backup.js';
 import { doctorCommand } from './commands/doctor.js';
@@ -610,6 +611,21 @@ program
   .action(async (slug) => {
     try {
       await disablePlaybookCommand(slug);
+    } catch (error) {
+      console.error(
+        'Error:',
+        error instanceof Error ? error.message : String(error),
+      );
+      process.exit(1);
+    }
+  });
+
+program
+  .command('regen-playbook-manifest')
+  .description('Rebuild ~/.syntaur/playbooks/manifest.md from current playbook files')
+  .action(async () => {
+    try {
+      await regenPlaybookManifestCommand();
     } catch (error) {
       console.error(
         'Error:',

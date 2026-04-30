@@ -236,10 +236,22 @@ const [search, setSearch] = useState('');
         />
       ) : (
         <div className="surface-panel mt-4 overflow-x-auto">
-          <table className="w-full min-w-[1040px] text-sm">
+          <table className="w-full min-w-[1280px] table-fixed text-sm">
+            <colgroup>
+              <col style={{ width: '32px' }} />
+              <col style={{ width: '140px' }} />
+              <col style={{ width: '160px' }} />
+              <col style={{ width: '200px' }} />
+              <col style={{ width: '110px' }} />
+              <col style={{ width: '130px' }} />
+              <col style={{ width: '140px' }} />
+              <col style={{ width: '200px' }} />
+              <col style={{ width: '200px' }} />
+              <col style={{ width: '40px' }} />
+            </colgroup>
             <thead>
               <tr className="border-b border-border/40 text-left text-xs uppercase tracking-wider text-muted-foreground">
-                <th className="w-8 pb-2 pr-3">
+                <th className="pb-2 pr-3">
                   <button onClick={toggleSelectAll} className="text-muted-foreground hover:text-foreground">
                     {selectedIds.size === filteredSessions.length && filteredSessions.length > 0
                       ? <CheckSquare className="h-4 w-4" />
@@ -254,7 +266,7 @@ const [search, setSearch] = useState('');
                 <th className="pb-2 pr-3">Started</th>
                 <th className="pb-2 pr-3">Path</th>
                 <th className="pb-2 pr-3">Transcript</th>
-                <th className="w-8 pb-2"></th>
+                <th className="pb-2"></th>
               </tr>
             </thead>
             <tbody>
@@ -334,7 +346,11 @@ function SessionRow({
       </td>
       <td className="py-2 pr-3">
         {session.projectSlug ? (
-          <Link to={`${wsPrefix}/projects/${session.projectSlug}`} className="text-primary hover:underline">
+          <Link
+            to={`${wsPrefix}/projects/${session.projectSlug}`}
+            className="block truncate text-primary hover:underline"
+            title={toTitleCase(session.projectSlug)}
+          >
             {toTitleCase(session.projectSlug)}
           </Link>
         ) : session.assignmentSlug ? (
@@ -349,14 +365,16 @@ function SessionRow({
         {session.projectSlug && session.assignmentSlug ? (
           <Link
             to={`${wsPrefix}/projects/${session.projectSlug}/assignments/${session.assignmentSlug}`}
-            className="text-primary hover:underline"
+            className="block truncate text-primary hover:underline"
+            title={toTitleCase(session.assignmentSlug)}
           >
             {toTitleCase(session.assignmentSlug)}
           </Link>
         ) : session.assignmentSlug ? (
           <Link
             to={`/assignments/${session.assignmentSlug}`}
-            className="text-primary hover:underline font-mono"
+            className="block truncate font-mono text-primary hover:underline"
+            title={session.assignmentSlug}
           >
             {session.assignmentSlug}
           </Link>
@@ -364,43 +382,43 @@ function SessionRow({
           <span className="text-muted-foreground">&mdash;</span>
         )}
       </td>
-      <td className="max-w-[200px] py-2 pr-3">
+      <td className="py-2 pr-3">
         {session.description ? (
-          <span className="truncate text-xs text-muted-foreground" title={session.description}>
-            {session.description.length > 60 ? session.description.slice(0, 57) + '...' : session.description}
-          </span>
+          <div className="truncate text-xs text-muted-foreground" title={session.description}>
+            {session.description}
+          </div>
         ) : (
           <span className="text-muted-foreground">&mdash;</span>
         )}
       </td>
       <td className="py-2 pr-3">
-        <span className="inline-flex items-center gap-1.5">
-          <Activity className="h-3 w-3 text-muted-foreground" />
-          {session.agent}
+        <span className="flex min-w-0 items-center gap-1.5">
+          <Activity className="h-3 w-3 shrink-0 text-muted-foreground" />
+          <span className="truncate">{session.agent}</span>
         </span>
       </td>
       <td className="py-2 pr-3">
-        <span className="inline-flex items-center gap-1.5">
-          <span className="font-mono text-xs text-muted-foreground" title={session.sessionId}>
+        <span className="flex min-w-0 items-center gap-1.5">
+          <span className="truncate font-mono text-xs text-muted-foreground" title={session.sessionId}>
             {shortId}
           </span>
           <CopyButton value={session.sessionId} />
         </span>
       </td>
       <td className="py-2 pr-3 text-xs text-muted-foreground">
-        {formatDateTime(session.started)}
+        <span className="truncate block">{formatDateTime(session.started)}</span>
       </td>
-      <td className="max-w-[240px] py-2 pr-3">
-        <span className="inline-flex items-center gap-1.5">
+      <td className="py-2 pr-3">
+        <span className="flex min-w-0 items-center gap-1.5">
           <span className="truncate text-xs text-muted-foreground" title={session.path}>
             {shortPath}
           </span>
           {session.path && <CopyButton value={session.path} />}
         </span>
       </td>
-      <td className="max-w-[260px] py-2 pr-3">
+      <td className="py-2 pr-3">
         {session.transcriptPath ? (
-          <span className="inline-flex items-center gap-1.5">
+          <span className="flex min-w-0 items-center gap-1.5">
             <span
               className="truncate font-mono text-xs text-muted-foreground"
               title={session.transcriptPath}
