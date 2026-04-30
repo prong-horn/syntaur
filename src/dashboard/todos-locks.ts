@@ -4,9 +4,9 @@
 // in lexical order of the prefixed key without risk of deadlock.
 //
 // Lock-key prefixes:
-//   ws:<workspace>   — workspace-scoped checklist
+//   ws:<workspace>   — workspace-scoped checklist (the singleton global
+//                     checklist is reached as ws:_global; see globalLockKey)
 //   proj:<slug>      — project-scoped checklist
-//   global:          — the singleton global checklist
 const writeLocks = new Map<string, Promise<void>>();
 
 export function withLock<T>(lockKey: string, fn: () => Promise<T>): Promise<T> {
@@ -30,8 +30,11 @@ export function projLock<T>(slug: string, fn: () => Promise<T>): Promise<T> {
   return withLock(`proj:${slug}`, fn);
 }
 
+// The global checklist is just a workspace named "_global" by convention;
+// this helper exists to make that mapping explicit at call sites that
+// distinguish global from named-workspace scopes.
 export function globalLockKey(): string {
-  return 'global:';
+  return 'ws:_global';
 }
 
 // Acquire two locks in lexical order to prevent deadlock when one request

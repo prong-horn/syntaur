@@ -8,8 +8,12 @@ import {
   generateUniqueId,
   computeCounts,
 } from '../todos/parser.js';
+import { resolve as resolvePath, dirname } from 'node:path';
+import { rename, mkdir } from 'node:fs/promises';
 import { ensureDir, fileExists } from '../utils/fs.js';
-import { wsLock } from './todos-locks.js';
+import { projectTodosDir, todoPlanDir } from '../utils/paths.js';
+import { wsLock, projLock, withTwoLocks, globalLockKey } from './todos-locks.js';
+import { isValidSlug } from '../utils/slug.js';
 import type { TodoItem, LogEntry } from '../todos/types.js';
 import type { WsMessage } from './types.js';
 
@@ -31,11 +35,15 @@ function touchItem(item: TodoItem): void {
 export function createTodosRouter(
   todosDir: string,
   broadcast: (msg: WsMessage) => void,
+  projectsDir?: string,
 ): Router {
   const router = Router();
 
   function broadcastUpdate(): void {
     broadcast({ type: 'todos-updated', timestamp: new Date().toISOString() });
+  }
+  function broadcastProject(slug: string): void {
+    broadcast({ type: 'todos-updated', projectSlug: slug, timestamp: new Date().toISOString() });
   }
 
   // Validate workspace name on all routes that use :workspace
@@ -552,6 +560,137 @@ export function createTodosRouter(
       res.json(result);
     } catch (error) {
       res.status(500).json({ error: error instanceof Error ? error.message : 'Failed to promote todos' });
+    }
+  });
+
+  // POST /:workspace/:id/move — cross-scope move (workspace/global ↔ project/global)
+  router.post('/:workspace/:id/move', async (req, res) => {
+    try {
+      const sourceWs = getWorkspaceParam(req.params.workspace);
+      const id = req.params.id;
+      const to = req.body?.to;
+      if (!to || typeof to !== 'object') {
+        res.status(400).json({ error: 'body.to is required' });
+        return;
+      }
+      const targetCount = [Boolean(to.workspace), Boolean(to.project), Boolean(to.global)].filter(Boolean).length;
+      if (targetCount !== 1) {
+        res.status(400).json({ error: 'body.to must specify exactly one of workspace, project, or global' });
+        return;
+      }
+      if (to.project && !isValidSlug(to.project)) {
+        res.status(400).json({ error: `Invalid target project slug: "${to.project}"` });
+        return;
+      }
+      if (to.workspace && !WORKSPACE_REGEX.test(to.workspace)) {
+        res.status(400).json({ error: `Invalid target workspace name: "${to.workspace}"` });
+        return;
+      }
+
+      // Resolve target scope details (todosPath, scope id, lock key, broadcast).
+      type Target =
+        | { kind: 'workspace'; id: string; todosPath: string; lockKey: string }
+        | { kind: 'project'; id: string; todosPath: string; lockKey: string };
+
+      let target: Target;
+      if (to.global) {
+        target = { kind: 'workspace', id: '_global', todosPath: todosDir, lockKey: 'ws:_global' };
+      } else if (to.workspace) {
+        target = { kind: 'workspace', id: to.workspace, todosPath: todosDir, lockKey: `ws:${to.workspace}` };
+      } else {
+        if (!projectsDir) {
+          res.status(500).json({ error: 'Server not configured with projectsDir; cannot move to project scope' });
+          return;
+        }
+        const slug = to.project as string;
+        const projectMd = resolvePath(projectsDir, slug, 'project.md');
+        if (!(await fileExists(projectMd))) {
+          res.status(404).json({ error: `Target project "${slug}" not found` });
+          return;
+        }
+        target = {
+          kind: 'project',
+          id: slug,
+          todosPath: projectTodosDir(projectsDir, slug),
+          lockKey: `proj:${slug}`,
+        };
+      }
+
+      const sourceLockKey = `ws:${sourceWs}`;
+      if (sourceLockKey === target.lockKey) {
+        res.status(400).json({ error: 'cannot move to the same scope' });
+        return;
+      }
+
+      const result = await withTwoLocks(sourceLockKey, target.lockKey, async () => {
+        const sourceChecklist = await readChecklist(todosDir, sourceWs);
+        const targetChecklist = await readChecklist(target.todosPath, target.id);
+
+        const idx = sourceChecklist.items.findIndex((i) => i.id === id);
+        if (idx === -1) return { status: 404 as const, error: `Todo "${id}" not found` };
+
+        if (targetChecklist.items.some((i) => i.id === id)) {
+          return { status: 409 as const, error: 'id already exists in target' };
+        }
+
+        const item = sourceChecklist.items[idx];
+        if (item.planDir) {
+          const newPlanDir = todoPlanDir(target.todosPath, target.id, id);
+          if (await fileExists(newPlanDir)) {
+            return { status: 409 as const, error: 'plan dir already exists in target' };
+          }
+          await mkdir(dirname(newPlanDir), { recursive: true });
+          await rename(item.planDir, newPlanDir);
+          item.planDir = newPlanDir;
+        }
+
+        sourceChecklist.items.splice(idx, 1);
+        targetChecklist.items.push(item);
+
+        await writeChecklist(todosDir, sourceChecklist);
+        await writeChecklist(target.todosPath, targetChecklist);
+
+        const sourceLabel = sourceWs === '_global' ? '_global' : `workspace:${sourceWs}`;
+        const targetLabel =
+          target.kind === 'project' ? `project:${target.id}` : target.id === '_global' ? '_global' : `workspace:${target.id}`;
+        const ts = new Date().toISOString();
+        await appendLogEntry(todosDir, sourceWs, {
+          timestamp: ts,
+          itemIds: [id],
+          items: item.description,
+          session: null,
+          branch: item.branch || null,
+          summary: `Moved to ${targetLabel}`,
+          blockers: null,
+          status: null,
+        });
+        await appendLogEntry(target.todosPath, target.id, {
+          timestamp: ts,
+          itemIds: [id],
+          items: item.description,
+          session: null,
+          branch: item.branch || null,
+          summary: `Moved from ${sourceLabel}`,
+          blockers: null,
+          status: null,
+        });
+
+        return { status: 200 as const, item };
+      });
+
+      if (result.status !== 200) {
+        res.status(result.status).json({ error: result.error });
+        return;
+      }
+
+      // Dual broadcast: source scope, then target scope.
+      broadcastUpdate(); // source is workspace
+      if (target.kind === 'project') broadcastProject(target.id);
+      else broadcastUpdate();
+
+      res.json({ moved: id, to: target });
+    } catch (error) {
+      res.status(500).json({ error: error instanceof Error ? error.message : 'Failed to move todo' });
     }
   });
 
