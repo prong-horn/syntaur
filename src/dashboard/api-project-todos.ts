@@ -13,19 +13,9 @@ import {
 import { fileExists, writeFileForce } from '../utils/fs.js';
 import { projectTodosDir } from '../utils/paths.js';
 import { isValidSlug } from '../utils/slug.js';
+import { projLock } from './todos-locks.js';
 import type { TodoItem, LogEntry } from '../todos/types.js';
 import type { WsMessage } from './types.js';
-
-// Per-project write locks, scope-prefixed to avoid collision with the
-// workspace router's lock map (keys are `proj:<slug>` here, `ws:<name>` there).
-const writeLocks = new Map<string, Promise<void>>();
-function projLock<T>(slug: string, fn: () => Promise<T>): Promise<T> {
-  const key = `proj:${slug}`;
-  const prev = writeLocks.get(key) ?? Promise.resolve();
-  const next = prev.then(fn);
-  writeLocks.set(key, next.then(() => {}, () => {}));
-  return next;
-}
 
 function touchItem(item: TodoItem): void {
   const now = new Date().toISOString();

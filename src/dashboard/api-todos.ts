@@ -9,6 +9,7 @@ import {
   computeCounts,
 } from '../todos/parser.js';
 import { ensureDir, fileExists } from '../utils/fs.js';
+import { wsLock } from './todos-locks.js';
 import type { TodoItem, LogEntry } from '../todos/types.js';
 import type { WsMessage } from './types.js';
 
@@ -19,20 +20,6 @@ function getWorkspaceParam(value: string | string[] | undefined): string {
     return value[0] ?? '';
   }
   return value ?? '';
-}
-
-// Per-scope write lock to prevent concurrent read-modify-write races.
-// Keys are scope-prefixed (e.g. "ws:<workspace>") so the workspace and
-// project-todo routers cannot collide on identical bare names.
-const writeLocks = new Map<string, Promise<void>>();
-function withLock<T>(lockKey: string, fn: () => Promise<T>): Promise<T> {
-  const prev = writeLocks.get(lockKey) ?? Promise.resolve();
-  const next = prev.then(fn);
-  writeLocks.set(lockKey, next.then(() => {}, () => {}));
-  return next;
-}
-function wsLock<T>(workspace: string, fn: () => Promise<T>): Promise<T> {
-  return withLock(`ws:${workspace}`, fn);
 }
 
 function touchItem(item: TodoItem): void {
