@@ -788,3 +788,124 @@ todoCommand
       process.exit(1);
     }
   });
+
+todoCommand
+  .command('move')
+  .description('Move a todo between scopes (workspace ↔ project ↔ global) without converting it')
+  .argument('<id>', 'Todo short ID')
+  .option('--to-workspace <slug>', 'Target workspace slug')
+  .option('--to-project <slug>', 'Target project slug')
+  .option('--to-global', 'Move to global todos')
+  .option('--workspace <slug>', 'Source workspace slug')
+  .option('--project <slug>', 'Source project slug (mutually exclusive with --workspace/--global)')
+  .option('--global', 'Source: global todos')
+  .action(async (id: string, options) => {
+    try {
+      await moveTodo(id, options);
+    } catch (error) {
+      console.error('Error:', error instanceof Error ? error.message : String(error));
+      process.exit(1);
+    }
+  });
+
+interface MoveOptions {
+  toWorkspace?: string;
+  toProject?: string;
+  toGlobal?: boolean;
+  workspace?: string;
+  project?: string;
+  global?: boolean;
+}
+
+async function moveTodo(id: string, options: MoveOptions): Promise<void> {
+  const targetCount = [
+    Boolean(options.toWorkspace),
+    Boolean(options.toProject),
+    Boolean(options.toGlobal),
+  ].filter(Boolean).length;
+  if (targetCount !== 1) {
+    throw new Error('Specify exactly one of --to-workspace <slug>, --to-project <slug>, --to-global.');
+  }
+
+  const sourceScope = await resolveScope({
+    project: options.project,
+    workspace: options.workspace,
+    global: options.global,
+  });
+  const targetScope = await resolveScope({
+    project: options.toProject,
+    workspace: options.toWorkspace,
+    global: options.toGlobal,
+  });
+
+  if (sourceScope.kind === targetScope.kind && sourceScope.id === targetScope.id) {
+    throw new Error('Source and target scopes are the same; nothing to move.');
+  }
+
+  const sourceChecklist = await readChecklist(sourceScope.todosPath, sourceScope.id);
+  const targetChecklist =
+    sourceScope.todosPath === targetScope.todosPath && sourceScope.id === targetScope.id
+      ? sourceChecklist
+      : await readChecklist(targetScope.todosPath, targetScope.id);
+
+  const idx = sourceChecklist.items.findIndex((i) => i.id === id);
+  if (idx === -1) {
+    throw new Error(`Todo [t:${id}] not found in scope ${describeScope(sourceScope)}.`);
+  }
+  const item = sourceChecklist.items[idx];
+
+  if (targetChecklist.items.some((i) => i.id === id)) {
+    throw new Error(`Todo id [t:${id}] already exists in target scope ${describeScope(targetScope)}; refusing to move (collision).`);
+  }
+
+  // Plan-dir relocation: re-resolve under the target scope and rename on disk.
+  if (item.planDir) {
+    const newPlanDir = todoPlanDir(targetScope.todosPath, targetScope.id, id);
+    if (await fileExists(newPlanDir)) {
+      throw new Error(`Plan directory already exists at target: ${newPlanDir}; refusing to move.`);
+    }
+    const { rename, mkdir } = await import('node:fs/promises');
+    const { dirname } = await import('node:path');
+    await mkdir(dirname(newPlanDir), { recursive: true });
+    await rename(item.planDir, newPlanDir);
+    item.planDir = newPlanDir;
+  }
+
+  // Splice from source, append to target. Preserve every other field verbatim
+  // (id, tags, branch, worktreePath, createdAt, updatedAt). Do NOT touchItem.
+  sourceChecklist.items.splice(idx, 1);
+  targetChecklist.items.push(item);
+
+  await writeChecklist(sourceScope.todosPath, sourceChecklist);
+  if (targetChecklist !== sourceChecklist) {
+    await writeChecklist(targetScope.todosPath, targetChecklist);
+  }
+
+  const sourceLabel = describeScope(sourceScope);
+  const targetLabel = describeScope(targetScope);
+  const ts = nowISO();
+  const sourceEntry: LogEntry = {
+    timestamp: ts,
+    itemIds: [id],
+    items: item.description,
+    session: null,
+    branch: item.branch || null,
+    summary: `Moved to ${targetLabel}`,
+    blockers: null,
+    status: null,
+  };
+  const targetEntry: LogEntry = {
+    timestamp: ts,
+    itemIds: [id],
+    items: item.description,
+    session: null,
+    branch: item.branch || null,
+    summary: `Moved from ${sourceLabel}`,
+    blockers: null,
+    status: null,
+  };
+  await appendLogEntry(sourceScope.todosPath, sourceScope.id, sourceEntry);
+  await appendLogEntry(targetScope.todosPath, targetScope.id, targetEntry);
+
+  console.log(`Moved [t:${id}] from ${sourceLabel} to ${targetLabel}`);
+}
