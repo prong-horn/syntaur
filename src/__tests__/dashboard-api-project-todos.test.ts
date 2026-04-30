@@ -34,8 +34,8 @@ async function startServer(projectsDir: string, workspaceTodosDir: string): Prom
   const broadcast = (msg: WsMessage): void => {
     broadcastLog.push(msg);
   };
-  app.use('/api/todos', createTodosRouter(workspaceTodosDir, broadcast));
-  app.use('/api/projects/:projectId/todos', createProjectTodosRouter(projectsDir, broadcast));
+  app.use('/api/todos', createTodosRouter(workspaceTodosDir, broadcast, projectsDir));
+  app.use('/api/projects/:projectId/todos', createProjectTodosRouter(projectsDir, broadcast, workspaceTodosDir));
 
   await new Promise<void>((resolvePromise) => {
     const listening = app.listen(0, () => {
@@ -209,5 +209,263 @@ describe('project todos router', () => {
     const msg = broadcastLog.find((m) => m.type === 'todos-updated' && m.projectSlug === 'alpha');
     expect(msg).toBeDefined();
     expect(msg?.projectSlug).toBe('alpha');
+  });
+});
+
+describe('cross-scope move endpoints', () => {
+  async function setupBoth(): Promise<{ projectsDir: string; workspaceTodosDir: string }> {
+    const projectsDir = resolve(testDir, 'projects');
+    const workspaceTodosDir = resolve(testDir, 'todos');
+    await mkdir(projectsDir, { recursive: true });
+    await mkdir(workspaceTodosDir, { recursive: true });
+    return { projectsDir, workspaceTodosDir };
+  }
+
+  async function getTodoId(url: string): Promise<string> {
+    const r = await fetch(url);
+    const data = (await r.json()) as { items: { id: string }[] };
+    return data.items[0].id;
+  }
+
+  it('workspace → project: moves item, fires two broadcasts (workspace + project)', async () => {
+    const { projectsDir, workspaceTodosDir } = await setupBoth();
+    await seedProject(projectsDir, 'alpha');
+    await startServer(projectsDir, workspaceTodosDir);
+
+    await fetch(`${baseUrl}/api/todos/src`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ description: 'movable' }),
+    });
+    const id = await getTodoId(`${baseUrl}/api/todos/src`);
+    broadcastLog.length = 0;
+
+    const res = await fetch(`${baseUrl}/api/todos/src/${id}/move`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ to: { project: 'alpha' } }),
+    });
+    expect(res.status).toBe(200);
+
+    const srcAfter = await (await fetch(`${baseUrl}/api/todos/src`)).json() as { items: unknown[] };
+    expect(srcAfter.items).toHaveLength(0);
+    const tgtAfter = await (await fetch(`${baseUrl}/api/projects/alpha/todos`)).json() as { items: { id: string }[] };
+    expect(tgtAfter.items.map((i) => i.id)).toContain(id);
+
+    expect(broadcastLog.length).toBe(2);
+    const wsMsg = broadcastLog.find((m) => !m.projectSlug);
+    const projMsg = broadcastLog.find((m) => m.projectSlug === 'alpha');
+    expect(wsMsg).toBeDefined();
+    expect(projMsg).toBeDefined();
+  });
+
+  it('rejects same-scope move with 400', async () => {
+    const { projectsDir, workspaceTodosDir } = await setupBoth();
+    await startServer(projectsDir, workspaceTodosDir);
+
+    await fetch(`${baseUrl}/api/todos/src`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ description: 'x' }),
+    });
+    const id = await getTodoId(`${baseUrl}/api/todos/src`);
+
+    const res = await fetch(`${baseUrl}/api/todos/src/${id}/move`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ to: { workspace: 'src' } }),
+    });
+    expect(res.status).toBe(400);
+  });
+
+  it('returns 404 when target project does not exist', async () => {
+    const { projectsDir, workspaceTodosDir } = await setupBoth();
+    await startServer(projectsDir, workspaceTodosDir);
+
+    await fetch(`${baseUrl}/api/todos/src`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ description: 'x' }),
+    });
+    const id = await getTodoId(`${baseUrl}/api/todos/src`);
+
+    const res = await fetch(`${baseUrl}/api/todos/src/${id}/move`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ to: { project: 'doesnotexist' } }),
+    });
+    expect(res.status).toBe(404);
+  });
+
+  it('returns 404 when source todo id is missing', async () => {
+    const { projectsDir, workspaceTodosDir } = await setupBoth();
+    await seedProject(projectsDir, 'alpha');
+    await startServer(projectsDir, workspaceTodosDir);
+
+    const res = await fetch(`${baseUrl}/api/todos/src/dead/move`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ to: { project: 'alpha' } }),
+    });
+    expect(res.status).toBe(404);
+  });
+
+  it('returns 409 on id collision in target', async () => {
+    const { projectsDir, workspaceTodosDir } = await setupBoth();
+    await seedProject(projectsDir, 'alpha');
+    await startServer(projectsDir, workspaceTodosDir);
+
+    await fetch(`${baseUrl}/api/todos/src`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ description: 'src' }),
+    });
+    const id = await getTodoId(`${baseUrl}/api/todos/src`);
+
+    // Manually craft a colliding entry on the target
+    await mkdir(resolve(projectsDir, 'alpha', 'todos'), { recursive: true });
+    await writeFile(
+      resolve(projectsDir, 'alpha', 'todos', 'alpha.md'),
+      `---\nworkspace: alpha\narchiveInterval: weekly\n---\n\n# Quick Todos\n\n- [ ] colliding [t:${id}]\n`,
+      'utf-8',
+    );
+
+    const res = await fetch(`${baseUrl}/api/todos/src/${id}/move`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ to: { project: 'alpha' } }),
+    });
+    expect(res.status).toBe(409);
+  });
+
+  it('project → workspace: moves and fires two broadcasts', async () => {
+    const { projectsDir, workspaceTodosDir } = await setupBoth();
+    await seedProject(projectsDir, 'alpha');
+    await startServer(projectsDir, workspaceTodosDir);
+
+    await fetch(`${baseUrl}/api/projects/alpha/todos`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ description: 'p2w' }),
+    });
+    const id = await getTodoId(`${baseUrl}/api/projects/alpha/todos`);
+    broadcastLog.length = 0;
+
+    const res = await fetch(`${baseUrl}/api/projects/alpha/todos/${id}/move`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ to: { workspace: 'src' } }),
+    });
+    expect(res.status).toBe(200);
+
+    expect(broadcastLog.length).toBe(2);
+    expect(broadcastLog.some((m) => m.projectSlug === 'alpha')).toBe(true);
+    expect(broadcastLog.some((m) => !m.projectSlug)).toBe(true);
+  });
+
+  it('project A → project B: two project broadcasts', async () => {
+    const { projectsDir, workspaceTodosDir } = await setupBoth();
+    await seedProject(projectsDir, 'alpha');
+    await seedProject(projectsDir, 'beta');
+    await startServer(projectsDir, workspaceTodosDir);
+
+    await fetch(`${baseUrl}/api/projects/alpha/todos`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ description: 'crossp' }),
+    });
+    const id = await getTodoId(`${baseUrl}/api/projects/alpha/todos`);
+    broadcastLog.length = 0;
+
+    const res = await fetch(`${baseUrl}/api/projects/alpha/todos/${id}/move`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ to: { project: 'beta' } }),
+    });
+    expect(res.status).toBe(200);
+    expect(broadcastLog.length).toBe(2);
+    expect(broadcastLog.some((m) => m.projectSlug === 'alpha')).toBe(true);
+    expect(broadcastLog.some((m) => m.projectSlug === 'beta')).toBe(true);
+  });
+
+  it('project → global: fires project + workspace broadcasts', async () => {
+    const { projectsDir, workspaceTodosDir } = await setupBoth();
+    await seedProject(projectsDir, 'alpha');
+    await startServer(projectsDir, workspaceTodosDir);
+
+    await fetch(`${baseUrl}/api/projects/alpha/todos`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ description: 'p2g' }),
+    });
+    const id = await getTodoId(`${baseUrl}/api/projects/alpha/todos`);
+    broadcastLog.length = 0;
+
+    const res = await fetch(`${baseUrl}/api/projects/alpha/todos/${id}/move`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ to: { global: true } }),
+    });
+    expect(res.status).toBe(200);
+    expect(broadcastLog.length).toBe(2);
+  });
+
+  it('preserves item timestamps verbatim across move', async () => {
+    const { projectsDir, workspaceTodosDir } = await setupBoth();
+    await seedProject(projectsDir, 'alpha');
+    await startServer(projectsDir, workspaceTodosDir);
+
+    await fetch(`${baseUrl}/api/todos/src`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ description: 'preserve-me' }),
+    });
+    const beforeData = await (await fetch(`${baseUrl}/api/todos/src`)).json() as {
+      items: { id: string; createdAt: string | null; updatedAt: string | null }[];
+    };
+    const beforeItem = beforeData.items[0];
+
+    const res = await fetch(`${baseUrl}/api/todos/src/${beforeItem.id}/move`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ to: { project: 'alpha' } }),
+    });
+    expect(res.status).toBe(200);
+
+    const afterData = await (await fetch(`${baseUrl}/api/projects/alpha/todos`)).json() as {
+      items: { id: string; createdAt: string | null; updatedAt: string | null }[];
+    };
+    const afterItem = afterData.items.find((i) => i.id === beforeItem.id)!;
+    expect(afterItem.createdAt).toBe(beforeItem.createdAt);
+    expect(afterItem.updatedAt).toBe(beforeItem.updatedAt);
+  });
+
+  it('project /promote: validates body shape (400 on missing mode)', async () => {
+    const { projectsDir, workspaceTodosDir } = await setupBoth();
+    await seedProject(projectsDir, 'alpha');
+    await startServer(projectsDir, workspaceTodosDir);
+
+    const res = await fetch(`${baseUrl}/api/projects/alpha/todos/promote`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ todoIds: ['x'] }),
+    });
+    expect(res.status).toBe(400);
+  });
+
+  it('project /promote: 404 when project does not exist', async () => {
+    const { projectsDir, workspaceTodosDir } = await setupBoth();
+    await startServer(projectsDir, workspaceTodosDir);
+
+    const res = await fetch(`${baseUrl}/api/projects/ghost/todos/promote`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        todoIds: ['x'],
+        mode: 'new-assignment',
+        target: { project: 'ghost' },
+      }),
+    });
+    expect(res.status).toBe(404);
   });
 });

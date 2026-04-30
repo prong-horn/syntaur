@@ -327,3 +327,179 @@ describe('syntaur todo promote --to-assignment', () => {
     expect(res.stderr).toMatch(/Invalid --to-assignment target/);
   });
 });
+
+describe('syntaur todo move', () => {
+  function extractMetaField(line: string, key: string): string | undefined {
+    const m = line.match(/<([^>]*)>/);
+    if (!m) return undefined;
+    const body = m[1];
+    const parts = body.split(';');
+    for (const p of parts) {
+      const eq = p.indexOf('=');
+      if (eq === -1) continue;
+      if (p.slice(0, eq) === key) return p.slice(eq + 1);
+    }
+    return undefined;
+  }
+
+  function getItemLine(content: string, id: string): string | undefined {
+    return content.split('\n').find((l) => l.includes(`[t:${id}]`));
+  }
+
+  it('moves a workspace todo to a project, preserving id/timestamps', async () => {
+    await seedProject('alpha');
+    await runCli(['todo', 'add', 'movable', '--workspace', 'src'], syntaurHome);
+    const sourceBefore = await readFile(resolve(syntaurHome, 'todos', 'src.md'), 'utf-8');
+    const id = sourceBefore.match(/\[t:([a-f0-9]{4})\]/)![1];
+    const beforeLine = getItemLine(sourceBefore, id)!;
+    const beforeCreated = extractMetaField(beforeLine, 'c');
+    const beforeUpdated = extractMetaField(beforeLine, 'u');
+
+    const res = await runCli(
+      ['todo', 'move', id, '--to-project', 'alpha', '--workspace', 'src'],
+      syntaurHome,
+    );
+    expect(res.code).toBe(0);
+
+    const sourceAfter = await readFile(resolve(syntaurHome, 'todos', 'src.md'), 'utf-8');
+    expect(sourceAfter).not.toContain(`[t:${id}]`);
+
+    const targetAfter = await readFile(
+      resolve(projectsDir, 'alpha', 'todos', 'alpha.md'),
+      'utf-8',
+    );
+    expect(targetAfter).toContain(`[t:${id}]`);
+    const afterLine = getItemLine(targetAfter, id)!;
+    expect(extractMetaField(afterLine, 'c')).toBe(beforeCreated);
+    expect(extractMetaField(afterLine, 'u')).toBe(beforeUpdated);
+
+    // Both logs touched
+    const srcLog = await readFile(resolve(syntaurHome, 'todos', 'src-log.md'), 'utf-8');
+    expect(srcLog).toMatch(/Moved to project:alpha/);
+    const tgtLog = await readFile(
+      resolve(projectsDir, 'alpha', 'todos', 'alpha-log.md'),
+      'utf-8',
+    );
+    expect(tgtLog).toMatch(/Moved from workspace:src/);
+  });
+
+  it('relocates plan dir on disk and updates planDir absolute path', async () => {
+    await seedProject('alpha');
+    await runCli(['todo', 'add', 'with-plan', '--workspace', 'src'], syntaurHome);
+    const list = await readFile(resolve(syntaurHome, 'todos', 'src.md'), 'utf-8');
+    const id = list.match(/\[t:([a-f0-9]{4})\]/)![1];
+
+    await runCli(['todo', 'plan', id, '--workspace', 'src'], syntaurHome);
+    const oldPlanDir = resolve(syntaurHome, 'todos', 'plans', 'src', id);
+    expect(await pathExists(oldPlanDir)).toBe(true);
+
+    const res = await runCli(
+      ['todo', 'move', id, '--to-project', 'alpha', '--workspace', 'src'],
+      syntaurHome,
+    );
+    expect(res.code).toBe(0);
+
+    const newPlanDir = resolve(projectsDir, 'alpha', 'todos', 'plans', 'alpha', id);
+    expect(await pathExists(oldPlanDir)).toBe(false);
+    expect(await pathExists(newPlanDir)).toBe(true);
+
+    const targetMd = await readFile(resolve(projectsDir, 'alpha', 'todos', 'alpha.md'), 'utf-8');
+    const line = targetMd.split('\n').find((l) => l.includes(`[t:${id}]`))!;
+    const meta = line.match(/<([^>]*)>/)![1];
+    expect(meta).toContain(`p=${newPlanDir}`);
+  });
+
+  it('refuses on plan-dir collision in target', async () => {
+    await seedProject('alpha');
+    await runCli(['todo', 'add', 'with-plan', '--workspace', 'src'], syntaurHome);
+    const list = await readFile(resolve(syntaurHome, 'todos', 'src.md'), 'utf-8');
+    const id = list.match(/\[t:([a-f0-9]{4})\]/)![1];
+    await runCli(['todo', 'plan', id, '--workspace', 'src'], syntaurHome);
+
+    // Pre-create the destination plan dir
+    const dest = resolve(projectsDir, 'alpha', 'todos', 'plans', 'alpha', id);
+    await mkdir(dest, { recursive: true });
+
+    const res = await runCli(
+      ['todo', 'move', id, '--to-project', 'alpha', '--workspace', 'src'],
+      syntaurHome,
+    );
+    expect(res.code).not.toBe(0);
+    expect(res.stderr).toMatch(/already exists at target/i);
+
+    // Source unchanged
+    const sourceAfter = await readFile(resolve(syntaurHome, 'todos', 'src.md'), 'utf-8');
+    expect(sourceAfter).toContain(`[t:${id}]`);
+  });
+
+  it('refuses on id collision in target', async () => {
+    await seedProject('alpha');
+    // Add a todo to source workspace
+    await runCli(['todo', 'add', 'src item', '--workspace', 'src'], syntaurHome);
+    const srcList = await readFile(resolve(syntaurHome, 'todos', 'src.md'), 'utf-8');
+    const id = srcList.match(/\[t:([a-f0-9]{4})\]/)![1];
+
+    // Manually craft a colliding entry in the target project
+    await mkdir(resolve(projectsDir, 'alpha', 'todos'), { recursive: true });
+    await writeFile(
+      resolve(projectsDir, 'alpha', 'todos', 'alpha.md'),
+      `---\nworkspace: alpha\narchiveInterval: weekly\n---\n\n# Quick Todos\n\n- [ ] colliding [t:${id}]\n`,
+    );
+
+    const res = await runCli(
+      ['todo', 'move', id, '--to-project', 'alpha', '--workspace', 'src'],
+      syntaurHome,
+    );
+    expect(res.code).not.toBe(0);
+    expect(res.stderr).toMatch(/already exists in target/i);
+  });
+
+  it('rejects same-scope moves', async () => {
+    await runCli(['todo', 'add', 'x', '--workspace', 'src'], syntaurHome);
+    const list = await readFile(resolve(syntaurHome, 'todos', 'src.md'), 'utf-8');
+    const id = list.match(/\[t:([a-f0-9]{4})\]/)![1];
+
+    const res = await runCli(
+      ['todo', 'move', id, '--to-workspace', 'src', '--workspace', 'src'],
+      syntaurHome,
+    );
+    expect(res.code).not.toBe(0);
+    expect(res.stderr).toMatch(/same/i);
+  });
+
+  it('moves project A → project B', async () => {
+    await seedProject('alpha');
+    await seedProject('beta');
+    await runCli(['todo', 'add', 'crossp', '--project', 'alpha'], syntaurHome);
+    const aMd = await readFile(resolve(projectsDir, 'alpha', 'todos', 'alpha.md'), 'utf-8');
+    const id = aMd.match(/\[t:([a-f0-9]{4})\]/)![1];
+
+    const res = await runCli(
+      ['todo', 'move', id, '--to-project', 'beta', '--project', 'alpha'],
+      syntaurHome,
+    );
+    expect(res.code).toBe(0);
+
+    const aAfter = await readFile(resolve(projectsDir, 'alpha', 'todos', 'alpha.md'), 'utf-8');
+    expect(aAfter).not.toContain(`[t:${id}]`);
+    const bAfter = await readFile(resolve(projectsDir, 'beta', 'todos', 'beta.md'), 'utf-8');
+    expect(bAfter).toContain(`[t:${id}]`);
+  });
+
+  it('moves workspace → global', async () => {
+    await runCli(['todo', 'add', 'globe', '--workspace', 'src'], syntaurHome);
+    const list = await readFile(resolve(syntaurHome, 'todos', 'src.md'), 'utf-8');
+    const id = list.match(/\[t:([a-f0-9]{4})\]/)![1];
+
+    const res = await runCli(
+      ['todo', 'move', id, '--to-global', '--workspace', 'src'],
+      syntaurHome,
+    );
+    expect(res.code).toBe(0);
+
+    const srcAfter = await readFile(resolve(syntaurHome, 'todos', 'src.md'), 'utf-8');
+    expect(srcAfter).not.toContain(`[t:${id}]`);
+    const gAfter = await readFile(resolve(syntaurHome, 'todos', '_global.md'), 'utf-8');
+    expect(gAfter).toContain(`[t:${id}]`);
+  });
+});
