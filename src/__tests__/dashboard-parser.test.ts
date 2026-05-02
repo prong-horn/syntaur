@@ -261,7 +261,7 @@ tags: []
     });
   });
 
-  it('normalizes explicit null, empty, and quoted url scalars', () => {
+  it('normalizes explicit null, empty, tilde, and quoted url scalars', () => {
     const ASSIGNMENT_QUIRKY_URLS = `---
 id: u-2
 slug: quirky-urls
@@ -281,6 +281,12 @@ externalIds:
   - system: jira
     id: A-3
     url: "https://example.com/A-3"
+  - system: jira
+    id: A-4
+    url: ~
+  - system: jira
+    id: A-5
+    url:
 dependsOn: []
 links: []
 blockedReason: null
@@ -294,10 +300,12 @@ tags: []
 
 # Quirky URLs`;
     const assignment = parseAssignmentFull(ASSIGNMENT_QUIRKY_URLS);
-    expect(assignment.externalIds).toHaveLength(3);
+    expect(assignment.externalIds).toHaveLength(5);
     expect(assignment.externalIds[0].url).toBeNull();
     expect(assignment.externalIds[1].url).toBeNull();
     expect(assignment.externalIds[2].url).toBe('https://example.com/A-3');
+    expect(assignment.externalIds[3].url).toBeNull();
+    expect(assignment.externalIds[4].url).toBeNull();
   });
 });
 

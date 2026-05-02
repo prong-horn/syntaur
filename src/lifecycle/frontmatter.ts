@@ -12,7 +12,7 @@ function extractFrontmatter(fileContent: string): [string, string] {
 
 function parseSimpleValue(raw: string): string | null {
   const trimmed = raw.trim();
-  if (trimmed === 'null') return null;
+  if (trimmed === 'null' || trimmed === '~' || trimmed === '') return null;
   if (
     (trimmed.startsWith('"') && trimmed.endsWith('"')) ||
     (trimmed.startsWith("'") && trimmed.endsWith("'"))
