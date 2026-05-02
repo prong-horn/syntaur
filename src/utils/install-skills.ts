@@ -11,12 +11,14 @@ export interface InstallSkillsOptions {
   force?: boolean;
   targetDir?: string; // override for tests
   sourceDir?: string; // override for tests
+  platformSkillsDir?: string; // override for tests
 }
 
 export interface SkillInstallResult {
   skill: string;
   status: 'installed' | 'already-current' | 'differs-preserved' | 'overwritten';
   targetPath: string;
+  source: 'shared' | 'platform';
 }
 
 const REQUIRED_SKILLS = [
@@ -34,6 +36,14 @@ export function getVendoredSkillsDir(): string {
   const here = dirname(fileURLToPath(import.meta.url));
   // Walk up once from `dist` to the package root.
   return resolve(here, '..', 'vendor', 'syntaur-skills', 'skills');
+}
+
+export function getPlatformSkillsDir(target: SkillTarget): string {
+  // Platform-specific skills live at <pkg>/platforms/<kind>/skills/.
+  // Same path-resolution strategy as getVendoredSkillsDir.
+  const here = dirname(fileURLToPath(import.meta.url));
+  const kind = target === 'claude' ? 'claude-code' : 'codex';
+  return resolve(here, '..', 'platforms', kind, 'skills');
 }
 
 export function defaultSkillTargetDir(target: SkillTarget): string {
@@ -96,10 +106,37 @@ async function skillMatches(srcDir: string, destDir: string): Promise<boolean> {
   return true;
 }
 
+async function installSkillDir(
+  srcDir: string,
+  destDir: string,
+  skillName: string,
+  source: 'shared' | 'platform',
+  force: boolean,
+): Promise<SkillInstallResult> {
+  if (!(await fileExists(destDir))) {
+    await copyDir(srcDir, destDir);
+    return { skill: skillName, status: 'installed', targetPath: destDir, source };
+  }
+
+  if (await skillMatches(srcDir, destDir)) {
+    return { skill: skillName, status: 'already-current', targetPath: destDir, source };
+  }
+
+  if (force) {
+    await rm(destDir, { recursive: true, force: true });
+    await copyDir(srcDir, destDir);
+    return { skill: skillName, status: 'overwritten', targetPath: destDir, source };
+  }
+
+  return { skill: skillName, status: 'differs-preserved', targetPath: destDir, source };
+}
+
 export async function installSkills(
   options: InstallSkillsOptions,
 ): Promise<SkillInstallResult[]> {
   const source = options.sourceDir ?? getVendoredSkillsDir();
+  const platformSource =
+    options.platformSkillsDir ?? getPlatformSkillsDir(options.target);
   const targetRoot = options.targetDir ?? defaultSkillTargetDir(options.target);
   const force = options.force ?? false;
 
@@ -112,45 +149,31 @@ export async function installSkills(
   const results: SkillInstallResult[] = [];
   await mkdir(targetRoot, { recursive: true });
 
+  // 1. Shared protocol skills (REQUIRED_SKILLS).
   for (const skill of REQUIRED_SKILLS) {
     const srcDir = join(source, skill);
-    const destDir = join(targetRoot, skill);
-
     if (!(await fileExists(srcDir))) continue;
+    const destDir = join(targetRoot, skill);
+    results.push(await installSkillDir(srcDir, destDir, skill, 'shared', force));
+  }
 
-    if (!(await fileExists(destDir))) {
-      await copyDir(srcDir, destDir);
-      results.push({
-        skill,
-        status: 'installed',
-        targetPath: destDir,
-      });
-      continue;
-    }
-
-    if (await skillMatches(srcDir, destDir)) {
-      results.push({
-        skill,
-        status: 'already-current',
-        targetPath: destDir,
-      });
-      continue;
-    }
-
-    if (force) {
-      await rm(destDir, { recursive: true, force: true });
-      await copyDir(srcDir, destDir);
-      results.push({
-        skill,
-        status: 'overwritten',
-        targetPath: destDir,
-      });
-    } else {
-      results.push({
-        skill,
-        status: 'differs-preserved',
-        targetPath: destDir,
-      });
+  // 2. Platform-specific skills (whatever subdirs exist under platforms/<kind>/skills/).
+  //
+  // Only Claude needs this: Claude's plugin manifest does not auto-discover
+  // skills, so Claude-specific skills must be installed globally to
+  // ~/.claude/skills/. Codex's plugin manifest already declares
+  // "skills": "./skills/", so the plugin install itself exposes those skills
+  // — installing them globally would create duplicates.
+  if (options.target === 'claude' && (await fileExists(platformSource))) {
+    const entries = await readdir(platformSource, { withFileTypes: true });
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue;
+      const skill = entry.name;
+      // Don't double-install: shared skills win if a platform happens to ship the same name.
+      if ((REQUIRED_SKILLS as readonly string[]).includes(skill)) continue;
+      const srcDir = join(platformSource, skill);
+      const destDir = join(targetRoot, skill);
+      results.push(await installSkillDir(srcDir, destDir, skill, 'platform', force));
     }
   }
 
@@ -160,13 +183,28 @@ export async function installSkills(
 export async function uninstallSkills(options: {
   target: SkillTarget;
   targetDir?: string;
+  platformSkillsDir?: string;
 }): Promise<string[]> {
   const targetRoot =
     options.targetDir ?? defaultSkillTargetDir(options.target);
   if (!(await fileExists(targetRoot))) return [];
 
+  // Build the list of known skill names for this target: the shared protocol
+  // skills plus, for Claude only, any subdirs in the platform skills source.
+  // Codex skips platform skills (its plugin manifest auto-discovers them, so
+  // they were never installed globally — see installSkills).
+  const known = new Set<string>(REQUIRED_SKILLS);
+  const platformSource =
+    options.platformSkillsDir ?? getPlatformSkillsDir(options.target);
+  if (options.target === 'claude' && (await fileExists(platformSource))) {
+    const entries = await readdir(platformSource, { withFileTypes: true });
+    for (const entry of entries) {
+      if (entry.isDirectory()) known.add(entry.name);
+    }
+  }
+
   const removed: string[] = [];
-  for (const skill of REQUIRED_SKILLS) {
+  for (const skill of known) {
     const destDir = join(targetRoot, skill);
     if (!(await fileExists(destDir))) continue;
 

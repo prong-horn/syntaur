@@ -154,6 +154,83 @@ describe('installSkills', () => {
     expect(files).toContain('file-ownership.md');
     expect(files).toContain('protocol-summary.md');
   });
+
+  it('also installs platform-specific skills into the same target dir', async () => {
+    // Build a fake platform skills dir with a skill that's not in REQUIRED_SKILLS.
+    const platformSkillsDir = join(sandbox, 'platform-skills');
+    const fakeSkillDir = join(platformSkillsDir, 'track-session');
+    await mkdir(fakeSkillDir, { recursive: true });
+    await writeFile(
+      join(fakeSkillDir, 'SKILL.md'),
+      '---\nname: track-session\ndescription: test\n---\n\n# Track Session\n',
+      'utf-8',
+    );
+
+    const results = await installSkills({
+      target: 'claude',
+      sourceDir: realSourceDir,
+      targetDir,
+      platformSkillsDir,
+    });
+
+    const trackSession = results.find((r) => r.skill === 'track-session');
+    expect(trackSession).toBeDefined();
+    expect(trackSession?.status).toBe('installed');
+    expect(trackSession?.source).toBe('platform');
+
+    const installedSkill = await readFile(
+      join(targetDir, 'track-session', 'SKILL.md'),
+      'utf-8',
+    );
+    expect(installedSkill).toContain('name: track-session');
+  });
+
+  it('skips platform-specific skills for codex target (plugin manifest handles them)', async () => {
+    const platformSkillsDir = join(sandbox, 'platform-skills');
+    const fakeSkillDir = join(platformSkillsDir, 'track-session');
+    await mkdir(fakeSkillDir, { recursive: true });
+    await writeFile(
+      join(fakeSkillDir, 'SKILL.md'),
+      '---\nname: track-session\ndescription: codex platform skill\n---\n\n# Track Session\n',
+      'utf-8',
+    );
+
+    const codexTarget = join(sandbox, 'codex-skills');
+    const results = await installSkills({
+      target: 'codex',
+      sourceDir: realSourceDir,
+      targetDir: codexTarget,
+      platformSkillsDir,
+    });
+
+    // Only shared skills should be installed; platform skills are loaded
+    // from the codex plugin manifest, not the global skills dir.
+    expect(results.find((r) => r.skill === 'track-session')).toBeUndefined();
+    expect(results.every((r) => r.source === 'shared')).toBe(true);
+  });
+
+  it('does not double-install when a platform skill collides with a shared skill name', async () => {
+    const platformSkillsDir = join(sandbox, 'platform-skills');
+    // Collide with a shared skill name.
+    const colliding = join(platformSkillsDir, 'syntaur-protocol');
+    await mkdir(colliding, { recursive: true });
+    await writeFile(
+      join(colliding, 'SKILL.md'),
+      '---\nname: syntaur-protocol\ndescription: platform override\n---\n\n# Override\n',
+      'utf-8',
+    );
+
+    const results = await installSkills({
+      target: 'claude',
+      sourceDir: realSourceDir,
+      targetDir,
+      platformSkillsDir,
+    });
+
+    const protocolEntries = results.filter((r) => r.skill === 'syntaur-protocol');
+    expect(protocolEntries).toHaveLength(1);
+    expect(protocolEntries[0]?.source).toBe('shared');
+  });
 });
 
 describe('uninstallSkills', () => {
