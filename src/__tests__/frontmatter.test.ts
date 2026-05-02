@@ -102,6 +102,45 @@ describe('parseAssignmentFrontmatter', () => {
     });
   });
 
+  it('preserves externalIds entries that omit the url, defaulting to null', () => {
+    const URL_LESS_ASSIGNMENT = `---
+id: u-1
+slug: link-less
+title: "Link-less"
+status: pending
+priority: medium
+created: "2026-03-15T09:30:00Z"
+updated: "2026-03-15T09:30:00Z"
+assignee: null
+externalIds:
+  - system: linear
+    id: ENG-7
+  - system: jira
+    id: PROJ-99
+    url: https://jira.example.com/browse/PROJ-99
+dependsOn: []
+links: []
+blockedReason: null
+workspace:
+  repository: null
+  worktreePath: null
+  branch: null
+  parentBranch: null
+tags: []
+---
+
+# x
+`;
+    const fm = parseAssignmentFrontmatter(URL_LESS_ASSIGNMENT);
+    expect(fm.externalIds).toHaveLength(2);
+    expect(fm.externalIds[0]).toEqual({ system: 'linear', id: 'ENG-7', url: null });
+    expect(fm.externalIds[1]).toEqual({
+      system: 'jira',
+      id: 'PROJ-99',
+      url: 'https://jira.example.com/browse/PROJ-99',
+    });
+  });
+
   it('throws on content without frontmatter', () => {
     expect(() => parseAssignmentFrontmatter('no frontmatter here')).toThrow(
       'No frontmatter found',

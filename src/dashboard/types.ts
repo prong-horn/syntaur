@@ -90,6 +90,7 @@ export interface ProjectDetail {
   created: string;
   updated: string;
   tags: string[];
+  externalIds: ExternalIdInfo[];
   body: string;
   progress: ProgressCounts;
   needsAttention: NeedsAttention;
@@ -110,7 +111,7 @@ export interface WorkspaceInfo {
 export interface ExternalIdInfo {
   system: string;
   id: string;
-  url: string;
+  url: string | null;
 }
 
 export interface AssignmentDetail {

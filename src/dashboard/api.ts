@@ -665,6 +665,7 @@ export async function getProjectDetail(
     created: project.created,
     updated,
     tags: project.tags,
+    externalIds: project.externalIds,
     body: project.body,
     progress: rollup.progress,
     needsAttention: rollup.needsAttention,

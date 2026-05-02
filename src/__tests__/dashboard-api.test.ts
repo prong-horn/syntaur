@@ -110,6 +110,12 @@ archivedAt: null
 archivedReason: null
 created: "2026-03-20T10:00:00Z"
 updated: "2026-03-20T10:00:00Z"
+externalIds:
+  - system: jira
+    id: TEST-1
+    url: https://jira.example.com/browse/TEST-1
+  - system: linear
+    id: ENG-9
 tags: []
 ---
 
@@ -270,6 +276,17 @@ describe('getProjectDetail', () => {
     expect(result!.status).toBe('active');
     expect(result!.assignments[0].slug).toBe('test-assignment');
     expect(result!.dependencyGraph).toBeNull();
+    expect(result!.externalIds).toHaveLength(2);
+    expect(result!.externalIds[0]).toEqual({
+      system: 'jira',
+      id: 'TEST-1',
+      url: 'https://jira.example.com/browse/TEST-1',
+    });
+    expect(result!.externalIds[1]).toEqual({
+      system: 'linear',
+      id: 'ENG-9',
+      url: null,
+    });
   });
 });
 

@@ -32,7 +32,7 @@ export const TERMINAL_STATUSES: ReadonlySet<string> = DEFAULT_TERMINAL_STATUSES;
 export interface ExternalId {
   system: string;
   id: string;
-  url: string;
+  url: string | null;
 }
 
 export interface Workspace {

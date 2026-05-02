@@ -93,6 +93,7 @@ export interface ParsedProject {
   updated: string;
   tags: string[];
   workspace: string | null;
+  externalIds: Array<{ system: string; id: string; url: string | null }>;
   body: string;
 }
 
@@ -114,6 +115,7 @@ export function parseProject(fileContent: string): ParsedProject {
     updated: getField(fm, 'updated') ?? '',
     tags: parseListField(fm, 'tags'),
     workspace: getField(fm, 'workspace'),
+    externalIds: parseExternalIds(fm),
     body,
   };
 }
@@ -211,18 +213,18 @@ export interface ParsedAssignmentFull {
     branch: string | null;
     parentBranch: string | null;
   };
-  externalIds: Array<{ system: string; id: string; url: string }>;
+  externalIds: Array<{ system: string; id: string; url: string | null }>;
   tags: string[];
   created: string;
   updated: string;
   body: string;
 }
 
-function parseExternalIds(frontmatter: string): Array<{ system: string; id: string; url: string }> {
+function parseExternalIds(frontmatter: string): Array<{ system: string; id: string; url: string | null }> {
   const inlineMatch = frontmatter.match(/^externalIds:\s*\[\s*\]/m);
   if (inlineMatch) return [];
 
-  const results: Array<{ system: string; id: string; url: string }> = [];
+  const results: Array<{ system: string; id: string; url: string | null }> = [];
   const blockMatch = frontmatter.match(
     /^externalIds:\s*\n((?:\s+-\s+[\s\S]*?)(?=^\w|\n---))/m,
   );
@@ -241,11 +243,11 @@ function parseExternalIds(frontmatter: string): Array<{ system: string; id: stri
         entry[key] = value;
       }
     }
-    if (entry['system'] && entry['id'] && entry['url']) {
+    if (entry['system'] && entry['id']) {
       results.push({
         system: entry['system'],
         id: entry['id'],
-        url: entry['url'],
+        url: entry['url'] || null,
       });
     }
   }

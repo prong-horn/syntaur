@@ -75,11 +75,11 @@ function parseExternalIds(frontmatter: string): ExternalId[] {
         entry[key] = value;
       }
     }
-    if (entry['system'] && entry['id'] && entry['url']) {
+    if (entry['system'] && entry['id']) {
       results.push({
         system: entry['system'],
         id: entry['id'],
-        url: entry['url'],
+        url: entry['url'] || null,
       });
     }
   }

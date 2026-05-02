@@ -65,6 +65,32 @@ Overview content.`;
     expect(project.body).toContain('Build Authentication System');
     expect(project.body).toContain('Overview content.');
   });
+
+  it('parses externalIds', () => {
+    const project = parseProject(PROJECT_MD);
+    expect(project.externalIds).toHaveLength(1);
+    expect(project.externalIds[0]).toEqual({
+      system: 'jira',
+      id: 'AUTH-42',
+      url: 'https://jira.example.com/browse/AUTH-42',
+    });
+  });
+
+  it('returns an empty externalIds array when frontmatter has none', () => {
+    const PROJECT_NO_EXT = `---
+id: x
+slug: x
+title: x
+archived: false
+created: "2026-03-15T09:00:00Z"
+updated: "2026-03-15T09:00:00Z"
+tags: []
+---
+
+# x`;
+    const project = parseProject(PROJECT_NO_EXT);
+    expect(project.externalIds).toEqual([]);
+  });
 });
 
 describe('parseStatus', () => {
@@ -190,6 +216,48 @@ Body here.`;
       system: 'jira',
       id: 'AUTH-43',
       url: 'https://jira.example.com/browse/AUTH-43',
+    });
+  });
+
+  it('keeps externalIds entries without a url, defaulting url to null', () => {
+    const ASSIGNMENT_URL_LESS = `---
+id: u-1
+slug: link-less
+title: Link-less External ID
+status: pending
+priority: medium
+created: "2026-03-15T09:30:00Z"
+updated: "2026-03-15T09:30:00Z"
+assignee: null
+externalIds:
+  - system: linear
+    id: ENG-7
+  - system: jira
+    id: PROJ-99
+    url: https://jira.example.com/browse/PROJ-99
+dependsOn: []
+links: []
+blockedReason: null
+workspace:
+  repository: null
+  worktreePath: null
+  branch: null
+  parentBranch: null
+tags: []
+---
+
+# Link-less External ID`;
+    const assignment = parseAssignmentFull(ASSIGNMENT_URL_LESS);
+    expect(assignment.externalIds).toHaveLength(2);
+    expect(assignment.externalIds[0]).toEqual({
+      system: 'linear',
+      id: 'ENG-7',
+      url: null,
+    });
+    expect(assignment.externalIds[1]).toEqual({
+      system: 'jira',
+      id: 'PROJ-99',
+      url: 'https://jira.example.com/browse/PROJ-99',
     });
   });
 });
