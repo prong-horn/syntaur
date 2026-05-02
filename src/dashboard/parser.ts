@@ -233,15 +233,13 @@ function parseExternalIds(frontmatter: string): Array<{ system: string; id: stri
   const itemBlocks = blockMatch[1].split(/\n\s+-\s+/).filter(Boolean);
   for (const block of itemBlocks) {
     const lines = block.split('\n');
-    const entry: Record<string, string> = {};
+    const entry: Record<string, string | null> = {};
     for (const line of lines) {
       const colonIdx = line.indexOf(':');
       if (colonIdx < 0) continue;
       const key = line.slice(0, colonIdx).trim().replace(/^-\s+/, '');
-      const value = line.slice(colonIdx + 1).trim();
-      if (key && value) {
-        entry[key] = value;
-      }
+      if (!key) continue;
+      entry[key] = parseSimpleValue(line.slice(colonIdx + 1));
     }
     if (entry['system'] && entry['id']) {
       results.push({

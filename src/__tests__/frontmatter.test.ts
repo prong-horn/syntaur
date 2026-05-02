@@ -141,6 +141,46 @@ tags: []
     });
   });
 
+  it('normalizes explicit null, empty, and quoted url scalars', () => {
+    const QUIRKY = `---
+id: u-2
+slug: quirky
+title: "Quirky"
+status: pending
+priority: medium
+created: "2026-03-15T09:30:00Z"
+updated: "2026-03-15T09:30:00Z"
+assignee: null
+externalIds:
+  - system: jira
+    id: A-1
+    url: null
+  - system: jira
+    id: A-2
+    url: ""
+  - system: jira
+    id: A-3
+    url: "https://example.com/A-3"
+dependsOn: []
+links: []
+blockedReason: null
+workspace:
+  repository: null
+  worktreePath: null
+  branch: null
+  parentBranch: null
+tags: []
+---
+
+# x
+`;
+    const fm = parseAssignmentFrontmatter(QUIRKY);
+    expect(fm.externalIds).toHaveLength(3);
+    expect(fm.externalIds[0].url).toBeNull();
+    expect(fm.externalIds[1].url).toBeNull();
+    expect(fm.externalIds[2].url).toBe('https://example.com/A-3');
+  });
+
   it('throws on content without frontmatter', () => {
     expect(() => parseAssignmentFrontmatter('no frontmatter here')).toThrow(
       'No frontmatter found',

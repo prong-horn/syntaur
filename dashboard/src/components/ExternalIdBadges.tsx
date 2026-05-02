@@ -8,7 +8,9 @@ interface ExternalIdBadgesProps {
 }
 
 const BADGE_BASE =
-  'inline-flex items-center gap-1 whitespace-nowrap rounded-full border px-2 py-0.5 text-[11px] font-semibold tracking-wide border-border/60 text-muted-foreground';
+  'inline-flex max-w-[14rem] items-center gap-1 whitespace-nowrap rounded-full border px-2 py-0.5 text-[11px] font-semibold tracking-wide border-border/60 text-muted-foreground';
+
+const LABEL_BASE = 'truncate';
 
 export function ExternalIdBadges({ externalIds, className }: ExternalIdBadgesProps) {
   if (externalIds.length === 0) return null;
@@ -33,15 +35,15 @@ export function ExternalIdBadges({ externalIds, className }: ExternalIdBadgesPro
               )}
               title={`Open ${label} in ${entry.system}`}
             >
-              <span>{label}</span>
-              <ExternalLink className="h-2.5 w-2.5" />
+              <span className={LABEL_BASE}>{label}</span>
+              <ExternalLink className="h-2.5 w-2.5 shrink-0" />
             </a>
           );
         }
 
         return (
           <span key={key} className={BADGE_BASE} title={label}>
-            {label}
+            <span className={LABEL_BASE}>{label}</span>
           </span>
         );
       })}

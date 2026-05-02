@@ -260,6 +260,45 @@ tags: []
       url: 'https://jira.example.com/browse/PROJ-99',
     });
   });
+
+  it('normalizes explicit null, empty, and quoted url scalars', () => {
+    const ASSIGNMENT_QUIRKY_URLS = `---
+id: u-2
+slug: quirky-urls
+title: Quirky URLs
+status: pending
+priority: medium
+created: "2026-03-15T09:30:00Z"
+updated: "2026-03-15T09:30:00Z"
+assignee: null
+externalIds:
+  - system: jira
+    id: A-1
+    url: null
+  - system: jira
+    id: A-2
+    url: ""
+  - system: jira
+    id: A-3
+    url: "https://example.com/A-3"
+dependsOn: []
+links: []
+blockedReason: null
+workspace:
+  repository: null
+  worktreePath: null
+  branch: null
+  parentBranch: null
+tags: []
+---
+
+# Quirky URLs`;
+    const assignment = parseAssignmentFull(ASSIGNMENT_QUIRKY_URLS);
+    expect(assignment.externalIds).toHaveLength(3);
+    expect(assignment.externalIds[0].url).toBeNull();
+    expect(assignment.externalIds[1].url).toBeNull();
+    expect(assignment.externalIds[2].url).toBe('https://example.com/A-3');
+  });
 });
 
 describe('parsePlan', () => {
