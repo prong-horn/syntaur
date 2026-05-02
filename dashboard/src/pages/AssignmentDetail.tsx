@@ -17,6 +17,7 @@ import { formatDateTime, formatRelativeTime, formatShortDate, formatShortDateTim
 import { LoadingState } from '../components/LoadingState';
 import { ErrorState } from '../components/ErrorState';
 import { StatusBadge } from '../components/StatusBadge';
+import { ExternalIdBadges } from '../components/ExternalIdBadges';
 import { ContentTabs } from '../components/ContentTabs';
 import { SectionCard } from '../components/SectionCard';
 import { MarkdownRenderer } from '../components/MarkdownRenderer';
@@ -368,6 +369,7 @@ export function AssignmentDetail() {
               ⚠ {unmetDeps.length} unmet dep{unmetDeps.length === 1 ? '' : 's'}
             </span>
           )}
+          <ExternalIdBadges externalIds={assignment.externalIds} />
           <span className="ml-auto flex items-center gap-2">
             {primaryTransition && (
               <button

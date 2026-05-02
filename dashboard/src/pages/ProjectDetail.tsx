@@ -7,6 +7,7 @@ import { formatDate, formatDateTime } from '../lib/format';
 import { LoadingState } from '../components/LoadingState';
 import { ErrorState } from '../components/ErrorState';
 import { StatusBadge } from '../components/StatusBadge';
+import { ExternalIdBadges } from '../components/ExternalIdBadges';
 import { StatCard } from '../components/StatCard';
 import { ProgressBar } from '../components/ProgressBar';
 import { ContentTabs } from '../components/ContentTabs';
@@ -173,6 +174,7 @@ export function ProjectDetail() {
           <Plus className="h-4 w-4" />
           <span>New Assignment</span>
         </Link>
+        <ExternalIdBadges externalIds={project.externalIds} />
         <span className="text-xs text-muted-foreground">Created {formatDate(project.created)}. Last source update {formatDateTime(project.updated)}.</span>
       </div>
 

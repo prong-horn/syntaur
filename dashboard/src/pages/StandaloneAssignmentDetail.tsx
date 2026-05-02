@@ -3,6 +3,7 @@ import { useAssignmentById } from '../hooks/useProjects';
 import { LoadingState } from '../components/LoadingState';
 import { ErrorState } from '../components/ErrorState';
 import { StatusBadge } from '../components/StatusBadge';
+import { ExternalIdBadges } from '../components/ExternalIdBadges';
 import { ContentTabs } from '../components/ContentTabs';
 import { SectionCard } from '../components/SectionCard';
 import { MarkdownRenderer } from '../components/MarkdownRenderer';
@@ -29,6 +30,7 @@ export function StandaloneAssignmentDetail() {
         <div className="flex flex-wrap items-center gap-3">
           <StatusBadge status={assignment.status} />
           <span className="text-xs font-mono text-muted-foreground">{assignment.id}</span>
+          <ExternalIdBadges externalIds={assignment.externalIds} />
           <Link
             to={`/assignments/${assignment.id}/edit`}
             className="ml-auto rounded border border-border px-2 py-1 text-xs text-muted-foreground hover:border-foreground/40 hover:text-foreground"
