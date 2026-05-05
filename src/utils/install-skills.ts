@@ -28,6 +28,7 @@ const REQUIRED_SKILLS = [
   'complete-assignment',
   'create-assignment',
   'create-project',
+  'save-session-summary',
 ] as const;
 
 export function getVendoredSkillsDir(): string {
