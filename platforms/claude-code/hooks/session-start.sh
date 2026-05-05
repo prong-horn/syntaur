@@ -36,11 +36,36 @@ CONTEXT_FILE="$CWD/.syntaur/context.json"
 # Always replace both sessionId and transcriptPath together. If the incoming
 # transcript_path is empty, explicitly null the stored transcriptPath so a new
 # session never inherits a stale transcript path from the prior session.
+#
+# Also resolve the latest session-summary path (mid-assignment continuity) so
+# the resuming agent's first protocol-read can pick it up. Selection rule:
+# the summary.md with the most recent file mtime under
+# <assignmentDir>/sessions/*/summary.md. Null if none exists.
+ASSIGNMENT_DIR_RAW=$(jq -r '.assignmentDir // empty' "$CONTEXT_FILE" 2>/dev/null)
+ASSIGNMENT_DIR="${ASSIGNMENT_DIR_RAW/#\~/$HOME}"
+
+LATEST_SUMMARY=""
+if [ -n "$ASSIGNMENT_DIR" ] && [ -d "$ASSIGNMENT_DIR/sessions" ]; then
+  # Prefer GNU-style stat formatting if available (Linux); fall back to BSD
+  # (macOS). Resolve newest-by-mtime portably.
+  while IFS= read -r -d '' f; do
+    if M=$(stat -f '%m' "$f" 2>/dev/null) || M=$(stat -c '%Y' "$f" 2>/dev/null); then
+      printf '%s\t%s\n' "$M" "$f"
+    fi
+  done < <(find "$ASSIGNMENT_DIR/sessions" -mindepth 2 -maxdepth 2 -type f -name 'summary.md' -print0 2>/dev/null) \
+    | sort -rn -k1,1 \
+    | head -1 \
+    | cut -f2- > "${CONTEXT_FILE}.summary.tmp.$$" 2>/dev/null
+  LATEST_SUMMARY=$(cat "${CONTEXT_FILE}.summary.tmp.$$" 2>/dev/null || true)
+  rm -f "${CONTEXT_FILE}.summary.tmp.$$"
+fi
+
 TMP="${CONTEXT_FILE}.tmp.$$"
 jq \
   --arg sid "$SESSION_ID" \
   --arg tp "$TRANSCRIPT_PATH" \
-  '. + {sessionId: $sid, transcriptPath: (if ($tp | length) > 0 then $tp else null end)}' \
+  --arg lsp "$LATEST_SUMMARY" \
+  '. + {sessionId: $sid, transcriptPath: (if ($tp | length) > 0 then $tp else null end), latestSessionSummaryPath: (if ($lsp | length) > 0 then $lsp else null end)}' \
   "$CONTEXT_FILE" > "$TMP" 2>/dev/null \
   && mv "$TMP" "$CONTEXT_FILE" 2>/dev/null \
   || rm -f "$TMP"

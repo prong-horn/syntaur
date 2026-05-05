@@ -227,6 +227,109 @@ describe('claude-code session-start.sh', () => {
     expect(parsed.path).toBe(sandbox);
   });
 
+  it('sets latestSessionSummaryPath when sessions/<sid>/summary.md exists', async () => {
+    const assignmentDir = resolve(sandbox, 'assignment');
+    await mkdir(resolve(assignmentDir, 'sessions', 'sess-1'), {
+      recursive: true,
+    });
+    await writeFile(
+      resolve(assignmentDir, 'sessions', 'sess-1', 'summary.md'),
+      '---\nassignment: a\nsessionId: sess-1\n---\n',
+    );
+
+    await mkdir(resolve(sandbox, '.syntaur'), { recursive: true });
+    await writeFile(
+      resolve(sandbox, '.syntaur', 'context.json'),
+      JSON.stringify({ projectSlug: 'p', assignmentDir }),
+    );
+
+    const res = runHook(
+      JSON.stringify({
+        session_id: 'sess-2',
+        transcript_path: '/tmp/t.jsonl',
+        cwd: sandbox,
+      }),
+    );
+    expect(res.status).toBe(0);
+
+    const after = JSON.parse(
+      await readFile(resolve(sandbox, '.syntaur', 'context.json'), 'utf-8'),
+    );
+    expect(after.latestSessionSummaryPath).toBe(
+      resolve(assignmentDir, 'sessions', 'sess-1', 'summary.md'),
+    );
+  });
+
+  it('sets latestSessionSummaryPath to null when no sessions/ dir exists', async () => {
+    const assignmentDir = resolve(sandbox, 'assignment');
+    await mkdir(assignmentDir, { recursive: true });
+
+    await mkdir(resolve(sandbox, '.syntaur'), { recursive: true });
+    await writeFile(
+      resolve(sandbox, '.syntaur', 'context.json'),
+      JSON.stringify({ projectSlug: 'p', assignmentDir }),
+    );
+
+    const res = runHook(
+      JSON.stringify({
+        session_id: 'sess-2',
+        transcript_path: '/tmp/t.jsonl',
+        cwd: sandbox,
+      }),
+    );
+    expect(res.status).toBe(0);
+
+    const after = JSON.parse(
+      await readFile(resolve(sandbox, '.syntaur', 'context.json'), 'utf-8'),
+    );
+    expect(after.latestSessionSummaryPath).toBeNull();
+  });
+
+  it('picks the newest summary.md by mtime when multiple sessions exist', async () => {
+    const assignmentDir = resolve(sandbox, 'assignment');
+    const oldPath = resolve(
+      assignmentDir,
+      'sessions',
+      'sess-old',
+      'summary.md',
+    );
+    const newPath = resolve(
+      assignmentDir,
+      'sessions',
+      'sess-new',
+      'summary.md',
+    );
+    await mkdir(dirname(oldPath), { recursive: true });
+    await mkdir(dirname(newPath), { recursive: true });
+    await writeFile(oldPath, '---\nsessionId: old\n---\n');
+    // Force an older mtime on the first file so the newer write wins
+    // deterministically across filesystems with coarse timestamps.
+    const past = new Date(Date.now() - 60_000);
+    const { utimes } = await import('node:fs/promises');
+    await utimes(oldPath, past, past);
+    await writeFile(newPath, '---\nsessionId: new\n---\n');
+
+    await mkdir(resolve(sandbox, '.syntaur'), { recursive: true });
+    await writeFile(
+      resolve(sandbox, '.syntaur', 'context.json'),
+      JSON.stringify({ projectSlug: 'p', assignmentDir }),
+    );
+
+    const res = runHook(
+      JSON.stringify({
+        session_id: 'sess-current',
+        transcript_path: '/tmp/t.jsonl',
+        cwd: sandbox,
+      }),
+    );
+    expect(res.status).toBe(0);
+
+    const after = JSON.parse(
+      await readFile(resolve(sandbox, '.syntaur', 'context.json'), 'utf-8'),
+    );
+    expect(after.latestSessionSummaryPath).toBe(newPath);
+  });
+
   it('silently tolerates an unreachable dashboard and still exits 0', async () => {
     await mkdir(resolve(sandbox, '.syntaur'), { recursive: true });
     await writeFile(
