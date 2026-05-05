@@ -311,6 +311,7 @@ async function installCopy(
 ): Promise<void> {
   await ensureDir(dirname(paths.targetDir));
   await cp(paths.sourceDir, paths.targetDir, { recursive: true });
+  await mirrorSkillsIntoPlugin(paths);
   const packageManifest = await readPackageManifest(paths.packageRoot);
   await writeInstallMetadata(paths.targetDir, pluginKind, 'copy', packageManifest);
 }
@@ -320,6 +321,30 @@ async function installLink(paths: PluginPaths): Promise<void> {
   await rm(paths.targetDir, { recursive: true, force: true });
   await ensureDir(dirname(paths.targetDir));
   await symlink(resolve(paths.sourceDir), paths.targetDir, 'dir');
+  // The plugin source dir (platforms/<kind>/) does not contain skills —
+  // skills live at <pkg>/skills/. Even in link mode we still mirror skills
+  // into the plugin target so plugin.json's `skills` paths resolve.
+  await mirrorSkillsIntoPlugin(paths);
+}
+
+// Plugin manifests reference skills by `./skills/<name>` paths relative to
+// the plugin root. After Phase 1 of the skills consolidation, skills no
+// longer live under platforms/<kind>/skills/ — they live at <pkg>/skills/.
+// On install we mirror them into the plugin target so the manifest's
+// `skills:` paths resolve when the plugin is enabled. Symlink first; fall
+// back to copy if symlinks aren't supported (e.g. on some Windows configs).
+async function mirrorSkillsIntoPlugin(paths: PluginPaths): Promise<void> {
+  const skillsSource = resolve(paths.packageRoot, 'skills');
+  if (!(await fileExists(skillsSource))) {
+    return;
+  }
+  const skillsTarget = resolve(paths.targetDir, 'skills');
+  await rm(skillsTarget, { recursive: true, force: true });
+  try {
+    await symlink(skillsSource, skillsTarget, 'dir');
+  } catch {
+    await cp(skillsSource, skillsTarget, { recursive: true });
+  }
 }
 
 async function removeInstallMarker(targetDir: string): Promise<void> {

@@ -1,9 +1,21 @@
 {
   "name": "syntaur",
-  "description": "Syntaur protocol adapter for Claude Code. Provides skills for grabbing, planning, and completing assignments, plus write boundary enforcement via hooks.",
+  "description": "Syntaur protocol adapter for Claude Code. Provides skills for grabbing, planning, and completing assignments, project management, session/server tracking, plus write boundary enforcement via hooks.",
   "author": {
     "name": "Brennen",
     "email": ""
   },
-  "version": "0.1.8"
+  "version": "0.7.0",
+  "skills": [
+    "./skills/syntaur-protocol",
+    "./skills/grab-assignment",
+    "./skills/plan-assignment",
+    "./skills/complete-assignment",
+    "./skills/create-assignment",
+    "./skills/create-project",
+    "./skills/manage-statuses",
+    "./skills/clear-assignment",
+    "./skills/track-session",
+    "./skills/track-server"
+  ]
 }

@@ -1,8 +1,8 @@
 import { readFile, readdir, mkdir, copyFile, rm, lstat } from 'node:fs/promises';
-import { dirname, resolve, relative, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { resolve, relative, join } from 'node:path';
 import { homedir } from 'node:os';
 import { fileExists } from './fs.js';
+import { findPackageRoot } from './package-root.js';
 
 export type SkillTarget = 'claude' | 'codex';
 
@@ -44,11 +44,12 @@ const KNOWN_SKILL_NAMES = [
 
 export const KNOWN_SKILLS = KNOWN_SKILL_NAMES;
 
-export function getSkillsDir(): string {
-  // After tsup bundling, import.meta.url resolves to <pkg>/dist/index.js.
-  // Skills live at <pkg>/skills/. Walk up once from `dist` to the package root.
-  const here = dirname(fileURLToPath(import.meta.url));
-  return resolve(here, '..', 'skills');
+export async function getSkillsDir(): Promise<string> {
+  // Walk up from this module to the package root containing skills/.
+  // Works whether we're bundled (<pkg>/dist/index.js) or running from
+  // source (<pkg>/src/utils/install-skills.ts in tests).
+  const packageRoot = await findPackageRoot('skills');
+  return resolve(packageRoot, 'skills');
 }
 
 export function defaultSkillTargetDir(target: SkillTarget): string {
@@ -176,7 +177,7 @@ async function discoverSkillNames(sourceDir: string): Promise<string[]> {
 export async function installSkills(
   options: InstallSkillsOptions,
 ): Promise<SkillInstallResult[]> {
-  const source = options.sourceDir ?? getSkillsDir();
+  const source = options.sourceDir ?? (await getSkillsDir());
   const targetRoot = options.targetDir ?? defaultSkillTargetDir(options.target);
   const force = options.force ?? false;
 
@@ -208,7 +209,7 @@ export async function uninstallSkills(options: {
     options.targetDir ?? defaultSkillTargetDir(options.target);
   if (!(await fileExists(targetRoot))) return [];
 
-  const sourceDir = options.sourceDir ?? getSkillsDir();
+  const sourceDir = options.sourceDir ?? (await getSkillsDir());
   const known = new Set<string>();
   if (await fileExists(sourceDir)) {
     for (const name of await discoverSkillNames(sourceDir)) {
