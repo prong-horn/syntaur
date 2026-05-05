@@ -9,6 +9,11 @@ dashboard/node_modules/
 .claude/
 .playwright-mcp/
 
+# Build artifact: skills are mirrored into each platform's plugin dir at
+# build time so plugin.json's `./skills/<name>` paths resolve. The
+# canonical source is <repo>/skills/.
+platforms/*/skills/
+
 # Ad-hoc screenshots and pack artifacts at repo root
 /*.png
 /*.tgz
