@@ -3,6 +3,7 @@ import { resolve, relative, join } from 'node:path';
 import { homedir } from 'node:os';
 import { fileExists } from './fs.js';
 import { findPackageRoot } from './package-root.js';
+import { isSyntaurPluginEnabledFor } from './plugin-state.js';
 
 export type SkillTarget = 'claude' | 'codex';
 
@@ -11,6 +12,15 @@ export interface InstallSkillsOptions {
   force?: boolean;
   targetDir?: string; // override for tests
   sourceDir?: string; // override for tests
+  // When true, run even if the syntaur plugin is enabled for this agent.
+  // Default false: if the plugin is enabled it already loads skills from
+  // its manifest, so we skip global install to avoid duplicates.
+  ignorePluginActive?: boolean;
+}
+
+export interface InstallSkillsReport {
+  results: SkillInstallResult[];
+  skippedReason?: 'plugin-active';
 }
 
 export interface SkillInstallResult {
@@ -177,6 +187,22 @@ async function discoverSkillNames(sourceDir: string): Promise<string[]> {
 export async function installSkills(
   options: InstallSkillsOptions,
 ): Promise<SkillInstallResult[]> {
+  const report = await installSkillsWithReport(options);
+  return report.results;
+}
+
+export async function installSkillsWithReport(
+  options: InstallSkillsOptions,
+): Promise<InstallSkillsReport> {
+  // If the syntaur plugin is enabled for this agent, the plugin manifest
+  // already declares its skills — installing them globally would duplicate
+  // the registration. Skip unless the caller explicitly opts in.
+  if (!options.ignorePluginActive && options.targetDir === undefined) {
+    if (await isSyntaurPluginEnabledFor(options.target)) {
+      return { results: [], skippedReason: 'plugin-active' };
+    }
+  }
+
   const source = options.sourceDir ?? (await getSkillsDir());
   const targetRoot = options.targetDir ?? defaultSkillTargetDir(options.target);
   const force = options.force ?? false;
@@ -197,7 +223,7 @@ export async function installSkills(
     results.push(await installSkillDir(srcDir, destDir, skill, force));
   }
 
-  return results;
+  return { results };
 }
 
 export async function uninstallSkills(options: {
@@ -246,11 +272,24 @@ export async function uninstallSkills(options: {
 }
 
 export function formatInstallReport(
-  results: SkillInstallResult[],
+  resultsOrReport: SkillInstallResult[] | InstallSkillsReport,
   target: SkillTarget,
 ): string {
+  const report: InstallSkillsReport = Array.isArray(resultsOrReport)
+    ? { results: resultsOrReport }
+    : resultsOrReport;
+  const { results, skippedReason } = report;
   const lines: string[] = [];
   lines.push(`Skill install (${target}):`);
+  if (skippedReason === 'plugin-active') {
+    lines.push(
+      '  Skipped — syntaur plugin is enabled for this agent and already loads skills from its manifest.',
+    );
+    lines.push(
+      '  Run with --force-skills to install globally anyway (creates duplicates with the plugin).',
+    );
+    return lines.join('\n');
+  }
   for (const r of results) {
     const marker =
       r.status === 'installed'

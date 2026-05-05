@@ -12,7 +12,7 @@ import {
   uninstallManagedPlugin,
 } from '../utils/install.js';
 import { confirmPrompt, isInteractiveTerminal, textPrompt } from '../utils/prompt.js';
-import { installSkills, formatInstallReport } from '../utils/install-skills.js';
+import { installSkillsWithReport, formatInstallReport } from '../utils/install-skills.js';
 
 export interface InstallPluginOptions {
   force?: boolean;
@@ -150,12 +150,17 @@ export async function installPluginCommand(
   }
   if (!options.skipSkills) {
     try {
-      const skillResults = await installSkills({
+      // The plugin's plugin.json declares its skills inline, so enabling
+      // the plugin will load them. installSkillsWithReport short-circuits
+      // when the plugin is enabled to avoid duplicate registrations; pass
+      // --force-skills to override and write to ~/.claude/skills/ anyway.
+      const skillReport = await installSkillsWithReport({
         target: 'claude',
         force: options.forceSkills,
+        ignorePluginActive: options.forceSkills,
       });
       console.log('');
-      console.log(formatInstallReport(skillResults, 'claude'));
+      console.log(formatInstallReport(skillReport, 'claude'));
     } catch (error) {
       console.warn(
         `Warning: skill install failed — ${

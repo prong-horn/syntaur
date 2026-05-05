@@ -7,6 +7,7 @@ import { dashboardChecks } from './checks/dashboard.js';
 import { integrationChecks } from './checks/integrations.js';
 import { workspaceChecks } from './checks/workspace.js';
 import { agentChecks } from './checks/agents.js';
+import { skillsChecks } from './checks/skills.js';
 
 export function allChecks(): Check[] {
   return [
@@ -18,5 +19,6 @@ export function allChecks(): Check[] {
     ...integrationChecks,
     ...workspaceChecks,
     ...agentChecks,
+    ...skillsChecks,
   ];
 }

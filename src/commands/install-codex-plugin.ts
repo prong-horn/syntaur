@@ -13,7 +13,7 @@ import {
   uninstallManagedPlugin,
 } from '../utils/install.js';
 import { confirmPrompt, isInteractiveTerminal, textPrompt } from '../utils/prompt.js';
-import { installSkills, formatInstallReport } from '../utils/install-skills.js';
+import { installSkillsWithReport, formatInstallReport } from '../utils/install-skills.js';
 
 export interface InstallCodexPluginOptions {
   force?: boolean;
@@ -140,12 +140,13 @@ export async function installCodexPluginCommand(
   console.log(`  marketplace: ${marketplace.marketplacePath}`);
   if (!options.skipSkills) {
     try {
-      const skillResults = await installSkills({
+      const skillReport = await installSkillsWithReport({
         target: 'codex',
         force: options.forceSkills,
+        ignorePluginActive: options.forceSkills,
       });
       console.log('');
-      console.log(formatInstallReport(skillResults, 'codex'));
+      console.log(formatInstallReport(skillReport, 'codex'));
     } catch (error) {
       console.warn(
         `Warning: skill install failed — ${
