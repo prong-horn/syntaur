@@ -107,9 +107,10 @@ A full install (CLI + both plugins + skills) touches the following locations:
 | `~/.npm/_npx/<hash>/` | npx-cached copy of the `syntaur` package | npm |
 | `$(npm root -g)/syntaur/` | Globally-installed copy of the `syntaur` package | `npm install -g` |
 | `~/.claude/plugins/.../syntaur/` | Claude Code plugin directory (slash commands, hooks, agent, marketplace entry) | `syntaur install-plugin` |
-| `~/.claude/skills/<skill>/` | Protocol skills (seven of them, including `save-session-summary`) | `syntaur install-plugin` copies from the vendored `syntaur-skills` |
-| `~/.codex/plugins/syntaur/` (or chosen dir) | Codex plugin directory (`track-session` skill, hooks) | `syntaur install-codex-plugin` |
-| `~/.codex/skills/<skill>/` | Protocol skills (same seven) | `syntaur install-codex-plugin` copies from the vendored `syntaur-skills` |
+| `~/.claude/skills/<skill>/` | Protocol skills (11 of them, including `save-session-summary`) | `npx skills add prong-horn/syntaur` OR `syntaur install-plugin --force-skills` (skipped by default when the plugin is enabled) |
+| `~/.claude/plugins/marketplaces/<name>/plugins/syntaur/skills/` | Plugin-loaded skills (preferred path when the plugin is enabled) | `syntaur install-plugin` mirrors `<repo>/skills/` here |
+| `~/.codex/plugins/syntaur/` (or chosen dir) | Codex plugin directory (commands, hooks, mirrored skills) | `syntaur install-codex-plugin` |
+| `~/.codex/skills/<skill>/` | Protocol skills (when not using the plugin path) | `npx skills add prong-horn/syntaur -a codex` OR `syntaur install-codex-plugin --force-skills` |
 | `~/.agents/plugins/marketplace.json` | Codex marketplace entry | `syntaur install-codex-plugin` |
 | `<repo>/.syntaur/context.json` | Per-workspace agent context (current assignment, session id, transcript path) | Written by the `grab-assignment` skill and SessionStart hooks |
 
@@ -161,33 +162,64 @@ Any of these can be prefixed with `npx syntaur@latest` if you chose not to insta
 
 ## Protocol Skills
 
-The six protocol skills (`syntaur-protocol`, `grab-assignment`, `plan-assignment`, `complete-assignment`, `create-assignment`, `create-project`) are maintained in a separate agent-agnostic repo — [`prong-horn/syntaur-skills`](https://github.com/prong-horn/syntaur-skills) — and vendored into this repo as a git submodule at `vendor/syntaur-skills/`.
+All Syntaur skills live at `<repo>/skills/<name>/SKILL.md` — one canonical source. The full set ships with the package and includes:
 
-`syntaur install-plugin` and `syntaur install-codex-plugin` automatically copy them into `~/.claude/skills/` or `~/.codex/skills/`. Per-skill copy behavior:
+`syntaur-protocol`, `grab-assignment`, `plan-assignment`, `complete-assignment`, `create-assignment`, `create-project`, `manage-statuses`, `clear-assignment`, `track-session` (Claude Code agent session registration), `track-server` (tmux dev-server tracking).
 
-- **Target absent** → skill is installed.
-- **Target matches the vendored version byte-for-byte** → no-op.
-- **Target differs (you edited it)** → skill is preserved and you get a warning. Pass `--force-skills` to overwrite.
+There are three install paths, all backed by the same `<repo>/skills/`:
 
-To manage the skills without touching the plugin:
+### 1. `npx skills add` — primary, cross-agent (recommended)
 
-```bash
-syntaur install-plugin --skip-skills         # install plugin, leave ~/.claude/skills alone
-syntaur install-plugin --force-skills        # overwrite any user-edited skills
-syntaur uninstall-skills --all               # remove the 6 skills from both dirs
-syntaur uninstall-skills --claude            # only ~/.claude/skills
-syntaur uninstall-skills --codex             # only ~/.codex/skills
-```
-
-`uninstall-skills` is safe: it only removes a skill directory if its `SKILL.md` `name:` field matches one of the six protocol skills we ship. A user-authored skill that happens to share a directory name is left alone.
-
-For non-Claude, non-Codex agents (Cursor, OpenCode, etc.), install the skills directly from the standalone repo:
+Works for Claude Code, Codex, Cursor, OpenCode, Gemini CLI, Cline, Copilot, and ~50 others via the [skills.sh](https://skills.sh) ecosystem CLI:
 
 ```bash
-npx skills add prong-horn/syntaur-skills
+# All agents detected on your machine, all syntaur skills:
+npx skills add prong-horn/syntaur
+
+# Subset:
+npx skills add prong-horn/syntaur --skill grab-assignment
+
+# Specific agents only:
+npx skills add prong-horn/syntaur -a claude-code -a codex
 ```
 
-Installing both the `syntaur` plugin AND `npx skills add prong-horn/syntaur-skills` on the same machine is safe — the names match exactly, and per-file detection prevents double-install.
+The skills.sh CLI handles per-agent target paths automatically. No syntaur CLI required.
+
+### 2. Claude Code plugin — convenience for Claude users
+
+Enable the `syntaur` plugin via Claude Code's `/plugin` UI (after the marketplace is registered). Skills are declared inline in the plugin manifest, so enabling the plugin loads them — no separate `~/.claude/skills/` install required.
+
+`syntaur install-plugin` puts the plugin in your local user-plugins marketplace (or any marketplace you've configured) and registers it with Claude Code's `known_marketplaces.json` so it shows up in `/plugin`. Pass `--enable` to flip it on in `settings.json` automatically:
+
+```bash
+syntaur install-plugin --enable
+```
+
+### 3. `syntaur install-plugin` — power-user / CI path
+
+Provides the full syntaur CLI (track-session, install-statusline, dashboard, doctor, etc.) plus the plugin. By default the plugin path provides the skills — global install into `~/.claude/skills/` is skipped when the plugin is enabled, so the same skill never registers twice. Override knobs:
+
+```bash
+syntaur install-plugin --skip-skills          # plugin only; never write ~/.claude/skills
+syntaur install-plugin --force-skills         # write skills globally even if the plugin is enabled
+syntaur install-plugin --enable               # auto-enable in settings.json after install
+syntaur install-plugin --target-dir <path>    # specific marketplace plugin dir
+SYNTAUR_PLUGIN_TARGET=<path> syntaur install-plugin   # env override (CI)
+syntaur uninstall-skills --all                # remove the syntaur skills from both ~/.claude/skills and ~/.codex/skills
+```
+
+`uninstall-skills` is safe: it only removes a skill directory if its `SKILL.md` `name:` matches one we ship, so a user-authored skill with the same dir name is preserved.
+
+### Avoiding duplicates across paths
+
+`syntaur doctor` includes a `skills.dedup` check that flags when the syntaur plugin is enabled AND syntaur skills are also installed globally (which would register the same skill twice). It also checks that `marketplace.json` and `known_marketplaces.json` agree about where the syntaur plugin lives. Run it after switching install paths:
+
+```bash
+syntaur doctor --only skills.dedup
+syntaur doctor --only integrations.claude-marketplace-registered
+```
+
+Symlinks created by `npx skills add` are recognized and never overwritten by the syntaur CLI.
 
 ---
 
@@ -199,7 +231,11 @@ Installing both the `syntaur` plugin AND `npx skills add prong-horn/syntaur-skil
 | npx | Nothing to do — `npx syntaur@latest ...` always consults the registry. To force a refetch: `rm -rf ~/.npm/_npx` |
 | Mixed | `syntaur` (global) stays pinned; `npx syntaur@latest` uses whatever's live. The CLI will prompt to upgrade the global install when the npx version is newer. |
 
-When you upgrade, the vendored skills under `~/.claude/skills/` and `~/.codex/skills/` are NOT automatically re-copied. Run `syntaur install-plugin` / `syntaur install-codex-plugin` again to refresh them (it'll skip any you've edited unless you pass `--force-skills`).
+When you upgrade, skills under `~/.claude/skills/` and `~/.codex/skills/` are NOT automatically re-copied. Either:
+
+- **`npx skills add prong-horn/syntaur` users**: run `npx skills update` to pull the latest.
+- **Plugin users**: enable / re-enable the plugin in `/plugin`. The plugin manifest references `<plugin-target>/skills/` directly, which is repopulated by `syntaur install-plugin`'s build-time mirror.
+- **`syntaur install-plugin` users**: re-run the command. It'll skip any skill you've edited unless you pass `--force-skills`.
 
 ---
 
@@ -283,8 +319,9 @@ Run `syntaur doctor` to diagnose inconsistent state (missing files, stale manife
 Common issues:
 
 - **"Error: no such column: project_slug"** — pre-v0.2.0 database. Upgrade to the latest `syntaur` (0.3.1+) — the auto-migration runs on next init.
-- **Plugin installed but Claude Code doesn't see slash commands** — re-run `syntaur install-plugin` and restart Claude Code. Check `~/.claude/plugins/marketplaces/` has a `user-plugins` (or equivalent) marketplace entry.
-- **Skills missing in Claude Code after plugin install** — verify `ls ~/.claude/skills/` shows the six protocol skills. If empty, re-run `syntaur install-plugin --force-skills`.
+- **Plugin installed but Claude Code doesn't see it** — run `syntaur doctor --only integrations.claude-marketplace-registered`. The most common cause is `~/.claude/plugins/known_marketplaces.json` not registering the marketplace; `syntaur install-plugin` (0.7.0+) writes that registration automatically. Then enable in `/plugin`, or rerun with `--enable`.
+- **Skills missing from Claude Code after plugin install** — they live inside the plugin dir's `skills/` (mirrored from `<repo>/skills/` at install time). If the plugin is enabled, the skills auto-load. If you'd rather have them in `~/.claude/skills/` for a non-plugin install, run `syntaur install-plugin --skip-skills=false --force-skills`.
+- **Same skill appears twice in Claude Code** — `syntaur doctor --only skills.dedup`. Either disable the plugin or remove the global copies via `syntaur uninstall-skills --claude`.
 - **`npx syntaur` keeps asking to install globally** — choose "3) Never", or `export SYNTAUR_SKIP_INSTALL_PROMPT=1`.
 - **Want to revert the global install to the published version** — `npm run untry` in the syntaur repo, which runs `npm unlink -g syntaur && npm install -g syntaur@latest`.
 
@@ -293,12 +330,15 @@ Common issues:
 ```bash
 git clone git@github.com:prong-horn/syntaur.git
 cd syntaur
-git submodule update --init --recursive  # clones vendor/syntaur-skills
-npm install                               # postinstall hook re-runs submodule init if needed
+npm install
+npm run mirror-skills                     # populate platforms/<kind>/skills/ from <repo>/skills/
+npm run build
 npm run typecheck
 npm test
-npx vitest run src/__tests__/adapter-templates.test.ts
+npx vitest run src/__tests__/install-plugin-marketplace.test.ts
 ```
+
+Skills live at `<repo>/skills/`. The `mirror-skills` script (also wired up as `prepack`) copies them into each platform plugin dir so plugin manifests' relative `./skills/<name>` paths resolve. Those mirrored copies are gitignored.
 
 Repo-local plugin linking for development:
 
