@@ -6,6 +6,7 @@ import {
   renderPlan,
   renderScratchpad,
   renderHandoff,
+  renderSessionSummary,
   renderDecisionRecord,
   renderIndexAssignments,
   renderStatus,
@@ -232,6 +233,44 @@ describe('renderHandoff', () => {
     expect(out).toContain('handoffCount: 0');
     expect(out).toContain('# Handoff Log');
     expect(out).toContain('No handoffs recorded yet.');
+  });
+});
+
+describe('renderSessionSummary', () => {
+  it('produces frontmatter with assignment, sessionId, created, updated', () => {
+    const out = renderSessionSummary({
+      assignmentSlug: 'test',
+      sessionId: 'sess-abc-123',
+      timestamp: TIMESTAMP,
+    });
+    expect(out).toContain('assignment: test');
+    expect(out).toContain('sessionId: sess-abc-123');
+    expect(out).toContain(`created: "${TIMESTAMP}"`);
+    expect(out).toContain(`updated: "${TIMESTAMP}"`);
+  });
+
+  it('has the Session Summary heading and required body sections', () => {
+    const out = renderSessionSummary({
+      assignmentSlug: 'test',
+      sessionId: 'sess-abc-123',
+      timestamp: TIMESTAMP,
+    });
+    expect(out).toContain('# Session Summary');
+    expect(out).toContain('## Snapshot');
+    expect(out).toContain('## What Was Done');
+    expect(out).toContain("## What's Next");
+    expect(out).toContain('## Open Questions');
+    expect(out).toContain('## Load-Bearing Context');
+  });
+
+  it('does not include a counter (single-doc-per-session model)', () => {
+    const out = renderSessionSummary({
+      assignmentSlug: 'test',
+      sessionId: 'sess-abc-123',
+      timestamp: TIMESTAMP,
+    });
+    expect(out).not.toMatch(/^\s*sessionSummaryCount:/m);
+    expect(out).not.toMatch(/^\s*summaryCount:/m);
   });
 });
 

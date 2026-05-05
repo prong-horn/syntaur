@@ -19,6 +19,9 @@ export type { ScratchpadParams } from './scratchpad.js';
 export { renderHandoff } from './handoff.js';
 export type { HandoffParams } from './handoff.js';
 
+export { renderSessionSummary } from './session-summary.js';
+export type { SessionSummaryParams } from './session-summary.js';
+
 export { renderProgress, formatProgressEntry } from './progress.js';
 export type { ProgressParams } from './progress.js';
 
