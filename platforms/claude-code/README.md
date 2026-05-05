@@ -4,10 +4,10 @@ Syntaur plugin for Claude Code. Installed automatically during `syntaur setup`.
 
 ## What's included
 
-- **Skills:** grab-assignment, plan-assignment, complete-assignment, create-project, create-assignment, syntaur-protocol
+- **Skills:** grab-assignment, plan-assignment, complete-assignment, create-project, create-assignment, syntaur-protocol, save-session-summary
 - **Agents:** syntaur-protocol (background)
-- **Hooks:** write boundary enforcement (PreToolUse)
-- **Commands:** track-session
+- **Hooks:** write boundary enforcement (PreToolUse), session-start, session-end, **PreCompact** (prompts the agent to `/save-session-summary` before context is compacted)
+- **Commands:** track-session, save-session-summary
 - **References:** protocol docs
 
 ## Manual install

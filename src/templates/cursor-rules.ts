@@ -36,8 +36,11 @@ You are working within the Syntaur protocol for multi-agent project coordination
           progress.md        # Agent-writable, append-only: timestamped progress log
           comments.md        # CLI-mediated: threaded questions/notes/feedback (via \`syntaur comment\`)
           scratchpad.md      # Agent-writable: working notes
-          handoff.md         # Agent-writable: append-only handoff log
+          handoff.md         # Agent-writable: append-only cross-ticket outbound at completion
           decision-record.md # Agent-writable: append-only decision log
+          sessions/
+            <session-id>/
+              summary.md     # Agent-writable: per-session continuity (single doc, overwritten)
       resources/
         _index.md            # Derived (read-only)
         <resource-slug>.md   # Shared-writable
@@ -53,13 +56,15 @@ You are working within the Syntaur protocol for multi-agent project coordination
       scratchpad.md
       handoff.md
       decision-record.md
+      sessions/<session-id>/summary.md  # Per-session continuity (same as project-nested)
 \`\`\`
 
 ## Write Boundary Rules (CRITICAL)
 
 ### Files you may WRITE:
 1. **Your assignment folder** -- only the assignment you are currently working on:
-   - \`assignment.md\`, \`plan*.md\` (0 or more versioned plan files), \`progress.md\`, \`scratchpad.md\`, \`handoff.md\`, \`decision-record.md\`
+   - \`assignment.md\`, \`plan*.md\` (0 or more versioned plan files), \`progress.md\`, \`scratchpad.md\`, \`handoff.md\` (cross-ticket outbound at completion), \`decision-record.md\`
+   - \`sessions/<session-id>/summary.md\` -- per-session continuity (single doc per session id, overwritten on save). Distinct from \`handoff.md\`.
    - Path (project-nested): \`~/.syntaur/projects/<project>/assignments/<your-assignment>/\`
    - Path (standalone): \`~/.syntaur/assignments/<your-assignment-uuid>/\`
 2. **Shared resources and memories** at the project level:
@@ -164,7 +169,8 @@ Before starting work, read these files in order:
 3. any \`${params.assignmentDir}/plan*.md\` files linked from active todos in the \`## Todos\` section (may be 0, 1, or many)
 4. \`${params.assignmentDir}/progress.md\` -- reverse-chron progress log (if present)
 5. \`${params.assignmentDir}/comments.md\` -- threaded questions/notes/feedback (if present)
-6. \`${params.assignmentDir}/handoff.md\` -- previous session handoff notes
+6. \`${params.assignmentDir}/handoff.md\` -- cross-ticket outbound history (entries from prior agents/humans handing this assignment off)
+7. The latest \`${params.assignmentDir}/sessions/<sid>/summary.md\` if present -- previous-session continuity (selected by \`summary.md\` file mtime; read it for "what was done / what's next" before resuming work in flight)
 
 ## Your Writable Files
 
@@ -175,6 +181,7 @@ You may write directly to these files inside your assignment folder:
 - \`${params.assignmentDir}/scratchpad.md\`
 - \`${params.assignmentDir}/handoff.md\`
 - \`${params.assignmentDir}/decision-record.md\`
+- \`${params.assignmentDir}/sessions/<session-id>/summary.md\` (per-session continuity)
 
 Do NOT edit \`${params.assignmentDir}/comments.md\` directly — use \`syntaur comment\`. Do NOT edit other assignments' files — use \`syntaur request\` for cross-assignment todos.
 

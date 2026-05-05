@@ -11,7 +11,7 @@ Your job is to work fluently within the Syntaur protocol without breaking owners
 
 - Create projects and assignments (project-nested or standalone) with the `syntaur` CLI
 - Claim assignments and establish local assignment context
-- Keep `assignment.md`, active plan files (`plan.md`, `plan-v2.md`, ...), `progress.md`, and `handoff.md` accurate during execution
+- Keep `assignment.md`, active plan files (`plan.md`, `plan-v2.md`, ...), `progress.md`, `handoff.md` (cross-ticket outbound), and any active `sessions/<sid>/summary.md` (mid-assignment continuity) accurate during execution
 - Record questions/notes/feedback via `syntaur comment` and route cross-assignment work via `syntaur request`
 - Track Codex sessions for the Syntaur dashboard
 - Set up Codex adapter instructions in the active workspace
@@ -30,7 +30,8 @@ When a task involves Syntaur:
    - any `<assignmentDir>/plan*.md` files linked from active todos in the `## Todos` section
    - `<assignmentDir>/progress.md` (if present) — reverse-chron progress log
    - `<assignmentDir>/comments.md` (if present) — threaded questions/notes/feedback
-   - `<assignmentDir>/handoff.md`
+   - `<assignmentDir>/handoff.md` — cross-ticket outbound history
+   - the latest `<assignmentDir>/sessions/<sid>/summary.md` (selected by file mtime) if present — mid-assignment continuity from a prior session
 4. Resolve the workspace boundary from `.syntaur/context.json` or `assignment.md` frontmatter before editing code.
 
 Project-nested assignments live at `~/.syntaur/projects/<slug>/assignments/<aslug>/`. Standalone assignments live at `~/.syntaur/assignments/<uuid>/` — folder named by UUID, `project: null`, `slug` display-only.
@@ -51,8 +52,9 @@ Project-nested assignments live at `~/.syntaur/projects/<slug>/assignments/<aslu
   - `plan*.md` (0 or more versioned plan files, e.g., `plan.md`, `plan-v2.md`)
   - `progress.md` (append timestamped entries, newest first — replaces the old `## Progress` section)
   - `scratchpad.md`
-  - `handoff.md`
+  - `handoff.md` (append-only; **assignment-level cross-ticket outbound** at completion)
   - `decision-record.md`
+  - `sessions/<session-id>/summary.md` (**per-session continuity**; single doc per session id, overwritten on save by `/save-session-summary`. Codex has no `PreCompact` hook — invoke manually before compaction or session end.)
 - project `resources/*.md`
 - project `memories/*.md`
 - `.syntaur/context.json` in the current working directory
@@ -72,7 +74,7 @@ Project-nested assignments live at `~/.syntaur/projects/<slug>/assignments/<aslu
 - Update acceptance criteria and `## Todos` checkboxes as work lands.
 - Append timestamped entries to `progress.md` (not to `assignment.md`) after meaningful milestones.
 - When requirements shift, supersede the prior plan todo instead of rewriting the old plan file.
-- Append handoffs instead of replacing previous handoff entries.
+- Append handoff.md entries (cross-ticket outbound) instead of replacing previous handoff entries. Mid-assignment session continuity is a separate file: `sessions/<sid>/summary.md`, single document per session id, overwritten on each save. Do not delete older `sessions/*/summary.md` files at completion — they remain as immutable history.
 - Record questions via `syntaur comment ... --type question` — they roll up into `_status.md`'s `openQuestions` counter.
 
 ## CLI Reference

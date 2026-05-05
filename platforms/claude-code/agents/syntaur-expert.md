@@ -59,8 +59,11 @@ Syntaur is a **markdown-based, filesystem-hosted protocol** that coordinates wor
           progress.md                # Agent-writable, append-only: timestamped progress log
           comments.md                # CLI-mediated: threaded questions/notes/feedback (via `syntaur comment`)
           scratchpad.md              # Agent-writable: working notes
-          handoff.md                 # Agent-writable: append-only handoff log
+          handoff.md                 # Agent-writable: append-only cross-ticket outbound at completion
           decision-record.md         # Agent-writable: append-only decision log
+          sessions/
+            <session-id>/
+              summary.md             # Agent-writable: per-session continuity (single doc, overwritten)
       resources/
         _index.md                    # Derived
         <resource-slug>.md           # Shared-writable
@@ -76,6 +79,7 @@ Syntaur is a **markdown-based, filesystem-hosted protocol** that coordinates wor
       scratchpad.md
       handoff.md
       decision-record.md
+      sessions/<session-id>/summary.md  # Per-session continuity (same as project-nested)
 ```
 
 ---
@@ -90,8 +94,9 @@ Syntaur is a **markdown-based, filesystem-hosted protocol** that coordinates wor
 - `plan*.md` — versioned implementation plans (optional, one per `## Todos` entry: `plan.md`, `plan-v2.md`, ...)
 - `progress.md` — append-only timestamped progress log (newest first). Replaces the old `## Progress` body section.
 - `scratchpad.md` — unstructured working notes
-- `handoff.md` — append-only handoff log
+- `handoff.md` — append-only **assignment-level cross-ticket outbound** at completion (written by `complete-assignment`)
 - `decision-record.md` — append-only decision log
+- `sessions/<session-id>/summary.md` — **per-session continuity** for resume across sessions of the same agent on this assignment (written by `/save-session-summary`). Single document per session id, overwritten on each save. Distinct from `handoff.md`. Older summaries accumulate as immutable history; never delete.
 
 Only the assigned agent may write to its own assignment folder.
 
@@ -415,8 +420,11 @@ A: No. Single-writer guarantee — one agent per assignment folder. Use separate
 **Q: What if I need to ask the human a question?**
 A: Run `syntaur comment <slug> "question text" --type question`. It appends to `comments.md`, which replaces the old `## Questions & Answers` body section. The question rolls up into `_status.md`'s `openQuestions` counter and shows on the dashboard. Do NOT set status to `blocked` for questions — `blocked` is for runtime obstacles only.
 
-**Q: What goes in `progress.md` vs `handoff.md`?**
-A: `progress.md` is a continuous reverse-chron log of what you've done — append an entry per meaningful work unit. `handoff.md` is only written when you hand off work (to another agent or human), and summarizes the state at that transition.
+**Q: What goes in `progress.md` vs `handoff.md` vs `sessions/<sid>/summary.md`?**
+A: Three distinct artifacts.
+- `progress.md`: continuous reverse-chron log of what you've done — one entry per meaningful work unit, append-only.
+- `handoff.md`: **assignment-level cross-ticket outbound**, written at completion (via `complete-assignment`) for the next ticket / agent / human reviewer. Append-only.
+- `sessions/<session-id>/summary.md`: **session-scoped mid-assignment continuity**, written via `/save-session-summary` before compaction or session end so a future session of the same agent can resume cleanly. Single doc per session id, overwritten on save. The Claude Code `PreCompact` hook reminds you to invoke this; the SessionStart hook surfaces the latest one as `latestSessionSummaryPath` in `.syntaur/context.json`.
 
 **Q: How do I route work to another assignment without breaking the single-writer rule?**
 A: Run `syntaur request <target> "text"` — it appends a todo to the target's `## Todos` annotated `(from: <source>)`. This is a CLI-mediated exception to the single-writer rule.

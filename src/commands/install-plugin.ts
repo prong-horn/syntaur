@@ -166,8 +166,8 @@ export async function installPluginCommand(
   }
 
   console.log('\nThe plugin is now available in Claude Code.');
-  console.log('  Slash commands: /grab-assignment, /plan-assignment, /complete-assignment, /create-assignment, /create-project, /track-session');
+  console.log('  Slash commands: /grab-assignment, /plan-assignment, /complete-assignment, /create-assignment, /create-project, /track-session, /save-session-summary');
   console.log('  Background: syntaur-protocol skill (auto-invoked)');
   console.log('  Claude-specific skill: track-session (agent session registration)');
-  console.log('  Hook: write boundary enforcement (PreToolUse) + SessionStart/End');
+  console.log('  Hook: write boundary enforcement (PreToolUse) + SessionStart/End + PreCompact (prompts /save-session-summary)');
 }

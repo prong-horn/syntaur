@@ -22,8 +22,11 @@ Protocol version: **2.0**
           progress.md        # Agent-writable, append-only: timestamped progress log
           comments.md        # CLI-mediated: threaded questions/notes/feedback (via `syntaur comment`)
           scratchpad.md      # Agent-writable: working notes
-          handoff.md         # Agent-writable: append-only handoff log
+          handoff.md         # Agent-writable: append-only cross-ticket outbound at completion
           decision-record.md # Agent-writable: append-only decision log
+          sessions/
+            <session-id>/
+              summary.md     # Agent-writable: per-session continuity (single doc, overwritten)
       resources/
         _index.md            # Derived (read-only)
         <resource-slug>.md   # Shared-writable
@@ -39,6 +42,7 @@ Protocol version: **2.0**
       scratchpad.md
       handoff.md
       decision-record.md
+      sessions/<session-id>/summary.md  # Per-session continuity, same as project-nested
   playbooks/
     manifest.md              # Derived: playbook listing (read-only)
     <slug>.md                # User-authored: behavioral rules for agents
@@ -83,3 +87,4 @@ Protocol version: **2.0**
 9. Progress is appended to `progress.md` as timestamped entries (newest first). Do not add a `## Progress` section to `assignment.md`.
 10. Comments are appended to `comments.md` via `syntaur comment <slug> "body" [--type question|note|feedback] [--reply-to <id>]`. Never edit `comments.md` directly.
 11. Cross-assignment work is requested via `syntaur request <source> <target> "text"` — appends to the target's `## Todos` annotated `(from: <source>)`.
+12. Session continuity (mid-assignment) lives at `sessions/<session-id>/summary.md` inside the assignment dir — one document per session id, overwritten on every save (via `/save-session-summary`). On resume, pick the latest by `summary.md` file mtime. Older summaries accumulate as immutable history; never delete them. Distinct from `handoff.md`, which is the assignment-level cross-ticket outbound at completion. `syntaur doctor` intentionally ignores `sessions/`. **Codex has no `PreCompact` hook event** — invoke `/save-session-summary` manually before compaction or session end.
