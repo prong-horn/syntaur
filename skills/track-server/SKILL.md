@@ -1,11 +1,11 @@
 ---
-name: track-session
-description: Use when the user wants to register, refresh, remove, or list tracked tmux sessions for the Syntaur dashboard.
+name: track-server
+description: Use when the user wants to register, refresh, remove, or list tracked tmux dev-server sessions for the Syntaur dashboard. Triggers on "/track-server", "track this server", "register this dev server", or similar — distinct from /track-session which registers Claude Code agent sessions.
 ---
 
-# Track Session
+# Track Server
 
-Track tmux sessions so their development servers show up in the Syntaur dashboard.
+Track tmux sessions so their development servers show up in the Syntaur dashboard. Distinct from `/track-session`, which registers Claude Code agent sessions.
 
 ## Arguments
 
