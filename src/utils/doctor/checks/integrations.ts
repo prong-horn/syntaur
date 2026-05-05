@@ -1,5 +1,6 @@
-import { resolve } from 'node:path';
-import { readdir } from 'node:fs/promises';
+import { resolve, dirname, basename } from 'node:path';
+import { readdir, readFile } from 'node:fs/promises';
+import { homedir } from 'node:os';
 import { fileExists } from '../../fs.js';
 import type { Check, CheckResult } from '../types.js';
 
@@ -86,7 +87,109 @@ const backupConfigured: Check = {
   },
 };
 
-export const integrationChecks: Check[] = [claudePluginLinked, codexPluginLinked, backupConfigured];
+// Reads ~/.claude/plugins/known_marketplaces.json safely.
+async function readKnownMarketplaces(): Promise<Record<string, { installLocation?: string }>> {
+  const path = resolve(homedir(), '.claude', 'plugins', 'known_marketplaces.json');
+  if (!(await fileExists(path))) return {};
+  try {
+    const raw = await readFile(path, 'utf-8');
+    return JSON.parse(raw) as Record<string, { installLocation?: string }>;
+  } catch {
+    return {};
+  }
+}
+
+const claudeMarketplaceRegistered: Check = {
+  id: 'integrations.claude-marketplace-registered',
+  category: CATEGORY,
+  title: 'Claude marketplace containing syntaur is registered in known_marketplaces.json',
+  async run(ctx) {
+    const dir = ctx.config.integrations.claudePluginDir;
+    if (!dir) return skipped(this, 'claudePluginDir not configured');
+    if (!(await fileExists(dir))) {
+      return skipped(this, 'claudePluginDir does not exist (run install-plugin)');
+    }
+
+    // The plugin lives at <marketplace>/plugins/<name>; walk up two levels.
+    const pluginsParent = dirname(dir);
+    if (basename(pluginsParent) !== 'plugins') {
+      return skipped(this, 'plugin not inside a marketplace layout');
+    }
+    const marketplaceRoot = dirname(pluginsParent);
+    const marketplaceManifest = resolve(marketplaceRoot, '.claude-plugin', 'marketplace.json');
+    if (!(await fileExists(marketplaceManifest))) {
+      return {
+        id: this.id,
+        category: this.category,
+        title: this.title,
+        status: 'error',
+        detail: `${marketplaceManifest} does not exist — Claude won't see this plugin.`,
+        affected: [marketplaceManifest],
+        remediation: {
+          kind: 'manual',
+          suggestion: 'Re-run install-plugin to repair the marketplace files.',
+          command: 'syntaur install-plugin',
+        },
+        autoFixable: false,
+      } satisfies CheckResult;
+    }
+
+    let parsed: { name?: string; plugins?: Array<{ name?: string }> } = {};
+    try {
+      parsed = JSON.parse(await readFile(marketplaceManifest, 'utf-8'));
+    } catch {
+      return {
+        id: this.id,
+        category: this.category,
+        title: this.title,
+        status: 'error',
+        detail: `${marketplaceManifest} is not valid JSON.`,
+        affected: [marketplaceManifest],
+        autoFixable: false,
+      } satisfies CheckResult;
+    }
+    const marketplaceName = parsed.name ?? basename(marketplaceRoot);
+    const hasSyntaurEntry = (parsed.plugins ?? []).some((p) => p?.name === 'syntaur');
+
+    const known = await readKnownMarketplaces();
+    const registered =
+      known[marketplaceName]?.installLocation === marketplaceRoot ||
+      Object.values(known).some((v) => v.installLocation === marketplaceRoot);
+
+    const issues: string[] = [];
+    if (!hasSyntaurEntry) {
+      issues.push(`marketplace.json at ${marketplaceManifest} does not list a "syntaur" plugin`);
+    }
+    if (!registered) {
+      issues.push(
+        `known_marketplaces.json does not register ${marketplaceName} → ${marketplaceRoot} (Claude will not show this plugin)`,
+      );
+    }
+
+    if (issues.length === 0) return pass(this);
+    return {
+      id: this.id,
+      category: this.category,
+      title: this.title,
+      status: 'error',
+      detail: issues.join('; '),
+      affected: [marketplaceManifest, resolve(homedir(), '.claude', 'plugins', 'known_marketplaces.json')],
+      remediation: {
+        kind: 'manual',
+        suggestion: 'Re-run install-plugin to ensure both files are in sync.',
+        command: 'syntaur install-plugin',
+      },
+      autoFixable: false,
+    } satisfies CheckResult;
+  },
+};
+
+export const integrationChecks: Check[] = [
+  claudePluginLinked,
+  claudeMarketplaceRegistered,
+  codexPluginLinked,
+  backupConfigured,
+];
 
 function pass(check: { id: string; category: string; title: string }): CheckResult {
   return {

@@ -354,6 +354,7 @@ program
   .option('--link', 'Use a symlink instead of copying files (repo-local dev only)')
   .option('--force-skills', 'Overwrite user-edited skills in ~/.claude/skills')
   .option('--skip-skills', 'Do not install protocol skills into ~/.claude/skills')
+  .option('--enable', 'Enable the plugin in ~/.claude/settings.json after install')
   .action(async (options) => {
     try {
       await installPluginCommand({ ...options, promptForTarget: true });
