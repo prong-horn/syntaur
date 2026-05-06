@@ -27,7 +27,8 @@ If the global Syntaur Codex plugin is installed, prefer these workflows instead 
 - \`create-assignment\` -- create a new assignment (use \`--type <bug|feature|chore|...>\` to classify; use \`--one-off\` to create a standalone assignment at \`~/.syntaur/assignments/<uuid>/\` with no parent project)
 - \`grab-assignment\` -- claim work, create \`.syntaur/context.json\`, and register a session
 - \`plan-assignment\` -- write a versioned plan file (\`plan.md\`, \`plan-v2.md\`, ...) and link it from the \`## Todos\` section of \`assignment.md\`
-- \`complete-assignment\` -- append the handoff, append a final entry to \`progress.md\`, close the session, and transition state
+- \`complete-assignment\` -- write the cross-ticket \`handoff.md\` entry, append a final entry to \`progress.md\`, close the session, and transition state
+- \`save-session-summary\` -- write per-session continuity at \`<assignmentDir>/sessions/<sessionId>/summary.md\` for resume across sessions of the same agent. Codex has no \`PreCompact\` hook event — invoke this manually before compaction or session end.
 - \`track-session\` -- manage tracked tmux sessions for the dashboard
 
 If the plugin is unavailable, follow the same workflow manually with the \`syntaur\` CLI and keep the protocol files current yourself.
@@ -41,7 +42,8 @@ Before starting work, read these files in order:
 4. any \`${params.assignmentDir}/plan*.md\` files linked from active todos in the \`## Todos\` section (may be 0, 1, or many)
 5. \`${params.assignmentDir}/progress.md\` -- reverse-chron progress log (if present)
 6. \`${params.assignmentDir}/comments.md\` -- threaded questions/notes/feedback (if present)
-7. \`${params.assignmentDir}/handoff.md\` -- previous session handoff notes
+7. \`${params.assignmentDir}/handoff.md\` -- cross-ticket outbound history (entries from prior agents/humans handing this assignment off)
+8. The latest \`${params.assignmentDir}/sessions/<sid>/summary.md\` if present -- previous-session continuity (read it for "what was done / what's next" before resuming work in flight)
 
 ## Context File
 
@@ -69,8 +71,11 @@ Before starting work, read these files in order:
           progress.md        # Agent-writable, append-only: timestamped progress log
           comments.md        # CLI-mediated: threaded questions/notes/feedback (via \`syntaur comment\`)
           scratchpad.md      # Agent-writable: working notes
-          handoff.md         # Agent-writable: append-only handoff log
+          handoff.md         # Agent-writable: append-only cross-ticket outbound at completion
           decision-record.md # Agent-writable: append-only decision log
+          sessions/
+            <session-id>/
+              summary.md     # Agent-writable: per-session continuity (single doc, overwritten)
       resources/
         _index.md            # Derived (read-only)
         <resource-slug>.md   # Shared-writable
@@ -86,13 +91,15 @@ Before starting work, read these files in order:
       scratchpad.md
       handoff.md
       decision-record.md
+      sessions/<session-id>/summary.md  # Per-session continuity (same as project-nested)
 \`\`\`
 
 ## Write Boundary Rules (CRITICAL)
 
 ### Files you may WRITE:
 1. **Your assignment folder** -- only the assignment you are currently working on:
-   - \`assignment.md\`, \`plan*.md\` (0 or more versioned plan files), \`progress.md\`, \`scratchpad.md\`, \`handoff.md\`, \`decision-record.md\`
+   - \`assignment.md\`, \`plan*.md\` (0 or more versioned plan files), \`progress.md\`, \`scratchpad.md\`, \`handoff.md\` (cross-ticket outbound at completion), \`decision-record.md\`
+   - \`sessions/<session-id>/summary.md\` -- per-session continuity (single doc per session id, overwritten on save). Distinct from \`handoff.md\`.
    - Path: \`${params.assignmentDir}/\`
 2. **Shared resources and memories** at the project level:
    - \`${params.projectDir}/resources/<slug>.md\`
@@ -171,7 +178,7 @@ Read each linked playbook and follow the rules in its body section. The \`when_t
 - Slugs are lowercase, hyphen-separated. For standalone assignments, \`slug\` is display-only; the folder is named by the UUID.
 - Always read \`project.md\` at the project level (when project-nested) before starting work.
 - Keep \`assignment.md\` acceptance criteria and \`## Todos\` updated as work lands; append timestamped entries to \`progress.md\` (never to \`assignment.md\`).
-- Keep active plan file(s) current after planning changes and \`handoff.md\` current before leaving the task.
+- Keep active plan file(s) current after planning changes. Write \`handoff.md\` (via \`complete-assignment\`) at the cross-ticket boundary; write \`sessions/<sid>/summary.md\` (via \`/save-session-summary\`) before compaction or before ending a session mid-assignment so a future session can resume cleanly.
 - When requirements shift, supersede the prior plan todo (\`- [x] ~~...~~ (superseded by plan-v<N>)\`) and write a new plan file instead of rewriting the old one.
 - Record questions, notes, and feedback via \`syntaur comment\`. Never edit \`comments.md\` directly. Resolve questions via the dashboard UI (toggle on the question entry).
 - To route work to another assignment, use \`syntaur request\`.

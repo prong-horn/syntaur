@@ -70,8 +70,11 @@ The root of all Syntaur data is `~/.syntaur/`. Below is the full directory tree 
           progress.md                # Agent-writable, append-only: timestamped progress log
           comments.md                # CLI-mediated shared-writable: threaded questions/notes/feedback
           scratchpad.md              # Agent-writable: unstructured working memory
-          handoff.md                 # Agent-writable: append-only handoff log
+          handoff.md                 # Agent-writable: append-only **assignment-level cross-ticket outbound** at completion
           decision-record.md         # Agent-writable: append-only decision log
+          sessions/
+            <session-id>/
+              summary.md             # Agent-writable: **per-session continuity** for resume across sessions of this assignment (single doc per session id, overwritten on save)
       resources/
         _index.md                    # Derived: resource listing
         <resource-slug>.md           # Shared-writable: reference material for the project
@@ -87,6 +90,7 @@ The root of all Syntaur data is `~/.syntaur/`. Below is the full directory tree 
       scratchpad.md                  # Same as project-nested
       handoff.md                     # Same as project-nested
       decision-record.md             # Same as project-nested
+      sessions/<session-id>/summary.md  # Same per-session continuity as project-nested
   playbooks/
     manifest.md                      # Derived: playbook listing with descriptions and when_to_use
     <slug>.md                        # User-authored: behavioral rules and workflows for agents

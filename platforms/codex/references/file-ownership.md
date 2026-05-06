@@ -18,8 +18,9 @@ You may only write to files inside your assigned assignment folder:
 | `plan*.md` | Versioned implementation plans (optional, 0 or more: `plan.md`, `plan-v2.md`, ...) — each linked from a todo in `assignment.md` |
 | `progress.md` | Append-only timestamped progress log (newest first). Replaces the old `## Progress` body section. |
 | `scratchpad.md` | Working notes |
-| `handoff.md` | Append-only handoff log |
+| `handoff.md` | Append-only **assignment-level cross-ticket outbound** at completion (written by `complete-assignment`) |
 | `decision-record.md` | Append-only decision log |
+| `sessions/<session-id>/summary.md` | **Per-session continuity** for resume across sessions of the same agent on this assignment. Single document per session id, overwritten on every save (written by `/save-session-summary`). Codex has no `PreCompact` hook — invoke manually. |
 
 Path pattern (project-nested): `~/.syntaur/projects/<project>/assignments/<your-assignment>/`
 Path pattern (standalone): `~/.syntaur/assignments/<your-assignment-uuid>/`

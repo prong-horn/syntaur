@@ -12,6 +12,16 @@
         ]
       }
     ],
+    "PreCompact": [
+      {
+        "hooks": [
+          {
+            "type": "prompt",
+            "prompt": "Before compaction, if there is an active Syntaur assignment (check `.syntaur/context.json` for `assignmentDir` and `sessionId`), invoke `/save-session-summary` to write `<assignmentDir>/sessions/<sessionId>/summary.md` so a future session can resume cleanly. Skip silently if no active Syntaur context. Do NOT write to `handoff.md` — that is reserved for cross-ticket handoff at completion."
+          }
+        ]
+      }
+    ],
     "SessionStart": [
       {
         "hooks": [

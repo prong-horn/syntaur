@@ -107,9 +107,9 @@ A full install (CLI + both plugins + skills) touches the following locations:
 | `~/.npm/_npx/<hash>/` | npx-cached copy of the `syntaur` package | npm |
 | `$(npm root -g)/syntaur/` | Globally-installed copy of the `syntaur` package | `npm install -g` |
 | `~/.claude/plugins/.../syntaur/` | Claude Code plugin directory (slash commands, hooks, agent, marketplace entry) | `syntaur install-plugin` |
-| `~/.claude/skills/<skill>/` | Protocol skills (six of them) | `syntaur install-plugin` copies from the vendored `syntaur-skills` |
+| `~/.claude/skills/<skill>/` | Protocol skills (seven of them, including `save-session-summary`) | `syntaur install-plugin` copies from the vendored `syntaur-skills` |
 | `~/.codex/plugins/syntaur/` (or chosen dir) | Codex plugin directory (`track-session` skill, hooks) | `syntaur install-codex-plugin` |
-| `~/.codex/skills/<skill>/` | Protocol skills (same six) | `syntaur install-codex-plugin` copies from the vendored `syntaur-skills` |
+| `~/.codex/skills/<skill>/` | Protocol skills (same seven) | `syntaur install-codex-plugin` copies from the vendored `syntaur-skills` |
 | `~/.agents/plugins/marketplace.json` | Codex marketplace entry | `syntaur install-codex-plugin` |
 | `<repo>/.syntaur/context.json` | Per-workspace agent context (current assignment, session id, transcript path) | Written by the `grab-assignment` skill and SessionStart hooks |
 

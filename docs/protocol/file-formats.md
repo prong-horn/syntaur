@@ -416,7 +416,9 @@ Refresh token: opaque string, stored as SHA-256 hash in DB.
 
 **Ownership:** Agent-writable, append-only
 
-A chronological log of handoffs between agents or between agents and humans. Each handoff is a numbered entry so history is preserved. The `handoffCount` in frontmatter enables quick indexing without parsing the body. Created as an empty template by scaffolding, optional until first use.
+The **assignment-level cross-ticket outbound** doc. Written at completion (via the `complete-assignment` skill / flow) for the next ticket, agent, or human reviewer who picks up downstream work. Each handoff is a numbered entry so history is preserved. The `handoffCount` in frontmatter enables quick indexing without parsing the body. Created as an empty template by scaffolding, optional until first use.
+
+This is **not** the mid-assignment session continuity artifact — that lives at `sessions/<session-id>/summary.md` (see Section 8 below) and is written by `/save-session-summary`.
 
 ### Frontmatter Schema
 
@@ -475,6 +477,100 @@ and RSA key pair storage. All acceptance criteria met.
 Chose PostgreSQL over Redis for refresh token storage. See decision record for
 rationale. The connection pooling findings are documented in the project memory
 `postgres-connection-pooling`.
+```
+
+---
+
+## 6a. sessions/<session-id>/summary.md
+
+**Ownership:** Agent-writable. Single document per session id, **overwritten** on every save (NOT append-only). Older `sessions/<other-sid>/summary.md` files accumulate as immutable historical context — never delete them, even at completion.
+
+The **session-scoped mid-assignment continuity** artifact. Written by the `save-session-summary` skill (typically invoked via `/save-session-summary`, or by the Claude Code `PreCompact` hook prompt). Captures what was done in the current session, what's next, open questions, and load-bearing context — enough for a future session of the same agent on the same assignment to resume cleanly without re-reading the full transcript.
+
+This is **not** `handoff.md`. The two are deliberately separate:
+
+| Artifact | Scope | When written | Audience |
+|----------|-------|--------------|----------|
+| `handoff.md` | Assignment-level | At completion | Next ticket / agent / human reviewer |
+| `sessions/<session-id>/summary.md` | Session-scoped | Mid-assignment, before compaction or session end | A future session of the same agent on the same assignment |
+
+### Path
+
+- Project-nested: `~/.syntaur/projects/<project>/assignments/<assignment-slug>/sessions/<session-id>/summary.md`
+- Standalone: `~/.syntaur/assignments/<assignment-uuid>/sessions/<session-id>/summary.md`
+
+### Frontmatter Schema
+
+| Field | Type | Valid Values | Required | Default | Description |
+|-------|------|-------------|----------|---------|-------------|
+| `assignment` | string | assignment slug | required | — | The parent assignment. |
+| `sessionId` | string | real agent runtime session id | required | — | Must match the directory name. Never a synthesized UUID. |
+| `created` | string (RFC 3339) | RFC 3339 datetime | required | — | When the summary file was first written. Preserved across re-saves of the same session. |
+| `updated` | string (RFC 3339) | RFC 3339 datetime | required | — | When the summary file was last written. |
+
+### Body Sections
+
+Single document with these required sections (in order). Each save overwrites the file in place — no entries-list, no counter.
+
+| Section | Purpose |
+|---------|---------|
+| `## Snapshot` | One-paragraph orientation: assignment goal, current state, anything load-bearing for resume. |
+| `## What Was Done` | Concrete actions taken during this session. |
+| `## What's Next` | Ordered next steps for the resuming session. |
+| `## Open Questions` | Unresolved questions, ambiguities, or deferred decisions. (Or "None.") |
+| `## Load-Bearing Context` | File paths + line numbers, command outputs, decisions, or external references the next session must not lose. |
+
+### Selection Rule (resume)
+
+When resuming an assignment with multiple `sessions/<sid>/summary.md` files, pick the one with the most recent `summary.md` file mtime. The Claude Code `SessionStart` hook computes this and stashes the absolute path into `.syntaur/context.json` as `latestSessionSummaryPath`; agents on platforms without that hook compute it themselves on demand.
+
+### Doctor
+
+`syntaur doctor` intentionally does NOT validate `sessions/`. Sessions are optional; absence is not anomalous.
+
+### Codex parity
+
+Codex has no `PreCompact` hook event. Codex agents invoke `/save-session-summary` manually before compaction or session end.
+
+### Example
+
+```markdown
+---
+assignment: implement-jwt-middleware
+sessionId: 8d3f1c0e-2a4b-4f6a-9c1d-7e8b0a3c2f5d
+created: "2026-03-18T14:30:00Z"
+updated: "2026-03-18T17:45:00Z"
+---
+
+# Session Summary
+
+## Snapshot
+
+Implementing JWT middleware for Express. Bearer extraction + RS256 verification
+landed and tested. Token-expiry path is in flight; refresh-token rotation is
+not started.
+
+## What Was Done
+
+- Added Bearer extraction with case-insensitive `Authorization` header parsing
+- Implemented RS256 signature verification using `jose.importSPKI`
+- 8 unit tests passing in `src/__tests__/middleware.test.ts`
+
+## What's Next
+
+1. Add token-expiry check (compare `exp` to `Date.now()`); 401 with `{code: "token_expired"}` on expiry.
+2. Add refresh-token rotation endpoint at `POST /auth/refresh`.
+3. Update API docs once both are landed.
+
+## Open Questions
+
+- Should token-expiry response include the `iat` so clients can pre-emptively refresh? (Asked the human via `syntaur comment`.)
+
+## Load-Bearing Context
+
+- Public key is loaded from `process.env.JWT_PUBLIC_KEY` at startup; cached in module scope (see `src/auth/keys.ts:14`). Don't move that — startup-cache is intentional.
+- Refresh tokens are SHA-256 hashed in DB; do NOT store raw tokens.
+- The `jose` library version is pinned to 5.x — 6.x changed `importSPKI` signature.
 ```
 
 ---
