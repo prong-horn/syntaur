@@ -88,7 +88,8 @@ ${todosSection}## Context
 - [Progress](./progress.md)
 - [Comments](./comments.md)
 - [Scratchpad](./scratchpad.md)
-- [Handoff](./handoff.md)
+- [Handoff](./handoff.md) — cross-ticket outbound
 - [Decision Record](./decision-record.md)
+- [Sessions](./sessions/) — per-session continuity summaries (one \`<session-id>/summary.md\` per session)
 `;
 }
