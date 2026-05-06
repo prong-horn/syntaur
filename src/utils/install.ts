@@ -591,10 +591,30 @@ async function registerKnownClaudeMarketplace(
   rootDir: string,
 ): Promise<{ added: boolean; updated: boolean }> {
   const manifestPath = getClaudeKnownMarketplacesPath();
-  const existing =
-    (await readJsonFileIfExists<Record<string, KnownClaudeMarketplaceRecord>>(
-      manifestPath,
-    )) ?? {};
+  // Read raw and parse explicitly so a malformed file is REFUSED instead
+  // of silently overwritten. readJsonFileIfExists() turns parse errors
+  // into null, which would cause us to clobber the entire registry with
+  // a fresh {} containing only our entry — destroying the user's other
+  // marketplaces. Refuse and let the user repair the file by hand.
+  let existing: Record<string, KnownClaudeMarketplaceRecord> = {};
+  if (await fileExists(manifestPath)) {
+    const raw = await readFile(manifestPath, 'utf-8');
+    try {
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        existing = parsed as Record<string, KnownClaudeMarketplaceRecord>;
+      } else {
+        throw new Error('not a JSON object');
+      }
+    } catch (err) {
+      throw new Error(
+        `Refusing to update ${manifestPath}: existing file is not a valid JSON object (${
+          err instanceof Error ? err.message : String(err)
+        }). Inspect and repair (or delete) it before re-running install-plugin.`,
+      );
+    }
+  }
+
   const had = Object.prototype.hasOwnProperty.call(existing, name);
   if (had && existing[name]?.installLocation === rootDir) {
     return { added: false, updated: false };
@@ -607,7 +627,16 @@ async function registerKnownClaudeMarketplace(
   (existing[name] as Record<string, unknown>).lastUpdated = new Date().toISOString();
   (existing[name] as Record<string, unknown>).autoUpdate = true;
   await ensureDir(dirname(manifestPath));
-  await writeFile(manifestPath, `${JSON.stringify(existing, null, 2)}\n`, 'utf-8');
+  // Back up the prior file before mutation, in case our write is wrong.
+  if (await fileExists(manifestPath)) {
+    const prev = await readFile(manifestPath, 'utf-8');
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+    await writeFile(`${manifestPath}.bak-${stamp}`, prev, 'utf-8');
+  }
+  // Atomic write: temp + rename.
+  const tmpPath = `${manifestPath}.tmp`;
+  await writeFile(tmpPath, `${JSON.stringify(existing, null, 2)}\n`, 'utf-8');
+  await rename(tmpPath, manifestPath);
   return { added: !had, updated: had };
 }
 

@@ -262,6 +262,67 @@ describe('ensureKnownClaudeMarketplaceForRoot (idempotent)', () => {
     expect(second.added).toBe(false);
     expect(second.updated).toBe(true);
   });
+
+  it('refuses to overwrite a malformed known_marketplaces.json (preserves user data)', async () => {
+    const knownPath = resolve(
+      homeDir,
+      '.claude',
+      'plugins',
+      'known_marketplaces.json',
+    );
+    await mkdir(resolve(homeDir, '.claude', 'plugins'), { recursive: true });
+    await writeFile(knownPath, '{not valid json', 'utf-8');
+
+    await expect(
+      ensureKnownClaudeMarketplaceForRoot({
+        name: 'user-plugins',
+        rootDir: '/some/path',
+      }),
+    ).rejects.toThrow(/not a valid JSON object|Refusing to update/);
+
+    // Original malformed content must NOT be overwritten.
+    const after = await readFile(knownPath, 'utf-8');
+    expect(after).toBe('{not valid json');
+  });
+
+  it('writes a backup before overwriting known_marketplaces.json', async () => {
+    const knownPath = resolve(
+      homeDir,
+      '.claude',
+      'plugins',
+      'known_marketplaces.json',
+    );
+    await mkdir(resolve(homeDir, '.claude', 'plugins'), { recursive: true });
+    const original = JSON.stringify({
+      'other-marketplace': {
+        source: { source: 'directory', path: '/other' },
+        installLocation: '/other',
+      },
+    });
+    await writeFile(knownPath, original, 'utf-8');
+
+    await ensureKnownClaudeMarketplaceForRoot({
+      name: 'user-plugins',
+      rootDir: '/some/path',
+    });
+
+    const { readdir } = await import('node:fs/promises');
+    const siblings = await readdir(resolve(homeDir, '.claude', 'plugins'));
+    const backups = siblings.filter((n) =>
+      n.startsWith('known_marketplaces.json.bak-'),
+    );
+    expect(backups.length).toBeGreaterThanOrEqual(1);
+    const backupContent = await readFile(
+      resolve(homeDir, '.claude', 'plugins', backups[0]),
+      'utf-8',
+    );
+    expect(backupContent).toBe(original);
+
+    // And the new file preserves the unrelated entry.
+    const updated = JSON.parse(await readFile(knownPath, 'utf-8'));
+    expect(updated['other-marketplace']).toBeDefined();
+    expect(updated['user-plugins']).toBeDefined();
+  });
 });
 
 describe('setSyntaurPluginEnabled', () => {

@@ -113,7 +113,28 @@ const claudeMarketplaceRegistered: Check = {
     // The plugin lives at <marketplace>/plugins/<name>; walk up two levels.
     const pluginsParent = dirname(dir);
     if (basename(pluginsParent) !== 'plugins') {
-      return skipped(this, 'plugin not inside a marketplace layout');
+      // The plugin is configured outside a marketplace layout. Claude
+      // Code only discovers plugins inside `<marketplace-root>/plugins/`,
+      // so this configuration leaves the plugin unreachable from the
+      // /plugin UI even though the files are on disk. Surface as error.
+      return {
+        id: this.id,
+        category: this.category,
+        title: this.title,
+        status: 'error',
+        detail:
+          `claudePluginDir is ${dir}, which is not under a Claude marketplace ` +
+          `(expected path of the form <marketplace-root>/plugins/syntaur). ` +
+          `Claude Code will not show this plugin until it lives inside a marketplace.`,
+        affected: [dir],
+        remediation: {
+          kind: 'manual',
+          suggestion:
+            'Re-run install-plugin to relocate into a marketplace, or pass --target-dir <marketplace>/plugins/syntaur.',
+          command: 'syntaur install-plugin',
+        },
+        autoFixable: false,
+      } satisfies CheckResult;
     }
     const marketplaceRoot = dirname(pluginsParent);
     const marketplaceManifest = resolve(marketplaceRoot, '.claude-plugin', 'marketplace.json');
