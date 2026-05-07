@@ -2,6 +2,7 @@ import { updateIntegrationConfig } from '../utils/config.js';
 import {
   detectClaudeMarketplaceForTarget,
   ensureClaudeMarketplaceEntry,
+  ensureKnownClaudeMarketplaceForRoot,
   getConfiguredOrLegacyManagedPluginDir,
   inspectInstallPath,
   installManagedPlugin,
@@ -9,10 +10,11 @@ import {
   removeClaudeMarketplaceEntry,
   recommendPluginTargetDir,
   getDefaultPluginTargetDir,
+  setSyntaurPluginEnabled,
   uninstallManagedPlugin,
 } from '../utils/install.js';
 import { confirmPrompt, isInteractiveTerminal, textPrompt } from '../utils/prompt.js';
-import { installSkills, formatInstallReport } from '../utils/install-skills.js';
+import { installSkillsWithReport, formatInstallReport } from '../utils/install-skills.js';
 
 export interface InstallPluginOptions {
   force?: boolean;
@@ -21,6 +23,9 @@ export interface InstallPluginOptions {
   promptForTarget?: boolean;
   forceSkills?: boolean;
   skipSkills?: boolean;
+  // When true, set `enabledPlugins["syntaur@<marketplace>"] = true` in
+  // ~/.claude/settings.json after install. Default: do not modify settings.
+  enable?: boolean;
 }
 
 async function promptForInstallPath(
@@ -40,17 +45,22 @@ async function promptForInstallPath(
 export async function installPluginCommand(
   options: InstallPluginOptions,
 ): Promise<void> {
+  // SYNTAUR_PLUGIN_TARGET overrides discovery for power users / CI.
+  const envOverride = process.env.SYNTAUR_PLUGIN_TARGET?.trim();
   const shouldPromptForTarget = Boolean(
     options.promptForTarget !== false &&
       isInteractiveTerminal() &&
-      !options.targetDir,
+      !options.targetDir &&
+      !envOverride,
   );
   const recommendedTargetDir = await recommendPluginTargetDir('claude');
   const targetDir = options.targetDir
     ? normalizeAbsoluteInstallPath(options.targetDir, 'Claude plugin target')
-    : shouldPromptForTarget
-      ? await promptForInstallPath('Claude plugin directory', recommendedTargetDir)
-      : recommendedTargetDir;
+    : envOverride
+      ? normalizeAbsoluteInstallPath(envOverride, 'SYNTAUR_PLUGIN_TARGET')
+      : shouldPromptForTarget
+        ? await promptForInstallPath('Claude plugin directory', recommendedTargetDir)
+        : recommendedTargetDir;
 
   const previousTargetDir = await getConfiguredOrLegacyManagedPluginDir('claude');
   const migrating = Boolean(previousTargetDir && previousTargetDir !== targetDir);
@@ -99,6 +109,7 @@ export async function installPluginCommand(
     targetDir,
   });
   const currentMarketplace = await detectClaudeMarketplaceForTarget(result.targetDir);
+  let knownMarketplaceState: { added: boolean; updated: boolean } | null = null;
   if (currentMarketplace) {
     await ensureClaudeMarketplaceEntry({
       marketplaceRootDir: currentMarketplace.rootDir,
@@ -108,6 +119,13 @@ export async function installPluginCommand(
         previousMarketplace && previousMarketplace.manifestPath === currentMarketplace.manifestPath
           ? previousTargetDir
           : null,
+    });
+    // Ensure Claude itself can see this marketplace. Historical bug:
+    // marketplace.json was correct on disk but known_marketplaces.json
+    // didn't list the marketplace, so the /plugin UI showed nothing.
+    knownMarketplaceState = await ensureKnownClaudeMarketplaceForRoot({
+      name: currentMarketplace.name,
+      rootDir: currentMarketplace.rootDir,
     });
   } else {
     console.warn(
@@ -141,21 +159,63 @@ export async function installPluginCommand(
     previousInstall = null;
   }
 
+  // Optional: enable the plugin in settings.json so it activates without
+  // the user having to flip it via /plugin.
+  let enableResult: Awaited<ReturnType<typeof setSyntaurPluginEnabled>> | null = null;
+  if (options.enable && currentMarketplace) {
+    try {
+      enableResult = await setSyntaurPluginEnabled({
+        marketplaceName: currentMarketplace.name,
+        enabled: true,
+      });
+    } catch (error) {
+      console.warn(
+        `Warning: could not enable plugin — ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
+  }
+
   console.log('Installed Syntaur plugin:');
   console.log(`  target: ${result.targetDir}`);
   console.log(`  source: ${result.sourceDir}`);
   console.log(`  mode: ${result.mode}`);
   if (currentMarketplace) {
     console.log(`  marketplace: ${currentMarketplace.manifestPath}`);
+    if (knownMarketplaceState) {
+      const tag = knownMarketplaceState.added
+        ? 'registered (added)'
+        : knownMarketplaceState.updated
+          ? 'registered (updated)'
+          : 'already registered';
+      console.log(`  known_marketplaces.json: ${tag}`);
+    }
+    const enabledKey = `syntaur@${currentMarketplace.name}`;
+    if (enableResult) {
+      console.log(
+        `  enabledPlugins: ${enabledKey} = ${enableResult.current}` +
+          (enableResult.changed ? '' : ' (already)'),
+      );
+    } else {
+      console.log(
+        `  enabledPlugins: ${enabledKey} not modified — run /plugin to enable, or pass --enable next time`,
+      );
+    }
   }
   if (!options.skipSkills) {
     try {
-      const skillResults = await installSkills({
+      // The plugin's plugin.json declares its skills inline, so enabling
+      // the plugin will load them. installSkillsWithReport short-circuits
+      // when the plugin is enabled to avoid duplicate registrations; pass
+      // --force-skills to override and write to ~/.claude/skills/ anyway.
+      const skillReport = await installSkillsWithReport({
         target: 'claude',
         force: options.forceSkills,
+        ignorePluginActive: options.forceSkills,
       });
       console.log('');
-      console.log(formatInstallReport(skillResults, 'claude'));
+      console.log(formatInstallReport(skillReport, 'claude'));
     } catch (error) {
       console.warn(
         `Warning: skill install failed — ${
@@ -166,8 +226,7 @@ export async function installPluginCommand(
   }
 
   console.log('\nThe plugin is now available in Claude Code.');
-  console.log('  Slash commands: /grab-assignment, /plan-assignment, /complete-assignment, /create-assignment, /create-project, /track-session, /save-session-summary');
+  console.log('  Slash commands: /grab-assignment, /plan-assignment, /complete-assignment, /create-assignment, /create-project, /track-session, /clear-assignment, /manage-statuses');
   console.log('  Background: syntaur-protocol skill (auto-invoked)');
-  console.log('  Claude-specific skill: track-session (agent session registration)');
-  console.log('  Hook: write boundary enforcement (PreToolUse) + SessionStart/End + PreCompact (prompts /save-session-summary)');
+  console.log('  Hook: write boundary enforcement (PreToolUse) + SessionStart/End');
 }

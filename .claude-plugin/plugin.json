@@ -1,11 +1,12 @@
 {
   "name": "syntaur",
-  "description": "Syntaur protocol adapter for Claude Code. Provides skills for grabbing, planning, and completing assignments, project management, session/server tracking, save-session-summary continuity, plus write boundary enforcement via hooks.",
+  "version": "0.8.0",
+  "description": "Syntaur protocol skills for AI coding agents — assignment, project, plan, and session lifecycle. Cross-agent (Claude Code, Codex, Cursor, OpenCode, Gemini CLI, and more via skills.sh).",
   "author": {
     "name": "Brennen",
     "email": ""
   },
-  "version": "0.8.0",
+  "homepage": "https://github.com/prong-horn/syntaur",
   "skills": [
     "./skills/syntaur-protocol",
     "./skills/grab-assignment",

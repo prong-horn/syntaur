@@ -1,7 +1,7 @@
 {
   "name": "syntaur",
-  "version": "0.1.8",
-  "description": "Run Syntaur project and assignment workflows from Codex, including claiming work, planning, completing handoffs, session tracking, and write-boundary enforcement.",
+  "version": "0.8.0",
+  "description": "Run Syntaur project and assignment workflows from Codex, including claiming work, planning, completing handoffs, session/server tracking, save-session-summary continuity, and write-boundary enforcement.",
   "author": {
     "name": "Brennen"
   },

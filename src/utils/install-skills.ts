@@ -1,8 +1,9 @@
-import { readFile, readdir, stat, mkdir, copyFile, rm } from 'node:fs/promises';
-import { dirname, resolve, relative, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { readFile, readdir, mkdir, copyFile, rm, lstat } from 'node:fs/promises';
+import { resolve, relative, join } from 'node:path';
 import { homedir } from 'node:os';
 import { fileExists } from './fs.js';
+import { findPackageRoot } from './package-root.js';
+import { isSyntaurPluginEnabledFor } from './plugin-state.js';
 
 export type SkillTarget = 'claude' | 'codex';
 
@@ -11,40 +12,55 @@ export interface InstallSkillsOptions {
   force?: boolean;
   targetDir?: string; // override for tests
   sourceDir?: string; // override for tests
-  platformSkillsDir?: string; // override for tests
+  // When true, run even if the syntaur plugin is enabled for this agent.
+  // Default false: if the plugin is enabled it already loads skills from
+  // its manifest, so we skip global install to avoid duplicates.
+  ignorePluginActive?: boolean;
+}
+
+export interface InstallSkillsReport {
+  results: SkillInstallResult[];
+  skippedReason?: 'plugin-active';
 }
 
 export interface SkillInstallResult {
   skill: string;
-  status: 'installed' | 'already-current' | 'differs-preserved' | 'overwritten';
+  status:
+    | 'installed'
+    | 'already-current'
+    | 'differs-preserved'
+    | 'overwritten'
+    | 'skipped-symlink';
   targetPath: string;
-  source: 'shared' | 'platform';
 }
 
-const REQUIRED_SKILLS = [
+// Skills the syntaur CLI considers first-class. Discovery is dynamic — every
+// directory under <pkg>/skills/ that contains a SKILL.md is installed — but
+// this list pins the install order and provides a stable source-of-truth for
+// uninstallSkills() and the doctor command. Update when a skill is added or
+// retired.
+const KNOWN_SKILL_NAMES = [
   'syntaur-protocol',
   'grab-assignment',
   'plan-assignment',
   'complete-assignment',
   'create-assignment',
   'create-project',
+  'manage-statuses',
+  'clear-assignment',
   'save-session-summary',
+  'track-session',
+  'track-server',
 ] as const;
 
-export function getVendoredSkillsDir(): string {
-  // After tsup bundling, import.meta.url resolves to <pkg>/dist/index.js.
-  // Vendored skills live at <pkg>/vendor/syntaur-skills/skills/.
-  const here = dirname(fileURLToPath(import.meta.url));
-  // Walk up once from `dist` to the package root.
-  return resolve(here, '..', 'vendor', 'syntaur-skills', 'skills');
-}
+export const KNOWN_SKILLS = KNOWN_SKILL_NAMES;
 
-export function getPlatformSkillsDir(target: SkillTarget): string {
-  // Platform-specific skills live at <pkg>/platforms/<kind>/skills/.
-  // Same path-resolution strategy as getVendoredSkillsDir.
-  const here = dirname(fileURLToPath(import.meta.url));
-  const kind = target === 'claude' ? 'claude-code' : 'codex';
-  return resolve(here, '..', 'platforms', kind, 'skills');
+export async function getSkillsDir(): Promise<string> {
+  // Walk up from this module to the package root containing skills/.
+  // Works whether we're bundled (<pkg>/dist/index.js) or running from
+  // source (<pkg>/src/utils/install-skills.ts in tests).
+  const packageRoot = await findPackageRoot('skills');
+  return resolve(packageRoot, 'skills');
 }
 
 export function defaultSkillTargetDir(target: SkillTarget): string {
@@ -107,100 +123,128 @@ async function skillMatches(srcDir: string, destDir: string): Promise<boolean> {
   return true;
 }
 
+async function isSymlink(path: string): Promise<boolean> {
+  try {
+    const stat = await lstat(path);
+    return stat.isSymbolicLink();
+  } catch {
+    return false;
+  }
+}
+
 async function installSkillDir(
   srcDir: string,
   destDir: string,
   skillName: string,
-  source: 'shared' | 'platform',
   force: boolean,
 ): Promise<SkillInstallResult> {
+  // Skills.sh CLI default-installs by symlinking. If the target is a symlink,
+  // assume the skills.sh CLI (or the user) is managing this skill and don't
+  // overwrite it.
+  if (await isSymlink(destDir)) {
+    return {
+      skill: skillName,
+      status: 'skipped-symlink',
+      targetPath: destDir,
+    };
+  }
+
   if (!(await fileExists(destDir))) {
     await copyDir(srcDir, destDir);
-    return { skill: skillName, status: 'installed', targetPath: destDir, source };
+    return { skill: skillName, status: 'installed', targetPath: destDir };
   }
 
   if (await skillMatches(srcDir, destDir)) {
-    return { skill: skillName, status: 'already-current', targetPath: destDir, source };
+    return { skill: skillName, status: 'already-current', targetPath: destDir };
   }
 
   if (force) {
     await rm(destDir, { recursive: true, force: true });
     await copyDir(srcDir, destDir);
-    return { skill: skillName, status: 'overwritten', targetPath: destDir, source };
+    return { skill: skillName, status: 'overwritten', targetPath: destDir };
   }
 
-  return { skill: skillName, status: 'differs-preserved', targetPath: destDir, source };
+  return { skill: skillName, status: 'differs-preserved', targetPath: destDir };
+}
+
+async function discoverSkillNames(sourceDir: string): Promise<string[]> {
+  const entries = await readdir(sourceDir, { withFileTypes: true });
+  const names: string[] = [];
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue;
+    if (entry.name.startsWith('.')) continue;
+    if (await fileExists(join(sourceDir, entry.name, 'SKILL.md'))) {
+      names.push(entry.name);
+    }
+  }
+  // Order: pinned names first (in their declared order), then any extra
+  // skills sorted alphabetically.
+  const pinnedSet = new Set<string>(KNOWN_SKILL_NAMES);
+  const pinned: string[] = KNOWN_SKILL_NAMES.filter((name) => names.includes(name));
+  const extras = names.filter((name) => !pinnedSet.has(name)).sort();
+  return [...pinned, ...extras];
 }
 
 export async function installSkills(
   options: InstallSkillsOptions,
 ): Promise<SkillInstallResult[]> {
-  const source = options.sourceDir ?? getVendoredSkillsDir();
-  const platformSource =
-    options.platformSkillsDir ?? getPlatformSkillsDir(options.target);
+  const report = await installSkillsWithReport(options);
+  return report.results;
+}
+
+export async function installSkillsWithReport(
+  options: InstallSkillsOptions,
+): Promise<InstallSkillsReport> {
+  // If the syntaur plugin is enabled for this agent, the plugin manifest
+  // already declares its skills — installing them globally would duplicate
+  // the registration. Skip unless the caller explicitly opts in.
+  if (!options.ignorePluginActive && options.targetDir === undefined) {
+    if (await isSyntaurPluginEnabledFor(options.target)) {
+      return { results: [], skippedReason: 'plugin-active' };
+    }
+  }
+
+  const source = options.sourceDir ?? (await getSkillsDir());
   const targetRoot = options.targetDir ?? defaultSkillTargetDir(options.target);
   const force = options.force ?? false;
 
   if (!(await fileExists(source))) {
     throw new Error(
-      `Vendored skills not found at ${source}. Reinstall syntaur: npm install -g syntaur@latest`,
+      `Syntaur skills not found at ${source}. Reinstall syntaur: npm install -g syntaur@latest`,
     );
   }
 
+  const skillNames = await discoverSkillNames(source);
   const results: SkillInstallResult[] = [];
   await mkdir(targetRoot, { recursive: true });
 
-  // 1. Shared protocol skills (REQUIRED_SKILLS).
-  for (const skill of REQUIRED_SKILLS) {
+  for (const skill of skillNames) {
     const srcDir = join(source, skill);
-    if (!(await fileExists(srcDir))) continue;
     const destDir = join(targetRoot, skill);
-    results.push(await installSkillDir(srcDir, destDir, skill, 'shared', force));
+    results.push(await installSkillDir(srcDir, destDir, skill, force));
   }
 
-  // 2. Platform-specific skills (whatever subdirs exist under platforms/<kind>/skills/).
-  //
-  // Only Claude needs this: Claude's plugin manifest does not auto-discover
-  // skills, so Claude-specific skills must be installed globally to
-  // ~/.claude/skills/. Codex's plugin manifest already declares
-  // "skills": "./skills/", so the plugin install itself exposes those skills
-  // — installing them globally would create duplicates.
-  if (options.target === 'claude' && (await fileExists(platformSource))) {
-    const entries = await readdir(platformSource, { withFileTypes: true });
-    for (const entry of entries) {
-      if (!entry.isDirectory()) continue;
-      const skill = entry.name;
-      // Don't double-install: shared skills win if a platform happens to ship the same name.
-      if ((REQUIRED_SKILLS as readonly string[]).includes(skill)) continue;
-      const srcDir = join(platformSource, skill);
-      const destDir = join(targetRoot, skill);
-      results.push(await installSkillDir(srcDir, destDir, skill, 'platform', force));
-    }
-  }
-
-  return results;
+  return { results };
 }
 
 export async function uninstallSkills(options: {
   target: SkillTarget;
   targetDir?: string;
-  platformSkillsDir?: string;
+  sourceDir?: string;
 }): Promise<string[]> {
   const targetRoot =
     options.targetDir ?? defaultSkillTargetDir(options.target);
   if (!(await fileExists(targetRoot))) return [];
 
-  // Build the list of known skill names for this target: the shared protocol
-  // skills plus, for Claude only, any subdirs in the platform skills source.
-  // Codex skips platform skills (its plugin manifest auto-discovers them, so
-  // they were never installed globally — see installSkills).
-  const known = new Set<string>(REQUIRED_SKILLS);
-  const platformSource =
-    options.platformSkillsDir ?? getPlatformSkillsDir(options.target);
-  if (options.target === 'claude' && (await fileExists(platformSource))) {
-    const entries = await readdir(platformSource, { withFileTypes: true });
-    for (const entry of entries) {
-      if (entry.isDirectory()) known.add(entry.name);
+  const sourceDir = options.sourceDir ?? (await getSkillsDir());
+  const known = new Set<string>();
+  if (await fileExists(sourceDir)) {
+    for (const name of await discoverSkillNames(sourceDir)) {
+      known.add(name);
+    }
+  } else {
+    for (const name of KNOWN_SKILL_NAMES) {
+      known.add(name);
     }
   }
 
@@ -208,6 +252,9 @@ export async function uninstallSkills(options: {
   for (const skill of known) {
     const destDir = join(targetRoot, skill);
     if (!(await fileExists(destDir))) continue;
+
+    // Skills.sh manages symlinks; never remove them.
+    if (await isSymlink(destDir)) continue;
 
     // Safety: only remove if SKILL.md frontmatter `name:` matches the
     // known skill name — never delete a user-authored skill that happens
@@ -226,11 +273,24 @@ export async function uninstallSkills(options: {
 }
 
 export function formatInstallReport(
-  results: SkillInstallResult[],
+  resultsOrReport: SkillInstallResult[] | InstallSkillsReport,
   target: SkillTarget,
 ): string {
+  const report: InstallSkillsReport = Array.isArray(resultsOrReport)
+    ? { results: resultsOrReport }
+    : resultsOrReport;
+  const { results, skippedReason } = report;
   const lines: string[] = [];
   lines.push(`Skill install (${target}):`);
+  if (skippedReason === 'plugin-active') {
+    lines.push(
+      '  Skipped — syntaur plugin is enabled for this agent and already loads skills from its manifest.',
+    );
+    lines.push(
+      '  Run with --force-skills to install globally anyway (creates duplicates with the plugin).',
+    );
+    return lines.join('\n');
+  }
   for (const r of results) {
     const marker =
       r.status === 'installed'
@@ -239,7 +299,9 @@ export function formatInstallReport(
           ? '!'
           : r.status === 'differs-preserved'
             ? '?'
-            : '=';
+            : r.status === 'skipped-symlink'
+              ? '~'
+              : '=';
     lines.push(`  ${marker} ${r.skill} (${r.status})`);
   }
   const diffs = results.filter((r) => r.status === 'differs-preserved');
@@ -249,10 +311,15 @@ export function formatInstallReport(
       `  Note: ${diffs.length} skill(s) already exist with different content and were preserved.`,
     );
     lines.push(
-      '  Run with --force-skills to overwrite with the vendored version.',
+      '  Run with --force-skills to overwrite with the syntaur version.',
+    );
+  }
+  const symlinked = results.filter((r) => r.status === 'skipped-symlink');
+  if (symlinked.length > 0) {
+    lines.push('');
+    lines.push(
+      `  Note: ${symlinked.length} skill(s) were skipped because the target is a symlink (likely managed by skills.sh).`,
     );
   }
   return lines.join('\n');
 }
-
-export const KNOWN_SKILLS = REQUIRED_SKILLS;

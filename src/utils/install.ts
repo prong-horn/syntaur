@@ -5,6 +5,7 @@ import {
   lstat,
   readFile,
   readlink,
+  rename,
   rm,
   unlink,
   writeFile,
@@ -395,7 +396,34 @@ async function writeClaudeMarketplaceFile(
   marketplace: ClaudeMarketplaceFile,
 ): Promise<void> {
   await ensureDir(dirname(manifestPath));
-  await writeFile(manifestPath, `${JSON.stringify(marketplace, null, 2)}\n`, 'utf-8');
+  // Sort plugins by name for deterministic git diffs.
+  if (Array.isArray(marketplace.plugins)) {
+    marketplace.plugins = [...marketplace.plugins].sort((a, b) => {
+      const an = (a?.name as string) ?? '';
+      const bn = (b?.name as string) ?? '';
+      return an.localeCompare(bn);
+    });
+  }
+  // Back up the previous file alongside, if it existed and parses,
+  // so a partial mistake is recoverable.
+  if (await fileExists(manifestPath)) {
+    try {
+      const prev = await readFile(manifestPath, 'utf-8');
+      JSON.parse(prev);
+      const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+      await writeFile(`${manifestPath}.bak-${stamp}`, prev, 'utf-8');
+    } catch {
+      // Pre-existing file is invalid JSON. Refuse to write — the caller
+      // should validate before reaching this point, but belt-and-suspenders.
+      throw new Error(
+        `Refusing to overwrite ${manifestPath}: existing file is not valid JSON. Inspect and remove or repair it manually before re-running.`,
+      );
+    }
+  }
+  // Atomic write: temp + rename.
+  const tmpPath = `${manifestPath}.tmp`;
+  await writeFile(tmpPath, `${JSON.stringify(marketplace, null, 2)}\n`, 'utf-8');
+  await rename(tmpPath, manifestPath);
 }
 
 function buildClaudeMarketplaceSourcePath(
@@ -561,14 +589,35 @@ async function getPreferredClaudeMarketplace(): Promise<ClaudeMarketplaceLocatio
 async function registerKnownClaudeMarketplace(
   name: string,
   rootDir: string,
-): Promise<void> {
+): Promise<{ added: boolean; updated: boolean }> {
   const manifestPath = getClaudeKnownMarketplacesPath();
-  const existing =
-    (await readJsonFileIfExists<Record<string, KnownClaudeMarketplaceRecord>>(
-      manifestPath,
-    )) ?? {};
-  if (existing[name]?.installLocation === rootDir) {
-    return;
+  // Read raw and parse explicitly so a malformed file is REFUSED instead
+  // of silently overwritten. readJsonFileIfExists() turns parse errors
+  // into null, which would cause us to clobber the entire registry with
+  // a fresh {} containing only our entry — destroying the user's other
+  // marketplaces. Refuse and let the user repair the file by hand.
+  let existing: Record<string, KnownClaudeMarketplaceRecord> = {};
+  if (await fileExists(manifestPath)) {
+    const raw = await readFile(manifestPath, 'utf-8');
+    try {
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        existing = parsed as Record<string, KnownClaudeMarketplaceRecord>;
+      } else {
+        throw new Error('not a JSON object');
+      }
+    } catch (err) {
+      throw new Error(
+        `Refusing to update ${manifestPath}: existing file is not a valid JSON object (${
+          err instanceof Error ? err.message : String(err)
+        }). Inspect and repair (or delete) it before re-running install-plugin.`,
+      );
+    }
+  }
+
+  const had = Object.prototype.hasOwnProperty.call(existing, name);
+  if (had && existing[name]?.installLocation === rootDir) {
+    return { added: false, updated: false };
   }
   existing[name] = {
     ...(existing[name] ?? {}),
@@ -578,7 +627,77 @@ async function registerKnownClaudeMarketplace(
   (existing[name] as Record<string, unknown>).lastUpdated = new Date().toISOString();
   (existing[name] as Record<string, unknown>).autoUpdate = true;
   await ensureDir(dirname(manifestPath));
-  await writeFile(manifestPath, `${JSON.stringify(existing, null, 2)}\n`, 'utf-8');
+  // Back up the prior file before mutation, in case our write is wrong.
+  if (await fileExists(manifestPath)) {
+    const prev = await readFile(manifestPath, 'utf-8');
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+    await writeFile(`${manifestPath}.bak-${stamp}`, prev, 'utf-8');
+  }
+  // Atomic write: temp + rename.
+  const tmpPath = `${manifestPath}.tmp`;
+  await writeFile(tmpPath, `${JSON.stringify(existing, null, 2)}\n`, 'utf-8');
+  await rename(tmpPath, manifestPath);
+  return { added: !had, updated: had };
+}
+
+// Public version. Idempotent: ensures known_marketplaces.json knows about
+// the marketplace at <rootDir>. Returns whether a change was made. The
+// historical bug was that install-plugin updated the marketplace's
+// .claude-plugin/marketplace.json but never registered the marketplace
+// here, so Claude Code couldn't see plugins inside it. Calling this from
+// install-plugin closes that gap.
+export async function ensureKnownClaudeMarketplaceForRoot(options: {
+  name: string;
+  rootDir: string;
+}): Promise<{ added: boolean; updated: boolean }> {
+  return registerKnownClaudeMarketplace(options.name, options.rootDir);
+}
+
+// Toggles the syntaur plugin in ~/.claude/settings.json's enabledPlugins
+// map for a specific marketplace. Used by `syntaur install-plugin --enable`.
+// Returns the previous and current values (true/false/undefined).
+export async function setSyntaurPluginEnabled(options: {
+  marketplaceName: string;
+  enabled: boolean;
+}): Promise<{
+  key: string;
+  previous: boolean | undefined;
+  current: boolean;
+  changed: boolean;
+}> {
+  const settingsPath = resolve(homedir(), '.claude', 'settings.json');
+  const key = `syntaur@${options.marketplaceName}`;
+  let parsed: Record<string, unknown> = {};
+  if (await fileExists(settingsPath)) {
+    const raw = await readFile(settingsPath, 'utf-8');
+    try {
+      parsed = JSON.parse(raw) as Record<string, unknown>;
+    } catch {
+      throw new Error(
+        `Cannot toggle plugin: ${settingsPath} is not valid JSON. Inspect and repair it before retrying.`,
+      );
+    }
+  }
+  const enabledPlugins = (parsed.enabledPlugins as Record<string, unknown> | undefined) ?? {};
+  const previous =
+    typeof enabledPlugins[key] === 'boolean' ? (enabledPlugins[key] as boolean) : undefined;
+  if (previous === options.enabled) {
+    return { key, previous, current: options.enabled, changed: false };
+  }
+  enabledPlugins[key] = options.enabled;
+  parsed.enabledPlugins = enabledPlugins;
+
+  await ensureDir(dirname(settingsPath));
+  // Back up the existing file before writing.
+  if (await fileExists(settingsPath)) {
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const prev = await readFile(settingsPath, 'utf-8');
+    await writeFile(`${settingsPath}.bak-${stamp}`, prev, 'utf-8');
+  }
+  const tmpPath = `${settingsPath}.tmp`;
+  await writeFile(tmpPath, `${JSON.stringify(parsed, null, 2)}\n`, 'utf-8');
+  await rename(tmpPath, settingsPath);
+  return { key, previous, current: options.enabled, changed: true };
 }
 
 async function ensureClaudeUserMarketplace(): Promise<ClaudeMarketplaceLocation> {
