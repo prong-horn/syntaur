@@ -48,6 +48,7 @@ const KNOWN_SKILL_NAMES = [
   'create-project',
   'manage-statuses',
   'clear-assignment',
+  'save-session-summary',
   'track-session',
   'track-server',
 ] as const;
