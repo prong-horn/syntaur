@@ -32,6 +32,7 @@ import { doctorCommand } from './commands/doctor.js';
 import { agentsCommand } from './commands/agents.js';
 import { commentCommand } from './commands/comment.js';
 import { captureCommand } from './commands/capture.js';
+import { proofCommand } from './commands/proof.js';
 import { requestCommand } from './commands/request.js';
 import { getDefaultCommandName } from './cli-default-command.js';
 import { maybePromptInstall } from './utils/npx-prompt.js';
@@ -663,6 +664,7 @@ program.addCommand(todoCommand);
 program.addCommand(backupCommand);
 program.addCommand(doctorCommand);
 program.addCommand(agentsCommand);
+program.addCommand(proofCommand);
 
 // Default to dashboard when no command is given
 if (process.argv.length <= 2) {
