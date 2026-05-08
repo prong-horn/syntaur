@@ -31,6 +31,7 @@ import { backupCommand } from './commands/backup.js';
 import { doctorCommand } from './commands/doctor.js';
 import { agentsCommand } from './commands/agents.js';
 import { commentCommand } from './commands/comment.js';
+import { captureCommand } from './commands/capture.js';
 import { requestCommand } from './commands/request.js';
 import { getDefaultCommandName } from './cli-default-command.js';
 import { maybePromptInstall } from './utils/npx-prompt.js';
@@ -124,6 +125,28 @@ program
   .action(async (assignment, text, options) => {
     try {
       await commentCommand(assignment, text, options);
+    } catch (error) {
+      console.error(
+        'Error:',
+        error instanceof Error ? error.message : String(error),
+      );
+      process.exit(1);
+    }
+  });
+
+program
+  .command('capture')
+  .description('Capture a typed proof artifact for an assignment')
+  .argument('[target]', 'Assignment slug (with --project) or UUID; falls back to .syntaur/context.json')
+  .option('--kind <type>', 'Artifact kind: screenshot | video | asciinema | http | text')
+  .option('--file <path>', 'Source file to ingest (forbidden for --kind=text)')
+  .option('--criterion <index>', 'Optional 0-based criterion index to tag')
+  .option('--note <text>', 'Optional note (required for --kind=text)')
+  .option('--project <slug>', 'Project slug if the target is project-nested')
+  .option('--dir <path>', 'Override default project directory')
+  .action(async (target, options) => {
+    try {
+      await captureCommand(target, options);
     } catch (error) {
       console.error(
         'Error:',
