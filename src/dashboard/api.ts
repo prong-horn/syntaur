@@ -34,14 +34,18 @@ import type {
   EditableDocumentResponse,
   EnrichedLink,
   HelpResponse,
+  MemoryDetail,
   MemorySummary,
+  MemorySummaryWithProject,
   ProjectDetail,
   ProjectSummary,
   OverviewResponse,
   ProgressCounts,
   NeedsAttention,
   RecentActivityItem,
+  ResourceDetail,
   ResourceSummary,
+  ResourceSummaryWithProject,
   PlaybookSummary,
   PlaybookDetail,
 } from './types.js';
@@ -1273,12 +1277,113 @@ async function listMemories(projectPath: string): Promise<MemorySummary[]> {
       source: parsed.source,
       scope: parsed.scope,
       sourceAssignment: parsed.sourceAssignment,
+      relatedAssignments: parsed.relatedAssignments,
       updated: parsed.updated,
     });
   }
 
   results.sort((left, right) => compareTimestamps(right.updated, left.updated));
   return results;
+}
+
+/** Walk every project and return its memories enriched with project context. */
+export async function listAllMemories(
+  projectsDir: string,
+): Promise<MemorySummaryWithProject[]> {
+  const projectRecords = await listProjectRecords(projectsDir);
+  const all: MemorySummaryWithProject[] = [];
+  for (const record of projectRecords) {
+    const memories = await listMemories(record.projectPath);
+    for (const memory of memories) {
+      all.push({
+        ...memory,
+        projectSlug: record.summary.slug,
+        projectTitle: record.summary.title,
+      });
+    }
+  }
+  all.sort((left, right) => compareTimestamps(right.updated, left.updated));
+  return all;
+}
+
+/** Walk every project and return its resources enriched with project context. */
+export async function listAllResources(
+  projectsDir: string,
+): Promise<ResourceSummaryWithProject[]> {
+  const projectRecords = await listProjectRecords(projectsDir);
+  const all: ResourceSummaryWithProject[] = [];
+  for (const record of projectRecords) {
+    const resources = await listResources(record.projectPath);
+    for (const resource of resources) {
+      all.push({
+        ...resource,
+        projectSlug: record.summary.slug,
+        projectTitle: record.summary.title,
+      });
+    }
+  }
+  all.sort((left, right) => compareTimestamps(right.updated, left.updated));
+  return all;
+}
+
+export async function getMemoryDetail(
+  projectsDir: string,
+  projectSlug: string,
+  itemSlug: string,
+): Promise<MemoryDetail | null> {
+  if (itemSlug.startsWith('_')) return null;
+  const filePath = resolve(projectsDir, projectSlug, 'memories', `${itemSlug}.md`);
+  if (!(await fileExists(filePath))) return null;
+
+  const projectRecords = await listProjectRecords(projectsDir);
+  const projectRecord = projectRecords.find((p) => p.summary.slug === projectSlug);
+  if (!projectRecord) return null;
+
+  const content = await readFile(filePath, 'utf-8');
+  const parsed = parseMemory(content);
+  return {
+    name: parsed.name,
+    slug: itemSlug,
+    source: parsed.source,
+    scope: parsed.scope,
+    sourceAssignment: parsed.sourceAssignment,
+    relatedAssignments: parsed.relatedAssignments,
+    updated: parsed.updated,
+    created: parsed.created,
+    body: parsed.body,
+    tags: parsed.tags,
+    projectSlug,
+    projectTitle: projectRecord.summary.title,
+  };
+}
+
+export async function getResourceDetail(
+  projectsDir: string,
+  projectSlug: string,
+  itemSlug: string,
+): Promise<ResourceDetail | null> {
+  if (itemSlug.startsWith('_')) return null;
+  const filePath = resolve(projectsDir, projectSlug, 'resources', `${itemSlug}.md`);
+  if (!(await fileExists(filePath))) return null;
+
+  const projectRecords = await listProjectRecords(projectsDir);
+  const projectRecord = projectRecords.find((p) => p.summary.slug === projectSlug);
+  if (!projectRecord) return null;
+
+  const content = await readFile(filePath, 'utf-8');
+  const parsed = parseResource(content);
+  return {
+    name: parsed.name,
+    slug: itemSlug,
+    category: parsed.category,
+    source: parsed.source,
+    relatedAssignments: parsed.relatedAssignments,
+    updated: parsed.updated,
+    created: parsed.created,
+    body: parsed.body,
+    projectSlug,
+    projectTitle: projectRecord.summary.title,
+  };
 }
 
 async function loadDependencyGraph(
@@ -1720,6 +1825,15 @@ function getDocumentPath(
       return assignmentSlug
         ? resolve(projectsDir, projectSlug, 'assignments', assignmentSlug, 'decision-record.md')
         : null;
+    case 'memory':
+      // For memory/resource, the second positional is the item slug.
+      return assignmentSlug
+        ? resolve(projectsDir, projectSlug, 'memories', `${assignmentSlug}.md`)
+        : null;
+    case 'resource':
+      return assignmentSlug
+        ? resolve(projectsDir, projectSlug, 'resources', `${assignmentSlug}.md`)
+        : null;
     default:
       return null;
   }
@@ -1745,6 +1859,10 @@ function getEditableDocumentTitle(
       return `Append Decision: ${assignmentSlug || 'assignment'}`;
     case 'playbook':
       return `Edit Playbook: ${projectSlug}`;
+    case 'memory':
+      return `Edit Memory: ${assignmentSlug || 'memory'}`;
+    case 'resource':
+      return `Edit Resource: ${assignmentSlug || 'resource'}`;
     default:
       return projectSlug;
   }

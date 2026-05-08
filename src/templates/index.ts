@@ -38,8 +38,10 @@ export {
   renderStatus,
   renderResourcesIndex,
   renderMemoriesIndex,
+  renderMemoryStub,
+  renderResourceStub,
 } from './index-stubs.js';
-export type { IndexStubParams } from './index-stubs.js';
+export type { IndexStubParams, MemoryStubParams, ResourceStubParams } from './index-stubs.js';
 
 export { renderPlaybook } from './playbook.js';
 export type { PlaybookParams } from './playbook.js';

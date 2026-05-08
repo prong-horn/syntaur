@@ -76,7 +76,40 @@ export interface MemorySummary {
   source: string;
   scope: string;
   sourceAssignment: string | null;
+  relatedAssignments: string[];
   updated: string;
+}
+
+/** Cross-project list shape: project-scoped summary enriched with project context. */
+export interface MemorySummaryWithProject extends MemorySummary {
+  projectSlug: string;
+  projectTitle: string;
+}
+
+export interface ResourceSummaryWithProject extends ResourceSummary {
+  projectSlug: string;
+  projectTitle: string;
+}
+
+export interface MemoryDetail extends MemorySummaryWithProject {
+  body: string;
+  created: string;
+  tags: string[];
+}
+
+export interface ResourceDetail extends ResourceSummaryWithProject {
+  body: string;
+  created: string;
+}
+
+export interface MemoriesResponse {
+  generatedAt: string;
+  memories: MemorySummaryWithProject[];
+}
+
+export interface ResourcesResponse {
+  generatedAt: string;
+  resources: ResourceSummaryWithProject[];
 }
 
 export interface ProjectDetail {
@@ -359,7 +392,9 @@ export type EditableDocumentType =
   | 'scratchpad'
   | 'handoff'
   | 'decision-record'
-  | 'playbook';
+  | 'playbook'
+  | 'memory'
+  | 'resource';
 
 export interface EditableDocumentResponse {
   documentType: EditableDocumentType;

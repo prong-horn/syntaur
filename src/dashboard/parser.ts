@@ -479,6 +479,7 @@ export interface ParsedMemory {
   scope: string;
   sourceAssignment: string | null;
   relatedAssignments: string[];
+  tags: string[];
   created: string;
   updated: string;
   body: string;
@@ -492,6 +493,7 @@ export function parseMemory(fileContent: string): ParsedMemory {
     scope: getField(fm, 'scope') ?? '',
     sourceAssignment: getField(fm, 'sourceAssignment'),
     relatedAssignments: parseListField(fm, 'relatedAssignments'),
+    tags: parseListField(fm, 'tags'),
     created: getField(fm, 'created') ?? '',
     updated: getField(fm, 'updated') ?? '',
     body,

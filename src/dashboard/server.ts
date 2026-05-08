@@ -7,6 +7,8 @@ import { WebSocketServer, WebSocket } from 'ws';
 import {
   listProjects,
   listAssignmentsBoard,
+  listAllMemories,
+  listAllResources,
   getProjectDetail,
   getAssignmentDetail,
   getAssignmentDetailById,
@@ -494,6 +496,27 @@ export function createDashboardServer(options: DashboardServerOptions) {
 
   // --- Playbooks API ---
   app.use('/api/playbooks', createPlaybooksRouter(playbooksDir));
+
+  // --- Memories / Resources (cross-project list) ---
+  app.get('/api/memories', async (_req, res) => {
+    try {
+      const memories = await listAllMemories(projectsDir);
+      res.json({ generatedAt: new Date().toISOString(), memories });
+    } catch (error) {
+      console.error('Error listing memories:', error);
+      res.status(500).json({ error: `Failed to load memories: ${(error as Error).message}` });
+    }
+  });
+
+  app.get('/api/resources', async (_req, res) => {
+    try {
+      const resources = await listAllResources(projectsDir);
+      res.json({ generatedAt: new Date().toISOString(), resources });
+    } catch (error) {
+      console.error('Error listing resources:', error);
+      res.status(500).json({ error: `Failed to load resources: ${(error as Error).message}` });
+    }
+  });
 
   // --- Todos API ---
   app.use('/api/todos', createTodosRouter(todosDir, broadcast, projectsDir));
