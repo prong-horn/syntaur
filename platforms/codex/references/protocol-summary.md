@@ -88,3 +88,11 @@ Protocol version: **2.0**
 10. Comments are appended to `comments.md` via `syntaur comment <slug> "body" [--type question|note|feedback] [--reply-to <id>]`. Never edit `comments.md` directly.
 11. Cross-assignment work is requested via `syntaur request <source> <target> "text"` — appends to the target's `## Todos` annotated `(from: <source>)`.
 12. Session continuity (mid-assignment) lives at `sessions/<session-id>/summary.md` inside the assignment dir — one document per session id, overwritten on every save (via `/save-session-summary`). On resume, pick the latest by `summary.md` file mtime. Older summaries accumulate as immutable history; never delete them. Distinct from `handoff.md`, which is the assignment-level cross-ticket outbound at completion. `syntaur doctor` intentionally ignores `sessions/`. **Codex has no `PreCompact` hook event** — invoke `/save-session-summary` manually before compaction or session end.
+
+## Proof artifacts (opt-in)
+
+Agents can attach typed evidence to an assignment so a human reviewer can verify the work in seconds without re-running it.
+
+- `syntaur capture --kind <screenshot|video|asciinema|http|text> [--file <path>] [--criterion <index>] [--note <text>] [target]` — record an artifact for the active assignment. Criterion linkage is optional (0-based index into the `## Acceptance Criteria` checklist). For `--kind=text`, supply `--note` and omit `--file`.
+- `syntaur proof build [target]` — render `proof.html` and `proof.md` at the assignment dir, walking the `## Acceptance Criteria` list and embedding tagged artifacts inline beneath each criterion. Untagged or stale (out-of-range) captures land in a final "Other artifacts" section. Atomic overwrite — safe to re-run.
+- Artifacts are stored under `<assignmentDir>/proof/<criterion|untagged>/<id>.<ext>`. The DB row lives in `~/.syntaur/syntaur.db` alongside session tracking. No completion gate — proof is purely opt-in for v1.

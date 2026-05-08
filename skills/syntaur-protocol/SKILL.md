@@ -111,6 +111,10 @@ ls ~/.syntaur/playbooks/*.md 2>/dev/null
 - Write handoffs with enough context for another agent or human to continue cleanly. Record decisions in `decision-record.md` with Status / Context / Decision / Consequences — downstream dependents auto-load these during grab.
 - Commit frequently with messages referencing the assignment slug.
 
+### Proof artifacts (opt-in)
+
+Agents can attach typed evidence so a human reviewer can verify work in seconds without re-running it. Use `syntaur capture` after a meaningful change is verified, then `syntaur proof build` to render `proof.html` at the assignment dir. Artifact kinds at v1: `screenshot`, `video`, `asciinema`, `http`, `text`. Criterion linkage is optional (0-based index into `## Acceptance Criteria`); untagged or stale-out-of-range artifacts render in a final "Other artifacts" section. Files live under `<assignmentDir>/proof/<criterion|untagged>/<id>.<ext>`. The `complete-assignment` skill mentions the proof page in its final report. **No completion gate** — proof is purely opt-in for v1.
+
 ## References
 
 For the full directory structure, lifecycle state table, and detailed file ownership rules, read:

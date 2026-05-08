@@ -51,6 +51,7 @@ const KNOWN_SKILL_NAMES = [
   'save-session-summary',
   'track-session',
   'track-server',
+  'capture-artifacts',
 ] as const;
 
 export const KNOWN_SKILLS = KNOWN_SKILL_NAMES;

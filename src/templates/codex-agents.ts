@@ -29,6 +29,7 @@ If the global Syntaur Codex plugin is installed, prefer these workflows instead 
 - \`plan-assignment\` -- write a versioned plan file (\`plan.md\`, \`plan-v2.md\`, ...) and link it from the \`## Todos\` section of \`assignment.md\`
 - \`complete-assignment\` -- write the cross-ticket \`handoff.md\` entry, append a final entry to \`progress.md\`, close the session, and transition state
 - \`save-session-summary\` -- write per-session continuity at \`<assignmentDir>/sessions/<sessionId>/summary.md\` for resume across sessions of the same agent. Codex has no \`PreCompact\` hook event — invoke this manually before compaction or session end.
+- \`capture-artifacts\` -- capture typed proof artifacts (screenshot/video/asciinema/http/text) for the active assignment. Criterion linkage is optional. Run \`syntaur proof build\` to render \`proof.html\`.
 - \`track-session\` -- manage tracked tmux sessions for the dashboard
 
 If the plugin is unavailable, follow the same workflow manually with the \`syntaur\` CLI and keep the protocol files current yourself.
@@ -157,6 +158,8 @@ Use the \`syntaur\` CLI for state transitions and coordination:
 - \`syntaur fail ${params.assignmentSlug} --project ${params.projectSlug}\` -- mark as failed
 - \`syntaur comment ${params.assignmentSlug} "body" --type question|note|feedback [--reply-to <id>]\` -- append to \`comments.md\` (use for all Q&A; questions support resolve toggle)
 - \`syntaur request ${params.assignmentSlug} <target-slug-or-uuid> "text"\` -- append a todo to another assignment's \`## Todos\` annotated \`(from: ${params.assignmentSlug})\`
+- \`syntaur capture --kind <screenshot|video|asciinema|http|text> [--file <path>] [--criterion <index>] [--note <text>] ${params.assignmentSlug} --project ${params.projectSlug}\` -- record a proof artifact. \`--kind=text\` requires \`--note\` and forbids \`--file\`. Criterion linkage is optional.
+- \`syntaur proof build ${params.assignmentSlug} --project ${params.projectSlug}\` -- render \`proof.html\` and \`proof.md\` at the assignment dir. Atomic overwrite — safe to re-run.
 
 ## Troubleshooting
 
