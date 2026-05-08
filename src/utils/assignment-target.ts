@@ -131,7 +131,12 @@ export async function resolveAssignmentTarget(
         `.syntaur/context.json points to a missing assignment dir: ${dir}.`,
       );
     }
-    const id = (await readAssignmentFrontmatterId(dir)) ?? '';
+    const id = await readAssignmentFrontmatterId(dir);
+    if (!id || id.trim() === '') {
+      throw new AssignmentTargetError(
+        `.syntaur/context.json points to an assignment with no frontmatter \`id\`: ${dir}.`,
+      );
+    }
     const assignmentSlug = ctx.assignmentSlug ?? dir.split('/').pop() ?? '';
     const projectSlug = ctx.projectSlug ?? null;
     return {

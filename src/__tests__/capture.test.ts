@@ -175,6 +175,34 @@ describe('captureCommand', () => {
     ).rejects.toThrow(/non-negative/);
   });
 
+  it('rejects non-numeric --criterion ("1foo")', async () => {
+    const { projectSlug } = await setupProjectAssignment();
+
+    await expect(
+      captureCommand('a', {
+        kind: 'text',
+        note: 'x',
+        criterion: '1foo',
+        project: projectSlug,
+        dir: testDir,
+      }),
+    ).rejects.toThrow(/non-negative integer/);
+  });
+
+  it('rejects fractional --criterion ("1.5")', async () => {
+    const { projectSlug } = await setupProjectAssignment();
+
+    await expect(
+      captureCommand('a', {
+        kind: 'text',
+        note: 'x',
+        criterion: '1.5',
+        project: projectSlug,
+        dir: testDir,
+      }),
+    ).rejects.toThrow(/non-negative integer/);
+  });
+
   it('accepts an out-of-range --criterion at capture time', async () => {
     const { projectSlug, assignmentDir } = await setupProjectAssignment();
 

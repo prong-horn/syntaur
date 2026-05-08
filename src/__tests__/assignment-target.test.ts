@@ -193,6 +193,21 @@ describe('resolveAssignmentTarget', () => {
     ).rejects.toThrow(/missing assignment dir/);
   });
 
+  it('throws when context.json points to an assignment with no frontmatter id', async () => {
+    const idlessDir = resolve(assignmentsDir, 'no-id-folder');
+    await mkdir(idlessDir, { recursive: true });
+    // Write an assignment.md with no `id:` frontmatter field.
+    await writeFile(
+      resolve(idlessDir, 'assignment.md'),
+      ['---', 'slug: example', 'title: Example', '---', '', '# Example', ''].join('\n'),
+    );
+    await writeContextJson(cwdRoot, { assignmentDir: idlessDir });
+
+    await expect(
+      resolveAssignmentTarget(undefined, { cwd: cwdRoot, dir: projectsDir }),
+    ).rejects.toThrow(/no frontmatter `id`/);
+  });
+
   it('throws when context.json has neither shape', async () => {
     await writeContextJson(cwdRoot, { sessionId: 'abc' });
 

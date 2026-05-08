@@ -11,6 +11,8 @@ import { renderProofHtml } from '../templates/proof-html.js';
 import {
   closeProofDb,
   resetProofDb,
+  initProofDb,
+  insertArtifact,
 } from '../db/proof-db.js';
 
 let testDir: string;
@@ -355,6 +357,35 @@ describe('proofBuildCommand', () => {
     const result = await proofBuildCommand('a', { project: 'p', dir: testDir });
     const md = await readFile(result.mdPath, 'utf-8');
     expect(md).toMatch(/untagged-note/);
+  });
+
+  it('does not read files outside the assignment proof/ tree even if a row points elsewhere', async () => {
+    const { assignmentDir } = await setupProjectAssignmentWithCriteria(['- [ ] One']);
+
+    // Drop a sensitive file outside the assignment dir.
+    const outsidePath = resolve(testDir, 'sensitive.txt');
+    await writeFile(outsidePath, 'SENSITIVE: should not appear in proof.html');
+
+    // Compute the assignment's frontmatter id, then directly inject a row
+    // whose file_path traverses outside the proof/ tree.
+    const asnMd = await readFile(resolve(assignmentDir, 'assignment.md'), 'utf-8');
+    const idMatch = asnMd.match(/^id:\s*(.+)$/m);
+    const id = idMatch ? idMatch[1].trim() : '';
+    initProofDb();
+    insertArtifact({
+      id: 'malicious',
+      assignmentId: id,
+      assignmentDir,
+      criterionIndex: null,
+      kind: 'text',
+      filePath: '../../../sensitive.txt',
+      note: null,
+    });
+
+    const result = await proofBuildCommand('a', { project: 'p', dir: testDir });
+    const html = await readFile(result.htmlPath, 'utf-8');
+
+    expect(html).not.toMatch(/SENSITIVE/);
   });
 
   it('builds against a standalone (UUID) assignment via .syntaur/context.json', async () => {

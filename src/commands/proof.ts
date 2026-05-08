@@ -1,9 +1,11 @@
 import { Command } from 'commander';
 import { readFile, writeFile, rename, stat } from 'node:fs/promises';
-import { resolve } from 'node:path';
+import { resolve, relative, isAbsolute } from 'node:path';
+import { randomBytes } from 'node:crypto';
 import { resolveAssignmentTarget } from '../utils/assignment-target.js';
 import { parseAcceptanceCriteria } from '../utils/acceptance-criteria-parse.js';
 import { fileExists } from '../utils/fs.js';
+import { proofDir } from '../utils/paths.js';
 import {
   initProofDb,
   listArtifactsByAssignment,
@@ -45,11 +47,23 @@ async function readAssignmentMeta(assignmentDir: string): Promise<AssignmentMeta
 
 /**
  * Atomic-write `content` to `destPath` via a sibling `.tmp` file + rename.
+ * Uses a per-call random suffix so concurrent `proof build` invocations on
+ * the same assignment do not stomp each other's tmp files.
  */
 async function atomicWrite(destPath: string, content: string): Promise<void> {
-  const tmp = `${destPath}.tmp`;
+  const tmp = `${destPath}.${randomBytes(4).toString('hex')}.tmp`;
   await writeFile(tmp, content, 'utf-8');
   await rename(tmp, destPath);
+}
+
+/**
+ * Returns true if `target` resolves to a path inside `root` (or equal to it).
+ * Used to defend the renderer against malicious or corrupted `file_path`
+ * rows in the DB pointing outside the assignment's proof tree.
+ */
+function isWithin(root: string, target: string): boolean {
+  const rel = relative(root, target);
+  return rel === '' || (!rel.startsWith('..') && !isAbsolute(rel));
 }
 
 function groupArtifacts(
@@ -92,10 +106,17 @@ async function loadInlineFiles(
   assignmentDir: string,
 ): Promise<Map<string, string | null>> {
   const out = new Map<string, string | null>();
+  const proofRoot = proofDir(assignmentDir);
   for (const r of rows) {
     if (!r.file_path) continue;
     if (r.kind !== 'http' && r.kind !== 'text') continue;
     const abs = resolve(assignmentDir, r.file_path);
+    // Refuse to read paths outside the assignment's proof/ tree. Defends
+    // against corrupted or maliciously-injected DB rows.
+    if (!isWithin(proofRoot, abs)) {
+      out.set(r.file_path, null);
+      continue;
+    }
     if (!(await fileExists(abs))) {
       out.set(r.file_path, null);
       continue;

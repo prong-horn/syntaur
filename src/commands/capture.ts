@@ -25,27 +25,26 @@ const MAX_ID_RETRIES = 5;
 
 function normalizeCriterionIndex(raw: string | number | undefined): number | null {
   if (raw === undefined || raw === null || raw === '') return null;
-  const parsed = typeof raw === 'number' ? raw : parseInt(String(raw), 10);
-  if (!Number.isInteger(parsed) || parsed < 0) {
+  if (typeof raw === 'number') {
+    if (!Number.isInteger(raw) || raw < 0) {
+      throw new Error(`--criterion must be a non-negative integer (got "${raw}")`);
+    }
+    return raw;
+  }
+  // Strings must be all digits — `parseInt` would silently accept "1foo" or "1.5".
+  const s = String(raw).trim();
+  if (!/^\d+$/.test(s)) {
     throw new Error(`--criterion must be a non-negative integer (got "${raw}")`);
   }
-  return parsed;
+  return parseInt(s, 10);
 }
 
-async function pickUniqueDestination(
-  destDir: string,
-  ext: string,
-): Promise<{ id: string; absPath: string }> {
-  for (let attempt = 0; attempt < MAX_ID_RETRIES; attempt += 1) {
-    const id = generateArtifactId();
-    const absPath = resolve(destDir, `${id}.${ext}`);
-    const dbCollision = getArtifactById(id);
-    const fsCollision = await fileExists(absPath);
-    if (!dbCollision && !fsCollision) {
-      return { id, absPath };
-    }
-  }
-  throw new Error('Failed to generate a unique artifact id after several attempts.');
+function isUniqueConstraintError(err: unknown): boolean {
+  if (!err || typeof err !== 'object') return false;
+  const e = err as { code?: string; message?: string };
+  if (e.code === 'SQLITE_CONSTRAINT_PRIMARYKEY' || e.code === 'SQLITE_CONSTRAINT_UNIQUE') return true;
+  if (e.code === 'SQLITE_CONSTRAINT' && /UNIQUE|PRIMARY KEY/i.test(e.message ?? '')) return true;
+  return false;
 }
 
 export async function captureCommand(
@@ -117,6 +116,13 @@ export async function captureCommand(
     resolvedSource = real;
   }
 
+  // The assignment id is the DB partition key; refuse to write with an empty one.
+  if (!resolved.id || resolved.id.trim() === '') {
+    throw new Error(
+      `Resolved assignment is missing a frontmatter \`id\`: ${resolved.assignmentDir}. Cannot record artifact.`,
+    );
+  }
+
   // Initialize the DB (no-op after first call).
   initProofDb();
 
@@ -124,42 +130,61 @@ export async function captureCommand(
   const subdir = criterionIndex === null ? 'untagged' : String(criterionIndex);
   const destDir = resolve(proofDir(resolved.assignmentDir), subdir);
 
-  let id: string;
-  let relativeFilePath: string | null = null;
+  // Insert-with-retry on UNIQUE conflict. The id space (1ms timestamp + 16
+  // random bits) makes collisions astronomically unlikely; the loop is for
+  // theoretical safety against same-millisecond concurrent writers and acts
+  // as the source of truth, replacing the racey check-then-act pattern.
+  if (resolvedSource) await mkdir(destDir, { recursive: true });
+  const ext = resolvedSource ? extensionForKind(kind) : null;
 
-  if (resolvedSource) {
-    await mkdir(destDir, { recursive: true });
-    const ext = extensionForKind(kind);
-    const picked = await pickUniqueDestination(destDir, ext);
-    id = picked.id;
-    await copyFile(resolvedSource, picked.absPath);
-    relativeFilePath = relative(resolved.assignmentDir, picked.absPath);
-  } else {
-    // Note-only artifact (text, or http with --note). No file written; still
-    // pick a unique id against the DB.
-    let candidate: string | null = null;
-    for (let attempt = 0; attempt < MAX_ID_RETRIES; attempt += 1) {
-      const trial = generateArtifactId();
-      if (!getArtifactById(trial)) {
-        candidate = trial;
-        break;
+  let id: string | null = null;
+  let relativeFilePath: string | null = null;
+  let absPath: string | null = null;
+  let lastErr: unknown = null;
+
+  for (let attempt = 0; attempt < MAX_ID_RETRIES; attempt += 1) {
+    const candidate = generateArtifactId();
+    const candidateAbsPath = resolvedSource && ext ? resolve(destDir, `${candidate}.${ext}`) : null;
+    const candidateRel = candidateAbsPath ? relative(resolved.assignmentDir, candidateAbsPath) : null;
+
+    try {
+      insertArtifact({
+        id: candidate,
+        assignmentId: resolved.id,
+        assignmentDir: resolved.assignmentDir,
+        criterionIndex,
+        kind,
+        filePath: candidateRel,
+        note: options.note ?? null,
+      });
+      id = candidate;
+      absPath = candidateAbsPath;
+      relativeFilePath = candidateRel;
+      break;
+    } catch (e) {
+      if (isUniqueConstraintError(e)) {
+        lastErr = e;
+        continue;
       }
+      throw e;
     }
-    if (!candidate) {
-      throw new Error('Failed to generate a unique artifact id after several attempts.');
-    }
-    id = candidate;
   }
 
-  insertArtifact({
-    id,
-    assignmentId: resolved.id,
-    assignmentDir: resolved.assignmentDir,
-    criterionIndex,
-    kind,
-    filePath: relativeFilePath,
-    note: options.note ?? null,
-  });
+  if (!id) {
+    throw new Error(
+      `Failed to generate a unique artifact id after ${MAX_ID_RETRIES} attempts: ${
+        lastErr instanceof Error ? lastErr.message : String(lastErr)
+      }`,
+    );
+  }
+
+  // File copy comes after the DB insert succeeded. If the file copy fails the
+  // DB row is left orphaned (rare; surfaces clearly to the user). Doing it
+  // this way means we never copy bytes to disk and then discover a DB
+  // collision.
+  if (resolvedSource && absPath) {
+    await copyFile(resolvedSource, absPath);
+  }
 
   const ref = resolved.standalone ? resolved.id : `${resolved.projectSlug}/${resolved.assignmentSlug}`;
   const tagSuffix = criterionIndex === null ? 'untagged' : `criterion ${criterionIndex}`;
