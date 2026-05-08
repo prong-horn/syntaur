@@ -6,7 +6,7 @@ description: >-
 license: MIT
 metadata:
   author: prong-horn
-  version: "1.1.0"
+  version: "1.2.0"
 ---
 
 # Complete Assignment
@@ -143,4 +143,5 @@ Summarize:
 - Assignment slug and title
 - New status (review or completed)
 - Number of acceptance criteria met vs total
+- If `<assignmentDir>/proof.html` exists, include its absolute path so the reviewer can open it directly in a browser. Mention briefly which criteria have artifacts attached. (Proof is opt-in — its absence is not a blocker.)
 - If transitioned to `review`, a human reviewer will check the work. If any criteria were unmet, they may send it back to `in_progress`.
