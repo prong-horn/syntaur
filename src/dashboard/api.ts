@@ -1,5 +1,5 @@
 import { readdir, readFile, writeFile } from 'node:fs/promises';
-import { resolve, dirname } from 'node:path';
+import { resolve, dirname, basename } from 'node:path';
 import { getTargetStatus, DEFAULT_STATUSES, DEFAULT_TRANSITION_TABLE, buildTransitionTable } from '../lifecycle/index.js';
 import { fileExists } from '../utils/fs.js';
 import { readConfig, type StatusConfig, type StatusTransition } from '../utils/config.js';
@@ -1286,7 +1286,14 @@ async function listMemories(projectPath: string): Promise<MemorySummary[]> {
   return results;
 }
 
-/** Walk every project and return its memories enriched with project context. */
+/**
+ * Walk every project and return its memories enriched with project context.
+ *
+ * `projectSlug` is the on-disk directory name (used for path-based routes like
+ * `/api/projects/:slug/memories/:itemSlug` and the `/projects/:slug/...` UI routes).
+ * In typical projects this equals the frontmatter `slug`, but fixtures/legacy projects
+ * may differ — and the directory name is what every path-based route resolves against.
+ */
 export async function listAllMemories(
   projectsDir: string,
 ): Promise<MemorySummaryWithProject[]> {
@@ -1297,7 +1304,7 @@ export async function listAllMemories(
     for (const memory of memories) {
       all.push({
         ...memory,
-        projectSlug: record.summary.slug,
+        projectSlug: basename(record.projectPath),
         projectTitle: record.summary.title,
       });
     }
@@ -1317,7 +1324,7 @@ export async function listAllResources(
     for (const resource of resources) {
       all.push({
         ...resource,
-        projectSlug: record.summary.slug,
+        projectSlug: basename(record.projectPath),
         projectTitle: record.summary.title,
       });
     }
@@ -1332,12 +1339,17 @@ export async function getMemoryDetail(
   itemSlug: string,
 ): Promise<MemoryDetail | null> {
   if (itemSlug.startsWith('_')) return null;
-  const filePath = resolve(projectsDir, projectSlug, 'memories', `${itemSlug}.md`);
-  if (!(await fileExists(filePath))) return null;
 
   const projectRecords = await listProjectRecords(projectsDir);
-  const projectRecord = projectRecords.find((p) => p.summary.slug === projectSlug);
+  // Match by directory name first (the path-based routing convention) and fall back to
+  // the frontmatter slug — covers fixtures/legacy projects whose dir name differs from slug.
+  const projectRecord = projectRecords.find(
+    (p) => basename(p.projectPath) === projectSlug || p.summary.slug === projectSlug,
+  );
   if (!projectRecord) return null;
+
+  const filePath = resolve(projectRecord.projectPath, 'memories', `${itemSlug}.md`);
+  if (!(await fileExists(filePath))) return null;
 
   const content = await readFile(filePath, 'utf-8');
   const parsed = parseMemory(content);
@@ -1352,7 +1364,7 @@ export async function getMemoryDetail(
     created: parsed.created,
     body: parsed.body,
     tags: parsed.tags,
-    projectSlug,
+    projectSlug: basename(projectRecord.projectPath),
     projectTitle: projectRecord.summary.title,
   };
 }
@@ -1363,12 +1375,15 @@ export async function getResourceDetail(
   itemSlug: string,
 ): Promise<ResourceDetail | null> {
   if (itemSlug.startsWith('_')) return null;
-  const filePath = resolve(projectsDir, projectSlug, 'resources', `${itemSlug}.md`);
-  if (!(await fileExists(filePath))) return null;
 
   const projectRecords = await listProjectRecords(projectsDir);
-  const projectRecord = projectRecords.find((p) => p.summary.slug === projectSlug);
+  const projectRecord = projectRecords.find(
+    (p) => basename(p.projectPath) === projectSlug || p.summary.slug === projectSlug,
+  );
   if (!projectRecord) return null;
+
+  const filePath = resolve(projectRecord.projectPath, 'resources', `${itemSlug}.md`);
+  if (!(await fileExists(filePath))) return null;
 
   const content = await readFile(filePath, 'utf-8');
   const parsed = parseResource(content);
@@ -1381,7 +1396,7 @@ export async function getResourceDetail(
     updated: parsed.updated,
     created: parsed.created,
     body: parsed.body,
-    projectSlug,
+    projectSlug: basename(projectRecord.projectPath),
     projectTitle: projectRecord.summary.title,
   };
 }
