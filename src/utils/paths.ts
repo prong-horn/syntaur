@@ -43,3 +43,7 @@ export function projectTodosDir(projectsDir: string, projectSlug: string): strin
 export function todoPlanDir(todosDir: string, workspaceOrProject: string, todoId: string): string {
   return resolve(todosDir, 'plans', workspaceOrProject, todoId);
 }
+
+export function proofDir(assignmentDir: string): string {
+  return resolve(assignmentDir, 'proof');
+}
