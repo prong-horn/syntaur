@@ -329,7 +329,19 @@ export function ProjectDetail() {
                 label: 'Knowledge',
                 content: (
                   <div className="grid gap-3 lg:grid-cols-2">
-                    <SectionCard title="Resources" description="Shared project references.">
+                    <SectionCard
+                      title="Resources"
+                      description="Shared project references."
+                      actions={
+                        <Link
+                          className="shell-action"
+                          to={`/resources/new?project=${project.slug}`}
+                        >
+                          <Plus className="h-4 w-4" />
+                          <span>New Resource</span>
+                        </Link>
+                      }
+                    >
                       {project.resources.length === 0 ? (
                         <EmptyState
                           title="No resources yet"
@@ -338,18 +350,34 @@ export function ProjectDetail() {
                       ) : (
                         <div className="space-y-3">
                           {project.resources.map((resource) => (
-                            <div key={resource.slug} className="rounded-md border border-border/60 bg-background/80 p-3">
+                            <Link
+                              key={resource.slug}
+                              to={`/projects/${project.slug}/resources/${resource.slug}`}
+                              className="block rounded-md border border-border/60 bg-background/80 p-3 transition hover:border-primary/40"
+                            >
                               <h3 className="font-semibold text-foreground">{resource.name}</h3>
                               <p className="mt-2 text-sm text-muted-foreground">
                                 {resource.category} · {resource.source}
                               </p>
-                            </div>
+                            </Link>
                           ))}
                         </div>
                       )}
                     </SectionCard>
 
-                    <SectionCard title="Memories" description="Learnings and patterns captured during the project.">
+                    <SectionCard
+                      title="Memories"
+                      description="Learnings and patterns captured during the project."
+                      actions={
+                        <Link
+                          className="shell-action"
+                          to={`/memories/new?project=${project.slug}`}
+                        >
+                          <Plus className="h-4 w-4" />
+                          <span>New Memory</span>
+                        </Link>
+                      }
+                    >
                       {project.memories.length === 0 ? (
                         <EmptyState
                           title="No memories yet"
@@ -358,12 +386,16 @@ export function ProjectDetail() {
                       ) : (
                         <div className="space-y-3">
                           {project.memories.map((memory) => (
-                            <div key={memory.slug} className="rounded-md border border-border/60 bg-background/80 p-3">
+                            <Link
+                              key={memory.slug}
+                              to={`/projects/${project.slug}/memories/${memory.slug}`}
+                              className="block rounded-md border border-border/60 bg-background/80 p-3 transition hover:border-primary/40"
+                            >
                               <h3 className="font-semibold text-foreground">{memory.name}</h3>
                               <p className="mt-2 text-sm text-muted-foreground">
                                 {memory.scope} · {memory.source}
                               </p>
-                            </div>
+                            </Link>
                           ))}
                         </div>
                       )}

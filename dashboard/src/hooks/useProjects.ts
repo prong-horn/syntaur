@@ -74,7 +74,39 @@ export interface MemorySummary {
   source: string;
   scope: string;
   sourceAssignment: string | null;
+  relatedAssignments: string[];
   updated: string;
+}
+
+export interface MemorySummaryWithProject extends MemorySummary {
+  projectSlug: string;
+  projectTitle: string;
+}
+
+export interface ResourceSummaryWithProject extends ResourceSummary {
+  projectSlug: string;
+  projectTitle: string;
+}
+
+export interface MemoryDetail extends MemorySummaryWithProject {
+  body: string;
+  created: string;
+  tags: string[];
+}
+
+export interface ResourceDetail extends ResourceSummaryWithProject {
+  body: string;
+  created: string;
+}
+
+export interface MemoriesResponse {
+  generatedAt: string;
+  memories: MemorySummaryWithProject[];
+}
+
+export interface ResourcesResponse {
+  generatedAt: string;
+  resources: ResourceSummaryWithProject[];
 }
 
 export interface ProjectDetail {
@@ -315,7 +347,9 @@ export type EditableDocumentType =
   | 'scratchpad'
   | 'handoff'
   | 'decision-record'
-  | 'playbook';
+  | 'playbook'
+  | 'memory'
+  | 'resource';
 
 export interface EditableDocumentResponse {
   documentType: EditableDocumentType;
@@ -504,4 +538,28 @@ export function usePlaybooks(): FetchState<PlaybooksResponse> {
 export function usePlaybook(slug: string | undefined): FetchState<PlaybookDetail> {
   const url = slug ? `/api/playbooks/${slug}` : null;
   return useFetch<PlaybookDetail>(url, 'playbooks');
+}
+
+export function useMemories(): FetchState<MemoriesResponse> {
+  return useFetch<MemoriesResponse>('/api/memories', 'project');
+}
+
+export function useMemory(
+  projectSlug: string | undefined,
+  itemSlug: string | undefined,
+): FetchState<MemoryDetail> {
+  const url = projectSlug && itemSlug ? `/api/projects/${projectSlug}/memories/${itemSlug}` : null;
+  return useFetch<MemoryDetail>(url, 'project');
+}
+
+export function useResources(): FetchState<ResourcesResponse> {
+  return useFetch<ResourcesResponse>('/api/resources', 'project');
+}
+
+export function useResource(
+  projectSlug: string | undefined,
+  itemSlug: string | undefined,
+): FetchState<ResourceDetail> {
+  const url = projectSlug && itemSlug ? `/api/projects/${projectSlug}/resources/${itemSlug}` : null;
+  return useFetch<ResourceDetail>(url, 'project');
 }

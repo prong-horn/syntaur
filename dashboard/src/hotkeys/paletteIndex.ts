@@ -32,6 +32,8 @@ export const STATIC_PAGES = [
   { id: 'page-servers',     title: 'Servers',     basePath: '/servers',     keywords: ['sessions'] },
   { id: 'page-attention',   title: 'Attention',   basePath: '/attention',   keywords: ['alerts'] },
   { id: 'page-playbooks',   title: 'Playbooks',   basePath: '/playbooks',   keywords: [] },
+  { id: 'page-memories',    title: 'Memories',    basePath: '/memories',    keywords: ['knowledge', 'learnings'] },
+  { id: 'page-resources',   title: 'Resources',   basePath: '/resources',   keywords: ['knowledge', 'reference'] },
   { id: 'page-settings',    title: 'Settings',    basePath: '/settings',    keywords: [] },
   { id: 'page-help',        title: 'Help',        basePath: '/help',        keywords: ['shortcuts'] },
 ] as const;
