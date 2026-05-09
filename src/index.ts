@@ -39,6 +39,7 @@ import { sessionCommand } from './commands/session.js';
 import { worktreeCommand } from './commands/worktree.js';
 import { resourceCommand } from './commands/resource.js';
 import { memoryCommand } from './commands/memory.js';
+import { lsCommand } from './commands/ls.js';
 import { getDefaultCommandName } from './cli-default-command.js';
 import { maybePromptInstall } from './utils/npx-prompt.js';
 import { readPackageVersion } from './utils/version.js';
@@ -675,6 +676,7 @@ program.addCommand(sessionCommand);
 program.addCommand(worktreeCommand);
 program.addCommand(resourceCommand);
 program.addCommand(memoryCommand);
+program.addCommand(lsCommand);
 
 // Default to dashboard when no command is given
 if (process.argv.length <= 2) {
