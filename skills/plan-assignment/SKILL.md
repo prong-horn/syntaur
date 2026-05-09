@@ -99,27 +99,48 @@ Body sections:
 
 If the target file already exists (only possible for `plan.md` on first re-run against a scaffolded-but-empty plan), preserve the frontmatter and replace only the body, flipping `status` from `draft` to `in_progress` and updating `updated`.
 
-### 5c. Update assignment.md Todos
+### 5c. Update assignment.md Todos (four-todo cycle)
 
-Read `<assignmentDir>/assignment.md` and locate the `## Todos` section.
+Read `<assignmentDir>/assignment.md` and locate the `## Todos` section. Per
+the **Create-and-Plan-Assignment** playbook, every plan version uses a
+four-todo cycle: Create / Review / Implement / Review implementation.
 
-1. **Supersede prior plan todos.** For every unchecked line matching `- [ ] Execute [<label>](./plan.md)` or `- [ ] Execute [<label>](./plan-v<N>.md)`, rewrite as:
-
-   ```
-   - [x] ~~Execute [<label>](./<old-plan-filename>)~~ (superseded by <versionLabel>)
-   ```
-
-   Never delete the old line — preserve history.
-
-2. **Append the new plan todo.** Add a new line to the end of `## Todos`:
+1. **Supersede the prior plan's four-todo cycle.** For every line referencing
+   the prior plan file (`./plan.md` or `./plan-v<N-1>.md`) — both the older
+   single-line `Execute [...]` form AND the four-todo-cycle lines (Create /
+   Review / Implement / Review implementation of) — rewrite as:
 
    ```
-   - [ ] Execute [<versionLabel>](./<planFilename>)
+   - [x] ~~<original line body>~~ (superseded by <versionLabel>)
    ```
 
-3. **Missing-section fallback.** If `## Todos` does not exist (legacy assignment predating this convention), insert it immediately after `## Acceptance Criteria` with a short guidance HTML comment followed by the new todo line.
+   Mark the checkbox `[x]` and wrap the body in `~~...~~`. Never delete any
+   prior todo — preserve history.
+
+2. **Append the new four-todo cycle.** Add four lines to the end of
+   `## Todos`, replacing `<versionLabel>` with the human label (e.g.
+   `plan v2`) and `<planFilename>` with the new file (e.g. `plan-v2.md`):
+
+   ```
+   - [ ] Create [<versionLabel>](./<planFilename>)
+   - [ ] Review [<versionLabel>](./<planFilename>)
+   - [ ] Implement [<versionLabel>](./<planFilename>)
+   - [ ] Review implementation of [<versionLabel>](./<planFilename>)
+   ```
+
+   For the first plan ever (`plan.md`), the label is `plan` and the four todos
+   point at `./plan.md`.
+
+3. **Missing-section fallback.** If `## Todos` does not exist (legacy
+   assignment predating this convention), insert it immediately after
+   `## Acceptance Criteria` with a short guidance HTML comment followed by
+   the new four-todo cycle.
 
 Also refresh the assignment frontmatter `updated` timestamp.
+
+> **Note:** the `syntaur plan version` CLI verb (used by the `replan` skill)
+> applies this exact same four-todo-cycle supersede pattern — `plan-assignment`
+> and `replan` are now in lockstep on this convention.
 
 ## Step 6: Report to User
 
