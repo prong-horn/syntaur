@@ -135,6 +135,29 @@ describe('syntaur plan version', () => {
     expect(assignment.match(/Create \[plan\]/g)?.length).toBe(1);
   });
 
+  it('does NOT rewrite non-canonical checkbox lines that happen to reference the old plan link', async () => {
+    const customAssignment = ASSIGNMENT_MD.replace(
+      '- [ ] Implement [plan](./plan.md)\n- [ ] Review implementation of [plan](./plan.md)',
+      `- [ ] Implement [plan](./plan.md)
+- [ ] Review implementation of [plan](./plan.md)
+- [ ] Custom follow-up referencing [plan](./plan.md) in prose`,
+    );
+    await writeFile(resolve(assignmentDir, 'assignment.md'), customAssignment);
+    const result = await runCli(
+      ['plan', 'version', '--assignment', 'demo', '--project', 'p'],
+      syntaurHome,
+      syntaurHome,
+    );
+    expect(result.code, result.stderr).toBe(0);
+    const updated = await readFile(resolve(assignmentDir, 'assignment.md'), 'utf-8');
+    // Custom non-cycle line is left intact.
+    expect(updated).toContain(
+      '- [ ] Custom follow-up referencing [plan](./plan.md) in prose',
+    );
+    // Canonical cycle lines ARE superseded.
+    expect(updated).toMatch(/- \[x\] ~~Create \[plan\]\(\.\/plan\.md\)~~ \(superseded/);
+  });
+
   it('picks plan-v3.md when plan-v2.md already exists (no clobber)', async () => {
     await writeFile(resolve(assignmentDir, 'plan-v2.md'), 'existing v2 body');
     const result = await runCli(

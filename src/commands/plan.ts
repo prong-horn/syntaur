@@ -117,31 +117,36 @@ function rewriteAssignmentTodos(
   const newLabel = planLinkText(newVersion);
   const supersededTag = `(superseded by plan-v${newVersion})`;
 
+  // Only the four canonical four-todo-cycle verbs are eligible for supersede
+  // rewriting. Any other checkbox in `## Todos` that happens to mention the
+  // old plan link (e.g. a prose-style follow-up like "verify [plan]…")
+  // is left untouched per the Plan Versioning playbook.
+  const CYCLE_VERB_PATTERN =
+    /^(\s*-\s*\[[ xX]\]\s*)(Create|Review|Implement|Review implementation of)(\s+\[)/;
+
   let rewrote = 0;
   for (let i = todosHeaderIdx + 1; i < endIdx; i++) {
     const line = lines[i];
-    // Match a todo line referencing the old plan file. Patterns include both
-    // `- [ ] Create [plan](./plan.md)` and `- [x] Create [plan](./plan.md)`.
-    if (line.includes(oldLink) && /^\s*-\s*\[[ xX]\]/.test(line)) {
-      // Already-superseded lines get skipped.
-      if (line.includes('(superseded by plan-v')) continue;
-      // Strikethrough the existing label, mark done, append superseded tag.
-      // Replace the leading `- [ ]` or `- [x]` with `- [x]`.
-      let next = line.replace(/^(\s*-\s*)\[[ xX]\]/, '$1[x]');
-      // Wrap the body text after the checkbox in `~~...~~` if not already wrapped.
-      next = next.replace(
-        /^(\s*-\s*\[x\]\s*)(.*)$/,
-        (_m, prefix: string, rest: string) => {
-          const body = rest.endsWith(' ') ? rest.trimEnd() : rest;
-          if (body.startsWith('~~') && body.endsWith('~~')) {
-            return `${prefix}${body} ${supersededTag}`;
-          }
-          return `${prefix}~~${body}~~ ${supersededTag}`;
-        },
-      );
-      lines[i] = next;
-      rewrote += 1;
-    }
+    if (!line.includes(oldLink)) continue;
+    if (!CYCLE_VERB_PATTERN.test(line)) continue;
+    // Already-superseded lines get skipped.
+    if (line.includes('(superseded by plan-v')) continue;
+    // Strikethrough the existing label, mark done, append superseded tag.
+    // Replace the leading `- [ ]` or `- [x]` with `- [x]`.
+    let next = line.replace(/^(\s*-\s*)\[[ xX]\]/, '$1[x]');
+    // Wrap the body text after the checkbox in `~~...~~` if not already wrapped.
+    next = next.replace(
+      /^(\s*-\s*\[x\]\s*)(.*)$/,
+      (_m, prefix: string, rest: string) => {
+        const body = rest.endsWith(' ') ? rest.trimEnd() : rest;
+        if (body.startsWith('~~') && body.endsWith('~~')) {
+          return `${prefix}${body} ${supersededTag}`;
+        }
+        return `${prefix}~~${body}~~ ${supersededTag}`;
+      },
+    );
+    lines[i] = next;
+    rewrote += 1;
   }
 
   // Append the new four-todo cycle just before endIdx, keeping a blank line if needed.
