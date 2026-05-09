@@ -82,10 +82,12 @@ export async function validateAssignmentFile(
   if (!parsed.updated) errors.push('Missing or empty `updated` field.');
   else if (!ISO_DATE.test(parsed.updated))
     warnings.push(`Field \`updated\` is not ISO 8601: "${parsed.updated}".`);
-  // Workspace block: all four fields must exist (may be null) per
-  // src/templates/assignment.ts.
+  // Workspace block: parseWorkspace fills nulls for absent fields, so we have
+  // to check the raw frontmatter source for actual key presence.
+  const fmMatch = content.match(/^---\n([\s\S]*?)\n---/);
+  const fmText = fmMatch ? fmMatch[1] : '';
   for (const key of REQUIRED_WORKSPACE_FIELDS) {
-    if (!(key in parsed.workspace)) {
+    if (!new RegExp(`^\\s+${key}:`, 'm').test(fmText)) {
       errors.push(`Workspace block is missing required field \`${key}\`.`);
     }
   }
