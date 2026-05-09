@@ -69,6 +69,26 @@ describe('syntaur memory add', () => {
     expect(indexContent).toContain('| [Worktree convention](./worktree-convention.md) |');
   });
 
+  it('escapes embedded double quotes in source/scope/sourceAssignment', async () => {
+    const result = await runCli(
+      [
+        'memory', 'add',
+        '--project', 'p',
+        '--name', 'Mem',
+        '--source', 'has "quotes" inside',
+        '--scope', 'project "scoped"',
+        '--source-assignment', 'slug-with-"quotes"',
+        '--slug', 'q-test',
+      ],
+      syntaurHome,
+    );
+    expect(result.code, result.stderr).toBe(0);
+    const content = await readFile(resolve(projectDir, 'memories', 'q-test.md'), 'utf-8');
+    expect(content).toContain('source: "has \\"quotes\\" inside"');
+    expect(content).toContain('scope: "project \\"scoped\\""');
+    expect(content).toContain('sourceAssignment: "slug-with-\\"quotes\\""');
+  });
+
   it('refuses to overwrite without --force', async () => {
     await runCli(['memory', 'add', '--project', 'p', '--name', 'Mem', '--source', 'x'], syntaurHome);
     const r = await runCli(['memory', 'add', '--project', 'p', '--name', 'Mem', '--source', 'x'], syntaurHome);

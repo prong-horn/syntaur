@@ -69,6 +69,26 @@ describe('syntaur resource add', () => {
     expect(indexContent).toContain('| [Grafana API Latency](./grafana-api-latency.md) |');
   });
 
+  it('escapes embedded double quotes in name/source/category', async () => {
+    const result = await runCli(
+      [
+        'resource', 'add',
+        '--project', 'p',
+        '--name', 'Has "Quotes" In Name',
+        '--source', 'note: includes a "quoted" word',
+        '--category', 'misc "tag"',
+        '--slug', 'quote-test',
+      ],
+      syntaurHome,
+    );
+    expect(result.code, result.stderr).toBe(0);
+    const slugFile = resolve(projectDir, 'resources', 'quote-test.md');
+    const slugContent = await readFile(slugFile, 'utf-8');
+    expect(slugContent).toContain('name: "Has \\"Quotes\\" In Name"');
+    expect(slugContent).toContain('source: "note: includes a \\"quoted\\" word"');
+    expect(slugContent).toContain('category: "misc \\"tag\\""');
+  });
+
   it('refuses to overwrite without --force', async () => {
     await runCli(['resource', 'add', '--project', 'p', '--name', 'Same', '--source', 's'], syntaurHome);
     const r = await runCli(['resource', 'add', '--project', 'p', '--name', 'Same', '--source', 's'], syntaurHome);

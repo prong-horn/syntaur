@@ -27,6 +27,10 @@ function parseList(value?: string): string[] {
     .filter((v) => v.length > 0);
 }
 
+function yamlQuote(value: string): string {
+  return `"${value.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
+}
+
 function renderResourceFile(opts: {
   name: string;
   source: string;
@@ -40,9 +44,9 @@ function renderResourceFile(opts: {
       ? '[]'
       : `\n${opts.relatedAssignments.map((a) => `  - ${a}`).join('\n')}`;
   return `---
-name: "${opts.name.replace(/"/g, '\\"')}"
-category: "${opts.category}"
-source: "${opts.source}"
+name: ${yamlQuote(opts.name)}
+category: ${yamlQuote(opts.category)}
+source: ${yamlQuote(opts.source)}
 relatedAssignments:${related}
 created: "${created}"
 updated: "${created}"

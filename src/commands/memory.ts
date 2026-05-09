@@ -28,6 +28,10 @@ function parseList(value?: string): string[] {
     .filter((v) => v.length > 0);
 }
 
+function yamlQuote(value: string): string {
+  return `"${value.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
+}
+
 function renderMemoryFile(opts: {
   name: string;
   source: string;
@@ -42,11 +46,11 @@ function renderMemoryFile(opts: {
       ? '[]'
       : `\n${opts.relatedAssignments.map((a) => `  - ${a}`).join('\n')}`;
   const sourceAssignment =
-    opts.sourceAssignment === null ? 'null' : `"${opts.sourceAssignment.replace(/"/g, '\\"')}"`;
+    opts.sourceAssignment === null ? 'null' : yamlQuote(opts.sourceAssignment);
   return `---
-name: "${opts.name.replace(/"/g, '\\"')}"
-source: "${opts.source}"
-scope: "${opts.scope}"
+name: ${yamlQuote(opts.name)}
+source: ${yamlQuote(opts.source)}
+scope: ${yamlQuote(opts.scope)}
 sourceAssignment: ${sourceAssignment}
 relatedAssignments:${related}
 created: "${created}"
