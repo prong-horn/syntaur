@@ -226,12 +226,18 @@ function computeWorktreeDefaults(opts: {
     ? `syntaur/${opts.projectSlug}/${opts.assignmentSlug}`
     : `syntaur/${opts.assignmentSlug}`;
   const parentBranch = opts.existing.parentBranch ?? detectCurrentBranch() ?? 'main';
-  const worktreeBase = resolve(
-    syntaurRoot(),
-    'worktrees',
-    opts.projectSlug || 'standalone',
-    opts.assignmentSlug,
-  );
+  // Repo-local convention: `<repository>/.worktrees/<branch>`. Falls back to
+  // the legacy `~/.syntaur/worktrees/<project>/<assignment>` form when the
+  // repository can't be detected so we never produce a path under the wrong
+  // tree.
+  const worktreeBase = repository
+    ? resolve(repository, '.worktrees', opts.assignmentSlug)
+    : resolve(
+        syntaurRoot(),
+        'worktrees',
+        opts.projectSlug || 'standalone',
+        opts.assignmentSlug,
+      );
   return {
     ...(repository ? { repository } : {}),
     branch,
