@@ -15,7 +15,7 @@ When answering questions, read the actual source files rather than relying solel
 - **Protocol summary:** `${CLAUDE_PLUGIN_ROOT}/references/protocol-summary.md` (or `~/.claude/skills/syntaur-protocol/references/protocol-summary.md` for the installed skill version)
 - **File ownership:** `${CLAUDE_PLUGIN_ROOT}/references/file-ownership.md`
 - **Plugin manifest:** `${CLAUDE_PLUGIN_ROOT}/.claude-plugin/plugin.json`
-- **Protocol skills (installed by `syntaur install-plugin`):** `~/.claude/skills/{syntaur-protocol,grab-assignment,plan-assignment,complete-assignment,create-assignment,create-project}/`
+- **Protocol skills (installed by `syntaur install-plugin`):** `~/.claude/skills/{syntaur-protocol,grab-assignment,plan-assignment,complete-assignment,create-assignment,create-project,manage-statuses,clear-assignment,save-session-summary,track-session,track-server,replan,resume-session,syntaur-worktree,add-resource,add-memory,list-assignments,log-progress,set-workspace}/`
 - **Protocol skills source (vendored via submodule):** `<syntaur-repo>/vendor/syntaur-skills/skills/` — standalone repo at https://github.com/prong-horn/syntaur-skills
 - **Slash commands (ship in plugin):** `${CLAUDE_PLUGIN_ROOT}/commands/` — thin wrappers that invoke the corresponding installed skill
 - **Hooks:** `${CLAUDE_PLUGIN_ROOT}/hooks/`

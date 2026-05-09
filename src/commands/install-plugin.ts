@@ -226,7 +226,7 @@ export async function installPluginCommand(
   }
 
   console.log('\nThe plugin is now available in Claude Code.');
-  console.log('  Slash commands: /grab-assignment, /plan-assignment, /complete-assignment, /create-assignment, /create-project, /track-session, /clear-assignment, /manage-statuses');
+  console.log('  Slash commands: /grab-assignment, /plan-assignment, /complete-assignment, /create-assignment, /create-project, /track-session, /clear-assignment, /manage-statuses, /replan, /resume-session, /syntaur-worktree, /add-resource, /add-memory, /list-assignments, /log-progress, /set-workspace');
   console.log('  Background: syntaur-protocol skill (auto-invoked)');
   console.log('  Hook: write boundary enforcement (PreToolUse) + SessionStart/End');
 }

@@ -30,6 +30,14 @@ If the global Syntaur Codex plugin is installed, prefer these workflows instead 
 - \`complete-assignment\` -- write the cross-ticket \`handoff.md\` entry, append a final entry to \`progress.md\`, close the session, and transition state
 - \`save-session-summary\` -- write per-session continuity at \`<assignmentDir>/sessions/<sessionId>/summary.md\` for resume across sessions of the same agent. Codex has no \`PreCompact\` hook event — invoke this manually before compaction or session end.
 - \`capture-artifacts\` -- capture typed proof artifacts (screenshot/video/asciinema/http/text) for the active assignment. Criterion linkage is optional. Run \`syntaur proof build\` to render \`proof.html\`.
+- \`resume-session\` -- counterpart to \`save-session-summary\`; loads the latest summary, \`.syntaur/context.json\`, and any open handoff so a fresh session re-orients without re-reading the transcript
+- \`replan\` -- bump the active assignment to a new \`plan-v<N>.md\` per the Plan Versioning playbook (CLI does file ops, skill writes the body)
+- \`syntaur-worktree\` -- atomic worktree creation under \`<repository>/.worktrees/<branch>\` plus assign + start + context binding in one move
+- \`add-resource\` -- register a project-level resource (link to dashboard / doc / ticket); CLI regenerates \`_index.md\` server-side
+- \`add-memory\` -- capture a project-level Syntaur memory; CLI regenerates \`_index.md\` server-side (distinct from user-global Claude Code auto-memory)
+- \`list-assignments\` -- cross-project listing with filters by status, project, tag, age (scriptable; not the interactive \`browse\` TUI)
+- \`log-progress\` -- append a timestamped entry to the active \`progress.md\` and bump frontmatter (Keep Records Updated playbook)
+- \`set-workspace\` -- populate the four \`workspace.*\` fields in \`assignment.md\`; validates via \`syntaur doctor --assignment --json\` before writing
 - \`track-session\` -- manage tracked tmux sessions for the dashboard
 
 If the plugin is unavailable, follow the same workflow manually with the \`syntaur\` CLI and keep the protocol files current yourself.
