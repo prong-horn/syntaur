@@ -76,13 +76,36 @@ assignment (the file should always exist for an in-progress assignment).
 
 ## Step 5: Write the file
 
-Write back the file with the updated frontmatter, the existing body, and the
-new entry appended at the end (with one blank line between the prior content
-and the new entry). Use `cat <<EOF >>` semantics OR rewrite the whole file
-— either is fine as long as the final content is correct.
+Write back the file with the updated frontmatter and the new entry **prepended**
+to the body (newest first), per the Keep Records Updated playbook and
+`skills/syntaur-protocol/references/protocol-summary.md`. Reverse-chronological
+order: the new `## <ISO 8601 timestamp>` heading sits immediately after the
+`# Progress` H1, with one blank line separating it from any prior entry.
+
+Layout:
+
+```markdown
+# Progress
+
+## <new ISO timestamp>
+
+<new entry body>
+
+## <prior ISO timestamp>
+
+<prior entry body>
+
+## <even-older ISO timestamp>
+
+<even-older entry body>
+```
 
 If the existing body is the placeholder text "No progress yet.", replace it
-with the new entry instead of appending after it.
+with the new entry instead of preserving the placeholder.
+
+> **Why prepend:** the dashboard and downstream readers expect the most recent
+> entry first. Appending at the end would silently break the convention
+> documented in `~/.syntaur/playbooks/keep-records-updated.md`.
 
 ## Step 6: Verify schema
 
