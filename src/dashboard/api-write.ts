@@ -316,7 +316,12 @@ export function createWriteRouter(projectsDir: string, assignmentsDir?: string):
       res.status(400).json({ error: 'Invalid memory slug.' });
       return;
     }
-    const document = await getEditableDocument(projectsDir, 'memory', slug, itemSlug);
+    const projectDir = await resolveProjectPath(projectsDir, slug);
+    if (!projectDir) {
+      res.status(404).json({ error: `Project "${slug}" not found` });
+      return;
+    }
+    const document = await getEditableDocument(projectsDir, 'memory', basename(projectDir), itemSlug);
     if (!document) {
       res.status(404).json({ error: 'Memory not found' });
       return;
@@ -331,7 +336,12 @@ export function createWriteRouter(projectsDir: string, assignmentsDir?: string):
       res.status(400).json({ error: 'Invalid resource slug.' });
       return;
     }
-    const document = await getEditableDocument(projectsDir, 'resource', slug, itemSlug);
+    const projectDir = await resolveProjectPath(projectsDir, slug);
+    if (!projectDir) {
+      res.status(404).json({ error: `Project "${slug}" not found` });
+      return;
+    }
+    const document = await getEditableDocument(projectsDir, 'resource', basename(projectDir), itemSlug);
     if (!document) {
       res.status(404).json({ error: 'Resource not found' });
       return;

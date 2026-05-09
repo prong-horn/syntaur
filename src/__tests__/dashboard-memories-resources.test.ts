@@ -436,6 +436,123 @@ This is the new body.
   });
 });
 
+describe('resource hardening (parity with memory)', () => {
+  it('rejects _index as itemSlug on GET detail / PATCH / DELETE', async () => {
+    await createProjectFixture('sample');
+    const router = createWriteRouter(testDir);
+    for (const method of ['get', 'patch', 'delete'] as const) {
+      const res = await invokeRoute(
+        router,
+        method,
+        '/api/projects/:slug/resources/:itemSlug',
+        { slug: 'sample', itemSlug: '_index' },
+        method === 'patch' ? { content: '---\n---\n\nbody\n' } : undefined,
+      );
+      expect(res.statusCode).toBe(400);
+    }
+  });
+
+  it('GET edit rejects _index slug with 400', async () => {
+    const dir = await createProjectFixture('sample');
+    await writeFile(resolve(dir, 'resources', '_index.md'), '# Index', 'utf-8');
+    const router = createWriteRouter(testDir);
+    const res = await invokeRoute(
+      router,
+      'get',
+      '/api/projects/:slug/resources/:itemSlug/edit',
+      { slug: 'sample', itemSlug: '_index' },
+      undefined,
+    );
+    expect(res.statusCode).toBe(400);
+  });
+
+  it('rejects path-traversal-style itemSlug', async () => {
+    await createProjectFixture('sample');
+    const router = createWriteRouter(testDir);
+    const res = await invokeRoute(
+      router,
+      'get',
+      '/api/projects/:slug/resources/:itemSlug',
+      { slug: 'sample', itemSlug: '..' },
+      undefined,
+    );
+    expect(res.statusCode).toBe(400);
+  });
+});
+
+describe('resolveProjectPath fallback (frontmatter slug → dir name)', () => {
+  it('POST with frontmatter slug lands the file in the on-disk directory', async () => {
+    // Project directory `legacy-dir` but project.md `slug: legacy-frontmatter`
+    const projectDir = resolve(testDir, 'legacy-dir');
+    await mkdir(resolve(projectDir, 'memories'), { recursive: true });
+    await writeFile(
+      resolve(projectDir, 'project.md'),
+      `---
+id: project-legacy
+slug: legacy-frontmatter
+title: Legacy Project
+archived: false
+archivedAt: null
+archivedReason: null
+created: "2026-03-20T10:00:00Z"
+updated: "2026-03-20T10:00:00Z"
+tags: []
+---
+
+# Legacy`,
+      'utf-8',
+    );
+
+    const router = createWriteRouter(testDir);
+    const res = await invokeRoute(
+      router,
+      'post',
+      '/api/projects/:slug/memories',
+      { slug: 'legacy-frontmatter' }, // frontmatter slug, not dir name
+      { name: 'Via Frontmatter Slug' },
+    );
+    expect(res.statusCode).toBe(201);
+    expect((res.payload as { projectSlug: string }).projectSlug).toBe('legacy-dir');
+    expect(
+      await fileExists(resolve(projectDir, 'memories', 'via-frontmatter-slug.md')),
+    ).toBe(true);
+  });
+
+  it('GET edit with frontmatter slug returns the document (not 404)', async () => {
+    const projectDir = resolve(testDir, 'legacy-dir');
+    await mkdir(resolve(projectDir, 'memories'), { recursive: true });
+    await writeFile(
+      resolve(projectDir, 'project.md'),
+      `---
+id: project-legacy
+slug: legacy-frontmatter
+title: Legacy Project
+archived: false
+archivedAt: null
+archivedReason: null
+created: "2026-03-20T10:00:00Z"
+updated: "2026-03-20T10:00:00Z"
+tags: []
+---
+
+# Legacy`,
+      'utf-8',
+    );
+    await seedMemory(projectDir, 'pg', 'PG');
+    const router = createWriteRouter(testDir);
+
+    const res = await invokeRoute(
+      router,
+      'get',
+      '/api/projects/:slug/memories/:itemSlug/edit',
+      { slug: 'legacy-frontmatter', itemSlug: 'pg' },
+      undefined,
+    );
+    expect(res.statusCode).toBe(200);
+    expect(res.payload).toMatchObject({ documentType: 'memory' });
+  });
+});
+
 describe('resource CRUD routes (parity)', () => {
   it('round-trip create → detail → patch (body-only) → delete', async () => {
     await createProjectFixture('sample');
