@@ -1,8 +1,8 @@
 import { Router, type Request, type Response } from 'express';
-import { resolve } from 'node:path';
-import { rm, readFile } from 'node:fs/promises';
+import { resolve, basename } from 'node:path';
+import { rm, readFile, open as fsOpen } from 'node:fs/promises';
 import { executeTransition } from '../lifecycle/index.js';
-import { isValidSlug } from '../utils/slug.js';
+import { isValidSlug, slugify } from '../utils/slug.js';
 import { generateId } from '../utils/uuid.js';
 import { nowTimestamp } from '../utils/timestamp.js';
 import { ensureDir, writeFileForce, fileExists } from '../utils/fs.js';
@@ -10,8 +10,10 @@ import {
   parseAssignmentFull,
   parseDecisionRecord,
   parseHandoff,
+  parseMemory,
   parseProject,
   parsePlan,
+  parseResource,
   parseScratchpad,
 } from './parser.js';
 import { toggleAcceptanceCriterion } from './acceptance-criteria.js';
@@ -20,8 +22,11 @@ import {
   getAssignmentDetailById,
   getEditableDocument,
   getEditableDocumentById,
+  getMemoryDetail,
   getProjectDetail,
+  getResourceDetail,
   getStatusConfig,
+  resolveProjectPath,
 } from './api.js';
 import { resolveAssignmentById } from '../utils/assignment-resolver.js';
 import { renderProgress } from '../templates/index.js';
@@ -35,6 +40,8 @@ import {
   renderStatus,
   renderResourcesIndex,
   renderMemoriesIndex,
+  renderMemoryStub,
+  renderResourceStub,
   renderAssignment,
   renderScratchpad,
   renderHandoff,
@@ -301,6 +308,264 @@ export function createWriteRouter(projectsDir: string, assignmentsDir?: string):
     }
     res.json(document);
   });
+
+  router.get('/api/projects/:slug/memories/:itemSlug/edit', async (req: Request, res: Response) => {
+    const slug = getParam(req.params.slug);
+    const itemSlug = getParam(req.params.itemSlug);
+    if (!isValidSlug(itemSlug)) {
+      res.status(400).json({ error: 'Invalid memory slug.' });
+      return;
+    }
+    const projectDir = await resolveProjectPath(projectsDir, slug);
+    if (!projectDir) {
+      res.status(404).json({ error: `Project "${slug}" not found` });
+      return;
+    }
+    const document = await getEditableDocument(projectsDir, 'memory', basename(projectDir), itemSlug);
+    if (!document) {
+      res.status(404).json({ error: 'Memory not found' });
+      return;
+    }
+    res.json(document);
+  });
+
+  router.get('/api/projects/:slug/resources/:itemSlug/edit', async (req: Request, res: Response) => {
+    const slug = getParam(req.params.slug);
+    const itemSlug = getParam(req.params.itemSlug);
+    if (!isValidSlug(itemSlug)) {
+      res.status(400).json({ error: 'Invalid resource slug.' });
+      return;
+    }
+    const projectDir = await resolveProjectPath(projectsDir, slug);
+    if (!projectDir) {
+      res.status(404).json({ error: `Project "${slug}" not found` });
+      return;
+    }
+    const document = await getEditableDocument(projectsDir, 'resource', basename(projectDir), itemSlug);
+    if (!document) {
+      res.status(404).json({ error: 'Resource not found' });
+      return;
+    }
+    res.json(document);
+  });
+
+  // ----- Memory / Resource CRUD ----------------------------------------------
+  // The two types share an identical contract; `kind` parameterizes the folder
+  // and stub renderer.
+
+  type ItemKind = 'memory' | 'resource';
+
+  function itemFolder(kind: ItemKind): 'memories' | 'resources' {
+    return kind === 'memory' ? 'memories' : 'resources';
+  }
+
+  function renderItemStub(
+    kind: ItemKind,
+    params: { slug: string; name: string; projectSlug: string; timestamp: string },
+  ): string {
+    return kind === 'memory' ? renderMemoryStub(params) : renderResourceStub(params);
+  }
+
+  /** Replace the body of a stub (everything after the closing frontmatter) with a custom body. */
+  function replaceStubBody(stub: string, body: string): string {
+    const match = stub.match(/^(---\r?\n[\s\S]*?\r?\n---\r?\n)/);
+    if (!match) return stub; // shouldn't happen — stub always has frontmatter
+    return `${match[1]}\n${body.startsWith('\n') ? body.slice(1) : body}${body.endsWith('\n') ? '' : '\n'}`;
+  }
+
+  /** Extract the verbatim frontmatter block (including the surrounding `---` lines). */
+  function extractFrontmatterBlock(content: string): string | null {
+    const match = content.match(/^(---\r?\n[\s\S]*?\r?\n---\r?\n)/);
+    return match ? match[1] : null;
+  }
+
+  function parseItem(kind: ItemKind, content: string) {
+    return kind === 'memory' ? parseMemory(content) : parseResource(content);
+  }
+
+  async function getItemDetail(kind: ItemKind, projectSlug: string, itemSlug: string) {
+    return kind === 'memory'
+      ? await getMemoryDetail(projectsDir, projectSlug, itemSlug)
+      : await getResourceDetail(projectsDir, projectSlug, itemSlug);
+  }
+
+  /**
+   * Resolve the on-disk project directory for a slug.
+   * Tries the directory-name match first (the typical case); falls back to scanning every
+   * project for a frontmatter-slug match (covers fixtures/legacy projects whose folder name
+   * differs from `project.md` `slug`).
+   */
+  async function resolveProjectDir(projectSlug: string): Promise<string | null> {
+    return resolveProjectPath(projectsDir, projectSlug);
+  }
+
+  /** 400 if the slug param wouldn't pass `isValidSlug`. Returns true if the response was sent. */
+  function rejectBadItemSlug(itemSlug: string, kind: ItemKind, res: Response): boolean {
+    if (isValidSlug(itemSlug)) return false;
+    res.status(400).json({
+      error: `Invalid ${kind} slug "${itemSlug}". Slugs must be lowercase letters, numbers, and hyphens only.`,
+    });
+    return true;
+  }
+
+  // GET detail
+  for (const kind of ['memory', 'resource'] as const) {
+    const folder = itemFolder(kind);
+
+    router.get(`/api/projects/:slug/${folder}/:itemSlug`, async (req: Request, res: Response) => {
+      try {
+        const projectSlug = getParam(req.params.slug);
+        const itemSlug = getParam(req.params.itemSlug);
+        if (rejectBadItemSlug(itemSlug, kind, res)) return;
+        const detail = await getItemDetail(kind, projectSlug, itemSlug);
+        if (!detail) {
+          res.status(404).json({ error: `${kind === 'memory' ? 'Memory' : 'Resource'} not found` });
+          return;
+        }
+        res.json(detail);
+      } catch (error) {
+        console.error(`Error fetching ${kind} detail:`, error);
+        res.status(500).json({ error: `Failed to load ${kind}: ${(error as Error).message}` });
+      }
+    });
+
+    // POST — create
+    router.post(`/api/projects/:slug/${folder}`, async (req: Request, res: Response) => {
+      try {
+        const projectSlug = getParam(req.params.slug);
+        const projectDir = await resolveProjectDir(projectSlug);
+        if (!projectDir) {
+          res.status(404).json({ error: `Project "${projectSlug}" not found` });
+          return;
+        }
+
+        const body = req.body ?? {};
+        const name = typeof body.name === 'string' ? body.name.trim() : '';
+        if (!name) {
+          res.status(400).json({ error: 'Name is required.' });
+          return;
+        }
+
+        const requestedSlug =
+          typeof body.slug === 'string' && body.slug.trim() ? body.slug.trim() : slugify(name);
+        if (!requestedSlug || !isValidSlug(requestedSlug)) {
+          res.status(400).json({
+            error: `Slug "${requestedSlug}" is invalid. Slugs must be lowercase letters, numbers, and hyphens only.`,
+          });
+          return;
+        }
+
+        const folderPath = resolve(projectDir, folder);
+        await ensureDir(folderPath);
+        const filePath = resolve(folderPath, `${requestedSlug}.md`);
+
+        const timestamp = nowTimestamp();
+        let content = renderItemStub(kind, {
+          slug: requestedSlug,
+          name,
+          projectSlug: basename(projectDir),
+          timestamp,
+        });
+
+        const customBody = typeof body.body === 'string' ? body.body : '';
+        if (customBody.trim()) {
+          content = replaceStubBody(content, customBody);
+        }
+
+        // Atomic create (`wx` flag fails if the file already exists). Closes the race window
+        // where two concurrent POSTs both pass an existence check and the later write wins.
+        try {
+          const handle = await fsOpen(filePath, 'wx');
+          try {
+            await handle.writeFile(content, 'utf-8');
+          } finally {
+            await handle.close();
+          }
+        } catch (err) {
+          if ((err as NodeJS.ErrnoException).code === 'EEXIST') {
+            res.status(409).json({
+              error: `${kind === 'memory' ? 'Memory' : 'Resource'} with slug "${requestedSlug}" already exists in project "${basename(projectDir)}".`,
+            });
+            return;
+          }
+          throw err;
+        }
+
+        res.status(201).json({ slug: requestedSlug, projectSlug: basename(projectDir), content });
+      } catch (error) {
+        console.error(`Error creating ${kind}:`, error);
+        res.status(500).json({ error: `Failed to create ${kind}: ${(error as Error).message}` });
+      }
+    });
+
+    // PATCH — body-only update
+    router.patch(`/api/projects/:slug/${folder}/:itemSlug`, async (req: Request, res: Response) => {
+      try {
+        const projectSlug = getParam(req.params.slug);
+        const itemSlug = getParam(req.params.itemSlug);
+        if (rejectBadItemSlug(itemSlug, kind, res)) return;
+
+        const projectDir = await resolveProjectDir(projectSlug);
+        if (!projectDir) {
+          res.status(404).json({ error: `Project "${projectSlug}" not found` });
+          return;
+        }
+        const filePath = resolve(projectDir, folder, `${itemSlug}.md`);
+        if (!(await fileExists(filePath))) {
+          res.status(404).json({ error: `${kind === 'memory' ? 'Memory' : 'Resource'} not found` });
+          return;
+        }
+
+        const nextContentRaw = requireContent(req, res);
+        if (!nextContentRaw) return;
+
+        const currentContent = await readFile(filePath, 'utf-8');
+        const frontmatterBlock = extractFrontmatterBlock(currentContent);
+        if (!frontmatterBlock) {
+          res.status(500).json({ error: `${kind} file is malformed (no frontmatter)` });
+          return;
+        }
+
+        const next = parseItem(kind, nextContentRaw);
+        const nextBody = next.body.trimStart();
+
+        let merged = `${frontmatterBlock}\n${nextBody}${nextBody.endsWith('\n') ? '' : '\n'}`;
+        merged = setTopLevelField(merged, 'updated', nowTimestamp());
+
+        await writeFileForce(filePath, merged);
+        const detail = await getItemDetail(kind, basename(projectDir), itemSlug);
+        res.json({ [kind]: detail, content: merged });
+      } catch (error) {
+        console.error(`Error updating ${kind}:`, error);
+        res.status(500).json({ error: `Failed to update ${kind}: ${(error as Error).message}` });
+      }
+    });
+
+    // DELETE
+    router.delete(`/api/projects/:slug/${folder}/:itemSlug`, async (req: Request, res: Response) => {
+      try {
+        const projectSlug = getParam(req.params.slug);
+        const itemSlug = getParam(req.params.itemSlug);
+        if (rejectBadItemSlug(itemSlug, kind, res)) return;
+
+        const projectDir = await resolveProjectDir(projectSlug);
+        if (!projectDir) {
+          res.status(404).json({ error: `Project "${projectSlug}" not found` });
+          return;
+        }
+        const filePath = resolve(projectDir, folder, `${itemSlug}.md`);
+        if (!(await fileExists(filePath))) {
+          res.status(404).json({ error: `${kind === 'memory' ? 'Memory' : 'Resource'} not found` });
+          return;
+        }
+        await rm(filePath);
+        res.status(204).end();
+      } catch (error) {
+        console.error(`Error deleting ${kind}:`, error);
+        res.status(500).json({ error: `Failed to delete ${kind}: ${(error as Error).message}` });
+      }
+    });
+  }
 
   router.post('/api/projects', async (req: Request, res: Response) => {
     try {

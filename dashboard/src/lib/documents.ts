@@ -50,6 +50,13 @@ export interface PlaybookEditorState {
   body: string;
 }
 
+/** Body-only editor state. Frontmatter is preserved server-side on save. */
+export interface MemoryEditorState {
+  body: string;
+}
+
+export type ResourceEditorState = MemoryEditorState;
+
 function parseFrontmatterModel(content: string): FrontmatterModel {
   const match = content.match(/^---\n([\s\S]*?)\n---\n?/);
   if (!match) {
@@ -335,6 +342,34 @@ export function updatePlaybookContent(
   return serializeFrontmatterModel(model);
 }
 
+export function parseMemoryEditorState(content: string): MemoryEditorState {
+  const model = parseFrontmatterModel(content);
+  return { body: model.body };
+}
+
+export function parseResourceEditorState(content: string): ResourceEditorState {
+  return parseMemoryEditorState(content);
+}
+
+/** Body-only update — preserves frontmatter verbatim. Server enforces this; this is local parity. */
+export function updateMemoryContent(
+  content: string,
+  updates: Partial<MemoryEditorState>,
+): string {
+  const model = parseFrontmatterModel(content);
+  if (updates.body !== undefined) {
+    model.body = updates.body;
+  }
+  return serializeFrontmatterModel(model);
+}
+
+export function updateResourceContent(
+  content: string,
+  updates: Partial<ResourceEditorState>,
+): string {
+  return updateMemoryContent(content, updates);
+}
+
 export function normalizeEditorContent(
   type: EditableDocumentType,
   content: string,
@@ -351,6 +386,10 @@ export function normalizeEditorContent(
       return updateScratchpadContent(content, updates as Partial<ScratchpadEditorState>);
     case 'playbook':
       return updatePlaybookContent(content, updates as Partial<PlaybookEditorState>);
+    case 'memory':
+      return updateMemoryContent(content, updates as Partial<MemoryEditorState>);
+    case 'resource':
+      return updateResourceContent(content, updates as Partial<ResourceEditorState>);
     default:
       return content;
   }

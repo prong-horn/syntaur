@@ -1,7 +1,56 @@
+import { escapeYamlString } from '../utils/yaml.js';
+
 export interface IndexStubParams {
   slug: string;
   title: string;
   timestamp: string;
+}
+
+export interface MemoryStubParams {
+  /** File slug (filename without `.md`). */
+  slug: string;
+  name: string;
+  /** Project slug — written into frontmatter for traceability. */
+  projectSlug: string;
+  timestamp: string;
+}
+
+export type ResourceStubParams = MemoryStubParams;
+
+export function renderMemoryStub(params: MemoryStubParams): string {
+  return `---
+type: memory
+name: ${escapeYamlString(params.name)}
+source: claude
+sourceAssignment: null
+relatedAssignments: []
+scope: project
+created: "${params.timestamp}"
+updated: "${params.timestamp}"
+tags: []
+---
+
+# ${params.name}
+
+`;
+}
+
+export function renderResourceStub(params: ResourceStubParams): string {
+  return `---
+type: resource
+name: ${escapeYamlString(params.name)}
+source: claude
+category: documentation
+sourceUrl: null
+sourceAssignment: null
+relatedAssignments: []
+created: "${params.timestamp}"
+updated: "${params.timestamp}"
+---
+
+# ${params.name}
+
+`;
 }
 
 export function renderIndexAssignments(params: IndexStubParams): string {

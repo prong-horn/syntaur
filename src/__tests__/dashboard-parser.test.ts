@@ -446,6 +446,56 @@ Content.`;
   });
 });
 
+describe('renderMemoryStub / renderResourceStub round-trip', () => {
+  it('renderMemoryStub round-trips through parseMemory', async () => {
+    const { renderMemoryStub } = await import('../templates/index-stubs.js');
+    const stub = renderMemoryStub({
+      slug: 'test-slug',
+      name: 'Test Memory',
+      projectSlug: 'sample-project',
+      timestamp: '2026-05-08T13:00:00Z',
+    });
+    const m = parseMemory(stub);
+    expect(m.name).toBe('Test Memory');
+    expect(m.source).toBe('claude');
+    expect(m.scope).toBe('project');
+    expect(m.sourceAssignment).toBeNull();
+    expect(m.relatedAssignments).toEqual([]);
+    expect(m.tags).toEqual([]);
+    expect(m.created).toBe('2026-05-08T13:00:00Z');
+    expect(m.updated).toBe('2026-05-08T13:00:00Z');
+  });
+
+  it('renderResourceStub round-trips through parseResource', async () => {
+    const { renderResourceStub } = await import('../templates/index-stubs.js');
+    const stub = renderResourceStub({
+      slug: 'test-slug',
+      name: 'Test Resource',
+      projectSlug: 'sample-project',
+      timestamp: '2026-05-08T13:00:00Z',
+    });
+    const r = parseResource(stub);
+    expect(r.name).toBe('Test Resource');
+    expect(r.source).toBe('claude');
+    expect(r.category).toBe('documentation');
+    expect(r.relatedAssignments).toEqual([]);
+    expect(r.created).toBe('2026-05-08T13:00:00Z');
+    expect(r.updated).toBe('2026-05-08T13:00:00Z');
+  });
+
+  it('renderMemoryStub round-trips a colon-bearing name', async () => {
+    const { renderMemoryStub } = await import('../templates/index-stubs.js');
+    const stub = renderMemoryStub({
+      slug: 'tricky',
+      name: 'Memory: with colon and ampersand & special',
+      projectSlug: 'sample-project',
+      timestamp: '2026-05-08T13:00:00Z',
+    });
+    const m = parseMemory(stub);
+    expect(m.name).toBe('Memory: with colon and ampersand & special');
+  });
+});
+
 describe('extractMermaidGraph', () => {
   it('extracts mermaid definition from markdown body', () => {
     const body = '# Status\n\n```mermaid\ngraph TD\n    A --> B\n```\n\nFooter.';
