@@ -36,6 +36,7 @@ import { proofCommand } from './commands/proof.js';
 import { requestCommand } from './commands/request.js';
 import { planCommand } from './commands/plan.js';
 import { sessionCommand } from './commands/session.js';
+import { worktreeCommand } from './commands/worktree.js';
 import { getDefaultCommandName } from './cli-default-command.js';
 import { maybePromptInstall } from './utils/npx-prompt.js';
 import { readPackageVersion } from './utils/version.js';
@@ -669,6 +670,7 @@ program.addCommand(agentsCommand);
 program.addCommand(proofCommand);
 program.addCommand(planCommand);
 program.addCommand(sessionCommand);
+program.addCommand(worktreeCommand);
 
 // Default to dashboard when no command is given
 if (process.argv.length <= 2) {
