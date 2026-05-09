@@ -231,7 +231,7 @@ function computeWorktreeDefaults(opts: {
   // repository can't be detected so we never produce a path under the wrong
   // tree.
   const worktreeBase = repository
-    ? resolve(repository, '.worktrees', opts.assignmentSlug)
+    ? resolve(repository, '.worktrees', branch)
     : resolve(
         syntaurRoot(),
         'worktrees',
