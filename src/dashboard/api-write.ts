@@ -1,6 +1,6 @@
 import { Router, type Request, type Response } from 'express';
-import { resolve } from 'node:path';
-import { rm, readFile } from 'node:fs/promises';
+import { resolve, basename } from 'node:path';
+import { rm, readFile, open as fsOpen } from 'node:fs/promises';
 import { executeTransition } from '../lifecycle/index.js';
 import { isValidSlug, slugify } from '../utils/slug.js';
 import { generateId } from '../utils/uuid.js';
@@ -26,6 +26,7 @@ import {
   getProjectDetail,
   getResourceDetail,
   getStatusConfig,
+  resolveProjectPath,
 } from './api.js';
 import { resolveAssignmentById } from '../utils/assignment-resolver.js';
 import { renderProgress } from '../templates/index.js';
@@ -311,6 +312,10 @@ export function createWriteRouter(projectsDir: string, assignmentsDir?: string):
   router.get('/api/projects/:slug/memories/:itemSlug/edit', async (req: Request, res: Response) => {
     const slug = getParam(req.params.slug);
     const itemSlug = getParam(req.params.itemSlug);
+    if (!isValidSlug(itemSlug)) {
+      res.status(400).json({ error: 'Invalid memory slug.' });
+      return;
+    }
     const document = await getEditableDocument(projectsDir, 'memory', slug, itemSlug);
     if (!document) {
       res.status(404).json({ error: 'Memory not found' });
@@ -322,6 +327,10 @@ export function createWriteRouter(projectsDir: string, assignmentsDir?: string):
   router.get('/api/projects/:slug/resources/:itemSlug/edit', async (req: Request, res: Response) => {
     const slug = getParam(req.params.slug);
     const itemSlug = getParam(req.params.itemSlug);
+    if (!isValidSlug(itemSlug)) {
+      res.status(400).json({ error: 'Invalid resource slug.' });
+      return;
+    }
     const document = await getEditableDocument(projectsDir, 'resource', slug, itemSlug);
     if (!document) {
       res.status(404).json({ error: 'Resource not found' });
@@ -370,6 +379,25 @@ export function createWriteRouter(projectsDir: string, assignmentsDir?: string):
       : await getResourceDetail(projectsDir, projectSlug, itemSlug);
   }
 
+  /**
+   * Resolve the on-disk project directory for a slug.
+   * Tries the directory-name match first (the typical case); falls back to scanning every
+   * project for a frontmatter-slug match (covers fixtures/legacy projects whose folder name
+   * differs from `project.md` `slug`).
+   */
+  async function resolveProjectDir(projectSlug: string): Promise<string | null> {
+    return resolveProjectPath(projectsDir, projectSlug);
+  }
+
+  /** 400 if the slug param wouldn't pass `isValidSlug`. Returns true if the response was sent. */
+  function rejectBadItemSlug(itemSlug: string, kind: ItemKind, res: Response): boolean {
+    if (isValidSlug(itemSlug)) return false;
+    res.status(400).json({
+      error: `Invalid ${kind} slug "${itemSlug}". Slugs must be lowercase letters, numbers, and hyphens only.`,
+    });
+    return true;
+  }
+
   // GET detail
   for (const kind of ['memory', 'resource'] as const) {
     const folder = itemFolder(kind);
@@ -378,6 +406,7 @@ export function createWriteRouter(projectsDir: string, assignmentsDir?: string):
       try {
         const projectSlug = getParam(req.params.slug);
         const itemSlug = getParam(req.params.itemSlug);
+        if (rejectBadItemSlug(itemSlug, kind, res)) return;
         const detail = await getItemDetail(kind, projectSlug, itemSlug);
         if (!detail) {
           res.status(404).json({ error: `${kind === 'memory' ? 'Memory' : 'Resource'} not found` });
@@ -394,8 +423,8 @@ export function createWriteRouter(projectsDir: string, assignmentsDir?: string):
     router.post(`/api/projects/:slug/${folder}`, async (req: Request, res: Response) => {
       try {
         const projectSlug = getParam(req.params.slug);
-        const projectDir = resolve(projectsDir, projectSlug);
-        if (!(await fileExists(resolve(projectDir, 'project.md')))) {
+        const projectDir = await resolveProjectDir(projectSlug);
+        if (!projectDir) {
           res.status(404).json({ error: `Project "${projectSlug}" not found` });
           return;
         }
@@ -419,18 +448,12 @@ export function createWriteRouter(projectsDir: string, assignmentsDir?: string):
         const folderPath = resolve(projectDir, folder);
         await ensureDir(folderPath);
         const filePath = resolve(folderPath, `${requestedSlug}.md`);
-        if (await fileExists(filePath)) {
-          res.status(409).json({
-            error: `${kind === 'memory' ? 'Memory' : 'Resource'} with slug "${requestedSlug}" already exists in project "${projectSlug}".`,
-          });
-          return;
-        }
 
         const timestamp = nowTimestamp();
         let content = renderItemStub(kind, {
           slug: requestedSlug,
           name,
-          projectSlug,
+          projectSlug: basename(projectDir),
           timestamp,
         });
 
@@ -439,8 +462,26 @@ export function createWriteRouter(projectsDir: string, assignmentsDir?: string):
           content = replaceStubBody(content, customBody);
         }
 
-        await writeFileForce(filePath, content);
-        res.status(201).json({ slug: requestedSlug, projectSlug, content });
+        // Atomic create (`wx` flag fails if the file already exists). Closes the race window
+        // where two concurrent POSTs both pass an existence check and the later write wins.
+        try {
+          const handle = await fsOpen(filePath, 'wx');
+          try {
+            await handle.writeFile(content, 'utf-8');
+          } finally {
+            await handle.close();
+          }
+        } catch (err) {
+          if ((err as NodeJS.ErrnoException).code === 'EEXIST') {
+            res.status(409).json({
+              error: `${kind === 'memory' ? 'Memory' : 'Resource'} with slug "${requestedSlug}" already exists in project "${basename(projectDir)}".`,
+            });
+            return;
+          }
+          throw err;
+        }
+
+        res.status(201).json({ slug: requestedSlug, projectSlug: basename(projectDir), content });
       } catch (error) {
         console.error(`Error creating ${kind}:`, error);
         res.status(500).json({ error: `Failed to create ${kind}: ${(error as Error).message}` });
@@ -452,7 +493,14 @@ export function createWriteRouter(projectsDir: string, assignmentsDir?: string):
       try {
         const projectSlug = getParam(req.params.slug);
         const itemSlug = getParam(req.params.itemSlug);
-        const filePath = resolve(projectsDir, projectSlug, folder, `${itemSlug}.md`);
+        if (rejectBadItemSlug(itemSlug, kind, res)) return;
+
+        const projectDir = await resolveProjectDir(projectSlug);
+        if (!projectDir) {
+          res.status(404).json({ error: `Project "${projectSlug}" not found` });
+          return;
+        }
+        const filePath = resolve(projectDir, folder, `${itemSlug}.md`);
         if (!(await fileExists(filePath))) {
           res.status(404).json({ error: `${kind === 'memory' ? 'Memory' : 'Resource'} not found` });
           return;
@@ -475,7 +523,7 @@ export function createWriteRouter(projectsDir: string, assignmentsDir?: string):
         merged = setTopLevelField(merged, 'updated', nowTimestamp());
 
         await writeFileForce(filePath, merged);
-        const detail = await getItemDetail(kind, projectSlug, itemSlug);
+        const detail = await getItemDetail(kind, basename(projectDir), itemSlug);
         res.json({ [kind]: detail, content: merged });
       } catch (error) {
         console.error(`Error updating ${kind}:`, error);
@@ -488,7 +536,14 @@ export function createWriteRouter(projectsDir: string, assignmentsDir?: string):
       try {
         const projectSlug = getParam(req.params.slug);
         const itemSlug = getParam(req.params.itemSlug);
-        const filePath = resolve(projectsDir, projectSlug, folder, `${itemSlug}.md`);
+        if (rejectBadItemSlug(itemSlug, kind, res)) return;
+
+        const projectDir = await resolveProjectDir(projectSlug);
+        if (!projectDir) {
+          res.status(404).json({ error: `Project "${projectSlug}" not found` });
+          return;
+        }
+        const filePath = resolve(projectDir, folder, `${itemSlug}.md`);
         if (!(await fileExists(filePath))) {
           res.status(404).json({ error: `${kind === 'memory' ? 'Memory' : 'Resource'} not found` });
           return;

@@ -337,6 +337,79 @@ This is the new body.
     expect(fileContent).not.toContain('updated: "2026-04-01T10:00:00Z"');
   });
 
+  it('rejects _index as itemSlug on GET detail / PATCH / DELETE', async () => {
+    await createProjectFixture('sample');
+    const router = createWriteRouter(testDir);
+
+    for (const method of ['get', 'patch', 'delete'] as const) {
+      const res = await invokeRoute(
+        router,
+        method,
+        method === 'patch'
+          ? '/api/projects/:slug/memories/:itemSlug'
+          : '/api/projects/:slug/memories/:itemSlug',
+        { slug: 'sample', itemSlug: '_index' },
+        method === 'patch' ? { content: '---\n---\n\nbody\n' } : undefined,
+      );
+      expect(res.statusCode).toBe(400);
+    }
+  });
+
+  it('rejects path-traversal-style itemSlug', async () => {
+    await createProjectFixture('sample');
+    const router = createWriteRouter(testDir);
+
+    const res = await invokeRoute(
+      router,
+      'get',
+      '/api/projects/:slug/memories/:itemSlug',
+      { slug: 'sample', itemSlug: '..' },
+      undefined,
+    );
+    expect(res.statusCode).toBe(400);
+  });
+
+  it('GET edit rejects _index slug with 400 (not 200)', async () => {
+    const dir = await createProjectFixture('sample');
+    // Seed an _index.md to make the path traversable to a real file.
+    await writeFile(resolve(dir, 'memories', '_index.md'), '# Index', 'utf-8');
+    const router = createWriteRouter(testDir);
+
+    const res = await invokeRoute(
+      router,
+      'get',
+      '/api/projects/:slug/memories/:itemSlug/edit',
+      { slug: 'sample', itemSlug: '_index' },
+      undefined,
+    );
+    expect(res.statusCode).toBe(400);
+  });
+
+  it('POST is atomic — concurrent collisions both end up well-defined', async () => {
+    await createProjectFixture('sample');
+    const router = createWriteRouter(testDir);
+
+    const [a, b] = await Promise.all([
+      invokeRoute(
+        router,
+        'post',
+        '/api/projects/:slug/memories',
+        { slug: 'sample' },
+        { name: 'Concurrent' },
+      ),
+      invokeRoute(
+        router,
+        'post',
+        '/api/projects/:slug/memories',
+        { slug: 'sample' },
+        { name: 'Concurrent' },
+      ),
+    ]);
+
+    const codes = [a.statusCode, b.statusCode].sort();
+    expect(codes).toEqual([201, 409]); // Exactly one create wins; the other 409s.
+  });
+
   it('DELETE removes the file; second DELETE 404s', async () => {
     const dir = await createProjectFixture('sample');
     await seedMemory(dir, 'pg', 'PG');

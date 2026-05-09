@@ -1333,6 +1333,22 @@ export async function listAllResources(
   return all;
 }
 
+/**
+ * Resolve a project slug to its on-disk directory path.
+ * Tries the dir-name match first (the typical case); falls back to scanning every project
+ * for a frontmatter-slug match. Returns `null` when no project matches.
+ */
+export async function resolveProjectPath(
+  projectsDir: string,
+  projectSlug: string,
+): Promise<string | null> {
+  const direct = resolve(projectsDir, projectSlug);
+  if (await fileExists(resolve(direct, 'project.md'))) return direct;
+  const records = await listProjectRecords(projectsDir);
+  const match = records.find((r) => r.summary.slug === projectSlug);
+  return match ? match.projectPath : null;
+}
+
 export async function getMemoryDetail(
   projectsDir: string,
   projectSlug: string,
