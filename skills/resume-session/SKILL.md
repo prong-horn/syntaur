@@ -37,8 +37,9 @@ Run `syntaur session resume`. The CLI:
    is set — telling the user to run `grab-assignment` first.
 3. Otherwise scans `<assignmentDir>/sessions/<sid>/summary.md` and picks the
    most recently modified.
-4. Scans `<assignmentDir>/handoffs/*.md` (when present) for any with
-   `status: open` frontmatter and reports the latest open one.
+4. Reads `<assignmentDir>/handoff.md` (the canonical single-file handoff per
+   assignment, managed by `complete-assignment`) and reports it if its body
+   has been written beyond the scaffolded placeholder.
 5. Prints a human-readable orientation block (project, assignment, branch,
    workspace root, latest summary path, open handoff, warnings).
 

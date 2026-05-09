@@ -45,23 +45,19 @@ async function findLatestSessionSummary(
 }
 
 async function findOpenHandoff(assignmentDir: string): Promise<string | null> {
-  const handoffsDir = resolve(assignmentDir, 'handoffs');
-  if (!(await fileExists(handoffsDir))) return null;
-  const entries = await readdir(handoffsDir, { withFileTypes: true });
-  let latest: { name: string; mtime: Date } | null = null;
-  for (const entry of entries) {
-    if (!entry.isFile() || !entry.name.endsWith('.md')) continue;
-    const fullPath = resolve(handoffsDir, entry.name);
-    const content = await readFile(fullPath, 'utf-8');
-    const statusMatch = content.match(/^status:\s*(.+?)\s*$/m);
-    const status = statusMatch ? statusMatch[1].trim() : '';
-    if (status !== 'open') continue;
-    const st = await stat(fullPath);
-    if (latest === null || st.mtime.getTime() > latest.mtime.getTime()) {
-      latest = { name: entry.name, mtime: st.mtime };
-    }
-  }
-  return latest ? resolve(handoffsDir, latest.name) : null;
+  // The Syntaur protocol uses a single root handoff.md per assignment (managed
+  // by complete-assignment). Surface it whenever it exists and has any body
+  // content beyond the placeholder so the resuming agent reads the latest
+  // outbound baton. We treat any non-empty handoff.md as a signal — there is
+  // currently no per-handoff `status: open` flag in the canonical schema.
+  const handoffPath = resolve(assignmentDir, 'handoff.md');
+  if (!(await fileExists(handoffPath))) return null;
+  const content = await readFile(handoffPath, 'utf-8');
+  const body = content.replace(/^---[\s\S]*?\n---\n?/, '').trim();
+  if (body.length === 0) return null;
+  // Skip the placeholder body that create-assignment scaffolds.
+  if (/^<!--[\s\S]*-->$/.test(body)) return null;
+  return handoffPath;
 }
 
 interface ResumeOptions {

@@ -80,6 +80,38 @@ describe('syntaur session resume', () => {
     expect(result.stdout).toContain(sid);
   });
 
+  it('reports the canonical root handoff.md when its body is written', async () => {
+    await mkdir(resolve(workspaceRoot, '.syntaur'), { recursive: true });
+    await writeFile(
+      resolve(workspaceRoot, '.syntaur', 'context.json'),
+      JSON.stringify({ projectSlug: 'p', assignmentSlug: 'demo', assignmentDir }),
+    );
+    await writeFile(
+      resolve(assignmentDir, 'handoff.md'),
+      `---\nassignment: demo\nhandoffCount: 1\n---\n\n## Handoff 1: 2026-05-08T12:00:00Z\n\nReal content.\n`,
+    );
+    const result = await runCli(['session', 'resume', '--json'], workspaceRoot, syntaurHome);
+    expect(result.code, result.stderr).toBe(0);
+    const data = JSON.parse(result.stdout);
+    expect(data.openHandoff).toBe(resolve(assignmentDir, 'handoff.md'));
+  });
+
+  it('ignores a placeholder-only handoff.md', async () => {
+    await mkdir(resolve(workspaceRoot, '.syntaur'), { recursive: true });
+    await writeFile(
+      resolve(workspaceRoot, '.syntaur', 'context.json'),
+      JSON.stringify({ projectSlug: 'p', assignmentSlug: 'demo', assignmentDir }),
+    );
+    await writeFile(
+      resolve(assignmentDir, 'handoff.md'),
+      `---\nassignment: demo\nhandoffCount: 0\n---\n\n<!-- Placeholder for cross-ticket handoff. -->`,
+    );
+    const result = await runCli(['session', 'resume', '--json'], workspaceRoot, syntaurHome);
+    expect(result.code, result.stderr).toBe(0);
+    const data = JSON.parse(result.stdout);
+    expect(data.openHandoff).toBeNull();
+  });
+
   it('is idempotent — running twice produces the same output and does not mutate state', async () => {
     await mkdir(resolve(workspaceRoot, '.syntaur'), { recursive: true });
     await writeFile(
