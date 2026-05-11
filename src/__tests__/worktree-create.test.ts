@@ -74,6 +74,10 @@ describe('syntaur worktree create', () => {
     repo = resolve(scratch, 'repo');
     await mkdir(repo);
     git(repo, ['init', '-q', '-b', 'main']);
+    // CI runners have no global git identity — configure locally so the
+    // initial commit doesn't bail with "Author identity unknown".
+    git(repo, ['config', 'user.email', 'test@example.com']);
+    git(repo, ['config', 'user.name', 'Test']);
     git(repo, ['commit', '--allow-empty', '-m', 'init', '--quiet']);
   });
 
