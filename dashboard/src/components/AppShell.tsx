@@ -177,8 +177,13 @@ function ShellSidebar({
     <div className="flex h-full flex-col gap-3">
       <div className="space-y-3">
         <Link to="/" className="inline-flex items-center gap-3" onClick={onNavigate}>
-          <span className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-card text-background shadow-sm ring-1 ring-border/60">
-            <img src="/syntaur-logo.svg" alt="Syntaur" width={20} height={20} className="h-5 w-5" />
+          <span className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-card text-foreground shadow-sm ring-1 ring-border/60">
+            <svg viewBox="0 0 43 51" aria-label="Syntaur" role="img" className="h-4 w-auto" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+              <path d="M13 2C13 0.89543 13.8954 0 15 0H41C42.1046 0 43 0.895431 43 2V12C43 13.1046 42.1046 14 41 14H13V2Z" />
+              <path d="M0 15C0 13.8954 0.895431 13 2 13H14V25C14 26.1046 13.1046 27 12 27H2C0.89543 27 0 26.1046 0 25V15Z" />
+              <path d="M30 49C30 50.1046 29.1046 51 28 51L2 51C0.89543 51 0 50.1046 0 49L0 39C0 37.8954 0.895431 37 2 37L30 37L30 49Z" />
+              <path d="M42.9646 36C42.9646 37.1046 42.0692 38 40.9646 38H28.9646V26C28.9646 24.8954 29.86 24 30.9646 24H40.9646C42.0692 24 42.9646 24.8954 42.9646 26V36Z" />
+            </svg>
           </span>
           <div>
             <p className="text-sm font-semibold text-foreground">Syntaur</p>
