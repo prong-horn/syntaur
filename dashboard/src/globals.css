@@ -65,6 +65,23 @@
     /* Modal/scrim overlay */
     --overlay: 8% 0.005 280;
     --radius: 0.5rem;
+    --radius-frame: 0.75rem;
+
+    /* Tracking scale (negative letter-spacing for display type) */
+    --tracking-hero: -0.06em;
+    --tracking-display: -0.04em;
+    --tracking-heading: -0.03em;
+
+    /* Chrome — light mode: hairline border + soft drop (no inset glow) */
+    --ring-border: 0 0 0 1px oklch(var(--border));
+    --ring-border-strong: 0 0 0 1px oklch(72% 0.012 260);
+    --card-shadow: 0 0 0 1px oklch(var(--border)), 0 1px 2px oklch(0% 0 0 / 0.04), 0 4px 12px oklch(0% 0 0 / 0.04);
+
+    /* Motion */
+    --duration-fast: 150ms;
+    --duration-normal: 300ms;
+    --ease-out-quart: cubic-bezier(0.25, 1, 0.5, 1);
+    --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
   }
 
   .dark {
@@ -129,6 +146,12 @@
     /* Modal/scrim overlay */
     --overlay: 4% 0.005 280;
     --radius: 0.5rem;
+    --radius-frame: 0.75rem;
+
+    /* Chrome — dark mode: shadow-as-border (Vercel/landing pattern) */
+    --ring-border: 0 0 0 1px oklch(100% 0 0 / 0.10);
+    --ring-border-strong: 0 0 0 1px oklch(100% 0 0 / 0.16);
+    --card-shadow: 0 0 0 1px oklch(100% 0 0 / 0.10), 0 2px 2px oklch(0% 0 0 / 0.4), inset 0 0 0 1px oklch(100% 0 0 / 0.04);
   }
 
   /* Preset themes — each shifts the full neutral palette so the whole UI
