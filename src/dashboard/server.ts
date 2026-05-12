@@ -44,6 +44,7 @@ import {
 import { createWriteRouter } from './api-write.js';
 import { createServersRouter } from './api-servers.js';
 import { createAgentSessionsRouter } from './api-agent-sessions.js';
+import { createLeasesRouter } from './api-leases.js';
 import { createPlaybooksRouter } from './api-playbooks.js';
 import {
   migrateLegacyProjectFiles,
@@ -54,6 +55,7 @@ import { createTodosRouter } from './api-todos.js';
 import { createProjectTodosRouter } from './api-project-todos.js';
 import { createBackupRouter } from './api-backup.js';
 import { initSessionDb, migrateFromMarkdown, closeSessionDb } from './session-db.js';
+import { initLeasesDb, closeLeasesDb } from '../db/leases-db.js';
 import { startAutodiscovery, stopAutodiscovery } from './autodiscovery.js';
 import type { WsMessage } from './types.js';
 
@@ -119,6 +121,9 @@ export function createDashboardServer(options: DashboardServerOptions) {
   migrateFromMarkdown(projectsDir).catch((err) => {
     console.error('Session migration from markdown failed:', err);
   });
+
+  // --- Initialize leases database (shares syntaur.db) ---
+  initLeasesDb();
 
   // --- One-shot legacy filesystem migration (pre-v0.2.0 → v0.2.0+) ---
   // Idempotent, non-destructive, reports what it did. Run in the background
@@ -491,6 +496,9 @@ export function createDashboardServer(options: DashboardServerOptions) {
   // --- Servers API ---
   app.use('/api/servers', createServersRouter(serversDir, projectsDir, assignmentsDir));
 
+  // --- Leases API ---
+  app.use('/api/leases', createLeasesRouter(broadcast));
+
   // --- Agent Sessions API ---
   app.use('/api/agent-sessions', createAgentSessionsRouter(projectsDir, broadcast, assignmentsDir));
 
@@ -581,6 +589,7 @@ export function createDashboardServer(options: DashboardServerOptions) {
         serversDir,
         playbooksDir,
         todosDir,
+        dbPath: resolve(syntaurRoot(), 'syntaur.db'),
         onMessage: broadcast,
       });
 
@@ -610,6 +619,7 @@ export function createDashboardServer(options: DashboardServerOptions) {
         await watcherHandle.close();
       }
       closeSessionDb();
+      closeLeasesDb();
       for (const client of clients) {
         client.terminate();
       }

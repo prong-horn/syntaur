@@ -416,6 +416,7 @@ export type WsMessageType =
   | 'agent-sessions-updated'
   | 'playbooks-updated'
   | 'todos-updated'
+  | 'leases-updated'
   | 'connected';
 
 export interface WsMessage {
