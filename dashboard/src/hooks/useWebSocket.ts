@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react';
 
 export interface WsMessage {
-  type: 'project-updated' | 'assignment-updated' | 'servers-updated' | 'agent-sessions-updated' | 'playbooks-updated' | 'todos-updated' | 'connected';
+  type: 'project-updated' | 'assignment-updated' | 'servers-updated' | 'agent-sessions-updated' | 'playbooks-updated' | 'todos-updated' | 'leases-updated' | 'connected';
   projectSlug?: string;
   assignmentSlug?: string;
   timestamp: string;

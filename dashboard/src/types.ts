@@ -41,6 +41,51 @@ export interface OverviewServerStats {
   totalPorts: number;
 }
 
+// --- Resource Lease Types ---
+
+export type MemberStatus = 'idle' | 'leased' | 'retired';
+export type LeaseState = 'active' | 'released' | 'expired' | 'revoked';
+
+export interface Inventory {
+  slug: string;
+  kind: string;
+  display_name: string | null;
+  default_ttl_s: number;
+  created_at: string;
+}
+
+export interface InventoryMember {
+  inventory_slug: string;
+  member_id: string;
+  status: MemberStatus;
+  generation: number;
+  metadata_json: string | null;
+  last_used_at: string | null;
+  retired_at: string | null;
+}
+
+export interface Lease {
+  lease_id: string;
+  inventory_slug: string;
+  member_id: string;
+  member_gen: number;
+  state: LeaseState;
+  granted_at: string;
+  expires_at: string;
+  released_at: string | null;
+  requested_for: string | null;
+}
+
+export interface InventoryDetail {
+  inventory: Inventory;
+  members: InventoryMember[];
+  active_leases: Lease[];
+}
+
+export interface InventoriesResponse {
+  inventories: InventoryDetail[];
+}
+
 // --- Playbook Types ---
 
 export interface PlaybookSummary {

@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useParams } from 'react-router-dom';
 import { useWebSocket } from './useWebSocket';
 import type { WsMessage } from './useWebSocket';
-import type { ServersResponse, TrackedSession, AgentSessionsResponse, PlaybooksResponse, PlaybookDetail } from '../types';
+import type { ServersResponse, TrackedSession, AgentSessionsResponse, PlaybooksResponse, PlaybookDetail, InventoriesResponse, InventoryDetail } from '../types';
 
 export type ProgressCounts = Record<string, number> & { total: number };
 
@@ -367,7 +367,7 @@ interface FetchState<T> {
   refetch: () => void;
 }
 
-function useFetch<T>(url: string | null, websocketScope?: 'projects' | 'project' | 'assignment' | 'assignments' | 'overview' | 'attention' | 'servers' | 'agent-sessions' | 'playbooks'): FetchState<T> {
+function useFetch<T>(url: string | null, websocketScope?: 'projects' | 'project' | 'assignment' | 'assignments' | 'overview' | 'attention' | 'servers' | 'agent-sessions' | 'playbooks' | 'inventories'): FetchState<T> {
   const [data, setData] = useState<T | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -432,6 +432,10 @@ function useFetch<T>(url: string | null, websocketScope?: 'projects' | 'project'
     }
 
     if (message.type === 'playbooks-updated' && websocketScope === 'playbooks') {
+      refetch();
+    }
+
+    if (message.type === 'leases-updated' && websocketScope === 'inventories') {
       refetch();
     }
   });
@@ -506,6 +510,17 @@ export function useServer(name: string | null): FetchState<TrackedSession> {
   return useFetch<TrackedSession>(
     name ? `/api/servers/${encodeURIComponent(name)}` : null,
     'servers',
+  );
+}
+
+export function useInventories(): FetchState<InventoriesResponse> {
+  return useFetch<InventoriesResponse>('/api/leases', 'inventories');
+}
+
+export function useInventory(slug: string | null): FetchState<InventoryDetail> {
+  return useFetch<InventoryDetail>(
+    slug ? `/api/leases/${encodeURIComponent(slug)}` : null,
+    'inventories',
   );
 }
 

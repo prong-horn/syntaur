@@ -33,6 +33,7 @@ import { agentsCommand } from './commands/agents.js';
 import { commentCommand } from './commands/comment.js';
 import { captureCommand } from './commands/capture.js';
 import { proofCommand } from './commands/proof.js';
+import { leaseCommand } from './commands/lease.js';
 import { requestCommand } from './commands/request.js';
 import { planCommand } from './commands/plan.js';
 import { sessionCommand } from './commands/session.js';
@@ -677,6 +678,7 @@ program.addCommand(worktreeCommand);
 program.addCommand(resourceCommand);
 program.addCommand(memoryCommand);
 program.addCommand(lsCommand);
+program.addCommand(leaseCommand);
 
 // Default to dashboard when no command is given
 if (process.argv.length <= 2) {

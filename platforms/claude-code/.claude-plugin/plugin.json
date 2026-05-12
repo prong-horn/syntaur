@@ -25,6 +25,8 @@
     "./skills/add-memory",
     "./skills/list-assignments",
     "./skills/log-progress",
-    "./skills/set-workspace"
+    "./skills/set-workspace",
+    "./skills/claim-resource",
+    "./skills/release-resource"
   ]
 }

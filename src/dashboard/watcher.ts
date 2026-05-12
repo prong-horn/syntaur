@@ -1,5 +1,5 @@
 import { watch } from 'chokidar';
-import { relative, sep } from 'node:path';
+import { basename, dirname, relative, sep } from 'node:path';
 import type { WsMessage } from './types.js';
 
 export interface WatcherOptions {
@@ -8,12 +8,17 @@ export interface WatcherOptions {
   serversDir?: string;
   playbooksDir?: string;
   todosDir?: string;
+  /** Absolute path to ~/.syntaur/syntaur.db. When set, watch the parent dir
+   * for changes to this file and its WAL siblings (-wal, -shm) and broadcast
+   * `leases-updated`. chokidar 4 removed glob support so we must filter by
+   * basename in the change handler. */
+  dbPath?: string;
   onMessage: (message: WsMessage) => void;
   debounceMs?: number;
 }
 
 export function createWatcher(options: WatcherOptions): { close: () => Promise<void> } {
-  const { projectsDir, assignmentsDir, serversDir, playbooksDir, todosDir, onMessage, debounceMs = 300 } = options;
+  const { projectsDir, assignmentsDir, serversDir, playbooksDir, todosDir, dbPath, onMessage, debounceMs = 300 } = options;
   const pendingEvents = new Map<string, NodeJS.Timeout>();
 
   // --- Projects watcher (existing logic) ---
@@ -225,6 +230,48 @@ export function createWatcher(options: WatcherOptions): { close: () => Promise<v
     todosWatcher.on('unlink', handleTodoChange);
   }
 
+  // --- Leases DB watcher ---
+  // SQLite WAL-mode writes mostly go to `<db>-wal`, not the main file. Watch
+  // the parent directory and filter by basename to catch the main DB and its
+  // -wal / -shm siblings. chokidar 4 has no glob support, so a literal pattern
+  // like `${dbPath}*` would be silently a no-op.
+  let leasesDbWatcher: ReturnType<typeof watch> | null = null;
+
+  if (dbPath) {
+    const dbDir = dirname(dbPath);
+    const dbBase = basename(dbPath);
+
+    leasesDbWatcher = watch(dbDir, {
+      ignoreInitial: true,
+      persistent: true,
+      depth: 0,
+      ignored: /(^|[\/\\])\../,
+    });
+
+    function handleDbChange(filePath: string): void {
+      if (!basename(filePath).startsWith(dbBase)) return;
+      const debounceKey = '__leases-db__';
+      const existing = pendingEvents.get(debounceKey);
+      if (existing) clearTimeout(existing);
+
+      pendingEvents.set(
+        debounceKey,
+        setTimeout(() => {
+          pendingEvents.delete(debounceKey);
+          const message: WsMessage = {
+            type: 'leases-updated',
+            timestamp: new Date().toISOString(),
+          };
+          onMessage(message);
+        }, debounceMs),
+      );
+    }
+
+    leasesDbWatcher.on('change', handleDbChange);
+    leasesDbWatcher.on('add', handleDbChange);
+    leasesDbWatcher.on('unlink', handleDbChange);
+  }
+
   return {
     close: async () => {
       pendingEvents.forEach((timeout) => {
@@ -236,6 +283,7 @@ export function createWatcher(options: WatcherOptions): { close: () => Promise<v
       if (serversWatcher) await serversWatcher.close();
       if (playbooksWatcher) await playbooksWatcher.close();
       if (todosWatcher) await todosWatcher.close();
+      if (leasesDbWatcher) await leasesDbWatcher.close();
     },
   };
 }

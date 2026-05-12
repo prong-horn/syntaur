@@ -223,6 +223,27 @@ Symlinks created by `npx skills add` are recognized and never overwritten by the
 
 ---
 
+## Resource Leases
+
+Coordinate access to shared finite resources (dev envs, test DBs, API keys with rate limits, capacity-1 named locks) across multiple parallel agents. Atomic claim with opaque lease tokens, CAS-guarded release/extend, TTL-driven expiry.
+
+```bash
+syntaur lease create-inventory dev-envs --kind dev-env --default-ttl 30m
+syntaur lease member add dev-envs box-1 -m url=https://box-1.example.test
+syntaur lease member add dev-envs box-2 -m url=https://box-2.example.test
+
+syntaur lease claim dev-envs --json         # → { lease_id, member_id, expires_at, metadata }
+syntaur lease release <lease_id>
+syntaur lease list                          # pool overview
+syntaur lease --help                        # full subcommand list
+```
+
+Two skills wrap this for agents: **claim-resource** (claim and persist into `.syntaur/context.json`) and **release-resource** (release one or `--all`).
+
+**v1 scope:** static inventories (you register members), atomic claim, TTL expiry, dashboard view, fail-fast on contention (capacity-1 inventory works as a named lock). **Not in v1:** automatic provisioning / recycling, an in-process plugin SDK, cross-host coordination, blocking `--wait`. Members are recycled by the caller's own scripts between leases for now.
+
+---
+
 ## Upgrade
 
 | Install style | Command |
