@@ -4,33 +4,33 @@
 
 @layer base {
   :root {
-    --background: 98% 0.005 280;
-    --foreground: 18% 0.01 280;
+    --background: 98% 0.008 260;
+    --foreground: 16% 0.020 260;
     --card: 100% 0 0;
-    --card-foreground: 18% 0.01 280;
+    --card-foreground: 16% 0.020 260;
     --popover: 100% 0 0;
-    --popover-foreground: 18% 0.01 280;
-    --primary: 70% 0.18 290;
-    --primary-dim: 50% 0.12 290;
-    --primary-foreground: 98% 0 0;
-    --secondary: 80% 0.14 75;
-    --secondary-foreground: 18% 0.01 280;
-    --muted: 95% 0.006 280;
-    --muted-foreground: 46% 0.01 280;
-    --accent: 93% 0.01 280;
-    --accent-foreground: 18% 0.01 280;
-    --destructive: 55% 0.20 15;
-    --destructive-foreground: 98% 0 0;
-    --border: 89% 0.008 280;
-    --input: 89% 0.008 280;
-    --ring: 70% 0.18 290;
-    --sidebar: 96% 0.006 280;
-    --accent-coral: 72% 0.17 15;
+    --popover-foreground: 16% 0.020 260;
+    --primary: 58% 0.08 295;
+    --primary-dim: 42% 0.07 295;
+    --primary-foreground: 98% 0.008 260;
+    --secondary: 72% 0.15 65;
+    --secondary-foreground: 16% 0.020 260;
+    --muted: 95% 0.012 260;
+    --muted-foreground: 42% 0.015 260;
+    --accent: 93% 0.020 260;
+    --accent-foreground: 16% 0.020 260;
+    --destructive: 56% 0.18 25;
+    --destructive-foreground: 98% 0.008 260;
+    --border: 88% 0.012 260;
+    --input: 88% 0.012 260;
+    --ring: 58% 0.08 295;
+    --sidebar: 96% 0.012 260;
+    --accent-coral: 70% 0.18 15;
     --accent-coral-dim: 50% 0.12 15;
-    --accent-teal: 72% 0.14 185;
-    --accent-teal-dim: 50% 0.10 185;
-    --accent-amber: 82% 0.16 75;
-    --dot-grid: 92% 0.006 280;
+    --accent-teal: 72% 0.14 196;
+    --accent-teal-dim: 50% 0.10 196;
+    --accent-amber: 72% 0.15 65;
+    --dot-grid: 92% 0.012 260;
 
     /* Semantic status surfaces (light) */
     --status-pending: 95% 0.005 280;
