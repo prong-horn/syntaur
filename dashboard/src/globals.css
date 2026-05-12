@@ -338,7 +338,20 @@
   h5,
   h6 {
     font-family: 'Space Grotesk', system-ui, -apple-system, sans-serif;
-    letter-spacing: -0.02em;
+    font-weight: 600;
+    letter-spacing: var(--tracking-heading);
+    line-height: 1.15;
+  }
+
+  h1 {
+    letter-spacing: var(--tracking-display);
+  }
+
+  /* Inputs keep neutral tracking so labels and field text stay legible. */
+  input,
+  textarea,
+  select {
+    letter-spacing: 0;
   }
 
   code,
