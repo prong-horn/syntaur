@@ -18,6 +18,8 @@
     "./skills/clear-assignment",
     "./skills/save-session-summary",
     "./skills/track-session",
-    "./skills/track-server"
+    "./skills/track-server",
+    "./skills/claim-resource",
+    "./skills/release-resource"
   ]
 }
