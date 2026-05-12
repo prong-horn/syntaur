@@ -85,33 +85,33 @@
   }
 
   .dark {
-    --background: 8% 0.008 280;
-    --foreground: 95% 0.005 280;
-    --card: 13% 0.008 280;
-    --card-foreground: 95% 0.005 280;
-    --popover: 13% 0.008 280;
-    --popover-foreground: 95% 0.005 280;
-    --primary: 70% 0.18 290;
-    --primary-dim: 50% 0.12 290;
-    --primary-foreground: 8% 0 0;
-    --secondary: 80% 0.14 75;
-    --secondary-foreground: 18% 0.01 280;
-    --muted: 17% 0.01 280;
-    --muted-foreground: 65% 0.01 280;
-    --accent: 17% 0.01 280;
-    --accent-foreground: 95% 0.005 280;
-    --destructive: 72% 0.17 15;
-    --destructive-foreground: 8% 0 0;
-    --border: 22% 0.008 280;
-    --input: 22% 0.008 280;
-    --ring: 70% 0.18 290;
-    --sidebar: 6% 0.008 280;
-    --accent-coral: 72% 0.17 15;
+    --background: 8% 0.018 260;
+    --foreground: 96% 0.015 80;
+    --card: 11% 0.018 260;
+    --card-foreground: 96% 0.015 80;
+    --popover: 11% 0.018 260;
+    --popover-foreground: 96% 0.015 80;
+    --primary: 58% 0.08 295;
+    --primary-dim: 42% 0.07 295;
+    --primary-foreground: 96% 0.015 80;
+    --secondary: 72% 0.15 65;
+    --secondary-foreground: 8% 0.018 260;
+    --muted: 14% 0.018 260;
+    --muted-foreground: 64% 0.018 260;
+    --accent: 15% 0.018 260;
+    --accent-foreground: 96% 0.015 80;
+    --destructive: 60% 0.18 25;
+    --destructive-foreground: 96% 0.015 80;
+    --border: 18% 0.015 260;
+    --input: 18% 0.015 260;
+    --ring: 58% 0.08 295;
+    --sidebar: 5% 0.015 260;
+    --accent-coral: 70% 0.18 15;
     --accent-coral-dim: 50% 0.12 15;
-    --accent-teal: 72% 0.14 185;
-    --accent-teal-dim: 50% 0.10 185;
-    --accent-amber: 82% 0.16 75;
-    --dot-grid: 22% 0.008 280;
+    --accent-teal: 72% 0.14 196;
+    --accent-teal-dim: 50% 0.10 196;
+    --accent-amber: 72% 0.15 65;
+    --dot-grid: 18% 0.015 260;
 
     /* Semantic status surfaces (dark) */
     --status-pending: 18% 0.005 280;
