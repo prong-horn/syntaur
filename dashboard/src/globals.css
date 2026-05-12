@@ -158,158 +158,157 @@
      adopts the preset's hue, not just brand accents. Default preset uses
      the bare :root / .dark rules above. */
 
-  /* MIDNIGHT — deep indigo-blue, One Dark Pro / Material Ocean inspired.
-     High chroma on dark surfaces (0.04–0.06) makes the blue unmistakable. */
+  /* OCEAN — cool indigo shift of the base ink-blue. Subtle, not a full reskin. */
   :root[data-theme='ocean'] {
-    --background: 97% 0.025 240;
-    --foreground: 22% 0.06 250;
-    --card: 99% 0.015 240;
-    --popover: 99% 0.015 240;
-    --muted: 93% 0.030 240;
-    --accent: 90% 0.040 240;
-    --border: 85% 0.035 240;
-    --input: 88% 0.030 240;
-    --sidebar: 94% 0.030 240;
-    --dot-grid: 88% 0.035 240;
-    --primary: 60% 0.17 250;
-    --primary-dim: 40% 0.12 250;
-    --primary-foreground: 98% 0.01 240;
-    --secondary: 70% 0.14 200;
-    --secondary-foreground: 18% 0.04 240;
-    --ring: 60% 0.17 250;
-    --accent-coral: 65% 0.20 350;
-    --accent-coral-dim: 45% 0.13 350;
-    --accent-teal: 75% 0.14 195;
-    --accent-teal-dim: 52% 0.10 195;
-    --accent-amber: 82% 0.15 90;
-    --muted-foreground: 45% 0.05 240;
+    --background: 98% 0.012 240;
+    --foreground: 16% 0.022 240;
+    --card: 100% 0 0;
+    --popover: 100% 0 0;
+    --muted: 95% 0.016 240;
+    --accent: 93% 0.024 240;
+    --border: 88% 0.016 240;
+    --input: 88% 0.016 240;
+    --sidebar: 96% 0.016 240;
+    --dot-grid: 92% 0.016 240;
+    --primary: 58% 0.10 250;
+    --primary-dim: 42% 0.09 250;
+    --primary-foreground: 98% 0.012 240;
+    --secondary: 72% 0.14 196;
+    --secondary-foreground: 16% 0.022 240;
+    --ring: 58% 0.10 250;
+    --accent-coral: 70% 0.18 15;
+    --accent-coral-dim: 50% 0.12 15;
+    --accent-teal: 72% 0.14 196;
+    --accent-teal-dim: 50% 0.10 196;
+    --accent-amber: 72% 0.15 65;
+    --muted-foreground: 42% 0.020 240;
   }
 
   .dark[data-theme='ocean'] {
-    --background: 16% 0.045 250;
-    --foreground: 92% 0.020 240;
-    --card: 21% 0.050 250;
-    --popover: 21% 0.050 250;
-    --muted: 26% 0.055 250;
-    --accent: 30% 0.060 250;
-    --border: 32% 0.055 250;
-    --input: 32% 0.055 250;
-    --sidebar: 13% 0.045 250;
-    --dot-grid: 32% 0.055 250;
-    --primary: 75% 0.16 240;
-    --primary-dim: 55% 0.12 240;
-    --primary-foreground: 14% 0.04 250;
-    --secondary: 78% 0.13 200;
-    --secondary-foreground: 18% 0.04 240;
-    --ring: 75% 0.16 240;
-    --accent-coral: 75% 0.18 350;
-    --accent-coral-dim: 52% 0.13 350;
-    --accent-teal: 80% 0.13 195;
-    --accent-teal-dim: 58% 0.10 195;
-    --accent-amber: 86% 0.15 90;
-    --muted-foreground: 72% 0.030 240;
+    --background: 8% 0.022 240;
+    --foreground: 96% 0.018 240;
+    --card: 11% 0.022 240;
+    --popover: 11% 0.022 240;
+    --muted: 14% 0.022 240;
+    --accent: 15% 0.022 240;
+    --border: 18% 0.020 240;
+    --input: 18% 0.020 240;
+    --sidebar: 5% 0.020 240;
+    --dot-grid: 18% 0.020 240;
+    --primary: 65% 0.12 250;
+    --primary-dim: 48% 0.10 250;
+    --primary-foreground: 96% 0.018 240;
+    --secondary: 76% 0.13 196;
+    --secondary-foreground: 8% 0.022 240;
+    --ring: 65% 0.12 250;
+    --accent-coral: 70% 0.18 15;
+    --accent-coral-dim: 50% 0.12 15;
+    --accent-teal: 76% 0.13 196;
+    --accent-teal-dim: 54% 0.10 196;
+    --accent-amber: 76% 0.14 65;
+    --muted-foreground: 66% 0.022 240;
   }
 
-  /* VERDANT — saturated emerald/pine on dark olive. */
+  /* FOREST — emerald/pine shift in the same chroma profile as base. */
   :root[data-theme='forest'] {
-    --background: 97% 0.025 145;
-    --foreground: 22% 0.05 145;
-    --card: 99% 0.015 145;
-    --popover: 99% 0.015 145;
-    --muted: 93% 0.030 145;
-    --accent: 90% 0.040 145;
-    --border: 85% 0.035 145;
-    --input: 88% 0.030 145;
-    --sidebar: 94% 0.030 145;
-    --dot-grid: 88% 0.035 145;
-    --primary: 55% 0.16 145;
-    --primary-dim: 38% 0.11 145;
-    --primary-foreground: 98% 0.01 145;
-    --secondary: 72% 0.14 110;
-    --secondary-foreground: 18% 0.04 145;
-    --ring: 55% 0.16 145;
-    --accent-coral: 68% 0.18 25;
-    --accent-coral-dim: 48% 0.12 25;
-    --accent-teal: 72% 0.13 175;
-    --accent-teal-dim: 50% 0.10 175;
-    --accent-amber: 80% 0.15 95;
-    --muted-foreground: 45% 0.05 145;
+    --background: 98% 0.012 165;
+    --foreground: 16% 0.022 165;
+    --card: 100% 0 0;
+    --popover: 100% 0 0;
+    --muted: 95% 0.016 165;
+    --accent: 93% 0.024 165;
+    --border: 88% 0.016 165;
+    --input: 88% 0.016 165;
+    --sidebar: 96% 0.016 165;
+    --dot-grid: 92% 0.016 165;
+    --primary: 50% 0.12 155;
+    --primary-dim: 36% 0.10 155;
+    --primary-foreground: 98% 0.012 165;
+    --secondary: 72% 0.15 65;
+    --secondary-foreground: 16% 0.022 165;
+    --ring: 50% 0.12 155;
+    --accent-coral: 70% 0.18 15;
+    --accent-coral-dim: 50% 0.12 15;
+    --accent-teal: 72% 0.14 180;
+    --accent-teal-dim: 50% 0.10 180;
+    --accent-amber: 72% 0.15 65;
+    --muted-foreground: 42% 0.020 165;
   }
 
   .dark[data-theme='forest'] {
-    --background: 15% 0.040 145;
-    --foreground: 92% 0.020 130;
-    --card: 19% 0.045 145;
-    --popover: 19% 0.045 145;
-    --muted: 24% 0.050 145;
-    --accent: 28% 0.055 145;
-    --border: 30% 0.050 145;
-    --input: 30% 0.050 145;
-    --sidebar: 12% 0.040 145;
-    --dot-grid: 30% 0.050 145;
-    --primary: 78% 0.17 145;
-    --primary-dim: 56% 0.12 145;
-    --primary-foreground: 13% 0.04 145;
-    --secondary: 80% 0.13 110;
-    --secondary-foreground: 18% 0.04 145;
-    --ring: 78% 0.17 145;
-    --accent-coral: 76% 0.17 25;
-    --accent-coral-dim: 54% 0.12 25;
-    --accent-teal: 78% 0.13 175;
-    --accent-teal-dim: 56% 0.10 175;
-    --accent-amber: 86% 0.15 95;
-    --muted-foreground: 72% 0.030 130;
+    --background: 8% 0.020 165;
+    --foreground: 96% 0.015 80;
+    --card: 11% 0.022 165;
+    --popover: 11% 0.022 165;
+    --muted: 14% 0.022 165;
+    --accent: 15% 0.022 165;
+    --border: 18% 0.020 165;
+    --input: 18% 0.020 165;
+    --sidebar: 5% 0.018 165;
+    --dot-grid: 18% 0.020 165;
+    --primary: 65% 0.14 155;
+    --primary-dim: 48% 0.10 155;
+    --primary-foreground: 8% 0.020 165;
+    --secondary: 76% 0.14 65;
+    --secondary-foreground: 8% 0.020 165;
+    --ring: 65% 0.14 155;
+    --accent-coral: 70% 0.18 15;
+    --accent-coral-dim: 50% 0.12 15;
+    --accent-teal: 76% 0.13 180;
+    --accent-teal-dim: 54% 0.10 180;
+    --accent-amber: 76% 0.14 65;
+    --muted-foreground: 66% 0.022 165;
   }
 
-  /* EMBER — warm sepia/copper, dark roasted browns. */
+  /* SUNSET — warm copper/sepia shift in the same chroma profile as base. */
   :root[data-theme='sunset'] {
-    --background: 97% 0.030 60;
-    --foreground: 24% 0.06 35;
-    --card: 99% 0.020 60;
-    --popover: 99% 0.020 60;
-    --muted: 93% 0.035 55;
-    --accent: 90% 0.045 50;
-    --border: 85% 0.040 50;
-    --input: 88% 0.035 55;
-    --sidebar: 94% 0.035 55;
-    --dot-grid: 88% 0.040 50;
-    --primary: 62% 0.19 35;
-    --primary-dim: 44% 0.13 35;
-    --primary-foreground: 98% 0.01 60;
-    --secondary: 75% 0.16 60;
-    --secondary-foreground: 22% 0.05 35;
-    --ring: 62% 0.19 35;
-    --accent-coral: 65% 0.21 15;
-    --accent-coral-dim: 46% 0.14 15;
-    --accent-teal: 70% 0.12 180;
-    --accent-teal-dim: 50% 0.09 180;
-    --accent-amber: 86% 0.17 70;
-    --muted-foreground: 45% 0.05 35;
+    --background: 98% 0.014 50;
+    --foreground: 18% 0.024 35;
+    --card: 100% 0 0;
+    --popover: 100% 0 0;
+    --muted: 95% 0.020 50;
+    --accent: 93% 0.028 50;
+    --border: 88% 0.020 50;
+    --input: 88% 0.020 50;
+    --sidebar: 96% 0.018 50;
+    --dot-grid: 92% 0.020 50;
+    --primary: 58% 0.14 35;
+    --primary-dim: 42% 0.11 35;
+    --primary-foreground: 98% 0.014 50;
+    --secondary: 72% 0.15 65;
+    --secondary-foreground: 18% 0.024 35;
+    --ring: 58% 0.14 35;
+    --accent-coral: 70% 0.18 15;
+    --accent-coral-dim: 50% 0.12 15;
+    --accent-teal: 70% 0.13 180;
+    --accent-teal-dim: 50% 0.10 180;
+    --accent-amber: 76% 0.16 70;
+    --muted-foreground: 44% 0.022 35;
   }
 
   .dark[data-theme='sunset'] {
-    --background: 17% 0.045 35;
-    --foreground: 93% 0.025 55;
-    --card: 21% 0.050 35;
-    --popover: 21% 0.050 35;
-    --muted: 26% 0.055 35;
-    --accent: 30% 0.060 35;
-    --border: 32% 0.055 35;
-    --input: 32% 0.055 35;
-    --sidebar: 13% 0.045 35;
-    --dot-grid: 32% 0.055 35;
-    --primary: 76% 0.17 40;
-    --primary-dim: 55% 0.13 40;
-    --primary-foreground: 15% 0.04 35;
-    --secondary: 80% 0.15 60;
-    --secondary-foreground: 18% 0.04 35;
-    --ring: 76% 0.17 40;
-    --accent-coral: 76% 0.19 15;
-    --accent-coral-dim: 54% 0.13 15;
-    --accent-teal: 76% 0.12 180;
-    --accent-teal-dim: 54% 0.09 180;
-    --accent-amber: 88% 0.17 70;
-    --muted-foreground: 75% 0.030 50;
+    --background: 9% 0.024 35;
+    --foreground: 96% 0.015 80;
+    --card: 12% 0.026 35;
+    --popover: 12% 0.026 35;
+    --muted: 15% 0.026 35;
+    --accent: 16% 0.026 35;
+    --border: 19% 0.022 35;
+    --input: 19% 0.022 35;
+    --sidebar: 6% 0.022 35;
+    --dot-grid: 19% 0.022 35;
+    --primary: 66% 0.15 35;
+    --primary-dim: 48% 0.12 35;
+    --primary-foreground: 9% 0.024 35;
+    --secondary: 76% 0.14 65;
+    --secondary-foreground: 9% 0.024 35;
+    --ring: 66% 0.15 35;
+    --accent-coral: 72% 0.18 15;
+    --accent-coral-dim: 52% 0.12 15;
+    --accent-teal: 74% 0.12 180;
+    --accent-teal-dim: 54% 0.10 180;
+    --accent-amber: 80% 0.16 70;
+    --muted-foreground: 66% 0.024 35;
   }
 
   * {
