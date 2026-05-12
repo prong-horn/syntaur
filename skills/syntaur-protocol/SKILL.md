@@ -60,6 +60,7 @@ If `.syntaur/context.json` exists in the current working directory, read it befo
 - `workspaceRoot` — absolute path to the code workspace
 - `sessionId` — real agent-runtime session id (never a synthesized UUID)
 - `transcriptPath` — absolute path to the agent's rollout/transcript file, if known
+- `leases` — array of active resource-lease records (managed by `/claim-resource` and `/release-resource`). Entry shape: `{ lease_id, inventory_slug, member_id, expires_at, metadata, claimed_at }`. Leases are NOT auto-released on session end or assignment completion in v1 — call `/release-resource` explicitly (or let the TTL expire).
 
 ## Required Reading Order
 
