@@ -35,6 +35,12 @@ import { captureCommand } from './commands/capture.js';
 import { proofCommand } from './commands/proof.js';
 import { leaseCommand } from './commands/lease.js';
 import { requestCommand } from './commands/request.js';
+import { planCommand } from './commands/plan.js';
+import { sessionCommand } from './commands/session.js';
+import { worktreeCommand } from './commands/worktree.js';
+import { resourceCommand } from './commands/resource.js';
+import { memoryCommand } from './commands/memory.js';
+import { lsCommand } from './commands/ls.js';
 import { getDefaultCommandName } from './cli-default-command.js';
 import { maybePromptInstall } from './utils/npx-prompt.js';
 import { readPackageVersion } from './utils/version.js';
@@ -666,6 +672,12 @@ program.addCommand(backupCommand);
 program.addCommand(doctorCommand);
 program.addCommand(agentsCommand);
 program.addCommand(proofCommand);
+program.addCommand(planCommand);
+program.addCommand(sessionCommand);
+program.addCommand(worktreeCommand);
+program.addCommand(resourceCommand);
+program.addCommand(memoryCommand);
+program.addCommand(lsCommand);
 program.addCommand(leaseCommand);
 
 // Default to dashboard when no command is given

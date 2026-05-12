@@ -19,6 +19,14 @@
     "./skills/save-session-summary",
     "./skills/track-session",
     "./skills/track-server",
+    "./skills/replan",
+    "./skills/resume-session",
+    "./skills/syntaur-worktree",
+    "./skills/add-resource",
+    "./skills/add-memory",
+    "./skills/list-assignments",
+    "./skills/log-progress",
+    "./skills/set-workspace",
     "./skills/claim-resource",
     "./skills/release-resource"
   ]

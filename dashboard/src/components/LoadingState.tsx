@@ -7,7 +7,7 @@ export function LoadingState({
 }: LoadingStateProps) {
   return (
     <div className="flex min-h-[240px] items-center justify-center">
-      <div className="rounded-lg border border-border/70 bg-card/90 px-4 py-3 shadow-sm">
+      <div className="chrome-card !px-4 !py-3">
         <p className="text-sm text-muted-foreground">{label}</p>
       </div>
     </div>

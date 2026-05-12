@@ -4,9 +4,9 @@ Syntaur plugin for OpenAI Codex. Installed automatically during `syntaur setup`.
 
 ## What's included
 
-- **Skills:** syntaur-protocol, create-project, create-assignment, grab-assignment, plan-assignment, complete-assignment, track-session, save-session-summary
+- **Skills:** syntaur-protocol, create-project, create-assignment, grab-assignment, plan-assignment, complete-assignment, track-session, save-session-summary, manage-statuses, clear-assignment, replan, resume-session, syntaur-worktree, add-resource, add-memory, list-assignments, log-progress, set-workspace
 - **Hooks:** write boundary enforcement, session cleanup
-- **Commands:** track-session, save-session-summary (Codex has no `PreCompact` event — invoke manually before compaction or session end)
+- **Commands:** track-session, save-session-summary, replan, resume-session, syntaur-worktree, add-resource, add-memory, list-assignments, log-progress, set-workspace (Codex has no `PreCompact` event — invoke save-session-summary manually before compaction or session end)
 - **Agents:** syntaur-protocol (background)
 - **References:** protocol docs
 

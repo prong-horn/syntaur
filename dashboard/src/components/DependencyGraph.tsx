@@ -25,7 +25,8 @@ export function DependencyGraph({ definition, className, nodeRoutes = {} }: Depe
         const mermaid = (await import('mermaid')).default;
         mermaid.initialize({
           startOnLoad: false,
-          theme,
+          theme: 'base',
+          themeVariables: resolveMermaidTheme(theme === 'dark'),
         });
 
         if (cancelled) return;
@@ -71,6 +72,53 @@ export function DependencyGraph({ definition, className, nodeRoutes = {} }: Depe
       <div ref={containerRef} className="overflow-auto" />
     </div>
   );
+}
+
+function resolveMermaidTheme(isDark: boolean): Record<string, string> {
+  const root = document.documentElement;
+  const get = (token: string) => {
+    const raw = getComputedStyle(root).getPropertyValue(token).trim();
+    return raw ? `oklch(${raw})` : '';
+  };
+
+  const card = get('--card');
+  const cardFg = get('--card-foreground');
+  const border = get('--border');
+  const primary = get('--primary');
+  const primaryFg = get('--primary-foreground');
+  const muted = get('--muted');
+  const mutedFg = get('--muted-foreground');
+  const secondary = get('--secondary');
+
+  return {
+    background: card,
+    primaryColor: card,
+    primaryTextColor: cardFg,
+    primaryBorderColor: border,
+    secondaryColor: muted,
+    secondaryTextColor: cardFg,
+    secondaryBorderColor: border,
+    tertiaryColor: muted,
+    tertiaryTextColor: mutedFg,
+    tertiaryBorderColor: border,
+    lineColor: isDark ? mutedFg : border,
+    textColor: cardFg,
+    mainBkg: card,
+    nodeBkg: card,
+    nodeTextColor: cardFg,
+    nodeBorder: border,
+    clusterBkg: muted,
+    clusterBorder: border,
+    edgeLabelBackground: card,
+    titleColor: cardFg,
+    // Highlights / actor styling (sequence/state)
+    activeTaskBkgColor: primary,
+    activeTaskBorderColor: primary,
+    altBackground: muted,
+    labelColor: cardFg,
+    errorBkgColor: secondary,
+    errorTextColor: primaryFg,
+  };
 }
 
 function wireNodeLinks(

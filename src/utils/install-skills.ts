@@ -52,6 +52,14 @@ const KNOWN_SKILL_NAMES = [
   'track-session',
   'track-server',
   'capture-artifacts',
+  'replan',
+  'resume-session',
+  'syntaur-worktree',
+  'add-resource',
+  'add-memory',
+  'list-assignments',
+  'log-progress',
+  'set-workspace',
 ] as const;
 
 export const KNOWN_SKILLS = KNOWN_SKILL_NAMES;

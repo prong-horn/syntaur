@@ -107,6 +107,20 @@ export default {
         lg: 'var(--radius)',
         md: 'calc(var(--radius) - 2px)',
         sm: 'calc(var(--radius) - 4px)',
+        frame: 'var(--radius-frame)',
+      },
+      letterSpacing: {
+        hero: 'var(--tracking-hero)',
+        display: 'var(--tracking-display)',
+        heading: 'var(--tracking-heading)',
+      },
+      boxShadow: {
+        chrome: 'var(--card-shadow)',
+        'chrome-strong': 'var(--ring-border-strong)',
+      },
+      transitionTimingFunction: {
+        'out-quart': 'var(--ease-out-quart)',
+        'out-expo': 'var(--ease-out-expo)',
       },
     },
   },

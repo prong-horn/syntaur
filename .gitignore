@@ -17,3 +17,4 @@ platforms/*/skills/
 # Ad-hoc screenshots and pack artifacts at repo root
 /*.png
 /*.tgz
+.proof/
