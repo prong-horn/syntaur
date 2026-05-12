@@ -350,12 +350,67 @@
 }
 
 @layer components {
+  /* Shared chrome: same component code, mode-aware via --card-shadow.
+     Light: hairline border + soft drop. Dark: shadow-as-border (landing pattern). */
+  .chrome-card,
   .surface-panel {
-    @apply rounded-lg border border-border/60 bg-card/95 p-3 shadow-sm;
+    border-radius: var(--radius);
+    background-color: oklch(var(--card));
+    color: oklch(var(--card-foreground));
+    padding: 0.75rem;
+    box-shadow: var(--card-shadow);
+    border: 0;
+    transition: box-shadow var(--duration-fast) var(--ease-out-quart);
   }
 
+  .chrome-card:hover,
+  .surface-panel:hover {
+    box-shadow: var(--ring-border-strong);
+  }
+
+  /* Pill chip — landing's nav/shell button language */
   .shell-action {
-    @apply inline-flex items-center gap-1.5 rounded-md border border-border/60 bg-card/90 px-3 py-1.5 text-sm font-medium text-foreground transition hover:border-primary/40 hover:bg-card;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    min-height: 32px;
+    padding: 0 12px;
+    border-radius: 999px;
+    border: 1px solid oklch(var(--border));
+    background-color: oklch(var(--card));
+    font-size: 0.8125rem;
+    font-weight: 500;
+    color: oklch(var(--foreground));
+    transition: background-color var(--duration-fast), border-color var(--duration-fast), color var(--duration-fast);
+  }
+
+  .shell-action:hover {
+    border-color: oklch(var(--primary) / 0.4);
+    background-color: oklch(var(--accent));
+  }
+
+  .shell-action--solid {
+    background-color: oklch(var(--primary));
+    border-color: transparent;
+    color: oklch(var(--primary-foreground));
+  }
+
+  .shell-action--solid:hover {
+    background-color: oklch(var(--primary-dim));
+    border-color: transparent;
+    color: oklch(var(--primary-foreground));
+  }
+
+  /* Eyebrow — small uppercase mono label, sanctioned mono usage */
+  .eyebrow {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace;
+    font-size: 0.6875rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: oklch(var(--muted-foreground));
   }
 
   .editor-input {
