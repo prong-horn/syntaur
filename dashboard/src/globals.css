@@ -32,38 +32,38 @@
     --accent-amber: 72% 0.15 65;
     --dot-grid: 92% 0.012 260;
 
-    /* Semantic status surfaces (light) */
-    --status-pending: 95% 0.005 280;
-    --status-pending-foreground: 38% 0.01 280;
-    --status-in-progress: 94% 0.04 290;
-    --status-in-progress-foreground: 40% 0.16 290;
-    --status-blocked: 94% 0.05 18;
-    --status-blocked-foreground: 45% 0.18 18;
-    --status-review: 94% 0.06 75;
-    --status-review-foreground: 42% 0.15 75;
-    --status-completed: 94% 0.05 175;
-    --status-completed-foreground: 40% 0.13 175;
+    /* Semantic status surfaces (light) — hue-aligned with new base */
+    --status-pending: 95% 0.005 260;
+    --status-pending-foreground: 38% 0.01 260;
+    --status-in-progress: 94% 0.04 295;
+    --status-in-progress-foreground: 40% 0.16 295;
+    --status-blocked: 94% 0.05 25;
+    --status-blocked-foreground: 45% 0.18 25;
+    --status-review: 94% 0.06 65;
+    --status-review-foreground: 42% 0.15 65;
+    --status-completed: 94% 0.05 165;
+    --status-completed-foreground: 40% 0.13 165;
     --status-failed: 94% 0.06 25;
     --status-failed-foreground: 45% 0.18 25;
-    --status-archived: 94% 0.003 280;
-    --status-archived-foreground: 40% 0.005 280;
+    --status-archived: 94% 0.003 260;
+    --status-archived-foreground: 40% 0.005 260;
 
     /* Feedback (light) */
-    --success: 94% 0.06 160;
-    --success-foreground: 38% 0.13 160;
-    --warning: 94% 0.06 75;
-    --warning-foreground: 42% 0.15 75;
+    --success: 94% 0.06 165;
+    --success-foreground: 38% 0.13 165;
+    --warning: 94% 0.06 65;
+    --warning-foreground: 42% 0.15 65;
     --error: 94% 0.06 25;
     --error-foreground: 45% 0.18 25;
     --info: 94% 0.05 230;
     --info-foreground: 40% 0.14 230;
 
     /* Code (light) */
-    --code: 95% 0.006 280;
-    --code-foreground: 25% 0.01 280;
+    --code: 95% 0.012 260;
+    --code-foreground: 22% 0.015 260;
 
-    /* Modal/scrim overlay */
-    --overlay: 8% 0.005 280;
+    /* Modal/scrim overlay — ink even in light, so modals carry weight */
+    --overlay: 8% 0.018 260;
     --radius: 0.5rem;
     --radius-frame: 0.75rem;
 
@@ -113,38 +113,38 @@
     --accent-amber: 72% 0.15 65;
     --dot-grid: 18% 0.015 260;
 
-    /* Semantic status surfaces (dark) */
-    --status-pending: 18% 0.005 280;
-    --status-pending-foreground: 78% 0.005 280;
-    --status-in-progress: 22% 0.05 290;
-    --status-in-progress-foreground: 80% 0.10 290;
-    --status-blocked: 22% 0.06 18;
-    --status-blocked-foreground: 78% 0.10 18;
-    --status-review: 22% 0.07 75;
-    --status-review-foreground: 80% 0.12 75;
-    --status-completed: 22% 0.06 175;
-    --status-completed-foreground: 78% 0.10 175;
-    --status-failed: 22% 0.07 25;
-    --status-failed-foreground: 78% 0.12 25;
-    --status-archived: 18% 0.003 280;
-    --status-archived-foreground: 72% 0.005 280;
+    /* Semantic status surfaces (dark) — hue-aligned with landing palette */
+    --status-pending: 11% 0.018 260;
+    --status-pending-foreground: 64% 0.018 260;
+    --status-in-progress: 14% 0.06 295;
+    --status-in-progress-foreground: 78% 0.10 295;
+    --status-blocked: 14% 0.07 25;
+    --status-blocked-foreground: 78% 0.14 25;
+    --status-review: 14% 0.08 65;
+    --status-review-foreground: 82% 0.15 65;
+    --status-completed: 14% 0.07 165;
+    --status-completed-foreground: 78% 0.12 165;
+    --status-failed: 14% 0.08 25;
+    --status-failed-foreground: 78% 0.14 25;
+    --status-archived: 11% 0.015 260;
+    --status-archived-foreground: 50% 0.012 260;
 
     /* Feedback (dark) */
-    --success: 22% 0.06 160;
-    --success-foreground: 78% 0.10 160;
-    --warning: 22% 0.07 75;
-    --warning-foreground: 80% 0.12 75;
-    --error: 22% 0.07 25;
-    --error-foreground: 78% 0.12 25;
-    --info: 22% 0.06 230;
-    --info-foreground: 78% 0.10 230;
+    --success: 14% 0.07 165;
+    --success-foreground: 78% 0.12 165;
+    --warning: 14% 0.08 65;
+    --warning-foreground: 82% 0.15 65;
+    --error: 14% 0.08 25;
+    --error-foreground: 78% 0.14 25;
+    --info: 14% 0.07 230;
+    --info-foreground: 78% 0.12 230;
 
     /* Code (dark) */
-    --code: 11% 0.008 280;
-    --code-foreground: 92% 0.005 280;
+    --code: 6% 0.015 260;
+    --code-foreground: 96% 0.015 80;
 
     /* Modal/scrim overlay */
-    --overlay: 4% 0.005 280;
+    --overlay: 5% 0.015 260;
     --radius: 0.5rem;
     --radius-frame: 0.75rem;
 
