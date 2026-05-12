@@ -38,7 +38,17 @@ export function Overview() {
   }
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-6">
+      <header className="space-y-2">
+        <p className="eyebrow">Workspace Overview</p>
+        <h1 className="text-4xl font-semibold tracking-display text-foreground md:text-5xl">
+          What needs you today
+        </h1>
+        <p className="max-w-2xl text-sm leading-6 text-muted-foreground">
+          A live snapshot of every project and assignment in your filesystem — sourced from markdown, not a database.
+        </p>
+      </header>
+
       <div className="grid gap-3 grid-cols-[repeat(auto-fill,minmax(160px,1fr))]">
         <StatCard label="Active Projects" value={overview.stats.activeProjects} icon={FolderKanban} to="/projects" />
         <StatCard label="In Progress" value={overview.stats.inProgressAssignments} icon={Gauge} tone="info" to="/assignments?status=in_progress" />

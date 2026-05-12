@@ -12,11 +12,11 @@ interface StatCardProps {
 }
 
 const TONE_STYLES = {
-  default: 'border-border/70 bg-card/90',
-  info: 'border-primary/30 bg-primary/5 dark:border-primary/40 dark:bg-primary/10',
-  warn: 'border-warning-foreground/30 bg-warning',
-  danger: 'border-error-foreground/30 bg-error',
-  success: 'border-success-foreground/30 bg-success',
+  default: 'chrome-card',
+  info: 'rounded-lg border border-primary/30 bg-primary/5 p-3 dark:border-primary/40 dark:bg-primary/10',
+  warn: 'rounded-lg border border-warning-foreground/30 bg-warning p-3',
+  danger: 'rounded-lg border border-error-foreground/30 bg-error p-3',
+  success: 'rounded-lg border border-success-foreground/30 bg-success p-3',
 } as const;
 
 export function StatCard({
@@ -49,10 +49,9 @@ export function StatCard({
   );
 
   const cardClassName = cn(
-    'rounded-lg border p-3 shadow-sm',
     TONE_STYLES[tone],
     to
-      ? 'block transition hover:-translate-y-0.5 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40'
+      ? 'block transition hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40'
       : '',
   );
 

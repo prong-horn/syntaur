@@ -21,7 +21,17 @@ export function AttentionPage() {
   }
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-6">
+      <header className="space-y-2">
+        <p className="eyebrow" style={{ color: 'oklch(var(--secondary))' }}>Needs Attention</p>
+        <h1 className="text-4xl font-semibold tracking-display text-foreground md:text-5xl">
+          Blocked, failed, and stale
+        </h1>
+        <p className="max-w-2xl text-sm leading-6 text-muted-foreground">
+          Everything that needs a human or agent in the loop, ranked by severity and freshness.
+        </p>
+      </header>
+
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
         <StatCard label="Critical" value={data.summary.critical} icon={Flame} tone="danger" />
         <StatCard label="High" value={data.summary.high} icon={AlertTriangle} tone="warn" />

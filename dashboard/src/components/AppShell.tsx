@@ -89,7 +89,7 @@ export function AppShell({
   return (
     <div className="min-h-screen bg-background">
       <div className="relative grid min-h-screen lg:grid-cols-[240px_minmax(0,1fr)]">
-        <aside className="hidden max-h-screen sticky top-0 overflow-y-auto border-r border-border/70 bg-sidebar/90 px-4 py-4 backdrop-blur lg:flex lg:flex-col">
+        <aside className="hidden max-h-screen sticky top-0 overflow-y-auto border-r border-border/70 bg-sidebar px-4 py-4 lg:flex lg:flex-col">
           <ShellSidebar
             sourceNoticeDismissed={sourceNoticeDismissed}
             onDismissSourceNotice={dismissSourceNotice}
@@ -313,7 +313,7 @@ function ShellSidebar({
       <SidebarNav items={UTILITY_NAV_ITEMS} onNavigate={onNavigate} />
 
       {sourceNoticeDismissed ? null : (
-        <div className="rounded-lg border border-border/60 bg-background/80 p-3">
+        <div className="chrome-card">
           <div className="flex items-start justify-between gap-3">
             <div>
               <p className="text-sm font-semibold text-foreground">Source-first dashboard</p>

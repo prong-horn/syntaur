@@ -4,289 +4,311 @@
 
 @layer base {
   :root {
-    --background: 98% 0.005 280;
-    --foreground: 18% 0.01 280;
+    --background: 98% 0.008 260;
+    --foreground: 16% 0.020 260;
     --card: 100% 0 0;
-    --card-foreground: 18% 0.01 280;
+    --card-foreground: 16% 0.020 260;
     --popover: 100% 0 0;
-    --popover-foreground: 18% 0.01 280;
-    --primary: 70% 0.18 290;
-    --primary-dim: 50% 0.12 290;
-    --primary-foreground: 98% 0 0;
-    --secondary: 80% 0.14 75;
-    --secondary-foreground: 18% 0.01 280;
-    --muted: 95% 0.006 280;
-    --muted-foreground: 46% 0.01 280;
-    --accent: 93% 0.01 280;
-    --accent-foreground: 18% 0.01 280;
-    --destructive: 55% 0.20 15;
-    --destructive-foreground: 98% 0 0;
-    --border: 89% 0.008 280;
-    --input: 89% 0.008 280;
-    --ring: 70% 0.18 290;
-    --sidebar: 96% 0.006 280;
-    --accent-coral: 72% 0.17 15;
+    --popover-foreground: 16% 0.020 260;
+    --primary: 58% 0.08 295;
+    --primary-dim: 42% 0.07 295;
+    --primary-foreground: 98% 0.008 260;
+    --secondary: 72% 0.15 65;
+    --secondary-foreground: 16% 0.020 260;
+    --muted: 95% 0.012 260;
+    --muted-foreground: 42% 0.015 260;
+    --accent: 93% 0.020 260;
+    --accent-foreground: 16% 0.020 260;
+    --destructive: 56% 0.18 25;
+    --destructive-foreground: 98% 0.008 260;
+    --border: 88% 0.012 260;
+    --input: 88% 0.012 260;
+    --ring: 58% 0.08 295;
+    --sidebar: 96% 0.012 260;
+    --accent-coral: 70% 0.18 15;
     --accent-coral-dim: 50% 0.12 15;
-    --accent-teal: 72% 0.14 185;
-    --accent-teal-dim: 50% 0.10 185;
-    --accent-amber: 82% 0.16 75;
-    --dot-grid: 92% 0.006 280;
+    --accent-teal: 72% 0.14 196;
+    --accent-teal-dim: 50% 0.10 196;
+    --accent-amber: 72% 0.15 65;
+    --dot-grid: 92% 0.012 260;
 
-    /* Semantic status surfaces (light) */
-    --status-pending: 95% 0.005 280;
-    --status-pending-foreground: 38% 0.01 280;
-    --status-in-progress: 94% 0.04 290;
-    --status-in-progress-foreground: 40% 0.16 290;
-    --status-blocked: 94% 0.05 18;
-    --status-blocked-foreground: 45% 0.18 18;
-    --status-review: 94% 0.06 75;
-    --status-review-foreground: 42% 0.15 75;
-    --status-completed: 94% 0.05 175;
-    --status-completed-foreground: 40% 0.13 175;
+    /* Semantic status surfaces (light) — hue-aligned with new base */
+    --status-pending: 95% 0.005 260;
+    --status-pending-foreground: 38% 0.01 260;
+    --status-in-progress: 94% 0.04 295;
+    --status-in-progress-foreground: 40% 0.16 295;
+    --status-blocked: 94% 0.05 25;
+    --status-blocked-foreground: 45% 0.18 25;
+    --status-review: 94% 0.06 65;
+    --status-review-foreground: 42% 0.15 65;
+    --status-completed: 94% 0.05 165;
+    --status-completed-foreground: 40% 0.13 165;
     --status-failed: 94% 0.06 25;
     --status-failed-foreground: 45% 0.18 25;
-    --status-archived: 94% 0.003 280;
-    --status-archived-foreground: 40% 0.005 280;
+    --status-archived: 94% 0.003 260;
+    --status-archived-foreground: 40% 0.005 260;
 
     /* Feedback (light) */
-    --success: 94% 0.06 160;
-    --success-foreground: 38% 0.13 160;
-    --warning: 94% 0.06 75;
-    --warning-foreground: 42% 0.15 75;
+    --success: 94% 0.06 165;
+    --success-foreground: 38% 0.13 165;
+    --warning: 94% 0.06 65;
+    --warning-foreground: 42% 0.15 65;
     --error: 94% 0.06 25;
     --error-foreground: 45% 0.18 25;
     --info: 94% 0.05 230;
     --info-foreground: 40% 0.14 230;
 
     /* Code (light) */
-    --code: 95% 0.006 280;
-    --code-foreground: 25% 0.01 280;
+    --code: 95% 0.012 260;
+    --code-foreground: 22% 0.015 260;
 
-    /* Modal/scrim overlay */
-    --overlay: 8% 0.005 280;
+    /* Modal/scrim overlay — ink even in light, so modals carry weight */
+    --overlay: 8% 0.018 260;
     --radius: 0.5rem;
+    --radius-frame: 0.75rem;
+
+    /* Tracking scale (negative letter-spacing for display type) */
+    --tracking-hero: -0.06em;
+    --tracking-display: -0.04em;
+    --tracking-heading: -0.03em;
+
+    /* Chrome — light mode: hairline border + soft drop (no inset glow) */
+    --ring-border: 0 0 0 1px oklch(var(--border));
+    --ring-border-strong: 0 0 0 1px oklch(72% 0.012 260);
+    --card-shadow: 0 0 0 1px oklch(var(--border)), 0 1px 2px oklch(0% 0 0 / 0.04), 0 4px 12px oklch(0% 0 0 / 0.04);
+
+    /* Motion */
+    --duration-fast: 150ms;
+    --duration-normal: 300ms;
+    --ease-out-quart: cubic-bezier(0.25, 1, 0.5, 1);
+    --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
   }
 
   .dark {
-    --background: 8% 0.008 280;
-    --foreground: 95% 0.005 280;
-    --card: 13% 0.008 280;
-    --card-foreground: 95% 0.005 280;
-    --popover: 13% 0.008 280;
-    --popover-foreground: 95% 0.005 280;
-    --primary: 70% 0.18 290;
-    --primary-dim: 50% 0.12 290;
-    --primary-foreground: 8% 0 0;
-    --secondary: 80% 0.14 75;
-    --secondary-foreground: 18% 0.01 280;
-    --muted: 17% 0.01 280;
-    --muted-foreground: 65% 0.01 280;
-    --accent: 17% 0.01 280;
-    --accent-foreground: 95% 0.005 280;
-    --destructive: 72% 0.17 15;
-    --destructive-foreground: 8% 0 0;
-    --border: 22% 0.008 280;
-    --input: 22% 0.008 280;
-    --ring: 70% 0.18 290;
-    --sidebar: 6% 0.008 280;
-    --accent-coral: 72% 0.17 15;
+    --background: 8% 0.018 260;
+    --foreground: 96% 0.015 80;
+    --card: 11% 0.018 260;
+    --card-foreground: 96% 0.015 80;
+    --popover: 11% 0.018 260;
+    --popover-foreground: 96% 0.015 80;
+    --primary: 58% 0.08 295;
+    --primary-dim: 42% 0.07 295;
+    --primary-foreground: 96% 0.015 80;
+    --secondary: 72% 0.15 65;
+    --secondary-foreground: 8% 0.018 260;
+    --muted: 14% 0.018 260;
+    --muted-foreground: 64% 0.018 260;
+    --accent: 15% 0.018 260;
+    --accent-foreground: 96% 0.015 80;
+    --destructive: 60% 0.18 25;
+    --destructive-foreground: 96% 0.015 80;
+    --border: 18% 0.015 260;
+    --input: 18% 0.015 260;
+    --ring: 58% 0.08 295;
+    --sidebar: 5% 0.015 260;
+    --accent-coral: 70% 0.18 15;
     --accent-coral-dim: 50% 0.12 15;
-    --accent-teal: 72% 0.14 185;
-    --accent-teal-dim: 50% 0.10 185;
-    --accent-amber: 82% 0.16 75;
-    --dot-grid: 22% 0.008 280;
+    --accent-teal: 72% 0.14 196;
+    --accent-teal-dim: 50% 0.10 196;
+    --accent-amber: 72% 0.15 65;
+    --dot-grid: 18% 0.015 260;
 
-    /* Semantic status surfaces (dark) */
-    --status-pending: 18% 0.005 280;
-    --status-pending-foreground: 78% 0.005 280;
-    --status-in-progress: 22% 0.05 290;
-    --status-in-progress-foreground: 80% 0.10 290;
-    --status-blocked: 22% 0.06 18;
-    --status-blocked-foreground: 78% 0.10 18;
-    --status-review: 22% 0.07 75;
-    --status-review-foreground: 80% 0.12 75;
-    --status-completed: 22% 0.06 175;
-    --status-completed-foreground: 78% 0.10 175;
-    --status-failed: 22% 0.07 25;
-    --status-failed-foreground: 78% 0.12 25;
-    --status-archived: 18% 0.003 280;
-    --status-archived-foreground: 72% 0.005 280;
+    /* Semantic status surfaces (dark) — hue-aligned with landing palette */
+    --status-pending: 11% 0.018 260;
+    --status-pending-foreground: 64% 0.018 260;
+    --status-in-progress: 14% 0.06 295;
+    --status-in-progress-foreground: 78% 0.10 295;
+    --status-blocked: 14% 0.07 25;
+    --status-blocked-foreground: 78% 0.14 25;
+    --status-review: 14% 0.08 65;
+    --status-review-foreground: 82% 0.15 65;
+    --status-completed: 14% 0.07 165;
+    --status-completed-foreground: 78% 0.12 165;
+    --status-failed: 14% 0.08 25;
+    --status-failed-foreground: 78% 0.14 25;
+    --status-archived: 11% 0.015 260;
+    --status-archived-foreground: 50% 0.012 260;
 
     /* Feedback (dark) */
-    --success: 22% 0.06 160;
-    --success-foreground: 78% 0.10 160;
-    --warning: 22% 0.07 75;
-    --warning-foreground: 80% 0.12 75;
-    --error: 22% 0.07 25;
-    --error-foreground: 78% 0.12 25;
-    --info: 22% 0.06 230;
-    --info-foreground: 78% 0.10 230;
+    --success: 14% 0.07 165;
+    --success-foreground: 78% 0.12 165;
+    --warning: 14% 0.08 65;
+    --warning-foreground: 82% 0.15 65;
+    --error: 14% 0.08 25;
+    --error-foreground: 78% 0.14 25;
+    --info: 14% 0.07 230;
+    --info-foreground: 78% 0.12 230;
 
     /* Code (dark) */
-    --code: 11% 0.008 280;
-    --code-foreground: 92% 0.005 280;
+    --code: 6% 0.015 260;
+    --code-foreground: 96% 0.015 80;
 
     /* Modal/scrim overlay */
-    --overlay: 4% 0.005 280;
+    --overlay: 5% 0.015 260;
     --radius: 0.5rem;
+    --radius-frame: 0.75rem;
+
+    /* Chrome — dark mode: shadow-as-border (Vercel/landing pattern) */
+    --ring-border: 0 0 0 1px oklch(100% 0 0 / 0.10);
+    --ring-border-strong: 0 0 0 1px oklch(100% 0 0 / 0.16);
+    --card-shadow: 0 0 0 1px oklch(100% 0 0 / 0.10), 0 2px 2px oklch(0% 0 0 / 0.4), inset 0 0 0 1px oklch(100% 0 0 / 0.04);
   }
 
   /* Preset themes — each shifts the full neutral palette so the whole UI
      adopts the preset's hue, not just brand accents. Default preset uses
      the bare :root / .dark rules above. */
 
-  /* MIDNIGHT — deep indigo-blue, One Dark Pro / Material Ocean inspired.
-     High chroma on dark surfaces (0.04–0.06) makes the blue unmistakable. */
+  /* OCEAN — cool indigo shift of the base ink-blue. Subtle, not a full reskin. */
   :root[data-theme='ocean'] {
-    --background: 97% 0.025 240;
-    --foreground: 22% 0.06 250;
-    --card: 99% 0.015 240;
-    --popover: 99% 0.015 240;
-    --muted: 93% 0.030 240;
-    --accent: 90% 0.040 240;
-    --border: 85% 0.035 240;
-    --input: 88% 0.030 240;
-    --sidebar: 94% 0.030 240;
-    --dot-grid: 88% 0.035 240;
-    --primary: 60% 0.17 250;
-    --primary-dim: 40% 0.12 250;
-    --primary-foreground: 98% 0.01 240;
-    --secondary: 70% 0.14 200;
-    --secondary-foreground: 18% 0.04 240;
-    --ring: 60% 0.17 250;
-    --accent-coral: 65% 0.20 350;
-    --accent-coral-dim: 45% 0.13 350;
-    --accent-teal: 75% 0.14 195;
-    --accent-teal-dim: 52% 0.10 195;
-    --accent-amber: 82% 0.15 90;
-    --muted-foreground: 45% 0.05 240;
+    --background: 98% 0.012 240;
+    --foreground: 16% 0.022 240;
+    --card: 100% 0 0;
+    --popover: 100% 0 0;
+    --muted: 95% 0.016 240;
+    --accent: 93% 0.024 240;
+    --border: 88% 0.016 240;
+    --input: 88% 0.016 240;
+    --sidebar: 96% 0.016 240;
+    --dot-grid: 92% 0.016 240;
+    --primary: 58% 0.10 250;
+    --primary-dim: 42% 0.09 250;
+    --primary-foreground: 98% 0.012 240;
+    --secondary: 72% 0.14 196;
+    --secondary-foreground: 16% 0.022 240;
+    --ring: 58% 0.10 250;
+    --accent-coral: 70% 0.18 15;
+    --accent-coral-dim: 50% 0.12 15;
+    --accent-teal: 72% 0.14 196;
+    --accent-teal-dim: 50% 0.10 196;
+    --accent-amber: 72% 0.15 65;
+    --muted-foreground: 42% 0.020 240;
   }
 
   .dark[data-theme='ocean'] {
-    --background: 16% 0.045 250;
-    --foreground: 92% 0.020 240;
-    --card: 21% 0.050 250;
-    --popover: 21% 0.050 250;
-    --muted: 26% 0.055 250;
-    --accent: 30% 0.060 250;
-    --border: 32% 0.055 250;
-    --input: 32% 0.055 250;
-    --sidebar: 13% 0.045 250;
-    --dot-grid: 32% 0.055 250;
-    --primary: 75% 0.16 240;
-    --primary-dim: 55% 0.12 240;
-    --primary-foreground: 14% 0.04 250;
-    --secondary: 78% 0.13 200;
-    --secondary-foreground: 18% 0.04 240;
-    --ring: 75% 0.16 240;
-    --accent-coral: 75% 0.18 350;
-    --accent-coral-dim: 52% 0.13 350;
-    --accent-teal: 80% 0.13 195;
-    --accent-teal-dim: 58% 0.10 195;
-    --accent-amber: 86% 0.15 90;
-    --muted-foreground: 72% 0.030 240;
+    --background: 8% 0.022 240;
+    --foreground: 96% 0.018 240;
+    --card: 11% 0.022 240;
+    --popover: 11% 0.022 240;
+    --muted: 14% 0.022 240;
+    --accent: 15% 0.022 240;
+    --border: 18% 0.020 240;
+    --input: 18% 0.020 240;
+    --sidebar: 5% 0.020 240;
+    --dot-grid: 18% 0.020 240;
+    --primary: 65% 0.12 250;
+    --primary-dim: 48% 0.10 250;
+    --primary-foreground: 96% 0.018 240;
+    --secondary: 76% 0.13 196;
+    --secondary-foreground: 8% 0.022 240;
+    --ring: 65% 0.12 250;
+    --accent-coral: 70% 0.18 15;
+    --accent-coral-dim: 50% 0.12 15;
+    --accent-teal: 76% 0.13 196;
+    --accent-teal-dim: 54% 0.10 196;
+    --accent-amber: 76% 0.14 65;
+    --muted-foreground: 66% 0.022 240;
   }
 
-  /* VERDANT — saturated emerald/pine on dark olive. */
+  /* FOREST — emerald/pine shift in the same chroma profile as base. */
   :root[data-theme='forest'] {
-    --background: 97% 0.025 145;
-    --foreground: 22% 0.05 145;
-    --card: 99% 0.015 145;
-    --popover: 99% 0.015 145;
-    --muted: 93% 0.030 145;
-    --accent: 90% 0.040 145;
-    --border: 85% 0.035 145;
-    --input: 88% 0.030 145;
-    --sidebar: 94% 0.030 145;
-    --dot-grid: 88% 0.035 145;
-    --primary: 55% 0.16 145;
-    --primary-dim: 38% 0.11 145;
-    --primary-foreground: 98% 0.01 145;
-    --secondary: 72% 0.14 110;
-    --secondary-foreground: 18% 0.04 145;
-    --ring: 55% 0.16 145;
-    --accent-coral: 68% 0.18 25;
-    --accent-coral-dim: 48% 0.12 25;
-    --accent-teal: 72% 0.13 175;
-    --accent-teal-dim: 50% 0.10 175;
-    --accent-amber: 80% 0.15 95;
-    --muted-foreground: 45% 0.05 145;
+    --background: 98% 0.012 165;
+    --foreground: 16% 0.022 165;
+    --card: 100% 0 0;
+    --popover: 100% 0 0;
+    --muted: 95% 0.016 165;
+    --accent: 93% 0.024 165;
+    --border: 88% 0.016 165;
+    --input: 88% 0.016 165;
+    --sidebar: 96% 0.016 165;
+    --dot-grid: 92% 0.016 165;
+    --primary: 50% 0.12 155;
+    --primary-dim: 36% 0.10 155;
+    --primary-foreground: 98% 0.012 165;
+    --secondary: 72% 0.15 65;
+    --secondary-foreground: 16% 0.022 165;
+    --ring: 50% 0.12 155;
+    --accent-coral: 70% 0.18 15;
+    --accent-coral-dim: 50% 0.12 15;
+    --accent-teal: 72% 0.14 180;
+    --accent-teal-dim: 50% 0.10 180;
+    --accent-amber: 72% 0.15 65;
+    --muted-foreground: 42% 0.020 165;
   }
 
   .dark[data-theme='forest'] {
-    --background: 15% 0.040 145;
-    --foreground: 92% 0.020 130;
-    --card: 19% 0.045 145;
-    --popover: 19% 0.045 145;
-    --muted: 24% 0.050 145;
-    --accent: 28% 0.055 145;
-    --border: 30% 0.050 145;
-    --input: 30% 0.050 145;
-    --sidebar: 12% 0.040 145;
-    --dot-grid: 30% 0.050 145;
-    --primary: 78% 0.17 145;
-    --primary-dim: 56% 0.12 145;
-    --primary-foreground: 13% 0.04 145;
-    --secondary: 80% 0.13 110;
-    --secondary-foreground: 18% 0.04 145;
-    --ring: 78% 0.17 145;
-    --accent-coral: 76% 0.17 25;
-    --accent-coral-dim: 54% 0.12 25;
-    --accent-teal: 78% 0.13 175;
-    --accent-teal-dim: 56% 0.10 175;
-    --accent-amber: 86% 0.15 95;
-    --muted-foreground: 72% 0.030 130;
+    --background: 8% 0.020 165;
+    --foreground: 96% 0.015 80;
+    --card: 11% 0.022 165;
+    --popover: 11% 0.022 165;
+    --muted: 14% 0.022 165;
+    --accent: 15% 0.022 165;
+    --border: 18% 0.020 165;
+    --input: 18% 0.020 165;
+    --sidebar: 5% 0.018 165;
+    --dot-grid: 18% 0.020 165;
+    --primary: 65% 0.14 155;
+    --primary-dim: 48% 0.10 155;
+    --primary-foreground: 8% 0.020 165;
+    --secondary: 76% 0.14 65;
+    --secondary-foreground: 8% 0.020 165;
+    --ring: 65% 0.14 155;
+    --accent-coral: 70% 0.18 15;
+    --accent-coral-dim: 50% 0.12 15;
+    --accent-teal: 76% 0.13 180;
+    --accent-teal-dim: 54% 0.10 180;
+    --accent-amber: 76% 0.14 65;
+    --muted-foreground: 66% 0.022 165;
   }
 
-  /* EMBER — warm sepia/copper, dark roasted browns. */
+  /* SUNSET — warm copper/sepia shift in the same chroma profile as base. */
   :root[data-theme='sunset'] {
-    --background: 97% 0.030 60;
-    --foreground: 24% 0.06 35;
-    --card: 99% 0.020 60;
-    --popover: 99% 0.020 60;
-    --muted: 93% 0.035 55;
-    --accent: 90% 0.045 50;
-    --border: 85% 0.040 50;
-    --input: 88% 0.035 55;
-    --sidebar: 94% 0.035 55;
-    --dot-grid: 88% 0.040 50;
-    --primary: 62% 0.19 35;
-    --primary-dim: 44% 0.13 35;
-    --primary-foreground: 98% 0.01 60;
-    --secondary: 75% 0.16 60;
-    --secondary-foreground: 22% 0.05 35;
-    --ring: 62% 0.19 35;
-    --accent-coral: 65% 0.21 15;
-    --accent-coral-dim: 46% 0.14 15;
-    --accent-teal: 70% 0.12 180;
-    --accent-teal-dim: 50% 0.09 180;
-    --accent-amber: 86% 0.17 70;
-    --muted-foreground: 45% 0.05 35;
+    --background: 98% 0.014 50;
+    --foreground: 18% 0.024 35;
+    --card: 100% 0 0;
+    --popover: 100% 0 0;
+    --muted: 95% 0.020 50;
+    --accent: 93% 0.028 50;
+    --border: 88% 0.020 50;
+    --input: 88% 0.020 50;
+    --sidebar: 96% 0.018 50;
+    --dot-grid: 92% 0.020 50;
+    --primary: 58% 0.14 35;
+    --primary-dim: 42% 0.11 35;
+    --primary-foreground: 98% 0.014 50;
+    --secondary: 72% 0.15 65;
+    --secondary-foreground: 18% 0.024 35;
+    --ring: 58% 0.14 35;
+    --accent-coral: 70% 0.18 15;
+    --accent-coral-dim: 50% 0.12 15;
+    --accent-teal: 70% 0.13 180;
+    --accent-teal-dim: 50% 0.10 180;
+    --accent-amber: 76% 0.16 70;
+    --muted-foreground: 44% 0.022 35;
   }
 
   .dark[data-theme='sunset'] {
-    --background: 17% 0.045 35;
-    --foreground: 93% 0.025 55;
-    --card: 21% 0.050 35;
-    --popover: 21% 0.050 35;
-    --muted: 26% 0.055 35;
-    --accent: 30% 0.060 35;
-    --border: 32% 0.055 35;
-    --input: 32% 0.055 35;
-    --sidebar: 13% 0.045 35;
-    --dot-grid: 32% 0.055 35;
-    --primary: 76% 0.17 40;
-    --primary-dim: 55% 0.13 40;
-    --primary-foreground: 15% 0.04 35;
-    --secondary: 80% 0.15 60;
-    --secondary-foreground: 18% 0.04 35;
-    --ring: 76% 0.17 40;
-    --accent-coral: 76% 0.19 15;
-    --accent-coral-dim: 54% 0.13 15;
-    --accent-teal: 76% 0.12 180;
-    --accent-teal-dim: 54% 0.09 180;
-    --accent-amber: 88% 0.17 70;
-    --muted-foreground: 75% 0.030 50;
+    --background: 9% 0.024 35;
+    --foreground: 96% 0.015 80;
+    --card: 12% 0.026 35;
+    --popover: 12% 0.026 35;
+    --muted: 15% 0.026 35;
+    --accent: 16% 0.026 35;
+    --border: 19% 0.022 35;
+    --input: 19% 0.022 35;
+    --sidebar: 6% 0.022 35;
+    --dot-grid: 19% 0.022 35;
+    --primary: 66% 0.15 35;
+    --primary-dim: 48% 0.12 35;
+    --primary-foreground: 9% 0.024 35;
+    --secondary: 76% 0.14 65;
+    --secondary-foreground: 9% 0.024 35;
+    --ring: 66% 0.15 35;
+    --accent-coral: 72% 0.18 15;
+    --accent-coral-dim: 52% 0.12 15;
+    --accent-teal: 74% 0.12 180;
+    --accent-teal-dim: 54% 0.10 180;
+    --accent-amber: 80% 0.16 70;
+    --muted-foreground: 66% 0.024 35;
   }
 
   * {
@@ -316,7 +338,20 @@
   h5,
   h6 {
     font-family: 'Space Grotesk', system-ui, -apple-system, sans-serif;
-    letter-spacing: -0.02em;
+    font-weight: 600;
+    letter-spacing: var(--tracking-heading);
+    line-height: 1.15;
+  }
+
+  h1 {
+    letter-spacing: var(--tracking-display);
+  }
+
+  /* Inputs keep neutral tracking so labels and field text stay legible. */
+  input,
+  textarea,
+  select {
+    letter-spacing: 0;
   }
 
   code,
@@ -328,12 +363,67 @@
 }
 
 @layer components {
+  /* Shared chrome: same component code, mode-aware via --card-shadow.
+     Light: hairline border + soft drop. Dark: shadow-as-border (landing pattern). */
+  .chrome-card,
   .surface-panel {
-    @apply rounded-lg border border-border/60 bg-card/95 p-3 shadow-sm;
+    border-radius: var(--radius);
+    background-color: oklch(var(--card));
+    color: oklch(var(--card-foreground));
+    padding: 0.75rem;
+    box-shadow: var(--card-shadow);
+    border: 0;
+    transition: box-shadow var(--duration-fast) var(--ease-out-quart);
   }
 
+  .chrome-card:hover,
+  .surface-panel:hover {
+    box-shadow: var(--ring-border-strong);
+  }
+
+  /* Pill chip — landing's nav/shell button language */
   .shell-action {
-    @apply inline-flex items-center gap-1.5 rounded-md border border-border/60 bg-card/90 px-3 py-1.5 text-sm font-medium text-foreground transition hover:border-primary/40 hover:bg-card;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    min-height: 32px;
+    padding: 0 12px;
+    border-radius: 999px;
+    border: 1px solid oklch(var(--border));
+    background-color: oklch(var(--card));
+    font-size: 0.8125rem;
+    font-weight: 500;
+    color: oklch(var(--foreground));
+    transition: background-color var(--duration-fast), border-color var(--duration-fast), color var(--duration-fast);
+  }
+
+  .shell-action:hover {
+    border-color: oklch(var(--primary) / 0.4);
+    background-color: oklch(var(--accent));
+  }
+
+  .shell-action--solid {
+    background-color: oklch(var(--primary));
+    border-color: transparent;
+    color: oklch(var(--primary-foreground));
+  }
+
+  .shell-action--solid:hover {
+    background-color: oklch(var(--primary-dim));
+    border-color: transparent;
+    color: oklch(var(--primary-foreground));
+  }
+
+  /* Eyebrow — small uppercase mono label, sanctioned mono usage */
+  .eyebrow {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace;
+    font-size: 0.6875rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: oklch(var(--muted-foreground));
   }
 
   .editor-input {
@@ -357,15 +447,16 @@
   }
 
   .prose-syntaur pre {
-    @apply rounded-lg border border-border/60 bg-code px-3 py-3 text-code-foreground;
+    @apply rounded-frame border border-border/60 bg-code px-4 py-3 text-code-foreground;
   }
 
   .prose-syntaur table {
     @apply block overflow-x-auto rounded-lg border border-border/60;
   }
 
+  /* Amber accent on blockquote — echoes the landing's eyebrow-amber pairing. */
   .prose-syntaur blockquote {
-    @apply rounded-r-lg border-l-4 border-primary/50 bg-accent/50 py-1 pr-3;
+    @apply rounded-r-lg border-l-4 border-secondary/70 bg-accent/40 py-1 pr-3;
   }
 
   /* Hotkey selection ring — applied to rows via data-hotkey-selected="true" */
