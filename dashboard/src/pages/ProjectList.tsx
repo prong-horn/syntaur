@@ -184,19 +184,35 @@ export function ProjectList() {
       </FilterBar>
 
       {filtered.length === 0 ? (
-        <EmptyState
-          title={projects.length === 0 ? 'No projects yet' : 'No projects match these filters'}
-          description={
-            projects.length === 0
-              ? 'A project is the high-level objective that groups assignments, resources, and memories. Create one to start the dashboard flow.'
-              : 'Adjust the current search and filters or create a new project.'
-          }
-          actions={
-            <Link className="shell-action bg-foreground text-background hover:opacity-90" to={`${wsPrefix}/create/project`}>
-              Create Project
-            </Link>
-          }
-        />
+        projects.length === 0 ? (
+          <div className="rounded-frame border border-border/60 bg-card px-6 py-16 text-center">
+            <p className="eyebrow mx-auto justify-center">Start here</p>
+            <h2 className="mx-auto mt-4 max-w-2xl text-3xl font-semibold tracking-display text-foreground md:text-4xl">
+              The task manager built for agents, by agents
+            </h2>
+            <p className="mx-auto mt-3 max-w-xl text-sm leading-6 text-muted-foreground">
+              A project groups assignments, resources, and memories under one objective. Markdown stays authoritative — the dashboard is just a view.
+            </p>
+            <div className="mt-6 flex flex-wrap justify-center gap-3">
+              <Link className="shell-action shell-action--solid" to={`${wsPrefix}/create/project`}>
+                Create your first project
+              </Link>
+              <Link className="shell-action" to="/help">
+                Read the spec
+              </Link>
+            </div>
+          </div>
+        ) : (
+          <EmptyState
+            title="No projects match these filters"
+            description="Adjust the current search and filters or create a new project."
+            actions={
+              <Link className="shell-action shell-action--solid" to={`${wsPrefix}/create/project`}>
+                Create Project
+              </Link>
+            }
+          />
+        )
       ) : view === 'cards' ? (
         <div className="grid gap-3 lg:grid-cols-2 2xl:grid-cols-3">
           {filtered.map((project, i) => (
