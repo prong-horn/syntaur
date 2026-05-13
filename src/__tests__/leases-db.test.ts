@@ -17,6 +17,11 @@ import {
   gcExpiredLeases,
   getLease,
   listLeases,
+  listMembers,
+  getLeaseEvents,
+  updateInventory,
+  deleteInventory,
+  releaseLeasesByRequestedFor,
   getInventoryDetail,
   NoIdleMemberError,
   StaleLeaseError,
@@ -349,5 +354,258 @@ describe('forceReleaseLease', () => {
 
   it('throws NotFoundError for an unknown lease id', () => {
     expect(() => forceReleaseLease('nonexistent')).toThrow(NotFoundError);
+  });
+});
+
+describe('listMembers', () => {
+  beforeEach(() => {
+    initLeasesDb(dbPath);
+    createInventory({ slug: 'envs', kind: 'dev-env', default_ttl_s: 600 });
+  });
+
+  it('returns members ordered by member_id', () => {
+    addMember({ inventory_slug: 'envs', member_id: 'b' });
+    addMember({ inventory_slug: 'envs', member_id: 'a' });
+    const rows = listMembers('envs');
+    expect(rows.map((r) => r.member_id)).toEqual(['a', 'b']);
+  });
+
+  it('returns [] for an empty inventory', () => {
+    expect(listMembers('envs')).toEqual([]);
+  });
+
+  it('throws NotFoundError when the inventory does not exist', () => {
+    expect(() => listMembers('does-not-exist')).toThrow(NotFoundError);
+  });
+
+  it('reflects current member status (idle vs leased)', () => {
+    addMember({ inventory_slug: 'envs', member_id: 'm1' });
+    addMember({ inventory_slug: 'envs', member_id: 'm2' });
+    claimLease('envs', 60);
+    const rows = listMembers('envs');
+    const statuses = rows.map((r) => r.status).sort();
+    expect(statuses).toEqual(['idle', 'leased']);
+  });
+});
+
+describe('getLeaseEvents', () => {
+  beforeEach(() => {
+    initLeasesDb(dbPath);
+    createInventory({ slug: 'envs', kind: 'dev-env', default_ttl_s: 600 });
+    addMember({ inventory_slug: 'envs', member_id: 'm1' });
+    addMember({ inventory_slug: 'envs', member_id: 'm2' });
+  });
+
+  it('returns a lease timeline in chronological order when filtered by lease_id', () => {
+    const a = claimLease('envs', 60);
+    extendLease(a.lease_id, 600);
+    releaseLease(a.lease_id);
+    const evs = getLeaseEvents(a.lease_id);
+    expect(evs.map((e) => e.event)).toEqual(['claimed', 'extended', 'released']);
+    expect(evs.every((e) => e.lease_id === a.lease_id)).toBe(true);
+  });
+
+  it('returns the most recent N events across all leases when no lease_id is given', () => {
+    const a = claimLease('envs', 60);
+    const b = claimLease('envs', 60);
+    releaseLease(a.lease_id);
+    releaseLease(b.lease_id);
+    const all = getLeaseEvents(undefined, 3);
+    expect(all).toHaveLength(3);
+    // Reverse-chronological: newest first.
+    for (let i = 0; i < all.length - 1; i += 1) {
+      expect(all[i].at >= all[i + 1].at).toBe(true);
+    }
+  });
+
+  it('respects the limit', () => {
+    const a = claimLease('envs', 60);
+    releaseLease(a.lease_id);
+    expect(getLeaseEvents(a.lease_id, 1)).toHaveLength(1);
+  });
+
+  it('returns [] for a lease that has no events', () => {
+    expect(getLeaseEvents('no-such-lease')).toEqual([]);
+  });
+});
+
+describe('updateInventory', () => {
+  beforeEach(() => {
+    initLeasesDb(dbPath);
+    createInventory({
+      slug: 'envs',
+      kind: 'dev-env',
+      display_name: 'Dev Envs',
+      default_ttl_s: 600,
+    });
+  });
+
+  it('updates default_ttl_s', () => {
+    const row = updateInventory('envs', { default_ttl_s: 1800 });
+    expect(row.default_ttl_s).toBe(1800);
+    expect(row.display_name).toBe('Dev Envs');
+  });
+
+  it('updates display_name', () => {
+    const row = updateInventory('envs', { display_name: 'Renamed' });
+    expect(row.display_name).toBe('Renamed');
+    expect(row.default_ttl_s).toBe(600);
+  });
+
+  it('updates both fields at once', () => {
+    const row = updateInventory('envs', {
+      default_ttl_s: 120,
+      display_name: 'Both',
+    });
+    expect(row.default_ttl_s).toBe(120);
+    expect(row.display_name).toBe('Both');
+  });
+
+  it('throws NotFoundError for unknown slug', () => {
+    expect(() =>
+      updateInventory('nope', { default_ttl_s: 1 }),
+    ).toThrow(NotFoundError);
+  });
+
+  it('refuses an empty patch', () => {
+    expect(() => updateInventory('envs', {})).toThrow(/nothing to update/);
+  });
+
+  it('rejects callers that try to sneak `kind` through', () => {
+    expect(() =>
+      updateInventory('envs', { kind: 'other' } as unknown as Parameters<
+        typeof updateInventory
+      >[1]),
+    ).toThrow(/immutable/);
+  });
+
+  it('rejects non-positive default_ttl_s', () => {
+    expect(() => updateInventory('envs', { default_ttl_s: 0 })).toThrow(
+      /positive/,
+    );
+    expect(() => updateInventory('envs', { default_ttl_s: -10 })).toThrow(
+      /positive/,
+    );
+  });
+});
+
+describe('deleteInventory', () => {
+  beforeEach(() => {
+    initLeasesDb(dbPath);
+    createInventory({ slug: 'envs', kind: 'dev-env', default_ttl_s: 600 });
+    addMember({ inventory_slug: 'envs', member_id: 'm1' });
+    addMember({ inventory_slug: 'envs', member_id: 'm2' });
+  });
+
+  it('deletes an empty inventory and reports zero revoked', () => {
+    createInventory({ slug: 'empty', kind: 'lock', default_ttl_s: 60 });
+    expect(deleteInventory('empty')).toEqual({ deleted: true, revoked: 0 });
+    expect(
+      getLeasesDb()
+        .prepare('SELECT slug FROM inventories WHERE slug = ?')
+        .get('empty'),
+    ).toBeUndefined();
+  });
+
+  it('deletes an inventory that has only retired/idle members', () => {
+    deleteInventory('envs');
+    expect(
+      getLeasesDb()
+        .prepare('SELECT slug FROM inventories WHERE slug = ?')
+        .get('envs'),
+    ).toBeUndefined();
+    expect(
+      getLeasesDb()
+        .prepare(
+          'SELECT COUNT(*) as n FROM inventory_members WHERE inventory_slug = ?',
+        )
+        .get('envs'),
+    ).toEqual({ n: 0 });
+  });
+
+  it('refuses if any lease is active and force is not set', () => {
+    claimLease('envs', 600);
+    expect(() => deleteInventory('envs')).toThrow(MemberInUseError);
+    // Inventory still present.
+    expect(
+      getLeasesDb()
+        .prepare('SELECT slug FROM inventories WHERE slug = ?')
+        .get('envs'),
+    ).toBeDefined();
+  });
+
+  it('with --force revokes active leases and cascades through events/leases/members', () => {
+    const a = claimLease('envs', 600);
+    claimLease('envs', 600);
+    const res = deleteInventory('envs', { force: true });
+    expect(res).toEqual({ deleted: true, revoked: 2 });
+
+    const db = getLeasesDb();
+    expect(
+      db.prepare('SELECT slug FROM inventories WHERE slug = ?').get('envs'),
+    ).toBeUndefined();
+    expect(
+      db
+        .prepare(
+          'SELECT COUNT(*) as n FROM inventory_members WHERE inventory_slug = ?',
+        )
+        .get('envs'),
+    ).toEqual({ n: 0 });
+    expect(
+      db
+        .prepare('SELECT COUNT(*) as n FROM leases WHERE inventory_slug = ?')
+        .get('envs'),
+    ).toEqual({ n: 0 });
+    expect(
+      db
+        .prepare('SELECT COUNT(*) as n FROM lease_events WHERE lease_id = ?')
+        .get(a.lease_id),
+    ).toEqual({ n: 0 });
+  });
+
+  it('throws NotFoundError for unknown slug', () => {
+    expect(() => deleteInventory('nope')).toThrow(NotFoundError);
+  });
+});
+
+describe('releaseLeasesByRequestedFor', () => {
+  beforeEach(() => {
+    initLeasesDb(dbPath);
+    createInventory({ slug: 'envs', kind: 'dev-env', default_ttl_s: 600 });
+    for (const id of ['m1', 'm2', 'm3']) {
+      addMember({ inventory_slug: 'envs', member_id: id });
+    }
+  });
+
+  it('returns empty arrays when no leases match', () => {
+    claimLease('envs', 600, 'other');
+    expect(releaseLeasesByRequestedFor('mine')).toEqual({
+      released: [],
+      stale: [],
+    });
+  });
+
+  it('releases every active lease tagged with <tag> and returns their ids', () => {
+    const a = claimLease('envs', 600, 'tag-a');
+    const b = claimLease('envs', 600, 'tag-a');
+    claimLease('envs', 600, 'tag-b');
+    const res = releaseLeasesByRequestedFor('tag-a');
+    expect(res.released.sort()).toEqual([a.lease_id, b.lease_id].sort());
+    expect(res.stale).toEqual([]);
+    // The tag-b lease is still active.
+    expect(listLeases({ state: 'active' })).toHaveLength(1);
+  });
+
+  it('tallies a stale lease as stale instead of throwing', () => {
+    const a = claimLease('envs', 600, 'tag-c');
+    // Force-release out of band so the next releaseLease for the same id is stale.
+    forceReleaseLease(a.lease_id);
+    // Manually flip state back so the SELECT finds it (simulating a race).
+    getLeasesDb()
+      .prepare("UPDATE leases SET state = 'active' WHERE lease_id = ?")
+      .run(a.lease_id);
+    const res = releaseLeasesByRequestedFor('tag-c');
+    expect(res.released).toEqual([]);
+    expect(res.stale).toEqual([a.lease_id]);
   });
 });

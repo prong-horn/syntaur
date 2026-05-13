@@ -677,6 +677,48 @@ export function listLeases(filter?: ListLeasesFilter): LeaseRow[] {
     .all(...params) as LeaseRow[];
 }
 
+export function listMembers(inventory_slug: string): InventoryMemberRow[] {
+  const database = getLeasesDb();
+  const inv = database
+    .prepare('SELECT slug FROM inventories WHERE slug = ?')
+    .get(inventory_slug);
+  if (!inv) throw new NotFoundError(inventory_slug);
+  return database
+    .prepare(
+      `SELECT inventory_slug, member_id, status, generation, metadata_json, last_used_at, retired_at
+       FROM inventory_members WHERE inventory_slug = ?
+       ORDER BY member_id`,
+    )
+    .all(inventory_slug) as InventoryMemberRow[];
+}
+
+/**
+ * Read lease_events. With a `lease_id`, returns that lease's event timeline in
+ * chronological order (oldest first). Without, returns the most recent `limit`
+ * events across all leases in reverse-chronological order (newest first).
+ */
+export function getLeaseEvents(lease_id?: string, limit = 50): LeaseEventRow[] {
+  const database = getLeasesDb();
+  if (lease_id) {
+    return database
+      .prepare(
+        `SELECT id, lease_id, event, at, detail_json
+         FROM lease_events WHERE lease_id = ?
+         ORDER BY at ASC, id ASC
+         LIMIT ?`,
+      )
+      .all(lease_id, limit) as LeaseEventRow[];
+  }
+  return database
+    .prepare(
+      `SELECT id, lease_id, event, at, detail_json
+       FROM lease_events
+       ORDER BY at DESC, id DESC
+       LIMIT ?`,
+    )
+    .all(limit) as LeaseEventRow[];
+}
+
 // --- GC --------------------------------------------------------------------
 
 /**
@@ -801,4 +843,171 @@ export function forceReleaseLease(lease_id: string): { member_freed: boolean } {
     if (isBusyError(err)) throw new LeaseContentionError(lease_id);
     throw err;
   }
+}
+
+// --- Inventory update / delete --------------------------------------------
+
+export interface UpdateInventoryInput {
+  default_ttl_s?: number;
+  display_name?: string | null;
+}
+
+/**
+ * Update mutable inventory fields. `kind` is immutable in v1 — the typed
+ * signature excludes it, and a runtime guard rejects any caller that sneaks
+ * a `kind` key through (defense in depth).
+ */
+export function updateInventory(
+  slug: string,
+  input: UpdateInventoryInput,
+): InventoryRow {
+  if ('kind' in input) {
+    throw new Error('inventory kind is immutable');
+  }
+  if (
+    input.default_ttl_s === undefined &&
+    input.display_name === undefined
+  ) {
+    throw new Error('nothing to update');
+  }
+  if (input.default_ttl_s !== undefined && input.default_ttl_s <= 0) {
+    throw new Error('default_ttl_s must be positive');
+  }
+  const database = getLeasesDb();
+
+  const fn = database.transaction(() => {
+    const existing = database
+      .prepare('SELECT slug FROM inventories WHERE slug = ?')
+      .get(slug);
+    if (!existing) throw new NotFoundError(slug);
+
+    const sets: string[] = [];
+    const params: unknown[] = [];
+    if (input.default_ttl_s !== undefined) {
+      sets.push('default_ttl_s = ?');
+      params.push(input.default_ttl_s);
+    }
+    if (input.display_name !== undefined) {
+      sets.push('display_name = ?');
+      params.push(input.display_name);
+    }
+    params.push(slug);
+
+    database
+      .prepare(`UPDATE inventories SET ${sets.join(', ')} WHERE slug = ?`)
+      .run(...params);
+
+    return database
+      .prepare(
+        `SELECT slug, kind, display_name, default_ttl_s, created_at
+         FROM inventories WHERE slug = ?`,
+      )
+      .get(slug) as InventoryRow;
+  });
+
+  try {
+    return fn.immediate();
+  } catch (err) {
+    if (isBusyError(err)) throw new LeaseContentionError(slug);
+    throw err;
+  }
+}
+
+/**
+ * Delete an inventory and all of its members, leases, and lease_events.
+ *
+ * Without `force`: refuses if any lease for the inventory is currently
+ * `active` (throws `MemberInUseError`).
+ *
+ * With `force`: tallies active leases as `revoked` and cascades through
+ * events → leases → members → inventory row, ALL inside one `BEGIN IMMEDIATE`
+ * transaction. The acquire-up-front lock prevents a concurrent `claimLease`
+ * from grabbing a freshly-idled member between the active-lease snapshot and
+ * the cascade — what would otherwise be a use-after-free window. No explicit
+ * `force_released` event is written because the entire event log for this
+ * inventory is deleted in the same tx anyway.
+ */
+export function deleteInventory(
+  slug: string,
+  opts: { force?: boolean } = {},
+): { deleted: boolean; revoked: number } {
+  const database = getLeasesDb();
+
+  let revoked = 0;
+  const fn = database.transaction(() => {
+    const existing = database
+      .prepare('SELECT slug FROM inventories WHERE slug = ?')
+      .get(slug);
+    if (!existing) throw new NotFoundError(slug);
+
+    const activeLeases = database
+      .prepare(
+        `SELECT lease_id FROM leases
+          WHERE inventory_slug = ? AND state = 'active'`,
+      )
+      .all(slug) as Array<{ lease_id: string }>;
+
+    if (activeLeases.length > 0 && !opts.force) {
+      throw new MemberInUseError(slug, '*');
+    }
+    revoked = activeLeases.length;
+
+    database
+      .prepare(
+        `DELETE FROM lease_events
+          WHERE lease_id IN (SELECT lease_id FROM leases WHERE inventory_slug = ?)`,
+      )
+      .run(slug);
+    database.prepare('DELETE FROM leases WHERE inventory_slug = ?').run(slug);
+    database
+      .prepare('DELETE FROM inventory_members WHERE inventory_slug = ?')
+      .run(slug);
+    database.prepare('DELETE FROM inventories WHERE slug = ?').run(slug);
+  });
+
+  try {
+    fn.immediate();
+  } catch (err) {
+    if (isBusyError(err)) throw new LeaseContentionError(slug);
+    throw err;
+  }
+  return { deleted: true, revoked };
+}
+
+// --- Bulk release by tag --------------------------------------------------
+
+/**
+ * Release every `active` lease whose `requested_for` matches `tag`. Per-row
+ * `releaseLease` calls keep each release in its own transaction; a
+ * `StaleLeaseError` from any individual release is tallied as `stale` and
+ * swallowed (the caller asked for a best-effort sweep). Returns the
+ * per-lease ids in two arrays so callers can render one-line-per-lease
+ * summaries without re-querying.
+ */
+export function releaseLeasesByRequestedFor(
+  tag: string,
+): { released: string[]; stale: string[] } {
+  const database = getLeasesDb();
+  const rows = database
+    .prepare(
+      `SELECT lease_id FROM leases
+        WHERE state = 'active' AND requested_for = ?`,
+    )
+    .all(tag) as Array<{ lease_id: string }>;
+
+  const released: string[] = [];
+  const stale: string[] = [];
+  for (const { lease_id } of rows) {
+    try {
+      releaseLease(lease_id);
+      released.push(lease_id);
+    } catch (err) {
+      if (err instanceof StaleLeaseError) {
+        stale.push(lease_id);
+        continue;
+      }
+      throw err;
+    }
+  }
+  return { released, stale };
 }
