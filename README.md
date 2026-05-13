@@ -238,9 +238,11 @@ syntaur lease list                          # pool overview
 syntaur lease --help                        # full subcommand list
 ```
 
-Two skills wrap this for agents: **claim-resource** (claim and persist into `.syntaur/context.json`) and **release-resource** (release one or `--all`).
+Four skills wrap this for agents: **claim-resource**, **release-resource**, **extend-resource**, and **list-resources** — see [`docs/leases/skills.md`](docs/leases/skills.md).
 
-**v1 scope:** static inventories (you register members), atomic claim, TTL expiry, dashboard view, fail-fast on contention (capacity-1 inventory works as a named lock). **Not in v1:** automatic provisioning / recycling, an in-process plugin SDK, cross-host coordination, blocking `--wait`. Members are recycled by the caller's own scripts between leases for now.
+Admin and cleanup commands (`revoke`, `release-all --for`, `inventory delete`, `inventory update`, `member list`, `history`, plus `claim --wait`) are documented in [`docs/leases/cli-reference.md`](docs/leases/cli-reference.md).
+
+**v1 scope:** static inventories (you register members), atomic claim, TTL expiry, dashboard view, optional `claim --wait`, fail-fast by default (capacity-1 inventory works as a named lock). **Not in v1:** automatic provisioning / recycling, an in-process plugin SDK, cross-host coordination, SessionEnd auto-release. Members are recycled by the caller's own scripts between leases for now.
 
 ---
 
