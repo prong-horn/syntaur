@@ -9,9 +9,15 @@ import {
   extendLease,
   getLease,
   listLeases,
+  listMembers,
   listInventories,
   getInventoryDetail,
   gcExpiredLeases,
+  forceReleaseLease,
+  getLeaseEvents,
+  updateInventory,
+  deleteInventory,
+  releaseLeasesByRequestedFor,
   NoIdleMemberError,
   StaleLeaseError,
   NotFoundError,
@@ -159,43 +165,90 @@ memberCommand
 
 leaseCommand
   .command('claim')
-  .description('Claim an idle member of an inventory. Fail-fast if none idle.')
+  .description('Claim an idle member of an inventory. Fail-fast unless --wait is set.')
   .argument('<inventory>', 'Inventory slug')
   .option('--ttl <duration>', 'Lease TTL (overrides inventory default)')
   .option('--for <tag>', 'Free-form requester tag (session id, assignment slug, etc.)')
+  .option(
+    '--wait <duration>',
+    'Block up to <duration> waiting for an idle member. Backoff: 100ms → 200ms → 400ms → 800ms → 1s cap.',
+  )
   .option('--json', 'Output JSON instead of a one-line summary')
-  .action(async (inventory: string, opts: { ttl?: string; for?: string; json?: boolean }) => {
-    try {
-      initLeasesDb();
-      const detail = getInventoryDetail(inventory);
-      if (!detail) {
-        console.error(`Error: inventory '${inventory}' not found`);
+  .action(
+    async (
+      inventory: string,
+      opts: { ttl?: string; for?: string; wait?: string; json?: boolean },
+    ) => {
+      try {
+        initLeasesDb();
+        const detail = getInventoryDetail(inventory);
+        if (!detail) {
+          console.error(`Error: inventory '${inventory}' not found`);
+          process.exit(1);
+          return;
+        }
+        const ttl_s = parseDuration(opts.ttl, detail.inventory.default_ttl_s);
+        const waitBudgetMs =
+          opts.wait !== undefined ? parseDuration(opts.wait, 0) * 1000 : 0;
+
+        const tryClaim = (): ReturnType<typeof claimLease> =>
+          claimLease(inventory, ttl_s, opts.for);
+
+        let result: ReturnType<typeof claimLease>;
+        if (waitBudgetMs <= 0) {
+          result = tryClaim();
+        } else {
+          const deadline = Date.now() + waitBudgetMs;
+          const backoffSchedule = [100, 200, 400, 800];
+          let attempt = 0;
+          // First attempt is immediate.
+          while (true) {
+            try {
+              result = tryClaim();
+              break;
+            } catch (err) {
+              if (!(err instanceof NoIdleMemberError)) throw err;
+              const remaining = deadline - Date.now();
+              if (remaining <= 0) {
+                console.error(
+                  `Error: timed out waiting ${opts.wait} for an idle member of '${inventory}'`,
+                );
+                process.exit(1);
+                return;
+              }
+              const delay = Math.min(
+                backoffSchedule[Math.min(attempt, backoffSchedule.length - 1)] ?? 1000,
+                1000,
+                remaining,
+              );
+              attempt += 1;
+              await new Promise((r) => setTimeout(r, delay));
+            }
+          }
+        }
+
+        if (opts.json) {
+          console.log(JSON.stringify(result, null, 2));
+        } else {
+          console.log(
+            `Claimed ${result.member_id} as ${result.lease_id} (expires ${result.expires_at})`,
+          );
+        }
+      } catch (error) {
+        if (error instanceof NoIdleMemberError) {
+          console.error(`Error: no idle members in '${error.inventorySlug}'`);
+          process.exit(1);
+        }
+        if (error instanceof LeaseContentionError) {
+          console.error(`Error: contention timeout on '${error.inventorySlug}'; retry`);
+          process.exit(1);
+        }
+        const message = error instanceof Error ? error.message : String(error);
+        console.error(`Error: ${message}`);
         process.exit(1);
-        return;
       }
-      const ttl_s = parseDuration(opts.ttl, detail.inventory.default_ttl_s);
-      const result = claimLease(inventory, ttl_s, opts.for);
-      if (opts.json) {
-        console.log(JSON.stringify(result, null, 2));
-      } else {
-        console.log(
-          `Claimed ${result.member_id} as ${result.lease_id} (expires ${result.expires_at})`,
-        );
-      }
-    } catch (error) {
-      if (error instanceof NoIdleMemberError) {
-        console.error(`Error: no idle members in '${error.inventorySlug}'`);
-        process.exit(1);
-      }
-      if (error instanceof LeaseContentionError) {
-        console.error(`Error: contention timeout on '${error.inventorySlug}'; retry`);
-        process.exit(1);
-      }
-      const message = error instanceof Error ? error.message : String(error);
-      console.error(`Error: ${message}`);
-      process.exit(1);
-    }
-  });
+    },
+  );
 
 // --- release ---------------------------------------------------------------
 
@@ -360,6 +413,242 @@ leaseCommand
     } catch (error) {
       if (error instanceof LeaseContentionError) {
         console.error(`Error: contention timeout; retry`);
+        process.exit(1);
+      }
+      const message = error instanceof Error ? error.message : String(error);
+      console.error(`Error: ${message}`);
+      process.exit(1);
+    }
+  });
+
+// --- revoke ----------------------------------------------------------------
+
+leaseCommand
+  .command('revoke')
+  .description(
+    'Force-release a lease (administrative). Idempotent — already-revoked exits 0.',
+  )
+  .argument('<lease-id>', 'Lease id to revoke')
+  .action(async (leaseId: string) => {
+    try {
+      initLeasesDb();
+      const existing = getLease(leaseId);
+      if (!existing) {
+        console.error(`Error: lease ${leaseId} not found`);
+        process.exit(1);
+        return;
+      }
+      if (existing.state === 'revoked') {
+        console.log(`already revoked ${leaseId}`);
+        return;
+      }
+      const res = forceReleaseLease(leaseId);
+      console.log(`revoked ${leaseId} (member_freed=${res.member_freed})`);
+    } catch (error) {
+      if (error instanceof NotFoundError) {
+        console.error(`Error: lease ${error.id} not found`);
+        process.exit(1);
+      }
+      if (error instanceof LeaseContentionError) {
+        console.error(`Error: contention timeout; retry`);
+        process.exit(1);
+      }
+      const message = error instanceof Error ? error.message : String(error);
+      console.error(`Error: ${message}`);
+      process.exit(1);
+    }
+  });
+
+// --- release-all -----------------------------------------------------------
+
+leaseCommand
+  .command('release-all')
+  .description('Release every active lease matching --for <tag>.')
+  .requiredOption('--for <tag>', 'Requester tag to match against `requested_for`')
+  .option('--json', 'Output JSON {released, stale} as id arrays')
+  .action(async (opts: { for: string; json?: boolean }) => {
+    try {
+      initLeasesDb();
+      const res = releaseLeasesByRequestedFor(opts.for);
+      if (opts.json) {
+        console.log(JSON.stringify(res, null, 2));
+        return;
+      }
+      for (const lid of res.released) {
+        console.log(`released ${lid}`);
+      }
+      for (const lid of res.stale) {
+        console.log(`skipped ${lid} (stale)`);
+      }
+      console.log(
+        `released ${res.released.length} lease(s) for tag "${opts.for}" (${res.stale.length} stale skipped)`,
+      );
+    } catch (error) {
+      if (error instanceof LeaseContentionError) {
+        console.error(`Error: contention timeout; retry`);
+        process.exit(1);
+      }
+      const message = error instanceof Error ? error.message : String(error);
+      console.error(`Error: ${message}`);
+      process.exit(1);
+    }
+  });
+
+// --- history ---------------------------------------------------------------
+
+leaseCommand
+  .command('history')
+  .description(
+    'Show lease_events. With a lease-id, print that lease\'s timeline; without, print the last N events across all leases.',
+  )
+  .argument('[lease-id]', 'Optional lease id to filter on')
+  .option('--limit <n>', 'Max events to return (default 50)', '50')
+  .option('--json', 'Output JSON rows')
+  .action(
+    async (
+      leaseId: string | undefined,
+      opts: { limit: string; json?: boolean },
+    ) => {
+      try {
+        initLeasesDb();
+        const limit = Number.parseInt(opts.limit, 10);
+        if (!Number.isFinite(limit) || limit <= 0) {
+          throw new Error('--limit must be a positive integer');
+        }
+        const rows = getLeaseEvents(leaseId, limit);
+        if (opts.json) {
+          console.log(JSON.stringify(rows, null, 2));
+          return;
+        }
+        if (rows.length === 0) {
+          console.log('(no events)');
+          return;
+        }
+        for (const r of rows) {
+          const detail = r.detail_json ? ` ${r.detail_json}` : '';
+          console.log(`${r.at}  ${r.event.padEnd(16)} ${r.lease_id}${detail}`);
+        }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        console.error(`Error: ${message}`);
+        process.exit(1);
+      }
+    },
+  );
+
+// --- inventory group -------------------------------------------------------
+
+const inventoryCommand = leaseCommand
+  .command('inventory')
+  .description('Manage existing inventories (update, delete)');
+
+inventoryCommand
+  .command('update')
+  .description(
+    'Update mutable inventory fields. `kind` is immutable in v1.',
+  )
+  .argument('<slug>', 'Inventory slug')
+  .option('--default-ttl <duration>', 'New default TTL (e.g. 30m, 2h)')
+  .option('--display-name <text>', 'New display name')
+  .action(
+    async (
+      slug: string,
+      opts: { defaultTtl?: string; displayName?: string },
+    ) => {
+      try {
+        initLeasesDb();
+        if (opts.defaultTtl === undefined && opts.displayName === undefined) {
+          throw new Error(
+            'nothing to update — pass --default-ttl or --display-name',
+          );
+        }
+        const patch: { default_ttl_s?: number; display_name?: string } = {};
+        if (opts.defaultTtl !== undefined) {
+          patch.default_ttl_s = parseDuration(opts.defaultTtl, 0);
+        }
+        if (opts.displayName !== undefined) {
+          patch.display_name = opts.displayName;
+        }
+        const row = updateInventory(slug, patch);
+        console.log(
+          `Updated inventory '${row.slug}' (kind=${row.kind}, default_ttl=${row.default_ttl_s}s, display_name=${row.display_name ?? '(none)'}).`,
+        );
+      } catch (error) {
+        if (error instanceof NotFoundError) {
+          console.error(`Error: inventory '${slug}' not found`);
+          process.exit(1);
+        }
+        const message = error instanceof Error ? error.message : String(error);
+        console.error(`Error: ${message}`);
+        process.exit(1);
+      }
+    },
+  );
+
+inventoryCommand
+  .command('delete')
+  .description(
+    'Delete an inventory. Refuses if any lease is active unless --force is set.',
+  )
+  .argument('<slug>', 'Inventory slug')
+  .option('--force', 'Revoke all active leases first, then cascade delete')
+  .action(async (slug: string, opts: { force?: boolean }) => {
+    try {
+      initLeasesDb();
+      const res = deleteInventory(slug, { force: opts.force });
+      console.log(
+        `deleted "${slug}" (revoked ${res.revoked} active lease(s))`,
+      );
+    } catch (error) {
+      if (error instanceof MemberInUseError) {
+        console.error(
+          `Error: inventory "${slug}" has active leases — use --force to revoke and delete`,
+        );
+        process.exit(1);
+      }
+      if (error instanceof NotFoundError) {
+        console.error(`Error: inventory '${slug}' not found`);
+        process.exit(1);
+      }
+      if (error instanceof LeaseContentionError) {
+        console.error(`Error: contention timeout; retry`);
+        process.exit(1);
+      }
+      const message = error instanceof Error ? error.message : String(error);
+      console.error(`Error: ${message}`);
+      process.exit(1);
+    }
+  });
+
+// --- member list -----------------------------------------------------------
+
+memberCommand
+  .command('list')
+  .description('List all members of an inventory (pure roster — no lease state).')
+  .argument('<inventory>', 'Inventory slug')
+  .option('--json', 'Output JSON rows')
+  .action(async (inventory: string, opts: { json?: boolean }) => {
+    try {
+      initLeasesDb();
+      const rows = listMembers(inventory);
+      if (opts.json) {
+        console.log(JSON.stringify(rows, null, 2));
+        return;
+      }
+      if (rows.length === 0) {
+        console.log('(no members)');
+        return;
+      }
+      for (const r of rows) {
+        const meta = r.metadata_json ? ` ${r.metadata_json}` : '';
+        const last = r.last_used_at ? ` last_used=${r.last_used_at}` : '';
+        console.log(
+          `${r.member_id.padEnd(24)} ${r.status.padEnd(8)} gen=${r.generation}${last}${meta}`,
+        );
+      }
+    } catch (error) {
+      if (error instanceof NotFoundError) {
+        console.error(`Error: inventory '${inventory}' not found`);
         process.exit(1);
       }
       const message = error instanceof Error ? error.message : String(error);
