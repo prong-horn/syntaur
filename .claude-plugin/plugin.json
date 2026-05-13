@@ -28,6 +28,8 @@
     "./skills/log-progress",
     "./skills/set-workspace",
     "./skills/claim-resource",
-    "./skills/release-resource"
+    "./skills/release-resource",
+    "./skills/extend-resource",
+    "./skills/list-resources"
   ]
 }

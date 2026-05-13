@@ -60,6 +60,10 @@ const KNOWN_SKILL_NAMES = [
   'list-assignments',
   'log-progress',
   'set-workspace',
+  'claim-resource',
+  'release-resource',
+  'extend-resource',
+  'list-resources',
 ] as const;
 
 export const KNOWN_SKILLS = KNOWN_SKILL_NAMES;
