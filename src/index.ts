@@ -152,6 +152,9 @@ program
   .option('--note <text>', 'Optional note (required for --kind=text)')
   .option('--project <slug>', 'Project slug if the target is project-nested')
   .option('--dir <path>', 'Override default project directory')
+  .option('--interactive', 'Screenshot mode: drag a region (macOS only)')
+  .option('--window', 'Screenshot mode: window picker (macOS only)')
+  .option('--fullscreen', 'Screenshot mode: silent full-screen capture (macOS only)')
   .action(async (target, options) => {
     try {
       await captureCommand(target, options);

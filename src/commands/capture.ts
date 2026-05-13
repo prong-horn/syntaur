@@ -9,6 +9,7 @@ import {
   ARTIFACT_KINDS,
 } from '../utils/proof-artifact-id.js';
 import { fileExists } from '../utils/fs.js';
+import { captureScreenshot, type ScreenshotMode } from '../utils/screencapture.js';
 import { initProofDb, insertArtifact, getArtifactById, type ArtifactKind } from '../db/proof-db.js';
 
 export interface CaptureOptions {
@@ -19,6 +20,9 @@ export interface CaptureOptions {
   project?: string;
   dir?: string;
   cwd?: string;
+  interactive?: boolean;
+  window?: boolean;
+  fullscreen?: boolean;
 }
 
 const MAX_ID_RETRIES = 5;
@@ -64,6 +68,37 @@ export async function captureCommand(
   }
   const kind: ArtifactKind = options.kind;
 
+  // Screenshot-mode shellout flags. Validated before per-kind rules so the
+  // "--kind=screenshot requires --file" check below can be relaxed when a
+  // shellout flag is set.
+  const shelloutFlagCount = [
+    options.interactive,
+    options.window,
+    options.fullscreen,
+  ].filter(Boolean).length;
+  if (shelloutFlagCount > 1) {
+    throw new Error('--interactive, --window, --fullscreen are mutually exclusive.');
+  }
+  const shelloutMode: ScreenshotMode | null = options.interactive
+    ? 'interactive'
+    : options.window
+      ? 'window'
+      : options.fullscreen
+        ? 'fullscreen'
+        : null;
+  if (shelloutMode) {
+    if (kind !== 'screenshot') {
+      throw new Error(
+        '--interactive, --window, and --fullscreen require --kind=screenshot.',
+      );
+    }
+    if (options.file) {
+      throw new Error(
+        '--file cannot be combined with --interactive, --window, or --fullscreen.',
+      );
+    }
+  }
+
   // Per-kind file/note rules.
   if (kind === 'text') {
     if (options.file) {
@@ -73,7 +108,7 @@ export async function captureCommand(
       throw new Error('--kind=text requires --note.');
     }
   } else {
-    if (kind !== 'http' && !options.file) {
+    if (kind !== 'http' && !options.file && !shelloutMode) {
       throw new Error(`--kind=${kind} requires --file.`);
     }
     // http allows either --file (transcript) or --note. If neither, the
@@ -94,6 +129,7 @@ export async function captureCommand(
 
   // Validate --file before copying anything.
   let resolvedSource: string | null = null;
+  let shelloutCleanup: (() => Promise<void>) | null = null;
   if (options.file) {
     const expanded = options.file.startsWith('~/')
       ? resolve(process.env.HOME ?? '', options.file.slice(2))
@@ -114,82 +150,108 @@ export async function captureCommand(
       throw new Error(`--file is not a regular file: ${options.file}`);
     }
     resolvedSource = real;
+  } else if (shelloutMode) {
+    // The helper cleans its tmp dir itself on any pre-return failure. Once it
+    // returns, the wrapping try/finally below owns cleanup. The copyFile-
+    // failure branch deliberately nulls shelloutCleanup to preserve the
+    // screenshot bytes for manual recovery.
+    const { pngPath, cleanup } = await captureScreenshot(shelloutMode);
+    resolvedSource = pngPath;
+    shelloutCleanup = cleanup;
   }
 
-  // The assignment id is the DB partition key; refuse to write with an empty one.
-  if (!resolved.id || resolved.id.trim() === '') {
-    throw new Error(
-      `Resolved assignment is missing a frontmatter \`id\`: ${resolved.assignmentDir}. Cannot record artifact.`,
-    );
-  }
-
-  // Initialize the DB (no-op after first call).
-  initProofDb();
-
-  // Build destination directory: <assignmentDir>/proof/<criterion-or-untagged>/.
-  const subdir = criterionIndex === null ? 'untagged' : String(criterionIndex);
-  const destDir = resolve(proofDir(resolved.assignmentDir), subdir);
-
-  // Insert-with-retry on UNIQUE conflict. The id space (1ms timestamp + 16
-  // random bits) makes collisions astronomically unlikely; the loop is for
-  // theoretical safety against same-millisecond concurrent writers and acts
-  // as the source of truth, replacing the racey check-then-act pattern.
-  if (resolvedSource) await mkdir(destDir, { recursive: true });
-  const ext = resolvedSource ? extensionForKind(kind) : null;
-
-  let id: string | null = null;
-  let relativeFilePath: string | null = null;
-  let absPath: string | null = null;
-  let lastErr: unknown = null;
-
-  for (let attempt = 0; attempt < MAX_ID_RETRIES; attempt += 1) {
-    const candidate = generateArtifactId();
-    const candidateAbsPath = resolvedSource && ext ? resolve(destDir, `${candidate}.${ext}`) : null;
-    const candidateRel = candidateAbsPath ? relative(resolved.assignmentDir, candidateAbsPath) : null;
-
-    try {
-      insertArtifact({
-        id: candidate,
-        assignmentId: resolved.id,
-        assignmentDir: resolved.assignmentDir,
-        criterionIndex,
-        kind,
-        filePath: candidateRel,
-        note: options.note ?? null,
-      });
-      id = candidate;
-      absPath = candidateAbsPath;
-      relativeFilePath = candidateRel;
-      break;
-    } catch (e) {
-      if (isUniqueConstraintError(e)) {
-        lastErr = e;
-        continue;
-      }
-      throw e;
+  try {
+    // The assignment id is the DB partition key; refuse to write with an empty one.
+    if (!resolved.id || resolved.id.trim() === '') {
+      throw new Error(
+        `Resolved assignment is missing a frontmatter \`id\`: ${resolved.assignmentDir}. Cannot record artifact.`,
+      );
     }
-  }
 
-  if (!id) {
-    throw new Error(
-      `Failed to generate a unique artifact id after ${MAX_ID_RETRIES} attempts: ${
-        lastErr instanceof Error ? lastErr.message : String(lastErr)
-      }`,
-    );
-  }
+    // Initialize the DB (no-op after first call).
+    initProofDb();
 
-  // File copy comes after the DB insert succeeded. If the file copy fails the
-  // DB row is left orphaned (rare; surfaces clearly to the user). Doing it
-  // this way means we never copy bytes to disk and then discover a DB
-  // collision.
-  if (resolvedSource && absPath) {
-    await copyFile(resolvedSource, absPath);
-  }
+    // Build destination directory: <assignmentDir>/proof/<criterion-or-untagged>/.
+    const subdir = criterionIndex === null ? 'untagged' : String(criterionIndex);
+    const destDir = resolve(proofDir(resolved.assignmentDir), subdir);
 
-  const ref = resolved.standalone ? resolved.id : `${resolved.projectSlug}/${resolved.assignmentSlug}`;
-  const tagSuffix = criterionIndex === null ? 'untagged' : `criterion ${criterionIndex}`;
-  console.log(`Captured artifact ${id} (${kind}) for ${ref} — ${tagSuffix}.`);
-  if (relativeFilePath) {
-    console.log(`  file: ${resolve(resolved.assignmentDir, relativeFilePath)}`);
+    // Insert-with-retry on UNIQUE conflict. The id space (1ms timestamp + 16
+    // random bits) makes collisions astronomically unlikely; the loop is for
+    // theoretical safety against same-millisecond concurrent writers and acts
+    // as the source of truth, replacing the racey check-then-act pattern.
+    if (resolvedSource) await mkdir(destDir, { recursive: true });
+    const ext = resolvedSource ? extensionForKind(kind) : null;
+
+    let id: string | null = null;
+    let relativeFilePath: string | null = null;
+    let absPath: string | null = null;
+    let lastErr: unknown = null;
+
+    for (let attempt = 0; attempt < MAX_ID_RETRIES; attempt += 1) {
+      const candidate = generateArtifactId();
+      const candidateAbsPath = resolvedSource && ext ? resolve(destDir, `${candidate}.${ext}`) : null;
+      const candidateRel = candidateAbsPath ? relative(resolved.assignmentDir, candidateAbsPath) : null;
+
+      try {
+        insertArtifact({
+          id: candidate,
+          assignmentId: resolved.id,
+          assignmentDir: resolved.assignmentDir,
+          criterionIndex,
+          kind,
+          filePath: candidateRel,
+          note: options.note ?? null,
+        });
+        id = candidate;
+        absPath = candidateAbsPath;
+        relativeFilePath = candidateRel;
+        break;
+      } catch (e) {
+        if (isUniqueConstraintError(e)) {
+          lastErr = e;
+          continue;
+        }
+        throw e;
+      }
+    }
+
+    if (!id) {
+      throw new Error(
+        `Failed to generate a unique artifact id after ${MAX_ID_RETRIES} attempts: ${
+          lastErr instanceof Error ? lastErr.message : String(lastErr)
+        }`,
+      );
+    }
+
+    // File copy comes after the DB insert succeeded. If the file copy fails the
+    // DB row is left orphaned (rare; surfaces clearly to the user). Doing it
+    // this way means we never copy bytes to disk and then discover a DB
+    // collision.
+    if (resolvedSource && absPath) {
+      try {
+        await copyFile(resolvedSource, absPath);
+      } catch (err) {
+        if (shelloutCleanup) {
+          console.error(
+            `Screenshot saved at ${resolvedSource} — DB row inserted but copy to proof dir failed. Recover with: mv ${resolvedSource} ${absPath}`,
+          );
+          // Preserve the screenshot bytes so the user can recover.
+          shelloutCleanup = null;
+        }
+        throw err;
+      }
+    }
+
+    const ref = resolved.standalone ? resolved.id : `${resolved.projectSlug}/${resolved.assignmentSlug}`;
+    const tagSuffix = criterionIndex === null ? 'untagged' : `criterion ${criterionIndex}`;
+    console.log(`Captured artifact ${id} (${kind}) for ${ref} — ${tagSuffix}.`);
+    if (relativeFilePath) {
+      console.log(`  file: ${resolve(resolved.assignmentDir, relativeFilePath)}`);
+    }
+  } finally {
+    if (shelloutCleanup) {
+      await shelloutCleanup();
+      shelloutCleanup = null;
+    }
   }
 }

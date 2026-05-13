@@ -1,7 +1,26 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtemp, rm, mkdir, writeFile, readFile, readdir } from 'node:fs/promises';
+import { describe, it, expect, beforeAll, beforeEach, afterEach, vi } from 'vitest';
+import { mkdtemp, rm, mkdir, writeFile, readFile, readdir, chmod } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { resolve, join } from 'node:path';
+import { resolve, join, dirname } from 'node:path';
+import { EventEmitter } from 'node:events';
+
+// Mock child_process.spawn at module scope (vitest hoists this above imports).
+// Tests set `behavior.handler` per-case to drive the fake child's events.
+const { fakeSpawn, behavior } = vi.hoisted(() => {
+  return {
+    fakeSpawn: vi.fn(),
+    behavior: {
+      handler: null as null | ((args: string[], child: EventEmitter) => void | Promise<void>),
+    },
+  };
+});
+
+vi.mock('node:child_process', async () => {
+  const actual = await vi.importActual<typeof import('node:child_process')>('node:child_process');
+  return { ...actual, spawn: fakeSpawn };
+});
+
 import { createProjectCommand } from '../commands/create-project.js';
 import { createAssignmentCommand } from '../commands/create-assignment.js';
 import { captureCommand } from '../commands/capture.js';
@@ -337,5 +356,308 @@ describe('captureCommand', () => {
     await expect(
       captureCommand('a', { kind: 'http', project: projectSlug, dir: testDir }),
     ).rejects.toThrow(/requires --file or --note/);
+  });
+});
+
+describe('captureCommand screenshot shellout', () => {
+  let origPlatform: PropertyDescriptor | undefined;
+
+  beforeAll(() => {
+    fakeSpawn.mockImplementation((_cmd: string, args: string[]) => {
+      const child = new EventEmitter() as EventEmitter & {
+        stdout: EventEmitter;
+        stderr: EventEmitter;
+      };
+      child.stdout = new EventEmitter();
+      child.stderr = new EventEmitter();
+      if (behavior.handler) {
+        const h = behavior.handler;
+        // Defer so the helper can attach 'close'/'error' listeners first.
+        queueMicrotask(() => {
+          void Promise.resolve(h(args, child)).catch((err) => {
+            child.emit('error', err);
+          });
+        });
+      }
+      return child;
+    });
+  });
+
+  beforeEach(() => {
+    behavior.handler = null;
+    fakeSpawn.mockClear();
+    origPlatform = Object.getOwnPropertyDescriptor(process, 'platform');
+    // Force darwin so the platform gate passes; individual tests can override.
+    Object.defineProperty(process, 'platform', { value: 'darwin', configurable: true });
+  });
+
+  afterEach(() => {
+    if (origPlatform) {
+      Object.defineProperty(process, 'platform', origPlatform);
+    }
+  });
+
+  function writeFakePng(path: string): Promise<void> {
+    return writeFile(path, Buffer.from([0x89, 0x50, 0x4e, 0x47]));
+  }
+
+  it('--interactive happy path: spawns screencapture -i and stores the PNG', async () => {
+    behavior.handler = async (args, child) => {
+      await writeFakePng(args[args.length - 1]);
+      child.emit('close', 0);
+    };
+
+    const { projectSlug, assignmentDir } = await setupProjectAssignment();
+    await captureCommand('a', {
+      kind: 'screenshot',
+      interactive: true,
+      project: projectSlug,
+      dir: testDir,
+    });
+
+    expect(fakeSpawn).toHaveBeenCalledTimes(1);
+    const [cmd, spawnArgs] = fakeSpawn.mock.calls[0] as [string, string[]];
+    expect(cmd).toBe('screencapture');
+    expect(spawnArgs[0]).toBe('-i');
+    const tmpPng = spawnArgs[1];
+    expect(tmpPng).toMatch(/syntaur-screenshot-/);
+
+    const id = await getAssignmentId(assignmentDir);
+    const rows = listArtifactsByAssignment(id);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].kind).toBe('screenshot');
+    expect(rows[0].file_path).toMatch(/^proof\/untagged\/.+\.png$/);
+
+    const proofUntagged = resolve(assignmentDir, 'proof', 'untagged');
+    const files = await readdir(proofUntagged);
+    expect(files).toHaveLength(1);
+    expect(files[0]).toMatch(/\.png$/);
+
+    // Helper-owned tmp dir cleaned up after successful copy.
+    expect(existsSync(dirname(tmpPng))).toBe(false);
+  });
+
+  it('--window passes -iWo to screencapture', async () => {
+    behavior.handler = async (args, child) => {
+      await writeFakePng(args[args.length - 1]);
+      child.emit('close', 0);
+    };
+
+    const { projectSlug } = await setupProjectAssignment();
+    await captureCommand('a', {
+      kind: 'screenshot',
+      window: true,
+      project: projectSlug,
+      dir: testDir,
+    });
+
+    const [, spawnArgs] = fakeSpawn.mock.calls[0] as [string, string[]];
+    expect(spawnArgs[0]).toBe('-iWo');
+  });
+
+  it('--fullscreen passes -x to screencapture', async () => {
+    behavior.handler = async (args, child) => {
+      await writeFakePng(args[args.length - 1]);
+      child.emit('close', 0);
+    };
+
+    const { projectSlug } = await setupProjectAssignment();
+    await captureCommand('a', {
+      kind: 'screenshot',
+      fullscreen: true,
+      project: projectSlug,
+      dir: testDir,
+    });
+
+    const [, spawnArgs] = fakeSpawn.mock.calls[0] as [string, string[]];
+    expect(spawnArgs[0]).toBe('-x');
+  });
+
+  it('errors with a --file hint on non-darwin platforms', async () => {
+    Object.defineProperty(process, 'platform', { value: 'linux', configurable: true });
+
+    const { projectSlug, assignmentDir } = await setupProjectAssignment();
+    await expect(
+      captureCommand('a', {
+        kind: 'screenshot',
+        interactive: true,
+        project: projectSlug,
+        dir: testDir,
+      }),
+    ).rejects.toThrow(/Use --file/);
+
+    expect(fakeSpawn).not.toHaveBeenCalled();
+    const id = await getAssignmentId(assignmentDir);
+    initProofDb();
+    expect(listArtifactsByAssignment(id)).toHaveLength(0);
+  });
+
+  it('rejects --interactive combined with --file', async () => {
+    const { projectSlug, assignmentDir } = await setupProjectAssignment();
+    const sourcePath = resolve(testDir, 'shot.png');
+    await writeFakePng(sourcePath);
+
+    await expect(
+      captureCommand('a', {
+        kind: 'screenshot',
+        interactive: true,
+        file: sourcePath,
+        project: projectSlug,
+        dir: testDir,
+      }),
+    ).rejects.toThrow(/--file cannot be combined/);
+
+    expect(fakeSpawn).not.toHaveBeenCalled();
+    const id = await getAssignmentId(assignmentDir);
+    initProofDb();
+    expect(listArtifactsByAssignment(id)).toHaveLength(0);
+  });
+
+  it('rejects two shellout flags together', async () => {
+    const { projectSlug, assignmentDir } = await setupProjectAssignment();
+
+    await expect(
+      captureCommand('a', {
+        kind: 'screenshot',
+        interactive: true,
+        window: true,
+        project: projectSlug,
+        dir: testDir,
+      }),
+    ).rejects.toThrow(/mutually exclusive/);
+
+    expect(fakeSpawn).not.toHaveBeenCalled();
+    const id = await getAssignmentId(assignmentDir);
+    initProofDb();
+    expect(listArtifactsByAssignment(id)).toHaveLength(0);
+  });
+
+  it('rejects --interactive when --kind is not screenshot', async () => {
+    const { projectSlug, assignmentDir } = await setupProjectAssignment();
+
+    await expect(
+      captureCommand('a', {
+        kind: 'text',
+        note: 'x',
+        interactive: true,
+        project: projectSlug,
+        dir: testDir,
+      }),
+    ).rejects.toThrow(/require --kind=screenshot/);
+
+    expect(fakeSpawn).not.toHaveBeenCalled();
+    const id = await getAssignmentId(assignmentDir);
+    initProofDb();
+    expect(listArtifactsByAssignment(id)).toHaveLength(0);
+  });
+
+  it('user cancel (non-zero exit, no PNG) throws, writes no row, cleans tmp dir', async () => {
+    behavior.handler = (_args, child) => {
+      child.emit('close', 1);
+    };
+
+    const { projectSlug, assignmentDir } = await setupProjectAssignment();
+    await expect(
+      captureCommand('a', {
+        kind: 'screenshot',
+        interactive: true,
+        project: projectSlug,
+        dir: testDir,
+      }),
+    ).rejects.toThrow(/canceled or failed/);
+
+    expect(fakeSpawn).toHaveBeenCalledTimes(1);
+    const [, spawnArgs] = fakeSpawn.mock.calls[0] as [string, string[]];
+    const tmpPng = spawnArgs[1];
+
+    const id = await getAssignmentId(assignmentDir);
+    initProofDb();
+    expect(listArtifactsByAssignment(id)).toHaveLength(0);
+    expect(existsSync(dirname(tmpPng))).toBe(false);
+  });
+
+  it('exit 0 but zero-byte PNG is treated as a capture failure', async () => {
+    behavior.handler = (_args, child) => {
+      child.emit('close', 0);
+    };
+
+    const { projectSlug, assignmentDir } = await setupProjectAssignment();
+    await expect(
+      captureCommand('a', {
+        kind: 'screenshot',
+        interactive: true,
+        project: projectSlug,
+        dir: testDir,
+      }),
+    ).rejects.toThrow(/produced no image/);
+
+    const [, spawnArgs] = fakeSpawn.mock.calls[0] as [string, string[]];
+    const tmpPng = spawnArgs[1];
+
+    const id = await getAssignmentId(assignmentDir);
+    initProofDb();
+    expect(listArtifactsByAssignment(id)).toHaveLength(0);
+    expect(existsSync(dirname(tmpPng))).toBe(false);
+  });
+
+  it('post-shellout failure (mkdir fails) still cleans the helper tmp dir', async () => {
+    // Regression guard for the try/finally that wraps the post-shellout flow.
+    behavior.handler = async (args, child) => {
+      await writeFakePng(args[args.length - 1]);
+      child.emit('close', 0);
+    };
+
+    const { projectSlug, assignmentDir } = await setupProjectAssignment();
+    // Make the assignment dir read+execute-only so `mkdir(proof/untagged)`
+    // inside captureCommand fails with EACCES *after* captureScreenshot has
+    // already produced a temp PNG.
+    await chmod(assignmentDir, 0o500);
+
+    try {
+      await expect(
+        captureCommand('a', {
+          kind: 'screenshot',
+          interactive: true,
+          project: projectSlug,
+          dir: testDir,
+        }),
+      ).rejects.toThrow();
+    } finally {
+      await chmod(assignmentDir, 0o700);
+    }
+
+    expect(fakeSpawn).toHaveBeenCalledTimes(1);
+    const [, spawnArgs] = fakeSpawn.mock.calls[0] as [string, string[]];
+    const tmpPng = spawnArgs[1];
+    expect(existsSync(dirname(tmpPng))).toBe(false);
+
+    const id = await getAssignmentId(assignmentDir);
+    initProofDb();
+    expect(listArtifactsByAssignment(id)).toHaveLength(0);
+  });
+
+  it('ENOENT from spawn surfaces a binary-not-found error', async () => {
+    behavior.handler = (_args, child) => {
+      const err = Object.assign(new Error('spawn ENOENT'), { code: 'ENOENT' });
+      child.emit('error', err);
+    };
+
+    const { projectSlug, assignmentDir } = await setupProjectAssignment();
+    await expect(
+      captureCommand('a', {
+        kind: 'screenshot',
+        interactive: true,
+        project: projectSlug,
+        dir: testDir,
+      }),
+    ).rejects.toThrow(/screencapture binary not found/);
+
+    const [, spawnArgs] = fakeSpawn.mock.calls[0] as [string, string[]];
+    const tmpPng = spawnArgs[1];
+
+    const id = await getAssignmentId(assignmentDir);
+    initProofDb();
+    expect(listArtifactsByAssignment(id)).toHaveLength(0);
+    expect(existsSync(dirname(tmpPng))).toBe(false);
   });
 });
