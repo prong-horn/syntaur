@@ -2,6 +2,7 @@ import { resolve } from 'node:path';
 import { expandHome } from '../utils/paths.js';
 import { fileExists } from '../utils/fs.js';
 import { readConfig } from '../utils/config.js';
+import { derivePathFromTranscript } from '../utils/transcript.js';
 import { initSessionDb } from '../dashboard/session-db.js';
 import { appendSession } from '../dashboard/agent-sessions.js';
 import type { AgentSessionStatus } from '../dashboard/types.js';
@@ -48,6 +49,14 @@ export async function trackSessionCommand(
 
   const { sessionId } = options;
 
+  // Prefer the launch cwd recorded in the transcript itself — that's the
+  // directory Claude Code uses to file the transcript, and the only one from
+  // which `claude --resume <id>` can find it. Falls through to the explicit
+  // --path or the registering process's cwd when no transcript is supplied
+  // (or it isn't readable yet).
+  const derivedPath = await derivePathFromTranscript(options.transcriptPath);
+  const recordedPath = derivedPath ?? options.path ?? process.cwd();
+
   await appendSession('', {
     projectSlug: options.project || null,
     assignmentSlug: options.assignment || null,
@@ -55,7 +64,7 @@ export async function trackSessionCommand(
     sessionId,
     started: new Date().toISOString(),
     status: 'active' as AgentSessionStatus,
-    path: options.path || process.cwd(),
+    path: recordedPath,
     description: options.description || null,
     transcriptPath: options.transcriptPath ?? null,
   });

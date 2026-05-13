@@ -11,6 +11,7 @@ import {
 } from './agent-sessions.js';
 import { fileExists } from '../utils/fs.js';
 import { resolveAssignmentById } from '../utils/assignment-resolver.js';
+import { derivePathFromTranscript } from '../utils/transcript.js';
 import type { AgentSessionStatus, WsMessage } from './types.js';
 
 export function createAgentSessionsRouter(
@@ -76,6 +77,13 @@ export function createAgentSessionsRouter(
         }
       }
 
+      // Prefer the launch cwd recorded inside the transcript over whatever
+      // path the caller posted — the transcript is what determines where
+      // Claude Code files the conversation, and the only directory from
+      // which `claude --resume <id>` will find it.
+      const derivedPath = await derivePathFromTranscript(transcriptPath);
+      const recordedPath = derivedPath ?? path ?? '';
+
       const session = {
         projectSlug: projectSlug || null,
         assignmentSlug: assignmentSlug || null,
@@ -83,7 +91,7 @@ export function createAgentSessionsRouter(
         sessionId,
         started: new Date().toISOString(),
         status: 'active' as AgentSessionStatus,
-        path: path || '',
+        path: recordedPath,
         description: description || null,
         transcriptPath: transcriptPath || null,
       };

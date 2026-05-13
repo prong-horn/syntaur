@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtemp, rm, readFile, readdir } from 'node:fs/promises';
+import { mkdtemp, rm, readFile, readdir, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { resolve, join, dirname } from 'node:path';
@@ -8,6 +8,11 @@ import { spawnSync } from 'node:child_process';
 import { createProjectCommand } from '../commands/create-project.js';
 import { createAssignmentCommand } from '../commands/create-assignment.js';
 import { trackSessionCommand } from '../commands/track-session.js';
+import {
+  closeSessionDb,
+  resetSessionDb,
+  getSessionDb,
+} from '../dashboard/session-db.js';
 
 let testDir: string;
 let origSyntaurHome: string | undefined;
@@ -277,6 +282,70 @@ describe('trackSessionCommand required flags', () => {
     await expect(
       trackSessionCommand({ sessionId: 'real-id' } as any),
     ).rejects.toThrow(/--agent/);
+  });
+});
+
+describe('trackSessionCommand path resolution', () => {
+  beforeEach(() => {
+    // Each test gets a fresh DB tied to SYNTAUR_HOME=testDir (set by the
+    // top-level beforeEach). resetSessionDb clears the singleton so the next
+    // initSessionDb call (inside trackSessionCommand) opens the new path.
+    resetSessionDb();
+  });
+
+  afterEach(() => {
+    closeSessionDb();
+  });
+
+  async function readSessionPath(sessionId: string): Promise<string | null> {
+    const row = getSessionDb()
+      .prepare('SELECT path FROM sessions WHERE session_id = ?')
+      .get(sessionId) as { path: string | null } | undefined;
+    return row?.path ?? null;
+  }
+
+  it('records the launch cwd from the transcript when --transcript-path is supplied, ignoring a stale --path', async () => {
+    const transcriptPath = join(testDir, 'sample.jsonl');
+    await writeFile(
+      transcriptPath,
+      JSON.stringify({ type: 'user', cwd: '/Users/me/launch-dir' }) + '\n',
+    );
+
+    const sessionId = `cli-${Math.random().toString(36).slice(2, 10)}`;
+    await trackSessionCommand({
+      agent: 'claude',
+      sessionId,
+      transcriptPath,
+      // Caller's cwd at registration time disagrees with the transcript —
+      // common when the agent cd'd into a worktree mid-session. The
+      // transcript is authoritative.
+      path: '/Users/me/some/worktree',
+    });
+
+    expect(await readSessionPath(sessionId)).toBe('/Users/me/launch-dir');
+  });
+
+  it('falls back to --path when no --transcript-path is supplied', async () => {
+    const sessionId = `cli-${Math.random().toString(36).slice(2, 10)}`;
+    await trackSessionCommand({
+      agent: 'claude',
+      sessionId,
+      path: '/Users/me/explicit-path',
+    });
+
+    expect(await readSessionPath(sessionId)).toBe('/Users/me/explicit-path');
+  });
+
+  it('falls back to --path when the transcript file is missing', async () => {
+    const sessionId = `cli-${Math.random().toString(36).slice(2, 10)}`;
+    await trackSessionCommand({
+      agent: 'claude',
+      sessionId,
+      transcriptPath: join(testDir, 'does-not-exist.jsonl'),
+      path: '/Users/me/fallback',
+    });
+
+    expect(await readSessionPath(sessionId)).toBe('/Users/me/fallback');
   });
 });
 
