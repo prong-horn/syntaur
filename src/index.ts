@@ -155,6 +155,10 @@ program
   .option('--interactive', 'Screenshot mode: drag a region (macOS only)')
   .option('--window', 'Screenshot mode: window picker (macOS only)')
   .option('--fullscreen', 'Screenshot mode: silent full-screen capture (macOS only)')
+  .option('--start', 'Start ffmpeg screen recording in the background (macOS only). Stop with --stop.')
+  .option('--stop', 'Stop the running ffmpeg recording and attach the mp4.')
+  .option('--device <index>', 'AVFoundation video device index for --start (default: 1). List devices: ffmpeg -f avfoundation -list_devices true -i ""')
+  .option('--fps <n>', 'Frame rate for --start (default: 30)')
   .action(async (target, options) => {
     try {
       await captureCommand(target, options);
