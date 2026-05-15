@@ -532,19 +532,19 @@ describe('captureCommand screenshot shellout', () => {
     expect(listArtifactsByAssignment(id)).toHaveLength(0);
   });
 
-  it('rejects --interactive when --kind is not screenshot', async () => {
+  it('rejects --interactive for kind=text/http/video', async () => {
     const { projectSlug, assignmentDir } = await setupProjectAssignment();
-
-    await expect(
-      captureCommand('a', {
-        kind: 'text',
-        note: 'x',
-        interactive: true,
-        project: projectSlug,
-        dir: testDir,
-      }),
-    ).rejects.toThrow(/require --kind=screenshot/);
-
+    for (const kind of ['text', 'http', 'video'] as const) {
+      await expect(
+        captureCommand('a', {
+          kind,
+          note: 'x',
+          interactive: true,
+          project: projectSlug,
+          dir: testDir,
+        }),
+      ).rejects.toThrow(/--interactive requires --kind=screenshot or --kind=asciinema/);
+    }
     expect(fakeSpawn).not.toHaveBeenCalled();
     const id = await getAssignmentId(assignmentDir);
     initProofDb();
@@ -659,5 +659,478 @@ describe('captureCommand screenshot shellout', () => {
     initProofDb();
     expect(listArtifactsByAssignment(id)).toHaveLength(0);
     expect(existsSync(dirname(tmpPng))).toBe(false);
+  });
+});
+
+describe('captureCommand asciinema shellout', () => {
+  beforeEach(() => {
+    behavior.handler = null;
+    fakeSpawn.mockClear();
+  });
+
+  async function writeFakeCast(path: string, eventLines = 1): Promise<void> {
+    const header = JSON.stringify({ version: 2, width: 80, height: 24 });
+    const events = Array.from({ length: eventLines }, (_, i) =>
+      JSON.stringify([0.1 * (i + 1), 'o', `line${i}\r\n`]),
+    );
+    await writeFile(path, [header, ...events].join('\n') + '\n');
+  }
+
+  async function writeHeaderOnlyCast(path: string): Promise<void> {
+    const header = JSON.stringify({ version: 2, width: 80, height: 24 });
+    await writeFile(path, header + '\n');
+  }
+
+  async function writeResizeOnlyCast(path: string): Promise<void> {
+    const header = JSON.stringify({ version: 2, width: 80, height: 24 });
+    const resize = JSON.stringify([0.05, 'r', '120x40']);
+    await writeFile(path, header + '\n' + resize + '\n');
+  }
+
+  it('--interactive happy path: spawns asciinema rec with stdio inherit and attaches the cast', async () => {
+    behavior.handler = async (args, child) => {
+      await writeFakeCast(args[args.length - 1]);
+      child.emit('close', 0);
+    };
+
+    const { projectSlug, assignmentDir } = await setupProjectAssignment();
+    await captureCommand('a', {
+      kind: 'asciinema',
+      interactive: true,
+      project: projectSlug,
+      dir: testDir,
+    });
+
+    expect(fakeSpawn).toHaveBeenCalledTimes(1);
+    const [cmd, spawnArgs, spawnOpts] = fakeSpawn.mock.calls[0] as [
+      string,
+      string[],
+      { stdio: unknown },
+    ];
+    expect(cmd).toBe('asciinema');
+    expect(spawnArgs[0]).toBe('rec');
+    expect(spawnOpts.stdio).toBe('inherit');
+    const castPath = spawnArgs[spawnArgs.length - 1];
+    expect(castPath).toMatch(/syntaur-asciinema-/);
+
+    const id = await getAssignmentId(assignmentDir);
+    const rows = listArtifactsByAssignment(id);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].kind).toBe('asciinema');
+    expect(rows[0].file_path).toMatch(/^proof\/untagged\/.+\.cast$/);
+
+    const proofUntagged = resolve(assignmentDir, 'proof', 'untagged');
+    const files = await readdir(proofUntagged);
+    expect(files).toHaveLength(1);
+    expect(files[0]).toMatch(/\.cast$/);
+
+    expect(existsSync(dirname(castPath))).toBe(false);
+  });
+
+  it('-- <cmd> non-interactive: spawns rec --command <joined> with stdio ignore+inherit+inherit', async () => {
+    behavior.handler = async (args, child) => {
+      await writeFakeCast(args[args.length - 1]);
+      child.emit('close', 0);
+    };
+
+    const { projectSlug, assignmentDir } = await setupProjectAssignment();
+    await captureCommand('a', {
+      kind: 'asciinema',
+      commandArgv: ['echo', 'hi'],
+      project: projectSlug,
+      dir: testDir,
+    });
+
+    expect(fakeSpawn).toHaveBeenCalledTimes(1);
+    const [, spawnArgs, spawnOpts] = fakeSpawn.mock.calls[0] as [
+      string,
+      string[],
+      { stdio: unknown },
+    ];
+    expect(spawnArgs[0]).toBe('rec');
+    expect(spawnArgs[1]).toBe('--command');
+    expect(spawnArgs[2]).toBe('echo hi');
+    expect(spawnOpts.stdio).toEqual(['ignore', 'inherit', 'inherit']);
+
+    const id = await getAssignmentId(assignmentDir);
+    expect(listArtifactsByAssignment(id)).toHaveLength(1);
+  });
+
+  it('shell-quotes argv containing spaces and shell metacharacters', async () => {
+    behavior.handler = async (args, child) => {
+      await writeFakeCast(args[args.length - 1]);
+      child.emit('close', 0);
+    };
+
+    const { projectSlug } = await setupProjectAssignment();
+    await captureCommand('a', {
+      kind: 'asciinema',
+      commandArgv: ['bash', '-c', 'echo a && echo b'],
+      project: projectSlug,
+      dir: testDir,
+    });
+
+    const [, spawnArgs] = fakeSpawn.mock.calls[0] as [string, string[]];
+    expect(spawnArgs[2]).toBe(`bash -c 'echo a && echo b'`);
+  });
+
+  it('shell-quotes argv containing an embedded single quote', async () => {
+    behavior.handler = async (args, child) => {
+      await writeFakeCast(args[args.length - 1]);
+      child.emit('close', 0);
+    };
+
+    const { projectSlug } = await setupProjectAssignment();
+    await captureCommand('a', {
+      kind: 'asciinema',
+      commandArgv: ['printf', '%s', "it's"],
+      project: projectSlug,
+      dir: testDir,
+    });
+
+    const [, spawnArgs] = fakeSpawn.mock.calls[0] as [string, string[]];
+    expect(spawnArgs[2]).toBe(`printf %s 'it'\\''s'`);
+  });
+
+  it('non-zero exit with non-empty cast is attached with a warning', async () => {
+    behavior.handler = async (args, child) => {
+      await writeFakeCast(args[args.length - 1]);
+      child.emit('close', 2);
+    };
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    const { projectSlug, assignmentDir } = await setupProjectAssignment();
+    try {
+      await captureCommand('a', {
+        kind: 'asciinema',
+        commandArgv: ['false'],
+        project: projectSlug,
+        dir: testDir,
+      });
+
+      expect(warnSpy).toHaveBeenCalled();
+      const warnArg = warnSpy.mock.calls[0][0] as string;
+      expect(warnArg).toMatch(/exited 2/);
+
+      const id = await getAssignmentId(assignmentDir);
+      expect(listArtifactsByAssignment(id)).toHaveLength(1);
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
+  it('header-only cast (canceled before any input) throws; no row; tmp dir gone', async () => {
+    behavior.handler = async (args, child) => {
+      await writeHeaderOnlyCast(args[args.length - 1]);
+      child.emit('close', 130);
+    };
+
+    const { projectSlug, assignmentDir } = await setupProjectAssignment();
+    await expect(
+      captureCommand('a', {
+        kind: 'asciinema',
+        interactive: true,
+        project: projectSlug,
+        dir: testDir,
+      }),
+    ).rejects.toThrow(/produced no recording \(canceled before any input/);
+
+    const [, spawnArgs] = fakeSpawn.mock.calls[0] as [string, string[]];
+    const castPath = spawnArgs[spawnArgs.length - 1];
+
+    const id = await getAssignmentId(assignmentDir);
+    initProofDb();
+    expect(listArtifactsByAssignment(id)).toHaveLength(0);
+    expect(existsSync(dirname(castPath))).toBe(false);
+  });
+
+  it('resize-only cast is treated as empty', async () => {
+    behavior.handler = async (args, child) => {
+      await writeResizeOnlyCast(args[args.length - 1]);
+      child.emit('close', 0);
+    };
+
+    const { projectSlug, assignmentDir } = await setupProjectAssignment();
+    await expect(
+      captureCommand('a', {
+        kind: 'asciinema',
+        interactive: true,
+        project: projectSlug,
+        dir: testDir,
+      }),
+    ).rejects.toThrow(/produced no recording/);
+
+    const id = await getAssignmentId(assignmentDir);
+    initProofDb();
+    expect(listArtifactsByAssignment(id)).toHaveLength(0);
+  });
+
+  it('missing cast file (asciinema exited 0 but wrote nothing) throws', async () => {
+    behavior.handler = (_args, child) => {
+      child.emit('close', 0);
+    };
+
+    const { projectSlug, assignmentDir } = await setupProjectAssignment();
+    await expect(
+      captureCommand('a', {
+        kind: 'asciinema',
+        interactive: true,
+        project: projectSlug,
+        dir: testDir,
+      }),
+    ).rejects.toThrow(/produced no cast file/);
+
+    const [, spawnArgs] = fakeSpawn.mock.calls[0] as [string, string[]];
+    const castPath = spawnArgs[spawnArgs.length - 1];
+    expect(existsSync(dirname(castPath))).toBe(false);
+
+    const id = await getAssignmentId(assignmentDir);
+    initProofDb();
+    expect(listArtifactsByAssignment(id)).toHaveLength(0);
+  });
+
+  it('ENOENT from spawn surfaces an install hint mentioning brew and pipx', async () => {
+    behavior.handler = (_args, child) => {
+      const err = Object.assign(new Error('spawn ENOENT'), { code: 'ENOENT' });
+      child.emit('error', err);
+    };
+
+    const { projectSlug, assignmentDir } = await setupProjectAssignment();
+    await expect(
+      captureCommand('a', {
+        kind: 'asciinema',
+        interactive: true,
+        project: projectSlug,
+        dir: testDir,
+      }),
+    ).rejects.toThrow(/asciinema not found on PATH.*brew install asciinema.*pipx install asciinema/s);
+
+    const id = await getAssignmentId(assignmentDir);
+    initProofDb();
+    expect(listArtifactsByAssignment(id)).toHaveLength(0);
+  });
+
+  it('--file <existing.cast> regression: does not spawn; copies file as before', async () => {
+    const sourcePath = resolve(testDir, 'manual.cast');
+    await writeFakeCast(sourcePath);
+
+    const { projectSlug, assignmentDir } = await setupProjectAssignment();
+    await captureCommand('a', {
+      kind: 'asciinema',
+      file: sourcePath,
+      project: projectSlug,
+      dir: testDir,
+    });
+
+    expect(fakeSpawn).not.toHaveBeenCalled();
+
+    const id = await getAssignmentId(assignmentDir);
+    const rows = listArtifactsByAssignment(id);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].kind).toBe('asciinema');
+    expect(rows[0].file_path).toMatch(/^proof\/untagged\/.+\.cast$/);
+
+    const proofUntagged = resolve(assignmentDir, 'proof', 'untagged');
+    const files = await readdir(proofUntagged);
+    expect(files).toHaveLength(1);
+    expect(existsSync(sourcePath)).toBe(true);
+  });
+
+  it('rejects -- <cmd> when --kind is not asciinema', async () => {
+    const { projectSlug, assignmentDir } = await setupProjectAssignment();
+    await expect(
+      captureCommand('a', {
+        kind: 'screenshot',
+        commandArgv: ['echo', 'hi'],
+        project: projectSlug,
+        dir: testDir,
+      }),
+    ).rejects.toThrow(/trailing -- <command> is only valid with --kind=asciinema/);
+
+    expect(fakeSpawn).not.toHaveBeenCalled();
+    const id = await getAssignmentId(assignmentDir);
+    initProofDb();
+    expect(listArtifactsByAssignment(id)).toHaveLength(0);
+  });
+
+  it('rejects --interactive combined with a trailing -- <cmd>', async () => {
+    const { projectSlug, assignmentDir } = await setupProjectAssignment();
+    await expect(
+      captureCommand('a', {
+        kind: 'asciinema',
+        interactive: true,
+        commandArgv: ['echo', 'hi'],
+        project: projectSlug,
+        dir: testDir,
+      }),
+    ).rejects.toThrow(/--interactive and a trailing -- <command> are mutually exclusive/);
+
+    expect(fakeSpawn).not.toHaveBeenCalled();
+    const id = await getAssignmentId(assignmentDir);
+    initProofDb();
+    expect(listArtifactsByAssignment(id)).toHaveLength(0);
+  });
+
+  it('Ctrl-C (SIGINT) during interactive mode: cast finalizes, row is written, parent does not die', async () => {
+    behavior.handler = async (args, child) => {
+      // Simulate asciinema's behavior on Ctrl-C: it catches SIGINT, finalizes
+      // the cast file, and exits with the typical 130 code. The parent's
+      // installed no-op listener prevents Node from auto-terminating.
+      await writeFakeCast(args[args.length - 1]);
+      process.emit('SIGINT' as never);
+      child.emit('close', 130);
+    };
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    const { projectSlug, assignmentDir } = await setupProjectAssignment();
+    try {
+      await captureCommand('a', {
+        kind: 'asciinema',
+        interactive: true,
+        project: projectSlug,
+        dir: testDir,
+      });
+
+      const id = await getAssignmentId(assignmentDir);
+      const rows = listArtifactsByAssignment(id);
+      expect(rows).toHaveLength(1);
+      expect(rows[0].kind).toBe('asciinema');
+      expect(warnSpy).toHaveBeenCalled();
+      expect(warnSpy.mock.calls[0][0]).toMatch(/exited 130/);
+
+      // The helper's SIGINT listener was removed after the call completed.
+      expect(process.listenerCount('SIGINT')).toBe(0);
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
+  it('SIGINT during interactive mode with empty cast: throws, listener cleaned up', async () => {
+    behavior.handler = async (args, child) => {
+      // SIGINT before any data is written → asciinema exits 130 with only the
+      // header on disk → helper throws "produced no recording".
+      await writeHeaderOnlyCast(args[args.length - 1]);
+      process.emit('SIGINT' as never);
+      child.emit('close', 130);
+    };
+
+    const { projectSlug, assignmentDir } = await setupProjectAssignment();
+    await expect(
+      captureCommand('a', {
+        kind: 'asciinema',
+        interactive: true,
+        project: projectSlug,
+        dir: testDir,
+      }),
+    ).rejects.toThrow(/produced no recording/);
+
+    const id = await getAssignmentId(assignmentDir);
+    initProofDb();
+    expect(listArtifactsByAssignment(id)).toHaveLength(0);
+    expect(process.listenerCount('SIGINT')).toBe(0);
+  });
+
+  it('rejects --file combined with a trailing -- <cmd>', async () => {
+    const sourcePath = resolve(testDir, 'manual.cast');
+    await writeFakeCast(sourcePath);
+
+    const { projectSlug, assignmentDir } = await setupProjectAssignment();
+    await expect(
+      captureCommand('a', {
+        kind: 'asciinema',
+        file: sourcePath,
+        commandArgv: ['echo', 'hi'],
+        project: projectSlug,
+        dir: testDir,
+      }),
+    ).rejects.toThrow(/--file cannot be combined with a trailing -- <command>/);
+
+    expect(fakeSpawn).not.toHaveBeenCalled();
+    const id = await getAssignmentId(assignmentDir);
+    initProofDb();
+    expect(listArtifactsByAssignment(id)).toHaveLength(0);
+  });
+});
+
+describe('asciinema helper internals', () => {
+  it('hasRecordedData: true for one output event', async () => {
+    const { hasRecordedData } = await import('../utils/asciinema.js');
+    const cast = [
+      JSON.stringify({ version: 2, width: 80, height: 24 }),
+      JSON.stringify([0.1, 'o', 'hello']),
+    ].join('\n');
+    expect(hasRecordedData(cast)).toBe(true);
+  });
+
+  it('hasRecordedData: true for one input event', async () => {
+    const { hasRecordedData } = await import('../utils/asciinema.js');
+    const cast = [
+      JSON.stringify({ version: 2, width: 80, height: 24 }),
+      JSON.stringify([0.1, 'i', 'x']),
+    ].join('\n');
+    expect(hasRecordedData(cast)).toBe(true);
+  });
+
+  it('hasRecordedData: false for header only', async () => {
+    const { hasRecordedData } = await import('../utils/asciinema.js');
+    const cast = JSON.stringify({ version: 2, width: 80, height: 24 }) + '\n';
+    expect(hasRecordedData(cast)).toBe(false);
+  });
+
+  it('hasRecordedData: false for header + resize event only', async () => {
+    const { hasRecordedData } = await import('../utils/asciinema.js');
+    const cast = [
+      JSON.stringify({ version: 2, width: 80, height: 24 }),
+      JSON.stringify([0.05, 'r', '120x40']),
+    ].join('\n');
+    expect(hasRecordedData(cast)).toBe(false);
+  });
+
+  it('hasRecordedData: false for header + v3 comment line only', async () => {
+    const { hasRecordedData } = await import('../utils/asciinema.js');
+    const cast = `{"version": 3, "term": {"cols": 80, "rows": 24}}\n# a v3 comment\n`;
+    expect(hasRecordedData(cast)).toBe(false);
+  });
+
+  it('hasRecordedData: true for scientific-notation timestamps', async () => {
+    const { hasRecordedData } = await import('../utils/asciinema.js');
+    const cast = [
+      JSON.stringify({ version: 2, width: 80, height: 24 }),
+      `[1e-3, "o", "x"]`,
+      `[2.5E+0, "o", "y"]`,
+    ].join('\n');
+    expect(hasRecordedData(cast)).toBe(true);
+  });
+
+  it('hasRecordedData: true even when final line is truncated after a valid event', async () => {
+    const { hasRecordedData } = await import('../utils/asciinema.js');
+    const cast =
+      JSON.stringify({ version: 2, width: 80, height: 24 }) +
+      '\n' +
+      JSON.stringify([0.1, 'o', 'hi']) +
+      '\n[0.2,"o","trunc';
+    expect(hasRecordedData(cast)).toBe(true);
+  });
+
+  it('shellQuote: passes safe tokens through unchanged', async () => {
+    const { shellQuote } = await import('../utils/asciinema.js');
+    expect(shellQuote('echo')).toBe('echo');
+    expect(shellQuote('./foo.sh')).toBe('./foo.sh');
+    expect(shellQuote('--flag=value')).toBe('--flag=value');
+  });
+
+  it('shellQuote: wraps spaces and metachars in single quotes', async () => {
+    const { shellQuote } = await import('../utils/asciinema.js');
+    expect(shellQuote('echo a && echo b')).toBe(`'echo a && echo b'`);
+  });
+
+  it('shellQuote: escapes embedded single quote via close-escape-reopen', async () => {
+    const { shellQuote } = await import('../utils/asciinema.js');
+    expect(shellQuote("it's")).toBe(`'it'\\''s'`);
+  });
+
+  it('shellQuote: empty string becomes ""', async () => {
+    const { shellQuote } = await import('../utils/asciinema.js');
+    expect(shellQuote('')).toBe(`''`);
   });
 });
