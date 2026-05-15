@@ -1,5 +1,5 @@
-import { resolve, relative } from 'node:path';
-import { copyFile, mkdir, realpath, stat } from 'node:fs/promises';
+import { resolve, relative, dirname } from 'node:path';
+import { copyFile, mkdir, realpath, rm, stat } from 'node:fs/promises';
 import { resolveAssignmentTarget } from '../utils/assignment-target.js';
 import { proofDir } from '../utils/paths.js';
 import {
@@ -11,7 +11,9 @@ import {
 import { fileExists } from '../utils/fs.js';
 import { captureScreenshot, type ScreenshotMode } from '../utils/screencapture.js';
 import { captureAsciinema } from '../utils/asciinema.js';
-import { initProofDb, insertArtifact, getArtifactById, type ArtifactKind } from '../db/proof-db.js';
+import { startRecording, stopRecording } from '../utils/recording.js';
+import type { ResolvedAssignment } from '../utils/assignment-resolver.js';
+import { initProofDb, insertArtifact, type ArtifactKind } from '../db/proof-db.js';
 
 export interface CaptureOptions {
   kind?: string;
@@ -25,6 +27,10 @@ export interface CaptureOptions {
   window?: boolean;
   fullscreen?: boolean;
   commandArgv?: string[];
+  start?: boolean;
+  stop?: boolean;
+  device?: string;
+  fps?: string;
 }
 
 const MAX_ID_RETRIES = 5;
@@ -120,6 +126,58 @@ export async function captureCommand(
     kind === 'asciinema' &&
     (options.interactive === true || (options.commandArgv?.length ?? 0) > 0);
 
+  // Video-mode shellout (start/stop lifecycle).
+  if (options.start && options.stop) {
+    throw new Error('--start and --stop are mutually exclusive.');
+  }
+  const videoShellout = Boolean(options.start || options.stop);
+  if (videoShellout && kind !== 'video') {
+    throw new Error('--start/--stop require --kind=video.');
+  }
+  if (videoShellout && (screenshotShelloutMode || wantsAsciinemaShellout)) {
+    throw new Error('--start/--stop cannot be combined with screenshot or asciinema mode flags.');
+  }
+  if (videoShellout && options.file) {
+    throw new Error('--file cannot be combined with --start/--stop.');
+  }
+  if ((options.device != null || options.fps != null) && !options.start) {
+    throw new Error('--device/--fps require --start.');
+  }
+
+  // --start branch: spawn ffmpeg, write pidfile + sidecar, return. No DB row
+  // is created here; --stop owns the artifact insertion.
+  if (options.start) {
+    const resolvedStart = await resolveAssignmentTarget(target, {
+      project: options.project,
+      dir: options.dir,
+      cwd: options.cwd,
+    });
+    if (!resolvedStart.id || resolvedStart.id.trim() === '') {
+      throw new Error(
+        `Resolved assignment is missing a frontmatter \`id\`: ${resolvedStart.assignmentDir}. Cannot record artifact.`,
+      );
+    }
+    const startCriterionIndex = normalizeCriterionIndex(options.criterion);
+
+    const { pid, logPath: logP } = await startRecording({
+      device: options.device ?? '1',
+      fps: options.fps ?? '30',
+      assignmentDir: resolvedStart.assignmentDir,
+      assignmentId: resolvedStart.id,
+      projectSlug: resolvedStart.projectSlug,
+      assignmentSlug: resolvedStart.assignmentSlug,
+      standalone: resolvedStart.standalone,
+      criterionIndex: startCriterionIndex,
+      note: options.note ?? null,
+    });
+
+    console.log('Recording started.');
+    console.log(`  PID: ${pid}`);
+    console.log(`  Log: ${logP}`);
+    console.log('  Stop with: syntaur capture --kind video --stop');
+    return;
+  }
+
   // Per-kind file/note rules.
   if (kind === 'text') {
     if (options.file) {
@@ -133,7 +191,8 @@ export async function captureCommand(
       kind !== 'http' &&
       !options.file &&
       !screenshotShelloutMode &&
-      !wantsAsciinemaShellout
+      !wantsAsciinemaShellout &&
+      !videoShellout
     ) {
       throw new Error(`--kind=${kind} requires --file.`);
     }
@@ -144,18 +203,41 @@ export async function captureCommand(
     }
   }
 
-  const criterionIndex = normalizeCriterionIndex(options.criterion);
+  let criterionIndex = normalizeCriterionIndex(options.criterion);
 
-  // Resolve assignment target (--project + slug, bare UUID, or context.json fallback).
-  const resolved = await resolveAssignmentTarget(target, {
-    project: options.project,
-    dir: options.dir,
-    cwd: options.cwd,
-  });
-
-  // Validate --file before copying anything.
+  // --stop branch: read sidecar, finalize ffmpeg, route the mp4 through the
+  // existing attach pipeline. Bypasses cwd-based assignment resolution.
+  let resolved: ResolvedAssignment;
   let resolvedSource: string | null = null;
   let shelloutCleanup: (() => Promise<void>) | null = null;
+  let stopNote: string | null = null;
+  if (options.stop) {
+    const { mp4Path, sidecar } = await stopRecording();
+    resolved = {
+      assignmentDir: sidecar.assignmentDir,
+      projectSlug: sidecar.projectSlug,
+      assignmentSlug: sidecar.assignmentSlug,
+      id: sidecar.assignmentId,
+      standalone: sidecar.standalone,
+      workspaceGroup: null,
+    };
+    criterionIndex = sidecar.criterionIndex;
+    stopNote = sidecar.note;
+    resolvedSource = mp4Path;
+    const mp4TmpDir = dirname(mp4Path);
+    shelloutCleanup = async () => {
+      await rm(mp4TmpDir, { recursive: true, force: true }).catch(() => {});
+    };
+  } else {
+    // Resolve assignment target (--project + slug, bare UUID, or context.json fallback).
+    resolved = await resolveAssignmentTarget(target, {
+      project: options.project,
+      dir: options.dir,
+      cwd: options.cwd,
+    });
+  }
+
+  // Validate --file before copying anything.
   if (options.file) {
     const expanded = options.file.startsWith('~/')
       ? resolve(process.env.HOME ?? '', options.file.slice(2))
@@ -237,7 +319,7 @@ export async function captureCommand(
           criterionIndex,
           kind,
           filePath: candidateRel,
-          note: options.note ?? null,
+          note: stopNote ?? options.note ?? null,
         });
         id = candidate;
         absPath = candidateAbsPath;
@@ -269,8 +351,10 @@ export async function captureCommand(
         await copyFile(resolvedSource, absPath);
       } catch (err) {
         if (shelloutCleanup) {
+          const label =
+            kind === 'video' ? 'Recording' : kind === 'asciinema' ? 'Asciicast' : 'Screenshot';
           console.error(
-            `Artifact saved at ${resolvedSource} — DB row inserted but copy to proof dir failed. Recover with: mv ${resolvedSource} ${absPath}`,
+            `${label} saved at ${resolvedSource} — DB row inserted but copy to proof dir failed. Recover with: mv ${resolvedSource} ${absPath}`,
           );
           shelloutCleanup = null;
         }
@@ -284,6 +368,27 @@ export async function captureCommand(
     if (relativeFilePath) {
       console.log(`  file: ${resolve(resolved.assignmentDir, relativeFilePath)}`);
     }
+  } catch (err) {
+    // For the video --stop path, any post-stopRecording failure (mkdir,
+    // insertArtifact, id-retry exhaustion, copyFile, ...) is a chance to lose
+    // a recording that may represent minutes of user state. The pidfile + sidecar
+    // have already been removed by stopRecording, so this is the only window
+    // where we can preserve the mp4 for manual recovery. The inner copyFile
+    // catch already handled its case (shelloutCleanup is null there) — this
+    // outer catch covers every other failure.
+    if (options.stop && kind === 'video' && shelloutCleanup && resolvedSource) {
+      const ref = resolved.standalone
+        ? resolved.id
+        : `${resolved.projectSlug}/${resolved.assignmentSlug}`;
+      const projectFlag = resolved.standalone ? '' : `--project ${resolved.projectSlug} `;
+      const target = resolved.standalone ? resolved.id : resolved.assignmentSlug;
+      console.error(
+        `Recording saved at ${resolvedSource} — finalization failed but the mp4 is preserved. ` +
+          `Re-attach with: syntaur capture --kind video ${projectFlag}--file ${resolvedSource} ${target} (assignment ${ref})`,
+      );
+      shelloutCleanup = null;
+    }
+    throw err;
   } finally {
     if (shelloutCleanup) {
       await shelloutCleanup();
