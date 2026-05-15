@@ -10,6 +10,7 @@ import {
 } from '../utils/proof-artifact-id.js';
 import { fileExists } from '../utils/fs.js';
 import { captureScreenshot, type ScreenshotMode } from '../utils/screencapture.js';
+import { captureAsciinema } from '../utils/asciinema.js';
 import { startRecording, stopRecording } from '../utils/recording.js';
 import type { ResolvedAssignment } from '../utils/assignment-resolver.js';
 import { initProofDb, insertArtifact, type ArtifactKind } from '../db/proof-db.js';
@@ -25,6 +26,7 @@ export interface CaptureOptions {
   interactive?: boolean;
   window?: boolean;
   fullscreen?: boolean;
+  commandArgv?: string[];
   start?: boolean;
   stop?: boolean;
   device?: string;
@@ -74,9 +76,8 @@ export async function captureCommand(
   }
   const kind: ArtifactKind = options.kind;
 
-  // Screenshot-mode shellout flags. Validated before per-kind rules so the
-  // "--kind=screenshot requires --file" check below can be relaxed when a
-  // shellout flag is set.
+  // Shellout flags. --interactive is valid for screenshot OR asciinema;
+  // --window and --fullscreen remain screenshot-only.
   const shelloutFlagCount = [
     options.interactive,
     options.window,
@@ -85,25 +86,45 @@ export async function captureCommand(
   if (shelloutFlagCount > 1) {
     throw new Error('--interactive, --window, --fullscreen are mutually exclusive.');
   }
-  const shelloutMode: ScreenshotMode | null = options.interactive
-    ? 'interactive'
-    : options.window
-      ? 'window'
-      : options.fullscreen
-        ? 'fullscreen'
-        : null;
-  if (shelloutMode) {
-    if (kind !== 'screenshot') {
-      throw new Error(
-        '--interactive, --window, and --fullscreen require --kind=screenshot.',
-      );
-    }
-    if (options.file) {
-      throw new Error(
-        '--file cannot be combined with --interactive, --window, or --fullscreen.',
-      );
-    }
+  if ((options.window || options.fullscreen) && kind !== 'screenshot') {
+    throw new Error('--window and --fullscreen require --kind=screenshot.');
   }
+  if (options.interactive && kind !== 'screenshot' && kind !== 'asciinema') {
+    throw new Error(
+      '--interactive requires --kind=screenshot or --kind=asciinema.',
+    );
+  }
+  if (options.file && (options.interactive || options.window || options.fullscreen)) {
+    throw new Error(
+      '--file cannot be combined with --interactive, --window, or --fullscreen.',
+    );
+  }
+  if (options.file && (options.commandArgv?.length ?? 0) > 0) {
+    throw new Error(
+      '--file cannot be combined with a trailing -- <command>.',
+    );
+  }
+  if ((options.commandArgv?.length ?? 0) > 0 && kind !== 'asciinema') {
+    throw new Error('A trailing -- <command> is only valid with --kind=asciinema.');
+  }
+  if (options.interactive && (options.commandArgv?.length ?? 0) > 0) {
+    throw new Error('--interactive and a trailing -- <command> are mutually exclusive.');
+  }
+
+  const screenshotShelloutMode: ScreenshotMode | null =
+    kind === 'screenshot'
+      ? options.interactive
+        ? 'interactive'
+        : options.window
+          ? 'window'
+          : options.fullscreen
+            ? 'fullscreen'
+            : null
+      : null;
+
+  const wantsAsciinemaShellout =
+    kind === 'asciinema' &&
+    (options.interactive === true || (options.commandArgv?.length ?? 0) > 0);
 
   // Video-mode shellout (start/stop lifecycle).
   if (options.start && options.stop) {
@@ -113,8 +134,8 @@ export async function captureCommand(
   if (videoShellout && kind !== 'video') {
     throw new Error('--start/--stop require --kind=video.');
   }
-  if (videoShellout && shelloutMode) {
-    throw new Error('--start/--stop cannot be combined with screenshot mode flags.');
+  if (videoShellout && (screenshotShelloutMode || wantsAsciinemaShellout)) {
+    throw new Error('--start/--stop cannot be combined with screenshot or asciinema mode flags.');
   }
   if (videoShellout && options.file) {
     throw new Error('--file cannot be combined with --start/--stop.');
@@ -166,7 +187,13 @@ export async function captureCommand(
       throw new Error('--kind=text requires --note.');
     }
   } else {
-    if (kind !== 'http' && !options.file && !shelloutMode && !videoShellout) {
+    if (
+      kind !== 'http' &&
+      !options.file &&
+      !screenshotShelloutMode &&
+      !wantsAsciinemaShellout &&
+      !videoShellout
+    ) {
       throw new Error(`--kind=${kind} requires --file.`);
     }
     // http allows either --file (transcript) or --note. If neither, the
@@ -231,12 +258,23 @@ export async function captureCommand(
       throw new Error(`--file is not a regular file: ${options.file}`);
     }
     resolvedSource = real;
-  } else if (shelloutMode) {
-    // The helper cleans its tmp dir itself on any pre-return failure. Once it
-    // returns, the wrapping try/finally below owns cleanup. The copyFile-
-    // failure branch deliberately nulls shelloutCleanup to preserve the
-    // screenshot bytes for manual recovery.
-    const { pngPath, cleanup } = await captureScreenshot(shelloutMode);
+  } else if (wantsAsciinemaShellout) {
+    // SIGINT handling lives inside captureAsciinema: it installs a no-op
+    // listener so Ctrl-C in the recorded TTY does not kill the parent before
+    // asciinema finalizes the cast. Any cast bytes already recorded survive,
+    // and the standard content-based success check decides attach vs. throw.
+    const result = await captureAsciinema({
+      commandArgv: options.commandArgv ?? [],
+    });
+    resolvedSource = result.castPath;
+    shelloutCleanup = result.cleanup;
+    if (result.nonZeroExit) {
+      console.warn(
+        `Note: asciinema exited ${result.exitCode}, but the cast contains recorded events — attaching it.`,
+      );
+    }
+  } else if (screenshotShelloutMode) {
+    const { pngPath, cleanup } = await captureScreenshot(screenshotShelloutMode);
     resolvedSource = pngPath;
     shelloutCleanup = cleanup;
   }
@@ -313,11 +351,11 @@ export async function captureCommand(
         await copyFile(resolvedSource, absPath);
       } catch (err) {
         if (shelloutCleanup) {
-          const label = kind === 'video' ? 'Recording' : 'Screenshot';
+          const label =
+            kind === 'video' ? 'Recording' : kind === 'asciinema' ? 'Asciicast' : 'Screenshot';
           console.error(
             `${label} saved at ${resolvedSource} — DB row inserted but copy to proof dir failed. Recover with: mv ${resolvedSource} ${absPath}`,
           );
-          // Preserve the captured bytes so the user can recover.
           shelloutCleanup = null;
         }
         throw err;

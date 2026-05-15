@@ -43,9 +43,12 @@ import { memoryCommand } from './commands/memory.js';
 import { lsCommand } from './commands/ls.js';
 import { getDefaultCommandName } from './cli-default-command.js';
 import { maybePromptInstall } from './utils/npx-prompt.js';
+import { spliceDashDashFromArgv } from './utils/argv-split.js';
 import { readPackageVersion } from './utils/version.js';
 
 await maybePromptInstall(import.meta.url);
+
+let captureDashDashArgv: string[] = [];
 
 const program = new Command();
 const version = (await readPackageVersion(import.meta.url)) ?? '0.0.0';
@@ -152,7 +155,7 @@ program
   .option('--note <text>', 'Optional note (required for --kind=text)')
   .option('--project <slug>', 'Project slug if the target is project-nested')
   .option('--dir <path>', 'Override default project directory')
-  .option('--interactive', 'Screenshot mode: drag a region (macOS only)')
+  .option('--interactive', 'Interactive mode: drag a region (--kind=screenshot) or record a TTY (--kind=asciinema)')
   .option('--window', 'Screenshot mode: window picker (macOS only)')
   .option('--fullscreen', 'Screenshot mode: silent full-screen capture (macOS only)')
   .option('--start', 'Start ffmpeg screen recording in the background (macOS only). Stop with --stop.')
@@ -161,7 +164,10 @@ program
   .option('--fps <n>', 'Frame rate for --start (default: 30)')
   .action(async (target, options) => {
     try {
-      await captureCommand(target, options);
+      await captureCommand(target, {
+        ...options,
+        commandArgv: captureDashDashArgv,
+      });
     } catch (error) {
       console.error(
         'Error:',
@@ -692,4 +698,5 @@ if (process.argv.length <= 2) {
   process.argv.push(await getDefaultCommandName());
 }
 
+captureDashDashArgv = spliceDashDashFromArgv(process.argv);
 await program.parseAsync();
