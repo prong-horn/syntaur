@@ -49,7 +49,40 @@ describe('lifecycle integration', () => {
 
     const content = await readAssignmentContent(projectSlug, 'task-a');
     expect(content).toContain('assignee: claude-1');
-    expect(content).toContain('status: pending');
+    expect(content).toContain('status: draft');
+  });
+
+  it('shape transitions draft -> ready_for_planning', async () => {
+    const projectDir = resolve(testDir, projectSlug);
+    const result = await executeTransition(projectDir, 'task-b', 'shape');
+    expect(result.success).toBe(true);
+    expect(result.toStatus).toBe('ready_for_planning');
+
+    const content = await readAssignmentContent(projectSlug, 'task-b');
+    expect(content).toContain('status: ready_for_planning');
+  });
+
+  it('plan-ready transitions ready_for_planning -> ready_to_implement', async () => {
+    const projectDir = resolve(testDir, projectSlug);
+    await executeTransition(projectDir, 'task-b', 'shape');
+    const result = await executeTransition(projectDir, 'task-b', 'plan-ready');
+    expect(result.success).toBe(true);
+    expect(result.toStatus).toBe('ready_to_implement');
+
+    const content = await readAssignmentContent(projectSlug, 'task-b');
+    expect(content).toContain('status: ready_to_implement');
+  });
+
+  it('implement transitions ready_to_implement -> in_progress', async () => {
+    const projectDir = resolve(testDir, projectSlug);
+    await executeTransition(projectDir, 'task-b', 'shape');
+    await executeTransition(projectDir, 'task-b', 'plan-ready');
+    const result = await executeTransition(projectDir, 'task-b', 'implement');
+    expect(result.success).toBe(true);
+    expect(result.toStatus).toBe('in_progress');
+
+    const content = await readAssignmentContent(projectSlug, 'task-b');
+    expect(content).toContain('status: in_progress');
   });
 
   it('start succeeds with unmet dependencies but includes warning', async () => {
