@@ -46,7 +46,7 @@ Linkage to a specific criterion is **optional**. Untagged artifacts are fine —
 
 ```bash
 # File-based (screenshot, video, asciinema, http transcript)
-syntaur capture --kind <type> --file <path> [--criterion <index>] [--note <text>] \
+syntaur capture --kind <type> --file <path> [--criterion <index>] [--note <text>] [--transcribe] \
   [--project <slug> <assignment-slug>]
 
 # Text-only (no --file)
@@ -59,6 +59,7 @@ Rules:
 - `--kind=http` accepts either `--file` (a transcript) or `--note` (an inline summary). At least one is required.
 - All other kinds (`screenshot`, `video`, `asciinema`) require `--file`. The CLI rejects nonexistent / non-file paths.
 - `--criterion <index>` is optional — pass the **0-based** index into the `## Acceptance Criteria` checklist when you want to anchor the artifact to a specific criterion.
+- `--transcribe` is video-only and writes a sibling `<id>.transcript.md` (requires `ELEVENLABS_API_KEY` + `ffmpeg`). `proof build` renders the transcript next to the player; clicking a phrase seeks the video.
 - If you have a `.syntaur/context.json` in the cwd, the positional target argument is unnecessary; otherwise pass `--project <slug> <assignment-slug>` or a bare assignment UUID.
 
 The CLI copies the file (if any) under `<assignmentDir>/proof/<criterion|untagged>/<id>.<ext>` and inserts a row in `~/.syntaur/syntaur.db`. Output prints the artifact id and absolute path.
