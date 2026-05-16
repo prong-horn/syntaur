@@ -35,7 +35,8 @@ const ID_REGEX = /\[t:([a-f0-9]{4})\]/;
 const TAG_REGEX = /#([a-zA-Z0-9_-]+)/g;
 // Meta token follows `[t:<id>]` and looks like `<key=value;key=value;...>`.
 // Anchored at end of line. Recognized keys: b (branch), w (worktreePath),
-// c (createdAt), u (updatedAt), p (planDir). Unknown keys are dropped.
+// c (createdAt), u (updatedAt), p (planDir), l (linkedAssignmentId),
+// lr (linkedAssignmentRef). Unknown keys are dropped.
 const META_TOKEN_REGEX = /\[t:[a-f0-9]{4}\]\s+<([^>]*)>\s*$/;
 const META_ENCODE_CHARS = ['%', '<', '>', '[', ']', '=', ';', '\n', '\r'];
 
@@ -63,10 +64,20 @@ interface MetaFields {
   createdAt: string | null;
   updatedAt: string | null;
   planDir: string | null;
+  linkedAssignmentId: string | null;
+  linkedAssignmentRef: string | null;
 }
 
 function emptyMetaFields(): MetaFields {
-  return { branch: null, worktreePath: null, createdAt: null, updatedAt: null, planDir: null };
+  return {
+    branch: null,
+    worktreePath: null,
+    createdAt: null,
+    updatedAt: null,
+    planDir: null,
+    linkedAssignmentId: null,
+    linkedAssignmentRef: null,
+  };
 }
 
 export function parseMetaToken(line: string): MetaFields {
@@ -89,6 +100,8 @@ export function parseMetaToken(line: string): MetaFields {
       case 'c': fields.createdAt = value; break;
       case 'u': fields.updatedAt = value; break;
       case 'p': fields.planDir = value; break;
+      case 'l': fields.linkedAssignmentId = value; break;
+      case 'lr': fields.linkedAssignmentRef = value; break;
     }
   }
   return fields;
@@ -101,6 +114,8 @@ export function serializeMetaToken(item: TodoItem): string {
   if (item.createdAt !== null) pairs.push(`c=${encodeMetaValue(item.createdAt)}`);
   if (item.updatedAt !== null) pairs.push(`u=${encodeMetaValue(item.updatedAt)}`);
   if (item.planDir !== null) pairs.push(`p=${encodeMetaValue(item.planDir)}`);
+  if (item.linkedAssignmentId !== null) pairs.push(`l=${encodeMetaValue(item.linkedAssignmentId)}`);
+  if (item.linkedAssignmentRef !== null) pairs.push(`lr=${encodeMetaValue(item.linkedAssignmentRef)}`);
   if (pairs.length === 0) return '';
   return `<${pairs.join(';')}>`;
 }
@@ -173,6 +188,8 @@ export function parseChecklistItem(line: string): TodoItem | null {
     createdAt: meta.createdAt,
     updatedAt: meta.updatedAt,
     planDir: meta.planDir,
+    linkedAssignmentId: meta.linkedAssignmentId,
+    linkedAssignmentRef: meta.linkedAssignmentRef,
   };
 }
 

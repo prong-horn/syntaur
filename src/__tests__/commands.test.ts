@@ -138,6 +138,24 @@ describe('createAssignmentCommand', () => {
     expect(content).toContain('assignee: null');
   });
 
+  it('writes acceptanceCriteria as checkbox items in assignment.md when option is set', async () => {
+    await createProjectCommand('Test Project', { dir: testDir });
+    await createAssignmentCommand('Promoted Task', {
+      project: 'test-project',
+      dir: testDir,
+      silent: true,
+      acceptanceCriteria: ['fix the parser', 'add a test'],
+    });
+    const content = await readFile(
+      resolve(testDir, 'test-project', 'assignments', 'promoted-task', 'assignment.md'),
+      'utf-8',
+    );
+    expect(content).toContain('## Acceptance Criteria');
+    expect(content).toContain('- [ ] fix the parser');
+    expect(content).toContain('- [ ] add a test');
+    expect(content).not.toContain('<!-- criterion 1 -->');
+  });
+
   it('rejects --one-off with --depends-on', async () => {
     await expect(
       createAssignmentCommand('Test', {
