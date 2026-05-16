@@ -85,6 +85,8 @@ todoCommand
         createdAt: now,
         updatedAt: now,
         planDir: null,
+        linkedAssignmentId: null,
+        linkedAssignmentRef: null,
       };
       checklist.items.push(item);
       await writeChecklist(todosPath, checklist);
@@ -542,7 +544,7 @@ todoCommand
   .option('--title <title>', 'Title for the new assignment (required if multiple ids in --new-assignment mode)')
   .option('--type <type>', 'Type for the new assignment (e.g. feature, bug)')
   .option('--priority <level>', 'Priority for the new assignment (low|medium|high|critical)')
-  .option('--keep-source', 'Do not mark source todos as completed')
+  .option('--keep-source', 'Leave source todos untouched (no status flip, no linkage)')
   .option('--workspace <slug>', 'Source workspace slug')
   .option('--project <slug>', 'Source project slug (mutually exclusive with --workspace/--global)')
   .option('--global', 'Use global todos')
@@ -607,28 +609,24 @@ async function promoteTodos(ids: string[], options: PromoteOptions): Promise<voi
       throw new Error('--title is required when promoting multiple todos to a new assignment.');
     }
     const title = options.title || todos[0].description;
-    const { createAssignmentCommand } = await import('./create-assignment.js');
     const validPriorities = ['low', 'medium', 'high', 'critical'] as const;
     type Priority = typeof validPriorities[number];
     const priority: Priority | undefined =
       options.priority && (validPriorities as readonly string[]).includes(options.priority)
         ? (options.priority as Priority)
         : undefined;
-    const result = await createAssignmentCommand(title, {
-      project: options.toProject!,
-      type: options.type,
-      priority,
-      withTodos: true,
-      silent: true,
-    });
-
-    await injectPromotedTodos(result.assignmentDir, todos, scopeLabel);
-
-    if (!options.keepSource) {
-      await markPromotedComplete(todos, todosPath, workspace, checklist, scope, `Promoted to assignment ${result.projectSlug}/${result.slug}`);
-    }
-
-    console.log(`Promoted ${todos.length} todo(s) to new assignment ${result.projectSlug}/${result.slug}`);
+    const { promoteTodosToNewAssignment } = await import('../utils/promote-todos.js');
+    const result = await promoteTodosToNewAssignment(
+      [{ todosDir: todosPath, workspace, items: todos, scopeLabel }],
+      {
+        title,
+        target: { project: options.toProject! },
+        type: options.type,
+        priority,
+        keepSource: options.keepSource,
+      },
+    );
+    console.log(`Promoted ${todos.length} todo(s) to new assignment ${result.assignmentRef}`);
     console.log(`  ${result.assignmentDir}`);
     return;
   }
