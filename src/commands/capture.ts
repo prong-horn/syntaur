@@ -1,5 +1,6 @@
 import { resolve, relative, dirname } from 'node:path';
-import { copyFile, mkdir, realpath, rm, stat } from 'node:fs/promises';
+import { copyFile, mkdir, realpath, rm, stat, writeFile } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
 import { resolveAssignmentTarget } from '../utils/assignment-target.js';
 import { proofDir } from '../utils/paths.js';
 import {
@@ -14,6 +15,13 @@ import { captureAsciinema } from '../utils/asciinema.js';
 import { startRecording, stopRecording } from '../utils/recording.js';
 import type { ResolvedAssignment } from '../utils/assignment-resolver.js';
 import { initProofDb, insertArtifact, type ArtifactKind } from '../db/proof-db.js';
+import {
+  getTranscriber,
+  TranscribeFfmpegError,
+  TranscribeFfmpegMissingError,
+  TranscribeNoAudioError,
+} from '../utils/transcribers/index.js';
+import { groupIntoPhrases, renderMarkdown } from '../utils/transcribers/pack.js';
 
 export interface CaptureOptions {
   kind?: string;
@@ -31,6 +39,7 @@ export interface CaptureOptions {
   stop?: boolean;
   device?: string;
   fps?: string;
+  transcribe?: boolean;
 }
 
 const MAX_ID_RETRIES = 5;
@@ -142,6 +151,9 @@ export async function captureCommand(
   }
   if ((options.device != null || options.fps != null) && !options.start) {
     throw new Error('--device/--fps require --start.');
+  }
+  if (options.transcribe && kind !== 'video') {
+    throw new Error('--transcribe is only valid with --kind=video.');
   }
 
   // --start branch: spawn ffmpeg, write pidfile + sidecar, return. No DB row
@@ -359,6 +371,39 @@ export async function captureCommand(
           shelloutCleanup = null;
         }
         throw err;
+      }
+    }
+
+    // Transcription is opt-in (--transcribe), video-only, never rolls back the
+    // artifact: any failure becomes a console.warn and the captured mp4 is
+    // preserved as proof.
+    if (options.transcribe && kind === 'video' && absPath && id) {
+      const sidecarPath = resolve(destDir, `${id}.transcript.md`);
+      if (existsSync(sidecarPath)) {
+        console.warn(
+          `transcript: ${sidecarPath} already exists, skipping (delete to re-transcribe)`,
+        );
+      } else {
+        try {
+          const json = await getTranscriber().transcribe(absPath);
+          const md = renderMarkdown(groupIntoPhrases(json.words ?? []));
+          await writeFile(sidecarPath, md, 'utf8');
+          console.log(`transcript: ${sidecarPath}`);
+        } catch (err) {
+          if (err instanceof TranscribeFfmpegMissingError) {
+            console.warn(
+              "transcript skipped: ffmpeg not found — install via 'brew install ffmpeg'",
+            );
+          } else if (err instanceof TranscribeNoAudioError) {
+            console.warn('transcript skipped: video has no audio track');
+          } else if (err instanceof TranscribeFfmpegError) {
+            console.warn(`transcript skipped: ${err.message}`);
+          } else {
+            console.warn(
+              `transcript skipped: ${err instanceof Error ? err.message : String(err)}`,
+            );
+          }
+        }
       }
     }
 
