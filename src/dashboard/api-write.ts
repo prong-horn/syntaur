@@ -183,7 +183,12 @@ async function readCurrentDocument(filePath: string): Promise<string | null> {
   return readFile(filePath, 'utf-8');
 }
 
-export function createWriteRouter(projectsDir: string, assignmentsDir?: string): Router {
+export function createWriteRouter(
+  projectsDir: string,
+  assignmentsDir?: string,
+  todosDir?: string,
+): Router {
+  const linkedTodosLookup = todosDir ? { todosDir, projectsDir } : undefined;
   const router = Router();
 
   router.get('/api/templates/project', (_req: Request, res: Response) => {
@@ -1276,6 +1281,7 @@ export function createWriteRouter(projectsDir: string, assignmentsDir?: string):
         reason: typeof reason === 'string' ? reason : undefined,
         transitionTable: config.custom ? config.transitionTable : undefined,
         terminalStatuses: config.custom ? config.terminalStatuses : undefined,
+        linkedTodosLookup,
       });
 
       if (!result.success) {
@@ -1900,6 +1906,7 @@ export function createWriteRouter(projectsDir: string, assignmentsDir?: string):
         {
           standalone: resolved.standalone,
           reason: typeof reason === 'string' ? reason : undefined,
+          linkedTodosLookup,
         },
       );
       if (!transitionResult.success) {
