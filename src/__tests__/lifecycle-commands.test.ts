@@ -85,6 +85,23 @@ describe('lifecycle integration', () => {
     expect(content).toContain('status: in_progress');
   });
 
+  it('shape/plan-ready/implement honor --agent and set assignee when unset', async () => {
+    const projectDir = resolve(testDir, projectSlug);
+
+    await executeTransition(projectDir, 'task-b', 'shape', { agent: 'codex-shaper' });
+    let content = await readAssignmentContent(projectSlug, 'task-b');
+    expect(content).toContain('assignee: codex-shaper');
+
+    // Subsequent transitions do not overwrite an existing assignee.
+    await executeTransition(projectDir, 'task-b', 'plan-ready', { agent: 'someone-else' });
+    content = await readAssignmentContent(projectSlug, 'task-b');
+    expect(content).toContain('assignee: codex-shaper');
+
+    await executeTransition(projectDir, 'task-b', 'implement', { agent: 'and-someone-else' });
+    content = await readAssignmentContent(projectSlug, 'task-b');
+    expect(content).toContain('assignee: codex-shaper');
+  });
+
   it('start succeeds with unmet dependencies but includes warning', async () => {
     const projectDir = resolve(testDir, projectSlug);
     await executeAssign(projectDir, 'task-a', 'claude-1');

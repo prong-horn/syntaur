@@ -28,7 +28,6 @@ export const DEFAULT_TRANSITION_TABLE = new Map<string, string>([
   ['ready_for_planning:plan-ready', 'ready_to_implement'],
   ['ready_for_planning:start', 'in_progress'],
   ['ready_to_implement:implement', 'in_progress'],
-  ['ready_to_implement:start', 'in_progress'],
   ['in_progress:block', 'blocked'],
   ['in_progress:review', 'review'],
   ['in_progress:complete', 'completed'],

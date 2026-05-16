@@ -50,6 +50,8 @@ export interface TransitionOptions {
   terminalStatuses?: ReadonlySet<string>;
 }
 
+const ASSIGNEE_SETTING_COMMANDS = new Set(['start', 'shape', 'plan-ready', 'implement']);
+
 export async function executeTransition(
   projectDir: string,
   assignmentSlug: string,
@@ -83,7 +85,7 @@ export async function executeTransition(
     updated: nowTimestamp(),
   };
 
-  if (command === 'start' && options.agent && !frontmatter.assignee) {
+  if (ASSIGNEE_SETTING_COMMANDS.has(command) && options.agent && !frontmatter.assignee) {
     updates.assignee = options.agent;
   }
   if (command === 'block') {
@@ -169,7 +171,7 @@ export async function executeTransitionByDir(
     updated: nowTimestamp(),
   };
 
-  if (command === 'start' && options.agent && !frontmatter.assignee) {
+  if (ASSIGNEE_SETTING_COMMANDS.has(command) && options.agent && !frontmatter.assignee) {
     updates.assignee = options.agent;
   }
   if (command === 'block') {
