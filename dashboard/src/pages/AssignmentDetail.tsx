@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
-  Activity,
   ArrowUpRight,
   ExternalLink,
   FilePenLine,
@@ -13,7 +12,7 @@ import {
 import { CopyButton } from '../components/CopyButton';
 import { useAssignment, useProject, useServers, useAssignmentSessions, useWorkspacePrefix, type AssignmentTransitionAction } from '../hooks/useProjects';
 import { useStatusConfig } from '../hooks/useStatusConfig';
-import { formatDateTime, formatRelativeTime, formatShortDate, formatShortDateTime } from '../lib/format';
+import { formatRelativeTime, formatShortDate, formatShortDateTime } from '../lib/format';
 import { LoadingState } from '../components/LoadingState';
 import { ErrorState } from '../components/ErrorState';
 import { StatusBadge } from '../components/StatusBadge';
@@ -22,6 +21,7 @@ import { ContentTabs } from '../components/ContentTabs';
 import { SectionCard } from '../components/SectionCard';
 import { MarkdownRenderer } from '../components/MarkdownRenderer';
 import { EmptyState } from '../components/EmptyState';
+import { AgentSessionsSection } from '../components/AgentSessionsSection';
 import { AssignmentTransitionDialog } from '../components/AssignmentTransitionDialog';
 import { ConfirmDialog } from '../components/ConfirmDialog';
 import { OverflowMenu, type OverflowMenuItem } from '../components/OverflowMenu';
@@ -58,7 +58,7 @@ export function AssignmentDetail() {
   const { data: assignment, loading, error, refetch } = useAssignment(slug, aslug);
   const { data: project } = useProject(slug);
   const { data: serversData } = useServers();
-  const { data: sessionsData } = useAssignmentSessions(slug, aslug);
+  const { data: sessionsData, loading: sessionsLoading, error: sessionsError } = useAssignmentSessions(slug, aslug);
 
   const enrichedDeps = useMemo(() => {
     if (!assignment || !project) return [];
@@ -712,30 +712,11 @@ export function AssignmentDetail() {
             </SectionCard>
           )}
 
-          {sessionsData && sessionsData.sessions.length > 0 && (
-            <SectionCard title="Agent Sessions">
-              <div className="space-y-2">
-                {sessionsData.sessions.map((session) => (
-                  <div key={session.sessionId} className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
-                    <span className="flex items-center gap-1.5">
-                      <Activity className="h-3 w-3 shrink-0 text-muted-foreground" />
-                      <span className="font-medium text-foreground">{session.agent}</span>
-                      <span className="inline-flex items-center gap-1.5 font-mono text-xs text-muted-foreground" title={session.sessionId}>
-                        {session.sessionId.slice(0, 8)}
-                        <CopyButton value={session.sessionId} />
-                      </span>
-                    </span>
-                    <span className="flex items-center gap-2">
-                      <StatusBadge status={session.status} />
-                      <span className="text-xs text-muted-foreground">
-                        {formatDateTime(session.started)}
-                      </span>
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </SectionCard>
-          )}
+          <AgentSessionsSection
+            sessions={sessionsData?.sessions}
+            loading={sessionsLoading}
+            error={sessionsError}
+          />
         </div>
       </div>
 
