@@ -19,10 +19,41 @@ const STYLE_BLOCK = `
   .stale { color: #b04a4a; font-style: italic; font-size: 0.9em; }
   .empty-criterion { color: #888; font-style: italic; }
   a { color: #2563eb; }
+  .video-with-transcript { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 1rem; align-items: start; }
+  .transcript { max-height: 480px; overflow: auto; font-size: 0.85em; line-height: 1.4; border: 1px solid #e5e5e5; border-radius: 4px; padding: 0.25rem; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .transcript .transcript-line { display: block; width: 100%; text-align: left; background: none; border: 0; padding: 0.25rem 0.5rem; cursor: pointer; font: inherit; color: inherit; border-radius: 2px; }
+  .transcript .transcript-line:hover { background: #f0f0f0; }
+  .transcript .transcript-raw { padding: 0.25rem 0.5rem; color: #666; font-style: italic; }
+  @media (max-width: 800px) { .video-with-transcript { grid-template-columns: 1fr; } }
 `;
+
+const TRANSCRIPT_CLICK_SCRIPT =
+  `<script>document.addEventListener('click',function(e){var t=e.target.closest('[data-t]');if(!t)return;var w=t.closest('.video-with-transcript');if(!w)return;var v=w.querySelector('video');if(!v)return;v.currentTime=parseFloat(t.getAttribute('data-t'));v.play();});</script>`;
+
+const PHRASE_LINE_RE = /^\s*\[(\d+(?:\.\d+)?)-(\d+(?:\.\d+)?)\]\s+(?:(S\d+)\s+)?(.+)$/;
+
+function renderTranscriptPane(markdown: string): string {
+  const lines = markdown.split(/\r?\n/);
+  const out: string[] = [];
+  for (const line of lines) {
+    if (line.trim() === '') continue;
+    const m = PHRASE_LINE_RE.exec(line);
+    if (m) {
+      const [, start, end, speaker, text] = m;
+      const speakerSegment = speaker ? ` ${escapeHtml(speaker)}` : '';
+      out.push(
+        `<button type="button" class="transcript-line" data-t="${escapeHtml(start)}">[${escapeHtml(start)}-${escapeHtml(end)}]${speakerSegment} ${escapeHtml(text)}</button>`,
+      );
+    } else {
+      out.push(`<div class="transcript-raw">${escapeHtml(line)}</div>`);
+    }
+  }
+  return `<aside class="transcript">${out.join('')}</aside>`;
+}
 
 interface RenderArtifactCtx {
   inlineFiles: Map<string, string | null>; // file_path -> contents (null if too large or unread)
+  transcriptSidecars: Map<string, string>; // artifact id -> transcript markdown
 }
 
 function renderArtifact(a: ArtifactRow, ctx: RenderArtifactCtx): string {
@@ -37,11 +68,18 @@ function renderArtifact(a: ArtifactRow, ctx: RenderArtifactCtx): string {
         ? `<img src="${filePathEsc}" alt="screenshot artifact ${idEsc}">`
         : '<em>missing file</em>';
       break;
-    case 'video':
-      body = filePathEsc
-        ? `<video controls preload="metadata" src="${filePathEsc}"></video>`
-        : '<em>missing file</em>';
+    case 'video': {
+      if (!filePathEsc) {
+        body = '<em>missing file</em>';
+        break;
+      }
+      const transcriptMd = ctx.transcriptSidecars.get(a.id);
+      const videoEl = `<video controls preload="metadata" src="${filePathEsc}"></video>`;
+      body = transcriptMd
+        ? `<div class="video-with-transcript">${videoEl}${renderTranscriptPane(transcriptMd)}</div>`
+        : videoEl;
       break;
+    }
     case 'asciinema':
       body = filePathEsc
         ? `<a href="${filePathEsc}" download>Open .cast file (${idEsc})</a> &mdash; <code>asciinema play &lt;file&gt;</code> to play locally`
@@ -69,9 +107,13 @@ function renderArtifact(a: ArtifactRow, ctx: RenderArtifactCtx): string {
   return `<div class="artifact">${noteHtml}${body}<div class="artifact-meta"><code>${idEsc}</code></div></div>`;
 }
 
-export function renderProofHtml(params: ProofRenderParams, inlineFiles: Map<string, string | null> = new Map()): string {
+export function renderProofHtml(
+  params: ProofRenderParams,
+  inlineFiles: Map<string, string | null> = new Map(),
+  transcriptSidecars: Map<string, string> = new Map(),
+): string {
   const { assignment, title, generated, criteria, artifactsByCriterion, untagged, staleByOriginalIndex } = params;
-  const ctx: RenderArtifactCtx = { inlineFiles };
+  const ctx: RenderArtifactCtx = { inlineFiles, transcriptSidecars };
 
   const totalArtifacts =
     untagged.length +
@@ -147,6 +189,7 @@ export function renderProofHtml(params: ProofRenderParams, inlineFiles: Map<stri
     ${criteriaHtml}
     ${otherSection}
   </main>
+  ${transcriptSidecars.size > 0 ? TRANSCRIPT_CLICK_SCRIPT : ''}
 </body>
 </html>
 `;

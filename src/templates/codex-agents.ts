@@ -166,7 +166,7 @@ Use the \`syntaur\` CLI for state transitions and coordination:
 - \`syntaur fail ${params.assignmentSlug} --project ${params.projectSlug}\` -- mark as failed
 - \`syntaur comment ${params.assignmentSlug} "body" --type question|note|feedback [--reply-to <id>]\` -- append to \`comments.md\` (use for all Q&A; questions support resolve toggle)
 - \`syntaur request ${params.assignmentSlug} <target-slug-or-uuid> "text"\` -- append a todo to another assignment's \`## Todos\` annotated \`(from: ${params.assignmentSlug})\`
-- \`syntaur capture --kind <screenshot|video|asciinema|http|text> [--file <path>] [--criterion <index>] [--note <text>] ${params.assignmentSlug} --project ${params.projectSlug}\` -- record a proof artifact. \`--kind=text\` requires \`--note\` and forbids \`--file\`. Criterion linkage is optional.
+- \`syntaur capture --kind <screenshot|video|asciinema|http|text> [--file <path>] [--criterion <index>] [--note <text>] [--transcribe] ${params.assignmentSlug} --project ${params.projectSlug}\` -- record a proof artifact. \`--kind=text\` requires \`--note\` and forbids \`--file\`. Criterion linkage is optional. \`--transcribe\` is video-only and writes a sibling \`<id>.transcript.md\` (requires \`ELEVENLABS_API_KEY\` + \`ffmpeg\`).
 - \`syntaur proof build ${params.assignmentSlug} --project ${params.projectSlug}\` -- render \`proof.html\` and \`proof.md\` at the assignment dir. Atomic overwrite — safe to re-run.
 
 ## Troubleshooting

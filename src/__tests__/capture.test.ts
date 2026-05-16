@@ -7,19 +7,31 @@ import { EventEmitter } from 'node:events';
 
 // Mock child_process.spawn at module scope (vitest hoists this above imports).
 // Tests set `behavior.handler` per-case to drive the fake child's events.
-const { fakeSpawn, behavior } = vi.hoisted(() => {
+const { fakeSpawn, behavior, fakeTranscribe } = vi.hoisted(() => {
   return {
     fakeSpawn: vi.fn(),
     behavior: {
       handler: null as null | ((args: string[], child: EventEmitter) => void | Promise<void>),
       suppressPid: false,
     },
+    fakeTranscribe: vi.fn(),
   };
 });
 
 vi.mock('node:child_process', async () => {
   const actual = await vi.importActual<typeof import('node:child_process')>('node:child_process');
   return { ...actual, spawn: fakeSpawn };
+});
+
+vi.mock('../utils/transcribers/index.js', async () => {
+  const actual =
+    await vi.importActual<typeof import('../utils/transcribers/index.js')>(
+      '../utils/transcribers/index.js',
+    );
+  return {
+    ...actual,
+    getTranscriber: () => ({ id: 'fake', transcribe: fakeTranscribe }),
+  };
 });
 
 import { createProjectCommand } from '../commands/create-project.js';
@@ -865,6 +877,69 @@ describe('captureCommand video shellout', () => {
     const files = await readdir(proofUntagged);
     expect(files).toHaveLength(1);
     expect(files[0]).toMatch(/\.mp4$/);
+  });
+
+  it('--start --stop --transcribe writes a sibling <id>.transcript.md', async () => {
+    let sigintSent = false;
+    killSpy = vi.spyOn(process, 'kill').mockImplementation((pid: number, signal?: number | NodeJS.Signals) => {
+      if (pid !== 12345) return realKill(pid, signal);
+      if (signal === 'SIGINT') {
+        sigintSent = true;
+        return true;
+      }
+      if (signal === 0) {
+        if (sigintSent) {
+          throw Object.assign(new Error('ESRCH'), { code: 'ESRCH' });
+        }
+        return true;
+      }
+      return true;
+    });
+
+    fakeTranscribe.mockReset();
+    fakeTranscribe.mockResolvedValue({
+      words: [
+        { type: 'word', text: 'hello', start: 0.0, end: 0.4 },
+        { type: 'word', text: 'world', start: 0.5, end: 1.0 },
+      ],
+    });
+
+    const { projectSlug, assignmentDir } = await setupProjectAssignment();
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    try {
+      await captureCommand('a', {
+        kind: 'video',
+        start: true,
+        project: projectSlug,
+        dir: testDir,
+      });
+
+      const sidecar = JSON.parse(
+        await readFile(resolve(testDir, 'recording.json'), 'utf-8'),
+      );
+      const mp4Path = String(sidecar.mp4Path);
+      await writeFile(mp4Path, Buffer.from('fake-mp4-bytes'));
+
+      await captureCommand(undefined, { kind: 'video', stop: true, transcribe: true });
+    } finally {
+      logSpy.mockRestore();
+    }
+
+    expect(fakeTranscribe).toHaveBeenCalledTimes(1);
+
+    const id = await getAssignmentId(assignmentDir);
+    const rows = listArtifactsByAssignment(id);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].kind).toBe('video');
+
+    const proofUntagged = resolve(assignmentDir, 'proof', 'untagged');
+    const files = await readdir(proofUntagged);
+    expect(files.some((f) => /\.mp4$/.test(f))).toBe(true);
+    const sidecarFile = files.find((f) => f.endsWith('.transcript.md'));
+    expect(sidecarFile).toBeDefined();
+    const md = await readFile(resolve(proofUntagged, sidecarFile!), 'utf-8');
+    expect(md).toBe('  [000.00-001.00] hello world\n');
   });
 
   it('--start refuses when a live PID is in the pidfile', async () => {

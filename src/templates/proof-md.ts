@@ -9,19 +9,23 @@ export interface ProofRenderParams {
   artifactsByCriterion: Map<number, ArtifactRow[]>;
   untagged: ArtifactRow[];
   staleByOriginalIndex: ArtifactRow[];
+  transcriptSidecars?: Map<string, string>;
 }
 
-function renderArtifactBullet(a: ArtifactRow): string {
+function renderArtifactBullet(a: ArtifactRow, transcriptSidecars?: Map<string, string>): string {
   const parts: string[] = [];
   parts.push(`**${a.kind}**`);
   parts.push(`\`${a.id}\``);
   if (a.file_path) parts.push(`file: \`${a.file_path}\``);
   if (a.note) parts.push(`note: ${a.note}`);
+  if (a.kind === 'video' && transcriptSidecars?.has(a.id)) {
+    parts.push(`transcript: \`${a.id}.transcript.md\``);
+  }
   return `- ${parts.join(' — ')}`;
 }
 
 export function renderProofMarkdown(params: ProofRenderParams): string {
-  const { assignment, title, generated, criteria, artifactsByCriterion, untagged, staleByOriginalIndex } = params;
+  const { assignment, title, generated, criteria, artifactsByCriterion, untagged, staleByOriginalIndex, transcriptSidecars } = params;
 
   const totalArtifacts =
     untagged.length +
@@ -51,7 +55,7 @@ export function renderProofMarkdown(params: ProofRenderParams): string {
     if (tagged.length === 0) {
       lines.push('_no artifacts captured_');
     } else {
-      for (const a of tagged) lines.push(renderArtifactBullet(a));
+      for (const a of tagged) lines.push(renderArtifactBullet(a, transcriptSidecars));
     }
     lines.push('');
   }
@@ -59,7 +63,7 @@ export function renderProofMarkdown(params: ProofRenderParams): string {
   if (untagged.length > 0 || staleByOriginalIndex.length > 0) {
     lines.push('## Other artifacts');
     lines.push('');
-    for (const a of untagged) lines.push(renderArtifactBullet(a));
+    for (const a of untagged) lines.push(renderArtifactBullet(a, transcriptSidecars));
     for (const a of staleByOriginalIndex) {
       const note = a.note ? ` — note: ${a.note}` : '';
       const file = a.file_path ? ` — file: \`${a.file_path}\`` : '';

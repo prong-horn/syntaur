@@ -1,6 +1,6 @@
 import { Command } from 'commander';
 import { readFile, writeFile, rename, stat } from 'node:fs/promises';
-import { resolve, relative, isAbsolute } from 'node:path';
+import { resolve, relative, isAbsolute, dirname } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { resolveAssignmentTarget } from '../utils/assignment-target.js';
 import { parseAcceptanceCriteria } from '../utils/acceptance-criteria-parse.js';
@@ -135,6 +135,34 @@ async function loadInlineFiles(
   return out;
 }
 
+/**
+ * For every video artifact with a sibling `<id>.transcript.md`, return its
+ * contents keyed by artifact id. Mirrors `loadInlineFiles` for path safety
+ * (`isWithin(proofRoot, sidecar)`) and size guard.
+ */
+async function loadTranscriptSidecars(
+  rows: ArtifactRow[],
+  assignmentDir: string,
+): Promise<Map<string, string>> {
+  const out = new Map<string, string>();
+  const proofRoot = proofDir(assignmentDir);
+  for (const r of rows) {
+    if (r.kind !== 'video' || !r.file_path) continue;
+    const videoAbs = resolve(assignmentDir, r.file_path);
+    const sidecar = resolve(dirname(videoAbs), `${r.id}.transcript.md`);
+    if (!isWithin(proofRoot, sidecar)) continue;
+    if (!(await fileExists(sidecar))) continue;
+    const st = await stat(sidecar);
+    if (st.size > INLINE_TEXT_LIMIT_BYTES) continue;
+    try {
+      out.set(r.id, await readFile(sidecar, 'utf-8'));
+    } catch {
+      // Unreadable — silently skip; bare video still renders.
+    }
+  }
+  return out;
+}
+
 export async function proofBuildCommand(
   target: string | undefined,
   options: ProofBuildOptions = {},
@@ -157,6 +185,7 @@ export async function proofBuildCommand(
   );
 
   const inlineFiles = await loadInlineFiles(rows, resolved.assignmentDir);
+  const transcriptSidecars = await loadTranscriptSidecars(rows, resolved.assignmentDir);
 
   const renderParams: ProofRenderParams = {
     assignment: resolved.standalone
@@ -168,10 +197,11 @@ export async function proofBuildCommand(
     artifactsByCriterion,
     untagged,
     staleByOriginalIndex,
+    transcriptSidecars,
   };
 
   const md = renderProofMarkdown(renderParams);
-  const html = renderProofHtml(renderParams, inlineFiles);
+  const html = renderProofHtml(renderParams, inlineFiles, transcriptSidecars);
 
   const mdPath = resolve(resolved.assignmentDir, 'proof.md');
   const htmlPath = resolve(resolved.assignmentDir, 'proof.html');

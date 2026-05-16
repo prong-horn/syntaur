@@ -162,6 +162,7 @@ program
   .option('--stop', 'Stop the running ffmpeg recording and attach the mp4.')
   .option('--device <index>', 'AVFoundation video device index for --start (default: 1). List devices: ffmpeg -f avfoundation -list_devices true -i ""')
   .option('--fps <n>', 'Frame rate for --start (default: 30)')
+  .option('--transcribe', 'Auto-transcribe captured video to a <id>.transcript.md sidecar (kind=video only; requires ELEVENLABS_API_KEY + ffmpeg)')
   .action(async (target, options) => {
     try {
       await captureCommand(target, {
