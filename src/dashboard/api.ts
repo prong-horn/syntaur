@@ -30,7 +30,6 @@ import type {
   AssignmentsBoardResponse,
   AssignmentTransitionAction,
   AttentionItem,
-  AttentionResponse,
   EditableDocumentResponse,
   EnrichedLink,
   HelpResponse,
@@ -51,7 +50,6 @@ import type {
 } from './types.js';
 
 const STALE_ASSIGNMENT_MS = 7 * 24 * 60 * 60 * 1000;
-const ATTENTION_PAGE_LIMIT = 50;
 const OVERVIEW_ATTENTION_LIMIT = 6;
 const RECENT_PROJECTS_LIMIT = 6;
 const RECENT_ACTIVITY_LIMIT = 12;
@@ -97,13 +95,6 @@ async function listStandaloneRecords(assignmentsDir: string | undefined): Promis
 
   records.sort((left, right) => compareTimestamps(right.record.updated, left.record.updated));
   return records;
-}
-
-interface AttentionSeverityCounts {
-  critical: number;
-  high: number;
-  medium: number;
-  low: number;
 }
 
 const DEFAULT_TRANSITION_DEFINITIONS: Array<{
@@ -416,71 +407,6 @@ export async function getOverview(
       .slice(0, RECENT_PROJECTS_LIMIT),
     recentActivity: recentActivity.slice(0, RECENT_ACTIVITY_LIMIT),
     serverStats,
-  };
-}
-
-/**
- * Get the explicit attention queue.
- * GET /api/attention
- */
-export async function getAttention(
-  projectsDir: string,
-  serversDir?: string,
-  assignmentsDir?: string,
-): Promise<AttentionResponse> {
-  const projectRecords = await listProjectRecords(projectsDir);
-  const standaloneRecords = await listStandaloneRecords(assignmentsDir);
-  const items = buildAttentionItems(projectRecords, standaloneRecords);
-
-  if (serversDir) {
-    try {
-      const { scanAllSessions } = await import('./scanner.js');
-      const servers = await scanAllSessions(serversDir, projectsDir, { assignmentsDir });
-      for (const session of servers.sessions) {
-        if (!session.alive) {
-          items.push({
-            id: `server-dead-${session.name}`,
-            severity: 'low',
-            projectSlug: '',
-            projectTitle: '',
-            assignmentSlug: '',
-            assignmentTitle: `tmux: ${session.name}`,
-            status: 'failed',
-            reason: 'Tmux session no longer exists but is still registered',
-            updated: session.lastRefreshed,
-            href: '/servers',
-            stale: false,
-            blockedReason: null,
-          });
-        }
-      }
-    } catch {
-      // Server scanning failure should not break attention
-    }
-  }
-
-  const pagedItems = items.slice(0, ATTENTION_PAGE_LIMIT);
-  const summary: AttentionSeverityCounts = {
-    critical: 0,
-    high: 0,
-    medium: 0,
-    low: 0,
-  };
-
-  for (const item of pagedItems) {
-    summary[item.severity]++;
-  }
-
-  return {
-    generatedAt: new Date().toISOString(),
-    summary: {
-      total: pagedItems.length,
-      critical: summary.critical,
-      high: summary.high,
-      medium: summary.medium,
-      low: summary.low,
-    },
-    items: pagedItems,
   };
 }
 

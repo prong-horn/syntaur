@@ -30,7 +30,6 @@ export const STATIC_PAGES = [
   { id: 'page-assignments', title: 'Assignments', basePath: '/assignments', keywords: [] },
   { id: 'page-todos',       title: 'Todos',       basePath: '/todos',       keywords: ['tasks'] },
   { id: 'page-servers',     title: 'Servers',     basePath: '/servers',     keywords: ['sessions'] },
-  { id: 'page-attention',   title: 'Attention',   basePath: '/attention',   keywords: ['alerts'] },
   { id: 'page-playbooks',   title: 'Playbooks',   basePath: '/playbooks',   keywords: [] },
   { id: 'page-memories',    title: 'Memories',    basePath: '/memories',    keywords: ['knowledge', 'learnings'] },
   { id: 'page-resources',   title: 'Resources',   basePath: '/resources',   keywords: ['knowledge', 'reference'] },

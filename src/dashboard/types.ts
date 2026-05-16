@@ -249,18 +249,6 @@ export interface AttentionItem {
   blockedReason: string | null;
 }
 
-export interface AttentionResponse {
-  generatedAt: string;
-  summary: {
-    total: number;
-    critical: number;
-    high: number;
-    medium: number;
-    low: number;
-  };
-  items: AttentionItem[];
-}
-
 export interface AssignmentsBoardResponse {
   generatedAt: string;
   assignments: AssignmentBoardItem[];

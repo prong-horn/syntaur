@@ -353,7 +353,7 @@ export async function getDashboardHelp(): Promise<HelpResponse> {
     navigation: [
       {
         label: 'Overview',
-        description: 'Triage hub showing current attention items, recent activity, progress stats, and first-run setup guidance.',
+        description: 'Triage hub showing assignments that need action, recent activity, progress stats, and first-run setup guidance.',
         href: '/',
       },
       {
@@ -380,11 +380,6 @@ export async function getDashboardHelp(): Promise<HelpResponse> {
         label: 'Playbooks',
         description: 'Create, browse, and edit behavioral rules that agents must follow. The playbook manifest at ~/.syntaur/playbooks/manifest.md is auto-generated for inclusion in agent instructions.',
         href: '/playbooks',
-      },
-      {
-        label: 'Attention',
-        description: 'Focused queue of assignments that need action: blocked, failed, in review, stale, or with unmet dependencies.',
-        href: '/attention',
       },
       {
         label: 'Help',
@@ -477,7 +472,7 @@ export async function getDashboardHelp(): Promise<HelpResponse> {
       },
       {
         title: 'Return to Overview for triage',
-        detail: 'Overview and Attention show the queue that needs action next.',
+        detail: 'Overview surfaces the queue of assignments that need action next.',
         href: '/',
       },
     ],
@@ -485,7 +480,6 @@ export async function getDashboardHelp(): Promise<HelpResponse> {
       { label: 'Overview', href: '/' },
       { label: 'Project Directory', href: '/projects' },
       { label: 'Assignments Board', href: '/assignments' },
-      { label: 'Attention Queue', href: '/attention' },
       { label: 'Servers', href: '/servers' },
       { label: 'Agent Sessions', href: '/agent-sessions' },
       { label: 'Playbooks', href: '/playbooks' },

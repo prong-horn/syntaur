@@ -1,7 +1,7 @@
 import { useState, type ReactNode } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import type { LucideIcon } from 'lucide-react';
-import { Activity, AlertTriangle, BookOpen, Boxes, Brain, CheckSquare, Compass, FolderKanban, LifeBuoy, Library, ListTodo, Monitor, Plus, Settings, X, ChevronDown } from 'lucide-react';
+import { Activity, BookOpen, Boxes, Brain, CheckSquare, Compass, FolderKanban, LifeBuoy, Library, ListTodo, Monitor, Plus, Settings, X, ChevronDown } from 'lucide-react';
 import { SidebarNav, type SidebarNavItem } from './SidebarNav';
 import { TopBar } from './TopBar';
 import { useWorkspaces } from '../hooks/useProjects';
@@ -24,7 +24,6 @@ interface AppShellProps {
 
 const GLOBAL_NAV_ITEMS: SidebarNavItem[] = [
   { to: '/', label: 'Overview', icon: Compass },
-  { to: '/attention', label: 'Attention', icon: AlertTriangle },
   { to: '/playbooks', label: 'Playbooks', icon: BookOpen },
   { to: '/memories', label: 'Memories', icon: Brain },
   { to: '/resources', label: 'Resources', icon: Library },

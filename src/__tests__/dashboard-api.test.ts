@@ -11,7 +11,6 @@ import {
   getProjectDetail,
   getAssignmentDetail,
   getOverview,
-  getAttention,
   getEditableDocument,
   getHelp,
 } from '../dashboard/api.js';
@@ -726,7 +725,7 @@ tags: []
   });
 });
 
-describe('overview and attention', () => {
+describe('overview', () => {
   it('returns first-run onboarding state for an empty workspace', async () => {
     const result = await getOverview(testDir);
     expect(result.firstRun).toBe(true);
@@ -741,7 +740,6 @@ describe('overview and attention', () => {
     ]);
 
     const overview = await getOverview(testDir);
-    const attention = await getAttention(testDir);
 
     expect(overview.firstRun).toBe(false);
     expect(overview.stats.activeProjects).toBe(1);
@@ -750,8 +748,8 @@ describe('overview and attention', () => {
     expect(overview.stats.staleAssignments).toBe(1);
     expect(overview.recentActivity[0].href).toContain('/projects/test-project');
 
-    expect(attention.items[0].severity).toBe('high');
-    expect(attention.items.some((item) => item.reason.includes('7 days'))).toBe(true);
+    expect(overview.attention[0].severity).toBe('high');
+    expect(overview.attention.some((item) => item.reason.includes('7 days'))).toBe(true);
   });
 });
 

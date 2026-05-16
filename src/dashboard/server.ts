@@ -13,7 +13,6 @@ import {
   getAssignmentDetail,
   getAssignmentDetailById,
   getOverview,
-  getAttention,
   getHelp,
   getStatusConfig,
   clearStatusConfigCache,
@@ -152,16 +151,6 @@ export function createDashboardServer(options: DashboardServerOptions) {
     } catch (error) {
       console.error('Error getting overview:', error);
       res.status(500).json({ error: 'Failed to get overview' });
-    }
-  });
-
-  app.get('/api/attention', async (_req, res) => {
-    try {
-      const attention = await getAttention(projectsDir, serversDir, assignmentsDir);
-      res.json(attention);
-    } catch (error) {
-      console.error('Error getting attention queue:', error);
-      res.status(500).json({ error: 'Failed to get attention queue' });
     }
   });
 

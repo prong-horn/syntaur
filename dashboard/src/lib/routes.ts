@@ -22,7 +22,6 @@ const SIDEBAR_SECTIONS = [
   '/memories',
   '/resources',
   '/todos',
-  '/attention',
   '/help',
   '/settings',
 ] as const;
@@ -87,10 +86,6 @@ export function getSidebarSection(pathname: string): SidebarSection | null {
 
   if (normalized.startsWith('/todos')) {
     return '/todos';
-  }
-
-  if (normalized.startsWith('/attention')) {
-    return '/attention';
   }
 
   if (normalized.startsWith('/help')) {
@@ -181,9 +176,6 @@ export function buildShellMeta(pathname: string): ShellMeta {
   } else if (parts[0] === 'agent-sessions') {
     title = 'Agent Sessions';
     breadcrumbs.push({ label: 'Agent Sessions', path: `${workspacePrefix}/agent-sessions` });
-  } else if (parts[0] === 'attention') {
-    title = 'Attention';
-    breadcrumbs.push({ label: 'Attention', path: '/attention' });
   } else if (parts[0] === 'assignments') {
     title = 'Assignments';
     breadcrumbs.push({ label: 'Assignments', path: `${workspacePrefix}/assignments` });

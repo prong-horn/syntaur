@@ -1,7 +1,6 @@
 import { BrowserRouter, Route, Routes } from 'react-router-dom';
 import { Layout } from './components/Layout';
 import { Overview } from './pages/Overview';
-import { AttentionPage } from './pages/Attention';
 import { HelpPage } from './pages/Help';
 import { ProjectList } from './pages/ProjectList';
 import { ProjectDetail } from './pages/ProjectDetail';
@@ -53,7 +52,6 @@ export function App() {
             <Route path="/assignments/:id/scratchpad/edit" element={<EditAssignmentScratchpad />} />
             <Route path="/assignments/:id/handoff/edit" element={<AppendAssignmentHandoff />} />
             <Route path="/assignments/:id/decision-record/edit" element={<AppendAssignmentDecisionRecord />} />
-            <Route path="/attention" element={<AttentionPage />} />
             <Route path="/servers" element={<ServersPage />} />
             <Route path="/inventories" element={<InventoriesPage />} />
             <Route path="/agent-sessions" element={<AgentSessionsPage />} />

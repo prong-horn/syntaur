@@ -6,7 +6,7 @@ describe('dashboard route helpers', () => {
   it('maps agent sessions routes to the correct shell title and sidebar item', () => {
     expect(buildShellMeta('/agent-sessions').title).toBe('Agent Sessions');
     expect(getSidebarSection('/agent-sessions')).toBe('/agent-sessions');
-    expect(isSidebarItemActive('/attention', '/attention')).toBe(true);
+    expect(isSidebarItemActive('/agent-sessions', '/agent-sessions')).toBe(true);
     expect(isSidebarItemActive('/agent-sessions', '/servers')).toBe(false);
   });
 });
