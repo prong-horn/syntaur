@@ -1,5 +1,5 @@
 import { Link, useParams, useSearchParams } from 'react-router-dom';
-import { useAssignmentById } from '../hooks/useProjects';
+import { useAssignmentById, useAssignmentSessionsById } from '../hooks/useProjects';
 import { LoadingState } from '../components/LoadingState';
 import { ErrorState } from '../components/ErrorState';
 import { StatusBadge } from '../components/StatusBadge';
@@ -9,6 +9,7 @@ import { SectionCard } from '../components/SectionCard';
 import { MarkdownRenderer } from '../components/MarkdownRenderer';
 import { EmptyState } from '../components/EmptyState';
 import { CommentsThread } from '../components/CommentsThread';
+import { AgentSessionsSection } from '../components/AgentSessionsSection';
 
 /**
  * Read-and-edit view for standalone assignments (those at
@@ -19,6 +20,7 @@ export function StandaloneAssignmentDetail() {
   const [searchParams, setSearchParams] = useSearchParams();
   const tab = searchParams.get('tab') ?? 'summary';
   const { data: assignment, loading, error } = useAssignmentById(id);
+  const { data: sessionsData, loading: sessionsLoading, error: sessionsError } = useAssignmentSessionsById(id);
 
   if (loading) return <LoadingState />;
   if (error) return <ErrorState error={error} />;
@@ -70,6 +72,12 @@ export function StandaloneAssignmentDetail() {
           </ul>
         </SectionCard>
       ) : null}
+
+      <AgentSessionsSection
+        sessions={sessionsData?.sessions}
+        loading={sessionsLoading}
+        error={sessionsError}
+      />
 
       <ContentTabs
         value={tab}
