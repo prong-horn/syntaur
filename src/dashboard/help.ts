@@ -34,11 +34,31 @@ const CLI_COMMANDS: HelpCommand[] = [
     example: 'syntaur assign implement-overview --project ui-overhaul --agent codex-1',
   },
 
-  // --- Lifecycle transitions (indices 5-11) ---
+  // --- Lifecycle transitions ---
   {
     command: 'syntaur start',
     description: 'Transition an assignment to in_progress.',
     example: 'syntaur start implement-overview --project ui-overhaul',
+  },
+  {
+    command: 'syntaur shape',
+    description: 'Transition a draft assignment to ready_for_planning once the Objective and Acceptance Criteria are fleshed out.',
+    example: 'syntaur shape implement-overview --project ui-overhaul',
+  },
+  {
+    command: 'syntaur plan-ready',
+    description: 'Transition a ready_for_planning assignment to ready_to_implement once a plan has been written and approved.',
+    example: 'syntaur plan-ready implement-overview --project ui-overhaul',
+  },
+  {
+    command: 'syntaur implement',
+    description: 'Transition a ready_to_implement assignment to in_progress when coding begins.',
+    example: 'syntaur implement implement-overview --project ui-overhaul',
+  },
+  {
+    command: 'syntaur migrate-statuses',
+    description: 'Suggest pending -> ready_for_planning promotions for fleshed-out assignments. Dry-run by default; pass --apply to write.',
+    example: 'syntaur migrate-statuses --apply',
   },
   {
     command: 'syntaur review',
@@ -176,9 +196,21 @@ const WORKFLOW: HelpChecklistItem[] = [
 ];
 
 const DEFAULT_STATUS_GUIDE: Record<string, { meaning: string; useWhen: string }> = {
+  draft: {
+    meaning: 'The assignment is a just-created stub; objective and acceptance criteria are not yet fleshed out.',
+    useWhen: 'Use draft for newly-scaffolded assignments. Transition to ready_for_planning with `syntaur shape` once the Objective and AC are written.',
+  },
   pending: {
     meaning: 'The assignment has not started yet.',
     useWhen: 'Use pending while waiting to start. If dependencies are unmet, pending is the normal waiting state.',
+  },
+  ready_for_planning: {
+    meaning: 'The assignment is fully shaped; a plan needs to be written before implementation can begin.',
+    useWhen: 'Use ready_for_planning after the Objective and Acceptance Criteria are filled out but before any plan.md exists. Transition to ready_to_implement with `syntaur plan-ready` after the plan is approved.',
+  },
+  ready_to_implement: {
+    meaning: 'The plan has been written and approved; the assignment is ready to start coding.',
+    useWhen: 'Use ready_to_implement once a plan.md exists and is approved. Transition to in_progress with `syntaur implement` when coding begins.',
   },
   in_progress: {
     meaning: 'An assigned agent is actively working the assignment.',

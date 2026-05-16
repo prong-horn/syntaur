@@ -38,7 +38,7 @@ import { CommentsThread } from '../components/CommentsThread';
 import { useHotkey, useHotkeyScope } from '../hotkeys';
 import { cn } from '../lib/utils';
 
-const TRANSITION_PRECEDENCE = ['review', 'complete', 'unblock', 'start', 'block', 'fail', 'reopen'] as const;
+const TRANSITION_PRECEDENCE = ['review', 'complete', 'shape', 'plan-ready', 'implement', 'unblock', 'start', 'block', 'fail', 'reopen'] as const;
 
 export function AssignmentDetail() {
   const { slug, aslug } = useParams<{ slug: string; aslug: string }>();
