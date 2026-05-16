@@ -3,7 +3,10 @@ export type AssignmentStatus = string;
 export type TransitionCommand = string;
 
 export const DEFAULT_STATUSES = [
+  'draft',
   'pending',
+  'ready_for_planning',
+  'ready_to_implement',
   'in_progress',
   'blocked',
   'review',
@@ -13,6 +16,9 @@ export const DEFAULT_STATUSES = [
 
 export const DEFAULT_COMMANDS = [
   'start',
+  'shape',
+  'plan-ready',
+  'implement',
   'complete',
   'block',
   'unblock',
