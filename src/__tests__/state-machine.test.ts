@@ -51,6 +51,22 @@ describe('state-machine', () => {
     it('returns null for unknown command', () => {
       expect(getTargetStatus('pending', 'nonexistent')).toBeNull();
     });
+
+    it('returns ready_for_planning for shape', () => {
+      expect(getTargetStatus('draft', 'shape')).toBe('ready_for_planning');
+    });
+
+    it('returns ready_to_implement for plan-ready', () => {
+      expect(getTargetStatus('ready_for_planning', 'plan-ready')).toBe('ready_to_implement');
+    });
+
+    it('returns in_progress for implement', () => {
+      expect(getTargetStatus('ready_to_implement', 'implement')).toBe('in_progress');
+    });
+
+    it('keeps legacy pending:start edge valid', () => {
+      expect(getTargetStatus('pending', 'start')).toBe('in_progress');
+    });
   });
 
   describe('isTerminalStatus', () => {

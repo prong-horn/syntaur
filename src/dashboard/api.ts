@@ -119,6 +119,24 @@ const DEFAULT_TRANSITION_DEFINITIONS: Array<{
     requiresReason: false,
   },
   {
+    command: 'shape',
+    label: 'Shape',
+    description: 'Promote a draft assignment to ready_for_planning once the Objective and Acceptance Criteria are fleshed out.',
+    requiresReason: false,
+  },
+  {
+    command: 'plan-ready',
+    label: 'Plan Ready',
+    description: 'Promote a ready_for_planning assignment to ready_to_implement after the plan is written and approved.',
+    requiresReason: false,
+  },
+  {
+    command: 'implement',
+    label: 'Implement',
+    description: 'Move a ready_to_implement assignment into in_progress when coding begins.',
+    requiresReason: false,
+  },
+  {
     command: 'review',
     label: 'Send To Review',
     description: 'Mark the assignment ready for inspection.',

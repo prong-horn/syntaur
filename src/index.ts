@@ -5,6 +5,10 @@ import { createAssignmentCommand } from './commands/create-assignment.js';
 import { dashboardCommand, didUserSpecifyDashboardPort } from './commands/dashboard.js';
 import { assignCommand } from './commands/assign.js';
 import { startCommand } from './commands/start.js';
+import { shapeCommand } from './commands/shape.js';
+import { planReadyCommand } from './commands/plan-ready.js';
+import { implementCommand } from './commands/implement.js';
+import { migrateStatusesCommand } from './commands/migrate-statuses.js';
 import { completeCommand } from './commands/complete.js';
 import { blockCommand } from './commands/block.js';
 import { unblockCommand } from './commands/unblock.js';
@@ -111,6 +115,7 @@ program
   .option('--dir <path>', 'Override default project directory (ignored for --one-off)')
   .option('--with-todos', 'Scaffold a ## Todos section in assignment.md (omitted by default; typically populated by /plan-assignment)')
   .option('--workspace <slug>', 'Workspace group slug (only valid with --one-off; mutually exclusive with --project)')
+  .option('--ready', 'Create the assignment directly as ready_for_planning (skips the draft phase)')
   .action(async (title, options) => {
     try {
       await createAssignmentCommand(title, options);
@@ -251,6 +256,80 @@ program
   .action(async (assignment, options) => {
     try {
       await startCommand(assignment, options);
+    } catch (error) {
+      console.error(
+        'Error:',
+        error instanceof Error ? error.message : String(error),
+      );
+      process.exit(1);
+    }
+  });
+
+program
+  .command('shape')
+  .description('Transition an assignment from draft to ready_for_planning')
+  .argument('<assignment>', 'Assignment slug')
+  .option('--project <slug>', 'Target project slug')
+  .option('--agent <name>', 'Agent name (sets assignee if not already set)')
+  .option('--dir <path>', 'Override default project directory')
+  .action(async (assignment, options) => {
+    try {
+      await shapeCommand(assignment, options);
+    } catch (error) {
+      console.error(
+        'Error:',
+        error instanceof Error ? error.message : String(error),
+      );
+      process.exit(1);
+    }
+  });
+
+program
+  .command('plan-ready')
+  .description('Transition an assignment from ready_for_planning to ready_to_implement')
+  .argument('<assignment>', 'Assignment slug')
+  .option('--project <slug>', 'Target project slug')
+  .option('--agent <name>', 'Agent name (sets assignee if not already set)')
+  .option('--dir <path>', 'Override default project directory')
+  .action(async (assignment, options) => {
+    try {
+      await planReadyCommand(assignment, options);
+    } catch (error) {
+      console.error(
+        'Error:',
+        error instanceof Error ? error.message : String(error),
+      );
+      process.exit(1);
+    }
+  });
+
+program
+  .command('migrate-statuses')
+  .description('Suggest pending -> ready_for_planning promotions for fleshed-out assignments (use --apply to write)')
+  .option('--dir <path>', 'Override default project directory')
+  .option('--apply', 'Apply the migration (default: dry-run)')
+  .action(async (options) => {
+    try {
+      await migrateStatusesCommand(options);
+    } catch (error) {
+      console.error(
+        'Error:',
+        error instanceof Error ? error.message : String(error),
+      );
+      process.exit(1);
+    }
+  });
+
+program
+  .command('implement')
+  .description('Transition an assignment from ready_to_implement to in_progress')
+  .argument('<assignment>', 'Assignment slug')
+  .option('--project <slug>', 'Target project slug')
+  .option('--agent <name>', 'Agent name (sets assignee if not already set)')
+  .option('--dir <path>', 'Override default project directory')
+  .action(async (assignment, options) => {
+    try {
+      await implementCommand(assignment, options);
     } catch (error) {
       console.error(
         'Error:',

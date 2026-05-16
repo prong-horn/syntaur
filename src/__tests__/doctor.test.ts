@@ -152,6 +152,69 @@ describe('syntaur doctor', () => {
     expect(issues.length).toBe(0);
   });
 
+  it('does not flag workspace-missing for draft, ready_for_planning, or ready_to_implement', async () => {
+    await initBaseline();
+    const projectDir = await writeProjectScaffold('m1');
+    for (const status of ['draft', 'ready_for_planning', 'ready_to_implement']) {
+      const dir = resolve(projectDir, 'assignments', status);
+      await mkdir(dir, { recursive: true });
+      await writeFile(resolve(dir, 'assignment.md'), assignmentMd(status));
+    }
+    const report = await runChecks();
+    const issues = byId(report, 'assignment.workspace-missing').filter((c) => c.status !== 'pass');
+    expect(issues.length).toBe(0);
+  });
+
+  it('flags draft-missing-objective when a draft has an empty Objective', async () => {
+    await initBaseline();
+    const projectDir = await writeProjectScaffold('m1');
+    const dir = resolve(projectDir, 'assignments', 'empty-draft');
+    await mkdir(dir, { recursive: true });
+    // Build an assignment with explicit empty Objective body
+    const md = `---\nid: 22222222-2222-2222-2222-222222222222\nslug: empty-draft\ntitle: Empty\nstatus: draft\npriority: medium\ncreated: "2026-01-01T00:00:00Z"\nupdated: "2026-01-01T00:00:00Z"\nassignee: null\nexternalIds: []\ndependsOn: []\nblockedReason: null\nworkspace:\n  repository: null\n  worktreePath: null\n  branch: null\n  parentBranch: null\ntags: []\n---\n\n# Empty\n\n## Objective\n\n## Acceptance Criteria\n\n- [ ] <!-- criterion 1 -->\n`;
+    await writeFile(resolve(dir, 'assignment.md'), md);
+    const report = await runChecks();
+    const issues = byId(report, 'assignment.draft-missing-objective').filter((c) => c.status === 'warn');
+    expect(issues.length).toBe(1);
+    expect(issues[0].detail).toContain('empty-draft');
+  });
+
+  it('does not flag draft-missing-objective when Objective has real content', async () => {
+    await initBaseline();
+    const projectDir = await writeProjectScaffold('m1');
+    const dir = resolve(projectDir, 'assignments', 'real-draft');
+    await mkdir(dir, { recursive: true });
+    const md = `---\nid: 33333333-3333-3333-3333-333333333333\nslug: real-draft\ntitle: Real\nstatus: draft\npriority: medium\ncreated: "2026-01-01T00:00:00Z"\nupdated: "2026-01-01T00:00:00Z"\nassignee: null\nexternalIds: []\ndependsOn: []\nblockedReason: null\nworkspace:\n  repository: null\n  worktreePath: null\n  branch: null\n  parentBranch: null\ntags: []\n---\n\n# Real\n\n## Objective\n\nThis is a real objective with actual content describing the work.\n\n## Acceptance Criteria\n\n- [ ] something concrete\n`;
+    await writeFile(resolve(dir, 'assignment.md'), md);
+    const report = await runChecks();
+    const issues = byId(report, 'assignment.draft-missing-objective').filter((c) => c.status !== 'pass');
+    expect(issues.length).toBe(0);
+  });
+
+  it('flags ready-to-implement-missing-plan when plan.md is missing', async () => {
+    await initBaseline();
+    const projectDir = await writeProjectScaffold('m1');
+    const dir = resolve(projectDir, 'assignments', 'no-plan');
+    await mkdir(dir, { recursive: true });
+    await writeFile(resolve(dir, 'assignment.md'), assignmentMd('ready_to_implement'));
+    const report = await runChecks();
+    const issues = byId(report, 'assignment.ready-to-implement-missing-plan').filter((c) => c.status === 'warn');
+    expect(issues.length).toBe(1);
+    expect(issues[0].detail).toContain('no-plan');
+  });
+
+  it('does not flag ready-to-implement-missing-plan when plan.md has content', async () => {
+    await initBaseline();
+    const projectDir = await writeProjectScaffold('m1');
+    const dir = resolve(projectDir, 'assignments', 'has-plan');
+    await mkdir(dir, { recursive: true });
+    await writeFile(resolve(dir, 'assignment.md'), assignmentMd('ready_to_implement'));
+    await writeFile(resolve(dir, 'plan.md'), '# Plan\n\nSome plan content.\n');
+    const report = await runChecks();
+    const issues = byId(report, 'assignment.ready-to-implement-missing-plan').filter((c) => c.status !== 'pass');
+    expect(issues.length).toBe(0);
+  });
+
   it('detects invalid status values', async () => {
     await initBaseline();
     const projectDir = await writeProjectScaffold('m1');

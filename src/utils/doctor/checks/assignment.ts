@@ -11,6 +11,36 @@ const CATEGORY = 'assignment';
 
 const STATUSES_REQUIRING_HANDOFF = new Set(['review', 'completed']);
 
+const PRE_WORKSPACE_STATUSES = new Set([
+  'pending',
+  'draft',
+  'ready_for_planning',
+  'ready_to_implement',
+]);
+
+const OBJECTIVE_PLACEHOLDER_PATTERNS = [
+  /<!--\s*placeholder\s*-->/i,
+  /<!--\s*Clear description of what needs to be done and why\.?\s*-->/i,
+];
+
+function objectiveBodyIsEmpty(content: string): boolean {
+  const lines = content.split('\n');
+  let inObjective = false;
+  const bodyLines: string[] = [];
+  for (const line of lines) {
+    if (/^##\s+Objective\b/.test(line)) {
+      inObjective = true;
+      continue;
+    }
+    if (inObjective && /^##\s+/.test(line)) break;
+    if (inObjective) bodyLines.push(line);
+  }
+  if (!inObjective) return true;
+  const body = bodyLines.map((l) => l.trim()).filter((l) => l.length > 0).join('\n').trim();
+  if (body.length === 0) return true;
+  return OBJECTIVE_PLACEHOLDER_PATTERNS.some((p) => p.test(body));
+}
+
 interface AssignmentEntry {
   projectDir: string;
   /** `null` for standalone assignments (no containing project). */
@@ -187,7 +217,7 @@ const workspaceMissing: Check = {
       const parsed = await parseSafe(path);
       if (!parsed) continue;
       if (terminal.has(parsed.status)) continue;
-      if (parsed.status === 'pending') continue; // workspace not yet expected
+      if (PRE_WORKSPACE_STATUSES.has(parsed.status)) continue; // workspace not yet expected
       const { repository, worktreePath } = parsed.workspace;
       if (repository === null && worktreePath === null) {
         results.push({
@@ -395,6 +425,94 @@ const projectFrontmatterMatchesContainer: Check = {
   },
 };
 
+const draftMissingObjective: Check = {
+  id: 'assignment.draft-missing-objective',
+  category: CATEGORY,
+  title: 'Draft assignments have a non-empty Objective',
+  async run(ctx) {
+    const { withAssignmentMd } = await listAssignments(ctx);
+    const results: CheckResult[] = [];
+    for (const a of withAssignmentMd) {
+      const path = resolve(a.assignmentDir, 'assignment.md');
+      const parsed = await parseSafe(path);
+      if (!parsed) continue;
+      if (parsed.status !== 'draft') continue;
+      let raw: string;
+      try {
+        raw = await readFile(path, 'utf-8');
+      } catch {
+        continue;
+      }
+      if (!objectiveBodyIsEmpty(raw)) continue;
+      const label = a.standalone ? `standalone/${a.assignmentSlug}` : `${a.projectSlug}/${a.assignmentSlug}`;
+      results.push({
+        id: this.id,
+        category: this.category,
+        title: this.title,
+        status: 'warn',
+        detail: `${label} (status: draft) has an empty or placeholder ## Objective`,
+        affected: [path],
+        remediation: {
+          kind: 'manual',
+          suggestion: `Flesh out the Objective and Acceptance Criteria, then run 'syntaur shape ${a.assignmentSlug}' to transition to ready_for_planning`,
+          command: null,
+        },
+        autoFixable: false,
+      });
+    }
+    if (results.length === 0) return pass(this);
+    return results;
+  },
+};
+
+const readyToImplementMissingPlan: Check = {
+  id: 'assignment.ready-to-implement-missing-plan',
+  category: CATEGORY,
+  title: 'ready_to_implement assignments have a plan.md (or plan-v<N>.md)',
+  async run(ctx) {
+    const { withAssignmentMd } = await listAssignments(ctx);
+    const results: CheckResult[] = [];
+    for (const a of withAssignmentMd) {
+      const path = resolve(a.assignmentDir, 'assignment.md');
+      const parsed = await parseSafe(path);
+      if (!parsed) continue;
+      if (parsed.status !== 'ready_to_implement') continue;
+      const entries = await readdir(a.assignmentDir).catch(() => [] as string[]);
+      const planFiles = entries.filter((f) => /^plan(?:-v\d+)?\.md$/i.test(f));
+      let hasPlanContent = false;
+      for (const f of planFiles) {
+        try {
+          const c = await readFile(resolve(a.assignmentDir, f), 'utf-8');
+          if (c.trim().length > 0) {
+            hasPlanContent = true;
+            break;
+          }
+        } catch {
+          // ignore
+        }
+      }
+      if (hasPlanContent) continue;
+      const label = a.standalone ? `standalone/${a.assignmentSlug}` : `${a.projectSlug}/${a.assignmentSlug}`;
+      results.push({
+        id: this.id,
+        category: this.category,
+        title: this.title,
+        status: 'warn',
+        detail: `${label} (status: ready_to_implement) has no plan.md or plan-v<N>.md`,
+        affected: [resolve(a.assignmentDir, 'plan.md')],
+        remediation: {
+          kind: 'manual',
+          suggestion: `Write a plan with '/plan-assignment' (or 'syntaur plan'), then re-mark ready_to_implement`,
+          command: null,
+        },
+        autoFixable: false,
+      });
+    }
+    if (results.length === 0) return pass(this);
+    return results;
+  },
+};
+
 export const assignmentChecks: Check[] = [
   requiredFiles,
   orphanedFolder,
@@ -404,6 +522,8 @@ export const assignmentChecks: Check[] = [
   companionFilesScaffolded,
   typeDefinition,
   projectFrontmatterMatchesContainer,
+  draftMissingObjective,
+  readyToImplementMissingPlan,
 ];
 
 async function parseSafe(path: string): Promise<ReturnType<typeof parseAssignmentFull> | null> {
