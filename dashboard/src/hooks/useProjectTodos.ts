@@ -152,8 +152,12 @@ async function postOrThrow(url: string, body: unknown): Promise<unknown> {
   return res.json().catch(() => ({}));
 }
 
-export async function promoteProjectTodos(projectId: string, body: PromoteBody): Promise<void> {
-  await postOrThrow(`${base(projectId)}/promote`, body);
+export async function promoteProjectTodos(
+  projectId: string,
+  body: PromoteBody,
+): Promise<import('./useTodos').PromoteResult> {
+  const res = await postOrThrow(`${base(projectId)}/promote`, body);
+  return res as import('./useTodos').PromoteResult;
 }
 
 export async function moveProjectTodo(projectId: string, id: string, to: MoveTarget): Promise<void> {
