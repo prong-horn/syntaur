@@ -435,3 +435,163 @@ describe('proofBuildCommand', () => {
     expect(html).toMatch(/Standalone Demo/);
   });
 });
+
+describe('renderProofHtml — transcript sidecars', () => {
+  function videoArtifact(id: string, filePath: string) {
+    return {
+      id,
+      assignment_id: 'asn',
+      assignment_dir: '/d',
+      criterion_index: 0,
+      kind: 'video' as const,
+      file_path: filePath,
+      note: null,
+      created_at: '',
+    };
+  }
+
+  function paramsForVideo(id: string, filePath: string) {
+    return {
+      assignment: 'p/a',
+      title: 'Demo',
+      generated: '2026-05-08T00:00:00Z',
+      criteria: [{ index: 0, text: 'C', checked: false }],
+      artifactsByCriterion: new Map([[0, [videoArtifact(id, filePath)]]]),
+      untagged: [],
+      staleByOriginalIndex: [],
+    };
+  }
+
+  it('renders bare <video> when no sidecar is present (AC5 regression)', () => {
+    const html = renderProofHtml(paramsForVideo('vid1', 'proof/0/vid1.mp4'));
+    expect(html).toMatch(/<video controls preload="metadata" src="proof\/0\/vid1\.mp4"><\/video>/);
+    // The wrapper div should not appear in the body — STYLE_BLOCK still names
+    // the class for the with-sidecar case, so search for the wrapper element.
+    expect(html).not.toMatch(/<div class="video-with-transcript">/);
+    expect(html).not.toMatch(/data-t=/);
+    expect(html).not.toMatch(/<button[^>]*class="transcript-line"/);
+  });
+
+  it('renders two-column layout + clickable phrase buttons when sidecar exists', () => {
+    const transcripts = new Map([
+      ['vid1', '  [000.00-001.50] S0 hello world\n  [001.50-003.00] second phrase\n'],
+    ]);
+    const html = renderProofHtml(
+      paramsForVideo('vid1', 'proof/0/vid1.mp4'),
+      new Map(),
+      transcripts,
+    );
+    expect(html).toMatch(/class="video-with-transcript"/);
+    expect(html).toMatch(/<button type="button" class="transcript-line" data-t="000\.00">/);
+    expect(html).toMatch(/<button type="button" class="transcript-line" data-t="001\.50">/);
+    // Click handler script appears exactly once
+    const matches = html.match(/document\.addEventListener\('click'/g) ?? [];
+    expect(matches).toHaveLength(1);
+  });
+
+  it('renders S<n> only when speaker tag is present in the line (matches python optional-speaker)', () => {
+    const transcripts = new Map([
+      ['vid1', '  [000.00-001.00] hello\n  [001.00-002.00] S0 world\n'],
+    ]);
+    const html = renderProofHtml(
+      paramsForVideo('vid1', 'proof/0/vid1.mp4'),
+      new Map(),
+      transcripts,
+    );
+    // First button: no S<n> after the bracket pair
+    expect(html).toMatch(/data-t="000\.00">\[000\.00-001\.00\] hello</);
+    // Second button: S0 appears between bracket pair and text
+    expect(html).toMatch(/data-t="001\.00">\[001\.00-002\.00\] S0 world</);
+  });
+
+  it('renders malformed lines as escaped transcript-raw divs, not buttons', () => {
+    const transcripts = new Map([
+      ['vid1', '  [000.00-001.00] valid line\nnot a phrase line <script>\n'],
+    ]);
+    const html = renderProofHtml(
+      paramsForVideo('vid1', 'proof/0/vid1.mp4'),
+      new Map(),
+      transcripts,
+    );
+    expect(html).toMatch(/class="transcript-line" data-t="000\.00"/);
+    expect(html).toMatch(/<div class="transcript-raw">not a phrase line &lt;script&gt;<\/div>/);
+    // No raw <script> tag escapes through
+    expect(html).not.toMatch(/<div class="transcript-raw">[^<]*<script>/);
+  });
+
+  it('omits the click-handler script entirely when no sidecars are passed', () => {
+    const html = renderProofHtml(paramsForVideo('vid1', 'proof/0/vid1.mp4'));
+    expect(html).not.toMatch(/document\.addEventListener\('click'/);
+  });
+
+  it('produces byte-identical output on repeated renders (AC7 idempotent rebuild)', () => {
+    const transcripts = new Map([
+      ['vid1', '  [000.00-001.50] S0 hello world\n'],
+    ]);
+    const params = paramsForVideo('vid1', 'proof/0/vid1.mp4');
+    const a = renderProofHtml(params, new Map(), transcripts);
+    const b = renderProofHtml(params, new Map(), transcripts);
+    expect(a).toBe(b);
+  });
+});
+
+describe('renderProofMarkdown — transcript sidecars', () => {
+  it('appends `transcript: <id>.transcript.md` line under video artifact when sidecar present', () => {
+    const md = renderProofMarkdown({
+      assignment: 'p/a',
+      title: 'Demo',
+      generated: '2026-05-08T00:00:00Z',
+      criteria: [{ index: 0, text: 'C', checked: false }],
+      artifactsByCriterion: new Map([
+        [
+          0,
+          [
+            {
+              id: 'vid1',
+              assignment_id: 'asn',
+              assignment_dir: '/d',
+              criterion_index: 0,
+              kind: 'video' as const,
+              file_path: 'proof/0/vid1.mp4',
+              note: null,
+              created_at: '',
+            },
+          ],
+        ],
+      ]),
+      untagged: [],
+      staleByOriginalIndex: [],
+      transcriptSidecars: new Map([['vid1', '  [000.00-001.00] hi\n']]),
+    });
+    expect(md).toMatch(/transcript: `vid1\.transcript\.md`/);
+  });
+
+  it('omits transcript line when no sidecar present', () => {
+    const md = renderProofMarkdown({
+      assignment: 'p/a',
+      title: 'Demo',
+      generated: '2026-05-08T00:00:00Z',
+      criteria: [{ index: 0, text: 'C', checked: false }],
+      artifactsByCriterion: new Map([
+        [
+          0,
+          [
+            {
+              id: 'vid1',
+              assignment_id: 'asn',
+              assignment_dir: '/d',
+              criterion_index: 0,
+              kind: 'video' as const,
+              file_path: 'proof/0/vid1.mp4',
+              note: null,
+              created_at: '',
+            },
+          ],
+        ],
+      ]),
+      untagged: [],
+      staleByOriginalIndex: [],
+    });
+    expect(md).not.toMatch(/transcript:/);
+  });
+});
