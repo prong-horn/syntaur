@@ -1,4 +1,6 @@
+import { useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
+import { ArrowRightLeft } from 'lucide-react';
 import { useAssignmentById } from '../hooks/useProjects';
 import { LoadingState } from '../components/LoadingState';
 import { ErrorState } from '../components/ErrorState';
@@ -9,6 +11,7 @@ import { SectionCard } from '../components/SectionCard';
 import { MarkdownRenderer } from '../components/MarkdownRenderer';
 import { EmptyState } from '../components/EmptyState';
 import { CommentsThread } from '../components/CommentsThread';
+import { MoveToWorkspaceDialog } from '../components/MoveToWorkspaceDialog';
 
 /**
  * Read-and-edit view for standalone assignments (those at
@@ -18,7 +21,8 @@ export function StandaloneAssignmentDetail() {
   const { id } = useParams<{ id: string }>();
   const [searchParams, setSearchParams] = useSearchParams();
   const tab = searchParams.get('tab') ?? 'summary';
-  const { data: assignment, loading, error } = useAssignmentById(id);
+  const { data: assignment, loading, error, refetch } = useAssignmentById(id);
+  const [moveOpen, setMoveOpen] = useState(false);
 
   if (loading) return <LoadingState />;
   if (error) return <ErrorState error={error} />;
@@ -31,12 +35,22 @@ export function StandaloneAssignmentDetail() {
           <StatusBadge status={assignment.status} />
           <span className="text-xs font-mono text-muted-foreground">{assignment.id}</span>
           <ExternalIdBadges externalIds={assignment.externalIds} />
-          <Link
-            to={`/assignments/${assignment.id}/edit`}
-            className="ml-auto rounded border border-border px-2 py-1 text-xs text-muted-foreground hover:border-foreground/40 hover:text-foreground"
-          >
-            Edit
-          </Link>
+          <div className="ml-auto flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setMoveOpen(true)}
+              className="inline-flex items-center gap-1.5 rounded border border-border px-2 py-1 text-xs text-muted-foreground hover:border-foreground/40 hover:text-foreground"
+            >
+              <ArrowRightLeft className="h-3 w-3" />
+              Move to workspace…
+            </button>
+            <Link
+              to={`/assignments/${assignment.id}/edit`}
+              className="rounded border border-border px-2 py-1 text-xs text-muted-foreground hover:border-foreground/40 hover:text-foreground"
+            >
+              Edit
+            </Link>
+          </div>
         </div>
         <h1 className="text-2xl font-semibold text-foreground">{assignment.title}</h1>
         {assignment.blockedReason ? (
@@ -239,6 +253,26 @@ export function StandaloneAssignmentDetail() {
             ),
           },
         ]}
+      />
+
+      <MoveToWorkspaceDialog
+        open={moveOpen}
+        onOpenChange={setMoveOpen}
+        currentWorkspace={assignment.projectWorkspace}
+        title="Move assignment to workspace"
+        description="Standalone assignments belong to a project-workspace via the workspaceGroup frontmatter field."
+        onSubmit={async (target) => {
+          const res = await fetch(`/api/assignments/${encodeURIComponent(assignment.id)}/move-workspace`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ workspaceGroup: target }),
+          });
+          if (!res.ok) {
+            const body = await res.json().catch(() => ({}));
+            throw new Error(body.error || 'Failed to move assignment');
+          }
+          refetch();
+        }}
       />
     </div>
   );

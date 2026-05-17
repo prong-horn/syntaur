@@ -19,6 +19,7 @@ import {
   listWorkspaces,
   createWorkspace,
   deleteWorkspace,
+  WorkspaceBlockedError,
 } from './api.js';
 import { resolveAssignmentById } from '../utils/assignment-resolver.js';
 import { listSessionsByAssignment, reconcileActiveSessions } from './agent-sessions.js';
@@ -385,10 +386,23 @@ export function createDashboardServer(options: DashboardServerOptions) {
 
   app.delete('/api/workspaces/:name', async (req, res) => {
     try {
-      await deleteWorkspace(projectsDir, req.params.name);
-      broadcast({ type: 'project-updated', projectSlug: '', timestamp: new Date().toISOString() });
-      res.json({ ok: true });
+      const cascade = req.query.cascade === 'true';
+      const result = await deleteWorkspace(projectsDir, req.params.name, {
+        cascade,
+        assignmentsDir,
+      });
+      // Watchers emit project-updated / assignment-updated for any rewritten
+      // file; only broadcast explicitly when the delete touched solely the
+      // registry (which sits outside any watched tree).
+      if (!result.rewroteFiles) {
+        broadcast({ type: 'project-updated', projectSlug: '', timestamp: new Date().toISOString() });
+      }
+      res.json({ ok: true, rewroteFiles: result.rewroteFiles });
     } catch (error) {
+      if (error instanceof WorkspaceBlockedError) {
+        res.status(409).json({ error: error.message, blockedBy: error.blockedBy });
+        return;
+      }
       console.error('Error deleting workspace:', error);
       res.status(500).json({ error: 'Failed to delete workspace' });
     }

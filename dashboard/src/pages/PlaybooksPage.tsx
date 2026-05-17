@@ -1,15 +1,19 @@
 import { useState, useMemo } from 'react';
 import { Link } from 'react-router-dom';
-import { BookOpen, Plus, Tag, Search, FileText } from 'lucide-react';
+import { BookOpen, Plus, Tag, Search, FileText, Trash2 } from 'lucide-react';
 import { usePlaybooks } from '../hooks/useProjects';
 import { LoadingState } from '../components/LoadingState';
 import { ErrorState } from '../components/ErrorState';
 import { EmptyState } from '../components/EmptyState';
+import { OverflowMenu, type OverflowMenuItem } from '../components/OverflowMenu';
+import { ConfirmDialog } from '../components/ConfirmDialog';
 
 export function PlaybooksPage() {
   const { data, loading, error, refetch } = usePlaybooks();
   const [search, setSearch] = useState('');
   const [pendingSlug, setPendingSlug] = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<{ slug: string; name: string } | null>(null);
+  const [deletingSlug, setDeletingSlug] = useState<string | null>(null);
 
   const filtered = useMemo(() => {
     if (!data?.playbooks) return [];
@@ -50,6 +54,27 @@ export function PlaybooksPage() {
       alert(err instanceof Error ? err.message : 'Failed to update playbook');
     } finally {
       setPendingSlug(null);
+    }
+  }
+
+  async function handleConfirmDelete() {
+    if (!deleteTarget) return;
+    setDeletingSlug(deleteTarget.slug);
+    try {
+      const response = await fetch(`/api/playbooks/${encodeURIComponent(deleteTarget.slug)}`, {
+        method: 'DELETE',
+      });
+      if (!response.ok) {
+        const body = await response.json().catch(() => ({}));
+        throw new Error(body.error || 'Failed to delete playbook');
+      }
+      setDeleteTarget(null);
+      refetch();
+    } catch (err) {
+      console.error(err);
+      alert(err instanceof Error ? err.message : 'Failed to delete playbook');
+    } finally {
+      setDeletingSlug(null);
     }
   }
 
@@ -118,11 +143,23 @@ export function PlaybooksPage() {
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {filtered.map((playbook) => {
             const isPending = pendingSlug === playbook.slug;
+            const menuItems: OverflowMenuItem[] = [
+              {
+                key: 'delete',
+                label: 'Delete',
+                icon: Trash2,
+                destructive: true,
+                onSelect: () => setDeleteTarget({ slug: playbook.slug, name: playbook.name }),
+              },
+            ];
             return (
               <div
                 key={playbook.slug}
                 className={`surface-panel relative flex flex-col gap-2 p-4 transition hover:border-foreground/20 ${playbook.enabled ? '' : 'opacity-75'}`}
               >
+                <div className="absolute right-3 top-3 z-10">
+                  <OverflowMenu items={menuItems} />
+                </div>
                 <Link
                   to={`/playbooks/${playbook.slug}`}
                   className="group flex flex-col gap-2"
@@ -184,6 +221,23 @@ export function PlaybooksPage() {
           })}
         </div>
       )}
+
+      <ConfirmDialog
+        open={deleteTarget !== null}
+        title="Delete playbook?"
+        description={
+          deleteTarget
+            ? `"${deleteTarget.name}" will be removed from disk and the playbook manifest will be regenerated. This cannot be undone.`
+            : ''
+        }
+        confirmLabel="Delete"
+        destructive
+        loading={deletingSlug !== null}
+        onConfirm={handleConfirmDelete}
+        onOpenChange={(next) => {
+          if (!next) setDeleteTarget(null);
+        }}
+      />
     </div>
   );
 }

@@ -170,6 +170,8 @@ export interface AssignmentDetail {
   enrichedLinks: EnrichedLink[];
   blockedReason: string | null;
   workspace: WorkspaceInfo;
+  /** Project-workspace this assignment belongs to. Distinct from `workspace` above, which is the assignment-workspace block. */
+  projectWorkspace: string | null;
   externalIds: ExternalIdInfo[];
   tags: string[];
   created: string;

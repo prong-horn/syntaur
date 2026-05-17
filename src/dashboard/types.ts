@@ -162,6 +162,8 @@ export interface AssignmentDetail {
   enrichedLinks: EnrichedLink[];
   blockedReason: string | null;
   workspace: WorkspaceInfo;
+  /** Project-workspace this assignment belongs to. Sourced from `project.workspace` for project-nested assignments, from `workspaceGroup` for standalone assignments. `null` when neither is set. Distinct from `workspace` above, which is the assignment-workspace block (repo/worktree/branch). */
+  projectWorkspace: string | null;
   externalIds: ExternalIdInfo[];
   tags: string[];
   created: string;

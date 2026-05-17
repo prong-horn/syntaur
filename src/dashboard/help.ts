@@ -158,6 +158,12 @@ const CLI_COMMANDS: HelpCommand[] = [
       'Disable a playbook so agents no longer list or load it. Playbook file is untouched; state is tracked in config.md.',
     example: 'syntaur disable-playbook commit-discipline',
   },
+  {
+    command: 'syntaur delete-playbook',
+    description:
+      'Delete a playbook from disk and regenerate the manifest. Refuses to delete the manifest itself.',
+    example: 'syntaur delete-playbook scratch-foo',
+  },
 ];
 
 const WORKFLOW: HelpChecklistItem[] = [

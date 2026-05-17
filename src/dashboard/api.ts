@@ -1,11 +1,49 @@
 import { readdir, readFile, writeFile } from 'node:fs/promises';
 import { resolve, dirname, basename } from 'node:path';
 import { getTargetStatus, DEFAULT_STATUSES, DEFAULT_TRANSITION_TABLE, buildTransitionTable } from '../lifecycle/index.js';
-import { fileExists } from '../utils/fs.js';
+import { fileExists, writeFileForce } from '../utils/fs.js';
+import { nowTimestamp } from '../utils/timestamp.js';
 import { readConfig, type StatusConfig, type StatusTransition } from '../utils/config.js';
 import { resolvePlaybookSlug } from '../utils/playbooks.js';
 import { migrateLegacyProjectFiles } from '../utils/fs-migration.js';
 import { resolveAssignmentById, type ResolvedAssignment } from '../utils/assignment-resolver.js';
+
+/**
+ * Thrown by `deleteWorkspace` when references exist and cascade is false.
+ * Routers map this to a 409 response carrying the blocker payload.
+ */
+export class WorkspaceBlockedError extends Error {
+  readonly blockedBy: { projects: string[]; standalones: string[] };
+  constructor(blockedBy: { projects: string[]; standalones: string[] }) {
+    super(
+      `Workspace is referenced by ${blockedBy.projects.length} project(s) and ${blockedBy.standalones.length} standalone(s).`,
+    );
+    this.name = 'WorkspaceBlockedError';
+    this.blockedBy = blockedBy;
+  }
+}
+
+/**
+ * Clear a single top-level frontmatter scalar field (regex-replace; assumes
+ * the file already starts with `---` and the field exists). Used by the
+ * cascade workspace delete to set `workspace:`/`workspaceGroup:` to `null`.
+ */
+function clearFrontmatterField(content: string, key: string): string {
+  const fieldRegex = new RegExp(`^(${escapeRegExp(key)}:)\\s*.*$`, 'm');
+  return content.replace(fieldRegex, `$1 null`);
+}
+
+function setUpdatedField(content: string, value: string): string {
+  const fieldRegex = /^(updated:)\s*.*$/m;
+  if (fieldRegex.test(content)) {
+    return content.replace(fieldRegex, `$1 "${value}"`);
+  }
+  return content;
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
 import {
   parseProject,
   parseStatus,
@@ -329,12 +367,73 @@ export async function createWorkspace(projectsDir: string, name: string): Promis
 
 /**
  * Delete a workspace from the registry.
- * DELETE /api/workspaces/:name
+ *
+ * Modes:
+ * - `cascade: false` (default): if any project or standalone still references
+ *   this workspace, throw `WorkspaceBlockedError` with the blocker lists.
+ *   Otherwise remove from the registry.
+ * - `cascade: true`: rewrite every referencing project's `workspace:` field
+ *   and every referencing standalone's `workspaceGroup:` field to `null`,
+ *   then remove the registry entry.
+ *
+ * Returns `{ rewroteFiles }` so callers (server.ts) can decide whether the
+ * explicit registry-level broadcast is still needed (watchers already emit
+ * project-updated/assignment-updated for rewritten files).
+ *
+ * DELETE /api/workspaces/:name[?cascade=true]
  */
-export async function deleteWorkspace(projectsDir: string, name: string): Promise<void> {
+export async function deleteWorkspace(
+  projectsDir: string,
+  name: string,
+  opts: { cascade?: boolean; assignmentsDir?: string } = {},
+): Promise<{ rewroteFiles: boolean }> {
+  const cascade = Boolean(opts.cascade);
+  const projectRecords = await listProjectRecords(projectsDir);
+  const standaloneRecords = await listStandaloneRecords(opts.assignmentsDir);
+
+  const projectsReferencing = projectRecords
+    .filter((record) => record.project.workspace === name)
+    .map((record) => record.project.slug);
+  const standalonesReferencing = standaloneRecords
+    .filter((record) => record.record.workspaceGroup === name)
+    .map((record) => record.id);
+
+  if (projectsReferencing.length + standalonesReferencing.length > 0 && !cascade) {
+    throw new WorkspaceBlockedError({
+      projects: projectsReferencing,
+      standalones: standalonesReferencing,
+    });
+  }
+
+  let rewroteFiles = false;
+  if (cascade) {
+    const timestamp = nowTimestamp();
+
+    for (const slug of projectsReferencing) {
+      const path = resolve(projectsDir, slug, 'project.md');
+      const raw = await readFile(path, 'utf-8');
+      let next = clearFrontmatterField(raw, 'workspace');
+      next = setUpdatedField(next, timestamp);
+      await writeFileForce(path, next);
+      rewroteFiles = true;
+    }
+
+    for (const id of standalonesReferencing) {
+      if (!opts.assignmentsDir) break;
+      const path = resolve(opts.assignmentsDir, id, 'assignment.md');
+      const raw = await readFile(path, 'utf-8');
+      let next = clearFrontmatterField(raw, 'workspaceGroup');
+      next = setUpdatedField(next, timestamp);
+      await writeFileForce(path, next);
+      rewroteFiles = true;
+    }
+  }
+
   const registered = await readWorkspaceRegistry(projectsDir);
   const filtered = registered.filter((w) => w !== name);
   await writeWorkspaceRegistry(projectsDir, filtered);
+
+  return { rewroteFiles };
 }
 
 /**
@@ -646,6 +745,13 @@ export async function getAssignmentDetail(
   const assignmentContent = await readFile(assignmentMdPath, 'utf-8');
   const assignment = parseAssignmentFull(assignmentContent);
 
+  let projectWorkspace: string | null = null;
+  const projectMdPath = resolve(projectsDir, projectSlug, 'project.md');
+  if (await fileExists(projectMdPath)) {
+    const projectContent = await readFile(projectMdPath, 'utf-8');
+    projectWorkspace = parseProject(projectContent).workspace;
+  }
+
   let plan: AssignmentDetail['plan'] = null;
   const planPath = resolve(assignmentDir, 'plan.md');
   if (await fileExists(planPath)) {
@@ -731,6 +837,7 @@ export async function getAssignmentDetail(
     enrichedLinks: [],
     blockedReason: assignment.blockedReason,
     workspace: assignment.workspace,
+    projectWorkspace,
     externalIds: assignment.externalIds,
     tags: assignment.tags,
     created: assignment.created,
@@ -1062,6 +1169,7 @@ async function buildStandaloneAssignmentDetail(
     enrichedLinks: [],
     blockedReason: assignment.blockedReason,
     workspace: assignment.workspace,
+    projectWorkspace: assignment.workspaceGroup,
     externalIds: assignment.externalIds,
     tags: assignment.tags,
     created: assignment.created,
