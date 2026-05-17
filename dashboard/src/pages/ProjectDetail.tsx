@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { BookOpenText, GitBranch, Plus, SquarePen } from 'lucide-react';
 import { CopyButton } from '../components/CopyButton';
@@ -62,8 +62,6 @@ export function ProjectDetail() {
     );
   }
   const prefs = useViewPrefs(slug ?? null);
-  const bootstrapDoneRef = useRef(false);
-  const persistedSerializedRef = useRef<string | null>(null);
 
   const [assignmentView, setAssignmentView] = useState<'kanban' | 'table'>(
     () => coerceProjectDetailView(prefs.defaultView),
@@ -74,38 +72,53 @@ export function ProjectDetail() {
 
   // Re-hydrate when react-router reuses this component across project switches
   // (the doc comment above on lines 45-47 calls this out for the tab param).
+  // Persistence is driven by user-action wrappers below, so these setX calls
+  // do not trigger saves — inherited fields stay inherited.
   useEffect(() => {
     setAssignmentView(coerceProjectDetailView(prefs.defaultView));
     setStatusFilter(prefs.filters.status ?? 'all');
     setAssigneeFilter(prefs.filters.assignee ?? 'all');
     setPriorityFilter(prefs.filters.priority ?? 'all');
-    bootstrapDoneRef.current = false;
-    persistedSerializedRef.current = null;
-    // Set bootstrap done on the next tick so the persist effect doesn't fire
-    // from the hydration setters above.
-    queueMicrotask(() => {
-      bootstrapDoneRef.current = true;
-    });
   }, [slug, prefs.defaultView, prefs.filters.status, prefs.filters.assignee, prefs.filters.priority]);
 
-  // Persist any change back to projects[slug].
-  useEffect(() => {
-    if (!bootstrapDoneRef.current || !slug) return;
-    const payload = {
-      defaultView: assignmentView,
-      filters: {
-        status: statusFilter,
-        assignee: assigneeFilter,
-        priority: priorityFilter,
-      },
-    };
-    const serialized = JSON.stringify(payload);
-    if (persistedSerializedRef.current === serialized) return;
-    persistedSerializedRef.current = serialized;
-    saveScopeViewPrefs(slug, payload).catch((err) => {
-      console.warn('Failed to persist project view prefs:', err);
-    });
-  }, [assignmentView, statusFilter, assigneeFilter, priorityFilter, slug]);
+  const persistField = useCallback(
+    (patch: Parameters<typeof saveScopeViewPrefs>[1]) => {
+      if (!slug) return;
+      saveScopeViewPrefs(slug, patch).catch((err) => {
+        console.warn('Failed to persist project view prefs:', err);
+      });
+    },
+    [slug],
+  );
+
+  const handleSetAssignmentView = useCallback(
+    (v: 'kanban' | 'table') => {
+      setAssignmentView(v);
+      persistField({ defaultView: v });
+    },
+    [persistField],
+  );
+  const handleSetStatusFilter = useCallback(
+    (v: string) => {
+      setStatusFilter(v);
+      persistField({ filters: { status: v } });
+    },
+    [persistField],
+  );
+  const handleSetAssigneeFilter = useCallback(
+    (v: string) => {
+      setAssigneeFilter(v);
+      persistField({ filters: { assignee: v } });
+    },
+    [persistField],
+  );
+  const handleSetPriorityFilter = useCallback(
+    (v: string) => {
+      setPriorityFilter(v);
+      persistField({ filters: { priority: v } });
+    },
+    [persistField],
+  );
 
   const dependencyRoutes = useMemo(
     () => project ? Object.fromEntries(
@@ -260,13 +273,13 @@ export function ProjectDetail() {
                       description="Board and table views over the source assignment files."
                       actions={
                         <div className="flex flex-wrap items-center gap-2">
-                          <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)} className="editor-input max-w-[170px]">
+                          <select value={statusFilter} onChange={(event) => handleSetStatusFilter(event.target.value)} className="editor-input max-w-[170px]">
                             <option value="all">All statuses</option>
                             {statusConfig.statuses.map((s) => (
                               <option key={s.id} value={s.id}>{s.label}</option>
                             ))}
                           </select>
-                          <select value={assigneeFilter} onChange={(event) => setAssigneeFilter(event.target.value)} className="editor-input max-w-[170px]">
+                          <select value={assigneeFilter} onChange={(event) => handleSetAssigneeFilter(event.target.value)} className="editor-input max-w-[170px]">
                             <option value="all">All assignees</option>
                             {assignees.map((assignee) => (
                               <option key={assignee} value={assignee ?? ''}>
@@ -274,7 +287,7 @@ export function ProjectDetail() {
                               </option>
                             ))}
                           </select>
-                          <select value={priorityFilter} onChange={(event) => setPriorityFilter(event.target.value)} className="editor-input max-w-[170px]">
+                          <select value={priorityFilter} onChange={(event) => handleSetPriorityFilter(event.target.value)} className="editor-input max-w-[170px]">
                             <option value="all">All priorities</option>
                             <option value="low">Low</option>
                             <option value="medium">Medium</option>
@@ -283,7 +296,7 @@ export function ProjectDetail() {
                           </select>
                           <ViewToggle
                             value={assignmentView}
-                            onChange={(value) => setAssignmentView(value as 'kanban' | 'table')}
+                            onChange={(value) => handleSetAssignmentView(value as 'kanban' | 'table')}
                             options={[
                               { value: 'kanban', label: 'Kanban' },
                               { value: 'table', label: 'Table' },
@@ -524,7 +537,7 @@ function AssignmentCard({
   return (
     <Link
       to={`${wsPrefix}/projects/${projectSlug}/assignments/${assignment.slug}`}
-      className="block rounded-lg border border-border/60 bg-background/80 p-3 transition hover:border-primary/40"
+      className="vp-card block rounded-lg border border-border/60 bg-background/80 p-3 transition hover:border-primary/40"
     >
       <div className="flex items-start justify-between gap-3">
         <div className="space-y-1">

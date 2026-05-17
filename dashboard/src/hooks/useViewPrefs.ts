@@ -17,7 +17,9 @@ const DEFAULT_RESPONSE: ViewPrefsResponse = {
   custom: false,
 };
 
-const CACHE_KEY = 'view-prefs.cache.v1';
+// Cache key encodes the file version. If ViewPrefsFile.version ever changes,
+// this key changes too — old caches are ignored instead of mis-parsed.
+const CACHE_KEY = `view-prefs.cache.v${DEFAULT_VIEW_PREFS_FILE.version}`;
 
 let cachedFile: ViewPrefsResponse | null = readLocalCache();
 let fetchPromise: Promise<ViewPrefsResponse> | null = null;
@@ -29,7 +31,7 @@ function readLocalCache(): ViewPrefsResponse | null {
     const raw = window.localStorage.getItem(CACHE_KEY);
     if (!raw) return null;
     const parsed = JSON.parse(raw) as { version?: number };
-    if (parsed.version !== 1) return null;
+    if (parsed.version !== DEFAULT_VIEW_PREFS_FILE.version) return null;
     return parsed as ViewPrefsResponse;
   } catch {
     return null;
@@ -73,8 +75,9 @@ function normalize(data: unknown): ViewPrefsResponse {
   };
 }
 
+// Always hits the server (with in-flight dedupe). Cache is for first-paint
+// only; server fetch reconciles whenever a consumer mounts.
 export function fetchViewPrefs(): Promise<ViewPrefsResponse> {
-  if (cachedFile && fetchPromise === null) return Promise.resolve(cachedFile);
   if (fetchPromise) return fetchPromise;
 
   fetchPromise = fetch('/api/view-prefs')
@@ -84,8 +87,7 @@ export function fetchViewPrefs(): Promise<ViewPrefsResponse> {
     })
     .then((data) => {
       const normalized = normalize(data);
-      cachedFile = normalized;
-      writeLocalCache(normalized);
+      notify(normalized);
       fetchPromise = null;
       return normalized;
     })

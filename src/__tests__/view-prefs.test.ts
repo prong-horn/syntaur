@@ -116,6 +116,23 @@ describe('view-prefs storage', () => {
     expect(next.projects.foo.defaultView).toBe('table'); // preserved sibling field
   });
 
+  it('(f0) missing version field is treated as v1 (forward-compat with files written without one)', async () => {
+    const file = {
+      global: {
+        ...DEFAULT_VIEW_PREFS_FILE.global,
+        defaultView: 'table' as const,
+      },
+      projects: {},
+    };
+    await writeFile(prefsPath, JSON.stringify(file));
+    const result = await readViewPrefsFile();
+    expect(result.version).toBe(1);
+    expect(result.global.defaultView).toBe('table');
+    // file is NOT renamed
+    const entries = await readdir(resolve(homeDir, '.syntaur'));
+    expect(entries.filter((e) => e.startsWith('view-prefs.corrupt-')).length).toBe(0);
+  });
+
   it('(f) unknown future version returns defaults without renaming the file', async () => {
     await writeFile(prefsPath, JSON.stringify({ version: 99, global: {}, projects: {} }));
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});

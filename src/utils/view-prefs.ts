@@ -22,7 +22,9 @@ function corruptFilePath(): string {
 function isViewPrefsFileShape(value: unknown): value is ViewPrefsFile {
   if (!value || typeof value !== 'object') return false;
   const obj = value as Record<string, unknown>;
-  if (obj.version !== 1) return false;
+  // Treat missing `version` as v1 (forward-compat with previously-written files).
+  // An explicit non-1 version is handled separately upstream.
+  if (obj.version !== undefined && obj.version !== 1) return false;
   if (!obj.global || typeof obj.global !== 'object') return false;
   if (!obj.projects || typeof obj.projects !== 'object' || Array.isArray(obj.projects)) {
     return false;
@@ -67,7 +69,8 @@ export async function readViewPrefsFile(): Promise<ViewPrefsFile> {
     await backupCorrupt(path);
     return { ...DEFAULT_VIEW_PREFS_FILE };
   }
-  return parsed;
+  // Normalize version (missing -> 1).
+  return { ...parsed, version: 1 };
 }
 
 async function backupCorrupt(path: string): Promise<void> {

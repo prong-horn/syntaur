@@ -362,12 +362,26 @@ export function createDashboardServer(options: DashboardServerOptions) {
 
   const VIEW_PREFS_LOCK = 'vp:global';
 
+  const FILTER_KEYS = new Set(['status', 'priority', 'assignee', 'project', 'activity']);
+  const GLOBAL_KEYS = new Set(['defaultView', 'sortField', 'sortDirection', 'density', 'grouping', 'filters']);
+  const SCOPE_KEYS = new Set(['defaultView', 'sortField', 'sortDirection', 'grouping', 'filters']);
+  const ROOT_KEYS = new Set(['global', 'projects']);
+
+  function unknownKey(obj: Record<string, unknown>, allowed: Set<string>, where: string): string | null {
+    for (const key of Object.keys(obj)) {
+      if (!allowed.has(key)) return `unknown key "${key}" in ${where}`;
+    }
+    return null;
+  }
+
   function validateFilters(value: unknown): { ok: true; value: ViewFilters } | { ok: false; error: string } {
     if (value === undefined) return { ok: true, value: {} };
     if (!value || typeof value !== 'object' || Array.isArray(value)) {
       return { ok: false, error: 'filters must be an object' };
     }
     const obj = value as Record<string, unknown>;
+    const unknown = unknownKey(obj, FILTER_KEYS, 'filters');
+    if (unknown) return { ok: false, error: unknown };
     const out: ViewFilters = {};
     for (const key of ['status', 'priority', 'assignee', 'project']) {
       if (obj[key] !== undefined) {
@@ -388,6 +402,8 @@ export function createDashboardServer(options: DashboardServerOptions) {
       return { ok: false, error: 'global must be an object' };
     }
     const obj = value as Record<string, unknown>;
+    const unknown = unknownKey(obj, GLOBAL_KEYS, 'global');
+    if (unknown) return { ok: false, error: unknown };
     const out: Partial<ViewPrefs> = {};
     if (obj.defaultView !== undefined) {
       if (!isViewMode(obj.defaultView)) return { ok: false, error: 'global.defaultView invalid' };
@@ -425,6 +441,8 @@ export function createDashboardServer(options: DashboardServerOptions) {
     if (obj.density !== undefined) {
       return { ok: false, error: 'density cannot be set per-project (global only)' };
     }
+    const unknown = unknownKey(obj, SCOPE_KEYS, 'project scope');
+    if (unknown) return { ok: false, error: unknown };
     const out: ProjectViewPrefs = {};
     if (obj.defaultView !== undefined) {
       if (!isViewMode(obj.defaultView)) return { ok: false, error: 'defaultView invalid' };
@@ -455,6 +473,8 @@ export function createDashboardServer(options: DashboardServerOptions) {
       return { ok: false, error: 'body must be an object with optional `global` and/or `projects` keys' };
     }
     const obj = body as Record<string, unknown>;
+    const unknownRoot = unknownKey(obj, ROOT_KEYS, 'request body');
+    if (unknownRoot) return { ok: false, error: unknownRoot };
     const patch: ViewPrefsPatch = {};
     const g = validateGlobalPatch(obj.global);
     if (!g.ok) return g;

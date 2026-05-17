@@ -232,9 +232,11 @@ export function AssignmentsPage() {
   }, [activityFilter, setSearchParams, statusFilter]);
 
   // Bootstrap: hydrate non-URL fields + seed URL-tracked fields from prefs.
-  // Runs once after prefs are first available. Both the state->URL effect above
-  // and the persist effect below are gated on bootstrapDoneRef so neither
-  // fires during this pass.
+  // Runs once after prefs are first available. The state->URL effect above is
+  // gated on bootstrapDoneRef so it does not fire during this pass.
+  // Persistence is driven by user-action wrappers below (NOT a snapshot effect)
+  // so the bootstrap setX calls never trigger saves and inherited scope fields
+  // stay inherited until the user actually changes them.
   useEffect(() => {
     if (bootstrapDoneRef.current) return;
     // Hydrate non-URL-tracked fields directly from prefs.
@@ -266,47 +268,84 @@ export function AssignmentsPage() {
     if (needsUrlWrite) {
       setSearchParams(nextParams, { replace: true });
     }
-    bootstrapDoneRef.current = true;
+    // Flip on the next microtask so the in-flight render's effects (state->URL)
+    // see false; subsequent user-driven setters see true.
+    queueMicrotask(() => {
+      bootstrapDoneRef.current = true;
+    });
   }, [prefs, searchParams, setSearchParams, VALID_STATUS_SET]);
 
-  // Persist any change to a tracked field back to the server.
-  // Gated on bootstrapDoneRef so the bootstrap pass itself doesn't trigger
-  // a save loop. Sends a snapshot patch; server deep-merges so siblings stay.
-  const persistedSerializedRef = useRef<string | null>(null);
-  useEffect(() => {
-    if (!bootstrapDoneRef.current) return;
-    const payload: ProjectViewPrefs = {
-      defaultView: view,
-      sortField,
-      sortDirection,
-      filters: {
-        status: statusFilter,
-        priority: priorityFilter,
-        assignee: assigneeFilter,
-        project: projectFilter,
-        activity: activityFilter,
-      },
-    };
-    const serialized = JSON.stringify(payload);
-    if (persistedSerializedRef.current === serialized) return;
-    persistedSerializedRef.current = serialized;
-    const save = scope === null
-      ? saveGlobalViewPrefs(payload)
-      : saveScopeViewPrefs(scope, payload);
-    save.catch((err) => {
-      console.warn('Failed to persist view prefs:', err);
-    });
-  }, [
-    activityFilter,
-    assigneeFilter,
-    priorityFilter,
-    projectFilter,
-    scope,
-    sortDirection,
-    sortField,
-    statusFilter,
-    view,
-  ]);
+  // Persist one field per user action. The server deep-merges, so siblings
+  // (other fields, other filter keys) are preserved. Inherited scope fields
+  // stay inherited because we never write a value the user didn't touch.
+  const persistField = useCallback(
+    (patch: ProjectViewPrefs) => {
+      const save = scope === null
+        ? saveGlobalViewPrefs(patch)
+        : saveScopeViewPrefs(scope, patch);
+      save.catch((err) => {
+        console.warn('Failed to persist view prefs:', err);
+      });
+    },
+    [scope],
+  );
+
+  const handleSetView = useCallback(
+    (v: ViewMode) => {
+      setView(v);
+      persistField({ defaultView: v });
+    },
+    [setView, persistField],
+  );
+  const handleSetStatusFilter = useCallback(
+    (v: string) => {
+      setStatusFilter(v);
+      persistField({ filters: { status: v } });
+    },
+    [persistField],
+  );
+  const handleSetPriorityFilter = useCallback(
+    (v: string) => {
+      setPriorityFilter(v);
+      persistField({ filters: { priority: v } });
+    },
+    [persistField],
+  );
+  const handleSetAssigneeFilter = useCallback(
+    (v: string) => {
+      setAssigneeFilter(v);
+      persistField({ filters: { assignee: v } });
+    },
+    [persistField],
+  );
+  const handleSetProjectFilter = useCallback(
+    (v: string) => {
+      setProjectFilter(v);
+      persistField({ filters: { project: v } });
+    },
+    [persistField],
+  );
+  const handleSetActivityFilter = useCallback(
+    (v: ActivityFilter) => {
+      setActivityFilter(v);
+      persistField({ filters: { activity: v } });
+    },
+    [persistField],
+  );
+  const handleSetSortField = useCallback(
+    (v: SortField) => {
+      setSortField(v);
+      persistField({ sortField: v });
+    },
+    [persistField],
+  );
+  const handleSetSortDirection = useCallback(
+    (v: SortDirection) => {
+      setSortDirection(v);
+      persistField({ sortDirection: v });
+    },
+    [persistField],
+  );
 
   const uniqueStatuses = useMemo(
     () => Array.from(new Set(boardItems.map((a) => a.status))).sort(),
@@ -534,10 +573,11 @@ export function AssignmentsPage() {
 
   function handleSort(field: SortField) {
     if (sortField === field) {
-      setSortDirection((d) => (d === 'asc' ? 'desc' : 'asc'));
+      const next: SortDirection = sortDirection === 'asc' ? 'desc' : 'asc';
+      handleSetSortDirection(next);
     } else {
-      setSortField(field);
-      setSortDirection('asc');
+      handleSetSortField(field);
+      handleSetSortDirection('asc');
     }
   }
 
@@ -624,7 +664,7 @@ export function AssignmentsPage() {
         />
         <select
           value={statusFilter}
-          onChange={(e) => setStatusFilter(normalizeStatusFilter(e.target.value))}
+          onChange={(e) => handleSetStatusFilter(normalizeStatusFilter(e.target.value))}
           className="editor-input max-w-[180px]"
         >
           <option value="all">All statuses</option>
@@ -632,33 +672,33 @@ export function AssignmentsPage() {
             <option key={s} value={s}>{COLUMN_LABELS[s] ?? s}</option>
           ))}
         </select>
-        <select value={priorityFilter} onChange={(e) => setPriorityFilter(e.target.value)} className="editor-input max-w-[180px]">
+        <select value={priorityFilter} onChange={(e) => handleSetPriorityFilter(e.target.value)} className="editor-input max-w-[180px]">
           <option value="all">All priorities</option>
           {uniquePriorities.map((p) => (
             <option key={p} value={p} className="capitalize">{p}</option>
           ))}
         </select>
-        <select value={assigneeFilter} onChange={(e) => setAssigneeFilter(e.target.value)} className="editor-input max-w-[180px]">
+        <select value={assigneeFilter} onChange={(e) => handleSetAssigneeFilter(e.target.value)} className="editor-input max-w-[180px]">
           <option value="all">All assignees</option>
           {uniqueAssignees.map((a) => (
             <option key={a} value={a}>{a === '__unassigned__' ? 'Unassigned' : a}</option>
           ))}
         </select>
-        <select value={projectFilter} onChange={(e) => setProjectFilter(e.target.value)} className="editor-input max-w-[180px]">
+        <select value={projectFilter} onChange={(e) => handleSetProjectFilter(e.target.value)} className="editor-input max-w-[180px]">
           <option value="all">All projects</option>
           <option value="__standalone__">Standalone</option>
           {uniqueProjects.map(([slug, title]) => (
             <option key={slug} value={slug}>{title}</option>
           ))}
         </select>
-        <select value={activityFilter} onChange={(e) => setActivityFilter(e.target.value as ActivityFilter)} className="editor-input max-w-[180px]">
+        <select value={activityFilter} onChange={(e) => handleSetActivityFilter(e.target.value as ActivityFilter)} className="editor-input max-w-[180px]">
           <option value="all">All activity</option>
           <option value="stale">Stale only</option>
           <option value="fresh">Fresh only</option>
         </select>
         <ViewToggle
           value={view}
-          onChange={(value) => setView(value as ViewMode)}
+          onChange={(value) => handleSetView(value as ViewMode)}
           options={[
             { value: 'table', label: 'Table' },
             { value: 'list', label: 'List' },
