@@ -119,7 +119,9 @@ export function AssignmentsPage() {
 
   const scope: string | null = workspace ?? null;
   const prefs = useViewPrefs(scope);
-  const bootstrapDoneRef = useRef(false);
+  // Tracks which scope the URL has been bootstrapped for. `undefined` = never.
+  // Reset implicitly when `scope` changes (we re-bootstrap for the new scope).
+  const bootstrappedScopeRef = useRef<string | null | undefined>(undefined);
 
   const COLUMNS = useMemo(() => getAssignmentColumns(statusConfig.order), [statusConfig]);
   const COLUMN_LABELS = useMemo(() => {
@@ -210,7 +212,10 @@ export function AssignmentsPage() {
   }, [activityFilter, staleParam, statusFilter, statusParam]);
 
   useEffect(() => {
-    if (!bootstrapDoneRef.current) return;
+    // Only mirror state -> URL once bootstrap for the current scope has
+    // completed. During scope switches the bootstrap re-runs and this gate
+    // re-closes until the new scope's seed is applied.
+    if (bootstrappedScopeRef.current !== scope) return;
     setSearchParams((prev) => {
       const next = new URLSearchParams(prev);
 
@@ -230,7 +235,7 @@ export function AssignmentsPage() {
 
       return areSearchParamsEqual(prev, next) ? prev : next;
     });
-  }, [activityFilter, setSearchParams, statusFilter]);
+  }, [activityFilter, scope, setSearchParams, statusFilter]);
 
   // Hydrate non-URL-tracked fields from prefs on every prefs change.
   // Idempotent setX — if local value already matches, React bails out. This
@@ -251,28 +256,40 @@ export function AssignmentsPage() {
     prefs.sortDirection,
   ]);
 
-  // One-shot URL seed: waits for the server response to land (fetchViewPrefs
-  // resolves after the first /api/view-prefs round-trip), then for each
-  // URL-tracked field (view / status / stale), writes the persisted value
-  // when the URL param is absent. Also hydrates local state for status /
-  // activity from the server prefs. Once done, flips bootstrapDoneRef on the
-  // next microtask so the state->URL effect (lines ~203-223) unlocks.
+  // Track the latest searchParams so the bootstrap .then handler — which can
+  // resolve on a later tick — reads the CURRENT URL instead of a stale closure
+  // value. Without this, a user toggling a URL-tracked field before the first
+  // GET resolves could be overwritten by the bootstrap's stale view of the URL.
+  const searchParamsRef = useRef(searchParams);
   useEffect(() => {
-    if (bootstrapDoneRef.current) return;
+    searchParamsRef.current = searchParams;
+  }, [searchParams]);
+
+  // One-shot URL seed PER SCOPE: waits for the server response to land
+  // (fetchViewPrefs resolves after the first /api/view-prefs round-trip),
+  // then for each URL-tracked field (view / status / stale), writes the
+  // persisted value when the URL param is absent. Also hydrates local state
+  // for status / activity from the server prefs. Once done, marks the ref
+  // with the current scope on next microtask so the state->URL effect unlocks.
+  // Re-runs when scope changes (react-router may reuse the component across
+  // /w/:workspace/assignments navigations).
+  useEffect(() => {
+    if (bootstrappedScopeRef.current === scope) return;
     let cancelled = false;
     fetchViewPrefs().then((latest) => {
-      if (cancelled || bootstrapDoneRef.current) return;
+      if (cancelled || bootstrappedScopeRef.current === scope) return;
       const p = mergeForScope(latest, scope);
       const wantView: ViewMode = p.defaultView;
       const wantStatus = p.filters.status ?? 'all';
       const wantActivity = p.filters.activity ?? 'all';
+      const currentSP = searchParamsRef.current;
       let needsUrlWrite = false;
-      const nextParams = new URLSearchParams(searchParams);
-      if (searchParams.get('view') === null && wantView !== 'kanban' && VALID_VIEWS.includes(wantView)) {
+      const nextParams = new URLSearchParams(currentSP);
+      if (currentSP.get('view') === null && wantView !== 'kanban' && VALID_VIEWS.includes(wantView)) {
         nextParams.set('view', wantView);
         needsUrlWrite = true;
       }
-      if (searchParams.get('status') === null && wantStatus !== 'all') {
+      if (currentSP.get('status') === null && wantStatus !== 'all') {
         // Don't pre-validate against VALID_STATUS_SET here — statusConfig is
         // also async and may not be loaded yet. The URL->state effect
         // (normalizeStatusFilter) gracefully reduces unknown values to 'all',
@@ -281,7 +298,7 @@ export function AssignmentsPage() {
         setStatusFilter(wantStatus);
         needsUrlWrite = true;
       }
-      if (searchParams.get('stale') === null && wantActivity !== 'all') {
+      if (currentSP.get('stale') === null && wantActivity !== 'all') {
         nextParams.set('stale', wantActivity === 'stale' ? '1' : '0');
         setActivityFilter(wantActivity);
         needsUrlWrite = true;
@@ -290,14 +307,14 @@ export function AssignmentsPage() {
         setSearchParams(nextParams, { replace: true });
       }
       queueMicrotask(() => {
-        bootstrapDoneRef.current = true;
+        bootstrappedScopeRef.current = scope;
       });
     });
     return () => {
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [scope]);
 
   // Persist one field per user action. The server deep-merges, so siblings
   // (other fields, other filter keys) are preserved. Inherited scope fields
