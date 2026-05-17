@@ -8,6 +8,9 @@ import { TERMINAL_STATUSES } from './types.js';
  */
 export const DEFAULT_COMMAND_TARGETS = new Map<string, string>([
   ['start', 'in_progress'],
+  ['shape', 'ready_for_planning'],
+  ['plan-ready', 'ready_to_implement'],
+  ['implement', 'in_progress'],
   ['block', 'blocked'],
   ['unblock', 'in_progress'],
   ['review', 'review'],
@@ -20,6 +23,11 @@ export const DEFAULT_COMMAND_TARGETS = new Map<string, string>([
 export const DEFAULT_TRANSITION_TABLE = new Map<string, string>([
   ['pending:start', 'in_progress'],
   ['pending:block', 'blocked'],
+  ['draft:shape', 'ready_for_planning'],
+  ['draft:start', 'in_progress'],
+  ['ready_for_planning:plan-ready', 'ready_to_implement'],
+  ['ready_for_planning:start', 'in_progress'],
+  ['ready_to_implement:implement', 'in_progress'],
   ['in_progress:block', 'blocked'],
   ['in_progress:review', 'review'],
   ['in_progress:complete', 'completed'],

@@ -1,14 +1,52 @@
 import { resolve } from 'node:path';
-import { readdir, readFile } from 'node:fs/promises';
+import { readdir, readFile, unlink } from 'node:fs/promises';
 import { fileExists, writeFileForce } from './fs.js';
 import { parsePlaybook, type ParsedPlaybook } from '../dashboard/parser.js';
 import { nowTimestamp } from './timestamp.js';
 import { readConfig, updatePlaybooksConfig } from './config.js';
+import { isValidSlug } from './slug.js';
 
 export interface ResolvedPlaybook {
   filename: string;
   slug: string;
   parsed: ParsedPlaybook;
+}
+
+export type PlaybookErrorCode = 'manifest' | 'not-found' | 'invalid-slug' | 'collision';
+
+/**
+ * Stable error thrown by playbook helpers. Routers and CLI commands branch on
+ * `code` to map to HTTP status / exit code without string matching.
+ */
+export class PlaybookError extends Error {
+  readonly code: PlaybookErrorCode;
+  constructor(code: PlaybookErrorCode, message: string) {
+    super(message);
+    this.code = code;
+    this.name = 'PlaybookError';
+  }
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
+ * Replace or insert a frontmatter scalar field. Playbook files always have
+ * frontmatter (parsePlaybook depends on it). If the field is absent, insert it
+ * just before the closing `---`. Values are written verbatim (caller decides
+ * quoting).
+ */
+function setFrontmatterField(content: string, key: string, value: string): string {
+  const regex = new RegExp(`^(${escapeRegExp(key)}:)\\s*.*$`, 'm');
+  if (regex.test(content)) {
+    return content.replace(regex, `$1 ${value}`);
+  }
+  const closingIdx = content.indexOf('\n---', 4);
+  if (closingIdx === -1) {
+    return content;
+  }
+  return `${content.slice(0, closingIdx)}\n${key}: ${value}${content.slice(closingIdx)}`;
 }
 
 function isVisiblePlaybookFile(name: string, isFile: boolean): boolean {
@@ -179,4 +217,110 @@ export async function rebuildPlaybookManifest(playbooksDir: string): Promise<voi
   lines.push('');
 
   await writeFileForce(resolve(playbooksDir, 'manifest.md'), lines.join('\n'));
+}
+
+/**
+ * Delete a playbook file from disk and regenerate the manifest. Refuses
+ * `manifest`. Drops the slug from `config.playbooks.disabled` if present so a
+ * later recreation with the same slug doesn't silently start disabled. Throws
+ * `PlaybookError` on `manifest` / `not-found`.
+ *
+ * Shared by `DELETE /api/playbooks/:slug` and `syntaur delete-playbook`.
+ */
+export async function deletePlaybook(
+  playbooksDir: string,
+  slug: string,
+): Promise<{ slug: string }> {
+  if (slug === 'manifest') {
+    throw new PlaybookError('manifest', 'The playbook manifest cannot be deleted.');
+  }
+
+  const resolved = await resolvePlaybookSlug(playbooksDir, slug);
+  if (!resolved) {
+    throw new PlaybookError('not-found', `Playbook "${slug}" not found.`);
+  }
+
+  await unlink(resolve(playbooksDir, resolved.filename));
+  await removeFromDisabledList(resolved.slug);
+  await rebuildPlaybookManifest(playbooksDir);
+
+  return { slug: resolved.slug };
+}
+
+/**
+ * Rename a playbook to a new slug. Validates the new slug, refuses `manifest`,
+ * and rejects collisions at both filename and canonical-slug levels. Updates
+ * the on-disk file's frontmatter `slug:` field. Migrates the disabled-list
+ * entry if needed. Regenerates the manifest.
+ *
+ * Special case: if `oldPath === newPath` (e.g., file is `foo.md` with
+ * frontmatter `slug: bar`, caller renames `bar -> foo`), rewrite the file in
+ * place without unlinking. Returns `renamedInPlace: true` in that case.
+ */
+export async function renamePlaybook(
+  playbooksDir: string,
+  oldSlug: string,
+  newSlug: string,
+): Promise<{ from: string; to: string; renamedInPlace: boolean }> {
+  if (!isValidSlug(newSlug)) {
+    throw new PlaybookError(
+      'invalid-slug',
+      `Invalid slug "${newSlug}". Slugs must be lowercase, hyphen-separated, with no special characters.`,
+    );
+  }
+  if (newSlug === 'manifest') {
+    throw new PlaybookError('manifest', 'A playbook cannot be named "manifest".');
+  }
+
+  const resolved = await resolvePlaybookSlug(playbooksDir, oldSlug);
+  if (!resolved) {
+    throw new PlaybookError('not-found', `Playbook "${oldSlug}" not found.`);
+  }
+
+  const oldPath = resolve(playbooksDir, resolved.filename);
+  const newPath = resolve(playbooksDir, `${newSlug}.md`);
+
+  // Rename-in-place: e.g., file `foo.md` with `slug: bar` renamed `bar -> foo`.
+  // The on-disk filename doesn't change; only the frontmatter slug field does.
+  const renamedInPlace = oldPath === newPath;
+
+  if (!renamedInPlace) {
+    // Filename collision: another file already occupies the new path.
+    if (await fileExists(newPath)) {
+      throw new PlaybookError(
+        'collision',
+        `A playbook file already exists at "${newSlug}.md".`,
+      );
+    }
+    // Canonical-slug collision: another file declares this slug in its frontmatter.
+    const existing = await resolvePlaybookSlug(playbooksDir, newSlug);
+    if (existing && resolve(playbooksDir, existing.filename) !== oldPath) {
+      throw new PlaybookError(
+        'collision',
+        `Another playbook already uses the canonical slug "${newSlug}".`,
+      );
+    }
+  }
+
+  const raw = await readFile(oldPath, 'utf-8');
+  let next = setFrontmatterField(raw, 'slug', newSlug);
+  next = setFrontmatterField(next, 'updated', `"${nowTimestamp()}"`);
+
+  await writeFileForce(newPath, next);
+  if (!renamedInPlace) {
+    await unlink(oldPath);
+  }
+
+  // Migrate disabled-list entry if the old canonical slug was disabled.
+  const config = await readConfig();
+  if (config.playbooks.disabled.includes(resolved.slug)) {
+    const nextDisabled = config.playbooks.disabled
+      .filter((s) => s !== resolved.slug)
+      .concat(newSlug);
+    await updatePlaybooksConfig({ disabled: Array.from(new Set(nextDisabled)).sort() });
+  }
+
+  await rebuildPlaybookManifest(playbooksDir);
+
+  return { from: resolved.slug, to: newSlug, renamedInPlace };
 }

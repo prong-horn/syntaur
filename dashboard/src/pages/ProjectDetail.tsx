@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { BookOpenText, GitBranch, Plus, SquarePen } from 'lucide-react';
 import { CopyButton } from '../components/CopyButton';
@@ -19,6 +19,8 @@ import { MarkdownRenderer } from '../components/MarkdownRenderer';
 import { ProjectTodosPanel } from '../components/ProjectTodosPanel';
 import { useStatusConfig } from '../hooks/useStatusConfig';
 import { useHotkey, useHotkeyScope } from '../hotkeys';
+import { coerceProjectDetailView } from '@shared/view-prefs-schema';
+import { saveScopeViewPrefs, useViewPrefs } from '../hooks/useViewPrefs';
 
 const VALID_TABS = new Set(['overview', 'assignments', 'todos', 'dependencies', 'knowledge']);
 
@@ -59,10 +61,66 @@ export function ProjectDetail() {
       { replace: true },
     );
   }
-  const [assignmentView, setAssignmentView] = useState<'board' | 'table'>('board');
-  const [statusFilter, setStatusFilter] = useState('all');
-  const [assigneeFilter, setAssigneeFilter] = useState('all');
-  const [priorityFilter, setPriorityFilter] = useState('all');
+  // Namespace the scope key (see AssignmentsPage for rationale).
+  const scopeKey = slug ? `p:${slug}` : null;
+  const prefs = useViewPrefs(scopeKey);
+
+  const [assignmentView, setAssignmentView] = useState<'kanban' | 'table'>(
+    () => coerceProjectDetailView(prefs.defaultView),
+  );
+  const [statusFilter, setStatusFilter] = useState<string>(() => prefs.filters.status ?? 'all');
+  const [assigneeFilter, setAssigneeFilter] = useState<string>(() => prefs.filters.assignee ?? 'all');
+  const [priorityFilter, setPriorityFilter] = useState<string>(() => prefs.filters.priority ?? 'all');
+
+  // Re-hydrate when react-router reuses this component across project switches
+  // (the doc comment above on lines 45-47 calls this out for the tab param).
+  // Persistence is driven by user-action wrappers below, so these setX calls
+  // do not trigger saves — inherited fields stay inherited.
+  useEffect(() => {
+    setAssignmentView(coerceProjectDetailView(prefs.defaultView));
+    setStatusFilter(prefs.filters.status ?? 'all');
+    setAssigneeFilter(prefs.filters.assignee ?? 'all');
+    setPriorityFilter(prefs.filters.priority ?? 'all');
+  }, [slug, prefs.defaultView, prefs.filters.status, prefs.filters.assignee, prefs.filters.priority]);
+
+  const persistField = useCallback(
+    (patch: Parameters<typeof saveScopeViewPrefs>[1]) => {
+      if (!scopeKey) return;
+      saveScopeViewPrefs(scopeKey, patch).catch((err) => {
+        console.warn('Failed to persist project view prefs:', err);
+      });
+    },
+    [scopeKey],
+  );
+
+  const handleSetAssignmentView = useCallback(
+    (v: 'kanban' | 'table') => {
+      setAssignmentView(v);
+      persistField({ defaultView: v });
+    },
+    [persistField],
+  );
+  const handleSetStatusFilter = useCallback(
+    (v: string) => {
+      setStatusFilter(v);
+      persistField({ filters: { status: v } });
+    },
+    [persistField],
+  );
+  const handleSetAssigneeFilter = useCallback(
+    (v: string) => {
+      setAssigneeFilter(v);
+      persistField({ filters: { assignee: v } });
+    },
+    [persistField],
+  );
+  const handleSetPriorityFilter = useCallback(
+    (v: string) => {
+      setPriorityFilter(v);
+      persistField({ filters: { priority: v } });
+    },
+    [persistField],
+  );
 
   const dependencyRoutes = useMemo(
     () => project ? Object.fromEntries(
@@ -120,7 +178,7 @@ export function ProjectDetail() {
   });
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-5" data-density={prefs.density}>
       <div className="flex flex-wrap items-center gap-3">
         <StatusBadge status={project.status} />
         {project.statusOverride && (
@@ -217,13 +275,13 @@ export function ProjectDetail() {
                       description="Board and table views over the source assignment files."
                       actions={
                         <div className="flex flex-wrap items-center gap-2">
-                          <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)} className="editor-input max-w-[170px]">
+                          <select value={statusFilter} onChange={(event) => handleSetStatusFilter(event.target.value)} className="editor-input max-w-[170px]">
                             <option value="all">All statuses</option>
                             {statusConfig.statuses.map((s) => (
                               <option key={s.id} value={s.id}>{s.label}</option>
                             ))}
                           </select>
-                          <select value={assigneeFilter} onChange={(event) => setAssigneeFilter(event.target.value)} className="editor-input max-w-[170px]">
+                          <select value={assigneeFilter} onChange={(event) => handleSetAssigneeFilter(event.target.value)} className="editor-input max-w-[170px]">
                             <option value="all">All assignees</option>
                             {assignees.map((assignee) => (
                               <option key={assignee} value={assignee ?? ''}>
@@ -231,7 +289,7 @@ export function ProjectDetail() {
                               </option>
                             ))}
                           </select>
-                          <select value={priorityFilter} onChange={(event) => setPriorityFilter(event.target.value)} className="editor-input max-w-[170px]">
+                          <select value={priorityFilter} onChange={(event) => handleSetPriorityFilter(event.target.value)} className="editor-input max-w-[170px]">
                             <option value="all">All priorities</option>
                             <option value="low">Low</option>
                             <option value="medium">Medium</option>
@@ -240,9 +298,9 @@ export function ProjectDetail() {
                           </select>
                           <ViewToggle
                             value={assignmentView}
-                            onChange={(value) => setAssignmentView(value as 'board' | 'table')}
+                            onChange={(value) => handleSetAssignmentView(value as 'kanban' | 'table')}
                             options={[
-                              { value: 'board', label: 'Board' },
+                              { value: 'kanban', label: 'Kanban' },
                               { value: 'table', label: 'Table' },
                             ]}
                           />
@@ -259,7 +317,7 @@ export function ProjectDetail() {
                             </Link>
                           }
                         />
-                      ) : assignmentView === 'board' ? (
+                      ) : assignmentView === 'kanban' ? (
                         <div className="grid gap-3 lg:grid-cols-2">
                           {filteredAssignments.map((assignment) => (
                             <AssignmentCard key={assignment.slug} projectSlug={project.slug} assignment={assignment} />
@@ -481,7 +539,7 @@ function AssignmentCard({
   return (
     <Link
       to={`${wsPrefix}/projects/${projectSlug}/assignments/${assignment.slug}`}
-      className="block rounded-lg border border-border/60 bg-background/80 p-3 transition hover:border-primary/40"
+      className="vp-card block rounded-lg border border-border/60 bg-background/80 p-3 transition hover:border-primary/40"
     >
       <div className="flex items-start justify-between gap-3">
         <div className="space-y-1">

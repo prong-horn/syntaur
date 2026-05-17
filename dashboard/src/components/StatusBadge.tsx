@@ -3,7 +3,10 @@ import {
   CheckCircle2,
   CircleDot,
   Clock3,
+  Compass,
   LoaderCircle,
+  Pencil,
+  Play,
   SearchCheck,
   StopCircle,
 } from 'lucide-react';
@@ -18,11 +21,29 @@ const STATUS_FAILED_CLASS = 'border-status-failed-foreground/30 bg-status-failed
 const STATUS_ARCHIVED_CLASS = 'border-status-archived-foreground/30 bg-status-archived text-status-archived-foreground';
 
 export const STATUS_META = {
+  draft: {
+    label: 'Draft',
+    description: 'Just-created stub; not yet shaped.',
+    className: STATUS_PENDING_CLASS,
+    icon: Pencil,
+  },
   pending: {
     label: 'Pending',
     description: 'Waiting to start or waiting on dependencies.',
     className: STATUS_PENDING_CLASS,
     icon: Clock3,
+  },
+  ready_for_planning: {
+    label: 'Ready for Planning',
+    description: 'Objective and acceptance criteria written; awaiting a plan.',
+    className: STATUS_PENDING_CLASS,
+    icon: Compass,
+  },
+  ready_to_implement: {
+    label: 'Ready to Implement',
+    description: 'Plan written and approved; ready to start coding.',
+    className: STATUS_IN_PROGRESS_CLASS,
+    icon: Play,
   },
   in_progress: {
     label: 'In Progress',

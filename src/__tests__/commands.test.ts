@@ -133,7 +133,7 @@ describe('createAssignmentCommand', () => {
     expect(content).toContain('slug: write-tests');
     expect(content).toContain(`id: ${uuid}`);
     expect(content).toContain('project: null');
-    expect(content).toContain('status: pending');
+    expect(content).toContain('status: draft');
     expect(content).toContain('priority: medium');
     expect(content).toContain('assignee: null');
   });
@@ -185,7 +185,7 @@ describe('createAssignmentCommand', () => {
       resolve(assignmentDir, 'assignment.md'),
       'utf-8',
     );
-    expect(content).toContain('status: pending');
+    expect(content).toContain('status: draft');
     expect(content).toContain('priority: high');
     expect(content).toContain('dependsOn:');
     expect(content).toContain('  - dep-one');
@@ -211,6 +211,23 @@ describe('createAssignmentCommand', () => {
     await expect(
       createAssignmentCommand('', { project: 'test' }),
     ).rejects.toThrow('cannot be empty');
+  });
+
+  it('creates assignment with --ready as ready_for_planning', async () => {
+    await createProjectCommand('Test Project', { dir: testDir });
+
+    await createAssignmentCommand('Already Shaped', {
+      project: 'test-project',
+      dir: testDir,
+      ready: true,
+    });
+
+    const content = await readFile(
+      resolve(testDir, 'test-project', 'assignments', 'already-shaped', 'assignment.md'),
+      'utf-8',
+    );
+    expect(content).toContain('status: ready_for_planning');
+    expect(content).not.toContain('status: draft');
   });
 
   it('throws on invalid project slug', async () => {

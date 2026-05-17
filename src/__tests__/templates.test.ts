@@ -85,7 +85,7 @@ describe('renderAssignment', () => {
     });
     expect(out).toContain('id: uuid-1');
     expect(out).toContain('slug: test-assignment');
-    expect(out).toContain('status: pending');
+    expect(out).toContain('status: draft');
     expect(out).toContain('priority: medium');
     expect(out).toContain('assignee: null');
     expect(out).toContain('externalIds: []');
@@ -192,6 +192,21 @@ describe('renderAssignment', () => {
       includeTodos: true,
     });
     expect(out).toContain('## Todos');
+  });
+
+  it('uses status override when provided', () => {
+    const out = renderAssignment({
+      id: 'id',
+      slug: 's',
+      title: 'T',
+      timestamp: TIMESTAMP,
+      priority: 'medium',
+      dependsOn: [],
+      links: [],
+      status: 'ready_for_planning',
+    });
+    expect(out).toContain('status: ready_for_planning');
+    expect(out).not.toContain('status: draft');
   });
 
   it('renders acceptanceCriteria as checkbox items when provided', () => {

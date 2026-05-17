@@ -1162,8 +1162,16 @@ export function createWriteRouter(
       }
 
       const { workspace } = req.body || {};
-      if (workspace !== null && (typeof workspace !== 'string' || !workspace.trim())) {
-        res.status(400).json({ error: 'workspace must be a non-empty string or null (for ungrouped).' });
+      if (
+        workspace !== null &&
+        (typeof workspace !== 'string' || !workspace.trim() || !isValidSlug(workspace))
+      ) {
+        // isValidSlug forbids newlines, colons, and other YAML metacharacters,
+        // so we can safely write the value into frontmatter without escaping.
+        res.status(400).json({
+          error:
+            'workspace must be a valid slug (lowercase letters, numbers, hyphens) or null (for ungrouped).',
+        });
         return;
       }
 
@@ -1176,6 +1184,54 @@ export function createWriteRouter(
       res.json({ project });
     } catch (error) {
       console.error('Error moving project workspace:', error);
+      res.status(500).json({ error: `Failed to move workspace: ${(error as Error).message}` });
+    }
+  });
+
+  router.post('/api/assignments/:id/move-workspace', async (req: Request, res: Response) => {
+    try {
+      if (!assignmentsDir) {
+        res.status(501).json({ error: 'Standalone assignments not configured on this server' });
+        return;
+      }
+
+      const id = getParam(req.params.id);
+      const resolved = await resolveAssignmentById(projectsDir, assignmentsDir, id);
+      if (!resolved) {
+        res.status(404).json({ error: `Assignment "${id}" not found` });
+        return;
+      }
+      if (!resolved.standalone) {
+        res.status(400).json({
+          error:
+            'Project-nested assignments inherit workspace from their parent project. Move the project instead.',
+        });
+        return;
+      }
+
+      const { workspaceGroup } = req.body || {};
+      if (
+        workspaceGroup !== null &&
+        (typeof workspaceGroup !== 'string' || !workspaceGroup.trim() || !isValidSlug(workspaceGroup))
+      ) {
+        // See workspace move route above: isValidSlug guards against frontmatter injection.
+        res.status(400).json({
+          error:
+            'workspaceGroup must be a valid slug (lowercase letters, numbers, hyphens) or null (for ungrouped).',
+        });
+        return;
+      }
+
+      const assignmentPath = resolve(resolved.assignmentDir, 'assignment.md');
+      let content = await readFile(assignmentPath, 'utf-8');
+      content = setTopLevelField(content, 'workspaceGroup', workspaceGroup ?? null);
+      content = setTopLevelField(content, 'updated', nowTimestamp());
+      await writeFileForce(assignmentPath, content);
+
+      const assignment = await getAssignmentDetailById(projectsDir, assignmentsDir, id);
+      res.json({ assignment });
+    } catch (error) {
+      console.error('Error moving assignment workspace:', error);
       res.status(500).json({ error: `Failed to move workspace: ${(error as Error).message}` });
     }
   });

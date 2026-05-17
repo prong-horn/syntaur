@@ -10,7 +10,10 @@ export const DEFAULT_PROJECT_BOARD_COLUMNS = [
 export const PROJECT_BOARD_COLUMNS = DEFAULT_PROJECT_BOARD_COLUMNS;
 
 export const DEFAULT_ASSIGNMENT_BOARD_COLUMNS = [
+  'draft',
   'pending',
+  'ready_for_planning',
+  'ready_to_implement',
   'in_progress',
   'blocked',
   'review',

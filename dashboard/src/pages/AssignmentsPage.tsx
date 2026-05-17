@@ -1,6 +1,6 @@
 import { type DragEvent, useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { Link, useNavigate, useSearchParams, useParams } from 'react-router-dom';
-import { ChevronDown, ChevronUp, FolderKanban, Plus } from 'lucide-react';
+import { ChevronDown, ChevronUp, FolderKanban, Plus, Pencil, Trash2, ArrowRightLeft } from 'lucide-react';
 import { CopyButton } from '../components/CopyButton';
 import { cn } from '../lib/utils';
 import {
@@ -19,19 +19,28 @@ import { SectionCard } from '../components/SectionCard';
 import { LoadingState } from '../components/LoadingState';
 import { ErrorState } from '../components/ErrorState';
 import { EmptyState } from '../components/EmptyState';
-import { KanbanBoard, type KanbanColumn } from '../components/KanbanBoard';
+import { KanbanBoard, type KanbanColumn, type ExternalDragData } from '../components/KanbanBoard';
 import { AssignmentTransitionDialog } from '../components/AssignmentTransitionDialog';
+import { ContextMenuPopover } from '../components/ContextMenuPopover';
+import { ConfirmDialog } from '../components/ConfirmDialog';
+import { MoveToWorkspaceDialog } from '../components/MoveToWorkspaceDialog';
+import type { OverflowMenuItem } from '../components/OverflowMenu';
 import { StatusBadge, STATUS_META, getStatusDescription } from '../components/StatusBadge';
 import { transitionNeedsReason } from '../lib/assignments';
 import { useStatusConfig, getStatusLabel } from '../hooks/useStatusConfig';
 import { useHotkey, useHotkeyScope, useListSelection } from '../hotkeys';
+import {
+  VIEW_MODES,
+  type ViewMode,
+  type SortField,
+  type SortDirection,
+  type Activity as ActivityFilter,
+  type ProjectViewPrefs,
+} from '@shared/view-prefs-schema';
+import { fetchViewPrefs, saveGlobalViewPrefs, saveScopeViewPrefs, useViewPrefs } from '../hooks/useViewPrefs';
+import { mergeForScope } from '@shared/view-prefs-schema';
 
-type ViewMode = 'table' | 'list' | 'kanban';
-const VALID_VIEWS: ViewMode[] = ['table', 'list', 'kanban'];
-type ActivityFilter = 'all' | 'stale' | 'fresh';
-
-type SortField = 'title' | 'status' | 'priority' | 'assignee' | 'dependencies' | 'updated';
-type SortDirection = 'asc' | 'desc';
+const VALID_VIEWS: readonly ViewMode[] = VIEW_MODES;
 
 interface PendingAssignmentMove {
   item: AssignmentBoardItem;
@@ -108,6 +117,14 @@ export function AssignmentsPage() {
   const statusConfig = useStatusConfig();
   const [searchParams, setSearchParams] = useSearchParams();
 
+  // Namespace the scope key so workspace-scoped prefs cannot collide with
+  // project-detail prefs if a workspace name and a project slug ever match.
+  const scope: string | null = workspace ? `w:${workspace}` : null;
+  const prefs = useViewPrefs(scope);
+  // Tracks which scope the URL has been bootstrapped for. `undefined` = never.
+  // Reset implicitly when `scope` changes (we re-bootstrap for the new scope).
+  const bootstrappedScopeRef = useRef<string | null | undefined>(undefined);
+
   const COLUMNS = useMemo(() => getAssignmentColumns(statusConfig.order), [statusConfig]);
   const COLUMN_LABELS = useMemo(() => {
     const labels: Record<string, string> = {};
@@ -155,14 +172,14 @@ export function AssignmentsPage() {
   const [statusFilter, setStatusFilter] = useState<string>(
     () => normalizeStatusFilter(statusParam),
   );
-  const [priorityFilter, setPriorityFilter] = useState('all');
-  const [assigneeFilter, setAssigneeFilter] = useState('all');
-  const [projectFilter, setProjectFilter] = useState('all');
+  const [priorityFilter, setPriorityFilter] = useState<string>(() => prefs.filters.priority ?? 'all');
+  const [assigneeFilter, setAssigneeFilter] = useState<string>(() => prefs.filters.assignee ?? 'all');
+  const [projectFilter, setProjectFilter] = useState<string>(() => prefs.filters.project ?? 'all');
   const [activityFilter, setActivityFilter] = useState<ActivityFilter>(
     () => normalizeActivityFilter(staleParam),
   );
-  const [sortField, setSortField] = useState<SortField>('updated');
-  const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
+  const [sortField, setSortField] = useState<SortField>(() => prefs.sortField);
+  const [sortDirection, setSortDirection] = useState<SortDirection>(() => prefs.sortDirection);
   const [expandedStatuses, setExpandedStatuses] = useState<Set<string>>(
     () => new Set(COLUMNS),
   );
@@ -172,6 +189,13 @@ export function AssignmentsPage() {
   const [draggedId, setDraggedId] = useState<string | null>(null);
   const [dropTargetStatus, setDropTargetStatus] = useState<string | null>(null);
   const [pendingMove, setPendingMove] = useState<PendingAssignmentMove | null>(null);
+  const [contextMenu, setContextMenu] = useState<{
+    item: AssignmentBoardItem;
+    anchor: { x: number; y: number };
+  } | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<AssignmentBoardItem | null>(null);
+  const [deletingKey, setDeletingKey] = useState<string | null>(null);
+  const [moveTarget, setMoveTarget] = useState<AssignmentBoardItem | null>(null);
 
   useEffect(() => {
     setBoardItems(data?.assignments ?? []);
@@ -190,6 +214,10 @@ export function AssignmentsPage() {
   }, [activityFilter, staleParam, statusFilter, statusParam]);
 
   useEffect(() => {
+    // Only mirror state -> URL once bootstrap for the current scope has
+    // completed. During scope switches the bootstrap re-runs and this gate
+    // re-closes until the new scope's seed is applied.
+    if (bootstrappedScopeRef.current !== scope) return;
     setSearchParams((prev) => {
       const next = new URLSearchParams(prev);
 
@@ -209,7 +237,156 @@ export function AssignmentsPage() {
 
       return areSearchParamsEqual(prev, next) ? prev : next;
     });
-  }, [activityFilter, setSearchParams, statusFilter]);
+  }, [activityFilter, scope, setSearchParams, statusFilter]);
+
+  // Hydrate non-URL-tracked fields from prefs on every prefs change.
+  // Idempotent setX — if local value already matches, React bails out. This
+  // covers BOTH the cold-browser case (defaults render first, server response
+  // arrives later) AND the Settings-driven case (user changes a default in
+  // another component, subscriber-set propagates here).
+  useEffect(() => {
+    setPriorityFilter(prefs.filters.priority ?? 'all');
+    setAssigneeFilter(prefs.filters.assignee ?? 'all');
+    setProjectFilter(prefs.filters.project ?? 'all');
+    setSortField(prefs.sortField);
+    setSortDirection(prefs.sortDirection);
+  }, [
+    prefs.filters.priority,
+    prefs.filters.assignee,
+    prefs.filters.project,
+    prefs.sortField,
+    prefs.sortDirection,
+  ]);
+
+  // One-shot URL seed PER SCOPE: waits for the server response to land
+  // (fetchViewPrefs resolves after the first /api/view-prefs round-trip),
+  // then for each URL-tracked field (view / status / stale), writes the
+  // persisted value when the URL param is absent. Also hydrates local state
+  // for status / activity from the server prefs. Once done, marks the ref
+  // with the current scope on next microtask so the state->URL effect unlocks.
+  // Re-runs when scope changes (react-router may reuse the component across
+  // /w/:workspace/assignments navigations).
+  useEffect(() => {
+    if (bootstrappedScopeRef.current === scope) return;
+    let cancelled = false;
+    fetchViewPrefs().then((latest) => {
+      if (cancelled || bootstrappedScopeRef.current === scope) return;
+      const p = mergeForScope(latest, scope);
+      const wantView: ViewMode = p.defaultView;
+      const wantStatus = p.filters.status ?? 'all';
+      const wantActivity = p.filters.activity ?? 'all';
+      // Read the live URL directly. react-router's setSearchParams updates
+      // window.location synchronously via the History API, so this is the
+      // authoritative current URL even if the React state hasn't propagated
+      // through useSearchParams' commit phase yet. Using a ref synchronized
+      // in a passive useEffect is too late — the microtask resolving this
+      // promise can fire AFTER a state update commits but BEFORE the effect
+      // that would refresh the ref runs.
+      const currentSP = new URLSearchParams(window.location.search);
+      let needsUrlWrite = false;
+      const nextParams = new URLSearchParams(currentSP);
+      if (currentSP.get('view') === null && wantView !== 'kanban' && VALID_VIEWS.includes(wantView)) {
+        nextParams.set('view', wantView);
+        needsUrlWrite = true;
+      }
+      if (currentSP.get('status') === null && wantStatus !== 'all') {
+        // Don't pre-validate against VALID_STATUS_SET here — statusConfig is
+        // also async and may not be loaded yet. The URL->state effect
+        // (normalizeStatusFilter) gracefully reduces unknown values to 'all',
+        // and the state->URL effect tidies the URL on the next render.
+        nextParams.set('status', wantStatus);
+        setStatusFilter(wantStatus);
+        needsUrlWrite = true;
+      }
+      if (currentSP.get('stale') === null && wantActivity !== 'all') {
+        nextParams.set('stale', wantActivity === 'stale' ? '1' : '0');
+        setActivityFilter(wantActivity);
+        needsUrlWrite = true;
+      }
+      if (needsUrlWrite) {
+        setSearchParams(nextParams, { replace: true });
+      }
+      queueMicrotask(() => {
+        bootstrappedScopeRef.current = scope;
+      });
+    });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scope]);
+
+  // Persist one field per user action. The server deep-merges, so siblings
+  // (other fields, other filter keys) are preserved. Inherited scope fields
+  // stay inherited because we never write a value the user didn't touch.
+  const persistField = useCallback(
+    (patch: ProjectViewPrefs) => {
+      const save = scope === null
+        ? saveGlobalViewPrefs(patch)
+        : saveScopeViewPrefs(scope, patch);
+      save.catch((err) => {
+        console.warn('Failed to persist view prefs:', err);
+      });
+    },
+    [scope],
+  );
+
+  const handleSetView = useCallback(
+    (v: ViewMode) => {
+      setView(v);
+      persistField({ defaultView: v });
+    },
+    [setView, persistField],
+  );
+  const handleSetStatusFilter = useCallback(
+    (v: string) => {
+      setStatusFilter(v);
+      persistField({ filters: { status: v } });
+    },
+    [persistField],
+  );
+  const handleSetPriorityFilter = useCallback(
+    (v: string) => {
+      setPriorityFilter(v);
+      persistField({ filters: { priority: v } });
+    },
+    [persistField],
+  );
+  const handleSetAssigneeFilter = useCallback(
+    (v: string) => {
+      setAssigneeFilter(v);
+      persistField({ filters: { assignee: v } });
+    },
+    [persistField],
+  );
+  const handleSetProjectFilter = useCallback(
+    (v: string) => {
+      setProjectFilter(v);
+      persistField({ filters: { project: v } });
+    },
+    [persistField],
+  );
+  const handleSetActivityFilter = useCallback(
+    (v: ActivityFilter) => {
+      setActivityFilter(v);
+      persistField({ filters: { activity: v } });
+    },
+    [persistField],
+  );
+  const handleSetSortField = useCallback(
+    (v: SortField) => {
+      setSortField(v);
+      persistField({ sortField: v });
+    },
+    [persistField],
+  );
+  const handleSetSortDirection = useCallback(
+    (v: SortDirection) => {
+      setSortDirection(v);
+      persistField({ sortDirection: v });
+    },
+    [persistField],
+  );
 
   const uniqueStatuses = useMemo(
     () => Array.from(new Set(boardItems.map((a) => a.status))).sort(),
@@ -437,10 +614,11 @@ export function AssignmentsPage() {
 
   function handleSort(field: SortField) {
     if (sortField === field) {
-      setSortDirection((d) => (d === 'asc' ? 'desc' : 'asc'));
+      const next: SortDirection = sortDirection === 'asc' ? 'desc' : 'asc';
+      handleSetSortDirection(next);
     } else {
-      setSortField(field);
-      setSortDirection('asc');
+      handleSetSortField(field);
+      handleSetSortDirection('asc');
     }
   }
 
@@ -507,7 +685,7 @@ export function AssignmentsPage() {
   }
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-5" data-density={prefs.density}>
       <div className="flex items-center justify-end">
         <Link
           to={`${wsPrefix}/assignments/new`}
@@ -527,7 +705,7 @@ export function AssignmentsPage() {
         />
         <select
           value={statusFilter}
-          onChange={(e) => setStatusFilter(normalizeStatusFilter(e.target.value))}
+          onChange={(e) => handleSetStatusFilter(normalizeStatusFilter(e.target.value))}
           className="editor-input max-w-[180px]"
         >
           <option value="all">All statuses</option>
@@ -535,33 +713,33 @@ export function AssignmentsPage() {
             <option key={s} value={s}>{COLUMN_LABELS[s] ?? s}</option>
           ))}
         </select>
-        <select value={priorityFilter} onChange={(e) => setPriorityFilter(e.target.value)} className="editor-input max-w-[180px]">
+        <select value={priorityFilter} onChange={(e) => handleSetPriorityFilter(e.target.value)} className="editor-input max-w-[180px]">
           <option value="all">All priorities</option>
           {uniquePriorities.map((p) => (
             <option key={p} value={p} className="capitalize">{p}</option>
           ))}
         </select>
-        <select value={assigneeFilter} onChange={(e) => setAssigneeFilter(e.target.value)} className="editor-input max-w-[180px]">
+        <select value={assigneeFilter} onChange={(e) => handleSetAssigneeFilter(e.target.value)} className="editor-input max-w-[180px]">
           <option value="all">All assignees</option>
           {uniqueAssignees.map((a) => (
             <option key={a} value={a}>{a === '__unassigned__' ? 'Unassigned' : a}</option>
           ))}
         </select>
-        <select value={projectFilter} onChange={(e) => setProjectFilter(e.target.value)} className="editor-input max-w-[180px]">
+        <select value={projectFilter} onChange={(e) => handleSetProjectFilter(e.target.value)} className="editor-input max-w-[180px]">
           <option value="all">All projects</option>
           <option value="__standalone__">Standalone</option>
           {uniqueProjects.map(([slug, title]) => (
             <option key={slug} value={slug}>{title}</option>
           ))}
         </select>
-        <select value={activityFilter} onChange={(e) => setActivityFilter(e.target.value as ActivityFilter)} className="editor-input max-w-[180px]">
+        <select value={activityFilter} onChange={(e) => handleSetActivityFilter(e.target.value as ActivityFilter)} className="editor-input max-w-[180px]">
           <option value="all">All activity</option>
           <option value="stale">Stale only</option>
           <option value="fresh">Fresh only</option>
         </select>
         <ViewToggle
           value={view}
-          onChange={(value) => setView(value as ViewMode)}
+          onChange={(value) => handleSetView(value as ViewMode)}
           options={[
             { value: 'table', label: 'Table' },
             { value: 'list', label: 'List' },
@@ -773,6 +951,15 @@ export function AssignmentsPage() {
             };
           }}
           onMove={({ item, toColumnId }) => handleMove({ item, toColumnId })}
+          getExternalDragData={(item): ExternalDragData | null =>
+            item.projectSlug === null
+              ? { type: 'standalone-assignment', id: item.id }
+              : { type: 'project-assignment', id: item.id }
+          }
+          onCardContextMenu={(item, event) => {
+            event.preventDefault();
+            setContextMenu({ item, anchor: { x: event.clientX, y: event.clientY } });
+          }}
           emptyMessage={(column) => `No ${column.title.toLowerCase()} assignments.`}
           renderCard={(item, { dragging }) => {
             const flatIdx = visibleIndexByKey.get(getAssignmentKey(item)) ?? -1;
@@ -817,8 +1004,119 @@ export function AssignmentsPage() {
           }
         }}
       />
+
+      <ContextMenuPopover
+        anchor={contextMenu?.anchor ?? null}
+        items={contextMenu ? buildAssignmentContextMenu(contextMenu.item, {
+          wsPrefix,
+          onEdit: () => {
+            const item = contextMenu.item;
+            const href =
+              item.projectSlug === null
+                ? `/assignments/${item.id}`
+                : `${item.projectWorkspace ? `/w/${item.projectWorkspace}` : wsPrefix}/projects/${item.projectSlug}/assignments/${item.slug}`;
+            navigate(href);
+          },
+          onDelete: () => setDeleteTarget(contextMenu.item),
+          onMove: () => setMoveTarget(contextMenu.item),
+        }) : []}
+        onClose={() => setContextMenu(null)}
+      />
+
+      <ConfirmDialog
+        open={deleteTarget !== null}
+        title="Delete assignment?"
+        description={
+          deleteTarget
+            ? `"${deleteTarget.title}" will be permanently removed. This cannot be undone.`
+            : ''
+        }
+        confirmLabel="Delete"
+        destructive
+        loading={deletingKey !== null}
+        onOpenChange={(next) => {
+          if (!next && deletingKey === null) setDeleteTarget(null);
+        }}
+        onConfirm={async () => {
+          if (!deleteTarget || deleteTarget.projectSlug === null) {
+            setDeleteTarget(null);
+            return;
+          }
+          const key = getAssignmentKey(deleteTarget);
+          setDeletingKey(key);
+          try {
+            const res = await fetch(
+              `/api/projects/${encodeURIComponent(deleteTarget.projectSlug)}/assignments/${encodeURIComponent(deleteTarget.slug)}`,
+              { method: 'DELETE' },
+            );
+            if (!res.ok) {
+              const body = await res.json().catch(() => ({}));
+              throw new Error(body.error || 'Failed to delete assignment');
+            }
+            setDeleteTarget(null);
+            refetch();
+          } catch (err) {
+            alert(err instanceof Error ? err.message : 'Failed to delete assignment');
+          } finally {
+            setDeletingKey(null);
+          }
+        }}
+      />
+
+      <MoveToWorkspaceDialog
+        open={moveTarget !== null}
+        onOpenChange={(next) => {
+          if (!next) setMoveTarget(null);
+        }}
+        currentWorkspace={moveTarget?.projectWorkspace ?? null}
+        title="Move assignment to workspace"
+        description="Standalone assignments belong to a project-workspace via the workspaceGroup frontmatter field."
+        onSubmit={async (target) => {
+          if (!moveTarget) return;
+          const res = await fetch(`/api/assignments/${encodeURIComponent(moveTarget.id)}/move-workspace`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ workspaceGroup: target }),
+          });
+          if (!res.ok) {
+            const body = await res.json().catch(() => ({}));
+            throw new Error(body.error || 'Failed to move assignment');
+          }
+          refetch();
+        }}
+      />
     </div>
   );
+}
+
+function buildAssignmentContextMenu(
+  item: AssignmentBoardItem,
+  handlers: { wsPrefix: string; onEdit: () => void; onDelete: () => void; onMove: () => void },
+): OverflowMenuItem[] {
+  const items: OverflowMenuItem[] = [
+    { key: 'edit', label: 'Edit', icon: Pencil, onSelect: handlers.onEdit },
+  ];
+  if (item.projectSlug !== null) {
+    // Project-scoped: delete is wired to the existing nested DELETE route.
+    items.push({
+      key: 'delete',
+      label: 'Delete',
+      icon: Trash2,
+      destructive: true,
+      onSelect: handlers.onDelete,
+    });
+    // Move is omitted: project-scoped assignments inherit their workspace from
+    // the parent project. The server enforces this with a 400.
+  } else {
+    // Standalone: no DELETE /api/assignments/:id route yet, so omit Delete.
+    items.push({
+      key: 'move',
+      label: 'Move to workspace…',
+      icon: ArrowRightLeft,
+      onSelect: handlers.onMove,
+    });
+  }
+  return items;
 }
 
 function AssignmentBoardCard({
@@ -832,7 +1130,7 @@ function AssignmentBoardCard({
 }) {
   const wsPrefix = useWorkspacePrefix();
   return (
-    <div className="rounded-lg border border-border/60 bg-background/85 p-3 shadow-sm">
+    <div className="vp-card rounded-lg border border-border/60 bg-background/85 p-3 shadow-sm">
       <div className="flex items-start justify-between gap-3">
         <div className="space-y-1">
           <Link

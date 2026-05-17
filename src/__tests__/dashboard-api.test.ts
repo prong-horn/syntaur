@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtemp, rm, mkdir, writeFile } from 'node:fs/promises';
+import { mkdtemp, rm, mkdir, writeFile, readFile } from 'node:fs/promises';
 import { resolve, join } from 'node:path';
 import { tmpdir } from 'node:os';
 import express from 'express';
@@ -11,7 +11,6 @@ import {
   getProjectDetail,
   getAssignmentDetail,
   getOverview,
-  getAttention,
   getEditableDocument,
   getHelp,
 } from '../dashboard/api.js';
@@ -365,6 +364,39 @@ First entry.
     expect(result!.progress).toBeNull();
     expect(result!.comments).toBeNull();
   });
+
+  it('populates projectWorkspace from the parent project for project-nested assignments', async () => {
+    const projectWithWorkspace = `---
+id: ws-project-1
+slug: ws-project
+title: Workspace Project
+archived: false
+archivedAt: null
+archivedReason: null
+created: "2026-03-20T10:00:00Z"
+updated: "2026-03-20T10:00:00Z"
+externalIds: []
+tags: []
+workspace: syntaur
+---
+
+# Workspace Project`;
+    await createProjectFiles(testDir, 'ws-project', projectWithWorkspace, [
+      { slug: 'test-assignment', assignmentMd: ASSIGNMENT_MD },
+    ]);
+    const result = await getAssignmentDetail(testDir, 'ws-project', 'test-assignment');
+    expect(result).not.toBeNull();
+    expect(result!.projectWorkspace).toBe('syntaur');
+  });
+
+  it('returns null projectWorkspace when the parent project has no workspace', async () => {
+    await createProjectFiles(testDir, 'test-project', PROJECT_MD, [
+      { slug: 'test-assignment', assignmentMd: ASSIGNMENT_MD },
+    ]);
+    const result = await getAssignmentDetail(testDir, 'test-project', 'test-assignment');
+    expect(result).not.toBeNull();
+    expect(result!.projectWorkspace).toBeNull();
+  });
 });
 
 describe('listAssignmentsBoard standalone support', () => {
@@ -415,6 +447,23 @@ tags: []
     expect(detail).not.toBeNull();
     expect(detail!.projectSlug).toBeNull();
     expect(detail!.dependsOn).toEqual([]);
+    expect(detail!.projectWorkspace).toBeNull();
+  });
+
+  it('populates projectWorkspace from workspaceGroup on the standalone detail builder', async () => {
+    const { getAssignmentDetailById } = await import('../dashboard/api.js');
+    const assignmentsDir = resolve(testDir, 'standalone');
+    await mkdir(assignmentsDir, { recursive: true });
+    const uuid = 'dddddddd-1111-2222-3333-eeeeeeeeeeee';
+    await mkdir(resolve(assignmentsDir, uuid), { recursive: true });
+    await writeFile(
+      resolve(assignmentsDir, uuid, 'assignment.md'),
+      `---\nid: ${uuid}\nslug: ws-scoped\ntitle: WS\nproject: null\nworkspaceGroup: syntaur\ntype: feature\nstatus: pending\npriority: medium\ncreated: "2026-04-22T10:00:00Z"\nupdated: "2026-04-22T10:00:00Z"\nassignee: null\nexternalIds: []\ndependsOn: []\nblockedReason: null\nworkspace:\n  repository: null\n  worktreePath: null\n  branch: null\n  parentBranch: null\ntags: []\n---\n\n# WS`,
+      'utf-8',
+    );
+    const detail = await getAssignmentDetailById(testDir, assignmentsDir, uuid);
+    expect(detail).not.toBeNull();
+    expect(detail!.projectWorkspace).toBe('syntaur');
   });
 
   it('returns null from getAssignmentDetailById for an unknown id', async () => {
@@ -605,6 +654,112 @@ tags: []
   });
 });
 
+describe('deleteWorkspace cascade semantics', () => {
+  async function writeRegistry(value: string[]): Promise<void> {
+    // Registry sits at <projectsDir>/../workspaces.json per readWorkspaceRegistry.
+    const registryPath = resolve(testDir, '..', 'workspaces.json');
+    await writeFile(registryPath, JSON.stringify(value, null, 2) + '\n', 'utf-8');
+  }
+
+  it('throws WorkspaceBlockedError when references exist and cascade is false', async () => {
+    const { deleteWorkspace, WorkspaceBlockedError } = await import('../dashboard/api.js');
+    await createProjectFiles(
+      testDir,
+      'proj-a',
+      `---\nid: proj-a-id\nslug: proj-a\ntitle: A\narchived: false\narchivedAt: null\narchivedReason: null\ncreated: "2026-04-22T10:00:00Z"\nupdated: "2026-04-22T10:00:00Z"\nexternalIds: []\ntags: []\nworkspace: target-ws\n---\n\n# A`,
+    );
+
+    try {
+      await deleteWorkspace(testDir, 'target-ws', { cascade: false });
+      expect.fail('expected WorkspaceBlockedError');
+    } catch (err) {
+      expect(err).toBeInstanceOf(WorkspaceBlockedError);
+      expect((err as InstanceType<typeof WorkspaceBlockedError>).blockedBy).toEqual({
+        projects: ['proj-a'],
+        standalones: [],
+      });
+    }
+  });
+
+  it('also surfaces standalone references in blockedBy', async () => {
+    const { deleteWorkspace, WorkspaceBlockedError } = await import('../dashboard/api.js');
+    const assignmentsDir = resolve(testDir, 'standalone');
+    await mkdir(assignmentsDir, { recursive: true });
+    const standaloneId = 'aaaa1111-bbbb-cccc-dddd-eeeeeeeeeeee';
+    await mkdir(resolve(assignmentsDir, standaloneId), { recursive: true });
+    await writeFile(
+      resolve(assignmentsDir, standaloneId, 'assignment.md'),
+      `---\nid: ${standaloneId}\nslug: alone\ntitle: Alone\nproject: null\nworkspaceGroup: target-ws\ntype: feature\nstatus: pending\npriority: medium\ncreated: "2026-04-22T10:00:00Z"\nupdated: "2026-04-22T10:00:00Z"\nassignee: null\nexternalIds: []\ndependsOn: []\nblockedReason: null\nworkspace:\n  repository: null\n  worktreePath: null\n  branch: null\n  parentBranch: null\ntags: []\n---\n\n# Alone`,
+      'utf-8',
+    );
+
+    try {
+      await deleteWorkspace(testDir, 'target-ws', { cascade: false, assignmentsDir });
+      expect.fail('expected WorkspaceBlockedError');
+    } catch (err) {
+      expect(err).toBeInstanceOf(WorkspaceBlockedError);
+      expect((err as InstanceType<typeof WorkspaceBlockedError>).blockedBy.standalones).toEqual([
+        standaloneId,
+      ]);
+    }
+  });
+
+  it('cascade clears references on projects and removes the registry entry', async () => {
+    const { deleteWorkspace } = await import('../dashboard/api.js');
+    await createProjectFiles(
+      testDir,
+      'proj-a',
+      `---\nid: proj-a-id\nslug: proj-a\ntitle: A\narchived: false\narchivedAt: null\narchivedReason: null\ncreated: "2026-04-22T10:00:00Z"\nupdated: "2026-04-22T10:00:00Z"\nexternalIds: []\ntags: []\nworkspace: target-ws\n---\n\n# A`,
+    );
+    await writeRegistry(['target-ws', 'keep-me']);
+
+    const result = await deleteWorkspace(testDir, 'target-ws', { cascade: true });
+
+    expect(result).toEqual({ rewroteFiles: true });
+    const projectMd = await readFile(resolve(testDir, 'proj-a', 'project.md'), 'utf-8');
+    expect(projectMd).toMatch(/^workspace:\s*null\s*$/m);
+
+    const registryPath = resolve(testDir, '..', 'workspaces.json');
+    const registry = JSON.parse(await readFile(registryPath, 'utf-8'));
+    expect(registry).toEqual(['keep-me']);
+  });
+
+  it('cascade clears workspaceGroup on standalones too', async () => {
+    const { deleteWorkspace } = await import('../dashboard/api.js');
+    const assignmentsDir = resolve(testDir, 'standalone');
+    await mkdir(assignmentsDir, { recursive: true });
+    const id = '99999999-aaaa-bbbb-cccc-111111111111';
+    await mkdir(resolve(assignmentsDir, id), { recursive: true });
+    await writeFile(
+      resolve(assignmentsDir, id, 'assignment.md'),
+      `---\nid: ${id}\nslug: x\ntitle: X\nproject: null\nworkspaceGroup: target-ws\ntype: feature\nstatus: pending\npriority: medium\ncreated: "2026-04-22T10:00:00Z"\nupdated: "2026-04-22T10:00:00Z"\nassignee: null\nexternalIds: []\ndependsOn: []\nblockedReason: null\nworkspace:\n  repository: null\n  worktreePath: null\n  branch: null\n  parentBranch: null\ntags: []\n---\n\n# X`,
+      'utf-8',
+    );
+    await writeRegistry(['target-ws']);
+
+    const result = await deleteWorkspace(testDir, 'target-ws', {
+      cascade: true,
+      assignmentsDir,
+    });
+    expect(result.rewroteFiles).toBe(true);
+
+    const content = await readFile(resolve(assignmentsDir, id, 'assignment.md'), 'utf-8');
+    expect(content).toMatch(/^workspaceGroup:\s*null\s*$/m);
+  });
+
+  it('no-reference delete returns rewroteFiles=false and still removes the registry entry', async () => {
+    const { deleteWorkspace } = await import('../dashboard/api.js');
+    await writeRegistry(['empty-ws', 'other-ws']);
+
+    const result = await deleteWorkspace(testDir, 'empty-ws', { cascade: false });
+
+    expect(result).toEqual({ rewroteFiles: false });
+    const registryPath = resolve(testDir, '..', 'workspaces.json');
+    const registry = JSON.parse(await readFile(registryPath, 'utf-8'));
+    expect(registry).toEqual(['other-ws']);
+  });
+});
+
 describe('referencedBy backlinks', () => {
   it('lists A under B.referencedBy when A links to B via relative path in its comments', async () => {
     const { getAssignmentDetail } = await import('../dashboard/api.js');
@@ -726,7 +881,7 @@ tags: []
   });
 });
 
-describe('overview and attention', () => {
+describe('overview', () => {
   it('returns first-run onboarding state for an empty workspace', async () => {
     const result = await getOverview(testDir);
     expect(result.firstRun).toBe(true);
@@ -741,7 +896,6 @@ describe('overview and attention', () => {
     ]);
 
     const overview = await getOverview(testDir);
-    const attention = await getAttention(testDir);
 
     expect(overview.firstRun).toBe(false);
     expect(overview.stats.activeProjects).toBe(1);
@@ -750,8 +904,8 @@ describe('overview and attention', () => {
     expect(overview.stats.staleAssignments).toBe(1);
     expect(overview.recentActivity[0].href).toContain('/projects/test-project');
 
-    expect(attention.items[0].severity).toBe('high');
-    expect(attention.items.some((item) => item.reason.includes('7 days'))).toBe(true);
+    expect(overview.attention[0].severity).toBe('high');
+    expect(overview.attention.some((item) => item.reason.includes('7 days'))).toBe(true);
   });
 });
 

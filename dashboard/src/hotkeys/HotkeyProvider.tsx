@@ -498,7 +498,6 @@ export function HotkeyProvider({ children }: { children: ReactNode }) {
       { suffix: 'a', basePath: '/assignments', desc: 'Go to Assignments' },
       { suffix: 't', basePath: '/todos',       desc: 'Go to Todos' },
       { suffix: 's', basePath: '/servers',     desc: 'Go to Servers' },
-      { suffix: '!', basePath: '/attention',   desc: 'Go to Attention' },
       { suffix: ',', basePath: '/settings',    desc: 'Go to Settings' },
     ];
     const ids = chords.map((c) =>

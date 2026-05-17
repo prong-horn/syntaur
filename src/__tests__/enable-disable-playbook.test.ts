@@ -18,6 +18,10 @@ import {
 } from '../utils/playbooks.js';
 import { enablePlaybookCommand } from '../commands/enable-playbook.js';
 import { disablePlaybookCommand } from '../commands/disable-playbook.js';
+import { deletePlaybookCommand } from '../commands/delete-playbook.js';
+import { deletePlaybook, renamePlaybook, PlaybookError } from '../utils/playbooks.js';
+import { fileExists } from '../utils/fs.js';
+import { parsePlaybook } from '../dashboard/parser.js';
 import { listPlaybooks, getPlaybookDetail } from '../dashboard/api.js';
 import { createPlaybooksRouter } from '../dashboard/api-playbooks.js';
 
@@ -230,6 +234,43 @@ describe('CLI commands', () => {
   it('rejects invalid slug format', async () => {
     await expect(disablePlaybookCommand('Bad Slug!')).rejects.toThrow(/Invalid slug/);
   });
+
+  it('deletePlaybookCommand removes the file and regenerates the manifest', async () => {
+    await writePlaybook('alpha');
+    await writePlaybook('beta');
+    await rebuildPlaybookManifest(playbooksDir);
+
+    await deletePlaybookCommand('alpha');
+
+    expect(await fileExists(resolve(playbooksDir, 'alpha.md'))).toBe(false);
+    expect(await fileExists(resolve(playbooksDir, 'beta.md'))).toBe(true);
+
+    const manifest = await readFile(resolve(playbooksDir, 'manifest.md'), 'utf-8');
+    expect(manifest).toContain('total: 1');
+    expect(manifest).toContain('beta.md');
+    expect(manifest).not.toContain('alpha.md');
+  });
+
+  it('deletePlaybookCommand refuses to delete the manifest', async () => {
+    await writePlaybook('alpha');
+    await rebuildPlaybookManifest(playbooksDir);
+    await expect(deletePlaybookCommand('manifest')).rejects.toThrow(/manifest cannot be deleted/);
+    expect(await fileExists(resolve(playbooksDir, 'manifest.md'))).toBe(true);
+  });
+
+  it('deletePlaybookCommand surfaces not-found as a clear error', async () => {
+    await expect(deletePlaybookCommand('not-a-real-slug')).rejects.toThrow(/not found/);
+  });
+
+  it('deletePlaybook helper drops the slug from the disabled list', async () => {
+    await writePlaybook('alpha');
+    await setPlaybookEnabled(playbooksDir, 'alpha', false);
+    expect((await readConfig()).playbooks.disabled).toEqual(['alpha']);
+
+    await deletePlaybook(playbooksDir, 'alpha');
+
+    expect((await readConfig()).playbooks.disabled).toEqual([]);
+  });
 });
 
 describe('dashboard listPlaybooks + getPlaybookDetail', () => {
@@ -346,6 +387,191 @@ describe('dashboard playbook routes', () => {
 
       const editDisabled = await fetch(`${baseUrl}/api/playbooks/canonical-bar/edit`);
       expect(editDisabled.status).toBe(200);
+    } finally {
+      await close();
+    }
+  });
+});
+
+describe('renamePlaybook', () => {
+  it('happy path: moves file, rewrites slug frontmatter, regenerates manifest', async () => {
+    await writePlaybook('alpha');
+    await writePlaybook('beta');
+
+    const result = await renamePlaybook(playbooksDir, 'alpha', 'gamma');
+
+    expect(result).toMatchObject({ from: 'alpha', to: 'gamma', renamedInPlace: false });
+    expect(await fileExists(resolve(playbooksDir, 'alpha.md'))).toBe(false);
+    expect(await fileExists(resolve(playbooksDir, 'gamma.md'))).toBe(true);
+
+    const renamed = await readFile(resolve(playbooksDir, 'gamma.md'), 'utf-8');
+    const parsed = parsePlaybook(renamed);
+    expect(parsed.slug).toBe('gamma');
+    expect(parsed.updated).not.toBe('2026-04-25T00:00:00Z'); // bumped
+
+    const manifest = await readFile(resolve(playbooksDir, 'manifest.md'), 'utf-8');
+    expect(manifest).toContain('gamma.md');
+    expect(manifest).not.toContain('alpha.md');
+    expect(manifest).toContain('beta.md');
+  });
+
+  it('rename-in-place: file foo.md with frontmatter slug "bar" renamed bar -> foo updates frontmatter only', async () => {
+    await writePlaybook('foo', 'Foo', 'bar'); // filename foo.md, canonical slug "bar"
+    expect(await fileExists(resolve(playbooksDir, 'foo.md'))).toBe(true);
+
+    const result = await renamePlaybook(playbooksDir, 'bar', 'foo');
+
+    expect(result.renamedInPlace).toBe(true);
+    // file should still exist (not unlinked then rewritten in a way that destroys it)
+    expect(await fileExists(resolve(playbooksDir, 'foo.md'))).toBe(true);
+    const content = await readFile(resolve(playbooksDir, 'foo.md'), 'utf-8');
+    expect(parsePlaybook(content).slug).toBe('foo');
+  });
+
+  it('rejects filename collision', async () => {
+    await writePlaybook('alpha');
+    await writePlaybook('beta');
+    await expect(renamePlaybook(playbooksDir, 'alpha', 'beta')).rejects.toMatchObject({
+      code: 'collision',
+    });
+    // Neither file moved
+    expect(await fileExists(resolve(playbooksDir, 'alpha.md'))).toBe(true);
+    expect(await fileExists(resolve(playbooksDir, 'beta.md'))).toBe(true);
+  });
+
+  it('rejects canonical-slug collision via a different file', async () => {
+    // file canonical-host.md declares canonical slug "owned" in its frontmatter.
+    await writePlaybook('canonical-host', 'Host', 'owned');
+    await writePlaybook('alpha');
+
+    await expect(renamePlaybook(playbooksDir, 'alpha', 'owned')).rejects.toMatchObject({
+      code: 'collision',
+    });
+    // alpha.md is preserved
+    expect(await fileExists(resolve(playbooksDir, 'alpha.md'))).toBe(true);
+  });
+
+  it('rejects invalid slug', async () => {
+    await writePlaybook('alpha');
+    await expect(renamePlaybook(playbooksDir, 'alpha', 'Not Valid!')).rejects.toMatchObject({
+      code: 'invalid-slug',
+    });
+  });
+
+  it('refuses to rename to "manifest"', async () => {
+    await writePlaybook('alpha');
+    await expect(renamePlaybook(playbooksDir, 'alpha', 'manifest')).rejects.toMatchObject({
+      code: 'manifest',
+    });
+  });
+
+  it('throws not-found for unknown source slug', async () => {
+    await expect(renamePlaybook(playbooksDir, 'ghost', 'phantom')).rejects.toMatchObject({
+      code: 'not-found',
+    });
+  });
+
+  it('migrates the disabled-list entry when renaming a disabled playbook', async () => {
+    await writePlaybook('alpha');
+    await setPlaybookEnabled(playbooksDir, 'alpha', false);
+    expect((await readConfig()).playbooks.disabled).toEqual(['alpha']);
+
+    await renamePlaybook(playbooksDir, 'alpha', 'gamma');
+
+    const cfg = await readConfig();
+    expect(cfg.playbooks.disabled).toEqual(['gamma']);
+  });
+
+  it('PlaybookError carries a stable code discriminator', async () => {
+    await writePlaybook('alpha');
+    try {
+      await renamePlaybook(playbooksDir, 'alpha', 'manifest');
+      expect.fail('expected throw');
+    } catch (err) {
+      expect(err).toBeInstanceOf(PlaybookError);
+      expect((err as PlaybookError).code).toBe('manifest');
+    }
+  });
+});
+
+describe('PATCH /:slug route', () => {
+  async function startServer(): Promise<{ baseUrl: string; close: () => Promise<void> }> {
+    const app = express();
+    app.use(express.json());
+    app.use('/api/playbooks', createPlaybooksRouter(playbooksDir));
+    const server = app.listen(0);
+    await new Promise<void>((res) => server.once('listening', () => res()));
+    const port = (server.address() as AddressInfo).port;
+    return {
+      baseUrl: `http://127.0.0.1:${port}`,
+      close: () => new Promise((res) => server.close(() => res())),
+    };
+  }
+
+  it('renames a playbook and returns the move metadata', async () => {
+    await writePlaybook('alpha');
+    const { baseUrl, close } = await startServer();
+    try {
+      const res = await fetch(`${baseUrl}/api/playbooks/alpha`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ newSlug: 'gamma' }),
+      });
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      expect(body).toMatchObject({ from: 'alpha', to: 'gamma', renamedInPlace: false });
+    } finally {
+      await close();
+    }
+  });
+
+  it('returns 409 on collision', async () => {
+    await writePlaybook('alpha');
+    await writePlaybook('beta');
+    const { baseUrl, close } = await startServer();
+    try {
+      const res = await fetch(`${baseUrl}/api/playbooks/alpha`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ newSlug: 'beta' }),
+      });
+      expect(res.status).toBe(409);
+    } finally {
+      await close();
+    }
+  });
+
+  it('returns 400 on invalid slug, 403 on manifest, 404 on unknown source', async () => {
+    await writePlaybook('alpha');
+    const { baseUrl, close } = await startServer();
+    try {
+      const invalid = await fetch(`${baseUrl}/api/playbooks/alpha`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ newSlug: 'Bad Slug!' }),
+      });
+      expect(invalid.status).toBe(400);
+
+      const manifest = await fetch(`${baseUrl}/api/playbooks/alpha`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ newSlug: 'manifest' }),
+      });
+      expect(manifest.status).toBe(403);
+
+      const unknown = await fetch(`${baseUrl}/api/playbooks/ghost`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ newSlug: 'phantom' }),
+      });
+      expect(unknown.status).toBe(404);
+
+      const missingBody = await fetch(`${baseUrl}/api/playbooks/alpha`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      });
+      expect(missingBody.status).toBe(400);
     } finally {
       await close();
     }

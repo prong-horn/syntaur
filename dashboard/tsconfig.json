@@ -19,8 +19,13 @@
     "baseUrl": ".",
     "paths": {
       "@/*": ["./src/*"],
-      "@shared/hotkeys-catalog": ["../src/utils/hotkeysCatalog.ts"]
+      "@shared/hotkeys-catalog": ["../src/utils/hotkeysCatalog.ts"],
+      "@shared/view-prefs-schema": ["../src/utils/view-prefs-schema.ts"]
     }
   },
-  "include": ["src", "../src/utils/hotkeysCatalog.ts"]
+  "include": [
+    "src",
+    "../src/utils/hotkeysCatalog.ts",
+    "../src/utils/view-prefs-schema.ts"
+  ]
 }

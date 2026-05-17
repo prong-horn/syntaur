@@ -12,6 +12,7 @@ export interface AssignmentParams {
   workspaceGroup?: string | null;
   type?: string;
   includeTodos?: boolean;
+  status?: string;
   acceptanceCriteria?: string[];
 }
 
@@ -57,7 +58,7 @@ slug: ${params.slug}
 title: ${safeTitle}
 ${projectYaml}${workspaceGroupLine}
 ${typeYaml}
-status: pending
+status: ${params.status ?? 'draft'}
 priority: ${params.priority}
 created: "${params.timestamp}"
 updated: "${params.timestamp}"

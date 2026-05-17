@@ -162,6 +162,8 @@ export interface AssignmentDetail {
   enrichedLinks: EnrichedLink[];
   blockedReason: string | null;
   workspace: WorkspaceInfo;
+  /** Project-workspace this assignment belongs to. Sourced from `project.workspace` for project-nested assignments, from `workspaceGroup` for standalone assignments. `null` when neither is set. Distinct from `workspace` above, which is the assignment-workspace block (repo/worktree/branch). */
+  projectWorkspace: string | null;
   externalIds: ExternalIdInfo[];
   tags: string[];
   created: string;
@@ -247,18 +249,6 @@ export interface AttentionItem {
   href: string;
   stale: boolean;
   blockedReason: string | null;
-}
-
-export interface AttentionResponse {
-  generatedAt: string;
-  summary: {
-    total: number;
-    critical: number;
-    high: number;
-    medium: number;
-    low: number;
-  };
-  items: AttentionItem[];
 }
 
 export interface AssignmentsBoardResponse {

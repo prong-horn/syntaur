@@ -13,13 +13,13 @@ import {
   getAssignmentDetail,
   getAssignmentDetailById,
   getOverview,
-  getAttention,
   getHelp,
   getStatusConfig,
   clearStatusConfigCache,
   listWorkspaces,
   createWorkspace,
   deleteWorkspace,
+  WorkspaceBlockedError,
 } from './api.js';
 import { resolveAssignmentById } from '../utils/assignment-resolver.js';
 import { listSessionsByAssignment, reconcileActiveSessions } from './agent-sessions.js';
@@ -41,6 +41,26 @@ import {
   isReservedCombo,
   type BindableActionKind,
 } from '../utils/hotkeysCatalog.js';
+import {
+  isViewMode,
+  isSortField,
+  isSortDirection,
+  isDensity,
+  isGrouping,
+  isActivity,
+  isFilterString,
+  type ViewPrefs,
+  type ProjectViewPrefs,
+  type ViewFilters,
+  type ViewPrefsPatch,
+} from '../utils/view-prefs-schema.js';
+import {
+  readViewPrefsFile,
+  applyViewPrefsPatch,
+  resetViewPrefsFile,
+  isViewPrefsDefaults,
+} from '../utils/view-prefs.js';
+import { withLock } from './todos-locks.js';
 import { createWriteRouter } from './api-write.js';
 import { createServersRouter } from './api-servers.js';
 import { createAgentSessionsRouter } from './api-agent-sessions.js';
@@ -152,16 +172,6 @@ export function createDashboardServer(options: DashboardServerOptions) {
     } catch (error) {
       console.error('Error getting overview:', error);
       res.status(500).json({ error: 'Failed to get overview' });
-    }
-  });
-
-  app.get('/api/attention', async (_req, res) => {
-    try {
-      const attention = await getAttention(projectsDir, serversDir, assignmentsDir);
-      res.json(attention);
-    } catch (error) {
-      console.error('Error getting attention queue:', error);
-      res.status(500).json({ error: 'Failed to get attention queue' });
     }
   });
 
@@ -350,6 +360,179 @@ export function createDashboardServer(options: DashboardServerOptions) {
     }
   });
 
+  const VIEW_PREFS_LOCK = 'vp:global';
+
+  const FILTER_KEYS = new Set(['status', 'priority', 'assignee', 'project', 'activity']);
+  const GLOBAL_KEYS = new Set(['defaultView', 'sortField', 'sortDirection', 'density', 'grouping', 'filters']);
+  const SCOPE_KEYS = new Set(['defaultView', 'sortField', 'sortDirection', 'grouping', 'filters']);
+  const ROOT_KEYS = new Set(['global', 'projects']);
+
+  function unknownKey(obj: Record<string, unknown>, allowed: Set<string>, where: string): string | null {
+    for (const key of Object.keys(obj)) {
+      if (!allowed.has(key)) return `unknown key "${key}" in ${where}`;
+    }
+    return null;
+  }
+
+  function validateFilters(value: unknown): { ok: true; value: ViewFilters } | { ok: false; error: string } {
+    if (value === undefined) return { ok: true, value: {} };
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+      return { ok: false, error: 'filters must be an object' };
+    }
+    const obj = value as Record<string, unknown>;
+    const unknown = unknownKey(obj, FILTER_KEYS, 'filters');
+    if (unknown) return { ok: false, error: unknown };
+    const out: ViewFilters = {};
+    for (const key of ['status', 'priority', 'assignee', 'project']) {
+      if (obj[key] !== undefined) {
+        if (!isFilterString(obj[key])) return { ok: false, error: `filters.${key} must be a non-empty string` };
+        (out as Record<string, string>)[key] = obj[key] as string;
+      }
+    }
+    if (obj.activity !== undefined) {
+      if (!isActivity(obj.activity)) return { ok: false, error: 'filters.activity invalid' };
+      out.activity = obj.activity;
+    }
+    return { ok: true, value: out };
+  }
+
+  function validateGlobalPatch(value: unknown): { ok: true; value: Partial<ViewPrefs> } | { ok: false; error: string } {
+    if (value === undefined) return { ok: true, value: {} };
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+      return { ok: false, error: 'global must be an object' };
+    }
+    const obj = value as Record<string, unknown>;
+    const unknown = unknownKey(obj, GLOBAL_KEYS, 'global');
+    if (unknown) return { ok: false, error: unknown };
+    const out: Partial<ViewPrefs> = {};
+    if (obj.defaultView !== undefined) {
+      if (!isViewMode(obj.defaultView)) return { ok: false, error: 'global.defaultView invalid' };
+      out.defaultView = obj.defaultView;
+    }
+    if (obj.sortField !== undefined) {
+      if (!isSortField(obj.sortField)) return { ok: false, error: 'global.sortField invalid' };
+      out.sortField = obj.sortField;
+    }
+    if (obj.sortDirection !== undefined) {
+      if (!isSortDirection(obj.sortDirection)) return { ok: false, error: 'global.sortDirection invalid' };
+      out.sortDirection = obj.sortDirection;
+    }
+    if (obj.density !== undefined) {
+      if (!isDensity(obj.density)) return { ok: false, error: 'global.density invalid' };
+      out.density = obj.density;
+    }
+    if (obj.grouping !== undefined) {
+      if (!isGrouping(obj.grouping)) return { ok: false, error: 'global.grouping invalid' };
+      out.grouping = obj.grouping;
+    }
+    if (obj.filters !== undefined) {
+      const f = validateFilters(obj.filters);
+      if (!f.ok) return f;
+      out.filters = f.value;
+    }
+    return { ok: true, value: out };
+  }
+
+  function validateScopePatch(value: unknown): { ok: true; value: ProjectViewPrefs } | { ok: false; error: string } {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+      return { ok: false, error: 'project scope must be an object' };
+    }
+    const obj = value as Record<string, unknown>;
+    if (obj.density !== undefined) {
+      return { ok: false, error: 'density cannot be set per-project (global only)' };
+    }
+    const unknown = unknownKey(obj, SCOPE_KEYS, 'project scope');
+    if (unknown) return { ok: false, error: unknown };
+    const out: ProjectViewPrefs = {};
+    if (obj.defaultView !== undefined) {
+      if (!isViewMode(obj.defaultView)) return { ok: false, error: 'defaultView invalid' };
+      out.defaultView = obj.defaultView;
+    }
+    if (obj.sortField !== undefined) {
+      if (!isSortField(obj.sortField)) return { ok: false, error: 'sortField invalid' };
+      out.sortField = obj.sortField;
+    }
+    if (obj.sortDirection !== undefined) {
+      if (!isSortDirection(obj.sortDirection)) return { ok: false, error: 'sortDirection invalid' };
+      out.sortDirection = obj.sortDirection;
+    }
+    if (obj.grouping !== undefined) {
+      if (!isGrouping(obj.grouping)) return { ok: false, error: 'grouping invalid' };
+      out.grouping = obj.grouping;
+    }
+    if (obj.filters !== undefined) {
+      const f = validateFilters(obj.filters);
+      if (!f.ok) return f;
+      out.filters = f.value;
+    }
+    return { ok: true, value: out };
+  }
+
+  function validateViewPrefsPatch(body: unknown): { ok: true; value: ViewPrefsPatch } | { ok: false; error: string } {
+    if (!body || typeof body !== 'object' || Array.isArray(body)) {
+      return { ok: false, error: 'body must be an object with optional `global` and/or `projects` keys' };
+    }
+    const obj = body as Record<string, unknown>;
+    const unknownRoot = unknownKey(obj, ROOT_KEYS, 'request body');
+    if (unknownRoot) return { ok: false, error: unknownRoot };
+    const patch: ViewPrefsPatch = {};
+    const g = validateGlobalPatch(obj.global);
+    if (!g.ok) return g;
+    if (Object.keys(g.value).length > 0) patch.global = g.value;
+    if (obj.projects !== undefined) {
+      if (!obj.projects || typeof obj.projects !== 'object' || Array.isArray(obj.projects)) {
+        return { ok: false, error: 'projects must be an object keyed by scope' };
+      }
+      const projectsOut: Record<string, ProjectViewPrefs> = {};
+      for (const [scope, scopePatch] of Object.entries(obj.projects as Record<string, unknown>)) {
+        if (typeof scope !== 'string' || scope.length === 0) {
+          return { ok: false, error: 'project scope keys must be non-empty strings' };
+        }
+        const sp = validateScopePatch(scopePatch);
+        if (!sp.ok) return { ok: false, error: `projects["${scope}"]: ${sp.error}` };
+        projectsOut[scope] = sp.value;
+      }
+      if (Object.keys(projectsOut).length > 0) patch.projects = projectsOut;
+    }
+    return { ok: true, value: patch };
+  }
+
+  app.get('/api/view-prefs', async (_req, res) => {
+    try {
+      const file = await readViewPrefsFile();
+      res.json({ ...file, custom: !isViewPrefsDefaults(file) });
+    } catch (error) {
+      console.error('Error reading view-prefs:', error);
+      res.status(500).json({ error: 'Failed to read view-prefs' });
+    }
+  });
+
+  app.post('/api/view-prefs', async (req, res) => {
+    const result = validateViewPrefsPatch(req.body);
+    if (!result.ok) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+    try {
+      const file = await withLock(VIEW_PREFS_LOCK, () => applyViewPrefsPatch(result.value));
+      res.json({ ...file, custom: !isViewPrefsDefaults(file) });
+    } catch (error) {
+      console.error('Error saving view-prefs:', error);
+      res.status(500).json({ error: 'Failed to save view-prefs' });
+    }
+  });
+
+  app.delete('/api/view-prefs', async (_req, res) => {
+    try {
+      await withLock(VIEW_PREFS_LOCK, () => resetViewPrefsFile());
+      const file = await readViewPrefsFile();
+      res.json({ ...file, custom: false });
+    } catch (error) {
+      console.error('Error resetting view-prefs:', error);
+      res.status(500).json({ error: 'Failed to reset view-prefs' });
+    }
+  });
+
   app.get('/api/projects', async (req, res) => {
     try {
       let projects = await listProjects(projectsDir);
@@ -396,10 +579,23 @@ export function createDashboardServer(options: DashboardServerOptions) {
 
   app.delete('/api/workspaces/:name', async (req, res) => {
     try {
-      await deleteWorkspace(projectsDir, req.params.name);
-      broadcast({ type: 'project-updated', projectSlug: '', timestamp: new Date().toISOString() });
-      res.json({ ok: true });
+      const cascade = req.query.cascade === 'true';
+      const result = await deleteWorkspace(projectsDir, req.params.name, {
+        cascade,
+        assignmentsDir,
+      });
+      // Watchers emit project-updated / assignment-updated for any rewritten
+      // file; only broadcast explicitly when the delete touched solely the
+      // registry (which sits outside any watched tree).
+      if (!result.rewroteFiles) {
+        broadcast({ type: 'project-updated', projectSlug: '', timestamp: new Date().toISOString() });
+      }
+      res.json({ ok: true, rewroteFiles: result.rewroteFiles });
     } catch (error) {
+      if (error instanceof WorkspaceBlockedError) {
+        res.status(409).json({ error: error.message, blockedBy: error.blockedBy });
+        return;
+      }
       console.error('Error deleting workspace:', error);
       res.status(500).json({ error: 'Failed to delete workspace' });
     }

@@ -170,6 +170,8 @@ export interface AssignmentDetail {
   enrichedLinks: EnrichedLink[];
   blockedReason: string | null;
   workspace: WorkspaceInfo;
+  /** Project-workspace this assignment belongs to. Distinct from `workspace` above, which is the assignment-workspace block. */
+  projectWorkspace: string | null;
   externalIds: ExternalIdInfo[];
   tags: string[];
   created: string;
@@ -233,18 +235,6 @@ export interface AttentionItem {
   href: string;
   stale: boolean;
   blockedReason: string | null;
-}
-
-export interface AttentionResponse {
-  generatedAt: string;
-  summary: {
-    total: number;
-    critical: number;
-    high: number;
-    medium: number;
-    low: number;
-  };
-  items: AttentionItem[];
 }
 
 export interface AssignmentsBoardResponse {
@@ -367,7 +357,7 @@ interface FetchState<T> {
   refetch: () => void;
 }
 
-function useFetch<T>(url: string | null, websocketScope?: 'projects' | 'project' | 'assignment' | 'assignments' | 'overview' | 'attention' | 'servers' | 'agent-sessions' | 'playbooks' | 'inventories'): FetchState<T> {
+function useFetch<T>(url: string | null, websocketScope?: 'projects' | 'project' | 'assignment' | 'assignments' | 'overview' | 'servers' | 'agent-sessions' | 'playbooks' | 'inventories'): FetchState<T> {
   const [data, setData] = useState<T | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -463,10 +453,6 @@ export function useOverview(): FetchState<OverviewResponse> {
 
 export function useAssignmentsBoard(): FetchState<AssignmentsBoardResponse> {
   return useFetch<AssignmentsBoardResponse>('/api/assignments', 'assignments');
-}
-
-export function useAttention(): FetchState<AttentionResponse> {
-  return useFetch<AttentionResponse>('/api/attention', 'attention');
 }
 
 export function useHelp(): FetchState<HelpResponse> {
