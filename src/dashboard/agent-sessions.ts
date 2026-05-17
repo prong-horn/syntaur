@@ -126,6 +126,18 @@ export async function listAllSessions(_projectsDir: string): Promise<AgentSessio
 }
 
 /**
+ * Fetch a single session by its agent-assigned session id.
+ * Returns null when no row matches. Throws if initSessionDb() has not run.
+ */
+export function getSessionById(sessionId: string): AgentSession | null {
+  const db = getSessionDb();
+  const row = db
+    .prepare('SELECT * FROM sessions WHERE session_id = ? LIMIT 1')
+    .get(sessionId) as SessionRow | undefined;
+  return row ? rowToSession(row) : null;
+}
+
+/**
  * List sessions for a specific project, optionally filtered by assignment.
  */
 export async function listProjectSessions(

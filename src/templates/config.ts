@@ -16,6 +16,7 @@ backup:
   categories: projects, playbooks, todos, servers, config
   lastBackup: null
   lastRestore: null
+terminal: terminal-app
 ---
 
 # Syntaur Configuration

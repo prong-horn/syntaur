@@ -13,6 +13,7 @@ import { EmptyState } from '../components/EmptyState';
 import { CommentsThread } from '../components/CommentsThread';
 import { MoveToWorkspaceDialog } from '../components/MoveToWorkspaceDialog';
 import { AgentSessionsSection } from '../components/AgentSessionsSection';
+import { OpenInAgentButton } from '../components/OpenInAgentButton';
 
 /**
  * Read-and-edit view for standalone assignments (those at
@@ -38,6 +39,11 @@ export function StandaloneAssignmentDetail() {
           <span className="text-xs font-mono text-muted-foreground">{assignment.id}</span>
           <ExternalIdBadges externalIds={assignment.externalIds} />
           <div className="ml-auto flex items-center gap-2">
+            <OpenInAgentButton
+              target={{ kind: 'assignment', id: assignment.id }}
+              worktreePath={assignment.workspace?.worktreePath ?? null}
+              size="compact"
+            />
             <button
               type="button"
               onClick={() => setMoveOpen(true)}

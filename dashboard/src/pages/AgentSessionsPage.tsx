@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { Activity, CheckSquare, Square, Trash2 } from 'lucide-react';
+import { Activity, CheckSquare, Square, Terminal, Trash2 } from 'lucide-react';
 import { CopyButton } from '../components/CopyButton';
 import { useAgentSessions, useProjects, useWorkspacePrefix } from '../hooks/useProjects';
 import { LoadingState } from '../components/LoadingState';
@@ -432,13 +432,22 @@ function SessionRow({
         )}
       </td>
       <td className="py-2">
-        <button
-          onClick={onDelete}
-          className="text-muted-foreground hover:text-destructive"
-          title="Delete session"
-        >
-          <Trash2 className="h-3.5 w-3.5" />
-        </button>
+        <div className="flex items-center gap-1.5">
+          <a
+            href={`syntaur://open?session=${encodeURIComponent(session.sessionId)}`}
+            className="text-muted-foreground hover:text-primary"
+            title={`Resume this session in ${session.agent}`}
+          >
+            <Terminal className="h-3.5 w-3.5" />
+          </a>
+          <button
+            onClick={onDelete}
+            className="text-muted-foreground hover:text-destructive"
+            title="Delete session"
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+          </button>
+        </div>
       </td>
     </tr>
   );
