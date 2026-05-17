@@ -3,6 +3,9 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { isAbsolute, resolve } from 'node:path';
 import { getAssignmentDetail } from '../dashboard/api.js';
 import type { AgentConfig } from '../utils/config.js';
+import type { BuiltArgv } from '../launch/types.js';
+
+export type { ResolvedArgv, BuiltArgv } from '../launch/types.js';
 
 export interface LaunchOptions {
   projectsDir: string;
@@ -49,11 +52,6 @@ export function shellQuote(arg: string): string {
   return `'${arg.replace(/'/g, `'\\''`)}'`;
 }
 
-interface ResolvedArgv {
-  command: string;
-  args: string[];
-}
-
 /**
  * Build argv for an agent launch. Handles:
  * - `resolveFromShellAliases: true` → `$SHELL -i -c '<quoted...>'`
@@ -64,7 +62,7 @@ export function buildAgentArgv(
   agent: AgentConfig,
   prompt: string,
   env: NodeJS.ProcessEnv = process.env,
-): { argv: ResolvedArgv; shellFallbackWarning: string | null } {
+): BuiltArgv {
   const position = agent.promptArgPosition ?? 'first';
   const baseArgs = [...(agent.args ?? [])];
   const agentArgs =

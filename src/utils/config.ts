@@ -103,6 +103,23 @@ export interface HotkeyBindingsConfig {
   bindings: Partial<Record<BindableActionKind, string>>;
 }
 
+export type TerminalChoice =
+  | 'terminal-app'
+  | 'iterm'
+  | 'ghostty'
+  | 'alacritty'
+  | 'warp'
+  | 'kitty';
+
+export const TERMINAL_CHOICES: readonly TerminalChoice[] = [
+  'terminal-app',
+  'iterm',
+  'ghostty',
+  'alacritty',
+  'warp',
+  'kitty',
+];
+
 export interface SyntaurConfig {
   version: string;
   defaultProjectDir: string;
@@ -120,6 +137,7 @@ export interface SyntaurConfig {
   playbooks: PlaybooksConfig;
   theme: ThemeConfig | null;
   hotkeys: HotkeyBindingsConfig | null;
+  terminal: TerminalChoice | null;
 }
 
 const DEFAULT_CONFIG: SyntaurConfig = {
@@ -147,6 +165,7 @@ const DEFAULT_CONFIG: SyntaurConfig = {
   },
   theme: null,
   hotkeys: null,
+  terminal: null,
 };
 
 export const BUILTIN_AGENTS: AgentConfig[] = [
@@ -251,6 +270,7 @@ function cloneDefaultConfig(): SyntaurConfig {
     hotkeys: DEFAULT_CONFIG.hotkeys
       ? { bindings: { ...DEFAULT_CONFIG.hotkeys.bindings } }
       : null,
+    terminal: DEFAULT_CONFIG.terminal,
   };
 }
 
@@ -1279,6 +1299,15 @@ export async function readConfig(): Promise<SyntaurConfig> {
     playbooks: parsePlaybooksConfig(fmBlock),
     theme: parseThemeConfig(content),
     hotkeys: parseHotkeyBindingsConfig(content),
+    terminal: (() => {
+      try {
+        return parseTerminalConfig(fm['terminal']);
+      } catch (err) {
+        const msg = err instanceof TerminalConfigError ? err.message : String(err);
+        console.warn(`Warning: ${msg} — falling back to default`);
+        return null;
+      }
+    })(),
   };
 }
 
@@ -1288,6 +1317,39 @@ export function getAssignmentTypes(config: SyntaurConfig): TypesConfig {
 
 export function getAgents(config: SyntaurConfig): AgentConfig[] {
   return config.agents ?? BUILTIN_AGENTS;
+}
+
+export class TerminalConfigError extends Error {}
+
+/**
+ * Parse the `terminal:` scalar from raw frontmatter values.
+ * Returns null when the key is absent (caller falls back to platform default).
+ * Throws TerminalConfigError when the value is not a known choice.
+ */
+export function parseTerminalConfig(value: unknown): TerminalChoice | null {
+  if (value === undefined || value === null || value === '') return null;
+  if (typeof value !== 'string') {
+    throw new TerminalConfigError(
+      `terminal must be a string — got ${typeof value}`,
+    );
+  }
+  const trimmed = value.trim();
+  if (trimmed === '') return null;
+  if (!TERMINAL_CHOICES.includes(trimmed as TerminalChoice)) {
+    throw new TerminalConfigError(
+      `terminal "${trimmed}" is not a known choice — expected one of ${TERMINAL_CHOICES.join('|')}`,
+    );
+  }
+  return trimmed as TerminalChoice;
+}
+
+/**
+ * Return the configured terminal, or the platform default when unset.
+ * Darwin → terminal-app; other platforms have no sensible auto-default and
+ * return terminal-app as a stable fallback (doctor will warn separately).
+ */
+export function getTerminal(config: SyntaurConfig): TerminalChoice {
+  return config.terminal ?? 'terminal-app';
 }
 
 export interface AgentsMutation {

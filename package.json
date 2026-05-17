@@ -23,6 +23,17 @@
     "syntaur": "./bin/syntaur.js"
   },
   "main": "./dist/index.js",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./launch": {
+      "types": "./dist/launch/index.d.ts",
+      "import": "./dist/launch/index.js"
+    },
+    "./dist/dashboard/server.js": "./dist/dashboard/server.js"
+  },
   "files": [
     "dist",
     "bin",
@@ -32,7 +43,8 @@
     ".claude-plugin",
     "examples",
     "dashboard/dist",
-    "statusline"
+    "statusline",
+    "scripts/install-macos-url-handler.mjs"
   ],
   "scripts": {
     "build": "tsup",
@@ -44,6 +56,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "mirror-skills": "node scripts/mirror-skills-to-platforms.mjs",
+    "postinstall": "node scripts/install-macos-url-handler.mjs",
     "prepack": "node scripts/mirror-skills-to-platforms.mjs",
     "prepublishOnly": "npm run build && npm ci --prefix dashboard && npm run build --prefix dashboard",
     "try": "node scripts/try.mjs",

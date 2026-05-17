@@ -24,6 +24,7 @@ import { setupCommand } from './commands/setup.js';
 import { uninstallCommand } from './commands/uninstall.js';
 import { setupAdapterCommand } from './commands/setup-adapter.js';
 import { trackSessionCommand } from './commands/track-session.js';
+import { urlCommand, formatUrlCommandError } from './commands/url.js';
 import { browseCommand } from './commands/browse.js';
 import { createPlaybookCommand } from './commands/create-playbook.js';
 import { listPlaybooksCommand } from './commands/list-playbooks.js';
@@ -659,6 +660,20 @@ program
         'Error:',
         error instanceof Error ? error.message : String(error),
       );
+      process.exit(1);
+    }
+  });
+
+program
+  .command('url <url>')
+  .description(
+    'Open an assignment or session in the configured terminal + agent (handles syntaur:// deep links)',
+  )
+  .action(async (url: string) => {
+    try {
+      await urlCommand(url);
+    } catch (error) {
+      console.error(formatUrlCommandError(error));
       process.exit(1);
     }
   });
