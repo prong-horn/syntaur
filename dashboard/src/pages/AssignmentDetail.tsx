@@ -25,6 +25,7 @@ import { EmptyState } from '../components/EmptyState';
 import { AssignmentTransitionDialog } from '../components/AssignmentTransitionDialog';
 import { ConfirmDialog } from '../components/ConfirmDialog';
 import { OverflowMenu, type OverflowMenuItem } from '../components/OverflowMenu';
+import { OpenInAgentButton } from '../components/OpenInAgentButton';
 import {
   deleteAssignment,
   runAssignmentTransition,
@@ -371,6 +372,10 @@ export function AssignmentDetail() {
           )}
           <ExternalIdBadges externalIds={assignment.externalIds} />
           <span className="ml-auto flex items-center gap-2">
+            <OpenInAgentButton
+              target={{ kind: 'assignment', id: assignment.id }}
+              worktreePath={assignment.workspace?.worktreePath ?? null}
+            />
             {primaryTransition && (
               <button
                 key={primaryIsReview ? `review-${reviewGlowKey}` : primaryTransition.command}
