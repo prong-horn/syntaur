@@ -20,6 +20,7 @@ import { invalidateStatusConfigCache } from '../hooks/useStatusConfig';
 import { PRESETS, type ThemeSlug } from '../themes';
 import { useTheme } from '../theme';
 import { HotkeyBindingsSection } from './HotkeyBindingsSection';
+import { ViewDefaultsSection } from './ViewDefaultsSection';
 
 interface EditableStatus {
   id: string;
@@ -306,6 +307,8 @@ export function SettingsPage() {
       </SectionCard>
 
       <HotkeyBindingsSection />
+
+      <ViewDefaultsSection />
 
       {/* Config state banner */}
       <div className={`flex items-center justify-between rounded-lg border px-4 py-3 text-sm ${

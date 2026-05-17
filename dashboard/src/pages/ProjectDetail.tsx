@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { BookOpenText, GitBranch, Plus, SquarePen } from 'lucide-react';
 import { CopyButton } from '../components/CopyButton';
@@ -19,6 +19,8 @@ import { MarkdownRenderer } from '../components/MarkdownRenderer';
 import { ProjectTodosPanel } from '../components/ProjectTodosPanel';
 import { useStatusConfig } from '../hooks/useStatusConfig';
 import { useHotkey, useHotkeyScope } from '../hotkeys';
+import { coerceProjectDetailView } from '@shared/view-prefs-schema';
+import { saveScopeViewPrefs, useViewPrefs } from '../hooks/useViewPrefs';
 
 const VALID_TABS = new Set(['overview', 'assignments', 'todos', 'dependencies', 'knowledge']);
 
@@ -59,10 +61,51 @@ export function ProjectDetail() {
       { replace: true },
     );
   }
-  const [assignmentView, setAssignmentView] = useState<'board' | 'table'>('board');
-  const [statusFilter, setStatusFilter] = useState('all');
-  const [assigneeFilter, setAssigneeFilter] = useState('all');
-  const [priorityFilter, setPriorityFilter] = useState('all');
+  const prefs = useViewPrefs(slug ?? null);
+  const bootstrapDoneRef = useRef(false);
+  const persistedSerializedRef = useRef<string | null>(null);
+
+  const [assignmentView, setAssignmentView] = useState<'kanban' | 'table'>(
+    () => coerceProjectDetailView(prefs.defaultView),
+  );
+  const [statusFilter, setStatusFilter] = useState<string>(() => prefs.filters.status ?? 'all');
+  const [assigneeFilter, setAssigneeFilter] = useState<string>(() => prefs.filters.assignee ?? 'all');
+  const [priorityFilter, setPriorityFilter] = useState<string>(() => prefs.filters.priority ?? 'all');
+
+  // Re-hydrate when react-router reuses this component across project switches
+  // (the doc comment above on lines 45-47 calls this out for the tab param).
+  useEffect(() => {
+    setAssignmentView(coerceProjectDetailView(prefs.defaultView));
+    setStatusFilter(prefs.filters.status ?? 'all');
+    setAssigneeFilter(prefs.filters.assignee ?? 'all');
+    setPriorityFilter(prefs.filters.priority ?? 'all');
+    bootstrapDoneRef.current = false;
+    persistedSerializedRef.current = null;
+    // Set bootstrap done on the next tick so the persist effect doesn't fire
+    // from the hydration setters above.
+    queueMicrotask(() => {
+      bootstrapDoneRef.current = true;
+    });
+  }, [slug, prefs.defaultView, prefs.filters.status, prefs.filters.assignee, prefs.filters.priority]);
+
+  // Persist any change back to projects[slug].
+  useEffect(() => {
+    if (!bootstrapDoneRef.current || !slug) return;
+    const payload = {
+      defaultView: assignmentView,
+      filters: {
+        status: statusFilter,
+        assignee: assigneeFilter,
+        priority: priorityFilter,
+      },
+    };
+    const serialized = JSON.stringify(payload);
+    if (persistedSerializedRef.current === serialized) return;
+    persistedSerializedRef.current = serialized;
+    saveScopeViewPrefs(slug, payload).catch((err) => {
+      console.warn('Failed to persist project view prefs:', err);
+    });
+  }, [assignmentView, statusFilter, assigneeFilter, priorityFilter, slug]);
 
   const dependencyRoutes = useMemo(
     () => project ? Object.fromEntries(
@@ -120,7 +163,7 @@ export function ProjectDetail() {
   });
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-5" data-density={prefs.density}>
       <div className="flex flex-wrap items-center gap-3">
         <StatusBadge status={project.status} />
         {project.statusOverride && (
@@ -240,9 +283,9 @@ export function ProjectDetail() {
                           </select>
                           <ViewToggle
                             value={assignmentView}
-                            onChange={(value) => setAssignmentView(value as 'board' | 'table')}
+                            onChange={(value) => setAssignmentView(value as 'kanban' | 'table')}
                             options={[
-                              { value: 'board', label: 'Board' },
+                              { value: 'kanban', label: 'Kanban' },
                               { value: 'table', label: 'Table' },
                             ]}
                           />
@@ -259,7 +302,7 @@ export function ProjectDetail() {
                             </Link>
                           }
                         />
-                      ) : assignmentView === 'board' ? (
+                      ) : assignmentView === 'kanban' ? (
                         <div className="grid gap-3 lg:grid-cols-2">
                           {filteredAssignments.map((assignment) => (
                             <AssignmentCard key={assignment.slug} projectSlug={project.slug} assignment={assignment} />

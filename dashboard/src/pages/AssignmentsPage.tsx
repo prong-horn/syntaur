@@ -29,13 +29,17 @@ import { StatusBadge, STATUS_META, getStatusDescription } from '../components/St
 import { transitionNeedsReason } from '../lib/assignments';
 import { useStatusConfig, getStatusLabel } from '../hooks/useStatusConfig';
 import { useHotkey, useHotkeyScope, useListSelection } from '../hotkeys';
+import {
+  VIEW_MODES,
+  type ViewMode,
+  type SortField,
+  type SortDirection,
+  type Activity as ActivityFilter,
+  type ProjectViewPrefs,
+} from '@shared/view-prefs-schema';
+import { saveGlobalViewPrefs, saveScopeViewPrefs, useViewPrefs } from '../hooks/useViewPrefs';
 
-type ViewMode = 'table' | 'list' | 'kanban';
-const VALID_VIEWS: ViewMode[] = ['table', 'list', 'kanban'];
-type ActivityFilter = 'all' | 'stale' | 'fresh';
-
-type SortField = 'title' | 'status' | 'priority' | 'assignee' | 'dependencies' | 'updated';
-type SortDirection = 'asc' | 'desc';
+const VALID_VIEWS: readonly ViewMode[] = VIEW_MODES;
 
 interface PendingAssignmentMove {
   item: AssignmentBoardItem;
@@ -112,6 +116,10 @@ export function AssignmentsPage() {
   const statusConfig = useStatusConfig();
   const [searchParams, setSearchParams] = useSearchParams();
 
+  const scope: string | null = workspace ?? null;
+  const prefs = useViewPrefs(scope);
+  const bootstrapDoneRef = useRef(false);
+
   const COLUMNS = useMemo(() => getAssignmentColumns(statusConfig.order), [statusConfig]);
   const COLUMN_LABELS = useMemo(() => {
     const labels: Record<string, string> = {};
@@ -159,14 +167,14 @@ export function AssignmentsPage() {
   const [statusFilter, setStatusFilter] = useState<string>(
     () => normalizeStatusFilter(statusParam),
   );
-  const [priorityFilter, setPriorityFilter] = useState('all');
-  const [assigneeFilter, setAssigneeFilter] = useState('all');
-  const [projectFilter, setProjectFilter] = useState('all');
+  const [priorityFilter, setPriorityFilter] = useState<string>(() => prefs.filters.priority ?? 'all');
+  const [assigneeFilter, setAssigneeFilter] = useState<string>(() => prefs.filters.assignee ?? 'all');
+  const [projectFilter, setProjectFilter] = useState<string>(() => prefs.filters.project ?? 'all');
   const [activityFilter, setActivityFilter] = useState<ActivityFilter>(
     () => normalizeActivityFilter(staleParam),
   );
-  const [sortField, setSortField] = useState<SortField>('updated');
-  const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
+  const [sortField, setSortField] = useState<SortField>(() => prefs.sortField);
+  const [sortDirection, setSortDirection] = useState<SortDirection>(() => prefs.sortDirection);
   const [expandedStatuses, setExpandedStatuses] = useState<Set<string>>(
     () => new Set(COLUMNS),
   );
@@ -201,6 +209,7 @@ export function AssignmentsPage() {
   }, [activityFilter, staleParam, statusFilter, statusParam]);
 
   useEffect(() => {
+    if (!bootstrapDoneRef.current) return;
     setSearchParams((prev) => {
       const next = new URLSearchParams(prev);
 
@@ -221,6 +230,83 @@ export function AssignmentsPage() {
       return areSearchParamsEqual(prev, next) ? prev : next;
     });
   }, [activityFilter, setSearchParams, statusFilter]);
+
+  // Bootstrap: hydrate non-URL fields + seed URL-tracked fields from prefs.
+  // Runs once after prefs are first available. Both the state->URL effect above
+  // and the persist effect below are gated on bootstrapDoneRef so neither
+  // fires during this pass.
+  useEffect(() => {
+    if (bootstrapDoneRef.current) return;
+    // Hydrate non-URL-tracked fields directly from prefs.
+    setPriorityFilter(prefs.filters.priority ?? 'all');
+    setAssigneeFilter(prefs.filters.assignee ?? 'all');
+    setProjectFilter(prefs.filters.project ?? 'all');
+    setSortField(prefs.sortField);
+    setSortDirection(prefs.sortDirection);
+    // Seed URL-tracked fields when the URL param is absent.
+    const wantView: ViewMode = prefs.defaultView;
+    const wantStatus = prefs.filters.status ?? 'all';
+    const wantActivity = prefs.filters.activity ?? 'all';
+    let needsUrlWrite = false;
+    const nextParams = new URLSearchParams(searchParams);
+    if (searchParams.get('view') === null && wantView !== 'kanban' && VALID_VIEWS.includes(wantView)) {
+      nextParams.set('view', wantView);
+      needsUrlWrite = true;
+    }
+    if (searchParams.get('status') === null && wantStatus !== 'all' && VALID_STATUS_SET.has(wantStatus)) {
+      nextParams.set('status', wantStatus);
+      setStatusFilter(wantStatus);
+      needsUrlWrite = true;
+    }
+    if (searchParams.get('stale') === null && wantActivity !== 'all') {
+      nextParams.set('stale', wantActivity === 'stale' ? '1' : '0');
+      setActivityFilter(wantActivity);
+      needsUrlWrite = true;
+    }
+    if (needsUrlWrite) {
+      setSearchParams(nextParams, { replace: true });
+    }
+    bootstrapDoneRef.current = true;
+  }, [prefs, searchParams, setSearchParams, VALID_STATUS_SET]);
+
+  // Persist any change to a tracked field back to the server.
+  // Gated on bootstrapDoneRef so the bootstrap pass itself doesn't trigger
+  // a save loop. Sends a snapshot patch; server deep-merges so siblings stay.
+  const persistedSerializedRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!bootstrapDoneRef.current) return;
+    const payload: ProjectViewPrefs = {
+      defaultView: view,
+      sortField,
+      sortDirection,
+      filters: {
+        status: statusFilter,
+        priority: priorityFilter,
+        assignee: assigneeFilter,
+        project: projectFilter,
+        activity: activityFilter,
+      },
+    };
+    const serialized = JSON.stringify(payload);
+    if (persistedSerializedRef.current === serialized) return;
+    persistedSerializedRef.current = serialized;
+    const save = scope === null
+      ? saveGlobalViewPrefs(payload)
+      : saveScopeViewPrefs(scope, payload);
+    save.catch((err) => {
+      console.warn('Failed to persist view prefs:', err);
+    });
+  }, [
+    activityFilter,
+    assigneeFilter,
+    priorityFilter,
+    projectFilter,
+    scope,
+    sortDirection,
+    sortField,
+    statusFilter,
+    view,
+  ]);
 
   const uniqueStatuses = useMemo(
     () => Array.from(new Set(boardItems.map((a) => a.status))).sort(),
@@ -518,7 +604,7 @@ export function AssignmentsPage() {
   }
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-5" data-density={prefs.density}>
       <div className="flex items-center justify-end">
         <Link
           to={`${wsPrefix}/assignments/new`}
@@ -963,7 +1049,7 @@ function AssignmentBoardCard({
 }) {
   const wsPrefix = useWorkspacePrefix();
   return (
-    <div className="rounded-lg border border-border/60 bg-background/85 p-3 shadow-sm">
+    <div className="vp-card rounded-lg border border-border/60 bg-background/85 p-3 shadow-sm">
       <div className="flex items-start justify-between gap-3">
         <div className="space-y-1">
           <Link

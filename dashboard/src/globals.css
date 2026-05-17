@@ -505,4 +505,15 @@
       animation: none;
     }
   }
+
+  /* View density — applied to page roots via data-density={prefs.density}.
+     `comfortable` is the default; `compact` tightens vp-card padding (used
+     on assignment cards) and table-row padding. Behavior only; full design
+     polish lives in follow-up work. */
+  [data-density='compact'] .vp-card {
+    @apply p-2;
+  }
+  [data-density='compact'] tbody tr td {
+    @apply py-1;
+  }
 }
