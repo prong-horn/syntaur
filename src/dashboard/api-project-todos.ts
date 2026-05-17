@@ -16,6 +16,10 @@ import { isValidSlug } from '../utils/slug.js';
 import { projLock, wsLock, withTwoLocks } from './todos-locks.js';
 import type { TodoItem, LogEntry } from '../todos/types.js';
 import type { WsMessage } from './types.js';
+import {
+  promoteTodosToNewAssignment,
+  parsePromoteTarget,
+} from '../utils/promote-todos.js';
 
 const WORKSPACE_REGEX = /^[a-z0-9_][a-z0-9-]*$/;
 
@@ -149,6 +153,8 @@ export function createProjectTodosRouter(
           createdAt: now,
           updatedAt: now,
           planDir: null,
+          linkedAssignmentId: null,
+          linkedAssignmentRef: null,
         };
         checklist.workspace = slug;
         checklist.items.push(newItem);
@@ -595,6 +601,33 @@ export function createProjectTodosRouter(
         }
 
         const scopeLabel = `project:${slug}`;
+
+        if (mode === 'new-assignment') {
+          if (items.length > 1 && !title) return { error: 'title is required when promoting multiple todos' };
+          // Project endpoint default: target.project = current project slug
+          const rawTarget = target && typeof target === 'object' && (target.project || target.oneOff)
+            ? target
+            : { project: slug };
+          const parsed = parsePromoteTarget(rawTarget);
+          if (!parsed.ok) return { error: parsed.error };
+          const promoted = await promoteTodosToNewAssignment(
+            [{ todosDir, workspace: slug, items, scopeLabel }],
+            {
+              title: title || items[0].description,
+              target: parsed.target,
+              type,
+              priority,
+              keepSource,
+            },
+          );
+          return {
+            assignmentRef: promoted.assignmentRef,
+            assignmentDir: promoted.assignmentDir,
+            promoted: promoted.promoted.map((p) => p.id),
+          };
+        }
+
+        // to-assignment mode (unchanged)
         const { assignmentsDir: assignmentsDirFn } = await import('../utils/paths.js');
         const { appendTodosToAssignmentBody, touchAssignmentUpdated } = await import(
           '../utils/assignment-todos.js'
@@ -604,39 +637,22 @@ export function createProjectTodosRouter(
         let assignmentRef: string;
         let assignmentDir: string;
 
-        if (mode === 'new-assignment') {
-          const targetProject: string | undefined = target?.project ?? slug;
-          if (!targetProject) return { error: 'target.project is required for new-assignment mode' };
-          if (items.length > 1 && !title) return { error: 'title is required when promoting multiple todos' };
-          const { createAssignmentCommand } = await import('../commands/create-assignment.js');
-          const created = await createAssignmentCommand(title || items[0].description, {
-            project: targetProject,
-            type,
-            priority,
-            withTodos: true,
-            silent: true,
-          });
-          assignmentDir = created.assignmentDir;
-          assignmentRef = `${created.projectSlug}/${created.slug}`;
+        const tg: string = target?.assignment || '';
+        if (!tg) return { error: 'target.assignment is required for to-assignment mode' };
+        if (tg.includes('/')) {
+          const parts = tg.split('/');
+          if (parts.length !== 2) return { error: `Invalid target.assignment "${tg}"` };
+          assignmentDir = resolve(projectsDir, parts[0], 'assignments', parts[1]);
+          assignmentRef = `${parts[0]}/${parts[1]}`;
+        } else if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(tg)) {
+          assignmentDir = resolve(assignmentsDirFn(), tg);
+          assignmentRef = tg;
         } else {
-          const tg: string = target?.assignment || '';
-          if (!tg) return { error: 'target.assignment is required for to-assignment mode' };
-          if (tg.includes('/')) {
-            const parts = tg.split('/');
-            if (parts.length !== 2) return { error: `Invalid target.assignment "${tg}"` };
-            assignmentDir = resolve(projectsDir, parts[0], 'assignments', parts[1]);
-            assignmentRef = `${parts[0]}/${parts[1]}`;
-          } else if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(tg)) {
-            assignmentDir = resolve(assignmentsDirFn(), tg);
-            assignmentRef = tg;
-          } else {
-            return { error: `Invalid target.assignment "${tg}"` };
-          }
-          const assignmentMdPath = resolve(assignmentDir, 'assignment.md');
-          if (!(await fileExists(assignmentMdPath))) return { error: `Target assignment not found: ${assignmentMdPath}` };
+          return { error: `Invalid target.assignment "${tg}"` };
         }
-
         const assignmentMdPath = resolve(assignmentDir, 'assignment.md');
+        if (!(await fileExists(assignmentMdPath))) return { error: `Target assignment not found: ${assignmentMdPath}` };
+
         let content = await readFile(assignmentMdPath, 'utf-8');
         content = appendTodosToAssignmentBody(
           content,

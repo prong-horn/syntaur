@@ -1,17 +1,51 @@
 import { useState, useMemo, useEffect, useRef } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
-import { CheckSquare, Plus, Search, AlertTriangle, Loader2, Copy, Check } from 'lucide-react';
-import { useAllTodos, addTodo, completeTodo, startTodo, blockTodo, reopenTodo, deleteTodo } from '../hooks/useTodos';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import {
+  CheckSquare,
+  Plus,
+  Search,
+  AlertTriangle,
+  Loader2,
+  Copy,
+  Check,
+  ArrowRight,
+} from 'lucide-react';
+import {
+  useAllTodos,
+  addTodo,
+  completeTodo,
+  startTodo,
+  blockTodo,
+  reopenTodo,
+  deleteTodo,
+  type PromoteResult,
+  type BulkPromoteResult,
+} from '../hooks/useTodos';
 import { LoadingState } from '../components/LoadingState';
 import { ErrorState } from '../components/ErrorState';
 import { EmptyState } from '../components/EmptyState';
 import { StatCard } from '../components/StatCard';
 import { StatusMenu } from '../components/StatusMenu';
+import { TodoPromoteModal, type PromoteScope } from '../components/TodoPromoteModal';
 import type { TodoItem } from '../types';
+import type { ProjectSummary } from '../hooks/useProjects';
 import { useHotkey, useHotkeyScope, useListSelection } from '../hotkeys';
+
+type AggregatedTodo = TodoItem & { workspace: string };
+type SelKey = string; // `${workspace}::${id}`
+const keyOf = (it: { workspace: string; id: string }): SelKey => `${it.workspace}::${it.id}`;
+
+function navigateRefTo(ref: string): string {
+  if (ref.includes('/')) {
+    const [p, s] = ref.split('/');
+    return `/projects/${p}/assignments/${s}`;
+  }
+  return `/assignments/${ref}`;
+}
 
 export function TodosPage() {
   const { data, loading, error, refetch } = useAllTodos();
+  const navigate = useNavigate();
   const [search, setSearch] = useState('');
   const searchRef = useRef<HTMLInputElement>(null);
   useHotkeyScope('list:todos');
@@ -21,6 +55,28 @@ export function TodosPage() {
   const [newTodoWorkspace, setNewTodoWorkspace] = useState('_global');
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
+  const [selectedKeys, setSelectedKeys] = useState<Set<SelKey>>(new Set());
+  const [promoteOpen, setPromoteOpen] = useState(false);
+  const lastSelectedIndexRef = useRef<number | null>(null);
+
+  const [projects, setProjects] = useState<ProjectSummary[] | null>(null);
+
+  // Load projects for the inferred-project picker.
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await fetch('/api/projects');
+        if (!res.ok) return;
+        const list = (await res.json()) as ProjectSummary[];
+        if (!cancelled) setProjects(list.filter((p) => !p.archived));
+      } catch {
+        // non-fatal
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
   function copyId(e: React.MouseEvent, id: string) {
     e.stopPropagation();
     navigator.clipboard.writeText(id);
@@ -28,9 +84,9 @@ export function TodosPage() {
     setTimeout(() => setCopiedId((c) => (c === id ? null : c)), 1500);
   }
 
-  const allItems = useMemo(() => {
+  const allItems = useMemo<AggregatedTodo[]>(() => {
     if (!data?.workspaces) return [];
-    const items: Array<TodoItem & { workspace: string }> = [];
+    const items: AggregatedTodo[] = [];
     for (const ws of data.workspaces) {
       for (const item of ws.items) {
         items.push({ ...item, workspace: ws.workspace });
@@ -47,7 +103,7 @@ export function TodosPage() {
     return Array.from(tags).sort();
   }, [allItems]);
 
-  const filtered = useMemo(() => {
+  const filtered = useMemo<AggregatedTodo[]>(() => {
     let items = allItems;
     if (search.trim()) {
       const q = search.toLowerCase();
@@ -66,6 +122,100 @@ export function TodosPage() {
     }
     return items;
   }, [allItems, search, statusFilter, tagFilter]);
+
+  // Reset selection on filter change.
+  useEffect(() => {
+    setSelectedKeys(new Set());
+    lastSelectedIndexRef.current = null;
+  }, [search, statusFilter, tagFilter]);
+
+  const selectedItems = useMemo(
+    () => filtered.filter((i) => selectedKeys.has(keyOf(i))),
+    [filtered, selectedKeys],
+  );
+  const allVisibleSelected = filtered.length > 0 && selectedItems.length === filtered.length;
+  const someVisibleSelected = selectedItems.length > 0 && !allVisibleSelected;
+
+  const sharedWorkspace = useMemo(() => {
+    if (selectedItems.length === 0) return null;
+    const wss = new Set(selectedItems.map((i) => i.workspace));
+    return wss.size === 1 ? [...wss][0] : null;
+  }, [selectedItems]);
+
+  const inferredProject = useMemo(() => {
+    if (!sharedWorkspace || !projects) return undefined;
+    // Only auto-fill when EXACTLY one project claims this workspace. Multiple
+    // matches are ambiguous and silently picking the first risks mis-routing,
+    // so leave the picker empty for the user to disambiguate.
+    const matches = projects.filter((p) => p.workspace === sharedWorkspace);
+    return matches.length === 1 ? matches[0].slug : undefined;
+  }, [sharedWorkspace, projects]);
+
+  const defaultTitle = selectedItems[0]?.description ?? '';
+
+  const aggregateGroups = useMemo(() => {
+    if (sharedWorkspace) return null;
+    const byWs = new Map<string, string[]>();
+    for (const it of selectedItems) {
+      if (!byWs.has(it.workspace)) byWs.set(it.workspace, []);
+      byWs.get(it.workspace)!.push(it.id);
+    }
+    return Array.from(byWs, ([workspace, todoIds]) => ({ workspace, todoIds }));
+  }, [selectedItems, sharedWorkspace]);
+
+  const promoteScope: PromoteScope = sharedWorkspace
+    ? { kind: 'workspace', workspace: sharedWorkspace }
+    : { kind: 'aggregate', groups: aggregateGroups ?? [] };
+
+  function toggleOne(item: AggregatedTodo, index: number, e?: React.MouseEvent | React.ChangeEvent) {
+    const k = keyOf(item);
+    const isShift = !!(e && 'shiftKey' in e && (e as React.MouseEvent).shiftKey);
+    if (isShift && lastSelectedIndexRef.current != null) {
+      const start = Math.min(lastSelectedIndexRef.current, index);
+      const end = Math.max(lastSelectedIndexRef.current, index);
+      setSelectedKeys((prev) => {
+        const next = new Set(prev);
+        for (let i = start; i <= end; i++) {
+          const it = filtered[i];
+          if (it) next.add(keyOf(it));
+        }
+        return next;
+      });
+    } else {
+      setSelectedKeys((prev) => {
+        const next = new Set(prev);
+        if (next.has(k)) next.delete(k);
+        else next.add(k);
+        return next;
+      });
+    }
+    lastSelectedIndexRef.current = index;
+  }
+
+  function toggleAllVisible() {
+    setSelectedKeys((prev) => {
+      const next = new Set(prev);
+      if (allVisibleSelected) {
+        for (const i of filtered) next.delete(keyOf(i));
+      } else {
+        for (const i of filtered) next.add(keyOf(i));
+      }
+      return next;
+    });
+  }
+
+  function clearSelection() {
+    setSelectedKeys(new Set());
+    lastSelectedIndexRef.current = null;
+  }
+
+  function onPromoteDone(result?: PromoteResult | BulkPromoteResult) {
+    clearSelection();
+    refetch();
+    if (result?.assignmentRef) {
+      navigate(navigateRefTo(result.assignmentRef));
+    }
+  }
 
   const totalCounts = useMemo(() => {
     if (!data?.workspaces) return { open: 0, in_progress: 0, completed: 0, blocked: 0, total: 0 };
@@ -140,8 +290,7 @@ export function TodosPage() {
     handler: () => refetch(),
   });
 
-  // R3: ?focus=<id> scroll + highlight. Retries on each render until the target
-  // row appears in the DOM (common case: palette navigates before data loads).
+  // R3: ?focus=<id> scroll + highlight.
   const [searchParams, setSearchParams] = useSearchParams();
   const focusId = searchParams.get('focus');
   useEffect(() => {
@@ -149,12 +298,12 @@ export function TodosPage() {
     const node = document.querySelector<HTMLElement>(
       `[data-todo-id="${CSS.escape(focusId)}"]`,
     );
-    if (!node) return; // will retry when filtered.length changes (data arrives)
+    if (!node) return;
     node.scrollIntoView({ block: 'nearest' });
     node.classList.add('ring-2', 'ring-primary/60');
     const t = window.setTimeout(() => {
       node.classList.remove('ring-2', 'ring-primary/60');
-      setSearchParams((prev) => {
+      setSearchParams((prev: URLSearchParams) => {
         const n = new URLSearchParams(prev);
         n.delete('focus');
         return n;
@@ -252,6 +401,40 @@ export function TodosPage() {
         )}
       </div>
 
+      {/* Bulk toolbar */}
+      {selectedItems.length > 0 ? (
+        <div className="surface-panel flex items-center justify-between gap-3 px-3 py-2">
+          <span className="text-sm font-medium">
+            {selectedItems.length} selected
+            {sharedWorkspace ? (
+              <span className="ml-2 text-xs text-muted-foreground">
+                (from <strong>{sharedWorkspace}</strong>)
+              </span>
+            ) : (
+              <span className="ml-2 text-xs text-muted-foreground">
+                across {new Set(selectedItems.map((i) => i.workspace)).size} workspaces
+              </span>
+            )}
+          </span>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setPromoteOpen(true)}
+              className="shell-action bg-foreground text-background hover:opacity-90"
+            >
+              Promote to assignment
+            </button>
+            <button
+              type="button"
+              onClick={clearSelection}
+              className="text-xs text-muted-foreground hover:text-foreground"
+            >
+              Clear
+            </button>
+          </div>
+        </div>
+      ) : null}
+
       {/* Items */}
       {filtered.length === 0 ? (
         <EmptyState
@@ -259,73 +442,124 @@ export function TodosPage() {
           description="Add your first todo above or use the CLI: syntaur todo add"
         />
       ) : (
-        <div className="space-y-1">
-          {filtered.map((item, i) => (
-            <div
-              key={`${item.workspace}-${item.id}`}
-              data-todo-id={item.id}
-              {...hotkeyRowProps(i)}
-              className="surface-panel flex items-center gap-3 px-3 py-2 group cursor-pointer hover:bg-foreground/[0.03] transition"
-              onClick={() => handleCycleStatus(item.workspace, item.id, item.status)}
-            >
-              <StatusMenu
-                status={item.status as any}
-                onChange={(s) => handleStatusChange(item.workspace, item.id, s)}
-              />
-              <div className="flex-1 min-w-0">
-                <span
-                  className={`text-sm ${item.status === 'completed' ? 'line-through text-muted-foreground' : 'text-foreground'}`}
+        <>
+          <div className="flex items-center gap-3 px-3 py-1 text-xs text-muted-foreground">
+            <input
+              type="checkbox"
+              aria-label="Select all visible todos"
+              checked={allVisibleSelected}
+              ref={(el) => { if (el) el.indeterminate = someVisibleSelected; }}
+              onChange={toggleAllVisible}
+              className="h-4 w-4 cursor-pointer accent-foreground"
+            />
+            <span>Select all in current filter ({filtered.length})</span>
+            <span className="text-muted-foreground/60">— shift-click for range select</span>
+          </div>
+          <div className="space-y-1">
+            {filtered.map((item, i) => {
+              const k = keyOf(item);
+              const selected = selectedKeys.has(k);
+              return (
+                <div
+                  key={`${item.workspace}-${item.id}`}
+                  data-todo-id={item.id}
+                  {...hotkeyRowProps(i)}
+                  className={`surface-panel flex items-center gap-3 px-3 py-2 group cursor-pointer hover:bg-foreground/[0.03] transition ${
+                    selected ? 'ring-1 ring-foreground/20' : ''
+                  }`}
+                  onClick={() => handleCycleStatus(item.workspace, item.id, item.status)}
                 >
-                  {item.description}
-                </span>
-                {item.tags.length > 0 && (
-                  <span className="ml-2 text-xs text-muted-foreground">
-                    {item.tags.map((t) => `#${t}`).join(' ')}
+                  <input
+                    type="checkbox"
+                    aria-label={`Select todo ${item.id}`}
+                    checked={selected}
+                    onChange={() => { /* handled via onClick to capture shiftKey */ }}
+                    onClick={(e) => { e.stopPropagation(); toggleOne(item, i, e); }}
+                    className="h-4 w-4 cursor-pointer accent-foreground"
+                  />
+                  <StatusMenu
+                    status={item.status as any}
+                    onChange={(s) => handleStatusChange(item.workspace, item.id, s)}
+                  />
+                  <div className="flex-1 min-w-0">
+                    <span
+                      className={`text-sm ${item.status === 'completed' ? 'line-through text-muted-foreground' : 'text-foreground'}`}
+                    >
+                      {item.description}
+                    </span>
+                    {item.tags.length > 0 && (
+                      <span className="ml-2 text-xs text-muted-foreground">
+                        {item.tags.map((t) => `#${t}`).join(' ')}
+                      </span>
+                    )}
+                    {item.linkedAssignmentRef ? (
+                      <Link
+                        to={navigateRefTo(item.linkedAssignmentRef)}
+                        className="ml-2 inline-flex items-center gap-0.5 rounded-full border border-status-completed-foreground/40 bg-status-completed/30 px-1.5 py-0.5 text-[10px] font-mono text-status-completed-foreground hover:bg-status-completed/50"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <ArrowRight className="h-2.5 w-2.5" />
+                        {item.linkedAssignmentRef.includes('/')
+                          ? item.linkedAssignmentRef
+                          : `oneoff:${item.linkedAssignmentRef.slice(0, 8)}`}
+                      </Link>
+                    ) : null}
+                  </div>
+                  <span className="text-xs text-muted-foreground/60 font-mono">
+                    {item.workspace !== '_global' && (
+                      <Link
+                        to={`/w/${item.workspace}/todos`}
+                        className="hover:text-foreground transition mr-2"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        {item.workspace}
+                      </Link>
+                    )}
                   </span>
-                )}
-              </div>
-              <span className="text-xs text-muted-foreground/60 font-mono">
-                {item.workspace !== '_global' && (
-                  <Link
-                    to={`/w/${item.workspace}/todos`}
-                    className="hover:text-foreground transition mr-2"
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    {item.workspace}
-                  </Link>
-                )}
-              </span>
-              {copiedId === item.id ? (
-                <span className="text-xs text-status-completed-foreground flex items-center gap-1">
-                  <Check className="h-3 w-3" /> Copied to clipboard
-                </span>
-              ) : (
-                <>
+                  {copiedId === item.id ? (
+                    <span className="text-xs text-status-completed-foreground flex items-center gap-1">
+                      <Check className="h-3 w-3" /> Copied to clipboard
+                    </span>
+                  ) : (
+                    <>
+                      <button
+                        className="text-xs text-muted-foreground/60 font-mono hover:text-foreground transition"
+                        onClick={(e) => copyId(e, item.id)}
+                      >
+                        t:{item.id}
+                      </button>
+                      <button
+                        className="text-muted-foreground/40 hover:text-foreground transition"
+                        title="Copy ID"
+                        onClick={(e) => copyId(e, item.id)}
+                      >
+                        <Copy className="h-3 w-3" />
+                      </button>
+                    </>
+                  )}
                   <button
-                    className="text-xs text-muted-foreground/60 font-mono hover:text-foreground transition"
-                    onClick={(e) => copyId(e, item.id)}
+                    onClick={(e) => { e.stopPropagation(); handleDelete(item.workspace, item.id); }}
+                    className="text-xs text-muted-foreground/40 hover:text-destructive transition opacity-0 group-hover:opacity-100"
                   >
-                    t:{item.id}
+                    delete
                   </button>
-                  <button
-                    className="text-muted-foreground/40 hover:text-foreground transition"
-                    title="Copy ID"
-                    onClick={(e) => copyId(e, item.id)}
-                  >
-                    <Copy className="h-3 w-3" />
-                  </button>
-                </>
-              )}
-              <button
-                onClick={() => handleDelete(item.workspace, item.id)}
-                className="text-xs text-muted-foreground/40 hover:text-destructive transition opacity-0 group-hover:opacity-100"
-              >
-                delete
-              </button>
-            </div>
-          ))}
-        </div>
+                </div>
+              );
+            })}
+          </div>
+        </>
       )}
+
+      <TodoPromoteModal
+        open={promoteOpen}
+        selectedIds={selectedItems.map((i) => i.id)}
+        scope={promoteScope}
+        onOpenChange={setPromoteOpen}
+        onDone={onPromoteDone}
+        defaultProject={inferredProject}
+        defaultTitle={defaultTitle}
+        allowOneOff
+      />
     </div>
   );
 }

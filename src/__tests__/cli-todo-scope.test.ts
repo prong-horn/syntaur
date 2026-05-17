@@ -138,7 +138,7 @@ describe('syntaur todo CLI scope resolution', () => {
 });
 
 describe('syntaur todo promote --new-assignment', () => {
-  it('creates a new assignment from a single todo and marks it completed', async () => {
+  it('creates a new assignment from a single todo and links the source as in_progress', async () => {
     await seedProject('alpha');
     const addRes = await runCli(['todo', 'add', 'rewrite the README'], syntaurHome);
     expect(addRes.code).toBe(0);
@@ -152,10 +152,13 @@ describe('syntaur todo promote --new-assignment', () => {
     expect(res.code).toBe(0);
 
     const after = await readFile(resolve(syntaurHome, 'todos', '_global.md'), 'utf-8');
-    expect(after).toMatch(new RegExp(`- \\[x\\] rewrite the README .*\\[t:${id}\\]`));
+    // Source todo flips to in_progress (marker `>`) and carries linkedAssignment meta.
+    expect(after).toMatch(new RegExp(`- \\[>\\] rewrite the README .*\\[t:${id}\\]`));
+    expect(after).toMatch(/l=[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/);
+    expect(after).toMatch(/lr=alpha\//);
 
     const log = await readFile(resolve(syntaurHome, 'todos', '_global-log.md'), 'utf-8');
-    expect(log).toContain('Promoted to assignment alpha/');
+    expect(log).toContain('Linked to assignment alpha/');
 
     const assignmentsRoot = resolve(projectsDir, 'alpha', 'assignments');
     const { readdir } = await import('node:fs/promises');
@@ -165,9 +168,11 @@ describe('syntaur todo promote --new-assignment', () => {
       resolve(assignmentsRoot, dirs[0], 'assignment.md'),
       'utf-8',
     );
-    expect(assignmentMd).toContain('## Todos');
+    // The promoted descriptions land in Acceptance Criteria, NOT a `## Todos`
+    // section — the new lifecycle uses criteria as the source of work.
+    expect(assignmentMd).toContain('## Acceptance Criteria');
     expect(assignmentMd).toContain('- [ ] rewrite the README');
-    expect(assignmentMd).toContain(`promoted from t:${id}`);
+    expect(assignmentMd).not.toContain('## Todos');
   });
 
   it('requires --title when promoting multiple todos', async () => {

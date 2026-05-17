@@ -24,6 +24,8 @@ function makeItem(overrides: Partial<TodoItem> & { id: string; description: stri
     createdAt: null,
     updatedAt: null,
     planDir: null,
+    linkedAssignmentId: null,
+    linkedAssignmentRef: null,
     ...overrides,
   };
 }
@@ -138,6 +140,8 @@ describe('parseMetaToken / serializeMetaToken', () => {
       createdAt: '2026-04-29T12:00:00Z',
       updatedAt: '2026-04-29T12:30:00Z',
       planDir: '/plans/aaaa',
+      linkedAssignmentId: null,
+      linkedAssignmentRef: null,
     });
   });
 
@@ -149,7 +153,27 @@ describe('parseMetaToken / serializeMetaToken', () => {
       createdAt: null,
       updatedAt: null,
       planDir: null,
+      linkedAssignmentId: null,
+      linkedAssignmentRef: null,
     });
+  });
+
+  it('round-trips linkedAssignmentId + linkedAssignmentRef through serialize/parse', () => {
+    const original = makeItem({
+      id: 'aaaa',
+      description: 'Build the thing',
+      status: 'in_progress',
+      tags: [],
+      session: null,
+      linkedAssignmentId: 'de2f0367-697b-4e3a-8457-1ccd43c5518c',
+      linkedAssignmentRef: 'syntaur-meta/promote-todos-to-assignment-from-dashboard',
+    });
+    const line = serializeChecklistItem(original);
+    expect(line).toContain('l=de2f0367-697b-4e3a-8457-1ccd43c5518c');
+    expect(line).toContain('lr=syntaur-meta/promote-todos-to-assignment-from-dashboard');
+    const parsed = parseChecklistItem(line);
+    expect(parsed?.linkedAssignmentId).toBe('de2f0367-697b-4e3a-8457-1ccd43c5518c');
+    expect(parsed?.linkedAssignmentRef).toBe('syntaur-meta/promote-todos-to-assignment-from-dashboard');
   });
 
   it('round-trips percent-encoded special characters', () => {

@@ -155,11 +155,15 @@ export async function deleteTodo(workspace: string, id: string): Promise<void> {
   });
 }
 
+export type PromoteTarget =
+  | { project: string }
+  | { oneOff: true; workspaceGroup?: string };
+
 export type PromoteBody =
   | {
       todoIds: string[];
       mode: 'new-assignment';
-      target: { project: string };
+      target: PromoteTarget;
       title?: string;
       type?: string;
       priority?: string;
@@ -171,6 +175,26 @@ export type PromoteBody =
       target: { assignment: string };
       keepSource?: boolean;
     };
+
+export interface PromoteResult {
+  assignmentRef: string;
+  assignmentDir: string;
+  promoted: string[];
+}
+
+export interface BulkPromoteBody {
+  groups: Array<{ workspace: string; todoIds: string[] }>;
+  mode: 'new-assignment';
+  target: PromoteTarget;
+  title?: string;
+  type?: string;
+  priority?: string;
+  keepSource?: boolean;
+}
+
+export interface BulkPromoteResult extends PromoteResult {
+  promotedByWorkspace: Array<{ workspace: string; ids: string[] }>;
+}
 
 export type MoveTarget =
   | { workspace: string }
@@ -195,8 +219,14 @@ async function postOrThrow(url: string, body: unknown): Promise<unknown> {
   return res.json().catch(() => ({}));
 }
 
-export async function promoteTodos(workspace: string, body: PromoteBody): Promise<void> {
-  await postOrThrow(`/api/todos/${encodeURIComponent(workspace)}/promote`, body);
+export async function promoteTodos(workspace: string, body: PromoteBody): Promise<PromoteResult> {
+  const res = await postOrThrow(`/api/todos/${encodeURIComponent(workspace)}/promote`, body);
+  return res as PromoteResult;
+}
+
+export async function promoteTodosBulk(body: BulkPromoteBody): Promise<BulkPromoteResult> {
+  const res = await postOrThrow('/api/todos/promote-bulk', body);
+  return res as BulkPromoteResult;
 }
 
 export async function moveTodo(workspace: string, id: string, to: MoveTarget): Promise<void> {

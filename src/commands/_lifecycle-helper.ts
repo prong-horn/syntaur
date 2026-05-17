@@ -1,5 +1,5 @@
 import { resolve } from 'node:path';
-import { expandHome, assignmentsDir as assignmentsDirFn } from '../utils/paths.js';
+import { expandHome, assignmentsDir as assignmentsDirFn, todosDir as todosDirFn } from '../utils/paths.js';
 import { fileExists } from '../utils/fs.js';
 import { readConfig } from '../utils/config.js';
 import { isValidSlug } from '../utils/slug.js';
@@ -12,6 +12,10 @@ import {
   type TransitionResult,
 } from '../lifecycle/index.js';
 import { resolveAssignmentById } from '../utils/assignment-resolver.js';
+
+function resolveLinkedTodosLookup(projectsDir: string): { todosDir: string; projectsDir: string } {
+  return { todosDir: todosDirFn(), projectsDir };
+}
 
 export interface LifecycleOptions {
   project?: string;
@@ -43,6 +47,7 @@ export async function runTransition(
     return executeTransition(projectDir, assignment, command, {
       reason: options.reason,
       agent: options.agent,
+      linkedTodosLookup: resolveLinkedTodosLookup(baseDir),
     });
   }
 
@@ -56,6 +61,7 @@ export async function runTransition(
     reason: options.reason,
     agent: options.agent,
     standalone: resolved.standalone,
+    linkedTodosLookup: resolveLinkedTodosLookup(baseDir),
   });
 }
 

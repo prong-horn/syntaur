@@ -26,6 +26,7 @@ export interface CreateAssignmentOptions {
   withTodos?: boolean;
   workspace?: string;
   silent?: boolean;
+  acceptanceCriteria?: string[];
 }
 
 export interface CreateAssignmentResult {
@@ -191,6 +192,7 @@ export async function createAssignmentCommand(
         workspaceGroup: options.workspace ?? null,
         type: options.type,
         includeTodos: options.withTodos === true,
+        acceptanceCriteria: options.acceptanceCriteria,
       }),
     ],
     [

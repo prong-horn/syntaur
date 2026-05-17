@@ -193,6 +193,66 @@ describe('renderAssignment', () => {
     });
     expect(out).toContain('## Todos');
   });
+
+  it('renders acceptanceCriteria as checkbox items when provided', () => {
+    const out = renderAssignment({
+      id: 'id',
+      slug: 's',
+      title: 'T',
+      timestamp: TIMESTAMP,
+      priority: 'medium',
+      dependsOn: [],
+      links: [],
+      acceptanceCriteria: ['Do A', 'Do B', 'Do C'],
+    });
+    expect(out).toContain('## Acceptance Criteria');
+    expect(out).toContain('- [ ] Do A');
+    expect(out).toContain('- [ ] Do B');
+    expect(out).toContain('- [ ] Do C');
+    expect(out).not.toContain('<!-- criterion 1 -->');
+  });
+
+  it('keeps the 3 placeholders when acceptanceCriteria is missing or empty', () => {
+    const without = renderAssignment({
+      id: 'id',
+      slug: 's',
+      title: 'T',
+      timestamp: TIMESTAMP,
+      priority: 'medium',
+      dependsOn: [],
+      links: [],
+    });
+    expect(without).toContain('<!-- criterion 1 -->');
+    expect(without).toContain('<!-- criterion 2 -->');
+    expect(without).toContain('<!-- criterion 3 -->');
+
+    const empty = renderAssignment({
+      id: 'id',
+      slug: 's',
+      title: 'T',
+      timestamp: TIMESTAMP,
+      priority: 'medium',
+      dependsOn: [],
+      links: [],
+      acceptanceCriteria: [],
+    });
+    expect(empty).toContain('<!-- criterion 1 -->');
+  });
+
+  it('flattens newlines in acceptanceCriteria entries to spaces (single-line checkbox)', () => {
+    const out = renderAssignment({
+      id: 'id',
+      slug: 's',
+      title: 'T',
+      timestamp: TIMESTAMP,
+      priority: 'medium',
+      dependsOn: [],
+      links: [],
+      acceptanceCriteria: ['Line 1\nspans two lines'],
+    });
+    expect(out).toContain('- [ ] Line 1 spans two lines');
+    expect(out).not.toContain('- [ ] Line 1\n');
+  });
 });
 
 describe('renderPlan', () => {

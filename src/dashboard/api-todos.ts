@@ -16,6 +16,10 @@ import { wsLock, projLock, withTwoLocks, globalLockKey } from './todos-locks.js'
 import { isValidSlug } from '../utils/slug.js';
 import type { TodoItem, LogEntry } from '../todos/types.js';
 import type { WsMessage } from './types.js';
+import {
+  promoteTodosToNewAssignment,
+  parsePromoteTarget,
+} from '../utils/promote-todos.js';
 
 const WORKSPACE_REGEX = /^[a-z0-9_][a-z0-9-]*$/;
 
@@ -58,6 +62,116 @@ export function createTodosRouter(
 
   // Apply workspace validation to all parameterized routes
   router.param('workspace', validateWorkspace as any);
+
+  // POST /promote-bulk — aggregate promote across multiple workspaces into one
+  // new assignment. Registered BEFORE any `/:workspace` route so the literal
+  // `promote-bulk` segment is not mis-routed to the add-todo handler.
+  // Only supports `mode: 'new-assignment'` in v1.
+  router.post('/promote-bulk', async (req, res) => {
+    try {
+      const { groups, mode, target, title, type, priority, keepSource } = req.body ?? {};
+      if (mode !== 'new-assignment') {
+        res.status(400).json({ error: 'promote-bulk only supports mode "new-assignment" in v1' });
+        return;
+      }
+      if (!Array.isArray(groups) || groups.length === 0) {
+        res.status(400).json({ error: 'groups (non-empty array of { workspace, todoIds }) is required' });
+        return;
+      }
+      // Preserve caller order — criteria order should follow request order.
+      // Reject duplicate workspaces up front so we never nest wsLock on the
+      // same key (a self-deadlock if the lock is non-reentrant).
+      const callerOrder: Array<{ workspace: string; todoIds: string[] }> = [];
+      const seen = new Set<string>();
+      let total = 0;
+      for (const g of groups) {
+        if (!g || typeof g !== 'object') {
+          res.status(400).json({ error: 'each group must be { workspace: string, todoIds: string[] }' });
+          return;
+        }
+        const ws = typeof g.workspace === 'string' ? g.workspace : '';
+        if (!ws || !WORKSPACE_REGEX.test(ws)) {
+          res.status(400).json({ error: `Invalid workspace name in group: "${ws}"` });
+          return;
+        }
+        if (seen.has(ws)) {
+          res.status(400).json({ error: `Duplicate workspace "${ws}" in groups — merge ids client-side before posting` });
+          return;
+        }
+        seen.add(ws);
+        if (!Array.isArray(g.todoIds) || g.todoIds.length === 0) {
+          res.status(400).json({ error: `group for workspace "${ws}" has no todoIds` });
+          return;
+        }
+        callerOrder.push({ workspace: ws, todoIds: g.todoIds.map(String) });
+        total += g.todoIds.length;
+      }
+      if (total > 1 && !title) {
+        res.status(400).json({ error: 'title is required when promoting multiple todos' });
+        return;
+      }
+      const parsed = parsePromoteTarget(target);
+      if (!parsed.ok) { res.status(400).json({ error: parsed.error }); return; }
+
+      // Lock in deterministic alpha order to avoid cross-request deadlock.
+      const lockOrder = [...callerOrder].sort((a, b) =>
+        a.workspace.localeCompare(b.workspace),
+      );
+
+      const runWithLocks = async (
+        index: number,
+      ): Promise<
+        | { ok: true; result: { assignmentRef: string; assignmentDir: string; promoted: string[]; promotedByWorkspace: Array<{ workspace: string; ids: string[] }> } }
+        | { ok: false; error: string }
+      > => {
+        if (index === lockOrder.length) {
+          // All locks held. Build helper groups in CALLER order so criteria
+          // come out in the order the user selected.
+          const helperGroups: Array<{ todosDir: string; workspace: string; items: TodoItem[]; scopeLabel: string }> = [];
+          for (const co of callerOrder) {
+            const checklist = await readChecklist(todosDir, co.workspace);
+            const items: TodoItem[] = [];
+            for (const id of co.todoIds) {
+              const item = checklist.items.find((i) => i.id === id);
+              if (!item) return { ok: false, error: `Todo "${id}" not found in workspace "${co.workspace}"` };
+              if (item.status === 'completed') return { ok: false, error: `Todo "${id}" is already completed` };
+              items.push(item);
+            }
+            const scopeLabel = co.workspace === '_global' ? '_global' : `workspace:${co.workspace}`;
+            helperGroups.push({ todosDir, workspace: co.workspace, items, scopeLabel });
+          }
+          if (helperGroups.every((g) => g.items.length === 0)) {
+            return { ok: false, error: 'No selectable todos found in the requested groups' };
+          }
+          const firstItem = helperGroups.flatMap((g) => g.items)[0];
+          const promoted = await promoteTodosToNewAssignment(helperGroups, {
+            title: title || firstItem.description,
+            target: parsed.target,
+            type,
+            priority,
+            keepSource,
+          });
+          return {
+            ok: true,
+            result: {
+              assignmentRef: promoted.assignmentRef,
+              assignmentDir: promoted.assignmentDir,
+              promoted: promoted.promoted.map((p) => p.id),
+              promotedByWorkspace: promoted.promotedByWorkspace,
+            },
+          };
+        }
+        return wsLock(lockOrder[index].workspace, async () => runWithLocks(index + 1));
+      };
+
+      const out = await runWithLocks(0);
+      if (!out.ok) { res.status(400).json({ error: out.error }); return; }
+      broadcastUpdate();
+      res.json(out.result);
+    } catch (error) {
+      res.status(500).json({ error: error instanceof Error ? error.message : 'Failed to bulk-promote todos' });
+    }
+  });
 
   // GET / — aggregate all workspace checklists
   router.get('/', async (_req, res) => {
@@ -133,6 +247,8 @@ export function createTodosRouter(
           createdAt: now,
           updatedAt: now,
           planDir: null,
+          linkedAssignmentId: null,
+          linkedAssignmentRef: null,
         };
         checklist.items.push(newItem);
         await writeChecklist(todosDir, checklist);
@@ -474,6 +590,29 @@ export function createTodosRouter(
         }
 
         const scopeLabel = workspace === '_global' ? '_global' : `workspace:${workspace}`;
+
+        if (mode === 'new-assignment') {
+          if (items.length > 1 && !title) return { error: 'title is required when promoting multiple todos' };
+          const parsed = parsePromoteTarget(target);
+          if (!parsed.ok) return { error: parsed.error };
+          const promoted = await promoteTodosToNewAssignment(
+            [{ todosDir, workspace, items, scopeLabel }],
+            {
+              title: title || items[0].description,
+              target: parsed.target,
+              type,
+              priority,
+              keepSource,
+            },
+          );
+          return {
+            assignmentRef: promoted.assignmentRef,
+            assignmentDir: promoted.assignmentDir,
+            promoted: promoted.promoted.map((p) => p.id),
+          };
+        }
+
+        // to-assignment mode (unchanged)
         const { resolve: resolvePath } = await import('node:path');
         const { readConfig } = await import('../utils/config.js');
         const { assignmentsDir: assignmentsDirFn } = await import('../utils/paths.js');
@@ -485,40 +624,23 @@ export function createTodosRouter(
         let assignmentRef: string;
         let assignmentDir: string;
 
-        if (mode === 'new-assignment') {
-          const targetProject: string | undefined = target?.project;
-          if (!targetProject) return { error: 'target.project is required for new-assignment mode' };
-          if (items.length > 1 && !title) return { error: 'title is required when promoting multiple todos' };
-          const { createAssignmentCommand } = await import('../commands/create-assignment.js');
-          const created = await createAssignmentCommand(title || items[0].description, {
-            project: targetProject,
-            type,
-            priority,
-            withTodos: true,
-            silent: true,
-          });
-          assignmentDir = created.assignmentDir;
-          assignmentRef = `${created.projectSlug}/${created.slug}`;
+        const tg: string = target?.assignment || '';
+        if (!tg) return { error: 'target.assignment is required for to-assignment mode' };
+        if (tg.includes('/')) {
+          const parts = tg.split('/');
+          if (parts.length !== 2) return { error: `Invalid target.assignment "${tg}"` };
+          const config = await readConfig();
+          assignmentDir = resolvePath(config.defaultProjectDir, parts[0], 'assignments', parts[1]);
+          assignmentRef = `${parts[0]}/${parts[1]}`;
+        } else if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(tg)) {
+          assignmentDir = resolvePath(assignmentsDirFn(), tg);
+          assignmentRef = tg;
         } else {
-          const tg: string = target?.assignment || '';
-          if (!tg) return { error: 'target.assignment is required for to-assignment mode' };
-          if (tg.includes('/')) {
-            const parts = tg.split('/');
-            if (parts.length !== 2) return { error: `Invalid target.assignment "${tg}"` };
-            const config = await readConfig();
-            assignmentDir = resolvePath(config.defaultProjectDir, parts[0], 'assignments', parts[1]);
-            assignmentRef = `${parts[0]}/${parts[1]}`;
-          } else if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(tg)) {
-            assignmentDir = resolvePath(assignmentsDirFn(), tg);
-            assignmentRef = tg;
-          } else {
-            return { error: `Invalid target.assignment "${tg}"` };
-          }
-          const assignmentMdPath = resolvePath(assignmentDir, 'assignment.md');
-          if (!(await fileExists(assignmentMdPath))) return { error: `Target assignment not found: ${assignmentMdPath}` };
+          return { error: `Invalid target.assignment "${tg}"` };
         }
-
         const assignmentMdPath = resolvePath(assignmentDir, 'assignment.md');
+        if (!(await fileExists(assignmentMdPath))) return { error: `Target assignment not found: ${assignmentMdPath}` };
+
         let content = await readFile(assignmentMdPath, 'utf-8');
         content = appendTodosToAssignmentBody(
           content,
