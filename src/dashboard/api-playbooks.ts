@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { resolve } from 'node:path';
-import { readFile, unlink } from 'node:fs/promises';
+import { readFile } from 'node:fs/promises';
 import { listPlaybooks, getPlaybookDetail } from './api.js';
 import { parsePlaybook } from './parser.js';
 import { isValidSlug } from '../utils/slug.js';
@@ -8,11 +8,26 @@ import { nowTimestamp } from '../utils/timestamp.js';
 import { ensureDir, fileExists, writeFileForce } from '../utils/fs.js';
 import { renderPlaybook } from '../templates/playbook.js';
 import {
+  deletePlaybook,
   rebuildPlaybookManifest,
+  renamePlaybook,
   resolvePlaybookSlug,
   setPlaybookEnabled,
-  removeFromDisabledList,
+  PlaybookError,
 } from '../utils/playbooks.js';
+
+function statusForPlaybookError(code: PlaybookError['code']): number {
+  switch (code) {
+    case 'manifest':
+      return 403;
+    case 'not-found':
+      return 404;
+    case 'invalid-slug':
+      return 400;
+    case 'collision':
+      return 409;
+  }
+}
 
 export function createPlaybooksRouter(playbooksDir: string): Router {
   const router = Router();
@@ -165,24 +180,33 @@ export function createPlaybooksRouter(playbooksDir: string): Router {
   // DELETE /:slug — delete a playbook
   router.delete('/:slug', async (req, res) => {
     try {
-      if (req.params.slug === 'manifest') {
-        res.status(403).json({ error: 'The playbook manifest cannot be deleted' });
-        return;
-      }
-
-      const resolved = await resolvePlaybookSlug(playbooksDir, req.params.slug);
-      if (!resolved) {
-        res.status(404).json({ error: `Playbook "${req.params.slug}" not found` });
-        return;
-      }
-
-      const filePath = resolve(playbooksDir, resolved.filename);
-      await unlink(filePath);
-      await removeFromDisabledList(resolved.slug);
-      await rebuildPlaybookManifest(playbooksDir);
-      res.json({ deleted: resolved.slug });
+      const { slug } = await deletePlaybook(playbooksDir, req.params.slug);
+      res.json({ deleted: slug });
     } catch (error) {
+      if (error instanceof PlaybookError) {
+        res.status(statusForPlaybookError(error.code)).json({ error: error.message });
+        return;
+      }
       res.status(500).json({ error: error instanceof Error ? error.message : 'Failed to delete playbook' });
+    }
+  });
+
+  // PATCH /:slug — rename a playbook (slug change)
+  router.patch('/:slug', async (req, res) => {
+    try {
+      const { newSlug } = req.body || {};
+      if (typeof newSlug !== 'string' || !newSlug.trim()) {
+        res.status(400).json({ error: 'newSlug is required' });
+        return;
+      }
+      const result = await renamePlaybook(playbooksDir, req.params.slug, newSlug.trim());
+      res.json(result);
+    } catch (error) {
+      if (error instanceof PlaybookError) {
+        res.status(statusForPlaybookError(error.code)).json({ error: error.message });
+        return;
+      }
+      res.status(500).json({ error: error instanceof Error ? error.message : 'Failed to rename playbook' });
     }
   });
 

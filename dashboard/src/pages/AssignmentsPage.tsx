@@ -1,6 +1,6 @@
 import { type DragEvent, useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { Link, useNavigate, useSearchParams, useParams } from 'react-router-dom';
-import { ChevronDown, ChevronUp, FolderKanban, Plus } from 'lucide-react';
+import { ChevronDown, ChevronUp, FolderKanban, Plus, Pencil, Trash2, ArrowRightLeft } from 'lucide-react';
 import { CopyButton } from '../components/CopyButton';
 import { cn } from '../lib/utils';
 import {
@@ -19,8 +19,12 @@ import { SectionCard } from '../components/SectionCard';
 import { LoadingState } from '../components/LoadingState';
 import { ErrorState } from '../components/ErrorState';
 import { EmptyState } from '../components/EmptyState';
-import { KanbanBoard, type KanbanColumn } from '../components/KanbanBoard';
+import { KanbanBoard, type KanbanColumn, type ExternalDragData } from '../components/KanbanBoard';
 import { AssignmentTransitionDialog } from '../components/AssignmentTransitionDialog';
+import { ContextMenuPopover } from '../components/ContextMenuPopover';
+import { ConfirmDialog } from '../components/ConfirmDialog';
+import { MoveToWorkspaceDialog } from '../components/MoveToWorkspaceDialog';
+import type { OverflowMenuItem } from '../components/OverflowMenu';
 import { StatusBadge, STATUS_META, getStatusDescription } from '../components/StatusBadge';
 import { transitionNeedsReason } from '../lib/assignments';
 import { useStatusConfig, getStatusLabel } from '../hooks/useStatusConfig';
@@ -172,6 +176,13 @@ export function AssignmentsPage() {
   const [draggedId, setDraggedId] = useState<string | null>(null);
   const [dropTargetStatus, setDropTargetStatus] = useState<string | null>(null);
   const [pendingMove, setPendingMove] = useState<PendingAssignmentMove | null>(null);
+  const [contextMenu, setContextMenu] = useState<{
+    item: AssignmentBoardItem;
+    anchor: { x: number; y: number };
+  } | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<AssignmentBoardItem | null>(null);
+  const [deletingKey, setDeletingKey] = useState<string | null>(null);
+  const [moveTarget, setMoveTarget] = useState<AssignmentBoardItem | null>(null);
 
   useEffect(() => {
     setBoardItems(data?.assignments ?? []);
@@ -773,6 +784,15 @@ export function AssignmentsPage() {
             };
           }}
           onMove={({ item, toColumnId }) => handleMove({ item, toColumnId })}
+          getExternalDragData={(item): ExternalDragData | null =>
+            item.projectSlug === null
+              ? { type: 'standalone-assignment', id: item.id }
+              : { type: 'project-assignment', id: item.id }
+          }
+          onCardContextMenu={(item, event) => {
+            event.preventDefault();
+            setContextMenu({ item, anchor: { x: event.clientX, y: event.clientY } });
+          }}
           emptyMessage={(column) => `No ${column.title.toLowerCase()} assignments.`}
           renderCard={(item, { dragging }) => {
             const flatIdx = visibleIndexByKey.get(getAssignmentKey(item)) ?? -1;
@@ -817,8 +837,119 @@ export function AssignmentsPage() {
           }
         }}
       />
+
+      <ContextMenuPopover
+        anchor={contextMenu?.anchor ?? null}
+        items={contextMenu ? buildAssignmentContextMenu(contextMenu.item, {
+          wsPrefix,
+          onEdit: () => {
+            const item = contextMenu.item;
+            const href =
+              item.projectSlug === null
+                ? `/assignments/${item.id}`
+                : `${item.projectWorkspace ? `/w/${item.projectWorkspace}` : wsPrefix}/projects/${item.projectSlug}/assignments/${item.slug}`;
+            navigate(href);
+          },
+          onDelete: () => setDeleteTarget(contextMenu.item),
+          onMove: () => setMoveTarget(contextMenu.item),
+        }) : []}
+        onClose={() => setContextMenu(null)}
+      />
+
+      <ConfirmDialog
+        open={deleteTarget !== null}
+        title="Delete assignment?"
+        description={
+          deleteTarget
+            ? `"${deleteTarget.title}" will be permanently removed. This cannot be undone.`
+            : ''
+        }
+        confirmLabel="Delete"
+        destructive
+        loading={deletingKey !== null}
+        onOpenChange={(next) => {
+          if (!next && deletingKey === null) setDeleteTarget(null);
+        }}
+        onConfirm={async () => {
+          if (!deleteTarget || deleteTarget.projectSlug === null) {
+            setDeleteTarget(null);
+            return;
+          }
+          const key = getAssignmentKey(deleteTarget);
+          setDeletingKey(key);
+          try {
+            const res = await fetch(
+              `/api/projects/${encodeURIComponent(deleteTarget.projectSlug)}/assignments/${encodeURIComponent(deleteTarget.slug)}`,
+              { method: 'DELETE' },
+            );
+            if (!res.ok) {
+              const body = await res.json().catch(() => ({}));
+              throw new Error(body.error || 'Failed to delete assignment');
+            }
+            setDeleteTarget(null);
+            refetch();
+          } catch (err) {
+            alert(err instanceof Error ? err.message : 'Failed to delete assignment');
+          } finally {
+            setDeletingKey(null);
+          }
+        }}
+      />
+
+      <MoveToWorkspaceDialog
+        open={moveTarget !== null}
+        onOpenChange={(next) => {
+          if (!next) setMoveTarget(null);
+        }}
+        currentWorkspace={moveTarget?.projectWorkspace ?? null}
+        title="Move assignment to workspace"
+        description="Standalone assignments belong to a project-workspace via the workspaceGroup frontmatter field."
+        onSubmit={async (target) => {
+          if (!moveTarget) return;
+          const res = await fetch(`/api/assignments/${encodeURIComponent(moveTarget.id)}/move-workspace`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ workspaceGroup: target }),
+          });
+          if (!res.ok) {
+            const body = await res.json().catch(() => ({}));
+            throw new Error(body.error || 'Failed to move assignment');
+          }
+          refetch();
+        }}
+      />
     </div>
   );
+}
+
+function buildAssignmentContextMenu(
+  item: AssignmentBoardItem,
+  handlers: { wsPrefix: string; onEdit: () => void; onDelete: () => void; onMove: () => void },
+): OverflowMenuItem[] {
+  const items: OverflowMenuItem[] = [
+    { key: 'edit', label: 'Edit', icon: Pencil, onSelect: handlers.onEdit },
+  ];
+  if (item.projectSlug !== null) {
+    // Project-scoped: delete is wired to the existing nested DELETE route.
+    items.push({
+      key: 'delete',
+      label: 'Delete',
+      icon: Trash2,
+      destructive: true,
+      onSelect: handlers.onDelete,
+    });
+    // Move is omitted: project-scoped assignments inherit their workspace from
+    // the parent project. The server enforces this with a 400.
+  } else {
+    // Standalone: no DELETE /api/assignments/:id route yet, so omit Delete.
+    items.push({
+      key: 'move',
+      label: 'Move to workspace…',
+      icon: ArrowRightLeft,
+      onSelect: handlers.onMove,
+    });
+  }
+  return items;
 }
 
 function AssignmentBoardCard({

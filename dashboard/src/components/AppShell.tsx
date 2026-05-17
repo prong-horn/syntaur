@@ -1,13 +1,23 @@
 import { useState, type ReactNode } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import type { LucideIcon } from 'lucide-react';
-import { Activity, AlertTriangle, BookOpen, Boxes, Brain, CheckSquare, Compass, FolderKanban, LifeBuoy, Library, ListTodo, Monitor, Plus, Settings, X, ChevronDown } from 'lucide-react';
+import { Activity, AlertTriangle, BookOpen, Boxes, Brain, CheckSquare, Compass, FolderKanban, LifeBuoy, Library, ListTodo, Monitor, Plus, Settings, X, ChevronDown, Trash2 } from 'lucide-react';
 import { SidebarNav, type SidebarNavItem } from './SidebarNav';
 import { TopBar } from './TopBar';
 import { useWorkspaces } from '../hooks/useProjects';
 import { toTitleCase } from '../lib/format';
 import { isSidebarItemActive, type SidebarSection } from '../lib/routes';
 import { useHotkey } from '../hotkeys';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from './ui/alert-dialog';
 
 interface Breadcrumb {
   label: string;
@@ -158,6 +168,10 @@ function ShellSidebar({
   const [collapsedWorkspaces, setCollapsedWorkspaces] = useState<Set<string>>(new Set());
   const [creatingWorkspace, setCreatingWorkspace] = useState(false);
   const [newWorkspaceName, setNewWorkspaceName] = useState('');
+  const [hoverWs, setHoverWs] = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
+  const [deleteBlockers, setDeleteBlockers] = useState<{ projects: string[]; standalones: string[] } | null>(null);
+  const [deleteLoading, setDeleteLoading] = useState(false);
   const navigate = useNavigate();
 
   function toggleCollapse(ws: string) {
@@ -174,6 +188,72 @@ function ShellSidebar({
 
   // Build workspace sections: named workspaces + ungrouped (only if projects without workspace exist)
   const allSections = [...workspaces, ...(hasUngrouped ? ['_ungrouped'] : [])];
+
+  async function handleDeleteWorkspace(cascade: boolean): Promise<void> {
+    if (!deleteTarget) return;
+    setDeleteLoading(true);
+    try {
+      const url = `/api/workspaces/${encodeURIComponent(deleteTarget)}${cascade ? '?cascade=true' : ''}`;
+      const res = await fetch(url, { method: 'DELETE' });
+      if (res.status === 409) {
+        const body = await res.json().catch(() => ({}));
+        setDeleteBlockers(body?.blockedBy ?? { projects: [], standalones: [] });
+        return;
+      }
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error || 'Failed to delete workspace');
+      }
+      setDeleteTarget(null);
+      setDeleteBlockers(null);
+    } catch (err) {
+      console.error(err);
+      alert(err instanceof Error ? err.message : 'Failed to delete workspace');
+    } finally {
+      setDeleteLoading(false);
+    }
+  }
+
+  async function handleSidebarDrop(
+    payload: { type: string; id: string },
+    target: string | null,
+  ): Promise<void> {
+    try {
+      if (payload.type === 'project') {
+        const res = await fetch(`/api/projects/${encodeURIComponent(payload.id)}/move-workspace`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ workspace: target }),
+        });
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({}));
+          throw new Error(body.error || 'Failed to move project');
+        }
+        return;
+      }
+      if (payload.type === 'standalone-assignment') {
+        const res = await fetch(`/api/assignments/${encodeURIComponent(payload.id)}/move-workspace`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ workspaceGroup: target }),
+        });
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({}));
+          throw new Error(body.error || 'Failed to move assignment');
+        }
+        return;
+      }
+      if (payload.type === 'project-assignment') {
+        alert(
+          'Assignments inherit workspace from their project — drag the project (or move it) to change workspaces.',
+        );
+        return;
+      }
+    } catch (err) {
+      console.error(err);
+      alert(err instanceof Error ? err.message : 'Failed to move item');
+    }
+  }
 
   return (
     <div className="flex h-full flex-col gap-3">
@@ -211,21 +291,71 @@ function ShellSidebar({
           const wsPrefix = isUngrouped ? '/w/_ungrouped' : `/w/${ws}`;
           const isCollapsed = collapsedWorkspaces.has(ws);
           const isActive = activeWorkspace === ws || (activeWorkspace === null && isUngrouped && location.pathname.startsWith('/w/_ungrouped'));
+          const isHover = hoverWs === ws;
 
           return (
-            <div key={ws}>
-              <button
-                type="button"
-                onClick={() => toggleCollapse(ws)}
-                className={`flex w-full items-center gap-2 rounded-md px-3 py-1.5 text-xs font-semibold uppercase tracking-wider transition ${
-                  isActive
-                    ? 'text-foreground'
-                    : 'text-muted-foreground/70 hover:text-muted-foreground'
-                }`}
-              >
-                <ChevronDown className={`h-3 w-3 transition-transform ${isCollapsed ? '-rotate-90' : ''}`} />
-                {wsLabel}
-              </button>
+            <div
+              key={ws}
+              className={`rounded-md transition ${isHover ? 'bg-accent/40 ring-1 ring-ring/40' : ''}`}
+              onDragOver={(event) => {
+                if (!event.dataTransfer.types.includes('application/json')) return;
+                event.preventDefault();
+                event.dataTransfer.dropEffect = 'move';
+                setHoverWs(ws);
+              }}
+              onDragLeave={(event) => {
+                // Descendant check prevents hover flicker as the pointer crosses child elements.
+                if (event.currentTarget.contains(event.relatedTarget as Node | null)) return;
+                setHoverWs((prev) => (prev === ws ? null : prev));
+              }}
+              onDrop={async (event) => {
+                try {
+                  const raw = event.dataTransfer.getData('application/json');
+                  if (!raw) return;
+                  event.preventDefault();
+                  let payload: { type?: string; id?: string };
+                  try {
+                    payload = JSON.parse(raw);
+                  } catch {
+                    return;
+                  }
+                  if (!payload?.type || !payload?.id) return;
+                  const target = isUngrouped ? null : ws;
+                  await handleSidebarDrop(payload as { type: string; id: string }, target);
+                } finally {
+                  setHoverWs(null);
+                }
+              }}
+            >
+              <div className="group flex items-center">
+                <button
+                  type="button"
+                  onClick={() => toggleCollapse(ws)}
+                  className={`flex flex-1 items-center gap-2 rounded-md px-3 py-1.5 text-xs font-semibold uppercase tracking-wider transition ${
+                    isActive
+                      ? 'text-foreground'
+                      : 'text-muted-foreground/70 hover:text-muted-foreground'
+                  }`}
+                >
+                  <ChevronDown className={`h-3 w-3 transition-transform ${isCollapsed ? '-rotate-90' : ''}`} />
+                  {wsLabel}
+                </button>
+                {!isUngrouped ? (
+                  <button
+                    type="button"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      setDeleteTarget(ws);
+                      setDeleteBlockers(null);
+                    }}
+                    title={`Delete workspace "${ws}"`}
+                    aria-label={`Delete workspace "${ws}"`}
+                    className="mr-1 flex h-6 w-6 items-center justify-center rounded text-muted-foreground/60 opacity-0 transition hover:bg-destructive/10 hover:text-destructive focus-visible:opacity-100 group-hover:opacity-100"
+                  >
+                    <Trash2 className="h-3 w-3" />
+                  </button>
+                ) : null}
+              </div>
               {!isCollapsed && (
                 <nav className="ml-2 space-y-0.5">
                   {WORKSPACE_SCOPED_LABELS.map((item) => {
@@ -334,6 +464,108 @@ function ShellSidebar({
           </div>
         </div>
       )}
+
+      <AlertDialog
+        open={deleteTarget !== null}
+        onOpenChange={(next) => {
+          if (deleteLoading) return;
+          if (!next) {
+            setDeleteTarget(null);
+            setDeleteBlockers(null);
+          }
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {deleteBlockers ? 'Workspace has references' : 'Delete workspace?'}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {deleteBlockers ? (
+                <>
+                  The workspace <code className="rounded bg-muted px-1 py-0.5">{deleteTarget}</code> is still referenced by:
+                </>
+              ) : (
+                <>
+                  Remove the workspace <code className="rounded bg-muted px-1 py-0.5">{deleteTarget}</code> from the registry. This does not affect projects or standalones unless you choose to cascade.
+                </>
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+
+          {deleteBlockers ? (
+            <div className="space-y-2 text-sm">
+              {deleteBlockers.projects.length > 0 ? (
+                <div>
+                  <p className="font-medium text-foreground">
+                    Projects ({deleteBlockers.projects.length})
+                  </p>
+                  <ul className="mt-1 list-disc pl-5 text-muted-foreground">
+                    {deleteBlockers.projects.map((slug) => (
+                      <li key={slug}>
+                        <Link to={`/projects/${slug}`} className="hover:underline">
+                          {slug}
+                        </Link>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+              {deleteBlockers.standalones.length > 0 ? (
+                <div>
+                  <p className="font-medium text-foreground">
+                    Standalones ({deleteBlockers.standalones.length})
+                  </p>
+                  <ul className="mt-1 list-disc pl-5 text-muted-foreground">
+                    {deleteBlockers.standalones.map((id) => (
+                      <li key={id}>
+                        <Link to={`/assignments/${id}`} className="hover:underline">
+                          {id}
+                        </Link>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+              <p className="text-xs text-muted-foreground">
+                Choose "Clear references and delete" to set <code>workspace:</code> / <code>workspaceGroup:</code> to <code>null</code> on each, then remove the workspace.
+              </p>
+            </div>
+          ) : null}
+
+          <AlertDialogFooter>
+            <AlertDialogCancel
+              disabled={deleteLoading}
+              className="shell-action mt-0 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              Cancel
+            </AlertDialogCancel>
+            {deleteBlockers ? (
+              <AlertDialogAction
+                disabled={deleteLoading}
+                onClick={(event) => {
+                  event.preventDefault();
+                  void handleDeleteWorkspace(true);
+                }}
+                className="shell-action mt-0 border-destructive/80 bg-destructive text-destructive-foreground hover:bg-destructive/90 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {deleteLoading ? 'Working…' : 'Clear references and delete'}
+              </AlertDialogAction>
+            ) : (
+              <AlertDialogAction
+                disabled={deleteLoading}
+                onClick={(event) => {
+                  event.preventDefault();
+                  void handleDeleteWorkspace(false);
+                }}
+                className="shell-action mt-0 border-destructive/80 bg-destructive text-destructive-foreground hover:bg-destructive/90 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {deleteLoading ? 'Working…' : 'Delete'}
+              </AlertDialogAction>
+            )}
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

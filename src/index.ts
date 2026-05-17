@@ -25,6 +25,7 @@ import { createPlaybookCommand } from './commands/create-playbook.js';
 import { listPlaybooksCommand } from './commands/list-playbooks.js';
 import { enablePlaybookCommand } from './commands/enable-playbook.js';
 import { disablePlaybookCommand } from './commands/disable-playbook.js';
+import { deletePlaybookCommand } from './commands/delete-playbook.js';
 import { regenPlaybookManifestCommand } from './commands/regen-playbook-manifest.js';
 import { todoCommand } from './commands/todo.js';
 import { backupCommand } from './commands/backup.js';
@@ -657,6 +658,22 @@ program
   .action(async (slug) => {
     try {
       await disablePlaybookCommand(slug);
+    } catch (error) {
+      console.error(
+        'Error:',
+        error instanceof Error ? error.message : String(error),
+      );
+      process.exit(1);
+    }
+  });
+
+program
+  .command('delete-playbook')
+  .description('Delete a playbook from disk and regenerate the manifest')
+  .argument('<slug>', 'Playbook slug')
+  .action(async (slug) => {
+    try {
+      await deletePlaybookCommand(slug);
     } catch (error) {
       console.error(
         'Error:',

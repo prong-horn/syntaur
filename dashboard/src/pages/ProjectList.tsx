@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useSearchParams, useParams } from 'react-router-dom';
-import { Info } from 'lucide-react';
+import { Info, Pencil, ArrowRightLeft } from 'lucide-react';
 import { useProjects, useWorkspacePrefix, type ProjectSummary } from '../hooks/useProjects';
 import { LoadingState } from '../components/LoadingState';
 import { ErrorState } from '../components/ErrorState';
@@ -9,12 +9,15 @@ import { FilterBar } from '../components/FilterBar';
 import { SearchInput } from '../components/SearchInput';
 import { ViewToggle } from '../components/ViewToggle';
 import { SectionCard } from '../components/SectionCard';
-import { KanbanBoard, type KanbanColumn } from '../components/KanbanBoard';
+import { KanbanBoard, type KanbanColumn, type ExternalDragData } from '../components/KanbanBoard';
 import { StatusBadge, getStatusDescription } from '../components/StatusBadge';
 import { ProgressBar } from '../components/ProgressBar';
 import { formatDate } from '../lib/format';
 import { PROJECT_BOARD_COLUMNS, moveItem } from '../lib/kanban';
 import { useHotkey, useHotkeyScope, useListSelection } from '../hotkeys';
+import { ContextMenuPopover } from '../components/ContextMenuPopover';
+import { MoveToWorkspaceDialog } from '../components/MoveToWorkspaceDialog';
+import type { OverflowMenuItem } from '../components/OverflowMenu';
 
 export function ProjectList() {
   const { workspace } = useParams<{ workspace?: string }>();
@@ -44,6 +47,11 @@ export function ProjectList() {
     });
   };
   const [projectOrder, setProjectOrder] = useState<Record<string, string[]>>({});
+  const [contextMenu, setContextMenu] = useState<{
+    project: ProjectSummary;
+    anchor: { x: number; y: number };
+  } | null>(null);
+  const [moveTarget, setMoveTarget] = useState<ProjectSummary | null>(null);
 
   const filtered = useMemo(() => {
     if (!projects) {
@@ -341,6 +349,11 @@ export function ProjectList() {
               window.location.reload();
             });
           }}
+          getExternalDragData={(project): ExternalDragData => ({ type: 'project', id: project.slug })}
+          onCardContextMenu={(project, event) => {
+            event.preventDefault();
+            setContextMenu({ project, anchor: { x: event.clientX, y: event.clientY } });
+          }}
           emptyMessage={(column) => `No ${column.title.toLowerCase()} projects.`}
           renderCard={(project, { dragging }) => {
             const flatIdx = visibleIndexByKey.get(project.slug) ?? -1;
@@ -352,6 +365,47 @@ export function ProjectList() {
           }}
         />
       )}
+
+      <ContextMenuPopover
+        anchor={contextMenu?.anchor ?? null}
+        items={contextMenu ? ([
+          {
+            key: 'edit',
+            label: 'Edit',
+            icon: Pencil,
+            onSelect: () => navigate(`${wsPrefix}/projects/${contextMenu.project.slug}`),
+          },
+          {
+            key: 'move',
+            label: 'Move to workspace…',
+            icon: ArrowRightLeft,
+            onSelect: () => setMoveTarget(contextMenu.project),
+          },
+        ] as OverflowMenuItem[]) : []}
+        onClose={() => setContextMenu(null)}
+      />
+
+      <MoveToWorkspaceDialog
+        open={moveTarget !== null}
+        onOpenChange={(next) => {
+          if (!next) setMoveTarget(null);
+        }}
+        currentWorkspace={moveTarget?.workspace ?? null}
+        title="Move project to workspace"
+        onSubmit={async (target) => {
+          if (!moveTarget) return;
+          const res = await fetch(`/api/projects/${encodeURIComponent(moveTarget.slug)}/move-workspace`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ workspace: target }),
+          });
+          if (!res.ok) {
+            const body = await res.json().catch(() => ({}));
+            throw new Error(body.error || 'Failed to move project');
+          }
+          refetch();
+        }}
+      />
 
       <div className="rounded-lg border border-border/60 bg-card/80 p-3 text-sm text-muted-foreground">
         <div className="flex items-start gap-3">

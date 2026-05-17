@@ -1,4 +1,4 @@
-import { Fragment, type DragEvent, type ReactNode, useMemo, useRef, useState } from 'react';
+import { Fragment, type DragEvent, type MouseEvent as ReactMouseEvent, type ReactNode, useMemo, useRef, useState } from 'react';
 import { cn } from '../lib/utils';
 
 export interface KanbanColumn {
@@ -20,6 +20,17 @@ interface MovePayload<T> {
   toIndex: number;
 }
 
+/**
+ * Closed union of types that external drop targets (e.g., sidebar workspace rows)
+ * understand. Producers (kanban consumers) set this via `getExternalDragData`.
+ */
+export type ExternalDragType = 'project' | 'project-assignment' | 'standalone-assignment';
+
+export interface ExternalDragData {
+  type: ExternalDragType;
+  id: string;
+}
+
 interface KanbanBoardProps<T> {
   columns: KanbanColumn[];
   items: T[];
@@ -28,6 +39,18 @@ interface KanbanBoardProps<T> {
   renderCard: (item: T, state: { dragging: boolean }) => ReactNode;
   canDrop?: (payload: { item: T; fromColumnId: string; toColumnId: string }) => DropValidation;
   onMove?: (payload: MovePayload<T>) => void | Promise<void>;
+  /**
+   * Optional. When set, drag-start additionally emits an `application/json` payload so
+   * external drop targets (sidebar rows etc.) can branch on the item type. Independent
+   * of `onMove` — a board can support external drag without in-board reordering.
+   */
+  getExternalDragData?: (item: T) => ExternalDragData | null;
+  /**
+   * Optional. Fires on right-click of a card whose target is not a nested `<a>` /
+   * `<button>` / `[role="button"]` (those keep the native menu). The handler is
+   * expected to `preventDefault()` itself if it wants to open a custom popover.
+   */
+  onCardContextMenu?: (item: T, event: ReactMouseEvent<HTMLElement>) => void;
   emptyMessage?: string | ((column: KanbanColumn) => string);
 }
 
@@ -44,6 +67,8 @@ export function KanbanBoard<T>({
   renderCard,
   canDrop,
   onMove,
+  getExternalDragData,
+  onCardContextMenu,
   emptyMessage = 'No cards in this column.',
 }: KanbanBoardProps<T>) {
   const [draggedId, setDraggedId] = useState<string | null>(null);
@@ -79,14 +104,23 @@ export function KanbanBoard<T>({
     setDropTarget(null);
   }
 
-  function handleDragStart(event: DragEvent<HTMLDivElement>, itemId: string) {
-    if (!onMove) {
+  function handleDragStart(event: DragEvent<HTMLDivElement>, item: T, itemId: string) {
+    const external = getExternalDragData?.(item) ?? null;
+
+    if (!onMove && !external) {
       return;
     }
 
     event.dataTransfer.effectAllowed = 'move';
     event.dataTransfer.setData('text/plain', itemId);
-    setDraggedId(itemId);
+
+    if (external) {
+      event.dataTransfer.setData('application/json', JSON.stringify(external));
+    }
+
+    if (onMove) {
+      setDraggedId(itemId);
+    }
   }
 
   function handleDragOver(event: DragEvent<HTMLElement>, columnId: string, index: number) {
@@ -211,7 +245,7 @@ export function KanbanBoard<T>({
                         onDrop={(event) => handleDrop(event, column.id, index)}
                       />
                       <div
-                        draggable={Boolean(onMove)}
+                        draggable={Boolean(onMove || getExternalDragData)}
                         onMouseDown={(e) => {
                           mouseDownTarget.current = e.target;
                         }}
@@ -221,12 +255,20 @@ export function KanbanBoard<T>({
                             event.preventDefault();
                             return;
                           }
-                          handleDragStart(event, itemId);
+                          handleDragStart(event, item, itemId);
                         }}
                         onDragEnd={clearDragState}
+                        onContextMenu={(event) => {
+                          if (!onCardContextMenu) return;
+                          const target = event.target as HTMLElement | null;
+                          // Right-clicks on nested interactive elements get the native menu
+                          // (e.g., "Open link in new tab" on the card title link).
+                          if (target?.closest('a, button, [role="button"]')) return;
+                          onCardContextMenu(item, event);
+                        }}
                         className={cn(
                           'transition',
-                          onMove ? 'cursor-grab active:cursor-grabbing' : '',
+                          onMove || getExternalDragData ? 'cursor-grab active:cursor-grabbing' : '',
                           isDragging ? 'scale-[0.98] opacity-50' : '',
                         )}
                       >

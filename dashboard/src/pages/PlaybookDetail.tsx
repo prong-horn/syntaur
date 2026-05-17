@@ -1,11 +1,20 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
-import { Pencil, Trash2, Tag } from 'lucide-react';
+import { Pencil, Trash2, Tag, Type } from 'lucide-react';
 import { usePlaybook } from '../hooks/useProjects';
 import { LoadingState } from '../components/LoadingState';
 import { ErrorState } from '../components/ErrorState';
 import { MarkdownRenderer } from '../components/MarkdownRenderer';
 import { formatDateTime } from '../lib/format';
+import { isValidSlug, slugify } from '../lib/slug';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '../components/ui/dialog';
 
 export function PlaybookDetail() {
   const { slug } = useParams<{ slug: string }>();
@@ -14,7 +23,45 @@ export function PlaybookDetail() {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [toggling, setToggling] = useState(false);
+  const [renameOpen, setRenameOpen] = useState(false);
+  const [renameInput, setRenameInput] = useState('');
+  const [renaming, setRenaming] = useState(false);
+  const [renameError, setRenameError] = useState<string | null>(null);
   const isManifest = slug === 'manifest';
+
+  useEffect(() => {
+    if (renameOpen) {
+      setRenameInput(slug ?? '');
+      setRenameError(null);
+    }
+  }, [renameOpen, slug]);
+
+  const renamePreview = slugify(renameInput);
+  const renameValid = renamePreview.length > 0 && isValidSlug(renamePreview) && renamePreview !== 'manifest';
+  const renameChanged = renamePreview !== slug;
+
+  async function handleRename() {
+    if (!slug || !renameValid || !renameChanged) return;
+    setRenaming(true);
+    setRenameError(null);
+    try {
+      const res = await fetch(`/api/playbooks/${encodeURIComponent(slug)}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ newSlug: renamePreview }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error || 'Failed to rename playbook');
+      }
+      setRenameOpen(false);
+      navigate(`/playbooks/${renamePreview}`);
+    } catch (err) {
+      setRenameError(err instanceof Error ? err.message : 'Failed to rename playbook');
+    } finally {
+      setRenaming(false);
+    }
+  }
 
   async function handleDelete() {
     if (!slug) return;
@@ -142,6 +189,15 @@ export function PlaybookDetail() {
               Edit
             </Link>
 
+            <button
+              type="button"
+              onClick={() => setRenameOpen(true)}
+              className="inline-flex h-8 items-center gap-1.5 rounded-md border border-border/70 bg-background px-3 text-xs font-medium text-foreground transition hover:bg-muted"
+            >
+              <Type className="h-3 w-3" />
+              Rename
+            </button>
+
             {confirmDelete ? (
               <div className="flex items-center gap-2">
                 <button
@@ -177,6 +233,69 @@ export function PlaybookDetail() {
       <div className="surface-panel p-4">
         <MarkdownRenderer content={data.body} />
       </div>
+
+      <Dialog
+        open={renameOpen}
+        onOpenChange={(next) => (!renaming ? setRenameOpen(next) : undefined)}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Rename playbook</DialogTitle>
+            <DialogDescription>
+              The slug changes both the file name and the canonical slug stored in frontmatter. The URL will update on save.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-2">
+            <label htmlFor="rename-slug-input" className="block text-xs font-medium text-muted-foreground">
+              New slug
+            </label>
+            <input
+              id="rename-slug-input"
+              type="text"
+              autoFocus
+              value={renameInput}
+              onChange={(event) => setRenameInput(event.target.value)}
+              disabled={renaming}
+              className="h-9 w-full rounded-md border border-border/70 bg-background px-3 text-sm text-foreground focus:border-foreground/40 focus:outline-none"
+              placeholder="my-new-slug"
+            />
+            {renameInput && renamePreview !== renameInput ? (
+              <p className="text-xs text-muted-foreground">
+                Will be normalized to <code className="rounded bg-muted px-1 py-0.5">{renamePreview || '—'}</code>
+              </p>
+            ) : null}
+            {renameInput && !renameValid ? (
+              <p className="text-xs text-destructive">
+                Slugs must be lowercase, hyphen-separated, with no special characters, and cannot be "manifest".
+              </p>
+            ) : null}
+          </div>
+
+          {renameError ? (
+            <p className="text-sm text-destructive" role="alert">{renameError}</p>
+          ) : null}
+
+          <DialogFooter>
+            <button
+              type="button"
+              onClick={() => setRenameOpen(false)}
+              disabled={renaming}
+              className="shell-action mt-0 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={handleRename}
+              disabled={renaming || !renameValid || !renameChanged}
+              className="shell-action mt-0 bg-foreground text-background hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {renaming ? 'Renaming…' : 'Rename'}
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
