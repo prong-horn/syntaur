@@ -37,7 +37,8 @@ import {
   type Activity as ActivityFilter,
   type ProjectViewPrefs,
 } from '@shared/view-prefs-schema';
-import { saveGlobalViewPrefs, saveScopeViewPrefs, useViewPrefs } from '../hooks/useViewPrefs';
+import { fetchViewPrefs, saveGlobalViewPrefs, saveScopeViewPrefs, useViewPrefs } from '../hooks/useViewPrefs';
+import { mergeForScope } from '@shared/view-prefs-schema';
 
 const VALID_VIEWS: readonly ViewMode[] = VIEW_MODES;
 
@@ -231,49 +232,72 @@ export function AssignmentsPage() {
     });
   }, [activityFilter, setSearchParams, statusFilter]);
 
-  // Bootstrap: hydrate non-URL fields + seed URL-tracked fields from prefs.
-  // Runs once after prefs are first available. The state->URL effect above is
-  // gated on bootstrapDoneRef so it does not fire during this pass.
-  // Persistence is driven by user-action wrappers below (NOT a snapshot effect)
-  // so the bootstrap setX calls never trigger saves and inherited scope fields
-  // stay inherited until the user actually changes them.
+  // Hydrate non-URL-tracked fields from prefs on every prefs change.
+  // Idempotent setX — if local value already matches, React bails out. This
+  // covers BOTH the cold-browser case (defaults render first, server response
+  // arrives later) AND the Settings-driven case (user changes a default in
+  // another component, subscriber-set propagates here).
   useEffect(() => {
-    if (bootstrapDoneRef.current) return;
-    // Hydrate non-URL-tracked fields directly from prefs.
     setPriorityFilter(prefs.filters.priority ?? 'all');
     setAssigneeFilter(prefs.filters.assignee ?? 'all');
     setProjectFilter(prefs.filters.project ?? 'all');
     setSortField(prefs.sortField);
     setSortDirection(prefs.sortDirection);
-    // Seed URL-tracked fields when the URL param is absent.
-    const wantView: ViewMode = prefs.defaultView;
-    const wantStatus = prefs.filters.status ?? 'all';
-    const wantActivity = prefs.filters.activity ?? 'all';
-    let needsUrlWrite = false;
-    const nextParams = new URLSearchParams(searchParams);
-    if (searchParams.get('view') === null && wantView !== 'kanban' && VALID_VIEWS.includes(wantView)) {
-      nextParams.set('view', wantView);
-      needsUrlWrite = true;
-    }
-    if (searchParams.get('status') === null && wantStatus !== 'all' && VALID_STATUS_SET.has(wantStatus)) {
-      nextParams.set('status', wantStatus);
-      setStatusFilter(wantStatus);
-      needsUrlWrite = true;
-    }
-    if (searchParams.get('stale') === null && wantActivity !== 'all') {
-      nextParams.set('stale', wantActivity === 'stale' ? '1' : '0');
-      setActivityFilter(wantActivity);
-      needsUrlWrite = true;
-    }
-    if (needsUrlWrite) {
-      setSearchParams(nextParams, { replace: true });
-    }
-    // Flip on the next microtask so the in-flight render's effects (state->URL)
-    // see false; subsequent user-driven setters see true.
-    queueMicrotask(() => {
-      bootstrapDoneRef.current = true;
+  }, [
+    prefs.filters.priority,
+    prefs.filters.assignee,
+    prefs.filters.project,
+    prefs.sortField,
+    prefs.sortDirection,
+  ]);
+
+  // One-shot URL seed: waits for the server response to land (fetchViewPrefs
+  // resolves after the first /api/view-prefs round-trip), then for each
+  // URL-tracked field (view / status / stale), writes the persisted value
+  // when the URL param is absent. Also hydrates local state for status /
+  // activity from the server prefs. Once done, flips bootstrapDoneRef on the
+  // next microtask so the state->URL effect (lines ~203-223) unlocks.
+  useEffect(() => {
+    if (bootstrapDoneRef.current) return;
+    let cancelled = false;
+    fetchViewPrefs().then((latest) => {
+      if (cancelled || bootstrapDoneRef.current) return;
+      const p = mergeForScope(latest, scope);
+      const wantView: ViewMode = p.defaultView;
+      const wantStatus = p.filters.status ?? 'all';
+      const wantActivity = p.filters.activity ?? 'all';
+      let needsUrlWrite = false;
+      const nextParams = new URLSearchParams(searchParams);
+      if (searchParams.get('view') === null && wantView !== 'kanban' && VALID_VIEWS.includes(wantView)) {
+        nextParams.set('view', wantView);
+        needsUrlWrite = true;
+      }
+      if (searchParams.get('status') === null && wantStatus !== 'all') {
+        // Don't pre-validate against VALID_STATUS_SET here — statusConfig is
+        // also async and may not be loaded yet. The URL->state effect
+        // (normalizeStatusFilter) gracefully reduces unknown values to 'all',
+        // and the state->URL effect tidies the URL on the next render.
+        nextParams.set('status', wantStatus);
+        setStatusFilter(wantStatus);
+        needsUrlWrite = true;
+      }
+      if (searchParams.get('stale') === null && wantActivity !== 'all') {
+        nextParams.set('stale', wantActivity === 'stale' ? '1' : '0');
+        setActivityFilter(wantActivity);
+        needsUrlWrite = true;
+      }
+      if (needsUrlWrite) {
+        setSearchParams(nextParams, { replace: true });
+      }
+      queueMicrotask(() => {
+        bootstrapDoneRef.current = true;
+      });
     });
-  }, [prefs, searchParams, setSearchParams, VALID_STATUS_SET]);
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Persist one field per user action. The server deep-merges, so siblings
   // (other fields, other filter keys) are preserved. Inherited scope fields

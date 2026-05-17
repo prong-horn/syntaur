@@ -25,6 +25,18 @@ let cachedFile: ViewPrefsResponse | null = readLocalCache();
 let fetchPromise: Promise<ViewPrefsResponse> | null = null;
 const subscribers = new Set<(value: ViewPrefsResponse) => void>();
 
+// Monotonic request sequence. Every fetch / POST / DELETE claims a fresh seq
+// before issuing; on completion the response only `notify()`s if its seq is
+// still the latest. This prevents a stale in-flight GET or an out-of-order
+// POST from overwriting a newer just-saved value.
+let latestSeq = 0;
+function claimSeq(): number {
+  return ++latestSeq;
+}
+function isLatest(seq: number): boolean {
+  return seq === latestSeq;
+}
+
 function readLocalCache(): ViewPrefsResponse | null {
   if (typeof window === 'undefined' || !window.localStorage) return null;
   try {
@@ -80,6 +92,7 @@ function normalize(data: unknown): ViewPrefsResponse {
 export function fetchViewPrefs(): Promise<ViewPrefsResponse> {
   if (fetchPromise) return fetchPromise;
 
+  const seq = claimSeq();
   fetchPromise = fetch('/api/view-prefs')
     .then((res) => {
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -87,9 +100,11 @@ export function fetchViewPrefs(): Promise<ViewPrefsResponse> {
     })
     .then((data) => {
       const normalized = normalize(data);
-      notify(normalized);
+      // Drop the result if a newer write has been issued in the meantime;
+      // its response (or an even later one) will produce the canonical state.
+      if (isLatest(seq)) notify(normalized);
       fetchPromise = null;
-      return normalized;
+      return cachedFile ?? normalized;
     })
     .catch(() => {
       fetchPromise = null;
@@ -139,6 +154,7 @@ export function useViewPrefsFile(): ViewPrefsResponse {
 }
 
 async function postPatch(patch: ViewPrefsPatch): Promise<ViewPrefsResponse> {
+  const seq = claimSeq();
   const res = await fetch('/api/view-prefs', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -149,7 +165,7 @@ async function postPatch(patch: ViewPrefsPatch): Promise<ViewPrefsResponse> {
     throw new Error(err.error ?? 'Failed to save view-prefs');
   }
   const normalized = normalize(await res.json());
-  notify(normalized);
+  if (isLatest(seq)) notify(normalized);
   return normalized;
 }
 
@@ -162,10 +178,11 @@ export function saveScopeViewPrefs(scope: string, patch: ProjectViewPrefs): Prom
 }
 
 export async function resetViewPrefs(): Promise<ViewPrefsResponse> {
+  const seq = claimSeq();
   const res = await fetch('/api/view-prefs', { method: 'DELETE' });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   const normalized = normalize(await res.json());
-  notify(normalized);
+  if (isLatest(seq)) notify(normalized);
   return normalized;
 }
 
