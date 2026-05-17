@@ -117,7 +117,9 @@ export function AssignmentsPage() {
   const statusConfig = useStatusConfig();
   const [searchParams, setSearchParams] = useSearchParams();
 
-  const scope: string | null = workspace ?? null;
+  // Namespace the scope key so workspace-scoped prefs cannot collide with
+  // project-detail prefs if a workspace name and a project slug ever match.
+  const scope: string | null = workspace ? `w:${workspace}` : null;
   const prefs = useViewPrefs(scope);
   // Tracks which scope the URL has been bootstrapped for. `undefined` = never.
   // Reset implicitly when `scope` changes (we re-bootstrap for the new scope).

@@ -61,7 +61,9 @@ export function ProjectDetail() {
       { replace: true },
     );
   }
-  const prefs = useViewPrefs(slug ?? null);
+  // Namespace the scope key (see AssignmentsPage for rationale).
+  const scopeKey = slug ? `p:${slug}` : null;
+  const prefs = useViewPrefs(scopeKey);
 
   const [assignmentView, setAssignmentView] = useState<'kanban' | 'table'>(
     () => coerceProjectDetailView(prefs.defaultView),
@@ -83,12 +85,12 @@ export function ProjectDetail() {
 
   const persistField = useCallback(
     (patch: Parameters<typeof saveScopeViewPrefs>[1]) => {
-      if (!slug) return;
-      saveScopeViewPrefs(slug, patch).catch((err) => {
+      if (!scopeKey) return;
+      saveScopeViewPrefs(scopeKey, patch).catch((err) => {
         console.warn('Failed to persist project view prefs:', err);
       });
     },
-    [slug],
+    [scopeKey],
   );
 
   const handleSetAssignmentView = useCallback(
