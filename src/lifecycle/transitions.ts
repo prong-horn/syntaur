@@ -4,7 +4,31 @@ import { fileExists, writeFileForce } from '../utils/fs.js';
 import { nowTimestamp } from '../utils/timestamp.js';
 import { getTargetStatus } from './state-machine.js';
 import { parseAssignmentFrontmatter, updateAssignmentFile } from './frontmatter.js';
+import {
+  completeLinkedTodos,
+  reopenLinkedTodos,
+  type LinkedTodosLookup,
+} from './linked-todos.js';
 import type { TransitionCommand, TransitionResult, AssignmentFrontmatter } from './types.js';
+
+function linkedAssignmentRef(frontmatter: AssignmentFrontmatter): string {
+  return frontmatter.project ? `${frontmatter.project}/${frontmatter.slug}` : frontmatter.id;
+}
+
+async function applyLinkedTodosSideEffect(
+  lookup: LinkedTodosLookup | undefined,
+  command: string,
+  targetStatus: string,
+  frontmatter: AssignmentFrontmatter,
+): Promise<void> {
+  if (!lookup) return;
+  const ref = linkedAssignmentRef(frontmatter);
+  if (targetStatus === 'completed') {
+    await completeLinkedTodos(lookup, frontmatter.id, ref);
+  } else if (command === 'reopen') {
+    await reopenLinkedTodos(lookup, frontmatter.id, ref);
+  }
+}
 
 function resolveAssignmentPath(projectDir: string, assignmentSlug: string): string {
   return resolve(projectDir, 'assignments', assignmentSlug, 'assignment.md');
@@ -48,6 +72,14 @@ export interface TransitionOptions {
   agent?: string;
   transitionTable?: Map<string, string>;
   terminalStatuses?: ReadonlySet<string>;
+  /**
+   * When provided, on a transition to `completed` we scan the configured todos
+   * dirs and auto-complete any todo whose `linkedAssignmentId` matches this
+   * assignment's UUID. On `reopen` we auto-reopen any such todo whose most
+   * recent log entry is the auto-complete marker (manual completions are left
+   * untouched).
+   */
+  linkedTodosLookup?: LinkedTodosLookup;
 }
 
 const ASSIGNEE_SETTING_COMMANDS = new Set(['start', 'shape', 'plan-ready', 'implement']);
@@ -97,6 +129,8 @@ export async function executeTransition(
 
   const updatedContent = updateAssignmentFile(content, updates);
   await writeFileForce(filePath, updatedContent);
+
+  await applyLinkedTodosSideEffect(options.linkedTodosLookup, command, targetStatus, frontmatter);
 
   return {
     success: true,
@@ -183,6 +217,8 @@ export async function executeTransitionByDir(
 
   const updatedContent = updateAssignmentFile(content, updates);
   await writeFileForce(filePath, updatedContent);
+
+  await applyLinkedTodosSideEffect(options.linkedTodosLookup, command, targetStatus, frontmatter);
 
   return {
     success: true,

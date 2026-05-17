@@ -13,6 +13,7 @@ export interface AssignmentParams {
   type?: string;
   includeTodos?: boolean;
   status?: string;
+  acceptanceCriteria?: string[];
 }
 
 export function renderAssignment(params: AssignmentParams): string {
@@ -30,6 +31,12 @@ export function renderAssignment(params: AssignmentParams): string {
     ? `\nworkspaceGroup: ${params.workspaceGroup}`
     : '';
   const typeYaml = `type: ${params.type ?? 'feature'}`;
+
+  const criteriaLines = params.acceptanceCriteria && params.acceptanceCriteria.length > 0
+    ? params.acceptanceCriteria.map((c) => `- [ ] ${c.replace(/\n/g, ' ').trim()}`).join('\n')
+    : `- [ ] <!-- criterion 1 -->
+- [ ] <!-- criterion 2 -->
+- [ ] <!-- criterion 3 -->`;
 
   const todosSection = params.includeTodos
     ? `## Todos
@@ -76,9 +83,7 @@ tags: []
 
 ## Acceptance Criteria
 
-- [ ] <!-- criterion 1 -->
-- [ ] <!-- criterion 2 -->
-- [ ] <!-- criterion 3 -->
+${criteriaLines}
 
 ${todosSection}## Context
 

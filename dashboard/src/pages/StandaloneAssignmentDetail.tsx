@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { ArrowRightLeft } from 'lucide-react';
-import { useAssignmentById } from '../hooks/useProjects';
+import { useAssignmentById, useAssignmentSessionsById } from '../hooks/useProjects';
 import { LoadingState } from '../components/LoadingState';
 import { ErrorState } from '../components/ErrorState';
 import { StatusBadge } from '../components/StatusBadge';
@@ -12,6 +12,7 @@ import { MarkdownRenderer } from '../components/MarkdownRenderer';
 import { EmptyState } from '../components/EmptyState';
 import { CommentsThread } from '../components/CommentsThread';
 import { MoveToWorkspaceDialog } from '../components/MoveToWorkspaceDialog';
+import { AgentSessionsSection } from '../components/AgentSessionsSection';
 
 /**
  * Read-and-edit view for standalone assignments (those at
@@ -22,6 +23,7 @@ export function StandaloneAssignmentDetail() {
   const [searchParams, setSearchParams] = useSearchParams();
   const tab = searchParams.get('tab') ?? 'summary';
   const { data: assignment, loading, error, refetch } = useAssignmentById(id);
+  const { data: sessionsData, loading: sessionsLoading, error: sessionsError } = useAssignmentSessionsById(id);
   const [moveOpen, setMoveOpen] = useState(false);
 
   if (loading) return <LoadingState />;
@@ -84,6 +86,12 @@ export function StandaloneAssignmentDetail() {
           </ul>
         </SectionCard>
       ) : null}
+
+      <AgentSessionsSection
+        sessions={sessionsData?.sessions}
+        loading={sessionsLoading}
+        error={sessionsError}
+      />
 
       <ContentTabs
         value={tab}

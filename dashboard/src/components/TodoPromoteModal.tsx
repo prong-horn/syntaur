@@ -8,24 +8,50 @@ import {
   DialogHeader,
   DialogTitle,
 } from './ui/dialog';
-import { promoteTodos, type PromoteBody } from '../hooks/useTodos';
+import {
+  promoteTodos,
+  promoteTodosBulk,
+  type PromoteBody,
+  type PromoteResult,
+  type BulkPromoteResult,
+} from '../hooks/useTodos';
 import { promoteProjectTodos } from '../hooks/useProjectTodos';
 import type { ProjectSummary, AssignmentSummary } from '../hooks/useProjects';
 import { cn } from '../lib/utils';
 
-export type PromoteScope = { kind: 'workspace'; workspace: string } | { kind: 'project'; projectId: string };
+export type PromoteScope =
+  | { kind: 'workspace'; workspace: string }
+  | { kind: 'project'; projectId: string }
+  | { kind: 'aggregate'; groups: Array<{ workspace: string; todoIds: string[] }> };
 
 interface TodoPromoteModalProps {
   open: boolean;
   selectedIds: string[];
   scope: PromoteScope;
   onOpenChange: (open: boolean) => void;
-  onDone: () => void;
+  onDone: (result?: PromoteResult | BulkPromoteResult) => void;
+  /** Pre-fill the "Target project" picker when known (e.g. inferred from selection). */
+  defaultProject?: string;
+  /** Pre-fill the title field. Defaults to the first selected todo's description in the caller. */
+  defaultTitle?: string;
+  /** When true, expose a "One-off (no project)" option in the new-assignment form. */
+  allowOneOff?: boolean;
 }
 
 type Priority = 'low' | 'medium' | 'high' | 'critical';
 
-export function TodoPromoteModal({ open, selectedIds, scope, onOpenChange, onDone }: TodoPromoteModalProps) {
+const ONE_OFF_SENTINEL = '__one_off__';
+
+export function TodoPromoteModal({
+  open,
+  selectedIds,
+  scope,
+  onOpenChange,
+  onDone,
+  defaultProject,
+  defaultTitle,
+  allowOneOff = true,
+}: TodoPromoteModalProps) {
   const [tab, setTab] = useState<'new' | 'existing'>('new');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -60,6 +86,8 @@ export function TodoPromoteModal({ open, selectedIds, scope, onOpenChange, onDon
       setAssignments(null);
       return;
     }
+    setNewProject(defaultProject ?? '');
+    setNewTitle(defaultTitle ?? '');
     let cancelled = false;
     void (async () => {
       try {
@@ -72,7 +100,7 @@ export function TodoPromoteModal({ open, selectedIds, scope, onOpenChange, onDon
       }
     })();
     return () => { cancelled = true; };
-  }, [open]);
+  }, [open, defaultProject, defaultTitle]);
 
   useEffect(() => {
     if (!existingProject) { setAssignments(null); return; }
@@ -97,12 +125,27 @@ export function TodoPromoteModal({ open, selectedIds, scope, onOpenChange, onDon
 
   async function submitNew(e: React.FormEvent) {
     e.preventDefault();
-    if (!newProject) { setError('Pick a target project.'); return; }
+    if (!newProject) { setError('Pick a target project (or "One-off").'); return; }
     if (titleRequired && !newTitle.trim()) { setError('Title is required when promoting multiple todos.'); return; }
+    const target = newProject === ONE_OFF_SENTINEL
+      ? ({ oneOff: true as const })
+      : ({ project: newProject });
+    if (scope.kind === 'aggregate') {
+      const body = {
+        groups: scope.groups,
+        mode: 'new-assignment' as const,
+        target,
+        title: newTitle.trim() || undefined,
+        type: newType.trim() || undefined,
+        priority: newPriority || undefined,
+      };
+      await runBulkMutation(body);
+      return;
+    }
     const body: PromoteBody = {
       todoIds: selectedIds,
       mode: 'new-assignment',
-      target: { project: newProject },
+      target,
       title: newTitle.trim() || undefined,
       type: newType.trim() || undefined,
       priority: newPriority || undefined,
@@ -112,6 +155,7 @@ export function TodoPromoteModal({ open, selectedIds, scope, onOpenChange, onDon
 
   async function submitExisting(e: React.FormEvent) {
     e.preventDefault();
+    if (scope.kind === 'aggregate') { setError('Existing-assignment mode does not support cross-workspace selections yet.'); return; }
     if (!existingProject || !existingAssignment) { setError('Pick both project and assignment.'); return; }
     const body: PromoteBody = {
       todoIds: selectedIds,
@@ -125,12 +169,29 @@ export function TodoPromoteModal({ open, selectedIds, scope, onOpenChange, onDon
     setSubmitting(true);
     setError(null);
     try {
+      let result: PromoteResult;
       if (scope.kind === 'workspace') {
-        await promoteTodos(scope.workspace, body);
+        result = await promoteTodos(scope.workspace, body);
+      } else if (scope.kind === 'project') {
+        result = await promoteProjectTodos(scope.projectId, body);
       } else {
-        await promoteProjectTodos(scope.projectId, body);
+        throw new Error('Aggregate scope requires runBulkMutation.');
       }
-      onDone();
+      onDone(result);
+      onOpenChange(false);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function runBulkMutation(body: Parameters<typeof promoteTodosBulk>[0]) {
+    setSubmitting(true);
+    setError(null);
+    try {
+      const result = await promoteTodosBulk(body);
+      onDone(result);
       onOpenChange(false);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -145,7 +206,7 @@ export function TodoPromoteModal({ open, selectedIds, scope, onOpenChange, onDon
         <DialogHeader>
           <DialogTitle>Promote {selectedIds.length} todo{selectedIds.length === 1 ? '' : 's'}</DialogTitle>
           <DialogDescription>
-            Convert the selected todo{selectedIds.length === 1 ? '' : 's'} to an assignment. The source todo{selectedIds.length === 1 ? '' : 's'} will be marked completed.
+            Convert the selected todo{selectedIds.length === 1 ? '' : 's'} to a new or existing assignment. Source todo{selectedIds.length === 1 ? '' : 's'} will be marked <strong>in progress</strong> and linked to the new assignment (auto-completed when the assignment closes).
           </DialogDescription>
         </DialogHeader>
 
@@ -180,6 +241,7 @@ export function TodoPromoteModal({ open, selectedIds, scope, onOpenChange, onDon
                   projects={projectOptions}
                   error={projectsError}
                   disabled={submitting}
+                  allowOneOff={allowOneOff}
                 />
               </Field>
               <Field label={titleRequired ? 'Title (required)' : 'Title (defaults to first todo)'}>
@@ -273,12 +335,14 @@ function ProjectSelect({
   projects,
   error,
   disabled,
+  allowOneOff,
 }: {
   value: string;
   onChange: (v: string) => void;
   projects: ProjectSummary[];
   error: string | null;
   disabled?: boolean;
+  allowOneOff?: boolean;
 }) {
   if (error) return <div className="text-sm text-destructive">Failed to load projects: {error}</div>;
   return (
@@ -289,6 +353,7 @@ function ProjectSelect({
       className="editor-textarea w-full bg-background/95 font-sans"
     >
       <option value="">Select project...</option>
+      {allowOneOff ? <option value={ONE_OFF_SENTINEL}>One-off (no project)</option> : null}
       {projects.map((p) => (
         <option key={p.slug} value={p.slug}>
           {p.title} ({p.slug})

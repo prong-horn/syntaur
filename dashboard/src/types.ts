@@ -145,6 +145,8 @@ export interface TodoItem {
   createdAt: string | null;
   updatedAt: string | null;
   planDir: string | null;
+  linkedAssignmentId: string | null;
+  linkedAssignmentRef: string | null;
 }
 
 export interface TodoCounts {

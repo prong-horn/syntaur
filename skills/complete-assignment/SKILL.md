@@ -129,6 +129,8 @@ If the command fails, report the error. Common failures:
 - Assignment is not in `in_progress` status
 - Project not found
 
+**Side effect:** Source todos that were promoted into this assignment via `syntaur todo promote --new-assignment` (or the dashboard `Promote to assignment` flow) automatically flip from `in_progress` to `completed` when this transition runs. If you later `reopen` the assignment, those auto-completed todos flip back to `in_progress`. Todos that the user manually marked `completed` after the auto-complete fired are left untouched on reopen.
+
 ## Step 8: Clean Up Context
 
 Delete the context file:

@@ -687,7 +687,7 @@ export function createDashboardServer(options: DashboardServerOptions) {
   });
 
   // --- Write API (create projects/assignments) ---
-  app.use(createWriteRouter(projectsDir, assignmentsDir));
+  app.use(createWriteRouter(projectsDir, assignmentsDir, todosDir));
 
   // --- Servers API ---
   app.use('/api/servers', createServersRouter(serversDir, projectsDir, assignmentsDir));
