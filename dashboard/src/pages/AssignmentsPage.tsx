@@ -256,15 +256,6 @@ export function AssignmentsPage() {
     prefs.sortDirection,
   ]);
 
-  // Track the latest searchParams so the bootstrap .then handler — which can
-  // resolve on a later tick — reads the CURRENT URL instead of a stale closure
-  // value. Without this, a user toggling a URL-tracked field before the first
-  // GET resolves could be overwritten by the bootstrap's stale view of the URL.
-  const searchParamsRef = useRef(searchParams);
-  useEffect(() => {
-    searchParamsRef.current = searchParams;
-  }, [searchParams]);
-
   // One-shot URL seed PER SCOPE: waits for the server response to land
   // (fetchViewPrefs resolves after the first /api/view-prefs round-trip),
   // then for each URL-tracked field (view / status / stale), writes the
@@ -282,7 +273,14 @@ export function AssignmentsPage() {
       const wantView: ViewMode = p.defaultView;
       const wantStatus = p.filters.status ?? 'all';
       const wantActivity = p.filters.activity ?? 'all';
-      const currentSP = searchParamsRef.current;
+      // Read the live URL directly. react-router's setSearchParams updates
+      // window.location synchronously via the History API, so this is the
+      // authoritative current URL even if the React state hasn't propagated
+      // through useSearchParams' commit phase yet. Using a ref synchronized
+      // in a passive useEffect is too late — the microtask resolving this
+      // promise can fire AFTER a state update commits but BEFORE the effect
+      // that would refresh the ref runs.
+      const currentSP = new URLSearchParams(window.location.search);
       let needsUrlWrite = false;
       const nextParams = new URLSearchParams(currentSP);
       if (currentSP.get('view') === null && wantView !== 'kanban' && VALID_VIEWS.includes(wantView)) {
