@@ -65,10 +65,10 @@ function notify(next: ViewPrefsResponse): void {
 function normalize(data: unknown): ViewPrefsResponse {
   if (!data || typeof data !== 'object') return DEFAULT_RESPONSE;
   const raw = data as Partial<ViewPrefsResponse>;
-  if (raw.version !== 1) return DEFAULT_RESPONSE;
+  if (raw.version !== DEFAULT_VIEW_PREFS_FILE.version) return DEFAULT_RESPONSE;
   if (!raw.global || !raw.projects) return DEFAULT_RESPONSE;
   return {
-    version: 1,
+    version: DEFAULT_VIEW_PREFS_FILE.version,
     global: raw.global,
     projects: raw.projects,
     custom: raw.custom === true,
