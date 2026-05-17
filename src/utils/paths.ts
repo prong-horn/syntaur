@@ -36,6 +36,10 @@ export function todosDir(): string {
   return resolve(syntaurRoot(), 'todos');
 }
 
+export function viewPrefsFile(): string {
+  return resolve(syntaurRoot(), 'view-prefs.json');
+}
+
 export function projectTodosDir(projectsDir: string, projectSlug: string): string {
   return resolve(projectsDir, projectSlug, 'todos');
 }

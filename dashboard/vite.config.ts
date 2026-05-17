@@ -12,6 +12,7 @@ export default defineConfig({
   resolve: {
     alias: {
       '@shared/hotkeys-catalog': resolve(__dirname, '../src/utils/hotkeysCatalog.ts'),
+      '@shared/view-prefs-schema': resolve(__dirname, '../src/utils/view-prefs-schema.ts'),
     },
   },
   server: {
