@@ -64,6 +64,7 @@ import { withLock } from './todos-locks.js';
 import { createWriteRouter } from './api-write.js';
 import { createServersRouter } from './api-servers.js';
 import { createAgentSessionsRouter } from './api-agent-sessions.js';
+import { createAgentsRouter } from './api-agents.js';
 import { createLeasesRouter } from './api-leases.js';
 import { createPlaybooksRouter } from './api-playbooks.js';
 import {
@@ -697,6 +698,9 @@ export function createDashboardServer(options: DashboardServerOptions) {
 
   // --- Agent Sessions API ---
   app.use('/api/agent-sessions', createAgentSessionsRouter(projectsDir, broadcast, assignmentsDir));
+
+  // --- Agents Config API ---
+  app.use('/api/config/agents', createAgentsRouter());
 
   // --- Playbooks API ---
   app.use('/api/playbooks', createPlaybooksRouter(playbooksDir));

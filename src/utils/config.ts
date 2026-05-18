@@ -11,6 +11,21 @@ import {
   isReservedCombo,
   type BindableActionKind,
 } from './hotkeysCatalog.js';
+import {
+  AGENT_ID_PATTERN,
+  BUILTIN_AGENTS,
+  PROMPT_ARG_POSITIONS,
+  type AgentConfig,
+  type PromptArgPosition,
+} from './agents-schema.js';
+
+export {
+  AGENT_ID_PATTERN,
+  BUILTIN_AGENTS,
+  PROMPT_ARG_POSITIONS,
+  type AgentConfig,
+  type PromptArgPosition,
+};
 
 export interface StatusDefinition {
   id: string;
@@ -75,18 +90,6 @@ export interface BackupConfig {
   categories: string;
   lastBackup: string | null;
   lastRestore: string | null;
-}
-
-export type PromptArgPosition = 'first' | 'last' | 'none';
-
-export interface AgentConfig {
-  id: string;
-  label: string;
-  command: string;
-  args?: string[];
-  promptArgPosition?: PromptArgPosition;
-  default?: boolean;
-  resolveFromShellAliases?: boolean;
 }
 
 export type AutoCreateWorktree = 'skip' | 'ask' | 'always';
@@ -168,13 +171,6 @@ const DEFAULT_CONFIG: SyntaurConfig = {
   terminal: null,
 };
 
-export const BUILTIN_AGENTS: AgentConfig[] = [
-  { id: 'claude', label: 'Claude', command: 'claude', default: true },
-  { id: 'codex', label: 'Codex', command: 'codex' },
-];
-
-const AGENT_ID_PATTERN = /^[a-z0-9][a-z0-9_-]*$/;
-const PROMPT_ARG_POSITIONS: readonly PromptArgPosition[] = ['first', 'last', 'none'];
 const AUTO_CREATE_WORKTREE_VALUES: readonly AutoCreateWorktree[] = ['skip', 'ask', 'always'];
 
 export class AgentConfigError extends Error {}
