@@ -1,6 +1,19 @@
 import { describe, it, expect } from 'vitest';
-import { formatUrlCommandError } from '../commands/url.js';
-import { OpenUrlError, LaunchError, TerminalNotFoundError } from '../launch/index.js';
+import { formatUrlCommandError, formatPlanForApplet } from '../commands/url.js';
+import { OpenUrlError, LaunchError, TerminalNotFoundError, type LaunchPlan } from '../launch/index.js';
+
+function makePlan(overrides: Partial<LaunchPlan> = {}): LaunchPlan {
+  return {
+    terminal: 'terminal-app',
+    cwd: '/Users/dev/work',
+    argv: { command: 'claude', args: ['Read the README'] },
+    env: {},
+    agentId: 'claude',
+    fallbackWarning: null,
+    shellFallbackWarning: null,
+    ...overrides,
+  };
+}
 
 describe('formatUrlCommandError', () => {
   it('formats OpenUrlError with its code', () => {
@@ -34,5 +47,35 @@ describe('formatUrlCommandError', () => {
     const msg = formatUrlCommandError('weird');
     expect(msg).toContain('Unexpected error');
     expect(msg).toContain('weird');
+  });
+});
+
+describe('formatPlanForApplet', () => {
+  it('emits exactly two lines: terminal id, then cd+command', () => {
+    const out = formatPlanForApplet(makePlan({ terminal: 'ghostty' }));
+    const lines = out.split('\n');
+    expect(lines).toHaveLength(2);
+    expect(lines[0]).toBe('ghostty');
+    expect(lines[1]).toBe("cd '/Users/dev/work' && 'claude' 'Read the README'");
+  });
+
+  it('shell-quotes every argv element exactly once', () => {
+    const out = formatPlanForApplet(
+      makePlan({ argv: { command: 'claude', args: ['--resume', 'sess-1'] } }),
+    );
+    expect(out.split('\n')[1]).toBe(
+      "cd '/Users/dev/work' && 'claude' '--resume' 'sess-1'",
+    );
+  });
+
+  it('escapes single quotes inside the cwd', () => {
+    const out = formatPlanForApplet(makePlan({ cwd: "/Users/o'malley/work" }));
+    // POSIX single-quote escaping: ' → '\''
+    expect(out.split('\n')[1]).toContain("'/Users/o'\\''malley/work'");
+  });
+
+  it('has no trailing newline', () => {
+    const out = formatPlanForApplet(makePlan());
+    expect(out.endsWith('\n')).toBe(false);
   });
 });
