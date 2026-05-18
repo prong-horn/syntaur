@@ -21,8 +21,32 @@ export interface LaunchOptions {
   onExit?: (code: number) => void;
 }
 
-export const INITIAL_PROMPT = (assignmentDir: string): string =>
-  `Read the current Syntaur assignment at ${assignmentDir}/assignment.md and give me a brief summary: title, status, priority, objective, and acceptance criteria.`;
+/**
+ * Initial message sent to the agent the first time it starts up at an
+ * assignment. This is the protocol entry point: `/grab-assignment` is the
+ * Claude Code skill that loads project/playbook/memory context for the
+ * assignment and (per its pre-flight check) prompts the user if a different
+ * assignment is already active in this workspace.
+ *
+ * Argument shapes match the skill's documented input:
+ *   - project-nested: `/grab-assignment <project-slug> <assignment-slug>`
+ *   - standalone:     `/grab-assignment --id <uuid>`
+ */
+export const INITIAL_PROMPT = (params: {
+  projectSlug: string | null;
+  assignmentSlug: string;
+  id?: string;
+}): string => {
+  if (params.projectSlug) {
+    return `/grab-assignment ${params.projectSlug} ${params.assignmentSlug}`;
+  }
+  if (params.id) {
+    return `/grab-assignment --id ${params.id}`;
+  }
+  // No project and no id — fall back to the slug. Should be rare; only
+  // happens if a caller forgot to pass the id for a standalone assignment.
+  return `/grab-assignment ${params.assignmentSlug}`;
+};
 
 /**
  * Build the one-line warning emitted when a launch falls back to a cwd because
@@ -145,7 +169,7 @@ export async function launchAgent(options: LaunchOptions): Promise<void> {
 
   const { argv, shellFallbackWarning } = buildAgentArgv(
     agent,
-    INITIAL_PROMPT(assignmentDir),
+    INITIAL_PROMPT({ projectSlug, assignmentSlug }),
   );
   if (shellFallbackWarning) {
     console.warn(shellFallbackWarning);

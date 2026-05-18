@@ -128,7 +128,11 @@ async function resolveAssignmentPlan(
   const agent = pickAgent(input.config);
   const { argv, shellFallbackWarning } = buildFreshArgv(
     agent,
-    INITIAL_PROMPT(resolved.assignmentDir),
+    INITIAL_PROMPT({
+      projectSlug: resolved.projectSlug,
+      assignmentSlug: resolved.assignmentSlug,
+      id: resolved.id,
+    }),
   );
 
   return {
