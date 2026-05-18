@@ -474,7 +474,12 @@ function useFetch<T>(url: string | null, websocketScope?: 'projects' | 'project'
       refetch();
     }
 
-    if (message.type === 'agent-sessions-updated' && websocketScope === 'agent-sessions') {
+    if (
+      message.type === 'agent-sessions-updated'
+      && (websocketScope === 'agent-sessions' || websocketScope === 'overview')
+    ) {
+      // Overview embeds recentSessions, so it must refetch when an agent
+      // session is registered/updated.
       refetch();
     }
 
@@ -504,8 +509,17 @@ export function useWorkspacePrefix(): string {
   return workspace ? `/w/${workspace}` : '';
 }
 
-export function useOverview(): FetchState<OverviewResponse> {
-  return useFetch<OverviewResponse>('/api/overview', 'overview');
+export function useOverview(options: { staleLimit?: number; staleOffset?: number } = {}): FetchState<OverviewResponse> {
+  const params = new URLSearchParams();
+  if (typeof options.staleLimit === 'number' && Number.isFinite(options.staleLimit)) {
+    params.set('staleLimit', String(options.staleLimit));
+  }
+  if (typeof options.staleOffset === 'number' && Number.isFinite(options.staleOffset)) {
+    params.set('staleOffset', String(options.staleOffset));
+  }
+  const qs = params.toString();
+  const url = qs ? `/api/overview?${qs}` : '/api/overview';
+  return useFetch<OverviewResponse>(url, 'overview');
 }
 
 export function useAssignmentsBoard(): FetchState<AssignmentsBoardResponse> {

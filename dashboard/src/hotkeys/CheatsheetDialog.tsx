@@ -6,6 +6,7 @@ import { canonicalizeCombo, type BindableActionKind } from './bindableActions';
 
 const SCOPE_LABEL: Record<HotkeyScope, string> = {
   global: 'Global',
+  'list:overview': 'Overview',
   'list:projects': 'Projects list',
   'list:assignments': 'Assignments list',
   'list:todos': 'Todos list',
@@ -15,6 +16,7 @@ const SCOPE_LABEL: Record<HotkeyScope, string> = {
 
 const SCOPE_ORDER: HotkeyScope[] = [
   'global',
+  'list:overview',
   'list:projects',
   'list:assignments',
   'list:todos',
