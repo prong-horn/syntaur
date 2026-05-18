@@ -77,6 +77,12 @@ import type {
   ProjectDetail,
   ProjectSummary,
   OverviewResponse,
+  OverviewSegmentId,
+  OverviewSegments,
+  OverviewHeroRecommendation,
+  OverviewHeroKind,
+  OverviewSegmentPayload,
+  OverviewStaleSegmentPayload,
   ProgressCounts,
   NeedsAttention,
   RecentActivityItem,
@@ -86,11 +92,38 @@ import type {
   PlaybookSummary,
   PlaybookDetail,
 } from './types.js';
+import { listAllSessions } from './agent-sessions.js';
+import { SEGMENT_REASON } from './overviewCopy.js';
 
 const STALE_ASSIGNMENT_MS = 7 * 24 * 60 * 60 * 1000;
-const OVERVIEW_ATTENTION_LIMIT = 6;
 const RECENT_PROJECTS_LIMIT = 6;
 const RECENT_ACTIVITY_LIMIT = 12;
+const RECENT_SESSIONS_LIMIT = 10;
+const NEWEST_CREATED_LIMIT = 5;
+const SEGMENT_DISPLAY_CAP = 5;
+const STALE_LIMIT_DEFAULT = 50;
+const STALE_LIMIT_MAX = 200;
+
+const TERMINAL_STATUSES = new Set(['completed', 'failed', 'archived']);
+
+const STATUS_TO_SEGMENT: Readonly<Record<string, OverviewSegmentId>> = {
+  review: 'readyForReview',
+  ready_to_implement: 'readyToImplement',
+  ready_for_planning: 'readyForPlanning',
+  in_progress: 'inProgress',
+  draft: 'drafts',
+  blocked: 'blocked',
+};
+
+const HERO_PRIORITY: ReadonlyArray<[OverviewSegmentId, OverviewHeroKind]> = [
+  ['readyForReview', 'review'],
+  ['readyToImplement', 'ready_to_implement'],
+  ['readyForPlanning', 'ready_for_planning'],
+  ['inProgress', 'in_progress'],
+  ['drafts', 'draft'],
+  ['blocked', 'blocked'],
+  ['stale', 'stale'],
+];
 
 type AssignmentRecord = ReturnType<typeof parseAssignmentFull>;
 
@@ -438,17 +471,36 @@ export async function deleteWorkspace(
 
 /**
  * Get overview data used by the app landing page.
- * GET /api/overview
+ * GET /api/overview?staleLimit=&staleOffset=
  */
 export async function getOverview(
   projectsDir: string,
   serversDir?: string,
   assignmentsDir?: string,
+  options: { staleLimit?: number; staleOffset?: number } = {},
 ): Promise<OverviewResponse> {
   const projectRecords = await listProjectRecords(projectsDir);
   const standaloneRecords = await listStandaloneRecords(assignmentsDir);
-  const attention = buildAttentionItems(projectRecords, standaloneRecords);
   const recentActivity = buildRecentActivity(projectRecords, standaloneRecords);
+
+  const staleLimit = clamp(
+    Number.isFinite(options.staleLimit) ? Number(options.staleLimit) : STALE_LIMIT_DEFAULT,
+    1,
+    STALE_LIMIT_MAX,
+  );
+  const staleOffset = Math.max(0, Number.isFinite(options.staleOffset) ? Number(options.staleOffset) : 0);
+
+  const buckets = await buildOverviewSegmentBuckets(projectsDir, projectRecords, standaloneRecords);
+  const segments = toOverviewSegments(buckets, { staleLimit, staleOffset });
+  const hero = pickOverviewHero(buckets);
+
+  let recentSessions: OverviewResponse['recentSessions'] = [];
+  try {
+    const all = await listAllSessions(projectsDir);
+    recentSessions = all.slice(0, RECENT_SESSIONS_LIMIT);
+  } catch {
+    // Sessions failure should not break overview.
+  }
 
   let serverStats: OverviewResponse['serverStats'];
   if (serversDir) {
@@ -499,7 +551,9 @@ export async function getOverview(
         0,
       ) + standaloneRecords.filter((sr) => isStale(sr.record.updated)).length,
     },
-    attention: attention.slice(0, OVERVIEW_ATTENTION_LIMIT),
+    hero,
+    segments,
+    recentSessions,
     recentProjects: projectRecords
       .map((record) => record.summary)
       .sort((left, right) => compareTimestamps(right.updated, left.updated))
@@ -1670,16 +1724,70 @@ async function getUnmetDependencies(projectPath: string, dependsOn: string[], te
   return unmet;
 }
 
-function buildAttentionItems(
+interface OverviewSegmentBuckets {
+  readyForReview: AttentionItem[];
+  readyToImplement: AttentionItem[];
+  readyForPlanning: AttentionItem[];
+  inProgress: AttentionItem[];
+  drafts: AttentionItem[];
+  blocked: AttentionItem[];
+  newestCreated: AttentionItem[];
+  stale: AttentionItem[];
+}
+
+function emptyBuckets(): OverviewSegmentBuckets {
+  return {
+    readyForReview: [],
+    readyToImplement: [],
+    readyForPlanning: [],
+    inProgress: [],
+    drafts: [],
+    blocked: [],
+    newestCreated: [],
+    stale: [],
+  };
+}
+
+function segmentSeverity(segment: OverviewSegmentId): AttentionItem['severity'] {
+  switch (segment) {
+    case 'blocked':
+      return 'high';
+    case 'readyForReview':
+      return 'medium';
+    case 'stale':
+      return 'low';
+    default:
+      return 'medium';
+  }
+}
+
+async function buildOverviewSegmentBuckets(
+  projectsDir: string,
   projectRecords: ProjectRecord[],
-  standaloneRecords: StandaloneRecord[] = [],
-): AttentionItem[] {
-  const items: AttentionItem[] = [];
+  standaloneRecords: StandaloneRecord[],
+): Promise<OverviewSegmentBuckets> {
+  const now = Date.now();
+  const buckets = emptyBuckets();
+  // Pool of all non-terminal rows (across primary segments) used to seed
+  // `newestCreated`. Each entry remembers its `created` timestamp + the row
+  // we'd clone into the segment.
+  const newestPool: Array<{ created: string; clone: AttentionItem }> = [];
 
   for (const record of projectRecords) {
     for (const assignment of record.assignments) {
+      const segmentId = STATUS_TO_SEGMENT[assignment.status];
       const stale = isStale(assignment.updated);
-      const base = {
+      const isTerminal = TERMINAL_STATUSES.has(assignment.status);
+      const agingMs = Math.max(0, now - parseTimestamp(assignment.updated));
+      const baseId = `${record.summary.slug}:${assignment.slug}`;
+      const availableTransitions = await getAvailableTransitions(
+        projectsDir,
+        record.summary.slug,
+        assignment.slug,
+        assignment,
+      );
+
+      const shared = {
         projectSlug: record.summary.slug,
         projectTitle: record.summary.title,
         assignmentSlug: assignment.slug,
@@ -1689,41 +1797,47 @@ function buildAttentionItems(
         href: `/projects/${record.summary.slug}/assignments/${assignment.slug}`,
         blockedReason: assignment.blockedReason,
         stale,
+        agingMs,
+        assignee: assignment.assignee ?? null,
+        availableTransitions,
       };
 
-      if (assignment.status === 'failed') {
-        items.push({
-          id: `${record.summary.slug}:${assignment.slug}:failed`,
-          severity: 'critical',
-          reason: 'Marked failed and needs a recovery decision.',
-          ...base,
-        });
+      if (segmentId) {
+        const reason =
+          segmentId === 'blocked' && assignment.blockedReason
+            ? assignment.blockedReason
+            : SEGMENT_REASON[segmentId];
+        const primary: AttentionItem = {
+          ...shared,
+          id: `${baseId}:${segmentId}`,
+          severity: segmentSeverity(segmentId),
+          reason,
+          segment: segmentId,
+        };
+        buckets[segmentId].push(primary);
       }
 
-      if (assignment.status === 'blocked') {
-        items.push({
-          id: `${record.summary.slug}:${assignment.slug}:blocked`,
-          severity: 'high',
-          reason: assignment.blockedReason || 'Blocked and waiting for intervention.',
-          ...base,
-        });
-      }
-
-      if (assignment.status === 'review') {
-        items.push({
-          id: `${record.summary.slug}:${assignment.slug}:review`,
-          severity: 'medium',
-          reason: 'Ready for review.',
-          ...base,
-        });
-      }
-
-      if (stale) {
-        items.push({
-          id: `${record.summary.slug}:${assignment.slug}:stale`,
+      if (stale && !isTerminal) {
+        const staleItem: AttentionItem = {
+          ...shared,
+          id: `${baseId}:stale`,
           severity: 'low',
-          reason: 'No source updates have been recorded in the last 7 days.',
-          ...base,
+          reason: SEGMENT_REASON.stale,
+          segment: 'stale',
+        };
+        buckets.stale.push(staleItem);
+      }
+
+      if (!isTerminal) {
+        newestPool.push({
+          created: assignment.created,
+          clone: {
+            ...shared,
+            id: `${baseId}:newest`,
+            severity: 'low',
+            reason: SEGMENT_REASON.newestCreated,
+            segment: 'newestCreated',
+          },
         });
       }
     }
@@ -1731,8 +1845,14 @@ function buildAttentionItems(
 
   for (const sr of standaloneRecords) {
     const assignment = sr.record;
+    const segmentId = STATUS_TO_SEGMENT[assignment.status];
     const stale = isStale(assignment.updated);
-    const base = {
+    const isTerminal = TERMINAL_STATUSES.has(assignment.status);
+    const agingMs = Math.max(0, now - parseTimestamp(assignment.updated));
+    const baseId = `standalone:${sr.id}`;
+    const availableTransitions = await getStandaloneAvailableTransitions(assignment);
+
+    const shared = {
       projectSlug: null,
       projectTitle: null,
       assignmentSlug: assignment.slug || sr.id,
@@ -1742,23 +1862,110 @@ function buildAttentionItems(
       href: `/assignments/${sr.id}`,
       blockedReason: assignment.blockedReason,
       stale,
+      agingMs,
+      assignee: assignment.assignee ?? null,
+      availableTransitions,
     };
 
-    if (assignment.status === 'failed') {
-      items.push({ id: `standalone:${sr.id}:failed`, severity: 'critical', reason: 'Marked failed and needs a recovery decision.', ...base });
+    if (segmentId) {
+      const reason =
+        segmentId === 'blocked' && assignment.blockedReason
+          ? assignment.blockedReason
+          : SEGMENT_REASON[segmentId];
+      buckets[segmentId].push({
+        ...shared,
+        id: `${baseId}:${segmentId}`,
+        severity: segmentSeverity(segmentId),
+        reason,
+        segment: segmentId,
+      });
     }
-    if (assignment.status === 'blocked') {
-      items.push({ id: `standalone:${sr.id}:blocked`, severity: 'high', reason: assignment.blockedReason || 'Blocked and waiting for intervention.', ...base });
+
+    if (stale && !isTerminal) {
+      buckets.stale.push({
+        ...shared,
+        id: `${baseId}:stale`,
+        severity: 'low',
+        reason: SEGMENT_REASON.stale,
+        segment: 'stale',
+      });
     }
-    if (assignment.status === 'review') {
-      items.push({ id: `standalone:${sr.id}:review`, severity: 'medium', reason: 'Ready for review.', ...base });
-    }
-    if (stale) {
-      items.push({ id: `standalone:${sr.id}:stale`, severity: 'low', reason: 'No source updates have been recorded in the last 7 days.', ...base });
+
+    if (!isTerminal) {
+      newestPool.push({
+        created: assignment.created,
+        clone: {
+          ...shared,
+          id: `${baseId}:newest`,
+          severity: 'low',
+          reason: SEGMENT_REASON.newestCreated,
+          segment: 'newestCreated',
+        },
+      });
     }
   }
 
-  return items.sort(compareAttentionItems);
+  newestPool.sort((a, b) => compareTimestamps(b.created, a.created));
+  buckets.newestCreated = newestPool.slice(0, NEWEST_CREATED_LIMIT).map((entry) => entry.clone);
+
+  for (const key of Object.keys(buckets) as OverviewSegmentId[]) {
+    if (key === 'newestCreated') continue; // already sorted by `created`
+    if (key === 'stale') {
+      buckets[key].sort((a, b) => b.agingMs - a.agingMs);
+      continue;
+    }
+    buckets[key].sort((a, b) => compareTimestamps(b.updated, a.updated));
+  }
+
+  return buckets;
+}
+
+function toOverviewSegments(
+  buckets: OverviewSegmentBuckets,
+  staleOpts: { staleLimit: number; staleOffset: number },
+): OverviewSegments {
+  const sliceCap = (items: AttentionItem[]): OverviewSegmentPayload => ({
+    items: items.slice(0, SEGMENT_DISPLAY_CAP),
+    total: items.length,
+  });
+
+  const stale = buckets.stale;
+  const staleSlice = stale.slice(staleOpts.staleOffset, staleOpts.staleOffset + staleOpts.staleLimit);
+  const staleSegment: OverviewStaleSegmentPayload = {
+    items: staleSlice,
+    total: stale.length,
+    limit: staleOpts.staleLimit,
+    offset: staleOpts.staleOffset,
+    hasMore: staleOpts.staleOffset + staleSlice.length < stale.length,
+  };
+
+  return {
+    readyForReview: sliceCap(buckets.readyForReview),
+    readyToImplement: sliceCap(buckets.readyToImplement),
+    readyForPlanning: sliceCap(buckets.readyForPlanning),
+    inProgress: sliceCap(buckets.inProgress),
+    drafts: sliceCap(buckets.drafts),
+    blocked: sliceCap(buckets.blocked),
+    newestCreated: { items: buckets.newestCreated, total: buckets.newestCreated.length },
+    stale: staleSegment,
+  };
+}
+
+function pickOverviewHero(buckets: OverviewSegmentBuckets): OverviewHeroRecommendation {
+  for (const [segmentId, kind] of HERO_PRIORITY) {
+    const bucket = buckets[segmentId];
+    if (bucket.length === 0) continue;
+    const top = bucket[0];
+    const total = bucket.length;
+    const copyKey = total === 1 ? `${kind}.singular` : kind;
+    return { kind, copyKey, itemId: top.id, total };
+  }
+  return { kind: 'clean', copyKey: 'clean', itemId: null, total: 0 };
+}
+
+function clamp(value: number, min: number, max: number): number {
+  if (!Number.isFinite(value)) return min;
+  return Math.min(Math.max(value, min), max);
 }
 
 function buildRecentActivity(
@@ -1812,15 +2019,6 @@ function buildRecentActivity(
 
   activity.sort((left, right) => compareTimestamps(right.updated, left.updated));
   return activity;
-}
-
-function compareAttentionItems(left: AttentionItem, right: AttentionItem): number {
-  const severityRank = { critical: 0, high: 1, medium: 2, low: 3 };
-  const severityDifference = severityRank[left.severity] - severityRank[right.severity];
-  if (severityDifference !== 0) {
-    return severityDifference;
-  }
-  return compareTimestamps(right.updated, left.updated);
 }
 
 function compareTimestamps(left: string, right: string): number {

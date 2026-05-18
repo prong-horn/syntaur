@@ -166,9 +166,16 @@ export function createDashboardServer(options: DashboardServerOptions) {
   app.use(express.json());
 
   // --- API Routes ---
-  app.get('/api/overview', async (_req, res) => {
+  app.get('/api/overview', async (req, res) => {
     try {
-      const overview = await getOverview(projectsDir, serversDir, assignmentsDir);
+      const staleLimitRaw = req.query.staleLimit;
+      const staleOffsetRaw = req.query.staleOffset;
+      const staleLimit = typeof staleLimitRaw === 'string' ? Number(staleLimitRaw) : undefined;
+      const staleOffset = typeof staleOffsetRaw === 'string' ? Number(staleOffsetRaw) : undefined;
+      const overview = await getOverview(projectsDir, serversDir, assignmentsDir, {
+        staleLimit,
+        staleOffset,
+      });
       res.json(overview);
     } catch (error) {
       console.error('Error getting overview:', error);

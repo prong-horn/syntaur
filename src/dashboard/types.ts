@@ -234,6 +234,21 @@ export interface AssignmentTransitionAction {
   requiresReason: boolean;
 }
 
+/**
+ * Overview segment identifier. Every row in the new segmented Overview maps
+ * to exactly one of these. Backed by the Overview row reason copy in
+ * `overviewCopy.ts`.
+ */
+export type OverviewSegmentId =
+  | 'readyForReview'
+  | 'readyToImplement'
+  | 'readyForPlanning'
+  | 'inProgress'
+  | 'drafts'
+  | 'blocked'
+  | 'newestCreated'
+  | 'stale';
+
 export interface AttentionItem {
   id: string;
   severity: 'critical' | 'high' | 'medium' | 'low';
@@ -249,6 +264,65 @@ export interface AttentionItem {
   href: string;
   stale: boolean;
   blockedReason: string | null;
+  /** Which Overview segment this row was bucketed into. */
+  segment: OverviewSegmentId;
+  /** Milliseconds since the row was last updated, relative to response time. */
+  agingMs: number;
+  /** Current assignee from frontmatter; `null` if unclaimed. */
+  assignee: string | null;
+  /** Transitions available right now; powers the Advance quick action. */
+  availableTransitions: AssignmentTransitionAction[];
+}
+
+/** Hero category — drives both copy lookup and the row reference. */
+export type OverviewHeroKind =
+  | 'review'
+  | 'ready_to_implement'
+  | 'ready_for_planning'
+  | 'in_progress'
+  | 'draft'
+  | 'blocked'
+  | 'stale'
+  | 'clean';
+
+export interface OverviewHeroRecommendation {
+  kind: OverviewHeroKind;
+  /**
+   * Copy key in `overviewCopy.ts`. For non-clean kinds the backend may emit
+   * either the plural key (`'review'`) or the singular variant
+   * (`'review.singular'`) — `total` carries the count.
+   */
+  copyKey: string;
+  /** AttentionItem.id of the row this hero references; `null` when `kind === 'clean'`. */
+  itemId: string | null;
+  /** Pre-cap total in the chosen segment. `0` when `kind === 'clean'`. */
+  total: number;
+}
+
+export interface OverviewSegmentPayload {
+  items: AttentionItem[];
+  /** Pre-cap total before display truncation. */
+  total: number;
+}
+
+export interface OverviewStaleSegmentPayload extends OverviewSegmentPayload {
+  /** Page size used by the server for this response. */
+  limit: number;
+  /** Page offset honored by the server for this response. */
+  offset: number;
+  /** True when there are more stale rows beyond `offset + items.length`. */
+  hasMore: boolean;
+}
+
+export interface OverviewSegments {
+  readyForReview: OverviewSegmentPayload;
+  readyToImplement: OverviewSegmentPayload;
+  readyForPlanning: OverviewSegmentPayload;
+  inProgress: OverviewSegmentPayload;
+  drafts: OverviewSegmentPayload;
+  blocked: OverviewSegmentPayload;
+  newestCreated: OverviewSegmentPayload;
+  stale: OverviewStaleSegmentPayload;
 }
 
 export interface AssignmentsBoardResponse {
@@ -281,7 +355,9 @@ export interface OverviewResponse {
     failedAssignments: number;
     staleAssignments: number;
   };
-  attention: AttentionItem[];
+  hero: OverviewHeroRecommendation;
+  segments: OverviewSegments;
+  recentSessions: AgentSession[];
   recentProjects: ProjectSummary[];
   recentActivity: RecentActivityItem[];
   serverStats?: {

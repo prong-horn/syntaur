@@ -38,6 +38,7 @@ import {
 
 export type HotkeyScope =
   | 'global'
+  | 'list:overview'
   | 'list:projects'
   | 'list:assignments'
   | 'list:todos'

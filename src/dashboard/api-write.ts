@@ -1311,6 +1311,38 @@ export function createWriteRouter(
     }
   });
 
+  router.patch('/api/projects/:slug/assignments/:aslug/assignee', async (req: Request, res: Response) => {
+    try {
+      const projectSlug = getParam(req.params.slug);
+      const assignmentSlug = getParam(req.params.aslug);
+      const assignmentPath = resolve(
+        projectsDir,
+        projectSlug,
+        'assignments',
+        assignmentSlug,
+        'assignment.md',
+      );
+      if (!(await fileExists(assignmentPath))) {
+        res.status(404).json({ error: 'Assignment not found' });
+        return;
+      }
+      const validation = validateAssigneeBody(req.body);
+      if (!validation.ok) {
+        res.status(400).json({ error: validation.error });
+        return;
+      }
+      let content = await readFile(assignmentPath, 'utf-8');
+      content = setTopLevelField(content, 'assignee', validation.value);
+      content = setTopLevelField(content, 'updated', nowTimestamp());
+      await writeFileForce(assignmentPath, content);
+      const assignment = await getAssignmentDetail(projectsDir, projectSlug, assignmentSlug);
+      res.json({ assignment });
+    } catch (error) {
+      console.error('Error updating assignee:', error);
+      res.status(500).json({ error: `Failed to update assignee: ${(error as Error).message}` });
+    }
+  });
+
   // --- Lifecycle Transitions ---
 
   router.post('/api/projects/:slug/assignments/:aslug/transitions/:command', async (req: Request, res: Response) => {
@@ -1902,6 +1934,131 @@ export function createWriteRouter(
     }
   });
 
+  router.patch('/api/assignments/:id/assignee', async (req: Request, res: Response) => {
+    try {
+      if (!assignmentsDir) {
+        res.status(501).json({ error: 'Standalone assignments not configured on this server' });
+        return;
+      }
+      const id = getParam(req.params.id);
+      const resolved = await resolveAssignmentById(projectsDir, assignmentsDir, id);
+      if (!resolved) {
+        res.status(404).json({ error: `Assignment "${id}" not found` });
+        return;
+      }
+      const assignmentPath = resolve(resolved.assignmentDir, 'assignment.md');
+      if (!(await fileExists(assignmentPath))) {
+        res.status(404).json({ error: 'Assignment not found' });
+        return;
+      }
+      const validation = validateAssigneeBody(req.body);
+      if (!validation.ok) {
+        res.status(400).json({ error: validation.error });
+        return;
+      }
+      let content = await readFile(assignmentPath, 'utf-8');
+      content = setTopLevelField(content, 'assignee', validation.value);
+      content = setTopLevelField(content, 'updated', nowTimestamp());
+      await writeFileForce(assignmentPath, content);
+      const assignment = await getAssignmentDetailById(projectsDir, assignmentsDir, id);
+      res.json({ assignment });
+    } catch (error) {
+      console.error('Error updating standalone assignee:', error);
+      res.status(500).json({ error: `Failed to update assignee: ${(error as Error).message}` });
+    }
+  });
+
+  router.post('/api/assignments/bulk-status-override', async (req: Request, res: Response) => {
+    try {
+      const body = req.body;
+      if (!body || typeof body !== 'object' || !Array.isArray(body.items)) {
+        res.status(400).json({ error: 'Request body must include `items` (array).' });
+        return;
+      }
+      const items = body.items as Array<unknown>;
+      if (items.length === 0) {
+        res.status(400).json({ error: '`items` must contain at least one entry.' });
+        return;
+      }
+      if (items.length > 200) {
+        res.status(400).json({ error: '`items` is capped at 200 entries per call.' });
+        return;
+      }
+
+      const config = await getStatusConfig();
+      const validStatuses = new Set(config.statuses.map((s) => s.id));
+      const timestamp = nowTimestamp();
+      const results: Array<{ key: string; ok: boolean; error?: string }> = [];
+      let succeeded = 0;
+      let failed = 0;
+
+      for (let index = 0; index < items.length; index += 1) {
+        const raw = items[index];
+        const itemKey = buildBulkItemKey(raw, index);
+        try {
+          if (!raw || typeof raw !== 'object') {
+            throw new Error('item must be an object');
+          }
+          const item = raw as Record<string, unknown>;
+          const status = typeof item.status === 'string' ? item.status : null;
+          if (!status || !validStatuses.has(status)) {
+            throw new Error(`invalid status "${status ?? ''}"`);
+          }
+
+          let assignmentPath: string | null = null;
+          if (typeof item.id === 'string' && item.id.trim()) {
+            if (!assignmentsDir) {
+              throw new Error('standalone assignments are not configured on this server');
+            }
+            const resolved = await resolveAssignmentById(projectsDir, assignmentsDir, item.id);
+            if (!resolved) {
+              throw new Error(`assignment "${item.id}" not found`);
+            }
+            assignmentPath = resolve(resolved.assignmentDir, 'assignment.md');
+          } else if (
+            typeof item.projectSlug === 'string'
+            && typeof item.assignmentSlug === 'string'
+            && item.projectSlug
+            && item.assignmentSlug
+          ) {
+            assignmentPath = resolve(
+              projectsDir,
+              item.projectSlug,
+              'assignments',
+              item.assignmentSlug,
+              'assignment.md',
+            );
+          } else {
+            throw new Error('must supply either `id` or both `projectSlug` and `assignmentSlug`');
+          }
+
+          if (!(await fileExists(assignmentPath))) {
+            throw new Error('assignment file not found');
+          }
+
+          let content = await readFile(assignmentPath, 'utf-8');
+          content = setTopLevelField(content, 'status', status);
+          content = setTopLevelField(content, 'updated', timestamp);
+          if (status !== 'blocked') {
+            content = setTopLevelField(content, 'blockedReason', null);
+          }
+          await writeFileForce(assignmentPath, content);
+
+          results.push({ key: itemKey, ok: true });
+          succeeded += 1;
+        } catch (error) {
+          results.push({ key: itemKey, ok: false, error: (error as Error).message });
+          failed += 1;
+        }
+      }
+
+      res.json({ results, succeeded, failed });
+    } catch (error) {
+      console.error('Error in bulk-status-override:', error);
+      res.status(500).json({ error: `Bulk status override failed: ${(error as Error).message}` });
+    }
+  });
+
   router.patch('/api/assignments/:id/acceptance-criteria/:index', async (req: Request, res: Response) => {
     try {
       if (!assignmentsDir) {
@@ -1988,6 +2145,38 @@ function slugifyLocal(input: string): string {
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '') || 'untitled';
+}
+
+type AssigneeValidation =
+  | { ok: true; value: string | null }
+  | { ok: false; error: string };
+
+function validateAssigneeBody(body: unknown): AssigneeValidation {
+  if (!body || typeof body !== 'object') {
+    return { ok: false, error: 'Body must include `assignee` (string or null).' };
+  }
+  const assignee = (body as Record<string, unknown>).assignee;
+  if (assignee === null) return { ok: true, value: null };
+  if (typeof assignee !== 'string') {
+    return { ok: false, error: '`assignee` must be a string or null.' };
+  }
+  const trimmed = assignee.trim();
+  if (trimmed.length === 0) return { ok: true, value: null };
+  if (trimmed.length > 120) {
+    return { ok: false, error: '`assignee` must be 120 characters or fewer.' };
+  }
+  return { ok: true, value: trimmed };
+}
+
+function buildBulkItemKey(raw: unknown, index: number): string {
+  if (raw && typeof raw === 'object') {
+    const item = raw as Record<string, unknown>;
+    if (typeof item.id === 'string' && item.id.trim()) return item.id;
+    if (typeof item.projectSlug === 'string' && typeof item.assignmentSlug === 'string') {
+      return `${item.projectSlug}/${item.assignmentSlug}`;
+    }
+  }
+  return `#${index}`;
 }
 
 async function appendCommentTo(
