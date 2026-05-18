@@ -886,10 +886,17 @@ describe('overview', () => {
     const result = await getOverview(testDir);
     expect(result.firstRun).toBe(true);
     expect(result.stats.activeProjects).toBe(0);
-    expect(result.attention).toHaveLength(0);
+    // Every segment is empty on a fresh workspace.
+    expect(result.segments.readyForReview.items).toHaveLength(0);
+    expect(result.segments.blocked.items).toHaveLength(0);
+    expect(result.segments.stale.items).toHaveLength(0);
+    expect(result.segments.inProgress.items).toHaveLength(0);
+    expect(result.hero.kind).toBe('clean');
+    expect(result.hero.itemId).toBeNull();
+    expect(result.recentSessions).toEqual([]);
   });
 
-  it('builds overview stats, recent activity, and attention items from source files', async () => {
+  it('builds overview stats, recent activity, and segmented attention from source files', async () => {
     await createProjectFiles(testDir, 'test-project', PROJECT_MD, [
       { slug: 'test-assignment', assignmentMd: ASSIGNMENT_MD, planMd: PLAN_MD },
       { slug: 'blocked-assignment', assignmentMd: BLOCKED_ASSIGNMENT_MD },
@@ -904,8 +911,43 @@ describe('overview', () => {
     expect(overview.stats.staleAssignments).toBe(1);
     expect(overview.recentActivity[0].href).toContain('/projects/test-project');
 
-    expect(overview.attention[0].severity).toBe('high');
-    expect(overview.attention.some((item) => item.reason.includes('7 days'))).toBe(true);
+    // Segments
+    expect(overview.segments.inProgress.items.length).toBeGreaterThanOrEqual(1);
+    expect(overview.segments.blocked.items.length).toBeGreaterThanOrEqual(1);
+    expect(overview.segments.stale.items.length).toBeGreaterThanOrEqual(1);
+    expect(overview.segments.blocked.items[0].severity).toBe('high');
+    expect(overview.segments.blocked.items[0].segment).toBe('blocked');
+    expect(overview.segments.stale.items[0].agingMs).toBeGreaterThan(0);
+    expect(overview.segments.blocked.total).toBe(overview.segments.blocked.items.length);
+
+    // Stale paging metadata
+    expect(overview.segments.stale.limit).toBeGreaterThan(0);
+    expect(overview.segments.stale.offset).toBe(0);
+    expect(typeof overview.segments.stale.hasMore).toBe('boolean');
+
+    // Hero rule: blocked beats stale (no review/ready_to_implement/ready_for_planning/in_progress
+    // would normally beat blocked, but in_progress is also present — `in_progress` is higher
+    // priority than `blocked`). Confirm hero picks one of the two and references a real id.
+    expect(['in_progress', 'blocked']).toContain(overview.hero.kind);
+    expect(overview.hero.itemId).toBeTruthy();
+    expect(overview.hero.total).toBeGreaterThan(0);
+
+    // Row contract: availableTransitions populated, assignee field present.
+    const blocked = overview.segments.blocked.items[0];
+    expect(Array.isArray(blocked.availableTransitions)).toBe(true);
+    expect('assignee' in blocked).toBe(true);
+  });
+
+  it('honors staleLimit / staleOffset paging options', async () => {
+    await createProjectFiles(testDir, 'test-project', PROJECT_MD, [
+      { slug: 'test-assignment', assignmentMd: ASSIGNMENT_MD, planMd: PLAN_MD },
+      { slug: 'blocked-assignment', assignmentMd: BLOCKED_ASSIGNMENT_MD },
+    ]);
+
+    const overview = await getOverview(testDir, undefined, undefined, { staleLimit: 1, staleOffset: 0 });
+    expect(overview.segments.stale.limit).toBe(1);
+    expect(overview.segments.stale.offset).toBe(0);
+    expect(overview.segments.stale.items.length).toBeLessThanOrEqual(1);
   });
 });
 

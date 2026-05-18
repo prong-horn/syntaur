@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useParams } from 'react-router-dom';
 import { useWebSocket } from './useWebSocket';
 import type { WsMessage } from './useWebSocket';
-import type { ServersResponse, TrackedSession, AgentSessionsResponse, PlaybooksResponse, PlaybookDetail, InventoriesResponse, InventoryDetail } from '../types';
+import type { ServersResponse, TrackedSession, AgentSessionsResponse, AgentSession, PlaybooksResponse, PlaybookDetail, InventoriesResponse, InventoryDetail } from '../types';
 
 export type ProgressCounts = Record<string, number> & { total: number };
 
@@ -222,11 +222,23 @@ export interface AssignmentComments {
   entries: AssignmentCommentEntry[];
 }
 
+export type OverviewSegmentId =
+  | 'readyForReview'
+  | 'readyToImplement'
+  | 'readyForPlanning'
+  | 'inProgress'
+  | 'drafts'
+  | 'blocked'
+  | 'newestCreated'
+  | 'stale';
+
 export interface AttentionItem {
   id: string;
   severity: 'critical' | 'high' | 'medium' | 'low';
-  projectSlug: string;
-  projectTitle: string;
+  /** `null` for standalone assignments. */
+  projectSlug: string | null;
+  /** `null` for standalone assignments. */
+  projectTitle: string | null;
   assignmentSlug: string;
   assignmentTitle: string;
   status: string;
@@ -235,6 +247,49 @@ export interface AttentionItem {
   href: string;
   stale: boolean;
   blockedReason: string | null;
+  segment: OverviewSegmentId;
+  agingMs: number;
+  assignee: string | null;
+  availableTransitions: AssignmentTransitionAction[];
+}
+
+export type OverviewHeroKind =
+  | 'review'
+  | 'ready_to_implement'
+  | 'ready_for_planning'
+  | 'in_progress'
+  | 'draft'
+  | 'blocked'
+  | 'stale'
+  | 'clean';
+
+export interface OverviewHeroRecommendation {
+  kind: OverviewHeroKind;
+  copyKey: string;
+  itemId: string | null;
+  total: number;
+}
+
+export interface OverviewSegmentPayload {
+  items: AttentionItem[];
+  total: number;
+}
+
+export interface OverviewStaleSegmentPayload extends OverviewSegmentPayload {
+  limit: number;
+  offset: number;
+  hasMore: boolean;
+}
+
+export interface OverviewSegments {
+  readyForReview: OverviewSegmentPayload;
+  readyToImplement: OverviewSegmentPayload;
+  readyForPlanning: OverviewSegmentPayload;
+  inProgress: OverviewSegmentPayload;
+  drafts: OverviewSegmentPayload;
+  blocked: OverviewSegmentPayload;
+  newestCreated: OverviewSegmentPayload;
+  stale: OverviewStaleSegmentPayload;
 }
 
 export interface AssignmentsBoardResponse {
@@ -265,7 +320,9 @@ export interface OverviewResponse {
     failedAssignments: number;
     staleAssignments: number;
   };
-  attention: AttentionItem[];
+  hero: OverviewHeroRecommendation;
+  segments: OverviewSegments;
+  recentSessions: AgentSession[];
   recentProjects: ProjectSummary[];
   recentActivity: RecentActivityItem[];
   serverStats?: {

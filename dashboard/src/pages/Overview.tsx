@@ -73,34 +73,44 @@ export function Overview() {
             title="Needs Attention Now"
             description="Blocked, failed, review, and stale work from the source files."
           >
-            {overview.attention.length === 0 ? (
-              <EmptyState
-                title="Nothing urgent right now"
-                description="The attention queue is empty. Overview will surface blocked, failed, review, and stale assignments here."
-              />
-            ) : (
-              <div className="space-y-3">
-                {overview.attention.map((item) => (
-                  <Link
-                    key={item.id}
-                    to={item.href}
-                    className="block rounded-md border border-border/60 bg-background/80 p-3 transition hover:border-primary/40 hover:bg-background"
-                  >
-                    <div className="flex flex-wrap items-start justify-between gap-3">
-                      <div className="space-y-1">
-                        <p className="text-sm font-semibold text-foreground">{item.assignmentTitle}</p>
-                        <p className="text-sm text-muted-foreground">{item.projectTitle}</p>
+            {(() => {
+              const attention = [
+                ...overview.segments.readyForReview.items,
+                ...overview.segments.blocked.items,
+                ...overview.segments.stale.items,
+              ];
+              if (attention.length === 0) {
+                return (
+                  <EmptyState
+                    title="Nothing urgent right now"
+                    description="The attention queue is empty. Overview will surface blocked, failed, review, and stale assignments here."
+                  />
+                );
+              }
+              return (
+                <div className="space-y-3">
+                  {attention.map((item) => (
+                    <Link
+                      key={item.id}
+                      to={item.href}
+                      className="block rounded-md border border-border/60 bg-background/80 p-3 transition hover:border-primary/40 hover:bg-background"
+                    >
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div className="space-y-1">
+                          <p className="text-sm font-semibold text-foreground">{item.assignmentTitle}</p>
+                          <p className="text-sm text-muted-foreground">{item.projectTitle}</p>
+                        </div>
+                        <StatusBadge status={item.status} />
                       </div>
-                      <StatusBadge status={item.status} />
-                    </div>
-                    <p className="mt-3 text-sm leading-6 text-muted-foreground">{item.reason}</p>
-                    <p className="mt-2 text-xs font-medium uppercase tracking-[0.1em] text-muted-foreground">
-                      Updated {formatDateTime(item.updated)}
-                    </p>
-                  </Link>
-                ))}
-              </div>
-            )}
+                      <p className="mt-3 text-sm leading-6 text-muted-foreground">{item.reason}</p>
+                      <p className="mt-2 text-xs font-medium uppercase tracking-[0.1em] text-muted-foreground">
+                        Updated {formatDateTime(item.updated)}
+                      </p>
+                    </Link>
+                  ))}
+                </div>
+              );
+            })()}
           </SectionCard>
 
           <div className="grid gap-4 lg:grid-cols-2">
