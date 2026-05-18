@@ -109,10 +109,39 @@ function main() {
     // step tries Add first (for missing keys) and falls back to Set (for keys
     // osacompile already wrote). The :CFBundleURLTypes array we always Add
     // fresh because osacompile never writes one.
+    //
+    // The Delete entries strip osacompile's kitchen-sink default
+    // NSXxxxUsageDescription keys — its applet template declares purpose
+    // strings for HomeKit/Photos/Camera/AppleMusic/Reminders/Siri/etc. so
+    // that ANY applet *could* request those permissions. We only need
+    // NSAppleEventsUsageDescription (for `tell application ...`); the rest
+    // would surface as scary "this app wants access to ..." entries in
+    // System Settings → Privacy & Security and serve no purpose for a URL
+    // handler. The Deletes are guarded by `null` fallbacks so missing keys
+    // are not fatal.
     runPlistBuddy(infoPlistPath, [
       [`Add :CFBundleIdentifier string ${BUNDLE_ID}`, `Set :CFBundleIdentifier ${BUNDLE_ID}`],
       [`Add :CFBundleName string ${BUNDLE_NAME}`, `Set :CFBundleName ${BUNDLE_NAME}`],
       ['Add :LSUIElement bool true', 'Set :LSUIElement true'],
+      // Replace the generic Apple Events string with one that names what
+      // this app actually does, so the prompt the user sees is meaningful.
+      // PlistBuddy Set on a string with an apostrophe/space mix is unreliable;
+      // Delete-then-Add is the safe pattern.
+      ['Delete :NSAppleEventsUsageDescription', null],
+      [
+        'Add :NSAppleEventsUsageDescription string Syntaur is opening your configured terminal at the assignment worktree.',
+        null,
+      ],
+      ['Delete :NSHomeKitUsageDescription', null],
+      ['Delete :NSAppleMusicUsageDescription', null],
+      ['Delete :NSCalendarsUsageDescription', null],
+      ['Delete :NSSiriUsageDescription', null],
+      ['Delete :NSCameraUsageDescription', null],
+      ['Delete :NSMicrophoneUsageDescription', null],
+      ['Delete :NSContactsUsageDescription', null],
+      ['Delete :NSPhotoLibraryUsageDescription', null],
+      ['Delete :NSRemindersUsageDescription', null],
+      ['Delete :NSSystemAdministrationUsageDescription', null],
       ['Delete :CFBundleURLTypes', null],
       ['Add :CFBundleURLTypes array', null],
       ['Add :CFBundleURLTypes:0 dict', null],

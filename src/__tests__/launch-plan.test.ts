@@ -133,7 +133,8 @@ describe('resolveLaunchPlan — assignment mode', () => {
     expect(plan.fallbackWarning).toBeNull();
     expect(plan.agentId).toBe('claude');
     expect(plan.argv.command).toBe('claude');
-    expect(plan.argv.args[0]).toContain('Read the current Syntaur assignment');
+    // Project-nested assignments use `/grab-assignment <project> <slug>`.
+    expect(plan.argv.args[0]).toBe('/grab-assignment demo-project demo-asg');
     expect(plan.terminal).toBe('ghostty');
   });
 
