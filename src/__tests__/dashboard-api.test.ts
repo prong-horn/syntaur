@@ -951,6 +951,28 @@ describe('overview', () => {
   });
 });
 
+describe('overview copy module', () => {
+  it('emits segment-specific reason strings (not the generic "Ready for review.")', async () => {
+    await createProjectFiles(testDir, 'test-project', PROJECT_MD, [
+      { slug: 'test-assignment', assignmentMd: ASSIGNMENT_MD, planMd: PLAN_MD },
+      { slug: 'blocked-assignment', assignmentMd: BLOCKED_ASSIGNMENT_MD },
+    ]);
+    const overview = await getOverview(testDir);
+
+    // Inspect every row across every segment.
+    const allReasons = new Set<string>();
+    for (const key of Object.keys(overview.segments) as Array<keyof typeof overview.segments>) {
+      for (const row of overview.segments[key].items) {
+        allReasons.add(row.reason);
+      }
+    }
+
+    // The legacy generic reason should NOT appear outside its segment.
+    // The new readyForReview reason copy is segment-specific, not "Ready for review."
+    expect(Array.from(allReasons)).not.toContain('Ready for review.');
+  });
+});
+
 describe('help and editable documents', () => {
   it('returns the structured help model with only implemented commands', async () => {
     const help = await getHelp();
