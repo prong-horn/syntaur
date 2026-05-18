@@ -888,4 +888,165 @@ updated: "2026-04-25T12:00:00Z"
       expect(content).toMatch(/^workspace: syntaur$/m);
     });
   });
+
+  describe('PATCH /api/projects/:slug/assignments/:aslug/assignee', () => {
+    it('updates assignee frontmatter without rewriting body', async () => {
+      await createAssignmentFixture();
+      const router = createWriteRouter(testDir);
+      const assignmentPath = resolve(testDir, 'test-project', 'assignments', 'test-assignment', 'assignment.md');
+      const bodyBefore = (await readFile(assignmentPath, 'utf-8')).split(/^---$/m)[2];
+
+      const res = await invokeRoute(
+        router,
+        'patch',
+        '/api/projects/:slug/assignments/:aslug/assignee',
+        { slug: 'test-project', aslug: 'test-assignment' },
+        { assignee: 'claude' },
+      );
+      expect(res.statusCode).toBe(200);
+
+      const after = await readFile(assignmentPath, 'utf-8');
+      expect(after).toMatch(/^assignee: claude$/m);
+      // Body untouched.
+      expect(after.split(/^---$/m)[2]).toBe(bodyBefore);
+    });
+
+    it('accepts null to clear the assignee', async () => {
+      await createAssignmentFixture();
+      const router = createWriteRouter(testDir);
+      const res = await invokeRoute(
+        router,
+        'patch',
+        '/api/projects/:slug/assignments/:aslug/assignee',
+        { slug: 'test-project', aslug: 'test-assignment' },
+        { assignee: null },
+      );
+      expect(res.statusCode).toBe(200);
+      const content = await readFile(
+        resolve(testDir, 'test-project', 'assignments', 'test-assignment', 'assignment.md'),
+        'utf-8',
+      );
+      expect(content).toMatch(/^assignee: null$/m);
+    });
+
+    it('rejects non-string non-null assignee', async () => {
+      await createAssignmentFixture();
+      const router = createWriteRouter(testDir);
+      const res = await invokeRoute(
+        router,
+        'patch',
+        '/api/projects/:slug/assignments/:aslug/assignee',
+        { slug: 'test-project', aslug: 'test-assignment' },
+        { assignee: 42 },
+      );
+      expect(res.statusCode).toBe(400);
+    });
+
+    it('rejects assignee longer than 120 chars', async () => {
+      await createAssignmentFixture();
+      const router = createWriteRouter(testDir);
+      const res = await invokeRoute(
+        router,
+        'patch',
+        '/api/projects/:slug/assignments/:aslug/assignee',
+        { slug: 'test-project', aslug: 'test-assignment' },
+        { assignee: 'a'.repeat(200) },
+      );
+      expect(res.statusCode).toBe(400);
+    });
+
+    it('returns 404 for missing assignment', async () => {
+      await createAssignmentFixture();
+      const router = createWriteRouter(testDir);
+      const res = await invokeRoute(
+        router,
+        'patch',
+        '/api/projects/:slug/assignments/:aslug/assignee',
+        { slug: 'test-project', aslug: 'ghost' },
+        { assignee: 'claude' },
+      );
+      expect(res.statusCode).toBe(404);
+    });
+  });
+
+  describe('POST /api/assignments/bulk-status-override', () => {
+    it('flips two project-scoped assignments to the requested status', async () => {
+      await createAssignmentFixture();
+      // Add a second assignment to test bulk semantics.
+      const second = resolve(testDir, 'test-project', 'assignments', 'second-assignment');
+      await mkdir(second, { recursive: true });
+      await writeFile(
+        resolve(second, 'assignment.md'),
+        `---\nid: assignment-2\nslug: second-assignment\ntitle: Second\nstatus: pending\npriority: medium\ncreated: "2026-03-20T10:00:00Z"\nupdated: "2026-03-20T10:00:00Z"\nassignee: null\nexternalIds: []\ndependsOn: []\nblockedReason: null\nworkspace:\n  repository: null\n  worktreePath: null\n  branch: null\n  parentBranch: null\ntags: []\n---\n\n# Second`,
+        'utf-8',
+      );
+
+      const router = createWriteRouter(testDir);
+      const res = await invokeRoute(
+        router,
+        'post',
+        '/api/assignments/bulk-status-override',
+        {},
+        {
+          items: [
+            { projectSlug: 'test-project', assignmentSlug: 'test-assignment', status: 'failed' },
+            { projectSlug: 'test-project', assignmentSlug: 'second-assignment', status: 'failed' },
+          ],
+        },
+      );
+      expect(res.statusCode).toBe(200);
+      const payload = res.payload as { results: Array<{ ok: boolean }>; succeeded: number; failed: number };
+      expect(payload.succeeded).toBe(2);
+      expect(payload.failed).toBe(0);
+      expect(payload.results.every((r) => r.ok)).toBe(true);
+    });
+
+    it('returns partial-failure results with 200 status when one item is invalid', async () => {
+      await createAssignmentFixture();
+      const router = createWriteRouter(testDir);
+      const res = await invokeRoute(
+        router,
+        'post',
+        '/api/assignments/bulk-status-override',
+        {},
+        {
+          items: [
+            { projectSlug: 'test-project', assignmentSlug: 'test-assignment', status: 'failed' },
+            { projectSlug: 'test-project', assignmentSlug: 'ghost-assignment', status: 'failed' },
+          ],
+        },
+      );
+      expect(res.statusCode).toBe(200);
+      const payload = res.payload as { results: Array<{ ok: boolean; error?: string }>; succeeded: number; failed: number };
+      expect(payload.succeeded).toBe(1);
+      expect(payload.failed).toBe(1);
+      expect(payload.results[0].ok).toBe(true);
+      expect(payload.results[1].ok).toBe(false);
+      expect(payload.results[1].error).toMatch(/not found/);
+    });
+
+    it('returns 400 for malformed body (missing items)', async () => {
+      const router = createWriteRouter(testDir);
+      const res = await invokeRoute(
+        router,
+        'post',
+        '/api/assignments/bulk-status-override',
+        {},
+        { foo: 'bar' },
+      );
+      expect(res.statusCode).toBe(400);
+    });
+
+    it('returns 400 for an empty items array', async () => {
+      const router = createWriteRouter(testDir);
+      const res = await invokeRoute(
+        router,
+        'post',
+        '/api/assignments/bulk-status-override',
+        {},
+        { items: [] },
+      );
+      expect(res.statusCode).toBe(400);
+    });
+  });
 });
