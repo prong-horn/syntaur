@@ -62,12 +62,25 @@ function main() {
       rmSync(bundlePath, { recursive: true, force: true });
     }
 
+    // Detect which AppleScript-driven terminals are installed. osacompile
+    // resolves application terminology at compile time, so a `tell application
+    // "Ghostty"` block would fail to compile if Ghostty isn't installed. We
+    // only embed tell-blocks for apps we find on disk; unknown/missing
+    // terminals fall back to a shell-out path which goes through the CLI's
+    // executeLaunchPlan (and may need its own TCC grant on the parent shell
+    // process).
+    const installedTerminals = detectInstalledTerminals();
+
     // 1. Write the AppleScript source to a temp file.
     const scriptPath = join(
       tmpdir(),
       `syntaur-url-handler-${process.pid}.applescript`,
     );
-    writeFileSync(scriptPath, renderAppleScript({ nodeBin, cliBin }), 'utf-8');
+    writeFileSync(
+      scriptPath,
+      renderAppleScript({ nodeBin, cliBin, installedTerminals }),
+      'utf-8',
+    );
 
     // 2. Compile it into an .app bundle. osacompile produces a real macOS app
     //    with the AppleScript runtime as its main executable — that runtime
@@ -108,7 +121,25 @@ function main() {
       [`Add :CFBundleURLTypes:0:CFBundleURLSchemes:0 string ${URL_SCHEME}`, null],
     ]);
 
-    // 4. Register with LaunchServices so the OS routes syntaur:// URLs here.
+    // 4. Re-sign the bundle ad-hoc. osacompile produces an ad-hoc signed
+    //    bundle, but PlistBuddy edits invalidate that signature ("Info.plist
+    //    not bound to signature"). Modern macOS refuses to prompt for
+    //    Automation/TCC permissions on unsigned bundles and denies Apple
+    //    events outright with error -1743 "Not authorized". Re-signing with
+    //    `--force --deep --sign -` produces a fresh ad-hoc signature that
+    //    includes the patched Info.plist, which is enough for TCC.
+    const sign = spawnSync(
+      '/usr/bin/codesign',
+      ['--force', '--deep', '--sign', '-', bundlePath],
+      { stdio: 'pipe', encoding: 'utf-8' },
+    );
+    if (sign.status !== 0) {
+      console.warn(
+        `syntaur: codesign returned ${sign.status} while re-signing ${bundlePath} — macOS may deny Automation permission. stderr: ${sign.stderr}`,
+      );
+    }
+
+    // 5. Register with LaunchServices so the OS routes syntaur:// URLs here.
     const ls = spawnSync(LSREGISTER, ['-f', bundlePath], { stdio: 'ignore' });
     if (ls.status !== 0) {
       console.warn(
@@ -138,13 +169,125 @@ function main() {
  * (e.g. CLI exited non-zero) fall through to a second `printf` that appends a
  * summary line to the same log.
  */
-function renderAppleScript({ nodeBin, cliBin }) {
-  // Build paths into AppleScript variables so the shell command can wrap each
-  // one with `quoted form of`. Embedding paths directly as AppleScript string
-  // literals would defeat shell quoting — any path with a space or shell
-  // metacharacter would break the command (or worse, run an unintended one).
-  // Every interpolated value into the shell line goes through `quoted form of`
-  // exactly once.
+/**
+ * Detect which AppleScript-driven terminals are installed on this Mac.
+ * osacompile resolves application terminology at compile time, so we can
+ * only emit `tell application "X"` blocks for apps that exist on disk.
+ *
+ * Returns a set of terminal ids that match the syntaur `TerminalChoice` enum.
+ * Terminal.app is always assumed present (it ships with macOS).
+ */
+function detectInstalledTerminals() {
+  const installed = new Set(['terminal-app']);
+  const bundleIds = {
+    iterm: 'com.googlecode.iterm2',
+    ghostty: 'com.mitchellh.ghostty',
+  };
+  for (const [id, bundleId] of Object.entries(bundleIds)) {
+    const r = spawnSync(
+      'mdfind',
+      [`kMDItemCFBundleIdentifier == '${bundleId}'`],
+      { encoding: 'utf-8' },
+    );
+    if (r.status === 0 && r.stdout.trim().length > 0) {
+      installed.add(id);
+    }
+  }
+  return installed;
+}
+
+/**
+ * Build the AppleScript `if/else if` chain that dispatches based on the
+ * terminal id the CLI returned. We only emit `tell application "X"` blocks
+ * for terminals confirmed installed (`installedTerminals`); everything else
+ * falls through to a shell-out that re-invokes the CLI without --print-plan
+ * so `executeLaunchPlan` does the spawn.
+ *
+ * Returns an array of AppleScript source lines (no trailing newline).
+ */
+function buildTerminalDispatch(installedTerminals) {
+  const branches = [];
+  if (installedTerminals.has('terminal-app')) {
+    branches.push({
+      id: 'terminal-app',
+      block: [
+        '\t\t\ttell application "Terminal"',
+        '\t\t\t\tactivate',
+        '\t\t\t\tdo script shellCmd',
+        '\t\t\tend tell',
+      ],
+    });
+  }
+  if (installedTerminals.has('iterm')) {
+    branches.push({
+      id: 'iterm',
+      block: [
+        '\t\t\ttell application "iTerm"',
+        '\t\t\t\tactivate',
+        '\t\t\t\tset newWindow to (create window with default profile)',
+        '\t\t\t\ttell current session of newWindow to write text shellCmd',
+        '\t\t\tend tell',
+      ],
+    });
+  }
+  if (installedTerminals.has('ghostty')) {
+    branches.push({
+      id: 'ghostty',
+      block: [
+        '\t\t\ttell application "Ghostty"',
+        '\t\t\t\tactivate',
+        '\t\t\t\tset newWin to (new window)',
+        '\t\t\t\tdelay 0.2',
+        '\t\t\t\tset t to terminal 1 of selected tab of newWin',
+        '\t\t\t\tinput text shellCmd to t',
+        '\t\t\t\tsend key "enter" to t',
+        '\t\t\tend tell',
+      ],
+    });
+  }
+
+  const lines = [];
+  branches.forEach((b, i) => {
+    const keyword = i === 0 ? 'if' : 'else if';
+    lines.push(`\t\t${keyword} theTerminal is "${b.id}" then`);
+    lines.push(...b.block);
+  });
+
+  // Fallback: any terminal we couldn't emit a tell-block for (because the
+  // app isn't installed) OR any CLI-driven terminal (alacritty/kitty/warp)
+  // falls through to a shell-out that runs the CLI's executeLaunchPlan.
+  if (branches.length > 0) {
+    lines.push('\t\telse');
+  }
+  lines.push(
+    `\t\t\tdo shell script quoted form of nodeBin & " " & quoted form of cliBin & " url " & quoted form of theURL & " >> " & quoted form of logFile & " 2>&1"`,
+  );
+  if (branches.length > 0) {
+    lines.push('\t\tend if');
+  }
+  return lines;
+}
+
+function renderAppleScript({ nodeBin, cliBin, installedTerminals }) {
+  // The applet must run the `tell application "Terminal" to do script ...`
+  // (and equivalent for iTerm/Ghostty) *itself* — not via `osascript` spawned
+  // from a do-shell-script chain. macOS TCC will not reliably attribute
+  // Apple Events sent from `applet -> do shell script -> node -> osascript`
+  // back to the applet's bundle identity; the request is denied with -1743
+  // "Not authorized" and the user never sees a permission prompt.
+  //
+  // Architecture:
+  //   1. Applet shells to `syntaur url --print-plan <url>`. The CLI returns
+  //      a two-line plan: terminal id on line 1, the cd-and-run shell command
+  //      on line 2. No Apple Events involved on this hop.
+  //   2. Applet parses the two lines and dispatches to a per-terminal
+  //      `tell application <name> to ...` block *inside the applet's own
+  //      AppleScript scope*. That makes the applet the responsible process
+  //      for the Apple Event, so macOS prompts the user once and grants
+  //      Automation permission to the applet.
+  //
+  // Every shell-command interpolation uses `quoted form of` so paths with
+  // spaces or shell metacharacters are safe.
   const node = appleScriptString(nodeBin);
   const cli = appleScriptString(cliBin);
 
@@ -156,20 +299,40 @@ function renderAppleScript({ nodeBin, cliBin }) {
     '\tset logDir to libPath & "Logs/Syntaur"',
     '\tset logFile to logDir & "/url-handler.log"',
     '\ttry',
-    // Ensure the log dir exists. Use absolute paths so LaunchServices'
-    // stripped PATH does not matter.
     '\t\tdo shell script "/bin/mkdir -p " & quoted form of logDir',
-    // Append stdout+stderr from `syntaur url <url>` to the log file. Without
-    // this, errors from the CLI (terminal not installed, assignment not
-    // found, etc.) would be silently discarded — `do shell script` redirects
-    // to /dev/null by default, and the Apple Event has no terminal.
-    `\t\tdo shell script quoted form of nodeBin & " " & quoted form of cliBin & " url " & quoted form of theURL & " >> " & quoted form of logFile & " 2>&1"`,
+    '\tend try',
+    '',
+    '\t-- Step 1: ask the CLI for the launch plan (two lines: terminal, shellCmd).',
+    '\tset planOutput to ""',
+    '\ttry',
+    `\t\tset planOutput to (do shell script quoted form of nodeBin & " " & quoted form of cliBin & " url --print-plan " & quoted form of theURL & " 2>> " & quoted form of logFile)`,
     '\ton error errMsg number errNum',
-    // do-shell-script errors fire on non-zero CLI exit. Append the failure to
-    // the same log so the user can find it. Wrapped in its own try because
-    // this fallback should never crash the handler.
     '\t\ttry',
-    `\t\t\tdo shell script "/usr/bin/printf '%s\\\\n' " & quoted form of ("syntaur:// handler failed for " & theURL & ": " & errMsg & " (" & errNum & ")") & " >> " & quoted form of logFile`,
+    `\t\t\tdo shell script "/usr/bin/printf '%s\\\\n' " & quoted form of ("syntaur:// plan resolution failed for " & theURL & ": " & errMsg & " (" & errNum & ")") & " >> " & quoted form of logFile`,
+    '\t\tend try',
+    '\t\treturn',
+    '\tend try',
+    '',
+    '\t-- Step 2: parse the two-line plan. `paragraphs of` splits on CR/LF.',
+    '\tset planLines to paragraphs of planOutput',
+    '\tif (count of planLines) < 2 then',
+    '\t\ttry',
+    `\t\t\tdo shell script "/usr/bin/printf '%s\\\\n' " & quoted form of ("syntaur:// plan output malformed (expected 2 lines, got " & (count of planLines) & "): " & planOutput) & " >> " & quoted form of logFile`,
+    '\t\tend try',
+    '\t\treturn',
+    '\tend if',
+    '\tset theTerminal to item 1 of planLines',
+    '\tset shellCmd to item 2 of planLines',
+    '',
+    '\t-- Step 3: dispatch to a per-terminal block. The `tell application`',
+    "\t-- below runs in the applet's own AppleScript scope, so macOS TCC",
+    '\t-- attributes the resulting Apple Event to the applet (signed bundle',
+    '\t-- with CFBundleIdentifier app.syntaur.url-handler).',
+    '\ttry',
+    ...buildTerminalDispatch(installedTerminals),
+    '\ton error errMsg number errNum',
+    '\t\ttry',
+    `\t\t\tdo shell script "/usr/bin/printf '%s\\\\n' " & quoted form of ("syntaur:// launch failed for " & theURL & " (terminal=" & theTerminal & "): " & errMsg & " (" & errNum & ")") & " >> " & quoted form of logFile`,
     '\t\tend try',
     '\tend try',
     'end open location',

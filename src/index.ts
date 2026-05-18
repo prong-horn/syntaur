@@ -669,9 +669,13 @@ program
   .description(
     'Open an assignment or session in the configured terminal + agent (handles syntaur:// deep links)',
   )
-  .action(async (url: string) => {
+  .option(
+    '--print-plan',
+    'Print the launch plan to stdout (two lines: terminal id, shell command) instead of executing. Used internally by the macOS URL handler applet so Apple Events come from the applet rather than from a subprocess.',
+  )
+  .action(async (url: string, options: { printPlan?: boolean }) => {
     try {
-      await urlCommand(url);
+      await urlCommand(url, { printPlan: options.printPlan });
     } catch (error) {
       console.error(formatUrlCommandError(error));
       process.exit(1);
