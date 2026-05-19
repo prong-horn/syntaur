@@ -16,14 +16,16 @@ import {
   formatFallbackCwdWarning,
 } from '../tui/launch.js';
 import { getSessionById } from '../dashboard/agent-sessions.js';
-import { buildFreshArgv, buildResumeArgv } from './argv.js';
+import { buildFreshArgv, buildSessionArgv } from './argv.js';
 import type { ResolvedArgv } from './types.js';
+import type { SessionMode } from './url.js';
 
 export type LaunchErrorCode =
   | 'no-agents-configured'
   | 'assignment-not-found'
   | 'session-not-found'
-  | 'agent-not-configured';
+  | 'agent-not-configured'
+  | 'mode-not-supported';
 
 export class LaunchError extends Error {
   readonly code: LaunchErrorCode;
@@ -49,6 +51,12 @@ export interface LaunchPlan {
 export interface ResolveLaunchPlanInput {
   kind: 'assignment' | 'session';
   id: string;
+  /**
+   * Only consulted when `kind === 'session'`. Defaults to `'resume'` so
+   * callers that haven't been updated to thread the URL mode through still
+   * get the prior behavior (continue the same session id).
+   */
+  mode?: SessionMode;
   config: SyntaurConfig;
   projectsDir: string;
   assignmentsDir: string;
@@ -188,9 +196,10 @@ async function resolveSessionPlan(
     );
   }
 
-  const { argv, shellFallbackWarning } = buildResumeArgv(
+  const { argv, shellFallbackWarning } = buildSessionArgv(
     agent,
     session.sessionId,
+    input.mode ?? 'resume',
   );
 
   return {

@@ -54,6 +54,7 @@ export async function urlCommand(
   const plan = await resolveLaunchPlan({
     kind: parsed.kind,
     id: parsed.id,
+    mode: parsed.kind === 'session' ? parsed.mode : undefined,
     config,
     projectsDir,
     assignmentsDir: assignmentsDir(),
