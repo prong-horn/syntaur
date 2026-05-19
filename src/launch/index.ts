@@ -28,3 +28,17 @@ export {
 } from './argv.js';
 
 export type { ResolvedArgv, BuiltArgv } from './types.js';
+
+export {
+  detectInstallKind,
+  extractNpxHash,
+  shouldNudgeForNpx,
+  recordNudge,
+  hasNudgedHash,
+  nudgeMessage,
+  isHandlerNudgeDisabled,
+  maybeNudgeForNpxInstall,
+  nudgeStampDir,
+  nudgeStampPath,
+  type InstallKind,
+} from './install-detection.js';
