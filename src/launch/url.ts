@@ -4,7 +4,8 @@ export type OpenUrlErrorCode =
   | 'missing-id'
   | 'both-ids'
   | 'malformed'
-  | 'duplicate-param';
+  | 'duplicate-param'
+  | 'bad-mode';
 
 export class OpenUrlError extends Error {
   readonly code: OpenUrlErrorCode;
@@ -15,9 +16,21 @@ export class OpenUrlError extends Error {
   }
 }
 
+export type SessionMode = 'resume' | 'fork';
+
+const SESSION_MODES: readonly SessionMode[] = ['resume', 'fork'];
+
 export interface ParsedOpenUrl {
   kind: 'assignment' | 'session';
   id: string;
+  /**
+   * Only set when `kind === 'session'`. Defaults to `'resume'` when the URL
+   * has no `mode` query param. Distinguishes "continue this session under the
+   * same id" (resume) from "branch a new session id at this point in
+   * history" (fork) so the dashboard can disable Resume while the original
+   * process may still be writing the transcript.
+   */
+  mode?: SessionMode;
 }
 
 /**
@@ -28,6 +41,7 @@ export interface ParsedOpenUrl {
  * - host must be `open`
  * - exactly one of `assignment` or `session` query params must be present
  * - neither param may be duplicated
+ * - when `session` is present, optional `mode=resume|fork` (default `resume`)
  *
  * Throws OpenUrlError with a structured code on any failure.
  */
@@ -99,7 +113,26 @@ export function parseOpenUrl(input: string): ParsedOpenUrl {
     if (id.trim() === '') {
       throw new OpenUrlError('missing-id', '`session` query param is empty');
     }
-    return { kind: 'session', id };
+
+    const modeVals = url.searchParams.getAll('mode');
+    if (modeVals.length > 1) {
+      throw new OpenUrlError(
+        'duplicate-param',
+        'URL has more than one `mode` query param',
+      );
+    }
+    let mode: SessionMode = 'resume';
+    if (modeVals.length === 1) {
+      const raw = modeVals[0];
+      if (!SESSION_MODES.includes(raw as SessionMode)) {
+        throw new OpenUrlError(
+          'bad-mode',
+          `\`mode\` must be one of ${SESSION_MODES.join('|')} (got "${raw}")`,
+        );
+      }
+      mode = raw as SessionMode;
+    }
+    return { kind: 'session', id, mode };
   }
 
   throw new OpenUrlError(
