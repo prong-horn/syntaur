@@ -201,6 +201,118 @@ describe('agents config', () => {
       warnSpy.mockRestore();
     });
 
+    it('round-trips resume + fork session invocations', async () => {
+      const agents: AgentConfig[] = [
+        {
+          id: 'claude',
+          label: 'Claude',
+          command: 'claude',
+          default: true,
+          resume: { args: ['--resume', '{id}'] },
+          fork: { args: ['--resume', '{id}', '--fork-session'] },
+        },
+        {
+          id: 'codex',
+          label: 'Codex',
+          command: 'codex',
+          resume: { args: ['resume', '{id}'] },
+          fork: { args: ['fork', '{id}'] },
+        },
+      ];
+      await writeAgentsConfig(agents);
+      const config = await readConfig();
+      expect(config.agents?.[0]).toMatchObject({
+        id: 'claude',
+        resume: { args: ['--resume', '{id}'] },
+        fork: { args: ['--resume', '{id}', '--fork-session'] },
+      });
+      expect(config.agents?.[1]).toMatchObject({
+        id: 'codex',
+        resume: { args: ['resume', '{id}'] },
+        fork: { args: ['fork', '{id}'] },
+      });
+    });
+
+    it('round-trips a resume invocation with a command override', async () => {
+      const agents: AgentConfig[] = [
+        {
+          id: 'custom',
+          label: 'Custom',
+          command: 'custom',
+          resume: { command: 'custom-resume', args: ['--id', '{id}'] },
+        },
+      ];
+      await writeAgentsConfig(agents);
+      const config = await readConfig();
+      expect(config.agents?.[0].resume).toEqual({
+        command: 'custom-resume',
+        args: ['--id', '{id}'],
+      });
+    });
+
+    it('rejects resume.args containing a non-string entry', () => {
+      expect(() =>
+        validateAgentList([
+          {
+            id: 'bad',
+            label: 'Bad',
+            command: 'bad',
+            resume: { args: ['ok', 42 as unknown as string] },
+          },
+        ]),
+      ).toThrow(/resume\.args must contain only strings/);
+    });
+
+    it('rejects resume.command when non-string', () => {
+      expect(() =>
+        validateAgentList([
+          {
+            id: 'bad',
+            label: 'Bad',
+            command: 'bad',
+            resume: { command: '' as unknown as string, args: ['{id}'] },
+          },
+        ]),
+      ).toThrow(/resume\.command must be a non-empty string/);
+    });
+
+    it('forward-compat: parser gracefully skips unknown nested blocks on a known agent', async () => {
+      // Simulates a config written by a future syntaur version that adds a
+      // new nested block (here: `extra:`) under an agent. The current parser
+      // must skip the unknown block without corrupting the known fields.
+      const configPath = resolve(homeDir, '.syntaur', 'config.md');
+      await writeFile(
+        configPath,
+        [
+          '---',
+          'version: "2.0"',
+          `defaultProjectDir: ${homeDir}/.syntaur/projects`,
+          'agents:',
+          '  - id: claude',
+          '    label: Claude',
+          '    command: claude',
+          '    extra:',
+          '      future-key: future-value',
+          '      future-list:',
+          '        - a',
+          '        - b',
+          '    resume:',
+          '      args:',
+          '        - "--resume"',
+          '        - "{id}"',
+          '---',
+          '',
+        ].join('\n'),
+      );
+      const config = await readConfig();
+      expect(config.agents?.[0]).toMatchObject({
+        id: 'claude',
+        label: 'Claude',
+        command: 'claude',
+        resume: { args: ['--resume', '{id}'] },
+      });
+    });
+
     it('writeAgentsConfig preserves other frontmatter sections', async () => {
       const configPath = resolve(homeDir, '.syntaur', 'config.md');
       await writeFile(

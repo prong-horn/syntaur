@@ -3,13 +3,31 @@ import { CopyButton } from './CopyButton';
 import { StatusBadge } from './StatusBadge';
 import { SectionCard } from './SectionCard';
 import { EmptyState } from './EmptyState';
+import { SessionActionButtons } from './SessionActionButtons';
 import { formatDateTime } from '../lib/format';
-import type { AgentSession } from '../types';
+import type { AgentSessionWithLiveness } from '../types';
 
 interface AgentSessionsSectionProps {
-  sessions: AgentSession[] | undefined;
+  sessions: AgentSessionWithLiveness[] | undefined;
   loading: boolean;
   error: string | null;
+}
+
+/**
+ * Per-assignment list of agent sessions, rendered on assignment detail pages.
+ *
+ * Mirrors the per-row affordances of the standalone /sessions page —
+ * Resume / Fork / Mark-stopped — by mounting `<SessionActionButtons>` on
+ * each row. Mark-stopped is fire-and-forget: PATCH is sent, then the
+ * websocket `agent-sessions-updated` broadcast (subscribed to by
+ * useAgentSessions / useProjects) refreshes the data.
+ */
+async function patchMarkStopped(sessionId: string): Promise<void> {
+  await fetch(`/api/agent-sessions/${encodeURIComponent(sessionId)}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ status: 'stopped' }),
+  });
 }
 
 export function AgentSessionsSection({ sessions, loading, error }: AgentSessionsSectionProps) {
@@ -54,6 +72,7 @@ export function AgentSessionsSection({ sessions, loading, error }: AgentSessions
               <StatusBadge status={session.status} />
               <span className="text-xs text-muted-foreground">{formatDateTime(session.started)}</span>
             </span>
+            <SessionActionButtons session={session} onMarkStopped={patchMarkStopped} />
           </div>
         ))}
       </div>

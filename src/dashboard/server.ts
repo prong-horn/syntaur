@@ -23,6 +23,7 @@ import {
 } from './api.js';
 import { resolveAssignmentById } from '../utils/assignment-resolver.js';
 import { listSessionsByAssignment, reconcileActiveSessions } from './agent-sessions.js';
+import { enrichSessions } from './session-liveness.js';
 import { createWatcher } from './watcher.js';
 import { fileExists } from '../utils/fs.js';
 import {
@@ -33,6 +34,7 @@ import {
   writeHotkeyBindingsConfig,
   deleteHotkeyBindingsConfig,
   readConfig,
+  getAgents,
 } from '../utils/config.js';
 import {
   BINDABLE_ACTION_KINDS,
@@ -667,7 +669,11 @@ export function createDashboardServer(options: DashboardServerOptions) {
         resolved.standalone ? null : resolved.projectSlug,
         resolved.standalone ? resolved.id : resolved.assignmentSlug,
       );
-      res.json({ sessions, generatedAt: new Date().toISOString() });
+      const agents = getAgents(await readConfig());
+      res.json({
+        sessions: enrichSessions(sessions, agents),
+        generatedAt: new Date().toISOString(),
+      });
     } catch (error) {
       console.error('Error listing sessions by id:', error);
       res.status(500).json({ error: 'Failed to list sessions' });

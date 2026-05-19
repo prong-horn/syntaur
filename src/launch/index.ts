@@ -3,6 +3,7 @@ export {
   OpenUrlError,
   type ParsedOpenUrl,
   type OpenUrlErrorCode,
+  type SessionMode,
 } from './url.js';
 
 export {
@@ -23,7 +24,7 @@ export {
 
 export {
   buildFreshArgv,
-  buildResumeArgv,
+  buildSessionArgv,
 } from './argv.js';
 
 export type { ResolvedArgv, BuiltArgv } from './types.js';

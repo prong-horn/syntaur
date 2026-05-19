@@ -2,30 +2,57 @@ import { isAbsolute } from 'node:path';
 import type { AgentConfig } from '../utils/config.js';
 import { buildAgentArgv, shellQuote } from '../tui/launch.js';
 import type { BuiltArgv } from './types.js';
+import { LaunchError } from './plan.js';
+import type { SessionMode } from './url.js';
 
 /**
  * Re-export the fresh-launch argv builder under a parallel name so the launch
  * core has a single import surface: `buildFreshArgv` (new run) and
- * `buildResumeArgv` (resume an existing session).
+ * `buildSessionArgv` (resume/fork an existing session).
  */
 export const buildFreshArgv = buildAgentArgv;
 
 /**
- * Build argv for resuming an existing agent session. Differs from
- * `buildAgentArgv` in one way: no initial prompt is injected — instead
- * `--resume <sessionId>` is appended to the agent's base args. The
- * `resolveFromShellAliases` rewriting is preserved identically (the command is
- * rewritten to `$SHELL`/`/bin/sh` and args become `['-i', '-c', '<quoted>']`).
+ * Build argv for continuing an existing agent session under a specific mode.
  *
- * The shape matches `buildAgentArgv` so callers can consume `argv.command` and
- * `argv.args` uniformly.
+ * The argv shape per agent is declared in `AgentConfig.resume` / `.fork`
+ * (`SessionInvocation`):
+ *   - `args` is a literal argv list. The substring `{id}` is replaced with
+ *     `sessionId`.
+ *   - `command` optionally overrides `agent.command` for subcommand-style
+ *     agents whose binary differs (none in builtins).
+ *
+ * Existing `agent.args` (the base flags applied to a fresh launch — e.g.
+ * `--dangerously-skip-permissions`) are preserved and prefixed before the
+ * invocation args, matching the prior `buildResumeArgv` behavior.
+ *
+ * The `resolveFromShellAliases` rewriting is preserved identically: the
+ * command is rewritten to `$SHELL`/`/bin/sh` and args become
+ * `['-i', '-c', '<quoted>']`. The quoted command line uses the (possibly
+ * overridden) executable.
+ *
+ * Throws `LaunchError('mode-not-supported', ...)` when the agent has no
+ * entry for the requested mode.
  */
-export function buildResumeArgv(
+export function buildSessionArgv(
   agent: AgentConfig,
   sessionId: string,
+  mode: SessionMode,
   env: NodeJS.ProcessEnv = process.env,
 ): BuiltArgv {
-  const agentArgs = [...(agent.args ?? []), '--resume', sessionId];
+  const invocation = agent[mode];
+  if (!invocation) {
+    throw new LaunchError(
+      'mode-not-supported',
+      `Agent "${agent.id}" does not support ${mode} (no agent.${mode} configured)`,
+    );
+  }
+
+  const substituted = invocation.args.map((a) =>
+    a === '{id}' ? sessionId : a,
+  );
+  const command = invocation.command ?? agent.command;
+  const agentArgs = [...(agent.args ?? []), ...substituted];
 
   if (agent.resolveFromShellAliases) {
     const requested = env.SHELL;
@@ -37,7 +64,7 @@ export function buildResumeArgv(
       } — falling back to /bin/sh for shell-alias resolution`;
       shell = '/bin/sh';
     }
-    const quoted = [agent.command, ...agentArgs].map(shellQuote).join(' ');
+    const quoted = [command, ...agentArgs].map(shellQuote).join(' ');
     return {
       argv: { command: shell, args: ['-i', '-c', quoted] },
       shellFallbackWarning: warning,
@@ -45,7 +72,7 @@ export function buildResumeArgv(
   }
 
   return {
-    argv: { command: agent.command, args: agentArgs },
+    argv: { command, args: agentArgs },
     shellFallbackWarning: null,
   };
 }

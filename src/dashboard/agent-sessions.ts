@@ -15,6 +15,8 @@ interface SessionRow {
   path: string | null;
   description: string | null;
   transcript_path: string | null;
+  pid: number | null;
+  pid_started_at: string | null;
 }
 
 function rowToSession(row: SessionRow): AgentSession {
@@ -29,6 +31,8 @@ function rowToSession(row: SessionRow): AgentSession {
     path: row.path ?? '',
     description: row.description ?? null,
     transcriptPath: row.transcript_path ?? null,
+    pid: row.pid ?? null,
+    pidStartedAt: row.pid_started_at ?? null,
   };
 }
 
@@ -63,8 +67,8 @@ export async function appendSession(
 ): Promise<void> {
   const db = getSessionDb();
   db.prepare(`
-    INSERT INTO sessions (session_id, project_slug, assignment_slug, agent, started, status, path, description, transcript_path)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO sessions (session_id, project_slug, assignment_slug, agent, started, status, path, description, transcript_path, pid, pid_started_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(session_id) DO UPDATE SET
       project_slug    = COALESCE(NULLIF(excluded.project_slug, ''),    project_slug),
       assignment_slug = COALESCE(NULLIF(excluded.assignment_slug, ''), assignment_slug),
@@ -73,6 +77,8 @@ export async function appendSession(
       path            = COALESCE(NULLIF(excluded.path, ''),            path),
       description     = COALESCE(NULLIF(excluded.description, ''),     description),
       transcript_path = COALESCE(NULLIF(excluded.transcript_path, ''), transcript_path),
+      pid             = COALESCE(excluded.pid,                         pid),
+      pid_started_at  = COALESCE(NULLIF(excluded.pid_started_at, ''),  pid_started_at),
       updated_at      = datetime('now')
   `).run(
     session.sessionId,
@@ -84,6 +90,8 @@ export async function appendSession(
     session.path,
     session.description ?? null,
     session.transcriptPath ?? null,
+    session.pid ?? null,
+    session.pidStartedAt ?? null,
   );
 }
 

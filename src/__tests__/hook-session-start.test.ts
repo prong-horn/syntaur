@@ -225,6 +225,11 @@ describe('claude-code session-start.sh', () => {
     expect(parsed.assignmentSlug).toBe('my-assn');
     expect(parsed.agent).toBe('claude');
     expect(parsed.path).toBe(sandbox);
+    // PID is captured from `ps -o ppid= -p $$` — guaranteed a positive
+    // integer when ps is available, which is true on the macOS/Linux test
+    // hosts the suite runs on. Don't pin the exact value (varies per run).
+    expect(parsed.pid).toEqual(expect.any(Number));
+    expect(parsed.pid).toBeGreaterThan(0);
   });
 
   it('sets latestSessionSummaryPath when sessions/<sid>/summary.md exists', async () => {

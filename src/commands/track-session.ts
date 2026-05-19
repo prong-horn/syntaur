@@ -3,6 +3,7 @@ import { expandHome } from '../utils/paths.js';
 import { fileExists } from '../utils/fs.js';
 import { readConfig } from '../utils/config.js';
 import { derivePathFromTranscript } from '../utils/transcript.js';
+import { captureProcessStartedAt } from '../utils/process-info.js';
 import { initSessionDb } from '../dashboard/session-db.js';
 import { appendSession } from '../dashboard/agent-sessions.js';
 import type { AgentSessionStatus } from '../dashboard/types.js';
@@ -16,6 +17,7 @@ export interface TrackSessionOptions {
   dir?: string;
   description?: string;
   transcriptPath?: string;
+  pid?: number;
 }
 
 export async function trackSessionCommand(
@@ -57,6 +59,9 @@ export async function trackSessionCommand(
   const derivedPath = await derivePathFromTranscript(options.transcriptPath);
   const recordedPath = derivedPath ?? options.path ?? process.cwd();
 
+  const pid = options.pid ?? null;
+  const pidStartedAt = pid !== null ? captureProcessStartedAt(pid) : null;
+
   await appendSession('', {
     projectSlug: options.project || null,
     assignmentSlug: options.assignment || null,
@@ -67,6 +72,8 @@ export async function trackSessionCommand(
     path: recordedPath,
     description: options.description || null,
     transcriptPath: options.transcriptPath ?? null,
+    pid,
+    pidStartedAt,
   });
 
   if (options.project && options.assignment) {

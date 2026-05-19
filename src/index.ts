@@ -1,4 +1,4 @@
-import { Command } from 'commander';
+import { Command, InvalidArgumentError } from 'commander';
 import { initCommand } from './commands/init.js';
 import { createProjectCommand } from './commands/create-project.js';
 import { createAssignmentCommand } from './commands/create-assignment.js';
@@ -652,6 +652,17 @@ program
   .option('--path <path>', 'Full path to session on disk (defaults to cwd)')
   .option('--dir <path>', 'Override default project directory')
   .option('--description <text>', 'Description of what this session is for')
+  .option(
+    '--pid <n>',
+    'Process ID owning this session — enables liveness detection so Resume is disabled while the process is still running.',
+    (v) => {
+      const n = Number.parseInt(v, 10);
+      if (!Number.isFinite(n) || n <= 0) {
+        throw new InvalidArgumentError('--pid must be a positive integer');
+      }
+      return n;
+    },
+  )
   .action(async (options) => {
     try {
       await trackSessionCommand(options);
