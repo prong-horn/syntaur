@@ -1,4 +1,5 @@
 import { resolve } from 'node:path';
+import { execFileSync } from 'node:child_process';
 import { expandHome } from '../utils/paths.js';
 import { fileExists } from '../utils/fs.js';
 import { readConfig } from '../utils/config.js';
@@ -16,6 +17,29 @@ export interface TrackSessionOptions {
   dir?: string;
   description?: string;
   transcriptPath?: string;
+  pid?: number;
+}
+
+/**
+ * Capture the start-time of a process via `ps -o lstart=`. Used as the
+ * recycling-defense baseline for liveness detection: the server compares
+ * stored start-time to current start-time, so a recycled PID with the same
+ * number but different start-time correctly reports as not-live.
+ *
+ * Returns null when `ps` fails (process already gone, or `ps` not on PATH).
+ * The CLI logs nothing in that case — null is the expected fallback.
+ */
+export function captureProcessStartedAt(pid: number): string | null {
+  try {
+    const out = execFileSync('ps', ['-o', 'lstart=', '-p', String(pid)], {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    });
+    const trimmed = out.trim();
+    return trimmed === '' ? null : trimmed;
+  } catch {
+    return null;
+  }
 }
 
 export async function trackSessionCommand(
@@ -57,6 +81,9 @@ export async function trackSessionCommand(
   const derivedPath = await derivePathFromTranscript(options.transcriptPath);
   const recordedPath = derivedPath ?? options.path ?? process.cwd();
 
+  const pid = options.pid ?? null;
+  const pidStartedAt = pid !== null ? captureProcessStartedAt(pid) : null;
+
   await appendSession('', {
     projectSlug: options.project || null,
     assignmentSlug: options.assignment || null,
@@ -67,6 +94,8 @@ export async function trackSessionCommand(
     path: recordedPath,
     description: options.description || null,
     transcriptPath: options.transcriptPath ?? null,
+    pid,
+    pidStartedAt,
   });
 
   if (options.project && options.assignment) {
