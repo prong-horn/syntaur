@@ -1039,4 +1039,137 @@ describe('POST /api/agent-sessions', () => {
     expect(row.path).toBe('/real/cwd'); // preserved, not overwritten with ''
     expect(row.transcriptPath).toBe('/tmp/transcript.jsonl'); // enriched
   });
+
+  it('list response includes isLive / resumeSupported / forkSupported per row', async () => {
+    await fetch(`http://127.0.0.1:${port}/api/agent-sessions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        agent: 'claude',
+        sessionId: 'sid-enrich-claude',
+        path: '/tmp',
+      }),
+    });
+    await fetch(`http://127.0.0.1:${port}/api/agent-sessions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        agent: 'mystery-agent', // not in BUILTIN_AGENTS or config
+        sessionId: 'sid-enrich-mystery',
+        path: '/tmp',
+      }),
+    });
+
+    const listRes = await fetch(`http://127.0.0.1:${port}/api/agent-sessions`);
+    const listBody = await listRes.json();
+
+    const claude = listBody.sessions.find((s: any) => s.sessionId === 'sid-enrich-claude');
+    expect(claude.isLive).toBeTypeOf('boolean'); // value depends on env; just assert presence
+    expect(claude.resumeSupported).toBe(true);
+    expect(claude.forkSupported).toBe(true);
+
+    const mystery = listBody.sessions.find((s: any) => s.sessionId === 'sid-enrich-mystery');
+    expect(mystery.resumeSupported).toBe(false);
+    expect(mystery.forkSupported).toBe(false);
+  });
+});
+
+describe('PATCH /api/agent-sessions/:sessionId (terminal-only)', () => {
+  let server: Server;
+  let port: number;
+  let dbDir: string;
+
+  beforeEach(async () => {
+    resetSessionDb();
+    dbDir = await mkdtemp(join(tmpdir(), 'syntaur-apidb-patch-'));
+    initSessionDb(resolve(dbDir, 'syntaur.db'));
+
+    const app = express();
+    app.use(express.json());
+    app.use('/api/agent-sessions', createAgentSessionsRouter(dbDir));
+
+    await new Promise<void>((ready) => {
+      server = app.listen(0, () => ready());
+    });
+    port = (server.address() as AddressInfo).port;
+
+    await fetch(`http://127.0.0.1:${port}/api/agent-sessions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ agent: 'claude', sessionId: 'sid-patch-1', path: '/tmp' }),
+    });
+  });
+
+  afterEach(async () => {
+    await new Promise<void>((done) => server.close(() => done()));
+    closeSessionDb();
+    await rm(dbDir, { recursive: true, force: true });
+  });
+
+  it('returns 200 and flips status to stopped', async () => {
+    const res = await fetch(`http://127.0.0.1:${port}/api/agent-sessions/sid-patch-1`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status: 'stopped' }),
+    });
+    expect(res.status).toBe(200);
+
+    const listRes = await fetch(`http://127.0.0.1:${port}/api/agent-sessions`);
+    const listBody = await listRes.json();
+    const row = listBody.sessions.find((s: any) => s.sessionId === 'sid-patch-1');
+    expect(row.status).toBe('stopped');
+    expect(row.isLive).toBe(false); // status override → false
+  });
+
+  it('returns 200 and flips status to completed', async () => {
+    const res = await fetch(`http://127.0.0.1:${port}/api/agent-sessions/sid-patch-1`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status: 'completed' }),
+    });
+    expect(res.status).toBe(200);
+  });
+
+  it('returns 400 when status is non-terminal (active)', async () => {
+    const res = await fetch(`http://127.0.0.1:${port}/api/agent-sessions/sid-patch-1`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status: 'active' }),
+    });
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error).toMatch(/stopped, completed/);
+  });
+
+  it('returns 400 when status is missing', async () => {
+    const res = await fetch(`http://127.0.0.1:${port}/api/agent-sessions/sid-patch-1`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    });
+    expect(res.status).toBe(400);
+  });
+
+  it('returns 404 when sessionId is unknown', async () => {
+    const res = await fetch(`http://127.0.0.1:${port}/api/agent-sessions/does-not-exist`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status: 'stopped' }),
+    });
+    expect(res.status).toBe(404);
+  });
+
+  it('PATCH /:sessionId/status (non-terminal, internal route) still works alongside the new endpoint', async () => {
+    // Express precedence: longer-prefix /:sessionId/status wins over /:sessionId
+    // for the existing route, so the more lenient internal flow still works.
+    const res = await fetch(
+      `http://127.0.0.1:${port}/api/agent-sessions/sid-patch-1/status`,
+      {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: 'active' }),
+      },
+    );
+    expect(res.status).toBe(200);
+  });
 });

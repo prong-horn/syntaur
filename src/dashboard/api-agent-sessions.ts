@@ -7,11 +7,12 @@ import {
   updateSessionStatus,
   deleteSessions,
   reconcileActiveSessions,
-  listSessionsByAssignment,
+  getSessionById,
 } from './agent-sessions.js';
 import { fileExists } from '../utils/fs.js';
-import { resolveAssignmentById } from '../utils/assignment-resolver.js';
 import { derivePathFromTranscript } from '../utils/transcript.js';
+import { enrichSessions } from './session-liveness.js';
+import { getAgents, readConfig } from '../utils/config.js';
 import type { AgentSessionStatus, WsMessage } from './types.js';
 
 export function createAgentSessionsRouter(
@@ -26,7 +27,11 @@ export function createAgentSessionsRouter(
     try {
       await reconcileActiveSessions(projectsDir, assignmentsDir);
       const sessions = await listAllSessions(projectsDir);
-      res.json({ sessions, generatedAt: new Date().toISOString() });
+      const agents = getAgents(await readConfig());
+      res.json({
+        sessions: enrichSessions(sessions, agents),
+        generatedAt: new Date().toISOString(),
+      });
     } catch (error) {
       res.status(500).json({ error: error instanceof Error ? error.message : 'Failed to list sessions' });
     }
@@ -44,7 +49,11 @@ export function createAgentSessionsRouter(
       }
       await reconcileActiveSessions(projectsDir, assignmentsDir);
       const sessions = await listProjectSessions(projectsDir, projectSlug, assignment);
-      res.json({ sessions, generatedAt: new Date().toISOString() });
+      const agents = getAgents(await readConfig());
+      res.json({
+        sessions: enrichSessions(sessions, agents),
+        generatedAt: new Date().toISOString(),
+      });
     } catch (error) {
       res.status(500).json({ error: error instanceof Error ? error.message : 'Failed to list sessions' });
     }
@@ -101,6 +110,37 @@ export function createAgentSessionsRouter(
       res.status(201).json({ sessionId });
     } catch (error) {
       res.status(500).json({ error: error instanceof Error ? error.message : 'Registration failed' });
+    }
+  });
+
+  // PATCH /api/agent-sessions/:sessionId — terminal-only status update.
+  // Used by the Mark-stopped affordance on session rows; the
+  // /:sessionId/status route below remains available for full status updates
+  // (non-terminal allowed) used by other internal flows. Express precedence
+  // matches the more specific /:sessionId/status route first.
+  router.patch('/:sessionId', async (req, res) => {
+    try {
+      const { sessionId } = req.params;
+      const status = (req.body ?? {}).status;
+      if (status !== 'stopped' && status !== 'completed') {
+        res.status(400).json({
+          error: 'status must be one of: stopped, completed',
+        });
+        return;
+      }
+      if (!getSessionById(sessionId)) {
+        res.status(404).json({ error: `Session "${sessionId}" not found` });
+        return;
+      }
+      const updated = await updateSessionStatus('', sessionId, status);
+      if (!updated) {
+        res.status(404).json({ error: `Session "${sessionId}" not found` });
+        return;
+      }
+      broadcast?.({ type: 'agent-sessions-updated', timestamp: new Date().toISOString() });
+      res.json({ updated: true });
+    } catch (error) {
+      res.status(500).json({ error: error instanceof Error ? error.message : 'Update failed' });
     }
   });
 
