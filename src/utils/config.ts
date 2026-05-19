@@ -79,6 +79,20 @@ export interface BackupConfig {
 
 export type PromptArgPosition = 'first' | 'last' | 'none';
 
+/**
+ * Per-agent argv recipe for continuing a recorded session in a specific mode.
+ *
+ * `args` is a literal argv list with the substring `{id}` substituted for the
+ * agent's session id at launch time. `command` overrides the agent's main
+ * `command` field — used by subcommand-style agents (e.g. `codex resume <id>`
+ * is documented as command=codex, args=['resume','{id}']; the override exists
+ * for future agents whose subcommand binary differs).
+ */
+export interface SessionInvocation {
+  command?: string;
+  args: string[];
+}
+
 export interface AgentConfig {
   id: string;
   label: string;
@@ -87,6 +101,8 @@ export interface AgentConfig {
   promptArgPosition?: PromptArgPosition;
   default?: boolean;
   resolveFromShellAliases?: boolean;
+  resume?: SessionInvocation;
+  fork?: SessionInvocation;
 }
 
 export type AutoCreateWorktree = 'skip' | 'ask' | 'always';
@@ -169,8 +185,21 @@ const DEFAULT_CONFIG: SyntaurConfig = {
 };
 
 export const BUILTIN_AGENTS: AgentConfig[] = [
-  { id: 'claude', label: 'Claude', command: 'claude', default: true },
-  { id: 'codex', label: 'Codex', command: 'codex' },
+  {
+    id: 'claude',
+    label: 'Claude',
+    command: 'claude',
+    default: true,
+    resume: { args: ['--resume', '{id}'] },
+    fork: { args: ['--resume', '{id}', '--fork-session'] },
+  },
+  {
+    id: 'codex',
+    label: 'Codex',
+    command: 'codex',
+    resume: { args: ['resume', '{id}'] },
+    fork: { args: ['fork', '{id}'] },
+  },
 ];
 
 const AGENT_ID_PATTERN = /^[a-z0-9][a-z0-9_-]*$/;
@@ -228,11 +257,41 @@ export function validateAgentList(agents: AgentConfig[]): void {
         `agent "${agent.id}" has invalid promptArgPosition "${agent.promptArgPosition}" — expected first|last|none`,
       );
     }
+    validateSessionInvocation(agent, 'resume', agent.resume);
+    validateSessionInvocation(agent, 'fork', agent.fork);
     if (agent.default) defaults++;
   }
   if (defaults > 1) {
     throw new AgentConfigError(
       `more than one agent is marked default: true (only one is allowed)`,
+    );
+  }
+}
+
+function validateSessionInvocation(
+  agent: AgentConfig,
+  mode: 'resume' | 'fork',
+  invocation: SessionInvocation | undefined,
+): void {
+  if (invocation === undefined) return;
+  if (!Array.isArray(invocation.args)) {
+    throw new AgentConfigError(
+      `agent "${agent.id}" ${mode}.args must be an array of strings`,
+    );
+  }
+  for (const a of invocation.args) {
+    if (typeof a !== 'string') {
+      throw new AgentConfigError(
+        `agent "${agent.id}" ${mode}.args must contain only strings`,
+      );
+    }
+  }
+  if (
+    invocation.command !== undefined &&
+    (typeof invocation.command !== 'string' || invocation.command.trim() === '')
+  ) {
+    throw new AgentConfigError(
+      `agent "${agent.id}" ${mode}.command must be a non-empty string when present`,
     );
   }
 }
@@ -261,6 +320,8 @@ function cloneDefaultConfig(): SyntaurConfig {
       ? DEFAULT_CONFIG.agents.map((a) => ({
           ...a,
           ...(a.args ? { args: [...a.args] } : {}),
+          ...(a.resume ? { resume: { ...a.resume, args: [...a.resume.args] } } : {}),
+          ...(a.fork ? { fork: { ...a.fork, args: [...a.fork.args] } } : {}),
         }))
       : null,
     playbooks: {
@@ -814,6 +875,15 @@ function parseAgentsConfig(content: string): AgentConfig[] | null {
   let current: Partial<AgentConfig> & { args?: string[] } | null = null;
   let argsCapture: string[] | null = null;
   let argsBaseIndent = 0;
+  // Active nested block state (e.g. `resume:` or `fork:` sub-mapping under an
+  // agent). When `nestedKey` is one of `resume` / `fork`, lines at deeper
+  // indent are parsed as that invocation's `command` / `args` fields. When
+  // `nestedKey === '__skip__'` we swallow the indented block without
+  // recording anything — this is the forward-compat path for unknown nested
+  // keys added in future syntaur versions.
+  let nestedKey: string | null = null;
+  let nestedInvocation: SessionInvocation | null = null;
+  let nestedBaseIndent = 0;
 
   function flushCurrent() {
     if (!current) return;
@@ -831,8 +901,25 @@ function parseAgentsConfig(content: string): AgentConfig[] | null {
         : {}),
       ...(current.default ? { default: true } : {}),
       ...(current.resolveFromShellAliases ? { resolveFromShellAliases: true } : {}),
+      ...(current.resume ? { resume: current.resume } : {}),
+      ...(current.fork ? { fork: current.fork } : {}),
     });
     current = null;
+    argsCapture = null;
+    nestedKey = null;
+    nestedInvocation = null;
+  }
+
+  function closeNestedBlock() {
+    if (!nestedKey) return;
+    if (current && (nestedKey === 'resume' || nestedKey === 'fork') && nestedInvocation) {
+      // Only attach when args were populated — empty invocation is a no-op.
+      if (Array.isArray(nestedInvocation.args)) {
+        current[nestedKey] = nestedInvocation;
+      }
+    }
+    nestedKey = null;
+    nestedInvocation = null;
     argsCapture = null;
   }
 
@@ -842,20 +929,22 @@ function parseAgentsConfig(content: string): AgentConfig[] | null {
     const indent = line.length - trimmed.length;
 
     if (indent === 0 && trimmed !== '' && !trimmed.startsWith('#')) {
+      closeNestedBlock();
       break; // new top-level key
     }
 
+    // Continue capturing list items for the active argsCapture target.
     if (argsCapture) {
       if (indent > argsBaseIndent && trimmed.startsWith('- ')) {
         argsCapture.push(decodeYamlScalar(trimmed.slice(2).trim()));
         continue;
       } else {
         argsCapture = null;
-        if (current) current.args = (current.args ?? []);
       }
     }
 
     if (indent === 2 && trimmed.startsWith('- ')) {
+      closeNestedBlock();
       flushCurrent();
       current = {};
       const rest = trimmed.slice(2).trim();
@@ -866,6 +955,37 @@ function parseAgentsConfig(content: string): AgentConfig[] | null {
         assignAgentField(current, k, v);
       }
       continue;
+    }
+
+    if (!current) continue;
+
+    // Inside a nested block (resume / fork / skip-unknown).
+    if (nestedKey && indent > nestedBaseIndent) {
+      const colonIdx = trimmed.indexOf(':');
+      if (colonIdx <= 0) continue;
+      const k = trimmed.slice(0, colonIdx).trim();
+      const v = trimmed.slice(colonIdx + 1).trim();
+      if (nestedKey === 'resume' || nestedKey === 'fork') {
+        if (!nestedInvocation) nestedInvocation = { args: [] };
+        if (k === 'args' && v === '') {
+          nestedInvocation.args = [];
+          argsCapture = nestedInvocation.args;
+          argsBaseIndent = indent;
+          continue;
+        }
+        if (k === 'command' && v !== '') {
+          nestedInvocation.command = decodeYamlScalar(v);
+          continue;
+        }
+        // Unknown nested-of-nested: ignore for forward compat.
+      }
+      // nestedKey === '__skip__' → swallow without recording.
+      continue;
+    }
+
+    // Returning out to indent 4 (or shallower) — close any open nested block.
+    if (nestedKey && indent <= nestedBaseIndent) {
+      closeNestedBlock();
     }
 
     if (indent >= 4 && current) {
@@ -879,14 +999,41 @@ function parseAgentsConfig(content: string): AgentConfig[] | null {
         current.args = argsCapture;
         continue;
       }
+      // Recognized nested mapping blocks: resume / fork. Empty value + no
+      // recognized scalar field → enter nested mode.
+      if ((k === 'resume' || k === 'fork') && v === '') {
+        nestedKey = k;
+        nestedInvocation = { args: [] };
+        nestedBaseIndent = indent;
+        continue;
+      }
+      // Unknown key with empty value at agent-field indent: forward-compat
+      // skip. Older parsers would crash here once a future version emits
+      // a new nested block; this branch lets us pass through gracefully.
+      if (v === '' && !KNOWN_AGENT_SCALAR_FIELDS.has(k)) {
+        nestedKey = '__skip__';
+        nestedInvocation = null;
+        nestedBaseIndent = indent;
+        continue;
+      }
       assignAgentField(current, k, v);
     }
   }
+  closeNestedBlock();
   flushCurrent();
 
   if (agents.length === 0) return [];
   return agents;
 }
+
+const KNOWN_AGENT_SCALAR_FIELDS: ReadonlySet<string> = new Set([
+  'id',
+  'label',
+  'command',
+  'promptArgPosition',
+  'default',
+  'resolveFromShellAliases',
+]);
 
 /**
  * Normalize and validate an agents list parsed from config.md. On any
@@ -1010,8 +1157,29 @@ function serializeAgentsConfig(agents: AgentConfig[]): string {
     if (a.resolveFromShellAliases) {
       lines.push(`    resolveFromShellAliases: true`);
     }
+    if (a.resume) {
+      appendSessionInvocation(lines, 'resume', a.resume);
+    }
+    if (a.fork) {
+      appendSessionInvocation(lines, 'fork', a.fork);
+    }
   }
   return lines.join('\n');
+}
+
+function appendSessionInvocation(
+  lines: string[],
+  key: 'resume' | 'fork',
+  invocation: SessionInvocation,
+): void {
+  lines.push(`    ${key}:`);
+  if (invocation.command !== undefined) {
+    lines.push(`      command: ${yamlQuoteScalar(invocation.command)}`);
+  }
+  lines.push(`      args:`);
+  for (const arg of invocation.args) {
+    lines.push(`        - ${yamlQuoteScalar(arg)}`);
+  }
 }
 
 export async function writeAgentsConfig(agents: AgentConfig[]): Promise<void> {
