@@ -123,10 +123,18 @@ export interface AgentSession {
   path: string;
   description?: string | null;
   transcriptPath?: string | null;
+  pid?: number | null;
+  pidStartedAt?: string | null;
+}
+
+export interface AgentSessionWithLiveness extends AgentSession {
+  isLive: boolean;
+  resumeSupported: boolean;
+  forkSupported: boolean;
 }
 
 export interface AgentSessionsResponse {
-  sessions: AgentSession[];
+  sessions: AgentSessionWithLiveness[];
   generatedAt: string;
 }
 
