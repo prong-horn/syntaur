@@ -47,12 +47,13 @@ syntaur track-session \
   --session-id "$SESSION_ID" \
   --transcript-path "$TRANSCRIPT_PATH" \
   --path "$(pwd)" \
+  --pid "$(ps -o ppid= -p $$ | tr -d ' ')" \
   [--description "<text>"] \
   [--project <slug>] \
   [--assignment <slug>]
 ```
 
-Omit `--transcript-path` entirely (don't pass an empty string) if no transcript path could be resolved.
+Omit `--transcript-path` entirely (don't pass an empty string) if no transcript path could be resolved. The `--pid` value is the shell PID that owns the Claude process — the dashboard uses it to disable Resume while this session may still be writing the transcript, forcing users to Fork instead. If `ps` is unavailable, omit `--pid` too.
 
 The CLI prints one of:
 - `Registered standalone agent session <sessionId>.`

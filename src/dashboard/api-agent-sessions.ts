@@ -13,6 +13,7 @@ import { fileExists } from '../utils/fs.js';
 import { derivePathFromTranscript } from '../utils/transcript.js';
 import { enrichSessions } from './session-liveness.js';
 import { getAgents, readConfig } from '../utils/config.js';
+import { captureProcessStartedAt } from '../utils/process-info.js';
 import type { AgentSessionStatus, WsMessage } from './types.js';
 
 export function createAgentSessionsRouter(
@@ -62,7 +63,7 @@ export function createAgentSessionsRouter(
   // POST /api/agent-sessions — register a new session
   router.post('/', async (req, res) => {
     try {
-      const { projectSlug, assignmentSlug, agent, sessionId, path, description, transcriptPath } =
+      const { projectSlug, assignmentSlug, agent, sessionId, path, description, transcriptPath, pid: rawPid } =
         req.body;
 
       if (!agent) {
@@ -93,6 +94,12 @@ export function createAgentSessionsRouter(
       const derivedPath = await derivePathFromTranscript(transcriptPath);
       const recordedPath = derivedPath ?? path ?? '';
 
+      const pid =
+        typeof rawPid === 'number' && Number.isFinite(rawPid) && rawPid > 0
+          ? rawPid
+          : null;
+      const pidStartedAt = pid !== null ? captureProcessStartedAt(pid) : null;
+
       const session = {
         projectSlug: projectSlug || null,
         assignmentSlug: assignmentSlug || null,
@@ -103,6 +110,8 @@ export function createAgentSessionsRouter(
         path: recordedPath,
         description: description || null,
         transcriptPath: transcriptPath || null,
+        pid,
+        pidStartedAt,
       };
 
       await appendSession('', session);
