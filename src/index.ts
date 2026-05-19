@@ -25,6 +25,10 @@ import { uninstallCommand } from './commands/uninstall.js';
 import { setupAdapterCommand } from './commands/setup-adapter.js';
 import { trackSessionCommand } from './commands/track-session.js';
 import { urlCommand, formatUrlCommandError } from './commands/url.js';
+import {
+  installUrlHandlerCommand,
+  formatInstallUrlHandlerError,
+} from './commands/install-url-handler.js';
 import { browseCommand } from './commands/browse.js';
 import { createPlaybookCommand } from './commands/create-playbook.js';
 import { listPlaybooksCommand } from './commands/list-playbooks.js';
@@ -49,10 +53,12 @@ import { memoryCommand } from './commands/memory.js';
 import { lsCommand } from './commands/ls.js';
 import { getDefaultCommandName } from './cli-default-command.js';
 import { maybePromptInstall } from './utils/npx-prompt.js';
+import { maybeNudgeForNpxInstall } from './launch/index.js';
 import { spliceDashDashFromArgv } from './utils/argv-split.js';
 import { readPackageVersion } from './utils/version.js';
 
 await maybePromptInstall(import.meta.url);
+await maybeNudgeForNpxInstall(import.meta.url);
 
 let captureDashDashArgv: string[] = [];
 
@@ -678,6 +684,20 @@ program
       await urlCommand(url, { printPlan: options.printPlan });
     } catch (error) {
       console.error(formatUrlCommandError(error));
+      process.exit(1);
+    }
+  });
+
+program
+  .command('install-url-handler')
+  .description(
+    'Register the syntaur:// deep-link handler with the OS. macOS-only today. Refuses to register from an npx cache or unrecognized install.',
+  )
+  .action(async () => {
+    try {
+      await installUrlHandlerCommand({ scriptUrl: import.meta.url });
+    } catch (error) {
+      console.error(formatInstallUrlHandlerError(error));
       process.exit(1);
     }
   });
