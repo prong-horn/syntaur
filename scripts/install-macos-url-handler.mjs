@@ -366,16 +366,24 @@ function buildTerminalDispatch(installedTerminals) {
     });
   }
   if (installedTerminals.has('ghostty')) {
+    // Ghostty's AppleScript dictionary doesn't expose `new window`/`terminal`/
+    // `input text` verbs — those calls fail at runtime ("can't get terminal 1"
+    // / "Can't make new window into integer"). Drive Ghostty via synthesized
+    // key events through System Events instead: activate the app, press Cmd-N
+    // to open a new window, type the command, then press Return.
+    //
+    // Requires Accessibility permission for the applet bundle. macOS prompts
+    // the first time we synthesize keystrokes; the user grants it once.
     branches.push({
       id: 'ghostty',
       block: [
-        '\t\t\ttell application "Ghostty"',
-        '\t\t\t\tactivate',
-        '\t\t\t\tset newWin to (new window)',
-        '\t\t\t\tdelay 0.2',
-        '\t\t\t\tset t to terminal 1 of selected tab of newWin',
-        '\t\t\t\tinput text shellCmd to t',
-        '\t\t\t\tsend key "enter" to t',
+        '\t\t\ttell application "Ghostty" to activate',
+        '\t\t\tdelay 0.3',
+        '\t\t\ttell application "System Events"',
+        '\t\t\t\tkeystroke "n" using command down',
+        '\t\t\t\tdelay 0.4',
+        '\t\t\t\tkeystroke shellCmd',
+        '\t\t\t\tkey code 36',
         '\t\t\tend tell',
       ],
     });
