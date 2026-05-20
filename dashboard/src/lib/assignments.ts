@@ -268,3 +268,96 @@ export function hasStoredClaimAs(): boolean {
     return false;
   }
 }
+
+// --- Worktree creation + candidate discovery ---
+
+export interface RepositoryCandidate {
+  path: string;
+  source: 'project' | 'sibling';
+  sourceAssignmentSlug: string | null;
+}
+
+export interface CreateWorktreePayload {
+  repository: string;
+  branch?: string;
+  parentBranch?: string;
+}
+
+/**
+ * Mutation-side errors from the worktree create endpoint can carry the raw
+ * git stderr. The dialog renders it in a `<pre>` so the user can see what
+ * git actually said (e.g., "fatal: A branch named 'foo' already exists.").
+ */
+export class CreateWorktreeError extends Error {
+  constructor(message: string, public readonly stderr?: string) {
+    super(message);
+    this.name = 'CreateWorktreeError';
+  }
+}
+
+async function readError(response: Response): Promise<CreateWorktreeError> {
+  const body = await response.json().catch(() => null);
+  const error = new CreateWorktreeError(
+    (body as { error?: string } | null)?.error || `HTTP ${response.status}`,
+    (body as { stderr?: string } | null)?.stderr,
+  );
+  return error;
+}
+
+export async function getProjectRepositoryCandidates(
+  projectSlug: string,
+): Promise<RepositoryCandidate[]> {
+  const response = await fetch(`/api/projects/${projectSlug}/repository-candidates`);
+  const body = await response.json().catch(() => null);
+  if (!response.ok) {
+    throw new Error((body as { error?: string } | null)?.error || `HTTP ${response.status}`);
+  }
+  return (body as { candidates: RepositoryCandidate[] }).candidates;
+}
+
+export async function getAssignmentRepositoryCandidatesById(
+  id: string,
+): Promise<RepositoryCandidate[]> {
+  const response = await fetch(`/api/assignments/${id}/repository-candidates`);
+  const body = await response.json().catch(() => null);
+  if (!response.ok) {
+    throw new Error((body as { error?: string } | null)?.error || `HTTP ${response.status}`);
+  }
+  return (body as { candidates: RepositoryCandidate[] }).candidates;
+}
+
+export async function createAssignmentWorktree(
+  projectSlug: string,
+  assignmentSlug: string,
+  payload: CreateWorktreePayload,
+): Promise<AssignmentDetail> {
+  const response = await fetch(
+    `/api/projects/${projectSlug}/assignments/${assignmentSlug}/worktree`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    },
+  );
+  if (!response.ok) {
+    throw await readError(response);
+  }
+  const body = await response.json();
+  return (body as { assignment: AssignmentDetail }).assignment;
+}
+
+export async function createAssignmentWorktreeById(
+  id: string,
+  payload: CreateWorktreePayload,
+): Promise<AssignmentDetail> {
+  const response = await fetch(`/api/assignments/${id}/worktree`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  if (!response.ok) {
+    throw await readError(response);
+  }
+  const body = await response.json();
+  return (body as { assignment: AssignmentDetail }).assignment;
+}

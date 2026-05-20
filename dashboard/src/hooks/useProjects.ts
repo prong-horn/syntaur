@@ -129,6 +129,8 @@ export interface ProjectDetail {
   memories: MemorySummary[];
   dependencyGraph: string | null;
   workspace: string | null;
+  /** Repository paths the project spans. Empty array when the project.md frontmatter omits the field. */
+  repositories: string[];
 }
 
 export interface WorkspaceInfo {

@@ -14,6 +14,7 @@ import { CommentsThread } from '../components/CommentsThread';
 import { MoveToWorkspaceDialog } from '../components/MoveToWorkspaceDialog';
 import { AgentSessionsSection } from '../components/AgentSessionsSection';
 import { OpenInAgentButton } from '../components/OpenInAgentButton';
+import { CreateWorktreeButton } from '../components/CreateWorktreeButton';
 
 /**
  * Read-and-edit view for standalone assignments (those at
@@ -44,6 +45,13 @@ export function StandaloneAssignmentDetail() {
               worktreePath={assignment.workspace?.worktreePath ?? null}
               size="compact"
             />
+            {!assignment.workspace?.worktreePath && (
+              <CreateWorktreeButton
+                assignmentId={assignment.id}
+                defaultBranch={`syntaur/${assignment.slug}`}
+                onCreated={() => refetch()}
+              />
+            )}
             <button
               type="button"
               onClick={() => setMoveOpen(true)}
