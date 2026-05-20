@@ -91,6 +91,57 @@ tags: []
     const project = parseProject(PROJECT_NO_EXT);
     expect(project.externalIds).toEqual([]);
   });
+
+  describe('repositories field', () => {
+    const HEADER = `---
+id: x
+slug: x
+title: x
+archived: false
+created: "2026-03-15T09:00:00Z"
+updated: "2026-03-15T09:00:00Z"
+tags: []`;
+
+    it('returns [] when the field is absent (backward compat)', () => {
+      const project = parseProject(`${HEADER}\n---\n\n# x`);
+      expect(project.repositories).toEqual([]);
+    });
+
+    it('returns [] for the inline empty form `repositories: []`', () => {
+      const project = parseProject(`${HEADER}\nrepositories: []\n---\n\n# x`);
+      expect(project.repositories).toEqual([]);
+    });
+
+    it('parses the block-list form', () => {
+      const project = parseProject(
+        `${HEADER}\nrepositories:\n  - /repo/a\n  - /repo/b\n---\n\n# x`,
+      );
+      expect(project.repositories).toEqual(['/repo/a', '/repo/b']);
+    });
+
+    it('preserves paths with spaces (no quoting needed)', () => {
+      const project = parseProject(
+        `${HEADER}\nrepositories:\n  - /Users/me/has spaces/repo\n---\n\n# x`,
+      );
+      expect(project.repositories).toEqual(['/Users/me/has spaces/repo']);
+    });
+
+    it('strips paired quotes for paths with YAML-special characters', () => {
+      const project = parseProject(
+        `${HEADER}\nrepositories:\n  - "/Users/me/has: colon/repo"\n---\n\n# x`,
+      );
+      expect(project.repositories).toEqual(['/Users/me/has: colon/repo']);
+    });
+
+    it('does NOT support populated inline-array form (returns [])', () => {
+      // parseListField only recognizes inline `[]` (empty) and block-list form.
+      // Populated inline form `[a, b]` is unsupported by design.
+      const project = parseProject(
+        `${HEADER}\nrepositories: [/a, /b]\n---\n\n# x`,
+      );
+      expect(project.repositories).toEqual([]);
+    });
+  });
 });
 
 describe('parseStatus', () => {

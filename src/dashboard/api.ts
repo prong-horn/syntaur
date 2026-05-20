@@ -777,6 +777,7 @@ export async function getProjectDetail(
     memories,
     dependencyGraph,
     workspace: project.workspace,
+    repositories: project.repositories,
   };
 }
 

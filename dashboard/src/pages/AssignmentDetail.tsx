@@ -26,6 +26,7 @@ import { AssignmentTransitionDialog } from '../components/AssignmentTransitionDi
 import { ConfirmDialog } from '../components/ConfirmDialog';
 import { OverflowMenu, type OverflowMenuItem } from '../components/OverflowMenu';
 import { OpenInAgentButton } from '../components/OpenInAgentButton';
+import { CreateWorktreeButton } from '../components/CreateWorktreeButton';
 import {
   deleteAssignment,
   runAssignmentTransition,
@@ -376,6 +377,14 @@ export function AssignmentDetail() {
               target={{ kind: 'assignment', id: assignment.id }}
               worktreePath={assignment.workspace?.worktreePath ?? null}
             />
+            {!assignment.workspace?.worktreePath && slug && aslug && (
+              <CreateWorktreeButton
+                projectSlug={slug}
+                assignmentSlug={aslug}
+                defaultBranch={`syntaur/${slug}/${aslug}`}
+                onCreated={() => refetch()}
+              />
+            )}
             {primaryTransition && (
               <button
                 key={primaryIsReview ? `review-${reviewGlowKey}` : primaryTransition.command}
