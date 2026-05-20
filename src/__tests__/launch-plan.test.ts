@@ -302,6 +302,29 @@ describe('resolveLaunchPlan — session mode', () => {
     expect(plan.cwd).toBe(worktree);
     expect(plan.argv.args).toEqual(['--resume', 'sess-proj']);
   });
+
+  it('threads mode=fork through to argv', async () => {
+    await appendSession('', {
+      sessionId: 'sess-fork',
+      projectSlug: null,
+      assignmentSlug: null,
+      agent: 'claude',
+      started: '2026-05-19T00:00:00Z',
+      status: 'active',
+      path: testDir,
+    });
+
+    const plan = await resolveLaunchPlan({
+      kind: 'session',
+      id: 'sess-fork',
+      mode: 'fork',
+      config: makeConfig(),
+      projectsDir,
+      assignmentsDir,
+    });
+
+    expect(plan.argv.args).toEqual(['--resume', 'sess-fork', '--fork-session']);
+  });
 });
 
 describe('buildTerminalInvocation', () => {

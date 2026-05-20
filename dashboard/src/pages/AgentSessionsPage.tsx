@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { Activity, CheckSquare, Square, Trash2 } from 'lucide-react';
 import { CopyButton } from '../components/CopyButton';
+import { SessionActionButtons } from '../components/SessionActionButtons';
 import { useAgentSessions, useProjects, useWorkspacePrefix } from '../hooks/useProjects';
 import { LoadingState } from '../components/LoadingState';
 import { ErrorState } from '../components/ErrorState';
@@ -9,9 +10,8 @@ import { EmptyState } from '../components/EmptyState';
 import { SearchInput } from '../components/SearchInput';
 import { FilterBar } from '../components/FilterBar';
 import { ConfirmDialog } from '../components/ConfirmDialog';
-import { OpenInAgentButton } from '../components/OpenInAgentButton';
 import { formatDateTime, toTitleCase } from '../lib/format';
-import type { AgentSession } from '../types';
+import type { AgentSession, AgentSessionWithLiveness } from '../types';
 
 type SessionSort =
   | 'started_desc'
@@ -150,6 +150,26 @@ const [search, setSearch] = useState('');
     }
   }
 
+  // Mark-stopped is fire-and-forget — the server broadcasts
+  // `agent-sessions-updated` after a successful PATCH and the WS-driven
+  // refetch in useAgentSessions / useProjects picks up the new status.
+  // Errors surface through the same error-state path as other mutations.
+  async function handleMarkStopped(sessionId: string) {
+    try {
+      const response = await fetch(`/api/agent-sessions/${encodeURIComponent(sessionId)}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: 'stopped' }),
+      });
+      if (!response.ok) {
+        const payload = await response.json().catch(() => null);
+        setDeleteError(payload?.error || `Failed to mark session stopped: HTTP ${response.status}`);
+      }
+    } catch (err) {
+      setDeleteError((err as Error).message);
+    }
+  }
+
   if (loading) return <LoadingState label="Loading agent sessions..." />;
   if (error) return <ErrorState error={error} />;
   if (!data) return null;
@@ -285,6 +305,7 @@ const [search, setSearch] = useState('');
                       confirmLabel: 'Delete Session',
                     })
                   }
+                  onMarkStopped={handleMarkStopped}
                 />
               ))}
             </tbody>
@@ -321,11 +342,13 @@ function SessionRow({
   selected,
   onToggle,
   onDelete,
+  onMarkStopped,
 }: {
-  session: AgentSession;
+  session: AgentSessionWithLiveness;
   selected: boolean;
   onToggle: () => void;
   onDelete: () => void;
+  onMarkStopped: (sessionId: string) => void;
 }) {
   const wsPrefix = useWorkspacePrefix();
   const shortId = session.sessionId.length > 12
@@ -434,11 +457,7 @@ function SessionRow({
       </td>
       <td className="py-2">
         <div className="flex items-center gap-1.5">
-          <OpenInAgentButton
-            target={{ kind: 'session', id: session.sessionId }}
-            size="compact"
-            title={`Resume this session in ${session.agent}`}
-          />
+          <SessionActionButtons session={session} onMarkStopped={onMarkStopped} />
           <button
             onClick={onDelete}
             className="text-muted-foreground hover:text-destructive"

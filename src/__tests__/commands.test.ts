@@ -382,6 +382,59 @@ describe('trackSessionCommand path resolution', () => {
 
     expect(await readSessionPath(sessionId)).toBe('/Users/me/fallback');
   });
+
+  it('persists --pid and auto-captures pid_started_at via ps -o lstart=', async () => {
+    const sessionId = `cli-${Math.random().toString(36).slice(2, 10)}`;
+    // Pass our own PID — guaranteed alive, so `ps -o lstart=` returns a value.
+    await trackSessionCommand({
+      agent: 'claude',
+      sessionId,
+      path: '/Users/me/pid-test',
+      pid: process.pid,
+    });
+
+    const row = getSessionDb()
+      .prepare('SELECT pid, pid_started_at FROM sessions WHERE session_id = ?')
+      .get(sessionId) as { pid: number | null; pid_started_at: string | null } | undefined;
+
+    expect(row?.pid).toBe(process.pid);
+    // ps -o lstart= output is non-empty (e.g. "Mon May 19 07:12:34 2026") on macOS/BSD/Linux.
+    expect(row?.pid_started_at).toMatch(/\S/);
+  });
+
+  it('stores null pid_started_at when --pid points at a dead process', async () => {
+    const sessionId = `cli-${Math.random().toString(36).slice(2, 10)}`;
+    // PID 2_147_483_647 (INT32_MAX) is effectively never a live process.
+    await trackSessionCommand({
+      agent: 'claude',
+      sessionId,
+      path: '/Users/me/dead-pid',
+      pid: 2147483647,
+    });
+
+    const row = getSessionDb()
+      .prepare('SELECT pid, pid_started_at FROM sessions WHERE session_id = ?')
+      .get(sessionId) as { pid: number | null; pid_started_at: string | null } | undefined;
+
+    expect(row?.pid).toBe(2147483647);
+    expect(row?.pid_started_at).toBeNull();
+  });
+
+  it('leaves pid and pid_started_at null when --pid is omitted', async () => {
+    const sessionId = `cli-${Math.random().toString(36).slice(2, 10)}`;
+    await trackSessionCommand({
+      agent: 'claude',
+      sessionId,
+      path: '/Users/me/no-pid',
+    });
+
+    const row = getSessionDb()
+      .prepare('SELECT pid, pid_started_at FROM sessions WHERE session_id = ?')
+      .get(sessionId) as { pid: number | null; pid_started_at: string | null } | undefined;
+
+    expect(row?.pid).toBeNull();
+    expect(row?.pid_started_at).toBeNull();
+  });
 });
 
 describe('track-session CLI: Commander required-option enforcement', () => {

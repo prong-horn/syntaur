@@ -60,6 +60,12 @@ export function getNestedField(frontmatter: string, parent: string, key: string)
 
 /**
  * Parse a YAML list field (e.g., tags, dependsOn, relatedAssignments).
+ *
+ * Supports the empty inline form `field: []` and the block-list form
+ * `field:\n  - a\n  - b`. Does NOT support populated inline arrays
+ * (`field: [a, b]`). List items are returned as raw trimmed text; callers
+ * that expect quoted-string entries should pass each item through
+ * {@link unquoteYamlString}.
  */
 function parseListField(frontmatter: string, fieldName: string): string[] {
   const inlineMatch = frontmatter.match(new RegExp(`^${fieldName}:\\s*\\[\\s*\\]`, 'm'));
@@ -79,6 +85,21 @@ function parseListField(frontmatter: string, fieldName: string): string[] {
   return results;
 }
 
+/**
+ * Strip a paired surrounding `"..."` or `'...'` from a YAML scalar.
+ * Mirrors `parseSimpleValue`'s quote handling for list-item entries (which
+ * `parseListField` leaves raw).
+ */
+function unquoteYamlString(value: string): string {
+  if (
+    (value.startsWith('"') && value.endsWith('"')) ||
+    (value.startsWith("'") && value.endsWith("'"))
+  ) {
+    return value.slice(1, -1);
+  }
+  return value;
+}
+
 // --- Project Parser ---
 
 export interface ParsedProject {
@@ -93,6 +114,13 @@ export interface ParsedProject {
   updated: string;
   tags: string[];
   workspace: string | null;
+  /**
+   * Repositories the project spans. Empty array when the field is absent —
+   * existing project.md files predate this field, so callers must treat
+   * missing as `[]`. Paths with YAML-special characters (spaces, colons,
+   * leading dashes) must be quoted in source; quotes are stripped here.
+   */
+  repositories: string[];
   externalIds: Array<{ system: string; id: string; url: string | null }>;
   body: string;
 }
@@ -115,6 +143,7 @@ export function parseProject(fileContent: string): ParsedProject {
     updated: getField(fm, 'updated') ?? '',
     tags: parseListField(fm, 'tags'),
     workspace: getField(fm, 'workspace'),
+    repositories: parseListField(fm, 'repositories').map(unquoteYamlString),
     externalIds: parseExternalIds(fm),
     body,
   };

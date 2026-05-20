@@ -132,6 +132,8 @@ export interface ProjectDetail {
   memories: MemorySummary[];
   dependencyGraph: string | null;
   workspace: string | null;
+  /** Repository paths the project spans. Empty array when the project.md frontmatter omits the field. */
+  repositories: string[];
 }
 
 export interface WorkspaceInfo {
@@ -559,9 +561,17 @@ export interface AgentSession {
   path: string;
   description?: string | null;
   transcriptPath?: string | null;
+  pid?: number | null;
+  pidStartedAt?: string | null;
+}
+
+export interface AgentSessionWithLiveness extends AgentSession {
+  isLive: boolean;
+  resumeSupported: boolean;
+  forkSupported: boolean;
 }
 
 export interface AgentSessionsResponse {
-  sessions: AgentSession[];
+  sessions: AgentSessionWithLiveness[];
   generatedAt: string;
 }

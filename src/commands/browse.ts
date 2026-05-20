@@ -1,4 +1,3 @@
-import { spawnSync } from 'node:child_process';
 import { resolve, isAbsolute } from 'node:path';
 import { readFile } from 'node:fs/promises';
 import { select, confirm, input } from '@inquirer/prompts';
@@ -7,9 +6,10 @@ import {
   getAgents,
   type AgentConfig,
 } from '../utils/config.js';
-import { expandHome, syntaurRoot } from '../utils/paths.js';
+import { expandHome } from '../utils/paths.js';
 import { fileExists } from '../utils/fs.js';
 import { isInteractiveTerminal } from '../utils/prompt.js';
+import { computeWorktreeDefaults, type WorktreeDefaults } from '../utils/worktree-defaults.js';
 
 export interface BrowseOptions {
   agent?: string;
@@ -207,62 +207,6 @@ async function ensureWorktree(opts: EnsureWorktreeOpts): Promise<string | undefi
     parentBranch,
     worktreePath,
   });
-}
-
-interface WorktreeDefaults {
-  repository: string;
-  branch: string;
-  parentBranch: string;
-  worktreePath: string;
-}
-
-function computeWorktreeDefaults(opts: {
-  projectSlug: string;
-  assignmentSlug: string;
-  existing: { repository: string | null; branch: string | null; parentBranch: string | null };
-}): Partial<WorktreeDefaults> & { repository?: string } {
-  const repository = opts.existing.repository ?? detectCurrentGitRoot();
-  const branch = opts.projectSlug
-    ? `syntaur/${opts.projectSlug}/${opts.assignmentSlug}`
-    : `syntaur/${opts.assignmentSlug}`;
-  const parentBranch = opts.existing.parentBranch ?? detectCurrentBranch() ?? 'main';
-  // Repo-local convention: `<repository>/.worktrees/<branch>`. Falls back to
-  // the legacy `~/.syntaur/worktrees/<project>/<assignment>` form when the
-  // repository can't be detected so we never produce a path under the wrong
-  // tree.
-  const worktreeBase = repository
-    ? resolve(repository, '.worktrees', branch)
-    : resolve(
-        syntaurRoot(),
-        'worktrees',
-        opts.projectSlug || 'standalone',
-        opts.assignmentSlug,
-      );
-  return {
-    ...(repository ? { repository } : {}),
-    branch,
-    parentBranch,
-    worktreePath: worktreeBase,
-  };
-}
-
-function detectCurrentGitRoot(): string | undefined {
-  const result = spawnSync('git', ['rev-parse', '--show-toplevel'], {
-    encoding: 'utf-8',
-  });
-  if (result.status !== 0) return undefined;
-  const out = result.stdout.trim();
-  return out.length > 0 ? out : undefined;
-}
-
-function detectCurrentBranch(): string | undefined {
-  const result = spawnSync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], {
-    encoding: 'utf-8',
-  });
-  if (result.status !== 0) return undefined;
-  const out = result.stdout.trim();
-  if (!out || out === 'HEAD') return undefined;
-  return out;
 }
 
 async function runCreate(

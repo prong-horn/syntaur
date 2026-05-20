@@ -2,10 +2,19 @@
 /**
  * Register `syntaur://` as a URL scheme handler on macOS.
  *
- * Postinstall hook. Builds an AppleScript applet (`.app` bundle) that
+ * Two call sites:
+ *   - Postinstall hook (npm runs `node scripts/install-macos-url-handler.mjs`):
+ *     uses the bottom-of-file `main()` wrapper which calls
+ *     `registerMacosUrlHandler({ throwOnFailure: false })` and swallows
+ *     everything so `npm install` never fails on URL-scheme registration.
+ *   - `syntaur install-url-handler` subcommand: dynamic-imports this module
+ *     and calls `registerMacosUrlHandler({ throwOnFailure: true })` so any
+ *     `osacompile`/`codesign`/`lsregister` failure surfaces loudly.
+ *
+ * Implementation: builds an AppleScript applet (`.app` bundle) that
  * LaunchServices routes incoming `syntaur://...` URLs to via the standard
  * `on open location` Apple Event handler, then runs `lsregister -f` to
- * register it.
+ * register it. See the renderAppleScript docstring for the routing flow.
  *
  * Why an AppleScript applet, not a bare Bash executable: macOS URL scheme
  * handlers receive URLs as `kAEGetURL` Apple Events, not as `argv[1]`. A plain
@@ -19,14 +28,27 @@
  * absolute path to the CLI entry (`bin/syntaur.js`), so LaunchServices's
  * stripped PATH doesn't matter.
  *
- * All failures are caught and logged as warnings. The script always exits 0 so
- * `npm install` never fails because of URL-scheme registration.
+ * Concurrency: both call sites can fire simultaneously (e.g. user has the
+ * subcommand open in one terminal while `npm install -g syntaur` runs in
+ * another). The bundle path is shared, so we acquire an exclusive lockfile
+ * at `~/.syntaur/install-url-handler.lock` via `fs.openSync(path, 'wx')`
+ * before touching the bundle directory and release it in `finally`.
  *
- * No-op on non-darwin platforms.
+ * No-op on non-darwin platforms (returns `{ bundlePath: '' }` under
+ * `throwOnFailure: false`; throws under `true`).
  */
 
-import { existsSync, mkdirSync, rmSync, writeFileSync, realpathSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
+import {
+  existsSync,
+  mkdirSync,
+  rmSync,
+  writeFileSync,
+  realpathSync,
+  openSync,
+  closeSync,
+  unlinkSync,
+} from 'node:fs';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { dirname, resolve, join } from 'node:path';
 import { homedir, tmpdir } from 'node:os';
 import { spawnSync } from 'node:child_process';
@@ -37,9 +59,64 @@ const URL_SCHEME = 'syntaur';
 const LSREGISTER = '/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister';
 const OSACOMPILE = '/usr/bin/osacompile';
 
-function main() {
+/**
+ * Mirror of `src/utils/paths.ts:syntaurRoot()`. Replicated here because the
+ * postinstall .mjs cannot reach into compiled TS — at postinstall time
+ * `dist/` may not exist yet on a fresh clone.
+ */
+function syntaurRootMjs() {
+  const override = process.env.SYNTAUR_HOME;
+  if (override && override.length > 0) {
+    return override;
+  }
+  return join(homedir(), '.syntaur');
+}
+
+/**
+ * Register the syntaur:// URL handler on macOS.
+ *
+ * @param {{ throwOnFailure: boolean }} options
+ *   throwOnFailure: when true (subcommand path), any non-zero exit from
+ *   osacompile/codesign/lsregister throws and a non-darwin platform throws.
+ *   When false (postinstall path), failures degrade to console.warn and the
+ *   function returns with bundlePath: ''.
+ * @returns {Promise<{ bundlePath: string }>}
+ */
+export async function registerMacosUrlHandler(options = { throwOnFailure: false }) {
+  const { throwOnFailure } = options;
+
   if (process.platform !== 'darwin') {
-    return; // Linux/Windows handler is deferred to a future task.
+    if (throwOnFailure) {
+      throw new Error(
+        'macOS-only: syntaur:// URL handler registration is only supported on darwin.',
+      );
+    }
+    return { bundlePath: '' };
+  }
+
+  // Acquire the cross-process lock before touching the shared bundle path.
+  // `wx` flag = O_CREAT | O_EXCL — open fails with EEXIST if the file is
+  // already there, which is exactly the "another registration in progress"
+  // signal we want. The stale-lock case (process crashed mid-registration)
+  // is left to manual cleanup; surfacing the lock path in the error message
+  // makes that obvious to the user.
+  const stateRoot = syntaurRootMjs();
+  mkdirSync(stateRoot, { recursive: true });
+  const lockPath = resolve(stateRoot, 'install-url-handler.lock');
+
+  let lockFd;
+  try {
+    lockFd = openSync(lockPath, 'wx');
+  } catch (err) {
+    if (err && err.code === 'EEXIST') {
+      const msg = `Another syntaur:// handler registration is in progress (lock at ${lockPath}). Wait for it to finish or remove the stale lock.`;
+      if (throwOnFailure) {
+        throw new Error(msg);
+      }
+      console.warn(`syntaur: skipping macOS URL-handler registration (${msg})`);
+      return { bundlePath: '' };
+    }
+    throw err;
   }
 
   try {
@@ -85,6 +162,8 @@ function main() {
     // 2. Compile it into an .app bundle. osacompile produces a real macOS app
     //    with the AppleScript runtime as its main executable — that runtime
     //    knows how to dispatch the kAEGetURL Apple Event to our handler.
+    //    osacompile failure is always fatal: registration is impossible
+    //    without the bundle, so we throw regardless of `throwOnFailure`.
     const compile = spawnSync(
       OSACOMPILE,
       ['-o', bundlePath, scriptPath],
@@ -163,21 +242,48 @@ function main() {
       { stdio: 'pipe', encoding: 'utf-8' },
     );
     if (sign.status !== 0) {
-      console.warn(
-        `syntaur: codesign returned ${sign.status} while re-signing ${bundlePath} — macOS may deny Automation permission. stderr: ${sign.stderr}`,
-      );
+      const msg = `codesign returned ${sign.status} while re-signing ${bundlePath}: ${sign.stderr || sign.stdout || '(no output)'}`;
+      if (throwOnFailure) {
+        throw new Error(msg);
+      }
+      console.warn(`syntaur: ${msg} — macOS may deny Automation permission.`);
     }
 
     // 5. Register with LaunchServices so the OS routes syntaur:// URLs here.
-    const ls = spawnSync(LSREGISTER, ['-f', bundlePath], { stdio: 'ignore' });
+    //    Switched stdio to 'pipe' (was 'ignore') so we can include lsregister's
+    //    own diagnostic in failure messages — postinstall used to drop it.
+    const ls = spawnSync(LSREGISTER, ['-f', bundlePath], {
+      stdio: 'pipe',
+      encoding: 'utf-8',
+    });
     if (ls.status !== 0) {
+      const msg = `lsregister returned ${ls.status} while registering ${bundlePath}: ${ls.stderr || ls.stdout || '(no output)'}`;
+      if (throwOnFailure) {
+        throw new Error(msg);
+      }
       console.warn(
-        `syntaur: lsregister returned ${ls.status} while registering ${bundlePath} — \`open syntaur://...\` may not route through the CLI handler until you run \`${LSREGISTER} -f ${bundlePath}\` manually.`,
+        `syntaur: ${msg} — \`open syntaur://...\` may not route through the CLI handler until you run \`${LSREGISTER} -f ${bundlePath}\` manually.`,
       );
     }
 
-    // 5. Clean up the temp source file.
+    // 6. Clean up the temp source file.
     try { rmSync(scriptPath); } catch { /* not fatal */ }
+
+    return { bundlePath };
+  } finally {
+    // Release the lock — both close and unlink wrapped so cleanup never throws.
+    try { closeSync(lockFd); } catch { /* not fatal */ }
+    try { unlinkSync(lockPath); } catch { /* not fatal */ }
+  }
+}
+
+/**
+ * Postinstall thin wrapper — preserves byte-identical behavior from before
+ * the export refactor: catches everything, prints a warning, exits 0.
+ */
+async function main() {
+  try {
+    await registerMacosUrlHandler({ throwOnFailure: false });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     console.warn(`syntaur: skipping macOS URL-handler registration (${msg})`);
@@ -260,16 +366,24 @@ function buildTerminalDispatch(installedTerminals) {
     });
   }
   if (installedTerminals.has('ghostty')) {
+    // Ghostty's AppleScript dictionary doesn't expose `new window`/`terminal`/
+    // `input text` verbs — those calls fail at runtime ("can't get terminal 1"
+    // / "Can't make new window into integer"). Drive Ghostty via synthesized
+    // key events through System Events instead: activate the app, press Cmd-N
+    // to open a new window, type the command, then press Return.
+    //
+    // Requires Accessibility permission for the applet bundle. macOS prompts
+    // the first time we synthesize keystrokes; the user grants it once.
     branches.push({
       id: 'ghostty',
       block: [
-        '\t\t\ttell application "Ghostty"',
-        '\t\t\t\tactivate',
-        '\t\t\t\tset newWin to (new window)',
-        '\t\t\t\tdelay 0.2',
-        '\t\t\t\tset t to terminal 1 of selected tab of newWin',
-        '\t\t\t\tinput text shellCmd to t',
-        '\t\t\t\tsend key "enter" to t',
+        '\t\t\ttell application "Ghostty" to activate',
+        '\t\t\tdelay 0.3',
+        '\t\t\ttell application "System Events"',
+        '\t\t\t\tkeystroke "n" using command down',
+        '\t\t\t\tdelay 0.4',
+        '\t\t\t\tkeystroke shellCmd',
+        '\t\t\t\tkey code 36',
         '\t\t\tend tell',
       ],
     });
@@ -423,4 +537,12 @@ function runPlistBuddy(plistPath, steps) {
   }
 }
 
-main();
+// Only run main() when this file is executed directly (e.g. via the npm
+// postinstall hook), NOT when it's dynamic-imported by the TS subcommand.
+// Without this guard, `await import(...)` from the subcommand would trigger
+// a second silent registration on import-time before the throw-mode call.
+// pathToFileURL handles cross-platform path-to-URL normalization (matters on
+// Windows where argv[1] uses backslashes).
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main();
+}

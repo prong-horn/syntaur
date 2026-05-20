@@ -77,6 +77,17 @@ jq \
 MISSION_SLUG=$(jq -r '.projectSlug // empty' "$CONTEXT_FILE" 2>/dev/null)
 ASSIGNMENT_SLUG=$(jq -r '.assignmentSlug // empty' "$CONTEXT_FILE" 2>/dev/null)
 
+# Capture the terminal-session PID that owns this Claude process. Claude
+# Code's SessionStart payload does NOT include a parent PID, so we approximate
+# by walking up one level from the hook's own PID — that is, the shell the
+# hook was spawned by, which is the shell that owns claude. The server uses
+# this for liveness checks (and an auto-captured ps lstart= for recycling
+# defense). If `ps` is unavailable or returns nothing we just omit the field.
+PID="$(ps -o ppid= -p $$ 2>/dev/null | tr -d '[:space:]' || true)"
+if [ -n "$PID" ] && ! printf '%s' "$PID" | grep -q '^[0-9]\+$'; then
+  PID=""
+fi
+
 PORT="${SYNTAUR_DASHBOARD_PORT:-}"
 if [ -z "$PORT" ]; then
   PORT=$(cat "$HOME/.syntaur/dashboard-port" 2>/dev/null || echo "4800")
@@ -88,10 +99,12 @@ BODY=$(jq -cn \
   --arg proj "$MISSION_SLUG" \
   --arg assn "$ASSIGNMENT_SLUG" \
   --arg path "$CWD" \
+  --arg pid "$PID" \
   '{ agent: "claude", sessionId: $sid, path: $path }
    + (if ($tp   | length) > 0 then {transcriptPath: $tp}    else {} end)
    + (if ($proj | length) > 0 then {projectSlug: $proj}     else {} end)
-   + (if ($assn | length) > 0 then {assignmentSlug: $assn}  else {} end)' 2>/dev/null)
+   + (if ($assn | length) > 0 then {assignmentSlug: $assn}  else {} end)
+   + (if ($pid  | length) > 0 then {pid: ($pid | tonumber)} else {} end)' 2>/dev/null)
 
 if [ -n "$BODY" ]; then
   # --max-time bounds the hook's wall-clock cost if the dashboard socket

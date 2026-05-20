@@ -12,7 +12,7 @@ describe('parseOpenUrl', () => {
 
   it('accepts syntaur://open?session=<id>', () => {
     const result = parseOpenUrl('syntaur://open?session=abc-123');
-    expect(result).toEqual({ kind: 'session', id: 'abc-123' });
+    expect(result).toEqual({ kind: 'session', id: 'abc-123', mode: 'resume' });
   });
 
   it('rejects unknown scheme', () => {
@@ -86,7 +86,12 @@ describe('parseOpenUrl', () => {
     const result = parseOpenUrl(
       'syntaur://open?session=sess-9&terminal=iterm',
     );
-    expect(result).toEqual({ kind: 'session', id: 'sess-9', terminal: 'iterm' });
+    expect(result).toEqual({
+      kind: 'session',
+      id: 'sess-9',
+      mode: 'resume',
+      terminal: 'iterm',
+    });
   });
 
   it('treats empty terminal value as absent', () => {
@@ -125,6 +130,41 @@ describe('parseOpenUrl', () => {
     } catch (err) {
       expect(err).toBeInstanceOf(OpenUrlError);
       expect((err as OpenUrlError).code).toBe('bad-host');
+    }
+  });
+
+  it('defaults mode to "resume" when session URL has no mode param', () => {
+    const result = parseOpenUrl('syntaur://open?session=sess-1');
+    expect(result).toEqual({ kind: 'session', id: 'sess-1', mode: 'resume' });
+  });
+
+  it('accepts mode=resume on a session URL', () => {
+    const result = parseOpenUrl('syntaur://open?session=sess-1&mode=resume');
+    expect(result).toEqual({ kind: 'session', id: 'sess-1', mode: 'resume' });
+  });
+
+  it('accepts mode=fork on a session URL', () => {
+    const result = parseOpenUrl('syntaur://open?session=sess-1&mode=fork');
+    expect(result).toEqual({ kind: 'session', id: 'sess-1', mode: 'fork' });
+  });
+
+  it('rejects invalid mode values with bad-mode', () => {
+    try {
+      parseOpenUrl('syntaur://open?session=sess-1&mode=branch');
+      throw new Error('should have thrown');
+    } catch (err) {
+      expect(err).toBeInstanceOf(OpenUrlError);
+      expect((err as OpenUrlError).code).toBe('bad-mode');
+    }
+  });
+
+  it('rejects duplicate mode params with duplicate-param', () => {
+    try {
+      parseOpenUrl('syntaur://open?session=sess-1&mode=resume&mode=fork');
+      throw new Error('should have thrown');
+    } catch (err) {
+      expect(err).toBeInstanceOf(OpenUrlError);
+      expect((err as OpenUrlError).code).toBe('duplicate-param');
     }
   });
 });
