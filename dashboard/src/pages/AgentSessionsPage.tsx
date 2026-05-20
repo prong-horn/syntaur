@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { Activity, CheckSquare, Square, Terminal, Trash2 } from 'lucide-react';
+import { Activity, CheckSquare, Square, Trash2 } from 'lucide-react';
 import { CopyButton } from '../components/CopyButton';
 import { useAgentSessions, useProjects, useWorkspacePrefix } from '../hooks/useProjects';
 import { LoadingState } from '../components/LoadingState';
@@ -9,6 +9,7 @@ import { EmptyState } from '../components/EmptyState';
 import { SearchInput } from '../components/SearchInput';
 import { FilterBar } from '../components/FilterBar';
 import { ConfirmDialog } from '../components/ConfirmDialog';
+import { OpenInAgentButton } from '../components/OpenInAgentButton';
 import { formatDateTime, toTitleCase } from '../lib/format';
 import type { AgentSession } from '../types';
 
@@ -433,13 +434,11 @@ function SessionRow({
       </td>
       <td className="py-2">
         <div className="flex items-center gap-1.5">
-          <a
-            href={`syntaur://open?session=${encodeURIComponent(session.sessionId)}`}
-            className="text-muted-foreground hover:text-primary"
+          <OpenInAgentButton
+            target={{ kind: 'session', id: session.sessionId }}
+            size="compact"
             title={`Resume this session in ${session.agent}`}
-          >
-            <Terminal className="h-3.5 w-3.5" />
-          </a>
+          />
           <button
             onClick={onDelete}
             className="text-muted-foreground hover:text-destructive"

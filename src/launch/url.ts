@@ -1,10 +1,16 @@
+import {
+  TERMINAL_CHOICES,
+  type TerminalChoice,
+} from '../utils/terminal-schema.js';
+
 export type OpenUrlErrorCode =
   | 'bad-scheme'
   | 'bad-host'
   | 'missing-id'
   | 'both-ids'
   | 'malformed'
-  | 'duplicate-param';
+  | 'duplicate-param'
+  | 'bad-terminal';
 
 export class OpenUrlError extends Error {
   readonly code: OpenUrlErrorCode;
@@ -18,6 +24,13 @@ export class OpenUrlError extends Error {
 export interface ParsedOpenUrl {
   kind: 'assignment' | 'session';
   id: string;
+  /**
+   * Optional one-shot terminal override. When present, the launch plan uses
+   * this instead of the configured `terminal:`. The dashboard's
+   * missing-terminal fallback dialog sets this so a confirm-to-fallback flow
+   * doesn't require mutating user config.
+   */
+  terminal?: TerminalChoice;
 }
 
 /**
@@ -83,6 +96,25 @@ export function parseOpenUrl(input: string): ParsedOpenUrl {
     );
   }
 
+  const terminalVals = url.searchParams.getAll('terminal');
+  if (terminalVals.length > 1) {
+    throw new OpenUrlError(
+      'duplicate-param',
+      'URL has more than one `terminal` query param',
+    );
+  }
+  let terminal: TerminalChoice | undefined;
+  if (terminalVals.length === 1 && terminalVals[0].trim() !== '') {
+    const candidate = terminalVals[0];
+    if (!(TERMINAL_CHOICES as readonly string[]).includes(candidate)) {
+      throw new OpenUrlError(
+        'bad-terminal',
+        `\`terminal\` query param must be one of: ${TERMINAL_CHOICES.join(', ')}`,
+      );
+    }
+    terminal = candidate as TerminalChoice;
+  }
+
   if (assignmentVals.length === 1) {
     const id = assignmentVals[0];
     if (id.trim() === '') {
@@ -91,7 +123,7 @@ export function parseOpenUrl(input: string): ParsedOpenUrl {
         '`assignment` query param is empty',
       );
     }
-    return { kind: 'assignment', id };
+    return { kind: 'assignment', id, ...(terminal ? { terminal } : {}) };
   }
 
   if (sessionVals.length === 1) {
@@ -99,7 +131,7 @@ export function parseOpenUrl(input: string): ParsedOpenUrl {
     if (id.trim() === '') {
       throw new OpenUrlError('missing-id', '`session` query param is empty');
     }
-    return { kind: 'session', id };
+    return { kind: 'session', id, ...(terminal ? { terminal } : {}) };
   }
 
   throw new OpenUrlError(

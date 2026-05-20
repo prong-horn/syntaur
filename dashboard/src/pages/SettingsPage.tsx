@@ -22,6 +22,7 @@ import { useTheme } from '../theme';
 import { HotkeyBindingsSection } from './HotkeyBindingsSection';
 import { ViewDefaultsSection } from './ViewDefaultsSection';
 import { AgentsSection } from './AgentsSection';
+import { TerminalSection } from './TerminalSection';
 
 interface EditableStatus {
   id: string;
@@ -308,6 +309,8 @@ export function SettingsPage() {
       </SectionCard>
 
       <HotkeyBindingsSection />
+
+      <TerminalSection />
 
       <AgentsSection />
 

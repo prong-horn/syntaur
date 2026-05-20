@@ -14,6 +14,7 @@ export default defineConfig({
       '@shared/hotkeys-catalog': resolve(__dirname, '../src/utils/hotkeysCatalog.ts'),
       '@shared/view-prefs-schema': resolve(__dirname, '../src/utils/view-prefs-schema.ts'),
       '@shared/agents-schema': resolve(__dirname, '../src/utils/agents-schema.ts'),
+      '@shared/terminal-schema': resolve(__dirname, '../src/utils/terminal-schema.ts'),
     },
   },
   server: {

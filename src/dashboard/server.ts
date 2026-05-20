@@ -65,6 +65,8 @@ import { createWriteRouter } from './api-write.js';
 import { createServersRouter } from './api-servers.js';
 import { createAgentSessionsRouter } from './api-agent-sessions.js';
 import { createAgentsRouter } from './api-agents.js';
+import { createLaunchPreflightRouter } from './api-launch-preflight.js';
+import { createTerminalConfigRouter } from './api-terminal-config.js';
 import { createLeasesRouter } from './api-leases.js';
 import { createPlaybooksRouter } from './api-playbooks.js';
 import {
@@ -288,6 +290,8 @@ export function createDashboardServer(options: DashboardServerOptions) {
       res.status(500).json({ error: 'Failed to reset theme config' });
     }
   });
+
+  app.use('/api/config/terminal', createTerminalConfigRouter());
 
   app.get('/api/config/hotkeys', async (_req, res) => {
     try {
@@ -708,6 +712,9 @@ export function createDashboardServer(options: DashboardServerOptions) {
 
   // --- Agents Config API ---
   app.use('/api/config/agents', createAgentsRouter());
+
+  // --- Launch Preflight API ---
+  app.use('/api/launch', createLaunchPreflightRouter());
 
   // --- Playbooks API ---
   app.use('/api/playbooks', createPlaybooksRouter(playbooksDir));

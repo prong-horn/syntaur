@@ -75,6 +75,40 @@ describe('parseOpenUrl', () => {
     ).toThrowError(expect.objectContaining({ code: 'duplicate-param' }));
   });
 
+  it('parses a valid one-shot terminal override', () => {
+    const result = parseOpenUrl(
+      'syntaur://open?assignment=abc-123&terminal=ghostty',
+    );
+    expect(result).toEqual({ kind: 'assignment', id: 'abc-123', terminal: 'ghostty' });
+  });
+
+  it('parses terminal override on session URLs', () => {
+    const result = parseOpenUrl(
+      'syntaur://open?session=sess-9&terminal=iterm',
+    );
+    expect(result).toEqual({ kind: 'session', id: 'sess-9', terminal: 'iterm' });
+  });
+
+  it('treats empty terminal value as absent', () => {
+    const result = parseOpenUrl(
+      'syntaur://open?assignment=abc-123&terminal=',
+    );
+    expect(result).toEqual({ kind: 'assignment', id: 'abc-123' });
+    expect(result).not.toHaveProperty('terminal');
+  });
+
+  it('rejects unknown terminal values', () => {
+    expect(() =>
+      parseOpenUrl('syntaur://open?assignment=x&terminal=bogus'),
+    ).toThrowError(expect.objectContaining({ code: 'bad-terminal' }));
+  });
+
+  it('rejects duplicate terminal params', () => {
+    expect(() =>
+      parseOpenUrl('syntaur://open?assignment=x&terminal=a&terminal=b'),
+    ).toThrowError(expect.objectContaining({ code: 'duplicate-param' }));
+  });
+
   it('rejects malformed URLs', () => {
     expect(() => parseOpenUrl('not a url')).toThrowError(
       expect.objectContaining({ code: 'malformed' }),

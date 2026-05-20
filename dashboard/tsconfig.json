@@ -21,13 +21,15 @@
       "@/*": ["./src/*"],
       "@shared/hotkeys-catalog": ["../src/utils/hotkeysCatalog.ts"],
       "@shared/view-prefs-schema": ["../src/utils/view-prefs-schema.ts"],
-      "@shared/agents-schema": ["../src/utils/agents-schema.ts"]
+      "@shared/agents-schema": ["../src/utils/agents-schema.ts"],
+      "@shared/terminal-schema": ["../src/utils/terminal-schema.ts"]
     }
   },
   "include": [
     "src",
     "../src/utils/hotkeysCatalog.ts",
     "../src/utils/view-prefs-schema.ts",
-    "../src/utils/agents-schema.ts"
+    "../src/utils/agents-schema.ts",
+    "../src/utils/terminal-schema.ts"
   ]
 }
