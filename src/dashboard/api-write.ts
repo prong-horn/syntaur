@@ -1,11 +1,21 @@
 import { Router, type Request, type Response } from 'express';
-import { resolve, basename } from 'node:path';
-import { rm, readFile, open as fsOpen } from 'node:fs/promises';
+import { resolve, basename, isAbsolute } from 'node:path';
+import { rm, readFile, open as fsOpen, stat as fsStat, realpath as fsRealpath } from 'node:fs/promises';
+import { spawnSync } from 'node:child_process';
 import { executeTransition } from '../lifecycle/index.js';
 import { isValidSlug, slugify } from '../utils/slug.js';
 import { generateId } from '../utils/uuid.js';
 import { nowTimestamp } from '../utils/timestamp.js';
 import { ensureDir, writeFileForce, fileExists } from '../utils/fs.js';
+import {
+  createWorktreeAndRecord,
+  GitWorktreeError,
+} from '../utils/git-worktree.js';
+import { computeWorktreeDefaults } from '../utils/worktree-defaults.js';
+import {
+  getProjectRepositoryCandidates,
+  getStandaloneRepositoryCandidates,
+} from './repository-candidates.js';
 import {
   parseAssignmentFull,
   parseDecisionRecord,
@@ -181,6 +191,149 @@ async function readCurrentDocument(filePath: string): Promise<string | null> {
     return null;
   }
   return readFile(filePath, 'utf-8');
+}
+
+interface WorktreeCreateContext {
+  assignmentPath: string;
+  projectSlug: string;
+  assignmentSlug: string;
+  reload: () => Promise<unknown>;
+}
+
+/**
+ * Shared body for both worktree-create routes. Validates inputs, runs the
+ * disk-collision and parent-branch pre-flights, then calls the same
+ * `createWorktreeAndRecord` helper the CLI / browse TUI use. Returns
+ * `{ assignment }` shaped via `reload` on success.
+ */
+async function handleWorktreeCreate(
+  req: Request,
+  res: Response,
+  ctx: WorktreeCreateContext,
+): Promise<void> {
+  if (!(await fileExists(ctx.assignmentPath))) {
+    res.status(404).json({ error: 'Assignment not found' });
+    return;
+  }
+
+  const parsed = parseAssignmentFull(await readFile(ctx.assignmentPath, 'utf-8'));
+  if (parsed.workspace.worktreePath) {
+    res
+      .status(409)
+      .json({ error: 'Worktree already configured for this assignment' });
+    return;
+  }
+
+  const { repository, branch: bodyBranch, parentBranch: bodyParent } = (req.body ?? {}) as {
+    repository?: unknown;
+    branch?: unknown;
+    parentBranch?: unknown;
+  };
+
+  if (typeof repository !== 'string' || !repository.trim()) {
+    res.status(400).json({ error: '`repository` is required.' });
+    return;
+  }
+  if (!isAbsolute(repository)) {
+    res
+      .status(400)
+      .json({ error: '`repository` must be an absolute path.' });
+    return;
+  }
+  try {
+    const st = await fsStat(repository);
+    if (!st.isDirectory()) {
+      res
+        .status(400)
+        .json({ error: `Repository path is not a directory: ${repository}` });
+      return;
+    }
+  } catch {
+    res
+      .status(400)
+      .json({ error: `Repository path does not exist: ${repository}` });
+    return;
+  }
+  const topLevel = spawnSync('git', ['-C', repository, 'rev-parse', '--show-toplevel'], {
+    encoding: 'utf-8',
+  });
+  const topLevelOut = topLevel.stdout.trim();
+  if (topLevel.status !== 0 || !topLevelOut) {
+    res
+      .status(400)
+      .json({ error: `Repository path is not a git working tree: ${repository}` });
+    return;
+  }
+  // The plan requires the request `repository` to be the repo root, not a
+  // subdirectory. `git -C <subdir> rev-parse --show-toplevel` succeeds for
+  // any path inside a working tree, so we have to compare paths. Use
+  // `realpath` so symlinks (e.g. macOS `/var` → `/private/var`) don't
+  // produce spurious mismatches.
+  const [requestReal, topLevelReal] = await Promise.all([
+    fsRealpath(repository),
+    fsRealpath(topLevelOut),
+  ]);
+  if (requestReal !== topLevelReal) {
+    res.status(400).json({
+      error:
+        `Repository path must be the git working-tree root. Got ${repository}; the enclosing repo root is ${topLevelOut}.`,
+    });
+    return;
+  }
+
+  const defaults = computeWorktreeDefaults({
+    projectSlug: ctx.projectSlug,
+    assignmentSlug: ctx.assignmentSlug,
+    existing: parsed.workspace,
+    cwd: repository,
+  });
+  const branch =
+    typeof bodyBranch === 'string' && bodyBranch.trim() ? bodyBranch.trim() : defaults.branch!;
+  const parentBranch =
+    typeof bodyParent === 'string' && bodyParent.trim() ? bodyParent.trim() : defaults.parentBranch!;
+  const worktreePath = resolve(repository, '.worktrees', branch);
+
+  try {
+    await fsStat(worktreePath);
+    res.status(409).json({
+      error: `A file or directory already exists at ${worktreePath}. Remove it or choose a different branch.`,
+    });
+    return;
+  } catch {
+    // ENOENT — good.
+  }
+
+  const parentCheck = spawnSync(
+    'git',
+    ['-C', repository, 'rev-parse', '--verify', '--quiet', parentBranch],
+    { encoding: 'utf-8' },
+  );
+  if (parentCheck.status !== 0) {
+    res.status(400).json({
+      error: `Parent branch "${parentBranch}" does not exist in ${repository}.`,
+    });
+    return;
+  }
+
+  try {
+    await createWorktreeAndRecord({
+      assignmentPath: ctx.assignmentPath,
+      repository,
+      branch,
+      worktreePath,
+      parentBranch,
+    });
+  } catch (error) {
+    if (error instanceof GitWorktreeError) {
+      res.status(400).json({ error: error.message, stderr: error.stderr });
+      return;
+    }
+    res.status(500).json({ error: (error as Error).message });
+    return;
+  }
+
+  const assignment = await ctx.reload();
+  res.json({ assignment });
 }
 
 export function createWriteRouter(
@@ -1235,6 +1388,127 @@ export function createWriteRouter(
       res.status(500).json({ error: `Failed to move workspace: ${(error as Error).message}` });
     }
   });
+
+  // --- Worktree creation + candidate discovery ---
+  // Mirrors the existing CLI flow (`syntaur worktree create`) and the browse
+  // TUI's `runCreate`. All three paths call `createWorktreeAndRecord` so the
+  // assignment.md frontmatter ends up identical regardless of entry point.
+
+  router.get(
+    '/api/projects/:slug/repository-candidates',
+    async (req: Request, res: Response) => {
+      try {
+        const projectSlug = getParam(req.params.slug);
+        const projectPath = resolve(projectsDir, projectSlug, 'project.md');
+        if (!(await fileExists(projectPath))) {
+          res.status(404).json({ error: `Project "${projectSlug}" not found` });
+          return;
+        }
+        const candidates = await getProjectRepositoryCandidates(projectsDir, projectSlug);
+        res.json({ candidates });
+      } catch (error) {
+        console.error('Error listing repository candidates:', error);
+        res.status(500).json({
+          error: `Failed to list repository candidates: ${(error as Error).message}`,
+        });
+      }
+    },
+  );
+
+  router.get(
+    '/api/assignments/:id/repository-candidates',
+    async (req: Request, res: Response) => {
+      try {
+        if (!assignmentsDir) {
+          res
+            .status(501)
+            .json({ error: 'Standalone assignments not configured on this server' });
+          return;
+        }
+        const id = getParam(req.params.id);
+        const resolved = await resolveAssignmentById(projectsDir, assignmentsDir, id);
+        if (!resolved) {
+          res.status(404).json({ error: `Assignment "${id}" not found` });
+          return;
+        }
+        const candidates = resolved.standalone
+          ? await getStandaloneRepositoryCandidates(assignmentsDir, id)
+          : await getProjectRepositoryCandidates(projectsDir, resolved.projectSlug!);
+        res.json({ candidates });
+      } catch (error) {
+        console.error('Error listing repository candidates:', error);
+        res.status(500).json({
+          error: `Failed to list repository candidates: ${(error as Error).message}`,
+        });
+      }
+    },
+  );
+
+  router.post(
+    '/api/projects/:slug/assignments/:aslug/worktree',
+    async (req: Request, res: Response) => {
+      try {
+        const projectSlug = getParam(req.params.slug);
+        const assignmentSlug = getParam(req.params.aslug);
+        const assignmentPath = resolve(
+          projectsDir,
+          projectSlug,
+          'assignments',
+          assignmentSlug,
+          'assignment.md',
+        );
+        await handleWorktreeCreate(req, res, {
+          assignmentPath,
+          projectSlug,
+          assignmentSlug,
+          reload: () => getAssignmentDetail(projectsDir, projectSlug, assignmentSlug),
+        });
+      } catch (error) {
+        console.error('Error creating worktree:', error);
+        res
+          .status(500)
+          .json({ error: `Failed to create worktree: ${(error as Error).message}` });
+      }
+    },
+  );
+
+  router.post(
+    '/api/assignments/:id/worktree',
+    async (req: Request, res: Response) => {
+      try {
+        if (!assignmentsDir) {
+          res
+            .status(501)
+            .json({ error: 'Standalone assignments not configured on this server' });
+          return;
+        }
+        const id = getParam(req.params.id);
+        const resolved = await resolveAssignmentById(projectsDir, assignmentsDir, id);
+        if (!resolved) {
+          res.status(404).json({ error: `Assignment "${id}" not found` });
+          return;
+        }
+        const assignmentPath = resolve(resolved.assignmentDir, 'assignment.md');
+        // Standalone: resolveAssignmentById returns the UUID as `assignmentSlug`.
+        // For branch naming we need the user-visible slug from frontmatter, so
+        // parse it here and pass that down. parseAssignmentFull falls back to
+        // empty string, hence the `|| resolved.id` belt-and-suspenders.
+        const parsedForSlug = parseAssignmentFull(await readFile(assignmentPath, 'utf-8'));
+        const assignmentSlugForBranch = parsedForSlug.slug || resolved.id;
+        await handleWorktreeCreate(req, res, {
+          assignmentPath,
+          projectSlug: resolved.projectSlug ?? '',
+          assignmentSlug: assignmentSlugForBranch,
+          reload: () => getAssignmentDetailById(projectsDir, assignmentsDir!, id),
+        });
+      } catch (error) {
+        console.error('Error creating worktree:', error);
+        res
+          .status(500)
+          .json({ error: `Failed to create worktree: ${(error as Error).message}` });
+      }
+    },
+  );
 
   // --- Status Override Endpoints ---
 

@@ -6,11 +6,25 @@ export interface ProjectParams {
   title: string;
   timestamp: string;
   workspace?: string;
+  /**
+   * Repository paths the project spans. Each entry is YAML-escaped on
+   * render so paths with spaces / colons / quotes don't corrupt the
+   * frontmatter. Empty by default for new projects.
+   */
+  repositories?: string[];
+}
+
+function renderRepositoriesBlock(repos: string[] | undefined): string {
+  if (!repos || repos.length === 0) {
+    return 'repositories: []';
+  }
+  return ['repositories:', ...repos.map((p) => `  - ${escapeYamlString(p)}`)].join('\n');
 }
 
 export function renderProject(params: ProjectParams): string {
   const safeTitle = escapeYamlString(params.title);
   const workspaceLine = params.workspace ? `\nworkspace: ${params.workspace}` : '';
+  const repositoriesBlock = renderRepositoriesBlock(params.repositories);
   return `---
 id: ${params.id}
 slug: ${params.slug}
@@ -21,7 +35,8 @@ archivedReason: null
 created: "${params.timestamp}"
 updated: "${params.timestamp}"
 externalIds: []
-tags: []${workspaceLine}
+tags: []
+${repositoriesBlock}${workspaceLine}
 ---
 
 # ${params.title}
