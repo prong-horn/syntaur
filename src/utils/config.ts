@@ -1,4 +1,5 @@
 import { readFile } from 'node:fs/promises';
+import { spawnSync } from 'node:child_process';
 import { resolve, isAbsolute } from 'node:path';
 import { syntaurRoot, defaultProjectDir, expandHome } from './paths.js';
 import { fileExists, writeFileForce } from './fs.js';
@@ -108,22 +109,8 @@ export interface HotkeyBindingsConfig {
   bindings: Partial<Record<BindableActionKind, string>>;
 }
 
-export type TerminalChoice =
-  | 'terminal-app'
-  | 'iterm'
-  | 'ghostty'
-  | 'alacritty'
-  | 'warp'
-  | 'kitty';
-
-export const TERMINAL_CHOICES: readonly TerminalChoice[] = [
-  'terminal-app',
-  'iterm',
-  'ghostty',
-  'alacritty',
-  'warp',
-  'kitty',
-];
+import { TERMINAL_CHOICES, type TerminalChoice } from './terminal-schema.js';
+export { TERMINAL_CHOICES, type TerminalChoice };
 
 export interface SyntaurConfig {
   version: string;
@@ -668,6 +655,57 @@ export async function deleteThemeConfig(): Promise<void> {
   const fmBlock = fmMatch[2];
   const afterFrontmatter = existing.slice(fmMatch[0].length);
   const cleanedFm = stripTopLevelBlock(fmBlock, 'theme');
+  const newContent = `---\n${cleanedFm}\n---${afterFrontmatter}`;
+  await writeFileForce(configPath, newContent);
+}
+
+/**
+ * Remove any top-level `key: <value>` scalar line from a YAML frontmatter block.
+ * Used for scalar keys (terminal:) that don't have child lines, so they can't
+ * use the block-style `stripTopLevelBlock`. No-op when the key is absent.
+ */
+function stripTopLevelScalar(fmBlock: string, key: string): string {
+  const lines = fmBlock.split('\n');
+  const keyRegex = new RegExp(`^${key}:\\s*\\S`);
+  const filtered = lines.filter((line) => !keyRegex.test(line));
+  return filtered.join('\n').replace(/\n+$/, '');
+}
+
+export async function writeTerminalConfig(terminal: TerminalChoice): Promise<void> {
+  const configPath = resolve(syntaurRoot(), 'config.md');
+  const terminalLine = `terminal: ${terminal}`;
+
+  const existing = (await fileExists(configPath))
+    ? await readFile(configPath, 'utf-8')
+    : renderConfig({ defaultProjectDir: defaultProjectDir() });
+
+  const fmMatch = existing.match(/^(---\n)([\s\S]*?)\n(---)/);
+  if (!fmMatch) {
+    const content = `---\nversion: "2.0"\ndefaultProjectDir: ${defaultProjectDir()}\n${terminalLine}\n---\n${existing}`;
+    await writeFileForce(configPath, content);
+    return;
+  }
+
+  const fmBlock = fmMatch[2];
+  const afterFrontmatter = existing.slice(fmMatch[0].length);
+  const cleanedFm = stripTopLevelScalar(fmBlock, 'terminal');
+  const newFm = `${cleanedFm}\n${terminalLine}`.replace(/^\n+/, '');
+  const normalizedFm = newFm.replace(/\n+$/, '');
+  const newContent = `---\n${normalizedFm}\n---${afterFrontmatter}`;
+  await writeFileForce(configPath, newContent);
+}
+
+export async function deleteTerminalConfig(): Promise<void> {
+  const configPath = resolve(syntaurRoot(), 'config.md');
+  if (!(await fileExists(configPath))) return;
+
+  const existing = await readFile(configPath, 'utf-8');
+  const fmMatch = existing.match(/^(---\n)([\s\S]*?)\n(---)/);
+  if (!fmMatch) return;
+
+  const fmBlock = fmMatch[2];
+  const afterFrontmatter = existing.slice(fmMatch[0].length);
+  const cleanedFm = stripTopLevelScalar(fmBlock, 'terminal');
   const newContent = `---\n${cleanedFm}\n---${afterFrontmatter}`;
   await writeFileForce(configPath, newContent);
 }
@@ -1482,11 +1520,29 @@ export function parseTerminalConfig(value: unknown): TerminalChoice | null {
 
 /**
  * Return the configured terminal, or the platform default when unset.
- * Darwin → terminal-app; other platforms have no sensible auto-default and
- * return terminal-app as a stable fallback (doctor will warn separately).
+ *
+ * darwin → terminal-app (always available).
+ * linux  → first of [kitty, alacritty, warp] resolvable via `which`, in that
+ *          order. If none are installed, return terminal-app as a stable
+ *          sentinel (doctor will surface the install gap separately).
+ * other  → terminal-app sentinel.
+ *
+ * The Linux probe order is intentionally deterministic and documented so the
+ * dashboard's preflight + the Settings hint show the same value.
  */
 export function getTerminal(config: SyntaurConfig): TerminalChoice {
-  return config.terminal ?? 'terminal-app';
+  if (config.terminal) return config.terminal;
+  if (process.platform === 'darwin') return 'terminal-app';
+  if (process.platform === 'linux') {
+    const order: TerminalChoice[] = ['kitty', 'alacritty', 'warp'];
+    for (const candidate of order) {
+      const result = spawnSync('which', [candidate], { encoding: 'utf-8' });
+      if (result.status === 0 && result.stdout.trim().length > 0) {
+        return candidate;
+      }
+    }
+  }
+  return 'terminal-app';
 }
 
 export interface AgentsMutation {

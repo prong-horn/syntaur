@@ -1,3 +1,8 @@
+import {
+  TERMINAL_CHOICES,
+  type TerminalChoice,
+} from '../utils/terminal-schema.js';
+
 export type OpenUrlErrorCode =
   | 'bad-scheme'
   | 'bad-host'
@@ -5,6 +10,7 @@ export type OpenUrlErrorCode =
   | 'both-ids'
   | 'malformed'
   | 'duplicate-param'
+  | 'bad-terminal'
   | 'bad-mode';
 
 export class OpenUrlError extends Error {
@@ -24,6 +30,13 @@ export interface ParsedOpenUrl {
   kind: 'assignment' | 'session';
   id: string;
   /**
+   * Optional one-shot terminal override. When present, the launch plan uses
+   * this instead of the configured `terminal:`. The dashboard's
+   * missing-terminal fallback dialog sets this so a confirm-to-fallback flow
+   * doesn't require mutating user config.
+   */
+  terminal?: TerminalChoice;
+  /**
    * Only set when `kind === 'session'`. Defaults to `'resume'` when the URL
    * has no `mode` query param. Distinguishes "continue this session under the
    * same id" (resume) from "branch a new session id at this point in
@@ -42,6 +55,8 @@ export interface ParsedOpenUrl {
  * - exactly one of `assignment` or `session` query params must be present
  * - neither param may be duplicated
  * - when `session` is present, optional `mode=resume|fork` (default `resume`)
+ * - optional `terminal=<choice>` one-shot override (validated against
+ *   `TERMINAL_CHOICES`)
  *
  * Throws OpenUrlError with a structured code on any failure.
  */
@@ -97,6 +112,25 @@ export function parseOpenUrl(input: string): ParsedOpenUrl {
     );
   }
 
+  const terminalVals = url.searchParams.getAll('terminal');
+  if (terminalVals.length > 1) {
+    throw new OpenUrlError(
+      'duplicate-param',
+      'URL has more than one `terminal` query param',
+    );
+  }
+  let terminal: TerminalChoice | undefined;
+  if (terminalVals.length === 1 && terminalVals[0].trim() !== '') {
+    const candidate = terminalVals[0];
+    if (!(TERMINAL_CHOICES as readonly string[]).includes(candidate)) {
+      throw new OpenUrlError(
+        'bad-terminal',
+        `\`terminal\` query param must be one of: ${TERMINAL_CHOICES.join(', ')}`,
+      );
+    }
+    terminal = candidate as TerminalChoice;
+  }
+
   if (assignmentVals.length === 1) {
     const id = assignmentVals[0];
     if (id.trim() === '') {
@@ -105,7 +139,7 @@ export function parseOpenUrl(input: string): ParsedOpenUrl {
         '`assignment` query param is empty',
       );
     }
-    return { kind: 'assignment', id };
+    return { kind: 'assignment', id, ...(terminal ? { terminal } : {}) };
   }
 
   if (sessionVals.length === 1) {
@@ -132,7 +166,7 @@ export function parseOpenUrl(input: string): ParsedOpenUrl {
       }
       mode = raw as SessionMode;
     }
-    return { kind: 'session', id, mode };
+    return { kind: 'session', id, mode, ...(terminal ? { terminal } : {}) };
   }
 
   throw new OpenUrlError(

@@ -6,23 +6,16 @@ import {
   TERMINAL_CHOICES,
   type TerminalChoice,
 } from '../../config.js';
+import {
+  APP_BUNDLE_IDS,
+  CLI_NAMES,
+  probeTerminalInstalled,
+} from '../../terminal-probe.js';
 import { syntaurRoot } from '../../paths.js';
 import { fileExists } from '../../fs.js';
 import type { Check, CheckResult } from '../types.js';
 
 const CATEGORY = 'terminal';
-
-const APP_BUNDLE_IDS: Partial<Record<TerminalChoice, string>> = {
-  'terminal-app': 'com.apple.Terminal',
-  iterm: 'com.googlecode.iterm2',
-  ghostty: 'com.mitchellh.ghostty',
-  warp: 'dev.warp.Warp-Stable',
-};
-
-const CLI_NAMES: Partial<Record<TerminalChoice, string>> = {
-  alacritty: 'alacritty',
-  kitty: 'kitty',
-};
 
 /**
  * Read the raw `terminal:` line from `~/.syntaur/config.md` frontmatter.
@@ -104,71 +97,50 @@ const terminalInstalled: Check = {
     const terminal = getTerminal(ctx.config);
     const bundleId = APP_BUNDLE_IDS[terminal];
     const cliName = CLI_NAMES[terminal];
+    const probe = probeTerminalInstalled(terminal);
 
-    if (bundleId) {
-      const result = spawnSync(
-        'mdfind',
-        [`kMDItemCFBundleIdentifier == '${bundleId}'`],
-        { encoding: 'utf-8' },
-      );
-      if (result.status === 0 && result.stdout.trim().length > 0) {
-        return {
-          id: this.id,
-          category: this.category,
-          title: this.title,
-          status: 'pass',
-          detail: `found ${terminal} at ${result.stdout.trim().split('\n')[0]}`,
-          autoFixable: false,
-        };
-      }
+    if (probe.reason === 'no-probe-available') {
       return {
         id: this.id,
         category: this.category,
         title: this.title,
-        status: 'warn',
-        detail: `${terminal} (bundle id ${bundleId}) not found via Spotlight`,
-        remediation: {
-          kind: 'manual',
-          suggestion: `Install ${terminal} or change \`terminal:\` in ~/.syntaur/config.md to a different choice`,
-          command: null,
-        },
+        status: 'skipped',
+        detail: `no install check defined for ${terminal}`,
         autoFixable: false,
       };
     }
 
-    if (cliName) {
-      const result = spawnSync('which', [cliName], { encoding: 'utf-8' });
-      if (result.status === 0 && result.stdout.trim().length > 0) {
-        return {
-          id: this.id,
-          category: this.category,
-          title: this.title,
-          status: 'pass',
-          detail: `resolved ${cliName} → ${result.stdout.trim()}`,
-          autoFixable: false,
-        };
-      }
+    if (probe.ok) {
+      const detail = bundleId
+        ? `found ${terminal} at ${probe.foundPath}`
+        : `resolved ${cliName} → ${probe.foundPath}`;
       return {
         id: this.id,
         category: this.category,
         title: this.title,
-        status: 'warn',
-        detail: `${cliName} not found on PATH`,
-        remediation: {
-          kind: 'manual',
-          suggestion: `Install ${cliName} or change \`terminal:\` in ~/.syntaur/config.md to a different choice`,
-          command: null,
-        },
+        status: 'pass',
+        detail,
         autoFixable: false,
       };
     }
 
+    const detail = bundleId
+      ? `${terminal} (bundle id ${bundleId}) not found via Spotlight`
+      : `${cliName} not found on PATH`;
+    const suggestion = bundleId
+      ? `Install ${terminal} or change \`terminal:\` in ~/.syntaur/config.md to a different choice`
+      : `Install ${cliName} or change \`terminal:\` in ~/.syntaur/config.md to a different choice`;
     return {
       id: this.id,
       category: this.category,
       title: this.title,
-      status: 'skipped',
-      detail: `no install check defined for ${terminal}`,
+      status: 'warn',
+      detail,
+      remediation: {
+        kind: 'manual',
+        suggestion,
+        command: null,
+      },
       autoFixable: false,
     };
   },

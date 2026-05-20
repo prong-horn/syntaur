@@ -58,6 +58,7 @@ export async function urlCommand(
     config,
     projectsDir,
     assignmentsDir: assignmentsDir(),
+    terminalOverride: parsed.terminal,
   });
 
   if (plan.fallbackWarning) {

@@ -160,6 +160,29 @@ describe('resolveLaunchPlan — assignment mode', () => {
     expect(plan.cwd).toBe(repo);
     expect(plan.fallbackWarning).toMatch(/worktreePath/);
   });
+
+  it('honors terminalOverride over the configured terminal', async () => {
+    const worktree = resolve(testDir, 'worktree-override');
+    await mkdir(worktree, { recursive: true });
+    await scaffoldAssignment(
+      projectsDir,
+      'demo-project',
+      'demo-asg',
+      ASSIGNMENT_ID,
+      { worktreePath: worktree, branch: 'feat/x' },
+    );
+
+    const plan = await resolveLaunchPlan({
+      kind: 'assignment',
+      id: ASSIGNMENT_ID,
+      config: makeConfig({ terminal: 'ghostty' }),
+      projectsDir,
+      assignmentsDir,
+      terminalOverride: 'iterm',
+    });
+
+    expect(plan.terminal).toBe('iterm');
+  });
 });
 
 describe('resolveLaunchPlan — session mode', () => {

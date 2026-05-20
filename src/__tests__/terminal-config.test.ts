@@ -1,5 +1,5 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { mkdtemp, mkdir, readFile, rm, writeFile, chmod } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import {
@@ -8,10 +8,27 @@ import {
   getTerminal,
   TerminalConfigError,
   TERMINAL_CHOICES,
+  writeTerminalConfig,
+  deleteTerminalConfig,
 } from '../utils/config.js';
 import { renderConfig } from '../templates/config.js';
 import { terminalChecks } from '../utils/doctor/checks/terminal.js';
 import type { CheckContext, CheckResult } from '../utils/doctor/types.js';
+
+/**
+ * Inject a `terminal: <value>` line into a rendered template's frontmatter.
+ * Necessary because the template no longer ships `terminal: terminal-app`
+ * out of the box — the OS-aware default decides at read time.
+ */
+function renderConfigWithTerminal(
+  defaultProjectDir: string,
+  terminalLine: string,
+): string {
+  return renderConfig({ defaultProjectDir }).replace(
+    /\n---\n/,
+    `\n${terminalLine}\n---\n`,
+  );
+}
 
 describe('terminal config', () => {
   describe('parseTerminalConfig', () => {
@@ -71,10 +88,7 @@ describe('terminal config', () => {
     });
 
     it('round-trips terminal: ghostty through renderConfig + readConfig', async () => {
-      const rendered = renderConfig({ defaultProjectDir: homeDir }).replace(
-        'terminal: terminal-app',
-        'terminal: ghostty',
-      );
+      const rendered = renderConfigWithTerminal(homeDir, 'terminal: ghostty');
       await writeFile(resolve(homeDir, '.syntaur/config.md'), rendered);
       const config = await readConfig();
       expect(config.terminal).toBe('ghostty');
@@ -82,19 +96,24 @@ describe('terminal config', () => {
     });
 
     it('returns null when terminal: is omitted from config.md', async () => {
-      const rendered = renderConfig({ defaultProjectDir: homeDir }).replace(
-        /\nterminal: .*\n/,
-        '\n',
-      );
+      const rendered = renderConfig({ defaultProjectDir: homeDir });
       await writeFile(resolve(homeDir, '.syntaur/config.md'), rendered);
       const config = await readConfig();
       expect(config.terminal).toBeNull();
-      expect(getTerminal(config)).toBe('terminal-app');
+      // getTerminal returns OS-aware default; on darwin/linux/other it is
+      // never null. We don't assert the exact value here — that's covered by
+      // the dedicated OS-aware describe block below.
+    });
+
+    it('default template no longer hardcodes terminal:', () => {
+      expect(renderConfig({ defaultProjectDir: '/tmp' })).not.toMatch(
+        /\nterminal:\s*\S/,
+      );
     });
 
     it('warns and falls back to null when terminal: value is invalid', async () => {
-      const rendered = renderConfig({ defaultProjectDir: homeDir }).replace(
-        'terminal: terminal-app',
+      const rendered = renderConfigWithTerminal(
+        homeDir,
         'terminal: notarealterminal',
       );
       await writeFile(resolve(homeDir, '.syntaur/config.md'), rendered);
@@ -156,10 +175,7 @@ describe('terminal config', () => {
       console.warn = () => {};
       try {
         const result = await runValueValidCheck(
-          renderConfig({ defaultProjectDir: homeDir }).replace(
-            'terminal: terminal-app',
-            'terminal: bogus-terminal',
-          ),
+          renderConfigWithTerminal(homeDir, 'terminal: bogus-terminal'),
         );
         expect(result.status).toBe('warn');
         expect(result.detail).toContain('bogus-terminal');
@@ -171,10 +187,7 @@ describe('terminal config', () => {
 
     it('passes when raw config.md has a valid terminal: value', async () => {
       const result = await runValueValidCheck(
-        renderConfig({ defaultProjectDir: homeDir }).replace(
-          'terminal: terminal-app',
-          'terminal: ghostty',
-        ),
+        renderConfigWithTerminal(homeDir, 'terminal: ghostty'),
       );
       expect(result.status).toBe('pass');
       expect(result.detail).toContain('ghostty');
@@ -182,10 +195,7 @@ describe('terminal config', () => {
 
     it('passes for a quoted valid value (terminal: "ghostty")', async () => {
       const result = await runValueValidCheck(
-        renderConfig({ defaultProjectDir: homeDir }).replace(
-          'terminal: terminal-app',
-          'terminal: "ghostty"',
-        ),
+        renderConfigWithTerminal(homeDir, 'terminal: "ghostty"'),
       );
       expect(result.status).toBe('pass');
       expect(result.detail).toContain('ghostty');
@@ -193,10 +203,7 @@ describe('terminal config', () => {
 
     it("passes for a single-quoted valid value (terminal: 'iterm')", async () => {
       const result = await runValueValidCheck(
-        renderConfig({ defaultProjectDir: homeDir }).replace(
-          'terminal: terminal-app',
-          "terminal: 'iterm'",
-        ),
+        renderConfigWithTerminal(homeDir, "terminal: 'iterm'"),
       );
       expect(result.status).toBe('pass');
       expect(result.detail).toContain('iterm');
@@ -204,13 +211,130 @@ describe('terminal config', () => {
 
     it('passes when terminal: is absent from config.md', async () => {
       const result = await runValueValidCheck(
-        renderConfig({ defaultProjectDir: homeDir }).replace(
-          /\nterminal: .*\n/,
-          '\n',
-        ),
+        renderConfig({ defaultProjectDir: homeDir }),
       );
       expect(result.status).toBe('pass');
       expect(result.detail).toContain('not set');
+    });
+  });
+
+  describe('writeTerminalConfig + deleteTerminalConfig', () => {
+    const originalHome = process.env.HOME;
+    const originalSyntaurHome = process.env.SYNTAUR_HOME;
+    let homeDir: string;
+
+    beforeEach(async () => {
+      homeDir = await mkdtemp(join(tmpdir(), 'syntaur-term-write-'));
+      process.env.HOME = homeDir;
+      process.env.SYNTAUR_HOME = resolve(homeDir, '.syntaur');
+      await mkdir(resolve(homeDir, '.syntaur'), { recursive: true });
+    });
+
+    afterEach(async () => {
+      process.env.HOME = originalHome;
+      if (originalSyntaurHome === undefined) {
+        delete process.env.SYNTAUR_HOME;
+      } else {
+        process.env.SYNTAUR_HOME = originalSyntaurHome;
+      }
+      await rm(homeDir, { recursive: true, force: true });
+    });
+
+    it('writes terminal: into existing frontmatter with no prior key', async () => {
+      const rendered = renderConfig({ defaultProjectDir: homeDir });
+      const configPath = resolve(homeDir, '.syntaur/config.md');
+      await writeFile(configPath, rendered);
+      await writeTerminalConfig('ghostty');
+      const content = await readFile(configPath, 'utf-8');
+      expect(content).toMatch(/^terminal: ghostty$/m);
+      const config = await readConfig();
+      expect(config.terminal).toBe('ghostty');
+    });
+
+    it('replaces an existing terminal: value', async () => {
+      const rendered = renderConfigWithTerminal(homeDir, 'terminal: ghostty');
+      const configPath = resolve(homeDir, '.syntaur/config.md');
+      await writeFile(configPath, rendered);
+      await writeTerminalConfig('iterm');
+      const content = await readFile(configPath, 'utf-8');
+      expect(content.match(/^terminal:.*$/gm)?.length).toBe(1);
+      expect(content).toMatch(/^terminal: iterm$/m);
+    });
+
+    it('deleteTerminalConfig removes the line', async () => {
+      const rendered = renderConfigWithTerminal(homeDir, 'terminal: warp');
+      const configPath = resolve(homeDir, '.syntaur/config.md');
+      await writeFile(configPath, rendered);
+      await deleteTerminalConfig();
+      const content = await readFile(configPath, 'utf-8');
+      expect(content).not.toMatch(/\nterminal:\s*\S/);
+    });
+
+    it('deleteTerminalConfig is a no-op when terminal is absent', async () => {
+      const rendered = renderConfig({ defaultProjectDir: homeDir });
+      const configPath = resolve(homeDir, '.syntaur/config.md');
+      await writeFile(configPath, rendered);
+      const before = await readFile(configPath, 'utf-8');
+      await deleteTerminalConfig();
+      const after = await readFile(configPath, 'utf-8');
+      // strip-trailing-newlines normalization may differ; ensure absence is unchanged
+      expect(after).not.toMatch(/\nterminal:\s*\S/);
+      expect(before).not.toMatch(/\nterminal:\s*\S/);
+    });
+  });
+
+  describe('getTerminal OS-aware default', () => {
+    const originalPlatform = process.platform;
+    const originalPath = process.env.PATH;
+    let pathDir: string;
+
+    function setPlatform(platform: NodeJS.Platform): void {
+      Object.defineProperty(process, 'platform', {
+        value: platform,
+        configurable: true,
+      });
+    }
+
+    beforeEach(async () => {
+      pathDir = await mkdtemp(join(tmpdir(), 'syntaur-path-'));
+    });
+
+    afterEach(async () => {
+      Object.defineProperty(process, 'platform', {
+        value: originalPlatform,
+        configurable: true,
+      });
+      process.env.PATH = originalPath;
+      await rm(pathDir, { recursive: true, force: true });
+      vi.restoreAllMocks();
+    });
+
+    it('returns terminal-app on darwin', () => {
+      setPlatform('darwin');
+      const config = makeConfig({ terminal: null });
+      expect(getTerminal(config)).toBe('terminal-app');
+    });
+
+    it('returns first installed CLI terminal on linux (kitty wins probe order)', async () => {
+      setPlatform('linux');
+      // Stage a fake `kitty` first on PATH so it wins probe order [kitty,
+      // alacritty, warp] regardless of what the host has installed. /usr/bin
+      // stays on PATH so the spawned `which` itself resolves.
+      const kittyPath = join(pathDir, 'kitty');
+      await writeFile(kittyPath, '#!/bin/sh\nexit 0\n');
+      await chmod(kittyPath, 0o755);
+      process.env.PATH = `${pathDir}:/usr/bin:/bin`;
+      const config = makeConfig({ terminal: null });
+      expect(getTerminal(config)).toBe('kitty');
+    });
+
+    it('falls back to terminal-app on linux when no probe hits', () => {
+      setPlatform('linux');
+      // Point PATH at a non-existent dir so the spawned `which` itself fails
+      // to resolve — no chance of accidentally hitting a host install.
+      process.env.PATH = '/tmp/syntaur-test-no-such-dir';
+      const config = makeConfig({ terminal: null });
+      expect(getTerminal(config)).toBe('terminal-app');
     });
   });
 });

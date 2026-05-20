@@ -60,6 +60,13 @@ export interface ResolveLaunchPlanInput {
   config: SyntaurConfig;
   projectsDir: string;
   assignmentsDir: string;
+  /**
+   * One-shot terminal override. When set, used in place of
+   * `getTerminal(config)`. Wired through from `?terminal=<choice>` on the
+   * incoming `syntaur://` URL so the dashboard's missing-terminal fallback
+   * dialog can confirm a different terminal without mutating user config.
+   */
+  terminalOverride?: TerminalChoice;
 }
 
 /**
@@ -89,7 +96,7 @@ export function pickAgent(config: SyntaurConfig): AgentConfig {
 export async function resolveLaunchPlan(
   input: ResolveLaunchPlanInput,
 ): Promise<LaunchPlan> {
-  const terminal = getTerminal(input.config);
+  const terminal = input.terminalOverride ?? getTerminal(input.config);
 
   if (input.kind === 'assignment') {
     return resolveAssignmentPlan(input, terminal);
