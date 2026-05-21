@@ -1,0 +1,123 @@
+{
+  "session": [
+    {
+      "agent": "claude",
+      "cacheCreationTokens": 832799,
+      "cacheReadTokens": 43229970,
+      "inputTokens": 3621,
+      "metadata": {
+        "lastActivity": "2026-05-12"
+      },
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 832799,
+          "cacheReadTokens": 43229970,
+          "cost": 30.093033750000007,
+          "inputTokens": 3621,
+          "modelName": "claude-opus-4-7",
+          "outputTokens": 130198
+        }
+      ],
+      "modelsUsed": [
+        "claude-opus-4-7"
+      ],
+      "outputTokens": 130198,
+      "period": "0019cd2d-9d8a-450a-a148-76a25dc3a6c0",
+      "totalCost": 30.093033750000007,
+      "totalTokens": 44196588
+    },
+    {
+      "agent": "codex",
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 550528,
+      "inputTokens": 83988,
+      "metadata": {
+        "lastActivity": "2026-03-13T12:02:17.747Z",
+        "reasoningOutputTokens": 2424
+      },
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 550528,
+          "cost": 0.5225920000000001,
+          "inputTokens": 83988,
+          "modelName": "gpt-5.4",
+          "outputTokens": 11666
+        }
+      ],
+      "modelsUsed": [
+        "gpt-5.4"
+      ],
+      "outputTokens": 11666,
+      "period": "2026/03/13/rollout-2026-03-13T05-48-02-019ce706-657d-7b70-ae09-9f33e32745ee",
+      "totalCost": 0.5225920000000001,
+      "totalTokens": 646182
+    },
+    {
+      "agent": "opencode",
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 165888,
+      "inputTokens": 47590,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 165888,
+          "cost": 0.0476748,
+          "inputTokens": 47590,
+          "modelName": "kimi-k2.5",
+          "outputTokens": 844
+        }
+      ],
+      "modelsUsed": [
+        "kimi-k2.5"
+      ],
+      "outputTokens": 844,
+      "period": "ses_2fed5cd72ffe26SxI85jRNCh8i",
+      "totalCost": 0.0476748,
+      "totalTokens": 214322
+    },
+    {
+      "agent": "claude",
+      "cacheCreationTokens": 2057771,
+      "cacheReadTokens": 121790818,
+      "inputTokens": 708,
+      "metadata": {
+        "lastActivity": "2026-05-12"
+      },
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 1987474,
+          "cacheReadTokens": 120090037,
+          "cost": 79.59659100000003,
+          "inputTokens": 577,
+          "modelName": "claude-opus-4-7",
+          "outputTokens": 285079
+        },
+        {
+          "cacheCreationTokens": 70297,
+          "cacheReadTokens": 1700781,
+          "cost": 0.29288035,
+          "inputTokens": 131,
+          "modelName": "claude-haiku-4-5-20251001",
+          "outputTokens": 6960
+        }
+      ],
+      "modelsUsed": [
+        "claude-opus-4-7",
+        "claude-haiku-4-5-20251001"
+      ],
+      "outputTokens": 292039,
+      "period": "24bf8750-ffed-4490-b717-06390c3b5112",
+      "totalCost": 79.88947135000002,
+      "totalTokens": 124141336
+    }
+  ],
+  "totals": {
+    "cacheCreationTokens": 89496307,
+    "cacheReadTokens": 4451239787,
+    "inputTokens": 53170133,
+    "outputTokens": 17515487,
+    "totalCost": 3179.930283350001,
+    "totalTokens": 4611421714
+  }
+}
