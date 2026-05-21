@@ -42,6 +42,7 @@ export interface AssignmentSummary {
   slug: string;
   title: string;
   status: string;
+  type: string | null;
   priority: 'low' | 'medium' | 'high' | 'critical';
   assignee: string | null;
   dependsOn: string[];
@@ -164,6 +165,7 @@ export interface AssignmentDetail {
   slug: string;
   title: string;
   status: string;
+  type: string | null;
   priority: AssignmentSummary['priority'];
   assignee: string | null;
   dependsOn: string[];

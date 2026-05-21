@@ -7,6 +7,7 @@ import { formatDate, formatDateTime } from '../lib/format';
 import { LoadingState } from '../components/LoadingState';
 import { ErrorState } from '../components/ErrorState';
 import { StatusBadge } from '../components/StatusBadge';
+import { TypeChip } from '../components/TypeChip';
 import { ExternalIdBadges } from '../components/ExternalIdBadges';
 import { StatCard } from '../components/StatCard';
 import { ProgressBar } from '../components/ProgressBar';
@@ -330,6 +331,7 @@ export function ProjectDetail() {
                               <tr className="border-b border-border/60 text-muted-foreground">
                                 <th className="pb-3 font-medium">Assignment</th>
                                 <th className="pb-3 font-medium">Status</th>
+                                <th className="pb-3 font-medium">Type</th>
                                 <th className="pb-3 font-medium">Priority</th>
                                 <th className="pb-3 font-medium">Assignee</th>
                                 <th className="pb-3 font-medium">Updated</th>
@@ -347,6 +349,7 @@ export function ProjectDetail() {
                                     </Link>
                                   </td>
                                   <td className="py-4"><StatusBadge status={assignment.status} /></td>
+                                  <td className="py-4"><TypeChip type={assignment.type} compact /></td>
                                   <td className="py-4 capitalize text-muted-foreground">{assignment.priority}</td>
                                   <td className="py-4 text-muted-foreground">{assignment.assignee ?? '\u2014'}</td>
                                   <td className="py-4 text-muted-foreground">{formatDate(assignment.updated)}</td>
@@ -555,6 +558,7 @@ function AssignmentCard({
         <StatusBadge status={assignment.status} />
       </div>
       <div className="mt-4 flex flex-wrap gap-2">
+        <TypeChip type={assignment.type} />
         <span className="rounded-full border border-border/60 px-2.5 py-1 text-xs capitalize text-muted-foreground">
           {assignment.priority}
         </span>

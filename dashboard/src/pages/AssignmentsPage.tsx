@@ -26,6 +26,7 @@ import { ConfirmDialog } from '../components/ConfirmDialog';
 import { MoveToWorkspaceDialog } from '../components/MoveToWorkspaceDialog';
 import type { OverflowMenuItem } from '../components/OverflowMenu';
 import { StatusBadge, STATUS_META, getStatusDescription } from '../components/StatusBadge';
+import { TypeChip } from '../components/TypeChip';
 import { transitionNeedsReason } from '../lib/assignments';
 import { useStatusConfig, getStatusLabel } from '../hooks/useStatusConfig';
 import { useHotkey, useHotkeyScope, useListSelection } from '../hotkeys';
@@ -778,6 +779,7 @@ export function AssignmentsPage() {
                 <tr className="border-b border-border/60 text-muted-foreground">
                   <SortHeader field="title">Assignment</SortHeader>
                   <SortHeader field="status">Status</SortHeader>
+                  <th className="py-2 pr-4 text-xs font-medium uppercase tracking-wider">Type</th>
                   <SortHeader field="priority">Priority</SortHeader>
                   <SortHeader field="assignee">Assignee</SortHeader>
                   <SortHeader field="dependencies">Dependencies</SortHeader>
@@ -846,6 +848,9 @@ export function AssignmentsPage() {
                           );
                         })}
                       </select>
+                    </td>
+                    <td className="py-4 pr-4">
+                      <TypeChip type={assignment.type} compact />
                     </td>
                     <td className="py-4 pr-4 capitalize text-muted-foreground">{assignment.priority}</td>
                     <td className="py-4 pr-4 text-muted-foreground">{assignment.assignee ?? 'Unassigned'}</td>
@@ -1165,6 +1170,7 @@ function AssignmentBoardCard({
       ) : null}
 
       <div className="mt-4 flex flex-wrap gap-2">
+        <TypeChip type={assignment.type} />
         <span className="rounded-full border border-border/60 px-2.5 py-1 text-xs capitalize text-muted-foreground">
           {assignment.priority}
         </span>
