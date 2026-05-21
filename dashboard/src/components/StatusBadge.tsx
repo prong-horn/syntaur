@@ -102,18 +102,45 @@ interface StatusBadgeProps {
   progress?: { checked: number; total: number };
 }
 
+export interface StatusMeta {
+  label: string;
+  description: string;
+  className: string;
+  icon: typeof CircleDot;
+}
+
+export function getStatusMeta(status: string): StatusMeta {
+  const known = STATUS_META[status as keyof typeof STATUS_META];
+  if (known) return known;
+  return {
+    className: STATUS_PENDING_CLASS,
+    icon: CircleDot,
+    label: status.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()),
+    description: `Status: ${status}`,
+  };
+}
+
+/**
+ * Tailwind class string for the pill chrome — shared by the read-only
+ * StatusBadge and the interactive StatusPillPicker trigger so they stay
+ * visually identical.
+ */
+export function getStatusPillClassName(status: string, extra?: string): string {
+  return cn(
+    'inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border px-2.5 py-0.5 text-xs font-medium tracking-normal',
+    'shadow-[inset_0_0_0_1px_oklch(100%_0_0_/_0)] dark:shadow-[inset_0_0_0_1px_oklch(100%_0_0_/_0.04)]',
+    getStatusMeta(status).className,
+    extra,
+  );
+}
+
 export function StatusBadge({
   status,
   className,
   showIcon = true,
   progress,
 }: StatusBadgeProps) {
-  const meta = STATUS_META[status as keyof typeof STATUS_META] ?? {
-    label: status.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()),
-    description: `Status: ${status}`,
-    className: STATUS_PENDING_CLASS,
-    icon: CircleDot,
-  };
+  const meta = getStatusMeta(status);
   const Icon = meta.icon;
 
   const hasProgress = progress && progress.total > 0;
@@ -151,15 +178,7 @@ export function StatusBadge({
   ) : null;
 
   return (
-    <span
-      title={description}
-      className={cn(
-        'inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border px-2.5 py-0.5 text-xs font-medium tracking-normal',
-        'shadow-[inset_0_0_0_1px_oklch(100%_0_0_/_0)] dark:shadow-[inset_0_0_0_1px_oklch(100%_0_0_/_0.04)]',
-        meta.className,
-        className,
-      )}
-    >
+    <span title={description} className={getStatusPillClassName(status, className)}>
       {iconNode}
       <span>{meta.label}</span>
     </span>
