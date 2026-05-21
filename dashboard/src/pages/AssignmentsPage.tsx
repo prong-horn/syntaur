@@ -16,6 +16,7 @@ import {
   updateAssignmentTitleById,
 } from '../lib/assignments';
 import { getAssignmentColumns } from '../lib/kanban';
+import { sortAssignments } from '../lib/sortAssignments';
 import { formatDate } from '../lib/format';
 import { SearchInput } from '../components/SearchInput';
 import { FilterBar } from '../components/FilterBar';
@@ -58,8 +59,6 @@ interface PendingAssignmentMove {
   action: AssignmentTransitionAction;
 }
 
-const PRIORITY_ORDER: Record<string, number> = { critical: 0, high: 1, medium: 2, low: 3 };
-
 function normalizeActivityFilter(value: string | null): ActivityFilter {
   if (value === '1') {
     return 'stale';
@@ -83,38 +82,6 @@ function isAssignmentStale(updated: string): boolean {
   }
 
   return Date.now() - timestamp > 7 * 24 * 60 * 60 * 1000;
-}
-
-function sortAssignments(
-  items: AssignmentBoardItem[],
-  field: SortField,
-  direction: SortDirection,
-): AssignmentBoardItem[] {
-  const sorted = [...items].sort((a, b) => {
-    let cmp = 0;
-    switch (field) {
-      case 'title':
-        cmp = a.title.localeCompare(b.title);
-        break;
-      case 'status':
-        cmp = a.status.localeCompare(b.status);
-        break;
-      case 'priority':
-        cmp = (PRIORITY_ORDER[a.priority] ?? 99) - (PRIORITY_ORDER[b.priority] ?? 99);
-        break;
-      case 'assignee':
-        cmp = (a.assignee ?? '').localeCompare(b.assignee ?? '');
-        break;
-      case 'dependencies':
-        cmp = a.dependsOn.length - b.dependsOn.length;
-        break;
-      case 'updated':
-        cmp = a.updated.localeCompare(b.updated);
-        break;
-    }
-    return direction === 'asc' ? cmp : -cmp;
-  });
-  return sorted;
 }
 
 export function AssignmentsPage() {

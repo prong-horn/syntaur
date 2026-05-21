@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { BookOpenText, GitBranch, Plus, SquarePen } from 'lucide-react';
+import { BookOpenText, ChevronDown, ChevronUp, GitBranch, Plus, SquarePen } from 'lucide-react';
 import { CopyButton } from '../components/CopyButton';
 import { useProject, useWorkspaces, useWorkspacePrefix, type AssignmentSummary } from '../hooks/useProjects';
 import { formatDate, formatDateTime } from '../lib/format';
 import { LoadingState } from '../components/LoadingState';
 import { ErrorState } from '../components/ErrorState';
-import { StatusBadge } from '../components/StatusBadge';
+import { StatusBadge, getStatusDescription } from '../components/StatusBadge';
 import { ExternalIdBadges } from '../components/ExternalIdBadges';
 import { StatCard } from '../components/StatCard';
 import { ProgressBar } from '../components/ProgressBar';
@@ -17,10 +17,13 @@ import { EmptyState } from '../components/EmptyState';
 import { DependencyGraph } from '../components/DependencyGraph';
 import { MarkdownRenderer } from '../components/MarkdownRenderer';
 import { ProjectTodosPanel } from '../components/ProjectTodosPanel';
-import { useStatusConfig } from '../hooks/useStatusConfig';
+import { KanbanBoard, type KanbanColumn } from '../components/KanbanBoard';
+import { useStatusConfig, getStatusLabel } from '../hooks/useStatusConfig';
 import { useHotkey, useHotkeyScope } from '../hotkeys';
-import { coerceProjectDetailView } from '@shared/view-prefs-schema';
+import { coerceProjectDetailView, type SortField, type SortDirection } from '@shared/view-prefs-schema';
 import { saveScopeViewPrefs, useViewPrefs } from '../hooks/useViewPrefs';
+import { getAssignmentColumns } from '../lib/kanban';
+import { sortAssignments } from '../lib/sortAssignments';
 
 const VALID_TABS = new Set(['overview', 'assignments', 'todos', 'dependencies', 'knowledge']);
 
@@ -71,6 +74,8 @@ export function ProjectDetail() {
   const [statusFilter, setStatusFilter] = useState<string>(() => prefs.filters.status ?? 'all');
   const [assigneeFilter, setAssigneeFilter] = useState<string>(() => prefs.filters.assignee ?? 'all');
   const [priorityFilter, setPriorityFilter] = useState<string>(() => prefs.filters.priority ?? 'all');
+  const [sortField, setSortField] = useState<SortField>(() => prefs.sortField);
+  const [sortDirection, setSortDirection] = useState<SortDirection>(() => prefs.sortDirection);
 
   // Re-hydrate when react-router reuses this component across project switches
   // (the doc comment above on lines 45-47 calls this out for the tab param).
@@ -81,7 +86,9 @@ export function ProjectDetail() {
     setStatusFilter(prefs.filters.status ?? 'all');
     setAssigneeFilter(prefs.filters.assignee ?? 'all');
     setPriorityFilter(prefs.filters.priority ?? 'all');
-  }, [slug, prefs.defaultView, prefs.filters.status, prefs.filters.assignee, prefs.filters.priority]);
+    setSortField(prefs.sortField);
+    setSortDirection(prefs.sortDirection);
+  }, [slug, prefs.defaultView, prefs.filters.status, prefs.filters.assignee, prefs.filters.priority, prefs.sortField, prefs.sortDirection]);
 
   const persistField = useCallback(
     (patch: Parameters<typeof saveScopeViewPrefs>[1]) => {
@@ -121,6 +128,29 @@ export function ProjectDetail() {
     },
     [persistField],
   );
+  const handleSetSortField = useCallback(
+    (v: SortField) => {
+      setSortField(v);
+      persistField({ sortField: v });
+    },
+    [persistField],
+  );
+  const handleSetSortDirection = useCallback(
+    (v: SortDirection) => {
+      setSortDirection(v);
+      persistField({ sortDirection: v });
+    },
+    [persistField],
+  );
+  function handleSort(field: SortField) {
+    if (sortField === field) {
+      const next: SortDirection = sortDirection === 'asc' ? 'desc' : 'asc';
+      handleSetSortDirection(next);
+    } else {
+      handleSetSortField(field);
+      handleSetSortDirection('asc');
+    }
+  }
 
   const dependencyRoutes = useMemo(
     () => project ? Object.fromEntries(
@@ -176,6 +206,34 @@ export function ProjectDetail() {
     }
     return true;
   });
+  const sortedAssignments = sortAssignments(filteredAssignments, sortField, sortDirection);
+  const kanbanColumns: KanbanColumn[] = getAssignmentColumns(statusConfig.order).map((id) => ({
+    id,
+    title: getStatusLabel(statusConfig, id),
+    description: getStatusDescription(id),
+  }));
+
+  function SortHeader({ field, children }: { field: SortField; children: React.ReactNode }) {
+    const active = sortField === field;
+    return (
+      <th className="pb-3 font-medium">
+        <button
+          type="button"
+          onClick={() => handleSort(field)}
+          className="inline-flex items-center gap-1 hover:text-foreground"
+        >
+          {children}
+          {active ? (
+            sortDirection === 'asc' ? (
+              <ChevronUp className="h-3 w-3" />
+            ) : (
+              <ChevronDown className="h-3 w-3" />
+            )
+          ) : null}
+        </button>
+      </th>
+    );
+  }
 
   return (
     <div className="space-y-5" data-density={prefs.density}>
@@ -318,25 +376,31 @@ export function ProjectDetail() {
                           }
                         />
                       ) : assignmentView === 'kanban' ? (
-                        <div className="grid gap-3 lg:grid-cols-2">
-                          {filteredAssignments.map((assignment) => (
-                            <AssignmentCard key={assignment.slug} projectSlug={project.slug} assignment={assignment} />
-                          ))}
-                        </div>
+                        <KanbanBoard
+                          columns={kanbanColumns}
+                          items={sortedAssignments}
+                          getItemId={(a) => a.slug}
+                          getColumnId={(a) => a.status}
+                          renderCard={(item) => (
+                            <AssignmentCard projectSlug={project.slug} assignment={item} />
+                          )}
+                          emptyMessage={(column) => `No ${column.title.toLowerCase()} assignments.`}
+                        />
                       ) : (
                         <div className="overflow-x-auto">
                           <table className="w-full min-w-[720px] text-left text-sm">
                             <thead>
                               <tr className="border-b border-border/60 text-muted-foreground">
-                                <th className="pb-3 font-medium">Assignment</th>
-                                <th className="pb-3 font-medium">Status</th>
-                                <th className="pb-3 font-medium">Priority</th>
-                                <th className="pb-3 font-medium">Assignee</th>
-                                <th className="pb-3 font-medium">Updated</th>
+                                <SortHeader field="title">Assignment</SortHeader>
+                                <SortHeader field="status">Status</SortHeader>
+                                <SortHeader field="priority">Priority</SortHeader>
+                                <SortHeader field="assignee">Assignee</SortHeader>
+                                <SortHeader field="dependencies">Dependencies</SortHeader>
+                                <SortHeader field="updated">Updated</SortHeader>
                               </tr>
                             </thead>
                             <tbody>
-                              {filteredAssignments.map((assignment) => (
+                              {sortedAssignments.map((assignment) => (
                                 <tr key={assignment.slug} className="border-b border-border/50 last:border-0">
                                   <td className="py-4">
                                     <Link
@@ -349,6 +413,7 @@ export function ProjectDetail() {
                                   <td className="py-4"><StatusBadge status={assignment.status} /></td>
                                   <td className="py-4 capitalize text-muted-foreground">{assignment.priority}</td>
                                   <td className="py-4 text-muted-foreground">{assignment.assignee ?? '\u2014'}</td>
+                                  <td className="py-4 text-muted-foreground">{assignment.dependsOn.length}</td>
                                   <td className="py-4 text-muted-foreground">{formatDate(assignment.updated)}</td>
                                 </tr>
                               ))}
