@@ -1,7 +1,7 @@
 import { useState, type ReactNode } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import type { LucideIcon } from 'lucide-react';
-import { Activity, BookOpen, Boxes, Brain, CheckSquare, Compass, FolderKanban, LifeBuoy, Library, ListTodo, Monitor, Plus, Settings, X, ChevronDown, Trash2 } from 'lucide-react';
+import { Activity, BookOpen, Boxes, Brain, CheckSquare, Coins, Compass, FolderKanban, LifeBuoy, Library, ListTodo, Monitor, Plus, Settings, X, ChevronDown, Trash2 } from 'lucide-react';
 import { SidebarNav, type SidebarNavItem } from './SidebarNav';
 import { TopBar } from './TopBar';
 import { useWorkspaces } from '../hooks/useProjects';
@@ -38,6 +38,7 @@ const GLOBAL_NAV_ITEMS: SidebarNavItem[] = [
   { to: '/memories', label: 'Memories', icon: Brain },
   { to: '/resources', label: 'Resources', icon: Library },
   { to: '/inventories', label: 'Inventories', icon: Boxes },
+  { to: '/usage', label: 'Usage', icon: Coins },
   { to: '/todos', label: 'Todos', icon: CheckSquare },
 ];
 
@@ -46,6 +47,7 @@ const WORKSPACE_SCOPED_LABELS: Array<{ suffix: string; label: string; icon: Luci
   { suffix: '/assignments', label: 'Assignments', icon: ListTodo },
   { suffix: '/servers', label: 'Servers', icon: Monitor },
   { suffix: '/inventories', label: 'Inventories', icon: Boxes },
+  { suffix: '/usage', label: 'Usage', icon: Coins },
   { suffix: '/agent-sessions', label: 'Agent Sessions', icon: Activity },
   { suffix: '/todos', label: 'Todos', icon: CheckSquare },
 ];
