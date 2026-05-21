@@ -10,6 +10,11 @@ export { encodeMetaValue, decodeMetaValue };
 
 const BUNDLE_ID_REGEX = /^[a-f0-9]{4}$/;
 const SCOPE_VALUES = new Set<BundleScope>(['workspace', 'project', 'global']);
+// scopeId formatting matches the workspace name regex (allows underscores,
+// digits, lowercase letters, hyphens) plus the special `_global`. Path
+// separators, `..`, and absolute paths are rejected — otherwise a crafted
+// bundle row could escape todosDir via resolve() in api-bundles.ts.
+const SCOPE_ID_REGEX = /^[a-z0-9_][a-z0-9_-]*$/;
 // Each bundle line: `- b:<id> <key=value;key=value;...>` — same `<...>;`
 // container as src/todos/parser.ts uses for todo meta tokens, so a value can
 // safely contain whitespace without fragmenting the line on read.
@@ -36,6 +41,7 @@ function parseScopeToken(raw: string): { scope: BundleScope; scopeId: string } |
   const scopeId = raw.slice(idx + 1);
   if (!SCOPE_VALUES.has(scopeRaw as BundleScope)) return null;
   if (!scopeId) return null;
+  if (!SCOPE_ID_REGEX.test(scopeId)) return null;
   return { scope: scopeRaw as BundleScope, scopeId };
 }
 

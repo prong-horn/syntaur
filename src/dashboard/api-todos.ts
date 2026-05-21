@@ -592,6 +592,9 @@ export function createTodosRouter(
           const item = checklist.items.find((i) => i.id === id);
           if (!item) return { error: `Todo "${id}" not found` };
           if (item.status === 'completed') return { error: `Todo "${id}" is already completed` };
+          if (item.bundleId !== null) {
+            return { error: `Todo [t:${id}] is part of bundle b:${item.bundleId}; run \`syntaur todo bundle remove b:${item.bundleId} ${id}\` first.` };
+          }
           items.push(item);
         }
 

@@ -1,9 +1,10 @@
 import { Command } from 'commander';
-import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import {
   bundlePlanDir,
   bundlesDir,
+  bundlesPath,
   projectTodosDir,
   todosDir as getTodosDir,
 } from '../utils/paths.js';
@@ -16,6 +17,7 @@ import {
   readChecklist,
   writeChecklist,
   appendLogEntry,
+  checklistPath,
 } from '../todos/parser.js';
 import { ensureDir, fileExists, writeFileForce } from '../utils/fs.js';
 import { readConfig } from '../utils/config.js';
@@ -175,6 +177,8 @@ bundleCommand
   .description('Create a new bundle from 2+ existing todos in a single scope')
   .argument('<ids...>', 'Todo short IDs to bundle (>= 2)')
   .option('--slug <slug>', 'Optional human slug (lowercase-alphanum-hyphen)')
+  .option('--branch <name>', 'Preset bundle.branch (does not create a worktree; use `bundle worktree` for that)')
+  .option('--plan', 'After creating the bundle, immediately create plan.md and print its path')
   .option('--workspace <slug>', 'Workspace scope')
   .option('--project <slug>', 'Project scope')
   .option('--global', 'Global scope (default)')
@@ -221,7 +225,7 @@ bundleCommand
         scopeId: sc.scopeId,
         todoIds: uniqueIds,
         planDir: null,
-        branch: null,
+        branch: options.branch ?? null,
         worktreePath: null,
         repository: null,
         createdAt: now,
@@ -231,10 +235,47 @@ bundleCommand
       await writeBundles(sc.todosPath, bundles);
       for (const item of items) {
         item.bundleId = id;
+        if (options.branch) item.branch = options.branch;
         touchTodo(item);
       }
       await writeChecklist(sc.todosPath, checklist);
       console.log(`Created bundle b:${id} (slug: ${bundle.slug ?? '-'}) with ${uniqueIds.length} members in scope ${sc.label}`);
+      if (options.plan) {
+        const planDir = bundlePlanDir(sc.todosPath, sc.scopeId, id);
+        await ensureDir(planDir);
+        const target = resolve(planDir, 'plan.md');
+        const memberLines = items.map((it) => `- ${it.description} [t:${it.id}]`).join('\n');
+        const stub = [
+          '---',
+          `bundle: b:${id}`,
+          `todos: [${uniqueIds.map((tid) => `"t:${tid}"`).join(', ')}]`,
+          `scope: ${bundle.scope}:${bundle.scopeId}`,
+          'status: draft',
+          `created: "${now}"`,
+          `updated: "${now}"`,
+          '---',
+          '',
+          `# Plan for bundle b:${id}`,
+          '',
+          bundle.slug ?? '',
+          '',
+          '## Members',
+          '',
+          memberLines,
+          '',
+        ].join('\n');
+        await writeFileForce(target, stub);
+        bundle.planDir = planDir;
+        bundle.updatedAt = nowISO();
+        for (const item of items) {
+          item.planDir = planDir;
+          touchTodo(item);
+        }
+        // Re-read bundles to avoid a stale write — but we already hold the in-memory copy that was just persisted, so re-persist the mutated bundle.
+        await writeBundles(sc.todosPath, bundles);
+        await writeChecklist(sc.todosPath, checklist);
+        console.log(target);
+      }
     } catch (error) {
       console.error('Error:', error instanceof Error ? error.message : String(error));
       process.exit(1);
@@ -430,6 +471,20 @@ bundleCommand
         }
       }
 
+      // Snapshot the on-disk state of both persisted files before record()
+      // mutates them, so a late failure (context.json write) can restore
+      // bundles/index.md and the checklist alongside git rolling back the
+      // worktree+branch. Without this snapshot the bundle would point at a
+      // worktreePath that no longer exists, jamming reruns.
+      const bundlesFilePath = bundlesPath(sc.todosPath);
+      const checklistFilePath = checklistPath(sc.todosPath, sc.checklistKey);
+      const bundlesSnapshot = (await fileExists(bundlesFilePath))
+        ? await readFile(bundlesFilePath, 'utf-8')
+        : null;
+      const checklistSnapshot = (await fileExists(checklistFilePath))
+        ? await readFile(checklistFilePath, 'utf-8')
+        : null;
+
       const record = async (): Promise<void> => {
         bundle.branch = options.branch;
         bundle.worktreePath = worktreePath;
@@ -442,23 +497,46 @@ bundleCommand
           item.worktreePath = worktreePath;
           touchTodo(item);
         }
-        await writeBundles(sc.todosPath, bundles);
-        await writeChecklist(sc.todosPath, checklist);
-        const ctxDir = resolve(worktreePath, '.syntaur');
-        await mkdir(ctxDir, { recursive: true });
-        const payload = {
-          bundleId: bundle.id,
-          bundleSlug: bundle.slug,
-          bundleScope: bundle.scope,
-          bundleScopeId: bundle.scopeId,
-          todoIds: bundle.todoIds,
-          planDir: bundle.planDir,
-          branch: options.branch,
-          worktreePath,
-          repository,
-          boundAt: nowISO(),
-        };
-        await writeFile(resolve(ctxDir, 'context.json'), JSON.stringify(payload, null, 2) + '\n');
+        try {
+          await writeBundles(sc.todosPath, bundles);
+          await writeChecklist(sc.todosPath, checklist);
+          const ctxDir = resolve(worktreePath, '.syntaur');
+          await mkdir(ctxDir, { recursive: true });
+          const payload = {
+            bundleId: bundle.id,
+            bundleSlug: bundle.slug,
+            bundleScope: bundle.scope,
+            bundleScopeId: bundle.scopeId,
+            todoIds: bundle.todoIds,
+            planDir: bundle.planDir,
+            branch: options.branch,
+            worktreePath,
+            repository,
+            boundAt: nowISO(),
+          };
+          await writeFile(resolve(ctxDir, 'context.json'), JSON.stringify(payload, null, 2) + '\n');
+        } catch (err) {
+          // Restore on-disk state from snapshots BEFORE rethrowing so the
+          // git rollback in createWorktreeForBundle's catch sees nothing
+          // half-persisted. Best-effort: log but do not mask the original
+          // failure.
+          try {
+            if (bundlesSnapshot === null) {
+              await rm(bundlesFilePath, { force: true });
+            } else {
+              await writeFileForce(bundlesFilePath, bundlesSnapshot);
+            }
+            if (checklistSnapshot === null) {
+              await rm(checklistFilePath, { force: true });
+            } else {
+              await writeFileForce(checklistFilePath, checklistSnapshot);
+            }
+          } catch {
+            // Restore failure is non-fatal here; the outer rollback error
+            // message already names the worktree and branch as orphans.
+          }
+          throw err;
+        }
       };
 
       await createWorktreeForBundle({

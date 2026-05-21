@@ -140,6 +140,51 @@ describe('syntaur todo bundle worktree', () => {
     expect(res.stderr).not.toMatch(/assignment frontmatter/i);
   });
 
+  it('rollback restores bundle and checklist files when LATE context.json write fails', async () => {
+    const env = { SYNTAUR_HOME: syntaurHome };
+    const bid = await newBundleWithTwoTodos(env);
+
+    // Capture the on-disk state BEFORE bundle worktree runs.
+    const bundlesPath = resolve(syntaurHome, 'todos', 'bundles', 'index.md');
+    const checklistPath = resolve(syntaurHome, 'todos', '_global.md');
+    const bundlesBefore = await readFile(bundlesPath, 'utf-8');
+    const checklistBefore = await readFile(checklistPath, 'utf-8');
+
+    // Trigger a LATE failure: writeFileForce uses temp+rename, which bypasses
+    // chmod on the destination file. To fail the SECOND write
+    // (writeChecklist) AFTER the first (writeBundles) succeeds, exploit the
+    // path layout: writeBundles writes inside <todosDir>/bundles/ (its own
+    // subdir), but writeChecklist writes inside <todosDir>/ directly. Chmod
+    // <todosDir> to 555: bundles/ subdir writes still succeed (temp file
+    // created inside bundles/), but the checklist's temp+rename in <todosDir>
+    // itself fails. context.json write also fails.
+    const { chmod } = await import('node:fs/promises');
+    const todosDir = resolve(syntaurHome, 'todos');
+    await chmod(todosDir, 0o555);
+
+    const res = await runCli(
+      ['todo', 'bundle', 'worktree', bid, '--branch', 'feat/late', '--repository', repo],
+      env,
+    );
+    await chmod(todosDir, 0o755);
+    expect(res.code).not.toBe(0);
+
+    // Worktree + branch rolled back by git.
+    expect(await stat(resolve(repo, '.worktrees', 'feat/late')).then(() => true, () => false)).toBe(false);
+    expect(git(repo, ['branch', '--list'])).not.toContain('feat/late');
+
+    // Bundle file restored to its pre-call snapshot (no branch/worktree/repository tokens).
+    const bundlesAfter = await readFile(bundlesPath, 'utf-8');
+    expect(bundlesAfter).toBe(bundlesBefore);
+    expect(bundlesAfter).not.toContain('branch=feat/late');
+
+    // Checklist also unchanged (it was the failing write — but the snapshot
+    // restore should still produce equality with bundles, and the file is
+    // back at read-write for the test cleanup).
+    const checklistAfter = await readFile(checklistPath, 'utf-8');
+    expect(checklistAfter).toBe(checklistBefore);
+  });
+
   it('rejects if bundle already has a worktreePath', async () => {
     const env = { SYNTAUR_HOME: syntaurHome };
     const bid = await newBundleWithTwoTodos(env);

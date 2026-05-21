@@ -131,6 +131,34 @@ describe('GET /api/bundles', () => {
     const globalScope = body.scopes.find((s: { scope: string }) => s.scope === 'global');
     expect(globalScope.bundles).toEqual([]);
   });
+
+  it('rejects path-traversal in bundles/index.md scope ids (parser dropped malformed row)', async () => {
+    // Hand-craft a bundles/index.md with a malicious scopeId that tries to
+    // escape <todosDir>/<scopeId>.md via path-traversal. The parser must
+    // drop it so the API never resolves arbitrary file paths.
+    const { mkdir, writeFile } = await import('node:fs/promises');
+    await mkdir(resolve(workspaceTodosDir, 'bundles'), { recursive: true });
+    const malicious = [
+      '---',
+      'version: "1"',
+      '---',
+      '',
+      '# Todo Bundles',
+      '',
+      '- b:dead <scope=workspace:../../etc/passwd;todos=aaaa,bbbb;created=2026-05-21T13:00:00Z;updated=2026-05-21T13:00:00Z>',
+      '',
+    ].join('\n');
+    await writeFile(resolve(workspaceTodosDir, 'bundles', 'index.md'), malicious);
+    await startServer();
+
+    const res = await fetch(`${baseUrl}/api/bundles`);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    // No scope entry created for the malformed scopeId; only the well-known
+    // `global` scope is present, and it has no bundles.
+    const escaped = body.scopes.find((s: { scopeId: string }) => s.scopeId.includes('..'));
+    expect(escaped).toBeUndefined();
+  });
 });
 
 describe('GET /api/bundles/:workspace', () => {

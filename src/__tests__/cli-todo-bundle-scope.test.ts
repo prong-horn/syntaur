@@ -153,6 +153,29 @@ describe('syntaur todo bundle new', () => {
     expect(res.code).toBe(0);
     expect(await pathExists(resolve(projectsDir, 'alpha', 'todos', 'bundles', 'index.md'))).toBe(true);
   });
+
+  it('--branch presets the bundle.branch field and member branches', async () => {
+    const [a, b] = await addTodos(2);
+    const res = await runCli(['todo', 'bundle', 'new', a, b, '--branch', 'feat/preset'], syntaurHome);
+    expect(res.code).toBe(0);
+    const bundles = await readFile(resolve(syntaurHome, 'todos', 'bundles', 'index.md'), 'utf-8');
+    expect(bundles).toContain('branch=feat/preset');
+    const checklist = await readFile(resolve(syntaurHome, 'todos', '_global.md'), 'utf-8');
+    // Members should have b=feat/preset on their meta tokens.
+    expect((checklist.match(/b=feat\/preset/g) ?? []).length).toBe(2);
+  });
+
+  it('--plan creates plan.md immediately and prints its path on stdout', async () => {
+    const [a, b] = await addTodos(2);
+    const res = await runCli(['todo', 'bundle', 'new', a, b, '--plan'], syntaurHome);
+    expect(res.code).toBe(0);
+    expect(res.stdout).toMatch(/Created bundle b:[a-f0-9]{4}/);
+    // The plan path is printed after the create line.
+    const bid = res.stdout.match(/b:([a-f0-9]{4})/)![1];
+    const expected = resolve(syntaurHome, 'todos', 'plans', '_global', 'bundles', bid, 'plan.md');
+    expect(res.stdout).toContain(expected);
+    expect(await pathExists(expected)).toBe(true);
+  });
 });
 
 describe('syntaur todo bundle list / show', () => {
