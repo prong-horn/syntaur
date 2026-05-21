@@ -155,6 +155,59 @@ export interface TodoItem {
   planDir: string | null;
   linkedAssignmentId: string | null;
   linkedAssignmentRef: string | null;
+  bundleId: string | null;
+}
+
+// --- Bundles (read-only in v1) ---
+
+export type BundleScope = 'workspace' | 'project' | 'global';
+
+export type BundleStatus = 'open' | 'in_progress' | 'blocked' | 'completed' | 'mixed';
+
+export interface BundleStatusSummary {
+  status: BundleStatus;
+  counts: {
+    open: number;
+    in_progress: number;
+    blocked: number;
+    completed: number;
+    total: number;
+  };
+}
+
+export interface TodoBundle {
+  id: string;
+  slug: string | null;
+  scope: BundleScope;
+  scopeId: string;
+  todoIds: string[];
+  planDir: string | null;
+  branch: string | null;
+  worktreePath: string | null;
+  repository: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface BundleWithMembers extends TodoBundle {
+  members: TodoItem[];
+  derivedStatus: BundleStatusSummary;
+}
+
+export interface BundleScopeGroup {
+  scope: BundleScope;
+  scopeId: string;
+  bundles: BundleWithMembers[];
+}
+
+export interface BundlesAggregateResponse {
+  scopes: BundleScopeGroup[];
+}
+
+export interface BundlesSingleScopeResponse {
+  scope: BundleScope;
+  scopeId: string;
+  bundles: BundleWithMembers[];
 }
 
 export interface TodoCounts {
