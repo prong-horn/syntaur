@@ -20,6 +20,7 @@ import { formatDate } from '../lib/format';
 import { SearchInput } from '../components/SearchInput';
 import { FilterBar } from '../components/FilterBar';
 import { ViewToggle } from '../components/ViewToggle';
+import { TableColumnPicker } from '../components/TableColumnPicker';
 import { SectionCard } from '../components/SectionCard';
 import { LoadingState } from '../components/LoadingState';
 import { ErrorState } from '../components/ErrorState';
@@ -45,6 +46,7 @@ import {
   type Activity as ActivityFilter,
   type ProjectViewPrefs,
 } from '@shared/view-prefs-schema';
+import { type TableColumnId } from '@shared/saved-views-schema';
 import { fetchViewPrefs, saveGlobalViewPrefs, saveScopeViewPrefs, useViewPrefs } from '../hooks/useViewPrefs';
 import { mergeForScope } from '@shared/view-prefs-schema';
 
@@ -188,8 +190,18 @@ export function AssignmentsPage() {
   );
   const [sortField, setSortField] = useState<SortField>(() => prefs.sortField);
   const [sortDirection, setSortDirection] = useState<SortDirection>(() => prefs.sortDirection);
-  const [expandedStatuses, setExpandedStatuses] = useState<Set<string>>(
-    () => new Set(COLUMNS),
+  // Serializable list-section visibility — default empty (all sections expanded).
+  // Persisted as part of a saved view's config (per Decision 9).
+  const [listSectionVisibility, setListSectionVisibility] = useState<{ collapsed: string[] }>(
+    () => ({ collapsed: [] }),
+  );
+  // Kanban column visibility — default empty (all columns shown).
+  const [kanbanColumnVisibility, setKanbanColumnVisibility] = useState<{ hidden: string[] }>(
+    () => ({ hidden: [] }),
+  );
+  // Table column visibility — default empty (all columns shown).
+  const [tableColumnVisibility, setTableColumnVisibility] = useState<{ hidden: TableColumnId[] }>(
+    () => ({ hidden: [] }),
   );
   const [boardItems, setBoardItems] = useState<AssignmentBoardItem[]>([]);
   const { toast, showToast, dismissToast } = useToast();
@@ -650,14 +662,12 @@ export function AssignmentsPage() {
   }
 
   function toggleStatus(status: string) {
-    setExpandedStatuses((current) => {
-      const next = new Set(current);
-      if (next.has(status)) {
-        next.delete(status);
-      } else {
-        next.add(status);
-      }
-      return next;
+    setListSectionVisibility((current) => {
+      const isCollapsed = current.collapsed.includes(status);
+      const next = isCollapsed
+        ? current.collapsed.filter((s) => s !== status)
+        : [...current.collapsed, status];
+      return { collapsed: next };
     });
   }
 
@@ -795,6 +805,12 @@ export function AssignmentsPage() {
             { value: 'kanban', label: 'Kanban' },
           ]}
         />
+        {view === 'table' ? (
+          <TableColumnPicker
+            visibility={tableColumnVisibility}
+            onChange={setTableColumnVisibility}
+          />
+        ) : null}
       </FilterBar>
 
       {data.assignments.length === 0 ? (
@@ -814,17 +830,21 @@ export function AssignmentsPage() {
           description="Adjust the search term or filters to show assignments across all projects again."
         />
       ) : view === 'table' ? (
+        (() => {
+          const hiddenCols = new Set(tableColumnVisibility.hidden);
+          const showCol = (id: TableColumnId) => !hiddenCols.has(id);
+          return (
         <SectionCard title={`${sortedItems.length} assignment${sortedItems.length === 1 ? '' : 's'}`}>
           <div className="overflow-x-auto">
             <table className="w-full min-w-[760px] text-left text-sm">
               <thead>
                 <tr className="border-b border-border/60 text-muted-foreground">
-                  <SortHeader field="title">Assignment</SortHeader>
-                  <SortHeader field="status">Status</SortHeader>
-                  <SortHeader field="priority">Priority</SortHeader>
-                  <SortHeader field="assignee">Assignee</SortHeader>
-                  <SortHeader field="dependencies">Dependencies</SortHeader>
-                  <SortHeader field="updated">Updated</SortHeader>
+                  {showCol('title') ? <SortHeader field="title">Assignment</SortHeader> : null}
+                  {showCol('status') ? <SortHeader field="status">Status</SortHeader> : null}
+                  {showCol('priority') ? <SortHeader field="priority">Priority</SortHeader> : null}
+                  {showCol('assignee') ? <SortHeader field="assignee">Assignee</SortHeader> : null}
+                  {showCol('dependencies') ? <SortHeader field="dependencies">Dependencies</SortHeader> : null}
+                  {showCol('updated') ? <SortHeader field="updated">Updated</SortHeader> : null}
                 </tr>
               </thead>
               <tbody>
@@ -834,6 +854,7 @@ export function AssignmentsPage() {
                     className="border-b border-border/50 last:border-0"
                     {...hotkeyRowProps(i)}
                   >
+                    {showCol('title') ? (
                     <td className="py-4 pr-4">
                       <Link
                         to={
@@ -857,6 +878,8 @@ export function AssignmentsPage() {
                         <CopyButton value={assignment.id} />
                       </p>
                     </td>
+                    ) : null}
+                    {showCol('status') ? (
                     <td className="py-4 pr-4">
                       <select
                         value={assignment.status}
@@ -890,22 +913,25 @@ export function AssignmentsPage() {
                         })}
                       </select>
                     </td>
-                    <td className="py-4 pr-4 capitalize text-muted-foreground">{assignment.priority}</td>
-                    <td className="py-4 pr-4 text-muted-foreground">{assignment.assignee ?? 'Unassigned'}</td>
-                    <td className="py-4 pr-4 text-muted-foreground">{assignment.dependsOn.length}</td>
-                    <td className="py-4 text-muted-foreground">{formatDate(assignment.updated)}</td>
+                    ) : null}
+                    {showCol('priority') ? <td className="py-4 pr-4 capitalize text-muted-foreground">{assignment.priority}</td> : null}
+                    {showCol('assignee') ? <td className="py-4 pr-4 text-muted-foreground">{assignment.assignee ?? 'Unassigned'}</td> : null}
+                    {showCol('dependencies') ? <td className="py-4 pr-4 text-muted-foreground">{assignment.dependsOn.length}</td> : null}
+                    {showCol('updated') ? <td className="py-4 text-muted-foreground">{formatDate(assignment.updated)}</td> : null}
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
         </SectionCard>
+          );
+        })()
       ) : view === 'list' ? (
         <div className="space-y-3">
           {COLUMNS.map((status) => {
             const items = filteredItems.filter((item) => item.status === status);
             if (items.length === 0 && !draggedItem) return null;
-            const expanded = expandedStatuses.has(status);
+            const expanded = !listSectionVisibility.collapsed.includes(status);
             const isValidTarget = draggedItem
               ? draggedItem.status !== status && !getAssignmentAction(draggedItem, status)?.disabled
               : false;
@@ -1004,6 +1030,17 @@ export function AssignmentsPage() {
             setContextMenu({ item, anchor: { x: event.clientX, y: event.clientY } });
           }}
           emptyMessage={(column) => `No ${column.title.toLowerCase()} assignments.`}
+          hiddenColumnIds={kanbanColumnVisibility.hidden}
+          onHideColumn={(columnId) =>
+            setKanbanColumnVisibility((current) => {
+              const isHidden = current.hidden.includes(columnId);
+              return {
+                hidden: isHidden
+                  ? current.hidden.filter((c) => c !== columnId)
+                  : [...current.hidden, columnId],
+              };
+            })
+          }
           renderCard={(item, { dragging }) => {
             const flatIdx = visibleIndexByKey.get(getAssignmentKey(item)) ?? -1;
             return (
