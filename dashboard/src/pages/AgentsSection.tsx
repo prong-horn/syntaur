@@ -439,7 +439,14 @@ export function AgentsSection() {
         command: '',
         argsText: '',
         promptArgPosition: 'first',
-        resolveFromShellAliases: false,
+        // Default ON: most user agents are alias-or-bare-name (e.g.
+        // `claude`, `cc`, `cursor-agent`) where lazy-loaded zshrc setups
+        // don't have the alias resolved by the time we type into the
+        // new terminal. Opting in to `$SHELL -ic '<cmd>'` makes the
+        // launch robust at the cost of one extra shell invocation per
+        // launch (~50-200ms). Users can flip it off for absolute-path
+        // binaries if they care about the startup overhead.
+        resolveFromShellAliases: true,
         default: false,
         fieldErrors: {},
       };

@@ -195,32 +195,33 @@ export function buildTerminalInvocation(plan: LaunchPlan): TerminalInvocation {
       };
 
     case 'ghostty':
-      // Ghostty's AppleScript dictionary (https://ghostty.org/docs/features/applescript)
-      // exposes `new window`, `new tab`, `split`, `input text`, and
-      // `send key`. The `input text` / `send key` verbs require a terminal
-      // target (not application scope) — calling them on the app produces a
-      // no-op or an error depending on the Ghostty version. Strategy: open
-      // a new window, resolve the terminal of its selected tab, send the
-      // `cd && <command>` line to that terminal, then send the Enter key.
-      // `delay 0.2` gives the new window's pty time to attach before we
-      // type into it.
+      // Ghostty's AppleScript dictionary doesn't actually expose
+      // `new window` / `terminal` / `input text` / `send key` as usable
+      // verbs at runtime — calls fail with "Can't make new window into
+      // integer" / "can't get terminal 1". Drive Ghostty via synthesized
+      // key events instead: activate the app, press Cmd-N for a new
+      // window, type the command, then press Return.
+      //
+      // Requires Accessibility permission for the process that emits the
+      // Apple Events (here: `osascript` itself). macOS will prompt the
+      // first time this code path fires.
       return {
         command: 'osascript',
         args: [
           '-e',
-          'tell application "Ghostty"',
+          'tell application "Ghostty" to activate',
           '-e',
-          'activate',
+          'delay 0.3',
           '-e',
-          'set newWin to (new window)',
+          'tell application "System Events"',
           '-e',
-          'delay 0.2',
+          'keystroke "n" using command down',
           '-e',
-          'set t to terminal 1 of selected tab of newWin',
+          'delay 0.4',
           '-e',
-          `input text ${appleScriptString(cdAndRun)} to t`,
+          `keystroke ${appleScriptString(cdAndRun)}`,
           '-e',
-          'send key "enter" to t',
+          'key code 36',
           '-e',
           'end tell',
         ],
