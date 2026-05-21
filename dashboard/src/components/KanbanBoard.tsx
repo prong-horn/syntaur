@@ -59,6 +59,14 @@ interface DropTarget {
   index: number;
 }
 
+// Elements that should never initiate a drag and should never trigger the
+// card's right-click context menu. Includes form controls, content-editable
+// regions, role="button" elements, and anything explicitly opting out via
+// `data-no-drag`. Inline-edit affordances (status pill picker, title editor)
+// rely on this list, so widening it should not break drag for the card body.
+const NON_DRAGGABLE_SELECTOR =
+  'a, button, input, select, textarea, [contenteditable="true"], [role="button"], [data-no-drag]';
+
 export function KanbanBoard<T>({
   columns,
   items,
@@ -251,7 +259,7 @@ export function KanbanBoard<T>({
                         }}
                         onDragStart={(event) => {
                           const target = mouseDownTarget.current as HTMLElement | null;
-                          if (target?.closest('a, button')) {
+                          if (target?.closest(NON_DRAGGABLE_SELECTOR)) {
                             event.preventDefault();
                             return;
                           }
@@ -261,9 +269,10 @@ export function KanbanBoard<T>({
                         onContextMenu={(event) => {
                           if (!onCardContextMenu) return;
                           const target = event.target as HTMLElement | null;
-                          // Right-clicks on nested interactive elements get the native menu
-                          // (e.g., "Open link in new tab" on the card title link).
-                          if (target?.closest('a, button, [role="button"]')) return;
+                          // Right-clicks on nested interactive elements keep the native menu
+                          // (e.g., "Open link in new tab" on the card title link, or text-input
+                          // context actions on the inline title editor).
+                          if (target?.closest(NON_DRAGGABLE_SELECTOR)) return;
                           onCardContextMenu(item, event);
                         }}
                         className={cn(
