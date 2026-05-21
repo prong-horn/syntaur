@@ -21,8 +21,12 @@ import { ProjectTodosPanel } from '../components/ProjectTodosPanel';
 import { useStatusConfig } from '../hooks/useStatusConfig';
 import { useTypesConfig, getTypeLabel } from '../hooks/useTypesConfig';
 import { useHotkey, useHotkeyScope } from '../hotkeys';
-import { coerceProjectDetailView } from '@shared/view-prefs-schema';
+import { coerceProjectDetailView, GROUPINGS, type Grouping } from '@shared/view-prefs-schema';
 import { saveScopeViewPrefs, useViewPrefs } from '../hooks/useViewPrefs';
+import { KanbanBoard, type KanbanColumn } from '../components/KanbanBoard';
+import { getStatusLabel } from '../hooks/useStatusConfig';
+import { getStatusDescription } from '../components/StatusBadge';
+import { getAssignmentColumns } from '../lib/kanban';
 
 const VALID_TABS = new Set(['overview', 'assignments', 'todos', 'dependencies', 'knowledge']);
 
@@ -75,6 +79,7 @@ export function ProjectDetail() {
   const [assigneeFilter, setAssigneeFilter] = useState<string>(() => prefs.filters.assignee ?? 'all');
   const [priorityFilter, setPriorityFilter] = useState<string>(() => prefs.filters.priority ?? 'all');
   const [typeFilter, setTypeFilter] = useState<string>(() => prefs.filters.type ?? 'all');
+  const [grouping, setGrouping] = useState<Grouping>(() => prefs.grouping);
 
   // Re-hydrate when react-router reuses this component across project switches
   // (the doc comment above on lines 45-47 calls this out for the tab param).
@@ -86,7 +91,8 @@ export function ProjectDetail() {
     setAssigneeFilter(prefs.filters.assignee ?? 'all');
     setPriorityFilter(prefs.filters.priority ?? 'all');
     setTypeFilter(prefs.filters.type ?? 'all');
-  }, [slug, prefs.defaultView, prefs.filters.status, prefs.filters.assignee, prefs.filters.priority, prefs.filters.type]);
+    setGrouping(prefs.grouping);
+  }, [slug, prefs.defaultView, prefs.filters.status, prefs.filters.assignee, prefs.filters.priority, prefs.filters.type, prefs.grouping]);
 
   const persistField = useCallback(
     (patch: Parameters<typeof saveScopeViewPrefs>[1]) => {
@@ -133,6 +139,28 @@ export function ProjectDetail() {
     },
     [persistField],
   );
+  const handleSetGrouping = useCallback(
+    (v: Grouping) => {
+      setGrouping(v);
+      persistField({ grouping: v });
+    },
+    [persistField],
+  );
+
+  const kanbanColumns: KanbanColumn[] = useMemo(() => {
+    if (grouping === 'type') {
+      return typesConfig.definitions.map((def) => ({
+        id: def.id,
+        title: getTypeLabel(typesConfig, def.id),
+        description: def.description,
+      }));
+    }
+    return getAssignmentColumns(statusConfig.order).map((status) => ({
+      id: status,
+      title: getStatusLabel(statusConfig, status),
+      description: getStatusDescription(status),
+    }));
+  }, [grouping, typesConfig, statusConfig]);
 
   const dependencyRoutes = useMemo(
     () => project ? Object.fromEntries(
@@ -317,6 +345,11 @@ export function ProjectDetail() {
                               <option key={t.id} value={t.id}>{getTypeLabel(typesConfig, t.id)}</option>
                             ))}
                           </select>
+                          <select value={grouping} onChange={(event) => handleSetGrouping(event.target.value as Grouping)} className="editor-input max-w-[170px]" title="Group by">
+                            {GROUPINGS.map((g) => (
+                              <option key={g} value={g}>{g === 'none' ? 'No grouping' : `Group: ${g.charAt(0).toUpperCase() + g.slice(1)}`}</option>
+                            ))}
+                          </select>
                           <ViewToggle
                             value={assignmentView}
                             onChange={(value) => handleSetAssignmentView(value as 'kanban' | 'table')}
@@ -339,11 +372,23 @@ export function ProjectDetail() {
                           }
                         />
                       ) : assignmentView === 'kanban' ? (
-                        <div className="grid gap-3 lg:grid-cols-2">
-                          {filteredAssignments.map((assignment) => (
-                            <AssignmentCard key={assignment.slug} projectSlug={project.slug} assignment={assignment} />
-                          ))}
-                        </div>
+                        <KanbanBoard
+                          columns={kanbanColumns}
+                          items={filteredAssignments}
+                          getItemId={(a) => a.slug}
+                          getColumnId={(a) =>
+                            grouping === 'type'
+                              ? (a.type && typesConfig.definitions.some((d) => d.id === a.type)
+                                  ? a.type
+                                  : typesConfig.default)
+                              : a.status
+                          }
+                          dragDisabled
+                          emptyMessage={(col) => `No ${col.title.toLowerCase()} assignments.`}
+                          renderCard={(assignment) => (
+                            <AssignmentCard projectSlug={project.slug} assignment={assignment} />
+                          )}
+                        />
                       ) : (
                         <div className="overflow-x-auto">
                           <table className="w-full min-w-[720px] text-left text-sm">

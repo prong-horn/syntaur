@@ -146,6 +146,14 @@ export function AssignmentsPage() {
     })),
     [COLUMNS, COLUMN_LABELS],
   );
+  const TYPE_KANBAN_COLUMNS: KanbanColumn[] = useMemo(
+    () => typesConfig.definitions.map((def) => ({
+      id: def.id,
+      title: getTypeLabel(typesConfig, def.id),
+      description: def.description,
+    })),
+    [typesConfig],
+  );
   const VALID_STATUS_SET = useMemo(() => new Set<string>(['all', ...COLUMNS]), [COLUMNS]);
 
   const viewParam = searchParams.get('view') as ViewMode | null;
@@ -1031,10 +1039,16 @@ export function AssignmentsPage() {
         </div>
       ) : (
         <KanbanBoard
-          columns={KANBAN_COLUMNS}
+          columns={grouping === 'type' ? TYPE_KANBAN_COLUMNS : KANBAN_COLUMNS}
           items={filteredItems}
           getItemId={getAssignmentKey}
-          getColumnId={(item) => item.status}
+          getColumnId={(item) =>
+            grouping === 'type'
+              ? (item.type && typesConfig.definitions.some((d) => d.id === item.type)
+                  ? item.type
+                  : typesConfig.default)
+              : item.status
+          }
           canDrop={({ item, fromColumnId, toColumnId }) => {
             if (fromColumnId === toColumnId) {
               return { allowed: true };
@@ -1052,7 +1066,8 @@ export function AssignmentsPage() {
                 : `Move to ${toColumnId} (direct status change).`,
             };
           }}
-          onMove={({ item, toColumnId }) => handleMove({ item, toColumnId })}
+          onMove={grouping === 'type' ? undefined : ({ item, toColumnId }) => handleMove({ item, toColumnId })}
+          dragDisabled={grouping === 'type'}
           getExternalDragData={(item): ExternalDragData | null =>
             item.projectSlug === null
               ? { type: 'standalone-assignment', id: item.id }
