@@ -79,6 +79,8 @@ import {
 } from '../utils/fs-migration.js';
 import { createTodosRouter } from './api-todos.js';
 import { createProjectTodosRouter } from './api-project-todos.js';
+import { createBundlesRouter } from './api-bundles.js';
+import { createProjectBundlesRouter } from './api-project-bundles.js';
 import { createBackupRouter } from './api-backup.js';
 import { initSessionDb, migrateFromMarkdown, closeSessionDb } from './session-db.js';
 import { initLeasesDb, closeLeasesDb } from '../db/leases-db.js';
@@ -753,6 +755,10 @@ export function createDashboardServer(options: DashboardServerOptions) {
   // --- Todos API ---
   app.use('/api/todos', createTodosRouter(todosDir, broadcast, projectsDir));
   app.use('/api/projects/:projectId/todos', createProjectTodosRouter(projectsDir, broadcast, todosDir));
+
+  // --- Bundles API (read-only in v1) ---
+  app.use('/api/bundles', createBundlesRouter(todosDir, broadcast));
+  app.use('/api/projects/:projectId/bundles', createProjectBundlesRouter(projectsDir, broadcast));
 
   // --- Backup API ---
   app.use('/api/backup', createBackupRouter());

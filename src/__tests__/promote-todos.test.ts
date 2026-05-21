@@ -51,6 +51,7 @@ function makeTodo(id: string, description: string): TodoItem {
     planDir: null,
     linkedAssignmentId: null,
     linkedAssignmentRef: null,
+    bundleId: null,
   };
 }
 

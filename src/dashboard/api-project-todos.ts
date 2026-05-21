@@ -18,6 +18,7 @@ import type { TodoItem, LogEntry } from '../todos/types.js';
 import type { WsMessage } from './types.js';
 import {
   promoteTodosToNewAssignment,
+  BundlePromoteError,
   parsePromoteTarget,
 } from '../utils/promote-todos.js';
 
@@ -155,6 +156,7 @@ export function createProjectTodosRouter(
           planDir: null,
           linkedAssignmentId: null,
           linkedAssignmentRef: null,
+          bundleId: null,
         };
         checklist.workspace = slug;
         checklist.items.push(newItem);
@@ -597,6 +599,9 @@ export function createProjectTodosRouter(
           const item = checklist.items.find((i) => i.id === id);
           if (!item) return { error: `Todo "${id}" not found` };
           if (item.status === 'completed') return { error: `Todo "${id}" is already completed` };
+          if (item.bundleId !== null) {
+            return { error: `Todo [t:${id}] is part of bundle b:${item.bundleId}; run \`syntaur todo bundle remove b:${item.bundleId} ${id}\` first.` };
+          }
           items.push(item);
         }
 
@@ -695,6 +700,10 @@ export function createProjectTodosRouter(
       broadcastUpdate(slug);
       res.json(result);
     } catch (error) {
+      if (error instanceof BundlePromoteError) {
+        res.status(400).json({ error: error.message });
+        return;
+      }
       if ((error as NodeJS.ErrnoException).code === 'PROJECT_GONE') {
         notFound(res, getProjectIdParam(params(req).projectId));
         return;

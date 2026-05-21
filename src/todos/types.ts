@@ -14,6 +14,28 @@ export interface TodoItem {
   planDir: string | null;
   linkedAssignmentId: string | null;
   linkedAssignmentRef: string | null;
+  bundleId: string | null;
+}
+
+export type BundleScope = 'workspace' | 'project' | 'global';
+
+export interface TodoBundle {
+  id: string;
+  slug: string | null;
+  scope: BundleScope;
+  scopeId: string;
+  todoIds: string[];
+  planDir: string | null;
+  branch: string | null;
+  worktreePath: string | null;
+  repository: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface BundleStatusSummary {
+  status: 'open' | 'in_progress' | 'blocked' | 'completed' | 'mixed';
+  counts: { open: number; in_progress: number; blocked: number; completed: number; total: number };
 }
 
 export interface TodoChecklist {

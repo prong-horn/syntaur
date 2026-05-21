@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { homedir } from 'node:os';
-import { expandHome, syntaurRoot, defaultProjectDir, projectTodosDir } from '../utils/paths.js';
+import { expandHome, syntaurRoot, defaultProjectDir, projectTodosDir, bundlePlanDir, bundlesDir, bundlesPath } from '../utils/paths.js';
 
 describe('expandHome', () => {
   it('expands ~ to home directory', () => {
@@ -55,5 +55,20 @@ describe('projectTodosDir', () => {
       if (prev === undefined) delete process.env.SYNTAUR_HOME;
       else process.env.SYNTAUR_HOME = prev;
     }
+  });
+});
+
+describe('bundle path helpers', () => {
+  it('bundlesDir nests bundles under todosDir', () => {
+    expect(bundlesDir('/x/.syntaur/todos')).toBe('/x/.syntaur/todos/bundles');
+  });
+
+  it('bundlesPath resolves to <todosDir>/bundles/index.md', () => {
+    expect(bundlesPath('/x/.syntaur/todos')).toBe('/x/.syntaur/todos/bundles/index.md');
+  });
+
+  it('bundlePlanDir keeps bundle plans disjoint from todo plans via the bundles/ segment', () => {
+    expect(bundlePlanDir('/x/.syntaur/todos', '_global', 'aaaa'))
+      .toBe('/x/.syntaur/todos/plans/_global/bundles/aaaa');
   });
 });

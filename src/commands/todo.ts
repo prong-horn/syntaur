@@ -52,8 +52,12 @@ function nowISO(): string {
   return new Date().toISOString();
 }
 
+import { bundleCommand } from './bundle.js';
+
 export const todoCommand = new Command('todo')
   .description('Manage quick todos');
+
+todoCommand.addCommand(bundleCommand);
 
 todoCommand
   .command('add')
@@ -87,6 +91,7 @@ todoCommand
         planDir: null,
         linkedAssignmentId: null,
         linkedAssignmentRef: null,
+        bundleId: null,
       };
       checklist.items.push(item);
       await writeChecklist(todosPath, checklist);
@@ -598,6 +603,11 @@ async function promoteTodos(ids: string[], options: PromoteOptions): Promise<voi
     if (!item) throw new Error(`Todo [t:${id}] not found in scope ${describeScope(scope)}.`);
     if (item.status === 'completed') {
       throw new Error(`Todo [t:${id}] is already completed; cannot promote.`);
+    }
+    if (item.bundleId !== null) {
+      throw new Error(
+        `Todo [t:${id}] is part of bundle b:${item.bundleId}; run \`syntaur todo bundle remove b:${item.bundleId} ${id}\` first.`,
+      );
     }
     return item;
   });

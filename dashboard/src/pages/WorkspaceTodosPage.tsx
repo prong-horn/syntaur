@@ -46,6 +46,8 @@ import { StatCard } from '../components/StatCard';
 import { StatusMenu } from '../components/StatusMenu';
 import { TodoPromoteModal } from '../components/TodoPromoteModal';
 import { TodoMoveModal } from '../components/TodoMoveModal';
+import { BundleSection } from '../components/BundleRow';
+import { useBundles } from '../hooks/useBundles';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../components/ui/tooltip';
 import type { TodoItem } from '../types';
 import { useHotkey, useHotkeyScope, useListSelection } from '../hotkeys';
@@ -248,6 +250,7 @@ export function WorkspaceTodosPage() {
   const { workspace } = useParams<{ workspace: string }>();
   const ws = workspace || '_global';
   const { data, loading, error, refetch } = useTodos(ws);
+  const { data: bundlesData } = useBundles(ws);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('');
   const [tagFilter, setTagFilter] = useState<string>('');
@@ -457,6 +460,9 @@ export function WorkspaceTodosPage() {
         <StatCard label="Blocked" value={counts.blocked} icon={AlertTriangle} tone="warn" />
         <StatCard label="Total" value={counts.total} icon={CheckSquare} />
       </div>
+
+      {/* Bundles (read-only) */}
+      {bundlesData && <BundleSection bundles={bundlesData.bundles} />}
 
       {/* Add todo */}
       <div className="surface-panel p-3">

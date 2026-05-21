@@ -14,18 +14,40 @@ interface ContextFile {
   projectDir?: string;
   assignmentDir?: string;
   workspaceRoot?: string;
+  // Bundle-scoped fields — mutually exclusive with the assignment fields above.
+  bundleId?: string;
+  bundleSlug?: string;
+  bundleScope?: string;
+  bundleScopeId?: string;
+  todoIds?: string[];
+  planDir?: string;
+  branch?: string;
+  worktreePath?: string;
+  repository?: string;
+  boundAt?: string;
 }
 
 const ASSIGNMENT_FIELDS = ['projectSlug', 'assignmentSlug', 'projectDir', 'assignmentDir'] as const;
+const BUNDLE_FIELDS = ['bundleId', 'bundleScope', 'bundleScopeId'] as const;
 
 function hasAnyAssignmentField(ctx: ContextFile | null): boolean {
   if (!ctx) return false;
   return ASSIGNMENT_FIELDS.some((k) => typeof ctx[k] === 'string' && ctx[k]!.length > 0);
 }
 
+function hasAnyBundleField(ctx: ContextFile | null): boolean {
+  if (!ctx) return false;
+  return BUNDLE_FIELDS.some((k) => typeof ctx[k] === 'string' && ctx[k]!.length > 0);
+}
+
+function isBundleContext(ctx: ContextFile | null): boolean {
+  if (!ctx) return false;
+  return hasAnyBundleField(ctx) && !hasAnyAssignmentField(ctx);
+}
+
 function isStandaloneSession(ctx: ContextFile | null): boolean {
   if (!ctx) return false;
-  return !hasAnyAssignmentField(ctx) && typeof ctx.sessionId === 'string' && ctx.sessionId.length > 0;
+  return !hasAnyAssignmentField(ctx) && !hasAnyBundleField(ctx) && typeof ctx.sessionId === 'string' && ctx.sessionId.length > 0;
 }
 
 async function loadContext(ctx: CheckContext): Promise<{
@@ -77,13 +99,32 @@ const contextValid: Check = {
     if (isStandaloneSession(data)) {
       return pass(this, 'standalone session context (sessionId only)');
     }
+    if (isBundleContext(data)) {
+      // Validate the bundle-context payload has the required field set.
+      const missing: string[] = [];
+      for (const key of ['bundleId', 'bundleScope', 'bundleScopeId'] as const) {
+        if (!data?.[key]) missing.push(key);
+      }
+      if (missing.length > 0) {
+        return {
+          id: this.id,
+          category: this.category,
+          title: this.title,
+          status: 'error',
+          detail: `.syntaur/context.json has partial bundle fields but is missing: ${missing.join(', ')}`,
+          affected: [path],
+          autoFixable: false,
+        } satisfies CheckResult;
+      }
+      return pass(this, `bundle context (b:${data!.bundleId})`);
+    }
     if (!hasAnyAssignmentField(data)) {
       return {
         id: this.id,
         category: this.category,
         title: this.title,
         status: 'error',
-        detail: '.syntaur/context.json has no sessionId and no assignment fields',
+        detail: '.syntaur/context.json has no sessionId, assignment, or bundle fields',
         affected: [path],
         autoFixable: false,
       } satisfies CheckResult;
@@ -115,6 +156,7 @@ const contextAssignmentResolves: Check = {
     const { data, path, exists } = await loadContext(ctx);
     if (!exists) return skipped(this, 'no context to resolve');
     if (isStandaloneSession(data)) return skipped(this, 'standalone session context — no assignment to resolve');
+    if (isBundleContext(data)) return skipped(this, 'bundle context — no assignment to resolve');
     if (!data?.assignmentDir) return skipped(this, 'context has no assignmentDir');
     const assignmentMd = resolve(data.assignmentDir, 'assignment.md');
     if (!(await fileExists(assignmentMd))) {
@@ -145,6 +187,7 @@ const contextTerminal: Check = {
     const { data, exists } = await loadContext(ctx);
     if (!exists) return skipped(this, 'no context to check');
     if (isStandaloneSession(data)) return skipped(this, 'standalone session context — no assignment to check');
+    if (isBundleContext(data)) return skipped(this, 'bundle context — no assignment to check');
     if (!data?.assignmentDir) return skipped(this, 'context has no assignmentDir');
     const assignmentMd = resolve(data.assignmentDir, 'assignment.md');
     if (!(await fileExists(assignmentMd))) return skipped(this, 'assignment file missing');

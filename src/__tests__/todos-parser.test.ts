@@ -26,6 +26,7 @@ function makeItem(overrides: Partial<TodoItem> & { id: string; description: stri
     planDir: null,
     linkedAssignmentId: null,
     linkedAssignmentRef: null,
+    bundleId: null,
     ...overrides,
   };
 }
@@ -142,6 +143,7 @@ describe('parseMetaToken / serializeMetaToken', () => {
       planDir: '/plans/aaaa',
       linkedAssignmentId: null,
       linkedAssignmentRef: null,
+      bundleId: null,
     });
   });
 
@@ -155,6 +157,7 @@ describe('parseMetaToken / serializeMetaToken', () => {
       planDir: null,
       linkedAssignmentId: null,
       linkedAssignmentRef: null,
+      bundleId: null,
     });
   });
 

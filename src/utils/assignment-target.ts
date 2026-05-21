@@ -6,6 +6,7 @@ import { readConfig } from './config.js';
 import { isValidSlug } from './slug.js';
 import { resolveAssignmentById, type ResolvedAssignment } from './assignment-resolver.js';
 import { extractFrontmatter, getField } from '../dashboard/parser.js';
+import type { BundleScope } from '../todos/types.js';
 
 export interface AssignmentTargetOptions {
   project?: string;
@@ -15,10 +16,36 @@ export interface AssignmentTargetOptions {
 
 export class AssignmentTargetError extends Error {}
 
-interface ContextJsonShape {
+export interface ContextJsonShape {
+  // Assignment-scoped context (set by grab-assignment).
   projectSlug?: string | null;
   assignmentSlug?: string | null;
   assignmentDir?: string | null;
+  // Session metadata (populated by Claude Code's SessionStart hook).
+  sessionId?: string | null;
+  // Bundle-scoped context (set by bundle worktree / grab-bundle). MUTUALLY
+  // EXCLUSIVE with the assignment fields above — see classifyContext().
+  bundleId?: string | null;
+  bundleSlug?: string | null;
+  bundleScope?: BundleScope | null;
+  bundleScopeId?: string | null;
+  todoIds?: string[] | null;
+  planDir?: string | null;
+  branch?: string | null;
+  worktreePath?: string | null;
+  repository?: string | null;
+  boundAt?: string | null;
+}
+
+export type ContextKind = 'assignment' | 'bundle' | 'standalone' | 'empty';
+
+export function classifyContext(ctx: ContextJsonShape | null): ContextKind {
+  if (!ctx) return 'empty';
+  const hasAssignment = Boolean(ctx.assignmentDir) || Boolean(ctx.assignmentSlug) || Boolean(ctx.projectSlug);
+  if (hasAssignment) return 'assignment';
+  if (ctx.bundleId) return 'bundle';
+  if (ctx.sessionId) return 'standalone';
+  return 'empty';
 }
 
 async function readAssignmentFrontmatterId(assignmentDir: string): Promise<string | null> {
@@ -120,6 +147,15 @@ export async function resolveAssignmentTarget(
   if (!ctx) {
     throw new AssignmentTargetError(
       'No assignment specified. Provide an argument, --project + slug, or run from a directory with .syntaur/context.json.',
+    );
+  }
+
+  // Bundle context: surface a clear error so assignment-only flows (e.g.,
+  // /plan-assignment, /complete-assignment) don't misfire inside a bundle
+  // worktree. The bundle-aware flows resolve via different helpers.
+  if (classifyContext(ctx) === 'bundle' && ctx.bundleId) {
+    throw new AssignmentTargetError(
+      `Context is bound to bundle b:${ctx.bundleId}, not an assignment. Use \`syntaur todo bundle show ${ctx.bundleId}\` or the complete-bundle skill.`,
     );
   }
 

@@ -19,6 +19,7 @@ import type { WsMessage } from './types.js';
 import {
   promoteTodosToNewAssignment,
   parsePromoteTarget,
+  BundlePromoteError,
 } from '../utils/promote-todos.js';
 
 const WORKSPACE_REGEX = /^[a-z0-9_][a-z0-9-]*$/;
@@ -169,6 +170,10 @@ export function createTodosRouter(
       broadcastUpdate();
       res.json(out.result);
     } catch (error) {
+      if (error instanceof BundlePromoteError) {
+        res.status(400).json({ error: error.message });
+        return;
+      }
       res.status(500).json({ error: error instanceof Error ? error.message : 'Failed to bulk-promote todos' });
     }
   });
@@ -249,6 +254,7 @@ export function createTodosRouter(
           planDir: null,
           linkedAssignmentId: null,
           linkedAssignmentRef: null,
+          bundleId: null,
         };
         checklist.items.push(newItem);
         await writeChecklist(todosDir, checklist);
@@ -586,6 +592,9 @@ export function createTodosRouter(
           const item = checklist.items.find((i) => i.id === id);
           if (!item) return { error: `Todo "${id}" not found` };
           if (item.status === 'completed') return { error: `Todo "${id}" is already completed` };
+          if (item.bundleId !== null) {
+            return { error: `Todo [t:${id}] is part of bundle b:${item.bundleId}; run \`syntaur todo bundle remove b:${item.bundleId} ${id}\` first.` };
+          }
           items.push(item);
         }
 
@@ -681,6 +690,10 @@ export function createTodosRouter(
       broadcastUpdate();
       res.json(result);
     } catch (error) {
+      if (error instanceof BundlePromoteError) {
+        res.status(400).json({ error: error.message });
+        return;
+      }
       res.status(500).json({ error: error instanceof Error ? error.message : 'Failed to promote todos' });
     }
   });

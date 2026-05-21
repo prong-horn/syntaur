@@ -7,6 +7,15 @@ import {
 import { createAssignmentCommand } from '../commands/create-assignment.js';
 import { isValidSlug } from './slug.js';
 
+// Thrown when a promote target is rejected because one of the source todos
+// belongs to a bundle. Dashboard routes catch this and translate to HTTP 400.
+export class BundlePromoteError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'BundlePromoteError';
+  }
+}
+
 export interface PromoteSourceGroup {
   /** Workspace todos dir OR projectTodosDir(...) for project-scope todos. */
   todosDir: string;
@@ -99,6 +108,18 @@ export async function promoteTodosToNewAssignment(
   }
   if (!options.title.trim()) {
     throw new Error('Title is required.');
+  }
+  // Bundle exclusivity (Decision 4 of todo-bundles plan): a todo that is
+  // part of a bundle cannot be promoted to an assignment. The bundle owns
+  // a shared worktree/branch; promoting would fork it.
+  for (const group of groups) {
+    for (const it of group.items) {
+      if (it.bundleId !== null) {
+        throw new BundlePromoteError(
+          `Todo [t:${it.id}] is part of bundle b:${it.bundleId}; run \`syntaur todo bundle remove b:${it.bundleId} ${it.id}\` first.`,
+        );
+      }
+    }
   }
 
   const acceptanceCriteria: string[] = [];

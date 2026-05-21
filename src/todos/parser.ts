@@ -66,6 +66,7 @@ interface MetaFields {
   planDir: string | null;
   linkedAssignmentId: string | null;
   linkedAssignmentRef: string | null;
+  bundleId: string | null;
 }
 
 function emptyMetaFields(): MetaFields {
@@ -77,6 +78,7 @@ function emptyMetaFields(): MetaFields {
     planDir: null,
     linkedAssignmentId: null,
     linkedAssignmentRef: null,
+    bundleId: null,
   };
 }
 
@@ -102,6 +104,7 @@ export function parseMetaToken(line: string): MetaFields {
       case 'p': fields.planDir = value; break;
       case 'l': fields.linkedAssignmentId = value; break;
       case 'lr': fields.linkedAssignmentRef = value; break;
+      case 'bn': fields.bundleId = value; break;
     }
   }
   return fields;
@@ -116,6 +119,7 @@ export function serializeMetaToken(item: TodoItem): string {
   if (item.planDir !== null) pairs.push(`p=${encodeMetaValue(item.planDir)}`);
   if (item.linkedAssignmentId !== null) pairs.push(`l=${encodeMetaValue(item.linkedAssignmentId)}`);
   if (item.linkedAssignmentRef !== null) pairs.push(`lr=${encodeMetaValue(item.linkedAssignmentRef)}`);
+  if (item.bundleId !== null) pairs.push(`bn=${encodeMetaValue(item.bundleId)}`);
   if (pairs.length === 0) return '';
   return `<${pairs.join(';')}>`;
 }
@@ -190,6 +194,7 @@ export function parseChecklistItem(line: string): TodoItem | null {
     planDir: meta.planDir,
     linkedAssignmentId: meta.linkedAssignmentId,
     linkedAssignmentRef: meta.linkedAssignmentRef,
+    bundleId: meta.bundleId,
   };
 }
 

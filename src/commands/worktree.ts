@@ -10,6 +10,18 @@ interface ContextFile {
   assignmentSlug?: string;
   assignmentDir?: string;
   workspaceRoot?: string;
+  // Bundle-scoped fields (this reader only cares about assignmentDir; the
+  // bundle fields are tolerated so the file parses cleanly inside a bundle worktree).
+  bundleId?: string;
+  bundleSlug?: string;
+  bundleScope?: string;
+  bundleScopeId?: string;
+  todoIds?: string[];
+  planDir?: string;
+  branch?: string;
+  worktreePath?: string;
+  repository?: string;
+  boundAt?: string;
 }
 
 async function readContext(cwd: string): Promise<ContextFile | null> {
