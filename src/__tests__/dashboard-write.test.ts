@@ -970,6 +970,216 @@ updated: "2026-04-25T12:00:00Z"
     });
   });
 
+  describe('PATCH /api/projects/:slug/assignments/:aslug/title', () => {
+    const assignmentPath = (): string =>
+      resolve(testDir, 'test-project', 'assignments', 'test-assignment', 'assignment.md');
+
+    it('updates title frontmatter without rewriting body', async () => {
+      await createAssignmentFixture();
+      const router = createWriteRouter(testDir);
+      const bodyBefore = (await readFile(assignmentPath(), 'utf-8')).split(/^---$/m)[2];
+
+      const res = await invokeRoute(
+        router,
+        'patch',
+        '/api/projects/:slug/assignments/:aslug/title',
+        { slug: 'test-project', aslug: 'test-assignment' },
+        { title: 'Renamed assignment' },
+      );
+      expect(res.statusCode).toBe(200);
+
+      const after = await readFile(assignmentPath(), 'utf-8');
+      expect(after).toMatch(/^title: Renamed assignment$/m);
+      expect(after.split(/^---$/m)[2]).toBe(bodyBefore);
+    });
+
+    it('quotes titles containing YAML metacharacters (colon) so they round-trip', async () => {
+      await createAssignmentFixture();
+      const router = createWriteRouter(testDir);
+
+      const res = await invokeRoute(
+        router,
+        'patch',
+        '/api/projects/:slug/assignments/:aslug/title',
+        { slug: 'test-project', aslug: 'test-assignment' },
+        { title: 'feat: do the thing' },
+      );
+      expect(res.statusCode).toBe(200);
+
+      const after = await readFile(assignmentPath(), 'utf-8');
+      // formatYamlValue must quote titles containing `:` to avoid YAML ambiguity.
+      expect(after).toMatch(/^title: "feat: do the thing"$/m);
+    });
+
+    it('bumps updated when the title changes', async () => {
+      await createAssignmentFixture();
+      const router = createWriteRouter(testDir);
+      const before = await readFile(assignmentPath(), 'utf-8');
+
+      const res = await invokeRoute(
+        router,
+        'patch',
+        '/api/projects/:slug/assignments/:aslug/title',
+        { slug: 'test-project', aslug: 'test-assignment' },
+        { title: 'Bumped' },
+      );
+      expect(res.statusCode).toBe(200);
+
+      const after = await readFile(assignmentPath(), 'utf-8');
+      const bumpedMatch = after.match(/^updated: "(.+)"$/m);
+      const originalMatch = before.match(/^updated: "(.+)"$/m);
+      expect(bumpedMatch).not.toBeNull();
+      expect(originalMatch).not.toBeNull();
+      expect(bumpedMatch![1]).not.toEqual(originalMatch![1]);
+    });
+
+    it('rejects empty title', async () => {
+      await createAssignmentFixture();
+      const router = createWriteRouter(testDir);
+      const res = await invokeRoute(
+        router,
+        'patch',
+        '/api/projects/:slug/assignments/:aslug/title',
+        { slug: 'test-project', aslug: 'test-assignment' },
+        { title: '' },
+      );
+      expect(res.statusCode).toBe(400);
+    });
+
+    it('rejects whitespace-only title', async () => {
+      await createAssignmentFixture();
+      const router = createWriteRouter(testDir);
+      const res = await invokeRoute(
+        router,
+        'patch',
+        '/api/projects/:slug/assignments/:aslug/title',
+        { slug: 'test-project', aslug: 'test-assignment' },
+        { title: '   \t  ' },
+      );
+      expect(res.statusCode).toBe(400);
+    });
+
+    it('rejects title longer than 200 chars', async () => {
+      await createAssignmentFixture();
+      const router = createWriteRouter(testDir);
+      const res = await invokeRoute(
+        router,
+        'patch',
+        '/api/projects/:slug/assignments/:aslug/title',
+        { slug: 'test-project', aslug: 'test-assignment' },
+        { title: 'a'.repeat(201) },
+      );
+      expect(res.statusCode).toBe(400);
+    });
+
+    it('rejects non-string title', async () => {
+      await createAssignmentFixture();
+      const router = createWriteRouter(testDir);
+      const res = await invokeRoute(
+        router,
+        'patch',
+        '/api/projects/:slug/assignments/:aslug/title',
+        { slug: 'test-project', aslug: 'test-assignment' },
+        { title: 42 },
+      );
+      expect(res.statusCode).toBe(400);
+    });
+
+    it('rejects title containing a double quote', async () => {
+      await createAssignmentFixture();
+      const router = createWriteRouter(testDir);
+      const res = await invokeRoute(
+        router,
+        'patch',
+        '/api/projects/:slug/assignments/:aslug/title',
+        { slug: 'test-project', aslug: 'test-assignment' },
+        { title: 'has "quote"' },
+      );
+      expect(res.statusCode).toBe(400);
+    });
+
+    it('rejects title containing a newline', async () => {
+      await createAssignmentFixture();
+      const router = createWriteRouter(testDir);
+      const res = await invokeRoute(
+        router,
+        'patch',
+        '/api/projects/:slug/assignments/:aslug/title',
+        { slug: 'test-project', aslug: 'test-assignment' },
+        { title: 'line one\nline two' },
+      );
+      expect(res.statusCode).toBe(400);
+    });
+
+    it('rejects title containing a carriage return', async () => {
+      await createAssignmentFixture();
+      const router = createWriteRouter(testDir);
+      const res = await invokeRoute(
+        router,
+        'patch',
+        '/api/projects/:slug/assignments/:aslug/title',
+        { slug: 'test-project', aslug: 'test-assignment' },
+        { title: 'line one\rline two' },
+      );
+      expect(res.statusCode).toBe(400);
+    });
+
+    it('returns 404 for missing assignment', async () => {
+      await createAssignmentFixture();
+      const router = createWriteRouter(testDir);
+      const res = await invokeRoute(
+        router,
+        'patch',
+        '/api/projects/:slug/assignments/:aslug/title',
+        { slug: 'test-project', aslug: 'ghost' },
+        { title: 'whatever' },
+      );
+      expect(res.statusCode).toBe(404);
+    });
+
+    it('PATCH /api/assignments/:id/title updates a standalone assignment', async () => {
+      const assignmentsDir = resolve(testDir, 'standalone');
+      await mkdir(assignmentsDir, { recursive: true });
+      const router = createWriteRouter(testDir, assignmentsDir);
+
+      const create = await invokeRoute(
+        router,
+        'post',
+        '/api/assignments',
+        {},
+        { title: 'Original' },
+      );
+      const id = (create.payload as any).assignment.id as string;
+
+      const res = await invokeRoute(
+        router,
+        'patch',
+        '/api/assignments/:id/title',
+        { id },
+        { title: 'Renamed standalone' },
+      );
+      expect(res.statusCode).toBe(200);
+
+      const content = await readFile(resolve(assignmentsDir, id, 'assignment.md'), 'utf-8');
+      expect(content).toMatch(/^title: Renamed standalone$/m);
+    });
+
+    it('PATCH /api/assignments/:id/title returns 404 for missing id', async () => {
+      const assignmentsDir = resolve(testDir, 'standalone');
+      await mkdir(assignmentsDir, { recursive: true });
+      const router = createWriteRouter(testDir, assignmentsDir);
+
+      const res = await invokeRoute(
+        router,
+        'patch',
+        '/api/assignments/:id/title',
+        { id: '00000000-0000-0000-0000-000000000000' },
+        { title: 'whatever' },
+      );
+      expect(res.statusCode).toBe(404);
+    });
+  });
+
   describe('POST /api/assignments/bulk-status-override', () => {
     it('flips two project-scoped assignments to the requested status', async () => {
       await createAssignmentFixture();
