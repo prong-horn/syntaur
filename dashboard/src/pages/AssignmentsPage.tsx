@@ -22,6 +22,8 @@ import { SearchInput } from '../components/SearchInput';
 import { FilterBar } from '../components/FilterBar';
 import { ViewToggle } from '../components/ViewToggle';
 import { TableColumnPicker } from '../components/TableColumnPicker';
+import { SaveViewDialog } from '../components/SaveViewDialog';
+import { SavedViewPicker } from '../components/SavedViewPicker';
 import { SectionCard } from '../components/SectionCard';
 import { LoadingState } from '../components/LoadingState';
 import { ErrorState } from '../components/ErrorState';
@@ -47,9 +49,11 @@ import {
   type Activity as ActivityFilter,
   type ProjectViewPrefs,
 } from '@shared/view-prefs-schema';
-import { type TableColumnId } from '@shared/saved-views-schema';
+import { type TableColumnId, type SavedView, type ViewScope } from '@shared/saved-views-schema';
 import { fetchViewPrefs, saveGlobalViewPrefs, saveScopeViewPrefs, useViewPrefs } from '../hooks/useViewPrefs';
 import { mergeForScope } from '@shared/view-prefs-schema';
+import { useSavedView, createSavedView, updateSavedView } from '../hooks/useSavedViews';
+import { captureCurrentView, applyConfig } from '../lib/savedViews';
 
 const VALID_VIEWS: readonly ViewMode[] = VIEW_MODES;
 
@@ -183,6 +187,21 @@ export function AssignmentsPage() {
   const [deleteTarget, setDeleteTarget] = useState<AssignmentBoardItem | null>(null);
   const [deletingKey, setDeletingKey] = useState<string | null>(null);
   const [moveTarget, setMoveTarget] = useState<AssignmentBoardItem | null>(null);
+  const [loadedViewId, setLoadedViewId] = useState<string | null>(null);
+  const [saveDialogOpen, setSaveDialogOpen] = useState(false);
+  const [saveAsNewMode, setSaveAsNewMode] = useState(false);
+
+  const viewScope: ViewScope = workspace
+    ? { kind: 'workspace', workspace }
+    : { kind: 'global' };
+
+  const loadViewParam = searchParams.get('loadView');
+  const { view: pendingView, loading: pendingViewLoading, error: pendingViewError } = useSavedView(
+    loadViewParam,
+  );
+  const { view: loadedView } = useSavedView(loadedViewId);
+  // Track the last id we already applied so we don't double-apply on re-render.
+  const lastAppliedLoadViewRef = useRef<string | null>(null);
 
   useEffect(() => {
     setBoardItems(data?.assignments ?? []);
@@ -374,6 +393,190 @@ export function AssignmentsPage() {
     },
     [persistField],
   );
+
+  const buildViewState = useCallback(
+    () => ({
+      viewMode: view,
+      filters: {
+        status: statusFilter,
+        priority: priorityFilter,
+        assignee: assigneeFilter,
+        project: projectFilter,
+        activity: activityFilter,
+      },
+      sortField,
+      sortDirection,
+      listSectionVisibility,
+      kanbanColumnVisibility,
+      tableColumnVisibility,
+    }),
+    [
+      view,
+      statusFilter,
+      priorityFilter,
+      assigneeFilter,
+      projectFilter,
+      activityFilter,
+      sortField,
+      sortDirection,
+      listSectionVisibility,
+      kanbanColumnVisibility,
+      tableColumnVisibility,
+    ],
+  );
+
+  const applyViewToState = useCallback(
+    (v: SavedView) => {
+      applyConfig(v, {
+        setViewMode: setView,
+        setStatusFilter: handleSetStatusFilter,
+        setPriorityFilter: handleSetPriorityFilter,
+        setAssigneeFilter: handleSetAssigneeFilter,
+        setProjectFilter: handleSetProjectFilter,
+        setActivityFilter: handleSetActivityFilter,
+        setSortField: handleSetSortField,
+        setSortDirection: handleSetSortDirection,
+        setListSectionVisibility,
+        setKanbanColumnVisibility,
+        setTableColumnVisibility,
+      });
+      setLoadedViewId(v.id);
+    },
+    [
+      setView,
+      handleSetStatusFilter,
+      handleSetPriorityFilter,
+      handleSetAssigneeFilter,
+      handleSetProjectFilter,
+      handleSetActivityFilter,
+      handleSetSortField,
+      handleSetSortDirection,
+    ],
+  );
+
+  const handleApplyView = useCallback(
+    (v: SavedView) => {
+      applyViewToState(v);
+      // Mark as already applied so the loadView effect doesn't re-apply.
+      lastAppliedLoadViewRef.current = v.id;
+      setSearchParams(
+        (prev) => {
+          const next = new URLSearchParams(prev);
+          next.set('loadView', v.id);
+          return next;
+        },
+        { replace: true },
+      );
+    },
+    [applyViewToState, setSearchParams],
+  );
+
+  const handleSave = useCallback(
+    async (name: string) => {
+      try {
+        const payload = captureCurrentView({
+          name,
+          context: { workspace: workspace ?? null, projectSlug: null },
+          state: buildViewState(),
+        });
+        const file = await createSavedView(payload);
+        const created = file.views[file.views.length - 1];
+        setLoadedViewId(created?.id ?? null);
+        if (created) {
+          lastAppliedLoadViewRef.current = created.id;
+          setSearchParams(
+            (prev) => {
+              const next = new URLSearchParams(prev);
+              next.set('loadView', created.id);
+              return next;
+            },
+            { replace: true },
+          );
+        }
+        setSaveDialogOpen(false);
+        setSaveAsNewMode(false);
+        showToast(`Saved view "${name}"`, 'success');
+      } catch (err) {
+        showToast(
+          err instanceof Error ? err.message : 'Failed to save view',
+          'error',
+        );
+        throw err;
+      }
+    },
+    [buildViewState, setSearchParams, showToast, workspace],
+  );
+
+  const handleUpdateView = useCallback(async () => {
+    if (!loadedViewId) return;
+    try {
+      const payload = captureCurrentView({
+        name: loadedView?.name ?? '',
+        context: { workspace: workspace ?? null, projectSlug: null },
+        state: buildViewState(),
+      });
+      await updateSavedView(loadedViewId, { config: payload.config });
+      showToast('View updated', 'success');
+    } catch (err) {
+      showToast(
+        err instanceof Error ? err.message : 'Failed to update view',
+        'error',
+      );
+    }
+  }, [buildViewState, loadedView?.name, loadedViewId, showToast, workspace]);
+
+  // ?loadView= handler. Tracks lastAppliedLoadViewRef to avoid re-applying on
+  // every render while waiting for the file to load.
+  useEffect(() => {
+    if (!loadViewParam) {
+      lastAppliedLoadViewRef.current = null;
+      return;
+    }
+    if (lastAppliedLoadViewRef.current === loadViewParam) return;
+    // Clear loadedViewId eagerly so Update doesn't point at the prior view.
+    if (loadedViewId && loadedViewId !== loadViewParam) {
+      setLoadedViewId(null);
+    }
+    if (pendingViewLoading) return;
+    if (pendingViewError) {
+      lastAppliedLoadViewRef.current = loadViewParam;
+      showToast("Couldn't load saved view — try again", 'error');
+      return;
+    }
+    if (pendingView) {
+      lastAppliedLoadViewRef.current = loadViewParam;
+      applyViewToState(pendingView);
+      setSearchParams(
+        (prev) => {
+          const next = new URLSearchParams(prev);
+          next.delete('loadView');
+          return next;
+        },
+        { replace: true },
+      );
+      return;
+    }
+    // !loading && !error && view === null → view no longer exists.
+    lastAppliedLoadViewRef.current = loadViewParam;
+    showToast('Saved view no longer exists', 'error');
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        next.delete('loadView');
+        return next;
+      },
+      { replace: true },
+    );
+  }, [
+    loadViewParam,
+    pendingView,
+    pendingViewLoading,
+    pendingViewError,
+    loadedViewId,
+    applyViewToState,
+    setSearchParams,
+    showToast,
+  ]);
 
   const uniqueStatuses = useMemo(
     () => Array.from(new Set(boardItems.map((a) => a.status))).sort(),
@@ -778,6 +981,43 @@ export function AssignmentsPage() {
             onChange={setTableColumnVisibility}
           />
         ) : null}
+        <SavedViewPicker
+          scope={viewScope}
+          loadedViewId={loadedViewId}
+          onApply={handleApplyView}
+          onOpenSaveDialog={() => {
+            setSaveAsNewMode(false);
+            setSaveDialogOpen(true);
+          }}
+        />
+        <button
+          type="button"
+          onClick={() => {
+            if (loadedViewId) {
+              void handleUpdateView();
+            } else {
+              setSaveAsNewMode(false);
+              setSaveDialogOpen(true);
+            }
+          }}
+          className="inline-flex items-center gap-1.5 rounded-md border border-border/60 bg-background/60 px-2.5 py-1.5 text-xs font-medium text-foreground hover:bg-background"
+          title={loadedView ? `Update ${loadedView.name}` : 'Save current view'}
+        >
+          {loadedView ? `Update '${loadedView.name}'` : 'Save view'}
+        </button>
+        {loadedViewId ? (
+          <button
+            type="button"
+            onClick={() => {
+              setSaveAsNewMode(true);
+              setSaveDialogOpen(true);
+            }}
+            className="inline-flex items-center gap-1.5 rounded-md border border-border/60 bg-background/60 px-2.5 py-1.5 text-xs font-medium text-foreground hover:bg-background"
+            title="Save as new view"
+          >
+            Save as new…
+          </button>
+        ) : null}
       </FilterBar>
 
       {data.assignments.length === 0 ? (
@@ -1028,6 +1268,17 @@ export function AssignmentsPage() {
       )}
 
       <Toaster toast={toast} onDismiss={dismissToast} />
+
+      <SaveViewDialog
+        open={saveDialogOpen}
+        onOpenChange={(open) => {
+          setSaveDialogOpen(open);
+          if (!open) setSaveAsNewMode(false);
+        }}
+        initialName={saveAsNewMode && loadedView ? `${loadedView.name} (copy)` : ''}
+        title={saveAsNewMode ? 'Save as new view' : 'Save view'}
+        onSubmit={handleSave}
+      />
 
       <AssignmentTransitionDialog
         open={pendingMove !== null}

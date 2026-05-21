@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { BookOpenText, ChevronDown, ChevronUp, GitBranch, Plus, SquarePen } from 'lucide-react';
 import { CopyButton } from '../components/CopyButton';
@@ -24,11 +24,17 @@ import { coerceProjectDetailView, type SortField, type SortDirection } from '@sh
 import { saveScopeViewPrefs, useViewPrefs } from '../hooks/useViewPrefs';
 import { getAssignmentColumns } from '../lib/kanban';
 import { sortAssignments } from '../lib/sortAssignments';
+import { SaveViewDialog } from '../components/SaveViewDialog';
+import { SavedViewPicker } from '../components/SavedViewPicker';
+import { useSavedView, createSavedView, updateSavedView } from '../hooks/useSavedViews';
+import { captureCurrentView, applyConfig } from '../lib/savedViews';
+import type { SavedView, ViewScope } from '@shared/saved-views-schema';
+import { useToast, Toaster } from '../components/Toast';
 
 const VALID_TABS = new Set(['overview', 'assignments', 'todos', 'dependencies', 'knowledge']);
 
 export function ProjectDetail() {
-  const { slug } = useParams<{ slug: string }>();
+  const { slug, workspace } = useParams<{ workspace?: string; slug: string }>();
   const wsPrefix = useWorkspacePrefix();
   const navigate = useNavigate();
   useHotkeyScope('project');
@@ -76,6 +82,29 @@ export function ProjectDetail() {
   const [priorityFilter, setPriorityFilter] = useState<string>(() => prefs.filters.priority ?? 'all');
   const [sortField, setSortField] = useState<SortField>(() => prefs.sortField);
   const [sortDirection, setSortDirection] = useState<SortDirection>(() => prefs.sortDirection);
+  // List visibility state — kept for saved-view round-trips even though
+  // ProjectDetail doesn't currently expose toggles for these. (Decision: keep
+  // captured state symmetric with AssignmentsPage so applying a view here
+  // doesn't silently drop the user's choices.)
+  const [listSectionVisibility, setListSectionVisibility] = useState<{ collapsed: string[] }>(() => ({ collapsed: [] }));
+  const [kanbanColumnVisibility, setKanbanColumnVisibility] = useState<{ hidden: string[] }>(() => ({ hidden: [] }));
+  const [tableColumnVisibility, setTableColumnVisibility] = useState<{ hidden: import('@shared/saved-views-schema').TableColumnId[] }>(() => ({ hidden: [] }));
+
+  const [loadedViewId, setLoadedViewId] = useState<string | null>(null);
+  const [saveDialogOpen, setSaveDialogOpen] = useState(false);
+  const [saveAsNewMode, setSaveAsNewMode] = useState(false);
+  const { toast, showToast, dismissToast } = useToast();
+
+  const viewScope: ViewScope = {
+    kind: 'project',
+    slug: slug ?? '',
+    workspace: workspace ?? null,
+  };
+
+  const loadViewParam = searchParams.get('loadView');
+  const { view: pendingView, loading: pendingViewLoading, error: pendingViewError } = useSavedView(loadViewParam);
+  const { view: loadedView } = useSavedView(loadedViewId);
+  const lastAppliedLoadViewRef = useRef<string | null>(null);
 
   // Re-hydrate when react-router reuses this component across project switches
   // (the doc comment above on lines 45-47 calls this out for the tab param).
@@ -142,6 +171,178 @@ export function ProjectDetail() {
     },
     [persistField],
   );
+
+  const buildViewState = useCallback(
+    () => ({
+      // ProjectDetail uses only 'kanban' | 'table'. The saved view ViewMode union
+      // includes 'list'; either value here is valid. Round-trip applies
+      // coerceProjectDetailView on the way back in.
+      viewMode: assignmentView,
+      filters: {
+        status: statusFilter,
+        priority: priorityFilter,
+        assignee: assigneeFilter,
+        // project filter is forced via context.projectSlug below — value here is ignored
+        project: 'all',
+        activity: 'all' as const,
+      },
+      sortField,
+      sortDirection,
+      listSectionVisibility,
+      kanbanColumnVisibility,
+      tableColumnVisibility,
+    }),
+    [
+      assignmentView,
+      statusFilter,
+      priorityFilter,
+      assigneeFilter,
+      sortField,
+      sortDirection,
+      listSectionVisibility,
+      kanbanColumnVisibility,
+      tableColumnVisibility,
+    ],
+  );
+
+  const applyViewToState = useCallback(
+    (v: SavedView) => {
+      applyConfig(v, {
+        setViewMode: (mode) => setAssignmentView(coerceProjectDetailView(mode)),
+        setStatusFilter: handleSetStatusFilter,
+        setPriorityFilter: handleSetPriorityFilter,
+        setAssigneeFilter: handleSetAssigneeFilter,
+        // setProjectFilter intentionally omitted — slug is URL-derived here.
+        setSortField: handleSetSortField,
+        setSortDirection: handleSetSortDirection,
+        setListSectionVisibility,
+        setKanbanColumnVisibility,
+        setTableColumnVisibility,
+      });
+      setLoadedViewId(v.id);
+    },
+    [
+      handleSetStatusFilter,
+      handleSetPriorityFilter,
+      handleSetAssigneeFilter,
+      handleSetSortField,
+      handleSetSortDirection,
+    ],
+  );
+
+  const handleApplyView = useCallback(
+    (v: SavedView) => {
+      applyViewToState(v);
+      lastAppliedLoadViewRef.current = v.id;
+      setSearchParams(
+        (prev) => {
+          const next = new URLSearchParams(prev);
+          next.set('loadView', v.id);
+          return next;
+        },
+        { replace: true },
+      );
+    },
+    [applyViewToState, setSearchParams],
+  );
+
+  const handleSave = useCallback(
+    async (name: string) => {
+      try {
+        const payload = captureCurrentView({
+          name,
+          context: { workspace: workspace ?? null, projectSlug: slug ?? null },
+          state: buildViewState(),
+        });
+        const file = await createSavedView(payload);
+        const created = file.views[file.views.length - 1];
+        setLoadedViewId(created?.id ?? null);
+        if (created) {
+          lastAppliedLoadViewRef.current = created.id;
+          setSearchParams(
+            (prev) => {
+              const next = new URLSearchParams(prev);
+              next.set('loadView', created.id);
+              return next;
+            },
+            { replace: true },
+          );
+        }
+        setSaveDialogOpen(false);
+        setSaveAsNewMode(false);
+        showToast(`Saved view "${name}"`, 'success');
+      } catch (err) {
+        showToast(err instanceof Error ? err.message : 'Failed to save view', 'error');
+        throw err;
+      }
+    },
+    [buildViewState, setSearchParams, showToast, slug, workspace],
+  );
+
+  const handleUpdateView = useCallback(async () => {
+    if (!loadedViewId) return;
+    try {
+      const payload = captureCurrentView({
+        name: loadedView?.name ?? '',
+        context: { workspace: workspace ?? null, projectSlug: slug ?? null },
+        state: buildViewState(),
+      });
+      await updateSavedView(loadedViewId, { config: payload.config });
+      showToast('View updated', 'success');
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Failed to update view', 'error');
+    }
+  }, [buildViewState, loadedView?.name, loadedViewId, showToast, slug, workspace]);
+
+  useEffect(() => {
+    if (!loadViewParam) {
+      lastAppliedLoadViewRef.current = null;
+      return;
+    }
+    if (lastAppliedLoadViewRef.current === loadViewParam) return;
+    if (loadedViewId && loadedViewId !== loadViewParam) {
+      setLoadedViewId(null);
+    }
+    if (pendingViewLoading) return;
+    if (pendingViewError) {
+      lastAppliedLoadViewRef.current = loadViewParam;
+      showToast("Couldn't load saved view — try again", 'error');
+      return;
+    }
+    if (pendingView) {
+      lastAppliedLoadViewRef.current = loadViewParam;
+      applyViewToState(pendingView);
+      setSearchParams(
+        (prev) => {
+          const next = new URLSearchParams(prev);
+          next.delete('loadView');
+          return next;
+        },
+        { replace: true },
+      );
+      return;
+    }
+    lastAppliedLoadViewRef.current = loadViewParam;
+    showToast('Saved view no longer exists', 'error');
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        next.delete('loadView');
+        return next;
+      },
+      { replace: true },
+    );
+  }, [
+    loadViewParam,
+    pendingView,
+    pendingViewLoading,
+    pendingViewError,
+    loadedViewId,
+    applyViewToState,
+    setSearchParams,
+    showToast,
+  ]);
+
   function handleSort(field: SortField) {
     if (sortField === field) {
       const next: SortDirection = sortDirection === 'asc' ? 'desc' : 'asc';
@@ -362,6 +563,43 @@ export function ProjectDetail() {
                               { value: 'table', label: 'Table' },
                             ]}
                           />
+                          <SavedViewPicker
+                            scope={viewScope}
+                            loadedViewId={loadedViewId}
+                            onApply={handleApplyView}
+                            onOpenSaveDialog={() => {
+                              setSaveAsNewMode(false);
+                              setSaveDialogOpen(true);
+                            }}
+                          />
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (loadedViewId) {
+                                void handleUpdateView();
+                              } else {
+                                setSaveAsNewMode(false);
+                                setSaveDialogOpen(true);
+                              }
+                            }}
+                            className="inline-flex items-center gap-1.5 rounded-md border border-border/60 bg-background/60 px-2.5 py-1.5 text-xs font-medium text-foreground hover:bg-background"
+                            title={loadedView ? `Update ${loadedView.name}` : 'Save current view'}
+                          >
+                            {loadedView ? `Update '${loadedView.name}'` : 'Save view'}
+                          </button>
+                          {loadedViewId ? (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setSaveAsNewMode(true);
+                                setSaveDialogOpen(true);
+                              }}
+                              className="inline-flex items-center gap-1.5 rounded-md border border-border/60 bg-background/60 px-2.5 py-1.5 text-xs font-medium text-foreground hover:bg-background"
+                              title="Save as new view"
+                            >
+                              Save as new…
+                            </button>
+                          ) : null}
                         </div>
                       }
                     >
@@ -589,6 +827,19 @@ export function ProjectDetail() {
           ) : null}
         </div>
       </div>
+
+      <Toaster toast={toast} onDismiss={dismissToast} />
+
+      <SaveViewDialog
+        open={saveDialogOpen}
+        onOpenChange={(open) => {
+          setSaveDialogOpen(open);
+          if (!open) setSaveAsNewMode(false);
+        }}
+        initialName={saveAsNewMode && loadedView ? `${loadedView.name} (copy)` : ''}
+        title={saveAsNewMode ? 'Save as new view' : 'Save view'}
+        onSubmit={handleSave}
+      />
     </div>
   );
 }
