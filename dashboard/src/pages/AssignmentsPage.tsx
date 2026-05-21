@@ -33,9 +33,11 @@ import { useTypesConfig, getTypeLabel } from '../hooks/useTypesConfig';
 import { useHotkey, useHotkeyScope, useListSelection } from '../hotkeys';
 import {
   VIEW_MODES,
+  GROUPINGS,
   type ViewMode,
   type SortField,
   type SortDirection,
+  type Grouping,
   type Activity as ActivityFilter,
   type ProjectViewPrefs,
 } from '@shared/view-prefs-schema';
@@ -184,9 +186,10 @@ export function AssignmentsPage() {
   );
   const [sortField, setSortField] = useState<SortField>(() => prefs.sortField);
   const [sortDirection, setSortDirection] = useState<SortDirection>(() => prefs.sortDirection);
-  const [expandedStatuses, setExpandedStatuses] = useState<Set<string>>(
-    () => new Set(COLUMNS),
-  );
+  const [grouping, setGrouping] = useState<Grouping>(() => prefs.grouping);
+  // Tracks group IDs the user has explicitly collapsed. New / unknown group IDs
+  // default to expanded so changing the grouping dimension doesn't hide everything.
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(() => new Set());
   const [boardItems, setBoardItems] = useState<AssignmentBoardItem[]>([]);
   const [transitionError, setTransitionError] = useState<string | null>(null);
   const [transitioningId, setTransitioningId] = useState<string | null>(null);
@@ -255,6 +258,7 @@ export function AssignmentsPage() {
     setProjectFilter(prefs.filters.project ?? 'all');
     setSortField(prefs.sortField);
     setSortDirection(prefs.sortDirection);
+    setGrouping(prefs.grouping);
   }, [
     prefs.filters.priority,
     prefs.filters.type,
@@ -262,6 +266,7 @@ export function AssignmentsPage() {
     prefs.filters.project,
     prefs.sortField,
     prefs.sortDirection,
+    prefs.grouping,
   ]);
 
   // One-shot URL seed PER SCOPE: waits for the server response to land
@@ -400,6 +405,13 @@ export function AssignmentsPage() {
     },
     [persistField],
   );
+  const handleSetGrouping = useCallback(
+    (v: Grouping) => {
+      setGrouping(v);
+      persistField({ grouping: v });
+    },
+    [persistField],
+  );
 
   const uniqueStatuses = useMemo(
     () => Array.from(new Set(boardItems.map((a) => a.status))).sort(),
@@ -466,17 +478,76 @@ export function AssignmentsPage() {
     [filteredItems, sortField, sortDirection],
   );
 
+  // Derive list-view groups from prefs.grouping. Status (default) preserves
+  // legacy behavior. Type and other dimensions are bucketed dynamically.
+  // Each group is { id, label, items } in display order.
+  const listGroups = useMemo(() => {
+    if (grouping === 'none') {
+      return [{ id: '__all__', label: 'All assignments', items: filteredItems }];
+    }
+    if (grouping === 'type') {
+      const groups: { id: string; label: string; items: AssignmentBoardItem[] }[] = typesConfig.definitions.map((def) => ({
+        id: def.id,
+        label: getTypeLabel(typesConfig, def.id),
+        items: filteredItems.filter((it) => it.type === def.id),
+      }));
+      const knownIds = new Set(typesConfig.definitions.map((d) => d.id));
+      const unknown = filteredItems.filter((it) => !it.type || !knownIds.has(it.type));
+      if (unknown.length > 0) {
+        groups.push({ id: '__unknown_type__', label: 'Other', items: unknown });
+      }
+      return groups;
+    }
+    if (grouping === 'priority') {
+      const order: AssignmentBoardItem['priority'][] = ['critical', 'high', 'medium', 'low'];
+      return order.map((p) => ({
+        id: p,
+        label: p.charAt(0).toUpperCase() + p.slice(1),
+        items: filteredItems.filter((it) => it.priority === p),
+      }));
+    }
+    if (grouping === 'assignee') {
+      const assignees = Array.from(new Set(filteredItems.map((it) => it.assignee ?? '__unassigned__'))).sort();
+      return assignees.map((a) => ({
+        id: a,
+        label: a === '__unassigned__' ? 'Unassigned' : a,
+        items: filteredItems.filter((it) => (it.assignee ?? '__unassigned__') === a),
+      }));
+    }
+    if (grouping === 'project') {
+      const seen = new Map<string, string>();
+      for (const it of filteredItems) {
+        const key = it.projectSlug ?? '__standalone__';
+        const label = it.projectTitle ?? 'Standalone';
+        if (!seen.has(key)) seen.set(key, label);
+      }
+      return Array.from(seen.entries())
+        .sort(([, a], [, b]) => a.localeCompare(b))
+        .map(([key, label]) => ({
+          id: key,
+          label,
+          items: filteredItems.filter((it) => (it.projectSlug ?? '__standalone__') === key),
+        }));
+    }
+    // Default: status grouping
+    return COLUMNS.map((status) => ({
+      id: status,
+      label: COLUMN_LABELS[status] ?? status,
+      items: filteredItems.filter((it) => it.status === status),
+    }));
+  }, [grouping, filteredItems, typesConfig, COLUMNS, COLUMN_LABELS]);
+
   // Flat visible order depends on view. In list/kanban the user sees items grouped by
-  // status column (in COLUMNS order); that's the j/k traversal order.
+  // the active grouping; that's the j/k traversal order.
   const { visibleItems, visibleIndexByKey } = useMemo(() => {
     const items =
       view === 'table'
         ? sortedItems
-        : COLUMNS.flatMap((status) => filteredItems.filter((it) => it.status === status));
+        : listGroups.flatMap((g) => g.items);
     const byKey = new Map<string, number>();
     items.forEach((it, i) => byKey.set(getAssignmentKey(it), i));
     return { visibleItems: items, visibleIndexByKey: byKey };
-  }, [view, sortedItems, filteredItems, COLUMNS]);
+  }, [view, sortedItems, listGroups]);
 
   const { hotkeyRowProps } = useListSelection(visibleItems, {
     scope: 'list:assignments',
@@ -614,13 +685,13 @@ export function AssignmentsPage() {
     await applyMove({ item, toColumnId, action });
   }
 
-  function toggleStatus(status: string) {
-    setExpandedStatuses((current) => {
+  function toggleGroup(groupId: string) {
+    setCollapsedGroups((current) => {
       const next = new Set(current);
-      if (next.has(status)) {
-        next.delete(status);
+      if (next.has(groupId)) {
+        next.delete(groupId);
       } else {
-        next.add(status);
+        next.add(groupId);
       }
       return next;
     });
@@ -757,6 +828,11 @@ export function AssignmentsPage() {
           <option value="stale">Stale only</option>
           <option value="fresh">Fresh only</option>
         </select>
+        <select value={grouping} onChange={(e) => handleSetGrouping(e.target.value as Grouping)} className="editor-input max-w-[180px]" title="Group by">
+          {GROUPINGS.map((g) => (
+            <option key={g} value={g}>{g === 'none' ? 'No grouping' : `Group: ${g.charAt(0).toUpperCase() + g.slice(1)}`}</option>
+          ))}
+        </select>
         <ViewToggle
           value={view}
           onChange={(value) => handleSetView(value as ViewMode)}
@@ -883,37 +959,39 @@ export function AssignmentsPage() {
         </SectionCard>
       ) : view === 'list' ? (
         <div className="space-y-3">
-          {COLUMNS.map((status) => {
-            const items = filteredItems.filter((item) => item.status === status);
-            if (items.length === 0 && !draggedItem) return null;
-            const expanded = expandedStatuses.has(status);
-            const isValidTarget = draggedItem
-              ? draggedItem.status !== status && !getAssignmentAction(draggedItem, status)?.disabled
-              : false;
-            const isInvalidTarget = draggedItem ? draggedItem.status !== status && !isValidTarget : false;
-            const isDropHover = dropTargetStatus === status;
+          {listGroups.map(({ id: groupId, label, items }) => {
+            if (items.length === 0 && !(draggedItem && grouping === 'status')) return null;
+            const expanded = !collapsedGroups.has(groupId);
+            const isStatusGroup = grouping === 'status';
+            const isValidTarget =
+              isStatusGroup && draggedItem
+                ? draggedItem.status !== groupId && !getAssignmentAction(draggedItem, groupId)?.disabled
+                : false;
+            const isInvalidTarget =
+              isStatusGroup && draggedItem ? draggedItem.status !== groupId && !isValidTarget : false;
+            const isDropHover = isStatusGroup && dropTargetStatus === groupId;
             return (
               <div
-                key={status}
+                key={groupId}
                 className={cn(
                   'rounded-lg border border-border/60 bg-card/90 transition',
                   isDropHover && isValidTarget && 'ring-2 ring-ring/30',
                   isInvalidTarget && 'border-dashed opacity-65',
                 )}
-                onDragOver={(event) => handleDragOver(event, status)}
-                onDragLeave={(event) => handleDragLeave(event, status)}
-                onDrop={(event) => handleListDrop(event, status)}
+                onDragOver={isStatusGroup ? (event) => handleDragOver(event, groupId) : undefined}
+                onDragLeave={isStatusGroup ? (event) => handleDragLeave(event, groupId) : undefined}
+                onDrop={isStatusGroup ? (event) => handleListDrop(event, groupId) : undefined}
               >
                 <button
                   type="button"
-                  onClick={() => toggleStatus(status)}
+                  onClick={() => toggleGroup(groupId)}
                   className="flex w-full items-center gap-2 px-4 py-3 text-left"
                 >
                   <ChevronDown
                     className={`h-4 w-4 text-muted-foreground transition-transform ${expanded ? '' : '-rotate-90'}`}
                   />
                   <span className="font-semibold text-foreground">
-                    {COLUMN_LABELS[status]}
+                    {label}
                   </span>
                   <span className="rounded-full border border-border/60 px-2 py-0.5 text-xs text-muted-foreground">
                     {items.length}
