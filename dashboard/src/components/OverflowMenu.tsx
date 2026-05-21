@@ -87,7 +87,7 @@ export function OverflowMenu({ items, align = 'end' }: OverflowMenuProps) {
               const content = (
                 <>
                   {Icon ? <Icon className="h-4 w-4 shrink-0" /> : null}
-                  <span className="truncate">{item.label}</span>
+                  <span className="block min-w-0 truncate">{item.label}</span>
                 </>
               );
 

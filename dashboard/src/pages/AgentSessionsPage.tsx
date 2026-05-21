@@ -418,12 +418,12 @@ function SessionRow({
       <td className="py-2 pr-3">
         <span className="flex min-w-0 items-center gap-1.5">
           <Activity className="h-3 w-3 shrink-0 text-muted-foreground" />
-          <span className="truncate">{session.agent}</span>
+          <span className="block min-w-0 truncate">{session.agent}</span>
         </span>
       </td>
       <td className="py-2 pr-3">
         <span className="flex min-w-0 items-center gap-1.5">
-          <span className="truncate font-mono text-xs text-muted-foreground" title={session.sessionId}>
+          <span className="block min-w-0 truncate font-mono text-xs text-muted-foreground" title={session.sessionId}>
             {shortId}
           </span>
           <CopyButton value={session.sessionId} />
@@ -434,7 +434,7 @@ function SessionRow({
       </td>
       <td className="py-2 pr-3">
         <span className="flex min-w-0 items-center gap-1.5">
-          <span className="truncate text-xs text-muted-foreground" title={session.path}>
+          <span className="block min-w-0 truncate text-xs text-muted-foreground" title={session.path}>
             {shortPath}
           </span>
           {session.path && <CopyButton value={session.path} />}
@@ -444,7 +444,7 @@ function SessionRow({
         {session.transcriptPath ? (
           <span className="flex min-w-0 items-center gap-1.5">
             <span
-              className="truncate font-mono text-xs text-muted-foreground"
+              className="block min-w-0 truncate font-mono text-xs text-muted-foreground"
               title={session.transcriptPath}
             >
               {shortTranscript}

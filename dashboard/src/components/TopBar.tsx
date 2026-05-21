@@ -53,7 +53,7 @@ export function TopBar({
                 <span>/</span>
               </nav>
             ) : null}
-            <h1 className="truncate text-base font-semibold text-foreground">{title}</h1>
+            <h1 className="min-w-0 truncate text-base font-semibold text-foreground">{title}</h1>
           </div>
         </div>
 
