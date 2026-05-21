@@ -52,8 +52,12 @@ function nowISO(): string {
   return new Date().toISOString();
 }
 
+import { bundleCommand } from './bundle.js';
+
 export const todoCommand = new Command('todo')
   .description('Manage quick todos');
+
+todoCommand.addCommand(bundleCommand);
 
 todoCommand
   .command('add')

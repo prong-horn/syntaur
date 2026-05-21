@@ -123,30 +123,67 @@ export function formatRollbackError(opts: {
   branch: string;
   worktreeCleanup: { ok: boolean; stderr: string };
   branchCleanup: { ok: boolean; stderr: string };
+  subject?: string;
 }): string {
   const { writeMsg, worktreePath, branch, worktreeCleanup, branchCleanup } = opts;
+  const subject = opts.subject ?? 'assignment frontmatter';
   const wtMsg = worktreeCleanup.stderr.trim() || '(no stderr)';
   const brMsg = branchCleanup.stderr.trim() || '(no stderr)';
   if (!worktreeCleanup.ok && !branchCleanup.ok) {
     return (
-      `Failed to update assignment frontmatter AND failed to clean up both worktree and branch. ` +
+      `Failed to update ${subject} AND failed to clean up both worktree and branch. ` +
       `Write error: ${writeMsg}. Worktree cleanup error: ${wtMsg}. Branch cleanup error: ${brMsg}. ` +
       `Orphan worktree at ${worktreePath} and orphan branch "${branch}" — remove them manually.`
     );
   }
   if (!worktreeCleanup.ok) {
     return (
-      `Failed to update assignment frontmatter AND failed to clean up worktree. ` +
+      `Failed to update ${subject} AND failed to clean up worktree. ` +
       `Write error: ${writeMsg}. Worktree cleanup error: ${wtMsg}. ` +
       `Orphan worktree at ${worktreePath} — remove it manually.`
     );
   }
   if (!branchCleanup.ok) {
     return (
-      `Failed to update assignment frontmatter: ${writeMsg}. Rolled back git worktree at ${worktreePath}, ` +
+      `Failed to update ${subject}: ${writeMsg}. Rolled back git worktree at ${worktreePath}, ` +
       `but could not delete branch "${branch}": ${brMsg}. ` +
       `Remove the branch manually.`
     );
   }
-  return `Failed to update assignment frontmatter: ${writeMsg}. Rolled back git worktree at ${worktreePath} and branch "${branch}".`;
+  return `Failed to update ${subject}: ${writeMsg}. Rolled back git worktree at ${worktreePath} and branch "${branch}".`;
+}
+
+export interface CreateWorktreeForBundleOptions extends CreateWorktreeOptions {
+  record: () => Promise<void>;
+}
+
+/**
+ * Bundle-scoped sibling of createWorktreeAndRecord. Creates the worktree,
+ * then runs the caller-supplied record() callback (which writes bundle
+ * storage + checklist + .syntaur/context.json). On record() failure, rolls
+ * back the worktree and branch and throws a formatted error tagged
+ * `subject: 'bundle storage'` so users see a bundle-specific message.
+ */
+export async function createWorktreeForBundle(
+  opts: CreateWorktreeForBundleOptions,
+): Promise<void> {
+  const { repository, branch, worktreePath, parentBranch, record } = opts;
+  await createWorktree({ repository, branch, worktreePath, parentBranch });
+  try {
+    await record();
+  } catch (writeErr) {
+    const cleanup = await removeWorktree(repository, worktreePath);
+    const branchCleanup = await deleteBranch(repository, branch);
+    const writeMsg = writeErr instanceof Error ? writeErr.message : String(writeErr);
+    throw new Error(
+      formatRollbackError({
+        writeMsg,
+        worktreePath,
+        branch,
+        worktreeCleanup: cleanup,
+        branchCleanup,
+        subject: 'bundle storage',
+      }),
+    );
+  }
 }
