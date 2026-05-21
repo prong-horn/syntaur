@@ -19,6 +19,7 @@ import type { WsMessage } from './types.js';
 import {
   promoteTodosToNewAssignment,
   parsePromoteTarget,
+  BundlePromoteError,
 } from '../utils/promote-todos.js';
 
 const WORKSPACE_REGEX = /^[a-z0-9_][a-z0-9-]*$/;
@@ -169,6 +170,10 @@ export function createTodosRouter(
       broadcastUpdate();
       res.json(out.result);
     } catch (error) {
+      if (error instanceof BundlePromoteError) {
+        res.status(400).json({ error: error.message });
+        return;
+      }
       res.status(500).json({ error: error instanceof Error ? error.message : 'Failed to bulk-promote todos' });
     }
   });
@@ -682,6 +687,10 @@ export function createTodosRouter(
       broadcastUpdate();
       res.json(result);
     } catch (error) {
+      if (error instanceof BundlePromoteError) {
+        res.status(400).json({ error: error.message });
+        return;
+      }
       res.status(500).json({ error: error instanceof Error ? error.message : 'Failed to promote todos' });
     }
   });

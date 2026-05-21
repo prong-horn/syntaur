@@ -600,6 +600,11 @@ async function promoteTodos(ids: string[], options: PromoteOptions): Promise<voi
     if (item.status === 'completed') {
       throw new Error(`Todo [t:${id}] is already completed; cannot promote.`);
     }
+    if (item.bundleId !== null) {
+      throw new Error(
+        `Todo [t:${id}] is part of bundle b:${item.bundleId}; run \`syntaur todo bundle remove b:${item.bundleId} ${id}\` first.`,
+      );
+    }
     return item;
   });
 

@@ -18,6 +18,7 @@ import type { TodoItem, LogEntry } from '../todos/types.js';
 import type { WsMessage } from './types.js';
 import {
   promoteTodosToNewAssignment,
+  BundlePromoteError,
   parsePromoteTarget,
 } from '../utils/promote-todos.js';
 
@@ -696,6 +697,10 @@ export function createProjectTodosRouter(
       broadcastUpdate(slug);
       res.json(result);
     } catch (error) {
+      if (error instanceof BundlePromoteError) {
+        res.status(400).json({ error: error.message });
+        return;
+      }
       if ((error as NodeJS.ErrnoException).code === 'PROJECT_GONE') {
         notFound(res, getProjectIdParam(params(req).projectId));
         return;

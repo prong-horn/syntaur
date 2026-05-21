@@ -8,6 +8,17 @@ interface ContextFile {
   projectSlug?: string;
   assignmentSlug?: string;
   assignmentDir?: string;
+  // Bundle-scoped fields tolerated; this reader only consumes assignmentDir.
+  bundleId?: string;
+  bundleSlug?: string;
+  bundleScope?: string;
+  bundleScopeId?: string;
+  todoIds?: string[];
+  planDir?: string;
+  branch?: string;
+  worktreePath?: string;
+  repository?: string;
+  boundAt?: string;
 }
 
 async function readContextAssignmentDir(cwd: string): Promise<string | null> {
