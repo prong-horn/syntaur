@@ -358,17 +358,23 @@ describe('buildTerminalInvocation', () => {
     expect(inv.args.join(' ')).toContain('write text');
   });
 
-  it('ghostty builds an osascript new-window + input-text-to-terminal call', () => {
+  it('ghostty activates + drives via System Events keystrokes (cmd-n, type, return)', () => {
+    // Ghostty's AppleScript dictionary doesn't actually expose
+    // `new window` / `terminal` / `input text` as usable verbs — calls
+    // fail at runtime. We drive the app via synthesized key events
+    // through System Events instead.
     const inv = buildTerminalInvocation(makePlan({ terminal: 'ghostty' }));
     expect(inv.command).toBe('osascript');
     const script = inv.args.join(' ');
-    expect(script).toContain('tell application "Ghostty"');
-    expect(script).toContain('new window');
-    expect(script).toContain('terminal 1 of selected tab');
-    // input text and send key MUST target a terminal, not application scope.
-    expect(script).toContain('input text');
-    expect(script).toContain('to t');
-    expect(script).toContain('send key "enter" to t');
+    expect(script).toContain('tell application "Ghostty" to activate');
+    expect(script).toContain('tell application "System Events"');
+    expect(script).toContain('keystroke "n" using command down');
+    // The command itself is typed via keystroke (not `input text`).
+    expect(script).toContain('keystroke');
+    // Return key — key code 36 is more layout-agnostic than `keystroke return`.
+    expect(script).toContain('key code 36');
+    expect(script).not.toContain('input text');
+    expect(script).not.toContain('terminal 1 of selected tab');
   });
 
   it('alacritty uses --working-directory + -e', () => {
