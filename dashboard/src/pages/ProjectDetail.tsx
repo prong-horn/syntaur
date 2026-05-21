@@ -19,6 +19,7 @@ import { DependencyGraph } from '../components/DependencyGraph';
 import { MarkdownRenderer } from '../components/MarkdownRenderer';
 import { ProjectTodosPanel } from '../components/ProjectTodosPanel';
 import { useStatusConfig } from '../hooks/useStatusConfig';
+import { useTypesConfig, getTypeLabel } from '../hooks/useTypesConfig';
 import { useHotkey, useHotkeyScope } from '../hotkeys';
 import { coerceProjectDetailView } from '@shared/view-prefs-schema';
 import { saveScopeViewPrefs, useViewPrefs } from '../hooks/useViewPrefs';
@@ -44,6 +45,7 @@ export function ProjectDetail() {
   });
   const { data: project, loading, error, refetch } = useProject(slug);
   const statusConfig = useStatusConfig();
+  const typesConfig = useTypesConfig();
   const { data: workspacesData } = useWorkspaces();
   // Tab selection lives in the URL (?tab=<value>) so it stays in sync when
   // react-router reuses this component across project navigations (e.g. the
@@ -72,6 +74,7 @@ export function ProjectDetail() {
   const [statusFilter, setStatusFilter] = useState<string>(() => prefs.filters.status ?? 'all');
   const [assigneeFilter, setAssigneeFilter] = useState<string>(() => prefs.filters.assignee ?? 'all');
   const [priorityFilter, setPriorityFilter] = useState<string>(() => prefs.filters.priority ?? 'all');
+  const [typeFilter, setTypeFilter] = useState<string>(() => prefs.filters.type ?? 'all');
 
   // Re-hydrate when react-router reuses this component across project switches
   // (the doc comment above on lines 45-47 calls this out for the tab param).
@@ -82,7 +85,8 @@ export function ProjectDetail() {
     setStatusFilter(prefs.filters.status ?? 'all');
     setAssigneeFilter(prefs.filters.assignee ?? 'all');
     setPriorityFilter(prefs.filters.priority ?? 'all');
-  }, [slug, prefs.defaultView, prefs.filters.status, prefs.filters.assignee, prefs.filters.priority]);
+    setTypeFilter(prefs.filters.type ?? 'all');
+  }, [slug, prefs.defaultView, prefs.filters.status, prefs.filters.assignee, prefs.filters.priority, prefs.filters.type]);
 
   const persistField = useCallback(
     (patch: Parameters<typeof saveScopeViewPrefs>[1]) => {
@@ -119,6 +123,13 @@ export function ProjectDetail() {
     (v: string) => {
       setPriorityFilter(v);
       persistField({ filters: { priority: v } });
+    },
+    [persistField],
+  );
+  const handleSetTypeFilter = useCallback(
+    (v: string) => {
+      setTypeFilter(v);
+      persistField({ filters: { type: v } });
     },
     [persistField],
   );
@@ -173,6 +184,9 @@ export function ProjectDetail() {
       return false;
     }
     if (priorityFilter !== 'all' && assignment.priority !== priorityFilter) {
+      return false;
+    }
+    if (typeFilter !== 'all' && (assignment.type ?? '') !== typeFilter) {
       return false;
     }
     return true;
@@ -296,6 +310,12 @@ export function ProjectDetail() {
                             <option value="medium">Medium</option>
                             <option value="high">High</option>
                             <option value="critical">Critical</option>
+                          </select>
+                          <select value={typeFilter} onChange={(event) => handleSetTypeFilter(event.target.value)} className="editor-input max-w-[170px]">
+                            <option value="all">All types</option>
+                            {typesConfig.definitions.map((t) => (
+                              <option key={t.id} value={t.id}>{getTypeLabel(typesConfig, t.id)}</option>
+                            ))}
                           </select>
                           <ViewToggle
                             value={assignmentView}

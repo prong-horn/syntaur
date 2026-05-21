@@ -29,6 +29,7 @@ import { StatusBadge, STATUS_META, getStatusDescription } from '../components/St
 import { TypeChip } from '../components/TypeChip';
 import { transitionNeedsReason } from '../lib/assignments';
 import { useStatusConfig, getStatusLabel } from '../hooks/useStatusConfig';
+import { useTypesConfig, getTypeLabel } from '../hooks/useTypesConfig';
 import { useHotkey, useHotkeyScope, useListSelection } from '../hotkeys';
 import {
   VIEW_MODES,
@@ -116,6 +117,7 @@ export function AssignmentsPage() {
   useHotkeyScope('list:assignments');
   const { data, loading, error, refetch } = useAssignmentsBoard();
   const statusConfig = useStatusConfig();
+  const typesConfig = useTypesConfig();
   const [searchParams, setSearchParams] = useSearchParams();
 
   // Namespace the scope key so workspace-scoped prefs cannot collide with
@@ -174,6 +176,7 @@ export function AssignmentsPage() {
     () => normalizeStatusFilter(statusParam),
   );
   const [priorityFilter, setPriorityFilter] = useState<string>(() => prefs.filters.priority ?? 'all');
+  const [typeFilter, setTypeFilter] = useState<string>(() => prefs.filters.type ?? 'all');
   const [assigneeFilter, setAssigneeFilter] = useState<string>(() => prefs.filters.assignee ?? 'all');
   const [projectFilter, setProjectFilter] = useState<string>(() => prefs.filters.project ?? 'all');
   const [activityFilter, setActivityFilter] = useState<ActivityFilter>(
@@ -247,12 +250,14 @@ export function AssignmentsPage() {
   // another component, subscriber-set propagates here).
   useEffect(() => {
     setPriorityFilter(prefs.filters.priority ?? 'all');
+    setTypeFilter(prefs.filters.type ?? 'all');
     setAssigneeFilter(prefs.filters.assignee ?? 'all');
     setProjectFilter(prefs.filters.project ?? 'all');
     setSortField(prefs.sortField);
     setSortDirection(prefs.sortDirection);
   }, [
     prefs.filters.priority,
+    prefs.filters.type,
     prefs.filters.assignee,
     prefs.filters.project,
     prefs.sortField,
@@ -353,6 +358,13 @@ export function AssignmentsPage() {
     },
     [persistField],
   );
+  const handleSetTypeFilter = useCallback(
+    (v: string) => {
+      setTypeFilter(v);
+      persistField({ filters: { type: v } });
+    },
+    [persistField],
+  );
   const handleSetAssigneeFilter = useCallback(
     (v: string) => {
       setAssigneeFilter(v);
@@ -424,6 +436,7 @@ export function AssignmentsPage() {
       }
       if (statusFilter !== 'all' && assignment.status !== statusFilter) return false;
       if (priorityFilter !== 'all' && assignment.priority !== priorityFilter) return false;
+      if (typeFilter !== 'all' && (assignment.type ?? '') !== typeFilter) return false;
       if (activityFilter === 'stale' && !isAssignmentStale(assignment.updated)) return false;
       if (activityFilter === 'fresh' && isAssignmentStale(assignment.updated)) return false;
       if (assigneeFilter !== 'all') {
@@ -446,7 +459,7 @@ export function AssignmentsPage() {
 
       return true;
     });
-  }, [activityFilter, boardItems, search, statusFilter, priorityFilter, assigneeFilter, projectFilter, workspace]);
+  }, [activityFilter, boardItems, search, statusFilter, priorityFilter, typeFilter, assigneeFilter, projectFilter, workspace]);
 
   const sortedItems = useMemo(
     () => sortAssignments(filteredItems, sortField, sortDirection),
@@ -718,6 +731,12 @@ export function AssignmentsPage() {
           <option value="all">All priorities</option>
           {uniquePriorities.map((p) => (
             <option key={p} value={p} className="capitalize">{p}</option>
+          ))}
+        </select>
+        <select value={typeFilter} onChange={(e) => handleSetTypeFilter(e.target.value)} className="editor-input max-w-[180px]">
+          <option value="all">All types</option>
+          {typesConfig.definitions.map((t) => (
+            <option key={t.id} value={t.id}>{getTypeLabel(typesConfig, t.id)}</option>
           ))}
         </select>
         <select value={assigneeFilter} onChange={(e) => handleSetAssigneeFilter(e.target.value)} className="editor-input max-w-[180px]">
