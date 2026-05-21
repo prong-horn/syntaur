@@ -2,9 +2,9 @@ import { Link } from 'react-router-dom';
 import { useMemo } from 'react';
 import {
   useAssignmentsBoard,
-  useWorkspacePrefix,
   type AssignmentBoardItem,
 } from '../../../hooks/useProjects';
+import { filterAssignment, assignmentDetailHref } from '../../../lib/assignmentFilter';
 import { useSavedView } from '../../../hooks/useSavedViews';
 import { useStatusConfig, getStatusLabel } from '../../../hooks/useStatusConfig';
 import { sortAssignments } from '../../../lib/sortAssignments';
@@ -23,9 +23,7 @@ interface SavedViewWidgetProps {
   onPickAnother: () => void;
 }
 
-const STALE_MS = 7 * 24 * 60 * 60 * 1000;
-
-function applyFilters(
+function applyViewFilters(
   items: AssignmentBoardItem[],
   filters: {
     status?: string;
@@ -36,21 +34,9 @@ function applyFilters(
   },
   workspace: string | null,
 ): AssignmentBoardItem[] {
-  const now = Date.now();
-  return items.filter((item) => {
-    if (filters.status && filters.status !== 'all' && item.status !== filters.status) return false;
-    if (filters.priority && filters.priority !== 'all' && item.priority !== filters.priority) return false;
-    if (filters.assignee && filters.assignee !== 'all' && (item.assignee ?? '') !== filters.assignee) return false;
-    if (filters.project && filters.project !== 'all' && item.projectSlug !== filters.project) return false;
-    if (filters.activity && filters.activity !== 'all') {
-      const updatedMs = Date.parse(item.updated);
-      const ageMs = Number.isFinite(updatedMs) ? now - updatedMs : 0;
-      if (filters.activity === 'stale' && ageMs <= STALE_MS) return false;
-      if (filters.activity === 'fresh' && ageMs >= STALE_MS) return false;
-    }
-    if (workspace !== null && item.projectWorkspace !== workspace) return false;
-    return true;
-  });
+  return items.filter((item) =>
+    filterAssignment(item, filters, { workspace }),
+  );
 }
 
 export function SavedViewWidget({ viewId, onPickAnother }: SavedViewWidgetProps) {
@@ -70,7 +56,7 @@ export function SavedViewWidget({ viewId, onPickAnother }: SavedViewWidgetProps)
 
   const sortedItems = useMemo(() => {
     if (!view || !data) return [];
-    const filtered = applyFilters(data.assignments, view.config.filters, view.workspace);
+    const filtered = applyViewFilters(data.assignments, view.config.filters, view.workspace);
     return sortAssignments(filtered, view.config.sortField, view.config.sortDirection);
   }, [data, view]);
 
@@ -165,11 +151,9 @@ export function SavedViewWidget({ viewId, onPickAnother }: SavedViewWidgetProps)
  * are previews, not the primary edit surface.
  */
 function CompactAssignmentCard({ item }: { item: AssignmentBoardItem }) {
-  const wsPrefix = useWorkspacePrefix();
-  const detailHref =
-    item.projectSlug === null
-      ? `/assignments/${item.id}`
-      : `${wsPrefix}/projects/${item.projectSlug}/assignments/${item.slug}`;
+  // Per-item workspace prefix — never use host page's workspace. A workspace-scoped
+  // widget rendered on the global Overview must still produce /w/<workspace>/... links.
+  const detailHref = assignmentDetailHref(item);
   return (
     <div className={cn('rounded-md border border-border/60 bg-background/85 p-2 shadow-sm')}>
       <div className="flex items-start justify-between gap-2">

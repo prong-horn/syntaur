@@ -43,11 +43,13 @@ function sortAssignments(
   return sorted;
 }
 
+// Standalone items NEVER get a /w/<ws> prefix — no such route exists.
 function buildAssignmentHref(item: AssignmentBoardItem): string {
+  if (item.projectSlug === null) {
+    return `/assignments/${item.id}`;
+  }
   const prefix = item.projectWorkspace ? `/w/${item.projectWorkspace}` : '';
-  return item.projectSlug === null
-    ? `${prefix}/assignments/${item.id}`
-    : `${prefix}/projects/${item.projectSlug}/assignments/${item.slug}`;
+  return `${prefix}/projects/${item.projectSlug}/assignments/${item.slug}`;
 }
 
 interface SavedViewTableViewProps {

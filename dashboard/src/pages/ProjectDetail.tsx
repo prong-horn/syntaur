@@ -18,6 +18,7 @@ import { DependencyGraph } from '../components/DependencyGraph';
 import { MarkdownRenderer } from '../components/MarkdownRenderer';
 import { ProjectTodosPanel } from '../components/ProjectTodosPanel';
 import { KanbanBoard, type KanbanColumn } from '../components/KanbanBoard';
+import { TableColumnPicker } from '../components/TableColumnPicker';
 import { useStatusConfig, getStatusLabel } from '../hooks/useStatusConfig';
 import { useHotkey, useHotkeyScope } from '../hotkeys';
 import { coerceProjectDetailView, type SortField, type SortDirection } from '@shared/view-prefs-schema';
@@ -103,8 +104,26 @@ export function ProjectDetail() {
 
   const loadViewParam = searchParams.get('loadView');
   const { view: pendingView, loading: pendingViewLoading, error: pendingViewError } = useSavedView(loadViewParam);
-  const { view: loadedView } = useSavedView(loadedViewId);
+  const { view: loadedView, loading: loadedViewLoading, error: loadedViewError } = useSavedView(loadedViewId);
   const lastAppliedLoadViewRef = useRef<string | null>(null);
+
+  // Clear loadedViewId if the view disappears (deleted elsewhere). Skip while
+  // still loading or on transient fetch error so a brief network blip doesn't
+  // drop state.
+  useEffect(() => {
+    if (loadedViewId && !loadedViewLoading && !loadedViewError && !loadedView) {
+      setLoadedViewId(null);
+    }
+  }, [loadedView, loadedViewError, loadedViewId, loadedViewLoading]);
+
+  // Clear loadedViewId on project or workspace change. The component is reused
+  // across /projects/:slug and /w/:workspace/projects/:slug via react-router; a
+  // view loaded for one project must not appear as "loaded" on another
+  // (Update would PATCH the source view's filters.project, swapping its scope).
+  useEffect(() => {
+    setLoadedViewId(null);
+    lastAppliedLoadViewRef.current = null;
+  }, [slug, workspace]);
 
   // Re-hydrate when react-router reuses this component across project switches
   // (the doc comment above on lines 45-47 calls this out for the tab param).
@@ -305,7 +324,8 @@ export function ProjectDetail() {
     }
     if (pendingViewLoading) return;
     if (pendingViewError) {
-      lastAppliedLoadViewRef.current = loadViewParam;
+      // Don't mark as applied — a later refetch may succeed. The param stays
+      // in the URL so recovery is automatic on next fetch.
       showToast("Couldn't load saved view — try again", 'error');
       return;
     }
@@ -575,7 +595,7 @@ export function ProjectDetail() {
                           <button
                             type="button"
                             onClick={() => {
-                              if (loadedViewId) {
+                              if (loadedView) {
                                 void handleUpdateView();
                               } else {
                                 setSaveAsNewMode(false);
@@ -587,7 +607,7 @@ export function ProjectDetail() {
                           >
                             {loadedView ? `Update '${loadedView.name}'` : 'Save view'}
                           </button>
-                          {loadedViewId ? (
+                          {loadedView ? (
                             <button
                               type="button"
                               onClick={() => {
@@ -623,23 +643,48 @@ export function ProjectDetail() {
                             <AssignmentCard projectSlug={project.slug} assignment={item} />
                           )}
                           emptyMessage={(column) => `No ${column.title.toLowerCase()} assignments.`}
+                          hiddenColumnIds={kanbanColumnVisibility.hidden}
+                          onHideColumn={(columnId) =>
+                            setKanbanColumnVisibility((current) => {
+                              const isHidden = current.hidden.includes(columnId);
+                              return {
+                                hidden: isHidden
+                                  ? current.hidden.filter((c) => c !== columnId)
+                                  : [...current.hidden, columnId],
+                              };
+                            })
+                          }
                         />
                       ) : (
+                        (() => {
+                          const hiddenCols = new Set(tableColumnVisibility.hidden);
+                          // `title` is non-hideable (TableColumnPicker NON_HIDEABLE). Force-show it
+                          // defensively so a persisted view with `hidden: ['title']` doesn't trap
+                          // the user — the picker can't restore it.
+                          const showCol = (id: import('@shared/saved-views-schema').TableColumnId) => id === 'title' || !hiddenCols.has(id);
+                          return (
                         <div className="overflow-x-auto">
+                          <div className="mb-3 flex items-center justify-end">
+                            <TableColumnPicker
+                              visibility={tableColumnVisibility}
+                              onChange={setTableColumnVisibility}
+                            />
+                          </div>
                           <table className="w-full min-w-[720px] text-left text-sm">
                             <thead>
                               <tr className="border-b border-border/60 text-muted-foreground">
-                                <SortHeader field="title">Assignment</SortHeader>
-                                <SortHeader field="status">Status</SortHeader>
-                                <SortHeader field="priority">Priority</SortHeader>
-                                <SortHeader field="assignee">Assignee</SortHeader>
-                                <SortHeader field="dependencies">Dependencies</SortHeader>
-                                <SortHeader field="updated">Updated</SortHeader>
+                                {showCol('title') ? <SortHeader field="title">Assignment</SortHeader> : null}
+                                {showCol('status') ? <SortHeader field="status">Status</SortHeader> : null}
+                                {showCol('priority') ? <SortHeader field="priority">Priority</SortHeader> : null}
+                                {showCol('assignee') ? <SortHeader field="assignee">Assignee</SortHeader> : null}
+                                {showCol('dependencies') ? <SortHeader field="dependencies">Dependencies</SortHeader> : null}
+                                {showCol('updated') ? <SortHeader field="updated">Updated</SortHeader> : null}
                               </tr>
                             </thead>
                             <tbody>
                               {sortedAssignments.map((assignment) => (
                                 <tr key={assignment.slug} className="border-b border-border/50 last:border-0">
+                                  {showCol('title') ? (
                                   <td className="py-4">
                                     <Link
                                       to={`${wsPrefix}/projects/${project.slug}/assignments/${assignment.slug}`}
@@ -648,16 +693,19 @@ export function ProjectDetail() {
                                       {assignment.title}
                                     </Link>
                                   </td>
-                                  <td className="py-4"><StatusBadge status={assignment.status} /></td>
-                                  <td className="py-4 capitalize text-muted-foreground">{assignment.priority}</td>
-                                  <td className="py-4 text-muted-foreground">{assignment.assignee ?? '\u2014'}</td>
-                                  <td className="py-4 text-muted-foreground">{assignment.dependsOn.length}</td>
-                                  <td className="py-4 text-muted-foreground">{formatDate(assignment.updated)}</td>
+                                  ) : null}
+                                  {showCol('status') ? <td className="py-4"><StatusBadge status={assignment.status} /></td> : null}
+                                  {showCol('priority') ? <td className="py-4 capitalize text-muted-foreground">{assignment.priority}</td> : null}
+                                  {showCol('assignee') ? <td className="py-4 text-muted-foreground">{assignment.assignee ?? '\u2014'}</td> : null}
+                                  {showCol('dependencies') ? <td className="py-4 text-muted-foreground">{assignment.dependsOn.length}</td> : null}
+                                  {showCol('updated') ? <td className="py-4 text-muted-foreground">{formatDate(assignment.updated)}</td> : null}
                                 </tr>
                               ))}
                             </tbody>
                           </table>
                         </div>
+                          );
+                        })()
                       )}
                     </SectionCard>
                   </div>

@@ -199,13 +199,31 @@ export function AssignmentsPage() {
   const { view: pendingView, loading: pendingViewLoading, error: pendingViewError } = useSavedView(
     loadViewParam,
   );
-  const { view: loadedView } = useSavedView(loadedViewId);
+  const { view: loadedView, loading: loadedViewLoading, error: loadedViewError } = useSavedView(loadedViewId);
   // Track the last id we already applied so we don't double-apply on re-render.
   const lastAppliedLoadViewRef = useRef<string | null>(null);
 
   useEffect(() => {
     setBoardItems(data?.assignments ?? []);
   }, [data]);
+
+  // If the currently-loaded view disappears (deleted in /views or another tab),
+  // clear loadedViewId so Update doesn't PATCH a 404. Skip while still loading
+  // or on transient fetch error so a brief network blip doesn't drop state.
+  useEffect(() => {
+    if (loadedViewId && !loadedViewLoading && !loadedViewError && !loadedView) {
+      setLoadedViewId(null);
+    }
+  }, [loadedView, loadedViewError, loadedViewId, loadedViewLoading]);
+
+  // Clear loadedViewId on workspace change. The component is reused across
+  // /assignments and /w/:workspace/assignments via react-router; a view loaded
+  // in one workspace must not appear as "loaded" in another (Update would PATCH
+  // the source view with the wrong surface's filter state).
+  useEffect(() => {
+    setLoadedViewId(null);
+    lastAppliedLoadViewRef.current = null;
+  }, [workspace]);
 
   useEffect(() => {
     const nextStatus = normalizeStatusFilter(statusParam);
@@ -539,7 +557,9 @@ export function AssignmentsPage() {
     }
     if (pendingViewLoading) return;
     if (pendingViewError) {
-      lastAppliedLoadViewRef.current = loadViewParam;
+      // Don't mark as applied — a later refetch may succeed, and we want
+      // this effect to re-run when `pendingView` / `pendingViewError` flips.
+      // The param stays in the URL so the recovery is automatic on next fetch.
       showToast("Couldn't load saved view — try again", 'error');
       return;
     }
@@ -556,7 +576,9 @@ export function AssignmentsPage() {
       );
       return;
     }
-    // !loading && !error && view === null → view no longer exists.
+    // !loading && !error && view === null → genuine orphan: server returned
+    // 200 with no matching id in file.views. Strip the param and mark applied
+    // so we don't re-toast on each render.
     lastAppliedLoadViewRef.current = loadViewParam;
     showToast('Saved view no longer exists', 'error');
     setSearchParams(
@@ -993,7 +1015,7 @@ export function AssignmentsPage() {
         <button
           type="button"
           onClick={() => {
-            if (loadedViewId) {
+            if (loadedView) {
               void handleUpdateView();
             } else {
               setSaveAsNewMode(false);
@@ -1005,7 +1027,7 @@ export function AssignmentsPage() {
         >
           {loadedView ? `Update '${loadedView.name}'` : 'Save view'}
         </button>
-        {loadedViewId ? (
+        {loadedView ? (
           <button
             type="button"
             onClick={() => {
@@ -1039,7 +1061,11 @@ export function AssignmentsPage() {
       ) : view === 'table' ? (
         (() => {
           const hiddenCols = new Set(tableColumnVisibility.hidden);
-          const showCol = (id: TableColumnId) => !hiddenCols.has(id);
+          // `title` is non-hideable in the picker (TableColumnPicker.tsx:NON_HIDEABLE).
+          // Defensively force-show it here so a persisted view with `hidden: ['title']`
+          // (from an older version, a malformed payload, etc.) does not leave the table
+          // without assignment links and no way to restore them via the picker.
+          const showCol = (id: TableColumnId) => id === 'title' || !hiddenCols.has(id);
           return (
         <SectionCard title={`${sortedItems.length} assignment${sortedItems.length === 1 ? '' : 's'}`}>
           <div className="overflow-x-auto">

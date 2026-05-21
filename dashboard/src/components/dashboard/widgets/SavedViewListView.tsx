@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ChevronDown } from 'lucide-react';
 import { cn } from '../../../lib/utils';
@@ -42,11 +42,13 @@ function sortAssignments(
   return sorted;
 }
 
+// Standalone items NEVER get a /w/<ws> prefix — no such route exists.
 function buildAssignmentHref(item: AssignmentBoardItem): string {
+  if (item.projectSlug === null) {
+    return `/assignments/${item.id}`;
+  }
   const prefix = item.projectWorkspace ? `/w/${item.projectWorkspace}` : '';
-  return item.projectSlug === null
-    ? `${prefix}/assignments/${item.id}`
-    : `${prefix}/projects/${item.projectSlug}/assignments/${item.slug}`;
+  return `${prefix}/projects/${item.projectSlug}/assignments/${item.slug}`;
 }
 
 interface SavedViewListViewProps {
@@ -67,11 +69,15 @@ export function SavedViewListView({
   compact = false,
 }: SavedViewListViewProps) {
   const statusConfig = useStatusConfig();
-  // Track per-mount overrides so the user can expand/collapse within the widget
-  // without persisting state. Initial state is derived from the prop.
+  // Per-mount local overrides for expand/collapse interactions inside the widget.
+  // Resets to the prop value whenever `listSectionVisibility` changes so live edits
+  // to the source view re-flow into this widget (Decision 3 — live reference).
   const [localCollapsed, setLocalCollapsed] = useState<Set<string>>(
     () => new Set(listSectionVisibility.collapsed),
   );
+  useEffect(() => {
+    setLocalCollapsed(new Set(listSectionVisibility.collapsed));
+  }, [listSectionVisibility]);
 
   const toggleStatus = (status: string) => {
     setLocalCollapsed((current) => {

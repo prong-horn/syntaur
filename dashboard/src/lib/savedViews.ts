@@ -128,11 +128,15 @@ export function applyConfig(view: SavedView, setters: ApplyConfigSetters): void 
 export function inferLandingRoute(view: SavedView): string {
   const prefix = view.workspace ? `/w/${view.workspace}` : '';
   const project = view.config.filters.project;
-  const search = `?loadView=${encodeURIComponent(view.id)}`;
-  if (project && project !== 'all') {
-    return `${prefix}/projects/${project}${search}`;
+  // '__standalone__' is a sentinel meaning "items not in any project". It is
+  // not a real project slug, so the right landing surface is the global
+  // assignments list with the filter applied (not /projects/__standalone__).
+  if (project && project !== 'all' && project !== '__standalone__') {
+    // ProjectDetail defaults to the `overview` tab; explicitly target `assignments`
+    // so the saved view actually applies to a visible board.
+    return `${prefix}/projects/${project}?tab=assignments&loadView=${encodeURIComponent(view.id)}`;
   }
-  return `${prefix}/assignments${search}`;
+  return `${prefix}/assignments?loadView=${encodeURIComponent(view.id)}`;
 }
 
 // Human-readable summary of the non-default filters on a view, for /views rows.
