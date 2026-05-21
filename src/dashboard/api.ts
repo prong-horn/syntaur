@@ -688,16 +688,19 @@ async function getStandaloneAvailableTransitions(
   const actions: AssignmentTransitionAction[] = [];
 
   for (const definition of transitionDefs) {
+    const target = getTargetStatus(assignment.status, definition.command, config.transitionTable);
+    // Only valid transitions reach the client; the kanban inline picker renders them directly.
+    if (target === null) continue;
+
     let warning: string | null = null;
     if (definition.command === 'start' && !assignment.assignee) {
       warning = 'No assignee set — consider assigning before starting.';
     }
-    const target = getTargetStatus(assignment.status, definition.command, config.transitionTable);
     actions.push({
       command: definition.command,
       label: definition.label,
       description: definition.description,
-      targetStatus: target ?? definition.command,
+      targetStatus: target,
       disabled: false,
       disabledReason: null,
       warning,
@@ -1786,6 +1789,10 @@ async function getAvailableTransitions(
   const traces = options?.traces;
 
   for (const definition of transitionDefs) {
+    const target = getTargetStatus(assignment.status, definition.command, config.transitionTable);
+    // Only valid transitions reach the client; the kanban inline picker renders them directly.
+    if (target === null) continue;
+
     let warning: string | null = null;
 
     if (definition.command === 'start' && !assignment.assignee) {
@@ -1806,13 +1813,11 @@ async function getAvailableTransitions(
       }
     }
 
-    const target = getTargetStatus(assignment.status, definition.command, config.transitionTable);
-
     actions.push({
       command: definition.command,
       label: definition.label,
       description: definition.description,
-      targetStatus: target ?? definition.command,
+      targetStatus: target,
       disabled: false,
       disabledReason: null,
       warning,

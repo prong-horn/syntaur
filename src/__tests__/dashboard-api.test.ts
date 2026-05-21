@@ -881,6 +881,68 @@ tags: []
         ?.availableTransitions.map((action) => action.command),
     ).toContain('review');
   });
+
+  it('only includes transitions that are valid from the current status (no fallback to command name)', async () => {
+    // ASSIGNMENT_MD has status: in_progress. From in_progress, the valid
+    // commands are `review`, `complete`, `block`, `fail` (per default
+    // transitionTable). Commands like `start`, `reopen`, `unblock`,
+    // `shape`, `plan-ready`, `implement` are NOT valid from in_progress
+    // and previously leaked through with `targetStatus: <commandName>`.
+    await createProjectFiles(testDir, 'test-project', PROJECT_MD, [
+      { slug: 'test-assignment', assignmentMd: ASSIGNMENT_MD },
+    ]);
+
+    const result = await listAssignmentsBoard(testDir);
+    const assignment = result.assignments.find((a) => a.slug === 'test-assignment');
+    expect(assignment).toBeDefined();
+    expect(assignment!.status).toBe('in_progress');
+
+    const commands = assignment!.availableTransitions.map((a) => a.command);
+    // None of the previously-bogus from-pending-only commands should leak.
+    expect(commands).not.toContain('start');
+    expect(commands).not.toContain('reopen');
+    expect(commands).not.toContain('unblock');
+  });
+
+  it('only includes valid transitions for standalone assignments too', async () => {
+    const assignmentsDir = resolve(testDir, 'standalone');
+    await mkdir(assignmentsDir, { recursive: true });
+    const standaloneId = '99999999-9999-9999-9999-999999999999';
+    await mkdir(resolve(assignmentsDir, standaloneId), { recursive: true });
+    // status: completed — from completed, only `reopen` should be valid
+    // under the default transition table. Commands like `start`, `block`,
+    // `review`, `complete` are not valid and used to leak through.
+    await writeFile(
+      resolve(assignmentsDir, standaloneId, 'assignment.md'),
+      `---
+id: ${standaloneId}
+slug: standalone-task
+title: Standalone Task
+status: completed
+priority: medium
+created: "2026-04-01T10:00:00Z"
+updated: "2026-04-01T10:00:00Z"
+assignee: human
+externalIds: []
+dependsOn: []
+links: []
+blockedReason: null
+tags: []
+---
+
+# Standalone Task`,
+      'utf-8',
+    );
+
+    const board = await listAssignmentsBoard(testDir, assignmentsDir);
+    const standalone = board.assignments.find((a) => a.id === standaloneId);
+    expect(standalone).toBeDefined();
+    const commands = standalone!.availableTransitions.map((a) => a.command);
+    expect(commands).not.toContain('start');
+    expect(commands).not.toContain('block');
+    expect(commands).not.toContain('review');
+    expect(commands).not.toContain('complete');
+  });
 });
 
 describe('overview', () => {
