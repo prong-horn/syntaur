@@ -9,6 +9,7 @@ import { workspaceChecks } from './checks/workspace.js';
 import { agentChecks } from './checks/agents.js';
 import { terminalChecks } from './checks/terminal.js';
 import { skillsChecks } from './checks/skills.js';
+import { bundleChecks } from './checks/bundles.js';
 
 export function allChecks(): Check[] {
   return [
@@ -22,5 +23,6 @@ export function allChecks(): Check[] {
     ...agentChecks,
     ...terminalChecks,
     ...skillsChecks,
+    ...bundleChecks,
   ];
 }
