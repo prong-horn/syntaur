@@ -87,6 +87,7 @@ todoCommand
         planDir: null,
         linkedAssignmentId: null,
         linkedAssignmentRef: null,
+        bundleId: null,
       };
       checklist.items.push(item);
       await writeChecklist(todosPath, checklist);

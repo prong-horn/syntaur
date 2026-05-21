@@ -249,6 +249,7 @@ export function createTodosRouter(
           planDir: null,
           linkedAssignmentId: null,
           linkedAssignmentRef: null,
+          bundleId: null,
         };
         checklist.items.push(newItem);
         await writeChecklist(todosDir, checklist);

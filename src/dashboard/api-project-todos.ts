@@ -155,6 +155,7 @@ export function createProjectTodosRouter(
           planDir: null,
           linkedAssignmentId: null,
           linkedAssignmentRef: null,
+          bundleId: null,
         };
         checklist.workspace = slug;
         checklist.items.push(newItem);

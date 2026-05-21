@@ -38,6 +38,7 @@ function makeTodo(id: string, description: string, overrides: Partial<TodoItem> 
     planDir: null,
     linkedAssignmentId: null,
     linkedAssignmentRef: null,
+    bundleId: null,
     ...overrides,
   };
 }
