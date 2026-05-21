@@ -1,6 +1,6 @@
 # YouTube Research Tooling — Design
 
-**Status:** Draft (pending user + codex review)
+**Status:** Draft v2 — codex review applied, pending final user review
 **Date:** 2026-05-21
 **Goal:** Standalone TS toolkit to ingest YouTube channel + recent-video data into SQLite and explore it for correlations ("what works") via a CLI and a small local dashboard.
 
@@ -8,7 +8,7 @@
 
 ### Goals
 - Collect channel-level and recent-video data (last 50 videos per channel) for thousands of channels.
-- Seed channels three ways: keyword search, manual list / external CSV import, and "expand" from existing channels' featured lists.
+- Seed channels three ways: keyword search, manual list / external CSV import, and "expand" from existing channels' featured channels (via `channelSections.list`).
 - Slice, filter, and correlate metrics across the dataset (CLI + dashboard).
 - Track time-series stats *opportunistically* — only when the user re-pulls a channel.
 - Respect the YouTube Data API v3 free-tier quota (10,000 units/day) with a clean halt-and-resume model.
@@ -108,16 +108,21 @@ CREATE TABLE channel_current (
 
 -- Video identity + latest stats
 CREATE TABLE videos (
-  id              TEXT PRIMARY KEY,
-  channel_id      TEXT NOT NULL REFERENCES channels(id),
-  title           TEXT NOT NULL,
-  published_at    TEXT NOT NULL,
-  duration_sec    INTEGER NOT NULL,         -- parsed from ISO 8601
-  is_short        INTEGER NOT NULL,         -- duration_sec <= 60
-  view_count      INTEGER,
-  like_count      INTEGER,
-  comment_count   INTEGER,
-  pulled_at       TEXT NOT NULL
+  id                  TEXT PRIMARY KEY,
+  channel_id          TEXT NOT NULL REFERENCES channels(id),
+  title               TEXT NOT NULL,
+  description         TEXT,                 -- captured for future NLP, nullable
+  category_id         INTEGER,              -- YouTube videoCategory ID
+  tags_json           TEXT,                 -- JSON array of tags (nullable; not always returned)
+  published_at        TEXT NOT NULL,
+  duration_sec        INTEGER NOT NULL,     -- parsed from ISO 8601
+  short_heuristic     INTEGER NOT NULL,     -- 1 if duration_sec <= 180 (post-Oct 2024 Shorts limit).
+                                            -- Heuristic only: the Data API does not expose
+                                            -- aspect ratio or the actual Shorts flag.
+  view_count          INTEGER,
+  like_count          INTEGER,
+  comment_count       INTEGER,
+  pulled_at           TEXT NOT NULL
 );
 CREATE INDEX idx_videos_channel ON videos(channel_id);
 CREATE INDEX idx_videos_published ON videos(published_at);
@@ -145,10 +150,12 @@ CREATE TABLE channel_niches (
   PRIMARY KEY (channel_id, niche_id)
 );
 
--- YouTube's own topicDetails (Freebase IDs), separate from user niches
+-- YouTube's own topicDetails (separate from user niches).
+-- NOTE: topicDetails.topicIds is deprecated; Google now returns a small curated set.
+-- Treat as weak metadata, not a stable taxonomy.
 CREATE TABLE channel_topics (
   channel_id TEXT NOT NULL REFERENCES channels(id),
-  topic_id   TEXT NOT NULL,     -- Freebase ID, e.g. /m/02jjt
+  topic_id   TEXT NOT NULL,     -- Freebase-style ID, e.g. /m/02jjt
   PRIMARY KEY (channel_id, topic_id)
 );
 
@@ -161,13 +168,29 @@ CREATE TABLE channel_seeds (
   PRIMARY KEY (channel_id, kind, query)
 );
 
--- Daily quota ledger (drives halt-and-resume)
+-- Daily quota ledger (drives halt-and-resume).
+-- `date` is the calendar date in America/Los_Angeles — matches Google's documented
+-- midnight-PT quota reset boundary. See §7.
 CREATE TABLE quota_log (
-  date     TEXT NOT NULL,        -- YYYY-MM-DD, UTC (Google's reset boundary is midnight PT — see §7)
+  date     TEXT NOT NULL,        -- YYYY-MM-DD in America/Los_Angeles
   endpoint TEXT NOT NULL,
   units    INTEGER NOT NULL,
   PRIMARY KEY (date, endpoint)
 );
+
+-- Ingestion provenance: failures and partial hydrations.
+-- Recorded per (operation, target) so we can audit "why isn't this channel/video here?"
+CREATE TABLE ingest_events (
+  id         INTEGER PRIMARY KEY,
+  occurred_at TEXT NOT NULL,
+  operation  TEXT NOT NULL,       -- 'seed' | 'pull' | 'refresh' | 'import' | 'expand'
+  target     TEXT NOT NULL,       -- channelId, handle, video ID, or input line
+  outcome    TEXT NOT NULL,       -- 'ok' | 'not_found' | 'private' | 'handle_unresolved'
+                                  -- | 'video_unhydrated' | 'schema_drift' | 'rate_limited'
+                                  -- | 'quota_halted' | 'transport_error'
+  detail     TEXT                  -- free text / JSON error payload
+);
+CREATE INDEX idx_ingest_events_target ON ingest_events(target);
 
 -- Schema version
 CREATE TABLE meta (
@@ -177,22 +200,43 @@ CREATE TABLE meta (
 ```
 
 ### Computed views (rebuilt at startup)
-- `v_channel_metrics` — joins `channel_current` + `age_days` + per-channel aggregates from `videos`: `avg_views`, `median_views`, `views_per_subscriber`, `uploads_per_month_90d`, `avg_duration_sec`, `pct_shorts`. If ≥2 snapshots exist, also `growth_subs_30d`, `growth_views_30d`.
+- `v_channel_metrics` — joins `channel_current` + `age_days` + per-channel aggregates from `videos`: `avg_views`, `median_views`, `views_per_subscriber`, `uploads_per_month_90d`, `avg_duration_sec`, `pct_short_heuristic`. If ≥2 snapshots exist, also `growth_subs_30d`, `growth_views_30d`.
 - `v_video_age_buckets` — bins videos by age (0–7d, 8–30d, 31–90d, 91–365d, >365d) for cohort comparisons.
+
+### Canonical success metrics (the targets of "what works")
+Defined once so the analysis layer has stable targets and the dashboard isn't computing them ad hoc.
+
+| Metric | Definition | Null/edge handling |
+|---|---|---|
+| `subscriber_count` | Latest reported subs from `channel_current` | NULL when hiddenSubscriberCount=true. Counts are rounded by YouTube for channels ≥1k subs; treated as approximate. |
+| `views_per_day` | `view_count / max(age_days, 1)` | Skip channels with `age_days < 30` from cohort comparisons. |
+| `views_per_subscriber` | `view_count / NULLIF(subscriber_count, 0)` | NULL when subscriber_count is NULL or 0. Excluded from correlations by default. |
+| `median_recent_views` | Median `view_count` across the stored last-N videos | Requires ≥5 videos; otherwise NULL. |
+| `recent_uploads_per_month` | Count of videos with `published_at` in last 90d × (30/90) | Always defined; 0 when no recent uploads. |
+| `growth_subs_30d` | `(subs_now − subs_30d_ago) / subs_30d_ago` from `channel_stats_snapshots` | Requires snapshots ≥25 days apart; otherwise NULL. |
+
+Per YouTube's March 31, 2025 change, public Shorts view counts now reflect a different definition than long-form views. We treat `view_count` as one metric per video without per-format normalization in v1, but the spec acknowledges the shift.
 
 ### Why the denormalized `channel_current`
 Avoids correlated subqueries against `channel_stats_snapshots` for every list query. Updated in the same transaction as the snapshot insert. Tradeoff: tiny duplication for big query simplicity.
 
 ## 5. Ingestion CLI (`yt-ingest`)
 
+Quota costs are **per call** for each list endpoint (1 unit), except `search.list` which is 100 units per call. There is no per-`part` multiplier.
+
 | Command | Description | Quota |
 |---|---|---|
-| `seed --query "<q>" [--max 50]` | `search.list` → channel IDs → `channels.list` → store with `channel_seeds.kind='search'` | 100 + ~1/50 channels |
-| `pull <channelId\|@handle> [--videos 50]` | `channels.list` → uploads playlist → `playlistItems.list` → `videos.list` in batches of 50 | ~3-5 per channel |
+| `seed --query "<q>" [--max 50]` | `search.list` (channel-type) → channel IDs → batched `channels.list` (50 IDs/call) → store with `channel_seeds.kind='search'`. Search snippets are never treated as canonical channel rows. | 100 (search) + 1 per 50 channels |
+| `pull <channelId\|@handle> [--videos 50]` | `channels.list` (1) → uploads playlist ID → `playlistItems.list` (1 per 50 items) → batched `videos.list` (1 per 50 IDs) | 3–4 per channel |
 | `refresh [--older-than 7d] [--limit N]` | Re-pulls stalest channels first; writes new snapshot rows | same as pull |
-| `import <file>` | One channel ID / `@handle` / channel URL per line. Resolves all to IDs in one `channels.list` batch (50/call), then pulls each. CSV ignored except first column. | ~1/50 + pull cost |
-| `expand <channelId>` | Pulls `brandingSettings.featuredChannelsUrls`; queues each | minimal |
-| `doctor` | Reports DB stats, quota usage today, schema version | 0 |
+| `import <file>` | One channel ID / `@handle` / channel URL per line. Resolution rules: URLs are parsed locally to either a UC ID or `@handle`; IDs are resolved in batches of 50 via `channels.list?id=`; handles are resolved one-at-a-time via `channels.list?forHandle=` (the API does not batch handles). Each pulled channel then incurs normal pull cost. | 1 per 50 IDs + 1 per handle + pull cost per channel |
+| `expand <channelId>` | `channelSections.list` (`part=contentDetails`) → for sections of type `singleplaylist`/`multiplechannels`, collect `contentDetails.channels[]` and queue. | 1 per channel + pull cost per discovered channel |
+| `doctor` | Reports DB stats, today's quota usage, schema version, and unresolved targets in `ingest_events`. | 0 |
+
+**Partial hydration & failure rules:**
+- `playlistItems.list` may return items whose video IDs do not hydrate in `videos.list` (deleted, private, region-blocked). The unhydrated IDs are recorded as `ingest_events.outcome='video_unhydrated'` and skipped.
+- Handle resolution returning no channel writes `outcome='handle_unresolved'` and the target is skipped (not retried in the same run).
+- All hard YouTube errors are recorded in `ingest_events` so re-running a `refresh` can skip known-bad targets.
 
 Every command:
 1. Loads `.env.local` for `YT_API_KEY`.
@@ -212,44 +256,59 @@ yt topics  [list | label <topic-id> <label>]
 ```
 
 ### Filter DSL
-Used by `yt query` and `yt cohort`. Tiny expression grammar:
+Used by `yt query` and `yt cohort`, and by the dashboard's `/api/channels` filters (same parser, same whitelist).
 
 ```
 expr     := term (AND|OR term)*
 term     := col op value | NOT term | "(" expr ")"
 op       := = | != | > | >= | < | <= | IN | LIKE
 value    := number | "string" | (val1, val2, ...)
+col      := IDENT                 -- must be in the column whitelist
 ```
 
-Parsed by a hand-written recursive-descent parser into a Zod-validated AST, then compiled to parameterized SQL. **No string interpolation into SQL.** Column whitelist is enforced (`channels.country`, `v_channel_metrics.avg_views`, etc.).
+Parsed by a hand-written recursive-descent parser into a Zod-validated AST, then compiled to parameterized SQL. **No string interpolation into SQL.** Arithmetic between columns is **not** supported in v1 — use pre-computed metrics (e.g. `views_per_subscriber`) instead.
 
-Example: `subs>10000 AND avg_views/subs>0.05 AND niche="finance"`.
+**The same column whitelist applies everywhere a user can name a column**: filter DSL, `--sort`, `--group-by`, and `export <view>`. The `export` command takes a view name (not arbitrary table name); the whitelist of exportable views is enumerated in code.
+
+Example: `subscriber_count>10000 AND views_per_subscriber>0.05 AND niche="finance"`.
 
 ### Built-in metrics for `yt correlate`
-- `subs`, `views`, `videos`, `age_days`
-- `avg_views`, `median_views`, `avg_duration_sec`
-- `views_per_subscriber`, `uploads_per_month_90d`, `pct_shorts`
-- `growth_subs_30d`, `growth_views_30d` (require ≥2 snapshots)
+All metrics map to columns of `v_channel_metrics`. See §4 "Canonical success metrics" for exact definitions.
+- `subscriber_count`, `view_count`, `video_count`, `age_days`
+- `avg_views`, `median_recent_views`, `avg_duration_sec`
+- `views_per_subscriber`, `views_per_day`, `recent_uploads_per_month`, `pct_short_heuristic`
+- `growth_subs_30d`, `growth_views_30d` (require ≥2 snapshots ≥25d apart)
 
 ## 7. YouTube API Client & Quota
 
-Single `YouTubeClient` class. Every method:
-1. Computes endpoint cost from a static cost map (`search.list=100`, `channels.list=1` per part returned, etc.).
-2. Reads today's quota total (UTC date for now; **note**: Google's quota actually resets at midnight Pacific Time. v1 uses UTC for simplicity — accept that the budget may be off by up to one PT-day boundary. v2 can compute against PT properly).
-3. If `current + cost > budget`, throws `QuotaBudgetExceededError` before any network call.
-4. Performs the call. Quota debiting rule:
-   - **Transport failure** (DNS, timeout, no HTTP response): no debit. YouTube wasn't reached.
-   - **HTTP response received** (2xx, 4xx, or 5xx other than `quotaExceeded`): debit the full cost. YouTube charges for nearly all served responses.
-   - **`quotaExceeded` 403**: no debit (the request was rejected pre-execution by Google's quota system).
-5. Retries: exponential backoff on 5xx and 403 `rateLimitExceeded` (different from `quotaExceeded`). Max 3 retries.
-6. Hard fail on 403 `quotaExceeded` — flips `meta.key='quota_halted_at'` and exits.
-7. Validates all responses through Zod schemas before returning. Drift surfaces as a typed error, not silent corruption.
+Single `YouTubeClient` class. Cost map (per Google's [Quota Cost calculator](https://developers.google.com/youtube/v3/determine_quota_cost), values current as of 2026-05):
+- `search.list` — 100 units per call
+- `channels.list`, `videos.list`, `playlistItems.list`, `channelSections.list` — 1 unit per call (not per part)
+- All other read endpoints used here — 1 unit per call
 
-Quota cost reference baked into client: https://developers.google.com/youtube/v3/determine_quota_cost (values current as of 2026-05).
+### Per-call flow
+1. Look up endpoint cost from the static cost map.
+2. Read today's quota total. **Quota date = current calendar date in `America/Los_Angeles`**, matching Google's documented midnight-PT reset boundary.
+3. If `current + cost > budget`, throw `QuotaBudgetExceededError` before any network call (clean halt; CLI exits with a "resume tomorrow" message).
+4. Perform the call. Quota debiting (best-effort heuristic — Google does not expose actual debits per response):
+   - **Transport failure** (DNS, timeout, no HTTP response): no debit.
+   - **HTTP response received** (success or error from YouTube): debit the full cost. Google's docs say even invalid requests cost ≥1 unit; we don't try to carve out exceptions.
+5. Retries: exponential backoff on 5xx and 403 `rateLimitExceeded` (this is the per-second rate limiter, distinct from daily `quotaExceeded`). Max 3 retries.
+6. Hard fail on 403 `quotaExceeded` — record an `ingest_events` row with `outcome='quota_halted'`, set `meta.key='quota_halted_at'`, and exit with code 2.
+7. Validate all responses through Zod schemas before returning. Drift surfaces as `SchemaValidationError`, not silent corruption.
+
+### SQLite settings (applied on every connection)
+- `PRAGMA journal_mode = WAL;` — concurrent readers + one writer.
+- `PRAGMA synchronous = NORMAL;` — durable enough for a research DB, faster writes.
+- `PRAGMA busy_timeout = 5000;` — block for up to 5s before returning `SQLITE_BUSY`.
+- `PRAGMA foreign_keys = ON;`
+- Read-only connections (dashboard, analyze CLI) open with `readonly: true`.
+
+WAL allows the dashboard to read while ingest writes, but only one writer can hold a transaction at a time; the busy timeout absorbs short contention.
 
 ## 8. Dashboard
 
-Hono server on port 5273 reads SQLite in read-only mode; serves JSON. The Vite SPA at `/` consumes those endpoints.
+Hono server on port 5273. The server gets its DB handle from `core/db` (no direct `better-sqlite3` calls in the dashboard package) — read-only by default, with a separate write-handle used only for the niche-tagging endpoint. The Vite SPA at `/` consumes JSON endpoints.
 
 ### Endpoints
 - `GET /api/channels` — paginated list with query-string filters (same column whitelist as the CLI filter DSL).
@@ -292,10 +351,10 @@ No auth. Server binds to `127.0.0.1` only.
 
 ## 12. Open Questions / Future Work
 
-- **Video time-series cadence** is currently coupled to channel re-pulls. If you eventually want trajectory data on *one* viral video without re-pulling its whole channel, add a `yt-ingest pull-video <id>` command.
-- **Bulk seed expansion** — if you want to crawl outward (related channels, comment-author channels), that's a separate ingester with much higher quota cost. Out of scope for v1.
-- **PT-based quota boundary** — see §7. v1 uses UTC; v2 should compute against America/Los_Angeles.
-- **Comments / transcripts / tags** — captured as nullable fields conceptually but not pulled in v1. Adding them is a flag on `pull`.
+- **Video time-series cadence** is currently coupled to channel re-pulls — trajectories will be irregular and channel-selection-biased. The dashboard must label these as opportunistic samples, not comparable panel data. If you eventually want true per-video tracking, add a `yt-ingest pull-video <id>` command on its own cadence.
+- **Bulk seed expansion** — if you want to crawl outward beyond featured channels (e.g. related channels via comment authors), that's a separate ingester with much higher quota cost. Out of scope for v1.
+- **Aspect-ratio-aware Shorts detection** — the public Data API does not expose aspect ratio, so `short_heuristic` is purely duration-based. If you ever need true Shorts identification, you'd need to scrape the watch page or use a third-party signal.
+- **Per-format view normalization** — YouTube's March 31, 2025 change altered how Shorts views are counted. v1 does not normalize across formats.
 
 ## 13. Out of Scope (Explicit)
 
