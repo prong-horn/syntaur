@@ -265,7 +265,7 @@ function PaneRow({
       <span className="shrink-0 font-mono text-xs text-muted-foreground/60">:{pane.index}</span>
       <span className="shrink-0 rounded bg-muted/60 px-1.5 py-0.5 font-mono text-xs">{pane.command}</span>
       <span className="inline-flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
-        <span className="truncate" title={pane.cwd}>{shortCwd}</span>
+        <span className="block min-w-0 truncate" title={pane.cwd}>{shortCwd}</span>
         <CopyButton value={pane.cwd} />
       </span>
       {pane.branch && (
