@@ -317,6 +317,7 @@ function detectInstalledTerminals() {
   const bundleIds = {
     iterm: 'com.googlecode.iterm2',
     ghostty: 'com.mitchellh.ghostty',
+    warp: 'dev.warp.Warp-Stable',
   };
   for (const [id, bundleId] of Object.entries(bundleIds)) {
     const r = spawnSync(
@@ -378,6 +379,30 @@ function buildTerminalDispatch(installedTerminals) {
       id: 'ghostty',
       block: [
         '\t\t\ttell application "Ghostty" to activate',
+        '\t\t\tdelay 0.3',
+        '\t\t\ttell application "System Events"',
+        '\t\t\t\tkeystroke "n" using command down',
+        '\t\t\t\tdelay 0.4',
+        '\t\t\t\tkeystroke shellCmd',
+        '\t\t\t\tkey code 36',
+        '\t\t\tend tell',
+      ],
+    });
+  }
+  if (installedTerminals.has('warp')) {
+    // Warp's URI scheme (warp://action/new_window?path=...) opens a window at
+    // the requested cwd but does NOT auto-start a command — there is no
+    // documented `command=` parameter. Same fix as Ghostty: activate Warp,
+    // open a new window via Cmd-N, type the full `cd '<cwd>' && '<cmd>'`
+    // line, press Return. shellCmd already contains the cd prefix so the
+    // new window doesn't have to start at the right cwd.
+    //
+    // Requires Accessibility permission for the applet bundle (one-time
+    // prompt, same as Ghostty).
+    branches.push({
+      id: 'warp',
+      block: [
+        '\t\t\ttell application "Warp" to activate',
         '\t\t\tdelay 0.3',
         '\t\t\ttell application "System Events"',
         '\t\t\t\tkeystroke "n" using command down',
