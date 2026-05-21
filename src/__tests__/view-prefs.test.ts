@@ -116,6 +116,41 @@ describe('view-prefs storage', () => {
     expect(next.projects.foo.defaultView).toBe('table'); // preserved sibling field
   });
 
+  it('(e2) mergePatch round-trips a filters.type patch without disturbing siblings', () => {
+    const current: ViewPrefsFile = {
+      version: 1,
+      global: {
+        ...DEFAULT_VIEW_PREFS_FILE.global,
+        filters: { status: 'in_progress', priority: 'high', type: 'all', assignee: 'all', project: 'all', activity: 'all' },
+      },
+      projects: {},
+    };
+    const next = mergePatch(current, { global: { filters: { type: 'bug' } } });
+    expect(next.global.filters.type).toBe('bug');
+    expect(next.global.filters.status).toBe('in_progress'); // preserved
+    expect(next.global.filters.priority).toBe('high'); // preserved (the deep-merge proof)
+  });
+
+  it('(e3) stale v1 prefs missing filters.type read cleanly — additive field is forward-compat', () => {
+    // Simulate a view-prefs.json written before filters.type existed: the
+    // schema's deep-merge should accept it, and downstream consumers fall back
+    // to 'all' via `?? 'all'`. This test pins mergeForScope() tolerance.
+    const stale: ViewPrefsFile = {
+      version: 1,
+      global: {
+        ...DEFAULT_VIEW_PREFS_FILE.global,
+        // Manually omit `type` from the filters block (cast to bypass shape check on the literal).
+        filters: { status: 'all', priority: 'all', assignee: 'all', project: 'all', activity: 'all' } as ViewPrefsFile['global']['filters'],
+      },
+      projects: { foo: { filters: { status: 'in_progress' } } },
+    };
+    const effective = mergeForScope(stale, 'foo');
+    expect(effective.filters.type).toBeUndefined();
+    // Consumers must treat undefined as 'all' — exercise that contract here:
+    expect(effective.filters.type ?? 'all').toBe('all');
+    expect(effective.filters.status).toBe('in_progress');
+  });
+
   it('(f0) missing version field is treated as v1 (forward-compat with files written without one)', async () => {
     const file = {
       global: {
