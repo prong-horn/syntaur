@@ -884,6 +884,7 @@ export async function getAssignmentDetail(
     slug: assignment.slug || assignmentSlug,
     title: assignment.title,
     status: assignment.status,
+    type: assignment.type,
     priority: assignment.priority as AssignmentDetail['priority'],
     assignee: assignment.assignee,
     dependsOn: assignment.dependsOn,
@@ -1216,6 +1217,7 @@ async function buildStandaloneAssignmentDetail(
     slug: assignment.slug || resolved.id,
     title: assignment.title,
     status: assignment.status,
+    type: assignment.type,
     priority: assignment.priority as AssignmentDetail['priority'],
     assignee: assignment.assignee,
     dependsOn: [], // standalone cannot declare dependencies
@@ -1593,6 +1595,7 @@ function toAssignmentSummary(assignment: AssignmentRecord): AssignmentSummary {
     slug: assignment.slug,
     title: assignment.title,
     status: assignment.status,
+    type: assignment.type,
     priority: assignment.priority as AssignmentSummary['priority'],
     assignee: assignment.assignee,
     dependsOn: assignment.dependsOn,
