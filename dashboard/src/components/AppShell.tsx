@@ -1,7 +1,7 @@
 import { useState, type ReactNode } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import type { LucideIcon } from 'lucide-react';
-import { Activity, BookOpen, Boxes, Brain, CheckSquare, Compass, FolderKanban, LifeBuoy, Library, ListTodo, Monitor, Plus, Settings, X, ChevronDown, Trash2 } from 'lucide-react';
+import { Activity, BookOpen, Boxes, Brain, CheckSquare, Compass, FolderKanban, LayoutTemplate, LifeBuoy, Library, ListTodo, Monitor, Plus, Settings, X, ChevronDown, Trash2 } from 'lucide-react';
 import { SidebarNav, type SidebarNavItem } from './SidebarNav';
 import { TopBar } from './TopBar';
 import { useWorkspaces } from '../hooks/useProjects';
@@ -39,6 +39,7 @@ const GLOBAL_NAV_ITEMS: SidebarNavItem[] = [
   { to: '/resources', label: 'Resources', icon: Library },
   { to: '/inventories', label: 'Inventories', icon: Boxes },
   { to: '/todos', label: 'Todos', icon: CheckSquare },
+  { to: '/views', label: 'Saved Views', icon: LayoutTemplate },
 ];
 
 const WORKSPACE_SCOPED_LABELS: Array<{ suffix: string; label: string; icon: LucideIcon }> = [

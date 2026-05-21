@@ -22,6 +22,7 @@ const SIDEBAR_SECTIONS = [
   '/memories',
   '/resources',
   '/todos',
+  '/views',
   '/help',
   '/settings',
 ] as const;
@@ -86,6 +87,10 @@ export function getSidebarSection(pathname: string): SidebarSection | null {
 
   if (normalized.startsWith('/todos')) {
     return '/todos';
+  }
+
+  if (normalized.startsWith('/views')) {
+    return '/views';
   }
 
   if (normalized.startsWith('/help')) {
@@ -207,6 +212,9 @@ export function buildShellMeta(pathname: string): ShellMeta {
   } else if (parts[0] === 'todos') {
     title = 'Todos';
     breadcrumbs.push({ label: 'Todos', path: `${workspacePrefix}/todos` });
+  } else if (parts[0] === 'views') {
+    title = 'Saved Views';
+    breadcrumbs.push({ label: 'Saved Views', path: `${workspacePrefix}/views` });
   } else if (parts[0] === 'help') {
     title = 'Help';
     breadcrumbs.push({ label: 'Help', path: '/help' });

@@ -16,10 +16,14 @@ import {
   updateAssignmentTitleById,
 } from '../lib/assignments';
 import { getAssignmentColumns } from '../lib/kanban';
+import { sortAssignments } from '../lib/sortAssignments';
 import { formatDate } from '../lib/format';
 import { SearchInput } from '../components/SearchInput';
 import { FilterBar } from '../components/FilterBar';
 import { ViewToggle } from '../components/ViewToggle';
+import { TableColumnPicker } from '../components/TableColumnPicker';
+import { SaveViewDialog } from '../components/SaveViewDialog';
+import { SavedViewPicker } from '../components/SavedViewPicker';
 import { SectionCard } from '../components/SectionCard';
 import { LoadingState } from '../components/LoadingState';
 import { ErrorState } from '../components/ErrorState';
@@ -45,8 +49,11 @@ import {
   type Activity as ActivityFilter,
   type ProjectViewPrefs,
 } from '@shared/view-prefs-schema';
+import { type TableColumnId, type SavedView, type ViewScope } from '@shared/saved-views-schema';
 import { fetchViewPrefs, saveGlobalViewPrefs, saveScopeViewPrefs, useViewPrefs } from '../hooks/useViewPrefs';
 import { mergeForScope } from '@shared/view-prefs-schema';
+import { useSavedView, createSavedView, updateSavedView } from '../hooks/useSavedViews';
+import { captureCurrentView, applyConfig } from '../lib/savedViews';
 
 const VALID_VIEWS: readonly ViewMode[] = VIEW_MODES;
 
@@ -55,8 +62,6 @@ interface PendingAssignmentMove {
   toColumnId: string;
   action: AssignmentTransitionAction;
 }
-
-const PRIORITY_ORDER: Record<string, number> = { critical: 0, high: 1, medium: 2, low: 3 };
 
 function normalizeActivityFilter(value: string | null): ActivityFilter {
   if (value === '1') {
@@ -81,38 +86,6 @@ function isAssignmentStale(updated: string): boolean {
   }
 
   return Date.now() - timestamp > 7 * 24 * 60 * 60 * 1000;
-}
-
-function sortAssignments(
-  items: AssignmentBoardItem[],
-  field: SortField,
-  direction: SortDirection,
-): AssignmentBoardItem[] {
-  const sorted = [...items].sort((a, b) => {
-    let cmp = 0;
-    switch (field) {
-      case 'title':
-        cmp = a.title.localeCompare(b.title);
-        break;
-      case 'status':
-        cmp = a.status.localeCompare(b.status);
-        break;
-      case 'priority':
-        cmp = (PRIORITY_ORDER[a.priority] ?? 99) - (PRIORITY_ORDER[b.priority] ?? 99);
-        break;
-      case 'assignee':
-        cmp = (a.assignee ?? '').localeCompare(b.assignee ?? '');
-        break;
-      case 'dependencies':
-        cmp = a.dependsOn.length - b.dependsOn.length;
-        break;
-      case 'updated':
-        cmp = a.updated.localeCompare(b.updated);
-        break;
-    }
-    return direction === 'asc' ? cmp : -cmp;
-  });
-  return sorted;
 }
 
 export function AssignmentsPage() {
@@ -188,8 +161,18 @@ export function AssignmentsPage() {
   );
   const [sortField, setSortField] = useState<SortField>(() => prefs.sortField);
   const [sortDirection, setSortDirection] = useState<SortDirection>(() => prefs.sortDirection);
-  const [expandedStatuses, setExpandedStatuses] = useState<Set<string>>(
-    () => new Set(COLUMNS),
+  // Serializable list-section visibility — default empty (all sections expanded).
+  // Persisted as part of a saved view's config (per Decision 9).
+  const [listSectionVisibility, setListSectionVisibility] = useState<{ collapsed: string[] }>(
+    () => ({ collapsed: [] }),
+  );
+  // Kanban column visibility — default empty (all columns shown).
+  const [kanbanColumnVisibility, setKanbanColumnVisibility] = useState<{ hidden: string[] }>(
+    () => ({ hidden: [] }),
+  );
+  // Table column visibility — default empty (all columns shown).
+  const [tableColumnVisibility, setTableColumnVisibility] = useState<{ hidden: TableColumnId[] }>(
+    () => ({ hidden: [] }),
   );
   const [boardItems, setBoardItems] = useState<AssignmentBoardItem[]>([]);
   const { toast, showToast, dismissToast } = useToast();
@@ -204,10 +187,43 @@ export function AssignmentsPage() {
   const [deleteTarget, setDeleteTarget] = useState<AssignmentBoardItem | null>(null);
   const [deletingKey, setDeletingKey] = useState<string | null>(null);
   const [moveTarget, setMoveTarget] = useState<AssignmentBoardItem | null>(null);
+  const [loadedViewId, setLoadedViewId] = useState<string | null>(null);
+  const [saveDialogOpen, setSaveDialogOpen] = useState(false);
+  const [saveAsNewMode, setSaveAsNewMode] = useState(false);
+
+  const viewScope: ViewScope = workspace
+    ? { kind: 'workspace', workspace }
+    : { kind: 'global' };
+
+  const loadViewParam = searchParams.get('loadView');
+  const { view: pendingView, loading: pendingViewLoading, error: pendingViewError } = useSavedView(
+    loadViewParam,
+  );
+  const { view: loadedView, loading: loadedViewLoading, error: loadedViewError } = useSavedView(loadedViewId);
+  // Track the last id we already applied so we don't double-apply on re-render.
+  const lastAppliedLoadViewRef = useRef<string | null>(null);
 
   useEffect(() => {
     setBoardItems(data?.assignments ?? []);
   }, [data]);
+
+  // If the currently-loaded view disappears (deleted in /views or another tab),
+  // clear loadedViewId so Update doesn't PATCH a 404. Skip while still loading
+  // or on transient fetch error so a brief network blip doesn't drop state.
+  useEffect(() => {
+    if (loadedViewId && !loadedViewLoading && !loadedViewError && !loadedView) {
+      setLoadedViewId(null);
+    }
+  }, [loadedView, loadedViewError, loadedViewId, loadedViewLoading]);
+
+  // Clear loadedViewId on workspace change. The component is reused across
+  // /assignments and /w/:workspace/assignments via react-router; a view loaded
+  // in one workspace must not appear as "loaded" in another (Update would PATCH
+  // the source view with the wrong surface's filter state).
+  useEffect(() => {
+    setLoadedViewId(null);
+    lastAppliedLoadViewRef.current = null;
+  }, [workspace]);
 
   useEffect(() => {
     const nextStatus = normalizeStatusFilter(statusParam);
@@ -395,6 +411,194 @@ export function AssignmentsPage() {
     },
     [persistField],
   );
+
+  const buildViewState = useCallback(
+    () => ({
+      viewMode: view,
+      filters: {
+        status: statusFilter,
+        priority: priorityFilter,
+        assignee: assigneeFilter,
+        project: projectFilter,
+        activity: activityFilter,
+      },
+      sortField,
+      sortDirection,
+      listSectionVisibility,
+      kanbanColumnVisibility,
+      tableColumnVisibility,
+    }),
+    [
+      view,
+      statusFilter,
+      priorityFilter,
+      assigneeFilter,
+      projectFilter,
+      activityFilter,
+      sortField,
+      sortDirection,
+      listSectionVisibility,
+      kanbanColumnVisibility,
+      tableColumnVisibility,
+    ],
+  );
+
+  const applyViewToState = useCallback(
+    (v: SavedView) => {
+      applyConfig(v, {
+        setViewMode: setView,
+        setStatusFilter: handleSetStatusFilter,
+        setPriorityFilter: handleSetPriorityFilter,
+        setAssigneeFilter: handleSetAssigneeFilter,
+        setProjectFilter: handleSetProjectFilter,
+        setActivityFilter: handleSetActivityFilter,
+        setSortField: handleSetSortField,
+        setSortDirection: handleSetSortDirection,
+        setListSectionVisibility,
+        setKanbanColumnVisibility,
+        setTableColumnVisibility,
+      });
+      setLoadedViewId(v.id);
+    },
+    [
+      setView,
+      handleSetStatusFilter,
+      handleSetPriorityFilter,
+      handleSetAssigneeFilter,
+      handleSetProjectFilter,
+      handleSetActivityFilter,
+      handleSetSortField,
+      handleSetSortDirection,
+    ],
+  );
+
+  const handleApplyView = useCallback(
+    (v: SavedView) => {
+      applyViewToState(v);
+      // Mark as already applied so the loadView effect doesn't re-apply.
+      lastAppliedLoadViewRef.current = v.id;
+      setSearchParams(
+        (prev) => {
+          const next = new URLSearchParams(prev);
+          next.set('loadView', v.id);
+          return next;
+        },
+        { replace: true },
+      );
+    },
+    [applyViewToState, setSearchParams],
+  );
+
+  const handleSave = useCallback(
+    async (name: string) => {
+      try {
+        const payload = captureCurrentView({
+          name,
+          context: { workspace: workspace ?? null, projectSlug: null },
+          state: buildViewState(),
+        });
+        const file = await createSavedView(payload);
+        const created = file.views[file.views.length - 1];
+        setLoadedViewId(created?.id ?? null);
+        if (created) {
+          lastAppliedLoadViewRef.current = created.id;
+          setSearchParams(
+            (prev) => {
+              const next = new URLSearchParams(prev);
+              next.set('loadView', created.id);
+              return next;
+            },
+            { replace: true },
+          );
+        }
+        setSaveDialogOpen(false);
+        setSaveAsNewMode(false);
+        showToast(`Saved view "${name}"`, 'success');
+      } catch (err) {
+        showToast(
+          err instanceof Error ? err.message : 'Failed to save view',
+          'error',
+        );
+        throw err;
+      }
+    },
+    [buildViewState, setSearchParams, showToast, workspace],
+  );
+
+  const handleUpdateView = useCallback(async () => {
+    if (!loadedViewId) return;
+    try {
+      const payload = captureCurrentView({
+        name: loadedView?.name ?? '',
+        context: { workspace: workspace ?? null, projectSlug: null },
+        state: buildViewState(),
+      });
+      await updateSavedView(loadedViewId, { config: payload.config });
+      showToast('View updated', 'success');
+    } catch (err) {
+      showToast(
+        err instanceof Error ? err.message : 'Failed to update view',
+        'error',
+      );
+    }
+  }, [buildViewState, loadedView?.name, loadedViewId, showToast, workspace]);
+
+  // ?loadView= handler. Tracks lastAppliedLoadViewRef to avoid re-applying on
+  // every render while waiting for the file to load.
+  useEffect(() => {
+    if (!loadViewParam) {
+      lastAppliedLoadViewRef.current = null;
+      return;
+    }
+    if (lastAppliedLoadViewRef.current === loadViewParam) return;
+    // Clear loadedViewId eagerly so Update doesn't point at the prior view.
+    if (loadedViewId && loadedViewId !== loadViewParam) {
+      setLoadedViewId(null);
+    }
+    if (pendingViewLoading) return;
+    if (pendingViewError) {
+      // Don't mark as applied — a later refetch may succeed, and we want
+      // this effect to re-run when `pendingView` / `pendingViewError` flips.
+      // The param stays in the URL so the recovery is automatic on next fetch.
+      showToast("Couldn't load saved view — try again", 'error');
+      return;
+    }
+    if (pendingView) {
+      lastAppliedLoadViewRef.current = loadViewParam;
+      applyViewToState(pendingView);
+      setSearchParams(
+        (prev) => {
+          const next = new URLSearchParams(prev);
+          next.delete('loadView');
+          return next;
+        },
+        { replace: true },
+      );
+      return;
+    }
+    // !loading && !error && view === null → genuine orphan: server returned
+    // 200 with no matching id in file.views. Strip the param and mark applied
+    // so we don't re-toast on each render.
+    lastAppliedLoadViewRef.current = loadViewParam;
+    showToast('Saved view no longer exists', 'error');
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        next.delete('loadView');
+        return next;
+      },
+      { replace: true },
+    );
+  }, [
+    loadViewParam,
+    pendingView,
+    pendingViewLoading,
+    pendingViewError,
+    loadedViewId,
+    applyViewToState,
+    setSearchParams,
+    showToast,
+  ]);
 
   const uniqueStatuses = useMemo(
     () => Array.from(new Set(boardItems.map((a) => a.status))).sort(),
@@ -650,14 +854,12 @@ export function AssignmentsPage() {
   }
 
   function toggleStatus(status: string) {
-    setExpandedStatuses((current) => {
-      const next = new Set(current);
-      if (next.has(status)) {
-        next.delete(status);
-      } else {
-        next.add(status);
-      }
-      return next;
+    setListSectionVisibility((current) => {
+      const isCollapsed = current.collapsed.includes(status);
+      const next = isCollapsed
+        ? current.collapsed.filter((s) => s !== status)
+        : [...current.collapsed, status];
+      return { collapsed: next };
     });
   }
 
@@ -795,6 +997,49 @@ export function AssignmentsPage() {
             { value: 'kanban', label: 'Kanban' },
           ]}
         />
+        {view === 'table' ? (
+          <TableColumnPicker
+            visibility={tableColumnVisibility}
+            onChange={setTableColumnVisibility}
+          />
+        ) : null}
+        <SavedViewPicker
+          scope={viewScope}
+          loadedViewId={loadedViewId}
+          onApply={handleApplyView}
+          onOpenSaveDialog={() => {
+            setSaveAsNewMode(false);
+            setSaveDialogOpen(true);
+          }}
+        />
+        <button
+          type="button"
+          onClick={() => {
+            if (loadedView) {
+              void handleUpdateView();
+            } else {
+              setSaveAsNewMode(false);
+              setSaveDialogOpen(true);
+            }
+          }}
+          className="inline-flex items-center gap-1.5 rounded-md border border-border/60 bg-background/60 px-2.5 py-1.5 text-xs font-medium text-foreground hover:bg-background"
+          title={loadedView ? `Update ${loadedView.name}` : 'Save current view'}
+        >
+          {loadedView ? `Update '${loadedView.name}'` : 'Save view'}
+        </button>
+        {loadedView ? (
+          <button
+            type="button"
+            onClick={() => {
+              setSaveAsNewMode(true);
+              setSaveDialogOpen(true);
+            }}
+            className="inline-flex items-center gap-1.5 rounded-md border border-border/60 bg-background/60 px-2.5 py-1.5 text-xs font-medium text-foreground hover:bg-background"
+            title="Save as new view"
+          >
+            Save as new…
+          </button>
+        ) : null}
       </FilterBar>
 
       {data.assignments.length === 0 ? (
@@ -814,17 +1059,25 @@ export function AssignmentsPage() {
           description="Adjust the search term or filters to show assignments across all projects again."
         />
       ) : view === 'table' ? (
+        (() => {
+          const hiddenCols = new Set(tableColumnVisibility.hidden);
+          // `title` is non-hideable in the picker (TableColumnPicker.tsx:NON_HIDEABLE).
+          // Defensively force-show it here so a persisted view with `hidden: ['title']`
+          // (from an older version, a malformed payload, etc.) does not leave the table
+          // without assignment links and no way to restore them via the picker.
+          const showCol = (id: TableColumnId) => id === 'title' || !hiddenCols.has(id);
+          return (
         <SectionCard title={`${sortedItems.length} assignment${sortedItems.length === 1 ? '' : 's'}`}>
           <div className="overflow-x-auto">
             <table className="w-full min-w-[760px] text-left text-sm">
               <thead>
                 <tr className="border-b border-border/60 text-muted-foreground">
-                  <SortHeader field="title">Assignment</SortHeader>
-                  <SortHeader field="status">Status</SortHeader>
-                  <SortHeader field="priority">Priority</SortHeader>
-                  <SortHeader field="assignee">Assignee</SortHeader>
-                  <SortHeader field="dependencies">Dependencies</SortHeader>
-                  <SortHeader field="updated">Updated</SortHeader>
+                  {showCol('title') ? <SortHeader field="title">Assignment</SortHeader> : null}
+                  {showCol('status') ? <SortHeader field="status">Status</SortHeader> : null}
+                  {showCol('priority') ? <SortHeader field="priority">Priority</SortHeader> : null}
+                  {showCol('assignee') ? <SortHeader field="assignee">Assignee</SortHeader> : null}
+                  {showCol('dependencies') ? <SortHeader field="dependencies">Dependencies</SortHeader> : null}
+                  {showCol('updated') ? <SortHeader field="updated">Updated</SortHeader> : null}
                 </tr>
               </thead>
               <tbody>
@@ -834,6 +1087,7 @@ export function AssignmentsPage() {
                     className="border-b border-border/50 last:border-0"
                     {...hotkeyRowProps(i)}
                   >
+                    {showCol('title') ? (
                     <td className="py-4 pr-4">
                       <Link
                         to={
@@ -857,6 +1111,8 @@ export function AssignmentsPage() {
                         <CopyButton value={assignment.id} />
                       </p>
                     </td>
+                    ) : null}
+                    {showCol('status') ? (
                     <td className="py-4 pr-4">
                       <select
                         value={assignment.status}
@@ -890,22 +1146,25 @@ export function AssignmentsPage() {
                         })}
                       </select>
                     </td>
-                    <td className="py-4 pr-4 capitalize text-muted-foreground">{assignment.priority}</td>
-                    <td className="py-4 pr-4 text-muted-foreground">{assignment.assignee ?? 'Unassigned'}</td>
-                    <td className="py-4 pr-4 text-muted-foreground">{assignment.dependsOn.length}</td>
-                    <td className="py-4 text-muted-foreground">{formatDate(assignment.updated)}</td>
+                    ) : null}
+                    {showCol('priority') ? <td className="py-4 pr-4 capitalize text-muted-foreground">{assignment.priority}</td> : null}
+                    {showCol('assignee') ? <td className="py-4 pr-4 text-muted-foreground">{assignment.assignee ?? 'Unassigned'}</td> : null}
+                    {showCol('dependencies') ? <td className="py-4 pr-4 text-muted-foreground">{assignment.dependsOn.length}</td> : null}
+                    {showCol('updated') ? <td className="py-4 text-muted-foreground">{formatDate(assignment.updated)}</td> : null}
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
         </SectionCard>
+          );
+        })()
       ) : view === 'list' ? (
         <div className="space-y-3">
           {COLUMNS.map((status) => {
             const items = filteredItems.filter((item) => item.status === status);
             if (items.length === 0 && !draggedItem) return null;
-            const expanded = expandedStatuses.has(status);
+            const expanded = !listSectionVisibility.collapsed.includes(status);
             const isValidTarget = draggedItem
               ? draggedItem.status !== status && !getAssignmentAction(draggedItem, status)?.disabled
               : false;
@@ -1004,6 +1263,17 @@ export function AssignmentsPage() {
             setContextMenu({ item, anchor: { x: event.clientX, y: event.clientY } });
           }}
           emptyMessage={(column) => `No ${column.title.toLowerCase()} assignments.`}
+          hiddenColumnIds={kanbanColumnVisibility.hidden}
+          onHideColumn={(columnId) =>
+            setKanbanColumnVisibility((current) => {
+              const isHidden = current.hidden.includes(columnId);
+              return {
+                hidden: isHidden
+                  ? current.hidden.filter((c) => c !== columnId)
+                  : [...current.hidden, columnId],
+              };
+            })
+          }
           renderCard={(item, { dragging }) => {
             const flatIdx = visibleIndexByKey.get(getAssignmentKey(item)) ?? -1;
             return (
@@ -1024,6 +1294,17 @@ export function AssignmentsPage() {
       )}
 
       <Toaster toast={toast} onDismiss={dismissToast} />
+
+      <SaveViewDialog
+        open={saveDialogOpen}
+        onOpenChange={(open) => {
+          setSaveDialogOpen(open);
+          if (!open) setSaveAsNewMode(false);
+        }}
+        initialName={saveAsNewMode && loadedView ? `${loadedView.name} (copy)` : ''}
+        title={saveAsNewMode ? 'Save as new view' : 'Save view'}
+        onSubmit={handleSave}
+      />
 
       <AssignmentTransitionDialog
         open={pendingMove !== null}

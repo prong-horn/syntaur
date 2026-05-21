@@ -1,12 +1,12 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { BookOpenText, GitBranch, Plus, SquarePen } from 'lucide-react';
+import { BookOpenText, ChevronDown, ChevronUp, GitBranch, Plus, SquarePen } from 'lucide-react';
 import { CopyButton } from '../components/CopyButton';
 import { useProject, useWorkspaces, useWorkspacePrefix, type AssignmentSummary } from '../hooks/useProjects';
 import { formatDate, formatDateTime } from '../lib/format';
 import { LoadingState } from '../components/LoadingState';
 import { ErrorState } from '../components/ErrorState';
-import { StatusBadge } from '../components/StatusBadge';
+import { StatusBadge, getStatusDescription } from '../components/StatusBadge';
 import { ExternalIdBadges } from '../components/ExternalIdBadges';
 import { StatCard } from '../components/StatCard';
 import { ProgressBar } from '../components/ProgressBar';
@@ -17,15 +17,25 @@ import { EmptyState } from '../components/EmptyState';
 import { DependencyGraph } from '../components/DependencyGraph';
 import { MarkdownRenderer } from '../components/MarkdownRenderer';
 import { ProjectTodosPanel } from '../components/ProjectTodosPanel';
-import { useStatusConfig } from '../hooks/useStatusConfig';
+import { KanbanBoard, type KanbanColumn } from '../components/KanbanBoard';
+import { TableColumnPicker } from '../components/TableColumnPicker';
+import { useStatusConfig, getStatusLabel } from '../hooks/useStatusConfig';
 import { useHotkey, useHotkeyScope } from '../hotkeys';
-import { coerceProjectDetailView } from '@shared/view-prefs-schema';
+import { coerceProjectDetailView, type SortField, type SortDirection } from '@shared/view-prefs-schema';
 import { saveScopeViewPrefs, useViewPrefs } from '../hooks/useViewPrefs';
+import { getAssignmentColumns } from '../lib/kanban';
+import { sortAssignments } from '../lib/sortAssignments';
+import { SaveViewDialog } from '../components/SaveViewDialog';
+import { SavedViewPicker } from '../components/SavedViewPicker';
+import { useSavedView, createSavedView, updateSavedView } from '../hooks/useSavedViews';
+import { captureCurrentView, applyConfig } from '../lib/savedViews';
+import type { SavedView, ViewScope } from '@shared/saved-views-schema';
+import { useToast, Toaster } from '../components/Toast';
 
 const VALID_TABS = new Set(['overview', 'assignments', 'todos', 'dependencies', 'knowledge']);
 
 export function ProjectDetail() {
-  const { slug } = useParams<{ slug: string }>();
+  const { slug, workspace } = useParams<{ workspace?: string; slug: string }>();
   const wsPrefix = useWorkspacePrefix();
   const navigate = useNavigate();
   useHotkeyScope('project');
@@ -71,6 +81,49 @@ export function ProjectDetail() {
   const [statusFilter, setStatusFilter] = useState<string>(() => prefs.filters.status ?? 'all');
   const [assigneeFilter, setAssigneeFilter] = useState<string>(() => prefs.filters.assignee ?? 'all');
   const [priorityFilter, setPriorityFilter] = useState<string>(() => prefs.filters.priority ?? 'all');
+  const [sortField, setSortField] = useState<SortField>(() => prefs.sortField);
+  const [sortDirection, setSortDirection] = useState<SortDirection>(() => prefs.sortDirection);
+  // List visibility state — kept for saved-view round-trips even though
+  // ProjectDetail doesn't currently expose toggles for these. (Decision: keep
+  // captured state symmetric with AssignmentsPage so applying a view here
+  // doesn't silently drop the user's choices.)
+  const [listSectionVisibility, setListSectionVisibility] = useState<{ collapsed: string[] }>(() => ({ collapsed: [] }));
+  const [kanbanColumnVisibility, setKanbanColumnVisibility] = useState<{ hidden: string[] }>(() => ({ hidden: [] }));
+  const [tableColumnVisibility, setTableColumnVisibility] = useState<{ hidden: import('@shared/saved-views-schema').TableColumnId[] }>(() => ({ hidden: [] }));
+
+  const [loadedViewId, setLoadedViewId] = useState<string | null>(null);
+  const [saveDialogOpen, setSaveDialogOpen] = useState(false);
+  const [saveAsNewMode, setSaveAsNewMode] = useState(false);
+  const { toast, showToast, dismissToast } = useToast();
+
+  const viewScope: ViewScope = {
+    kind: 'project',
+    slug: slug ?? '',
+    workspace: workspace ?? null,
+  };
+
+  const loadViewParam = searchParams.get('loadView');
+  const { view: pendingView, loading: pendingViewLoading, error: pendingViewError } = useSavedView(loadViewParam);
+  const { view: loadedView, loading: loadedViewLoading, error: loadedViewError } = useSavedView(loadedViewId);
+  const lastAppliedLoadViewRef = useRef<string | null>(null);
+
+  // Clear loadedViewId if the view disappears (deleted elsewhere). Skip while
+  // still loading or on transient fetch error so a brief network blip doesn't
+  // drop state.
+  useEffect(() => {
+    if (loadedViewId && !loadedViewLoading && !loadedViewError && !loadedView) {
+      setLoadedViewId(null);
+    }
+  }, [loadedView, loadedViewError, loadedViewId, loadedViewLoading]);
+
+  // Clear loadedViewId on project or workspace change. The component is reused
+  // across /projects/:slug and /w/:workspace/projects/:slug via react-router; a
+  // view loaded for one project must not appear as "loaded" on another
+  // (Update would PATCH the source view's filters.project, swapping its scope).
+  useEffect(() => {
+    setLoadedViewId(null);
+    lastAppliedLoadViewRef.current = null;
+  }, [slug, workspace]);
 
   // Re-hydrate when react-router reuses this component across project switches
   // (the doc comment above on lines 45-47 calls this out for the tab param).
@@ -81,7 +134,9 @@ export function ProjectDetail() {
     setStatusFilter(prefs.filters.status ?? 'all');
     setAssigneeFilter(prefs.filters.assignee ?? 'all');
     setPriorityFilter(prefs.filters.priority ?? 'all');
-  }, [slug, prefs.defaultView, prefs.filters.status, prefs.filters.assignee, prefs.filters.priority]);
+    setSortField(prefs.sortField);
+    setSortDirection(prefs.sortDirection);
+  }, [slug, prefs.defaultView, prefs.filters.status, prefs.filters.assignee, prefs.filters.priority, prefs.sortField, prefs.sortDirection]);
 
   const persistField = useCallback(
     (patch: Parameters<typeof saveScopeViewPrefs>[1]) => {
@@ -121,6 +176,202 @@ export function ProjectDetail() {
     },
     [persistField],
   );
+  const handleSetSortField = useCallback(
+    (v: SortField) => {
+      setSortField(v);
+      persistField({ sortField: v });
+    },
+    [persistField],
+  );
+  const handleSetSortDirection = useCallback(
+    (v: SortDirection) => {
+      setSortDirection(v);
+      persistField({ sortDirection: v });
+    },
+    [persistField],
+  );
+
+  const buildViewState = useCallback(
+    () => ({
+      // ProjectDetail uses only 'kanban' | 'table'. The saved view ViewMode union
+      // includes 'list'; either value here is valid. Round-trip applies
+      // coerceProjectDetailView on the way back in.
+      viewMode: assignmentView,
+      filters: {
+        status: statusFilter,
+        priority: priorityFilter,
+        assignee: assigneeFilter,
+        // project filter is forced via context.projectSlug below — value here is ignored
+        project: 'all',
+        activity: 'all' as const,
+      },
+      sortField,
+      sortDirection,
+      listSectionVisibility,
+      kanbanColumnVisibility,
+      tableColumnVisibility,
+    }),
+    [
+      assignmentView,
+      statusFilter,
+      priorityFilter,
+      assigneeFilter,
+      sortField,
+      sortDirection,
+      listSectionVisibility,
+      kanbanColumnVisibility,
+      tableColumnVisibility,
+    ],
+  );
+
+  const applyViewToState = useCallback(
+    (v: SavedView) => {
+      applyConfig(v, {
+        setViewMode: (mode) => setAssignmentView(coerceProjectDetailView(mode)),
+        setStatusFilter: handleSetStatusFilter,
+        setPriorityFilter: handleSetPriorityFilter,
+        setAssigneeFilter: handleSetAssigneeFilter,
+        // setProjectFilter intentionally omitted — slug is URL-derived here.
+        setSortField: handleSetSortField,
+        setSortDirection: handleSetSortDirection,
+        setListSectionVisibility,
+        setKanbanColumnVisibility,
+        setTableColumnVisibility,
+      });
+      setLoadedViewId(v.id);
+    },
+    [
+      handleSetStatusFilter,
+      handleSetPriorityFilter,
+      handleSetAssigneeFilter,
+      handleSetSortField,
+      handleSetSortDirection,
+    ],
+  );
+
+  const handleApplyView = useCallback(
+    (v: SavedView) => {
+      applyViewToState(v);
+      lastAppliedLoadViewRef.current = v.id;
+      setSearchParams(
+        (prev) => {
+          const next = new URLSearchParams(prev);
+          next.set('loadView', v.id);
+          return next;
+        },
+        { replace: true },
+      );
+    },
+    [applyViewToState, setSearchParams],
+  );
+
+  const handleSave = useCallback(
+    async (name: string) => {
+      try {
+        const payload = captureCurrentView({
+          name,
+          context: { workspace: workspace ?? null, projectSlug: slug ?? null },
+          state: buildViewState(),
+        });
+        const file = await createSavedView(payload);
+        const created = file.views[file.views.length - 1];
+        setLoadedViewId(created?.id ?? null);
+        if (created) {
+          lastAppliedLoadViewRef.current = created.id;
+          setSearchParams(
+            (prev) => {
+              const next = new URLSearchParams(prev);
+              next.set('loadView', created.id);
+              return next;
+            },
+            { replace: true },
+          );
+        }
+        setSaveDialogOpen(false);
+        setSaveAsNewMode(false);
+        showToast(`Saved view "${name}"`, 'success');
+      } catch (err) {
+        showToast(err instanceof Error ? err.message : 'Failed to save view', 'error');
+        throw err;
+      }
+    },
+    [buildViewState, setSearchParams, showToast, slug, workspace],
+  );
+
+  const handleUpdateView = useCallback(async () => {
+    if (!loadedViewId) return;
+    try {
+      const payload = captureCurrentView({
+        name: loadedView?.name ?? '',
+        context: { workspace: workspace ?? null, projectSlug: slug ?? null },
+        state: buildViewState(),
+      });
+      await updateSavedView(loadedViewId, { config: payload.config });
+      showToast('View updated', 'success');
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Failed to update view', 'error');
+    }
+  }, [buildViewState, loadedView?.name, loadedViewId, showToast, slug, workspace]);
+
+  useEffect(() => {
+    if (!loadViewParam) {
+      lastAppliedLoadViewRef.current = null;
+      return;
+    }
+    if (lastAppliedLoadViewRef.current === loadViewParam) return;
+    if (loadedViewId && loadedViewId !== loadViewParam) {
+      setLoadedViewId(null);
+    }
+    if (pendingViewLoading) return;
+    if (pendingViewError) {
+      // Don't mark as applied — a later refetch may succeed. The param stays
+      // in the URL so recovery is automatic on next fetch.
+      showToast("Couldn't load saved view — try again", 'error');
+      return;
+    }
+    if (pendingView) {
+      lastAppliedLoadViewRef.current = loadViewParam;
+      applyViewToState(pendingView);
+      setSearchParams(
+        (prev) => {
+          const next = new URLSearchParams(prev);
+          next.delete('loadView');
+          return next;
+        },
+        { replace: true },
+      );
+      return;
+    }
+    lastAppliedLoadViewRef.current = loadViewParam;
+    showToast('Saved view no longer exists', 'error');
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        next.delete('loadView');
+        return next;
+      },
+      { replace: true },
+    );
+  }, [
+    loadViewParam,
+    pendingView,
+    pendingViewLoading,
+    pendingViewError,
+    loadedViewId,
+    applyViewToState,
+    setSearchParams,
+    showToast,
+  ]);
+
+  function handleSort(field: SortField) {
+    if (sortField === field) {
+      const next: SortDirection = sortDirection === 'asc' ? 'desc' : 'asc';
+      handleSetSortDirection(next);
+    } else {
+      handleSetSortField(field);
+      handleSetSortDirection('asc');
+    }
+  }
 
   const dependencyRoutes = useMemo(
     () => project ? Object.fromEntries(
@@ -176,6 +427,34 @@ export function ProjectDetail() {
     }
     return true;
   });
+  const sortedAssignments = sortAssignments(filteredAssignments, sortField, sortDirection);
+  const kanbanColumns: KanbanColumn[] = getAssignmentColumns(statusConfig.order).map((id) => ({
+    id,
+    title: getStatusLabel(statusConfig, id),
+    description: getStatusDescription(id),
+  }));
+
+  function SortHeader({ field, children }: { field: SortField; children: React.ReactNode }) {
+    const active = sortField === field;
+    return (
+      <th className="pb-3 font-medium">
+        <button
+          type="button"
+          onClick={() => handleSort(field)}
+          className="inline-flex items-center gap-1 hover:text-foreground"
+        >
+          {children}
+          {active ? (
+            sortDirection === 'asc' ? (
+              <ChevronUp className="h-3 w-3" />
+            ) : (
+              <ChevronDown className="h-3 w-3" />
+            )
+          ) : null}
+        </button>
+      </th>
+    );
+  }
 
   return (
     <div className="space-y-5" data-density={prefs.density}>
@@ -304,6 +583,43 @@ export function ProjectDetail() {
                               { value: 'table', label: 'Table' },
                             ]}
                           />
+                          <SavedViewPicker
+                            scope={viewScope}
+                            loadedViewId={loadedViewId}
+                            onApply={handleApplyView}
+                            onOpenSaveDialog={() => {
+                              setSaveAsNewMode(false);
+                              setSaveDialogOpen(true);
+                            }}
+                          />
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (loadedView) {
+                                void handleUpdateView();
+                              } else {
+                                setSaveAsNewMode(false);
+                                setSaveDialogOpen(true);
+                              }
+                            }}
+                            className="inline-flex items-center gap-1.5 rounded-md border border-border/60 bg-background/60 px-2.5 py-1.5 text-xs font-medium text-foreground hover:bg-background"
+                            title={loadedView ? `Update ${loadedView.name}` : 'Save current view'}
+                          >
+                            {loadedView ? `Update '${loadedView.name}'` : 'Save view'}
+                          </button>
+                          {loadedView ? (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setSaveAsNewMode(true);
+                                setSaveDialogOpen(true);
+                              }}
+                              className="inline-flex items-center gap-1.5 rounded-md border border-border/60 bg-background/60 px-2.5 py-1.5 text-xs font-medium text-foreground hover:bg-background"
+                              title="Save as new view"
+                            >
+                              Save as new…
+                            </button>
+                          ) : null}
                         </div>
                       }
                     >
@@ -318,26 +634,57 @@ export function ProjectDetail() {
                           }
                         />
                       ) : assignmentView === 'kanban' ? (
-                        <div className="grid gap-3 lg:grid-cols-2">
-                          {filteredAssignments.map((assignment) => (
-                            <AssignmentCard key={assignment.slug} projectSlug={project.slug} assignment={assignment} />
-                          ))}
-                        </div>
+                        <KanbanBoard
+                          columns={kanbanColumns}
+                          items={sortedAssignments}
+                          getItemId={(a) => a.slug}
+                          getColumnId={(a) => a.status}
+                          renderCard={(item) => (
+                            <AssignmentCard projectSlug={project.slug} assignment={item} />
+                          )}
+                          emptyMessage={(column) => `No ${column.title.toLowerCase()} assignments.`}
+                          hiddenColumnIds={kanbanColumnVisibility.hidden}
+                          onHideColumn={(columnId) =>
+                            setKanbanColumnVisibility((current) => {
+                              const isHidden = current.hidden.includes(columnId);
+                              return {
+                                hidden: isHidden
+                                  ? current.hidden.filter((c) => c !== columnId)
+                                  : [...current.hidden, columnId],
+                              };
+                            })
+                          }
+                        />
                       ) : (
+                        (() => {
+                          const hiddenCols = new Set(tableColumnVisibility.hidden);
+                          // `title` is non-hideable (TableColumnPicker NON_HIDEABLE). Force-show it
+                          // defensively so a persisted view with `hidden: ['title']` doesn't trap
+                          // the user — the picker can't restore it.
+                          const showCol = (id: import('@shared/saved-views-schema').TableColumnId) => id === 'title' || !hiddenCols.has(id);
+                          return (
                         <div className="overflow-x-auto">
+                          <div className="mb-3 flex items-center justify-end">
+                            <TableColumnPicker
+                              visibility={tableColumnVisibility}
+                              onChange={setTableColumnVisibility}
+                            />
+                          </div>
                           <table className="w-full min-w-[720px] text-left text-sm">
                             <thead>
                               <tr className="border-b border-border/60 text-muted-foreground">
-                                <th className="pb-3 font-medium">Assignment</th>
-                                <th className="pb-3 font-medium">Status</th>
-                                <th className="pb-3 font-medium">Priority</th>
-                                <th className="pb-3 font-medium">Assignee</th>
-                                <th className="pb-3 font-medium">Updated</th>
+                                {showCol('title') ? <SortHeader field="title">Assignment</SortHeader> : null}
+                                {showCol('status') ? <SortHeader field="status">Status</SortHeader> : null}
+                                {showCol('priority') ? <SortHeader field="priority">Priority</SortHeader> : null}
+                                {showCol('assignee') ? <SortHeader field="assignee">Assignee</SortHeader> : null}
+                                {showCol('dependencies') ? <SortHeader field="dependencies">Dependencies</SortHeader> : null}
+                                {showCol('updated') ? <SortHeader field="updated">Updated</SortHeader> : null}
                               </tr>
                             </thead>
                             <tbody>
-                              {filteredAssignments.map((assignment) => (
+                              {sortedAssignments.map((assignment) => (
                                 <tr key={assignment.slug} className="border-b border-border/50 last:border-0">
+                                  {showCol('title') ? (
                                   <td className="py-4">
                                     <Link
                                       to={`${wsPrefix}/projects/${project.slug}/assignments/${assignment.slug}`}
@@ -346,15 +693,19 @@ export function ProjectDetail() {
                                       {assignment.title}
                                     </Link>
                                   </td>
-                                  <td className="py-4"><StatusBadge status={assignment.status} /></td>
-                                  <td className="py-4 capitalize text-muted-foreground">{assignment.priority}</td>
-                                  <td className="py-4 text-muted-foreground">{assignment.assignee ?? '\u2014'}</td>
-                                  <td className="py-4 text-muted-foreground">{formatDate(assignment.updated)}</td>
+                                  ) : null}
+                                  {showCol('status') ? <td className="py-4"><StatusBadge status={assignment.status} /></td> : null}
+                                  {showCol('priority') ? <td className="py-4 capitalize text-muted-foreground">{assignment.priority}</td> : null}
+                                  {showCol('assignee') ? <td className="py-4 text-muted-foreground">{assignment.assignee ?? '\u2014'}</td> : null}
+                                  {showCol('dependencies') ? <td className="py-4 text-muted-foreground">{assignment.dependsOn.length}</td> : null}
+                                  {showCol('updated') ? <td className="py-4 text-muted-foreground">{formatDate(assignment.updated)}</td> : null}
                                 </tr>
                               ))}
                             </tbody>
                           </table>
                         </div>
+                          );
+                        })()
                       )}
                     </SectionCard>
                   </div>
@@ -524,6 +875,19 @@ export function ProjectDetail() {
           ) : null}
         </div>
       </div>
+
+      <Toaster toast={toast} onDismiss={dismissToast} />
+
+      <SaveViewDialog
+        open={saveDialogOpen}
+        onOpenChange={(open) => {
+          setSaveDialogOpen(open);
+          if (!open) setSaveAsNewMode(false);
+        }}
+        initialName={saveAsNewMode && loadedView ? `${loadedView.name} (copy)` : ''}
+        title={saveAsNewMode ? 'Save as new view' : 'Save view'}
+        onSubmit={handleSave}
+      />
     </div>
   );
 }

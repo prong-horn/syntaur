@@ -52,6 +52,22 @@ interface KanbanBoardProps<T> {
    */
   onCardContextMenu?: (item: T, event: ReactMouseEvent<HTMLElement>) => void;
   emptyMessage?: string | ((column: KanbanColumn) => string);
+  /**
+   * Optional. Column ids to skip rendering (saved-view column-hide primitive).
+   * The remaining `Show hidden columns ▾` chip lists each hidden column with click-to-restore.
+   */
+  hiddenColumnIds?: string[];
+  /**
+   * Optional. Called when the user hides a column via its overflow control. The parent
+   * is expected to add the id to its own `kanbanColumnVisibility` state and pass the
+   * updated `hiddenColumnIds` back in. Kanban itself stores no hidden state internally.
+   */
+  onHideColumn?: (columnId: string) => void;
+  /**
+   * Optional. Reduces column min-width and card padding for embedding inside a 5-slot
+   * dashboard widget. Default false.
+   */
+  compact?: boolean;
 }
 
 interface DropTarget {
@@ -78,7 +94,19 @@ export function KanbanBoard<T>({
   getExternalDragData,
   onCardContextMenu,
   emptyMessage = 'No cards in this column.',
+  hiddenColumnIds,
+  onHideColumn,
+  compact = false,
 }: KanbanBoardProps<T>) {
+  const hiddenSet = useMemo(() => new Set(hiddenColumnIds ?? []), [hiddenColumnIds]);
+  const visibleColumns = useMemo(
+    () => columns.filter((c) => !hiddenSet.has(c.id)),
+    [columns, hiddenSet],
+  );
+  const hiddenColumns = useMemo(
+    () => columns.filter((c) => hiddenSet.has(c.id)),
+    [columns, hiddenSet],
+  );
   const [draggedId, setDraggedId] = useState<string | null>(null);
   const [dropTarget, setDropTarget] = useState<DropTarget | null>(null);
   const mouseDownTarget = useRef<EventTarget | null>(null);
@@ -89,11 +117,11 @@ export function KanbanBoard<T>({
   );
   const groupedColumns = useMemo(
     () =>
-      columns.map((column) => ({
+      visibleColumns.map((column) => ({
         column,
         items: items.filter((item) => getColumnId(item) === column.id),
       })),
-    [columns, getColumnId, items],
+    [visibleColumns, getColumnId, items],
   );
 
   const draggedItem = draggedId ? itemsById.get(draggedId) ?? null : null;
@@ -192,7 +220,28 @@ export function KanbanBoard<T>({
         scrollbarWidth: 'thin',
       }}
     >
-      <div className="grid min-w-max auto-cols-[minmax(260px,320px)] grid-flow-col gap-4">
+      {hiddenColumns.length > 0 && onHideColumn ? (
+        <div className="mb-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+          <span>Hidden:</span>
+          {hiddenColumns.map((c) => (
+            <button
+              key={c.id}
+              type="button"
+              onClick={() => onHideColumn(c.id)}
+              className="rounded-full border border-dashed border-border/60 px-2 py-0.5 hover:border-border hover:text-foreground"
+              title={`Restore "${c.title}" column`}
+            >
+              {c.title} ×
+            </button>
+          ))}
+        </div>
+      ) : null}
+      <div
+        className={cn(
+          'grid min-w-max grid-flow-col gap-4',
+          compact ? 'auto-cols-[minmax(200px,240px)]' : 'auto-cols-[minmax(260px,320px)]',
+        )}
+      >
         {groupedColumns.map(({ column, items: columnItems }) => {
           const validation = getDropValidation(column.id);
           const isDropColumn = dropTarget?.columnId === column.id;
@@ -201,7 +250,8 @@ export function KanbanBoard<T>({
             <section
               key={column.id}
               className={cn(
-                'flex min-h-[320px] flex-col rounded-lg border border-border/60 bg-card/85 p-3 shadow-sm',
+                'flex flex-col rounded-lg border border-border/60 bg-card/85 shadow-sm',
+                compact ? 'min-h-[200px] p-2' : 'min-h-[320px] p-3',
                 draggedItem && !validation.allowed ? 'border-dashed opacity-65' : '',
                 draggedItem && validation.allowed ? 'border-primary/30 bg-accent/30' : '',
                 isDropColumn ? 'ring-2 ring-ring/30' : '',
@@ -210,16 +260,32 @@ export function KanbanBoard<T>({
             >
               <div className="mb-3 flex items-start justify-between gap-3">
                 <div className="space-y-1">
-                  <h2 className="text-sm font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                  <h2 className={cn(
+                    'font-semibold uppercase tracking-[0.16em] text-muted-foreground',
+                    compact ? 'text-xs' : 'text-sm',
+                  )}>
                     {column.title}
                   </h2>
-                  {column.description ? (
+                  {column.description && !compact ? (
                     <p className="text-sm leading-6 text-muted-foreground">{column.description}</p>
                   ) : null}
                 </div>
-                <span className="rounded-full border border-border/60 bg-background/80 px-2.5 py-1 text-xs font-semibold text-foreground">
-                  {columnItems.length}
-                </span>
+                <div className="flex items-center gap-1">
+                  <span className="rounded-full border border-border/60 bg-background/80 px-2.5 py-1 text-xs font-semibold text-foreground">
+                    {columnItems.length}
+                  </span>
+                  {onHideColumn ? (
+                    <button
+                      type="button"
+                      onClick={() => onHideColumn(column.id)}
+                      className="rounded-full border border-transparent px-1.5 py-0.5 text-xs text-muted-foreground hover:border-border hover:text-foreground"
+                      title={`Hide "${column.title}" column`}
+                      aria-label={`Hide column ${column.title}`}
+                    >
+                      ×
+                    </button>
+                  ) : null}
+                </div>
               </div>
 
               <div
