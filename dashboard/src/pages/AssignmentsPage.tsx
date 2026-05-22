@@ -573,17 +573,32 @@ export function AssignmentsPage() {
       : TYPE_KANBAN_COLUMNS;
   }, [TYPE_KANBAN_COLUMNS, typesConfig, filteredItems]);
 
-  // Flat visible order depends on view. In list/kanban the user sees items grouped by
-  // the active grouping; that's the j/k traversal order.
+  // Flat visible order depends on view. For list, follow the active grouping
+  // (which may be any GROUPINGS value). For kanban, follow effectiveKanbanGrouping
+  // (status or type) so j/k traversal matches what the user sees on the board —
+  // listGroups can iterate by priority/assignee/project, which would disagree
+  // with the kanban renderer when the persisted grouping is unsupported by kanban.
   const { visibleItems, visibleIndexByKey } = useMemo(() => {
-    const items =
-      view === 'table'
-        ? sortedItems
-        : listGroups.flatMap((g) => g.items);
+    let items: AssignmentBoardItem[];
+    if (view === 'table') {
+      items = sortedItems;
+    } else if (view === 'kanban') {
+      const knownIds = new Set(typesConfig.definitions.map((d) => d.id));
+      if (effectiveKanbanGrouping === 'type') {
+        items = [
+          ...typesConfig.definitions.flatMap((def) => filteredItems.filter((it) => it.type === def.id)),
+          ...filteredItems.filter((it) => !it.type || !knownIds.has(it.type)),
+        ];
+      } else {
+        items = COLUMNS.flatMap((status) => filteredItems.filter((it) => it.status === status));
+      }
+    } else {
+      items = listGroups.flatMap((g) => g.items);
+    }
     const byKey = new Map<string, number>();
     items.forEach((it, i) => byKey.set(getAssignmentKey(it), i));
     return { visibleItems: items, visibleIndexByKey: byKey };
-  }, [view, sortedItems, listGroups]);
+  }, [view, sortedItems, listGroups, effectiveKanbanGrouping, typesConfig, filteredItems, COLUMNS]);
 
   const { hotkeyRowProps } = useListSelection(visibleItems, {
     scope: 'list:assignments',
