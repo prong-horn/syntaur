@@ -25,6 +25,35 @@ export interface StatusConfigResponse {
   custom: boolean;
 }
 
+// Shared client types for the orphan-prompt feature. Mirror server shapes
+// in src/dashboard/api-status-config.ts.
+
+export type StatusResolution =
+  | { id: string; mode: 'remap'; target: string }
+  | { id: string; mode: 'delete' };
+
+export interface AffectedAssignmentSummary {
+  display: string;
+  projectSlug: string | null;
+  assignmentSlug: string;
+  status: string;
+}
+
+export interface AffectedResponse {
+  id: string;
+  count: number;
+  truncated: boolean;
+  assignments: AffectedAssignmentSummary[];
+}
+
+export interface StatusConfigSaveResponse extends StatusConfigResponse {
+  applied?: {
+    remapped: number;
+    deleted: number;
+    byId: Record<string, { mode: 'remap' | 'delete'; count: number; target?: string }>;
+  };
+}
+
 const DEFAULT_STATUS_CONFIG: StatusConfigResponse = {
   statuses: [
     { id: 'pending', label: 'Pending' },

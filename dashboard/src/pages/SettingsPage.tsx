@@ -15,8 +15,15 @@ import { ErrorState } from '../components/ErrorState';
 import { ColorPicker } from '../components/ColorPicker';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../components/ui/tooltip';
 import { BackupSection } from '../components/BackupSection';
-import type { StatusConfigResponse } from '../hooks/useStatusConfig';
+import type {
+  StatusConfigResponse,
+  StatusResolution,
+  AffectedResponse,
+  StatusConfigSaveResponse,
+} from '../hooks/useStatusConfig';
 import { invalidateStatusConfigCache } from '../hooks/useStatusConfig';
+import { StatusDeleteModal } from './StatusDeleteModal';
+import { buildStatusSavePayload, pruneStaleResolutions } from './settings-page-helpers';
 import { PRESETS, type ThemeSlug } from '../themes';
 import { useTheme } from '../theme';
 import { HotkeyBindingsSection } from './HotkeyBindingsSection';
@@ -57,6 +64,19 @@ export function SettingsPage() {
   const [saving, setSaving] = useState(false);
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
   const [dirty, setDirty] = useState(false);
+
+  // Orphan-prompt state. `savedStatusIds` tracks which ids are backed by
+  // disk (so we know when the trash-icon click is a delete-of-saved-status
+  // that may have orphans). `pendingResolutions` buffers user choices
+  // between the trash click and Save. `modalState` controls the modal.
+  const [savedStatusIds, setSavedStatusIds] = useState<Set<string>>(new Set());
+  const [pendingResolutions, setPendingResolutions] = useState<Map<string, StatusResolution>>(
+    new Map(),
+  );
+  const [modalState, setModalState] = useState<
+    | { open: true; affected: AffectedResponse; pendingIndex: number }
+    | { open: false }
+  >({ open: false });
 
   const { preset, setPreset, resetPreset } = useTheme();
   const [themeSaving, setThemeSaving] = useState(false);
@@ -106,6 +126,8 @@ export function SettingsPage() {
       setStatuses(editable.statuses);
       setOrder(editable.order);
       setCustom(data.custom);
+      setSavedStatusIds(new Set(editable.statuses.map((s) => s.id)));
+      setPendingResolutions(new Map());
       setDirty(false);
       setError(null);
     } catch (err) {
@@ -125,34 +147,60 @@ export function SettingsPage() {
     setSaving(true);
     setFeedback(null);
     try {
-      const body = {
-        statuses: statuses.map((s) => ({
-          id: s.id,
-          label: s.label,
-          ...(s.description ? { description: s.description } : {}),
-          ...(s.color ? { color: s.color } : {}),
-          ...(s.terminal ? { terminal: true } : {}),
-        })),
-        order,
-        transitions: [],
-      };
+      const { body } = buildStatusSavePayload({ statuses, order, pendingResolutions });
       const res = await fetch('/api/config/statuses', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
       });
       if (!res.ok) {
-        const err = await res.json().catch(() => ({ error: 'Unknown error' }));
-        throw new Error(err.error ?? 'Save failed');
+        const errBody = await res.json().catch(() => null);
+        if (res.status === 409 && errBody?.error === 'unresolved-orphans') {
+          const ids = Array.isArray(errBody.unresolved)
+            ? errBody.unresolved.map((u: { id: string }) => u.id).join(', ')
+            : '';
+          throw new Error(
+            `Cannot save — these statuses have assignments that need a resolution: ${ids}. Click the trash icon on each row to choose remap or delete.`,
+          );
+        }
+        if (res.status === 500 && errBody?.error === 'config-write-failed' && errBody?.applied) {
+          const { remapped, deleted } = errBody.applied;
+          setFeedback({
+            type: 'error',
+            message: `Resolutions applied (${remapped} remapped, ${deleted} deleted) but the status config write failed. Click Save again to retry.`,
+          });
+          await loadConfig();
+          return;
+        }
+        if (errBody?.error === 'invalid-remap-target') {
+          throw new Error(
+            `Invalid remap target (${errBody.reason}): ${errBody.id} → ${errBody.target}.`,
+          );
+        }
+        if (errBody?.error === 'duplicate-resolution-ids') {
+          throw new Error(`Duplicate resolution ids: ${(errBody.ids ?? []).join(', ')}`);
+        }
+        if (errBody?.error === 'stale-resolution') {
+          throw new Error(`Stale resolution for id "${errBody.id}".`);
+        }
+        if (errBody?.error === 'malformed-resolutions') {
+          throw new Error(`Malformed resolutions: ${errBody.message ?? 'unknown'}`);
+        }
+        throw new Error(errBody?.error ?? `Save failed (HTTP ${res.status})`);
       }
-      const data: StatusConfigResponse = await res.json();
+      const data: StatusConfigSaveResponse = await res.json();
       const editable = toEditable(data);
       setStatuses(editable.statuses);
       setOrder(editable.order);
       setCustom(data.custom);
+      setSavedStatusIds(new Set(editable.statuses.map((s) => s.id)));
+      setPendingResolutions(new Map());
       setDirty(false);
       invalidateStatusConfigCache();
-      setFeedback({ type: 'success', message: 'Status config saved' });
+      const appliedMsg = data.applied
+        ? ` (${data.applied.remapped} remapped, ${data.applied.deleted} deleted)`
+        : '';
+      setFeedback({ type: 'success', message: `Status config saved${appliedMsg}` });
       clearFeedback();
     } catch (err) {
       setFeedback({ type: 'error', message: err instanceof Error ? err.message : 'Save failed' });
@@ -172,6 +220,8 @@ export function SettingsPage() {
       setStatuses(editable.statuses);
       setOrder(editable.order);
       setCustom(data.custom);
+      setSavedStatusIds(new Set(editable.statuses.map((s) => s.id)));
+      setPendingResolutions(new Map());
       setDirty(false);
       invalidateStatusConfigCache();
       setFeedback({ type: 'success', message: 'Reset to defaults' });
@@ -204,11 +254,65 @@ export function SettingsPage() {
     setDirty(true);
   }
 
-  function removeStatus(index: number) {
+  async function removeStatus(index: number) {
     const removedId = statuses[index].id;
-    setStatuses((prev) => prev.filter((_, i) => i !== index));
+
+    // Row added in this session (not on disk yet) — drop locally, no prompt.
+    if (!savedStatusIds.has(removedId)) {
+      setStatuses((prev) => prev.filter((_, i) => i !== index));
+      setOrder((prev) => prev.filter((id) => id !== removedId));
+      setPendingResolutions((prev) => pruneStaleResolutions(prev, new Set(
+        statuses.filter((_, i) => i !== index).map((s) => s.id),
+      )));
+      setDirty(true);
+      return;
+    }
+
+    // Row backed by disk — check for affected assignments.
+    try {
+      const res = await fetch(`/api/config/statuses/affected/${encodeURIComponent(removedId)}`);
+      if (!res.ok) {
+        throw new Error(`HTTP ${res.status}`);
+      }
+      const affected: AffectedResponse = await res.json();
+      if (affected.count === 0) {
+        setStatuses((prev) => prev.filter((_, i) => i !== index));
+        setOrder((prev) => prev.filter((id) => id !== removedId));
+        setDirty(true);
+        return;
+      }
+      setModalState({ open: true, affected, pendingIndex: index });
+    } catch (err) {
+      setFeedback({
+        type: 'error',
+        message: `Could not check affected assignments for "${removedId}": ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      });
+    }
+  }
+
+  function handleModalResolve(resolution: StatusResolution) {
+    if (!modalState.open) return;
+    const { pendingIndex } = modalState;
+    const removedId = statuses[pendingIndex]?.id;
+    if (removedId !== resolution.id) {
+      setModalState({ open: false });
+      return;
+    }
+    setPendingResolutions((prev) => {
+      const next = new Map(prev);
+      next.set(removedId, resolution);
+      return next;
+    });
+    setStatuses((prev) => prev.filter((_, i) => i !== pendingIndex));
     setOrder((prev) => prev.filter((id) => id !== removedId));
     setDirty(true);
+    setModalState({ open: false });
+  }
+
+  function handleModalCancel() {
+    setModalState({ open: false });
   }
 
   // --- Order mutations ---
@@ -384,12 +488,28 @@ export function SettingsPage() {
               {statuses.map((s, i) => (
                 <tr key={i}>
                   <td className="py-2 pr-3">
-                    <input
-                      type="text"
-                      value={s.id}
-                      onChange={(e) => updateStatus(i, 'id', e.target.value)}
-                      className="editor-input w-full text-sm"
-                    />
+                    {savedStatusIds.has(s.id) ? (
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <input
+                            type="text"
+                            value={s.id}
+                            readOnly
+                            className="editor-input w-full text-sm cursor-not-allowed opacity-60"
+                          />
+                        </TooltipTrigger>
+                        <TooltipContent className="max-w-xs text-xs font-normal normal-case tracking-normal">
+                          To rename a saved status, delete the row and create a new one (this triggers the orphan-resolution flow if assignments still reference it).
+                        </TooltipContent>
+                      </Tooltip>
+                    ) : (
+                      <input
+                        type="text"
+                        value={s.id}
+                        onChange={(e) => updateStatus(i, 'id', e.target.value)}
+                        className="editor-input w-full text-sm"
+                      />
+                    )}
                   </td>
                   <td className="py-2 pr-3">
                     <input
@@ -502,6 +622,24 @@ export function SettingsPage() {
 
       {/* GitHub Backup */}
       <BackupSection />
+
+      {/* Orphan-prompt modal */}
+      {modalState.open && (
+        <StatusDeleteModal
+          open={modalState.open}
+          affected={{
+            ...modalState.affected,
+            label:
+              statuses.find((s) => s.id === modalState.affected.id)?.label ??
+              modalState.affected.id,
+          }}
+          remaining={statuses
+            .filter((s) => s.id !== modalState.affected.id && savedStatusIds.has(s.id))
+            .map((s) => ({ id: s.id, label: s.label }))}
+          onResolve={handleModalResolve}
+          onCancel={handleModalCancel}
+        />
+      )}
     </div>
     </TooltipProvider>
   );
