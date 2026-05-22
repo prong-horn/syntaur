@@ -217,7 +217,18 @@ export async function applyStatusResolutions(
         // Re-read current state to guard against TOCTOU. The buffer holds
         // what we scanned earlier; re-read NOW and check status hasn't
         // drifted.
-        const current = await readFile(a.path, 'utf-8');
+        let current: string;
+        try {
+          current = await readFile(a.path, 'utf-8');
+        } catch (err) {
+          const code = (err as NodeJS.ErrnoException)?.code;
+          if (code === 'ENOENT') {
+            // File vanished between buffer and remap — assignment is gone;
+            // remap is moot. Skip silently (mirrors the delete phase).
+            continue;
+          }
+          throw err;
+        }
         const fm = parseAssignmentFrontmatter(current);
         if (fm.status !== r.id) {
           console.warn(
