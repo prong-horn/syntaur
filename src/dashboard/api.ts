@@ -339,12 +339,28 @@ export async function getStatusConfig(): Promise<ResolvedStatusConfig> {
     const terminalSet = new Set(
       config.statuses.statuses.filter((s) => s.terminal).map((s) => s.id),
     );
+    // If a user defines custom statuses but omits the `transitions:` block,
+    // fall back to default transitions. Without this, buildTransitionTable([])
+    // returns an empty Map and getTargetStatus returns null for every command,
+    // so the dashboard would show zero available transitions for any assignment.
+    // We materialize a FRESH table from DEFAULT_TRANSITION_TABLE entries (rather
+    // than reusing the DEFAULT_TRANSITION_TABLE reference) so getTargetStatus
+    // takes the custom-config code path and uses `from:command` lookups — this
+    // is what enforces "only emit transitions valid from current status" for
+    // users whose config has custom statuses but default transitions.
+    const hasCustomTransitions = config.statuses.transitions.length > 0;
+    const effectiveTransitions = hasCustomTransitions
+      ? config.statuses.transitions
+      : Array.from(DEFAULT_TRANSITION_TABLE.entries()).map(([key, to]) => {
+          const [from, command] = key.split(':');
+          return { from, command, to };
+        });
     _cachedConfig = {
       custom: true,
       statuses: config.statuses.statuses,
       order: config.statuses.order,
-      transitions: config.statuses.transitions,
-      transitionTable: buildTransitionTable(config.statuses.transitions),
+      transitions: effectiveTransitions,
+      transitionTable: buildTransitionTable(effectiveTransitions),
       terminalStatuses: terminalSet.size > 0 ? terminalSet : new Set(['completed', 'failed']),
     };
   } else {
