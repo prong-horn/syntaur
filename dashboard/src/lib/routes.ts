@@ -17,6 +17,7 @@ const SIDEBAR_SECTIONS = [
   '/assignments',
   '/servers',
   '/inventories',
+  '/usage',
   '/agent-sessions',
   '/playbooks',
   '/memories',
@@ -67,6 +68,10 @@ export function getSidebarSection(pathname: string): SidebarSection | null {
 
   if (normalized.startsWith('/inventories')) {
     return '/inventories';
+  }
+
+  if (normalized.startsWith('/usage')) {
+    return '/usage';
   }
 
   if (normalized.startsWith('/agent-sessions')) {
@@ -178,6 +183,9 @@ export function buildShellMeta(pathname: string): ShellMeta {
   } else if (parts[0] === 'inventories') {
     title = 'Inventories';
     breadcrumbs.push({ label: 'Inventories', path: `${workspacePrefix}/inventories` });
+  } else if (parts[0] === 'usage') {
+    title = 'Usage';
+    breadcrumbs.push({ label: 'Usage', path: `${workspacePrefix}/usage` });
   } else if (parts[0] === 'agent-sessions') {
     title = 'Agent Sessions';
     breadcrumbs.push({ label: 'Agent Sessions', path: `${workspacePrefix}/agent-sessions` });

@@ -71,6 +71,7 @@ import { createAgentsRouter } from './api-agents.js';
 import { createLaunchPreflightRouter } from './api-launch-preflight.js';
 import { createTerminalConfigRouter } from './api-terminal-config.js';
 import { createLeasesRouter } from './api-leases.js';
+import { createUsageRouter } from './api-usage.js';
 import { createPlaybooksRouter } from './api-playbooks.js';
 import {
   migrateLegacyProjectFiles,
@@ -84,6 +85,7 @@ import { createProjectBundlesRouter } from './api-project-bundles.js';
 import { createBackupRouter } from './api-backup.js';
 import { initSessionDb, migrateFromMarkdown, closeSessionDb } from './session-db.js';
 import { initLeasesDb, closeLeasesDb } from '../db/leases-db.js';
+import { initUsageDb, closeUsageDb } from '../db/usage-db.js';
 import { startAutodiscovery, stopAutodiscovery } from './autodiscovery.js';
 import type { WsMessage } from './types.js';
 
@@ -152,6 +154,9 @@ export function createDashboardServer(options: DashboardServerOptions) {
 
   // --- Initialize leases database (shares syntaur.db) ---
   initLeasesDb();
+
+  // --- Initialize usage database (shares syntaur.db) ---
+  initUsageDb();
 
   // --- One-shot legacy filesystem migration (pre-v0.2.0 → v0.2.0+) ---
   // Idempotent, non-destructive, reports what it did. Run in the background
@@ -719,6 +724,9 @@ export function createDashboardServer(options: DashboardServerOptions) {
   // --- Leases API ---
   app.use('/api/leases', createLeasesRouter(broadcast));
 
+  // --- Usage API (per-assignment / per-project token usage rollups) ---
+  app.use('/api/usage', createUsageRouter());
+
   // --- Agent Sessions API ---
   app.use('/api/agent-sessions', createAgentSessionsRouter(projectsDir, broadcast, assignmentsDir));
 
@@ -850,6 +858,7 @@ export function createDashboardServer(options: DashboardServerOptions) {
       }
       closeSessionDb();
       closeLeasesDb();
+      closeUsageDb();
       for (const client of clients) {
         client.terminate();
       }

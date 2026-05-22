@@ -1,0 +1,7 @@
+{
+  "ccusageVersion": "20.0.1",
+  "capturedAt": "2026-05-21T15:48:00Z",
+  "command": "ccusage session --json --breakdown",
+  "captureMachine": "darwin/25.3.0",
+  "notes": "Sampled from a 477-session real dump. Includes one row per agent (claude, codex, opencode) plus one multi-model session. Key per-agent quirks observed:\n- claude.period is the session UUID; metadata.lastActivity is date-only (YYYY-MM-DD).\n- codex.period is a path-like string like '2026/03/13/rollout-2026-03-13T05-48-02-<uuid>'; UUID is the last hyphen-delimited block. metadata.lastActivity is full ISO timestamp.\n- opencode.period is 'ses_<short-id>'; metadata.lastActivity is undefined (omit from event_ts; fall back to current time minus a safety lag in the parser).\n- modelBreakdowns array always present and ordered. Per-model fields are 'cost' (not 'totalCost') and 'modelName' (not 'model')."
+}
