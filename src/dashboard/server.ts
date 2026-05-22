@@ -14,8 +14,6 @@ import {
   getAssignmentDetailById,
   getOverview,
   getHelp,
-  getStatusConfig,
-  clearStatusConfigCache,
   listWorkspaces,
   createWorkspace,
   deleteWorkspace,
@@ -27,8 +25,6 @@ import { enrichSessions } from './session-liveness.js';
 import { createWatcher } from './watcher.js';
 import { fileExists } from '../utils/fs.js';
 import {
-  writeStatusConfig,
-  deleteStatusConfig,
   writeThemeConfig,
   deleteThemeConfig,
   writeHotkeyBindingsConfig,
@@ -70,6 +66,7 @@ import { createAgentSessionsRouter } from './api-agent-sessions.js';
 import { createAgentsRouter } from './api-agents.js';
 import { createLaunchPreflightRouter } from './api-launch-preflight.js';
 import { createTerminalConfigRouter } from './api-terminal-config.js';
+import { createStatusConfigRouter } from './api-status-config.js';
 import { createLeasesRouter } from './api-leases.js';
 import { createUsageRouter } from './api-usage.js';
 import { createPlaybooksRouter } from './api-playbooks.js';
@@ -205,59 +202,7 @@ export function createDashboardServer(options: DashboardServerOptions) {
     }
   });
 
-  app.get('/api/config/statuses', async (_req, res) => {
-    try {
-      const config = await getStatusConfig();
-      res.json({
-        statuses: config.statuses,
-        order: config.order,
-        transitions: config.transitions,
-        custom: config.custom,
-      });
-    } catch (error) {
-      console.error('Error getting status config:', error);
-      res.status(500).json({ error: 'Failed to get status config' });
-    }
-  });
-
-  app.post('/api/config/statuses', async (req, res) => {
-    try {
-      const { statuses, order, transitions } = req.body;
-      if (!Array.isArray(statuses) || !Array.isArray(order) || !Array.isArray(transitions)) {
-        res.status(400).json({ error: 'Request body must include statuses, order, and transitions arrays' });
-        return;
-      }
-      await writeStatusConfig({ statuses, order, transitions });
-      clearStatusConfigCache();
-      const config = await getStatusConfig();
-      res.json({
-        statuses: config.statuses,
-        order: config.order,
-        transitions: config.transitions,
-        custom: config.custom,
-      });
-    } catch (error) {
-      console.error('Error saving status config:', error);
-      res.status(500).json({ error: 'Failed to save status config' });
-    }
-  });
-
-  app.delete('/api/config/statuses', async (_req, res) => {
-    try {
-      await deleteStatusConfig();
-      clearStatusConfigCache();
-      const config = await getStatusConfig();
-      res.json({
-        statuses: config.statuses,
-        order: config.order,
-        transitions: config.transitions,
-        custom: config.custom,
-      });
-    } catch (error) {
-      console.error('Error resetting status config:', error);
-      res.status(500).json({ error: 'Failed to reset status config' });
-    }
-  });
+  app.use('/api/config/statuses', createStatusConfigRouter(projectsDir, assignmentsDir));
 
   // Theme presets — keep in sync with PRESETS in dashboard/src/themes.ts (canonical client list).
   const THEME_PRESET_SLUGS = ['default', 'ocean', 'forest', 'sunset'] as const;
