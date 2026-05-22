@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import {
   scanAssignmentsByStatus,
   applyStatusResolutions,
+  verifyNoDriftedOrphans,
   StatusResolutionError,
   type StatusResolution,
 } from '../utils/status-config-resolution.js';
@@ -124,7 +125,9 @@ describe('applyStatusResolutions', () => {
       new Set(['draft', 'in_progress']),
     );
 
-    expect(result).toEqual({ remapped: 1, deleted: 0 });
+    expect(result.remapped).toBe(1);
+    expect(result.deleted).toBe(0);
+    expect(result.byId.get('pending')).toEqual({ mode: 'remap', count: 1, target: 'draft' });
     const after = await readFile(path, 'utf-8');
     expect(getStatus(after)).toBe('draft');
     expect(getUpdated(after)).not.toBe(getUpdated(before));
@@ -143,7 +146,9 @@ describe('applyStatusResolutions', () => {
       new Set(['draft']),
     );
 
-    expect(result).toEqual({ remapped: 0, deleted: 2 });
+    expect(result.remapped).toBe(0);
+    expect(result.deleted).toBe(2);
+    expect(result.byId.get('pending')).toEqual({ mode: 'delete', count: 2 });
     expect(await fileGone(p1)).toBe(true);
     expect(await fileGone(p2)).toBe(true);
   });
@@ -162,7 +167,8 @@ describe('applyStatusResolutions', () => {
       new Set(['draft']),
     );
 
-    expect(result).toEqual({ remapped: 1, deleted: 1 });
+    expect(result.remapped).toBe(1);
+    expect(result.deleted).toBe(1);
     expect(getStatus(await readFile(r1, 'utf-8'))).toBe('draft');
     expect(await fileGone(d1)).toBe(true);
   });
@@ -174,7 +180,8 @@ describe('applyStatusResolutions', () => {
       affected,
       new Set(['draft']),
     );
-    expect(result).toEqual({ remapped: 0, deleted: 0 });
+    expect(result.remapped).toBe(0);
+    expect(result.deleted).toBe(0);
   });
 
   it('throws duplicate-id when two resolutions share the same id', async () => {
@@ -270,36 +277,31 @@ describe('applyStatusResolutions', () => {
     expect(await fileGone(stablePath)).toBe(true);
   });
 
-  it('rolls back remap writes on phase failure (restores originals from buffer)', async () => {
-    // Seed two assignments; make the second's containing dir read-only AFTER
-    // the buffer phase reads the original. We achieve this via two scans:
-    // the buffer-reading happens with the dirs writable; then chmod restricts
-    // before the write phase reaches the second file. But applyStatusResolutions
-    // is one call — so we use the alphabetical ordering of the walker output
-    // (a1 < a2) and pre-chmod a2's dir to readonly (0o555 — readable+executable
-    // but not writable). The first write to a1 succeeds, then the second
-    // write to a2's read-only dir fails (EACCES on macOS for replace).
-    //
-    // Subtlety: writeFile on an existing file inside a 0o555 dir CAN succeed
-    // (the file exists; we're not unlinking). To force a failure, set the
-    // *file itself* to 0o444 (read-only). writeFile then throws EACCES.
+  it('rolls back remap writes on phase failure (proves write happened then restored from buffer via mtime check)', async () => {
+    // Iterate the walker order (apply does NOT sort), so the FIRST entry
+    // gets written and succeeds; the SECOND has assignment.md chmod 0o444
+    // and writeFile throws EACCES. Buffer rollback must restore the first
+    // file byte-for-byte. We additionally check that the first file's
+    // mtime advanced — proving an actual write happened, not just that the
+    // implementation skipped the loop without doing anything.
+    const { stat, chmod, utimes } = await import('node:fs/promises');
 
-    const a1 = await seed(join(projectsDir, 'p1', 'assignments', 'a1'), 'a1', 'pending');
-    const a2 = await seed(join(projectsDir, 'p1', 'assignments', 'a2'), 'a2', 'pending');
+    await seed(join(projectsDir, 'p1', 'assignments', 'a1'), 'a1', 'pending');
+    await seed(join(projectsDir, 'p1', 'assignments', 'a2'), 'a2', 'pending');
     const affected = await scanAssignmentsByStatus(projectsDir, null, ['pending']);
-    // Confirm ordering: a1 < a2
-    const sorted = affected.get('pending')!.slice().sort((x, y) => x.path.localeCompare(y.path));
-    expect(sorted[0].path).toBe(a1);
-    expect(sorted[1].path).toBe(a2);
+    const list = affected.get('pending')!;
+    expect(list).toHaveLength(2);
 
-    const original1 = await readFile(a1, 'utf-8');
-    const original2 = await readFile(a2, 'utf-8');
+    const original1 = await readFile(list[0].path, 'utf-8');
+    const original2 = await readFile(list[1].path, 'utf-8');
 
-    // Chmod a2's assignment.md to readonly so writeFile throws.
-    const fs = await import('node:fs/promises');
-    await fs.chmod(a2, 0o444);
+    // Backdate the first file's mtime so a successful write will move it forward.
+    const past = new Date('2020-01-01T00:00:00Z');
+    await utimes(list[0].path, past, past);
+    const mtimeBefore = (await stat(list[0].path)).mtimeMs;
 
-    let restoredOriginal2 = false;
+    await chmod(list[1].path, 0o444);
+
     try {
       await expect(
         applyStatusResolutions(
@@ -309,17 +311,57 @@ describe('applyStatusResolutions', () => {
         ),
       ).rejects.toMatchObject({ code: 'write-failed' });
 
-      // a1 should be rolled back to original.
-      expect(await readFile(a1, 'utf-8')).toBe(original1);
-      // a2 should never have been mutated (write threw).
-      expect(await readFile(a2, 'utf-8')).toBe(original2);
-      restoredOriginal2 = true;
+      expect(await readFile(list[0].path, 'utf-8')).toBe(original1);
+      expect(await readFile(list[1].path, 'utf-8')).toBe(original2);
+      const mtimeAfter = (await stat(list[0].path)).mtimeMs;
+      expect(mtimeAfter).toBeGreaterThan(mtimeBefore);
     } finally {
-      // Restore perms before cleanup so afterEach can rm -rf.
-      await fs.chmod(a2, 0o644).catch(() => {});
-      if (!restoredOriginal2) {
-        await fs.writeFile(a2, original2).catch(() => {});
-      }
+      await chmod(list[1].path, 0o644).catch(() => {});
     }
+  });
+
+  it('throws scan-failed on a non-ENOENT read error (e.g. permission denied)', async () => {
+    const { chmod } = await import('node:fs/promises');
+    const a1 = await seed(join(projectsDir, 'p1', 'assignments', 'a1'), 'a1', 'pending');
+    // Strip ALL read perms so readFile throws EACCES.
+    await chmod(a1, 0o000);
+    try {
+      await expect(
+        scanAssignmentsByStatus(projectsDir, null, ['pending']),
+      ).rejects.toMatchObject({ code: 'scan-failed' });
+    } finally {
+      await chmod(a1, 0o644).catch(() => {});
+    }
+  });
+});
+
+describe('verifyNoDriftedOrphans', () => {
+  it('no-op when no assignment still references a dropped id', async () => {
+    await seed(join(projectsDir, 'p1', 'assignments', 'a1'), 'a1', 'in_progress');
+    // Nothing references 'pending'.
+    await expect(
+      verifyNoDriftedOrphans(projectsDir, null, ['pending']),
+    ).resolves.toBeUndefined();
+  });
+
+  it('throws drift-detected when an assignment references a dropped id', async () => {
+    await seed(join(projectsDir, 'p1', 'assignments', 'a1'), 'a1', 'in_progress');
+    await seed(join(projectsDir, 'p1', 'assignments', 'a2'), 'a2', 'pending');
+    await expect(
+      verifyNoDriftedOrphans(projectsDir, null, ['pending']),
+    ).rejects.toMatchObject({ code: 'drift-detected' });
+  });
+
+  it('catches cross-id drift (assignment moved A→B while both are being dropped)', async () => {
+    // Seed under "review" (we'll claim we scanned this as "pending").
+    const driftedPath = await seed(join(projectsDir, 'p1', 'assignments', 'a1'), 'a1', 'review');
+    // applyStatusResolutions for [pending, review] would skip a1 for pending (status drifted)
+    // and not even include it in 'review' (scan was for pending only).
+    // verifyNoDriftedOrphans with both ids catches it.
+    await expect(
+      verifyNoDriftedOrphans(projectsDir, null, ['pending', 'review']),
+    ).rejects.toMatchObject({ code: 'drift-detected' });
+    // Ensure the file is still on its drifted status (we didn't mutate it).
+    expect(getStatus(await readFile(driftedPath, 'utf-8'))).toBe('review');
   });
 });

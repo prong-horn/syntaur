@@ -7,6 +7,7 @@ import { getStatusConfig, clearStatusConfigCache } from './api.js';
 import {
   scanAssignmentsByStatus,
   applyStatusResolutions,
+  verifyNoDriftedOrphans,
   StatusResolutionError,
   type StatusResolution,
   type AffectedAssignment,
@@ -108,12 +109,23 @@ function mapResolutionErrorToHttp(
       return { status: 400, body: { error: 'stale-resolution', message: err.message } };
     case 'invalid-target':
       return { status: 400, body: { error: 'invalid-remap-target', message: err.message } };
+    case 'scan-failed':
+      return { status: 500, body: { error: 'scan-failed', cause: err.message } };
     case 'write-failed':
       return { status: 500, body: { error: 'remap-write-failed', cause: err.message } };
     case 'delete-failed':
       return {
         status: 500,
         body: { error: 'delete-failed', cause: err.message, applied: applied ?? undefined },
+      };
+    case 'drift-detected':
+      return {
+        status: 409,
+        body: {
+          error: 'concurrent-edit',
+          cause: err.message,
+          applied: applied ?? undefined,
+        },
       };
   }
 }
@@ -236,12 +248,31 @@ export function createStatusConfigRouter(
       }
 
       // Step A: apply resolutions (remap → delete).
-      let applied: { remapped: number; deleted: number };
+      let applied: Awaited<ReturnType<typeof applyStatusResolutions>>;
       try {
         applied = await applyStatusResolutions(resolutions, affectedMap, validTargets);
       } catch (err) {
         if (err instanceof StatusResolutionError) {
           const mapped = mapResolutionErrorToHttp(err, null);
+          res.status(mapped.status).json(mapped.body);
+          return;
+        }
+        throw err;
+      }
+
+      // Step A.5: final drift check. Catches the case where an assignment
+      // moved from one dropped id to another between scan and apply (the
+      // intra-resolution TOCTOU guard misses this). If anything still
+      // references a dropped id, abort before config write so the user can
+      // retry cleanly.
+      try {
+        await verifyNoDriftedOrphans(projectsDir, assignmentsDir, droppedIds);
+      } catch (err) {
+        if (err instanceof StatusResolutionError) {
+          const mapped = mapResolutionErrorToHttp(err, {
+            remapped: applied.remapped,
+            deleted: applied.deleted,
+          });
           res.status(mapped.status).json(mapped.body);
           return;
         }
@@ -260,21 +291,22 @@ export function createStatusConfigRouter(
         res.status(500).json({
           error: 'config-write-failed',
           message: err instanceof Error ? err.message : String(err),
-          applied,
+          applied: { remapped: applied.remapped, deleted: applied.deleted },
         });
         return;
       }
 
-      // Step C: cache + return.
+      // Step C: cache + return. Use per-resolution counts from `applied.byId`
+      // (which already account for TOCTOU skips) rather than scan-time list
+      // lengths — otherwise the user sees inflated counts when a concurrent
+      // writer moved an assignment out of scope.
       clearStatusConfigCache();
       const config = await getStatusConfig();
       const byId: Record<string, { mode: 'remap' | 'delete'; count: number; target?: string }> = {};
-      for (const r of resolutions) {
-        const list = affectedMap.get(r.id) ?? [];
-        byId[r.id] =
-          r.mode === 'remap'
-            ? { mode: 'remap', count: list.length, target: r.target }
-            : { mode: 'delete', count: list.length };
+      for (const [id, entry] of applied.byId) {
+        byId[id] = entry.target !== undefined
+          ? { mode: entry.mode, count: entry.count, target: entry.target }
+          : { mode: entry.mode, count: entry.count };
       }
       res.json({
         statuses: config.statuses,

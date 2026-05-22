@@ -74,7 +74,7 @@ export function SettingsPage() {
     new Map(),
   );
   const [modalState, setModalState] = useState<
-    | { open: true; affected: AffectedResponse; pendingIndex: number }
+    | { open: true; affected: AffectedResponse; pendingId: string }
     | { open: false }
   >({ open: false });
 
@@ -163,11 +163,23 @@ export function SettingsPage() {
             `Cannot save — these statuses have assignments that need a resolution: ${ids}. Click the trash icon on each row to choose remap or delete.`,
           );
         }
-        if (res.status === 500 && errBody?.error === 'config-write-failed' && errBody?.applied) {
-          const { remapped, deleted } = errBody.applied;
+        if (res.status === 409 && errBody?.error === 'concurrent-edit') {
+          const applied = errBody.applied
+            ? ` (${errBody.applied.remapped} remapped, ${errBody.applied.deleted} deleted before the conflict)`
+            : '';
           setFeedback({
             type: 'error',
-            message: `Resolutions applied (${remapped} remapped, ${deleted} deleted) but the status config write failed. Click Save again to retry.`,
+            message: `Concurrent edit detected${applied}: ${errBody.cause ?? 'an assignment moved to a still-dropped status during save'}. Refreshing — please re-resolve.`,
+          });
+          await loadConfig();
+          return;
+        }
+        if (res.status === 500 && errBody?.error === 'config-write-failed' && errBody?.applied) {
+          const { remapped, deleted } = errBody.applied;
+          const cause = errBody.message ? `: ${errBody.message}` : '';
+          setFeedback({
+            type: 'error',
+            message: `Resolutions applied (${remapped} remapped, ${deleted} deleted) but the status config write failed${cause}. Click Save again to retry.`,
           });
           await loadConfig();
           return;
@@ -181,10 +193,13 @@ export function SettingsPage() {
           throw new Error(`Duplicate resolution ids: ${(errBody.ids ?? []).join(', ')}`);
         }
         if (errBody?.error === 'stale-resolution') {
-          throw new Error(`Stale resolution for id "${errBody.id}".`);
+          throw new Error(`Stale resolution for id "${errBody.id ?? '?'}".`);
         }
         if (errBody?.error === 'malformed-resolutions') {
           throw new Error(`Malformed resolutions: ${errBody.message ?? 'unknown'}`);
+        }
+        if (errBody?.error === 'remap-write-failed' || errBody?.error === 'delete-failed' || errBody?.error === 'scan-failed') {
+          throw new Error(`${errBody.error}: ${errBody.cause ?? 'unknown'}`);
         }
         throw new Error(errBody?.error ?? `Save failed (HTTP ${res.status})`);
       }
@@ -254,17 +269,23 @@ export function SettingsPage() {
     setDirty(true);
   }
 
+  function dropRowAndPrune(removedId: string) {
+    setStatuses((prev) => {
+      const nextStatuses = prev.filter((s) => s.id !== removedId);
+      const nextIds = new Set(nextStatuses.map((s) => s.id));
+      setPendingResolutions((prevRes) => pruneStaleResolutions(prevRes, nextIds));
+      return nextStatuses;
+    });
+    setOrder((prev) => prev.filter((id) => id !== removedId));
+    setDirty(true);
+  }
+
   async function removeStatus(index: number) {
     const removedId = statuses[index].id;
 
     // Row added in this session (not on disk yet) — drop locally, no prompt.
     if (!savedStatusIds.has(removedId)) {
-      setStatuses((prev) => prev.filter((_, i) => i !== index));
-      setOrder((prev) => prev.filter((id) => id !== removedId));
-      setPendingResolutions((prev) => pruneStaleResolutions(prev, new Set(
-        statuses.filter((_, i) => i !== index).map((s) => s.id),
-      )));
-      setDirty(true);
+      dropRowAndPrune(removedId);
       return;
     }
 
@@ -276,12 +297,10 @@ export function SettingsPage() {
       }
       const affected: AffectedResponse = await res.json();
       if (affected.count === 0) {
-        setStatuses((prev) => prev.filter((_, i) => i !== index));
-        setOrder((prev) => prev.filter((id) => id !== removedId));
-        setDirty(true);
+        dropRowAndPrune(removedId);
         return;
       }
-      setModalState({ open: true, affected, pendingIndex: index });
+      setModalState({ open: true, affected, pendingId: removedId });
     } catch (err) {
       setFeedback({
         type: 'error',
@@ -294,19 +313,28 @@ export function SettingsPage() {
 
   function handleModalResolve(resolution: StatusResolution) {
     if (!modalState.open) return;
-    const { pendingIndex } = modalState;
-    const removedId = statuses[pendingIndex]?.id;
-    if (removedId !== resolution.id) {
+    const { pendingId } = modalState;
+    if (pendingId !== resolution.id) {
+      setModalState({ open: false });
+      return;
+    }
+    // Verify the row still exists in the current statuses array (it should,
+    // unless the user did something weird like a rapid-fire double-click).
+    if (!statuses.some((s) => s.id === pendingId)) {
+      setFeedback({
+        type: 'error',
+        message: `Row for "${pendingId}" was already removed — modal action ignored.`,
+      });
       setModalState({ open: false });
       return;
     }
     setPendingResolutions((prev) => {
       const next = new Map(prev);
-      next.set(removedId, resolution);
+      next.set(pendingId, resolution);
       return next;
     });
-    setStatuses((prev) => prev.filter((_, i) => i !== pendingIndex));
-    setOrder((prev) => prev.filter((id) => id !== removedId));
+    setStatuses((prev) => prev.filter((s) => s.id !== pendingId));
+    setOrder((prev) => prev.filter((id) => id !== pendingId));
     setDirty(true);
     setModalState({ open: false });
   }

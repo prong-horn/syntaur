@@ -23,8 +23,10 @@ export type StatusResolutionErrorCode =
   | 'invalid-target'
   | 'duplicate-id'
   | 'stale-resolution'
+  | 'scan-failed'
   | 'write-failed'
-  | 'delete-failed';
+  | 'delete-failed'
+  | 'drift-detected';
 
 export class StatusResolutionError extends Error {
   constructor(message: string, public code: StatusResolutionErrorCode) {
@@ -37,8 +39,14 @@ export class StatusResolutionError extends Error {
  * Walk all project and standalone assignments, parse each `assignment.md`,
  * and group those whose `status` matches one of the requested `ids`.
  *
- * Returns a Map keyed by status id. Callers should `map.get(id) ?? []` —
- * the map only contains entries for ids that had at least one match.
+ * Returns a Map keyed by status id, **always pre-populated with an entry
+ * for every requested id** (possibly empty). This lets callers
+ * distinguish "stale" (id not in map) from "zero-affected" (id in map,
+ * list empty).
+ *
+ * Throws `StatusResolutionError(code: 'scan-failed')` on any read error
+ * other than ENOENT (which is treated as the file vanishing between the
+ * walk and the read — rare but benign).
  */
 export async function scanAssignmentsByStatus(
   projectsDir: string,
@@ -60,8 +68,19 @@ export async function scanAssignmentsByStatus(
     let content: string;
     try {
       content = await readFile(assignmentPath, 'utf-8');
-    } catch {
-      continue;
+    } catch (err) {
+      // Don't swallow IO errors silently — surface them as scan-failed.
+      // Silent skip would hide affected assignments and let the server
+      // wrongly approve a drop, leaving doctor errors after save.
+      const code = (err as NodeJS.ErrnoException)?.code;
+      if (code === 'ENOENT') {
+        // File literally vanished between walk and read (rare race) — skip.
+        continue;
+      }
+      throw new StatusResolutionError(
+        `failed to read ${assignmentPath}: ${err instanceof Error ? err.message : String(err)}`,
+        'scan-failed',
+      );
     }
     const fm = parseAssignmentFrontmatter(content);
     if (!idSet.has(fm.status)) continue;
@@ -105,11 +124,18 @@ export async function scanAssignmentsByStatus(
  * Returns `{ remapped, deleted }` — counts of files actually touched.
  * Skipped TOCTOU mismatches do not count.
  */
+export interface ApplyResult {
+  remapped: number;
+  deleted: number;
+  /** Per-resolution actual counts (after TOCTOU skips). */
+  byId: Map<string, { mode: 'remap' | 'delete'; count: number; target?: string }>;
+}
+
 export async function applyStatusResolutions(
   resolutions: StatusResolution[],
   affected: Map<string, AffectedAssignment[]>,
   validTargets: Set<string>,
-): Promise<{ remapped: number; deleted: number }> {
+): Promise<ApplyResult> {
   // 1. Validate
   const seenIds = new Set<string>();
   for (const r of resolutions) {
@@ -163,6 +189,11 @@ export async function applyStatusResolutions(
   // 3. Remap phase
   const writtenPaths: string[] = [];
   let remapped = 0;
+  const byId = new Map<string, { mode: 'remap' | 'delete'; count: number; target?: string }>();
+  for (const r of resolutions) {
+    if (r.mode === 'remap') byId.set(r.id, { mode: 'remap', count: 0, target: r.target });
+    else byId.set(r.id, { mode: 'delete', count: 0 });
+  }
   try {
     for (const r of resolutions) {
       if (r.mode !== 'remap') continue;
@@ -186,6 +217,8 @@ export async function applyStatusResolutions(
         await writeFile(a.path, next, 'utf-8');
         writtenPaths.push(a.path);
         remapped++;
+        const bucket = byId.get(r.id);
+        if (bucket) bucket.count++;
       }
     }
   } catch (err) {
@@ -231,6 +264,8 @@ export async function applyStatusResolutions(
       try {
         await rm(assignmentDir, { recursive: true, force: true });
         deleted++;
+        const bucket = byId.get(r.id);
+        if (bucket) bucket.count++;
       } catch (err) {
         throw new StatusResolutionError(
           `delete failed for ${a.display}: ${err instanceof Error ? err.message : String(err)}`,
@@ -240,5 +275,40 @@ export async function applyStatusResolutions(
     }
   }
 
-  return { remapped, deleted };
+  return { remapped, deleted, byId };
+}
+
+/**
+ * After `applyStatusResolutions` runs, the apply-time TOCTOU re-verify
+ * catches drift WITHIN the same dropped id. But an assignment can drift
+ * from one dropped id to ANOTHER dropped id between scan and apply (e.g.
+ * the user is dropping both A and B; an assignment changes A → B while
+ * we're working). In that case the scan saw it as A (skipped because
+ * status changed to B at apply time) and B's resolution doesn't include
+ * it (scan never saw it as B). Writing the config now would orphan it.
+ *
+ * This guard does one final scan of the dropped ids against the live
+ * filesystem and throws if anything still references one. Call BEFORE
+ * writeStatusConfig.
+ */
+export async function verifyNoDriftedOrphans(
+  projectsDir: string,
+  standaloneDir: string | null,
+  droppedIds: string[],
+): Promise<void> {
+  if (droppedIds.length === 0) return;
+  const finalScan = await scanAssignmentsByStatus(projectsDir, standaloneDir, droppedIds);
+  const remaining: string[] = [];
+  for (const id of droppedIds) {
+    const list = finalScan.get(id) ?? [];
+    for (const a of list) {
+      remaining.push(`${a.display} (status: ${a.status})`);
+    }
+  }
+  if (remaining.length > 0) {
+    throw new StatusResolutionError(
+      `concurrent edit detected: ${remaining.length} assignment(s) still reference a dropped status after resolutions applied: ${remaining.join(', ')}`,
+      'drift-detected',
+    );
+  }
 }

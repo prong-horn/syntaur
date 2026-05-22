@@ -322,6 +322,26 @@ describe('POST / — resolution-aware writes', () => {
     expect(body.id).toBe('pending');
   });
 
+  it('(k) per-resolution counts in applied.byId reflect actual writes (not scan-time list size)', async () => {
+    await seedAssignment(join(projectsDir, 'p1', 'assignments', 'a1'), 'a1', 'pending');
+    await seedAssignment(join(projectsDir, 'p1', 'assignments', 'a2'), 'a2', 'pending');
+
+    const newStatuses = baseStatuses.filter((s) => s.id !== 'pending');
+    const res = await fetch(baseUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        statuses: newStatuses,
+        order: newStatuses.map((s) => s.id),
+        transitions: [],
+        resolutions: [{ id: 'pending', mode: 'remap', target: 'in_progress' }],
+      }),
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.applied.byId.pending).toEqual({ mode: 'remap', count: 2, target: 'in_progress' });
+  });
+
   it('(j) remap target same as source → 400 invalid-remap-target same-as-source', async () => {
     await seedAssignment(join(projectsDir, 'p1', 'assignments', 'a1'), 'a1', 'pending');
 
