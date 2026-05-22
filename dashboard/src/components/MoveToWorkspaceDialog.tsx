@@ -97,7 +97,7 @@ export function MoveToWorkspaceDialog({
                         : 'hover:bg-foreground/5',
                   )}
                 >
-                  <span className={cn('truncate', option.value === null ? 'italic text-muted-foreground' : '')}>
+                  <span className={cn('block min-w-0 truncate', option.value === null ? 'italic text-muted-foreground' : '')}>
                     {option.label}
                     {isCurrent ? <span className="ml-2 text-xs">(current)</span> : null}
                   </span>

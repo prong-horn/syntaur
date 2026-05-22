@@ -9,7 +9,12 @@ import {
   type AssignmentBoardItem,
   type AssignmentTransitionAction,
 } from '../hooks/useProjects';
-import { runAssignmentTransition, overrideAssignmentStatus } from '../lib/assignments';
+import {
+  runAssignmentTransition,
+  overrideAssignmentStatus,
+  updateAssignmentTitle,
+  updateAssignmentTitleById,
+} from '../lib/assignments';
 import { getAssignmentColumns } from '../lib/kanban';
 import { formatDate } from '../lib/format';
 import { SearchInput } from '../components/SearchInput';
@@ -27,6 +32,9 @@ import { MoveToWorkspaceDialog } from '../components/MoveToWorkspaceDialog';
 import type { OverflowMenuItem } from '../components/OverflowMenu';
 import { StatusBadge, STATUS_META, getStatusDescription } from '../components/StatusBadge';
 import { TypeChip } from '../components/TypeChip';
+import { StatusPillPicker } from '../components/StatusPillPicker';
+import { InlineTitleEditor } from '../components/InlineTitleEditor';
+import { useToast, Toaster } from '../components/Toast';
 import { transitionNeedsReason } from '../lib/assignments';
 import { useStatusConfig, getStatusLabel } from '../hooks/useStatusConfig';
 import { useTypesConfig, getTypeLabel } from '../hooks/useTypesConfig';
@@ -200,7 +208,7 @@ export function AssignmentsPage() {
   // default to expanded so changing the grouping dimension doesn't hide everything.
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(() => new Set());
   const [boardItems, setBoardItems] = useState<AssignmentBoardItem[]>([]);
-  const [transitionError, setTransitionError] = useState<string | null>(null);
+  const { toast, showToast, dismissToast } = useToast();
   const [transitioningId, setTransitioningId] = useState<string | null>(null);
   const [draggedId, setDraggedId] = useState<string | null>(null);
   const [dropTargetStatus, setDropTargetStatus] = useState<string | null>(null);
@@ -615,7 +623,6 @@ export function AssignmentsPage() {
     action?: AssignmentTransitionAction;
     reason?: string;
   }) {
-    setTransitionError(null);
     setTransitioningId(getAssignmentKey(item));
 
     const previous = boardItems;
@@ -676,7 +683,7 @@ export function AssignmentsPage() {
       return true;
     } catch (mutationError) {
       setBoardItems(previous);
-      setTransitionError((mutationError as Error).message);
+      showToast((mutationError as Error).message, 'error');
       return false;
     } finally {
       setTransitioningId(null);
@@ -686,17 +693,25 @@ export function AssignmentsPage() {
   async function handleMove({
     item,
     toColumnId,
+    action: providedAction,
   }: {
     item: AssignmentBoardItem;
     toColumnId: string;
+    /**
+     * The chosen transition action when the call originated from the inline
+     * status-pill picker. When omitted (drag flow), we re-derive by target
+     * status. Passing it through preserves `command` / `requiresReason` when
+     * multiple commands share a target status.
+     */
+    action?: AssignmentTransitionAction;
   }) {
     if (item.status === toColumnId) {
       return;
     }
 
-    const action = getAssignmentAction(item, toColumnId);
+    const action = providedAction ?? getAssignmentAction(item, toColumnId);
     if (action?.disabled) {
-      setTransitionError(action.disabledReason || `Cannot move this assignment to ${toColumnId}.`);
+      showToast(action.disabledReason || `Cannot move this assignment to ${toColumnId}.`, 'error');
       return;
     }
 
@@ -706,6 +721,40 @@ export function AssignmentsPage() {
     }
 
     await applyMove({ item, toColumnId, action });
+  }
+
+  async function handleRenameTitle(item: AssignmentBoardItem, newTitle: string): Promise<void> {
+    if (newTitle === item.title) return;
+
+    const key = getAssignmentKey(item);
+    const previous = boardItems;
+    setBoardItems((current) =>
+      current.map((candidate) =>
+        getAssignmentKey(candidate) === key ? { ...candidate, title: newTitle } : candidate,
+      ),
+    );
+    setTransitioningId(key);
+
+    try {
+      const updated = item.projectSlug === null
+        ? await updateAssignmentTitleById({ id: item.id, title: newTitle })
+        : await updateAssignmentTitle({ projectSlug: item.projectSlug, assignmentSlug: item.slug, title: newTitle });
+
+      setBoardItems((current) =>
+        current.map((candidate) =>
+          getAssignmentKey(candidate) === key
+            ? { ...candidate, title: updated.title, updated: updated.updated }
+            : candidate,
+        ),
+      );
+      refetch();
+    } catch (mutationError) {
+      setBoardItems(previous);
+      showToast((mutationError as Error).message, 'error');
+      throw mutationError;
+    } finally {
+      setTransitioningId(null);
+    }
   }
 
   function toggleGroup(groupId: string) {
@@ -872,12 +921,6 @@ export function AssignmentsPage() {
           ]}
         />
       </FilterBar>
-
-      {transitionError ? (
-        <div className="rounded-md border border-error-foreground/30 bg-error px-4 py-3 text-sm text-error-foreground">
-          {transitionError}
-        </div>
-      ) : null}
 
       {data.assignments.length === 0 ? (
         <EmptyState
@@ -1107,12 +1150,18 @@ export function AssignmentsPage() {
                   assignment={item}
                   dragging={dragging}
                   transitioning={transitioningId === getAssignmentKey(item)}
+                  onPillSelect={(action) =>
+                    void handleMove({ item, toColumnId: action.targetStatus, action })
+                  }
+                  onRenameTitle={(next) => handleRenameTitle(item, next)}
                 />
               </div>
             );
           }}
         />
       )}
+
+      <Toaster toast={toast} onDismiss={dismissToast} />
 
       <AssignmentTransitionDialog
         open={pendingMove !== null}
@@ -1261,26 +1310,38 @@ function AssignmentBoardCard({
   assignment,
   dragging,
   transitioning,
+  onPillSelect,
+  onRenameTitle,
 }: {
   assignment: AssignmentBoardItem;
   dragging: boolean;
   transitioning: boolean;
+  /** Present in the kanban render-site only; absent → read-only card (list view). */
+  onPillSelect?: (action: AssignmentTransitionAction) => void;
+  /** Present in the kanban render-site only; absent → read-only card (list view). */
+  onRenameTitle?: (newTitle: string) => Promise<void>;
 }) {
   const wsPrefix = useWorkspacePrefix();
+  const detailHref = assignment.projectSlug === null
+    ? `/assignments/${assignment.id}`
+    : `${wsPrefix}/projects/${assignment.projectSlug}/assignments/${assignment.slug}`;
+  const inlineEditEnabled = Boolean(onPillSelect && onRenameTitle);
   return (
     <div className="vp-card rounded-lg border border-border/60 bg-background/85 p-3 shadow-sm">
       <div className="flex items-start justify-between gap-3">
-        <div className="space-y-1">
-          <Link
-            to={
-              assignment.projectSlug === null
-                ? `/assignments/${assignment.id}`
-                : `${wsPrefix}/projects/${assignment.projectSlug}/assignments/${assignment.slug}`
-            }
-            className="text-base font-semibold text-foreground hover:text-primary"
-          >
-            {assignment.title}
-          </Link>
+        <div className="min-w-0 flex-1 space-y-1">
+          {inlineEditEnabled ? (
+            <InlineTitleEditor
+              title={assignment.title}
+              detailHref={detailHref}
+              onSave={onRenameTitle!}
+              disabled={transitioning}
+            />
+          ) : (
+            <Link to={detailHref} className="text-base font-semibold text-foreground hover:text-primary">
+              {assignment.title}
+            </Link>
+          )}
           <p className="text-sm text-muted-foreground">
             {assignment.projectTitle ?? (
               <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-[10px] uppercase text-muted-foreground">
@@ -1293,7 +1354,16 @@ function AssignmentBoardCard({
             {assignment.id && <CopyButton value={assignment.id} />}
           </p>
         </div>
-        <StatusBadge status={assignment.status} />
+        {inlineEditEnabled ? (
+          <StatusPillPicker
+            currentStatus={assignment.status}
+            availableTransitions={assignment.availableTransitions}
+            onSelect={onPillSelect!}
+            disabled={transitioning}
+          />
+        ) : (
+          <StatusBadge status={assignment.status} />
+        )}
       </div>
 
       {assignment.blockedReason ? (

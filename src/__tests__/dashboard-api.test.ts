@@ -13,7 +13,9 @@ import {
   getOverview,
   getEditableDocument,
   getHelp,
+  clearStatusConfigCache,
 } from '../dashboard/api.js';
+import { clearScanCache } from '../dashboard/scanner.js';
 import { createAgentSessionsRouter } from '../dashboard/api-agent-sessions.js';
 import {
   initSessionDb,
@@ -883,6 +885,68 @@ tags: []
         ?.availableTransitions.map((action) => action.command),
     ).toContain('review');
   });
+
+  it('only includes transitions that are valid from the current status (no fallback to command name)', async () => {
+    // ASSIGNMENT_MD has status: in_progress. From in_progress, the valid
+    // commands are `review`, `complete`, `block`, `fail` (per default
+    // transitionTable). Commands like `start`, `reopen`, `unblock`,
+    // `shape`, `plan-ready`, `implement` are NOT valid from in_progress
+    // and previously leaked through with `targetStatus: <commandName>`.
+    await createProjectFiles(testDir, 'test-project', PROJECT_MD, [
+      { slug: 'test-assignment', assignmentMd: ASSIGNMENT_MD },
+    ]);
+
+    const result = await listAssignmentsBoard(testDir);
+    const assignment = result.assignments.find((a) => a.slug === 'test-assignment');
+    expect(assignment).toBeDefined();
+    expect(assignment!.status).toBe('in_progress');
+
+    const commands = assignment!.availableTransitions.map((a) => a.command);
+    // None of the previously-bogus from-pending-only commands should leak.
+    expect(commands).not.toContain('start');
+    expect(commands).not.toContain('reopen');
+    expect(commands).not.toContain('unblock');
+  });
+
+  it('only includes valid transitions for standalone assignments too', async () => {
+    const assignmentsDir = resolve(testDir, 'standalone');
+    await mkdir(assignmentsDir, { recursive: true });
+    const standaloneId = '99999999-9999-9999-9999-999999999999';
+    await mkdir(resolve(assignmentsDir, standaloneId), { recursive: true });
+    // status: completed — from completed, only `reopen` should be valid
+    // under the default transition table. Commands like `start`, `block`,
+    // `review`, `complete` are not valid and used to leak through.
+    await writeFile(
+      resolve(assignmentsDir, standaloneId, 'assignment.md'),
+      `---
+id: ${standaloneId}
+slug: standalone-task
+title: Standalone Task
+status: completed
+priority: medium
+created: "2026-04-01T10:00:00Z"
+updated: "2026-04-01T10:00:00Z"
+assignee: human
+externalIds: []
+dependsOn: []
+links: []
+blockedReason: null
+tags: []
+---
+
+# Standalone Task`,
+      'utf-8',
+    );
+
+    const board = await listAssignmentsBoard(testDir, assignmentsDir);
+    const standalone = board.assignments.find((a) => a.id === standaloneId);
+    expect(standalone).toBeDefined();
+    const commands = standalone!.availableTransitions.map((a) => a.command);
+    expect(commands).not.toContain('start');
+    expect(commands).not.toContain('block');
+    expect(commands).not.toContain('review');
+    expect(commands).not.toContain('complete');
+  });
 });
 
 describe('overview', () => {
@@ -953,6 +1017,154 @@ describe('overview', () => {
     expect(overview.segments.stale.offset).toBe(0);
     expect(overview.segments.stale.items.length).toBeLessThanOrEqual(1);
   });
+});
+
+describe('overview performance', () => {
+  // Regression test for the slow /api/overview fix. The original implementation
+  // walked every project + every assignment sequentially via `for…await`, which
+  // scaled linearly with FS round-trip latency. After parallelization
+  // (`listProjectRecords` + `listAssignmentRecords` + `buildProjectRollup` +
+  // `buildOverviewSegmentBuckets` in `src/dashboard/api.ts`), wall-clock drops
+  // by ~2× on a fast tmpfs and substantially more on slower disks where
+  // per-syscall latency is the dominant cost.
+  //
+  // Measured locally on Apple Silicon tmpfs, 60 projects × 30 assignments,
+  // with `SYNTAUR_PERF_TRACE` OFF (trace adds substantial overhead). The
+  // numbers below are the worst of 3 warm samples (per the assertion) under
+  // full-suite parallel load via `npm test` — isolated runs are roughly 2×
+  // faster but don't reflect real CI conditions.
+  //   pre-fix  (npm test, full parallel suite): 1291ms warm
+  //   post-fix (npm test, full parallel suite):  246ms warm
+  // The under-load gap is much wider than the isolated gap because the
+  // sequential `for…await` pattern competes for the event loop on every
+  // await; parallelizing collapses that into a single `Promise.all` wait.
+  //
+  // Sanity-check revert (executed during implementation): stashing `api.ts`
+  // and re-running `npm test` produces warm samples ≥ 1291ms, which exceeds
+  // the ceiling below and fails the test as required.
+  //
+  // Ceiling: derived per the plan as max(post-fix warm) × 3 rounded up to
+  // the nearest 50ms = 246 × 3 = 738 → 750ms. This catches the >1000ms
+  // pre-fix regression decisively (1291ms >> 750ms) while still giving the
+  // ~250ms post-fix baseline ample CI hardware headroom. See scratchpad.md
+  // in the originating assignment for the full table.
+  const OVERVIEW_PERF_CEILING_MS = 750;
+  const PERF_FIXTURE_PROJECTS = 60;
+  const PERF_FIXTURE_ASSIGNMENTS_PER_PROJECT = 30;
+
+  beforeEach(() => {
+    // Reset module-level caches so each perf run starts from a known
+    // cold state and does not get spuriously fast wall-clock from another
+    // test's warm caches. `clearScanCache()` is no-op when the scanner has
+    // not been exercised (we don't pass a serversDir) but keeping it here
+    // matches the plan's cache-reset requirement.
+    clearStatusConfigCache();
+    clearScanCache();
+  });
+
+  function buildPerfProjectMd(slug: string): string {
+    return `---
+id: ${slug}-id
+slug: ${slug}
+title: ${slug}
+archived: false
+archivedAt: null
+archivedReason: null
+created: "2026-03-20T10:00:00Z"
+updated: "2026-03-20T10:00:00Z"
+externalIds: []
+tags: []
+---
+
+# ${slug}`;
+  }
+
+  function buildPerfAssignmentMd(slug: string, status: string, dependsOn: string[]): string {
+    return `---
+id: ${slug}-id
+slug: ${slug}
+title: ${slug}
+status: ${status}
+priority: medium
+created: "2026-03-20T10:00:00Z"
+updated: "${RECENT_DATE}"
+assignee: bench
+externalIds: []
+dependsOn: ${JSON.stringify(dependsOn)}
+blockedReason: null
+workspace:
+  repository: null
+  worktreePath: null
+  branch: null
+  parentBranch: null
+tags: []
+---
+
+# ${slug}`;
+  }
+
+  it(`returns under ${OVERVIEW_PERF_CEILING_MS}ms warm against a ${PERF_FIXTURE_PROJECTS}-project x ${PERF_FIXTURE_ASSIGNMENTS_PER_PROJECT}-assignment workspace`, async () => {
+    const statuses = [
+      'in_progress',
+      'in_progress',
+      'review',
+      'ready_to_implement',
+      'ready_for_planning',
+      'draft',
+      'blocked',
+      'completed',
+    ];
+
+    // Seed the fixture in parallel (this is test setup, not under measurement).
+    await Promise.all(
+      Array.from({ length: PERF_FIXTURE_PROJECTS }, async (_, p) => {
+        const projectSlug = `proj-${p.toString().padStart(3, '0')}`;
+        const projectPath = resolve(testDir, projectSlug);
+        await mkdir(projectPath, { recursive: true });
+        await writeFile(resolve(projectPath, 'project.md'), buildPerfProjectMd(projectSlug), 'utf-8');
+
+        await Promise.all(
+          Array.from({ length: PERF_FIXTURE_ASSIGNMENTS_PER_PROJECT }, async (_, a) => {
+            const slug = `asg-${a.toString().padStart(3, '0')}`;
+            const status = statuses[a % statuses.length]!;
+            // Every 5th assignment depends on the previous one in the same
+            // project — exercises getUnmetDependencies and the new
+            // dependencyStatusMap fast-path.
+            const dependsOn =
+              a > 0 && a % 5 === 0 ? [`asg-${(a - 1).toString().padStart(3, '0')}`] : [];
+            const aDir = resolve(projectPath, 'assignments', slug);
+            await mkdir(aDir, { recursive: true });
+            await writeFile(
+              resolve(aDir, 'assignment.md'),
+              buildPerfAssignmentMd(slug, status, dependsOn),
+              'utf-8',
+            );
+            // Every 4th assignment gets a comments.md with an open question —
+            // exercises the parallelized countOpenQuestions in buildProjectRollup.
+            if (a % 4 === 0) {
+              await writeFile(resolve(aDir, 'comments.md'), COMMENTS_MD_ONE_OPEN_QUESTION, 'utf-8');
+            }
+          }),
+        );
+      }),
+    );
+
+    // Warm the FS cache and migration guard with one untimed call.
+    await getOverview(testDir);
+
+    // Measured call: take the worst of three warm runs to dampen jitter.
+    const samples: number[] = [];
+    for (let i = 0; i < 3; i++) {
+      const start = performance.now();
+      const overview = await getOverview(testDir);
+      samples.push(performance.now() - start);
+      // Sanity check that the fixture actually parsed.
+      expect(overview.firstRun).toBe(false);
+      expect(overview.recentProjects.length).toBeGreaterThan(0);
+    }
+    const observed = Math.max(...samples);
+    expect(observed).toBeLessThan(OVERVIEW_PERF_CEILING_MS);
+  }, 60_000);
 });
 
 describe('overview copy module', () => {

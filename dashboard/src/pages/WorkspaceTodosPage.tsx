@@ -197,7 +197,7 @@ export function TodoMetaBadges({ item }: { item: TodoItem }) {
             <TooltipTrigger asChild>
               <span className="inline-flex items-center gap-1 rounded-full border border-info-foreground/30 bg-info/30 px-1.5 py-0.5 text-[10px] font-mono text-info-foreground">
                 <GitBranch className="h-2.5 w-2.5" />
-                <span className="max-w-[120px] truncate">{item.branch}</span>
+                <span className="block min-w-0 max-w-[120px] truncate">{item.branch}</span>
               </span>
             </TooltipTrigger>
             <TooltipContent>{item.branch}</TooltipContent>

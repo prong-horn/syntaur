@@ -189,6 +189,42 @@ export async function claimAssignmentById(args: {
   return (payload as { assignment: AssignmentDetail }).assignment;
 }
 
+export async function updateAssignmentTitle(args: {
+  projectSlug: string;
+  assignmentSlug: string;
+  title: string;
+}): Promise<AssignmentDetail> {
+  const response = await fetch(
+    `/api/projects/${args.projectSlug}/assignments/${args.assignmentSlug}/title`,
+    {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title: args.title }),
+    },
+  );
+  const payload = await response.json().catch(() => null);
+  if (!response.ok) {
+    throw new Error((payload as { error?: string } | null)?.error || `HTTP ${response.status}`);
+  }
+  return (payload as { assignment: AssignmentDetail }).assignment;
+}
+
+export async function updateAssignmentTitleById(args: {
+  id: string;
+  title: string;
+}): Promise<AssignmentDetail> {
+  const response = await fetch(`/api/assignments/${args.id}/title`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ title: args.title }),
+  });
+  const payload = await response.json().catch(() => null);
+  if (!response.ok) {
+    throw new Error((payload as { error?: string } | null)?.error || `HTTP ${response.status}`);
+  }
+  return (payload as { assignment: AssignmentDetail }).assignment;
+}
+
 export type QuickCommentType = 'question' | 'note' | 'feedback';
 
 /**

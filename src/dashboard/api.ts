@@ -106,6 +106,58 @@ const STALE_LIMIT_MAX = 200;
 
 const TERMINAL_STATUSES = new Set(['completed', 'failed', 'archived']);
 
+// ---------------------------------------------------------------------------
+// Overview perf instrumentation (opt-in via SYNTAUR_PERF_TRACE=1).
+// Used by getOverview() and helpers it calls. Inactive when traces is undefined.
+// ---------------------------------------------------------------------------
+
+interface TraceEntry {
+  label: string;
+  ms: number;
+}
+
+interface OverviewTraces {
+  entries: TraceEntry[];
+  subPhases: Map<string, number>;
+}
+
+function createTraces(): OverviewTraces {
+  return { entries: [], subPhases: new Map() };
+}
+
+async function timed<T>(
+  traces: OverviewTraces | undefined,
+  label: string,
+  fn: () => Promise<T>,
+): Promise<T> {
+  if (!traces) return fn();
+  const start = performance.now();
+  try {
+    return await fn();
+  } finally {
+    traces.entries.push({ label, ms: performance.now() - start });
+  }
+}
+
+function accumulatePhase(
+  traces: OverviewTraces | undefined,
+  label: string,
+  ms: number,
+): void {
+  if (!traces) return;
+  traces.subPhases.set(label, (traces.subPhases.get(label) ?? 0) + ms);
+}
+
+function emitTrace(traces: OverviewTraces, meta: Record<string, unknown>): void {
+  if (process.env.SYNTAUR_PERF_TRACE !== '1') return;
+  const totalMs = traces.entries.reduce((sum, entry) => sum + entry.ms, 0);
+  const subPhases = Object.fromEntries(traces.subPhases);
+  // eslint-disable-next-line no-console
+  console.log(
+    JSON.stringify({ kind: 'overview-trace', totalMs, phases: traces.entries, subPhases, ...meta }),
+  );
+}
+
 const STATUS_TO_SEGMENT: Readonly<Record<string, OverviewSegmentId>> = {
   review: 'readyForReview',
   ready_to_implement: 'readyToImplement',
@@ -479,8 +531,16 @@ export async function getOverview(
   assignmentsDir?: string,
   options: { staleLimit?: number; staleOffset?: number } = {},
 ): Promise<OverviewResponse> {
-  const projectRecords = await listProjectRecords(projectsDir);
-  const standaloneRecords = await listStandaloneRecords(assignmentsDir);
+  const traceEnabled = process.env.SYNTAUR_PERF_TRACE === '1';
+  const traces: OverviewTraces | undefined = traceEnabled ? createTraces() : undefined;
+  const overallStart = traceEnabled ? performance.now() : 0;
+
+  const projectRecords = await timed(traces, 'list-project-records', () =>
+    listProjectRecords(projectsDir, traces),
+  );
+  const standaloneRecords = await timed(traces, 'list-standalone-records', () =>
+    listStandaloneRecords(assignmentsDir),
+  );
   const recentActivity = buildRecentActivity(projectRecords, standaloneRecords);
 
   const staleLimit = clamp(
@@ -490,13 +550,15 @@ export async function getOverview(
   );
   const staleOffset = Math.max(0, Number.isFinite(options.staleOffset) ? Number(options.staleOffset) : 0);
 
-  const buckets = await buildOverviewSegmentBuckets(projectsDir, projectRecords, standaloneRecords);
+  const buckets = await timed(traces, 'build-segment-buckets', () =>
+    buildOverviewSegmentBuckets(projectsDir, projectRecords, standaloneRecords, traces),
+  );
   const segments = toOverviewSegments(buckets, { staleLimit, staleOffset });
   const hero = pickOverviewHero(buckets);
 
   let recentSessions: OverviewResponse['recentSessions'] = [];
   try {
-    const all = await listAllSessions(projectsDir);
+    const all = await timed(traces, 'list-recent-sessions', () => listAllSessions(projectsDir));
     recentSessions = all.slice(0, RECENT_SESSIONS_LIMIT);
   } catch {
     // Sessions failure should not break overview.
@@ -506,7 +568,9 @@ export async function getOverview(
   if (serversDir) {
     try {
       const { scanAllSessions } = await import('./scanner.js');
-      const servers = await scanAllSessions(serversDir, projectsDir, { assignmentsDir });
+      const servers = await timed(traces, 'scan-tmux-sessions', () =>
+        scanAllSessions(serversDir, projectsDir, { assignmentsDir }),
+      );
       if (servers.tmuxAvailable) {
         const alive = servers.sessions.filter(s => s.alive).length;
         const totalPorts = servers.sessions.reduce((sum, s) =>
@@ -522,6 +586,16 @@ export async function getOverview(
     } catch {
       // Server scanning failure should not break overview
     }
+  }
+
+  if (traces) {
+    const wallMs = performance.now() - overallStart;
+    const totalAssignments =
+      projectRecords.reduce((sum, r) => sum + r.assignments.length, 0) + standaloneRecords.length;
+    emitTrace(traces, {
+      wallMs,
+      fixture: { projects: projectRecords.length, assignments: totalAssignments },
+    });
   }
 
   return {
@@ -614,16 +688,19 @@ async function getStandaloneAvailableTransitions(
   const actions: AssignmentTransitionAction[] = [];
 
   for (const definition of transitionDefs) {
+    const target = getTargetStatus(assignment.status, definition.command, config.transitionTable);
+    // Only valid transitions reach the client; the kanban inline picker renders them directly.
+    if (target === null) continue;
+
     let warning: string | null = null;
     if (definition.command === 'start' && !assignment.assignee) {
       warning = 'No assignee set — consider assigning before starting.';
     }
-    const target = getTargetStatus(assignment.status, definition.command, config.transitionTable);
     actions.push({
       command: definition.command,
       label: definition.label,
       description: definition.description,
-      targetStatus: target ?? definition.command,
+      targetStatus: target,
       disabled: false,
       disabledReason: null,
       warning,
@@ -1250,7 +1327,10 @@ async function buildStandaloneAssignmentDetail(
 // sandboxes in the same process.
 const migratedProjectsDirs = new Set<string>();
 
-async function listProjectRecords(projectsDir: string): Promise<ProjectRecord[]> {
+async function listProjectRecords(
+  projectsDir: string,
+  traces?: OverviewTraces,
+): Promise<ProjectRecord[]> {
   if (!(await fileExists(projectsDir))) {
     return [];
   }
@@ -1262,72 +1342,91 @@ async function listProjectRecords(projectsDir: string): Promise<ProjectRecord[]>
 
   const entries = await readdir(projectsDir, { withFileTypes: true });
   const projectDirs = entries.filter((entry) => entry.isDirectory() && !entry.name.startsWith('.'));
-  const records: ProjectRecord[] = [];
 
-  for (const entry of projectDirs) {
-    const projectPath = resolve(projectsDir, entry.name);
-    const projectMdPath = resolve(projectPath, 'project.md');
+  const maybeRecords = await Promise.all(
+    projectDirs.map(async (entry): Promise<ProjectRecord | null> => {
+      const projectPath = resolve(projectsDir, entry.name);
+      const projectMdPath = resolve(projectPath, 'project.md');
 
-    if (!(await fileExists(projectMdPath))) {
-      continue;
-    }
+      if (!(await fileExists(projectMdPath))) {
+        return null;
+      }
 
-    const projectContent = await readFile(projectMdPath, 'utf-8');
-    const project = parseProject(projectContent);
-    const assignments = await listAssignmentRecords(projectPath);
-    const rollup = await buildProjectRollup(projectPath, project, assignments);
-    const updated = getProjectActivityTimestamp(project.updated, assignments);
+      const t0 = traces ? performance.now() : 0;
+      const projectContent = await readFile(projectMdPath, 'utf-8');
+      const project = parseProject(projectContent);
+      if (traces) accumulatePhase(traces, 'parse-project-md', performance.now() - t0);
 
-    records.push({
-      projectPath,
-      project,
-      assignments,
-      dependencyGraph: await loadDependencyGraph(projectPath, assignments),
-      summary: {
-        slug: project.slug || entry.name,
-        title: project.title,
-        status: rollup.status,
-        statusOverride: project.statusOverride,
-        archived: project.archived,
-        archivedAt: project.archivedAt,
-        archivedReason: project.archivedReason,
-        created: project.created,
-        updated,
-        tags: project.tags,
-        progress: rollup.progress,
-        needsAttention: rollup.needsAttention,
-        workspace: project.workspace,
-      },
-    });
-  }
+      const t1 = traces ? performance.now() : 0;
+      const assignments = await listAssignmentRecords(projectPath, traces);
+      if (traces) accumulatePhase(traces, 'list-assignments', performance.now() - t1);
 
+      const t2 = traces ? performance.now() : 0;
+      const rollup = await buildProjectRollup(projectPath, project, assignments, traces);
+      if (traces) accumulatePhase(traces, 'build-rollup', performance.now() - t2);
+
+      const updated = getProjectActivityTimestamp(project.updated, assignments);
+
+      const t3 = traces ? performance.now() : 0;
+      const dependencyGraph = await loadDependencyGraph(projectPath, assignments);
+      if (traces) accumulatePhase(traces, 'load-dep-graph', performance.now() - t3);
+
+      return {
+        projectPath,
+        project,
+        assignments,
+        dependencyGraph,
+        summary: {
+          slug: project.slug || entry.name,
+          title: project.title,
+          status: rollup.status,
+          statusOverride: project.statusOverride,
+          archived: project.archived,
+          archivedAt: project.archivedAt,
+          archivedReason: project.archivedReason,
+          created: project.created,
+          updated,
+          tags: project.tags,
+          progress: rollup.progress,
+          needsAttention: rollup.needsAttention,
+          workspace: project.workspace,
+        },
+      };
+    }),
+  );
+
+  const records = maybeRecords.filter((r): r is ProjectRecord => r !== null);
   records.sort((left, right) => compareTimestamps(right.summary.updated, left.summary.updated));
   return records;
 }
 
-async function listAssignmentRecords(projectPath: string): Promise<AssignmentRecord[]> {
+async function listAssignmentRecords(
+  projectPath: string,
+  traces?: OverviewTraces,
+): Promise<AssignmentRecord[]> {
   const assignmentsDir = resolve(projectPath, 'assignments');
   if (!(await fileExists(assignmentsDir))) {
     return [];
   }
 
   const entries = await readdir(assignmentsDir, { withFileTypes: true });
-  const records: AssignmentRecord[] = [];
+  const dirEntries = entries.filter((entry) => entry.isDirectory());
 
-  for (const entry of entries) {
-    if (!entry.isDirectory()) {
-      continue;
-    }
+  const maybeRecords = await Promise.all(
+    dirEntries.map(async (entry): Promise<AssignmentRecord | null> => {
+      const assignmentMd = resolve(assignmentsDir, entry.name, 'assignment.md');
+      if (!(await fileExists(assignmentMd))) {
+        return null;
+      }
+      const t0 = traces ? performance.now() : 0;
+      const content = await readFile(assignmentMd, 'utf-8');
+      const parsed = parseAssignmentFull(content);
+      if (traces) accumulatePhase(traces, 'read-assignment-md', performance.now() - t0);
+      return parsed;
+    }),
+  );
 
-    const assignmentMd = resolve(assignmentsDir, entry.name, 'assignment.md');
-    if (!(await fileExists(assignmentMd))) {
-      continue;
-    }
-
-    const content = await readFile(assignmentMd, 'utf-8');
-    records.push(parseAssignmentFull(content));
-  }
-
+  const records = maybeRecords.filter((r): r is AssignmentRecord => r !== null);
   records.sort((left, right) => compareTimestamps(right.updated, left.updated));
   return records;
 }
@@ -1547,6 +1646,7 @@ async function buildProjectRollup(
   projectPath: string,
   project: ReturnType<typeof parseProject>,
   assignments: AssignmentRecord[],
+  traces?: OverviewTraces,
 ): Promise<{
   progress: ProgressCounts;
   needsAttention: NeedsAttention;
@@ -1554,11 +1654,21 @@ async function buildProjectRollup(
 }> {
   const progress: ProgressCounts = { total: assignments.length };
 
+  // Map: read every comments.md in parallel. Reduce: fold the per-assignment
+  // results into progress counters + openQuestions sum.
+  const perAssignment = await Promise.all(
+    assignments.map(async (assignment) => {
+      const t0 = traces ? performance.now() : 0;
+      const openQuestions = await countOpenQuestions(projectPath, assignment.slug);
+      if (traces) accumulatePhase(traces, 'count-open-questions', performance.now() - t0);
+      return { status: assignment.status, openQuestions };
+    }),
+  );
+
   let openQuestions = 0;
-  for (const assignment of assignments) {
-    const s = assignment.status;
-    progress[s] = (progress[s] ?? 0) + 1;
-    openQuestions += await countOpenQuestions(projectPath, assignment.slug);
+  for (const entry of perAssignment) {
+    progress[entry.status] = (progress[entry.status] ?? 0) + 1;
+    openQuestions += entry.openQuestions;
   }
 
   const needsAttention: NeedsAttention = {
@@ -1670,13 +1780,22 @@ async function getAvailableTransitions(
   projectSlug: string,
   assignmentSlug: string,
   assignment: AssignmentRecord,
+  options?: {
+    dependencyStatusMap?: ReadonlyMap<string, string>;
+    traces?: OverviewTraces;
+  },
 ): Promise<AssignmentTransitionAction[]> {
   const config = await getStatusConfig();
   const transitionDefs = getTransitionDefinitions(config);
   const actions: AssignmentTransitionAction[] = [];
   const projectPath = resolve(projectsDir, projectSlug);
+  const traces = options?.traces;
 
   for (const definition of transitionDefs) {
+    const target = getTargetStatus(assignment.status, definition.command, config.transitionTable);
+    // Only valid transitions reach the client; the kanban inline picker renders them directly.
+    if (target === null) continue;
+
     let warning: string | null = null;
 
     if (definition.command === 'start' && !assignment.assignee) {
@@ -1684,19 +1803,24 @@ async function getAvailableTransitions(
     }
 
     if (definition.command === 'start' && assignment.dependsOn.length > 0) {
-      const unmetDependencies = await getUnmetDependencies(projectPath, assignment.dependsOn, config.terminalStatuses);
+      const t0 = traces ? performance.now() : 0;
+      const unmetDependencies = await getUnmetDependencies(
+        projectPath,
+        assignment.dependsOn,
+        config.terminalStatuses,
+        options?.dependencyStatusMap,
+      );
+      if (traces) accumulatePhase(traces, 'get-unmet-dependencies', performance.now() - t0);
       if (unmetDependencies.length > 0) {
         warning = `Unmet dependencies: ${unmetDependencies.join(', ')}.`;
       }
     }
 
-    const target = getTargetStatus(assignment.status, definition.command, config.transitionTable);
-
     actions.push({
       command: definition.command,
       label: definition.label,
       description: definition.description,
-      targetStatus: target ?? definition.command,
+      targetStatus: target,
       disabled: false,
       disabledReason: null,
       warning,
@@ -1707,11 +1831,28 @@ async function getAvailableTransitions(
   return actions;
 }
 
-async function getUnmetDependencies(projectPath: string, dependsOn: string[], terminalStatuses?: ReadonlySet<string>): Promise<string[]> {
+async function getUnmetDependencies(
+  projectPath: string,
+  dependsOn: string[],
+  terminalStatuses?: ReadonlySet<string>,
+  dependencyStatusMap?: ReadonlyMap<string, string>,
+): Promise<string[]> {
   const terminals = terminalStatuses ?? new Set(['completed']);
   const unmet: string[] = [];
 
   for (const dependency of dependsOn) {
+    // Fast path: in-memory map (built once by the overview pass over already-parsed records).
+    if (dependencyStatusMap) {
+      const mappedStatus = dependencyStatusMap.get(dependency);
+      if (mappedStatus !== undefined) {
+        if (!terminals.has(mappedStatus)) {
+          unmet.push(`${dependency} (${mappedStatus})`);
+        }
+        continue;
+      }
+      // Fall through to disk read only if the map didn't know about this dependency.
+    }
+
     const dependencyPath = resolve(projectPath, 'assignments', dependency, 'assignment.md');
     if (!(await fileExists(dependencyPath))) {
       unmet.push(`${dependency} (missing)`);
@@ -1769,6 +1910,7 @@ async function buildOverviewSegmentBuckets(
   projectsDir: string,
   projectRecords: ProjectRecord[],
   standaloneRecords: StandaloneRecord[],
+  traces?: OverviewTraces,
 ): Promise<OverviewSegmentBuckets> {
   const now = Date.now();
   const buckets = emptyBuckets();
@@ -1778,18 +1920,36 @@ async function buildOverviewSegmentBuckets(
   const newestPool: Array<{ created: string; clone: AttentionItem }> = [];
 
   for (const record of projectRecords) {
-    for (const assignment of record.assignments) {
+    // Build a dep-status map once per project so getUnmetDependencies can resolve
+    // dependency status from memory instead of re-reading each dep's assignment.md.
+    const depMap = new Map<string, string>();
+    for (const a of record.assignments) {
+      depMap.set(a.slug, a.status);
+    }
+
+    // Resolve every per-assignment getAvailableTransitions call for this project
+    // in parallel, then run the synchronous classification logic below over the results.
+    const resolvedTransitions = await Promise.all(
+      record.assignments.map(async (assignment) => {
+        const t0 = traces ? performance.now() : 0;
+        const availableTransitions = await getAvailableTransitions(
+          projectsDir,
+          record.summary.slug,
+          assignment.slug,
+          assignment,
+          { traces, dependencyStatusMap: depMap },
+        );
+        if (traces) accumulatePhase(traces, 'get-available-transitions', performance.now() - t0);
+        return { assignment, availableTransitions };
+      }),
+    );
+
+    for (const { assignment, availableTransitions } of resolvedTransitions) {
       const segmentId = STATUS_TO_SEGMENT[assignment.status];
       const stale = isStale(assignment.updated);
       const isTerminal = TERMINAL_STATUSES.has(assignment.status);
       const agingMs = Math.max(0, now - parseTimestamp(assignment.updated));
       const baseId = `${record.summary.slug}:${assignment.slug}`;
-      const availableTransitions = await getAvailableTransitions(
-        projectsDir,
-        record.summary.slug,
-        assignment.slug,
-        assignment,
-      );
 
       const shared = {
         projectSlug: record.summary.slug,
@@ -1847,14 +2007,22 @@ async function buildOverviewSegmentBuckets(
     }
   }
 
-  for (const sr of standaloneRecords) {
+  const resolvedStandaloneTransitions = await Promise.all(
+    standaloneRecords.map(async (sr) => {
+      const t0 = traces ? performance.now() : 0;
+      const availableTransitions = await getStandaloneAvailableTransitions(sr.record);
+      if (traces) accumulatePhase(traces, 'get-available-transitions', performance.now() - t0);
+      return { sr, availableTransitions };
+    }),
+  );
+
+  for (const { sr, availableTransitions } of resolvedStandaloneTransitions) {
     const assignment = sr.record;
     const segmentId = STATUS_TO_SEGMENT[assignment.status];
     const stale = isStale(assignment.updated);
     const isTerminal = TERMINAL_STATUSES.has(assignment.status);
     const agingMs = Math.max(0, now - parseTimestamp(assignment.updated));
     const baseId = `standalone:${sr.id}`;
-    const availableTransitions = await getStandaloneAvailableTransitions(assignment);
 
     const shared = {
       projectSlug: null,

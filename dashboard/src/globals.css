@@ -506,6 +506,40 @@
     }
   }
 
+  @keyframes syntaur-toast-in {
+    from {
+      opacity: 0;
+      transform: translateY(0.5rem);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  .syntaur-toast {
+    animation: syntaur-toast-in 180ms ease-out;
+  }
+
+  @keyframes syntaur-input-shake {
+    0%, 100% { transform: translateX(0); }
+    20% { transform: translateX(-4px); }
+    40% { transform: translateX(4px); }
+    60% { transform: translateX(-3px); }
+    80% { transform: translateX(3px); }
+  }
+
+  .syntaur-input-shake {
+    animation: syntaur-input-shake 240ms ease-in-out;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .syntaur-toast,
+    .syntaur-input-shake {
+      animation: none;
+    }
+  }
+
   /* View density — applied to page roots via data-density={prefs.density}.
      `comfortable` is the default; `compact` tightens vp-card padding (used
      on assignment cards) and table-row padding. Behavior only; full design

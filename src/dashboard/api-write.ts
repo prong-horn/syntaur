@@ -1617,6 +1617,38 @@ export function createWriteRouter(
     }
   });
 
+  router.patch('/api/projects/:slug/assignments/:aslug/title', async (req: Request, res: Response) => {
+    try {
+      const projectSlug = getParam(req.params.slug);
+      const assignmentSlug = getParam(req.params.aslug);
+      const assignmentPath = resolve(
+        projectsDir,
+        projectSlug,
+        'assignments',
+        assignmentSlug,
+        'assignment.md',
+      );
+      if (!(await fileExists(assignmentPath))) {
+        res.status(404).json({ error: 'Assignment not found' });
+        return;
+      }
+      const validation = validateTitleBody(req.body);
+      if (!validation.ok) {
+        res.status(400).json({ error: validation.error });
+        return;
+      }
+      let content = await readFile(assignmentPath, 'utf-8');
+      content = setTopLevelField(content, 'title', validation.value);
+      content = setTopLevelField(content, 'updated', nowTimestamp());
+      await writeFileForce(assignmentPath, content);
+      const assignment = await getAssignmentDetail(projectsDir, projectSlug, assignmentSlug);
+      res.json({ assignment });
+    } catch (error) {
+      console.error('Error updating title:', error);
+      res.status(500).json({ error: `Failed to update title: ${(error as Error).message}` });
+    }
+  });
+
   // --- Lifecycle Transitions ---
 
   router.post('/api/projects/:slug/assignments/:aslug/transitions/:command', async (req: Request, res: Response) => {
@@ -2242,6 +2274,40 @@ export function createWriteRouter(
     }
   });
 
+  router.patch('/api/assignments/:id/title', async (req: Request, res: Response) => {
+    try {
+      if (!assignmentsDir) {
+        res.status(501).json({ error: 'Standalone assignments not configured on this server' });
+        return;
+      }
+      const id = getParam(req.params.id);
+      const resolved = await resolveAssignmentById(projectsDir, assignmentsDir, id);
+      if (!resolved) {
+        res.status(404).json({ error: `Assignment "${id}" not found` });
+        return;
+      }
+      const assignmentPath = resolve(resolved.assignmentDir, 'assignment.md');
+      if (!(await fileExists(assignmentPath))) {
+        res.status(404).json({ error: 'Assignment not found' });
+        return;
+      }
+      const validation = validateTitleBody(req.body);
+      if (!validation.ok) {
+        res.status(400).json({ error: validation.error });
+        return;
+      }
+      let content = await readFile(assignmentPath, 'utf-8');
+      content = setTopLevelField(content, 'title', validation.value);
+      content = setTopLevelField(content, 'updated', nowTimestamp());
+      await writeFileForce(assignmentPath, content);
+      const assignment = await getAssignmentDetailById(projectsDir, assignmentsDir, id);
+      res.json({ assignment });
+    } catch (error) {
+      console.error('Error updating standalone title:', error);
+      res.status(500).json({ error: `Failed to update title: ${(error as Error).message}` });
+    }
+  });
+
   router.post('/api/assignments/bulk-status-override', async (req: Request, res: Response) => {
     try {
       const body = req.body;
@@ -2438,6 +2504,34 @@ function validateAssigneeBody(body: unknown): AssigneeValidation {
   if (trimmed.length === 0) return { ok: true, value: null };
   if (trimmed.length > 120) {
     return { ok: false, error: '`assignee` must be 120 characters or fewer.' };
+  }
+  return { ok: true, value: trimmed };
+}
+
+type TitleValidation =
+  | { ok: true; value: string }
+  | { ok: false; error: string };
+
+function validateTitleBody(body: unknown): TitleValidation {
+  if (!body || typeof body !== 'object') {
+    return { ok: false, error: 'Body must include `title` (non-empty string).' };
+  }
+  const title = (body as Record<string, unknown>).title;
+  if (typeof title !== 'string') {
+    return { ok: false, error: '`title` must be a string.' };
+  }
+  const trimmed = title.trim();
+  if (trimmed.length === 0) {
+    return { ok: false, error: '`title` is required.' };
+  }
+  if (trimmed.length > 200) {
+    return { ok: false, error: '`title` must be 200 characters or fewer.' };
+  }
+  // The frontmatter parser does not unescape \" and setTopLevelField rewrites
+  // a single matched line via ^…$/m — newlines and embedded double-quotes
+  // would corrupt the frontmatter block. Cleanest mitigation: reject.
+  if (/["\r\n]/.test(trimmed)) {
+    return { ok: false, error: '`title` may not contain double quotes or line breaks.' };
   }
   return { ok: true, value: trimmed };
 }

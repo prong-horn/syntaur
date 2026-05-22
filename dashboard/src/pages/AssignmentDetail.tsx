@@ -780,7 +780,7 @@ function DetailRow({ label, value, copyable }: { label: string; value: string; c
     <div className="flex items-start justify-between gap-3">
       <dt className="text-muted-foreground">{label}</dt>
       <dd className="flex items-center gap-1.5 max-w-[60%] text-right text-foreground break-all">
-        <span className="truncate" title={value}>{value}</span>
+        <span className="block min-w-0 truncate" title={value}>{value}</span>
         {copyable && value !== '\u2014' && <CopyButton value={value} />}
       </dd>
     </div>
