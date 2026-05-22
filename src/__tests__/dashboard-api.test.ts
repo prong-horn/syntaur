@@ -129,6 +129,7 @@ const ASSIGNMENT_MD = `---
 id: a-123
 slug: test-assignment
 title: Test Assignment
+type: feature
 status: in_progress
 priority: high
 created: "2026-03-20T10:00:00Z"
@@ -311,6 +312,7 @@ describe('getAssignmentDetail', () => {
 
     const result = await getAssignmentDetail(testDir, 'test-project', 'test-assignment');
     expect(result).not.toBeNull();
+    expect(result!.type).toBe('feature');
     expect(result!.plan?.status).toBe('in_progress');
     expect(result!.scratchpad?.updated).toBe('2026-04-07T11:00:00Z');
     expect(result!.handoff?.handoffCount).toBe(1);
@@ -444,12 +446,14 @@ tags: []
     expect(item!.projectTitle).toBeNull();
     expect(item!.projectWorkspace).toBeNull();
     expect(item!.slug).toBe('my-standalone');
+    expect(item!.type).toBe('feature');
 
     const detail = await getAssignmentDetailById(testDir, assignmentsDir, uuid);
     expect(detail).not.toBeNull();
     expect(detail!.projectSlug).toBeNull();
     expect(detail!.dependsOn).toEqual([]);
     expect(detail!.projectWorkspace).toBeNull();
+    expect(detail!.type).toBe('feature');
   });
 
   it('populates projectWorkspace from workspaceGroup on the standalone detail builder', async () => {

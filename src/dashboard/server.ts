@@ -35,6 +35,7 @@ import {
   deleteHotkeyBindingsConfig,
   readConfig,
   getAgents,
+  getAssignmentTypes,
 } from '../utils/config.js';
 import {
   BINDABLE_ACTION_KINDS,
@@ -251,6 +252,21 @@ export function createDashboardServer(options: DashboardServerOptions) {
     }
   });
 
+  app.get('/api/config/types', async (_req, res) => {
+    try {
+      const config = await readConfig();
+      const types = getAssignmentTypes(config);
+      res.json({
+        definitions: types.definitions,
+        default: types.default,
+        custom: config.types !== null,
+      });
+    } catch (error) {
+      console.error('Error getting types config:', error);
+      res.status(500).json({ error: 'Failed to get types config' });
+    }
+  });
+
   // Theme presets — keep in sync with PRESETS in dashboard/src/themes.ts (canonical client list).
   const THEME_PRESET_SLUGS = ['default', 'ocean', 'forest', 'sunset'] as const;
   const DEFAULT_THEME_PRESET = 'default';
@@ -376,7 +392,7 @@ export function createDashboardServer(options: DashboardServerOptions) {
 
   const VIEW_PREFS_LOCK = 'vp:global';
 
-  const FILTER_KEYS = new Set(['status', 'priority', 'assignee', 'project', 'activity']);
+  const FILTER_KEYS = new Set(['status', 'type', 'priority', 'assignee', 'project', 'activity']);
   const GLOBAL_KEYS = new Set(['defaultView', 'sortField', 'sortDirection', 'density', 'grouping', 'filters']);
   const SCOPE_KEYS = new Set(['defaultView', 'sortField', 'sortDirection', 'grouping', 'filters']);
   const ROOT_KEYS = new Set(['global', 'projects']);
@@ -397,7 +413,7 @@ export function createDashboardServer(options: DashboardServerOptions) {
     const unknown = unknownKey(obj, FILTER_KEYS, 'filters');
     if (unknown) return { ok: false, error: unknown };
     const out: ViewFilters = {};
-    for (const key of ['status', 'priority', 'assignee', 'project']) {
+    for (const key of ['status', 'type', 'priority', 'assignee', 'project']) {
       if (obj[key] !== undefined) {
         if (!isFilterString(obj[key])) return { ok: false, error: `filters.${key} must be a non-empty string` };
         (out as Record<string, string>)[key] = obj[key] as string;

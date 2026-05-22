@@ -25,10 +25,11 @@ export const SORT_DIRECTIONS: readonly SortDirection[] = ['asc', 'desc'];
 export type Density = 'comfortable' | 'compact';
 export const DENSITIES: readonly Density[] = ['comfortable', 'compact'];
 
-export type Grouping = 'none' | 'status' | 'priority' | 'assignee' | 'project';
+export type Grouping = 'none' | 'status' | 'type' | 'priority' | 'assignee' | 'project';
 export const GROUPINGS: readonly Grouping[] = [
   'none',
   'status',
+  'type',
   'priority',
   'assignee',
   'project',
@@ -43,6 +44,7 @@ export const ACTIVITIES: readonly Activity[] = ['all', 'stale', 'fresh'];
 // so validation is allow-by-shape (non-empty string), not allow-by-value.
 export interface ViewFilters {
   status?: string;
+  type?: string;
   priority?: string;
   assignee?: string;
   project?: string;
@@ -75,6 +77,7 @@ export const DEFAULT_VIEW_PREFS: ViewPrefs = {
   grouping: 'none',
   filters: {
     status: 'all',
+    type: 'all',
     priority: 'all',
     assignee: 'all',
     project: 'all',

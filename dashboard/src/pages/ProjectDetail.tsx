@@ -7,6 +7,7 @@ import { formatDate, formatDateTime } from '../lib/format';
 import { LoadingState } from '../components/LoadingState';
 import { ErrorState } from '../components/ErrorState';
 import { StatusBadge } from '../components/StatusBadge';
+import { TypeChip } from '../components/TypeChip';
 import { ExternalIdBadges } from '../components/ExternalIdBadges';
 import { StatCard } from '../components/StatCard';
 import { ProgressBar } from '../components/ProgressBar';
@@ -18,9 +19,14 @@ import { DependencyGraph } from '../components/DependencyGraph';
 import { MarkdownRenderer } from '../components/MarkdownRenderer';
 import { ProjectTodosPanel } from '../components/ProjectTodosPanel';
 import { useStatusConfig } from '../hooks/useStatusConfig';
+import { useTypesConfig, getTypeLabel } from '../hooks/useTypesConfig';
 import { useHotkey, useHotkeyScope } from '../hotkeys';
-import { coerceProjectDetailView } from '@shared/view-prefs-schema';
+import { coerceProjectDetailView, type Grouping } from '@shared/view-prefs-schema';
 import { saveScopeViewPrefs, useViewPrefs } from '../hooks/useViewPrefs';
+import { KanbanBoard, type KanbanColumn } from '../components/KanbanBoard';
+import { getStatusLabel } from '../hooks/useStatusConfig';
+import { getStatusDescription } from '../components/StatusBadge';
+import { getAssignmentColumns } from '../lib/kanban';
 
 const VALID_TABS = new Set(['overview', 'assignments', 'todos', 'dependencies', 'knowledge']);
 
@@ -43,6 +49,7 @@ export function ProjectDetail() {
   });
   const { data: project, loading, error, refetch } = useProject(slug);
   const statusConfig = useStatusConfig();
+  const typesConfig = useTypesConfig();
   const { data: workspacesData } = useWorkspaces();
   // Tab selection lives in the URL (?tab=<value>) so it stays in sync when
   // react-router reuses this component across project navigations (e.g. the
@@ -71,6 +78,8 @@ export function ProjectDetail() {
   const [statusFilter, setStatusFilter] = useState<string>(() => prefs.filters.status ?? 'all');
   const [assigneeFilter, setAssigneeFilter] = useState<string>(() => prefs.filters.assignee ?? 'all');
   const [priorityFilter, setPriorityFilter] = useState<string>(() => prefs.filters.priority ?? 'all');
+  const [typeFilter, setTypeFilter] = useState<string>(() => prefs.filters.type ?? 'all');
+  const [grouping, setGrouping] = useState<Grouping>(() => prefs.grouping);
 
   // Re-hydrate when react-router reuses this component across project switches
   // (the doc comment above on lines 45-47 calls this out for the tab param).
@@ -81,7 +90,9 @@ export function ProjectDetail() {
     setStatusFilter(prefs.filters.status ?? 'all');
     setAssigneeFilter(prefs.filters.assignee ?? 'all');
     setPriorityFilter(prefs.filters.priority ?? 'all');
-  }, [slug, prefs.defaultView, prefs.filters.status, prefs.filters.assignee, prefs.filters.priority]);
+    setTypeFilter(prefs.filters.type ?? 'all');
+    setGrouping(prefs.grouping);
+  }, [slug, prefs.defaultView, prefs.filters.status, prefs.filters.assignee, prefs.filters.priority, prefs.filters.type, prefs.grouping]);
 
   const persistField = useCallback(
     (patch: Parameters<typeof saveScopeViewPrefs>[1]) => {
@@ -121,6 +132,53 @@ export function ProjectDetail() {
     },
     [persistField],
   );
+  const handleSetTypeFilter = useCallback(
+    (v: string) => {
+      setTypeFilter(v);
+      persistField({ filters: { type: v } });
+    },
+    [persistField],
+  );
+  const handleSetGrouping = useCallback(
+    (v: Grouping) => {
+      setGrouping(v);
+      persistField({ grouping: v });
+    },
+    [persistField],
+  );
+
+  const UNKNOWN_TYPE_COLUMN_ID = '__unknown_type__';
+  // Filter project assignments. Pre-early-return so kanbanColumns can depend on it.
+  const projectAssignments = project?.assignments ?? [];
+  const filteredAssignments = useMemo(
+    () => projectAssignments.filter((assignment) => {
+      if (statusFilter !== 'all' && assignment.status !== statusFilter) return false;
+      if (assigneeFilter !== 'all' && assignment.assignee !== assigneeFilter) return false;
+      if (priorityFilter !== 'all' && assignment.priority !== priorityFilter) return false;
+      if (typeFilter !== 'all' && (assignment.type ?? '') !== typeFilter) return false;
+      return true;
+    }),
+    [projectAssignments, statusFilter, assigneeFilter, priorityFilter, typeFilter],
+  );
+  const kanbanColumns: KanbanColumn[] = useMemo(() => {
+    if (grouping === 'type') {
+      const knownIds = new Set(typesConfig.definitions.map((d) => d.id));
+      const cols: KanbanColumn[] = typesConfig.definitions.map((def) => ({
+        id: def.id,
+        title: getTypeLabel(typesConfig, def.id),
+        description: def.description,
+      }));
+      if (filteredAssignments.some((a) => !a.type || !knownIds.has(a.type))) {
+        cols.push({ id: UNKNOWN_TYPE_COLUMN_ID, title: 'Other', description: 'Assignments with no recognized type.' });
+      }
+      return cols;
+    }
+    return getAssignmentColumns(statusConfig.order).map((status) => ({
+      id: status,
+      title: getStatusLabel(statusConfig, status),
+      description: getStatusDescription(status),
+    }));
+  }, [grouping, typesConfig, statusConfig, filteredAssignments]);
 
   const dependencyRoutes = useMemo(
     () => project ? Object.fromEntries(
@@ -164,18 +222,6 @@ export function ProjectDetail() {
   const assignees = Array.from(
     new Set(project.assignments.map((assignment) => assignment.assignee).filter(Boolean)),
   ).sort();
-  const filteredAssignments = project.assignments.filter((assignment) => {
-    if (statusFilter !== 'all' && assignment.status !== statusFilter) {
-      return false;
-    }
-    if (assigneeFilter !== 'all' && assignment.assignee !== assigneeFilter) {
-      return false;
-    }
-    if (priorityFilter !== 'all' && assignment.priority !== priorityFilter) {
-      return false;
-    }
-    return true;
-  });
 
   return (
     <div className="space-y-5" data-density={prefs.density}>
@@ -296,6 +342,18 @@ export function ProjectDetail() {
                             <option value="high">High</option>
                             <option value="critical">Critical</option>
                           </select>
+                          <select value={typeFilter} onChange={(event) => handleSetTypeFilter(event.target.value)} className="editor-input max-w-[170px]">
+                            <option value="all">All types</option>
+                            {typesConfig.definitions.map((t) => (
+                              <option key={t.id} value={t.id}>{getTypeLabel(typesConfig, t.id)}</option>
+                            ))}
+                          </select>
+                          {assignmentView === 'kanban' && (
+                            <select value={grouping === 'type' ? 'type' : 'status'} onChange={(event) => handleSetGrouping(event.target.value as Grouping)} className="editor-input max-w-[170px]" title="Group kanban by">
+                              <option value="status">Group: Status</option>
+                              <option value="type">Group: Type</option>
+                            </select>
+                          )}
                           <ViewToggle
                             value={assignmentView}
                             onChange={(value) => handleSetAssignmentView(value as 'kanban' | 'table')}
@@ -318,11 +376,23 @@ export function ProjectDetail() {
                           }
                         />
                       ) : assignmentView === 'kanban' ? (
-                        <div className="grid gap-3 lg:grid-cols-2">
-                          {filteredAssignments.map((assignment) => (
-                            <AssignmentCard key={assignment.slug} projectSlug={project.slug} assignment={assignment} />
-                          ))}
-                        </div>
+                        <KanbanBoard
+                          columns={kanbanColumns}
+                          items={filteredAssignments}
+                          getItemId={(a) => a.slug}
+                          getColumnId={(a) =>
+                            grouping === 'type'
+                              ? (a.type && typesConfig.definitions.some((d) => d.id === a.type)
+                                  ? a.type
+                                  : UNKNOWN_TYPE_COLUMN_ID)
+                              : a.status
+                          }
+                          dragDisabled
+                          emptyMessage={(col) => `No ${col.title.toLowerCase()} assignments.`}
+                          renderCard={(assignment) => (
+                            <AssignmentCard projectSlug={project.slug} assignment={assignment} />
+                          )}
+                        />
                       ) : (
                         <div className="overflow-x-auto">
                           <table className="w-full min-w-[720px] text-left text-sm">
@@ -330,6 +400,7 @@ export function ProjectDetail() {
                               <tr className="border-b border-border/60 text-muted-foreground">
                                 <th className="pb-3 font-medium">Assignment</th>
                                 <th className="pb-3 font-medium">Status</th>
+                                <th className="pb-3 font-medium">Type</th>
                                 <th className="pb-3 font-medium">Priority</th>
                                 <th className="pb-3 font-medium">Assignee</th>
                                 <th className="pb-3 font-medium">Updated</th>
@@ -347,6 +418,7 @@ export function ProjectDetail() {
                                     </Link>
                                   </td>
                                   <td className="py-4"><StatusBadge status={assignment.status} /></td>
+                                  <td className="py-4"><TypeChip type={assignment.type} compact /></td>
                                   <td className="py-4 capitalize text-muted-foreground">{assignment.priority}</td>
                                   <td className="py-4 text-muted-foreground">{assignment.assignee ?? '\u2014'}</td>
                                   <td className="py-4 text-muted-foreground">{formatDate(assignment.updated)}</td>
@@ -555,6 +627,7 @@ function AssignmentCard({
         <StatusBadge status={assignment.status} />
       </div>
       <div className="mt-4 flex flex-wrap gap-2">
+        <TypeChip type={assignment.type} />
         <span className="rounded-full border border-border/60 px-2.5 py-1 text-xs capitalize text-muted-foreground">
           {assignment.priority}
         </span>
