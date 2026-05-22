@@ -181,8 +181,23 @@ export async function applyStatusResolutions(
     if (r.mode !== 'remap') continue;
     const list = affected.get(r.id) ?? [];
     for (const a of list) {
-      const content = await readFile(a.path, 'utf-8');
-      buffer.set(a.path, content);
+      try {
+        const content = await readFile(a.path, 'utf-8');
+        buffer.set(a.path, content);
+      } catch (err) {
+        // File vanished or perms changed between scan and buffer — surface
+        // as scan-failed so the caller can map to a clean 5xx instead of a
+        // raw ENOENT/EACCES.
+        const code = (err as NodeJS.ErrnoException)?.code;
+        if (code === 'ENOENT') {
+          // Skip silently — assignment is already gone; remap is moot.
+          continue;
+        }
+        throw new StatusResolutionError(
+          `failed to buffer ${a.path}: ${err instanceof Error ? err.message : String(err)}`,
+          'scan-failed',
+        );
+      }
     }
   }
 

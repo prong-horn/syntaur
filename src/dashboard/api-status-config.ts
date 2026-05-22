@@ -231,7 +231,17 @@ export function createStatusConfigRouter(
       }
 
       // Scan affected assignments for every dropped id.
-      const affectedMap = await scanAssignmentsByStatus(projectsDir, assignmentsDir, droppedIds);
+      let affectedMap: Awaited<ReturnType<typeof scanAssignmentsByStatus>>;
+      try {
+        affectedMap = await scanAssignmentsByStatus(projectsDir, assignmentsDir, droppedIds);
+      } catch (err) {
+        if (err instanceof StatusResolutionError) {
+          const mapped = mapResolutionErrorToHttp(err, null);
+          res.status(mapped.status).json(mapped.body);
+          return;
+        }
+        throw err;
+      }
 
       // Reject unresolved drops with affected assignments.
       const unresolved: AffectedResponse[] = [];

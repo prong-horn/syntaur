@@ -328,12 +328,19 @@ export function SettingsPage() {
       setModalState({ open: false });
       return;
     }
-    setPendingResolutions((prev) => {
-      const next = new Map(prev);
-      next.set(pendingId, resolution);
-      return next;
+    setStatuses((prev) => {
+      const nextStatuses = prev.filter((s) => s.id !== pendingId);
+      const nextIds = new Set(nextStatuses.map((s) => s.id));
+      setPendingResolutions((prevRes) => {
+        // First drop resolutions whose target is now gone (because we just
+        // removed pendingId), then add the new resolution for pendingId.
+        const pruned = pruneStaleResolutions(prevRes, nextIds);
+        const next = new Map(pruned);
+        next.set(pendingId, resolution);
+        return next;
+      });
+      return nextStatuses;
     });
-    setStatuses((prev) => prev.filter((s) => s.id !== pendingId));
     setOrder((prev) => prev.filter((id) => id !== pendingId));
     setDirty(true);
     setModalState({ open: false });
