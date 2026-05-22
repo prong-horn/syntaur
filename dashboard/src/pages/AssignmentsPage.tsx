@@ -204,6 +204,11 @@ export function AssignmentsPage() {
   const [sortField, setSortField] = useState<SortField>(() => prefs.sortField);
   const [sortDirection, setSortDirection] = useState<SortDirection>(() => prefs.sortDirection);
   const [grouping, setGrouping] = useState<Grouping>(() => prefs.grouping);
+  // Kanban only supports status / type grouping; any other persisted value
+  // (set from list view) is rendered as status. The dropdown reflects this
+  // coerced value when view === 'kanban' so the UI never disagrees with what
+  // the board actually shows. Persisted value survives the view switch.
+  const effectiveKanbanGrouping: 'status' | 'type' = grouping === 'type' ? 'type' : 'status';
   // Tracks group IDs the user has explicitly collapsed. New / unknown group IDs
   // default to expanded so changing the grouping dimension doesn't hide everything.
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(() => new Set());
@@ -900,7 +905,7 @@ export function AssignmentsPage() {
           <option value="stale">Stale only</option>
           <option value="fresh">Fresh only</option>
         </select>
-        <select value={grouping} onChange={(e) => handleSetGrouping(e.target.value as Grouping)} className="editor-input max-w-[180px]" title="Group by">
+        <select value={view === 'kanban' ? effectiveKanbanGrouping : grouping} onChange={(e) => handleSetGrouping(e.target.value as Grouping)} className="editor-input max-w-[180px]" title="Group by">
           {GROUPINGS.map((g) => {
             const isKanbanUnsupported = view === 'kanban' && g !== 'status' && g !== 'type';
             const label = g === 'none' ? 'No grouping' : `Group: ${g.charAt(0).toUpperCase() + g.slice(1)}`;
@@ -1075,15 +1080,17 @@ export function AssignmentsPage() {
                       const itemKey = getAssignmentKey(item);
                       const isDragging = draggedId === itemKey;
                       const flatIdx = visibleIndexByKey.get(itemKey) ?? -1;
+                      const dragEnabled = isStatusGroup;
                       return (
                         <div
                           key={itemKey}
-                          draggable
-                          onDragStart={(event) => handleDragStart(event, itemKey)}
-                          onDragEnd={handleDragEnd}
+                          draggable={dragEnabled}
+                          onDragStart={dragEnabled ? (event) => handleDragStart(event, itemKey) : undefined}
+                          onDragEnd={dragEnabled ? handleDragEnd : undefined}
                           {...(flatIdx >= 0 ? hotkeyRowProps(flatIdx) : {})}
                           className={cn(
-                            'cursor-grab transition active:cursor-grabbing',
+                            'transition',
+                            dragEnabled && 'cursor-grab active:cursor-grabbing',
                             isDragging && 'scale-[0.98] opacity-50',
                           )}
                         >
@@ -1103,11 +1110,11 @@ export function AssignmentsPage() {
         </div>
       ) : (
         <KanbanBoard
-          columns={grouping === 'type' ? TYPE_KANBAN_COLUMNS_WITH_FALLBACK : KANBAN_COLUMNS}
+          columns={effectiveKanbanGrouping === 'type' ? TYPE_KANBAN_COLUMNS_WITH_FALLBACK : KANBAN_COLUMNS}
           items={filteredItems}
           getItemId={getAssignmentKey}
           getColumnId={(item) =>
-            grouping === 'type'
+            effectiveKanbanGrouping === 'type'
               ? (item.type && typesConfig.definitions.some((d) => d.id === item.type)
                   ? item.type
                   : UNKNOWN_TYPE_COLUMN_ID)
@@ -1130,8 +1137,8 @@ export function AssignmentsPage() {
                 : `Move to ${toColumnId} (direct status change).`,
             };
           }}
-          onMove={grouping === 'type' ? undefined : ({ item, toColumnId }) => handleMove({ item, toColumnId })}
-          dragDisabled={grouping === 'type'}
+          onMove={effectiveKanbanGrouping === 'type' ? undefined : ({ item, toColumnId }) => handleMove({ item, toColumnId })}
+          dragDisabled={effectiveKanbanGrouping === 'type'}
           getExternalDragData={(item): ExternalDragData | null =>
             item.projectSlug === null
               ? { type: 'standalone-assignment', id: item.id }
