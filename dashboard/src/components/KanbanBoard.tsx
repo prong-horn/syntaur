@@ -228,12 +228,18 @@ export function KanbanBoard<T>({
                 onDrop={(event) => handleDrop(event, column.id, columnItems.length)}
               >
                 {columnItems.length === 0 ? (
-                  <DropZone
-                    active={dropTarget?.columnId === column.id && dropTarget.index === 0}
-                    disabled={Boolean(draggedItem) && !validation.allowed}
-                  >
-                    {typeof emptyMessage === 'function' ? emptyMessage(column) : emptyMessage}
-                  </DropZone>
+                  dragDisabled ? (
+                    <div className="flex min-h-[128px] items-center justify-center rounded-lg border border-border/60 bg-background/50 px-4 text-center text-sm text-muted-foreground">
+                      {typeof emptyMessage === 'function' ? emptyMessage(column) : emptyMessage}
+                    </div>
+                  ) : (
+                    <DropZone
+                      active={dropTarget?.columnId === column.id && dropTarget.index === 0}
+                      disabled={Boolean(draggedItem) && !validation.allowed}
+                    >
+                      {typeof emptyMessage === 'function' ? emptyMessage(column) : emptyMessage}
+                    </DropZone>
+                  )
                 ) : null}
 
                 {columnItems.map((item, index) => {
@@ -286,7 +292,7 @@ export function KanbanBoard<T>({
                   );
                 })}
 
-                {columnItems.length > 0 ? (
+                {columnItems.length > 0 && !dragDisabled ? (
                   <div
                     className={cn(
                       'mt-1 rounded-md border border-dashed px-3 py-2 text-center text-xs text-muted-foreground transition',

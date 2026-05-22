@@ -154,6 +154,7 @@ export function AssignmentsPage() {
     })),
     [typesConfig],
   );
+  const UNKNOWN_TYPE_COLUMN_ID = '__unknown_type__';
   const VALID_STATUS_SET = useMemo(() => new Set<string>(['all', ...COLUMNS]), [COLUMNS]);
 
   const viewParam = searchParams.get('view') as ViewMode | null;
@@ -502,7 +503,7 @@ export function AssignmentsPage() {
       const knownIds = new Set(typesConfig.definitions.map((d) => d.id));
       const unknown = filteredItems.filter((it) => !it.type || !knownIds.has(it.type));
       if (unknown.length > 0) {
-        groups.push({ id: '__unknown_type__', label: 'Other', items: unknown });
+        groups.push({ id: UNKNOWN_TYPE_COLUMN_ID, label: 'Other', items: unknown });
       }
       return groups;
     }
@@ -544,6 +545,20 @@ export function AssignmentsPage() {
       items: filteredItems.filter((it) => it.status === status),
     }));
   }, [grouping, filteredItems, typesConfig, COLUMNS, COLUMN_LABELS]);
+
+  // Add an "Other" column to the type kanban when any filtered item has a null
+  // / unrecognized type slug. Mirrors the list-view bucketing so the same
+  // assignment doesn't move between buckets when the user switches views.
+  const TYPE_KANBAN_COLUMNS_WITH_FALLBACK: KanbanColumn[] = useMemo(() => {
+    const knownIds = new Set(typesConfig.definitions.map((d) => d.id));
+    const hasUnknown = filteredItems.some((it) => !it.type || !knownIds.has(it.type));
+    return hasUnknown
+      ? [
+          ...TYPE_KANBAN_COLUMNS,
+          { id: UNKNOWN_TYPE_COLUMN_ID, title: 'Other', description: 'Assignments with no recognized type.' },
+        ]
+      : TYPE_KANBAN_COLUMNS;
+  }, [TYPE_KANBAN_COLUMNS, typesConfig, filteredItems]);
 
   // Flat visible order depends on view. In list/kanban the user sees items grouped by
   // the active grouping; that's the j/k traversal order.
@@ -837,9 +852,15 @@ export function AssignmentsPage() {
           <option value="fresh">Fresh only</option>
         </select>
         <select value={grouping} onChange={(e) => handleSetGrouping(e.target.value as Grouping)} className="editor-input max-w-[180px]" title="Group by">
-          {GROUPINGS.map((g) => (
-            <option key={g} value={g}>{g === 'none' ? 'No grouping' : `Group: ${g.charAt(0).toUpperCase() + g.slice(1)}`}</option>
-          ))}
+          {GROUPINGS.map((g) => {
+            const isKanbanUnsupported = view === 'kanban' && g !== 'status' && g !== 'type';
+            const label = g === 'none' ? 'No grouping' : `Group: ${g.charAt(0).toUpperCase() + g.slice(1)}`;
+            return (
+              <option key={g} value={g} disabled={isKanbanUnsupported}>
+                {isKanbanUnsupported ? `${label} (list only)` : label}
+              </option>
+            );
+          })}
         </select>
         <ViewToggle
           value={view}
@@ -1039,14 +1060,14 @@ export function AssignmentsPage() {
         </div>
       ) : (
         <KanbanBoard
-          columns={grouping === 'type' ? TYPE_KANBAN_COLUMNS : KANBAN_COLUMNS}
+          columns={grouping === 'type' ? TYPE_KANBAN_COLUMNS_WITH_FALLBACK : KANBAN_COLUMNS}
           items={filteredItems}
           getItemId={getAssignmentKey}
           getColumnId={(item) =>
             grouping === 'type'
               ? (item.type && typesConfig.definitions.some((d) => d.id === item.type)
                   ? item.type
-                  : typesConfig.default)
+                  : UNKNOWN_TYPE_COLUMN_ID)
               : item.status
           }
           canDrop={({ item, fromColumnId, toColumnId }) => {

@@ -114,6 +114,7 @@ export function isViewPrefsDefaults(file: ViewPrefsFile): boolean {
   const gf = g.filters;
   const df = d.filters;
   if (gf.status !== df.status) return false;
+  if (gf.type !== df.type) return false;
   if (gf.priority !== df.priority) return false;
   if (gf.assignee !== df.assignee) return false;
   if (gf.project !== df.project) return false;

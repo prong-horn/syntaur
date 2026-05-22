@@ -21,7 +21,7 @@ import { ProjectTodosPanel } from '../components/ProjectTodosPanel';
 import { useStatusConfig } from '../hooks/useStatusConfig';
 import { useTypesConfig, getTypeLabel } from '../hooks/useTypesConfig';
 import { useHotkey, useHotkeyScope } from '../hotkeys';
-import { coerceProjectDetailView, GROUPINGS, type Grouping } from '@shared/view-prefs-schema';
+import { coerceProjectDetailView, type Grouping } from '@shared/view-prefs-schema';
 import { saveScopeViewPrefs, useViewPrefs } from '../hooks/useViewPrefs';
 import { KanbanBoard, type KanbanColumn } from '../components/KanbanBoard';
 import { getStatusLabel } from '../hooks/useStatusConfig';
@@ -147,20 +147,38 @@ export function ProjectDetail() {
     [persistField],
   );
 
+  const UNKNOWN_TYPE_COLUMN_ID = '__unknown_type__';
+  // Filter project assignments. Pre-early-return so kanbanColumns can depend on it.
+  const projectAssignments = project?.assignments ?? [];
+  const filteredAssignments = useMemo(
+    () => projectAssignments.filter((assignment) => {
+      if (statusFilter !== 'all' && assignment.status !== statusFilter) return false;
+      if (assigneeFilter !== 'all' && assignment.assignee !== assigneeFilter) return false;
+      if (priorityFilter !== 'all' && assignment.priority !== priorityFilter) return false;
+      if (typeFilter !== 'all' && (assignment.type ?? '') !== typeFilter) return false;
+      return true;
+    }),
+    [projectAssignments, statusFilter, assigneeFilter, priorityFilter, typeFilter],
+  );
   const kanbanColumns: KanbanColumn[] = useMemo(() => {
     if (grouping === 'type') {
-      return typesConfig.definitions.map((def) => ({
+      const knownIds = new Set(typesConfig.definitions.map((d) => d.id));
+      const cols: KanbanColumn[] = typesConfig.definitions.map((def) => ({
         id: def.id,
         title: getTypeLabel(typesConfig, def.id),
         description: def.description,
       }));
+      if (filteredAssignments.some((a) => !a.type || !knownIds.has(a.type))) {
+        cols.push({ id: UNKNOWN_TYPE_COLUMN_ID, title: 'Other', description: 'Assignments with no recognized type.' });
+      }
+      return cols;
     }
     return getAssignmentColumns(statusConfig.order).map((status) => ({
       id: status,
       title: getStatusLabel(statusConfig, status),
       description: getStatusDescription(status),
     }));
-  }, [grouping, typesConfig, statusConfig]);
+  }, [grouping, typesConfig, statusConfig, filteredAssignments]);
 
   const dependencyRoutes = useMemo(
     () => project ? Object.fromEntries(
@@ -204,21 +222,6 @@ export function ProjectDetail() {
   const assignees = Array.from(
     new Set(project.assignments.map((assignment) => assignment.assignee).filter(Boolean)),
   ).sort();
-  const filteredAssignments = project.assignments.filter((assignment) => {
-    if (statusFilter !== 'all' && assignment.status !== statusFilter) {
-      return false;
-    }
-    if (assigneeFilter !== 'all' && assignment.assignee !== assigneeFilter) {
-      return false;
-    }
-    if (priorityFilter !== 'all' && assignment.priority !== priorityFilter) {
-      return false;
-    }
-    if (typeFilter !== 'all' && (assignment.type ?? '') !== typeFilter) {
-      return false;
-    }
-    return true;
-  });
 
   return (
     <div className="space-y-5" data-density={prefs.density}>
@@ -345,11 +348,12 @@ export function ProjectDetail() {
                               <option key={t.id} value={t.id}>{getTypeLabel(typesConfig, t.id)}</option>
                             ))}
                           </select>
-                          <select value={grouping} onChange={(event) => handleSetGrouping(event.target.value as Grouping)} className="editor-input max-w-[170px]" title="Group by">
-                            {GROUPINGS.map((g) => (
-                              <option key={g} value={g}>{g === 'none' ? 'No grouping' : `Group: ${g.charAt(0).toUpperCase() + g.slice(1)}`}</option>
-                            ))}
-                          </select>
+                          {assignmentView === 'kanban' && (
+                            <select value={grouping === 'type' ? 'type' : 'status'} onChange={(event) => handleSetGrouping(event.target.value as Grouping)} className="editor-input max-w-[170px]" title="Group kanban by">
+                              <option value="status">Group: Status</option>
+                              <option value="type">Group: Type</option>
+                            </select>
+                          )}
                           <ViewToggle
                             value={assignmentView}
                             onChange={(value) => handleSetAssignmentView(value as 'kanban' | 'table')}
@@ -380,7 +384,7 @@ export function ProjectDetail() {
                             grouping === 'type'
                               ? (a.type && typesConfig.definitions.some((d) => d.id === a.type)
                                   ? a.type
-                                  : typesConfig.default)
+                                  : UNKNOWN_TYPE_COLUMN_ID)
                               : a.status
                           }
                           dragDisabled

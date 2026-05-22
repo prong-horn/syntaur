@@ -151,6 +151,31 @@ describe('view-prefs storage', () => {
     expect(effective.filters.status).toBe('in_progress');
   });
 
+  it('(e4) readViewPrefsFile tolerates a v1 on-disk file missing filters.type', async () => {
+    // Disk-level regression for the stale-prefs case: write a JSON file shaped
+    // like a v1 prefs file authored before `type` existed in filters, and confirm
+    // readViewPrefsFile returns it without throwing or marking the file corrupt.
+    const stalePayload = {
+      version: 1,
+      global: {
+        defaultView: 'kanban',
+        sortField: 'updated',
+        sortDirection: 'desc',
+        density: 'comfortable',
+        grouping: 'none',
+        filters: { status: 'all', priority: 'all', assignee: 'all', project: 'all', activity: 'all' },
+      },
+      projects: {},
+    };
+    await writeFile(prefsPath, JSON.stringify(stalePayload));
+    const result = await readViewPrefsFile();
+    expect(result.version).toBe(1);
+    expect(result.global.filters.type).toBeUndefined();
+    // No corrupt-backup written:
+    const entries = await readdir(resolve(homeDir, '.syntaur'));
+    expect(entries.filter((e) => e.startsWith('view-prefs.corrupt-')).length).toBe(0);
+  });
+
   it('(f0) missing version field is treated as v1 (forward-compat with files written without one)', async () => {
     const file = {
       global: {
