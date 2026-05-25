@@ -1,10 +1,11 @@
 import { resolve } from 'node:path';
-import { readdir, readFile } from 'node:fs/promises';
+import { readFile, readdir } from 'node:fs/promises';
 import { fileExists } from '../../fs.js';
 import { parseAssignmentFull } from '../../../dashboard/parser.js';
 import { DEFAULT_STATUSES, DEFAULT_TERMINAL_STATUSES } from '../../../lifecycle/types.js';
 import { DEFAULT_ASSIGNMENT_TYPES } from '../../config.js';
 import { assignmentsDir as getStandaloneDir } from '../../paths.js';
+import { listAssignmentsByProject, type AssignmentEntry } from '../../assignment-walk.js';
 import type { CheckContext, Check, CheckResult } from '../types.js';
 
 const CATEGORY = 'assignment';
@@ -41,77 +42,11 @@ function objectiveBodyIsEmpty(content: string): boolean {
   return OBJECTIVE_PLACEHOLDER_PATTERNS.some((p) => p.test(body));
 }
 
-interface AssignmentEntry {
-  projectDir: string;
-  /** `null` for standalone assignments (no containing project). */
-  projectSlug: string | null;
-  assignmentDir: string;
-  /** For standalone, this is the UUID folder name. */
-  assignmentSlug: string;
-  standalone: boolean;
-}
-
 async function listAssignments(ctx: CheckContext): Promise<{
   withAssignmentMd: AssignmentEntry[];
   orphanFolders: AssignmentEntry[];
 }> {
-  const result = { withAssignmentMd: [] as AssignmentEntry[], orphanFolders: [] as AssignmentEntry[] };
-  const projectsDir = ctx.config.defaultProjectDir;
-  if (await fileExists(projectsDir)) {
-    const projects = await readdir(projectsDir, { withFileTypes: true });
-    for (const m of projects) {
-      if (!m.isDirectory()) continue;
-      if (m.name.startsWith('.') || m.name.startsWith('_')) continue;
-      const assignmentsDir = resolve(projectsDir, m.name, 'assignments');
-      if (!(await fileExists(assignmentsDir))) continue;
-
-      const entries = await readdir(assignmentsDir, { withFileTypes: true });
-      for (const a of entries) {
-        if (!a.isDirectory()) continue;
-        if (a.name.startsWith('.') || a.name.startsWith('_')) continue;
-        const assignmentDir = resolve(assignmentsDir, a.name);
-        const assignmentMd = resolve(assignmentDir, 'assignment.md');
-        const entry: AssignmentEntry = {
-          projectDir: resolve(projectsDir, m.name),
-          projectSlug: m.name,
-          assignmentDir,
-          assignmentSlug: a.name,
-          standalone: false,
-        };
-        if (await fileExists(assignmentMd)) {
-          result.withAssignmentMd.push(entry);
-        } else {
-          result.orphanFolders.push(entry);
-        }
-      }
-    }
-  }
-
-  // Walk standalone assignments at ~/.syntaur/assignments/
-  const standaloneRoot = getStandaloneDir();
-  if (await fileExists(standaloneRoot)) {
-    const entries = await readdir(standaloneRoot, { withFileTypes: true });
-    for (const a of entries) {
-      if (!a.isDirectory()) continue;
-      if (a.name.startsWith('.') || a.name.startsWith('_')) continue;
-      const assignmentDir = resolve(standaloneRoot, a.name);
-      const assignmentMd = resolve(assignmentDir, 'assignment.md');
-      const entry: AssignmentEntry = {
-        projectDir: standaloneRoot,
-        projectSlug: null,
-        assignmentDir,
-        assignmentSlug: a.name,
-        standalone: true,
-      };
-      if (await fileExists(assignmentMd)) {
-        result.withAssignmentMd.push(entry);
-      } else {
-        result.orphanFolders.push(entry);
-      }
-    }
-  }
-
-  return result;
+  return listAssignmentsByProject(ctx.config.defaultProjectDir, getStandaloneDir());
 }
 
 function configuredStatuses(ctx: CheckContext): Set<string> {
