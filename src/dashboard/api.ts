@@ -585,7 +585,10 @@ export async function getOverview(
     try {
       const { scanAllSessions } = await import('./scanner.js');
       const servers = await timed(traces, 'scan-tmux-sessions', () =>
-        scanAllSessions(serversDir, projectsDir, { assignmentsDir }),
+        // Overview only needs aggregate counts — never block its render on a
+        // live scan; serve last-known stats and let the scan refresh in the
+        // background (stale-while-revalidate).
+        scanAllSessions(serversDir, projectsDir, { assignmentsDir, nonBlocking: true }),
       );
       if (servers.tmuxAvailable) {
         const alive = servers.sessions.filter(s => s.alive).length;
