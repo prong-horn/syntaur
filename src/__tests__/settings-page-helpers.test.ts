@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   buildStatusSavePayload,
   pruneStaleResolutions,
+  sortStatusesByOrder,
 } from '../../dashboard/src/pages/settings-page-helpers';
 import type { StatusResolution } from '../../dashboard/src/hooks/useStatusConfig';
 
@@ -104,5 +105,45 @@ describe('pruneStaleResolutions', () => {
     const next = pruneStaleResolutions(pending, new Set(['in_progress']));
     expect(next.size).toBe(1);
     expect(next.get('pending')).toEqual({ id: 'pending', mode: 'delete' });
+  });
+});
+
+describe('sortStatusesByOrder', () => {
+  const defs = [
+    { id: 'pending', label: 'Pending' },
+    { id: 'in_progress', label: 'In Progress' },
+    { id: 'done', label: 'Done' },
+  ];
+
+  it('reorders rows to match the persisted display order', () => {
+    const result = sortStatusesByOrder(defs, ['done', 'pending', 'in_progress']);
+    expect(result.map((s) => s.id)).toEqual(['done', 'pending', 'in_progress']);
+  });
+
+  it('appends statuses missing from order, keeping their relative order', () => {
+    const result = sortStatusesByOrder(defs, ['done']);
+    expect(result.map((s) => s.id)).toEqual(['done', 'pending', 'in_progress']);
+  });
+
+  it('ignores order ids with no matching status', () => {
+    const result = sortStatusesByOrder(defs, ['ghost', 'done', 'pending', 'in_progress']);
+    expect(result.map((s) => s.id)).toEqual(['done', 'pending', 'in_progress']);
+  });
+
+  it('returns statuses unchanged when order is empty', () => {
+    const result = sortStatusesByOrder(defs, []);
+    expect(result.map((s) => s.id)).toEqual(['pending', 'in_progress', 'done']);
+  });
+
+  it('never drops rows when two statuses share an id (no silent loss)', () => {
+    const dupes = [
+      { id: 'dup', label: 'First' },
+      { id: 'in_progress', label: 'In Progress' },
+      { id: 'dup', label: 'Second' },
+    ];
+    const result = sortStatusesByOrder(dupes, ['dup', 'in_progress']);
+    // Both 'dup' rows survive (keyed-Map dedup would have lost one).
+    expect(result).toHaveLength(3);
+    expect(result.map((s) => s.label)).toEqual(['First', 'Second', 'In Progress']);
   });
 });
