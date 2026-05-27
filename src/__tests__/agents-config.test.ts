@@ -329,6 +329,71 @@ describe('agents config', () => {
     });
   });
 
+  describe('getAgents builtin resume/fork merge', () => {
+    it('inherits builtin resume/fork for a claude agent that omits them', async () => {
+      await writeAgentsConfig([
+        { id: 'claude', label: 'My Claude', command: 'claude', default: true },
+      ]);
+      const config = await readConfig();
+      // The stored config genuinely lacks resume/fork (e.g. saved via the
+      // dashboard editor, which drops those fields).
+      expect(config.agents?.[0].resume).toBeUndefined();
+      expect(config.agents?.[0].fork).toBeUndefined();
+      const [claude] = getAgents(config);
+      expect(claude.resume).toEqual({ args: ['--resume', '{id}'] });
+      expect(claude.fork).toEqual({ args: ['--resume', '{id}', '--fork-session'] });
+      expect(claude).toMatchObject({ id: 'claude', label: 'My Claude', command: 'claude' });
+    });
+
+    it('inherits builtin resume/fork for a codex agent that omits them', async () => {
+      await writeAgentsConfig([{ id: 'codex', label: 'My Codex', command: 'codex' }]);
+      const config = await readConfig();
+      const [codex] = getAgents(config);
+      expect(codex.resume).toEqual({ args: ['resume', '{id}'] });
+      expect(codex.fork).toEqual({ args: ['fork', '{id}'] });
+    });
+
+    it('preserves user-provided resume/fork (does not overwrite with builtin)', async () => {
+      await writeAgentsConfig([
+        {
+          id: 'claude',
+          label: 'Claude',
+          command: 'claude',
+          resume: { args: ['--continue', '{id}'] },
+          fork: { args: ['--branch', '{id}'] },
+        },
+      ]);
+      const config = await readConfig();
+      const [claude] = getAgents(config);
+      expect(claude.resume).toEqual({ args: ['--continue', '{id}'] });
+      expect(claude.fork).toEqual({ args: ['--branch', '{id}'] });
+    });
+
+    it('fills only the omitted side when one of resume/fork is provided', async () => {
+      await writeAgentsConfig([
+        {
+          id: 'claude',
+          label: 'Claude',
+          command: 'claude',
+          resume: { args: ['--continue', '{id}'] },
+        },
+      ]);
+      const config = await readConfig();
+      const [claude] = getAgents(config);
+      expect(claude.resume).toEqual({ args: ['--continue', '{id}'] }); // user wins
+      expect(claude.fork).toEqual({ args: ['--resume', '{id}', '--fork-session'] }); // inherited
+    });
+
+    it('leaves non-builtin agents untouched (no resume/fork injected)', async () => {
+      await writeAgentsConfig([{ id: 'mytool', label: 'My Tool', command: 'mytool' }]);
+      const config = await readConfig();
+      const [mytool] = getAgents(config);
+      expect(mytool.resume).toBeUndefined();
+      expect(mytool.fork).toBeUndefined();
+      expect(mytool).toMatchObject({ id: 'mytool', label: 'My Tool', command: 'mytool' });
+    });
+  });
+
   describe('updateAgentsConfig', () => {
     it('dry-run does not write', async () => {
       const result = await updateAgentsConfig(

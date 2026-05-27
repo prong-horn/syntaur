@@ -150,6 +150,16 @@ describe('enrichSession resumeSupported / forkSupported', () => {
     expect(enriched.resumeSupported).toBe(false);
     expect(enriched.forkSupported).toBe(false);
   });
+
+  it('flags both false for a configured custom agent with neither resume nor fork', () => {
+    // The case that triggers the UI "Reopen unavailable" fallback: a non-builtin
+    // agent (so getAgents injects nothing) that defines no resume/fork.
+    const customAgent: AgentConfig = { id: 'mytool', label: 'My Tool', command: 'mytool' };
+    const s = makeSession({ agent: 'mytool' });
+    const enriched = enrichSession(s, [customAgent], deps());
+    expect(enriched.resumeSupported).toBe(false);
+    expect(enriched.forkSupported).toBe(false);
+  });
 });
 
 describe('enrichSessions', () => {
