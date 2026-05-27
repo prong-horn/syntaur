@@ -19,7 +19,12 @@ export const DEFAULT_COMMAND_TARGETS = new Map<string, string>([
   ['reopen', 'in_progress'],
 ]);
 
-/** @deprecated Transition guards removed — kept for API compat, always returns true */
+/**
+ * Built-in `from:command` → `to` map for the default (no custom config) status
+ * set. Used by the dashboard to guard which transitions are valid from a given
+ * status (see getTargetStatus when a table is passed). The CLI transition path
+ * passes no table and stays guard-free via DEFAULT_COMMAND_TARGETS.
+ */
 export const DEFAULT_TRANSITION_TABLE = new Map<string, string>([
   ['pending:start', 'in_progress'],
   ['pending:block', 'blocked'],
@@ -65,11 +70,18 @@ export function getTargetStatus(
   command: TransitionCommand,
   table?: Map<string, string>,
 ): AssignmentStatus | null {
-  // Try command-only lookup first, fall back to from:command for backwards compat
-  if (!table || table === DEFAULT_TRANSITION_TABLE) {
+  // No table provided (e.g. the CLI transition path): commands are guard-free —
+  // workflow enforcement happens via agent prompting, not code — so a command
+  // resolves to its canonical target regardless of the current status.
+  if (!table) {
     return DEFAULT_COMMAND_TARGETS.get(command) ?? null;
   }
-  // Custom table: try command-only key first, then from:command
+  // A table was provided (the dashboard passes one — custom, or the built-in
+  // DEFAULT_TRANSITION_TABLE): honor `from:command` so only transitions valid
+  // from the current status resolve. The kanban inline picker renders these
+  // directly and must not offer e.g. `start` on an in_progress card. Both
+  // DEFAULT_TRANSITION_TABLE and buildTransitionTable() key by `from:command`;
+  // the bare-command lookup is a defensive fallback (no current table uses it).
   return table.get(command) ?? table.get(`${_from}:${command}`) ?? null;
 }
 
