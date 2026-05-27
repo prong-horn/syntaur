@@ -1348,6 +1348,55 @@ describe('POST /api/agent-sessions', () => {
     expect(mystery.resumeSupported).toBe(false);
     expect(mystery.forkSupported).toBe(false);
   });
+
+  it('enriches an overridden claude session with inherited resume/fork (flags independent of liveness)', async () => {
+    // Point config resolution at a temp SYNTAUR_HOME whose config overrides
+    // `claude` WITHOUT resume/fork — the case that produced an empty
+    // Agent Sessions box on the reported machine.
+    const prevSyntaurHome = process.env.SYNTAUR_HOME;
+    const cfgHome = await mkdtemp(join(tmpdir(), 'syntaur-apicfg-'));
+    try {
+      process.env.SYNTAUR_HOME = cfgHome;
+      await writeFile(
+        resolve(cfgHome, 'config.md'),
+        [
+          '---',
+          'version: "2.0"',
+          `defaultProjectDir: ${resolve(cfgHome, 'projects')}`,
+          'agents:',
+          '  - id: claude',
+          '    label: My Claude',
+          '    command: claude',
+          '    default: true',
+          '---',
+          '',
+        ].join('\n'),
+      );
+
+      await fetch(`http://127.0.0.1:${port}/api/agent-sessions`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ agent: 'claude', sessionId: 'sid-override-claude', path: '/tmp' }),
+      });
+
+      const listRes = await fetch(`http://127.0.0.1:${port}/api/agent-sessions`);
+      const listBody = await listRes.json();
+      const row = listBody.sessions.find((s: any) => s.sessionId === 'sid-override-claude');
+
+      // getAgents inherits the builtin resume/fork even though the user config
+      // omits them → both capability flags resolve true.
+      expect(row.resumeSupported).toBe(true);
+      expect(row.forkSupported).toBe(true);
+      // Capability flags are derived purely from agent config, independent of
+      // liveness; isLive is reported separately and is what gates Resume in the
+      // UI (a live session still reports resumeSupported/forkSupported true).
+      expect(row.isLive).toBeTypeOf('boolean');
+    } finally {
+      if (prevSyntaurHome === undefined) delete process.env.SYNTAUR_HOME;
+      else process.env.SYNTAUR_HOME = prevSyntaurHome;
+      await rm(cfgHome, { recursive: true, force: true });
+    }
+  });
 });
 
 describe('PATCH /api/agent-sessions/:sessionId (terminal-only)', () => {

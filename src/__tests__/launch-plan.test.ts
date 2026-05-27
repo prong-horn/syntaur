@@ -325,6 +325,37 @@ describe('resolveLaunchPlan — session mode', () => {
 
     expect(plan.argv.args).toEqual(['--resume', 'sess-fork', '--fork-session']);
   });
+
+  it('inherits builtin resume for a claude agent overridden without resume/fork', async () => {
+    await appendSession('', {
+      sessionId: 'sess-override',
+      projectSlug: null,
+      assignmentSlug: null,
+      agent: 'claude',
+      started: '2026-05-19T00:00:00Z',
+      status: 'active',
+      path: testDir,
+    });
+
+    // User config overrides `claude` but omits resume/fork (e.g. saved via the
+    // dashboard agent editor, which drops those fields). getAgents must inherit
+    // the builtin resume so the deep-link launch resolves instead of throwing
+    // mode-not-supported.
+    const plan = await resolveLaunchPlan({
+      kind: 'session',
+      id: 'sess-override',
+      mode: 'resume',
+      config: makeConfig({
+        agents: [{ id: 'claude', label: 'My Claude', command: 'claude', default: true }],
+      }),
+      projectsDir,
+      assignmentsDir,
+    });
+
+    expect(plan.argv.command).toBe('claude');
+    expect(plan.argv.args).toEqual(['--resume', 'sess-override']);
+    expect(plan.agentId).toBe('claude');
+  });
 });
 
 describe('buildTerminalInvocation', () => {

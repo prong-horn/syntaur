@@ -1491,7 +1491,26 @@ export function getAssignmentTypes(config: SyntaurConfig): TypesConfig {
 }
 
 export function getAgents(config: SyntaurConfig): AgentConfig[] {
-  return config.agents ?? BUILTIN_AGENTS;
+  if (config.agents === null) return BUILTIN_AGENTS;
+  // For agents whose id matches a builtin (claude/codex), inherit the builtin's
+  // resume/fork for whichever the user omitted. Omission means "inherit", not
+  // "disable": there is no syntax to express intentional disable, and the
+  // dashboard agent editor (api-agents coerceAgentRow) silently drops these
+  // fields, so omission is frequently accidental. User-provided values win;
+  // non-builtin agents pass through untouched. Inputs are never mutated.
+  const builtinById = new Map(BUILTIN_AGENTS.map((a) => [a.id, a]));
+  return config.agents.map((agent) => {
+    const builtin = builtinById.get(agent.id);
+    if (!builtin) return agent;
+    const resume = agent.resume ?? builtin.resume;
+    const fork = agent.fork ?? builtin.fork;
+    if (resume === agent.resume && fork === agent.fork) return agent;
+    return {
+      ...agent,
+      ...(resume ? { resume } : {}),
+      ...(fork ? { fork } : {}),
+    };
+  });
 }
 
 export class TerminalConfigError extends Error {}

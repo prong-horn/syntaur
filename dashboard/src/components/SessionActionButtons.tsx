@@ -30,6 +30,14 @@ interface SessionActionButtonsProps {
  * writes into the same transcript file — the server reports `isLive: true`
  * when the original process may still be running, and the tooltip points
  * the user at Fork instead.
+ *
+ * Fallback: when neither resume nor fork is supported (a custom agent whose
+ * config defines no resume/fork — builtin claude/codex always inherit theirs
+ * via getAgents), we render a disabled "Reopen" affordance + reason tooltip
+ * rather than collapsing the row to id + status, so the box always explains
+ * why reopen isn't available.
+ *
+ *   | Terminal (Reopen) | never (only when neither R nor F) | always | (none) |
  */
 export function SessionActionButtons({ session, onMarkStopped }: SessionActionButtonsProps) {
   const resumeUrl = `syntaur://open?session=${encodeURIComponent(session.sessionId)}&mode=resume`;
@@ -41,14 +49,21 @@ export function SessionActionButtons({ session, onMarkStopped }: SessionActionBu
     'inline-flex items-center justify-center px-2 py-1 text-xs',
     'disabled:cursor-not-allowed disabled:opacity-50',
   );
+  // Disabled <button> elements don't emit hover/focus events reliably across
+  // browsers, so a tooltip attached directly to one won't show and isn't
+  // keyboard reachable. Wrap disabled buttons in a focusable span and use that
+  // as the TooltipTrigger (same pattern as OverflowMenu / ContextMenuPopover).
+  const disabledTriggerClass = 'inline-flex outline-none focus-visible:ring-1 focus-visible:ring-ring rounded-sm';
+
+  const reopenUnavailable = !session.resumeSupported && !session.forkSupported;
 
   return (
     <TooltipProvider delayDuration={200}>
       <div className="inline-flex items-center gap-1">
-        {session.resumeSupported && (
-          session.isLive ? (
-            <Tooltip>
-              <TooltipTrigger asChild>
+        {reopenUnavailable && (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span tabIndex={0} className={disabledTriggerClass}>
                 <button
                   type="button"
                   disabled
@@ -56,8 +71,31 @@ export function SessionActionButtons({ session, onMarkStopped }: SessionActionBu
                   className={btnClass}
                 >
                   <Terminal className={iconClass} />
-                  <span>Resume</span>
+                  <span>Reopen</span>
                 </button>
+              </span>
+            </TooltipTrigger>
+            <TooltipContent side="top">
+              Reopen unavailable — this agent has no resume/fork command configured
+            </TooltipContent>
+          </Tooltip>
+        )}
+
+        {session.resumeSupported && (
+          session.isLive ? (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span tabIndex={0} className={disabledTriggerClass}>
+                  <button
+                    type="button"
+                    disabled
+                    aria-disabled
+                    className={btnClass}
+                  >
+                    <Terminal className={iconClass} />
+                    <span>Resume</span>
+                  </button>
+                </span>
               </TooltipTrigger>
               <TooltipContent side="top">
                 Session appears active — fork instead to avoid transcript corruption
@@ -105,7 +143,9 @@ export function SessionActionButtons({ session, onMarkStopped }: SessionActionBu
               </button>
             </TooltipTrigger>
             <TooltipContent side="top">
-              Tell the dashboard this session has ended so Resume re-enables
+              {session.resumeSupported
+                ? 'Tell the dashboard this session has ended so Resume re-enables'
+                : 'Tell the dashboard this session has ended'}
             </TooltipContent>
           </Tooltip>
         )}
