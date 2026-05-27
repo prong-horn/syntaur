@@ -10,7 +10,7 @@ import {
   Trash2,
 } from 'lucide-react';
 import { CopyButton } from '../components/CopyButton';
-import { useAssignment, useProject, useServers, useAssignmentSessions, useWorkspacePrefix, type AssignmentTransitionAction } from '../hooks/useProjects';
+import { useAssignment, useProject, useServers, useAssignmentSessions, useWorkspacePrefix, type AssignmentTransitionAction, type ExternalIdInfo } from '../hooks/useProjects';
 import { useStatusConfig } from '../hooks/useStatusConfig';
 import { formatRelativeTime, formatShortDate, formatShortDateTime } from '../lib/format';
 import { LoadingState } from '../components/LoadingState';
@@ -703,6 +703,9 @@ export function AssignmentDetail() {
               {assignment.workspace.parentBranch && (
                 <DetailRow label="Parent branch" value={assignment.workspace.parentBranch} copyable />
               )}
+              {assignment.externalIds.map((entry, idx) => (
+                <ExternalIdRow key={`${entry.system}:${entry.id}:${idx}`} entry={entry} />
+              ))}
             </dl>
           </SectionCard>
 
@@ -780,6 +783,31 @@ function DetailRow({ label, value, copyable }: { label: string; value: string; c
       <dd className="flex items-center gap-1.5 max-w-[60%] text-right text-foreground break-all">
         <span className="truncate" title={value}>{value}</span>
         {copyable && value !== '\u2014' && <CopyButton value={value} />}
+      </dd>
+    </div>
+  );
+}
+
+function ExternalIdRow({ entry }: { entry: ExternalIdInfo }) {
+  const hasUrl = entry.url != null && entry.url.length > 0;
+  return (
+    <div className="flex items-start justify-between gap-3">
+      <dt className="text-muted-foreground">{entry.system}</dt>
+      <dd className="flex items-center gap-1.5 max-w-[60%] text-right text-foreground break-all">
+        {hasUrl ? (
+          <a
+            href={entry.url ?? undefined}
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-label={`Open ${entry.system}:${entry.id} in ${entry.system}`}
+            className="flex items-center gap-1.5 min-w-0 text-primary hover:underline"
+          >
+            <span className="truncate min-w-0" title={entry.id}>{entry.id}</span>
+            <ExternalLink className="h-2.5 w-2.5 shrink-0" />
+          </a>
+        ) : (
+          <span className="truncate min-w-0" title={entry.id}>{entry.id}</span>
+        )}
       </dd>
     </div>
   );

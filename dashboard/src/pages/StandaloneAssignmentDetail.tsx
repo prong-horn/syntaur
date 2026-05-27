@@ -1,11 +1,13 @@
 import { useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
-import { ArrowRightLeft } from 'lucide-react';
-import { useAssignmentById, useAssignmentSessionsById } from '../hooks/useProjects';
+import { ArrowRightLeft, ExternalLink } from 'lucide-react';
+import { useAssignmentById, useAssignmentSessionsById, type ExternalIdInfo } from '../hooks/useProjects';
 import { LoadingState } from '../components/LoadingState';
 import { ErrorState } from '../components/ErrorState';
 import { StatusBadge } from '../components/StatusBadge';
 import { ExternalIdBadges } from '../components/ExternalIdBadges';
+import { CopyButton } from '../components/CopyButton';
+import { formatShortDate, formatShortDateTime } from '../lib/format';
 import { ContentTabs } from '../components/ContentTabs';
 import { SectionCard } from '../components/SectionCard';
 import { MarkdownRenderer } from '../components/MarkdownRenderer';
@@ -73,6 +75,33 @@ export function StandaloneAssignmentDetail() {
           <p className="text-sm text-warning-foreground">Blocked: {assignment.blockedReason}</p>
         ) : null}
       </header>
+
+      <SectionCard title="Details">
+        <dl className="space-y-3 text-sm">
+          <DetailRow label="ID" value={assignment.id} copyable />
+          <DetailRow label="Priority" value={assignment.priority} />
+          {assignment.assignee && <DetailRow label="Assignee" value={assignment.assignee} />}
+          <DetailRow
+            label="Updated"
+            value={`${formatShortDateTime(assignment.updated)} · Created ${formatShortDate(assignment.created)}`}
+          />
+          {assignment.workspace.repository && (
+            <DetailRow label="Repository" value={assignment.workspace.repository} copyable />
+          )}
+          {assignment.workspace.worktreePath && (
+            <DetailRow label="Worktree" value={assignment.workspace.worktreePath} copyable />
+          )}
+          {assignment.workspace.branch && (
+            <DetailRow label="Branch" value={assignment.workspace.branch} copyable />
+          )}
+          {assignment.workspace.parentBranch && (
+            <DetailRow label="Parent branch" value={assignment.workspace.parentBranch} copyable />
+          )}
+          {assignment.externalIds.map((entry, idx) => (
+            <ExternalIdRow key={`${entry.system}:${entry.id}:${idx}`} entry={entry} />
+          ))}
+        </dl>
+      </SectionCard>
 
       {assignment.referencedBy && assignment.referencedBy.length > 0 ? (
         <SectionCard
@@ -296,6 +325,43 @@ export function StandaloneAssignmentDetail() {
           refetch();
         }}
       />
+    </div>
+  );
+}
+
+function DetailRow({ label, value, copyable }: { label: string; value: string; copyable?: boolean }) {
+  return (
+    <div className="flex items-start justify-between gap-3">
+      <dt className="text-muted-foreground">{label}</dt>
+      <dd className="flex items-center gap-1.5 max-w-[60%] text-right text-foreground break-all">
+        <span className="truncate" title={value}>{value}</span>
+        {copyable && value !== '—' && <CopyButton value={value} />}
+      </dd>
+    </div>
+  );
+}
+
+function ExternalIdRow({ entry }: { entry: ExternalIdInfo }) {
+  const hasUrl = entry.url != null && entry.url.length > 0;
+  return (
+    <div className="flex items-start justify-between gap-3">
+      <dt className="text-muted-foreground">{entry.system}</dt>
+      <dd className="flex items-center gap-1.5 max-w-[60%] text-right text-foreground break-all">
+        {hasUrl ? (
+          <a
+            href={entry.url ?? undefined}
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-label={`Open ${entry.system}:${entry.id} in ${entry.system}`}
+            className="flex items-center gap-1.5 min-w-0 text-primary hover:underline"
+          >
+            <span className="truncate min-w-0" title={entry.id}>{entry.id}</span>
+            <ExternalLink className="h-2.5 w-2.5 shrink-0" />
+          </a>
+        ) : (
+          <span className="truncate min-w-0" title={entry.id}>{entry.id}</span>
+        )}
+      </dd>
     </div>
   );
 }
