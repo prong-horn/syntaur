@@ -16,6 +16,7 @@ const DEFAULT_FILTERS: Required<ViewFilters> = {
   assignee: 'all',
   project: 'all',
   activity: 'all',
+  type: 'all',
 };
 
 export interface CaptureContext {

@@ -35,17 +35,21 @@ import { ConfirmDialog } from '../components/ConfirmDialog';
 import { MoveToWorkspaceDialog } from '../components/MoveToWorkspaceDialog';
 import type { OverflowMenuItem } from '../components/OverflowMenu';
 import { StatusBadge, STATUS_META, getStatusDescription } from '../components/StatusBadge';
+import { TypeChip } from '../components/TypeChip';
 import { StatusPillPicker } from '../components/StatusPillPicker';
 import { InlineTitleEditor } from '../components/InlineTitleEditor';
 import { useToast, Toaster } from '../components/Toast';
 import { transitionNeedsReason } from '../lib/assignments';
 import { useStatusConfig, getStatusLabel } from '../hooks/useStatusConfig';
+import { useTypesConfig, getTypeLabel } from '../hooks/useTypesConfig';
 import { useHotkey, useHotkeyScope, useListSelection } from '../hotkeys';
 import {
   VIEW_MODES,
+  GROUPINGS,
   type ViewMode,
   type SortField,
   type SortDirection,
+  type Grouping,
   type Activity as ActivityFilter,
   type ProjectViewPrefs,
 } from '@shared/view-prefs-schema';
@@ -96,6 +100,7 @@ export function AssignmentsPage() {
   useHotkeyScope('list:assignments');
   const { data, loading, error, refetch } = useAssignmentsBoard();
   const statusConfig = useStatusConfig();
+  const typesConfig = useTypesConfig();
   const [searchParams, setSearchParams] = useSearchParams();
 
   // Namespace the scope key so workspace-scoped prefs cannot collide with
@@ -122,6 +127,15 @@ export function AssignmentsPage() {
     })),
     [COLUMNS, COLUMN_LABELS],
   );
+  const TYPE_KANBAN_COLUMNS: KanbanColumn[] = useMemo(
+    () => typesConfig.definitions.map((def) => ({
+      id: def.id,
+      title: getTypeLabel(typesConfig, def.id),
+      description: def.description,
+    })),
+    [typesConfig],
+  );
+  const UNKNOWN_TYPE_COLUMN_ID = '__unknown_type__';
   const VALID_STATUS_SET = useMemo(() => new Set<string>(['all', ...COLUMNS]), [COLUMNS]);
 
   const viewParam = searchParams.get('view') as ViewMode | null;
@@ -154,6 +168,7 @@ export function AssignmentsPage() {
     () => normalizeStatusFilter(statusParam),
   );
   const [priorityFilter, setPriorityFilter] = useState<string>(() => prefs.filters.priority ?? 'all');
+  const [typeFilter, setTypeFilter] = useState<string>(() => prefs.filters.type ?? 'all');
   const [assigneeFilter, setAssigneeFilter] = useState<string>(() => prefs.filters.assignee ?? 'all');
   const [projectFilter, setProjectFilter] = useState<string>(() => prefs.filters.project ?? 'all');
   const [activityFilter, setActivityFilter] = useState<ActivityFilter>(
@@ -161,11 +176,6 @@ export function AssignmentsPage() {
   );
   const [sortField, setSortField] = useState<SortField>(() => prefs.sortField);
   const [sortDirection, setSortDirection] = useState<SortDirection>(() => prefs.sortDirection);
-  // Serializable list-section visibility — default empty (all sections expanded).
-  // Persisted as part of a saved view's config (per Decision 9).
-  const [listSectionVisibility, setListSectionVisibility] = useState<{ collapsed: string[] }>(
-    () => ({ collapsed: [] }),
-  );
   // Kanban column visibility — default empty (all columns shown).
   const [kanbanColumnVisibility, setKanbanColumnVisibility] = useState<{ hidden: string[] }>(
     () => ({ hidden: [] }),
@@ -174,6 +184,17 @@ export function AssignmentsPage() {
   const [tableColumnVisibility, setTableColumnVisibility] = useState<{ hidden: TableColumnId[] }>(
     () => ({ hidden: [] }),
   );
+  const [grouping, setGrouping] = useState<Grouping>(() => prefs.grouping);
+  // Kanban only supports status / type grouping; any other persisted value
+  // (set from list view) is rendered as status. The dropdown reflects this
+  // coerced value when view === 'kanban' so the UI never disagrees with what
+  // the board actually shows. Persisted value survives the view switch.
+  const effectiveKanbanGrouping: 'status' | 'type' = grouping === 'type' ? 'type' : 'status';
+  // Tracks group IDs the user has explicitly collapsed, keyed by the active
+  // grouping's group id. Persisted via saved views: buildViewState derives the
+  // serializable `listSectionVisibility` from this set, and applyConfig seeds it
+  // back. New / unknown group IDs default to expanded.
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(() => new Set());
   const [boardItems, setBoardItems] = useState<AssignmentBoardItem[]>([]);
   const { toast, showToast, dismissToast } = useToast();
   const [transitioningId, setTransitioningId] = useState<string | null>(null);
@@ -270,16 +291,20 @@ export function AssignmentsPage() {
   // another component, subscriber-set propagates here).
   useEffect(() => {
     setPriorityFilter(prefs.filters.priority ?? 'all');
+    setTypeFilter(prefs.filters.type ?? 'all');
     setAssigneeFilter(prefs.filters.assignee ?? 'all');
     setProjectFilter(prefs.filters.project ?? 'all');
     setSortField(prefs.sortField);
     setSortDirection(prefs.sortDirection);
+    setGrouping(prefs.grouping);
   }, [
     prefs.filters.priority,
+    prefs.filters.type,
     prefs.filters.assignee,
     prefs.filters.project,
     prefs.sortField,
     prefs.sortDirection,
+    prefs.grouping,
   ]);
 
   // One-shot URL seed PER SCOPE: waits for the server response to land
@@ -376,6 +401,13 @@ export function AssignmentsPage() {
     },
     [persistField],
   );
+  const handleSetTypeFilter = useCallback(
+    (v: string) => {
+      setTypeFilter(v);
+      persistField({ filters: { type: v } });
+    },
+    [persistField],
+  );
   const handleSetAssigneeFilter = useCallback(
     (v: string) => {
       setAssigneeFilter(v);
@@ -411,6 +443,13 @@ export function AssignmentsPage() {
     },
     [persistField],
   );
+  const handleSetGrouping = useCallback(
+    (v: Grouping) => {
+      setGrouping(v);
+      persistField({ grouping: v });
+    },
+    [persistField],
+  );
 
   const buildViewState = useCallback(
     () => ({
@@ -424,7 +463,7 @@ export function AssignmentsPage() {
       },
       sortField,
       sortDirection,
-      listSectionVisibility,
+      listSectionVisibility: { collapsed: [...collapsedGroups] },
       kanbanColumnVisibility,
       tableColumnVisibility,
     }),
@@ -437,7 +476,7 @@ export function AssignmentsPage() {
       activityFilter,
       sortField,
       sortDirection,
-      listSectionVisibility,
+      collapsedGroups,
       kanbanColumnVisibility,
       tableColumnVisibility,
     ],
@@ -454,7 +493,7 @@ export function AssignmentsPage() {
         setActivityFilter: handleSetActivityFilter,
         setSortField: handleSetSortField,
         setSortDirection: handleSetSortDirection,
-        setListSectionVisibility,
+        setListSectionVisibility: (vis) => setCollapsedGroups(new Set(vis.collapsed)),
         setKanbanColumnVisibility,
         setTableColumnVisibility,
       });
@@ -635,6 +674,7 @@ export function AssignmentsPage() {
       }
       if (statusFilter !== 'all' && assignment.status !== statusFilter) return false;
       if (priorityFilter !== 'all' && assignment.priority !== priorityFilter) return false;
+      if (typeFilter !== 'all' && (assignment.type ?? '') !== typeFilter) return false;
       if (activityFilter === 'stale' && !isAssignmentStale(assignment.updated)) return false;
       if (activityFilter === 'fresh' && isAssignmentStale(assignment.updated)) return false;
       if (assigneeFilter !== 'all') {
@@ -657,24 +697,112 @@ export function AssignmentsPage() {
 
       return true;
     });
-  }, [activityFilter, boardItems, search, statusFilter, priorityFilter, assigneeFilter, projectFilter, workspace]);
+  }, [activityFilter, boardItems, search, statusFilter, priorityFilter, typeFilter, assigneeFilter, projectFilter, workspace]);
 
   const sortedItems = useMemo(
     () => sortAssignments(filteredItems, sortField, sortDirection),
     [filteredItems, sortField, sortDirection],
   );
 
-  // Flat visible order depends on view. In list/kanban the user sees items grouped by
-  // status column (in COLUMNS order); that's the j/k traversal order.
+  // Derive list-view groups from prefs.grouping. Status (default) preserves
+  // legacy behavior. Type and other dimensions are bucketed dynamically.
+  // Each group is { id, label, items } in display order.
+  const listGroups = useMemo(() => {
+    if (grouping === 'none') {
+      return [{ id: '__all__', label: 'All assignments', items: filteredItems }];
+    }
+    if (grouping === 'type') {
+      const groups: { id: string; label: string; items: AssignmentBoardItem[] }[] = typesConfig.definitions.map((def) => ({
+        id: def.id,
+        label: getTypeLabel(typesConfig, def.id),
+        items: filteredItems.filter((it) => it.type === def.id),
+      }));
+      const knownIds = new Set(typesConfig.definitions.map((d) => d.id));
+      const unknown = filteredItems.filter((it) => !it.type || !knownIds.has(it.type));
+      if (unknown.length > 0) {
+        groups.push({ id: UNKNOWN_TYPE_COLUMN_ID, label: 'Other', items: unknown });
+      }
+      return groups;
+    }
+    if (grouping === 'priority') {
+      const order: AssignmentBoardItem['priority'][] = ['critical', 'high', 'medium', 'low'];
+      return order.map((p) => ({
+        id: p,
+        label: p.charAt(0).toUpperCase() + p.slice(1),
+        items: filteredItems.filter((it) => it.priority === p),
+      }));
+    }
+    if (grouping === 'assignee') {
+      const assignees = Array.from(new Set(filteredItems.map((it) => it.assignee ?? '__unassigned__'))).sort();
+      return assignees.map((a) => ({
+        id: a,
+        label: a === '__unassigned__' ? 'Unassigned' : a,
+        items: filteredItems.filter((it) => (it.assignee ?? '__unassigned__') === a),
+      }));
+    }
+    if (grouping === 'project') {
+      const seen = new Map<string, string>();
+      for (const it of filteredItems) {
+        const key = it.projectSlug ?? '__standalone__';
+        const label = it.projectTitle ?? 'Standalone';
+        if (!seen.has(key)) seen.set(key, label);
+      }
+      return Array.from(seen.entries())
+        .sort(([, a], [, b]) => a.localeCompare(b))
+        .map(([key, label]) => ({
+          id: key,
+          label,
+          items: filteredItems.filter((it) => (it.projectSlug ?? '__standalone__') === key),
+        }));
+    }
+    // Default: status grouping
+    return COLUMNS.map((status) => ({
+      id: status,
+      label: COLUMN_LABELS[status] ?? status,
+      items: filteredItems.filter((it) => it.status === status),
+    }));
+  }, [grouping, filteredItems, typesConfig, COLUMNS, COLUMN_LABELS]);
+
+  // Add an "Other" column to the type kanban when any filtered item has a null
+  // / unrecognized type slug. Mirrors the list-view bucketing so the same
+  // assignment doesn't move between buckets when the user switches views.
+  const TYPE_KANBAN_COLUMNS_WITH_FALLBACK: KanbanColumn[] = useMemo(() => {
+    const knownIds = new Set(typesConfig.definitions.map((d) => d.id));
+    const hasUnknown = filteredItems.some((it) => !it.type || !knownIds.has(it.type));
+    return hasUnknown
+      ? [
+          ...TYPE_KANBAN_COLUMNS,
+          { id: UNKNOWN_TYPE_COLUMN_ID, title: 'Other', description: 'Assignments with no recognized type.' },
+        ]
+      : TYPE_KANBAN_COLUMNS;
+  }, [TYPE_KANBAN_COLUMNS, typesConfig, filteredItems]);
+
+  // Flat visible order depends on view. For list, follow the active grouping
+  // (which may be any GROUPINGS value). For kanban, follow effectiveKanbanGrouping
+  // (status or type) so j/k traversal matches what the user sees on the board —
+  // listGroups can iterate by priority/assignee/project, which would disagree
+  // with the kanban renderer when the persisted grouping is unsupported by kanban.
   const { visibleItems, visibleIndexByKey } = useMemo(() => {
-    const items =
-      view === 'table'
-        ? sortedItems
-        : COLUMNS.flatMap((status) => filteredItems.filter((it) => it.status === status));
+    let items: AssignmentBoardItem[];
+    if (view === 'table') {
+      items = sortedItems;
+    } else if (view === 'kanban') {
+      const knownIds = new Set(typesConfig.definitions.map((d) => d.id));
+      if (effectiveKanbanGrouping === 'type') {
+        items = [
+          ...typesConfig.definitions.flatMap((def) => filteredItems.filter((it) => it.type === def.id)),
+          ...filteredItems.filter((it) => !it.type || !knownIds.has(it.type)),
+        ];
+      } else {
+        items = COLUMNS.flatMap((status) => filteredItems.filter((it) => it.status === status));
+      }
+    } else {
+      items = listGroups.flatMap((g) => g.items);
+    }
     const byKey = new Map<string, number>();
     items.forEach((it, i) => byKey.set(getAssignmentKey(it), i));
     return { visibleItems: items, visibleIndexByKey: byKey };
-  }, [view, sortedItems, filteredItems, COLUMNS]);
+  }, [view, sortedItems, listGroups, effectiveKanbanGrouping, typesConfig, filteredItems, COLUMNS]);
 
   const { hotkeyRowProps } = useListSelection(visibleItems, {
     scope: 'list:assignments',
@@ -853,13 +981,15 @@ export function AssignmentsPage() {
     }
   }
 
-  function toggleStatus(status: string) {
-    setListSectionVisibility((current) => {
-      const isCollapsed = current.collapsed.includes(status);
-      const next = isCollapsed
-        ? current.collapsed.filter((s) => s !== status)
-        : [...current.collapsed, status];
-      return { collapsed: next };
+  function toggleGroup(groupId: string) {
+    setCollapsedGroups((current) => {
+      const next = new Set(current);
+      if (next.has(groupId)) {
+        next.delete(groupId);
+      } else {
+        next.add(groupId);
+      }
+      return next;
     });
   }
 
@@ -970,6 +1100,12 @@ export function AssignmentsPage() {
             <option key={p} value={p} className="capitalize">{p}</option>
           ))}
         </select>
+        <select value={typeFilter} onChange={(e) => handleSetTypeFilter(e.target.value)} className="editor-input max-w-[180px]">
+          <option value="all">All types</option>
+          {typesConfig.definitions.map((t) => (
+            <option key={t.id} value={t.id}>{getTypeLabel(typesConfig, t.id)}</option>
+          ))}
+        </select>
         <select value={assigneeFilter} onChange={(e) => handleSetAssigneeFilter(e.target.value)} className="editor-input max-w-[180px]">
           <option value="all">All assignees</option>
           {uniqueAssignees.map((a) => (
@@ -987,6 +1123,17 @@ export function AssignmentsPage() {
           <option value="all">All activity</option>
           <option value="stale">Stale only</option>
           <option value="fresh">Fresh only</option>
+        </select>
+        <select value={view === 'kanban' ? effectiveKanbanGrouping : grouping} onChange={(e) => handleSetGrouping(e.target.value as Grouping)} className="editor-input max-w-[180px]" title="Group by">
+          {GROUPINGS.map((g) => {
+            const isKanbanUnsupported = view === 'kanban' && g !== 'status' && g !== 'type';
+            const label = g === 'none' ? 'No grouping' : `Group: ${g.charAt(0).toUpperCase() + g.slice(1)}`;
+            return (
+              <option key={g} value={g} disabled={isKanbanUnsupported}>
+                {isKanbanUnsupported ? `${label} (list only)` : label}
+              </option>
+            );
+          })}
         </select>
         <ViewToggle
           value={view}
@@ -1074,6 +1221,7 @@ export function AssignmentsPage() {
                 <tr className="border-b border-border/60 text-muted-foreground">
                   {showCol('title') ? <SortHeader field="title">Assignment</SortHeader> : null}
                   {showCol('status') ? <SortHeader field="status">Status</SortHeader> : null}
+                  <th className="py-2 pr-4 text-xs font-medium uppercase tracking-wider">Type</th>
                   {showCol('priority') ? <SortHeader field="priority">Priority</SortHeader> : null}
                   {showCol('assignee') ? <SortHeader field="assignee">Assignee</SortHeader> : null}
                   {showCol('dependencies') ? <SortHeader field="dependencies">Dependencies</SortHeader> : null}
@@ -1147,6 +1295,9 @@ export function AssignmentsPage() {
                       </select>
                     </td>
                     ) : null}
+                    <td className="py-4 pr-4">
+                      <TypeChip type={assignment.type} compact />
+                    </td>
                     {showCol('priority') ? <td className="py-4 pr-4 capitalize text-muted-foreground">{assignment.priority}</td> : null}
                     {showCol('assignee') ? <td className="py-4 pr-4 text-muted-foreground">{assignment.assignee ?? 'Unassigned'}</td> : null}
                     {showCol('dependencies') ? <td className="py-4 pr-4 text-muted-foreground">{assignment.dependsOn.length}</td> : null}
@@ -1161,37 +1312,39 @@ export function AssignmentsPage() {
         })()
       ) : view === 'list' ? (
         <div className="space-y-3">
-          {COLUMNS.map((status) => {
-            const items = filteredItems.filter((item) => item.status === status);
-            if (items.length === 0 && !draggedItem) return null;
-            const expanded = !listSectionVisibility.collapsed.includes(status);
-            const isValidTarget = draggedItem
-              ? draggedItem.status !== status && !getAssignmentAction(draggedItem, status)?.disabled
-              : false;
-            const isInvalidTarget = draggedItem ? draggedItem.status !== status && !isValidTarget : false;
-            const isDropHover = dropTargetStatus === status;
+          {listGroups.map(({ id: groupId, label, items }) => {
+            if (items.length === 0 && !(draggedItem && grouping === 'status')) return null;
+            const expanded = !collapsedGroups.has(groupId);
+            const isStatusGroup = grouping === 'status';
+            const isValidTarget =
+              isStatusGroup && draggedItem
+                ? draggedItem.status !== groupId && !getAssignmentAction(draggedItem, groupId)?.disabled
+                : false;
+            const isInvalidTarget =
+              isStatusGroup && draggedItem ? draggedItem.status !== groupId && !isValidTarget : false;
+            const isDropHover = isStatusGroup && dropTargetStatus === groupId;
             return (
               <div
-                key={status}
+                key={groupId}
                 className={cn(
                   'rounded-lg border border-border/60 bg-card/90 transition',
                   isDropHover && isValidTarget && 'ring-2 ring-ring/30',
                   isInvalidTarget && 'border-dashed opacity-65',
                 )}
-                onDragOver={(event) => handleDragOver(event, status)}
-                onDragLeave={(event) => handleDragLeave(event, status)}
-                onDrop={(event) => handleListDrop(event, status)}
+                onDragOver={isStatusGroup ? (event) => handleDragOver(event, groupId) : undefined}
+                onDragLeave={isStatusGroup ? (event) => handleDragLeave(event, groupId) : undefined}
+                onDrop={isStatusGroup ? (event) => handleListDrop(event, groupId) : undefined}
               >
                 <button
                   type="button"
-                  onClick={() => toggleStatus(status)}
+                  onClick={() => toggleGroup(groupId)}
                   className="flex w-full items-center gap-2 px-4 py-3 text-left"
                 >
                   <ChevronDown
                     className={`h-4 w-4 text-muted-foreground transition-transform ${expanded ? '' : '-rotate-90'}`}
                   />
                   <span className="font-semibold text-foreground">
-                    {COLUMN_LABELS[status]}
+                    {label}
                   </span>
                   <span className="rounded-full border border-border/60 px-2 py-0.5 text-xs text-muted-foreground">
                     {items.length}
@@ -1203,15 +1356,17 @@ export function AssignmentsPage() {
                       const itemKey = getAssignmentKey(item);
                       const isDragging = draggedId === itemKey;
                       const flatIdx = visibleIndexByKey.get(itemKey) ?? -1;
+                      const dragEnabled = isStatusGroup;
                       return (
                         <div
                           key={itemKey}
-                          draggable
-                          onDragStart={(event) => handleDragStart(event, itemKey)}
-                          onDragEnd={handleDragEnd}
+                          draggable={dragEnabled}
+                          onDragStart={dragEnabled ? (event) => handleDragStart(event, itemKey) : undefined}
+                          onDragEnd={dragEnabled ? handleDragEnd : undefined}
                           {...(flatIdx >= 0 ? hotkeyRowProps(flatIdx) : {})}
                           className={cn(
-                            'cursor-grab transition active:cursor-grabbing',
+                            'transition',
+                            dragEnabled && 'cursor-grab active:cursor-grabbing',
                             isDragging && 'scale-[0.98] opacity-50',
                           )}
                         >
@@ -1231,10 +1386,16 @@ export function AssignmentsPage() {
         </div>
       ) : (
         <KanbanBoard
-          columns={KANBAN_COLUMNS}
+          columns={effectiveKanbanGrouping === 'type' ? TYPE_KANBAN_COLUMNS_WITH_FALLBACK : KANBAN_COLUMNS}
           items={filteredItems}
           getItemId={getAssignmentKey}
-          getColumnId={(item) => item.status}
+          getColumnId={(item) =>
+            effectiveKanbanGrouping === 'type'
+              ? (item.type && typesConfig.definitions.some((d) => d.id === item.type)
+                  ? item.type
+                  : UNKNOWN_TYPE_COLUMN_ID)
+              : item.status
+          }
           canDrop={({ item, fromColumnId, toColumnId }) => {
             if (fromColumnId === toColumnId) {
               return { allowed: true };
@@ -1252,7 +1413,8 @@ export function AssignmentsPage() {
                 : `Move to ${toColumnId} (direct status change).`,
             };
           }}
-          onMove={({ item, toColumnId }) => handleMove({ item, toColumnId })}
+          onMove={effectiveKanbanGrouping === 'type' ? undefined : ({ item, toColumnId }) => handleMove({ item, toColumnId })}
+          dragDisabled={effectiveKanbanGrouping === 'type'}
           getExternalDragData={(item): ExternalDragData | null =>
             item.projectSlug === null
               ? { type: 'standalone-assignment', id: item.id }
@@ -1516,6 +1678,7 @@ function AssignmentBoardCard({
       ) : null}
 
       <div className="mt-4 flex flex-wrap gap-2">
+        <TypeChip type={assignment.type} />
         <span className="rounded-full border border-border/60 px-2.5 py-1 text-xs capitalize text-muted-foreground">
           {assignment.priority}
         </span>

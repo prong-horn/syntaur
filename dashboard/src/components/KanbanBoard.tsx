@@ -68,6 +68,12 @@ interface KanbanBoardProps<T> {
    * dashboard widget. Default false.
    */
   compact?: boolean;
+  /**
+   * When true, suppress all drag affordances and short-circuit drop handlers. Use
+   * for read-only grouping modes (e.g. group-by-type) where re-bucketing by drag
+   * isn't supported. Default false — preserves existing call-site behavior.
+   */
+  dragDisabled?: boolean;
 }
 
 interface DropTarget {
@@ -97,6 +103,7 @@ export function KanbanBoard<T>({
   hiddenColumnIds,
   onHideColumn,
   compact = false,
+  dragDisabled = false,
 }: KanbanBoardProps<T>) {
   const hiddenSet = useMemo(() => new Set(hiddenColumnIds ?? []), [hiddenColumnIds]);
   const visibleColumns = useMemo(
@@ -141,6 +148,7 @@ export function KanbanBoard<T>({
   }
 
   function handleDragStart(event: DragEvent<HTMLDivElement>, item: T, itemId: string) {
+    if (dragDisabled) return;
     const external = getExternalDragData?.(item) ?? null;
 
     if (!onMove && !external) {
@@ -160,7 +168,7 @@ export function KanbanBoard<T>({
   }
 
   function handleDragOver(event: DragEvent<HTMLElement>, columnId: string, index: number) {
-    if (!onMove || !draggedItem) {
+    if (dragDisabled || !onMove || !draggedItem) {
       return;
     }
 
@@ -179,7 +187,7 @@ export function KanbanBoard<T>({
   async function handleDrop(event: DragEvent<HTMLElement>, columnId: string, index: number) {
     event.preventDefault();
 
-    if (!onMove || !draggedItem) {
+    if (dragDisabled || !onMove || !draggedItem) {
       clearDragState();
       return;
     }
@@ -294,12 +302,18 @@ export function KanbanBoard<T>({
                 onDrop={(event) => handleDrop(event, column.id, columnItems.length)}
               >
                 {columnItems.length === 0 ? (
-                  <DropZone
-                    active={dropTarget?.columnId === column.id && dropTarget.index === 0}
-                    disabled={Boolean(draggedItem) && !validation.allowed}
-                  >
-                    {typeof emptyMessage === 'function' ? emptyMessage(column) : emptyMessage}
-                  </DropZone>
+                  dragDisabled ? (
+                    <div className="flex min-h-[128px] items-center justify-center rounded-lg border border-border/60 bg-background/50 px-4 text-center text-sm text-muted-foreground">
+                      {typeof emptyMessage === 'function' ? emptyMessage(column) : emptyMessage}
+                    </div>
+                  ) : (
+                    <DropZone
+                      active={dropTarget?.columnId === column.id && dropTarget.index === 0}
+                      disabled={Boolean(draggedItem) && !validation.allowed}
+                    >
+                      {typeof emptyMessage === 'function' ? emptyMessage(column) : emptyMessage}
+                    </DropZone>
+                  )
                 ) : null}
 
                 {columnItems.map((item, index) => {
@@ -319,7 +333,7 @@ export function KanbanBoard<T>({
                         onDrop={(event) => handleDrop(event, column.id, index)}
                       />
                       <div
-                        draggable={Boolean(onMove || getExternalDragData)}
+                        draggable={!dragDisabled && Boolean(onMove || getExternalDragData)}
                         onMouseDown={(e) => {
                           mouseDownTarget.current = e.target;
                         }}
@@ -343,7 +357,7 @@ export function KanbanBoard<T>({
                         }}
                         className={cn(
                           'transition',
-                          onMove || getExternalDragData ? 'cursor-grab active:cursor-grabbing' : '',
+                          !dragDisabled && (onMove || getExternalDragData) ? 'cursor-grab active:cursor-grabbing' : '',
                           isDragging ? 'scale-[0.98] opacity-50' : '',
                         )}
                       >
@@ -353,7 +367,7 @@ export function KanbanBoard<T>({
                   );
                 })}
 
-                {columnItems.length > 0 ? (
+                {columnItems.length > 0 && !dragDisabled ? (
                   <div
                     className={cn(
                       'mt-1 rounded-md border border-dashed px-3 py-2 text-center text-xs text-muted-foreground transition',

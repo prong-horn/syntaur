@@ -16,6 +16,7 @@ import { formatRelativeTime, formatShortDate, formatShortDateTime } from '../lib
 import { LoadingState } from '../components/LoadingState';
 import { ErrorState } from '../components/ErrorState';
 import { StatusBadge } from '../components/StatusBadge';
+import { TypeChip } from '../components/TypeChip';
 import { ExternalIdBadges } from '../components/ExternalIdBadges';
 import { ContentTabs } from '../components/ContentTabs';
 import { SectionCard } from '../components/SectionCard';
@@ -362,6 +363,7 @@ export function AssignmentDetail() {
       <div className="sticky top-12 z-20 rounded-lg border border-border/60 bg-card/90 p-3 shadow-sm backdrop-blur">
         <div className="flex flex-wrap items-center gap-3">
           <StatusBadge status={assignment.status} progress={progress} />
+          <TypeChip type={assignment.type} />
           <h1 className="text-lg font-semibold text-foreground">{assignment.title}</h1>
           <span className="text-xs text-muted-foreground">
             Updated {formatRelativeTime(assignment.updated)}
@@ -781,7 +783,7 @@ function DetailRow({ label, value, copyable }: { label: string; value: string; c
     <div className="flex items-start justify-between gap-3">
       <dt className="text-muted-foreground">{label}</dt>
       <dd className="flex items-center gap-1.5 max-w-[60%] text-right text-foreground break-all">
-        <span className="truncate" title={value}>{value}</span>
+        <span className="block min-w-0 truncate" title={value}>{value}</span>
         {copyable && value !== '\u2014' && <CopyButton value={value} />}
       </dd>
     </div>

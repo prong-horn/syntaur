@@ -10,7 +10,7 @@ interface ExternalIdBadgesProps {
 const BADGE_BASE =
   'inline-flex max-w-[14rem] items-center gap-1 whitespace-nowrap rounded-full border px-2 py-0.5 text-[11px] font-semibold tracking-wide border-border/60 text-muted-foreground';
 
-const LABEL_BASE = 'truncate';
+const LABEL_BASE = 'block min-w-0 truncate';
 
 export function ExternalIdBadges({ externalIds, className }: ExternalIdBadgesProps) {
   if (externalIds.length === 0) return null;

@@ -7,6 +7,7 @@ import { formatDate, formatDateTime } from '../lib/format';
 import { LoadingState } from '../components/LoadingState';
 import { ErrorState } from '../components/ErrorState';
 import { StatusBadge, getStatusDescription } from '../components/StatusBadge';
+import { TypeChip } from '../components/TypeChip';
 import { ExternalIdBadges } from '../components/ExternalIdBadges';
 import { StatCard } from '../components/StatCard';
 import { ProgressBar } from '../components/ProgressBar';
@@ -20,8 +21,9 @@ import { ProjectTodosPanel } from '../components/ProjectTodosPanel';
 import { KanbanBoard, type KanbanColumn } from '../components/KanbanBoard';
 import { TableColumnPicker } from '../components/TableColumnPicker';
 import { useStatusConfig, getStatusLabel } from '../hooks/useStatusConfig';
+import { useTypesConfig, getTypeLabel } from '../hooks/useTypesConfig';
 import { useHotkey, useHotkeyScope } from '../hotkeys';
-import { coerceProjectDetailView, type SortField, type SortDirection } from '@shared/view-prefs-schema';
+import { coerceProjectDetailView, type SortField, type SortDirection, type Grouping } from '@shared/view-prefs-schema';
 import { saveScopeViewPrefs, useViewPrefs } from '../hooks/useViewPrefs';
 import { getAssignmentColumns } from '../lib/kanban';
 import { sortAssignments } from '../lib/sortAssignments';
@@ -33,6 +35,7 @@ import type { SavedView, ViewScope } from '@shared/saved-views-schema';
 import { useToast, Toaster } from '../components/Toast';
 
 const VALID_TABS = new Set(['overview', 'assignments', 'todos', 'dependencies', 'knowledge']);
+const UNKNOWN_TYPE_COLUMN_ID = '__unknown_type__';
 
 export function ProjectDetail() {
   const { slug, workspace } = useParams<{ workspace?: string; slug: string }>();
@@ -53,6 +56,7 @@ export function ProjectDetail() {
   });
   const { data: project, loading, error, refetch } = useProject(slug);
   const statusConfig = useStatusConfig();
+  const typesConfig = useTypesConfig();
   const { data: workspacesData } = useWorkspaces();
   // Tab selection lives in the URL (?tab=<value>) so it stays in sync when
   // react-router reuses this component across project navigations (e.g. the
@@ -81,6 +85,8 @@ export function ProjectDetail() {
   const [statusFilter, setStatusFilter] = useState<string>(() => prefs.filters.status ?? 'all');
   const [assigneeFilter, setAssigneeFilter] = useState<string>(() => prefs.filters.assignee ?? 'all');
   const [priorityFilter, setPriorityFilter] = useState<string>(() => prefs.filters.priority ?? 'all');
+  const [typeFilter, setTypeFilter] = useState<string>(() => prefs.filters.type ?? 'all');
+  const [grouping, setGrouping] = useState<Grouping>(() => prefs.grouping);
   const [sortField, setSortField] = useState<SortField>(() => prefs.sortField);
   const [sortDirection, setSortDirection] = useState<SortDirection>(() => prefs.sortDirection);
   // List visibility state — kept for saved-view round-trips even though
@@ -134,9 +140,11 @@ export function ProjectDetail() {
     setStatusFilter(prefs.filters.status ?? 'all');
     setAssigneeFilter(prefs.filters.assignee ?? 'all');
     setPriorityFilter(prefs.filters.priority ?? 'all');
+    setTypeFilter(prefs.filters.type ?? 'all');
+    setGrouping(prefs.grouping);
     setSortField(prefs.sortField);
     setSortDirection(prefs.sortDirection);
-  }, [slug, prefs.defaultView, prefs.filters.status, prefs.filters.assignee, prefs.filters.priority, prefs.sortField, prefs.sortDirection]);
+  }, [slug, prefs.defaultView, prefs.filters.status, prefs.filters.assignee, prefs.filters.priority, prefs.filters.type, prefs.grouping, prefs.sortField, prefs.sortDirection]);
 
   const persistField = useCallback(
     (patch: Parameters<typeof saveScopeViewPrefs>[1]) => {
@@ -173,6 +181,20 @@ export function ProjectDetail() {
     (v: string) => {
       setPriorityFilter(v);
       persistField({ filters: { priority: v } });
+    },
+    [persistField],
+  );
+  const handleSetTypeFilter = useCallback(
+    (v: string) => {
+      setTypeFilter(v);
+      persistField({ filters: { type: v } });
+    },
+    [persistField],
+  );
+  const handleSetGrouping = useCallback(
+    (v: Grouping) => {
+      setGrouping(v);
+      persistField({ grouping: v });
     },
     [persistField],
   );
@@ -425,14 +447,36 @@ export function ProjectDetail() {
     if (priorityFilter !== 'all' && assignment.priority !== priorityFilter) {
       return false;
     }
+    if (typeFilter !== 'all' && (assignment.type ?? '') !== typeFilter) {
+      return false;
+    }
     return true;
   });
   const sortedAssignments = sortAssignments(filteredAssignments, sortField, sortDirection);
-  const kanbanColumns: KanbanColumn[] = getAssignmentColumns(statusConfig.order).map((id) => ({
-    id,
-    title: getStatusLabel(statusConfig, id),
-    description: getStatusDescription(id),
-  }));
+  const knownTypeIds = new Set(typesConfig.definitions.map((d) => d.id));
+  const kanbanColumns: KanbanColumn[] =
+    grouping === 'type'
+      ? [
+          ...typesConfig.definitions.map((def) => ({
+            id: def.id,
+            title: getTypeLabel(typesConfig, def.id),
+            description: def.description,
+          })),
+          ...(filteredAssignments.some((a) => !a.type || !knownTypeIds.has(a.type))
+            ? [
+                {
+                  id: UNKNOWN_TYPE_COLUMN_ID,
+                  title: 'Other',
+                  description: 'Assignments with no recognized type.',
+                },
+              ]
+            : []),
+        ]
+      : getAssignmentColumns(statusConfig.order).map((id) => ({
+          id,
+          title: getStatusLabel(statusConfig, id),
+          description: getStatusDescription(id),
+        }));
 
   function SortHeader({ field, children }: { field: SortField; children: React.ReactNode }) {
     const active = sortField === field;
@@ -575,6 +619,18 @@ export function ProjectDetail() {
                             <option value="high">High</option>
                             <option value="critical">Critical</option>
                           </select>
+                          <select value={typeFilter} onChange={(event) => handleSetTypeFilter(event.target.value)} className="editor-input max-w-[170px]">
+                            <option value="all">All types</option>
+                            {typesConfig.definitions.map((t) => (
+                              <option key={t.id} value={t.id}>{getTypeLabel(typesConfig, t.id)}</option>
+                            ))}
+                          </select>
+                          {assignmentView === 'kanban' && (
+                            <select value={grouping === 'type' ? 'type' : 'status'} onChange={(event) => handleSetGrouping(event.target.value as Grouping)} className="editor-input max-w-[170px]" title="Group kanban by">
+                              <option value="status">Group: Status</option>
+                              <option value="type">Group: Type</option>
+                            </select>
+                          )}
                           <ViewToggle
                             value={assignmentView}
                             onChange={(value) => handleSetAssignmentView(value as 'kanban' | 'table')}
@@ -638,7 +694,14 @@ export function ProjectDetail() {
                           columns={kanbanColumns}
                           items={sortedAssignments}
                           getItemId={(a) => a.slug}
-                          getColumnId={(a) => a.status}
+                          getColumnId={(a) =>
+                            grouping === 'type'
+                              ? a.type && knownTypeIds.has(a.type)
+                                ? a.type
+                                : UNKNOWN_TYPE_COLUMN_ID
+                              : a.status
+                          }
+                          dragDisabled
                           renderCard={(item) => (
                             <AssignmentCard projectSlug={project.slug} assignment={item} />
                           )}
@@ -675,6 +738,7 @@ export function ProjectDetail() {
                               <tr className="border-b border-border/60 text-muted-foreground">
                                 {showCol('title') ? <SortHeader field="title">Assignment</SortHeader> : null}
                                 {showCol('status') ? <SortHeader field="status">Status</SortHeader> : null}
+                                <th className="pb-3 font-medium">Type</th>
                                 {showCol('priority') ? <SortHeader field="priority">Priority</SortHeader> : null}
                                 {showCol('assignee') ? <SortHeader field="assignee">Assignee</SortHeader> : null}
                                 {showCol('dependencies') ? <SortHeader field="dependencies">Dependencies</SortHeader> : null}
@@ -695,6 +759,7 @@ export function ProjectDetail() {
                                   </td>
                                   ) : null}
                                   {showCol('status') ? <td className="py-4"><StatusBadge status={assignment.status} /></td> : null}
+                                  <td className="py-4"><TypeChip type={assignment.type} compact /></td>
                                   {showCol('priority') ? <td className="py-4 capitalize text-muted-foreground">{assignment.priority}</td> : null}
                                   {showCol('assignee') ? <td className="py-4 text-muted-foreground">{assignment.assignee ?? '\u2014'}</td> : null}
                                   {showCol('dependencies') ? <td className="py-4 text-muted-foreground">{assignment.dependsOn.length}</td> : null}
@@ -919,6 +984,7 @@ function AssignmentCard({
         <StatusBadge status={assignment.status} />
       </div>
       <div className="mt-4 flex flex-wrap gap-2">
+        <TypeChip type={assignment.type} />
         <span className="rounded-full border border-border/60 px-2.5 py-1 text-xs capitalize text-muted-foreground">
           {assignment.priority}
         </span>

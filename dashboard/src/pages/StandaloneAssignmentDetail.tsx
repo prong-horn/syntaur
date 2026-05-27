@@ -5,6 +5,7 @@ import { useAssignmentById, useAssignmentSessionsById, type ExternalIdInfo } fro
 import { LoadingState } from '../components/LoadingState';
 import { ErrorState } from '../components/ErrorState';
 import { StatusBadge } from '../components/StatusBadge';
+import { TypeChip } from '../components/TypeChip';
 import { ExternalIdBadges } from '../components/ExternalIdBadges';
 import { CopyButton } from '../components/CopyButton';
 import { formatShortDate, formatShortDateTime } from '../lib/format';
@@ -39,6 +40,7 @@ export function StandaloneAssignmentDetail() {
       <header className="space-y-2">
         <div className="flex flex-wrap items-center gap-3">
           <StatusBadge status={assignment.status} />
+          <TypeChip type={assignment.type} />
           <span className="text-xs font-mono text-muted-foreground">{assignment.id}</span>
           <ExternalIdBadges externalIds={assignment.externalIds} />
           <div className="ml-auto flex items-center gap-2">
