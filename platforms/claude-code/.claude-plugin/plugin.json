@@ -29,6 +29,7 @@
     "./skills/claim-resource",
     "./skills/release-resource",
     "./skills/extend-resource",
-    "./skills/list-resources"
+    "./skills/list-resources",
+    "./skills/run-playbook"
   ]
 }
