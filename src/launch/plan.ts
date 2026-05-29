@@ -1,4 +1,3 @@
-import { isAbsolute } from 'node:path';
 import {
   type AgentConfig,
   type SyntaurConfig,
@@ -11,10 +10,8 @@ import {
   getAssignmentDetail,
   getAssignmentDetailById,
 } from '../dashboard/api.js';
-import {
-  INITIAL_PROMPT,
-  formatFallbackCwdWarning,
-} from '../tui/launch.js';
+import { INITIAL_PROMPT } from '../tui/launch.js';
+import { formatFallbackCwdWarning, resolveWorkspaceCwd } from './cwd.js';
 import { getSessionById } from '../dashboard/agent-sessions.js';
 import { buildFreshArgv, buildSessionArgv } from './argv.js';
 import type { ResolvedArgv } from './types.js';
@@ -25,7 +22,8 @@ export type LaunchErrorCode =
   | 'assignment-not-found'
   | 'session-not-found'
   | 'agent-not-configured'
-  | 'mode-not-supported';
+  | 'mode-not-supported'
+  | 'workspace-path-invalid';
 
 export class LaunchError extends Error {
   readonly code: LaunchErrorCode;
@@ -132,13 +130,19 @@ async function resolveAssignmentPlan(
     );
   }
 
-  const { cwd, fallbackWarning } = pickCwd({
+  const picked = resolveWorkspaceCwd({
     worktreePath: detail.workspace.worktreePath,
     repository: detail.workspace.repository,
     branch: detail.workspace.branch,
     assignmentSlug: resolved.assignmentSlug,
-    fallbackPath: process.cwd(),
   });
+  if (picked.cwd === null) {
+    // No valid worktree or repository directory — refuse rather than silently
+    // launching in the dashboard process cwd.
+    throw new LaunchError('workspace-path-invalid', picked.invalidReason as string);
+  }
+  const cwd = picked.cwd;
+  const fallbackWarning = picked.fallbackWarning;
 
   const agent = pickAgent(input.config);
   const { argv, shellFallbackWarning } = buildFreshArgv(
@@ -183,15 +187,26 @@ async function resolveSessionPlan(
       session.assignmentSlug,
     );
     if (detail) {
-      const picked = pickCwd({
+      const picked = resolveWorkspaceCwd({
         worktreePath: detail.workspace.worktreePath,
         repository: detail.workspace.repository,
         branch: detail.workspace.branch,
         assignmentSlug: session.assignmentSlug,
-        fallbackPath: session.path,
       });
-      cwd = picked.cwd;
-      fallbackWarning = picked.fallbackWarning;
+      if (picked.cwd !== null) {
+        cwd = picked.cwd;
+        fallbackWarning = picked.fallbackWarning;
+      } else {
+        // Neither worktree nor repository is a valid directory. Sessions keep
+        // their recorded `session.path` (may be '') rather than failing the
+        // launch — only assignment launches hard-error on an invalid workspace.
+        fallbackWarning = formatFallbackCwdWarning({
+          assignmentSlug: session.assignmentSlug,
+          workspaceDir: session.path,
+          worktreePath: detail.workspace.worktreePath,
+          branch: detail.workspace.branch,
+        });
+      }
     }
   }
 
@@ -220,25 +235,3 @@ async function resolveSessionPlan(
   };
 }
 
-function pickCwd(input: {
-  worktreePath: string | null;
-  repository: string | null;
-  branch: string | null;
-  assignmentSlug: string;
-  fallbackPath: string;
-}): { cwd: string; fallbackWarning: string | null } {
-  if (input.worktreePath && isAbsolute(input.worktreePath)) {
-    return { cwd: input.worktreePath, fallbackWarning: null };
-  }
-  const workspaceDir =
-    input.repository && isAbsolute(input.repository)
-      ? input.repository
-      : input.fallbackPath;
-  const fallbackWarning = formatFallbackCwdWarning({
-    assignmentSlug: input.assignmentSlug,
-    workspaceDir,
-    worktreePath: input.worktreePath,
-    branch: input.branch,
-  });
-  return { cwd: workspaceDir, fallbackWarning };
-}

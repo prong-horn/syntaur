@@ -4,8 +4,19 @@ import { isAbsolute, resolve } from 'node:path';
 import { getAssignmentDetail } from '../dashboard/api.js';
 import type { AgentConfig } from '../utils/config.js';
 import type { BuiltArgv } from '../launch/types.js';
+import {
+  formatFallbackCwdWarning,
+  isExistingDir,
+  resolveWorkspaceCwd,
+} from '../launch/cwd.js';
+import type { SpawnFn } from '../launch/execute.js';
 
 export type { ResolvedArgv, BuiltArgv } from '../launch/types.js';
+// `formatFallbackCwdWarning` now lives in ../launch/cwd.ts (a neutral module so
+// plan.ts can import the cwd helpers without a cycle). Re-exported here so the
+// existing `import { formatFallbackCwdWarning } from '../tui/launch.js'` sites
+// (e.g. launch-argv.test.ts) keep working.
+export { formatFallbackCwdWarning } from '../launch/cwd.js';
 
 export interface LaunchOptions {
   projectsDir: string;
@@ -19,6 +30,12 @@ export interface LaunchOptions {
    * callers should leave this unset.
    */
   onExit?: (code: number) => void;
+  /**
+   * Test hook: replaces `child_process.spawn` so unit tests can assert exactly
+   * what (and with which cwd) the launcher invoked without spawning a real
+   * process. Default is the real `spawn`. Production callers leave this unset.
+   */
+  spawnFn?: SpawnFn;
 }
 
 /**
@@ -47,25 +64,6 @@ export const INITIAL_PROMPT = (params: {
   // happens if a caller forgot to pass the id for a standalone assignment.
   return `/grab-assignment ${params.assignmentSlug}`;
 };
-
-/**
- * Build the one-line warning emitted when a launch falls back to a cwd because
- * the assignment is missing `workspace.worktreePath` and/or `workspace.branch`.
- * Returns null when both fields are populated (no warning needed).
- */
-export function formatFallbackCwdWarning(opts: {
-  assignmentSlug: string;
-  workspaceDir: string;
-  worktreePath: string | null;
-  branch: string | null;
-}): string | null {
-  const missing: string[] = [];
-  if (!opts.worktreePath) missing.push('worktreePath');
-  if (!opts.branch) missing.push('branch');
-  if (missing.length === 0) return null;
-  const fields = missing.map((m) => `workspace.${m}`).join(' and ');
-  return `syntaur: ${fields} not set for ${opts.assignmentSlug} — launching in ${opts.workspaceDir}`;
-}
 
 /**
  * POSIX single-quote shell escaping. Safe to embed in `sh -c '<result>'`.
@@ -132,19 +130,45 @@ export async function launchAgent(options: LaunchOptions): Promise<void> {
   const projectDir = resolve(projectsDir, projectSlug);
   const assignmentDir = resolve(projectDir, 'assignments', assignmentSlug);
 
-  const resolvedFromWorkspace =
-    cwdOverride ??
-    detail.workspace.worktreePath ??
-    (detail.workspace.repository?.startsWith('/') ? detail.workspace.repository : null);
-  const workspaceDir = resolvedFromWorkspace ?? process.cwd();
-
-  if (!cwdOverride) {
-    const warning = formatFallbackCwdWarning({
-      assignmentSlug,
-      workspaceDir,
+  // Resolve + VALIDATE the working directory before writing context.json or
+  // spawning. Never silently fall back to process.cwd() — refuse the launch so
+  // we don't open the agent (or write context) in the wrong directory.
+  let workspaceDir: string;
+  if (cwdOverride) {
+    // An explicit, present-but-invalid override is a caller bug — hard error
+    // rather than silently falling through to the workspace fields.
+    if (!isExistingDir(cwdOverride)) {
+      console.error(
+        `syntaur: --cwd ${cwdOverride} is not an existing directory — refusing to launch.`,
+      );
+      exitWith(1);
+      return;
+    }
+    workspaceDir = cwdOverride;
+  } else {
+    const picked = resolveWorkspaceCwd({
       worktreePath: detail.workspace.worktreePath,
+      repository: detail.workspace.repository,
       branch: detail.workspace.branch,
+      assignmentSlug,
     });
+    if (picked.cwd === null) {
+      console.error(`syntaur: ${picked.invalidReason} — refusing to launch.`);
+      exitWith(1);
+      return;
+    }
+    workspaceDir = picked.cwd;
+    // Preserve the existing missing-field warning behavior: when worktree is
+    // valid but `branch` (or worktreePath) is unset we still nudge the user.
+    // `picked.fallbackWarning` covers the worktree→repository fallback cases.
+    const warning =
+      picked.fallbackWarning ??
+      formatFallbackCwdWarning({
+        assignmentSlug,
+        workspaceDir,
+        worktreePath: detail.workspace.worktreePath,
+        branch: detail.workspace.branch,
+      });
     if (warning) console.warn(warning);
   }
 
@@ -175,8 +199,9 @@ export async function launchAgent(options: LaunchOptions): Promise<void> {
     console.warn(shellFallbackWarning);
   }
 
+  const spawnImpl = options.spawnFn ?? spawn;
   return new Promise<void>((resolvePromise) => {
-    const child = spawn(argv.command, argv.args, {
+    const child = spawnImpl(argv.command, argv.args, {
       cwd: workspaceDir,
       stdio: 'inherit',
     });
