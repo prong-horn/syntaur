@@ -1541,6 +1541,19 @@ export function createWriteRouter(
     '/api/projects/:slug/assignments/:aslug/repository-branches',
     async (req: Request, res: Response) => {
       try {
+        const projectSlug = getParam(req.params.slug);
+        const assignmentSlug = getParam(req.params.aslug);
+        const assignmentPath = resolve(
+          projectsDir,
+          projectSlug,
+          'assignments',
+          assignmentSlug,
+          'assignment.md',
+        );
+        if (!(await fileExists(assignmentPath))) {
+          res.status(404).json({ error: 'Assignment not found' });
+          return;
+        }
         await handleRepositoryBranches(req, res);
       } catch (error) {
         console.error('Error listing repository branches:', error);
@@ -1561,6 +1574,12 @@ export function createWriteRouter(
             .json({ error: 'Standalone assignments not configured on this server' });
           return;
         }
+        const id = getParam(req.params.id);
+        const resolved = await resolveAssignmentById(projectsDir, assignmentsDir, id);
+        if (!resolved) {
+          res.status(404).json({ error: `Assignment "${id}" not found` });
+          return;
+        }
         await handleRepositoryBranches(req, res);
       } catch (error) {
         console.error('Error listing repository branches:', error);
@@ -1577,6 +1596,17 @@ export function createWriteRouter(
       try {
         const projectSlug = getParam(req.params.slug);
         const assignmentSlug = getParam(req.params.aslug);
+        const assignmentPath = resolve(
+          projectsDir,
+          projectSlug,
+          'assignments',
+          assignmentSlug,
+          'assignment.md',
+        );
+        if (!(await fileExists(assignmentPath))) {
+          res.status(404).json({ error: 'Assignment not found' });
+          return;
+        }
         const sourceAssignments = await getProjectSourceAssignments(
           projectsDir,
           projectSlug,

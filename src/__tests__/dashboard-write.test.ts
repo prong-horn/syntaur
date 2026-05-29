@@ -1594,6 +1594,21 @@ tags: []
         expect(res.statusCode).toBe(400);
       });
 
+      it('project: 404 when the assignment does not exist', async () => {
+        await createAssignmentFixture();
+        const repo = await setupRepo();
+        const router = createWriteRouter(testDir);
+        const res = await invokeRoute(
+          router,
+          'get',
+          '/api/projects/:slug/assignments/:aslug/repository-branches',
+          { slug: 'test-project', aslug: 'no-such-assignment' },
+          undefined,
+          { repo },
+        );
+        expect(res.statusCode).toBe(404);
+      });
+
       it('standalone: 501 when standalone not configured', async () => {
         const router = createWriteRouter(testDir);
         const res = await invokeRoute(
@@ -1607,7 +1622,7 @@ tags: []
         expect(res.statusCode).toBe(501);
       });
 
-      it('standalone: returns branches when configured', async () => {
+      it('standalone: 404 when the assignment id is unknown', async () => {
         const assignmentsDir = resolve(testDir, 'standalone');
         await mkdir(assignmentsDir, { recursive: true });
         const repo = await setupRepo();
@@ -1616,7 +1631,24 @@ tags: []
           router,
           'get',
           '/api/assignments/:id/repository-branches',
-          { id: 'x' },
+          { id: 'nope' },
+          undefined,
+          { repo },
+        );
+        expect(res.statusCode).toBe(404);
+      });
+
+      it('standalone: returns branches when configured', async () => {
+        const assignmentsDir = resolve(testDir, 'standalone');
+        await mkdir(assignmentsDir, { recursive: true });
+        await writeStandaloneAssignment(assignmentsDir, 'uuid-1', 'task', {});
+        const repo = await setupRepo();
+        const router = createWriteRouter(testDir, assignmentsDir);
+        const res = await invokeRoute(
+          router,
+          'get',
+          '/api/assignments/:id/repository-branches',
+          { id: 'uuid-1' },
           undefined,
           { repo },
         );
@@ -1656,6 +1688,19 @@ tags: []
         expect(sources[0]!.id).toBe('sib-1');
         expect(sources[0]!.repository).toBe('/repo/sib');
         expect(sources[0]!.branch).toBe('sib-branch');
+      });
+
+      it('project: 404 when the target assignment does not exist', async () => {
+        await createAssignmentFixture();
+        const router = createWriteRouter(testDir);
+        const res = await invokeRoute(
+          router,
+          'get',
+          '/api/projects/:slug/assignments/:aslug/source-assignments',
+          { slug: 'test-project', aslug: 'no-such-assignment' },
+          undefined,
+        );
+        expect(res.statusCode).toBe(404);
       });
 
       it('standalone: excludes self by id, omits bare assignments', async () => {

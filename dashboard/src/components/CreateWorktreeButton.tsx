@@ -190,10 +190,15 @@ export function CreateWorktreeButton({
       .then((res) => {
         if (cancelled) return;
         setBranches(res.branches);
+        // Only adopt a default that is actually a loaded local branch, so the
+        // dropdown selection always matches a real <option> (and the server's
+        // parent-branch pre-flight can't reject what we prefilled).
         const fallback =
-          res.defaultBranch ??
-          (res.branches.includes(defaultParentBranch) ? defaultParentBranch : res.branches[0]) ??
-          '';
+          (res.defaultBranch && res.branches.includes(res.defaultBranch)
+            ? res.defaultBranch
+            : res.branches.includes(defaultParentBranch)
+              ? defaultParentBranch
+              : res.branches[0]) ?? '';
         setParentBranch(fallback);
         setBranchesLoading(false);
       })

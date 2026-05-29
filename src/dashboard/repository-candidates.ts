@@ -153,9 +153,10 @@ export async function getProjectSourceAssignments(
     const parsed = parseAssignmentFull(await readFile(assignmentMd, 'utf-8'));
     const source = toSourceAssignment(parsed, entry.name);
     if (!source) continue;
-    if (source.slug === excludeSlug) continue;
-    if (seen.has(source.slug)) continue;
-    seen.add(source.slug);
+    // Exclude + dedupe by the directory name (route-authoritative, unique within
+    // the project) rather than parsed frontmatter, which could be malformed.
+    if (seen.has(entry.name)) continue;
+    seen.add(entry.name);
     out.push(source);
   }
 
@@ -186,9 +187,10 @@ export async function getStandaloneSourceAssignments(
     const parsed = parseAssignmentFull(await readFile(assignmentMd, 'utf-8'));
     const source = toSourceAssignment(parsed, entry.name);
     if (!source) continue;
-    if (source.id === excludeAssignmentId) continue;
-    if (seen.has(source.id)) continue;
-    seen.add(source.id);
+    // Exclude + dedupe by the directory name (the authoritative UUID) rather
+    // than parsed frontmatter.
+    if (seen.has(entry.name)) continue;
+    seen.add(entry.name);
     out.push(source);
   }
 

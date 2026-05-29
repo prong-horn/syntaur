@@ -100,6 +100,12 @@ export async function listBranches(repository: string): Promise<string[]> {
  *   4. the first local branch, else `null`.
  */
 export async function detectDefaultBranch(repository: string): Promise<string | null> {
+  const branches = await listBranches(repository);
+  if (branches.length === 0) return null;
+
+  // Every candidate below is checked against the local branch list so callers
+  // can rely on the result being a real, checkout-able local branch (otherwise
+  // `git worktree add ... <parent>` would later fail with "does not exist").
   const head = await run('git', [
     '-C',
     repository,
@@ -110,16 +116,15 @@ export async function detectDefaultBranch(repository: string): Promise<string | 
   ]);
   if (head.code === 0) {
     const ref = head.stdout.trim().replace(/^origin\//, '');
-    if (ref) return ref;
+    if (ref && branches.includes(ref)) return ref;
   }
 
-  const branches = await listBranches(repository);
   if (branches.includes('main')) return 'main';
 
   const current = await run('git', ['-C', repository, 'rev-parse', '--abbrev-ref', 'HEAD']);
   if (current.code === 0) {
     const name = current.stdout.trim();
-    if (name && name !== 'HEAD') return name;
+    if (name && name !== 'HEAD' && branches.includes(name)) return name;
   }
 
   return branches[0] ?? null;

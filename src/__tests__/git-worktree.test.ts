@@ -184,6 +184,14 @@ describe('git-worktree helpers', () => {
     expect(await detectDefaultBranch(repo)).toBe('main');
   });
 
+  it('detectDefaultBranch falls back to a real local branch when main is absent', async () => {
+    git(repo, ['branch', '-m', 'main', 'trunk']);
+    const result = await detectDefaultBranch(repo);
+    expect(result).toBe('trunk');
+    // Whatever it returns must be an actual local branch.
+    expect(await listBranches(repo)).toContain(result);
+  });
+
   it('removeWorktree cleans up', async () => {
     const wtPath = resolve(scratch, 'wt5');
     await createWorktree({
