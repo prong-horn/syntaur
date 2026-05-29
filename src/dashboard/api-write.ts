@@ -36,6 +36,7 @@ import {
   getProjectDetail,
   getResourceDetail,
   getStatusConfig,
+  installRecordsInvalidation,
   resolveProjectPath,
 } from './api.js';
 import { resolveAssignmentById } from '../utils/assignment-resolver.js';
@@ -343,6 +344,9 @@ export function createWriteRouter(
 ): Router {
   const linkedTodosLookup = todosDir ? { todosDir, projectsDir } : undefined;
   const router = Router();
+  // Every mutation here writes a record file; clear the shared records cache
+  // once each handler resolves so the next read reflects the change.
+  installRecordsInvalidation(router);
 
   router.get('/api/templates/project', (_req: Request, res: Response) => {
     const content = renderProject({

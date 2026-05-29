@@ -418,18 +418,22 @@ interface FetchState<T> {
   refetch: () => void;
 }
 
-function useFetch<T>(url: string | null, websocketScope?: 'projects' | 'project' | 'assignment' | 'assignments' | 'overview' | 'servers' | 'agent-sessions' | 'playbooks' | 'inventories'): FetchState<T> {
+function useFetch<T>(url: string | null, websocketScope?: 'projects' | 'project' | 'assignment' | 'assignments' | 'overview' | 'servers' | 'agent-sessions' | 'playbooks' | 'inventories', enabled = true): FetchState<T> {
   const [data, setData] = useState<T | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [fetchCount, setFetchCount] = useState(0);
+
+  // When `enabled` is false the hook is inert (no request fired) — used to defer
+  // heavy fetches, e.g. the command palette's indexes until it first opens.
+  const activeUrl = enabled ? url : null;
 
   const refetch = useCallback(() => {
     setFetchCount((count) => count + 1);
   }, []);
 
   useEffect(() => {
-    if (!url) {
+    if (!activeUrl) {
       setLoading(false);
       setData(null);
       return;
@@ -439,7 +443,7 @@ function useFetch<T>(url: string | null, websocketScope?: 'projects' | 'project'
     setLoading(true);
     setError(null);
 
-    fetch(url)
+    fetch(activeUrl)
       .then(async (response) => {
         if (!response.ok) {
           const body = await response.json().catch(() => null);
@@ -463,10 +467,10 @@ function useFetch<T>(url: string | null, websocketScope?: 'projects' | 'project'
     return () => {
       cancelled = true;
     };
-  }, [url, fetchCount]);
+  }, [activeUrl, fetchCount]);
 
   useWebSocket((message: WsMessage) => {
-    if (!websocketScope) {
+    if (!websocketScope || !activeUrl) {
       return;
     }
 
@@ -499,8 +503,8 @@ function useFetch<T>(url: string | null, websocketScope?: 'projects' | 'project'
   return { data, loading, error, refetch };
 }
 
-export function useProjects(): FetchState<ProjectSummary[]> {
-  return useFetch<ProjectSummary[]>('/api/projects', 'projects');
+export function useProjects(enabled = true): FetchState<ProjectSummary[]> {
+  return useFetch<ProjectSummary[]>('/api/projects', 'projects', enabled);
 }
 
 export function useWorkspaces(): FetchState<{ workspaces: string[]; hasUngrouped: boolean }> {
@@ -526,8 +530,8 @@ export function useOverview(options: { staleLimit?: number; staleOffset?: number
   return useFetch<OverviewResponse>(url, 'overview');
 }
 
-export function useAssignmentsBoard(): FetchState<AssignmentsBoardResponse> {
-  return useFetch<AssignmentsBoardResponse>('/api/assignments', 'assignments');
+export function useAssignmentsBoard(enabled = true): FetchState<AssignmentsBoardResponse> {
+  return useFetch<AssignmentsBoardResponse>('/api/assignments', 'assignments', enabled);
 }
 
 export function useHelp(): FetchState<HelpResponse> {
@@ -563,8 +567,8 @@ export function useEditableDocument(
   return useFetch<EditableDocumentResponse>(url);
 }
 
-export function useServers(): FetchState<ServersResponse> {
-  return useFetch<ServersResponse>('/api/servers', 'servers');
+export function useServers(enabled = true): FetchState<ServersResponse> {
+  return useFetch<ServersResponse>('/api/servers', 'servers', enabled);
 }
 
 export function useServer(name: string | null): FetchState<TrackedSession> {
@@ -607,8 +611,8 @@ export function useAssignmentSessionsById(
   return useFetch<AgentSessionsResponse>(url, 'agent-sessions');
 }
 
-export function usePlaybooks(): FetchState<PlaybooksResponse> {
-  return useFetch<PlaybooksResponse>('/api/playbooks', 'playbooks');
+export function usePlaybooks(enabled = true): FetchState<PlaybooksResponse> {
+  return useFetch<PlaybooksResponse>('/api/playbooks', 'playbooks', enabled);
 }
 
 export function usePlaybook(slug: string | undefined): FetchState<PlaybookDetail> {

@@ -195,7 +195,80 @@ interface StandaloneRecord {
   record: AssignmentRecord;
 }
 
+// ---------------------------------------------------------------------------
+// Shared records cache (coarse, clear-all).
+//
+// Parsed project records and standalone records are read on every hot read
+// path — /api/overview, /api/projects, /api/assignments, /api/workspaces, plus
+// the server scanner's workspace lookup. The underlying work is a file fan-out
+// (readdir + readFile + parse for every project, assignment, and comments
+// file), which dominates request latency and is badly amplified by corporate
+// EDR/AV that hooks filesystem syscalls. The dashboard server is long-lived, so
+// we cache the parsed snapshot per directory and reuse it across requests.
+//
+// Granularity is deliberately coarse: a whole-snapshot clear-all (not a
+// per-file map). Rebuild cost is one full scan, amortized across every read
+// until the next mutation. In-flight promises are stored (not just resolved
+// values) so concurrent callers de-duplicate onto a single scan, and a rejected
+// scan is dropped so the next call retries rather than caching a failure.
+//
+// Invalidation is the correctness core: there is no single fs choke-point (the
+// write routers mutate via writeFileForce, executeTransition, rm, and worktree
+// helpers), so every mutating router installs `installRecordsInvalidation`,
+// which clears the cache synchronously once each handler resolves. Non-router
+// mutators (deleteWorkspace) call invalidateRecordsCache() directly, and the
+// file watcher clears it for edits made outside the dashboard.
+const projectRecordsCache = new Map<string, Promise<ProjectRecord[]>>();
+const standaloneRecordsCache = new Map<string, Promise<StandaloneRecord[]>>();
+
+/** Drop all cached record snapshots. Cheap and idempotent. */
+export function invalidateRecordsCache(): void {
+  projectRecordsCache.clear();
+  standaloneRecordsCache.clear();
+}
+
+/**
+ * Install synchronous records-cache invalidation on a mutating Express router.
+ * Wraps the terminal handler of every post/put/patch/delete route so the cache
+ * is cleared in a `finally` once the handler resolves — before the next request
+ * can read it. Centralizes invalidation at registration because the handlers
+ * have no shared fs write path to hook. Typed structurally to avoid importing
+ * express here.
+ */
+/* eslint-disable @typescript-eslint/no-explicit-any */
+type RouterMethod = (...args: any[]) => any;
+type MutatingRouter = Record<'post' | 'put' | 'patch' | 'delete', RouterMethod>;
+export function installRecordsInvalidation(router: MutatingRouter): void {
+  for (const method of ['post', 'put', 'patch', 'delete'] as const) {
+    const original = (router[method] as RouterMethod).bind(router);
+    router[method] = (path: any, ...handlers: any[]): any => {
+      if (handlers.length > 0) {
+        const last = handlers[handlers.length - 1] as RouterMethod;
+        handlers[handlers.length - 1] = async (req: any, res: any, next: any) => {
+          try {
+            return await last(req, res, next);
+          } finally {
+            invalidateRecordsCache();
+          }
+        };
+      }
+      return original(path, ...handlers);
+    };
+  }
+}
+/* eslint-enable @typescript-eslint/no-explicit-any */
+
 async function listStandaloneRecords(assignmentsDir: string | undefined): Promise<StandaloneRecord[]> {
+  const key = assignmentsDir ?? '';
+  const cached = standaloneRecordsCache.get(key);
+  if (cached) return cached;
+  const promise = computeStandaloneRecords(assignmentsDir);
+  standaloneRecordsCache.set(key, promise);
+  promise.catch(() => standaloneRecordsCache.delete(key));
+  return promise;
+}
+
+async function computeStandaloneRecords(assignmentsDir: string | undefined): Promise<StandaloneRecord[]> {
   if (!assignmentsDir) return [];
   if (!(await fileExists(assignmentsDir))) return [];
 
@@ -454,6 +527,64 @@ export async function listWorkspaces(
 }
 
 /**
+ * Worktree/branch records for the server scanner's tmux pane auto-linking,
+ * derived from the cached records snapshot instead of a second file fan-out
+ * (the scanner previously re-read every assignment.md on each cold scan). A
+ * `null` projectSlug marks a standalone assignment. By convention a project
+ * assignment's folder name equals its slug, and standalone folders are named by
+ * UUID, so `assignmentSlug` matches the scanner's prior folder-name behavior.
+ */
+export async function listWorkspaceRecords(
+  projectsDir: string,
+  assignmentsDir?: string,
+): Promise<
+  Array<{
+    projectSlug: string | null;
+    assignmentSlug: string;
+    assignmentTitle: string;
+    worktreePath: string | null;
+    branch: string | null;
+  }>
+> {
+  const [projectRecords, standaloneRecords] = await Promise.all([
+    listProjectRecords(projectsDir),
+    listStandaloneRecords(assignmentsDir),
+  ]);
+
+  const records: Array<{
+    projectSlug: string | null;
+    assignmentSlug: string;
+    assignmentTitle: string;
+    worktreePath: string | null;
+    branch: string | null;
+  }> = [];
+
+  for (const project of projectRecords) {
+    for (const assignment of project.assignments) {
+      records.push({
+        projectSlug: project.summary.slug,
+        assignmentSlug: assignment.slug,
+        assignmentTitle: assignment.title || assignment.slug,
+        worktreePath: assignment.workspace.worktreePath ?? null,
+        branch: assignment.workspace.branch ?? null,
+      });
+    }
+  }
+
+  for (const standalone of standaloneRecords) {
+    records.push({
+      projectSlug: null,
+      assignmentSlug: standalone.id,
+      assignmentTitle: standalone.record.title || standalone.id,
+      worktreePath: standalone.record.workspace.worktreePath ?? null,
+      branch: standalone.record.workspace.branch ?? null,
+    });
+  }
+
+  return records;
+}
+
+/**
  * Create an empty workspace by registering it.
  * POST /api/workspaces
  */
@@ -533,6 +664,14 @@ export async function deleteWorkspace(
   const registered = await readWorkspaceRegistry(projectsDir);
   const filtered = registered.filter((w) => w !== name);
   await writeWorkspaceRegistry(projectsDir, filtered);
+
+  // Cascade rewrote project/assignment frontmatter (workspace fields), so the
+  // cached records snapshot is stale. This is a library function invoked
+  // directly by a server.ts route (outside the write router), so invalidate
+  // here rather than relying on a router wrapper.
+  if (rewroteFiles) {
+    invalidateRecordsCache();
+  }
 
   return { rewroteFiles };
 }
@@ -1347,6 +1486,20 @@ async function buildStandaloneAssignmentDetail(
 const migratedProjectsDirs = new Set<string>();
 
 async function listProjectRecords(
+  projectsDir: string,
+  traces?: OverviewTraces,
+): Promise<ProjectRecord[]> {
+  const cached = projectRecordsCache.get(projectsDir);
+  if (cached) return cached;
+  // `traces` only flows through on a cache miss; a hit legitimately does ~0
+  // fan-out, so the absence of per-phase traces on a hit is the correct signal.
+  const promise = computeProjectRecords(projectsDir, traces);
+  projectRecordsCache.set(projectsDir, promise);
+  promise.catch(() => projectRecordsCache.delete(projectsDir));
+  return promise;
+}
+
+async function computeProjectRecords(
   projectsDir: string,
   traces?: OverviewTraces,
 ): Promise<ProjectRecord[]> {

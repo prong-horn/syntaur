@@ -15,7 +15,7 @@ import { useHotkey, useHotkeyScope } from '../hotkeys';
 import type { DashboardSlot, WidgetConfig } from '@shared/saved-views-schema';
 
 export function Overview() {
-  const { data: overview, loading, error, refetch } = useOverview();
+  const { data: overview, error, refetch } = useOverview();
   const { data: help } = useHelp();
   const { layout } = useDashboardLayout();
 
@@ -69,24 +69,24 @@ export function Overview() {
     [layout.slots, persistLayout],
   );
 
-  if (loading && !overview) {
-    return <LoadingState label="Loading overview…" />;
-  }
-
-  if (error || !overview) {
-    return <ErrorState error={error || 'Overview data is unavailable.'} />;
-  }
-
   // Build itemsById from the (still-served-by-the-API) segment payloads so
   // OverviewHero can resolve its `hero.itemId` reference. Segments are not
   // rendered as widgets anymore, but the hero remains coupled to them.
   const itemsById: Record<string, import('../hooks/useProjects').AttentionItem> = {};
-  for (const key of Object.keys(overview.segments) as Array<keyof typeof overview.segments>) {
-    for (const item of overview.segments[key].items) {
-      itemsById[item.id] = item;
+  if (overview) {
+    for (const key of Object.keys(overview.segments) as Array<keyof typeof overview.segments>) {
+      for (const item of overview.segments[key].items) {
+        itemsById[item.id] = item;
+      }
     }
   }
 
+  // Render the shell (header + dashboard widget grid) immediately rather than
+  // blocking the whole page on /api/overview. The widget slots fetch their own
+  // data, so they hydrate independently; only the hero, getting-started card,
+  // and server-stats footer depend on the overview payload and hydrate when it
+  // arrives. This keeps the page from going blank on every load, especially
+  // when a background refresh is slow on the work machine.
   return (
     <div className="space-y-6">
       <header className="space-y-2">
@@ -96,9 +96,15 @@ export function Overview() {
         </h1>
       </header>
 
-      <OverviewHero hero={overview.hero} itemsById={itemsById} />
+      {overview ? (
+        <OverviewHero hero={overview.hero} itemsById={itemsById} />
+      ) : error ? (
+        <ErrorState error={error} />
+      ) : (
+        <LoadingState label="Loading overview…" />
+      )}
 
-      {overview.firstRun ? <GettingStartedCard help={help} /> : null}
+      {overview?.firstRun ? <GettingStartedCard help={help} /> : null}
 
       {layoutError ? (
         <div className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
@@ -118,7 +124,7 @@ export function Overview() {
         ))}
       </div>
 
-      {overview.serverStats ? (
+      {overview?.serverStats ? (
         <p className="flex items-center gap-2 text-xs text-muted-foreground">
           <Monitor className="h-3 w-3" aria-hidden="true" />
           <span>

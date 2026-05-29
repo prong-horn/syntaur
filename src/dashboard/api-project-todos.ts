@@ -21,6 +21,7 @@ import {
   BundlePromoteError,
   parsePromoteTarget,
 } from '../utils/promote-todos.js';
+import { installRecordsInvalidation } from './api.js';
 
 const WORKSPACE_REGEX = /^[a-z0-9_][a-z0-9-]*$/;
 
@@ -84,6 +85,9 @@ export function createProjectTodosRouter(
   workspaceTodosDir?: string,
 ): Router {
   const router = Router({ mergeParams: true });
+  // The promote route appends todos to assignment.md; clear the records cache
+  // after any mutation here so promoted work shows up on the next read.
+  installRecordsInvalidation(router);
 
   function broadcastUpdate(projectSlug: string): void {
     broadcast({ type: 'todos-updated', projectSlug, timestamp: new Date().toISOString() });

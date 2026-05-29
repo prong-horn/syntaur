@@ -116,12 +116,18 @@ export function HotkeyProvider({ children }: { children: ReactNode }) {
   const navigate = useNavigate();
   const wsPrefix = getWorkspaceFromPathname(location.pathname);
 
-  // Eager data hooks for the palette index.
-  const projectsState = useProjects();
-  const assignmentsState = useAssignmentsBoard();
-  const playbooksState = usePlaybooks();
-  const serversState = useServers();
-  const todosState = useAllTodos();
+  // Palette index data is fetched lazily: these hooks stay inert until the
+  // command/actions palette is first opened. Previously they fired five
+  // requests (projects, assignments, playbooks, servers, todos — the last hits
+  // the tmux scan) on *every* page load, which is what made the overview slow
+  // on every load, not just the first. Global hotkeys and g-chord navigation
+  // don't need this data, so deferring it doesn't affect them.
+  const [paletteDataEnabled, setPaletteDataEnabled] = useState(false);
+  const projectsState = useProjects(paletteDataEnabled);
+  const assignmentsState = useAssignmentsBoard(paletteDataEnabled);
+  const playbooksState = usePlaybooks(paletteDataEnabled);
+  const serversState = useServers(paletteDataEnabled);
+  const todosState = useAllTodos(paletteDataEnabled);
 
   const paletteEntries = useMemo<PaletteEntry[]>(() => {
     const projects = projectsState.data ?? [];
@@ -186,6 +192,12 @@ export function HotkeyProvider({ children }: { children: ReactNode }) {
   const [actionsPaletteOpen, setActionsPaletteOpen] = useState(false);
   const [pendingActionKind, setPendingActionKind] =
     useState<BindableActionKind | null>(null);
+
+  // Once either palette has opened, keep the index data warm for the rest of
+  // the session (the flag latches true and never resets).
+  useEffect(() => {
+    if (paletteOpen || actionsPaletteOpen) setPaletteDataEnabled(true);
+  }, [paletteOpen, actionsPaletteOpen]);
 
   const { bindings: userBindings } = useHotkeyBindings();
   const customBindings = useMemo(

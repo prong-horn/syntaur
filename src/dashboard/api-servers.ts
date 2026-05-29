@@ -21,7 +21,16 @@ export function createServersRouter(
 ): Router {
   const router = Router();
 
-  // GET /api/servers — all sessions with cached scan data
+  // GET /api/servers — all sessions with cached scan data.
+  //
+  // Deliberately blocking (no `nonBlocking`): the dedicated servers page needs
+  // real session data, and a `nonBlocking` cold call returns an empty scan with
+  // no websocket re-fetch afterward (a read-only scan writes no session file,
+  // so it emits no `servers-updated`), which would leave the page empty. A true
+  // hard wait only happens on the first scan of the process; the overview's
+  // `nonBlocking` warm-up populates `lastKnown` first, so by the time the user
+  // opens /servers the SWR cache serves instantly and refreshes in the
+  // background. (See decision-record.md — cold-GET decision.)
   router.get('/', async (_req, res) => {
     try {
       const result = await scanAllSessions(serversDir, projectsDir, { assignmentsDir });

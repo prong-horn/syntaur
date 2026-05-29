@@ -31,7 +31,7 @@ export function useTodos(workspace: string) {
   return { data, loading, error, refetch: fetchData };
 }
 
-export function useAllTodos() {
+export function useAllTodos(enabled = true) {
   const [data, setData] = useState<TodoAggregateResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -49,11 +49,18 @@ export function useAllTodos() {
     }
   }, []);
 
+  // Inert until `enabled` — defers the palette's todo index fetch until the
+  // command palette first opens.
   useEffect(() => {
+    if (!enabled) {
+      setLoading(false);
+      return;
+    }
     fetchData();
-  }, [fetchData]);
+  }, [fetchData, enabled]);
 
   useWebSocket((msg) => {
+    if (!enabled) return;
     if (msg.type === 'todos-updated' && !msg.projectSlug) fetchData();
   });
 

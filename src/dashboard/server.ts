@@ -17,6 +17,7 @@ import {
   listWorkspaces,
   createWorkspace,
   deleteWorkspace,
+  invalidateRecordsCache,
   WorkspaceBlockedError,
 } from './api.js';
 import { resolveAssignmentById } from '../utils/assignment-resolver.js';
@@ -136,6 +137,14 @@ export function createDashboardServer(options: DashboardServerOptions) {
   });
 
   function broadcast(message: WsMessage): void {
+    // Net for record edits made outside the dashboard's own write routes (the
+    // watcher debounces 300ms, so this can't be the only mechanism — the write
+    // routers invalidate synchronously — but it catches external/manual edits).
+    // Internal routes already invalidated before broadcasting; re-clearing is a
+    // cheap idempotent no-op.
+    if (message.type === 'project-updated' || message.type === 'assignment-updated') {
+      invalidateRecordsCache();
+    }
     const data = JSON.stringify(message);
     for (const client of clients) {
       if (client.readyState === WebSocket.OPEN) {

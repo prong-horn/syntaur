@@ -5,6 +5,14 @@
  *
  *   SYNTAUR_PERF_BENCH=1 SYNTAUR_PERF_TRACE=1 \
  *     npx vitest run src/__tests__/perf-overview.test.ts --reporter=verbose
+ *
+ * Add SYNTAUR_PERF_BENCH_REAL=1 to also bench against the live ~/.syntaur
+ * workspace, including the FULL startup path (overview with serversDir +
+ * assignmentsDir, a /api/servers GET, and the concurrent startup request set).
+ * This is the command to run on the slow work Mac:
+ *
+ *   SYNTAUR_PERF_BENCH=1 SYNTAUR_PERF_BENCH_REAL=1 SYNTAUR_PERF_TRACE=1 \
+ *     npx vitest run src/__tests__/perf-overview.test.ts --reporter=verbose
  */
 import { describe, it, beforeEach, afterEach } from 'vitest';
 import { mkdtemp, rm, mkdir, writeFile } from 'node:fs/promises';
@@ -12,7 +20,17 @@ import { resolve, join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { homedir } from 'node:os';
 
-import { getOverview } from '../dashboard/api.js';
+import {
+  getOverview,
+  listProjects,
+  listAssignmentsBoard,
+  listWorkspaces,
+} from '../dashboard/api.js';
+import { scanAllSessions } from '../dashboard/scanner.js';
+import {
+  assignmentsDir as getAssignmentsDir,
+  serversDir as getServersDir,
+} from '../utils/paths.js';
 
 const ENABLED = process.env.SYNTAUR_PERF_BENCH === '1';
 
@@ -138,6 +156,66 @@ async function runOnce(label: string, projectsDir: string): Promise<number> {
   return ms;
 }
 
+// Exercises the FULL overview args (serversDir + assignmentsDir) the dashboard
+// actually passes — this is the path that triggers the tmux scan, which
+// `runOnce` (projectsDir-only) never measures.
+async function runFullOverview(
+  label: string,
+  projectsDir: string,
+  serversDir: string,
+  assignmentsDir: string,
+): Promise<number> {
+  const start = performance.now();
+  const overview = await getOverview(projectsDir, serversDir, assignmentsDir);
+  const ms = performance.now() - start;
+  // eslint-disable-next-line no-console
+  console.log(
+    `[perf-bench:${label}] total=${ms.toFixed(1)}ms projects=${overview.recentProjects.length} serverStats=${overview.serverStats ? 'present' : 'absent'}`,
+  );
+  return ms;
+}
+
+// Measures a single /api/servers GET the way the route does it
+// (api-servers.ts:27 — blocking, no nonBlocking flag).
+async function runServersGet(
+  label: string,
+  serversDir: string,
+  projectsDir: string,
+  assignmentsDir: string,
+): Promise<number> {
+  const start = performance.now();
+  const result = await scanAllSessions(serversDir, projectsDir, { assignmentsDir });
+  const ms = performance.now() - start;
+  // eslint-disable-next-line no-console
+  console.log(
+    `[perf-bench:${label}] total=${ms.toFixed(1)}ms tmuxAvailable=${result.tmuxAvailable} sessions=${result.sessions.length}`,
+  );
+  return ms;
+}
+
+// Simulates the request fan-out a single hard page load fires: the overview
+// route plus the palette-priming fetches in HotkeyProvider (projects,
+// assignments, workspaces, servers). Run concurrently to mirror the browser.
+async function runStartupSet(
+  label: string,
+  projectsDir: string,
+  serversDir: string,
+  assignmentsDir: string,
+): Promise<number> {
+  const start = performance.now();
+  await Promise.all([
+    getOverview(projectsDir, serversDir, assignmentsDir),
+    listProjects(projectsDir),
+    listAssignmentsBoard(projectsDir, assignmentsDir),
+    listWorkspaces(projectsDir, assignmentsDir),
+    scanAllSessions(serversDir, projectsDir, { assignmentsDir }),
+  ]);
+  const ms = performance.now() - start;
+  // eslint-disable-next-line no-console
+  console.log(`[perf-bench:${label}] total=${ms.toFixed(1)}ms`);
+  return ms;
+}
+
 describe.skipIf(!ENABLED)('perf-overview synthetic 30x20', () => {
   let dir: string;
 
@@ -168,5 +246,31 @@ describe.skipIf(!ENABLED || !process.env.SYNTAUR_PERF_BENCH_REAL)('perf-overview
     const warm = await runOnce('real-warm', real);
     // eslint-disable-next-line no-console
     console.log(`[perf-bench:real-summary] cold=${cold.toFixed(1)}ms warm=${warm.toFixed(1)}ms`);
+  }, 120_000);
+
+  // The real startup path: full overview args (triggers the tmux scan),
+  // a standalone /api/servers GET, and the concurrent startup request set.
+  // This is the bench to re-run on the work Mac — copy the command from the
+  // file header. `SYNTAUR_PERF_TRACE=1` adds per-phase JSON for getOverview.
+  it('full startup path against ~/.syntaur', async () => {
+    const projectsDir = resolve(homedir(), '.syntaur', 'projects');
+    const serversDir = getServersDir();
+    const assignmentsDir = getAssignmentsDir();
+
+    const overviewCold = await runFullOverview('real-full-overview-cold', projectsDir, serversDir, assignmentsDir);
+    const overviewWarm = await runFullOverview('real-full-overview-warm', projectsDir, serversDir, assignmentsDir);
+
+    const serversCold = await runServersGet('real-servers-cold', serversDir, projectsDir, assignmentsDir);
+    const serversWarm = await runServersGet('real-servers-warm', serversDir, projectsDir, assignmentsDir);
+
+    const startupCold = await runStartupSet('real-startup-set-cold', projectsDir, serversDir, assignmentsDir);
+    const startupWarm = await runStartupSet('real-startup-set-warm', projectsDir, serversDir, assignmentsDir);
+
+    // eslint-disable-next-line no-console
+    console.log(
+      `[perf-bench:real-full-summary] overview cold=${overviewCold.toFixed(1)}ms warm=${overviewWarm.toFixed(1)}ms | ` +
+        `servers cold=${serversCold.toFixed(1)}ms warm=${serversWarm.toFixed(1)}ms | ` +
+        `startup-set cold=${startupCold.toFixed(1)}ms warm=${startupWarm.toFixed(1)}ms`,
+    );
   }, 120_000);
 });
