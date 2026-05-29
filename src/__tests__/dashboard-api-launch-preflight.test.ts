@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdtemp, rm, mkdir, writeFile, chmod } from 'node:fs/promises';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import express from 'express';
 import type { AddressInfo } from 'node:net';
@@ -13,8 +13,58 @@ const originalPath = process.env.PATH;
 
 let tmpHome: string;
 let pathDir: string;
+let projectsDir: string;
+let assignmentsDir: string;
 let server: Server;
 let baseUrl: string;
+
+async function writeAssignment(
+  id: string,
+  ws: { repository?: string | null; worktreePath?: string | null; branch?: string | null },
+): Promise<void> {
+  const projectSlug = 'demo';
+  const assignmentSlug = `task-${id.slice(0, 8)}`;
+  const projectDir = resolve(projectsDir, projectSlug);
+  const assignmentDir = resolve(projectDir, 'assignments', assignmentSlug);
+  await mkdir(assignmentDir, { recursive: true });
+  await writeFile(
+    resolve(projectDir, 'project.md'),
+    `---\nslug: ${projectSlug}\ntitle: ${projectSlug}\nstatus: in_progress\ncreated: "2026-01-01T00:00:00Z"\nupdated: "2026-01-01T00:00:00Z"\n---\n# ${projectSlug}\n`,
+  );
+  await writeFile(
+    resolve(assignmentDir, 'assignment.md'),
+    [
+      '---',
+      `id: ${id}`,
+      `slug: ${assignmentSlug}`,
+      `title: "${assignmentSlug}"`,
+      `project: ${projectSlug}`,
+      'type: feature',
+      'status: in_progress',
+      'priority: medium',
+      'created: "2026-05-17T00:00:00Z"',
+      'updated: "2026-05-17T00:00:00Z"',
+      'assignee: null',
+      'externalIds: []',
+      'dependsOn: []',
+      'links: []',
+      'blockedReason: null',
+      'workspace:',
+      `  repository: ${ws.repository ?? 'null'}`,
+      `  worktreePath: ${ws.worktreePath ?? 'null'}`,
+      `  branch: ${ws.branch ?? 'null'}`,
+      '  parentBranch: null',
+      'tags: []',
+      '---',
+      '',
+      `# ${assignmentSlug}`,
+      '',
+      '## Objective',
+      'test',
+      '',
+    ].join('\n'),
+  );
+}
 
 beforeEach(async () => {
   tmpHome = await mkdtemp(join(tmpdir(), 'syntaur-preflight-api-'));
@@ -22,10 +72,14 @@ beforeEach(async () => {
   process.env.HOME = tmpHome;
   process.env.SYNTAUR_HOME = join(tmpHome, '.syntaur');
   pathDir = await mkdtemp(join(tmpdir(), 'syntaur-preflight-path-'));
+  projectsDir = resolve(tmpHome, 'projects');
+  assignmentsDir = resolve(tmpHome, 'assignments');
+  await mkdir(projectsDir, { recursive: true });
+  await mkdir(assignmentsDir, { recursive: true });
 
   const app = express();
   app.use(express.json());
-  app.use('/api/launch', createLaunchPreflightRouter());
+  app.use('/api/launch', createLaunchPreflightRouter(projectsDir, assignmentsDir));
 
   await new Promise<void>((ready) => {
     server = app.listen(0, () => ready());
@@ -89,6 +143,54 @@ describe('POST /api/launch/preflight', () => {
     expect(res.status).toBe(400);
     const body = await res.json();
     expect(body.error).toMatch(/terminal must be one of/);
+  });
+
+  it('returns workspace-path-invalid when the assignment workspace dirs do not exist', async () => {
+    // Terminal must be installed first so the workspace check runs.
+    const kittyPath = join(pathDir, 'kitty');
+    await writeFile(kittyPath, '#!/bin/sh\nexit 0\n');
+    await chmod(kittyPath, 0o755);
+    process.env.PATH = `${pathDir}:/usr/bin:/bin`;
+
+    const id = '22222222-2222-2222-2222-222222222222';
+    await writeAssignment(id, {
+      worktreePath: join(tmpHome, 'gone-wt'),
+      repository: join(tmpHome, 'gone-repo'),
+      branch: 'feat/x',
+    });
+
+    const res = await fetch(baseUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ terminal: 'kitty', target: { kind: 'assignment', id } }),
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.ok).toBe(false);
+    expect(body.reason).toBe('workspace-path-invalid');
+    expect(typeof body.message).toBe('string');
+  });
+
+  it('returns ok:true for an assignment whose worktree exists', async () => {
+    const kittyPath = join(pathDir, 'kitty');
+    await writeFile(kittyPath, '#!/bin/sh\nexit 0\n');
+    await chmod(kittyPath, 0o755);
+    process.env.PATH = `${pathDir}:/usr/bin:/bin`;
+
+    const id = '33333333-3333-3333-3333-333333333333';
+    const wt = join(tmpHome, 'real-wt');
+    await mkdir(wt, { recursive: true });
+    await writeAssignment(id, { worktreePath: wt, branch: 'feat/x' });
+
+    const res = await fetch(baseUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ terminal: 'kitty', target: { kind: 'assignment', id } }),
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.ok).toBe(true);
+    expect(body.terminal).toBe('kitty');
   });
 
   it('uses the configured terminal when body has no terminal', async () => {

@@ -161,6 +161,59 @@ describe('resolveLaunchPlan — assignment mode', () => {
     expect(plan.fallbackWarning).toMatch(/worktreePath/);
   });
 
+  it('falls back to repository when worktreePath is set but not an existing directory', async () => {
+    const repo = resolve(testDir, 'repo-valid');
+    await mkdir(repo, { recursive: true });
+    await scaffoldAssignment(
+      projectsDir,
+      'demo-project',
+      'demo-asg',
+      ASSIGNMENT_ID,
+      {
+        worktreePath: resolve(testDir, 'missing-worktree'),
+        repository: repo,
+        branch: 'feat/x',
+      },
+    );
+
+    const plan = await resolveLaunchPlan({
+      kind: 'assignment',
+      id: ASSIGNMENT_ID,
+      config: makeConfig(),
+      projectsDir,
+      assignmentsDir,
+    });
+
+    expect(plan.cwd).toBe(repo);
+    expect(plan.fallbackWarning).toContain('is not an existing directory');
+  });
+
+  it('throws workspace-path-invalid when neither worktreePath nor repository is a real directory', async () => {
+    await scaffoldAssignment(
+      projectsDir,
+      'demo-project',
+      'demo-asg',
+      ASSIGNMENT_ID,
+      {
+        worktreePath: resolve(testDir, 'no-worktree'),
+        repository: resolve(testDir, 'no-repo'),
+        branch: 'feat/x',
+      },
+    );
+
+    await expect(
+      resolveLaunchPlan({
+        kind: 'assignment',
+        id: ASSIGNMENT_ID,
+        config: makeConfig(),
+        projectsDir,
+        assignmentsDir,
+      }),
+    ).rejects.toThrowError(
+      expect.objectContaining({ code: 'workspace-path-invalid' }),
+    );
+  });
+
   it('honors terminalOverride over the configured terminal', async () => {
     const worktree = resolve(testDir, 'worktree-override');
     await mkdir(worktree, { recursive: true });
@@ -301,6 +354,44 @@ describe('resolveLaunchPlan — session mode', () => {
 
     expect(plan.cwd).toBe(worktree);
     expect(plan.argv.args).toEqual(['--resume', 'sess-proj']);
+  });
+
+  it('falls back to session.path (no throw) when the assignment workspace is invalid', async () => {
+    // Assignment exists but its workspace points at non-existent paths.
+    await scaffoldAssignment(
+      projectsDir,
+      'demo-project',
+      'demo-asg',
+      ASSIGNMENT_ID,
+      {
+        worktreePath: resolve(testDir, 'gone-worktree'),
+        repository: resolve(testDir, 'gone-repo'),
+        branch: 'feat/z',
+      },
+    );
+
+    await appendSession('', {
+      sessionId: 'sess-invalid-ws',
+      projectSlug: 'demo-project',
+      assignmentSlug: 'demo-asg',
+      agent: 'claude',
+      started: '2026-05-17T00:00:00Z',
+      status: 'active',
+      path: testDir, // a real directory
+    });
+
+    // Unlike assignment launches, session launches must NOT throw — they keep
+    // the recorded session.path rather than failing.
+    const plan = await resolveLaunchPlan({
+      kind: 'session',
+      id: 'sess-invalid-ws',
+      config: makeConfig(),
+      projectsDir,
+      assignmentsDir,
+    });
+
+    expect(plan.cwd).toBe(testDir);
+    expect(plan.argv.args).toEqual(['--resume', 'sess-invalid-ws']);
   });
 
   it('threads mode=fork through to argv', async () => {
