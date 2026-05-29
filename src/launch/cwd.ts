@@ -62,12 +62,14 @@ export function resolveWorkspaceCwd(
     return { cwd: repository, fallbackWarning, invalidReason: null };
   }
 
+  const shown = (p: string | null): string =>
+    p && p.trim().length > 0 ? p : '(unset)';
   return {
     cwd: null,
     fallbackWarning: null,
     invalidReason:
       `workspace path invalid for ${assignmentSlug}: tried worktreePath ` +
-      `${worktreePath ?? '(unset)'} and repository ${repository ?? '(unset)'} — ` +
+      `${shown(worktreePath)} and repository ${shown(repository)} — ` +
       `neither is an existing directory`,
   };
 }

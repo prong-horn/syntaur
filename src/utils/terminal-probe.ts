@@ -94,7 +94,14 @@ export interface ProbeResult {
  */
 export function probeTerminalInstalled(
   terminal: TerminalChoice,
-  opts: { applicationsDirs?: string[] } = {},
+  /**
+   * `applicationsDirsOverride` REPLACES (does not extend) the default
+   * applications directories for the `.app` fallback. Production never sets it;
+   * it exists so tests can point the fallback at a temp dir and stay isolated
+   * from the host's real /Applications (merging with the defaults would make a
+   * host that actually has the app produce a false positive).
+   */
+  opts: { applicationsDirsOverride?: string[] } = {},
 ): ProbeResult {
   const bundleId = APP_BUNDLE_IDS[terminal];
   if (bundleId) {
@@ -106,10 +113,11 @@ export function probeTerminalInstalled(
     if (result.status === 0 && result.stdout.trim().length > 0) {
       return { ok: true, foundPath: result.stdout.trim().split('\n')[0] };
     }
-    // `mdfind` yielded no path (it exits 0 with empty stdout when Spotlight is
-    // not indexing, e.g. background/launchd contexts). Fall back to checking
-    // the standard `.app` bundle locations before declaring it not installed.
-    const bundlePath = findAppBundle(terminal, opts.applicationsDirs);
+    // `mdfind` yielded no path. This covers BOTH a non-zero exit AND an exit 0
+    // with empty stdout (Spotlight not indexing, e.g. background/launchd
+    // contexts). Fall back to the standard `.app` locations before declaring
+    // the terminal not installed.
+    const bundlePath = findAppBundle(terminal, opts.applicationsDirsOverride);
     if (bundlePath) {
       return { ok: true, foundPath: bundlePath };
     }
