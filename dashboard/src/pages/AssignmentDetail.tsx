@@ -378,6 +378,7 @@ export function AssignmentDetail() {
             <OpenInAgentButton
               target={{ kind: 'assignment', id: assignment.id }}
               worktreePath={assignment.workspace?.worktreePath ?? null}
+              repository={assignment.workspace?.repository ?? null}
             />
             {!assignment.workspace?.worktreePath && slug && aslug && (
               <CreateWorktreeButton

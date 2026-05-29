@@ -47,6 +47,7 @@ export function StandaloneAssignmentDetail() {
             <OpenInAgentButton
               target={{ kind: 'assignment', id: assignment.id }}
               worktreePath={assignment.workspace?.worktreePath ?? null}
+              repository={assignment.workspace?.repository ?? null}
               size="compact"
             />
             {!assignment.workspace?.worktreePath && (

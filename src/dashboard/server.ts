@@ -704,7 +704,10 @@ export function createDashboardServer(options: DashboardServerOptions) {
   app.use('/api/config/agents', createAgentsRouter());
 
   // --- Launch Preflight API ---
-  app.use('/api/launch', createLaunchPreflightRouter());
+  app.use(
+    '/api/launch',
+    createLaunchPreflightRouter(projectsDir, assignmentsDir),
+  );
 
   // --- Playbooks API ---
   app.use('/api/playbooks', createPlaybooksRouter(playbooksDir));

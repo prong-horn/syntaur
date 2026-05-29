@@ -109,6 +109,9 @@ export function formatUrlCommandError(err: unknown): string {
     return `Invalid syntaur:// URL (${err.code}): ${err.message}`;
   }
   if (err instanceof LaunchError) {
+    if (err.code === 'workspace-path-invalid') {
+      return `Open in agent failed — ${err.message}. Set a valid workspace.worktreePath or workspace.repository for this assignment.`;
+    }
     return `Could not launch (${err.code}): ${err.message}`;
   }
   if (err instanceof TerminalNotFoundError) {

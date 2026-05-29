@@ -18,12 +18,17 @@ interface OpenInAgentButtonProps {
   /** Either an assignment id or a session id. */
   target: { kind: 'assignment'; id: string } | { kind: 'session'; id: string };
   /**
-   * The assignment's worktreePath. When null, the button renders as disabled
-   * with a tooltip pointing at the Workspace Before Code playbook. Required
-   * only for assignment-mode; session-mode falls back to session.path so the
-   * button stays enabled even without a worktree set.
+   * The assignment's worktreePath. Preferred cwd for the launch. May be null
+   * if the assignment has no worktree yet — in that case `repository` is used.
    */
   worktreePath?: string | null;
+  /**
+   * The assignment's repository path — the fallback cwd when there is no
+   * worktree. The button is disabled (assignment-mode) only when BOTH
+   * worktreePath and repository are absent. Session-mode falls back to
+   * session.path so it stays enabled regardless.
+   */
+  repository?: string | null;
   /** Visual size — `default` for header action group, `compact` for row actions. */
   size?: 'default' | 'compact';
   /** Override the tooltip. */
@@ -40,7 +45,16 @@ interface PreflightMiss {
   reason: 'not-installed';
   suggestedFallback: TerminalChoice;
 }
-type PreflightResponse = PreflightOk | PreflightMiss;
+interface PreflightWorkspaceInvalid {
+  ok: false;
+  terminal: TerminalChoice;
+  reason: 'workspace-path-invalid';
+  message: string;
+}
+type PreflightResponse =
+  | PreflightOk
+  | PreflightMiss
+  | PreflightWorkspaceInvalid;
 
 function baseHref(
   target: OpenInAgentButtonProps['target'],
@@ -65,13 +79,15 @@ function baseHref(
 export function OpenInAgentButton({
   target,
   worktreePath = null,
+  repository = null,
   size = 'default',
   title,
 }: OpenInAgentButtonProps) {
   const disabled =
-    target.kind === 'assignment' && (worktreePath == null || worktreePath === '');
+    target.kind === 'assignment' && !worktreePath && !repository;
 
   const [miss, setMiss] = useState<PreflightMiss | null>(null);
+  const [workspaceError, setWorkspaceError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
 
   const defaultTitle =
@@ -79,7 +95,7 @@ export function OpenInAgentButton({
       ? 'Open this assignment in your configured terminal + agent'
       : 'Resume this session in its agent';
   const disabledTitle =
-    'Set a worktree first — see the Workspace Before Code playbook';
+    'Set a workspace path first — see the Workspace Before Code playbook';
 
   const classes = cn(
     'shell-action',
@@ -110,15 +126,23 @@ export function OpenInAgentButton({
       const res = await fetch('/api/launch/preflight', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: '{}',
+        body: JSON.stringify({ target }),
       });
       if (!res.ok) {
+        // Network/5xx — best effort: fire the link; the CLI/applet will surface
+        // any launch error itself.
         window.location.href = baseHref(target);
         return;
       }
       const body = (await res.json()) as PreflightResponse;
       if (body.ok) {
         window.location.href = baseHref(target);
+        return;
+      }
+      if (body.reason === 'workspace-path-invalid') {
+        // Do NOT navigate — opening the deep link would fail (or land in the
+        // wrong directory). Show the reason inline instead.
+        setWorkspaceError(body.message);
         return;
       }
       setMiss(body);
@@ -180,6 +204,29 @@ export function OpenInAgentButton({
               }}
             >
               Open in {miss?.suggestedFallback}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog
+        open={workspaceError !== null}
+        onOpenChange={(open) => !open && setWorkspaceError(null)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Can't open in agent</AlertDialogTitle>
+            <AlertDialogDescription>
+              {workspaceError} Set a valid worktree or repository for this
+              assignment, then try again.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogAction
+              className="shell-action mt-0 bg-foreground text-background hover:opacity-90"
+              onClick={() => setWorkspaceError(null)}
+            >
+              OK
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
