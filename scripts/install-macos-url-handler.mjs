@@ -319,6 +319,15 @@ function detectInstalledTerminals() {
     ghostty: 'com.mitchellh.ghostty',
     warp: 'dev.warp.Warp-Stable',
   };
+  // Standard `.app` bundle names, used as a fallback when `mdfind` returns
+  // nothing (it exits 0 with empty stdout when Spotlight is not indexing).
+  // Keep in sync with APP_BUNDLE_NAMES in src/utils/terminal-probe.ts.
+  const bundleNames = {
+    iterm: 'iTerm.app',
+    ghostty: 'Ghostty.app',
+    warp: 'Warp.app',
+  };
+  const appDirs = ['/Applications', join(homedir(), 'Applications')];
   for (const [id, bundleId] of Object.entries(bundleIds)) {
     const r = spawnSync(
       'mdfind',
@@ -326,6 +335,13 @@ function detectInstalledTerminals() {
       { encoding: 'utf-8' },
     );
     if (r.status === 0 && r.stdout.trim().length > 0) {
+      installed.add(id);
+      continue;
+    }
+    // mdfind found nothing — fall back to checking the standard .app locations
+    // so a cold Spotlight index doesn't drop the terminal's dispatch block.
+    const name = bundleNames[id];
+    if (name && appDirs.some((dir) => existsSync(join(dir, name)))) {
       installed.add(id);
     }
   }
@@ -473,10 +489,16 @@ function renderAppleScript({ nodeBin, cliBin, installedTerminals }) {
     '\t-- Step 1: ask the CLI for the launch plan (two lines: terminal, shellCmd).',
     '\tset planOutput to ""',
     '\ttry',
-    `\t\tset planOutput to (do shell script quoted form of nodeBin & " " & quoted form of cliBin & " url --print-plan " & quoted form of theURL & " 2>> " & quoted form of logFile)`,
+    `\t\tset planOutput to (do shell script quoted form of nodeBin & " " & quoted form of cliBin & " url --print-plan " & quoted form of theURL)`,
     '\ton error errMsg number errNum',
+    '\t\t-- No `2>>` redirect above, so a non-zero CLI exit surfaces its stderr',
+    '\t\t-- (the formatUrlCommandError message, e.g. workspace-path-invalid) in',
+    '\t\t-- errMsg. Log it AND show the user a visible alert.',
     '\t\ttry',
     `\t\t\tdo shell script "/usr/bin/printf '%s\\\\n' " & quoted form of ("syntaur:// plan resolution failed for " & theURL & ": " & errMsg & " (" & errNum & ")") & " >> " & quoted form of logFile`,
+    '\t\tend try',
+    '\t\ttry',
+    '\t\t\tdisplay alert "Open in agent failed" message errMsg as critical',
     '\t\tend try',
     '\t\treturn',
     '\tend try',
@@ -501,6 +523,9 @@ function renderAppleScript({ nodeBin, cliBin, installedTerminals }) {
     '\ton error errMsg number errNum',
     '\t\ttry',
     `\t\t\tdo shell script "/usr/bin/printf '%s\\\\n' " & quoted form of ("syntaur:// launch failed for " & theURL & " (terminal=" & theTerminal & "): " & errMsg & " (" & errNum & ")") & " >> " & quoted form of logFile`,
+    '\t\tend try',
+    '\t\ttry',
+    '\t\t\tdisplay alert "Open in agent failed" message errMsg as critical',
     '\t\tend try',
     '\tend try',
     'end open location',

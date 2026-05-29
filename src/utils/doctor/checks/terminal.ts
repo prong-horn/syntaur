@@ -125,7 +125,7 @@ const terminalInstalled: Check = {
     }
 
     const detail = bundleId
-      ? `${terminal} (bundle id ${bundleId}) not found via Spotlight`
+      ? `${terminal} (bundle id ${bundleId}) not found via Spotlight or in /Applications`
       : `${cliName} not found on PATH`;
     const suggestion = bundleId
       ? `Install ${terminal} or change \`terminal:\` in ~/.syntaur/config.md to a different choice`
