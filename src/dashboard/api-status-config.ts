@@ -3,7 +3,7 @@ import {
   writeStatusConfig,
   deleteStatusConfig,
 } from '../utils/config.js';
-import { getStatusConfig, clearStatusConfigCache } from './api.js';
+import { getStatusConfig, clearStatusConfigCache, installRecordsInvalidation } from './api.js';
 import {
   scanAssignmentsByStatus,
   applyStatusResolutions,
@@ -135,6 +135,11 @@ export function createStatusConfigRouter(
   assignmentsDir: string | null,
 ): Router {
   const router = Router();
+  // The POST/DELETE routes rewrite assignment.md status fields (and may remove
+  // assignment dirs) via applyStatusResolutions; clear the shared records cache
+  // synchronously once each mutation resolves so the client's immediate refetch
+  // sees fresh status counts rather than the pre-remap snapshot.
+  installRecordsInvalidation(router);
 
   router.get('/', async (_req: Request, res: Response) => {
     try {

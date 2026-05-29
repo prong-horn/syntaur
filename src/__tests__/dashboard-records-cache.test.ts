@@ -10,6 +10,7 @@ import {
   invalidateRecordsCache,
 } from '../dashboard/api.js';
 import { createWriteRouter } from '../dashboard/api-write.js';
+import { createStatusConfigRouter } from '../dashboard/api-status-config.js';
 
 let testDir: string;
 
@@ -168,6 +169,29 @@ describe('records cache', () => {
     expect(status).toBe(200);
 
     // The very next read reflects the write with no manual invalidation.
+    const after = await getOverview(testDir);
+    expect(after.stats.inProgressAssignments).toBe(1);
+  });
+
+  it('invalidates the records cache after a status-config mutation', async () => {
+    await seedProjectWithAssignment('pending');
+    const assignmentPath = resolve(testDir, 'test-project', 'assignments', 'test-assignment', 'assignment.md');
+    const router = createStatusConfigRouter(testDir, null);
+
+    // Warm the cache with the pending state.
+    const before = await getOverview(testDir);
+    expect(before.stats.inProgressAssignments).toBe(0);
+
+    // Mutate on disk, bypassing every router.
+    await writeFile(assignmentPath, assignmentMd('test-assignment', 'in_progress'), 'utf-8');
+
+    // A malformed body short-circuits to 400 before any global status-config
+    // read/write, but it must still run the invalidation wrapper's `finally` —
+    // proving the status-config router is wired with installRecordsInvalidation.
+    const status = await invokeRoute(router, 'post', '/', {}, {});
+    expect(status).toBe(400);
+
+    // The next read reflects the on-disk change → the cache was cleared.
     const after = await getOverview(testDir);
     expect(after.stats.inProgressAssignments).toBe(1);
   });

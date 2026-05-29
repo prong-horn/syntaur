@@ -1,5 +1,7 @@
 import { Router } from 'express';
 import { updateBackupConfig } from '../utils/config.js';
+import { invalidateRecordsCache } from './api.js';
+import { clearScanCache } from './scanner.js';
 import {
   backupToGithub,
   restoreFromGithub,
@@ -93,6 +95,15 @@ export function createBackupRouter(): Router {
         success: false,
         error: error instanceof Error ? error.message : String(error),
       });
+    } finally {
+      // A restore rewrites the entire projects/ tree (project.md + assignment.md),
+      // which feeds both the shared records cache and the scanner's workspace
+      // auto-links. Clear both so reads after a restore reflect the restored data
+      // instead of the pre-restore snapshot. In a `finally` because a partial or
+      // failed restore can still have mutated files on disk; both clears are cheap
+      // and idempotent.
+      invalidateRecordsCache();
+      clearScanCache();
     }
   });
 
