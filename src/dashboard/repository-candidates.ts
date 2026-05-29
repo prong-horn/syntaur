@@ -11,6 +11,41 @@ export interface RepositoryCandidate {
 }
 
 /**
+ * A candidate assignment to "branch off" — one that already has a resolved
+ * workspace (both `workspace.repository` and `workspace.branch` set). Branching
+ * off it reuses its repository and uses its branch as the new worktree's parent.
+ */
+export interface SourceAssignment {
+  /** Stable unique identifier (the assignment UUID). */
+  id: string;
+  slug: string;
+  title: string;
+  repository: string;
+  branch: string;
+}
+
+/**
+ * Build a {@link SourceAssignment} from a parsed assignment, or `null` when it
+ * lacks a usable workspace (missing/blank repository or branch).
+ */
+function toSourceAssignment(
+  parsed: ReturnType<typeof parseAssignmentFull>,
+  fallbackId: string,
+): SourceAssignment | null {
+  const repository = parsed.workspace.repository?.trim();
+  const branch = parsed.workspace.branch?.trim();
+  if (!repository || !branch) return null;
+  const slug = parsed.slug?.trim() || fallbackId;
+  return {
+    id: parsed.id?.trim() || fallbackId,
+    slug,
+    title: parsed.title?.trim() || slug,
+    repository,
+    branch,
+  };
+}
+
+/**
  * Collect repository candidates for a project-nested assignment.
  *
  * Order: project-configured first (in declaration order), then
@@ -87,6 +122,74 @@ export async function getStandaloneRepositoryCandidates(
     if (seen.has(abs)) continue;
     seen.add(abs);
     out.push({ path: abs, source: 'sibling', sourceAssignmentSlug: parsed.slug });
+  }
+
+  return out;
+}
+
+/**
+ * List sibling assignments in a project that can be branched off (both
+ * `workspace.repository` and `workspace.branch` are set). Excludes the
+ * assignment being configured and dedupes by slug (the project dir name, which
+ * is unique within a project). Missing assignments directory returns `[]`.
+ */
+export async function getProjectSourceAssignments(
+  projectsDir: string,
+  projectSlug: string,
+  excludeSlug: string,
+): Promise<SourceAssignment[]> {
+  const assignmentsDir = resolve(projectsDir, projectSlug, 'assignments');
+  if (!(await fileExists(assignmentsDir))) return [];
+
+  const seen = new Set<string>();
+  const out: SourceAssignment[] = [];
+
+  const entries = await readdir(assignmentsDir, { withFileTypes: true });
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue;
+    if (entry.name === excludeSlug) continue;
+    const assignmentMd = resolve(assignmentsDir, entry.name, 'assignment.md');
+    if (!(await fileExists(assignmentMd))) continue;
+    const parsed = parseAssignmentFull(await readFile(assignmentMd, 'utf-8'));
+    const source = toSourceAssignment(parsed, entry.name);
+    if (!source) continue;
+    if (source.slug === excludeSlug) continue;
+    if (seen.has(source.slug)) continue;
+    seen.add(source.slug);
+    out.push(source);
+  }
+
+  return out;
+}
+
+/**
+ * List standalone assignments that can be branched off (both
+ * `workspace.repository` and `workspace.branch` are set). Excludes the
+ * assignment being configured and dedupes by the UUID `id` (standalone slugs
+ * are display-only and may collide). Missing directory returns `[]`.
+ */
+export async function getStandaloneSourceAssignments(
+  assignmentsDir: string,
+  excludeAssignmentId: string,
+): Promise<SourceAssignment[]> {
+  if (!(await fileExists(assignmentsDir))) return [];
+
+  const seen = new Set<string>();
+  const out: SourceAssignment[] = [];
+
+  const entries = await readdir(assignmentsDir, { withFileTypes: true });
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue;
+    if (entry.name === excludeAssignmentId) continue;
+    const assignmentMd = resolve(assignmentsDir, entry.name, 'assignment.md');
+    if (!(await fileExists(assignmentMd))) continue;
+    const parsed = parseAssignmentFull(await readFile(assignmentMd, 'utf-8'));
+    const source = toSourceAssignment(parsed, entry.name);
+    if (!source) continue;
+    if (source.id === excludeAssignmentId) continue;
+    if (seen.has(source.id)) continue;
+    seen.add(source.id);
+    out.push(source);
   }
 
   return out;

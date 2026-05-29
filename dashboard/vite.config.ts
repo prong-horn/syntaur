@@ -16,6 +16,7 @@ export default defineConfig({
       '@shared/saved-views-schema': resolve(__dirname, '../src/utils/saved-views-schema.ts'),
       '@shared/agents-schema': resolve(__dirname, '../src/utils/agents-schema.ts'),
       '@shared/terminal-schema': resolve(__dirname, '../src/utils/terminal-schema.ts'),
+      '@shared/branch-name': resolve(__dirname, '../src/utils/branch-name.ts'),
     },
   },
   server: {

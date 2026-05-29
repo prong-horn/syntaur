@@ -9,6 +9,8 @@ import {
   removeWorktree,
   formatRollbackError,
   GitWorktreeError,
+  listBranches,
+  detectDefaultBranch,
 } from '../utils/git-worktree.js';
 
 function git(cwd: string, args: string[]): string {
@@ -167,6 +169,19 @@ describe('git-worktree helpers', () => {
     expect(msg).toMatch(/Rolled back git worktree at \/x\/wt/);
     expect(msg).toMatch(/could not delete branch "feature\/x"/);
     expect(msg).toMatch(/branch is checked out somewhere/);
+  });
+
+  it('listBranches returns local branches', async () => {
+    git(repo, ['branch', 'develop']);
+    git(repo, ['branch', 'feature/x']);
+    const branches = await listBranches(repo);
+    expect(branches).toEqual(expect.arrayContaining(['main', 'develop', 'feature/x']));
+    expect(branches).toHaveLength(3);
+  });
+
+  it('detectDefaultBranch returns main when present', async () => {
+    git(repo, ['branch', 'develop']);
+    expect(await detectDefaultBranch(repo)).toBe('main');
   });
 
   it('removeWorktree cleans up', async () => {

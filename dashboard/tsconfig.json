@@ -23,7 +23,8 @@
       "@shared/view-prefs-schema": ["../src/utils/view-prefs-schema.ts"],
       "@shared/saved-views-schema": ["../src/utils/saved-views-schema.ts"],
       "@shared/agents-schema": ["../src/utils/agents-schema.ts"],
-      "@shared/terminal-schema": ["../src/utils/terminal-schema.ts"]
+      "@shared/terminal-schema": ["../src/utils/terminal-schema.ts"],
+      "@shared/branch-name": ["../src/utils/branch-name.ts"]
     }
   },
   "include": [
@@ -32,6 +33,7 @@
     "../src/utils/view-prefs-schema.ts",
     "../src/utils/saved-views-schema.ts",
     "../src/utils/agents-schema.ts",
-    "../src/utils/terminal-schema.ts"
+    "../src/utils/terminal-schema.ts",
+    "../src/utils/branch-name.ts"
   ]
 }

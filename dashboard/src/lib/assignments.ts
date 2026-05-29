@@ -397,3 +397,67 @@ export async function createAssignmentWorktreeById(
   const body = await response.json();
   return (body as { assignment: AssignmentDetail }).assignment;
 }
+
+// Shared branch-name validator (same rules the server enforces) for instant
+// inline feedback in the create-worktree modal.
+export { validateBranchName } from '@shared/branch-name';
+
+export interface RepositoryBranches {
+  branches: string[];
+  defaultBranch: string | null;
+}
+
+export interface SourceAssignment {
+  /** Stable unique identifier (the assignment UUID) — use as React key / <option> value. */
+  id: string;
+  slug: string;
+  title: string;
+  repository: string;
+  branch: string;
+}
+
+async function readJsonOrThrow<T>(response: Response): Promise<T> {
+  const body = await response.json().catch(() => null);
+  if (!response.ok) {
+    throw new Error((body as { error?: string } | null)?.error || `HTTP ${response.status}`);
+  }
+  return body as T;
+}
+
+export async function getRepositoryBranches(
+  projectSlug: string,
+  assignmentSlug: string,
+  repo: string,
+): Promise<RepositoryBranches> {
+  const response = await fetch(
+    `/api/projects/${projectSlug}/assignments/${assignmentSlug}/repository-branches?repo=${encodeURIComponent(repo)}`,
+  );
+  return readJsonOrThrow<RepositoryBranches>(response);
+}
+
+export async function getRepositoryBranchesById(
+  id: string,
+  repo: string,
+): Promise<RepositoryBranches> {
+  const response = await fetch(
+    `/api/assignments/${id}/repository-branches?repo=${encodeURIComponent(repo)}`,
+  );
+  return readJsonOrThrow<RepositoryBranches>(response);
+}
+
+export async function getProjectSourceAssignments(
+  projectSlug: string,
+  assignmentSlug: string,
+): Promise<SourceAssignment[]> {
+  const response = await fetch(
+    `/api/projects/${projectSlug}/assignments/${assignmentSlug}/source-assignments`,
+  );
+  const body = await readJsonOrThrow<{ sourceAssignments: SourceAssignment[] }>(response);
+  return body.sourceAssignments;
+}
+
+export async function getSourceAssignmentsById(id: string): Promise<SourceAssignment[]> {
+  const response = await fetch(`/api/assignments/${id}/source-assignments`);
+  const body = await readJsonOrThrow<{ sourceAssignments: SourceAssignment[] }>(response);
+  return body.sourceAssignments;
+}

@@ -4,7 +4,7 @@ import { mkdtemp, rm, mkdir, writeFile, readFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { spawnSync } from 'node:child_process';
-import { createWriteRouter } from '../dashboard/api-write.js';
+import { createWriteRouter, worktreeInFlight } from '../dashboard/api-write.js';
 
 let testDir: string;
 
@@ -1469,6 +1469,358 @@ tags: []
       });
     });
 
+    // --- Redesign: branch listing, source assignments, validation, lock ---
+
+    async function writeProjectAssignment(
+      slug: string,
+      opts: { id?: string; repository?: string; branch?: string },
+    ): Promise<void> {
+      const dir = resolve(testDir, 'test-project', 'assignments', slug);
+      await mkdir(dir, { recursive: true });
+      const repo = opts.repository ?? null;
+      const branch = opts.branch ?? null;
+      const worktreePath = repo && branch ? `${repo}/.worktrees/${branch}` : null;
+      await writeFile(
+        resolve(dir, 'assignment.md'),
+        `---
+id: ${opts.id ?? `${slug}-id`}
+slug: ${slug}
+title: ${slug} title
+status: in_progress
+priority: medium
+created: "2026-03-20T10:00:00Z"
+updated: "2026-03-20T10:00:00Z"
+externalIds: []
+dependsOn: []
+blockedReason: null
+workspace:
+  repository: ${repo ?? 'null'}
+  worktreePath: ${worktreePath ?? 'null'}
+  branch: ${branch ?? 'null'}
+  parentBranch: ${repo && branch ? 'main' : 'null'}
+tags: []
+---
+
+# ${slug}`,
+        'utf-8',
+      );
+    }
+
+    async function writeStandaloneAssignment(
+      assignmentsDir: string,
+      id: string,
+      slug: string,
+      opts: { repository?: string; branch?: string },
+    ): Promise<void> {
+      const dir = resolve(assignmentsDir, id);
+      await mkdir(dir, { recursive: true });
+      const repo = opts.repository ?? null;
+      const branch = opts.branch ?? null;
+      const worktreePath = repo && branch ? `${repo}/.worktrees/${branch}` : null;
+      await writeFile(
+        resolve(dir, 'assignment.md'),
+        `---
+id: ${id}
+slug: ${slug}
+title: ${slug} title
+status: in_progress
+priority: medium
+created: "2026-03-20T10:00:00Z"
+updated: "2026-03-20T10:00:00Z"
+externalIds: []
+dependsOn: []
+blockedReason: null
+workspace:
+  repository: ${repo ?? 'null'}
+  worktreePath: ${worktreePath ?? 'null'}
+  branch: ${branch ?? 'null'}
+  parentBranch: ${repo && branch ? 'main' : 'null'}
+tags: []
+---
+
+# ${slug}`,
+        'utf-8',
+      );
+    }
+
+    describe('GET repository-branches', () => {
+      it('project: returns branches + default', async () => {
+        await createAssignmentFixture();
+        const repo = await setupRepo();
+        spawnSync('git', ['-C', repo, 'branch', 'develop'], { encoding: 'utf-8' });
+        const router = createWriteRouter(testDir);
+        const res = await invokeRoute(
+          router,
+          'get',
+          '/api/projects/:slug/assignments/:aslug/repository-branches',
+          { slug: 'test-project', aslug: 'test-assignment' },
+          undefined,
+          { repo },
+        );
+        expect(res.statusCode, JSON.stringify(res.payload)).toBe(200);
+        const payload = res.payload as { branches: string[]; defaultBranch: string | null };
+        expect(payload.branches).toEqual(expect.arrayContaining(['main', 'develop']));
+        expect(payload.defaultBranch).toBe('main');
+      });
+
+      it('project: 400 when repo is a subdirectory (not the root)', async () => {
+        await createAssignmentFixture();
+        const repo = await setupRepo();
+        await mkdir(resolve(repo, 'sub'), { recursive: true });
+        const router = createWriteRouter(testDir);
+        const res = await invokeRoute(
+          router,
+          'get',
+          '/api/projects/:slug/assignments/:aslug/repository-branches',
+          { slug: 'test-project', aslug: 'test-assignment' },
+          undefined,
+          { repo: resolve(repo, 'sub') },
+        );
+        expect(res.statusCode).toBe(400);
+        expect((res.payload as { error: string }).error).toMatch(/working-tree root/i);
+      });
+
+      it('project: 400 when repo query is missing', async () => {
+        await createAssignmentFixture();
+        const router = createWriteRouter(testDir);
+        const res = await invokeRoute(
+          router,
+          'get',
+          '/api/projects/:slug/assignments/:aslug/repository-branches',
+          { slug: 'test-project', aslug: 'test-assignment' },
+          undefined,
+          {},
+        );
+        expect(res.statusCode).toBe(400);
+      });
+
+      it('standalone: 501 when standalone not configured', async () => {
+        const router = createWriteRouter(testDir);
+        const res = await invokeRoute(
+          router,
+          'get',
+          '/api/assignments/:id/repository-branches',
+          { id: 'x' },
+          undefined,
+          { repo: '/whatever' },
+        );
+        expect(res.statusCode).toBe(501);
+      });
+
+      it('standalone: returns branches when configured', async () => {
+        const assignmentsDir = resolve(testDir, 'standalone');
+        await mkdir(assignmentsDir, { recursive: true });
+        const repo = await setupRepo();
+        const router = createWriteRouter(testDir, assignmentsDir);
+        const res = await invokeRoute(
+          router,
+          'get',
+          '/api/assignments/:id/repository-branches',
+          { id: 'x' },
+          undefined,
+          { repo },
+        );
+        expect(res.statusCode, JSON.stringify(res.payload)).toBe(200);
+        expect((res.payload as { branches: string[] }).branches).toContain('main');
+      });
+    });
+
+    describe('GET source-assignments', () => {
+      it('project: excludes self + bare assignments, returns configured siblings', async () => {
+        await createAssignmentFixture();
+        // The current assignment itself has a workspace — it must still be excluded.
+        await writeProjectAssignment('test-assignment', {
+          id: 'cur-id',
+          repository: '/repo/self',
+          branch: 'self-branch',
+        });
+        await writeProjectAssignment('sibling-configured', {
+          id: 'sib-1',
+          repository: '/repo/sib',
+          branch: 'sib-branch',
+        });
+        await writeProjectAssignment('sibling-bare', { id: 'sib-2' });
+        const router = createWriteRouter(testDir);
+        const res = await invokeRoute(
+          router,
+          'get',
+          '/api/projects/:slug/assignments/:aslug/source-assignments',
+          { slug: 'test-project', aslug: 'test-assignment' },
+          undefined,
+        );
+        expect(res.statusCode).toBe(200);
+        const sources = (res.payload as {
+          sourceAssignments: Array<{ id: string; slug: string; repository: string; branch: string }>;
+        }).sourceAssignments;
+        expect(sources.map((s) => s.slug)).toEqual(['sibling-configured']);
+        expect(sources[0]!.id).toBe('sib-1');
+        expect(sources[0]!.repository).toBe('/repo/sib');
+        expect(sources[0]!.branch).toBe('sib-branch');
+      });
+
+      it('standalone: excludes self by id, omits bare assignments', async () => {
+        const assignmentsDir = resolve(testDir, 'standalone');
+        await mkdir(assignmentsDir, { recursive: true });
+        await writeStandaloneAssignment(assignmentsDir, 'uuid-self', 'self', {
+          repository: '/repo/self',
+          branch: 'self-b',
+        });
+        await writeStandaloneAssignment(assignmentsDir, 'uuid-other', 'other', {
+          repository: '/repo/other',
+          branch: 'other-b',
+        });
+        await writeStandaloneAssignment(assignmentsDir, 'uuid-bare', 'bare', {});
+        const router = createWriteRouter(testDir, assignmentsDir);
+        const res = await invokeRoute(
+          router,
+          'get',
+          '/api/assignments/:id/source-assignments',
+          { id: 'uuid-self' },
+          undefined,
+        );
+        expect(res.statusCode).toBe(200);
+        const sources = (res.payload as { sourceAssignments: Array<{ id: string }> }).sourceAssignments;
+        expect(sources.map((s) => s.id)).toEqual(['uuid-other']);
+      });
+    });
+
+    describe('POST worktree validation + lock + branch-off', () => {
+      it('400 on invalid branch name, leaving no partial state', async () => {
+        await createAssignmentFixture();
+        const repo = await setupRepo();
+        const router = createWriteRouter(testDir);
+        const res = await invokeRoute(
+          router,
+          'post',
+          '/api/projects/:slug/assignments/:aslug/worktree',
+          { slug: 'test-project', aslug: 'test-assignment' },
+          { repository: repo, branch: 'bad name' },
+        );
+        expect(res.statusCode).toBe(400);
+        const fs = await import('node:fs/promises');
+        await expect(fs.stat(resolve(repo, '.worktrees', 'bad name'))).rejects.toBeTruthy();
+        const content = await fs.readFile(
+          resolve(testDir, 'test-project', 'assignments', 'test-assignment', 'assignment.md'),
+          'utf-8',
+        );
+        expect(content).toContain('worktreePath: null');
+      });
+
+      it('409 when the branch already exists in the repo', async () => {
+        await createAssignmentFixture();
+        const repo = await setupRepo();
+        spawnSync('git', ['-C', repo, 'branch', 'syntaur/test-project/test-assignment'], {
+          encoding: 'utf-8',
+        });
+        const router = createWriteRouter(testDir);
+        const res = await invokeRoute(
+          router,
+          'post',
+          '/api/projects/:slug/assignments/:aslug/worktree',
+          { slug: 'test-project', aslug: 'test-assignment' },
+          { repository: repo },
+        );
+        expect(res.statusCode).toBe(409);
+        expect((res.payload as { error: string }).error).toMatch(/already exists/i);
+      });
+
+      it('trims whitespace around the repository path', async () => {
+        await createAssignmentFixture();
+        const repo = await setupRepo();
+        const router = createWriteRouter(testDir);
+        const res = await invokeRoute(
+          router,
+          'post',
+          '/api/projects/:slug/assignments/:aslug/worktree',
+          { slug: 'test-project', aslug: 'test-assignment' },
+          { repository: `  ${repo}  ` },
+        );
+        expect(res.statusCode, JSON.stringify(res.payload)).toBe(200);
+        expect(
+          (res.payload as { assignment: { workspace: { repository: string } } }).assignment.workspace
+            .repository,
+        ).toBe(repo);
+      });
+
+      it('in-flight lock: 409 while a create is in progress, then succeeds (different branch)', async () => {
+        await createAssignmentFixture();
+        const repo = await setupRepo();
+        const router = createWriteRouter(testDir);
+        const assignmentPath = resolve(
+          testDir,
+          'test-project',
+          'assignments',
+          'test-assignment',
+          'assignment.md',
+        );
+        worktreeInFlight.add(assignmentPath);
+        try {
+          const blocked = await invokeRoute(
+            router,
+            'post',
+            '/api/projects/:slug/assignments/:aslug/worktree',
+            { slug: 'test-project', aslug: 'test-assignment' },
+            { repository: repo, branch: 'some-other-branch' },
+          );
+          expect(blocked.statusCode).toBe(409);
+          expect((blocked.payload as { error: string }).error).toMatch(/already being created/i);
+        } finally {
+          worktreeInFlight.delete(assignmentPath);
+        }
+        // Lock released: a create with a DIFFERENT branch now succeeds — proving
+        // the lock guarded a race `git worktree add` alone would not catch.
+        const ok = await invokeRoute(
+          router,
+          'post',
+          '/api/projects/:slug/assignments/:aslug/worktree',
+          { slug: 'test-project', aslug: 'test-assignment' },
+          { repository: repo, branch: 'some-other-branch' },
+        );
+        expect(ok.statusCode, JSON.stringify(ok.payload)).toBe(200);
+      });
+
+      it('branch-off: uses a source assignment\'s repo + branch as parent', async () => {
+        await createAssignmentFixture();
+        const repo = await setupRepo();
+        // The source's branch must exist so the parent-branch pre-flight passes.
+        spawnSync('git', ['-C', repo, 'branch', 'feature/src'], { encoding: 'utf-8' });
+        await writeProjectAssignment('source-asg', {
+          id: 'src-1',
+          repository: repo,
+          branch: 'feature/src',
+        });
+        const router = createWriteRouter(testDir);
+        // 1. The UI lists source assignments.
+        const list = await invokeRoute(
+          router,
+          'get',
+          '/api/projects/:slug/assignments/:aslug/source-assignments',
+          { slug: 'test-project', aslug: 'test-assignment' },
+          undefined,
+        );
+        const sources = (list.payload as {
+          sourceAssignments: Array<{ id: string; repository: string; branch: string }>;
+        }).sourceAssignments;
+        const src = sources.find((s) => s.id === 'src-1')!;
+        expect(src.branch).toBe('feature/src');
+        // 2. It submits the resolved repo + branch-as-parent via the same POST.
+        const res = await invokeRoute(
+          router,
+          'post',
+          '/api/projects/:slug/assignments/:aslug/worktree',
+          { slug: 'test-project', aslug: 'test-assignment' },
+          { repository: src.repository, branch: 'syntaur/branched', parentBranch: src.branch },
+        );
+        expect(res.statusCode, JSON.stringify(res.payload)).toBe(200);
+        const ws = (res.payload as {
+          assignment: { workspace: { repository: string; branch: string; parentBranch: string } };
+        }).assignment.workspace;
+        expect(ws.repository).toBe(repo);
+        expect(ws.branch).toBe('syntaur/branched');
+        expect(ws.parentBranch).toBe('feature/src');
+      });
+    });
+
     describe('POST /api/projects/:slug/assignments/:aslug/worktree', () => {
       it('happy path: creates worktree + updates frontmatter', async () => {
         await createAssignmentFixture();
@@ -1595,7 +1947,7 @@ tags: []
         expect(res.statusCode).toBe(400);
       });
 
-      it('returns 400 when branch already exists in the repo (surfaces stderr)', async () => {
+      it('returns 409 with a plain-language error when the branch already exists', async () => {
         await createAssignmentFixture();
         const repo = await setupRepo();
         // Pre-create the branch syntaur/test-project/test-assignment.
@@ -1610,9 +1962,11 @@ tags: []
           { slug: 'test-project', aslug: 'test-assignment' },
           { repository: repo },
         );
-        expect(res.statusCode).toBe(400);
+        // Caught by the pre-flight in plain language (AC #6) — not raw git stderr.
+        expect(res.statusCode).toBe(409);
         const payload = res.payload as { error: string; stderr?: string };
-        expect(payload.stderr).toBeTruthy();
+        expect(payload.error).toMatch(/already exists/i);
+        expect(payload.stderr).toBeUndefined();
         // Frontmatter must NOT be partially populated.
         const after = await readFile(
           resolve(testDir, 'test-project', 'assignments', 'test-assignment', 'assignment.md'),
@@ -1869,7 +2223,7 @@ tags: []
         expect(res.statusCode).toBe(400);
       });
 
-      it('returns 400 when branch already exists on id-route (surfaces stderr)', async () => {
+      it('returns 409 with a plain-language error when branch exists (id-route)', async () => {
         const { assignmentsDir } = await setupStandalone('uuid-1', 'my-task');
         const repo = await setupRepo();
         spawnSync('git', ['-C', repo, 'branch', 'syntaur/my-task'], { encoding: 'utf-8' });
@@ -1881,9 +2235,10 @@ tags: []
           { id: 'uuid-1' },
           { repository: repo },
         );
-        expect(res.statusCode).toBe(400);
+        expect(res.statusCode).toBe(409);
         const payload = res.payload as { error: string; stderr?: string };
-        expect(payload.stderr).toBeTruthy();
+        expect(payload.error).toMatch(/already exists/i);
+        expect(payload.stderr).toBeUndefined();
       });
 
       it('returns 409 when the worktree dir already exists on disk (id-route)', async () => {

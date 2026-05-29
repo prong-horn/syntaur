@@ -10,11 +10,16 @@ import { ensureDir, writeFileForce, fileExists } from '../utils/fs.js';
 import {
   createWorktreeAndRecord,
   GitWorktreeError,
+  listBranches,
+  detectDefaultBranch,
 } from '../utils/git-worktree.js';
 import { computeWorktreeDefaults } from '../utils/worktree-defaults.js';
+import { validateBranchName } from '../utils/branch-name.js';
 import {
   getProjectRepositoryCandidates,
   getStandaloneRepositoryCandidates,
+  getProjectSourceAssignments,
+  getStandaloneSourceAssignments,
 } from './repository-candidates.js';
 import {
   parseAssignmentFull,
@@ -202,6 +207,67 @@ interface WorktreeCreateContext {
 }
 
 /**
+ * Assignment-file paths with a worktree creation currently in flight. Guards
+ * the double-submit race that `git worktree add` does NOT catch: two concurrent
+ * POSTs for the same assignment with *different* branch names would otherwise
+ * both succeed — creating two worktrees and a last-write-wins `workspace.*`.
+ * Exported so tests can deterministically assert the 409 path.
+ */
+export const worktreeInFlight = new Set<string>();
+
+/**
+ * Validate a repository input end-to-end: present + non-empty, absolute,
+ * exists, is a directory, is a git working tree, and is the work-tree ROOT (not
+ * a subdirectory — compared via realpath so symlinks like macOS `/var` →
+ * `/private/var` don't cause spurious mismatches). Returns the trimmed repo on
+ * success, or a `{ status, error }` envelope using the same messages the
+ * worktree-create flow has always produced. Shared by `handleWorktreeCreate`
+ * and the `repository-branches` read endpoints so they enforce one contract.
+ */
+async function assertRepoRoot(
+  repoInput: unknown,
+): Promise<{ ok: true; repo: string } | { ok: false; status: number; error: string }> {
+  if (typeof repoInput !== 'string' || !repoInput.trim()) {
+    return { ok: false, status: 400, error: '`repository` is required.' };
+  }
+  const repo = repoInput.trim();
+  if (!isAbsolute(repo)) {
+    return { ok: false, status: 400, error: '`repository` must be an absolute path.' };
+  }
+  try {
+    const st = await fsStat(repo);
+    if (!st.isDirectory()) {
+      return { ok: false, status: 400, error: `Repository path is not a directory: ${repo}` };
+    }
+  } catch {
+    return { ok: false, status: 400, error: `Repository path does not exist: ${repo}` };
+  }
+  const topLevel = spawnSync('git', ['-C', repo, 'rev-parse', '--show-toplevel'], {
+    encoding: 'utf-8',
+  });
+  const topLevelOut = topLevel.stdout.trim();
+  if (topLevel.status !== 0 || !topLevelOut) {
+    return {
+      ok: false,
+      status: 400,
+      error: `Repository path is not a git working tree: ${repo}`,
+    };
+  }
+  const [requestReal, topLevelReal] = await Promise.all([
+    fsRealpath(repo),
+    fsRealpath(topLevelOut),
+  ]);
+  if (requestReal !== topLevelReal) {
+    return {
+      ok: false,
+      status: 400,
+      error: `Repository path must be the git working-tree root. Got ${repo}; the enclosing repo root is ${topLevelOut}.`,
+    };
+  }
+  return { ok: true, repo };
+}
+
+/**
  * Shared body for both worktree-create routes. Validates inputs, runs the
  * disk-collision and parent-branch pre-flights, then calls the same
  * `createWorktreeAndRecord` helper the CLI / browse TUI use. Returns
@@ -217,124 +283,130 @@ async function handleWorktreeCreate(
     return;
   }
 
-  const parsed = parseAssignmentFull(await readFile(ctx.assignmentPath, 'utf-8'));
-  if (parsed.workspace.worktreePath) {
+  // Double-submit guard: reject a second concurrent create for this assignment.
+  if (worktreeInFlight.has(ctx.assignmentPath)) {
     res
       .status(409)
-      .json({ error: 'Worktree already configured for this assignment' });
+      .json({ error: 'A worktree is already being created for this assignment.' });
     return;
   }
+  worktreeInFlight.add(ctx.assignmentPath);
 
-  const { repository, branch: bodyBranch, parentBranch: bodyParent } = (req.body ?? {}) as {
-    repository?: unknown;
-    branch?: unknown;
-    parentBranch?: unknown;
-  };
-
-  if (typeof repository !== 'string' || !repository.trim()) {
-    res.status(400).json({ error: '`repository` is required.' });
-    return;
-  }
-  if (!isAbsolute(repository)) {
-    res
-      .status(400)
-      .json({ error: '`repository` must be an absolute path.' });
-    return;
-  }
   try {
-    const st = await fsStat(repository);
-    if (!st.isDirectory()) {
+    const parsed = parseAssignmentFull(await readFile(ctx.assignmentPath, 'utf-8'));
+    if (parsed.workspace.worktreePath) {
       res
-        .status(400)
-        .json({ error: `Repository path is not a directory: ${repository}` });
+        .status(409)
+        .json({ error: 'Worktree already configured for this assignment' });
       return;
     }
-  } catch {
-    res
-      .status(400)
-      .json({ error: `Repository path does not exist: ${repository}` });
-    return;
-  }
-  const topLevel = spawnSync('git', ['-C', repository, 'rev-parse', '--show-toplevel'], {
-    encoding: 'utf-8',
-  });
-  const topLevelOut = topLevel.stdout.trim();
-  if (topLevel.status !== 0 || !topLevelOut) {
-    res
-      .status(400)
-      .json({ error: `Repository path is not a git working tree: ${repository}` });
-    return;
-  }
-  // The plan requires the request `repository` to be the repo root, not a
-  // subdirectory. `git -C <subdir> rev-parse --show-toplevel` succeeds for
-  // any path inside a working tree, so we have to compare paths. Use
-  // `realpath` so symlinks (e.g. macOS `/var` → `/private/var`) don't
-  // produce spurious mismatches.
-  const [requestReal, topLevelReal] = await Promise.all([
-    fsRealpath(repository),
-    fsRealpath(topLevelOut),
-  ]);
-  if (requestReal !== topLevelReal) {
-    res.status(400).json({
-      error:
-        `Repository path must be the git working-tree root. Got ${repository}; the enclosing repo root is ${topLevelOut}.`,
-    });
-    return;
-  }
 
-  const defaults = computeWorktreeDefaults({
-    projectSlug: ctx.projectSlug,
-    assignmentSlug: ctx.assignmentSlug,
-    existing: parsed.workspace,
-    cwd: repository,
-  });
-  const branch =
-    typeof bodyBranch === 'string' && bodyBranch.trim() ? bodyBranch.trim() : defaults.branch!;
-  const parentBranch =
-    typeof bodyParent === 'string' && bodyParent.trim() ? bodyParent.trim() : defaults.parentBranch!;
-  const worktreePath = resolve(repository, '.worktrees', branch);
+    const { repository, branch: bodyBranch, parentBranch: bodyParent } = (req.body ?? {}) as {
+      repository?: unknown;
+      branch?: unknown;
+      parentBranch?: unknown;
+    };
 
-  try {
-    await fsStat(worktreePath);
-    res.status(409).json({
-      error: `A file or directory already exists at ${worktreePath}. Remove it or choose a different branch.`,
-    });
-    return;
-  } catch {
-    // ENOENT — good.
-  }
+    // Branch-name format check on user-supplied input — before ANY git command.
+    if (typeof bodyBranch === 'string' && bodyBranch.trim()) {
+      const branchError = validateBranchName(bodyBranch.trim());
+      if (branchError) {
+        res.status(400).json({ error: branchError });
+        return;
+      }
+    }
 
-  const parentCheck = spawnSync(
-    'git',
-    ['-C', repository, 'rev-parse', '--verify', '--quiet', parentBranch],
-    { encoding: 'utf-8' },
-  );
-  if (parentCheck.status !== 0) {
-    res.status(400).json({
-      error: `Parent branch "${parentBranch}" does not exist in ${repository}.`,
-    });
-    return;
-  }
-
-  try {
-    await createWorktreeAndRecord({
-      assignmentPath: ctx.assignmentPath,
-      repository,
-      branch,
-      worktreePath,
-      parentBranch,
-    });
-  } catch (error) {
-    if (error instanceof GitWorktreeError) {
-      res.status(400).json({ error: error.message, stderr: error.stderr });
+    // Full repository-input validation (absolute, exists, directory, git root).
+    const repoResult = await assertRepoRoot(repository);
+    if (!repoResult.ok) {
+      res.status(repoResult.status).json({ error: repoResult.error });
       return;
     }
-    res.status(500).json({ error: (error as Error).message });
-    return;
-  }
+    const repo = repoResult.repo;
 
-  const assignment = await ctx.reload();
-  res.json({ assignment });
+    const defaults = computeWorktreeDefaults({
+      projectSlug: ctx.projectSlug,
+      assignmentSlug: ctx.assignmentSlug,
+      existing: parsed.workspace,
+      cwd: repo,
+    });
+    const branch =
+      typeof bodyBranch === 'string' && bodyBranch.trim() ? bodyBranch.trim() : defaults.branch!;
+    const parentBranch =
+      typeof bodyParent === 'string' && bodyParent.trim() ? bodyParent.trim() : defaults.parentBranch!;
+    const worktreePath = resolve(repo, '.worktrees', branch);
+
+    // Authoritative branch-name validation (catches anything the JS validator
+    // misses, and covers a server-derived default branch) — before any mutation.
+    const refCheck = spawnSync('git', ['-C', repo, 'check-ref-format', '--branch', branch], {
+      encoding: 'utf-8',
+    });
+    if (refCheck.status !== 0) {
+      res.status(400).json({
+        error: `Invalid branch name "${branch}". Use letters, numbers, "-", "_", "/" and "." (no spaces or special characters).`,
+      });
+      return;
+    }
+
+    // Branch-exists pre-flight: a plain-language error instead of raw git stderr.
+    const branchExists = spawnSync(
+      'git',
+      ['-C', repo, 'rev-parse', '--verify', '--quiet', `refs/heads/${branch}`],
+      { encoding: 'utf-8' },
+    );
+    if (branchExists.status === 0) {
+      res.status(409).json({
+        error: `Branch "${branch}" already exists in this repository. Choose a different name.`,
+      });
+      return;
+    }
+
+    // Worktree-path disk collision.
+    try {
+      await fsStat(worktreePath);
+      res.status(409).json({
+        error: `A file or directory already exists at ${worktreePath}. Remove it or choose a different branch.`,
+      });
+      return;
+    } catch {
+      // ENOENT — good.
+    }
+
+    // Parent-branch existence.
+    const parentCheck = spawnSync(
+      'git',
+      ['-C', repo, 'rev-parse', '--verify', '--quiet', parentBranch],
+      { encoding: 'utf-8' },
+    );
+    if (parentCheck.status !== 0) {
+      res.status(400).json({
+        error: `Parent branch "${parentBranch}" does not exist in ${repo}.`,
+      });
+      return;
+    }
+
+    try {
+      await createWorktreeAndRecord({
+        assignmentPath: ctx.assignmentPath,
+        repository: repo,
+        branch,
+        worktreePath,
+        parentBranch,
+      });
+    } catch (error) {
+      if (error instanceof GitWorktreeError) {
+        res.status(400).json({ error: error.message, stderr: error.stderr });
+        return;
+      }
+      res.status(500).json({ error: (error as Error).message });
+      return;
+    }
+
+    const assignment = await ctx.reload();
+    res.json({ assignment });
+  } finally {
+    worktreeInFlight.delete(ctx.assignmentPath);
+  }
 }
 
 export function createWriteRouter(
@@ -1443,6 +1515,111 @@ export function createWriteRouter(
         console.error('Error listing repository candidates:', error);
         res.status(500).json({
           error: `Failed to list repository candidates: ${(error as Error).message}`,
+        });
+      }
+    },
+  );
+
+  // List a repository's local branches + best-effort default branch. `repo` is
+  // an internal UI value (the selected/derived repo path), not user-typed text.
+  async function handleRepositoryBranches(req: Request, res: Response): Promise<void> {
+    const repoResult = await assertRepoRoot(
+      typeof req.query.repo === 'string' ? req.query.repo : undefined,
+    );
+    if (!repoResult.ok) {
+      res.status(repoResult.status).json({ error: repoResult.error });
+      return;
+    }
+    const [branches, defaultBranch] = await Promise.all([
+      listBranches(repoResult.repo),
+      detectDefaultBranch(repoResult.repo),
+    ]);
+    res.json({ branches, defaultBranch });
+  }
+
+  router.get(
+    '/api/projects/:slug/assignments/:aslug/repository-branches',
+    async (req: Request, res: Response) => {
+      try {
+        await handleRepositoryBranches(req, res);
+      } catch (error) {
+        console.error('Error listing repository branches:', error);
+        res.status(500).json({
+          error: `Failed to list repository branches: ${(error as Error).message}`,
+        });
+      }
+    },
+  );
+
+  router.get(
+    '/api/assignments/:id/repository-branches',
+    async (req: Request, res: Response) => {
+      try {
+        if (!assignmentsDir) {
+          res
+            .status(501)
+            .json({ error: 'Standalone assignments not configured on this server' });
+          return;
+        }
+        await handleRepositoryBranches(req, res);
+      } catch (error) {
+        console.error('Error listing repository branches:', error);
+        res.status(500).json({
+          error: `Failed to list repository branches: ${(error as Error).message}`,
+        });
+      }
+    },
+  );
+
+  router.get(
+    '/api/projects/:slug/assignments/:aslug/source-assignments',
+    async (req: Request, res: Response) => {
+      try {
+        const projectSlug = getParam(req.params.slug);
+        const assignmentSlug = getParam(req.params.aslug);
+        const sourceAssignments = await getProjectSourceAssignments(
+          projectsDir,
+          projectSlug,
+          assignmentSlug,
+        );
+        res.json({ sourceAssignments });
+      } catch (error) {
+        console.error('Error listing source assignments:', error);
+        res.status(500).json({
+          error: `Failed to list source assignments: ${(error as Error).message}`,
+        });
+      }
+    },
+  );
+
+  router.get(
+    '/api/assignments/:id/source-assignments',
+    async (req: Request, res: Response) => {
+      try {
+        if (!assignmentsDir) {
+          res
+            .status(501)
+            .json({ error: 'Standalone assignments not configured on this server' });
+          return;
+        }
+        const id = getParam(req.params.id);
+        const resolved = await resolveAssignmentById(projectsDir, assignmentsDir, id);
+        if (!resolved) {
+          res.status(404).json({ error: `Assignment "${id}" not found` });
+          return;
+        }
+        const sourceAssignments = resolved.standalone
+          ? await getStandaloneSourceAssignments(assignmentsDir, id)
+          : await getProjectSourceAssignments(
+              projectsDir,
+              resolved.projectSlug!,
+              resolved.assignmentSlug,
+            );
+        res.json({ sourceAssignments });
+      } catch (error) {
+        console.error('Error listing source assignments:', error);
+        res.status(500).json({
+          error: `Failed to list source assignments: ${(error as Error).message}`,
         });
       }
     },

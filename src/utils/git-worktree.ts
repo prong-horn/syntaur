@@ -73,6 +73,58 @@ export async function deleteBranch(
   return { ok: result.code === 0, stderr: result.stderr };
 }
 
+/**
+ * List the local branch names of a repository (read-only).
+ * Returns `[]` if git fails (e.g. a bare/empty repo with no branches yet).
+ */
+export async function listBranches(repository: string): Promise<string[]> {
+  const result = await run('git', [
+    '-C',
+    repository,
+    'for-each-ref',
+    '--format=%(refname:short)',
+    'refs/heads',
+  ]);
+  if (result.code !== 0) return [];
+  return result.stdout
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
+}
+
+/**
+ * Best-effort detection of a repository's default branch (read-only):
+ *   1. `origin/HEAD` symbolic ref (strip the `origin/` prefix), else
+ *   2. `main` if it exists locally, else
+ *   3. the current branch (ignoring detached HEAD), else
+ *   4. the first local branch, else `null`.
+ */
+export async function detectDefaultBranch(repository: string): Promise<string | null> {
+  const head = await run('git', [
+    '-C',
+    repository,
+    'symbolic-ref',
+    '--quiet',
+    '--short',
+    'refs/remotes/origin/HEAD',
+  ]);
+  if (head.code === 0) {
+    const ref = head.stdout.trim().replace(/^origin\//, '');
+    if (ref) return ref;
+  }
+
+  const branches = await listBranches(repository);
+  if (branches.includes('main')) return 'main';
+
+  const current = await run('git', ['-C', repository, 'rev-parse', '--abbrev-ref', 'HEAD']);
+  if (current.code === 0) {
+    const name = current.stdout.trim();
+    if (name && name !== 'HEAD') return name;
+  }
+
+  return branches[0] ?? null;
+}
+
 export interface CreateWorktreeAndRecordOptions extends CreateWorktreeOptions {
   assignmentPath: string;
 }
