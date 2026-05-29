@@ -177,15 +177,28 @@ export function buildCreateViewPayload(
   workspace: string | null,
 ): { workspace: string | null; config: SavedViewConfig } {
   const assignee = state.filters.assignee?.trim();
+  // A concrete project filter routes Apply to ProjectDetail (see
+  // inferLandingRoute), which has NO activity filter and coerces 'list' to
+  // 'kanban' (mirrors coerceProjectDetailView in view-prefs-schema). Drop
+  // activity and coerce list here so the SAVED config faithfully matches what
+  // Apply will actually render — otherwise the view would not round-trip. The
+  // 'all'/'__standalone__' cases route to the global assignments list, which
+  // supports both, so they keep activity + list.
+  const project = state.filters.project;
+  const concreteProject = !!project && project !== 'all' && project !== '__standalone__';
   const filters: ViewFilters = {
     ...state.filters,
     assignee: assignee ? assignee : undefined,
+    activity: concreteProject ? undefined : state.filters.activity,
   };
+  const viewMode: ViewMode =
+    concreteProject && state.viewMode === 'list' ? 'kanban' : state.viewMode;
   const { config } = captureCurrentView({
     name: '',
     context: { workspace, projectSlug: null },
     state: {
       ...state,
+      viewMode,
       filters,
       listSectionVisibility: { collapsed: [] },
       kanbanColumnVisibility: { hidden: [] },

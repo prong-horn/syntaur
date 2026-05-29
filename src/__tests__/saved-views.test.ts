@@ -299,6 +299,19 @@ describe('saved-views HTTP routes', () => {
     expect(file.views.find((v) => v.id === created.id)?.workspace).toBe('syntaur');
   });
 
+  it('POST /api/saved-views stores the _ungrouped workspace literally', async () => {
+    const { workspace, config } = buildCreateViewPayload(DEFAULT_CREATE_VIEW_STATE, '_ungrouped');
+    expect(workspace).toBe('_ungrouped');
+    const res = await fetch(`${base()}/api/saved-views`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: 'Ungrouped View', workspace, config }),
+    });
+    expect(res.status).toBe(201);
+    const created = (await res.json()).views.at(-1);
+    expect(created.workspace).toBe('_ungrouped');
+  });
+
   it('PATCH /api/saved-views/:id returns 404 for unknown id', async () => {
     const res = await fetch(`${base()}/api/saved-views/no-such-id`, {
       method: 'PATCH',

@@ -18,6 +18,7 @@ export function ViewToggle({ value, options, onChange }: ViewToggleProps) {
         <button
           key={option.value}
           type="button"
+          aria-pressed={value === option.value}
           onClick={() => onChange(option.value)}
           className={cn(
             'rounded-sm px-2.5 py-1.5 text-sm font-medium transition',

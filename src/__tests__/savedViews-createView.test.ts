@@ -68,6 +68,62 @@ describe('buildCreateViewPayload', () => {
   });
 });
 
+describe('buildCreateViewPayload concrete-project coercion (round-trip safety)', () => {
+  // A concrete project routes Apply to ProjectDetail, which has no activity
+  // filter and coerces 'list' -> 'kanban'. The saved config must match.
+  it('coerces list -> kanban when a concrete project is set', () => {
+    const state: CreateViewBuilderState = {
+      ...DEFAULT_CREATE_VIEW_STATE,
+      viewMode: 'list',
+      filters: { project: 'foo' },
+    };
+    const payload = buildCreateViewPayload(state, null);
+    expect(payload.config.viewMode).toBe('kanban');
+  });
+
+  it('keeps table view mode for a concrete project (ProjectDetail supports table)', () => {
+    const state: CreateViewBuilderState = {
+      ...DEFAULT_CREATE_VIEW_STATE,
+      viewMode: 'table',
+      filters: { project: 'foo' },
+    };
+    expect(buildCreateViewPayload(state, null).config.viewMode).toBe('table');
+  });
+
+  it('drops the activity filter when a concrete project is set', () => {
+    const state: CreateViewBuilderState = {
+      ...DEFAULT_CREATE_VIEW_STATE,
+      filters: { project: 'foo', activity: 'stale' },
+    };
+    const payload = buildCreateViewPayload(state, null);
+    expect(payload.config.filters.activity).toBeUndefined();
+    expect(payload.config.filters.project).toBe('foo');
+  });
+
+  it('keeps list + activity for the __standalone__ sentinel (routes to global list)', () => {
+    const state: CreateViewBuilderState = {
+      ...DEFAULT_CREATE_VIEW_STATE,
+      viewMode: 'list',
+      filters: { project: '__standalone__', activity: 'stale' },
+    };
+    const payload = buildCreateViewPayload(state, null);
+    expect(payload.config.viewMode).toBe('list');
+    expect(payload.config.filters.activity).toBe('stale');
+    expect(payload.config.filters.project).toBe('__standalone__');
+  });
+
+  it('keeps list + activity when no project is set', () => {
+    const state: CreateViewBuilderState = {
+      ...DEFAULT_CREATE_VIEW_STATE,
+      viewMode: 'list',
+      filters: { activity: 'fresh' },
+    };
+    const payload = buildCreateViewPayload(state, null);
+    expect(payload.config.viewMode).toBe('list');
+    expect(payload.config.filters.activity).toBe('fresh');
+  });
+});
+
 describe('applyConfig round-trip (config is applyable)', () => {
   it('drives setters from a built config', () => {
     const state: CreateViewBuilderState = {

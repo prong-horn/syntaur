@@ -94,6 +94,23 @@ export function CreateViewDialog({
         : p.workspace === workspace,
   );
 
+  // A concrete project routes Apply to ProjectDetail, which has no activity
+  // filter and renders 'list' as 'kanban'. Hide those unsupported controls so a
+  // user can't build a view that won't round-trip (buildCreateViewPayload also
+  // coerces them defensively). 'No project'/'All' route to the global list.
+  const concreteProject = project !== 'all' && project !== '__standalone__';
+  useEffect(() => {
+    if (concreteProject) {
+      setViewMode((m) => (m === 'list' ? 'kanban' : m));
+      setActivity('all');
+    }
+  }, [concreteProject]);
+
+  const viewModeOptions = (concreteProject
+    ? VIEW_MODES.filter((m) => m !== 'list')
+    : VIEW_MODES
+  ).map((m) => ({ value: m, label: VIEW_MODE_LABEL[m] }));
+
   const trimmedName = name.trim();
   const valid = trimmedName.length > 0 && trimmedName.length <= MAX_NAME_LENGTH;
 
@@ -147,7 +164,7 @@ export function CreateViewDialog({
             <ViewToggle
               value={viewMode}
               onChange={(v) => setViewMode(v as ViewMode)}
-              options={VIEW_MODES.map((m) => ({ value: m, label: VIEW_MODE_LABEL[m] }))}
+              options={viewModeOptions}
             />
           </div>
 
@@ -200,11 +217,18 @@ export function CreateViewDialog({
                 value={activity}
                 onChange={(e) => setActivity(e.target.value as 'all' | 'fresh' | 'stale')}
                 className="editor-input w-full"
+                disabled={concreteProject}
+                title={concreteProject ? 'Not available when a single project is selected' : undefined}
               >
                 <option value="all">All activity</option>
                 <option value="stale">Stale only</option>
                 <option value="fresh">Fresh only</option>
               </select>
+              {concreteProject ? (
+                <span className="block text-[11px] text-muted-foreground">
+                  Not available for a single project.
+                </span>
+              ) : null}
             </label>
 
             <label className="space-y-1">
