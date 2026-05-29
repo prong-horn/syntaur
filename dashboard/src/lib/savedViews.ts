@@ -140,6 +140,61 @@ export function inferLandingRoute(view: SavedView): string {
   return `${prefix}/assignments?loadView=${encodeURIComponent(view.id)}`;
 }
 
+// Canonical priority options for the create-view builder. There is no
+// priority-config endpoint (unlike status/type), and AssignmentsPage derives its
+// priority dropdown from live board items — not available on /views. This
+// lowercase list is the canonical set; the saved value is whatever the user
+// picks (or 'all', which minimizes away).
+export const PRIORITY_OPTIONS = ['critical', 'high', 'medium', 'low'] as const;
+
+// Builder state for the create-view dialog on /views. The dialog passes RAW
+// state here — empty/whitespace free-text fields (e.g. assignee) are normalized
+// by buildCreateViewPayload, NOT by the caller.
+export interface CreateViewBuilderState {
+  viewMode: ViewMode;
+  filters: ViewFilters; // status / priority / assignee / project / activity
+  sortField: SortField;
+  sortDirection: SortDirection;
+}
+
+// Sensible defaults: kanban, no filters, sort by updated desc — so a user can
+// create a near-default view in two clicks. All-default filters minimize to {}.
+export const DEFAULT_CREATE_VIEW_STATE: CreateViewBuilderState = {
+  viewMode: 'kanban',
+  filters: {},
+  sortField: 'updated',
+  sortDirection: 'desc',
+};
+
+// Build the persistence payload (sans name) from builder state. SINGLE SOURCE OF
+// TRUTH for normalization: an empty/whitespace assignee is cleaned to undefined
+// here, because minimizeFilters only strips values equal to the 'all' default —
+// a literal '' would otherwise persist and then filter to nothing on apply.
+// Returns { workspace, config } (NOT name) so the create call cannot clobber the
+// real name with an empty string.
+export function buildCreateViewPayload(
+  state: CreateViewBuilderState,
+  workspace: string | null,
+): { workspace: string | null; config: SavedViewConfig } {
+  const assignee = state.filters.assignee?.trim();
+  const filters: ViewFilters = {
+    ...state.filters,
+    assignee: assignee ? assignee : undefined,
+  };
+  const { config } = captureCurrentView({
+    name: '',
+    context: { workspace, projectSlug: null },
+    state: {
+      ...state,
+      filters,
+      listSectionVisibility: { collapsed: [] },
+      kanbanColumnVisibility: { hidden: [] },
+      tableColumnVisibility: { hidden: [] },
+    },
+  });
+  return { workspace, config };
+}
+
 // Human-readable summary of the non-default filters on a view, for /views rows.
 export function summarizeFilters(filters: ViewFilters): string {
   const parts: string[] = [];

@@ -20,6 +20,13 @@ import {
   type SavedViewConfig,
   type SavedViewsFile,
 } from '../utils/saved-views-schema.js';
+// Dashboard create-view helper. savedViews.ts imports @shared only as
+// `import type` (erased at runtime), so it loads under node with no alias —
+// letting this integration test POST the exact payload the /views dialog builds.
+import {
+  buildCreateViewPayload,
+  DEFAULT_CREATE_VIEW_STATE,
+} from '../../dashboard/src/lib/savedViews';
 
 const SAMPLE_CONFIG: SavedViewConfig = {
   viewMode: 'list',
@@ -253,6 +260,43 @@ describe('saved-views HTTP routes', () => {
     const body = await res.json();
     expect(body.views).toHaveLength(DEFAULT_SAVED_VIEWS_FILE.views.length + 1);
     expect(body.views.at(-1).name).toBe('API View');
+  });
+
+  it('POST /api/saved-views persists a builder-shaped global view (create-from-/views path)', async () => {
+    const { workspace, config } = buildCreateViewPayload(
+      { ...DEFAULT_CREATE_VIEW_STATE, filters: { priority: 'high' } },
+      null,
+    );
+    const res = await fetch(`${base()}/api/saved-views`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: 'Builder Global', workspace, config }),
+    });
+    expect(res.status).toBe(201);
+    const body = await res.json();
+    const created = body.views.at(-1);
+    expect(created.name).toBe('Builder Global');
+    expect(created.workspace).toBe(null);
+    expect(created.config.filters.priority).toBe('high');
+
+    // Persisted to disk and re-readable.
+    const file = await readSavedViewsFile();
+    expect(file.views.find((v) => v.id === created.id)?.workspace).toBe(null);
+  });
+
+  it('POST /api/saved-views persists a builder-shaped workspace-scoped view', async () => {
+    const { workspace, config } = buildCreateViewPayload(DEFAULT_CREATE_VIEW_STATE, 'syntaur');
+    const res = await fetch(`${base()}/api/saved-views`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: 'Builder Scoped', workspace, config }),
+    });
+    expect(res.status).toBe(201);
+    const created = (await res.json()).views.at(-1);
+    expect(created.workspace).toBe('syntaur');
+
+    const file = await readSavedViewsFile();
+    expect(file.views.find((v) => v.id === created.id)?.workspace).toBe('syntaur');
   });
 
   it('PATCH /api/saved-views/:id returns 404 for unknown id', async () => {

@@ -1,16 +1,23 @@
 import { useState, useRef, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { Pencil } from 'lucide-react';
+import { useNavigate, useParams } from 'react-router-dom';
+import { Pencil, Plus } from 'lucide-react';
 import type { SavedView, ViewMode } from '@shared/saved-views-schema';
 import {
   useSavedViews,
+  createSavedView,
   updateSavedView,
   deleteSavedView,
 } from '../hooks/useSavedViews';
-import { inferLandingRoute, summarizeFilters } from '../lib/savedViews';
+import {
+  inferLandingRoute,
+  summarizeFilters,
+  buildCreateViewPayload,
+  type CreateViewBuilderState,
+} from '../lib/savedViews';
 import { LoadingState } from '../components/LoadingState';
 import { EmptyState } from '../components/EmptyState';
 import { ConfirmDialog } from '../components/ConfirmDialog';
+import { CreateViewDialog } from '../components/CreateViewDialog';
 import { PageHeader } from '../components/PageHeader';
 import { SectionCard } from '../components/SectionCard';
 import { useToast, Toaster } from '../components/Toast';
@@ -23,10 +30,12 @@ const VIEW_MODE_LABEL: Record<ViewMode, string> = {
 };
 
 export function SavedViewsPage() {
+  const { workspace } = useParams<{ workspace?: string }>();
   const { views, loading } = useSavedViews();
   const { toast, showToast, dismissToast } = useToast();
   const [deleteTarget, setDeleteTarget] = useState<SavedView | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [createOpen, setCreateOpen] = useState(false);
 
   async function handleConfirmDelete() {
     if (!deleteTarget) return;
@@ -41,11 +50,38 @@ export function SavedViewsPage() {
     }
   }
 
+  // Build + persist a view from the dialog's builder state. The stored workspace
+  // is a raw passthrough of the route param (matching the capture flow), so the
+  // name is passed explicitly and never clobbered by the payload spread.
+  async function handleCreate(name: string, state: CreateViewBuilderState) {
+    const { workspace: ws, config } = buildCreateViewPayload(state, workspace ?? null);
+    try {
+      await createSavedView({ name, workspace: ws, config });
+      setCreateOpen(false);
+      showToast(`Created view "${name}"`);
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Failed to create saved view');
+      throw err; // keep the dialog open and let it surface the inline error
+    }
+  }
+
+  const createButton = (
+    <button
+      type="button"
+      onClick={() => setCreateOpen(true)}
+      className="shell-action inline-flex items-center gap-1.5 bg-foreground text-background hover:opacity-90"
+    >
+      <Plus className="h-4 w-4" />
+      Create view
+    </button>
+  );
+
   return (
     <div className="space-y-4">
       <PageHeader
         title="Saved Views"
-        description="Browse, rename, and apply saved views captured from any assignments board."
+        description="Create a view here, or browse, rename, and apply views captured from any board."
+        actions={createButton}
       />
 
       {loading ? (
@@ -53,7 +89,8 @@ export function SavedViewsPage() {
       ) : views.length === 0 ? (
         <EmptyState
           title="No saved views yet"
-          description="Visit any assignments board, set filters/sort/column visibility, and click 'Save view' to start."
+          description="Create your first view here, or capture one from any assignments board."
+          actions={createButton}
         />
       ) : (
         <SectionCard>
@@ -69,6 +106,13 @@ export function SavedViewsPage() {
           </ul>
         </SectionCard>
       )}
+
+      <CreateViewDialog
+        open={createOpen}
+        onOpenChange={setCreateOpen}
+        workspace={workspace ?? null}
+        onSubmit={handleCreate}
+      />
 
       <ConfirmDialog
         open={deleteTarget !== null}
