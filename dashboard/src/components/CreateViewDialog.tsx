@@ -111,19 +111,16 @@ export function CreateViewDialog({
   // typo/no-match bugs (Decision 3); MultiSelect injects any orphan selection.
   const assigneeOptions = useMemo<MultiSelectOption[]>(() => {
     const names = new Set<string>();
-    let hasUnassigned = false;
     for (const a of board?.assignments ?? []) {
       const inScope = !workspace
         ? true
         : workspace === '_ungrouped'
           ? a.projectWorkspace === null
           : a.projectWorkspace === workspace;
-      if (!inScope) continue;
-      if (a.assignee) names.add(a.assignee);
-      else hasUnassigned = true;
+      if (inScope && a.assignee) names.add(a.assignee);
     }
-    const opts: MultiSelectOption[] = [];
-    if (hasUnassigned) opts.push({ value: '__unassigned__', label: 'Unassigned' });
+    // Always offer Unassigned so a user can proactively build an "unassigned" view.
+    const opts: MultiSelectOption[] = [{ value: '__unassigned__', label: 'Unassigned' }];
     for (const n of Array.from(names).sort()) opts.push({ value: n, label: n });
     return opts;
   }, [board, workspace]);

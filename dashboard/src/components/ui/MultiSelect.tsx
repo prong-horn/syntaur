@@ -7,6 +7,13 @@ export interface MultiSelectOption {
   label: string;
 }
 
+// Friendly labels for known sentinels when they appear as orphan selections
+// (a saved value not present in the live option list).
+const SENTINEL_LABELS: Record<string, string> = {
+  __unassigned__: 'Unassigned',
+  __standalone__: 'No project',
+};
+
 interface MultiSelectProps {
   options: MultiSelectOption[];
   /** Selected values ([] === none selected === "all"). */
@@ -44,9 +51,12 @@ export function MultiSelect({
   const itemRefs = useRef<Array<HTMLButtonElement | null>>([]);
 
   // Append any selected orphan (not in options) so it stays visible/removable.
+  // Known sentinels still get a friendly label even when orphaned.
   const displayOptions = useMemo<MultiSelectOption[]>(() => {
     const known = new Set(options.map((o) => o.value));
-    const orphans = value.filter((v) => !known.has(v)).map((v) => ({ value: v, label: v }));
+    const orphans = value
+      .filter((v) => !known.has(v))
+      .map((v) => ({ value: v, label: SENTINEL_LABELS[v] ?? v }));
     return [...options, ...orphans];
   }, [options, value]);
 
@@ -59,6 +69,14 @@ export function MultiSelect({
     }
     document.addEventListener('mousedown', handleClick);
     return () => document.removeEventListener('mousedown', handleClick);
+  }, [open]);
+
+  // Move focus INTO the menu when it opens so it is keyboard-operable (arrows
+  // navigate, Space/Enter toggles, Escape closes). Programmatic focus works on
+  // the tabIndex={-1} rows (roving focus). Refs are assigned during commit,
+  // before this effect runs.
+  useEffect(() => {
+    if (open) itemRefs.current[0]?.focus();
   }, [open]);
 
   const summary = useMemo(() => {
@@ -112,6 +130,12 @@ export function MultiSelect({
         aria-expanded={open}
         aria-label={ariaLabel}
         onClick={() => setOpen((o) => !o)}
+        onKeyDown={(e) => {
+          if (!open && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) {
+            e.preventDefault();
+            setOpen(true);
+          }
+        }}
         className={cn(
           'editor-input inline-flex items-center justify-between gap-1.5 text-left',
           value.length > 0 && 'border-foreground/40 text-foreground',

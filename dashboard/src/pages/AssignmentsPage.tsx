@@ -654,28 +654,42 @@ export function AssignmentsPage() {
     showToast,
   ]);
 
+  // Filter-bar option lists must be scoped to the current workspace (the board
+  // applies workspace filtering at match time), or /w/<ws> dropdowns would offer
+  // dead cross-workspace assignees/projects that get persisted into prefs/views.
+  const workspaceItems = useMemo(
+    () =>
+      boardItems.filter((a) =>
+        !workspace
+          ? true
+          : workspace === '_ungrouped'
+            ? a.projectWorkspace === null
+            : a.projectWorkspace === workspace,
+      ),
+    [boardItems, workspace],
+  );
   const uniqueStatuses = useMemo(
-    () => Array.from(new Set(boardItems.map((a) => a.status))).sort(),
-    [boardItems],
+    () => Array.from(new Set(workspaceItems.map((a) => a.status))).sort(),
+    [workspaceItems],
   );
   const uniquePriorities = useMemo(
-    () => Array.from(new Set(boardItems.map((a) => a.priority))).sort(),
-    [boardItems],
+    () => Array.from(new Set(workspaceItems.map((a) => a.priority))).sort(),
+    [workspaceItems],
   );
   const uniqueAssignees = useMemo(
-    () => Array.from(new Set(boardItems.map((a) => a.assignee ?? '__unassigned__'))).sort(),
-    [boardItems],
+    () => Array.from(new Set(workspaceItems.map((a) => a.assignee ?? '__unassigned__'))).sort(),
+    [workspaceItems],
   );
   const uniqueProjects = useMemo(
     () =>
       Array.from(
         new Map(
-          boardItems
+          workspaceItems
             .filter((a): a is typeof a & { projectSlug: string; projectTitle: string } => a.projectSlug !== null)
             .map((a) => [a.projectSlug, a.projectTitle]),
         ),
       ).sort(([, a], [, b]) => a.localeCompare(b)),
-    [boardItems],
+    [workspaceItems],
   );
 
   const filteredItems = useMemo(
@@ -1110,7 +1124,12 @@ export function AssignmentsPage() {
           ariaLabel="Assignee filter"
           className="max-w-[180px]"
           allLabel="All assignees"
-          options={uniqueAssignees.map((a) => ({ value: a, label: a === '__unassigned__' ? 'Unassigned' : a }))}
+          options={[
+            { value: '__unassigned__', label: 'Unassigned' },
+            ...uniqueAssignees
+              .filter((a) => a !== '__unassigned__')
+              .map((a) => ({ value: a, label: a })),
+          ]}
           value={assigneeFilter}
           onChange={handleSetAssigneeFilter}
         />

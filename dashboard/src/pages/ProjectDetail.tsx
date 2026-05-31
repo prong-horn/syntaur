@@ -331,9 +331,14 @@ export function ProjectDetail() {
   const handleUpdateView = useCallback(async () => {
     if (!loadedViewId) return;
     try {
+      // Preserve the LOADED view's project scope on Update — do NOT force the
+      // route slug (Decision 11: Save/Update never silently changes a view). A
+      // global view applied here stays global; a [slug]-scoped one stays scoped.
+      // (New Save below intentionally scopes to this project via slug.)
+      const loadedProject = toFilterValues(loadedView?.config.filters.project)[0] ?? null;
       const payload = captureCurrentView({
         name: loadedView?.name ?? '',
-        context: { workspace: workspace ?? null, projectSlug: slug ?? null },
+        context: { workspace: workspace ?? null, projectSlug: loadedProject },
         state: buildViewState(),
       });
       await updateSavedView(loadedViewId, { config: payload.config });
@@ -341,7 +346,7 @@ export function ProjectDetail() {
     } catch (err) {
       showToast(err instanceof Error ? err.message : 'Failed to update view', 'error');
     }
-  }, [buildViewState, loadedView?.name, loadedViewId, showToast, slug, workspace]);
+  }, [buildViewState, loadedView, loadedViewId, showToast, workspace]);
 
   useEffect(() => {
     if (!loadViewParam) {
@@ -461,13 +466,11 @@ export function ProjectDetail() {
   // round-trips here. MultiSelect injects any orphan selection not in this list.
   const assigneeOptions: MultiSelectOption[] = (() => {
     const names = new Set<string>();
-    let hasUnassigned = false;
     for (const a of project.assignments) {
       if (a.assignee) names.add(a.assignee);
-      else hasUnassigned = true;
     }
-    const opts: MultiSelectOption[] = [];
-    if (hasUnassigned) opts.push({ value: '__unassigned__', label: 'Unassigned' });
+    // Always offer Unassigned so a user can proactively filter/save for it.
+    const opts: MultiSelectOption[] = [{ value: '__unassigned__', label: 'Unassigned' }];
     for (const n of Array.from(names).sort()) opts.push({ value: n, label: n });
     return opts;
   })();
