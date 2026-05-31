@@ -18,6 +18,7 @@ import {
 import { getAssignmentColumns } from '../lib/kanban';
 import { sortAssignments } from '../lib/sortAssignments';
 import { formatDate } from '../lib/format';
+import { assignmentDetailHref } from '../lib/assignmentFilter';
 import { SearchInput } from '../components/SearchInput';
 import { FilterBar } from '../components/FilterBar';
 import { ViewToggle } from '../components/ViewToggle';
@@ -1626,15 +1627,16 @@ function AssignmentBoardCard({
   /** Present in the kanban render-site only; absent → read-only card (list view). */
   onRenameTitle?: (newTitle: string) => Promise<void>;
 }) {
-  const wsPrefix = useWorkspacePrefix();
   const navigate = useNavigate();
   const cardRef = useRef<HTMLDivElement>(null);
   // Set on mousedown; when true the trailing click is dismissing an open status
   // menu or committing an inline title edit, so it must NOT also navigate.
   const suppressBodyNavRef = useRef(false);
-  const detailHref = assignment.projectSlug === null
-    ? `/assignments/${assignment.id}`
-    : `${wsPrefix}/projects/${assignment.projectSlug}/assignments/${assignment.slug}`;
+  // Canonical per-item deep link: handles standalone vs project-nested and the
+  // assignment's OWN workspace prefix (not the current page's), matching the
+  // keyboard onOpen path and dashboard widgets. Body-click, the title <Link>,
+  // and the external-link icon all navigate consistently through this.
+  const detailHref = assignmentDetailHref(assignment);
   // Body-click navigation is kanban-only: the kanban render-site is the only one
   // that passes onPillSelect + onRenameTitle, so this is also the "is this the
   // interactive (kanban) card" signal. The list-view card stays read-only.
