@@ -69,6 +69,7 @@ export function createUsageRouter(): Router {
         assignmentSlug,
         daily: dailyRows,
         events: eventRows,
+        summary: buildAssignmentSummary(dailyRows),
       });
     } catch (error) {
       res.status(500).json({
@@ -94,6 +95,7 @@ export function createUsageRouter(): Router {
         assignmentId: assignmentSlug,
         daily: dailyRows,
         events: eventRows,
+        summary: buildAssignmentSummary(dailyRows),
       });
     } catch (error) {
       res.status(500).json({
@@ -153,6 +155,61 @@ interface SummaryRow {
   totalTokens: number;
   totalCost: number;
   lastEventDay: string;
+}
+
+/** Per-model token/cost breakdown for one assignment. */
+export interface ModelUsage {
+  model: string;
+  totalTokens: number;
+  totalCost: number;
+}
+
+/**
+ * Pre-aggregated usage totals for a single assignment, surfaced on the
+ * assignment detail page. `lastEventDay` is `null` when there is no usage yet
+ * (the panel renders a calm empty state in that case).
+ */
+export interface AssignmentUsageSummary {
+  totalTokens: number;
+  totalCost: number;
+  lastEventDay: string | null;
+  byModel: ModelUsage[];
+}
+
+/** Group daily rows by model, summing tokens/cost (highest tokens first). */
+function byModelBreakdown(rows: ReturnType<typeof listDaily>): ModelUsage[] {
+  const map = new Map<string, ModelUsage>();
+  for (const r of rows) {
+    const existing = map.get(r.model);
+    if (existing) {
+      existing.totalTokens += r.total_tokens;
+      existing.totalCost += r.total_cost;
+    } else {
+      map.set(r.model, {
+        model: r.model,
+        totalTokens: r.total_tokens,
+        totalCost: r.total_cost,
+      });
+    }
+  }
+  return [...map.values()].sort((a, b) => b.totalTokens - a.totalTokens);
+}
+
+/**
+ * Roll a single assignment's daily rows into an {@link AssignmentUsageSummary}.
+ * Reuses {@link summarize} for the grand totals + `lastEventDay` (its single
+ * `'assignment'` group), defaulting to zero/`null` when there are no rows.
+ */
+function buildAssignmentSummary(
+  rows: ReturnType<typeof listDaily>,
+): AssignmentUsageSummary {
+  const totals = summarize(rows, 'assignment')[0];
+  return {
+    totalTokens: totals?.totalTokens ?? 0,
+    totalCost: totals?.totalCost ?? 0,
+    lastEventDay: totals?.lastEventDay ?? null,
+    byModel: byModelBreakdown(rows),
+  };
 }
 
 function summarize(

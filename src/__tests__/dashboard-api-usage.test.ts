@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import express from 'express';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { resolve, join } from 'node:path';
+import { join } from 'node:path';
 import type { AddressInfo } from 'node:net';
 import {
   initUsageDb,
@@ -129,6 +129,37 @@ describe('GET /api/usage/projects/:projectSlug/assignments/:assignmentSlug', () 
     expect(body.events.length).toBe(1);
     expect(body.events[0].total_tokens).toBe(100);
   });
+
+  it('includes a pre-aggregated summary for the assignment', async () => {
+    seed('p1', 'a1', 100, 0.5);
+    seed('p1', 'a2', 200, 1.0);
+    runRollup();
+
+    const res = await fetch(`${baseUrl}/api/usage/projects/p1/assignments/a1`);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.summary.totalTokens).toBe(100);
+    expect(body.summary.totalCost).toBe(0.5);
+    expect(body.summary.lastEventDay).toBe('2026-05-21');
+    expect(body.summary.byModel).toEqual([
+      { model: 'claude-opus-4-7', totalTokens: 100, totalCost: 0.5 },
+    ]);
+  });
+
+  it('returns a calm zero summary when the assignment has no usage', async () => {
+    seed('p1', 'a1', 100, 0.5);
+    runRollup();
+
+    const res = await fetch(`${baseUrl}/api/usage/projects/p1/assignments/none`);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.daily.length).toBe(0);
+    expect(body.events.length).toBe(0);
+    expect(body.summary.totalTokens).toBe(0);
+    expect(body.summary.totalCost).toBe(0);
+    expect(body.summary.lastEventDay).toBeNull();
+    expect(body.summary.byModel).toEqual([]);
+  });
 });
 
 describe('GET /api/usage/standalone/:assignmentId', () => {
@@ -142,5 +173,24 @@ describe('GET /api/usage/standalone/:assignmentId', () => {
     expect(body.assignmentId).toBe('standalone-asgn');
     expect(body.daily.length).toBe(1);
     expect(body.events.length).toBe(1);
+    expect(body.summary.totalTokens).toBe(500);
+    expect(body.summary.totalCost).toBe(0.7);
+    expect(body.summary.byModel).toEqual([
+      { model: 'claude-opus-4-7', totalTokens: 500, totalCost: 0.7 },
+    ]);
+  });
+
+  it('returns a calm zero summary for a standalone assignment with no usage', async () => {
+    seed('', 'standalone-asgn', 500, 0.7);
+    runRollup();
+
+    const res = await fetch(`${baseUrl}/api/usage/standalone/none`);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.daily.length).toBe(0);
+    expect(body.events.length).toBe(0);
+    expect(body.summary.totalTokens).toBe(0);
+    expect(body.summary.lastEventDay).toBeNull();
+    expect(body.summary.byModel).toEqual([]);
   });
 });
