@@ -262,9 +262,12 @@ describe('saved-views HTTP routes', () => {
     expect(body.views.at(-1).name).toBe('API View');
   });
 
-  it('POST /api/saved-views persists a builder-shaped global view (create-from-/views path)', async () => {
+  it('POST /api/saved-views persists a builder-shaped global view with MULTI-value filters', async () => {
     const { workspace, config } = buildCreateViewPayload(
-      { ...DEFAULT_CREATE_VIEW_STATE, filters: { priority: 'high' } },
+      {
+        ...DEFAULT_CREATE_VIEW_STATE,
+        filters: { priority: ['high', 'critical'], status: ['in_progress', 'review'], type: ['feature'] },
+      },
       null,
     );
     const res = await fetch(`${base()}/api/saved-views`, {
@@ -277,7 +280,21 @@ describe('saved-views HTTP routes', () => {
     const created = body.views.at(-1);
     expect(created.name).toBe('Builder Global');
     expect(created.workspace).toBe(null);
-    expect(created.config.filters.priority).toBe('high');
+    expect(created.config.filters.priority).toEqual(['high', 'critical']);
+    expect(created.config.filters.status).toEqual(['in_progress', 'review']);
+    expect(created.config.filters.type).toEqual(['feature']);
+
+    // A LEGACY single-string POST still validates + persists (back-compat).
+    const legacy = await fetch(`${base()}/api/saved-views`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: 'Legacy Scalar',
+        workspace: null,
+        config: { ...config, filters: { priority: 'high' } },
+      }),
+    });
+    expect(legacy.status).toBe(201);
 
     // Persisted to disk and re-readable.
     const file = await readSavedViewsFile();

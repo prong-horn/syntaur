@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
-// savedViews.ts imports @shared only as `import type` (erased at runtime), so it
-// loads under node with no alias. Relative path keeps it inside vitest's reach.
+// savedViews.ts pulls shared schema via `@shared/*` (aliased to src/utils in
+// vitest.config.ts), so it loads under the node env. Relative path keeps it
+// inside vitest's `include` reach.
 import {
   buildCreateViewPayload,
   applyConfig,
@@ -30,105 +31,88 @@ describe('buildCreateViewPayload', () => {
     expect(payload.config.viewMode).toBe('kanban');
     expect(payload.config.sortField).toBe('updated');
     expect(payload.config.sortDirection).toBe('desc');
-    // All-default filters minimize away to {}.
     expect(payload.config.filters).toEqual({});
   });
 
   it('scopes the payload to the passed workspace', () => {
-    const payload = buildCreateViewPayload(DEFAULT_CREATE_VIEW_STATE, 'syntaur');
-    expect(payload.workspace).toBe('syntaur');
+    expect(buildCreateViewPayload(DEFAULT_CREATE_VIEW_STATE, 'syntaur').workspace).toBe('syntaur');
   });
 
-  it('preserves a non-default filter through minimization', () => {
+  it('persists MULTI-value filters as arrays', () => {
     const state: CreateViewBuilderState = {
       ...DEFAULT_CREATE_VIEW_STATE,
-      filters: { priority: 'high' },
+      filters: {
+        status: ['in_progress', 'review'],
+        priority: ['high', 'critical'],
+        type: ['feature', 'bug'],
+        project: ['alpha', 'beta'],
+      },
     };
-    const payload = buildCreateViewPayload(state, null);
-    expect(payload.config.filters.priority).toBe('high');
-    expect(isSavedViewConfig(payload.config)).toBe(true);
+    const { config } = buildCreateViewPayload(state, null);
+    expect(isSavedViewConfig(config)).toBe(true);
+    expect(config.filters.status).toEqual(['in_progress', 'review']);
+    expect(config.filters.priority).toEqual(['high', 'critical']);
+    expect(config.filters.type).toEqual(['feature', 'bug']);
+    expect(config.filters.project).toEqual(['alpha', 'beta']);
   });
 
-  it('normalizes an empty/whitespace assignee to undefined (never persists "")', () => {
-    const state: CreateViewBuilderState = {
-      ...DEFAULT_CREATE_VIEW_STATE,
-      filters: { assignee: '  ' },
-    };
-    const payload = buildCreateViewPayload(state, null);
-    expect(payload.config.filters.assignee).toBeUndefined();
+  it('normalizes a LEGACY single-string filter into an array', () => {
+    const state = { ...DEFAULT_CREATE_VIEW_STATE, filters: { priority: 'high' } } as CreateViewBuilderState;
+    expect(buildCreateViewPayload(state, null).config.filters.priority).toEqual(['high']);
   });
 
-  it('keeps a real assignee value (trimmed)', () => {
+  it('drops empty/whitespace + "all" tokens and dedupes', () => {
     const state: CreateViewBuilderState = {
       ...DEFAULT_CREATE_VIEW_STATE,
-      filters: { assignee: '  claude  ' },
+      filters: { assignee: ['  ', '', 'all', '  claude  ', 'claude'] },
     };
-    const payload = buildCreateViewPayload(state, null);
-    expect(payload.config.filters.assignee).toBe('claude');
+    const { config } = buildCreateViewPayload(state, null);
+    expect(config.filters.assignee).toEqual(['claude']);
+  });
+
+  it('an all-empty multi field minimizes away entirely', () => {
+    const state: CreateViewBuilderState = {
+      ...DEFAULT_CREATE_VIEW_STATE,
+      filters: { status: [], priority: ['all'] },
+    };
+    expect(buildCreateViewPayload(state, null).config.filters).toEqual({});
   });
 });
 
-describe('buildCreateViewPayload concrete-project coercion (round-trip safety)', () => {
-  // A concrete project routes Apply to ProjectDetail, which has no activity
-  // filter and coerces 'list' -> 'kanban'. The saved config must match.
-  it('coerces list -> kanban when a concrete project is set', () => {
+describe('buildCreateViewPayload — faithful capture (NO route coercion, Decision 11)', () => {
+  it('keeps list + activity even with a single concrete project', () => {
     const state: CreateViewBuilderState = {
       ...DEFAULT_CREATE_VIEW_STATE,
       viewMode: 'list',
-      filters: { project: 'foo' },
+      filters: { project: ['foo'], activity: 'stale' },
     };
-    const payload = buildCreateViewPayload(state, null);
-    expect(payload.config.viewMode).toBe('kanban');
+    const { config } = buildCreateViewPayload(state, null);
+    // Capture is faithful — routing (inferLandingRoute) decides the surface.
+    expect(config.viewMode).toBe('list');
+    expect(config.filters.activity).toBe('stale');
+    expect(config.filters.project).toEqual(['foo']);
   });
 
-  it('keeps table view mode for a concrete project (ProjectDetail supports table)', () => {
+  it('keeps table view mode for a concrete project too', () => {
     const state: CreateViewBuilderState = {
       ...DEFAULT_CREATE_VIEW_STATE,
       viewMode: 'table',
-      filters: { project: 'foo' },
+      filters: { project: ['foo'] },
     };
     expect(buildCreateViewPayload(state, null).config.viewMode).toBe('table');
   });
-
-  it('drops the activity filter when a concrete project is set', () => {
-    const state: CreateViewBuilderState = {
-      ...DEFAULT_CREATE_VIEW_STATE,
-      filters: { project: 'foo', activity: 'stale' },
-    };
-    const payload = buildCreateViewPayload(state, null);
-    expect(payload.config.filters.activity).toBeUndefined();
-    expect(payload.config.filters.project).toBe('foo');
-  });
-
-  it('keeps list + activity for the __standalone__ sentinel (routes to global list)', () => {
-    const state: CreateViewBuilderState = {
-      ...DEFAULT_CREATE_VIEW_STATE,
-      viewMode: 'list',
-      filters: { project: '__standalone__', activity: 'stale' },
-    };
-    const payload = buildCreateViewPayload(state, null);
-    expect(payload.config.viewMode).toBe('list');
-    expect(payload.config.filters.activity).toBe('stale');
-    expect(payload.config.filters.project).toBe('__standalone__');
-  });
-
-  it('keeps list + activity when no project is set', () => {
-    const state: CreateViewBuilderState = {
-      ...DEFAULT_CREATE_VIEW_STATE,
-      viewMode: 'list',
-      filters: { activity: 'fresh' },
-    };
-    const payload = buildCreateViewPayload(state, null);
-    expect(payload.config.viewMode).toBe('list');
-    expect(payload.config.filters.activity).toBe('fresh');
-  });
 });
 
-describe('applyConfig round-trip (config is applyable)', () => {
-  it('drives setters from a built config', () => {
+describe('applyConfig round-trip (multi-value, applyable)', () => {
+  it('drives array setters from a built config (incl. type)', () => {
     const state: CreateViewBuilderState = {
       viewMode: 'table',
-      filters: { status: 'in_progress', priority: 'high', assignee: 'claude' },
+      filters: {
+        status: ['in_progress', 'review'],
+        priority: ['high'],
+        type: ['feature'],
+        assignee: ['claude'],
+      },
       sortField: 'priority',
       sortDirection: 'asc',
     };
@@ -139,6 +123,7 @@ describe('applyConfig round-trip (config is applyable)', () => {
     const setters: ApplyConfigSetters = {
       setViewMode: (v) => (seen.viewMode = v),
       setStatusFilter: (v) => (seen.status = v),
+      setTypeFilter: (v) => (seen.type = v),
       setPriorityFilter: (v) => (seen.priority = v),
       setAssigneeFilter: (v) => (seen.assignee = v),
       setProjectFilter: (v) => (seen.project = v),
@@ -149,22 +134,34 @@ describe('applyConfig round-trip (config is applyable)', () => {
     applyConfig(view, setters);
 
     expect(seen.viewMode).toBe('table');
-    expect(seen.status).toBe('in_progress');
-    expect(seen.priority).toBe('high');
-    expect(seen.assignee).toBe('claude');
-    expect(seen.project).toBe('all'); // unset filter applies as 'all'
+    expect(seen.status).toEqual(['in_progress', 'review']);
+    expect(seen.type).toEqual(['feature']);
+    expect(seen.priority).toEqual(['high']);
+    expect(seen.assignee).toEqual(['claude']);
+    expect(seen.project).toEqual([]); // unset filter applies as empty (no constraint)
+    expect(seen.activity).toBe('all');
     expect(seen.sortField).toBe('priority');
     expect(seen.sortDirection).toBe('asc');
   });
-});
 
-describe('inferLandingRoute for built views', () => {
-  function routeFor(workspace: string | null, project?: string): string {
+  it('round-trips the __unassigned__ sentinel inside an array', () => {
     const state: CreateViewBuilderState = {
       ...DEFAULT_CREATE_VIEW_STATE,
-      filters: project ? { project } : {},
+      filters: { assignee: ['__unassigned__', 'claude'] },
     };
-    const { config } = buildCreateViewPayload(state, workspace);
+    const { config } = buildCreateViewPayload(state, null);
+    const seen: Record<string, unknown> = {};
+    applyConfig(makeView(null, config), { setAssigneeFilter: (v) => (seen.assignee = v) });
+    expect(seen.assignee).toEqual(['__unassigned__', 'claude']);
+  });
+});
+
+describe('inferLandingRoute for built views (compatibility-aware)', () => {
+  function routeFor(
+    workspace: string | null,
+    filters: CreateViewBuilderState['filters'] = {},
+  ): string {
+    const { config } = buildCreateViewPayload({ ...DEFAULT_CREATE_VIEW_STATE, filters }, workspace);
     return inferLandingRoute(makeView(workspace, config));
   }
 
@@ -180,13 +177,37 @@ describe('inferLandingRoute for built views', () => {
     expect(routeFor('_ungrouped')).toBe('/w/_ungrouped/assignments?loadView=v1');
   });
 
-  it('project-filtered view → project route on the assignments tab', () => {
-    expect(routeFor(null, 'my-proj')).toBe(
+  it('single concrete project, no activity → project route on the assignments tab', () => {
+    expect(routeFor(null, { project: ['my-proj'] })).toBe(
       '/projects/my-proj?tab=assignments&loadView=v1',
     );
   });
 
+  it('single concrete project + activity → GLOBAL list (ProjectDetail has no activity)', () => {
+    expect(routeFor(null, { project: ['my-proj'], activity: 'stale' })).toBe(
+      '/assignments?loadView=v1',
+    );
+  });
+
+  it('MULTI-project view → global list (no single ProjectDetail to land on)', () => {
+    expect(routeFor(null, { project: ['a', 'b'] })).toBe('/assignments?loadView=v1');
+  });
+
   it('__standalone__ sentinel → assignments list, NOT /projects/__standalone__', () => {
-    expect(routeFor(null, '__standalone__')).toBe('/assignments?loadView=v1');
+    expect(routeFor(null, { project: ['__standalone__'] })).toBe('/assignments?loadView=v1');
+  });
+
+  it('LEGACY scalar project + activity config → global list (Decision 10/11)', () => {
+    // A view persisted before this feature can carry scalar project + activity.
+    const view = makeView(null, {
+      viewMode: 'list',
+      filters: { project: 'foo', activity: 'stale' },
+      sortField: 'updated',
+      sortDirection: 'desc',
+      listSectionVisibility: { collapsed: [] },
+      kanbanColumnVisibility: { hidden: [] },
+      tableColumnVisibility: { hidden: [] },
+    });
+    expect(inferLandingRoute(view)).toBe('/assignments?loadView=v1');
   });
 });

@@ -275,4 +275,49 @@ describe('view-prefs storage', () => {
       isViewPrefsDefaults({ ...DEFAULT_VIEW_PREFS_FILE, projects: { foo: {} } }),
     ).toBe(false);
   });
+
+  it('isViewPrefsDefaults compares NORMALIZED filter semantics (arrays)', () => {
+    const withFilters = (filters: Record<string, unknown>): ViewPrefsFile => ({
+      ...DEFAULT_VIEW_PREFS_FILE,
+      global: {
+        ...DEFAULT_VIEW_PREFS_FILE.global,
+        filters: { ...DEFAULT_VIEW_PREFS_FILE.global.filters, ...filters } as ViewPrefsFile['global']['filters'],
+      },
+    });
+    // Empty array / 'all' / absent are all semantically default.
+    expect(isViewPrefsDefaults(withFilters({ status: [] }))).toBe(true);
+    expect(isViewPrefsDefaults(withFilters({ status: 'all' }))).toBe(true);
+    expect(isViewPrefsDefaults(withFilters({ status: ['all'] }))).toBe(true);
+    // A populated array is custom.
+    expect(isViewPrefsDefaults(withFilters({ status: ['in_progress'] }))).toBe(false);
+    expect(isViewPrefsDefaults(withFilters({ priority: ['high', 'critical'] }))).toBe(false);
+    expect(isViewPrefsDefaults(withFilters({ activity: 'stale' }))).toBe(false);
+  });
+
+  it('mergePatch overwrites a prior array with an explicit [] clear', () => {
+    const current: ViewPrefsFile = {
+      ...DEFAULT_VIEW_PREFS_FILE,
+      global: {
+        ...DEFAULT_VIEW_PREFS_FILE.global,
+        filters: { ...DEFAULT_VIEW_PREFS_FILE.global.filters, status: ['in_progress', 'review'] },
+      },
+    };
+    const next = mergePatch(current, { global: { filters: { status: [] } } });
+    expect(next.global.filters.status).toEqual([]);
+    expect(isViewPrefsDefaults(next)).toBe(true);
+  });
+
+  it('round-trips multi-value array filters through write/read', async () => {
+    const next: ViewPrefsFile = {
+      ...DEFAULT_VIEW_PREFS_FILE,
+      global: {
+        ...DEFAULT_VIEW_PREFS_FILE.global,
+        filters: { ...DEFAULT_VIEW_PREFS_FILE.global.filters, status: ['in_progress', 'review'], priority: ['high'] },
+      },
+    };
+    await writeViewPrefsFile(next);
+    const read = await readViewPrefsFile();
+    expect(read.global.filters.status).toEqual(['in_progress', 'review']);
+    expect(read.global.filters.priority).toEqual(['high']);
+  });
 });
