@@ -86,7 +86,9 @@ interface DropTarget {
 // regions, role="button" elements, and anything explicitly opting out via
 // `data-no-drag`. Inline-edit affordances (status pill picker, title editor)
 // rely on this list, so widening it should not break drag for the card body.
-const NON_DRAGGABLE_SELECTOR =
+// Exported so card-body click-to-navigate handlers can reuse the same
+// "what counts as an interactive control" definition (single source of truth).
+export const NON_DRAGGABLE_SELECTOR =
   'a, button, input, select, textarea, [contenteditable="true"], [role="button"], [data-no-drag]';
 
 export function KanbanBoard<T>({
