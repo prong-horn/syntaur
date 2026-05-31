@@ -441,17 +441,17 @@ function useFetch<T>(
     setFetchCount((count) => count + 1);
   }, []);
 
-  // Drop stale data the moment the target URL changes (opt-in). Runs only on
-  // `activeUrl` changes, not on `refetch`/websocket-triggered refetches, so it
-  // never clears good data during a same-key refresh.
+  // Drop stale data the moment the target URL changes (opt-in) — DURING render,
+  // not in a post-commit effect, so a previous entity's data is never painted on
+  // a new key, not even for one frame. This is React's documented "adjust state
+  // while rendering" pattern: guarded by a ref so it fires exactly once per URL
+  // change (never on `refetch`/websocket-triggered refetches of the same key).
   const lastUrlRef = useRef(activeUrl);
-  useEffect(() => {
-    if (resetDataOnUrlChange && lastUrlRef.current !== activeUrl) {
-      setData(null);
-      setError(null);
-    }
+  if (resetDataOnUrlChange && lastUrlRef.current !== activeUrl) {
     lastUrlRef.current = activeUrl;
-  }, [activeUrl, resetDataOnUrlChange]);
+    setData(null);
+    setError(null);
+  }
 
   useEffect(() => {
     if (!activeUrl) {
