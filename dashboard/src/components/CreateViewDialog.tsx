@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type { ViewMode, SortField, SortDirection } from '@shared/saved-views-schema';
 import { VIEW_MODES, SORT_FIELDS } from '@shared/view-prefs-schema';
 import {
@@ -8,9 +8,11 @@ import {
   DialogHeader,
   DialogTitle,
 } from './ui/dialog';
+import { MultiSelect, type MultiSelectOption } from './ui/MultiSelect';
 import { ViewToggle } from './ViewToggle';
 import { useStatusConfig, getStatusLabel } from '../hooks/useStatusConfig';
-import { useProjects } from '../hooks/useProjects';
+import { useTypesConfig, getTypeLabel } from '../hooks/useTypesConfig';
+import { useProjects, useAssignmentsBoard } from '../hooks/useProjects';
 import {
   PRIORITY_OPTIONS,
   DEFAULT_CREATE_VIEW_STATE,
@@ -50,14 +52,17 @@ export function CreateViewDialog({
   onSubmit,
 }: CreateViewDialogProps) {
   const statusConfig = useStatusConfig();
+  const typesConfig = useTypesConfig();
   const { data: projects } = useProjects();
+  const { data: board } = useAssignmentsBoard();
 
   const [name, setName] = useState('');
   const [viewMode, setViewMode] = useState<ViewMode>(DEFAULT_CREATE_VIEW_STATE.viewMode);
-  const [status, setStatus] = useState('all');
-  const [priority, setPriority] = useState('all');
-  const [project, setProject] = useState('all');
-  const [assignee, setAssignee] = useState('');
+  const [status, setStatus] = useState<string[]>([]);
+  const [priority, setPriority] = useState<string[]>([]);
+  const [type, setType] = useState<string[]>([]);
+  const [project, setProject] = useState<string[]>([]);
+  const [assignee, setAssignee] = useState<string[]>([]);
   const [activity, setActivity] = useState<'all' | 'fresh' | 'stale'>('all');
   const [sortField, setSortField] = useState<SortField>(DEFAULT_CREATE_VIEW_STATE.sortField);
   const [sortDirection, setSortDirection] = useState<SortDirection>(
@@ -71,10 +76,11 @@ export function CreateViewDialog({
     if (open) {
       setName('');
       setViewMode(DEFAULT_CREATE_VIEW_STATE.viewMode);
-      setStatus('all');
-      setPriority('all');
-      setProject('all');
-      setAssignee('');
+      setStatus([]);
+      setPriority([]);
+      setType([]);
+      setProject([]);
+      setAssignee([]);
       setActivity('all');
       setSortField(DEFAULT_CREATE_VIEW_STATE.sortField);
       setSortDirection(DEFAULT_CREATE_VIEW_STATE.sortDirection);
@@ -86,30 +92,56 @@ export function CreateViewDialog({
   // Project options follow the repo's `_ungrouped` sentinel semantics
   // (matching ProjectList / AssignmentsPage): show ungrouped projects on
   // /w/_ungrouped, workspace-matched projects on /w/:ws, all on global /views.
-  const visibleProjects = (projects ?? []).filter((p) =>
-    !workspace
-      ? true
-      : workspace === '_ungrouped'
-        ? p.workspace === null
-        : p.workspace === workspace,
+  const projectOptions = useMemo<MultiSelectOption[]>(() => {
+    const visible = (projects ?? []).filter((p) =>
+      !workspace
+        ? true
+        : workspace === '_ungrouped'
+          ? p.workspace === null
+          : p.workspace === workspace,
+    );
+    return [
+      { value: '__standalone__', label: 'No project' },
+      ...visible.map((p) => ({ value: p.slug, label: p.title })),
+    ];
+  }, [projects, workspace]);
+
+  // Assignee options derived from the live board (scoped like the project list),
+  // plus the Unassigned sentinel. Free-text rejected — derived options avoid
+  // typo/no-match bugs (Decision 3); MultiSelect injects any orphan selection.
+  const assigneeOptions = useMemo<MultiSelectOption[]>(() => {
+    const names = new Set<string>();
+    let hasUnassigned = false;
+    for (const a of board?.assignments ?? []) {
+      const inScope = !workspace
+        ? true
+        : workspace === '_ungrouped'
+          ? a.projectWorkspace === null
+          : a.projectWorkspace === workspace;
+      if (!inScope) continue;
+      if (a.assignee) names.add(a.assignee);
+      else hasUnassigned = true;
+    }
+    const opts: MultiSelectOption[] = [];
+    if (hasUnassigned) opts.push({ value: '__unassigned__', label: 'Unassigned' });
+    for (const n of Array.from(names).sort()) opts.push({ value: n, label: n });
+    return opts;
+  }, [board, workspace]);
+
+  const statusOptions = useMemo<MultiSelectOption[]>(
+    () => statusConfig.order.map((id) => ({ value: id, label: getStatusLabel(statusConfig, id) })),
+    [statusConfig],
+  );
+  const priorityOptions = useMemo<MultiSelectOption[]>(
+    () => PRIORITY_OPTIONS.map((p) => ({ value: p, label: p[0].toUpperCase() + p.slice(1) })),
+    [],
+  );
+  const typeOptions = useMemo<MultiSelectOption[]>(
+    () => typesConfig.definitions.map((t) => ({ value: t.id, label: getTypeLabel(typesConfig, t.id) })),
+    [typesConfig],
   );
 
-  // A concrete project routes Apply to ProjectDetail, which has no activity
-  // filter and renders 'list' as 'kanban'. Hide those unsupported controls so a
-  // user can't build a view that won't round-trip (buildCreateViewPayload also
-  // coerces them defensively). 'No project'/'All' route to the global list.
-  const concreteProject = project !== 'all' && project !== '__standalone__';
-  useEffect(() => {
-    if (concreteProject) {
-      setViewMode((m) => (m === 'list' ? 'kanban' : m));
-      setActivity('all');
-    }
-  }, [concreteProject]);
-
-  const viewModeOptions = (concreteProject
-    ? VIEW_MODES.filter((m) => m !== 'list')
-    : VIEW_MODES
-  ).map((m) => ({ value: m, label: VIEW_MODE_LABEL[m] }));
+  const viewModeOptions = VIEW_MODES.map((m) => ({ value: m, label: VIEW_MODE_LABEL[m] }));
 
   const trimmedName = name.trim();
   const valid = trimmedName.length > 0 && trimmedName.length <= MAX_NAME_LENGTH;
@@ -126,7 +158,7 @@ export function CreateViewDialog({
             setError(null);
             const state: CreateViewBuilderState = {
               viewMode,
-              filters: { status, priority, project, assignee, activity },
+              filters: { status, priority, type, project, assignee, activity },
               sortField,
               sortDirection,
             };
@@ -171,43 +203,61 @@ export function CreateViewDialog({
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <label className="space-y-1">
               <span className="block text-xs font-medium text-muted-foreground">Status</span>
-              <select value={status} onChange={(e) => setStatus(e.target.value)} className="editor-input w-full">
-                <option value="all">All statuses</option>
-                {statusConfig.order.map((id) => (
-                  <option key={id} value={id}>{getStatusLabel(statusConfig, id)}</option>
-                ))}
-              </select>
+              <MultiSelect
+                ariaLabel="Status filter"
+                className="w-full"
+                allLabel="All statuses"
+                options={statusOptions}
+                value={status}
+                onChange={setStatus}
+              />
             </label>
 
             <label className="space-y-1">
               <span className="block text-xs font-medium text-muted-foreground">Priority</span>
-              <select value={priority} onChange={(e) => setPriority(e.target.value)} className="editor-input w-full">
-                <option value="all">All priorities</option>
-                {PRIORITY_OPTIONS.map((p) => (
-                  <option key={p} value={p} className="capitalize">{p}</option>
-                ))}
-              </select>
+              <MultiSelect
+                ariaLabel="Priority filter"
+                className="w-full"
+                allLabel="All priorities"
+                options={priorityOptions}
+                value={priority}
+                onChange={setPriority}
+              />
+            </label>
+
+            <label className="space-y-1">
+              <span className="block text-xs font-medium text-muted-foreground">Type</span>
+              <MultiSelect
+                ariaLabel="Type filter"
+                className="w-full"
+                allLabel="All types"
+                options={typeOptions}
+                value={type}
+                onChange={setType}
+              />
             </label>
 
             <label className="space-y-1">
               <span className="block text-xs font-medium text-muted-foreground">Project</span>
-              <select value={project} onChange={(e) => setProject(e.target.value)} className="editor-input w-full">
-                <option value="all">All projects</option>
-                <option value="__standalone__">No project</option>
-                {visibleProjects.map((p) => (
-                  <option key={p.slug} value={p.slug}>{p.title}</option>
-                ))}
-              </select>
+              <MultiSelect
+                ariaLabel="Project filter"
+                className="w-full"
+                allLabel="All projects"
+                options={projectOptions}
+                value={project}
+                onChange={setProject}
+              />
             </label>
 
             <label className="space-y-1">
               <span className="block text-xs font-medium text-muted-foreground">Assignee</span>
-              <input
-                type="text"
+              <MultiSelect
+                ariaLabel="Assignee filter"
+                className="w-full"
+                allLabel="All assignees"
+                options={assigneeOptions}
                 value={assignee}
-                onChange={(e) => setAssignee(e.target.value)}
-                placeholder="Any assignee"
-                className="editor-input w-full"
+                onChange={setAssignee}
               />
             </label>
 
@@ -217,21 +267,14 @@ export function CreateViewDialog({
                 value={activity}
                 onChange={(e) => setActivity(e.target.value as 'all' | 'fresh' | 'stale')}
                 className="editor-input w-full"
-                disabled={concreteProject}
-                title={concreteProject ? 'Not available when a single project is selected' : undefined}
               >
                 <option value="all">All activity</option>
                 <option value="stale">Stale only</option>
                 <option value="fresh">Fresh only</option>
               </select>
-              {concreteProject ? (
-                <span className="block text-[11px] text-muted-foreground">
-                  Not available for a single project.
-                </span>
-              ) : null}
             </label>
 
-            <label className="space-y-1">
+            <label className="space-y-1 sm:col-span-2">
               <span className="block text-xs font-medium text-muted-foreground">Sort by</span>
               <div className="flex gap-2">
                 <select

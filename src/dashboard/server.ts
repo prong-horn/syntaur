@@ -48,10 +48,11 @@ import {
   isDensity,
   isGrouping,
   isActivity,
-  isFilterString,
+  isFilterValue,
   type ViewPrefs,
   type ProjectViewPrefs,
   type ViewFilters,
+  type FilterValue,
   type ViewPrefsPatch,
 } from '../utils/view-prefs-schema.js';
 import {
@@ -377,8 +378,10 @@ export function createDashboardServer(options: DashboardServerOptions) {
     const out: ViewFilters = {};
     for (const key of ['status', 'type', 'priority', 'assignee', 'project']) {
       if (obj[key] !== undefined) {
-        if (!isFilterString(obj[key])) return { ok: false, error: `filters.${key} must be a non-empty string` };
-        (out as Record<string, string>)[key] = obj[key] as string;
+        if (!isFilterValue(obj[key])) {
+          return { ok: false, error: `filters.${key} must be a non-empty string or array of non-empty strings` };
+        }
+        (out as Record<string, FilterValue>)[key] = obj[key] as FilterValue;
       }
     }
     if (obj.activity !== undefined) {

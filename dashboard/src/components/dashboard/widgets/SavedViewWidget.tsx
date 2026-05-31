@@ -4,7 +4,7 @@ import {
   useAssignmentsBoard,
   type AssignmentBoardItem,
 } from '../../../hooks/useProjects';
-import { filterAssignment, assignmentDetailHref } from '../../../lib/assignmentFilter';
+import { filterAssignment, assignmentDetailHref, type AssignmentFilterCriteria } from '../../../lib/assignmentFilter';
 import { useSavedView } from '../../../hooks/useSavedViews';
 import { useStatusConfig, getStatusLabel } from '../../../hooks/useStatusConfig';
 import { sortAssignments } from '../../../lib/sortAssignments';
@@ -25,13 +25,7 @@ interface SavedViewWidgetProps {
 
 function applyViewFilters(
   items: AssignmentBoardItem[],
-  filters: {
-    status?: string;
-    priority?: string;
-    assignee?: string;
-    project?: string;
-    activity?: string;
-  },
+  filters: AssignmentFilterCriteria,
   workspace: string | null,
 ): AssignmentBoardItem[] {
   return items.filter((item) =>

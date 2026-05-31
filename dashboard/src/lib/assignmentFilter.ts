@@ -1,10 +1,31 @@
+import { toFilterValues, type FilterValue } from '@shared/view-prefs-schema';
 import type { AssignmentBoardItem } from '../hooks/useProjects';
 
+// Structural minimum that `filterAssignment` reads. `AssignmentBoardItem`
+// satisfies it fully; ProjectDetail's `AssignmentSummary` satisfies it too — the
+// project / workspace / search-only fields are optional and only read when the
+// matching criteria/options are set, which ProjectDetail never triggers.
+export interface AssignmentFilterItem {
+  status: string;
+  priority: string;
+  assignee: string | null;
+  type?: string | null;
+  updated: string;
+  title?: string;
+  slug?: string;
+  projectSlug?: string | null;
+  projectTitle?: string | null;
+  projectWorkspace?: string | null;
+}
+
+// Multi-select: each field is a single value (legacy) or an array; `toFilterValues`
+// normalizes to a deduped set where empty === "no constraint".
 export interface AssignmentFilterCriteria {
-  status?: string;
-  priority?: string;
-  assignee?: string;
-  project?: string;
+  status?: FilterValue;
+  priority?: FilterValue;
+  type?: FilterValue;
+  assignee?: FilterValue;
+  project?: FilterValue;
   activity?: string;
 }
 
@@ -20,45 +41,52 @@ export function isAssignmentStale(updated: string): boolean {
 }
 
 // Mirrors AssignmentsPage's filter semantics exactly so saved-view widgets
-// produce the same items as the source surface. Sentinels handled:
+// produce the same items as the source surface. Multi-value: an item matches a
+// field when its value is in the selected set (OR within a field); fields are
+// AND-ed; an empty set means "no constraint". Sentinels handled:
 // - assignee '__unassigned__' matches items with assignee === null
 // - project '__standalone__' matches items with projectSlug === null
 // - workspace '_ungrouped' matches items with projectWorkspace === null
 export function filterAssignment(
-  item: AssignmentBoardItem,
+  item: AssignmentFilterItem,
   criteria: AssignmentFilterCriteria,
   options: AssignmentFilterOptions = {},
 ): boolean {
   const { workspace, search } = options;
-  const { status, priority, assignee, project, activity } = criteria;
+  const statuses = toFilterValues(criteria.status);
+  const priorities = toFilterValues(criteria.priority);
+  const types = toFilterValues(criteria.type);
+  const assignees = toFilterValues(criteria.assignee);
+  const projects = toFilterValues(criteria.project);
+  const { activity } = criteria;
 
   if (workspace) {
     if (workspace === '_ungrouped') {
-      if (item.projectWorkspace !== null) return false;
-    } else {
-      if (item.projectWorkspace !== workspace) return false;
-    }
-  }
-  if (status && status !== 'all' && item.status !== status) return false;
-  if (priority && priority !== 'all' && item.priority !== priority) return false;
-  if (activity === 'stale' && !isAssignmentStale(item.updated)) return false;
-  if (activity === 'fresh' && isAssignmentStale(item.updated)) return false;
-  if (assignee && assignee !== 'all') {
-    const val = item.assignee ?? '__unassigned__';
-    if (val !== assignee) return false;
-  }
-  if (project && project !== 'all') {
-    if (project === '__standalone__') {
-      if (item.projectSlug !== null) return false;
-    } else if (item.projectSlug !== project) {
+      if (item.projectWorkspace != null) return false;
+    } else if (item.projectWorkspace !== workspace) {
       return false;
     }
+  }
+  if (statuses.length && !statuses.includes(item.status)) return false;
+  if (priorities.length && !priorities.includes(item.priority)) return false;
+  if (types.length && !types.includes(item.type ?? '')) return false;
+  if (activity === 'stale' && !isAssignmentStale(item.updated)) return false;
+  if (activity === 'fresh' && isAssignmentStale(item.updated)) return false;
+  if (assignees.length) {
+    const val = item.assignee ?? '__unassigned__';
+    if (!assignees.includes(val)) return false;
+  }
+  if (projects.length) {
+    const matched = projects.some((p) =>
+      p === '__standalone__' ? item.projectSlug == null : item.projectSlug === p,
+    );
+    if (!matched) return false;
   }
 
   if (search) {
     const query = search.trim().toLowerCase();
     if (query) {
-      const haystack = `${item.title} ${item.slug} ${item.projectTitle ?? 'standalone'} ${item.projectSlug ?? ''}`.toLowerCase();
+      const haystack = `${item.title ?? ''} ${item.slug ?? ''} ${item.projectTitle ?? 'standalone'} ${item.projectSlug ?? ''}`.toLowerCase();
       if (!haystack.includes(query)) return false;
     }
   }

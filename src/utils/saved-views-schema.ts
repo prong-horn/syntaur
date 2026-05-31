@@ -3,13 +3,17 @@ import {
   type SortField,
   type SortDirection,
   type ViewFilters,
+  type FilterValue,
   isViewMode,
   isSortField,
   isSortDirection,
+  isActivity,
+  isFilterValue,
+  toFilterValues,
 } from './view-prefs-schema.js';
 
 // Re-export shared types so frontend can pull everything from a single module via `@shared/saved-views-schema`.
-export type { ViewMode, SortField, SortDirection, ViewFilters };
+export type { ViewMode, SortField, SortDirection, ViewFilters, FilterValue };
 
 export interface ListSectionVisibility {
   collapsed: string[];
@@ -169,13 +173,15 @@ function isTableColumnVisibility(value: unknown): value is TableColumnVisibility
   return Array.isArray(obj.hidden) && obj.hidden.every((s) => isTableColumnId(s));
 }
 
-function isViewFilters(value: unknown): value is ViewFilters {
-  if (!value || typeof value !== 'object') return false;
+export function isViewFilters(value: unknown): value is ViewFilters {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
   const obj = value as Record<string, unknown>;
-  for (const key of ['status', 'priority', 'assignee', 'project', 'activity']) {
-    const v = obj[key];
-    if (v !== undefined && typeof v !== 'string') return false;
+  // Multi-capable fields accept a non-empty string OR an array of non-empty
+  // strings (legacy single values still validate). `type` is now persisted too.
+  for (const key of ['status', 'type', 'priority', 'assignee', 'project'] as const) {
+    if (obj[key] !== undefined && !isFilterValue(obj[key])) return false;
   }
+  if (obj.activity !== undefined && !isActivity(obj.activity)) return false;
   return true;
 }
 
@@ -227,10 +233,25 @@ export type ViewScope =
   | { kind: 'workspace'; workspace: string }
   | { kind: 'project'; slug: string; workspace: string | null };
 
+// Can ProjectDetail render this view faithfully? ProjectDetail pins the project
+// to the URL slug and has NO activity setter, so a view is compatible only when
+// its project set is empty or exactly [slug] AND it carries no active activity
+// filter. `viewMode: 'list'` is fine — ProjectDetail intrinsically coerces it to
+// kanban at apply time. This is the single source of truth shared by scopeMatches
+// (picker visibility), inferLandingRoute (Apply target), and ProjectDetail's
+// loadView guard, so they can never disagree.
+export function isProjectDetailCompatible(config: SavedViewConfig, slug: string): boolean {
+  const p = toFilterValues(config.filters.project);
+  const projectOk = p.length === 0 || (p.length === 1 && p[0] === slug);
+  const activity = config.filters.activity;
+  return projectOk && (!activity || activity === 'all');
+}
+
 // A view is compatible with a scope if it could meaningfully be applied there.
 // - global: only global views (workspace === null) — global pages can't navigate to a workspace.
 // - workspace: same-workspace views plus global views.
-// - project: workspace must match (or be global) AND projectFilter must be undefined/'all'/matching slug.
+// - project: workspace must match (or be global) AND the config must be
+//   ProjectDetail-renderable (empty/[slug] project set, no activity).
 export function scopeMatches(view: SavedView, scope: ViewScope): boolean {
   switch (scope.kind) {
     case 'global':
@@ -240,8 +261,7 @@ export function scopeMatches(view: SavedView, scope: ViewScope): boolean {
     case 'project': {
       const workspaceOk = view.workspace === scope.workspace || view.workspace === null;
       if (!workspaceOk) return false;
-      const viewProject = view.config.filters.project;
-      return viewProject === undefined || viewProject === 'all' || viewProject === scope.slug;
+      return isProjectDetailCompatible(view.config, scope.slug);
     }
   }
 }

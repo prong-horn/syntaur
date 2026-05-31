@@ -7,6 +7,7 @@ import {
   type ViewPrefsFile,
   type ViewPrefsPatch,
   mergePatch,
+  toFilterValues,
 } from './view-prefs-schema.js';
 
 // Re-exports so consumers only need to import from this module.
@@ -111,13 +112,13 @@ export function isViewPrefsDefaults(file: ViewPrefsFile): boolean {
   if (g.sortDirection !== d.sortDirection) return false;
   if (g.density !== d.density) return false;
   if (g.grouping !== d.grouping) return false;
+  // Compare NORMALIZED filter semantics, not raw scalar equality: once filters
+  // can be arrays, `status: []` / `'all'` / absent are all "default", and a
+  // populated array is "custom". Raw `!==` would misclassify these.
   const gf = g.filters;
-  const df = d.filters;
-  if (gf.status !== df.status) return false;
-  if (gf.type !== df.type) return false;
-  if (gf.priority !== df.priority) return false;
-  if (gf.assignee !== df.assignee) return false;
-  if (gf.project !== df.project) return false;
-  if (gf.activity !== df.activity) return false;
+  for (const key of ['status', 'type', 'priority', 'assignee', 'project'] as const) {
+    if (toFilterValues(gf[key]).length > 0) return false;
+  }
+  if (gf.activity !== undefined && gf.activity !== 'all') return false;
   return true;
 }

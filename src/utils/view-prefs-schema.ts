@@ -42,13 +42,50 @@ export const ACTIVITIES: readonly Activity[] = ['all', 'stale', 'fresh'];
 // assignee names, project slugs) plus 'all'. The codebase also uses the
 // sentinels '__unassigned__' and '__standalone__' for assignee/project,
 // so validation is allow-by-shape (non-empty string), not allow-by-value.
+//
+// Multi-select: the multi-capable fields accept a single string (legacy /
+// backward-compatible) OR an array of strings. `activity` stays a single
+// tri-state enum. Normalize with `toFilterValues` before matching.
+export type FilterValue = string | string[];
+
 export interface ViewFilters {
-  status?: string;
-  type?: string;
-  priority?: string;
-  assignee?: string;
-  project?: string;
+  status?: FilterValue;
+  type?: FilterValue;
+  priority?: FilterValue;
+  assignee?: FilterValue;
+  project?: FilterValue;
   activity?: Activity;
+}
+
+// Canonical normalization: any FilterValue -> deduped string[] of real
+// constraints. `undefined` / `'all'` / `''` / `[]` / `['all']` all collapse to
+// `[]` ("no constraint"). Trims, drops empty/'all', preserves first-seen order.
+export function toFilterValues(v: FilterValue | undefined): string[] {
+  const arr = v === undefined ? [] : Array.isArray(v) ? v : [v];
+  const out: string[] = [];
+  for (const s of arr) {
+    if (typeof s !== 'string') continue;
+    const t = s.trim();
+    if (!t || t === 'all') continue;
+    if (!out.includes(t)) out.push(t);
+  }
+  return out;
+}
+
+// A FilterValue is a non-whitespace string, OR an array of non-whitespace
+// strings (empty array allowed). Trim-gate here rather than relying on
+// toFilterValues to erase whitespace after the fact.
+export function isFilterValue(v: unknown): v is FilterValue {
+  if (typeof v === 'string') return v.trim().length > 0;
+  return Array.isArray(v) && v.every((x) => typeof x === 'string' && x.trim().length > 0);
+}
+
+// Normalized set-equality for array filter state — used to gate React effects so
+// switching board filter state to string[] doesn't thrash/loop on URL<->state sync.
+export function sameFilterValues(a: FilterValue | undefined, b: FilterValue | undefined): boolean {
+  const x = toFilterValues(a);
+  const y = toFilterValues(b);
+  return x.length === y.length && x.every((v) => y.includes(v));
 }
 
 export interface ViewPrefs {

@@ -47,6 +47,8 @@ import { useHotkey, useHotkeyScope, useListSelection } from '../hotkeys';
 import {
   VIEW_MODES,
   GROUPINGS,
+  toFilterValues,
+  sameFilterValues,
   type ViewMode,
   type SortField,
   type SortDirection,
@@ -59,6 +61,8 @@ import { fetchViewPrefs, saveGlobalViewPrefs, saveScopeViewPrefs, useViewPrefs }
 import { mergeForScope } from '@shared/view-prefs-schema';
 import { useSavedView, createSavedView, updateSavedView } from '../hooks/useSavedViews';
 import { captureCurrentView, applyConfig } from '../lib/savedViews';
+import { filterAssignment } from '../lib/assignmentFilter';
+import { MultiSelect } from '../components/ui/MultiSelect';
 
 const VALID_VIEWS: readonly ViewMode[] = VIEW_MODES;
 
@@ -82,15 +86,6 @@ function normalizeActivityFilter(value: string | null): ActivityFilter {
 
 function areSearchParamsEqual(left: URLSearchParams, right: URLSearchParams): boolean {
   return left.toString() === right.toString();
-}
-
-function isAssignmentStale(updated: string): boolean {
-  const timestamp = Date.parse(updated);
-  if (Number.isNaN(timestamp)) {
-    return false;
-  }
-
-  return Date.now() - timestamp > 7 * 24 * 60 * 60 * 1000;
 }
 
 export function AssignmentsPage() {
@@ -144,9 +139,19 @@ export function AssignmentsPage() {
   const staleParam = searchParams.get('stale');
   const view: ViewMode = viewParam && VALID_VIEWS.includes(viewParam) ? viewParam : 'kanban';
 
-  function normalizeStatusFilter(value: string | null): string {
-    if (!value || !VALID_STATUS_SET.has(value)) return 'all';
-    return value;
+  // Multi-value status URL param: comma-separated, keep only known status ids
+  // (statusConfig is async — unknowns drop gracefully, mirroring the single-value
+  // normalizeStatusFilter behavior), dedupe. `?status=blocked` still parses to
+  // ['blocked']; `?status=in_progress,review` to both.
+  function parseStatusParam(value: string | null): string[] {
+    if (!value) return [];
+    const out: string[] = [];
+    for (const raw of value.split(',')) {
+      const s = raw.trim();
+      if (!s || s === 'all' || !VALID_STATUS_SET.has(s)) continue;
+      if (!out.includes(s)) out.push(s);
+    }
+    return out;
   }
 
   const setView = useCallback(
@@ -165,13 +170,13 @@ export function AssignmentsPage() {
   );
 
   const [search, setSearch] = useState('');
-  const [statusFilter, setStatusFilter] = useState<string>(
-    () => normalizeStatusFilter(statusParam),
+  const [statusFilter, setStatusFilter] = useState<string[]>(
+    () => parseStatusParam(statusParam),
   );
-  const [priorityFilter, setPriorityFilter] = useState<string>(() => prefs.filters.priority ?? 'all');
-  const [typeFilter, setTypeFilter] = useState<string>(() => prefs.filters.type ?? 'all');
-  const [assigneeFilter, setAssigneeFilter] = useState<string>(() => prefs.filters.assignee ?? 'all');
-  const [projectFilter, setProjectFilter] = useState<string>(() => prefs.filters.project ?? 'all');
+  const [priorityFilter, setPriorityFilter] = useState<string[]>(() => toFilterValues(prefs.filters.priority));
+  const [typeFilter, setTypeFilter] = useState<string[]>(() => toFilterValues(prefs.filters.type));
+  const [assigneeFilter, setAssigneeFilter] = useState<string[]>(() => toFilterValues(prefs.filters.assignee));
+  const [projectFilter, setProjectFilter] = useState<string[]>(() => toFilterValues(prefs.filters.project));
   const [activityFilter, setActivityFilter] = useState<ActivityFilter>(
     () => normalizeActivityFilter(staleParam),
   );
@@ -248,8 +253,11 @@ export function AssignmentsPage() {
   }, [workspace]);
 
   useEffect(() => {
-    const nextStatus = normalizeStatusFilter(statusParam);
-    if (nextStatus !== statusFilter) {
+    const nextStatus = parseStatusParam(statusParam);
+    // Set-equality guard: statusFilter is now string[]; a fresh array that is
+    // semantically equal must NOT trigger setState (would loop with the
+    // state->URL mirror below).
+    if (!sameFilterValues(nextStatus, statusFilter)) {
       setStatusFilter(nextStatus);
     }
 
@@ -267,10 +275,10 @@ export function AssignmentsPage() {
     setSearchParams((prev) => {
       const next = new URLSearchParams(prev);
 
-      if (statusFilter === 'all') {
+      if (statusFilter.length === 0) {
         next.delete('status');
       } else {
-        next.set('status', statusFilter);
+        next.set('status', statusFilter.join(','));
       }
 
       if (activityFilter === 'all') {
@@ -291,10 +299,10 @@ export function AssignmentsPage() {
   // arrives later) AND the Settings-driven case (user changes a default in
   // another component, subscriber-set propagates here).
   useEffect(() => {
-    setPriorityFilter(prefs.filters.priority ?? 'all');
-    setTypeFilter(prefs.filters.type ?? 'all');
-    setAssigneeFilter(prefs.filters.assignee ?? 'all');
-    setProjectFilter(prefs.filters.project ?? 'all');
+    setPriorityFilter(toFilterValues(prefs.filters.priority));
+    setTypeFilter(toFilterValues(prefs.filters.type));
+    setAssigneeFilter(toFilterValues(prefs.filters.assignee));
+    setProjectFilter(toFilterValues(prefs.filters.project));
     setSortField(prefs.sortField);
     setSortDirection(prefs.sortDirection);
     setGrouping(prefs.grouping);
@@ -323,7 +331,7 @@ export function AssignmentsPage() {
       if (cancelled || bootstrappedScopeRef.current === scope) return;
       const p = mergeForScope(latest, scope);
       const wantView: ViewMode = p.defaultView;
-      const wantStatus = p.filters.status ?? 'all';
+      const wantStatus = toFilterValues(p.filters.status);
       const wantActivity = p.filters.activity ?? 'all';
       // Read the live URL directly. react-router's setSearchParams updates
       // window.location synchronously via the History API, so this is the
@@ -339,12 +347,12 @@ export function AssignmentsPage() {
         nextParams.set('view', wantView);
         needsUrlWrite = true;
       }
-      if (currentSP.get('status') === null && wantStatus !== 'all') {
+      if (currentSP.get('status') === null && wantStatus.length > 0) {
         // Don't pre-validate against VALID_STATUS_SET here — statusConfig is
         // also async and may not be loaded yet. The URL->state effect
-        // (normalizeStatusFilter) gracefully reduces unknown values to 'all',
-        // and the state->URL effect tidies the URL on the next render.
-        nextParams.set('status', wantStatus);
+        // (parseStatusParam) gracefully drops unknown values, and the state->URL
+        // effect tidies the URL on the next render.
+        nextParams.set('status', wantStatus.join(','));
         setStatusFilter(wantStatus);
         needsUrlWrite = true;
       }
@@ -388,36 +396,38 @@ export function AssignmentsPage() {
     },
     [setView, persistField],
   );
+  // Multi-value: persist the explicit array (incl. [] to clear — prefs deep-merge
+  // treats an omitted key as "preserve", so clearing must be sent explicitly).
   const handleSetStatusFilter = useCallback(
-    (v: string) => {
+    (v: string[]) => {
       setStatusFilter(v);
       persistField({ filters: { status: v } });
     },
     [persistField],
   );
   const handleSetPriorityFilter = useCallback(
-    (v: string) => {
+    (v: string[]) => {
       setPriorityFilter(v);
       persistField({ filters: { priority: v } });
     },
     [persistField],
   );
   const handleSetTypeFilter = useCallback(
-    (v: string) => {
+    (v: string[]) => {
       setTypeFilter(v);
       persistField({ filters: { type: v } });
     },
     [persistField],
   );
   const handleSetAssigneeFilter = useCallback(
-    (v: string) => {
+    (v: string[]) => {
       setAssigneeFilter(v);
       persistField({ filters: { assignee: v } });
     },
     [persistField],
   );
   const handleSetProjectFilter = useCallback(
-    (v: string) => {
+    (v: string[]) => {
       setProjectFilter(v);
       persistField({ filters: { project: v } });
     },
@@ -458,6 +468,7 @@ export function AssignmentsPage() {
       filters: {
         status: statusFilter,
         priority: priorityFilter,
+        type: typeFilter,
         assignee: assigneeFilter,
         project: projectFilter,
         activity: activityFilter,
@@ -472,6 +483,7 @@ export function AssignmentsPage() {
       view,
       statusFilter,
       priorityFilter,
+      typeFilter,
       assigneeFilter,
       projectFilter,
       activityFilter,
@@ -489,6 +501,7 @@ export function AssignmentsPage() {
         setViewMode: setView,
         setStatusFilter: handleSetStatusFilter,
         setPriorityFilter: handleSetPriorityFilter,
+        setTypeFilter: handleSetTypeFilter,
         setAssigneeFilter: handleSetAssigneeFilter,
         setProjectFilter: handleSetProjectFilter,
         setActivityFilter: handleSetActivityFilter,
@@ -504,6 +517,7 @@ export function AssignmentsPage() {
       setView,
       handleSetStatusFilter,
       handleSetPriorityFilter,
+      handleSetTypeFilter,
       handleSetAssigneeFilter,
       handleSetProjectFilter,
       handleSetActivityFilter,
@@ -664,41 +678,24 @@ export function AssignmentsPage() {
     [boardItems],
   );
 
-  const filteredItems = useMemo(() => {
-    return boardItems.filter((assignment) => {
-      if (workspace) {
-        if (workspace === '_ungrouped') {
-          if (assignment.projectWorkspace !== null) return false;
-        } else {
-          if (assignment.projectWorkspace !== workspace) return false;
-        }
-      }
-      if (statusFilter !== 'all' && assignment.status !== statusFilter) return false;
-      if (priorityFilter !== 'all' && assignment.priority !== priorityFilter) return false;
-      if (typeFilter !== 'all' && (assignment.type ?? '') !== typeFilter) return false;
-      if (activityFilter === 'stale' && !isAssignmentStale(assignment.updated)) return false;
-      if (activityFilter === 'fresh' && isAssignmentStale(assignment.updated)) return false;
-      if (assigneeFilter !== 'all') {
-        const val = assignment.assignee ?? '__unassigned__';
-        if (val !== assigneeFilter) return false;
-      }
-      if (projectFilter !== 'all') {
-        if (projectFilter === '__standalone__') {
-          if (assignment.projectSlug !== null) return false;
-        } else if (assignment.projectSlug !== projectFilter) {
-          return false;
-        }
-      }
-
-      const query = search.trim().toLowerCase();
-      if (query) {
-        const haystack = `${assignment.title} ${assignment.slug} ${assignment.projectTitle ?? 'standalone'} ${assignment.projectSlug ?? ''}`.toLowerCase();
-        if (!haystack.includes(query)) return false;
-      }
-
-      return true;
-    });
-  }, [activityFilter, boardItems, search, statusFilter, priorityFilter, typeFilter, assigneeFilter, projectFilter, workspace]);
+  const filteredItems = useMemo(
+    () =>
+      boardItems.filter((assignment) =>
+        filterAssignment(
+          assignment,
+          {
+            status: statusFilter,
+            priority: priorityFilter,
+            type: typeFilter,
+            assignee: assigneeFilter,
+            project: projectFilter,
+            activity: activityFilter,
+          },
+          { workspace, search },
+        ),
+      ),
+    [activityFilter, boardItems, search, statusFilter, priorityFilter, typeFilter, assigneeFilter, projectFilter, workspace],
+  );
 
   const sortedItems = useMemo(
     () => sortAssignments(filteredItems, sortField, sortDirection),
@@ -1085,41 +1082,49 @@ export function AssignmentsPage() {
           onChange={setSearch}
           placeholder="Search assignments or projects"
         />
-        <select
+        <MultiSelect
+          ariaLabel="Status filter"
+          className="max-w-[180px]"
+          allLabel="All statuses"
+          options={uniqueStatuses.map((s) => ({ value: s, label: COLUMN_LABELS[s] ?? s }))}
           value={statusFilter}
-          onChange={(e) => handleSetStatusFilter(normalizeStatusFilter(e.target.value))}
-          className="editor-input max-w-[180px]"
-        >
-          <option value="all">All statuses</option>
-          {uniqueStatuses.map((s) => (
-            <option key={s} value={s}>{COLUMN_LABELS[s] ?? s}</option>
-          ))}
-        </select>
-        <select value={priorityFilter} onChange={(e) => handleSetPriorityFilter(e.target.value)} className="editor-input max-w-[180px]">
-          <option value="all">All priorities</option>
-          {uniquePriorities.map((p) => (
-            <option key={p} value={p} className="capitalize">{p}</option>
-          ))}
-        </select>
-        <select value={typeFilter} onChange={(e) => handleSetTypeFilter(e.target.value)} className="editor-input max-w-[180px]">
-          <option value="all">All types</option>
-          {typesConfig.definitions.map((t) => (
-            <option key={t.id} value={t.id}>{getTypeLabel(typesConfig, t.id)}</option>
-          ))}
-        </select>
-        <select value={assigneeFilter} onChange={(e) => handleSetAssigneeFilter(e.target.value)} className="editor-input max-w-[180px]">
-          <option value="all">All assignees</option>
-          {uniqueAssignees.map((a) => (
-            <option key={a} value={a}>{a === '__unassigned__' ? 'Unassigned' : a}</option>
-          ))}
-        </select>
-        <select value={projectFilter} onChange={(e) => handleSetProjectFilter(e.target.value)} className="editor-input max-w-[180px]">
-          <option value="all">All projects</option>
-          <option value="__standalone__">Standalone</option>
-          {uniqueProjects.map(([slug, title]) => (
-            <option key={slug} value={slug}>{title}</option>
-          ))}
-        </select>
+          onChange={handleSetStatusFilter}
+        />
+        <MultiSelect
+          ariaLabel="Priority filter"
+          className="max-w-[180px]"
+          allLabel="All priorities"
+          options={uniquePriorities.map((p) => ({ value: p, label: p[0].toUpperCase() + p.slice(1) }))}
+          value={priorityFilter}
+          onChange={handleSetPriorityFilter}
+        />
+        <MultiSelect
+          ariaLabel="Type filter"
+          className="max-w-[180px]"
+          allLabel="All types"
+          options={typesConfig.definitions.map((t) => ({ value: t.id, label: getTypeLabel(typesConfig, t.id) }))}
+          value={typeFilter}
+          onChange={handleSetTypeFilter}
+        />
+        <MultiSelect
+          ariaLabel="Assignee filter"
+          className="max-w-[180px]"
+          allLabel="All assignees"
+          options={uniqueAssignees.map((a) => ({ value: a, label: a === '__unassigned__' ? 'Unassigned' : a }))}
+          value={assigneeFilter}
+          onChange={handleSetAssigneeFilter}
+        />
+        <MultiSelect
+          ariaLabel="Project filter"
+          className="max-w-[180px]"
+          allLabel="All projects"
+          options={[
+            { value: '__standalone__', label: 'Standalone' },
+            ...uniqueProjects.map(([slug, title]) => ({ value: slug, label: title })),
+          ]}
+          value={projectFilter}
+          onChange={handleSetProjectFilter}
+        />
         <select value={activityFilter} onChange={(e) => handleSetActivityFilter(e.target.value as ActivityFilter)} className="editor-input max-w-[180px]">
           <option value="all">All activity</option>
           <option value="stale">Stale only</option>

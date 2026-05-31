@@ -23,15 +23,17 @@ import { TableColumnPicker } from '../components/TableColumnPicker';
 import { useStatusConfig, getStatusLabel } from '../hooks/useStatusConfig';
 import { useTypesConfig, getTypeLabel } from '../hooks/useTypesConfig';
 import { useHotkey, useHotkeyScope } from '../hotkeys';
-import { coerceProjectDetailView, type SortField, type SortDirection, type Grouping } from '@shared/view-prefs-schema';
+import { coerceProjectDetailView, toFilterValues, type SortField, type SortDirection, type Grouping } from '@shared/view-prefs-schema';
 import { saveScopeViewPrefs, useViewPrefs } from '../hooks/useViewPrefs';
 import { getAssignmentColumns } from '../lib/kanban';
 import { sortAssignments } from '../lib/sortAssignments';
+import { filterAssignment } from '../lib/assignmentFilter';
 import { SaveViewDialog } from '../components/SaveViewDialog';
 import { SavedViewPicker } from '../components/SavedViewPicker';
+import { MultiSelect, type MultiSelectOption } from '../components/ui/MultiSelect';
 import { useSavedView, createSavedView, updateSavedView } from '../hooks/useSavedViews';
-import { captureCurrentView, applyConfig } from '../lib/savedViews';
-import type { SavedView, ViewScope } from '@shared/saved-views-schema';
+import { captureCurrentView, applyConfig, inferLandingRoute } from '../lib/savedViews';
+import { scopeMatches, type SavedView, type ViewScope } from '@shared/saved-views-schema';
 import { useToast, Toaster } from '../components/Toast';
 
 const VALID_TABS = new Set(['overview', 'assignments', 'todos', 'dependencies', 'knowledge']);
@@ -82,10 +84,10 @@ export function ProjectDetail() {
   const [assignmentView, setAssignmentView] = useState<'kanban' | 'table'>(
     () => coerceProjectDetailView(prefs.defaultView),
   );
-  const [statusFilter, setStatusFilter] = useState<string>(() => prefs.filters.status ?? 'all');
-  const [assigneeFilter, setAssigneeFilter] = useState<string>(() => prefs.filters.assignee ?? 'all');
-  const [priorityFilter, setPriorityFilter] = useState<string>(() => prefs.filters.priority ?? 'all');
-  const [typeFilter, setTypeFilter] = useState<string>(() => prefs.filters.type ?? 'all');
+  const [statusFilter, setStatusFilter] = useState<string[]>(() => toFilterValues(prefs.filters.status));
+  const [assigneeFilter, setAssigneeFilter] = useState<string[]>(() => toFilterValues(prefs.filters.assignee));
+  const [priorityFilter, setPriorityFilter] = useState<string[]>(() => toFilterValues(prefs.filters.priority));
+  const [typeFilter, setTypeFilter] = useState<string[]>(() => toFilterValues(prefs.filters.type));
   const [grouping, setGrouping] = useState<Grouping>(() => prefs.grouping);
   const [sortField, setSortField] = useState<SortField>(() => prefs.sortField);
   const [sortDirection, setSortDirection] = useState<SortDirection>(() => prefs.sortDirection);
@@ -137,10 +139,10 @@ export function ProjectDetail() {
   // do not trigger saves — inherited fields stay inherited.
   useEffect(() => {
     setAssignmentView(coerceProjectDetailView(prefs.defaultView));
-    setStatusFilter(prefs.filters.status ?? 'all');
-    setAssigneeFilter(prefs.filters.assignee ?? 'all');
-    setPriorityFilter(prefs.filters.priority ?? 'all');
-    setTypeFilter(prefs.filters.type ?? 'all');
+    setStatusFilter(toFilterValues(prefs.filters.status));
+    setAssigneeFilter(toFilterValues(prefs.filters.assignee));
+    setPriorityFilter(toFilterValues(prefs.filters.priority));
+    setTypeFilter(toFilterValues(prefs.filters.type));
     setGrouping(prefs.grouping);
     setSortField(prefs.sortField);
     setSortDirection(prefs.sortDirection);
@@ -163,29 +165,31 @@ export function ProjectDetail() {
     },
     [persistField],
   );
+  // Multi-value: persist the explicit array (incl. [] to clear — the prefs
+  // deep-merge treats omission as "preserve", so clearing must be explicit).
   const handleSetStatusFilter = useCallback(
-    (v: string) => {
+    (v: string[]) => {
       setStatusFilter(v);
       persistField({ filters: { status: v } });
     },
     [persistField],
   );
   const handleSetAssigneeFilter = useCallback(
-    (v: string) => {
+    (v: string[]) => {
       setAssigneeFilter(v);
       persistField({ filters: { assignee: v } });
     },
     [persistField],
   );
   const handleSetPriorityFilter = useCallback(
-    (v: string) => {
+    (v: string[]) => {
       setPriorityFilter(v);
       persistField({ filters: { priority: v } });
     },
     [persistField],
   );
   const handleSetTypeFilter = useCallback(
-    (v: string) => {
+    (v: string[]) => {
       setTypeFilter(v);
       persistField({ filters: { type: v } });
     },
@@ -222,6 +226,7 @@ export function ProjectDetail() {
       filters: {
         status: statusFilter,
         priority: priorityFilter,
+        type: typeFilter,
         assignee: assigneeFilter,
         // project filter is forced via context.projectSlug below — value here is ignored
         project: 'all',
@@ -237,6 +242,7 @@ export function ProjectDetail() {
       assignmentView,
       statusFilter,
       priorityFilter,
+      typeFilter,
       assigneeFilter,
       sortField,
       sortDirection,
@@ -252,6 +258,7 @@ export function ProjectDetail() {
         setViewMode: (mode) => setAssignmentView(coerceProjectDetailView(mode)),
         setStatusFilter: handleSetStatusFilter,
         setPriorityFilter: handleSetPriorityFilter,
+        setTypeFilter: handleSetTypeFilter,
         setAssigneeFilter: handleSetAssigneeFilter,
         // setProjectFilter intentionally omitted — slug is URL-derived here.
         setSortField: handleSetSortField,
@@ -265,6 +272,7 @@ export function ProjectDetail() {
     [
       handleSetStatusFilter,
       handleSetPriorityFilter,
+      handleSetTypeFilter,
       handleSetAssigneeFilter,
       handleSetSortField,
       handleSetSortDirection,
@@ -353,6 +361,17 @@ export function ProjectDetail() {
     }
     if (pendingView) {
       lastAppliedLoadViewRef.current = loadViewParam;
+      // ProjectDetail can't render every view (no activity setter; project is
+      // pinned to the URL slug; foreign-workspace views belong elsewhere). If the
+      // view isn't project-scope compatible — e.g. a legacy project+activity view,
+      // a multi-project view, or a different-workspace view reached via a bookmarked
+      // /projects/<slug>?loadView= URL — redirect to its own faithful surface via
+      // inferLandingRoute (correct prefix from the VIEW's workspace) instead of
+      // silently dropping filters here.
+      if (!scopeMatches(pendingView, { kind: 'project', slug: slug ?? '', workspace: workspace ?? null })) {
+        navigate(inferLandingRoute(pendingView), { replace: true });
+        return;
+      }
       applyViewToState(pendingView);
       setSearchParams(
         (prev) => {
@@ -383,6 +402,9 @@ export function ProjectDetail() {
     applyViewToState,
     setSearchParams,
     showToast,
+    navigate,
+    slug,
+    workspace,
   ]);
 
   function handleSort(field: SortField) {
@@ -434,24 +456,31 @@ export function ProjectDetail() {
     return <ErrorState error={error || 'Project not found.'} />;
   }
 
-  const assignees = Array.from(
-    new Set(project.assignments.map((assignment) => assignment.assignee).filter(Boolean)),
-  ).sort();
-  const filteredAssignments = project.assignments.filter((assignment) => {
-    if (statusFilter !== 'all' && assignment.status !== statusFilter) {
-      return false;
+  // Assignee options: the sentinel-aware shared model (null -> '__unassigned__'),
+  // matching AssignmentsPage and filterAssignment, so an Unassigned saved view
+  // round-trips here. MultiSelect injects any orphan selection not in this list.
+  const assigneeOptions: MultiSelectOption[] = (() => {
+    const names = new Set<string>();
+    let hasUnassigned = false;
+    for (const a of project.assignments) {
+      if (a.assignee) names.add(a.assignee);
+      else hasUnassigned = true;
     }
-    if (assigneeFilter !== 'all' && assignment.assignee !== assigneeFilter) {
-      return false;
-    }
-    if (priorityFilter !== 'all' && assignment.priority !== priorityFilter) {
-      return false;
-    }
-    if (typeFilter !== 'all' && (assignment.type ?? '') !== typeFilter) {
-      return false;
-    }
-    return true;
-  });
+    const opts: MultiSelectOption[] = [];
+    if (hasUnassigned) opts.push({ value: '__unassigned__', label: 'Unassigned' });
+    for (const n of Array.from(names).sort()) opts.push({ value: n, label: n });
+    return opts;
+  })();
+  // Centralized predicate (multi-value + sentinel-aware). No workspace/project/
+  // activity criteria here — ProjectDetail is already scoped to its slug.
+  const filteredAssignments = project.assignments.filter((assignment) =>
+    filterAssignment(assignment, {
+      status: statusFilter,
+      priority: priorityFilter,
+      type: typeFilter,
+      assignee: assigneeFilter,
+    }),
+  );
   const sortedAssignments = sortAssignments(filteredAssignments, sortField, sortDirection);
   const knownTypeIds = new Set(typesConfig.definitions.map((d) => d.id));
   const kanbanColumns: KanbanColumn[] =
@@ -598,33 +627,43 @@ export function ProjectDetail() {
                       description="Board and table views over the source assignment files."
                       actions={
                         <div className="flex flex-wrap items-center gap-2">
-                          <select value={statusFilter} onChange={(event) => handleSetStatusFilter(event.target.value)} className="editor-input max-w-[170px]">
-                            <option value="all">All statuses</option>
-                            {statusConfig.statuses.map((s) => (
-                              <option key={s.id} value={s.id}>{s.label}</option>
-                            ))}
-                          </select>
-                          <select value={assigneeFilter} onChange={(event) => handleSetAssigneeFilter(event.target.value)} className="editor-input max-w-[170px]">
-                            <option value="all">All assignees</option>
-                            {assignees.map((assignee) => (
-                              <option key={assignee} value={assignee ?? ''}>
-                                {assignee}
-                              </option>
-                            ))}
-                          </select>
-                          <select value={priorityFilter} onChange={(event) => handleSetPriorityFilter(event.target.value)} className="editor-input max-w-[170px]">
-                            <option value="all">All priorities</option>
-                            <option value="low">Low</option>
-                            <option value="medium">Medium</option>
-                            <option value="high">High</option>
-                            <option value="critical">Critical</option>
-                          </select>
-                          <select value={typeFilter} onChange={(event) => handleSetTypeFilter(event.target.value)} className="editor-input max-w-[170px]">
-                            <option value="all">All types</option>
-                            {typesConfig.definitions.map((t) => (
-                              <option key={t.id} value={t.id}>{getTypeLabel(typesConfig, t.id)}</option>
-                            ))}
-                          </select>
+                          <MultiSelect
+                            ariaLabel="Status filter"
+                            className="max-w-[170px]"
+                            allLabel="All statuses"
+                            options={statusConfig.statuses.map((s) => ({ value: s.id, label: s.label }))}
+                            value={statusFilter}
+                            onChange={handleSetStatusFilter}
+                          />
+                          <MultiSelect
+                            ariaLabel="Assignee filter"
+                            className="max-w-[170px]"
+                            allLabel="All assignees"
+                            options={assigneeOptions}
+                            value={assigneeFilter}
+                            onChange={handleSetAssigneeFilter}
+                          />
+                          <MultiSelect
+                            ariaLabel="Priority filter"
+                            className="max-w-[170px]"
+                            allLabel="All priorities"
+                            options={[
+                              { value: 'critical', label: 'Critical' },
+                              { value: 'high', label: 'High' },
+                              { value: 'medium', label: 'Medium' },
+                              { value: 'low', label: 'Low' },
+                            ]}
+                            value={priorityFilter}
+                            onChange={handleSetPriorityFilter}
+                          />
+                          <MultiSelect
+                            ariaLabel="Type filter"
+                            className="max-w-[170px]"
+                            allLabel="All types"
+                            options={typesConfig.definitions.map((t) => ({ value: t.id, label: getTypeLabel(typesConfig, t.id) }))}
+                            value={typeFilter}
+                            onChange={handleSetTypeFilter}
+                          />
                           {assignmentView === 'kanban' && (
                             <select value={grouping === 'type' ? 'type' : 'status'} onChange={(event) => handleSetGrouping(event.target.value as Grouping)} className="editor-input max-w-[170px]" title="Group kanban by">
                               <option value="status">Group: Status</option>
