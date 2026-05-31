@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { ArrowRightLeft, ExternalLink } from 'lucide-react';
-import { useAssignmentById, useAssignmentSessionsById, type ExternalIdInfo } from '../hooks/useProjects';
+import { useAssignmentById, useAssignmentSessionsById, useStandaloneAssignmentUsage, type ExternalIdInfo } from '../hooks/useProjects';
 import { LoadingState } from '../components/LoadingState';
 import { ErrorState } from '../components/ErrorState';
 import { StatusBadge } from '../components/StatusBadge';
@@ -16,6 +16,7 @@ import { EmptyState } from '../components/EmptyState';
 import { CommentsThread } from '../components/CommentsThread';
 import { MoveToWorkspaceDialog } from '../components/MoveToWorkspaceDialog';
 import { AgentSessionsSection } from '../components/AgentSessionsSection';
+import { AssignmentUsageSection } from '../components/AssignmentUsageSection';
 import { OpenInAgentButton } from '../components/OpenInAgentButton';
 import { CreateWorktreeButton } from '../components/CreateWorktreeButton';
 
@@ -29,6 +30,9 @@ export function StandaloneAssignmentDetail() {
   const tab = searchParams.get('tab') ?? 'summary';
   const { data: assignment, loading, error, refetch } = useAssignmentById(id);
   const { data: sessionsData, loading: sessionsLoading, error: sessionsError } = useAssignmentSessionsById(id);
+  // D3: the standalone usage endpoint keys on the assignment SLUG, not the UUID
+  // `id`. `assignment` is undefined until loaded, so gate on `assignment?.slug`.
+  const { data: usageData, loading: usageLoading, error: usageError } = useStandaloneAssignmentUsage(assignment?.slug);
   const [moveOpen, setMoveOpen] = useState(false);
 
   if (loading) return <LoadingState />;
@@ -137,6 +141,12 @@ export function StandaloneAssignmentDetail() {
         sessions={sessionsData?.sessions}
         loading={sessionsLoading}
         error={sessionsError}
+      />
+
+      <AssignmentUsageSection
+        summary={usageData?.summary}
+        loading={usageLoading}
+        error={usageError}
       />
 
       <ContentTabs

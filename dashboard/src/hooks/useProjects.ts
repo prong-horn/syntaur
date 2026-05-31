@@ -611,6 +611,44 @@ export function useAssignmentSessionsById(
   return useFetch<AgentSessionsResponse>(url, 'agent-sessions');
 }
 
+export interface AssignmentUsageSummary {
+  totalTokens: number;
+  totalCost: number;
+  lastEventDay: string | null;
+  byModel: { model: string; totalTokens: number; totalCost: number }[];
+}
+
+export interface AssignmentUsageResponse {
+  summary: AssignmentUsageSummary;
+  // `daily` / `events` are returned for backward compat but unused by the panel.
+  daily?: unknown[];
+  events?: unknown[];
+}
+
+// Usage is read-only and not broadcast over the websocket, so these hooks omit
+// the `websocketScope` arg — they fetch once per (project, assignment) and stay
+// inert to project/assignment/session broadcasts.
+export function useAssignmentUsage(
+  projectSlug: string | undefined,
+  assignmentSlug: string | undefined,
+): FetchState<AssignmentUsageResponse> {
+  const url =
+    projectSlug && assignmentSlug
+      ? `/api/usage/projects/${encodeURIComponent(projectSlug)}/assignments/${encodeURIComponent(assignmentSlug)}`
+      : null;
+  return useFetch<AssignmentUsageResponse>(url);
+}
+
+// Keyed on the assignment SLUG (not the UUID id): the standalone usage endpoint
+// matches `assignment_slug`, and `sessions.assignment_slug` is written with the
+// slug. Passing the UUID would always return empty.
+export function useStandaloneAssignmentUsage(
+  slug: string | undefined,
+): FetchState<AssignmentUsageResponse> {
+  const url = slug ? `/api/usage/standalone/${encodeURIComponent(slug)}` : null;
+  return useFetch<AssignmentUsageResponse>(url);
+}
+
 export function usePlaybooks(enabled = true): FetchState<PlaybooksResponse> {
   return useFetch<PlaybooksResponse>('/api/playbooks', 'playbooks', enabled);
 }

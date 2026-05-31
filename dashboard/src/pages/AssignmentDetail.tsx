@@ -10,7 +10,7 @@ import {
   Trash2,
 } from 'lucide-react';
 import { CopyButton } from '../components/CopyButton';
-import { useAssignment, useProject, useServers, useAssignmentSessions, useWorkspacePrefix, type AssignmentTransitionAction, type ExternalIdInfo } from '../hooks/useProjects';
+import { useAssignment, useProject, useServers, useAssignmentSessions, useAssignmentUsage, useWorkspacePrefix, type AssignmentTransitionAction, type ExternalIdInfo } from '../hooks/useProjects';
 import { useStatusConfig } from '../hooks/useStatusConfig';
 import { formatRelativeTime, formatShortDate, formatShortDateTime } from '../lib/format';
 import { LoadingState } from '../components/LoadingState';
@@ -23,6 +23,7 @@ import { SectionCard } from '../components/SectionCard';
 import { MarkdownRenderer } from '../components/MarkdownRenderer';
 import { EmptyState } from '../components/EmptyState';
 import { AgentSessionsSection } from '../components/AgentSessionsSection';
+import { AssignmentUsageSection } from '../components/AssignmentUsageSection';
 import { AssignmentTransitionDialog } from '../components/AssignmentTransitionDialog';
 import { ConfirmDialog } from '../components/ConfirmDialog';
 import { OverflowMenu, type OverflowMenuItem } from '../components/OverflowMenu';
@@ -62,6 +63,7 @@ export function AssignmentDetail() {
   const { data: project } = useProject(slug);
   const { data: serversData } = useServers();
   const { data: sessionsData, loading: sessionsLoading, error: sessionsError } = useAssignmentSessions(slug, aslug);
+  const { data: usageData, loading: usageLoading, error: usageError } = useAssignmentUsage(slug, aslug);
 
   const enrichedDeps = useMemo(() => {
     if (!assignment || !project) return [];
@@ -736,6 +738,12 @@ export function AssignmentDetail() {
             sessions={sessionsData?.sessions}
             loading={sessionsLoading}
             error={sessionsError}
+          />
+
+          <AssignmentUsageSection
+            summary={usageData?.summary}
+            loading={usageLoading}
+            error={usageError}
           />
         </div>
       </div>
