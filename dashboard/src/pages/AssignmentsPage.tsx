@@ -28,7 +28,7 @@ import { SectionCard } from '../components/SectionCard';
 import { LoadingState } from '../components/LoadingState';
 import { ErrorState } from '../components/ErrorState';
 import { EmptyState } from '../components/EmptyState';
-import { KanbanBoard, type KanbanColumn, type ExternalDragData } from '../components/KanbanBoard';
+import { KanbanBoard, NON_DRAGGABLE_SELECTOR, type KanbanColumn, type ExternalDragData } from '../components/KanbanBoard';
 import { AssignmentTransitionDialog } from '../components/AssignmentTransitionDialog';
 import { ContextMenuPopover } from '../components/ContextMenuPopover';
 import { ConfirmDialog } from '../components/ConfirmDialog';
@@ -1627,12 +1627,53 @@ function AssignmentBoardCard({
   onRenameTitle?: (newTitle: string) => Promise<void>;
 }) {
   const wsPrefix = useWorkspacePrefix();
+  const navigate = useNavigate();
+  const cardRef = useRef<HTMLDivElement>(null);
+  // Set on mousedown; when true the trailing click is dismissing an open status
+  // menu or committing an inline title edit, so it must NOT also navigate.
+  const suppressBodyNavRef = useRef(false);
   const detailHref = assignment.projectSlug === null
     ? `/assignments/${assignment.id}`
     : `${wsPrefix}/projects/${assignment.projectSlug}/assignments/${assignment.slug}`;
+  // Body-click navigation is kanban-only: the kanban render-site is the only one
+  // that passes onPillSelect + onRenameTitle, so this is also the "is this the
+  // interactive (kanban) card" signal. The list-view card stays read-only.
   const inlineEditEnabled = Boolean(onPillSelect && onRenameTitle);
+
+  const handleBodyMouseDown = () => {
+    const card = cardRef.current;
+    // Status menu open? The picker portals its menu out of the card, but its
+    // trigger button (in the card) carries aria-expanded — and it's still "true"
+    // here because the card's mousedown fires before the picker's document-level
+    // outside-close listener runs.
+    const menuOpen = Boolean(card?.querySelector('[aria-expanded="true"]'));
+    // Inline title editor focused? At mousedown the input still holds focus
+    // (blur fires afterward), so document.activeElement is observable here.
+    const active = document.activeElement;
+    const editorActive = Boolean(
+      active && card?.contains(active) &&
+        (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA'),
+    );
+    suppressBodyNavRef.current = menuOpen || editorActive;
+  };
+
+  const handleBodyClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (suppressBodyNavRef.current) return; // dismissed a menu / committed an edit
+    const target = e.target as HTMLElement | null;
+    if (!target || target.closest(NON_DRAGGABLE_SELECTOR)) return; // interactive control
+    navigate(detailHref);
+  };
+
   return (
-    <div className="vp-card rounded-lg border border-border/60 bg-background/85 p-3 shadow-sm">
+    <div
+      ref={cardRef}
+      className={cn(
+        'vp-card rounded-lg border border-border/60 bg-background/85 p-3 shadow-sm',
+        inlineEditEnabled && 'cursor-pointer',
+      )}
+      onMouseDown={inlineEditEnabled ? handleBodyMouseDown : undefined}
+      onClick={inlineEditEnabled ? handleBodyClick : undefined}
+    >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1 space-y-1">
           {inlineEditEnabled ? (
