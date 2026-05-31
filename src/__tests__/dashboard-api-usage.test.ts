@@ -49,10 +49,11 @@ function seed(
   totalTokens: number,
   totalCost: number,
   eventTs = '2026-05-21T12:00:00.000Z',
+  model = 'claude-opus-4-7',
 ) {
   upsertEvent({
-    sessionId: `${projectSlug}-${assignmentSlug}`,
-    model: 'claude-opus-4-7',
+    sessionId: `${projectSlug}-${assignmentSlug}-${model}-${eventTs}`,
+    model,
     tool: 'claude',
     eventTs,
     inputTokens: 0,
@@ -146,6 +147,26 @@ describe('GET /api/usage/projects/:projectSlug/assignments/:assignmentSlug', () 
     ]);
   });
 
+  it('merges byModel across multiple days and models, ordered by tokens desc', async () => {
+    // One assignment, two models, spread across two days.
+    seed('p1', 'merge', 100, 0.5, '2026-05-20T12:00:00.000Z', 'claude-opus-4-7');
+    seed('p1', 'merge', 30, 0.25, '2026-05-21T12:00:00.000Z', 'claude-opus-4-7');
+    seed('p1', 'merge', 50, 0.125, '2026-05-21T12:00:00.000Z', 'claude-sonnet-4-6');
+    runRollup();
+
+    const res = await fetch(`${baseUrl}/api/usage/projects/p1/assignments/merge`);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.summary.totalTokens).toBe(180);
+    expect(body.summary.totalCost).toBeCloseTo(0.875, 6);
+    expect(body.summary.lastEventDay).toBe('2026-05-21');
+    // opus (130) before sonnet (50); the two opus daily rows are merged.
+    expect(body.summary.byModel).toEqual([
+      { model: 'claude-opus-4-7', totalTokens: 130, totalCost: 0.75 },
+      { model: 'claude-sonnet-4-6', totalTokens: 50, totalCost: 0.125 },
+    ]);
+  });
+
   it('returns a calm zero summary when the assignment has no usage', async () => {
     seed('p1', 'a1', 100, 0.5);
     runRollup();
@@ -190,6 +211,7 @@ describe('GET /api/usage/standalone/:assignmentId', () => {
     expect(body.daily.length).toBe(0);
     expect(body.events.length).toBe(0);
     expect(body.summary.totalTokens).toBe(0);
+    expect(body.summary.totalCost).toBe(0);
     expect(body.summary.lastEventDay).toBeNull();
     expect(body.summary.byModel).toEqual([]);
   });

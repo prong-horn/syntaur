@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams } from 'react-router-dom';
 import { useWebSocket } from './useWebSocket';
 import type { WsMessage } from './useWebSocket';
@@ -418,7 +418,16 @@ interface FetchState<T> {
   refetch: () => void;
 }
 
-function useFetch<T>(url: string | null, websocketScope?: 'projects' | 'project' | 'assignment' | 'assignments' | 'overview' | 'servers' | 'agent-sessions' | 'playbooks' | 'inventories', enabled = true): FetchState<T> {
+function useFetch<T>(
+  url: string | null,
+  websocketScope?: 'projects' | 'project' | 'assignment' | 'assignments' | 'overview' | 'servers' | 'agent-sessions' | 'playbooks' | 'inventories',
+  enabled = true,
+  // By default `data` is retained across URL changes so filter-driven views
+  // (e.g. UsagePage's date range) update smoothly without flashing empty. Set
+  // this for entity-keyed fetches where rendering a *previous* entity's data on
+  // a new key would be wrong (e.g. assignment-to-assignment navigation).
+  resetDataOnUrlChange = false,
+): FetchState<T> {
   const [data, setData] = useState<T | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -431,6 +440,18 @@ function useFetch<T>(url: string | null, websocketScope?: 'projects' | 'project'
   const refetch = useCallback(() => {
     setFetchCount((count) => count + 1);
   }, []);
+
+  // Drop stale data the moment the target URL changes (opt-in). Runs only on
+  // `activeUrl` changes, not on `refetch`/websocket-triggered refetches, so it
+  // never clears good data during a same-key refresh.
+  const lastUrlRef = useRef(activeUrl);
+  useEffect(() => {
+    if (resetDataOnUrlChange && lastUrlRef.current !== activeUrl) {
+      setData(null);
+      setError(null);
+    }
+    lastUrlRef.current = activeUrl;
+  }, [activeUrl, resetDataOnUrlChange]);
 
   useEffect(() => {
     if (!activeUrl) {
@@ -636,7 +657,8 @@ export function useAssignmentUsage(
     projectSlug && assignmentSlug
       ? `/api/usage/projects/${encodeURIComponent(projectSlug)}/assignments/${encodeURIComponent(assignmentSlug)}`
       : null;
-  return useFetch<AssignmentUsageResponse>(url);
+  // resetDataOnUrlChange: never render a prior assignment's totals on a new one.
+  return useFetch<AssignmentUsageResponse>(url, undefined, true, true);
 }
 
 // Keyed on the assignment SLUG (not the UUID id): the standalone usage endpoint
@@ -646,7 +668,8 @@ export function useStandaloneAssignmentUsage(
   slug: string | undefined,
 ): FetchState<AssignmentUsageResponse> {
   const url = slug ? `/api/usage/standalone/${encodeURIComponent(slug)}` : null;
-  return useFetch<AssignmentUsageResponse>(url);
+  // resetDataOnUrlChange: never render a prior assignment's totals on a new one.
+  return useFetch<AssignmentUsageResponse>(url, undefined, true, true);
 }
 
 export function usePlaybooks(enabled = true): FetchState<PlaybooksResponse> {

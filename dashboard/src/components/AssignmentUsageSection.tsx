@@ -17,13 +17,17 @@ const TITLE = 'Cost / Usage';
  * Data is pulled live from the usage DB via the usage API — never persisted to
  * `assignment.md`.
  *
- * State handling mirrors `AgentSessionsSection`, with one refinement: because
- * the usage endpoint always returns a `summary` object on success, an undefined
- * `summary` reliably means "request hasn't completed". We therefore return
- * `null` while `!summary` (covers both the spinner phase and the brief window
- * after a slug-gated hook resolves but before its fetch fires) and key the calm
- * empty state on the *loaded* summary being zero — avoiding a one-frame
- * "No usage recorded yet" flash.
+ * State handling mirrors `AgentSessionsSection`, with two refinements:
+ *  - Because the usage endpoint always returns a `summary` object on success,
+ *    an undefined `summary` reliably means "request hasn't completed". We
+ *    therefore return `null` while `!summary` (covers both the spinner phase
+ *    and the brief window after a slug-gated hook resolves but before its fetch
+ *    fires) instead of consulting `loading` — which `useFetch` reports as
+ *    `false` while the URL is null.
+ *  - The empty state is keyed on the server's explicit no-rows sentinel
+ *    (`lastEventDay === null`), NOT on `totalTokens === 0`: a recorded row can
+ *    legitimately carry cost with zero tokens, and a real (even zero-valued)
+ *    row should show "$0.00 / 0 tokens", not "No usage recorded yet".
  */
 export function AssignmentUsageSection({ summary, error }: AssignmentUsageSectionProps) {
   // `loading` is intentionally not consulted: gating on it would flash the empty
@@ -38,7 +42,7 @@ export function AssignmentUsageSection({ summary, error }: AssignmentUsageSectio
 
   if (!summary) return null;
 
-  if (summary.totalTokens === 0) {
+  if (summary.lastEventDay === null) {
     return (
       <SectionCard title={TITLE}>
         <EmptyState
@@ -80,11 +84,10 @@ export function AssignmentUsageSection({ summary, error }: AssignmentUsageSectio
           </div>
         ) : null}
 
-        {summary.lastEventDay ? (
-          <p className="text-xs text-muted-foreground">
-            Last usage recorded {formatDay(summary.lastEventDay)}
-          </p>
-        ) : null}
+        {/* lastEventDay is non-null here (the null case returned above). */}
+        <p className="text-xs text-muted-foreground">
+          Last usage recorded {formatDay(summary.lastEventDay)}
+        </p>
       </div>
     </SectionCard>
   );
