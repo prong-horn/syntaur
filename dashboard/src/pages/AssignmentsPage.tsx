@@ -1644,19 +1644,24 @@ function AssignmentBoardCard({
 
   const handleBodyMouseDown = () => {
     const card = cardRef.current;
-    // Status menu open? The picker portals its menu out of the card, but its
-    // trigger button (in the card) carries aria-expanded — and it's still "true"
-    // here because the card's mousedown fires before the picker's document-level
-    // outside-close listener runs.
-    const menuOpen = Boolean(card?.querySelector('[aria-expanded="true"]'));
-    // Inline title editor focused? At mousedown the input still holds focus
-    // (blur fires afterward), so document.activeElement is observable here.
+    // Suppress the trailing navigation click whenever this press is dismissing an
+    // overlay or committing an inline edit (the click would otherwise do BOTH):
+    //  - status pill menu open: its trigger (in this card) carries aria-expanded,
+    //    still "true" here because the card's mousedown fires before the picker's
+    //    document-level outside-close listener runs.
+    //  - any open menu/popover (the right-click context menu, page-level, plus the
+    //    status menu itself): both render role="menu" only while open. We read it
+    //    at mousedown, before the popover's own document mousedown handler closes it.
+    //  - inline title editor focused: at mousedown the input still holds focus
+    //    (blur fires afterward), so document.activeElement is observable here.
+    const statusMenuOpen = Boolean(card?.querySelector('[aria-expanded="true"]'));
+    const anyMenuOpen = Boolean(document.querySelector('[role="menu"]'));
     const active = document.activeElement;
     const editorActive = Boolean(
       active && card?.contains(active) &&
         (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA'),
     );
-    suppressBodyNavRef.current = menuOpen || editorActive;
+    suppressBodyNavRef.current = statusMenuOpen || anyMenuOpen || editorActive;
   };
 
   const handleBodyClick = (e: React.MouseEvent<HTMLDivElement>) => {
