@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Coins } from 'lucide-react';
+import { formatTokens, formatCost } from '../lib/format';
 
 interface UsageDailyRow {
   day: string;
@@ -30,14 +31,6 @@ function thirtyDaysAgo(): string {
 
 function today(): string {
   return new Date().toISOString().slice(0, 10);
-}
-
-function formatTokens(n: number): string {
-  return n.toLocaleString('en-US');
-}
-
-function formatCost(n: number): string {
-  return `$${n.toFixed(4)}`;
 }
 
 export function UsagePage() {

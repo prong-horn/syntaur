@@ -101,6 +101,44 @@ export function formatCount(value: number, singular: string, plural = `${singula
   return `${value} ${value === 1 ? singular : plural}`;
 }
 
+export function formatTokens(n: number): string {
+  return n.toLocaleString('en-US');
+}
+
+export function formatCost(n: number): string {
+  return `$${n.toFixed(4)}`;
+}
+
+/**
+ * Format a date-only `YYYY-MM-DD` string (e.g. usage `lastEventDay`) in the
+ * local timezone. Unlike {@link formatDate}, this does NOT route through
+ * `new Date(value)`, which parses a bare date as UTC midnight and renders the
+ * previous calendar day in negative-offset zones. Returns an em-dash for
+ * null/empty, and the raw value if it isn't a `YYYY-MM-DD` string.
+ */
+export function formatDay(value: string | null | undefined): string {
+  if (!value) {
+    return '—';
+  }
+
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (!match) {
+    return value;
+  }
+
+  const [, year, month, day] = match;
+  const date = new Date(Number(year), Number(month) - 1, Number(day));
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+
+  return date.toLocaleDateString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  });
+}
+
 export function formatDuration(started: string, ended?: string | null): string {
   const startDate = new Date(started);
   if (Number.isNaN(startDate.getTime())) {
