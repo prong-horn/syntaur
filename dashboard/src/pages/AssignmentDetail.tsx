@@ -43,6 +43,7 @@ import { LinksPanel } from '../components/LinksPanel';
 import { CommentsThread } from '../components/CommentsThread';
 import { useHotkey, useHotkeyScope } from '../hotkeys';
 import { cn } from '../lib/utils';
+import { useToast, Toaster } from '../components/Toast';
 
 const TRANSITION_PRECEDENCE = ['review', 'complete', 'shape', 'plan-ready', 'implement', 'unblock', 'start', 'block', 'fail', 'reopen'] as const;
 
@@ -52,6 +53,7 @@ export function AssignmentDetail() {
   const wsPrefix = useWorkspacePrefix();
   const [searchParams, setSearchParams] = useSearchParams();
   const [transitionError, setTransitionError] = useState<string | null>(null);
+  const { toast, showToast, dismissToast } = useToast();
   const [transitioning, setTransitioning] = useState<string | null>(null);
   const [pendingTransition, setPendingTransition] = useState<AssignmentTransitionAction | null>(null);
   const [criteriaError, setCriteriaError] = useState<string | null>(null);
@@ -242,6 +244,7 @@ export function AssignmentDetail() {
         throw new Error(payload?.error || `HTTP ${response.status}`);
       }
       refetch();
+      showToast(archived ? 'Assignment archived' : 'Assignment restored', 'success');
     } catch (err) {
       setTransitionError((err as Error).message);
     }
@@ -387,6 +390,7 @@ export function AssignmentDetail() {
 
   return (
     <div className="space-y-5">
+      <Toaster toast={toast} onDismiss={dismissToast} />
       <div className="sticky top-12 z-20 rounded-lg border border-border/60 bg-card/90 p-3 shadow-sm backdrop-blur">
         <div className="flex flex-wrap items-center gap-3">
           <StatusBadge status={assignment.status} progress={progress} />

@@ -19,6 +19,7 @@ import { AgentSessionsSection } from '../components/AgentSessionsSection';
 import { AssignmentUsageSection } from '../components/AssignmentUsageSection';
 import { OpenInAgentButton } from '../components/OpenInAgentButton';
 import { CreateWorktreeButton } from '../components/CreateWorktreeButton';
+import { useToast, Toaster } from '../components/Toast';
 
 /**
  * Read-and-edit view for standalone assignments (those at
@@ -35,6 +36,7 @@ export function StandaloneAssignmentDetail() {
   const { data: usageData, loading: usageLoading, error: usageError } = useStandaloneAssignmentUsage(assignment?.slug);
   const [moveOpen, setMoveOpen] = useState(false);
   const [archiveError, setArchiveError] = useState<string | null>(null);
+  const { toast, showToast, dismissToast } = useToast();
 
   async function handleArchive(archived: boolean) {
     if (!id) return;
@@ -49,6 +51,7 @@ export function StandaloneAssignmentDetail() {
         throw new Error(payload?.error || `HTTP ${res.status}`);
       }
       refetch();
+      showToast(archived ? 'Assignment archived' : 'Assignment restored', 'success');
     } catch (err) {
       setArchiveError(err instanceof Error ? err.message : 'Archive failed');
     }
@@ -60,6 +63,7 @@ export function StandaloneAssignmentDetail() {
 
   return (
     <div className="space-y-6">
+      <Toaster toast={toast} onDismiss={dismissToast} />
       <header className="space-y-2">
         <div className="flex flex-wrap items-center gap-3">
           <StatusBadge status={assignment.status} />

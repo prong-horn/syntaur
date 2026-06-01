@@ -480,6 +480,7 @@ export function ProjectDetail() {
         return;
       }
       refetch();
+      showToast(archived ? 'Project archived' : 'Project restored', 'success');
     } catch (err) {
       showToast(err instanceof Error ? err.message : 'Failed to update archive state', 'error');
     }

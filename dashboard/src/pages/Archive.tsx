@@ -9,6 +9,7 @@ import { PageHeader } from '../components/PageHeader';
 import { SectionCard } from '../components/SectionCard';
 import { StatusBadge } from '../components/StatusBadge';
 import { formatDateTime } from '../lib/format';
+import { useToast, Toaster } from '../components/Toast';
 
 function ArchivedPill() {
   return (
@@ -30,8 +31,9 @@ export function Archive() {
   const [busy, setBusy] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+  const { toast, showToast, dismissToast } = useToast();
 
-  async function post(url: string, key: string) {
+  async function post(url: string, key: string, successMessage: string) {
     setBusy(key);
     setActionError(null);
     try {
@@ -41,6 +43,7 @@ export function Archive() {
         throw new Error(payload?.error || `HTTP ${res.status}`);
       }
       refetch();
+      showToast(successMessage, 'success');
     } catch (err) {
       setActionError(err instanceof Error ? err.message : 'Restore failed');
     } finally {
@@ -49,14 +52,14 @@ export function Archive() {
   }
 
   function restoreProject(project: ArchivedProjectItem) {
-    return post(`/api/projects/${project.slug}/unarchive`, `project:${project.slug}`);
+    return post(`/api/projects/${project.slug}/unarchive`, `project:${project.slug}`, 'Project restored');
   }
 
   function restoreAssignment(item: ArchivedAssignmentItem) {
     const url = item.projectSlug
       ? `/api/projects/${item.projectSlug}/assignments/${item.slug}/unarchive`
       : `/api/assignments/${item.id}/unarchive`;
-    return post(url, `assignment:${item.id}`);
+    return post(url, `assignment:${item.id}`, 'Assignment restored');
   }
 
   if (loading) return <LoadingState label="Loading archived content…" />;
@@ -68,6 +71,7 @@ export function Archive() {
 
   return (
     <div className="space-y-6">
+      <Toaster toast={toast} onDismiss={dismissToast} />
       <PageHeader
         title="Archive"
         description="Archived projects and individually-archived assignments. Restoring a project also brings back its cascade-hidden assignments; assignments archived on their own stay archived until restored here."
