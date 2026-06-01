@@ -22,7 +22,12 @@ export function useProjects(projectsDir: string) {
 
         const tree: TreeNode[] = projects.map((m, i) => {
           const detail = details[i];
-          const children: TreeNode[] = (detail?.assignments ?? []).map((a) => ({
+          // getProjectDetail returns ALL assignments (incl. archived); hide the
+          // individually-archived ones from browse. Archived projects are already
+          // excluded by listProjects.
+          const children: TreeNode[] = (detail?.assignments ?? [])
+            .filter((a) => !a.archived)
+            .map((a) => ({
             id: `a:${m.slug}:${a.slug}`,
             kind: 'assignment' as const,
             label: a.title,

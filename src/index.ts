@@ -5,6 +5,8 @@ import { createAssignmentCommand } from './commands/create-assignment.js';
 import { dashboardCommand, didUserSpecifyDashboardPort } from './commands/dashboard.js';
 import { assignCommand } from './commands/assign.js';
 import { startCommand } from './commands/start.js';
+import { archiveCommand } from './commands/archive.js';
+import { restoreCommand } from './commands/restore.js';
 import { shapeCommand } from './commands/shape.js';
 import { planReadyCommand } from './commands/plan-ready.js';
 import { implementCommand } from './commands/implement.js';
@@ -270,6 +272,37 @@ program
         'Error:',
         error instanceof Error ? error.message : String(error),
       );
+      process.exit(1);
+    }
+  });
+
+program
+  .command('archive')
+  .description('Archive an assignment or a project (hidden from normal views; restorable)')
+  .argument('<target>', 'Assignment slug/UUID, or a project slug')
+  .option('--project <slug>', 'Resolve <target> as an assignment within this project')
+  .option('--reason <text>', 'Optional reason recorded with the archive')
+  .option('--dir <path>', 'Override default project directory')
+  .action(async (target, options) => {
+    try {
+      await archiveCommand(target, options);
+    } catch (error) {
+      console.error('Error:', error instanceof Error ? error.message : String(error));
+      process.exit(1);
+    }
+  });
+
+program
+  .command('restore')
+  .description('Restore an archived assignment or project (preserves prior status)')
+  .argument('<target>', 'Assignment slug/UUID, or a project slug')
+  .option('--project <slug>', 'Resolve <target> as an assignment within this project')
+  .option('--dir <path>', 'Override default project directory')
+  .action(async (target, options) => {
+    try {
+      await restoreCommand(target, options);
+    } catch (error) {
+      console.error('Error:', error instanceof Error ? error.message : String(error));
       process.exit(1);
     }
   });
