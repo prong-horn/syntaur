@@ -65,6 +65,38 @@ describe('isViewFilters (back-compat + multi-value)', () => {
     expect(isViewFilters({ status: 3 })).toBe(false);
     expect(isViewFilters({ activity: 'whenever' })).toBe(false);
   });
+  it('accepts tags, search, and dateRange; rejects a bad dateRange', () => {
+    expect(isViewFilters({ tags: ['backend', 'urgent'] })).toBe(true);
+    expect(isViewFilters({ search: 'login' })).toBe(true);
+    expect(isViewFilters({ dateRange: { field: 'updated', preset: 'last_7d' } })).toBe(true);
+    expect(isViewFilters({ dateRange: { field: 'bad' } })).toBe(false);
+    expect(isViewFilters({ search: 5 })).toBe(false);
+    expect(isViewFilters({ tags: ['  '] })).toBe(false);
+  });
+  it('stays permissive about unknown forward-compat keys', () => {
+    expect(isViewFilters({ status: ['x'], futureKey: 'whatever' })).toBe(true);
+  });
+});
+
+describe('filterAssignment — tags (match-ANY) + dateRange', () => {
+  const tagged = (tags: string[]): Item => ({ ...item(), tags });
+  it('tags match-ANY: item matches if it has any selected tag', () => {
+    expect(filterAssignment(tagged(['backend']), { tags: ['backend', 'urgent'] })).toBe(true);
+    expect(filterAssignment(tagged(['frontend']), { tags: ['backend', 'urgent'] })).toBe(false);
+    expect(filterAssignment(tagged([]), { tags: ['backend'] })).toBe(false);
+    expect(filterAssignment(tagged([]), { tags: [] })).toBe(true); // empty filter = no constraint
+  });
+  it('dateRange flows through filterAssignment criteria (uses real now)', () => {
+    const fresh: Item = { ...item(), updated: new Date(Date.now() - 1 * 86400_000).toISOString() };
+    const old: Item = { ...item(), updated: new Date(Date.now() - 40 * 86400_000).toISOString() };
+    expect(filterAssignment(fresh, { dateRange: { field: 'updated', preset: 'last_7d' } })).toBe(true);
+    expect(filterAssignment(old, { dateRange: { field: 'updated', preset: 'last_7d' } })).toBe(false);
+  });
+  it('respects options.search (the path the Overview widget plumbs through)', () => {
+    const i: Item = { ...item(), title: 'Fix login bug' };
+    expect(filterAssignment(i, {}, { search: 'login' })).toBe(true);
+    expect(filterAssignment(i, {}, { search: 'logout' })).toBe(false);
+  });
 });
 
 interface Item {
@@ -72,6 +104,9 @@ interface Item {
   priority: string;
   assignee: string | null;
   type?: string | null;
+  tags?: string[];
+  created?: string;
+  title?: string;
   updated: string;
   projectSlug?: string | null;
   projectWorkspace?: string | null;

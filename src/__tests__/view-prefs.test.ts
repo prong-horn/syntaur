@@ -292,6 +292,9 @@ describe('view-prefs storage', () => {
     expect(isViewPrefsDefaults(withFilters({ status: ['in_progress'] }))).toBe(false);
     expect(isViewPrefsDefaults(withFilters({ priority: ['high', 'critical'] }))).toBe(false);
     expect(isViewPrefsDefaults(withFilters({ activity: 'stale' }))).toBe(false);
+    // `tags` is persisted to view-prefs too, so it must factor into the custom flag.
+    expect(isViewPrefsDefaults(withFilters({ tags: [] }))).toBe(true);
+    expect(isViewPrefsDefaults(withFilters({ tags: ['backend'] }))).toBe(false);
   });
 
   it('mergePatch overwrites a prior array with an explicit [] clear', () => {

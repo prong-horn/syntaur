@@ -329,6 +329,42 @@ describe('saved-views HTTP routes', () => {
     expect(created.workspace).toBe('_ungrouped');
   });
 
+  it('POST + PATCH a view with dateRange / tags / search (create + edit round-trip)', async () => {
+    const { config } = buildCreateViewPayload(
+      {
+        ...DEFAULT_CREATE_VIEW_STATE,
+        filters: { tags: ['backend'], dateRange: { field: 'updated', preset: 'last_7d' }, search: 'login' },
+      },
+      null,
+    );
+    const res = await fetch(`${base()}/api/saved-views`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: 'Recent backend', workspace: null, config }),
+    });
+    expect(res.status).toBe(201);
+    const created = (await res.json()).views.at(-1);
+    expect(created.config.filters.tags).toEqual(['backend']);
+    expect(created.config.filters.dateRange).toEqual({ field: 'updated', preset: 'last_7d' });
+    expect(created.config.filters.search).toBe('login');
+
+    // Edit (PATCH config): change the date range to an absolute range.
+    const edited = buildCreateViewPayload(
+      { ...DEFAULT_CREATE_VIEW_STATE, filters: { tags: ['backend'], dateRange: { field: 'created', from: '2026-05-01', to: '2026-05-31' } } },
+      null,
+    ).config;
+    const patch = await fetch(`${base()}/api/saved-views/${created.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ config: edited }),
+    });
+    expect(patch.status).toBe(200);
+    const file = await readSavedViewsFile();
+    const stored = file.views.find((v) => v.id === created.id);
+    expect(stored?.config.filters.dateRange).toEqual({ field: 'created', from: '2026-05-01', to: '2026-05-31' });
+    expect(stored?.config.filters.search).toBeUndefined(); // cleared on edit
+  });
+
   it('PATCH /api/saved-views/:id returns 404 for unknown id', async () => {
     const res = await fetch(`${base()}/api/saved-views/no-such-id`, {
       method: 'PATCH',

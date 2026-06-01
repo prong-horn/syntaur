@@ -10,7 +10,7 @@ import {
   type ApplyConfigSetters,
   type CreateViewBuilderState,
 } from '../../dashboard/src/lib/savedViews';
-import { isSavedViewConfig, type SavedView } from '../utils/saved-views-schema.js';
+import { isSavedViewConfig, isProjectDetailCompatible, type SavedView } from '../utils/saved-views-schema.js';
 
 function makeView(workspace: string | null, config: SavedView['config']): SavedView {
   return {
@@ -153,6 +153,45 @@ describe('applyConfig round-trip (multi-value, applyable)', () => {
     const seen: Record<string, unknown> = {};
     applyConfig(makeView(null, config), { setAssigneeFilter: (v) => (seen.assignee = v) });
     expect(seen.assignee).toEqual(['__unassigned__', 'claude']);
+  });
+});
+
+describe('tags / dateRange / search persistence + round-trip', () => {
+  it('persists tags + dateRange + search and applyConfig round-trips them', () => {
+    const state: CreateViewBuilderState = {
+      ...DEFAULT_CREATE_VIEW_STATE,
+      filters: {
+        tags: ['backend', 'urgent'],
+        dateRange: { field: 'updated', preset: 'last_7d' },
+        search: '  login  ',
+      },
+    };
+    const { config } = buildCreateViewPayload(state, null);
+    expect(isSavedViewConfig(config)).toBe(true);
+    expect(config.filters.tags).toEqual(['backend', 'urgent']);
+    expect(config.filters.dateRange).toEqual({ field: 'updated', preset: 'last_7d' });
+    expect(config.filters.search).toBe('login'); // trimmed
+
+    const seen: Record<string, unknown> = {};
+    applyConfig(makeView(null, config), {
+      setTagsFilter: (v) => (seen.tags = v),
+      setDateRange: (v) => (seen.dateRange = v),
+      setSearch: (v) => (seen.search = v),
+    });
+    expect(seen.tags).toEqual(['backend', 'urgent']);
+    expect(seen.dateRange).toEqual({ field: 'updated', preset: 'last_7d', from: '', to: '' });
+    expect(seen.search).toBe('login');
+  });
+
+  it('isProjectDetailCompatible: search excludes, dateRange/tags do NOT', () => {
+    const base = buildCreateViewPayload({ ...DEFAULT_CREATE_VIEW_STATE, filters: { project: ['foo'] } }, null).config;
+    expect(isProjectDetailCompatible(base, 'foo')).toBe(true);
+    const withTags = buildCreateViewPayload({ ...DEFAULT_CREATE_VIEW_STATE, filters: { project: ['foo'], tags: ['x'] } }, null).config;
+    expect(isProjectDetailCompatible(withTags, 'foo')).toBe(true);
+    const withDate = buildCreateViewPayload({ ...DEFAULT_CREATE_VIEW_STATE, filters: { project: ['foo'], dateRange: { field: 'created', preset: 'last_30d' } } }, null).config;
+    expect(isProjectDetailCompatible(withDate, 'foo')).toBe(true);
+    const withSearch = buildCreateViewPayload({ ...DEFAULT_CREATE_VIEW_STATE, filters: { project: ['foo'], search: 'q' } }, null).config;
+    expect(isProjectDetailCompatible(withSearch, 'foo')).toBe(false);
   });
 });
 
