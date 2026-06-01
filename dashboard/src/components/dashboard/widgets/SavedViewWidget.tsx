@@ -25,11 +25,13 @@ interface SavedViewWidgetProps {
 
 function applyViewFilters(
   items: AssignmentBoardItem[],
-  filters: AssignmentFilterCriteria,
+  filters: AssignmentFilterCriteria & { search?: string },
   workspace: string | null,
 ): AssignmentBoardItem[] {
+  // `search` is a saved-view filter but `filterAssignment` reads it from `options`,
+  // not `criteria` — plumb it explicitly so the widget matches the board exactly.
   return items.filter((item) =>
-    filterAssignment(item, filters, { workspace }),
+    filterAssignment(item, filters, { workspace, search: filters.search }),
   );
 }
 

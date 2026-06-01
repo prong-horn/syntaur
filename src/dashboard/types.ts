@@ -48,6 +48,8 @@ export interface AssignmentSummary {
   assignee: string | null;
   dependsOn: string[];
   links: string[];
+  tags: string[];
+  created: string;
   updated: string;
   archived: boolean;
   archivedAt: string | null;

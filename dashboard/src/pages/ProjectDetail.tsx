@@ -31,8 +31,9 @@ import { filterAssignment } from '../lib/assignmentFilter';
 import { SaveViewDialog } from '../components/SaveViewDialog';
 import { SavedViewPicker } from '../components/SavedViewPicker';
 import { MultiSelect, type MultiSelectOption } from '../components/ui/MultiSelect';
+import { DateRangeControl } from '../components/ui/DateRangeControl';
 import { useSavedView, createSavedView, updateSavedView } from '../hooks/useSavedViews';
-import { captureCurrentView, applyConfig, inferLandingRoute } from '../lib/savedViews';
+import { captureCurrentView, applyConfig, inferLandingRoute, mergeUpdatedConfig, minimizeDateRange, type DateRangeUiState } from '../lib/savedViews';
 import { scopeMatches, type SavedView, type ViewScope } from '@shared/saved-views-schema';
 import { useToast, Toaster } from '../components/Toast';
 
@@ -88,6 +89,9 @@ export function ProjectDetail() {
   const [assigneeFilter, setAssigneeFilter] = useState<string[]>(() => toFilterValues(prefs.filters.assignee));
   const [priorityFilter, setPriorityFilter] = useState<string[]>(() => toFilterValues(prefs.filters.priority));
   const [typeFilter, setTypeFilter] = useState<string[]>(() => toFilterValues(prefs.filters.type));
+  const [tagsFilter, setTagsFilter] = useState<string[]>(() => toFilterValues(prefs.filters.tags));
+  // dateRange is a saved-view-only filter (ephemeral, not persisted to view-prefs).
+  const [dateRange, setDateRange] = useState<DateRangeUiState | null>(null);
   const [grouping, setGrouping] = useState<Grouping>(() => prefs.grouping);
   const [sortField, setSortField] = useState<SortField>(() => prefs.sortField);
   const [sortDirection, setSortDirection] = useState<SortDirection>(() => prefs.sortDirection);
@@ -143,10 +147,12 @@ export function ProjectDetail() {
     setAssigneeFilter(toFilterValues(prefs.filters.assignee));
     setPriorityFilter(toFilterValues(prefs.filters.priority));
     setTypeFilter(toFilterValues(prefs.filters.type));
+    setTagsFilter(toFilterValues(prefs.filters.tags));
+    setDateRange(null); // ephemeral; reset when the scope re-hydrates
     setGrouping(prefs.grouping);
     setSortField(prefs.sortField);
     setSortDirection(prefs.sortDirection);
-  }, [slug, prefs.defaultView, prefs.filters.status, prefs.filters.assignee, prefs.filters.priority, prefs.filters.type, prefs.grouping, prefs.sortField, prefs.sortDirection]);
+  }, [slug, prefs.defaultView, prefs.filters.status, prefs.filters.assignee, prefs.filters.priority, prefs.filters.type, prefs.filters.tags, prefs.grouping, prefs.sortField, prefs.sortDirection]);
 
   const persistField = useCallback(
     (patch: Parameters<typeof saveScopeViewPrefs>[1]) => {
@@ -195,6 +201,13 @@ export function ProjectDetail() {
     },
     [persistField],
   );
+  const handleSetTagsFilter = useCallback(
+    (v: string[]) => {
+      setTagsFilter(v);
+      persistField({ filters: { tags: v } });
+    },
+    [persistField],
+  );
   const handleSetGrouping = useCallback(
     (v: Grouping) => {
       setGrouping(v);
@@ -228,9 +241,11 @@ export function ProjectDetail() {
         priority: priorityFilter,
         type: typeFilter,
         assignee: assigneeFilter,
+        tags: tagsFilter,
         // project filter is forced via context.projectSlug below — value here is ignored
         project: 'all',
         activity: 'all' as const,
+        dateRange: minimizeDateRange(dateRange),
       },
       sortField,
       sortDirection,
@@ -244,6 +259,8 @@ export function ProjectDetail() {
       priorityFilter,
       typeFilter,
       assigneeFilter,
+      tagsFilter,
+      dateRange,
       sortField,
       sortDirection,
       listSectionVisibility,
@@ -260,7 +277,10 @@ export function ProjectDetail() {
         setPriorityFilter: handleSetPriorityFilter,
         setTypeFilter: handleSetTypeFilter,
         setAssigneeFilter: handleSetAssigneeFilter,
-        // setProjectFilter intentionally omitted — slug is URL-derived here.
+        setTagsFilter: handleSetTagsFilter,
+        setDateRange,
+        // setProjectFilter / setSearch intentionally omitted — slug is URL-derived
+        // and ProjectDetail has no search box (search-bearing views route elsewhere).
         setSortField: handleSetSortField,
         setSortDirection: handleSetSortDirection,
         setListSectionVisibility,
@@ -274,6 +294,7 @@ export function ProjectDetail() {
       handleSetPriorityFilter,
       handleSetTypeFilter,
       handleSetAssigneeFilter,
+      handleSetTagsFilter,
       handleSetSortField,
       handleSetSortDirection,
     ],
@@ -329,19 +350,22 @@ export function ProjectDetail() {
   );
 
   const handleUpdateView = useCallback(async () => {
-    if (!loadedViewId) return;
+    if (!loadedViewId || !loadedView) return;
     try {
       // Preserve the LOADED view's project scope on Update — do NOT force the
-      // route slug (Decision 11: Save/Update never silently changes a view). A
-      // global view applied here stays global; a [slug]-scoped one stays scoped.
-      // (New Save below intentionally scopes to this project via slug.)
-      const loadedProject = toFilterValues(loadedView?.config.filters.project)[0] ?? null;
+      // route slug (Save/Update never silently changes a view). A global view
+      // applied here stays global; a [slug]-scoped one stays scoped. (New Save
+      // below intentionally scopes to this project via slug.)
+      const loadedProject = toFilterValues(loadedView.config.filters.project)[0] ?? null;
       const payload = captureCurrentView({
-        name: loadedView?.name ?? '',
+        name: loadedView.name,
         context: { workspace: workspace ?? null, projectSlug: loadedProject },
         state: buildViewState(),
       });
-      await updateSavedView(loadedViewId, { config: payload.config });
+      // Merge onto the existing config: visibility from the live capture, unknown
+      // top-level + filter keys preserved from the loaded view.
+      const config = mergeUpdatedConfig(loadedView.config, payload.config, payload.config);
+      await updateSavedView(loadedViewId, { config });
       showToast('View updated', 'success');
     } catch (err) {
       showToast(err instanceof Error ? err.message : 'Failed to update view', 'error');
@@ -493,12 +517,19 @@ export function ProjectDetail() {
   })();
   // Centralized predicate (multi-value + sentinel-aware). No workspace/project/
   // activity criteria here — ProjectDetail is already scoped to its slug.
+  const tagOptions: MultiSelectOption[] = Array.from(
+    new Set(project.assignments.flatMap((a) => a.tags ?? [])),
+  )
+    .sort()
+    .map((t) => ({ value: t, label: t }));
   const filteredAssignments = project.assignments.filter((assignment) =>
     filterAssignment(assignment, {
       status: statusFilter,
       priority: priorityFilter,
       type: typeFilter,
       assignee: assigneeFilter,
+      tags: tagsFilter,
+      dateRange: minimizeDateRange(dateRange),
     }),
   );
   const sortedAssignments = sortAssignments(filteredAssignments, sortField, sortDirection);
@@ -697,6 +728,19 @@ export function ProjectDetail() {
                             value={typeFilter}
                             onChange={handleSetTypeFilter}
                           />
+                          <MultiSelect
+                            ariaLabel="Tags filter"
+                            className="max-w-[170px]"
+                            allLabel="Any tags"
+                            options={tagOptions}
+                            value={tagsFilter}
+                            onChange={handleSetTagsFilter}
+                          />
+                          <DateRangeControl
+                            className="max-w-[190px]"
+                            value={dateRange}
+                            onChange={setDateRange}
+                          />
                           {assignmentView === 'kanban' && (
                             <select value={grouping === 'type' ? 'type' : 'status'} onChange={(event) => handleSetGrouping(event.target.value as Grouping)} className="editor-input max-w-[170px]" title="Group kanban by">
                               <option value="status">Group: Status</option>
@@ -814,6 +858,7 @@ export function ProjectDetail() {
                                 {showCol('priority') ? <SortHeader field="priority">Priority</SortHeader> : null}
                                 {showCol('assignee') ? <SortHeader field="assignee">Assignee</SortHeader> : null}
                                 {showCol('dependencies') ? <SortHeader field="dependencies">Dependencies</SortHeader> : null}
+                                {showCol('created') ? <SortHeader field="created">Created</SortHeader> : null}
                                 {showCol('updated') ? <SortHeader field="updated">Updated</SortHeader> : null}
                               </tr>
                             </thead>
@@ -835,6 +880,7 @@ export function ProjectDetail() {
                                   {showCol('priority') ? <td className="py-4 capitalize text-muted-foreground">{assignment.priority}</td> : null}
                                   {showCol('assignee') ? <td className="py-4 text-muted-foreground">{assignment.assignee ?? '\u2014'}</td> : null}
                                   {showCol('dependencies') ? <td className="py-4 text-muted-foreground">{assignment.dependsOn.length}</td> : null}
+                                  {showCol('created') ? <td className="py-4 text-muted-foreground">{formatDate(assignment.created)}</td> : null}
                                   {showCol('updated') ? <td className="py-4 text-muted-foreground">{formatDate(assignment.updated)}</td> : null}
                                 </tr>
                               ))}

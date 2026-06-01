@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
-import type { ViewMode, SortField, SortDirection } from '@shared/saved-views-schema';
-import { VIEW_MODES, SORT_FIELDS } from '@shared/view-prefs-schema';
+import type { ViewMode, SortField, SortDirection, SavedView } from '@shared/saved-views-schema';
+import { VIEW_MODES, SORT_FIELDS, toFilterValues } from '@shared/view-prefs-schema';
 import {
   Dialog,
   DialogContent,
@@ -9,6 +9,7 @@ import {
   DialogTitle,
 } from './ui/dialog';
 import { MultiSelect, type MultiSelectOption } from './ui/MultiSelect';
+import { DateRangeControl } from './ui/DateRangeControl';
 import { ViewToggle } from './ViewToggle';
 import { useStatusConfig, getStatusLabel } from '../hooks/useStatusConfig';
 import { useTypesConfig, getTypeLabel } from '../hooks/useTypesConfig';
@@ -16,14 +17,19 @@ import { useProjects, useAssignmentsBoard } from '../hooks/useProjects';
 import {
   PRIORITY_OPTIONS,
   DEFAULT_CREATE_VIEW_STATE,
+  minimizeDateRange,
+  expandDateRange,
+  type DateRangeUiState,
   type CreateViewBuilderState,
 } from '../lib/savedViews';
 
 interface CreateViewDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  /** Active workspace from the route; null on global /views. */
+  /** Workspace used to SCOPE the project/assignee/tag option lists. */
   workspace: string | null;
+  /** When set, the dialog opens in edit mode prefilled from this view. */
+  initialView?: SavedView | null;
   /** Re-throws on failure so the dialog stays open and surfaces the error. */
   onSubmit: (name: string, state: CreateViewBuilderState) => Promise<void>;
 }
@@ -42,6 +48,7 @@ const SORT_FIELD_LABEL: Record<SortField, string> = {
   priority: 'Priority',
   assignee: 'Assignee',
   dependencies: 'Dependencies',
+  created: 'Created',
   updated: 'Updated',
 };
 
@@ -49,8 +56,10 @@ export function CreateViewDialog({
   open,
   onOpenChange,
   workspace,
+  initialView,
   onSubmit,
 }: CreateViewDialogProps) {
+  const isEdit = !!initialView;
   const statusConfig = useStatusConfig();
   const typesConfig = useTypesConfig();
   const { data: projects } = useProjects();
@@ -63,7 +72,10 @@ export function CreateViewDialog({
   const [type, setType] = useState<string[]>([]);
   const [project, setProject] = useState<string[]>([]);
   const [assignee, setAssignee] = useState<string[]>([]);
+  const [tags, setTags] = useState<string[]>([]);
   const [activity, setActivity] = useState<'all' | 'fresh' | 'stale'>('all');
+  const [dateRange, setDateRange] = useState<DateRangeUiState | null>(null);
+  const [search, setSearch] = useState('');
   const [sortField, setSortField] = useState<SortField>(DEFAULT_CREATE_VIEW_STATE.sortField);
   const [sortDirection, setSortDirection] = useState<SortDirection>(
     DEFAULT_CREATE_VIEW_STATE.sortDirection,
@@ -71,58 +83,78 @@ export function CreateViewDialog({
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Reset all builder state whenever the dialog (re)opens.
-  useEffect(() => {
-    if (open) {
-      setName('');
-      setViewMode(DEFAULT_CREATE_VIEW_STATE.viewMode);
-      setStatus([]);
-      setPriority([]);
-      setType([]);
-      setProject([]);
-      setAssignee([]);
-      setActivity('all');
-      setSortField(DEFAULT_CREATE_VIEW_STATE.sortField);
-      setSortDirection(DEFAULT_CREATE_VIEW_STATE.sortDirection);
-      setError(null);
-      setSubmitting(false);
-    }
-  }, [open]);
+  function clearAll() {
+    setViewMode(DEFAULT_CREATE_VIEW_STATE.viewMode);
+    setStatus([]);
+    setPriority([]);
+    setType([]);
+    setProject([]);
+    setAssignee([]);
+    setTags([]);
+    setActivity('all');
+    setDateRange(null);
+    setSearch('');
+    setSortField(DEFAULT_CREATE_VIEW_STATE.sortField);
+    setSortDirection(DEFAULT_CREATE_VIEW_STATE.sortDirection);
+  }
 
-  // Project options follow the repo's `_ungrouped` sentinel semantics
-  // (matching ProjectList / AssignmentsPage): show ungrouped projects on
-  // /w/_ungrouped, workspace-matched projects on /w/:ws, all on global /views.
+  // Seed on open: prefill from initialView (edit) or reset to defaults (create).
+  useEffect(() => {
+    if (!open) return;
+    setError(null);
+    setSubmitting(false);
+    if (initialView) {
+      const f = initialView.config.filters;
+      setName(initialView.name);
+      setViewMode(initialView.config.viewMode);
+      setStatus(toFilterValues(f.status));
+      setPriority(toFilterValues(f.priority));
+      setType(toFilterValues(f.type));
+      setProject(toFilterValues(f.project));
+      setAssignee(toFilterValues(f.assignee));
+      setTags(toFilterValues(f.tags));
+      setActivity(f.activity ?? 'all');
+      setDateRange(expandDateRange(f.dateRange));
+      setSearch(f.search ?? '');
+      setSortField(initialView.config.sortField);
+      setSortDirection(initialView.config.sortDirection);
+    } else {
+      setName('');
+      clearAll();
+    }
+  }, [open, initialView]);
+
+  const scopeOf = (ws: string | null) => (item: { projectWorkspace?: string | null }) =>
+    !ws ? true : ws === '_ungrouped' ? item.projectWorkspace === null : item.projectWorkspace === ws;
+
   const projectOptions = useMemo<MultiSelectOption[]>(() => {
-    const visible = (projects ?? []).filter((p) =>
-      !workspace
-        ? true
-        : workspace === '_ungrouped'
-          ? p.workspace === null
-          : p.workspace === workspace,
-    );
+    const inScope = (p: { workspace: string | null }) =>
+      !workspace ? true : workspace === '_ungrouped' ? p.workspace === null : p.workspace === workspace;
+    const visible = (projects ?? []).filter(inScope);
     return [
       { value: '__standalone__', label: 'No project' },
       ...visible.map((p) => ({ value: p.slug, label: p.title })),
     ];
   }, [projects, workspace]);
 
-  // Assignee options derived from the live board (scoped like the project list),
-  // plus the Unassigned sentinel. Free-text rejected — derived options avoid
-  // typo/no-match bugs (Decision 3); MultiSelect injects any orphan selection.
   const assigneeOptions = useMemo<MultiSelectOption[]>(() => {
     const names = new Set<string>();
+    const inScope = scopeOf(workspace);
     for (const a of board?.assignments ?? []) {
-      const inScope = !workspace
-        ? true
-        : workspace === '_ungrouped'
-          ? a.projectWorkspace === null
-          : a.projectWorkspace === workspace;
-      if (inScope && a.assignee) names.add(a.assignee);
+      if (inScope(a) && a.assignee) names.add(a.assignee);
     }
-    // Always offer Unassigned so a user can proactively build an "unassigned" view.
     const opts: MultiSelectOption[] = [{ value: '__unassigned__', label: 'Unassigned' }];
     for (const n of Array.from(names).sort()) opts.push({ value: n, label: n });
     return opts;
+  }, [board, workspace]);
+
+  const tagOptions = useMemo<MultiSelectOption[]>(() => {
+    const set = new Set<string>();
+    const inScope = scopeOf(workspace);
+    for (const a of board?.assignments ?? []) {
+      if (inScope(a)) for (const t of a.tags ?? []) set.add(t);
+    }
+    return Array.from(set).sort().map((t) => ({ value: t, label: t }));
   }, [board, workspace]);
 
   const statusOptions = useMemo<MultiSelectOption[]>(
@@ -155,7 +187,17 @@ export function CreateViewDialog({
             setError(null);
             const state: CreateViewBuilderState = {
               viewMode,
-              filters: { status, priority, type, project, assignee, activity },
+              filters: {
+                status,
+                priority,
+                type,
+                project,
+                assignee,
+                tags,
+                activity,
+                dateRange: minimizeDateRange(dateRange),
+                search,
+              },
               sortField,
               sortDirection,
             };
@@ -168,7 +210,7 @@ export function CreateViewDialog({
           }}
         >
           <DialogHeader>
-            <DialogTitle>Create view</DialogTitle>
+            <DialogTitle>{isEdit ? 'Edit view' : 'Create view'}</DialogTitle>
           </DialogHeader>
 
           <div className="space-y-2">
@@ -190,76 +232,29 @@ export function CreateViewDialog({
 
           <div className="space-y-2">
             <span className="block text-xs font-medium text-muted-foreground">View mode</span>
-            <ViewToggle
-              value={viewMode}
-              onChange={(v) => setViewMode(v as ViewMode)}
-              options={viewModeOptions}
-            />
+            <ViewToggle value={viewMode} onChange={(v) => setViewMode(v as ViewMode)} options={viewModeOptions} />
           </div>
 
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <label className="space-y-1">
-              <span className="block text-xs font-medium text-muted-foreground">Status</span>
-              <MultiSelect
-                ariaLabel="Status filter"
-                className="w-full"
-                allLabel="All statuses"
-                options={statusOptions}
-                value={status}
-                onChange={setStatus}
-              />
-            </label>
-
-            <label className="space-y-1">
-              <span className="block text-xs font-medium text-muted-foreground">Priority</span>
-              <MultiSelect
-                ariaLabel="Priority filter"
-                className="w-full"
-                allLabel="All priorities"
-                options={priorityOptions}
-                value={priority}
-                onChange={setPriority}
-              />
-            </label>
-
-            <label className="space-y-1">
-              <span className="block text-xs font-medium text-muted-foreground">Type</span>
-              <MultiSelect
-                ariaLabel="Type filter"
-                className="w-full"
-                allLabel="All types"
-                options={typeOptions}
-                value={type}
-                onChange={setType}
-              />
-            </label>
-
-            <label className="space-y-1">
-              <span className="block text-xs font-medium text-muted-foreground">Project</span>
-              <MultiSelect
-                ariaLabel="Project filter"
-                className="w-full"
-                allLabel="All projects"
-                options={projectOptions}
-                value={project}
-                onChange={setProject}
-              />
-            </label>
-
-            <label className="space-y-1">
-              <span className="block text-xs font-medium text-muted-foreground">Assignee</span>
-              <MultiSelect
-                ariaLabel="Assignee filter"
-                className="w-full"
-                allLabel="All assignees"
-                options={assigneeOptions}
-                value={assignee}
-                onChange={setAssignee}
-              />
-            </label>
-
-            <label className="space-y-1">
-              <span className="block text-xs font-medium text-muted-foreground">Activity</span>
+            <Field label="Status">
+              <MultiSelect ariaLabel="Status filter" className="w-full" allLabel="All statuses" options={statusOptions} value={status} onChange={setStatus} />
+            </Field>
+            <Field label="Priority">
+              <MultiSelect ariaLabel="Priority filter" className="w-full" allLabel="All priorities" options={priorityOptions} value={priority} onChange={setPriority} />
+            </Field>
+            <Field label="Type">
+              <MultiSelect ariaLabel="Type filter" className="w-full" allLabel="All types" options={typeOptions} value={type} onChange={setType} />
+            </Field>
+            <Field label="Project">
+              <MultiSelect ariaLabel="Project filter" className="w-full" allLabel="All projects" options={projectOptions} value={project} onChange={setProject} />
+            </Field>
+            <Field label="Assignee">
+              <MultiSelect ariaLabel="Assignee filter" className="w-full" allLabel="All assignees" options={assigneeOptions} value={assignee} onChange={setAssignee} />
+            </Field>
+            <Field label="Tags">
+              <MultiSelect ariaLabel="Tags filter" className="w-full" allLabel="Any tags" options={tagOptions} value={tags} onChange={setTags} />
+            </Field>
+            <Field label="Activity">
               <select
                 value={activity}
                 onChange={(e) => setActivity(e.target.value as 'all' | 'fresh' | 'stale')}
@@ -269,16 +264,22 @@ export function CreateViewDialog({
                 <option value="stale">Stale only</option>
                 <option value="fresh">Fresh only</option>
               </select>
-            </label>
-
-            <label className="space-y-1 sm:col-span-2">
-              <span className="block text-xs font-medium text-muted-foreground">Sort by</span>
+            </Field>
+            <Field label="Date range">
+              <DateRangeControl className="w-full" value={dateRange} onChange={setDateRange} />
+            </Field>
+            <Field label="Search" className="sm:col-span-2">
+              <input
+                type="text"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Title / slug / project contains…"
+                className="editor-input w-full"
+              />
+            </Field>
+            <Field label="Sort by" className="sm:col-span-2">
               <div className="flex gap-2">
-                <select
-                  value={sortField}
-                  onChange={(e) => setSortField(e.target.value as SortField)}
-                  className="editor-input w-full"
-                >
+                <select value={sortField} onChange={(e) => setSortField(e.target.value as SortField)} className="editor-input w-full">
                   {SORT_FIELDS.map((f) => (
                     <option key={f} value={f}>{SORT_FIELD_LABEL[f]}</option>
                   ))}
@@ -292,7 +293,7 @@ export function CreateViewDialog({
                   {sortDirection === 'asc' ? 'Asc' : 'Desc'}
                 </button>
               </div>
-            </label>
+            </Field>
           </div>
 
           {error ? (
@@ -301,25 +302,42 @@ export function CreateViewDialog({
             </p>
           ) : null}
 
-          <DialogFooter>
-            <button
-              type="button"
-              onClick={() => onOpenChange(false)}
-              className="shell-action"
-              disabled={submitting}
-            >
-              Cancel
+          <DialogFooter className="sm:justify-between">
+            <button type="button" onClick={clearAll} className="shell-action" disabled={submitting}>
+              Clear all
             </button>
-            <button
-              type="submit"
-              disabled={!valid || submitting}
-              className="shell-action bg-foreground text-background hover:opacity-90 disabled:opacity-50"
-            >
-              {submitting ? 'Creating…' : 'Create view'}
-            </button>
+            <div className="flex items-center gap-2">
+              <button type="button" onClick={() => onOpenChange(false)} className="shell-action" disabled={submitting}>
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={!valid || submitting}
+                className="shell-action bg-foreground text-background hover:opacity-90 disabled:opacity-50"
+              >
+                {submitting ? 'Saving…' : isEdit ? 'Save changes' : 'Create view'}
+              </button>
+            </div>
           </DialogFooter>
         </form>
       </DialogContent>
     </Dialog>
+  );
+}
+
+function Field({
+  label,
+  className,
+  children,
+}: {
+  label: string;
+  className?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <label className={`space-y-1 ${className ?? ''}`}>
+      <span className="block text-xs font-medium text-muted-foreground">{label}</span>
+      {children}
+    </label>
   );
 }

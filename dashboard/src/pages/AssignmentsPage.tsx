@@ -60,9 +60,10 @@ import { type TableColumnId, type SavedView, type ViewScope } from '@shared/save
 import { fetchViewPrefs, saveGlobalViewPrefs, saveScopeViewPrefs, useViewPrefs } from '../hooks/useViewPrefs';
 import { mergeForScope } from '@shared/view-prefs-schema';
 import { useSavedView, createSavedView, updateSavedView } from '../hooks/useSavedViews';
-import { captureCurrentView, applyConfig } from '../lib/savedViews';
+import { captureCurrentView, applyConfig, mergeUpdatedConfig, minimizeDateRange, type DateRangeUiState } from '../lib/savedViews';
 import { filterAssignment } from '../lib/assignmentFilter';
 import { MultiSelect } from '../components/ui/MultiSelect';
+import { DateRangeControl } from '../components/ui/DateRangeControl';
 
 const VALID_VIEWS: readonly ViewMode[] = VIEW_MODES;
 
@@ -177,6 +178,9 @@ export function AssignmentsPage() {
   const [typeFilter, setTypeFilter] = useState<string[]>(() => toFilterValues(prefs.filters.type));
   const [assigneeFilter, setAssigneeFilter] = useState<string[]>(() => toFilterValues(prefs.filters.assignee));
   const [projectFilter, setProjectFilter] = useState<string[]>(() => toFilterValues(prefs.filters.project));
+  const [tagsFilter, setTagsFilter] = useState<string[]>(() => toFilterValues(prefs.filters.tags));
+  // dateRange is a saved-view-only filter (ephemeral board state, not persisted to view-prefs).
+  const [dateRange, setDateRange] = useState<DateRangeUiState | null>(null);
   const [activityFilter, setActivityFilter] = useState<ActivityFilter>(
     () => normalizeActivityFilter(staleParam),
   );
@@ -250,6 +254,7 @@ export function AssignmentsPage() {
   useEffect(() => {
     setLoadedViewId(null);
     lastAppliedLoadViewRef.current = null;
+    setDateRange(null); // ephemeral saved-view-only filter; don't leak across scopes
   }, [workspace]);
 
   useEffect(() => {
@@ -303,6 +308,7 @@ export function AssignmentsPage() {
     setTypeFilter(toFilterValues(prefs.filters.type));
     setAssigneeFilter(toFilterValues(prefs.filters.assignee));
     setProjectFilter(toFilterValues(prefs.filters.project));
+    setTagsFilter(toFilterValues(prefs.filters.tags));
     setSortField(prefs.sortField);
     setSortDirection(prefs.sortDirection);
     setGrouping(prefs.grouping);
@@ -311,6 +317,7 @@ export function AssignmentsPage() {
     prefs.filters.type,
     prefs.filters.assignee,
     prefs.filters.project,
+    prefs.filters.tags,
     prefs.sortField,
     prefs.sortDirection,
     prefs.grouping,
@@ -433,6 +440,13 @@ export function AssignmentsPage() {
     },
     [persistField],
   );
+  const handleSetTagsFilter = useCallback(
+    (v: string[]) => {
+      setTagsFilter(v);
+      persistField({ filters: { tags: v } });
+    },
+    [persistField],
+  );
   const handleSetActivityFilter = useCallback(
     (v: ActivityFilter) => {
       setActivityFilter(v);
@@ -471,7 +485,10 @@ export function AssignmentsPage() {
         type: typeFilter,
         assignee: assigneeFilter,
         project: projectFilter,
+        tags: tagsFilter,
         activity: activityFilter,
+        dateRange: minimizeDateRange(dateRange),
+        search,
       },
       sortField,
       sortDirection,
@@ -486,7 +503,10 @@ export function AssignmentsPage() {
       typeFilter,
       assigneeFilter,
       projectFilter,
+      tagsFilter,
       activityFilter,
+      dateRange,
+      search,
       sortField,
       sortDirection,
       collapsedGroups,
@@ -504,7 +524,10 @@ export function AssignmentsPage() {
         setTypeFilter: handleSetTypeFilter,
         setAssigneeFilter: handleSetAssigneeFilter,
         setProjectFilter: handleSetProjectFilter,
+        setTagsFilter: handleSetTagsFilter,
         setActivityFilter: handleSetActivityFilter,
+        setDateRange,
+        setSearch,
         setSortField: handleSetSortField,
         setSortDirection: handleSetSortDirection,
         setListSectionVisibility: (vis) => setCollapsedGroups(new Set(vis.collapsed)),
@@ -520,6 +543,7 @@ export function AssignmentsPage() {
       handleSetTypeFilter,
       handleSetAssigneeFilter,
       handleSetProjectFilter,
+      handleSetTagsFilter,
       handleSetActivityFilter,
       handleSetSortField,
       handleSetSortDirection,
@@ -580,14 +604,17 @@ export function AssignmentsPage() {
   );
 
   const handleUpdateView = useCallback(async () => {
-    if (!loadedViewId) return;
+    if (!loadedViewId || !loadedView) return;
     try {
       const payload = captureCurrentView({
-        name: loadedView?.name ?? '',
+        name: loadedView.name,
         context: { workspace: workspace ?? null, projectSlug: null },
         state: buildViewState(),
       });
-      await updateSavedView(loadedViewId, { config: payload.config });
+      // Merge onto the existing config: visibility from the live capture, but
+      // unknown top-level + filter keys preserved from the loaded view.
+      const config = mergeUpdatedConfig(loadedView.config, payload.config, payload.config);
+      await updateSavedView(loadedViewId, { config });
       showToast('View updated', 'success');
     } catch (err) {
       showToast(
@@ -595,7 +622,7 @@ export function AssignmentsPage() {
         'error',
       );
     }
-  }, [buildViewState, loadedView?.name, loadedViewId, showToast, workspace]);
+  }, [buildViewState, loadedView, loadedViewId, showToast, workspace]);
 
   // ?loadView= handler. Tracks lastAppliedLoadViewRef to avoid re-applying on
   // every render while waiting for the file to load.
@@ -691,6 +718,10 @@ export function AssignmentsPage() {
       ).sort(([, a], [, b]) => a.localeCompare(b)),
     [workspaceItems],
   );
+  const uniqueTags = useMemo(
+    () => Array.from(new Set(workspaceItems.flatMap((a) => a.tags ?? []))).sort(),
+    [workspaceItems],
+  );
 
   const filteredItems = useMemo(
     () =>
@@ -703,12 +734,14 @@ export function AssignmentsPage() {
             type: typeFilter,
             assignee: assigneeFilter,
             project: projectFilter,
+            tags: tagsFilter,
             activity: activityFilter,
+            dateRange: minimizeDateRange(dateRange),
           },
           { workspace, search },
         ),
       ),
-    [activityFilter, boardItems, search, statusFilter, priorityFilter, typeFilter, assigneeFilter, projectFilter, workspace],
+    [activityFilter, boardItems, search, statusFilter, priorityFilter, typeFilter, assigneeFilter, projectFilter, tagsFilter, dateRange, workspace],
   );
 
   const sortedItems = useMemo(
@@ -1144,6 +1177,19 @@ export function AssignmentsPage() {
           value={projectFilter}
           onChange={handleSetProjectFilter}
         />
+        <MultiSelect
+          ariaLabel="Tags filter"
+          className="max-w-[180px]"
+          allLabel="Any tags"
+          options={uniqueTags.map((t) => ({ value: t, label: t }))}
+          value={tagsFilter}
+          onChange={handleSetTagsFilter}
+        />
+        <DateRangeControl
+          className="max-w-[200px]"
+          value={dateRange}
+          onChange={setDateRange}
+        />
         <select value={activityFilter} onChange={(e) => handleSetActivityFilter(e.target.value as ActivityFilter)} className="editor-input max-w-[180px]">
           <option value="all">All activity</option>
           <option value="stale">Stale only</option>
@@ -1250,6 +1296,7 @@ export function AssignmentsPage() {
                   {showCol('priority') ? <SortHeader field="priority">Priority</SortHeader> : null}
                   {showCol('assignee') ? <SortHeader field="assignee">Assignee</SortHeader> : null}
                   {showCol('dependencies') ? <SortHeader field="dependencies">Dependencies</SortHeader> : null}
+                  {showCol('created') ? <SortHeader field="created">Created</SortHeader> : null}
                   {showCol('updated') ? <SortHeader field="updated">Updated</SortHeader> : null}
                 </tr>
               </thead>
@@ -1326,6 +1373,7 @@ export function AssignmentsPage() {
                     {showCol('priority') ? <td className="py-4 pr-4 capitalize text-muted-foreground">{assignment.priority}</td> : null}
                     {showCol('assignee') ? <td className="py-4 pr-4 text-muted-foreground">{assignment.assignee ?? 'Unassigned'}</td> : null}
                     {showCol('dependencies') ? <td className="py-4 pr-4 text-muted-foreground">{assignment.dependsOn.length}</td> : null}
+                    {showCol('created') ? <td className="py-4 pr-4 text-muted-foreground">{formatDate(assignment.created)}</td> : null}
                     {showCol('updated') ? <td className="py-4 text-muted-foreground">{formatDate(assignment.updated)}</td> : null}
                   </tr>
                 ))}

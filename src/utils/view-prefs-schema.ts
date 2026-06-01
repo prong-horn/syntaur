@@ -8,6 +8,7 @@ export type SortField =
   | 'priority'
   | 'assignee'
   | 'dependencies'
+  | 'created'
   | 'updated';
 
 export const SORT_FIELDS: readonly SortField[] = [
@@ -16,6 +17,7 @@ export const SORT_FIELDS: readonly SortField[] = [
   'priority',
   'assignee',
   'dependencies',
+  'created',
   'updated',
 ];
 
@@ -38,6 +40,53 @@ export const GROUPINGS: readonly Grouping[] = [
 export type Activity = 'all' | 'stale' | 'fresh';
 export const ACTIVITIES: readonly Activity[] = ['all', 'stale', 'fresh'];
 
+// Date-range filter. `field` selects which timestamp to test. Either a relative
+// `preset` (resolved against "now" at evaluation time, so a saved view stays
+// relative) XOR an absolute `from`/`to` (YYYY-MM-DD, inclusive of the whole local
+// `to` day). Absent/empty = no constraint. `dateRange` is a saved-view-only filter
+// (never persisted to view-prefs).
+export type DateRangeField = 'created' | 'updated';
+export const DATE_RANGE_FIELDS: readonly DateRangeField[] = ['created', 'updated'];
+
+export type DateRangePreset =
+  | 'last_24h' | 'last_7d' | 'last_30d' | 'last_90d' | 'older_7d' | 'older_30d';
+export const DATE_RANGE_PRESETS: readonly DateRangePreset[] = [
+  'last_24h', 'last_7d', 'last_30d', 'last_90d', 'older_7d', 'older_30d',
+];
+
+export interface DateRangeFilter {
+  field: DateRangeField;
+  preset?: DateRangePreset;
+  from?: string; // YYYY-MM-DD
+  to?: string; // YYYY-MM-DD
+}
+
+const YMD_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+export function isDateRangeField(v: unknown): v is DateRangeField {
+  return typeof v === 'string' && (DATE_RANGE_FIELDS as readonly string[]).includes(v);
+}
+export function isDateRangePreset(v: unknown): v is DateRangePreset {
+  return typeof v === 'string' && (DATE_RANGE_PRESETS as readonly string[]).includes(v);
+}
+// field required + valid; preset (if present) valid; from/to (if present) match
+// YYYY-MM-DD; preset and from/to are mutually exclusive; reject unknown keys.
+export function isDateRange(v: unknown): v is DateRangeFilter {
+  if (!v || typeof v !== 'object' || Array.isArray(v)) return false;
+  const r = v as Record<string, unknown>;
+  if (!isDateRangeField(r.field)) return false;
+  for (const key of Object.keys(r)) {
+    if (key !== 'field' && key !== 'preset' && key !== 'from' && key !== 'to') return false;
+  }
+  const hasPreset = r.preset !== undefined;
+  const hasAbsolute = r.from !== undefined || r.to !== undefined;
+  if (hasPreset && hasAbsolute) return false;
+  if (hasPreset && !isDateRangePreset(r.preset)) return false;
+  if (r.from !== undefined && (typeof r.from !== 'string' || !YMD_RE.test(r.from))) return false;
+  if (r.to !== undefined && (typeof r.to !== 'string' || !YMD_RE.test(r.to))) return false;
+  return true;
+}
+
 // Filter values are user-data-driven strings (status ids, priority names,
 // assignee names, project slugs) plus 'all'. The codebase also uses the
 // sentinels '__unassigned__' and '__standalone__' for assignee/project,
@@ -54,7 +103,11 @@ export interface ViewFilters {
   priority?: FilterValue;
   assignee?: FilterValue;
   project?: FilterValue;
+  tags?: FilterValue;
   activity?: Activity;
+  // Saved-view-only filters (never persisted to view-prefs):
+  dateRange?: DateRangeFilter;
+  search?: string;
 }
 
 // Canonical normalization: any FilterValue -> deduped string[] of real

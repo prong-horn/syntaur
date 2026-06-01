@@ -356,7 +356,7 @@ export function createDashboardServer(options: DashboardServerOptions) {
 
   const VIEW_PREFS_LOCK = 'vp:global';
 
-  const FILTER_KEYS = new Set(['status', 'type', 'priority', 'assignee', 'project', 'activity']);
+  const FILTER_KEYS = new Set(['status', 'type', 'priority', 'assignee', 'project', 'tags', 'activity']);
   const GLOBAL_KEYS = new Set(['defaultView', 'sortField', 'sortDirection', 'density', 'grouping', 'filters']);
   const SCOPE_KEYS = new Set(['defaultView', 'sortField', 'sortDirection', 'grouping', 'filters']);
   const ROOT_KEYS = new Set(['global', 'projects']);
@@ -377,7 +377,7 @@ export function createDashboardServer(options: DashboardServerOptions) {
     const unknown = unknownKey(obj, FILTER_KEYS, 'filters');
     if (unknown) return { ok: false, error: unknown };
     const out: ViewFilters = {};
-    for (const key of ['status', 'type', 'priority', 'assignee', 'project']) {
+    for (const key of ['status', 'type', 'priority', 'assignee', 'project', 'tags']) {
       if (obj[key] !== undefined) {
         if (!isFilterValue(obj[key])) {
           return { ok: false, error: `filters.${key} must be a non-empty string or array of non-empty strings` };

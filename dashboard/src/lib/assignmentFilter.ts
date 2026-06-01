@@ -1,4 +1,4 @@
-import { toFilterValues, type FilterValue } from '@shared/view-prefs-schema';
+import { toFilterValues, type FilterValue, type DateRangeFilter } from '@shared/view-prefs-schema';
 import type { AssignmentBoardItem } from '../hooks/useProjects';
 
 // Structural minimum that `filterAssignment` reads. `AssignmentBoardItem`
@@ -10,6 +10,8 @@ export interface AssignmentFilterItem {
   priority: string;
   assignee: string | null;
   type?: string | null;
+  tags?: string[];
+  created?: string;
   updated: string;
   title?: string;
   slug?: string;
@@ -27,7 +29,9 @@ export interface AssignmentFilterCriteria {
   type?: FilterValue;
   assignee?: FilterValue;
   project?: FilterValue;
+  tags?: FilterValue;
   activity?: string;
+  dateRange?: DateRangeFilter;
 }
 
 export interface AssignmentFilterOptions {
@@ -41,6 +45,53 @@ export function isAssignmentStale(updated: string): boolean {
   const timestamp = Date.parse(updated);
   if (Number.isNaN(timestamp)) return false;
   return Date.now() - timestamp > 7 * 24 * 60 * 60 * 1000;
+}
+
+const PRESET_WINDOW_MS: Record<string, number> = {
+  last_24h: 24 * 60 * 60 * 1000,
+  last_7d: 7 * 24 * 60 * 60 * 1000,
+  last_30d: 30 * 24 * 60 * 60 * 1000,
+  last_90d: 90 * 24 * 60 * 60 * 1000,
+  older_7d: 7 * 24 * 60 * 60 * 1000,
+  older_30d: 30 * 24 * 60 * 60 * 1000,
+};
+
+// Local-day bounds for an absolute YYYY-MM-DD (the dashboard renders dates in
+// LOCAL time, so a UTC-day bound would mis-exclude items near midnight).
+function localDayStart(ymd: string): number {
+  const [y, m, d] = ymd.split('-').map(Number);
+  return new Date(y, m - 1, d, 0, 0, 0, 0).getTime();
+}
+function localDayEnd(ymd: string): number {
+  const [y, m, d] = ymd.split('-').map(Number);
+  return new Date(y, m - 1, d, 23, 59, 59, 999).getTime();
+}
+
+// Does an item's created/updated timestamp satisfy a date-range filter? Parses
+// timestamps and compares numerically (raw frontmatter ISO may be non-canonical).
+// Relative presets resolve against `now`; absolute from/to are inclusive local days.
+// `now` is injectable for tests; defaults to Date.now().
+export function matchesDateRange(
+  item: { created?: string; updated: string },
+  range: DateRangeFilter | undefined,
+  now: number = Date.now(),
+): boolean {
+  if (!range) return true;
+  const raw = range.field === 'created' ? item.created ?? item.updated : item.updated;
+  const ts = Date.parse(raw);
+  if (Number.isNaN(ts)) return false; // unparseable timestamp can't satisfy a date filter
+  if (range.preset) {
+    const win = PRESET_WINDOW_MS[range.preset];
+    if (win === undefined) return true;
+    if (range.preset.startsWith('older_')) return now - ts > win;
+    return ts >= now - win && ts <= now; // last_*: within window AND not future-dated
+  }
+  const from = range.from && range.from.length > 0 ? range.from : undefined;
+  const to = range.to && range.to.length > 0 ? range.to : undefined;
+  if (!from && !to) return true;
+  if (from && ts < localDayStart(from)) return false;
+  if (to && ts > localDayEnd(to)) return false;
+  return true;
 }
 
 // Mirrors AssignmentsPage's filter semantics exactly so saved-view widgets
@@ -64,6 +115,7 @@ export function filterAssignment(
   const types = toFilterValues(criteria.type);
   const assignees = toFilterValues(criteria.assignee);
   const projects = toFilterValues(criteria.project);
+  const tags = toFilterValues(criteria.tags);
   const { activity } = criteria;
 
   if (workspace) {
@@ -88,6 +140,12 @@ export function filterAssignment(
     );
     if (!matched) return false;
   }
+  // Tags: match-ANY (OR within the field) — item matches if it has any selected tag.
+  if (tags.length) {
+    const itemTags = item.tags ?? [];
+    if (!tags.some((t) => itemTags.includes(t))) return false;
+  }
+  if (!matchesDateRange(item, criteria.dateRange)) return false;
 
   if (search) {
     const query = search.trim().toLowerCase();

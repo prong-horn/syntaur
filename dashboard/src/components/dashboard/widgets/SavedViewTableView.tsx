@@ -34,6 +34,9 @@ function sortAssignments(
       case 'dependencies':
         cmp = a.dependsOn.length - b.dependsOn.length;
         break;
+      case 'created':
+        cmp = (a.created ?? '').localeCompare(b.created ?? '');
+        break;
       case 'updated':
         cmp = a.updated.localeCompare(b.updated);
         break;
@@ -97,6 +100,9 @@ export function SavedViewTableView({
             {showCol('dependencies') ? (
               <th className={cn('font-medium', cellPadding)}>Dependencies</th>
             ) : null}
+            {showCol('created') ? (
+              <th className={cn('font-medium', cellPadding)}>Created</th>
+            ) : null}
             {showCol('updated') ? (
               <th className={cn('font-medium', cellPadding)}>Updated</th>
             ) : null}
@@ -144,6 +150,11 @@ export function SavedViewTableView({
                 {showCol('dependencies') ? (
                   <td className={cn('text-muted-foreground', cellPadding)}>
                     {assignment.dependsOn.length}
+                  </td>
+                ) : null}
+                {showCol('created') ? (
+                  <td className={cn('text-muted-foreground', cellPadding)}>
+                    {formatDate(assignment.created)}
                   </td>
                 ) : null}
                 {showCol('updated') ? (

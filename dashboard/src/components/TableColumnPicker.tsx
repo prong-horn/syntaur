@@ -19,6 +19,7 @@ const COLUMN_LABELS: Record<TableColumnId, string> = {
   priority: 'Priority',
   assignee: 'Assignee',
   dependencies: 'Dependencies',
+  created: 'Created',
   updated: 'Updated',
 };
 

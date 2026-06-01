@@ -4,16 +4,19 @@ import {
   type SortDirection,
   type ViewFilters,
   type FilterValue,
+  type DateRangeField,
+  type DateRangeFilter,
   isViewMode,
   isSortField,
   isSortDirection,
   isActivity,
   isFilterValue,
+  isDateRange,
   toFilterValues,
 } from './view-prefs-schema.js';
 
 // Re-export shared types so frontend can pull everything from a single module via `@shared/saved-views-schema`.
-export type { ViewMode, SortField, SortDirection, ViewFilters, FilterValue };
+export type { ViewMode, SortField, SortDirection, ViewFilters, FilterValue, DateRangeField, DateRangeFilter };
 
 export interface ListSectionVisibility {
   collapsed: string[];
@@ -29,6 +32,7 @@ export type TableColumnId =
   | 'priority'
   | 'assignee'
   | 'dependencies'
+  | 'created'
   | 'updated';
 
 export const TABLE_COLUMN_IDS: readonly TableColumnId[] = [
@@ -37,6 +41,7 @@ export const TABLE_COLUMN_IDS: readonly TableColumnId[] = [
   'priority',
   'assignee',
   'dependencies',
+  'created',
   'updated',
 ];
 
@@ -177,11 +182,14 @@ export function isViewFilters(value: unknown): value is ViewFilters {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
   const obj = value as Record<string, unknown>;
   // Multi-capable fields accept a non-empty string OR an array of non-empty
-  // strings (legacy single values still validate). `type` is now persisted too.
-  for (const key of ['status', 'type', 'priority', 'assignee', 'project'] as const) {
+  // strings (legacy single values still validate). `tags` joined the set.
+  for (const key of ['status', 'type', 'priority', 'assignee', 'project', 'tags'] as const) {
     if (obj[key] !== undefined && !isFilterValue(obj[key])) return false;
   }
   if (obj.activity !== undefined && !isActivity(obj.activity)) return false;
+  if (obj.dateRange !== undefined && !isDateRange(obj.dateRange)) return false;
+  if (obj.search !== undefined && typeof obj.search !== 'string') return false;
+  // Permissive about UNKNOWN keys (forward-compat): only known keys are validated.
   return true;
 }
 
@@ -244,7 +252,10 @@ export function isProjectDetailCompatible(config: SavedViewConfig, slug: string)
   const p = toFilterValues(config.filters.project);
   const projectOk = p.length === 0 || (p.length === 1 && p[0] === slug);
   const activity = config.filters.activity;
-  return projectOk && (!activity || activity === 'all');
+  // ProjectDetail has no activity or search controls (it DOES support tags +
+  // date range). A view using either must route to the global list instead.
+  const hasSearch = typeof config.filters.search === 'string' && config.filters.search.trim().length > 0;
+  return projectOk && (!activity || activity === 'all') && !hasSearch;
 }
 
 // A view is compatible with a scope if it could meaningfully be applied there.

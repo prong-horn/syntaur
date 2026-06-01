@@ -116,7 +116,7 @@ export function isViewPrefsDefaults(file: ViewPrefsFile): boolean {
   // can be arrays, `status: []` / `'all'` / absent are all "default", and a
   // populated array is "custom". Raw `!==` would misclassify these.
   const gf = g.filters;
-  for (const key of ['status', 'type', 'priority', 'assignee', 'project'] as const) {
+  for (const key of ['status', 'type', 'priority', 'assignee', 'project', 'tags'] as const) {
     if (toFilterValues(gf[key]).length > 0) return false;
   }
   if (gf.activity !== undefined && gf.activity !== 'all') return false;

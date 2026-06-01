@@ -2015,6 +2015,8 @@ function toAssignmentSummary(assignment: AssignmentRecord): AssignmentSummary {
     assignee: assignment.assignee,
     dependsOn: assignment.dependsOn,
     links: assignment.links,
+    tags: assignment.tags,
+    created: assignment.created,
     updated: assignment.updated,
     archived: assignment.archived,
     archivedAt: assignment.archivedAt,

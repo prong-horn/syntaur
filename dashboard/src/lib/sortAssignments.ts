@@ -14,6 +14,7 @@ export function sortAssignments<
     priority: string;
     assignee: string | null;
     dependsOn: string[];
+    created?: string;
     updated: string;
   },
 >(items: T[], field: SortField, direction: SortDirection): T[] {
@@ -34,6 +35,9 @@ export function sortAssignments<
         break;
       case 'dependencies':
         cmp = a.dependsOn.length - b.dependsOn.length;
+        break;
+      case 'created':
+        cmp = (a.created ?? '').localeCompare(b.created ?? '');
         break;
       case 'updated':
         cmp = a.updated.localeCompare(b.updated);

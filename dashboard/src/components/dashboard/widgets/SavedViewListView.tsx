@@ -33,6 +33,9 @@ function sortAssignments(
       case 'dependencies':
         cmp = a.dependsOn.length - b.dependsOn.length;
         break;
+      case 'created':
+        cmp = (a.created ?? '').localeCompare(b.created ?? '');
+        break;
       case 'updated':
         cmp = a.updated.localeCompare(b.updated);
         break;

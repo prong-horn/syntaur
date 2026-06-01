@@ -30,6 +30,7 @@ const SORT_FIELD_LABEL: Record<SortField, string> = {
   priority: 'Priority',
   assignee: 'Assignee',
   dependencies: 'Dependencies',
+  created: 'Created',
   updated: 'Updated',
 };
 

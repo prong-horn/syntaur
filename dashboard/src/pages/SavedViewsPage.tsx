@@ -12,6 +12,7 @@ import {
   inferLandingRoute,
   summarizeFilters,
   buildCreateViewPayload,
+  mergeUpdatedConfig,
   type CreateViewBuilderState,
 } from '../lib/savedViews';
 import { LoadingState } from '../components/LoadingState';
@@ -36,6 +37,7 @@ export function SavedViewsPage() {
   const [deleteTarget, setDeleteTarget] = useState<SavedView | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
+  const [editTarget, setEditTarget] = useState<SavedView | null>(null);
 
   async function handleConfirmDelete() {
     if (!deleteTarget) return;
@@ -62,6 +64,36 @@ export function SavedViewsPage() {
     } catch (err) {
       showToast(err instanceof Error ? err.message : 'Failed to create saved view');
       throw err; // keep the dialog open and let it surface the inline error
+    }
+  }
+
+  // Edit preserves the VIEW's own workspace (never the route) and merges the
+  // built fields onto the existing config so column/section visibility + unknown
+  // forward-compat keys survive (visibility from the existing view — the dialog
+  // doesn't edit it).
+  async function handleEdit(target: SavedView, name: string, state: CreateViewBuilderState) {
+    const built = buildCreateViewPayload(state, target.workspace).config;
+    const config = mergeUpdatedConfig(target.config, built, target.config);
+    try {
+      await updateSavedView(target.id, { name, config });
+      setEditTarget(null);
+      showToast(`Updated view "${name}"`);
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Failed to update saved view');
+      throw err;
+    }
+  }
+
+  async function handleDuplicate(view: SavedView) {
+    try {
+      await createSavedView({
+        name: `${view.name} (copy)`,
+        workspace: view.workspace,
+        config: view.config,
+      });
+      showToast(`Duplicated "${view.name}"`);
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Failed to duplicate saved view');
     }
   }
 
@@ -101,6 +133,8 @@ export function SavedViewsPage() {
                 view={view}
                 onRenameError={(msg) => showToast(msg)}
                 onRequestDelete={() => setDeleteTarget(view)}
+                onRequestEdit={() => setEditTarget(view)}
+                onRequestDuplicate={() => void handleDuplicate(view)}
               />
             ))}
           </ul>
@@ -108,10 +142,20 @@ export function SavedViewsPage() {
       )}
 
       <CreateViewDialog
-        open={createOpen}
-        onOpenChange={setCreateOpen}
-        workspace={workspace ?? null}
-        onSubmit={handleCreate}
+        open={createOpen || editTarget !== null}
+        onOpenChange={(o) => {
+          if (!o) {
+            setCreateOpen(false);
+            setEditTarget(null);
+          }
+        }}
+        // Edit scopes options to the VIEW's own workspace (NOT the route — a global
+        // view edited from /w/:ws/views must stay global). Create uses the route.
+        workspace={editTarget ? editTarget.workspace : workspace ?? null}
+        initialView={editTarget}
+        onSubmit={
+          editTarget ? (name, state) => handleEdit(editTarget, name, state) : handleCreate
+        }
       />
 
       <ConfirmDialog
@@ -140,9 +184,17 @@ interface SavedViewRowProps {
   view: SavedView;
   onRenameError: (message: string) => void;
   onRequestDelete: () => void;
+  onRequestEdit: () => void;
+  onRequestDuplicate: () => void;
 }
 
-function SavedViewRow({ view, onRenameError, onRequestDelete }: SavedViewRowProps) {
+function SavedViewRow({
+  view,
+  onRenameError,
+  onRequestDelete,
+  onRequestEdit,
+  onRequestDuplicate,
+}: SavedViewRowProps) {
   const navigate = useNavigate();
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(view.name);
@@ -243,6 +295,12 @@ function SavedViewRow({ view, onRenameError, onRequestDelete }: SavedViewRowProp
           className="shell-action"
         >
           Apply
+        </button>
+        <button type="button" onClick={onRequestEdit} className="shell-action">
+          Edit
+        </button>
+        <button type="button" onClick={onRequestDuplicate} className="shell-action">
+          Duplicate
         </button>
         <button
           type="button"
