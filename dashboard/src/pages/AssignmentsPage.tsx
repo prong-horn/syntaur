@@ -29,7 +29,7 @@ import { SectionCard } from '../components/SectionCard';
 import { LoadingState } from '../components/LoadingState';
 import { ErrorState } from '../components/ErrorState';
 import { EmptyState } from '../components/EmptyState';
-import { KanbanBoard, NON_DRAGGABLE_SELECTOR, type KanbanColumn, type ExternalDragData } from '../components/KanbanBoard';
+import { KanbanBoard, type KanbanColumn, type ExternalDragData } from '../components/KanbanBoard';
 import { AssignmentTransitionDialog } from '../components/AssignmentTransitionDialog';
 import { ContextMenuPopover } from '../components/ContextMenuPopover';
 import { ConfirmDialog } from '../components/ConfirmDialog';
@@ -39,6 +39,7 @@ import { StatusBadge, STATUS_META, getStatusDescription } from '../components/St
 import { TypeChip } from '../components/TypeChip';
 import { StatusPillPicker } from '../components/StatusPillPicker';
 import { InlineTitleEditor } from '../components/InlineTitleEditor';
+import { useBodyClickNavigation } from '../hooks/useBodyClickNavigation';
 import { useToast, Toaster } from '../components/Toast';
 import { transitionNeedsReason } from '../lib/assignments';
 import { useStatusConfig, getStatusLabel } from '../hooks/useStatusConfig';
@@ -1305,23 +1306,20 @@ export function AssignmentsPage() {
               </thead>
               <tbody>
                 {sortedItems.map((assignment, i) => (
-                  <tr
+                  <ClickableTableRow
                     key={getAssignmentKey(assignment)}
-                    className="border-b border-border/50 last:border-0"
+                    detailHref={assignmentDetailHref(assignment)}
+                    className="cursor-pointer border-b border-border/50 transition hover:bg-muted/40 last:border-0"
                     {...hotkeyRowProps(i)}
                   >
                     {showCol('title') ? (
                     <td className="py-4 pr-4">
-                      <Link
-                        to={
-                          assignment.projectSlug === null
-                            ? `/assignments/${assignment.id}`
-                            : `${wsPrefix}/projects/${assignment.projectSlug}/assignments/${assignment.slug}`
-                        }
-                        className="font-semibold text-foreground hover:text-primary"
-                      >
-                        {assignment.title}
-                      </Link>
+                      <InlineTitleEditor
+                        title={assignment.title}
+                        detailHref={assignmentDetailHref(assignment)}
+                        onSave={(next) => handleRenameTitle(assignment, next)}
+                        disabled={transitioningId === getAssignmentKey(assignment)}
+                      />
                       <p className="mt-1 text-xs text-muted-foreground">
                         {assignment.projectTitle ?? (
                           <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-[10px] uppercase text-muted-foreground">
@@ -1378,7 +1376,7 @@ export function AssignmentsPage() {
                     {showCol('dependencies') ? <td className="py-4 pr-4 text-muted-foreground">{assignment.dependsOn.length}</td> : null}
                     {showCol('created') ? <td className="py-4 pr-4 text-muted-foreground">{formatDate(assignment.created)}</td> : null}
                     {showCol('updated') ? <td className="py-4 text-muted-foreground">{formatDate(assignment.updated)}</td> : null}
-                  </tr>
+                  </ClickableTableRow>
                 ))}
               </tbody>
             </table>
@@ -1450,6 +1448,10 @@ export function AssignmentsPage() {
                             assignment={item}
                             dragging={isDragging}
                             transitioning={transitioningId === itemKey}
+                            onPillSelect={(action) =>
+                              void handleMove({ item, toColumnId: action.targetStatus, action })
+                            }
+                            onRenameTitle={(next) => handleRenameTitle(item, next)}
                           />
                         </div>
                       );
@@ -1687,6 +1689,33 @@ function buildAssignmentContextMenu(
   return items;
 }
 
+/**
+ * A table row whose body navigates to the assignment detail page on click,
+ * reusing the same suppression rules as the kanban/list card (don't navigate
+ * when dismissing a menu, committing an inline edit, or clicking an interactive
+ * control). The hook must live in a component, so the per-row `<tr>` is wrapped
+ * here rather than inlined in the table `.map()`.
+ */
+function ClickableTableRow({
+  detailHref,
+  children,
+  className,
+  ...rest
+}: { detailHref: string } & React.ComponentPropsWithoutRef<'tr'>) {
+  const nav = useBodyClickNavigation<HTMLTableRowElement>(detailHref);
+  return (
+    <tr
+      ref={nav.containerRef}
+      className={className}
+      onMouseDown={nav.onMouseDown}
+      onClick={nav.onClick}
+      {...rest}
+    >
+      {children}
+    </tr>
+  );
+}
+
 function AssignmentBoardCard({
   assignment,
   dragging,
@@ -1702,11 +1731,6 @@ function AssignmentBoardCard({
   /** Present in the kanban render-site only; absent → read-only card (list view). */
   onRenameTitle?: (newTitle: string) => Promise<void>;
 }) {
-  const navigate = useNavigate();
-  const cardRef = useRef<HTMLDivElement>(null);
-  // Set on mousedown; when true the trailing click is dismissing an open status
-  // menu or committing an inline title edit, so it must NOT also navigate.
-  const suppressBodyNavRef = useRef(false);
   // Canonical per-item deep link: handles standalone vs project-nested and the
   // assignment's OWN workspace prefix (not the current page's), matching the
   // keyboard onOpen path and dashboard widgets. Body-click, the title <Link>,
@@ -1716,45 +1740,19 @@ function AssignmentBoardCard({
   // that passes onPillSelect + onRenameTitle, so this is also the "is this the
   // interactive (kanban) card" signal. The list-view card stays read-only.
   const inlineEditEnabled = Boolean(onPillSelect && onRenameTitle);
-
-  const handleBodyMouseDown = () => {
-    const card = cardRef.current;
-    // Suppress the trailing navigation click whenever this press is dismissing an
-    // overlay or committing an inline edit (the click would otherwise do BOTH):
-    //  - status pill menu open: its trigger (in this card) carries aria-expanded,
-    //    still "true" here because the card's mousedown fires before the picker's
-    //    document-level outside-close listener runs.
-    //  - any open menu/popover (the right-click context menu, page-level, plus the
-    //    status menu itself): both render role="menu" only while open. We read it
-    //    at mousedown, before the popover's own document mousedown handler closes it.
-    //  - inline title editor focused: at mousedown the input still holds focus
-    //    (blur fires afterward), so document.activeElement is observable here.
-    const statusMenuOpen = Boolean(card?.querySelector('[aria-expanded="true"]'));
-    const anyMenuOpen = Boolean(document.querySelector('[role="menu"]'));
-    const active = document.activeElement;
-    const editorActive = Boolean(
-      active && card?.contains(active) &&
-        (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA'),
-    );
-    suppressBodyNavRef.current = statusMenuOpen || anyMenuOpen || editorActive;
-  };
-
-  const handleBodyClick = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (suppressBodyNavRef.current) return; // dismissed a menu / committed an edit
-    const target = e.target as HTMLElement | null;
-    if (!target || target.closest(NON_DRAGGABLE_SELECTOR)) return; // interactive control
-    navigate(detailHref);
-  };
+  // Shared with the table row: navigate on body click, suppressing clicks that
+  // dismiss a menu, commit an inline edit, or hit an interactive control.
+  const bodyNav = useBodyClickNavigation<HTMLDivElement>(detailHref);
 
   return (
     <div
-      ref={cardRef}
+      ref={inlineEditEnabled ? bodyNav.containerRef : undefined}
       className={cn(
         'vp-card rounded-lg border border-border/60 bg-background/85 p-3 shadow-sm',
         inlineEditEnabled && 'cursor-pointer',
       )}
-      onMouseDown={inlineEditEnabled ? handleBodyMouseDown : undefined}
-      onClick={inlineEditEnabled ? handleBodyClick : undefined}
+      onMouseDown={inlineEditEnabled ? bodyNav.onMouseDown : undefined}
+      onClick={inlineEditEnabled ? bodyNav.onClick : undefined}
     >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1 space-y-1">
