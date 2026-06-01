@@ -5,7 +5,7 @@ import { fileExists, writeFileForce } from '../utils/fs.js';
 import { nowTimestamp } from '../utils/timestamp.js';
 import { readConfig, type StatusConfig, type StatusTransition } from '../utils/config.js';
 import { resolvePlaybookSlug } from '../utils/playbooks.js';
-import { migrateLegacyProjectFiles } from '../utils/fs-migration.js';
+import { migrateLegacyProjectFiles, migrateLegacyArchivedProjects } from '../utils/fs-migration.js';
 import { resolveAssignmentById, type ResolvedAssignment } from '../utils/assignment-resolver.js';
 
 /**
@@ -61,6 +61,9 @@ import {
 } from './parser.js';
 import { getDashboardHelp } from './help.js';
 import type {
+  ArchiveResponse,
+  ArchivedAssignmentItem,
+  ArchivedProjectItem,
   AssignmentBoardItem,
   AssignmentDetail,
   AssignmentReference,
@@ -105,6 +108,21 @@ const STALE_LIMIT_DEFAULT = 50;
 const STALE_LIMIT_MAX = 200;
 
 const TERMINAL_STATUSES = new Set(['completed', 'failed', 'archived']);
+
+// --- Archive hiding helpers (cascade) ---
+// "Hidden from normal views" is enforced in the aggregating/consuming functions,
+// never in the parser or detail builders (those keep returning everything so the
+// Archive page + restore can read archived items).
+
+/** A project is hidden when its real `archived` flag is set. */
+function isProjectArchived(p: { archived?: boolean }): boolean {
+  return p.archived === true;
+}
+
+/** Drop individually-archived assignments from a list (for normal/active views). */
+function activeAssignments<T extends { archived?: boolean }>(items: T[]): T[] {
+  return items.filter((item) => item.archived !== true);
+}
 
 // ---------------------------------------------------------------------------
 // Overview perf instrumentation (opt-in via SYNTAUR_PERF_TRACE=1).
@@ -468,7 +486,10 @@ export function clearStatusConfigCache(): void {
  */
 export async function listProjects(projectsDir: string): Promise<ProjectSummary[]> {
   const projectRecords = await listProjectRecords(projectsDir);
-  return projectRecords.map((record) => record.summary);
+  // Archived projects are hidden from normal views; they live only on /archive.
+  return projectRecords
+    .filter((record) => !isProjectArchived(record.summary))
+    .map((record) => record.summary);
 }
 
 /**
@@ -696,7 +717,13 @@ export async function getOverview(
   const standaloneRecords = await timed(traces, 'list-standalone-records', () =>
     listStandaloneRecords(assignmentsDir),
   );
-  const recentActivity = buildRecentActivity(projectRecords, standaloneRecords);
+  // Archived projects + individually-archived assignments are hidden from every
+  // overview aggregate (stats, recent projects, recent activity). The full record
+  // sets are still used for firstRun detection and the segment-bucket builder
+  // (which applies its own cascade filtering internally).
+  const activeProjectRecords = projectRecords.filter((record) => !isProjectArchived(record.summary));
+  const activeStandaloneRecords = standaloneRecords.filter((sr) => sr.record.archived !== true);
+  const recentActivity = buildRecentActivity(activeProjectRecords, activeStandaloneRecords);
 
   const staleLimit = clamp(
     Number.isFinite(options.staleLimit) ? Number(options.staleLimit) : STALE_LIMIT_DEFAULT,
@@ -760,33 +787,35 @@ export async function getOverview(
     generatedAt: new Date().toISOString(),
     firstRun: projectRecords.length === 0 && standaloneRecords.length === 0,
     stats: {
-      activeProjects: projectRecords.filter((record) => record.summary.status === 'active').length,
-      inProgressAssignments: projectRecords.reduce(
+      activeProjects: activeProjectRecords.filter((record) => record.summary.status === 'active').length,
+      inProgressAssignments: activeProjectRecords.reduce(
         (total, record) => total + (record.summary.progress['in_progress'] ?? 0),
         0,
       ),
-      blockedAssignments: projectRecords.reduce(
+      blockedAssignments: activeProjectRecords.reduce(
         (total, record) => total + (record.summary.progress['blocked'] ?? 0),
         0,
       ),
-      reviewAssignments: projectRecords.reduce(
+      reviewAssignments: activeProjectRecords.reduce(
         (total, record) => total + (record.summary.progress['review'] ?? 0),
         0,
       ),
-      failedAssignments: projectRecords.reduce(
+      failedAssignments: activeProjectRecords.reduce(
         (total, record) => total + (record.summary.progress['failed'] ?? 0),
         0,
       ),
-      staleAssignments: projectRecords.reduce(
+      staleAssignments: activeProjectRecords.reduce(
         (total, record) =>
-          total + record.assignments.filter((assignment) => isStale(assignment.updated)).length,
+          total +
+          activeAssignments(record.assignments).filter((assignment) => isStale(assignment.updated))
+            .length,
         0,
-      ) + standaloneRecords.filter((sr) => isStale(sr.record.updated)).length,
+      ) + activeStandaloneRecords.filter((sr) => isStale(sr.record.updated)).length,
     },
     hero,
     segments,
     recentSessions,
-    recentProjects: projectRecords
+    recentProjects: activeProjectRecords
       .map((record) => record.summary)
       .sort((left, right) => compareTimestamps(right.updated, left.updated))
       .slice(0, RECENT_PROJECTS_LIMIT),
@@ -802,21 +831,38 @@ export async function getOverview(
 export async function listAssignmentsBoard(
   projectsDir: string,
   assignmentsDir?: string,
+  options: { archived?: 'exclude' | 'only' } = {},
 ): Promise<AssignmentsBoardResponse> {
+  const mode = options.archived ?? 'exclude';
   const projectRecords = await listProjectRecords(projectsDir);
   const projectItems = await Promise.all(
-    projectRecords.flatMap(async (record) =>
-      Promise.all(
-        record.assignments.map(async (assignment) =>
+    projectRecords.flatMap(async (record) => {
+      if (mode === 'only') {
+        // Individually-archived assignments only — ignore project-archived cascade.
+        return Promise.all(
+          record.assignments
+            .filter((assignment) => assignment.archived === true)
+            .map(async (assignment) => toAssignmentBoardItem(projectsDir, record, assignment)),
+        );
+      }
+      // 'exclude': cascade-hide every child of an archived project, and drop
+      // individually-archived children of non-archived projects.
+      if (isProjectArchived(record.summary)) return [] as AssignmentBoardItem[];
+      return Promise.all(
+        activeAssignments(record.assignments).map(async (assignment) =>
           toAssignmentBoardItem(projectsDir, record, assignment),
         ),
-      ),
-    ),
+      );
+    }),
   );
 
   const standaloneRecords = await listStandaloneRecords(assignmentsDir);
+  const filteredStandalone =
+    mode === 'only'
+      ? standaloneRecords.filter((sr) => sr.record.archived === true)
+      : standaloneRecords.filter((sr) => sr.record.archived !== true);
   const standaloneItems = await Promise.all(
-    standaloneRecords.map(async (sr) => toStandaloneBoardItem(sr)),
+    filteredStandalone.map(async (sr) => toStandaloneBoardItem(sr)),
   );
 
   return {
@@ -824,6 +870,77 @@ export async function listAssignmentsBoard(
     assignments: [...projectItems.flat(), ...standaloneItems]
       .sort((left, right) => compareTimestamps(right.updated, left.updated)),
   };
+}
+
+function toArchivedAssignmentItem(
+  assignment: AssignmentRecord,
+  projectSlug: string | null,
+  projectTitle: string | null,
+): ArchivedAssignmentItem {
+  return {
+    id: assignment.id,
+    slug: assignment.slug,
+    title: assignment.title,
+    status: assignment.status,
+    type: assignment.type,
+    priority: assignment.priority as ArchivedAssignmentItem['priority'],
+    projectSlug,
+    projectTitle,
+    archived: assignment.archived,
+    archivedAt: assignment.archivedAt,
+    archivedReason: assignment.archivedReason,
+    updated: assignment.updated,
+  };
+}
+
+/**
+ * Build the canonical archived view for the dashboard Archive page.
+ * Returns archived projects (each expandable to ALL its children) plus
+ * individually-archived assignments whose parent project is NOT archived
+ * (so they are never double-listed) and archived standalone assignments.
+ * GET /api/archived
+ */
+export async function listArchived(
+  projectsDir: string,
+  assignmentsDir?: string,
+): Promise<ArchiveResponse> {
+  const projectRecords = await listProjectRecords(projectsDir);
+  const standaloneRecords = await listStandaloneRecords(assignmentsDir);
+
+  const projects: ArchivedProjectItem[] = projectRecords
+    .filter((record) => isProjectArchived(record.summary))
+    .map((record) => ({
+      slug: record.summary.slug,
+      title: record.summary.title,
+      archivedAt: record.summary.archivedAt,
+      archivedReason: record.summary.archivedReason,
+      assignments: record.assignments
+        .map((assignment) =>
+          toArchivedAssignmentItem(assignment, record.summary.slug, record.summary.title),
+        )
+        .sort((left, right) => compareTimestamps(right.updated, left.updated)),
+    }))
+    .sort((left, right) => compareTimestamps(right.archivedAt ?? '', left.archivedAt ?? ''));
+
+  const individuallyArchived: ArchivedAssignmentItem[] = [];
+  for (const record of projectRecords) {
+    if (isProjectArchived(record.summary)) continue; // its children belong under the project above
+    for (const assignment of record.assignments) {
+      if (assignment.archived === true) {
+        individuallyArchived.push(
+          toArchivedAssignmentItem(assignment, record.summary.slug, record.summary.title),
+        );
+      }
+    }
+  }
+  for (const sr of standaloneRecords) {
+    if (sr.record.archived === true) {
+      individuallyArchived.push(toArchivedAssignmentItem(sr.record, null, null));
+    }
+  }
+  individuallyArchived.sort((left, right) => compareTimestamps(right.updated, left.updated));
+
+  return { projects, assignments: individuallyArchived };
 }
 
 async function toStandaloneBoardItem(sr: StandaloneRecord): Promise<AssignmentBoardItem> {
@@ -1131,6 +1248,9 @@ export async function getAssignmentDetail(
     projectWorkspace,
     externalIds: assignment.externalIds,
     tags: assignment.tags,
+    archived: assignment.archived,
+    archivedAt: assignment.archivedAt,
+    archivedReason: assignment.archivedReason,
     created: assignment.created,
     updated: assignment.updated,
     body: assignment.body,
@@ -1464,6 +1584,9 @@ async function buildStandaloneAssignmentDetail(
     projectWorkspace: assignment.workspaceGroup,
     externalIds: assignment.externalIds,
     tags: assignment.tags,
+    archived: assignment.archived,
+    archivedAt: assignment.archivedAt,
+    archivedReason: assignment.archivedReason,
     created: assignment.created,
     updated: assignment.updated,
     body: assignment.body,
@@ -1510,6 +1633,9 @@ async function computeProjectRecords(
   if (!migratedProjectsDirs.has(projectsDir)) {
     migratedProjectsDirs.add(projectsDir);
     await migrateLegacyProjectFiles(projectsDir);
+    // Reconcile legacy "archived-as-a-status" projects (statusOverride: 'archived')
+    // into the real `archived` flag so there is one source of truth.
+    await migrateLegacyArchivedProjects(projectsDir);
   }
 
   const entries = await readdir(projectsDir, { withFileTypes: true });
@@ -1824,12 +1950,15 @@ async function buildProjectRollup(
   needsAttention: NeedsAttention;
   status: string;
 }> {
-  const progress: ProgressCounts = { total: assignments.length };
+  // Archived children are hidden from normal views, so they must not count in
+  // the project's progress/totals/status rollup either (cascade consistency).
+  const active = activeAssignments(assignments);
+  const progress: ProgressCounts = { total: active.length };
 
   // Map: read every comments.md in parallel. Reduce: fold the per-assignment
   // results into progress counters + openQuestions sum.
   const perAssignment = await Promise.all(
-    assignments.map(async (assignment) => {
+    active.map(async (assignment) => {
       const t0 = traces ? performance.now() : 0;
       const openQuestions = await countOpenQuestions(projectPath, assignment.slug);
       if (traces) accumulatePhase(traces, 'count-open-questions', performance.now() - t0);
@@ -1883,6 +2012,9 @@ function toAssignmentSummary(assignment: AssignmentRecord): AssignmentSummary {
     dependsOn: assignment.dependsOn,
     links: assignment.links,
     updated: assignment.updated,
+    archived: assignment.archived,
+    archivedAt: assignment.archivedAt,
+    archivedReason: assignment.archivedReason,
   };
 }
 
@@ -2092,17 +2224,25 @@ async function buildOverviewSegmentBuckets(
   const newestPool: Array<{ created: string; clone: AttentionItem }> = [];
 
   for (const record of projectRecords) {
+    // Cascade-hide: an archived project contributes none of its assignments to
+    // the overview segments.
+    if (isProjectArchived(record.summary)) continue;
+
     // Build a dep-status map once per project so getUnmetDependencies can resolve
     // dependency status from memory instead of re-reading each dep's assignment.md.
+    // (Built over ALL assignments so dependency resolution is unaffected by hiding.)
     const depMap = new Map<string, string>();
     for (const a of record.assignments) {
       depMap.set(a.slug, a.status);
     }
 
+    // Individually-archived assignments are hidden from the overview segments.
+    const visibleAssignments = activeAssignments(record.assignments);
+
     // Resolve every per-assignment getAvailableTransitions call for this project
     // in parallel, then run the synchronous classification logic below over the results.
     const resolvedTransitions = await Promise.all(
-      record.assignments.map(async (assignment) => {
+      visibleAssignments.map(async (assignment) => {
         const t0 = traces ? performance.now() : 0;
         const availableTransitions = await getAvailableTransitions(
           projectsDir,
@@ -2180,7 +2320,9 @@ async function buildOverviewSegmentBuckets(
   }
 
   const resolvedStandaloneTransitions = await Promise.all(
-    standaloneRecords.map(async (sr) => {
+    standaloneRecords
+      .filter((sr) => sr.record.archived !== true)
+      .map(async (sr) => {
       const t0 = traces ? performance.now() : 0;
       const availableTransitions = await getStandaloneAvailableTransitions(sr.record);
       if (traces) accumulatePhase(traces, 'get-available-transitions', performance.now() - t0);

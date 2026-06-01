@@ -2,6 +2,7 @@ import { readdir, readFile, rename, writeFile } from 'node:fs/promises';
 import type { Dirent } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileExists } from './fs.js';
+import { nowTimestamp } from './timestamp.js';
 
 /**
  * Filesystem-level migrations for users upgrading from pre-v0.2.0 installs,
@@ -83,6 +84,87 @@ export async function migrateLegacyProjectFiles(
       } catch {
         // Ignore.
       }
+    }
+  }
+
+  return result;
+}
+
+/**
+ * Set (or insert) a top-level scalar frontmatter field. Mirrors the dashboard
+ * `setTopLevelField` writer: replaces the field in place when present, else
+ * inserts it just before the closing `---`. Returns the content unchanged if
+ * the field is absent and no closing delimiter is found.
+ */
+function setFrontmatterField(content: string, key: string, value: boolean | string | null): string {
+  const formatted = value === null ? 'null' : typeof value === 'boolean' ? String(value) : value;
+  const fieldRegex = new RegExp(`^(${key}:)\\s*.*$`, 'm');
+  if (fieldRegex.test(content)) {
+    return content.replace(fieldRegex, `$1 ${formatted}`);
+  }
+  const closingIdx = content.indexOf('\n---', 4);
+  if (closingIdx === -1) return content;
+  return `${content.slice(0, closingIdx)}\n${key}: ${formatted}${content.slice(closingIdx)}`;
+}
+
+/** Read a top-level scalar field's raw (trimmed) value, or null if absent. */
+function readFrontmatterField(content: string, key: string): string | null {
+  const match = content.match(new RegExp(`^${key}:\\s*(.*)$`, 'm'));
+  if (!match) return null;
+  const raw = match[1].trim().replace(/^['"]|['"]$/g, '');
+  return raw === '' || raw === 'null' ? null : raw;
+}
+
+export interface ArchivedProjectsMigrationResult {
+  /** Project slugs reconciled from `statusOverride: archived` to the real flag. */
+  reconciled: string[];
+}
+
+/**
+ * Reconcile legacy "archived-as-a-status" projects into the orthogonal archive
+ * flag. Any `project.md` whose frontmatter has `statusOverride: archived` is
+ * rewritten to `archived: true` (stamping `archivedAt` if not already set) and
+ * its `statusOverride` is cleared, so `archived` is the single source of truth.
+ *
+ * Idempotent: only rewrites a file when it still carries `statusOverride: archived`.
+ * Swallows per-project errors and never throws.
+ */
+export async function migrateLegacyArchivedProjects(
+  projectsDir: string,
+): Promise<ArchivedProjectsMigrationResult> {
+  const result: ArchivedProjectsMigrationResult = { reconciled: [] };
+
+  if (!(await fileExists(projectsDir))) return result;
+
+  let entries: Dirent[];
+  try {
+    entries = (await readdir(projectsDir, { withFileTypes: true })) as Dirent[];
+  } catch {
+    return result;
+  }
+
+  for (const entry of entries) {
+    if (!entry.isDirectory() || entry.name.startsWith('.')) continue;
+
+    const projectMd = resolve(projectsDir, entry.name, 'project.md');
+    try {
+      if (!(await fileExists(projectMd))) continue;
+      const content = await readFile(projectMd, 'utf-8');
+      // Only act on projects whose status override is exactly "archived".
+      if (readFrontmatterField(content, 'statusOverride') !== 'archived') continue;
+
+      let next = setFrontmatterField(content, 'archived', true);
+      if (readFrontmatterField(content, 'archivedAt') === null) {
+        next = setFrontmatterField(next, 'archivedAt', nowTimestamp());
+      }
+      next = setFrontmatterField(next, 'statusOverride', null);
+      next = setFrontmatterField(next, 'updated', nowTimestamp());
+
+      await writeFile(projectMd, next, 'utf-8');
+      result.reconciled.push(entry.name);
+    } catch {
+      // Swallow per-project errors (permission denied, racing editor, etc).
+      continue;
     }
   }
 

@@ -49,6 +49,9 @@ export interface AssignmentSummary {
   dependsOn: string[];
   links: string[];
   updated: string;
+  archived: boolean;
+  archivedAt: string | null;
+  archivedReason: string | null;
 }
 
 export interface AssignmentBoardItem extends AssignmentSummary {
@@ -60,6 +63,42 @@ export interface AssignmentBoardItem extends AssignmentSummary {
   availableTransitions: AssignmentTransitionAction[];
   /** Workspace this assignment belongs to. Sourced from `project.workspace` for project-nested assignments, from `workspaceGroup` for standalone assignments. `null` when neither is set. */
   projectWorkspace: string | null;
+}
+
+/** One archived assignment row shown on the canonical Archive page. */
+export interface ArchivedAssignmentItem {
+  id: string;
+  slug: string;
+  title: string;
+  status: string;
+  type: string | null;
+  priority: 'low' | 'medium' | 'high' | 'critical';
+  /** `null` for standalone assignments. */
+  projectSlug: string | null;
+  /** `null` for standalone assignments. */
+  projectTitle: string | null;
+  /** This row's own archive flag — distinguishes individually-archived from cascade-hidden children. */
+  archived: boolean;
+  archivedAt: string | null;
+  archivedReason: string | null;
+  updated: string;
+}
+
+/** One archived project (expandable to ALL its child assignments) on the Archive page. */
+export interface ArchivedProjectItem {
+  slug: string;
+  title: string;
+  archivedAt: string | null;
+  archivedReason: string | null;
+  /** ALL children, each carrying its own `archived` flag for the badge. */
+  assignments: ArchivedAssignmentItem[];
+}
+
+export interface ArchiveResponse {
+  /** Archived projects, expandable to their children. */
+  projects: ArchivedProjectItem[];
+  /** Individually-archived assignments whose parent project is NOT archived, plus archived standalone assignments. */
+  assignments: ArchivedAssignmentItem[];
 }
 
 export interface ResourceSummary {
@@ -170,6 +209,9 @@ export interface AssignmentDetail {
   projectWorkspace: string | null;
   externalIds: ExternalIdInfo[];
   tags: string[];
+  archived: boolean;
+  archivedAt: string | null;
+  archivedReason: string | null;
   created: string;
   updated: string;
   body: string;
