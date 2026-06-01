@@ -135,6 +135,7 @@ export function ProjectDetail() {
   useEffect(() => {
     setLoadedViewId(null);
     lastAppliedLoadViewRef.current = null;
+    setDateRange(null); // ephemeral saved-view-only filter; reset only on scope change
   }, [slug, workspace]);
 
   // Re-hydrate when react-router reuses this component across project switches
@@ -148,7 +149,6 @@ export function ProjectDetail() {
     setPriorityFilter(toFilterValues(prefs.filters.priority));
     setTypeFilter(toFilterValues(prefs.filters.type));
     setTagsFilter(toFilterValues(prefs.filters.tags));
-    setDateRange(null); // ephemeral; reset when the scope re-hydrates
     setGrouping(prefs.grouping);
     setSortField(prefs.sortField);
     setSortDirection(prefs.sortDirection);
