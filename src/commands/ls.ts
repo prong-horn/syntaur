@@ -13,6 +13,7 @@ interface LsOptions {
   tag?: string;
   age?: string;
   json?: boolean;
+  archived?: boolean;
 }
 
 const AGE_PATTERN = /^(\d+)([dhwm])$/i;
@@ -67,6 +68,7 @@ export async function runLs(
   const board = await listAssignmentsBoard(
     defaultProjectDir(),
     standaloneAssignmentsDir(),
+    { archived: options.archived ? 'only' : 'exclude' },
   );
   let items = board.assignments;
 
@@ -134,6 +136,7 @@ export const lsCommand = new Command('ls')
   .option('--project <slug>', 'Filter to one project')
   .option('--tag <list>', 'Comma-separated tag filter (assignment must have ALL tags)')
   .option('--age <duration>', 'Only include assignments updated within duration (e.g. 7d, 24h, 2w, 1m)')
+  .option('--archived', 'List only archived assignments (hidden from the default view)')
   .option('--json', 'Emit JSON instead of a table')
   .action(async (options: LsOptions) => {
     try {

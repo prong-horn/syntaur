@@ -1502,3 +1502,157 @@ describe('PATCH /api/agent-sessions/:sessionId (terminal-only)', () => {
     expect(res.status).toBe(200);
   });
 });
+
+describe('archive hiding + cascade + listArchived + migration', () => {
+  const RECENT = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString().replace(/\.\d+Z$/, 'Z');
+
+  function projectMd(slug: string, opts: { archived?: boolean; statusOverride?: string } = {}): string {
+    const so = opts.statusOverride ? `statusOverride: ${opts.statusOverride}\n` : '';
+    return `---\nid: ${slug}-id\nslug: ${slug}\ntitle: ${slug}\narchived: ${opts.archived ? 'true' : 'false'}\narchivedAt: null\narchivedReason: null\n${so}created: "2026-03-20T10:00:00Z"\nupdated: "2026-03-20T10:00:00Z"\ntags: []\n---\n\n# ${slug}`;
+  }
+
+  function asgMd(id: string, slug: string, opts: { archived?: boolean; status?: string } = {}): string {
+    const archived = opts.archived ? 'true' : 'false';
+    const archivedAt = opts.archived ? '"2026-05-31T00:00:00Z"' : 'null';
+    return `---\nid: ${id}\nslug: ${slug}\ntitle: ${slug}\nstatus: ${opts.status ?? 'in_progress'}\npriority: medium\ncreated: "2026-03-20T10:00:00Z"\nupdated: "${RECENT}"\nassignee: null\nexternalIds: []\ndependsOn: []\nblockedReason: null\nworkspace:\n  repository: null\n  worktreePath: null\n  branch: null\n  parentBranch: null\ntags: []\narchived: ${archived}\narchivedAt: ${archivedAt}\narchivedReason: null\n---\n\nBody`;
+  }
+
+  async function writeStandalone(dir: string, id: string, slug: string, archived: boolean): Promise<void> {
+    const adir = resolve(dir, id);
+    await mkdir(adir, { recursive: true });
+    await writeFile(resolve(adir, 'assignment.md'),
+      `---\nid: ${id}\nslug: ${slug}\ntitle: ${slug}\nstatus: in_progress\npriority: medium\ncreated: "2026-03-20T10:00:00Z"\nupdated: "${RECENT}"\nassignee: null\nexternalIds: []\ndependsOn: []\nblockedReason: null\nworkspace:\n  repository: null\n  worktreePath: null\n  branch: null\n  parentBranch: null\ntags: []\narchived: ${archived ? 'true' : 'false'}\narchivedAt: ${archived ? '"2026-05-31T00:00:00Z"' : 'null'}\narchivedReason: null\n---\n\nBody`,
+      'utf-8');
+  }
+
+  // Project A: active, with one active + one individually-archived assignment.
+  // Project B: archived, with two assignments (one individually archived).
+  // Standalone: one active, one archived.
+  async function seed(assignmentsDir: string): Promise<void> {
+    clearStatusConfigCache();
+    await createProjectFiles(testDir, 'proj-a', projectMd('proj-a'), [
+      { slug: 'a-active', assignmentMd: asgMd('a-active-id', 'a-active') },
+      { slug: 'a-arch', assignmentMd: asgMd('a-arch-id', 'a-arch', { archived: true }) },
+    ]);
+    await createProjectFiles(testDir, 'proj-b', projectMd('proj-b', { archived: true }), [
+      { slug: 'b1', assignmentMd: asgMd('b1-id', 'b1') },
+      { slug: 'b2', assignmentMd: asgMd('b2-id', 'b2', { archived: true }) },
+    ]);
+    await mkdir(assignmentsDir, { recursive: true });
+    await writeStandalone(assignmentsDir, 'sa-active', 's-active', false);
+    await writeStandalone(assignmentsDir, 'sa-arch', 's-arch', true);
+  }
+
+  it('listProjects excludes archived projects', async () => {
+    const assignmentsDir = resolve(testDir, '.assignments');
+    await seed(assignmentsDir);
+    const projects = await listProjects(testDir);
+    expect(projects.map((p) => p.slug).sort()).toEqual(['proj-a']);
+  });
+
+  it('listAssignmentsBoard default-excludes archived + cascade-hides archived-project children', async () => {
+    const assignmentsDir = resolve(testDir, '.assignments');
+    await seed(assignmentsDir);
+    const board = await listAssignmentsBoard(testDir, assignmentsDir);
+    const slugs = board.assignments.map((a) => a.slug).sort();
+    // a-active + s-active only. a-arch hidden; b1/b2 cascade-hidden; s-arch hidden.
+    expect(slugs).toEqual(['a-active', 's-active']);
+  });
+
+  it("listAssignmentsBoard { archived: 'only' } returns individually-archived only (no cascade children)", async () => {
+    const assignmentsDir = resolve(testDir, '.assignments');
+    await seed(assignmentsDir);
+    const board = await listAssignmentsBoard(testDir, assignmentsDir, { archived: 'only' });
+    const slugs = board.assignments.map((a) => a.slug).sort();
+    // a-arch (individually) + b2 (individually, even under archived project) + s-arch.
+    // b1 is NOT included (it is cascade-hidden, not individually archived).
+    expect(slugs).toEqual(['a-arch', 'b2', 's-arch']);
+  });
+
+  it('listArchived returns archived projects with children + individually-archived (no double-listing)', async () => {
+    const { listArchived } = await import('../dashboard/api.js');
+    const assignmentsDir = resolve(testDir, '.assignments');
+    await seed(assignmentsDir);
+    const archived = await listArchived(testDir, assignmentsDir);
+
+    expect(archived.projects.map((p) => p.slug)).toEqual(['proj-b']);
+    expect(archived.projects[0].assignments.map((a) => a.slug).sort()).toEqual(['b1', 'b2']);
+
+    // Top-level archived assignments: a-arch (parent active) + s-arch standalone.
+    // b2 must NOT appear here (it lives under archived proj-b).
+    expect(archived.assignments.map((a) => a.slug).sort()).toEqual(['a-arch', 's-arch']);
+  });
+
+  it('buildProjectRollup progress.total excludes archived children', async () => {
+    const assignmentsDir = resolve(testDir, '.assignments');
+    await seed(assignmentsDir);
+    const detail = await getProjectDetail(testDir, 'proj-a');
+    expect(detail).not.toBeNull();
+    // getProjectDetail still returns ALL assignments...
+    expect(detail!.assignments.length).toBe(2);
+    // ...but progress.total counts only the active one.
+    expect(detail!.progress.total).toBe(1);
+  });
+
+  it('getOverview excludes archived projects + individually-archived (incl. standalone) from stats', async () => {
+    const assignmentsDir = resolve(testDir, '.assignments');
+    await seed(assignmentsDir);
+    const overview = await getOverview(testDir, undefined, assignmentsDir);
+    // proj-b is archived → not counted as an active project.
+    expect(overview.recentProjects.map((p) => p.slug)).toEqual(['proj-a']);
+    // in-progress count: only a-active (a-arch hidden, proj-b cascade-hidden).
+    expect(overview.stats.inProgressAssignments).toBe(1);
+  });
+
+  it('migrates legacy statusOverride:archived projects to the real flag on read', async () => {
+    const { listArchived } = await import('../dashboard/api.js');
+    await createProjectFiles(testDir, 'legacy', projectMd('legacy', { statusOverride: 'archived' }), [
+      { slug: 'l1', assignmentMd: asgMd('l1-id', 'l1') },
+    ]);
+    // First read triggers the migration.
+    const projects = await listProjects(testDir);
+    expect(projects.map((p) => p.slug)).not.toContain('legacy');
+
+    const onDisk = await readFile(resolve(testDir, 'legacy', 'project.md'), 'utf-8');
+    expect(onDisk).toContain('archived: true');
+    expect(onDisk).not.toContain('statusOverride: archived');
+
+    const archived = await listArchived(testDir);
+    expect(archived.projects.map((p) => p.slug)).toContain('legacy');
+  });
+
+  it('migration preserves an existing archivedAt when reconciling statusOverride:archived', async () => {
+    const existing = '2025-01-01T00:00:00Z';
+    const md = `---\nid: legacy2-id\nslug: legacy2\ntitle: legacy2\narchived: false\narchivedAt: "${existing}"\narchivedReason: null\nstatusOverride: archived\ncreated: "2026-03-20T10:00:00Z"\nupdated: "2026-03-20T10:00:00Z"\ntags: []\n---\n\n# legacy2`;
+    await createProjectFiles(testDir, 'legacy2', md, []);
+    await listProjects(testDir); // triggers migration
+    const onDisk = await readFile(resolve(testDir, 'legacy2', 'project.md'), 'utf-8');
+    expect(onDisk).toContain('archived: true');
+    expect(onDisk).toContain(`archivedAt: "${existing}"`); // preserved, not re-stamped
+    expect(onDisk).not.toContain('statusOverride: archived');
+  });
+
+  it('restoring an archived project unhides cascade children but keeps individually-archived ones hidden', async () => {
+    const { invalidateRecordsCache } = await import('../dashboard/api.js');
+    const assignmentsDir = resolve(testDir, '.assignments');
+    await seed(assignmentsDir);
+
+    // While proj-b is archived, both its children are hidden from the board.
+    let board = await listAssignmentsBoard(testDir, assignmentsDir);
+    expect(board.assignments.map((a) => a.slug)).not.toContain('b1');
+    expect(board.assignments.map((a) => a.slug)).not.toContain('b2');
+
+    // Restore proj-b (clear its archive flag); children are untouched on disk.
+    await writeFile(
+      resolve(testDir, 'proj-b', 'project.md'),
+      projectMd('proj-b', { archived: false }),
+      'utf-8',
+    );
+    invalidateRecordsCache();
+
+    board = await listAssignmentsBoard(testDir, assignmentsDir);
+    const slugs = board.assignments.map((a) => a.slug);
+    expect(slugs).toContain('b1'); // cascade-hidden child reappears
+    expect(slugs).not.toContain('b2'); // individually-archived child stays hidden
+  });
+});

@@ -73,6 +73,9 @@ workspace:
   branch: null
   parentBranch: null
 tags: []
+archived: false
+archivedAt: null
+archivedReason: null
 ---
 
 # ${params.title}

@@ -65,6 +65,9 @@ export interface AssignmentFrontmatter {
   blockedReason: string | null;
   workspace: Workspace;
   tags: string[];
+  archived: boolean;
+  archivedAt: string | null;
+  archivedReason: string | null;
 }
 
 export interface TransitionResult {

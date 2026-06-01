@@ -87,9 +87,12 @@ export const STATUS_META = {
     className: STATUS_PENDING_CLASS,
     icon: StopCircle,
   },
+  // Not a status value anymore — `archived` is an orthogonal flag. Kept as a
+  // reusable visual badge for archived content (Archive page + archived-project
+  // detail), decoupled from the status model.
   archived: {
     label: 'Archived',
-    description: 'Archived by a human override.',
+    description: 'Hidden from normal views; restorable from the Archive page.',
     className: STATUS_ARCHIVED_CLASS,
     icon: CircleDot,
   },

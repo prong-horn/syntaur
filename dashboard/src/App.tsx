@@ -3,6 +3,7 @@ import { Layout } from './components/Layout';
 import { Overview } from './pages/Overview';
 import { HelpPage } from './pages/Help';
 import { ProjectList } from './pages/ProjectList';
+import { Archive } from './pages/Archive';
 import { ProjectDetail } from './pages/ProjectDetail';
 import { AssignmentDetail } from './pages/AssignmentDetail';
 import { StandaloneAssignmentDetail } from './pages/StandaloneAssignmentDetail';
@@ -46,6 +47,7 @@ export function App() {
           <Route element={<Layout />}>
             <Route path="/" element={<Overview />} />
             <Route path="/projects" element={<ProjectList />} />
+            <Route path="/archive" element={<Archive />} />
             <Route path="/assignments" element={<AssignmentsPage />} />
             <Route path="/assignments/new" element={<CreateStandaloneAssignment />} />
             <Route path="/assignments/:id" element={<StandaloneAssignmentDetail />} />

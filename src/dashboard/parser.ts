@@ -244,6 +244,9 @@ export interface ParsedAssignmentFull {
   };
   externalIds: Array<{ system: string; id: string; url: string | null }>;
   tags: string[];
+  archived: boolean;
+  archivedAt: string | null;
+  archivedReason: string | null;
   created: string;
   updated: string;
   body: string;
@@ -304,6 +307,9 @@ export function parseAssignmentFull(fileContent: string): ParsedAssignmentFull {
     },
     externalIds: parseExternalIds(fm),
     tags: parseListField(fm, 'tags'),
+    archived: getField(fm, 'archived') === 'true',
+    archivedAt: getField(fm, 'archivedAt'),
+    archivedReason: getField(fm, 'archivedReason'),
     created: getField(fm, 'created') ?? '',
     updated: getField(fm, 'updated') ?? '',
     body,

@@ -111,42 +111,6 @@ export async function overrideAssignmentStatusById(
   return (payload as { assignment: AssignmentDetail }).assignment;
 }
 
-// --- Overview quick-action helpers ---
-
-export interface BulkAssignmentActionItem {
-  projectSlug?: string | null;
-  assignmentSlug?: string;
-  id?: string;
-  status: string;
-}
-
-export interface BulkAssignmentActionResult {
-  results: Array<{ key: string; ok: boolean; error?: string }>;
-  succeeded: number;
-  failed: number;
-}
-
-/**
- * POST /api/assignments/bulk-status-override. Used by the Overview Stale
- * segment for bulk-archive (and other future bulk status flips).
- */
-export async function runBulkAssignmentAction(
-  items: BulkAssignmentActionItem[],
-  reason?: string,
-): Promise<BulkAssignmentActionResult> {
-  const response = await fetch('/api/assignments/bulk-status-override', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(reason ? { items, reason } : { items }),
-  });
-
-  const payload = await response.json().catch(() => null);
-  if (!response.ok) {
-    throw new Error((payload as { error?: string } | null)?.error || `HTTP ${response.status}`);
-  }
-  return payload as BulkAssignmentActionResult;
-}
-
 /**
  * Set the assignee on a project-scoped assignment via the dedicated
  * assignee endpoint. Body content stays untouched — only the

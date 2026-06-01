@@ -16,6 +16,7 @@ export interface AssignmentFilterItem {
   projectSlug?: string | null;
   projectTitle?: string | null;
   projectWorkspace?: string | null;
+  archived?: boolean;
 }
 
 // Multi-select: each field is a single value (legacy) or an array; `toFilterValues`
@@ -32,6 +33,8 @@ export interface AssignmentFilterCriteria {
 export interface AssignmentFilterOptions {
   workspace?: string | null;
   search?: string;
+  /** Archived items are excluded from normal views by default; only the Archive page opts in. */
+  includeArchived?: boolean;
 }
 
 export function isAssignmentStale(updated: string): boolean {
@@ -52,7 +55,10 @@ export function filterAssignment(
   criteria: AssignmentFilterCriteria,
   options: AssignmentFilterOptions = {},
 ): boolean {
-  const { workspace, search } = options;
+  const { workspace, search, includeArchived } = options;
+  // Default-exclude archived from every normal view (defense-in-depth: ProjectDetail's
+  // assignments come from getProjectDetail, which still includes archived items).
+  if (item.archived === true && !includeArchived) return false;
   const statuses = toFilterValues(criteria.status);
   const priorities = toFilterValues(criteria.priority);
   const types = toFilterValues(criteria.type);

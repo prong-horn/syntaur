@@ -154,6 +154,20 @@ function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
+/**
+ * Apply (or clear) the orthogonal archive fields on a project.md / assignment.md
+ * frontmatter string. On archive: stamps `archivedAt` + optional `archivedReason`.
+ * On restore: clears all three. Always bumps `updated`. `status` is never touched,
+ * so restore preserves the prior status exactly.
+ */
+function applyArchiveFields(content: string, archived: boolean, reason: string | null): string {
+  let next = setTopLevelField(content, 'archived', archived);
+  next = setTopLevelField(next, 'archivedAt', archived ? nowTimestamp() : null);
+  next = setTopLevelField(next, 'archivedReason', archived ? reason : null);
+  next = setTopLevelField(next, 'updated', nowTimestamp());
+  return next;
+}
+
 function appendLogEntry(
   existingContent: string,
   countField: 'handoffCount' | 'decisionCount',
@@ -1734,7 +1748,8 @@ export function createWriteRouter(
 
       const { status } = req.body || {};
       const config = await getStatusConfig();
-      const validStatuses = ['active', 'archived', ...config.statuses.map((s) => s.id)];
+      // `archived` is no longer a status — use the dedicated /archive endpoints.
+      const validStatuses = ['active', ...config.statuses.map((s) => s.id)];
       if (status !== null && (typeof status !== 'string' || !validStatuses.includes(status))) {
         res.status(400).json({ error: `Invalid status. Must be one of: ${validStatuses.join(', ')}, or null to clear.` });
         return;
@@ -1793,6 +1808,127 @@ export function createWriteRouter(
     } catch (error) {
       console.error('Error overriding assignment status:', error);
       res.status(500).json({ error: `Failed to override status: ${(error as Error).message}` });
+    }
+  });
+
+  // --- Archive / Restore Endpoints (orthogonal `archived` flag) ---
+  // Archiving never touches `status`; restore preserves the prior status. Project
+  // archive does NOT stamp child assignments — cascade-hide is computed at read time.
+
+  function archiveReason(body: unknown): string | null {
+    const reason = (body as { reason?: unknown } | null)?.reason;
+    return typeof reason === 'string' && reason.trim() ? reason : null;
+  }
+
+  router.post('/api/projects/:slug/archive', async (req: Request, res: Response) => {
+    try {
+      const projectSlug = getParam(req.params.slug);
+      const projectPath = resolve(projectsDir, projectSlug, 'project.md');
+      if (!(await fileExists(projectPath))) {
+        res.status(404).json({ error: `Project "${projectSlug}" not found` });
+        return;
+      }
+      const content = await readFile(projectPath, 'utf-8');
+      await writeFileForce(projectPath, applyArchiveFields(content, true, archiveReason(req.body)));
+      const project = await getProjectDetail(projectsDir, projectSlug);
+      res.json({ project });
+    } catch (error) {
+      console.error('Error archiving project:', error);
+      res.status(500).json({ error: `Failed to archive project: ${(error as Error).message}` });
+    }
+  });
+
+  router.post('/api/projects/:slug/unarchive', async (req: Request, res: Response) => {
+    try {
+      const projectSlug = getParam(req.params.slug);
+      const projectPath = resolve(projectsDir, projectSlug, 'project.md');
+      if (!(await fileExists(projectPath))) {
+        res.status(404).json({ error: `Project "${projectSlug}" not found` });
+        return;
+      }
+      const content = await readFile(projectPath, 'utf-8');
+      await writeFileForce(projectPath, applyArchiveFields(content, false, null));
+      const project = await getProjectDetail(projectsDir, projectSlug);
+      res.json({ project });
+    } catch (error) {
+      console.error('Error restoring project:', error);
+      res.status(500).json({ error: `Failed to restore project: ${(error as Error).message}` });
+    }
+  });
+
+  async function handleAssignmentArchive(
+    req: Request,
+    res: Response,
+    archived: boolean,
+  ): Promise<void> {
+    const projectSlug = getParam(req.params.slug);
+    const assignmentSlug = getParam(req.params.aslug);
+    const assignmentPath = resolve(projectsDir, projectSlug, 'assignments', assignmentSlug, 'assignment.md');
+    if (!(await fileExists(assignmentPath))) {
+      res.status(404).json({ error: 'Assignment not found' });
+      return;
+    }
+    const content = await readFile(assignmentPath, 'utf-8');
+    await writeFileForce(assignmentPath, applyArchiveFields(content, archived, archived ? archiveReason(req.body) : null));
+    const assignment = await getAssignmentDetail(projectsDir, projectSlug, assignmentSlug);
+    res.json({ assignment });
+  }
+
+  router.post('/api/projects/:slug/assignments/:aslug/archive', async (req: Request, res: Response) => {
+    try {
+      await handleAssignmentArchive(req, res, true);
+    } catch (error) {
+      console.error('Error archiving assignment:', error);
+      res.status(500).json({ error: `Failed to archive assignment: ${(error as Error).message}` });
+    }
+  });
+
+  router.post('/api/projects/:slug/assignments/:aslug/unarchive', async (req: Request, res: Response) => {
+    try {
+      await handleAssignmentArchive(req, res, false);
+    } catch (error) {
+      console.error('Error restoring assignment:', error);
+      res.status(500).json({ error: `Failed to restore assignment: ${(error as Error).message}` });
+    }
+  });
+
+  async function handleStandaloneArchive(
+    req: Request,
+    res: Response,
+    archived: boolean,
+  ): Promise<void> {
+    if (!assignmentsDir) {
+      res.status(501).json({ error: 'Standalone assignments not configured on this server' });
+      return;
+    }
+    const id = getParam(req.params.id);
+    const resolved = await resolveAssignmentById(projectsDir, assignmentsDir, id);
+    if (!resolved) {
+      res.status(404).json({ error: `Assignment "${id}" not found` });
+      return;
+    }
+    const assignmentPath = resolve(resolved.assignmentDir, 'assignment.md');
+    const content = await readFile(assignmentPath, 'utf-8');
+    await writeFileForce(assignmentPath, applyArchiveFields(content, archived, archived ? archiveReason(req.body) : null));
+    const assignment = await getAssignmentDetailById(projectsDir, assignmentsDir, id);
+    res.json({ assignment });
+  }
+
+  router.post('/api/assignments/:id/archive', async (req: Request, res: Response) => {
+    try {
+      await handleStandaloneArchive(req, res, true);
+    } catch (error) {
+      console.error('Error archiving assignment:', error);
+      res.status(500).json({ error: `Failed to archive assignment: ${(error as Error).message}` });
+    }
+  });
+
+  router.post('/api/assignments/:id/unarchive', async (req: Request, res: Response) => {
+    try {
+      await handleStandaloneArchive(req, res, false);
+    } catch (error) {
+      console.error('Error restoring assignment:', error);
+      res.status(500).json({ error: `Failed to restore assignment: ${(error as Error).message}` });
     }
   });
 
@@ -2519,97 +2655,6 @@ export function createWriteRouter(
     }
   });
 
-  router.post('/api/assignments/bulk-status-override', async (req: Request, res: Response) => {
-    try {
-      const body = req.body;
-      if (!body || typeof body !== 'object' || !Array.isArray(body.items)) {
-        res.status(400).json({ error: 'Request body must include `items` (array).' });
-        return;
-      }
-      const items = body.items as Array<unknown>;
-      if (items.length === 0) {
-        res.status(400).json({ error: '`items` must contain at least one entry.' });
-        return;
-      }
-      if (items.length > 200) {
-        res.status(400).json({ error: '`items` is capped at 200 entries per call.' });
-        return;
-      }
-
-      const config = await getStatusConfig();
-      const validStatuses = new Set(config.statuses.map((s) => s.id));
-      const timestamp = nowTimestamp();
-      const results: Array<{ key: string; ok: boolean; error?: string }> = [];
-      let succeeded = 0;
-      let failed = 0;
-
-      for (let index = 0; index < items.length; index += 1) {
-        const raw = items[index];
-        const itemKey = buildBulkItemKey(raw, index);
-        try {
-          if (!raw || typeof raw !== 'object') {
-            throw new Error('item must be an object');
-          }
-          const item = raw as Record<string, unknown>;
-          const status = typeof item.status === 'string' ? item.status : null;
-          if (!status || !validStatuses.has(status)) {
-            throw new Error(`invalid status "${status ?? ''}"`);
-          }
-
-          let assignmentPath: string | null = null;
-          if (typeof item.id === 'string' && item.id.trim()) {
-            if (!assignmentsDir) {
-              throw new Error('standalone assignments are not configured on this server');
-            }
-            const resolved = await resolveAssignmentById(projectsDir, assignmentsDir, item.id);
-            if (!resolved) {
-              throw new Error(`assignment "${item.id}" not found`);
-            }
-            assignmentPath = resolve(resolved.assignmentDir, 'assignment.md');
-          } else if (
-            typeof item.projectSlug === 'string'
-            && typeof item.assignmentSlug === 'string'
-            && item.projectSlug
-            && item.assignmentSlug
-          ) {
-            assignmentPath = resolve(
-              projectsDir,
-              item.projectSlug,
-              'assignments',
-              item.assignmentSlug,
-              'assignment.md',
-            );
-          } else {
-            throw new Error('must supply either `id` or both `projectSlug` and `assignmentSlug`');
-          }
-
-          if (!(await fileExists(assignmentPath))) {
-            throw new Error('assignment file not found');
-          }
-
-          let content = await readFile(assignmentPath, 'utf-8');
-          content = setTopLevelField(content, 'status', status);
-          content = setTopLevelField(content, 'updated', timestamp);
-          if (status !== 'blocked') {
-            content = setTopLevelField(content, 'blockedReason', null);
-          }
-          await writeFileForce(assignmentPath, content);
-
-          results.push({ key: itemKey, ok: true });
-          succeeded += 1;
-        } catch (error) {
-          results.push({ key: itemKey, ok: false, error: (error as Error).message });
-          failed += 1;
-        }
-      }
-
-      res.json({ results, succeeded, failed });
-    } catch (error) {
-      console.error('Error in bulk-status-override:', error);
-      res.status(500).json({ error: `Bulk status override failed: ${(error as Error).message}` });
-    }
-  });
-
   router.patch('/api/assignments/:id/acceptance-criteria/:index', async (req: Request, res: Response) => {
     try {
       if (!assignmentsDir) {
@@ -2745,17 +2790,6 @@ function validateTitleBody(body: unknown): TitleValidation {
     return { ok: false, error: '`title` may not contain double quotes or line breaks.' };
   }
   return { ok: true, value: trimmed };
-}
-
-function buildBulkItemKey(raw: unknown, index: number): string {
-  if (raw && typeof raw === 'object') {
-    const item = raw as Record<string, unknown>;
-    if (typeof item.id === 'string' && item.id.trim()) return item.id;
-    if (typeof item.projectSlug === 'string' && typeof item.assignmentSlug === 'string') {
-      return `${item.projectSlug}/${item.assignmentSlug}`;
-    }
-  }
-  return `#${index}`;
 }
 
 async function appendCommentTo(

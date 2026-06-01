@@ -266,3 +266,54 @@ describe('updateAssignmentFile', () => {
     expect(result).toContain('updated: "2026-03-18T16:00:00Z"');
   });
 });
+
+describe('archive frontmatter fields', () => {
+  it('defaults missing archive fields to false/null/null', () => {
+    const fm = parseAssignmentFrontmatter(SIMPLE_ASSIGNMENT);
+    expect(fm.archived).toBe(false);
+    expect(fm.archivedAt).toBeNull();
+    expect(fm.archivedReason).toBeNull();
+  });
+
+  it('inserts archive fields into a file that lacks them, and round-trips', () => {
+    const result = updateAssignmentFile(SIMPLE_ASSIGNMENT, {
+      archived: true,
+      archivedAt: '2026-05-31T12:00:00Z',
+      archivedReason: 'superseded',
+      updated: '2026-05-31T12:00:00Z',
+    });
+    expect(result).toContain('archived: true');
+    expect(result).toContain('archivedAt: "2026-05-31T12:00:00Z"');
+    expect(result).toContain('archivedReason: superseded');
+    // status untouched
+    expect(result).toContain('status: pending');
+    const fm = parseAssignmentFrontmatter(result);
+    expect(fm.archived).toBe(true);
+    expect(fm.archivedAt).toBe('2026-05-31T12:00:00Z');
+    expect(fm.archivedReason).toBe('superseded');
+    expect(fm.status).toBe('pending');
+  });
+
+  it('replaces existing archive fields in place (no duplicate keys)', () => {
+    const archived = updateAssignmentFile(SIMPLE_ASSIGNMENT, {
+      archived: true,
+      archivedAt: '2026-05-31T12:00:00Z',
+      archivedReason: 'temp',
+      updated: '2026-05-31T12:00:00Z',
+    });
+    const restored = updateAssignmentFile(archived, {
+      archived: false,
+      archivedAt: null,
+      archivedReason: null,
+      updated: '2026-05-31T13:00:00Z',
+    });
+    expect(restored.match(/^archived:/gm)).toHaveLength(1);
+    const fm = parseAssignmentFrontmatter(restored);
+    expect(fm.archived).toBe(false);
+    expect(fm.archivedAt).toBeNull();
+    expect(fm.archivedReason).toBeNull();
+    expect(fm.updated).toBe('2026-05-31T13:00:00Z');
+    // restore preserves status
+    expect(fm.status).toBe('pending');
+  });
+});

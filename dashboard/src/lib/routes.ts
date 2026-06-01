@@ -14,6 +14,7 @@ export interface ShellMeta {
 const SIDEBAR_SECTIONS = [
   '/',
   '/projects',
+  '/archive',
   '/assignments',
   '/servers',
   '/inventories',
@@ -49,6 +50,10 @@ export function getSidebarSection(pathname: string): SidebarSection | null {
 
   if (normalized === '/') {
     return '/';
+  }
+
+  if (normalized.startsWith('/archive')) {
+    return '/archive';
   }
 
   if (normalized.startsWith('/projects')) {
@@ -192,6 +197,9 @@ export function buildShellMeta(pathname: string): ShellMeta {
   } else if (parts[0] === 'assignments') {
     title = 'Assignments';
     breadcrumbs.push({ label: 'Assignments', path: `${workspacePrefix}/assignments` });
+  } else if (parts[0] === 'archive') {
+    title = 'Archive';
+    breadcrumbs.push({ label: 'Archive', path: '/archive' });
   } else if (parts[0] === 'playbooks') {
     breadcrumbs.push({ label: 'Playbooks', path: '/playbooks' });
     title = 'Playbooks';

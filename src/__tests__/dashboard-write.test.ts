@@ -1180,84 +1180,111 @@ updated: "2026-04-25T12:00:00Z"
     });
   });
 
-  describe('POST /api/assignments/bulk-status-override', () => {
-    it('flips two project-scoped assignments to the requested status', async () => {
+  describe('archive / restore endpoints', () => {
+    it('archives + restores a project-scoped assignment, preserving status', async () => {
       await createAssignmentFixture();
-      // Add a second assignment to test bulk semantics.
-      const second = resolve(testDir, 'test-project', 'assignments', 'second-assignment');
-      await mkdir(second, { recursive: true });
+      const router = createWriteRouter(testDir);
+      const assignmentPath = resolve(testDir, 'test-project', 'assignments', 'test-assignment', 'assignment.md');
+
+      const archived = await invokeRoute(
+        router,
+        'post',
+        '/api/projects/:slug/assignments/:aslug/archive',
+        { slug: 'test-project', aslug: 'test-assignment' },
+        { reason: 'no longer needed' },
+      );
+      expect(archived.statusCode).toBe(200);
+      const archDetail = (archived.payload as any).assignment;
+      expect(archDetail.archived).toBe(true);
+      expect(archDetail.archivedAt).toBeTruthy();
+      expect(archDetail.archivedReason).toBe('no longer needed');
+      expect(archDetail.status).toBe('pending'); // status untouched
+      const archContent = await readFile(assignmentPath, 'utf-8');
+      expect(archContent).toContain('archived: true');
+      expect(archContent).toContain('status: pending');
+
+      const restored = await invokeRoute(
+        router,
+        'post',
+        '/api/projects/:slug/assignments/:aslug/unarchive',
+        { slug: 'test-project', aslug: 'test-assignment' },
+        {},
+      );
+      expect(restored.statusCode).toBe(200);
+      const restDetail = (restored.payload as any).assignment;
+      expect(restDetail.archived).toBe(false);
+      expect(restDetail.archivedAt).toBeNull();
+      expect(restDetail.archivedReason).toBeNull();
+      expect(restDetail.status).toBe('pending'); // prior status preserved
+    });
+
+    it('archives + restores a project via the real flag (not statusOverride)', async () => {
+      await createAssignmentFixture();
+      const router = createWriteRouter(testDir);
+      const projectPath = resolve(testDir, 'test-project', 'project.md');
+
+      const archived = await invokeRoute(
+        router,
+        'post',
+        '/api/projects/:slug/archive',
+        { slug: 'test-project' },
+        {},
+      );
+      expect(archived.statusCode).toBe(200);
+      expect((archived.payload as any).project.archived).toBe(true);
+      const archContent = await readFile(projectPath, 'utf-8');
+      expect(archContent).toContain('archived: true');
+      expect(archContent).not.toContain('statusOverride: archived');
+
+      const restored = await invokeRoute(
+        router,
+        'post',
+        '/api/projects/:slug/unarchive',
+        { slug: 'test-project' },
+        {},
+      );
+      expect(restored.statusCode).toBe(200);
+      expect((restored.payload as any).project.archived).toBe(false);
+    });
+
+    it('archives + restores a standalone assignment', async () => {
+      const assignmentsDir = resolve(testDir, 'standalone');
+      const sdir = resolve(assignmentsDir, 'sa-uuid-1');
+      await mkdir(sdir, { recursive: true });
       await writeFile(
-        resolve(second, 'assignment.md'),
-        `---\nid: assignment-2\nslug: second-assignment\ntitle: Second\nstatus: pending\npriority: medium\ncreated: "2026-03-20T10:00:00Z"\nupdated: "2026-03-20T10:00:00Z"\nassignee: null\nexternalIds: []\ndependsOn: []\nblockedReason: null\nworkspace:\n  repository: null\n  worktreePath: null\n  branch: null\n  parentBranch: null\ntags: []\n---\n\n# Second`,
+        resolve(sdir, 'assignment.md'),
+        `---\nid: sa-uuid-1\nslug: solo-task\ntitle: Solo\nstatus: in_progress\npriority: medium\ncreated: "2026-03-20T10:00:00Z"\nupdated: "2026-03-20T10:00:00Z"\nassignee: null\nexternalIds: []\ndependsOn: []\nblockedReason: null\nworkspace:\n  repository: null\n  worktreePath: null\n  branch: null\n  parentBranch: null\ntags: []\n---\n\n# Solo`,
         'utf-8',
       );
+      const router = createWriteRouter(testDir, assignmentsDir);
 
-      const router = createWriteRouter(testDir);
-      const res = await invokeRoute(
+      const archived = await invokeRoute(
         router,
         'post',
-        '/api/assignments/bulk-status-override',
+        '/api/assignments/:id/archive',
+        { id: 'sa-uuid-1' },
         {},
-        {
-          items: [
-            { projectSlug: 'test-project', assignmentSlug: 'test-assignment', status: 'failed' },
-            { projectSlug: 'test-project', assignmentSlug: 'second-assignment', status: 'failed' },
-          ],
-        },
       );
-      expect(res.statusCode).toBe(200);
-      const payload = res.payload as { results: Array<{ ok: boolean }>; succeeded: number; failed: number };
-      expect(payload.succeeded).toBe(2);
-      expect(payload.failed).toBe(0);
-      expect(payload.results.every((r) => r.ok)).toBe(true);
+      expect(archived.statusCode).toBe(200);
+      expect((archived.payload as any).assignment.archived).toBe(true);
+      expect((archived.payload as any).assignment.status).toBe('in_progress');
+
+      const restored = await invokeRoute(
+        router,
+        'post',
+        '/api/assignments/:id/unarchive',
+        { id: 'sa-uuid-1' },
+        {},
+      );
+      expect(restored.statusCode).toBe(200);
+      expect((restored.payload as any).assignment.archived).toBe(false);
+      expect((restored.payload as any).assignment.status).toBe('in_progress');
     });
 
-    it('returns partial-failure results with 200 status when one item is invalid', async () => {
-      await createAssignmentFixture();
+    it('returns 404 archiving a missing project', async () => {
       const router = createWriteRouter(testDir);
-      const res = await invokeRoute(
-        router,
-        'post',
-        '/api/assignments/bulk-status-override',
-        {},
-        {
-          items: [
-            { projectSlug: 'test-project', assignmentSlug: 'test-assignment', status: 'failed' },
-            { projectSlug: 'test-project', assignmentSlug: 'ghost-assignment', status: 'failed' },
-          ],
-        },
-      );
-      expect(res.statusCode).toBe(200);
-      const payload = res.payload as { results: Array<{ ok: boolean; error?: string }>; succeeded: number; failed: number };
-      expect(payload.succeeded).toBe(1);
-      expect(payload.failed).toBe(1);
-      expect(payload.results[0].ok).toBe(true);
-      expect(payload.results[1].ok).toBe(false);
-      expect(payload.results[1].error).toMatch(/not found/);
-    });
-
-    it('returns 400 for malformed body (missing items)', async () => {
-      const router = createWriteRouter(testDir);
-      const res = await invokeRoute(
-        router,
-        'post',
-        '/api/assignments/bulk-status-override',
-        {},
-        { foo: 'bar' },
-      );
-      expect(res.statusCode).toBe(400);
-    });
-
-    it('returns 400 for an empty items array', async () => {
-      const router = createWriteRouter(testDir);
-      const res = await invokeRoute(
-        router,
-        'post',
-        '/api/assignments/bulk-status-override',
-        {},
-        { items: [] },
-      );
-      expect(res.statusCode).toBe(400);
+      const res = await invokeRoute(router, 'post', '/api/projects/:slug/archive', { slug: 'ghost' }, {});
+      expect(res.statusCode).toBe(404);
     });
   });
 

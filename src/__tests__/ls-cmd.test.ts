@@ -126,4 +126,27 @@ describe('syntaur ls', () => {
     expect(data.assignments).toHaveLength(1);
     expect(data.assignments[0].slug).toBe('a-pending');
   });
+
+  it('hides archived by default and shows only archived with --archived', async () => {
+    // Add an individually-archived assignment to the existing project.
+    const projDir = resolve(syntaurHome, 'projects', 'p');
+    const adir = resolve(projDir, 'assignments', 'a-archived');
+    await mkdir(adir, { recursive: true });
+    await writeFile(
+      resolve(adir, 'assignment.md'),
+      `---\nid: a4\nslug: a-archived\ntitle: "a-archived"\nproject: p\nstatus: in_progress\npriority: medium\ncreated: "2026-04-01T00:00:00Z"\nupdated: "2026-05-08T12:00:00Z"\nworkspace:\n  repository: null\n  worktreePath: null\n  branch: null\n  parentBranch: null\ntags: []\narchived: true\narchivedAt: "2026-05-08T12:00:00Z"\narchivedReason: null\n---\n\nBody.\n`,
+    );
+
+    const def = await runCli(['ls', '--json'], syntaurHome);
+    expect(def.code, def.stderr).toBe(0);
+    const defSlugs = JSON.parse(def.stdout).assignments.map((a: { slug: string }) => a.slug);
+    expect(defSlugs).not.toContain('a-archived');
+    expect(defSlugs).toHaveLength(3);
+
+    const arch = await runCli(['ls', '--archived', '--json'], syntaurHome);
+    expect(arch.code, arch.stderr).toBe(0);
+    const archAssignments = JSON.parse(arch.stdout).assignments;
+    expect(archAssignments).toHaveLength(1);
+    expect(archAssignments[0].slug).toBe('a-archived');
+  });
 });

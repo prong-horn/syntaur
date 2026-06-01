@@ -143,10 +143,14 @@ export function parseAssignmentFrontmatter(fileContent: string): AssignmentFront
     blockedReason: getField('blockedReason'),
     workspace: parseWorkspace(frontmatter),
     tags: parseTags(frontmatter),
+    archived: getField('archived') === 'true',
+    archivedAt: getField('archivedAt'),
+    archivedReason: getField('archivedReason'),
   };
 }
 
-function formatYamlValue(value: string | null): string {
+function formatYamlValue(value: string | boolean | null): string {
+  if (typeof value === 'boolean') return value ? 'true' : 'false';
   if (value === null) return 'null';
   if (/^\d{4}-\d{2}-\d{2}T/.test(value)) {
     return `"${value}"`;
@@ -161,16 +165,28 @@ function formatYamlValue(value: string | null): string {
 
 export function updateAssignmentFile(
   fileContent: string,
-  updates: Partial<Pick<AssignmentFrontmatter, 'status' | 'assignee' | 'blockedReason' | 'updated'>>,
+  updates: Partial<
+    Pick<
+      AssignmentFrontmatter,
+      'status' | 'assignee' | 'blockedReason' | 'updated' | 'archived' | 'archivedAt' | 'archivedReason'
+    >
+  >,
 ): string {
   let result = fileContent;
 
   for (const [key, value] of Object.entries(updates)) {
     if (value === undefined) continue;
-    const formatted = formatYamlValue(value as string | null);
+    const formatted = formatYamlValue(value as string | boolean | null);
     const fieldRegex = new RegExp(`^(${key}:)\\s*.*$`, 'm');
     if (fieldRegex.test(result)) {
       result = result.replace(fieldRegex, `$1 ${formatted}`);
+    } else {
+      // Insert a missing field just before the closing frontmatter delimiter.
+      // `indexOf('\n---', 4)` skips the opening `---`; mirrors setTopLevelField.
+      const closeIdx = result.indexOf('\n---', 4);
+      if (closeIdx !== -1) {
+        result = `${result.slice(0, closeIdx)}\n${key}: ${formatted}${result.slice(closeIdx)}`;
+      }
     }
   }
 

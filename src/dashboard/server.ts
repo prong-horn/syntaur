@@ -7,6 +7,7 @@ import { WebSocketServer, WebSocket } from 'ws';
 import {
   listProjects,
   listAssignmentsBoard,
+  listArchived,
   listAllMemories,
   listAllResources,
   getProjectDetail,
@@ -614,6 +615,16 @@ export function createDashboardServer(options: DashboardServerOptions) {
     } catch (error) {
       console.error('Error listing assignments:', error);
       res.status(500).json({ error: 'Failed to list assignments' });
+    }
+  });
+
+  app.get('/api/archived', async (_req, res) => {
+    try {
+      const result = await listArchived(projectsDir, assignmentsDir);
+      res.json(result);
+    } catch (error) {
+      console.error('Error listing archived content:', error);
+      res.status(500).json({ error: 'Failed to list archived content' });
     }
   });
 

@@ -48,6 +48,9 @@ export interface AssignmentSummary {
   dependsOn: string[];
   links: string[];
   updated: string;
+  archived: boolean;
+  archivedAt: string | null;
+  archivedReason: string | null;
 }
 
 export interface AssignmentBoardItem extends AssignmentSummary {
@@ -58,6 +61,35 @@ export interface AssignmentBoardItem extends AssignmentSummary {
   blockedReason: string | null;
   availableTransitions: AssignmentTransitionAction[];
   projectWorkspace: string | null;
+}
+
+export interface ArchivedAssignmentItem {
+  id: string;
+  slug: string;
+  title: string;
+  status: string;
+  type: string | null;
+  priority: 'low' | 'medium' | 'high' | 'critical';
+  projectSlug: string | null;
+  projectTitle: string | null;
+  /** This row's own archive flag — distinguishes individually-archived from cascade-hidden children. */
+  archived: boolean;
+  archivedAt: string | null;
+  archivedReason: string | null;
+  updated: string;
+}
+
+export interface ArchivedProjectItem {
+  slug: string;
+  title: string;
+  archivedAt: string | null;
+  archivedReason: string | null;
+  assignments: ArchivedAssignmentItem[];
+}
+
+export interface ArchiveResponse {
+  projects: ArchivedProjectItem[];
+  assignments: ArchivedAssignmentItem[];
 }
 
 export interface ResourceSummary {
@@ -178,6 +210,9 @@ export interface AssignmentDetail {
   projectWorkspace: string | null;
   externalIds: ExternalIdInfo[];
   tags: string[];
+  archived: boolean;
+  archivedAt: string | null;
+  archivedReason: string | null;
   created: string;
   updated: string;
   body: string;
@@ -553,6 +588,11 @@ export function useOverview(options: { staleLimit?: number; staleOffset?: number
 
 export function useAssignmentsBoard(enabled = true): FetchState<AssignmentsBoardResponse> {
   return useFetch<AssignmentsBoardResponse>('/api/assignments', 'assignments', enabled);
+}
+
+export function useArchived(enabled = true): FetchState<ArchiveResponse> {
+  // Refetches on any project/assignment broadcast so a restore elsewhere updates the page.
+  return useFetch<ArchiveResponse>('/api/archived', 'assignments', enabled);
 }
 
 export function useHelp(): FetchState<HelpResponse> {

@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
+  Archive,
+  ArchiveRestore,
   ArrowUpRight,
   ExternalLink,
   FilePenLine,
@@ -228,6 +230,23 @@ export function AssignmentDetail() {
     }
   }
 
+  async function handleArchiveAssignment(archived: boolean) {
+    setTransitionError(null);
+    try {
+      const response = await fetch(
+        `/api/projects/${projectSlug}/assignments/${assignmentSlug}/${archived ? 'archive' : 'unarchive'}`,
+        { method: 'POST', headers: { 'Content-Type': 'application/json' } },
+      );
+      if (!response.ok) {
+        const payload = await response.json().catch(() => null);
+        throw new Error(payload?.error || `HTTP ${response.status}`);
+      }
+      refetch();
+    } catch (err) {
+      setTransitionError((err as Error).message);
+    }
+  }
+
   async function handleDeleteAssignment() {
     setDeleteLoading(true);
     try {
@@ -348,6 +367,12 @@ export function AssignmentDetail() {
       label: 'Append decision',
       icon: Hammer,
       href: `${wsPrefix}/projects/${slug}/assignments/${aslug}/decision-record/edit`,
+    },
+    {
+      key: assignment.archived ? 'unarchive' : 'archive',
+      label: assignment.archived ? 'Restore assignment' : 'Archive assignment',
+      icon: assignment.archived ? ArchiveRestore : Archive,
+      onSelect: () => handleArchiveAssignment(!assignment.archived),
     },
     {
       key: 'delete',

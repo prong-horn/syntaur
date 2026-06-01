@@ -260,6 +260,25 @@ Body here.`;
     expect(assignment.workspace.repository).toBe('/Users/test/projects/auth-service');
   });
 
+  it('defaults archive fields when absent (backward compatible)', () => {
+    const assignment = parseAssignmentFull(ASSIGNMENT_WITH_DEPS);
+    expect(assignment.archived).toBe(false);
+    expect(assignment.archivedAt).toBeNull();
+    expect(assignment.archivedReason).toBeNull();
+  });
+
+  it('parses archive fields when present', () => {
+    const archived = parseAssignmentFull(
+      ASSIGNMENT_WITH_DEPS.replace(
+        'tags: []\n---',
+        'tags: []\narchived: true\narchivedAt: "2026-05-31T12:00:00Z"\narchivedReason: stale\n---',
+      ),
+    );
+    expect(archived.archived).toBe(true);
+    expect(archived.archivedAt).toBe('2026-05-31T12:00:00Z');
+    expect(archived.archivedReason).toBe('stale');
+  });
+
   it('parses externalIds', () => {
     const assignment = parseAssignmentFull(ASSIGNMENT_WITH_DEPS);
     expect(assignment.externalIds).toHaveLength(1);
