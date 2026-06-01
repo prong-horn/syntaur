@@ -360,6 +360,17 @@
   samp {
     font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace;
   }
+
+  /* Focus ring. The browser default (outline-style: auto) ignores border-radius
+     and renders as a mismatched double-ring around our pill buttons. Replace it
+     with a clean ring that follows the element's own radius — a solid outline
+     respects border-radius and, unlike a box-shadow ring, isn't clipped by
+     overflow:hidden ancestors. :where() keeps specificity at 0 so any component
+     that defines its own focus-visible treatment still wins. */
+  :where(button, [role='button'], a[href], summary):focus-visible {
+    outline: 2px solid oklch(var(--ring));
+    outline-offset: 2px;
+  }
 }
 
 @layer components {
