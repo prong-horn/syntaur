@@ -1704,12 +1704,14 @@ function ClickableTableRow({
 }: { detailHref: string } & React.ComponentPropsWithoutRef<'tr'>) {
   const nav = useBodyClickNavigation<HTMLTableRowElement>(detailHref);
   return (
+    // `...rest` first so the nav ref/handlers always win — a caller's own
+    // onClick/onMouseDown must never silently clobber row navigation.
     <tr
+      {...rest}
       ref={nav.containerRef}
       className={className}
       onMouseDown={nav.onMouseDown}
       onClick={nav.onClick}
-      {...rest}
     >
       {children}
     </tr>
@@ -1726,19 +1728,19 @@ function AssignmentBoardCard({
   assignment: AssignmentBoardItem;
   dragging: boolean;
   transitioning: boolean;
-  /** Present in the kanban render-site only; absent → read-only card (list view). */
+  /** Present in the kanban & list render-sites; absent → read-only card. */
   onPillSelect?: (action: AssignmentTransitionAction) => void;
-  /** Present in the kanban render-site only; absent → read-only card (list view). */
+  /** Present in the kanban & list render-sites; absent → read-only card. */
   onRenameTitle?: (newTitle: string) => Promise<void>;
 }) {
   // Canonical per-item deep link: handles standalone vs project-nested and the
   // assignment's OWN workspace prefix (not the current page's), matching the
-  // keyboard onOpen path and dashboard widgets. Body-click, the title <Link>,
-  // and the external-link icon all navigate consistently through this.
+  // keyboard onOpen path and dashboard widgets. Body-click, the title editor's
+  // external-link icon, and the read-only title <Link> all navigate through this.
   const detailHref = assignmentDetailHref(assignment);
-  // Body-click navigation is kanban-only: the kanban render-site is the only one
-  // that passes onPillSelect + onRenameTitle, so this is also the "is this the
-  // interactive (kanban) card" signal. The list-view card stays read-only.
+  // Body-click navigation + inline edit are enabled wherever the render-site
+  // passes onPillSelect + onRenameTitle (kanban and list). Without them the card
+  // is read-only (plain title <Link> + StatusBadge, no body navigation).
   const inlineEditEnabled = Boolean(onPillSelect && onRenameTitle);
   // Shared with the table row: navigate on body click, suppressing clicks that
   // dismiss a menu, commit an inline edit, or hit an interactive control.
