@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { matchesDateRange } from '../../dashboard/src/lib/assignmentFilter';
+import { sortAssignments } from '../../dashboard/src/lib/sortAssignments';
 import { isDateRange, isDateRangePreset } from '../utils/view-prefs-schema.js';
 import { minimizeDateRange, expandDateRange, type DateRangeUiState } from '../../dashboard/src/lib/savedViews';
 
@@ -67,6 +68,27 @@ describe('isDateRange / isDateRangePreset', () => {
   it('isDateRangePreset', () => {
     expect(isDateRangePreset('last_30d')).toBe(true);
     expect(isDateRangePreset('last_5y')).toBe(false);
+  });
+});
+
+describe('sortAssignments created sort (parsed epoch, not lexical)', () => {
+  const row = (id: string, created: string) => ({
+    title: id, status: 'x', priority: 'medium', assignee: null, dependsOn: [] as string[],
+    created, updated: created,
+  });
+  it('orders by actual instant even when lexical order disagrees (tz offsets)', () => {
+    // a = 05:00Z, b = 00:00Z. Lexically a ("...-05:00") < b ("...Z"), but a is LATER.
+    const a = row('a', '2026-01-01T00:00:00-05:00'); // 2026-01-01T05:00Z
+    const b = row('b', '2026-01-01T00:00:00Z');       // 2026-01-01T00:00Z
+    const asc = sortAssignments([a, b], 'created', 'asc').map((r) => r.title);
+    expect(asc).toEqual(['b', 'a']); // chronological, not lexical (['a','b'])
+    const desc = sortAssignments([a, b], 'created', 'desc').map((r) => r.title);
+    expect(desc).toEqual(['a', 'b']);
+  });
+  it('missing/invalid created sorts as oldest (epoch 0)', () => {
+    const valid = row('valid', '2026-01-01T00:00:00Z');
+    const missing = { ...row('missing', ''), created: '' };
+    expect(sortAssignments([valid, missing], 'created', 'asc').map((r) => r.title)).toEqual(['missing', 'valid']);
   });
 });
 

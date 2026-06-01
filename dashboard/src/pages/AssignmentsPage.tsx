@@ -254,7 +254,10 @@ export function AssignmentsPage() {
   useEffect(() => {
     setLoadedViewId(null);
     lastAppliedLoadViewRef.current = null;
-    setDateRange(null); // ephemeral saved-view-only filter; don't leak across scopes
+    // Ephemeral saved-view-only filters: don't leak across scopes (the component
+    // is reused across /assignments and /w/:workspace/assignments).
+    setDateRange(null);
+    setSearch('');
   }, [workspace]);
 
   useEffect(() => {

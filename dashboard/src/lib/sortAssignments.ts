@@ -2,6 +2,13 @@ import type { SortField, SortDirection } from '@shared/view-prefs-schema';
 
 const PRIORITY_ORDER: Record<string, number> = { critical: 0, high: 1, medium: 2, low: 3 };
 
+// Parse a timestamp to epoch ms for sorting. Raw frontmatter ISO can be
+// non-canonical, so compare parsed instants (NOT lexically); invalid/missing
+// sorts as epoch 0 (oldest).
+function epoch(value: string | undefined): number {
+  return Date.parse(value ?? '') || 0;
+}
+
 /**
  * Sort a list of assignment-like records by the given field and direction.
  * Used by both `AssignmentsPage` and `ProjectDetail` so both surfaces share
@@ -37,10 +44,10 @@ export function sortAssignments<
         cmp = a.dependsOn.length - b.dependsOn.length;
         break;
       case 'created':
-        cmp = (a.created ?? '').localeCompare(b.created ?? '');
+        cmp = epoch(a.created) - epoch(b.created);
         break;
       case 'updated':
-        cmp = a.updated.localeCompare(b.updated);
+        cmp = epoch(a.updated) - epoch(b.updated);
         break;
     }
     return direction === 'asc' ? cmp : -cmp;

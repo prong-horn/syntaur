@@ -134,7 +134,12 @@ export function DateRangeControl({
             <PresetRow
               label="Custom range…"
               selected={customMode}
-              onClick={() => setCustomMode(true)}
+              onClick={() => {
+                // Clear any active preset immediately so Save can't persist a
+                // stale preset while the UI shows custom mode.
+                setCustomMode(true);
+                onChange({ field, preset: '', from: value?.from ?? '', to: value?.to ?? '' });
+              }}
             />
           </div>
           {customMode ? (

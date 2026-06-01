@@ -7,43 +7,8 @@ import { useStatusConfig, getStatusLabel } from '../../../hooks/useStatusConfig'
 import type { AssignmentBoardItem } from '../../../hooks/useProjects';
 import type { SortField, SortDirection } from '@shared/view-prefs-schema';
 import type { ListSectionVisibility } from '@shared/saved-views-schema';
-
-const PRIORITY_ORDER: Record<string, number> = { critical: 0, high: 1, medium: 2, low: 3 };
-
-function sortAssignments(
-  items: AssignmentBoardItem[],
-  field: SortField,
-  direction: SortDirection,
-): AssignmentBoardItem[] {
-  const sorted = [...items].sort((a, b) => {
-    let cmp = 0;
-    switch (field) {
-      case 'title':
-        cmp = a.title.localeCompare(b.title);
-        break;
-      case 'status':
-        cmp = a.status.localeCompare(b.status);
-        break;
-      case 'priority':
-        cmp = (PRIORITY_ORDER[a.priority] ?? 99) - (PRIORITY_ORDER[b.priority] ?? 99);
-        break;
-      case 'assignee':
-        cmp = (a.assignee ?? '').localeCompare(b.assignee ?? '');
-        break;
-      case 'dependencies':
-        cmp = a.dependsOn.length - b.dependsOn.length;
-        break;
-      case 'created':
-        cmp = (a.created ?? '').localeCompare(b.created ?? '');
-        break;
-      case 'updated':
-        cmp = a.updated.localeCompare(b.updated);
-        break;
-    }
-    return direction === 'asc' ? cmp : -cmp;
-  });
-  return sorted;
-}
+// Shared sorter — single source of truth (parsed-epoch date sort, etc.).
+import { sortAssignments } from '../../../lib/sortAssignments';
 
 // Standalone items NEVER get a /w/<ws> prefix — no such route exists.
 function buildAssignmentHref(item: AssignmentBoardItem): string {

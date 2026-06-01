@@ -72,8 +72,11 @@ export function SavedViewsPage() {
   // forward-compat keys survive (visibility from the existing view — the dialog
   // doesn't edit it).
   async function handleEdit(target: SavedView, name: string, state: CreateViewBuilderState) {
-    const built = buildCreateViewPayload(state, target.workspace).config;
-    const config = mergeUpdatedConfig(target.config, built, target.config);
+    // Merge against the FRESHEST view (the live list), not the dialog-open
+    // snapshot, so a concurrent change isn't clobbered with stale visibility/keys.
+    const current = views.find((v) => v.id === target.id) ?? target;
+    const built = buildCreateViewPayload(state, current.workspace).config;
+    const config = mergeUpdatedConfig(current.config, built, current.config);
     try {
       await updateSavedView(target.id, { name, config });
       setEditTarget(null);
