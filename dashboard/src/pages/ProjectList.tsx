@@ -28,7 +28,6 @@ export function ProjectList() {
   useHotkeyScope('list:projects');
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
-  const [archivedFilter, setArchivedFilter] = useState('active');
   const [tagFilter, setTagFilter] = useState('all');
   const [sortBy, setSortBy] = useState('updated');
   const [searchParams, setSearchParams] = useSearchParams();
@@ -66,12 +65,6 @@ export function ProjectList() {
             if (project.workspace !== workspace) return false;
           }
         }
-        if (archivedFilter === 'active' && project.archived) {
-          return false;
-        }
-        if (archivedFilter === 'archived' && !project.archived) {
-          return false;
-        }
         if (statusFilter !== 'all' && project.status !== statusFilter) {
           return false;
         }
@@ -86,7 +79,7 @@ export function ProjectList() {
         return haystack.includes(search.toLowerCase());
       })
       .sort((left, right) => sortProjects(left, right, sortBy));
-  }, [projects, search, statusFilter, archivedFilter, tagFilter, sortBy, workspace]);
+  }, [projects, search, statusFilter, tagFilter, sortBy, workspace]);
 
   const filteredKey = filtered.map((project) => `${project.slug}:${project.status}`).join('|');
 
@@ -159,12 +152,6 @@ export function ProjectList() {
           <option value="blocked">Blocked</option>
           <option value="failed">Failed</option>
           <option value="completed">Completed</option>
-          <option value="archived">Archived</option>
-        </select>
-        <select value={archivedFilter} onChange={(event) => setArchivedFilter(event.target.value)} className="editor-input max-w-[180px]">
-          <option value="active">Hide archived</option>
-          <option value="all">All projects</option>
-          <option value="archived">Archived only</option>
         </select>
         <select value={tagFilter} onChange={(event) => setTagFilter(event.target.value)} className="editor-input max-w-[180px]">
           <option value="all">All tags</option>
@@ -425,7 +412,6 @@ const PROJECT_COLUMN_LABELS: Record<(typeof PROJECT_BOARD_COLUMNS)[number], stri
   blocked: 'Blocked',
   failed: 'Failed',
   completed: 'Completed',
-  archived: 'Archived',
 };
 
 const PROJECT_COLUMNS: KanbanColumn[] = PROJECT_BOARD_COLUMNS.map((status) => ({

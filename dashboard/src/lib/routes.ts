@@ -14,6 +14,7 @@ export interface ShellMeta {
 const SIDEBAR_SECTIONS = [
   '/',
   '/projects',
+  '/archive',
   '/assignments',
   '/servers',
   '/inventories',
@@ -49,6 +50,10 @@ export function getSidebarSection(pathname: string): SidebarSection | null {
 
   if (normalized === '/') {
     return '/';
+  }
+
+  if (normalized.startsWith('/archive')) {
+    return '/archive';
   }
 
   if (normalized.startsWith('/projects')) {

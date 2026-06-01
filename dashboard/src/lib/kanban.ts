@@ -4,7 +4,6 @@ export const DEFAULT_PROJECT_BOARD_COLUMNS = [
   'blocked',
   'failed',
   'completed',
-  'archived',
 ] as const;
 
 export const PROJECT_BOARD_COLUMNS = DEFAULT_PROJECT_BOARD_COLUMNS;

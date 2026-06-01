@@ -444,6 +444,14 @@ export function ProjectDetail() {
     refetch();
   }
 
+  async function handleArchiveProject(archived: boolean) {
+    await fetch(`/api/projects/${slug}/${archived ? 'archive' : 'unarchive'}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+    });
+    refetch();
+  }
+
   async function handleMoveWorkspace(workspace: string | null) {
     await fetch(`/api/projects/${slug}/move-workspace`, {
       method: 'POST',
@@ -560,6 +568,18 @@ export function ProjectDetail() {
           ))}
           <option value="active">Active</option>
         </select>
+        <button
+          type="button"
+          className="shell-action"
+          onClick={() => handleArchiveProject(!project.archived)}
+          title={
+            project.archived
+              ? 'Restore this project and its cascade-hidden assignments'
+              : 'Archive this project (hides it and its assignments from normal views)'
+          }
+        >
+          {project.archived ? 'Restore' : 'Archive'}
+        </button>
         {workspacesData && workspacesData.workspaces.length > 0 && (
           <select
             className="shell-action appearance-none bg-transparent text-sm"
@@ -622,7 +642,8 @@ export function ProjectDetail() {
               {
                 value: 'assignments',
                 label: 'Assignments',
-                count: project.assignments.length,
+                // Archived assignments are hidden from the table; don't inflate the count with them.
+                count: project.assignments.filter((a) => !a.archived).length,
                 content: (
                   <div className="space-y-5">
                     <SectionCard

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
-import { ArrowRightLeft, ExternalLink } from 'lucide-react';
+import { Archive, ArchiveRestore, ArrowRightLeft, ExternalLink } from 'lucide-react';
 import { useAssignmentById, useAssignmentSessionsById, useStandaloneAssignmentUsage, type ExternalIdInfo } from '../hooks/useProjects';
 import { LoadingState } from '../components/LoadingState';
 import { ErrorState } from '../components/ErrorState';
@@ -34,6 +34,15 @@ export function StandaloneAssignmentDetail() {
   // `id`. `assignment` is undefined until loaded, so gate on `assignment?.slug`.
   const { data: usageData, loading: usageLoading, error: usageError } = useStandaloneAssignmentUsage(assignment?.slug);
   const [moveOpen, setMoveOpen] = useState(false);
+
+  async function handleArchive(archived: boolean) {
+    if (!id) return;
+    await fetch(`/api/assignments/${id}/${archived ? 'archive' : 'unarchive'}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+    });
+    refetch();
+  }
 
   if (loading) return <LoadingState />;
   if (error) return <ErrorState error={error} />;
@@ -75,6 +84,15 @@ export function StandaloneAssignmentDetail() {
             >
               Edit
             </Link>
+            <button
+              type="button"
+              onClick={() => handleArchive(!assignment.archived)}
+              className="inline-flex items-center gap-1.5 rounded border border-border px-2 py-1 text-xs text-muted-foreground hover:border-foreground/40 hover:text-foreground"
+              title={assignment.archived ? 'Restore this assignment' : 'Archive this assignment'}
+            >
+              {assignment.archived ? <ArchiveRestore className="h-3 w-3" /> : <Archive className="h-3 w-3" />}
+              {assignment.archived ? 'Restore' : 'Archive'}
+            </button>
           </div>
         </div>
         <h1 className="text-2xl font-semibold text-foreground">{assignment.title}</h1>
