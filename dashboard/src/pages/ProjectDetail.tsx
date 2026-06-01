@@ -445,11 +445,20 @@ export function ProjectDetail() {
   }
 
   async function handleArchiveProject(archived: boolean) {
-    await fetch(`/api/projects/${slug}/${archived ? 'archive' : 'unarchive'}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-    });
-    refetch();
+    try {
+      const res = await fetch(`/api/projects/${slug}/${archived ? 'archive' : 'unarchive'}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      });
+      if (!res.ok) {
+        const payload = await res.json().catch(() => null);
+        showToast(payload?.error || `HTTP ${res.status}`, 'error');
+        return;
+      }
+      refetch();
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Failed to update archive state', 'error');
+    }
   }
 
   async function handleMoveWorkspace(workspace: string | null) {

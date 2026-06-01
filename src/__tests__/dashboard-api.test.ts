@@ -1620,4 +1620,39 @@ describe('archive hiding + cascade + listArchived + migration', () => {
     const archived = await listArchived(testDir);
     expect(archived.projects.map((p) => p.slug)).toContain('legacy');
   });
+
+  it('migration preserves an existing archivedAt when reconciling statusOverride:archived', async () => {
+    const existing = '2025-01-01T00:00:00Z';
+    const md = `---\nid: legacy2-id\nslug: legacy2\ntitle: legacy2\narchived: false\narchivedAt: "${existing}"\narchivedReason: null\nstatusOverride: archived\ncreated: "2026-03-20T10:00:00Z"\nupdated: "2026-03-20T10:00:00Z"\ntags: []\n---\n\n# legacy2`;
+    await createProjectFiles(testDir, 'legacy2', md, []);
+    await listProjects(testDir); // triggers migration
+    const onDisk = await readFile(resolve(testDir, 'legacy2', 'project.md'), 'utf-8');
+    expect(onDisk).toContain('archived: true');
+    expect(onDisk).toContain(`archivedAt: "${existing}"`); // preserved, not re-stamped
+    expect(onDisk).not.toContain('statusOverride: archived');
+  });
+
+  it('restoring an archived project unhides cascade children but keeps individually-archived ones hidden', async () => {
+    const { invalidateRecordsCache } = await import('../dashboard/api.js');
+    const assignmentsDir = resolve(testDir, '.assignments');
+    await seed(assignmentsDir);
+
+    // While proj-b is archived, both its children are hidden from the board.
+    let board = await listAssignmentsBoard(testDir, assignmentsDir);
+    expect(board.assignments.map((a) => a.slug)).not.toContain('b1');
+    expect(board.assignments.map((a) => a.slug)).not.toContain('b2');
+
+    // Restore proj-b (clear its archive flag); children are untouched on disk.
+    await writeFile(
+      resolve(testDir, 'proj-b', 'project.md'),
+      projectMd('proj-b', { archived: false }),
+      'utf-8',
+    );
+    invalidateRecordsCache();
+
+    board = await listAssignmentsBoard(testDir, assignmentsDir);
+    const slugs = board.assignments.map((a) => a.slug);
+    expect(slugs).toContain('b1'); // cascade-hidden child reappears
+    expect(slugs).not.toContain('b2'); // individually-archived child stays hidden
+  });
 });

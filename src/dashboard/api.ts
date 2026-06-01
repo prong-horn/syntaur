@@ -1105,7 +1105,9 @@ export async function getProjectDetail(
   const dependencyGraph = await loadDependencyGraph(projectPath, assignments);
   const resources = await listResources(projectPath);
   const memories = await listMemories(projectPath);
-  const updated = getProjectActivityTimestamp(project.updated, assignments);
+  // Consistent with the project summary: the activity timestamp ignores archived
+  // children so archiving an old assignment doesn't bump it.
+  const updated = getProjectActivityTimestamp(project.updated, activeAssignments(assignments));
 
   return {
     slug: project.slug || slug,
@@ -1663,7 +1665,9 @@ async function computeProjectRecords(
       const rollup = await buildProjectRollup(projectPath, project, assignments, traces);
       if (traces) accumulatePhase(traces, 'build-rollup', performance.now() - t2);
 
-      const updated = getProjectActivityTimestamp(project.updated, assignments);
+      // Archived children are hidden, so archiving an old one must not bump the
+      // project's activity timestamp (which drives list/recent-projects ordering).
+      const updated = getProjectActivityTimestamp(project.updated, activeAssignments(assignments));
 
       const t3 = traces ? performance.now() : 0;
       const dependencyGraph = await loadDependencyGraph(projectPath, assignments);
@@ -2473,7 +2477,7 @@ function buildRecentActivity(
       summary: `Project status is ${record.summary.status}.`,
     });
 
-    for (const assignment of record.assignments) {
+    for (const assignment of activeAssignments(record.assignments)) {
       activity.push({
         id: `assignment:${record.summary.slug}:${assignment.slug}`,
         type: 'assignment',

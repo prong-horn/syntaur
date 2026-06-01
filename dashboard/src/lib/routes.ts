@@ -197,6 +197,9 @@ export function buildShellMeta(pathname: string): ShellMeta {
   } else if (parts[0] === 'assignments') {
     title = 'Assignments';
     breadcrumbs.push({ label: 'Assignments', path: `${workspacePrefix}/assignments` });
+  } else if (parts[0] === 'archive') {
+    title = 'Archive';
+    breadcrumbs.push({ label: 'Archive', path: '/archive' });
   } else if (parts[0] === 'playbooks') {
     breadcrumbs.push({ label: 'Playbooks', path: '/playbooks' });
     title = 'Playbooks';

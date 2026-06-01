@@ -28,10 +28,12 @@ function assignmentHref(item: ArchivedAssignmentItem): string {
 export function Archive() {
   const { data, loading, error, refetch } = useArchived();
   const [busy, setBusy] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
 
   async function post(url: string, key: string) {
     setBusy(key);
+    setActionError(null);
     try {
       const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' } });
       if (!res.ok) {
@@ -39,6 +41,8 @@ export function Archive() {
         throw new Error(payload?.error || `HTTP ${res.status}`);
       }
       refetch();
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : 'Restore failed');
     } finally {
       setBusy(null);
     }
@@ -68,6 +72,12 @@ export function Archive() {
         title="Archive"
         description="Archived projects and individually-archived assignments. Restoring a project also brings back its cascade-hidden assignments; assignments archived on their own stay archived until restored here."
       />
+
+      {actionError ? (
+        <div className="rounded border border-status-failed-foreground/30 bg-status-failed px-3 py-2 text-sm text-status-failed-foreground">
+          {actionError}
+        </div>
+      ) : null}
 
       {isEmpty ? (
         <EmptyState

@@ -34,14 +34,24 @@ export function StandaloneAssignmentDetail() {
   // `id`. `assignment` is undefined until loaded, so gate on `assignment?.slug`.
   const { data: usageData, loading: usageLoading, error: usageError } = useStandaloneAssignmentUsage(assignment?.slug);
   const [moveOpen, setMoveOpen] = useState(false);
+  const [archiveError, setArchiveError] = useState<string | null>(null);
 
   async function handleArchive(archived: boolean) {
     if (!id) return;
-    await fetch(`/api/assignments/${id}/${archived ? 'archive' : 'unarchive'}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-    });
-    refetch();
+    setArchiveError(null);
+    try {
+      const res = await fetch(`/api/assignments/${id}/${archived ? 'archive' : 'unarchive'}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      });
+      if (!res.ok) {
+        const payload = await res.json().catch(() => null);
+        throw new Error(payload?.error || `HTTP ${res.status}`);
+      }
+      refetch();
+    } catch (err) {
+      setArchiveError(err instanceof Error ? err.message : 'Archive failed');
+    }
   }
 
   if (loading) return <LoadingState />;
@@ -98,6 +108,9 @@ export function StandaloneAssignmentDetail() {
         <h1 className="text-2xl font-semibold text-foreground">{assignment.title}</h1>
         {assignment.blockedReason ? (
           <p className="text-sm text-warning-foreground">Blocked: {assignment.blockedReason}</p>
+        ) : null}
+        {archiveError ? (
+          <p className="text-sm text-status-failed-foreground">{archiveError}</p>
         ) : null}
       </header>
 
