@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useRef } from 'react';
+import { useState, useMemo, useEffect, useRef, type DragEvent } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   CheckSquare,
@@ -23,10 +23,18 @@ import {
 } from '../hooks/useTodos';
 import { LoadingState } from '../components/LoadingState';
 import { ErrorState } from '../components/ErrorState';
-import { EmptyState } from '../components/EmptyState';
 import { StatCard } from '../components/StatCard';
 import { StatusMenu } from '../components/StatusMenu';
 import { TodoPromoteModal, type PromoteScope } from '../components/TodoPromoteModal';
+import { NON_DRAGGABLE_SELECTOR } from '../components/KanbanBoard';
+import { TodoAccordionSection } from '../components/TodoAccordionSection';
+import { useTodoSectionCollapse } from '../hooks/useTodoSectionCollapse';
+import {
+  groupTodosBySections,
+  sectionIdForStatus,
+  type TodoSectionConfig,
+  type TodoSectionId,
+} from '@shared/todo-sections';
 import type { TodoItem } from '../types';
 import type { ProjectSummary } from '../hooks/useProjects';
 import { useHotkey, useHotkeyScope, useListSelection } from '../hotkeys';
@@ -60,6 +68,10 @@ export function TodosPage() {
   const lastSelectedIndexRef = useRef<number | null>(null);
 
   const [projects, setProjects] = useState<ProjectSummary[] | null>(null);
+
+  const collapse = useTodoSectionCollapse('all');
+  const [draggedKey, setDraggedKey] = useState<SelKey | null>(null);
+  const [dropTargetSection, setDropTargetSection] = useState<TodoSectionId | null>(null);
 
   // Load projects for the inferred-project picker.
   useEffect(() => {
@@ -176,7 +188,7 @@ export function TodosPage() {
       setSelectedKeys((prev) => {
         const next = new Set(prev);
         for (let i = start; i <= end; i++) {
-          const it = filtered[i];
+          const it = renderedOrdered[i];
           if (it) next.add(keyOf(it));
         }
         return next;
@@ -271,8 +283,16 @@ export function TodosPage() {
     refetch();
   }
 
+  // Group the filtered todos into the three accordion sections. `renderedOrdered`
+  // is the flat list of rows actually in the DOM (expanded sections only); it
+  // must match what useListSelection / shift-range select index into.
+  const sections = groupTodosBySections(filtered);
+  const renderedOrdered = sections
+    .filter((s) => !collapse.isCollapsed(s.config.id))
+    .flatMap((s) => s.items);
+
   // Hotkey wiring (R5d: Enter cycles status, o is no-op).
-  const { hotkeyRowProps } = useListSelection(filtered, {
+  const { hotkeyRowProps } = useListSelection(renderedOrdered, {
     scope: 'list:todos',
     bindO: false,
     onOpen: (todo) => handleCycleStatus(todo.workspace, todo.id, todo.status),
@@ -293,6 +313,16 @@ export function TodosPage() {
   // R3: ?focus=<id> scroll + highlight.
   const [searchParams, setSearchParams] = useSearchParams();
   const focusId = searchParams.get('focus');
+  // Expand the section holding a ?focus= target so its row can render (Done is
+  // collapsed by default). `collapse` is intentionally omitted from deps.
+  useEffect(() => {
+    if (!focusId) return;
+    const target = allItems.find((i) => i.id === focusId);
+    if (!target) return;
+    const sectionId = sectionIdForStatus(target.status);
+    if (collapse.isCollapsed(sectionId)) collapse.toggle(sectionId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focusId, allItems]);
   useEffect(() => {
     if (!focusId) return;
     const node = document.querySelector<HTMLElement>(
@@ -310,7 +340,48 @@ export function TodosPage() {
       });
     }, 1500);
     return () => window.clearTimeout(t);
-  }, [focusId, filtered.length, setSearchParams]);
+  }, [focusId, renderedOrdered.length, setSearchParams]);
+
+  // --- Native drag-to-change-status (per-row workspace) ---
+  const draggedTodo = draggedKey ? filtered.find((i) => keyOf(i) === draggedKey) ?? null : null;
+
+  function handleDragStart(e: DragEvent<HTMLDivElement>, key: SelKey) {
+    // Don't start a drag from an interactive control; let those handle clicks.
+    const target = e.target as HTMLElement | null;
+    if (target?.closest(NON_DRAGGABLE_SELECTOR)) {
+      e.preventDefault();
+      return;
+    }
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', key);
+    setDraggedKey(key);
+  }
+
+  function handleDragEnd() {
+    setDraggedKey(null);
+    setDropTargetSection(null);
+  }
+
+  function handleSectionDragOver(e: DragEvent<HTMLElement>, config: TodoSectionConfig) {
+    if (!draggedTodo || config.statuses.includes(draggedTodo.status)) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    setDropTargetSection(config.id);
+  }
+
+  function handleSectionDragLeave(e: DragEvent<HTMLElement>, config: TodoSectionConfig) {
+    if (dropTargetSection === config.id && !e.currentTarget.contains(e.relatedTarget as Node)) {
+      setDropTargetSection(null);
+    }
+  }
+
+  function handleSectionDrop(e: DragEvent<HTMLElement>, config: TodoSectionConfig) {
+    e.preventDefault();
+    const item = draggedTodo;
+    handleDragEnd();
+    if (!item || config.statuses.includes(item.status)) return;
+    handleStatusChange(item.workspace, item.id, config.dropStatus);
+  }
 
   if (loading) return <LoadingState label="Loading todos..." />;
   if (error) return <ErrorState error={error} />;
@@ -435,120 +506,139 @@ export function TodosPage() {
         </div>
       ) : null}
 
-      {/* Items */}
-      {filtered.length === 0 ? (
-        <EmptyState
-          title="No todos"
-          description="Add your first todo above or use the CLI: syntaur todo add"
-        />
-      ) : (
-        <>
-          <div className="flex items-center gap-3 px-3 py-1 text-xs text-muted-foreground">
-            <input
-              type="checkbox"
-              aria-label="Select all visible todos"
-              checked={allVisibleSelected}
-              ref={(el) => { if (el) el.indeterminate = someVisibleSelected; }}
-              onChange={toggleAllVisible}
-              className="h-4 w-4 cursor-pointer accent-foreground"
-            />
-            <span>Select all in current filter ({filtered.length})</span>
-            <span className="text-muted-foreground/60">— shift-click for range select</span>
-          </div>
-          <div className="space-y-1">
-            {filtered.map((item, i) => {
-              const k = keyOf(item);
-              const selected = selectedKeys.has(k);
-              return (
-                <div
-                  key={`${item.workspace}-${item.id}`}
-                  data-todo-id={item.id}
-                  {...hotkeyRowProps(i)}
-                  className={`surface-panel flex items-center gap-3 px-3 py-2 group cursor-pointer hover:bg-foreground/[0.03] transition ${
-                    selected ? 'ring-1 ring-foreground/20' : ''
-                  }`}
-                  onClick={() => handleCycleStatus(item.workspace, item.id, item.status)}
-                >
-                  <input
-                    type="checkbox"
-                    aria-label={`Select todo ${item.id}`}
-                    checked={selected}
-                    onChange={() => { /* handled via onClick to capture shiftKey */ }}
-                    onClick={(e) => { e.stopPropagation(); toggleOne(item, i, e); }}
-                    className="h-4 w-4 cursor-pointer accent-foreground"
-                  />
-                  <StatusMenu
-                    status={item.status as any}
-                    onChange={(s) => handleStatusChange(item.workspace, item.id, s)}
-                  />
-                  <div className="flex-1 min-w-0">
-                    <span
-                      className={`text-sm ${item.status === 'completed' ? 'line-through text-muted-foreground' : 'text-foreground'}`}
-                    >
-                      {item.description}
-                    </span>
-                    {item.tags.length > 0 && (
-                      <span className="ml-2 text-xs text-muted-foreground">
-                        {item.tags.map((t) => `#${t}`).join(' ')}
-                      </span>
-                    )}
-                    {item.linkedAssignmentRef ? (
-                      <Link
-                        to={navigateRefTo(item.linkedAssignmentRef)}
-                        className="ml-2 inline-flex items-center gap-0.5 rounded-full border border-status-completed-foreground/40 bg-status-completed/30 px-1.5 py-0.5 text-[10px] font-mono text-status-completed-foreground hover:bg-status-completed/50"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        <ArrowRight className="h-2.5 w-2.5" />
-                        {item.linkedAssignmentRef.includes('/')
-                          ? item.linkedAssignmentRef
-                          : `oneoff:${item.linkedAssignmentRef.slice(0, 8)}`}
-                      </Link>
-                    ) : null}
-                  </div>
-                  <span className="text-xs text-muted-foreground/60 font-mono">
-                    {item.workspace !== '_global' && (
-                      <Link
-                        to={`/w/${item.workspace}/todos`}
-                        className="hover:text-foreground transition mr-2"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        {item.workspace}
-                      </Link>
-                    )}
-                  </span>
-                  {copiedId === item.id ? (
-                    <span className="text-xs text-status-completed-foreground flex items-center gap-1">
-                      <Check className="h-3 w-3" /> Copied to clipboard
-                    </span>
-                  ) : (
-                    <>
-                      <button
-                        className="text-xs text-muted-foreground/60 font-mono hover:text-foreground transition"
-                        onClick={(e) => copyId(e, item.id)}
-                      >
-                        t:{item.id}
-                      </button>
-                      <button
-                        className="text-muted-foreground/40 hover:text-foreground transition"
-                        title="Copy ID"
-                        onClick={(e) => copyId(e, item.id)}
-                      >
-                        <Copy className="h-3 w-3" />
-                      </button>
-                    </>
-                  )}
-                  <button
-                    onClick={(e) => { e.stopPropagation(); handleDelete(item.workspace, item.id); }}
-                    className="text-xs text-muted-foreground/40 hover:text-destructive transition opacity-0 group-hover:opacity-100"
-                  >
-                    delete
-                  </button>
-                </div>
-              );
-            })}
-          </div>
-        </>
+      {/* Items — accordion sections by status */}
+      {filtered.length > 0 && (
+        <div className="flex items-center gap-3 px-3 py-1 text-xs text-muted-foreground">
+          <input
+            type="checkbox"
+            aria-label="Select all visible todos"
+            checked={allVisibleSelected}
+            ref={(el) => { if (el) el.indeterminate = someVisibleSelected; }}
+            onChange={toggleAllVisible}
+            className="h-4 w-4 cursor-pointer accent-foreground"
+          />
+          <span>Select all in current filter ({filtered.length})</span>
+          <span className="text-muted-foreground/60">— shift-click for range select</span>
+        </div>
       )}
+      <div className="space-y-3">
+        {(() => {
+          let flatIndex = -1;
+          return sections.map(({ config, items }) => {
+            const expanded = !collapse.isCollapsed(config.id);
+            return (
+              <TodoAccordionSection
+                key={config.id}
+                label={config.label}
+                count={items.length}
+                expanded={expanded}
+                onToggle={() => collapse.toggle(config.id)}
+                isDropTarget={dropTargetSection === config.id}
+                onDragOver={(e) => handleSectionDragOver(e, config)}
+                onDragLeave={(e) => handleSectionDragLeave(e, config)}
+                onDrop={(e) => handleSectionDrop(e, config)}
+              >
+                {expanded &&
+                  items.map((item) => {
+                    flatIndex += 1;
+                    const rowIndex = flatIndex;
+                    const k = keyOf(item);
+                    const selected = selectedKeys.has(k);
+                    return (
+                      <div
+                        key={`${item.workspace}-${item.id}`}
+                        draggable
+                        data-todo-id={item.id}
+                        {...hotkeyRowProps(rowIndex)}
+                        onDragStart={(e) => handleDragStart(e, k)}
+                        onDragEnd={handleDragEnd}
+                        className={`surface-panel flex items-center gap-3 px-3 py-2 group cursor-grab active:cursor-grabbing hover:bg-foreground/[0.03] transition ${
+                          selected ? 'ring-1 ring-foreground/20' : ''
+                        } ${draggedKey === k ? 'opacity-50 shadow-lg' : ''}`}
+                        onClick={() => handleCycleStatus(item.workspace, item.id, item.status)}
+                      >
+                        <input
+                          type="checkbox"
+                          aria-label={`Select todo ${item.id}`}
+                          checked={selected}
+                          onChange={() => { /* handled via onClick to capture shiftKey */ }}
+                          onClick={(e) => { e.stopPropagation(); toggleOne(item, rowIndex, e); }}
+                          className="h-4 w-4 cursor-pointer accent-foreground"
+                        />
+                        <StatusMenu
+                          status={item.status as any}
+                          onChange={(s) => handleStatusChange(item.workspace, item.id, s)}
+                        />
+                        <div className="flex-1 min-w-0">
+                          <span
+                            className={`text-sm ${item.status === 'completed' ? 'line-through text-muted-foreground' : 'text-foreground'}`}
+                          >
+                            {item.description}
+                          </span>
+                          {item.tags.length > 0 && (
+                            <span className="ml-2 text-xs text-muted-foreground">
+                              {item.tags.map((t) => `#${t}`).join(' ')}
+                            </span>
+                          )}
+                          {item.linkedAssignmentRef ? (
+                            <Link
+                              to={navigateRefTo(item.linkedAssignmentRef)}
+                              className="ml-2 inline-flex items-center gap-0.5 rounded-full border border-status-completed-foreground/40 bg-status-completed/30 px-1.5 py-0.5 text-[10px] font-mono text-status-completed-foreground hover:bg-status-completed/50"
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              <ArrowRight className="h-2.5 w-2.5" />
+                              {item.linkedAssignmentRef.includes('/')
+                                ? item.linkedAssignmentRef
+                                : `oneoff:${item.linkedAssignmentRef.slice(0, 8)}`}
+                            </Link>
+                          ) : null}
+                        </div>
+                        <span className="text-xs text-muted-foreground/60 font-mono">
+                          {item.workspace !== '_global' && (
+                            <Link
+                              to={`/w/${item.workspace}/todos`}
+                              className="hover:text-foreground transition mr-2"
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              {item.workspace}
+                            </Link>
+                          )}
+                        </span>
+                        {copiedId === item.id ? (
+                          <span className="text-xs text-status-completed-foreground flex items-center gap-1">
+                            <Check className="h-3 w-3" /> Copied to clipboard
+                          </span>
+                        ) : (
+                          <>
+                            <button
+                              className="text-xs text-muted-foreground/60 font-mono hover:text-foreground transition"
+                              onClick={(e) => copyId(e, item.id)}
+                            >
+                              t:{item.id}
+                            </button>
+                            <button
+                              className="text-muted-foreground/40 hover:text-foreground transition"
+                              title="Copy ID"
+                              onClick={(e) => copyId(e, item.id)}
+                            >
+                              <Copy className="h-3 w-3" />
+                            </button>
+                          </>
+                        )}
+                        <button
+                          onClick={(e) => { e.stopPropagation(); handleDelete(item.workspace, item.id); }}
+                          className="text-xs text-muted-foreground/40 hover:text-destructive transition opacity-0 group-hover:opacity-100"
+                        >
+                          delete
+                        </button>
+                      </div>
+                    );
+                  })}
+              </TodoAccordionSection>
+            );
+          });
+        })()}
+      </div>
 
       <TodoPromoteModal
         open={promoteOpen}
