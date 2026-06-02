@@ -289,7 +289,7 @@ export function PlaybookDetail() {
               type="button"
               onClick={handleRename}
               disabled={renaming || !renameValid || !renameChanged}
-              className="shell-action mt-0 bg-foreground text-background hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+              className="shell-action mt-0 shell-action--cta disabled:cursor-not-allowed disabled:opacity-50"
             >
               {renaming ? 'Renaming…' : 'Rename'}
             </button>

@@ -536,7 +536,7 @@ export function WorkspaceTodosPage() {
             <button
               type="button"
               onClick={() => setPromoteOpen(true)}
-              className="shell-action bg-foreground text-background hover:opacity-90"
+              className="shell-action shell-action--cta"
             >
               Promote selected
             </button>

@@ -123,14 +123,14 @@ export function MarkdownEditor({
         <button
           type="button"
           onClick={() => setMobilePane('edit')}
-          className={`shell-action ${mobilePane === 'edit' ? 'bg-foreground text-background' : ''}`}
+          className={`shell-action ${mobilePane === 'edit' ? 'shell-action--cta' : ''}`}
         >
           Edit
         </button>
         <button
           type="button"
           onClick={() => setMobilePane('preview')}
-          className={`shell-action ${mobilePane === 'preview' ? 'bg-foreground text-background' : ''}`}
+          className={`shell-action ${mobilePane === 'preview' ? 'shell-action--cta' : ''}`}
         >
           <Eye className="h-4 w-4" />
           Preview

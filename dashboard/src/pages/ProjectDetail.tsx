@@ -644,7 +644,7 @@ export function ProjectDetail() {
           <SquarePen className="h-4 w-4" />
           <span>Edit Project</span>
         </Link>
-        <Link className="shell-action bg-foreground text-background hover:opacity-90" to={`${wsPrefix}/projects/${project.slug}/create/assignment`}>
+        <Link className="shell-action shell-action--cta" to={`${wsPrefix}/projects/${project.slug}/create/assignment`}>
           <Plus className="h-4 w-4" />
           <span>New Assignment</span>
         </Link>
@@ -801,7 +801,7 @@ export function ProjectDetail() {
                           title="No assignments match these filters"
                           description="Clear the current filters or create a new assignment for this project."
                           actions={
-                            <Link className="shell-action bg-foreground text-background hover:opacity-90" to={`${wsPrefix}/projects/${project.slug}/create/assignment`}>
+                            <Link className="shell-action shell-action--cta" to={`${wsPrefix}/projects/${project.slug}/create/assignment`}>
                               Create Assignment
                             </Link>
                           }

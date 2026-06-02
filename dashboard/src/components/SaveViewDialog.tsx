@@ -92,7 +92,7 @@ export function SaveViewDialog({
             <button
               type="submit"
               disabled={!valid || submitting}
-              className="shell-action bg-foreground text-background hover:opacity-90 disabled:opacity-50"
+              className="shell-action shell-action--cta disabled:opacity-50"
             >
               {submitting ? 'Saving…' : 'Save'}
             </button>

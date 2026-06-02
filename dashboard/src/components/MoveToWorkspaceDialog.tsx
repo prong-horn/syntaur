@@ -127,7 +127,7 @@ export function MoveToWorkspaceDialog({
             type="button"
             onClick={handleSubmit}
             disabled={!canSubmit}
-            className="shell-action mt-0 bg-foreground text-background hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+            className="shell-action mt-0 shell-action--cta disabled:cursor-not-allowed disabled:opacity-50"
           >
             {submitting ? 'Moving…' : 'Move'}
           </button>
