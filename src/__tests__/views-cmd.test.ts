@@ -138,4 +138,9 @@ describe('syntaur views', () => {
     expect(r.code).toBe(1);
     expect(r.stderr).toContain('200');
   });
+
+  it('dedupes visibility column ids (set-like, UI parity)', async () => {
+    const view = await addView(['--name', 'Vis', '--table-hidden', 'status,status,priority']);
+    expect(view.config.tableColumnVisibility.hidden).toEqual(['status', 'priority']);
+  });
 });

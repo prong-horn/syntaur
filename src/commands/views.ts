@@ -77,6 +77,13 @@ function parseList(value?: string): string[] {
     .filter((v) => v.length > 0);
 }
 
+// Visibility maps are set-like in the dashboard (toggles). The CLI dedupes so
+// `--table-hidden status,status` matches the UI shape. (Filter fields dedupe via
+// toFilterValues already; visibility bypasses that path.)
+function parseSet(value?: string): string[] {
+  return [...new Set(parseList(value))];
+}
+
 function validateEnum<T extends string>(value: string, allowed: readonly T[], flag: string): T {
   if (!(allowed as readonly string[]).includes(value)) {
     throw new Error(`Invalid ${flag} "${value}". Valid: ${allowed.join(', ')}`);
@@ -238,10 +245,10 @@ function applyFlagsToState(state: ViewState, opts: ViewFlagOptions): void {
     const dr = buildDateRange(opts);
     if (dr !== undefined) state.filters.dateRange = dr;
   }
-  if (opts.collapsed !== undefined) state.listSectionVisibility = { collapsed: parseList(opts.collapsed) };
-  if (opts.kanbanHidden !== undefined) state.kanbanColumnVisibility = { hidden: parseList(opts.kanbanHidden) };
+  if (opts.collapsed !== undefined) state.listSectionVisibility = { collapsed: parseSet(opts.collapsed) };
+  if (opts.kanbanHidden !== undefined) state.kanbanColumnVisibility = { hidden: parseSet(opts.kanbanHidden) };
   if (opts.tableHidden !== undefined) {
-    const ids = parseList(opts.tableHidden);
+    const ids = parseSet(opts.tableHidden);
     for (const id of ids) {
       if (!isTableColumnId(id)) {
         throw new Error(`Invalid --table-hidden "${id}". Valid: ${TABLE_COLUMN_IDS.join(', ')}`);

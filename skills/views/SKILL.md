@@ -92,7 +92,7 @@ syntaur views add \
   [--status <a,b>] [--priority <a,b>] [--type <a,b>] \
   [--assignee <a,b>] [--project-filter <a,b>] [--tags <a,b>] \
   [--activity <all|stale|fresh>] \
-  [--date-range-field <created|updated> --date-range-preset <preset> | --date-from <YYYY-MM-DD> --date-to <YYYY-MM-DD>] \
+  [--date-range-field <created|updated> (--date-range-preset <preset> | --date-from <YYYY-MM-DD> [--date-to <YYYY-MM-DD>])] \
   [--search "<text>"] \
   [--sort-field <field>] [--sort-direction <asc|desc>] \
   [--json]
