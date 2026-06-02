@@ -3,6 +3,8 @@ import {
   updateCommand,
   detectPackageManager,
   pmUpdateCommand,
+  defaultResolveFreshBin,
+  bunGlobalNodeModulesDir,
   type UpdateRunner,
   type UpdateDeps,
   type UpdateOptions,
@@ -85,6 +87,40 @@ describe('detectPackageManager', () => {
   });
   it('returns null when ambiguous', () => {
     expect(detectPackageManager('/random/place/syntaur', {})).toBeNull();
+  });
+});
+
+describe('bunGlobalNodeModulesDir', () => {
+  it('honors BUN_INSTALL_GLOBAL_DIR', () => {
+    expect(bunGlobalNodeModulesDir({ BUN_INSTALL_GLOBAL_DIR: '/cfg/bun-global' })).toBe('/cfg/bun-global/node_modules');
+  });
+  it('falls back to BUN_INSTALL/install/global', () => {
+    expect(bunGlobalNodeModulesDir({ BUN_INSTALL: '/b' })).toBe('/b/install/global/node_modules');
+  });
+});
+
+describe('defaultResolveFreshBin', () => {
+  it('queries `npm root -g` and returns null when the installed entry is missing', async () => {
+    const { runner, calls } = recordingRunner([{ stdout: '/no/such/root' }]);
+    const res = await defaultResolveFreshBin('npm', runner, {});
+    expect(calls[0]).toMatchObject({ cmd: 'npm', args: ['root', '-g'] });
+    expect(res).toBeNull();
+  });
+  it('queries `pnpm root -g`', async () => {
+    const { runner, calls } = recordingRunner([{ stdout: '/no/such/root' }]);
+    await defaultResolveFreshBin('pnpm', runner, {});
+    expect(calls[0]).toMatchObject({ cmd: 'pnpm', args: ['root', '-g'] });
+  });
+  it('queries `yarn global dir`', async () => {
+    const { runner, calls } = recordingRunner([{ stdout: '/no/such/dir' }]);
+    await defaultResolveFreshBin('yarn', runner, {});
+    expect(calls[0]).toMatchObject({ cmd: 'yarn', args: ['global', 'dir'] });
+  });
+  it('bun resolves without a query and returns null when missing', async () => {
+    const { runner, calls } = recordingRunner();
+    const res = await defaultResolveFreshBin('bun', runner, { BUN_INSTALL: '/no/such/bun' });
+    expect(calls).toHaveLength(0);
+    expect(res).toBeNull();
   });
 });
 

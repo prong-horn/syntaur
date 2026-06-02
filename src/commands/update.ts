@@ -113,7 +113,14 @@ const defaultRunner: UpdateRunner = (cmd, args, opts) =>
 // the stale, still-loaded package root). Queries the PM's global dir, builds the
 // path to the installed syntaur bin, and verifies it exists; returns null (→ PATH
 // `syntaur` fallback) if anything is uncertain.
-async function defaultResolveFreshBin(
+// Bun's global node_modules dir, honoring BUN_INSTALL_GLOBAL_DIR (full path to
+// the global dir) → BUN_INSTALL/install/global → ~/.bun/install/global.
+export function bunGlobalNodeModulesDir(env: NodeJS.ProcessEnv): string {
+  const globalDir = env.BUN_INSTALL_GLOBAL_DIR ?? join(env.BUN_INSTALL ?? join(homedir(), '.bun'), 'install', 'global');
+  return join(globalDir, 'node_modules');
+}
+
+export async function defaultResolveFreshBin(
   pm: PackageManager,
   runner: UpdateRunner,
   env: NodeJS.ProcessEnv,
@@ -133,9 +140,8 @@ async function defaultResolveFreshBin(
       const dir = res.stdout.trim();
       return dir ? binFromPkgRoot(join(dir, 'node_modules')) : null;
     }
-    // bun: global packages live under $BUN_INSTALL/install/global/node_modules.
-    const bunRoot = env.BUN_INSTALL ?? join(homedir(), '.bun');
-    return binFromPkgRoot(join(bunRoot, 'install', 'global', 'node_modules'));
+    // bun
+    return binFromPkgRoot(bunGlobalNodeModulesDir(env));
   } catch {
     return null;
   }
@@ -196,9 +202,14 @@ function classifyUpdateFailure(pm: PackageManager, cmd: string, args: string[], 
       'Global install failed (permissions?). Try a Node version manager, or re-run with appropriate privileges.',
     );
   }
-  // Yarn 2+ (berry) removed `yarn global`; match its specific "unknown/invalid
-  // command" phrasing, not a bare "global" substring.
-  if (pm === 'yarn' && /unknown command|usage error|couldn'?t find|not a valid|isn'?t a valid/i.test(res.stderr)) {
+  // Yarn 2+ (berry) removed `yarn global`; require BOTH a mention of `global` AND
+  // berry's "unknown/usage" phrasing so unrelated yarn-classic failures (e.g. a
+  // bad version spec) aren't misreported.
+  if (
+    pm === 'yarn' &&
+    /\bglobal\b/i.test(res.stderr) &&
+    /unknown command|usage error|couldn'?t find|command not found/i.test(res.stderr)
+  ) {
     return new Error(
       "`yarn global` isn't available (Yarn 2+ removed it). Re-run with `--pm npm` (or pnpm/bun), or install syntaur globally with your preferred manager.",
     );
