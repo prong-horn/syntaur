@@ -49,6 +49,7 @@ interface TodoRowProps {
   onCopyId: (e: React.MouseEvent, id: string) => void;
   onDelete: (e: React.MouseEvent, id: string, description: string) => void;
   hotkeyRowProps?: Record<string, string | number | boolean>;
+  onDragOrigin: (e: React.MouseEvent<HTMLDivElement>) => void;
   onDragStart: (e: DragEvent<HTMLDivElement>, id: string) => void;
   onDragEnd: () => void;
   isDragging: boolean;
@@ -65,6 +66,7 @@ function TodoRow({
   onCopyId,
   onDelete,
   hotkeyRowProps,
+  onDragOrigin,
   onDragStart,
   onDragEnd,
   isDragging,
@@ -74,6 +76,7 @@ function TodoRow({
       draggable
       data-todo-id={item.id}
       {...(hotkeyRowProps ?? {})}
+      onMouseDown={onDragOrigin}
       onDragStart={(e) => onDragStart(e, item.id)}
       onDragEnd={onDragEnd}
       className={`surface-panel flex items-center gap-3 px-3 py-2 cursor-grab active:cursor-grabbing hover:bg-foreground/[0.03] transition ${
@@ -171,6 +174,9 @@ export function ProjectTodosPanel({ projectId }: ProjectTodosPanelProps) {
   const collapse = useTodoSectionCollapse('project:' + projectId);
   const [draggedId, setDraggedId] = useState<string | null>(null);
   const [dropTargetSection, setDropTargetSection] = useState<TodoSectionId | null>(null);
+  // The dragstart event's target is the draggable row, not the grabbed child, so
+  // record the actual mousedown target to gate drags from interactive controls.
+  const dragOriginRef = useRef<EventTarget | null>(null);
 
   function copyId(e: React.MouseEvent, id: string) {
     e.stopPropagation();
@@ -357,8 +363,9 @@ export function ProjectTodosPanel({ projectId }: ProjectTodosPanelProps) {
 
   function handleDragStart(e: DragEvent<HTMLDivElement>, id: string) {
     // Don't start a drag from an interactive control; let those handle clicks.
-    const target = e.target as HTMLElement | null;
-    if (target?.closest(NON_DRAGGABLE_SELECTOR)) {
+    // Use the recorded mousedown target — the dragstart target is the row itself.
+    const origin = dragOriginRef.current as HTMLElement | null;
+    if (origin?.closest(NON_DRAGGABLE_SELECTOR)) {
       e.preventDefault();
       return;
     }
@@ -547,6 +554,7 @@ export function ProjectTodosPanel({ projectId }: ProjectTodosPanelProps) {
                         onCopyId={copyId}
                         onDelete={handleDelete}
                         hotkeyRowProps={hotkeyRowProps(flatIndex)}
+                        onDragOrigin={(e) => { dragOriginRef.current = e.target; }}
                         onDragStart={handleDragStart}
                         onDragEnd={handleDragEnd}
                         isDragging={draggedId === item.id}

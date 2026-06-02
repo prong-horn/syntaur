@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { TODO_SECTIONS, type TodoSectionId } from '@shared/todo-sections';
 
 // Per-client persistence for the todos accordion collapse state. Kept out of the
@@ -46,21 +46,29 @@ export interface TodoSectionCollapse {
 export function useTodoSectionCollapse(viewKey: string): TodoSectionCollapse {
   const [map, setMap] = useState<CollapseMap>(() => readStore()[viewKey] ?? {});
 
+  // Reload when the view changes — the page component is reused (not remounted)
+  // when navigating between workspaces/projects, so without this the prior
+  // view's collapse map would bleed into the new one.
+  useEffect(() => {
+    setMap(readStore()[viewKey] ?? {});
+  }, [viewKey]);
+
   const isCollapsed = useCallback(
     (id: TodoSectionId): boolean => map[id] ?? DEFAULT_COLLAPSED[id],
     [map],
   );
 
+  // Read-modify-write against storage keyed by the current viewKey so a stale
+  // React `map` (e.g. mid-viewKey-change) can never clobber another view's state.
   const toggle = useCallback(
     (id: TodoSectionId): void => {
-      setMap((prev) => {
-        const current = prev[id] ?? DEFAULT_COLLAPSED[id];
-        const next: CollapseMap = { ...prev, [id]: !current };
-        const store = readStore();
-        store[viewKey] = next;
-        writeStore(store);
-        return next;
-      });
+      const store = readStore();
+      const currentMap = store[viewKey] ?? {};
+      const current = currentMap[id] ?? DEFAULT_COLLAPSED[id];
+      const nextMap: CollapseMap = { ...currentMap, [id]: !current };
+      store[viewKey] = nextMap;
+      writeStore(store);
+      setMap(nextMap);
     },
     [viewKey],
   );

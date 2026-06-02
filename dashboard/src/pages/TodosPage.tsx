@@ -65,13 +65,16 @@ export function TodosPage() {
 
   const [selectedKeys, setSelectedKeys] = useState<Set<SelKey>>(new Set());
   const [promoteOpen, setPromoteOpen] = useState(false);
-  const lastSelectedIndexRef = useRef<number | null>(null);
+  const lastSelectedKeyRef = useRef<SelKey | null>(null);
 
   const [projects, setProjects] = useState<ProjectSummary[] | null>(null);
 
   const collapse = useTodoSectionCollapse('all');
   const [draggedKey, setDraggedKey] = useState<SelKey | null>(null);
   const [dropTargetSection, setDropTargetSection] = useState<TodoSectionId | null>(null);
+  // The dragstart event's target is the draggable row, not the grabbed child, so
+  // record the actual mousedown target to gate drags from interactive controls.
+  const dragOriginRef = useRef<EventTarget | null>(null);
 
   // Load projects for the inferred-project picker.
   useEffect(() => {
@@ -138,7 +141,7 @@ export function TodosPage() {
   // Reset selection on filter change.
   useEffect(() => {
     setSelectedKeys(new Set());
-    lastSelectedIndexRef.current = null;
+    lastSelectedKeyRef.current = null;
   }, [search, statusFilter, tagFilter]);
 
   const selectedItems = useMemo(
@@ -182,9 +185,14 @@ export function TodosPage() {
   function toggleOne(item: AggregatedTodo, index: number, e?: React.MouseEvent | React.ChangeEvent) {
     const k = keyOf(item);
     const isShift = !!(e && 'shiftKey' in e && (e as React.MouseEvent).shiftKey);
-    if (isShift && lastSelectedIndexRef.current != null) {
-      const start = Math.min(lastSelectedIndexRef.current, index);
-      const end = Math.max(lastSelectedIndexRef.current, index);
+    // Resolve the anchor by key against the CURRENT rendered order, so collapsing/
+    // expanding a section between shift-clicks can't desync the range.
+    const anchorIndex = lastSelectedKeyRef.current
+      ? renderedOrdered.findIndex((it) => keyOf(it) === lastSelectedKeyRef.current)
+      : -1;
+    if (isShift && anchorIndex !== -1) {
+      const start = Math.min(anchorIndex, index);
+      const end = Math.max(anchorIndex, index);
       setSelectedKeys((prev) => {
         const next = new Set(prev);
         for (let i = start; i <= end; i++) {
@@ -201,7 +209,7 @@ export function TodosPage() {
         return next;
       });
     }
-    lastSelectedIndexRef.current = index;
+    lastSelectedKeyRef.current = k;
   }
 
   function toggleAllVisible() {
@@ -218,7 +226,7 @@ export function TodosPage() {
 
   function clearSelection() {
     setSelectedKeys(new Set());
-    lastSelectedIndexRef.current = null;
+    lastSelectedKeyRef.current = null;
   }
 
   function onPromoteDone(result?: PromoteResult | BulkPromoteResult) {
@@ -347,8 +355,9 @@ export function TodosPage() {
 
   function handleDragStart(e: DragEvent<HTMLDivElement>, key: SelKey) {
     // Don't start a drag from an interactive control; let those handle clicks.
-    const target = e.target as HTMLElement | null;
-    if (target?.closest(NON_DRAGGABLE_SELECTOR)) {
+    // Use the recorded mousedown target — the dragstart target is the row itself.
+    const origin = dragOriginRef.current as HTMLElement | null;
+    if (origin?.closest(NON_DRAGGABLE_SELECTOR)) {
       e.preventDefault();
       return;
     }
@@ -550,6 +559,7 @@ export function TodosPage() {
                         draggable
                         data-todo-id={item.id}
                         {...hotkeyRowProps(rowIndex)}
+                        onMouseDown={(e) => { dragOriginRef.current = e.target; }}
                         onDragStart={(e) => handleDragStart(e, k)}
                         onDragEnd={handleDragEnd}
                         className={`surface-panel flex items-center gap-3 px-3 py-2 group cursor-grab active:cursor-grabbing hover:bg-foreground/[0.03] transition ${
