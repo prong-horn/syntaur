@@ -7,7 +7,7 @@ import type { AgentSession, AgentSessionStatus } from './types.js';
 
 let db: Database.Database | null = null;
 
-const SCHEMA_VERSION = '4';
+const SCHEMA_VERSION = '5';
 
 // The base schema deliberately OMITS the project_slug indexes — they are
 // created after any legacy-schema migrations run below. Older installs may
@@ -27,6 +27,7 @@ CREATE TABLE IF NOT EXISTS sessions (
   transcript_path TEXT,
   pid INTEGER,
   pid_started_at TEXT,
+  original_head_sha TEXT,
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
@@ -196,6 +197,44 @@ export function initSessionDb(dbPath?: string): Database.Database {
         CREATE INDEX IF NOT EXISTS idx_sessions_assignment ON sessions(project_slug, assignment_slug);
         CREATE INDEX IF NOT EXISTS idx_sessions_status ON sessions(status);
         UPDATE meta SET value = '4' WHERE key = 'schema_version';
+      `);
+    }
+
+    // --- v4 → v5: add original_head_sha for exact worktree recreation ---
+    const vBeforeV5 = (
+      database
+        .prepare("SELECT value FROM meta WHERE key = 'schema_version'")
+        .get() as { value: string } | undefined
+    )?.value;
+
+    if (vBeforeV5 === '4') {
+      database.exec(`
+        CREATE TABLE sessions_v5 (
+          session_id TEXT PRIMARY KEY,
+          project_slug TEXT,
+          assignment_slug TEXT,
+          agent TEXT NOT NULL,
+          started TEXT NOT NULL,
+          ended TEXT,
+          status TEXT NOT NULL DEFAULT 'active',
+          path TEXT,
+          description TEXT,
+          transcript_path TEXT,
+          pid INTEGER,
+          pid_started_at TEXT,
+          original_head_sha TEXT,
+          created_at TEXT NOT NULL DEFAULT (datetime('now')),
+          updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+        INSERT INTO sessions_v5
+          SELECT session_id, project_slug, assignment_slug, agent, started, ended, status, path, description, transcript_path, pid, pid_started_at, NULL, created_at, updated_at
+          FROM sessions;
+        DROP TABLE sessions;
+        ALTER TABLE sessions_v5 RENAME TO sessions;
+        CREATE INDEX IF NOT EXISTS idx_sessions_project ON sessions(project_slug);
+        CREATE INDEX IF NOT EXISTS idx_sessions_assignment ON sessions(project_slug, assignment_slug);
+        CREATE INDEX IF NOT EXISTS idx_sessions_status ON sessions(status);
+        UPDATE meta SET value = '5' WHERE key = 'schema_version';
       `);
     }
   });

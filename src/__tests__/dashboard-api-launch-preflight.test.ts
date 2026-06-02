@@ -171,6 +171,94 @@ describe('POST /api/launch/preflight', () => {
     expect(typeof body.message).toBe('string');
   });
 
+  it('offers recreate when an assignment worktree is gone but the repository remains (the core bug)', async () => {
+    const kittyPath = join(pathDir, 'kitty');
+    await writeFile(kittyPath, '#!/bin/sh\nexit 0\n');
+    await chmod(kittyPath, 0o755);
+    process.env.PATH = `${pathDir}:/usr/bin:/bin`;
+
+    // Repository still exists; only the worktree dir was deleted. The legacy
+    // `cwd === null` check would NOT fire here (it falls back to the repo).
+    const repoDir = join(tmpHome, 'live-repo');
+    await mkdir(repoDir, { recursive: true });
+    const goneWt = join(tmpHome, 'gone-wt-recreatable');
+
+    const id = '44444444-4444-4444-4444-444444444444';
+    await writeAssignment(id, {
+      worktreePath: goneWt,
+      repository: repoDir,
+      branch: 'feat/x',
+    });
+
+    const res = await fetch(baseUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ terminal: 'kitty', target: { kind: 'assignment', id } }),
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.ok).toBe(false);
+    expect(body.reason).toBe('workspace-path-invalid');
+    expect(body.recreate).toBeTruthy();
+    expect(body.recreate.kind).toBe('assignment');
+    expect(body.recreate.deletedPath).toBe(goneWt);
+    expect(body.recreate.repository).toBe(repoDir);
+    expect(body.recreate.branch).toBe('feat/x');
+  });
+
+  it('offers recreate for a session whose recorded worktree is gone (preflight parity)', async () => {
+    const kittyPath = join(pathDir, 'kitty');
+    await writeFile(kittyPath, '#!/bin/sh\nexit 0\n');
+    await chmod(kittyPath, 0o755);
+    process.env.PATH = `${pathDir}:/usr/bin:/bin`;
+
+    const { resetSessionDb, initSessionDb, closeSessionDb } = await import(
+      '../dashboard/session-db.js'
+    );
+    const { appendSession } = await import('../dashboard/agent-sessions.js');
+    resetSessionDb();
+    initSessionDb(resolve(tmpHome, '.syntaur', 'sessions.db'));
+    try {
+      const repoDir = join(tmpHome, 'live-repo-session');
+      await mkdir(repoDir, { recursive: true });
+      const goneWt = join(tmpHome, 'gone-session-wt');
+
+      const id = '55555555-5555-5555-5555-555555555555';
+      const assignmentSlug = `task-${id.slice(0, 8)}`;
+      await writeAssignment(id, {
+        worktreePath: goneWt,
+        repository: repoDir,
+        branch: 'feat/sess',
+      });
+      await appendSession('', {
+        projectSlug: 'demo',
+        assignmentSlug,
+        agent: 'claude',
+        sessionId: 'sess-abc',
+        started: '2026-06-01T00:00:00Z',
+        status: 'active',
+        path: goneWt,
+      });
+
+      const res = await fetch(baseUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ terminal: 'kitty', target: { kind: 'session', id: 'sess-abc' } }),
+      });
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      expect(body.ok).toBe(false);
+      expect(body.reason).toBe('workspace-path-invalid');
+      expect(body.recreate).toBeTruthy();
+      expect(body.recreate.kind).toBe('session');
+      expect(body.recreate.deletedPath).toBe(goneWt);
+      expect(body.recreate.repository).toBe(repoDir);
+    } finally {
+      closeSessionDb();
+      resetSessionDb();
+    }
+  });
+
   it('returns ok:true for an assignment whose worktree exists', async () => {
     const kittyPath = join(pathDir, 'kitty');
     await writeFile(kittyPath, '#!/bin/sh\nexit 0\n');

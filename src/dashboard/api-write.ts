@@ -15,6 +15,7 @@ import {
 } from '../utils/git-worktree.js';
 import { computeWorktreeDefaults } from '../utils/worktree-defaults.js';
 import { validateBranchName } from '../utils/branch-name.js';
+import { recreateForTarget, recreateOutcomeToHttp } from './worktree-recreate.js';
 import {
   getProjectRepositoryCandidates,
   getStandaloneRepositoryCandidates,
@@ -238,7 +239,7 @@ export const worktreeInFlight = new Set<string>();
  * worktree-create flow has always produced. Shared by `handleWorktreeCreate`
  * and the `repository-branches` read endpoints so they enforce one contract.
  */
-async function assertRepoRoot(
+export async function assertRepoRoot(
   repoInput: unknown,
 ): Promise<{ ok: true; repo: string } | { ok: false; status: number; error: string }> {
   if (typeof repoInput !== 'string' || !repoInput.trim()) {
@@ -1731,6 +1732,58 @@ export function createWriteRouter(
         res
           .status(500)
           .json({ error: `Failed to create worktree: ${(error as Error).message}` });
+      }
+    },
+  );
+
+  // --- Worktree recreate (rebuild a deleted worktree at its exact path) ---
+  // Server-authoritative: the path/repo/branch come from persisted state, never
+  // the request body. Bypasses the create-flow's "already configured" / "branch
+  // exists" 409 guards since recreate intentionally rebuilds an existing record.
+
+  router.post(
+    '/api/projects/:slug/assignments/:aslug/worktree/recreate',
+    async (req: Request, res: Response) => {
+      try {
+        const projectSlug = getParam(req.params.slug);
+        const assignmentSlug = getParam(req.params.aslug);
+        const outcome = await recreateForTarget(
+          { projectsDir, assignmentsDir: assignmentsDir ?? '' },
+          { kind: 'assignment', projectSlug, assignmentSlug },
+        );
+        const { httpStatus, body } = recreateOutcomeToHttp(outcome);
+        res.status(httpStatus).json(body);
+      } catch (error) {
+        console.error('Error recreating worktree:', error);
+        res
+          .status(500)
+          .json({ error: `Failed to recreate worktree: ${(error as Error).message}` });
+      }
+    },
+  );
+
+  router.post(
+    '/api/assignments/:id/worktree/recreate',
+    async (req: Request, res: Response) => {
+      try {
+        if (!assignmentsDir) {
+          res
+            .status(501)
+            .json({ error: 'Standalone assignments not configured on this server' });
+          return;
+        }
+        const id = getParam(req.params.id);
+        const outcome = await recreateForTarget(
+          { projectsDir, assignmentsDir },
+          { kind: 'assignment', id },
+        );
+        const { httpStatus, body } = recreateOutcomeToHttp(outcome);
+        res.status(httpStatus).json(body);
+      } catch (error) {
+        console.error('Error recreating worktree:', error);
+        res
+          .status(500)
+          .json({ error: `Failed to recreate worktree: ${(error as Error).message}` });
       }
     },
   );
