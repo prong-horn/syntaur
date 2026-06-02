@@ -154,6 +154,9 @@ export function useSavedViewsFile(): SavedViewsFileState {
     fetchPromise = null;
     setLoading(true);
     setError(null);
+    // Drop `ready` until the retry settles (onFile/onError flip it back) so a
+    // consumer gating not-found on `ready` doesn't flash "not found" mid-retry.
+    setReady(false);
     fetchSavedViews();
   };
 

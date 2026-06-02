@@ -155,13 +155,17 @@ export function SavedViewPage() {
 
       <SavedViewResults view={view} />
 
-      <CreateViewDialog
-        open={editOpen}
-        onOpenChange={setEditOpen}
-        workspace={view.workspace}
-        initialView={view}
-        onSubmit={handleEditSubmit}
-      />
+      {/* Lazy-mount: CreateViewDialog eagerly fetches projects/assignments, which
+          SavedViewResults already loads — only mount it when actually editing. */}
+      {editOpen ? (
+        <CreateViewDialog
+          open={editOpen}
+          onOpenChange={setEditOpen}
+          workspace={view.workspace}
+          initialView={view}
+          onSubmit={handleEditSubmit}
+        />
+      ) : null}
 
       <ConfirmDialog
         open={deleteOpen}

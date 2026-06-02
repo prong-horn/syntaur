@@ -90,6 +90,7 @@ export function SavedViewResults({ view, compact, emptyDescription }: SavedViewR
       return (
         <KanbanBoard
           compact={compact}
+          dragDisabled
           columns={kanbanColumns}
           items={sortedItems}
           getItemId={(i) => i.slug || i.id}
