@@ -65,6 +65,7 @@ const KNOWN_SKILL_NAMES = [
   'extend-resource',
   'list-resources',
   'run-playbook',
+  'views',
 ] as const;
 
 export const KNOWN_SKILLS = KNOWN_SKILL_NAMES;

@@ -54,6 +54,7 @@ import { worktreeCommand } from './commands/worktree.js';
 import { resourceCommand } from './commands/resource.js';
 import { memoryCommand } from './commands/memory.js';
 import { lsCommand } from './commands/ls.js';
+import { viewsCommand } from './commands/views.js';
 import { getDefaultCommandName } from './cli-default-command.js';
 import { maybePromptInstall } from './utils/npx-prompt.js';
 import { maybeNudgeForNpxInstall } from './launch/index.js';
@@ -872,6 +873,7 @@ program.addCommand(worktreeCommand);
 program.addCommand(resourceCommand);
 program.addCommand(memoryCommand);
 program.addCommand(lsCommand);
+program.addCommand(viewsCommand);
 program.addCommand(leaseCommand);
 program.addCommand(usageCommand);
 
