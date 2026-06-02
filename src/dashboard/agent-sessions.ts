@@ -81,7 +81,7 @@ export async function appendSession(
       transcript_path   = COALESCE(NULLIF(excluded.transcript_path, ''),   transcript_path),
       pid               = COALESCE(excluded.pid,                           pid),
       pid_started_at    = COALESCE(NULLIF(excluded.pid_started_at, ''),    pid_started_at),
-      original_head_sha = COALESCE(NULLIF(excluded.original_head_sha, ''), original_head_sha),
+      original_head_sha = COALESCE(NULLIF(original_head_sha, ''), NULLIF(excluded.original_head_sha, '')),
       updated_at        = datetime('now')
   `).run(
     session.sessionId,

@@ -619,6 +619,21 @@ describe('v4 -> v5 schema migration (adds original_head_sha)', () => {
     );
     expect(getSessionById('sha-row')?.originalHeadSha).toBe('deadbeefcafef00d');
   });
+
+  it('preserves the ORIGINAL sha across re-registration (does not let a later HEAD clobber it)', async () => {
+    const { getSessionById } = await import('../dashboard/agent-sessions.js');
+    await appendSession('', makeSession({ sessionId: 'sha-keep', originalHeadSha: 'sha1' }));
+    // A later re-track after HEAD moved must NOT overwrite the original anchor.
+    await appendSession('', makeSession({ sessionId: 'sha-keep', originalHeadSha: 'sha2' }));
+    expect(getSessionById('sha-keep')?.originalHeadSha).toBe('sha1');
+  });
+
+  it('backfills original_head_sha when the first registration captured none', async () => {
+    const { getSessionById } = await import('../dashboard/agent-sessions.js');
+    await appendSession('', makeSession({ sessionId: 'sha-fill', originalHeadSha: null }));
+    await appendSession('', makeSession({ sessionId: 'sha-fill', originalHeadSha: 'sha2' }));
+    expect(getSessionById('sha-fill')?.originalHeadSha).toBe('sha2');
+  });
 });
 
 describe('appendSession upsert semantics', () => {

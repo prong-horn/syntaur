@@ -291,6 +291,33 @@ describe('git-worktree helpers', () => {
     expect(result.exact).toBe(false);
   });
 
+  it('recreateWorktree falls back to a detached worktree when the branch is checked out elsewhere', async () => {
+    const originalHeadSha = git(repo, ['rev-parse', 'HEAD']);
+    // A LIVE worktree already holds feat/shared, so it cannot be re-attached.
+    const livePath = resolve(scratch, 'wt-live');
+    await createWorktree({
+      repository: repo,
+      branch: 'feat/shared',
+      worktreePath: livePath,
+      parentBranch: 'main',
+    });
+
+    const wtPath = resolve(scratch, 'wt-elsewhere');
+    const result = await recreateWorktree({
+      repository: repo,
+      worktreePath: wtPath,
+      branch: 'feat/shared',
+      originalHeadSha,
+    });
+
+    expect((await stat(wtPath)).isDirectory()).toBe(true);
+    expect(result.branch).toBeNull(); // detached, not on the branch
+    expect(result.baseUsed).toBe(originalHeadSha);
+    expect(result.exact).toBe(true);
+    // The live worktree still owns the branch.
+    expect(git(livePath, ['rev-parse', '--abbrev-ref', 'HEAD'])).toBe('feat/shared');
+  });
+
   it('recreateWorktree creates a detached worktree when no branch is on record', async () => {
     const wtPath = resolve(scratch, 'wt-detached');
     const originalHeadSha = git(repo, ['rev-parse', 'HEAD']);

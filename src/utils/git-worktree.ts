@@ -2,6 +2,7 @@ import { spawn } from 'node:child_process';
 import { readFile } from 'node:fs/promises';
 import { updateAssignmentWorkspace } from '../lifecycle/frontmatter.js';
 import { writeFileForce } from './fs.js';
+import { isExistingDir } from '../launch/cwd.js';
 
 export interface CreateWorktreeOptions {
   repository: string;
@@ -162,6 +163,30 @@ export async function captureHeadSha(dir: string): Promise<string | null> {
 }
 
 /**
+ * Return the worktree path where `branch` is currently checked out, or null if
+ * it isn't checked out by any worktree. Parses `git worktree list --porcelain`
+ * (blocks of `worktree <path>` / `branch refs/heads/<name>`). Used to decide
+ * whether a branch can be re-attached or must be recreated detached.
+ */
+async function branchCheckedOutAt(
+  repository: string,
+  branch: string,
+): Promise<string | null> {
+  const result = await run('git', ['-C', repository, 'worktree', 'list', '--porcelain']);
+  if (result.code !== 0) return null;
+  let currentPath: string | null = null;
+  for (const line of result.stdout.split('\n')) {
+    if (line.startsWith('worktree ')) {
+      currentPath = line.slice('worktree '.length).trim();
+    } else if (line.startsWith('branch ')) {
+      const ref = line.slice('branch '.length).trim();
+      if (ref === `refs/heads/${branch}` && currentPath) return currentPath;
+    }
+  }
+  return null;
+}
+
+/**
  * Recreate a worktree at an EXACT recorded path after its directory was deleted
  * (e.g. manually `rm -rf`'d). A manual delete leaves stale
  * `.git/worktrees/<name>/` metadata with the branch still marked checked-out,
@@ -209,8 +234,26 @@ export async function recreateWorktree(
 
   // 1. Branch still exists — re-attach a worktree to it at the recorded path.
   if (branch && (await listBranches(repository)).includes(branch)) {
-    await add([worktreePath, branch]);
-    return { baseUsed: branch, exact: true, branch };
+    const checkedOutAt = await branchCheckedOutAt(repository, branch);
+    if (
+      !checkedOutAt ||
+      checkedOutAt === worktreePath ||
+      !isExistingDir(checkedOutAt)
+    ) {
+      // Free to attach (post-prune the deleted worktree's claim is gone).
+      await add([worktreePath, branch]);
+      return { baseUsed: branch, exact: true, branch };
+    }
+    // The branch is checked out in another LIVE worktree, so it can't be
+    // attached here. A directory at the exact path is the sufficient condition
+    // for `claude --resume`, so recreate detached at the original sha (exact)
+    // or the branch tip.
+    const detachBase =
+      originalHeadSha && (await refExists(`${originalHeadSha}^{commit}`))
+        ? originalHeadSha
+        : `refs/heads/${branch}`;
+    await add(['--detach', worktreePath, detachBase]);
+    return { baseUsed: detachBase, exact: detachBase === originalHeadSha, branch: null };
   }
 
   // 2/3. Branch missing (deleted) or never recorded — choose a base ref.

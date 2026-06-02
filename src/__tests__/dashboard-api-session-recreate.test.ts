@@ -160,6 +160,77 @@ describe('POST /api/agent-sessions/:sessionId/worktree/recreate', () => {
     await expect(stat(wtPath)).resolves.toBeTruthy();
   });
 
+  it('rebuilds for a standalone-linked session (project_slug NULL, assignment_slug = UUID)', async () => {
+    const repo = resolve(tmpHome, 'repo-standalone');
+    await mkdir(repo, { recursive: true });
+    git(repo, ['init', '-q', '-b', 'main']);
+    git(repo, ['config', 'user.email', 't@e.com']);
+    git(repo, ['config', 'user.name', 'T']);
+    await writeFile(resolve(repo, 'README.md'), '# t\n');
+    git(repo, ['add', '.']);
+    git(repo, ['commit', '-q', '-m', 'init']);
+    const wtPath = resolve(tmpHome, 'standalone-session-wt');
+    git(repo, ['worktree', 'add', '-b', 'feat/solo', wtPath, 'main']);
+
+    // Standalone assignment lives under assignmentsDir/<uuid>/assignment.md and
+    // is resolved by id (the session's assignment_slug holds that UUID).
+    const id = 'bbbb2222-cccc-3333-dddd-444455556666';
+    const soloDir = resolve(assignmentsDir, id);
+    await mkdir(soloDir, { recursive: true });
+    await writeFile(
+      resolve(soloDir, 'assignment.md'),
+      [
+        '---',
+        `id: ${id}`,
+        'slug: solo-task',
+        'title: "Solo Task"',
+        'project: null',
+        'type: feature',
+        'status: in_progress',
+        'priority: medium',
+        'created: "2026-06-01T00:00:00Z"',
+        'updated: "2026-06-01T00:00:00Z"',
+        'assignee: null',
+        'externalIds: []',
+        'dependsOn: []',
+        'links: []',
+        'blockedReason: null',
+        'workspace:',
+        `  repository: ${repo}`,
+        `  worktreePath: ${wtPath}`,
+        '  branch: feat/solo',
+        '  parentBranch: main',
+        'tags: []',
+        '---',
+        '',
+        '# Solo Task',
+      ].join('\n'),
+    );
+
+    await appendSession('', {
+      projectSlug: null,
+      assignmentSlug: id, // standalone: assignment_slug holds the UUID
+      agent: 'claude',
+      sessionId: 'sess-standalone-1',
+      started: '2026-06-01T00:00:00Z',
+      status: 'active',
+      path: wtPath,
+    });
+
+    await rm(wtPath, { recursive: true, force: true });
+
+    const res = await fetch(`${baseUrl}/sess-standalone-1/worktree/recreate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: '{}',
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.ok).toBe(true);
+    expect(body.branch).toBe('feat/solo');
+    await expect(stat(wtPath)).resolves.toBeTruthy();
+  });
+
   it('404s for an unknown session', async () => {
     const res = await fetch(`${baseUrl}/no-such-session/worktree/recreate`, {
       method: 'POST',
