@@ -4,24 +4,36 @@ import { realpathSync } from 'node:fs';
 import { detectInstallKind, type InstallKind } from '../launch/index.js';
 import { compareSemver } from '../utils/npx-prompt.js';
 import { readPackageVersion } from '../utils/version.js';
-import { getConfiguredOrLegacyManagedPluginDir } from '../utils/install.js';
+import { getConfiguredOrLegacyManagedPluginDir, getDefaultPluginTargetDir } from '../utils/install.js';
+import { existsSync } from 'node:fs';
+import { join } from 'node:path';
+import { homedir } from 'node:os';
 
 export type PackageManager = 'npm' | 'pnpm' | 'yarn' | 'bun';
 const PACKAGE_MANAGERS: readonly PackageManager[] = ['npm', 'pnpm', 'yarn', 'bun'];
 
 export interface UpdateRunResult {
   code: number;
+  stdout: string;
   stderr: string;
   error?: Error;
 }
 
-// Single runner for BOTH the package-manager update spawn and the fresh
-// `install-plugin` refresh spawn. Injectable so tests never spawn.
+// Single runner for the package-manager update spawn, the global-dir query, and
+// the fresh `install-plugin` refresh spawn. Injectable so tests never spawn.
+// `captureStdout` pipes+returns stdout quietly (for `npm root -g` style queries);
+// otherwise stdout is inherited so the user sees PM/install progress.
 export type UpdateRunner = (
   cmd: string,
   args: string[],
-  opts?: { env?: NodeJS.ProcessEnv },
+  opts?: { env?: NodeJS.ProcessEnv; captureStdout?: boolean },
 ) => Promise<UpdateRunResult>;
+
+// How to invoke the freshly-installed CLI for the refresh.
+export interface FreshBin {
+  cmd: string;
+  baseArgs: string[];
+}
 
 export interface UpdateOptions {
   scriptUrl: string;
@@ -42,6 +54,7 @@ export interface UpdateDeps {
   fetchLatest?: (pkg: string, timeoutMs: number) => Promise<string | null>;
   getManagedDir?: (kind: 'claude' | 'codex') => Promise<string | null>;
   readOldVersion?: (scriptUrl: string) => Promise<string | null>;
+  resolveFreshBin?: (pm: PackageManager, runner: UpdateRunner, env: NodeJS.ProcessEnv) => Promise<FreshBin | null>;
   env?: NodeJS.ProcessEnv;
   log?: (msg: string) => void;
 }
@@ -73,20 +86,60 @@ async function fetchLatestNpmVersion(pkg: string, timeoutMs: number): Promise<st
 // the user sees progress while we can still classify failures (yarn-berry/EACCES).
 const defaultRunner: UpdateRunner = (cmd, args, opts) =>
   new Promise((resolvePromise) => {
+    const capture = opts?.captureStdout === true;
     const child = spawn(cmd, args, {
       env: opts?.env ?? process.env,
-      stdio: ['inherit', 'inherit', 'pipe'],
+      stdio: ['inherit', capture ? 'pipe' : 'inherit', 'pipe'],
       shell: process.platform === 'win32',
     });
+    let stdout = '';
     let stderr = '';
+    if (capture) {
+      child.stdout?.on('data', (d) => {
+        stdout += d.toString();
+      });
+    }
     child.stderr?.on('data', (d) => {
       const s = d.toString();
       stderr += s;
-      process.stderr.write(s);
+      // Tee PM/install progress to the user — but stay quiet for capture queries.
+      if (!capture) process.stderr.write(s);
     });
-    child.on('error', (error) => resolvePromise({ code: -1, stderr, error }));
-    child.on('close', (code) => resolvePromise({ code: code ?? -1, stderr }));
+    child.on('error', (error) => resolvePromise({ code: -1, stdout, stderr, error }));
+    child.on('close', (code) => resolvePromise({ code: code ?? -1, stdout, stderr }));
   });
+
+// Resolve how to invoke the JUST-INSTALLED CLI so the refresh runs NEW code (not
+// the stale, still-loaded package root). Queries the PM's global dir, builds the
+// path to the installed syntaur bin, and verifies it exists; returns null (→ PATH
+// `syntaur` fallback) if anything is uncertain.
+async function defaultResolveFreshBin(
+  pm: PackageManager,
+  runner: UpdateRunner,
+  env: NodeJS.ProcessEnv,
+): Promise<FreshBin | null> {
+  const binFromPkgRoot = (pkgRoot: string): FreshBin | null => {
+    const entry = join(pkgRoot, 'syntaur', 'bin', 'syntaur.js');
+    return existsSync(entry) ? { cmd: process.execPath, baseArgs: [entry] } : null;
+  };
+  try {
+    if (pm === 'npm' || pm === 'pnpm') {
+      const res = await runner(pm, ['root', '-g'], { env, captureStdout: true });
+      const dir = res.stdout.trim();
+      return dir ? binFromPkgRoot(dir) : null;
+    }
+    if (pm === 'yarn') {
+      const res = await runner('yarn', ['global', 'dir'], { env, captureStdout: true });
+      const dir = res.stdout.trim();
+      return dir ? binFromPkgRoot(join(dir, 'node_modules')) : null;
+    }
+    // bun: global packages live under $BUN_INSTALL/install/global/node_modules.
+    const bunRoot = env.BUN_INSTALL ?? join(homedir(), '.bun');
+    return binFromPkgRoot(join(bunRoot, 'install', 'global', 'node_modules'));
+  } catch {
+    return null;
+  }
+}
 
 function resolveScriptPath(scriptUrl: string, realpath: (p: string) => string): string | null {
   try {
@@ -136,14 +189,18 @@ function classifyUpdateFailure(pm: PackageManager, cmd: string, args: string[], 
   if (res.error && (res.error as NodeJS.ErrnoException).code === 'ENOENT') {
     return new Error(`\`${pm}\` not found on PATH — install it or pass \`--pm <other>\`.`);
   }
-  if (pm === 'yarn' && /\bglobal\b|unknown command/i.test(res.stderr)) {
-    return new Error(
-      "`yarn global` isn't available (Yarn 2+ removed it). Re-run with `--pm npm` (or pnpm/bun), or install syntaur globally with your preferred manager.",
-    );
-  }
+  // EACCES first: a Yarn-classic permission error often mentions a "global" path,
+  // which would otherwise be misread as the Yarn-berry "no global command" case.
   if (/EACCES|permission denied/i.test(res.stderr)) {
     return new Error(
       'Global install failed (permissions?). Try a Node version manager, or re-run with appropriate privileges.',
+    );
+  }
+  // Yarn 2+ (berry) removed `yarn global`; match its specific "unknown/invalid
+  // command" phrasing, not a bare "global" substring.
+  if (pm === 'yarn' && /unknown command|usage error|couldn'?t find|not a valid|isn'?t a valid/i.test(res.stderr)) {
+    return new Error(
+      "`yarn global` isn't available (Yarn 2+ removed it). Re-run with `--pm npm` (or pnpm/bun), or install syntaur globally with your preferred manager.",
     );
   }
   return new Error(`${pm} update failed (exit ${res.code}): ${cmd} ${args.join(' ')}`);
@@ -158,6 +215,7 @@ export async function updateCommand(options: UpdateOptions, deps: UpdateDeps = {
   const fetchLatest = deps.fetchLatest ?? fetchLatestNpmVersion;
   const getManagedDir = deps.getManagedDir ?? getConfiguredOrLegacyManagedPluginDir;
   const readOld = deps.readOldVersion ?? readPackageVersion;
+  const resolveFreshBin = deps.resolveFreshBin ?? defaultResolveFreshBin;
 
   // --- 1. Resolve read-only facts ---
   const kind = detectKind(options.scriptUrl);
@@ -166,7 +224,8 @@ export async function updateCommand(options: UpdateOptions, deps: UpdateDeps = {
     resolveScriptPath(options.scriptUrl, realpath),
     env,
   );
-  const old = (await readOld(options.scriptUrl)) ?? 'unknown';
+  const oldRaw = await readOld(options.scriptUrl); // null when the running version can't be read
+  const old = oldRaw ?? 'unknown';
   const target = options.version ?? (await fetchLatest('syntaur', 4000));
 
   // --- 2. --check (read-only; works from any install kind) ---
@@ -177,7 +236,7 @@ export async function updateCommand(options: UpdateOptions, deps: UpdateDeps = {
     }
     if (options.version) {
       log(`Current ${old} → requested ${target} (pinned). Run \`syntaur update --version ${target}\` to apply.`);
-    } else if (compareSemver(old, target) >= 0) {
+    } else if (oldRaw !== null && compareSemver(oldRaw, target) >= 0) {
       log(`syntaur is up to date (${old}).`);
     } else {
       log(`Update available: ${old} → ${target}. Run \`syntaur update\` to apply.`);
@@ -212,7 +271,9 @@ export async function updateCommand(options: UpdateOptions, deps: UpdateDeps = {
   }
 
   // --- 4. No-op decision (before dry-run, so dry-run is truthful) ---
-  const isNoop = options.version ? old === target : compareSemver(old, target) >= 0;
+  // An unreadable current version (oldRaw === null) is never a no-op — update it.
+  const isNoop =
+    oldRaw !== null && (options.version ? oldRaw === target : compareSemver(oldRaw, target) >= 0);
 
   // --- 5. --dry-run ---
   if (options.dryRun) {
@@ -248,7 +309,7 @@ export async function updateCommand(options: UpdateOptions, deps: UpdateDeps = {
   if (options.skipRefresh) {
     refreshNote = 'Skipped plugin/skills refresh (--skip-refresh).';
   } else {
-    refreshNote = await refreshPluginSkills(options, runner, getManagedDir, env, log);
+    refreshNote = await refreshPluginSkills(options, pm, runner, getManagedDir, resolveFreshBin, env, log);
   }
 
   // --- Report ---
@@ -280,22 +341,30 @@ function resolvePm(
 // migration confirm in install-plugin.
 async function refreshPluginSkills(
   options: UpdateOptions,
+  pm: PackageManager,
   runner: UpdateRunner,
   getManagedDir: (kind: 'claude' | 'codex') => Promise<string | null>,
+  resolveFreshBin: (pm: PackageManager, runner: UpdateRunner, env: NodeJS.ProcessEnv) => Promise<FreshBin | null>,
   env: NodeJS.ProcessEnv,
   log: (m: string) => void,
 ): Promise<string> {
-  const managedDir = await getManagedDir('claude');
   const args = ['install-plugin', '--force'];
   if (options.forceSkills) args.push('--force-skills');
   if (options.enable) args.push('--enable');
 
-  const childEnv: NodeJS.ProcessEnv = { ...env };
-  if (managedDir) childEnv.SYNTAUR_PLUGIN_TARGET = managedDir;
+  // Always pin SYNTAUR_PLUGIN_TARGET (existing managed dir, else the default) so
+  // the spawned install-plugin never prompts (target prompt + migration confirm).
+  const target = (await getManagedDir('claude')) ?? getDefaultPluginTargetDir('claude');
+  const childEnv: NodeJS.ProcessEnv = { ...env, SYNTAUR_PLUGIN_TARGET: target };
 
-  // After a successful global update, PATH `syntaur` resolves to the new version.
+  // Run the JUST-INSTALLED CLI (resolved from the PM's global dir) so the refresh
+  // copies NEW skills; fall back to PATH `syntaur` only if resolution fails.
+  const fresh = await resolveFreshBin(pm, runner, env);
+  const cmd = fresh ? fresh.cmd : 'syntaur';
+  const fullArgs = fresh ? [...fresh.baseArgs, ...args] : args;
+
   log(`Refreshing plugin + skills: syntaur ${args.join(' ')}`);
-  const res = await runner('syntaur', args, { env: childEnv });
+  const res = await runner(cmd, fullArgs, { env: childEnv });
   if (res.code !== 0 || res.error) {
     return 'Warning: skills refresh failed — run `syntaur install-plugin --force` manually.';
   }

@@ -18,14 +18,14 @@ interface RunnerCall {
 }
 
 function recordingRunner(
-  results: Array<{ code?: number; stderr?: string; error?: Error }> = [],
+  results: Array<{ code?: number; stdout?: string; stderr?: string; error?: Error }> = [],
 ): { runner: UpdateRunner; calls: RunnerCall[] } {
   const calls: RunnerCall[] = [];
   let i = 0;
   const runner: UpdateRunner = async (cmd, args, opts) => {
     calls.push({ cmd, args, env: opts?.env });
     const r = results[i++] ?? {};
-    return { code: r.code ?? 0, stderr: r.stderr ?? '', error: r.error };
+    return { code: r.code ?? 0, stdout: r.stdout ?? '', stderr: r.stderr ?? '', error: r.error };
   };
   return { runner, calls };
 }
@@ -38,9 +38,12 @@ function makeDeps(
   const deps: UpdateDeps = {
     runner: rec.runner,
     detectKind: () => over.kind ?? 'global',
-    readOldVersion: async () => over.old ?? '0.1.0',
+    readOldVersion: over.readOldVersion ?? (async () => over.old ?? '0.1.0'),
     fetchLatest: async () => (over.latest === undefined ? '9.9.9' : over.latest),
     getManagedDir: async () => over.getManagedDir ? (await over.getManagedDir('claude')) : '/home/u/.claude/plugins/syntaur',
+    // Default: fail to resolve a fresh bin → refresh falls back to PATH `syntaur`
+    // (keeps refresh call-counts clean). Override per-test to assert resolution.
+    resolveFreshBin: over.resolveFreshBin ?? (async () => null),
     env: over.env ?? {},
     log: (m) => logs.push(m),
   };
@@ -136,6 +139,47 @@ describe('updateCommand — version flow', () => {
     const { deps } = makeDeps({ kind: 'global', latest: null });
     await expect(run({}, deps)).rejects.toThrow(/npm registry/i);
   });
+
+  it('treats an unreadable current version as updateable (not a no-op)', async () => {
+    const { deps, calls } = makeDeps({
+      kind: 'global',
+      latest: '9.9.9',
+      env: { npm_config_user_agent: 'npm/10' },
+      readOldVersion: async () => null,
+    });
+    await run({ skipRefresh: true }, deps);
+    expect(calls[0]).toMatchObject({ cmd: 'npm', args: ['install', '-g', 'syntaur@9.9.9'] });
+  });
+});
+
+describe('updateCommand — fresh-bin + target pinning', () => {
+  it('runs the resolved fresh bin via process.execPath when resolution succeeds', async () => {
+    const fresh = { cmd: process.execPath, baseArgs: ['/g/node_modules/syntaur/bin/syntaur.js'] };
+    const { deps, calls } = makeDeps({
+      kind: 'global',
+      old: '0.1.0',
+      latest: '9.9.9',
+      env: { npm_config_user_agent: 'npm/10' },
+      resolveFreshBin: async () => fresh,
+    });
+    await run({}, deps);
+    expect(calls[1]).toMatchObject({
+      cmd: process.execPath,
+      args: ['/g/node_modules/syntaur/bin/syntaur.js', 'install-plugin', '--force'],
+    });
+  });
+
+  it('always pins SYNTAUR_PLUGIN_TARGET even when no managed dir exists', async () => {
+    const { deps, calls } = makeDeps({
+      kind: 'global',
+      old: '0.1.0',
+      latest: '9.9.9',
+      env: { npm_config_user_agent: 'npm/10' },
+      getManagedDir: async () => null,
+    });
+    await run({}, deps);
+    expect(calls[1].env?.SYNTAUR_PLUGIN_TARGET).toMatch(/[\\/]\.claude[\\/]plugins[\\/]syntaur$/);
+  });
 });
 
 describe('updateCommand — durable-global PMs (classified unknown)', () => {
@@ -209,6 +253,12 @@ describe('updateCommand — errors', () => {
   it('surfaces EACCES permission failures', async () => {
     const { runner } = recordingRunner([{ code: 1, stderr: 'npm ERR! Error: EACCES: permission denied' }]);
     const { deps } = makeDeps({ kind: 'global', old: '0.1.0', latest: '9.9.9', env: { npm_config_user_agent: 'npm/10' }, runner });
+    await expect(run({}, deps)).rejects.toThrow(/permissions/i);
+  });
+
+  it('reports permissions (not yarn-berry) when a yarn global install hits EACCES on a global path', async () => {
+    const { runner } = recordingRunner([{ code: 1, stderr: 'error EACCES: permission denied, mkdir /usr/local/share/.config/yarn/global' }]);
+    const { deps } = makeDeps({ kind: 'global', old: '0.1.0', latest: '9.9.9', env: { npm_config_user_agent: 'yarn/1.22.0' }, runner });
     await expect(run({}, deps)).rejects.toThrow(/permissions/i);
   });
 
