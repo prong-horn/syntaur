@@ -51,7 +51,7 @@ export function ConfirmDialog({
             className={`shell-action mt-0 disabled:cursor-not-allowed disabled:opacity-50 ${
               destructive
                 ? 'border-destructive/80 bg-destructive text-destructive-foreground hover:bg-destructive/90'
-                : 'bg-foreground text-background hover:opacity-90'
+                : 'shell-action--cta'
             }`}
             onClick={(event) => {
               event.preventDefault();

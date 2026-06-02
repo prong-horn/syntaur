@@ -62,7 +62,7 @@ export function ClaimAsDialog({ open, onOpenChange, onSubmit }: ClaimAsDialogPro
             <button
               type="submit"
               disabled={value.trim().length === 0}
-              className="shell-action bg-foreground text-background hover:opacity-90 disabled:opacity-50"
+              className="shell-action shell-action--cta disabled:opacity-50"
             >
               {DIALOG_COPY.claimAsSubmit}
             </button>

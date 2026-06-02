@@ -509,7 +509,7 @@ export function CreateWorktreeButton({
             type="button"
             disabled={submitDisabled}
             onClick={() => void handleSubmit()}
-            className="shell-action mt-0 bg-foreground text-background hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+            className="shell-action mt-0 shell-action--cta disabled:cursor-not-allowed disabled:opacity-50"
           >
             {submitting ? 'Working…' : 'Create worktree'}
           </button>

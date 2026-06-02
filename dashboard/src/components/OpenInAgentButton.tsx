@@ -197,7 +197,7 @@ export function OpenInAgentButton({
               Cancel
             </AlertDialogCancel>
             <AlertDialogAction
-              className="shell-action mt-0 bg-foreground text-background hover:opacity-90"
+              className="shell-action mt-0 shell-action--cta"
               onClick={(event) => {
                 event.preventDefault();
                 confirmFallback();
@@ -223,7 +223,7 @@ export function OpenInAgentButton({
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogAction
-              className="shell-action mt-0 bg-foreground text-background hover:opacity-90"
+              className="shell-action mt-0 shell-action--cta"
               onClick={() => setWorkspaceError(null)}
             >
               OK

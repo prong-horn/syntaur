@@ -393,7 +393,7 @@ function PromoteFooter({
       <button
         type="submit"
         disabled={submitting}
-        className="shell-action bg-foreground text-background hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+        className="shell-action shell-action--cta disabled:cursor-not-allowed disabled:opacity-50"
       >
         {submitting ? 'Submitting...' : submitLabel}
       </button>
