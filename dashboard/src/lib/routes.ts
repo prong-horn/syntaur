@@ -231,6 +231,10 @@ export function buildShellMeta(pathname: string): ShellMeta {
   } else if (parts[0] === 'views') {
     title = 'Saved Views';
     breadcrumbs.push({ label: 'Saved Views', path: `${workspacePrefix}/views` });
+    if (parts[1]) {
+      // /views/:id — the detail page sets its own title from the view name.
+      title = 'View';
+    }
   } else if (parts[0] === 'help') {
     title = 'Help';
     breadcrumbs.push({ label: 'Help', path: '/help' });

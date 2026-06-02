@@ -102,6 +102,10 @@ export function fetchSavedViews(): Promise<SavedViewsFile> {
 export interface SavedViewsFileState {
   file: SavedViewsFile;
   loading: boolean;
+  // True once THIS mount's first fetch has resolved. Distinct from `loading`,
+  // which starts false when a cache exists — so a direct deep-link can't treat a
+  // stale-cache miss as a genuine "not found" before the first revalidation lands.
+  ready: boolean;
   error: Error | null;
   refetch(): void;
 }
@@ -109,6 +113,7 @@ export interface SavedViewsFileState {
 export function useSavedViewsFile(): SavedViewsFileState {
   const [file, setFile] = useState<SavedViewsFile>(() => cachedFile ?? DEFAULT_SAVED_VIEWS_FILE);
   const [loading, setLoading] = useState<boolean>(() => cachedFile === null);
+  const [ready, setReady] = useState<boolean>(false);
   const [error, setError] = useState<Error | null>(() => lastError);
 
   useEffect(() => {
@@ -118,12 +123,14 @@ export function useSavedViewsFile(): SavedViewsFileState {
       if (!cancelled) {
         setFile(next);
         setLoading(false);
+        setReady(true);
       }
     });
     const onFile = (next: SavedViewsFile) => {
       if (!cancelled) {
         setFile(next);
         setLoading(false);
+        setReady(true);
         setError(null);
       }
     };
@@ -131,6 +138,7 @@ export function useSavedViewsFile(): SavedViewsFileState {
       if (!cancelled) {
         setError(err);
         setLoading(false);
+        setReady(true);
       }
     };
     subscribers.add(onFile);
@@ -149,7 +157,7 @@ export function useSavedViewsFile(): SavedViewsFileState {
     fetchSavedViews();
   };
 
-  return { file, loading, error, refetch };
+  return { file, loading, ready, error, refetch };
 }
 
 export function useSavedViews(): { views: SavedView[]; loading: boolean } {
@@ -165,15 +173,16 @@ export function useDashboardLayout(): { layout: SavedViewsFile['dashboard']; loa
 export interface SavedViewState {
   view: SavedView | null;
   loading: boolean;
+  ready: boolean;
   error: Error | null;
   refetch(): void;
 }
 
 export function useSavedView(id: string | null | undefined): SavedViewState {
-  const { file, loading, error, refetch } = useSavedViewsFile();
-  if (!id) return { view: null, loading: false, error: null, refetch };
+  const { file, loading, ready, error, refetch } = useSavedViewsFile();
+  if (!id) return { view: null, loading: false, ready: true, error: null, refetch };
   const view = file.views.find((v) => v.id === id) ?? null;
-  return { view, loading, error, refetch };
+  return { view, loading, ready, error, refetch };
 }
 
 async function postJson(method: 'POST' | 'PATCH' | 'PUT' | 'DELETE', url: string, body?: unknown): Promise<SavedViewsFile> {

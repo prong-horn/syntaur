@@ -205,10 +205,23 @@ export function applyConfig(view: SavedView, setters: ApplyConfigSetters): void 
   setters.setTableColumnVisibility?.({ hidden: [...config.tableColumnVisibility.hidden] });
 }
 
-// Routing helper for /views Apply button and dashboard widget link generation.
-// The view's own `workspace` field drives the prefix; the caller's current
-// workspace is irrelevant — applying a workspace-scoped view should navigate
-// to that workspace, not stay where you are.
+// The saved-views LIST route for a scope. A workspace-scoped view's chrome lives
+// under /w/<ws>/views, a global view's under /views.
+export function savedViewsIndexPath(workspace: string | null): string {
+  return workspace ? `/w/${workspace}/views` : '/views';
+}
+
+// The detail-page route for a saved view. Keyed off the VIEW's OWN workspace (not
+// the current route), so /w/<ws>/views/<id> always matches the view's scope.
+export function savedViewPath(view: Pick<SavedView, 'id' | 'workspace'>): string {
+  return `${savedViewsIndexPath(view.workspace)}/${encodeURIComponent(view.id)}`;
+}
+
+// Routing helper for the "Open on board" action and dashboard widget link
+// generation. The view's own `workspace` field drives the prefix; the caller's
+// current workspace is irrelevant — opening a workspace-scoped view on a board
+// should navigate to that workspace, not stay where you are. (Since the view-detail
+// redesign, this is the secondary "Open on board" path, not the default /views action.)
 export function inferLandingRoute(view: SavedView): string {
   const prefix = view.workspace ? `/w/${view.workspace}` : '';
   const projects = toFilterValues(view.config.filters.project);

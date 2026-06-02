@@ -1,18 +1,13 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { Pencil, Plus } from 'lucide-react';
+import { Plus } from 'lucide-react';
 import type { SavedView, ViewMode } from '@shared/saved-views-schema';
+import { useSavedViews, createSavedView } from '../hooks/useSavedViews';
+import { useSavedViewActions } from '../hooks/useSavedViewActions';
 import {
-  useSavedViews,
-  createSavedView,
-  updateSavedView,
-  deleteSavedView,
-} from '../hooks/useSavedViews';
-import {
-  inferLandingRoute,
+  savedViewPath,
   summarizeFilters,
   buildCreateViewPayload,
-  mergeUpdatedConfig,
   type CreateViewBuilderState,
 } from '../lib/savedViews';
 import { LoadingState } from '../components/LoadingState';
@@ -33,28 +28,15 @@ const VIEW_MODE_LABEL: Record<ViewMode, string> = {
 export function SavedViewsPage() {
   const { workspace } = useParams<{ workspace?: string }>();
   const { views, loading } = useSavedViews();
+  const { submitEdit, duplicate, remove } = useSavedViewActions();
   const { toast, showToast, dismissToast } = useToast();
   const [deleteTarget, setDeleteTarget] = useState<SavedView | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
   const [editTarget, setEditTarget] = useState<SavedView | null>(null);
 
-  async function handleConfirmDelete() {
-    if (!deleteTarget) return;
-    setDeleting(true);
-    try {
-      await deleteSavedView(deleteTarget.id);
-      setDeleteTarget(null);
-    } catch (err) {
-      showToast(err instanceof Error ? err.message : 'Failed to delete saved view');
-    } finally {
-      setDeleting(false);
-    }
-  }
-
-  // Build + persist a view from the dialog's builder state. The stored workspace
-  // is a raw passthrough of the route param (matching the capture flow), so the
-  // name is passed explicitly and never clobbered by the payload spread.
+  // Create-new uses the ROUTE workspace; the name is passed explicitly so the
+  // payload spread can't clobber it.
   async function handleCreate(name: string, state: CreateViewBuilderState) {
     const { workspace: ws, config } = buildCreateViewPayload(state, workspace ?? null);
     try {
@@ -63,22 +45,13 @@ export function SavedViewsPage() {
       showToast(`Created view "${name}"`);
     } catch (err) {
       showToast(err instanceof Error ? err.message : 'Failed to create saved view');
-      throw err; // keep the dialog open and let it surface the inline error
+      throw err; // keep the dialog open and surface the inline error
     }
   }
 
-  // Edit preserves the VIEW's own workspace (never the route) and merges the
-  // built fields onto the existing config so column/section visibility + unknown
-  // forward-compat keys survive (visibility from the existing view — the dialog
-  // doesn't edit it).
   async function handleEdit(target: SavedView, name: string, state: CreateViewBuilderState) {
-    // Merge against the FRESHEST view (the live list), not the dialog-open
-    // snapshot, so a concurrent change isn't clobbered with stale visibility/keys.
-    const current = views.find((v) => v.id === target.id) ?? target;
-    const built = buildCreateViewPayload(state, current.workspace).config;
-    const config = mergeUpdatedConfig(current.config, built, current.config);
     try {
-      await updateSavedView(target.id, { name, config });
+      await submitEdit(target, name, state);
       setEditTarget(null);
       showToast(`Updated view "${name}"`);
     } catch (err) {
@@ -89,14 +62,23 @@ export function SavedViewsPage() {
 
   async function handleDuplicate(view: SavedView) {
     try {
-      await createSavedView({
-        name: `${view.name} (copy)`,
-        workspace: view.workspace,
-        config: view.config,
-      });
+      await duplicate(view);
       showToast(`Duplicated "${view.name}"`);
     } catch (err) {
       showToast(err instanceof Error ? err.message : 'Failed to duplicate saved view');
+    }
+  }
+
+  async function handleConfirmDelete() {
+    if (!deleteTarget) return;
+    setDeleting(true);
+    try {
+      await remove(deleteTarget);
+      setDeleteTarget(null);
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Failed to delete saved view');
+    } finally {
+      setDeleting(false);
     }
   }
 
@@ -115,7 +97,7 @@ export function SavedViewsPage() {
     <div className="space-y-4">
       <PageHeader
         title="Saved Views"
-        description="Create a view here, or browse, rename, and apply views captured from any board."
+        description="Create a view here, or open, edit, and reuse views captured from any board."
         actions={createButton}
       />
 
@@ -134,7 +116,6 @@ export function SavedViewsPage() {
               <SavedViewRow
                 key={view.id}
                 view={view}
-                onRenameError={(msg) => showToast(msg)}
                 onRequestDelete={() => setDeleteTarget(view)}
                 onRequestEdit={() => setEditTarget(view)}
                 onRequestDuplicate={() => void handleDuplicate(view)}
@@ -156,9 +137,7 @@ export function SavedViewsPage() {
         // view edited from /w/:ws/views must stay global). Create uses the route.
         workspace={editTarget ? editTarget.workspace : workspace ?? null}
         initialView={editTarget}
-        onSubmit={
-          editTarget ? (name, state) => handleEdit(editTarget, name, state) : handleCreate
-        }
+        onSubmit={editTarget ? (name, state) => handleEdit(editTarget, name, state) : handleCreate}
       />
 
       <ConfirmDialog
@@ -185,61 +164,14 @@ export function SavedViewsPage() {
 
 interface SavedViewRowProps {
   view: SavedView;
-  onRenameError: (message: string) => void;
   onRequestDelete: () => void;
   onRequestEdit: () => void;
   onRequestDuplicate: () => void;
 }
 
-function SavedViewRow({
-  view,
-  onRenameError,
-  onRequestDelete,
-  onRequestEdit,
-  onRequestDuplicate,
-}: SavedViewRowProps) {
+function SavedViewRow({ view, onRequestDelete, onRequestEdit, onRequestDuplicate }: SavedViewRowProps) {
   const navigate = useNavigate();
-  const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState(view.name);
-  const [saving, setSaving] = useState(false);
-  const inputRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    if (editing) {
-      inputRef.current?.focus();
-      inputRef.current?.select();
-    }
-  }, [editing]);
-
-  // Sync draft when the underlying view name changes from outside (e.g. successful save).
-  useEffect(() => {
-    if (!editing) setDraft(view.name);
-  }, [view.name, editing]);
-
-  async function commitRename() {
-    const next = draft.trim();
-    if (!next || next === view.name) {
-      setDraft(view.name);
-      setEditing(false);
-      return;
-    }
-    setSaving(true);
-    try {
-      await updateSavedView(view.id, { name: next });
-      setEditing(false);
-    } catch (err) {
-      onRenameError(err instanceof Error ? err.message : 'Failed to rename saved view');
-      // Stay in edit mode on error.
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  function cancelRename() {
-    setDraft(view.name);
-    setEditing(false);
-  }
-
+  const open = () => navigate(savedViewPath(view));
   const summary = summarizeFilters(view.config.filters);
   const workspaceLabel = view.workspace ? toTitleCase(view.workspace) : null;
 
@@ -247,39 +179,14 @@ function SavedViewRow({
     <li className="flex flex-wrap items-center gap-3 py-3">
       <div className="min-w-0 flex-1 space-y-1">
         <div className="flex items-center gap-2">
-          {editing ? (
-            <input
-              ref={inputRef}
-              type="text"
-              value={draft}
-              onChange={(e) => setDraft(e.target.value)}
-              onBlur={() => {
-                if (!saving) void commitRename();
-              }}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') {
-                  e.preventDefault();
-                  void commitRename();
-                } else if (e.key === 'Escape') {
-                  e.preventDefault();
-                  cancelRename();
-                }
-              }}
-              disabled={saving}
-              className="editor-input max-w-xs text-sm font-semibold"
-              aria-label="Rename saved view"
-            />
-          ) : (
-            <button
-              type="button"
-              onClick={() => setEditing(true)}
-              className="group inline-flex items-center gap-1.5 rounded-md text-left text-sm font-semibold text-foreground hover:text-foreground/80"
-              title="Click to rename"
-            >
-              <span className="truncate">{view.name}</span>
-              <Pencil className="h-3 w-3 text-muted-foreground/50 opacity-0 transition group-hover:opacity-100" />
-            </button>
-          )}
+          <button
+            type="button"
+            onClick={open}
+            className="truncate text-left text-sm font-semibold text-foreground hover:text-primary"
+            title="Open view"
+          >
+            {view.name}
+          </button>
           <span className="inline-flex shrink-0 items-center rounded-full border border-border/70 bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
             {VIEW_MODE_LABEL[view.config.viewMode]}
           </span>
@@ -292,12 +199,8 @@ function SavedViewRow({
         <p className="truncate text-xs text-muted-foreground">{summary}</p>
       </div>
       <div className="flex shrink-0 items-center gap-2">
-        <button
-          type="button"
-          onClick={() => navigate(inferLandingRoute(view))}
-          className="shell-action"
-        >
-          Apply
+        <button type="button" onClick={open} className="shell-action">
+          Open
         </button>
         <button type="button" onClick={onRequestEdit} className="shell-action">
           Edit

@@ -37,6 +37,7 @@ import { SettingsPage } from './pages/SettingsPage';
 import { TodosPage } from './pages/TodosPage';
 import { WorkspaceTodosPage } from './pages/WorkspaceTodosPage';
 import { SavedViewsPage } from './pages/SavedViewsPage';
+import { SavedViewPage } from './pages/SavedViewPage';
 import { HotkeyProvider } from './hotkeys';
 
 export function App() {
@@ -74,6 +75,7 @@ export function App() {
             <Route path="/projects/:slug/resources/:itemSlug/edit" element={<EditResource />} />
             <Route path="/todos" element={<TodosPage />} />
             <Route path="/views" element={<SavedViewsPage />} />
+            <Route path="/views/:id" element={<SavedViewPage />} />
             <Route path="/help" element={<HelpPage />} />
             <Route path="/settings" element={<SettingsPage />} />
             <Route path="/create/project" element={<CreateProject />} />
@@ -97,6 +99,7 @@ export function App() {
             <Route path="/w/:workspace/agent-sessions" element={<AgentSessionsPage />} />
             <Route path="/w/:workspace/todos" element={<WorkspaceTodosPage />} />
             <Route path="/w/:workspace/views" element={<SavedViewsPage />} />
+            <Route path="/w/:workspace/views/:id" element={<SavedViewPage />} />
             <Route path="/w/:workspace/create/project" element={<CreateProject />} />
             <Route path="/w/:workspace/projects/:slug" element={<ProjectDetail />} />
             <Route path="/w/:workspace/projects/:slug/edit" element={<EditProject />} />

@@ -6,6 +6,8 @@ import {
   buildCreateViewPayload,
   applyConfig,
   inferLandingRoute,
+  savedViewPath,
+  savedViewsIndexPath,
   DEFAULT_CREATE_VIEW_STATE,
   type ApplyConfigSetters,
   type CreateViewBuilderState,
@@ -192,6 +194,18 @@ describe('tags / dateRange / search persistence + round-trip', () => {
     expect(isProjectDetailCompatible(withDate, 'foo')).toBe(true);
     const withSearch = buildCreateViewPayload({ ...DEFAULT_CREATE_VIEW_STATE, filters: { project: ['foo'], search: 'q' } }, null).config;
     expect(isProjectDetailCompatible(withSearch, 'foo')).toBe(false);
+  });
+});
+
+describe('savedViewsIndexPath / savedViewPath (view-detail routing, view-own workspace)', () => {
+  it('index path keys off workspace', () => {
+    expect(savedViewsIndexPath(null)).toBe('/views');
+    expect(savedViewsIndexPath('syntaur')).toBe('/w/syntaur/views');
+  });
+  it('detail path uses the view OWN workspace + encodes the id', () => {
+    expect(savedViewPath({ id: 'v1', workspace: null })).toBe('/views/v1');
+    expect(savedViewPath({ id: 'v1', workspace: 'syntaur' })).toBe('/w/syntaur/views/v1');
+    expect(savedViewPath({ id: 'a b/c', workspace: null })).toBe('/views/a%20b%2Fc');
   });
 });
 
