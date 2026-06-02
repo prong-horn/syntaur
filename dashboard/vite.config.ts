@@ -17,6 +17,7 @@ export default defineConfig({
       '@shared/agents-schema': resolve(__dirname, '../src/utils/agents-schema.ts'),
       '@shared/terminal-schema': resolve(__dirname, '../src/utils/terminal-schema.ts'),
       '@shared/branch-name': resolve(__dirname, '../src/utils/branch-name.ts'),
+      '@shared/todo-sections': resolve(__dirname, '../src/utils/todoSections.ts'),
     },
   },
   server: {

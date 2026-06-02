@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useRef } from 'react';
+import { useState, useMemo, useEffect, useRef, type DragEvent } from 'react';
 import { useParams, useSearchParams } from 'react-router-dom';
 import {
   CheckSquare,
@@ -7,28 +7,11 @@ import {
   AlertTriangle,
   Copy,
   Check,
-  GripVertical,
   Trash2,
   GitBranch,
   FileText,
   ArrowRightLeft,
 } from 'lucide-react';
-import {
-  DndContext,
-  closestCenter,
-  PointerSensor,
-  KeyboardSensor,
-  useSensor,
-  useSensors,
-  type DragEndEvent,
-} from '@dnd-kit/core';
-import {
-  SortableContext,
-  verticalListSortingStrategy,
-  useSortable,
-  arrayMove,
-} from '@dnd-kit/sortable';
-import { CSS } from '@dnd-kit/utilities';
 import {
   useTodos,
   addTodo,
@@ -36,12 +19,10 @@ import {
   blockTodo,
   startTodo,
   reopenTodo,
-  reorderTodos,
   deleteTodo,
 } from '../hooks/useTodos';
 import { LoadingState } from '../components/LoadingState';
 import { ErrorState } from '../components/ErrorState';
-import { EmptyState } from '../components/EmptyState';
 import { StatCard } from '../components/StatCard';
 import { StatusMenu } from '../components/StatusMenu';
 import { TodoPromoteModal } from '../components/TodoPromoteModal';
@@ -51,8 +32,17 @@ import { useBundles } from '../hooks/useBundles';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../components/ui/tooltip';
 import type { TodoItem } from '../types';
 import { useHotkey, useHotkeyScope, useListSelection } from '../hotkeys';
+import { NON_DRAGGABLE_SELECTOR } from '../components/KanbanBoard';
+import { TodoAccordionSection } from '../components/TodoAccordionSection';
+import { useTodoSectionCollapse } from '../hooks/useTodoSectionCollapse';
+import {
+  groupTodosBySections,
+  sectionIdForStatus,
+  type TodoSectionConfig,
+  type TodoSectionId,
+} from '@shared/todo-sections';
 
-interface SortableTodoRowProps {
+interface TodoRowProps {
   item: TodoItem;
   copiedId: string | null;
   selected: boolean;
@@ -62,12 +52,13 @@ interface SortableTodoRowProps {
   onStatusChange: (id: string, status: string) => void;
   onCopyId: (e: React.MouseEvent, id: string) => void;
   onDelete: (e: React.MouseEvent, id: string, description: string) => void;
-  disabled: boolean;
   hotkeyRowProps?: Record<string, string | number | boolean>;
-  rowIndex?: number;
+  onDragStart: (e: DragEvent<HTMLDivElement>, id: string) => void;
+  onDragEnd: () => void;
+  isDragging: boolean;
 }
 
-function SortableTodoRow({
+function TodoRow({
   item,
   copiedId,
   selected,
@@ -77,33 +68,19 @@ function SortableTodoRow({
   onStatusChange,
   onCopyId,
   onDelete,
-  disabled,
   hotkeyRowProps,
-}: SortableTodoRowProps) {
-  const {
-    attributes,
-    listeners,
-    setNodeRef,
-    setActivatorNodeRef,
-    transform,
-    transition,
-    isDragging,
-  } = useSortable({ id: item.id, disabled });
-
-  const style = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-    zIndex: isDragging ? 50 : undefined,
-    position: isDragging ? 'relative' as const : undefined,
-  };
-
+  onDragStart,
+  onDragEnd,
+  isDragging,
+}: TodoRowProps) {
   return (
     <div
-      ref={setNodeRef}
-      style={style}
+      draggable
       data-todo-id={item.id}
       {...(hotkeyRowProps ?? {})}
-      className={`surface-panel flex items-center gap-3 px-3 py-2 cursor-pointer hover:bg-foreground/[0.03] transition ${
+      onDragStart={(e) => onDragStart(e, item.id)}
+      onDragEnd={onDragEnd}
+      className={`surface-panel flex items-center gap-3 px-3 py-2 cursor-grab active:cursor-grabbing hover:bg-foreground/[0.03] transition ${
         isDragging ? 'opacity-50 shadow-lg' : ''
       }`}
       onClick={() => onCycleStatus(item.id, item.status)}
@@ -116,17 +93,6 @@ function SortableTodoRow({
         onClick={(e) => e.stopPropagation()}
         className="h-4 w-4 cursor-pointer accent-foreground"
       />
-      {!disabled && (
-        <button
-          ref={setActivatorNodeRef}
-          {...attributes}
-          {...listeners}
-          className="cursor-grab active:cursor-grabbing text-muted-foreground/40 hover:text-muted-foreground transition touch-none"
-          onClick={(e) => e.stopPropagation()}
-        >
-          <GripVertical className="h-4 w-4" />
-        </button>
-      )}
       <StatusMenu
         status={item.status as any}
         onChange={(s) => onStatusChange(item.id, s)}
@@ -263,13 +229,9 @@ export function WorkspaceTodosPage() {
   const searchRef = useRef<HTMLInputElement>(null);
   useHotkeyScope('list:todos');
 
-  const isFiltered = !!(search.trim() || statusFilter || tagFilter);
-
-  // dnd-kit sensors: require 8px movement before drag starts (prevents accidental drags)
-  const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
-    useSensor(KeyboardSensor),
-  );
+  const collapse = useTodoSectionCollapse('workspace:' + ws);
+  const [draggedId, setDraggedId] = useState<string | null>(null);
+  const [dropTargetSection, setDropTargetSection] = useState<TodoSectionId | null>(null);
 
   function copyId(e: React.MouseEvent, id: string) {
     e.stopPropagation();
@@ -392,8 +354,16 @@ export function WorkspaceTodosPage() {
     refetch();
   }
 
+  // Group the filtered todos into the three accordion sections. `renderedOrdered`
+  // is the flat list of rows actually in the DOM (expanded sections only); it
+  // must match what useListSelection queries via [data-hotkey-row-index].
+  const sections = groupTodosBySections(filtered);
+  const renderedOrdered = sections
+    .filter((s) => !collapse.isCollapsed(s.config.id))
+    .flatMap((s) => s.items);
+
   // Hotkey wiring (R3 + R5d).
-  const { hotkeyRowProps } = useListSelection(filtered, {
+  const { hotkeyRowProps } = useListSelection(renderedOrdered, {
     scope: 'list:todos',
     bindO: false,
     onOpen: (todo) => handleCycleStatus(todo.id, todo.status),
@@ -414,12 +384,24 @@ export function WorkspaceTodosPage() {
   // ?focus=<id> handler — retries until target row renders.
   const [searchParams, setSearchParams] = useSearchParams();
   const focusId = searchParams.get('focus');
+  // Expand the section holding a ?focus= target so its row can render (Done is
+  // collapsed by default). `collapse` is intentionally omitted from deps: its
+  // identity changes every render and the isCollapsed guard makes any repeat a
+  // no-op.
+  useEffect(() => {
+    if (!focusId || !data?.items) return;
+    const target = data.items.find((i) => i.id === focusId);
+    if (!target) return;
+    const sectionId = sectionIdForStatus(target.status);
+    if (collapse.isCollapsed(sectionId)) collapse.toggle(sectionId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focusId, data?.items]);
   useEffect(() => {
     if (!focusId) return;
     const node = document.querySelector<HTMLElement>(
       `[data-todo-id="${window.CSS.escape(focusId)}"]`,
     );
-    if (!node) return; // will retry when filtered.length changes (data arrives)
+    if (!node) return; // retries when renderedOrdered.length changes (data arrives / section expands)
     node.scrollIntoView({ block: 'nearest' });
     node.classList.add('ring-2', 'ring-primary/60');
     const t = window.setTimeout(() => {
@@ -431,19 +413,48 @@ export function WorkspaceTodosPage() {
       });
     }, 1500);
     return () => window.clearTimeout(t);
-  }, [focusId, filtered.length, setSearchParams]);
+  }, [focusId, renderedOrdered.length, setSearchParams]);
 
-  async function handleDragEnd(event: DragEndEvent) {
-    const { active, over } = event;
-    if (!over || active.id === over.id || !data?.items) return;
+  // --- Native drag-to-change-status (mirrors the AssignmentsPage list DnD) ---
+  const draggedItem = draggedId ? data?.items.find((i) => i.id === draggedId) ?? null : null;
 
-    const oldIndex = data.items.findIndex((i) => i.id === active.id);
-    const newIndex = data.items.findIndex((i) => i.id === over.id);
-    if (oldIndex === -1 || newIndex === -1) return;
+  function handleDragStart(e: DragEvent<HTMLDivElement>, id: string) {
+    // Don't start a drag from an interactive control (checkbox, status menu,
+    // buttons, links); let those handle their own clicks.
+    const target = e.target as HTMLElement | null;
+    if (target?.closest(NON_DRAGGABLE_SELECTOR)) {
+      e.preventDefault();
+      return;
+    }
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', id);
+    setDraggedId(id);
+  }
 
-    const reordered = arrayMove(data.items, oldIndex, newIndex);
-    await reorderTodos(ws, reordered.map((i) => i.id));
-    refetch();
+  function handleDragEnd() {
+    setDraggedId(null);
+    setDropTargetSection(null);
+  }
+
+  function handleSectionDragOver(e: DragEvent<HTMLElement>, config: TodoSectionConfig) {
+    if (!draggedItem || config.statuses.includes(draggedItem.status)) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    setDropTargetSection(config.id);
+  }
+
+  function handleSectionDragLeave(e: DragEvent<HTMLElement>, config: TodoSectionConfig) {
+    if (dropTargetSection === config.id && !e.currentTarget.contains(e.relatedTarget as Node)) {
+      setDropTargetSection(null);
+    }
+  }
+
+  function handleSectionDrop(e: DragEvent<HTMLElement>, config: TodoSectionConfig) {
+    e.preventDefault();
+    const item = draggedItem;
+    handleDragEnd();
+    if (!item || config.statuses.includes(item.status)) return;
+    handleStatusChange(item.id, config.dropStatus);
   }
 
   if (loading) return <LoadingState label="Loading todos..." />;
@@ -558,57 +569,64 @@ export function WorkspaceTodosPage() {
         </div>
       ) : null}
 
-      {/* Items */}
-      {filtered.length === 0 ? (
-        <EmptyState
-          title="No todos"
-          description="Add your first todo above."
-        />
-      ) : (
-        <>
-          {/* Header row with select-all checkbox (matches current filter) */}
-          <div className="flex items-center gap-3 px-3 py-1 text-xs text-muted-foreground">
-            <input
-              type="checkbox"
-              aria-label="Select all visible todos"
-              checked={allVisibleSelected}
-              ref={(el) => { if (el) el.indeterminate = someVisibleSelected; }}
-              onChange={toggleAllVisible}
-              className="h-4 w-4 cursor-pointer accent-foreground"
-            />
-            <span>Select all in current filter ({filtered.length})</span>
-          </div>
-          <DndContext
-            sensors={sensors}
-            collisionDetection={closestCenter}
-            onDragEnd={handleDragEnd}
-          >
-            <SortableContext
-              items={filtered.map((i) => i.id)}
-              strategy={verticalListSortingStrategy}
-            >
-              <div className="space-y-1">
-                {filtered.map((item, i) => (
-                  <SortableTodoRow
-                    key={item.id}
-                    item={item}
-                    copiedId={copiedId}
-                    selected={selectedIds.has(item.id)}
-                    onToggleSelected={(id) => toggleOne(id)}
-                    onMoveOne={(id, e) => { e.stopPropagation(); setMoveSingleId(id); setMoveOpen(true); }}
-                    onCycleStatus={handleCycleStatus}
-                    onStatusChange={handleStatusChange}
-                    onCopyId={copyId}
-                    onDelete={handleDelete}
-                    disabled={isFiltered}
-                    hotkeyRowProps={hotkeyRowProps(i)}
-                  />
-                ))}
-              </div>
-            </SortableContext>
-          </DndContext>
-        </>
+      {/* Items — accordion sections by status */}
+      {filtered.length > 0 && (
+        <div className="flex items-center gap-3 px-3 py-1 text-xs text-muted-foreground">
+          <input
+            type="checkbox"
+            aria-label="Select all visible todos"
+            checked={allVisibleSelected}
+            ref={(el) => { if (el) el.indeterminate = someVisibleSelected; }}
+            onChange={toggleAllVisible}
+            className="h-4 w-4 cursor-pointer accent-foreground"
+          />
+          <span>Select all in current filter ({filtered.length})</span>
+        </div>
       )}
+      <div className="space-y-3">
+        {(() => {
+          let flatIndex = -1;
+          return sections.map(({ config, items }) => {
+            const expanded = !collapse.isCollapsed(config.id);
+            return (
+              <TodoAccordionSection
+                key={config.id}
+                label={config.label}
+                count={items.length}
+                expanded={expanded}
+                onToggle={() => collapse.toggle(config.id)}
+                isDropTarget={dropTargetSection === config.id}
+                onDragOver={(e) => handleSectionDragOver(e, config)}
+                onDragLeave={(e) => handleSectionDragLeave(e, config)}
+                onDrop={(e) => handleSectionDrop(e, config)}
+              >
+                {expanded &&
+                  items.map((item) => {
+                    flatIndex += 1;
+                    return (
+                      <TodoRow
+                        key={item.id}
+                        item={item}
+                        copiedId={copiedId}
+                        selected={selectedIds.has(item.id)}
+                        onToggleSelected={(id) => toggleOne(id)}
+                        onMoveOne={(id, e) => { e.stopPropagation(); setMoveSingleId(id); setMoveOpen(true); }}
+                        onCycleStatus={handleCycleStatus}
+                        onStatusChange={handleStatusChange}
+                        onCopyId={copyId}
+                        onDelete={handleDelete}
+                        hotkeyRowProps={hotkeyRowProps(flatIndex)}
+                        onDragStart={handleDragStart}
+                        onDragEnd={handleDragEnd}
+                        isDragging={draggedId === item.id}
+                      />
+                    );
+                  })}
+              </TodoAccordionSection>
+            );
+          });
+        })()}
+      </div>
 
       <TodoPromoteModal
         open={promoteOpen}

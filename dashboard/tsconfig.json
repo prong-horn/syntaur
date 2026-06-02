@@ -24,7 +24,8 @@
       "@shared/saved-views-schema": ["../src/utils/saved-views-schema.ts"],
       "@shared/agents-schema": ["../src/utils/agents-schema.ts"],
       "@shared/terminal-schema": ["../src/utils/terminal-schema.ts"],
-      "@shared/branch-name": ["../src/utils/branch-name.ts"]
+      "@shared/branch-name": ["../src/utils/branch-name.ts"],
+      "@shared/todo-sections": ["../src/utils/todoSections.ts"]
     }
   },
   "include": [
@@ -34,6 +35,8 @@
     "../src/utils/saved-views-schema.ts",
     "../src/utils/agents-schema.ts",
     "../src/utils/terminal-schema.ts",
-    "../src/utils/branch-name.ts"
+    "../src/utils/branch-name.ts",
+    "../src/utils/todoSections.ts",
+    "../src/todos/types.ts"
   ]
 }
