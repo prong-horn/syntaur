@@ -18,6 +18,7 @@ import { reviewCommand } from './commands/review.js';
 import { failCommand } from './commands/fail.js';
 import { reopenCommand } from './commands/reopen.js';
 import { installPluginCommand } from './commands/install-plugin.js';
+import { updateCommand } from './commands/update.js';
 import { installStatuslineCommand, uninstallStatuslineCommand, type StatuslineMode } from './commands/install-statusline.js';
 import { configureStatuslineCommand, PRESETS as STATUSLINE_PRESETS } from './commands/configure-statusline.js';
 import { installCodexPluginCommand } from './commands/install-codex-plugin.js';
@@ -61,8 +62,16 @@ import { maybeNudgeForNpxInstall } from './launch/index.js';
 import { spliceDashDashFromArgv } from './utils/argv-split.js';
 import { readPackageVersion } from './utils/version.js';
 
-await maybePromptInstall(import.meta.url);
-await maybeNudgeForNpxInstall(import.meta.url);
+// Skip the npx/global-install startup nudges for `update`/`upgrade` — that
+// command does its own install-kind detection and must stay read-only for
+// --check/--dry-run (a startup prompt could install before it even runs).
+{
+  const sub = process.argv[2];
+  if (sub !== 'update' && sub !== 'upgrade') {
+    await maybePromptInstall(import.meta.url);
+    await maybeNudgeForNpxInstall(import.meta.url);
+  }
+}
 
 let captureDashDashArgv: string[] = [];
 
@@ -525,6 +534,30 @@ program
   .action(async (options) => {
     try {
       await installPluginCommand({ ...options, promptForTarget: true });
+    } catch (error) {
+      console.error(
+        'Error:',
+        error instanceof Error ? error.message : String(error),
+      );
+      process.exit(1);
+    }
+  });
+
+program
+  .command('update')
+  .alias('upgrade')
+  .description('Self-update the global syntaur package and refresh the plugin/skills')
+  .option('--version <v>', 'Update to a specific version instead of latest')
+  .option('--check', 'Report whether an update is available; apply nothing')
+  .option('--dry-run', 'Print what would happen without changing anything')
+  .option('--skip-refresh', 'Update the package only; do not refresh the plugin/skills')
+  .option('--force-skills', 'Overwrite user-edited skills during the refresh')
+  .option('--enable', 'Enable the plugin in settings.json during the refresh')
+  .option('--pm <name>', 'Override package-manager detection (npm|pnpm|yarn|bun)')
+  .option('--yes', 'Assume yes for any confirmation (non-interactive)')
+  .action(async (options) => {
+    try {
+      await updateCommand({ ...options, scriptUrl: import.meta.url });
     } catch (error) {
       console.error(
         'Error:',
