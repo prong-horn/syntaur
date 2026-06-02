@@ -22,6 +22,7 @@
       "@shared/hotkeys-catalog": ["../src/utils/hotkeysCatalog.ts"],
       "@shared/view-prefs-schema": ["../src/utils/view-prefs-schema.ts"],
       "@shared/saved-views-schema": ["../src/utils/saved-views-schema.ts"],
+      "@shared/saved-view-builder": ["../src/utils/saved-view-builder.ts"],
       "@shared/agents-schema": ["../src/utils/agents-schema.ts"],
       "@shared/terminal-schema": ["../src/utils/terminal-schema.ts"],
       "@shared/branch-name": ["../src/utils/branch-name.ts"]
@@ -32,6 +33,7 @@
     "../src/utils/hotkeysCatalog.ts",
     "../src/utils/view-prefs-schema.ts",
     "../src/utils/saved-views-schema.ts",
+    "../src/utils/saved-view-builder.ts",
     "../src/utils/agents-schema.ts",
     "../src/utils/terminal-schema.ts",
     "../src/utils/branch-name.ts"
