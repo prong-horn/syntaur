@@ -2,7 +2,8 @@ import { Command } from 'commander';
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { fileExists, writeFileForce } from '../utils/fs.js';
-import { defaultProjectDir, assignmentsDir } from '../utils/paths.js';
+import { assignmentsDir } from '../utils/paths.js';
+import { readConfig } from '../utils/config.js';
 import { nowTimestamp } from '../utils/timestamp.js';
 import { updateAssignmentWorkspace, updateAssignmentFile } from '../lifecycle/frontmatter.js';
 import { validateAssignmentFile } from './doctor.js';
@@ -28,7 +29,8 @@ async function resolveAssignmentPath(opts: {
 }): Promise<string> {
   if (opts.assignment) {
     if (opts.project) {
-      return resolve(defaultProjectDir(), opts.project, 'assignments', opts.assignment, 'assignment.md');
+      const projectsDir = (await readConfig()).defaultProjectDir;
+      return resolve(projectsDir, opts.project, 'assignments', opts.assignment, 'assignment.md');
     }
     return resolve(assignmentsDir(), opts.assignment, 'assignment.md');
   }

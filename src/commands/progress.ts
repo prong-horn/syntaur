@@ -2,7 +2,8 @@ import { Command } from 'commander';
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { fileExists, writeFileForce } from '../utils/fs.js';
-import { defaultProjectDir, assignmentsDir } from '../utils/paths.js';
+import { assignmentsDir } from '../utils/paths.js';
+import { readConfig } from '../utils/config.js';
 import { nowTimestamp } from '../utils/timestamp.js';
 import { formatProgressEntry, renderProgress } from '../templates/index.js';
 
@@ -28,8 +29,9 @@ async function resolveAssignmentDir(opts: {
 }): Promise<{ dir: string; slug: string }> {
   if (opts.assignment) {
     if (opts.project) {
+      const projectsDir = (await readConfig()).defaultProjectDir;
       return {
-        dir: resolve(defaultProjectDir(), opts.project, 'assignments', opts.assignment),
+        dir: resolve(projectsDir, opts.project, 'assignments', opts.assignment),
         slug: opts.assignment,
       };
     }
@@ -105,6 +107,9 @@ export async function runProgressLog(
     project: options.project,
     cwd,
   });
+  if (!(await fileExists(resolve(dir, 'assignment.md')))) {
+    throw new Error(`No assignment found at ${dir} (missing assignment.md).`);
+  }
   const path = resolve(dir, 'progress.md');
   const now = nowTimestamp();
 

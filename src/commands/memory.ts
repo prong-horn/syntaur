@@ -1,7 +1,7 @@
 import { Command } from 'commander';
 import { resolve } from 'node:path';
 import { readFile, readdir, rm } from 'node:fs/promises';
-import { defaultProjectDir } from '../utils/paths.js';
+import { readConfig } from '../utils/config.js';
 import { fileExists, writeFileForce } from '../utils/fs.js';
 import { isValidSlug, slugify } from '../utils/slug.js';
 import { rebuildMemoriesIndex } from '../utils/project-indexes.js';
@@ -70,7 +70,7 @@ ${opts.body ?? '<!-- Capture the load-bearing context for this memory here. -->'
 
 async function resolveProjectDir(project: string): Promise<string> {
   if (!isValidSlug(project)) throw new Error(`Invalid project slug: "${project}".`);
-  const projectDir = resolve(defaultProjectDir(), project);
+  const projectDir = resolve((await readConfig()).defaultProjectDir, project);
   if (!(await fileExists(resolve(projectDir, 'project.md')))) {
     throw new Error(`Project "${project}" not found at ${projectDir}.`);
   }
@@ -80,13 +80,7 @@ async function resolveProjectDir(project: string): Promise<string> {
 export async function runMemoryAdd(
   options: MemoryAddOptions,
 ): Promise<{ filePath: string; indexPath: string; total: number }> {
-  if (!isValidSlug(options.project)) {
-    throw new Error(`Invalid project slug: "${options.project}".`);
-  }
-  const projectDir = resolve(defaultProjectDir(), options.project);
-  if (!(await fileExists(resolve(projectDir, 'project.md')))) {
-    throw new Error(`Project "${options.project}" not found at ${projectDir}.`);
-  }
+  const projectDir = await resolveProjectDir(options.project);
   if (!options.name) throw new Error('--name is required.');
   if (!options.source) throw new Error('--source is required.');
 

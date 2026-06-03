@@ -41,6 +41,7 @@ describe('syntaur progress log', () => {
     home = await mkdtemp(join(tmpdir(), 'syntaur-prog-'));
     const dir = resolve(home, 'projects', 'p', 'assignments', 'a');
     await mkdir(dir, { recursive: true });
+    await writeFile(resolve(dir, 'assignment.md'), '---\nid: x\nslug: a\nstatus: in_progress\n---\n# A\n', 'utf-8');
     progressPath = resolve(dir, 'progress.md');
     await writeFile(progressPath, PROGRESS, 'utf-8');
   });

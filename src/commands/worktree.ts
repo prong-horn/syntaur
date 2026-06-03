@@ -9,7 +9,8 @@ import {
   type WorktreeEntry,
 } from '../utils/git-worktree.js';
 import { fileExists, writeFileForce } from '../utils/fs.js';
-import { defaultProjectDir, assignmentsDir } from '../utils/paths.js';
+import { assignmentsDir } from '../utils/paths.js';
+import { readConfig } from '../utils/config.js';
 import { nowTimestamp } from '../utils/timestamp.js';
 import {
   parseAssignmentFrontmatter,
@@ -53,13 +54,8 @@ async function resolveAssignmentPath(opts: {
 }): Promise<string> {
   if (opts.assignment) {
     if (opts.project) {
-      return resolve(
-        defaultProjectDir(),
-        opts.project,
-        'assignments',
-        opts.assignment,
-        'assignment.md',
-      );
+      const projectsDir = (await readConfig()).defaultProjectDir;
+      return resolve(projectsDir, opts.project, 'assignments', opts.assignment, 'assignment.md');
     }
     return resolve(assignmentsDir(), opts.assignment, 'assignment.md');
   }
@@ -153,13 +149,17 @@ export async function runWorktreeRemove(
     throw new Error('No worktreePath recorded in the assignment workspace — nothing to remove.');
   }
 
-  // 1. Git teardown first. On failure, leave the frontmatter untouched.
-  const removed = await removeWorktree(repository, worktreePath, { force: options.force });
-  if (!removed.ok) {
-    throw new Error(
-      `git worktree remove failed: ${removed.stderr.trim() || '(no stderr)'}` +
-        (options.force ? '' : '\nThe worktree may be dirty or locked — re-run with --force to discard it.'),
-    );
+  // 1. Git teardown first. On failure, leave the frontmatter untouched. If the
+  // worktree dir is already gone (e.g. a prior run removed it but then failed on
+  // branch deletion), skip removal so the operation is rerunnable.
+  if (await fileExists(worktreePath)) {
+    const removed = await removeWorktree(repository, worktreePath, { force: options.force });
+    if (!removed.ok) {
+      throw new Error(
+        `git worktree remove failed: ${removed.stderr.trim() || '(no stderr)'}` +
+          (options.force ? '' : '\nThe worktree may be dirty or locked — re-run with --force to discard it.'),
+      );
+    }
   }
 
   // 2. Optional branch deletion. When --delete-branch was explicitly requested it

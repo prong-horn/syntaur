@@ -2,7 +2,8 @@ import { Command } from 'commander';
 import { readFile, readdir, stat } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { fileExists, writeFileForce } from '../utils/fs.js';
-import { defaultProjectDir, assignmentsDir } from '../utils/paths.js';
+import { assignmentsDir } from '../utils/paths.js';
+import { readConfig } from '../utils/config.js';
 import { nowTimestamp } from '../utils/timestamp.js';
 
 interface ContextFile {
@@ -196,7 +197,7 @@ async function resolveSaveTarget(
 
   if (options.assignment) {
     assignmentDir = options.project
-      ? resolve(defaultProjectDir(), options.project, 'assignments', options.assignment)
+      ? resolve((await readConfig()).defaultProjectDir, options.project, 'assignments', options.assignment)
       : resolve(assignmentsDir(), options.assignment);
     slug = options.assignment;
   } else {
@@ -260,6 +261,9 @@ export async function runSessionSave(
   body?: string,
 ): Promise<string> {
   const { assignmentDir, slug, sessionId } = await resolveSaveTarget(options, cwd);
+  if (!(await fileExists(resolve(assignmentDir, 'assignment.md')))) {
+    throw new Error(`No assignment found at ${assignmentDir} (missing assignment.md).`);
+  }
   const sessionDir = resolve(assignmentDir, 'sessions', sessionId);
   const summaryPath = resolve(sessionDir, 'summary.md');
   const now = nowTimestamp();

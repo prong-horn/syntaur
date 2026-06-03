@@ -220,4 +220,27 @@ describe('syntaur status', () => {
     expect(r.code).toBe(1);
     expect(r.stderr).toContain('init');
   });
+
+  it('a custom block with no transitions: list shows defaults, transition add preserves them', async () => {
+    // A statuses block with definitions + order but NO transitions: block — the
+    // runtime (and dashboard) materialize the default transitions for this case.
+    await writeFile(
+      resolve(home, 'config.md'),
+      `---\nversion: "2.0"\ndefaultProjectDir: ${resolve(home, 'projects')}\nstatuses:\n  definitions:\n    - id: pending\n      label: Pending\n    - id: done\n      label: Done\n      terminal: true\n  order:\n    - pending\n    - done\n---\n`,
+      'utf-8',
+    );
+    const before = await list();
+    expect(before.source).toBe('config');
+    expect(before.transitions.length).toBeGreaterThan(0); // materialized defaults, not []
+
+    const add = await runCli(
+      ['status', 'transition', 'add', '--from', 'pending', '--command', 'finish', '--to', 'done'],
+      home,
+    );
+    expect(add.code, add.stderr).toBe(0);
+    const after = await list();
+    // The new transition is present AND the default transitions were not wiped.
+    expect(after.transitions.some((t) => t.command === 'finish')).toBe(true);
+    expect(after.transitions.length).toBeGreaterThan(1);
+  });
 });

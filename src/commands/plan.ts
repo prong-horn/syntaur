@@ -2,7 +2,8 @@ import { Command } from 'commander';
 import { readFile, readdir } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { fileExists, writeFileForce } from '../utils/fs.js';
-import { defaultProjectDir, assignmentsDir } from '../utils/paths.js';
+import { assignmentsDir } from '../utils/paths.js';
+import { readConfig } from '../utils/config.js';
 
 interface ContextFile {
   projectSlug?: string;
@@ -44,7 +45,7 @@ async function resolveAssignmentDir(opts: {
   const cwd = opts.cwd ?? process.cwd();
   if (opts.assignment) {
     if (opts.project) {
-      return resolve(defaultProjectDir(), opts.project, 'assignments', opts.assignment);
+      return resolve((await readConfig()).defaultProjectDir, opts.project, 'assignments', opts.assignment);
     }
     // Standalone (assignment is UUID under ~/.syntaur/assignments/)
     return resolve(assignmentsDir(), opts.assignment);

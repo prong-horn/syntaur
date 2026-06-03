@@ -97,6 +97,18 @@ function lineDiff(before: string, after: string): string {
   return out.join('\n');
 }
 
+/**
+ * The transitions that are actually in effect for a block: its own if non-empty,
+ * else the built-in defaults (matching the dashboard, which materializes default
+ * transitions when a custom statuses block omits `transitions:`). Mutating verbs
+ * must operate on these so that, e.g., `transition add` doesn't silently wipe the
+ * default transitions and `remove`/`rename` don't leave defaults pointing at a
+ * dropped/old id.
+ */
+function effectiveTransitions(block: StatusConfig): StatusConfig['transitions'] {
+  return block.transitions.length > 0 ? block.transitions : buildDefaultStatusConfig().transitions;
+}
+
 /** Render the `statuses:` block (or "(none)" when null) for diffing. */
 function renderBlock(cfg: StatusConfig | null): string {
   return cfg ? serializeStatusConfig(cfg) : '(no statuses block)';
@@ -332,7 +344,7 @@ export async function runStatusRemove(
   const after: StatusConfig = {
     statuses: before.statuses.filter((s) => s.id !== id),
     order: before.order.filter((o) => o !== id),
-    transitions: before.transitions.filter((t) => t.from !== id && t.to !== id),
+    transitions: effectiveTransitions(before).filter((t) => t.from !== id && t.to !== id),
   };
 
   if (opts.dryRun) {
@@ -368,7 +380,7 @@ export async function runStatusRename(
       s.id === id ? { ...s, id: newId, label: opts.label ?? s.label } : s,
     ),
     order: before.order.map((o) => (o === id ? newId : o)),
-    transitions: before.transitions.map((t) => ({
+    transitions: effectiveTransitions(before).map((t) => ({
       ...t,
       from: t.from === id ? newId : t.from,
       to: t.to === id ? newId : t.to,
@@ -442,7 +454,8 @@ export async function runStatusTransitionAdd(opts: TransitionAddOptions): Promis
   const ids = new Set(before.statuses.map((s) => s.id));
   if (!ids.has(opts.from)) throw new Error(`--from "${opts.from}" is not a defined status`);
   if (!ids.has(opts.to)) throw new Error(`--to "${opts.to}" is not a defined status`);
-  if (before.transitions.some((t) => t.from === opts.from && t.command === opts.command)) {
+  const base = effectiveTransitions(before);
+  if (base.some((t) => t.from === opts.from && t.command === opts.command)) {
     throw new Error(`a transition from "${opts.from}" with command "${opts.command}" already exists`);
   }
   const transition: StatusConfig['transitions'][number] = {
@@ -456,7 +469,7 @@ export async function runStatusTransitionAdd(opts: TransitionAddOptions): Promis
   const after: StatusConfig = {
     statuses: before.statuses,
     order: before.order,
-    transitions: [...before.transitions, transition],
+    transitions: [...base, transition],
   };
   if (opts.dryRun) {
     printBlockDiff(before, after);
@@ -472,10 +485,9 @@ export async function runStatusTransitionRemove(opts: {
 }): Promise<void> {
   if (!opts.from || !opts.command) throw new Error('--from and --command are required');
   const before = await requireStatusBlock();
-  const remaining = before.transitions.filter(
-    (t) => !(t.from === opts.from && t.command === opts.command),
-  );
-  if (remaining.length === before.transitions.length) {
+  const base = effectiveTransitions(before);
+  const remaining = base.filter((t) => !(t.from === opts.from && t.command === opts.command));
+  if (remaining.length === base.length) {
     throw new Error(`no transition from "${opts.from}" with command "${opts.command}" found`);
   }
   const after: StatusConfig = {
