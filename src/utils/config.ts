@@ -117,6 +117,12 @@ export interface HotkeyBindingsConfig {
 import { TERMINAL_CHOICES, type TerminalChoice } from './terminal-schema.js';
 export { TERMINAL_CHOICES, type TerminalChoice };
 
+import {
+  normalizeHiddenList,
+  type WorkspaceVisibilityConfig,
+} from './workspace-visibility-schema.js';
+export { type WorkspaceVisibilityConfig };
+
 export interface SyntaurConfig {
   version: string;
   defaultProjectDir: string;
@@ -135,6 +141,7 @@ export interface SyntaurConfig {
   theme: ThemeConfig | null;
   hotkeys: HotkeyBindingsConfig | null;
   terminal: TerminalChoice | null;
+  workspaceVisibility: WorkspaceVisibilityConfig;
 }
 
 const DEFAULT_CONFIG: SyntaurConfig = {
@@ -163,6 +170,9 @@ const DEFAULT_CONFIG: SyntaurConfig = {
   theme: null,
   hotkeys: null,
   terminal: null,
+  workspaceVisibility: {
+    hidden: [],
+  },
 };
 
 const AUTO_CREATE_WORKTREE_VALUES: readonly AutoCreateWorktree[] = ['skip', 'ask', 'always'];
@@ -293,6 +303,9 @@ function cloneDefaultConfig(): SyntaurConfig {
       ? { bindings: { ...DEFAULT_CONFIG.hotkeys.bindings } }
       : null,
     terminal: DEFAULT_CONFIG.terminal,
+    workspaceVisibility: {
+      hidden: [...DEFAULT_CONFIG.workspaceVisibility.hidden],
+    },
   };
 }
 
@@ -685,6 +698,124 @@ export async function deleteThemeConfig(): Promise<void> {
   const fmBlock = fmMatch[2];
   const afterFrontmatter = existing.slice(fmMatch[0].length);
   const cleanedFm = stripTopLevelBlock(fmBlock, 'theme');
+  const newContent = `---\n${cleanedFm}\n---${afterFrontmatter}`;
+  await writeFileForce(configPath, newContent);
+}
+
+/**
+ * Serialize the workspace-visibility blocklist. Mirrors the `playbooks.disabled`
+ * list shape but JSON-escapes each entry so arbitrary workspace names (spaces,
+ * quotes, backslashes) round-trip. Returns `null` for an empty list so the
+ * writer omits the block entirely (absent = all workspaces visible).
+ */
+function serializeWorkspaceVisibilityConfig(
+  cfg: WorkspaceVisibilityConfig,
+): string | null {
+  const hidden = normalizeHiddenList(cfg.hidden);
+  if (hidden.length === 0) return null;
+  const lines: string[] = ['workspaceVisibility:', '  hidden:'];
+  for (const name of hidden) {
+    lines.push(`    - ${JSON.stringify(name)}`);
+  }
+  return lines.join('\n');
+}
+
+/**
+ * Parse the workspace-visibility blocklist from a frontmatter block. Unlike
+ * `parsePlaybooksConfig` (which rejects whitespace-containing slugs), workspace
+ * names are arbitrary: a JSON-quoted entry is `JSON.parse`d, an unquoted entry
+ * is taken literally. Absent block → empty list (everything visible).
+ */
+function parseWorkspaceVisibilityConfig(
+  fmBlock: string,
+): WorkspaceVisibilityConfig {
+  const blockStart = fmBlock.match(/^workspaceVisibility:\s*$/m);
+  if (!blockStart) {
+    return { hidden: [] };
+  }
+
+  const startIdx = fmBlock.indexOf(blockStart[0]) + blockStart[0].length;
+  const remaining = fmBlock.slice(startIdx).split('\n');
+
+  const hidden: string[] = [];
+  let currentSection: 'hidden' | null = null;
+
+  for (const line of remaining) {
+    const trimmed = line.trimStart();
+    const indent = line.length - trimmed.length;
+
+    // End of block — next top-level key.
+    if (indent === 0 && trimmed.length > 0) break;
+    if (trimmed === '') continue;
+
+    if (indent === 2 && trimmed.startsWith('hidden:')) {
+      currentSection = 'hidden';
+      // Support inline form `hidden: []` — treat as empty list.
+      continue;
+    }
+
+    if (currentSection === 'hidden' && indent >= 4 && trimmed.startsWith('- ')) {
+      const rest = trimmed.slice(2).trim();
+      if (rest.length === 0) continue;
+      let name: string;
+      if (rest.startsWith('"')) {
+        try {
+          name = JSON.parse(rest) as string;
+        } catch {
+          // Hand-edited / malformed — strip a single surrounding quote pair.
+          name = rest.replace(/^["']|["']$/g, '');
+        }
+      } else {
+        name = rest;
+      }
+      hidden.push(name);
+      continue;
+    }
+  }
+
+  return { hidden: normalizeHiddenList(hidden) };
+}
+
+export async function writeWorkspaceVisibilityConfig(
+  cfg: WorkspaceVisibilityConfig,
+): Promise<void> {
+  const configPath = resolve(syntaurRoot(), 'config.md');
+  const block = serializeWorkspaceVisibilityConfig(cfg);
+
+  const existing = (await fileExists(configPath))
+    ? await readFile(configPath, 'utf-8')
+    : renderConfig({ defaultProjectDir: defaultProjectDir() });
+
+  const fmMatch = existing.match(/^(---\n)([\s\S]*?)\n(---)/);
+  if (!fmMatch) {
+    const bodyBlock = block ? `${block}\n` : '';
+    const content = `---\nversion: "2.0"\ndefaultProjectDir: ${defaultProjectDir()}\n${bodyBlock}---\n${existing}`;
+    await writeFileForce(configPath, content);
+    return;
+  }
+
+  const fmBlock = fmMatch[2];
+  const afterFrontmatter = existing.slice(fmMatch[0].length);
+  const cleanedFm = stripTopLevelBlock(fmBlock, 'workspaceVisibility');
+  const newFm = block
+    ? `${cleanedFm}\n${block}`.replace(/^\n+/, '')
+    : cleanedFm;
+  const normalizedFm = newFm.replace(/\n+$/, '');
+  const newContent = `---\n${normalizedFm}\n---${afterFrontmatter}`;
+  await writeFileForce(configPath, newContent);
+}
+
+export async function deleteWorkspaceVisibilityConfig(): Promise<void> {
+  const configPath = resolve(syntaurRoot(), 'config.md');
+  if (!(await fileExists(configPath))) return;
+
+  const existing = await readFile(configPath, 'utf-8');
+  const fmMatch = existing.match(/^(---\n)([\s\S]*?)\n(---)/);
+  if (!fmMatch) return;
+
+  const fmBlock = fmMatch[2];
+  const afterFrontmatter = existing.slice(fmMatch[0].length);
+  const cleanedFm = stripTopLevelBlock(fmBlock, 'workspaceVisibility');
   const newContent = `---\n${cleanedFm}\n---${afterFrontmatter}`;
   await writeFileForce(configPath, newContent);
 }
@@ -1514,6 +1645,7 @@ export async function readConfig(): Promise<SyntaurConfig> {
         return null;
       }
     })(),
+    workspaceVisibility: parseWorkspaceVisibilityConfig(fmBlock),
   };
 }
 
