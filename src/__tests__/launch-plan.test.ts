@@ -472,6 +472,20 @@ describe('buildTerminalInvocation', () => {
     expect(inv.args.join(' ')).toContain("'--resume' 'sess-1'");
   });
 
+  it('terminal-app avoids the cold-start blank window (reuses launch window when not running)', () => {
+    const inv = buildTerminalInvocation(makePlan({ terminal: 'terminal-app' }));
+    const script = inv.args.join('\n');
+    // Running state captured BEFORE the tell block so checking it does not
+    // launch Terminal.
+    expect(script).toContain('set wasRunning to application "Terminal" is running');
+    expect(script.indexOf('set wasRunning')).toBeLessThan(
+      script.indexOf('tell application "Terminal"'),
+    );
+    // Cold start reuses the blank launch window instead of opening a second.
+    expect(script).toContain('if wasRunning then');
+    expect(script).toContain('in window 1');
+  });
+
   it('iterm builds an osascript create-window call', () => {
     const inv = buildTerminalInvocation(makePlan({ terminal: 'iterm' }));
     expect(inv.command).toBe('osascript');

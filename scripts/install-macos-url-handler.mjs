@@ -360,12 +360,25 @@ function detectInstalledTerminals() {
 function buildTerminalDispatch(installedTerminals) {
   const branches = [];
   if (installedTerminals.has('terminal-app')) {
+    // Terminal.app cold-start quirk: launching it auto-opens a blank window,
+    // and `do script` opens ANOTHER — two windows, one blank. Capture the
+    // running state BEFORE the `tell` block (addressing Terminal would launch
+    // it), then on a cold start run the command in the blank launch window
+    // instead of opening a second one. Warm starts still get a fresh window.
     branches.push({
       id: 'terminal-app',
       block: [
+        '\t\t\tset wasRunning to application "Terminal" is running',
         '\t\t\ttell application "Terminal"',
         '\t\t\t\tactivate',
-        '\t\t\t\tdo script shellCmd',
+        '\t\t\t\tif wasRunning then',
+        '\t\t\t\t\tdo script shellCmd',
+        '\t\t\t\telse',
+        '\t\t\t\t\trepeat until (count of windows) > 0',
+        '\t\t\t\t\t\tdelay 0.1',
+        '\t\t\t\t\tend repeat',
+        '\t\t\t\t\tdo script shellCmd in window 1',
+        '\t\t\t\tend if',
         '\t\t\tend tell',
       ],
     });
