@@ -56,6 +56,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "mirror-skills": "node scripts/mirror-skills-to-platforms.mjs",
+    "build:skills-index": "node scripts/build-skills-index.mjs",
     "postinstall": "node scripts/install-macos-url-handler.mjs",
     "prepack": "node scripts/mirror-skills-to-platforms.mjs",
     "prepublishOnly": "npm run build && npm ci --prefix dashboard && npm run build --prefix dashboard",

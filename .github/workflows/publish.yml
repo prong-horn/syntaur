@@ -18,6 +18,7 @@ on:
 permissions:
   contents: write
   id-token: write
+  pages: write
 
 jobs:
   release:
@@ -86,3 +87,49 @@ jobs:
           repository: prong-horn/syntaur-app
           event-type: syntaur-published
           client-payload: '{"version": "${{ steps.extract.outputs.version }}"}'
+
+  # Generate the Agent Skills v0.2.0 discovery index from skills/ and deploy it
+  # (plus the per-skill artifacts) to GitHub Pages, so `npx skills add
+  # https://prong-horn.github.io/syntaur` resolves + content-verifies Syntaur
+  # skills over HTTP. Runs only after `release` (its full test suite is the
+  # drift gate) and in the SAME run for both triggers, so it never depends on
+  # the bot-pushed tag re-triggering a workflow.
+  #
+  # One-time prerequisite: enable Pages with Source = GitHub Actions
+  #   gh api -X POST repos/prong-horn/syntaur/pages -f build_type=workflow
+  # (configure-pages `enablement: true` below also attempts this when the token
+  # has pages: write).
+  pages:
+    needs: release
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+
+      - name: Generate .well-known skills index
+        run: node scripts/build-skills-index.mjs --out-dir _site/.well-known/agent-skills
+
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+        with:
+          enablement: true
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+      - name: Deploy to GitHub Pages
+        id: deploy
+        uses: actions/deploy-pages@v4
