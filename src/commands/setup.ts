@@ -6,6 +6,7 @@ import { installCodexPluginCommand } from './install-codex-plugin.js';
 import { isSyntaurDataInstalled, getPluginInstallCommand } from '../utils/install.js';
 import { confirmPrompt, isInteractiveTerminal } from '../utils/prompt.js';
 import { updateOnboardingConfig } from '../utils/config.js';
+import { crossAgentInstallCommand } from './cross-agent-install.js';
 
 function isCliInstalled(command: string): boolean {
   try {
@@ -24,6 +25,12 @@ export interface SetupOptions {
   claudeDir?: string;
   codexDir?: string;
   codexMarketplacePath?: string;
+  // Cross-agent install (pi/hermes/openclaw/...). When either is set, setup
+  // delegates to the gated cross-agent flow and the default flow is skipped.
+  target?: string;
+  agent?: string;
+  dryRun?: boolean;
+  force?: boolean;
 }
 
 function printNonInteractiveSetupHelp(): void {
@@ -36,6 +43,21 @@ function printNonInteractiveSetupHelp(): void {
 }
 
 export async function setupCommand(options: SetupOptions): Promise<void> {
+  // --dry-run only describes the cross-agent install path; on the default setup
+  // path it would be silently ignored while init/onboarding still write to disk.
+  if (options.dryRun && !options.target && !options.agent) {
+    throw new Error(
+      '--dry-run only applies to cross-agent install. Pass --target <id> or --agent <id>.',
+    );
+  }
+
+  // Cross-agent install path is fully gated: only runs when explicitly
+  // requested, leaving the default Claude/Codex/dashboard flow untouched.
+  if (options.target || options.agent) {
+    await crossAgentInstallCommand(options);
+    return;
+  }
+
   const initialized = await isSyntaurDataInstalled();
   const interactive = isInteractiveTerminal();
 

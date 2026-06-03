@@ -1,15 +1,6 @@
 import { useState, useMemo, useEffect, useRef, type DragEvent } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import {
-  CheckSquare,
-  Plus,
-  Search,
-  AlertTriangle,
-  Copy,
-  Check,
-  Trash2,
-  ArrowRightLeft,
-} from 'lucide-react';
+import { CheckSquare, Plus, Search, AlertTriangle } from 'lucide-react';
 import {
   useProjectTodos,
   addProjectTodo,
@@ -18,14 +9,17 @@ import {
   startProjectTodo,
   reopenProjectTodo,
   deleteProjectTodo,
+  patchProjectTodo,
+  addProjectTodoAttachments,
+  deleteProjectTodoAttachment,
+  projectTodoAttachmentUrl,
 } from '../hooks/useProjectTodos';
 import { LoadingState } from './LoadingState';
 import { ErrorState } from './ErrorState';
 import { StatCard } from './StatCard';
-import { StatusMenu } from './StatusMenu';
+import { TodoRow } from './TodoRow';
 import { TodoPromoteModal } from './TodoPromoteModal';
 import { TodoMoveModal } from './TodoMoveModal';
-import { TodoMetaBadges } from '../pages/WorkspaceTodosPage';
 import { NON_DRAGGABLE_SELECTOR } from './KanbanBoard';
 import { TodoAccordionSection } from './TodoAccordionSection';
 import { useTodoSectionCollapse } from '../hooks/useTodoSectionCollapse';
@@ -35,123 +29,7 @@ import {
   type TodoSectionConfig,
   type TodoSectionId,
 } from '@shared/todo-sections';
-import type { TodoItem } from '../types';
 import { useHotkey, useHotkeyScope, useListSelection } from '../hotkeys';
-
-interface TodoRowProps {
-  item: TodoItem;
-  copiedId: string | null;
-  selected: boolean;
-  onToggleSelected: (id: string, e: React.MouseEvent | React.ChangeEvent) => void;
-  onMoveOne: (id: string, e: React.MouseEvent) => void;
-  onCycleStatus: (id: string, status: string) => void;
-  onStatusChange: (id: string, status: string) => void;
-  onCopyId: (e: React.MouseEvent, id: string) => void;
-  onDelete: (e: React.MouseEvent, id: string, description: string) => void;
-  hotkeyRowProps?: Record<string, string | number | boolean>;
-  onDragOrigin: (e: React.MouseEvent<HTMLDivElement>) => void;
-  onDragStart: (e: DragEvent<HTMLDivElement>, id: string) => void;
-  onDragEnd: () => void;
-  isDragging: boolean;
-}
-
-function TodoRow({
-  item,
-  copiedId,
-  selected,
-  onToggleSelected,
-  onMoveOne,
-  onCycleStatus,
-  onStatusChange,
-  onCopyId,
-  onDelete,
-  hotkeyRowProps,
-  onDragOrigin,
-  onDragStart,
-  onDragEnd,
-  isDragging,
-}: TodoRowProps) {
-  return (
-    <div
-      draggable
-      data-todo-id={item.id}
-      {...(hotkeyRowProps ?? {})}
-      onMouseDown={onDragOrigin}
-      onDragStart={(e) => onDragStart(e, item.id)}
-      onDragEnd={onDragEnd}
-      className={`surface-panel flex items-center gap-3 px-3 py-2 cursor-grab active:cursor-grabbing hover:bg-foreground/[0.03] transition ${
-        isDragging ? 'opacity-50 shadow-lg' : ''
-      }`}
-      onClick={() => onCycleStatus(item.id, item.status)}
-    >
-      <input
-        type="checkbox"
-        aria-label={`Select todo ${item.id}`}
-        checked={selected}
-        onChange={(e) => onToggleSelected(item.id, e)}
-        onClick={(e) => e.stopPropagation()}
-        className="h-4 w-4 cursor-pointer accent-foreground"
-      />
-      <StatusMenu
-        status={item.status as any}
-        onChange={(s) => onStatusChange(item.id, s)}
-      />
-      <div className="flex-1 min-w-0">
-        <span
-          className={`text-sm ${item.status === 'completed' ? 'line-through text-muted-foreground' : 'text-foreground'}`}
-        >
-          {item.description}
-        </span>
-        {item.tags.length > 0 && (
-          <span className="ml-2 text-xs text-muted-foreground">
-            {item.tags.map((t) => `#${t}`).join(' ')}
-          </span>
-        )}
-        {item.session && (
-          <span className="ml-2 text-xs text-info-foreground/70 font-mono">
-            session:{item.session.slice(0, 8)}
-          </span>
-        )}
-        <TodoMetaBadges item={item} />
-      </div>
-      {copiedId === item.id ? (
-        <span className="text-xs text-status-completed-foreground flex items-center gap-1">
-          <Check className="h-3 w-3" /> Copied to clipboard
-        </span>
-      ) : (
-        <>
-          <button
-            className="text-xs text-muted-foreground/60 font-mono hover:text-foreground transition"
-            onClick={(e) => onCopyId(e, item.id)}
-          >
-            t:{item.id}
-          </button>
-          <button
-            className="text-muted-foreground/40 hover:text-foreground transition"
-            title="Copy ID"
-            onClick={(e) => onCopyId(e, item.id)}
-          >
-            <Copy className="h-3 w-3" />
-          </button>
-          <button
-            className="text-muted-foreground/40 hover:text-foreground transition"
-            title="Move to..."
-            onClick={(e) => onMoveOne(item.id, e)}
-          >
-            <ArrowRightLeft className="h-3 w-3" />
-          </button>
-          <button
-            className="text-muted-foreground/40 hover:text-destructive transition"
-            title="Delete todo"
-            onClick={(e) => onDelete(e, item.id, item.description)}
-          >
-            <Trash2 className="h-3 w-3" />
-          </button>
-        </>
-      )}
-    </div>
-  );
-}
 
 interface ProjectTodosPanelProps {
   projectId: string;
@@ -164,6 +42,7 @@ export function ProjectTodosPanel({ projectId }: ProjectTodosPanelProps) {
   const [tagFilter, setTagFilter] = useState<string>('');
   const [newTodoText, setNewTodoText] = useState('');
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [promoteOpen, setPromoteOpen] = useState(false);
   const [moveOpen, setMoveOpen] = useState(false);
@@ -261,17 +140,6 @@ export function ProjectTodosPanel({ projectId }: ProjectTodosPanelProps) {
     refetch();
   }
 
-  const NEXT_STATUS: Record<string, string> = {
-    open: 'in_progress',
-    in_progress: 'completed',
-    completed: 'open',
-    blocked: 'open',
-  };
-
-  function handleCycleStatus(id: string, currentStatus: string) {
-    handleStatusChange(id, NEXT_STATUS[currentStatus] || 'open');
-  }
-
   async function handleDelete(e: React.MouseEvent, id: string, description: string) {
     e.stopPropagation();
     if (!window.confirm(`Delete "${description}"? This can't be undone.`)) return;
@@ -297,6 +165,21 @@ export function ProjectTodosPanel({ projectId }: ProjectTodosPanelProps) {
     refetch();
   }
 
+  async function handlePatchDescription(id: string, next: string) {
+    await patchProjectTodo(projectId, id, next);
+    refetch();
+  }
+
+  async function handleAddAttachments(id: string, files: File[]) {
+    await addProjectTodoAttachments(projectId, id, files);
+    refetch();
+  }
+
+  async function handleDeleteAttachment(id: string, attachmentId: string) {
+    await deleteProjectTodoAttachment(projectId, id, attachmentId);
+    refetch();
+  }
+
   // Group the filtered todos into the three accordion sections. `renderedOrdered`
   // is the flat list of rows actually in the DOM (expanded sections only); it
   // must match what useListSelection queries via [data-hotkey-row-index].
@@ -308,7 +191,8 @@ export function ProjectTodosPanel({ projectId }: ProjectTodosPanelProps) {
   const { hotkeyRowProps } = useListSelection(renderedOrdered, {
     scope: 'list:todos',
     bindO: false,
-    onOpen: (todo) => handleCycleStatus(todo.id, todo.status),
+    // Enter opens the inline editor — status changes only via the dot, never a cycle.
+    onOpen: (todo) => setEditingId(todo.id),
   });
   useHotkey({
     keys: '/',
@@ -547,9 +431,15 @@ export function ProjectTodosPanel({ projectId }: ProjectTodosPanelProps) {
                         item={item}
                         copiedId={copiedId}
                         selected={selectedIds.has(item.id)}
+                        editing={editingId === item.id}
+                        onBeginEdit={(id) => setEditingId(id)}
+                        onEndEdit={() => setEditingId(null)}
+                        onPatchDescription={handlePatchDescription}
+                        onAddAttachments={handleAddAttachments}
+                        onDeleteAttachment={handleDeleteAttachment}
+                        attachmentUrl={(id, attachmentId) => projectTodoAttachmentUrl(projectId, id, attachmentId)}
                         onToggleSelected={(id) => toggleOne(id)}
                         onMoveOne={(id, e) => { e.stopPropagation(); setMoveSingleId(id); setMoveOpen(true); }}
-                        onCycleStatus={handleCycleStatus}
                         onStatusChange={handleStatusChange}
                         onCopyId={copyId}
                         onDelete={handleDelete}

@@ -46,6 +46,7 @@ import { HotkeyBindingsSection } from './HotkeyBindingsSection';
 import { ViewDefaultsSection } from './ViewDefaultsSection';
 import { AgentsSection } from './AgentsSection';
 import { TerminalSection } from './TerminalSection';
+import { WorkspaceVisibilitySection } from './WorkspaceVisibilitySection';
 
 interface EditableStatus {
   rowKey: string;
@@ -608,6 +609,8 @@ export function SettingsPage() {
       <HotkeyBindingsSection />
 
       <TerminalSection />
+
+      <WorkspaceVisibilitySection />
 
       <AgentsSection />
 

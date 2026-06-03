@@ -69,9 +69,12 @@ import { readPackageVersion } from './utils/version.js';
 // Skip the npx/global-install startup nudges for `update`/`upgrade` — that
 // command does its own install-kind detection and must stay read-only for
 // --check/--dry-run (a startup prompt could install before it even runs).
+// Also skip for `setup --dry-run`, which must write nothing at all.
 {
   const sub = process.argv[2];
-  if (sub !== 'update' && sub !== 'upgrade') {
+  const isDryRunSetup =
+    sub === 'setup' && process.argv.slice(3).includes('--dry-run');
+  if (sub !== 'update' && sub !== 'upgrade' && !isDryRunSetup) {
     await maybePromptInstall(import.meta.url);
     await maybeNudgeForNpxInstall(import.meta.url);
   }
@@ -532,6 +535,10 @@ program
   .option('--codex-dir <path>', 'Install the Codex plugin at a specific path')
   .option('--codex-marketplace-path <path>', 'Write the Codex marketplace entry to a specific file')
   .option('--dashboard', 'Launch the dashboard after setup')
+  .option('--target <id>', 'Install Syntaur into a cross-agent target (pi, hermes, openclaw, cursor, opencode); comma-separated for several')
+  .option('--agent <id>', 'Alias for --target; cross-agent target id(s) to install into')
+  .option('--force', 'Overwrite existing cross-agent protocol files / skills')
+  .option('--dry-run', 'Print the cross-agent install actions without writing anything')
   .action(async (options) => {
     try {
       await setupCommand(options);

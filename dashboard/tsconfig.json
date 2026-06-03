@@ -26,7 +26,8 @@
       "@shared/agents-schema": ["../src/utils/agents-schema.ts"],
       "@shared/terminal-schema": ["../src/utils/terminal-schema.ts"],
       "@shared/branch-name": ["../src/utils/branch-name.ts"],
-      "@shared/todo-sections": ["../src/utils/todoSections.ts"]
+      "@shared/todo-sections": ["../src/utils/todoSections.ts"],
+      "@shared/workspace-visibility-schema": ["../src/utils/workspace-visibility-schema.ts"]
     }
   },
   "include": [
@@ -39,6 +40,7 @@
     "../src/utils/terminal-schema.ts",
     "../src/utils/branch-name.ts",
     "../src/utils/todoSections.ts",
+    "../src/utils/workspace-visibility-schema.ts",
     "../src/todos/types.ts"
   ]
 }

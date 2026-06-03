@@ -70,6 +70,7 @@ import { createAgentSessionsRouter } from './api-agent-sessions.js';
 import { createAgentsRouter } from './api-agents.js';
 import { createLaunchPreflightRouter } from './api-launch-preflight.js';
 import { createTerminalConfigRouter } from './api-terminal-config.js';
+import { createWorkspaceVisibilityConfigRouter } from './api-workspace-visibility-config.js';
 import { createStatusConfigRouter } from './api-status-config.js';
 import { createLeasesRouter } from './api-leases.js';
 import { createUsageRouter } from './api-usage.js';
@@ -274,6 +275,7 @@ export function createDashboardServer(options: DashboardServerOptions) {
   });
 
   app.use('/api/config/terminal', createTerminalConfigRouter());
+  app.use('/api/config/workspace-visibility', createWorkspaceVisibilityConfigRouter());
 
   app.get('/api/config/hotkeys', async (_req, res) => {
     try {
