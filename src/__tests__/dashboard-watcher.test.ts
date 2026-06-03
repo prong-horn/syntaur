@@ -1,7 +1,7 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, win32, posix } from 'node:path';
 import { createWatcher, ignoreDotSegmentsBelow } from '../dashboard/watcher.js';
 import type { WsMessage } from '../dashboard/types.js';
 
@@ -45,6 +45,22 @@ describe('ignoreDotSegmentsBelow', () => {
     expect(ignore('/tmp/.syntaur/syntaur.db-wal')).toBe(false);
     expect(ignore('/tmp/.syntaur/syntaur.db-shm')).toBe(false);
     expect(ignore('/tmp/.syntaur/.hidden')).toBe(true); // genuine hidden file in root
+  });
+
+  // Deterministic cross-platform coverage by injecting path.win32 / path.posix,
+  // so the backslash-split and the `isAbsolute(rel)` cross-drive guard are real
+  // regression guards even on a posix CI host (where they'd otherwise be dead).
+  it('handles Windows separators and cross-drive paths via the injected path API', () => {
+    const winIgnore = ignoreDotSegmentsBelow('C:\\Users\\me\\.syntaur\\projects', win32);
+    expect(winIgnore('C:\\Users\\me\\.syntaur\\projects')).toBe(false); // root itself
+    expect(winIgnore('C:\\Users\\me\\.syntaur\\projects\\proj\\assignment.md')).toBe(false); // real record
+    expect(winIgnore('C:\\Users\\me\\.syntaur\\projects\\proj\\.git\\config')).toBe(true); // hidden below root
+    // Different drive → win32.relative yields an absolute path → isAbsolute guard keeps it.
+    expect(winIgnore('D:\\other\\.hidden')).toBe(false);
+
+    const posixIgnore = ignoreDotSegmentsBelow('/home/me/.syntaur/projects', posix);
+    expect(posixIgnore('/home/me/.syntaur/projects/proj/assignment.md')).toBe(false);
+    expect(posixIgnore('/home/me/.syntaur/projects/proj/.hidden/x')).toBe(true);
   });
 });
 
@@ -95,5 +111,11 @@ describe('createWatcher under a dot-named ancestor directory', () => {
     await writeFile(join(asgDir, '.hidden.tmp'), 'x');
     await new Promise((resolve) => setTimeout(resolve, 400));
     expect(messages).toHaveLength(0);
+
+    // Liveness: prove the silence above was real ignoring, not a dead watcher —
+    // a subsequent NON-hidden write must still be delivered.
+    await writeFile(join(asgDir, 'plan.md'), '# plan\n');
+    const stillDelivering = await waitFor(() => messages.length > 0, 3000);
+    expect(stillDelivering).toBe(true);
   });
 });

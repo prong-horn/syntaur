@@ -2,6 +2,11 @@ import { watch } from 'chokidar';
 import { basename, dirname, isAbsolute, relative, sep } from 'node:path';
 import type { WsMessage } from './types.js';
 
+/** Minimal slice of `node:path` the matcher needs. Injectable so tests can
+ * exercise `path.win32` / `path.posix` behavior deterministically on any OS. */
+type PathApi = { relative: typeof relative; isAbsolute: typeof isAbsolute };
+const defaultPathApi: PathApi = { relative, isAbsolute };
+
 /**
  * Build a chokidar `ignored` matcher scoped to a single watched root.
  *
@@ -11,12 +16,18 @@ import type { WsMessage } from './types.js';
  * against the full absolute path, and because every watched root lives under
  * `~/.syntaur`, that regex matched the `.syntaur` ancestor and suppressed the
  * entire tree (0 events fired). Returning `true` means "ignore".
+ *
+ * @param pathApi overrides `node:path` (default) — used by tests to verify
+ *   Windows separator / cross-drive behavior on a posix host.
  */
-export function ignoreDotSegmentsBelow(root: string): (p: string) => boolean {
+export function ignoreDotSegmentsBelow(
+  root: string,
+  pathApi: PathApi = defaultPathApi,
+): (p: string) => boolean {
   return (p: string): boolean => {
-    const rel = relative(root, p);
+    const rel = pathApi.relative(root, p);
     if (!rel) return false; // the watched root itself
-    if (isAbsolute(rel)) return false; // different drive (Windows) → outside root
+    if (pathApi.isAbsolute(rel)) return false; // different drive (Windows) → outside root
     const parts = rel.split(/[\\/]/); // tolerate either separator
     // Exact first-segment `..` means the path is above/outside the root (this
     // is what spares the dot-named ancestor). Use an exact segment match, not
@@ -299,10 +310,13 @@ export function createWatcher(
     leasesDbWatcher.on('unlink', handleDbChange);
   }
 
-  // Resolves once every constructed watcher has finished its initial scan and
-  // emitted `ready`. Listeners are attached synchronously here (before the first
-  // `ready` can fire on a later tick), so this is race-free. Lets callers/tests
-  // await readiness deterministically instead of sleeping.
+  // Resolves once every constructed watcher has settled its initial scan.
+  // Listeners are attached synchronously here (before the first `ready` can fire
+  // on a later tick), so this is race-free. Each watcher settles on `ready` OR
+  // `error` so a watcher that errors before emitting `ready` can never hang the
+  // promise; settling on either also keeps `ready` from rejecting (the server
+  // ignores it). Lets callers/tests await readiness deterministically instead of
+  // sleeping.
   const allWatchers = [
     projectsWatcher,
     standaloneWatcher,
@@ -312,7 +326,21 @@ export function createWatcher(
     leasesDbWatcher,
   ].filter((w): w is ReturnType<typeof watch> => w !== null);
   const ready = Promise.all(
-    allWatchers.map((w) => new Promise<void>((resolveReady) => w.on('ready', () => resolveReady()))),
+    allWatchers.map(
+      (w) =>
+        new Promise<void>((resolveReady) => {
+          const onReady = (): void => {
+            w.off('error', onError);
+            resolveReady();
+          };
+          const onError = (): void => {
+            w.off('ready', onReady);
+            resolveReady();
+          };
+          w.once('ready', onReady);
+          w.once('error', onError);
+        }),
+    ),
   ).then(() => undefined);
 
   return {
