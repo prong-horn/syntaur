@@ -33,6 +33,15 @@ function yamlQuote(value: string): string {
   return `"${value.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
 }
 
+/**
+ * `parseResource().body` includes the leading `# <name>` H1. Strip it so a
+ * re-render (which re-adds the heading) doesn't stack duplicate headings on
+ * every update.
+ */
+function stripLeadingHeading(body: string): string {
+  return body.replace(/^\s*#\s+.*\r?\n+/, '').trim();
+}
+
 function renderResourceFile(opts: {
   name: string;
   source: string;
@@ -183,7 +192,7 @@ export async function runResourceUpdate(
       options.relatedAssignments !== undefined
         ? parseList(options.relatedAssignments)
         : existing.relatedAssignments,
-    body: existing.body.trim().length > 0 ? existing.body.trim() : undefined,
+    body: stripLeadingHeading(existing.body) || undefined,
     created: existing.created || undefined,
     updated: nowIso(),
   });

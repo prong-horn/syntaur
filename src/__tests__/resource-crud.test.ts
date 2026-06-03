@@ -47,12 +47,16 @@ describe('syntaur resource CRUD', () => {
     const show = await runCli(['resource', 'show', 'dash', '--project', 'p', '--json'], home);
     expect(JSON.parse(show.stdout).category).toBe('dashboard');
 
-    const upd = await runCli(['resource', 'update', 'dash', '--project', 'p', '--category', 'ops'], home);
+    // Two updates in a row must not stack duplicate "# <name>" headings.
+    await runCli(['resource', 'update', 'dash', '--project', 'p', '--category', 'ops'], home);
+    const upd = await runCli(['resource', 'update', 'dash', '--project', 'p', '--category', 'ops2'], home);
     expect(upd.code, upd.stderr).toBe(0);
+    const file = await readFile(resolve(home, 'projects', 'p', 'resources', 'dash.md'), 'utf-8');
+    expect((file.match(/^# /gm) ?? []).length).toBe(1);
     // _index.md reflects the update (not just add).
     const index = await readFile(resolve(home, 'projects', 'p', 'resources', '_index.md'), 'utf-8');
-    expect(index).toContain('ops');
-    expect(JSON.parse((await runCli(['resource', 'show', 'dash', '--project', 'p', '--json'], home)).stdout).category).toBe('ops');
+    expect(index).toContain('ops2');
+    expect(JSON.parse((await runCli(['resource', 'show', 'dash', '--project', 'p', '--json'], home)).stdout).category).toBe('ops2');
 
     const rm1 = await runCli(['resource', 'remove', 'dash', '--project', 'p'], home);
     expect(rm1.code, rm1.stderr).toBe(0);
