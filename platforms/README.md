@@ -4,13 +4,41 @@ Adapters generate framework-specific instruction files that teach non-Claude-Cod
 agents how to follow the Syntaur protocol. Each adapter produces files in the
 format expected by the target framework.
 
-## Supported Frameworks
+Adapters are the **Tier-2** layer. **Tier-1** (the actual `SKILL.md` skills) ships
+to any agent via the open Agent Skills spec — see "Installing skills into any
+agent" below.
+
+## Supported Frameworks (Tier-2 protocol adapters)
+
+Driven declaratively by the registry in `src/targets/registry.ts`.
 
 | Framework | Generated Files | Discovery Mechanism |
 |-----------|----------------|---------------------|
 | **Cursor** | `.cursor/rules/syntaur-protocol.mdc`, `.cursor/rules/syntaur-assignment.mdc` | Cursor reads `.cursor/rules/*.mdc` files with YAML frontmatter |
 | **Codex** | `AGENTS.md` | Codex reads `AGENTS.md` at repo root |
 | **OpenCode** | `AGENTS.md`, `opencode.json` | OpenCode reads `AGENTS.md` at project root, plus optional `opencode.json` |
+| **Pi** | `AGENTS.md` | Pi reads `AGENTS.md` or `CLAUDE.md` |
+| **OpenClaw** | `AGENTS.md` | OpenClaw reads `AGENTS.md` (built on Pi) |
+| **Hermes Agent** | `SOUL.md` | Hermes reads `SOUL.md` / context files |
+
+## Installing skills into any agent (Tier 1)
+
+Syntaur's `skills/` directory is a valid Agent Skills source, so the skills
+install into any of the ~56 agents the ecosystem supports via `npx skills add`:
+
+```bash
+# Turnkey (wraps `npx skills add` + writes the Tier-2 protocol files):
+syntaur setup --target pi                 # or hermes, openclaw, cursor, opencode
+syntaur setup --target hermes,openclaw    # several at once
+syntaur setup --target pi --dry-run       # preview, write nothing
+
+# Or use the Agent Skills CLI directly:
+npx skills add prong-horn/syntaur --agent pi
+```
+
+If `npx` is unavailable, `syntaur setup --target <id>` falls back to copying the
+bundled skills directly into the agent's skills dir. See
+`references/tool-dialects.md` for the Syntaur-id ↔ skills.sh-id mapping.
 
 ## Usage
 

@@ -82,6 +82,11 @@ export interface IntegrationConfig {
   claudePluginDir: string | null;
   codexPluginDir: string | null;
   codexMarketplacePath: string | null;
+  // Per-agent cross-agent install records (pi, hermes, openclaw, ...). Optional
+  // so existing `IntegrationConfig` literals (and the default config) need no
+  // change. Serialized as flat `installedAgents.<id>: <scope>` keys inside the
+  // `integrations:` block (the frontmatter parser only flattens two levels).
+  installedAgents?: Record<string, { scope: 'project' | 'global' }>;
 }
 
 export interface OnboardingConfig {
@@ -318,6 +323,26 @@ function parseFrontmatter(content: string): Record<string, string> {
   return result;
 }
 
+/**
+ * Reconstruct the optional per-agent install records from the flattened
+ * frontmatter. Keys look like `integrations.installedAgents.<id>` → `<scope>`.
+ * Returns `{}` (no key) when none are present so the field stays absent.
+ */
+function parseInstalledAgents(
+  fm: Record<string, string>,
+): Pick<IntegrationConfig, 'installedAgents'> {
+  const prefix = 'integrations.installedAgents.';
+  const installedAgents: Record<string, { scope: 'project' | 'global' }> = {};
+  for (const [key, value] of Object.entries(fm)) {
+    if (!key.startsWith(prefix)) continue;
+    const id = key.slice(prefix.length);
+    if (!id) continue;
+    const scope = value === 'project' ? 'project' : 'global';
+    installedAgents[id] = { scope };
+  }
+  return Object.keys(installedAgents).length > 0 ? { installedAgents } : {};
+}
+
 function parseStatusConfig(content: string): StatusConfig | null {
   const match = content.match(/^---\n([\s\S]*?)\n---/);
   if (!match) return null;
@@ -474,6 +499,11 @@ function serializeIntegrationConfig(integrations: IntegrationConfig): string | n
   }
   if (integrations.codexMarketplacePath) {
     lines.push(`  codexMarketplacePath: ${integrations.codexMarketplacePath}`);
+  }
+  if (integrations.installedAgents) {
+    for (const [id, rec] of Object.entries(integrations.installedAgents)) {
+      lines.push(`  installedAgents.${id}: ${rec.scope}`);
+    }
   }
 
   if (lines.length === 0) {
@@ -1459,6 +1489,7 @@ export async function readConfig(): Promise<SyntaurConfig> {
         fm['integrations.codexMarketplacePath'],
         'integrations.codexMarketplacePath',
       ),
+      ...parseInstalledAgents(fm),
     },
     backup: fm['backup.repo'] || fm['backup.categories']
       ? {
