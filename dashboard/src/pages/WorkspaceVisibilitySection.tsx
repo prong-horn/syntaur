@@ -23,7 +23,13 @@ function workspaceLabel(name: string): string {
 
 export function WorkspaceVisibilitySection() {
   const { data, loading, error, refetch } = useWorkspaces();
-  const { hidden, custom, loading: configLoading } = useWorkspaceVisibilityConfig();
+  const {
+    hidden,
+    custom,
+    loading: configLoading,
+    error: configError,
+    reload: reloadConfig,
+  } = useWorkspaceVisibilityConfig();
   const [saving, setSaving] = useState(false);
   const [feedback, setFeedback] = useState<Feedback | null>(null);
 
@@ -107,13 +113,20 @@ export function WorkspaceVisibilitySection() {
 
       {loading || configLoading ? (
         <div className="text-sm text-muted-foreground">Loading workspaces…</div>
-      ) : error ? (
+      ) : error || configError ? (
         <div className="flex items-center gap-3 text-sm text-error-foreground">
-          <span>Failed to load workspaces.</span>
+          <span>
+            {error
+              ? 'Failed to load workspaces.'
+              : 'Failed to load the visibility preference.'}
+          </span>
           <button
             type="button"
             className="shell-action text-xs"
-            onClick={refetch}
+            onClick={() => {
+              if (error) refetch();
+              if (configError) reloadConfig();
+            }}
           >
             <RotateCcw className="h-3 w-3" />
             Retry
