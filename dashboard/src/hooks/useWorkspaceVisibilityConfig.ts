@@ -6,6 +6,11 @@ export interface WorkspaceVisibilityConfigResponse {
   custom: boolean;
 }
 
+export interface WorkspaceVisibilityConfigState extends WorkspaceVisibilityConfigResponse {
+  /** False until the preference has been fetched at least once. */
+  loading: boolean;
+}
+
 const DEFAULT: WorkspaceVisibilityConfigResponse = { hidden: [], custom: false };
 
 let cachedConfig: WorkspaceVisibilityConfigResponse | null = null;
@@ -54,15 +59,21 @@ export function fetchWorkspaceVisibilityConfig(): Promise<WorkspaceVisibilityCon
   return fetchPromise;
 }
 
-export function useWorkspaceVisibilityConfig(): WorkspaceVisibilityConfigResponse {
+export function useWorkspaceVisibilityConfig(): WorkspaceVisibilityConfigState {
   const [config, setConfig] = useState<WorkspaceVisibilityConfigResponse>(
     () => cachedConfig ?? DEFAULT,
   );
+  // Loading is true only until the first fetch resolves. If the value is
+  // already cached (a prior mount loaded it), we're ready immediately.
+  const [loading, setLoading] = useState<boolean>(() => cachedConfig === null);
 
   useEffect(() => {
     let cancelled = false;
     fetchWorkspaceVisibilityConfig().then((next) => {
-      if (!cancelled) setConfig(next);
+      if (!cancelled) {
+        setConfig(next);
+        setLoading(false);
+      }
     });
     subscribers.add(setConfig);
     return () => {
@@ -71,7 +82,7 @@ export function useWorkspaceVisibilityConfig(): WorkspaceVisibilityConfigRespons
     };
   }, []);
 
-  return config;
+  return { ...config, loading };
 }
 
 export function invalidateWorkspaceVisibilityConfigCache(): void {

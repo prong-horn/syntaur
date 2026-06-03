@@ -23,7 +23,7 @@ function workspaceLabel(name: string): string {
 
 export function WorkspaceVisibilitySection() {
   const { data, loading, error, refetch } = useWorkspaces();
-  const { hidden, custom } = useWorkspaceVisibilityConfig();
+  const { hidden, custom, loading: configLoading } = useWorkspaceVisibilityConfig();
   const [saving, setSaving] = useState(false);
   const [feedback, setFeedback] = useState<Feedback | null>(null);
 
@@ -105,7 +105,7 @@ export function WorkspaceVisibilitySection() {
         </div>
       )}
 
-      {loading ? (
+      {loading || configLoading ? (
         <div className="text-sm text-muted-foreground">Loading workspaces…</div>
       ) : error ? (
         <div className="flex items-center gap-3 text-sm text-error-foreground">

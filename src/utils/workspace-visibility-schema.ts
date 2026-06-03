@@ -24,11 +24,17 @@ export interface WorkspaceVisibilityConfig {
 }
 
 /**
+ * Upper bound on a single workspace name. Real workspace slugs/group names are
+ * short; this only guards against a pathological config.md entry.
+ */
+export const MAX_WORKSPACE_NAME_LENGTH = 256;
+
+/**
  * Normalize a raw blocklist (from disk, an API body, or a fetch response) into
- * a clean `string[]`: keep only strings, trim each, drop empties and any entry
- * containing a newline, then dedupe preserving first-seen order. Used on both
- * the server (POST validation) and the client (response `normalize`) so the
- * trim/dedupe rules are identical on both sides.
+ * a clean `string[]`: keep only strings, trim each, drop empties, anything
+ * containing a line break, and absurdly long names, then dedupe preserving
+ * first-seen order. Used on both the server (POST validation) and the client
+ * (response `normalize`) so the rules are identical on both sides.
  */
 export function normalizeHiddenList(input: unknown): string[] {
   if (!Array.isArray(input)) return [];
@@ -38,7 +44,8 @@ export function normalizeHiddenList(input: unknown): string[] {
     if (typeof raw !== 'string') continue;
     const name = raw.trim();
     if (name.length === 0) continue;
-    if (name.includes('\n')) continue;
+    if (name.length > MAX_WORKSPACE_NAME_LENGTH) continue;
+    if (/[\r\n]/.test(name)) continue;
     if (seen.has(name)) continue;
     seen.add(name);
     out.push(name);
