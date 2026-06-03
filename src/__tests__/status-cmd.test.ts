@@ -30,9 +30,11 @@ describe('syntaur status', () => {
 
   beforeEach(async () => {
     home = await mkdtemp(join(tmpdir(), 'syntaur-status-'));
+    // defaultProjectDir must point at THIS temp home so remove/rename scans
+    // resolve the fixture assignments (the CLI scans config.defaultProjectDir).
     await writeFile(
       resolve(home, 'config.md'),
-      '---\nversion: "2.0"\ndefaultProjectDir: ~/projects\n---\n',
+      `---\nversion: "2.0"\ndefaultProjectDir: ${resolve(home, 'projects')}\n---\n`,
       'utf-8',
     );
   });

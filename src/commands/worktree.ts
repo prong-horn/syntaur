@@ -1,5 +1,5 @@
 import { Command } from 'commander';
-import { readFile, writeFile } from 'node:fs/promises';
+import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import {
   createWorktreeAndRecord,
@@ -8,7 +8,7 @@ import {
   listWorktrees,
   type WorktreeEntry,
 } from '../utils/git-worktree.js';
-import { fileExists } from '../utils/fs.js';
+import { fileExists, writeFileForce } from '../utils/fs.js';
 import { defaultProjectDir, assignmentsDir } from '../utils/paths.js';
 import { nowTimestamp } from '../utils/timestamp.js';
 import {
@@ -162,14 +162,19 @@ export async function runWorktreeRemove(
     );
   }
 
-  // 2. Optional branch deletion.
+  // 2. Optional branch deletion. When --delete-branch was explicitly requested it
+  // is part of teardown — a failure means teardown is incomplete, so we abort
+  // BEFORE clearing workspace.* (which would otherwise lose the branch reference).
   let branchDeleted = false;
   if (options.deleteBranch && branch) {
     const del = await deleteBranch(repository, branch);
-    branchDeleted = del.ok;
     if (!del.ok) {
-      console.error(`Warning: could not delete branch "${branch}": ${del.stderr.trim()}`);
+      throw new Error(
+        `Worktree removed, but deleting branch "${branch}" failed: ${del.stderr.trim() || '(no stderr)'}. ` +
+          'Workspace fields were left intact. Delete the branch manually, then re-run to clear them.',
+      );
     }
+    branchDeleted = true;
   }
 
   // 3. Clear the four workspace.* fields + bump updated. If this fails after the
@@ -183,7 +188,7 @@ export async function runWorktreeRemove(
       parentBranch: null,
     });
     next = updateAssignmentFile(next, { updated: nowTimestamp() });
-    await writeFile(assignmentPath, next, 'utf-8');
+    await writeFileForce(assignmentPath, next);
     workspaceCleared = true;
   } catch (err) {
     console.error(

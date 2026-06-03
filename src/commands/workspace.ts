@@ -1,7 +1,7 @@
 import { Command } from 'commander';
-import { readFile, writeFile } from 'node:fs/promises';
+import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
-import { fileExists } from '../utils/fs.js';
+import { fileExists, writeFileForce } from '../utils/fs.js';
 import { defaultProjectDir, assignmentsDir } from '../utils/paths.js';
 import { nowTimestamp } from '../utils/timestamp.js';
 import { updateAssignmentWorkspace, updateAssignmentFile } from '../lifecycle/frontmatter.js';
@@ -89,12 +89,12 @@ export async function runWorkspaceSet(
   const original = await readFile(path, 'utf-8');
   let next = updateAssignmentWorkspace(original, partial);
   next = updateAssignmentFile(next, { updated: nowTimestamp() });
-  await writeFile(path, next, 'utf-8');
+  await writeFileForce(path, next); // atomic: a crash can't leave a half-written file
 
   // Post-write validation — restore the original if we somehow broke it.
   const post = await validateAssignmentFile(path);
   if (!post.ok) {
-    await writeFile(path, original, 'utf-8');
+    await writeFileForce(path, original);
     throw new Error(
       `Write rolled back — post-write validation failed:\n${post.errors.map((e) => `  - ${e}`).join('\n')}`,
     );

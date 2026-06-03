@@ -1,7 +1,7 @@
 import { Command } from 'commander';
-import { readFile, readdir, stat, mkdir, writeFile } from 'node:fs/promises';
+import { readFile, readdir, stat } from 'node:fs/promises';
 import { resolve } from 'node:path';
-import { fileExists } from '../utils/fs.js';
+import { fileExists, writeFileForce } from '../utils/fs.js';
 import { defaultProjectDir, assignmentsDir } from '../utils/paths.js';
 import { nowTimestamp } from '../utils/timestamp.js';
 
@@ -289,8 +289,8 @@ updated: "${now}"
 ${trimmed.length > 0 ? trimmed : SESSION_SUMMARY_SKELETON.trim()}
 `;
 
-  await mkdir(sessionDir, { recursive: true });
-  await writeFile(summaryPath, content, 'utf-8');
+  // writeFileForce ensures sessions/<id>/ exists and writes atomically.
+  await writeFileForce(summaryPath, content);
   return summaryPath;
 }
 

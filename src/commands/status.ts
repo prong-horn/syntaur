@@ -1,5 +1,5 @@
 import { Command } from 'commander';
-import { readFile, writeFile } from 'node:fs/promises';
+import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import {
   parseStatusConfig,
@@ -7,17 +7,29 @@ import {
   writeStatusConfig,
   deleteStatusConfig,
   buildDefaultStatusConfig,
+  readConfig,
   type StatusConfig,
   type StatusDefinition,
 } from '../utils/config.js';
-import { syntaurRoot, defaultProjectDir, assignmentsDir } from '../utils/paths.js';
-import { fileExists } from '../utils/fs.js';
+import { syntaurRoot, assignmentsDir } from '../utils/paths.js';
+import { fileExists, writeFileForce } from '../utils/fs.js';
 import { nowTimestamp } from '../utils/timestamp.js';
 import { updateAssignmentFile } from '../lifecycle/frontmatter.js';
 import {
   scanAssignmentsByStatus,
   type AffectedAssignment,
 } from '../utils/status-config-resolution.js';
+
+/**
+ * The project + standalone dirs the dashboard's status router scans
+ * (`config.defaultProjectDir` + the standalone assignments dir). Using the
+ * *configured* project dir — not the fixed paths.defaultProjectDir() — keeps the
+ * CLI's remove/rename scans in sync with the dashboard for custom project roots.
+ */
+async function scanDirs(): Promise<{ projectsDir: string; standaloneDir: string }> {
+  const config = await readConfig();
+  return { projectsDir: config.defaultProjectDir, standaloneDir: assignmentsDir() };
+}
 
 function fail(error: unknown): never {
   console.error('Error:', error instanceof Error ? error.message : String(error));
@@ -108,10 +120,15 @@ export interface StatusListResult {
 export async function runStatusList(): Promise<StatusListResult> {
   const block = await readStatusBlock();
   const cfg = block ?? buildDefaultStatusConfig();
+  // Parity with the dashboard's getStatusConfig(): a custom statuses block with
+  // no `transitions:` falls back to the built-in default transitions (the CLI
+  // must not report `[]` where the dashboard materializes defaults).
+  const transitions =
+    cfg.transitions.length > 0 ? cfg.transitions : buildDefaultStatusConfig().transitions;
   return {
     statuses: cfg.statuses,
     order: cfg.order,
-    transitions: cfg.transitions,
+    transitions,
     source: block ? 'config' : 'default',
   };
 }
@@ -298,7 +315,8 @@ export async function runStatusRemove(
     throw new Error(`Status "${id}" does not exist.`);
   }
 
-  const affectedMap = await scanAssignmentsByStatus(defaultProjectDir(), assignmentsDir(), [id]);
+  const { projectsDir, standaloneDir } = await scanDirs();
+  const affectedMap = await scanAssignmentsByStatus(projectsDir, standaloneDir, [id]);
   const affected = affectedMap.get(id) ?? [];
 
   if (affected.length > 0 && !opts.force) {
@@ -357,7 +375,8 @@ export async function runStatusRename(
     })),
   };
 
-  const affectedMap = await scanAssignmentsByStatus(defaultProjectDir(), assignmentsDir(), [id]);
+  const { projectsDir, standaloneDir } = await scanDirs();
+  const affectedMap = await scanAssignmentsByStatus(projectsDir, standaloneDir, [id]);
   const affected = affectedMap.get(id) ?? [];
 
   if (opts.dryRun) {
@@ -373,8 +392,8 @@ export async function runStatusRename(
     return;
   }
 
-  // Atomic transaction: buffer config.md + every affected assignment.md, write all,
-  // restore every buffered original on any failure.
+  // Atomic transaction: buffer config.md + every affected assignment.md, write all
+  // (atomically, via writeFileForce), restore every buffered original on any failure.
   const cfgPath = configPath();
   const buffers = new Map<string, string>();
   buffers.set(cfgPath, (await fileExists(cfgPath)) ? await readFile(cfgPath, 'utf-8') : '');
@@ -388,13 +407,13 @@ export async function runStatusRename(
     for (const a of affected) {
       const original = buffers.get(a.path)!;
       const rewritten = updateAssignmentFile(original, { status: newId, updated: now });
-      await writeFile(a.path, rewritten, 'utf-8');
+      await writeFileForce(a.path, rewritten);
     }
   } catch (err) {
     // Roll back everything we buffered.
     for (const [p, original] of buffers) {
       if (original.length === 0) continue;
-      await writeFile(p, original, 'utf-8').catch(() => {
+      await writeFileForce(p, original).catch(() => {
         /* best-effort rollback */
       });
     }

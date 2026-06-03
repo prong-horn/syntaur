@@ -1,7 +1,7 @@
 import { Command } from 'commander';
-import { readFile, writeFile } from 'node:fs/promises';
+import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
-import { fileExists } from '../utils/fs.js';
+import { fileExists, writeFileForce } from '../utils/fs.js';
 import { defaultProjectDir, assignmentsDir } from '../utils/paths.js';
 import { nowTimestamp } from '../utils/timestamp.js';
 import { formatProgressEntry, renderProgress } from '../templates/index.js';
@@ -113,7 +113,7 @@ export async function runProgressLog(
     : renderProgress({ assignment: slug, timestamp: now });
 
   const next = appendProgressEntry(content, text, now);
-  await writeFile(path, next, 'utf-8');
+  await writeFileForce(path, next);
   return path;
 }
 
