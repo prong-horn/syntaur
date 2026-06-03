@@ -65,9 +65,12 @@ import { readPackageVersion } from './utils/version.js';
 // Skip the npx/global-install startup nudges for `update`/`upgrade` — that
 // command does its own install-kind detection and must stay read-only for
 // --check/--dry-run (a startup prompt could install before it even runs).
+// Also skip for `setup --dry-run`, which must write nothing at all.
 {
   const sub = process.argv[2];
-  if (sub !== 'update' && sub !== 'upgrade') {
+  const isDryRunSetup =
+    sub === 'setup' && process.argv.slice(3).includes('--dry-run');
+  if (sub !== 'update' && sub !== 'upgrade' && !isDryRunSetup) {
     await maybePromptInstall(import.meta.url);
     await maybeNudgeForNpxInstall(import.meta.url);
   }

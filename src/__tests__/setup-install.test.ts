@@ -128,6 +128,15 @@ describe('setup and install flows', () => {
     );
   });
 
+  it('setup --target codex/claude is rejected (use the plugin path)', async () => {
+    await expect(setupCommand({ target: 'codex', dryRun: true })).rejects.toThrow(
+      'native Syntaur plugin',
+    );
+    await expect(setupCommand({ target: 'claude', dryRun: true })).rejects.toThrow(
+      'native Syntaur plugin',
+    );
+  });
+
   it('setup --dry-run without --target/--agent is rejected (never writes)', async () => {
     await expect(setupCommand({ dryRun: true })).rejects.toThrow(
       '--dry-run only applies to cross-agent install',

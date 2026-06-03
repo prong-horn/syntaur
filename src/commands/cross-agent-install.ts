@@ -84,6 +84,14 @@ export async function crossAgentInstallCommand(
         `Unknown agent "${id}". Known agents: ${agentTargetIds().join(', ')}`,
       );
     }
+    // Claude Code / Codex install via their dedicated full-plugin path, not the
+    // cross-agent skills.sh/offline flow — keep that boundary intact.
+    if (t.nativePlugin) {
+      throw new Error(
+        `"${id}" installs as a native Syntaur plugin, not via cross-agent install. ` +
+          `Use \`syntaur setup --${t.nativePlugin}\` (or \`syntaur ${t.nativePlugin === 'claude' ? 'install-plugin' : 'install-codex-plugin'}\`).`,
+      );
+    }
     targets.push(t);
   }
 
