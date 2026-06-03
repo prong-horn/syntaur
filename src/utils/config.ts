@@ -5,6 +5,7 @@ import { syntaurRoot, defaultProjectDir, expandHome } from './paths.js';
 import { fileExists, writeFileForce } from './fs.js';
 import { renderConfig } from '../templates/config.js';
 import { migrateLegacyConfig } from './fs-migration.js';
+import { DEFAULT_STATUSES, DEFAULT_TRANSITION_TABLE } from '../lifecycle/index.js';
 import {
   BINDABLE_ACTION_KINDS,
   canonicalizeCombo,
@@ -318,7 +319,7 @@ function parseFrontmatter(content: string): Record<string, string> {
   return result;
 }
 
-function parseStatusConfig(content: string): StatusConfig | null {
+export function parseStatusConfig(content: string): StatusConfig | null {
   const match = content.match(/^---\n([\s\S]*?)\n---/);
   if (!match) return null;
   const fmBlock = match[1];
@@ -426,7 +427,51 @@ function parseStatusConfig(content: string): StatusConfig | null {
   };
 }
 
-function serializeStatusConfig(statuses: StatusConfig): string {
+/**
+ * Default per-status accent colors. Statuses without an entry fall back to
+ * `'gray'` in {@link buildDefaultStatusConfig}. Shared by the dashboard's
+ * `getStatusConfig()` and the `syntaur status` CLI so the two never drift.
+ */
+export const DEFAULT_STATUS_COLORS: Record<string, string> = {
+  pending: 'slate',
+  in_progress: 'teal',
+  blocked: 'amber',
+  review: 'violet',
+  completed: 'emerald',
+  failed: 'rose',
+};
+
+/** Turn a snake_case status id into a human label ("in_progress" → "In Progress"). */
+export function toTitleCase(s: string): string {
+  return s.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+/**
+ * Materialize the built-in default status set as an explicit {@link StatusConfig}.
+ *
+ * `DEFAULT_CONFIG.statuses` is `null` (the runtime resolves defaults lazily), so
+ * `syntaur status init` / `list` cannot read defaults from there. This builder
+ * reproduces exactly what the dashboard's `getStatusConfig()` no-block branch
+ * builds — same ids/labels/colors/terminal flags and the same transition table —
+ * so the CLI and the dashboard share one source of truth.
+ */
+export function buildDefaultStatusConfig(): StatusConfig {
+  return {
+    statuses: DEFAULT_STATUSES.map((id) => ({
+      id,
+      label: toTitleCase(id),
+      color: DEFAULT_STATUS_COLORS[id] ?? 'gray',
+      terminal: id === 'completed' || id === 'failed',
+    })),
+    order: [...DEFAULT_STATUSES],
+    transitions: Array.from(DEFAULT_TRANSITION_TABLE.entries()).map(([key, to]) => {
+      const [from, command] = key.split(':');
+      return { from, command, to };
+    }),
+  };
+}
+
+export function serializeStatusConfig(statuses: StatusConfig): string {
   const lines: string[] = [];
   lines.push('statuses:');
 
