@@ -512,7 +512,6 @@ program
   .option('--dashboard', 'Launch the dashboard after setup')
   .option('--target <id>', 'Install Syntaur into a cross-agent target (pi, hermes, openclaw, cursor, opencode); comma-separated for several')
   .option('--agent <id>', 'Alias for --target; cross-agent target id(s) to install into')
-  .option('--scope <scope>', 'Install scope for cross-agent skills: project or global (default: global)')
   .option('--force', 'Overwrite existing cross-agent protocol files / skills')
   .option('--dry-run', 'Print the cross-agent install actions without writing anything')
   .action(async (options) => {

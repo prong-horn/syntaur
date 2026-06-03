@@ -128,6 +128,14 @@ describe('setup and install flows', () => {
     );
   });
 
+  it('setup --dry-run without --target/--agent is rejected (never writes)', async () => {
+    await expect(setupCommand({ dryRun: true })).rejects.toThrow(
+      '--dry-run only applies to cross-agent install',
+    );
+    // nothing was initialized
+    await expect(lstat(resolve(homeDir, '.syntaur'))).rejects.toThrow();
+  });
+
   it('non-interactive setup without flags fails with guidance', async () => {
     Object.defineProperty(process.stdin, 'isTTY', { value: false, configurable: true });
     Object.defineProperty(process.stdout, 'isTTY', { value: false, configurable: true });

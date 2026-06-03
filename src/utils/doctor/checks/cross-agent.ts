@@ -1,4 +1,4 @@
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { fileExists } from '../../fs.js';
 import { KNOWN_SKILLS } from '../../install-skills.js';
 import { AGENT_TARGETS } from '../../../targets/registry.js';
@@ -6,24 +6,26 @@ import type { Check, CheckResult } from '../types.js';
 
 const CATEGORY = 'cross-agent';
 
-/** A target "has" Syntaur skills if at least one known skill dir with a matching SKILL.md is present. */
-async function hasSyntaurSkills(dir: string): Promise<boolean> {
-  if (!(await fileExists(dir))) return false;
+/** Count how many known Syntaur skills are present (by SKILL.md) in a dir. */
+async function countSyntaurSkills(dir: string): Promise<number> {
+  if (!(await fileExists(dir))) return 0;
+  let n = 0;
   for (const skill of KNOWN_SKILLS) {
-    if (await fileExists(join(dir, skill, 'SKILL.md'))) return true;
+    if (await fileExists(join(dir, skill, 'SKILL.md'))) n++;
   }
-  return false;
+  return n;
 }
 
 const crossAgentSkillsCheck: Check = {
   id: 'cross-agent.skills',
   category: CATEGORY,
-  title: 'Cross-agent targets have Syntaur skills installed',
+  title: 'Cross-agent targets have Syntaur skills + protocol files',
   async run(ctx) {
     const installed = ctx.config.integrations.installedAgents ?? {};
+    const total = KNOWN_SKILLS.length;
     const lines: string[] = [];
+    const problems: string[] = [];
     const affected: string[] = [];
-    const missingRecorded: string[] = [];
     let considered = 0;
 
     for (const t of AGENT_TARGETS) {
@@ -32,16 +34,32 @@ const crossAgentSkillsCheck: Check = {
       const dir = t.skillsDir?.global;
       if (!dir) continue;
 
-      const detected = await t.detect();
       const recorded = Boolean(installed[t.id]);
-      if (!detected && !recorded) continue;
+      const detected = await t.detect();
+      if (!recorded && !detected) continue;
 
       considered++;
-      const has = await hasSyntaurSkills(dir);
-      lines.push(`${t.displayName}: ${has ? 'skills present' : 'no syntaur skills'} (${dir})`);
-      if (recorded && !has) {
-        missingRecorded.push(t.displayName);
+      const present = await countSyntaurSkills(dir);
+      lines.push(`${t.displayName}: ${present}/${total} skills (${dir})`);
+
+      // Only escalate to a problem for agents the user recorded installing —
+      // a merely-detected agent the user never targeted shouldn't warn.
+      if (recorded && present < total) {
+        problems.push(
+          `${t.displayName}: ${present === 0 ? 'no Syntaur skills' : `incomplete skills (${present}/${total})`}`,
+        );
         affected.push(dir);
+      }
+
+      // Tier-2 adapter files are workspace-local; check against the cwd.
+      if (recorded && t.instructions) {
+        for (const f of t.instructions.files) {
+          const p = resolve(ctx.cwd, f.path);
+          if (!(await fileExists(p))) {
+            problems.push(`${t.displayName}: missing protocol file ${f.path} in cwd`);
+            affected.push(p);
+          }
+        }
       }
     }
 
@@ -56,18 +74,18 @@ const crossAgentSkillsCheck: Check = {
       } satisfies CheckResult;
     }
 
-    if (missingRecorded.length > 0) {
+    if (problems.length > 0) {
       return {
         id: this.id,
         category: this.category,
         title: this.title,
         status: 'warn',
-        detail: `Recorded install but skills missing for: ${missingRecorded.join(', ')}. ${lines.join('; ')}`,
+        detail: `${problems.join('; ')}. (${lines.join('; ')})`,
         affected,
         remediation: {
           kind: 'manual',
           suggestion:
-            'Re-run `syntaur setup --target <id>` to (re)install skills for that agent.',
+            'Re-run `syntaur setup --target <id>` (from the assignment workspace, to also write protocol files) to complete the install.',
           command: null,
         },
         autoFixable: false,

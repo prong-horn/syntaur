@@ -23,7 +23,6 @@ export interface CrossAgentInstallOptions {
   agent?: string;
   dryRun?: boolean;
   force?: boolean;
-  scope?: 'project' | 'global';
 }
 
 function parseTargetIds(options: CrossAgentInstallOptions): string[] {
@@ -89,7 +88,9 @@ export async function crossAgentInstallCommand(
 
   const dryRun = Boolean(options.dryRun);
   const force = Boolean(options.force);
-  const scope = options.scope ?? 'global';
+  // Phase 1 installs to each agent's global skills dir only; project scope is
+  // deferred (see plan), so records are always 'global'.
+  const scope = 'global' as const;
   const prefix = dryRun ? '[dry-run] ' : '';
 
   if (!dryRun && !(await isSyntaurDataInstalled())) {

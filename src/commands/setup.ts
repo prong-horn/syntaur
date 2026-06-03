@@ -31,7 +31,6 @@ export interface SetupOptions {
   agent?: string;
   dryRun?: boolean;
   force?: boolean;
-  scope?: 'project' | 'global';
 }
 
 function printNonInteractiveSetupHelp(): void {
@@ -44,6 +43,14 @@ function printNonInteractiveSetupHelp(): void {
 }
 
 export async function setupCommand(options: SetupOptions): Promise<void> {
+  // --dry-run only describes the cross-agent install path; on the default setup
+  // path it would be silently ignored while init/onboarding still write to disk.
+  if (options.dryRun && !options.target && !options.agent) {
+    throw new Error(
+      '--dry-run only applies to cross-agent install. Pass --target <id> or --agent <id>.',
+    );
+  }
+
   // Cross-agent install path is fully gated: only runs when explicitly
   // requested, leaving the default Claude/Codex/dashboard flow untouched.
   if (options.target || options.agent) {
