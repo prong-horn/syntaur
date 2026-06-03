@@ -56,6 +56,7 @@ import { resourceCommand } from './commands/resource.js';
 import { memoryCommand } from './commands/memory.js';
 import { lsCommand } from './commands/ls.js';
 import { viewsCommand } from './commands/views.js';
+import { statusCommand } from './commands/status.js';
 import { getDefaultCommandName } from './cli-default-command.js';
 import { maybePromptInstall } from './utils/npx-prompt.js';
 import { maybeNudgeForNpxInstall } from './launch/index.js';
@@ -907,6 +908,7 @@ program.addCommand(resourceCommand);
 program.addCommand(memoryCommand);
 program.addCommand(lsCommand);
 program.addCommand(viewsCommand);
+program.addCommand(statusCommand);
 program.addCommand(leaseCommand);
 program.addCommand(usageCommand);
 
