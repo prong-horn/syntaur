@@ -53,9 +53,7 @@ export interface WatcherOptions {
   debounceMs?: number;
 }
 
-export function createWatcher(
-  options: WatcherOptions,
-): { ready: Promise<void>; close: () => Promise<void> } {
+export function createWatcher(options: WatcherOptions): { close: () => Promise<void> } {
   const { projectsDir, assignmentsDir, serversDir, playbooksDir, todosDir, dbPath, onMessage, debounceMs = 300 } = options;
   const pendingEvents = new Map<string, NodeJS.Timeout>();
 
@@ -310,41 +308,7 @@ export function createWatcher(
     leasesDbWatcher.on('unlink', handleDbChange);
   }
 
-  // Resolves once every constructed watcher has settled its initial scan.
-  // Listeners are attached synchronously here (before the first `ready` can fire
-  // on a later tick), so this is race-free. Each watcher settles on `ready` OR
-  // `error` so a watcher that errors before emitting `ready` can never hang the
-  // promise; settling on either also keeps `ready` from rejecting (the server
-  // ignores it). Lets callers/tests await readiness deterministically instead of
-  // sleeping.
-  const allWatchers = [
-    projectsWatcher,
-    standaloneWatcher,
-    serversWatcher,
-    playbooksWatcher,
-    todosWatcher,
-    leasesDbWatcher,
-  ].filter((w): w is ReturnType<typeof watch> => w !== null);
-  const ready = Promise.all(
-    allWatchers.map(
-      (w) =>
-        new Promise<void>((resolveReady) => {
-          const onReady = (): void => {
-            w.off('error', onError);
-            resolveReady();
-          };
-          const onError = (): void => {
-            w.off('ready', onReady);
-            resolveReady();
-          };
-          w.once('ready', onReady);
-          w.once('error', onError);
-        }),
-    ),
-  ).then(() => undefined);
-
   return {
-    ready,
     close: async () => {
       pendingEvents.forEach((timeout) => {
         clearTimeout(timeout);
