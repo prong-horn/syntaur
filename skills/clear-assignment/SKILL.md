@@ -29,7 +29,7 @@ If the assignment is actually done, use `complete-assignment` instead so a hando
 Optional flags from the user:
 
 - `--keep-session` — preserve `sessionId` / `transcriptPath` fields in `context.json` (just strip the assignment fields). Default: full delete.
-- `--unassign` — also run `syntaur unassign <slug> --project <project>` so the assignment is no longer claimed by this agent. Default: leave the claim in place (only the local context is cleared). Skip this flag if the CLI does not support `unassign` in the installed version — fall back to leaving the claim alone and tell the user.
+- `--unassign` — also run `syntaur unassign <slug> --project <project>` so the assignment is no longer claimed by this agent. Default: leave the claim in place (only the local context is cleared).
 
 ## Step 1: Load Context
 
@@ -66,7 +66,7 @@ syntaur unassign <assignment-slug> --project <project-slug>
 
 For standalone assignments use the UUID (the folder name) in place of the slug, and omit `--project`.
 
-If the CLI rejects the command (older versions may not implement `unassign`), report the error and continue — the local context clear in Step 4 still happens.
+`syntaur unassign` clears the assignee on the assignment frontmatter (the inverse of `assign`) and bumps `updated`.
 
 ## Step 4: Clear the Context File
 

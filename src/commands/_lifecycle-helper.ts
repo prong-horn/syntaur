@@ -8,6 +8,8 @@ import {
   executeTransitionByDir,
   executeAssign,
   executeAssignByDir,
+  executeUnassign,
+  executeUnassignByDir,
   type TransitionCommand,
   type TransitionResult,
 } from '../lifecycle/index.js';
@@ -95,6 +97,37 @@ export async function runAssign(
     );
   }
   return executeAssignByDir(resolved.assignmentDir, agent);
+}
+
+export async function runUnassign(
+  assignment: string,
+  options: LifecycleOptions = {},
+): Promise<TransitionResult> {
+  const config = await readConfig();
+  const baseDir = options.dir ? expandHome(options.dir) : config.defaultProjectDir;
+
+  if (options.project) {
+    if (!isValidSlug(options.project)) {
+      throw new Error(`Invalid project slug "${options.project}".`);
+    }
+    if (!isValidSlug(assignment)) {
+      throw new Error(`Invalid assignment slug "${assignment}".`);
+    }
+    const projectDir = resolve(baseDir, options.project);
+    const projectMdPath = resolve(projectDir, 'project.md');
+    if (!(await fileExists(projectDir)) || !(await fileExists(projectMdPath))) {
+      throw new Error(`Project "${options.project}" not found at ${projectDir}.`);
+    }
+    return executeUnassign(projectDir, assignment);
+  }
+
+  const resolved = await resolveAssignmentById(baseDir, assignmentsDirFn(), assignment);
+  if (!resolved) {
+    throw new Error(
+      `Assignment "${assignment}" not found. Provide --project <slug> or a valid standalone UUID.`,
+    );
+  }
+  return executeUnassignByDir(resolved.assignmentDir);
 }
 
 export function reportResult(result: TransitionResult): void {

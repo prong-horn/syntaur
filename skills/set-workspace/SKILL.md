@@ -41,21 +41,9 @@ Read `.syntaur/context.json` from the current working directory. Extract
 If no context, abort with: "No active assignment. Run `grab-assignment`
 first."
 
-## Step 2: Pre-write validation
+## Step 2: Gather inputs
 
-```bash
-syntaur doctor --assignment <assignmentDir>/assignment.md --json
-```
-
-Parse the JSON output. If `ok: false`, refuse to proceed. Report the
-`errors[]` to the user verbatim and recommend they fix the underlying
-frontmatter (or run `syntaur doctor` for the broader project context).
-**Do not write any changes if the file is malformed.**
-
-## Step 3: Gather inputs
-
-Required (one or more — at minimum the user must specify enough to fill
-all four fields):
+At minimum specify enough to fill the four fields:
 
 - `--repository <path>` — repo root (typically `git rev-parse --show-toplevel`).
 - `--worktree-path <path>` — usually `<repository>/.worktrees/<branch>`
@@ -63,47 +51,43 @@ all four fields):
 - `--branch <name>` — current branch (`git rev-parse --abbrev-ref HEAD`).
 - `--parent-branch <name>` — typically `main`.
 
-Defaults the skill should auto-detect when not supplied:
+Defaults to auto-detect when not supplied:
 
 - `repository` ← `git -C $(pwd) rev-parse --show-toplevel`.
 - `branch` ← `git -C $(pwd) rev-parse --abbrev-ref HEAD`.
 - `worktreePath` ← `$(pwd)` (when invoked from the worktree itself).
 - `parentBranch` ← prompt the user; do not invent.
 
-## Step 4: Read assignment.md
+## Step 3: Write via the CLI
 
-Locate the `workspace:` block in the frontmatter. It must look like:
-
-```yaml
-workspace:
-  repository: <value-or-null>
-  worktreePath: <value-or-null>
-  branch: <value-or-null>
-  parentBranch: <value-or-null>
+```bash
+syntaur workspace set \
+  --repository <repo> \
+  --worktree-path <repo>/.worktrees/<branch> \
+  --branch <branch> \
+  --parent-branch <parent>
 ```
 
-If the block is missing entirely, refuse to write — `doctor --assignment`
-should have caught it; this is a defensive check.
+Targets the active assignment from `.syntaur/context.json` by default; pass
+`--assignment <slug> [--project <slug>]` to target one explicitly. The command
+does the whole safe write in one atomic step:
 
-## Step 5: Write the four fields
+- **Pre-write validation** — runs the same checks as `syntaur doctor
+  --assignment --json`; if the file is malformed it refuses to write and prints
+  the errors. (Implements the "never touch a malformed file" guard.)
+- Writes the four `workspace.*` fields in place via the frontmatter mutator
+  (other same-named keys elsewhere are untouched) and bumps the top-level
+  `updated` timestamp.
+- **Post-write re-validation** — if the result is somehow invalid, it restores
+  the original file and exits non-zero, so the file is never left half-written.
 
-Replace the four lines in place. Quote string values containing special
-characters; use `null` literal for unset fields. Preserve the rest of the
-frontmatter and body bit-for-bit.
+If the command exits non-zero, report its `Error:` output verbatim and fix the
+underlying frontmatter before retrying.
 
-Bump the top-level `updated` timestamp in the frontmatter.
-
-## Step 6: Re-validate
-
-Re-run `syntaur doctor --assignment <path> --json`. Expect `ok: true`. If
-the post-write validation fails, restore the prior file content and report
-the error — do not leave the file in a half-written state.
-
-## Step 7: Report to User
+## Step 4: Report to User
 
 Summarize:
 
-- Path of the modified assignment.md.
+- Path of the modified assignment.md (the command prints it).
 - The four field values that were written.
-- Confirmation that post-write `doctor --assignment` passed.
 - Reminder: implementation work is now unblocked by the write-boundary hook.
