@@ -1,6 +1,31 @@
 import { watch } from 'chokidar';
-import { basename, dirname, relative, sep } from 'node:path';
+import { basename, dirname, isAbsolute, relative, sep } from 'node:path';
 import type { WsMessage } from './types.js';
+
+/**
+ * Build a chokidar `ignored` matcher scoped to a single watched root.
+ *
+ * Ignores only dot-prefixed path segments AT OR BELOW `root` — never the root
+ * itself, and never a (possibly dot-named, e.g. `.syntaur`) ANCESTOR. This
+ * replaces the old `ignored: /(^|[\/\\])\../` regex: chokidar 4 tests `ignored`
+ * against the full absolute path, and because every watched root lives under
+ * `~/.syntaur`, that regex matched the `.syntaur` ancestor and suppressed the
+ * entire tree (0 events fired). Returning `true` means "ignore".
+ */
+export function ignoreDotSegmentsBelow(root: string): (p: string) => boolean {
+  return (p: string): boolean => {
+    const rel = relative(root, p);
+    if (!rel) return false; // the watched root itself
+    if (isAbsolute(rel)) return false; // different drive (Windows) → outside root
+    const parts = rel.split(/[\\/]/); // tolerate either separator
+    // Exact first-segment `..` means the path is above/outside the root (this
+    // is what spares the dot-named ancestor). Use an exact segment match, not
+    // `startsWith('..')`, so an in-root file literally named `..foo` is still
+    // treated as a dotfile below the root.
+    if (parts[0] === '..') return false;
+    return parts.some((segment) => segment.startsWith('.'));
+  };
+}
 
 export interface WatcherOptions {
   projectsDir: string;
@@ -17,7 +42,9 @@ export interface WatcherOptions {
   debounceMs?: number;
 }
 
-export function createWatcher(options: WatcherOptions): { close: () => Promise<void> } {
+export function createWatcher(
+  options: WatcherOptions,
+): { ready: Promise<void>; close: () => Promise<void> } {
   const { projectsDir, assignmentsDir, serversDir, playbooksDir, todosDir, dbPath, onMessage, debounceMs = 300 } = options;
   const pendingEvents = new Map<string, NodeJS.Timeout>();
 
@@ -26,7 +53,7 @@ export function createWatcher(options: WatcherOptions): { close: () => Promise<v
     ignoreInitial: true,
     persistent: true,
     depth: 10,
-    ignored: /(^|[\/\\])\../,
+    ignored: ignoreDotSegmentsBelow(projectsDir),
   });
 
   function handleProjectChange(filePath: string): void {
@@ -94,7 +121,7 @@ export function createWatcher(options: WatcherOptions): { close: () => Promise<v
       ignoreInitial: true,
       persistent: true,
       depth: 5,
-      ignored: /(^|[\/\\])\../,
+      ignored: ignoreDotSegmentsBelow(assignmentsDir),
     });
 
     function handleStandaloneChange(filePath: string): void {
@@ -136,7 +163,7 @@ export function createWatcher(options: WatcherOptions): { close: () => Promise<v
       ignoreInitial: true,
       persistent: true,
       depth: 1,
-      ignored: /(^|[\/\\])\../,
+      ignored: ignoreDotSegmentsBelow(serversDir),
     });
 
     function handleServerChange(): void {
@@ -170,7 +197,7 @@ export function createWatcher(options: WatcherOptions): { close: () => Promise<v
       ignoreInitial: true,
       persistent: true,
       depth: 1,
-      ignored: /(^|[\/\\])\../,
+      ignored: ignoreDotSegmentsBelow(playbooksDir),
     });
 
     function handlePlaybookChange(): void {
@@ -204,7 +231,7 @@ export function createWatcher(options: WatcherOptions): { close: () => Promise<v
       ignoreInitial: true,
       persistent: true,
       depth: 1,
-      ignored: /(^|[\/\\])\../,
+      ignored: ignoreDotSegmentsBelow(todosDir),
     });
 
     function handleTodoChange(): void {
@@ -245,7 +272,7 @@ export function createWatcher(options: WatcherOptions): { close: () => Promise<v
       ignoreInitial: true,
       persistent: true,
       depth: 0,
-      ignored: /(^|[\/\\])\../,
+      ignored: ignoreDotSegmentsBelow(dbDir),
     });
 
     function handleDbChange(filePath: string): void {
@@ -272,7 +299,24 @@ export function createWatcher(options: WatcherOptions): { close: () => Promise<v
     leasesDbWatcher.on('unlink', handleDbChange);
   }
 
+  // Resolves once every constructed watcher has finished its initial scan and
+  // emitted `ready`. Listeners are attached synchronously here (before the first
+  // `ready` can fire on a later tick), so this is race-free. Lets callers/tests
+  // await readiness deterministically instead of sleeping.
+  const allWatchers = [
+    projectsWatcher,
+    standaloneWatcher,
+    serversWatcher,
+    playbooksWatcher,
+    todosWatcher,
+    leasesDbWatcher,
+  ].filter((w): w is ReturnType<typeof watch> => w !== null);
+  const ready = Promise.all(
+    allWatchers.map((w) => new Promise<void>((resolveReady) => w.on('ready', () => resolveReady()))),
+  ).then(() => undefined);
+
   return {
+    ready,
     close: async () => {
       pendingEvents.forEach((timeout) => {
         clearTimeout(timeout);
