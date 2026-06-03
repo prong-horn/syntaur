@@ -1,17 +1,6 @@
 import { useState, useMemo, useEffect, useRef, type DragEvent } from 'react';
 import { useParams, useSearchParams } from 'react-router-dom';
-import {
-  CheckSquare,
-  Plus,
-  Search,
-  AlertTriangle,
-  Copy,
-  Check,
-  Trash2,
-  GitBranch,
-  FileText,
-  ArrowRightLeft,
-} from 'lucide-react';
+import { CheckSquare, Plus, Search, AlertTriangle } from 'lucide-react';
 import {
   useTodos,
   addTodo,
@@ -20,17 +9,19 @@ import {
   startTodo,
   reopenTodo,
   deleteTodo,
+  patchTodo,
+  addTodoAttachments,
+  deleteTodoAttachment,
+  todoAttachmentUrl,
 } from '../hooks/useTodos';
 import { LoadingState } from '../components/LoadingState';
 import { ErrorState } from '../components/ErrorState';
 import { StatCard } from '../components/StatCard';
-import { StatusMenu } from '../components/StatusMenu';
+import { TodoRow } from '../components/TodoRow';
 import { TodoPromoteModal } from '../components/TodoPromoteModal';
 import { TodoMoveModal } from '../components/TodoMoveModal';
 import { BundleSection } from '../components/BundleRow';
 import { useBundles } from '../hooks/useBundles';
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../components/ui/tooltip';
-import type { TodoItem } from '../types';
 import { useHotkey, useHotkeyScope, useListSelection } from '../hotkeys';
 import { NON_DRAGGABLE_SELECTOR } from '../components/KanbanBoard';
 import { TodoAccordionSection } from '../components/TodoAccordionSection';
@@ -42,179 +33,6 @@ import {
   type TodoSectionId,
 } from '@shared/todo-sections';
 
-interface TodoRowProps {
-  item: TodoItem;
-  copiedId: string | null;
-  selected: boolean;
-  onToggleSelected: (id: string, e: React.MouseEvent | React.ChangeEvent) => void;
-  onMoveOne: (id: string, e: React.MouseEvent) => void;
-  onCycleStatus: (id: string, status: string) => void;
-  onStatusChange: (id: string, status: string) => void;
-  onCopyId: (e: React.MouseEvent, id: string) => void;
-  onDelete: (e: React.MouseEvent, id: string, description: string) => void;
-  hotkeyRowProps?: Record<string, string | number | boolean>;
-  onDragOrigin: (e: React.MouseEvent<HTMLDivElement>) => void;
-  onDragStart: (e: DragEvent<HTMLDivElement>, id: string) => void;
-  onDragEnd: () => void;
-  isDragging: boolean;
-}
-
-function TodoRow({
-  item,
-  copiedId,
-  selected,
-  onToggleSelected,
-  onMoveOne,
-  onCycleStatus,
-  onStatusChange,
-  onCopyId,
-  onDelete,
-  hotkeyRowProps,
-  onDragOrigin,
-  onDragStart,
-  onDragEnd,
-  isDragging,
-}: TodoRowProps) {
-  return (
-    <div
-      draggable
-      data-todo-id={item.id}
-      {...(hotkeyRowProps ?? {})}
-      onMouseDown={onDragOrigin}
-      onDragStart={(e) => onDragStart(e, item.id)}
-      onDragEnd={onDragEnd}
-      className={`surface-panel flex items-center gap-3 px-3 py-2 cursor-grab active:cursor-grabbing hover:bg-foreground/[0.03] transition ${
-        isDragging ? 'opacity-50 shadow-lg' : ''
-      }`}
-      onClick={() => onCycleStatus(item.id, item.status)}
-    >
-      <input
-        type="checkbox"
-        aria-label={`Select todo ${item.id}`}
-        checked={selected}
-        onChange={(e) => onToggleSelected(item.id, e)}
-        onClick={(e) => e.stopPropagation()}
-        className="h-4 w-4 cursor-pointer accent-foreground"
-      />
-      <StatusMenu
-        status={item.status as any}
-        onChange={(s) => onStatusChange(item.id, s)}
-      />
-      <div className="flex-1 min-w-0">
-        <span
-          className={`text-sm ${item.status === 'completed' ? 'line-through text-muted-foreground' : 'text-foreground'}`}
-        >
-          {item.description}
-        </span>
-        {item.tags.length > 0 && (
-          <span className="ml-2 text-xs text-muted-foreground">
-            {item.tags.map((t) => `#${t}`).join(' ')}
-          </span>
-        )}
-        {item.session && (
-          <span className="ml-2 text-xs text-info-foreground/70 font-mono">
-            session:{item.session.slice(0, 8)}
-          </span>
-        )}
-        <TodoMetaBadges item={item} />
-      </div>
-      {copiedId === item.id ? (
-        <span className="text-xs text-status-completed-foreground flex items-center gap-1">
-          <Check className="h-3 w-3" /> Copied to clipboard
-        </span>
-      ) : (
-        <>
-          <button
-            className="text-xs text-muted-foreground/60 font-mono hover:text-foreground transition"
-            onClick={(e) => onCopyId(e, item.id)}
-          >
-            t:{item.id}
-          </button>
-          <button
-            className="text-muted-foreground/40 hover:text-foreground transition"
-            title="Copy ID"
-            onClick={(e) => onCopyId(e, item.id)}
-          >
-            <Copy className="h-3 w-3" />
-          </button>
-          <button
-            className="text-muted-foreground/40 hover:text-foreground transition"
-            title="Move to..."
-            onClick={(e) => onMoveOne(item.id, e)}
-          >
-            <ArrowRightLeft className="h-3 w-3" />
-          </button>
-          <button
-            className="text-muted-foreground/40 hover:text-destructive transition"
-            title="Delete todo"
-            onClick={(e) => onDelete(e, item.id, item.description)}
-          >
-            <Trash2 className="h-3 w-3" />
-          </button>
-        </>
-      )}
-    </div>
-  );
-}
-
-export function TodoMetaBadges({ item }: { item: TodoItem }) {
-  const hasMeta = !!(item.branch || item.planDir || item.worktreePath || item.createdAt || item.updatedAt);
-  if (!hasMeta) return null;
-  return (
-    <span className="inline-flex items-center gap-1 ml-2 align-middle">
-      {item.branch ? (
-        <TooltipProvider delayDuration={120}>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <span className="inline-flex items-center gap-1 rounded-full border border-info-foreground/30 bg-info/30 px-1.5 py-0.5 text-[10px] font-mono text-info-foreground">
-                <GitBranch className="h-2.5 w-2.5" />
-                <span className="block min-w-0 max-w-[120px] truncate">{item.branch}</span>
-              </span>
-            </TooltipTrigger>
-            <TooltipContent>{item.branch}</TooltipContent>
-          </Tooltip>
-        </TooltipProvider>
-      ) : null}
-      {item.planDir ? (
-        <TooltipProvider delayDuration={120}>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  navigator.clipboard.writeText(item.planDir!);
-                }}
-                className="inline-flex items-center rounded-full border border-status-completed-foreground/40 bg-status-completed/30 p-1 text-status-completed-foreground hover:bg-status-completed/50"
-                aria-label="Copy plan directory path"
-              >
-                <FileText className="h-2.5 w-2.5" />
-              </button>
-            </TooltipTrigger>
-            <TooltipContent>Plan: {item.planDir}</TooltipContent>
-          </Tooltip>
-        </TooltipProvider>
-      ) : null}
-      {(item.worktreePath || item.createdAt || item.updatedAt) ? (
-        <TooltipProvider delayDuration={120}>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <span className="text-[10px] text-muted-foreground/60 cursor-default">·</span>
-            </TooltipTrigger>
-            <TooltipContent>
-              <div className="space-y-0.5 text-xs font-mono">
-                {item.worktreePath ? <div>worktree: {item.worktreePath}</div> : null}
-                {item.createdAt ? <div>created: {item.createdAt}</div> : null}
-                {item.updatedAt ? <div>updated: {item.updatedAt}</div> : null}
-              </div>
-            </TooltipContent>
-          </Tooltip>
-        </TooltipProvider>
-      ) : null}
-    </span>
-  );
-}
-
 export function WorkspaceTodosPage() {
   const { workspace } = useParams<{ workspace: string }>();
   const ws = workspace || '_global';
@@ -225,6 +43,7 @@ export function WorkspaceTodosPage() {
   const [tagFilter, setTagFilter] = useState<string>('');
   const [newTodoText, setNewTodoText] = useState('');
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [promoteOpen, setPromoteOpen] = useState(false);
   const [moveOpen, setMoveOpen] = useState(false);
@@ -324,17 +143,6 @@ export function WorkspaceTodosPage() {
     refetch();
   }
 
-  const NEXT_STATUS: Record<string, string> = {
-    open: 'in_progress',
-    in_progress: 'completed',
-    completed: 'open',
-    blocked: 'open',
-  };
-
-  function handleCycleStatus(id: string, currentStatus: string) {
-    handleStatusChange(id, NEXT_STATUS[currentStatus] || 'open');
-  }
-
   async function handleDelete(e: React.MouseEvent, id: string, description: string) {
     e.stopPropagation();
     if (!window.confirm(`Delete "${description}"? This can't be undone.`)) return;
@@ -360,6 +168,21 @@ export function WorkspaceTodosPage() {
     refetch();
   }
 
+  async function handlePatchDescription(id: string, next: string) {
+    await patchTodo(ws, id, next);
+    refetch();
+  }
+
+  async function handleAddAttachments(id: string, files: File[]) {
+    await addTodoAttachments(ws, id, files);
+    refetch();
+  }
+
+  async function handleDeleteAttachment(id: string, attachmentId: string) {
+    await deleteTodoAttachment(ws, id, attachmentId);
+    refetch();
+  }
+
   // Group the filtered todos into the three accordion sections. `renderedOrdered`
   // is the flat list of rows actually in the DOM (expanded sections only); it
   // must match what useListSelection queries via [data-hotkey-row-index].
@@ -372,7 +195,8 @@ export function WorkspaceTodosPage() {
   const { hotkeyRowProps } = useListSelection(renderedOrdered, {
     scope: 'list:todos',
     bindO: false,
-    onOpen: (todo) => handleCycleStatus(todo.id, todo.status),
+    // Enter opens the inline editor — status changes only via the dot, never a cycle.
+    onOpen: (todo) => setEditingId(todo.id),
   });
   useHotkey({
     keys: '/',
@@ -616,9 +440,15 @@ export function WorkspaceTodosPage() {
                         item={item}
                         copiedId={copiedId}
                         selected={selectedIds.has(item.id)}
+                        editing={editingId === item.id}
+                        onBeginEdit={(id) => setEditingId(id)}
+                        onEndEdit={() => setEditingId(null)}
+                        onPatchDescription={handlePatchDescription}
+                        onAddAttachments={handleAddAttachments}
+                        onDeleteAttachment={handleDeleteAttachment}
+                        attachmentUrl={(id, attachmentId) => todoAttachmentUrl(ws, id, attachmentId)}
                         onToggleSelected={(id) => toggleOne(id)}
                         onMoveOne={(id, e) => { e.stopPropagation(); setMoveSingleId(id); setMoveOpen(true); }}
-                        onCycleStatus={handleCycleStatus}
                         onStatusChange={handleStatusChange}
                         onCopyId={copyId}
                         onDelete={handleDelete}
