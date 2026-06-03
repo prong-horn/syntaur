@@ -59,4 +59,44 @@ describe('syntaur memory CRUD', () => {
     expect(r.code).toBe(1);
     expect(r.stderr).toContain('at least one');
   });
+
+  it('update preserves tags, unknown frontmatter, the body, and created', async () => {
+    const file = resolve(home, 'projects', 'p', 'memories', 'm.md');
+    await mkdir(resolve(home, 'projects', 'p', 'memories'), { recursive: true });
+    await writeFile(
+      file,
+      [
+        '---',
+        'name: "M"',
+        'source: "convo"',
+        'scope: "project"',
+        'sourceAssignment: null',
+        'relatedAssignments: []',
+        'customField: "keepme"',
+        'tags:',
+        '  - alpha',
+        '  - beta',
+        'created: "2026-01-01T00:00:00Z"',
+        'updated: "2026-01-01T00:00:00Z"',
+        '---',
+        '',
+        '# Custom Heading',
+        '',
+        'Notes.',
+        '',
+      ].join('\n'),
+      'utf-8',
+    );
+    const r = await runCli(['memory', 'update', 'm', '--project', 'p', '--scope', 'global'], home);
+    expect(r.code, r.stderr).toBe(0);
+    const out = await readFile(file, 'utf-8');
+    expect(out).toContain('scope: "global"');
+    expect(out).toContain('customField: "keepme"'); // unknown field preserved
+    expect(out).toContain('- alpha'); // tags preserved
+    expect(out).toContain('- beta');
+    expect(out).toContain('# Custom Heading'); // body heading not stripped/duplicated
+    expect((out.match(/^# /gm) ?? []).length).toBe(1);
+    expect(out).toContain('created: "2026-01-01T00:00:00Z"'); // created preserved
+    expect(out).not.toContain('updated: "2026-01-01T00:00:00Z"'); // updated bumped
+  });
 });

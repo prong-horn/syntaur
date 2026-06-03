@@ -33,13 +33,40 @@ function yamlQuote(value: string): string {
   return `"${value.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
 }
 
+function setScalarField(fm: string, key: string, value: string | null): string {
+  const formatted = value === null ? 'null' : yamlQuote(value);
+  const re = new RegExp(`^${key}:[^\\n]*$`, 'm');
+  return re.test(fm) ? fm.replace(re, `${key}: ${formatted}`) : `${fm}\n${key}: ${formatted}`;
+}
+
+function setListField(fm: string, key: string, items: string[]): string {
+  const serialized =
+    items.length === 0 ? `${key}: []` : `${key}:\n${items.map((i) => `  - ${i}`).join('\n')}`;
+  // Match the `key:` line plus any following indented `- ` list items.
+  const re = new RegExp(`^${key}:[^\\n]*(?:\\n[ \\t]+-[^\\n]*)*$`, 'm');
+  return re.test(fm) ? fm.replace(re, serialized) : `${fm}\n${serialized}`;
+}
+
 /**
- * `parseResource().body` includes the leading `# <name>` H1. Strip it so a
- * re-render (which re-adds the heading) doesn't stack duplicate headings on
- * every update.
+ * Edit only the given frontmatter fields in place (preserving the body and any
+ * unknown frontmatter the dashboard may have written), and bump `updated`. This
+ * is used by `update` instead of a full re-render so nothing is lost.
  */
-function stripLeadingHeading(body: string): string {
-  return body.replace(/^\s*#\s+.*\r?\n+/, '').trim();
+function editResourceFrontmatter(
+  content: string,
+  updates: { name?: string; category?: string; source?: string; relatedAssignments?: string[] },
+): string {
+  const m = content.match(/^(---\n)([\s\S]*?)(\n---)([\s\S]*)$/);
+  if (!m) throw new Error('Resource file has no frontmatter.');
+  let fm = m[2];
+  if (updates.name !== undefined) fm = setScalarField(fm, 'name', updates.name);
+  if (updates.category !== undefined) fm = setScalarField(fm, 'category', updates.category);
+  if (updates.source !== undefined) fm = setScalarField(fm, 'source', updates.source);
+  if (updates.relatedAssignments !== undefined) {
+    fm = setListField(fm, 'relatedAssignments', updates.relatedAssignments);
+  }
+  fm = setScalarField(fm, 'updated', nowIso());
+  return `${m[1]}${fm}${m[3]}${m[4]}`;
 }
 
 function renderResourceFile(opts: {
@@ -175,7 +202,6 @@ export async function runResourceUpdate(
   if (!(await fileExists(filePath))) {
     throw new Error(`Resource "${slug}" not found in project "${options.project}".`);
   }
-  const existing = parseResource(await readFile(filePath, 'utf-8'));
   if (
     options.name === undefined &&
     options.source === undefined &&
@@ -184,17 +210,13 @@ export async function runResourceUpdate(
   ) {
     throw new Error('Provide at least one of --name, --source, --category, --related-assignments.');
   }
-  const content = renderResourceFile({
-    name: options.name ?? existing.name,
-    source: options.source ?? existing.source,
-    category: options.category ?? existing.category,
+  const original = await readFile(filePath, 'utf-8');
+  const content = editResourceFrontmatter(original, {
+    name: options.name,
+    category: options.category,
+    source: options.source,
     relatedAssignments:
-      options.relatedAssignments !== undefined
-        ? parseList(options.relatedAssignments)
-        : existing.relatedAssignments,
-    body: stripLeadingHeading(existing.body) || undefined,
-    created: existing.created || undefined,
-    updated: nowIso(),
+      options.relatedAssignments !== undefined ? parseList(options.relatedAssignments) : undefined,
   });
   await writeFileForce(filePath, content);
   const { path: indexPath, total } = await rebuildResourcesIndex(projectDir);

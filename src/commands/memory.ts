@@ -34,13 +34,48 @@ function yamlQuote(value: string): string {
   return `"${value.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
 }
 
+function setScalarField(fm: string, key: string, value: string | null): string {
+  const formatted = value === null ? 'null' : yamlQuote(value);
+  const re = new RegExp(`^${key}:[^\\n]*$`, 'm');
+  return re.test(fm) ? fm.replace(re, `${key}: ${formatted}`) : `${fm}\n${key}: ${formatted}`;
+}
+
+function setListField(fm: string, key: string, items: string[]): string {
+  const serialized =
+    items.length === 0 ? `${key}: []` : `${key}:\n${items.map((i) => `  - ${i}`).join('\n')}`;
+  const re = new RegExp(`^${key}:[^\\n]*(?:\\n[ \\t]+-[^\\n]*)*$`, 'm');
+  return re.test(fm) ? fm.replace(re, serialized) : `${fm}\n${serialized}`;
+}
+
 /**
- * `parseMemory().body` includes the leading `# <name>` H1. Strip it so a
- * re-render (which re-adds the heading) doesn't stack duplicate headings on
- * every update.
+ * Edit only the given frontmatter fields in place (preserving the body, `tags`,
+ * and any other unknown frontmatter), and bump `updated`. Used by `update` so a
+ * metadata change never drops fields the CLI doesn't model.
  */
-function stripLeadingHeading(body: string): string {
-  return body.replace(/^\s*#\s+.*\r?\n+/, '').trim();
+function editMemoryFrontmatter(
+  content: string,
+  updates: {
+    name?: string;
+    source?: string;
+    scope?: string;
+    sourceAssignment?: string;
+    relatedAssignments?: string[];
+  },
+): string {
+  const m = content.match(/^(---\n)([\s\S]*?)(\n---)([\s\S]*)$/);
+  if (!m) throw new Error('Memory file has no frontmatter.');
+  let fm = m[2];
+  if (updates.name !== undefined) fm = setScalarField(fm, 'name', updates.name);
+  if (updates.source !== undefined) fm = setScalarField(fm, 'source', updates.source);
+  if (updates.scope !== undefined) fm = setScalarField(fm, 'scope', updates.scope);
+  if (updates.sourceAssignment !== undefined) {
+    fm = setScalarField(fm, 'sourceAssignment', updates.sourceAssignment);
+  }
+  if (updates.relatedAssignments !== undefined) {
+    fm = setListField(fm, 'relatedAssignments', updates.relatedAssignments);
+  }
+  fm = setScalarField(fm, 'updated', nowIso());
+  return `${m[1]}${fm}${m[3]}${m[4]}`;
 }
 
 function renderMemoryFile(opts: {
@@ -190,7 +225,6 @@ export async function runMemoryUpdate(
   if (!(await fileExists(filePath))) {
     throw new Error(`Memory "${slug}" not found in project "${options.project}".`);
   }
-  const existing = parseMemory(await readFile(filePath, 'utf-8'));
   if (
     options.name === undefined &&
     options.source === undefined &&
@@ -202,19 +236,14 @@ export async function runMemoryUpdate(
       'Provide at least one of --name, --source, --scope, --source-assignment, --related-assignments.',
     );
   }
-  const content = renderMemoryFile({
-    name: options.name ?? existing.name,
-    source: options.source ?? existing.source,
-    scope: options.scope ?? existing.scope,
-    sourceAssignment:
-      options.sourceAssignment !== undefined ? options.sourceAssignment : existing.sourceAssignment,
+  const original = await readFile(filePath, 'utf-8');
+  const content = editMemoryFrontmatter(original, {
+    name: options.name,
+    source: options.source,
+    scope: options.scope,
+    sourceAssignment: options.sourceAssignment,
     relatedAssignments:
-      options.relatedAssignments !== undefined
-        ? parseList(options.relatedAssignments)
-        : existing.relatedAssignments,
-    body: stripLeadingHeading(existing.body) || undefined,
-    created: existing.created || undefined,
-    updated: nowIso(),
+      options.relatedAssignments !== undefined ? parseList(options.relatedAssignments) : undefined,
   });
   await writeFileForce(filePath, content);
   const { path: indexPath, total } = await rebuildMemoriesIndex(projectDir);
