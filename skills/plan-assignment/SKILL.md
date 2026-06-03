@@ -76,7 +76,24 @@ Remember this `planFilename` and `versionLabel` for Steps 5b and 5c.
 
 ### 5b. Write the plan file
 
-Write `<assignmentDir>/<planFilename>` with standard plan frontmatter:
+**Scaffold via the CLI — do not hand-write the file or frontmatter.**
+
+- **Initial plan** (`planFilename` is `plan.md`, no plan files exist yet): run
+
+  ```bash
+  syntaur plan create
+  ```
+
+  (or `--assignment <slug> [--project <slug>]` to target one explicitly). This
+  writes `plan.md` with the standard `draft` frontmatter AND appends the
+  four-todo cycle to assignment.md `## Todos` — so **Step 5c is already done for
+  the initial plan**; skip it and proceed to fill in the body sections below.
+
+- **New version** (`planFilename` is `plan-v<N>.md`): run `syntaur plan version`,
+  which scaffolds `plan-v<N>.md`, supersedes the prior cycle, and carries forward
+  unchecked tasks (this is Step 5c for the versioned case).
+
+The scaffolded frontmatter is:
 
 ```yaml
 ---
@@ -86,6 +103,8 @@ created: "<nowTimestamp>"
 updated: "<nowTimestamp>"
 ---
 ```
+
+Then edit the scaffolded plan file in place to add the body sections below.
 
 Body sections:
 
