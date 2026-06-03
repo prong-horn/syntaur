@@ -4,6 +4,7 @@ import {
   renderCursorAssignment,
   renderCodexAgents,
   renderOpenCodeConfig,
+  renderHermesSoul,
 } from '../templates/index.js';
 
 const TEST_PARAMS = {
@@ -244,5 +245,31 @@ describe('renderOpenCodeConfig', () => {
       projectDir: TEST_PARAMS.projectDir,
     });
     expect(out).toMatch(/\n$/);
+  });
+});
+
+describe('renderHermesSoul', () => {
+  it('starts with a SOUL heading', () => {
+    const out = renderHermesSoul(TEST_PARAMS);
+    expect(out).toMatch(/^# SOUL/);
+  });
+
+  it('embeds the Syntaur protocol body', () => {
+    const out = renderHermesSoul(TEST_PARAMS);
+    expect(out).toContain('Syntaur Protocol');
+    expect(out).toContain('Write Boundary Rules');
+  });
+
+  it('contains assignment context', () => {
+    const out = renderHermesSoul(TEST_PARAMS);
+    expect(out).toContain('test-project');
+    expect(out).toContain('test-assignment');
+    expect(out).toContain(TEST_PARAMS.assignmentDir);
+  });
+
+  it('contains lifecycle commands', () => {
+    const out = renderHermesSoul(TEST_PARAMS);
+    expect(out).toContain('syntaur start');
+    expect(out).toContain('syntaur complete');
   });
 });

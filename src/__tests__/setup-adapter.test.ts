@@ -68,6 +68,34 @@ describe('setup-adapter command', () => {
     expect(JSON.parse(config).instructions).toBeDefined();
   });
 
+  it('generates Pi adapter file (AGENTS.md)', async () => {
+    await setupAdapterCommand('pi', baseOptions(tempDir));
+    const agents = await readFile(resolve(cwdDir, 'AGENTS.md'), 'utf-8');
+    expect(agents).toContain('Syntaur Protocol');
+    expect(agents).toContain('test-assignment');
+  });
+
+  it('generates OpenClaw adapter file (AGENTS.md)', async () => {
+    await setupAdapterCommand('openclaw', baseOptions(tempDir));
+    const agents = await readFile(resolve(cwdDir, 'AGENTS.md'), 'utf-8');
+    expect(agents).toContain('Syntaur Protocol');
+    expect(agents).toContain('test-assignment');
+  });
+
+  it('generates Hermes adapter file (SOUL.md)', async () => {
+    await setupAdapterCommand('hermes', baseOptions(tempDir));
+    const soul = await readFile(resolve(cwdDir, 'SOUL.md'), 'utf-8');
+    expect(soul).toMatch(/^# SOUL/);
+    expect(soul).toContain('Syntaur Protocol');
+    expect(soul).toContain('test-assignment');
+  });
+
+  it('refuses native-plugin-only frameworks (claude)', async () => {
+    await expect(
+      setupAdapterCommand('claude', baseOptions(tempDir)),
+    ).rejects.toThrow('Unsupported framework');
+  });
+
   it('skips existing files without --force', async () => {
     const agentsPath = resolve(cwdDir, 'AGENTS.md');
     await writeFile(agentsPath, 'existing content');

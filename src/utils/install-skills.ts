@@ -242,6 +242,43 @@ export async function installSkillsWithReport(
   return { results };
 }
 
+export interface InstallSkillsToDirOptions {
+  /** Absolute destination skills dir (e.g. a cross-agent target's global dir). */
+  targetDir: string;
+  force?: boolean;
+  sourceDir?: string;
+}
+
+/**
+ * Offline fallback installer: copy the bundled `skills/` into an arbitrary
+ * directory (a cross-agent target's `skillsDir.global`). Unlike `installSkills`,
+ * this has NO `SkillTarget` and NO plugin-active gating — it is used when
+ * `npx skills add` is unavailable so Syntaur stays functional without the
+ * external CLI. Reuses the same per-skill copy + symlink-skip logic, so it
+ * coexists with skills.sh-managed symlinks.
+ */
+export async function installSkillsToDir(
+  options: InstallSkillsToDirOptions,
+): Promise<SkillInstallResult[]> {
+  const source = options.sourceDir ?? (await getSkillsDir());
+  if (!(await fileExists(source))) {
+    throw new Error(
+      `Syntaur skills not found at ${source}. Reinstall syntaur: npm install -g syntaur@latest`,
+    );
+  }
+  const force = options.force ?? false;
+  const skillNames = await discoverSkillNames(source);
+  await mkdir(options.targetDir, { recursive: true });
+
+  const results: SkillInstallResult[] = [];
+  for (const skill of skillNames) {
+    const srcDir = join(source, skill);
+    const destDir = join(options.targetDir, skill);
+    results.push(await installSkillDir(srcDir, destDir, skill, force));
+  }
+  return results;
+}
+
 export async function uninstallSkills(options: {
   target: SkillTarget;
   targetDir?: string;
