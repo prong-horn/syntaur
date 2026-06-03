@@ -18,6 +18,10 @@ import {
   blockTodo,
   reopenTodo,
   deleteTodo,
+  patchTodo,
+  addTodoAttachments,
+  deleteTodoAttachment,
+  todoAttachmentUrl,
   type PromoteResult,
   type BulkPromoteResult,
 } from '../hooks/useTodos';
@@ -25,6 +29,7 @@ import { LoadingState } from '../components/LoadingState';
 import { ErrorState } from '../components/ErrorState';
 import { StatCard } from '../components/StatCard';
 import { StatusMenu } from '../components/StatusMenu';
+import { InlineTodoText, TodoAttachments } from '../components/TodoRow';
 import { TodoPromoteModal, type PromoteScope } from '../components/TodoPromoteModal';
 import { NON_DRAGGABLE_SELECTOR } from '../components/KanbanBoard';
 import { TodoAccordionSection } from '../components/TodoAccordionSection';
@@ -62,6 +67,7 @@ export function TodosPage() {
   const [newTodoText, setNewTodoText] = useState('');
   const [newTodoWorkspace, setNewTodoWorkspace] = useState('_global');
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [editingKey, setEditingKey] = useState<SelKey | null>(null);
 
   const [selectedKeys, setSelectedKeys] = useState<Set<SelKey>>(new Set());
   const [promoteOpen, setPromoteOpen] = useState(false);
@@ -257,17 +263,6 @@ export function TodosPage() {
     refetch();
   }
 
-  const NEXT_STATUS: Record<string, string> = {
-    open: 'in_progress',
-    in_progress: 'completed',
-    completed: 'open',
-    blocked: 'open',
-  };
-
-  function handleCycleStatus(workspace: string, id: string, currentStatus: string) {
-    handleStatusChange(workspace, id, NEXT_STATUS[currentStatus] || 'open');
-  }
-
   async function handleStatusChange(workspace: string, id: string, newStatus: string) {
     switch (newStatus) {
       case 'open':
@@ -291,6 +286,21 @@ export function TodosPage() {
     refetch();
   }
 
+  async function handlePatchDescription(workspace: string, id: string, next: string) {
+    await patchTodo(workspace, id, next);
+    refetch();
+  }
+
+  async function handleAddAttachments(workspace: string, id: string, files: File[]) {
+    await addTodoAttachments(workspace, id, files);
+    refetch();
+  }
+
+  async function handleDeleteAttachment(workspace: string, id: string, attachmentId: string) {
+    await deleteTodoAttachment(workspace, id, attachmentId);
+    refetch();
+  }
+
   // Group the filtered todos into the three accordion sections. `renderedOrdered`
   // is the flat list of rows actually in the DOM (expanded sections only); it
   // must match what useListSelection / shift-range select index into.
@@ -299,11 +309,11 @@ export function TodosPage() {
     .filter((s) => !collapse.isCollapsed(s.config.id))
     .flatMap((s) => s.items);
 
-  // Hotkey wiring (R5d: Enter cycles status, o is no-op).
+  // Hotkey wiring: Enter opens the inline editor (status changes only via the dot).
   const { hotkeyRowProps } = useListSelection(renderedOrdered, {
     scope: 'list:todos',
     bindO: false,
-    onOpen: (todo) => handleCycleStatus(todo.workspace, todo.id, todo.status),
+    onOpen: (todo) => setEditingKey(keyOf(todo)),
   });
   useHotkey({
     keys: '/',
@@ -562,46 +572,62 @@ export function TodosPage() {
                         onMouseDown={(e) => { dragOriginRef.current = e.target; }}
                         onDragStart={(e) => handleDragStart(e, k)}
                         onDragEnd={handleDragEnd}
-                        className={`surface-panel flex items-center gap-3 px-3 py-2 group cursor-grab active:cursor-grabbing hover:bg-foreground/[0.03] transition ${
+                        className={`surface-panel flex items-start gap-3 px-3 py-2 group cursor-grab active:cursor-grabbing hover:bg-foreground/[0.03] transition ${
                           selected ? 'ring-1 ring-foreground/20' : ''
                         } ${draggedKey === k ? 'opacity-50 shadow-lg' : ''}`}
-                        onClick={() => handleCycleStatus(item.workspace, item.id, item.status)}
                       >
                         <input
                           type="checkbox"
+                          data-no-drag
                           aria-label={`Select todo ${item.id}`}
+                          title="Select"
                           checked={selected}
                           onChange={() => { /* handled via onClick to capture shiftKey */ }}
                           onClick={(e) => { e.stopPropagation(); toggleOne(item, rowIndex, e); }}
-                          className="h-4 w-4 cursor-pointer accent-foreground"
+                          className="mt-1 h-4 w-4 shrink-0 cursor-pointer accent-foreground"
                         />
-                        <StatusMenu
-                          status={item.status as any}
-                          onChange={(s) => handleStatusChange(item.workspace, item.id, s)}
-                        />
+                        <span className="mt-0.5 self-stretch w-px bg-border/60" aria-hidden="true" />
+                        <div className="mt-0.5 shrink-0">
+                          <StatusMenu
+                            status={item.status as any}
+                            onChange={(s) => handleStatusChange(item.workspace, item.id, s)}
+                          />
+                        </div>
                         <div className="flex-1 min-w-0">
-                          <span
-                            className={`text-sm ${item.status === 'completed' ? 'line-through text-muted-foreground' : 'text-foreground'}`}
-                          >
-                            {item.description}
-                          </span>
-                          {item.tags.length > 0 && (
-                            <span className="ml-2 text-xs text-muted-foreground">
-                              {item.tags.map((t) => `#${t}`).join(' ')}
-                            </span>
-                          )}
-                          {item.linkedAssignmentRef ? (
-                            <Link
-                              to={navigateRefTo(item.linkedAssignmentRef)}
-                              className="ml-2 inline-flex items-center gap-0.5 rounded-full border border-status-completed-foreground/40 bg-status-completed/30 px-1.5 py-0.5 text-[10px] font-mono text-status-completed-foreground hover:bg-status-completed/50"
-                              onClick={(e) => e.stopPropagation()}
-                            >
-                              <ArrowRight className="h-2.5 w-2.5" />
-                              {item.linkedAssignmentRef.includes('/')
-                                ? item.linkedAssignmentRef
-                                : `oneoff:${item.linkedAssignmentRef.slice(0, 8)}`}
-                            </Link>
-                          ) : null}
+                          <div className="flex items-baseline flex-wrap gap-x-2">
+                            <InlineTodoText
+                              description={item.description}
+                              status={item.status}
+                              editing={editingKey === k}
+                              onBeginEdit={() => setEditingKey(k)}
+                              onEndEdit={() => setEditingKey(null)}
+                              onSave={(next) => handlePatchDescription(item.workspace, item.id, next)}
+                            />
+                            {item.tags.length > 0 && (
+                              <span className="text-xs text-muted-foreground">
+                                {item.tags.map((t) => `#${t}`).join(' ')}
+                              </span>
+                            )}
+                            {item.linkedAssignmentRef ? (
+                              <Link
+                                to={navigateRefTo(item.linkedAssignmentRef)}
+                                data-no-drag
+                                className="inline-flex items-center gap-0.5 rounded-full border border-status-completed-foreground/40 bg-status-completed/30 px-1.5 py-0.5 text-[10px] font-mono text-status-completed-foreground hover:bg-status-completed/50"
+                                onClick={(e) => e.stopPropagation()}
+                              >
+                                <ArrowRight className="h-2.5 w-2.5" />
+                                {item.linkedAssignmentRef.includes('/')
+                                  ? item.linkedAssignmentRef
+                                  : `oneoff:${item.linkedAssignmentRef.slice(0, 8)}`}
+                              </Link>
+                            ) : null}
+                          </div>
+                          <TodoAttachments
+                            item={item}
+                            attachmentUrl={(id, attachmentId) => todoAttachmentUrl(item.workspace, id, attachmentId)}
+                            onAdd={(files) => handleAddAttachments(item.workspace, item.id, files)}
+                            onDelete={(attachmentId) => handleDeleteAttachment(item.workspace, item.id, attachmentId)}
+                          />
                         </div>
                         <span className="text-xs text-muted-foreground/60 font-mono">
                           {item.workspace !== '_global' && (

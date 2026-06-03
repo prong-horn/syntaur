@@ -222,10 +222,11 @@ export function createTodosRouter(
         if (!file.endsWith('.md') || file.endsWith('-log.md')) continue;
         const workspace = file.replace('.md', '');
         const checklist = await readChecklist(todosDir, workspace);
+        const attachmentsByTodo = await readScopeAttachments(todosDir, checklist.workspace);
         workspaces.push({
           workspace: checklist.workspace,
           archiveInterval: checklist.archiveInterval,
-          items: checklist.items,
+          items: checklist.items.map((i) => ({ ...i, attachments: attachmentsByTodo[i.id] ?? [] })),
           counts: computeCounts(checklist.items),
         });
       }

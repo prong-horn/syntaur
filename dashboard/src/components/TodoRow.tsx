@@ -176,7 +176,7 @@ interface InlineTodoTextProps {
   onSave: (next: string) => Promise<void>;
 }
 
-function InlineTodoText({ description, status, editing, onBeginEdit, onEndEdit, onSave }: InlineTodoTextProps) {
+export function InlineTodoText({ description, status, editing, onBeginEdit, onEndEdit, onSave }: InlineTodoTextProps) {
   if (!editing) {
     return (
       <button
@@ -311,7 +311,7 @@ interface TodoAttachmentsProps {
   onDelete: (attachmentId: string) => Promise<void>;
 }
 
-function TodoAttachments({ item, attachmentUrl, onAdd, onDelete }: TodoAttachmentsProps) {
+export function TodoAttachments({ item, attachmentUrl, onAdd, onDelete }: TodoAttachmentsProps) {
   const attachments = item.attachments ?? [];
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
