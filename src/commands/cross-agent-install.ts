@@ -11,6 +11,7 @@ import {
   getAgentTarget,
   agentTargetIds,
   isHermesHomeCustom,
+  hermesSkillsDir,
 } from '../targets/registry.js';
 import type { AgentTarget } from '../targets/types.js';
 
@@ -117,7 +118,10 @@ export async function crossAgentInstallCommand(
 
   // --- Offline fallback + Hermes $HERMES_HOME reconciliation ---
   for (const t of targets) {
-    const globalDir = t.skillsDir?.global;
+    // Hermes resolves its dir fresh from $HERMES_HOME at call time — the
+    // descriptor's frozen `skillsDir.global` can be stale if the env was set
+    // after module load.
+    const globalDir = t.id === 'hermes' ? hermesSkillsDir() : t.skillsDir?.global;
     if (!globalDir) continue;
 
     const offlineNeeded = !tier1Done; // also true under dry-run (tier1Done stays false)

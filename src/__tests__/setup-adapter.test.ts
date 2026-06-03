@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { mkdtemp, rm, mkdir, writeFile, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -94,6 +94,26 @@ describe('setup-adapter command', () => {
     await expect(
       setupAdapterCommand('claude', baseOptions(tempDir)),
     ).rejects.toThrow('Unsupported framework');
+  });
+
+  it('a clean re-run reports "up-to-date", not "Generated"', async () => {
+    await setupAdapterCommand('codex', baseOptions(tempDir));
+    const first = await readFile(resolve(cwdDir, 'AGENTS.md'), 'utf-8');
+
+    const logs: string[] = [];
+    const spy = vi.spyOn(console, 'log').mockImplementation((...a) => {
+      logs.push(a.map(String).join(' '));
+    });
+    try {
+      await setupAdapterCommand('codex', baseOptions(tempDir));
+    } finally {
+      spy.mockRestore();
+    }
+    const out = logs.join('\n');
+    expect(out).toContain('up-to-date');
+    expect(out).not.toContain('Generated codex adapter files');
+    // content unchanged
+    expect(await readFile(resolve(cwdDir, 'AGENTS.md'), 'utf-8')).toBe(first);
   });
 
   it('skips existing files without --force', async () => {

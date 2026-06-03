@@ -83,6 +83,7 @@ export async function setupAdapterCommand(
   };
 
   const writtenFiles: string[] = [];
+  const upToDateFiles: string[] = [];
   const skippedFiles: string[] = [];
 
   for (const file of target.instructions.files) {
@@ -93,7 +94,10 @@ export async function setupAdapterCommand(
     });
     if (status === 'differs-preserved') {
       skippedFiles.push(filePath);
+    } else if (status === 'already-current') {
+      upToDateFiles.push(filePath);
     } else {
+      // 'written' | 'overwritten'
       writtenFiles.push(filePath);
     }
   }
@@ -105,13 +109,19 @@ export async function setupAdapterCommand(
       console.log(`  ${f}`);
     }
   }
+  if (upToDateFiles.length > 0) {
+    console.log(`Already up-to-date:`);
+    for (const f of upToDateFiles) {
+      console.log(`  ${f}`);
+    }
+  }
   if (skippedFiles.length > 0) {
-    console.log(`Skipped (already exist, use --force to overwrite):`);
+    console.log(`Skipped (exists with different content, use --force to overwrite):`);
     for (const f of skippedFiles) {
       console.log(`  ${f}`);
     }
   }
-  if (writtenFiles.length === 0 && skippedFiles.length > 0) {
-    console.log(`No files written. All target files already exist.`);
+  if (writtenFiles.length === 0 && skippedFiles.length === 0 && upToDateFiles.length > 0) {
+    console.log(`No changes. All ${target.id} adapter files are already up-to-date.`);
   }
 }
