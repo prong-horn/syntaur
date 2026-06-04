@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -8,6 +8,12 @@ import {
   type SkillProblemKind,
 } from '../utils/doctor/checks/cross-agent.js';
 import { readSkillIdentity } from '../utils/skill-frontmatter.js';
+import {
+  KNOWN_SKILLS,
+  getSkillsDir,
+  discoverSkillNames,
+} from '../utils/install-skills.js';
+import type { CheckContext } from '../utils/doctor/types.js';
 
 function skillMd(name: string, description = 'A valid description. Use when testing.'): string {
   return `---\nname: ${name}\ndescription: ${description}\n---\n\n# ${name}\n`;
@@ -109,5 +115,77 @@ describe('readSkillIdentity', () => {
 
   it('strips quotes around the name', () => {
     expect(readSkillIdentity('---\nname: "foo"\ndescription: x\n---').name).toBe('foo');
+  });
+});
+
+describe('doctor skill-set source of truth', () => {
+  it('every pinned KNOWN_SKILL exists in the canonical skills/ tree (no retired pins)', async () => {
+    const discovered = await discoverSkillNames(await getSkillsDir());
+    const set = new Set(discovered);
+    for (const skill of KNOWN_SKILLS) expect(set.has(skill)).toBe(true);
+    // The deepened doctor derives its list from the tree, which must be a
+    // superset of the pinned list (the tree has skills KNOWN_SKILLS lags on).
+    expect(discovered.length).toBeGreaterThanOrEqual(KNOWN_SKILLS.length);
+  });
+});
+
+// Run-level tests of the cross-agent.skills check. AGENT_TARGETS captures
+// home() paths at import time, so we set HOME to a tmpdir and re-import the
+// module fresh (vi.resetModules) for each scenario. We pass a minimal
+// CheckContext directly (the check only reads config.integrations.installedAgents
+// and cwd) so no real ~/.syntaur is touched.
+describe('cross-agent.skills check (run-level)', () => {
+  const originalHome = process.env.HOME;
+  const originalCodexHome = process.env.CODEX_HOME;
+  const originalHermesHome = process.env.HERMES_HOME;
+  let home: string;
+  let cwd: string;
+
+  beforeEach(async () => {
+    home = await mkdtemp(join(tmpdir(), 'syntaur-doctor-home-'));
+    cwd = await mkdtemp(join(tmpdir(), 'syntaur-doctor-cwd-'));
+    process.env.HOME = home;
+    delete process.env.CODEX_HOME;
+    delete process.env.HERMES_HOME;
+  });
+
+  afterEach(async () => {
+    process.env.HOME = originalHome;
+    if (originalCodexHome === undefined) delete process.env.CODEX_HOME;
+    else process.env.CODEX_HOME = originalCodexHome;
+    if (originalHermesHome === undefined) delete process.env.HERMES_HOME;
+    else process.env.HERMES_HOME = originalHermesHome;
+    await rm(home, { recursive: true, force: true });
+    await rm(cwd, { recursive: true, force: true });
+  });
+
+  async function runCheck(installedAgents: Record<string, { scope: string }>) {
+    vi.resetModules();
+    const { crossAgentChecks } = await import('../utils/doctor/checks/cross-agent.js');
+    const ctx = {
+      config: { integrations: { installedAgents } },
+      cwd,
+    } as unknown as CheckContext;
+    return crossAgentChecks[0].run(ctx);
+  }
+
+  it('is skipped when no non-native agent is detected or recorded', async () => {
+    const res = await runCheck({});
+    expect(Array.isArray(res) ? res[0].status : res.status).toBe('skipped');
+  });
+
+  it('warns when a recorded agent is missing skills', async () => {
+    await mkdir(join(home, '.cursor'), { recursive: true }); // makes cursor detectable
+    const res = await runCheck({ cursor: { scope: 'global' } });
+    const out = Array.isArray(res) ? res[0] : res;
+    expect(out.status).toBe('warn');
+    expect(out.detail).toContain('Cursor');
+  });
+
+  it('does NOT escalate a detected-but-unrecorded agent (recorded-only escalation)', async () => {
+    await mkdir(join(home, '.cursor'), { recursive: true }); // detected, but not recorded
+    const res = await runCheck({});
+    const out = Array.isArray(res) ? res[0] : res;
+    expect(out.status).toBe('pass');
   });
 });

@@ -1,7 +1,7 @@
 import { join, resolve } from 'node:path';
 import { readFile } from 'node:fs/promises';
 import { fileExists } from '../../fs.js';
-import { KNOWN_SKILLS, getSkillsDir } from '../../install-skills.js';
+import { KNOWN_SKILLS, getSkillsDir, discoverSkillNames } from '../../install-skills.js';
 import { readSkillIdentity, sha256File } from '../../skill-frontmatter.js';
 import { AGENT_TARGETS } from '../../../targets/registry.js';
 import type { Check, CheckResult } from '../types.js';
@@ -101,8 +101,19 @@ const crossAgentSkillsCheck: Check = {
   title: 'Cross-agent targets have Syntaur skills + protocol files',
   async run(ctx) {
     const installed = ctx.config.integrations.installedAgents ?? {};
-    const total = KNOWN_SKILLS.length;
     const canonicalSkillsDir = await getSkillsDir();
+    // Derive the expected skill set from the canonical tree (the same set the
+    // cross-agent install actually copies — `discoverSkillNames`), NOT the
+    // hand-pinned KNOWN_SKILLS, which lags behind newly-added skills (e.g. the
+    // bundle-* skills) and would let them silently escape integrity checks.
+    let knownSkills: readonly string[];
+    try {
+      const discovered = await discoverSkillNames(canonicalSkillsDir);
+      knownSkills = discovered.length > 0 ? discovered : KNOWN_SKILLS;
+    } catch {
+      knownSkills = KNOWN_SKILLS;
+    }
+    const total = knownSkills.length;
     const lines: string[] = [];
     const problems: string[] = [];
     const affected: string[] = [];
@@ -119,7 +130,7 @@ const crossAgentSkillsCheck: Check = {
       if (!recorded && !detected) continue;
 
       considered++;
-      const integrity = await checkTargetSkillsIntegrity(dir, canonicalSkillsDir, KNOWN_SKILLS);
+      const integrity = await checkTargetSkillsIntegrity(dir, canonicalSkillsDir, knownSkills);
       const summary = summarizeProblems(integrity.problems);
       lines.push(
         `${t.displayName}: ${integrity.valid}/${total} valid` +

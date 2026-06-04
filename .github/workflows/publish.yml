@@ -95,14 +95,15 @@ jobs:
   # drift gate) and in the SAME run for both triggers, so it never depends on
   # the bot-pushed tag re-triggering a workflow.
   #
-  # One-time prerequisite: enable Pages with Source = GitHub Actions
+  # One-time prerequisite (required — the default GITHUB_TOKEN cannot enable
+  # Pages, so `configure-pages` runs WITHOUT enablement): enable Pages with
+  # Source = GitHub Actions once, via Settings → Pages or:
   #   gh api -X POST repos/prong-horn/syntaur/pages -f build_type=workflow
-  # (configure-pages `enablement: true` below also attempts this when the token
-  # has pages: write).
   pages:
     needs: release
     runs-on: ubuntu-latest
     permissions:
+      contents: read
       pages: write
       id-token: write
     environment:
@@ -122,8 +123,6 @@ jobs:
 
       - name: Configure Pages
         uses: actions/configure-pages@v5
-        with:
-          enablement: true
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
