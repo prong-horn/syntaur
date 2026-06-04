@@ -1,6 +1,7 @@
 import { Terminal, GitFork, Square } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './ui/tooltip';
 import { cn } from '../lib/utils';
+import { useRecreateFlow } from './useRecreateFlow';
 import type { AgentSessionWithLiveness } from '../types';
 
 interface SessionActionButtonsProps {
@@ -26,6 +27,11 @@ interface SessionActionButtonsProps {
  *   | GitFork (F)     | !forkSupported        | never             | open?session=<id>&mode=fork |
  *   | Square (Stop)   | status !== 'active'   | never             | PATCH /api/agent-sessions/<id> |
  *
+ * Resume/Fork are preflight-gated through {@link useRecreateFlow}: a missing
+ * worktree raises the recreate popup (instead of a dead `cd` in the terminal),
+ * and the clicked `mode` is preserved through recreate so a fork never silently
+ * degrades into a resume.
+ *
  * Resume's disabled state exists to prevent two processes from interleaving
  * writes into the same transcript file — the server reports `isLive: true`
  * when the original process may still be running, and the tooltip points
@@ -40,8 +46,8 @@ interface SessionActionButtonsProps {
  *   | Terminal (Reopen) | never (only when neither R nor F) | always | (none) |
  */
 export function SessionActionButtons({ session, onMarkStopped }: SessionActionButtonsProps) {
-  const resumeUrl = `syntaur://open?session=${encodeURIComponent(session.sessionId)}&mode=resume`;
-  const forkUrl = `syntaur://open?session=${encodeURIComponent(session.sessionId)}&mode=fork`;
+  const flow = useRecreateFlow();
+  const sessionTarget = { kind: 'session' as const, id: session.sessionId };
 
   const iconClass = 'size-3.5';
   const btnClass = cn(
@@ -58,31 +64,10 @@ export function SessionActionButtons({ session, onMarkStopped }: SessionActionBu
   const reopenUnavailable = !session.resumeSupported && !session.forkSupported;
 
   return (
-    <TooltipProvider delayDuration={200}>
-      <div className="inline-flex items-center gap-1">
-        {reopenUnavailable && (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <span tabIndex={0} className={disabledTriggerClass}>
-                <button
-                  type="button"
-                  disabled
-                  aria-disabled
-                  className={btnClass}
-                >
-                  <Terminal className={iconClass} />
-                  <span>Reopen</span>
-                </button>
-              </span>
-            </TooltipTrigger>
-            <TooltipContent side="top">
-              Reopen unavailable — this agent has no resume/fork command configured
-            </TooltipContent>
-          </Tooltip>
-        )}
-
-        {session.resumeSupported && (
-          session.isLive ? (
+    <>
+      <TooltipProvider delayDuration={200}>
+        <div className="inline-flex items-center gap-1">
+          {reopenUnavailable && (
             <Tooltip>
               <TooltipTrigger asChild>
                 <span tabIndex={0} className={disabledTriggerClass}>
@@ -93,63 +78,97 @@ export function SessionActionButtons({ session, onMarkStopped }: SessionActionBu
                     className={btnClass}
                   >
                     <Terminal className={iconClass} />
-                    <span>Resume</span>
+                    <span>Reopen</span>
                   </button>
                 </span>
               </TooltipTrigger>
               <TooltipContent side="top">
-                Session appears active — fork instead to avoid transcript corruption
+                Reopen unavailable — this agent has no resume/fork command configured
               </TooltipContent>
             </Tooltip>
-          ) : (
+          )}
+
+          {session.resumeSupported && (
+            session.isLive ? (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span tabIndex={0} className={disabledTriggerClass}>
+                    <button
+                      type="button"
+                      disabled
+                      aria-disabled
+                      className={btnClass}
+                    >
+                      <Terminal className={iconClass} />
+                      <span>Resume</span>
+                    </button>
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent side="top">
+                  Session appears active — fork instead to avoid transcript corruption
+                </TooltipContent>
+              </Tooltip>
+            ) : (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    type="button"
+                    className={btnClass}
+                    disabled={flow.pending}
+                    onClick={() => void flow.open(sessionTarget, 'resume')}
+                  >
+                    <Terminal className={iconClass} />
+                    <span>Resume</span>
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent side="top">
+                  Continue this session in its agent (same session id, same transcript)
+                </TooltipContent>
+              </Tooltip>
+            )
+          )}
+
+          {session.forkSupported && (
             <Tooltip>
               <TooltipTrigger asChild>
-                <a href={resumeUrl} className={btnClass}>
-                  <Terminal className={iconClass} />
-                  <span>Resume</span>
-                </a>
+                <button
+                  type="button"
+                  className={btnClass}
+                  disabled={flow.pending}
+                  onClick={() => void flow.open(sessionTarget, 'fork')}
+                >
+                  <GitFork className={iconClass} />
+                  <span>Fork</span>
+                </button>
               </TooltipTrigger>
               <TooltipContent side="top">
-                Continue this session in its agent (same session id, same transcript)
+                Branch a new session from this point — safe even when the original is still running
               </TooltipContent>
             </Tooltip>
-          )
-        )}
+          )}
 
-        {session.forkSupported && (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <a href={forkUrl} className={btnClass}>
-                <GitFork className={iconClass} />
-                <span>Fork</span>
-              </a>
-            </TooltipTrigger>
-            <TooltipContent side="top">
-              Branch a new session from this point — safe even when the original is still running
-            </TooltipContent>
-          </Tooltip>
-        )}
-
-        {session.status === 'active' && (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <button
-                type="button"
-                className={btnClass}
-                onClick={() => onMarkStopped(session.sessionId)}
-              >
-                <Square className={iconClass} />
-                <span>Mark stopped</span>
-              </button>
-            </TooltipTrigger>
-            <TooltipContent side="top">
-              {session.resumeSupported
-                ? 'Tell the dashboard this session has ended so Resume re-enables'
-                : 'Tell the dashboard this session has ended'}
-            </TooltipContent>
-          </Tooltip>
-        )}
-      </div>
-    </TooltipProvider>
+          {session.status === 'active' && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  type="button"
+                  className={btnClass}
+                  onClick={() => onMarkStopped(session.sessionId)}
+                >
+                  <Square className={iconClass} />
+                  <span>Mark stopped</span>
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="top">
+                {session.resumeSupported
+                  ? 'Tell the dashboard this session has ended so Resume re-enables'
+                  : 'Tell the dashboard this session has ended'}
+              </TooltipContent>
+            </Tooltip>
+          )}
+        </div>
+      </TooltipProvider>
+      {flow.dialogs}
+    </>
   );
 }

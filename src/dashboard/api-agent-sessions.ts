@@ -14,6 +14,9 @@ import { derivePathFromTranscript } from '../utils/transcript.js';
 import { enrichSessions } from './session-liveness.js';
 import { getAgents, readConfig } from '../utils/config.js';
 import { captureProcessStartedAt } from '../utils/process-info.js';
+import { captureHeadSha } from '../utils/git-worktree.js';
+import { isExistingDir } from '../launch/cwd.js';
+import { recreateForTarget, recreateOutcomeToHttp } from './worktree-recreate.js';
 import type { AgentSessionStatus, WsMessage } from './types.js';
 
 export function createAgentSessionsRouter(
@@ -100,6 +103,12 @@ export function createAgentSessionsRouter(
           : null;
       const pidStartedAt = pid !== null ? captureProcessStartedAt(pid) : null;
 
+      // Best-effort capture of the worktree's HEAD sha so a later recreate of a
+      // deleted worktree can be exact. Never blocks registration on git.
+      const originalHeadSha = isExistingDir(recordedPath)
+        ? await captureHeadSha(recordedPath)
+        : null;
+
       const session = {
         projectSlug: projectSlug || null,
         assignmentSlug: assignmentSlug || null,
@@ -112,6 +121,7 @@ export function createAgentSessionsRouter(
         transcriptPath: transcriptPath || null,
         pid,
         pidStartedAt,
+        originalHeadSha,
       };
 
       await appendSession('', session);
@@ -119,6 +129,26 @@ export function createAgentSessionsRouter(
       res.status(201).json({ sessionId });
     } catch (error) {
       res.status(500).json({ error: error instanceof Error ? error.message : 'Registration failed' });
+    }
+  });
+
+  // POST /api/agent-sessions/:sessionId/worktree/recreate — rebuild a deleted
+  // worktree at the session's exact recorded path so `claude --resume <id>` can
+  // find the transcript again. Server-authoritative (path/repo/branch derived
+  // from the session row + its linked assignment, never the request body).
+  router.post('/:sessionId/worktree/recreate', async (req, res) => {
+    try {
+      const { sessionId } = req.params;
+      const outcome = await recreateForTarget(
+        { projectsDir, assignmentsDir: assignmentsDir ?? '' },
+        { kind: 'session', id: sessionId },
+      );
+      const { httpStatus, body } = recreateOutcomeToHttp(outcome);
+      res.status(httpStatus).json(body);
+    } catch (error) {
+      res.status(500).json({
+        error: error instanceof Error ? error.message : 'Failed to recreate worktree',
+      });
     }
   });
 

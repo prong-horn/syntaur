@@ -2,6 +2,7 @@ import { spawn } from 'node:child_process';
 import { readFile } from 'node:fs/promises';
 import { updateAssignmentWorkspace } from '../lifecycle/frontmatter.js';
 import { writeFileForce } from './fs.js';
+import { isExistingDir } from '../launch/cwd.js';
 
 export interface CreateWorktreeOptions {
   repository: string;
@@ -175,6 +176,159 @@ export async function detectDefaultBranch(repository: string): Promise<string | 
   }
 
   return branches[0] ?? null;
+}
+
+export interface RecreateWorktreeOptions {
+  repository: string;
+  /** The EXACT recorded path to rebuild at. */
+  worktreePath: string;
+  /** Branch on record, or null for a standalone session with no branch. */
+  branch: string | null;
+  /** Original HEAD sha captured at creation, for exact recreation. */
+  originalHeadSha?: string | null;
+}
+
+export interface RecreateWorktreeResult {
+  /** Branch name or base ref actually used for the worktree add. */
+  baseUsed: string;
+  /** True when the original branch was restored, or the base === originalHeadSha. */
+  exact: boolean;
+  /** Resulting branch (null when the worktree was created detached). */
+  branch: string | null;
+}
+
+/**
+ * Capture the current HEAD sha of a worktree/repo directory (best-effort).
+ * Returns the trimmed sha on success, or null if git fails (e.g. the dir is
+ * not a git worktree, or git is unavailable). Never throws.
+ */
+export async function captureHeadSha(dir: string): Promise<string | null> {
+  const result = await run('git', ['-C', dir, 'rev-parse', 'HEAD']);
+  if (result.code !== 0) return null;
+  const sha = result.stdout.trim();
+  return sha.length > 0 ? sha : null;
+}
+
+/**
+ * Return the worktree path where `branch` is currently checked out, or null if
+ * it isn't checked out by any worktree. Parses `git worktree list --porcelain`
+ * (blocks of `worktree <path>` / `branch refs/heads/<name>`). Used to decide
+ * whether a branch can be re-attached or must be recreated detached.
+ */
+async function branchCheckedOutAt(
+  repository: string,
+  branch: string,
+): Promise<string | null> {
+  const result = await run('git', ['-C', repository, 'worktree', 'list', '--porcelain']);
+  if (result.code !== 0) return null;
+  let currentPath: string | null = null;
+  for (const line of result.stdout.split('\n')) {
+    if (line.startsWith('worktree ')) {
+      currentPath = line.slice('worktree '.length).trim();
+    } else if (line.startsWith('branch ')) {
+      const ref = line.slice('branch '.length).trim();
+      if (ref === `refs/heads/${branch}` && currentPath) return currentPath;
+    }
+  }
+  return null;
+}
+
+/**
+ * Recreate a worktree at an EXACT recorded path after its directory was deleted
+ * (e.g. manually `rm -rf`'d). A manual delete leaves stale
+ * `.git/worktrees/<name>/` metadata with the branch still marked checked-out,
+ * so `git worktree prune` runs first, then:
+ *   - branch still exists -> `git worktree add <path> <branch>` (exact: branch restored)
+ *   - branch was deleted  -> `git worktree add -b <branch> <path> <base>` where <base> is, in order:
+ *                            originalHeadSha (if it resolves), refs/remotes/origin/<branch>,
+ *                            or detectDefaultBranch() (a LOCAL branch — never `origin/*`)
+ *   - no branch on record -> `git worktree add --detach <path> <base>` (a dir at the path is the
+ *                            sufficient condition for `claude --resume <id>`)
+ * Throws GitWorktreeError when the `git worktree add` fails or no base ref is available.
+ */
+export async function recreateWorktree(
+  opts: RecreateWorktreeOptions,
+): Promise<RecreateWorktreeResult> {
+  const { repository, worktreePath, branch } = opts;
+  const originalHeadSha = opts.originalHeadSha ?? null;
+
+  // Clear stale metadata for the deleted directory so a subsequent add at the
+  // same path / branch is not rejected ("already used by worktree at ..."). Best
+  // effort — any real failure surfaces from the add step below.
+  await run('git', ['-C', repository, 'worktree', 'prune']);
+
+  const add = async (args: string[]): Promise<void> => {
+    const result = await run('git', ['-C', repository, 'worktree', 'add', ...args]);
+    if (result.code !== 0) {
+      throw new GitWorktreeError(
+        `git worktree add failed (exit ${result.code}): ${result.stderr.trim() || '(no stderr)'}`,
+        result.stderr,
+      );
+    }
+  };
+
+  const refExists = async (ref: string): Promise<boolean> => {
+    const result = await run('git', [
+      '-C',
+      repository,
+      'rev-parse',
+      '--verify',
+      '--quiet',
+      ref,
+    ]);
+    return result.code === 0;
+  };
+
+  // 1. Branch still exists — re-attach a worktree to it at the recorded path.
+  if (branch && (await listBranches(repository)).includes(branch)) {
+    const checkedOutAt = await branchCheckedOutAt(repository, branch);
+    if (
+      !checkedOutAt ||
+      checkedOutAt === worktreePath ||
+      !isExistingDir(checkedOutAt)
+    ) {
+      // Free to attach (post-prune the deleted worktree's claim is gone).
+      await add([worktreePath, branch]);
+      return { baseUsed: branch, exact: true, branch };
+    }
+    // The branch is checked out in another LIVE worktree, so it can't be
+    // attached here. A directory at the exact path is the sufficient condition
+    // for `claude --resume`, so recreate detached at the original sha (exact)
+    // or the branch tip.
+    const detachBase =
+      originalHeadSha && (await refExists(`${originalHeadSha}^{commit}`))
+        ? originalHeadSha
+        : `refs/heads/${branch}`;
+    await add(['--detach', worktreePath, detachBase]);
+    return { baseUsed: detachBase, exact: detachBase === originalHeadSha, branch: null };
+  }
+
+  // 2/3. Branch missing (deleted) or never recorded — choose a base ref.
+  let baseUsed: string | null = null;
+  if (originalHeadSha && (await refExists(`${originalHeadSha}^{commit}`))) {
+    baseUsed = originalHeadSha;
+  } else if (branch && (await refExists(`refs/remotes/origin/${branch}`))) {
+    baseUsed = `refs/remotes/origin/${branch}`;
+  } else {
+    baseUsed = await detectDefaultBranch(repository);
+  }
+  if (!baseUsed) {
+    throw new GitWorktreeError(
+      `recreateWorktree: no base ref to recreate ${worktreePath} ` +
+        `(no original sha, no origin/${branch ?? '<none>'}, no default branch)`,
+      '',
+    );
+  }
+
+  const exact = baseUsed === originalHeadSha;
+  if (branch) {
+    // 2. Recreate the deleted branch at the base ref.
+    await add(['-b', branch, worktreePath, baseUsed]);
+    return { baseUsed, exact, branch };
+  }
+  // 3. No branch on record — a detached worktree is enough for `--resume`.
+  await add(['--detach', worktreePath, baseUsed]);
+  return { baseUsed, exact, branch: null };
 }
 
 export interface CreateWorktreeAndRecordOptions extends CreateWorktreeOptions {

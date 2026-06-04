@@ -1,0 +1,92 @@
+import { describe, it, expect, vi } from 'vitest';
+import {
+  continuationUrl,
+  recreateRequest,
+  type RecreateIdentity,
+} from '../../dashboard/src/lib/recreate-flow';
+
+describe('continuationUrl', () => {
+  it('builds an assignment deep link with no mode', () => {
+    expect(continuationUrl({ kind: 'assignment', id: 'abc 123' })).toBe(
+      'syntaur://open?assignment=abc%20123',
+    );
+  });
+
+  it('preserves mode=resume for a session', () => {
+    expect(continuationUrl({ kind: 'session', id: 's1' }, 'resume')).toBe(
+      'syntaur://open?session=s1&mode=resume',
+    );
+  });
+
+  it('preserves mode=fork for a session (does not collapse to resume)', () => {
+    expect(continuationUrl({ kind: 'session', id: 's1' }, 'fork')).toBe(
+      'syntaur://open?session=s1&mode=fork',
+    );
+  });
+
+  it('appends a fallback terminal override', () => {
+    expect(continuationUrl({ kind: 'session', id: 's1' }, 'fork', 'kitty')).toBe(
+      'syntaur://open?session=s1&mode=fork&terminal=kitty',
+    );
+    // Assignment + fallback (no mode).
+    expect(continuationUrl({ kind: 'assignment', id: 'a1' }, undefined, 'wezterm')).toBe(
+      'syntaur://open?assignment=a1&terminal=wezterm',
+    );
+  });
+});
+
+describe('recreateRequest', () => {
+  it('routes a project-nested assignment to the project recreate endpoint', () => {
+    const id: RecreateIdentity = {
+      kind: 'assignment',
+      id: 'uuid-1',
+      projectSlug: 'proj',
+      assignmentSlug: 'task-x',
+    };
+    expect(recreateRequest(id)).toEqual({
+      method: 'POST',
+      url: '/api/projects/proj/assignments/task-x/worktree/recreate',
+    });
+  });
+
+  it('routes a standalone assignment (no project) to the by-id endpoint', () => {
+    const id: RecreateIdentity = {
+      kind: 'assignment',
+      id: 'uuid-2',
+      projectSlug: null,
+      assignmentSlug: null,
+    };
+    expect(recreateRequest(id)).toEqual({
+      method: 'POST',
+      url: '/api/assignments/uuid-2/worktree/recreate',
+    });
+  });
+
+  it('routes a session to the agent-sessions recreate endpoint', () => {
+    const id: RecreateIdentity = {
+      kind: 'session',
+      id: 'sess-9',
+      projectSlug: 'p',
+      assignmentSlug: 'a',
+    };
+    expect(recreateRequest(id)).toEqual({
+      method: 'POST',
+      url: '/api/agent-sessions/sess-9/worktree/recreate',
+    });
+  });
+
+  it('is a pure descriptor builder — performs no network I/O (the No/cancel path makes no request)', () => {
+    const fetchSpy = vi.fn();
+    const original = (globalThis as { fetch?: unknown }).fetch;
+    (globalThis as { fetch?: unknown }).fetch = fetchSpy;
+    try {
+      // Building the descriptor (what a confirm would do) never fetches; a
+      // cancel simply never calls this, so cancelling fires nothing.
+      recreateRequest({ kind: 'session', id: 's', projectSlug: null, assignmentSlug: null });
+      continuationUrl({ kind: 'session', id: 's' }, 'resume');
+      expect(fetchSpy).not.toHaveBeenCalled();
+    } finally {
+      (globalThis as { fetch?: unknown }).fetch = original;
+    }
+  });
+});

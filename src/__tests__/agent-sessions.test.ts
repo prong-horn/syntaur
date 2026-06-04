@@ -390,8 +390,8 @@ describe('v2 -> v3 schema migration (adds transcript_path)', () => {
     const version = db
       .prepare("SELECT value FROM meta WHERE key = 'schema_version'")
       .get() as { value: string };
-    // v2 chains through v3 to current head (v4).
-    expect(version.value).toBe('4');
+    // v2 chains through every migration to the current head (v5).
+    expect(version.value).toBe('5');
   });
 
   it('falls back to mission_slug when a v2 table has both columns but project_slug is null', async () => {
@@ -545,7 +545,94 @@ describe('v3 -> v4 schema migration (adds pid + pid_started_at)', () => {
     const version = db
       .prepare("SELECT value FROM meta WHERE key = 'schema_version'")
       .get() as { value: string };
-    expect(version.value).toBe('4');
+    // v3→v4 adds pid columns, then the chain continues to the current head (v5).
+    expect(version.value).toBe('5');
+  });
+});
+
+describe('v4 -> v5 schema migration (adds original_head_sha)', () => {
+  it('preserves existing rows, adds original_head_sha (null), bumps version to 5', async () => {
+    // beforeEach already created a v5 db. Tear it down and reseed as v4.
+    closeSessionDb();
+    resetSessionDb();
+    await rm(dbPath, { force: true });
+    const { default: Database } = await import('better-sqlite3');
+    const seedDb = new Database(dbPath);
+    seedDb.pragma('journal_mode = WAL');
+    seedDb.exec(`
+      CREATE TABLE sessions (
+        session_id TEXT PRIMARY KEY,
+        project_slug TEXT,
+        assignment_slug TEXT,
+        agent TEXT NOT NULL,
+        started TEXT NOT NULL,
+        ended TEXT,
+        status TEXT NOT NULL DEFAULT 'active',
+        path TEXT,
+        description TEXT,
+        transcript_path TEXT,
+        pid INTEGER,
+        pid_started_at TEXT,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+      CREATE INDEX idx_sessions_project ON sessions(project_slug);
+      CREATE INDEX idx_sessions_assignment ON sessions(project_slug, assignment_slug);
+      CREATE INDEX idx_sessions_status ON sessions(status);
+      CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT);
+      INSERT INTO meta (key, value) VALUES ('schema_version', '4');
+      INSERT INTO sessions (session_id, project_slug, assignment_slug, agent, started, status, path, transcript_path, pid)
+      VALUES
+        ('v4-row-1', 'p1', 'a1', 'claude', '2026-05-30T10:00:00Z', 'active',    '/tmp/p1', '/tmp/t1.jsonl', 4242),
+        ('v4-row-2', 'p2', 'a2', 'codex',  '2026-05-30T11:00:00Z', 'completed', '/tmp/p2', NULL,            NULL);
+    `);
+    seedDb.close();
+
+    initSessionDb(dbPath);
+
+    const all = await listAllSessions('');
+    expect(all).toHaveLength(2);
+    const row1 = all.find((s) => s.sessionId === 'v4-row-1');
+    const row2 = all.find((s) => s.sessionId === 'v4-row-2');
+    expect(row1?.projectSlug).toBe('p1');
+    expect(row1?.pid).toBe(4242);
+    expect(row1?.originalHeadSha ?? null).toBeNull();
+    expect(row2?.agent).toBe('codex');
+    expect(row2?.originalHeadSha ?? null).toBeNull();
+
+    const { getSessionDb } = await import('../dashboard/session-db.js');
+    const db = getSessionDb();
+    const columns = db.prepare('PRAGMA table_info(sessions)').all() as Array<{ name: string }>;
+    expect(columns.map((c) => c.name)).toContain('original_head_sha');
+
+    const version = db
+      .prepare("SELECT value FROM meta WHERE key = 'schema_version'")
+      .get() as { value: string };
+    expect(version.value).toBe('5');
+  });
+
+  it('round-trips original_head_sha through appendSession + getSessionById', async () => {
+    const { getSessionById } = await import('../dashboard/agent-sessions.js');
+    await appendSession(
+      '',
+      makeSession({ sessionId: 'sha-row', originalHeadSha: 'deadbeefcafef00d' }),
+    );
+    expect(getSessionById('sha-row')?.originalHeadSha).toBe('deadbeefcafef00d');
+  });
+
+  it('preserves the ORIGINAL sha across re-registration (does not let a later HEAD clobber it)', async () => {
+    const { getSessionById } = await import('../dashboard/agent-sessions.js');
+    await appendSession('', makeSession({ sessionId: 'sha-keep', originalHeadSha: 'sha1' }));
+    // A later re-track after HEAD moved must NOT overwrite the original anchor.
+    await appendSession('', makeSession({ sessionId: 'sha-keep', originalHeadSha: 'sha2' }));
+    expect(getSessionById('sha-keep')?.originalHeadSha).toBe('sha1');
+  });
+
+  it('backfills original_head_sha when the first registration captured none', async () => {
+    const { getSessionById } = await import('../dashboard/agent-sessions.js');
+    await appendSession('', makeSession({ sessionId: 'sha-fill', originalHeadSha: null }));
+    await appendSession('', makeSession({ sessionId: 'sha-fill', originalHeadSha: 'sha2' }));
+    expect(getSessionById('sha-fill')?.originalHeadSha).toBe('sha2');
   });
 });
 

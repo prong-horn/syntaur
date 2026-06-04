@@ -1,4 +1,5 @@
 import type { AssignmentDetail, AssignmentTransitionAction } from '../hooks/useProjects';
+import { recreateRequest, type RecreateIdentity } from './recreate-flow';
 
 interface TransitionResponse {
   assignment: AssignmentDetail;
@@ -360,6 +361,38 @@ export async function createAssignmentWorktreeById(
   }
   const body = await response.json();
   return (body as { assignment: AssignmentDetail }).assignment;
+}
+
+export interface RecreateWorktreeResult {
+  /** Branch name or base ref used to rebuild the worktree. */
+  baseUsed: string;
+  /** True when the original branch/sha was restored exactly. */
+  exact: boolean;
+  /** Resulting branch (null when recreated detached). */
+  branch: string | null;
+  /** True when the directory already existed (idempotent no-op recreate). */
+  alreadyExisted?: boolean;
+}
+
+/**
+ * Rebuild a deleted worktree at its exact recorded path. The server derives the
+ * path/repo/branch from persisted state keyed on the identity, so the request
+ * body carries no path. Reuses {@link CreateWorktreeError} so callers can render
+ * any git stderr.
+ */
+export async function recreateWorktree(
+  identity: RecreateIdentity,
+): Promise<RecreateWorktreeResult> {
+  const { url } = recreateRequest(identity);
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: '{}',
+  });
+  if (!response.ok) {
+    throw await readError(response);
+  }
+  return (await response.json()) as RecreateWorktreeResult;
 }
 
 // Shared branch-name validator (same rules the server enforces) for instant

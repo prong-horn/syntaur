@@ -4,6 +4,8 @@ import { fileExists } from '../utils/fs.js';
 import { readConfig } from '../utils/config.js';
 import { derivePathFromTranscript } from '../utils/transcript.js';
 import { captureProcessStartedAt } from '../utils/process-info.js';
+import { captureHeadSha } from '../utils/git-worktree.js';
+import { isExistingDir } from '../launch/cwd.js';
 import { initSessionDb } from '../dashboard/session-db.js';
 import { appendSession } from '../dashboard/agent-sessions.js';
 import type { AgentSessionStatus } from '../dashboard/types.js';
@@ -62,6 +64,12 @@ export async function trackSessionCommand(
   const pid = options.pid ?? null;
   const pidStartedAt = pid !== null ? captureProcessStartedAt(pid) : null;
 
+  // Best-effort capture of the worktree's HEAD sha so a later recreate of a
+  // deleted worktree can be exact. Never blocks registration on git.
+  const originalHeadSha = isExistingDir(recordedPath)
+    ? await captureHeadSha(recordedPath)
+    : null;
+
   await appendSession('', {
     projectSlug: options.project || null,
     assignmentSlug: options.assignment || null,
@@ -74,6 +82,7 @@ export async function trackSessionCommand(
     transcriptPath: options.transcriptPath ?? null,
     pid,
     pidStartedAt,
+    originalHeadSha,
   });
 
   if (options.project && options.assignment) {

@@ -6,6 +6,8 @@ import { join, resolve } from 'node:path';
 import {
   createWorktree,
   createWorktreeAndRecord,
+  recreateWorktree,
+  captureHeadSha,
   removeWorktree,
   formatRollbackError,
   GitWorktreeError,
@@ -202,5 +204,137 @@ describe('git-worktree helpers', () => {
     });
     const result = await removeWorktree(repo, wtPath);
     expect(result.ok).toBe(true);
+  });
+
+  it('captureHeadSha returns the HEAD sha, null for a non-git dir', async () => {
+    const sha = await captureHeadSha(repo);
+    expect(sha).toBe(git(repo, ['rev-parse', 'HEAD']));
+    expect(await captureHeadSha(resolve(scratch, 'not-a-repo'))).toBeNull();
+  });
+
+  it('recreateWorktree reuses an existing branch after the dir was rm -rf\'d (stale metadata)', async () => {
+    const wtPath = resolve(scratch, 'wt-reuse');
+    await createWorktree({
+      repository: repo,
+      branch: 'feat/reuse',
+      worktreePath: wtPath,
+      parentBranch: 'main',
+    });
+    // Simulate a manual delete: remove the dir WITHOUT `git worktree remove`,
+    // leaving stale `.git/worktrees/*` metadata + the branch marked checked-out.
+    await rm(wtPath, { recursive: true, force: true });
+    expect(git(repo, ['branch', '--list'])).toContain('feat/reuse');
+
+    const result = await recreateWorktree({
+      repository: repo,
+      worktreePath: wtPath,
+      branch: 'feat/reuse',
+    });
+
+    expect((await stat(wtPath)).isDirectory()).toBe(true);
+    expect(result.branch).toBe('feat/reuse');
+    expect(result.baseUsed).toBe('feat/reuse');
+    expect(result.exact).toBe(true);
+    expect(git(wtPath, ['rev-parse', '--abbrev-ref', 'HEAD'])).toBe('feat/reuse');
+  });
+
+  it('recreateWorktree recreates a deleted branch from the original sha (exact)', async () => {
+    const wtPath = resolve(scratch, 'wt-sha');
+    const originalHeadSha = git(repo, ['rev-parse', 'HEAD']);
+    await createWorktree({
+      repository: repo,
+      branch: 'feat/gone-sha',
+      worktreePath: wtPath,
+      parentBranch: 'main',
+    });
+    // Delete the dir AND the branch (prune frees the branch from the worktree).
+    await rm(wtPath, { recursive: true, force: true });
+    git(repo, ['worktree', 'prune']);
+    git(repo, ['branch', '-D', 'feat/gone-sha']);
+    expect(git(repo, ['branch', '--list'])).not.toContain('feat/gone-sha');
+
+    const result = await recreateWorktree({
+      repository: repo,
+      worktreePath: wtPath,
+      branch: 'feat/gone-sha',
+      originalHeadSha,
+    });
+
+    expect((await stat(wtPath)).isDirectory()).toBe(true);
+    expect(result.branch).toBe('feat/gone-sha');
+    expect(result.baseUsed).toBe(originalHeadSha);
+    expect(result.exact).toBe(true);
+    expect(git(repo, ['branch', '--list'])).toContain('feat/gone-sha');
+  });
+
+  it('recreateWorktree recreates a deleted branch from a default base when no sha (not exact)', async () => {
+    const wtPath = resolve(scratch, 'wt-base');
+    await createWorktree({
+      repository: repo,
+      branch: 'feat/gone-base',
+      worktreePath: wtPath,
+      parentBranch: 'main',
+    });
+    await rm(wtPath, { recursive: true, force: true });
+    git(repo, ['worktree', 'prune']);
+    git(repo, ['branch', '-D', 'feat/gone-base']);
+
+    const result = await recreateWorktree({
+      repository: repo,
+      worktreePath: wtPath,
+      branch: 'feat/gone-base',
+    });
+
+    expect((await stat(wtPath)).isDirectory()).toBe(true);
+    expect(result.branch).toBe('feat/gone-base');
+    expect(result.baseUsed).toBe('main'); // detectDefaultBranch (local)
+    expect(result.exact).toBe(false);
+  });
+
+  it('recreateWorktree falls back to a detached worktree when the branch is checked out elsewhere', async () => {
+    const originalHeadSha = git(repo, ['rev-parse', 'HEAD']);
+    // A LIVE worktree already holds feat/shared, so it cannot be re-attached.
+    const livePath = resolve(scratch, 'wt-live');
+    await createWorktree({
+      repository: repo,
+      branch: 'feat/shared',
+      worktreePath: livePath,
+      parentBranch: 'main',
+    });
+
+    const wtPath = resolve(scratch, 'wt-elsewhere');
+    const result = await recreateWorktree({
+      repository: repo,
+      worktreePath: wtPath,
+      branch: 'feat/shared',
+      originalHeadSha,
+    });
+
+    expect((await stat(wtPath)).isDirectory()).toBe(true);
+    expect(result.branch).toBeNull(); // detached, not on the branch
+    expect(result.baseUsed).toBe(originalHeadSha);
+    expect(result.exact).toBe(true);
+    // The live worktree still owns the branch.
+    expect(git(livePath, ['rev-parse', '--abbrev-ref', 'HEAD'])).toBe('feat/shared');
+  });
+
+  it('recreateWorktree creates a detached worktree when no branch is on record', async () => {
+    const wtPath = resolve(scratch, 'wt-detached');
+    const originalHeadSha = git(repo, ['rev-parse', 'HEAD']);
+
+    const result = await recreateWorktree({
+      repository: repo,
+      worktreePath: wtPath,
+      branch: null,
+      originalHeadSha,
+    });
+
+    expect((await stat(wtPath)).isDirectory()).toBe(true);
+    expect(result.branch).toBeNull();
+    expect(result.baseUsed).toBe(originalHeadSha);
+    expect(result.exact).toBe(true);
+    // Detached HEAD reports the symbolic ref as HEAD.
+    expect(git(wtPath, ['rev-parse', '--abbrev-ref', 'HEAD'])).toBe('HEAD');
+    expect(git(wtPath, ['rev-parse', 'HEAD'])).toBe(originalHeadSha);
   });
 });

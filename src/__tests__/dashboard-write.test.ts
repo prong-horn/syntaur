@@ -1893,6 +1893,101 @@ tags: []
       });
     });
 
+    describe('POST worktree/recreate', () => {
+      async function createWorktreeThenPath(router: Router, repo: string): Promise<string> {
+        const create = await invokeRoute(
+          router,
+          'post',
+          '/api/projects/:slug/assignments/:aslug/worktree',
+          { slug: 'test-project', aslug: 'test-assignment' },
+          { repository: repo },
+        );
+        expect(create.statusCode, JSON.stringify(create.payload)).toBe(200);
+        return (
+          create.payload as { assignment: { workspace: { worktreePath: string } } }
+        ).assignment.workspace.worktreePath;
+      }
+
+      it('rebuilds at the exact recorded path, bypassing the configured + branch-exists 409 guards', async () => {
+        await createAssignmentFixture();
+        const repo = await setupRepo();
+        const router = createWriteRouter(testDir);
+        const wtPath = await createWorktreeThenPath(router, repo);
+
+        const fs = await import('node:fs/promises');
+        // Manual delete: remove the dir WITHOUT `git worktree remove` (leaves
+        // metadata + the still-existing branch — both would 409 the create flow).
+        await fs.rm(wtPath, { recursive: true, force: true });
+        await expect(fs.stat(wtPath)).rejects.toBeTruthy();
+
+        const res = await invokeRoute(
+          router,
+          'post',
+          '/api/projects/:slug/assignments/:aslug/worktree/recreate',
+          { slug: 'test-project', aslug: 'test-assignment' },
+          {},
+        );
+        expect(res.statusCode, JSON.stringify(res.payload)).toBe(200);
+        const body = res.payload as { ok: boolean; exact: boolean; branch: string | null };
+        expect(body.ok).toBe(true);
+        expect(body.branch).toBe('syntaur/test-project/test-assignment');
+        expect(body.exact).toBe(true);
+        await expect(fs.stat(wtPath)).resolves.toBeTruthy();
+      });
+
+      it('ignores a client-supplied path and rebuilds the persisted one (server-authoritative)', async () => {
+        await createAssignmentFixture();
+        const repo = await setupRepo();
+        const router = createWriteRouter(testDir);
+        const wtPath = await createWorktreeThenPath(router, repo);
+        const fs = await import('node:fs/promises');
+        await fs.rm(wtPath, { recursive: true, force: true });
+
+        const bogus = resolve(testDir, 'attacker-controlled');
+        const res = await invokeRoute(
+          router,
+          'post',
+          '/api/projects/:slug/assignments/:aslug/worktree/recreate',
+          { slug: 'test-project', aslug: 'test-assignment' },
+          { worktreePath: bogus, repository: '/etc' },
+        );
+        expect(res.statusCode, JSON.stringify(res.payload)).toBe(200);
+        // Rebuilt at the recorded path, NOT the body-supplied one.
+        await expect(fs.stat(wtPath)).resolves.toBeTruthy();
+        await expect(fs.stat(bogus)).rejects.toBeTruthy();
+      });
+
+      it('returns 422 when there is no recorded worktree path to recreate', async () => {
+        await createAssignmentFixture();
+        const router = createWriteRouter(testDir);
+        const res = await invokeRoute(
+          router,
+          'post',
+          '/api/projects/:slug/assignments/:aslug/worktree/recreate',
+          { slug: 'test-project', aslug: 'test-assignment' },
+          {},
+        );
+        expect(res.statusCode).toBe(422);
+      });
+
+      it('is idempotent (200, alreadyExisted) when the worktree directory still exists', async () => {
+        await createAssignmentFixture();
+        const repo = await setupRepo();
+        const router = createWriteRouter(testDir);
+        await createWorktreeThenPath(router, repo);
+        // Do NOT delete — recreate should no-op since the dir is present.
+        const res = await invokeRoute(
+          router,
+          'post',
+          '/api/projects/:slug/assignments/:aslug/worktree/recreate',
+          { slug: 'test-project', aslug: 'test-assignment' },
+          {},
+        );
+        expect(res.statusCode).toBe(200);
+        expect((res.payload as { alreadyExisted?: boolean }).alreadyExisted).toBe(true);
+      });
+    });
+
     describe('POST /api/projects/:slug/assignments/:aslug/worktree', () => {
       it('happy path: creates worktree + updates frontmatter', async () => {
         await createAssignmentFixture();
