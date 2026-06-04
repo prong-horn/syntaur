@@ -1,0 +1,6 @@
+name: syntaur
+version: 0.1.0
+description: Syntaur write-boundary enforcement + session cleanup for Hermes Agent
+provides_hooks:
+  - pre_tool_call
+  - on_session_end

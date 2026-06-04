@@ -21,6 +21,31 @@ Driven declaratively by the registry in `src/targets/registry.ts`.
 | **OpenClaw** | `AGENTS.md` | OpenClaw reads `AGENTS.md` (built on Pi) |
 | **Hermes Agent** | `SOUL.md` | Hermes reads `SOUL.md` / context files |
 
+**User-authored agents:** end users can register a brand-new Tier-1+Tier-2 agent
+WITHOUT a Syntaur release by dropping a JSON descriptor in `~/.syntaur/targets/`.
+See `references/user-targets.md`.
+
+## Tier-3 deep enforcement plugins (pi / OpenClaw / Hermes)
+
+Tier-3 brings the **same enforcement parity the Claude Code / Codex plugins have** —
+write-boundary blocking + session cleanup + Syntaur slash commands — to agents that
+support imperative plugins. Installed automatically when the agent is targeted
+(`syntaur setup --target pi`); `syntaur doctor` reports Tier-3 install status.
+
+| Agent | Plugin | Installed to | Enforcement |
+|-------|--------|--------------|-------------|
+| **Pi** | TypeScript extension (`platforms/pi/extensions/syntaur/`) | `~/.pi/agent/extensions/syntaur/` | `tool_call` → block out-of-boundary writes; `session_shutdown` → mark session stopped |
+| **OpenClaw** | reuses the **pi** extension (runs on pi-coding-agent) | `~/.openclaw/extensions/syntaur/` | same as Pi |
+| **Hermes** | Python plugin (`platforms/hermes/plugins/syntaur/`) | `~/.hermes/plugins/syntaur/` | `pre_tool_call` → log + best-effort block; `on_session_end` → mark session stopped |
+
+Caveats (see each plugin's `README.md`): **OpenClaw** is assumed to run on
+pi-coding-agent per the design memo — if a build diverges to its own plugin format,
+only the install dir needs repointing. **Hermes** `pre_tool_call` blocking is
+version-dependent (documented primarily as an observer hook), so the Hermes plugin
+logs every violation in addition to returning a deny signal; verify hard-block
+against your live runtime. The boundary logic for both is unit-tested in
+`src/__tests__/pi-extension.test.ts` and `src/__tests__/hermes-plugin.test.ts`.
+
 ## Installing skills into any agent (Tier 1)
 
 Syntaur's `skills/` directory is a valid Agent Skills source, so the skills
@@ -99,15 +124,21 @@ To add support for a new framework:
    - Export a render function returning the file content as a string
    - Embed protocol knowledge directly in the template literal (do not read files at runtime)
 
-3. **Update barrel exports** in `src/templates/index.ts` -- add the new render function
-   and param type.
+3. **Register the renderer** in `src/targets/renderers.ts` -- add a `RendererKey`
+   in `src/targets/types.ts` and map it to the render function in the `RENDERERS` table.
 
-4. **Add a case** in `src/commands/setup-adapter.ts` for the new framework:
-   - Add the framework name to `SUPPORTED_FRAMEWORKS`
-   - Add the rendering and file-writing logic in the framework switch
+4. **Add a descriptor** to the registry array in `src/targets/registry.ts` (the
+   `SUPPORTED_FRAMEWORKS` switch was removed in the Phase-1 registry refactor):
+   one `AgentTarget` with `id`, `displayName`, `detect`, optional `skillsDir`, and an
+   `instructions.files[]` listing each protocol file + its `renderer` key.
 
-5. **Add unit tests** in `src/__tests__/adapter-templates.test.ts` verifying
-   the renderer produces correct output.
+   **No-code alternative:** end users can register a Tier-1+Tier-2 agent WITHOUT a
+   Syntaur release by dropping a JSON descriptor in `~/.syntaur/targets/` -- see
+   `references/user-targets.md`. Code changes here are only needed for built-in
+   agents or new renderers.
+
+5. **Add unit tests** in `src/__tests__/targets-registry.test.ts` /
+   `src/__tests__/adapter-templates.test.ts` verifying the renderer produces correct output.
 
 6. **Update this README** with the new framework in the table above.
 

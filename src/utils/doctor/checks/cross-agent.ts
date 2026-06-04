@@ -3,7 +3,7 @@ import { readFile } from 'node:fs/promises';
 import { fileExists } from '../../fs.js';
 import { KNOWN_SKILLS, getSkillsDir, discoverSkillNames } from '../../install-skills.js';
 import { readSkillIdentity, sha256File } from '../../skill-frontmatter.js';
-import { AGENT_TARGETS } from '../../../targets/registry.js';
+import { resolveAgentTargets } from '../../../targets/registry.js';
 import type { Check, CheckResult } from '../types.js';
 
 const CATEGORY = 'cross-agent';
@@ -101,6 +101,10 @@ const crossAgentSkillsCheck: Check = {
   title: 'Cross-agent targets have Syntaur skills + protocol files',
   async run(ctx) {
     const installed = ctx.config.integrations.installedAgents ?? {};
+    // Merge built-in targets with validated user descriptors; descriptor load
+    // warnings are surfaced (see below) so a malformed file is never silent.
+    const { targets: resolvedTargets, warnings: descriptorWarnings } =
+      await resolveAgentTargets();
     const canonicalSkillsDir = await getSkillsDir();
     // Derive the expected skill set from the canonical tree (the same set the
     // cross-agent install actually copies — `discoverSkillNames`), NOT the
@@ -119,7 +123,7 @@ const crossAgentSkillsCheck: Check = {
     const affected: string[] = [];
     let considered = 0;
 
-    for (const t of AGENT_TARGETS) {
+    for (const t of resolvedTargets) {
       // CC/Codex skills are covered by their own plugin + skills checks.
       if (t.nativePlugin) continue;
       const dir = t.skillsDir?.global;
@@ -155,9 +159,41 @@ const crossAgentSkillsCheck: Check = {
           }
         }
       }
+
+      // Tier-3 deep-enforcement plugin status (pi/OpenClaw/Hermes). Additive:
+      // report installed/absent; warn only for agents the user recorded.
+      if (t.tier3) {
+        const installDir = t.tier3.installDir();
+        const installed = await fileExists(join(installDir, t.tier3.entry));
+        lines.push(
+          `${t.displayName}: Tier-3 ${t.tier3.kind} ${installed ? 'installed' : 'absent'} (${installDir})`,
+        );
+        if (recorded && !installed) {
+          problems.push(`${t.displayName}: Tier-3 ${t.tier3.kind} not installed`);
+          affected.push(installDir);
+        }
+      }
     }
 
+    // Surface user-descriptor load warnings even when nothing else is checked —
+    // otherwise a malformed `~/.syntaur/targets/*.json` would be swallowed by the
+    // `considered === 0` skipped path.
     if (considered === 0) {
+      if (descriptorWarnings.length > 0) {
+        return {
+          id: this.id,
+          category: this.category,
+          title: this.title,
+          status: 'warn',
+          detail: `User target descriptor issues: ${descriptorWarnings.join('; ')}`,
+          remediation: {
+            kind: 'manual',
+            suggestion: `Fix or remove the offending file(s) in ~/.syntaur/targets/ (see references/user-targets.md).`,
+            command: null,
+          },
+          autoFixable: false,
+        } satisfies CheckResult;
+      }
       return {
         id: this.id,
         category: this.category,
@@ -167,6 +203,9 @@ const crossAgentSkillsCheck: Check = {
         autoFixable: false,
       } satisfies CheckResult;
     }
+
+    // Descriptor warnings escalate the check when targets WERE considered.
+    for (const w of descriptorWarnings) problems.push(`user target descriptor: ${w}`);
 
     if (problems.length > 0) {
       return {

@@ -3,7 +3,7 @@ import { expandHome } from '../utils/paths.js';
 import { fileExists, writeFileReport } from '../utils/fs.js';
 import { readConfig } from '../utils/config.js';
 import { isValidSlug } from '../utils/slug.js';
-import { getAgentTarget, adapterTargets } from '../targets/registry.js';
+import { resolveAgentTargets } from '../targets/registry.js';
 import { RENDERERS } from '../targets/renderers.js';
 import type { ProtocolContext } from '../targets/types.js';
 
@@ -18,16 +18,21 @@ export async function setupAdapterCommand(
   framework: string,
   options: SetupAdapterOptions,
 ): Promise<void> {
-  // Resolve the target from the registry. Only targets that expose a Tier-2
-  // protocol-instruction adapter are valid here; native-plugin-only agents
-  // (e.g. claude) install via the plugin path, not setup-adapter.
-  const target = getAgentTarget(framework);
+  // Resolve the target from the registry (built-ins + user descriptors). Only
+  // targets that expose a Tier-2 protocol-instruction adapter are valid here;
+  // native-plugin-only agents (e.g. claude) install via the plugin path.
+  const { targets: known, warnings } = await resolveAgentTargets();
+  const target = known.find((t) => t.id === framework);
   if (!target || !target.instructions) {
-    const supported = adapterTargets()
+    const supported = known
+      .filter((t) => t.instructions !== undefined)
       .map((t) => t.id)
       .join(', ');
+    // Surface loader warnings so a malformed user descriptor (which is why a
+    // just-added id can be "unsupported") shows its validation reason.
+    const warn = warnings.length ? ` (descriptor warnings: ${warnings.join('; ')})` : '';
     throw new Error(
-      `Unsupported framework "${framework}". Supported: ${supported}`,
+      `Unsupported framework "${framework}". Supported: ${supported}.${warn}`,
     );
   }
 

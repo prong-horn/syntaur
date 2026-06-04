@@ -81,4 +81,52 @@ export interface AgentTarget {
    * left untouched by the cross-agent flow.
    */
   nativePlugin?: 'claude' | 'codex';
+  /**
+   * Tier-3 deep-enforcement plugin (boundary hook + session cleanup + commands)
+   * for non-native agents (pi/OpenClaw TypeScript extension, Hermes Python
+   * plugin). Built-in-only — user descriptors can never set this. See
+   * `src/commands/cross-agent-install.ts` (install) + the doctor cross-agent
+   * check (status).
+   */
+  tier3?: Tier3Plugin;
+}
+
+/**
+ * A Tier-3 enforcement plugin shipped in `platforms/<kind>/…` and copied into the
+ * agent's plugin/extension dir by the cross-agent install flow.
+ */
+export interface Tier3Plugin {
+  kind: 'pi-extension' | 'hermes-plugin';
+  /** Source dir relative to the package root (e.g. `platforms/pi/extensions/syntaur`). */
+  source: string;
+  /** Absolute, home-expanded install dir (e.g. `~/.pi/agent/extensions/syntaur`). */
+  installDir: () => string;
+  /** Entry file the doctor check probes to report installed/absent (e.g. `index.ts`). */
+  entry: string;
+}
+
+/**
+ * Declarative, serializable detect probe. User descriptors can't ship a `detect`
+ * function, so they describe the probe as data and the loader compiles it into an
+ * `AgentTarget['detect']` at load time.
+ */
+export type DetectSpec =
+  | { kind: 'pathExists'; path: string } // true if the (home/env-expanded) path exists
+  | { kind: 'anyPathExists'; paths: string[] } // true if ANY listed path exists
+  | { kind: 'envSet'; env: string }; // true if process.env[env] is a non-empty string
+
+/**
+ * The serializable, user-authorable form of `AgentTarget`. Lives in a JSON file
+ * under `~/.syntaur/targets/`. Deliberately omits `detect` (a function),
+ * `nativePlugin`, and `tier3` — users register Tier-1+Tier-2 agents only, and
+ * `detect` is supplied declaratively via `DetectSpec`. See
+ * `references/user-targets.md` and `src/targets/user-descriptors.ts`.
+ */
+export interface UserAgentDescriptor {
+  id: string; // ^[a-z0-9][a-z0-9_-]*$ and NOT a built-in id
+  displayName: string; // non-empty
+  skillsShAgentId?: string;
+  detect: DetectSpec;
+  skillsDir?: AgentSkillsDir;
+  instructions?: { files: AgentInstructionFile[] }; // renderer must be an existing RendererKey
 }

@@ -1,7 +1,8 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
+import { mkdtemp, mkdir, writeFile, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { fileExists } from '../utils/fs.js';
 import {
   checkTargetSkillsIntegrity,
   summarizeProblems,
@@ -138,6 +139,7 @@ describe('cross-agent.skills check (run-level)', () => {
   const originalHome = process.env.HOME;
   const originalCodexHome = process.env.CODEX_HOME;
   const originalHermesHome = process.env.HERMES_HOME;
+  const originalSyntaurHome = process.env.SYNTAUR_HOME;
   let home: string;
   let cwd: string;
 
@@ -147,6 +149,9 @@ describe('cross-agent.skills check (run-level)', () => {
     process.env.HOME = home;
     delete process.env.CODEX_HOME;
     delete process.env.HERMES_HOME;
+    // syntaurRoot() honors SYNTAUR_HOME over HOME — clear it so user-descriptor
+    // resolution reads the isolated HOME, not a real ~/.syntaur from the env.
+    delete process.env.SYNTAUR_HOME;
   });
 
   afterEach(async () => {
@@ -155,6 +160,8 @@ describe('cross-agent.skills check (run-level)', () => {
     else process.env.CODEX_HOME = originalCodexHome;
     if (originalHermesHome === undefined) delete process.env.HERMES_HOME;
     else process.env.HERMES_HOME = originalHermesHome;
+    if (originalSyntaurHome === undefined) delete process.env.SYNTAUR_HOME;
+    else process.env.SYNTAUR_HOME = originalSyntaurHome;
     await rm(home, { recursive: true, force: true });
     await rm(cwd, { recursive: true, force: true });
   });
@@ -187,5 +194,105 @@ describe('cross-agent.skills check (run-level)', () => {
     const res = await runCheck({});
     const out = Array.isArray(res) ? res[0] : res;
     expect(out.status).toBe('pass');
+  });
+
+  it('reports Tier-3 absent for a recorded pi without the extension (warn)', async () => {
+    const res = await runCheck({ pi: { scope: 'global' } });
+    const out = Array.isArray(res) ? res[0] : res;
+    expect(out.status).toBe('warn');
+    expect(out.detail).toMatch(/Tier-3 pi-extension/);
+    expect(out.detail).toMatch(/not installed/);
+  });
+
+  it('reports Tier-3 installed when the pi extension entry exists', async () => {
+    const extDir = join(home, '.pi', 'agent', 'extensions', 'syntaur');
+    await mkdir(extDir, { recursive: true });
+    await writeFile(join(extDir, 'index.ts'), '// syntaur pi extension\n');
+    const res = await runCheck({ pi: { scope: 'global' } });
+    const out = Array.isArray(res) ? res[0] : res;
+    expect(out.detail).toMatch(/Tier-3 pi-extension installed/);
+  });
+});
+
+// Tier-3 plugin install wiring (the copy step), isolated from the full
+// `npx skills add` flow. HOME is swapped so installDir resolves under a tmpdir;
+// installTier3Plugin's source resolves via findPackageRoot (real platforms/ tree).
+describe('tier-3 install (installTier3Plugin)', () => {
+  const originalHome = process.env.HOME;
+  const originalSyntaurHome = process.env.SYNTAUR_HOME;
+  let home: string;
+
+  beforeEach(async () => {
+    home = await mkdtemp(join(tmpdir(), 'syntaur-tier3-home-'));
+    process.env.HOME = home;
+    delete process.env.SYNTAUR_HOME;
+  });
+  afterEach(async () => {
+    process.env.HOME = originalHome;
+    if (originalSyntaurHome === undefined) delete process.env.SYNTAUR_HOME;
+    else process.env.SYNTAUR_HOME = originalSyntaurHome;
+    await rm(home, { recursive: true, force: true });
+  });
+
+  it('dry-run prints the action and writes nothing', async () => {
+    vi.resetModules();
+    const { getAgentTarget } = await import('../targets/registry.js');
+    const { installTier3Plugin } = await import('../commands/cross-agent-install.js');
+    const pi = getAgentTarget('pi')!;
+    const logs: string[] = [];
+    const spy = vi.spyOn(console, 'log').mockImplementation((...a) => {
+      logs.push(a.map(String).join(' '));
+    });
+    try {
+      await installTier3Plugin(pi, { dryRun: true });
+    } finally {
+      spy.mockRestore();
+    }
+    expect(logs.join('\n')).toMatch(/Tier 3 \(pi\): platforms\/pi\/extensions\/syntaur ->/);
+    await expect(stat(join(home, '.pi'))).rejects.toThrow();
+  });
+
+  it('copies the pi extension into the agent extension dir (non-dry-run)', async () => {
+    vi.resetModules();
+    const { getAgentTarget } = await import('../targets/registry.js');
+    const { installTier3Plugin } = await import('../commands/cross-agent-install.js');
+    const pi = getAgentTarget('pi')!;
+    await installTier3Plugin(pi, {});
+    expect(await fileExists(join(home, '.pi', 'agent', 'extensions', 'syntaur', 'index.ts'))).toBe(
+      true,
+    );
+  });
+
+  it('is idempotent: skips an existing install unless force', async () => {
+    vi.resetModules();
+    const { getAgentTarget } = await import('../targets/registry.js');
+    const { installTier3Plugin } = await import('../commands/cross-agent-install.js');
+    const pi = getAgentTarget('pi')!;
+    expect(await installTier3Plugin(pi, {})).toBe('installed');
+    const logs: string[] = [];
+    const spy = vi.spyOn(console, 'log').mockImplementation((...a) => {
+      logs.push(a.map(String).join(' '));
+    });
+    let result: string;
+    try {
+      result = await installTier3Plugin(pi, {}); // second call → already installed
+    } finally {
+      spy.mockRestore();
+    }
+    expect(result).toBe('already-present');
+    expect(logs.join('\n')).toMatch(/already installed/);
+  });
+
+  it('self-heals an incomplete install dir (dir exists but entry missing)', async () => {
+    vi.resetModules();
+    const { getAgentTarget } = await import('../targets/registry.js');
+    const { installTier3Plugin } = await import('../commands/cross-agent-install.js');
+    const pi = getAgentTarget('pi')!;
+    // Simulate a prior partial copy: the dir exists, but no index.ts entry.
+    const installDir = join(home, '.pi', 'agent', 'extensions', 'syntaur');
+    await mkdir(installDir, { recursive: true });
+    const result = await installTier3Plugin(pi, {}); // no --force
+    expect(result).toBe('installed');
+    expect(await fileExists(join(installDir, 'index.ts'))).toBe(true);
   });
 });
