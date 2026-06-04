@@ -14,6 +14,12 @@ dashboard/node_modules/
 # canonical source is <repo>/skills/.
 platforms/*/skills/
 
+# Build artifact: the Agent Skills v0.2.0 discovery index + artifacts are
+# generated from <repo>/skills/ by scripts/build-skills-index.mjs and deployed
+# to GitHub Pages by publish.yml. Regenerated on every release; never committed.
+.well-known/
+_site/
+
 # Ad-hoc screenshots and pack artifacts at repo root
 /*.png
 /*.tgz

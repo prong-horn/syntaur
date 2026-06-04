@@ -1,6 +1,6 @@
 {
   "name": "syntaur",
-  "version": "0.30.0",
+  "version": "0.31.0",
   "description": "Project workflow CLI with dashboard, Claude Code plugin, and Codex plugin",
   "homepage": "https://github.com/prong-horn/syntaur#readme",
   "repository": {
@@ -56,6 +56,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "mirror-skills": "node scripts/mirror-skills-to-platforms.mjs",
+    "build:skills-index": "node scripts/build-skills-index.mjs",
     "postinstall": "node scripts/install-macos-url-handler.mjs",
     "prepack": "node scripts/mirror-skills-to-platforms.mjs",
     "prepublishOnly": "npm run build && npm ci --prefix dashboard && npm run build --prefix dashboard",
