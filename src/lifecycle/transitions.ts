@@ -128,16 +128,22 @@ export async function executeTransition(
     updates.blockedReason = null;
   }
 
-  const updatedContent = updateAssignmentFile(content, updates);
-  const withHistory = appendStatusHistoryEntry(updatedContent, {
-    at: now,
-    from: frontmatter.status,
-    to: targetStatus,
-    command,
-    by: options.agent ?? frontmatter.assignee ?? null,
-    reason: command === 'block' ? options.reason : undefined,
-  });
-  await writeFileForce(filePath, withHistory);
+  let updatedContent = updateAssignmentFile(content, updates);
+  // Only record a history entry on an ACTUAL status change. CLI commands are
+  // guard-free (getTargetStatus returns the canonical target regardless of the
+  // current status), so re-running e.g. `complete` on an already-completed
+  // assignment must not append a from===to entry and reset statusAge.
+  if (targetStatus !== frontmatter.status) {
+    updatedContent = appendStatusHistoryEntry(updatedContent, {
+      at: now,
+      from: frontmatter.status,
+      to: targetStatus,
+      command,
+      by: options.agent ?? frontmatter.assignee ?? null,
+      reason: command === 'block' ? options.reason : undefined,
+    });
+  }
+  await writeFileForce(filePath, updatedContent);
 
   await applyLinkedTodosSideEffect(options.linkedTodosLookup, command, targetStatus, frontmatter);
 
@@ -225,16 +231,19 @@ export async function executeTransitionByDir(
     updates.blockedReason = null;
   }
 
-  const updatedContent = updateAssignmentFile(content, updates);
-  const withHistory = appendStatusHistoryEntry(updatedContent, {
-    at: now,
-    from: frontmatter.status,
-    to: targetStatus,
-    command,
-    by: options.agent ?? frontmatter.assignee ?? null,
-    reason: command === 'block' ? options.reason : undefined,
-  });
-  await writeFileForce(filePath, withHistory);
+  let updatedContent = updateAssignmentFile(content, updates);
+  // Only record a history entry on an ACTUAL status change (see executeTransition).
+  if (targetStatus !== frontmatter.status) {
+    updatedContent = appendStatusHistoryEntry(updatedContent, {
+      at: now,
+      from: frontmatter.status,
+      to: targetStatus,
+      command,
+      by: options.agent ?? frontmatter.assignee ?? null,
+      reason: command === 'block' ? options.reason : undefined,
+    });
+  }
+  await writeFileForce(filePath, updatedContent);
 
   await applyLinkedTodosSideEffect(options.linkedTodosLookup, command, targetStatus, frontmatter);
 

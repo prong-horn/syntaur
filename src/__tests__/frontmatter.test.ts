@@ -339,6 +339,44 @@ describe('parseStatusHistory', () => {
     expect(parseAssignmentFrontmatter(SIMPLE_ASSIGNMENT).statusHistory).toEqual([]);
   });
 
+  it('parses the real block even when an earlier scalar contains "statusHistory:"', () => {
+    // The title value contains the substring "statusHistory:". A naive
+    // indexOf('statusHistory:') would lock onto the title and drop the real block.
+    const TRICKY = `---
+id: t-1
+slug: tricky
+title: "Audit statusHistory: behavior"
+status: in_progress
+priority: medium
+created: "2026-03-18T10:00:00Z"
+updated: "2026-03-18T10:00:00Z"
+assignee: null
+externalIds: []
+statusHistory:
+  - at: "2026-03-18T10:00:00Z"
+    from: null
+    to: draft
+    command: create
+    by: null
+dependsOn: []
+links: []
+blockedReason: null
+workspace:
+  repository: null
+  worktreePath: null
+  branch: null
+  parentBranch: null
+tags: []
+---
+
+# x
+`;
+    const fm = parseAssignmentFrontmatter(TRICKY);
+    expect(fm.title).toBe('Audit statusHistory: behavior');
+    expect(fm.statusHistory).toHaveLength(1);
+    expect(fm.statusHistory[0]).toMatchObject({ to: 'draft', command: 'create' });
+  });
+
   it('parses a statusHistory block that is the LAST frontmatter key (EOF-safe)', () => {
     // No trailing top-level key and no `\n---` inside the captured frontmatter —
     // this is the case the naive externalIds boundary regex would drop.

@@ -301,7 +301,9 @@ function parseStatusHistory(frontmatter: string): StatusHistoryEntry[] {
   const headerMatch = frontmatter.match(/^statusHistory:\s*$/m);
   if (!headerMatch) return [];
 
-  const headerStart = frontmatter.indexOf(headerMatch[0]);
+  // Regex match offset, not indexOf — guards against an earlier scalar value
+  // containing the substring "statusHistory:".
+  const headerStart = headerMatch.index ?? frontmatter.indexOf(headerMatch[0]);
   const bodyStart = headerStart + headerMatch[0].length + 1; // skip the trailing \n
   const after = frontmatter.slice(bodyStart);
 
