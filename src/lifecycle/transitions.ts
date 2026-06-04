@@ -3,7 +3,7 @@ import { readFile } from 'node:fs/promises';
 import { fileExists, writeFileForce } from '../utils/fs.js';
 import { nowTimestamp } from '../utils/timestamp.js';
 import { getTargetStatus } from './state-machine.js';
-import { parseAssignmentFrontmatter, updateAssignmentFile } from './frontmatter.js';
+import { appendStatusHistoryEntry, parseAssignmentFrontmatter, updateAssignmentFile } from './frontmatter.js';
 import {
   completeLinkedTodos,
   reopenLinkedTodos,
@@ -112,9 +112,10 @@ export async function executeTransition(
     }
   }
 
+  const now = nowTimestamp();
   const updates: Partial<Pick<AssignmentFrontmatter, 'status' | 'assignee' | 'blockedReason' | 'updated'>> = {
     status: targetStatus,
-    updated: nowTimestamp(),
+    updated: now,
   };
 
   if (ASSIGNEE_SETTING_COMMANDS.has(command) && options.agent && !frontmatter.assignee) {
@@ -128,7 +129,15 @@ export async function executeTransition(
   }
 
   const updatedContent = updateAssignmentFile(content, updates);
-  await writeFileForce(filePath, updatedContent);
+  const withHistory = appendStatusHistoryEntry(updatedContent, {
+    at: now,
+    from: frontmatter.status,
+    to: targetStatus,
+    command,
+    by: options.agent ?? frontmatter.assignee ?? null,
+    reason: command === 'block' ? options.reason : undefined,
+  });
+  await writeFileForce(filePath, withHistory);
 
   await applyLinkedTodosSideEffect(options.linkedTodosLookup, command, targetStatus, frontmatter);
 
@@ -200,9 +209,10 @@ export async function executeTransitionByDir(
     }
   }
 
+  const now = nowTimestamp();
   const updates: Partial<Pick<AssignmentFrontmatter, 'status' | 'assignee' | 'blockedReason' | 'updated'>> = {
     status: targetStatus,
-    updated: nowTimestamp(),
+    updated: now,
   };
 
   if (ASSIGNEE_SETTING_COMMANDS.has(command) && options.agent && !frontmatter.assignee) {
@@ -216,7 +226,15 @@ export async function executeTransitionByDir(
   }
 
   const updatedContent = updateAssignmentFile(content, updates);
-  await writeFileForce(filePath, updatedContent);
+  const withHistory = appendStatusHistoryEntry(updatedContent, {
+    at: now,
+    from: frontmatter.status,
+    to: targetStatus,
+    command,
+    by: options.agent ?? frontmatter.assignee ?? null,
+    reason: command === 'block' ? options.reason : undefined,
+  });
+  await writeFileForce(filePath, withHistory);
 
   await applyLinkedTodosSideEffect(options.linkedTodosLookup, command, targetStatus, frontmatter);
 

@@ -418,6 +418,12 @@ export async function runStatusRename(
     await writeStatusConfig(after);
     for (const a of affected) {
       const original = buffers.get(a.path)!;
+      // NOTE: `status rename` deliberately does NOT append a statusHistory entry.
+      // A rename is a relabel of an existing status, not a lifecycle transition —
+      // the assignment never changed workflow stage. Appending here would reset
+      // `statusAge` (time-in-status) and misrepresent a relabel as a move. This is
+      // an intentional exclusion in the status-history audit (see the Query Language
+      // Piece 1 plan). Accepted limitation: prior history entries keep the old label.
       const rewritten = updateAssignmentFile(original, { status: newId, updated: now });
       await writeFileForce(a.path, rewritten);
     }

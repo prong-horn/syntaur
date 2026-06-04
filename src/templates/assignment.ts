@@ -31,6 +31,7 @@ export function renderAssignment(params: AssignmentParams): string {
     ? `\nworkspaceGroup: ${params.workspaceGroup}`
     : '';
   const typeYaml = `type: ${params.type ?? 'feature'}`;
+  const seedStatus = params.status ?? 'draft';
 
   const criteriaLines = params.acceptanceCriteria && params.acceptanceCriteria.length > 0
     ? params.acceptanceCriteria.map((c) => `- [ ] ${c.replace(/\n/g, ' ').trim()}`).join('\n')
@@ -58,12 +59,18 @@ slug: ${params.slug}
 title: ${safeTitle}
 ${projectYaml}${workspaceGroupLine}
 ${typeYaml}
-status: ${params.status ?? 'draft'}
+status: ${seedStatus}
 priority: ${params.priority}
 created: "${params.timestamp}"
 updated: "${params.timestamp}"
 assignee: null
 externalIds: []
+statusHistory:
+  - at: "${params.timestamp}"
+    from: null
+    to: ${seedStatus}
+    command: create
+    by: null
 ${dependsOnYaml}
 ${linksYaml}
 blockedReason: null
