@@ -250,3 +250,46 @@ export async function executeAssignByDir(
     fromStatus: frontmatter.status,
   };
 }
+
+export async function executeUnassign(
+  projectDir: string,
+  assignmentSlug: string,
+): Promise<TransitionResult> {
+  const filePath = resolveAssignmentPath(projectDir, assignmentSlug);
+  const { content, frontmatter } = await readAssignment(filePath);
+
+  const updates: Partial<Pick<AssignmentFrontmatter, 'status' | 'assignee' | 'blockedReason' | 'updated'>> = {
+    assignee: null,
+    updated: nowTimestamp(),
+  };
+
+  const updatedContent = updateAssignmentFile(content, updates);
+  await writeFileForce(filePath, updatedContent);
+
+  return {
+    success: true,
+    message: `Assignment "${assignmentSlug}" unassigned (assignee cleared).`,
+    fromStatus: frontmatter.status,
+  };
+}
+
+export async function executeUnassignByDir(
+  assignmentDir: string,
+): Promise<TransitionResult> {
+  const filePath = resolve(assignmentDir, 'assignment.md');
+  const { content, frontmatter } = await readAssignment(filePath);
+
+  const updates: Partial<Pick<AssignmentFrontmatter, 'status' | 'assignee' | 'blockedReason' | 'updated'>> = {
+    assignee: null,
+    updated: nowTimestamp(),
+  };
+
+  const updatedContent = updateAssignmentFile(content, updates);
+  await writeFileForce(filePath, updatedContent);
+
+  return {
+    success: true,
+    message: `Assignment "${frontmatter.slug || assignmentDir}" unassigned (assignee cleared).`,
+    fromStatus: frontmatter.status,
+  };
+}

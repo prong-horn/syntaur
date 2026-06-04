@@ -158,15 +158,36 @@ export function buildTerminalInvocation(plan: LaunchPlan): TerminalInvocation {
 
   switch (plan.terminal) {
     case 'terminal-app':
+      // Terminal.app cold-start quirk: launching it auto-opens a blank window,
+      // and `do script` opens ANOTHER — two windows, one blank. Capture the
+      // running state BEFORE the `tell` block (addressing Terminal would launch
+      // it), then on a cold start run the command in the blank launch window
+      // instead of opening a second one. Warm starts still get a fresh window.
       return {
         command: 'osascript',
         args: [
+          '-e',
+          'set wasRunning to application "Terminal" is running',
           '-e',
           'tell application "Terminal"',
           '-e',
           'activate',
           '-e',
+          'if wasRunning then',
+          '-e',
           `do script ${appleScriptString(cdAndRun)}`,
+          '-e',
+          'else',
+          '-e',
+          'repeat until (count of windows) > 0',
+          '-e',
+          'delay 0.1',
+          '-e',
+          'end repeat',
+          '-e',
+          `do script ${appleScriptString(cdAndRun)} in window 1`,
+          '-e',
+          'end if',
           '-e',
           'end tell',
         ],

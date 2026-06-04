@@ -142,6 +142,14 @@ export interface AgentSessionsResponse {
 
 export type TodoStatus = 'open' | 'in_progress' | 'completed' | 'blocked';
 
+export interface TodoAttachment {
+  id: string;
+  filename: string;
+  mime: string;
+  size: number;
+  createdAt: string;
+}
+
 export interface TodoItem {
   id: string;
   description: string;
@@ -156,6 +164,8 @@ export interface TodoItem {
   linkedAssignmentId: string | null;
   linkedAssignmentRef: string | null;
   bundleId: string | null;
+  // Present on list/single GET responses (computed server-side from disk).
+  attachments?: TodoAttachment[];
 }
 
 // --- Bundles (read-only in v1) ---

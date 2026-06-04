@@ -4,6 +4,7 @@ import { createProjectCommand } from './commands/create-project.js';
 import { createAssignmentCommand } from './commands/create-assignment.js';
 import { dashboardCommand, didUserSpecifyDashboardPort } from './commands/dashboard.js';
 import { assignCommand } from './commands/assign.js';
+import { unassignCommand } from './commands/unassign.js';
 import { startCommand } from './commands/start.js';
 import { archiveCommand } from './commands/archive.js';
 import { restoreCommand } from './commands/restore.js';
@@ -56,6 +57,9 @@ import { resourceCommand } from './commands/resource.js';
 import { memoryCommand } from './commands/memory.js';
 import { lsCommand } from './commands/ls.js';
 import { viewsCommand } from './commands/views.js';
+import { statusCommand } from './commands/status.js';
+import { workspaceCommand } from './commands/workspace.js';
+import { progressCommand } from './commands/progress.js';
 import { getDefaultCommandName } from './cli-default-command.js';
 import { maybePromptInstall } from './utils/npx-prompt.js';
 import { maybeNudgeForNpxInstall } from './launch/index.js';
@@ -261,6 +265,24 @@ program
   .action(async (assignment, options) => {
     try {
       await assignCommand(assignment, options);
+    } catch (error) {
+      console.error(
+        'Error:',
+        error instanceof Error ? error.message : String(error),
+      );
+      process.exit(1);
+    }
+  });
+
+program
+  .command('unassign')
+  .description('Clear the assignee on an assignment (inverse of assign)')
+  .argument('<assignment>', 'Assignment slug (UUID for standalone)')
+  .option('--project <slug>', 'Target project slug')
+  .option('--dir <path>', 'Override default project directory')
+  .action(async (assignment, options) => {
+    try {
+      await unassignCommand(assignment, options);
     } catch (error) {
       console.error(
         'Error:',
@@ -914,6 +936,9 @@ program.addCommand(resourceCommand);
 program.addCommand(memoryCommand);
 program.addCommand(lsCommand);
 program.addCommand(viewsCommand);
+program.addCommand(statusCommand);
+program.addCommand(workspaceCommand);
+program.addCommand(progressCommand);
 program.addCommand(leaseCommand);
 program.addCommand(usageCommand);
 

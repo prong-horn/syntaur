@@ -5,6 +5,11 @@ import { Activity, Archive, BookOpen, Boxes, Brain, CheckSquare, Coins, Compass,
 import { SidebarNav, type SidebarNavItem } from './SidebarNav';
 import { TopBar } from './TopBar';
 import { useWorkspaces } from '../hooks/useProjects';
+import {
+  UNGROUPED_WORKSPACE,
+  visibleWorkspaces,
+} from '@shared/workspace-visibility-schema';
+import { useWorkspaceVisibilityConfig } from '../hooks/useWorkspaceVisibilityConfig';
 import { toTitleCase } from '../lib/format';
 import { isSidebarItemActive, type SidebarSection } from '../lib/routes';
 import { useHotkey } from '../hotkeys';
@@ -167,6 +172,7 @@ function ShellSidebar({
   const { data: workspaceData } = useWorkspaces();
   const workspaces = workspaceData?.workspaces ?? [];
   const hasUngrouped = workspaceData?.hasUngrouped ?? false;
+  const { hidden: hiddenWorkspaces } = useWorkspaceVisibilityConfig();
   const location = useLocation();
   const [collapsedWorkspaces, setCollapsedWorkspaces] = useState<Set<string>>(new Set());
   const [creatingWorkspace, setCreatingWorkspace] = useState(false);
@@ -189,8 +195,13 @@ function ShellSidebar({
     });
   }
 
-  // Build workspace sections: named workspaces + ungrouped (only if projects without workspace exist)
-  const allSections = [...workspaces, ...(hasUngrouped ? ['_ungrouped'] : [])];
+  // Build workspace sections: named workspaces + ungrouped (only if projects without workspace exist),
+  // then drop any the user has hidden from the left nav (absent from the blocklist = visible).
+  // Hidden workspaces stay fully reachable via direct URL — only the sidebar list shrinks.
+  const allSections = visibleWorkspaces(
+    [...workspaces, ...(hasUngrouped ? [UNGROUPED_WORKSPACE] : [])],
+    hiddenWorkspaces,
+  );
 
   async function handleDeleteWorkspace(cascade: boolean): Promise<void> {
     if (!deleteTarget) return;

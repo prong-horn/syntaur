@@ -60,6 +60,131 @@ Reorder agents. `<ids>` is a comma-separated list that must cover every currentl
 syntaur agents reorder codex,claude --dry-run
 ```
 
+## `syntaur status`
+
+Manage the assignment-status workflow — the `statuses:` block in `~/.syntaur/config.md` that the dashboard Settings page also edits. The runtime is **all-or-nothing**: once a `statuses:` block exists the built-in defaults are no longer merged. Every mutating verb accepts `--dry-run` to print a unified diff of the would-be `statuses:` block (and, for `rename`, per-file `assignment.md` diffs) without writing.
+
+### `syntaur status list [--json]`
+
+Print the current statuses, order, and transitions, with a `source: config | default` marker (`--json` emits `{ statuses, order, transitions, source }`).
+
+### `syntaur status init [--force] [--dry-run]`
+
+Materialize the built-in defaults explicitly. Refuses to overwrite an existing custom block unless `--force`.
+
+### `syntaur status reset [--force] [--dry-run]`
+
+Remove the `statuses:` block and revert to implicit defaults.
+
+### `syntaur status add <id> [--dry-run]`
+
+```
+syntaur status add <id> --label <label> [--color <hex>] [--icon <name>] \
+  [--description <text>] [--terminal] [--after <id> | --before <id> | --at-end]
+```
+
+Append a new status. The position flags are mutually exclusive (default `--at-end`).
+
+### `syntaur status set --id <id> [--dry-run]`
+
+Edit metadata on an existing status without renaming it: `--label`, `--color`, `--icon`, `--description`, `--terminal true|false` (literal strings).
+
+### `syntaur status reorder <ids> [--dry-run]`
+
+Replace the order. `<ids>` is a comma-separated list that must be a permutation of the current ids (no drops or extras).
+
+### `syntaur status remove <id> [--force] [--dry-run]`
+
+Remove a status. Without `--force` it errors and lists any assignments still using the id. With `--force` it edits `config.md` only — it drops the status from `statuses`/`order` and prunes transitions referencing it; **affected `assignment.md` files are left untouched** (they now reference an undefined status, which `syntaur doctor` flags). It never deletes assignments.
+
+### `syntaur status rename <id> --to <new-id> [--label <label>] [--dry-run]`
+
+Rename a status id atomically across `config.md` AND every affected `assignment.md` (buffer-write-rollback: if any write fails, all originals are restored). Keeps the original label unless `--label` is given.
+
+### `syntaur status transition add|remove [--dry-run]`
+
+```
+syntaur status transition add --from <id> --command <cmd> --to <id> [--label <label>] [--requires-reason]
+syntaur status transition remove --from <id> --command <cmd>
+```
+
+Define or drop a custom transition.
+
+## `syntaur workspace set`
+
+Set the four `workspace.*` frontmatter fields on an assignment atomically. Validates the file (same checks as `syntaur doctor --assignment --json`) **before** writing and re-validates **after**, restoring the original on failure, and bumps `updated`.
+
+```
+syntaur workspace set \
+  --repository <path> --worktree-path <path> --branch <name> --parent-branch <name> \
+  [--assignment <slug> [--project <slug>]]
+```
+
+Targets the active assignment from `.syntaur/context.json` unless `--assignment` is given. Provide at least one field flag.
+
+## `syntaur progress log <text>`
+
+Append a timestamped entry to the active assignment's `progress.md`: newest first (right after the `# Progress` H1), replacing the `No progress yet.` placeholder, incrementing `entryCount`, bumping `updated`, and preserving `assignment`/`generated`.
+
+```
+syntaur progress log "<text>" [--assignment <slug> [--project <slug>]]
+```
+
+## `syntaur session save`
+
+Write the active session's continuity summary to `<assignmentDir>/sessions/<sessionId>/summary.md`. Preserves the existing `created` timestamp on re-save; the section body comes from `--from-file`, piped stdin, or a written skeleton. Never touches `handoff.md`.
+
+```
+syntaur session save [--session-id <id>] [--from-file <path>] [--assignment <slug> [--project <slug>]]
+```
+
+`--session-id` defaults to the `sessionId` in `.syntaur/context.json`; the command aborts if no real session id can be resolved.
+
+## `syntaur unassign <assignment>`
+
+Clear the assignee on an assignment (the inverse of `syntaur assign`) and bump `updated`.
+
+```
+syntaur unassign <assignment> [--project <slug>] [--dir <path>]
+```
+
+For standalone assignments pass the UUID and omit `--project`.
+
+## `syntaur resource`
+
+Manage project-level resources under `<projectDir>/resources/`. Every mutation regenerates `_index.md`.
+
+- `syntaur resource add --project <slug> --name <name> --source <url-or-path> [--category <name>] [--slug <slug>] [--related-assignments <slugs>] [--force]`
+- `syntaur resource list --project <slug> [--json]`
+- `syntaur resource show <slug> --project <slug> [--json]`
+- `syntaur resource update <slug> --project <slug> [--name] [--source] [--category] [--related-assignments]`
+- `syntaur resource remove <slug> --project <slug> [--force]`
+
+## `syntaur memory`
+
+Manage project-level memories under `<projectDir>/memories/`. Every mutation regenerates `_index.md`.
+
+- `syntaur memory add --project <slug> --name <name> --source <text> [--scope <scope>] [--source-assignment <slug>] [--slug <slug>] [--related-assignments <slugs>] [--force]`
+- `syntaur memory list --project <slug> [--json]`
+- `syntaur memory show <slug> --project <slug> [--json]`
+- `syntaur memory update <slug> --project <slug> [--name] [--source] [--scope] [--source-assignment] [--related-assignments]`
+- `syntaur memory remove <slug> --project <slug> [--force]`
+
+## `syntaur worktree`
+
+Manage git worktrees bound to assignments.
+
+- `syntaur worktree create --branch <name> [--repository <path>] [--parent-branch <name>] [--assignment <slug> [--project <slug>]] [--worktree-path <path>]` — create a worktree and record the workspace block.
+- `syntaur worktree list [--repository <path>] [--json]` — list the repository's worktrees.
+- `syntaur worktree remove` (alias `prune`) `[--assignment <slug> [--project <slug>]] [--repository <path>] [--delete-branch] [--force]` — remove the assignment's worktree (git teardown first), optionally delete the branch, then clear the four `workspace.*` fields and bump `updated`. Without `--force`, git refuses a dirty/locked worktree.
+
+## `syntaur plan`
+
+Manage plan files for an assignment.
+
+- `syntaur plan create [--assignment <slug> [--project <slug>]] [--force]` — write the initial `plan.md` and append the four-todo cycle to `assignment.md ## Todos`. Refuses to overwrite an existing `plan.md` without `--force`.
+- `syntaur plan version [--assignment <slug> [--project <slug>]] [--force]` — create the next `plan-v<N>.md`, supersede the prior cycle, and carry forward unchecked tasks.
+
 ## Launch flow
 
 `syntaur browse` opens the TUI browser and, when you pick an assignment, launches an agent.

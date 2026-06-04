@@ -22,6 +22,14 @@ import {
   parsePromoteTarget,
 } from '../utils/promote-todos.js';
 import { installRecordsInvalidation } from './api.js';
+import { installTodoAttachmentRoutes } from './todo-attachments-routes.js';
+import {
+  readScopeAttachments,
+  listAttachments,
+  deleteAllAttachments,
+  attachmentMoveConflict,
+  moveAttachments,
+} from '../todos/attachments.js';
 
 const WORKSPACE_REGEX = /^[a-z0-9_][a-z0-9-]*$/;
 
@@ -110,6 +118,21 @@ export function createProjectTodosRouter(
   // as generic middleware instead.
   router.use(validateProjectId);
 
+  // Attachment endpoints (upload / serve / delete) for `/:id`. scopeId is the
+  // project slug; storage lives under the project's own todos dir.
+  installTodoAttachmentRoutes(router, '/:id', {
+    resolveScope: (req) => {
+      const slug = getProjectIdParam(params(req).projectId);
+      return { todosDir: projectTodosDir(projectsDir, slug), scopeId: slug, todoId: params(req).id ?? '' };
+    },
+    withScopeLock: (req, fn) => projLock(getProjectIdParam(params(req).projectId), fn),
+    todoExists: async (scope) => {
+      const checklist = await readChecklist(scope.todosDir, scope.scopeId);
+      return checklist.items.some((i) => i.id === scope.todoId);
+    },
+    onChange: (req) => broadcastUpdate(getProjectIdParam(params(req).projectId)),
+  });
+
   // GET / — list this project's todos
   router.get('/', async (req, res) => {
     try {
@@ -117,10 +140,11 @@ export function createProjectTodosRouter(
       if (!(await projectExists(projectsDir, slug))) { notFound(res, slug); return; }
       const todosDir = projectTodosDir(projectsDir, slug);
       const checklist = await readChecklist(todosDir, slug);
+      const attachmentsByTodo = await readScopeAttachments(todosDir, slug);
       res.json({
         workspace: checklist.workspace,
         archiveInterval: checklist.archiveInterval,
-        items: checklist.items,
+        items: checklist.items.map((i) => ({ ...i, attachments: attachmentsByTodo[i.id] ?? [] })),
         counts: computeCounts(checklist.items),
       });
     } catch (error) {
@@ -237,51 +261,63 @@ export function createProjectTodosRouter(
     try {
       const slug = getProjectIdParam(params(req).projectId);
       if (!(await projectExists(projectsDir, slug))) { notFound(res, slug); return; }
-      const todosDir = projectTodosDir(projectsDir, slug);
-      await ensureProjectTodosDir(projectsDir, slug);
+      // Hold the project lock across the whole existence-check / read / trim / write +
+      // attachment cleanup so archiving can't race a concurrent mutation or upload.
+      const outcome = await projLock(slug, async () => {
+        if (!(await projectExists(projectsDir, slug))) return 'gone' as const;
+        await ensureProjectTodosDir(projectsDir, slug);
+        const todosDir = projectTodosDir(projectsDir, slug);
 
-      const checklist = await readChecklist(todosDir, slug);
-      const log = await readLog(todosDir, slug);
-      const completedIds = new Set(
-        checklist.items.filter((i) => i.status === 'completed').map((i) => i.id),
-      );
-      if (completedIds.size === 0) {
-        res.json({ archived: 0, message: 'No completed items to archive' });
-        return;
-      }
-      const toArchive = log.entries.filter((e) =>
-        e.itemIds.every((id) => completedIds.has(id)),
-      );
-      const archFile = archivePath(todosDir, slug, checklist.archiveInterval);
-      let archContent = '';
-      if (await fileExists(archFile)) {
-        archContent = await readFile(archFile, 'utf-8');
-        archContent = archContent.trimEnd() + '\n\n';
-      } else {
-        archContent = `---\nworkspace: ${slug}\n---\n\n# Archive\n\n`;
-      }
-      const completedItems = checklist.items.filter((i) => completedIds.has(i.id));
-      for (const item of completedItems) {
-        archContent += `- [x] ${item.description} ${item.tags.map((t: string) => `#${t}`).join(' ')} [t:${item.id}]\n`;
-      }
-      archContent += '\n';
-      for (const entry of toArchive) {
-        archContent += `### ${entry.timestamp} — ${entry.itemIds.map((i: string) => `t:${i}`).join(', ')}\n`;
-        if (entry.items) archContent += `**Items:** ${entry.items}\n`;
-        if (entry.session) archContent += `**Session:** ${entry.session}\n`;
-        if (entry.branch) archContent += `**Branch:** ${entry.branch}\n`;
-        if (entry.summary) archContent += `**Summary:** ${entry.summary}\n`;
-        if (entry.blockers) archContent += `**Blockers:** ${entry.blockers}\n`;
+        const checklist = await readChecklist(todosDir, slug);
+        const log = await readLog(todosDir, slug);
+        const completedIds = new Set(
+          checklist.items.filter((i) => i.status === 'completed').map((i) => i.id),
+        );
+        if (completedIds.size === 0) {
+          return { archived: 0, message: 'No completed items to archive' as const };
+        }
+        const toArchive = log.entries.filter((e) =>
+          e.itemIds.every((id) => completedIds.has(id)),
+        );
+        const archFile = archivePath(todosDir, slug, checklist.archiveInterval);
+        let archContent = '';
+        if (await fileExists(archFile)) {
+          archContent = await readFile(archFile, 'utf-8');
+          archContent = archContent.trimEnd() + '\n\n';
+        } else {
+          archContent = `---\nworkspace: ${slug}\n---\n\n# Archive\n\n`;
+        }
+        const completedItems = checklist.items.filter((i) => completedIds.has(i.id));
+        for (const item of completedItems) {
+          archContent += `- [x] ${item.description} ${item.tags.map((t: string) => `#${t}`).join(' ')} [t:${item.id}]\n`;
+        }
         archContent += '\n';
-      }
-      await writeFileForce(archFile, archContent);
+        for (const entry of toArchive) {
+          archContent += `### ${entry.timestamp} — ${entry.itemIds.map((i: string) => `t:${i}`).join(', ')}\n`;
+          if (entry.items) archContent += `**Items:** ${entry.items}\n`;
+          if (entry.session) archContent += `**Session:** ${entry.session}\n`;
+          if (entry.branch) archContent += `**Branch:** ${entry.branch}\n`;
+          if (entry.summary) archContent += `**Summary:** ${entry.summary}\n`;
+          if (entry.blockers) archContent += `**Blockers:** ${entry.blockers}\n`;
+          archContent += '\n';
+        }
+        await writeFileForce(archFile, archContent);
 
-      checklist.workspace = slug;
-      checklist.items = checklist.items.filter((i) => !completedIds.has(i.id));
-      await writeChecklist(todosDir, checklist);
+        checklist.workspace = slug;
+        checklist.items = checklist.items.filter((i) => !completedIds.has(i.id));
+        await writeChecklist(todosDir, checklist);
 
-      broadcastUpdate(slug);
-      res.json({ archived: completedIds.size, logEntries: toArchive.length });
+        // Archived todos leave the active checklist for good — drop their attachments.
+        for (const id of completedIds) {
+          await deleteAllAttachments(todosDir, slug, id);
+        }
+
+        return { archived: completedIds.size, logEntries: toArchive.length };
+      });
+
+      if (outcome === 'gone') { notFound(res, slug); return; }
+      if (outcome.archived > 0) broadcastUpdate(slug);
+      res.json(outcome);
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === 'PROJECT_GONE') {
         notFound(res, getProjectIdParam(params(req).projectId));
@@ -316,7 +352,8 @@ export function createProjectTodosRouter(
       if (!item) { res.status(404).json({ error: `Todo "${(params(req).id ?? "")}" not found` }); return; }
       const log = await readLog(todosDir, slug);
       const logEntries = log.entries.filter((e) => e.itemIds.includes((params(req).id ?? "")));
-      res.json({ ...item, log: logEntries });
+      const attachments = await listAttachments(todosDir, slug, item.id);
+      res.json({ ...item, attachments, log: logEntries });
     } catch (error) {
       res.status(500).json({ error: error instanceof Error ? error.message : 'Failed to get todo' });
     }
@@ -364,11 +401,13 @@ export function createProjectTodosRouter(
         await ensureProjectTodosDir(projectsDir, slug);
         const todosDir = projectTodosDir(projectsDir, slug);
         const checklist = await readChecklist(todosDir, slug);
-        const idx = checklist.items.findIndex((i) => i.id === (params(req).id ?? ""));
+        const targetId = params(req).id ?? '';
+        const idx = checklist.items.findIndex((i) => i.id === targetId);
         if (idx === -1) return false;
         checklist.items.splice(idx, 1);
         checklist.workspace = slug;
         await writeChecklist(todosDir, checklist);
+        await deleteAllAttachments(todosDir, slug, targetId);
         return true;
       });
       if (deleted === 'gone') { notFound(res, slug); return; }
@@ -797,15 +836,27 @@ export function createProjectTodosRouter(
         }
 
         const item = sourceChecklist.items[idx];
+
+        // Preflight ALL target conflicts (planDir dir + attachment dir) BEFORE any
+        // rename, so a conflict can never leave a half-migrated todo behind.
+        let newPlanDir: string | null = null;
         if (item.planDir) {
-          const newPlanDir = todoPlanDir(target.todosPath, target.id, id);
+          newPlanDir = todoPlanDir(target.todosPath, target.id, id);
           if (await fileExists(newPlanDir)) {
             return { status: 409 as const, error: 'plan dir already exists in target' };
           }
+        }
+        if (await attachmentMoveConflict(sourceTodosDir, sourceSlug, target.todosPath, target.id, id)) {
+          return { status: 409 as const, error: 'attachments already exist in target' };
+        }
+
+        // All conflicts cleared — now perform the renames.
+        if (item.planDir && newPlanDir) {
           await mkdir(dirname(newPlanDir), { recursive: true });
           await rename(item.planDir, newPlanDir);
           item.planDir = newPlanDir;
         }
+        await moveAttachments(sourceTodosDir, sourceSlug, target.todosPath, target.id, id);
 
         sourceChecklist.items.splice(idx, 1);
         targetChecklist.items.push(item);
