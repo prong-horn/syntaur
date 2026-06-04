@@ -1,6 +1,42 @@
 import { watch } from 'chokidar';
-import { basename, dirname, relative, sep } from 'node:path';
+import { basename, dirname, isAbsolute, relative, sep } from 'node:path';
 import type { WsMessage } from './types.js';
+
+/** Minimal slice of `node:path` the matcher needs. Injectable so tests can
+ * exercise `path.win32` / `path.posix` behavior deterministically on any OS. */
+type PathApi = { relative: typeof relative; isAbsolute: typeof isAbsolute };
+const defaultPathApi: PathApi = { relative, isAbsolute };
+
+/**
+ * Build a chokidar `ignored` matcher scoped to a single watched root.
+ *
+ * Ignores only dot-prefixed path segments AT OR BELOW `root` — never the root
+ * itself, and never a (possibly dot-named, e.g. `.syntaur`) ANCESTOR. This
+ * replaces the old `ignored: /(^|[\/\\])\../` regex: chokidar 4 tests `ignored`
+ * against the full absolute path, and because every watched root lives under
+ * `~/.syntaur`, that regex matched the `.syntaur` ancestor and suppressed the
+ * entire tree (0 events fired). Returning `true` means "ignore".
+ *
+ * @param pathApi overrides `node:path` (default) — used by tests to verify
+ *   Windows separator / cross-drive behavior on a posix host.
+ */
+export function ignoreDotSegmentsBelow(
+  root: string,
+  pathApi: PathApi = defaultPathApi,
+): (p: string) => boolean {
+  return (p: string): boolean => {
+    const rel = pathApi.relative(root, p);
+    if (!rel) return false; // the watched root itself
+    if (pathApi.isAbsolute(rel)) return false; // different drive (Windows) → outside root
+    const parts = rel.split(/[\\/]/); // tolerate either separator
+    // Exact first-segment `..` means the path is above/outside the root (this
+    // is what spares the dot-named ancestor). Use an exact segment match, not
+    // `startsWith('..')`, so an in-root file literally named `..foo` is still
+    // treated as a dotfile below the root.
+    if (parts[0] === '..') return false;
+    return parts.some((segment) => segment.startsWith('.'));
+  };
+}
 
 export interface WatcherOptions {
   projectsDir: string;
@@ -26,7 +62,7 @@ export function createWatcher(options: WatcherOptions): { close: () => Promise<v
     ignoreInitial: true,
     persistent: true,
     depth: 10,
-    ignored: /(^|[\/\\])\../,
+    ignored: ignoreDotSegmentsBelow(projectsDir),
   });
 
   function handleProjectChange(filePath: string): void {
@@ -94,7 +130,7 @@ export function createWatcher(options: WatcherOptions): { close: () => Promise<v
       ignoreInitial: true,
       persistent: true,
       depth: 5,
-      ignored: /(^|[\/\\])\../,
+      ignored: ignoreDotSegmentsBelow(assignmentsDir),
     });
 
     function handleStandaloneChange(filePath: string): void {
@@ -136,7 +172,7 @@ export function createWatcher(options: WatcherOptions): { close: () => Promise<v
       ignoreInitial: true,
       persistent: true,
       depth: 1,
-      ignored: /(^|[\/\\])\../,
+      ignored: ignoreDotSegmentsBelow(serversDir),
     });
 
     function handleServerChange(): void {
@@ -170,7 +206,7 @@ export function createWatcher(options: WatcherOptions): { close: () => Promise<v
       ignoreInitial: true,
       persistent: true,
       depth: 1,
-      ignored: /(^|[\/\\])\../,
+      ignored: ignoreDotSegmentsBelow(playbooksDir),
     });
 
     function handlePlaybookChange(): void {
@@ -204,7 +240,7 @@ export function createWatcher(options: WatcherOptions): { close: () => Promise<v
       ignoreInitial: true,
       persistent: true,
       depth: 1,
-      ignored: /(^|[\/\\])\../,
+      ignored: ignoreDotSegmentsBelow(todosDir),
     });
 
     function handleTodoChange(): void {
@@ -245,7 +281,7 @@ export function createWatcher(options: WatcherOptions): { close: () => Promise<v
       ignoreInitial: true,
       persistent: true,
       depth: 0,
-      ignored: /(^|[\/\\])\../,
+      ignored: ignoreDotSegmentsBelow(dbDir),
     });
 
     function handleDbChange(filePath: string): void {
