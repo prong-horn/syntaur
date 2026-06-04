@@ -1269,7 +1269,7 @@ export function AssignmentsPage() {
           title="No assignments yet"
           description="Assignments appear here once projects contain concrete work items."
           actions={
-            <Link className="shell-action bg-foreground text-background hover:opacity-90" to={`${wsPrefix}/projects`}>
+            <Link className="shell-action shell-action--cta" to={`${wsPrefix}/projects`}>
               <FolderKanban className="h-4 w-4" />
               <span>Browse Projects</span>
             </Link>

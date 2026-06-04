@@ -5,6 +5,7 @@ import { syntaurRoot, defaultProjectDir, expandHome } from './paths.js';
 import { fileExists, writeFileForce } from './fs.js';
 import { renderConfig } from '../templates/config.js';
 import { migrateLegacyConfig } from './fs-migration.js';
+import { DEFAULT_STATUSES, DEFAULT_TRANSITION_TABLE } from '../lifecycle/index.js';
 import {
   BINDABLE_ACTION_KINDS,
   canonicalizeCombo,
@@ -82,6 +83,11 @@ export interface IntegrationConfig {
   claudePluginDir: string | null;
   codexPluginDir: string | null;
   codexMarketplacePath: string | null;
+  // Per-agent cross-agent install records (pi, hermes, openclaw, ...). Optional
+  // so existing `IntegrationConfig` literals (and the default config) need no
+  // change. Serialized as flat `installedAgents.<id>: <scope>` keys inside the
+  // `integrations:` block (the frontmatter parser only flattens two levels).
+  installedAgents?: Record<string, { scope: 'project' | 'global' }>;
 }
 
 export interface OnboardingConfig {
@@ -112,6 +118,12 @@ export interface HotkeyBindingsConfig {
 import { TERMINAL_CHOICES, type TerminalChoice } from './terminal-schema.js';
 export { TERMINAL_CHOICES, type TerminalChoice };
 
+import {
+  normalizeHiddenList,
+  type WorkspaceVisibilityConfig,
+} from './workspace-visibility-schema.js';
+export { type WorkspaceVisibilityConfig };
+
 export interface SyntaurConfig {
   version: string;
   defaultProjectDir: string;
@@ -130,6 +142,7 @@ export interface SyntaurConfig {
   theme: ThemeConfig | null;
   hotkeys: HotkeyBindingsConfig | null;
   terminal: TerminalChoice | null;
+  workspaceVisibility: WorkspaceVisibilityConfig;
 }
 
 const DEFAULT_CONFIG: SyntaurConfig = {
@@ -158,6 +171,9 @@ const DEFAULT_CONFIG: SyntaurConfig = {
   theme: null,
   hotkeys: null,
   terminal: null,
+  workspaceVisibility: {
+    hidden: [],
+  },
 };
 
 const AUTO_CREATE_WORKTREE_VALUES: readonly AutoCreateWorktree[] = ['skip', 'ask', 'always'];
@@ -288,6 +304,9 @@ function cloneDefaultConfig(): SyntaurConfig {
       ? { bindings: { ...DEFAULT_CONFIG.hotkeys.bindings } }
       : null,
     terminal: DEFAULT_CONFIG.terminal,
+    workspaceVisibility: {
+      hidden: [...DEFAULT_CONFIG.workspaceVisibility.hidden],
+    },
   };
 }
 
@@ -318,7 +337,27 @@ function parseFrontmatter(content: string): Record<string, string> {
   return result;
 }
 
-function parseStatusConfig(content: string): StatusConfig | null {
+/**
+ * Reconstruct the optional per-agent install records from the flattened
+ * frontmatter. Keys look like `integrations.installedAgents.<id>` → `<scope>`.
+ * Returns `{}` (no key) when none are present so the field stays absent.
+ */
+function parseInstalledAgents(
+  fm: Record<string, string>,
+): Pick<IntegrationConfig, 'installedAgents'> {
+  const prefix = 'integrations.installedAgents.';
+  const installedAgents: Record<string, { scope: 'project' | 'global' }> = {};
+  for (const [key, value] of Object.entries(fm)) {
+    if (!key.startsWith(prefix)) continue;
+    const id = key.slice(prefix.length);
+    if (!id) continue;
+    const scope = value === 'project' ? 'project' : 'global';
+    installedAgents[id] = { scope };
+  }
+  return Object.keys(installedAgents).length > 0 ? { installedAgents } : {};
+}
+
+export function parseStatusConfig(content: string): StatusConfig | null {
   const match = content.match(/^---\n([\s\S]*?)\n---/);
   if (!match) return null;
   const fmBlock = match[1];
@@ -426,7 +465,51 @@ function parseStatusConfig(content: string): StatusConfig | null {
   };
 }
 
-function serializeStatusConfig(statuses: StatusConfig): string {
+/**
+ * Default per-status accent colors. Statuses without an entry fall back to
+ * `'gray'` in {@link buildDefaultStatusConfig}. Shared by the dashboard's
+ * `getStatusConfig()` and the `syntaur status` CLI so the two never drift.
+ */
+export const DEFAULT_STATUS_COLORS: Record<string, string> = {
+  pending: 'slate',
+  in_progress: 'teal',
+  blocked: 'amber',
+  review: 'violet',
+  completed: 'emerald',
+  failed: 'rose',
+};
+
+/** Turn a snake_case status id into a human label ("in_progress" → "In Progress"). */
+export function toTitleCase(s: string): string {
+  return s.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+/**
+ * Materialize the built-in default status set as an explicit {@link StatusConfig}.
+ *
+ * `DEFAULT_CONFIG.statuses` is `null` (the runtime resolves defaults lazily), so
+ * `syntaur status init` / `list` cannot read defaults from there. This builder
+ * reproduces exactly what the dashboard's `getStatusConfig()` no-block branch
+ * builds — same ids/labels/colors/terminal flags and the same transition table —
+ * so the CLI and the dashboard share one source of truth.
+ */
+export function buildDefaultStatusConfig(): StatusConfig {
+  return {
+    statuses: DEFAULT_STATUSES.map((id) => ({
+      id,
+      label: toTitleCase(id),
+      color: DEFAULT_STATUS_COLORS[id] ?? 'gray',
+      terminal: id === 'completed' || id === 'failed',
+    })),
+    order: [...DEFAULT_STATUSES],
+    transitions: Array.from(DEFAULT_TRANSITION_TABLE.entries()).map(([key, to]) => {
+      const [from, command] = key.split(':');
+      return { from, command, to };
+    }),
+  };
+}
+
+export function serializeStatusConfig(statuses: StatusConfig): string {
   const lines: string[] = [];
   lines.push('statuses:');
 
@@ -474,6 +557,11 @@ function serializeIntegrationConfig(integrations: IntegrationConfig): string | n
   }
   if (integrations.codexMarketplacePath) {
     lines.push(`  codexMarketplacePath: ${integrations.codexMarketplacePath}`);
+  }
+  if (integrations.installedAgents) {
+    for (const [id, rec] of Object.entries(integrations.installedAgents)) {
+      lines.push(`  installedAgents.${id}: ${rec.scope}`);
+    }
   }
 
   if (lines.length === 0) {
@@ -655,6 +743,124 @@ export async function deleteThemeConfig(): Promise<void> {
   const fmBlock = fmMatch[2];
   const afterFrontmatter = existing.slice(fmMatch[0].length);
   const cleanedFm = stripTopLevelBlock(fmBlock, 'theme');
+  const newContent = `---\n${cleanedFm}\n---${afterFrontmatter}`;
+  await writeFileForce(configPath, newContent);
+}
+
+/**
+ * Serialize the workspace-visibility blocklist. Mirrors the `playbooks.disabled`
+ * list shape but JSON-escapes each entry so arbitrary workspace names (spaces,
+ * quotes, backslashes) round-trip. Returns `null` for an empty list so the
+ * writer omits the block entirely (absent = all workspaces visible).
+ */
+function serializeWorkspaceVisibilityConfig(
+  cfg: WorkspaceVisibilityConfig,
+): string | null {
+  const hidden = normalizeHiddenList(cfg.hidden);
+  if (hidden.length === 0) return null;
+  const lines: string[] = ['workspaceVisibility:', '  hidden:'];
+  for (const name of hidden) {
+    lines.push(`    - ${JSON.stringify(name)}`);
+  }
+  return lines.join('\n');
+}
+
+/**
+ * Parse the workspace-visibility blocklist from a frontmatter block. Unlike
+ * `parsePlaybooksConfig` (which rejects whitespace-containing slugs), workspace
+ * names are arbitrary: a JSON-quoted entry is `JSON.parse`d, an unquoted entry
+ * is taken literally. Absent block → empty list (everything visible).
+ */
+function parseWorkspaceVisibilityConfig(
+  fmBlock: string,
+): WorkspaceVisibilityConfig {
+  const blockStart = fmBlock.match(/^workspaceVisibility:\s*$/m);
+  if (!blockStart) {
+    return { hidden: [] };
+  }
+
+  const startIdx = fmBlock.indexOf(blockStart[0]) + blockStart[0].length;
+  const remaining = fmBlock.slice(startIdx).split('\n');
+
+  const hidden: string[] = [];
+  let currentSection: 'hidden' | null = null;
+
+  for (const line of remaining) {
+    const trimmed = line.trimStart();
+    const indent = line.length - trimmed.length;
+
+    // End of block — next top-level key.
+    if (indent === 0 && trimmed.length > 0) break;
+    if (trimmed === '') continue;
+
+    if (indent === 2 && trimmed.startsWith('hidden:')) {
+      currentSection = 'hidden';
+      // Support inline form `hidden: []` — treat as empty list.
+      continue;
+    }
+
+    if (currentSection === 'hidden' && indent >= 4 && trimmed.startsWith('- ')) {
+      const rest = trimmed.slice(2).trim();
+      if (rest.length === 0) continue;
+      let name: string;
+      if (rest.startsWith('"')) {
+        try {
+          name = JSON.parse(rest) as string;
+        } catch {
+          // Hand-edited / malformed — strip a single surrounding quote pair.
+          name = rest.replace(/^["']|["']$/g, '');
+        }
+      } else {
+        name = rest;
+      }
+      hidden.push(name);
+      continue;
+    }
+  }
+
+  return { hidden: normalizeHiddenList(hidden) };
+}
+
+export async function writeWorkspaceVisibilityConfig(
+  cfg: WorkspaceVisibilityConfig,
+): Promise<void> {
+  const configPath = resolve(syntaurRoot(), 'config.md');
+  const block = serializeWorkspaceVisibilityConfig(cfg);
+
+  const existing = (await fileExists(configPath))
+    ? await readFile(configPath, 'utf-8')
+    : renderConfig({ defaultProjectDir: defaultProjectDir() });
+
+  const fmMatch = existing.match(/^(---\n)([\s\S]*?)\n(---)/);
+  if (!fmMatch) {
+    const bodyBlock = block ? `${block}\n` : '';
+    const content = `---\nversion: "2.0"\ndefaultProjectDir: ${defaultProjectDir()}\n${bodyBlock}---\n${existing}`;
+    await writeFileForce(configPath, content);
+    return;
+  }
+
+  const fmBlock = fmMatch[2];
+  const afterFrontmatter = existing.slice(fmMatch[0].length);
+  const cleanedFm = stripTopLevelBlock(fmBlock, 'workspaceVisibility');
+  const newFm = block
+    ? `${cleanedFm}\n${block}`.replace(/^\n+/, '')
+    : cleanedFm;
+  const normalizedFm = newFm.replace(/\n+$/, '');
+  const newContent = `---\n${normalizedFm}\n---${afterFrontmatter}`;
+  await writeFileForce(configPath, newContent);
+}
+
+export async function deleteWorkspaceVisibilityConfig(): Promise<void> {
+  const configPath = resolve(syntaurRoot(), 'config.md');
+  if (!(await fileExists(configPath))) return;
+
+  const existing = await readFile(configPath, 'utf-8');
+  const fmMatch = existing.match(/^(---\n)([\s\S]*?)\n(---)/);
+  if (!fmMatch) return;
+
+  const fmBlock = fmMatch[2];
+  const afterFrontmatter = existing.slice(fmMatch[0].length);
+  const cleanedFm = stripTopLevelBlock(fmBlock, 'workspaceVisibility');
   const newContent = `---\n${cleanedFm}\n---${afterFrontmatter}`;
   await writeFileForce(configPath, newContent);
 }
@@ -1459,6 +1665,7 @@ export async function readConfig(): Promise<SyntaurConfig> {
         fm['integrations.codexMarketplacePath'],
         'integrations.codexMarketplacePath',
       ),
+      ...parseInstalledAgents(fm),
     },
     backup: fm['backup.repo'] || fm['backup.categories']
       ? {
@@ -1483,6 +1690,7 @@ export async function readConfig(): Promise<SyntaurConfig> {
         return null;
       }
     })(),
+    workspaceVisibility: parseWorkspaceVisibilityConfig(fmBlock),
   };
 }
 

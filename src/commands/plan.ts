@@ -2,7 +2,8 @@ import { Command } from 'commander';
 import { readFile, readdir } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { fileExists, writeFileForce } from '../utils/fs.js';
-import { defaultProjectDir, assignmentsDir } from '../utils/paths.js';
+import { assignmentsDir } from '../utils/paths.js';
+import { readConfig } from '../utils/config.js';
 
 interface ContextFile {
   projectSlug?: string;
@@ -44,7 +45,7 @@ async function resolveAssignmentDir(opts: {
   const cwd = opts.cwd ?? process.cwd();
   if (opts.assignment) {
     if (opts.project) {
-      return resolve(defaultProjectDir(), opts.project, 'assignments', opts.assignment);
+      return resolve((await readConfig()).defaultProjectDir, opts.project, 'assignments', opts.assignment);
     }
     // Standalone (assignment is UUID under ~/.syntaur/assignments/)
     return resolve(assignmentsDir(), opts.assignment);
@@ -246,6 +247,116 @@ ${carriedSection}
 `;
 }
 
+function buildInitialPlanStub(assignmentSlug: string): string {
+  const created = isoNow();
+  return `---
+assignment: ${assignmentSlug}
+status: draft
+created: "${created}"
+updated: "${created}"
+---
+
+# ${assignmentSlug} — Implementation Plan
+
+**Date:** ${created.slice(0, 10)}
+
+## Objective
+
+<!-- Describe the goal and success criteria. -->
+
+## Tasks
+
+<!-- Add the implementation tasks here. -->
+
+## Verification
+
+<!-- Add verification steps here. -->
+`;
+}
+
+/**
+ * Append the four-todo plan cycle for `version` to assignment.md `## Todos`
+ * (no supersede). Returns null if there is no `## Todos` section. Used by the
+ * initial `plan create` — the versioning case goes through rewriteAssignmentTodos.
+ */
+function appendPlanTodos(
+  content: string,
+  version: number,
+): { updated: string; appended: number } | null {
+  const lines = content.split('\n');
+  const todosHeaderIdx = lines.findIndex((l) => /^##\s+Todos\s*$/.test(l));
+  if (todosHeaderIdx === -1) return null;
+
+  let endIdx = lines.length;
+  for (let i = todosHeaderIdx + 1; i < lines.length; i++) {
+    if (/^##\s/.test(lines[i])) {
+      endIdx = i;
+      break;
+    }
+  }
+
+  const file = planFileName(version);
+  const label = planLinkText(version);
+  const newTodos = [
+    `- [ ] Create [${label}](./${file})`,
+    `- [ ] Review [${label}](./${file})`,
+    `- [ ] Implement [${label}](./${file})`,
+    `- [ ] Review implementation of [${label}](./${file})`,
+  ];
+
+  const insertAt = endIdx;
+  const prevLine = lines[insertAt - 1] ?? '';
+  const toInsert: string[] = [];
+  if (prevLine.trim() !== '') toInsert.push('');
+  toInsert.push(...newTodos);
+  lines.splice(insertAt, 0, ...toInsert);
+
+  return { updated: lines.join('\n'), appended: newTodos.length };
+}
+
+interface PlanCreateOptions {
+  assignment?: string;
+  project?: string;
+  force?: boolean;
+}
+
+async function runPlanCreate(options: PlanCreateOptions): Promise<void> {
+  const assignmentDir = await resolveAssignmentDir(options);
+  if (!(await fileExists(assignmentDir))) {
+    throw new Error(`Assignment directory does not exist: ${assignmentDir}`);
+  }
+  const assignmentMdPath = resolve(assignmentDir, 'assignment.md');
+  if (!(await fileExists(assignmentMdPath))) {
+    throw new Error(`Missing assignment.md at: ${assignmentMdPath}`);
+  }
+
+  const planPath = resolve(assignmentDir, 'plan.md');
+  if ((await fileExists(planPath)) && !options.force) {
+    throw new Error(
+      'plan.md already exists. Use --force to overwrite, or `syntaur plan version` to create the next version.',
+    );
+  }
+
+  const assignmentMd = await readFile(assignmentMdPath, 'utf-8');
+  const slugMatch = assignmentMd.match(/^slug:\s*(.+?)\s*$/m);
+  const slug = slugMatch ? slugMatch[1].trim() : assignmentDir.split('/').pop() ?? '';
+
+  await writeFileForce(planPath, buildInitialPlanStub(slug));
+
+  // Append the plan todo-cycle once (idempotent: skip if a plan.md link already exists).
+  let appended = 0;
+  if (!assignmentMd.includes('](./plan.md)')) {
+    const result = appendPlanTodos(assignmentMd, 1);
+    if (result) {
+      await writeFileForce(assignmentMdPath, result.updated);
+      appended = result.appended;
+    }
+  }
+
+  console.log(`Created ${planPath}`);
+  if (appended > 0) console.log(`Appended ${appended} plan todo(s) to assignment.md.`);
+}
+
 interface PlanVersionOptions {
   assignment?: string;
   project?: string;
@@ -318,6 +429,21 @@ export const planCommand = new Command('plan')
   .description('Manage plan files for the active assignment');
 
 planCommand
+  .command('create')
+  .description('Create the initial plan.md and append the plan todo-cycle to assignment.md ## Todos')
+  .option('--assignment <slug>', 'Assignment slug (UUID for standalone). Defaults to .syntaur/context.json')
+  .option('--project <slug>', 'Project slug. Required when --assignment is given for a project-nested assignment')
+  .option('--force', 'Overwrite an existing plan.md')
+  .action(async (options: PlanCreateOptions) => {
+    try {
+      await runPlanCreate(options);
+    } catch (error) {
+      console.error('Error:', error instanceof Error ? error.message : String(error));
+      process.exit(1);
+    }
+  });
+
+planCommand
   .command('version')
   .description(
     'Create the next plan-v<N>.md, supersede the prior plan in assignment.md ## Todos, and carry forward unchecked tasks',
@@ -342,4 +468,6 @@ export const _internal = {
   listPlanFiles,
   resolveAssignmentDir,
   runPlanVersion,
+  runPlanCreate,
+  buildInitialPlanStub,
 };

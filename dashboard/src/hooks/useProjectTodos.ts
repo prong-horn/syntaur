@@ -132,6 +132,39 @@ export async function deleteProjectTodo(projectId: string, id: string): Promise<
   });
 }
 
+export async function patchProjectTodo(projectId: string, id: string, description: string): Promise<void> {
+  const res = await fetch(`${base(projectId)}/${id}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ description }),
+  });
+  if (!res.ok) throw new Error((await res.text().catch(() => '')) || `HTTP ${res.status}`);
+}
+
+export function projectTodoAttachmentUrl(projectId: string, id: string, attachmentId: string): string {
+  return `${base(projectId)}/${id}/attachments/${encodeURIComponent(attachmentId)}`;
+}
+
+export async function addProjectTodoAttachments(projectId: string, id: string, files: File[]): Promise<void> {
+  for (const file of files) {
+    const res = await fetch(`${base(projectId)}/${id}/attachments`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/octet-stream',
+        'x-attachment-filename': encodeURIComponent(file.name || 'file'),
+        'x-attachment-mime': file.type || 'application/octet-stream',
+      },
+      body: file,
+    });
+    if (!res.ok) throw new Error((await res.text().catch(() => '')) || `HTTP ${res.status}`);
+  }
+}
+
+export async function deleteProjectTodoAttachment(projectId: string, id: string, attachmentId: string): Promise<void> {
+  const res = await fetch(projectTodoAttachmentUrl(projectId, id, attachmentId), { method: 'DELETE' });
+  if (!res.ok) throw new Error((await res.text().catch(() => '')) || `HTTP ${res.status}`);
+}
+
 import type { PromoteBody, MoveTarget } from './useTodos';
 
 async function postOrThrow(url: string, body: unknown): Promise<unknown> {

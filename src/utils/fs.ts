@@ -1,4 +1,4 @@
-import { mkdir, writeFile, access, rename } from 'node:fs/promises';
+import { mkdir, writeFile, readFile, access, rename } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 
 export async function ensureDir(dir: string): Promise<void> {
@@ -38,4 +38,40 @@ export async function writeFileForce(
   await ensureDir(dir);
   await writeFile(tempPath, content, 'utf-8');
   await rename(tempPath, filePath);
+}
+
+export type WriteReportStatus =
+  | 'written'
+  | 'already-current'
+  | 'differs-preserved'
+  | 'overwritten';
+
+/**
+ * Content-aware idempotent write. Unlike `writeFileSafe` (which skips on mere
+ * existence), this compares the on-disk content:
+ *   - missing            → write          → 'written'
+ *   - present & equal    → no-op          → 'already-current'
+ *   - present & differs  → keep (no force)→ 'differs-preserved'
+ *   - present & differs  → overwrite      → 'overwritten' (force)
+ * Mirrors the skill-install status vocabulary so adapter writes report honestly.
+ */
+export async function writeFileReport(
+  filePath: string,
+  content: string,
+  options: { force?: boolean } = {},
+): Promise<WriteReportStatus> {
+  if (!(await fileExists(filePath))) {
+    await ensureDir(dirname(filePath));
+    await writeFile(filePath, content, 'utf-8');
+    return 'written';
+  }
+  const current = await readFile(filePath, 'utf-8').catch(() => null);
+  if (current === content) {
+    return 'already-current';
+  }
+  if (!options.force) {
+    return 'differs-preserved';
+  }
+  await writeFileForce(filePath, content);
+  return 'overwritten';
 }

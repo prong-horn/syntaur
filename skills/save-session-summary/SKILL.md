@@ -36,30 +36,12 @@ Extract:
 
 If `sessionId` is missing, empty, or `null`, abort with: "Session not tracked. Run `syntaur track-session ...` first." Do not invent or generate a session id.
 
-## Step 2: Ensure Session Directory
+## Step 2: Author the summary body
 
-Create `<assignmentDir>/sessions/<sessionId>/` only at this step (not earlier — empty session dirs are noise). Use `mkdir -p` semantics so re-saves are idempotent.
-
-## Step 3: Read Existing Summary (if any)
-
-If `<assignmentDir>/sessions/<sessionId>/summary.md` already exists, read it and preserve its `created` frontmatter timestamp. Otherwise, the new file's `created` is now.
-
-This is a **single document per session id** — every save in the same session overwrites in place. The directory partitions by session id, so older sessions remain on disk as immutable history.
-
-## Step 4: Write the Summary
-
-Write `<assignmentDir>/sessions/<sessionId>/summary.md` with this structure (overwrite if it exists). Fill the section bodies with content derived from this session's actual work — be specific and concrete, this is what a future session will load to resume.
+Compose the markdown body — be specific and concrete, this is what a future
+session loads to resume. Use these sections:
 
 ```markdown
----
-assignment: <assignment-slug>
-sessionId: <session-id>
-created: "<original created timestamp, or now if new>"
-updated: "<now, ISO 8601>"
----
-
-# Session Summary
-
 ## Snapshot
 
 <One paragraph: what the assignment is, where work currently stands, what is load-bearing for a future session to know immediately on resume.>
@@ -68,19 +50,15 @@ updated: "<now, ISO 8601>"
 
 - <Concrete action 1>
 - <Concrete action 2>
-- ...
 
 ## What's Next
 
 - <Most important next step>
 - <Subsequent steps in order>
-- ...
 
 ## Open Questions
 
 - <Unresolved question or decision>
-- <Ambiguity to resolve>
-- ...
 (or "None." if no open items)
 
 ## Load-Bearing Context
@@ -91,7 +69,28 @@ updated: "<now, ISO 8601>"
 - External references (PRs, issues, docs) that scope the next steps
 ```
 
-## Step 5: Confirm — Do NOT Touch handoff.md
+## Step 3: Write via the CLI
+
+Pass the body to `syntaur session save` (it owns the directory, frontmatter,
+and `created`-preservation):
+
+```bash
+syntaur session save --session-id <sessionId> --from-file <body.md>
+# or pipe it:  printf '%s' "$BODY" | syntaur session save --session-id <sessionId>
+```
+
+Resolves the active assignment from `.syntaur/context.json` (or pass
+`--assignment <slug> [--project <slug>]`), and `--session-id` defaults to the
+context's `sessionId`. The command:
+
+- Creates `<assignmentDir>/sessions/<sessionId>/` (idempotent) and writes
+  `summary.md` — a **single document per session id**, overwritten in place;
+  older sessions remain on disk as immutable history.
+- Preserves the existing `created` frontmatter timestamp on re-save (new file →
+  `created = now`); always stamps `assignment`, `sessionId`, and `updated`.
+- Writes the standard section skeleton if no body is supplied.
+
+## Step 4: Confirm — Do NOT Touch handoff.md
 
 Verify your write did not modify `<assignmentDir>/handoff.md`. The two artifacts are deliberately separate:
 
@@ -100,11 +99,11 @@ Verify your write did not modify `<assignmentDir>/handoff.md`. The two artifacts
 | `handoff.md` | Assignment-level | At completion (via `complete-assignment`) | Next ticket / agent / human reviewer |
 | `sessions/<sid>/summary.md` | Session-scoped | Mid-assignment, on demand or pre-compact | Future session of the same agent on the same assignment |
 
-## Step 6: Append a Progress Entry (optional but recommended)
+## Step 5: Append a Progress Entry (optional but recommended)
 
-If progress hasn't already been logged in this turn, append a brief entry to `<assignmentDir>/progress.md` noting that a session summary was saved and the next-step pointer.
+If progress hasn't already been logged in this turn, run `syntaur progress log "<note>"` noting that a session summary was saved and the next-step pointer.
 
-## Step 7: Report to User
+## Step 6: Report to User
 
 Summarize:
 - Path of the written summary

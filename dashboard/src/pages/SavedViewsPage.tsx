@@ -86,7 +86,7 @@ export function SavedViewsPage() {
     <button
       type="button"
       onClick={() => setCreateOpen(true)}
-      className="shell-action inline-flex items-center gap-1.5 bg-foreground text-background hover:opacity-90"
+      className="shell-action inline-flex items-center gap-1.5 shell-action--cta"
     >
       <Plus className="h-4 w-4" />
       Create view

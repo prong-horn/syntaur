@@ -58,12 +58,59 @@ export async function createWorktree(opts: CreateWorktreeOptions): Promise<void>
 export async function removeWorktree(
   repository: string,
   worktreePath: string,
+  opts: { force?: boolean } = {},
 ): Promise<{ ok: boolean; stderr: string }> {
-  const result = await run(
-    'git',
-    ['-C', repository, 'worktree', 'remove', '--force', worktreePath],
-  );
+  const args = ['-C', repository, 'worktree', 'remove'];
+  // Without --force git refuses to remove a dirty/locked worktree (intentional).
+  if (opts.force) args.push('--force');
+  args.push(worktreePath);
+  const result = await run('git', args);
   return { ok: result.code === 0, stderr: result.stderr };
+}
+
+export interface WorktreeEntry {
+  worktreePath: string;
+  branch: string | null;
+  head: string | null;
+  bare: boolean;
+  detached: boolean;
+}
+
+/**
+ * Parse `git worktree list --porcelain` into structured entries (read-only).
+ * Returns `[]` if git fails.
+ */
+export async function listWorktrees(repository: string): Promise<WorktreeEntry[]> {
+  const result = await run('git', ['-C', repository, 'worktree', 'list', '--porcelain']);
+  if (result.code !== 0) return [];
+  const entries: WorktreeEntry[] = [];
+  let current: Partial<WorktreeEntry> | null = null;
+  const flush = () => {
+    if (current && current.worktreePath) {
+      entries.push({
+        worktreePath: current.worktreePath,
+        branch: current.branch ?? null,
+        head: current.head ?? null,
+        bare: current.bare ?? false,
+        detached: current.detached ?? false,
+      });
+    }
+    current = null;
+  };
+  for (const line of result.stdout.split('\n')) {
+    if (line.startsWith('worktree ')) {
+      flush();
+      current = { worktreePath: line.slice('worktree '.length).trim() };
+    } else if (current) {
+      if (line.startsWith('HEAD ')) current.head = line.slice('HEAD '.length).trim();
+      else if (line.startsWith('branch ')) {
+        current.branch = line.slice('branch '.length).trim().replace(/^refs\/heads\//, '');
+      } else if (line.trim() === 'bare') current.bare = true;
+      else if (line.trim() === 'detached') current.detached = true;
+    }
+  }
+  flush();
+  return entries;
 }
 
 export async function deleteBranch(
@@ -312,7 +359,7 @@ export async function createWorktreeAndRecord(
     });
     await writeFileForce(assignmentPath, updated);
   } catch (writeErr) {
-    const cleanup = await removeWorktree(repository, worktreePath);
+    const cleanup = await removeWorktree(repository, worktreePath, { force: true });
     // Always try to delete the branch created by -b, even if worktree removal already failed.
     const branchCleanup = await deleteBranch(repository, branch);
     const writeMsg = writeErr instanceof Error ? writeErr.message : String(writeErr);
@@ -383,7 +430,7 @@ export async function createWorktreeForBundle(
   try {
     await record();
   } catch (writeErr) {
-    const cleanup = await removeWorktree(repository, worktreePath);
+    const cleanup = await removeWorktree(repository, worktreePath, { force: true });
     const branchCleanup = await deleteBranch(repository, branch);
     const writeMsg = writeErr instanceof Error ? writeErr.message : String(writeErr);
     throw new Error(

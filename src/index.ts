@@ -4,6 +4,7 @@ import { createProjectCommand } from './commands/create-project.js';
 import { createAssignmentCommand } from './commands/create-assignment.js';
 import { dashboardCommand, didUserSpecifyDashboardPort } from './commands/dashboard.js';
 import { assignCommand } from './commands/assign.js';
+import { unassignCommand } from './commands/unassign.js';
 import { startCommand } from './commands/start.js';
 import { archiveCommand } from './commands/archive.js';
 import { restoreCommand } from './commands/restore.js';
@@ -18,6 +19,7 @@ import { reviewCommand } from './commands/review.js';
 import { failCommand } from './commands/fail.js';
 import { reopenCommand } from './commands/reopen.js';
 import { installPluginCommand } from './commands/install-plugin.js';
+import { updateCommand } from './commands/update.js';
 import { installStatuslineCommand, uninstallStatuslineCommand, type StatuslineMode } from './commands/install-statusline.js';
 import { configureStatuslineCommand, PRESETS as STATUSLINE_PRESETS } from './commands/configure-statusline.js';
 import { installCodexPluginCommand } from './commands/install-codex-plugin.js';
@@ -54,14 +56,29 @@ import { worktreeCommand } from './commands/worktree.js';
 import { resourceCommand } from './commands/resource.js';
 import { memoryCommand } from './commands/memory.js';
 import { lsCommand } from './commands/ls.js';
+import { viewsCommand } from './commands/views.js';
+import { statusCommand } from './commands/status.js';
+import { workspaceCommand } from './commands/workspace.js';
+import { progressCommand } from './commands/progress.js';
 import { getDefaultCommandName } from './cli-default-command.js';
 import { maybePromptInstall } from './utils/npx-prompt.js';
 import { maybeNudgeForNpxInstall } from './launch/index.js';
 import { spliceDashDashFromArgv } from './utils/argv-split.js';
 import { readPackageVersion } from './utils/version.js';
 
-await maybePromptInstall(import.meta.url);
-await maybeNudgeForNpxInstall(import.meta.url);
+// Skip the npx/global-install startup nudges for `update`/`upgrade` — that
+// command does its own install-kind detection and must stay read-only for
+// --check/--dry-run (a startup prompt could install before it even runs).
+// Also skip for `setup --dry-run`, which must write nothing at all.
+{
+  const sub = process.argv[2];
+  const isDryRunSetup =
+    sub === 'setup' && process.argv.slice(3).includes('--dry-run');
+  if (sub !== 'update' && sub !== 'upgrade' && !isDryRunSetup) {
+    await maybePromptInstall(import.meta.url);
+    await maybeNudgeForNpxInstall(import.meta.url);
+  }
+}
 
 let captureDashDashArgv: string[] = [];
 
@@ -248,6 +265,24 @@ program
   .action(async (assignment, options) => {
     try {
       await assignCommand(assignment, options);
+    } catch (error) {
+      console.error(
+        'Error:',
+        error instanceof Error ? error.message : String(error),
+      );
+      process.exit(1);
+    }
+  });
+
+program
+  .command('unassign')
+  .description('Clear the assignee on an assignment (inverse of assign)')
+  .argument('<assignment>', 'Assignment slug (UUID for standalone)')
+  .option('--project <slug>', 'Target project slug')
+  .option('--dir <path>', 'Override default project directory')
+  .action(async (assignment, options) => {
+    try {
+      await unassignCommand(assignment, options);
     } catch (error) {
       console.error(
         'Error:',
@@ -500,6 +535,10 @@ program
   .option('--codex-dir <path>', 'Install the Codex plugin at a specific path')
   .option('--codex-marketplace-path <path>', 'Write the Codex marketplace entry to a specific file')
   .option('--dashboard', 'Launch the dashboard after setup')
+  .option('--target <id>', 'Install Syntaur into a cross-agent target (pi, hermes, openclaw, cursor, opencode); comma-separated for several')
+  .option('--agent <id>', 'Alias for --target; cross-agent target id(s) to install into')
+  .option('--force', 'Overwrite existing cross-agent protocol files / skills')
+  .option('--dry-run', 'Print the cross-agent install actions without writing anything')
   .action(async (options) => {
     try {
       await setupCommand(options);
@@ -524,6 +563,30 @@ program
   .action(async (options) => {
     try {
       await installPluginCommand({ ...options, promptForTarget: true });
+    } catch (error) {
+      console.error(
+        'Error:',
+        error instanceof Error ? error.message : String(error),
+      );
+      process.exit(1);
+    }
+  });
+
+program
+  .command('update')
+  .alias('upgrade')
+  .description('Self-update the global syntaur package and refresh the plugin/skills')
+  .option('--version <v>', 'Update to a specific version instead of latest')
+  .option('--check', 'Report whether an update is available; apply nothing')
+  .option('--dry-run', 'Print what would happen without changing anything')
+  .option('--skip-refresh', 'Update the package only; do not refresh the plugin/skills')
+  .option('--force-skills', 'Overwrite user-edited skills during the refresh')
+  .option('--enable', 'Enable the plugin in settings.json during the refresh')
+  .option('--pm <name>', 'Override package-manager detection (npm|pnpm|yarn|bun)')
+  .option('--yes', 'Assume yes for any confirmation (non-interactive)')
+  .action(async (options) => {
+    try {
+      await updateCommand({ ...options, scriptUrl: import.meta.url });
     } catch (error) {
       console.error(
         'Error:',
@@ -872,6 +935,10 @@ program.addCommand(worktreeCommand);
 program.addCommand(resourceCommand);
 program.addCommand(memoryCommand);
 program.addCommand(lsCommand);
+program.addCommand(viewsCommand);
+program.addCommand(statusCommand);
+program.addCommand(workspaceCommand);
+program.addCommand(progressCommand);
 program.addCommand(leaseCommand);
 program.addCommand(usageCommand);
 

@@ -25,7 +25,7 @@ export function OverviewHero({ hero, itemsById }: OverviewHeroProps) {
           When work shows up — a draft, a review, a stale row — it’ll surface here.
         </p>
         <div className="mt-4">
-          <Link to={`${prefix}/projects`} className="shell-action bg-foreground text-background hover:opacity-90">
+          <Link to={`${prefix}/projects`} className="shell-action shell-action--cta">
             {DIALOG_COPY.emptyStateCleanCTA}
           </Link>
         </div>
@@ -55,7 +55,7 @@ export function OverviewHero({ hero, itemsById }: OverviewHeroProps) {
         </p>
       ) : null}
       <div className="mt-4">
-        <Link to={href} className="shell-action bg-foreground text-background hover:opacity-90">
+        <Link to={href} className="shell-action shell-action--cta">
           Open {title || 'assignment'}
         </Link>
       </div>

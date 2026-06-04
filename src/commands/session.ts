@@ -1,7 +1,10 @@
 import { Command } from 'commander';
 import { readFile, readdir, stat } from 'node:fs/promises';
 import { resolve } from 'node:path';
-import { fileExists } from '../utils/fs.js';
+import { fileExists, writeFileForce } from '../utils/fs.js';
+import { assignmentsDir } from '../utils/paths.js';
+import { readConfig } from '../utils/config.js';
+import { nowTimestamp } from '../utils/timestamp.js';
 
 interface ContextFile {
   sessionId?: string;
@@ -177,6 +180,124 @@ export async function runSessionResume(
   return out;
 }
 
+export interface SessionSaveOptions {
+  sessionId?: string;
+  fromFile?: string;
+  assignment?: string;
+  project?: string;
+}
+
+async function resolveSaveTarget(
+  options: SessionSaveOptions,
+  cwd: string,
+): Promise<{ assignmentDir: string; slug: string; sessionId: string }> {
+  let assignmentDir: string;
+  let slug: string;
+  const ctx = await readContext(cwd);
+
+  if (options.assignment) {
+    assignmentDir = options.project
+      ? resolve((await readConfig()).defaultProjectDir, options.project, 'assignments', options.assignment)
+      : resolve(assignmentsDir(), options.assignment);
+    slug = options.assignment;
+  } else {
+    if (!ctx?.assignmentDir) {
+      throw new Error(
+        'No active assignment. Pass --assignment <slug> [--project <slug>] or run from a workspace with .syntaur/context.json.',
+      );
+    }
+    assignmentDir = ctx.assignmentDir;
+    slug = ctx.assignmentSlug ?? '';
+  }
+
+  const sessionId = options.sessionId ?? ctx?.sessionId;
+  if (!sessionId) {
+    throw new Error(
+      'Session not tracked. Pass --session-id <id>, or run `syntaur track-session ...` first so context.json carries a real session id.',
+    );
+  }
+  return { assignmentDir, slug, sessionId };
+}
+
+async function readStdin(): Promise<string> {
+  if (process.stdin.isTTY) return '';
+  const chunks: Buffer[] = [];
+  for await (const chunk of process.stdin) chunks.push(chunk as Buffer);
+  return Buffer.concat(chunks).toString('utf-8');
+}
+
+const SESSION_SUMMARY_SKELETON = `# Session Summary
+
+## Snapshot
+
+<One paragraph: what the assignment is, where work stands, what is load-bearing on resume.>
+
+## What Was Done
+
+-
+
+## What's Next
+
+-
+
+## Open Questions
+
+None.
+
+## Load-Bearing Context
+
+-
+`;
+
+/** Extract the existing \`created\` frontmatter timestamp, or null. */
+function extractCreated(content: string): string | null {
+  const m = content.match(/^created:\s*"?([^"\n]+)"?\s*$/m);
+  return m ? m[1] : null;
+}
+
+export async function runSessionSave(
+  options: SessionSaveOptions,
+  cwd: string = process.cwd(),
+  body?: string,
+): Promise<string> {
+  const { assignmentDir, slug, sessionId } = await resolveSaveTarget(options, cwd);
+  if (!(await fileExists(resolve(assignmentDir, 'assignment.md')))) {
+    throw new Error(`No assignment found at ${assignmentDir} (missing assignment.md).`);
+  }
+  const sessionDir = resolve(assignmentDir, 'sessions', sessionId);
+  const summaryPath = resolve(sessionDir, 'summary.md');
+  const now = nowTimestamp();
+
+  let created = now;
+  if (await fileExists(summaryPath)) {
+    const existing = await readFile(summaryPath, 'utf-8');
+    created = extractCreated(existing) ?? now;
+  }
+
+  let sectionBody = body;
+  if (sectionBody === undefined) {
+    if (options.fromFile) {
+      sectionBody = await readFile(resolve(cwd, options.fromFile), 'utf-8');
+    } else {
+      sectionBody = await readStdin();
+    }
+  }
+  const trimmed = (sectionBody ?? '').trim();
+  const content = `---
+assignment: ${slug}
+sessionId: ${sessionId}
+created: "${created}"
+updated: "${now}"
+---
+
+${trimmed.length > 0 ? trimmed : SESSION_SUMMARY_SKELETON.trim()}
+`;
+
+  // writeFileForce ensures sessions/<id>/ exists and writes atomically.
+  await writeFileForce(summaryPath, content);
+  return summaryPath;
+}
+
 export const sessionCommand = new Command('session')
   .description('Manage agent sessions for the active assignment');
 
@@ -190,6 +311,23 @@ sessionCommand
     try {
       const out = await runSessionResume(options);
       if (!out.ok) process.exit(1);
+    } catch (error) {
+      console.error('Error:', error instanceof Error ? error.message : String(error));
+      process.exit(1);
+    }
+  });
+
+sessionCommand
+  .command('save')
+  .description("Write the session's continuity summary to sessions/<sessionId>/summary.md")
+  .option('--session-id <id>', 'Session id (defaults to .syntaur/context.json sessionId)')
+  .option('--from-file <path>', 'Read the summary body from a file (else stdin; else a skeleton)')
+  .option('--assignment <slug>', 'Assignment slug (UUID for standalone). Defaults to .syntaur/context.json')
+  .option('--project <slug>', 'Project slug. Required with --assignment for a project-nested assignment')
+  .action(async (options: SessionSaveOptions) => {
+    try {
+      const path = await runSessionSave(options);
+      console.log(`Saved session summary to ${path}`);
     } catch (error) {
       console.error('Error:', error instanceof Error ? error.message : String(error));
       process.exit(1);

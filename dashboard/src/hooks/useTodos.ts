@@ -162,6 +162,42 @@ export async function deleteTodo(workspace: string, id: string): Promise<void> {
   });
 }
 
+export async function patchTodo(workspace: string, id: string, description: string): Promise<void> {
+  const res = await fetch(`/api/todos/${encodeURIComponent(workspace)}/${id}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ description }),
+  });
+  if (!res.ok) throw new Error((await res.text().catch(() => '')) || `HTTP ${res.status}`);
+}
+
+export function todoAttachmentUrl(workspace: string, id: string, attachmentId: string): string {
+  return `/api/todos/${encodeURIComponent(workspace)}/${id}/attachments/${encodeURIComponent(attachmentId)}`;
+}
+
+// Upload each file as raw bytes. Content-Type is forced to application/octet-stream
+// so the server's global express.json() never intercepts the body; the original
+// name + mime travel in headers.
+export async function addTodoAttachments(workspace: string, id: string, files: File[]): Promise<void> {
+  for (const file of files) {
+    const res = await fetch(`/api/todos/${encodeURIComponent(workspace)}/${id}/attachments`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/octet-stream',
+        'x-attachment-filename': encodeURIComponent(file.name || 'file'),
+        'x-attachment-mime': file.type || 'application/octet-stream',
+      },
+      body: file,
+    });
+    if (!res.ok) throw new Error((await res.text().catch(() => '')) || `HTTP ${res.status}`);
+  }
+}
+
+export async function deleteTodoAttachment(workspace: string, id: string, attachmentId: string): Promise<void> {
+  const res = await fetch(todoAttachmentUrl(workspace, id, attachmentId), { method: 'DELETE' });
+  if (!res.ok) throw new Error((await res.text().catch(() => '')) || `HTTP ${res.status}`);
+}
+
 export type PromoteTarget =
   | { project: string }
   | { oneOff: true; workspaceGroup?: string };

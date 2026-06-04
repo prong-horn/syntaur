@@ -250,7 +250,7 @@ export function TodoPromoteModal({
                   value={newTitle}
                   onChange={(e) => setNewTitle(e.target.value)}
                   disabled={submitting}
-                  className="editor-textarea w-full bg-background/95 font-sans"
+                  className="editor-input bg-background/95 font-sans"
                 />
               </Field>
               <div className="grid grid-cols-2 gap-3">
@@ -261,7 +261,7 @@ export function TodoPromoteModal({
                     onChange={(e) => setNewType(e.target.value)}
                     placeholder="feature"
                     disabled={submitting}
-                    className="editor-textarea w-full bg-background/95 font-sans"
+                    className="editor-input bg-background/95 font-sans"
                   />
                 </Field>
                 <Field label="Priority">
@@ -269,7 +269,7 @@ export function TodoPromoteModal({
                     value={newPriority}
                     onChange={(e) => setNewPriority(e.target.value as Priority | '')}
                     disabled={submitting}
-                    className="editor-textarea w-full bg-background/95 font-sans"
+                    className="editor-input bg-background/95 font-sans"
                   >
                     <option value="">—</option>
                     <option value="low">low</option>
@@ -300,7 +300,7 @@ export function TodoPromoteModal({
                   value={existingAssignment}
                   onChange={(e) => setExistingAssignment(e.target.value)}
                   disabled={submitting || !existingProject || assignmentsLoading}
-                  className="editor-textarea w-full bg-background/95 font-sans"
+                  className="editor-input bg-background/95 font-sans"
                 >
                   <option value="">{existingProject ? 'Select assignment...' : 'Pick a project first'}</option>
                   {(assignments ?? []).map((a) => (
@@ -350,7 +350,7 @@ function ProjectSelect({
       value={value}
       onChange={(e) => onChange(e.target.value)}
       disabled={disabled}
-      className="editor-textarea w-full bg-background/95 font-sans"
+      className="editor-input bg-background/95 font-sans"
     >
       <option value="">Select project...</option>
       {allowOneOff ? <option value={ONE_OFF_SENTINEL}>One-off (no project)</option> : null}
@@ -393,7 +393,7 @@ function PromoteFooter({
       <button
         type="submit"
         disabled={submitting}
-        className="shell-action bg-foreground text-background hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+        className="shell-action shell-action--cta disabled:cursor-not-allowed disabled:opacity-50"
       >
         {submitting ? 'Submitting...' : submitLabel}
       </button>

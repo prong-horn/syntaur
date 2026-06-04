@@ -1,9 +1,11 @@
 import { Command } from 'commander';
 import { resolve } from 'node:path';
-import { defaultProjectDir } from '../utils/paths.js';
+import { readFile, readdir, rm } from 'node:fs/promises';
+import { readConfig } from '../utils/config.js';
 import { fileExists, writeFileForce } from '../utils/fs.js';
 import { isValidSlug, slugify } from '../utils/slug.js';
 import { rebuildMemoriesIndex } from '../utils/project-indexes.js';
+import { parseMemory } from '../dashboard/parser.js';
 
 interface MemoryAddOptions {
   project: string;
@@ -32,6 +34,50 @@ function yamlQuote(value: string): string {
   return `"${value.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
 }
 
+function setScalarField(fm: string, key: string, value: string | null): string {
+  const formatted = value === null ? 'null' : yamlQuote(value);
+  const re = new RegExp(`^${key}:[^\\n]*$`, 'm');
+  return re.test(fm) ? fm.replace(re, `${key}: ${formatted}`) : `${fm}\n${key}: ${formatted}`;
+}
+
+function setListField(fm: string, key: string, items: string[]): string {
+  const serialized =
+    items.length === 0 ? `${key}: []` : `${key}:\n${items.map((i) => `  - ${i}`).join('\n')}`;
+  const re = new RegExp(`^${key}:[^\\n]*(?:\\n[ \\t]+-[^\\n]*)*$`, 'm');
+  return re.test(fm) ? fm.replace(re, serialized) : `${fm}\n${serialized}`;
+}
+
+/**
+ * Edit only the given frontmatter fields in place (preserving the body, `tags`,
+ * and any other unknown frontmatter), and bump `updated`. Used by `update` so a
+ * metadata change never drops fields the CLI doesn't model.
+ */
+function editMemoryFrontmatter(
+  content: string,
+  updates: {
+    name?: string;
+    source?: string;
+    scope?: string;
+    sourceAssignment?: string;
+    relatedAssignments?: string[];
+  },
+): string {
+  const m = content.match(/^(---\n)([\s\S]*?)(\n---)([\s\S]*)$/);
+  if (!m) throw new Error('Memory file has no frontmatter.');
+  let fm = m[2];
+  if (updates.name !== undefined) fm = setScalarField(fm, 'name', updates.name);
+  if (updates.source !== undefined) fm = setScalarField(fm, 'source', updates.source);
+  if (updates.scope !== undefined) fm = setScalarField(fm, 'scope', updates.scope);
+  if (updates.sourceAssignment !== undefined) {
+    fm = setScalarField(fm, 'sourceAssignment', updates.sourceAssignment);
+  }
+  if (updates.relatedAssignments !== undefined) {
+    fm = setListField(fm, 'relatedAssignments', updates.relatedAssignments);
+  }
+  fm = setScalarField(fm, 'updated', nowIso());
+  return `${m[1]}${fm}${m[3]}${m[4]}`;
+}
+
 function renderMemoryFile(opts: {
   name: string;
   source: string;
@@ -39,8 +85,11 @@ function renderMemoryFile(opts: {
   sourceAssignment: string | null;
   relatedAssignments: string[];
   body?: string;
+  created?: string;
+  updated?: string;
 }): string {
-  const created = nowIso();
+  const created = opts.created ?? nowIso();
+  const updated = opts.updated ?? created;
   const related =
     opts.relatedAssignments.length === 0
       ? '[]'
@@ -54,7 +103,7 @@ scope: ${yamlQuote(opts.scope)}
 sourceAssignment: ${sourceAssignment}
 relatedAssignments:${related}
 created: "${created}"
-updated: "${created}"
+updated: "${updated}"
 ---
 
 # ${opts.name}
@@ -63,16 +112,19 @@ ${opts.body ?? '<!-- Capture the load-bearing context for this memory here. -->'
 `;
 }
 
+async function resolveProjectDir(project: string): Promise<string> {
+  if (!isValidSlug(project)) throw new Error(`Invalid project slug: "${project}".`);
+  const projectDir = resolve((await readConfig()).defaultProjectDir, project);
+  if (!(await fileExists(resolve(projectDir, 'project.md')))) {
+    throw new Error(`Project "${project}" not found at ${projectDir}.`);
+  }
+  return projectDir;
+}
+
 export async function runMemoryAdd(
   options: MemoryAddOptions,
 ): Promise<{ filePath: string; indexPath: string; total: number }> {
-  if (!isValidSlug(options.project)) {
-    throw new Error(`Invalid project slug: "${options.project}".`);
-  }
-  const projectDir = resolve(defaultProjectDir(), options.project);
-  if (!(await fileExists(resolve(projectDir, 'project.md')))) {
-    throw new Error(`Project "${options.project}" not found at ${projectDir}.`);
-  }
+  const projectDir = await resolveProjectDir(options.project);
   if (!options.name) throw new Error('--name is required.');
   if (!options.source) throw new Error('--source is required.');
 
@@ -98,6 +150,120 @@ export async function runMemoryAdd(
   return { filePath, indexPath, total };
 }
 
+export interface MemorySummary {
+  slug: string;
+  name: string;
+  scope: string;
+  source: string;
+  updated: string;
+}
+
+async function listMemorySlugs(projectDir: string): Promise<string[]> {
+  const dir = resolve(projectDir, 'memories');
+  if (!(await fileExists(dir))) return [];
+  const entries = await readdir(dir, { withFileTypes: true });
+  return entries
+    .filter((e) => e.isFile() && e.name.endsWith('.md') && e.name !== '_index.md')
+    .map((e) => e.name.slice(0, -3))
+    .sort();
+}
+
+export async function runMemoryList(project: string): Promise<MemorySummary[]> {
+  const projectDir = await resolveProjectDir(project);
+  const slugs = await listMemorySlugs(projectDir);
+  const out: MemorySummary[] = [];
+  for (const slug of slugs) {
+    const parsed = parseMemory(await readFile(resolve(projectDir, 'memories', `${slug}.md`), 'utf-8'));
+    out.push({ slug, name: parsed.name, scope: parsed.scope, source: parsed.source, updated: parsed.updated });
+  }
+  return out;
+}
+
+export async function runMemoryShow(
+  project: string,
+  slug: string,
+): Promise<
+  MemorySummary & {
+    sourceAssignment: string | null;
+    relatedAssignments: string[];
+    created: string;
+    body: string;
+  }
+> {
+  const projectDir = await resolveProjectDir(project);
+  const filePath = resolve(projectDir, 'memories', `${slug}.md`);
+  if (!(await fileExists(filePath))) throw new Error(`Memory "${slug}" not found in project "${project}".`);
+  const parsed = parseMemory(await readFile(filePath, 'utf-8'));
+  return {
+    slug,
+    name: parsed.name,
+    scope: parsed.scope,
+    source: parsed.source,
+    updated: parsed.updated,
+    created: parsed.created,
+    sourceAssignment: parsed.sourceAssignment,
+    relatedAssignments: parsed.relatedAssignments,
+    body: parsed.body,
+  };
+}
+
+export interface MemoryUpdateOptions {
+  project: string;
+  name?: string;
+  source?: string;
+  scope?: string;
+  sourceAssignment?: string;
+  relatedAssignments?: string;
+}
+
+export async function runMemoryUpdate(
+  slug: string,
+  options: MemoryUpdateOptions,
+): Promise<{ filePath: string; indexPath: string; total: number }> {
+  const projectDir = await resolveProjectDir(options.project);
+  const filePath = resolve(projectDir, 'memories', `${slug}.md`);
+  if (!(await fileExists(filePath))) {
+    throw new Error(`Memory "${slug}" not found in project "${options.project}".`);
+  }
+  if (
+    options.name === undefined &&
+    options.source === undefined &&
+    options.scope === undefined &&
+    options.sourceAssignment === undefined &&
+    options.relatedAssignments === undefined
+  ) {
+    throw new Error(
+      'Provide at least one of --name, --source, --scope, --source-assignment, --related-assignments.',
+    );
+  }
+  const original = await readFile(filePath, 'utf-8');
+  const content = editMemoryFrontmatter(original, {
+    name: options.name,
+    source: options.source,
+    scope: options.scope,
+    sourceAssignment: options.sourceAssignment,
+    relatedAssignments:
+      options.relatedAssignments !== undefined ? parseList(options.relatedAssignments) : undefined,
+  });
+  await writeFileForce(filePath, content);
+  const { path: indexPath, total } = await rebuildMemoriesIndex(projectDir);
+  return { filePath, indexPath, total };
+}
+
+export async function runMemoryRemove(
+  slug: string,
+  options: { project: string; force?: boolean },
+): Promise<{ filePath: string; indexPath: string; total: number }> {
+  const projectDir = await resolveProjectDir(options.project);
+  const filePath = resolve(projectDir, 'memories', `${slug}.md`);
+  if (!(await fileExists(filePath))) {
+    throw new Error(`Memory "${slug}" not found in project "${options.project}".`);
+  }
+  await rm(filePath);
+  const { path: indexPath, total } = await rebuildMemoriesIndex(projectDir);
+  return { filePath, indexPath, total };
+}
+
 export const memoryCommand = new Command('memory')
   .description('Manage project-level memory entries');
 
@@ -118,6 +284,94 @@ memoryCommand
     try {
       const { filePath, indexPath, total } = await runMemoryAdd(options);
       console.log(`Wrote ${filePath}`);
+      console.log(`Rebuilt ${indexPath} (${total} total memories).`);
+    } catch (error) {
+      console.error('Error:', error instanceof Error ? error.message : String(error));
+      process.exit(1);
+    }
+  });
+
+memoryCommand
+  .command('list')
+  .description("List a project's memories")
+  .requiredOption('--project <slug>', 'Project slug')
+  .option('--json', 'Output as JSON')
+  .action(async (options: { project: string; json?: boolean }) => {
+    try {
+      const rows = await runMemoryList(options.project);
+      if (options.json) {
+        console.log(JSON.stringify(rows, null, 2));
+      } else if (rows.length === 0) {
+        console.log('No memories.');
+      } else {
+        for (const m of rows) {
+          console.log(`${m.slug}  —  ${m.name}${m.scope ? ` [${m.scope}]` : ''}  ${m.source}`);
+        }
+      }
+    } catch (error) {
+      console.error('Error:', error instanceof Error ? error.message : String(error));
+      process.exit(1);
+    }
+  });
+
+memoryCommand
+  .command('show')
+  .description('Show one memory by slug')
+  .argument('<slug>', 'Memory slug')
+  .requiredOption('--project <slug>', 'Project slug')
+  .option('--json', 'Output as JSON')
+  .action(async (slug: string, options: { project: string; json?: boolean }) => {
+    try {
+      const m = await runMemoryShow(options.project, slug);
+      if (options.json) {
+        console.log(JSON.stringify(m, null, 2));
+      } else {
+        console.log(`slug:             ${m.slug}`);
+        console.log(`name:             ${m.name}`);
+        console.log(`scope:            ${m.scope}`);
+        console.log(`source:           ${m.source}`);
+        console.log(`sourceAssignment: ${m.sourceAssignment ?? '(none)'}`);
+        console.log(`created:          ${m.created}`);
+        console.log(`updated:          ${m.updated}`);
+        console.log(`related:          ${m.relatedAssignments.join(', ') || '(none)'}`);
+      }
+    } catch (error) {
+      console.error('Error:', error instanceof Error ? error.message : String(error));
+      process.exit(1);
+    }
+  });
+
+memoryCommand
+  .command('update')
+  .description('Update fields on an existing memory and regenerate _index.md')
+  .argument('<slug>', 'Memory slug')
+  .requiredOption('--project <slug>', 'Project slug')
+  .option('--name <name>', 'New name')
+  .option('--source <text>', 'New source')
+  .option('--scope <scope>', 'New scope')
+  .option('--source-assignment <slug>', 'New source assignment slug')
+  .option('--related-assignments <slugs>', 'Comma-separated related assignment slugs (replaces the list)')
+  .action(async (slug: string, options: MemoryUpdateOptions) => {
+    try {
+      const { filePath, indexPath, total } = await runMemoryUpdate(slug, options);
+      console.log(`Updated ${filePath}`);
+      console.log(`Rebuilt ${indexPath} (${total} total memories).`);
+    } catch (error) {
+      console.error('Error:', error instanceof Error ? error.message : String(error));
+      process.exit(1);
+    }
+  });
+
+memoryCommand
+  .command('remove')
+  .description('Remove a memory and regenerate _index.md')
+  .argument('<slug>', 'Memory slug')
+  .requiredOption('--project <slug>', 'Project slug')
+  .option('--force', 'Remove without prompting')
+  .action(async (slug: string, options: { project: string; force?: boolean }) => {
+    try {
+      const { filePath, indexPath, total } = await runMemoryRemove(slug, options);
+      console.log(`Removed ${filePath}`);
       console.log(`Rebuilt ${indexPath} (${total} total memories).`);
     } catch (error) {
       console.error('Error:', error instanceof Error ? error.message : String(error));

@@ -1,9 +1,14 @@
 import { readdir, readFile, writeFile } from 'node:fs/promises';
 import { resolve, dirname, basename } from 'node:path';
-import { getTargetStatus, DEFAULT_STATUSES, DEFAULT_TRANSITION_TABLE, buildTransitionTable } from '../lifecycle/index.js';
+import { getTargetStatus, DEFAULT_TRANSITION_TABLE, buildTransitionTable } from '../lifecycle/index.js';
 import { fileExists, writeFileForce } from '../utils/fs.js';
 import { nowTimestamp } from '../utils/timestamp.js';
-import { readConfig, type StatusConfig, type StatusTransition } from '../utils/config.js';
+import {
+  readConfig,
+  buildDefaultStatusConfig,
+  toTitleCase,
+  type StatusTransition,
+} from '../utils/config.js';
 import { resolvePlaybookSlug } from '../utils/playbooks.js';
 import { migrateLegacyProjectFiles, migrateLegacyArchivedProjects } from '../utils/fs-migration.js';
 import { resolveAssignmentById, type ResolvedAssignment } from '../utils/assignment-resolver.js';
@@ -379,19 +384,6 @@ const DEFAULT_TRANSITION_DEFINITIONS: Array<{
   },
 ];
 
-const DEFAULT_STATUS_COLORS: Record<string, string> = {
-  pending: 'slate',
-  in_progress: 'teal',
-  blocked: 'amber',
-  review: 'violet',
-  completed: 'emerald',
-  failed: 'rose',
-};
-
-function toTitleCase(s: string): string {
-  return s.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
-}
-
 function getTransitionDefinitions(config: ResolvedStatusConfig) {
   if (!config.custom) return DEFAULT_TRANSITION_DEFINITIONS;
   // Deduplicate commands from transitions
@@ -455,19 +447,14 @@ export async function getStatusConfig(): Promise<ResolvedStatusConfig> {
       terminalStatuses: terminalSet.size > 0 ? terminalSet : new Set(['completed', 'failed']),
     };
   } else {
+    // Shared default builder so the dashboard and the `syntaur status` CLI
+    // resolve identical default statuses/order/transitions (no drift).
+    const def = buildDefaultStatusConfig();
     _cachedConfig = {
       custom: false,
-      statuses: DEFAULT_STATUSES.map((id) => ({
-        id,
-        label: toTitleCase(id),
-        color: DEFAULT_STATUS_COLORS[id] ?? 'gray',
-        terminal: id === 'completed' || id === 'failed',
-      })),
-      order: [...DEFAULT_STATUSES],
-      transitions: Array.from(DEFAULT_TRANSITION_TABLE.entries()).map(([key, to]) => {
-        const [from, command] = key.split(':');
-        return { from, command, to };
-      }),
+      statuses: def.statuses,
+      order: def.order,
+      transitions: def.transitions,
       transitionTable: DEFAULT_TRANSITION_TABLE,
       terminalStatuses: new Set(['completed', 'failed']),
     };

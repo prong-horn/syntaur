@@ -187,7 +187,7 @@ export function useRecreateFlow() {
           <AlertDialogFooter>
             <AlertDialogCancel className="shell-action mt-0">Cancel</AlertDialogCancel>
             <AlertDialogAction
-              className="shell-action mt-0 bg-foreground text-background hover:opacity-90"
+              className="shell-action mt-0 shell-action--cta"
               onClick={(event) => {
                 event.preventDefault();
                 confirmFallback();
@@ -212,7 +212,7 @@ export function useRecreateFlow() {
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogAction
-              className="shell-action mt-0 bg-foreground text-background hover:opacity-90"
+              className="shell-action mt-0 shell-action--cta"
               onClick={() => setWorkspaceError(null)}
             >
               OK
@@ -257,7 +257,7 @@ export function useRecreateFlow() {
               No
             </AlertDialogCancel>
             <AlertDialogAction
-              className="shell-action mt-0 bg-foreground text-background hover:opacity-90"
+              className="shell-action mt-0 shell-action--cta"
               disabled={recreating}
               onClick={(event) => {
                 event.preventDefault();
@@ -281,7 +281,7 @@ export function useRecreateFlow() {
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogAction
-              className="shell-action mt-0 bg-foreground text-background hover:opacity-90"
+              className="shell-action mt-0 shell-action--cta"
               onClick={() => setRecreateNote(null)}
             >
               OK

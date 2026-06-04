@@ -162,7 +162,7 @@ export function StatusDeleteModal({
             className={`shell-action ${
               mode === 'delete'
                 ? 'bg-error text-error-foreground hover:opacity-90'
-                : 'bg-foreground text-background hover:opacity-90'
+                : 'shell-action--cta'
             } disabled:cursor-not-allowed disabled:opacity-50`}
           >
             {mode === 'remap' ? `Remap ${affected.count} → ${target || '...'}` : `Delete ${affected.count}`}

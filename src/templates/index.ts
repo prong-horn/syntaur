@@ -54,3 +54,6 @@ export type { CodexAgentsParams } from './codex-agents.js';
 
 export { renderOpenCodeConfig } from './opencode-config.js';
 export type { OpenCodeConfigParams } from './opencode-config.js';
+
+export { renderHermesSoul } from './hermes-soul.js';
+export type { HermesSoulParams } from './hermes-soul.js';

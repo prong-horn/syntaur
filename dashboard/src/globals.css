@@ -425,6 +425,23 @@
     color: oklch(var(--primary-foreground));
   }
 
+  /* Solid high-contrast CTA — foreground fill with a self-owned hover so the
+     base .shell-action:hover accent swap can't bury the (dark) label. Use this
+     instead of utility `bg-foreground text-background hover:opacity-90`, which
+     loses to .shell-action:hover on specificity and goes dark-on-dark. */
+  .shell-action--cta {
+    background-color: oklch(var(--foreground));
+    border-color: transparent;
+    color: oklch(var(--background));
+  }
+
+  .shell-action--cta:hover {
+    background-color: oklch(var(--foreground));
+    border-color: transparent;
+    color: oklch(var(--background));
+    opacity: 0.9;
+  }
+
   /* Eyebrow — small uppercase mono label, sanctioned mono usage */
   .eyebrow {
     display: inline-flex;

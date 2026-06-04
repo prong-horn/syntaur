@@ -16,9 +16,12 @@ metadata:
 # Log Progress
 
 Append a structured timestamped entry to the active assignment's
-`<assignmentDir>/progress.md`, and update its frontmatter. Markdown-only —
-no CLI verb. Idempotent in the sense that re-running with the same body
-produces a duplicate entry, which is intentional (timestamps differ).
+`<assignmentDir>/progress.md`, and update its frontmatter. CLI-mediated via
+`syntaur progress log "<text>"` — the command stamps the timestamp, inserts the
+entry reverse-chronologically (newest right after the `# Progress` H1), replaces
+the `No progress yet.` placeholder, bumps `entryCount` + `updated`, and preserves
+the `assignment`/`generated` frontmatter. Re-running with the same body produces a
+duplicate entry, which is intentional (timestamps differ).
 
 This skill implements the **Keep Records Updated** playbook: agents must keep
 records current in real-time, especially after every meaningful action.
@@ -55,34 +58,29 @@ The entry should be concise, factual, and link-rich. Suggested structure:
 Optional notes paragraph.
 ```
 
-Use ISO 8601 with `Z` suffix (e.g. `2026-05-08T20:13:00Z`). Use absolute
-file paths or repo-relative paths consistently.
+The CLI stamps the ISO 8601 `Z` timestamp for you. Use absolute file paths or
+repo-relative paths consistently in the body.
 
-## Step 3: Read existing progress.md
+## Step 3: Log the entry via the CLI
 
-Read `<assignmentDir>/progress.md`. Extract:
+Run:
 
-- Current `entryCount` from the frontmatter.
-- The full body (everything after the second `---`).
+```bash
+syntaur progress log "<your composed entry body>"
+```
 
-If `progress.md` doesn't exist, abort and tell the user to re-grab the
-assignment (the file should always exist for an in-progress assignment).
+The command resolves the active assignment from `.syntaur/context.json`
+(or pass `--assignment <slug> [--project <slug>]` to target one explicitly),
+then atomically:
 
-## Step 4: Compute new frontmatter
+- Inserts the entry immediately after the `# Progress` H1 (newest first,
+  reverse-chronological), replacing the `No progress yet.` placeholder on the
+  first real entry.
+- Increments `entryCount` and bumps `updated`, preserving `assignment` and
+  `generated`.
 
-- `entryCount`: increment by 1.
-- `updated`: set to current ISO timestamp.
-- Other fields (`assignment`, `generated`): preserve as-is.
-
-## Step 5: Write the file
-
-Write back the file with the updated frontmatter and the new entry **prepended**
-to the body (newest first), per the Keep Records Updated playbook and
-`skills/syntaur-protocol/references/protocol-summary.md`. Reverse-chronological
-order: the new `## <ISO 8601 timestamp>` heading sits immediately after the
-`# Progress` H1, with one blank line separating it from any prior entry.
-
-Layout:
+Quote the body so the shell passes it as a single argument. Multi-line bodies
+are fine inside the quotes. The resulting layout is:
 
 ```markdown
 # Progress
@@ -94,32 +92,15 @@ Layout:
 ## <prior ISO timestamp>
 
 <prior entry body>
-
-## <even-older ISO timestamp>
-
-<even-older entry body>
 ```
 
-If the existing body is the placeholder text "No progress yet.", replace it
-with the new entry instead of preserving the placeholder.
+> **Why the CLI:** the insert/ordering/`entryCount`/placeholder rules used to be
+> hand-applied (and easy to get subtly wrong). `syntaur progress log` is the
+> single, validated writer — the dashboard and downstream readers expect the
+> most recent entry first, the convention documented in
+> `~/.syntaur/playbooks/keep-records-updated.md`.
 
-> **Why prepend:** the dashboard and downstream readers expect the most recent
-> entry first. Appending at the end would silently break the convention
-> documented in `~/.syntaur/playbooks/keep-records-updated.md`.
-
-## Step 6: Verify schema
-
-Confirm by re-reading the file:
-
-- Starts with `---`, then frontmatter, then `---`.
-- `entryCount` is a non-negative integer.
-- `updated` matches the timestamp you wrote.
-- The new entry's `## <timestamp>` heading is present.
-
-If the file fails schema check, restore the prior content and report the
-error — do not leave it partially written.
-
-## Step 7: Report to User
+## Step 4: Report to User
 
 Summarize:
 

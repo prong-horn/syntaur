@@ -106,7 +106,7 @@ export function AppendEntryPage({
               type="button"
               onClick={handleSave}
               disabled={saving || !entryBody.trim()}
-              className="shell-action bg-foreground text-background hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+              className="shell-action shell-action--cta disabled:cursor-not-allowed disabled:opacity-50"
             >
               {saving ? 'Appending…' : 'Append Entry'}
             </button>

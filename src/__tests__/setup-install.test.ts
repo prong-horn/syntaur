@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { lstat, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
@@ -90,6 +90,59 @@ describe('setup and install flows', () => {
 
     const configPath = resolve(homeDir, '.syntaur', 'config.md');
     expect(await readFile(configPath, 'utf-8')).toContain('defaultProjectDir');
+  });
+
+  it('setup --target pi --dry-run prints the npx invocation and writes nothing', async () => {
+    const logs: string[] = [];
+    const spy = vi.spyOn(console, 'log').mockImplementation((...args) => {
+      logs.push(args.map(String).join(' '));
+    });
+    try {
+      await setupCommand({ target: 'pi', dryRun: true });
+    } finally {
+      spy.mockRestore();
+    }
+    const out = logs.join('\n');
+    expect(out).toContain('npx skills add prong-horn/syntaur --agent pi');
+    expect(out).toContain('AGENTS.md'); // the Tier-2 file it would write for pi
+    // dry-run must write nothing: no ~/.syntaur was initialized.
+    await expect(lstat(resolve(homeDir, '.syntaur'))).rejects.toThrow();
+  });
+
+  it('setup --target maps hermes to the hermes-agent skills.sh id', async () => {
+    const logs: string[] = [];
+    const spy = vi.spyOn(console, 'log').mockImplementation((...args) => {
+      logs.push(args.map(String).join(' '));
+    });
+    try {
+      await setupCommand({ target: 'hermes', dryRun: true });
+    } finally {
+      spy.mockRestore();
+    }
+    expect(logs.join('\n')).toContain('--agent hermes-agent');
+  });
+
+  it('setup --target rejects an unknown agent', async () => {
+    await expect(setupCommand({ target: 'bogus', dryRun: true })).rejects.toThrow(
+      'Unknown agent',
+    );
+  });
+
+  it('setup --target codex/claude is rejected (use the plugin path)', async () => {
+    await expect(setupCommand({ target: 'codex', dryRun: true })).rejects.toThrow(
+      'native Syntaur plugin',
+    );
+    await expect(setupCommand({ target: 'claude', dryRun: true })).rejects.toThrow(
+      'native Syntaur plugin',
+    );
+  });
+
+  it('setup --dry-run without --target/--agent is rejected (never writes)', async () => {
+    await expect(setupCommand({ dryRun: true })).rejects.toThrow(
+      '--dry-run only applies to cross-agent install',
+    );
+    // nothing was initialized
+    await expect(lstat(resolve(homeDir, '.syntaur'))).rejects.toThrow();
   });
 
   it('non-interactive setup without flags fails with guidance', async () => {
