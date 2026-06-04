@@ -182,7 +182,7 @@ async function installSkillDir(
   return { skill: skillName, status: 'differs-preserved', targetPath: destDir };
 }
 
-async function discoverSkillNames(sourceDir: string): Promise<string[]> {
+export async function discoverSkillNames(sourceDir: string): Promise<string[]> {
   const entries = await readdir(sourceDir, { withFileTypes: true });
   const names: string[] = [];
   for (const entry of entries) {

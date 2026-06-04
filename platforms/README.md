@@ -40,6 +40,27 @@ If `npx` is unavailable, `syntaur setup --target <id>` falls back to copying the
 bundled skills directly into the agent's skills dir. See
 `references/tool-dialects.md` for the Syntaur-id ↔ skills.sh-id mapping.
 
+### Channels
+
+Two equivalent Tier-1 sources resolve the same 30 skills:
+
+- **GitHub source** — `npx skills add prong-horn/syntaur` clones the repo and
+  auto-discovers `skills/` (no index needed).
+- **Branded HTTP source** — a spec-valid Agent Skills **v0.2.0** discovery index at
+  `/.well-known/agent-skills/index.json`, generated from `skills/` by
+  `scripts/build-skills-index.mjs` (per-skill `sha256:` digests; single-file skills
+  ship as `skill-md`, the multi-file `syntaur-protocol` as a deterministic `archive`
+  tar.gz) and deployed to **GitHub Pages** by `publish.yml` on each `v*` tag:
+
+  ```bash
+  # Pass the FULL URL (a bare host parses as a GitHub shorthand in skills.sh):
+  npx skills add https://prong-horn.github.io/syntaur
+  ```
+
+  The index emits **index-directory-relative** `url`s, so it resolves correctly whether
+  hosted under the project-Pages subpath (`/syntaur/`) or, later, a custom domain at an
+  origin root — no regeneration needed to adopt a CNAME.
+
 ## Usage
 
 ```bash
