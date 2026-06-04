@@ -64,8 +64,6 @@ const UTILITY_NAV_ITEMS: SidebarNavItem[] = [
   { to: '/settings', label: 'Settings', icon: Settings },
 ];
 
-const SOURCE_FIRST_NOTICE_KEY = 'syntaur.dashboard.sourceFirstNoticeDismissed';
-
 export function AppShell({
   title,
   breadcrumbs,
@@ -84,37 +82,11 @@ export function AppShell({
     handler: () => setMobileNavOpen(false),
   });
 
-  const [sourceNoticeDismissed, setSourceNoticeDismissed] = useState(() => {
-    if (typeof window === 'undefined') return false;
-    try {
-      return window.localStorage.getItem(SOURCE_FIRST_NOTICE_KEY) === '1';
-    } catch {
-      return false;
-    }
-  });
-
-  function dismissSourceNotice() {
-    setSourceNoticeDismissed(true);
-    if (typeof window === 'undefined') {
-      return;
-    }
-
-    try {
-      window.localStorage.setItem(SOURCE_FIRST_NOTICE_KEY, '1');
-    } catch {
-      // Keep the notice dismissed for this session even if persistence fails.
-    }
-  }
-
   return (
     <div className="min-h-screen bg-background">
       <div className="relative grid min-h-screen lg:grid-cols-[240px_minmax(0,1fr)]">
         <aside className="hidden max-h-screen sticky top-0 overflow-y-auto border-r border-border/70 bg-sidebar px-4 py-4 lg:flex lg:flex-col">
-          <ShellSidebar
-            sourceNoticeDismissed={sourceNoticeDismissed}
-            onDismissSourceNotice={dismissSourceNotice}
-            activeWorkspace={workspace}
-          />
+          <ShellSidebar activeWorkspace={workspace} />
         </aside>
 
         {mobileNavOpen ? (
@@ -133,8 +105,6 @@ export function AppShell({
                 </button>
               </div>
               <ShellSidebar
-                sourceNoticeDismissed={sourceNoticeDismissed}
-                onDismissSourceNotice={dismissSourceNotice}
                 activeWorkspace={workspace}
                 onNavigate={() => setMobileNavOpen(false)}
               />
@@ -159,13 +129,9 @@ export function AppShell({
 }
 
 function ShellSidebar({
-  sourceNoticeDismissed,
-  onDismissSourceNotice,
   activeWorkspace,
   onNavigate,
 }: {
-  sourceNoticeDismissed: boolean;
-  onDismissSourceNotice: () => void;
   activeWorkspace: string | null;
   onNavigate?: () => void;
 }) {
@@ -457,27 +423,6 @@ function ShellSidebar({
 
       {/* Utility zone */}
       <SidebarNav items={UTILITY_NAV_ITEMS} onNavigate={onNavigate} />
-
-      {sourceNoticeDismissed ? null : (
-        <div className="chrome-card">
-          <div className="flex items-start justify-between gap-3">
-            <div>
-              <p className="text-sm font-semibold text-foreground">Source-first dashboard</p>
-              <p className="mt-2 text-sm leading-6 text-muted-foreground">
-                Project and assignment markdown files stay authoritative. Derived files are read-only projections.
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={onDismissSourceNotice}
-              className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-border/70 bg-background/80 text-muted-foreground transition hover:text-foreground"
-              aria-label="Dismiss source-first dashboard notice"
-            >
-              <X className="h-4 w-4" />
-            </button>
-          </div>
-        </div>
-      )}
 
       <AlertDialog
         open={deleteTarget !== null}
