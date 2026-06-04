@@ -14,7 +14,7 @@ import {
 import { syntaurRoot, assignmentsDir } from '../utils/paths.js';
 import { fileExists, writeFileForce } from '../utils/fs.js';
 import { nowTimestamp } from '../utils/timestamp.js';
-import { updateAssignmentFile } from '../lifecycle/frontmatter.js';
+import { renameStatusInHistory, updateAssignmentFile } from '../lifecycle/frontmatter.js';
 import {
   scanAssignmentsByStatus,
   type AffectedAssignment,
@@ -396,7 +396,11 @@ export async function runStatusRename(
     const now = nowTimestamp();
     for (const a of affected) {
       const original = await readFile(a.path, 'utf-8');
-      const rewritten = updateAssignmentFile(original, { status: newId, updated: now });
+      const rewritten = renameStatusInHistory(
+        updateAssignmentFile(original, { status: newId, updated: now }),
+        id,
+        newId,
+      );
       console.log(`\n--- ${a.display}/assignment.md`);
       console.log(`+++ ${a.display}/assignment.md`);
       console.log(lineDiff(original, rewritten));
@@ -418,13 +422,16 @@ export async function runStatusRename(
     await writeStatusConfig(after);
     for (const a of affected) {
       const original = buffers.get(a.path)!;
-      // NOTE: `status rename` deliberately does NOT append a statusHistory entry.
-      // A rename is a relabel of an existing status, not a lifecycle transition —
-      // the assignment never changed workflow stage. Appending here would reset
-      // `statusAge` (time-in-status) and misrepresent a relabel as a move. This is
-      // an intentional exclusion in the status-history audit (see the Query Language
-      // Piece 1 plan). Accepted limitation: prior history entries keep the old label.
-      const rewritten = updateAssignmentFile(original, { status: newId, updated: now });
+      // `status rename` is a relabel, NOT a lifecycle transition: it must not
+      // append a statusHistory entry (that would reset `statusAge`). Instead we
+      // relabel the id in-place across existing history entries (preserving each
+      // `at`), so derived `completedAt` stays correct after renaming a terminal
+      // status. See the status-history audit in the Query Language Piece 1 plan.
+      const rewritten = renameStatusInHistory(
+        updateAssignmentFile(original, { status: newId, updated: now }),
+        id,
+        newId,
+      );
       await writeFileForce(a.path, rewritten);
     }
   } catch (err) {

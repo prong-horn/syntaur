@@ -337,6 +337,29 @@ export function updateAssignmentWorkspace(
 }
 
 /**
+ * Relabel a status id within an assignment's `statusHistory` — rewrite every
+ * entry whose `from`/`to` equals `oldId` to `newId`, WITHOUT appending a new
+ * entry or changing any `at`. Used by `syntaur status rename`: a rename is a
+ * relabel, not a transition, so it must preserve `statusAge` (no new entry) yet
+ * keep historical labels consistent with the new id (so derived `completedAt`
+ * stays correct after renaming a terminal status). Scoped to the frontmatter
+ * block; `from:`/`to:` keys are unique to statusHistory entries there. Exact
+ * value match avoids relabeling a status whose id is a substring of another.
+ */
+export function renameStatusInHistory(
+  content: string,
+  oldId: string,
+  newId: string,
+): string {
+  const fmMatch = content.match(/^(---\n)([\s\S]*?)(\n---)/);
+  if (!fmMatch) return content;
+  const esc = oldId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const re = new RegExp(`^(\\s+(?:from|to):[ \\t]*)${esc}[ \\t]*$`, 'gm');
+  const newFm = fmMatch[2].replace(re, `$1${newId}`);
+  return `${fmMatch[1]}${newFm}${fmMatch[3]}${content.slice(fmMatch[0].length)}`;
+}
+
+/**
  * Locate the `statusHistory:` block (the multi-line list form, not inline `[]`)
  * inside a frontmatter string and return the [bodyStart, bodyEnd) offsets of the
  * block body (the indented `- …` item lines, excluding the header line). Returns

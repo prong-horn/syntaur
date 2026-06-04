@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   appendStatusHistoryEntry,
   parseAssignmentFrontmatter,
+  renameStatusInHistory,
   updateAssignmentFile,
 } from '../lifecycle/frontmatter.js';
 
@@ -503,6 +504,82 @@ describe('appendStatusHistoryEntry', () => {
     expect(() => appendStatusHistoryEntry('no frontmatter', ENTRY)).toThrow(
       'No frontmatter found',
     );
+  });
+});
+
+describe('renameStatusInHistory', () => {
+  const FIXTURE = `---
+id: r-1
+slug: ren
+title: "Ren"
+status: completed
+priority: medium
+created: "2026-03-18T10:00:00Z"
+updated: "2026-03-18T12:00:00Z"
+assignee: null
+externalIds: []
+statusHistory:
+  - at: "2026-03-18T10:00:00Z"
+    from: null
+    to: in_review
+    command: create
+    by: null
+  - at: "2026-03-18T12:00:00Z"
+    from: in_review
+    to: completed
+    command: complete
+    by: claude
+dependsOn: []
+links: []
+blockedReason: null
+workspace:
+  repository: null
+  worktreePath: null
+  branch: null
+  parentBranch: null
+tags: []
+---
+
+# Ren
+`;
+
+  it('relabels from/to in place, preserving at and appending no entry', () => {
+    const renamed = renameStatusInHistory(FIXTURE, 'completed', 'done');
+    const fm = parseAssignmentFrontmatter(renamed);
+    expect(fm.statusHistory).toHaveLength(2); // no new entry
+    expect(fm.statusHistory[0]).toEqual({
+      at: '2026-03-18T10:00:00Z',
+      from: null,
+      to: 'in_review',
+      command: 'create',
+      by: null,
+    });
+    expect(fm.statusHistory[1]).toMatchObject({
+      at: '2026-03-18T12:00:00Z', // at preserved
+      from: 'in_review',
+      to: 'done', // relabeled
+      command: 'complete',
+    });
+  });
+
+  it('rewrites both from and to occurrences of the old id', () => {
+    // Rename in_review → review: the create entry's `to` and the complete
+    // entry's `from` both reference in_review.
+    const fm = parseAssignmentFrontmatter(renameStatusInHistory(FIXTURE, 'in_review', 'review'));
+    expect(fm.statusHistory[0].to).toBe('review');
+    expect(fm.statusHistory[1].from).toBe('review');
+  });
+
+  it('does not relabel a status whose id is only a substring', () => {
+    // 'review' must NOT match 'in_review'.
+    const fm = parseAssignmentFrontmatter(renameStatusInHistory(FIXTURE, 'review', 'x'));
+    expect(fm.statusHistory[0].to).toBe('in_review');
+    expect(fm.statusHistory[1].from).toBe('in_review');
+  });
+
+  it('leaves null `from` entries untouched', () => {
+    const fm = parseAssignmentFrontmatter(renameStatusInHistory(FIXTURE, 'completed', 'done'));
+    expect(fm.statusHistory[0].from).toBeNull();
   });
 });
 
