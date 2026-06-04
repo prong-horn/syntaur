@@ -184,6 +184,30 @@ describe('syntaur status', () => {
     expect(await readFile(c, 'utf-8')).toContain('status: review');
   });
 
+  it('rename does NOT append a statusHistory entry (relabel — statusAge preserved)', async () => {
+    await runCli(['status', 'init'], home);
+    // Seed an assignment that already has a statusHistory entry.
+    const dir = resolve(home, 'projects', 'p', 'assignments', 'hist');
+    await mkdir(dir, { recursive: true });
+    const path = resolve(dir, 'assignment.md');
+    await writeFile(
+      path,
+      `---\nid: 1111-hist\nslug: hist\nstatus: in_progress\nproject: p\nupdated: "2026-01-01T00:00:00Z"\nstatusHistory:\n  - at: "2026-01-01T00:00:00Z"\n    from: null\n    to: in_progress\n    command: create\n    by: null\n---\n# hist\n`,
+      'utf-8',
+    );
+    const r = await runCli(['status', 'rename', 'in_progress', '--to', 'working'], home);
+    expect(r.code, r.stderr).toBe(0);
+
+    const after = await readFile(path, 'utf-8');
+    // Top-level status is relabeled...
+    expect(after).toContain('status: working');
+    // ...but no new history entry was appended (still exactly one), and no rename
+    // entry exists. The historical entry keeps the OLD label (documented limit).
+    expect((after.match(/^ {2}- at:/gm) ?? []).length).toBe(1);
+    expect(after).not.toContain('command: rename');
+    expect(after).toContain('to: in_progress');
+  });
+
   it('rename --dry-run shows the per-file diff and writes nothing', async () => {
     await runCli(['status', 'init'], home);
     const a = await writeAssignment('a', 'in_progress');

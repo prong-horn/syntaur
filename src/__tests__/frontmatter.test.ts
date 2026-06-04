@@ -1,5 +1,9 @@
 import { describe, it, expect } from 'vitest';
-import { parseAssignmentFrontmatter, updateAssignmentFile } from '../lifecycle/frontmatter.js';
+import {
+  appendStatusHistoryEntry,
+  parseAssignmentFrontmatter,
+  updateAssignmentFile,
+} from '../lifecycle/frontmatter.js';
 
 const SIMPLE_ASSIGNMENT = `---
 id: test-id-123
@@ -264,6 +268,203 @@ describe('updateAssignmentFile', () => {
     expect(result).toContain('status: blocked');
     expect(result).toContain('blockedReason: Need API key');
     expect(result).toContain('updated: "2026-03-18T16:00:00Z"');
+  });
+});
+
+const WITH_HISTORY = `---
+id: h-1
+slug: with-history
+title: "With History"
+status: blocked
+priority: medium
+created: "2026-03-18T10:00:00Z"
+updated: "2026-03-18T11:00:00Z"
+assignee: claude-1
+externalIds: []
+statusHistory:
+  - at: "2026-03-18T10:00:00Z"
+    from: null
+    to: draft
+    command: create
+    by: null
+  - at: "2026-03-18T11:00:00Z"
+    from: draft
+    to: blocked
+    command: block
+    by: claude-1
+    reason: waiting on API
+dependsOn: []
+links: []
+blockedReason: waiting on API
+workspace:
+  repository: null
+  worktreePath: null
+  branch: null
+  parentBranch: null
+tags: []
+---
+
+# With History
+`;
+
+describe('parseStatusHistory', () => {
+  it('parses a block of entries including one with a reason', () => {
+    const fm = parseAssignmentFrontmatter(WITH_HISTORY);
+    expect(fm.statusHistory).toHaveLength(2);
+    expect(fm.statusHistory[0]).toEqual({
+      at: '2026-03-18T10:00:00Z',
+      from: null,
+      to: 'draft',
+      command: 'create',
+      by: null,
+    });
+    expect(fm.statusHistory[1]).toEqual({
+      at: '2026-03-18T11:00:00Z',
+      from: 'draft',
+      to: 'blocked',
+      command: 'block',
+      by: 'claude-1',
+      reason: 'waiting on API',
+    });
+  });
+
+  it('returns [] for the inline empty list form', () => {
+    const fm = parseAssignmentFrontmatter(
+      SIMPLE_ASSIGNMENT.replace('externalIds: []', 'externalIds: []\nstatusHistory: []'),
+    );
+    expect(fm.statusHistory).toEqual([]);
+  });
+
+  it('returns [] when the key is absent', () => {
+    expect(parseAssignmentFrontmatter(SIMPLE_ASSIGNMENT).statusHistory).toEqual([]);
+  });
+
+  it('parses a statusHistory block that is the LAST frontmatter key (EOF-safe)', () => {
+    // No trailing top-level key and no `\n---` inside the captured frontmatter —
+    // this is the case the naive externalIds boundary regex would drop.
+    const LAST_KEY = `---
+id: e-1
+slug: eof
+title: "EOF"
+status: in_progress
+priority: medium
+created: "2026-03-18T10:00:00Z"
+updated: "2026-03-18T10:00:00Z"
+assignee: null
+externalIds: []
+dependsOn: []
+links: []
+blockedReason: null
+workspace:
+  repository: null
+  worktreePath: null
+  branch: null
+  parentBranch: null
+tags: []
+statusHistory:
+  - at: "2026-03-18T10:00:00Z"
+    from: null
+    to: draft
+    command: create
+    by: null
+  - at: "2026-03-18T10:05:00Z"
+    from: draft
+    to: in_progress
+    command: start
+    by: claude
+---
+
+# EOF
+`;
+    const fm = parseAssignmentFrontmatter(LAST_KEY);
+    expect(fm.statusHistory).toHaveLength(2);
+    expect(fm.statusHistory[1].to).toBe('in_progress');
+    expect(fm.statusHistory[1].command).toBe('start');
+    expect(fm.statusHistory[1].by).toBe('claude');
+  });
+});
+
+describe('appendStatusHistoryEntry', () => {
+  const ENTRY = {
+    at: '2026-04-01T12:00:00Z',
+    from: 'in_progress',
+    to: 'review',
+    command: 'review',
+    by: 'claude-2',
+  };
+
+  it('creates the block when no statusHistory key exists, and round-trips (EOF combined)', () => {
+    const appended = appendStatusHistoryEntry(SIMPLE_ASSIGNMENT, {
+      at: '2026-04-01T12:00:00Z',
+      from: null,
+      to: 'pending',
+      command: 'create',
+      by: null,
+    });
+    expect(appended).toContain('statusHistory:');
+    // statusHistory is now the LAST key — parse must still find it.
+    const fm = parseAssignmentFrontmatter(appended);
+    expect(fm.statusHistory).toHaveLength(1);
+    expect(fm.statusHistory[0]).toEqual({
+      at: '2026-04-01T12:00:00Z',
+      from: null,
+      to: 'pending',
+      command: 'create',
+      by: null,
+    });
+  });
+
+  it('converts an inline empty list to a block', () => {
+    const inline = SIMPLE_ASSIGNMENT.replace(
+      'externalIds: []',
+      'externalIds: []\nstatusHistory: []',
+    );
+    const appended = appendStatusHistoryEntry(inline, ENTRY);
+    expect(appended).not.toContain('statusHistory: []');
+    const fm = parseAssignmentFrontmatter(appended);
+    expect(fm.statusHistory).toHaveLength(1);
+    expect(fm.statusHistory[0].to).toBe('review');
+  });
+
+  it('appends to an existing block, preserving prior entries and order', () => {
+    const appended = appendStatusHistoryEntry(WITH_HISTORY, ENTRY);
+    const fm = parseAssignmentFrontmatter(appended);
+    expect(fm.statusHistory).toHaveLength(3);
+    expect(fm.statusHistory[0].to).toBe('draft');
+    expect(fm.statusHistory[1].to).toBe('blocked');
+    expect(fm.statusHistory[2]).toEqual({ ...ENTRY });
+  });
+
+  it('does not disturb other frontmatter fields', () => {
+    const appended = appendStatusHistoryEntry(WITH_HISTORY, ENTRY);
+    const fm = parseAssignmentFrontmatter(appended);
+    expect(fm.id).toBe('h-1');
+    expect(fm.assignee).toBe('claude-1');
+    expect(fm.blockedReason).toBe('waiting on API');
+    expect(fm.status).toBe('blocked');
+    expect(fm.dependsOn).toEqual([]);
+    expect(fm.tags).toEqual([]);
+    // body intact
+    expect(appended).toContain('# With History');
+  });
+
+  it('quotes a reason containing YAML-special characters', () => {
+    const appended = appendStatusHistoryEntry(SIMPLE_ASSIGNMENT, {
+      at: '2026-04-01T12:00:00Z',
+      from: 'in_progress',
+      to: 'blocked',
+      command: 'block',
+      by: null,
+      reason: 'blocked: needs review',
+    });
+    const fm = parseAssignmentFrontmatter(appended);
+    expect(fm.statusHistory[0].reason).toBe('blocked: needs review');
+  });
+
+  it('throws on content without frontmatter', () => {
+    expect(() => appendStatusHistoryEntry('no frontmatter', ENTRY)).toThrow(
+      'No frontmatter found',
+    );
   });
 });
 

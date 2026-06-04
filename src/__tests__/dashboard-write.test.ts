@@ -5,6 +5,7 @@ import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { spawnSync } from 'node:child_process';
 import { createWriteRouter, worktreeInFlight } from '../dashboard/api-write.js';
+import { parseAssignmentFrontmatter } from '../lifecycle/frontmatter.js';
 
 let testDir: string;
 
@@ -2359,5 +2360,166 @@ tags: []
         expect(payload.assignment.workspace.worktreePath).toBe(resolve(repo, '.worktrees', 'feature/foo'));
       });
     });
+  });
+});
+
+describe('statusHistory recording + virtual fields (write router)', () => {
+  const PROJ = 'test-project';
+  const ASSIGN = 'test-assignment';
+
+  function assignmentPath(slug = ASSIGN): string {
+    return resolve(testDir, PROJ, 'assignments', slug, 'assignment.md');
+  }
+  async function readFm(slug = ASSIGN) {
+    return parseAssignmentFrontmatter(await readFile(assignmentPath(slug), 'utf-8'));
+  }
+
+  it('project status-override appends a command:override entry on an actual change', async () => {
+    await createAssignmentFixture();
+    const router = createWriteRouter(testDir);
+    const res = await invokeRoute(
+      router,
+      'post',
+      '/api/projects/:slug/assignments/:aslug/status-override',
+      { slug: PROJ, aslug: ASSIGN },
+      { status: 'in_progress' },
+    );
+    expect(res.statusCode).toBe(200);
+    const fm = await readFm();
+    expect(fm.status).toBe('in_progress');
+    expect(fm.statusHistory).toHaveLength(1);
+    expect(fm.statusHistory[0]).toMatchObject({
+      from: 'pending',
+      to: 'in_progress',
+      command: 'override',
+      by: null,
+    });
+  });
+
+  it('project status-override is a no-op when the status is unchanged (no new entry)', async () => {
+    await createAssignmentFixture();
+    const router = createWriteRouter(testDir);
+    // Move to in_progress (a real change → 1 entry).
+    await invokeRoute(
+      router,
+      'post',
+      '/api/projects/:slug/assignments/:aslug/status-override',
+      { slug: PROJ, aslug: ASSIGN },
+      { status: 'in_progress' },
+    );
+    expect((await readFm()).statusHistory).toHaveLength(1);
+    // Override to the SAME status → must not append another entry.
+    const res = await invokeRoute(
+      router,
+      'post',
+      '/api/projects/:slug/assignments/:aslug/status-override',
+      { slug: PROJ, aslug: ASSIGN },
+      { status: 'in_progress' },
+    );
+    expect(res.statusCode).toBe(200);
+    expect((await readFm()).statusHistory).toHaveLength(1); // still 1
+  });
+
+  it('raw PATCH appends command:edit on a status change, nothing otherwise', async () => {
+    await createAssignmentFixture();
+    const router = createWriteRouter(testDir);
+
+    const base = await readFile(assignmentPath(), 'utf-8');
+    const changed = base.replace('status: pending', 'status: review');
+    const r1 = await invokeRoute(
+      router,
+      'patch',
+      '/api/projects/:slug/assignments/:aslug',
+      { slug: PROJ, aslug: ASSIGN },
+      { content: changed },
+    );
+    expect(r1.statusCode).toBe(200);
+    let fm = await readFm();
+    expect(fm.status).toBe('review');
+    expect(fm.statusHistory).toHaveLength(1);
+    expect(fm.statusHistory[0]).toMatchObject({ from: 'pending', to: 'review', command: 'edit' });
+
+    // A second PATCH that does NOT change the status must append nothing.
+    const current = await readFile(assignmentPath(), 'utf-8');
+    const titleOnly = current.replace('title: Test Assignment', 'title: Renamed Title');
+    const r2 = await invokeRoute(
+      router,
+      'patch',
+      '/api/projects/:slug/assignments/:aslug',
+      { slug: PROJ, aslug: ASSIGN },
+      { content: titleOnly },
+    );
+    expect(r2.statusCode).toBe(200);
+    fm = await readFm();
+    expect(fm.statusHistory).toHaveLength(1); // unchanged
+    expect(fm.title).toBe('Renamed Title');
+  });
+
+  it('raw create seeds a command:create entry', async () => {
+    await createAssignmentFixture(); // creates the project
+    const router = createWriteRouter(testDir);
+    const content = `---
+id: placeholder
+slug: fresh-one
+title: Fresh One
+status: draft
+priority: medium
+created: "2026-03-21T10:00:00Z"
+updated: "2026-03-21T10:00:00Z"
+assignee: null
+externalIds: []
+dependsOn: []
+links: []
+blockedReason: null
+workspace:
+  repository: null
+  worktreePath: null
+  branch: null
+  parentBranch: null
+tags: []
+---
+
+# Fresh One
+`;
+    const res = await invokeRoute(
+      router,
+      'post',
+      '/api/projects/:slug/assignments',
+      { slug: PROJ },
+      { content },
+    );
+    expect(res.statusCode).toBe(201);
+    const fm = await readFm('fresh-one');
+    expect(fm.statusHistory).toHaveLength(1);
+    expect(fm.statusHistory[0]).toMatchObject({ from: null, to: 'draft', command: 'create', by: null });
+  });
+
+  it('derives completedAt when terminal, clears it on reopen; statusAge is numeric', async () => {
+    await createAssignmentFixture();
+    const router = createWriteRouter(testDir);
+
+    const done = await invokeRoute(
+      router,
+      'post',
+      '/api/projects/:slug/assignments/:aslug/status-override',
+      { slug: PROJ, aslug: ASSIGN },
+      { status: 'completed' },
+    );
+    const detail1 = (done.payload as { assignment: { completedAt: string | null; statusAge: number | null } })
+      .assignment;
+    expect(detail1.completedAt).toBeTruthy();
+    expect(typeof detail1.statusAge).toBe('number');
+    expect(detail1.statusAge as number).toBeGreaterThanOrEqual(0);
+
+    // Reopen: completed -> in_progress. completedAt must clear (current status no longer terminal).
+    const reopen = await invokeRoute(
+      router,
+      'post',
+      '/api/projects/:slug/assignments/:aslug/status-override',
+      { slug: PROJ, aslug: ASSIGN },
+      { status: 'in_progress' },
+    );
+    const detail2 = (reopen.payload as { assignment: { completedAt: string | null } }).assignment;
+    expect(detail2.completedAt).toBeNull();
   });
 });
