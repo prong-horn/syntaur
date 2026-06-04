@@ -2,7 +2,7 @@ import { resolve } from 'node:path';
 import { readdir, readFile } from 'node:fs/promises';
 import { expandHome, assignmentsDir as getStandaloneDir } from '../utils/paths.js';
 import { fileExists, writeFileForce } from '../utils/fs.js';
-import { readConfig } from '../utils/config.js';
+import { readConfig, type SyntaurConfig } from '../utils/config.js';
 import { appendStatusHistoryEntry, parseAssignmentFrontmatter } from '../lifecycle/frontmatter.js';
 import { TERMINAL_STATUSES } from '../lifecycle/types.js';
 import type { AssignmentFrontmatter } from '../lifecycle/types.js';
@@ -28,17 +28,35 @@ async function parseSafe(path: string): Promise<AssignmentFrontmatter | null> {
 }
 
 /**
+ * Resolve the terminal status set from config. Mirrors getStatusConfig in the
+ * dashboard: honor a custom `statuses:` block's `terminal` flags, falling back
+ * to the lifecycle default ({ completed, failed }) when none are configured.
+ */
+function resolveTerminalSet(config: SyntaurConfig): ReadonlySet<string> {
+  if (config.statuses) {
+    const set = new Set(
+      config.statuses.statuses.filter((s) => s.terminal).map((s) => s.id),
+    );
+    if (set.size > 0) return set;
+  }
+  return TERMINAL_STATUSES;
+}
+
+/**
  * The synthetic seed timestamp. Pre-migration history is unrecoverable, so we
  * pick the best available anchor: for currently-terminal items use `updated`
  * (an approximation of completion time, making the derived `completedAt`
  * roughly correct); for everything else use `created` (the creation anchor).
  */
-function seedAtFor(fm: AssignmentFrontmatter): string {
-  const anchor = TERMINAL_STATUSES.has(fm.status) ? fm.updated : fm.created;
+function seedAtFor(fm: AssignmentFrontmatter, terminalStatuses: ReadonlySet<string>): string {
+  const anchor = terminalStatuses.has(fm.status) ? fm.updated : fm.created;
   return anchor || fm.created || fm.updated || '';
 }
 
-async function collectTargets(baseDirs: string[]): Promise<SeedTarget[]> {
+async function collectTargets(
+  baseDirs: string[],
+  terminalStatuses: ReadonlySet<string>,
+): Promise<SeedTarget[]> {
   const targets: SeedTarget[] = [];
   const seen = new Set<string>();
   for (const baseDir of baseDirs) {
@@ -59,7 +77,7 @@ async function collectTargets(baseDirs: string[]): Promise<SeedTarget[]> {
             display: `standalone/${m.name}`,
             assignmentMd: directAssignmentMd,
             status: fm.status,
-            seedAt: seedAtFor(fm),
+            seedAt: seedAtFor(fm, terminalStatuses),
           });
         }
         continue;
@@ -82,7 +100,7 @@ async function collectTargets(baseDirs: string[]): Promise<SeedTarget[]> {
           display: `${m.name}/${a.name}`,
           assignmentMd,
           status: fm.status,
-          seedAt: seedAtFor(fm),
+          seedAt: seedAtFor(fm, terminalStatuses),
         });
       }
     }
@@ -102,8 +120,9 @@ export async function migrateStatusHistoryCommand(
   const config = await readConfig();
   const projectsBase = options.dir ? expandHome(options.dir) : config.defaultProjectDir;
   const standaloneBase = getStandaloneDir();
+  const terminalStatuses = resolveTerminalSet(config);
 
-  const targets = await collectTargets([projectsBase, standaloneBase]);
+  const targets = await collectTargets([projectsBase, standaloneBase], terminalStatuses);
 
   if (targets.length === 0) {
     console.log('No assignments need a statusHistory seed — all up to date.');

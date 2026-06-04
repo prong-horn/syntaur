@@ -143,6 +143,32 @@ describe('migrateStatusHistoryCommand', () => {
     expect(parseAssignmentFrontmatter(await readFile(good, 'utf-8')).statusHistory).toHaveLength(1);
   });
 
+  it('honors a CUSTOM configured terminal status (terminal → updated anchor)', async () => {
+    // Custom config: `done` is terminal, `in_progress` is not.
+    await writeFile(
+      resolve(home, 'config.md'),
+      `---\nversion: "2.0"\ndefaultProjectDir: ${projectsDir}\nstatuses:\n  definitions:\n    - id: in_progress\n      label: In Progress\n    - id: done\n      label: Done\n      terminal: true\n  order:\n    - in_progress\n    - done\n---\n`,
+      'utf-8',
+    );
+    const donePath = await seedProject('p1', 'd1', 'done', C, U);
+    const wipPath = await seedProject('p1', 'w1', 'in_progress', C, U);
+
+    await migrateStatusHistoryCommand({ dir: projectsDir, apply: true });
+
+    // `done` is configured terminal → anchor is `updated` (U).
+    expect(parseAssignmentFrontmatter(await readFile(donePath, 'utf-8')).statusHistory[0]).toMatchObject({
+      at: U,
+      to: 'done',
+      command: 'seed',
+    });
+    // `in_progress` is non-terminal → anchor is `created` (C).
+    expect(parseAssignmentFrontmatter(await readFile(wipPath, 'utf-8')).statusHistory[0]).toMatchObject({
+      at: C,
+      to: 'in_progress',
+      command: 'seed',
+    });
+  });
+
   it('seeds a standalone assignment (uuid dir under the standalone base)', async () => {
     const path = await seedStandalone('11111111-2222-3333-4444-555555555555', 'review', C, U);
     await migrateStatusHistoryCommand({ dir: projectsDir, apply: true });
