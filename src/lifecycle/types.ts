@@ -41,6 +41,22 @@ export interface ExternalId {
   url: string | null;
 }
 
+/**
+ * One row in an assignment's `statusHistory` frontmatter array — an append-only
+ * log of status transitions. `at`/`from`/`to` are always present (`from` is null
+ * only for the creation/seed entry). `command`/`by` are recorded when known;
+ * `reason` is set on `block` transitions. See the Query Language design doc,
+ * Piece 1, for the full data-model rationale.
+ */
+export interface StatusHistoryEntry {
+  at: string;
+  from: string | null;
+  to: string;
+  command: string;
+  by: string | null;
+  reason?: string;
+}
+
 export interface Workspace {
   repository: string | null;
   worktreePath: string | null;
@@ -60,6 +76,7 @@ export interface AssignmentFrontmatter {
   updated: string;
   assignee: string | null;
   externalIds: ExternalId[];
+  statusHistory: StatusHistoryEntry[];
   dependsOn: string[];
   links: string[];
   blockedReason: string | null;
