@@ -82,6 +82,26 @@ describe('codex session-cleanup.sh', () => {
     expect(captured.url).toBe('/api/agent-sessions/CODEX-A/status');
   });
 
+  it('fails CLOSED: skips a marker whose procStart does not match the live process', async () => {
+    await writeFile(
+      resolve(sandbox, '.syntaur', 'context.json'),
+      JSON.stringify({ projectSlug: 'p', sessionId: 'CLOBBERED' }),
+    );
+    // procStart is bogus → cannot match the test process's real `ps -o lstart=` → skip.
+    await writeFile(
+      join(runtimeDir, `${process.pid}.json`),
+      JSON.stringify({ sessionId: 'CODEX-STALE', procStart: 'Mon Jan  1 00:00:00 2001' }),
+    );
+    const { captured } = await withCaptureServer(async (port) => {
+      await writeFile(resolve(sandbox, '.syntaur', 'dashboard-port'), String(port));
+      const r = await runHookAsync(JSON.stringify({ cwd: sandbox }), {
+        SYNTAUR_RUNTIME_SESSIONS_DIR: runtimeDir,
+      });
+      expect(r.status).toBe(0);
+    });
+    expect(captured.url).toBeUndefined();
+  });
+
   it('skips the PATCH when no exact marker resolves (does NOT trust the clobbered scalar)', async () => {
     await writeFile(
       resolve(sandbox, '.syntaur', 'context.json'),

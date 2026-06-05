@@ -17,7 +17,7 @@
         "hooks": [
           {
             "type": "prompt",
-            "prompt": "Before compaction, if there is an active Syntaur assignment (check `.syntaur/context.json` for `assignmentDir` and `sessionId`), invoke `/save-session-summary` to write `<assignmentDir>/sessions/<sessionId>/summary.md` so a future session can resume cleanly. Skip silently if no active Syntaur context. Do NOT write to `handoff.md` — that is reserved for cross-ticket handoff at completion."
+            "prompt": "Before compaction, if there is an active Syntaur assignment (check `.syntaur/context.json` for `assignmentDir`), invoke `/save-session-summary` so a future session can resume cleanly. The summary is written under `<assignmentDir>/sessions/<sessionId>/`, where the CLI resolves `<sessionId>` from your running process (env / process tree) — do not read it from the `context.json` scalar (a co-tenant can clobber that hint). Skip silently if no active Syntaur context. Do NOT write to `handoff.md` — that is reserved for cross-ticket handoff at completion."
           }
         ]
       }

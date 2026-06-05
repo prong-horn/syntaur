@@ -50,12 +50,14 @@ resolve_session_from_markers() {
       procstart=$(jq -r '.procStart // empty' "$marker" 2>/dev/null)
       if [ -n "$sid" ]; then
         if [ -n "$procstart" ]; then
+          # Fail CLOSED: require a readable, exactly-matching live start time;
+          # if ps can't prove the pid wasn't recycled, skip this marker.
           actual=$(ps -o lstart= -p "$pid" 2>/dev/null | sed 's/^ *//;s/ *$//')
-          if [ -z "$actual" ] || [ "$actual" = "$procstart" ]; then
+          if [ -n "$actual" ] && [ "$actual" = "$procstart" ]; then
             printf '%s' "$sid"
             return 0
           fi
-          # else: recycled pid — skip this marker, keep walking
+          # else: cannot prove pid identity — skip this marker, keep walking
         else
           printf '%s' "$sid"
           return 0
@@ -73,6 +75,12 @@ MISSION_SLUG=$(jq -r '.projectSlug // empty' "$CONTEXT_FILE" 2>/dev/null)
 
 # No EXACT id — do not risk stopping the wrong co-tenant session.
 [ -z "$SESSION_ID" ] && exit 0
+
+# Defensive: the id becomes a URL path segment — reject anything that isn't a
+# plain id (UUID/ULID charset). Real ids never trip this.
+case "$SESSION_ID" in
+  *[!A-Za-z0-9_-]*) exit 0 ;;
+esac
 
 PORT=$(cat "$HOME/.syntaur/dashboard-port" 2>/dev/null || echo "4800")
 if [ -n "$MISSION_SLUG" ]; then

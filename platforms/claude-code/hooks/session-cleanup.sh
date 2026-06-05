@@ -45,6 +45,12 @@ ASSIGNMENT_SLUG=$(jq -r '.assignmentSlug // empty' "$CONTEXT_FILE" 2>/dev/null)
 # No real session id available — exit quietly. We never synthesize one.
 [ -z "$SESSION_ID" ] && exit 0
 
+# Defensive: the id becomes a URL path segment — reject anything that isn't a
+# plain id (UUID/ULID charset). Real Claude session ids never trip this.
+case "$SESSION_ID" in
+  *[!A-Za-z0-9_-]*) exit 0 ;;
+esac
+
 # --- Dashboard endpoint resolution (mirror session-start.sh exactly so start
 # and end hooks always target the same host:port) ---
 PORT="${SYNTAUR_DASHBOARD_PORT:-}"

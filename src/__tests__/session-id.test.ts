@@ -6,6 +6,7 @@ import {
   resolveOwnSessionId,
   writeRuntimeMarker,
   readRuntimeMarker,
+  isSafeSessionId,
   SESSION_ID_ENV_VARS,
   type ResolverDeps,
 } from '../utils/session-id.js';
@@ -123,6 +124,15 @@ describe('resolveOwnSessionId', () => {
       expect(id).toBe('fresh');
     });
 
+    it('fails CLOSED: skips a procStart marker when the live start time is unreadable', async () => {
+      writeRuntimeMarker(4242, { sessionId: 'unprovable', procStart: 'SOME' }, dir);
+      const id = await resolveOwnSessionId(
+        { legacyHint: 'hint' },
+        inertDeps({ startPid: 4242, runtimeSessionsDir: dir, pidStartedAt: () => null }),
+      );
+      expect(id).toBe('hint'); // cannot prove the pid wasn't recycled → skip the marker
+    });
+
     it('reads the marker before probing ps (no ps call on marker-less levels)', async () => {
       const pidStartedAt = vi.fn(() => 'whatever');
       // Marker WITHOUT procStart at the start pid → resolves without ever calling pidStartedAt.
@@ -142,6 +152,37 @@ describe('resolveOwnSessionId', () => {
     });
     it('returns undefined when the hint is omitted (exact-only callers)', async () => {
       expect(await resolveOwnSessionId({}, inertDeps())).toBeUndefined();
+    });
+  });
+
+  describe('session-id validation (path/URL safety)', () => {
+    it('rejects an unsafe explicit id and falls through', async () => {
+      expect(
+        await resolveOwnSessionId({ sessionId: '../../etc/passwd', legacyHint: 'safe-hint' }, inertDeps()),
+      ).toBe('safe-hint');
+    });
+    it('rejects an unsafe env id and falls through', async () => {
+      expect(
+        await resolveOwnSessionId({ legacyHint: 'safe-hint' }, inertDeps({ env: { CLAUDE_CODE_SESSION_ID: 'a/b' } })),
+      ).toBe('safe-hint');
+    });
+    it('rejects an unsafe legacy hint (returns undefined)', async () => {
+      expect(await resolveOwnSessionId({ legacyHint: '..' }, inertDeps())).toBeUndefined();
+    });
+    it('rejects an unsafe marker id and falls through', async () => {
+      writeRuntimeMarker(4242, { sessionId: '../escape' }, dir);
+      expect(
+        await resolveOwnSessionId({ legacyHint: 'safe-hint' }, inertDeps({ startPid: 4242, runtimeSessionsDir: dir })),
+      ).toBe('safe-hint');
+    });
+    it('isSafeSessionId accepts real UUID/ULID ids, rejects separators and dot-paths', () => {
+      expect(isSafeSessionId('85544734-b7f3-43ac-9922-139aa62d90b9')).toBe(true);
+      expect(isSafeSessionId('019e982a-7411-77f3-a1be-1028a2bb8682')).toBe(true);
+      expect(isSafeSessionId('a/b')).toBe(false);
+      expect(isSafeSessionId('..')).toBe(false);
+      expect(isSafeSessionId('a b')).toBe(false);
+      expect(isSafeSessionId('')).toBe(false);
+      expect(isSafeSessionId(undefined)).toBe(false);
     });
   });
 

@@ -44,6 +44,18 @@ export const SESSION_ID_ENV_VARS = [
   'PI_SESSION_ID',
 ] as const;
 
+// Resolved ids become filesystem path segments (sessions/<id>/summary.md) and
+// URL path segments in the cleanup hooks. Now that ids come from widened sources
+// (env vars, ancestor markers, transcript scans), validate them so a malformed
+// value can't traverse out of the sessions dir or inject into a URL. Real agent
+// ids are UUIDs/ULIDs — alphanumerics, hyphens, underscores — so this is strict
+// but never rejects a legitimate id. Invalid candidates are treated as a miss
+// and the resolver falls through to the next layer.
+const SAFE_SESSION_ID = /^[A-Za-z0-9_-]+$/;
+export function isSafeSessionId(value: unknown): value is string {
+  return typeof value === 'string' && value.length > 0 && value.length <= 256 && SAFE_SESSION_ID.test(value);
+}
+
 /**
  * Shape of a per-process runtime marker file at
  * `<claudeSessionsDir | runtimeSessionsDir>/<pid>.json`. Claude Code writes its
@@ -171,10 +183,13 @@ function resolveFromAncestorMarkers(
       const marker = readRuntimeMarker(pid, dir);
       if (!marker) continue;
       if (marker.procStart) {
+        // Fail CLOSED: a recorded procStart must be PROVEN to still match. If we
+        // can't read the live start time, we can't prove the pid wasn't recycled
+        // (a stale marker for a reused pid), so skip rather than trust it.
         const actual = pidStartedAt(pid);
-        if (actual && actual !== marker.procStart) continue; // recycled pid — skip
+        if (!actual || actual !== marker.procStart) continue;
       }
-      return marker.sessionId;
+      if (isSafeSessionId(marker.sessionId)) return marker.sessionId;
     }
     const parent = readPpid(pid);
     if (parent === null) break;
@@ -190,12 +205,12 @@ async function resolveFromCwdScan(
 ): Promise<string | undefined> {
   const candidates: Array<{ sessionId: string; mtime: number }> = [];
   for await (const meta of walkClaudeProjects()) {
-    if (meta.cwd === cwd) {
+    if (meta.cwd === cwd && isSafeSessionId(meta.sessionId)) {
       candidates.push({ sessionId: meta.sessionId, mtime: statMtimeMs(meta.path) ?? 0 });
     }
   }
   for await (const meta of walkCodexSessions()) {
-    if (meta.cwd === cwd) {
+    if (meta.cwd === cwd && isSafeSessionId(meta.sessionId)) {
       candidates.push({ sessionId: meta.sessionId, mtime: statMtimeMs(meta.path) ?? 0 });
     }
   }
@@ -210,13 +225,13 @@ export async function resolveOwnSessionId(
   deps: ResolverDeps = {},
 ): Promise<string | undefined> {
   // Layer 1 — explicit override.
-  if (opts.sessionId && opts.sessionId.length > 0) return opts.sessionId;
+  if (isSafeSessionId(opts.sessionId)) return opts.sessionId;
 
   // Layer 2 — injected env var (clobber-proof, per-process).
   const env = deps.env ?? process.env;
   for (const key of SESSION_ID_ENV_VARS) {
     const value = env[key];
-    if (typeof value === 'string' && value.length > 0) return value;
+    if (isSafeSessionId(value)) return value;
   }
 
   // Layer 3 — agent side channel (seam).
@@ -245,7 +260,7 @@ export async function resolveOwnSessionId(
   }
 
   // Layer 6 — legacy context.json hint (only when the caller opts in).
-  if (opts.legacyHint && opts.legacyHint.length > 0) return opts.legacyHint;
+  if (isSafeSessionId(opts.legacyHint)) return opts.legacyHint;
 
   return undefined;
 }
