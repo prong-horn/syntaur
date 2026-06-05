@@ -1,6 +1,14 @@
 #!/usr/bin/env bash
 # Syntaur SessionEnd hook for Codex plugins.
-# Marks active agent sessions as stopped when a Codex session exits.
+# Marks the ENDING agent session as stopped when a Codex session exits.
+#
+# Identity rule: resolve the ending session's id EXACTLY, from a capture-at-birth
+# runtime marker stamped by a session-start/boundary hook (keyed by the Codex
+# process pid). We deliberately do NOT read .sessionId from context.json — that
+# shared scalar is clobbered when two sessions share a workspace, so trusting it
+# would mark the WRONG session stopped. Codex has no SessionStart hook and its
+# SessionEnd stdin carries no id, so when no exact marker resolves we SKIP the
+# PATCH and let the dashboard liveness reaper mark the dead session stopped.
 
 set -o pipefail 2>/dev/null || true
 
@@ -23,17 +31,58 @@ if [ ! -f "$CONTEXT_FILE" ]; then
   exit 0
 fi
 
-SESSION_ID=$(jq -r '.sessionId // empty' "$CONTEXT_FILE" 2>/dev/null)
+RUNTIME_DIR="${SYNTAUR_RUNTIME_SESSIONS_DIR:-$HOME/.syntaur/runtime/sessions}"
+
+# Walk the ancestor-pid chain reading runtime markers. Returns the nearest
+# marker's sessionId on stdout (and success), pid-reuse-guarded by procStart.
+resolve_session_from_markers() {
+  local pid="$PPID"
+  local depth=0
+  while [ "$depth" -lt 12 ]; do
+    case "$pid" in
+      '' | *[!0-9]*) break ;;
+    esac
+    [ "$pid" -le 1 ] && break
+    local marker="$RUNTIME_DIR/$pid.json"
+    if [ -f "$marker" ]; then
+      local sid procstart actual
+      sid=$(jq -r '.sessionId // empty' "$marker" 2>/dev/null)
+      procstart=$(jq -r '.procStart // empty' "$marker" 2>/dev/null)
+      if [ -n "$sid" ]; then
+        if [ -n "$procstart" ]; then
+          actual=$(ps -o lstart= -p "$pid" 2>/dev/null | sed 's/^ *//;s/ *$//')
+          if [ -z "$actual" ] || [ "$actual" = "$procstart" ]; then
+            printf '%s' "$sid"
+            return 0
+          fi
+          # else: recycled pid — skip this marker, keep walking
+        else
+          printf '%s' "$sid"
+          return 0
+        fi
+      fi
+    fi
+    pid=$(ps -o ppid= -p "$pid" 2>/dev/null | tr -d ' ')
+    depth=$((depth + 1))
+  done
+  return 1
+}
+
+SESSION_ID=$(resolve_session_from_markers || true)
 MISSION_SLUG=$(jq -r '.projectSlug // empty' "$CONTEXT_FILE" 2>/dev/null)
 
-if [ -z "$SESSION_ID" ] || [ -z "$MISSION_SLUG" ]; then
-  exit 0
-fi
+# No EXACT id — do not risk stopping the wrong co-tenant session.
+[ -z "$SESSION_ID" ] && exit 0
 
 PORT=$(cat "$HOME/.syntaur/dashboard-port" 2>/dev/null || echo "4800")
+if [ -n "$MISSION_SLUG" ]; then
+  BODY="{\"status\": \"stopped\", \"projectSlug\": \"${MISSION_SLUG}\"}"
+else
+  BODY="{\"status\": \"stopped\"}"
+fi
 curl -sf -X PATCH "http://localhost:${PORT}/api/agent-sessions/${SESSION_ID}/status" \
   -H "Content-Type: application/json" \
-  -d "{\"status\": \"stopped\", \"projectSlug\": \"${MISSION_SLUG}\"}" \
+  -d "$BODY" \
   -o /dev/null 2>/dev/null || true
 
 exit 0
