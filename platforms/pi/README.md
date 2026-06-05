@@ -5,8 +5,12 @@ shared `.syntaur/context.json` scalar (a co-tenant clobbers it). For Pi, the job
 is to inject `PI_SESSION_ID` per spawn so the CLI's `resolveOwnSessionId` picks
 it up at layer 2. See `../SESSION-ID-RESOLUTION.md` for the full design.
 
-> **Status:** reference artifact. There is no Syntaur-managed Pi install path
-> yet; this documents the injector and its verification gate.
+> **Status:** Syntaur already ships a Pi extension at
+> `extensions/syntaur/index.ts` (it tracks the dashboard session via
+> `ctx.sessionId`). That extension does **not** yet inject `PI_SESSION_ID` into
+> spawned commands — adding the `spawnHook` below to it is the remaining piece
+> so Pi commands self-identify to `resolveOwnSessionId` (layer 2). This file
+> documents that injector and its verification gate.
 
 ## Injector — a `spawnHook` extension
 

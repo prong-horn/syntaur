@@ -65,8 +65,10 @@ Pi extensions expose `session_start` (capture `ctx.sessionManager.getSessionId()
 and a bash `spawnHook` that injects env per spawn. Inject `PI_SESSION_ID` (layer
 2). Reference: `platforms/pi/extension/syntaur-session-env.js` + `platforms/pi/README.md`.
 
-- **Status:** no `platforms/pi/` integration existed before this change; shipped
-  as a reference artifact, not yet wired into a Syntaur install path.
+- **Status:** Syntaur ships a Pi extension at
+  `platforms/pi/extensions/syntaur/` (dashboard session tracking). It does not
+  yet inject `PI_SESSION_ID`; adding the `spawnHook` injector to that extension
+  is the remaining piece. See `platforms/pi/README.md`.
 - **Live verification gate (cannot run here):** `echo $PI_SESSION_ID` from a Pi
   tool call returns the real id.
 
