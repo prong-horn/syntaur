@@ -32,9 +32,14 @@ If the file does not exist, tell the user: "No active assignment found. Run `gra
 
 Extract:
 - `assignmentDir` (absolute path) — required.
-- `sessionId` — required, must be the real agent runtime session id.
 
-If `sessionId` is missing, empty, or `null`, abort with: "Session not tracked. Run `syntaur track-session ...` first." Do not invent or generate a session id.
+**Do not read the session id from `context.json` for identity.** That scalar is
+a shared, legacy hint a co-tenant can clobber. The session id is resolved from
+*your* running process — prefer, in order:
+1. `$CLAUDE_CODE_SESSION_ID` (or the peer `OPENCODE_SESSION_ID` / `PI_SESSION_ID`) if your runtime injects it.
+2. Otherwise omit `--session-id` entirely and let `syntaur session save` resolve it (it walks env → process tree → transcript, and falls back to the `context.json` hint only as a last resort).
+
+Never invent or generate a session id.
 
 ## Step 2: Author the summary body
 
@@ -75,13 +80,17 @@ Pass the body to `syntaur session save` (it owns the directory, frontmatter,
 and `created`-preservation):
 
 ```bash
-syntaur session save --session-id <sessionId> --from-file <body.md>
-# or pipe it:  printf '%s' "$BODY" | syntaur session save --session-id <sessionId>
+# Recommended: omit --session-id and let the CLI resolve YOUR own session id.
+printf '%s' "$BODY" | syntaur session save
+# or from a file:  syntaur session save --from-file <body.md>
+# Pass --session-id <id> only to override (e.g. you already have $CLAUDE_CODE_SESSION_ID).
 ```
 
 Resolves the active assignment from `.syntaur/context.json` (or pass
-`--assignment <slug> [--project <slug>]`), and `--session-id` defaults to the
-context's `sessionId`. The command:
+`--assignment <slug> [--project <slug>]`). `--session-id` now defaults to the
+**resolved** session (env → process tree → transcript), falling back to the
+`context.json` hint only as a last resort — so a co-tenant that clobbered the
+shared scalar can't make you write under the wrong id. The command:
 
 - Creates `<assignmentDir>/sessions/<sessionId>/` (idempotent) and writes
   `summary.md` — a **single document per session id**, overwritten in place;

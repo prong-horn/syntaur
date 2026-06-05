@@ -5,6 +5,7 @@ import { fileExists, writeFileForce } from '../utils/fs.js';
 import { assignmentsDir } from '../utils/paths.js';
 import { readConfig } from '../utils/config.js';
 import { nowTimestamp } from '../utils/timestamp.js';
+import { resolveOwnSessionId } from '../utils/session-id.js';
 
 interface ContextFile {
   sessionId?: string;
@@ -210,7 +211,14 @@ async function resolveSaveTarget(
     slug = ctx.assignmentSlug ?? '';
   }
 
-  const sessionId = options.sessionId ?? ctx?.sessionId;
+  // Resolve the caller's OWN session id from the process, not the shared
+  // context.json scalar (a co-tenant clobbers the scalar). The context scalar
+  // is passed only as the last-resort legacy hint.
+  const sessionId = await resolveOwnSessionId({
+    sessionId: options.sessionId,
+    cwd,
+    legacyHint: ctx?.sessionId,
+  });
   if (!sessionId) {
     throw new Error(
       'Session not tracked. Pass --session-id <id>, or run `syntaur track-session ...` first so context.json carries a real session id.',
@@ -320,7 +328,7 @@ sessionCommand
 sessionCommand
   .command('save')
   .description("Write the session's continuity summary to sessions/<sessionId>/summary.md")
-  .option('--session-id <id>', 'Session id (defaults to .syntaur/context.json sessionId)')
+  .option('--session-id <id>', 'Session id (defaults to the resolved session: env / process tree, falling back to the .syntaur/context.json hint)')
   .option('--from-file <path>', 'Read the summary body from a file (else stdin; else a skeleton)')
   .option('--assignment <slug>', 'Assignment slug (UUID for standalone). Defaults to .syntaur/context.json')
   .option('--project <slug>', 'Project slug. Required with --assignment for a project-nested assignment')
@@ -328,6 +336,23 @@ sessionCommand
     try {
       const path = await runSessionSave(options);
       console.log(`Saved session summary to ${path}`);
+    } catch (error) {
+      console.error('Error:', error instanceof Error ? error.message : String(error));
+      process.exit(1);
+    }
+  });
+
+sessionCommand
+  .command('resolve-id')
+  .description(
+    "Print the caller's own real session id, resolved from the process (env / process tree / transcript). Exits 1 if none can be resolved. Deliberately does NOT read the context.json scalar — for hooks that must attribute the exact ending session.",
+  )
+  .option('--cwd <path>', 'Working directory for the transcript-scan fallback', process.cwd())
+  .action(async (options: { cwd?: string }) => {
+    try {
+      const id = await resolveOwnSessionId({ cwd: options.cwd ?? process.cwd() });
+      if (!id) process.exit(1);
+      console.log(id);
     } catch (error) {
       console.error('Error:', error instanceof Error ? error.message : String(error));
       process.exit(1);

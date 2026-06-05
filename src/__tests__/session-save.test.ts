@@ -8,11 +8,26 @@ const CLI_ENTRY = resolve(__dirname, '..', '..', 'bin', 'syntaur.js');
 
 interface RunResult { code: number; stdout: string; stderr: string }
 
-async function runCli(args: string[], home: string, stdin?: string): Promise<RunResult> {
+async function runCli(
+  args: string[],
+  home: string,
+  stdin?: string,
+  extraEnv: Record<string, string> = {},
+): Promise<RunResult> {
   return new Promise((res) => {
+    // Hermetic env: pin HOME + SYNTAUR_HOME to the sandbox so the session-id
+    // resolver's ancestor-pid (`~/.claude/sessions`) and transcript-scan layers
+    // see an empty home, and scrub any inherited *_SESSION_ID env so the test
+    // process's own real session id can't leak into layer 2. Tests opt into
+    // env vars explicitly via `extraEnv`.
+    const env: NodeJS.ProcessEnv = { ...process.env, SYNTAUR_HOME: home, HOME: home };
+    delete env.CLAUDE_CODE_SESSION_ID;
+    delete env.OPENCODE_SESSION_ID;
+    delete env.PI_SESSION_ID;
+    Object.assign(env, extraEnv);
     // cwd = home so the command never picks up the repo's own .syntaur/context.json.
     const child = spawn(process.execPath, [CLI_ENTRY, ...args], {
-      env: { ...process.env, SYNTAUR_HOME: home },
+      env,
       cwd: home,
       stdio: ['pipe', 'pipe', 'pipe'],
     });
@@ -96,5 +111,39 @@ describe('syntaur session save', () => {
     const r = await runCli(['session', 'save', '--assignment', 'a', '--project', 'p'], home, 'x');
     expect(r.code).toBe(1);
     expect(r.stderr).toContain('session');
+  });
+
+  it('resolves the caller\'s OWN id from env, not a clobbered context.json scalar (the reported bug)', async () => {
+    // Co-tenant scenario: agent B started in the same workspace and clobbered
+    // the shared scalar to 'B'. Agent A (this process, env=A) returns and saves.
+    // A's summary must land under A, never the clobbered B.
+    await mkdir(resolve(home, '.syntaur'), { recursive: true });
+    await writeFile(
+      resolve(home, '.syntaur', 'context.json'),
+      JSON.stringify({ assignmentDir, assignmentSlug: 'a', projectSlug: 'p', sessionId: 'B' }),
+      'utf-8',
+    );
+    const r = await runCli(['session', 'save'], home, 'Agent A summary.', { CLAUDE_CODE_SESSION_ID: 'A' });
+    expect(r.code, r.stderr).toBe(0);
+    const aSummary = await readFile(resolve(assignmentDir, 'sessions', 'A', 'summary.md'), 'utf-8');
+    expect(aSummary).toContain('sessionId: A');
+    expect(aSummary).toContain('Agent A summary.');
+    const { fileExists } = await import('../utils/fs.js');
+    expect(await fileExists(resolve(assignmentDir, 'sessions', 'B', 'summary.md'))).toBe(false);
+  });
+
+  it('falls back to the context.json sessionId hint when no env/process id is available', async () => {
+    // Back-compat: no *_SESSION_ID env, hermetic HOME (no markers/transcripts) —
+    // the legacy scalar is the last-resort hint and still resolves.
+    await mkdir(resolve(home, '.syntaur'), { recursive: true });
+    await writeFile(
+      resolve(home, '.syntaur', 'context.json'),
+      JSON.stringify({ assignmentDir, assignmentSlug: 'a', projectSlug: 'p', sessionId: 'C' }),
+      'utf-8',
+    );
+    const r = await runCli(['session', 'save'], home, 'legacy body');
+    expect(r.code, r.stderr).toBe(0);
+    const cSummary = await readFile(resolve(assignmentDir, 'sessions', 'C', 'summary.md'), 'utf-8');
+    expect(cSummary).toContain('sessionId: C');
   });
 });

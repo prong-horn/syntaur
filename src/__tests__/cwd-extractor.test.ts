@@ -77,6 +77,7 @@ describe('extractClaudeSessionMeta', () => {
     expect(meta?.cwd).toBe('/Users/dev/proj');
     expect(meta?.startTs).toBe('2026-05-21T12:00:00.000Z');
     expect(meta?.endTs).toBe('2026-05-21T12:05:00.000Z');
+    expect(meta?.path).toBe(filePath);
   });
 
   it('returns null when transcript has no cwd', async () => {

@@ -38,6 +38,8 @@ export interface ClaudeSessionMeta {
   cwd: string;
   startTs: string | null;
   endTs: string | null;
+  /** Absolute path to the transcript file (for mtime-based ordering). */
+  path: string;
 }
 
 export interface CodexSessionMeta {
@@ -46,6 +48,8 @@ export interface CodexSessionMeta {
   cwd: string;
   startTs: string;
   endTs: string;
+  /** Absolute path to the rollout file (for mtime-based ordering). */
+  path: string;
 }
 
 export type SessionMeta = ClaudeSessionMeta | CodexSessionMeta;
@@ -75,6 +79,7 @@ export async function extractClaudeSessionMeta(
     cwd,
     startTs,
     endTs,
+    path: jsonlPath,
   };
 }
 
@@ -135,6 +140,7 @@ export async function extractCodexSessionMeta(
       cwd,
       startTs: timestamp,
       endTs,
+      path: jsonlPath,
     };
   } finally {
     await handle.close().catch(() => {});
@@ -176,7 +182,7 @@ export async function* walkClaudeProjects(opts: {
         const sessionId = f.name.replace(/\.jsonl$/, '');
         const startTs = await readFirstTimestamp(filePath);
         const endTs = await readLastTimestamp(filePath);
-        meta = { tool: 'claude', sessionId, cwd: cachedCwd, startTs, endTs };
+        meta = { tool: 'claude', sessionId, cwd: cachedCwd, startTs, endTs, path: filePath };
       } else {
         meta = await extractClaudeSessionMeta(filePath);
         if (meta) cachedCwd = meta.cwd;
