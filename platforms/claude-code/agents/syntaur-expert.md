@@ -405,7 +405,7 @@ Created by `/grab-assignment` in the current working directory. The SessionStart
 }
 ```
 
-Read by `/plan-assignment`, `/complete-assignment`, and the write boundary hook to determine what the current agent is allowed to do.
+Read by `/plan-assignment`, `/complete-assignment`, and the write boundary hook to determine what the current agent is allowed to do. Note that the `sessionId` scalar above is a shared, **legacy hint** — a co-tenant sharing the workspace can clobber it. The active session id is resolved from the running process (env `$CLAUDE_CODE_SESSION_ID` / the peer `OPENCODE_SESSION_ID` / `PI_SESSION_ID`, else `syntaur session resolve-id`); the scalar is only a last-resort fallback, never authoritative.
 
 ---
 

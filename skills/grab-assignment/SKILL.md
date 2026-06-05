@@ -113,14 +113,15 @@ Use absolute paths (expand `~` to the home directory). If `workspace.repository`
 
 ## Step 6: Register Agent Session (real IDs only — no UUIDs)
 
-`syntaur track-session` requires a `--session-id` from the agent runtime. Synthetic UUIDs are rejected. Source the real id in this order:
+`syntaur track-session` requires a `--session-id` from the agent runtime. Synthetic UUIDs are rejected. Source the real per-process id in this order:
 
-1. If `.syntaur/context.json` already has `sessionId` (platform SessionStart hook populated it), use it and the companion `transcriptPath` if present.
+1. Prefer the env var your runtime injects: `$CLAUDE_CODE_SESSION_ID` (or the peer `OPENCODE_SESSION_ID` / `PI_SESSION_ID`).
 2. Otherwise, fall back to the per-agent lookup:
-   - **Claude Code**: the most-recently-modified `~/.claude/sessions/*.json` whose `cwd` matches `$(pwd)` — read its `sessionId`. The transcript path is `~/.claude/projects/<encoded-cwd>/<session-id>.jsonl` (omit if the file is absent).
+   - **Claude Code**: the most-recently-modified `~/.claude/sessions/<pid>.json` whose `cwd` matches `$(pwd)` — read its `sessionId`. The transcript path is `~/.claude/projects/<encoded-cwd>/<session-id>.jsonl` (omit if the file is absent).
    - **Codex**: the most-recently-modified file under `~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl` whose first-line `session_meta.payload.cwd` matches `$(pwd)`. Use `payload.id` as the session id and the full rollout path as the transcript path.
    - **Other agents**: use whatever real session identifier the runtime exposes. Do not invent one.
-3. If no real id can be resolved, stop and tell the user to restart the session so the platform hook can populate it, or to run `/rename <assignment-slug>` (Claude Code) and retry.
+3. Only as a last resort, fall back to the `sessionId` scalar already in `.syntaur/context.json` (and the companion `transcriptPath` if present). That scalar is a shared, legacy hint a co-tenant sharing this workspace can clobber — never treat it as authoritative.
+4. If no real id can be resolved, stop and tell the user to restart the session so the platform hook can populate it, or to run `/rename <assignment-slug>` (Claude Code) and retry.
 
 After resolving, merge `sessionId` + `transcriptPath` back into context.json. Then register:
 

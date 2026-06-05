@@ -57,7 +57,7 @@ Before starting work, read these files in order:
 ## Context File
 
 - Treat \`.syntaur/context.json\` in the current working directory as the active assignment context when it exists.
-- Use that file to resolve the workspace boundary, assignment path, project path, and active session ID.
+- Use that file to resolve the workspace boundary, assignment path, and project path (the active assignment binding). The active session id, however, is resolved from *your* running process -- prefer \`$CLAUDE_CODE_SESSION_ID\` (or the peer \`OPENCODE_SESSION_ID\` / \`PI_SESSION_ID\`), otherwise run \`syntaur session resolve-id\`; the \`sessionId\` scalar in context.json is only a clobberable legacy hint, not authoritative.
 - If there is no context file yet and you are supposed to work on an assignment, claim or set up the assignment before editing code.
 
 ## Directory Structure

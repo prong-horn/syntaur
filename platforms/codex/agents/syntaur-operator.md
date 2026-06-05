@@ -133,7 +133,7 @@ Use these commands directly when needed:
 2. Update any missing checkboxes in `assignment.md`.
 3. Append a final timestamped entry to `progress.md` summarizing the work.
 4. Append a new structured handoff entry to `handoff.md`.
-5. Mark the dashboard session completed if `sessionId` exists.
+5. Mark the dashboard session completed. Resolve the session id from your running process (prefer `$CLAUDE_CODE_SESSION_ID` / the peer `OPENCODE_SESSION_ID` / `PI_SESSION_ID`, otherwise `syntaur session resolve-id`); the `sessionId` scalar in `.syntaur/context.json` is only a clobberable legacy-hint fallback, not authoritative.
 6. Transition the assignment with `syntaur review` or `syntaur complete`.
 7. Remove `.syntaur/context.json` when the assignment is no longer active.
 

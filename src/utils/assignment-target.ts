@@ -21,8 +21,12 @@ export interface ContextJsonShape {
   projectSlug?: string | null;
   assignmentSlug?: string | null;
   assignmentDir?: string | null;
-  // Session metadata (populated by Claude Code's SessionStart hook).
+  // Session metadata (populated by Claude Code's SessionStart hook). These are
+  // a legacy, co-tenant-clobberable HINT — never trust the sessionId value as
+  // identity (resolve that from the process via resolveOwnSessionId). Their
+  // PRESENCE vs absence is still a stable signal for classification.
   sessionId?: string | null;
+  transcriptPath?: string | null;
   // Bundle-scoped context (set by bundle worktree / grab-bundle). MUTUALLY
   // EXCLUSIVE with the assignment fields above — see classifyContext().
   bundleId?: string | null;
@@ -44,7 +48,11 @@ export function classifyContext(ctx: ContextJsonShape | null): ContextKind {
   const hasAssignment = Boolean(ctx.assignmentDir) || Boolean(ctx.assignmentSlug) || Boolean(ctx.projectSlug);
   if (hasAssignment) return 'assignment';
   if (ctx.bundleId) return 'bundle';
-  if (ctx.sessionId) return 'standalone';
+  // Standalone = a session-only context with no assignment/bundle binding.
+  // Classify on the PRESENCE of session metadata (sessionId or transcriptPath),
+  // not the specific id value — the value is a clobberable hint, but
+  // presence-vs-absence is stable under co-tenancy.
+  if (ctx.sessionId || ctx.transcriptPath) return 'standalone';
   return 'empty';
 }
 

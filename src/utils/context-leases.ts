@@ -48,7 +48,13 @@ async function loadContext(cwd: string): Promise<Record<string, unknown>> {
     throw err;
   }
   const data = JSON.parse(raw) as Record<string, unknown>;
-  const hasSession = typeof data.sessionId === 'string' && data.sessionId.length > 0;
+  // Presence gate only — "is there any real context here". The sessionId scalar
+  // is a clobberable hint, not identity (resolve identity via
+  // resolveOwnSessionId); its PRESENCE, or a transcriptPath, is enough to say a
+  // standalone session context exists. Co-tenant-safe.
+  const hasSession =
+    (typeof data.sessionId === 'string' && data.sessionId.length > 0) ||
+    (typeof data.transcriptPath === 'string' && data.transcriptPath.length > 0);
   const hasAssignment = ASSIGNMENT_KEYS.some((k) => {
     const v = data[k];
     return typeof v === 'string' && v.length > 0;

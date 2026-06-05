@@ -101,7 +101,7 @@ Do NOT uncheck or rewrite superseded todo lines matching `- [x] ~~...~~ (superse
 
 ## Step 6: Close Session (optional)
 
-If `.syntaur/context.json` includes a `sessionId` and the Syntaur dashboard is running, mark the session as completed:
+If the Syntaur dashboard is running, mark this session as completed. Resolve `<session-id>` from *your* running process — prefer `$CLAUDE_CODE_SESSION_ID` (or the peer `OPENCODE_SESSION_ID` / `PI_SESSION_ID`), otherwise run `syntaur session resolve-id`; fall back to the `sessionId` scalar in `.syntaur/context.json` only as a last resort (it is a shared, legacy hint a co-tenant can clobber, not authoritative):
 
 ```bash
 curl -s -X PATCH "http://localhost:$(cat ~/.syntaur/dashboard-port 2>/dev/null || echo 4800)/api/agent-sessions/<session-id>/status" \

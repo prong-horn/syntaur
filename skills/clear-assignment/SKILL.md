@@ -90,7 +90,7 @@ Do not delete the `.syntaur/` directory itself — other tooling may use it.
 
 ## Step 5: Close Session (optional)
 
-If the original `context.json` included a `sessionId` and the Syntaur dashboard is running, mark the session as cleared so the dashboard does not keep showing it as active:
+If the Syntaur dashboard is running, mark this session as cleared so the dashboard does not keep showing it as active. Resolve `<session-id>` from *your* running process — prefer `$CLAUDE_CODE_SESSION_ID` (or the peer `OPENCODE_SESSION_ID` / `PI_SESSION_ID`), otherwise run `syntaur session resolve-id`. Only if neither yields an id, fall back to the `sessionId` you captured from the original `context.json` in Step 1 (before deletion) — that scalar is a shared, legacy hint a co-tenant can clobber, so don't treat it as authoritative:
 
 ```bash
 curl -s -X PATCH "http://localhost:$(cat ~/.syntaur/dashboard-port 2>/dev/null || echo 4800)/api/agent-sessions/<session-id>/status" \

@@ -9,6 +9,7 @@ const CATEGORY = 'workspace';
 
 interface ContextFile {
   sessionId?: string;
+  transcriptPath?: string;
   projectSlug?: string;
   assignmentSlug?: string;
   projectDir?: string;
@@ -47,7 +48,12 @@ function isBundleContext(ctx: ContextFile | null): boolean {
 
 function isStandaloneSession(ctx: ContextFile | null): boolean {
   if (!ctx) return false;
-  return !hasAnyAssignmentField(ctx) && !hasAnyBundleField(ctx) && typeof ctx.sessionId === 'string' && ctx.sessionId.length > 0;
+  // Presence of session metadata (sessionId or transcriptPath), not the id
+  // value — the value is a clobberable hint, presence-vs-absence is stable.
+  const hasSessionMeta =
+    (typeof ctx.sessionId === 'string' && ctx.sessionId.length > 0) ||
+    (typeof ctx.transcriptPath === 'string' && ctx.transcriptPath.length > 0);
+  return !hasAnyAssignmentField(ctx) && !hasAnyBundleField(ctx) && hasSessionMeta;
 }
 
 async function loadContext(ctx: CheckContext): Promise<{

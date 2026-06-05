@@ -29,11 +29,12 @@ Extract optional flags from the argument string:
 
 ### Step 2: Source the real session id + transcript path
 
-In priority order:
+Resolve the session id from *your* running process, in priority order:
 
-1. Read `.syntaur/context.json` if present. If it contains `sessionId`, use it. Also pick up `transcriptPath` if present.
-2. Otherwise, read the most-recently-modified file under `~/.claude/sessions/*.json` whose `cwd` matches `$(pwd)` and use its `sessionId` field. The transcript path is conventionally `~/.claude/projects/<encoded-cwd>/<sessionId>.jsonl`; include it if the file exists, otherwise omit.
-3. If neither source yields an id, abort with: "Could not resolve a real Claude Code session id. Restart the Claude session so the SessionStart hook can populate `.syntaur/context.json`, or run `/rename <slug>` then try again."
+1. `$CLAUDE_CODE_SESSION_ID` (or the peer `OPENCODE_SESSION_ID` / `PI_SESSION_ID`) if your runtime injects it.
+2. Otherwise, read the most-recently-modified file under `~/.claude/sessions/<pid>.json` whose `cwd` matches `$(pwd)` and use its `sessionId` field. The transcript path is conventionally `~/.claude/projects/<encoded-cwd>/<sessionId>.jsonl`; include it if the file exists, otherwise omit.
+3. Only as a last resort, fall back to the `sessionId` scalar in `.syntaur/context.json` (and the companion `transcriptPath` if present). This scalar is a shared, legacy hint a co-tenant sharing this workspace can clobber — never treat it as authoritative.
+4. If no source yields an id, abort with: "Could not resolve a real Claude Code session id. Restart the Claude session so the SessionStart hook can populate `.syntaur/context.json`, or run `/rename <slug>` then try again."
 
 DO NOT generate a UUID. `syntaur track-session` rejects missing session IDs.
 
