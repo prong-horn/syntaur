@@ -12,7 +12,7 @@ import {
   setDashboardLayout,
 } from '../hooks/useSavedViews';
 import { useHotkey, useHotkeyScope } from '../hotkeys';
-import type { DashboardSlot, WidgetConfig } from '@shared/saved-views-schema';
+import type { DashboardSlot, WidgetConfig, WidgetSize } from '@shared/saved-views-schema';
 
 export function Overview() {
   const { data: overview, error, refetch } = useOverview();
@@ -69,6 +69,16 @@ export function Overview() {
     [layout.slots, persistLayout],
   );
 
+  const handleResize = useCallback(
+    (index: number, size: WidgetSize) => {
+      const nextSlots = layout.slots.map((slot, i) =>
+        i === index ? { ...slot, size } : slot,
+      );
+      void persistLayout(nextSlots);
+    },
+    [layout.slots, persistLayout],
+  );
+
   // Build itemsById from the (still-served-by-the-API) segment payloads so
   // OverviewHero can resolve its `hero.itemId` reference. Segments are not
   // rendered as widgets anymore, but the hero remains coupled to them.
@@ -112,7 +122,7 @@ export function Overview() {
         </div>
       ) : null}
 
-      <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+      <div className="grid grid-flow-dense grid-cols-1 gap-4 xl:grid-cols-2">
         {layout.slots.map((slot, i) => (
           <WidgetSlot
             key={slot.id}
@@ -120,6 +130,7 @@ export function Overview() {
             index={i}
             onReplace={() => openPicker(i)}
             onRemove={() => handleRemove(i)}
+            onResize={(size) => handleResize(i, size)}
           />
         ))}
       </div>
