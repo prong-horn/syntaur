@@ -86,7 +86,10 @@ function validateDashboardBody(
     return { ok: false, error: 'slots must be an array' };
   }
   if (!obj.slots.every(isDashboardSlot)) {
-    return { ok: false, error: 'every slot must be { id: string, widget: WidgetConfig | null }' };
+    return {
+      ok: false,
+      error: 'every slot must be { id: string, widget: WidgetConfig | null, size?: WidgetSize }',
+    };
   }
   return { ok: true, value: obj.slots };
 }
