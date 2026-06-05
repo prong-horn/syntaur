@@ -18,6 +18,7 @@ const execFileAsync = promisify(execFile);
 
 describe('setup and install flows', () => {
   const originalHome = process.env.HOME;
+  const originalSyntaurHome = process.env.SYNTAUR_HOME;
   let homeDir: string;
   let stdinTty: boolean | undefined;
   let stdoutTty: boolean | undefined;
@@ -70,6 +71,9 @@ describe('setup and install flows', () => {
   beforeEach(async () => {
     homeDir = await mkdtemp(join(tmpdir(), 'syntaur-home-'));
     process.env.HOME = homeDir;
+    // syntaurRoot() honors SYNTAUR_HOME over HOME — clear it so the isolated HOME
+    // is authoritative and no real ~/.syntaur leaks in.
+    delete process.env.SYNTAUR_HOME;
     stdinTty = process.stdin.isTTY;
     stdoutTty = process.stdout.isTTY;
     await seedClaudeUserMarketplace();
@@ -77,6 +81,8 @@ describe('setup and install flows', () => {
 
   afterEach(async () => {
     process.env.HOME = originalHome;
+    if (originalSyntaurHome === undefined) delete process.env.SYNTAUR_HOME;
+    else process.env.SYNTAUR_HOME = originalSyntaurHome;
     Object.defineProperty(process.stdin, 'isTTY', { value: stdinTty, configurable: true });
     Object.defineProperty(process.stdout, 'isTTY', { value: stdoutTty, configurable: true });
     await rm(homeDir, { recursive: true, force: true });

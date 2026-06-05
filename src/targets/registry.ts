@@ -1,6 +1,7 @@
 import { homedir } from 'node:os';
 import { resolve } from 'node:path';
 import { fileExists } from '../utils/fs.js';
+import { loadUserDescriptors } from './user-descriptors.js';
 import type { AgentTarget } from './types.js';
 
 function home(...segments: string[]): string {
@@ -99,6 +100,12 @@ export const AGENT_TARGETS: AgentTarget[] = [
     detect: detectDir(home('.pi')),
     skillsDir: { global: home('.pi', 'agent', 'skills') },
     instructions: { files: [{ path: 'AGENTS.md', renderer: 'codexAgents' }] },
+    tier3: {
+      kind: 'pi-extension',
+      source: 'platforms/pi/extensions/syntaur',
+      installDir: () => home('.pi', 'agent', 'extensions', 'syntaur'),
+      entry: 'index.ts',
+    },
   },
   {
     id: 'openclaw',
@@ -107,6 +114,14 @@ export const AGENT_TARGETS: AgentTarget[] = [
     detect: detectDir(home('.openclaw')),
     skillsDir: { global: home('.openclaw', 'skills') },
     instructions: { files: [{ path: 'AGENTS.md', renderer: 'codexAgents' }] },
+    // OpenClaw runs on pi-coding-agent (design memo), so it reuses the pi
+    // extension SOURCE; only the install dir differs.
+    tier3: {
+      kind: 'pi-extension',
+      source: 'platforms/pi/extensions/syntaur',
+      installDir: () => home('.openclaw', 'extensions', 'syntaur'),
+      entry: 'index.ts',
+    },
   },
   {
     id: 'hermes',
@@ -115,6 +130,12 @@ export const AGENT_TARGETS: AgentTarget[] = [
     detect: () => fileExists(hermesHome()),
     skillsDir: { global: hermesSkillsDir() },
     instructions: { files: [{ path: 'SOUL.md', renderer: 'hermesSoul' }] },
+    tier3: {
+      kind: 'hermes-plugin',
+      source: 'platforms/hermes/plugins/syntaur',
+      installDir: () => resolve(hermesHome(), 'plugins', 'syntaur'),
+      entry: 'plugin.yaml',
+    },
   },
 ];
 
@@ -140,4 +161,37 @@ export function adapterTargets(): AgentTarget[] {
 export async function detectInstalledTargets(): Promise<AgentTarget[]> {
   const flags = await Promise.all(AGENT_TARGETS.map((t) => t.detect()));
   return AGENT_TARGETS.filter((_, i) => flags[i]);
+}
+
+// --- User-authored descriptors (Phase 3a) -----------------------------------
+// The sync API above is built-in-only (back-compat + internal callers). The
+// async resolvers below merge built-ins with validated user descriptors from
+// `~/.syntaur/targets/`. Built-ins always win (collisions are rejected by the
+// loader), so they are listed first. Commands that accept a user-registerable
+// `--target`/framework id resolve through these.
+
+/** Built-ins + validated user descriptors, plus any loader warnings. */
+export async function resolveAgentTargets(): Promise<{
+  targets: AgentTarget[];
+  warnings: string[];
+}> {
+  const { targets: user, warnings } = await loadUserDescriptors({
+    builtinIds: new Set(AGENT_TARGETS.map((t) => t.id)),
+  });
+  return { targets: [...AGENT_TARGETS, ...user], warnings };
+}
+
+/** Resolve a single target id across built-ins + user descriptors. */
+export async function resolveAgentTarget(id: string): Promise<AgentTarget | undefined> {
+  return (await resolveAgentTargets()).targets.find((t) => t.id === id);
+}
+
+/** Every resolvable target id (built-in + user), for help text + validation. */
+export async function resolveAgentTargetIds(): Promise<string[]> {
+  return (await resolveAgentTargets()).targets.map((t) => t.id);
+}
+
+/** Targets exposing a Tier-2 adapter, across built-ins + user descriptors. */
+export async function resolveAdapterTargets(): Promise<AgentTarget[]> {
+  return (await resolveAgentTargets()).targets.filter((t) => t.instructions !== undefined);
 }

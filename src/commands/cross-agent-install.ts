@@ -1,15 +1,15 @@
 import { spawnSync } from 'node:child_process';
-import { resolve } from 'node:path';
-import { readFile } from 'node:fs/promises';
+import { dirname, join, resolve } from 'node:path';
+import { cp, mkdir, readFile } from 'node:fs/promises';
 import { fileExists } from '../utils/fs.js';
 import { isSyntaurDataInstalled } from '../utils/install.js';
+import { findPackageRoot } from '../utils/package-root.js';
 import { initCommand } from './init.js';
 import { setupAdapterCommand } from './setup-adapter.js';
 import { installSkillsToDir } from '../utils/install-skills.js';
 import { readConfig, updateIntegrationConfig } from '../utils/config.js';
 import {
-  getAgentTarget,
-  agentTargetIds,
+  resolveAgentTargets,
   isHermesHomeCustom,
   hermesSkillsDir,
 } from '../targets/registry.js';
@@ -24,6 +24,48 @@ export interface CrossAgentInstallOptions {
   agent?: string;
   dryRun?: boolean;
   force?: boolean;
+}
+
+export type Tier3InstallResult = 'installed' | 'already-present' | 'dry-run' | 'failed' | 'none';
+
+/**
+ * Copy a target's Tier-3 enforcement plugin into the agent's plugin/extension dir.
+ * Idempotent: skips when already installed unless `force`. Returns a status so the
+ * caller can surface a copy FAILURE instead of silently reporting success.
+ * Exported for tests.
+ */
+export async function installTier3Plugin(
+  t: AgentTarget,
+  opts: { dryRun?: boolean; force?: boolean; prefix?: string } = {},
+): Promise<Tier3InstallResult> {
+  if (!t.tier3) return 'none';
+  const plugin = t.tier3;
+  const installDir = plugin.installDir();
+  const prefix = opts.prefix ?? '';
+  if (opts.dryRun) {
+    console.log(`${prefix}Tier 3 (${t.id}): ${plugin.source} -> ${installDir}`);
+    return 'dry-run';
+  }
+  // "Already installed" means the ENTRY file is present — not merely the dir, which
+  // a prior failed/partial copy could have left empty. An incomplete dir falls
+  // through to a (self-healing) re-copy below.
+  if ((await fileExists(join(installDir, plugin.entry))) && !opts.force) {
+    console.log(
+      `Tier 3 (${t.id}): already installed at ${installDir} (use --force to overwrite).`,
+    );
+    return 'already-present';
+  }
+  try {
+    const sourceDir = resolve(await findPackageRoot(plugin.source), plugin.source);
+    await mkdir(dirname(installDir), { recursive: true });
+    await cp(sourceDir, installDir, { recursive: true, force: true });
+    console.log(`Tier 3 (${t.id}): installed ${plugin.kind} -> ${installDir}`);
+    return 'installed';
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.log(`Tier 3 for ${t.id} FAILED: ${msg}`);
+    return 'failed';
+  }
 }
 
 function parseTargetIds(options: CrossAgentInstallOptions): string[] {
@@ -76,12 +118,18 @@ export async function crossAgentInstallCommand(
     throw new Error('No agents specified. Use --target <id> or --agent <id>.');
   }
 
+  // Resolve built-ins + user descriptors once; surface any loader warnings so a
+  // malformed `~/.syntaur/targets/*.json` is visible rather than silently ignored.
+  const { targets: known, warnings } = await resolveAgentTargets();
+  for (const w of warnings) console.log(`Warning (user target): ${w}`);
+  const byId = new Map(known.map((t) => [t.id, t]));
+
   const targets: AgentTarget[] = [];
   for (const id of ids) {
-    const t = getAgentTarget(id);
+    const t = byId.get(id);
     if (!t) {
       throw new Error(
-        `Unknown agent "${id}". Known agents: ${agentTargetIds().join(', ')}`,
+        `Unknown agent "${id}". Known agents: ${known.map((k) => k.id).join(', ')}`,
       );
     }
     // Claude Code / Codex install via their dedicated full-plugin path, not the
@@ -130,9 +178,21 @@ export async function crossAgentInstallCommand(
     // descriptor's frozen `skillsDir.global` can be stale if the env was set
     // after module load.
     const globalDir = t.id === 'hermes' ? hermesSkillsDir() : t.skillsDir?.global;
-    if (!globalDir) continue;
-
     const offlineNeeded = !tier1Done; // also true under dry-run (tier1Done stays false)
+    if (!globalDir) {
+      // No offline fallback path for this agent. If Tier-1 actually failed (npx
+      // unavailable/errored — not a dry-run), its skills did NOT install; surface
+      // that rather than printing a misleading "Done". (A user descriptor may have
+      // no skillsDir.global — see references/user-targets.md "Tier-1 reachability".)
+      if (offlineNeeded && !dryRun) {
+        console.log(
+          `Warning: skills NOT installed for ${t.displayName} — Tier-1 (npx skills add) ` +
+            `was unavailable/failed and the descriptor has no skillsDir.global for an offline copy.`,
+        );
+      }
+      continue;
+    }
+
     // skills.sh always installs hermes-agent to ~/.hermes/skills, ignoring
     // $HERMES_HOME — so a custom $HERMES_HOME must be covered explicitly even
     // when the npx install succeeded.
@@ -183,6 +243,23 @@ export async function crossAgentInstallCommand(
         console.log(`Tier 2 for ${t.id} skipped: ${msg}`);
       }
     }
+  }
+
+  // --- Tier 3: deep-enforcement plugins (boundary hook + cleanup + commands) ---
+  // Implied when an agent with a `tier3` descriptor is targeted — no extra flag.
+  const tier3Failures: string[] = [];
+  for (const t of targets.filter((x) => x.tier3)) {
+    const result = await installTier3Plugin(t, { dryRun, force, prefix });
+    if (result === 'failed') tier3Failures.push(t.displayName);
+  }
+  // A failed Tier-3 copy means the agent would run WITHOUT enforcement — fail loudly
+  // rather than recording the agent installed and printing "Done".
+  if (tier3Failures.length > 0) {
+    throw new Error(
+      `Tier-3 enforcement plugin failed to install for: ${tier3Failures.join(', ')}. ` +
+        `Enforcement is NOT active for ${tier3Failures.length > 1 ? 'those agents' : 'that agent'} — ` +
+        `check permissions and re-run \`syntaur setup --target <id> --force\`.`,
+    );
   }
 
   // --- Record install records ---

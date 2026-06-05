@@ -535,7 +535,7 @@ program
   .option('--codex-dir <path>', 'Install the Codex plugin at a specific path')
   .option('--codex-marketplace-path <path>', 'Write the Codex marketplace entry to a specific file')
   .option('--dashboard', 'Launch the dashboard after setup')
-  .option('--target <id>', 'Install Syntaur into a cross-agent target (pi, hermes, openclaw, cursor, opencode); comma-separated for several')
+  .option('--target <id>', 'Install Syntaur into a cross-agent target. Built-in ids: pi, hermes, openclaw, cursor, opencode (plus any user descriptors in ~/.syntaur/targets/). Comma-separated for several')
   .option('--agent <id>', 'Alias for --target; cross-agent target id(s) to install into')
   .option('--force', 'Overwrite existing cross-agent protocol files / skills')
   .option('--dry-run', 'Print the cross-agent install actions without writing anything')
@@ -721,7 +721,7 @@ program
 program
   .command('setup-adapter')
   .description('Generate adapter instruction files for a framework in the current directory')
-  .argument('<framework>', 'Target framework (cursor, codex, opencode)')
+  .argument('<framework>', 'Target framework: built-in ids cursor, codex, opencode, pi, openclaw, hermes (plus any user descriptor with an instructions adapter in ~/.syntaur/targets/)')
   .option('--project <slug>', 'Target project slug (required)')
   .option('--assignment <slug>', 'Target assignment slug (required)')
   .option('--force', 'Overwrite existing adapter files')

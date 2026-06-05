@@ -10,6 +10,8 @@ describe('setup-adapter command', () => {
   let assignmentDir: string;
   let originalCwd: string;
   let cwdDir: string;
+  let prevHome: string | undefined;
+  let prevSyntaurHome: string | undefined;
 
   beforeEach(async () => {
     tempDir = await mkdtemp(join(tmpdir(), 'syntaur-test-'));
@@ -23,10 +25,22 @@ describe('setup-adapter command', () => {
     await mkdir(cwdDir, { recursive: true });
     originalCwd = process.cwd();
     process.chdir(cwdDir);
+
+    // Isolate HOME/SYNTAUR_HOME so setup-adapter's user-descriptor resolution
+    // can't read the developer's real ~/.syntaur/targets (a stray descriptor
+    // would otherwise perturb the "unsupported framework" assertions below).
+    prevHome = process.env.HOME;
+    prevSyntaurHome = process.env.SYNTAUR_HOME;
+    process.env.HOME = tempDir;
+    process.env.SYNTAUR_HOME = join(tempDir, '.syntaur');
   });
 
   afterEach(async () => {
     process.chdir(originalCwd);
+    if (prevHome === undefined) delete process.env.HOME;
+    else process.env.HOME = prevHome;
+    if (prevSyntaurHome === undefined) delete process.env.SYNTAUR_HOME;
+    else process.env.SYNTAUR_HOME = prevSyntaurHome;
     await rm(tempDir, { recursive: true, force: true });
   });
 

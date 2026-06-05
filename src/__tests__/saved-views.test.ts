@@ -17,6 +17,10 @@ import {
 } from '../utils/saved-views.js';
 import {
   DEFAULT_SAVED_VIEWS_FILE,
+  isDashboardSlot,
+  isWidgetSize,
+  WIDGET_SIZES,
+  type DashboardSlot,
   type SavedViewConfig,
   type SavedViewsFile,
 } from '../utils/saved-views-schema.js';
@@ -68,6 +72,21 @@ describe('saved-views storage', () => {
     await writeSavedViewsFile(next);
     const read = await readSavedViewsFile();
     expect(read).toEqual(next);
+  });
+
+  it('(b2) round-trips dashboard slot sizes through write/read, leaving size-less slots untouched', async () => {
+    const next: SavedViewsFile = JSON.parse(JSON.stringify(DEFAULT_SAVED_VIEWS_FILE));
+    next.dashboard.slots = [
+      { id: 'slot-0', widget: { kind: 'agent-sessions' }, size: 'large' },
+      { id: 'slot-1', widget: { kind: 'saved-view', viewId: next.views[0].id }, size: 'wide' },
+      { id: 'slot-2', widget: null, size: 'tall' },
+      { id: 'slot-3', widget: null }, // legacy size-less slot — must survive unchanged
+    ];
+    await writeSavedViewsFile(next);
+    const read = await readSavedViewsFile();
+    expect(read).toEqual(next);
+    // No migration: the size-less slot is not given a `size` on read.
+    expect(read.dashboard.slots[3]).not.toHaveProperty('size');
   });
 
   it('(c) resets by removing the file', async () => {
@@ -199,6 +218,41 @@ describe('saved-views CRUD helpers', () => {
     ];
     const result = setDashboardLayout(file, newSlots);
     expect(result).toEqual({ error: 'unknown-view-id', viewId: 'no-such-view' });
+  });
+
+  it('isWidgetSize accepts the four tiers and rejects everything else', () => {
+    expect(WIDGET_SIZES).toEqual(['small', 'wide', 'tall', 'large']);
+    for (const s of WIDGET_SIZES) expect(isWidgetSize(s)).toBe(true);
+    for (const bad of ['huge', '', 'SMALL', null, undefined, 0, {}, []]) {
+      expect(isWidgetSize(bad)).toBe(false);
+    }
+  });
+
+  it('isDashboardSlot validates the optional size on both filled and empty slots', () => {
+    // Valid size on a filled slot, and on an empty slot.
+    expect(isDashboardSlot({ id: 'slot-0', widget: { kind: 'agent-sessions' }, size: 'large' })).toBe(true);
+    expect(isDashboardSlot({ id: 'slot-0', widget: null, size: 'wide' })).toBe(true);
+    // Absent size is fine (backward compatibility).
+    expect(isDashboardSlot({ id: 'slot-0', widget: null })).toBe(true);
+    // Invalid size on a filled slot is rejected.
+    expect(isDashboardSlot({ id: 'slot-0', widget: { kind: 'agent-sessions' }, size: 'huge' })).toBe(false);
+    // Invalid size on an EMPTY slot is rejected too — regression guard: the size
+    // check must run BEFORE the `widget === null` early return.
+    expect(isDashboardSlot({ id: 'slot-0', widget: null, size: 'huge' })).toBe(false);
+  });
+
+  it('setDashboardLayout round-trips slot sizes and leaves size-less slots untouched', () => {
+    const sized: DashboardSlot[] = [
+      { id: 'slot-0', widget: { kind: 'agent-sessions' }, size: 'large' },
+      { id: 'slot-1', widget: { kind: 'inventories' }, size: 'wide' },
+      { id: 'slot-2', widget: null, size: 'tall' },
+      { id: 'slot-3', widget: null }, // no size — back-compat
+    ];
+    const result = setDashboardLayout(file, sized);
+    expect('error' in result).toBe(false);
+    if ('error' in result) return;
+    expect(result.file.dashboard.slots).toEqual(sized);
+    expect(result.file.dashboard.slots[3]).not.toHaveProperty('size');
   });
 });
 
@@ -456,6 +510,43 @@ describe('saved-views HTTP routes', () => {
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.dashboard.slots).toEqual(slots);
+  });
+
+  it('PUT /api/dashboard round-trips slot sizes (incl. a legacy size-less slot)', async () => {
+    const slots = [
+      { id: 'slot-0', widget: { kind: 'agent-sessions' }, size: 'large' },
+      { id: 'slot-1', widget: { kind: 'inventories' }, size: 'wide' },
+      { id: 'slot-2', widget: null, size: 'tall' },
+      { id: 'slot-3', widget: null }, // legacy, no size
+      { id: 'slot-4', widget: null },
+    ];
+    const res = await fetch(`${base()}/api/dashboard`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ slots }),
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.dashboard.slots).toEqual(slots);
+    expect(body.dashboard.slots[3]).not.toHaveProperty('size');
+  });
+
+  it('PUT /api/dashboard returns 400 for an invalid size on a filled slot', async () => {
+    const res = await fetch(`${base()}/api/dashboard`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ slots: [{ id: 'slot-0', widget: { kind: 'agent-sessions' }, size: 'huge' }] }),
+    });
+    expect(res.status).toBe(400);
+  });
+
+  it('PUT /api/dashboard returns 400 for an invalid size on an empty slot (early-return guard)', async () => {
+    const res = await fetch(`${base()}/api/dashboard`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ slots: [{ id: 'slot-0', widget: null, size: 'huge' }] }),
+    });
+    expect(res.status).toBe(400);
   });
 });
 

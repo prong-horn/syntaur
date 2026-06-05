@@ -80,9 +80,23 @@ export type WidgetConfig =
 export const WIDGET_KINDS = ['saved-view', 'agent-sessions', 'inventories'] as const;
 export type WidgetKind = (typeof WIDGET_KINDS)[number];
 
+// Per-slot sizing on the Overview dashboard. Two-axis named tiers: width
+// (1 vs 2 columns at the `xl` breakpoint) × height (normal vs tall). The
+// size→className mapping lives in the dashboard (Tailwind only scans
+// `dashboard/`), not here. Absent `size` defaults to `small` at render.
+export const WIDGET_SIZES = ['small', 'wide', 'tall', 'large'] as const;
+export type WidgetSize = (typeof WIDGET_SIZES)[number];
+
+export function isWidgetSize(value: unknown): value is WidgetSize {
+  return typeof value === 'string' && (WIDGET_SIZES as readonly string[]).includes(value);
+}
+
 export interface DashboardSlot {
   id: string;
   widget: WidgetConfig | null;
+  // Optional for backward compatibility: pre-sizing layouts have no `size` and
+  // render at the `small` default. Validated by `isDashboardSlot`.
+  size?: WidgetSize;
 }
 
 export interface DashboardLayout {
@@ -225,6 +239,9 @@ export function isDashboardSlot(value: unknown): value is DashboardSlot {
   if (!value || typeof value !== 'object') return false;
   const obj = value as Record<string, unknown>;
   if (typeof obj.id !== 'string' || obj.id.length === 0) return false;
+  // Validate `size` BEFORE the null-widget early return, so an empty slot with
+  // an invalid size (e.g. from a cascade-deleted view) is still rejected.
+  if (obj.size !== undefined && !isWidgetSize(obj.size)) return false;
   if (obj.widget === null) return true;
   return isWidgetConfig(obj.widget);
 }
