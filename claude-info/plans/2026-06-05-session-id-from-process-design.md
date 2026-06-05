@@ -69,9 +69,17 @@ no longer load-bearing).
 
 ### 1. A single resolver: `resolveOwnSessionId()`
 
-A plain, synchronous function in the `syntaur` CLI. No daemon, no timer. Invoked by
+A function in the `syntaur` CLI. No daemon, no timer. Invoked by
 any command that needs "which session am I running inside." It returns the **real**
-agent id, ordered by trustworthiness:
+agent id, ordered by trustworthiness.
+
+> **Implementation note (2026-06-05):** as built, `resolveOwnSessionId` is
+> `async` — layers 1, 2, and 4 are effectively synchronous, but layer 5 (the
+> cwd/mtime transcript scan) delegates to `cwd-extractor`'s async file I/O. All
+> call sites (`resolveSaveTarget`, the `session resolve-id` action) are already
+> async, so this is transparent. The legacy hint (layer 6) is an optional
+> `legacyHint` parameter applied inside the resolver, so exact-only callers
+> (cleanup paths, `resolve-id`) opt out by omitting it.
 
 1. `--session-id <id>` — explicit override.
 2. **Injected env var** — `CLAUDE_CODE_SESSION_ID` / `OPENCODE_SESSION_ID` /
@@ -176,8 +184,15 @@ write path in a later release once consumers are fully rerouted.
 
 ## Open questions
 
-1. Does Codex's current hook spec expose a session-start event and the process pid?
-   (Decides whether Codex can be made exact.)
+1. ~~Does Codex's current hook spec expose a session-start event and the process pid?~~
+   **RESOLVED (2026-06-05):** No. The wired Codex hooks expose no real id —
+   `PreToolUse` stdin carries `.tool_name`/`.tool_input` only, `SessionEnd` stdin
+   carries `.cwd` only, and there is **no SessionStart hook**. So capture-at-birth
+   (stamping `~/.syntaur/runtime/sessions/<pid>.json`) is not possible today
+   without Codex adding a start event that surfaces the rollout id/pid. Honest
+   floor: `session-cleanup.sh` resolves only from an exact marker and otherwise
+   skips (liveness reaper backstops); explicit `--session-id` for exact-now
+   attribution. See `platforms/SESSION-ID-RESOLUTION.md`.
 2. Canonical env-var name(s): read each native var, or also set one shared key from
    the shipped OpenCode/Pi hooks?
 3. Standalone-session classification (`assignment-target.ts:47`) — replacement
