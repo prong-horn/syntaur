@@ -97,6 +97,15 @@ describe('SessionStart plugin drift warning', () => {
     await chmod(p, 0o755);
     return binDir;
   }
+  // A `syntaur` that IGNORES SIGTERM and hangs — proves the watchdog's SIGKILL
+  // deadline bounds even a TERM-trapping CLI.
+  async function makeTermIgnoringSyntaur(): Promise<string> {
+    const binDir = await mkdtemp(join(tmpdir(), 'syntaur-trapbin-'));
+    const p = join(binDir, 'syntaur');
+    await writeFile(p, `#!/bin/sh\ntrap '' TERM\nsleep 10\necho 9.9.9\n`);
+    await chmod(p, 0o755);
+    return binDir;
+  }
   async function makePluginRoot(markerVersion: string | null): Promise<string> {
     const root = await mkdtemp(join(tmpdir(), 'syntaur-pluginroot-'));
     if (markerVersion !== null) {
@@ -179,6 +188,34 @@ describe('SessionStart plugin drift warning', () => {
       expect(res.signal).toBeNull();
       expect(elapsed).toBeLessThan(5000); // bounded well under the 10s hang
       expect(res.stdout).not.toContain('differs'); // version unresolved → no false warning
+    } finally {
+      await rm(binDir, { recursive: true, force: true });
+      await rm(pluginRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('bounds a SIGTERM-ignoring CLI via SIGKILL and still exits 0', async () => {
+    const binDir = await makeTermIgnoringSyntaur();
+    const pluginRoot = await makePluginRoot('0.0.1');
+    try {
+      const start = Date.now();
+      const res = spawnSync('bash', [hookPath], {
+        input: STDIN,
+        encoding: 'utf-8',
+        timeout: 6000,
+        env: {
+          ...process.env,
+          HOME: sandbox,
+          SYNTAUR_DASHBOARD_PORT: '1',
+          CLAUDE_PLUGIN_ROOT: pluginRoot,
+          PATH: `${binDir}:${process.env.PATH}`,
+        },
+      });
+      const elapsed = Date.now() - start;
+      expect(res.status).toBe(0);
+      expect(res.signal).toBeNull();
+      expect(elapsed).toBeLessThan(5000);
+      expect(res.stdout).not.toContain('differs');
     } finally {
       await rm(binDir, { recursive: true, force: true });
       await rm(pluginRoot, { recursive: true, force: true });

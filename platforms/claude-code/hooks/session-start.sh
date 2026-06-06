@@ -29,11 +29,15 @@ syntaur_bounded_version() {
   out="${TMPDIR:-/tmp}/syntaur-ver.$$"
   syntaur --version >"$out" 2>/dev/null &
   cpid=$!
-  ( sleep 1; kill -TERM "$cpid" 2>/dev/null ) >/dev/null 2>&1 &
+  # Hard deadline via SIGKILL (uncatchable — a TERM-ignoring or hung CLI cannot
+  # block us) at ~1s, guaranteeing the `wait` below returns. `--version` is a
+  # node process with no descendants in practice, so killing it is complete.
+  ( sleep 1; kill -KILL "$cpid" 2>/dev/null ) >/dev/null 2>&1 &
   kpid=$!
   wait "$cpid" 2>/dev/null
   rc=$?
-  kill -TERM "$kpid" 2>/dev/null
+  # Stop the watchdog early on the fast path (and reap it).
+  kill -KILL "$kpid" 2>/dev/null
   wait "$kpid" 2>/dev/null
   if [ "$rc" -eq 0 ]; then
     tr -d '[:space:]' <"$out" 2>/dev/null
