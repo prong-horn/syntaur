@@ -211,9 +211,23 @@ export function createLaunchPreflightRouter(
       });
     } catch (error) {
       if (error instanceof LaunchError) {
-        const status = error.code === 'session-not-found' ? 404 : 422;
-        res.status(status).json({ error: error.message });
-        return;
+        // Explicit allowlist: a known client/config-shaped failure maps to a
+        // 4xx; any OTHER LaunchError code (e.g. a future one, or one this
+        // session path isn't expected to emit) is treated as a server fault
+        // and falls through to the 500 below — never silently mislabeled 422.
+        const status =
+          error.code === 'session-not-found'
+            ? 404
+            : error.code === 'agent-not-configured' ||
+                error.code === 'mode-not-supported' ||
+                error.code === 'no-agents-configured' ||
+                error.code === 'workspace-path-invalid'
+              ? 422
+              : null;
+        if (status !== null) {
+          res.status(status).json({ error: error.message });
+          return;
+        }
       }
       console.error('Error in launch command:', error);
       res.status(500).json({ error: 'launch command failed' });

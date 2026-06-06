@@ -484,6 +484,23 @@ describe('GET /api/launch/command', () => {
     });
   });
 
+  it('returns 500 when the session store is unreadable (non-LaunchError fault)', async () => {
+    // Skip initSessionDb() on purpose: getSessionById -> getSessionDb() throws a
+    // plain Error ("not initialized"), NOT a LaunchError. The handler must treat
+    // any non-allowlisted fault as a 500 — never mislabel it as a 4xx. Params are
+    // valid so the request gets past validation and into the try/catch.
+    const { resetSessionDb } = await import('../dashboard/session-db.js');
+    resetSessionDb();
+    try {
+      const res = await fetch(`${commandUrl()}?session=anything&mode=resume`);
+      expect(res.status).toBe(500);
+      const body = await res.json();
+      expect(body.error).toBe('launch command failed');
+    } finally {
+      resetSessionDb();
+    }
+  });
+
   it('returns 400 when the session param is missing', async () => {
     const res = await fetch(commandUrl());
     expect(res.status).toBe(400);
