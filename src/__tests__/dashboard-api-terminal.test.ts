@@ -69,6 +69,23 @@ describe('POST /api/config/terminal', () => {
     expect(getBody.custom).toBe(true);
   });
 
+  it('persists cmux and reports custom=true after save', async () => {
+    const postRes = await fetch(baseUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ terminal: 'cmux' }),
+    });
+    expect(postRes.status).toBe(200);
+    const postBody = await postRes.json();
+    expect(postBody.terminal).toBe('cmux');
+    expect(postBody.custom).toBe(true);
+
+    const getRes = await fetch(baseUrl);
+    const getBody = await getRes.json();
+    expect(getBody.terminal).toBe('cmux');
+    expect(getBody.custom).toBe(true);
+  });
+
   it('rejects an unknown terminal value with 400', async () => {
     const res = await fetch(baseUrl, {
       method: 'POST',

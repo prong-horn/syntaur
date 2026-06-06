@@ -542,6 +542,31 @@ describe('buildTerminalInvocation', () => {
     expect(inv.args[3]).toBe('claude');
     expect(inv.args.slice(4)).toEqual(['--resume', 'sess-1']);
   });
+
+  it('cmux uses workspace create --cwd + --command + --focus', () => {
+    const inv = buildTerminalInvocation(makePlan({ terminal: 'cmux' }));
+    // Host-independent: resolveCmuxCli returns an absolute bundle path where
+    // cmux is installed, or the bare name otherwise — both end in `cmux`.
+    expect(inv.command).toMatch(/(^|\/)cmux$/);
+    expect(inv.args.slice(0, 2)).toEqual(['workspace', 'create']);
+    expect(inv.args[inv.args.indexOf('--cwd') + 1]).toBe('/Users/dev/work');
+    expect(inv.args[inv.args.indexOf('--command') + 1]).toBe(
+      "'claude' '--resume' 'sess-1'",
+    );
+    expect(inv.args.slice(-2)).toEqual(['--focus', 'true']);
+  });
+
+  it('cmux shell-quotes the command (spaces and apostrophes)', () => {
+    const inv = buildTerminalInvocation(
+      makePlan({
+        terminal: 'cmux',
+        argv: { command: 'claude', args: ["it's", 'a b'] },
+      }),
+    );
+    expect(inv.args[inv.args.indexOf('--command') + 1]).toBe(
+      "'claude' 'it'\\''s' 'a b'",
+    );
+  });
 });
 
 async function scaffoldAssignment(

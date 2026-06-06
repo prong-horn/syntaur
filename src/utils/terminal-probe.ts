@@ -23,12 +23,18 @@ export const APP_BUNDLE_IDS: Partial<Record<TerminalChoice, string>> = {
  * applications directories; Terminal.app ships at a fixed system path.
  *
  * Keep in sync with `detectInstalledTerminals()` in
- * scripts/install-macos-url-handler.mjs.
+ * scripts/install-macos-url-handler.mjs — EXCEPT `cmux`, which is intentionally
+ * present here but absent from `detectInstalledTerminals()`. That function lists
+ * the *AppleScript-driven* terminals (the applet runs `tell application` blocks
+ * for them); cmux is CLI-driven and falls through to `executeLaunchPlan`, so it
+ * must not be added there. `cmux.app` is listed here only so `findAppBundle`
+ * (and `resolveCmuxCli`) can locate the bundle that contains the cmux CLI.
  */
 export const APP_BUNDLE_NAMES: Partial<Record<TerminalChoice, string>> = {
   iterm: 'iTerm.app',
   ghostty: 'Ghostty.app',
   warp: 'Warp.app',
+  cmux: 'cmux.app',
 };
 
 /** Fixed absolute paths for apps not found under the applications dirs. */
@@ -71,7 +77,46 @@ export function findAppBundle(
 export const CLI_NAMES: Partial<Record<TerminalChoice, string>> = {
   alacritty: 'alacritty',
   kitty: 'kitty',
+  // cmux is CLI-driven, but its CLI lives inside the app bundle (not on a
+  // standard PATH dir), so detection uses `resolveCmuxCli` rather than a bare
+  // `which cmux`. The entry here is for doctor messaging (e.g. "resolved cmux
+  // → <path>") and to document cmux as CLI-driven.
+  cmux: 'cmux',
 };
+
+/**
+ * Absolute path to the cmux CLI (inside the app bundle), or a PATH fallback, or
+ * null when cmux is not installed.
+ *
+ * cmux is controlled by a first-party CLI that ships *inside* the app bundle at
+ * `Contents/Resources/bin/cmux` and is NOT on any standard PATH dir. The macOS
+ * `syntaur://` URL-handler applet, which drives the production "Open in agent"
+ * flow, launches with a stripped LaunchServices PATH
+ * (`/usr/bin:/bin:/usr/sbin:/sbin`), where a bare `cmux` is unresolvable. So
+ * BOTH detection (this probe) and launch (`buildTerminalInvocation`) must
+ * resolve the bundle binary by absolute path; sharing one resolver keeps
+ * server-side preflight and the actual applet launch consistent.
+ *
+ * Resolution order: the bundle CLI (stable, PATH-independent) first, then
+ * `which cmux` (covers a DMG mount / Linux / future packaging), else null.
+ *
+ * `applicationsDirsOverride` is forwarded to `findAppBundle` so tests can point
+ * the bundle search at a temp directory (see `probeTerminalInstalled`).
+ */
+export function resolveCmuxCli(
+  applicationsDirsOverride?: string[],
+): string | null {
+  const bundle = findAppBundle('cmux', applicationsDirsOverride);
+  if (bundle) {
+    const cli = join(bundle, 'Contents/Resources/bin/cmux');
+    if (existsSync(cli)) return cli;
+  }
+  const which = spawnSync('which', ['cmux'], { encoding: 'utf-8' });
+  if (which.status === 0 && which.stdout.trim().length > 0) {
+    return which.stdout.trim();
+  }
+  return null;
+}
 
 export interface ProbeResult {
   ok: boolean;
@@ -103,6 +148,20 @@ export function probeTerminalInstalled(
    */
   opts: { applicationsDirsOverride?: string[] } = {},
 ): ProbeResult {
+  // cmux is special-cased before the generic bundle-id / CLI-name paths: its
+  // control CLI lives inside the app bundle and is not on a standard PATH dir,
+  // so neither the `mdfind` bundle-id path (cmux is deliberately absent from
+  // APP_BUNDLE_IDS — it would resolve the `.app`, not the CLI) nor a bare
+  // `which cmux` is correct. `resolveCmuxCli` finds the bundle CLI (or PATH
+  // fallback) and is the same resolver `buildTerminalInvocation` uses, so
+  // detection and launch agree under a stripped PATH.
+  if (terminal === 'cmux') {
+    const cli = resolveCmuxCli(opts.applicationsDirsOverride);
+    return cli
+      ? { ok: true, foundPath: cli }
+      : { ok: false, reason: 'not-installed' };
+  }
+
   const bundleId = APP_BUNDLE_IDS[terminal];
   if (bundleId) {
     const result = spawnSync(

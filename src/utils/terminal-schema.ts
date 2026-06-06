@@ -4,7 +4,8 @@ export type TerminalChoice =
   | 'ghostty'
   | 'alacritty'
   | 'warp'
-  | 'kitty';
+  | 'kitty'
+  | 'cmux';
 
 export const TERMINAL_CHOICES: readonly TerminalChoice[] = [
   'terminal-app',
@@ -13,4 +14,5 @@ export const TERMINAL_CHOICES: readonly TerminalChoice[] = [
   'alacritty',
   'warp',
   'kitty',
+  'cmux',
 ];

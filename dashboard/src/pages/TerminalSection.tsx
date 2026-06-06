@@ -15,6 +15,7 @@ const LABELS: Record<TerminalChoice, string> = {
   alacritty: 'Alacritty',
   warp: 'Warp',
   kitty: 'kitty',
+  cmux: 'cmux',
 };
 
 interface Feedback {

@@ -117,6 +117,29 @@ describe('POST /api/launch/preflight', () => {
     expect(body.terminal).toBe('kitty');
   });
 
+  it('returns ok:true for cmux when its CLI is resolvable', async () => {
+    // cmux detection (resolveCmuxCli) checks the app bundle first, then `which`.
+    // Stage a fake `cmux` on PATH so the probe resolves on a host without the
+    // real cmux.app installed (a host that has it resolves via the bundle).
+    // The not-installed branch is host-dependent here (a dev box may have
+    // cmux.app), so it is covered deterministically in terminal-probe.test.ts
+    // via applicationsDirsOverride + a mocked `which`.
+    const cmuxPath = join(pathDir, 'cmux');
+    await writeFile(cmuxPath, '#!/bin/sh\nexit 0\n');
+    await chmod(cmuxPath, 0o755);
+    process.env.PATH = `${pathDir}:/usr/bin:/bin`;
+
+    const res = await fetch(baseUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ terminal: 'cmux' }),
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.ok).toBe(true);
+    expect(body.terminal).toBe('cmux');
+  });
+
   it('returns ok:false with suggestedFallback when the requested CLI terminal is missing', async () => {
     // PATH points at a non-existent dir so `which` itself fails to resolve.
     process.env.PATH = '/tmp/syntaur-preflight-no-such-dir';

@@ -1,5 +1,7 @@
 import { spawn, type ChildProcess, type SpawnOptions } from 'node:child_process';
+import { basename } from 'node:path';
 import { shellQuote } from '../tui/launch.js';
+import { resolveCmuxCli } from '../utils/terminal-probe.js';
 import type { LaunchPlan } from './plan.js';
 import type { TerminalChoice } from '../utils/config.js';
 
@@ -35,8 +37,23 @@ const realSpawn: SpawnFn = (command, args, options) =>
  * Commands we treat as "wrappers" that synchronously delegate to the actual
  * terminal app. These fail fast (non-zero exit + stderr) when the target app
  * or URL scheme isn't installed, so we monitor their exit code briefly.
+ *
+ * Membership is tested by BASENAME (see `isWrapperCommand`): `osascript`/`open`
+ * are spawned by bare name, but `cmux` is resolved to an absolute bundle path
+ * (`/Applications/cmux.app/Contents/Resources/bin/cmux`), so a plain
+ * set-membership check on the full command would miss it and wrongly classify
+ * it as a long-running launcher (skipping exit-code monitoring).
  */
-const WRAPPER_COMMANDS = new Set(['osascript', 'open']);
+const WRAPPER_COMMANDS = new Set(['osascript', 'open', 'cmux']);
+
+/**
+ * A command is a wrapper if its basename is in `WRAPPER_COMMANDS`. Using the
+ * basename lets cmux's absolute bundle path match `'cmux'` while leaving the
+ * bare `osascript`/`open` names (basename === name) unaffected.
+ */
+function isWrapperCommand(command: string): boolean {
+  return WRAPPER_COMMANDS.has(basename(command));
+}
 
 /**
  * How long we wait for a wrapper (osascript/open) to exit before assuming it
@@ -68,7 +85,7 @@ export async function executeLaunchPlan(
     );
   }
   const invocation = buildTerminalInvocation(plan);
-  const isWrapper = WRAPPER_COMMANDS.has(invocation.command);
+  const isWrapper = isWrapperCommand(invocation.command);
 
   let child: ChildProcess;
   try {
@@ -289,6 +306,34 @@ export function buildTerminalInvocation(plan: LaunchPlan): TerminalInvocation {
           '--',
           plan.argv.command,
           ...plan.argv.args,
+        ],
+      };
+
+    case 'cmux':
+      // cmux is a socket-controlled workspace multiplexer driven by its
+      // first-party CLI, which lives INSIDE the app bundle and is not on a
+      // standard PATH dir. The macOS URL-handler applet launches with a
+      // stripped LaunchServices PATH, so we resolve the bundle binary by
+      // absolute path (resolveCmuxCli) rather than relying on a bare `cmux`
+      // (which would ENOENT in that context). `workspace create` makes a
+      // workspace rooted at --cwd and sends the command text+Enter to it via
+      // --command; --cwd removes the need for a `cd &&` prefix; commandLine is
+      // shell-quoted because cmux types it into the new workspace's shell;
+      // --focus true surfaces the workspace. cmux is registered in
+      // WRAPPER_COMMANDS (matched by basename, since command is absolute) — a
+      // short-lived socket client monitored for a non-zero exit, so a missing
+      // binary or dead socket surfaces as a TerminalNotFoundError.
+      return {
+        command: resolveCmuxCli() ?? 'cmux',
+        args: [
+          'workspace',
+          'create',
+          '--cwd',
+          plan.cwd,
+          '--command',
+          commandLine,
+          '--focus',
+          'true',
         ],
       };
   }

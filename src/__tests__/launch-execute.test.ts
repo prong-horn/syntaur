@@ -103,6 +103,35 @@ describe('executeLaunchPlan', () => {
     ).rejects.toThrow(TerminalNotFoundError);
   });
 
+  it('treats cmux as a wrapper: non-zero exit → TerminalNotFoundError', async () => {
+    // cmux resolves to an absolute bundle path where installed; the wrapper
+    // check matches by basename, so exit-code monitoring still applies.
+    const spawnFn: SpawnFn = () =>
+      fakeChild({
+        fireOn: 'exit',
+        exitCode: 1,
+        stderr: 'cmux: socket not reachable',
+      });
+    await expect(
+      executeLaunchPlan(makePlan({ terminal: 'cmux' }), spawnFn),
+    ).rejects.toThrowError(/exited with code 1/);
+  });
+
+  it('treats cmux as a wrapper: exit 0 resolves', async () => {
+    const spawnFn: SpawnFn = () => fakeChild({ fireOn: 'exit', exitCode: 0 });
+    await expect(
+      executeLaunchPlan(makePlan({ terminal: 'cmux' }), spawnFn),
+    ).resolves.toBeUndefined();
+  });
+
+  it('cmux spawn error (ENOENT) → TerminalNotFoundError', async () => {
+    const spawnFn: SpawnFn = () =>
+      fakeChild({ fireOn: 'error', errorMessage: 'spawn cmux ENOENT' });
+    await expect(
+      executeLaunchPlan(makePlan({ terminal: 'cmux' }), spawnFn),
+    ).rejects.toThrow(TerminalNotFoundError);
+  });
+
   it('captures stderr text in the wrapper-failure error message', async () => {
     const spawnFn: SpawnFn = () =>
       fakeChild({
