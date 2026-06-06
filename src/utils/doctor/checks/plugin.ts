@@ -46,43 +46,39 @@ const versionDrift: Check = {
   id: 'plugin.version-drift',
   category: CATEGORY,
   title: 'Installed plugin matches the CLI version',
-  async run(): Promise<CheckResult> {
-    const base = { id: this.id, category: this.category, title: this.title, autoFixable: false } as const;
-
-    const installed: Array<{ kind: PluginKind; label: string; version: string }> = [];
-    for (const kind of PLUGIN_KINDS) {
-      const version = await readManagedInstallVersion(kind);
-      if (version !== null) installed.push({ kind, label: getPluginDisplayName(kind), version });
-    }
-
-    if (installed.length === 0) {
-      return { ...base, status: 'skipped', detail: 'no managed plugin install detected' };
-    }
-
+  async run(): Promise<CheckResult[]> {
     const cliVersion = await readCliVersion();
-    if (!cliVersion) {
-      return { ...base, status: 'skipped', detail: 'could not read the running CLI version' };
-    }
+    // One result PER kind so each carries its OWN remediation command — an
+    // aggregated single result could only surface one command and would leave
+    // the other plugin stale when both drift.
+    return Promise.all(
+      PLUGIN_KINDS.map(async (kind): Promise<CheckResult> => {
+        const base = { id: this.id, category: this.category, title: this.title, affected: [kind] as string[], autoFixable: false };
+        const label = getPluginDisplayName(kind);
 
-    const drifted = installed.filter((p) => p.version !== cliVersion);
-    if (drifted.length === 0) {
-      const versions = installed.map((p) => `${p.label} ${p.version}`).join(', ');
-      return { ...base, status: 'pass', detail: `${versions} matches CLI ${cliVersion}` };
-    }
-
-    const commands = drifted.map((p) => `${getPluginInstallCommand(p.kind)} --force`);
-    const detail = `${drifted.map((p) => `${p.label} v${p.version}`).join(', ')} differs from CLI v${cliVersion}`;
-    return {
-      ...base,
-      status: 'warn',
-      detail,
-      affected: drifted.map((p) => p.kind),
-      remediation: {
-        kind: 'manual',
-        suggestion: `Re-run ${commands.join(' and ')} to refresh the plugin`,
-        command: commands[0],
-      },
-    };
+        const installed = await readManagedInstallVersion(kind);
+        if (installed === null) {
+          return { ...base, status: 'skipped', detail: `no managed ${label} install` };
+        }
+        if (!cliVersion) {
+          return { ...base, status: 'skipped', detail: 'could not read the running CLI version' };
+        }
+        if (installed === cliVersion) {
+          return { ...base, status: 'pass', detail: `${label} ${installed} matches CLI` };
+        }
+        const command = `${getPluginInstallCommand(kind)} --force`;
+        return {
+          ...base,
+          status: 'warn',
+          detail: `installed ${label} v${installed} differs from CLI v${cliVersion}`,
+          remediation: {
+            kind: 'manual',
+            suggestion: `Re-run \`${command}\` to refresh the ${label}`,
+            command,
+          },
+        };
+      }),
+    );
   },
 };
 

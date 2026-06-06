@@ -89,6 +89,14 @@ describe('SessionStart plugin drift warning', () => {
     await chmod(p, 0o755);
     return binDir;
   }
+  // A `syntaur` that hangs — to prove the hook's portable watchdog bounds it.
+  async function makeHangingSyntaur(): Promise<string> {
+    const binDir = await mkdtemp(join(tmpdir(), 'syntaur-hangbin-'));
+    const p = join(binDir, 'syntaur');
+    await writeFile(p, `#!/bin/sh\nsleep 10\necho 9.9.9\n`);
+    await chmod(p, 0o755);
+    return binDir;
+  }
   async function makePluginRoot(markerVersion: string | null): Promise<string> {
     const root = await mkdtemp(join(tmpdir(), 'syntaur-pluginroot-'));
     if (markerVersion !== null) {
@@ -143,6 +151,34 @@ describe('SessionStart plugin drift warning', () => {
       const res = runHook(STDIN, { CLAUDE_PLUGIN_ROOT: pluginRoot, PATH: `${binDir}:${process.env.PATH}` });
       expect(res.status).toBe(0);
       expect(res.stdout).not.toContain('differs');
+    } finally {
+      await rm(binDir, { recursive: true, force: true });
+      await rm(pluginRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('does not hang when the CLI hangs (portable watchdog bounds it) and still exits 0', async () => {
+    const binDir = await makeHangingSyntaur();
+    const pluginRoot = await makePluginRoot('0.0.1');
+    try {
+      const start = Date.now();
+      const res = spawnSync('bash', [hookPath], {
+        input: STDIN,
+        encoding: 'utf-8',
+        timeout: 6000, // hard cap so a regression fails fast instead of hanging the suite
+        env: {
+          ...process.env,
+          HOME: sandbox,
+          SYNTAUR_DASHBOARD_PORT: '1',
+          CLAUDE_PLUGIN_ROOT: pluginRoot,
+          PATH: `${binDir}:${process.env.PATH}`,
+        },
+      });
+      const elapsed = Date.now() - start;
+      expect(res.status).toBe(0); // not killed by the spawnSync cap
+      expect(res.signal).toBeNull();
+      expect(elapsed).toBeLessThan(5000); // bounded well under the 10s hang
+      expect(res.stdout).not.toContain('differs'); // version unresolved → no false warning
     } finally {
       await rm(binDir, { recursive: true, force: true });
       await rm(pluginRoot, { recursive: true, force: true });

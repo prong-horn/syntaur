@@ -19,6 +19,31 @@ command -v jq >/dev/null 2>&1 || exit 0
 INPUT=$(cat)
 [ -z "$INPUT" ] && exit 0
 
+# Run `syntaur --version` with a PORTABLE ~1s watchdog (background + kill) so it
+# is bounded even where `timeout`/`gtimeout` are absent (stock macOS). Prints the
+# trimmed version on success; prints nothing and returns non-zero if it hangs or
+# fails. 1s + the dashboard curl's --max-time 3 stays under the hook's 5s budget.
+syntaur_bounded_version() {
+  command -v syntaur >/dev/null 2>&1 || return 1
+  local out cpid kpid rc
+  out="${TMPDIR:-/tmp}/syntaur-ver.$$"
+  syntaur --version >"$out" 2>/dev/null &
+  cpid=$!
+  ( sleep 1; kill -TERM "$cpid" 2>/dev/null ) >/dev/null 2>&1 &
+  kpid=$!
+  wait "$cpid" 2>/dev/null
+  rc=$?
+  kill -TERM "$kpid" 2>/dev/null
+  wait "$kpid" 2>/dev/null
+  if [ "$rc" -eq 0 ]; then
+    tr -d '[:space:]' <"$out" 2>/dev/null
+    rm -f "$out"
+    return 0
+  fi
+  rm -f "$out"
+  return 1
+}
+
 # --- Best-effort, non-blocking: warn when the installed plugin is stale vs the
 # running CLI (the CLI updates via npm; the marketplace plugin copy does not).
 # Plugin-global, so it runs BEFORE the context-dependent early exits below. Any
@@ -29,18 +54,7 @@ syntaur_plugin_drift_warn() {
   [ -f "$marker" ] || return 0
   marker_ver=$(jq -r '.packageVersion // empty' "$marker" 2>/dev/null)
   [ -n "$marker_ver" ] || return 0
-  command -v syntaur >/dev/null 2>&1 || return 0
-  # Bound the CLI call to 1s (it is ~0.3s) — `timeout` is absent on stock macOS,
-  # so fall back to `gtimeout`, then a bare call. 1s + the dashboard curl's
-  # --max-time 3 stays under the hook's 5s budget.
-  if command -v timeout >/dev/null 2>&1; then
-    cli_ver=$(timeout 1 syntaur --version 2>/dev/null)
-  elif command -v gtimeout >/dev/null 2>&1; then
-    cli_ver=$(gtimeout 1 syntaur --version 2>/dev/null)
-  else
-    cli_ver=$(syntaur --version 2>/dev/null)
-  fi
-  cli_ver=$(printf '%s' "$cli_ver" | tr -d '[:space:]')
+  cli_ver=$(syntaur_bounded_version) || return 0
   [ -n "$cli_ver" ] || return 0
   [ "$marker_ver" = "$cli_ver" ] && return 0
   msg="Syntaur plugin v${marker_ver} differs from the installed CLI v${cli_ver} — run \`syntaur install-plugin --force\` to refresh."

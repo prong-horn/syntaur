@@ -31,6 +31,12 @@ function byId(report: DoctorReport, id: string) {
   return report.checks.filter((c) => c.id === id);
 }
 
+// The check emits one result per plugin kind (each carries its own remediation),
+// so look the per-kind result up by its `affected` tag rather than position.
+function forKind(report: DoctorReport, kind: 'claude' | 'codex') {
+  return byId(report, 'plugin.version-drift').find((c) => c.affected?.includes(kind));
+}
+
 // Plant a managed (copy-mode) install marker at the default plugin dir for `kind`.
 async function plantManagedInstall(kind: 'claude' | 'codex', packageVersion: string): Promise<void> {
   const dir = kind === 'claude'
@@ -50,35 +56,45 @@ async function plantManagedInstall(kind: 'claude' | 'codex', packageVersion: str
 }
 
 describe('doctor plugin.version-drift', () => {
-  it('skips when no managed plugin install exists', async () => {
+  it('skips per kind when no managed plugin install exists', async () => {
     const report = await runChecks();
-    const res = byId(report, 'plugin.version-drift');
-    expect(res).toHaveLength(1);
-    expect(res[0]?.status).toBe('skipped');
+    expect(forKind(report, 'claude')?.status).toBe('skipped');
+    expect(forKind(report, 'codex')?.status).toBe('skipped');
   });
 
   it('passes when the installed Claude plugin matches the CLI version', async () => {
     await plantManagedInstall('claude', cliVersion);
     const report = await runChecks();
-    expect(byId(report, 'plugin.version-drift')[0]?.status).toBe('pass');
+    expect(forKind(report, 'claude')?.status).toBe('pass');
+    expect(forKind(report, 'codex')?.status).toBe('skipped'); // codex not installed
   });
 
   it('warns when the Claude plugin is stale, suggesting install-plugin --force', async () => {
     await plantManagedInstall('claude', '0.0.1');
     const report = await runChecks();
-    const result = byId(report, 'plugin.version-drift')[0];
+    const result = forKind(report, 'claude');
     expect(result?.status).toBe('warn');
     expect(result?.detail).toContain('0.0.1');
-    expect(result?.affected).toContain('claude');
     expect(result?.remediation?.command).toBe('syntaur install-plugin --force');
   });
 
   it('warns when the Codex plugin is stale, suggesting install-codex-plugin --force', async () => {
     await plantManagedInstall('codex', '0.0.1');
     const report = await runChecks();
-    const result = byId(report, 'plugin.version-drift')[0];
+    const result = forKind(report, 'codex');
     expect(result?.status).toBe('warn');
-    expect(result?.affected).toContain('codex');
     expect(result?.remediation?.command).toBe('syntaur install-codex-plugin --force');
+  });
+
+  it('reports BOTH kinds independently when both drift (each with its own command)', async () => {
+    await plantManagedInstall('claude', '0.0.1');
+    await plantManagedInstall('codex', '0.0.2');
+    const report = await runChecks();
+    const claude = forKind(report, 'claude');
+    const codex = forKind(report, 'codex');
+    expect(claude?.status).toBe('warn');
+    expect(claude?.remediation?.command).toBe('syntaur install-plugin --force');
+    expect(codex?.status).toBe('warn');
+    expect(codex?.remediation?.command).toBe('syntaur install-codex-plugin --force');
   });
 });
