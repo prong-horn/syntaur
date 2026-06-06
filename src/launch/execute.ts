@@ -221,6 +221,16 @@ const CMUX_LAUNCH_SCRIPT = [
 ].join('\n');
 
 /**
+ * The agent command line with every token shell-quoted, WITHOUT a `cd` prefix:
+ * `'<command>' '<arg>' …`. cmux uses this directly (it sets the workspace cwd
+ * via `--cwd`, so it must not prepend `cd`); `buildShellCommandLine` adds the
+ * `cd` for the terminals that drop the user into a shell.
+ */
+export function buildAgentCommandLine(plan: LaunchPlan): string {
+  return [plan.argv.command, ...plan.argv.args].map(shellQuote).join(' ');
+}
+
+/**
  * Build the plain POSIX shell command line that actually runs inside the
  * terminal: `cd '<cwd>' && '<command>' '<arg>' …` with every token
  * shell-quoted. This is the single source of truth for "the command the launch
@@ -229,10 +239,7 @@ const CMUX_LAUNCH_SCRIPT = [
  * for reuse + unit testing.
  */
 export function buildShellCommandLine(plan: LaunchPlan): string {
-  const commandLine = [plan.argv.command, ...plan.argv.args]
-    .map(shellQuote)
-    .join(' ');
-  return `cd ${shellQuote(plan.cwd)} && ${commandLine}`;
+  return `cd ${shellQuote(plan.cwd)} && ${buildAgentCommandLine(plan)}`;
 }
 
 /**
@@ -389,8 +396,9 @@ export function buildTerminalInvocation(plan: LaunchPlan): TerminalInvocation {
       // `/bin/sh -c` script (CMUX_LAUNCH_SCRIPT): launch-if-needed via `open
       // -b`, await socket readiness, then `workspace create --cwd <cwd>
       // --command <cmd> --focus true` (which makes a workspace at --cwd and
-      // sends the agent command text+Enter to it). commandLine is shell-quoted
-      // because cmux types it into the new workspace's shell. The /bin/sh
+      // sends the agent command text+Enter to it). The command is the bare
+      // shell-quoted agent command (NO `cd` prefix — cmux sets the cwd via
+      // --cwd) because cmux types it into the new workspace's shell. The /bin/sh
       // interpreter is registered in WRAPPER_COMMANDS (matched by basename
       // 'sh'), so a missing binary or dead socket surfaces as a
       // TerminalNotFoundError.
@@ -402,7 +410,7 @@ export function buildTerminalInvocation(plan: LaunchPlan): TerminalInvocation {
           'syntaur-cmux-launch', // $0 (label in ps / error messages)
           resolveCmuxCli() ?? 'cmux', // $1
           plan.cwd, // $2
-          commandLine, // $3
+          buildAgentCommandLine(plan), // $3
         ],
         // Exceed the cold-start readiness poll so a failed cold launch surfaces
         // as an error instead of being masked by the wrapper safety net.
