@@ -1193,6 +1193,21 @@ export async function getConfiguredOrLegacyManagedPluginDir(
   return null;
 }
 
+/**
+ * The `packageVersion` recorded in the managed install's marker
+ * (`.syntaur-install.json`) — i.e. the CLI version that last installed/copied
+ * the plugin. Returns `null` when there is no managed install, or for `link`
+ * installs (which write no marker and are always fresh via the symlink). Used
+ * by the `plugin.version-drift` doctor check + the SessionStart warning to
+ * detect a plugin that has gone stale relative to the running CLI.
+ */
+export async function readManagedInstallVersion(pluginKind: PluginKind): Promise<string | null> {
+  const dir = await getConfiguredOrLegacyManagedPluginDir(pluginKind);
+  if (!dir) return null;
+  const metadata = await readInstallMetadata(dir);
+  return metadata?.packageVersion ?? null;
+}
+
 export async function getConfiguredOrLegacyMarketplacePath(): Promise<string | null> {
   const config = await readConfig();
   if (config.integrations.codexMarketplacePath) {

@@ -19,6 +19,53 @@ command -v jq >/dev/null 2>&1 || exit 0
 INPUT=$(cat)
 [ -z "$INPUT" ] && exit 0
 
+# Run `syntaur --version` with a PORTABLE ~1s watchdog (background + kill) so it
+# is bounded even where `timeout`/`gtimeout` are absent (stock macOS). Prints the
+# trimmed version on success; prints nothing and returns non-zero if it hangs or
+# fails. 1s + the dashboard curl's --max-time 3 stays under the hook's 5s budget.
+syntaur_bounded_version() {
+  command -v syntaur >/dev/null 2>&1 || return 1
+  local out cpid kpid rc
+  out="${TMPDIR:-/tmp}/syntaur-ver.$$"
+  syntaur --version >"$out" 2>/dev/null &
+  cpid=$!
+  # Hard deadline via SIGKILL (uncatchable — a TERM-ignoring or hung CLI cannot
+  # block us) at ~1s, guaranteeing the `wait` below returns. `--version` is a
+  # node process with no descendants in practice, so killing it is complete.
+  ( sleep 1; kill -KILL "$cpid" 2>/dev/null ) >/dev/null 2>&1 &
+  kpid=$!
+  wait "$cpid" 2>/dev/null
+  rc=$?
+  # Stop the watchdog early on the fast path (and reap it).
+  kill -KILL "$kpid" 2>/dev/null
+  wait "$kpid" 2>/dev/null
+  if [ "$rc" -eq 0 ]; then
+    tr -d '[:space:]' <"$out" 2>/dev/null
+    rm -f "$out"
+    return 0
+  fi
+  rm -f "$out"
+  return 1
+}
+
+# --- Best-effort, non-blocking: warn when the installed plugin is stale vs the
+# running CLI (the CLI updates via npm; the marketplace plugin copy does not).
+# Plugin-global, so it runs BEFORE the context-dependent early exits below. Any
+# failure → do nothing. NEVER changes the exit status (the hook always exits 0).
+syntaur_plugin_drift_warn() {
+  local marker marker_ver cli_ver msg
+  marker="${CLAUDE_PLUGIN_ROOT:-$HOME/.claude/plugins/syntaur}/.syntaur-install.json"
+  [ -f "$marker" ] || return 0
+  marker_ver=$(jq -r '.packageVersion // empty' "$marker" 2>/dev/null)
+  [ -n "$marker_ver" ] || return 0
+  cli_ver=$(syntaur_bounded_version) || return 0
+  [ -n "$cli_ver" ] || return 0
+  [ "$marker_ver" = "$cli_ver" ] && return 0
+  msg="Syntaur plugin v${marker_ver} differs from the installed CLI v${cli_ver} — run \`syntaur install-plugin --force\` to refresh."
+  jq -cn --arg c "$msg" '{hookSpecificOutput:{hookEventName:"SessionStart",additionalContext:$c}}' 2>/dev/null || true
+}
+syntaur_plugin_drift_warn || true
+
 SESSION_ID=$(printf '%s' "$INPUT" | jq -r '.session_id // empty' 2>/dev/null)
 TRANSCRIPT_PATH=$(printf '%s' "$INPUT" | jq -r '.transcript_path // empty' 2>/dev/null)
 CWD=$(printf '%s' "$INPUT" | jq -r '.cwd // empty' 2>/dev/null)

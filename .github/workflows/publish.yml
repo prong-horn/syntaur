@@ -55,12 +55,21 @@ jobs:
       - name: Verify adapter templates
         run: npx vitest run src/__tests__/adapter-templates.test.ts
 
+      # Guards the tag-push path: the committed plugin manifests must already
+      # match package.json (the `version` lifecycle script stamps them on bump).
+      - name: Verify plugin version sync
+        run: node scripts/sync-plugin-version.mjs --check
+
       - name: Bump version and push tag (manual dispatch)
         if: github.event_name == 'workflow_dispatch'
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
+          # `npm version` runs the `version` lifecycle script, which stamps the
+          # three plugin manifests and `git add`s them into the bump commit.
           npm version ${{ inputs.bump }} -m "chore: release %s"
+          # Validate the POST-bump commit before publishing/pushing.
+          node scripts/sync-plugin-version.mjs --check
           git push --follow-tags
 
       - name: Verify tag matches package version (tag push)
