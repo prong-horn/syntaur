@@ -11,6 +11,7 @@ import { terminalChecks } from './checks/terminal.js';
 import { skillsChecks } from './checks/skills.js';
 import { crossAgentChecks } from './checks/cross-agent.js';
 import { bundleChecks } from './checks/bundles.js';
+import { pluginChecks } from './checks/plugin.js';
 
 export function allChecks(): Check[] {
   return [
@@ -26,5 +27,6 @@ export function allChecks(): Check[] {
     ...skillsChecks,
     ...crossAgentChecks,
     ...bundleChecks,
+    ...pluginChecks,
   ];
 }
