@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { resolve, join } from 'node:path';
@@ -20,6 +20,17 @@ import {
   type AgentConfig,
   type SyntaurConfig,
 } from '../utils/config.js';
+
+// Pin resolveCmuxCli so buildTerminalInvocation's cmux case is deterministic
+// regardless of whether the host has cmux installed (otherwise the resolved CLI
+// path embedded in the invocation would differ by host). probeTerminalInstalled
+// and the rest of terminal-probe stay real via importOriginal.
+const CMUX_CLI = '/Applications/cmux.app/Contents/Resources/bin/cmux';
+vi.mock('../utils/terminal-probe.js', async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import('../utils/terminal-probe.js')>();
+  return { ...actual, resolveCmuxCli: () => CMUX_CLI };
+});
 
 const ASSIGNMENT_ID = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
 
@@ -543,29 +554,34 @@ describe('buildTerminalInvocation', () => {
     expect(inv.args.slice(4)).toEqual(['--resume', 'sess-1']);
   });
 
-  it('cmux uses workspace create --cwd + --command + --focus', () => {
+  it('cmux launches via a /bin/sh cold-start wrapper around `workspace create`', () => {
     const inv = buildTerminalInvocation(makePlan({ terminal: 'cmux' }));
-    // Host-independent: resolveCmuxCli returns an absolute bundle path where
-    // cmux is installed, or the bare name otherwise — both end in `cmux`.
-    expect(inv.command).toMatch(/(^|\/)cmux$/);
-    expect(inv.args.slice(0, 2)).toEqual(['workspace', 'create']);
-    expect(inv.args[inv.args.indexOf('--cwd') + 1]).toBe('/Users/dev/work');
-    expect(inv.args[inv.args.indexOf('--command') + 1]).toBe(
-      "'claude' '--resume' 'sess-1'",
+    // Single monitored spawn: /bin/sh -c <script> <$0> <cli> <cwd> <command>.
+    expect(inv.command).toBe('/bin/sh');
+    expect(inv.args[0]).toBe('-c');
+    const script = inv.args[1];
+    // The script launches cmux if needed, awaits socket readiness, then creates
+    // the workspace and sends the agent command to it.
+    expect(script).toContain('open -b com.cmuxterm.app');
+    expect(script).toContain('"$1" ping');
+    expect(script).toContain(
+      'workspace create --cwd "$2" --command "$3" --focus true',
     );
-    expect(inv.args.slice(-2)).toEqual(['--focus', 'true']);
+    // Positional args ($1=cli, $2=cwd, $3=command) — no second shell-quoting.
+    expect(inv.args[3]).toBe(CMUX_CLI);
+    expect(inv.args[4]).toBe('/Users/dev/work');
+    expect(inv.args[5]).toBe("'claude' '--resume' 'sess-1'");
   });
 
-  it('cmux shell-quotes the command (spaces and apostrophes)', () => {
+  it('cmux shell-quotes the command arg (spaces and apostrophes)', () => {
     const inv = buildTerminalInvocation(
       makePlan({
         terminal: 'cmux',
         argv: { command: 'claude', args: ["it's", 'a b'] },
       }),
     );
-    expect(inv.args[inv.args.indexOf('--command') + 1]).toBe(
-      "'claude' 'it'\\''s' 'a b'",
-    );
+    // $3 is the command text cmux types into the new workspace's shell.
+    expect(inv.args[5]).toBe("'claude' 'it'\\''s' 'a b'");
   });
 });
 

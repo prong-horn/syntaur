@@ -76,6 +76,7 @@ describe('probeTerminalInstalled — .app fallback when mdfind misses', () => {
 
 describe('resolveCmuxCli + probeTerminalInstalled("cmux")', () => {
   let appsDir: string;
+  let cliDir: string;
 
   // Stage a fake cmux.app whose bundled CLI exists on disk, and return the
   // absolute CLI path the resolver should return.
@@ -96,6 +97,7 @@ describe('resolveCmuxCli + probeTerminalInstalled("cmux")', () => {
 
   beforeEach(async () => {
     appsDir = await mkdtemp(join(tmpdir(), 'syntaur-cmux-apps-'));
+    cliDir = await mkdtemp(join(tmpdir(), 'syntaur-cmux-cli-'));
     // vitest does not clearMocks (see vitest.config.ts), so prior tests'
     // spawnSync calls would pollute the call-history assertions below.
     vi.mocked(spawnSync).mockClear();
@@ -107,30 +109,43 @@ describe('resolveCmuxCli + probeTerminalInstalled("cmux")', () => {
   });
   afterEach(async () => {
     await rm(appsDir, { recursive: true, force: true });
+    await rm(cliDir, { recursive: true, force: true });
   });
+
+  // Pass an empty cliDirsOverride to keep these hermetic from the host's real
+  // /usr/local/bin and /opt/homebrew/bin (a dev box might have cmux there).
 
   it('resolveCmuxCli returns the absolute bundle CLI path without calling `which`', async () => {
     const cliPath = await stageCmuxBundle(appsDir);
 
-    expect(resolveCmuxCli([appsDir])).toBe(cliPath);
+    expect(resolveCmuxCli([appsDir], [])).toBe(cliPath);
     // The bundle CLI was found, so `which` must NOT be consulted.
     expect(spawnArgs()).not.toContain('which');
   });
 
-  it('resolveCmuxCli falls back to `which cmux` when no bundle is present', () => {
+  it('resolveCmuxCli resolves a canonical-dir CLI (PATH-independent) without calling `which`', async () => {
+    const cliPath = join(cliDir, 'cmux');
+    await writeFile(cliPath, '#!/bin/sh\nexit 0\n');
+
+    // No bundle, but cmux exists in a canonical dir → found via existsSync.
+    expect(resolveCmuxCli([appsDir], [cliDir])).toBe(cliPath);
+    expect(spawnArgs()).not.toContain('which');
+  });
+
+  it('resolveCmuxCli falls back to `which cmux` when no bundle or canonical-dir CLI is present', () => {
     vi.mocked(spawnSync).mockReturnValue({
       status: 0,
-      stdout: '/usr/local/bin/cmux\n',
+      stdout: '/opt/oddplace/cmux\n',
       stderr: '',
     } as unknown as ReturnType<typeof spawnSync>);
 
-    expect(resolveCmuxCli([appsDir])).toBe('/usr/local/bin/cmux');
+    expect(resolveCmuxCli([appsDir], [])).toBe('/opt/oddplace/cmux');
     expect(spawnArgs()).toContain('which');
   });
 
-  it('resolveCmuxCli returns null when neither the bundle nor `which` resolves', () => {
+  it('resolveCmuxCli returns null when bundle, canonical dirs, and `which` all miss', () => {
     // Default mock: `which` exits 0 with empty stdout → unresolved.
-    expect(resolveCmuxCli([appsDir])).toBeNull();
+    expect(resolveCmuxCli([appsDir], [])).toBeNull();
   });
 
   it('probeTerminalInstalled("cmux") is ok with the bundle CLI and never calls mdfind', async () => {
@@ -138,6 +153,7 @@ describe('resolveCmuxCli + probeTerminalInstalled("cmux")', () => {
 
     const result = probeTerminalInstalled('cmux', {
       applicationsDirsOverride: [appsDir],
+      cmuxCliDirsOverride: [],
     });
 
     expect(result).toEqual({ ok: true, foundPath: cliPath });
@@ -145,9 +161,10 @@ describe('resolveCmuxCli + probeTerminalInstalled("cmux")', () => {
     expect(spawnArgs()).not.toContain('mdfind');
   });
 
-  it('probeTerminalInstalled("cmux") reports not-installed when bundle absent and `which` misses', () => {
+  it('probeTerminalInstalled("cmux") reports not-installed when bundle, canonical dirs, and `which` miss', () => {
     const result = probeTerminalInstalled('cmux', {
       applicationsDirsOverride: [appsDir],
+      cmuxCliDirsOverride: [],
     });
 
     expect(result).toEqual({ ok: false, reason: 'not-installed' });

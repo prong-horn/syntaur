@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { EventEmitter } from 'node:events';
 import { Readable } from 'node:stream';
 import {
@@ -7,6 +7,18 @@ import {
   type LaunchPlan,
   type SpawnFn,
 } from '../launch/index.js';
+
+// Pin resolveCmuxCli so the cmux invocation is deterministic and does not hit
+// the real filesystem / spawn `which` during these unit tests. The cmux command
+// is `/bin/sh` regardless, so wrapper classification is host-independent.
+vi.mock('../utils/terminal-probe.js', async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import('../utils/terminal-probe.js')>();
+  return {
+    ...actual,
+    resolveCmuxCli: () => '/Applications/cmux.app/Contents/Resources/bin/cmux',
+  };
+});
 
 function makePlan(overrides: Partial<LaunchPlan> = {}): LaunchPlan {
   return {

@@ -1,11 +1,32 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { mkdtemp, rm, mkdir, writeFile, chmod } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import express from 'express';
 import type { AddressInfo } from 'node:net';
 import type { Server } from 'node:http';
+import type { ProbeResult } from '../utils/terminal-probe.js';
 import { createLaunchPreflightRouter } from '../dashboard/api-launch-preflight.js';
+
+// cmux detection is filesystem/PATH-dependent, so on a host that has (or lacks)
+// the real cmux.app the endpoint result would vary. Pin probeTerminalInstalled
+// for cmux ONLY; every other terminal delegates to the real probe so the
+// kitty/alacritty integration assertions below stay genuine.
+const probeState = vi.hoisted(() => ({ cmux: null as ProbeResult | null }));
+vi.mock('../utils/terminal-probe.js', async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import('../utils/terminal-probe.js')>();
+  return {
+    ...actual,
+    probeTerminalInstalled: ((terminal, opts) =>
+      terminal === 'cmux' && probeState.cmux
+        ? probeState.cmux
+        : actual.probeTerminalInstalled(
+            terminal,
+            opts,
+          )) as typeof actual.probeTerminalInstalled,
+  };
+});
 
 const originalHome = process.env.HOME;
 const originalSyntaurHome = process.env.SYNTAUR_HOME;
@@ -67,6 +88,7 @@ async function writeAssignment(
 }
 
 beforeEach(async () => {
+  probeState.cmux = null; // default: delegate cmux to the real probe too
   tmpHome = await mkdtemp(join(tmpdir(), 'syntaur-preflight-api-'));
   await mkdir(join(tmpHome, '.syntaur'), { recursive: true });
   process.env.HOME = tmpHome;
@@ -117,17 +139,11 @@ describe('POST /api/launch/preflight', () => {
     expect(body.terminal).toBe('kitty');
   });
 
-  it('returns ok:true for cmux when its CLI is resolvable', async () => {
-    // cmux detection (resolveCmuxCli) checks the app bundle first, then `which`.
-    // Stage a fake `cmux` on PATH so the probe resolves on a host without the
-    // real cmux.app installed (a host that has it resolves via the bundle).
-    // The not-installed branch is host-dependent here (a dev box may have
-    // cmux.app), so it is covered deterministically in terminal-probe.test.ts
-    // via applicationsDirsOverride + a mocked `which`.
-    const cmuxPath = join(pathDir, 'cmux');
-    await writeFile(cmuxPath, '#!/bin/sh\nexit 0\n');
-    await chmod(cmuxPath, 0o755);
-    process.env.PATH = `${pathDir}:/usr/bin:/bin`;
+  it('returns ok:true for cmux when its CLI resolves', async () => {
+    probeState.cmux = {
+      ok: true,
+      foundPath: '/Applications/cmux.app/Contents/Resources/bin/cmux',
+    };
 
     const res = await fetch(baseUrl, {
       method: 'POST',
@@ -138,6 +154,22 @@ describe('POST /api/launch/preflight', () => {
     const body = await res.json();
     expect(body.ok).toBe(true);
     expect(body.terminal).toBe('cmux');
+  });
+
+  it('returns ok:false not-installed + suggestedFallback for cmux when its CLI is missing', async () => {
+    probeState.cmux = { ok: false, reason: 'not-installed' };
+
+    const res = await fetch(baseUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ terminal: 'cmux' }),
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.ok).toBe(false);
+    expect(body.terminal).toBe('cmux');
+    expect(body.reason).toBe('not-installed');
+    expect(typeof body.suggestedFallback).toBe('string');
   });
 
   it('returns ok:false with suggestedFallback when the requested CLI terminal is missing', async () => {

@@ -39,17 +39,17 @@ const realSpawn: SpawnFn = (command, args, options) =>
  * or URL scheme isn't installed, so we monitor their exit code briefly.
  *
  * Membership is tested by BASENAME (see `isWrapperCommand`): `osascript`/`open`
- * are spawned by bare name, but `cmux` is resolved to an absolute bundle path
- * (`/Applications/cmux.app/Contents/Resources/bin/cmux`), so a plain
- * set-membership check on the full command would miss it and wrongly classify
- * it as a long-running launcher (skipping exit-code monitoring).
+ * are spawned by bare name, but cmux launches via an absolute `/bin/sh -c`
+ * cold-start wrapper, so a plain set-membership check on the full command
+ * (`/bin/sh`) would miss `'sh'` and wrongly classify it as a long-running
+ * launcher (skipping exit-code monitoring).
  */
-const WRAPPER_COMMANDS = new Set(['osascript', 'open', 'cmux']);
+const WRAPPER_COMMANDS = new Set(['osascript', 'open', 'sh']);
 
 /**
  * A command is a wrapper if its basename is in `WRAPPER_COMMANDS`. Using the
- * basename lets cmux's absolute bundle path match `'cmux'` while leaving the
- * bare `osascript`/`open` names (basename === name) unaffected.
+ * basename lets cmux's absolute `/bin/sh` interpreter match `'sh'` while leaving
+ * the bare `osascript`/`open` names (basename === name) unaffected.
  */
 function isWrapperCommand(command: string): boolean {
   return WRAPPER_COMMANDS.has(basename(command));
@@ -162,6 +162,34 @@ interface TerminalInvocation {
   command: string;
   args: string[];
 }
+
+/** cmux app bundle id, used to launch it on a cold start via `open -b`. */
+const CMUX_BUNDLE_ID = 'com.cmuxterm.app';
+
+/**
+ * POSIX-sh cold-start orchestration for cmux, run as a single monitored
+ * `/bin/sh -c` spawn. `workspace create` is a socket-control command that needs
+ * the cmux app running, so on a cold start (app closed) it would fail. This
+ * script: (1) launches cmux if needed via `open -b` (a no-op when already
+ * running; PATH-independent — `open` is at /usr/bin even under the applet's
+ * stripped PATH); (2) polls `cmux ping` for socket readiness, bounded so it
+ * never hangs; (3) `exec`s `workspace create` so its exit code is the script's
+ * exit code (a failure surfaces as TerminalNotFoundError via the wrapper path).
+ *
+ * Values are passed as positional args ($1=cli, $2=cwd, $3=command) rather than
+ * interpolated, so no second layer of shell-quoting is needed and a hostile cwd
+ * or command cannot break out of the script.
+ */
+const CMUX_LAUNCH_SCRIPT = [
+  `open -b ${CMUX_BUNDLE_ID} >/dev/null 2>&1 || true`,
+  'i=0',
+  'while [ "$i" -lt 20 ]; do',
+  '  "$1" ping >/dev/null 2>&1 && break',
+  '  i=$((i + 1))',
+  '  sleep 0.25',
+  'done',
+  'exec "$1" workspace create --cwd "$2" --command "$3" --focus true',
+].join('\n');
 
 /**
  * Build the argv that will be handed to `spawn` to open `plan.argv` in a new
@@ -313,27 +341,27 @@ export function buildTerminalInvocation(plan: LaunchPlan): TerminalInvocation {
       // cmux is a socket-controlled workspace multiplexer driven by its
       // first-party CLI, which lives INSIDE the app bundle and is not on a
       // standard PATH dir. The macOS URL-handler applet launches with a
-      // stripped LaunchServices PATH, so we resolve the bundle binary by
-      // absolute path (resolveCmuxCli) rather than relying on a bare `cmux`
-      // (which would ENOENT in that context). `workspace create` makes a
-      // workspace rooted at --cwd and sends the command text+Enter to it via
-      // --command; --cwd removes the need for a `cd &&` prefix; commandLine is
-      // shell-quoted because cmux types it into the new workspace's shell;
-      // --focus true surfaces the workspace. cmux is registered in
-      // WRAPPER_COMMANDS (matched by basename, since command is absolute) — a
-      // short-lived socket client monitored for a non-zero exit, so a missing
-      // binary or dead socket surfaces as a TerminalNotFoundError.
+      // stripped LaunchServices PATH, so we resolve the CLI to an absolute path
+      // (resolveCmuxCli: bundle → canonical dir → PATH) rather than relying on
+      // a bare `cmux` (which would ENOENT there). Because `workspace create` is
+      // a socket command that needs the app running, we wrap it in a cold-start
+      // `/bin/sh -c` script (CMUX_LAUNCH_SCRIPT): launch-if-needed via `open
+      // -b`, await socket readiness, then `workspace create --cwd <cwd>
+      // --command <cmd> --focus true` (which makes a workspace at --cwd and
+      // sends the agent command text+Enter to it). commandLine is shell-quoted
+      // because cmux types it into the new workspace's shell. The /bin/sh
+      // interpreter is registered in WRAPPER_COMMANDS (matched by basename
+      // 'sh'), so a missing binary or dead socket surfaces as a
+      // TerminalNotFoundError.
       return {
-        command: resolveCmuxCli() ?? 'cmux',
+        command: '/bin/sh',
         args: [
-          'workspace',
-          'create',
-          '--cwd',
-          plan.cwd,
-          '--command',
-          commandLine,
-          '--focus',
-          'true',
+          '-c',
+          CMUX_LAUNCH_SCRIPT,
+          'syntaur-cmux-launch', // $0 (label in ps / error messages)
+          resolveCmuxCli() ?? 'cmux', // $1
+          plan.cwd, // $2
+          commandLine, // $3
         ],
       };
   }
