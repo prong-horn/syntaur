@@ -7,6 +7,11 @@ import {
 } from '../utils/config.js';
 import { probeTerminalInstalled } from '../utils/terminal-probe.js';
 import { isExistingDir } from '../launch/cwd.js';
+import {
+  resolveLaunchPlan,
+  buildShellCommandLine,
+  LaunchError,
+} from '../launch/index.js';
 import { resolveRecreateTarget } from './recreate-target.js';
 
 /** Data the dashboard needs to offer a one-click recreate of a deleted worktree. */
@@ -156,6 +161,76 @@ export function createLaunchPreflightRouter(
     } catch (error) {
       console.error('Error in launch preflight:', error);
       res.status(500).json({ error: 'preflight failed' });
+    }
+  });
+
+  // Return the exact shell command the session's Resume/launch button would
+  // run — `cd '<cwd>' && '<agent>' '--resume' '<id>'` — so the dashboard can
+  // offer a "copy launch command" affordance. The command and cwd come from
+  // the SAME `resolveLaunchPlan` the launcher uses (worktree-preferred, falling
+  // back to the session's recorded path) and the SAME `buildShellCommandLine`
+  // helper, so the copied command can never drift from what the button runs.
+  // This deliberately does NOT run preflight/recreate — copying text is a
+  // lighter contract than launching; the literal cwd is visible in the command.
+  router.get('/command', async (req, res) => {
+    const rawSession = req.query.session;
+    if (typeof rawSession !== 'string' || rawSession.length === 0) {
+      // typeof guard also rejects Express 5 duplicate params (?session=a&session=b → array).
+      res.status(400).json({ error: 'session query param is required' });
+      return;
+    }
+
+    const rawMode = req.query.mode;
+    let mode: 'resume' | 'fork';
+    if (rawMode === undefined) {
+      mode = 'resume';
+    } else if (rawMode === 'resume' || rawMode === 'fork') {
+      mode = rawMode;
+    } else {
+      res.status(400).json({ error: 'mode must be one of: resume, fork' });
+      return;
+    }
+
+    try {
+      const config = await readConfig();
+      const plan = await resolveLaunchPlan({
+        kind: 'session',
+        id: rawSession,
+        mode,
+        config,
+        projectsDir,
+        assignmentsDir,
+      });
+      const command = buildShellCommandLine(plan);
+      res.json({
+        command,
+        cwd: plan.cwd,
+        agentId: plan.agentId,
+        mode,
+        fallbackWarning: plan.fallbackWarning,
+      });
+    } catch (error) {
+      if (error instanceof LaunchError) {
+        // Explicit allowlist: a known client/config-shaped failure maps to a
+        // 4xx; any OTHER LaunchError code (e.g. a future one, or one this
+        // session path isn't expected to emit) is treated as a server fault
+        // and falls through to the 500 below — never silently mislabeled 422.
+        const status =
+          error.code === 'session-not-found'
+            ? 404
+            : error.code === 'agent-not-configured' ||
+                error.code === 'mode-not-supported' ||
+                error.code === 'no-agents-configured' ||
+                error.code === 'workspace-path-invalid'
+              ? 422
+              : null;
+        if (status !== null) {
+          res.status(status).json({ error: error.message });
+          return;
+        }
+      }
+      console.error('Error in launch command:', error);
+      res.status(500).json({ error: 'launch command failed' });
     }
   });
 

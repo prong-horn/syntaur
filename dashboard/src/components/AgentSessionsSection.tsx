@@ -1,5 +1,6 @@
 import { Activity } from 'lucide-react';
 import { CopyButton } from './CopyButton';
+import { CopyLaunchCommandButton } from './CopyLaunchCommandButton';
 import { StatusBadge } from './StatusBadge';
 import { SectionCard } from './SectionCard';
 import { EmptyState } from './EmptyState';
@@ -11,6 +12,10 @@ interface AgentSessionsSectionProps {
   sessions: AgentSessionWithLiveness[] | undefined;
   loading: boolean;
   error: string | null;
+  /** Surfaces copy-launch-command failures (e.g. to a toast). */
+  onError?: (error: Error) => void;
+  /** Surfaces a non-fatal notice after a copy (e.g. a fallback-cwd warning). */
+  onNotice?: (message: string) => void;
 }
 
 /**
@@ -30,7 +35,7 @@ async function patchMarkStopped(sessionId: string): Promise<void> {
   });
 }
 
-export function AgentSessionsSection({ sessions, loading, error }: AgentSessionsSectionProps) {
+export function AgentSessionsSection({ sessions, loading, error, onError, onNotice }: AgentSessionsSectionProps) {
   if (loading && !sessions) return null;
 
   if (error && !sessions) {
@@ -66,6 +71,13 @@ export function AgentSessionsSection({ sessions, loading, error }: AgentSessions
               >
                 {session.sessionId.slice(0, 8)}
                 <CopyButton value={session.sessionId} />
+                <CopyLaunchCommandButton
+                  sessionId={session.sessionId}
+                  disabled={!session.resumeSupported}
+                  disabledReason="Resume not supported for this agent"
+                  onError={onError}
+                  onNotice={onNotice}
+                />
               </span>
             </span>
             <span className="flex items-center gap-2">

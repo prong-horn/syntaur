@@ -176,6 +176,8 @@ export function StandaloneAssignmentDetail() {
         sessions={sessionsData?.sessions}
         loading={sessionsLoading}
         error={sessionsError}
+        onError={(e) => showToast(e.message, 'error')}
+        onNotice={(m) => showToast(m, 'success')}
       />
 
       <AssignmentUsageSection

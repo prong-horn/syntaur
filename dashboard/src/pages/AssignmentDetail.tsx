@@ -715,7 +715,7 @@ export function AssignmentDetail() {
           />
         </div>
 
-        <div className="space-y-5">
+        <div className="min-w-0 space-y-5">
           <SectionCard title="Details">
             <dl className="space-y-3 text-sm">
               <DetailRow label="ID" value={assignment.id} copyable />
@@ -747,14 +747,30 @@ export function AssignmentDetail() {
             <SectionCard title="Servers">
               <div className="space-y-2">
                 {linkedPanes.map((lp, i) => (
-                  <div key={i} className="flex items-center gap-2 text-sm">
-                    <span className="rounded bg-muted/60 px-1.5 py-0.5 font-mono text-xs">{lp.command}</span>
-                    <span className="text-xs text-muted-foreground">{lp.sessionName}</span>
+                  <div key={i} className="flex min-w-0 flex-wrap items-center gap-2 text-sm">
+                    <span
+                      className="min-w-0 max-w-full truncate rounded bg-muted/60 px-1.5 py-0.5 font-mono text-xs"
+                      title={lp.command}
+                    >
+                      {lp.command}
+                    </span>
+                    <span
+                      className="min-w-0 max-w-full truncate text-xs text-muted-foreground"
+                      title={lp.sessionName}
+                    >
+                      {lp.sessionName}
+                    </span>
                     {lp.urls.map(url => (
-                      <a key={url} href={url} target="_blank" rel="noopener noreferrer"
-                        className="inline-flex items-center gap-1 text-xs text-primary hover:underline">
-                        {url.replace('http://localhost:', ':')}
-                        <ExternalLink className="h-2.5 w-2.5" />
+                      <a
+                        key={url}
+                        href={url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        title={url}
+                        className="inline-flex min-w-0 max-w-full items-center gap-1 rounded border border-primary/30 bg-primary/5 px-1.5 py-0.5 text-xs font-medium text-primary hover:bg-primary/10 dark:border-primary/40 dark:bg-primary/10 dark:hover:bg-primary/20"
+                      >
+                        <span className="min-w-0 truncate">{url.replace('http://localhost:', ':')}</span>
+                        <ExternalLink className="h-2.5 w-2.5 shrink-0" />
                       </a>
                     ))}
                   </div>
@@ -767,6 +783,8 @@ export function AssignmentDetail() {
             sessions={sessionsData?.sessions}
             loading={sessionsLoading}
             error={sessionsError}
+            onError={(e) => showToast(e.message, 'error')}
+            onNotice={(m) => showToast(m, 'success')}
           />
 
           <AssignmentUsageSection
