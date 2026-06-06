@@ -6,6 +6,7 @@ import {
   writeFile,
   readFile,
   stat,
+  chmod,
 } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -79,6 +80,75 @@ function runHookAsync(
     child.stdin.end(stdinJson);
   });
 }
+
+describe('SessionStart plugin drift warning', () => {
+  async function makeFakeSyntaur(version: string): Promise<string> {
+    const binDir = await mkdtemp(join(tmpdir(), 'syntaur-fakebin-'));
+    const p = join(binDir, 'syntaur');
+    await writeFile(p, `#!/bin/sh\necho "${version}"\n`);
+    await chmod(p, 0o755);
+    return binDir;
+  }
+  async function makePluginRoot(markerVersion: string | null): Promise<string> {
+    const root = await mkdtemp(join(tmpdir(), 'syntaur-pluginroot-'));
+    if (markerVersion !== null) {
+      await writeFile(
+        join(root, '.syntaur-install.json'),
+        JSON.stringify({
+          packageName: 'syntaur',
+          packageVersion: markerVersion,
+          pluginKind: 'claude',
+          installMode: 'copy',
+          installedAt: '2026-06-06T00:00:00Z',
+        }),
+      );
+    }
+    return root;
+  }
+  // cwd has no .syntaur/context.json → the hook exits 0 right after the warning.
+  const STDIN = JSON.stringify({ session_id: 's', cwd: '/tmp/no-syntaur-context-xyz' });
+
+  it('emits a non-blocking drift warning when the plugin marker differs from the CLI version', async () => {
+    const binDir = await makeFakeSyntaur('9.9.9');
+    const pluginRoot = await makePluginRoot('0.0.1');
+    try {
+      const res = runHook(STDIN, { CLAUDE_PLUGIN_ROOT: pluginRoot, PATH: `${binDir}:${process.env.PATH}` });
+      expect(res.status).toBe(0);
+      expect(res.stdout).toContain('additionalContext');
+      expect(res.stdout).toContain('0.0.1');
+      expect(res.stdout).toContain('install-plugin --force');
+    } finally {
+      await rm(binDir, { recursive: true, force: true });
+      await rm(pluginRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('does not warn when the plugin marker matches the CLI version', async () => {
+    const binDir = await makeFakeSyntaur('0.0.1');
+    const pluginRoot = await makePluginRoot('0.0.1');
+    try {
+      const res = runHook(STDIN, { CLAUDE_PLUGIN_ROOT: pluginRoot, PATH: `${binDir}:${process.env.PATH}` });
+      expect(res.status).toBe(0);
+      expect(res.stdout).not.toContain('differs');
+    } finally {
+      await rm(binDir, { recursive: true, force: true });
+      await rm(pluginRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('does not warn and still exits 0 when no install marker is present', async () => {
+    const binDir = await makeFakeSyntaur('9.9.9');
+    const pluginRoot = await makePluginRoot(null);
+    try {
+      const res = runHook(STDIN, { CLAUDE_PLUGIN_ROOT: pluginRoot, PATH: `${binDir}:${process.env.PATH}` });
+      expect(res.status).toBe(0);
+      expect(res.stdout).not.toContain('differs');
+    } finally {
+      await rm(binDir, { recursive: true, force: true });
+      await rm(pluginRoot, { recursive: true, force: true });
+    }
+  });
+});
 
 describe('claude-code session-start.sh', () => {
   it('merges session_id + transcript_path into an existing context.json without dropping other fields', async () => {

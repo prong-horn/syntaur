@@ -19,6 +19,35 @@ command -v jq >/dev/null 2>&1 || exit 0
 INPUT=$(cat)
 [ -z "$INPUT" ] && exit 0
 
+# --- Best-effort, non-blocking: warn when the installed plugin is stale vs the
+# running CLI (the CLI updates via npm; the marketplace plugin copy does not).
+# Plugin-global, so it runs BEFORE the context-dependent early exits below. Any
+# failure → do nothing. NEVER changes the exit status (the hook always exits 0).
+syntaur_plugin_drift_warn() {
+  local marker marker_ver cli_ver msg
+  marker="${CLAUDE_PLUGIN_ROOT:-$HOME/.claude/plugins/syntaur}/.syntaur-install.json"
+  [ -f "$marker" ] || return 0
+  marker_ver=$(jq -r '.packageVersion // empty' "$marker" 2>/dev/null)
+  [ -n "$marker_ver" ] || return 0
+  command -v syntaur >/dev/null 2>&1 || return 0
+  # Bound the CLI call to 1s (it is ~0.3s) — `timeout` is absent on stock macOS,
+  # so fall back to `gtimeout`, then a bare call. 1s + the dashboard curl's
+  # --max-time 3 stays under the hook's 5s budget.
+  if command -v timeout >/dev/null 2>&1; then
+    cli_ver=$(timeout 1 syntaur --version 2>/dev/null)
+  elif command -v gtimeout >/dev/null 2>&1; then
+    cli_ver=$(gtimeout 1 syntaur --version 2>/dev/null)
+  else
+    cli_ver=$(syntaur --version 2>/dev/null)
+  fi
+  cli_ver=$(printf '%s' "$cli_ver" | tr -d '[:space:]')
+  [ -n "$cli_ver" ] || return 0
+  [ "$marker_ver" = "$cli_ver" ] && return 0
+  msg="Syntaur plugin v${marker_ver} differs from the installed CLI v${cli_ver} — run \`syntaur install-plugin --force\` to refresh."
+  jq -cn --arg c "$msg" '{hookSpecificOutput:{hookEventName:"SessionStart",additionalContext:$c}}' 2>/dev/null || true
+}
+syntaur_plugin_drift_warn || true
+
 SESSION_ID=$(printf '%s' "$INPUT" | jq -r '.session_id // empty' 2>/dev/null)
 TRANSCRIPT_PATH=$(printf '%s' "$INPUT" | jq -r '.transcript_path // empty' 2>/dev/null)
 CWD=$(printf '%s' "$INPUT" | jq -r '.cwd // empty' 2>/dev/null)
