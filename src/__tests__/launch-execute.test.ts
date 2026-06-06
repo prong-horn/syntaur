@@ -144,6 +144,22 @@ describe('executeLaunchPlan', () => {
     ).rejects.toThrow(TerminalNotFoundError);
   });
 
+  it('cmux surfaces a SLOW cold-start failure (exit after the default 1.5s net)', async () => {
+    // The cold-start poll can run several seconds; cmux raises its wrapper
+    // safety-net window past that. A non-zero exit at ~1.6s (which the default
+    // 1500ms net would have masked as success) must still throw.
+    const spawnFn: SpawnFn = () =>
+      fakeChild({
+        fireOn: 'exit',
+        exitCode: 1,
+        stderr: 'cmux: socket not reachable after readiness wait',
+        delayMs: 1600,
+      });
+    await expect(
+      executeLaunchPlan(makePlan({ terminal: 'cmux' }), spawnFn),
+    ).rejects.toThrowError(/exited with code 1/);
+  });
+
   it('captures stderr text in the wrapper-failure error message', async () => {
     const spawnFn: SpawnFn = () =>
       fakeChild({

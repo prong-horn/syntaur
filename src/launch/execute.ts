@@ -60,6 +60,10 @@ function isWrapperCommand(command: string): boolean {
  * spawned the target app successfully and detaching. Wrappers that succeed
  * usually exit in tens of milliseconds; wrappers that fail exit even faster.
  * A small window keeps the CLI responsive without missing legitimate failures.
+ *
+ * Per-invocation override via `TerminalInvocation.wrapperTimeoutMs` — cmux needs
+ * a larger window because its cold-start script can poll for socket readiness
+ * for several seconds before it exits with the real success/failure code.
  */
 const WRAPPER_EXIT_TIMEOUT_MS = 1500;
 
@@ -148,8 +152,13 @@ export async function executeLaunchPlan(
       });
       // Safety net: if the wrapper hasn't exited within the window, assume
       // success and detach. This is the normal "Terminal.app spawned, wrapper
-      // is keeping the connection open" case.
-      setTimeout(finishOk, WRAPPER_EXIT_TIMEOUT_MS).unref();
+      // is keeping the connection open" case. cmux overrides the window
+      // (wrapperTimeoutMs) so it exceeds the cold-start readiness poll —
+      // otherwise a slow cold-start FAILURE would be masked as success here.
+      setTimeout(
+        finishOk,
+        invocation.wrapperTimeoutMs ?? WRAPPER_EXIT_TIMEOUT_MS,
+      ).unref();
     } else {
       child.once('spawn', () => {
         finishOk();
@@ -161,10 +170,30 @@ export async function executeLaunchPlan(
 interface TerminalInvocation {
   command: string;
   args: string[];
+  /**
+   * Override for the wrapper-exit safety-net window (ms). Set only by terminals
+   * whose wrapper legitimately runs longer than `WRAPPER_EXIT_TIMEOUT_MS`
+   * before exiting (cmux's cold-start readiness poll). Omitted = default.
+   */
+  wrapperTimeoutMs?: number;
 }
 
 /** cmux app bundle id, used to launch it on a cold start via `open -b`. */
 const CMUX_BUNDLE_ID = 'com.cmuxterm.app';
+
+/**
+ * Upper bound (ms) on cmux's cold-start readiness poll: CMUX_LAUNCH_SCRIPT tries
+ * 20 times at 0.25s = 5s. Keep these two in sync if the script's loop changes.
+ */
+const CMUX_READINESS_MAX_MS = 20 * 250;
+
+/**
+ * Wrapper safety-net window for cmux. Must exceed CMUX_READINESS_MAX_MS (plus
+ * app-launch + workspace-create overhead) so that a cold-start failure exits
+ * with its real non-zero code and surfaces as a TerminalNotFoundError, rather
+ * than the safety net falsely resolving success mid-poll.
+ */
+const CMUX_LAUNCH_TIMEOUT_MS = CMUX_READINESS_MAX_MS + 3000;
 
 /**
  * POSIX-sh cold-start orchestration for cmux, run as a single monitored
@@ -363,6 +392,9 @@ export function buildTerminalInvocation(plan: LaunchPlan): TerminalInvocation {
           plan.cwd, // $2
           commandLine, // $3
         ],
+        // Exceed the cold-start readiness poll so a failed cold launch surfaces
+        // as an error instead of being masked by the wrapper safety net.
+        wrapperTimeoutMs: CMUX_LAUNCH_TIMEOUT_MS,
       };
   }
 }

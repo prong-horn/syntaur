@@ -107,15 +107,19 @@ export const CMUX_CLI_DIRS: readonly string[] = [
  * resolve an absolute path; sharing one resolver keeps server-side preflight
  * and the actual applet launch consistent.
  *
- * Resolution order, chosen so the common cases are PATH-independent (server and
- * applet agree):
+ * Resolution order, chosen so resolution is PATH-independent on macOS (where the
+ * applet launch is the only stripped-PATH context) — server preflight and the
+ * applet then agree by construction:
  *   1. the bundle CLI (`findAppBundle` → `Contents/Resources/bin/cmux`)
  *   2. a canonical install dir (`CMUX_CLI_DIRS`, via `existsSync` — covers a
  *      Homebrew/`/usr/local` symlink even under the applet's stripped PATH)
- *   3. `which cmux` (PATH-dependent last resort for exotic installs; this is the
- *      only branch that can differ between server and applet — a non-canonical
- *      PATH-only install would pass server preflight yet fail the applet launch,
- *      degrading to a clear `TerminalNotFoundError` rather than a wrong launch)
+ *   3. `which cmux` — PATH-DEPENDENT, so it is consulted ONLY off macOS. On
+ *      darwin we deliberately skip it: a cmux reachable only via a non-canonical
+ *      PATH dir would pass the full-PATH server preflight but be invisible to
+ *      the stripped-PATH applet, so accepting it would be a false positive.
+ *      Skipping it makes macOS detection consistent with the applet (real macOS
+ *      installs are always the .app bundle anyway). Off macOS there is no
+ *      stripped-PATH applet, so launch and preflight share the same PATH.
  *
  * `applicationsDirsOverride` / `cliDirsOverride` REPLACE the defaults so tests
  * stay hermetic from the host's real `/Applications` and `/usr/local/bin`.
@@ -133,9 +137,11 @@ export function resolveCmuxCli(
     const cli = join(dir, 'cmux');
     if (existsSync(cli)) return cli;
   }
-  const which = spawnSync('which', ['cmux'], { encoding: 'utf-8' });
-  if (which.status === 0 && which.stdout.trim().length > 0) {
-    return which.stdout.trim();
+  if (process.platform !== 'darwin') {
+    const which = spawnSync('which', ['cmux'], { encoding: 'utf-8' });
+    if (which.status === 0 && which.stdout.trim().length > 0) {
+      return which.stdout.trim();
+    }
   }
   return null;
 }

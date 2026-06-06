@@ -77,6 +77,14 @@ describe('probeTerminalInstalled — .app fallback when mdfind misses', () => {
 describe('resolveCmuxCli + probeTerminalInstalled("cmux")', () => {
   let appsDir: string;
   let cliDir: string;
+  const originalPlatform = process.platform;
+
+  function setPlatform(platform: NodeJS.Platform): void {
+    Object.defineProperty(process, 'platform', {
+      value: platform,
+      configurable: true,
+    });
+  }
 
   // Stage a fake cmux.app whose bundled CLI exists on disk, and return the
   // absolute CLI path the resolver should return.
@@ -108,6 +116,10 @@ describe('resolveCmuxCli + probeTerminalInstalled("cmux")', () => {
     } as unknown as ReturnType<typeof spawnSync>);
   });
   afterEach(async () => {
+    Object.defineProperty(process, 'platform', {
+      value: originalPlatform,
+      configurable: true,
+    });
     await rm(appsDir, { recursive: true, force: true });
     await rm(cliDir, { recursive: true, force: true });
   });
@@ -132,7 +144,16 @@ describe('resolveCmuxCli + probeTerminalInstalled("cmux")', () => {
     expect(spawnArgs()).not.toContain('which');
   });
 
-  it('resolveCmuxCli falls back to `which cmux` when no bundle or canonical-dir CLI is present', () => {
+  it('on macOS, resolveCmuxCli SKIPS `which` and returns null when bundle + canonical dirs miss', () => {
+    // The applet launches under a stripped PATH where `which` cannot rediscover
+    // a non-canonical install, so accepting it would be a false positive.
+    setPlatform('darwin');
+    expect(resolveCmuxCli([appsDir], [])).toBeNull();
+    expect(spawnArgs()).not.toContain('which');
+  });
+
+  it('off macOS, resolveCmuxCli falls back to `which cmux` (no stripped-PATH applet there)', () => {
+    setPlatform('linux');
     vi.mocked(spawnSync).mockReturnValue({
       status: 0,
       stdout: '/opt/oddplace/cmux\n',
@@ -143,7 +164,8 @@ describe('resolveCmuxCli + probeTerminalInstalled("cmux")', () => {
     expect(spawnArgs()).toContain('which');
   });
 
-  it('resolveCmuxCli returns null when bundle, canonical dirs, and `which` all miss', () => {
+  it('off macOS, resolveCmuxCli returns null when `which` also misses', () => {
+    setPlatform('linux');
     // Default mock: `which` exits 0 with empty stdout → unresolved.
     expect(resolveCmuxCli([appsDir], [])).toBeNull();
   });
@@ -161,7 +183,8 @@ describe('resolveCmuxCli + probeTerminalInstalled("cmux")', () => {
     expect(spawnArgs()).not.toContain('mdfind');
   });
 
-  it('probeTerminalInstalled("cmux") reports not-installed when bundle, canonical dirs, and `which` miss', () => {
+  it('probeTerminalInstalled("cmux") reports not-installed on macOS when bundle + canonical dirs miss', () => {
+    setPlatform('darwin');
     const result = probeTerminalInstalled('cmux', {
       applicationsDirsOverride: [appsDir],
       cmuxCliDirsOverride: [],
