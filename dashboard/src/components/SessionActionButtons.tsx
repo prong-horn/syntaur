@@ -37,11 +37,12 @@ interface SessionActionButtonsProps {
  * when the original process may still be running, and the tooltip points
  * the user at Fork instead.
  *
- * Fallback: when neither resume nor fork is supported (a custom agent whose
- * config defines no resume/fork — builtin claude/codex always inherit theirs
- * via getAgents), we render a disabled "Reopen" affordance + reason tooltip
- * rather than collapsing the row to id + status, so the box always explains
- * why reopen isn't available.
+ * Fallback: when neither resume nor fork is supported, we render a disabled
+ * "Reopen" affordance + reason tooltip rather than collapsing the row to
+ * id + status, so the box always explains why reopen isn't available. This
+ * applies both to a custom agent whose config defines no resume/fork, and to
+ * the builtin launch-only agents (openclaw/hermes) that ship without a recipe
+ * (claude/codex/pi do carry recipes and inherit them via getAgents).
  *
  *   | Terminal (Reopen) | never (only when neither R nor F) | always | (none) |
  */

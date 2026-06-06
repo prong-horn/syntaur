@@ -165,4 +165,40 @@ describe('buildSessionArgv', () => {
     });
     expect(argv.args[2]).toContain(`'say'\\''hi'`);
   });
+
+  describe('builtin pi/openclaw/hermes', () => {
+    const pi = BUILTIN_AGENTS.find((a) => a.id === 'pi')!;
+    const openclaw = BUILTIN_AGENTS.find((a) => a.id === 'openclaw')!;
+    const hermes = BUILTIN_AGENTS.find((a) => a.id === 'hermes')!;
+
+    it('builds pi resume argv: --session <id>', () => {
+      const { argv } = buildSessionArgv(pi, 'sess-pi-1', 'resume');
+      expect(argv.command).toBe('pi');
+      expect(argv.args).toEqual(['--session', 'sess-pi-1']);
+    });
+
+    it('builds pi fork argv: --fork <id>', () => {
+      const { argv } = buildSessionArgv(pi, 'sess-pi-2', 'fork');
+      expect(argv.command).toBe('pi');
+      expect(argv.args).toEqual(['--fork', 'sess-pi-2']);
+    });
+
+    it('openclaw resume and fork throw mode-not-supported (no recipe)', () => {
+      expect(() => buildSessionArgv(openclaw, 'sess', 'resume')).toThrow(
+        expect.objectContaining({ code: 'mode-not-supported' }),
+      );
+      expect(() => buildSessionArgv(openclaw, 'sess', 'fork')).toThrow(
+        expect.objectContaining({ code: 'mode-not-supported' }),
+      );
+    });
+
+    it('hermes resume and fork throw mode-not-supported (no recipe)', () => {
+      expect(() => buildSessionArgv(hermes, 'sess', 'resume')).toThrow(
+        expect.objectContaining({ code: 'mode-not-supported' }),
+      );
+      expect(() => buildSessionArgv(hermes, 'sess', 'fork')).toThrow(
+        expect.objectContaining({ code: 'mode-not-supported' }),
+      );
+    });
+  });
 });

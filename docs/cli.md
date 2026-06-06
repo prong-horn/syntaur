@@ -6,7 +6,7 @@ Reference for `syntaur` subcommands. Run `syntaur --help` for a full list.
 
 Manage configurable agents used by `syntaur browse` and future launch flows.
 
-Agents live under the `agents:` list in `~/.syntaur/config.md`. When the block is absent, Syntaur uses built-in defaults (`claude`, `codex`). Every mutating subcommand accepts `--dry-run` to print the proposed change without writing.
+Agents live under the `agents:` list in `~/.syntaur/config.md`. When the block is absent, Syntaur uses built-in defaults (`claude`, `codex`, `pi`, `openclaw`, `hermes`). Every mutating subcommand accepts `--dry-run` to print the proposed change without writing.
 
 ### `syntaur agents list`
 

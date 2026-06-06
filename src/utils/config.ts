@@ -1700,8 +1700,10 @@ export function getAssignmentTypes(config: SyntaurConfig): TypesConfig {
 
 export function getAgents(config: SyntaurConfig): AgentConfig[] {
   if (config.agents === null) return BUILTIN_AGENTS;
-  // For agents whose id matches a builtin (claude/codex), inherit the builtin's
-  // resume/fork for whichever the user omitted. Omission means "inherit", not
+  // For agents whose id matches any builtin (claude/codex/pi/openclaw/hermes),
+  // inherit that builtin's resume/fork for whichever the user omitted. Builtins
+  // without a recipe (openclaw/hermes) have nothing to inherit, so an omitted
+  // field stays omitted. Omission means "inherit", not
   // "disable": there is no syntax to express intentional disable, and the
   // dashboard agent editor (api-agents coerceAgentRow) silently drops these
   // fields, so omission is frequently accidental. User-provided values win;
