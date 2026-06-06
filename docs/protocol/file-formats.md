@@ -1335,7 +1335,7 @@ Global Syntaur configuration file at `~/.syntaur/config.md`. This file is **opti
 | `agentDefaults.trustLevel` | string (enum) | `low`, `medium`, `high` | optional | `medium` | Default trust level for agents. |
 | `agentDefaults.autoApprove` | boolean | `true`, `false` | optional | `false` | Whether to auto-approve agent actions. |
 | `agentDefaults.autoCreateWorktree` | string (enum) | `skip`, `ask`, `always` | optional | `ask` | Behavior when launching an assignment that has no `workspace.worktreePath`/`branch` set. `skip`: fall back without prompting. `ask`: interactively offer to create a worktree. `always`: create one with inferred defaults, no prompt. The `--no-worktree-prompt` flag on `syntaur browse` always wins over this setting. |
-| `agents` | array or null | list of agent entries | optional | `null` (built-in defaults: `claude`, `codex`) | Ordered list of agents that `syntaur browse` can launch. |
+| `agents` | array or null | list of agent entries | optional | `null` (built-in defaults: `claude`, `codex`, `pi`, `openclaw`, `hermes`) | Ordered list of agents that `syntaur browse` can launch. |
 | `backup.repo` | string or null | repo path or URL | optional | `null` | Backup git repo for `syntaur backup` / `syntaur restore`. |
 | `backup.categories` | string | comma-separated | optional | `"projects, playbooks, todos, servers, config"` | Categories included in backups. |
 | `backup.lastBackup` | string (RFC 3339) or null | | optional | `null` | Last backup timestamp. |
@@ -1368,7 +1368,7 @@ Built-in defaults apply when `types` is absent: `feature`, `bug`, `refactor`, `r
 
 Doctor (`syntaur doctor`) verifies every configured agent's `command` resolves: absolute paths must exist, bare names must be on `PATH`, and `resolveFromShellAliases: true` is accepted as-is with an informational detail.
 
-Built-in defaults apply when `agents:` is absent: `claude` (command `claude`, marked default) and `codex` (command `codex`). Manage the list with `syntaur agents {list, add, remove, set, reorder}` (all mutating commands support `--dry-run`).
+Built-in defaults apply when `agents:` is absent: `claude` (command `claude`, marked default), `codex` (command `codex`), `pi` (command `pi`, with `--session`/`--fork` resume/fork recipes), `openclaw` (command `openclaw`), and `hermes` (command `hermes`). `openclaw` and `hermes` ship launch-only (no resume/fork recipe — their CLIs are not yet verified, so resuming them falls back to a graceful "mode not supported" until a recipe is configured). Manage the list with `syntaur agents {list, add, remove, set, reorder}` (all mutating commands support `--dry-run`).
 
 **Path normalization:** All path fields must use absolute expanded form. The CLI expands `~` to the full home directory at write time. A config file must never contain a literal `~` in any path value.
 

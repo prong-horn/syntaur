@@ -4,13 +4,13 @@ import {
   parseOpenUrl,
   resolveLaunchPlan,
   executeLaunchPlan,
+  buildShellCommandLine,
   OpenUrlError,
   LaunchError,
   TerminalNotFoundError,
   type LaunchPlan,
 } from '../launch/index.js';
 import { initSessionDb } from '../dashboard/session-db.js';
-import { shellQuote } from '../tui/launch.js';
 
 export interface UrlCommandOptions {
   /**
@@ -91,10 +91,7 @@ export async function urlCommand(
  * Apple Event.
  */
 export function formatPlanForApplet(plan: LaunchPlan): string {
-  const commandLine = [plan.argv.command, ...plan.argv.args]
-    .map(shellQuote)
-    .join(' ');
-  const cdAndRun = `cd ${shellQuote(plan.cwd)} && ${commandLine}`;
+  const cdAndRun = buildShellCommandLine(plan);
   // Two lines, NO trailing newline — keeps it easy to read with AppleScript's
   // `paragraphs of` which splits on either CR or LF.
   return `${plan.terminal}\n${cdAndRun}`;

@@ -145,7 +145,13 @@ describe('agents config', () => {
       expect(config.agents).toBeNull();
       const defaults = getAgents(config);
       expect(defaults).toEqual(BUILTIN_AGENTS);
-      expect(defaults.map((a) => a.command)).toEqual(['claude', 'codex']);
+      expect(defaults.map((a) => a.command)).toEqual([
+        'claude',
+        'codex',
+        'pi',
+        'openclaw',
+        'hermes',
+      ]);
     });
 
     it('round-trips double-quoted scalars containing escapes', async () => {
@@ -470,5 +476,49 @@ describe('agents config', () => {
         ),
       ).rejects.toThrow(/reorder list/);
     });
+  });
+});
+
+describe('BUILTIN_AGENTS launch agents (pi/openclaw/hermes)', () => {
+  const byId = (id: string) => BUILTIN_AGENTS.find((a) => a.id === id);
+
+  it('passes validateAgentList', () => {
+    expect(() => validateAgentList(BUILTIN_AGENTS)).not.toThrow();
+  });
+
+  it('keeps claude first and the sole default', () => {
+    expect(BUILTIN_AGENTS[0].id).toBe('claude');
+    const defaults = BUILTIN_AGENTS.filter((a) => a.default === true);
+    expect(defaults).toHaveLength(1);
+    expect(defaults[0].id).toBe('claude');
+  });
+
+  it('has unique ids', () => {
+    const ids = BUILTIN_AGENTS.map((a) => a.id);
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+
+  it('ships pi with verified --session/--fork recipes', () => {
+    const pi = byId('pi');
+    expect(pi).toBeDefined();
+    expect(pi!.command).toBe('pi');
+    expect(pi!.resume).toEqual({ args: ['--session', '{id}'] });
+    expect(pi!.fork).toEqual({ args: ['--fork', '{id}'] });
+  });
+
+  it('ships openclaw command-only (no resume/fork recipe)', () => {
+    const openclaw = byId('openclaw');
+    expect(openclaw).toBeDefined();
+    expect(openclaw!.command).toBe('openclaw');
+    expect(openclaw!.resume).toBeUndefined();
+    expect(openclaw!.fork).toBeUndefined();
+  });
+
+  it('ships hermes command-only (no resume/fork recipe)', () => {
+    const hermes = byId('hermes');
+    expect(hermes).toBeDefined();
+    expect(hermes!.command).toBe('hermes');
+    expect(hermes!.resume).toBeUndefined();
+    expect(hermes!.fork).toBeUndefined();
   });
 });

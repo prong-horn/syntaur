@@ -350,3 +350,230 @@ describe('POST /api/launch/preflight', () => {
     expect(typeof body.terminal).toBe('string');
   });
 });
+
+describe('GET /api/launch/command', () => {
+  const commandUrl = () => baseUrl.replace('/preflight', '/command');
+
+  async function withSessionDb(
+    fn: () => Promise<void>,
+  ): Promise<void> {
+    const { resetSessionDb, initSessionDb, closeSessionDb } = await import(
+      '../dashboard/session-db.js'
+    );
+    resetSessionDb();
+    initSessionDb(resolve(tmpHome, '.syntaur', 'sessions.db'));
+    try {
+      await fn();
+    } finally {
+      closeSessionDb();
+      resetSessionDb();
+    }
+  }
+
+  it('returns the exact resume command for a session (builtin claude, no linked assignment)', async () => {
+    await withSessionDb(async () => {
+      const { appendSession } = await import('../dashboard/agent-sessions.js');
+      await appendSession('', {
+        projectSlug: null,
+        assignmentSlug: null,
+        agent: 'claude',
+        sessionId: 'sess-xyz',
+        started: '2026-06-01T00:00:00Z',
+        status: 'active',
+        path: '/tmp/work',
+      });
+
+      const res = await fetch(`${commandUrl()}?session=sess-xyz&mode=resume`);
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      expect(body.command).toBe("cd '/tmp/work' && 'claude' '--resume' 'sess-xyz'");
+      expect(body.cwd).toBe('/tmp/work');
+      expect(body.agentId).toBe('claude');
+      expect(body.mode).toBe('resume');
+      expect(body.fallbackWarning).toBeNull();
+    });
+  });
+
+  it('defaults mode to resume when the mode param is omitted (route default)', async () => {
+    await withSessionDb(async () => {
+      const { appendSession } = await import('../dashboard/agent-sessions.js');
+      await appendSession('', {
+        projectSlug: null,
+        assignmentSlug: null,
+        agent: 'claude',
+        sessionId: 'sess-xyz',
+        started: '2026-06-01T00:00:00Z',
+        status: 'active',
+        path: '/tmp/work',
+      });
+
+      const res = await fetch(`${commandUrl()}?session=sess-xyz`);
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      expect(body.mode).toBe('resume');
+      expect(body.command).toBe("cd '/tmp/work' && 'claude' '--resume' 'sess-xyz'");
+    });
+  });
+
+  it('returns a non-null fallbackWarning and the repository cwd when the worktree is gone', async () => {
+    await withSessionDb(async () => {
+      const { appendSession } = await import('../dashboard/agent-sessions.js');
+      const repoDir = join(tmpHome, 'fb-repo');
+      await mkdir(repoDir, { recursive: true });
+      const goneWt = join(tmpHome, 'fb-gone-wt');
+
+      const id = '66666666-6666-6666-6666-666666666666';
+      const assignmentSlug = `task-${id.slice(0, 8)}`;
+      await writeAssignment(id, {
+        worktreePath: goneWt,
+        repository: repoDir,
+        branch: 'feat/fb',
+      });
+      await appendSession('', {
+        projectSlug: 'demo',
+        assignmentSlug,
+        agent: 'claude',
+        sessionId: 'sess-fb',
+        started: '2026-06-01T00:00:00Z',
+        status: 'active',
+        path: goneWt,
+      });
+
+      const res = await fetch(`${commandUrl()}?session=sess-fb&mode=resume`);
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      expect(typeof body.fallbackWarning).toBe('string');
+      expect(body.fallbackWarning.length).toBeGreaterThan(0);
+      expect(body.cwd).toBe(repoDir);
+    });
+  });
+
+  it('keeps session.path with a NULL warning when both worktree and repository are gone but fields are populated', async () => {
+    await withSessionDb(async () => {
+      const { appendSession } = await import('../dashboard/agent-sessions.js');
+      const goneWt = join(tmpHome, 'stale-gone-wt');
+
+      const id = '77777777-7777-7777-7777-777777777777';
+      const assignmentSlug = `task-${id.slice(0, 8)}`;
+      await writeAssignment(id, {
+        worktreePath: goneWt,
+        repository: join(tmpHome, 'stale-gone-repo'),
+        branch: 'feat/none',
+      });
+      await appendSession('', {
+        projectSlug: 'demo',
+        assignmentSlug,
+        agent: 'claude',
+        sessionId: 'sess-stale',
+        started: '2026-06-01T00:00:00Z',
+        status: 'active',
+        path: goneWt,
+      });
+
+      const res = await fetch(`${commandUrl()}?session=sess-stale&mode=resume`);
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      expect(body.fallbackWarning).toBeNull();
+      expect(body.cwd).toBe(goneWt);
+      expect(body.command.startsWith(`cd '${goneWt}' &&`)).toBe(true);
+    });
+  });
+
+  it('returns 404 when the session does not exist (DB initialized, empty)', async () => {
+    await withSessionDb(async () => {
+      const res = await fetch(`${commandUrl()}?session=does-not-exist`);
+      expect(res.status).toBe(404);
+      const body = await res.json();
+      expect(typeof body.error).toBe('string');
+    });
+  });
+
+  it('returns 422 when the session was started with an unconfigured agent', async () => {
+    await withSessionDb(async () => {
+      const { appendSession } = await import('../dashboard/agent-sessions.js');
+      await appendSession('', {
+        projectSlug: null,
+        assignmentSlug: null,
+        agent: 'ghost-agent',
+        sessionId: 'sess-ghost',
+        started: '2026-06-01T00:00:00Z',
+        status: 'active',
+        path: '/tmp/work',
+      });
+
+      const res = await fetch(`${commandUrl()}?session=sess-ghost&mode=resume`);
+      expect(res.status).toBe(422);
+      const body = await res.json();
+      expect(body.error).toContain('ghost-agent');
+    });
+  });
+
+  it('returns 422 when the agent does not support the requested mode (fork)', async () => {
+    const { writeAgentsConfig } = await import('../utils/config.js');
+    await writeAgentsConfig([
+      {
+        id: 'noforkagent',
+        label: 'No Fork Agent',
+        command: 'noforkagent',
+        default: true,
+        resume: { args: ['--resume', '{id}'] },
+      },
+    ]);
+
+    await withSessionDb(async () => {
+      const { appendSession } = await import('../dashboard/agent-sessions.js');
+      await appendSession('', {
+        projectSlug: null,
+        assignmentSlug: null,
+        agent: 'noforkagent',
+        sessionId: 'sess-nofork',
+        started: '2026-06-01T00:00:00Z',
+        status: 'active',
+        path: '/tmp/work',
+      });
+
+      const res = await fetch(`${commandUrl()}?session=sess-nofork&mode=fork`);
+      expect(res.status).toBe(422);
+      const body = await res.json();
+      expect(body.error).toMatch(/fork/);
+    });
+  });
+
+  it('returns 500 when the session store is unreadable (non-LaunchError fault)', async () => {
+    // Skip initSessionDb() on purpose: getSessionById -> getSessionDb() throws a
+    // plain Error ("not initialized"), NOT a LaunchError. The handler must treat
+    // any non-allowlisted fault as a 500 — never mislabel it as a 4xx. Params are
+    // valid so the request gets past validation and into the try/catch.
+    const { resetSessionDb } = await import('../dashboard/session-db.js');
+    resetSessionDb();
+    try {
+      const res = await fetch(`${commandUrl()}?session=anything&mode=resume`);
+      expect(res.status).toBe(500);
+      const body = await res.json();
+      expect(body.error).toBe('launch command failed');
+    } finally {
+      resetSessionDb();
+    }
+  });
+
+  it('returns 400 when the session param is missing', async () => {
+    const res = await fetch(commandUrl());
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error).toMatch(/session/);
+  });
+
+  it('returns 400 for an invalid mode value', async () => {
+    const res = await fetch(`${commandUrl()}?session=sess-xyz&mode=bogus`);
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error).toMatch(/mode must be one of/);
+  });
+
+  it('returns 400 when session is a duplicated (array) query param', async () => {
+    const res = await fetch(`${commandUrl()}?session=a&session=b`);
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error).toMatch(/session/);
+  });
+});

@@ -221,14 +221,26 @@ const CMUX_LAUNCH_SCRIPT = [
 ].join('\n');
 
 /**
+ * Build the plain POSIX shell command line that actually runs inside the
+ * terminal: `cd '<cwd>' && '<command>' '<arg>' …` with every token
+ * shell-quoted. This is the single source of truth for "the command the launch
+ * button runs" — consumed by `buildTerminalInvocation` (which wraps it per
+ * terminal app) and by the dashboard's copy-launch-command endpoint. Exported
+ * for reuse + unit testing.
+ */
+export function buildShellCommandLine(plan: LaunchPlan): string {
+  const commandLine = [plan.argv.command, ...plan.argv.args]
+    .map(shellQuote)
+    .join(' ');
+  return `cd ${shellQuote(plan.cwd)} && ${commandLine}`;
+}
+
+/**
  * Build the argv that will be handed to `spawn` to open `plan.argv` in a new
  * window of `plan.terminal` at `plan.cwd`. Exported for unit testing.
  */
 export function buildTerminalInvocation(plan: LaunchPlan): TerminalInvocation {
-  const commandLine = [plan.argv.command, ...plan.argv.args]
-    .map(shellQuote)
-    .join(' ');
-  const cdAndRun = `cd ${shellQuote(plan.cwd)} && ${commandLine}`;
+  const cdAndRun = buildShellCommandLine(plan);
 
   switch (plan.terminal) {
     case 'terminal-app':
