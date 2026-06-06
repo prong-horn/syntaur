@@ -3,6 +3,8 @@ import { EventEmitter } from 'node:events';
 import { Readable } from 'node:stream';
 import {
   executeLaunchPlan,
+  buildShellCommandLine,
+  buildTerminalInvocation,
   TerminalNotFoundError,
   type LaunchPlan,
   type SpawnFn,
@@ -117,5 +119,52 @@ describe('executeLaunchPlan', () => {
       expect(err).toBeInstanceOf(TerminalNotFoundError);
       expect((err as Error).message).toContain('line one');
     }
+  });
+});
+
+describe('buildShellCommandLine', () => {
+  it('quotes every token: cd, command, and each arg', () => {
+    const cmd = buildShellCommandLine(
+      makePlan({
+        cwd: '/tmp/work',
+        argv: { command: 'claude', args: ['--resume', 'sess-xyz'] },
+      }),
+    );
+    expect(cmd).toBe("cd '/tmp/work' && 'claude' '--resume' 'sess-xyz'");
+  });
+
+  it('shell-escapes a cwd containing spaces', () => {
+    const cmd = buildShellCommandLine(
+      makePlan({
+        cwd: '/tmp/a b',
+        argv: { command: 'claude', args: ['--resume', 'id'] },
+      }),
+    );
+    expect(cmd.startsWith("cd '/tmp/a b' && 'claude'")).toBe(true);
+  });
+
+  it('escapes a single quote inside an argument', () => {
+    const cmd = buildShellCommandLine(
+      makePlan({ cwd: '/w', argv: { command: 'agent', args: ["a'b"] } }),
+    );
+    // POSIX single-quote escaping: ' -> '\''
+    expect(cmd).toBe("cd '/w' && 'agent' 'a'\\''b'");
+  });
+});
+
+describe('buildTerminalInvocation (regression guard after buildShellCommandLine extraction)', () => {
+  it('embeds the exact cdAndRun string in the Terminal.app osascript args', () => {
+    const inv = buildTerminalInvocation(
+      makePlan({
+        terminal: 'terminal-app',
+        cwd: '/tmp/work',
+        argv: { command: 'claude', args: ['--resume', 'sess-xyz'] },
+      }),
+    );
+    expect(inv.command).toBe('osascript');
+    // The cdAndRun line is wrapped by appleScriptString (double-quoted), so the
+    // inner shell command appears verbatim inside one of the -e args.
+    const expectedInner = "cd '/tmp/work' && 'claude' '--resume' 'sess-xyz'";
+    expect(inv.args.some((a) => a.includes(expectedInner))).toBe(true);
   });
 });

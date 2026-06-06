@@ -18,6 +18,7 @@ export {
 export {
   executeLaunchPlan,
   buildTerminalInvocation,
+  buildShellCommandLine,
   TerminalNotFoundError,
   type SpawnFn,
 } from './execute.js';

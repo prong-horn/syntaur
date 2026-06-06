@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { Activity, CheckSquare, Square, Trash2 } from 'lucide-react';
 import { CopyButton } from '../components/CopyButton';
+import { CopyLaunchCommandButton } from '../components/CopyLaunchCommandButton';
 import { SessionActionButtons } from '../components/SessionActionButtons';
 import { useAgentSessions, useProjects, useWorkspacePrefix } from '../hooks/useProjects';
 import { LoadingState } from '../components/LoadingState';
@@ -306,6 +307,7 @@ const [search, setSearch] = useState('');
                     })
                   }
                   onMarkStopped={handleMarkStopped}
+                  onCopyError={setDeleteError}
                 />
               ))}
             </tbody>
@@ -343,12 +345,14 @@ function SessionRow({
   onToggle,
   onDelete,
   onMarkStopped,
+  onCopyError,
 }: {
   session: AgentSessionWithLiveness;
   selected: boolean;
   onToggle: () => void;
   onDelete: () => void;
   onMarkStopped: (sessionId: string) => void;
+  onCopyError: (message: string) => void;
 }) {
   const wsPrefix = useWorkspacePrefix();
   const shortId = session.sessionId.length > 12
@@ -427,6 +431,13 @@ function SessionRow({
             {shortId}
           </span>
           <CopyButton value={session.sessionId} />
+          <CopyLaunchCommandButton
+            sessionId={session.sessionId}
+            disabled={!session.resumeSupported}
+            disabledReason="Resume not supported for this agent"
+            onError={(e) => onCopyError(e.message)}
+            onNotice={(m) => onCopyError(m)}
+          />
         </span>
       </td>
       <td className="py-2 pr-3 text-xs text-muted-foreground">
