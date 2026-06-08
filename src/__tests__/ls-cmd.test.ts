@@ -69,8 +69,12 @@ describe('syntaur ls', () => {
       resolve(projDir, 'project.md'),
       '---\nid: pid\nslug: p\ntitle: "P"\nworkspace: null\n---\n',
     );
-    const today = '2026-05-08T12:00:00Z';
-    const old = '2025-01-01T12:00:00Z';
+    // Relative to the real clock so the `--age` filter test is stable whenever
+    // it runs (a hardcoded date silently ages out of the window — it broke the
+    // 0.41.0 release CI once "today" drifted past 30 days old).
+    const DAY_MS = 24 * 60 * 60 * 1000;
+    const today = new Date(Date.now() - 3 * DAY_MS).toISOString(); // recent: within any --age window
+    const old = new Date(Date.now() - 400 * DAY_MS).toISOString(); // stale: outside 30d
     for (const a of [
       { id: 'a1', slug: 'a-pending', status: 'pending', tags: ['x', 'y'], updated: today },
       { id: 'a2', slug: 'a-progress', status: 'in_progress', tags: ['x'], updated: today },
