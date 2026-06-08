@@ -1365,6 +1365,8 @@ Built-in defaults apply when `types` is absent: `feature`, `bug`, `refactor`, `r
 | `promptArgPosition` | string (enum) | optional | `first` | Where the injected prompt sits in argv: `first` (default), `last`, or `none` (no prompt argv element — launcher still writes `.syntaur/context.json` and selects cwd). |
 | `default` | boolean | optional | `false` | Pre-selected option in the picker. At most one agent may be marked `default: true`. |
 | `resolveFromShellAliases` | boolean | optional | `false` | When true, launch via `$SHELL -i -c '<quoted command + args>'` so shell aliases resolve. Falls back to `/bin/sh` (with a warning) if `$SHELL` is unset or not absolute. |
+| `model` | string | optional | — | LLM model for this runner profile. Injected into the launched CLI as a generic `--model <value>` flag (placed after `args` so the profile is authoritative; included on fresh launch and resume/fork). Blank/absent omits the flag. Works for agents whose CLI accepts `--model` (e.g. claude, codex). |
+| `playbook` | string (slug) | optional | — | Playbook slug to run on a fresh "Open in agent" launch. When set, the seed prompt instructs the agent to `/grab-assignment` then `/run-playbook <slug>` end-to-end. Must be a valid playbook slug (`/^[a-z0-9]+(-[a-z0-9]+)*$/`). Blank/absent keeps the plain `/grab-assignment` seed. |
 
 Doctor (`syntaur doctor`) verifies every configured agent's `command` resolves: absolute paths must exist, bare names must be on `PATH`, and `resolveFromShellAliases: true` is accepted as-is with an informational detail.
 

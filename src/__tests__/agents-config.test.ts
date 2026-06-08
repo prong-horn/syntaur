@@ -94,6 +94,35 @@ describe('agents config', () => {
         ]),
       ).toThrow(/promptArgPosition/);
     });
+
+    it('accepts a valid model + playbook slug', () => {
+      expect(() =>
+        validateAgentList([
+          {
+            id: 'a',
+            label: 'A',
+            command: 'a',
+            model: 'opus',
+            playbook: 'e2e-dev-cycle',
+          },
+        ]),
+      ).not.toThrow();
+    });
+
+    it('rejects an invalid playbook slug (underscore / leading hyphen)', () => {
+      expect(() =>
+        validateAgentList([{ id: 'a', label: 'A', command: 'a', playbook: 'bad_slug' }]),
+      ).toThrow(/invalid playbook/);
+      expect(() =>
+        validateAgentList([{ id: 'a', label: 'A', command: 'a', playbook: '-leading' }]),
+      ).toThrow(/invalid playbook/);
+    });
+
+    it('rejects a model containing a newline', () => {
+      expect(() =>
+        validateAgentList([{ id: 'a', label: 'A', command: 'a', model: 'opus\nsonnet' }]),
+      ).toThrow(/invalid model/);
+    });
   });
 
   describe('round-trip', () => {
@@ -137,6 +166,26 @@ describe('agents config', () => {
       expect(config.agents?.[2]).toMatchObject({
         id: 'echoer',
         promptArgPosition: 'none',
+      });
+    });
+
+    it('round-trips model + playbook fields', async () => {
+      const agents: AgentConfig[] = [
+        {
+          id: 'claude-e2e',
+          label: 'Claude (e2e)',
+          command: 'claude',
+          default: true,
+          model: 'opus',
+          playbook: 'e2e-dev-cycle',
+        },
+      ];
+      await writeAgentsConfig(agents);
+      const config = await readConfig();
+      expect(config.agents?.[0]).toMatchObject({
+        id: 'claude-e2e',
+        model: 'opus',
+        playbook: 'e2e-dev-cycle',
       });
     });
 

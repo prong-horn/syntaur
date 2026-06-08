@@ -1,6 +1,8 @@
+import { useEffect, useState } from 'react';
 import { Terminal } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { useRecreateFlow } from './useRecreateFlow';
+import { useAgentsConfig } from '../hooks/useAgentsConfig';
 
 interface OpenInAgentButtonProps {
   /** Either an assignment id or a session id. */
@@ -47,6 +49,24 @@ export function OpenInAgentButton({
 
   const flow = useRecreateFlow();
 
+  // Agent picker (assignment only — sessions pin their agent from the record).
+  const agentsState = useAgentsConfig();
+  const agents = agentsState.agents;
+  const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
+  useEffect(() => {
+    // `useAgentsConfig` resolves asynchronously (starts as []). Initialize once
+    // it loads; preserve a still-valid current choice, else fall back to the
+    // configured default agent, else the first one.
+    if (agents.length === 0) return;
+    setSelectedAgentId((prev) => {
+      if (prev && agents.some((a) => a.id === prev)) return prev;
+      const def = agents.find((a) => a.default) ?? agents[0];
+      return def.id;
+    });
+  }, [agents]);
+
+  const showAgentPicker = target.kind === 'assignment' && agents.length > 0;
+
   const defaultTitle =
     target.kind === 'assignment'
       ? 'Open this assignment in your configured terminal + agent'
@@ -78,16 +98,40 @@ export function OpenInAgentButton({
 
   return (
     <>
-      <button
-        type="button"
-        onClick={() => void flow.open(target)}
-        disabled={flow.pending}
-        title={title ?? defaultTitle}
-        className={classes}
-      >
-        <Terminal className="size-3.5" />
-        <span>{target.kind === 'session' ? 'Open' : 'Open in agent'}</span>
-      </button>
+      <div className="inline-flex items-center gap-1.5">
+        {showAgentPicker && (
+          <select
+            value={selectedAgentId ?? ''}
+            onChange={(e) => setSelectedAgentId(e.target.value)}
+            disabled={flow.pending}
+            title="Agent to launch (runner profile)"
+            aria-label="Agent to launch"
+            className={cn(
+              'editor-input',
+              size === 'compact' ? 'px-1.5 py-1 text-xs' : 'text-sm',
+            )}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {agents.map((a) => (
+              <option key={a.id} value={a.id}>
+                {a.label}
+              </option>
+            ))}
+          </select>
+        )}
+        <button
+          type="button"
+          onClick={() =>
+            void flow.open(target, undefined, selectedAgentId ?? undefined)
+          }
+          disabled={flow.pending}
+          title={title ?? defaultTitle}
+          className={classes}
+        >
+          <Terminal className="size-3.5" />
+          <span>{target.kind === 'session' ? 'Open' : 'Open in agent'}</span>
+        </button>
+      </div>
       {flow.dialogs}
     </>
   );

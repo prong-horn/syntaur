@@ -33,6 +33,30 @@ describe('continuationUrl', () => {
       'syntaur://open?assignment=a1&terminal=wezterm',
     );
   });
+
+  it('appends &agent= for an assignment target (url-encoded)', () => {
+    expect(
+      continuationUrl({ kind: 'assignment', id: 'a1' }, undefined, undefined, 'claude e2e'),
+    ).toBe('syntaur://open?assignment=a1&agent=claude%20e2e');
+  });
+
+  it('appends &agent= alongside a fallback terminal', () => {
+    expect(
+      continuationUrl({ kind: 'assignment', id: 'a1' }, undefined, 'wezterm', 'codex'),
+    ).toBe('syntaur://open?assignment=a1&terminal=wezterm&agent=codex');
+  });
+
+  it('does NOT append agent for a session target (agent is pinned by the record)', () => {
+    expect(continuationUrl({ kind: 'session', id: 's1' }, 'resume', undefined, 'codex')).toBe(
+      'syntaur://open?session=s1&mode=resume',
+    );
+  });
+
+  it('omits agent when no agentId is given', () => {
+    expect(continuationUrl({ kind: 'assignment', id: 'a1' })).toBe(
+      'syntaur://open?assignment=a1',
+    );
+  });
 });
 
 describe('recreateRequest', () => {

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { buildAgentArgv, shellQuote, formatFallbackCwdWarning } from '../tui/launch.js';
+import { modelFlagArgs } from '../utils/agents-schema.js';
 import type { AgentConfig } from '../utils/config.js';
 
 describe('shellQuote', () => {
@@ -175,5 +176,81 @@ describe('buildAgentArgv', () => {
     const { argv } = buildAgentArgv(agent, prompt);
     expect(argv.command).toBe('/usr/local/bin/claude');
     expect(argv.args).toEqual([prompt, '--foo', 'bar']);
+  });
+
+  describe('model injection', () => {
+    it('appends --model after agent.args (position first)', () => {
+      const agent: AgentConfig = { id: 'x', label: 'X', command: 'claude', model: 'opus' };
+      const { argv } = buildAgentArgv(agent, prompt);
+      expect(argv.args).toEqual([prompt, '--model', 'opus']);
+    });
+
+    it('places --model after args, before the trailing prompt (position last)', () => {
+      const agent: AgentConfig = {
+        id: 'x',
+        label: 'X',
+        command: 'claude',
+        args: ['--flag'],
+        promptArgPosition: 'last',
+        model: 'sonnet',
+      };
+      const { argv } = buildAgentArgv(agent, prompt);
+      expect(argv.args).toEqual(['--flag', '--model', 'sonnet', prompt]);
+    });
+
+    it('omits --model when model is blank/absent', () => {
+      const agent: AgentConfig = { id: 'x', label: 'X', command: 'claude', model: '  ' };
+      const { argv } = buildAgentArgv(agent, prompt);
+      expect(argv.args).toEqual([prompt]);
+      expect(argv.args).not.toContain('--model');
+    });
+
+    it('profile model wins over a hand-written --model in args (last-wins ordering)', () => {
+      const agent: AgentConfig = {
+        id: 'x',
+        label: 'X',
+        command: 'claude',
+        args: ['--model', 'sonnet'],
+        promptArgPosition: 'none',
+        model: 'opus',
+      };
+      const { argv } = buildAgentArgv(agent, prompt);
+      // profile --model opus comes AFTER the manual one → CLI resolves last.
+      expect(argv.args).toEqual(['--model', 'sonnet', '--model', 'opus']);
+    });
+
+    it('includes --model in the resolveFromShellAliases quoting', () => {
+      const agent: AgentConfig = {
+        id: 'c',
+        label: 'x',
+        command: 'c',
+        args: ['--x'],
+        resolveFromShellAliases: true,
+        model: 'opus',
+      };
+      const { argv } = buildAgentArgv(agent, prompt, { SHELL: '/bin/zsh' });
+      expect(argv.args[2]).toBe(`'c' 'hello world' '--x' '--model' 'opus'`);
+    });
+  });
+});
+
+describe('modelFlagArgs', () => {
+  it('returns the flag pair when model is set', () => {
+    expect(modelFlagArgs({ id: 'x', label: 'X', command: 'claude', model: 'opus' })).toEqual([
+      '--model',
+      'opus',
+    ]);
+  });
+
+  it('trims surrounding whitespace', () => {
+    expect(modelFlagArgs({ id: 'x', label: 'X', command: 'claude', model: '  opus ' })).toEqual([
+      '--model',
+      'opus',
+    ]);
+  });
+
+  it('returns [] when model is undefined or blank', () => {
+    expect(modelFlagArgs({ id: 'x', label: 'X', command: 'claude' })).toEqual([]);
+    expect(modelFlagArgs({ id: 'x', label: 'X', command: 'claude', model: '   ' })).toEqual([]);
   });
 });

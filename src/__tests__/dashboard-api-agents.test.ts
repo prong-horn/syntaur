@@ -202,6 +202,48 @@ describe('PUT /api/config/agents', () => {
     expect(r.status).toBe(400);
     expect(r.body.fieldErrors[0]).toMatchObject({ id: 'foo', field: 'args' });
   });
+
+  it('accepts and round-trips model + playbook', async () => {
+    const r = await put({
+      agents: [
+        {
+          id: 'claude',
+          label: 'Claude',
+          command: 'claude',
+          model: 'opus',
+          playbook: 'e2e-dev-cycle',
+        },
+      ],
+    });
+    expect(r.status).toBe(200);
+    expect(r.body.agents[0]).toMatchObject({ model: 'opus', playbook: 'e2e-dev-cycle' });
+  });
+
+  it('normalizes empty/whitespace model + playbook to omitted', async () => {
+    const r = await put({
+      agents: [{ id: 'foo', label: 'Foo', command: 'foo', model: '   ', playbook: '' }],
+    });
+    expect(r.status).toBe(200);
+    expect(r.body.agents[0].model).toBeUndefined();
+    expect(r.body.agents[0].playbook).toBeUndefined();
+  });
+
+  it('400 + fieldErrors when model is not a string', async () => {
+    const r = await put({
+      agents: [{ id: 'foo', label: 'Foo', command: 'foo', model: 123 }],
+    });
+    expect(r.status).toBe(400);
+    expect(r.body.fieldErrors[0]).toMatchObject({ id: 'foo', field: 'model' });
+  });
+
+  it('400 + fieldErrors mapping an invalid playbook slug to field:playbook', async () => {
+    const r = await put({
+      agents: [{ id: 'foo', label: 'Foo', command: 'foo', playbook: 'bad_slug' }],
+    });
+    expect(r.status).toBe(400);
+    expect(r.body.error).toMatch(/invalid playbook/);
+    expect(r.body.fieldErrors[0]).toMatchObject({ id: 'foo', field: 'playbook' });
+  });
 });
 
 describe('DELETE /api/config/agents', () => {

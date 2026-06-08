@@ -1,5 +1,6 @@
 import { isAbsolute } from 'node:path';
 import type { AgentConfig } from '../utils/config.js';
+import { modelFlagArgs } from '../utils/agents-schema.js';
 import { buildAgentArgv, shellQuote } from '../tui/launch.js';
 import type { BuiltArgv } from './types.js';
 import { LaunchError } from './plan.js';
@@ -52,7 +53,11 @@ export function buildSessionArgv(
     a === '{id}' ? sessionId : a,
   );
   const command = invocation.command ?? agent.command;
-  const agentArgs = [...(agent.args ?? []), ...substituted];
+  // Model flag goes after the agent's own args (profile-authoritative via
+  // last-wins) but BEFORE the resume/fork `substituted` args — subcommand-style
+  // agents need `--model <v>` ahead of the `resume`/`fork` token
+  // (e.g. `codex --model <v> resume <id>`).
+  const agentArgs = [...(agent.args ?? []), ...modelFlagArgs(agent), ...substituted];
 
   if (agent.resolveFromShellAliases) {
     const requested = env.SHELL;

@@ -65,6 +65,14 @@ export interface ResolveLaunchPlanInput {
    * dialog can confirm a different terminal without mutating user config.
    */
   terminalOverride?: TerminalChoice;
+  /**
+   * Only consulted when `kind === 'assignment'`. The agent id to launch with,
+   * wired from `?agent=<id>` on the incoming `syntaur://` URL so the dashboard's
+   * "Open in agent" picker can launch a specific runner profile. When unset,
+   * falls back to `pickAgent(config)` (the default agent). An unknown id throws
+   * `LaunchError('agent-not-configured')`.
+   */
+  agentId?: string;
 }
 
 /**
@@ -144,13 +152,26 @@ async function resolveAssignmentPlan(
   const cwd = picked.cwd;
   const fallbackWarning = picked.fallbackWarning;
 
-  const agent = pickAgent(input.config);
+  let agent: AgentConfig;
+  if (input.agentId) {
+    const found = getAgents(input.config).find((a) => a.id === input.agentId);
+    if (!found) {
+      throw new LaunchError(
+        'agent-not-configured',
+        `Agent "${input.agentId}" requested in the open URL is not in your agents list.`,
+      );
+    }
+    agent = found;
+  } else {
+    agent = pickAgent(input.config);
+  }
   const { argv, shellFallbackWarning } = buildFreshArgv(
     agent,
     INITIAL_PROMPT({
       projectSlug: resolved.projectSlug,
       assignmentSlug: resolved.assignmentSlug,
       id: resolved.id,
+      playbook: agent.playbook,
     }),
   );
 

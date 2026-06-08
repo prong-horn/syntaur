@@ -51,6 +51,8 @@ type PreflightResponse = PreflightOk | PreflightMiss | PreflightWorkspaceInvalid
 interface Pending {
   target: ContinuationTarget;
   mode?: ReopenMode;
+  /** Agent id to launch with (assignment "Open in agent" picker). */
+  agentId?: string;
 }
 
 /**
@@ -73,7 +75,11 @@ export function useRecreateFlow() {
   const [recreateError, setRecreateError] = useState<string | null>(null);
   const [recreateNote, setRecreateNote] = useState<string | null>(null);
 
-  async function open(target: ContinuationTarget, mode?: ReopenMode): Promise<void> {
+  async function open(
+    target: ContinuationTarget,
+    mode?: ReopenMode,
+    agentId?: string,
+  ): Promise<void> {
     if (pending) return;
     setPending(true);
     try {
@@ -85,12 +91,12 @@ export function useRecreateFlow() {
       if (!res.ok) {
         // Network/5xx — best effort: fire the link; the CLI/applet surfaces any
         // launch error itself.
-        window.location.href = continuationUrl(target, mode);
+        window.location.href = continuationUrl(target, mode, undefined, agentId);
         return;
       }
       const body = (await res.json()) as PreflightResponse;
       if (body.ok) {
-        window.location.href = continuationUrl(target, mode);
+        window.location.href = continuationUrl(target, mode, undefined, agentId);
         return;
       }
       if (body.reason === 'workspace-path-invalid') {
@@ -98,17 +104,17 @@ export function useRecreateFlow() {
         // directory). Offer recreate when possible; else the read-only reason.
         if (body.recreate) {
           setRecreate(body.recreate);
-          setRecreatePending({ target, mode });
+          setRecreatePending({ target, mode, agentId });
         } else {
           setWorkspaceError(body.message);
         }
         return;
       }
       setMiss(body);
-      setMissPending({ target, mode });
+      setMissPending({ target, mode, agentId });
     } catch (err) {
       console.warn('preflight failed, firing without override:', err);
-      window.location.href = continuationUrl(target, mode);
+      window.location.href = continuationUrl(target, mode, undefined, agentId);
     } finally {
       setPending(false);
     }
@@ -120,6 +126,7 @@ export function useRecreateFlow() {
       missPending.target,
       missPending.mode,
       miss.suggestedFallback,
+      missPending.agentId,
     );
     setMiss(null);
     setMissPending(null);
@@ -136,13 +143,13 @@ export function useRecreateFlow() {
         projectSlug: recreate.projectSlug,
         assignmentSlug: recreate.assignmentSlug,
       });
-      const { target, mode } = recreatePending;
+      const { target, mode, agentId } = recreatePending;
       setRecreate(null);
       setRecreatePending(null);
       // The worktree now exists at the exact recorded path — re-fire the
       // original open. A `syntaur://` href triggers the OS handler without
       // unloading this page, so any non-exact note below still renders.
-      window.location.href = continuationUrl(target, mode);
+      window.location.href = continuationUrl(target, mode, undefined, agentId);
       if (!result.exact && !result.alreadyExisted) {
         setRecreateNote(
           `Recreated from ${result.baseUsed} — the original branch couldn't be ` +

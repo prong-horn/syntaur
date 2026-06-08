@@ -49,6 +49,24 @@ describe('buildSessionArgv', () => {
     expect(argv.args).toEqual(['--profile', 'work', 'resume', 'sess-5']);
   });
 
+  it('injects --model after agent.args and before the resume subcommand args', () => {
+    const codexWithModel: AgentConfig = { ...codex, model: 'gpt-5.5-codex' };
+    const { argv } = buildSessionArgv(codexWithModel, 'sess-5b', 'resume');
+    expect(argv.command).toBe('codex');
+    expect(argv.args).toEqual(['--model', 'gpt-5.5-codex', 'resume', 'sess-5b']);
+  });
+
+  it('injects --model after agent.args (claude resume) when both args and model are set', () => {
+    const claudeWithModel: AgentConfig = { ...claude, args: ['--verbose'], model: 'opus' };
+    const { argv } = buildSessionArgv(claudeWithModel, 'sess-5c', 'resume');
+    expect(argv.args).toEqual(['--verbose', '--model', 'opus', '--resume', 'sess-5c']);
+  });
+
+  it('omits --model when model is unset', () => {
+    const { argv } = buildSessionArgv(codex, 'sess-5d', 'resume');
+    expect(argv.args).not.toContain('--model');
+  });
+
   it('applies invocation.command override over agent.command', () => {
     const custom: AgentConfig = {
       id: 'custom',

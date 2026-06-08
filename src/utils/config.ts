@@ -21,6 +21,7 @@ import {
   type PromptArgPosition,
   type SessionInvocation,
 } from './agents-schema.js';
+import { isValidSlug } from './slug.js';
 
 export {
   AGENT_ID_PATTERN,
@@ -227,6 +228,20 @@ export function validateAgentList(agents: AgentConfig[]): void {
     ) {
       throw new AgentConfigError(
         `agent "${agent.id}" has invalid promptArgPosition "${agent.promptArgPosition}" — expected first|last|none`,
+      );
+    }
+    if (agent.model !== undefined && /[\r\n]/.test(agent.model)) {
+      throw new AgentConfigError(
+        `agent "${agent.id}" has invalid model — must be a single line (no newlines)`,
+      );
+    }
+    if (
+      agent.playbook !== undefined &&
+      agent.playbook.trim() !== '' &&
+      !isValidSlug(agent.playbook)
+    ) {
+      throw new AgentConfigError(
+        `agent "${agent.id}" has invalid playbook "${agent.playbook}" — must be a valid playbook slug`,
       );
     }
     validateSessionInvocation(agent, 'resume', agent.resume);
@@ -1114,6 +1129,8 @@ function parseAgentsConfig(content: string): AgentConfig[] | null {
         : {}),
       ...(current.default ? { default: true } : {}),
       ...(current.resolveFromShellAliases ? { resolveFromShellAliases: true } : {}),
+      ...(current.model ? { model: current.model } : {}),
+      ...(current.playbook ? { playbook: current.playbook } : {}),
       ...(current.resume ? { resume: current.resume } : {}),
       ...(current.fork ? { fork: current.fork } : {}),
     });
@@ -1246,6 +1263,8 @@ const KNOWN_AGENT_SCALAR_FIELDS: ReadonlySet<string> = new Set([
   'promptArgPosition',
   'default',
   'resolveFromShellAliases',
+  'model',
+  'playbook',
 ]);
 
 /**
@@ -1330,6 +1349,12 @@ function assignAgentField(target: Partial<AgentConfig>, key: string, rawValue: s
     case 'resolveFromShellAliases':
       target.resolveFromShellAliases = value === 'true';
       break;
+    case 'model':
+      target.model = value;
+      break;
+    case 'playbook':
+      target.playbook = value;
+      break;
   }
 }
 
@@ -1355,6 +1380,12 @@ function serializeAgentsConfig(agents: AgentConfig[]): string {
     lines.push(`  - id: ${yamlQuoteScalar(a.id)}`);
     lines.push(`    label: ${yamlQuoteScalar(a.label)}`);
     lines.push(`    command: ${yamlQuoteScalar(a.command)}`);
+    if (a.model) {
+      lines.push(`    model: ${yamlQuoteScalar(a.model)}`);
+    }
+    if (a.playbook) {
+      lines.push(`    playbook: ${yamlQuoteScalar(a.playbook)}`);
+    }
     if (a.args && a.args.length > 0) {
       lines.push(`    args:`);
       for (const arg of a.args) {

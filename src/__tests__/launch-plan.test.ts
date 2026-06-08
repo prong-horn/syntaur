@@ -149,6 +149,111 @@ describe('resolveLaunchPlan — assignment mode', () => {
     expect(plan.terminal).toBe('ghostty');
   });
 
+  it('uses the requested agentId instead of the default', async () => {
+    const worktree = resolve(testDir, 'wt-agent');
+    await mkdir(worktree, { recursive: true });
+    await scaffoldAssignment(projectsDir, 'demo-project', 'demo-asg', ASSIGNMENT_ID, {
+      worktreePath: worktree,
+      branch: 'feat/x',
+    });
+    const agents: AgentConfig[] = [
+      { id: 'codex', label: 'Codex', command: 'codex' },
+      { id: 'claude', label: 'Claude', command: 'claude', default: true },
+    ];
+
+    const plan = await resolveLaunchPlan({
+      kind: 'assignment',
+      id: ASSIGNMENT_ID,
+      config: makeConfig({ agents }),
+      projectsDir,
+      assignmentsDir,
+      agentId: 'codex',
+    });
+
+    expect(plan.agentId).toBe('codex');
+    expect(plan.argv.command).toBe('codex');
+  });
+
+  it('falls back to the default agent when agentId is omitted', async () => {
+    const worktree = resolve(testDir, 'wt-default');
+    await mkdir(worktree, { recursive: true });
+    await scaffoldAssignment(projectsDir, 'demo-project', 'demo-asg', ASSIGNMENT_ID, {
+      worktreePath: worktree,
+      branch: 'feat/x',
+    });
+    const agents: AgentConfig[] = [
+      { id: 'codex', label: 'Codex', command: 'codex' },
+      { id: 'claude', label: 'Claude', command: 'claude', default: true },
+    ];
+
+    const plan = await resolveLaunchPlan({
+      kind: 'assignment',
+      id: ASSIGNMENT_ID,
+      config: makeConfig({ agents }),
+      projectsDir,
+      assignmentsDir,
+    });
+
+    expect(plan.agentId).toBe('claude');
+  });
+
+  it('throws agent-not-configured for an unknown agentId', async () => {
+    const worktree = resolve(testDir, 'wt-unknown');
+    await mkdir(worktree, { recursive: true });
+    await scaffoldAssignment(projectsDir, 'demo-project', 'demo-asg', ASSIGNMENT_ID, {
+      worktreePath: worktree,
+      branch: 'feat/x',
+    });
+
+    await expect(
+      resolveLaunchPlan({
+        kind: 'assignment',
+        id: ASSIGNMENT_ID,
+        config: makeConfig(),
+        projectsDir,
+        assignmentsDir,
+        agentId: 'ghost',
+      }),
+    ).rejects.toThrowError(
+      expect.objectContaining({ code: 'agent-not-configured' }),
+    );
+  });
+
+  it('threads the agent profile model + playbook into the launch', async () => {
+    const worktree = resolve(testDir, 'wt-profile');
+    await mkdir(worktree, { recursive: true });
+    await scaffoldAssignment(projectsDir, 'demo-project', 'demo-asg', ASSIGNMENT_ID, {
+      worktreePath: worktree,
+      branch: 'feat/x',
+    });
+    const agents: AgentConfig[] = [
+      {
+        id: 'claude',
+        label: 'Claude',
+        command: 'claude',
+        default: true,
+        model: 'opus',
+        playbook: 'e2e-dev-cycle',
+      },
+    ];
+
+    const plan = await resolveLaunchPlan({
+      kind: 'assignment',
+      id: ASSIGNMENT_ID,
+      config: makeConfig({ agents }),
+      projectsDir,
+      assignmentsDir,
+    });
+
+    // Playbook → instruction-style seed chaining grab + run-playbook.
+    expect(plan.argv.args[0]).toContain('/grab-assignment');
+    expect(plan.argv.args[0]).toContain('/run-playbook');
+    expect(plan.argv.args[0]).toContain('e2e-dev-cycle');
+    // Model → --model opus injected.
+    expect(plan.argv.args).toContain('--model');
+    expect(plan.argv.args).toContain('opus');
+  });
+
   it('falls back to repository and emits a warning when worktreePath is missing', async () => {
     const repo = resolve(testDir, 'repo');
     await mkdir(repo, { recursive: true });

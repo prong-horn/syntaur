@@ -15,12 +15,15 @@ export type ContinuationTarget =
  * Sessions carry `&mode=resume|fork` so a fork never silently degrades into a
  * resume; assignments take no mode. An optional `fallbackTerminal` appends
  * `&terminal=` so a one-click "open in <fallback>" honors the override for that
- * single launch without mutating config.
+ * single launch without mutating config. An optional `agentId` appends `&agent=`
+ * for ASSIGNMENT targets only (so the "Open in agent" picker can launch a
+ * specific runner profile); sessions pin their agent from the session record.
  */
 export function continuationUrl(
   target: ContinuationTarget,
   mode?: ReopenMode,
   fallbackTerminal?: string,
+  agentId?: string,
 ): string {
   let url = `syntaur://open?${target.kind}=${encodeURIComponent(target.id)}`;
   if (target.kind === 'session' && mode) {
@@ -28,6 +31,9 @@ export function continuationUrl(
   }
   if (fallbackTerminal) {
     url += `&terminal=${encodeURIComponent(fallbackTerminal)}`;
+  }
+  if (agentId && target.kind === 'assignment') {
+    url += `&agent=${encodeURIComponent(agentId)}`;
   }
   return url;
 }

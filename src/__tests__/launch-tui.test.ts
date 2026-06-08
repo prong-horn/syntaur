@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { EventEmitter } from 'node:events';
 import type { ChildProcess } from 'node:child_process';
-import { launchAgent } from '../tui/launch.js';
+import { launchAgent, INITIAL_PROMPT } from '../tui/launch.js';
 import type { AgentConfig } from '../utils/config.js';
 
 const AGENT: AgentConfig = {
@@ -219,5 +219,70 @@ describe('launchAgent — validated cwd resolution', () => {
 
     expect(calls).toHaveLength(0);
     expect(code).toBe(1);
+  });
+});
+
+describe('INITIAL_PROMPT', () => {
+  describe('without a playbook (unchanged behavior)', () => {
+    it('project-nested → /grab-assignment <proj> <asg>', () => {
+      expect(INITIAL_PROMPT({ projectSlug: 'proj', assignmentSlug: 'asg' })).toBe(
+        '/grab-assignment proj asg',
+      );
+    });
+
+    it('standalone with id → /grab-assignment --id <uuid>', () => {
+      expect(
+        INITIAL_PROMPT({ projectSlug: null, assignmentSlug: 'asg', id: 'uuid-1' }),
+      ).toBe('/grab-assignment --id uuid-1');
+    });
+
+    it('slug fallback (no project, no id) → /grab-assignment <slug>', () => {
+      expect(INITIAL_PROMPT({ projectSlug: null, assignmentSlug: 'asg' })).toBe(
+        '/grab-assignment asg',
+      );
+    });
+
+    it('treats a blank playbook as no playbook', () => {
+      expect(
+        INITIAL_PROMPT({ projectSlug: 'proj', assignmentSlug: 'asg', playbook: '   ' }),
+      ).toBe('/grab-assignment proj asg');
+    });
+  });
+
+  describe('with a playbook (chains grab + run-playbook)', () => {
+    it('project-nested references proj/asg, /grab-assignment, /run-playbook and the slug', () => {
+      const out = INITIAL_PROMPT({
+        projectSlug: 'proj',
+        assignmentSlug: 'asg',
+        playbook: 'e2e-dev-cycle',
+      });
+      expect(out).toContain('proj/asg');
+      expect(out).toContain('/grab-assignment');
+      expect(out).toContain('/run-playbook');
+      expect(out).toContain('e2e-dev-cycle');
+      expect(out).toContain('end-to-end');
+    });
+
+    it('standalone references the uuid via --id', () => {
+      const out = INITIAL_PROMPT({
+        projectSlug: null,
+        assignmentSlug: 'asg',
+        id: 'uuid-9',
+        playbook: 'create-and-plan-assignment',
+      });
+      expect(out).toContain('/grab-assignment --id uuid-9');
+      expect(out).toContain('create-and-plan-assignment');
+    });
+
+    it('slug fallback references the assignment slug', () => {
+      const out = INITIAL_PROMPT({
+        projectSlug: null,
+        assignmentSlug: 'asg',
+        playbook: 'keep-records-updated',
+      });
+      expect(out).toContain('`asg`');
+      expect(out).toContain('/grab-assignment');
+      expect(out).toContain('keep-records-updated');
+    });
   });
 });

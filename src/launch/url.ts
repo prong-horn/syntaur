@@ -44,6 +44,14 @@ export interface ParsedOpenUrl {
    * process may still be writing the transcript.
    */
   mode?: SessionMode;
+  /**
+   * Optional agent id to launch with (the `agent=` query param). Lets the
+   * dashboard's "Open in agent" picker launch a specific runner profile instead
+   * of the configured default. Only honored for `kind === 'assignment'`; for
+   * sessions the agent is pinned by the session record, so the value is
+   * parsed-but-ignored rather than rejected (keeps the parser simple).
+   */
+  agent?: string;
 }
 
 /**
@@ -131,6 +139,18 @@ export function parseOpenUrl(input: string): ParsedOpenUrl {
     terminal = candidate as TerminalChoice;
   }
 
+  const agentVals = url.searchParams.getAll('agent');
+  if (agentVals.length > 1) {
+    throw new OpenUrlError(
+      'duplicate-param',
+      'URL has more than one `agent` query param',
+    );
+  }
+  let agent: string | undefined;
+  if (agentVals.length === 1 && agentVals[0].trim() !== '') {
+    agent = agentVals[0];
+  }
+
   if (assignmentVals.length === 1) {
     const id = assignmentVals[0];
     if (id.trim() === '') {
@@ -139,7 +159,12 @@ export function parseOpenUrl(input: string): ParsedOpenUrl {
         '`assignment` query param is empty',
       );
     }
-    return { kind: 'assignment', id, ...(terminal ? { terminal } : {}) };
+    return {
+      kind: 'assignment',
+      id,
+      ...(terminal ? { terminal } : {}),
+      ...(agent ? { agent } : {}),
+    };
   }
 
   if (sessionVals.length === 1) {
@@ -166,7 +191,13 @@ export function parseOpenUrl(input: string): ParsedOpenUrl {
       }
       mode = raw as SessionMode;
     }
-    return { kind: 'session', id, mode, ...(terminal ? { terminal } : {}) };
+    return {
+      kind: 'session',
+      id,
+      mode,
+      ...(terminal ? { terminal } : {}),
+      ...(agent ? { agent } : {}),
+    };
   }
 
   throw new OpenUrlError(

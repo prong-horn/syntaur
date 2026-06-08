@@ -38,6 +38,13 @@ import {
   AgentsConfigError,
   type FieldError,
 } from '../hooks/useAgentsConfig';
+import { usePlaybooks } from '../hooks/useProjects';
+
+/** Minimal shape of the playbook options passed down to each agent row. */
+interface PlaybookOption {
+  slug: string;
+  name: string;
+}
 
 type FieldKey =
   | 'id'
@@ -47,6 +54,8 @@ type FieldKey =
   | 'promptArgPosition'
   | 'resolveFromShellAliases'
   | 'default'
+  | 'model'
+  | 'playbook'
   | 'row';
 
 interface EditableAgent {
@@ -62,6 +71,8 @@ interface EditableAgent {
   promptArgPosition: PromptArgPosition;
   resolveFromShellAliases: boolean;
   default: boolean;
+  model: string;
+  playbook: string;
   fieldErrors: Partial<Record<FieldKey, string>>;
 }
 
@@ -89,6 +100,8 @@ function hydrate(agents: AgentConfig[]): EditableAgent[] {
     promptArgPosition: a.promptArgPosition ?? 'first',
     resolveFromShellAliases: a.resolveFromShellAliases ?? false,
     default: a.default ?? false,
+    model: a.model ?? '',
+    playbook: a.playbook ?? '',
     fieldErrors: {},
   }));
 }
@@ -105,6 +118,8 @@ function buildPayload(rows: EditableAgent[]): AgentConfig[] {
     if (row.promptArgPosition !== 'first') agent.promptArgPosition = row.promptArgPosition;
     if (row.resolveFromShellAliases) agent.resolveFromShellAliases = true;
     if (row.default) agent.default = true;
+    if (row.model.trim()) agent.model = row.model.trim();
+    if (row.playbook.trim()) agent.playbook = row.playbook.trim();
     return agent;
   });
 }
@@ -169,7 +184,9 @@ function rowsAreEqual(a: EditableAgent[], b: EditableAgent[]): boolean {
       ai.argsText !== bi.argsText ||
       ai.promptArgPosition !== bi.promptArgPosition ||
       ai.resolveFromShellAliases !== bi.resolveFromShellAliases ||
-      ai.default !== bi.default
+      ai.default !== bi.default ||
+      ai.model !== bi.model ||
+      ai.playbook !== bi.playbook
     ) {
       return false;
     }
@@ -181,6 +198,7 @@ interface SortableAgentRowProps {
   row: EditableAgent;
   index: number;
   canRemove: boolean;
+  playbooks: PlaybookOption[];
   onPatch: (patch: Partial<EditableAgent>) => void;
   onSetDefault: () => void;
   onRemove: () => void;
@@ -190,6 +208,7 @@ function SortableAgentRow({
   row,
   index,
   canRemove,
+  playbooks,
   onPatch,
   onSetDefault,
   onRemove,
@@ -356,6 +375,45 @@ function SortableAgentRow({
             </p>
           )}
         </div>
+        <div>
+          <label className="text-[11px] uppercase tracking-wide text-muted-foreground/80">
+            Model
+          </label>
+          <input
+            type="text"
+            value={row.model}
+            placeholder="opus (optional)"
+            onChange={(e) => onPatch({ model: e.target.value })}
+            className={`editor-input mt-0.5 w-full font-mono ${errorClass('model')}`}
+          />
+          {row.fieldErrors.model && (
+            <p className="mt-0.5 text-[11px] text-error-foreground">{row.fieldErrors.model}</p>
+          )}
+        </div>
+        <div>
+          <label className="text-[11px] uppercase tracking-wide text-muted-foreground/80">
+            Playbook
+          </label>
+          <select
+            value={row.playbook}
+            onChange={(e) => onPatch({ playbook: e.target.value })}
+            className={`editor-input mt-0.5 w-full ${errorClass('playbook')}`}
+          >
+            <option value="">— none —</option>
+            {playbooks.map((p) => (
+              <option key={p.slug} value={p.slug}>
+                {p.name}
+              </option>
+            ))}
+            {/* Preserve a stale/disabled slug that isn't in the enabled list. */}
+            {row.playbook && !playbooks.some((p) => p.slug === row.playbook) && (
+              <option value={row.playbook}>{row.playbook} (unavailable)</option>
+            )}
+          </select>
+          {row.fieldErrors.playbook && (
+            <p className="mt-0.5 text-[11px] text-error-foreground">{row.fieldErrors.playbook}</p>
+          )}
+        </div>
         <label className="col-span-full inline-flex items-center gap-1.5 text-xs text-muted-foreground">
           <input
             type="checkbox"
@@ -372,6 +430,14 @@ function SortableAgentRow({
 
 export function AgentsSection() {
   const serverState = useAgentsConfig();
+  const playbooksState = usePlaybooks();
+  const playbookOptions = useMemo<PlaybookOption[]>(
+    () =>
+      (playbooksState.data?.playbooks ?? [])
+        .filter((p) => p.enabled)
+        .map((p) => ({ slug: p.slug, name: p.name })),
+    [playbooksState.data],
+  );
   const [rows, setRows] = useState<EditableAgent[]>(() => hydrate(serverState.agents));
   const [hydrated, setHydrated] = useState<EditableAgent[]>(() => hydrate(serverState.agents));
   const [saving, setSaving] = useState(false);
@@ -448,6 +514,8 @@ export function AgentsSection() {
         // binaries if they care about the startup overhead.
         resolveFromShellAliases: true,
         default: false,
+        model: '',
+        playbook: '',
         fieldErrors: {},
       };
       return [...prev, next];
@@ -577,6 +645,7 @@ export function AgentsSection() {
                 row={row}
                 index={i}
                 canRemove={rows.length > 1}
+                playbooks={playbookOptions}
                 onPatch={(patch) => patchRow(row.rowKey, patch)}
                 onSetDefault={() => setDefaultRow(row.rowKey)}
                 onRemove={() => removeRow(row.rowKey)}
@@ -633,5 +702,7 @@ function stripErrorsForPatch(
   if ('promptArgPosition' in patch) delete next.promptArgPosition;
   if ('resolveFromShellAliases' in patch) delete next.resolveFromShellAliases;
   if ('default' in patch) delete next.default;
+  if ('model' in patch) delete next.model;
+  if ('playbook' in patch) delete next.playbook;
   return next;
 }

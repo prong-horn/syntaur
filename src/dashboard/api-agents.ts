@@ -89,6 +89,26 @@ export function mapAgentErrorToFieldErrors(
     };
   }
 
+  match = message.match(/^agent "([^"]+)" has invalid playbook/);
+  if (match) {
+    return {
+      error: message,
+      fieldErrors: [
+        { id: match[1], field: 'playbook', message: 'must be a valid playbook slug' },
+      ],
+    };
+  }
+
+  match = message.match(/^agent "([^"]+)" has invalid model/);
+  if (match) {
+    return {
+      error: message,
+      fieldErrors: [
+        { id: match[1], field: 'model', message: 'must be a single line' },
+      ],
+    };
+  }
+
   return { error: message };
 }
 
@@ -209,6 +229,36 @@ function coerceAgentRow(
       };
     }
     cleaned.default = entry.default;
+  }
+
+  if (entry.model !== undefined) {
+    if (typeof entry.model !== 'string') {
+      return {
+        ok: false,
+        status: 400,
+        body: {
+          error: `agents[${index}].model must be a string`,
+          fieldErrors: [{ id, field: 'model', message: 'model must be a string' }],
+        },
+      };
+    }
+    const model = entry.model.trim();
+    if (model) cleaned.model = model;
+  }
+
+  if (entry.playbook !== undefined) {
+    if (typeof entry.playbook !== 'string') {
+      return {
+        ok: false,
+        status: 400,
+        body: {
+          error: `agents[${index}].playbook must be a string`,
+          fieldErrors: [{ id, field: 'playbook', message: 'playbook must be a string' }],
+        },
+      };
+    }
+    const playbook = entry.playbook.trim();
+    if (playbook) cleaned.playbook = playbook;
   }
 
   return { ok: true, value: cleaned };

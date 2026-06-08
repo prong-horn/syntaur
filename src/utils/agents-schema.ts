@@ -24,6 +24,20 @@ export interface AgentConfig {
   resolveFromShellAliases?: boolean;
   resume?: SessionInvocation;
   fork?: SessionInvocation;
+  /**
+   * Optional LLM model for this runner profile, injected into the launched CLI
+   * as a generic `--model <value>` flag (see `modelFlagArgs`). Blank/undefined
+   * omits the flag entirely (today's behavior). Works for agents whose CLI
+   * accepts `--model` (claude, codex); leave blank for agents that don't.
+   */
+  model?: string;
+  /**
+   * Optional playbook slug for this runner profile. When set, a fresh "Open in
+   * agent" launch seeds a prompt that grabs the assignment AND runs this
+   * playbook end-to-end (see `INITIAL_PROMPT`). Blank/undefined keeps the plain
+   * `/grab-assignment` seed.
+   */
+  playbook?: string;
 }
 
 export const BUILTIN_AGENTS: AgentConfig[] = [
@@ -74,3 +88,15 @@ export const BUILTIN_AGENTS: AgentConfig[] = [
 
 export const AGENT_ID_PATTERN = /^[a-z0-9][a-z0-9_-]*$/;
 export const PROMPT_ARG_POSITIONS: readonly PromptArgPosition[] = ['first', 'last', 'none'];
+
+/**
+ * Argv fragment that injects the profile's model as a generic `--model <value>`
+ * flag, or `[]` when no model is set. Callers append this AFTER `agent.args` so
+ * the profile model is authoritative: if a user also hand-wrote `--model X` in
+ * `args`, this flag comes later and the CLI's last-wins resolution makes the
+ * profile model win.
+ */
+export function modelFlagArgs(agent: AgentConfig): string[] {
+  const m = agent.model?.trim();
+  return m ? ['--model', m] : [];
+}

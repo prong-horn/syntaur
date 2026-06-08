@@ -59,6 +59,7 @@ export async function urlCommand(
     projectsDir,
     assignmentsDir: assignmentsDir(),
     terminalOverride: parsed.terminal,
+    agentId: parsed.kind === 'assignment' ? parsed.agent : undefined,
   });
 
   if (plan.fallbackWarning) {

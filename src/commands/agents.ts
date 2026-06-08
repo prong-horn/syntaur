@@ -30,6 +30,8 @@ agentsCommand
         if (agent.default) flags.push('default');
         if (agent.resolveFromShellAliases) flags.push('shell-alias');
         if (agent.promptArgPosition) flags.push(`prompt=${agent.promptArgPosition}`);
+        if (agent.model) flags.push(`model=${agent.model}`);
+        if (agent.playbook) flags.push(`playbook=${agent.playbook}`);
         const flagStr = flags.length > 0 ? ` [${flags.join(', ')}]` : '';
         const args = agent.args && agent.args.length > 0 ? ` ${agent.args.join(' ')}` : '';
         console.log(`  ${agent.id.padEnd(12)} ${agent.label.padEnd(20)} ${agent.command}${args}${flagStr}`);
@@ -47,6 +49,8 @@ interface AddOptions {
   promptArgPosition?: string;
   default?: boolean;
   resolveFromShellAliases?: boolean;
+  model?: string;
+  playbook?: string;
   dryRun?: boolean;
 }
 
@@ -60,6 +64,8 @@ agentsCommand
   .option('--prompt-arg-position <position>', 'first | last | none')
   .option('--default', 'Mark this agent as the default launch target')
   .option('--resolve-from-shell-aliases', 'Run via $SHELL -i -c (for shell aliases)')
+  .option('--model <model>', 'LLM model injected as --model <value> at launch')
+  .option('--playbook <slug>', 'Playbook slug to run end-to-end on a fresh launch')
   .option('--dry-run', 'Validate and print the proposed config without writing')
   .action(async (options: AddOptions) => {
     try {
@@ -120,6 +126,8 @@ interface SetOptions {
   promptArgPosition?: string;
   default?: boolean;
   resolveFromShellAliases?: boolean;
+  model?: string;
+  playbook?: string;
   dryRun?: boolean;
 }
 
@@ -134,6 +142,8 @@ agentsCommand
   .option('--no-default', 'Unset the default flag on this agent')
   .option('--resolve-from-shell-aliases', 'Run via $SHELL -i -c (for shell aliases)')
   .option('--no-resolve-from-shell-aliases', 'Disable shell-alias resolution for this agent')
+  .option('--model <model>', 'LLM model injected as --model <value> (empty string clears)')
+  .option('--playbook <slug>', 'Playbook slug to run on a fresh launch (empty string clears)')
   .option('--dry-run', 'Validate and print the proposed config without writing')
   .action(async (id: string, options: SetOptions) => {
     try {
@@ -217,6 +227,8 @@ function buildAgentFromOptions(options: AddOptions, existing: AgentConfig | null
   }
   if (options.default) agent.default = true;
   if (options.resolveFromShellAliases) agent.resolveFromShellAliases = true;
+  if (options.model && options.model.trim()) agent.model = options.model.trim();
+  if (options.playbook && options.playbook.trim()) agent.playbook = options.playbook.trim();
   validateAgentList([...(existing ? [] : []), agent]); // field-level sanity
   return agent;
 }
@@ -239,6 +251,16 @@ function mergeOptionsIntoAgent(existing: AgentConfig, options: SetOptions): Agen
   if (options.default === false) delete merged.default;
   if (options.resolveFromShellAliases === true) merged.resolveFromShellAliases = true;
   if (options.resolveFromShellAliases === false) delete merged.resolveFromShellAliases;
+  if (options.model !== undefined) {
+    const model = options.model.trim();
+    if (model) merged.model = model;
+    else delete merged.model;
+  }
+  if (options.playbook !== undefined) {
+    const playbook = options.playbook.trim();
+    if (playbook) merged.playbook = playbook;
+    else delete merged.playbook;
+  }
   return merged;
 }
 
@@ -278,11 +300,16 @@ function renderDiff(prev: AgentConfig[], next: AgentConfig[]): string {
   return out.join('\n');
 }
 
-function formatAgentLine(a: AgentConfig): string {
+/** Exported for tests: the one-line diff representation of an agent. Model and
+ * playbook MUST appear here so a model/playbook-only `set` is not reported as
+ * "(no changes)" by `renderDiff` (which compares these lines). */
+export function formatAgentLine(a: AgentConfig): string {
   const flags: string[] = [];
   if (a.default) flags.push('default');
   if (a.resolveFromShellAliases) flags.push('shell-alias');
   if (a.promptArgPosition) flags.push(`prompt=${a.promptArgPosition}`);
+  if (a.model) flags.push(`model=${a.model}`);
+  if (a.playbook) flags.push(`playbook=${a.playbook}`);
   if (a.args && a.args.length > 0) flags.push(`args=[${a.args.join(', ')}]`);
   const suffix = flags.length > 0 ? ` (${flags.join(', ')})` : '';
   return `${a.id}: ${a.label} → ${a.command}${suffix}`;

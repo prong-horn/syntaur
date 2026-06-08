@@ -3,6 +3,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { isAbsolute, resolve } from 'node:path';
 import { getAssignmentDetail } from '../dashboard/api.js';
 import type { AgentConfig } from '../utils/config.js';
+import { modelFlagArgs } from '../utils/agents-schema.js';
 import type { BuiltArgv } from '../launch/types.js';
 import {
   formatFallbackCwdWarning,
@@ -48,21 +49,47 @@ export interface LaunchOptions {
  * Argument shapes match the skill's documented input:
  *   - project-nested: `/grab-assignment <project-slug> <assignment-slug>`
  *   - standalone:     `/grab-assignment --id <uuid>`
+ *
+ * When `playbook` is set (an agent runner profile), the seed switches to an
+ * instruction-style message that chains BOTH `/grab-assignment` and
+ * `/run-playbook`. This is deliberate: a Claude Code message fires only ONE
+ * leading slash-command — everything after it is swallowed as that command's
+ * arguments — so two slash-commands cannot be issued from a single seed. A
+ * plain-language instruction lets the agent invoke both skills itself
+ * (grab-assignment loads playbook *context*; run-playbook *executes* a specific
+ * enabled playbook end-to-end — complementary, not redundant). The no-playbook
+ * path keeps the exact, well-tested `/grab-assignment` invocation unchanged.
  */
 export const INITIAL_PROMPT = (params: {
   projectSlug: string | null;
   assignmentSlug: string;
   id?: string;
+  playbook?: string | null;
 }): string => {
-  if (params.projectSlug) {
-    return `/grab-assignment ${params.projectSlug} ${params.assignmentSlug}`;
+  const playbook = params.playbook?.trim();
+
+  if (!playbook) {
+    if (params.projectSlug) {
+      return `/grab-assignment ${params.projectSlug} ${params.assignmentSlug}`;
+    }
+    if (params.id) {
+      return `/grab-assignment --id ${params.id}`;
+    }
+    // No project and no id — fall back to the slug. Should be rare; only
+    // happens if a caller forgot to pass the id for a standalone assignment.
+    return `/grab-assignment ${params.assignmentSlug}`;
   }
-  if (params.id) {
-    return `/grab-assignment --id ${params.id}`;
-  }
-  // No project and no id — fall back to the slug. Should be rare; only
-  // happens if a caller forgot to pass the id for a standalone assignment.
-  return `/grab-assignment ${params.assignmentSlug}`;
+
+  // Playbook profile: chain grab + run-playbook via a plain-language seed.
+  const grabClause = params.projectSlug
+    ? `the assignment \`${params.projectSlug}/${params.assignmentSlug}\` using the /grab-assignment skill`
+    : params.id
+      ? `the assignment id \`${params.id}\` using /grab-assignment --id ${params.id}`
+      : `the assignment \`${params.assignmentSlug}\` using the /grab-assignment skill`;
+  return (
+    `Grab ${grabClause}, then load and run the \`${playbook}\` playbook ` +
+    `using the /run-playbook skill and carry it out end-to-end.`
+  );
 };
 
 /**
@@ -86,7 +113,9 @@ export function buildAgentArgv(
   env: NodeJS.ProcessEnv = process.env,
 ): BuiltArgv {
   const position = agent.promptArgPosition ?? 'first';
-  const baseArgs = [...(agent.args ?? [])];
+  // Model flag goes AFTER the agent's own args so the profile model is
+  // authoritative (CLI last-wins beats a hand-written `--model` in `args`).
+  const baseArgs = [...(agent.args ?? []), ...modelFlagArgs(agent)];
   const agentArgs =
     position === 'first'
       ? [prompt, ...baseArgs]
@@ -193,7 +222,7 @@ export async function launchAgent(options: LaunchOptions): Promise<void> {
 
   const { argv, shellFallbackWarning } = buildAgentArgv(
     agent,
-    INITIAL_PROMPT({ projectSlug, assignmentSlug }),
+    INITIAL_PROMPT({ projectSlug, assignmentSlug, playbook: agent.playbook }),
   );
   if (shellFallbackWarning) {
     console.warn(shellFallbackWarning);

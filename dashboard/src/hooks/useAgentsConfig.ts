@@ -60,6 +60,12 @@ function normalizeRow(raw: unknown): AgentConfig | null {
   if (typeof entry.default === 'boolean') {
     agent.default = entry.default;
   }
+  if (typeof entry.model === 'string') {
+    agent.model = entry.model;
+  }
+  if (typeof entry.playbook === 'string') {
+    agent.playbook = entry.playbook;
+  }
   return agent;
 }
 

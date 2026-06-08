@@ -15,6 +15,40 @@ describe('parseOpenUrl', () => {
     expect(result).toEqual({ kind: 'session', id: 'abc-123', mode: 'resume' });
   });
 
+  it('parses an assignment agent= param', () => {
+    const result = parseOpenUrl('syntaur://open?assignment=a1&agent=claude');
+    expect(result).toEqual({ kind: 'assignment', id: 'a1', agent: 'claude' });
+  });
+
+  it('omits agent when absent or empty', () => {
+    expect(parseOpenUrl('syntaur://open?assignment=a1')).not.toHaveProperty('agent');
+    expect(parseOpenUrl('syntaur://open?assignment=a1&agent=')).not.toHaveProperty('agent');
+  });
+
+  it('carries agent on the session branch too (inert downstream)', () => {
+    const result = parseOpenUrl('syntaur://open?session=s1&agent=codex');
+    expect(result).toEqual({ kind: 'session', id: 's1', mode: 'resume', agent: 'codex' });
+  });
+
+  it('rejects a duplicated agent param', () => {
+    expect(() => parseOpenUrl('syntaur://open?assignment=a1&agent=x&agent=y')).toThrowError(
+      expect.objectContaining({ code: 'duplicate-param' }),
+    );
+  });
+
+  it('coexists with terminal and mode params', () => {
+    const result = parseOpenUrl(
+      'syntaur://open?session=s2&mode=fork&terminal=iterm&agent=codex',
+    );
+    expect(result).toEqual({
+      kind: 'session',
+      id: 's2',
+      mode: 'fork',
+      terminal: 'iterm',
+      agent: 'codex',
+    });
+  });
+
   it('rejects unknown scheme', () => {
     expect(() => parseOpenUrl('http://open?assignment=x')).toThrowError(
       expect.objectContaining({ code: 'bad-scheme' }),
