@@ -660,7 +660,7 @@ export function ProjectDetail() {
         <StatCard label="Completed" value={project.progress['completed'] ?? 0} tone="success" />
       </div>
 
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_280px]">
+      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_280px]">
         <div className="space-y-4">
           <ContentTabs
             value={tab}
