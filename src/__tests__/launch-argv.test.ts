@@ -205,7 +205,7 @@ describe('buildAgentArgv', () => {
       expect(argv.args).not.toContain('--model');
     });
 
-    it('profile model wins over a hand-written --model in args (last-wins ordering)', () => {
+    it('profile model REPLACES a hand-written --model in args (no duplicate flag)', () => {
       const agent: AgentConfig = {
         id: 'x',
         label: 'X',
@@ -215,8 +215,49 @@ describe('buildAgentArgv', () => {
         model: 'opus',
       };
       const { argv } = buildAgentArgv(agent, prompt);
-      // profile --model opus comes AFTER the manual one → CLI resolves last.
-      expect(argv.args).toEqual(['--model', 'sonnet', '--model', 'opus']);
+      // The manual --model sonnet is stripped; exactly one --model remains.
+      expect(argv.args).toEqual(['--model', 'opus']);
+      expect(argv.args.filter((a) => a === '--model')).toHaveLength(1);
+    });
+
+    it('strips the combined --model=/-m forms and the -m flag from args', () => {
+      const combined = buildAgentArgv(
+        {
+          id: 'x',
+          label: 'X',
+          command: 'claude',
+          args: ['--model=sonnet', '--keep'],
+          promptArgPosition: 'none',
+          model: 'opus',
+        },
+        prompt,
+      );
+      expect(combined.argv.args).toEqual(['--keep', '--model', 'opus']);
+
+      const shortFlag = buildAgentArgv(
+        {
+          id: 'x',
+          label: 'X',
+          command: 'claude',
+          args: ['-m', 'sonnet', '--keep'],
+          promptArgPosition: 'none',
+          model: 'opus',
+        },
+        prompt,
+      );
+      expect(shortFlag.argv.args).toEqual(['--keep', '--model', 'opus']);
+    });
+
+    it('leaves a hand-written --model in args untouched when the profile has no model', () => {
+      const agent: AgentConfig = {
+        id: 'x',
+        label: 'X',
+        command: 'claude',
+        args: ['--model', 'sonnet'],
+        promptArgPosition: 'none',
+      };
+      const { argv } = buildAgentArgv(agent, prompt);
+      expect(argv.args).toEqual(['--model', 'sonnet']);
     });
 
     it('includes --model in the resolveFromShellAliases quoting', () => {

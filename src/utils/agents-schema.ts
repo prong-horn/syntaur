@@ -91,12 +91,42 @@ export const PROMPT_ARG_POSITIONS: readonly PromptArgPosition[] = ['first', 'las
 
 /**
  * Argv fragment that injects the profile's model as a generic `--model <value>`
- * flag, or `[]` when no model is set. Callers append this AFTER `agent.args` so
- * the profile model is authoritative: if a user also hand-wrote `--model X` in
- * `args`, this flag comes later and the CLI's last-wins resolution makes the
- * profile model win.
+ * flag, or `[]` when no model is set.
  */
 export function modelFlagArgs(agent: AgentConfig): string[] {
   const m = agent.model?.trim();
   return m ? ['--model', m] : [];
+}
+
+/**
+ * Remove any existing `--model`/`-m` flag (and its value) from an argv list.
+ * Handles both the separate (`--model opus`) and combined (`--model=opus`,
+ * `-m=opus`) forms.
+ */
+function stripModelFlags(args: string[]): string[] {
+  const out: string[] = [];
+  for (let i = 0; i < args.length; i++) {
+    const a = args[i];
+    if (a === '--model' || a === '-m') {
+      i++; // also skip the following value token
+      continue;
+    }
+    if (a.startsWith('--model=') || a.startsWith('-m=')) continue;
+    out.push(a);
+  }
+  return out;
+}
+
+/**
+ * Apply the profile's model to a base argv list. When the profile sets a model,
+ * any pre-existing `--model`/`-m` in `baseArgs` is stripped first and the
+ * profile flag appended — the profile model is authoritative AND we never emit a
+ * duplicate `--model` (Codex 0.135.0 rejects duplicate `--model` outright; it is
+ * not last-wins). When the profile has no model, `baseArgs` is returned
+ * unchanged so a hand-written `--model` in `args` still works.
+ */
+export function applyModelFlag(agent: AgentConfig, baseArgs: string[]): string[] {
+  const flag = modelFlagArgs(agent);
+  if (flag.length === 0) return baseArgs;
+  return [...stripModelFlags(baseArgs), ...flag];
 }

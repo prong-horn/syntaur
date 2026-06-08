@@ -3,7 +3,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { isAbsolute, resolve } from 'node:path';
 import { getAssignmentDetail } from '../dashboard/api.js';
 import type { AgentConfig } from '../utils/config.js';
-import { modelFlagArgs } from '../utils/agents-schema.js';
+import { applyModelFlag } from '../utils/agents-schema.js';
 import type { BuiltArgv } from '../launch/types.js';
 import {
   formatFallbackCwdWarning,
@@ -113,9 +113,10 @@ export function buildAgentArgv(
   env: NodeJS.ProcessEnv = process.env,
 ): BuiltArgv {
   const position = agent.promptArgPosition ?? 'first';
-  // Model flag goes AFTER the agent's own args so the profile model is
-  // authoritative (CLI last-wins beats a hand-written `--model` in `args`).
-  const baseArgs = [...(agent.args ?? []), ...modelFlagArgs(agent)];
+  // Profile model is appended after the agent's own args (and any pre-existing
+  // `--model` in those args is stripped first) so exactly one authoritative
+  // `--model` is emitted — never a duplicate, which some CLIs reject.
+  const baseArgs = applyModelFlag(agent, [...(agent.args ?? [])]);
   const agentArgs =
     position === 'first'
       ? [prompt, ...baseArgs]

@@ -67,6 +67,13 @@ describe('buildSessionArgv', () => {
     expect(argv.args).not.toContain('--model');
   });
 
+  it('replaces a pre-existing --model in args with the profile model (no duplicate)', () => {
+    const codexDup: AgentConfig = { ...codex, args: ['--model', 'old'], model: 'gpt-5.5-codex' };
+    const { argv } = buildSessionArgv(codexDup, 'sess-5e', 'resume');
+    expect(argv.args).toEqual(['--model', 'gpt-5.5-codex', 'resume', 'sess-5e']);
+    expect(argv.args.filter((a) => a === '--model')).toHaveLength(1);
+  });
+
   it('applies invocation.command override over agent.command', () => {
     const custom: AgentConfig = {
       id: 'custom',
