@@ -112,10 +112,9 @@ Change:
 **`dashboard/src/pages/AgentsSection.tsx`** — per agent row add:
 - **Model** — text input (free-form; placeholder e.g. `opus`), styled like the
   existing `command`/`args` fields, with the same inline field-error pattern.
-- **Playbook** — `<select>` populated from `GET /api/playbooks` (enabled
-  playbooks), with a leading `— none —` option mapping to empty/undefined.
-  Fetch via a small hook mirroring the existing `usePlaybooks`/playbooks API
-  consumption already used by `PlaybooksPage`.
+- **Playbook** — `<select>` populated from the EXISTING `usePlaybooks()` hook
+  (`dashboard/src/hooks/useProjects.ts`; no new hook needed), filtered to
+  enabled playbooks, with a leading `— none —` option mapping to empty/undefined.
 
 Persist both through the existing `saveAgentsConfig` → `PUT /api/config/agents`
 path (no new endpoints).
@@ -123,20 +122,24 @@ path (no new endpoints).
 **`src/dashboard/api-agents.ts` + `validateAgentList` (`src/utils/config.ts`)** —
 accept and validate the new fields on PUT:
 - `model`: optional string; trimmed; empty string normalizes to omitted.
-- `playbook`: optional string; must match the playbook slug pattern
-  (`^[a-z0-9][a-z0-9_-]*$`) when present; empty normalizes to omitted. We do NOT
+- `playbook`: optional string; must satisfy `isValidSlug` from
+  `src/utils/slug.ts` (the real validator is `/^[a-z0-9]+(-[a-z0-9]+)*$/` —
+  stricter than the agent-id pattern: no underscores, no leading/trailing/
+  repeated hyphens) when present; empty normalizes to omitted. We do NOT
   hard-fail if the slug isn't currently an enabled playbook (playbooks can be
   toggled independently); the UI offers a valid dropdown, and a stale slug
   simply yields a seed that asks the agent to load a missing playbook.
+- `model`: validate it contains no newline (field-specific error → `field:'model'`).
 
 **`dashboard/src/components/OpenInAgentButton.tsx` + `useRecreateFlow.tsx` +
-`src/dashboard/api-launch-preflight.ts` + `dashboard/src/lib/recreate-flow.ts`**
-— agent-selection dropdown:
-- A small dropdown / split-button next to "Open in agent" listing configured
-  agents (label), defaulting to the configured default agent.
-- Thread the chosen `agentId` through `flow.open(target, { agentId })` →
-  preflight (carry it through but it does not affect preflight checks) → the
-  `syntaur://open?...&agent=<id>` URL builder.
+`dashboard/src/lib/recreate-flow.ts`** — agent-selection dropdown:
+- A small dropdown next to "Open in agent" listing configured agents (label),
+  defaulting to the configured default agent (initialized via a `useEffect` once
+  the async `useAgentsConfig()` resolves).
+- Thread the chosen `agentId` through `flow.open(target, mode?, agentId?)` → the
+  `syntaur://open?...&agent=<id>` URL builder. **Preflight is agent-independent
+  and needs no change** (`POST /api/launch/preflight` only checks terminal +
+  worktree).
 
 ### 5. Tests
 
@@ -170,10 +173,10 @@ accept and validate the new fields on PUT:
 | Validation | `src/utils/config.ts` (`validateAgentList`) |
 | Launch argv (model + prompt) | `src/tui/launch.ts`, `src/launch/argv.ts` |
 | Launch plan (agent pick + playbook) | `src/launch/plan.ts` |
-| URL parse (`agent=`) | `src/launch/url.ts` |
+| URL parse (`agent=`) + plan wiring | `src/launch/url.ts`, `src/commands/url.ts` |
 | Agent API validation | `src/dashboard/api-agents.ts` |
-| Preflight pass-through | `src/dashboard/api-launch-preflight.ts` |
-| Settings UI | `dashboard/src/pages/AgentsSection.tsx` |
+| Settings UI | `dashboard/src/pages/AgentsSection.tsx`, `dashboard/src/hooks/useAgentsConfig.ts` |
 | Open button + flow | `dashboard/src/components/OpenInAgentButton.tsx`, `dashboard/src/components/useRecreateFlow.tsx`, `dashboard/src/lib/recreate-flow.ts` |
-| Playbook list hook (UI) | `dashboard/src/hooks/` (new, small) |
-| Tests | alongside the above (`*.test.ts`) |
+| Playbook list (UI) | existing `usePlaybooks()` in `dashboard/src/hooks/useProjects.ts` (no new hook) |
+| CLI + docs parity | `src/commands/agents.ts`, `docs/protocol/file-formats.md` |
+| Tests | `src/__tests__/*.test.ts` (extend existing files) |
