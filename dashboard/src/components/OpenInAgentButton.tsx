@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import { Terminal } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { Terminal, ChevronDown, Check } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { useRecreateFlow } from './useRecreateFlow';
 import { useAgentsConfig } from '../hooks/useAgentsConfig';
@@ -65,7 +65,32 @@ export function OpenInAgentButton({
     });
   }, [agents]);
 
-  const showAgentPicker = target.kind === 'assignment' && agents.length > 0;
+  // Split-button menu (the chevron half) — only when there's a choice to make.
+  const showAgentPicker = target.kind === 'assignment' && agents.length > 1;
+  const selectedAgent = agents.find((a) => a.id === selectedAgentId) ?? null;
+  const rootRef = useRef<HTMLDivElement>(null);
+  const [menuOpen, setMenuOpen] = useState(false);
+  useEffect(() => {
+    if (!menuOpen) return;
+    function onDown(e: MouseEvent) {
+      if (rootRef.current && !rootRef.current.contains(e.target as Node)) {
+        setMenuOpen(false);
+      }
+    }
+    function onKey(e: KeyboardEvent) {
+      if (e.key === 'Escape') setMenuOpen(false);
+    }
+    document.addEventListener('mousedown', onDown);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDown);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [menuOpen]);
+
+  function launch(agentId?: string) {
+    void flow.open(target, undefined, agentId);
+  }
 
   const defaultTitle =
     target.kind === 'assignment'
@@ -96,41 +121,91 @@ export function OpenInAgentButton({
     );
   }
 
+  const launchLabel = target.kind === 'session' ? 'Open' : 'Open in agent';
+
   return (
     <>
-      <div className="inline-flex items-center gap-1.5">
-        {showAgentPicker && (
-          <select
-            value={selectedAgentId ?? ''}
-            onChange={(e) => setSelectedAgentId(e.target.value)}
+      <div className="relative inline-flex" ref={rootRef}>
+        <div className="inline-flex items-stretch">
+          {/* Primary action: launch with the currently-selected agent. */}
+          <button
+            type="button"
+            onClick={() => launch(selectedAgentId ?? undefined)}
             disabled={flow.pending}
-            title="Agent to launch (runner profile)"
-            aria-label="Agent to launch"
-            className={cn(
-              'editor-input',
-              size === 'compact' ? 'px-1.5 py-1 text-xs' : 'text-sm',
-            )}
-            onClick={(e) => e.stopPropagation()}
+            title={
+              (title ?? defaultTitle) +
+              (showAgentPicker && selectedAgent ? ` (${selectedAgent.label})` : '')
+            }
+            className={cn(classes, showAgentPicker && 'rounded-r-none')}
           >
+            <Terminal className="size-3.5" />
+            <span>{launchLabel}</span>
+          </button>
+
+          {/* Chevron half: opens the agent picker menu. */}
+          {showAgentPicker && (
+            <button
+              type="button"
+              onClick={() => setMenuOpen((o) => !o)}
+              disabled={flow.pending}
+              aria-haspopup="menu"
+              aria-expanded={menuOpen}
+              aria-label="Choose which agent to launch"
+              title="Choose which agent to launch"
+              className={cn(
+                classes,
+                '-ml-px rounded-l-none',
+                size === 'compact' ? 'px-1' : 'px-1.5',
+              )}
+            >
+              <ChevronDown
+                className={cn(
+                  'size-3.5 opacity-70 transition-transform',
+                  menuOpen && 'rotate-180',
+                )}
+              />
+            </button>
+          )}
+        </div>
+
+        {menuOpen && showAgentPicker && (
+          <div
+            role="menu"
+            aria-label="Open with agent"
+            className="absolute right-0 top-full z-30 mt-1 min-w-[180px] overflow-hidden rounded-md border border-border/70 bg-background py-1 shadow-lg"
+          >
+            <div className="px-2.5 pb-1 pt-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground/70">
+              Open with agent
+            </div>
             {agents.map((a) => (
-              <option key={a.id} value={a.id}>
-                {a.label}
-              </option>
+              <button
+                key={a.id}
+                type="button"
+                role="menuitemradio"
+                aria-checked={a.id === selectedAgentId}
+                onClick={() => {
+                  setSelectedAgentId(a.id);
+                  setMenuOpen(false);
+                  launch(a.id);
+                }}
+                className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-sm text-foreground transition-colors hover:bg-accent"
+              >
+                <Check
+                  className={cn(
+                    'size-3.5 shrink-0',
+                    a.id === selectedAgentId ? 'opacity-100' : 'opacity-0',
+                  )}
+                />
+                <span className="truncate">{a.label}</span>
+                {a.default && (
+                  <span className="ml-auto text-[10px] text-muted-foreground/60">
+                    default
+                  </span>
+                )}
+              </button>
             ))}
-          </select>
+          </div>
         )}
-        <button
-          type="button"
-          onClick={() =>
-            void flow.open(target, undefined, selectedAgentId ?? undefined)
-          }
-          disabled={flow.pending}
-          title={title ?? defaultTitle}
-          className={classes}
-        >
-          <Terminal className="size-3.5" />
-          <span>{target.kind === 'session' ? 'Open' : 'Open in agent'}</span>
-        </button>
       </div>
       {flow.dialogs}
     </>
