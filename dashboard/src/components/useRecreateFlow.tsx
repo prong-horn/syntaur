@@ -53,6 +53,12 @@ interface Pending {
   mode?: ReopenMode;
   /** Agent id to launch with (assignment "Open in agent" picker). */
   agentId?: string;
+  /**
+   * One-shot launch-prompt override (assignment editable box). Presence-
+   * significant — threaded through every continuation so an edited prompt
+   * survives the missing-terminal + recreate detours.
+   */
+  prompt?: string;
 }
 
 /**
@@ -79,6 +85,7 @@ export function useRecreateFlow() {
     target: ContinuationTarget,
     mode?: ReopenMode,
     agentId?: string,
+    prompt?: string,
   ): Promise<void> {
     if (pending) return;
     setPending(true);
@@ -91,12 +98,12 @@ export function useRecreateFlow() {
       if (!res.ok) {
         // Network/5xx — best effort: fire the link; the CLI/applet surfaces any
         // launch error itself.
-        window.location.href = continuationUrl(target, mode, undefined, agentId);
+        window.location.href = continuationUrl(target, mode, undefined, agentId, prompt);
         return;
       }
       const body = (await res.json()) as PreflightResponse;
       if (body.ok) {
-        window.location.href = continuationUrl(target, mode, undefined, agentId);
+        window.location.href = continuationUrl(target, mode, undefined, agentId, prompt);
         return;
       }
       if (body.reason === 'workspace-path-invalid') {
@@ -104,17 +111,17 @@ export function useRecreateFlow() {
         // directory). Offer recreate when possible; else the read-only reason.
         if (body.recreate) {
           setRecreate(body.recreate);
-          setRecreatePending({ target, mode, agentId });
+          setRecreatePending({ target, mode, agentId, prompt });
         } else {
           setWorkspaceError(body.message);
         }
         return;
       }
       setMiss(body);
-      setMissPending({ target, mode, agentId });
+      setMissPending({ target, mode, agentId, prompt });
     } catch (err) {
       console.warn('preflight failed, firing without override:', err);
-      window.location.href = continuationUrl(target, mode, undefined, agentId);
+      window.location.href = continuationUrl(target, mode, undefined, agentId, prompt);
     } finally {
       setPending(false);
     }
@@ -127,6 +134,7 @@ export function useRecreateFlow() {
       missPending.mode,
       miss.suggestedFallback,
       missPending.agentId,
+      missPending.prompt,
     );
     setMiss(null);
     setMissPending(null);
@@ -143,13 +151,13 @@ export function useRecreateFlow() {
         projectSlug: recreate.projectSlug,
         assignmentSlug: recreate.assignmentSlug,
       });
-      const { target, mode, agentId } = recreatePending;
+      const { target, mode, agentId, prompt } = recreatePending;
       setRecreate(null);
       setRecreatePending(null);
       // The worktree now exists at the exact recorded path — re-fire the
       // original open. A `syntaur://` href triggers the OS handler without
       // unloading this page, so any non-exact note below still renders.
-      window.location.href = continuationUrl(target, mode, undefined, agentId);
+      window.location.href = continuationUrl(target, mode, undefined, agentId, prompt);
       if (!result.exact && !result.alreadyExisted) {
         setRecreateNote(
           `Recreated from ${result.baseUsed} — the original branch couldn't be ` +

@@ -3,6 +3,7 @@ import { Terminal, ChevronDown, Check } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { useRecreateFlow } from './useRecreateFlow';
 import { useAgentsConfig } from '../hooks/useAgentsConfig';
+import { LaunchPromptDialog } from './LaunchPromptDialog';
 
 interface OpenInAgentButtonProps {
   /** Either an assignment id or a session id. */
@@ -49,6 +50,10 @@ export function OpenInAgentButton({
 
   const flow = useRecreateFlow();
 
+  // Assignment launches open an editable prompt box first; sessions launch
+  // directly (their first message comes from history).
+  const [promptDialogAgent, setPromptDialogAgent] = useState<{ agentId?: string } | null>(null);
+
   // Agent picker (assignment only — sessions pin their agent from the record).
   const agentsState = useAgentsConfig();
   const agents = agentsState.agents;
@@ -89,7 +94,12 @@ export function OpenInAgentButton({
   }, [menuOpen]);
 
   function launch(agentId?: string) {
-    void flow.open(target, undefined, agentId);
+    if (target.kind === 'assignment') {
+      // Open the editable prompt box; the actual launch fires on its Confirm.
+      setPromptDialogAgent({ agentId });
+    } else {
+      void flow.open(target, undefined, agentId);
+    }
   }
 
   const defaultTitle =
@@ -208,6 +218,19 @@ export function OpenInAgentButton({
         )}
       </div>
       {flow.dialogs}
+      {target.kind === 'assignment' && promptDialogAgent && (
+        <LaunchPromptDialog
+          open
+          assignmentId={target.id}
+          agentId={promptDialogAgent.agentId}
+          onConfirm={(prompt) => {
+            void flow.open(target, undefined, promptDialogAgent.agentId, prompt);
+          }}
+          onOpenChange={(o) => {
+            if (!o) setPromptDialogAgent(null);
+          }}
+        />
+      )}
     </>
   );
 }
