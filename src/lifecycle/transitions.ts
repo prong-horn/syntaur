@@ -106,7 +106,12 @@ export async function executeTransition(
       ? getTargetStatus(frontmatter.status, command, options.transitionTable)
       : null) ??
     options.commandTargets?.get(command) ??
-    (options.transitionTable ? null : getTargetStatus(frontmatter.status, command));
+    // Built-ins apply only when NEITHER custom mechanism was supplied — a
+    // provided-but-miss commandTargets means "custom config had no answer",
+    // which must refuse, not silently fall back (codex r4).
+    (!options.transitionTable && !options.commandTargets
+      ? getTargetStatus(frontmatter.status, command)
+      : null);
 
   if (!targetStatus) {
     return {
@@ -230,7 +235,12 @@ export async function executeTransitionByDir(
       ? getTargetStatus(frontmatter.status, command, options.transitionTable)
       : null) ??
     options.commandTargets?.get(command) ??
-    (options.transitionTable ? null : getTargetStatus(frontmatter.status, command));
+    // Built-ins apply only when NEITHER custom mechanism was supplied — a
+    // provided-but-miss commandTargets means "custom config had no answer",
+    // which must refuse, not silently fall back (codex r4).
+    (!options.transitionTable && !options.commandTargets
+      ? getTargetStatus(frontmatter.status, command)
+      : null);
   if (!targetStatus) {
     return {
       success: false,
