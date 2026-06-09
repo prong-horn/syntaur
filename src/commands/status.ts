@@ -703,3 +703,38 @@ transitionCommand
       fail(error);
     }
   });
+
+// ── derived-status pin/unpin (design v3, Piece 4) ───────────────────────────
+import { statusPinCommand, statusUnpinCommand } from './derive-verbs.js';
+
+statusCommand
+  .command('pin')
+  .description('Pin (override) an assignment to a status — sticky until unpinned; non-terminal only')
+  .argument('<assignment>', 'Assignment slug or standalone UUID')
+  .argument('<status>', 'Status id to pin to (terminal statuses refused)')
+  .option('--project <slug>', 'Target project slug')
+  .option('--reason <text>', 'Why the pin is needed (recorded in history)')
+  .option('--agent <name>', 'Acting agent id (default: bound session, else human)')
+  .option('--dir <path>', 'Override default project directory')
+  .action(async (assignment, status, opts) => {
+    try {
+      await statusPinCommand(assignment, status, opts);
+    } catch (error) {
+      fail(error);
+    }
+  });
+
+statusCommand
+  .command('unpin')
+  .description('Clear a status pin — status re-derives from facts')
+  .argument('<assignment>', 'Assignment slug or standalone UUID')
+  .option('--project <slug>', 'Target project slug')
+  .option('--agent <name>', 'Acting agent id')
+  .option('--dir <path>', 'Override default project directory')
+  .action(async (assignment, opts) => {
+    try {
+      await statusUnpinCommand(assignment, opts);
+    } catch (error) {
+      fail(error);
+    }
+  });

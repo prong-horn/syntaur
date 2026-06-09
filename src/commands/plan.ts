@@ -471,3 +471,38 @@ export const _internal = {
   runPlanCreate,
   buildInitialPlanStub,
 };
+
+// ── plan approval (derived-status v3: revision-bound file + digest) ─────────
+import { planApproveCommand, planUnapproveCommand } from './derive-verbs.js';
+
+planCommand
+  .command('approve')
+  .description('Approve the latest plan revision (file+digest bound); ready_to_implement derives from it')
+  .argument('<assignment>', 'Assignment slug or standalone UUID')
+  .option('--project <slug>', 'Target project slug')
+  .option('--agent <name>', 'Acting agent id (default: bound session, else human)')
+  .option('--dir <path>', 'Override default project directory')
+  .action(async (assignment, options) => {
+    try {
+      await planApproveCommand(assignment, options);
+    } catch (error) {
+      console.error('Error:', error instanceof Error ? error.message : String(error));
+      process.exit(1);
+    }
+  });
+
+planCommand
+  .command('unapprove')
+  .description('Clear plan approval; the phase regresses to planning-level facts')
+  .argument('<assignment>', 'Assignment slug or standalone UUID')
+  .option('--project <slug>', 'Target project slug')
+  .option('--agent <name>', 'Acting agent id')
+  .option('--dir <path>', 'Override default project directory')
+  .action(async (assignment, options) => {
+    try {
+      await planUnapproveCommand(assignment, options);
+    } catch (error) {
+      console.error('Error:', error instanceof Error ? error.message : String(error));
+      process.exit(1);
+    }
+  });

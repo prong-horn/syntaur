@@ -1,10 +1,13 @@
 import { Command } from 'commander';
 import { readFile } from 'node:fs/promises';
-import { resolve } from 'node:path';
+import { dirname, resolve } from 'node:path';
 import { listAssignmentsBoard } from '../dashboard/api.js';
 import { defaultProjectDir, assignmentsDir as standaloneAssignmentsDir } from '../utils/paths.js';
 import { fileExists } from '../utils/fs.js';
 import { parseAssignmentFrontmatter } from '../lifecycle/frontmatter.js';
+import { computeFacts } from '../lifecycle/facts.js';
+import { resolveDeriveContext } from '../lifecycle/recompute.js';
+import { compileQuery, type QueryItem } from '../utils/query/index.js';
 import type { AssignmentBoardItem } from '../dashboard/types.js';
 
 interface LsOptions {
@@ -12,6 +15,7 @@ interface LsOptions {
   project?: string;
   tag?: string;
   age?: string;
+  query?: string;
   json?: boolean;
   archived?: boolean;
 }
@@ -99,7 +103,75 @@ export async function runLs(
       .map(({ item }) => item);
   }
 
+  if (options.query) {
+    const { query, errors } = compileQuery(options.query);
+    if (!query) {
+      throw new Error(
+        `Invalid --query:\n${errors.map((e) => `  at ${e.pos}: ${e.message}`).join('\n')}`,
+      );
+    }
+    const context = await resolveDeriveContext();
+    const now = Date.now();
+    const enriched = await Promise.all(
+      items.map(async (item) => ({ item, q: await loadQueryItem(item, context.terminalStatuses, now) })),
+    );
+    items = enriched.filter(({ q }) => q !== null && query.predicate(q, { now })).map(({ item }) => item);
+  }
+
   return { items };
+}
+
+/**
+ * Materialize the full AQL item (frontmatter fields + facts + history
+ * virtuals) for one board row. CLI-scale (hundreds of assignments) — full
+ * loads are fine; the dashboard ships the same shape in payloads instead.
+ */
+async function loadQueryItem(
+  item: AssignmentBoardItem,
+  terminalStatuses: ReadonlySet<string>,
+  now: number,
+): Promise<QueryItem | null> {
+  const path = assignmentMdPath(item);
+  if (!(await fileExists(path))) return null;
+  try {
+    const content = await readFile(path, 'utf-8');
+    const fm = parseAssignmentFrontmatter(content);
+    const body = content.replace(/^---\n[\s\S]*?\n---/, '');
+    const assignmentDir = dirname(path);
+    const projectDir = item.projectSlug ? resolve(defaultProjectDir(), item.projectSlug) : null;
+    const facts = await computeFacts({ assignmentDir, frontmatter: fm, body, projectDir, terminalStatuses });
+
+    // history virtuals: completedAt (currently-terminal only) + statusAge
+    // (time since last HEADLINE change — dimension-only entries don't reset it)
+    const history = fm.statusHistory;
+    const lastHeadlineChange = [...history].reverse().find((e) => e.from !== e.to || e.from === null);
+    const statusAge = lastHeadlineChange ? now - Date.parse(lastHeadlineChange.at) : null;
+    const lastPhaseChange = [...history].reverse().find((e) => e.phaseTo !== undefined && e.phaseFrom !== e.phaseTo);
+    const phaseAge = lastPhaseChange ? now - Date.parse(lastPhaseChange.at) : null;
+    const completedAt =
+      terminalStatuses.has(fm.status) && lastHeadlineChange ? lastHeadlineChange.at : null;
+
+    return {
+      ...facts,
+      status: fm.status,
+      phase: fm.phase,
+      disposition: fm.disposition,
+      priority: fm.priority,
+      type: fm.type,
+      assignee: fm.assignee,
+      project: item.projectSlug,
+      tags: fm.tags,
+      archived: fm.archived,
+      title: fm.title,
+      created: fm.created,
+      updated: fm.updated,
+      completedAt,
+      statusAge,
+      phaseAge,
+    };
+  } catch {
+    return null;
+  }
 }
 
 function pad(value: string, width: number): string {
@@ -136,6 +208,10 @@ export const lsCommand = new Command('ls')
   .option('--project <slug>', 'Filter to one project')
   .option('--tag <list>', 'Comma-separated tag filter (assignment must have ALL tags)')
   .option('--age <duration>', 'Only include assignments updated within duration (e.g. 7d, 24h, 2w, 1m)')
+  .option(
+    '--query <expr>',
+    'AQL boolean filter over fields + facts (e.g. "disposition:blocked AND phase:ready_to_implement", "planApproved:true AND workspaceSet:false", "phase:planning AND statusAge > 3d")',
+  )
   .option('--archived', 'List only archived assignments (hidden from the default view)')
   .option('--json', 'Emit JSON instead of a table')
   .action(async (options: LsOptions) => {

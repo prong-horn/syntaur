@@ -1,13 +1,7 @@
-import { runTransition, reportResult, type LifecycleOptions } from './_lifecycle-helper.js';
+import { planApproveCommand, type DeriveVerbOptions } from './derive-verbs.js';
 
-export interface PlanReadyOptions extends LifecycleOptions {
-  agent?: string;
-}
-
-export async function planReadyCommand(
-  assignment: string,
-  options: PlanReadyOptions,
-): Promise<void> {
-  const result = await runTransition(assignment, 'plan-ready', options);
-  reportResult(result);
+/** Derived model: `plan-ready` = approving the latest plan revision
+ * (file+digest bound). ready_to_implement follows from derivation. */
+export async function planReadyCommand(assignment: string, options: DeriveVerbOptions): Promise<void> {
+  await planApproveCommand(assignment, options);
 }
