@@ -10,7 +10,11 @@ import {
   getAssignmentDetail,
   getAssignmentDetailById,
 } from '../dashboard/api.js';
-import { INITIAL_PROMPT } from '../tui/launch.js';
+// Import the resolver directly (not via ./index.js) to avoid the
+// argv→tui/launch import cycle the barrel would introduce.
+import { resolveLaunchPrompt } from './launch-prompt.js';
+import { playbooksDir } from '../utils/paths.js';
+import { listPlaybookSlugs } from '../utils/playbooks.js';
 import { formatFallbackCwdWarning, resolveWorkspaceCwd } from './cwd.js';
 import { getSessionById } from '../dashboard/agent-sessions.js';
 import { buildFreshArgv, buildSessionArgv } from './argv.js';
@@ -44,6 +48,8 @@ export interface LaunchPlan {
   fallbackWarning: string | null;
   /** Non-fatal warning from shell-alias resolution falling back to /bin/sh. */
   shellFallbackWarning: string | null;
+  /** Non-fatal launch-prompt token warnings (unknown/malformed `@`-tokens). */
+  promptWarnings?: string[];
 }
 
 export interface ResolveLaunchPlanInput {
@@ -165,15 +171,17 @@ async function resolveAssignmentPlan(
   } else {
     agent = pickAgent(input.config);
   }
-  const { argv, shellFallbackWarning } = buildFreshArgv(
-    agent,
-    INITIAL_PROMPT({
-      projectSlug: resolved.projectSlug,
-      assignmentSlug: resolved.assignmentSlug,
-      id: resolved.id,
-      playbook: agent.playbook,
-    }),
-  );
+  const knownPlaybookSlugs = await listPlaybookSlugs(playbooksDir());
+  const { prompt, warnings: promptWarnings } = resolveLaunchPrompt({
+    template: agent.launchPrompt,
+    playbook: agent.playbook,
+    id: resolved.id,
+    assignmentDir: resolved.assignmentDir,
+    projectSlug: resolved.projectSlug,
+    assignmentSlug: resolved.assignmentSlug,
+    knownPlaybookSlugs,
+  });
+  const { argv, shellFallbackWarning } = buildFreshArgv(agent, prompt);
 
   return {
     terminal,
@@ -183,6 +191,7 @@ async function resolveAssignmentPlan(
     agentId: agent.id,
     fallbackWarning,
     shellFallbackWarning,
+    promptWarnings,
   };
 }
 

@@ -11,7 +11,9 @@ import {
   resolveWorkspaceCwd,
 } from '../launch/cwd.js';
 import type { SpawnFn } from '../launch/execute.js';
-import { bareGrabSeed } from '../launch/launch-prompt.js';
+import { bareGrabSeed, resolveLaunchPrompt } from '../launch/launch-prompt.js';
+import { playbooksDir } from '../utils/paths.js';
+import { listPlaybookSlugs } from '../utils/playbooks.js';
 
 export type { ResolvedArgv, BuiltArgv } from '../launch/types.js';
 // `formatFallbackCwdWarning` now lives in ../launch/cwd.ts (a neutral module so
@@ -225,10 +227,19 @@ export async function launchAgent(options: LaunchOptions): Promise<void> {
     JSON.stringify(context, null, 2) + '\n',
   );
 
-  const { argv, shellFallbackWarning } = buildAgentArgv(
-    agent,
-    INITIAL_PROMPT({ projectSlug, assignmentSlug, playbook: agent.playbook }),
-  );
+  const knownPlaybookSlugs = await listPlaybookSlugs(playbooksDir());
+  const { prompt, warnings } = resolveLaunchPrompt({
+    template: agent.launchPrompt,
+    playbook: agent.playbook,
+    id: detail.id,
+    assignmentDir,
+    projectSlug,
+    assignmentSlug,
+    knownPlaybookSlugs,
+  });
+  for (const warning of warnings) console.warn(warning);
+
+  const { argv, shellFallbackWarning } = buildAgentArgv(agent, prompt);
   if (shellFallbackWarning) {
     console.warn(shellFallbackWarning);
   }

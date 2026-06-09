@@ -68,6 +68,9 @@ export async function urlCommand(
   if (plan.shellFallbackWarning) {
     console.error(plan.shellFallbackWarning);
   }
+  for (const warning of plan.promptWarnings ?? []) {
+    console.error(warning);
+  }
 
   if (options.printPlan) {
     process.stdout.write(formatPlanForApplet(plan));
