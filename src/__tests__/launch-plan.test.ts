@@ -149,6 +149,40 @@ describe('resolveLaunchPlan — assignment mode', () => {
     expect(plan.terminal).toBe('ghostty');
   });
 
+  it('routes agent.launchPrompt through the resolver and threads promptWarnings', async () => {
+    const worktree = resolve(testDir, 'wt-lp');
+    await mkdir(worktree, { recursive: true });
+    await scaffoldAssignment(projectsDir, 'demo-project', 'demo-asg', ASSIGNMENT_ID, {
+      worktreePath: worktree,
+      branch: 'feat/x',
+    });
+    const agents: AgentConfig[] = [
+      {
+        id: 'claude',
+        label: 'Claude',
+        command: 'claude',
+        default: true,
+        launchPrompt: '@assignment Then @FOO please.',
+      },
+    ];
+
+    const plan = await resolveLaunchPlan({
+      kind: 'assignment',
+      id: ASSIGNMENT_ID,
+      config: makeConfig({ agents }),
+      projectsDir,
+      assignmentsDir,
+    });
+
+    // @assignment expanded to the records pointer (id + grab/read instructions).
+    expect(plan.argv.args[0]).toContain(ASSIGNMENT_ID);
+    expect(plan.argv.args[0]).toContain('/grab-assignment skill if available');
+    // Malformed @FOO left literal and threaded as exactly one prompt warning.
+    expect(plan.argv.args[0]).toContain('@FOO');
+    expect(plan.promptWarnings).toHaveLength(1);
+    expect(plan.promptWarnings?.[0]).toContain('@FOO');
+  });
+
   it('uses the requested agentId instead of the default', async () => {
     const worktree = resolve(testDir, 'wt-agent');
     await mkdir(worktree, { recursive: true });

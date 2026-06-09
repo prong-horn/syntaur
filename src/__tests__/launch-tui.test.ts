@@ -220,6 +220,38 @@ describe('launchAgent — validated cwd resolution', () => {
     expect(calls).toHaveLength(0);
     expect(code).toBe(1);
   });
+
+  it('resolves agent.launchPrompt into the seed and prints token warnings once', async () => {
+    const worktree = resolve(testDir, 'wt-lp');
+    await mkdir(worktree, { recursive: true });
+    await writeAssignment(projectsDir, 'demo', 'task', {
+      worktreePath: worktree,
+      branch: 'feat/x',
+    });
+
+    const calls: SpawnCall[] = [];
+    await launchAgent({
+      projectsDir,
+      projectSlug: 'demo',
+      assignmentSlug: 'task',
+      agent: { ...AGENT, launchPrompt: '@assignment Then @FOO please.' },
+      spawnFn: fakeSpawn(calls),
+      onExit: () => {},
+    });
+
+    expect(calls).toHaveLength(1);
+    const argvText = calls[0].args.join(' ');
+    // @assignment expanded to the records pointer (id from the fixture).
+    expect(argvText).toContain('11111111-1111-1111-1111-111111111111');
+    // Malformed @FOO left literal …
+    expect(argvText).toContain('@FOO');
+    // … and surfaced as exactly one console.warn (resolver stays pure; the
+    // call site prints).
+    const tokenWarnings = warnSpy.mock.calls
+      .map((c) => String(c[0] ?? ''))
+      .filter((m) => m.includes('not a valid playbook token'));
+    expect(tokenWarnings).toHaveLength(1);
+  });
 });
 
 describe('INITIAL_PROMPT', () => {
