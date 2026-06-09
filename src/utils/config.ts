@@ -244,6 +244,11 @@ export function validateAgentList(agents: AgentConfig[]): void {
         `agent "${agent.id}" has invalid playbook "${agent.playbook}" — must be a valid playbook slug`,
       );
     }
+    if (agent.launchPrompt !== undefined && /[\r\n]/.test(agent.launchPrompt)) {
+      throw new AgentConfigError(
+        `agent "${agent.id}" has invalid launchPrompt — must be a single line (no newlines)`,
+      );
+    }
     validateSessionInvocation(agent, 'resume', agent.resume);
     validateSessionInvocation(agent, 'fork', agent.fork);
     if (agent.default) defaults++;
@@ -1131,6 +1136,7 @@ function parseAgentsConfig(content: string): AgentConfig[] | null {
       ...(current.resolveFromShellAliases ? { resolveFromShellAliases: true } : {}),
       ...(current.model ? { model: current.model } : {}),
       ...(current.playbook ? { playbook: current.playbook } : {}),
+      ...(current.launchPrompt ? { launchPrompt: current.launchPrompt } : {}),
       ...(current.resume ? { resume: current.resume } : {}),
       ...(current.fork ? { fork: current.fork } : {}),
     });
@@ -1265,6 +1271,7 @@ const KNOWN_AGENT_SCALAR_FIELDS: ReadonlySet<string> = new Set([
   'resolveFromShellAliases',
   'model',
   'playbook',
+  'launchPrompt',
 ]);
 
 /**
@@ -1355,6 +1362,9 @@ function assignAgentField(target: Partial<AgentConfig>, key: string, rawValue: s
     case 'playbook':
       target.playbook = value;
       break;
+    case 'launchPrompt':
+      target.launchPrompt = value;
+      break;
   }
 }
 
@@ -1385,6 +1395,9 @@ function serializeAgentsConfig(agents: AgentConfig[]): string {
     }
     if (a.playbook) {
       lines.push(`    playbook: ${yamlQuoteScalar(a.playbook)}`);
+    }
+    if (a.launchPrompt) {
+      lines.push(`    launchPrompt: ${yamlQuoteScalar(a.launchPrompt)}`);
     }
     if (a.args && a.args.length > 0) {
       lines.push(`    args:`);

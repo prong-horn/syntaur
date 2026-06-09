@@ -123,6 +123,14 @@ describe('agents config', () => {
         validateAgentList([{ id: 'a', label: 'A', command: 'a', model: 'opus\nsonnet' }]),
       ).toThrow(/invalid model/);
     });
+
+    it('rejects a launchPrompt containing a newline', () => {
+      expect(() =>
+        validateAgentList([
+          { id: 'a', label: 'A', command: 'a', launchPrompt: 'line1\nline2' },
+        ]),
+      ).toThrow(/invalid launchPrompt/);
+    });
   });
 
   describe('round-trip', () => {
@@ -187,6 +195,16 @@ describe('agents config', () => {
         model: 'opus',
         playbook: 'e2e-dev-cycle',
       });
+    });
+
+    it('round-trips launchPrompt with @, :, and quotes (single-line)', async () => {
+      const launchPrompt = '@assignment Run @e2e-dev-cycle: say "hi" then stop.';
+      const agents: AgentConfig[] = [
+        { id: 'claude-lp', label: 'Claude (lp)', command: 'claude', launchPrompt },
+      ];
+      await writeAgentsConfig(agents);
+      const config = await readConfig();
+      expect(config.agents?.[0]).toMatchObject({ id: 'claude-lp', launchPrompt });
     });
 
     it('getAgents returns built-in defaults when block absent', async () => {
