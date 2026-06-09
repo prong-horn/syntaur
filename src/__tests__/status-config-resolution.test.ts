@@ -9,6 +9,7 @@ import {
   StatusResolutionError,
   type StatusResolution,
 } from '../utils/status-config-resolution.js';
+import { parseAssignmentFrontmatter } from '../lifecycle/frontmatter.js';
 
 let root: string;
 let projectsDir: string;
@@ -133,6 +134,28 @@ describe('applyStatusResolutions', () => {
     expect(getUpdated(after)).not.toBe(getUpdated(before));
     expect(after).toContain('title: a1');
     expect(after).toContain('priority: medium');
+  });
+
+  it('remap appends a statusHistory entry (command: remap, correct from/to)', async () => {
+    const path = await seed(join(projectsDir, 'p1', 'assignments', 'a1'), 'a1', 'pending');
+    const affected = await scanAssignmentsByStatus(projectsDir, null, ['pending']);
+
+    await applyStatusResolutions(
+      [{ id: 'pending', mode: 'remap', target: 'draft' }],
+      affected,
+      new Set(['draft', 'in_progress']),
+    );
+
+    const fm = parseAssignmentFrontmatter(await readFile(path, 'utf-8'));
+    expect(fm.statusHistory).toHaveLength(1);
+    expect(fm.statusHistory[0]).toMatchObject({
+      from: 'pending',
+      to: 'draft',
+      command: 'remap',
+      by: null,
+    });
+    // the appended `at` matches the bumped `updated`
+    expect(fm.statusHistory[0].at).toBe(fm.updated);
   });
 
   it('delete-only: removes assignment directories', async () => {

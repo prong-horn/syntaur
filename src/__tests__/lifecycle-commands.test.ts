@@ -4,7 +4,8 @@ import { tmpdir } from 'node:os';
 import { resolve, join } from 'node:path';
 import { createProjectCommand } from '../commands/create-project.js';
 import { createAssignmentCommand } from '../commands/create-assignment.js';
-import { executeTransition, executeAssign } from '../lifecycle/index.js';
+import { executeTransition, executeTransitionByDir, executeAssign } from '../lifecycle/index.js';
+import { parseAssignmentFrontmatter } from '../lifecycle/frontmatter.js';
 
 let testDir: string;
 
@@ -255,6 +256,79 @@ describe('lifecycle integration', () => {
     const finalContent = await readAssignmentContent(projectSlug, 'task-b');
     expect(finalContent).toContain('## Objective');
     expect(finalContent).toContain('## Acceptance Criteria');
+  });
+
+  describe('statusHistory recording', () => {
+    it('create seeds a statusHistory entry (command: create, to: draft)', async () => {
+      const fm = parseAssignmentFrontmatter(await readAssignmentContent(projectSlug, 'task-b'));
+      expect(fm.statusHistory).toHaveLength(1);
+      expect(fm.statusHistory[0]).toMatchObject({
+        from: null,
+        to: 'draft',
+        command: 'create',
+      });
+      expect(fm.statusHistory[0].at).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+    });
+
+    it('executeTransition appends an entry with correct from/to/command/by', async () => {
+      const projectDir = resolve(testDir, projectSlug);
+      await executeTransition(projectDir, 'task-b', 'shape', { agent: 'claude-x' });
+      const fm = parseAssignmentFrontmatter(await readAssignmentContent(projectSlug, 'task-b'));
+      expect(fm.statusHistory).toHaveLength(2);
+      expect(fm.statusHistory[1]).toMatchObject({
+        from: 'draft',
+        to: 'ready_for_planning',
+        command: 'shape',
+        by: 'claude-x',
+      });
+      // the appended `at` matches the bumped `updated`
+      expect(fm.statusHistory[1].at).toBe(fm.updated);
+    });
+
+    it('a block transition records the reason on the history entry', async () => {
+      const projectDir = resolve(testDir, projectSlug);
+      await executeTransition(projectDir, 'task-b', 'start', { agent: 'claude-2' });
+      await executeTransition(projectDir, 'task-b', 'block', { reason: 'waiting on review' });
+      const fm = parseAssignmentFrontmatter(await readAssignmentContent(projectSlug, 'task-b'));
+      const last = fm.statusHistory[fm.statusHistory.length - 1];
+      expect(last).toMatchObject({ to: 'blocked', command: 'block', reason: 'waiting on review' });
+    });
+
+    it('executeTransitionByDir appends an entry', async () => {
+      const assignmentDir = resolve(testDir, projectSlug, 'assignments', 'task-b');
+      await executeTransitionByDir(assignmentDir, 'shape');
+      const fm = parseAssignmentFrontmatter(await readAssignmentContent(projectSlug, 'task-b'));
+      expect(fm.statusHistory).toHaveLength(2);
+      expect(fm.statusHistory[1]).toMatchObject({
+        from: 'draft',
+        to: 'ready_for_planning',
+        command: 'shape',
+      });
+    });
+
+    it('executeAssign does NOT append a statusHistory entry', async () => {
+      const projectDir = resolve(testDir, projectSlug);
+      const before = parseAssignmentFrontmatter(await readAssignmentContent(projectSlug, 'task-a'));
+      await executeAssign(projectDir, 'task-a', 'claude-1');
+      const after = parseAssignmentFrontmatter(await readAssignmentContent(projectSlug, 'task-a'));
+      expect(after.statusHistory).toHaveLength(before.statusHistory.length);
+      expect(after.assignee).toBe('claude-1');
+    });
+
+    it('re-running a command whose target equals the current status appends nothing', async () => {
+      const projectDir = resolve(testDir, projectSlug);
+      await executeTransition(projectDir, 'task-b', 'start', { agent: 'claude-2' });
+      await executeTransition(projectDir, 'task-b', 'complete');
+      const done = parseAssignmentFrontmatter(await readAssignmentContent(projectSlug, 'task-b'));
+      expect(done.status).toBe('completed');
+      const len = done.statusHistory.length;
+      // CLI commands are guard-free: `complete` resolves to 'completed' regardless
+      // of current status. Re-running it must not append a from===to entry.
+      await executeTransition(projectDir, 'task-b', 'complete');
+      const again = parseAssignmentFrontmatter(await readAssignmentContent(projectSlug, 'task-b'));
+      expect(again.statusHistory).toHaveLength(len);
+      expect(again.statusHistory[len - 1].to).toBe('completed');
+    });
   });
 });
 

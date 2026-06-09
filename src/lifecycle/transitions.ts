@@ -3,7 +3,7 @@ import { readFile } from 'node:fs/promises';
 import { fileExists, writeFileForce } from '../utils/fs.js';
 import { nowTimestamp } from '../utils/timestamp.js';
 import { getTargetStatus } from './state-machine.js';
-import { parseAssignmentFrontmatter, updateAssignmentFile } from './frontmatter.js';
+import { appendStatusHistoryEntry, parseAssignmentFrontmatter, updateAssignmentFile } from './frontmatter.js';
 import {
   completeLinkedTodos,
   reopenLinkedTodos,
@@ -112,9 +112,10 @@ export async function executeTransition(
     }
   }
 
+  const now = nowTimestamp();
   const updates: Partial<Pick<AssignmentFrontmatter, 'status' | 'assignee' | 'blockedReason' | 'updated'>> = {
     status: targetStatus,
-    updated: nowTimestamp(),
+    updated: now,
   };
 
   if (ASSIGNEE_SETTING_COMMANDS.has(command) && options.agent && !frontmatter.assignee) {
@@ -127,7 +128,21 @@ export async function executeTransition(
     updates.blockedReason = null;
   }
 
-  const updatedContent = updateAssignmentFile(content, updates);
+  let updatedContent = updateAssignmentFile(content, updates);
+  // Only record a history entry on an ACTUAL status change. CLI commands are
+  // guard-free (getTargetStatus returns the canonical target regardless of the
+  // current status), so re-running e.g. `complete` on an already-completed
+  // assignment must not append a from===to entry and reset statusAge.
+  if (targetStatus !== frontmatter.status) {
+    updatedContent = appendStatusHistoryEntry(updatedContent, {
+      at: now,
+      from: frontmatter.status,
+      to: targetStatus,
+      command,
+      by: options.agent ?? frontmatter.assignee ?? null,
+      reason: command === 'block' ? options.reason : undefined,
+    });
+  }
   await writeFileForce(filePath, updatedContent);
 
   await applyLinkedTodosSideEffect(options.linkedTodosLookup, command, targetStatus, frontmatter);
@@ -200,9 +215,10 @@ export async function executeTransitionByDir(
     }
   }
 
+  const now = nowTimestamp();
   const updates: Partial<Pick<AssignmentFrontmatter, 'status' | 'assignee' | 'blockedReason' | 'updated'>> = {
     status: targetStatus,
-    updated: nowTimestamp(),
+    updated: now,
   };
 
   if (ASSIGNEE_SETTING_COMMANDS.has(command) && options.agent && !frontmatter.assignee) {
@@ -215,7 +231,18 @@ export async function executeTransitionByDir(
     updates.blockedReason = null;
   }
 
-  const updatedContent = updateAssignmentFile(content, updates);
+  let updatedContent = updateAssignmentFile(content, updates);
+  // Only record a history entry on an ACTUAL status change (see executeTransition).
+  if (targetStatus !== frontmatter.status) {
+    updatedContent = appendStatusHistoryEntry(updatedContent, {
+      at: now,
+      from: frontmatter.status,
+      to: targetStatus,
+      command,
+      by: options.agent ?? frontmatter.assignee ?? null,
+      reason: command === 'block' ? options.reason : undefined,
+    });
+  }
   await writeFileForce(filePath, updatedContent);
 
   await applyLinkedTodosSideEffect(options.linkedTodosLookup, command, targetStatus, frontmatter);

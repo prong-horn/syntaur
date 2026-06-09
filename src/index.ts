@@ -12,6 +12,7 @@ import { shapeCommand } from './commands/shape.js';
 import { planReadyCommand } from './commands/plan-ready.js';
 import { implementCommand } from './commands/implement.js';
 import { migrateStatusesCommand } from './commands/migrate-statuses.js';
+import { migrateStatusHistoryCommand } from './commands/migrate-status-history.js';
 import { completeCommand } from './commands/complete.js';
 import { blockCommand } from './commands/block.js';
 import { unblockCommand } from './commands/unblock.js';
@@ -388,6 +389,23 @@ program
   .action(async (options) => {
     try {
       await migrateStatusesCommand(options);
+    } catch (error) {
+      console.error(
+        'Error:',
+        error instanceof Error ? error.message : String(error),
+      );
+      process.exit(1);
+    }
+  });
+
+program
+  .command('migrate-status-history')
+  .description('Seed a synthetic statusHistory entry on assignments that lack one (use --apply to write)')
+  .option('--dir <path>', 'Override default project directory')
+  .option('--apply', 'Apply the migration (default: dry-run)')
+  .action(async (options) => {
+    try {
+      await migrateStatusHistoryCommand(options);
     } catch (error) {
       console.error(
         'Error:',

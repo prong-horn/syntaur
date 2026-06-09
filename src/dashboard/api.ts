@@ -931,8 +931,9 @@ export async function listArchived(
 }
 
 async function toStandaloneBoardItem(sr: StandaloneRecord): Promise<AssignmentBoardItem> {
+  const { terminalStatuses } = await getStatusConfig();
   return {
-    ...toAssignmentSummary(sr.record),
+    ...toAssignmentSummary(sr.record, terminalStatuses),
     projectSlug: null,
     projectTitle: null,
     blockedReason: sr.record.blockedReason,
@@ -1095,6 +1096,7 @@ export async function getProjectDetail(
   // Consistent with the project summary: the activity timestamp ignores archived
   // children so archiving an old assignment doesn't bump it.
   const updated = getProjectActivityTimestamp(project.updated, activeAssignments(assignments));
+  const { terminalStatuses } = await getStatusConfig();
 
   return {
     slug: project.slug || slug,
@@ -1112,7 +1114,7 @@ export async function getProjectDetail(
     progress: rollup.progress,
     needsAttention: rollup.needsAttention,
     assignments: assignments
-      .map(toAssignmentSummary)
+      .map((a) => toAssignmentSummary(a, terminalStatuses))
       .sort((left, right) => compareTimestamps(right.updated, left.updated)),
     resources,
     memories,
@@ -1219,6 +1221,7 @@ export async function getAssignmentDetail(
     };
   }
 
+  const { terminalStatuses } = await getStatusConfig();
   const detail: AssignmentDetail = {
     id: assignment.id,
     projectSlug,
@@ -1240,6 +1243,7 @@ export async function getAssignmentDetail(
     archived: assignment.archived,
     archivedAt: assignment.archivedAt,
     archivedReason: assignment.archivedReason,
+    ...deriveStatusVirtuals(assignment, terminalStatuses),
     created: assignment.created,
     updated: assignment.updated,
     body: assignment.body,
@@ -1555,6 +1559,7 @@ async function buildStandaloneAssignmentDetail(
     comments = { updated: parsed.updated, entryCount: parsed.entryCount, entries: parsed.entries };
   }
 
+  const { terminalStatuses } = await getStatusConfig();
   const detail: AssignmentDetail = {
     id: assignment.id,
     projectSlug: null,
@@ -1576,6 +1581,7 @@ async function buildStandaloneAssignmentDetail(
     archived: assignment.archived,
     archivedAt: assignment.archivedAt,
     archivedReason: assignment.archivedReason,
+    ...deriveStatusVirtuals(assignment, terminalStatuses),
     created: assignment.created,
     updated: assignment.updated,
     body: assignment.body,
@@ -1991,7 +1997,41 @@ async function buildProjectRollup(
   return { progress, needsAttention, status };
 }
 
-function toAssignmentSummary(assignment: AssignmentRecord): AssignmentSummary {
+/**
+ * Derive the loader-only virtual fields from an assignment's `statusHistory`
+ * (never stored on disk). `completedAt` is the `at` of the LAST transition into
+ * the current status, but only when that status is terminal (lifecycle
+ * `completed`/`failed`) — so an assignment reopened after completion reports null,
+ * because its current status is no longer terminal. `statusAge` is the elapsed
+ * milliseconds since the last entry (time in current status), null when there is
+ * no history or the timestamp is unparseable.
+ */
+function deriveStatusVirtuals(
+  assignment: AssignmentRecord,
+  terminalStatuses: ReadonlySet<string>,
+): { completedAt: string | null; statusAge: number | null } {
+  const hist = assignment.statusHistory ?? [];
+
+  let completedAt: string | null = null;
+  if (terminalStatuses.has(assignment.status)) {
+    for (const entry of hist) {
+      if (entry.to === assignment.status) completedAt = entry.at;
+    }
+  }
+
+  let statusAge: number | null = null;
+  if (hist.length > 0) {
+    const t = Date.parse(hist[hist.length - 1].at);
+    statusAge = Number.isNaN(t) ? null : Date.now() - t;
+  }
+
+  return { completedAt, statusAge };
+}
+
+function toAssignmentSummary(
+  assignment: AssignmentRecord,
+  terminalStatuses: ReadonlySet<string>,
+): AssignmentSummary {
   return {
     id: assignment.id,
     slug: assignment.slug,
@@ -2008,6 +2048,7 @@ function toAssignmentSummary(assignment: AssignmentRecord): AssignmentSummary {
     archived: assignment.archived,
     archivedAt: assignment.archivedAt,
     archivedReason: assignment.archivedReason,
+    ...deriveStatusVirtuals(assignment, terminalStatuses),
   };
 }
 
@@ -2016,8 +2057,9 @@ async function toAssignmentBoardItem(
   projectRecord: ProjectRecord,
   assignment: AssignmentRecord,
 ): Promise<AssignmentBoardItem> {
+  const { terminalStatuses } = await getStatusConfig();
   return {
-    ...toAssignmentSummary(assignment),
+    ...toAssignmentSummary(assignment, terminalStatuses),
     projectSlug: projectRecord.summary.slug,
     projectTitle: projectRecord.summary.title,
     blockedReason: assignment.blockedReason,

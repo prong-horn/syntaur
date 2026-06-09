@@ -184,6 +184,33 @@ describe('syntaur status', () => {
     expect(await readFile(c, 'utf-8')).toContain('status: review');
   });
 
+  it('rename relabels statusHistory in place (no new entry, at preserved)', async () => {
+    await runCli(['status', 'init'], home);
+    // Seed an assignment that already has a statusHistory entry referencing the
+    // status being renamed.
+    const dir = resolve(home, 'projects', 'p', 'assignments', 'hist');
+    await mkdir(dir, { recursive: true });
+    const path = resolve(dir, 'assignment.md');
+    await writeFile(
+      path,
+      `---\nid: 1111-hist\nslug: hist\nstatus: in_progress\nproject: p\nupdated: "2026-01-01T00:00:00Z"\nstatusHistory:\n  - at: "2026-01-01T00:00:00Z"\n    from: null\n    to: in_progress\n    command: create\n    by: null\n---\n# hist\n`,
+      'utf-8',
+    );
+    const r = await runCli(['status', 'rename', 'in_progress', '--to', 'working'], home);
+    expect(r.code, r.stderr).toBe(0);
+
+    const after = await readFile(path, 'utf-8');
+    // Top-level status is relabeled...
+    expect(after).toContain('status: working');
+    // ...and the history entry is relabeled in place: still exactly one entry
+    // (no transition appended), `at` preserved, and `to` now uses the new id.
+    expect((after.match(/^ {2}- at:/gm) ?? []).length).toBe(1);
+    expect(after).not.toContain('command: rename');
+    expect(after).toContain('at: "2026-01-01T00:00:00Z"');
+    expect(after).toContain('to: working');
+    expect(after).not.toContain('to: in_progress');
+  });
+
   it('rename --dry-run shows the per-file diff and writes nothing', async () => {
     await runCli(['status', 'init'], home);
     const a = await writeAssignment('a', 'in_progress');

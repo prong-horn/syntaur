@@ -1,7 +1,11 @@
 import { readFile, writeFile, rm } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import type { AssignmentStatus } from '../lifecycle/types.js';
-import { parseAssignmentFrontmatter, updateAssignmentFile } from '../lifecycle/frontmatter.js';
+import {
+  appendStatusHistoryEntry,
+  parseAssignmentFrontmatter,
+  updateAssignmentFile,
+} from '../lifecycle/frontmatter.js';
 import { listAssignmentsByProject } from './assignment-walk.js';
 import { nowTimestamp } from './timestamp.js';
 
@@ -236,10 +240,14 @@ export async function applyStatusResolutions(
           );
           continue;
         }
-        const next = updateAssignmentFile(current, {
-          status: r.target,
-          updated: nowTimestamp(),
-        });
+        const now = nowTimestamp();
+        const next = appendStatusHistoryEntry(
+          updateAssignmentFile(current, {
+            status: r.target,
+            updated: now,
+          }),
+          { at: now, from: r.id, to: r.target, command: 'remap', by: null },
+        );
         await writeFile(a.path, next, 'utf-8');
         writtenPaths.push(a.path);
         remapped++;

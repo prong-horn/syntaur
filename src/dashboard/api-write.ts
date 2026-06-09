@@ -3,6 +3,7 @@ import { resolve, basename, isAbsolute } from 'node:path';
 import { rm, readFile, open as fsOpen, stat as fsStat, realpath as fsRealpath } from 'node:fs/promises';
 import { spawnSync } from 'node:child_process';
 import { executeTransition } from '../lifecycle/index.js';
+import { appendStatusHistoryEntry } from '../lifecycle/frontmatter.js';
 import { isValidSlug, slugify } from '../utils/slug.js';
 import { generateId } from '../utils/uuid.js';
 import { nowTimestamp } from '../utils/timestamp.js';
@@ -938,7 +939,19 @@ export function createWriteRouter(
       const timestamp = fields.created || nowTimestamp();
 
       await ensureDir(assignmentDir);
-      await writeFileForce(resolve(assignmentDir, 'assignment.md'), content);
+      // Raw create bypasses renderAssignment, so seed the statusHistory here
+      // (only when the body didn't already supply one — never double-seed).
+      const seededContent =
+        parseAssignmentFull(content).statusHistory.length > 0
+          ? content
+          : appendStatusHistoryEntry(content, {
+              at: timestamp,
+              from: null,
+              to: parseAssignmentFull(content).status,
+              command: 'create',
+              by: null,
+            });
+      await writeFileForce(resolve(assignmentDir, 'assignment.md'), seededContent);
 
       try {
         const companions: Array<[string, string]> = [
@@ -1041,13 +1054,27 @@ export function createWriteRouter(
       }
 
       let nextContent = nextContentRaw;
+      const now = nowTimestamp();
 
       // Clear blockedReason when status moves away from blocked
       if (next.status !== current.status && current.status === 'blocked' && next.status !== 'blocked') {
         nextContent = setTopLevelField(nextContent, 'blockedReason', null);
       }
 
-      nextContent = setTopLevelField(nextContent, 'updated', nowTimestamp());
+      nextContent = setTopLevelField(nextContent, 'updated', now);
+
+      // Record a transition when a raw edit changes the status (conditional — no
+      // entry on an unchanged status).
+      if (next.status !== current.status) {
+        nextContent = appendStatusHistoryEntry(nextContent, {
+          at: now,
+          from: current.status,
+          to: next.status,
+          command: 'edit',
+          by: null,
+        });
+      }
+
       await writeFileForce(assignmentPath, nextContent);
 
       const assignment = await getAssignmentDetail(projectsDir, projectSlug, assignmentSlug);
@@ -1846,12 +1873,26 @@ export function createWriteRouter(
       }
 
       let content = await readFile(assignmentPath, 'utf-8');
+      const fromStatus = parseAssignmentFull(content).status;
+      const now = nowTimestamp();
       content = setTopLevelField(content, 'status', status);
-      content = setTopLevelField(content, 'updated', nowTimestamp());
+      content = setTopLevelField(content, 'updated', now);
 
       // Clear blockedReason when moving away from blocked
       if (status !== 'blocked') {
         content = setTopLevelField(content, 'blockedReason', null);
+      }
+
+      // Record the transition — only on an ACTUAL status change. Re-setting the
+      // same status is a no-op (not a transition) and must not reset statusAge.
+      if (status !== fromStatus) {
+        content = appendStatusHistoryEntry(content, {
+          at: now,
+          from: fromStatus,
+          to: status,
+          command: 'override',
+          by: null,
+        });
       }
 
       await writeFileForce(assignmentPath, content);
@@ -2177,7 +2218,18 @@ export function createWriteRouter(
         const timestamp = fields.created || nowTimestamp();
         await ensureDir(assignmentDir);
         // Normalize the frontmatter id to the freshly-generated UUID — the template ships a placeholder.
-        const normalizedContent = setTopLevelField(rawContent, 'id', id);
+        let normalizedContent = setTopLevelField(rawContent, 'id', id);
+        // Raw create bypasses renderAssignment, so seed statusHistory here (only
+        // when the body didn't already supply one — never double-seed).
+        if (parseAssignmentFull(normalizedContent).statusHistory.length === 0) {
+          normalizedContent = appendStatusHistoryEntry(normalizedContent, {
+            at: timestamp,
+            from: null,
+            to: parseAssignmentFull(normalizedContent).status,
+            command: 'create',
+            by: null,
+          });
+        }
         await writeFileForce(resolve(assignmentDir, 'assignment.md'), normalizedContent);
         await writeFileForce(
           resolve(assignmentDir, 'scratchpad.md'),
@@ -2426,11 +2478,25 @@ export function createWriteRouter(
       nextContent = setTopLevelField(nextContent, 'project', null);
       if (current.slug) nextContent = setTopLevelField(nextContent, 'slug', current.slug);
 
+      const now = nowTimestamp();
+
       if (next.status !== current.status && current.status === 'blocked' && next.status !== 'blocked') {
         nextContent = setTopLevelField(nextContent, 'blockedReason', null);
       }
 
-      nextContent = setTopLevelField(nextContent, 'updated', nowTimestamp());
+      nextContent = setTopLevelField(nextContent, 'updated', now);
+
+      // Record a transition when a raw edit changes the status (conditional).
+      if (next.status !== current.status) {
+        nextContent = appendStatusHistoryEntry(nextContent, {
+          at: now,
+          from: current.status,
+          to: next.status,
+          command: 'edit',
+          by: null,
+        });
+      }
+
       await writeFileForce(assignmentPath, nextContent);
 
       const assignment = await getAssignmentDetailById(projectsDir, assignmentsDir, id);
@@ -2626,10 +2692,22 @@ export function createWriteRouter(
         return;
       }
       let content = await readFile(assignmentPath, 'utf-8');
+      const fromStatus = parseAssignmentFull(content).status;
+      const now = nowTimestamp();
       content = setTopLevelField(content, 'status', status);
-      content = setTopLevelField(content, 'updated', nowTimestamp());
+      content = setTopLevelField(content, 'updated', now);
       if (status !== 'blocked') {
         content = setTopLevelField(content, 'blockedReason', null);
+      }
+      // Record the transition — only on an ACTUAL status change (no no-op entry).
+      if (status !== fromStatus) {
+        content = appendStatusHistoryEntry(content, {
+          at: now,
+          from: fromStatus,
+          to: status,
+          command: 'override',
+          by: null,
+        });
       }
       await writeFileForce(assignmentPath, content);
       const assignment = await getAssignmentDetailById(projectsDir, assignmentsDir, id);

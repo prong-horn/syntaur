@@ -3,7 +3,11 @@ import { readdir, readFile } from 'node:fs/promises';
 import { expandHome, assignmentsDir as getStandaloneDir } from '../utils/paths.js';
 import { fileExists, writeFileForce } from '../utils/fs.js';
 import { readConfig } from '../utils/config.js';
-import { parseAssignmentFrontmatter, updateAssignmentFile } from '../lifecycle/frontmatter.js';
+import {
+  appendStatusHistoryEntry,
+  parseAssignmentFrontmatter,
+  updateAssignmentFile,
+} from '../lifecycle/frontmatter.js';
 import { nowTimestamp } from '../utils/timestamp.js';
 import type { AssignmentFrontmatter } from '../lifecycle/types.js';
 
@@ -136,10 +140,13 @@ export async function migrateStatusesCommand(
   let migrated = 0;
   for (const c of candidates) {
     const content = await readFile(c.assignmentMd, 'utf-8');
-    const updated = updateAssignmentFile(content, {
-      status: c.toStatus,
-      updated: now,
-    });
+    const updated = appendStatusHistoryEntry(
+      updateAssignmentFile(content, {
+        status: c.toStatus,
+        updated: now,
+      }),
+      { at: now, from: c.fromStatus, to: c.toStatus, command: 'promote', by: null },
+    );
     await writeFileForce(c.assignmentMd, updated);
     migrated += 1;
   }

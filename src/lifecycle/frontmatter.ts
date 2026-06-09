@@ -1,4 +1,4 @@
-import type { AssignmentFrontmatter, ExternalId, Workspace } from './types.js';
+import type { AssignmentFrontmatter, ExternalId, StatusHistoryEntry, Workspace } from './types.js';
 
 function extractFrontmatter(fileContent: string): [string, string] {
   const match = fileContent.match(/^---\n([\s\S]*?)\n---/);
@@ -84,6 +84,67 @@ function parseExternalIds(frontmatter: string): ExternalId[] {
   return results;
 }
 
+/**
+ * Parse the `statusHistory` list-of-mappings from a frontmatter string.
+ *
+ * NOTE on the boundary: `extractFrontmatter` strips the closing `\n---`, so when
+ * `statusHistory` is the LAST frontmatter key there is no trailing `---` and no
+ * following top-level key. The `parseExternalIds` regex boundary `(?=^\w|\n---)`
+ * would silently drop such a block, and `$` under `/m` matches end-of-LINE (which
+ * would truncate an entry after its first line). So this uses a robust line-scan:
+ * collect blank/indented lines after the header until the first column-0 non-blank
+ * line OR end of input. This is end-of-input safe regardless of the `---` delimiter.
+ */
+function parseStatusHistory(frontmatter: string): StatusHistoryEntry[] {
+  if (/^statusHistory:\s*\[\s*\]/m.test(frontmatter)) return [];
+
+  const headerMatch = frontmatter.match(/^statusHistory:\s*$/m);
+  if (!headerMatch) return [];
+
+  // Use the regex match offset, NOT indexOf(headerMatch[0]) — an earlier scalar
+  // value could contain the substring "statusHistory:" (e.g. a title) and shift
+  // the start position, dropping the real block.
+  const headerStart = headerMatch.index ?? frontmatter.indexOf(headerMatch[0]);
+  const bodyStart = headerStart + headerMatch[0].length + 1; // skip the trailing \n
+  const after = frontmatter.slice(bodyStart);
+
+  const bodyLines: string[] = [];
+  for (const line of after.split('\n')) {
+    if (line.length === 0) {
+      bodyLines.push(line); // blank line — keep scanning (YAML allows blanks in a block)
+      continue;
+    }
+    if (line[0] !== ' ' && line[0] !== '\t') break; // column-0 non-blank → block ended
+    bodyLines.push(line);
+  }
+  const body = bodyLines.join('\n');
+
+  const results: StatusHistoryEntry[] = [];
+  const itemBlocks = body.split(/\n\s+-\s+/).filter((b) => b.trim().length > 0);
+  for (const block of itemBlocks) {
+    const entry: Record<string, string | null> = {};
+    for (const line of block.split('\n')) {
+      const colonIdx = line.indexOf(':');
+      if (colonIdx < 0) continue;
+      const key = line.slice(0, colonIdx).trim().replace(/^-\s+/, '');
+      if (!key) continue;
+      entry[key] = parseSimpleValue(line.slice(colonIdx + 1));
+    }
+    // `to` is required; `from` is null only on the seed/create entry.
+    if (!entry['to']) continue;
+    const result: StatusHistoryEntry = {
+      at: entry['at'] ?? '',
+      from: entry['from'] ?? null,
+      to: entry['to'],
+      command: entry['command'] ?? '',
+      by: entry['by'] ?? null,
+    };
+    if (entry['reason'] != null) result.reason = entry['reason'];
+    results.push(result);
+  }
+  return results;
+}
+
 function parseWorkspace(frontmatter: string): Workspace {
   const defaults: Workspace = {
     repository: null,
@@ -138,6 +199,7 @@ export function parseAssignmentFrontmatter(fileContent: string): AssignmentFront
     updated: getField('updated') ?? '',
     assignee: getField('assignee'),
     externalIds: parseExternalIds(frontmatter),
+    statusHistory: parseStatusHistory(frontmatter),
     dependsOn: parseDependsOn(frontmatter),
     links: parseLinks(frontmatter),
     blockedReason: getField('blockedReason'),
@@ -269,6 +331,116 @@ export function updateAssignmentWorkspace(
       lines.push(`  ${field}: ${formatYamlValue(value)}`);
     }
     newFm = `${fmBlock.replace(/\n+$/, '')}\n${lines.join('\n')}`;
+  }
+
+  return `${fmMatch[1]}${newFm}${fmMatch[3]}${fileContent.slice(fmMatch[0].length)}`;
+}
+
+/**
+ * Relabel a status id within an assignment's `statusHistory` — rewrite every
+ * entry whose `from`/`to` equals `oldId` to `newId`, WITHOUT appending a new
+ * entry or changing any `at`. Used by `syntaur status rename`: a rename is a
+ * relabel, not a transition, so it must preserve `statusAge` (no new entry) yet
+ * keep historical labels consistent with the new id (so derived `completedAt`
+ * stays correct after renaming a terminal status). Scoped to the frontmatter
+ * block; `from:`/`to:` keys are unique to statusHistory entries there. Exact
+ * value match avoids relabeling a status whose id is a substring of another.
+ */
+export function renameStatusInHistory(
+  content: string,
+  oldId: string,
+  newId: string,
+): string {
+  const fmMatch = content.match(/^(---\n)([\s\S]*?)(\n---)/);
+  if (!fmMatch) return content;
+  const esc = oldId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const re = new RegExp(`^(\\s+(?:from|to):[ \\t]*)${esc}[ \\t]*$`, 'gm');
+  const newFm = fmMatch[2].replace(re, `$1${newId}`);
+  return `${fmMatch[1]}${newFm}${fmMatch[3]}${content.slice(fmMatch[0].length)}`;
+}
+
+/**
+ * Locate the `statusHistory:` block (the multi-line list form, not inline `[]`)
+ * inside a frontmatter string and return the [bodyStart, bodyEnd) offsets of the
+ * block body (the indented `- …` item lines, excluding the header line). Returns
+ * null when there is no block header. Mirrors `findWorkspaceBlock`.
+ */
+function findStatusHistoryBlock(
+  fmBlock: string,
+): { headerStart: number; bodyStart: number; bodyEnd: number } | null {
+  const headerMatch = fmBlock.match(/^statusHistory:\s*$/m);
+  if (!headerMatch) return null;
+  // Regex match offset, not indexOf — guards against an earlier scalar value
+  // containing the substring "statusHistory:".
+  const headerStart = headerMatch.index ?? fmBlock.indexOf(headerMatch[0]);
+  const bodyStart = headerStart + headerMatch[0].length + 1; // skip the trailing \n
+  const after = fmBlock.slice(bodyStart);
+  const lines = after.split('\n');
+  let consumed = 0;
+  for (const line of lines) {
+    if (line.length === 0) {
+      consumed += line.length + 1;
+      continue;
+    }
+    if (line[0] !== ' ' && line[0] !== '\t') break; // top-level key — block ended
+    consumed += line.length + 1;
+  }
+  const bodyEnd = Math.min(bodyStart + consumed, fmBlock.length);
+  return { headerStart, bodyStart, bodyEnd };
+}
+
+function renderStatusHistoryItem(entry: StatusHistoryEntry): string {
+  const lines = [
+    `  - at: ${formatYamlValue(entry.at)}`,
+    `    from: ${formatYamlValue(entry.from)}`,
+    `    to: ${formatYamlValue(entry.to)}`,
+    `    command: ${formatYamlValue(entry.command)}`,
+    `    by: ${formatYamlValue(entry.by)}`,
+  ];
+  if (entry.reason !== undefined && entry.reason !== null) {
+    lines.push(`    reason: ${formatYamlValue(entry.reason)}`);
+  }
+  return lines.join('\n');
+}
+
+/**
+ * Append one entry to an assignment file's `statusHistory` frontmatter list,
+ * returning the new file content. Robust to three states:
+ *   (i)   no `statusHistory:` key      → create the block before the closing `---`;
+ *   (ii)  inline `statusHistory: []`   → convert it to a block with this entry;
+ *   (iii) existing block               → append the item after the last item.
+ * This is the single shared serializer used by the lifecycle transition paths and
+ * the dashboard write paths. Mirrors the bespoke block handling of
+ * `updateAssignmentWorkspace` (scalar `updateAssignmentFile` cannot append to a list).
+ */
+export function appendStatusHistoryEntry(
+  fileContent: string,
+  entry: StatusHistoryEntry,
+): string {
+  const fmMatch = fileContent.match(/^(---\n)([\s\S]*?)(\n---)/);
+  if (!fmMatch) {
+    throw new Error('No frontmatter found in assignment file. Expected --- delimiters.');
+  }
+  const fmBlock = fmMatch[2];
+  const item = renderStatusHistoryItem(entry);
+
+  const inlineRegex = /^statusHistory:[ \t]*\[[ \t]*\][ \t]*$/m;
+  const block = findStatusHistoryBlock(fmBlock);
+
+  let newFm: string;
+  if (inlineRegex.test(fmBlock)) {
+    // (ii) inline empty list → block.
+    newFm = fmBlock.replace(inlineRegex, `statusHistory:\n${item}`);
+  } else if (block) {
+    // (iii) existing block → insert after the last item line.
+    const before = fmBlock.slice(0, block.bodyEnd);
+    const rest = fmBlock.slice(block.bodyEnd);
+    const sep1 = before.endsWith('\n') ? '' : '\n';
+    const sep2 = rest.length > 0 && !rest.startsWith('\n') ? '\n' : '';
+    newFm = `${before}${sep1}${item}${sep2}${rest}`;
+  } else {
+    // (i) no key → append a new block at the end of the frontmatter.
+    newFm = `${fmBlock.replace(/\n+$/, '')}\nstatusHistory:\n${item}`;
   }
 
   return `${fmMatch[1]}${newFm}${fmMatch[3]}${fileContent.slice(fmMatch[0].length)}`;

@@ -3,6 +3,8 @@
  * Pattern copied from src/lifecycle/frontmatter.ts:3-23 (extractFrontmatter + parseSimpleValue).
  */
 
+import type { StatusHistoryEntry } from '../lifecycle/types.js';
+
 export interface ParsedFile {
   frontmatter: Record<string, string>;
   body: string;
@@ -243,6 +245,7 @@ export interface ParsedAssignmentFull {
     parentBranch: string | null;
   };
   externalIds: Array<{ system: string; id: string; url: string | null }>;
+  statusHistory: StatusHistoryEntry[];
   tags: string[];
   archived: boolean;
   archivedAt: string | null;
@@ -284,6 +287,62 @@ function parseExternalIds(frontmatter: string): Array<{ system: string; id: stri
   return results;
 }
 
+/**
+ * Parse the `statusHistory` list-of-mappings. Parity copy of
+ * `src/lifecycle/frontmatter.ts::parseStatusHistory` — uses the same robust
+ * line-scan (NOT the `parseExternalIds` regex boundary), because this module's
+ * `extractFrontmatter` also strips the closing `\n---`, so a last-key
+ * `statusHistory` block would otherwise be dropped. Keep in sync with the
+ * lifecycle parser (dashboard-parser parity test guards this).
+ */
+function parseStatusHistory(frontmatter: string): StatusHistoryEntry[] {
+  if (/^statusHistory:\s*\[\s*\]/m.test(frontmatter)) return [];
+
+  const headerMatch = frontmatter.match(/^statusHistory:\s*$/m);
+  if (!headerMatch) return [];
+
+  // Regex match offset, not indexOf — guards against an earlier scalar value
+  // containing the substring "statusHistory:".
+  const headerStart = headerMatch.index ?? frontmatter.indexOf(headerMatch[0]);
+  const bodyStart = headerStart + headerMatch[0].length + 1; // skip the trailing \n
+  const after = frontmatter.slice(bodyStart);
+
+  const bodyLines: string[] = [];
+  for (const line of after.split('\n')) {
+    if (line.length === 0) {
+      bodyLines.push(line);
+      continue;
+    }
+    if (line[0] !== ' ' && line[0] !== '\t') break;
+    bodyLines.push(line);
+  }
+  const body = bodyLines.join('\n');
+
+  const results: StatusHistoryEntry[] = [];
+  const itemBlocks = body.split(/\n\s+-\s+/).filter((b) => b.trim().length > 0);
+  for (const block of itemBlocks) {
+    const entry: Record<string, string | null> = {};
+    for (const line of block.split('\n')) {
+      const colonIdx = line.indexOf(':');
+      if (colonIdx < 0) continue;
+      const key = line.slice(0, colonIdx).trim().replace(/^-\s+/, '');
+      if (!key) continue;
+      entry[key] = parseSimpleValue(line.slice(colonIdx + 1));
+    }
+    if (!entry['to']) continue;
+    const result: StatusHistoryEntry = {
+      at: entry['at'] ?? '',
+      from: entry['from'] ?? null,
+      to: entry['to'],
+      command: entry['command'] ?? '',
+      by: entry['by'] ?? null,
+    };
+    if (entry['reason'] != null) result.reason = entry['reason'];
+    results.push(result);
+  }
+  return results;
+}
+
 export function parseAssignmentFull(fileContent: string): ParsedAssignmentFull {
   const [fm, body] = extractFrontmatter(fileContent);
   return {
@@ -306,6 +365,7 @@ export function parseAssignmentFull(fileContent: string): ParsedAssignmentFull {
       parentBranch: getNestedField(fm, 'workspace', 'parentBranch'),
     },
     externalIds: parseExternalIds(fm),
+    statusHistory: parseStatusHistory(fm),
     tags: parseListField(fm, 'tags'),
     archived: getField(fm, 'archived') === 'true',
     archivedAt: getField(fm, 'archivedAt'),

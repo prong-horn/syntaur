@@ -577,3 +577,71 @@ describe('extractMermaidGraph', () => {
     expect(extractMermaidGraph('No graph here.')).toBeNull();
   });
 });
+
+describe('parseAssignmentFull — statusHistory parity', () => {
+  // Same fixture parsed by both the dashboard parser and the lifecycle parser
+  // must yield identical statusHistory (the two parsers are independent copies).
+  const HISTORY_BLOCK = `statusHistory:
+  - at: "2026-03-18T10:00:00Z"
+    from: null
+    to: draft
+    command: create
+    by: null
+  - at: "2026-03-18T11:00:00Z"
+    from: draft
+    to: blocked
+    command: block
+    by: claude-1
+    reason: waiting on API`;
+
+  function fixture(historyPlacement: 'middle' | 'last'): string {
+    const head = `---
+id: p-1
+slug: parity
+title: "Parity"
+status: blocked
+priority: medium
+created: "2026-03-18T10:00:00Z"
+updated: "2026-03-18T11:00:00Z"
+assignee: claude-1
+externalIds: []`;
+    const tail = `dependsOn: []
+links: []
+blockedReason: waiting on API
+workspace:
+  repository: null
+  worktreePath: null
+  branch: null
+  parentBranch: null
+tags: []`;
+    const fm =
+      historyPlacement === 'last'
+        ? `${head}\n${tail}\n${HISTORY_BLOCK}`
+        : `${head}\n${HISTORY_BLOCK}\n${tail}`;
+    return `${fm}\n---\n\n# Parity\n`;
+  }
+
+  it('matches the lifecycle parser (statusHistory in the middle)', async () => {
+    const { parseAssignmentFrontmatter } = await import('../lifecycle/frontmatter.js');
+    const content = fixture('middle');
+    expect(parseAssignmentFull(content).statusHistory).toEqual(
+      parseAssignmentFrontmatter(content).statusHistory,
+    );
+    expect(parseAssignmentFull(content).statusHistory).toHaveLength(2);
+  });
+
+  it('matches the lifecycle parser when statusHistory is the LAST key (EOF-safe)', async () => {
+    const { parseAssignmentFrontmatter } = await import('../lifecycle/frontmatter.js');
+    const content = fixture('last');
+    const dashboard = parseAssignmentFull(content).statusHistory;
+    const lifecycle = parseAssignmentFrontmatter(content).statusHistory;
+    expect(dashboard).toEqual(lifecycle);
+    expect(dashboard).toHaveLength(2);
+    expect(dashboard[1]).toMatchObject({ to: 'blocked', command: 'block', reason: 'waiting on API' });
+  });
+
+  it('returns [] when statusHistory is absent or inline empty', () => {
+    const base = fixture('middle').replace(HISTORY_BLOCK, 'statusHistory: []');
+    expect(parseAssignmentFull(base).statusHistory).toEqual([]);
+  });
+});

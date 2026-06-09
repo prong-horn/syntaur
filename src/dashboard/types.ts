@@ -54,6 +54,18 @@ export interface AssignmentSummary {
   archived: boolean;
   archivedAt: string | null;
   archivedReason: string | null;
+  /**
+   * Loader-derived (NOT stored). The `at` of the transition into the current
+   * status iff that status is terminal (lifecycle `completed`/`failed`), else
+   * null — so an assignment reopened after completion reports null. Sourced from
+   * `statusHistory`. See `deriveStatusVirtuals` in api.ts.
+   */
+  completedAt: string | null;
+  /**
+   * Loader-derived (NOT stored). Milliseconds spent in the current status =
+   * `Date.now() − at(last statusHistory entry)`. Null when there is no history.
+   */
+  statusAge: number | null;
 }
 
 export interface AssignmentBoardItem extends AssignmentSummary {
@@ -214,6 +226,10 @@ export interface AssignmentDetail {
   archived: boolean;
   archivedAt: string | null;
   archivedReason: string | null;
+  /** Loader-derived (NOT stored). See {@link AssignmentSummary.completedAt}. */
+  completedAt: string | null;
+  /** Loader-derived (NOT stored). See {@link AssignmentSummary.statusAge}. */
+  statusAge: number | null;
   created: string;
   updated: string;
   body: string;
