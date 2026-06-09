@@ -71,6 +71,11 @@ export interface TransitionOptions {
   reason?: string;
   agent?: string;
   transitionTable?: Map<string, string>;
+  /** Guard-free custom targets: when provided (and no transitionTable), the
+   * command resolves to this map's target regardless of the current status —
+   * preserving a CUSTOM terminal target (e.g. complete -> done) without the
+   * from:command guard, even for assignments on legacy/undefined statuses. */
+  commandTargets?: Map<string, string>;
   terminalStatuses?: ReadonlySet<string>;
   /**
    * When provided, on a transition to `completed` we scan the configured todos
@@ -93,7 +98,9 @@ export async function executeTransition(
   const filePath = resolveAssignmentPath(projectDir, assignmentSlug);
   const { content, frontmatter } = await readAssignment(filePath);
 
-  const targetStatus = getTargetStatus(frontmatter.status, command, options.transitionTable);
+  const targetStatus = options.transitionTable
+    ? getTargetStatus(frontmatter.status, command, options.transitionTable)
+    : (options.commandTargets?.get(command) ?? getTargetStatus(frontmatter.status, command));
 
   if (!targetStatus) {
     return {
@@ -210,7 +217,9 @@ export async function executeTransitionByDir(
   const filePath = resolve(assignmentDir, 'assignment.md');
   const { content, frontmatter } = await readAssignment(filePath);
 
-  const targetStatus = getTargetStatus(frontmatter.status, command, options.transitionTable);
+  const targetStatus = options.transitionTable
+    ? getTargetStatus(frontmatter.status, command, options.transitionTable)
+    : (options.commandTargets?.get(command) ?? getTargetStatus(frontmatter.status, command));
   if (!targetStatus) {
     return {
       success: false,

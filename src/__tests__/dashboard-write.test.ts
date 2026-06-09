@@ -502,7 +502,7 @@ Keep this paragraph.`, 'utf-8');
     expect(content).toContain('Why?');
   });
 
-  it('POST /api/assignments/:id/transitions/start moves standalone pending → in_progress', async () => {
+  it('POST /api/assignments/:id/transitions/start settles to derived status', async () => {
     const assignmentsDir = resolve(testDir, 'standalone');
     await mkdir(assignmentsDir, { recursive: true });
     const router = createWriteRouter(testDir, assignmentsDir);
@@ -524,7 +524,9 @@ Keep this paragraph.`, 'utf-8');
       {},
     );
     expect(start.statusCode).toBe(200);
-    expect((start.payload as any).assignment.status).toBe('in_progress');
+    // Derived-status v3: the imperative target settles to derived reality —
+    // a bare standalone assignment (placeholder content) derives to draft.
+    expect((start.payload as any).assignment.status).toBe('draft');
   });
 
   it('GET /api/assignments is routable only when router constructed with assignmentsDir', async () => {

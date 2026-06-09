@@ -64,7 +64,13 @@ export async function resolveDeriveContext(): Promise<DeriveContext> {
 /** Acquire the per-assignment advisory lock. Returns a release function.
  * The lockfile carries an ownership token: release unlinks only when the
  * token still matches, so a holder that was staleness-evicted cannot unlink
- * its REPLACEMENT's lock (codex code-review finding 14). */
+ * its REPLACEMENT's lock (codex code-review finding 14).
+ *
+ * Accepted residual (codex r2 finding 6): the read-token-then-unlink pair is
+ * itself a (microseconds-wide) TOCTOU — unlink-by-path is the POSIX ceiling
+ * without fd-based locking. With cooperating writers, a 30s staleness window
+ * vs ms-scale critical sections, and content-CAS behind the lock as a second
+ * line of defense, the residual risk is accepted for single-host use. */
 async function acquireLock(assignmentDir: string): Promise<() => Promise<void>> {
   const lockPath = resolve(assignmentDir, LOCK_FILE);
   const token = `${process.pid}:${createHash('sha256').update(`${Math.random()}${Date.now()}`).digest('hex').slice(0, 12)}`;

@@ -10,7 +10,7 @@
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { expandHome, assignmentsDir as assignmentsDirFn } from '../utils/paths.js';
-import { fileExists, writeFileForce } from '../utils/fs.js';
+import { fileExists } from '../utils/fs.js';
 import { readConfig } from '../utils/config.js';
 import { isValidSlug } from '../utils/slug.js';
 import { nowTimestamp } from '../utils/timestamp.js';
@@ -128,6 +128,11 @@ async function assertFact(
     throw new Error(
       `Assignment is ${result.status} (terminal) — facts are frozen. Use \`syntaur reopen\` first.`,
     );
+  }
+  if (result.warning) {
+    // CAS retries exhausted — the fact mutation did NOT land. Failing loudly
+    // beats a silent success (codex r2 finding 5).
+    throw new Error(result.warning);
   }
   reportDerived(label, result);
   return result;

@@ -18,6 +18,7 @@ import {
   parseAssignmentFrontmatter,
   renameStatusInHistory,
   updateAssignmentFile,
+  updateOverride,
 } from '../lifecycle/frontmatter.js';
 
 /** Relabel every reference to a status id in one assignment file: headline
@@ -28,7 +29,13 @@ function renameAssignmentStatusRefs(content: string, id: string, newId: string, 
   const updates: Parameters<typeof updateAssignmentFile>[1] = { updated: now };
   if (fm.status === id) updates.status = newId;
   if (fm.phase === id) updates.phase = newId;
-  return renameStatusInHistory(updateAssignmentFile(content, updates), id, newId);
+  let next = updateAssignmentFile(content, updates);
+  // A pin targeting the renamed id must follow it, or the override silently
+  // dissolves on the next recompute (codex r2 finding 4).
+  if (fm.override?.status === id) {
+    next = updateOverride(next, { ...fm.override, status: newId });
+  }
+  return renameStatusInHistory(next, id, newId);
 }
 import {
   scanAssignmentsByStatus,

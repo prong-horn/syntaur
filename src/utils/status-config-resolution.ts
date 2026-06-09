@@ -378,7 +378,7 @@ export async function scanAssignmentsReferencingStatus(
     const inHistory = fm.statusHistory.some(
       (e) => e.from === id || e.to === id || e.phaseFrom === id || e.phaseTo === id,
     );
-    if (fm.status !== id && fm.phase !== id && !inHistory) continue;
+    if (fm.status !== id && fm.phase !== id && fm.override?.status !== id && !inHistory) continue;
     affected.push({
       path: assignmentPath,
       display: entry.standalone
