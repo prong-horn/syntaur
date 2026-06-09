@@ -94,6 +94,28 @@ export async function resolvePlaybookSlug(
 }
 
 /**
+ * List the canonical slugs of all installed playbook files in `playbooksDir`
+ * (enabled or not). Canonical slug is the frontmatter `slug`, falling back to
+ * the filename stem — matching `resolvePlaybookSlug`. Returns an empty set if
+ * the directory is absent. Used at launch to validate `@<playbook-slug>` tokens
+ * in an agent's `launchPrompt`.
+ */
+export async function listPlaybookSlugs(playbooksDir: string): Promise<Set<string>> {
+  const slugs = new Set<string>();
+  if (!(await fileExists(playbooksDir))) return slugs;
+
+  const entries = await readdir(playbooksDir, { withFileTypes: true });
+  for (const entry of entries) {
+    if (!isVisiblePlaybookFile(entry.name, entry.isFile())) continue;
+    const filePath = resolve(playbooksDir, entry.name);
+    const raw = await readFile(filePath, 'utf-8');
+    const parsed = parsePlaybook(raw);
+    slugs.add(parsed.slug || entry.name.replace(/\.md$/, ''));
+  }
+  return slugs;
+}
+
+/**
  * Toggle a playbook's enabled/disabled state. Writes config.md, rebuilds the
  * manifest, and returns the canonical slug + resulting enabled flag.
  *

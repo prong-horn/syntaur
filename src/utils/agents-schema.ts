@@ -32,12 +32,22 @@ export interface AgentConfig {
    */
   model?: string;
   /**
-   * Optional playbook slug for this runner profile. When set, a fresh "Open in
-   * agent" launch seeds a prompt that grabs the assignment AND runs this
-   * playbook end-to-end (see `INITIAL_PROMPT`). Blank/undefined keeps the plain
-   * `/grab-assignment` seed.
+   * Optional playbook slug for this runner profile. Back-compat shorthand: when
+   * set (and no `launchPrompt`), a fresh "Open in agent" launch synthesizes a
+   * prompt that grabs the assignment AND runs this playbook end-to-end (see
+   * `resolveLaunchPrompt`). Blank/undefined keeps the plain `/grab-assignment`
+   * seed. Ignored for seed assembly when `launchPrompt` is also set.
    */
   playbook?: string;
+  /**
+   * Editable, user-owned launch prompt: the literal first message handed to the
+   * agent on a fresh "Open in agent" launch, with `@`-tokens resolved at launch
+   * time (`@assignment` → assignment id + records-dir path + grab/read
+   * instructions; `@<playbook-slug>` → a `/run-playbook` reference). When unset,
+   * falls back to back-compat `playbook`, then to the bare `/grab-assignment`
+   * seed. Takes precedence over `playbook`. Single-line (see `serializeAgentsConfig`).
+   */
+  launchPrompt?: string;
 }
 
 export const BUILTIN_AGENTS: AgentConfig[] = [

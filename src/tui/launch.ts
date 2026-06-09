@@ -11,6 +11,7 @@ import {
   resolveWorkspaceCwd,
 } from '../launch/cwd.js';
 import type { SpawnFn } from '../launch/execute.js';
+import { bareGrabSeed } from '../launch/launch-prompt.js';
 
 export type { ResolvedArgv, BuiltArgv } from '../launch/types.js';
 // `formatFallbackCwdWarning` now lives in ../launch/cwd.ts (a neutral module so
@@ -60,6 +61,13 @@ export interface LaunchOptions {
  * enabled playbook end-to-end — complementary, not redundant). The no-playbook
  * path keeps the exact, well-tested `/grab-assignment` invocation unchanged.
  */
+/**
+ * @deprecated Both launch call sites now route through `resolveLaunchPrompt`
+ * (`../launch/launch-prompt.js`), which supports the editable `launchPrompt`
+ * field. `INITIAL_PROMPT` is retained only for its existing tests / transitional
+ * reference; its no-playbook branch shares `bareGrabSeed` with the resolver so
+ * those bare-seed strings stay byte-identical.
+ */
 export const INITIAL_PROMPT = (params: {
   projectSlug: string | null;
   assignmentSlug: string;
@@ -69,15 +77,11 @@ export const INITIAL_PROMPT = (params: {
   const playbook = params.playbook?.trim();
 
   if (!playbook) {
-    if (params.projectSlug) {
-      return `/grab-assignment ${params.projectSlug} ${params.assignmentSlug}`;
-    }
-    if (params.id) {
-      return `/grab-assignment --id ${params.id}`;
-    }
-    // No project and no id — fall back to the slug. Should be rare; only
-    // happens if a caller forgot to pass the id for a standalone assignment.
-    return `/grab-assignment ${params.assignmentSlug}`;
+    return bareGrabSeed({
+      projectSlug: params.projectSlug,
+      assignmentSlug: params.assignmentSlug,
+      id: params.id,
+    });
   }
 
   // Playbook profile: chain grab + run-playbook via a plain-language seed.

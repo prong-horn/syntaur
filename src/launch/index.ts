@@ -28,6 +28,17 @@ export {
   buildSessionArgv,
 } from './argv.js';
 
+// NOTE: in-`src/launch`/`src/tui` call sites import the resolver directly from
+// './launch-prompt.js' (not this barrel) to avoid the argv→tui/launch cycle.
+// This re-export is for external consumers.
+export {
+  resolveLaunchPrompt,
+  bareGrabSeed,
+  runPlaybookClause,
+  type ResolveLaunchPromptInput,
+  type ResolveLaunchPromptResult,
+} from './launch-prompt.js';
+
 export type { ResolvedArgv, BuiltArgv } from './types.js';
 
 export {
