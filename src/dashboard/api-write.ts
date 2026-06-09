@@ -1867,35 +1867,43 @@ export function createWriteRouter(
       const { status } = req.body || {};
       const config = await getStatusConfig();
       const validStatuses = config.statuses.map((s) => s.id);
-      if (typeof status !== 'string' || !validStatuses.includes(status)) {
+      const clearing = status === null;
+      if (!clearing && (typeof status !== 'string' || !validStatuses.includes(status))) {
         res.status(400).json({ error: `Invalid status. Must be one of: ${validStatuses.join(', ')}.` });
         return;
       }
 
-      let content = await readFile(assignmentPath, 'utf-8');
-      const fromStatus = parseAssignmentFull(content).status;
-      const now = nowTimestamp();
-      content = setTopLevelField(content, 'status', status);
-      content = setTopLevelField(content, 'updated', now);
-
-      // Clear blockedReason when moving away from blocked
-      if (status !== 'blocked') {
-        content = setTopLevelField(content, 'blockedReason', null);
-      }
-
-      // Record the transition — only on an ACTUAL status change. Re-setting the
-      // same status is a no-op (not a transition) and must not reset statusAge.
-      if (status !== fromStatus) {
-        content = appendStatusHistoryEntry(content, {
-          at: now,
-          from: fromStatus,
-          to: status,
-          command: 'override',
-          by: null,
+      // Derived-status v3: free-form "set status to X" is retired. This
+      // endpoint now applies PIN semantics — the sanctioned override — so the
+      // UI affordance survives but cannot silently drift status from facts.
+      // `status: null` clears the pin (re-derive). Terminal targets are
+      // refused (terminal only via complete/fail). Re-pinning the same status
+      // is idempotent.
+      if (!clearing && config.terminalStatuses.has(status)) {
+        res.status(400).json({
+          error: `"${status}" is terminal — use the complete/fail transition (gated), not an override.`,
         });
+        return;
       }
-
-      await writeFileForce(assignmentPath, content);
+      const { recomputeAndWrite, resolveDeriveContext } = await import('../lifecycle/recompute.js');
+      const { updateOverride } = await import('../lifecycle/frontmatter.js');
+      const context = await resolveDeriveContext();
+      const result = await recomputeAndWrite(assignmentPath, {
+        cause: clearing ? 'unpin' : 'pin',
+        by: 'human',
+        projectDir: resolve(projectsDir, projectSlug),
+        context,
+        mutate: (content) => {
+          if (clearing) return updateOverride(content, null);
+          const current = parseAssignmentFull(content);
+          if (current.override?.status === status) return content; // idempotent
+          return updateOverride(content, { status, source: 'human', reason: null, at: nowTimestamp() });
+        },
+      });
+      if (result.deferredTerminal) {
+        res.status(409).json({ error: 'Assignment is terminal — reopen it first.' });
+        return;
+      }
 
       const assignment = await getAssignmentDetail(projectsDir, projectSlug, assignmentSlug);
       res.json({ assignment });
@@ -2112,9 +2120,15 @@ export function createWriteRouter(
       }
 
       const { reason } = req.body || {};
+      // Derived-status v3: fact verbs (block/unblock) and the gated terminal
+      // commands (complete/fail/reopen) are guard-free — a fact can be
+      // asserted from ANY derived status (e.g. blocked from draft), and the
+      // from:command table predates derivation. The table still guards the
+      // legacy phase-advance buttons (start/shape/plan-ready/implement/review).
+      const GUARD_FREE = new Set(['block', 'unblock', 'complete', 'fail', 'reopen']);
       const result = await executeTransition(projectDir, assignmentSlug, command, {
         reason: typeof reason === 'string' ? reason : undefined,
-        transitionTable: config.custom ? config.transitionTable : undefined,
+        transitionTable: config.custom && !GUARD_FREE.has(command) ? config.transitionTable : undefined,
         terminalStatuses: config.custom ? config.terminalStatuses : undefined,
         linkedTodosLookup,
       });
@@ -2122,6 +2136,35 @@ export function createWriteRouter(
       if (!result.success) {
         res.status(400).json({ error: result.message });
         return;
+      }
+
+      // Derived-status v3: settle BEFORE responding. The imperative transition
+      // wrote a command-target status; recompute folds it back to derived
+      // reality (block/unblock already moved the blockedReason fact; non-fact
+      // commands re-derive to wherever the facts are), so the client never
+      // sees a pre-derivation flicker. Terminal targets defer inside.
+      {
+        const { recomputeAndWrite, recomputeDependents, resolveDeriveContext } = await import(
+          '../lifecycle/recompute.js'
+        );
+        const context = await resolveDeriveContext();
+        const assignmentPath = resolve(projectDir, 'assignments', assignmentSlug, 'assignment.md');
+        await recomputeAndWrite(assignmentPath, {
+          cause: command,
+          by: 'human',
+          projectDir,
+          context,
+        });
+        // Terminal-membership changes flip dependents' depsSatisfied fact.
+        const wasTerminal = config.terminalStatuses.has(result.fromStatus);
+        const isTerminal = result.toStatus ? config.terminalStatuses.has(result.toStatus) : false;
+        if (wasTerminal !== isTerminal) {
+          await recomputeDependents(projectDir, assignmentSlug, {
+            cause: 'dep-terminal',
+            by: 'system',
+            context,
+          });
+        }
       }
 
       const assignment = await getAssignmentDetail(projectsDir, projectSlug, assignmentSlug);

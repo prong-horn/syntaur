@@ -2111,8 +2111,10 @@ async function buildDerivedDetail(
       nextAction: dims.nextAction,
       facts: facts as unknown as Record<string, boolean | number>,
     };
-  } catch {
-    return null; // derivation detail is best-effort enrichment, never a 500
+  } catch (err) {
+    // Best-effort enrichment, never a 500 — but not silent (codex finding 12).
+    console.warn(`buildDerivedDetail failed for ${assignmentDir}:`, err);
+    return null;
   }
 }
 

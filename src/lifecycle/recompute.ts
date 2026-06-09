@@ -61,17 +61,22 @@ export async function resolveDeriveContext(): Promise<DeriveContext> {
   };
 }
 
-/** Acquire the per-assignment advisory lock. Returns a release function. */
+/** Acquire the per-assignment advisory lock. Returns a release function.
+ * The lockfile carries an ownership token: release unlinks only when the
+ * token still matches, so a holder that was staleness-evicted cannot unlink
+ * its REPLACEMENT's lock (codex code-review finding 14). */
 async function acquireLock(assignmentDir: string): Promise<() => Promise<void>> {
   const lockPath = resolve(assignmentDir, LOCK_FILE);
+  const token = `${process.pid}:${createHash('sha256').update(`${Math.random()}${Date.now()}`).digest('hex').slice(0, 12)}`;
   for (let attempt = 0; attempt <= LOCK_MAX_WAITS; attempt++) {
     try {
       const handle = await open(lockPath, 'wx');
-      await handle.writeFile(`${process.pid} ${Date.now()}`, 'utf-8');
+      await handle.writeFile(token, 'utf-8');
       await handle.close();
       return async () => {
         try {
-          await unlink(lockPath);
+          const current = await readFile(lockPath, 'utf-8');
+          if (current === token) await unlink(lockPath);
         } catch {
           /* already gone — fine */
         }
@@ -114,6 +119,14 @@ export interface RecomputeOptions {
   context: DeriveContext;
   /** Optional reason carried onto the history entry (pin/block causes). */
   reason?: string;
+  /**
+   * Optional fact mutation applied INSIDE the lock + CAS loop, after the
+   * terminal check and before fact computation — so fact-write + derivation
+   * are one transaction (codex finding: a pre-lock fact write could race a
+   * concurrent completion or lose against another verb). Receives the
+   * freshly-read content; returns the mutated content.
+   */
+  mutate?: (content: string) => Promise<string> | string;
 }
 
 export interface RecomputeResult {
@@ -140,14 +153,20 @@ export async function recomputeAndWrite(
   const release = await acquireLock(assignmentDir);
   try {
     for (let attempt = 0; attempt < CAS_RETRIES; attempt++) {
-      const content = await readFile(assignmentPath, 'utf-8');
-      const hash = contentHash(content);
-      const frontmatter = parseAssignmentFrontmatter(content);
+      const original = await readFile(assignmentPath, 'utf-8');
+      const hash = contentHash(original);
 
-      // Terminal defers entirely — only `reopen` re-enters derivation.
-      if (opts.context.terminalStatuses.has(frontmatter.status)) {
-        return { changed: false, status: frontmatter.status, dimensions: null, deferredTerminal: true };
+      // Terminal check on the FRESH read, inside the lock — a concurrent
+      // completion between caller and lock acquisition freezes facts here.
+      const originalFm = parseAssignmentFrontmatter(original);
+      if (opts.context.terminalStatuses.has(originalFm.status)) {
+        return { changed: false, status: originalFm.status, dimensions: null, deferredTerminal: true };
       }
+
+      // Apply the caller's fact mutation as part of this transaction.
+      const content = opts.mutate ? await opts.mutate(original) : original;
+      const mutated = content !== original;
+      const frontmatter = mutated ? parseAssignmentFrontmatter(content) : originalFm;
 
       const facts = await computeFacts({
         assignmentDir,
@@ -173,6 +192,13 @@ export async function recomputeAndWrite(
       const phaseChanged = dims.phase !== frontmatter.phase;
       const dispositionChanged = dims.disposition !== frontmatter.disposition;
       if (!statusChanged && !phaseChanged && !dispositionChanged) {
+        // No dimension change — but a fact mutation still has to land.
+        if (mutated) {
+          const current = await readFile(assignmentPath, 'utf-8');
+          if (contentHash(current) !== hash) continue;
+          await writeFileForce(assignmentPath, content);
+          return { changed: true, status: frontmatter.status, dimensions: dims, deferredTerminal: false };
+        }
         return { changed: false, status: frontmatter.status, dimensions: dims, deferredTerminal: false };
       }
 
@@ -196,11 +222,11 @@ export async function recomputeAndWrite(
           : {}),
       });
 
-      // Content CAS: a non-cooperating writer (human editor) may have raced us
-      // between read and write. Re-read and verify before the atomic rename.
+      // Content CAS vs the ORIGINAL read: a non-cooperating writer (human
+      // editor) may have raced us. Re-read and verify before the atomic rename.
       const current = await readFile(assignmentPath, 'utf-8');
       if (contentHash(current) !== hash) {
-        continue; // retry the whole read-compute-write cycle
+        continue; // retry the whole read-mutate-compute-write cycle
       }
       await writeFileForce(assignmentPath, next);
       return { changed: true, status: dims.status, dimensions: dims, deferredTerminal: false };

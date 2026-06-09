@@ -99,7 +99,13 @@ function reportDerived(label: string, result: RecomputeResult): void {
   if (result.warning) console.warn(`Warning: ${result.warning}`);
 }
 
-/** Shared mutate-then-recompute spine for every fact verb. */
+/**
+ * Shared spine for every fact verb. The mutation runs INSIDE
+ * recomputeAndWrite's lock + CAS loop — one transaction with derivation — so
+ * concurrent verbs can't lose updates and a concurrent completion can't be
+ * overwritten with stale non-terminal content (codex code-review finding 2).
+ * Terminal assignments surface a clear error instead of a silent defer.
+ */
 async function assertFact(
   assignment: string,
   options: DeriveVerbOptions,
@@ -110,25 +116,19 @@ async function assertFact(
   const target = await resolveTarget(assignment, options);
   const context = await resolveDeriveContext();
 
-  const content = await readFile(target.assignmentPath, 'utf-8');
-  const fm = parseAssignmentFrontmatter(content);
-  if (context.terminalStatuses.has(fm.status) && cause !== 'recompute') {
-    throw new Error(
-      `Assignment is ${fm.status} (terminal) — facts are frozen. Use \`syntaur reopen\` first.`,
-    );
-  }
-
-  const next = await mutate(content, target);
-  if (next !== content) {
-    await writeFileForce(target.assignmentPath, next);
-  }
   const result = await recomputeAndWrite(target.assignmentPath, {
     cause,
     by: await inferActor(options),
     projectDir: target.projectDir,
     context,
     reason: options.reason,
+    mutate: (content) => mutate(content, target),
   });
+  if (result.deferredTerminal) {
+    throw new Error(
+      `Assignment is ${result.status} (terminal) — facts are frozen. Use \`syntaur reopen\` first.`,
+    );
+  }
   reportDerived(label, result);
   return result;
 }
@@ -197,13 +197,23 @@ export async function requestReviewCommand(
 }
 
 /** Assert implementation has begun. The derived replacement for the old
- * imperative `implement`/`start` status write. */
+ * imperative `implement`/`start` status write. Preserves the legacy side
+ * effect: `--agent` sets the assignee when none is set yet. */
 export async function implementStartedCommand(assignment: string, options: DeriveVerbOptions): Promise<void> {
   await assertFact(
     assignment,
     options,
     'implement',
-    (content) => updateAssignmentFile(content, { implementationStarted: true }),
+    (content) => {
+      let next = updateAssignmentFile(content, { implementationStarted: true });
+      if (options.agent) {
+        const fm = parseAssignmentFrontmatter(next);
+        if (fm.assignee === null) {
+          next = updateAssignmentFile(next, { assignee: options.agent });
+        }
+      }
+      return next;
+    },
     'Implementation started',
   );
 }

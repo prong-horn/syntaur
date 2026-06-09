@@ -14,9 +14,25 @@ import {
 import { syntaurRoot, assignmentsDir } from '../utils/paths.js';
 import { fileExists, writeFileForce } from '../utils/fs.js';
 import { nowTimestamp } from '../utils/timestamp.js';
-import { renameStatusInHistory, updateAssignmentFile } from '../lifecycle/frontmatter.js';
+import {
+  parseAssignmentFrontmatter,
+  renameStatusInHistory,
+  updateAssignmentFile,
+} from '../lifecycle/frontmatter.js';
+
+/** Relabel every reference to a status id in one assignment file: headline
+ * `status` and cached `phase` (only when they match), plus all history keys
+ * via renameStatusInHistory. No history entry is appended (relabel ≠ transition). */
+function renameAssignmentStatusRefs(content: string, id: string, newId: string, now: string): string {
+  const fm = parseAssignmentFrontmatter(content);
+  const updates: Parameters<typeof updateAssignmentFile>[1] = { updated: now };
+  if (fm.status === id) updates.status = newId;
+  if (fm.phase === id) updates.phase = newId;
+  return renameStatusInHistory(updateAssignmentFile(content, updates), id, newId);
+}
 import {
   scanAssignmentsByStatus,
+  scanAssignmentsReferencingStatus,
   type AffectedAssignment,
 } from '../utils/status-config-resolution.js';
 
@@ -236,6 +252,7 @@ export async function runStatusAdd(id: string, opts: StatusAddOptions): Promise<
     statuses: [...before.statuses, def],
     order: insertIntoOrder(before.order, id, { after: opts.after, before: opts.before }),
     transitions: before.transitions,
+    derive: before.derive ?? null,
   };
 
   if (opts.dryRun) {
@@ -275,7 +292,12 @@ export async function runStatusSet(opts: StatusSetOptions): Promise<void> {
 
   const statuses = [...before.statuses];
   statuses[idx] = updated;
-  const after: StatusConfig = { statuses, order: before.order, transitions: before.transitions };
+  const after: StatusConfig = {
+    statuses,
+    order: before.order,
+    transitions: before.transitions,
+    derive: before.derive ?? null,
+  };
 
   if (opts.dryRun) {
     printBlockDiff(before, after);
@@ -304,6 +326,7 @@ export async function runStatusReorder(csv: string, opts: { dryRun?: boolean }):
     statuses: before.statuses,
     order: requested,
     transitions: before.transitions,
+    derive: before.derive ?? null,
   };
   if (opts.dryRun) {
     printBlockDiff(before, after);
@@ -328,8 +351,9 @@ export async function runStatusRemove(
   }
 
   const { projectsDir, standaloneDir } = await scanDirs();
-  const affectedMap = await scanAssignmentsByStatus(projectsDir, standaloneDir, [id]);
-  const affected = affectedMap.get(id) ?? [];
+  // Rename must reach cached `phase` and history phase keys too, not just the
+  // headline — a blocked/pinned assignment can reference the id only there.
+  const affected = await scanAssignmentsReferencingStatus(projectsDir, standaloneDir, id);
 
   if (affected.length > 0 && !opts.force) {
     throw new Error(
@@ -345,6 +369,9 @@ export async function runStatusRemove(
     statuses: before.statuses.filter((s) => s.id !== id),
     order: before.order.filter((o) => o !== id),
     transitions: effectiveTransitions(before).filter((t) => t.from !== id && t.to !== id),
+    // Derive rules referencing the removed id are preserved as-is — doctor /
+    // validateDeriveConfig flags them, mirroring the affected-assignments policy.
+    derive: before.derive ?? null,
   };
 
   if (opts.dryRun) {
@@ -385,22 +412,34 @@ export async function runStatusRename(
       from: t.from === id ? newId : t.from,
       to: t.to === id ? newId : t.to,
     })),
+    // Relabel derive-rule references too (phase ids + headline targets share
+    // the status-id namespace; `when` conditions reference facts, not ids).
+    derive: before.derive
+      ? {
+          phaseLadder: before.derive.phaseLadder.map((r) =>
+            r.phase === id ? { ...r, phase: newId } : r,
+          ),
+          disposition: before.derive.disposition,
+          headline: {
+            ...before.derive.headline,
+            parked: before.derive.headline.parked === id ? newId : before.derive.headline.parked,
+            blocked: before.derive.headline.blocked === id ? newId : before.derive.headline.blocked,
+          },
+        }
+      : null,
   };
 
   const { projectsDir, standaloneDir } = await scanDirs();
-  const affectedMap = await scanAssignmentsByStatus(projectsDir, standaloneDir, [id]);
-  const affected = affectedMap.get(id) ?? [];
+  // Rename must reach cached `phase` and history phase keys too, not just the
+  // headline — a blocked/pinned assignment can reference the id only there.
+  const affected = await scanAssignmentsReferencingStatus(projectsDir, standaloneDir, id);
 
   if (opts.dryRun) {
     printBlockDiff(before, after);
     const now = nowTimestamp();
     for (const a of affected) {
       const original = await readFile(a.path, 'utf-8');
-      const rewritten = renameStatusInHistory(
-        updateAssignmentFile(original, { status: newId, updated: now }),
-        id,
-        newId,
-      );
+      const rewritten = renameAssignmentStatusRefs(original, id, newId, now);
       console.log(`\n--- ${a.display}/assignment.md`);
       console.log(`+++ ${a.display}/assignment.md`);
       console.log(lineDiff(original, rewritten));
@@ -427,11 +466,7 @@ export async function runStatusRename(
       // relabel the id in-place across existing history entries (preserving each
       // `at`), so derived `completedAt` stays correct after renaming a terminal
       // status. See the status-history audit in the Query Language Piece 1 plan.
-      const rewritten = renameStatusInHistory(
-        updateAssignmentFile(original, { status: newId, updated: now }),
-        id,
-        newId,
-      );
+      const rewritten = renameAssignmentStatusRefs(original, id, newId, now);
       await writeFileForce(a.path, rewritten);
     }
   } catch (err) {
@@ -483,6 +518,7 @@ export async function runStatusTransitionAdd(opts: TransitionAddOptions): Promis
     statuses: before.statuses,
     order: before.order,
     transitions: [...base, transition],
+    derive: before.derive ?? null,
   };
   if (opts.dryRun) {
     printBlockDiff(before, after);
@@ -507,6 +543,7 @@ export async function runStatusTransitionRemove(opts: {
     statuses: before.statuses,
     order: before.order,
     transitions: remaining,
+    derive: before.derive ?? null,
   };
   if (opts.dryRun) {
     printBlockDiff(before, after);

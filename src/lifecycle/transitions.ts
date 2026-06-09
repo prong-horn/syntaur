@@ -113,7 +113,9 @@ export async function executeTransition(
   }
 
   const now = nowTimestamp();
-  const updates: Partial<Pick<AssignmentFrontmatter, 'status' | 'assignee' | 'blockedReason' | 'updated'>> = {
+  const updates: Partial<
+    Pick<AssignmentFrontmatter, 'status' | 'assignee' | 'blockedReason' | 'updated' | 'disposition'>
+  > = {
     status: targetStatus,
     updated: now,
   };
@@ -122,10 +124,24 @@ export async function executeTransition(
     updates.assignee = options.agent;
   }
   if (command === 'block') {
-    updates.blockedReason = options.reason ?? null;
+    // Derived-status v3: the blocked disposition keys on blockedReason
+    // PRESENCE — a null reason would make block-without-reason a silent
+    // no-op under derivation. Match the CLI verb's default.
+    updates.blockedReason = options.reason ?? '(unspecified)';
   }
   if (command === 'unblock') {
     updates.blockedReason = null;
+  }
+
+  // Dimension-aware terminal cache (derived-status v3): entering a terminal
+  // status sets `disposition: terminal` so payloads/queries never show a
+  // terminal headline with a stale active/blocked disposition. Leaving
+  // terminal (reopen) hands the cache back to derivation, which the CLI
+  // reopen command runs immediately after this transition.
+  const terminalSet = options.terminalStatuses ?? new Set(['completed', 'failed']);
+  const enteringTerminal = terminalSet.has(targetStatus) && frontmatter.disposition !== 'terminal';
+  if (enteringTerminal) {
+    updates.disposition = 'terminal';
   }
 
   let updatedContent = updateAssignmentFile(content, updates);
@@ -141,6 +157,9 @@ export async function executeTransition(
       command,
       by: options.agent ?? frontmatter.assignee ?? null,
       reason: command === 'block' ? options.reason : undefined,
+      ...(enteringTerminal
+        ? { dispositionFrom: frontmatter.disposition, dispositionTo: 'terminal' }
+        : {}),
     });
   }
   await writeFileForce(filePath, updatedContent);
@@ -216,7 +235,9 @@ export async function executeTransitionByDir(
   }
 
   const now = nowTimestamp();
-  const updates: Partial<Pick<AssignmentFrontmatter, 'status' | 'assignee' | 'blockedReason' | 'updated'>> = {
+  const updates: Partial<
+    Pick<AssignmentFrontmatter, 'status' | 'assignee' | 'blockedReason' | 'updated' | 'disposition'>
+  > = {
     status: targetStatus,
     updated: now,
   };
@@ -225,10 +246,21 @@ export async function executeTransitionByDir(
     updates.assignee = options.agent;
   }
   if (command === 'block') {
-    updates.blockedReason = options.reason ?? null;
+    // Derived-status v3: the blocked disposition keys on blockedReason
+    // PRESENCE — a null reason would make block-without-reason a silent
+    // no-op under derivation. Match the CLI verb's default.
+    updates.blockedReason = options.reason ?? '(unspecified)';
   }
   if (command === 'unblock') {
     updates.blockedReason = null;
+  }
+
+  // Dimension-aware terminal cache — see executeTransition.
+  const terminalSetByDir = options.terminalStatuses ?? new Set(['completed', 'failed']);
+  const enteringTerminalByDir =
+    terminalSetByDir.has(targetStatus) && frontmatter.disposition !== 'terminal';
+  if (enteringTerminalByDir) {
+    updates.disposition = 'terminal';
   }
 
   let updatedContent = updateAssignmentFile(content, updates);
@@ -241,6 +273,9 @@ export async function executeTransitionByDir(
       command,
       by: options.agent ?? frontmatter.assignee ?? null,
       reason: command === 'block' ? options.reason : undefined,
+      ...(enteringTerminalByDir
+        ? { dispositionFrom: frontmatter.disposition, dispositionTo: 'terminal' }
+        : {}),
     });
   }
   await writeFileForce(filePath, updatedContent);

@@ -88,7 +88,22 @@ function compileEquality(def: FieldDef, field: string, value: QueryValue, atomPo
         ]);
       }
       const expected = want === 'true';
-      return (item) => Boolean(readField(def, field, item)) === expected;
+      return (item) => {
+        // Strict-ish coercion: real booleans pass through; the strings
+        // 'true'/'false' parse (frontmatter scalars); null/undefined/'' mean
+        // false (an absent fact is false). Anything else never matches —
+        // Boolean('false') === true was the bug here.
+        const v = readField(def, field, item);
+        const b =
+          typeof v === 'boolean'
+            ? v
+            : v === 'true'
+              ? true
+              : v === 'false' || v === null || v === undefined || v === ''
+                ? false
+                : null;
+        return b !== null && b === expected;
+      };
     }
     case 'number': {
       const n = value.num ?? toNumber(value.raw);

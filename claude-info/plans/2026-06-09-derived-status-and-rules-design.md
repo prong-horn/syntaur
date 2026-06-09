@@ -126,7 +126,7 @@ stored"); the browser never reads the filesystem:
 | `acAllChecked` | bool | `acRealTotal > 0 AND acRealChecked == acRealTotal` (precomputed; leaves stay `field OP literal`) |
 | `planExists` | bool | sibling `plan.md` / `plan-v*.md` present |
 | `planApproved` | bool | `planApproval` record matches the **current latest** plan file **and** its digest |
-| `workspaceSet` | bool | `workspace.worktreePath`/`branch` present |
+| `workspaceSet` | bool | `workspace.repository` AND `workspace.branch` present (worktreePath is legitimately null per Workspace Before Code) |
 | `implementationStarted` | bool | asserted flag (explicit `implement` CLI assertion; worktrees precede planning, so `workspaceSet` ≠ building) |
 | `depsSatisfied` | bool | all `dependsOn` terminal (`checkDependencies`); terminal transitions trigger reverse-dependent recompute |
 | `unresolvedQuestions` | int | open `question` entries in `comments.md` |

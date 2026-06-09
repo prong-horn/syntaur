@@ -340,9 +340,12 @@ Keep this paragraph.`, 'utf-8');
 
     expect(blockedWithoutReason.statusCode).toBe(200);
     expect((blockedWithoutReason.payload as any).assignment.status).toBe('blocked');
-    expect((blockedWithoutReason.payload as any).assignment.blockedReason).toBeNull();
+    // Derived-status v3: blocked keys on blockedReason PRESENCE, so a default
+    // reason is recorded instead of null (else the block would derive away).
+    expect((blockedWithoutReason.payload as any).assignment.blockedReason).toBe('(unspecified)');
 
-    // Unblock (blocked -> in_progress)
+    // Unblock: status RE-DERIVES from facts (this bare fixture has placeholder
+    // content → draft), not an imperative jump to in_progress.
     const unblocked = await invokeRoute(
       router,
       'post',
@@ -351,7 +354,8 @@ Keep this paragraph.`, 'utf-8');
       {},
     );
     expect(unblocked.statusCode).toBe(200);
-    expect((unblocked.payload as any).assignment.status).toBe('in_progress');
+    expect((unblocked.payload as any).assignment.status).toBe('draft');
+    expect((unblocked.payload as any).assignment.blockedReason).toBeNull();
 
     // Block with a reason
     const blocked = await invokeRoute(
@@ -2469,7 +2473,7 @@ describe('statusHistory recording + virtual fields (write router)', () => {
     return parseAssignmentFrontmatter(await readFile(assignmentPath(slug), 'utf-8'));
   }
 
-  it('project status-override appends a command:override entry on an actual change', async () => {
+  it('project status-override applies PIN semantics (derived-status v3)', async () => {
     await createAssignmentFixture();
     const router = createWriteRouter(testDir);
     const res = await invokeRoute(
@@ -2482,13 +2486,35 @@ describe('statusHistory recording + virtual fields (write router)', () => {
     expect(res.statusCode).toBe(200);
     const fm = await readFm();
     expect(fm.status).toBe('in_progress');
+    expect(fm.override).toMatchObject({ status: 'in_progress', source: 'human' });
     expect(fm.statusHistory).toHaveLength(1);
     expect(fm.statusHistory[0]).toMatchObject({
       from: 'pending',
       to: 'in_progress',
-      command: 'override',
-      by: null,
+      command: 'pin',
+      by: 'human',
     });
+    // terminal pins are refused — the gated path owns terminal
+    const refused = await invokeRoute(
+      router,
+      'post',
+      '/api/projects/:slug/assignments/:aslug/status-override',
+      { slug: PROJ, aslug: ASSIGN },
+      { status: 'completed' },
+    );
+    expect(refused.statusCode).toBe(400);
+    // status: null clears the pin → re-derives to facts (bare fixture → draft)
+    const cleared = await invokeRoute(
+      router,
+      'post',
+      '/api/projects/:slug/assignments/:aslug/status-override',
+      { slug: PROJ, aslug: ASSIGN },
+      { status: null },
+    );
+    expect(cleared.statusCode).toBe(200);
+    const after = await readFm();
+    expect(after.override).toBeNull();
+    expect(after.status).toBe('draft');
   });
 
   it('project status-override is a no-op when the status is unchanged (no new entry)', async () => {
@@ -2503,7 +2529,7 @@ describe('statusHistory recording + virtual fields (write router)', () => {
       { status: 'in_progress' },
     );
     expect((await readFm()).statusHistory).toHaveLength(1);
-    // Override to the SAME status → must not append another entry.
+    // Re-pinning the SAME status is idempotent → no new entry, pin intact.
     const res = await invokeRoute(
       router,
       'post',
@@ -2512,7 +2538,9 @@ describe('statusHistory recording + virtual fields (write router)', () => {
       { status: 'in_progress' },
     );
     expect(res.statusCode).toBe(200);
-    expect((await readFm()).statusHistory).toHaveLength(1); // still 1
+    const fm = await readFm();
+    expect(fm.statusHistory).toHaveLength(1); // still 1
+    expect(fm.override?.status).toBe('in_progress');
   });
 
   it('raw PATCH appends command:edit on a status change, nothing otherwise', async () => {
@@ -2593,12 +2621,14 @@ tags: []
     await createAssignmentFixture();
     const router = createWriteRouter(testDir);
 
+    // Terminal is reached only via the gated transition (v3) — the override
+    // endpoint refuses terminal targets.
     const done = await invokeRoute(
       router,
       'post',
-      '/api/projects/:slug/assignments/:aslug/status-override',
-      { slug: PROJ, aslug: ASSIGN },
-      { status: 'completed' },
+      '/api/projects/:slug/assignments/:aslug/transitions/:command',
+      { slug: PROJ, aslug: ASSIGN, command: 'complete' },
+      {},
     );
     const detail1 = (done.payload as { assignment: { completedAt: string | null; statusAge: number | null } })
       .assignment;
@@ -2606,13 +2636,14 @@ tags: []
     expect(typeof detail1.statusAge).toBe('number');
     expect(detail1.statusAge as number).toBeGreaterThanOrEqual(0);
 
-    // Reopen: completed -> in_progress. completedAt must clear (current status no longer terminal).
+    // Reopen via the gated transition; completedAt must clear and status
+    // re-derives (the settle pass) — current status no longer terminal.
     const reopen = await invokeRoute(
       router,
       'post',
-      '/api/projects/:slug/assignments/:aslug/status-override',
-      { slug: PROJ, aslug: ASSIGN },
-      { status: 'in_progress' },
+      '/api/projects/:slug/assignments/:aslug/transitions/:command',
+      { slug: PROJ, aslug: ASSIGN, command: 'reopen' },
+      {},
     );
     const detail2 = (reopen.payload as { assignment: { completedAt: string | null } }).assignment;
     expect(detail2.completedAt).toBeNull();

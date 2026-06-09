@@ -14,9 +14,15 @@
 
 import { readdir, readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
-import { readConfig } from '../utils/config.js';
+import {
+  DEFAULT_DERIVE_CONFIG,
+  buildDefaultStatusConfig,
+  readConfig,
+  toTitleCase,
+  writeStatusConfig,
+} from '../utils/config.js';
 import { expandHome, assignmentsDir as assignmentsDirFn } from '../utils/paths.js';
-import { fileExists, writeFileForce } from '../utils/fs.js';
+import { fileExists } from '../utils/fs.js';
 import { parseAssignmentFrontmatter, updateAssignmentFile } from '../lifecycle/frontmatter.js';
 import { computeFacts } from '../lifecycle/facts.js';
 import { deriveDimensions } from '../lifecycle/derive.js';
@@ -102,6 +108,30 @@ export async function migrateDeriveCommand(options: MigrateDeriveOptions): Promi
   const standaloneDir = assignmentsDirFn();
   const context: DeriveContext = await resolveDeriveContext();
 
+  // Materialize the parked headline status (codex finding: without a defined
+  // id, parking silently falls back to the phase). Adds the definition + order
+  // entry to the statuses block, preserving any custom derive rules.
+  const statusConfig = config.statuses ?? buildDefaultStatusConfig();
+  const parkedId = (config.statuses?.derive ?? DEFAULT_DERIVE_CONFIG).headline.parked;
+  if (!statusConfig.statuses.some((s) => s.id === parkedId)) {
+    if (options.dryRun) {
+      console.log(`[dry-run] would add missing status definition "${parkedId}" (parked headline target).`);
+    } else {
+      await writeStatusConfig({
+        ...statusConfig,
+        statuses: [
+          ...statusConfig.statuses,
+          { id: parkedId, label: toTitleCase(parkedId), color: 'slate' },
+        ],
+        // place parked just before any terminal statuses in the order
+        order: [...statusConfig.order, parkedId],
+        derive: config.statuses?.derive ?? null,
+      });
+      context.knownStatusIds = new Set([...context.knownStatusIds, parkedId]);
+      console.log(`Added missing status definition "${parkedId}" (parked headline target).`);
+    }
+  }
+
   const targets = await listTargets(projectsDir, standaloneDir);
   const divergences: DivergenceRow[] = [];
   let seeded = 0;
@@ -151,15 +181,18 @@ export async function migrateDeriveCommand(options: MigrateDeriveOptions): Promi
       continue;
     }
 
-    if (willSeed) {
-      await writeFileForce(target.path, seededContent);
-      seeded++;
-    }
+    if (willSeed) seeded++;
+    // Seeding rides inside the recompute transaction (lock + CAS), same as
+    // every other fact mutation — no pre-lock write.
     const result = await recomputeAndWrite(target.path, {
       cause: 'migrate-derive',
       by: 'system',
       projectDir: target.projectDir,
       context,
+      mutate: (current) => {
+        const currentFm = parseAssignmentFrontmatter(current);
+        return seedFacts(current, currentFm.status, currentFm.blockedReason);
+      },
     });
     if (result.changed) {
       recomputed++;

@@ -20,10 +20,12 @@ function extractFrontmatter(fileContent: string): [string, string] {
 function parseSimpleValue(raw: string): string | null {
   const trimmed = raw.trim();
   if (trimmed === 'null' || trimmed === '~' || trimmed === '') return null;
-  if (
-    (trimmed.startsWith('"') && trimmed.endsWith('"')) ||
-    (trimmed.startsWith("'") && trimmed.endsWith("'"))
-  ) {
+  if (trimmed.startsWith('"') && trimmed.endsWith('"') && trimmed.length >= 2) {
+    // Decode the escapes formatYamlValue encodes — round-trip safety for
+    // values containing quotes/backslashes (codex code-review finding 4).
+    return trimmed.slice(1, -1).replace(/\\(["\\])/g, '$1');
+  }
+  if (trimmed.startsWith("'") && trimmed.endsWith("'") && trimmed.length >= 2) {
     return trimmed.slice(1, -1);
   }
   return trimmed;
@@ -280,11 +282,21 @@ export function parseAssignmentFrontmatter(fileContent: string): AssignmentFront
 function formatYamlValue(value: string | boolean | null): string {
   if (typeof value === 'boolean') return value ? 'true' : 'false';
   if (value === null) return 'null';
+  // Frontmatter scalars are single-line by contract: flatten embedded
+  // newlines rather than corrupting the block (codex code-review finding 4).
+  if (/[\r\n]/.test(value)) {
+    value = value.replace(/\s*[\r\n]+\s*/g, ' ').trim();
+  }
   if (/^\d{4}-\d{2}-\d{2}T/.test(value)) {
     return `"${value}"`;
   }
+  // Quote YAML keyword/number look-alikes so a literal string "null"/"true"/
+  // "42" round-trips as a string, not the YAML scalar.
+  if (/^(null|~|true|false|-?\d+(\.\d+)?)$/i.test(value)) {
+    return `"${value}"`;
+  }
   // Quote values containing YAML-special characters that could cause parse issues
-  if (/[:#{}[\],&*?|>!%@`]/.test(value) || /^\s|\s$/.test(value) || value === '') {
+  if (/[:#{}[\],&*?|>!%@\`]/.test(value) || /^\s|\s$/.test(value) || value === '') {
     const escaped = value.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
     return `"${escaped}"`;
   }
@@ -505,6 +517,10 @@ function renderStatusHistoryItem(entry: StatusHistoryEntry): string {
  * lines) in assignment frontmatter. `record = null` writes `header: null`
  * (preserving the key so future sets edit in place). Creates the block before
  * the closing `---` when absent. Used for `planApproval` and `override`.
+ *
+ * Duplicate headers: only the FIRST block is edited — consistent with
+ * parseNestedBlock, which also reads the first. This writer never creates a
+ * second block, so duplicates can only come from hand edits; doctor territory.
  */
 export function updateNestedBlock(
   fileContent: string,

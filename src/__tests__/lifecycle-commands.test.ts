@@ -244,7 +244,9 @@ describe('lifecycle integration', () => {
 
     const content = await readAssignmentContent(projectSlug, 'task-b');
     expect(content).toContain('status: blocked');
-    expect(content).toContain('blockedReason: null');
+    // Derived-status v3: blocked keys on blockedReason PRESENCE — block
+    // without a reason records the default instead of null.
+    expect(content).toContain('blockedReason: (unspecified)');
   });
 
   it('preserves markdown body through multiple transitions', async () => {
