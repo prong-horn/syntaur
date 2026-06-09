@@ -11,7 +11,15 @@ export type OpenUrlErrorCode =
   | 'malformed'
   | 'duplicate-param'
   | 'bad-terminal'
-  | 'bad-mode';
+  | 'bad-mode'
+  | 'invalid-prompt';
+
+/**
+ * Maximum length of an `prompt=` launch-prompt override. Bounds the
+ * `syntaur://` URL and is enforced server-side in `parseOpenUrl` so a
+ * hand-crafted direct URL can't bypass the dashboard dialog's cap.
+ */
+export const MAX_OPEN_PROMPT_LENGTH = 2000;
 
 export class OpenUrlError extends Error {
   readonly code: OpenUrlErrorCode;
@@ -52,6 +60,15 @@ export interface ParsedOpenUrl {
    * parsed-but-ignored rather than rejected (keeps the parser simple).
    */
   agent?: string;
+  /**
+   * Optional one-shot launch-prompt override (the `prompt=` query param) — the
+   * dashboard's editable prompt box sends the (possibly edited) template here.
+   * Only set for `kind === 'assignment'` (sessions take their first message
+   * from history). Single-line and length-bounded (`MAX_OPEN_PROMPT_LENGTH`).
+   * Presence-significant: an empty string is a deliberate override (re-resolves
+   * to the fallback seed), distinct from `undefined` (no override).
+   */
+  prompt?: string;
 }
 
 /**
@@ -151,6 +168,34 @@ export function parseOpenUrl(input: string): ParsedOpenUrl {
     agent = agentVals[0];
   }
 
+  // `prompt=` is presence-significant: keep an empty value (a deliberate clear)
+  // distinct from absent. Single-line + bounded so it can't break the macOS
+  // two-line applet protocol or bloat the URL.
+  const promptVals = url.searchParams.getAll('prompt');
+  if (promptVals.length > 1) {
+    throw new OpenUrlError(
+      'duplicate-param',
+      'URL has more than one `prompt` query param',
+    );
+  }
+  let prompt: string | undefined;
+  if (promptVals.length === 1) {
+    const value = promptVals[0];
+    if (/[\r\n]/.test(value)) {
+      throw new OpenUrlError(
+        'invalid-prompt',
+        '`prompt` query param must be a single line (no newlines)',
+      );
+    }
+    if (value.length > MAX_OPEN_PROMPT_LENGTH) {
+      throw new OpenUrlError(
+        'invalid-prompt',
+        `\`prompt\` query param exceeds ${MAX_OPEN_PROMPT_LENGTH} characters`,
+      );
+    }
+    prompt = value;
+  }
+
   if (assignmentVals.length === 1) {
     const id = assignmentVals[0];
     if (id.trim() === '') {
@@ -164,6 +209,8 @@ export function parseOpenUrl(input: string): ParsedOpenUrl {
       id,
       ...(terminal ? { terminal } : {}),
       ...(agent ? { agent } : {}),
+      // assignment-only; keep '' (presence-significant) — hence !== undefined.
+      ...(prompt !== undefined ? { prompt } : {}),
     };
   }
 

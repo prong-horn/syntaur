@@ -60,6 +60,7 @@ export async function urlCommand(
     assignmentsDir: assignmentsDir(),
     terminalOverride: parsed.terminal,
     agentId: parsed.kind === 'assignment' ? parsed.agent : undefined,
+    promptOverride: parsed.kind === 'assignment' ? parsed.prompt : undefined,
   });
 
   emitPlanWarnings(plan);

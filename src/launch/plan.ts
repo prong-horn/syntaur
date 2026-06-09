@@ -79,6 +79,16 @@ export interface ResolveLaunchPlanInput {
    * `LaunchError('agent-not-configured')`.
    */
   agentId?: string;
+  /**
+   * Only consulted when `kind === 'assignment'`. A one-shot launch-prompt
+   * override, wired from `?prompt=<text>` on the incoming `syntaur://` URL (the
+   * dashboard's editable prompt box). **Presence-significant:** when defined
+   * (including `''`) it is used as the `template` for `resolveLaunchPrompt`
+   * instead of `agent.launchPrompt`, so its `@`-tokens re-resolve and an empty
+   * value falls back through the normal empty-template path (never silently
+   * reusing `agent.launchPrompt`). Per-launch only — never written to config.
+   */
+  promptOverride?: string;
 }
 
 /**
@@ -172,8 +182,12 @@ async function resolveAssignmentPlan(
     agent = pickAgent(input.config);
   }
   const knownPlaybookSlugs = await listPlaybookSlugs(playbooksDir());
+  // A defined promptOverride (incl. '') wins over the stored template by
+  // presence — clearing the box must not silently reuse agent.launchPrompt.
+  const template =
+    input.promptOverride !== undefined ? input.promptOverride : agent.launchPrompt;
   const { prompt, warnings: promptWarnings } = resolveLaunchPrompt({
-    template: agent.launchPrompt,
+    template,
     playbook: agent.playbook,
     id: resolved.id,
     assignmentDir: resolved.assignmentDir,

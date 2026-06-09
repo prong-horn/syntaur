@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseOpenUrl, OpenUrlError } from '../launch/url.js';
+import { parseOpenUrl, OpenUrlError, MAX_OPEN_PROMPT_LENGTH } from '../launch/url.js';
 
 describe('parseOpenUrl', () => {
   it('accepts syntaur://open?assignment=<id>', () => {
@@ -47,6 +47,48 @@ describe('parseOpenUrl', () => {
       terminal: 'iterm',
       agent: 'codex',
     });
+  });
+
+  it('parses an assignment prompt= param (presence-significant; keeps empty)', () => {
+    expect(parseOpenUrl('syntaur://open?assignment=a1&prompt=hi%20there')).toEqual({
+      kind: 'assignment',
+      id: 'a1',
+      prompt: 'hi there',
+    });
+    // An empty value is a deliberate clear — preserved, not dropped.
+    expect(parseOpenUrl('syntaur://open?assignment=a1&prompt=')).toEqual({
+      kind: 'assignment',
+      id: 'a1',
+      prompt: '',
+    });
+  });
+
+  it('omits prompt when absent', () => {
+    expect(parseOpenUrl('syntaur://open?assignment=a1')).not.toHaveProperty('prompt');
+  });
+
+  it('does not carry prompt on the session branch', () => {
+    expect(parseOpenUrl('syntaur://open?session=s1&prompt=hi')).not.toHaveProperty('prompt');
+  });
+
+  it('rejects a duplicated prompt param', () => {
+    expect(() => parseOpenUrl('syntaur://open?assignment=a1&prompt=x&prompt=y')).toThrowError(
+      expect.objectContaining({ code: 'duplicate-param' }),
+    );
+  });
+
+  it('rejects a prompt containing a newline (single-line)', () => {
+    expect(() =>
+      parseOpenUrl('syntaur://open?assignment=a1&prompt=' + encodeURIComponent('a\nb')),
+    ).toThrowError(expect.objectContaining({ code: 'invalid-prompt' }));
+  });
+
+  it('accepts a prompt at exactly MAX_OPEN_PROMPT_LENGTH and rejects one char more', () => {
+    const max = 'x'.repeat(MAX_OPEN_PROMPT_LENGTH);
+    expect(parseOpenUrl('syntaur://open?assignment=a1&prompt=' + max)).toMatchObject({ prompt: max });
+    expect(() =>
+      parseOpenUrl('syntaur://open?assignment=a1&prompt=' + max + 'x'),
+    ).toThrowError(expect.objectContaining({ code: 'invalid-prompt' }));
   });
 
   it('rejects unknown scheme', () => {

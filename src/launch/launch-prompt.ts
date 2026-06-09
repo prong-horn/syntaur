@@ -134,3 +134,39 @@ export function resolveLaunchPrompt(input: ResolveLaunchPromptInput): ResolveLau
 
   return { prompt: bareGrabSeed({ projectSlug, assignmentSlug, id }), warnings: [] };
 }
+
+/**
+ * The editable **template** to prefill the dashboard's "Open in agent" prompt
+ * box — NOT the resolved text. Returns:
+ *   - `launchPrompt` verbatim when set (non-empty after trim); else
+ *   - a synth template `@assignment Run <runPlaybookClause(playbook)> end-to-end.`
+ *     when `playbook` is set — the playbook clause is LITERAL (only `@assignment`
+ *     is a token), so re-resolving this through `resolveLaunchPrompt` reproduces
+ *     this module's playbook synth (above) byte-for-byte for ANY playbook
+ *     (installed / disabled / uninstalled / the reserved `assignment`); else
+ *   - the bare `/grab-assignment` seed (no `@`-tokens).
+ *
+ * Prefilling the template (not resolved text) and resolving exactly once at
+ * launch avoids re-tokenizing an `@<slug>` that may appear inside an expanded
+ * records-dir path.
+ */
+export function effectiveLaunchTemplate(input: {
+  launchPrompt?: string | null;
+  playbook?: string | null;
+  projectSlug: string | null;
+  assignmentSlug: string;
+  id?: string;
+}): string {
+  if (input.launchPrompt && input.launchPrompt.trim()) {
+    return input.launchPrompt;
+  }
+  const pb = input.playbook?.trim();
+  if (pb) {
+    return `@assignment Run ${runPlaybookClause(pb)} end-to-end.`;
+  }
+  return bareGrabSeed({
+    projectSlug: input.projectSlug,
+    assignmentSlug: input.assignmentSlug,
+    id: input.id,
+  });
+}

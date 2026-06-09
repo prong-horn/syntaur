@@ -13,6 +13,8 @@ import {
   pickAgent,
   LaunchError,
   buildTerminalInvocation,
+  resolveLaunchPrompt,
+  effectiveLaunchTemplate,
   type LaunchPlan,
 } from '../launch/index.js';
 import {
@@ -181,6 +183,52 @@ describe('resolveLaunchPlan — assignment mode', () => {
     expect(plan.argv.args[0]).toContain('@FOO');
     expect(plan.promptWarnings).toHaveLength(1);
     expect(plan.promptWarnings?.[0]).toContain('@FOO');
+  });
+
+  it('honors a promptOverride — re-resolves it as the template (presence-based)', async () => {
+    const worktree = resolve(testDir, 'wt-override');
+    await mkdir(worktree, { recursive: true });
+    await scaffoldAssignment(projectsDir, 'demo-project', 'demo-asg', ASSIGNMENT_ID, {
+      worktreePath: worktree,
+      branch: 'feat/x',
+    });
+    const agents: AgentConfig[] = [
+      { id: 'claude', label: 'Claude', command: 'claude', default: true, launchPrompt: '@assignment stored.' },
+    ];
+    const plan = await resolveLaunchPlan({
+      kind: 'assignment',
+      id: ASSIGNMENT_ID,
+      config: makeConfig({ agents }),
+      projectsDir,
+      assignmentsDir,
+      promptOverride: '@assignment Then @FOO go.',
+    });
+    expect(plan.argv.args[0]).toContain(ASSIGNMENT_ID); // @assignment in the override re-resolved
+    expect(plan.argv.args[0]).toContain('@FOO'); // malformed token left literal
+    expect(plan.argv.args[0]).not.toContain('stored.'); // override replaced the stored template
+    expect(plan.promptWarnings).toHaveLength(1);
+  });
+
+  it('an empty promptOverride falls back to the seed (never reuses agent.launchPrompt)', async () => {
+    const worktree = resolve(testDir, 'wt-empty');
+    await mkdir(worktree, { recursive: true });
+    await scaffoldAssignment(projectsDir, 'demo-project', 'demo-asg', ASSIGNMENT_ID, {
+      worktreePath: worktree,
+      branch: 'feat/x',
+    });
+    const agents: AgentConfig[] = [
+      { id: 'claude', label: 'Claude', command: 'claude', default: true, launchPrompt: '@assignment stored.' },
+    ];
+    const plan = await resolveLaunchPlan({
+      kind: 'assignment',
+      id: ASSIGNMENT_ID,
+      config: makeConfig({ agents }),
+      projectsDir,
+      assignmentsDir,
+      promptOverride: '',
+    });
+    // Empty template → resolver fallback chain → bare grab seed (NOT 'stored.').
+    expect(plan.argv.args[0]).toBe('/grab-assignment demo-project demo-asg');
   });
 
   it('uses the requested agentId instead of the default', async () => {
@@ -722,6 +770,36 @@ describe('buildTerminalInvocation', () => {
     // $3 is the command text cmux types into the new workspace's shell.
     expect(inv.args[5]).toBe("'claude' 'it'\\''s' 'a b'");
   });
+});
+
+describe('effectiveLaunchTemplate (prefill template form)', () => {
+  const base = { projectSlug: 'proj' as string | null, assignmentSlug: 'asg', id: 'idX' };
+  const resolveCtx = { ...base, assignmentDir: '/recs' };
+
+  it('returns launchPrompt verbatim (untrimmed) when set', () => {
+    expect(
+      effectiveLaunchTemplate({ launchPrompt: '  @assignment hi  ', playbook: 'e2e-dev-cycle', ...base }),
+    ).toBe('  @assignment hi  ');
+  });
+
+  it('returns the bare grab seed when neither launchPrompt nor playbook is set', () => {
+    expect(effectiveLaunchTemplate({ ...base })).toBe('/grab-assignment proj asg');
+  });
+
+  // The synth template's playbook clause is LITERAL (only @assignment is a token),
+  // so re-resolving it reproduces Phase A's synth byte-for-byte regardless of
+  // whether the slug is installed — for any playbook, including the reserved name.
+  it.each(['e2e-dev-cycle', 'not-installed', 'assignment'])(
+    'synth template for playbook=%s re-resolves to Phase A synth (installed OR not)',
+    (pb) => {
+      const template = effectiveLaunchTemplate({ playbook: pb, ...base });
+      const phaseASynth = resolveLaunchPrompt({ playbook: pb, ...resolveCtx }).prompt;
+      const reInstalled = resolveLaunchPrompt({ template, knownPlaybookSlugs: new Set([pb]), ...resolveCtx }).prompt;
+      const reUninstalled = resolveLaunchPrompt({ template, knownPlaybookSlugs: new Set(), ...resolveCtx }).prompt;
+      expect(reInstalled).toBe(phaseASynth);
+      expect(reUninstalled).toBe(phaseASynth);
+    },
+  );
 });
 
 async function scaffoldAssignment(

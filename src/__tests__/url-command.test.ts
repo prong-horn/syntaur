@@ -1,6 +1,23 @@
-import { describe, it, expect } from 'vitest';
-import { formatUrlCommandError, formatPlanForApplet, emitPlanWarnings } from '../commands/url.js';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import {
+  formatUrlCommandError,
+  formatPlanForApplet,
+  emitPlanWarnings,
+  urlCommand,
+} from '../commands/url.js';
 import { OpenUrlError, LaunchError, TerminalNotFoundError, type LaunchPlan } from '../launch/index.js';
+
+// Spy on resolveLaunchPlan so we can assert urlCommand threads parsed.prompt as
+// promptOverride without spawning a terminal (printPlan short-circuits execute).
+const { resolveLaunchPlanSpy } = vi.hoisted(() => ({ resolveLaunchPlanSpy: vi.fn() }));
+vi.mock('../launch/index.js', async (orig) => {
+  const actual = await orig<typeof import('../launch/index.js')>();
+  return { ...actual, resolveLaunchPlan: resolveLaunchPlanSpy };
+});
+vi.mock('../dashboard/session-db.js', async (orig) => {
+  const actual = await orig<typeof import('../dashboard/session-db.js')>();
+  return { ...actual, initSessionDb: () => {} };
+});
 
 function makePlan(overrides: Partial<LaunchPlan> = {}): LaunchPlan {
   return {
@@ -104,5 +121,34 @@ describe('emitPlanWarnings', () => {
     const out: string[] = [];
     emitPlanWarnings(makePlan(), (m) => out.push(m));
     expect(out).toEqual([]);
+  });
+});
+
+describe('urlCommand — prompt override threading', () => {
+  beforeEach(() => {
+    resolveLaunchPlanSpy.mockReset();
+    resolveLaunchPlanSpy.mockResolvedValue(makePlan());
+    vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+  });
+
+  it('threads an assignment prompt= as promptOverride', async () => {
+    await urlCommand('syntaur://open?assignment=a1&prompt=hello%20world', { printPlan: true });
+    expect(resolveLaunchPlanSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: 'assignment', promptOverride: 'hello world' }),
+    );
+  });
+
+  it('passes promptOverride: undefined when no prompt= is present', async () => {
+    await urlCommand('syntaur://open?assignment=a1', { printPlan: true });
+    expect(resolveLaunchPlanSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: 'assignment', promptOverride: undefined }),
+    );
+  });
+
+  it('never passes a promptOverride for sessions', async () => {
+    await urlCommand('syntaur://open?session=s1&prompt=ignored', { printPlan: true });
+    expect(resolveLaunchPlanSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: 'session', promptOverride: undefined }),
+    );
   });
 });

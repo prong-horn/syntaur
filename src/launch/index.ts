@@ -33,6 +33,7 @@ export {
 // This re-export is for external consumers.
 export {
   resolveLaunchPrompt,
+  effectiveLaunchTemplate,
   bareGrabSeed,
   runPlaybookClause,
   type ResolveLaunchPromptInput,
