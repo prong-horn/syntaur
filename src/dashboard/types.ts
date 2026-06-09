@@ -62,10 +62,21 @@ export interface AssignmentSummary {
    */
   completedAt: string | null;
   /**
-   * Loader-derived (NOT stored). Milliseconds spent in the current status =
-   * `Date.now() − at(last statusHistory entry)`. Null when there is no history.
+   * Loader-derived (NOT stored). Milliseconds spent in the current HEADLINE
+   * status = `Date.now() − at(last statusHistory entry where from != to)`.
+   * Dimension-only entries (phase moved while headline stayed, e.g. progress
+   * while blocked) do NOT reset it. Null when there is no history.
    */
   statusAge: number | null;
+  /** Loader-derived (NOT stored). Milliseconds since the last phase change
+   * recorded in statusHistory (phaseFrom != phaseTo). Null when never recorded. */
+  phaseAge: number | null;
+  /** Cached phase dimension (written by recompute; null pre-migration). */
+  phase: string | null;
+  /** Cached disposition dimension (active|blocked|parked; null pre-migration). */
+  disposition: string | null;
+  /** A sticky status override (pin) is active. */
+  pinned: boolean;
 }
 
 export interface AssignmentBoardItem extends AssignmentSummary {
@@ -230,6 +241,24 @@ export interface AssignmentDetail {
   completedAt: string | null;
   /** Loader-derived (NOT stored). See {@link AssignmentSummary.statusAge}. */
   statusAge: number | null;
+  /** Loader-derived (NOT stored). See {@link AssignmentSummary.phaseAge}. */
+  phaseAge: number | null;
+  /** Cached phase dimension (null pre-migration). */
+  phase: string | null;
+  /** Cached disposition dimension (null pre-migration). */
+  disposition: string | null;
+  /** The active pin, when present (status/source/reason/at). */
+  override: { status: string; source: string; reason: string | null; at: string } | null;
+  /** Server-materialized derivation detail (design v3: facts are computed
+   * server-side and shipped — the browser never reads the filesystem).
+   * `derivedStatus` is the pre-override headline, powering the
+   * "pinned to X — would otherwise be Y" divergence display. Null for
+   * terminal assignments (derivation defers). */
+  derived: {
+    derivedStatus: string;
+    nextAction: string | null;
+    facts: Record<string, boolean | number>;
+  } | null;
   created: string;
   updated: string;
   body: string;

@@ -1251,6 +1251,8 @@ export async function getAssignmentDetail(
     archivedAt: assignment.archivedAt,
     archivedReason: assignment.archivedReason,
     ...deriveStatusVirtuals(assignment, terminalStatuses),
+    override: assignment.override,
+    derived: await buildDerivedDetail(assignment, assignmentDir, resolve(projectsDir, projectSlug)),
     created: assignment.created,
     updated: assignment.updated,
     body: assignment.body,
@@ -1589,6 +1591,8 @@ async function buildStandaloneAssignmentDetail(
     archivedAt: assignment.archivedAt,
     archivedReason: assignment.archivedReason,
     ...deriveStatusVirtuals(assignment, terminalStatuses),
+    override: assignment.override,
+    derived: await buildDerivedDetail(assignment, assignmentDir, null),
     created: assignment.created,
     updated: assignment.updated,
     body: assignment.body,
@@ -2016,7 +2020,14 @@ async function buildProjectRollup(
 function deriveStatusVirtuals(
   assignment: AssignmentRecord,
   terminalStatuses: ReadonlySet<string>,
-): { completedAt: string | null; statusAge: number | null } {
+): {
+  completedAt: string | null;
+  statusAge: number | null;
+  phaseAge: number | null;
+  phase: string | null;
+  disposition: string | null;
+  pinned: boolean;
+} {
   const hist = assignment.statusHistory ?? [];
 
   let completedAt: string | null = null;
@@ -2026,13 +2037,83 @@ function deriveStatusVirtuals(
     }
   }
 
+  // statusAge counts HEADLINE changes only: dimension-only entries (from == to,
+  // e.g. phase advanced while blocked) must not reset the clock. The seed
+  // entry (from: null) counts as a headline change.
   let statusAge: number | null = null;
-  if (hist.length > 0) {
-    const t = Date.parse(hist[hist.length - 1].at);
-    statusAge = Number.isNaN(t) ? null : Date.now() - t;
+  for (let i = hist.length - 1; i >= 0; i--) {
+    const entry = hist[i];
+    if (entry.from !== entry.to || entry.from === null) {
+      const t = Date.parse(entry.at);
+      statusAge = Number.isNaN(t) ? null : Date.now() - t;
+      break;
+    }
   }
 
-  return { completedAt, statusAge };
+  let phaseAge: number | null = null;
+  for (let i = hist.length - 1; i >= 0; i--) {
+    const entry = hist[i];
+    if (entry.phaseTo !== undefined && entry.phaseFrom !== entry.phaseTo) {
+      const t = Date.parse(entry.at);
+      phaseAge = Number.isNaN(t) ? null : Date.now() - t;
+      break;
+    }
+  }
+
+  return {
+    completedAt,
+    statusAge,
+    phaseAge,
+    phase: assignment.phase,
+    disposition: assignment.disposition,
+    pinned: assignment.override !== null,
+  };
+}
+
+/**
+ * Server-side materialization of the derivation detail for one assignment
+ * (design v3: the browser never reads the filesystem — facts ship in the
+ * payload). Null for terminal assignments (derivation defers entirely).
+ */
+async function buildDerivedDetail(
+  assignment: AssignmentRecord,
+  assignmentDir: string,
+  projectDir: string | null,
+): Promise<AssignmentDetail['derived']> {
+  const config = await getStatusConfig();
+  if (config.terminalStatuses.has(assignment.status)) return null;
+  try {
+    const { computeFacts } = await import('../lifecycle/facts.js');
+    const { deriveDimensions } = await import('../lifecycle/derive.js');
+    const { DEFAULT_DERIVE_CONFIG } = await import('../utils/config.js');
+    const facts = await computeFacts({
+      assignmentDir,
+      frontmatter: {
+        ...assignment,
+        // AssignmentRecord ⊃ the fields computeFacts reads; statusHistory and
+        // derived caches ride along untouched.
+      } as unknown as import('../lifecycle/types.js').AssignmentFrontmatter,
+      body: assignment.body,
+      projectDir,
+      terminalStatuses: config.terminalStatuses,
+    });
+    const dims = deriveDimensions({
+      facts,
+      derive: config.derive ?? DEFAULT_DERIVE_CONFIG,
+      currentStatus: assignment.status,
+      terminalStatuses: config.terminalStatuses,
+      knownStatusIds: new Set(config.statuses.map((s) => s.id)),
+      override: assignment.override,
+    });
+    if (!dims) return null;
+    return {
+      derivedStatus: dims.derivedStatus,
+      nextAction: dims.nextAction,
+      facts: facts as unknown as Record<string, boolean | number>,
+    };
+  } catch {
+    return null; // derivation detail is best-effort enrichment, never a 500
+  }
 }
 
 function toAssignmentSummary(

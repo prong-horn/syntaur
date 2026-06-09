@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { win32, posix } from 'node:path';
-import { ignoreDotSegmentsBelow } from '../dashboard/watcher.js';
+import { createWatcher, ignoreDotSegmentsBelow } from '../dashboard/watcher.js';
 
 // Deterministic regression guard for the dead-watcher bug. chokidar 4 calls
 // `ignored(absolutePath)` for every path it encounters; the old
@@ -57,5 +57,48 @@ describe('ignoreDotSegmentsBelow', () => {
     const posixIgnore = ignoreDotSegmentsBelow('/home/me/.syntaur/projects', posix);
     expect(posixIgnore('/home/me/.syntaur/projects/proj/assignment.md')).toBe(false);
     expect(posixIgnore('/home/me/.syntaur/projects/proj/.hidden/x')).toBe(true);
+  });
+});
+
+// ── derived-status v3: recompute hooks ──────────────────────────────────────
+
+describe('watcher derive hooks', () => {
+  it('fires onAssignmentChanged for project + standalone edits, onConfigChanged for config.md', async () => {
+    const { mkdtemp, mkdir, writeFile } = await import('node:fs/promises');
+    const { tmpdir } = await import('node:os');
+    const { join } = await import('node:path');
+    const root = await mkdtemp(join(tmpdir(), 'syntaur-watch-derive-'));
+    const projectsDir = join(root, 'projects');
+    const assignmentsDir = join(root, 'assignments');
+    const configPath = join(root, 'config.md');
+    await mkdir(join(projectsDir, 'p1', 'assignments', 'a1'), { recursive: true });
+    await mkdir(join(assignmentsDir, 'u1'), { recursive: true });
+    await writeFile(configPath, '---\nversion: "2.0"\n---\n');
+
+    const assignmentEvents: Array<[string | null, string]> = [];
+    let configEvents = 0;
+
+    const watcher = createWatcher({
+      projectsDir,
+      assignmentsDir,
+      configPath,
+      onMessage: () => {},
+      onAssignmentChanged: (p, a) => assignmentEvents.push([p, a]),
+      onConfigChanged: () => configEvents++,
+      debounceMs: 50,
+    });
+
+    // let chokidar settle before generating events
+    await new Promise((r) => setTimeout(r, 300));
+    await writeFile(join(projectsDir, 'p1', 'assignments', 'a1', 'assignment.md'), '---\nslug: a1\n---\n');
+    await writeFile(join(assignmentsDir, 'u1', 'assignment.md'), '---\nslug: u1\n---\n');
+    await writeFile(configPath, '---\nversion: "2.0"\nupdated: true\n---\n');
+    await new Promise((r) => setTimeout(r, 700));
+
+    await watcher.close();
+
+    expect(assignmentEvents).toContainEqual(['p1', 'a1']);
+    expect(assignmentEvents).toContainEqual([null, 'u1']);
+    expect(configEvents).toBeGreaterThanOrEqual(1);
   });
 });

@@ -19,6 +19,7 @@ import {
   createWorkspace,
   deleteWorkspace,
   invalidateRecordsCache,
+  clearStatusConfigCache,
   WorkspaceBlockedError,
 } from './api.js';
 import { resolveAssignmentById } from '../utils/assignment-resolver.js';
@@ -810,6 +811,49 @@ export function createDashboardServer(options: DashboardServerOptions) {
 
   return {
     async start(): Promise<void> {
+      // Derived-status recompute wiring (design v3, Piece 3 trigger set):
+      // watcher → per-assignment recompute (out-of-band edits re-derive);
+      // config.md → recompute-all (the rules changed); boot → reconciliation
+      // sweep (covers edits made while the server was down).
+      const { recomputeAndWrite, recomputeAll, resolveDeriveContext } = await import(
+        '../lifecycle/recompute.js'
+      );
+      const recomputeOne = async (projectSlug: string | null, assignmentSlug: string): Promise<void> => {
+        try {
+          const context = await resolveDeriveContext();
+          const projectDir = projectSlug ? resolve(projectsDir, projectSlug) : null;
+          const path = projectDir
+            ? resolve(projectDir, 'assignments', assignmentSlug, 'assignment.md')
+            : resolve(assignmentsDir, assignmentSlug, 'assignment.md');
+          if (!(await fileExists(path))) return;
+          const result = await recomputeAndWrite(path, {
+            cause: 'derive',
+            by: 'system',
+            projectDir,
+            context,
+          });
+          if (result.warning) console.warn(result.warning);
+        } catch (err) {
+          console.error(`derive recompute failed for ${projectSlug ?? ''}/${assignmentSlug}:`, err);
+        }
+      };
+      const sweepAll = async (cause: string): Promise<void> => {
+        try {
+          const context = await resolveDeriveContext();
+          const summary = await recomputeAll(projectsDir, assignmentsDir, {
+            cause,
+            by: 'system',
+            context,
+          });
+          if (summary.changed > 0) {
+            console.log(`derive ${cause}: ${summary.changed}/${summary.scanned} assignment(s) re-derived.`);
+          }
+          for (const w of summary.warnings) console.warn(w);
+        } catch (err) {
+          console.error(`derive ${cause} sweep failed:`, err);
+        }
+      };
+
       watcherHandle = createWatcher({
         projectsDir,
         assignmentsDir,
@@ -817,8 +861,20 @@ export function createDashboardServer(options: DashboardServerOptions) {
         playbooksDir,
         todosDir,
         dbPath: resolve(syntaurRoot(), 'syntaur.db'),
+        configPath: resolve(syntaurRoot(), 'config.md'),
         onMessage: broadcast,
+        onAssignmentChanged: (projectSlug, assignmentSlug) => {
+          void recomputeOne(projectSlug, assignmentSlug);
+        },
+        onConfigChanged: () => {
+          clearStatusConfigCache();
+          void sweepAll('config-change');
+        },
       });
+
+      // Startup reconciliation — non-blocking so the server is responsive
+      // immediately; the sweep converges derived state in the background.
+      void sweepAll('boot-reconcile');
 
       startAutodiscovery({ serversDir, projectsDir, assignmentsDir, excludePids: new Set([process.pid]) });
 
