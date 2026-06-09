@@ -1,4 +1,11 @@
-import type { AssignmentFrontmatter, ExternalId, StatusHistoryEntry, Workspace } from './types.js';
+import type {
+  AssignmentFrontmatter,
+  ExternalId,
+  PlanApproval,
+  StatusHistoryEntry,
+  StatusOverride,
+  Workspace,
+} from './types.js';
 
 function extractFrontmatter(fileContent: string): [string, string] {
   const match = fileContent.match(/^---\n([\s\S]*?)\n---/);
@@ -140,9 +147,61 @@ function parseStatusHistory(frontmatter: string): StatusHistoryEntry[] {
       by: entry['by'] ?? null,
     };
     if (entry['reason'] != null) result.reason = entry['reason'];
+    // Dimension-aware optional keys (derived-status v3); absent on old entries.
+    if ('phaseFrom' in entry) result.phaseFrom = entry['phaseFrom'];
+    if ('phaseTo' in entry) result.phaseTo = entry['phaseTo'];
+    if ('dispositionFrom' in entry) result.dispositionFrom = entry['dispositionFrom'];
+    if ('dispositionTo' in entry) result.dispositionTo = entry['dispositionTo'];
     results.push(result);
   }
   return results;
+}
+
+/**
+ * Parse a flat nested mapping block (`header:` + indented `key: value` lines)
+ * into a string map. Returns null when the header is absent or explicitly null.
+ * Shared by `planApproval` / `override` parsing; mirrors `parseWorkspace`'s
+ * field scanning but generically.
+ */
+function parseNestedBlock(frontmatter: string, header: string): Record<string, string | null> | null {
+  if (new RegExp(`^${header}:\\s*(null|~)\\s*$`, 'm').test(frontmatter)) return null;
+  const headerMatch = frontmatter.match(new RegExp(`^${header}:\\s*$`, 'm'));
+  if (!headerMatch) return null;
+  const headerStart = headerMatch.index ?? frontmatter.indexOf(headerMatch[0]);
+  const after = frontmatter.slice(headerStart + headerMatch[0].length + 1);
+  const out: Record<string, string | null> = {};
+  for (const line of after.split('\n')) {
+    if (line.length === 0) continue;
+    if (line[0] !== ' ' && line[0] !== '\t') break; // top-level key — block ended
+    const colonIdx = line.indexOf(':');
+    if (colonIdx < 0) continue;
+    const key = line.slice(0, colonIdx).trim();
+    if (!key) continue;
+    out[key] = parseSimpleValue(line.slice(colonIdx + 1));
+  }
+  return Object.keys(out).length > 0 ? out : null;
+}
+
+function parsePlanApproval(frontmatter: string): PlanApproval | null {
+  const block = parseNestedBlock(frontmatter, 'planApproval');
+  if (!block || !block['file'] || !block['digest']) return null;
+  return {
+    file: block['file'],
+    digest: block['digest'],
+    by: block['by'] ?? null,
+    at: block['at'] ?? '',
+  };
+}
+
+function parseOverride(frontmatter: string): StatusOverride | null {
+  const block = parseNestedBlock(frontmatter, 'override');
+  if (!block || !block['status']) return null;
+  return {
+    status: block['status'],
+    source: block['source'] ?? 'human',
+    reason: block['reason'] ?? null,
+    at: block['at'] ?? '',
+  };
 }
 
 function parseWorkspace(frontmatter: string): Workspace {
@@ -208,6 +267,13 @@ export function parseAssignmentFrontmatter(fileContent: string): AssignmentFront
     archived: getField('archived') === 'true',
     archivedAt: getField('archivedAt'),
     archivedReason: getField('archivedReason'),
+    phase: getField('phase'),
+    disposition: getField('disposition'),
+    planApproval: parsePlanApproval(frontmatter),
+    parked: getField('parked') === 'true',
+    reviewRequested: getField('reviewRequested') === 'true',
+    implementationStarted: getField('implementationStarted') === 'true',
+    override: parseOverride(frontmatter),
   };
 }
 
@@ -230,7 +296,18 @@ export function updateAssignmentFile(
   updates: Partial<
     Pick<
       AssignmentFrontmatter,
-      'status' | 'assignee' | 'blockedReason' | 'updated' | 'archived' | 'archivedAt' | 'archivedReason'
+      | 'status'
+      | 'assignee'
+      | 'blockedReason'
+      | 'updated'
+      | 'archived'
+      | 'archivedAt'
+      | 'archivedReason'
+      | 'phase'
+      | 'disposition'
+      | 'parked'
+      | 'reviewRequested'
+      | 'implementationStarted'
     >
   >,
 ): string {
@@ -354,7 +431,10 @@ export function renameStatusInHistory(
   const fmMatch = content.match(/^(---\n)([\s\S]*?)(\n---)/);
   if (!fmMatch) return content;
   const esc = oldId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const re = new RegExp(`^(\\s+(?:from|to):[ \\t]*)${esc}[ \\t]*$`, 'gm');
+  // phaseFrom/phaseTo also hold status ids (phase namespace = status definitions),
+  // so a rename must relabel them too. Disposition keys hold dimension values
+  // (active/blocked/...), not status ids — excluded.
+  const re = new RegExp(`^(\\s+(?:from|to|phaseFrom|phaseTo):[ \\t]*)${esc}[ \\t]*$`, 'gm');
   const newFm = fmMatch[2].replace(re, `$1${newId}`);
   return `${fmMatch[1]}${newFm}${fmMatch[3]}${content.slice(fmMatch[0].length)}`;
 }
@@ -400,6 +480,13 @@ function renderStatusHistoryItem(entry: StatusHistoryEntry): string {
   if (entry.reason !== undefined && entry.reason !== null) {
     lines.push(`    reason: ${formatYamlValue(entry.reason)}`);
   }
+  // Dimension-aware optional keys — rendered only when present, so entries
+  // written by plain status transitions stay byte-identical to the v1 format.
+  for (const key of ['phaseFrom', 'phaseTo', 'dispositionFrom', 'dispositionTo'] as const) {
+    if (entry[key] !== undefined) {
+      lines.push(`    ${key}: ${formatYamlValue(entry[key] ?? null)}`);
+    }
+  }
   return lines.join('\n');
 }
 
@@ -413,6 +500,77 @@ function renderStatusHistoryItem(entry: StatusHistoryEntry): string {
  * the dashboard write paths. Mirrors the bespoke block handling of
  * `updateAssignmentWorkspace` (scalar `updateAssignmentFile` cannot append to a list).
  */
+/**
+ * Set or clear a flat nested mapping block (`header:` + indented `key: value`
+ * lines) in assignment frontmatter. `record = null` writes `header: null`
+ * (preserving the key so future sets edit in place). Creates the block before
+ * the closing `---` when absent. Used for `planApproval` and `override`.
+ */
+export function updateNestedBlock(
+  fileContent: string,
+  header: string,
+  record: Record<string, string | null> | null,
+): string {
+  const fmMatch = fileContent.match(/^(---\n)([\s\S]*?)(\n---)/);
+  if (!fmMatch) {
+    throw new Error('No frontmatter found in assignment file. Expected --- delimiters.');
+  }
+  const fmBlock = fmMatch[2];
+
+  const rendered =
+    record === null
+      ? `${header}: null`
+      : [`${header}:`, ...Object.entries(record).map(([k, v]) => `  ${k}: ${formatYamlValue(v)}`)].join('\n');
+
+  // Replace an existing block (header + indented body) or scalar form, else append.
+  const headerRe = new RegExp(`^${header}:.*$`, 'm');
+  const headerMatch = fmBlock.match(headerRe);
+  let newFm: string;
+  if (headerMatch) {
+    const start = headerMatch.index ?? 0;
+    let end = start + headerMatch[0].length;
+    // consume any indented body lines following the header; blanks inside a
+    // block are scanned past (mirrors findWorkspaceBlock) but only indented
+    // lines extend the consumed range, so trailing blanks aren't swallowed.
+    const after = fmBlock.slice(end);
+    let scanned = 0;
+    for (const line of after.split('\n').slice(1)) {
+      if (line.length === 0) {
+        scanned += 1 + line.length;
+        continue;
+      }
+      if (line[0] !== ' ' && line[0] !== '\t') break;
+      scanned += 1 + line.length;
+      end += scanned;
+      scanned = 0;
+    }
+    newFm = fmBlock.slice(0, start) + rendered + fmBlock.slice(end);
+  } else {
+    newFm = `${fmBlock.replace(/\n+$/, '')}\n${rendered}`;
+  }
+  return `${fmMatch[1]}${newFm}${fmMatch[3]}${fileContent.slice(fmMatch[0].length)}`;
+}
+
+export function updatePlanApproval(fileContent: string, approval: PlanApproval | null): string {
+  return updateNestedBlock(
+    fileContent,
+    'planApproval',
+    approval === null
+      ? null
+      : { file: approval.file, digest: approval.digest, by: approval.by, at: approval.at },
+  );
+}
+
+export function updateOverride(fileContent: string, override: StatusOverride | null): string {
+  return updateNestedBlock(
+    fileContent,
+    'override',
+    override === null
+      ? null
+      : { status: override.status, source: override.source, reason: override.reason, at: override.at },
+  );
+}
+
 export function appendStatusHistoryEntry(
   fileContent: string,
   entry: StatusHistoryEntry,

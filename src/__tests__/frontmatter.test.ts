@@ -633,3 +633,124 @@ describe('archive frontmatter fields', () => {
     expect(fm.status).toBe('pending');
   });
 });
+
+// ── derived-status v3: dimension-aware history + asserted-fact fields ──────
+
+import { updateOverride, updatePlanApproval } from '../lifecycle/frontmatter.js';
+
+describe('dimension-aware statusHistory (v3)', () => {
+  it('round-trips an entry with phase/disposition keys', () => {
+    const entry = {
+      at: '2026-06-09T12:00:00Z',
+      from: 'blocked',
+      to: 'blocked',
+      command: 'derive',
+      by: 'agent:claude',
+      phaseFrom: 'planning',
+      phaseTo: 'ready_to_implement',
+      dispositionFrom: 'blocked',
+      dispositionTo: 'blocked',
+    };
+    const content = appendStatusHistoryEntry(SIMPLE_ASSIGNMENT, entry);
+    const parsed = parseAssignmentFrontmatter(content);
+    expect(parsed.statusHistory).toHaveLength(1);
+    expect(parsed.statusHistory[0]).toMatchObject(entry);
+  });
+
+  it('old headline-only entries parse unchanged (no dimension keys)', () => {
+    const content = appendStatusHistoryEntry(SIMPLE_ASSIGNMENT, {
+      at: '2026-06-09T12:00:00Z',
+      from: 'pending',
+      to: 'in_progress',
+      command: 'start',
+      by: null,
+    });
+    const parsed = parseAssignmentFrontmatter(content);
+    const e = parsed.statusHistory[0];
+    expect(e.phaseFrom).toBeUndefined();
+    expect(e.dispositionTo).toBeUndefined();
+    // serialized form stays byte-identical to v1 (no dimension lines)
+    expect(content).not.toContain('phaseFrom');
+  });
+
+  it('renameStatusInHistory relabels phaseFrom/phaseTo but not disposition keys', () => {
+    let content = appendStatusHistoryEntry(SIMPLE_ASSIGNMENT, {
+      at: '2026-06-09T12:00:00Z',
+      from: 'review',
+      to: 'review',
+      command: 'derive',
+      by: null,
+      phaseFrom: 'review',
+      phaseTo: 'review',
+      dispositionFrom: 'active',
+      dispositionTo: 'active',
+    });
+    content = renameStatusInHistory(content, 'review', 'code_review');
+    const e = parseAssignmentFrontmatter(content).statusHistory[0];
+    expect(e.from).toBe('code_review');
+    expect(e.phaseFrom).toBe('code_review');
+    expect(e.phaseTo).toBe('code_review');
+    expect(e.dispositionFrom).toBe('active'); // dimension values untouched
+  });
+});
+
+describe('asserted-fact frontmatter fields (v3)', () => {
+  it('defaults are null/false on legacy files', () => {
+    const parsed = parseAssignmentFrontmatter(SIMPLE_ASSIGNMENT);
+    expect(parsed.phase).toBeNull();
+    expect(parsed.disposition).toBeNull();
+    expect(parsed.planApproval).toBeNull();
+    expect(parsed.override).toBeNull();
+    expect(parsed.parked).toBe(false);
+    expect(parsed.reviewRequested).toBe(false);
+    expect(parsed.implementationStarted).toBe(false);
+  });
+
+  it('updatePlanApproval writes and clears a nested record', () => {
+    const approval = {
+      file: 'plan-v2.md',
+      digest: 'abc123',
+      by: 'human',
+      at: '2026-06-09T12:00:00Z',
+    };
+    let content = updatePlanApproval(SIMPLE_ASSIGNMENT, approval);
+    expect(parseAssignmentFrontmatter(content).planApproval).toEqual(approval);
+    // set again in place (edit, not duplicate)
+    content = updatePlanApproval(content, { ...approval, file: 'plan-v3.md' });
+    const reparsed = parseAssignmentFrontmatter(content);
+    expect(reparsed.planApproval?.file).toBe('plan-v3.md');
+    expect(content.match(/^planApproval:/gm)).toHaveLength(1);
+    // clear → null, key preserved
+    content = updatePlanApproval(content, null);
+    expect(parseAssignmentFrontmatter(content).planApproval).toBeNull();
+    expect(content).toMatch(/^planApproval: null$/m);
+  });
+
+  it('updateOverride writes and clears the pin record', () => {
+    const pin = {
+      status: 'blocked',
+      source: 'agent:claude',
+      reason: 'waiting on vendor',
+      at: '2026-06-09T12:00:00Z',
+    };
+    let content = updateOverride(COMPLEX_ASSIGNMENT, pin);
+    expect(parseAssignmentFrontmatter(content).override).toEqual(pin);
+    content = updateOverride(content, null);
+    expect(parseAssignmentFrontmatter(content).override).toBeNull();
+  });
+
+  it('updateAssignmentFile handles new scalar fields incl. insertion when missing', () => {
+    const content = updateAssignmentFile(SIMPLE_ASSIGNMENT, {
+      phase: 'planning',
+      disposition: 'active',
+      parked: false,
+      reviewRequested: true,
+      implementationStarted: true,
+    });
+    const parsed = parseAssignmentFrontmatter(content);
+    expect(parsed.phase).toBe('planning');
+    expect(parsed.disposition).toBe('active');
+    expect(parsed.reviewRequested).toBe(true);
+    expect(parsed.implementationStarted).toBe(true);
+  });
+});
