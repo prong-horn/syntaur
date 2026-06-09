@@ -50,10 +50,78 @@ export interface StatusTransition {
   requiresReason?: boolean;
 }
 
+/** One rung of the phase ladder (derived-status v3). Ordered low → high; the
+ * HIGHEST rung whose AQL `when` holds wins. Regressible by design (e.g. a
+ * replan invalidates approval and the phase drops). `phase` must be a defined
+ * status id; `next` is the human next-action label surfaced by views. */
+export interface PhaseRung {
+  phase: string;
+  when: string;
+  next?: string;
+}
+
+/** One disposition rule (first match wins). `when: null` is the `else` arm.
+ * `is` ∈ active|blocked|parked (terminal is never a rule — terminal statuses
+ * defer derivation entirely). */
+export interface DispositionRule {
+  when: string | null;
+  is: string;
+}
+
+/** Headline projection: which status id the single-column board shows.
+ * `terminal` is always passthrough and `active` always shows the phase; the
+ * configurable parts are which status ids represent parked/blocked. */
+export interface HeadlineProjection {
+  terminal: 'passthrough';
+  parked: string;
+  blocked: string;
+  active: 'phase';
+}
+
+export interface DeriveConfig {
+  phaseLadder: PhaseRung[];
+  disposition: DispositionRule[];
+  headline: HeadlineProjection;
+}
+
+/** Built-in derive rules matching DEFAULT_STATUSES (review rung = `review`). */
+export const DEFAULT_DERIVE_CONFIG: DeriveConfig = {
+  phaseLadder: [
+    { phase: 'draft', when: '*', next: 'Fill in the objective and acceptance criteria' },
+    {
+      // planExists-but-not-approved also sits here: the default status set has
+      // no `planning` id. Users who define one add a `planExists:true` rung.
+      phase: 'ready_for_planning',
+      when: 'hasRealObjective:true AND acRealTotal > 0',
+      next: 'Write a plan and get it approved',
+    },
+    { phase: 'ready_to_implement', when: 'planApproved:true', next: 'Start implementing' },
+    {
+      phase: 'in_progress',
+      when: 'planApproved:true AND implementationStarted:true',
+      next: 'Finish acceptance criteria, then request review',
+    },
+    {
+      phase: 'review',
+      when: 'acAllChecked:true OR reviewRequested:true',
+      next: 'Complete, or address review feedback',
+    },
+  ],
+  disposition: [
+    { when: 'parked:true', is: 'parked' },
+    { when: 'blocked:true', is: 'blocked' },
+    { when: null, is: 'active' },
+  ],
+  headline: { terminal: 'passthrough', parked: 'parked', blocked: 'blocked', active: 'phase' },
+};
+
 export interface StatusConfig {
   statuses: StatusDefinition[];
   order: string[];
   transitions: StatusTransition[];
+  /** Derived-status rules (v3). Null/absent → DEFAULT_DERIVE_CONFIG at resolve
+   * time. Persisted under `statuses:` so the Settings writer round-trips it. */
+  derive?: DeriveConfig | null;
 }
 
 export interface TypeDefinition {
@@ -388,9 +456,30 @@ export function parseStatusConfig(content: string): StatusConfig | null {
   const statuses: StatusDefinition[] = [];
   const order: string[] = [];
   const transitions: StatusTransition[] = [];
+  const phaseLadder: PhaseRung[] = [];
+  const disposition: DispositionRule[] = [];
+  const headline: Record<string, string> = {};
 
-  // Parse sub-sections: definitions, order, transitions
-  let currentSection: 'definitions' | 'order' | 'transitions' | null = null;
+  // Strip surrounding quotes from a YAML scalar (AQL conditions are quoted).
+  const unquote = (v: string): string => {
+    const t = v.trim();
+    if ((t.startsWith('"') && t.endsWith('"')) || (t.startsWith("'") && t.endsWith("'"))) {
+      return t.slice(1, -1);
+    }
+    return t;
+  };
+
+  // Parse sub-sections: definitions, order, transitions + derive rules
+  // (phaseLadder, disposition, headline — derived-status v3, persisted flat
+  // under `statuses:`).
+  let currentSection:
+    | 'definitions'
+    | 'order'
+    | 'transitions'
+    | 'phaseLadder'
+    | 'disposition'
+    | 'headline'
+    | null = null;
   const lines = remaining.split('\n');
 
   function parseListEntry(lineIdx: number, baseIndent: number): { entry: Record<string, string>; consumed: number } {
@@ -426,6 +515,9 @@ export function parseStatusConfig(content: string): StatusConfig | null {
       if (key === 'definitions') currentSection = 'definitions';
       else if (key === 'order') currentSection = 'order';
       else if (key === 'transitions') currentSection = 'transitions';
+      else if (key === 'phaseLadder') currentSection = 'phaseLadder';
+      else if (key === 'disposition') currentSection = 'disposition';
+      else if (key === 'headline') currentSection = 'headline';
       else currentSection = null;
       continue;
     }
@@ -469,14 +561,61 @@ export function parseStatusConfig(content: string): StatusConfig | null {
       lineIdx += consumed - 1;
       continue;
     }
+
+    if (currentSection === 'phaseLadder' && indent >= 4 && trimmed.startsWith('- ')) {
+      const { entry, consumed } = parseListEntry(lineIdx, indent);
+      if (entry['phase'] && entry['when'] !== undefined) {
+        phaseLadder.push({
+          phase: unquote(entry['phase']),
+          when: unquote(entry['when']),
+          next: entry['next'] !== undefined ? unquote(entry['next']) : undefined,
+        });
+      }
+      lineIdx += consumed - 1;
+      continue;
+    }
+
+    if (currentSection === 'disposition' && indent >= 4 && trimmed.startsWith('- ')) {
+      const { entry, consumed } = parseListEntry(lineIdx, indent);
+      if (entry['else'] !== undefined) {
+        disposition.push({ when: null, is: unquote(entry['else']) });
+      } else if (entry['when'] !== undefined && entry['is']) {
+        disposition.push({ when: unquote(entry['when']), is: unquote(entry['is']) });
+      }
+      lineIdx += consumed - 1;
+      continue;
+    }
+
+    if (currentSection === 'headline' && indent >= 4 && !trimmed.startsWith('- ')) {
+      const ci = trimmed.indexOf(':');
+      if (ci > 0) {
+        headline[trimmed.slice(0, ci).trim()] = unquote(trimmed.slice(ci + 1));
+      }
+      continue;
+    }
   }
 
   if (statuses.length === 0) return null;
+
+  const derive: DeriveConfig | null =
+    phaseLadder.length > 0 || disposition.length > 0 || Object.keys(headline).length > 0
+      ? {
+          phaseLadder: phaseLadder.length > 0 ? phaseLadder : DEFAULT_DERIVE_CONFIG.phaseLadder,
+          disposition: disposition.length > 0 ? disposition : DEFAULT_DERIVE_CONFIG.disposition,
+          headline: {
+            terminal: 'passthrough',
+            parked: headline['parked'] ?? DEFAULT_DERIVE_CONFIG.headline.parked,
+            blocked: headline['blocked'] ?? DEFAULT_DERIVE_CONFIG.headline.blocked,
+            active: 'phase',
+          },
+        }
+      : null;
 
   return {
     statuses,
     order: order.length > 0 ? order : statuses.map((s) => s.id),
     transitions,
+    derive,
   };
 }
 
@@ -558,7 +697,85 @@ export function serializeStatusConfig(statuses: StatusConfig): string {
     }
   }
 
+  // derive rules (derived-status v3) — serialized so every writeStatusConfig
+  // round-trip preserves them (the pre-v3 writer rebuilt the block from
+  // definitions/order/transitions only and silently deleted custom rules).
+  if (statuses.derive) {
+    const d = statuses.derive;
+    lines.push('  phaseLadder:');
+    for (const rung of d.phaseLadder) {
+      lines.push(`    - phase: ${rung.phase}`);
+      lines.push(`      when: "${rung.when.replace(/"/g, '\\"')}"`);
+      if (rung.next) lines.push(`      next: "${rung.next.replace(/"/g, '\\"')}"`);
+    }
+    lines.push('  disposition:');
+    for (const rule of d.disposition) {
+      if (rule.when === null) {
+        lines.push(`    - else: ${rule.is}`);
+      } else {
+        lines.push(`    - when: "${rule.when.replace(/"/g, '\\"')}"`);
+        lines.push(`      is: ${rule.is}`);
+      }
+    }
+    lines.push('  headline:');
+    lines.push(`    terminal: passthrough`);
+    lines.push(`    parked: ${d.headline.parked}`);
+    lines.push(`    blocked: ${d.headline.blocked}`);
+    lines.push(`    active: phase`);
+  }
+
   return lines.join('\n');
+}
+
+/**
+ * Validate derive rules against a status config: rung/headline ids must be
+ * defined statuses, disposition `is` values must be active|blocked|parked,
+ * and every `when` must parse against the AQL field registry. Returns
+ * human-readable problems (empty = valid). Used by doctor and the dashboard
+ * settings API; pure so the dashboard client could reuse it.
+ */
+export function validateDeriveConfig(
+  derive: DeriveConfig,
+  statusConfig: Pick<StatusConfig, 'statuses'>,
+  validateWhen: (when: string) => string | null = () => null,
+): string[] {
+  const problems: string[] = [];
+  const ids = new Set(statusConfig.statuses.map((s) => s.id));
+
+  if (derive.phaseLadder.length === 0) {
+    problems.push('phaseLadder must have at least one rung');
+  }
+  for (const rung of derive.phaseLadder) {
+    if (!ids.has(rung.phase)) {
+      problems.push(`phaseLadder rung "${rung.phase}" is not a defined status id`);
+    }
+    const err = rung.when === '*' ? null : validateWhen(rung.when);
+    if (err) problems.push(`phaseLadder rung "${rung.phase}": invalid condition — ${err}`);
+  }
+  const VALID_DISPOSITIONS = new Set(['active', 'blocked', 'parked']);
+  let sawElse = false;
+  for (const rule of derive.disposition) {
+    if (!VALID_DISPOSITIONS.has(rule.is)) {
+      problems.push(
+        `disposition "${rule.is}" is not valid (expected active, blocked, or parked — terminal is never a rule)`,
+      );
+    }
+    if (rule.when === null) sawElse = true;
+    else {
+      const err = validateWhen(rule.when);
+      if (err) problems.push(`disposition rule "${rule.is}": invalid condition — ${err}`);
+    }
+  }
+  if (!sawElse) problems.push('disposition rules must end with an `else:` arm');
+
+  for (const key of ['parked', 'blocked'] as const) {
+    if (!ids.has(derive.headline[key])) {
+      problems.push(
+        `headline.${key} → "${derive.headline[key]}" is not a defined status id (add the definition or run migrate-derive)`,
+      );
+    }
+  }
+  return problems;
 }
 
 function serializeIntegrationConfig(integrations: IntegrationConfig): string | null {

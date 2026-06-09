@@ -8,6 +8,7 @@ import {
   buildDefaultStatusConfig,
   toTitleCase,
   type StatusTransition,
+  type DeriveConfig,
 } from '../utils/config.js';
 import { resolvePlaybookSlug } from '../utils/playbooks.js';
 import { migrateLegacyProjectFiles, migrateLegacyArchivedProjects } from '../utils/fs-migration.js';
@@ -409,6 +410,10 @@ interface ResolvedStatusConfig {
   transitions: StatusTransition[];
   transitionTable: Map<string, string>;
   terminalStatuses: ReadonlySet<string>;
+  /** Derive rules as configured (null when the user has none — resolve to
+   * DEFAULT_DERIVE_CONFIG at the derivation call site, NOT here, so the
+   * Settings writer can distinguish "user customized" from "defaults"). */
+  derive: DeriveConfig | null;
 }
 
 let _cachedConfig: ResolvedStatusConfig | null = null;
@@ -445,6 +450,7 @@ export async function getStatusConfig(): Promise<ResolvedStatusConfig> {
       transitions: effectiveTransitions,
       transitionTable: buildTransitionTable(effectiveTransitions),
       terminalStatuses: terminalSet.size > 0 ? terminalSet : new Set(['completed', 'failed']),
+      derive: config.statuses.derive ?? null,
     };
   } else {
     // Shared default builder so the dashboard and the `syntaur status` CLI
@@ -457,6 +463,7 @@ export async function getStatusConfig(): Promise<ResolvedStatusConfig> {
       transitions: def.transitions,
       transitionTable: DEFAULT_TRANSITION_TABLE,
       terminalStatuses: new Set(['completed', 'failed']),
+      derive: null,
     };
   }
 
