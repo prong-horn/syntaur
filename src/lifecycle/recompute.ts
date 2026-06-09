@@ -26,6 +26,7 @@ import {
   type DeriveConfig,
 } from '../utils/config.js';
 import { fileExists, writeFileForce } from '../utils/fs.js';
+import { syntaurRoot } from '../utils/paths.js';
 import { nowTimestamp } from '../utils/timestamp.js';
 import { computeFacts } from './facts.js';
 import { deriveDimensions, type DerivedDimensions } from './derive.js';
@@ -46,6 +47,26 @@ export interface DeriveContext {
   derive: DeriveConfig;
   terminalStatuses: ReadonlySet<string>;
   knownStatusIds: ReadonlySet<string>;
+}
+
+/**
+ * One-time migration marker (rollout safety): IMPLICIT recompute triggers —
+ * the dashboard boot sweep, watcher-driven recomputes, config-change sweeps —
+ * stay dormant until `syntaur migrate-derive` has seeded facts. Without this,
+ * upgrading the dashboard would re-derive every in-flight assignment before
+ * its implementationStarted/reviewRequested standing was seeded, regressing
+ * real work. EXPLICIT actions (CLI verbs, dashboard transitions, `syntaur
+ * recompute`) are deliberate per-assignment acts and run regardless — their
+ * output shows the derived result plainly.
+ */
+const MIGRATION_MARKER = 'derive-migrated';
+
+export async function isDeriveMigrated(): Promise<boolean> {
+  return fileExists(resolve(syntaurRoot(), MIGRATION_MARKER));
+}
+
+export async function markDeriveMigrated(): Promise<void> {
+  await writeFileForce(resolve(syntaurRoot(), MIGRATION_MARKER), `${nowTimestamp()}\n`);
 }
 
 /** Resolve the derive context from config.md (defaults when unconfigured).

@@ -27,6 +27,7 @@ import { parseAssignmentFrontmatter, updateAssignmentFile } from '../lifecycle/f
 import { computeFacts } from '../lifecycle/facts.js';
 import { deriveDimensions } from '../lifecycle/derive.js';
 import {
+  markDeriveMigrated,
   recomputeAndWrite,
   resolveDeriveContext,
   type DeriveContext,
@@ -203,6 +204,12 @@ export async function migrateDeriveCommand(options: MigrateDeriveOptions): Promi
         phase: result.dimensions?.phase ?? null,
       });
     }
+  }
+
+  if (!options.dryRun) {
+    // Unlocks the dashboard's implicit recompute triggers (boot/watcher/config
+    // sweeps) — they stay dormant until facts have been seeded.
+    await markDeriveMigrated();
   }
 
   const mode = options.dryRun ? '[dry-run] ' : '';

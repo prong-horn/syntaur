@@ -815,10 +815,22 @@ export function createDashboardServer(options: DashboardServerOptions) {
       // watcher → per-assignment recompute (out-of-band edits re-derive);
       // config.md → recompute-all (the rules changed); boot → reconciliation
       // sweep (covers edits made while the server was down).
-      const { recomputeAndWrite, recomputeAll, resolveDeriveContext } = await import(
+      const { recomputeAndWrite, recomputeAll, resolveDeriveContext, isDeriveMigrated } = await import(
         '../lifecycle/recompute.js'
       );
+      let warnedMigrationPending = false;
+      const migrationGate = async (): Promise<boolean> => {
+        if (await isDeriveMigrated()) return true;
+        if (!warnedMigrationPending) {
+          warnedMigrationPending = true;
+          console.log(
+            'derived-status: migration pending — implicit recomputes are dormant until `syntaur migrate-derive` runs.',
+          );
+        }
+        return false;
+      };
       const recomputeOne = async (projectSlug: string | null, assignmentSlug: string): Promise<void> => {
+        if (!(await migrationGate())) return;
         try {
           const context = await resolveDeriveContext();
           const projectDir = projectSlug ? resolve(projectsDir, projectSlug) : null;
@@ -838,6 +850,7 @@ export function createDashboardServer(options: DashboardServerOptions) {
         }
       };
       const sweepAll = async (cause: string): Promise<void> => {
+        if (!(await migrationGate())) return;
         try {
           const context = await resolveDeriveContext();
           const summary = await recomputeAll(projectsDir, assignmentsDir, {
