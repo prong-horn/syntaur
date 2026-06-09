@@ -630,4 +630,21 @@ describe('GET /api/launch/prompt', () => {
     expect((await fetch(`${promptUrl()}`)).status).toBe(400);
     expect((await fetch(`${promptUrl()}?assignment=a&assignment=b`)).status).toBe(400);
   });
+
+  it('400 for a duplicate agent param (Express array)', async () => {
+    await writeAssignment(ID, {});
+    expect((await fetch(`${promptUrl()}?assignment=${ID}&agent=a&agent=b`)).status).toBe(400);
+  });
+
+  it('knownPlaybookSlugs includes an installed playbook file (dir-resident, enabled or not)', async () => {
+    await writeAssignment(ID, {});
+    const pbDir = resolve(tmpHome, '.syntaur', 'playbooks');
+    await mkdir(pbDir, { recursive: true });
+    await writeFile(
+      resolve(pbDir, 'my-installed-pb.md'),
+      ['---', 'name: "PB"', 'slug: my-installed-pb', 'description: "x"', 'when_to_use: "y"', 'tags: []', '---', '# PB', '', 'body', ''].join('\n'),
+    );
+    const res = await fetch(`${promptUrl()}?assignment=${ID}`);
+    expect((await res.json()).knownPlaybookSlugs).toContain('my-installed-pb');
+  });
 });

@@ -74,6 +74,7 @@ describe('tokenWarnings — parity with the server resolveLaunchPrompt', () => {
     '@FOO and @foo_bar and @foo--bar',
     'plain @ and user@example.com',
     '@assignment then @keep-records-updated and @nope',
+    'path @foo.bar/x stops at the dot',
   ];
 
   it.each(cases)('warning count matches the server for: %s', (text) => {

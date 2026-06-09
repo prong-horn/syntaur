@@ -108,10 +108,11 @@ export function LaunchPromptDialog({
 
   function syncCaret(e: React.SyntheticEvent<HTMLTextAreaElement>) {
     setCaret(e.currentTarget.selectionStart ?? value.length);
+    setSelected(0); // the active token (and its suggestions) may have changed
   }
 
-  function apply(suggestion: string) {
-    if (!active) return;
+  function apply(suggestion: string | undefined) {
+    if (!active || !suggestion) return;
     const result = applySuggestion(value, active, suggestion);
     setValue(result.text);
     setCaret(result.caret);
@@ -135,14 +136,11 @@ export function LaunchPromptDialog({
       setSelected((s) => Math.max(s - 1, 0));
     } else if (e.key === 'Enter' || e.key === 'Tab') {
       e.preventDefault();
-      apply(suggestions[selected]);
-    } else if (e.key === 'Escape') {
-      // Dismiss the popup only — keep stopPropagation so Radix doesn't also
-      // close the dialog on this Escape.
-      e.preventDefault();
-      e.stopPropagation();
-      setDismissed(true);
+      apply(suggestions[selected]); // apply() guards an out-of-range/undefined pick
     }
+    // Escape is handled by DialogContent.onEscapeKeyDown (Radix listens on
+    // document capture, before this handler) so it can dismiss the popup
+    // without closing the dialog.
   }
 
   function confirm() {
@@ -153,7 +151,16 @@ export function LaunchPromptDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
+      <DialogContent
+        onEscapeKeyDown={(e) => {
+          // When the autocomplete popup is open, Escape dismisses it instead of
+          // closing the whole dialog (Radix fires this before any React handler).
+          if (showPopup) {
+            e.preventDefault();
+            setDismissed(true);
+          }
+        }}
+      >
         <DialogHeader>
           <DialogTitle>Edit launch prompt</DialogTitle>
           <DialogDescription>
