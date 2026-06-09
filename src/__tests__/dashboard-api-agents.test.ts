@@ -244,6 +244,31 @@ describe('PUT /api/config/agents', () => {
     expect(r.body.error).toMatch(/invalid playbook/);
     expect(r.body.fieldErrors[0]).toMatchObject({ id: 'foo', field: 'playbook' });
   });
+
+  it('accepts and round-trips launchPrompt (no silent drop)', async () => {
+    const launchPrompt = '@assignment Run @e2e-dev-cycle: "go".';
+    const r = await put({
+      agents: [{ id: 'claude', label: 'Claude', command: 'claude', launchPrompt }],
+    });
+    expect(r.status).toBe(200);
+    expect(r.body.agents[0]).toMatchObject({ launchPrompt });
+  });
+
+  it('normalizes empty/whitespace launchPrompt to omitted', async () => {
+    const r = await put({
+      agents: [{ id: 'foo', label: 'Foo', command: 'foo', launchPrompt: '   ' }],
+    });
+    expect(r.status).toBe(200);
+    expect(r.body.agents[0].launchPrompt).toBeUndefined();
+  });
+
+  it('400 + fieldErrors when launchPrompt is not a string', async () => {
+    const r = await put({
+      agents: [{ id: 'foo', label: 'Foo', command: 'foo', launchPrompt: 42 }],
+    });
+    expect(r.status).toBe(400);
+    expect(r.body.fieldErrors[0]).toMatchObject({ id: 'foo', field: 'launchPrompt' });
+  });
 });
 
 describe('DELETE /api/config/agents', () => {

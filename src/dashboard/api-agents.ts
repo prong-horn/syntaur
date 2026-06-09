@@ -109,6 +109,16 @@ export function mapAgentErrorToFieldErrors(
     };
   }
 
+  match = message.match(/^agent "([^"]+)" has invalid launchPrompt/);
+  if (match) {
+    return {
+      error: message,
+      fieldErrors: [
+        { id: match[1], field: 'launchPrompt', message: 'must be a single line' },
+      ],
+    };
+  }
+
   return { error: message };
 }
 
@@ -259,6 +269,21 @@ function coerceAgentRow(
     }
     const playbook = entry.playbook.trim();
     if (playbook) cleaned.playbook = playbook;
+  }
+
+  if (entry.launchPrompt !== undefined) {
+    if (typeof entry.launchPrompt !== 'string') {
+      return {
+        ok: false,
+        status: 400,
+        body: {
+          error: `agents[${index}].launchPrompt must be a string`,
+          fieldErrors: [{ id, field: 'launchPrompt', message: 'launchPrompt must be a string' }],
+        },
+      };
+    }
+    // Store untrimmed (preserve author spacing); drop when empty-after-trim.
+    if (entry.launchPrompt.trim()) cleaned.launchPrompt = entry.launchPrompt;
   }
 
   return { ok: true, value: cleaned };

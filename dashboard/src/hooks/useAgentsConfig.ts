@@ -66,6 +66,9 @@ function normalizeRow(raw: unknown): AgentConfig | null {
   if (typeof entry.playbook === 'string') {
     agent.playbook = entry.playbook;
   }
+  if (typeof entry.launchPrompt === 'string') {
+    agent.launchPrompt = entry.launchPrompt;
+  }
   return agent;
 }
 

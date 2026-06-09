@@ -73,6 +73,9 @@ interface EditableAgent {
   default: boolean;
   model: string;
   playbook: string;
+  // Preserved as an untouched pass-through (no editor UI yet — Phase B) so a
+  // CLI-set launchPrompt is not dropped when other fields are edited + saved.
+  launchPrompt: string;
   fieldErrors: Partial<Record<FieldKey, string>>;
 }
 
@@ -102,6 +105,7 @@ function hydrate(agents: AgentConfig[]): EditableAgent[] {
     default: a.default ?? false,
     model: a.model ?? '',
     playbook: a.playbook ?? '',
+    launchPrompt: a.launchPrompt ?? '',
     fieldErrors: {},
   }));
 }
@@ -120,6 +124,8 @@ function buildPayload(rows: EditableAgent[]): AgentConfig[] {
     if (row.default) agent.default = true;
     if (row.model.trim()) agent.model = row.model.trim();
     if (row.playbook.trim()) agent.playbook = row.playbook.trim();
+    // Store untrimmed (preserve author spacing); drop when empty-after-trim.
+    if (row.launchPrompt.trim()) agent.launchPrompt = row.launchPrompt;
     return agent;
   });
 }
@@ -186,7 +192,8 @@ function rowsAreEqual(a: EditableAgent[], b: EditableAgent[]): boolean {
       ai.resolveFromShellAliases !== bi.resolveFromShellAliases ||
       ai.default !== bi.default ||
       ai.model !== bi.model ||
-      ai.playbook !== bi.playbook
+      ai.playbook !== bi.playbook ||
+      ai.launchPrompt !== bi.launchPrompt
     ) {
       return false;
     }
@@ -516,6 +523,7 @@ export function AgentsSection() {
         default: false,
         model: '',
         playbook: '',
+        launchPrompt: '',
         fieldErrors: {},
       };
       return [...prev, next];
