@@ -32,6 +32,7 @@ agentsCommand
         if (agent.promptArgPosition) flags.push(`prompt=${agent.promptArgPosition}`);
         if (agent.model) flags.push(`model=${agent.model}`);
         if (agent.playbook) flags.push(`playbook=${agent.playbook}`);
+        if (agent.launchPrompt) flags.push(`launchPrompt=${truncateForList(agent.launchPrompt)}`);
         const flagStr = flags.length > 0 ? ` [${flags.join(', ')}]` : '';
         const args = agent.args && agent.args.length > 0 ? ` ${agent.args.join(' ')}` : '';
         console.log(`  ${agent.id.padEnd(12)} ${agent.label.padEnd(20)} ${agent.command}${args}${flagStr}`);
@@ -51,6 +52,7 @@ interface AddOptions {
   resolveFromShellAliases?: boolean;
   model?: string;
   playbook?: string;
+  launchPrompt?: string;
   dryRun?: boolean;
 }
 
@@ -66,6 +68,7 @@ agentsCommand
   .option('--resolve-from-shell-aliases', 'Run via $SHELL -i -c (for shell aliases)')
   .option('--model <model>', 'LLM model injected as --model <value> at launch')
   .option('--playbook <slug>', 'Playbook slug to run end-to-end on a fresh launch')
+  .option('--launch-prompt <text>', 'Editable launch prompt with @assignment / @<playbook> tokens')
   .option('--dry-run', 'Validate and print the proposed config without writing')
   .action(async (options: AddOptions) => {
     try {
@@ -128,6 +131,7 @@ interface SetOptions {
   resolveFromShellAliases?: boolean;
   model?: string;
   playbook?: string;
+  launchPrompt?: string;
   dryRun?: boolean;
 }
 
@@ -144,6 +148,7 @@ agentsCommand
   .option('--no-resolve-from-shell-aliases', 'Disable shell-alias resolution for this agent')
   .option('--model <model>', 'LLM model injected as --model <value> (empty string clears)')
   .option('--playbook <slug>', 'Playbook slug to run on a fresh launch (empty string clears)')
+  .option('--launch-prompt <text>', 'Editable launch prompt with @-tokens (empty string clears)')
   .option('--dry-run', 'Validate and print the proposed config without writing')
   .action(async (id: string, options: SetOptions) => {
     try {
@@ -214,7 +219,7 @@ agentsCommand
 
 // ---------- helpers ----------
 
-function buildAgentFromOptions(options: AddOptions, existing: AgentConfig | null): AgentConfig {
+export function buildAgentFromOptions(options: AddOptions, existing: AgentConfig | null): AgentConfig {
   const agent: AgentConfig = {
     id: options.id,
     label: options.label,
@@ -229,11 +234,14 @@ function buildAgentFromOptions(options: AddOptions, existing: AgentConfig | null
   if (options.resolveFromShellAliases) agent.resolveFromShellAliases = true;
   if (options.model && options.model.trim()) agent.model = options.model.trim();
   if (options.playbook && options.playbook.trim()) agent.playbook = options.playbook.trim();
+  // launchPrompt: store the author's value untrimmed (preserve intentional
+  // spacing); only the emptiness gate trims.
+  if (options.launchPrompt && options.launchPrompt.trim()) agent.launchPrompt = options.launchPrompt;
   validateAgentList([...(existing ? [] : []), agent]); // field-level sanity
   return agent;
 }
 
-function mergeOptionsIntoAgent(existing: AgentConfig, options: SetOptions): AgentConfig {
+export function mergeOptionsIntoAgent(existing: AgentConfig, options: SetOptions): AgentConfig {
   const merged: AgentConfig = { ...existing };
   if (options.label !== undefined) merged.label = options.label;
   if (options.command !== undefined) {
@@ -260,6 +268,11 @@ function mergeOptionsIntoAgent(existing: AgentConfig, options: SetOptions): Agen
     const playbook = options.playbook.trim();
     if (playbook) merged.playbook = playbook;
     else delete merged.playbook;
+  }
+  if (options.launchPrompt !== undefined) {
+    // Store untrimmed (preserve author spacing); empty-after-trim clears.
+    if (options.launchPrompt.trim()) merged.launchPrompt = options.launchPrompt;
+    else delete merged.launchPrompt;
   }
   return merged;
 }
@@ -300,9 +313,11 @@ function renderDiff(prev: AgentConfig[], next: AgentConfig[]): string {
   return out.join('\n');
 }
 
-/** Exported for tests: the one-line diff representation of an agent. Model and
- * playbook MUST appear here so a model/playbook-only `set` is not reported as
- * "(no changes)" by `renderDiff` (which compares these lines). */
+/** Exported for tests: the one-line diff representation of an agent. Model,
+ * playbook, and launchPrompt MUST appear here — and launchPrompt in FULL (not
+ * truncated) — so a field-only `set` is not reported as "(no changes)" by
+ * `renderDiff` (which compares these lines; two prompts sharing a prefix must
+ * not collapse). Human-facing truncation happens only in `agents list`. */
 export function formatAgentLine(a: AgentConfig): string {
   const flags: string[] = [];
   if (a.default) flags.push('default');
@@ -310,9 +325,16 @@ export function formatAgentLine(a: AgentConfig): string {
   if (a.promptArgPosition) flags.push(`prompt=${a.promptArgPosition}`);
   if (a.model) flags.push(`model=${a.model}`);
   if (a.playbook) flags.push(`playbook=${a.playbook}`);
+  if (a.launchPrompt) flags.push(`launchPrompt=${a.launchPrompt}`);
   if (a.args && a.args.length > 0) flags.push(`args=[${a.args.join(', ')}]`);
   const suffix = flags.length > 0 ? ` (${flags.join(', ')})` : '';
   return `${a.id}: ${a.label} → ${a.command}${suffix}`;
+}
+
+/** Truncate a value for human-facing `agents list` display only (never used in
+ * `formatAgentLine`/diff identity). */
+function truncateForList(value: string, max = 40): string {
+  return value.length > max ? `${value.slice(0, max - 1)}…` : value;
 }
 
 function reportAndExit(error: unknown): never {
