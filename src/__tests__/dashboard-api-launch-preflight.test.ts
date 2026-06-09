@@ -7,6 +7,7 @@ import type { AddressInfo } from 'node:net';
 import type { Server } from 'node:http';
 import type { ProbeResult } from '../utils/terminal-probe.js';
 import { createLaunchPreflightRouter } from '../dashboard/api-launch-preflight.js';
+import { writeAgentsConfig, type AgentConfig } from '../utils/config.js';
 
 // cmux detection is filesystem/PATH-dependent, so on a host that has (or lacks)
 // the real cmux.app the endpoint result would vary. Pin probeTerminalInstalled
@@ -575,5 +576,58 @@ describe('GET /api/launch/command', () => {
     expect(res.status).toBe(400);
     const body = await res.json();
     expect(body.error).toMatch(/session/);
+  });
+});
+
+describe('GET /api/launch/prompt', () => {
+  const promptUrl = () => baseUrl.replace('/preflight', '/prompt');
+  const ID = '11111111-2222-3333-4444-555555555555';
+  const slug = `task-${ID.slice(0, 8)}`;
+
+  it('returns the bare grab seed template for the zero-config default agent', async () => {
+    await writeAssignment(ID, {});
+    const res = await fetch(`${promptUrl()}?assignment=${ID}`);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.template).toBe(`/grab-assignment demo ${slug}`);
+    expect(Array.isArray(body.knownPlaybookSlugs)).toBe(true);
+  });
+
+  it('returns the stored launchPrompt template verbatim', async () => {
+    await writeAssignment(ID, {});
+    await writeAgentsConfig([
+      { id: 'lp', label: 'LP', command: 'claude', launchPrompt: '@assignment Run @e2e-dev-cycle.' } as AgentConfig,
+    ]);
+    const res = await fetch(`${promptUrl()}?assignment=${ID}&agent=lp`);
+    expect(res.status).toBe(200);
+    expect((await res.json()).template).toBe('@assignment Run @e2e-dev-cycle.');
+  });
+
+  it('returns the synth template (literal clause) for a playbook agent', async () => {
+    await writeAssignment(ID, {});
+    await writeAgentsConfig([
+      { id: 'pb', label: 'PB', command: 'claude', playbook: 'e2e-dev-cycle' } as AgentConfig,
+    ]);
+    const res = await fetch(`${promptUrl()}?assignment=${ID}&agent=pb`);
+    expect((await res.json()).template).toBe(
+      '@assignment Run the `e2e-dev-cycle` playbook via the /run-playbook skill end-to-end.',
+    );
+  });
+
+  it('422 for an unknown agent', async () => {
+    await writeAssignment(ID, {});
+    await writeAgentsConfig([
+      { id: 'only', label: 'Only', command: 'claude' } as AgentConfig,
+    ]);
+    expect((await fetch(`${promptUrl()}?assignment=${ID}&agent=nope`)).status).toBe(422);
+  });
+
+  it('404 for an unknown assignment', async () => {
+    expect((await fetch(`${promptUrl()}?assignment=does-not-exist`)).status).toBe(404);
+  });
+
+  it('400 for a missing or duplicate assignment param', async () => {
+    expect((await fetch(`${promptUrl()}`)).status).toBe(400);
+    expect((await fetch(`${promptUrl()}?assignment=a&assignment=b`)).status).toBe(400);
   });
 });

@@ -2,16 +2,23 @@ import { Router } from 'express';
 import {
   readConfig,
   getTerminal,
+  getAgents,
   TERMINAL_CHOICES,
   type TerminalChoice,
+  type AgentConfig,
 } from '../utils/config.js';
 import { probeTerminalInstalled } from '../utils/terminal-probe.js';
 import { isExistingDir } from '../launch/cwd.js';
 import {
   resolveLaunchPlan,
   buildShellCommandLine,
+  pickAgent,
+  effectiveLaunchTemplate,
   LaunchError,
 } from '../launch/index.js';
+import { resolveAssignmentById } from '../utils/assignment-resolver.js';
+import { listPlaybookSlugs } from '../utils/playbooks.js';
+import { playbooksDir } from '../utils/paths.js';
 import { resolveRecreateTarget } from './recreate-target.js';
 
 /** Data the dashboard needs to offer a one-click recreate of a deleted worktree. */
@@ -231,6 +238,67 @@ export function createLaunchPreflightRouter(
       }
       console.error('Error in launch command:', error);
       res.status(500).json({ error: 'launch command failed' });
+    }
+  });
+
+  // Prefill source for the dashboard's editable "Open in agent" prompt box.
+  // Returns the effective TEMPLATE (NOT resolved text — the box re-resolves the
+  // edited value at launch) plus the authoritative installed-playbook slug set
+  // (`listPlaybookSlugs`, incl. disabled — same set launch uses) for @-token
+  // autocomplete + warning parity. Per-launch only; nothing is written.
+  router.get('/prompt', async (req, res) => {
+    const rawAssignment = req.query.assignment;
+    if (typeof rawAssignment !== 'string' || rawAssignment.length === 0) {
+      // typeof guard also rejects Express 5 duplicate params (array).
+      res.status(400).json({ error: 'assignment query param is required' });
+      return;
+    }
+    const rawAgent = req.query.agent;
+    if (rawAgent !== undefined && typeof rawAgent !== 'string') {
+      res.status(400).json({ error: 'agent query param must be a single value' });
+      return;
+    }
+
+    try {
+      const resolved = await resolveAssignmentById(projectsDir, assignmentsDir, rawAssignment);
+      if (!resolved) {
+        res.status(404).json({ error: `Assignment ${rawAssignment} not found` });
+        return;
+      }
+      const config = await readConfig();
+      let agent: AgentConfig;
+      if (rawAgent !== undefined && rawAgent.length > 0) {
+        const found = getAgents(config).find((a) => a.id === rawAgent);
+        if (!found) {
+          res.status(422).json({ error: `Agent "${rawAgent}" is not configured` });
+          return;
+        }
+        agent = found;
+      } else {
+        agent = pickAgent(config); // throws LaunchError('no-agents-configured') if empty
+      }
+      const knownPlaybookSlugs = Array.from(await listPlaybookSlugs(playbooksDir()));
+      const template = effectiveLaunchTemplate({
+        launchPrompt: agent.launchPrompt,
+        playbook: agent.playbook,
+        projectSlug: resolved.projectSlug,
+        assignmentSlug: resolved.assignmentSlug,
+        id: resolved.id,
+      });
+      res.json({ template, knownPlaybookSlugs });
+    } catch (error) {
+      if (error instanceof LaunchError) {
+        const status =
+          error.code === 'agent-not-configured' || error.code === 'no-agents-configured'
+            ? 422
+            : null;
+        if (status !== null) {
+          res.status(status).json({ error: error.message });
+          return;
+        }
+      }
+      console.error('Error in launch prompt prefill:', error);
+      res.status(500).json({ error: 'launch prompt prefill failed' });
     }
   });
 
