@@ -57,6 +57,30 @@ describe('continuationUrl', () => {
       'syntaur://open?assignment=a1',
     );
   });
+
+  it('appends &prompt= for an assignment (url-encoded), alongside agent', () => {
+    expect(
+      continuationUrl({ kind: 'assignment', id: 'a1' }, undefined, undefined, 'claude', '@assignment go'),
+    ).toBe('syntaur://open?assignment=a1&agent=claude&prompt=%40assignment%20go');
+  });
+
+  it('emits an empty &prompt= (presence-significant clear)', () => {
+    expect(
+      continuationUrl({ kind: 'assignment', id: 'a1' }, undefined, undefined, undefined, ''),
+    ).toBe('syntaur://open?assignment=a1&prompt=');
+  });
+
+  it('omits prompt when undefined', () => {
+    expect(
+      continuationUrl({ kind: 'assignment', id: 'a1' }, undefined, undefined, undefined, undefined),
+    ).toBe('syntaur://open?assignment=a1');
+  });
+
+  it('does NOT append prompt for a session target', () => {
+    expect(
+      continuationUrl({ kind: 'session', id: 's1' }, 'resume', undefined, undefined, '@assignment go'),
+    ).toBe('syntaur://open?session=s1&mode=resume');
+  });
 });
 
 describe('recreateRequest', () => {

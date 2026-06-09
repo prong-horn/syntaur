@@ -18,12 +18,18 @@ export type ContinuationTarget =
  * single launch without mutating config. An optional `agentId` appends `&agent=`
  * for ASSIGNMENT targets only (so the "Open in agent" picker can launch a
  * specific runner profile); sessions pin their agent from the session record.
+ * An optional `prompt` appends `&prompt=` for ASSIGNMENT targets only — the
+ * editable launch box's (possibly edited) template, re-resolved server-side.
+ * It is **presence-significant**: an empty string is a deliberate override and
+ * is still emitted; `undefined` means "no override". Callers must pass a
+ * single-line value (the box strips newlines + bounds length).
  */
 export function continuationUrl(
   target: ContinuationTarget,
   mode?: ReopenMode,
   fallbackTerminal?: string,
   agentId?: string,
+  prompt?: string,
 ): string {
   let url = `syntaur://open?${target.kind}=${encodeURIComponent(target.id)}`;
   if (target.kind === 'session' && mode) {
@@ -34,6 +40,9 @@ export function continuationUrl(
   }
   if (agentId && target.kind === 'assignment') {
     url += `&agent=${encodeURIComponent(agentId)}`;
+  }
+  if (prompt !== undefined && target.kind === 'assignment') {
+    url += `&prompt=${encodeURIComponent(prompt)}`;
   }
   return url;
 }
