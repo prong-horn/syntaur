@@ -263,6 +263,17 @@ describe('INITIAL_PROMPT', () => {
       expect(out).toContain('end-to-end');
     });
 
+    it('byte-locks the legacy playbook sentence (guards the bareGrabSeed extraction)', () => {
+      // The playbook branch keeps its legacy "using the /run-playbook skill"
+      // wording verbatim — the resolver's new "via" phrasing must NOT leak here.
+      expect(
+        INITIAL_PROMPT({ projectSlug: 'proj', assignmentSlug: 'asg', playbook: 'e2e-dev-cycle' }),
+      ).toBe(
+        'Grab the assignment `proj/asg` using the /grab-assignment skill, then load and run ' +
+          'the `e2e-dev-cycle` playbook using the /run-playbook skill and carry it out end-to-end.',
+      );
+    });
+
     it('standalone references the uuid via --id', () => {
       const out = INITIAL_PROMPT({
         projectSlug: null,

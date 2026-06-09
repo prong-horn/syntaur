@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { formatUrlCommandError, formatPlanForApplet } from '../commands/url.js';
+import { formatUrlCommandError, formatPlanForApplet, emitPlanWarnings } from '../commands/url.js';
 import { OpenUrlError, LaunchError, TerminalNotFoundError, type LaunchPlan } from '../launch/index.js';
 
 function makePlan(overrides: Partial<LaunchPlan> = {}): LaunchPlan {
@@ -77,5 +77,32 @@ describe('formatPlanForApplet', () => {
   it('has no trailing newline', () => {
     const out = formatPlanForApplet(makePlan());
     expect(out.endsWith('\n')).toBe(false);
+  });
+});
+
+describe('emitPlanWarnings', () => {
+  it('emits cwd, shell, then launch-prompt warnings in order, each exactly once', () => {
+    const out: string[] = [];
+    emitPlanWarnings(
+      makePlan({
+        fallbackWarning: 'cwd-warn',
+        shellFallbackWarning: 'shell-warn',
+        promptWarnings: ['prompt-w1', 'prompt-w2'],
+      }),
+      (m) => out.push(m),
+    );
+    expect(out).toEqual(['cwd-warn', 'shell-warn', 'prompt-w1', 'prompt-w2']);
+  });
+
+  it('emits each promptWarning exactly once', () => {
+    const out: string[] = [];
+    emitPlanWarnings(makePlan({ promptWarnings: ['only-one'] }), (m) => out.push(m));
+    expect(out.filter((m) => m === 'only-one')).toHaveLength(1);
+  });
+
+  it('no-ops when there are no warnings (promptWarnings undefined)', () => {
+    const out: string[] = [];
+    emitPlanWarnings(makePlan(), (m) => out.push(m));
+    expect(out).toEqual([]);
   });
 });

@@ -62,15 +62,7 @@ export async function urlCommand(
     agentId: parsed.kind === 'assignment' ? parsed.agent : undefined,
   });
 
-  if (plan.fallbackWarning) {
-    console.error(plan.fallbackWarning);
-  }
-  if (plan.shellFallbackWarning) {
-    console.error(plan.shellFallbackWarning);
-  }
-  for (const warning of plan.promptWarnings ?? []) {
-    console.error(warning);
-  }
+  emitPlanWarnings(plan);
 
   if (options.printPlan) {
     process.stdout.write(formatPlanForApplet(plan));
@@ -94,6 +86,22 @@ export async function urlCommand(
  * applet's own bundle identity is the one macOS TCC sees on the outgoing
  * Apple Event.
  */
+/**
+ * Emit all non-fatal launch-plan warnings in order — cwd fallback, shell
+ * fallback, then launch-prompt token warnings — each exactly once. Extracted as
+ * a pure function (the `emit` sink defaults to `console.error`) so the ordering
+ * and once-per-warning guarantee is unit-testable without driving the full
+ * `urlCommand` action.
+ */
+export function emitPlanWarnings(
+  plan: LaunchPlan,
+  emit: (message: string) => void = console.error,
+): void {
+  if (plan.fallbackWarning) emit(plan.fallbackWarning);
+  if (plan.shellFallbackWarning) emit(plan.shellFallbackWarning);
+  for (const warning of plan.promptWarnings ?? []) emit(warning);
+}
+
 export function formatPlanForApplet(plan: LaunchPlan): string {
   const cdAndRun = buildShellCommandLine(plan);
   // Two lines, NO trailing newline — keeps it easy to read with AppleScript's
