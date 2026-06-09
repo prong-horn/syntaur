@@ -98,9 +98,15 @@ export async function executeTransition(
   const filePath = resolveAssignmentPath(projectDir, assignmentSlug);
   const { content, frontmatter } = await readAssignment(filePath);
 
-  const targetStatus = options.transitionTable
-    ? getTargetStatus(frontmatter.status, command, options.transitionTable)
-    : (options.commandTargets?.get(command) ?? getTargetStatus(frontmatter.status, command));
+  // Resolution order: a from-specific custom mapping wins; the guard-free
+  // commandTargets fallback covers legacy/undefined statuses; built-ins last
+  // (only when neither custom mechanism was supplied).
+  const targetStatus =
+    (options.transitionTable
+      ? getTargetStatus(frontmatter.status, command, options.transitionTable)
+      : null) ??
+    options.commandTargets?.get(command) ??
+    (options.transitionTable ? null : getTargetStatus(frontmatter.status, command));
 
   if (!targetStatus) {
     return {
@@ -217,9 +223,14 @@ export async function executeTransitionByDir(
   const filePath = resolve(assignmentDir, 'assignment.md');
   const { content, frontmatter } = await readAssignment(filePath);
 
-  const targetStatus = options.transitionTable
-    ? getTargetStatus(frontmatter.status, command, options.transitionTable)
-    : (options.commandTargets?.get(command) ?? getTargetStatus(frontmatter.status, command));
+  // See executeTransition: from-specific mapping wins, commandTargets is the
+  // guard-free fallback, built-ins only when no custom mechanism supplied.
+  const targetStatus =
+    (options.transitionTable
+      ? getTargetStatus(frontmatter.status, command, options.transitionTable)
+      : null) ??
+    options.commandTargets?.get(command) ??
+    (options.transitionTable ? null : getTargetStatus(frontmatter.status, command));
   if (!targetStatus) {
     return {
       success: false,

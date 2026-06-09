@@ -425,6 +425,22 @@ async function handleWorktreeCreate(
   }
 }
 
+/**
+ * Guard-free terminal-command target (derived-status v3): the per-from custom
+ * table is passed alongside, so this fallback only matters for legacy/
+ * undefined statuses. Ambiguous configs (one command, multiple distinct
+ * targets) return undefined — the from-table must then decide, and an unknown
+ * from is correctly refused rather than guessed (codex r3 finding 1).
+ */
+function unambiguousCommandTarget(
+  transitions: Array<{ command: string; to: string }>,
+  command: string,
+): string | undefined {
+  const targets = new Set(transitions.filter((t) => t.command === command).map((t) => t.to));
+  if (targets.size === 1) return [...targets][0];
+  return undefined;
+}
+
 export function createWriteRouter(
   projectsDir: string,
   assignmentsDir?: string,
@@ -2166,17 +2182,18 @@ export function createWriteRouter(
       }
 
       const GATED_TERMINAL = new Set(['complete', 'fail', 'reopen']);
-      const { buildCommandTargets } = await import('../lifecycle/state-machine.js');
+      const gatedFallback = GATED_TERMINAL.has(command)
+        ? unambiguousCommandTarget(config.transitions, command)
+        : undefined;
       const result = await executeTransition(projectDir, assignmentSlug, command, {
         reason: typeof reason === 'string' ? reason : undefined,
-        // Terminal commands run guard-free but honor the CUSTOM target
-        // (codex r2 finding 1) — commandTargets works for assignments on
-        // legacy/undefined statuses too, unlike a from-keyed table.
-        transitionTable: config.custom && !GATED_TERMINAL.has(command) ? config.transitionTable : undefined,
+        // Gated terminal commands: the from-specific custom mapping wins
+        // (passed via the table), with the unambiguous command target as the
+        // guard-free fallback for legacy/undefined statuses (codex r3
+        // finding 1 — ambiguous configs must not pick an arbitrary target).
+        transitionTable: config.custom ? config.transitionTable : undefined,
         commandTargets:
-          config.custom && GATED_TERMINAL.has(command)
-            ? buildCommandTargets(config.transitions)
-            : undefined,
+          config.custom && gatedFallback ? new Map([[command, gatedFallback]]) : undefined,
         terminalStatuses: config.custom ? config.terminalStatuses : undefined,
         linkedTodosLookup,
       });
@@ -2187,12 +2204,16 @@ export function createWriteRouter(
       }
 
       // Settle BEFORE responding — the client never sees pre-derivation state.
-      await recomputeAndWrite(assignmentPath, {
+      const settled = await recomputeAndWrite(assignmentPath, {
         cause: command,
         by: 'human',
         projectDir,
         context,
       });
+      if (settled.warning) {
+        res.status(503).json({ error: settled.warning });
+        return;
+      }
       // Terminal-membership changes flip dependents' depsSatisfied fact.
       const wasTerminal = config.terminalStatuses.has(result.fromStatus);
       const isTerminal = result.toStatus ? config.terminalStatuses.has(result.toStatus) : false;
@@ -2935,6 +2956,13 @@ export function createWriteRouter(
 
       const { reason } = req.body || {};
       const config = await getStatusConfig();
+      // Parity with the project route (codex r3 finding 2): only configured
+      // commands are executable.
+      const validCommandsById = [...new Set(config.transitions.map((t) => t.command))];
+      if (!validCommandsById.includes(command)) {
+        res.status(400).json({ error: `Unsupported transition command "${command}"` });
+        return;
+      }
       const { recomputeAndWrite, recomputeDependents, resolveDeriveContext } = await import(
         '../lifecycle/recompute.js'
       );
@@ -2975,17 +3003,24 @@ export function createWriteRouter(
       }
 
       const GATED_TERMINAL = new Set(['complete', 'fail', 'reopen']);
-      const { buildCommandTargets } = await import('../lifecycle/state-machine.js');
+      const gatedFallbackById = GATED_TERMINAL.has(command)
+        ? unambiguousCommandTarget(config.transitions, command)
+        : undefined;
       const transitionResult = await executeTransitionByDir(
         resolved.assignmentDir,
         command as any,
         {
           standalone: resolved.standalone,
           reason: typeof reason === 'string' ? reason : undefined,
+          // Same resolution as the project route: from-specific mapping wins,
+          // unambiguous command target as guard-free fallback for gated
+          // terminal commands. NOTE: by-id historically ran guard-free for
+          // all commands; the custom from-table now applies only to gated
+          // commands' resolution (their fallback), keeping non-terminal by-id
+          // behavior guard-free as before.
           commandTargets:
-            config.custom && GATED_TERMINAL.has(command)
-              ? buildCommandTargets(config.transitions)
-              : undefined,
+            config.custom && gatedFallbackById ? new Map([[command, gatedFallbackById]]) : undefined,
+          transitionTable: config.custom && GATED_TERMINAL.has(command) ? config.transitionTable : undefined,
           terminalStatuses: config.custom ? config.terminalStatuses : undefined,
           linkedTodosLookup,
         },
@@ -2996,12 +3031,16 @@ export function createWriteRouter(
       }
 
       // Settle BEFORE responding (incl. the reopen convergence event).
-      await recomputeAndWrite(byIdPath, {
+      const settledById = await recomputeAndWrite(byIdPath, {
         cause: command,
         by: 'human',
         projectDir: byIdProjectDir,
         context,
       });
+      if (settledById.warning) {
+        res.status(503).json({ error: settledById.warning });
+        return;
+      }
       if (byIdProjectDir) {
         const wasTerminal = config.terminalStatuses.has(transitionResult.fromStatus);
         const isTerminal = transitionResult.toStatus

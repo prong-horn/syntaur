@@ -445,9 +445,11 @@ export function renameStatusInHistory(
   const esc = oldId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   // phaseFrom/phaseTo also hold status ids (phase namespace = status definitions),
   // so a rename must relabel them too. Disposition keys hold dimension values
-  // (active/blocked/...), not status ids — excluded.
-  const re = new RegExp(`^(\\s+(?:from|to|phaseFrom|phaseTo):[ \\t]*)${esc}[ \\t]*$`, 'gm');
-  const newFm = fmMatch[2].replace(re, `$1${newId}`);
+  // (active/blocked/...), not status ids — excluded. Values may be QUOTED when
+  // the id is a YAML keyword/number look-alike (codex r3 finding 3) — match
+  // both forms; the replacement is written unquoted only when safe.
+  const re = new RegExp(`^(\\s+(?:from|to|phaseFrom|phaseTo):[ \\t]*)("?)${esc}\\2[ \\t]*$`, 'gm');
+  const newFm = fmMatch[2].replace(re, (_m, prefix: string, quote: string) => `${prefix}${quote}${newId}${quote}`);
   return `${fmMatch[1]}${newFm}${fmMatch[3]}${content.slice(fmMatch[0].length)}`;
 }
 
