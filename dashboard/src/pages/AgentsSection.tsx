@@ -56,6 +56,7 @@ type FieldKey =
   | 'default'
   | 'model'
   | 'playbook'
+  | 'launchPrompt'
   | 'row';
 
 interface EditableAgent {
@@ -73,8 +74,8 @@ interface EditableAgent {
   default: boolean;
   model: string;
   playbook: string;
-  // Preserved as an untouched pass-through (no editor UI yet — Phase B) so a
-  // CLI-set launchPrompt is not dropped when other fields are edited + saved.
+  // Editable launch prompt (the literal first message; @assignment / @<playbook>
+  // tokens resolve at launch). Single-line — see the Launch prompt textarea.
   launchPrompt: string;
   fieldErrors: Partial<Record<FieldKey, string>>;
 }
@@ -421,6 +422,23 @@ function SortableAgentRow({
             <p className="mt-0.5 text-[11px] text-error-foreground">{row.fieldErrors.playbook}</p>
           )}
         </div>
+        <div className="col-span-full">
+          <label className="text-[11px] uppercase tracking-wide text-muted-foreground/80">
+            Launch prompt
+          </label>
+          <textarea
+            value={row.launchPrompt}
+            rows={2}
+            placeholder="@assignment Run @<playbook> end-to-end. (optional)"
+            // Single-line field: collapse pasted newlines so a value can't break
+            // the config serializer or the launch URL protocol.
+            onChange={(e) => onPatch({ launchPrompt: e.target.value.replace(/[\r\n]+/g, ' ') })}
+            className={`editor-input mt-0.5 w-full font-mono ${errorClass('launchPrompt')}`}
+          />
+          {row.fieldErrors.launchPrompt && (
+            <p className="mt-0.5 text-[11px] text-error-foreground">{row.fieldErrors.launchPrompt}</p>
+          )}
+        </div>
         <label className="col-span-full inline-flex items-center gap-1.5 text-xs text-muted-foreground">
           <input
             type="checkbox"
@@ -712,5 +730,6 @@ function stripErrorsForPatch(
   if ('default' in patch) delete next.default;
   if ('model' in patch) delete next.model;
   if ('playbook' in patch) delete next.playbook;
+  if ('launchPrompt' in patch) delete next.launchPrompt;
   return next;
 }
