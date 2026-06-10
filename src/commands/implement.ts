@@ -1,13 +1,11 @@
-import { runTransition, reportResult, type LifecycleOptions } from './_lifecycle-helper.js';
+import { implementStartedCommand, type DeriveVerbOptions } from './derive-verbs.js';
 
-export interface ImplementOptions extends LifecycleOptions {
+export interface ImplementOptions extends DeriveVerbOptions {
   agent?: string;
 }
 
-export async function implementCommand(
-  assignment: string,
-  options: ImplementOptions,
-): Promise<void> {
-  const result = await runTransition(assignment, 'implement', options);
-  reportResult(result);
+/** Derived model: `implement` asserts implementationStarted; in_progress
+ * follows from derivation when the plan is approved. */
+export async function implementCommand(assignment: string, options: ImplementOptions): Promise<void> {
+  await implementStartedCommand(assignment, options);
 }

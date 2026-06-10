@@ -41,6 +41,64 @@ export interface ExternalId {
   url: string | null;
 }
 
+/**
+ * One row in an assignment's `statusHistory` frontmatter array — an append-only
+ * log of status transitions. `at`/`from`/`to` are always present (`from` is null
+ * only for the creation/seed entry). `command`/`by` are recorded when known;
+ * `reason` is set on `block` transitions. See the Query Language design doc,
+ * Piece 1, for the full data-model rationale.
+ *
+ * Dimension-aware extension (derived-status design v3): `from`/`to` ALWAYS hold
+ * the headline status. When the underlying phase and/or disposition dimension
+ * changed, the optional `phaseFrom/phaseTo` / `dispositionFrom/dispositionTo`
+ * keys record it — so a phase change under an unchanged headline (e.g. progress
+ * while blocked) is representable as `from: blocked, to: blocked,
+ * phaseFrom: planning, phaseTo: ready_to_implement`. Entries written before the
+ * dimension model simply lack the keys and parse unchanged.
+ */
+export interface StatusHistoryEntry {
+  at: string;
+  from: string | null;
+  to: string;
+  command: string;
+  by: string | null;
+  reason?: string;
+  phaseFrom?: string | null;
+  phaseTo?: string | null;
+  dispositionFrom?: string | null;
+  dispositionTo?: string | null;
+}
+
+/**
+ * Revision-bound plan approval record (derived-status design v3, Piece 5).
+ * The derived `planApproved` fact is true iff `file` is still the latest plan
+ * revision AND `digest` matches its current content — so a replan or a
+ * post-approval edit auto-invalidates the approval.
+ */
+export interface PlanApproval {
+  file: string;
+  digest: string;
+  by: string | null;
+  at: string;
+}
+
+/**
+ * Sticky manual status override ("pin"). Folded into the written headline
+ * `status` at recompute time; the un-overridden derived headline travels in
+ * API payloads only (divergence display). May not target a terminal status
+ * and may not be applied to a terminal assignment.
+ */
+export interface StatusOverride {
+  status: string;
+  source: string; // 'human' | 'agent:<id>'
+  reason: string | null;
+  at: string;
+}
+
+/** Disposition dimension values (orthogonal to phase). */
+export const DISPOSITIONS = ['active', 'blocked', 'parked', 'terminal'] as const;
+export type Disposition = (typeof DISPOSITIONS)[number];
+
 export interface Workspace {
   repository: string | null;
   worktreePath: string | null;
@@ -60,6 +118,7 @@ export interface AssignmentFrontmatter {
   updated: string;
   assignee: string | null;
   externalIds: ExternalId[];
+  statusHistory: StatusHistoryEntry[];
   dependsOn: string[];
   links: string[];
   blockedReason: string | null;
@@ -68,6 +127,21 @@ export interface AssignmentFrontmatter {
   archived: boolean;
   archivedAt: string | null;
   archivedReason: string | null;
+  // ── derived-status v3 fields ─────────────────────────────────────────────
+  /** Cached phase dimension (written by recompute; null pre-migration). */
+  phase: string | null;
+  /** Cached disposition dimension (written by recompute; null pre-migration). */
+  disposition: string | null;
+  /** Revision-bound plan approval record; null = not approved. */
+  planApproval: PlanApproval | null;
+  /** Intentional withhold → disposition: parked. */
+  parked: boolean;
+  /** Review escalation atom; feeds the review phase rung. */
+  reviewRequested: boolean;
+  /** Asserted "implementation has begun" (worktrees precede planning, so workspaceSet ≠ building). */
+  implementationStarted: boolean;
+  /** Sticky manual pin; null = no override. */
+  override: StatusOverride | null;
 }
 
 export interface TransitionResult {

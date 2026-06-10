@@ -3,6 +3,7 @@ import { resolve, basename, isAbsolute } from 'node:path';
 import { rm, readFile, open as fsOpen, stat as fsStat, realpath as fsRealpath } from 'node:fs/promises';
 import { spawnSync } from 'node:child_process';
 import { executeTransition } from '../lifecycle/index.js';
+import { appendStatusHistoryEntry } from '../lifecycle/frontmatter.js';
 import { isValidSlug, slugify } from '../utils/slug.js';
 import { generateId } from '../utils/uuid.js';
 import { nowTimestamp } from '../utils/timestamp.js';
@@ -422,6 +423,22 @@ async function handleWorktreeCreate(
   } finally {
     worktreeInFlight.delete(ctx.assignmentPath);
   }
+}
+
+/**
+ * Guard-free terminal-command target (derived-status v3): the per-from custom
+ * table is passed alongside, so this fallback only matters for legacy/
+ * undefined statuses. Ambiguous configs (one command, multiple distinct
+ * targets) return undefined — the from-table must then decide, and an unknown
+ * from is correctly refused rather than guessed (codex r3 finding 1).
+ */
+function unambiguousCommandTarget(
+  transitions: Array<{ command: string; to: string }>,
+  command: string,
+): string | undefined {
+  const targets = new Set(transitions.filter((t) => t.command === command).map((t) => t.to));
+  if (targets.size === 1) return [...targets][0];
+  return undefined;
 }
 
 export function createWriteRouter(
@@ -938,7 +955,19 @@ export function createWriteRouter(
       const timestamp = fields.created || nowTimestamp();
 
       await ensureDir(assignmentDir);
-      await writeFileForce(resolve(assignmentDir, 'assignment.md'), content);
+      // Raw create bypasses renderAssignment, so seed the statusHistory here
+      // (only when the body didn't already supply one — never double-seed).
+      const seededContent =
+        parseAssignmentFull(content).statusHistory.length > 0
+          ? content
+          : appendStatusHistoryEntry(content, {
+              at: timestamp,
+              from: null,
+              to: parseAssignmentFull(content).status,
+              command: 'create',
+              by: null,
+            });
+      await writeFileForce(resolve(assignmentDir, 'assignment.md'), seededContent);
 
       try {
         const companions: Array<[string, string]> = [
@@ -1041,13 +1070,27 @@ export function createWriteRouter(
       }
 
       let nextContent = nextContentRaw;
+      const now = nowTimestamp();
 
       // Clear blockedReason when status moves away from blocked
       if (next.status !== current.status && current.status === 'blocked' && next.status !== 'blocked') {
         nextContent = setTopLevelField(nextContent, 'blockedReason', null);
       }
 
-      nextContent = setTopLevelField(nextContent, 'updated', nowTimestamp());
+      nextContent = setTopLevelField(nextContent, 'updated', now);
+
+      // Record a transition when a raw edit changes the status (conditional — no
+      // entry on an unchanged status).
+      if (next.status !== current.status) {
+        nextContent = appendStatusHistoryEntry(nextContent, {
+          at: now,
+          from: current.status,
+          to: next.status,
+          command: 'edit',
+          by: null,
+        });
+      }
+
       await writeFileForce(assignmentPath, nextContent);
 
       const assignment = await getAssignmentDetail(projectsDir, projectSlug, assignmentSlug);
@@ -1840,21 +1883,47 @@ export function createWriteRouter(
       const { status } = req.body || {};
       const config = await getStatusConfig();
       const validStatuses = config.statuses.map((s) => s.id);
-      if (typeof status !== 'string' || !validStatuses.includes(status)) {
+      const clearing = status === null;
+      if (!clearing && (typeof status !== 'string' || !validStatuses.includes(status))) {
         res.status(400).json({ error: `Invalid status. Must be one of: ${validStatuses.join(', ')}.` });
         return;
       }
 
-      let content = await readFile(assignmentPath, 'utf-8');
-      content = setTopLevelField(content, 'status', status);
-      content = setTopLevelField(content, 'updated', nowTimestamp());
-
-      // Clear blockedReason when moving away from blocked
-      if (status !== 'blocked') {
-        content = setTopLevelField(content, 'blockedReason', null);
+      // Derived-status v3: free-form "set status to X" is retired. This
+      // endpoint now applies PIN semantics — the sanctioned override — so the
+      // UI affordance survives but cannot silently drift status from facts.
+      // `status: null` clears the pin (re-derive). Terminal targets are
+      // refused (terminal only via complete/fail). Re-pinning the same status
+      // is idempotent.
+      if (!clearing && config.terminalStatuses.has(status)) {
+        res.status(400).json({
+          error: `"${status}" is terminal — use the complete/fail transition (gated), not an override.`,
+        });
+        return;
       }
-
-      await writeFileForce(assignmentPath, content);
+      const { recomputeAndWrite, resolveDeriveContext } = await import('../lifecycle/recompute.js');
+      const { updateOverride } = await import('../lifecycle/frontmatter.js');
+      const context = await resolveDeriveContext();
+      const result = await recomputeAndWrite(assignmentPath, {
+        cause: clearing ? 'unpin' : 'pin',
+        by: 'human',
+        projectDir: resolve(projectsDir, projectSlug),
+        context,
+        mutate: (content) => {
+          if (clearing) return updateOverride(content, null);
+          const current = parseAssignmentFull(content);
+          if (current.override?.status === status) return content; // idempotent
+          return updateOverride(content, { status, source: 'human', reason: null, at: nowTimestamp() });
+        },
+      });
+      if (result.deferredTerminal) {
+        res.status(409).json({ error: 'Assignment is terminal — reopen it first.' });
+        return;
+      }
+      if (result.warning) {
+        res.status(503).json({ error: result.warning });
+        return;
+      }
 
       const assignment = await getAssignmentDetail(projectsDir, projectSlug, assignmentSlug);
       res.json({ assignment });
@@ -2071,9 +2140,60 @@ export function createWriteRouter(
       }
 
       const { reason } = req.body || {};
+      const { recomputeAndWrite, recomputeDependents, resolveDeriveContext } = await import(
+        '../lifecycle/recompute.js'
+      );
+      const context = await resolveDeriveContext();
+
+      // Derived-status v3 command routing:
+      //  - block/unblock are PURE FACT mutations — they run inside the
+      //    recompute lock (terminal recheck included), never an imperative
+      //    status write (codex r2 finding 3).
+      //  - complete/fail/reopen stay on the gated transition, guard-free but
+      //    with the CUSTOM command target honored (codex r2 finding 1 — a
+      //    custom `complete -> done` must not fall back to built-in
+      //    `completed`), then settle + reverse-dependency recompute.
+      //  - everything else keeps the legacy from:command guard, then settles.
+      if (command === 'block' || command === 'unblock') {
+        const { updateAssignmentFile } = await import('../lifecycle/frontmatter.js');
+        const result = await recomputeAndWrite(assignmentPath, {
+          cause: command,
+          by: 'human',
+          projectDir,
+          context,
+          reason: typeof reason === 'string' ? reason : undefined,
+          mutate: (content) =>
+            updateAssignmentFile(content, {
+              blockedReason:
+                command === 'block' ? (typeof reason === 'string' && reason ? reason : '(unspecified)') : null,
+            }),
+        });
+        if (result.deferredTerminal) {
+          res.status(409).json({ error: 'Assignment is terminal — reopen it first.' });
+          return;
+        }
+        if (result.warning) {
+          res.status(503).json({ error: result.warning });
+          return;
+        }
+        const assignment = await getAssignmentDetail(projectsDir, projectSlug, assignmentSlug);
+        res.json({ assignment, transition: { success: true, message: command, fromStatus: '', toStatus: result.status } });
+        return;
+      }
+
+      const GATED_TERMINAL = new Set(['complete', 'fail', 'reopen']);
+      const gatedFallback = GATED_TERMINAL.has(command)
+        ? unambiguousCommandTarget(config.transitions, command)
+        : undefined;
       const result = await executeTransition(projectDir, assignmentSlug, command, {
         reason: typeof reason === 'string' ? reason : undefined,
+        // Gated terminal commands: the from-specific custom mapping wins
+        // (passed via the table), with the unambiguous command target as the
+        // guard-free fallback for legacy/undefined statuses (codex r3
+        // finding 1 — ambiguous configs must not pick an arbitrary target).
         transitionTable: config.custom ? config.transitionTable : undefined,
+        commandTargets:
+          config.custom && gatedFallback ? new Map([[command, gatedFallback]]) : undefined,
         terminalStatuses: config.custom ? config.terminalStatuses : undefined,
         linkedTodosLookup,
       });
@@ -2081,6 +2201,28 @@ export function createWriteRouter(
       if (!result.success) {
         res.status(400).json({ error: result.message });
         return;
+      }
+
+      // Settle BEFORE responding — the client never sees pre-derivation state.
+      const settled = await recomputeAndWrite(assignmentPath, {
+        cause: command,
+        by: 'human',
+        projectDir,
+        context,
+      });
+      if (settled.warning) {
+        res.status(503).json({ error: settled.warning });
+        return;
+      }
+      // Terminal-membership changes flip dependents' depsSatisfied fact.
+      const wasTerminal = config.terminalStatuses.has(result.fromStatus);
+      const isTerminal = result.toStatus ? config.terminalStatuses.has(result.toStatus) : false;
+      if (wasTerminal !== isTerminal) {
+        await recomputeDependents(projectDir, assignmentSlug, {
+          cause: 'dep-terminal',
+          by: 'system',
+          context,
+        });
       }
 
       const assignment = await getAssignmentDetail(projectsDir, projectSlug, assignmentSlug);
@@ -2177,7 +2319,18 @@ export function createWriteRouter(
         const timestamp = fields.created || nowTimestamp();
         await ensureDir(assignmentDir);
         // Normalize the frontmatter id to the freshly-generated UUID — the template ships a placeholder.
-        const normalizedContent = setTopLevelField(rawContent, 'id', id);
+        let normalizedContent = setTopLevelField(rawContent, 'id', id);
+        // Raw create bypasses renderAssignment, so seed statusHistory here (only
+        // when the body didn't already supply one — never double-seed).
+        if (parseAssignmentFull(normalizedContent).statusHistory.length === 0) {
+          normalizedContent = appendStatusHistoryEntry(normalizedContent, {
+            at: timestamp,
+            from: null,
+            to: parseAssignmentFull(normalizedContent).status,
+            command: 'create',
+            by: null,
+          });
+        }
         await writeFileForce(resolve(assignmentDir, 'assignment.md'), normalizedContent);
         await writeFileForce(
           resolve(assignmentDir, 'scratchpad.md'),
@@ -2426,11 +2579,25 @@ export function createWriteRouter(
       nextContent = setTopLevelField(nextContent, 'project', null);
       if (current.slug) nextContent = setTopLevelField(nextContent, 'slug', current.slug);
 
+      const now = nowTimestamp();
+
       if (next.status !== current.status && current.status === 'blocked' && next.status !== 'blocked') {
         nextContent = setTopLevelField(nextContent, 'blockedReason', null);
       }
 
-      nextContent = setTopLevelField(nextContent, 'updated', nowTimestamp());
+      nextContent = setTopLevelField(nextContent, 'updated', now);
+
+      // Record a transition when a raw edit changes the status (conditional).
+      if (next.status !== current.status) {
+        nextContent = appendStatusHistoryEntry(nextContent, {
+          at: now,
+          from: current.status,
+          to: next.status,
+          command: 'edit',
+          by: null,
+        });
+      }
+
       await writeFileForce(assignmentPath, nextContent);
 
       const assignment = await getAssignmentDetailById(projectsDir, assignmentsDir, id);
@@ -2621,17 +2788,43 @@ export function createWriteRouter(
       const { status } = req.body || {};
       const config = await getStatusConfig();
       const validStatuses = config.statuses.map((s) => s.id);
-      if (typeof status !== 'string' || !validStatuses.includes(status)) {
+      const clearing = status === null;
+      if (!clearing && (typeof status !== 'string' || !validStatuses.includes(status))) {
         res.status(400).json({ error: `Invalid status. Must be one of: ${validStatuses.join(', ')}.` });
         return;
       }
-      let content = await readFile(assignmentPath, 'utf-8');
-      content = setTopLevelField(content, 'status', status);
-      content = setTopLevelField(content, 'updated', nowTimestamp());
-      if (status !== 'blocked') {
-        content = setTopLevelField(content, 'blockedReason', null);
+      // Derived-status v3: PIN semantics, same contract as the project route
+      // (codex r2 finding 2 — the by-id route had been left imperative).
+      if (!clearing && config.terminalStatuses.has(status)) {
+        res.status(400).json({
+          error: `"${status}" is terminal — use the complete/fail transition (gated), not an override.`,
+        });
+        return;
       }
-      await writeFileForce(assignmentPath, content);
+      const { recomputeAndWrite, resolveDeriveContext } = await import('../lifecycle/recompute.js');
+      const { updateOverride } = await import('../lifecycle/frontmatter.js');
+      const context = await resolveDeriveContext();
+      const projectDirForId = resolved.standalone ? null : resolve(resolved.assignmentDir, '..', '..');
+      const result = await recomputeAndWrite(assignmentPath, {
+        cause: clearing ? 'unpin' : 'pin',
+        by: 'human',
+        projectDir: projectDirForId,
+        context,
+        mutate: (content) => {
+          if (clearing) return updateOverride(content, null);
+          const current = parseAssignmentFull(content);
+          if (current.override?.status === status) return content; // idempotent
+          return updateOverride(content, { status, source: 'human', reason: null, at: nowTimestamp() });
+        },
+      });
+      if (result.deferredTerminal) {
+        res.status(409).json({ error: 'Assignment is terminal — reopen it first.' });
+        return;
+      }
+      if (result.warning) {
+        res.status(503).json({ error: result.warning });
+        return;
+      }
       const assignment = await getAssignmentDetailById(projectsDir, assignmentsDir, id);
       res.json({ assignment });
     } catch (error) {
@@ -2762,18 +2955,104 @@ export function createWriteRouter(
       }
 
       const { reason } = req.body || {};
+      const config = await getStatusConfig();
+      // Parity with the project route (codex r3 finding 2): only configured
+      // commands are executable.
+      const validCommandsById = [...new Set(config.transitions.map((t) => t.command))];
+      if (!validCommandsById.includes(command)) {
+        res.status(400).json({ error: `Unsupported transition command "${command}"` });
+        return;
+      }
+      const { recomputeAndWrite, recomputeDependents, resolveDeriveContext } = await import(
+        '../lifecycle/recompute.js'
+      );
+      const context = await resolveDeriveContext();
+      const byIdPath = resolve(resolved.assignmentDir, 'assignment.md');
+      const byIdProjectDir = resolved.standalone ? null : resolve(resolved.assignmentDir, '..', '..');
+
+      // Same derived-status routing as the project route (codex r2 finding 2):
+      // block/unblock = fact mutations in-lock; terminal commands honor the
+      // custom target and settle; everything else settles after the transition.
+      if (command === 'block' || command === 'unblock') {
+        const { updateAssignmentFile } = await import('../lifecycle/frontmatter.js');
+        const result = await recomputeAndWrite(byIdPath, {
+          cause: command,
+          by: 'human',
+          projectDir: byIdProjectDir,
+          context,
+          reason: typeof reason === 'string' ? reason : undefined,
+          mutate: (content) =>
+            updateAssignmentFile(content, {
+              blockedReason:
+                command === 'block' ? (typeof reason === 'string' && reason ? reason : '(unspecified)') : null,
+            }),
+        });
+        if (result.deferredTerminal) {
+          res.status(409).json({ error: 'Assignment is terminal — reopen it first.' });
+          return;
+        }
+        if (result.warning) {
+          res.status(503).json({ error: result.warning });
+          return;
+        }
+        const detail = resolved.standalone
+          ? await getAssignmentDetailById(projectsDir, assignmentsDir, id)
+          : await getAssignmentDetail(projectsDir, resolved.projectSlug!, resolved.assignmentSlug);
+        res.json({ assignment: detail, warnings: [] });
+        return;
+      }
+
+      const GATED_TERMINAL = new Set(['complete', 'fail', 'reopen']);
+      const gatedFallbackById = GATED_TERMINAL.has(command)
+        ? unambiguousCommandTarget(config.transitions, command)
+        : undefined;
       const transitionResult = await executeTransitionByDir(
         resolved.assignmentDir,
         command as any,
         {
           standalone: resolved.standalone,
           reason: typeof reason === 'string' ? reason : undefined,
+          // Same resolution as the project route: from-specific mapping wins,
+          // unambiguous command target as guard-free fallback for gated
+          // terminal commands. NOTE: by-id historically ran guard-free for
+          // all commands; the custom from-table now applies only to gated
+          // commands' resolution (their fallback), keeping non-terminal by-id
+          // behavior guard-free as before.
+          commandTargets:
+            config.custom && gatedFallbackById ? new Map([[command, gatedFallbackById]]) : undefined,
+          transitionTable: config.custom && GATED_TERMINAL.has(command) ? config.transitionTable : undefined,
+          terminalStatuses: config.custom ? config.terminalStatuses : undefined,
           linkedTodosLookup,
         },
       );
       if (!transitionResult.success) {
         res.status(400).json({ error: transitionResult.message, fromStatus: transitionResult.fromStatus });
         return;
+      }
+
+      // Settle BEFORE responding (incl. the reopen convergence event).
+      const settledById = await recomputeAndWrite(byIdPath, {
+        cause: command,
+        by: 'human',
+        projectDir: byIdProjectDir,
+        context,
+      });
+      if (settledById.warning) {
+        res.status(503).json({ error: settledById.warning });
+        return;
+      }
+      if (byIdProjectDir) {
+        const wasTerminal = config.terminalStatuses.has(transitionResult.fromStatus);
+        const isTerminal = transitionResult.toStatus
+          ? config.terminalStatuses.has(transitionResult.toStatus)
+          : false;
+        if (wasTerminal !== isTerminal) {
+          await recomputeDependents(byIdProjectDir, resolved.assignmentSlug, {
+            cause: 'dep-terminal',
+            by: 'system',
+            context,
+          });
+        }
       }
 
       const detail = resolved.standalone

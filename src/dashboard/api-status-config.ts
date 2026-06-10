@@ -300,7 +300,11 @@ export function createStatusConfigRouter(
       // target was in oldIds, every delete is gone). Surface the partial-apply
       // 500 to the client so it can refresh and retry.
       try {
-        await writeStatusConfig({ statuses, order, transitions });
+        // Preserve derive rules (phaseLadder/disposition/headline) across a
+        // Settings save — the request body carries only definitions/order/
+        // transitions; rebuilding the block without `derive` would silently
+        // delete the user's derived-status rules (codex design-review finding).
+        await writeStatusConfig({ statuses, order, transitions, derive: currentConfig.derive ?? null });
       } catch (err) {
         console.error('Error saving status config after applying resolutions:', err);
         res.status(500).json({

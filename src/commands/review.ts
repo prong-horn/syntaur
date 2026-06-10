@@ -1,11 +1,7 @@
-import { runTransition, reportResult, type LifecycleOptions } from './_lifecycle-helper.js';
+import { requestReviewCommand, type DeriveVerbOptions } from './derive-verbs.js';
 
-export interface ReviewOptions extends LifecycleOptions {}
-
-export async function reviewCommand(
-  assignment: string,
-  options: ReviewOptions,
-): Promise<void> {
-  const result = await runTransition(assignment, 'review', options);
-  reportResult(result);
+/** Derived model: `review` asserts reviewRequested; the review phase follows
+ * from derivation (also satisfied by all ACs checked). */
+export async function reviewCommand(assignment: string, options: DeriveVerbOptions): Promise<void> {
+  await requestReviewCommand(assignment, options);
 }

@@ -1,7 +1,11 @@
 import { readFile, writeFile, rm } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import type { AssignmentStatus } from '../lifecycle/types.js';
-import { parseAssignmentFrontmatter, updateAssignmentFile } from '../lifecycle/frontmatter.js';
+import {
+  appendStatusHistoryEntry,
+  parseAssignmentFrontmatter,
+  updateAssignmentFile,
+} from '../lifecycle/frontmatter.js';
 import { listAssignmentsByProject } from './assignment-walk.js';
 import { nowTimestamp } from './timestamp.js';
 
@@ -236,10 +240,14 @@ export async function applyStatusResolutions(
           );
           continue;
         }
-        const next = updateAssignmentFile(current, {
-          status: r.target,
-          updated: nowTimestamp(),
-        });
+        const now = nowTimestamp();
+        const next = appendStatusHistoryEntry(
+          updateAssignmentFile(current, {
+            status: r.target,
+            updated: now,
+          }),
+          { at: now, from: r.id, to: r.target, command: 'remap', by: null },
+        );
         await writeFile(a.path, next, 'utf-8');
         writtenPaths.push(a.path);
         remapped++;
@@ -337,4 +345,49 @@ export async function verifyNoDriftedOrphans(
       'drift-detected',
     );
   }
+}
+
+/**
+ * Rename-scope scan (derived-status v3): find every assignment that references
+ * a status id ANYWHERE relabeling must reach — headline `status`, cached
+ * `phase`, or any statusHistory from/to/phaseFrom/phaseTo. The plain
+ * `scanAssignmentsByStatus` only matches the headline, which misses e.g. a
+ * blocked assignment whose cached phase uses the renamed id.
+ */
+export async function scanAssignmentsReferencingStatus(
+  projectsDir: string,
+  standaloneDir: string | null,
+  id: string,
+): Promise<AffectedAssignment[]> {
+  const walk = await listAssignmentsByProject(projectsDir, standaloneDir);
+  const affected: AffectedAssignment[] = [];
+  for (const entry of walk.withAssignmentMd) {
+    const assignmentPath = `${entry.assignmentDir}/assignment.md`;
+    let content: string;
+    try {
+      content = await readFile(assignmentPath, 'utf-8');
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException)?.code;
+      if (code === 'ENOENT') continue;
+      throw new StatusResolutionError(
+        `failed to read ${assignmentPath}: ${err instanceof Error ? err.message : String(err)}`,
+        'scan-failed',
+      );
+    }
+    const fm = parseAssignmentFrontmatter(content);
+    const inHistory = fm.statusHistory.some(
+      (e) => e.from === id || e.to === id || e.phaseFrom === id || e.phaseTo === id,
+    );
+    if (fm.status !== id && fm.phase !== id && fm.override?.status !== id && !inHistory) continue;
+    affected.push({
+      path: assignmentPath,
+      display: entry.standalone
+        ? `(standalone) ${entry.assignmentSlug}`
+        : `${entry.projectSlug}/${entry.assignmentSlug}`,
+      projectSlug: entry.projectSlug,
+      assignmentSlug: entry.assignmentSlug,
+      status: fm.status,
+    });
+  }
+  return affected;
 }

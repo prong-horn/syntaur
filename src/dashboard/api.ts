@@ -8,6 +8,7 @@ import {
   buildDefaultStatusConfig,
   toTitleCase,
   type StatusTransition,
+  type DeriveConfig,
 } from '../utils/config.js';
 import { resolvePlaybookSlug } from '../utils/playbooks.js';
 import { migrateLegacyProjectFiles, migrateLegacyArchivedProjects } from '../utils/fs-migration.js';
@@ -409,6 +410,10 @@ interface ResolvedStatusConfig {
   transitions: StatusTransition[];
   transitionTable: Map<string, string>;
   terminalStatuses: ReadonlySet<string>;
+  /** Derive rules as configured (null when the user has none — resolve to
+   * DEFAULT_DERIVE_CONFIG at the derivation call site, NOT here, so the
+   * Settings writer can distinguish "user customized" from "defaults"). */
+  derive: DeriveConfig | null;
 }
 
 let _cachedConfig: ResolvedStatusConfig | null = null;
@@ -445,6 +450,7 @@ export async function getStatusConfig(): Promise<ResolvedStatusConfig> {
       transitions: effectiveTransitions,
       transitionTable: buildTransitionTable(effectiveTransitions),
       terminalStatuses: terminalSet.size > 0 ? terminalSet : new Set(['completed', 'failed']),
+      derive: config.statuses.derive ?? null,
     };
   } else {
     // Shared default builder so the dashboard and the `syntaur status` CLI
@@ -457,6 +463,7 @@ export async function getStatusConfig(): Promise<ResolvedStatusConfig> {
       transitions: def.transitions,
       transitionTable: DEFAULT_TRANSITION_TABLE,
       terminalStatuses: new Set(['completed', 'failed']),
+      derive: null,
     };
   }
 
@@ -931,8 +938,9 @@ export async function listArchived(
 }
 
 async function toStandaloneBoardItem(sr: StandaloneRecord): Promise<AssignmentBoardItem> {
+  const { terminalStatuses } = await getStatusConfig();
   return {
-    ...toAssignmentSummary(sr.record),
+    ...toAssignmentSummary(sr.record, terminalStatuses),
     projectSlug: null,
     projectTitle: null,
     blockedReason: sr.record.blockedReason,
@@ -1095,6 +1103,7 @@ export async function getProjectDetail(
   // Consistent with the project summary: the activity timestamp ignores archived
   // children so archiving an old assignment doesn't bump it.
   const updated = getProjectActivityTimestamp(project.updated, activeAssignments(assignments));
+  const { terminalStatuses } = await getStatusConfig();
 
   return {
     slug: project.slug || slug,
@@ -1112,7 +1121,7 @@ export async function getProjectDetail(
     progress: rollup.progress,
     needsAttention: rollup.needsAttention,
     assignments: assignments
-      .map(toAssignmentSummary)
+      .map((a) => toAssignmentSummary(a, terminalStatuses))
       .sort((left, right) => compareTimestamps(right.updated, left.updated)),
     resources,
     memories,
@@ -1219,6 +1228,7 @@ export async function getAssignmentDetail(
     };
   }
 
+  const { terminalStatuses } = await getStatusConfig();
   const detail: AssignmentDetail = {
     id: assignment.id,
     projectSlug,
@@ -1240,6 +1250,9 @@ export async function getAssignmentDetail(
     archived: assignment.archived,
     archivedAt: assignment.archivedAt,
     archivedReason: assignment.archivedReason,
+    ...deriveStatusVirtuals(assignment, terminalStatuses),
+    override: assignment.override,
+    derived: await buildDerivedDetail(assignment, assignmentDir, resolve(projectsDir, projectSlug)),
     created: assignment.created,
     updated: assignment.updated,
     body: assignment.body,
@@ -1555,6 +1568,7 @@ async function buildStandaloneAssignmentDetail(
     comments = { updated: parsed.updated, entryCount: parsed.entryCount, entries: parsed.entries };
   }
 
+  const { terminalStatuses } = await getStatusConfig();
   const detail: AssignmentDetail = {
     id: assignment.id,
     projectSlug: null,
@@ -1576,6 +1590,9 @@ async function buildStandaloneAssignmentDetail(
     archived: assignment.archived,
     archivedAt: assignment.archivedAt,
     archivedReason: assignment.archivedReason,
+    ...deriveStatusVirtuals(assignment, terminalStatuses),
+    override: assignment.override,
+    derived: await buildDerivedDetail(assignment, assignmentDir, null),
     created: assignment.created,
     updated: assignment.updated,
     body: assignment.body,
@@ -1991,7 +2008,120 @@ async function buildProjectRollup(
   return { progress, needsAttention, status };
 }
 
-function toAssignmentSummary(assignment: AssignmentRecord): AssignmentSummary {
+/**
+ * Derive the loader-only virtual fields from an assignment's `statusHistory`
+ * (never stored on disk). `completedAt` is the `at` of the LAST transition into
+ * the current status, but only when that status is terminal (lifecycle
+ * `completed`/`failed`) — so an assignment reopened after completion reports null,
+ * because its current status is no longer terminal. `statusAge` is the elapsed
+ * milliseconds since the last entry (time in current status), null when there is
+ * no history or the timestamp is unparseable.
+ */
+function deriveStatusVirtuals(
+  assignment: AssignmentRecord,
+  terminalStatuses: ReadonlySet<string>,
+): {
+  completedAt: string | null;
+  statusAge: number | null;
+  phaseAge: number | null;
+  phase: string | null;
+  disposition: string | null;
+  pinned: boolean;
+} {
+  const hist = assignment.statusHistory ?? [];
+
+  let completedAt: string | null = null;
+  if (terminalStatuses.has(assignment.status)) {
+    for (const entry of hist) {
+      if (entry.to === assignment.status) completedAt = entry.at;
+    }
+  }
+
+  // statusAge counts HEADLINE changes only: dimension-only entries (from == to,
+  // e.g. phase advanced while blocked) must not reset the clock. The seed
+  // entry (from: null) counts as a headline change.
+  let statusAge: number | null = null;
+  for (let i = hist.length - 1; i >= 0; i--) {
+    const entry = hist[i];
+    if (entry.from !== entry.to || entry.from === null) {
+      const t = Date.parse(entry.at);
+      statusAge = Number.isNaN(t) ? null : Date.now() - t;
+      break;
+    }
+  }
+
+  let phaseAge: number | null = null;
+  for (let i = hist.length - 1; i >= 0; i--) {
+    const entry = hist[i];
+    if (entry.phaseTo !== undefined && entry.phaseFrom !== entry.phaseTo) {
+      const t = Date.parse(entry.at);
+      phaseAge = Number.isNaN(t) ? null : Date.now() - t;
+      break;
+    }
+  }
+
+  return {
+    completedAt,
+    statusAge,
+    phaseAge,
+    phase: assignment.phase,
+    disposition: assignment.disposition,
+    pinned: assignment.override !== null,
+  };
+}
+
+/**
+ * Server-side materialization of the derivation detail for one assignment
+ * (design v3: the browser never reads the filesystem — facts ship in the
+ * payload). Null for terminal assignments (derivation defers entirely).
+ */
+async function buildDerivedDetail(
+  assignment: AssignmentRecord,
+  assignmentDir: string,
+  projectDir: string | null,
+): Promise<AssignmentDetail['derived']> {
+  const config = await getStatusConfig();
+  if (config.terminalStatuses.has(assignment.status)) return null;
+  try {
+    const { computeFacts } = await import('../lifecycle/facts.js');
+    const { deriveDimensions } = await import('../lifecycle/derive.js');
+    const { DEFAULT_DERIVE_CONFIG } = await import('../utils/config.js');
+    const facts = await computeFacts({
+      assignmentDir,
+      frontmatter: {
+        ...assignment,
+        // AssignmentRecord ⊃ the fields computeFacts reads; statusHistory and
+        // derived caches ride along untouched.
+      } as unknown as import('../lifecycle/types.js').AssignmentFrontmatter,
+      body: assignment.body,
+      projectDir,
+      terminalStatuses: config.terminalStatuses,
+    });
+    const dims = deriveDimensions({
+      facts,
+      derive: config.derive ?? DEFAULT_DERIVE_CONFIG,
+      currentStatus: assignment.status,
+      terminalStatuses: config.terminalStatuses,
+      knownStatusIds: new Set(config.statuses.map((s) => s.id)),
+      override: assignment.override,
+    });
+    if (!dims) return null;
+    return {
+      derivedStatus: dims.derivedStatus,
+      nextAction: dims.nextAction,
+      facts: facts as unknown as Record<string, boolean | number>,
+    };
+  } catch (err) {
+    // Best-effort enrichment, never a 500 — but not silent (codex finding 12).
+    console.warn(`buildDerivedDetail failed for ${assignmentDir}:`, err);
+    return null;
+  }
+}
+
+function toAssignmentSummary(
+  assignment: AssignmentRecord,
+  terminalStatuses: ReadonlySet<string>,
+): AssignmentSummary {
   return {
     id: assignment.id,
     slug: assignment.slug,
@@ -2008,6 +2138,7 @@ function toAssignmentSummary(assignment: AssignmentRecord): AssignmentSummary {
     archived: assignment.archived,
     archivedAt: assignment.archivedAt,
     archivedReason: assignment.archivedReason,
+    ...deriveStatusVirtuals(assignment, terminalStatuses),
   };
 }
 
@@ -2016,8 +2147,9 @@ async function toAssignmentBoardItem(
   projectRecord: ProjectRecord,
   assignment: AssignmentRecord,
 ): Promise<AssignmentBoardItem> {
+  const { terminalStatuses } = await getStatusConfig();
   return {
-    ...toAssignmentSummary(assignment),
+    ...toAssignmentSummary(assignment, terminalStatuses),
     projectSlug: projectRecord.summary.slug,
     projectTitle: projectRecord.summary.title,
     blockedReason: assignment.blockedReason,

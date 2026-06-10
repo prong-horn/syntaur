@@ -12,6 +12,16 @@ import { shapeCommand } from './commands/shape.js';
 import { planReadyCommand } from './commands/plan-ready.js';
 import { implementCommand } from './commands/implement.js';
 import { migrateStatusesCommand } from './commands/migrate-statuses.js';
+import { migrateStatusHistoryCommand } from './commands/migrate-status-history.js';
+import { migrateDeriveCommand } from './commands/migrate-derive.js';
+import {
+  planApproveCommand,
+  planUnapproveCommand,
+  parkCommand,
+  unparkCommand,
+  requestReviewCommand,
+  recomputeCommand,
+} from './commands/derive-verbs.js';
 import { completeCommand } from './commands/complete.js';
 import { blockCommand } from './commands/block.js';
 import { unblockCommand } from './commands/unblock.js';
@@ -294,7 +304,7 @@ program
 
 program
   .command('start')
-  .description('Transition an assignment to in_progress')
+  .description('Assert implementation has started (alias of implement under derived status)')
   .argument('<assignment>', 'Assignment slug')
   .option('--project <slug>', 'Target project slug')
   .option('--agent <name>', 'Agent name (sets assignee if not already set)')
@@ -344,7 +354,7 @@ program
 
 program
   .command('shape')
-  .description('Transition an assignment from draft to ready_for_planning')
+  .description('Recompute derived status; ready_for_planning follows once objective + ACs are real')
   .argument('<assignment>', 'Assignment slug')
   .option('--project <slug>', 'Target project slug')
   .option('--agent <name>', 'Agent name (sets assignee if not already set)')
@@ -363,7 +373,7 @@ program
 
 program
   .command('plan-ready')
-  .description('Transition an assignment from ready_for_planning to ready_to_implement')
+  .description('Approve the latest plan revision (file+digest bound); ready_to_implement derives from it')
   .argument('<assignment>', 'Assignment slug')
   .option('--project <slug>', 'Target project slug')
   .option('--agent <name>', 'Agent name (sets assignee if not already set)')
@@ -398,8 +408,106 @@ program
   });
 
 program
+  .command('migrate-status-history')
+  .description('Seed a synthetic statusHistory entry on assignments that lack one (use --apply to write)')
+  .option('--dir <path>', 'Override default project directory')
+  .option('--apply', 'Apply the migration (default: dry-run)')
+  .action(async (options) => {
+    try {
+      await migrateStatusHistoryCommand(options);
+    } catch (error) {
+      console.error(
+        'Error:',
+        error instanceof Error ? error.message : String(error),
+      );
+      process.exit(1);
+    }
+  });
+
+program
+  .command('migrate-derive')
+  .description('One-time migration to derived status: seed facts from current statuses, re-derive all, print a divergence report')
+  .option('--dir <path>', 'Override default project directory')
+  .option('--dry-run', 'Report what would change without writing')
+  .action(async (options) => {
+    try {
+      await migrateDeriveCommand(options);
+    } catch (error) {
+      console.error('Error:', error instanceof Error ? error.message : String(error));
+      process.exit(1);
+    }
+  });
+
+program
+  .command('park')
+  .description('Park an assignment (intentional withhold); disposition derives to parked')
+  .argument('<assignment>', 'Assignment slug or standalone UUID')
+  .option('--project <slug>', 'Target project slug')
+  .option('--reason <text>', 'Why it is parked (recorded in history)')
+  .option('--agent <name>', 'Acting agent id')
+  .option('--dir <path>', 'Override default project directory')
+  .action(async (assignment, options) => {
+    try {
+      await parkCommand(assignment, options);
+    } catch (error) {
+      console.error('Error:', error instanceof Error ? error.message : String(error));
+      process.exit(1);
+    }
+  });
+
+program
+  .command('unpark')
+  .description('Unpark an assignment; status re-derives from facts')
+  .argument('<assignment>', 'Assignment slug or standalone UUID')
+  .option('--project <slug>', 'Target project slug')
+  .option('--agent <name>', 'Acting agent id')
+  .option('--dir <path>', 'Override default project directory')
+  .action(async (assignment, options) => {
+    try {
+      await unparkCommand(assignment, options);
+    } catch (error) {
+      console.error('Error:', error instanceof Error ? error.message : String(error));
+      process.exit(1);
+    }
+  });
+
+program
+  .command('request-review')
+  .description('Request review (sets reviewRequested); the review phase derives from it')
+  .argument('<assignment>', 'Assignment slug or standalone UUID')
+  .option('--project <slug>', 'Target project slug')
+  .option('--clear', 'Clear the review request instead')
+  .option('--agent <name>', 'Acting agent id')
+  .option('--dir <path>', 'Override default project directory')
+  .action(async (assignment, options) => {
+    try {
+      await requestReviewCommand(assignment, options);
+    } catch (error) {
+      console.error('Error:', error instanceof Error ? error.message : String(error));
+      process.exit(1);
+    }
+  });
+
+program
+  .command('recompute')
+  .description('Recompute derived status for one assignment or --all (headless reconcile)')
+  .argument('[assignment]', 'Assignment slug or standalone UUID')
+  .option('--all', 'Recompute every assignment (projects + standalone)')
+  .option('--project <slug>', 'Target project slug')
+  .option('--agent <name>', 'Acting agent id')
+  .option('--dir <path>', 'Override default project directory')
+  .action(async (assignment, options) => {
+    try {
+      await recomputeCommand(assignment, options);
+    } catch (error) {
+      console.error('Error:', error instanceof Error ? error.message : String(error));
+      process.exit(1);
+    }
+  });
+
+program
   .command('implement')
-  .description('Transition an assignment from ready_to_implement to in_progress')
+  .description('Assert implementation has started; status derives to in_progress when the plan is approved')
   .argument('<assignment>', 'Assignment slug')
   .option('--project <slug>', 'Target project slug')
   .option('--agent <name>', 'Agent name (sets assignee if not already set)')
@@ -436,7 +544,7 @@ program
 
 program
   .command('block')
-  .description('Transition an assignment to blocked')
+  .description('Assert a blocker (sets blockedReason); disposition derives to blocked')
   .argument('<assignment>', 'Assignment slug')
   .option('--project <slug>', 'Target project slug')
   .option('--reason <text>', 'Reason for blocking')
@@ -455,7 +563,7 @@ program
 
 program
   .command('unblock')
-  .description('Transition a blocked assignment to in_progress')
+  .description('Clear the blocker; status re-derives from facts')
   .argument('<assignment>', 'Assignment slug')
   .option('--project <slug>', 'Target project slug')
   .option('--dir <path>', 'Override default project directory')
@@ -473,7 +581,7 @@ program
 
 program
   .command('review')
-  .description('Transition an assignment to review')
+  .description('Request review; the review phase derives from it (or from all ACs checked)')
   .argument('<assignment>', 'Assignment slug')
   .option('--project <slug>', 'Target project slug')
   .option('--dir <path>', 'Override default project directory')

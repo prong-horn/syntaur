@@ -394,6 +394,23 @@ export function AssignmentDetail() {
       <div className="sticky top-12 z-20 rounded-lg border border-border/60 bg-card/90 p-3 shadow-sm backdrop-blur">
         <div className="flex flex-wrap items-center gap-3">
           <StatusBadge status={assignment.status} progress={progress} />
+          {/* derived-status dimensions: phase ⊥ disposition (v3) */}
+          {assignment.phase && assignment.phase !== assignment.status && (
+            <span
+              className="rounded-full border border-border/60 px-2 py-0.5 text-[11px] text-muted-foreground"
+              title="Phase dimension — how far along the work is, independent of blockage"
+            >
+              phase: {assignment.phase}
+            </span>
+          )}
+          {assignment.disposition && assignment.disposition !== 'active' && (
+            <span
+              className="rounded-full border border-warning-foreground/40 px-2 py-0.5 text-[11px] text-warning-foreground"
+              title="Disposition dimension — orthogonal to phase"
+            >
+              {assignment.disposition}
+            </span>
+          )}
           <TypeChip type={assignment.type} />
           <h1 className="text-lg font-semibold text-foreground">{assignment.title}</h1>
           <span className="text-xs text-muted-foreground">
@@ -451,6 +468,24 @@ export function AssignmentDetail() {
           <div className="mt-4 rounded-md border border-warning-foreground/30 bg-warning px-4 py-3 text-sm text-warning-foreground">
             <strong>Blocked reason:</strong> {assignment.blockedReason}
           </div>
+        ) : null}
+
+        {/* Pin divergence: the always-visible "would otherwise be Y" (v3) */}
+        {assignment.override && assignment.derived &&
+          assignment.derived.derivedStatus !== assignment.status ? (
+          <div className="mt-4 rounded-md border border-warning-foreground/30 bg-warning px-4 py-3 text-sm text-warning-foreground">
+            <strong>Pinned to {assignment.status}</strong> by {assignment.override.source}
+            {assignment.override.reason ? <> — “{assignment.override.reason}”</> : null}
+            {' · '}would otherwise be <strong>{assignment.derived.derivedStatus}</strong>
+          </div>
+        ) : null}
+
+        {/* Next action from the phase ladder */}
+        {assignment.derived?.nextAction ? (
+          <p className="mt-3 text-xs text-muted-foreground">
+            <span className="font-medium text-foreground">Next:</span>{' '}
+            {assignment.derived.nextAction}
+          </p>
         ) : null}
       </div>
 

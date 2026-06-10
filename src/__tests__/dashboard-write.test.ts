@@ -5,6 +5,7 @@ import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { spawnSync } from 'node:child_process';
 import { createWriteRouter, worktreeInFlight } from '../dashboard/api-write.js';
+import { parseAssignmentFrontmatter } from '../lifecycle/frontmatter.js';
 
 let testDir: string;
 
@@ -339,9 +340,12 @@ Keep this paragraph.`, 'utf-8');
 
     expect(blockedWithoutReason.statusCode).toBe(200);
     expect((blockedWithoutReason.payload as any).assignment.status).toBe('blocked');
-    expect((blockedWithoutReason.payload as any).assignment.blockedReason).toBeNull();
+    // Derived-status v3: blocked keys on blockedReason PRESENCE, so a default
+    // reason is recorded instead of null (else the block would derive away).
+    expect((blockedWithoutReason.payload as any).assignment.blockedReason).toBe('(unspecified)');
 
-    // Unblock (blocked -> in_progress)
+    // Unblock: status RE-DERIVES from facts (this bare fixture has placeholder
+    // content → draft), not an imperative jump to in_progress.
     const unblocked = await invokeRoute(
       router,
       'post',
@@ -350,7 +354,8 @@ Keep this paragraph.`, 'utf-8');
       {},
     );
     expect(unblocked.statusCode).toBe(200);
-    expect((unblocked.payload as any).assignment.status).toBe('in_progress');
+    expect((unblocked.payload as any).assignment.status).toBe('draft');
+    expect((unblocked.payload as any).assignment.blockedReason).toBeNull();
 
     // Block with a reason
     const blocked = await invokeRoute(
@@ -497,7 +502,7 @@ Keep this paragraph.`, 'utf-8');
     expect(content).toContain('Why?');
   });
 
-  it('POST /api/assignments/:id/transitions/start moves standalone pending → in_progress', async () => {
+  it('POST /api/assignments/:id/transitions/start settles to derived status', async () => {
     const assignmentsDir = resolve(testDir, 'standalone');
     await mkdir(assignmentsDir, { recursive: true });
     const router = createWriteRouter(testDir, assignmentsDir);
@@ -519,7 +524,9 @@ Keep this paragraph.`, 'utf-8');
       {},
     );
     expect(start.statusCode).toBe(200);
-    expect((start.payload as any).assignment.status).toBe('in_progress');
+    // Derived-status v3: the imperative target settles to derived reality —
+    // a bare standalone assignment (placeholder content) derives to draft.
+    expect((start.payload as any).assignment.status).toBe('draft');
   });
 
   it('GET /api/assignments is routable only when router constructed with assignmentsDir', async () => {
@@ -2454,5 +2461,193 @@ tags: []
         expect(payload.assignment.workspace.worktreePath).toBe(resolve(repo, '.worktrees', 'feature/foo'));
       });
     });
+  });
+});
+
+describe('statusHistory recording + virtual fields (write router)', () => {
+  const PROJ = 'test-project';
+  const ASSIGN = 'test-assignment';
+
+  function assignmentPath(slug = ASSIGN): string {
+    return resolve(testDir, PROJ, 'assignments', slug, 'assignment.md');
+  }
+  async function readFm(slug = ASSIGN) {
+    return parseAssignmentFrontmatter(await readFile(assignmentPath(slug), 'utf-8'));
+  }
+
+  it('project status-override applies PIN semantics (derived-status v3)', async () => {
+    await createAssignmentFixture();
+    const router = createWriteRouter(testDir);
+    const res = await invokeRoute(
+      router,
+      'post',
+      '/api/projects/:slug/assignments/:aslug/status-override',
+      { slug: PROJ, aslug: ASSIGN },
+      { status: 'in_progress' },
+    );
+    expect(res.statusCode).toBe(200);
+    const fm = await readFm();
+    expect(fm.status).toBe('in_progress');
+    expect(fm.override).toMatchObject({ status: 'in_progress', source: 'human' });
+    expect(fm.statusHistory).toHaveLength(1);
+    expect(fm.statusHistory[0]).toMatchObject({
+      from: 'pending',
+      to: 'in_progress',
+      command: 'pin',
+      by: 'human',
+    });
+    // terminal pins are refused — the gated path owns terminal
+    const refused = await invokeRoute(
+      router,
+      'post',
+      '/api/projects/:slug/assignments/:aslug/status-override',
+      { slug: PROJ, aslug: ASSIGN },
+      { status: 'completed' },
+    );
+    expect(refused.statusCode).toBe(400);
+    // status: null clears the pin → re-derives to facts (bare fixture → draft)
+    const cleared = await invokeRoute(
+      router,
+      'post',
+      '/api/projects/:slug/assignments/:aslug/status-override',
+      { slug: PROJ, aslug: ASSIGN },
+      { status: null },
+    );
+    expect(cleared.statusCode).toBe(200);
+    const after = await readFm();
+    expect(after.override).toBeNull();
+    expect(after.status).toBe('draft');
+  });
+
+  it('project status-override is a no-op when the status is unchanged (no new entry)', async () => {
+    await createAssignmentFixture();
+    const router = createWriteRouter(testDir);
+    // Move to in_progress (a real change → 1 entry).
+    await invokeRoute(
+      router,
+      'post',
+      '/api/projects/:slug/assignments/:aslug/status-override',
+      { slug: PROJ, aslug: ASSIGN },
+      { status: 'in_progress' },
+    );
+    expect((await readFm()).statusHistory).toHaveLength(1);
+    // Re-pinning the SAME status is idempotent → no new entry, pin intact.
+    const res = await invokeRoute(
+      router,
+      'post',
+      '/api/projects/:slug/assignments/:aslug/status-override',
+      { slug: PROJ, aslug: ASSIGN },
+      { status: 'in_progress' },
+    );
+    expect(res.statusCode).toBe(200);
+    const fm = await readFm();
+    expect(fm.statusHistory).toHaveLength(1); // still 1
+    expect(fm.override?.status).toBe('in_progress');
+  });
+
+  it('raw PATCH appends command:edit on a status change, nothing otherwise', async () => {
+    await createAssignmentFixture();
+    const router = createWriteRouter(testDir);
+
+    const base = await readFile(assignmentPath(), 'utf-8');
+    const changed = base.replace('status: pending', 'status: review');
+    const r1 = await invokeRoute(
+      router,
+      'patch',
+      '/api/projects/:slug/assignments/:aslug',
+      { slug: PROJ, aslug: ASSIGN },
+      { content: changed },
+    );
+    expect(r1.statusCode).toBe(200);
+    let fm = await readFm();
+    expect(fm.status).toBe('review');
+    expect(fm.statusHistory).toHaveLength(1);
+    expect(fm.statusHistory[0]).toMatchObject({ from: 'pending', to: 'review', command: 'edit' });
+
+    // A second PATCH that does NOT change the status must append nothing.
+    const current = await readFile(assignmentPath(), 'utf-8');
+    const titleOnly = current.replace('title: Test Assignment', 'title: Renamed Title');
+    const r2 = await invokeRoute(
+      router,
+      'patch',
+      '/api/projects/:slug/assignments/:aslug',
+      { slug: PROJ, aslug: ASSIGN },
+      { content: titleOnly },
+    );
+    expect(r2.statusCode).toBe(200);
+    fm = await readFm();
+    expect(fm.statusHistory).toHaveLength(1); // unchanged
+    expect(fm.title).toBe('Renamed Title');
+  });
+
+  it('raw create seeds a command:create entry', async () => {
+    await createAssignmentFixture(); // creates the project
+    const router = createWriteRouter(testDir);
+    const content = `---
+id: placeholder
+slug: fresh-one
+title: Fresh One
+status: draft
+priority: medium
+created: "2026-03-21T10:00:00Z"
+updated: "2026-03-21T10:00:00Z"
+assignee: null
+externalIds: []
+dependsOn: []
+links: []
+blockedReason: null
+workspace:
+  repository: null
+  worktreePath: null
+  branch: null
+  parentBranch: null
+tags: []
+---
+
+# Fresh One
+`;
+    const res = await invokeRoute(
+      router,
+      'post',
+      '/api/projects/:slug/assignments',
+      { slug: PROJ },
+      { content },
+    );
+    expect(res.statusCode).toBe(201);
+    const fm = await readFm('fresh-one');
+    expect(fm.statusHistory).toHaveLength(1);
+    expect(fm.statusHistory[0]).toMatchObject({ from: null, to: 'draft', command: 'create', by: null });
+  });
+
+  it('derives completedAt when terminal, clears it on reopen; statusAge is numeric', async () => {
+    await createAssignmentFixture();
+    const router = createWriteRouter(testDir);
+
+    // Terminal is reached only via the gated transition (v3) — the override
+    // endpoint refuses terminal targets.
+    const done = await invokeRoute(
+      router,
+      'post',
+      '/api/projects/:slug/assignments/:aslug/transitions/:command',
+      { slug: PROJ, aslug: ASSIGN, command: 'complete' },
+      {},
+    );
+    const detail1 = (done.payload as { assignment: { completedAt: string | null; statusAge: number | null } })
+      .assignment;
+    expect(detail1.completedAt).toBeTruthy();
+    expect(typeof detail1.statusAge).toBe('number');
+    expect(detail1.statusAge as number).toBeGreaterThanOrEqual(0);
+
+    // Reopen via the gated transition; completedAt must clear and status
+    // re-derives (the settle pass) — current status no longer terminal.
+    const reopen = await invokeRoute(
+      router,
+      'post',
+      '/api/projects/:slug/assignments/:aslug/transitions/:command',
+      { slug: PROJ, aslug: ASSIGN, command: 'reopen' },
+      {},
+    );
+    const detail2 = (reopen.payload as { assignment: { completedAt: string | null } }).assignment;
+    expect(detail2.completedAt).toBeNull();
   });
 });

@@ -1,11 +1,7 @@
-import { runTransition, reportResult, type LifecycleOptions } from './_lifecycle-helper.js';
+import { unblockFactCommand, type DeriveVerbOptions } from './derive-verbs.js';
 
-export interface UnblockOptions extends LifecycleOptions {}
-
-export async function unblockCommand(
-  assignment: string,
-  options: UnblockOptions,
-): Promise<void> {
-  const result = await runTransition(assignment, 'unblock', options);
-  reportResult(result);
+/** Derived model: clears blockedReason; status re-derives to wherever the
+ * facts actually are (not an imperative jump to in_progress). */
+export async function unblockCommand(assignment: string, options: DeriveVerbOptions): Promise<void> {
+  await unblockFactCommand(assignment, options);
 }

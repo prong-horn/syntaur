@@ -44,6 +44,18 @@ export interface WatcherOptions {
   serversDir?: string;
   playbooksDir?: string;
   todosDir?: string;
+  /** Absolute path to ~/.syntaur/config.md. When set, changes trigger
+   * `onConfigChanged` — derive rules may have changed, so the server runs a
+   * recompute-all sweep (design v3, Piece 3 trigger set). */
+  configPath?: string;
+  /** Debounced per-assignment hook fired alongside `assignment-updated` —
+   * the server wires this to `recomputeAndWrite` so out-of-band edits
+   * (agents/humans editing files directly) re-derive. The recompute's own
+   * write fires one more event that no-ops (no change → no write), so the
+   * cycle terminates. */
+  onAssignmentChanged?: (projectSlug: string | null, assignmentSlug: string) => void;
+  /** Debounced hook for config.md changes (recompute-all trigger). */
+  onConfigChanged?: () => void;
   /** Absolute path to ~/.syntaur/syntaur.db. When set, watch the parent dir
    * for changes to this file and its WAL siblings (-wal, -shm) and broadcast
    * `leases-updated`. chokidar 4 removed glob support so we must filter by
@@ -54,7 +66,19 @@ export interface WatcherOptions {
 }
 
 export function createWatcher(options: WatcherOptions): { close: () => Promise<void> } {
-  const { projectsDir, assignmentsDir, serversDir, playbooksDir, todosDir, dbPath, onMessage, debounceMs = 300 } = options;
+  const {
+    projectsDir,
+    assignmentsDir,
+    serversDir,
+    playbooksDir,
+    todosDir,
+    dbPath,
+    configPath,
+    onMessage,
+    onAssignmentChanged,
+    onConfigChanged,
+    debounceMs = 300,
+  } = options;
   const pendingEvents = new Map<string, NodeJS.Timeout>();
 
   // --- Projects watcher (existing logic) ---
@@ -114,6 +138,9 @@ export function createWatcher(options: WatcherOptions): { close: () => Promise<v
               timestamp: new Date().toISOString(),
             };
         onMessage(message);
+        if (assignmentSlug && onAssignmentChanged) {
+          onAssignmentChanged(projectSlug, assignmentSlug);
+        }
       }, debounceMs),
     );
   }
@@ -155,6 +182,7 @@ export function createWatcher(options: WatcherOptions): { close: () => Promise<v
             timestamp: new Date().toISOString(),
           };
           onMessage(message);
+          if (onAssignmentChanged) onAssignmentChanged(null, assignmentId);
         }, debounceMs),
       );
     }
@@ -308,6 +336,33 @@ export function createWatcher(options: WatcherOptions): { close: () => Promise<v
     leasesDbWatcher.on('unlink', handleDbChange);
   }
 
+  // --- config.md watcher (derive rules → recompute-all) ---
+  let configWatcher: ReturnType<typeof watch> | null = null;
+
+  if (configPath && onConfigChanged) {
+    configWatcher = watch(configPath, {
+      ignoreInitial: true,
+      persistent: true,
+      depth: 0,
+    });
+
+    function handleConfigChange(): void {
+      const debounceKey = '__config__';
+      const existing = pendingEvents.get(debounceKey);
+      if (existing) clearTimeout(existing);
+      pendingEvents.set(
+        debounceKey,
+        setTimeout(() => {
+          pendingEvents.delete(debounceKey);
+          onConfigChanged!();
+        }, debounceMs),
+      );
+    }
+
+    configWatcher.on('change', handleConfigChange);
+    configWatcher.on('add', handleConfigChange);
+  }
+
   return {
     close: async () => {
       pendingEvents.forEach((timeout) => {
@@ -320,6 +375,7 @@ export function createWatcher(options: WatcherOptions): { close: () => Promise<v
       if (playbooksWatcher) await playbooksWatcher.close();
       if (todosWatcher) await todosWatcher.close();
       if (leasesDbWatcher) await leasesDbWatcher.close();
+      if (configWatcher) await configWatcher.close();
     },
   };
 }

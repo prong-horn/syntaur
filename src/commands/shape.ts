@@ -1,13 +1,8 @@
-import { runTransition, reportResult, type LifecycleOptions } from './_lifecycle-helper.js';
+import { recomputeCommand, type DeriveVerbOptions } from './derive-verbs.js';
 
-export interface ShapeOptions extends LifecycleOptions {
-  agent?: string;
-}
-
-export async function shapeCommand(
-  assignment: string,
-  options: ShapeOptions,
-): Promise<void> {
-  const result = await runTransition(assignment, 'shape', options);
-  reportResult(result);
+/** Derived model: shaping IS filling in the objective/ACs — there's no fact
+ * to assert. `shape` just recomputes; ready_for_planning follows when the
+ * content is real (placeholder ACs don't count). */
+export async function shapeCommand(assignment: string, options: DeriveVerbOptions): Promise<void> {
+  await recomputeCommand(assignment, options);
 }

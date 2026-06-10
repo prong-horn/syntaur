@@ -226,6 +226,20 @@ export interface AssignmentDetail {
   comments: AssignmentComments | null;
   referencedBy: AssignmentReference[];
   availableTransitions: AssignmentTransitionAction[];
+  // ── derived-status v3 (server-materialized; may be absent on old servers) ──
+  /** Cached phase dimension (null pre-migration). */
+  phase?: string | null;
+  /** Cached disposition dimension (active|blocked|parked; null pre-migration). */
+  disposition?: string | null;
+  /** The active sticky pin, when present. */
+  override?: { status: string; source: string; reason: string | null; at: string } | null;
+  /** Server-materialized derivation: pre-override headline + next action + facts.
+   * Null for terminal assignments (derivation defers). */
+  derived?: {
+    derivedStatus: string;
+    nextAction: string | null;
+    facts: Record<string, boolean | number>;
+  } | null;
 }
 
 export interface AssignmentReference {
