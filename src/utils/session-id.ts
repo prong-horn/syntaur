@@ -62,10 +62,13 @@ export function isSafeSessionId(value: unknown): value is string {
  * native `~/.claude/sessions/<pid>.json` in (a superset of) this shape; the
  * generic `~/.syntaur/runtime/sessions/<pid>.json` is written by a
  * capture-at-birth hook for agents that learn the real id but cannot inject env.
- * Extra fields are tolerated; `sessionId` is the only required one.
+ * Extra fields are tolerated. `sessionId` may be absent on a PENDING marker —
+ * written at launch time before the agent has minted its real id (fresh/fork
+ * launches); `readRuntimeMarker` rejects those, so pending markers never
+ * resolve ids until something backfills them.
  */
 export interface RuntimeSessionMarker {
-  sessionId: string;
+  sessionId?: string;
   agent?: string;
   cwd?: string;
   /** `ps -o lstart=`-style start time, used to guard against pid reuse. */
@@ -104,7 +107,9 @@ export interface ResolveSessionOpts {
   legacyHint?: string | null;
 }
 
-function defaultReadPpid(pid: number): number | null {
+/** Parent pid of `pid` via `ps -o ppid=`, or null. Exported for callers that
+ * need the hook-equivalent "shell that owns the agent" fallback pid. */
+export function readPpid(pid: number): number | null {
   if (!Number.isFinite(pid) || pid <= 1) return null;
   try {
     const out = execFileSync('ps', ['-o', 'ppid=', '-p', String(pid)], {
@@ -247,7 +252,7 @@ export async function resolveOwnSessionId(
     startPid,
     claudeSessionsDir,
     runtimeSessionsDir,
-    deps.readPpid ?? defaultReadPpid,
+    deps.readPpid ?? readPpid,
     deps.pidStartedAt ?? captureProcessStartedAt,
     deps.maxDepth ?? 12,
   );

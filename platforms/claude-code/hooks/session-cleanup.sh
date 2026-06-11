@@ -1,72 +1,33 @@
 #!/usr/bin/env bash
-# Syntaur SessionEnd Hook
-# Logs and marks agent sessions as "stopped" when a Claude Code session exits.
-# If the session was never registered but has an active assignment, registers it first.
-# Reads JSON from stdin, always exits 0.
+# Syntaur SessionEnd Hook — thin wrapper around `syntaur session stop`.
+# The CLI resolves the ENDING session's id (stdin .session_id first, the shared
+# context.json scalar only as a fallback) and marks the row stopped with a
+# direct DB write. No dashboard required. Reads JSON from stdin, always exits 0.
 
-# --- Safety: never fail ---
 set -o pipefail 2>/dev/null || true
 
-# --- Step 1: Check for jq ---
-if ! command -v jq &>/dev/null; then
-  exit 0
-fi
+command -v jq >/dev/null 2>&1 || exit 0
 
-# --- Step 2: Read stdin ---
 INPUT=$(cat)
-if [ -z "$INPUT" ]; then
-  exit 0
-fi
+[ -z "$INPUT" ] && exit 0
 
-# --- Step 3: Find context file ---
-CWD=$(echo "$INPUT" | jq -r '.cwd // empty' 2>/dev/null)
-if [ -z "$CWD" ]; then
-  exit 0
-fi
+command -v syntaur >/dev/null 2>&1 || exit 0
 
-CONTEXT_FILE="$CWD/.syntaur/context.json"
-if [ ! -f "$CONTEXT_FILE" ]; then
-  exit 0
-fi
-
-# --- Step 4: Resolve the ENDING session's id ---
-# Prefer the exact, per-process id from the SessionEnd stdin payload (Claude
-# Code's contract passes .session_id). The context.json scalar is shared mutable
-# state a co-tenant can clobber, so it is only a last-resort fallback — reading
-# it first would mark the WRONG session stopped when two sessions share a
-# workspace.
-SESSION_ID=$(printf '%s' "$INPUT" | jq -r '.session_id // empty' 2>/dev/null)
-if [ -z "$SESSION_ID" ]; then
-  SESSION_ID=$(jq -r '.sessionId // empty' "$CONTEXT_FILE" 2>/dev/null)
-fi
-MISSION_SLUG=$(jq -r '.projectSlug // empty' "$CONTEXT_FILE" 2>/dev/null)
-ASSIGNMENT_SLUG=$(jq -r '.assignmentSlug // empty' "$CONTEXT_FILE" 2>/dev/null)
-
-# No real session id available — exit quietly. We never synthesize one.
-[ -z "$SESSION_ID" ] && exit 0
-
-# Defensive: the id becomes a URL path segment — reject anything that isn't a
-# plain id (UUID/ULID charset). Real Claude session ids never trip this.
-case "$SESSION_ID" in
-  *[!A-Za-z0-9_-]*) exit 0 ;;
-esac
-
-# --- Dashboard endpoint resolution (mirror session-start.sh exactly so start
-# and end hooks always target the same host:port) ---
-PORT="${SYNTAUR_DASHBOARD_PORT:-}"
-if [ -z "$PORT" ]; then
-  PORT=$(cat "$HOME/.syntaur/dashboard-port" 2>/dev/null || echo "4800")
-fi
-
-# --- Step 5: Mark session as stopped via dashboard API ---
-BODY="{\"status\": \"stopped\"}"
-if [ -n "$MISSION_SLUG" ]; then
-  BODY="{\"status\": \"stopped\", \"projectSlug\": \"${MISSION_SLUG}\"}"
-fi
-
-curl -sf --max-time 3 -X PATCH "http://127.0.0.1:${PORT}/api/agent-sessions/${SESSION_ID}/status" \
-  -H "Content-Type: application/json" \
-  -d "$BODY" \
-  -o /dev/null 2>/dev/null || true
+# Bounded SIGKILL watchdog (portable — no `timeout` on stock macOS). ~4s stays
+# under the hook's `timeout: 5` budget. A stale CLI without the subcommand
+# exits non-zero — swallowed; the scanner sweeps the row on its next tick.
+syntaur_bounded_stop() {
+  local cpid kpid rc
+  printf '%s' "$INPUT" | syntaur session stop --from-hook >/dev/null 2>&1 &
+  cpid=$!
+  ( sleep 4; kill -KILL "$cpid" 2>/dev/null ) >/dev/null 2>&1 &
+  kpid=$!
+  wait "$cpid" 2>/dev/null
+  rc=$?
+  kill -KILL "$kpid" 2>/dev/null
+  wait "$kpid" 2>/dev/null
+  return "$rc"
+}
+syntaur_bounded_stop || true
 
 exit 0

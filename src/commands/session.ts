@@ -2,13 +2,21 @@ import { Command } from 'commander';
 import { readFile, readdir, stat } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { fileExists, writeFileForce } from '../utils/fs.js';
-import { assignmentsDir } from '../utils/paths.js';
-import { readConfig } from '../utils/config.js';
+import { assignmentsDir, expandHome } from '../utils/paths.js';
+import { readConfig, type SessionAutoTrack } from '../utils/config.js';
 import { nowTimestamp } from '../utils/timestamp.js';
-import { resolveOwnSessionId } from '../utils/session-id.js';
+import { isSafeSessionId, readPpid, resolveOwnSessionId } from '../utils/session-id.js';
+import { captureProcessStartedAt } from '../utils/process-info.js';
+import { captureHeadSha } from '../utils/git-worktree.js';
+import { isExistingDir } from '../launch/cwd.js';
+import { initSessionDb } from '../dashboard/session-db.js';
+import { appendSession, updateSessionStatus } from '../dashboard/agent-sessions.js';
+import type { AgentSessionStatus } from '../dashboard/types.js';
 
 interface ContextFile {
   sessionId?: string;
+  transcriptPath?: string | null;
+  latestSessionSummaryPath?: string | null;
   projectSlug?: string;
   assignmentSlug?: string;
   projectDir?: string;
@@ -306,8 +314,225 @@ ${trimmed.length > 0 ? trimmed : SESSION_SUMMARY_SKELETON.trim()}
   return summaryPath;
 }
 
+// --- session register / stop (hook-driven, zero-token, DB-direct) ---
+
+interface HookPayload {
+  session_id?: string;
+  transcript_path?: string;
+  cwd?: string;
+}
+
+function parseHookPayload(rawStdin: string): HookPayload | null {
+  try {
+    const parsed: unknown = JSON.parse(rawStdin);
+    if (!parsed || typeof parsed !== 'object') return null;
+    return parsed as HookPayload;
+  } catch {
+    return null;
+  }
+}
+
+export interface SessionRegisterOptions {
+  fromHook?: boolean;
+  agent?: string;
+  pid?: string;
+}
+
+/** Injectable seams for tests; production callers pass nothing. */
+export interface SessionRegisterDeps {
+  /** Override the configured `session.autoTrack` (skips readConfig). */
+  autoTrack?: SessionAutoTrack;
+  /** Owning pid when --pid is absent. Defaults to readPpid(process.ppid) —
+   * the shell that owns the agent, matching the bash hook's `ps -o ppid= -p $$`. */
+  fallbackPid?: () => number | null;
+  pidStartedAt?: (pid: number) => string | null;
+  headSha?: (cwd: string) => Promise<string | null>;
+  now?: () => string;
+}
+
+export interface SessionRegisterResult {
+  merged: boolean;
+  registered: boolean;
+  sessionId: string | null;
+}
+
+/**
+ * Deterministic SessionStart registration (criterion: no dashboard, no LLM).
+ * Parses the hook's stdin payload, merges session fields into an EXISTING
+ * `.syntaur/context.json` (never creates one), and upserts the session row
+ * directly into the sessions DB. Standalone sessions (no context.json)
+ * register as unlinked rows. Never throws — the CLI action exits 0 always.
+ */
+export async function runSessionRegister(
+  rawStdin: string,
+  options: SessionRegisterOptions = {},
+  deps: SessionRegisterDeps = {},
+): Promise<SessionRegisterResult> {
+  const result: SessionRegisterResult = { merged: false, registered: false, sessionId: null };
+
+  const payload = parseHookPayload(rawStdin);
+  if (!payload) return result;
+  const sessionId = payload.session_id;
+  const cwd = payload.cwd;
+  if (!isSafeSessionId(sessionId) || !cwd) return result;
+  result.sessionId = sessionId;
+  const transcriptPath = payload.transcript_path ?? '';
+
+  // --- (1) Merge session fields into an EXISTING context.json. Mirrors the
+  // bash merge this replaces: always replace sessionId and transcriptPath
+  // together (null when the incoming transcript_path is empty, so a new
+  // session never inherits a stale path), and resolve the newest-mtime
+  // session summary for mid-assignment continuity.
+  const contextPath = resolve(cwd, '.syntaur', 'context.json');
+  const hasContextFile = await fileExists(contextPath);
+  const ctx = hasContextFile ? await readContext(cwd) : null;
+  if (ctx) {
+    try {
+      const assignmentDir = ctx.assignmentDir ? expandHome(ctx.assignmentDir) : null;
+      const latest = assignmentDir ? await findLatestSessionSummary(assignmentDir) : null;
+      const merged: ContextFile = {
+        ...ctx,
+        sessionId,
+        transcriptPath: transcriptPath.length > 0 ? transcriptPath : null,
+        latestSessionSummaryPath: latest?.path ?? null,
+      };
+      await writeFileForce(contextPath, `${JSON.stringify(merged, null, 2)}\n`);
+      result.merged = true;
+    } catch {
+      // Leave context.json untouched on any failure — same as the bash `|| rm -f $TMP`.
+    }
+  }
+
+  // --- (2) DB registration, gated on session.autoTrack.
+  const autoTrack = deps.autoTrack ?? (await readConfig()).session.autoTrack;
+  if (autoTrack === 'off') return result;
+  if (autoTrack === 'workspaces-only' && !hasContextFile) return result;
+
+  initSessionDb();
+
+  const optPid = options.pid !== undefined ? Number.parseInt(String(options.pid), 10) : NaN;
+  const pid = Number.isInteger(optPid) && optPid > 0
+    ? optPid
+    : (deps.fallbackPid ?? (() => readPpid(process.ppid)))();
+  const pidStartedAt = pid !== null ? (deps.pidStartedAt ?? captureProcessStartedAt)(pid) : null;
+  const originalHeadSha = isExistingDir(cwd)
+    ? await (deps.headSha ?? captureHeadSha)(cwd)
+    : null;
+
+  await appendSession('', {
+    projectSlug: ctx?.projectSlug || null,
+    assignmentSlug: ctx?.assignmentSlug || null,
+    agent: options.agent || 'claude',
+    sessionId,
+    started: deps.now?.() ?? new Date().toISOString(),
+    status: 'active' as AgentSessionStatus,
+    path: cwd,
+    description: null,
+    transcriptPath: transcriptPath.length > 0 ? transcriptPath : null,
+    pid,
+    pidStartedAt,
+    originalHeadSha,
+  });
+  result.registered = true;
+  return result;
+}
+
+export interface SessionStopResult {
+  stopped: boolean;
+  sessionId: string | null;
+}
+
+/**
+ * Deterministic SessionEnd handling: resolve the ENDING session's id (stdin
+ * `.session_id` first; the shared context.json scalar only as a last-resort
+ * fallback — a co-tenant can clobber it) and mark the row stopped with a
+ * direct DB write. Never throws.
+ */
+export async function runSessionStop(rawStdin: string): Promise<SessionStopResult> {
+  const result: SessionStopResult = { stopped: false, sessionId: null };
+
+  const payload = parseHookPayload(rawStdin);
+  if (!payload) return result;
+
+  let sessionId = isSafeSessionId(payload.session_id) ? payload.session_id : null;
+  if (!sessionId && payload.cwd) {
+    const ctx = await readContext(payload.cwd);
+    if (isSafeSessionId(ctx?.sessionId)) sessionId = ctx!.sessionId!;
+  }
+  if (!sessionId) return result;
+  result.sessionId = sessionId;
+
+  initSessionDb();
+  result.stopped = await updateSessionStatus('', sessionId, 'stopped');
+  return result;
+}
+
 export const sessionCommand = new Command('session')
   .description('Manage agent sessions for the active assignment');
+
+sessionCommand
+  .command('register')
+  .description(
+    'Register the calling agent session in the sessions DB (SessionStart hook entry point). Reads the hook JSON payload from stdin; merges session fields into an existing .syntaur/context.json; always exits 0.',
+  )
+  .option('--from-hook', 'Read the SessionStart JSON payload from stdin')
+  .option('--agent <name>', 'Agent name for the session row', 'claude')
+  .option('--pid <pid>', 'Owning process pid for liveness checks (defaults to the grandparent pid)')
+  .action(async (options: SessionRegisterOptions) => {
+    if (!options.fromHook) {
+      console.error('session register currently requires --from-hook (stdin JSON payload).');
+      process.exit(1);
+    }
+    // Hook path: NEVER fail — a broken registration must not break the agent session.
+    try {
+      await runSessionRegister(await readStdin(), options);
+    } catch {
+      /* always exit 0 */
+    }
+  });
+
+sessionCommand
+  .command('scan')
+  .description(
+    'Reconcile the sessions DB against on-disk agent transcripts: upsert every discovered session, link workspaces, revive on live-process evidence, sweep stale active rows.',
+  )
+  .option('--full', 'Ignore the incremental mtime watermark and rescan everything')
+  .option('--json', 'Emit the scan summary as JSON')
+  .action(async (options: { full?: boolean; json?: boolean }) => {
+    try {
+      const { scanSessions } = await import('../sessions/scanner.js');
+      initSessionDb();
+      const summary = await scanSessions({ full: options.full });
+      if (options.json) {
+        console.log(JSON.stringify(summary));
+      } else {
+        console.log(
+          `Scan complete — discovered ${summary.discovered}, inserted ${summary.inserted}, revived ${summary.revived}, swept ${summary.swept}, skipped ${summary.skipped}.`,
+        );
+      }
+    } catch (error) {
+      console.error('Error:', error instanceof Error ? error.message : String(error));
+      process.exit(1);
+    }
+  });
+
+sessionCommand
+  .command('stop')
+  .description(
+    'Mark the calling agent session stopped in the sessions DB (SessionEnd hook entry point). Reads the hook JSON payload from stdin; always exits 0.',
+  )
+  .option('--from-hook', 'Read the SessionEnd JSON payload from stdin')
+  .action(async (options: { fromHook?: boolean }) => {
+    if (!options.fromHook) {
+      console.error('session stop currently requires --from-hook (stdin JSON payload).');
+      process.exit(1);
+    }
+    try {
+      await runSessionStop(await readStdin());
+    } catch {
+      /* always exit 0 */
+    }
+  });
 
 sessionCommand
   .command('resume')
