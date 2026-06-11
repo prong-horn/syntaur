@@ -236,6 +236,37 @@ describe('queryToViewFilters — chip-representable parse', () => {
       search: 'foo',
     });
   });
+
+  // ── activity + a non-7d updated dateRange parse to BOTH slots ───────────────
+  // The exact 7d atom fills the activity sub-slot; the other `updated` atom fills
+  // the updated dateRange sub-slot. AND is order-independent, so both atom orders
+  // must produce the same ViewFilters.
+  it('activity + updated relative dateRange (both orders)', () => {
+    const expected = { activity: 'stale', dateRange: { field: 'updated', preset: 'last_30d' } };
+    expect(queryToViewFilters('updated < -7d AND updated >= -30d')).toEqual(expected);
+    expect(queryToViewFilters('updated >= -30d AND updated < -7d')).toEqual(expected);
+  });
+
+  it('activity fresh + updated older relative dateRange (both orders)', () => {
+    const expected = { activity: 'fresh', dateRange: { field: 'updated', preset: 'older_30d' } };
+    expect(queryToViewFilters('updated >= -7d AND updated < -30d')).toEqual(expected);
+    expect(queryToViewFilters('updated < -30d AND updated >= -7d')).toEqual(expected);
+  });
+
+  it('activity + updated absolute bound dateRange (both orders)', () => {
+    const expected = { activity: 'stale', dateRange: { field: 'updated', from: '2026-06-01' } };
+    expect(queryToViewFilters('updated < -7d AND updated >= 2026-06-01')).toEqual(expected);
+    expect(queryToViewFilters('updated >= 2026-06-01 AND updated < -7d')).toEqual(expected);
+  });
+
+  it('activity + updated absolute from+to dateRange', () => {
+    expect(
+      queryToViewFilters('updated < -7d AND updated >= 2026-06-01 AND updated <= 2026-06-30'),
+    ).toEqual({
+      activity: 'stale',
+      dateRange: { field: 'updated', from: '2026-06-01', to: '2026-06-30' },
+    });
+  });
 });
 
 // ── queryToViewFilters: null fallbacks ───────────────────────────────────────
@@ -281,15 +312,21 @@ describe('queryToViewFilters — non-chip-representable → null', () => {
   });
   it('two distinct date fields with bounds (separate dateRange slots)', () => {
     expect(queryToViewFilters('created >= 2026-06-01 AND updated <= 2026-06-30')).toBeNull();
+    // A preset on one field colliding with a bound on ANOTHER field still →
+    // null (only one dateRange slot exists; exercises the post-loop guard).
+    expect(queryToViewFilters('created >= -30d AND updated >= 2026-06-01')).toBeNull();
   });
-  it('activity collides with an updated bound on the same field (both orders)', () => {
-    // updated owns one slot: an activity shape + an absolute updated bound is a
-    // duplicate, regardless of atom order.
-    expect(queryToViewFilters('updated >= 2026-06-01 AND updated < -7d')).toBeNull();
-    expect(queryToViewFilters('updated < -7d AND updated >= 2026-06-01')).toBeNull();
-  });
-  it('activity collides with an updated preset on the same field', () => {
-    expect(queryToViewFilters('updated >= -30d AND updated < -7d')).toBeNull();
+  it('two genuine updated dateRange lower bounds (both relative, neither the 7d activity shape) → null', () => {
+    // Two `>=` relative `updated` atoms both want the dateRange lower-bound
+    // sub-slot (a preset whole-range slot) — a real duplicate, still null.
+    expect(queryToViewFilters('updated >= -30d AND updated >= -90d')).toBeNull();
+    // Two activity-shaped atoms both want the activity sub-slot → still null.
+    expect(queryToViewFilters('updated < -7d AND updated < -7d')).toBeNull();
+    expect(queryToViewFilters('updated >= -7d AND updated >= -7d')).toBeNull();
+    // A preset and an absolute bound on the SAME field still conflict.
+    expect(queryToViewFilters('updated >= -30d AND updated >= 2026-06-01')).toBeNull();
+    // Two absolute lower bounds on updated still conflict.
+    expect(queryToViewFilters('updated >= 2026-06-01 AND updated >= 2026-06-05')).toBeNull();
   });
   it('unknown field-shaped atom', () => {
     expect(queryToViewFilters('title:engine')).toBeNull(); // title is not a chip slot
@@ -345,6 +382,54 @@ describe('round-trip law', () => {
         search: 'engine',
         dateRange: { field: 'created', preset: 'last_30d' },
       },
+    },
+    // ── activity × updated-dateRange (the fixed round-trip class) ──────────────
+    // The exact 7d shape is activity; ANY other `updated` atom is the dateRange,
+    // so these coexist and round-trip losslessly.
+    {
+      name: 'activity stale + updated last_30d',
+      f: { activity: 'stale', dateRange: { field: 'updated', preset: 'last_30d' } },
+    },
+    {
+      name: 'activity fresh + updated last_30d',
+      f: { activity: 'fresh', dateRange: { field: 'updated', preset: 'last_30d' } },
+    },
+    {
+      name: 'activity stale + updated older_30d',
+      f: { activity: 'stale', dateRange: { field: 'updated', preset: 'older_30d' } },
+    },
+    {
+      name: 'activity fresh + updated last_90d',
+      f: { activity: 'fresh', dateRange: { field: 'updated', preset: 'last_90d' } },
+    },
+    {
+      name: 'activity stale + updated from only (absolute)',
+      f: { activity: 'stale', dateRange: { field: 'updated', from: '2026-06-01' } },
+    },
+    {
+      name: 'activity fresh + updated to only (absolute)',
+      f: { activity: 'fresh', dateRange: { field: 'updated', to: '2026-06-30' } },
+    },
+    {
+      name: 'activity stale + updated from+to (absolute)',
+      f: {
+        activity: 'stale',
+        dateRange: { field: 'updated', from: '2026-06-01', to: '2026-06-30' },
+      },
+    },
+    {
+      name: 'activity + updated dateRange + value slot all together',
+      f: {
+        status: ['in_progress'],
+        activity: 'stale',
+        dateRange: { field: 'updated', preset: 'last_30d' },
+      },
+    },
+    {
+      // Cross-field: activity lives on the `updated` 7d sub-slot, the dateRange
+      // on `created` — fully independent slots, the canonical "both at once".
+      name: 'activity stale + created dateRange',
+      f: { activity: 'stale', dateRange: { field: 'created', preset: 'last_30d' } },
     },
   ];
 

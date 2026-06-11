@@ -37,6 +37,16 @@
  *     is older_7d/last_7d folds into activity stale/fresh and the dateRange is dropped.
  * The same presets on `field:'created'` do NOT collide (activity is updated-only) and
  * round-trip cleanly as a dateRange.
+ *
+ * ── Activity + a non-7d `updated` dateRange coexist ──────────────────────────
+ * Because the EXACT 7d shapes always belong to activity, ANY other `updated` atom
+ * (a non-7d relative preset, or an absolute `>=`/`<=` bound) is an unambiguous
+ * `updated` dateRange. So `{activity, dateRange:{field:'updated',…}}` emits BOTH
+ * atoms (e.g. `updated < -7d AND updated >= -30d`) and parses back to both: the
+ * 7d atom fills the `activity` sub-slot, the other fills the `updated` dateRange
+ * sub-slot. These two sub-slots are tracked separately so they never collide —
+ * but a second atom wanting the SAME sub-slot (two activity shapes, or two
+ * `updated` lower bounds) still → null.
  */
 
 import { parseQuery } from './query/index.js';
@@ -230,8 +240,11 @@ export function queryToViewFilters(query: string): ViewFilters | null {
   if (atoms === null) return null; // OR / NOT / grouping / non-atom → not chip-representable
 
   const result: ViewFilters = {};
-  // Track occupied logical slots to reject duplicates. The `updated`/date fields
-  // share special handling below.
+  // Track occupied logical slots to reject duplicates. On the `updated` AST field
+  // there are TWO distinct sub-slots that can both be filled at once: `activity`
+  // (the exact `updated < -7d` / `updated >= -7d` shape) and the `updated`
+  // dateRange (`date:updated`, any other `updated` atom). They never block each
+  // other; each still rejects a second atom that wants the SAME sub-slot.
   const used = new Set<string>();
   // Accumulate date-field bounds so a `>=`/`<=` pair on one field merges into a
   // single dateRange.
@@ -255,14 +268,13 @@ export function queryToViewFilters(query: string): ViewFilters | null {
         break;
       }
       case 'activity': {
-        // activity and the `updated` date field are the same AST field; one
-        // owner only. Reject if a preset claimed `updated` (used) OR absolute
-        // bounds did (dateBounds).
-        if (used.has('activity') || used.has('date:updated') || dateBounds.has('updated')) {
-          return null;
-        }
+        // The activity sub-slot is the EXACT `updated < -7d` / `updated >= -7d`
+        // shape only (recognizeAtom routes nothing else here). It is DISTINCT
+        // from the `updated` dateRange sub-slot: an activity atom and a non-7d
+        // `updated` dateRange can coexist (they round-trip the same way they were
+        // emitted — see viewFiltersToQuery). Only a SECOND activity atom collides.
+        if (used.has('activity')) return null;
         used.add('activity');
-        used.add('date:updated');
         result.activity = slot.activity;
         break;
       }
@@ -270,8 +282,9 @@ export function queryToViewFilters(query: string): ViewFilters | null {
         const key = `date:${slot.field}`;
         if (used.has(key)) return null;
         // A preset is a whole dateRange — it cannot coexist with bounds on the
-        // same field. `updated` preset also conflicts with activity.
-        if (slot.field === 'updated' && used.has('activity')) return null;
+        // same field. (The exact 7d `updated` activity shapes never reach here:
+        // recognizeRelative intercepts them as `activity`, so an `updated` preset
+        // is always non-7d and is a genuine dateRange that can sit beside activity.)
         if (dateBounds.has(slot.field)) return null;
         used.add(key);
         result.dateRange = { field: slot.field, preset: slot.preset };
@@ -279,10 +292,11 @@ export function queryToViewFilters(query: string): ViewFilters | null {
       }
       case 'dateBound': {
         // Bounds accumulate (>= → from, <= → to) but each direction only once,
-        // and not alongside a preset on the same field.
+        // and not alongside a preset on the same field. Absolute `updated` bounds
+        // are a dateRange sub-slot independent of the activity sub-slot, so they
+        // may coexist with an activity atom.
         const key = `date:${slot.field}`;
         if (used.has(key)) return null; // a preset already claimed this field
-        if (slot.field === 'updated' && used.has('activity')) return null;
         const bounds = dateBounds.get(slot.field) ?? {};
         if (slot.bound === 'from') {
           if (bounds.from !== undefined) return null; // duplicate >=
