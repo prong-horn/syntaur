@@ -260,6 +260,9 @@ export async function runStatusAdd(id: string, opts: StatusAddOptions): Promise<
     order: insertIntoOrder(before.order, id, { after: opts.after, before: opts.before }),
     transitions: before.transitions,
     derive: before.derive ?? null,
+    // Preserve custom fact declarations across status mutations — same
+    // silent-deletion bug class as derive (Settings/CLI rebuild the block).
+    facts: before.facts ?? null,
   };
 
   if (opts.dryRun) {
@@ -304,6 +307,9 @@ export async function runStatusSet(opts: StatusSetOptions): Promise<void> {
     order: before.order,
     transitions: before.transitions,
     derive: before.derive ?? null,
+    // Preserve custom fact declarations across status mutations — same
+    // silent-deletion bug class as derive (Settings/CLI rebuild the block).
+    facts: before.facts ?? null,
   };
 
   if (opts.dryRun) {
@@ -334,6 +340,9 @@ export async function runStatusReorder(csv: string, opts: { dryRun?: boolean }):
     order: requested,
     transitions: before.transitions,
     derive: before.derive ?? null,
+    // Preserve custom fact declarations across status mutations — same
+    // silent-deletion bug class as derive (Settings/CLI rebuild the block).
+    facts: before.facts ?? null,
   };
   if (opts.dryRun) {
     printBlockDiff(before, after);
@@ -379,6 +388,9 @@ export async function runStatusRemove(
     // Derive rules referencing the removed id are preserved as-is — doctor /
     // validateDeriveConfig flags them, mirroring the affected-assignments policy.
     derive: before.derive ?? null,
+    // Preserve custom fact declarations across status mutations — same
+    // silent-deletion bug class as derive (Settings/CLI rebuild the block).
+    facts: before.facts ?? null,
   };
 
   if (opts.dryRun) {
@@ -434,6 +446,8 @@ export async function runStatusRename(
           },
         }
       : null,
+    // Custom fact names are independent of status ids — preserve verbatim.
+    facts: before.facts ?? null,
   };
 
   const { projectsDir, standaloneDir } = await scanDirs();
@@ -526,6 +540,9 @@ export async function runStatusTransitionAdd(opts: TransitionAddOptions): Promis
     order: before.order,
     transitions: [...base, transition],
     derive: before.derive ?? null,
+    // Preserve custom fact declarations across status mutations — same
+    // silent-deletion bug class as derive (Settings/CLI rebuild the block).
+    facts: before.facts ?? null,
   };
   if (opts.dryRun) {
     printBlockDiff(before, after);
@@ -551,6 +568,9 @@ export async function runStatusTransitionRemove(opts: {
     order: before.order,
     transitions: remaining,
     derive: before.derive ?? null,
+    // Preserve custom fact declarations across status mutations — same
+    // silent-deletion bug class as derive (Settings/CLI rebuild the block).
+    facts: before.facts ?? null,
   };
   if (opts.dryRun) {
     printBlockDiff(before, after);

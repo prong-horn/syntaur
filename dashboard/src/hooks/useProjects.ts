@@ -238,7 +238,21 @@ export interface AssignmentDetail {
   derived?: {
     derivedStatus: string;
     nextAction: string | null;
-    facts: Record<string, boolean | number>;
+    facts: Record<string, boolean | number | string[]>;
+    /** Declared bool/number custom facts only (server pre-separated them). */
+    customFacts?: Record<string, boolean | number>;
+    /** Per-attestation-fact state with per-actor verdicts + staleness. */
+    attestations?: Array<{
+      fact: string;
+      binds: 'plan' | 'commit' | 'none';
+      records: Array<{
+        actor: string;
+        verdict: 'approved' | 'changes-requested';
+        at: string;
+        note: string | null;
+        stale: boolean;
+      }>;
+    }>;
   } | null;
 }
 

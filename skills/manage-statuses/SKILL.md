@@ -62,11 +62,59 @@ After every mutating subcommand, run `syntaur status list` (or `--json` for mach
 - **After a `remove --force`,** the affected assignments now reference an undefined status. `syntaur doctor` will flag them as invalid. Suggest the user run `syntaur doctor` and either re-add the status (`syntaur status add ...`) or edit each frontmatter to a valid id.
 - **After `transition add`,** the dashboard's transition buttons reflect the new transition only after the cache invalidation above.
 
+## Custom facts and attestations
+
+Beyond the 14 built-in derived-status facts, users can declare their **own** facts under `statuses.facts` and reference them in `phaseLadder` / `disposition` conditions. There are two kinds.
+
+**1. Custom asserted facts** — config-declared `bool` / `number` values, asserted via `syntaur fact set` and stored in a `facts:` frontmatter map:
+
+```yaml
+statuses:
+  facts:
+    - name: qaPassed
+      type: bool
+    - name: storyPoints
+      type: number
+```
+
+```bash
+syntaur fact set <assignment> qaPassed true --project <p>
+syntaur fact set <assignment> storyPoints 5 --project <p>
+```
+
+`bool` accepts case-insensitive `true`/`false`; `number` accepts any finite number. The declared `name` exports a single derive field of the same name (`qaPassed:true`, `storyPoints > 3`). Stored in frontmatter as `facts:\n  qaPassed: "true"`.
+
+**2. Attestation facts** — model "agent X reviewed revision Y with verdict Z". Declared with `type: attestation` and a `binds:` mode:
+
+```yaml
+statuses:
+  facts:
+    - name: codeReview
+      type: attestation
+      binds: plan      # plan | commit | none
+```
+
+```bash
+syntaur attest <assignment> codeReview --agent codex --verdict approved --project <p>
+syntaur attest <assignment> codeReview --agent pi --verdict changes-requested --note "fix the lock" --project <p>
+```
+
+`--verdict` defaults to `approved` (the other value is `changes-requested`). One record per actor — re-attesting **replaces** that actor's record. Stored in an `attestations:` frontmatter list (`{fact, actor, verdict, at, note?}` + binding snapshot).
+
+Each attestation fact exports **five** derive fields (for `codeReview`): `codeReview` (any valid record), `codeReviewApproved`, `codeReviewChangesRequested` (bools), and `codeReviewBy`, `codeReviewApprovedBy` (actor **sets** — use `:` for contains / `IN`-lists, e.g. `codeReviewApprovedBy:"agent:codex"`; quote actor values that contain a `:`). This makes review loops self-modeling — a rung `when: "codeReviewApproved:true"` fires on approval, and `when: "codeReviewChangesRequested:true"` expresses "reviewed but not signed off".
+
+**Revision binding** is what makes attestations self-invalidate:
+- `binds: plan` — bound to the latest plan file + its digest (same semantics as plan approval). A replan or a post-attest plan edit makes the record **stale**; stale records contribute nothing (the fact flips false, the actor drops out of the `*By` sets).
+- `binds: commit` — bound to the workspace branch HEAD sha at attest time. A new commit makes it stale. **Lazy convergence:** dashboard payloads and `ls --query` compute facts fresh per request (always honest), but the *persisted* phase regression lands on the next recompute trigger (any CLI verb, watcher event, config change, or boot sweep) — there is no git watcher.
+- `binds: none` — never stale (a standing sign-off).
+
+**Validation & teeth.** Declared names are validated by `syntaur doctor` (the `derive-config.valid` check): bad name/type/binds and any collision of an exported field with a built-in or another declaration is reported as an error and the offending declaration is dropped (built-ins always win). A derive condition that references an **undeclared** fact still fails at recompute time (`CompileError`), exactly as before. `syntaur fact set` / `syntaur attest` reject undeclared names, wrong types, and invalid verdicts. Every `fact set` / `attest` is recorded in `statusHistory` with its actor and cause, even when no dimension moves.
+
 ## Safety notes
 
 - **`remove` is destructive.** Without `--force` it refuses if any assignment references the id. Don't suggest `--force` without first running `syntaur status remove <id>` (no force) so the user sees the affected list.
 - **`rename` rewrites many files.** It edits `config.md` AND every affected `assignment.md` in a single atomic transaction (with rollback if any write fails partway). Always run `--dry-run` first on a non-trivial codebase so the user sees the per-file diff.
 - **`terminal: true` is load-bearing.** Terminal statuses affect dashboard progress bars and dependency-satisfaction logic — an assignment with a terminal status counts as "done" for downstream `dependsOn` checks and project-rollup status. Don't toggle this on `pending`-style states without thinking.
-- **`init --force` overwrites a custom block.** Use `reset` first if the user wants a clean slate, OR confirm before passing `--force` if they have unsaved customizations.
+- **`init --force` overwrites a custom block.** Use `reset` first if the user wants a clean slate, OR confirm before passing `--force` if they have unsaved customizations. It resets to the built-in defaults and therefore **drops any `statuses.facts` declarations and `derive` rules** along with the custom statuses — every other `status` subcommand (`set`/`add`/`remove`/`rename`/`reorder`/`transition`) preserves them.
 - **Concurrency.** `rename`'s buffer-write-rollback strategy assumes no concurrent writers. Tell the user to close the dashboard / pause other agents during a rename.
 - **`SYNTAUR_HOME` precedence.** If the user has `SYNTAUR_HOME` set, the CLI writes there instead of `~/.syntaur`. Mirror their environment.

@@ -83,6 +83,27 @@ export interface PlanApproval {
 }
 
 /**
+ * One attestation record (custom-facts-attestations): "agent X reviewed
+ * revision Y with verdict Z". One record per (fact, actor) — re-attesting
+ * replaces that actor's record. Revision-bound via the binding snapshot:
+ * `file`+`digest` for binds:plan (planApproval semantics), `commit` for
+ * binds:commit, neither for binds:none. A record is VALID only while its
+ * snapshot still matches the live revision; stale records contribute nothing.
+ */
+export interface AttestationRecord {
+  fact: string;
+  actor: string;
+  verdict: 'approved' | 'changes-requested';
+  at: string;
+  note?: string;
+  /** binds:plan snapshot — plan file name + its digest at attest time. */
+  file?: string;
+  digest?: string;
+  /** binds:commit snapshot — workspace HEAD sha at attest time. */
+  commit?: string;
+}
+
+/**
  * Sticky manual status override ("pin"). Folded into the written headline
  * `status` at recompute time; the un-overridden derived headline travels in
  * API payloads only (divergence display). May not target a terminal status
@@ -142,6 +163,12 @@ export interface AssignmentFrontmatter {
   implementationStarted: boolean;
   /** Sticky manual pin; null = no override. */
   override: StatusOverride | null;
+  /** Custom asserted fact values (raw scalars keyed by declared name; typed
+   * coercion against declarations happens in facts.ts). Absent block → {}. */
+  facts: Record<string, string>;
+  /** Attestation records, one per (fact, actor). Revision-bound; stale records
+   * contribute nothing at compute time. Absent block → []. */
+  attestations: AttestationRecord[];
 }
 
 export interface TransitionResult {

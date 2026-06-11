@@ -3,7 +3,7 @@
  * Pattern copied from src/lifecycle/frontmatter.ts:3-23 (extractFrontmatter + parseSimpleValue).
  */
 
-import type { StatusHistoryEntry } from '../lifecycle/types.js';
+import type { AttestationRecord, StatusHistoryEntry } from '../lifecycle/types.js';
 
 export interface ParsedFile {
   frontmatter: Record<string, string>;
@@ -261,6 +261,12 @@ export interface ParsedAssignmentFull {
   implementationStarted: boolean;
   planApproval: { file: string; digest: string; by: string | null; at: string } | null;
   override: { status: string; source: string; reason: string | null; at: string } | null;
+  // ── custom facts + attestations ──────────────────────────────────────────
+  /** Custom asserted fact values (raw scalars). Absent block → {}. Parity with
+   * the lifecycle parser so buildDerivedDetail's cast feeds computeFacts these. */
+  facts: Record<string, string>;
+  /** Attestation records (one per fact+actor). Absent block → []. */
+  attestations: AttestationRecord[];
 }
 
 function parseExternalIds(frontmatter: string): Array<{ system: string; id: string; url: string | null }> {
@@ -357,6 +363,86 @@ function parseStatusHistory(frontmatter: string): StatusHistoryEntry[] {
   return results;
 }
 
+/**
+ * Parse the `facts:` map (parity with lifecycle `frontmatter.ts::parseFactsMap`).
+ * Absent/null block → `{}`; null-valued entries dropped; values trimmed +
+ * unquoted via parseSimpleValue. Keep in sync with the lifecycle parser.
+ */
+function parseFactsMap(frontmatter: string): Record<string, string> {
+  const headerMatch = frontmatter.match(/^facts:\s*$/m);
+  if (!headerMatch) return {};
+  const headerStart = headerMatch.index ?? frontmatter.indexOf(headerMatch[0]);
+  const after = frontmatter.slice(headerStart + headerMatch[0].length + 1);
+  const out: Record<string, string> = {};
+  for (const line of after.split('\n')) {
+    if (line.length === 0) continue;
+    if (line[0] !== ' ' && line[0] !== '\t') break;
+    const colonIdx = line.indexOf(':');
+    if (colonIdx < 0) continue;
+    const key = line.slice(0, colonIdx).trim();
+    if (!key) continue;
+    const value = parseSimpleValue(line.slice(colonIdx + 1));
+    if (value === null) continue;
+    out[key] = value;
+  }
+  return out;
+}
+
+/**
+ * Parse the `attestations:` record list (parity with lifecycle
+ * `frontmatter.ts::parseAttestations` — same robust line-scan). Records missing
+ * a required key or with an unknown verdict are dropped. Keep in sync.
+ */
+function parseAttestations(frontmatter: string): AttestationRecord[] {
+  if (/^attestations:\s*\[\s*\]/m.test(frontmatter)) return [];
+
+  const headerMatch = frontmatter.match(/^attestations:\s*$/m);
+  if (!headerMatch) return [];
+
+  const headerStart = headerMatch.index ?? frontmatter.indexOf(headerMatch[0]);
+  const bodyStart = headerStart + headerMatch[0].length + 1;
+  const after = frontmatter.slice(bodyStart);
+
+  const bodyLines: string[] = [];
+  for (const line of after.split('\n')) {
+    if (line.length === 0) {
+      bodyLines.push(line);
+      continue;
+    }
+    if (line[0] !== ' ' && line[0] !== '\t') break;
+    bodyLines.push(line);
+  }
+  const body = bodyLines.join('\n');
+
+  const results: AttestationRecord[] = [];
+  const itemBlocks = body.split(/\n\s+-\s+/).filter((b) => b.trim().length > 0);
+  for (const block of itemBlocks) {
+    const entry: Record<string, string | null> = {};
+    for (const line of block.split('\n')) {
+      const colonIdx = line.indexOf(':');
+      if (colonIdx < 0) continue;
+      const key = line.slice(0, colonIdx).trim().replace(/^-\s+/, '');
+      if (!key) continue;
+      entry[key] = parseSimpleValue(line.slice(colonIdx + 1));
+    }
+    const verdict = entry['verdict'];
+    if (!entry['fact'] || !entry['actor'] || !verdict || !entry['at']) continue;
+    if (verdict !== 'approved' && verdict !== 'changes-requested') continue;
+    const record: AttestationRecord = {
+      fact: entry['fact'],
+      actor: entry['actor'],
+      verdict,
+      at: entry['at'],
+    };
+    if (entry['note'] != null) record.note = entry['note'];
+    if (entry['file'] != null) record.file = entry['file'];
+    if (entry['digest'] != null) record.digest = entry['digest'];
+    if (entry['commit'] != null) record.commit = entry['commit'];
+    results.push(record);
+  }
+  return results;
+}
+
 export function parseAssignmentFull(fileContent: string): ParsedAssignmentFull {
   const [fm, body] = extractFrontmatter(fileContent);
   return {
@@ -413,6 +499,8 @@ export function parseAssignmentFull(fileContent: string): ParsedAssignmentFull {
         at: getNestedField(fm, 'override', 'at') ?? '',
       };
     })(),
+    facts: parseFactsMap(fm),
+    attestations: parseAttestations(fm),
   };
 }
 

@@ -21,6 +21,8 @@ import {
   unparkCommand,
   requestReviewCommand,
   recomputeCommand,
+  factSetCommand,
+  attestCommand,
 } from './commands/derive-verbs.js';
 import { completeCommand } from './commands/complete.js';
 import { blockCommand } from './commands/block.js';
@@ -482,6 +484,47 @@ program
   .action(async (assignment, options) => {
     try {
       await requestReviewCommand(assignment, options);
+    } catch (error) {
+      console.error('Error:', error instanceof Error ? error.message : String(error));
+      process.exit(1);
+    }
+  });
+
+const factCommand = program
+  .command('fact')
+  .description('Manage custom asserted facts declared under statuses.facts');
+
+factCommand
+  .command('set')
+  .description('Set a declared custom fact (bool/number); status re-derives from it')
+  .argument('<assignment>', 'Assignment slug or standalone UUID')
+  .argument('<name>', 'Declared fact name (statuses.facts)')
+  .argument('<value>', 'Value (bool: true/false; number: any finite number)')
+  .option('--project <slug>', 'Target project slug')
+  .option('--agent <name>', 'Acting agent id')
+  .option('--dir <path>', 'Override default project directory')
+  .action(async (assignment, name, value, options) => {
+    try {
+      await factSetCommand(assignment, name, value, options);
+    } catch (error) {
+      console.error('Error:', error instanceof Error ? error.message : String(error));
+      process.exit(1);
+    }
+  });
+
+program
+  .command('attest')
+  .description('Record an attestation (agent reviewed a revision with a verdict); revision-bound')
+  .argument('<assignment>', 'Assignment slug or standalone UUID')
+  .argument('<fact>', 'Declared attestation fact name (statuses.facts)')
+  .option('--verdict <verdict>', 'approved | changes-requested', 'approved')
+  .option('--note <text>', 'Optional note recorded on the attestation')
+  .option('--agent <id>', 'Acting agent id (else the bound session, else human)')
+  .option('--project <slug>', 'Target project slug')
+  .option('--dir <path>', 'Override default project directory')
+  .action(async (assignment, fact, options) => {
+    try {
+      await attestCommand(assignment, fact, options);
     } catch (error) {
       console.error('Error:', error instanceof Error ? error.message : String(error));
       process.exit(1);

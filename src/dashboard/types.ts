@@ -257,7 +257,24 @@ export interface AssignmentDetail {
   derived: {
     derivedStatus: string;
     nextAction: string | null;
-    facts: Record<string, boolean | number>;
+    /** Full materialized fact set (built-ins + custom + attestation exports;
+     * actor-set exports are string[]). */
+    facts: Record<string, boolean | number | string[]>;
+    /** Declared bool/number custom facts only — pre-separated so the client
+     * renders them without guessing which keys are built-ins. */
+    customFacts: Record<string, boolean | number>;
+    /** Per-attestation-fact state with per-actor verdicts + staleness. */
+    attestations: Array<{
+      fact: string;
+      binds: 'plan' | 'commit' | 'none';
+      records: Array<{
+        actor: string;
+        verdict: 'approved' | 'changes-requested';
+        at: string;
+        note: string | null;
+        stale: boolean;
+      }>;
+    }>;
   } | null;
   created: string;
   updated: string;

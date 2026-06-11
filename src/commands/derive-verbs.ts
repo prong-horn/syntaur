@@ -18,10 +18,14 @@ import { resolveAssignmentById } from '../utils/assignment-resolver.js';
 import {
   parseAssignmentFrontmatter,
   updateAssignmentFile,
+  updateFactsMap,
   updateOverride,
   updatePlanApproval,
+  upsertAttestation,
 } from '../lifecycle/frontmatter.js';
-import { latestPlanFile, planDigest } from '../lifecycle/facts.js';
+import { canonicalizeFactValue, latestPlanFile, planDigest } from '../lifecycle/facts.js';
+import { captureHeadSha } from '../utils/git-worktree.js';
+import type { AttestationRecord } from '../lifecycle/types.js';
 import {
   recomputeAndWrite,
   resolveDeriveContext,
@@ -112,9 +116,10 @@ async function assertFact(
   cause: string,
   mutate: (content: string, target: ResolvedTarget) => Promise<string> | string,
   label: string,
+  extra?: { context?: DeriveContext; auditMutation?: boolean },
 ): Promise<RecomputeResult> {
   const target = await resolveTarget(assignment, options);
-  const context = await resolveDeriveContext();
+  const context = extra?.context ?? (await resolveDeriveContext());
 
   const result = await recomputeAndWrite(target.assignmentPath, {
     cause,
@@ -123,6 +128,7 @@ async function assertFact(
     context,
     reason: options.reason,
     mutate: (content) => mutate(content, target),
+    auditMutation: extra?.auditMutation,
   });
   if (result.deferredTerminal) {
     throw new Error(
@@ -164,6 +170,111 @@ export async function planApproveCommand(assignment: string, options: DeriveVerb
 
 export async function planUnapproveCommand(assignment: string, options: DeriveVerbOptions): Promise<void> {
   await assertFact(assignment, options, 'plan-unapprove', (content) => updatePlanApproval(content, null), 'Plan approval cleared');
+}
+
+// ── custom asserted facts + attestations ────────────────────────────────────
+
+/**
+ * `syntaur fact set <assignment> <name> <value>` — assert a declared bool/number
+ * custom fact through the assertFact spine. The name must be in the ACCEPTED
+ * declaration list (a collision-skipped / malformed declaration is "not declared"
+ * here too) and the value must coerce to the declared type. Records an audit
+ * entry even when no dimension moves (AC9). NOT gated on the migrate-derive
+ * marker — explicit verbs always run.
+ */
+export async function factSetCommand(
+  assignment: string,
+  name: string,
+  value: string,
+  options: DeriveVerbOptions,
+): Promise<void> {
+  const context = await resolveDeriveContext();
+  const decl = context.factDeclarations.find((d) => d.name === name);
+  if (!decl || (decl.type !== 'bool' && decl.type !== 'number')) {
+    throw new Error(
+      `"${name}" is not a declared custom fact (bool/number). Declare it under statuses.facts in config.md.`,
+    );
+  }
+  const canonical = canonicalizeFactValue(decl.type, value);
+  if (canonical === null) {
+    throw new Error(`"${value}" is not a valid ${decl.type} value for fact "${name}".`);
+  }
+  await assertFact(
+    assignment,
+    options,
+    'fact-set',
+    (content) => updateFactsMap(content, name, canonical),
+    `Fact ${name} = ${canonical}`,
+    { context, auditMutation: true },
+  );
+}
+
+/**
+ * `syntaur attest <assignment> <fact> [--agent] [--verdict] [--note]` — record
+ * an attestation (default verdict `approved`). The binding snapshot is captured
+ * inside the mutate transaction: binds:plan → latest plan file + digest (errors
+ * when no plan); binds:commit → workspace HEAD sha read off the fresh content
+ * (errors when unanchorable); binds:none → no snapshot. One record per actor —
+ * re-attesting replaces it. Records an audit entry (AC9).
+ */
+export async function attestCommand(
+  assignment: string,
+  fact: string,
+  options: DeriveVerbOptions & { verdict?: string; note?: string },
+): Promise<void> {
+  const context = await resolveDeriveContext();
+  const decl = context.factDeclarations.find((d) => d.name === fact);
+  if (!decl || decl.type !== 'attestation') {
+    throw new Error(
+      `"${fact}" is not a declared attestation fact. Declare it (type: attestation) under statuses.facts in config.md.`,
+    );
+  }
+  const rawVerdict = options.verdict ?? 'approved';
+  if (rawVerdict !== 'approved' && rawVerdict !== 'changes-requested') {
+    throw new Error(`Invalid verdict "${rawVerdict}" — expected approved or changes-requested.`);
+  }
+  const verdict = rawVerdict as 'approved' | 'changes-requested';
+  const actor = await inferActor(options);
+  const binds = decl.binds;
+
+  await assertFact(
+    assignment,
+    options,
+    'attest',
+    async (content, target) => {
+      const record: AttestationRecord = {
+        fact,
+        actor,
+        verdict,
+        at: nowTimestamp(),
+        ...(options.note ? { note: options.note } : {}),
+      };
+      if (binds === 'plan') {
+        const planFile = await latestPlanFile(target.assignmentDir);
+        if (!planFile) {
+          throw new Error(
+            'No plan file found (plan.md / plan-v*.md). Write a plan before attesting a binds:plan fact.',
+          );
+        }
+        const planContent = await readFile(resolve(target.assignmentDir, planFile), 'utf-8');
+        record.file = planFile;
+        record.digest = planDigest(planContent);
+      } else if (binds === 'commit') {
+        const fm = parseAssignmentFrontmatter(content);
+        const dir = fm.workspace.worktreePath ?? fm.workspace.repository;
+        const sha = dir ? await captureHeadSha(dir) : null;
+        if (!sha) {
+          throw new Error(
+            'Cannot record a binds:commit attestation — no workspace path is set or it is not a git repo. Set workspace.worktreePath/repository first.',
+          );
+        }
+        record.commit = sha;
+      }
+      return upsertAttestation(content, record);
+    },
+    `Attested ${fact} (${verdict})`,
+    { context, auditMutation: true },
+  );
 }
 
 // ── park / review / implementation facts ───────────────────────────────────

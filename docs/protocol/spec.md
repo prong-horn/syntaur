@@ -205,6 +205,8 @@ Every assignment has a `status` field in its frontmatter. The valid values are:
 | `completed` | Done. All acceptance criteria met. |
 | `failed` | Could not be completed. |
 
+**Custom statuses and derived status.** The table above is the built-in default set. Users may define their own status workflow (and the **derived-status** rules that compute `status` from objective facts) under a `statuses:` block in `~/.syntaur/config.md`. That block may also declare **custom facts** (`statuses.facts`) — config-declared `bool`/`number` values (asserted via `syntaur fact set`, stored in a `facts:` frontmatter map) and **attestation** facts (`syntaur attest`, stored in an `attestations:` frontmatter list) that model "agent reviewed revision with verdict" and self-invalidate when the plan digest or workspace commit moves. Declared facts are usable in `phaseLadder`/`disposition` conditions. See the `manage-statuses` skill for the full declaration syntax, the exported attestation fields, and revision-binding semantics; see `file-formats.md` §3 for the `facts:`/`attestations:` frontmatter shapes.
+
 ### Dependency Semantics
 
 Assignments declare dependencies via the `dependsOn` field, which lists assignment slugs. Dependency enforcement follows two distinct rules:

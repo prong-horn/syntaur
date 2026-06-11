@@ -489,6 +489,61 @@ export function AssignmentDetail() {
         ) : null}
       </div>
 
+      {/* Custom facts + attestations (server-derived; display-only). Renders
+          nothing for zero-config users and terminal assignments (derived: null). */}
+      {assignment.derived &&
+      (Object.keys(assignment.derived.customFacts ?? {}).length > 0 ||
+        (assignment.derived.attestations ?? []).length > 0) ? (
+        <SectionCard
+          title="Facts"
+          description="Custom asserted facts and review attestations, materialized server-side."
+        >
+          <div className="space-y-3">
+            {Object.keys(assignment.derived.customFacts ?? {}).length > 0 && (
+              <div className="flex flex-wrap items-center gap-2">
+                {Object.entries(assignment.derived.customFacts ?? {}).map(([name, value]) => (
+                  <span
+                    key={name}
+                    className="rounded-full border border-border/60 px-2 py-0.5 text-[11px] text-muted-foreground"
+                  >
+                    {name}: <span className="font-medium text-foreground">{String(value)}</span>
+                  </span>
+                ))}
+              </div>
+            )}
+            {(assignment.derived.attestations ?? []).map((att) => (
+              <div key={att.fact} className="flex flex-wrap items-center gap-2">
+                <span className="text-[11px] font-medium text-foreground">{att.fact}</span>
+                <span className="text-[11px] text-muted-foreground">({att.binds})</span>
+                {att.records.length === 0 ? (
+                  <span className="text-[11px] text-muted-foreground">— no attestations yet</span>
+                ) : (
+                  att.records.map((r) => (
+                    <span
+                      key={r.actor}
+                      title={`${r.verdict}${r.note ? ` — ${r.note}` : ''}${
+                        r.stale ? ' (stale — revision moved)' : ''
+                      } · ${r.at}`}
+                      className={cn(
+                        'rounded-full border px-2 py-0.5 text-[11px]',
+                        r.stale
+                          ? 'border-border/40 text-muted-foreground line-through'
+                          : r.verdict === 'approved'
+                            ? 'border-success-foreground/40 text-success-foreground'
+                            : 'border-warning-foreground/40 text-warning-foreground',
+                      )}
+                    >
+                      {r.actor}: {r.verdict === 'approved' ? 'approved' : 'changes'}
+                      {r.stale ? ' (stale)' : ''}
+                    </span>
+                  ))
+                )}
+              </div>
+            ))}
+          </div>
+        </SectionCard>
+      ) : null}
+
       {enrichedDeps.length > 0 && (
         <DependencyPanel
           projectSlug={slug!}

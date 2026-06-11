@@ -12,6 +12,7 @@ import { skillsChecks } from './checks/skills.js';
 import { crossAgentChecks } from './checks/cross-agent.js';
 import { bundleChecks } from './checks/bundles.js';
 import { pluginChecks } from './checks/plugin.js';
+import { deriveConfigChecks } from './checks/derive-config.js';
 
 export function allChecks(): Check[] {
   return [
@@ -28,5 +29,6 @@ export function allChecks(): Check[] {
     ...crossAgentChecks,
     ...bundleChecks,
     ...pluginChecks,
+    ...deriveConfigChecks,
   ];
 }

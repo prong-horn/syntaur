@@ -19,14 +19,14 @@
  *    pin CLI already refuses those).
  */
 
-import type { DeriveConfig } from '../utils/config.js';
+import type { DeriveConfig, FactDeclaration } from '../utils/config.js';
 import { compileNode, CompileError, parseQuery, type Predicate } from '../utils/query/index.js';
-import type { FieldRegistry } from '../utils/query/index.js';
+import { ASSIGNMENT_FIELDS, type FieldRegistry } from '../utils/query/index.js';
 import type { StatusOverride } from './types.js';
 
-/** The fact set dimensions derive from. Computed by `facts.ts` (Node) or
- * shipped in dashboard payloads (browser). */
-export interface AssignmentFacts {
+/** The fixed built-in fact set (the 14 derived-status v3 facts). Custom facts
+ * extend {@link AssignmentFacts} dynamically via the config-declared registry. */
+export interface BuiltinFacts {
   hasRealObjective: boolean;
   acRealTotal: number;
   acRealChecked: number;
@@ -42,6 +42,15 @@ export interface AssignmentFacts {
   reviewRequested: boolean;
   pinned: boolean;
 }
+
+/**
+ * The fact set dimensions derive from. Computed by `facts.ts` (Node) or shipped
+ * in dashboard payloads (browser). The 14 built-ins are always present; custom
+ * declared facts (bool/number) and attestation exports (`<name>`,
+ * `<name>Approved`, … as boolean / actor `string[]`) ride in the open index.
+ */
+export type AssignmentFacts = BuiltinFacts &
+  Record<string, boolean | number | string[]>;
 
 /**
  * Registry for derive conditions: facts only. Deliberately excludes
@@ -66,14 +75,139 @@ export const DERIVE_FIELDS: FieldRegistry = {
   pinned: { kind: 'bool' },
 };
 
-/** Validate one derive condition against the facts-only registry.
- * Returns an error message or null. Plugs into validateDeriveConfig. */
-export function validateDeriveCondition(when: string): string | null {
+/** Canonical export/registry names for one fact declaration. */
+export interface FactFieldNames {
+  /** Storage key in the `facts:` map = declared name verbatim. */
+  storageKey: string;
+  /** camelCase exported fact keys (attestations use all five; bool/number
+   * only use `fact`). */
+  exports: {
+    fact: string;
+    approved: string;
+    changesRequested: string;
+    by: string;
+    approvedBy: string;
+  };
+  /** Lowercased registry keys this declaration contributes (1 for bool/number,
+   * 5 for attestation) — the collision unit. */
+  registryKeys: string[];
+}
+
+/**
+ * THE one canonical naming helper (Locked Decisions): every consumer derives
+ * fact field names here so no path invents its own variant. For bool/number
+ * the single export is `<name>`; for attestation the five exports are `<name>`,
+ * `<name>Approved`, `<name>ChangesRequested`, `<name>By`, `<name>ApprovedBy`.
+ */
+export function factFieldNames(decl: FactDeclaration): FactFieldNames {
+  const name = decl.name;
+  const exportNames = {
+    fact: name,
+    approved: `${name}Approved`,
+    changesRequested: `${name}ChangesRequested`,
+    by: `${name}By`,
+    approvedBy: `${name}ApprovedBy`,
+  };
+  const registryKeys =
+    decl.type === 'attestation'
+      ? [
+          exportNames.fact,
+          exportNames.approved,
+          exportNames.changesRequested,
+          exportNames.by,
+          exportNames.approvedBy,
+        ].map((k) => k.toLowerCase())
+      : [exportNames.fact.toLowerCase()];
+  return { storageKey: name, exports: exportNames, registryKeys };
+}
+
+/**
+ * THE one collision filter (Locked Decisions): drop any declaration whose
+ * registry keys collide (case-insensitively) with a built-in field
+ * (`DERIVE_FIELDS` ∪ `ASSIGNMENT_FIELDS`) or an earlier-accepted declaration.
+ * Built-ins always win; first-declared wins among duplicates. Never throws — a
+ * bad config can't brick recompute; doctor (Task 4) surfaces the same collisions
+ * as errors. Returns the ACCEPTED list every consumer builds from.
+ */
+export function acceptFactDeclarations(declarations: FactDeclaration[]): FactDeclaration[] {
+  // DERIVE_FIELDS / ASSIGNMENT_FIELDS keys are already lowercase.
+  const taken = new Set<string>([
+    ...Object.keys(DERIVE_FIELDS),
+    ...Object.keys(ASSIGNMENT_FIELDS),
+  ]);
+  const accepted: FactDeclaration[] = [];
+  for (const decl of declarations) {
+    const keys = factFieldNames(decl).registryKeys;
+    if (keys.some((k) => taken.has(k))) continue; // collision — drop
+    for (const k of keys) taken.add(k);
+    accepted.push(decl);
+  }
+  return accepted;
+}
+
+/** Add one accepted declaration's fields to a registry (shared by derive +
+ * query registry builders so both speak the identical vocabulary). */
+function addFactFields(registry: FieldRegistry, decl: FactDeclaration): void {
+  const names = factFieldNames(decl);
+  if (decl.type === 'attestation') {
+    registry[names.exports.fact.toLowerCase()] = { kind: 'bool', get: (i) => i[names.exports.fact] };
+    registry[names.exports.approved.toLowerCase()] = {
+      kind: 'bool',
+      get: (i) => i[names.exports.approved],
+    };
+    registry[names.exports.changesRequested.toLowerCase()] = {
+      kind: 'bool',
+      get: (i) => i[names.exports.changesRequested],
+    };
+    // actor sets register as `list` — `:` equality + IN lists already have
+    // contains semantics there (query/fields.ts kind 'list').
+    registry[names.exports.by.toLowerCase()] = { kind: 'list', get: (i) => i[names.exports.by] };
+    registry[names.exports.approvedBy.toLowerCase()] = {
+      kind: 'list',
+      get: (i) => i[names.exports.approvedBy],
+    };
+  } else {
+    registry[names.exports.fact.toLowerCase()] = {
+      kind: decl.type,
+      get: (i) => i[names.exports.fact],
+    };
+  }
+}
+
+/**
+ * Build the DERIVE registry (facts only) from the ACCEPTED declaration list.
+ * Callers run the normalize→accept pipeline first and build ONE registry per
+ * config resolution (so the WeakMap compile cache stays warm across sweeps).
+ */
+export function buildDeriveRegistry(accepted: FactDeclaration[]): FieldRegistry {
+  const registry: FieldRegistry = { ...DERIVE_FIELDS };
+  for (const decl of accepted) addFactFields(registry, decl);
+  return registry;
+}
+
+/**
+ * Build the QUERY registry (full assignment vocabulary) from the ACCEPTED list —
+ * custom entries merged over `ASSIGNMENT_FIELDS` for ls/dashboard query paths.
+ * Same accepted input, same entries as {@link buildDeriveRegistry}.
+ */
+export function buildQueryRegistry(accepted: FactDeclaration[]): FieldRegistry {
+  const registry: FieldRegistry = { ...ASSIGNMENT_FIELDS };
+  for (const decl of accepted) addFactFields(registry, decl);
+  return registry;
+}
+
+/** Validate one derive condition against a field registry (defaults to the
+ * facts-only base). Returns an error message or null. Plugs into
+ * validateDeriveConfig; pass a custom registry to accept declared fact names. */
+export function validateDeriveCondition(
+  when: string,
+  registry: FieldRegistry = DERIVE_FIELDS,
+): string | null {
   if (when === '*') return null;
   const parsed = parseQuery(when);
   if (!parsed.ast) return parsed.errors[0]?.message ?? 'unparseable condition';
   try {
-    compileNode(parsed.ast, DERIVE_FIELDS);
+    compileNode(parsed.ast, registry);
     return null;
   } catch (err) {
     if (err instanceof CompileError) return err.errors[0]?.message ?? 'invalid condition';
@@ -94,15 +228,18 @@ export interface DerivedDimensions {
   nextAction: string | null;
 }
 
-// Compiled-condition cache, keyed by config object identity (config reloads
-// produce a new object → fresh cache). Matters for recompute-all sweeps.
-const conditionCache = new WeakMap<DeriveConfig, Map<string, Predicate>>();
+// Compiled-condition cache, keyed by REGISTRY object identity — config reloads
+// and config-resolution build a fresh registry → fresh cache. Keying by
+// registry (not config) lets all default-config derivations share the base
+// DERIVE_FIELDS cache, while a custom-vocabulary config gets its own. Callers
+// must build ONE registry per config resolution for sweeps to stay cached.
+const conditionCache = new WeakMap<FieldRegistry, Map<string, Predicate>>();
 
-function compiledWhen(derive: DeriveConfig, when: string): Predicate {
-  let cache = conditionCache.get(derive);
+function compiledWhen(registry: FieldRegistry, when: string): Predicate {
+  let cache = conditionCache.get(registry);
   if (!cache) {
     cache = new Map();
-    conditionCache.set(derive, cache);
+    conditionCache.set(registry, cache);
   }
   let pred = cache.get(when);
   if (!pred) {
@@ -113,7 +250,7 @@ function compiledWhen(derive: DeriveConfig, when: string): Predicate {
       if (!parsed.ast) {
         throw new CompileError(parsed.errors);
       }
-      pred = compileNode(parsed.ast, DERIVE_FIELDS);
+      pred = compileNode(parsed.ast, registry);
     }
     cache.set(when, pred);
   }
@@ -129,6 +266,11 @@ export interface DeriveInput {
   /** Defined status ids — headline targets outside this set fall back to phase. */
   knownStatusIds: ReadonlySet<string>;
   override: StatusOverride | null;
+  /** Field registry the `when` conditions compile against. Defaults to the base
+   * facts-only registry; callers with custom facts pass the resolution's
+   * `buildDeriveRegistry(...)` output (ONE per config resolution — see the
+   * compile-cache note). */
+  registry?: FieldRegistry;
 }
 
 /**
@@ -137,6 +279,7 @@ export interface DeriveInput {
  */
 export function deriveDimensions(input: DeriveInput): DerivedDimensions | null {
   const { facts, derive, currentStatus, terminalStatuses, knownStatusIds, override } = input;
+  const registry = input.registry ?? DERIVE_FIELDS;
 
   if (terminalStatuses.has(currentStatus)) return null;
 
@@ -150,7 +293,7 @@ export function deriveDimensions(input: DeriveInput): DerivedDimensions | null {
   let nextAction: string | null = derive.phaseLadder[0]?.next ?? null;
   for (let i = derive.phaseLadder.length - 1; i >= 0; i--) {
     const rung = derive.phaseLadder[i];
-    if (compiledWhen(derive, rung.when)(item, ctx)) {
+    if (compiledWhen(registry, rung.when)(item, ctx)) {
       phase = rung.phase;
       nextAction = rung.next ?? null;
       break;
@@ -160,7 +303,7 @@ export function deriveDimensions(input: DeriveInput): DerivedDimensions | null {
   // Disposition: first match wins; `when: null` is the else arm.
   let disposition: DerivedDimensions['disposition'] = 'active';
   for (const rule of derive.disposition) {
-    if (rule.when === null || compiledWhen(derive, rule.when)(item, ctx)) {
+    if (rule.when === null || compiledWhen(registry, rule.when)(item, ctx)) {
       disposition = rule.is as DerivedDimensions['disposition'];
       break;
     }

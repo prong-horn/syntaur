@@ -6,10 +6,15 @@ import { nowTimestamp } from '../utils/timestamp.js';
 import {
   readConfig,
   buildDefaultStatusConfig,
+  normalizeFactDeclarations,
   toTitleCase,
   type StatusTransition,
   type DeriveConfig,
+  type FactDeclaration,
+  type RawFactDeclaration,
 } from '../utils/config.js';
+import { acceptFactDeclarations, buildDeriveRegistry } from '../lifecycle/derive.js';
+import type { FieldRegistry } from '../utils/query/index.js';
 import { resolvePlaybookSlug } from '../utils/playbooks.js';
 import { migrateLegacyProjectFiles, migrateLegacyArchivedProjects } from '../utils/fs-migration.js';
 import { resolveAssignmentById, type ResolvedAssignment } from '../utils/assignment-resolver.js';
@@ -414,6 +419,17 @@ interface ResolvedStatusConfig {
    * DEFAULT_DERIVE_CONFIG at the derivation call site, NOT here, so the
    * Settings writer can distinguish "user customized" from "defaults"). */
   derive: DeriveConfig | null;
+  /** RAW custom-fact declarations (verbatim) — what the Settings writer passes
+   * back to `writeStatusConfig` so a Settings save can't silently delete the
+   * user's `statuses.facts` (same bug class as `derive`). */
+  facts: RawFactDeclaration[] | null;
+  /** ACCEPTED declarations (normalize→accept) — drives `customFacts` extraction
+   * and the registry; collision-skipped/malformed rows are absent here. */
+  factDeclarations: FactDeclaration[];
+  /** Derive registry built ONCE per cached resolution from the accepted list —
+   * reused across requests so the WeakMap compile-cache stays warm (no
+   * per-request registry construction in buildDerivedDetail). */
+  deriveRegistry: FieldRegistry;
 }
 
 let _cachedConfig: ResolvedStatusConfig | null = null;
@@ -443,6 +459,7 @@ export async function getStatusConfig(): Promise<ResolvedStatusConfig> {
           const [from, command] = key.split(':');
           return { from, command, to };
         });
+    const accepted = acceptFactDeclarations(normalizeFactDeclarations(config.statuses.facts ?? null));
     _cachedConfig = {
       custom: true,
       statuses: config.statuses.statuses,
@@ -451,6 +468,9 @@ export async function getStatusConfig(): Promise<ResolvedStatusConfig> {
       transitionTable: buildTransitionTable(effectiveTransitions),
       terminalStatuses: terminalSet.size > 0 ? terminalSet : new Set(['completed', 'failed']),
       derive: config.statuses.derive ?? null,
+      facts: config.statuses.facts ?? null,
+      factDeclarations: accepted,
+      deriveRegistry: buildDeriveRegistry(accepted),
     };
   } else {
     // Shared default builder so the dashboard and the `syntaur status` CLI
@@ -464,6 +484,9 @@ export async function getStatusConfig(): Promise<ResolvedStatusConfig> {
       transitionTable: DEFAULT_TRANSITION_TABLE,
       terminalStatuses: new Set(['completed', 'failed']),
       derive: null,
+      facts: null,
+      factDeclarations: [],
+      deriveRegistry: buildDeriveRegistry([]),
     };
   }
 
@@ -2083,19 +2106,23 @@ async function buildDerivedDetail(
   const config = await getStatusConfig();
   if (config.terminalStatuses.has(assignment.status)) return null;
   try {
-    const { computeFacts } = await import('../lifecycle/facts.js');
+    const { computeFactsDetailed } = await import('../lifecycle/facts.js');
     const { deriveDimensions } = await import('../lifecycle/derive.js');
     const { DEFAULT_DERIVE_CONFIG } = await import('../utils/config.js');
-    const facts = await computeFacts({
+    // ONE compute pass: facts (custom + attestation exports) and per-record
+    // validity come from the same plan-file / HEAD reads. Fresh-per-request is
+    // what makes binds:commit lazy convergence honest (Locked Decisions).
+    const { facts, attestations } = await computeFactsDetailed({
       assignmentDir,
       frontmatter: {
         ...assignment,
-        // AssignmentRecord ⊃ the fields computeFacts reads; statusHistory and
-        // derived caches ride along untouched.
+        // AssignmentRecord ⊃ the fields computeFacts reads (incl. facts +
+        // attestations from the parser); statusHistory + derived caches ride along.
       } as unknown as import('../lifecycle/types.js').AssignmentFrontmatter,
       body: assignment.body,
       projectDir,
       terminalStatuses: config.terminalStatuses,
+      declarations: config.factDeclarations,
     });
     const dims = deriveDimensions({
       facts,
@@ -2104,12 +2131,36 @@ async function buildDerivedDetail(
       terminalStatuses: config.terminalStatuses,
       knownStatusIds: new Set(config.statuses.map((s) => s.id)),
       override: assignment.override,
+      registry: config.deriveRegistry,
     });
     if (!dims) return null;
+
+    // customFacts: declared bool/number values only — the client renders them
+    // without guessing which keys are built-ins (the server separated them).
+    const customFacts: Record<string, boolean | number> = {};
+    for (const decl of config.factDeclarations) {
+      if (decl.type === 'bool' || decl.type === 'number') {
+        const v = facts[decl.name];
+        if (typeof v === 'boolean' || typeof v === 'number') customFacts[decl.name] = v;
+      }
+    }
+
     return {
       derivedStatus: dims.derivedStatus,
       nextAction: dims.nextAction,
-      facts: facts as unknown as Record<string, boolean | number>,
+      facts: facts as unknown as Record<string, boolean | number | string[]>,
+      customFacts,
+      attestations: attestations.map((a) => ({
+        fact: a.fact,
+        binds: a.binds,
+        records: a.records.map(({ record, valid }) => ({
+          actor: record.actor,
+          verdict: record.verdict,
+          at: record.at,
+          note: record.note ?? null,
+          stale: !valid,
+        })),
+      })),
     };
   } catch (err) {
     // Best-effort enrichment, never a 500 — but not silent (codex finding 12).

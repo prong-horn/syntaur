@@ -12,8 +12,10 @@ import { createHash } from 'node:crypto';
 import { readdir, readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { fileExists } from '../utils/fs.js';
-import type { AssignmentFacts } from './derive.js';
-import type { AssignmentFrontmatter } from './types.js';
+import { captureHeadSha } from '../utils/git-worktree.js';
+import { type AssignmentFacts, factFieldNames } from './derive.js';
+import type { AssignmentFrontmatter, AttestationRecord } from './types.js';
+import type { FactDeclaration } from '../utils/config.js';
 
 /** Matches the assignment template's placeholder list items / comments. */
 const HTML_COMMENT_RE = /<!--[\s\S]*?-->/g;
@@ -152,11 +154,90 @@ export interface ComputeFactsInput {
   /** Project dir for dependency checks; null for standalone assignments. */
   projectDir: string | null;
   terminalStatuses: ReadonlySet<string>;
+  /** The ACCEPTED custom-fact declarations (normalize→accept output). Absent →
+   * only the 14 built-ins materialize. */
+  declarations?: FactDeclaration[];
 }
 
-/** Materialize the full fact set for one assignment. */
-export async function computeFacts(input: ComputeFactsInput): Promise<AssignmentFacts> {
+/**
+ * Canonical fact-value coercion (Locked Decisions — used by BOTH facts.ts and
+ * the CLI). bool → case-insensitive `true`/`false` only; number → trimmed,
+ * `Number(value)` finite (rejects NaN/Infinity/empty). Returns the canonical
+ * stored form (`'true'`/`'false'` or `String(n)`) or null if invalid. The CLI
+ * rejects null with the declared type; computeFacts treats null as absent.
+ */
+export function canonicalizeFactValue(type: 'bool' | 'number', raw: string): string | null {
+  const t = raw.trim();
+  if (type === 'bool') {
+    const low = t.toLowerCase();
+    if (low === 'true') return 'true';
+    if (low === 'false') return 'false';
+    return null;
+  }
+  if (t === '') return null;
+  const n = Number(t);
+  return Number.isFinite(n) ? String(n) : null;
+}
+
+/** Read a stored bool fact, degrading absent/invalid to false (never throws). */
+function readBoolFact(raw: string | undefined): boolean {
+  if (typeof raw !== 'string') return false;
+  return canonicalizeFactValue('bool', raw) === 'true';
+}
+
+/** Read a stored number fact, degrading absent/invalid to 0 (never throws). */
+function readNumberFact(raw: string | undefined): number {
+  if (typeof raw !== 'string') return 0;
+  const c = canonicalizeFactValue('number', raw);
+  return c === null ? 0 : Number(c);
+}
+
+/** Per-attestation-fact validity detail (one record list per declared fact). */
+export interface AttestationDetail {
+  fact: string;
+  binds: 'plan' | 'commit' | 'none';
+  records: Array<{ record: AttestationRecord; valid: boolean }>;
+}
+
+export interface ComputeFactsResult {
+  facts: AssignmentFacts;
+  attestations: AttestationDetail[];
+}
+
+/** Resolved-once binding environment for attestation validity. */
+interface AttestationEnv {
+  latestPlanFile: string | null;
+  /** Digest of the latest plan file's CURRENT content (null when no plan). */
+  planDigest: string | null;
+  /** Workspace HEAD sha (null when no workspace / not a git dir). */
+  headSha: string | null;
+}
+
+function isAttestationValid(
+  record: AttestationRecord,
+  binds: 'plan' | 'commit' | 'none',
+  env: AttestationEnv,
+): boolean {
+  if (binds === 'none') return true;
+  if (binds === 'plan') {
+    if (!record.file || !env.latestPlanFile || record.file !== env.latestPlanFile) return false;
+    if (!record.digest || !env.planDigest) return false;
+    return record.digest === env.planDigest;
+  }
+  // binds:commit
+  if (!record.commit || !env.headSha) return false;
+  return record.commit === env.headSha;
+}
+
+/**
+ * Materialize the full fact set PLUS per-attestation validity in ONE pass —
+ * the dashboard (Task 9) calls this once per detail request so facts and
+ * record-level staleness come from the same plan-file / HEAD reads. `computeFacts`
+ * is a thin delegate returning just `.facts`.
+ */
+export async function computeFactsDetailed(input: ComputeFactsInput): Promise<ComputeFactsResult> {
   const { assignmentDir, frontmatter, body, projectDir, terminalStatuses } = input;
+  const declarations = input.declarations ?? [];
 
   const ac = countRealAcceptanceCriteria(body);
   const [planFile, planApproved, unresolvedQuestions, depsSatisfied] = await Promise.all([
@@ -166,7 +247,7 @@ export async function computeFacts(input: ComputeFactsInput): Promise<Assignment
     areDependenciesSatisfied(projectDir, frontmatter.dependsOn, terminalStatuses),
   ]);
 
-  return {
+  const facts: AssignmentFacts = {
     hasRealObjective: hasRealObjective(body),
     acRealTotal: ac.total,
     acRealChecked: ac.checked,
@@ -182,4 +263,64 @@ export async function computeFacts(input: ComputeFactsInput): Promise<Assignment
     reviewRequested: frontmatter.reviewRequested,
     pinned: frontmatter.override !== null,
   };
+
+  const attestations: AttestationDetail[] = [];
+  if (declarations.length > 0) {
+    const storedFacts = frontmatter.facts ?? {};
+    const records = frontmatter.attestations ?? [];
+
+    // Custom bool/number facts (absent/invalid stored values degrade, no throw).
+    for (const decl of declarations) {
+      if (decl.type === 'bool') facts[decl.name] = readBoolFact(storedFacts[decl.name]);
+      else if (decl.type === 'number') facts[decl.name] = readNumberFact(storedFacts[decl.name]);
+    }
+
+    // Attestation facts — resolve the binding env ONCE, then evaluate each.
+    const attestationDecls = declarations.filter(
+      (d): d is Extract<FactDeclaration, { type: 'attestation' }> => d.type === 'attestation',
+    );
+    if (attestationDecls.length > 0) {
+      const needsPlan = attestationDecls.some((d) => d.binds === 'plan');
+      const needsCommit = attestationDecls.some((d) => d.binds === 'commit');
+      let planDigestVal: string | null = null;
+      if (needsPlan && planFile) {
+        try {
+          const content = await readFile(resolve(assignmentDir, planFile), 'utf-8');
+          planDigestVal = planDigest(content);
+        } catch {
+          planDigestVal = null;
+        }
+      }
+      let headSha: string | null = null;
+      if (needsCommit) {
+        const dir = frontmatter.workspace.worktreePath ?? frontmatter.workspace.repository;
+        headSha = dir ? await captureHeadSha(dir) : null;
+      }
+      const env: AttestationEnv = { latestPlanFile: planFile, planDigest: planDigestVal, headSha };
+
+      for (const decl of attestationDecls) {
+        const detailRecords = records
+          .filter((r) => r.fact === decl.name)
+          .map((record) => ({ record, valid: isAttestationValid(record, decl.binds, env) }));
+        attestations.push({ fact: decl.name, binds: decl.binds, records: detailRecords });
+
+        const valid = detailRecords.filter((r) => r.valid).map((r) => r.record);
+        const validApproved = valid.filter((r) => r.verdict === 'approved');
+        const validChanges = valid.filter((r) => r.verdict === 'changes-requested');
+        const names = factFieldNames(decl);
+        facts[names.exports.fact] = valid.length > 0;
+        facts[names.exports.approved] = validApproved.length > 0;
+        facts[names.exports.changesRequested] = validChanges.length > 0;
+        facts[names.exports.by] = valid.map((r) => r.actor);
+        facts[names.exports.approvedBy] = validApproved.map((r) => r.actor);
+      }
+    }
+  }
+
+  return { facts, attestations };
+}
+
+/** Materialize the full fact set for one assignment (thin delegate). */
+export async function computeFacts(input: ComputeFactsInput): Promise<AssignmentFacts> {
+  return (await computeFactsDetailed(input)).facts;
 }

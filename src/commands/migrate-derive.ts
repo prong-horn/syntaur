@@ -166,6 +166,7 @@ export async function migrateDeriveCommand(options: MigrateDeriveOptions): Promi
         body,
         projectDir: target.projectDir,
         terminalStatuses: context.terminalStatuses,
+        declarations: context.factDeclarations,
       });
       const dims = deriveDimensions({
         facts,
@@ -174,6 +175,7 @@ export async function migrateDeriveCommand(options: MigrateDeriveOptions): Promi
         terminalStatuses: context.terminalStatuses,
         knownStatusIds: context.knownStatusIds,
         override: seededFm.override,
+        registry: context.registry,
       });
       if (dims && dims.status !== fm.status) {
         divergences.push({ ref: target.ref, before: fm.status, after: dims.status, phase: dims.phase });

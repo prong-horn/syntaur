@@ -6,8 +6,10 @@ import { defaultProjectDir, assignmentsDir as standaloneAssignmentsDir } from '.
 import { fileExists } from '../utils/fs.js';
 import { parseAssignmentFrontmatter } from '../lifecycle/frontmatter.js';
 import { computeFacts } from '../lifecycle/facts.js';
+import { buildQueryRegistry } from '../lifecycle/derive.js';
 import { resolveDeriveContext } from '../lifecycle/recompute.js';
 import { compileQuery, type QueryItem } from '../utils/query/index.js';
+import type { FactDeclaration } from '../utils/config.js';
 import type { AssignmentBoardItem } from '../dashboard/types.js';
 
 interface LsOptions {
@@ -104,16 +106,25 @@ export async function runLs(
   }
 
   if (options.query) {
-    const { query, errors } = compileQuery(options.query);
+    // Resolve the derive context FIRST so the query compiles against the custom
+    // vocabulary (declared facts + attestation exports), then materialize each
+    // item with the same declarations so the spread carries those fields.
+    const context = await resolveDeriveContext();
+    const { query, errors } = compileQuery(
+      options.query,
+      buildQueryRegistry(context.factDeclarations),
+    );
     if (!query) {
       throw new Error(
         `Invalid --query:\n${errors.map((e) => `  at ${e.pos}: ${e.message}`).join('\n')}`,
       );
     }
-    const context = await resolveDeriveContext();
     const now = Date.now();
     const enriched = await Promise.all(
-      items.map(async (item) => ({ item, q: await loadQueryItem(item, context.terminalStatuses, now) })),
+      items.map(async (item) => ({
+        item,
+        q: await loadQueryItem(item, context.terminalStatuses, now, context.factDeclarations),
+      })),
     );
     items = enriched.filter(({ q }) => q !== null && query.predicate(q, { now })).map(({ item }) => item);
   }
@@ -130,6 +141,7 @@ async function loadQueryItem(
   item: AssignmentBoardItem,
   terminalStatuses: ReadonlySet<string>,
   now: number,
+  declarations: FactDeclaration[],
 ): Promise<QueryItem | null> {
   const path = assignmentMdPath(item);
   if (!(await fileExists(path))) return null;
@@ -139,7 +151,7 @@ async function loadQueryItem(
     const body = content.replace(/^---\n[\s\S]*?\n---/, '');
     const assignmentDir = dirname(path);
     const projectDir = item.projectSlug ? resolve(defaultProjectDir(), item.projectSlug) : null;
-    const facts = await computeFacts({ assignmentDir, frontmatter: fm, body, projectDir, terminalStatuses });
+    const facts = await computeFacts({ assignmentDir, frontmatter: fm, body, projectDir, terminalStatuses, declarations });
 
     // history virtuals: completedAt (currently-terminal only) + statusAge
     // (time since last HEADLINE change — dimension-only entries don't reset it)

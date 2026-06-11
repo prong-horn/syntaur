@@ -22,6 +22,8 @@ import {
   type SessionInvocation,
 } from './agents-schema.js';
 import { isValidSlug } from './slug.js';
+import { DERIVE_FIELDS, factFieldNames } from '../lifecycle/derive.js';
+import { ASSIGNMENT_FIELDS } from './query/index.js';
 
 export {
   AGENT_ID_PATTERN,
@@ -115,6 +117,55 @@ export const DEFAULT_DERIVE_CONFIG: DeriveConfig = {
   headline: { terminal: 'passthrough', parked: 'parked', blocked: 'blocked', active: 'phase' },
 };
 
+/**
+ * A custom-fact declaration EXACTLY as parsed from `statuses.facts` — loose
+ * parse (Locked Decisions): every field is a raw string so user input
+ * round-trips through serialization even when invalid. The strict
+ * {@link FactDeclaration} is derived from this via {@link normalizeFactDeclarations}.
+ */
+export interface RawFactDeclaration {
+  name: string;
+  type: string;
+  binds: string | null;
+}
+
+/**
+ * A VALIDATED custom-fact declaration (strict union). bool/number facts are
+ * asserted values stored in the `facts:` frontmatter map; attestation facts
+ * model "agent reviewed revision with verdict" and carry a revision binding.
+ */
+export type FactDeclaration =
+  | { name: string; type: 'bool' | 'number' }
+  | { name: string; type: 'attestation'; binds: 'plan' | 'commit' | 'none' };
+
+/**
+ * Narrow raw declarations to the strict union, DROPPING malformed rows (bad
+ * name format / unknown type / invalid binds) — never throws. The single
+ * bridge every consumer crosses before the collision filter
+ * (`acceptFactDeclarations`). `validateFactDeclarations` diagnoses the raw rows
+ * so doctor can report exactly what this drops.
+ */
+export function normalizeFactDeclarations(
+  raw: RawFactDeclaration[] | null | undefined,
+): FactDeclaration[] {
+  const out: FactDeclaration[] = [];
+  for (const row of raw ?? []) {
+    if (!row || typeof row.name !== 'string') continue;
+    const name = row.name.trim();
+    if (!/^[a-z][a-zA-Z0-9]*$/.test(name)) continue;
+    const type = (row.type ?? '').trim();
+    if (type === 'bool' || type === 'number') {
+      out.push({ name, type });
+    } else if (type === 'attestation') {
+      const binds = (row.binds ?? 'none').toString().trim() || 'none';
+      if (binds === 'plan' || binds === 'commit' || binds === 'none') {
+        out.push({ name, type: 'attestation', binds });
+      }
+    }
+  }
+  return out;
+}
+
 export interface StatusConfig {
   statuses: StatusDefinition[];
   order: string[];
@@ -122,6 +173,10 @@ export interface StatusConfig {
   /** Derived-status rules (v3). Null/absent → DEFAULT_DERIVE_CONFIG at resolve
    * time. Persisted under `statuses:` so the Settings writer round-trips it. */
   derive?: DeriveConfig | null;
+  /** Custom-fact declarations (raw — see {@link RawFactDeclaration}). Persisted
+   * under `statuses.facts`; preserved verbatim so invalid rows round-trip and
+   * doctor can diagnose them. Null/absent → no custom vocabulary. */
+  facts?: RawFactDeclaration[] | null;
 }
 
 export interface TypeDefinition {
@@ -464,6 +519,7 @@ export function parseStatusConfig(content: string): StatusConfig | null {
   const phaseLadder: PhaseRung[] = [];
   const disposition: DispositionRule[] = [];
   const headline: Record<string, string> = {};
+  const facts: RawFactDeclaration[] = [];
 
   // Strip surrounding quotes from a YAML scalar (AQL conditions are quoted).
   const unquote = (v: string): string => {
@@ -484,6 +540,7 @@ export function parseStatusConfig(content: string): StatusConfig | null {
     | 'phaseLadder'
     | 'disposition'
     | 'headline'
+    | 'facts'
     | null = null;
   const lines = remaining.split('\n');
 
@@ -523,6 +580,7 @@ export function parseStatusConfig(content: string): StatusConfig | null {
       else if (key === 'phaseLadder') currentSection = 'phaseLadder';
       else if (key === 'disposition') currentSection = 'disposition';
       else if (key === 'headline') currentSection = 'headline';
+      else if (key === 'facts') currentSection = 'facts';
       else currentSection = null;
       continue;
     }
@@ -598,6 +656,21 @@ export function parseStatusConfig(content: string): StatusConfig | null {
       }
       continue;
     }
+
+    if (currentSection === 'facts' && indent >= 4 && trimmed.startsWith('- ')) {
+      // Loose parse: keep every field verbatim (RawFactDeclaration) so invalid
+      // rows round-trip and doctor can diagnose them. normalize/accept narrow.
+      const { entry, consumed } = parseListEntry(lineIdx, indent);
+      if (entry['name'] !== undefined) {
+        facts.push({
+          name: unquote(entry['name']),
+          type: entry['type'] !== undefined ? unquote(entry['type']) : '',
+          binds: entry['binds'] !== undefined ? unquote(entry['binds']) : null,
+        });
+      }
+      lineIdx += consumed - 1;
+      continue;
+    }
   }
 
   if (statuses.length === 0) return null;
@@ -621,6 +694,7 @@ export function parseStatusConfig(content: string): StatusConfig | null {
     order: order.length > 0 ? order : statuses.map((s) => s.id),
     transitions,
     derive,
+    facts: facts.length > 0 ? facts : null,
   };
 }
 
@@ -702,6 +776,20 @@ export function serializeStatusConfig(statuses: StatusConfig): string {
     }
   }
 
+  // custom fact declarations — emitted verbatim (RawFactDeclaration) so the
+  // round-trip preserves whatever the user wrote, even invalid rows that the
+  // normalize/accept pipeline later drops. Same silent-deletion class as derive.
+  if (statuses.facts && statuses.facts.length > 0) {
+    lines.push('  facts:');
+    for (const f of statuses.facts) {
+      lines.push(`    - name: ${f.name}`);
+      lines.push(`      type: ${f.type}`);
+      if (f.binds !== null && f.binds !== undefined) {
+        lines.push(`      binds: ${f.binds}`);
+      }
+    }
+  }
+
   // derive rules (derived-status v3) — serialized so every writeStatusConfig
   // round-trip preserves them (the pre-v3 writer rebuilt the block from
   // definitions/order/transitions only and silently deleted custom rules).
@@ -778,6 +866,63 @@ export function validateDeriveConfig(
       problems.push(
         `headline.${key} → "${derive.headline[key]}" is not a defined status id (add the definition or run migrate-derive)`,
       );
+    }
+  }
+  return problems;
+}
+
+/**
+ * Diagnose RAW fact declarations (Task 4): returns one human-readable problem
+ * per malformed/colliding row — exactly what the normalize→accept pipeline will
+ * drop, so doctor reports nothing silently. Checks name format, type/binds, and
+ * case-insensitive collision of EVERY exported key (the declared name and, for
+ * attestations, all four generated names) against `DERIVE_FIELDS`,
+ * `ASSIGNMENT_FIELDS`, or an earlier declaration's exported keys. Works with
+ * `derive: null` — declarations validate independently of derive rules.
+ */
+export function validateFactDeclarations(raw: RawFactDeclaration[]): string[] {
+  const problems: string[] = [];
+  // DERIVE_FIELDS / ASSIGNMENT_FIELDS keys are already lowercase.
+  const builtins = new Set<string>([
+    ...Object.keys(DERIVE_FIELDS),
+    ...Object.keys(ASSIGNMENT_FIELDS),
+  ]);
+  const seen = new Map<string, string>(); // lowercased export key → owning declared name
+  for (const row of raw ?? []) {
+    const name = (row?.name ?? '').trim();
+    if (!/^[a-z][a-zA-Z0-9]*$/.test(name)) {
+      problems.push(
+        `fact "${row?.name ?? ''}": invalid name — must match /^[a-z][a-zA-Z0-9]*$/`,
+      );
+      continue;
+    }
+    const type = (row.type ?? '').trim();
+    if (type !== 'bool' && type !== 'number' && type !== 'attestation') {
+      problems.push(
+        `fact "${name}": invalid type "${row.type ?? ''}" — expected bool, number, or attestation`,
+      );
+      continue;
+    }
+    if (type === 'attestation') {
+      const binds = (row.binds ?? 'none').toString().trim() || 'none';
+      if (binds !== 'plan' && binds !== 'commit' && binds !== 'none') {
+        problems.push(
+          `fact "${name}": invalid binds "${row.binds}" — expected plan, commit, or none`,
+        );
+        continue;
+      }
+    }
+    // Collision check across ALL exported keys (binds is irrelevant to names).
+    const decl: FactDeclaration =
+      type === 'attestation' ? { name, type, binds: 'none' } : { name, type };
+    for (const key of factFieldNames(decl).registryKeys) {
+      if (builtins.has(key)) {
+        problems.push(`fact "${name}": exported field "${key}" collides with a built-in field`);
+      } else if (seen.has(key) && seen.get(key) !== name) {
+        problems.push(`fact "${name}": exported field "${key}" collides with fact "${seen.get(key)}"`);
+      } else {
+        seen.set(key, name);
+      }
     }
   }
   return problems;

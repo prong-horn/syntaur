@@ -1,5 +1,6 @@
 import type {
   AssignmentFrontmatter,
+  AttestationRecord,
   ExternalId,
   PlanApproval,
   StatusHistoryEntry,
@@ -206,6 +207,79 @@ function parseOverride(frontmatter: string): StatusOverride | null {
   };
 }
 
+/**
+ * Parse the `facts:` map (custom asserted fact values). Reuses
+ * {@link parseNestedBlock}: absent/null block → `{}`; entries whose value is
+ * null (empty / `null` / `~`) are DROPPED; remaining values kept as trimmed
+ * strings (parseSimpleValue already trims + strips quotes). Typed coercion
+ * against declarations happens in facts.ts — hand-edited garbage degrades there.
+ */
+function parseFactsMap(frontmatter: string): Record<string, string> {
+  const block = parseNestedBlock(frontmatter, 'facts');
+  if (!block) return {};
+  const out: Record<string, string> = {};
+  for (const [k, v] of Object.entries(block)) {
+    if (v === null) continue;
+    out[k] = v;
+  }
+  return out;
+}
+
+/**
+ * Parse the `attestations:` record list. Modeled on {@link parseStatusHistory}
+ * (same end-of-input-safe line scan). Records missing any required key
+ * (fact/actor/verdict/at) or carrying an unknown verdict are dropped.
+ */
+function parseAttestations(frontmatter: string): AttestationRecord[] {
+  if (/^attestations:\s*\[\s*\]/m.test(frontmatter)) return [];
+
+  const headerMatch = frontmatter.match(/^attestations:\s*$/m);
+  if (!headerMatch) return [];
+
+  const headerStart = headerMatch.index ?? frontmatter.indexOf(headerMatch[0]);
+  const bodyStart = headerStart + headerMatch[0].length + 1; // skip the trailing \n
+  const after = frontmatter.slice(bodyStart);
+
+  const bodyLines: string[] = [];
+  for (const line of after.split('\n')) {
+    if (line.length === 0) {
+      bodyLines.push(line);
+      continue;
+    }
+    if (line[0] !== ' ' && line[0] !== '\t') break;
+    bodyLines.push(line);
+  }
+  const body = bodyLines.join('\n');
+
+  const results: AttestationRecord[] = [];
+  const itemBlocks = body.split(/\n\s+-\s+/).filter((b) => b.trim().length > 0);
+  for (const block of itemBlocks) {
+    const entry: Record<string, string | null> = {};
+    for (const line of block.split('\n')) {
+      const colonIdx = line.indexOf(':');
+      if (colonIdx < 0) continue;
+      const key = line.slice(0, colonIdx).trim().replace(/^-\s+/, '');
+      if (!key) continue;
+      entry[key] = parseSimpleValue(line.slice(colonIdx + 1));
+    }
+    const verdict = entry['verdict'];
+    if (!entry['fact'] || !entry['actor'] || !verdict || !entry['at']) continue;
+    if (verdict !== 'approved' && verdict !== 'changes-requested') continue;
+    const record: AttestationRecord = {
+      fact: entry['fact'],
+      actor: entry['actor'],
+      verdict,
+      at: entry['at'],
+    };
+    if (entry['note'] != null) record.note = entry['note'];
+    if (entry['file'] != null) record.file = entry['file'];
+    if (entry['digest'] != null) record.digest = entry['digest'];
+    if (entry['commit'] != null) record.commit = entry['commit'];
+    results.push(record);
+  }
+  return results;
+}
+
 function parseWorkspace(frontmatter: string): Workspace {
   const defaults: Workspace = {
     repository: null,
@@ -276,6 +350,8 @@ export function parseAssignmentFrontmatter(fileContent: string): AssignmentFront
     reviewRequested: getField('reviewRequested') === 'true',
     implementationStarted: getField('implementationStarted') === 'true',
     override: parseOverride(frontmatter),
+    facts: parseFactsMap(frontmatter),
+    attestations: parseAttestations(frontmatter),
   };
 }
 
@@ -587,6 +663,95 @@ export function updateOverride(fileContent: string, override: StatusOverride | n
       ? null
       : { status: override.status, source: override.source, reason: override.reason, at: override.at },
   );
+}
+
+/**
+ * Set one custom fact value in the `facts:` map (read-modify-write the whole
+ * map through {@link updateNestedBlock}). `value` must already be the CANONICAL
+ * serialization (`'true'`/`'false'` / `String(n)`) — the CLI coerces before
+ * calling. Dedicated block writer (like {@link updatePlanApproval}); no
+ * `updateAssignmentFile` whitelist entry needed.
+ */
+export function updateFactsMap(fileContent: string, name: string, value: string): string {
+  const [frontmatter] = extractFrontmatter(fileContent);
+  const current = parseFactsMap(frontmatter);
+  current[name] = value;
+  return updateNestedBlock(fileContent, 'facts', current);
+}
+
+function renderAttestationItem(r: AttestationRecord): string {
+  const lines = [
+    `  - fact: ${formatYamlValue(r.fact)}`,
+    `    actor: ${formatYamlValue(r.actor)}`,
+    `    verdict: ${formatYamlValue(r.verdict)}`,
+    `    at: ${formatYamlValue(r.at)}`,
+  ];
+  if (r.note !== undefined && r.note !== null) lines.push(`    note: ${formatYamlValue(r.note)}`);
+  if (r.file !== undefined && r.file !== null) lines.push(`    file: ${formatYamlValue(r.file)}`);
+  if (r.digest !== undefined && r.digest !== null) lines.push(`    digest: ${formatYamlValue(r.digest)}`);
+  if (r.commit !== undefined && r.commit !== null) lines.push(`    commit: ${formatYamlValue(r.commit)}`);
+  return lines.join('\n');
+}
+
+/**
+ * Locate the `attestations:` block (multi-line list form). Mirrors
+ * {@link findStatusHistoryBlock}; returns null when no block header.
+ */
+function findAttestationsBlock(
+  fmBlock: string,
+): { headerStart: number; bodyStart: number; bodyEnd: number } | null {
+  const headerMatch = fmBlock.match(/^attestations:\s*$/m);
+  if (!headerMatch) return null;
+  const headerStart = headerMatch.index ?? fmBlock.indexOf(headerMatch[0]);
+  const bodyStart = headerStart + headerMatch[0].length + 1; // skip the trailing \n
+  const after = fmBlock.slice(bodyStart);
+  const lines = after.split('\n');
+  let consumed = 0;
+  for (const line of lines) {
+    if (line.length === 0) {
+      consumed += line.length + 1;
+      continue;
+    }
+    if (line[0] !== ' ' && line[0] !== '\t') break;
+    consumed += line.length + 1;
+  }
+  const bodyEnd = Math.min(bodyStart + consumed, fmBlock.length);
+  return { headerStart, bodyStart, bodyEnd };
+}
+
+/**
+ * Upsert one attestation record into the `attestations:` frontmatter list:
+ * any existing record with the same (fact, actor) is replaced, then the whole
+ * block is re-rendered. Robust to no key / inline `[]` / existing block, like
+ * {@link appendStatusHistoryEntry}.
+ */
+export function upsertAttestation(fileContent: string, record: AttestationRecord): string {
+  const fmMatch = fileContent.match(/^(---\n)([\s\S]*?)(\n---)/);
+  if (!fmMatch) {
+    throw new Error('No frontmatter found in assignment file. Expected --- delimiters.');
+  }
+  const fmBlock = fmMatch[2];
+
+  const existing = parseAttestations(fmBlock);
+  const next = existing.filter((r) => !(r.fact === record.fact && r.actor === record.actor));
+  next.push(record);
+  const rendered = `attestations:\n${next.map(renderAttestationItem).join('\n')}`;
+
+  const inlineRegex = /^attestations:[ \t]*\[[ \t]*\][ \t]*$/m;
+  const block = findAttestationsBlock(fmBlock);
+
+  let newFm: string;
+  if (inlineRegex.test(fmBlock)) {
+    newFm = fmBlock.replace(inlineRegex, rendered);
+  } else if (block) {
+    const before = fmBlock.slice(0, block.headerStart);
+    const rest = fmBlock.slice(block.bodyEnd);
+    const sep = rest.length > 0 && !rest.startsWith('\n') ? '\n' : '';
+    newFm = `${before}${rendered}${sep}${rest}`;
+  } else {
+    newFm = `${fmBlock.replace(/\n+$/, '')}\n${rendered}`;
+  }
+  return `${fmMatch[1]}${newFm}${fmMatch[3]}${fileContent.slice(fmMatch[0].length)}`;
 }
 
 export function appendStatusHistoryEntry(

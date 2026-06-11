@@ -22,14 +22,22 @@ import { dirname, resolve } from 'node:path';
 import {
   DEFAULT_DERIVE_CONFIG,
   buildDefaultStatusConfig,
+  normalizeFactDeclarations,
   readConfig,
   type DeriveConfig,
+  type FactDeclaration,
 } from '../utils/config.js';
 import { fileExists, writeFileForce } from '../utils/fs.js';
 import { syntaurRoot } from '../utils/paths.js';
 import { nowTimestamp } from '../utils/timestamp.js';
 import { computeFacts } from './facts.js';
-import { deriveDimensions, type DerivedDimensions } from './derive.js';
+import {
+  acceptFactDeclarations,
+  buildDeriveRegistry,
+  deriveDimensions,
+  type DerivedDimensions,
+} from './derive.js';
+import type { FieldRegistry } from '../utils/query/index.js';
 import {
   appendStatusHistoryEntry,
   parseAssignmentFrontmatter,
@@ -47,6 +55,12 @@ export interface DeriveContext {
   derive: DeriveConfig;
   terminalStatuses: ReadonlySet<string>;
   knownStatusIds: ReadonlySet<string>;
+  /** ACCEPTED custom-fact declarations (normalize→accept output) — resolved
+   * once and passed to computeFacts so every recompute speaks one vocabulary. */
+  factDeclarations: FactDeclaration[];
+  /** Derive registry built from the accepted declarations — ONE per config
+   * resolution so the compile-condition cache stays warm across sweeps. */
+  registry: FieldRegistry;
 }
 
 /**
@@ -75,10 +89,15 @@ export async function resolveDeriveContext(): Promise<DeriveContext> {
   const config = await readConfig();
   const statusConfig = config.statuses ?? buildDefaultStatusConfig();
   const terminal = new Set(statusConfig.statuses.filter((s) => s.terminal).map((s) => s.id));
+  // Run the full pipeline ONCE: raw → normalize (drop malformed) → accept (drop
+  // collisions). Every consumer of this context uses the ACCEPTED list/registry.
+  const accepted = acceptFactDeclarations(normalizeFactDeclarations(config.statuses?.facts ?? null));
   return {
     derive: config.statuses?.derive ?? DEFAULT_DERIVE_CONFIG,
     terminalStatuses: terminal.size > 0 ? terminal : DEFAULT_TERMINAL_STATUSES,
     knownStatusIds: new Set(statusConfig.statuses.map((s) => s.id)),
+    factDeclarations: accepted,
+    registry: buildDeriveRegistry(accepted),
   };
 }
 
@@ -154,6 +173,14 @@ export interface RecomputeOptions {
    * freshly-read content; returns the mutated content.
    */
   mutate?: (content: string) => Promise<string> | string;
+  /**
+   * Opt-in audit entry (AC9): when a mutation ran but dimensions did NOT change,
+   * append a same-status history entry `{at, from: status, to: status, command:
+   * cause, by}` (no phase/dispo keys) and bump `updated`. Only the new `fact
+   * set` / `attest` verbs set this; existing verbs keep today's no-entry
+   * behavior on dimension-stable mutations bit-for-bit.
+   */
+  auditMutation?: boolean;
 }
 
 export interface RecomputeResult {
@@ -201,6 +228,7 @@ export async function recomputeAndWrite(
         body: extractBody(content),
         projectDir: opts.projectDir,
         terminalStatuses: opts.context.terminalStatuses,
+        declarations: opts.context.factDeclarations,
       });
 
       const dims = deriveDimensions({
@@ -210,6 +238,7 @@ export async function recomputeAndWrite(
         terminalStatuses: opts.context.terminalStatuses,
         knownStatusIds: opts.context.knownStatusIds,
         override: frontmatter.override,
+        registry: opts.context.registry,
       });
       if (dims === null) {
         return { changed: false, status: frontmatter.status, dimensions: null, deferredTerminal: true };
@@ -221,9 +250,24 @@ export async function recomputeAndWrite(
       if (!statusChanged && !phaseChanged && !dispositionChanged) {
         // No dimension change — but a fact mutation still has to land.
         if (mutated) {
+          let toWrite = content;
+          if (opts.auditMutation) {
+            // AC9: record the fact/attestation mutation as a same-status entry
+            // and bump `updated`, even though no dimension moved.
+            const at = nowTimestamp();
+            toWrite = updateAssignmentFile(toWrite, { updated: at });
+            toWrite = appendStatusHistoryEntry(toWrite, {
+              at,
+              from: frontmatter.status,
+              to: frontmatter.status,
+              command: opts.cause,
+              by: opts.by,
+              ...(opts.reason !== undefined ? { reason: opts.reason } : {}),
+            });
+          }
           const current = await readFile(assignmentPath, 'utf-8');
           if (contentHash(current) !== hash) continue;
-          await writeFileForce(assignmentPath, content);
+          await writeFileForce(assignmentPath, toWrite);
           return { changed: true, status: frontmatter.status, dimensions: dims, deferredTerminal: false };
         }
         return { changed: false, status: frontmatter.status, dimensions: dims, deferredTerminal: false };

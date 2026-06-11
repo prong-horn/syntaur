@@ -173,6 +173,8 @@ The core unit of work and the **single source of truth** for assignment state. T
 | `workspace.branch` | string or null | branch name | optional | `null` | The git branch for this assignment's work. |
 | `workspace.parentBranch` | string or null | branch name | optional | `null` | The branch this was created from. |
 | `tags` | array of strings | any | optional | `[]` | Freeform tags. |
+| `facts` | object (string→scalar) | declared custom-fact name → value | optional | `{}` | Custom asserted facts (derived-status). Keys must be declared under `statuses.facts` in `config.md`; values are canonical scalars (`"true"`/`"false"` for `bool`, `String(n)` for `number`). Written by `syntaur fact set`. Undeclared/invalid entries are ignored at compute time. |
+| `attestations` | array of objects | `{fact, actor, verdict, at, note?, file?, digest?, commit?}` | optional | `[]` | Review attestations (derived-status). One record per `(fact, actor)`. `verdict` ∈ `approved` \| `changes-requested`. The binding snapshot (`file`+`digest` for `binds: plan`, `commit` for `binds: commit`) makes a record self-invalidate when the revision moves. Written by `syntaur attest`. See the `manage-statuses` skill for declaration syntax and the five exported derive fields per attestation fact. |
 
 ### Dependency Semantics
 
