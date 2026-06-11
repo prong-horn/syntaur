@@ -22,7 +22,11 @@ import {
   type SessionInvocation,
 } from './agents-schema.js';
 import { isValidSlug } from './slug.js';
-import { DERIVE_FIELDS, factFieldNames } from '../lifecycle/derive.js';
+import {
+  DERIVE_FIELDS,
+  factFieldNames,
+  type FactDeclaration,
+} from './fact-registry.js';
 import { ASSIGNMENT_FIELDS } from './query/index.js';
 
 export {
@@ -133,10 +137,11 @@ export interface RawFactDeclaration {
  * A VALIDATED custom-fact declaration (strict union). bool/number facts are
  * asserted values stored in the `facts:` frontmatter map; attestation facts
  * model "agent reviewed revision with verdict" and carry a revision binding.
+ *
+ * Defined in `fact-registry.ts` (browser-safe); re-exported here so existing
+ * Node-side imports from `config.js` keep resolving.
  */
-export type FactDeclaration =
-  | { name: string; type: 'bool' | 'number' }
-  | { name: string; type: 'attestation'; binds: 'plan' | 'commit' | 'none' };
+export type { FactDeclaration } from './fact-registry.js';
 
 /**
  * Narrow raw declarations to the strict union, DROPPING malformed rows (bad
