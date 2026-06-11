@@ -23,7 +23,7 @@ import { toFilterValues } from './view-prefs-schema.js';
 // Known saved-view filter keys. Used to preserve forward-compat UNKNOWN keys when
 // rebuilding `filters` on any update path (so a future filter key isn't dropped).
 export const KNOWN_FILTER_KEYS = new Set([
-  'status', 'type', 'priority', 'assignee', 'project', 'tags', 'activity', 'dateRange', 'search',
+  'status', 'type', 'priority', 'assignee', 'project', 'tags', 'activity', 'dateRange', 'search', 'query',
 ]);
 
 export function preserveUnknownFilterKeys(existing: ViewFilters, built: ViewFilters): ViewFilters {
@@ -113,6 +113,8 @@ function minimizeFilters(filters: ViewFilters, forcedProject: string | null): Vi
   if (filters.dateRange) minimal.dateRange = filters.dateRange;
   const search = filters.search?.trim();
   if (search) minimal.search = search;
+  const query = filters.query?.trim();
+  if (query) minimal.query = query;
   return minimal;
 }
 
