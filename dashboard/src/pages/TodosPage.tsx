@@ -25,6 +25,7 @@ import {
   type PromoteResult,
   type BulkPromoteResult,
 } from '../hooks/useTodos';
+import { copyText } from '../lib/clipboard';
 import { LoadingState } from '../components/LoadingState';
 import { ErrorState } from '../components/ErrorState';
 import { StatCard } from '../components/StatCard';
@@ -98,9 +99,9 @@ export function TodosPage() {
     return () => { cancelled = true; };
   }, []);
 
-  function copyId(e: React.MouseEvent, id: string) {
+  async function copyId(e: React.MouseEvent, id: string) {
     e.stopPropagation();
-    navigator.clipboard.writeText(id);
+    if (!(await copyText(id))) return;
     setCopiedId(id);
     setTimeout(() => setCopiedId((c) => (c === id ? null : c)), 1500);
   }

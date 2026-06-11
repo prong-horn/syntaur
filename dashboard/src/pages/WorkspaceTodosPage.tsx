@@ -14,6 +14,7 @@ import {
   deleteTodoAttachment,
   todoAttachmentUrl,
 } from '../hooks/useTodos';
+import { copyText } from '../lib/clipboard';
 import { LoadingState } from '../components/LoadingState';
 import { ErrorState } from '../components/ErrorState';
 import { StatCard } from '../components/StatCard';
@@ -58,9 +59,9 @@ export function WorkspaceTodosPage() {
   // record the actual mousedown target to gate drags from interactive controls.
   const dragOriginRef = useRef<EventTarget | null>(null);
 
-  function copyId(e: React.MouseEvent, id: string) {
+  async function copyId(e: React.MouseEvent, id: string) {
     e.stopPropagation();
-    navigator.clipboard.writeText(id);
+    if (!(await copyText(id))) return;
     setCopiedId(id);
     setTimeout(() => setCopiedId((c) => (c === id ? null : c)), 1500);
   }

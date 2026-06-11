@@ -40,36 +40,88 @@ export function CopyLaunchCommandButton({
   async function handleCopy() {
     if (disabled || pending) return;
     setPending(true);
-    try {
-      const res = await fetch(
-        `/api/launch/command?session=${encodeURIComponent(sessionId)}&mode=resume`,
-      );
-      if (!res.ok) {
-        const payload = (await res.json().catch(() => null)) as
-          | { error?: string }
+
+    // Resolve the launch command from the server. Kept as a promise (rather
+    // than awaited up front) so it can be handed to ClipboardItem below: the
+    // clipboard write must be *initiated* synchronously inside the click
+    // handler or the browser drops the transient user activation once we
+    // `await fetch(...)`, and rejects the write with a NotAllowedError. Safari
+    // enforces this always; Chrome enforces it when the tab isn't focused.
+    const resolved: Promise<{ command: string; fallbackWarning?: string }> =
+      (async () => {
+        const res = await fetch(
+          `/api/launch/command?session=${encodeURIComponent(sessionId)}&mode=resume`,
+        );
+        if (!res.ok) {
+          const payload = (await res.json().catch(() => null)) as
+            | { error?: string }
+            | null;
+          throw new Error(payload?.error ?? `HTTP ${res.status}`);
+        }
+        const data = (await res.json().catch(() => null)) as
+          | { command?: unknown; fallbackWarning?: unknown }
           | null;
-        throw new Error(payload?.error ?? `HTTP ${res.status}`);
+        if (!data || typeof data.command !== 'string') {
+          throw new Error('Malformed response from launch command endpoint');
+        }
+        return {
+          command: data.command,
+          fallbackWarning:
+            typeof data.fallbackWarning === 'string' && data.fallbackWarning
+              ? data.fallbackWarning
+              : undefined,
+        };
+      })();
+
+    try {
+      const canWriteAsync =
+        typeof navigator.clipboard?.write === 'function' &&
+        typeof ClipboardItem !== 'undefined';
+
+      let fallbackWarning: string | undefined;
+
+      if (canWriteAsync) {
+        // ClipboardItem accepts a promise of the payload, so the write is
+        // initiated within the gesture and the fetched command streams in
+        // without losing user activation.
+        await navigator.clipboard.write([
+          new ClipboardItem({
+            'text/plain': resolved.then(
+              (r) => new Blob([r.command], { type: 'text/plain' }),
+            ),
+          }),
+        ]);
+        fallbackWarning = (await resolved).fallbackWarning;
+      } else {
+        // Older browsers without ClipboardItem/clipboard.write: fall back to
+        // writeText. This can still hit the activation limit above, but it's
+        // the best available path on those engines.
+        const r = await resolved;
+        if (
+          !navigator.clipboard ||
+          typeof navigator.clipboard.writeText !== 'function'
+        ) {
+          throw new Error('Clipboard API is unavailable in this context.');
+        }
+        await navigator.clipboard.writeText(r.command);
+        fallbackWarning = r.fallbackWarning;
       }
-      const data = (await res.json().catch(() => null)) as
-        | { command?: unknown; fallbackWarning?: unknown }
-        | null;
-      if (!data || typeof data.command !== 'string') {
-        throw new Error('Malformed response from launch command endpoint');
-      }
-      if (
-        !navigator.clipboard ||
-        typeof navigator.clipboard.writeText !== 'function'
-      ) {
-        throw new Error('Clipboard API is unavailable in this context.');
-      }
-      await navigator.clipboard.writeText(data.command);
+
       setCopied(true);
       setTimeout(() => setCopied(false), 1500);
-      if (typeof data.fallbackWarning === 'string' && data.fallbackWarning) {
-        onNotice?.(data.fallbackWarning);
+      if (fallbackWarning) {
+        onNotice?.(fallbackWarning);
       }
     } catch (err) {
-      onError?.(err instanceof Error ? err : new Error(String(err)));
+      // If the fetch/payload step is what failed, surface that specific error
+      // rather than the generic clipboard rejection bubbled up by the write.
+      let surfaced = err instanceof Error ? err : new Error(String(err));
+      try {
+        await resolved;
+      } catch (fetchErr) {
+        surfaced = fetchErr instanceof Error ? fetchErr : new Error(String(fetchErr));
+      }
+      onError?.(surfaced);
     } finally {
       setPending(false);
     }
