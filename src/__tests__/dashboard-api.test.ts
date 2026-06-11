@@ -22,6 +22,8 @@ import {
   closeSessionDb,
   resetSessionDb,
 } from '../dashboard/session-db.js';
+import { compileQuery } from '../utils/query/index.js';
+import { boardItemToQueryItem } from '../../dashboard/src/lib/queryFilter';
 
 let testDir: string;
 
@@ -1654,5 +1656,88 @@ describe('archive hiding + cascade + listArchived + migration', () => {
     const slugs = board.assignments.map((a) => a.slug);
     expect(slugs).toContain('b1'); // cascade-hidden child reappears
     expect(slugs).not.toContain('b2'); // individually-archived child stays hidden
+  });
+});
+
+// ── AC5/AC6: board items carry a computed facts block (terminal items too) ────
+describe('board payload — facts block + terminal completedAt (AC5/AC6)', () => {
+  // A completed assignment with a statusHistory entry transitioning INTO the
+  // terminal `completed` status → deriveStatusVirtuals materializes completedAt.
+  const COMPLETED_MD = `---
+id: done-1
+slug: done-task
+title: Done Task
+type: feature
+status: completed
+priority: medium
+created: "2026-04-01T10:00:00Z"
+updated: "2026-04-01T12:00:00Z"
+assignee: claude
+externalIds: []
+dependsOn: []
+blockedReason: null
+workspace:
+  repository: null
+  worktreePath: null
+  branch: null
+  parentBranch: null
+tags: []
+statusHistory:
+  - at: "2026-04-01T10:00:00Z"
+    from: null
+    to: in_progress
+    command: create
+    by: human
+  - at: "2026-04-01T12:00:00Z"
+    from: in_progress
+    to: completed
+    command: complete
+    by: human
+---
+
+# Done Task
+
+## Objective
+
+Ship it.
+
+## Acceptance Criteria
+
+- [x] Done
+`;
+
+  it('a non-terminal board item carries a facts block', async () => {
+    await createProjectFiles(testDir, 'test-project', PROJECT_MD, [
+      { slug: 'test-assignment', assignmentMd: ASSIGNMENT_MD, planMd: PLAN_MD },
+    ]);
+    const board = await listAssignmentsBoard(testDir);
+    const item = board.assignments.find((a) => a.slug === 'test-assignment');
+    expect(item).toBeDefined();
+    // facts are computed (not nulled) and include the built-in objective facts.
+    expect(item!.facts).toBeDefined();
+    expect(typeof item!.facts!.planExists).toBe('boolean');
+    expect('hasRealObjective' in item!.facts!).toBe(true);
+  });
+
+  it('a TERMINAL item still has completedAt populated + a facts block, and matches completedAt < -1mo', async () => {
+    await createProjectFiles(testDir, 'test-project', PROJECT_MD, [
+      { slug: 'done-task', assignmentMd: COMPLETED_MD },
+    ]);
+    const board = await listAssignmentsBoard(testDir);
+    const item = board.assignments.find((a) => a.slug === 'done-task');
+    expect(item).toBeDefined();
+    expect(item!.status).toBe('completed');
+    // Facts are computed for terminal items, not nulled.
+    expect(item!.facts).toBeDefined();
+    // completedAt is the `at` of the transition INTO the terminal status.
+    expect(item!.completedAt).toBe('2026-04-01T12:00:00Z');
+
+    // The materialized QueryItem matches `completedAt < -1mo` with a now well
+    // after the completion date (fixed, never wall-clock).
+    const NOW = Date.parse('2026-06-09T12:00:00Z');
+    const { query: compiled } = compileQuery('completedAt < -1mo');
+    expect(compiled).not.toBeNull();
+    const q = boardItemToQueryItem(item!);
+    expect(compiled!.predicate(q, { now: NOW })).toBe(true);
   });
 });

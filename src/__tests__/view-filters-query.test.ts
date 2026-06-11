@@ -5,6 +5,12 @@ import {
   queryToViewFilters,
   normalizeChipFilters,
 } from '../utils/view-filters-query.js';
+import {
+  captureCurrentView,
+  mergeUpdatedConfig,
+  type CaptureInput,
+} from '../utils/saved-view-builder.js';
+import { isViewFilters, type SavedViewConfig } from '../utils/saved-views-schema.js';
 import type { ViewFilters } from '../utils/view-prefs-schema.js';
 
 // ── quoteQueryValue ──────────────────────────────────────────────────────────
@@ -451,5 +457,129 @@ describe('round-trip law', () => {
     const f: ViewFilters = { dateRange: { field: 'updated', preset: 'last_7d' } };
     expect(normalizeChipFilters(f)).toEqual({ activity: 'fresh' });
     expect(queryToViewFilters(viewFiltersToQuery(f))).toEqual({ activity: 'fresh' });
+  });
+});
+
+// ── AC4: lossless upgrade of a query-less view ───────────────────────────────
+// A saved view persisted before AQL carries chip filters but NO `query` key. The
+// upgrade path synthesizes a query from those filters; re-parsing that query must
+// reproduce the original (normalized) chip filters — no data lost in the bridge.
+describe('AC4 — lossless chip→query→chip upgrade for query-less views', () => {
+  const legacyFilters: Array<{ name: string; f: ViewFilters }> = [
+    { name: 'status + priority + search', f: { status: ['in_progress'], priority: ['high', 'critical'], search: 'engine' } },
+    { name: 'unassigned + project standalone', f: { assignee: '__unassigned__', project: '__standalone__' } },
+    { name: 'tags + activity + dateRange', f: { tags: ['aql', 'protocol'], activity: 'stale', dateRange: { field: 'created', preset: 'last_30d' } } },
+    { name: 'actor assignee needing quotes', f: { assignee: ['agent:codex', 'claude'] } },
+  ];
+  for (const { name, f } of legacyFilters) {
+    it(`${name} survives the synthesize→reparse round-trip`, () => {
+      const synthesized = viewFiltersToQuery(f); // what the upgrade writes into `query`
+      expect(synthesized.length).toBeGreaterThan(0);
+      expect(queryToViewFilters(synthesized)).toEqual(normalizeChipFilters(f));
+    });
+  }
+});
+
+// ── AC4: the `query` filter key survives minimize / merge ────────────────────
+// `captureCurrentView` runs the (private) `minimizeFilters`; the CLI add/update
+// paths and every dashboard save funnel through it. Confirm the query string is
+// preserved, trimmed, and dropped when blank — and that mergeUpdatedConfig
+// rebuilds it from the freshly-built config (it is a KNOWN filter key).
+describe('AC4 — query key through minimizeFilters / mergeUpdatedConfig', () => {
+  function capture(filters: ViewFilters): ViewFilters {
+    const input: CaptureInput = {
+      name: 'X',
+      context: { workspace: null, projectSlug: null },
+      state: {
+        viewMode: 'kanban',
+        filters,
+        sortField: 'updated',
+        sortDirection: 'desc',
+        listSectionVisibility: { collapsed: [] },
+        kanbanColumnVisibility: { hidden: [] },
+        tableColumnVisibility: { hidden: [] },
+      },
+    };
+    return captureCurrentView(input).config.filters;
+  }
+
+  it('preserves a non-empty query verbatim', () => {
+    expect(capture({ query: 'qaPassed:true AND priority:high' }).query).toBe(
+      'qaPassed:true AND priority:high',
+    );
+  });
+
+  it('trims surrounding whitespace on the query', () => {
+    expect(capture({ query: '  status:in_progress  ' }).query).toBe('status:in_progress');
+  });
+
+  it('drops a blank / whitespace-only query', () => {
+    expect(capture({ query: '' }).query).toBeUndefined();
+    expect(capture({ query: '   ' }).query).toBeUndefined();
+  });
+
+  it('mergeUpdatedConfig carries the freshly-built query (known filter key)', () => {
+    const base: SavedViewConfig = {
+      viewMode: 'kanban',
+      filters: { query: 'status:draft' },
+      sortField: 'updated',
+      sortDirection: 'desc',
+      listSectionVisibility: { collapsed: [] },
+      kanbanColumnVisibility: { hidden: [] },
+      tableColumnVisibility: { hidden: [] },
+    };
+    const built: SavedViewConfig = { ...base, filters: { query: 'qaPassed:true' } };
+    const merged = mergeUpdatedConfig(base, built, {
+      listSectionVisibility: { collapsed: [] },
+      kanbanColumnVisibility: { hidden: [] },
+      tableColumnVisibility: { hidden: [] },
+    });
+    expect(merged.filters.query).toBe('qaPassed:true');
+
+    // Built config with NO query drops it (rebuilt from `built`, not retained).
+    const cleared = mergeUpdatedConfig(base, { ...base, filters: {} }, {
+      listSectionVisibility: { collapsed: [] },
+      kanbanColumnVisibility: { hidden: [] },
+      tableColumnVisibility: { hidden: [] },
+    });
+    expect(cleared.filters.query).toBeUndefined();
+  });
+});
+
+// ── AC4: isViewFilters accepts string query, rejects non-string ──────────────
+describe('AC4 — isViewFilters query typing', () => {
+  it('accepts a string query', () => {
+    expect(isViewFilters({ query: 'status:in_progress' })).toBe(true);
+    expect(isViewFilters({ query: '' })).toBe(true); // empty string still a string
+  });
+  it('rejects a non-string query', () => {
+    expect(isViewFilters({ query: 123 })).toBe(false);
+    expect(isViewFilters({ query: ['status:draft'] })).toBe(false);
+    expect(isViewFilters({ query: { raw: 'x' } })).toBe(false);
+    expect(isViewFilters({ query: null })).toBe(false);
+  });
+});
+
+// ── AC7: custom status ids are an OPEN enum in the translator ─────────────────
+// The translator must not assume the default status vocabulary — an arbitrary
+// custom status id round-trips through both directions like any other value.
+describe('AC7 — translator treats status as an open enum (custom ids)', () => {
+  it('single arbitrary custom status id round-trips', () => {
+    expect(viewFiltersToQuery({ status: 'awaiting_triage' })).toBe('status:awaiting_triage');
+    expect(queryToViewFilters('status:awaiting_triage')).toEqual({ status: ['awaiting_triage'] });
+  });
+
+  it('multi custom status ids round-trip as an IN-list', () => {
+    const f: ViewFilters = { status: ['awaiting_triage', 'shipped_to_staging'] };
+    const q = viewFiltersToQuery(f);
+    expect(q).toBe('status:(awaiting_triage, shipped_to_staging)');
+    expect(queryToViewFilters(q)).toEqual(normalizeChipFilters(f));
+  });
+
+  it('a custom status id needing quotes (leading digit / colon) round-trips', () => {
+    const f: ViewFilters = { status: ['phase:2', 'foo'] };
+    const q = viewFiltersToQuery(f);
+    expect(q).toBe('status:("phase:2", foo)');
+    expect(queryToViewFilters(q)).toEqual(normalizeChipFilters(f));
   });
 });
