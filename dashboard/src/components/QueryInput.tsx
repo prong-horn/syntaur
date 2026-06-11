@@ -187,15 +187,23 @@ export function QueryInput({
     [dropdownOpen, suggestions, activeSuggestion, handleSelect],
   );
 
+  const blurTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const handleBlur = useCallback(() => {
     // Delay close so a click on a suggestion fires first.
-    setTimeout(() => setDropdownOpen(false), 120);
+    blurTimerRef.current = setTimeout(() => setDropdownOpen(false), 120);
   }, []);
+  useEffect(() => () => { if (blurTimerRef.current !== null) clearTimeout(blurTimerRef.current); }, []);
 
   const handleFocus = useCallback(() => {
     const caret = inputRef.current?.selectionStart ?? value.length;
     refreshSuggestions(value, caret);
   }, [value, refreshSuggestions]);
+
+  // Scroll the active suggestion into view when navigating with arrow keys.
+  useEffect(() => {
+    if (!dropdownOpen) return;
+    dropdownRef.current?.querySelector('[aria-selected="true"]')?.scrollIntoView({ block: 'nearest' });
+  }, [activeSuggestion, dropdownOpen]);
 
   // ── Render ─────────────────────────────────────────────────────────────────
 
@@ -259,7 +267,7 @@ export function QueryInput({
 
       {/* Inline error display: `at {pos}: {message}` per ls.ts:119 */}
       {hasErrors && (
-        <ul className="space-y-0.5" role="alert" aria-live="polite">
+        <ul className="space-y-0.5" role="status" aria-live="polite">
           {errors.map((err, i) => (
             <li key={i} className="font-mono text-xs text-destructive">
               at {err.pos}: {err.message}

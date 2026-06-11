@@ -52,10 +52,6 @@ export type CaretContext = FieldCaretContext | ValueCaretContext | null;
 // Mirrors the AQL lexer: IDENT_START = [A-Za-z_], IDENT_CHAR = [A-Za-z0-9_-].
 // Values may also be quoted strings — handled specially below.
 const IDENT_CHAR = /[A-Za-z0-9_-]/;
-// Operators that separate a field from its value.
-const OP_RE = /^(:|>=|<=|!=|=|>|<)/;
-// Boolean-operator keyword chars — used to detect word boundaries.
-const BOOL_OP_RE = /^(AND|OR|NOT)\b/i;
 
 /**
  * Classify the caret position in the query input string.
@@ -285,5 +281,3 @@ export function applySuggestion(
   return { text, caret: ctx.tokenStart + inserted.length };
 }
 
-// Re-export OP_RE so tests can inspect it without reaching into the module guts.
-export { OP_RE as _OP_RE_FOR_TESTS, BOOL_OP_RE as _BOOL_OP_RE_FOR_TESTS };
