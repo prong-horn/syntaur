@@ -6,6 +6,7 @@ import { DEFAULT_DERIVE_CONFIG } from '../utils/config.js';
 import { recomputeAndWrite, recomputeAll, recomputeDependents, type DeriveContext } from '../lifecycle/recompute.js';
 import { parseAssignmentFrontmatter } from '../lifecycle/frontmatter.js';
 import { planDigest } from '../lifecycle/facts.js';
+import { buildDeriveRegistry } from '../lifecycle/derive.js';
 
 const CONTEXT: DeriveContext = {
   derive: DEFAULT_DERIVE_CONFIG,
@@ -21,6 +22,8 @@ const CONTEXT: DeriveContext = {
     'completed',
     'failed',
   ]),
+  factDeclarations: [],
+  registry: buildDeriveRegistry([]),
 };
 
 const tmpDirs: string[] = [];
