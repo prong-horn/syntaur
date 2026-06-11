@@ -54,6 +54,36 @@ export interface AgentSkillsDir {
   global?: string;
 }
 
+/** A session discovered on disk from an agent's transcript files. */
+export interface DiscoveredSession {
+  sessionId: string;
+  cwd: string;
+  startedAt: string | null;
+  endedAt?: string | null;
+  /** Absolute path to the transcript file backing this session. */
+  transcriptPath: string;
+}
+
+export interface SessionsWalkOpts {
+  /** Override the transcript root (tests). */
+  root?: string;
+  /** Skip transcript files modified before this epoch-ms watermark. */
+  sinceMtimeMs?: number;
+}
+
+/**
+ * Filesystem session discovery for an agent: where transcripts live (`globs`),
+ * how to parse a single file (`parse`), and an efficient bulk walk over all of
+ * them (`walk` — the scanner's path, backed by the usage walkers). Built-in
+ * only: `UserAgentDescriptor` deliberately omits it (like `tier3`) because it
+ * is behavioral code, not serializable data.
+ */
+export interface AgentSessionsDescriptor {
+  globs: (root?: string) => string[];
+  parse: (file: string) => Promise<DiscoveredSession | null>;
+  walk: (opts?: SessionsWalkOpts) => AsyncGenerator<DiscoveredSession>;
+}
+
 /**
  * A single agent target. Adding support for "any agent" is a matter of adding
  * one of these to the registry.
@@ -89,6 +119,12 @@ export interface AgentTarget {
    * check (status).
    */
   tier3?: Tier3Plugin;
+  /**
+   * Filesystem session discovery for the universal session scanner. Absent →
+   * the agent's sessions are only tracked via hooks/launch (e.g. Cursor has no
+   * parseable on-disk transcripts). Built-in-only, like `tier3`.
+   */
+  sessions?: AgentSessionsDescriptor;
 }
 
 /**

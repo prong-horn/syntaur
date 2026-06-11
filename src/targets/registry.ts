@@ -1,8 +1,16 @@
 import { homedir } from 'node:os';
-import { resolve } from 'node:path';
+import { join, resolve } from 'node:path';
 import { fileExists } from '../utils/fs.js';
+import {
+  extractClaudeSessionMeta,
+  extractCodexSessionMeta,
+  resolveCodexSessionsRoot,
+  walkClaudeProjects,
+  walkCodexSessions,
+  type SessionMeta,
+} from '../usage/cwd-extractor.js';
 import { loadUserDescriptors } from './user-descriptors.js';
-import type { AgentTarget } from './types.js';
+import type { AgentSessionsDescriptor, AgentTarget, DiscoveredSession } from './types.js';
 
 function home(...segments: string[]): string {
   return resolve(homedir(), ...segments);
@@ -40,6 +48,41 @@ function codexHome(): string {
 
 const detectDir = (dir: string) => (): Promise<boolean> => fileExists(dir);
 
+// --- Session discovery descriptors (universal session scanner) ---------------
+
+function toDiscovered(meta: SessionMeta | null): DiscoveredSession | null {
+  if (!meta) return null;
+  return {
+    sessionId: meta.sessionId,
+    cwd: meta.cwd,
+    startedAt: meta.startTs,
+    endedAt: meta.endTs,
+    transcriptPath: meta.path,
+  };
+}
+
+const claudeSessions: AgentSessionsDescriptor = {
+  globs: (root) => [join(root ?? home('.claude', 'projects'), '*', '*.jsonl')],
+  parse: async (file) => toDiscovered(await extractClaudeSessionMeta(file)),
+  walk: async function* (opts = {}) {
+    for await (const meta of walkClaudeProjects({ root: opts.root, sinceMtimeMs: opts.sinceMtimeMs })) {
+      const d = toDiscovered(meta);
+      if (d) yield d;
+    }
+  },
+};
+
+const codexSessions: AgentSessionsDescriptor = {
+  globs: (root) => [join(root ?? resolveCodexSessionsRoot(), '**', '*.jsonl')],
+  parse: async (file) => toDiscovered(await extractCodexSessionMeta(file)),
+  walk: async function* (opts = {}) {
+    for await (const meta of walkCodexSessions({ root: opts.root, sinceMtimeMs: opts.sinceMtimeMs })) {
+      const d = toDiscovered(meta);
+      if (d) yield d;
+    }
+  },
+};
+
 /**
  * The declarative cross-agent target registry. Adding an agent = adding an
  * entry here. `instructions` is the Tier-2 adapter (protocol files); `skillsDir`
@@ -69,6 +112,7 @@ export const AGENT_TARGETS: AgentTarget[] = [
     detect: detectDir(codexHome()),
     skillsDir: { global: resolve(codexHome(), 'skills') },
     instructions: { files: [{ path: 'AGENTS.md', renderer: 'codexAgents' }] },
+    sessions: codexSessions,
   },
   {
     id: 'opencode',
@@ -92,6 +136,7 @@ export const AGENT_TARGETS: AgentTarget[] = [
     nativePlugin: 'claude',
     detect: detectDir(home('.claude')),
     skillsDir: { global: home('.claude', 'skills') },
+    sessions: claudeSessions,
   },
   {
     id: 'pi',

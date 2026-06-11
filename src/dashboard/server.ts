@@ -889,7 +889,17 @@ export function createDashboardServer(options: DashboardServerOptions) {
       // immediately; the sweep converges derived state in the background.
       void sweepAll('boot-reconcile');
 
-      startAutodiscovery({ serversDir, projectsDir, assignmentsDir, excludePids: new Set([process.pid]) });
+      startAutodiscovery({
+        serversDir,
+        projectsDir,
+        assignmentsDir,
+        excludePids: new Set([process.pid]),
+        // Same WS frame the REST mutations emit, so the UI refreshes when the
+        // session scan inserts/revives/sweeps rows. Autodiscovery's immediate
+        // first run covers "scan at dashboard start".
+        onAgentSessionsChanged: () =>
+          broadcast({ type: 'agent-sessions-updated', timestamp: new Date().toISOString() }),
+      });
 
       return new Promise<void>((resolvePromise, reject) => {
         server.on('error', (err: NodeJS.ErrnoException) => {

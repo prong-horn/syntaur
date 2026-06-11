@@ -67,6 +67,8 @@ export interface AutodiscoveryOptions {
   assignmentsDir?: string;
   intervalMs?: number;
   excludePids?: Set<number>;
+  /** Invoked when the agent-session scan changed any DB row (drives the WS broadcast). */
+  onAgentSessionsChanged?: () => void;
 }
 
 let savedOptions: AutodiscoveryOptions | null = null;
@@ -98,7 +100,7 @@ export async function stopAutodiscovery(): Promise<void> {
 function runReconcile(): void {
   if (activeReconcile || !savedOptions) return;
   const opts = savedOptions;
-  activeReconcile = reconcile(opts.serversDir, opts.projectsDir, opts.excludePids, opts.assignmentsDir)
+  activeReconcile = reconcile(opts.serversDir, opts.projectsDir, opts.excludePids, opts.assignmentsDir, opts.onAgentSessionsChanged)
     .catch((err) => {
       console.error('[autodiscovery] reconcile failed:', err);
     })
@@ -286,7 +288,7 @@ export async function isProcessAlive(pid: number): Promise<boolean> {
   }
 }
 
-async function reconcile(serversDir: string, projectsDir: string, excludePids?: Set<number>, assignmentsDir?: string): Promise<void> {
+async function reconcile(serversDir: string, projectsDir: string, excludePids?: Set<number>, assignmentsDir?: string, onAgentSessionsChanged?: () => void): Promise<void> {
   // Load all existing session files
   const names = await listSessionFiles(serversDir);
   const existingFiles = new Map<string, SessionFileData>();
@@ -311,6 +313,21 @@ async function reconcile(serversDir: string, projectsDir: string, excludePids?: 
   // Invalidate scan cache if anything changed
   if (tmuxChanged || processChanged || cleanupChanged) {
     clearScanCache();
+  }
+
+  // Universal agent-session scan rides the same interval. Skipped entirely
+  // when the session DB was never initialized (unit tests calling reconcile
+  // directly); isolated failure domain otherwise — a scan error must never
+  // break server/tmux discovery.
+  const { isSessionDbInitialized } = await import('./session-db.js');
+  if (isSessionDbInitialized()) {
+    try {
+      const { scanSessions } = await import('../sessions/scanner.js');
+      const summary = await scanSessions({});
+      if (summary.changed) onAgentSessionsChanged?.();
+    } catch (err) {
+      console.error('[autodiscovery] session scan failed:', err);
+    }
   }
 }
 

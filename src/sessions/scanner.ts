@@ -1,0 +1,345 @@
+/**
+ * Universal agent-session scanner/reconciler.
+ *
+ * The guaranteed floor of session tracking: walks every registered agent's
+ * `sessions` descriptor (transcripts on disk), upserts each discovered session
+ * into the sessions DB with its real timestamps, links project/assignment by
+ * reading `<cwd>/.syntaur/context.json`, derives liveness (a process holding
+ * the transcript open via lsof, else mtime freshness), and sweeps stale
+ * `active` rows to `stopped` with `ended` backdated to the transcript's last
+ * mtime. Hooks and the launch path make registration instant where supported;
+ * this scanner guarantees eventual consistency for everything else.
+ *
+ * Runs inside the dashboard's autodiscovery interval and standalone via
+ * `syntaur session scan`. Callers must `initSessionDb()` first.
+ */
+
+import { execFile, execFileSync } from 'node:child_process';
+import { promisify } from 'node:util';
+import { statSync } from 'node:fs';
+import { readFile } from 'node:fs/promises';
+import { resolve } from 'node:path';
+import { fileExists } from '../utils/fs.js';
+import { readConfig, type SessionAutoTrack } from '../utils/config.js';
+import { isSafeSessionId } from '../utils/session-id.js';
+import { AGENT_TARGETS } from '../targets/registry.js';
+import type { AgentTarget, DiscoveredSession } from '../targets/types.js';
+import { getSessionDb } from '../dashboard/session-db.js';
+import {
+  appendSession,
+  getSessionById,
+  updateSessionStatus,
+} from '../dashboard/agent-sessions.js';
+import type { AgentSessionStatus } from '../dashboard/types.js';
+
+const execFileAsync = promisify(execFile);
+
+const FRESH_MTIME_MS = 5 * 60 * 1000;
+const LSOF_CHUNK = 64;
+const WATERMARK_KEY = 'sessions_scan_last_ms';
+
+export interface ScannerDeps {
+  /** Targets to scan. Defaults to built-ins with a `sessions` descriptor. */
+  targets?: AgentTarget[];
+  /** Per-target transcript-root override keyed by target id (tests). */
+  roots?: Record<string, string>;
+  /** Override the configured `session.autoTrack` (skips readConfig). */
+  autoTrack?: SessionAutoTrack;
+  now?: () => number;
+  statMtimeMs?: (path: string) => number | null;
+  /** Returns the subset of `files` currently held open by some process. */
+  openFiles?: (files: string[]) => Promise<Set<string>>;
+  isPidAlive?: (pid: number) => boolean;
+  pidStartedAt?: (pid: number) => string | null;
+}
+
+export interface ScanSummary {
+  /** Sessions discovered on disk (post id-validation). */
+  discovered: number;
+  /** New rows inserted. */
+  inserted: number;
+  /** `stopped` rows revived to `active` on live-process evidence. */
+  revived: number;
+  /** `active` rows swept to `stopped`. */
+  swept: number;
+  /** Discovered sessions skipped (workspaces-only gating). */
+  skipped: number;
+  /** Whether any DB row changed (drives the dashboard broadcast). */
+  changed: boolean;
+}
+
+function emptySummary(): ScanSummary {
+  return { discovered: 0, inserted: 0, revived: 0, swept: 0, skipped: 0, changed: false };
+}
+
+function defaultStatMtimeMs(path: string): number | null {
+  try {
+    return statSync(path).mtimeMs;
+  } catch {
+    return null;
+  }
+}
+
+function defaultIsPidAlive(pid: number): boolean {
+  if (!Number.isFinite(pid) || pid <= 0) return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (err) {
+    return (err as NodeJS.ErrnoException).code === 'EPERM';
+  }
+}
+
+function defaultPidStartedAt(pid: number): string | null {
+  if (!Number.isFinite(pid) || pid <= 0) return null;
+  try {
+    const out = execFileSync('ps', ['-o', 'lstart=', '-p', String(pid)], {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    });
+    const trimmed = out.trim();
+    return trimmed === '' ? null : trimmed;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Which of `files` are currently held open by some process, via batched
+ * `lsof -Fn`. lsof exits non-zero when any listed file is NOT open, but still
+ * prints the open ones — so parse stdout from both resolve and reject paths.
+ * Degrades to "none open" when lsof is unavailable (mtime freshness remains).
+ */
+async function defaultOpenFiles(files: string[]): Promise<Set<string>> {
+  const open = new Set<string>();
+  for (let i = 0; i < files.length; i += LSOF_CHUNK) {
+    const chunk = files.slice(i, i + LSOF_CHUNK);
+    let stdout = '';
+    try {
+      const result = await execFileAsync('lsof', ['-Fn', '--', ...chunk], {
+        maxBuffer: 8 * 1024 * 1024,
+      });
+      stdout = result.stdout;
+    } catch (err) {
+      const maybe = (err as { stdout?: unknown }).stdout;
+      stdout = typeof maybe === 'string' ? maybe : '';
+    }
+    for (const line of stdout.split('\n')) {
+      if (line.startsWith('n') && line.length > 1) open.add(line.slice(1));
+    }
+  }
+  return open;
+}
+
+interface ContextLink {
+  projectSlug: string | null;
+  assignmentSlug: string | null;
+}
+
+async function readContextLink(
+  cwd: string,
+  cache: Map<string, ContextLink | null>,
+): Promise<ContextLink | null> {
+  if (cache.has(cwd)) return cache.get(cwd)!;
+  let link: ContextLink | null = null;
+  const path = resolve(cwd, '.syntaur', 'context.json');
+  if (await fileExists(path)) {
+    try {
+      const parsed = JSON.parse(await readFile(path, 'utf-8')) as {
+        projectSlug?: string;
+        assignmentSlug?: string;
+      };
+      link = {
+        projectSlug: typeof parsed.projectSlug === 'string' ? parsed.projectSlug : null,
+        assignmentSlug: typeof parsed.assignmentSlug === 'string' ? parsed.assignmentSlug : null,
+      };
+    } catch {
+      // Malformed context.json → standalone row, but the workspace still
+      // counts as a workspace for autoTrack gating (the file exists).
+      link = { projectSlug: null, assignmentSlug: null };
+    }
+  }
+  cache.set(cwd, link);
+  return link;
+}
+
+function readWatermark(): number | null {
+  const db = getSessionDb();
+  const row = db.prepare('SELECT value FROM meta WHERE key = ?').get(WATERMARK_KEY) as
+    | { value: string }
+    | undefined;
+  if (!row) return null;
+  const parsed = Number.parseInt(row.value, 10);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function writeWatermark(ms: number): void {
+  const db = getSessionDb();
+  db.prepare(
+    'INSERT INTO meta (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value',
+  ).run(WATERMARK_KEY, String(ms));
+}
+
+interface Discovered extends DiscoveredSession {
+  agent: string;
+}
+
+/**
+ * One reconcile pass. `full: true` ignores the incremental mtime watermark
+ * (the first run is always full — that's the retroactive backfill).
+ */
+export async function scanSessions(
+  opts: { full?: boolean } = {},
+  deps: ScannerDeps = {},
+): Promise<ScanSummary> {
+  const summary = emptySummary();
+
+  const autoTrack = deps.autoTrack ?? (await readConfig()).session.autoTrack;
+  if (autoTrack === 'off') return summary;
+
+  const now = deps.now ?? (() => Date.now());
+  const statMtimeMs = deps.statMtimeMs ?? defaultStatMtimeMs;
+  const openFiles = deps.openFiles ?? defaultOpenFiles;
+  const isPidAlive = deps.isPidAlive ?? defaultIsPidAlive;
+  const pidStartedAt = deps.pidStartedAt ?? defaultPidStartedAt;
+  const targets = (deps.targets ?? AGENT_TARGETS).filter((t) => t.sessions !== undefined);
+
+  const scanStartMs = now();
+  const watermark = opts.full ? null : readWatermark();
+
+  // --- (1) Discover sessions from every descriptor.
+  const discovered: Discovered[] = [];
+  for (const target of targets) {
+    const walk = target.sessions!.walk({
+      root: deps.roots?.[target.id],
+      sinceMtimeMs: watermark ?? undefined,
+    });
+    for await (const session of walk) {
+      if (!isSafeSessionId(session.sessionId)) continue;
+      discovered.push({ ...session, agent: target.id });
+    }
+  }
+  summary.discovered = discovered.length;
+
+  // --- (2) Liveness evidence: one batched lsof pass over all transcripts.
+  const openSet = await openFiles(discovered.map((d) => d.transcriptPath));
+
+  // --- (3) Upsert each discovered session.
+  const contextCache = new Map<string, ContextLink | null>();
+  for (const d of discovered) {
+    const link = await readContextLink(d.cwd, contextCache);
+    if (autoTrack === 'workspaces-only' && link === null) {
+      summary.skipped += 1;
+      continue;
+    }
+
+    const mtime = statMtimeMs(d.transcriptPath);
+    const heldOpen = openSet.has(d.transcriptPath);
+    const isLive = heldOpen || (mtime !== null && now() - mtime < FRESH_MTIME_MS);
+    const status: AgentSessionStatus = isLive ? 'active' : 'stopped';
+
+    const prev = getSessionById(d.sessionId);
+    const started =
+      d.startedAt ?? (mtime !== null ? new Date(mtime).toISOString() : new Date(now()).toISOString());
+
+    await appendSession(
+      '',
+      {
+        sessionId: d.sessionId,
+        projectSlug: link?.projectSlug ?? null,
+        assignmentSlug: link?.assignmentSlug ?? null,
+        agent: d.agent,
+        started,
+        status,
+        path: d.cwd,
+        description: null,
+        transcriptPath: d.transcriptPath,
+        pid: null,
+        pidStartedAt: null,
+        originalHeadSha: null,
+      },
+      // Narrow revival rule: only live-process evidence may flip a stopped
+      // row back to active. `completed` always sticks (appendSession enforces).
+      { reviveStopped: isLive },
+    );
+
+    // Backdate `ended` for rows that just landed (or already sat) in `stopped`
+    // without an end timestamp. Never touches rows that already have one.
+    if (!isLive) {
+      const after = getSessionById(d.sessionId);
+      if (after && after.status === 'stopped' && !after.ended) {
+        const endedAt = d.endedAt ?? (mtime !== null ? new Date(mtime).toISOString() : undefined);
+        await updateSessionStatus('', d.sessionId, 'stopped', endedAt);
+      }
+    }
+
+    if (!prev) {
+      summary.inserted += 1;
+      summary.changed = true;
+    } else {
+      if (prev.status === 'stopped' && isLive) {
+        summary.revived += 1;
+        summary.changed = true;
+      } else if (prev.status === 'active' && !isLive) {
+        summary.changed = true;
+      }
+      if (
+        (link?.projectSlug && !prev.projectSlug) ||
+        (link?.assignmentSlug && !prev.assignmentSlug)
+      ) {
+        summary.changed = true;
+      }
+    }
+  }
+
+  // --- (4) Sweep: every `active` DB row with no remaining liveness evidence
+  // flips to `stopped`, `ended` backdated to the transcript's last mtime.
+  const db = getSessionDb();
+  const activeRows = db
+    .prepare("SELECT session_id, pid, pid_started_at, transcript_path FROM sessions WHERE status = 'active'")
+    .all() as Array<{
+    session_id: string;
+    pid: number | null;
+    pid_started_at: string | null;
+    transcript_path: string | null;
+  }>;
+
+  const sweepCandidates: Array<{ sessionId: string; transcriptPath: string | null }> = [];
+  for (const row of activeRows) {
+    if (row.pid !== null) {
+      const alive =
+        isPidAlive(row.pid) &&
+        (!row.pid_started_at || (pidStartedAt(row.pid) ?? row.pid_started_at) === row.pid_started_at);
+      if (alive) continue;
+    }
+    if (row.transcript_path) {
+      sweepCandidates.push({ sessionId: row.session_id, transcriptPath: row.transcript_path });
+    } else if (row.pid !== null) {
+      // pid evidence says dead and there is no transcript to check.
+      sweepCandidates.push({ sessionId: row.session_id, transcriptPath: null });
+    }
+    // No pid AND no transcript → no signal either way; leave the row alone.
+  }
+
+  const sweepOpenSet = await openFiles(
+    sweepCandidates.map((c) => c.transcriptPath).filter((p): p is string => p !== null),
+  );
+  for (const candidate of sweepCandidates) {
+    if (candidate.transcriptPath) {
+      if (sweepOpenSet.has(candidate.transcriptPath)) continue;
+      const mtime = statMtimeMs(candidate.transcriptPath);
+      if (mtime !== null && now() - mtime < FRESH_MTIME_MS) continue;
+      const endedAt = mtime !== null ? new Date(mtime).toISOString() : undefined;
+      if (await updateSessionStatus('', candidate.sessionId, 'stopped', endedAt)) {
+        summary.swept += 1;
+        summary.changed = true;
+      }
+    } else if (await updateSessionStatus('', candidate.sessionId, 'stopped')) {
+      summary.swept += 1;
+      summary.changed = true;
+    }
+  }
+
+  writeWatermark(scanStartMs);
+  return summary;
+}
