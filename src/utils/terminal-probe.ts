@@ -95,8 +95,33 @@ export const CMUX_CLI_DIRS: readonly string[] = [
 ];
 
 /**
- * Absolute path to the cmux CLI (inside the app bundle, or a canonical install
- * dir, or on PATH), or null when cmux is not installed.
+ * Queries LaunchServices for the bundle path of the RUNNING cmux app. Returns
+ * the raw `lsappinfo` stdout, or null when the query fails or cmux is not
+ * running. Injectable (see `resolveCmuxCli`) so tests never shell out to the
+ * host's real `/usr/bin/lsappinfo`.
+ */
+export type CmuxLsappinfoRunner = () => string | null;
+
+/**
+ * Default running-app lookup: ask LaunchServices where the running cmux lives.
+ * Invokes `/usr/bin/lsappinfo` by ABSOLUTE path so it resolves under the
+ * `syntaur://` URL-handler applet's stripped LaunchServices PATH
+ * (`/usr/bin:/bin:/usr/sbin:/sbin`), where a bare `lsappinfo` is unresolvable.
+ * Returns stdout on a clean exit, else null (non-zero exit / spawn failure).
+ */
+const defaultCmuxLsappinfoRunner: CmuxLsappinfoRunner = () => {
+  const result = spawnSync(
+    '/usr/bin/lsappinfo',
+    ['info', '-only', 'bundlepath', 'com.cmuxterm.app'],
+    { encoding: 'utf-8' },
+  );
+  return result.status === 0 ? result.stdout : null;
+};
+
+/**
+ * Absolute path to the cmux CLI (inside the app bundle, a canonical install
+ * dir, the running app's bundle, or on PATH), or null when cmux is not
+ * installed.
  *
  * cmux is controlled by a first-party CLI that ships *inside* the app bundle at
  * `Contents/Resources/bin/cmux` and is NOT on any standard PATH dir. The macOS
@@ -113,20 +138,34 @@ export const CMUX_CLI_DIRS: readonly string[] = [
  *   1. the bundle CLI (`findAppBundle` → `Contents/Resources/bin/cmux`)
  *   2. a canonical install dir (`CMUX_CLI_DIRS`, via `existsSync` — covers a
  *      Homebrew/`/usr/local` symlink even under the applet's stripped PATH)
- *   3. `which cmux` — PATH-DEPENDENT, so it is consulted ONLY off macOS. On
+ *   3. the RUNNING app via LaunchServices (`/usr/bin/lsappinfo info -only
+ *      bundlepath com.cmuxterm.app` → `<bundle>/Contents/Resources/bin/cmux`),
+ *      darwin-only. This catches a cmux launched from a non-canonical location
+ *      (e.g. straight off a mounted DMG at `/Volumes/cmux/cmux.app`) that misses
+ *      every fixed location above. Steps 1–2 keep priority — when a canonical
+ *      copy exists but a DIFFERENT copy is running, the canonical CLI drives the
+ *      running app over the shared control socket: fine while versions match
+ *      (both 0.64.13 today), could skew after an update. That caveat is
+ *      documented, not guarded at runtime. Not-running + non-canonical
+ *      legitimately stays unresolved (a cold start from nowhere is unlaunchable)
+ *      and surfaces as not-installed.
+ *   4. `which cmux` — PATH-DEPENDENT, so it is consulted ONLY off macOS. On
  *      darwin we deliberately skip it: a cmux reachable only via a non-canonical
  *      PATH dir would pass the full-PATH server preflight but be invisible to
  *      the stripped-PATH applet, so accepting it would be a false positive.
  *      Skipping it makes macOS detection consistent with the applet (real macOS
- *      installs are always the .app bundle anyway). Off macOS there is no
- *      stripped-PATH applet, so launch and preflight share the same PATH.
+ *      installs are the .app bundle, or now the running-app lookup above). Off
+ *      macOS there is no stripped-PATH applet, so launch and preflight share the
+ *      same PATH.
  *
- * `applicationsDirsOverride` / `cliDirsOverride` REPLACE the defaults so tests
- * stay hermetic from the host's real `/Applications` and `/usr/local/bin`.
+ * `applicationsDirsOverride` / `cliDirsOverride` / `lsappinfoRunnerOverride`
+ * REPLACE the defaults so tests stay hermetic from the host's real
+ * `/Applications`, `/usr/local/bin`, and `/usr/bin/lsappinfo`.
  */
 export function resolveCmuxCli(
   applicationsDirsOverride?: string[],
   cliDirsOverride?: string[],
+  lsappinfoRunnerOverride?: CmuxLsappinfoRunner,
 ): string | null {
   const bundle = findAppBundle('cmux', applicationsDirsOverride);
   if (bundle) {
@@ -137,11 +176,26 @@ export function resolveCmuxCli(
     const cli = join(dir, 'cmux');
     if (existsSync(cli)) return cli;
   }
-  if (process.platform !== 'darwin') {
-    const which = spawnSync('which', ['cmux'], { encoding: 'utf-8' });
-    if (which.status === 0 && which.stdout.trim().length > 0) {
-      return which.stdout.trim();
+  if (process.platform === 'darwin') {
+    // Running-app fallback: a cmux launched from a non-canonical location is
+    // invisible to the fixed checks above. Ask LaunchServices where it lives.
+    const runner = lsappinfoRunnerOverride ?? defaultCmuxLsappinfoRunner;
+    const stdout = runner();
+    if (stdout) {
+      // lsappinfo emits e.g. ` "LSBundlePath"="/Volumes/cmux/cmux.app"\n` with
+      // leading whitespace and a trailing newline — do NOT anchor the match.
+      const match = stdout.match(/"LSBundlePath"="([^"]+)"/);
+      if (match) {
+        const cli = join(match[1], 'Contents/Resources/bin/cmux');
+        if (existsSync(cli)) return cli;
+      }
     }
+    // darwin deliberately skips `which` (see step 4) — fall through to null.
+    return null;
+  }
+  const which = spawnSync('which', ['cmux'], { encoding: 'utf-8' });
+  if (which.status === 0 && which.stdout.trim().length > 0) {
+    return which.stdout.trim();
   }
   return null;
 }
@@ -178,6 +232,8 @@ export function probeTerminalInstalled(
     applicationsDirsOverride?: string[];
     /** REPLACES `CMUX_CLI_DIRS` for the cmux resolver; tests only. */
     cmuxCliDirsOverride?: string[];
+    /** REPLACES the default `/usr/bin/lsappinfo` runner; tests only. */
+    cmuxLsappinfoRunnerOverride?: CmuxLsappinfoRunner;
   } = {},
 ): ProbeResult {
   // cmux is special-cased before the generic bundle-id / CLI-name paths: its
@@ -191,6 +247,7 @@ export function probeTerminalInstalled(
     const cli = resolveCmuxCli(
       opts.applicationsDirsOverride,
       opts.cmuxCliDirsOverride,
+      opts.cmuxLsappinfoRunnerOverride,
     );
     return cli
       ? { ok: true, foundPath: cli }

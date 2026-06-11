@@ -390,8 +390,13 @@ export function buildTerminalInvocation(plan: LaunchPlan): TerminalInvocation {
       // first-party CLI, which lives INSIDE the app bundle and is not on a
       // standard PATH dir. The macOS URL-handler applet launches with a
       // stripped LaunchServices PATH, so we resolve the CLI to an absolute path
-      // (resolveCmuxCli: bundle → canonical dir → PATH) rather than relying on
-      // a bare `cmux` (which would ENOENT there). Because `workspace create` is
+      // (resolveCmuxCli: bundle → canonical dir → running-app via lsappinfo →
+      // `which` off-darwin) rather than relying on a bare `cmux` (which would
+      // ENOENT there). Canonical hits keep priority over the running-app lookup:
+      // when a canonical copy exists but a different copy is running (e.g. off a
+      // DMG), the canonical CLI still drives the running app over the shared
+      // socket — fine while versions match, could skew after an update. Because
+      // `workspace create` is
       // a socket command that needs the app running, we wrap it in a cold-start
       // `/bin/sh -c` script (CMUX_LAUNCH_SCRIPT): launch-if-needed via `open
       // -b`, await socket readiness, then `workspace create --cwd <cwd>

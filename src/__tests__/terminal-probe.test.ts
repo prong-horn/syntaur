@@ -144,11 +144,13 @@ describe('resolveCmuxCli + probeTerminalInstalled("cmux")', () => {
     expect(spawnArgs()).not.toContain('which');
   });
 
-  it('on macOS, resolveCmuxCli SKIPS `which` and returns null when bundle + canonical dirs miss', () => {
+  it('on macOS, resolveCmuxCli SKIPS `which` and returns null when bundle + canonical dirs + lsappinfo all miss', () => {
     // The applet launches under a stripped PATH where `which` cannot rediscover
     // a non-canonical install, so accepting it would be a false positive.
     setPlatform('darwin');
-    expect(resolveCmuxCli([appsDir], [])).toBeNull();
+    // Inject a not-running lsappinfo runner so the null is explicit about the
+    // running-app miss, not just an unconfigured default runner.
+    expect(resolveCmuxCli([appsDir], [], () => null)).toBeNull();
     expect(spawnArgs()).not.toContain('which');
   });
 
@@ -192,5 +194,135 @@ describe('resolveCmuxCli + probeTerminalInstalled("cmux")', () => {
 
     expect(result).toEqual({ ok: false, reason: 'not-installed' });
     expect(spawnArgs()).not.toContain('mdfind');
+  });
+
+  // --- Running-app (lsappinfo) fallback matrix -----------------------------
+  // The fallback fires only on darwin, only when bundle + canonical dirs miss.
+  // The runner is injectable so no test shells out to the real /usr/bin/lsappinfo.
+
+  it('resolveCmuxCli resolves the RUNNING app via the lsappinfo fallback when bundle + canonical dirs miss', async () => {
+    setPlatform('darwin');
+    const runningDir = await mkdtemp(join(tmpdir(), 'syntaur-cmux-running-'));
+    const bundlePath = join(runningDir, 'cmux.app');
+    const cliPath = await stageCmuxBundle(runningDir);
+    const runner = () => `"LSBundlePath"="${bundlePath}"`;
+
+    expect(resolveCmuxCli([appsDir], [], runner)).toBe(cliPath);
+
+    await rm(runningDir, { recursive: true, force: true });
+  });
+
+  it('probeTerminalInstalled("cmux") threads cmuxLsappinfoRunnerOverride through to the resolver', async () => {
+    setPlatform('darwin');
+    const runningDir = await mkdtemp(join(tmpdir(), 'syntaur-cmux-running-'));
+    const bundlePath = join(runningDir, 'cmux.app');
+    const cliPath = await stageCmuxBundle(runningDir);
+
+    const result = probeTerminalInstalled('cmux', {
+      applicationsDirsOverride: [],
+      cmuxCliDirsOverride: [],
+      cmuxLsappinfoRunnerOverride: () => `"LSBundlePath"="${bundlePath}"`,
+    });
+
+    // If the override were not threaded, the default runner's mocked spawnSync
+    // (empty stdout) would miss and this would be { ok: false, ... }.
+    expect(result).toEqual({ ok: true, foundPath: cliPath });
+
+    await rm(runningDir, { recursive: true, force: true });
+  });
+
+  it('probeTerminalInstalled("cmux") uses the default /usr/bin/lsappinfo runner with the exact argv (the doctor/preflight path)', async () => {
+    setPlatform('darwin');
+    const runningDir = await mkdtemp(join(tmpdir(), 'syntaur-cmux-running-'));
+    const bundlePath = join(runningDir, 'cmux.app');
+    const cliPath = await stageCmuxBundle(runningDir);
+    // Realistic lsappinfo fixture: leading whitespace + trailing newline.
+    vi.mocked(spawnSync).mockReturnValue({
+      status: 0,
+      stdout: ` "LSBundlePath"="${bundlePath}"\n`,
+      stderr: '',
+    } as unknown as ReturnType<typeof spawnSync>);
+
+    // No cmuxLsappinfoRunnerOverride — exactly how doctor (terminal.ts) and
+    // preflight (api-launch-preflight.ts) call the probe.
+    const result = probeTerminalInstalled('cmux', {
+      applicationsDirsOverride: [],
+      cmuxCliDirsOverride: [],
+    });
+
+    expect(result).toEqual({ ok: true, foundPath: cliPath });
+    expect(spawnSync).toHaveBeenCalledWith(
+      '/usr/bin/lsappinfo',
+      ['info', '-only', 'bundlepath', 'com.cmuxterm.app'],
+      expect.objectContaining({ encoding: 'utf-8' }),
+    );
+
+    await rm(runningDir, { recursive: true, force: true });
+  });
+
+  it('resolveCmuxCli returns null when the default lsappinfo runner exits non-zero', () => {
+    setPlatform('darwin');
+    vi.mocked(spawnSync).mockReturnValue({
+      status: 1,
+      stdout: '',
+      stderr: 'lsappinfo: error',
+    } as unknown as ReturnType<typeof spawnSync>);
+
+    expect(resolveCmuxCli([], [])).toBeNull();
+  });
+
+  it('resolveCmuxCli returns null (and the probe reports not-installed) when cmux is not running', () => {
+    setPlatform('darwin');
+    const runner = () => null;
+
+    expect(resolveCmuxCli([appsDir], [], runner)).toBeNull();
+    expect(
+      probeTerminalInstalled('cmux', {
+        applicationsDirsOverride: [appsDir],
+        cmuxCliDirsOverride: [],
+        cmuxLsappinfoRunnerOverride: runner,
+      }),
+    ).toEqual({ ok: false, reason: 'not-installed' });
+  });
+
+  it('resolveCmuxCli returns null on malformed lsappinfo output or a running bundle whose CLI is missing', async () => {
+    setPlatform('darwin');
+    // No LSBundlePath in the output.
+    expect(
+      resolveCmuxCli([appsDir], [], () => 'garbage output, no bundle path'),
+    ).toBeNull();
+    // Parseable bundle path, but no Contents/Resources/bin/cmux on disk.
+    const emptyDir = await mkdtemp(join(tmpdir(), 'syntaur-cmux-empty-'));
+    expect(
+      resolveCmuxCli(
+        [appsDir],
+        [],
+        () => `"LSBundlePath"="${join(emptyDir, 'cmux.app')}"`,
+      ),
+    ).toBeNull();
+    await rm(emptyDir, { recursive: true, force: true });
+  });
+
+  it('canonical bundle beats the running app — the lsappinfo runner is never called', async () => {
+    setPlatform('darwin');
+    const canonicalCli = await stageCmuxBundle(appsDir);
+    const runningDir = await mkdtemp(join(tmpdir(), 'syntaur-cmux-running-'));
+    await stageCmuxBundle(runningDir);
+    const runner = vi.fn(() => `"LSBundlePath"="${join(runningDir, 'cmux.app')}"`);
+
+    expect(resolveCmuxCli([appsDir], [], runner)).toBe(canonicalCli);
+    expect(runner).not.toHaveBeenCalled();
+
+    await rm(runningDir, { recursive: true, force: true });
+  });
+
+  it('off macOS, the lsappinfo runner is never called (resolution proceeds to `which`)', () => {
+    setPlatform('linux');
+    const runner = vi.fn(() => '"LSBundlePath"="/should/not/matter/cmux.app"');
+
+    // Default mocked `which` exits 0 with empty stdout → unresolved → null.
+    expect(resolveCmuxCli([appsDir], [], runner)).toBeNull();
+    expect(runner).not.toHaveBeenCalled();
+    expect(spawnArgs()).toContain('which');
   });
 });
