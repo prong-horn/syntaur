@@ -29,10 +29,13 @@ export function extractFrontmatter(fileContent: string): [string, string] {
 function parseSimpleValue(raw: string): string | null {
   const trimmed = raw.trim();
   if (trimmed === 'null' || trimmed === '~' || trimmed === '') return null;
-  if (
-    (trimmed.startsWith('"') && trimmed.endsWith('"')) ||
-    (trimmed.startsWith("'") && trimmed.endsWith("'"))
-  ) {
+  // Double-quoted: decode the escapes formatYamlValue writes (`\"` and `\\`), so
+  // notes/values containing quotes or backslashes round-trip identically to the
+  // lifecycle parser. Single-quoted: literal contents (parity with lifecycle).
+  if (trimmed.startsWith('"') && trimmed.endsWith('"') && trimmed.length >= 2) {
+    return trimmed.slice(1, -1).replace(/\\(["\\])/g, '$1');
+  }
+  if (trimmed.startsWith("'") && trimmed.endsWith("'") && trimmed.length >= 2) {
     return trimmed.slice(1, -1);
   }
   return trimmed;

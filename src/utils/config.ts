@@ -658,12 +658,19 @@ export function parseStatusConfig(content: string): StatusConfig | null {
     }
 
     if (currentSection === 'facts' && indent >= 4 && trimmed.startsWith('- ')) {
-      // Loose parse: keep every field verbatim (RawFactDeclaration) so invalid
-      // rows round-trip and doctor can diagnose them. normalize/accept narrow.
+      // Loose parse: keep every recognizable row verbatim (RawFactDeclaration)
+      // so invalid rows round-trip AND doctor can diagnose exactly what the
+      // normalize/accept pipeline drops — a row missing `name` must NOT be
+      // silently deleted (that is the silent-deletion bug class this feature
+      // exists to prevent). A row with no recognized key at all is skipped.
       const { entry, consumed } = parseListEntry(lineIdx, indent);
-      if (entry['name'] !== undefined) {
+      if (
+        entry['name'] !== undefined ||
+        entry['type'] !== undefined ||
+        entry['binds'] !== undefined
+      ) {
         facts.push({
-          name: unquote(entry['name']),
+          name: entry['name'] !== undefined ? unquote(entry['name']) : '',
           type: entry['type'] !== undefined ? unquote(entry['type']) : '',
           binds: entry['binds'] !== undefined ? unquote(entry['binds']) : null,
         });
@@ -882,12 +889,16 @@ export function validateDeriveConfig(
  */
 export function validateFactDeclarations(raw: RawFactDeclaration[]): string[] {
   const problems: string[] = [];
-  // DERIVE_FIELDS / ASSIGNMENT_FIELDS keys are already lowercase.
-  const builtins = new Set<string>([
-    ...Object.keys(DERIVE_FIELDS),
-    ...Object.keys(ASSIGNMENT_FIELDS),
-  ]);
-  const seen = new Map<string, string>(); // lowercased export key → owning declared name
+  // Owner of each lowercased key: 'built-in' or the declaring fact name. Mirrors
+  // acceptFactDeclarations EXACTLY so doctor reports precisely what the runtime
+  // drops — atomic per declaration (built-ins always win, first-declared wins),
+  // and a declaration's keys are reserved ONLY when the whole declaration is
+  // accepted (a built-in-collided declaration reserves nothing, so a later
+  // declaration the runtime accepts is not falsely flagged).
+  const owners = new Map<string, string>(); // lowercased key → 'built-in' | <fact name>
+  for (const key of Object.keys(DERIVE_FIELDS)) owners.set(key, 'built-in');
+  for (const key of Object.keys(ASSIGNMENT_FIELDS)) owners.set(key, 'built-in');
+
   for (const row of raw ?? []) {
     const name = (row?.name ?? '').trim();
     if (!/^[a-z][a-zA-Z0-9]*$/.test(name)) {
@@ -915,15 +926,20 @@ export function validateFactDeclarations(raw: RawFactDeclaration[]): string[] {
     // Collision check across ALL exported keys (binds is irrelevant to names).
     const decl: FactDeclaration =
       type === 'attestation' ? { name, type, binds: 'none' } : { name, type };
-    for (const key of factFieldNames(decl).registryKeys) {
-      if (builtins.has(key)) {
-        problems.push(`fact "${name}": exported field "${key}" collides with a built-in field`);
-      } else if (seen.has(key) && seen.get(key) !== name) {
-        problems.push(`fact "${name}": exported field "${key}" collides with fact "${seen.get(key)}"`);
+    const keys = factFieldNames(decl).registryKeys;
+    const collidingKey = keys.find((k) => owners.has(k));
+    if (collidingKey !== undefined) {
+      const owner = owners.get(collidingKey)!;
+      if (owner === 'built-in') {
+        problems.push(`fact "${name}": exported field "${collidingKey}" collides with a built-in field`);
+      } else if (owner === name) {
+        problems.push(`fact "${name}": duplicate declaration (a fact named "${name}" is already declared)`);
       } else {
-        seen.set(key, name);
+        problems.push(`fact "${name}": exported field "${collidingKey}" collides with fact "${owner}"`);
       }
+      continue; // atomic: reserve NOTHING for a rejected declaration
     }
+    for (const key of keys) owners.set(key, name);
   }
   return problems;
 }

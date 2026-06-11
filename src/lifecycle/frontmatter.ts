@@ -737,12 +737,15 @@ export function upsertAttestation(fileContent: string, record: AttestationRecord
   next.push(record);
   const rendered = `attestations:\n${next.map(renderAttestationItem).join('\n')}`;
 
-  const inlineRegex = /^attestations:[ \t]*\[[ \t]*\][ \t]*$/m;
+  // Inline empty list `[]` OR a scalar `null`/`~` form — both parse as "no
+  // records" but findAttestationsBlock (which requires an empty tail) skips the
+  // scalar form, so handle both here to avoid appending a duplicate key.
+  const scalarRegex = /^attestations:[ \t]*(\[[ \t]*\]|null|~)[ \t]*$/m;
   const block = findAttestationsBlock(fmBlock);
 
   let newFm: string;
-  if (inlineRegex.test(fmBlock)) {
-    newFm = fmBlock.replace(inlineRegex, rendered);
+  if (scalarRegex.test(fmBlock)) {
+    newFm = fmBlock.replace(scalarRegex, rendered);
   } else if (block) {
     const before = fmBlock.slice(0, block.headerStart);
     const rest = fmBlock.slice(block.bodyEnd);

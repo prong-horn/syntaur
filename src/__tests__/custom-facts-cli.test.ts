@@ -275,22 +275,46 @@ describe('custom facts + attestations CLI (end-to-end)', () => {
     expect((await fm()).facts.qaPassed).toBe('true');
   });
 
-  it('status mutations preserve statuses.facts; status init --force drops them (destructive)', async () => {
+  it('ALL seven status mutations preserve statuses.facts; init --force drops them', async () => {
     const { parseStatusConfig } = await import('../utils/config.js');
-    const configPath = join(home, 'config.md');
+    const cfgPath = join(home, 'config.md');
+    const EXPECT = ['qaPassed', 'storyPoints', 'codeReview', 'deploy'];
+    const facts = async () =>
+      (parseStatusConfig(await readFile(cfgPath, 'utf-8'))!.facts ?? []).map((f) => f.name);
+    const order = async () => parseStatusConfig(await readFile(cfgPath, 'utf-8'))!.order;
 
-    // a metadata mutation must NOT silently delete the facts block
-    let r = await runCli(['status', 'set', '--id', 'draft', '--label', 'Draft Renamed'], home);
-    expect(r.code).toBe(0);
-    let cfg = parseStatusConfig(await readFile(configPath, 'utf-8'));
-    expect(cfg!.facts?.map((f) => f.name)).toEqual(['qaPassed', 'storyPoints', 'codeReview', 'deploy']);
-    expect(cfg!.statuses.find((s) => s.id === 'draft')!.label).toBe('Draft Renamed');
+    expect(await facts()).toEqual(EXPECT);
+
+    // 1. add  2. set  3. reorder  4. transition add  5. transition remove
+    // 6. remove  7. rename — none may silently delete the facts block.
+    expect((await runCli(['status', 'add', 'qa', '--label', 'QA', '--at-end'], home)).code).toBe(0);
+    expect(await facts()).toEqual(EXPECT);
+
+    expect((await runCli(['status', 'set', '--id', 'draft', '--label', 'Draft X'], home)).code).toBe(0);
+    expect(await facts()).toEqual(EXPECT);
+
+    expect((await runCli(['status', 'reorder', [...(await order())].reverse().join(',')], home)).code).toBe(0);
+    expect(await facts()).toEqual(EXPECT);
+
+    expect(
+      (await runCli(['status', 'transition', 'add', '--from', 'draft', '--command', 'go', '--to', 'in_progress'], home)).code,
+    ).toBe(0);
+    expect(await facts()).toEqual(EXPECT);
+
+    expect(
+      (await runCli(['status', 'transition', 'remove', '--from', 'draft', '--command', 'go'], home)).code,
+    ).toBe(0);
+    expect(await facts()).toEqual(EXPECT);
+
+    expect((await runCli(['status', 'remove', 'deployed'], home)).code).toBe(0);
+    expect(await facts()).toEqual(EXPECT);
+
+    expect((await runCli(['status', 'rename', 'blocked', '--to', 'on_hold'], home)).code).toBe(0);
+    expect(await facts()).toEqual(EXPECT);
 
     // init --force is intentionally destructive (resets to defaults; drops facts)
-    r = await runCli(['status', 'init', '--force'], home);
-    expect(r.code).toBe(0);
-    cfg = parseStatusConfig(await readFile(configPath, 'utf-8'));
-    expect(cfg!.facts ?? null).toBeNull();
+    expect((await runCli(['status', 'init', '--force'], home)).code).toBe(0);
+    expect(parseStatusConfig(await readFile(cfgPath, 'utf-8'))!.facts ?? null).toBeNull();
   });
 
   it('AC9: a dimension-stable fact set appends a same-status audit entry + bumps updated', async () => {

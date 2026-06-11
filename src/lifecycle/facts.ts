@@ -240,12 +240,28 @@ export async function computeFactsDetailed(input: ComputeFactsInput): Promise<Co
   const declarations = input.declarations ?? [];
 
   const ac = countRealAcceptanceCriteria(body);
-  const [planFile, planApproved, unresolvedQuestions, depsSatisfied] = await Promise.all([
-    latestPlanFile(assignmentDir),
-    isPlanApproved(assignmentDir, frontmatter),
+  // Resolve the plan environment ONCE — a single read of the latest plan file's
+  // content drives BOTH the built-in `planApproved` fact AND binds:plan
+  // attestation validity, so a concurrent replan can't make the two disagree
+  // and the plan is read at most once. Read only when something needs the digest.
+  const needsPlanDigest =
+    frontmatter.planApproval !== null ||
+    declarations.some((d) => d.type === 'attestation' && d.binds === 'plan');
+  const planFile = await latestPlanFile(assignmentDir);
+  const [planFileContent, unresolvedQuestions, depsSatisfied] = await Promise.all([
+    needsPlanDigest && planFile
+      ? readFile(resolve(assignmentDir, planFile), 'utf-8').catch(() => null)
+      : Promise.resolve(null),
     countUnresolvedQuestions(assignmentDir),
     areDependenciesSatisfied(projectDir, frontmatter.dependsOn, terminalStatuses),
   ]);
+  const planFileDigest = planFileContent !== null ? planDigest(planFileContent) : null;
+  const approval = frontmatter.planApproval;
+  const planApproved =
+    approval !== null &&
+    approval.file === planFile &&
+    planFileDigest !== null &&
+    approval.digest === planFileDigest;
 
   const facts: AssignmentFacts = {
     hasRealObjective: hasRealObjective(body),
@@ -280,23 +296,15 @@ export async function computeFactsDetailed(input: ComputeFactsInput): Promise<Co
       (d): d is Extract<FactDeclaration, { type: 'attestation' }> => d.type === 'attestation',
     );
     if (attestationDecls.length > 0) {
-      const needsPlan = attestationDecls.some((d) => d.binds === 'plan');
       const needsCommit = attestationDecls.some((d) => d.binds === 'commit');
-      let planDigestVal: string | null = null;
-      if (needsPlan && planFile) {
-        try {
-          const content = await readFile(resolve(assignmentDir, planFile), 'utf-8');
-          planDigestVal = planDigest(content);
-        } catch {
-          planDigestVal = null;
-        }
-      }
       let headSha: string | null = null;
       if (needsCommit) {
         const dir = frontmatter.workspace.worktreePath ?? frontmatter.workspace.repository;
         headSha = dir ? await captureHeadSha(dir) : null;
       }
-      const env: AttestationEnv = { latestPlanFile: planFile, planDigest: planDigestVal, headSha };
+      // planFile + planFileDigest were resolved once above (shared with the
+      // built-in planApproved fact) — no second read, one consistent snapshot.
+      const env: AttestationEnv = { latestPlanFile: planFile, planDigest: planFileDigest, headSha };
 
       for (const decl of attestationDecls) {
         const detailRecords = records

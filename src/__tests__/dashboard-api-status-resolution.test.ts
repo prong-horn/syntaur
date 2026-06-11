@@ -7,6 +7,7 @@ import type { AddressInfo } from 'node:net';
 import type { Server } from 'node:http';
 import { createStatusConfigRouter } from '../dashboard/api-status-config.js';
 import { clearStatusConfigCache } from '../dashboard/api.js';
+import { parseStatusConfig } from '../utils/config.js';
 
 const originalHome = process.env.HOME;
 const originalSyntaurHome = process.env.SYNTAUR_HOME;
@@ -150,6 +151,53 @@ describe('POST / — resolution-aware writes', () => {
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.statuses.map((s: { id: string }) => s.id)).not.toContain('completed');
+  });
+
+  it('preserves statuses.facts across a Settings save (request body carries no facts)', async () => {
+    // Seed a config WITH custom facts declared.
+    const md = `---
+version: "2.0"
+defaultProjectDir: ${projectsDir}
+statuses:
+  definitions:
+    - id: pending
+      label: Pending
+    - id: in_progress
+      label: In progress
+    - id: completed
+      label: Completed
+      terminal: true
+  order:
+    - pending
+    - in_progress
+    - completed
+  facts:
+    - name: qaPassed
+      type: bool
+    - name: codeReview
+      type: attestation
+      binds: plan
+---
+`;
+    await writeFile(join(tmpHome, '.syntaur', 'config.md'), md);
+    clearStatusConfigCache();
+
+    // The Settings UI POSTs only definitions/order/transitions — no facts. The
+    // handler must preserve the user's facts (same silent-deletion class as derive).
+    const newStatuses = [...baseStatuses, { id: 'shipped', label: 'Shipped' }];
+    const res = await fetch(baseUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ statuses: newStatuses, order: newStatuses.map((s) => s.id), transitions: [] }),
+    });
+    expect(res.status).toBe(200);
+
+    const cfg = parseStatusConfig(await readFile(join(tmpHome, '.syntaur', 'config.md'), 'utf-8'));
+    expect(cfg!.facts).toEqual([
+      { name: 'qaPassed', type: 'bool', binds: null },
+      { name: 'codeReview', type: 'attestation', binds: 'plan' },
+    ]);
+    expect(cfg!.statuses.some((s) => s.id === 'shipped')).toBe(true);
   });
 
   it('(b) drop with remap rewrites frontmatters + writes config', async () => {

@@ -104,6 +104,16 @@ describe('statuses.facts config parse + serialize', () => {
     };
     expect(serializeStatusConfig(cfg)).not.toContain('facts:');
   });
+
+  it('preserves a malformed row missing `name` verbatim (round-trips; validate flags it)', () => {
+    const cfg = parseStatusConfig(configContent().replace(/\n---\n$/, '\n    - type: bool\n---\n'));
+    expect(cfg!.facts).toContainEqual({ name: '', type: 'bool', binds: null });
+    // round-trips through serialize → parse (no silent deletion on the next write)
+    const reparsed = parseStatusConfig(`---\nversion: "2.0"\n${serializeStatusConfig(cfg!)}\n---\n`);
+    expect(reparsed!.facts).toContainEqual({ name: '', type: 'bool', binds: null });
+    // and doctor can diagnose it
+    expect(validateFactDeclarations(cfg!.facts!).join(' ')).toMatch(/invalid name/i);
+  });
 });
 
 describe('normalizeFactDeclarations', () => {
@@ -226,6 +236,29 @@ describe('validateFactDeclarations', () => {
       { name: 'revApproved', type: 'bool', binds: null }, // collides with rev's revApproved
     ]);
     expect(problems.join(' ')).toMatch(/collides with fact "rev"/i);
+  });
+
+  it('flags a same-name duplicate (matches the runtime accept-filter, which drops it)', () => {
+    const problems = validateFactDeclarations([
+      { name: 'dup', type: 'bool', binds: null },
+      { name: 'dup', type: 'number', binds: null },
+    ]);
+    expect(problems).toHaveLength(1);
+    expect(problems[0]).toMatch(/duplicate declaration/i);
+  });
+
+  it('a built-in-collided declaration reserves nothing — a later valid declaration is not falsely flagged', () => {
+    // `plan` (attestation) is dropped at runtime for the planApproved collision;
+    // its other generated keys (planBy, …) must NOT poison `planBy` (bool), which
+    // the runtime accepts. Validation must agree with acceptFactDeclarations.
+    const rows: RawFactDeclaration[] = [
+      { name: 'plan', type: 'attestation', binds: 'plan' },
+      { name: 'planBy', type: 'bool', binds: null },
+    ];
+    const problems = validateFactDeclarations(rows);
+    expect(problems).toHaveLength(1);
+    expect(problems[0]).toMatch(/planapproved.*built-in/i); // only the plan/built-in collision
+    expect(acceptFactDeclarations(normalizeFactDeclarations(rows)).map((d) => d.name)).toEqual(['planBy']);
   });
 });
 
@@ -389,6 +422,25 @@ describe('frontmatter facts/attestations round-trip + writers', () => {
     const dashboard = parseAssignmentFull(content);
     expect(dashboard.facts).toEqual(lifecycle.facts);
     expect(dashboard.attestations).toEqual(lifecycle.attestations);
+  });
+
+  it('parsers agree on ESCAPED values (note with quotes + backslash)', () => {
+    const note = 'fix the "lock" and the \\path';
+    const content = upsertAttestation(BASE_FM, {
+      fact: 'codeReview', actor: 'agent:codex', verdict: 'changes-requested', at: 't',
+      file: 'plan.md', digest: 'd', note,
+    });
+    const lifecycle = parseAssignmentFrontmatter(content);
+    const dashboard = parseAssignmentFull(content);
+    expect(lifecycle.attestations[0].note).toBe(note); // round-trips through formatYamlValue escaping
+    expect(dashboard.attestations).toEqual(lifecycle.attestations); // dashboard unescapes identically
+  });
+
+  it('upsertAttestation replaces a scalar `attestations: null` without duplicating the key', () => {
+    const withNull = BASE_FM.replace('override: null', 'override: null\nattestations: null');
+    const out = upsertAttestation(withNull, { fact: 'codeReview', actor: 'a', verdict: 'approved', at: 't' });
+    expect((out.match(/^attestations:/gm) ?? []).length).toBe(1); // no duplicate key
+    expect(parseAssignmentFrontmatter(out).attestations).toHaveLength(1);
   });
 });
 
