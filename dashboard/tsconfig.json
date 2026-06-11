@@ -28,7 +28,9 @@
       "@shared/branch-name": ["../src/utils/branch-name.ts"],
       "@shared/todo-sections": ["../src/utils/todoSections.ts"],
       "@shared/workspace-visibility-schema": ["../src/utils/workspace-visibility-schema.ts"],
-      "@shared/fact-registry": ["../src/utils/fact-registry.ts"]
+      "@shared/fact-registry": ["../src/utils/fact-registry.ts"],
+      "@shared/view-filters-query": ["../src/utils/view-filters-query.ts"],
+      "@shared/query": ["../src/utils/query/index.ts"]
     }
   },
   "include": [
@@ -43,6 +45,13 @@
     "../src/utils/todoSections.ts",
     "../src/utils/workspace-visibility-schema.ts",
     "../src/utils/fact-registry.ts",
+    "../src/utils/view-filters-query.ts",
+    "../src/utils/query/index.ts",
+    "../src/utils/query/ast.ts",
+    "../src/utils/query/evaluate.ts",
+    "../src/utils/query/fields.ts",
+    "../src/utils/query/lexer.ts",
+    "../src/utils/query/parser.ts",
     "../src/todos/types.ts"
   ]
 }
