@@ -58,7 +58,11 @@ export async function parseSessionsIndex(
  * On conflict, non-null fields in the new payload fill in missing values on the
  * existing row (COALESCE). `started` / `created_at` from the first insert are
  * preserved. A session already in a terminal state (`completed` / `stopped`)
- * is NOT revived by re-registration — status only moves forward.
+ * is NOT revived by re-registration — status only moves forward — with one
+ * narrow exception: `opts.reviveStopped` lets an `active` payload flip a
+ * `stopped` row back to active. Callers may only pass it on live-process
+ * evidence (the scanner seeing a process hold the transcript open).
+ * `completed` always sticks.
  *
  * Makes registration idempotent across SessionStart hooks, `/track-session`,
  * and grab-assignment all touching the same real session ID.
@@ -66,6 +70,7 @@ export async function parseSessionsIndex(
 export async function appendSession(
   _projectDir: string,
   session: AgentSession,
+  opts?: { reviveStopped?: boolean },
 ): Promise<void> {
   const db = getSessionDb();
   db.prepare(`
@@ -75,7 +80,11 @@ export async function appendSession(
       project_slug      = COALESCE(NULLIF(excluded.project_slug, ''),      project_slug),
       assignment_slug   = COALESCE(NULLIF(excluded.assignment_slug, ''),   assignment_slug),
       agent             = excluded.agent,
-      status            = CASE WHEN status IN ('completed','stopped') THEN status ELSE excluded.status END,
+      status            = CASE
+                            WHEN status = 'completed' THEN status
+                            WHEN status = 'stopped' AND NOT (? AND excluded.status = 'active') THEN status
+                            ELSE excluded.status
+                          END,
       path              = COALESCE(NULLIF(excluded.path, ''),              path),
       description       = COALESCE(NULLIF(excluded.description, ''),       description),
       transcript_path   = COALESCE(NULLIF(excluded.transcript_path, ''),   transcript_path),
@@ -96,17 +105,21 @@ export async function appendSession(
     session.pid ?? null,
     session.pidStartedAt ?? null,
     session.originalHeadSha ?? null,
+    opts?.reviveStopped ? 1 : 0,
   );
 }
 
 /**
  * Update a session's status by sessionId.
  * Sets `ended` timestamp for terminal statuses (completed, stopped).
+ * `endedAt` (ISO 8601) overrides the default `datetime('now')` so sweeps can
+ * backdate `ended` to the transcript's last mtime.
  */
 export async function updateSessionStatus(
   _projectDir: string,
   sessionId: string,
   status: AgentSessionStatus,
+  endedAt?: string,
 ): Promise<boolean> {
   const db = getSessionDb();
   const isTerminal = status === 'completed' || status === 'stopped';
@@ -114,9 +127,9 @@ export async function updateSessionStatus(
   const result = isTerminal
     ? db
         .prepare(
-          'UPDATE sessions SET status = ?, ended = datetime(\'now\'), updated_at = datetime(\'now\') WHERE session_id = ?',
+          'UPDATE sessions SET status = ?, ended = COALESCE(?, datetime(\'now\')), updated_at = datetime(\'now\') WHERE session_id = ?',
         )
-        .run(status, sessionId)
+        .run(status, endedAt ?? null, sessionId)
     : db
         .prepare(
           'UPDATE sessions SET status = ?, updated_at = datetime(\'now\') WHERE session_id = ?',

@@ -685,3 +685,87 @@ describe('appendSession upsert semantics', () => {
     expect(all[0].description).toBe('late-arriving'); // fields still merged
   });
 });
+
+describe('narrow revival rule (reviveStopped)', () => {
+  it('revives a stopped row to active when reviveStopped is set', async () => {
+    const sid = 'revivable-session';
+    await appendSession('', makeSession({ sessionId: sid }));
+    await updateSessionStatus('', sid, 'stopped');
+
+    await appendSession(
+      '',
+      makeSession({ sessionId: sid, status: 'active' as AgentSessionStatus }),
+      { reviveStopped: true },
+    );
+
+    const all = await listAllSessions('');
+    expect(all[0].status).toBe('active');
+  });
+
+  it('does not revive a stopped row without reviveStopped', async () => {
+    const sid = 'stays-stopped';
+    await appendSession('', makeSession({ sessionId: sid }));
+    await updateSessionStatus('', sid, 'stopped');
+
+    await appendSession(
+      '',
+      makeSession({ sessionId: sid, status: 'active' as AgentSessionStatus }),
+    );
+
+    const all = await listAllSessions('');
+    expect(all[0].status).toBe('stopped');
+  });
+
+  it('never revives a completed row, even with reviveStopped', async () => {
+    const sid = 'completed-stays';
+    await appendSession('', makeSession({ sessionId: sid }));
+    await updateSessionStatus('', sid, 'completed');
+
+    await appendSession(
+      '',
+      makeSession({ sessionId: sid, status: 'active' as AgentSessionStatus }),
+      { reviveStopped: true },
+    );
+
+    const all = await listAllSessions('');
+    expect(all[0].status).toBe('completed');
+  });
+
+  it('reviveStopped with a non-active payload leaves a stopped row stopped', async () => {
+    const sid = 'stopped-on-stopped';
+    await appendSession('', makeSession({ sessionId: sid }));
+    await updateSessionStatus('', sid, 'stopped');
+
+    await appendSession(
+      '',
+      makeSession({ sessionId: sid, status: 'stopped' as AgentSessionStatus }),
+      { reviveStopped: true },
+    );
+
+    const all = await listAllSessions('');
+    expect(all[0].status).toBe('stopped');
+  });
+});
+
+describe('updateSessionStatus explicit endedAt', () => {
+  it('writes the provided endedAt for a terminal status', async () => {
+    const session = makeSession();
+    await appendSession('', session);
+
+    await updateSessionStatus('', session.sessionId, 'stopped', '2026-01-02T03:04:05.000Z');
+
+    const all = await listAllSessions('');
+    expect(all[0].ended).toBe('2026-01-02T03:04:05.000Z');
+  });
+
+  it('defaults ended to now when endedAt is omitted', async () => {
+    const session = makeSession();
+    await appendSession('', session);
+
+    await updateSessionStatus('', session.sessionId, 'stopped');
+
+    const all = await listAllSessions('');
+    expect(all[0].ended).toBeTruthy();
+    expect(all[0].ended).not.toBe('2026-01-02T03:04:05.000Z');
+  });
+});

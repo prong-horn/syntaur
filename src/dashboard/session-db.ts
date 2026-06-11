@@ -246,6 +246,11 @@ export function initSessionDb(dbPath?: string): Database.Database {
   return db;
 }
 
+/** True once initSessionDb() has run (and the handle wasn't closed/reset). */
+export function isSessionDbInitialized(): boolean {
+  return db !== null;
+}
+
 /**
  * Get the initialized database handle.
  * Throws if initSessionDb() has not been called.
