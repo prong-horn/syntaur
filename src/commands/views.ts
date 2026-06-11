@@ -31,6 +31,9 @@ import {
   mergeUpdatedConfig,
   type CaptureInput,
 } from '../utils/saved-view-builder.js';
+import { buildQueryRegistry } from '../lifecycle/derive.js';
+import { resolveDeriveContext } from '../lifecycle/recompute.js';
+import { compileQuery } from '../utils/query/index.js';
 
 // Mutable copy of the `state` arg captureCurrentView consumes (visibility lives here,
 // NOT on CreateViewBuilderState).
@@ -56,6 +59,7 @@ interface ViewFlagOptions {
   dateTo?: string;
   clearDateRange?: boolean;
   search?: string;
+  query?: string;
   collapsed?: string;
   kanbanHidden?: string;
   tableHidden?: string;
@@ -175,7 +179,8 @@ function hasConfigFlag(opts: ViewFlagOptions): boolean {
     opts.clearDateRange === true ||
     opts.collapsed !== undefined ||
     opts.kanbanHidden !== undefined ||
-    opts.tableHidden !== undefined
+    opts.tableHidden !== undefined ||
+    opts.query !== undefined
   );
 }
 
@@ -215,7 +220,7 @@ function baseStateFromConfig(config: SavedView['config']): ViewState {
 // Apply provided flags onto a mutable state. Filters set to 'all'/'' minimize away
 // (clearing); --clear-date-range removes dateRange. Normalization happens later in
 // captureCurrentView.
-function applyFlagsToState(state: ViewState, opts: ViewFlagOptions): void {
+async function applyFlagsToState(state: ViewState, opts: ViewFlagOptions): Promise<void> {
   if (opts.viewMode !== undefined) state.viewMode = validateEnum(opts.viewMode, VIEW_MODES, '--view-mode');
   if (opts.sortField !== undefined) state.sortField = validateEnum(opts.sortField, SORT_FIELDS, '--sort-field');
   if (opts.sortDirection !== undefined) {
@@ -256,6 +261,20 @@ function applyFlagsToState(state: ViewState, opts: ViewFlagOptions): void {
     }
     state.tableColumnVisibility = { hidden: ids as TableColumnId[] };
   }
+  if (opts.query !== undefined) {
+    if (opts.query === '') {
+      delete state.filters.query;
+    } else {
+      const context = await resolveDeriveContext();
+      const { query, errors } = compileQuery(opts.query, buildQueryRegistry(context.factDeclarations));
+      if (!query) {
+        throw new Error(
+          `Invalid --query:\n${errors.map((e) => `  at ${e.pos}: ${e.message}`).join('\n')}`,
+        );
+      }
+      state.filters.query = opts.query;
+    }
+  }
 }
 
 export async function runViewsAdd(opts: ViewFlagOptions): Promise<SavedView> {
@@ -263,7 +282,7 @@ export async function runViewsAdd(opts: ViewFlagOptions): Promise<SavedView> {
   const name = validateName(opts.name);
   const { value: workspace } = resolveWorkspaceFlag(opts);
   const state = baseStateForAdd();
-  applyFlagsToState(state, opts);
+  await applyFlagsToState(state, opts);
   const { config } = captureCurrentView({ name, context: { workspace, projectSlug: null }, state });
   if (!isSavedViewConfig(config)) throw new Error('assembled an invalid SavedViewConfig');
   const file = await readSavedViewsFile();
@@ -315,7 +334,7 @@ export async function runViewsUpdate(id: string, opts: ViewFlagOptions): Promise
   if (ws.provided) patch.workspace = ws.value;
   if (hasConfigFlag(opts)) {
     const state = baseStateFromConfig(existing.config);
-    applyFlagsToState(state, opts);
+    await applyFlagsToState(state, opts);
     const built = captureCurrentView({ name: '', context: { workspace: null, projectSlug: null }, state }).config;
     // mergeUpdatedConfig re-attaches forward-compat unknown top-level + filter keys
     // that minimizeFilters dropped — same path every dashboard update uses.
@@ -365,6 +384,7 @@ function addConfigFlags(cmd: Command): Command {
     .option('--date-to <YYYY-MM-DD>', 'Date range end (exclusive with --date-range-preset)')
     .option('--clear-date-range', 'Remove the date-range filter')
     .option('--search <text>', 'Search text filter ("" clears)')
+    .option('--query <expr>', 'AQL filter query ("" clears)')
     .option('--collapsed <vals>', 'List-view collapsed section ids, comma-separated')
     .option('--kanban-hidden <vals>', 'Kanban hidden column ids, comma-separated')
     .option('--table-hidden <vals>', `Table hidden column ids (${TABLE_COLUMN_IDS.join('|')}), comma-separated`)
