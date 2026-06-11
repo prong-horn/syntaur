@@ -481,17 +481,20 @@ export function AssignmentsPage() {
   // Refs mirror the current chip state so the assemble helper reads fresh values
   // synchronously inside an event handler (a setX call does not update the
   // closed-over state variable until the next render).
-  const chipStateRef = useRef({
-    status: statusFilter,
-    priority: priorityFilter,
-    type: typeFilter,
-    assignee: assigneeFilter,
-    project: projectFilter,
-    tags: tagsFilter,
-    activity: activityFilter,
-    dateRange,
-    search,
-  });
+  // Single source of truth: the per-render assignment below is canonical.
+  // useRef is initialised with null! (typed placeholder) so there is no
+  // duplicate field-list to drift out of sync with the reassignment.
+  const chipStateRef = useRef<{
+    status: string[];
+    priority: string[];
+    type: string[];
+    assignee: string[];
+    project: string[];
+    tags: string[];
+    activity: ActivityFilter;
+    dateRange: DateRangeUiState | null;
+    search: string;
+  }>(null!);
   chipStateRef.current = {
     status: statusFilter,
     priority: priorityFilter,
@@ -941,24 +944,12 @@ export function AssignmentsPage() {
 
   // Apply the compiled predicate through the AQL evaluator. Workspace + archived
   // stay OUTSIDE the query (page options), exactly as before. compiled === null
-  // (empty/invalid) → match-all: return every workspace/archived-eligible item.
-  const filteredItems = useMemo(() => {
-    if (!compiled) {
-      // Match-all, but still honor the workspace / archived page pre-filters.
-      return boardItems.filter((item) => {
-        if (item.archived === true) return false;
-        if (workspace) {
-          if (workspace === '_ungrouped') {
-            if (item.projectWorkspace != null) return false;
-          } else if (item.projectWorkspace !== workspace) {
-            return false;
-          }
-        }
-        return true;
-      });
-    }
-    return filterBoardItems(boardItems, compiled, { workspace });
-  }, [boardItems, compiled, workspace]);
+  // (empty/invalid) → match-all via filterBoardItems' null-predicate path: only
+  // the page-level pre-filters (archived-exclude + workspace / _ungrouped) run.
+  const filteredItems = useMemo(
+    () => filterBoardItems(boardItems, compiled, { workspace }),
+    [boardItems, compiled, workspace],
+  );
 
   const sortedItems = useMemo(
     () => sortAssignments(filteredItems, sortField, sortDirection),

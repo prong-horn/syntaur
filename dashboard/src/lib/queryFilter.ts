@@ -89,10 +89,15 @@ export interface FilterBoardItemsOptions {
  * `now` is threaded into `EvalContext` so timestamp/duration predicates
  * (e.g. `completedAt < -1mo`, `statusAge > 3d`) resolve deterministically.
  * Only defaulted to `Date.now()` at the call boundary — never inside the engine.
+ *
+ * When `compiled` is `null` (empty / invalid query), the AQL constraint is
+ * skipped entirely — only the page-level pre-filters (archived-exclude +
+ * workspace / `_ungrouped`) are applied. This is the "match-all" path: a
+ * typo never blanks the board, but workspace / archived scoping still holds.
  */
 export function filterBoardItems(
   items: AssignmentBoardItem[],
-  compiled: CompiledQuery,
+  compiled: CompiledQuery | null,
   opts: FilterBoardItemsOptions = {},
 ): AssignmentBoardItem[] {
   const { workspace, includeArchived = false, now = Date.now() } = opts;
@@ -111,7 +116,8 @@ export function filterBoardItems(
       }
     }
 
-    // ── AQL predicate ──────────────────────────────────────────────────────
+    // ── AQL predicate (skipped when compiled is null → pre-filters only) ──
+    if (!compiled) return true;
     const q = boardItemToQueryItem(item);
     return compiled.predicate(q, ctx);
   });
