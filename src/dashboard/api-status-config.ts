@@ -149,6 +149,7 @@ export function createStatusConfigRouter(
         order: config.order,
         transitions: config.transitions,
         custom: config.custom,
+        factDeclarations: config.factDeclarations,
       });
     } catch (error) {
       console.error('Error getting status config:', error);

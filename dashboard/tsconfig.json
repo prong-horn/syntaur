@@ -27,7 +27,8 @@
       "@shared/terminal-schema": ["../src/utils/terminal-schema.ts"],
       "@shared/branch-name": ["../src/utils/branch-name.ts"],
       "@shared/todo-sections": ["../src/utils/todoSections.ts"],
-      "@shared/workspace-visibility-schema": ["../src/utils/workspace-visibility-schema.ts"]
+      "@shared/workspace-visibility-schema": ["../src/utils/workspace-visibility-schema.ts"],
+      "@shared/fact-registry": ["../src/utils/fact-registry.ts"]
     }
   },
   "include": [
@@ -41,6 +42,7 @@
     "../src/utils/branch-name.ts",
     "../src/utils/todoSections.ts",
     "../src/utils/workspace-visibility-schema.ts",
+    "../src/utils/fact-registry.ts",
     "../src/todos/types.ts"
   ]
 }
