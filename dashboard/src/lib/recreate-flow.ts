@@ -21,8 +21,8 @@ export type ContinuationTarget =
  * An optional `prompt` appends `&prompt=` for ASSIGNMENT targets only — the
  * editable launch box's (possibly edited) template, re-resolved server-side.
  * It is **presence-significant**: an empty string is a deliberate override and
- * is still emitted; `undefined` means "no override". Callers must pass a
- * single-line value (the box strips newlines + bounds length).
+ * is still emitted; `undefined` means "no override". Multi-line values are
+ * accepted and percent-encoded normally.
  */
 export function continuationUrl(
   target: ContinuationTarget,
