@@ -184,6 +184,12 @@ export function useRecreateFlow() {
           <AlertDialogHeader>
             <AlertDialogTitle>{miss?.terminal} is not installed</AlertDialogTitle>
             <AlertDialogDescription>
+              {miss?.terminal === 'cmux' ? (
+                <>
+                  To use cmux, install <strong>cmux.app</strong> into{' '}
+                  <code>/Applications</code>.{' '}
+                </>
+              ) : null}
               Open in <strong>{miss?.suggestedFallback}</strong> instead? You can
               change the default in{' '}
               <Link
