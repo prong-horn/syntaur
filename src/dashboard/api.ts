@@ -13,7 +13,7 @@ import {
   type FactDeclaration,
   type RawFactDeclaration,
 } from '../utils/config.js';
-import { acceptFactDeclarations, buildDeriveRegistry } from '../lifecycle/derive.js';
+import { acceptFactDeclarations, buildDeriveRegistry, buildQueryRegistry } from '../lifecycle/derive.js';
 import type { FieldRegistry } from '../utils/query/index.js';
 import { resolvePlaybookSlug } from '../utils/playbooks.js';
 import { migrateLegacyProjectFiles, migrateLegacyArchivedProjects } from '../utils/fs-migration.js';
@@ -430,6 +430,10 @@ interface ResolvedStatusConfig {
    * reused across requests so the WeakMap compile-cache stays warm (no
    * per-request registry construction in buildDerivedDetail). */
   deriveRegistry: FieldRegistry;
+  /** Query registry built ONCE per cached resolution from the accepted list —
+   * sibling of deriveRegistry; stable object identity keeps the WeakMap
+   * compile-cache warm across saved-view query validations. */
+  queryRegistry: FieldRegistry;
 }
 
 let _cachedConfig: ResolvedStatusConfig | null = null;
@@ -471,6 +475,7 @@ export async function getStatusConfig(): Promise<ResolvedStatusConfig> {
       facts: config.statuses.facts ?? null,
       factDeclarations: accepted,
       deriveRegistry: buildDeriveRegistry(accepted),
+      queryRegistry: buildQueryRegistry(accepted),
     };
   } else {
     // Shared default builder so the dashboard and the `syntaur status` CLI
@@ -487,6 +492,7 @@ export async function getStatusConfig(): Promise<ResolvedStatusConfig> {
       facts: null,
       factDeclarations: [],
       deriveRegistry: buildDeriveRegistry([]),
+      queryRegistry: buildQueryRegistry([]),
     };
   }
 

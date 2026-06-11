@@ -14,6 +14,8 @@ import {
   setDashboardLayout,
 } from '../utils/saved-views.js';
 import { withLock } from './todos-locks.js';
+import { getStatusConfig } from './api.js';
+import { validateQuery } from '../utils/query/index.js';
 
 const SAVED_VIEWS_LOCK = 'sv:global';
 
@@ -113,6 +115,15 @@ export function createSavedViewsRouter(): Router {
       res.status(400).json({ error: result.error });
       return;
     }
+    const queryStr = result.value.config.filters.query;
+    if (typeof queryStr === 'string' && queryStr.length > 0) {
+      const statusConfig = await getStatusConfig();
+      const queryErrors = validateQuery(queryStr, statusConfig.queryRegistry);
+      if (queryErrors.length > 0) {
+        res.status(400).json({ errors: queryErrors });
+        return;
+      }
+    }
     try {
       const file = await withLock(SAVED_VIEWS_LOCK, async () => {
         const current = await readSavedViewsFile();
@@ -137,6 +148,15 @@ export function createSavedViewsRouter(): Router {
     if (!result.ok) {
       res.status(400).json({ error: result.error });
       return;
+    }
+    const patchQueryStr = result.value.config?.filters.query;
+    if (typeof patchQueryStr === 'string' && patchQueryStr.length > 0) {
+      const statusConfig = await getStatusConfig();
+      const queryErrors = validateQuery(patchQueryStr, statusConfig.queryRegistry);
+      if (queryErrors.length > 0) {
+        res.status(400).json({ errors: queryErrors });
+        return;
+      }
     }
     try {
       const outcome = await withLock(SAVED_VIEWS_LOCK, async () => {
