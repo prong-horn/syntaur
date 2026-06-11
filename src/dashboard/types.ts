@@ -77,6 +77,11 @@ export interface AssignmentSummary {
   disposition: string | null;
   /** A sticky status override (pin) is active. */
   pinned: boolean;
+  /**
+   * Evaluator facts for AQL board filtering; omitted on compute error or for
+   * ProjectDetail's summary path (chips-only by design — Decision 8).
+   */
+  facts?: Record<string, boolean | number | string[]>;
 }
 
 export interface AssignmentBoardItem extends AssignmentSummary {
