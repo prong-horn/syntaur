@@ -248,6 +248,14 @@ import {
 } from './workspace-visibility-schema.js';
 export { type WorkspaceVisibilityConfig };
 
+/**
+ * Automatic session tracking scope:
+ * - `all`: every discovered/hooked session is written to the sessions DB.
+ * - `workspaces-only`: only sessions whose cwd has `.syntaur/context.json`.
+ * - `off`: no automatic DB writes (manual `track-session` still works).
+ */
+export type SessionAutoTrack = 'all' | 'workspaces-only' | 'off';
+
 export interface SyntaurConfig {
   version: string;
   defaultProjectDir: string;
@@ -256,6 +264,9 @@ export interface SyntaurConfig {
     trustLevel: 'low' | 'medium' | 'high';
     autoApprove: boolean;
     autoCreateWorktree: AutoCreateWorktree;
+  };
+  session: {
+    autoTrack: SessionAutoTrack;
   };
   integrations: IntegrationConfig;
   backup: BackupConfig | null;
@@ -280,6 +291,9 @@ const DEFAULT_CONFIG: SyntaurConfig = {
     autoApprove: false,
     autoCreateWorktree: 'ask',
   },
+  session: {
+    autoTrack: 'all',
+  },
   integrations: {
     claudePluginDir: null,
     codexPluginDir: null,
@@ -301,6 +315,8 @@ const DEFAULT_CONFIG: SyntaurConfig = {
 };
 
 const AUTO_CREATE_WORKTREE_VALUES: readonly AutoCreateWorktree[] = ['skip', 'ask', 'always'];
+
+const SESSION_AUTO_TRACK_VALUES: readonly SessionAutoTrack[] = ['all', 'workspaces-only', 'off'];
 
 export class AgentConfigError extends Error {}
 
@@ -416,6 +432,7 @@ function cloneDefaultConfig(): SyntaurConfig {
     ...DEFAULT_CONFIG,
     onboarding: { ...DEFAULT_CONFIG.onboarding },
     agentDefaults: { ...DEFAULT_CONFIG.agentDefaults },
+    session: { ...DEFAULT_CONFIG.session },
     integrations: { ...DEFAULT_CONFIG.integrations },
     backup: DEFAULT_CONFIG.backup ? { ...DEFAULT_CONFIG.backup } : null,
     statuses: DEFAULT_CONFIG.statuses
@@ -2073,6 +2090,13 @@ export async function readConfig(): Promise<SyntaurConfig> {
       )
         ? (fm['agentDefaults.autoCreateWorktree'] as AutoCreateWorktree)
         : DEFAULT_CONFIG.agentDefaults.autoCreateWorktree,
+    },
+    session: {
+      autoTrack: SESSION_AUTO_TRACK_VALUES.includes(
+        fm['session.autoTrack'] as SessionAutoTrack,
+      )
+        ? (fm['session.autoTrack'] as SessionAutoTrack)
+        : DEFAULT_CONFIG.session.autoTrack,
     },
     integrations: {
       claudePluginDir: parseOptionalAbsolutePath(
