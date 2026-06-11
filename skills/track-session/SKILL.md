@@ -5,84 +5,36 @@ description: Use when the user asks to track, register, or log this Claude Code 
 
 # Track Session
 
-Register the current Claude Code session as an agent session in the Syntaur dashboard. Works standalone or linked to a project/assignment.
+Attach a description and/or a project+assignment link to the current agent session's row in the Syntaur dashboard.
 
-Only real Claude Code session IDs are accepted — no synthesis. The real id is written to `.syntaur/context.json` by the SessionStart hook, with `~/.claude/sessions/<pid>.json` as the fallback source.
+Plain registration is automatic now — the SessionStart hook registers every session (and the background scanner backfills any the hook missed), so this skill only matters for the one remaining manual case: adding a description or an explicit project/assignment link. The CLI self-resolves the calling session's id (env → process-tree markers → transcript scan); never pass a synthesized id.
 
 ## Usage
 
 User arguments: `$ARGUMENTS`
 
-- (no args) — register a standalone session
-- `--description "<text>"` — with a description
-- `--project <slug> --assignment <slug>` — linked to a project
+- (no args) — upsert the session row as-is (rarely needed; the hook already did this)
+- `--description "<text>"` — attach a description
+- `--project <slug> --assignment <slug>` — link to a project assignment
 - `--description "<text>" --project <slug> --assignment <slug>` — both
 
 ## Workflow
 
-### Step 1: Parse arguments
-
-Extract optional flags from the argument string:
-- `--description "<text>"` or `--description <text>` — session description
-- `--project <slug>` — project to link to
-- `--assignment <slug>` — assignment to link to
-
-### Step 2: Source the real session id + transcript path
-
-Resolve the session id from *your* running process, in priority order:
-
-1. `$CLAUDE_CODE_SESSION_ID` (or the peer `OPENCODE_SESSION_ID` / `PI_SESSION_ID`) if your runtime injects it.
-2. Otherwise, read the most-recently-modified file under `~/.claude/sessions/<pid>.json` whose `cwd` matches `$(pwd)` and use its `sessionId` field. The transcript path is conventionally `~/.claude/projects/<encoded-cwd>/<sessionId>.jsonl`; include it if the file exists, otherwise omit.
-3. Only as a last resort, fall back to the `sessionId` scalar in `.syntaur/context.json` (and the companion `transcriptPath` if present). This scalar is a shared, legacy hint a co-tenant sharing this workspace can clobber — never treat it as authoritative.
-4. If no source yields an id, abort with: "Could not resolve a real Claude Code session id. Restart the Claude session so the SessionStart hook can populate `.syntaur/context.json`, or run `/rename <slug>` then try again."
-
-DO NOT generate a UUID. `syntaur track-session` rejects missing session IDs.
-
-### Step 3: Run the CLI command
-
-Run the track-session CLI via Bash (use `dangerouslyDisableSandbox: true` since it writes to `~/.syntaur/`):
+Run one Bash call (use `dangerouslyDisableSandbox: true` since it writes to `~/.syntaur/`), passing through whatever optional flags the user gave:
 
 ```bash
-syntaur track-session \
-  --agent claude \
-  --session-id "$SESSION_ID" \
-  --transcript-path "$TRANSCRIPT_PATH" \
-  --path "$(pwd)" \
-  --pid "$(ps -o ppid= -p $$ | tr -d ' ')" \
+syntaur track-session --agent claude \
   [--description "<text>"] \
-  [--project <slug>] \
-  [--assignment <slug>]
+  [--project <slug>] [--assignment <slug>]
 ```
 
-Omit `--transcript-path` entirely (don't pass an empty string) if no transcript path could be resolved. The `--pid` value is the shell PID that owns the Claude process — the dashboard uses it to disable Resume while this session may still be writing the transcript, forcing users to Fork instead. If `ps` is unavailable, omit `--pid` too.
+The CLI resolves the session id, transcript-derived path, owning pid, and HEAD sha itself, and prints one of:
 
-The CLI prints one of:
 - `Registered standalone agent session <sessionId>.`
 - `Registered agent session <sessionId> for <assignment> in <project>.`
 
-Registration is idempotent — re-running the command with the same session id safely upserts project/assignment/description onto the existing row.
+Registration is idempotent — re-running with the same session id safely upserts the description/link onto the existing row.
 
-### Step 4: Merge context.json
+If it errors with "Could not resolve a session id", restart the Claude session so the SessionStart hook can register it (or pass `--session-id <id>` with a real agent-generated id — never synthesize one).
 
-Ensure `.syntaur/context.json` has the session fields (so SessionEnd and future `track-session` runs find them). Merge, don't overwrite:
-
-```bash
-mkdir -p .syntaur
-if [ -f .syntaur/context.json ]; then
-  jq --arg sid "$SESSION_ID" --arg tp "$TRANSCRIPT_PATH" \
-    '. + {sessionId: $sid} + (if ($tp | length) > 0 then {transcriptPath: $tp} else {} end)' \
-    .syntaur/context.json > .syntaur/context.json.tmp \
-    && mv .syntaur/context.json.tmp .syntaur/context.json
-else
-  jq -n --arg sid "$SESSION_ID" --arg tp "$TRANSCRIPT_PATH" \
-    '{sessionId: $sid} + (if ($tp | length) > 0 then {transcriptPath: $tp} else {} end)' \
-    > .syntaur/context.json
-fi
-```
-
-### Step 5: Confirm
-
-Tell the user:
-- The session was registered (include the short session id).
-- It will be auto-stopped when this conversation ends via the SessionEnd hook.
-- If linked to a project, mention which project/assignment.
+Confirm to the user: the row was updated (include the short session id), it auto-stops at SessionEnd, and which project/assignment it is linked to, if any.

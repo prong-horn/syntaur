@@ -1,10 +1,12 @@
 import { resolve } from 'node:path';
+import { readFile } from 'node:fs/promises';
 import { expandHome } from '../utils/paths.js';
 import { fileExists } from '../utils/fs.js';
 import { readConfig } from '../utils/config.js';
 import { derivePathFromTranscript } from '../utils/transcript.js';
 import { captureProcessStartedAt } from '../utils/process-info.js';
 import { captureHeadSha } from '../utils/git-worktree.js';
+import { readPpid, resolveOwnSessionId } from '../utils/session-id.js';
 import { isExistingDir } from '../launch/cwd.js';
 import { initSessionDb } from '../dashboard/session-db.js';
 import { appendSession } from '../dashboard/agent-sessions.js';
@@ -22,16 +24,39 @@ export interface TrackSessionOptions {
   pid?: number;
 }
 
+/** Injectable seams for tests; production callers pass nothing. */
+export interface TrackSessionDeps {
+  resolveSessionId?: typeof resolveOwnSessionId;
+  fallbackPid?: () => number | null;
+}
+
 export async function trackSessionCommand(
   options: TrackSessionOptions,
+  deps: TrackSessionDeps = {},
 ): Promise<void> {
   if (!options.agent) {
     throw new Error('--agent <name> is required.');
   }
 
-  if (!options.sessionId) {
+  // Self-resolve the calling session's id when not passed explicitly: env →
+  // process-tree markers → transcript scan, with the cwd context.json scalar
+  // only as the last-resort legacy hint. Never synthesized.
+  let sessionId = options.sessionId;
+  if (!sessionId) {
+    const cwd = process.cwd();
+    let legacyHint: string | undefined;
+    try {
+      const raw = await readFile(resolve(cwd, '.syntaur', 'context.json'), 'utf-8');
+      const parsed = JSON.parse(raw) as { sessionId?: string };
+      if (typeof parsed.sessionId === 'string') legacyHint = parsed.sessionId;
+    } catch {
+      // No context.json — fine; the resolver has five other layers.
+    }
+    sessionId = await (deps.resolveSessionId ?? resolveOwnSessionId)({ cwd, legacyHint });
+  }
+  if (!sessionId) {
     throw new Error(
-      '--session-id <id> is required. Pass the real agent-generated session id — do not synthesize one.',
+      'Could not resolve a session id. Pass --session-id <id> with the real agent-generated session id — do not synthesize one.',
     );
   }
 
@@ -51,8 +76,6 @@ export async function trackSessionCommand(
 
   initSessionDb();
 
-  const { sessionId } = options;
-
   // Prefer the launch cwd recorded in the transcript itself — that's the
   // directory Claude Code uses to file the transcript, and the only one from
   // which `claude --resume <id>` can find it. Falls through to the explicit
@@ -61,7 +84,10 @@ export async function trackSessionCommand(
   const derivedPath = await derivePathFromTranscript(options.transcriptPath);
   const recordedPath = derivedPath ?? options.path ?? process.cwd();
 
-  const pid = options.pid ?? null;
+  // Default the owning pid to the grandparent — the shell that owns the agent
+  // (this CLI's parent is the agent/skill shell) — matching the hook's
+  // `ps -o ppid= -p $$`, so the one-line skill call loses no liveness data.
+  const pid = options.pid ?? (deps.fallbackPid ?? (() => readPpid(process.ppid)))();
   const pidStartedAt = pid !== null ? captureProcessStartedAt(pid) : null;
 
   // Best-effort capture of the worktree's HEAD sha so a later recreate of a

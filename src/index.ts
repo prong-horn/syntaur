@@ -895,9 +895,9 @@ program
   .option('--project <slug>', 'Target project slug')
   .option('--assignment <slug>', 'Assignment slug')
   .option('--agent <name>', 'Agent name, e.g. claude, codex, cursor (required)')
-  .requiredOption(
+  .option(
     '--session-id <id>',
-    'Session id from the agent runtime (real, not generated). Claude: read from ~/.claude/sessions/<pid>.json or the SessionStart hook payload. Codex: `payload.id` from the first line of the matching ~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl.',
+    'Session id from the agent runtime (real, not generated). Defaults to self-resolution via env / process-tree markers / transcript scan — pass explicitly only when registering a session other than the calling one.',
   )
   .option(
     '--transcript-path <path>',

@@ -306,11 +306,15 @@ describe('createAssignmentCommand', () => {
 });
 
 describe('trackSessionCommand required flags', () => {
-  it('rejects when sessionId is missing', async () => {
-    // Without --session-id the in-function guard must fire before any DB touch.
+  it('rejects when sessionId is missing AND self-resolution finds nothing', async () => {
+    // --session-id is optional now; the guard fires only when the six-layer
+    // resolver also comes up empty (injected here for determinism).
     await expect(
-      trackSessionCommand({ agent: 'claude' } as any),
-    ).rejects.toThrow(/session-id/);
+      trackSessionCommand({ agent: 'claude' } as any, {
+        resolveSessionId: async () => undefined,
+        fallbackPid: () => null,
+      }),
+    ).rejects.toThrow(/session id/);
   });
 
   it('rejects when agent is missing', async () => {
@@ -420,13 +424,18 @@ describe('trackSessionCommand path resolution', () => {
     expect(row?.pid_started_at).toBeNull();
   });
 
-  it('leaves pid and pid_started_at null when --pid is omitted', async () => {
+  it('leaves pid and pid_started_at null when --pid is omitted and the fallback resolves nothing', async () => {
     const sessionId = `cli-${Math.random().toString(36).slice(2, 10)}`;
-    await trackSessionCommand({
-      agent: 'claude',
-      sessionId,
-      path: '/Users/me/no-pid',
-    });
+    await trackSessionCommand(
+      {
+        agent: 'claude',
+        sessionId,
+        path: '/Users/me/no-pid',
+      },
+      // --pid now defaults to the grandparent pid; pin the fallback to null so
+      // this asserts the unresolvable case deterministically.
+      { fallbackPid: () => null },
+    );
 
     const row = getSessionDb()
       .prepare('SELECT pid, pid_started_at FROM sessions WHERE session_id = ?')
@@ -437,11 +446,11 @@ describe('trackSessionCommand path resolution', () => {
   });
 });
 
-describe('track-session CLI: Commander required-option enforcement', () => {
+describe('track-session CLI: optional --session-id', () => {
   const here = dirname(fileURLToPath(import.meta.url));
   const cliPath = resolve(here, '../../dist/index.js');
 
-  it('exits non-zero with a session-id error when --session-id omitted', () => {
+  it('exits non-zero with a session-id error when omitted AND unresolvable', async () => {
     if (!existsSync(cliPath)) {
       // Verification plan requires a prior `npm run build`. Fail loudly rather
       // than silently passing so the dev notices.
@@ -450,13 +459,31 @@ describe('track-session CLI: Commander required-option enforcement', () => {
       );
     }
 
-    const res = spawnSync(
-      'node',
-      [cliPath, 'track-session', '--agent', 'claude'],
-      { encoding: 'utf-8' },
-    );
-    expect(res.status).not.toBe(0);
-    // Commander emits "required option '--session-id <id>'" on stderr.
-    expect(res.stderr).toMatch(/session-id/);
+    // Hermetic env: strip the session-id env vars, point HOME at an empty
+    // sandbox (no marker dirs, no transcripts) and run from a cwd with no
+    // .syntaur/context.json — all six resolver layers must come up empty.
+    const sandbox = await mkdtemp(join(tmpdir(), 'syntaur-cli-track-'));
+    try {
+      const env: NodeJS.ProcessEnv = {
+        ...process.env,
+        HOME: sandbox,
+        SYNTAUR_HOME: join(sandbox, '.syntaur'),
+      };
+      delete env.CLAUDE_CODE_SESSION_ID;
+      delete env.OPENCODE_SESSION_ID;
+      delete env.PI_SESSION_ID;
+      delete env.CODEX_HOME;
+      delete env.CODEX_SESSIONS_DIR;
+
+      const res = spawnSync(
+        'node',
+        [cliPath, 'track-session', '--agent', 'claude'],
+        { encoding: 'utf-8', cwd: sandbox, env },
+      );
+      expect(res.status).not.toBe(0);
+      expect(res.stderr).toMatch(/session id/i);
+    } finally {
+      await rm(sandbox, { recursive: true, force: true });
+    }
   });
 });
