@@ -1,7 +1,12 @@
 import { spawn, type ChildProcess, type SpawnOptions } from 'node:child_process';
-import { basename } from 'node:path';
+import { homedir } from 'node:os';
+import { basename, join, resolve } from 'node:path';
 import { shellQuote } from '../tui/launch.js';
 import { resolveCmuxCli } from '../utils/terminal-probe.js';
+import { fileExists } from '../utils/fs.js';
+import { readConfig } from '../utils/config.js';
+import { writeRuntimeMarker } from '../utils/session-id.js';
+import { captureProcessStartedAt } from '../utils/process-info.js';
 import type { LaunchPlan } from './plan.js';
 import type { TerminalChoice } from '../utils/config.js';
 
@@ -165,6 +170,81 @@ export async function executeLaunchPlan(
       });
     }
   });
+
+  await registerLaunchAtBirth(plan, child);
+}
+
+/**
+ * Register-at-birth: anything Syntaur spawns leaves a generic runtime marker
+ * at `~/.syntaur/runtime/sessions/<pid>.json` regardless of the agent's hook
+ * support, and — when the session id is already known (resume-mode launches) —
+ * an active row in the sessions DB. Fresh/fork launches write a PENDING marker
+ * (no sessionId; ids are never synthesized) and the scanner closes the gap on
+ * its next tick. For wrapper terminals (osascript/open/sh) the pid is the
+ * wrapper's, not the agent's — acceptable: the ancestor-walk in
+ * `resolveOwnSessionId` tolerates intermediate pids and the scanner is the
+ * guaranteed floor. Best-effort: never throws, never fails the launch.
+ */
+async function registerLaunchAtBirth(plan: LaunchPlan, child: ChildProcess): Promise<void> {
+  try {
+    const pid = child.pid;
+    if (!pid) return;
+
+    const autoTrack = (await readConfig()).session.autoTrack;
+    if (autoTrack === 'off') return;
+
+    const sessionId = plan.session?.sessionId ?? null;
+    const procStart = captureProcessStartedAt(pid);
+
+    const envDir = process.env.SYNTAUR_RUNTIME_SESSIONS_DIR;
+    const markerDir = envDir && envDir.length > 0
+      ? envDir
+      : join(homedir(), '.syntaur', 'runtime', 'sessions');
+    writeRuntimeMarker(
+      pid,
+      {
+        ...(sessionId ? { sessionId } : {}),
+        agent: plan.agentId,
+        cwd: plan.cwd,
+        ...(procStart ? { procStart } : {}),
+        writtenAt: Date.now(),
+      },
+      markerDir,
+    );
+
+    if (!sessionId) return;
+    if (
+      autoTrack === 'workspaces-only' &&
+      !(await fileExists(resolve(plan.cwd, '.syntaur', 'context.json')))
+    ) {
+      return;
+    }
+
+    const { initSessionDb } = await import('../dashboard/session-db.js');
+    const { appendSession } = await import('../dashboard/agent-sessions.js');
+    initSessionDb();
+    await appendSession(
+      '',
+      {
+        sessionId,
+        projectSlug: null,
+        assignmentSlug: null,
+        agent: plan.agentId,
+        started: new Date().toISOString(),
+        status: 'active',
+        path: plan.cwd,
+        description: null,
+        transcriptPath: null,
+        pid,
+        pidStartedAt: procStart,
+        originalHeadSha: null,
+      },
+      // Resuming a stopped session IS live-process evidence — we just spawned it.
+      { reviveStopped: true },
+    );
+  } catch {
+    // Best-effort only — a tracking failure must never fail the launch.
+  }
 }
 
 interface TerminalInvocation {

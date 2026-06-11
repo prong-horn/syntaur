@@ -1,6 +1,9 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { EventEmitter } from 'node:events';
 import { Readable } from 'node:stream';
+import { mkdtemp, rm, readFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import {
   executeLaunchPlan,
   buildShellCommandLine,
@@ -9,6 +12,16 @@ import {
   type LaunchPlan,
   type SpawnFn,
 } from '../launch/index.js';
+import {
+  initSessionDb,
+  closeSessionDb,
+  resetSessionDb,
+} from '../dashboard/session-db.js';
+import {
+  appendSession,
+  getSessionById,
+  updateSessionStatus,
+} from '../dashboard/agent-sessions.js';
 
 // Pin resolveCmuxCli so the cmux invocation is deterministic and does not hit
 // the real filesystem / spawn `which` during these unit tests. The cmux command
@@ -46,12 +59,15 @@ function fakeChild(opts: {
   errorMessage?: string;
   stderr?: string;
   delayMs?: number;
+  pid?: number;
 }) {
   const emitter = new EventEmitter() as EventEmitter & {
     unref: () => void;
     stderr: Readable | null;
+    pid?: number;
   };
   emitter.unref = () => {};
+  if (opts.pid !== undefined) emitter.pid = opts.pid;
   const stderrStream = opts.stderr
     ? Readable.from([Buffer.from(opts.stderr)])
     : null;
@@ -176,6 +192,94 @@ describe('executeLaunchPlan', () => {
       expect(err).toBeInstanceOf(TerminalNotFoundError);
       expect((err as Error).message).toContain('line one');
     }
+  });
+});
+
+describe('executeLaunchPlan register-at-birth', () => {
+  let markerDir: string;
+  let dbDir: string;
+
+  let savedSyntaurHome: string | undefined;
+
+  beforeEach(async () => {
+    markerDir = await mkdtemp(join(tmpdir(), 'syntaur-launch-markers-'));
+    dbDir = await mkdtemp(join(tmpdir(), 'syntaur-launch-db-'));
+    process.env.SYNTAUR_RUNTIME_SESSIONS_DIR = markerDir;
+    // Hermetic config: no real ~/.syntaur/config.md → defaults (autoTrack 'all').
+    savedSyntaurHome = process.env.SYNTAUR_HOME;
+    process.env.SYNTAUR_HOME = dbDir;
+    resetSessionDb();
+    initSessionDb(join(dbDir, 'test.db'));
+  });
+
+  afterEach(async () => {
+    delete process.env.SYNTAUR_RUNTIME_SESSIONS_DIR;
+    if (savedSyntaurHome === undefined) delete process.env.SYNTAUR_HOME;
+    else process.env.SYNTAUR_HOME = savedSyntaurHome;
+    closeSessionDb();
+    await rm(markerDir, { recursive: true, force: true });
+    await rm(dbDir, { recursive: true, force: true });
+  });
+
+  it('writes a pending runtime marker (no sessionId) for a fresh/fork launch', async () => {
+    const spawnFn: SpawnFn = () => fakeChild({ fireOn: 'spawn', pid: 55001 });
+    await executeLaunchPlan(
+      makePlan({ terminal: 'alacritty', session: { sessionId: null } }),
+      spawnFn,
+    );
+
+    const marker = JSON.parse(await readFile(join(markerDir, '55001.json'), 'utf-8'));
+    expect(marker.sessionId).toBeUndefined(); // pending — never synthesized
+    expect(marker.agent).toBe('claude');
+    expect(marker.cwd).toBe('/tmp/work');
+    expect(getSessionById('55001')).toBeNull(); // no row without a real id
+  });
+
+  it('writes the marker AND an active DB row for a resume-mode launch with a known id', async () => {
+    const spawnFn: SpawnFn = () => fakeChild({ fireOn: 'spawn', pid: 55002 });
+    await executeLaunchPlan(
+      makePlan({ terminal: 'alacritty', session: { sessionId: 'resumed-sess-1' } }),
+      spawnFn,
+    );
+
+    const marker = JSON.parse(await readFile(join(markerDir, '55002.json'), 'utf-8'));
+    expect(marker.sessionId).toBe('resumed-sess-1');
+
+    const row = getSessionById('resumed-sess-1');
+    expect(row).not.toBeNull();
+    expect(row!.status).toBe('active');
+    expect(row!.pid).toBe(55002);
+    expect(row!.agent).toBe('claude');
+  });
+
+  it('revives a stopped row when resuming it (live-process evidence)', async () => {
+    await appendSession('', {
+      sessionId: 'stopped-resume-1',
+      projectSlug: null,
+      assignmentSlug: null,
+      agent: 'claude',
+      started: '2026-06-11T08:00:00Z',
+      status: 'active',
+      path: '/tmp/work',
+    });
+    await updateSessionStatus('', 'stopped-resume-1', 'stopped');
+
+    const spawnFn: SpawnFn = () => fakeChild({ fireOn: 'spawn', pid: 55003 });
+    await executeLaunchPlan(
+      makePlan({ terminal: 'alacritty', session: { sessionId: 'stopped-resume-1' } }),
+      spawnFn,
+    );
+
+    expect(getSessionById('stopped-resume-1')!.status).toBe('active');
+  });
+
+  it('skips registration entirely when the spawned child has no pid', async () => {
+    const spawnFn: SpawnFn = () => fakeChild({ fireOn: 'spawn' });
+    await executeLaunchPlan(
+      makePlan({ terminal: 'alacritty', session: { sessionId: 'no-pid-sess' } }),
+      spawnFn,
+    );
+    expect(getSessionById('no-pid-sess')).toBeNull();
   });
 });
 

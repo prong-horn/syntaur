@@ -50,6 +50,13 @@ export interface LaunchPlan {
   shellFallbackWarning: string | null;
   /** Non-fatal launch-prompt token warnings (unknown/malformed `@`-tokens). */
   promptWarnings?: string[];
+  /**
+   * Session identity at launch time, for register-at-birth. `sessionId` is only
+   * known for resume-mode session launches; fresh/fork launches mint a NEW id
+   * inside the agent, so they carry `null` and rely on the pending runtime
+   * marker + scanner to close the gap. Absent on assignment launches.
+   */
+  session?: { sessionId: string | null };
 }
 
 export interface ResolveLaunchPlanInput {
@@ -276,6 +283,8 @@ async function resolveSessionPlan(
     agentId: agent.id,
     fallbackWarning,
     shellFallbackWarning,
+    // Resume continues the SAME session id; fork mints a new one in-agent.
+    session: { sessionId: (input.mode ?? 'resume') === 'resume' ? session.sessionId : null },
   };
 }
 
