@@ -30,7 +30,10 @@
       "@shared/workspace-visibility-schema": ["../src/utils/workspace-visibility-schema.ts"],
       "@shared/fact-registry": ["../src/utils/fact-registry.ts"],
       "@shared/view-filters-query": ["../src/utils/view-filters-query.ts"],
-      "@shared/query": ["../src/utils/query/index.ts"]
+      "@shared/query": ["../src/utils/query/index.ts"],
+      "@shared/derive-config": ["../src/utils/derive-config.ts"],
+      "@shared/derive": ["../src/lifecycle/derive.ts"],
+      "@shared/state-machine": ["../src/lifecycle/state-machine.ts"]
     }
   },
   "include": [
@@ -52,6 +55,10 @@
     "../src/utils/query/fields.ts",
     "../src/utils/query/lexer.ts",
     "../src/utils/query/parser.ts",
-    "../src/todos/types.ts"
+    "../src/todos/types.ts",
+    "../src/utils/derive-config.ts",
+    "../src/lifecycle/derive.ts",
+    "../src/lifecycle/state-machine.ts",
+    "../src/lifecycle/types.ts"
   ]
 }

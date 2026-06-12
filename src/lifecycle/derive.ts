@@ -19,7 +19,7 @@
  *    pin CLI already refuses those).
  */
 
-import type { DeriveConfig } from '../utils/config.js';
+import type { DeriveConfig } from '../utils/derive-config.js';
 import { compileNode, CompileError, parseQuery, type Predicate, type FieldRegistry } from '../utils/query/index.js';
 import type { StatusOverride } from './types.js';
 import { DERIVE_FIELDS } from '../utils/fact-registry.js';
