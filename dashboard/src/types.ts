@@ -125,8 +125,8 @@ export interface AgentSession {
   transcriptPath?: string | null;
   pid?: number | null;
   pidStartedAt?: string | null;
-  /** HEAD sha of the worktree at session creation, for exact worktree recreation. */
   originalHeadSha?: string | null;
+  updatedAt?: string | null;
 }
 
 export interface AgentSessionWithLiveness extends AgentSession {

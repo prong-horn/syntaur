@@ -19,7 +19,10 @@ import {
   DEFAULT_SAVED_VIEWS_FILE,
   isDashboardSlot,
   isProjectDetailCompatible,
+  isSavedView,
+  isSavedViewConfig,
   isViewFilters,
+  isWidgetConfig,
   isWidgetSize,
   WIDGET_SIZES,
   type DashboardSlot,
@@ -644,5 +647,207 @@ describe('AC4 — query filter schema, minimize, and ProjectDetail compatibility
     expect(isProjectDetailCompatible(configWith({}), 'syntaur')).toBe(true);
     // Blank query → treated as absent → compatible.
     expect(isProjectDetailCompatible(configWith({ query: '   ' }), 'syntaur')).toBe(true);
+  });
+});
+
+// ── Session view schema validation (Task 9) ────────────────────────────────────
+describe('session view schema validators', () => {
+  it('isSavedView accepts a session view with entityType: session', () => {
+    const view = {
+      id: 'test-session-view',
+      name: 'My Session View',
+      workspace: null,
+      entityType: 'session',
+      config: {
+        viewMode: 'list',
+        filters: {},
+        sortField: 'started',
+        sortDirection: 'desc',
+        limit: 10,
+        listSectionVisibility: { collapsed: [] },
+        kanbanColumnVisibility: { hidden: [] },
+        tableColumnVisibility: { hidden: [] },
+      },
+      createdAt: '2026-06-12T00:00:00Z',
+      updatedAt: '2026-06-12T00:00:00Z',
+    };
+    expect(isSavedView(view)).toBe(true);
+  });
+
+  it('isSavedView rejects an invalid entityType', () => {
+    const view = {
+      id: 'test-session-view',
+      name: 'Bad',
+      workspace: null,
+      entityType: 'server',
+      config: {
+        viewMode: 'list',
+        filters: {},
+        sortField: 'started',
+        sortDirection: 'desc',
+        listSectionVisibility: { collapsed: [] },
+        kanbanColumnVisibility: { hidden: [] },
+        tableColumnVisibility: { hidden: [] },
+      },
+      createdAt: '2026-06-12T00:00:00Z',
+      updatedAt: '2026-06-12T00:00:00Z',
+    };
+    expect(isSavedView(view)).toBe(false);
+  });
+
+  it('isSavedView accepts absent entityType (backward compat)', () => {
+    const view = {
+      id: 'legacy-view',
+      name: 'Legacy',
+      workspace: null,
+      config: {
+        viewMode: 'list',
+        filters: {},
+        sortField: 'updated',
+        sortDirection: 'desc',
+        listSectionVisibility: { collapsed: [] },
+        kanbanColumnVisibility: { hidden: [] },
+        tableColumnVisibility: { hidden: [] },
+      },
+      createdAt: '2026-06-12T00:00:00Z',
+      updatedAt: '2026-06-12T00:00:00Z',
+    };
+    expect(isSavedView(view)).toBe(true);
+  });
+
+  it('isSavedViewConfig accepts config with limit', () => {
+    const config = {
+      viewMode: 'list',
+      filters: {},
+      sortField: 'started',
+      sortDirection: 'desc',
+      limit: 25,
+      listSectionVisibility: { collapsed: [] },
+      kanbanColumnVisibility: { hidden: [] },
+      tableColumnVisibility: { hidden: [] },
+    };
+    expect(isSavedViewConfig(config)).toBe(true);
+  });
+
+  it('isWidgetConfig accepts agent-sessions with viewId', () => {
+    expect(isWidgetConfig({ kind: 'agent-sessions', viewId: 'abc' })).toBe(true);
+  });
+
+  it('isWidgetConfig rejects agent-sessions with non-string viewId', () => {
+    expect(isWidgetConfig({ kind: 'agent-sessions', viewId: 123 })).toBe(false);
+  });
+
+  it('isWidgetConfig accepts agent-sessions without viewId', () => {
+    expect(isWidgetConfig({ kind: 'agent-sessions' })).toBe(true);
+  });
+
+  it('createSavedView persists entityType: session when provided', () => {
+    const file = JSON.parse(JSON.stringify(DEFAULT_SAVED_VIEWS_FILE));
+    const result = createSavedView(file, {
+      name: 'Session View',
+      workspace: null,
+      entityType: 'session',
+      config: {
+        viewMode: 'list',
+        filters: {},
+        sortField: 'started',
+        sortDirection: 'desc',
+        limit: 5,
+        listSectionVisibility: { collapsed: [] },
+        kanbanColumnVisibility: { hidden: [] },
+        tableColumnVisibility: { hidden: [] },
+      },
+    });
+    expect(result.view.entityType).toBe('session');
+    expect(result.view.config.limit).toBe(5);
+    expect(result.view.config.sortField).toBe('started');
+  });
+
+  it('createSavedView defaults to an assignment view when entityType is omitted', () => {
+    const file = JSON.parse(JSON.stringify(DEFAULT_SAVED_VIEWS_FILE));
+    const result = createSavedView(file, {
+      name: 'Plain View',
+      workspace: null,
+      config: {
+        viewMode: 'kanban',
+        filters: {},
+        sortField: 'updated',
+        sortDirection: 'desc',
+        listSectionVisibility: { collapsed: [] },
+        kanbanColumnVisibility: { hidden: [] },
+        tableColumnVisibility: { hidden: [] },
+      },
+    });
+    // Absent === assignment: entityType is not written, preserving backward compat.
+    expect(result.view.entityType).toBeUndefined();
+  });
+
+  it('updateSavedView preserves entityType across edits (powers session edit + duplicate)', () => {
+    const seed = JSON.parse(JSON.stringify(DEFAULT_SAVED_VIEWS_FILE));
+    const { file, view } = createSavedView(seed, {
+      name: 'Session View',
+      workspace: null,
+      entityType: 'session',
+      config: {
+        viewMode: 'list',
+        filters: {},
+        sortField: 'started',
+        sortDirection: 'desc',
+        limit: 5,
+        listSectionVisibility: { collapsed: [] },
+        kanbanColumnVisibility: { hidden: [] },
+        tableColumnVisibility: { hidden: [] },
+      },
+    });
+    const result = updateSavedView(file, view.id, { name: 'Renamed Session View' });
+    expect('view' in result).toBe(true);
+    if ('view' in result) {
+      expect(result.view.entityType).toBe('session');
+      expect(result.view.name).toBe('Renamed Session View');
+    }
+  });
+
+  it('round-trips a session view through write/read', async () => {
+    const originalHome = process.env.HOME;
+    const homeDir = await mkdtemp(join(tmpdir(), 'syntaur-session-view-'));
+    process.env.HOME = homeDir;
+    await mkdir(resolve(homeDir, '.syntaur'), { recursive: true });
+
+    const file: SavedViewsFile = {
+      version: 1,
+      views: [
+        {
+          id: 'sv-1',
+          name: 'Recent sessions',
+          workspace: null,
+          entityType: 'session',
+          config: {
+            viewMode: 'list',
+            filters: { agent: ['codex'] },
+            sortField: 'started',
+            sortDirection: 'desc',
+            limit: 20,
+            listSectionVisibility: { collapsed: [] },
+            kanbanColumnVisibility: { hidden: [] },
+            tableColumnVisibility: { hidden: [] },
+          },
+          createdAt: '2026-06-12T00:00:00Z',
+          updatedAt: '2026-06-12T00:00:00Z',
+        },
+      ],
+      dashboard: {
+        version: 1,
+        slots: [{ id: 'slot-0', widget: { kind: 'agent-sessions', viewId: 'sv-1' } }],
+      },
+    };
+
+    await writeSavedViewsFile(file);
+    const read = await readSavedViewsFile();
+    expect(read.views[0].entityType).toBe('session');
+    expect(read.views[0].config.limit).toBe(20);
+    expect(read.dashboard.slots[0].widget).toEqual({ kind: 'agent-sessions', viewId: 'sv-1' });
+
+    process.env.HOME = originalHome;
+    await rm(homeDir, { recursive: true, force: true });
   });
 });

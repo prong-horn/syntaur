@@ -99,6 +99,93 @@ export function factFieldNames(decl: FactDeclaration): FactFieldNames {
   return { storageKey: name, exports: exportNames, registryKeys };
 }
 
+// ── RawFactDeclaration ─────────────────────────────────────────────────────────
+
+/**
+ * A custom-fact declaration EXACTLY as parsed from `statuses.facts` — loose
+ * parse (Locked Decisions): every field is a raw string so user input
+ * round-trips through serialization even when invalid. The strict
+ * {@link FactDeclaration} is derived from this via {@link normalizeFactDeclarations}
+ * (defined in `config.ts`, which imports this type).
+ */
+export interface RawFactDeclaration {
+  name: string;
+  type: string;
+  binds: string | null;
+}
+
+// ── validateFactDeclarations ──────────────────────────────────────────────────
+
+/**
+ * Diagnose RAW fact declarations: returns one human-readable problem
+ * per malformed/colliding row — exactly what the normalize→accept pipeline will
+ * drop, so doctor reports nothing silently. Checks name format, type/binds, and
+ * case-insensitive collision of EVERY exported key (the declared name and, for
+ * attestations, all four generated names) against `DERIVE_FIELDS`,
+ * `ASSIGNMENT_FIELDS`, or an earlier declaration's exported keys. Works with
+ * `derive: null` — declarations validate independently of derive rules.
+ *
+ * KEPT IN LOCKSTEP with {@link acceptFactDeclarations} so doctor reports
+ * precisely what the runtime drops. If you change collision semantics here,
+ * change them there.
+ */
+export function validateFactDeclarations(raw: RawFactDeclaration[]): string[] {
+  const problems: string[] = [];
+  // Owner of each lowercased key: 'built-in' or the declaring fact name. Mirrors
+  // acceptFactDeclarations EXACTLY so doctor reports precisely what the runtime
+  // drops — atomic per declaration (built-ins always win, first-declared wins),
+  // and a declaration's keys are reserved ONLY when the whole declaration is
+  // accepted (a built-in-collided declaration reserves nothing, so a later
+  // declaration the runtime accepts is not falsely flagged).
+  const owners = new Map<string, string>(); // lowercased key → 'built-in' | <fact name>
+  for (const key of Object.keys(DERIVE_FIELDS)) owners.set(key, 'built-in');
+  for (const key of Object.keys(ASSIGNMENT_FIELDS)) owners.set(key, 'built-in');
+
+  for (const row of raw ?? []) {
+    const name = (row?.name ?? '').trim();
+    if (!/^[a-z][a-zA-Z0-9]*$/.test(name)) {
+      problems.push(
+        `fact "${row?.name ?? ''}": invalid name — must match /^[a-z][a-zA-Z0-9]*$/`,
+      );
+      continue;
+    }
+    const type = (row.type ?? '').trim();
+    if (type !== 'bool' && type !== 'number' && type !== 'attestation') {
+      problems.push(
+        `fact "${name}": invalid type "${row.type ?? ''}" — expected bool, number, or attestation`,
+      );
+      continue;
+    }
+    if (type === 'attestation') {
+      const binds = (row.binds ?? 'none').toString().trim() || 'none';
+      if (binds !== 'plan' && binds !== 'commit' && binds !== 'none') {
+        problems.push(
+          `fact "${name}": invalid binds "${row.binds}" — expected plan, commit, or none`,
+        );
+        continue;
+      }
+    }
+    // Collision check across ALL exported keys (binds is irrelevant to names).
+    const decl: FactDeclaration =
+      type === 'attestation' ? { name, type, binds: 'none' } : { name, type };
+    const keys = factFieldNames(decl).registryKeys;
+    const collidingKey = keys.find((k) => owners.has(k));
+    if (collidingKey !== undefined) {
+      const owner = owners.get(collidingKey)!;
+      if (owner === 'built-in') {
+        problems.push(`fact "${name}": exported field "${collidingKey}" collides with a built-in field`);
+      } else if (owner === name) {
+        problems.push(`fact "${name}": duplicate declaration (a fact named "${name}" is already declared)`);
+      } else {
+        problems.push(`fact "${name}": exported field "${collidingKey}" collides with fact "${owner}"`);
+      }
+      continue; // atomic: reserve NOTHING for a rejected declaration
+    }
+    for (const key of keys) owners.set(key, name);
+  }
+  return problems;
+}
+
 // ── acceptFactDeclarations ────────────────────────────────────────────────────
 
 /**
@@ -108,6 +195,8 @@ export function factFieldNames(decl: FactDeclaration): FactFieldNames {
  * Built-ins always win; first-declared wins among duplicates. Never throws — a
  * bad config can't brick recompute; doctor (Task 4) surfaces the same collisions
  * as errors. Returns the ACCEPTED list every consumer builds from.
+ *
+ * KEPT IN LOCKSTEP with {@link validateFactDeclarations}.
  */
 export function acceptFactDeclarations(declarations: FactDeclaration[]): FactDeclaration[] {
   // DERIVE_FIELDS / ASSIGNMENT_FIELDS keys are already lowercase.

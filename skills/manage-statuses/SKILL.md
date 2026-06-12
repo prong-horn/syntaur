@@ -66,6 +66,13 @@ After every mutating subcommand, run `syntaur status list` (or `--json` for mach
 
 Beyond the 14 built-in derived-status facts, users can declare their **own** facts under `statuses.facts` and reference them in `phaseLadder` / `disposition` conditions. There are two kinds.
 
+**Two ways to declare them**, kept in sync because both write the same `statuses.facts` block:
+
+- **Dashboard** — the Settings page has a **Facts** section that lists every declared fact and lets the user add/edit/delete declarations (name + kind, plus `binds` for attestations) with the same validation the CLI/doctor enforce. Deleting a fact that a derive rule still references prompts for confirmation before saving, and a Facts save preserves the existing statuses, ordering, and derive rules.
+- **Config / CLI** — hand-edit the `statuses.facts` block in `~/.syntaur/config.md` directly (the shapes below).
+
+Declaring a fact (either way) only defines the vocabulary; asserting per-assignment values is always `syntaur fact set` / `syntaur attest`.
+
 **1. Custom asserted facts** — config-declared `bool` / `number` values, asserted via `syntaur fact set` and stored in a `facts:` frontmatter map:
 
 ```yaml

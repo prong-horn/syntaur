@@ -4,7 +4,7 @@ import { SectionCard } from '../components/SectionCard';
 import {
   DENSITIES,
   SORT_DIRECTIONS,
-  SORT_FIELDS,
+  ASSIGNMENT_SORT_FIELDS,
   VIEW_MODES,
   type Density,
   type SortDirection,
@@ -24,7 +24,9 @@ const DENSITY_LABEL: Record<Density, string> = {
   compact: 'Compact',
 };
 
-const SORT_FIELD_LABEL: Record<SortField, string> = {
+// Assignment-only sort labels. Partial because the shared SortField union also
+// carries session-only fields, which the assignment view defaults never offer.
+const SORT_FIELD_LABEL: Partial<Record<SortField, string>> = {
   title: 'Title',
   status: 'Status',
   priority: 'Priority',
@@ -166,8 +168,8 @@ export function ViewDefaultsSection() {
               disabled={saving}
               className="editor-input max-w-[220px]"
             >
-              {SORT_FIELDS.map((f) => (
-                <option key={f} value={f}>{SORT_FIELD_LABEL[f]}</option>
+              {ASSIGNMENT_SORT_FIELDS.map((f) => (
+                <option key={f} value={f}>{SORT_FIELD_LABEL[f] ?? f}</option>
               ))}
             </select>
           </dd>

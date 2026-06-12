@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import type { FactDeclaration } from '@shared/fact-registry';
+import type { FactDeclaration, RawFactDeclaration } from '@shared/fact-registry';
 
 export interface StatusDefinition {
   id: string;
@@ -25,6 +25,7 @@ export interface StatusConfigResponse {
   transitions: StatusTransition[];
   custom: boolean;
   factDeclarations: FactDeclaration[];
+  rawFacts: RawFactDeclaration[];
 }
 
 // Shared client types for the orphan-prompt feature. Mirror server shapes
@@ -69,6 +70,7 @@ const DEFAULT_STATUS_CONFIG: StatusConfigResponse = {
   transitions: [],
   custom: false,
   factDeclarations: [],
+  rawFacts: [],
 };
 
 let cachedConfig: StatusConfigResponse | null = null;

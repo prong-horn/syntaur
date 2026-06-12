@@ -444,8 +444,17 @@ export async function getStatusConfig(): Promise<ResolvedStatusConfig> {
   const config = await readConfig();
 
   if (config.statuses) {
+    const sc = config.statuses;
+    // A config may declare facts and/or derive rules without any custom status
+    // `definitions` (parseStatusConfig now preserves those rather than dropping
+    // the whole block). Fall back to the default statuses/order so the board
+    // still renders, while the declared facts/derive ride along — same
+    // no-silent-deletion contract as the parser.
+    const defaults = sc.statuses.length === 0 ? buildDefaultStatusConfig() : null;
+    const effectiveStatuses = defaults ? defaults.statuses : sc.statuses;
+    const effectiveOrder = defaults ? defaults.order : sc.order;
     const terminalSet = new Set(
-      config.statuses.statuses.filter((s) => s.terminal).map((s) => s.id),
+      effectiveStatuses.filter((s) => s.terminal).map((s) => s.id),
     );
     // If a user defines custom statuses but omits the `transitions:` block,
     // fall back to default transitions. Without this, buildTransitionTable([])
@@ -456,23 +465,23 @@ export async function getStatusConfig(): Promise<ResolvedStatusConfig> {
     // takes the custom-config code path and uses `from:command` lookups — this
     // is what enforces "only emit transitions valid from current status" for
     // users whose config has custom statuses but default transitions.
-    const hasCustomTransitions = config.statuses.transitions.length > 0;
+    const hasCustomTransitions = sc.transitions.length > 0;
     const effectiveTransitions = hasCustomTransitions
-      ? config.statuses.transitions
+      ? sc.transitions
       : Array.from(DEFAULT_TRANSITION_TABLE.entries()).map(([key, to]) => {
           const [from, command] = key.split(':');
           return { from, command, to };
         });
-    const accepted = acceptFactDeclarations(normalizeFactDeclarations(config.statuses.facts ?? null));
+    const accepted = acceptFactDeclarations(normalizeFactDeclarations(sc.facts ?? null));
     _cachedConfig = {
       custom: true,
-      statuses: config.statuses.statuses,
-      order: config.statuses.order,
+      statuses: effectiveStatuses,
+      order: effectiveOrder,
       transitions: effectiveTransitions,
       transitionTable: buildTransitionTable(effectiveTransitions),
       terminalStatuses: terminalSet.size > 0 ? terminalSet : new Set(['completed', 'failed']),
-      derive: config.statuses.derive ?? null,
-      facts: config.statuses.facts ?? null,
+      derive: sc.derive ?? null,
+      facts: sc.facts ?? null,
       factDeclarations: accepted,
       deriveRegistry: buildDeriveRegistry(accepted),
       queryRegistry: buildQueryRegistry(accepted),

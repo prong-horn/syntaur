@@ -22,12 +22,15 @@ export {
   captureCurrentView,
   DEFAULT_CREATE_VIEW_STATE,
   buildCreateViewPayload,
+  DEFAULT_CREATE_SESSION_VIEW_STATE,
+  buildSessionViewPayload,
 } from '@shared/saved-view-builder';
 export type {
   CaptureContext,
   CaptureInput,
   CapturedPayload,
   CreateViewBuilderState,
+  CreateSessionViewBuilderState,
 } from '@shared/saved-view-builder';
 
 // ── Date-range UI <-> persisted shape ───────────────────────────────────────

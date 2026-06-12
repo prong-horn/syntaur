@@ -430,3 +430,276 @@ describe('DELETE / — existing handler preserved by refactor', () => {
     expect(body.custom).toBe(false);
   });
 });
+
+describe('GET / — rawFacts + factDeclarations', () => {
+  it('returns both rawFacts and factDeclarations', async () => {
+    const md = `---
+version: "2.0"
+defaultProjectDir: ${projectsDir}
+statuses:
+  facts:
+    - name: qaPassed
+      type: bool
+    - name: bad name!
+      type: frob
+    - name: codeReview
+      type: attestation
+      binds: plan
+---
+`;
+    await writeFile(join(tmpHome, '.syntaur', 'config.md'), md);
+    clearStatusConfigCache();
+
+    const res = await fetch(baseUrl);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.rawFacts).toEqual([
+      { name: 'qaPassed', type: 'bool', binds: null },
+      { name: 'bad name!', type: 'frob', binds: null },
+      { name: 'codeReview', type: 'attestation', binds: 'plan' },
+    ]);
+    // factDeclarations only contains the valid, accepted ones.
+    expect(body.factDeclarations).toHaveLength(2);
+    expect(body.factDeclarations.map((d: { name: string }) => d.name)).toEqual(['qaPassed', 'codeReview']);
+    // A facts-only config (no status `definitions`) still renders default
+    // statuses rather than blanking the board.
+    expect(body.statuses.length).toBeGreaterThan(0);
+  });
+});
+
+describe('POST / — facts saves', () => {
+  it('facts-only POST persists facts and preserves existing statuses/order/derive', async () => {
+    const md = `---
+version: "2.0"
+defaultProjectDir: ${projectsDir}
+statuses:
+  definitions:
+    - id: pending
+      label: Pending
+    - id: in_progress
+      label: In progress
+    - id: completed
+      label: Completed
+      terminal: true
+  order:
+    - pending
+    - in_progress
+    - completed
+  phaseLadder:
+    - phase: draft
+      when: '*'
+    - phase: ready_for_planning
+      when: 'hasRealObjective:true AND acRealTotal > 0'
+    - phase: ready_to_implement
+      when: 'planApproved:true'
+    - phase: in_progress
+      when: 'planApproved:true AND implementationStarted:true'
+    - phase: review
+      when: 'acAllChecked:true OR reviewRequested:true'
+  disposition:
+    - when: 'parked:true'
+      is: parked
+    - else: active
+  headline:
+    terminal: passthrough
+    parked: parked
+    blocked: blocked
+    active: phase
+  facts:
+    - name: qaPassed
+      type: bool
+---
+`;
+    await writeFile(join(tmpHome, '.syntaur', 'config.md'), md);
+    clearStatusConfigCache();
+
+    const res = await fetch(baseUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        facts: [
+          { name: 'qaPassed', type: 'bool' },
+          { name: 'deployed', type: 'attestation', binds: 'commit' },
+        ],
+      }),
+    });
+    expect(res.status).toBe(200);
+
+    const cfg = parseStatusConfig(await readFile(join(tmpHome, '.syntaur', 'config.md'), 'utf-8'));
+    expect(cfg!.facts).toEqual([
+      { name: 'qaPassed', type: 'bool', binds: null },
+      { name: 'deployed', type: 'attestation', binds: 'commit' },
+    ]);
+    // Statuses, order, and derive preserved byte-stable.
+    expect(cfg!.statuses.map((s) => s.id)).toEqual(['pending', 'in_progress', 'completed']);
+    expect(cfg!.order).toEqual(['pending', 'in_progress', 'completed']);
+    expect(cfg!.derive).not.toBeNull();
+    expect(cfg!.derive!.phaseLadder).toHaveLength(5);
+  });
+
+  it('POST with invalid facts → 400 invalid-facts', async () => {
+    const res = await fetch(baseUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        facts: [
+          { name: '', type: 'bool' },
+          { name: 'blocked', type: 'bool' },
+        ],
+      }),
+    });
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error).toBe('invalid-facts');
+    expect(body.problems).toBeInstanceOf(Array);
+    expect(body.problems.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it('POST with malformed facts shape → 400 malformed-facts', async () => {
+    const res = await fetch(baseUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        facts: 'not-an-array',
+      }),
+    });
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error).toBe('malformed-facts');
+  });
+
+  it('POST removing a derive-referenced fact without ack → 409 unresolved-fact-references', async () => {
+    const md = `---
+version: "2.0"
+defaultProjectDir: ${projectsDir}
+statuses:
+  definitions:
+    - id: pending
+      label: Pending
+  order:
+    - pending
+  phaseLadder:
+    - phase: draft
+      when: '*'
+    - phase: ready_for_planning
+      when: 'customFact:true'
+  disposition:
+    - else: active
+  headline:
+    terminal: passthrough
+    parked: parked
+    blocked: blocked
+    active: phase
+  facts:
+    - name: customFact
+      type: bool
+---
+`;
+    await writeFile(join(tmpHome, '.syntaur', 'config.md'), md);
+    clearStatusConfigCache();
+
+    const res = await fetch(baseUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ facts: [] }),
+    });
+    expect(res.status).toBe(409);
+    const body = await res.json();
+    expect(body.error).toBe('unresolved-fact-references');
+    expect(body.references).toBeInstanceOf(Array);
+    expect(body.references.length).toBeGreaterThan(0);
+    expect(body.references[0].factName).toBe('customFact');
+  });
+
+  it('POST removing a derive-referenced fact with ack → succeeds', async () => {
+    const md = `---
+version: "2.0"
+defaultProjectDir: ${projectsDir}
+statuses:
+  definitions:
+    - id: pending
+      label: Pending
+  order:
+    - pending
+  phaseLadder:
+    - phase: draft
+      when: '*'
+    - phase: ready_for_planning
+      when: 'customFact:true'
+  disposition:
+    - else: active
+  headline:
+    terminal: passthrough
+    parked: parked
+    blocked: blocked
+    active: phase
+  facts:
+    - name: customFact
+      type: bool
+---
+`;
+    await writeFile(join(tmpHome, '.syntaur', 'config.md'), md);
+    clearStatusConfigCache();
+
+    const res = await fetch(baseUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ facts: [], factRemovalAcks: ['customFact'] }),
+    });
+    expect(res.status).toBe(200);
+
+    const cfg = parseStatusConfig(await readFile(join(tmpHome, '.syntaur', 'config.md'), 'utf-8'));
+    // Removing every fact canonicalizes to no `facts:` block at all, which the
+    // parser surfaces as null (an empty array and null are equivalent here).
+    expect(cfg!.facts).toBeNull();
+  });
+
+  it('preserves statuses.facts across a Settings save (no facts in body)', async () => {
+    const md = `---
+version: "2.0"
+defaultProjectDir: ${projectsDir}
+statuses:
+  definitions:
+    - id: pending
+      label: Pending
+    - id: in_progress
+      label: In progress
+    - id: completed
+      label: Completed
+      terminal: true
+  order:
+    - pending
+    - in_progress
+    - completed
+  facts:
+    - name: qaPassed
+      type: bool
+    - name: bad name!
+      type: frob
+---
+`;
+    await writeFile(join(tmpHome, '.syntaur', 'config.md'), md);
+    clearStatusConfigCache();
+
+    const newStatuses = [
+      ...baseStatuses,
+      { id: 'shipped', label: 'Shipped' },
+    ];
+    const res = await fetch(baseUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        statuses: newStatuses,
+        order: newStatuses.map((s) => s.id),
+        transitions: [],
+      }),
+    });
+    expect(res.status).toBe(200);
+
+    const cfg = parseStatusConfig(await readFile(join(tmpHome, '.syntaur', 'config.md'), 'utf-8'));
+    expect(cfg!.facts).toEqual([
+      { name: 'qaPassed', type: 'bool', binds: null },
+      { name: 'bad name!', type: 'frob', binds: null },
+    ]);
+  });
+});

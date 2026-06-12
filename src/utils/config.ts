@@ -23,11 +23,9 @@ import {
 } from './agents-schema.js';
 import { isValidSlug } from './slug.js';
 import {
-  DERIVE_FIELDS,
-  factFieldNames,
   type FactDeclaration,
+  type RawFactDeclaration,
 } from './fact-registry.js';
-import { ASSIGNMENT_FIELDS } from './query/index.js';
 
 export {
   AGENT_ID_PATTERN,
@@ -126,12 +124,11 @@ export const DEFAULT_DERIVE_CONFIG: DeriveConfig = {
  * parse (Locked Decisions): every field is a raw string so user input
  * round-trips through serialization even when invalid. The strict
  * {@link FactDeclaration} is derived from this via {@link normalizeFactDeclarations}.
+ *
+ * Defined in `fact-registry.ts` (browser-safe); re-exported here so existing
+ * Node-side imports from `config.js` keep resolving.
  */
-export interface RawFactDeclaration {
-  name: string;
-  type: string;
-  binds: string | null;
-}
+export type { RawFactDeclaration } from './fact-registry.js';
 
 /**
  * A VALIDATED custom-fact declaration (strict union). bool/number facts are
@@ -142,13 +139,14 @@ export interface RawFactDeclaration {
  * Node-side imports from `config.js` keep resolving.
  */
 export type { FactDeclaration } from './fact-registry.js';
+export { validateFactDeclarations } from './fact-registry.js';
 
 /**
  * Narrow raw declarations to the strict union, DROPPING malformed rows (bad
  * name format / unknown type / invalid binds) — never throws. The single
  * bridge every consumer crosses before the collision filter
- * (`acceptFactDeclarations`). `validateFactDeclarations` diagnoses the raw rows
- * so doctor can report exactly what this drops.
+ * (`acceptFactDeclarations`). `validateFactDeclarations` (in `fact-registry.ts`)
+ * diagnoses the raw rows so doctor can report exactly what this drops.
  */
 export function normalizeFactDeclarations(
   raw: RawFactDeclaration[] | null | undefined,
@@ -702,8 +700,6 @@ export function parseStatusConfig(content: string): StatusConfig | null {
     }
   }
 
-  if (statuses.length === 0) return null;
-
   const derive: DeriveConfig | null =
     phaseLadder.length > 0 || disposition.length > 0 || Object.keys(headline).length > 0
       ? {
@@ -717,6 +713,14 @@ export function parseStatusConfig(content: string): StatusConfig | null {
           },
         }
       : null;
+
+  // Return null only when the `statuses:` block carried no usable content at
+  // all. A block that declares facts and/or derive rules but no status
+  // `definitions` must still surface them — dropping them here is the
+  // silent-deletion bug class this loose parser exists to prevent
+  // (getStatusConfig falls back to default statuses/order so the board still
+  // renders, while the declared facts/derive ride along).
+  if (statuses.length === 0 && facts.length === 0 && derive === null) return null;
 
   return {
     statuses,
@@ -896,72 +900,6 @@ export function validateDeriveConfig(
         `headline.${key} → "${derive.headline[key]}" is not a defined status id (add the definition or run migrate-derive)`,
       );
     }
-  }
-  return problems;
-}
-
-/**
- * Diagnose RAW fact declarations (Task 4): returns one human-readable problem
- * per malformed/colliding row — exactly what the normalize→accept pipeline will
- * drop, so doctor reports nothing silently. Checks name format, type/binds, and
- * case-insensitive collision of EVERY exported key (the declared name and, for
- * attestations, all four generated names) against `DERIVE_FIELDS`,
- * `ASSIGNMENT_FIELDS`, or an earlier declaration's exported keys. Works with
- * `derive: null` — declarations validate independently of derive rules.
- */
-export function validateFactDeclarations(raw: RawFactDeclaration[]): string[] {
-  const problems: string[] = [];
-  // Owner of each lowercased key: 'built-in' or the declaring fact name. Mirrors
-  // acceptFactDeclarations EXACTLY so doctor reports precisely what the runtime
-  // drops — atomic per declaration (built-ins always win, first-declared wins),
-  // and a declaration's keys are reserved ONLY when the whole declaration is
-  // accepted (a built-in-collided declaration reserves nothing, so a later
-  // declaration the runtime accepts is not falsely flagged).
-  const owners = new Map<string, string>(); // lowercased key → 'built-in' | <fact name>
-  for (const key of Object.keys(DERIVE_FIELDS)) owners.set(key, 'built-in');
-  for (const key of Object.keys(ASSIGNMENT_FIELDS)) owners.set(key, 'built-in');
-
-  for (const row of raw ?? []) {
-    const name = (row?.name ?? '').trim();
-    if (!/^[a-z][a-zA-Z0-9]*$/.test(name)) {
-      problems.push(
-        `fact "${row?.name ?? ''}": invalid name — must match /^[a-z][a-zA-Z0-9]*$/`,
-      );
-      continue;
-    }
-    const type = (row.type ?? '').trim();
-    if (type !== 'bool' && type !== 'number' && type !== 'attestation') {
-      problems.push(
-        `fact "${name}": invalid type "${row.type ?? ''}" — expected bool, number, or attestation`,
-      );
-      continue;
-    }
-    if (type === 'attestation') {
-      const binds = (row.binds ?? 'none').toString().trim() || 'none';
-      if (binds !== 'plan' && binds !== 'commit' && binds !== 'none') {
-        problems.push(
-          `fact "${name}": invalid binds "${row.binds}" — expected plan, commit, or none`,
-        );
-        continue;
-      }
-    }
-    // Collision check across ALL exported keys (binds is irrelevant to names).
-    const decl: FactDeclaration =
-      type === 'attestation' ? { name, type, binds: 'none' } : { name, type };
-    const keys = factFieldNames(decl).registryKeys;
-    const collidingKey = keys.find((k) => owners.has(k));
-    if (collidingKey !== undefined) {
-      const owner = owners.get(collidingKey)!;
-      if (owner === 'built-in') {
-        problems.push(`fact "${name}": exported field "${collidingKey}" collides with a built-in field`);
-      } else if (owner === name) {
-        problems.push(`fact "${name}": duplicate declaration (a fact named "${name}" is already declared)`);
-      } else {
-        problems.push(`fact "${name}": exported field "${collidingKey}" collides with fact "${owner}"`);
-      }
-      continue; // atomic: reserve NOTHING for a rejected declaration
-    }
-    for (const key of keys) owners.set(key, name);
   }
   return problems;
 }
