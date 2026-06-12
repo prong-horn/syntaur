@@ -117,6 +117,9 @@ export function LaunchPromptDialog({
     setValue(result.text);
     setCaret(result.caret);
     setSelected(0);
+    // Caret lands inside the just-inserted token, so it would otherwise re-open
+    // immediately — keep it closed until the user types again.
+    setDismissed(true);
     requestAnimationFrame(() => {
       const el = textareaRef.current;
       if (el) {

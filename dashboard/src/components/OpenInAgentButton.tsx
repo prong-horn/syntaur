@@ -95,8 +95,26 @@ export function OpenInAgentButton({
 
   function launch(agentId?: string) {
     if (target.kind === 'assignment') {
-      // Open the editable prompt box; the actual launch fires on its Confirm.
-      setPromptDialogAgent({ agentId });
+      // Resolve which agent this launch targets (an omitted agentId means the
+      // configured default — mirror the launch-plan resolver's fallback).
+      const agent =
+        agents.find((a) => a.id === agentId) ??
+        agents.find((a) => a.default) ??
+        agents[0];
+      // If the agent already has a prompt configured in settings — either the
+      // editable `launchPrompt` or the legacy `playbook` — launch straight away:
+      // omitting the prompt override lets the server resolve that configured
+      // template. Only pop the editable box when there's nothing set in
+      // settings, i.e. the launch would otherwise fall back to the bare
+      // `/grab-assignment` seed.
+      const hasConfiguredPrompt =
+        Boolean(agent?.launchPrompt?.trim()) || Boolean(agent?.playbook?.trim());
+      if (hasConfiguredPrompt) {
+        void flow.open(target, undefined, agentId);
+      } else {
+        // Open the editable prompt box; the actual launch fires on its Confirm.
+        setPromptDialogAgent({ agentId });
+      }
     } else {
       void flow.open(target, undefined, agentId);
     }
