@@ -18,6 +18,7 @@ interface SessionRow {
   pid: number | null;
   pid_started_at: string | null;
   original_head_sha: string | null;
+  updated_at: string | null;
 }
 
 function rowToSession(row: SessionRow): AgentSession {
@@ -35,6 +36,7 @@ function rowToSession(row: SessionRow): AgentSession {
     pid: row.pid ?? null,
     pidStartedAt: row.pid_started_at ?? null,
     originalHeadSha: row.original_head_sha ?? null,
+    updatedAt: row.updated_at ?? null,
   };
 }
 

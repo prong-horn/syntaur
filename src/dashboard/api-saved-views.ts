@@ -21,7 +21,7 @@ const SAVED_VIEWS_LOCK = 'sv:global';
 
 function validateCreateBody(
   body: unknown,
-): { ok: true; value: { name: string; workspace: string | null; config: SavedViewConfig } } | { ok: false; error: string } {
+): { ok: true; value: { name: string; workspace: string | null; config: SavedViewConfig; entityType?: 'assignment' | 'session' } } | { ok: false; error: string } {
   if (!body || typeof body !== 'object' || Array.isArray(body)) {
     return { ok: false, error: 'body must be an object with `name`, `workspace`, and `config`' };
   }
@@ -35,12 +35,16 @@ function validateCreateBody(
   if (!isSavedViewConfig(obj.config)) {
     return { ok: false, error: 'config must be a valid SavedViewConfig' };
   }
+  if (obj.entityType !== undefined && obj.entityType !== 'assignment' && obj.entityType !== 'session') {
+    return { ok: false, error: "entityType must be 'assignment' or 'session'" };
+  }
   return {
     ok: true,
     value: {
       name: obj.name.trim(),
       workspace: obj.workspace as string | null,
       config: obj.config,
+      ...(obj.entityType !== undefined ? { entityType: obj.entityType as 'assignment' | 'session' } : {}),
     },
   };
 }

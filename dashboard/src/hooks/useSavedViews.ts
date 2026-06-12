@@ -208,6 +208,7 @@ export function createSavedView(input: {
   name: string;
   workspace: string | null;
   config: SavedViewConfig;
+  entityType?: 'assignment' | 'session';
 }): Promise<SavedViewsFile> {
   return postJson('POST', '/api/saved-views', input);
 }

@@ -59,6 +59,7 @@ export interface SavedViewConfig {
   filters: ViewFilters;
   sortField: SortField;
   sortDirection: SortDirection;
+  limit?: number;
   listSectionVisibility: ListSectionVisibility;
   kanbanColumnVisibility: KanbanColumnVisibility;
   tableColumnVisibility: TableColumnVisibility;
@@ -68,6 +69,7 @@ export interface SavedView {
   id: string;
   name: string;
   workspace: string | null;
+  entityType?: 'assignment' | 'session';
   config: SavedViewConfig;
   createdAt: string;
   updatedAt: string;
@@ -75,7 +77,7 @@ export interface SavedView {
 
 export type WidgetConfig =
   | { kind: 'saved-view'; viewId: string }
-  | { kind: 'agent-sessions' }
+  | { kind: 'agent-sessions'; viewId?: string }
   | { kind: 'inventories' };
 
 export const WIDGET_KINDS = ['saved-view', 'agent-sessions', 'inventories'] as const;
@@ -132,6 +134,7 @@ function makeSeededView(
     id,
     name,
     workspace: null,
+    entityType: 'assignment',
     config: {
       viewMode: 'list',
       filters: { ...DEFAULT_FILTERS, ...filterOverrides },
@@ -172,7 +175,13 @@ export function isWidgetConfig(value: unknown): value is WidgetConfig {
   if (obj.kind === 'saved-view') {
     return typeof obj.viewId === 'string' && obj.viewId.length > 0;
   }
-  return obj.kind === 'agent-sessions' || obj.kind === 'inventories';
+  if (obj.kind === 'agent-sessions') {
+    if (obj.viewId !== undefined) {
+      return typeof obj.viewId === 'string' && obj.viewId.length > 0;
+    }
+    return true;
+  }
+  return obj.kind === 'inventories';
 }
 
 function isListSectionVisibility(value: unknown): value is ListSectionVisibility {
@@ -226,6 +235,9 @@ export function isSavedViewConfig(value: unknown): value is SavedViewConfig {
 export function isSavedView(value: unknown): value is SavedView {
   if (!value || typeof value !== 'object') return false;
   const obj = value as Record<string, unknown>;
+  if (obj.entityType !== undefined && obj.entityType !== 'assignment' && obj.entityType !== 'session') {
+    return false;
+  }
   return (
     typeof obj.id === 'string' &&
     obj.id.length > 0 &&

@@ -33,7 +33,14 @@ export const widgetRegistry: Record<WidgetConfig['kind'], WidgetRenderer> = {
   'agent-sessions': {
     title: 'Agent sessions',
     icon: Activity,
-    render: () => createElement(AgentSessionsWidget),
+    render: (config, ctx) => {
+      if (config.kind !== 'agent-sessions') return null;
+      return createElement(AgentSessionsWidget, {
+        viewId: config.viewId,
+        slotId: ctx.slotId,
+        onPickAnother: ctx.onPickAnother,
+      });
+    },
   },
   inventories: {
     title: 'Inventories',

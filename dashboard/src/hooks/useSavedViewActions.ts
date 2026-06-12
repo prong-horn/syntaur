@@ -7,8 +7,10 @@ import {
 } from './useSavedViews';
 import {
   buildCreateViewPayload,
+  buildSessionViewPayload,
   mergeUpdatedConfig,
   type CreateViewBuilderState,
+  type CreateSessionViewBuilderState,
 } from '../lib/savedViews';
 
 /**
@@ -32,11 +34,27 @@ export function useSavedViewActions() {
     await updateSavedView(target.id, { name, config });
   }
 
+  // Session-view edit. Builds with the session payload (viewMode 'list' + limit)
+  // and merges onto the freshest config. entityType is preserved server-side
+  // (updateSavedView spreads the previous view), so the view stays a session view.
+  async function submitEditSession(
+    target: SavedView,
+    name: string,
+    state: CreateSessionViewBuilderState,
+  ): Promise<void> {
+    const current = views.find((v) => v.id === target.id) ?? target;
+    const built = buildSessionViewPayload(state, current.workspace).config;
+    const config = mergeUpdatedConfig(current.config, built, current.config);
+    await updateSavedView(target.id, { name, config });
+  }
+
   async function duplicate(view: SavedView): Promise<void> {
     await createSavedView({
       name: `${view.name} (copy)`,
       workspace: view.workspace,
       config: view.config,
+      // Carry the discriminator so a duplicated session view stays a session view.
+      entityType: view.entityType,
     });
   }
 
@@ -44,5 +62,5 @@ export function useSavedViewActions() {
     await deleteSavedView(view.id);
   }
 
-  return { submitEdit, duplicate, remove };
+  return { submitEdit, submitEditSession, duplicate, remove };
 }

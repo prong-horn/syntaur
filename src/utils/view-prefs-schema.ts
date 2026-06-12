@@ -9,7 +9,11 @@ export type SortField =
   | 'assignee'
   | 'dependencies'
   | 'created'
-  | 'updated';
+  | 'updated'
+  | 'started'
+  | 'lastActivity'
+  | 'projectName'
+  | 'agentName';
 
 export const SORT_FIELDS: readonly SortField[] = [
   'title',
@@ -19,6 +23,31 @@ export const SORT_FIELDS: readonly SortField[] = [
   'dependencies',
   'created',
   'updated',
+  'started',
+  'lastActivity',
+  'projectName',
+  'agentName',
+];
+
+// Sort fields offered by assignment-view surfaces (boards, CreateViewDialog,
+// view defaults). The session-only fields are intentionally excluded so the
+// assignment dropdowns don't surface session sorts.
+export const ASSIGNMENT_SORT_FIELDS: readonly SortField[] = [
+  'title',
+  'status',
+  'priority',
+  'assignee',
+  'dependencies',
+  'created',
+  'updated',
+];
+
+// Sort fields offered by session views (CreateSessionViewDialog).
+export const SESSION_SORT_FIELDS: readonly SortField[] = [
+  'started',
+  'lastActivity',
+  'projectName',
+  'agentName',
 ];
 
 export type SortDirection = 'asc' | 'desc';
@@ -45,8 +74,8 @@ export const ACTIVITIES: readonly Activity[] = ['all', 'stale', 'fresh'];
 // relative) XOR an absolute `from`/`to` (YYYY-MM-DD, inclusive of the whole local
 // `to` day). Absent/empty = no constraint. `dateRange` is a saved-view-only filter
 // (never persisted to view-prefs).
-export type DateRangeField = 'created' | 'updated';
-export const DATE_RANGE_FIELDS: readonly DateRangeField[] = ['created', 'updated'];
+export type DateRangeField = 'created' | 'updated' | 'started';
+export const DATE_RANGE_FIELDS: readonly DateRangeField[] = ['created', 'updated', 'started'];
 
 export type DateRangePreset =
   | 'last_24h' | 'last_7d' | 'last_30d' | 'last_90d' | 'older_7d' | 'older_30d';
@@ -105,6 +134,8 @@ export interface ViewFilters {
   project?: FilterValue;
   tags?: FilterValue;
   activity?: Activity;
+  sessionStatus?: FilterValue;
+  agent?: FilterValue;
   // Saved-view-only filters (never persisted to view-prefs):
   dateRange?: DateRangeFilter;
   search?: string;

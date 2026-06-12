@@ -23,7 +23,7 @@ import { toFilterValues } from './view-prefs-schema.js';
 // Known saved-view filter keys. Used to preserve forward-compat UNKNOWN keys when
 // rebuilding `filters` on any update path (so a future filter key isn't dropped).
 export const KNOWN_FILTER_KEYS = new Set([
-  'status', 'type', 'priority', 'assignee', 'project', 'tags', 'activity', 'dateRange', 'search', 'query',
+  'status', 'type', 'priority', 'assignee', 'project', 'tags', 'activity', 'dateRange', 'search', 'query', 'sessionStatus', 'agent',
 ]);
 
 export function preserveUnknownFilterKeys(existing: ViewFilters, built: ViewFilters): ViewFilters {
@@ -52,6 +52,9 @@ export function mergeUpdatedConfig(
     filters: preserveUnknownFilterKeys(existing.filters, built.filters),
     sortField: built.sortField,
     sortDirection: built.sortDirection,
+    // `limit` is rebuilt from `built` (session views); assignment edits carry
+    // undefined here, which serializes away — so this can't leak a stale limit.
+    limit: built.limit,
     listSectionVisibility: { collapsed: [...visibility.listSectionVisibility.collapsed] },
     kanbanColumnVisibility: { hidden: [...visibility.kanbanColumnVisibility.hidden] },
     tableColumnVisibility: { hidden: [...visibility.tableColumnVisibility.hidden] },
@@ -109,6 +112,10 @@ function minimizeFilters(filters: ViewFilters, forcedProject: string | null): Vi
     if (project.length) minimal.project = project;
   }
   if (filters.activity && filters.activity !== 'all') minimal.activity = filters.activity;
+  const sessionStatus = toFilterValues(filters.sessionStatus);
+  if (sessionStatus.length) minimal.sessionStatus = sessionStatus;
+  const agent = toFilterValues(filters.agent);
+  if (agent.length) minimal.agent = agent;
   // dateRange is already minimized (built directly from validated inputs).
   if (filters.dateRange) minimal.dateRange = filters.dateRange;
   const search = filters.search?.trim();
@@ -143,6 +150,15 @@ export interface CreateViewBuilderState {
   filters: ViewFilters; // status / type / priority / assignee / project (arrays) + activity
   sortField: SortField;
   sortDirection: SortDirection;
+  limit?: number;
+}
+
+// Session views have a different builder state shape (no viewMode selector).
+export interface CreateSessionViewBuilderState {
+  filters: ViewFilters; // sessionStatus / agent / project / dateRange
+  sortField: SortField;
+  sortDirection: SortDirection;
+  limit?: number;
 }
 
 // Sensible defaults: kanban, no filters, sort by updated desc — so a user can
@@ -151,6 +167,13 @@ export const DEFAULT_CREATE_VIEW_STATE: CreateViewBuilderState = {
   viewMode: 'kanban',
   filters: {},
   sortField: 'updated',
+  sortDirection: 'desc',
+};
+
+// Default builder state for session views.
+export const DEFAULT_CREATE_SESSION_VIEW_STATE: CreateSessionViewBuilderState = {
+  filters: {},
+  sortField: 'started',
   sortDirection: 'desc',
 };
 
@@ -174,5 +197,34 @@ export function buildCreateViewPayload(
       tableColumnVisibility: { hidden: [] },
     },
   });
-  return { workspace, config };
+  const out: SavedViewConfig = { ...config };
+  if (state.limit !== undefined && state.limit > 0) {
+    out.limit = state.limit;
+  }
+  return { workspace, config: out };
+}
+
+// Build the persistence payload for a session view. Always uses 'list' mode.
+export function buildSessionViewPayload(
+  state: CreateSessionViewBuilderState,
+  workspace: string | null,
+): { workspace: string | null; config: SavedViewConfig } {
+  const { config } = captureCurrentView({
+    name: '',
+    context: { workspace, projectSlug: null },
+    state: {
+      viewMode: 'list',
+      filters: state.filters,
+      sortField: state.sortField,
+      sortDirection: state.sortDirection,
+      listSectionVisibility: { collapsed: [] },
+      kanbanColumnVisibility: { hidden: [] },
+      tableColumnVisibility: { hidden: [] },
+    },
+  });
+  const out: SavedViewConfig = { ...config };
+  if (state.limit !== undefined && state.limit > 0) {
+    out.limit = state.limit;
+  }
+  return { workspace, config: out };
 }

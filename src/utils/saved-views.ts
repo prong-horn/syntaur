@@ -115,6 +115,9 @@ export interface CreateSavedViewInput {
   name: string;
   workspace: string | null;
   config: SavedViewConfig;
+  // Discriminates session views from assignment views. Absent === 'assignment'
+  // for backward compatibility, so it is only written when explicitly provided.
+  entityType?: 'assignment' | 'session';
 }
 
 export interface SavedViewMutationOk {
@@ -138,6 +141,8 @@ export function createSavedView(
     id: randomUUID(),
     name: input.name,
     workspace: input.workspace,
+    // Only persist entityType when explicitly a session view; absent === assignment.
+    ...(input.entityType === 'session' ? { entityType: 'session' as const } : {}),
     config: input.config,
     createdAt: ts,
     updatedAt: ts,

@@ -37,7 +37,7 @@ export function WidgetPicker({ open, onOpenChange, onSelect }: WidgetPickerProps
         <DialogHeader>
           <DialogTitle>Add a widget</DialogTitle>
           <DialogDescription>
-            Choose a built-in widget or one of your saved views.
+            Choose a built-in widget, an assignment view, or a session view.
           </DialogDescription>
         </DialogHeader>
 
@@ -84,32 +84,78 @@ export function WidgetPicker({ open, onOpenChange, onSelect }: WidgetPickerProps
               </p>
             </div>
           ) : (
-            <ul className="max-h-72 divide-y divide-border/40 overflow-auto rounded-md border border-border/60">
-              {views.map((v) => (
-                <li key={v.id}>
-                  <button
-                    type="button"
-                    onClick={() => pick({ kind: 'saved-view', viewId: v.id })}
-                    className="flex w-full items-center gap-3 px-3 py-2.5 text-left text-sm hover:bg-muted/40"
-                  >
-                    <span className="min-w-0 flex-1 truncate font-medium text-foreground">
-                      {v.name}
-                    </span>
-                    {v.workspace !== null ? (
-                      <span
-                        className="shrink-0 rounded-full border border-border/60 px-2 py-0.5 text-[10px] text-muted-foreground"
-                        title={`Scoped to workspace: ${v.workspace}`}
-                      >
-                        {v.workspace}
-                      </span>
-                    ) : null}
-                    <span className="shrink-0 rounded-full border border-border/60 px-2 py-0.5 text-[10px] capitalize text-muted-foreground">
-                      {v.config.viewMode}
-                    </span>
-                  </button>
-                </li>
-              ))}
-            </ul>
+            <div className="space-y-3">
+              {/* Assignment views */}
+              {views.some((v) => v.entityType !== 'session') && (
+                <div>
+                  <h4 className="mb-1 px-3 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                    Assignments
+                  </h4>
+                  <ul className="divide-y divide-border/40 rounded-md border border-border/60">
+                    {views
+                      .filter((v) => v.entityType !== 'session')
+                      .map((v) => (
+                        <li key={v.id}>
+                          <button
+                            type="button"
+                            onClick={() => pick({ kind: 'saved-view', viewId: v.id })}
+                            className="flex w-full items-center gap-3 px-3 py-2.5 text-left text-sm hover:bg-muted/40"
+                          >
+                            <span className="min-w-0 flex-1 truncate font-medium text-foreground">
+                              {v.name}
+                            </span>
+                            {v.workspace !== null ? (
+                              <span
+                                className="shrink-0 rounded-full border border-border/60 px-2 py-0.5 text-[10px] text-muted-foreground"
+                                title={`Scoped to workspace: ${v.workspace}`}
+                              >
+                                {v.workspace}
+                              </span>
+                            ) : null}
+                            <span className="shrink-0 rounded-full border border-border/60 px-2 py-0.5 text-[10px] capitalize text-muted-foreground">
+                              {v.config.viewMode}
+                            </span>
+                          </button>
+                        </li>
+                      ))}
+                  </ul>
+                </div>
+              )}
+
+              {/* Session views */}
+              {views.some((v) => v.entityType === 'session') && (
+                <div>
+                  <h4 className="mb-1 px-3 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                    Sessions
+                  </h4>
+                  <ul className="divide-y divide-border/40 rounded-md border border-border/60">
+                    {views
+                      .filter((v) => v.entityType === 'session')
+                      .map((v) => (
+                        <li key={v.id}>
+                          <button
+                            type="button"
+                            onClick={() => pick({ kind: 'agent-sessions', viewId: v.id })}
+                            className="flex w-full items-center gap-3 px-3 py-2.5 text-left text-sm hover:bg-muted/40"
+                          >
+                            <span className="min-w-0 flex-1 truncate font-medium text-foreground">
+                              {v.name}
+                            </span>
+                            {v.workspace !== null ? (
+                              <span
+                                className="shrink-0 rounded-full border border-border/60 px-2 py-0.5 text-[10px] text-muted-foreground"
+                                title={`Scoped to workspace: ${v.workspace}`}
+                              >
+                                {v.workspace}
+                              </span>
+                            ) : null}
+                          </button>
+                        </li>
+                      ))}
+                  </ul>
+                </div>
+              )}
+            </div>
           )}
           {!loading && views.some((v) => v.workspace !== null) ? (
             <p className="text-[11px] text-muted-foreground">

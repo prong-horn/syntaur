@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { ViewMode, SortField, SortDirection, SavedView } from '@shared/saved-views-schema';
-import { VIEW_MODES, SORT_FIELDS, toFilterValues } from '@shared/view-prefs-schema';
+import { VIEW_MODES, ASSIGNMENT_SORT_FIELDS, toFilterValues } from '@shared/view-prefs-schema';
 import {
   Dialog,
   DialogContent,
@@ -42,7 +42,9 @@ const VIEW_MODE_LABEL: Record<ViewMode, string> = {
   table: 'Table',
 };
 
-const SORT_FIELD_LABEL: Record<SortField, string> = {
+// Assignment-only sort labels. Partial because the shared SortField union also
+// carries session-only fields, which assignment views never offer.
+const SORT_FIELD_LABEL: Partial<Record<SortField, string>> = {
   title: 'Title',
   status: 'Status',
   priority: 'Priority',
@@ -280,8 +282,8 @@ export function CreateViewDialog({
             <Field label="Sort by" className="sm:col-span-2">
               <div className="flex gap-2">
                 <select value={sortField} onChange={(e) => setSortField(e.target.value as SortField)} className="editor-input w-full">
-                  {SORT_FIELDS.map((f) => (
-                    <option key={f} value={f}>{SORT_FIELD_LABEL[f]}</option>
+                  {ASSIGNMENT_SORT_FIELDS.map((f) => (
+                    <option key={f} value={f}>{SORT_FIELD_LABEL[f] ?? f}</option>
                   ))}
                 </select>
                 <button

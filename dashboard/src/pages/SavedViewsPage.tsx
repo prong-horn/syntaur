@@ -8,12 +8,15 @@ import {
   savedViewPath,
   summarizeFilters,
   buildCreateViewPayload,
+  buildSessionViewPayload,
   type CreateViewBuilderState,
+  type CreateSessionViewBuilderState,
 } from '../lib/savedViews';
 import { LoadingState } from '../components/LoadingState';
 import { EmptyState } from '../components/EmptyState';
 import { ConfirmDialog } from '../components/ConfirmDialog';
 import { CreateViewDialog } from '../components/CreateViewDialog';
+import { CreateSessionViewDialog } from '../components/CreateSessionViewDialog';
 import { PageHeader } from '../components/PageHeader';
 import { SectionCard } from '../components/SectionCard';
 import { useToast, Toaster } from '../components/Toast';
@@ -25,18 +28,27 @@ const VIEW_MODE_LABEL: Record<ViewMode, string> = {
   table: 'Table',
 };
 
+const ENTITY_TYPE_LABEL: Record<string, string> = {
+  assignment: 'Assignment',
+  session: 'Session',
+};
+
+const ENTITY_TYPE_CLASS: Record<string, string> = {
+  assignment: 'bg-muted text-muted-foreground',
+  session: 'bg-primary/10 text-primary',
+};
+
 export function SavedViewsPage() {
   const { workspace } = useParams<{ workspace?: string }>();
   const { views, loading } = useSavedViews();
-  const { submitEdit, duplicate, remove } = useSavedViewActions();
+  const { submitEdit, submitEditSession, duplicate, remove } = useSavedViewActions();
   const { toast, showToast, dismissToast } = useToast();
   const [deleteTarget, setDeleteTarget] = useState<SavedView | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
+  const [createSessionOpen, setCreateSessionOpen] = useState(false);
   const [editTarget, setEditTarget] = useState<SavedView | null>(null);
 
-  // Create-new uses the ROUTE workspace; the name is passed explicitly so the
-  // payload spread can't clobber it.
   async function handleCreate(name: string, state: CreateViewBuilderState) {
     const { workspace: ws, config } = buildCreateViewPayload(state, workspace ?? null);
     try {
@@ -45,7 +57,19 @@ export function SavedViewsPage() {
       showToast(`Created view "${name}"`);
     } catch (err) {
       showToast(err instanceof Error ? err.message : 'Failed to create saved view');
-      throw err; // keep the dialog open and surface the inline error
+      throw err;
+    }
+  }
+
+  async function handleCreateSession(name: string, state: CreateSessionViewBuilderState) {
+    const { workspace: ws, config } = buildSessionViewPayload(state, workspace ?? null);
+    try {
+      await createSavedView({ name, workspace: ws, config, entityType: 'session' });
+      setCreateSessionOpen(false);
+      showToast(`Created session view "${name}"`);
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Failed to create session view');
+      throw err;
     }
   }
 
@@ -56,6 +80,17 @@ export function SavedViewsPage() {
       showToast(`Updated view "${name}"`);
     } catch (err) {
       showToast(err instanceof Error ? err.message : 'Failed to update saved view');
+      throw err;
+    }
+  }
+
+  async function handleEditSession(target: SavedView, name: string, state: CreateSessionViewBuilderState) {
+    try {
+      await submitEditSession(target, name, state);
+      setEditTarget(null);
+      showToast(`Updated session view "${name}"`);
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Failed to update session view');
       throw err;
     }
   }
@@ -82,7 +117,7 @@ export function SavedViewsPage() {
     }
   }
 
-  const createButton = (
+  const createAssignmentButton = (
     <button
       type="button"
       onClick={() => setCreateOpen(true)}
@@ -93,12 +128,30 @@ export function SavedViewsPage() {
     </button>
   );
 
+  const createSessionButton = (
+    <button
+      type="button"
+      onClick={() => setCreateSessionOpen(true)}
+      className="shell-action inline-flex items-center gap-1.5"
+    >
+      <Plus className="h-4 w-4" />
+      Create session view
+    </button>
+  );
+
+  const isEditingSession = editTarget?.entityType === 'session';
+
   return (
     <div className="space-y-4">
       <PageHeader
         title="Saved Views"
         description="Create a view here, or open, edit, and reuse views captured from any board."
-        actions={createButton}
+        actions={
+          <div className="flex items-center gap-2">
+            {createSessionButton}
+            {createAssignmentButton}
+          </div>
+        }
       />
 
       {loading ? (
@@ -107,7 +160,12 @@ export function SavedViewsPage() {
         <EmptyState
           title="No saved views yet"
           description="Create your first view here, or capture one from any assignments board."
-          actions={createButton}
+          actions={
+            <div className="flex items-center gap-2">
+              {createSessionButton}
+              {createAssignmentButton}
+            </div>
+          }
         />
       ) : (
         <SectionCard>
@@ -125,19 +183,40 @@ export function SavedViewsPage() {
         </SectionCard>
       )}
 
+      {/* Assignment view dialog */}
       <CreateViewDialog
-        open={createOpen || editTarget !== null}
+        open={createOpen || (!isEditingSession && editTarget !== null)}
         onOpenChange={(o) => {
           if (!o) {
             setCreateOpen(false);
-            setEditTarget(null);
+            if (!isEditingSession) setEditTarget(null);
           }
         }}
-        // Edit scopes options to the VIEW's own workspace (NOT the route — a global
-        // view edited from /w/:ws/views must stay global). Create uses the route.
-        workspace={editTarget ? editTarget.workspace : workspace ?? null}
-        initialView={editTarget}
-        onSubmit={editTarget ? (name, state) => handleEdit(editTarget, name, state) : handleCreate}
+        workspace={editTarget && !isEditingSession ? editTarget.workspace : workspace ?? null}
+        initialView={editTarget && !isEditingSession ? editTarget : null}
+        onSubmit={
+          editTarget && !isEditingSession
+            ? (name, state) => handleEdit(editTarget, name, state)
+            : handleCreate
+        }
+      />
+
+      {/* Session view dialog */}
+      <CreateSessionViewDialog
+        open={createSessionOpen || (isEditingSession && editTarget !== null)}
+        onOpenChange={(o) => {
+          if (!o) {
+            setCreateSessionOpen(false);
+            if (isEditingSession) setEditTarget(null);
+          }
+        }}
+        workspace={editTarget && isEditingSession ? editTarget.workspace : workspace ?? null}
+        initialView={editTarget && isEditingSession ? editTarget : null}
+        onSubmit={
+          editTarget && isEditingSession
+            ? (name, state) => handleEditSession(editTarget, name, state)
+            : handleCreateSession
+        }
       />
 
       <ConfirmDialog
@@ -174,6 +253,13 @@ function SavedViewRow({ view, onRequestDelete, onRequestEdit, onRequestDuplicate
   const open = () => navigate(savedViewPath(view));
   const summary = summarizeFilters(view.config.filters);
   const workspaceLabel = view.workspace ? toTitleCase(view.workspace) : null;
+  const entityType = view.entityType ?? 'assignment';
+  const isSession = entityType === 'session';
+
+  // Session views show limit + sort in the summary line.
+  const extraSummary = isSession
+    ? `limit: ${view.config.limit ?? 'none'} · sort: ${view.config.sortField} ${view.config.sortDirection}`
+    : null;
 
   return (
     <li className="flex flex-wrap items-center gap-3 py-3">
@@ -187,16 +273,26 @@ function SavedViewRow({ view, onRequestDelete, onRequestEdit, onRequestDuplicate
           >
             {view.name}
           </button>
-          <span className="inline-flex shrink-0 items-center rounded-full border border-border/70 bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
-            {VIEW_MODE_LABEL[view.config.viewMode]}
+          <span
+            className={`inline-flex shrink-0 items-center rounded-full border border-border/70 px-2 py-0.5 text-xs font-medium ${ENTITY_TYPE_CLASS[entityType] ?? 'bg-muted text-muted-foreground'}`}
+          >
+            {ENTITY_TYPE_LABEL[entityType] ?? entityType}
           </span>
+          {!isSession && (
+            <span className="inline-flex shrink-0 items-center rounded-full border border-border/70 bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
+              {VIEW_MODE_LABEL[view.config.viewMode]}
+            </span>
+          )}
           {workspaceLabel ? (
             <span className="inline-flex shrink-0 items-center rounded-full border border-border/70 bg-muted/60 px-2 py-0.5 text-xs text-muted-foreground">
               {workspaceLabel}
             </span>
           ) : null}
         </div>
-        <p className="truncate text-xs text-muted-foreground">{summary}</p>
+        <p className="truncate text-xs text-muted-foreground">
+          {summary}
+          {extraSummary ? ` · ${extraSummary}` : ''}
+        </p>
       </div>
       <div className="flex shrink-0 items-center gap-2">
         <button type="button" onClick={open} className="shell-action">
