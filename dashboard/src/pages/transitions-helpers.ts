@@ -66,6 +66,19 @@ export function filterToStatuses<T extends { from: string }>(rows: T[], statusId
   return rows.filter((r) => statusIds.has(r.from));
 }
 
+/**
+ * Keep only rows whose `from` AND `to` are currently-defined statuses — used
+ * when seeding the read-only defaults / customize view so no phantom row
+ * references a status the user's config doesn't define (which would otherwise
+ * make the unified Save fail validation).
+ */
+export function filterValidTransitions<T extends { from: string; to: string }>(
+  rows: T[],
+  statusIds: Set<string>,
+): T[] {
+  return rows.filter((r) => statusIds.has(r.from) && statusIds.has(r.to));
+}
+
 export interface TransitionGroup<T> {
   from: string;
   rows: T[];

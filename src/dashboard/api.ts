@@ -414,6 +414,13 @@ interface ResolvedStatusConfig {
   order: string[];
   transitions: StatusTransition[];
   transitionTable: Map<string, string>;
+  /** RAW transitions as configured (empty when the user declares none — the
+   * Settings editor distinguishes "user customized" from "showing defaults"
+   * via {@link transitionsCustom}, same pattern as {@link derive}). Distinct
+   * from {@link transitions}, which is materialized with the default table for
+   * the runtime transition guards so the board still offers commands. */
+  rawTransitions: StatusTransition[];
+  transitionsCustom: boolean;
   terminalStatuses: ReadonlySet<string>;
   /** Derive rules as configured (null when the user has none — resolve to
    * DEFAULT_DERIVE_CONFIG at the derivation call site, NOT here, so the
@@ -479,6 +486,8 @@ export async function getStatusConfig(): Promise<ResolvedStatusConfig> {
       order: effectiveOrder,
       transitions: effectiveTransitions,
       transitionTable: buildTransitionTable(effectiveTransitions),
+      rawTransitions: sc.transitions,
+      transitionsCustom: hasCustomTransitions,
       terminalStatuses: terminalSet.size > 0 ? terminalSet : new Set(['completed', 'failed']),
       derive: sc.derive ?? null,
       facts: sc.facts ?? null,
@@ -496,6 +505,9 @@ export async function getStatusConfig(): Promise<ResolvedStatusConfig> {
       order: def.order,
       transitions: def.transitions,
       transitionTable: DEFAULT_TRANSITION_TABLE,
+      // No custom config at all → the Settings editor shows read-only defaults.
+      rawTransitions: [],
+      transitionsCustom: false,
       terminalStatuses: new Set(['completed', 'failed']),
       derive: null,
       facts: null,

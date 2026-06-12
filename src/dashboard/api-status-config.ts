@@ -4,6 +4,7 @@ import {
   deleteStatusConfig,
   DEFAULT_DERIVE_CONFIG,
   validateDeriveConfig,
+  validateDeriveShape,
   validateFactDeclarations,
   normalizeFactDeclarations,
   type RawFactDeclaration,
@@ -75,7 +76,13 @@ function configResponse(config: Awaited<ReturnType<typeof getStatusConfig>>) {
   return {
     statuses: config.statuses,
     order: config.order,
-    transitions: config.transitions,
+    // RAW transitions (empty when the user has none) + a custom flag, so the
+    // Settings editor can show read-only defaults vs. a customized table. The
+    // materialized `config.transitions` (default-filled for runtime guards) is
+    // deliberately NOT exposed here — sending it would make the defaults view
+    // unreachable and round-trip phantom rows for undefined statuses.
+    transitions: config.rawTransitions,
+    transitionsCustom: config.transitionsCustom,
     custom: config.custom,
     derive: config.derive ?? DEFAULT_DERIVE_CONFIG,
     deriveCustom: config.derive !== null,
@@ -244,9 +251,13 @@ export function createStatusConfigRouter(
 
       const effectiveStatuses = hasStatuses ? statuses : currentConfig.statuses;
       const effectiveOrder = hasOrder ? order : currentConfig.order;
+      // Preserve the RAW transitions (what's actually in config.md), NOT the
+      // materialized default-filled `currentConfig.transitions` — otherwise a
+      // statuses-only save would persist the 17 built-in rows (including ones
+      // referencing undefined statuses) into a config that had none.
       const effectiveTransitions: StatusTransition[] = hasTransitions
         ? transitions
-        : currentConfig.transitions;
+        : currentConfig.rawTransitions;
 
       // Validate resolutions shape early.
       const parsed = parseResolutions(rawResolutions);
@@ -350,20 +361,12 @@ export function createStatusConfigRouter(
         if (derive === null) {
           effectiveDerive = null; // reset to built-in defaults
         } else {
-          const d = derive as Record<string, unknown>;
-          const headline = d.headline as Record<string, unknown> | undefined;
-          const shapeOk =
-            Array.isArray(d.phaseLadder) &&
-            Array.isArray(d.disposition) &&
-            !!headline &&
-            typeof headline === 'object' &&
-            typeof headline.parked === 'string' &&
-            typeof headline.blocked === 'string';
-          if (!shapeOk) {
-            res.status(400).json({
-              error: 'invalid-derive',
-              problems: ['derive must have phaseLadder[], disposition[], and headline{ parked, blocked }'],
-            });
+          // Deep shape-check FIRST — validateDeriveConfig assumes correct types,
+          // so a malformed payload (null rung, numeric when/next, …) would 500
+          // and could partial-mutate via serialization after resolutions apply.
+          const shapeProblems = validateDeriveShape(derive);
+          if (shapeProblems.length > 0) {
+            res.status(400).json({ error: 'invalid-derive', problems: shapeProblems });
             return;
           }
           const incomingRegistry = buildDeriveRegistry(

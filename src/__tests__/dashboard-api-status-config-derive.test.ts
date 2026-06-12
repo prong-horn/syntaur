@@ -316,6 +316,65 @@ describe('fact-removal 409 evaluates the INCOMING derive', () => {
   });
 });
 
+describe('custom status set with no transitions (P1-1)', () => {
+  // A 3-status custom set, no transitions block.
+  const customStatuses: StatusDefinition[] = [
+    { id: 'in_progress', label: 'In progress' },
+    { id: 'blocked', label: 'Blocked' },
+    { id: 'completed', label: 'Completed', terminal: true },
+  ];
+  const customOrder = customStatuses.map((s) => s.id);
+
+  it('GET reports transitionsCustom=false and empty raw transitions (defaults view reachable)', async () => {
+    await seedConfigWith({ statuses: customStatuses, order: customOrder, transitions: [] });
+    const body = await (await fetch(baseUrl)).json();
+    expect(body.transitionsCustom).toBe(false);
+    expect(body.transitions).toEqual([]);
+  });
+
+  it('a statuses-only save does not round-trip phantom default transitions', async () => {
+    await seedConfigWith({ statuses: customStatuses, order: customOrder, transitions: [] });
+    // Save statuses with NO transitions key (defaults view → preserve).
+    const res = await post({ statuses: customStatuses, order: customOrder });
+    expect(res.status).toBe(200);
+    const after = await (await fetch(baseUrl)).json();
+    // Raw transitions stay empty — not 17 default rows referencing draft/pending/etc.
+    expect(after.transitions).toEqual([]);
+    expect(after.transitionsCustom).toBe(false);
+    expect(parseStatusConfig(await readConfigMd())!.transitions).toEqual([]);
+  });
+});
+
+describe('deep derive shape validation before mutation (P1-2)', () => {
+  it('a null rung returns invalid-derive 400 (not 500) and leaves assignment files untouched', async () => {
+    await seedConfigWith();
+    const assignPath = await seedAssignment(join(projectsDir, 'p1', 'assignments', 'a3'), 'a3', 'review');
+    const droppedStatuses = statuses.filter((s) => s.id !== 'review');
+    const res = await post({
+      statuses: droppedStatuses,
+      order: droppedStatuses.map((s) => s.id),
+      transitions: [],
+      derive: { ...DEFAULT_DERIVE_CONFIG, phaseLadder: [null] },
+      resolutions: [{ id: 'review', mode: 'remap', target: 'in_progress' }],
+    });
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toBe('invalid-derive');
+    expect(await statusOf(assignPath)).toBe('review');
+  });
+
+  it('a numeric `when` returns invalid-derive 400 (not a 500 at serialization)', async () => {
+    await seedConfigWith();
+    const res = await post({
+      statuses,
+      order,
+      transitions: [],
+      derive: { ...DEFAULT_DERIVE_CONFIG, phaseLadder: [{ phase: 'draft', when: 5 }] },
+    });
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toBe('invalid-derive');
+  });
+});
+
 describe('validation before mutation', () => {
   it('an invalid-derive payload with pending resolutions does NOT touch assignment files', async () => {
     // status "review" will be dropped, with an assignment in it + a resolution.

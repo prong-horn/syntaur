@@ -26,11 +26,22 @@ import { validateDeriveCondition } from '@shared/derive';
 export type BuilderOp = ':' | ComparisonOp;
 export type BuilderJoin = 'AND' | 'OR';
 
+/** The AQL value token kinds, narrowed to what the builder serializes. */
+export type BuilderValueType = 'word' | 'string' | 'number' | 'date' | 'duration';
+
 export interface BuilderComparison {
   field: string;
   op: BuilderOp;
-  /** Raw value source text (unquoted), e.g. `true`, `0`, `high`. */
+  /** Value as DISPLAYED/edited (unquoted, unescaped), e.g. `true`, `0`, `agent:codex`. */
   value: string;
+  /**
+   * The value's token kind, so serialization re-quotes losslessly. `string`
+   * values are quoted+escaped when they aren't a bare identifier (e.g.
+   * `agent:codex` → `"agent:codex"`); numeric/date/duration values stay bare.
+   * Absent → treated as a string-ish value (quote-if-needed) — safe for
+   * user-typed edits.
+   */
+  valueType?: BuilderValueType;
 }
 
 /** A group of comparisons joined by `join`. Single nesting level only. */
@@ -48,7 +59,8 @@ export interface BuilderModel {
 function atomToComparison(node: Extract<QueryNode, { kind: 'atom' }>): BuilderComparison | null {
   // IN-lists (`field:(a, b)`) are beyond the builder grammar.
   if (node.values.length !== 1) return null;
-  return { field: node.field, op: node.op, value: node.values[0].raw };
+  const v = node.values[0];
+  return { field: node.field, op: node.op, value: v.raw, valueType: v.type };
 }
 
 /**
@@ -101,8 +113,32 @@ export function whenToBuilderModel(when: string): BuilderModel | null {
   return astToBuilderModel(parsed.ast);
 }
 
+// A value is safe to emit bare (as an AQL IDENT) only if it's a plain
+// identifier and not a reserved keyword — otherwise it must be quoted so it
+// round-trips (the lexer would otherwise split `agent:codex` on the colon).
+const BARE_IDENT = /^[A-Za-z_][A-Za-z0-9_-]*$/;
+function needsQuoting(value: string): boolean {
+  return value === '' || !BARE_IDENT.test(value) || /^(and|or|not)$/i.test(value);
+}
+
+function quoteValue(value: string): string {
+  return `"${value.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
+}
+
+/** Serialize one comparison value, re-quoting strings losslessly. */
+export function serializeValue(c: BuilderComparison): string {
+  // Numeric/date/duration values are always bare — quoting would change them
+  // into a STRING token and break comparisons against typed fields.
+  if (c.valueType === 'number' || c.valueType === 'date' || c.valueType === 'duration') {
+    return c.value;
+  }
+  // word/string/unknown → bare when it's a clean identifier, else quoted+escaped.
+  return needsQuoting(c.value) ? quoteValue(c.value) : c.value;
+}
+
 function comparisonToString(c: BuilderComparison): string {
-  return c.op === ':' ? `${c.field}:${c.value}` : `${c.field} ${c.op} ${c.value}`;
+  const v = serializeValue(c);
+  return c.op === ':' ? `${c.field}:${v}` : `${c.field} ${c.op} ${v}`;
 }
 
 /** Serialize a builder model back to an AQL string. Multi-comparison groups
@@ -151,6 +187,22 @@ export function deriveFieldOptions(accepted: FactDeclaration[]): FieldOption[] {
     if (def) out.push({ name, kind: def.kind });
   }
   return out;
+}
+
+/** The value token kind to tag a comparison with, given its field's kind, so
+ * serialization quotes correctly (bool/number stay bare, text is quote-if-need). */
+export function valueTypeForKind(kind: FieldKind): BuilderValueType {
+  switch (kind) {
+    case 'bool':
+      return 'word';
+    case 'number':
+    case 'ordinal':
+    case 'duration':
+    case 'timestamp':
+      return 'number';
+    default:
+      return 'string';
+  }
 }
 
 /** Operators valid for a given field kind (for the builder's op picker). */

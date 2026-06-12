@@ -3,7 +3,7 @@ import { Plus, Trash2 } from 'lucide-react';
 import { SectionCard } from '../components/SectionCard';
 import {
   defaultTransitions,
-  filterToStatuses,
+  filterValidTransitions,
   groupTransitions,
   makeTransitionRowKey,
   validateTransitions,
@@ -49,7 +49,7 @@ export function TransitionsSection({
 
   // ── read-only defaults view ────────────────────────────────────────────
   if (!customizing && value.length === 0) {
-    const defaults = filterToStatuses(defaultTransitions(), statusIds);
+    const defaults = filterValidTransitions(defaultTransitions(), statusIds);
     const groups = groupTransitions(defaults);
     return (
       <SectionCard

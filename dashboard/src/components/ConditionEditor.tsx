@@ -6,6 +6,7 @@ import {
   builderModelToString,
   validateCondition,
   opsForKind,
+  valueTypeForKind,
   type BuilderModel,
   type BuilderComparison,
   type BuilderOp,
@@ -25,7 +26,12 @@ interface ConditionEditorProps {
 function emptyModel(fields: FieldOption[]): BuilderModel {
   const first = fields[0];
   const comparison: BuilderComparison = first
-    ? { field: first.name, op: opsForKind(first.kind)[0], value: first.kind === 'bool' ? 'true' : '' }
+    ? {
+        field: first.name,
+        op: opsForKind(first.kind)[0],
+        value: first.kind === 'bool' ? 'true' : '',
+        valueType: valueTypeForKind(first.kind),
+      }
     : { field: '', op: ':', value: '' };
   return { outerJoin: 'AND', groups: [{ join: 'AND', comparisons: [comparison] }] };
 }
@@ -187,6 +193,7 @@ export function ConditionEditor({ value, onChange, fieldOptions, registry, disab
                             field: e.target.value,
                             op: nextOps.includes(c.op) ? c.op : nextOps[0],
                             value: nextKind === 'bool' ? 'true' : c.value,
+                            valueType: valueTypeForKind(nextKind),
                           });
                         }}
                         disabled={disabled}

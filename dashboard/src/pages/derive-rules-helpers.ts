@@ -39,6 +39,14 @@ export interface EditableDerive {
 }
 
 export function toEditableDerive(d: DeriveConfig): EditableDerive {
+  // Pin the `else:` arm (when: null) last so the UI always renders it pinned at
+  // the bottom and a save can't produce an unreachable-rules ordering — the
+  // runtime is first-match-wins. Non-else rules keep their relative order.
+  const disposition = [...d.disposition].sort((a, b) => {
+    if (a.when === null && b.when !== null) return 1;
+    if (a.when !== null && b.when === null) return -1;
+    return 0;
+  });
   return {
     phaseLadder: d.phaseLadder.map((r) => ({
       rowKey: makeDeriveRowKey(),
@@ -46,7 +54,7 @@ export function toEditableDerive(d: DeriveConfig): EditableDerive {
       when: r.when,
       next: r.next ?? '',
     })),
-    disposition: d.disposition.map((r) => ({
+    disposition: disposition.map((r) => ({
       rowKey: makeDeriveRowKey(),
       when: r.when,
       is: r.is,

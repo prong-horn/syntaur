@@ -72,7 +72,7 @@ import {
   toEditableTransitions,
   fromEditableTransitions,
   defaultTransitions,
-  filterToStatuses,
+  filterValidTransitions,
   validateTransitions,
   type EditableTransition,
 } from './transitions-helpers';
@@ -357,7 +357,7 @@ export function SettingsPage() {
     setDeriveDirty(false);
     setDeriveReset(false);
     setTransitions(toEditableTransitions(data.transitions ?? []));
-    setTransitionsCustomizing((data.transitions ?? []).length > 0);
+    setTransitionsCustomizing(data.transitionsCustom ?? false);
     setKnownCommands(data.knownCommands ?? []);
     setDirty(false);
   }, []);
@@ -427,7 +427,7 @@ export function SettingsPage() {
   }, []);
   const onTransitionsCustomize = useCallback(() => {
     setTransitions((prev) =>
-      prev.length > 0 ? prev : toEditableTransitions(filterToStatuses(defaultTransitions(), statusIds)),
+      prev.length > 0 ? prev : toEditableTransitions(filterValidTransitions(defaultTransitions(), statusIds)),
     );
     setTransitionsCustomizing(true);
     setDirty(true);

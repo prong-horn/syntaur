@@ -51,6 +51,41 @@ describe('astToBuilderModel / builderModelToString round-trips', () => {
   });
 });
 
+describe('lossless quoting round-trips (P1-4)', () => {
+  it('preserves a quoted value containing a colon (attestation actor)', () => {
+    const when = 'codeReviewApprovedBy:"agent:codex"';
+    const model = whenToBuilderModel(when);
+    expect(model).not.toBeNull();
+    // The builder holds the UNQUOTED value but re-quotes on serialization.
+    expect(model!.groups[0].comparisons[0].value).toBe('agent:codex');
+    expect(builderModelToString(model!)).toBe(when);
+  });
+
+  it('preserves a quoted value containing spaces', () => {
+    const when = 'assignee:"Jane Doe"';
+    const model = whenToBuilderModel(when);
+    expect(model).not.toBeNull();
+    expect(builderModelToString(model!)).toBe(when);
+  });
+
+  it('preserves escaped quotes inside a string value', () => {
+    const when = 'title:"say \\"hi\\""';
+    const model = whenToBuilderModel(when);
+    expect(model).not.toBeNull();
+    expect(model!.groups[0].comparisons[0].value).toBe('say "hi"');
+    expect(builderModelToString(model!)).toBe(when);
+  });
+
+  it('does not quote a bare numeric value', () => {
+    const model = whenToBuilderModel('acRealTotal > 0');
+    expect(builderModelToString(model!)).toBe('acRealTotal > 0');
+  });
+
+  it('keeps a list-valued (IN-list) condition raw-only', () => {
+    expect(whenToBuilderModel('codeReviewApprovedBy:("agent:codex", "agent:pi")')).toBeNull();
+  });
+});
+
 describe('astToBuilderModel returns null for grammar beyond the builder', () => {
   it('NOT', () => {
     const ast = parseQuery('NOT planApproved:true').ast!;

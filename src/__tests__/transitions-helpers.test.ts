@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   defaultTransitions,
   filterToStatuses,
+  filterValidTransitions,
   groupTransitions,
   toEditableTransitions,
   fromEditableTransitions,
@@ -32,6 +33,23 @@ describe('filterToStatuses', () => {
     expect(filtered.every((r) => r.from === 'in_progress' || r.from === 'review')).toBe(true);
     // none of the dropped `from`s (pending, draft, …) survive
     expect(filtered.some((r) => r.from === 'pending')).toBe(false);
+  });
+});
+
+describe('filterValidTransitions (P1-1)', () => {
+  it('drops rows whose `to` is undefined even when `from` is defined', () => {
+    const rows = [
+      { from: 'in_progress', command: 'block', to: 'blocked' },
+      { from: 'in_progress', command: 'review', to: 'review' }, // `review` not defined
+    ];
+    const out = filterValidTransitions(rows, new Set(['in_progress', 'blocked']));
+    expect(out).toEqual([{ from: 'in_progress', command: 'block', to: 'blocked' }]);
+  });
+
+  it('the built-in defaults filtered to a 3-status set never reference an undefined status', () => {
+    const ids = new Set(['in_progress', 'blocked', 'completed']);
+    const out = filterValidTransitions(defaultTransitions(), ids);
+    expect(out.every((r) => ids.has(r.from) && ids.has(r.to))).toBe(true);
   });
 });
 

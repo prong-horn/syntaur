@@ -64,13 +64,14 @@ export interface StatusTransition {
 import {
   DEFAULT_DERIVE_CONFIG,
   validateDeriveConfig,
+  validateDeriveShape,
   type PhaseRung,
   type DispositionRule,
   type HeadlineProjection,
   type DeriveConfig,
 } from './derive-config.js';
 
-export { DEFAULT_DERIVE_CONFIG, validateDeriveConfig };
+export { DEFAULT_DERIVE_CONFIG, validateDeriveConfig, validateDeriveShape };
 export type { PhaseRung, DispositionRule, HeadlineProjection, DeriveConfig };
 
 /**

@@ -22,8 +22,11 @@ export interface StatusTransition {
 
 export interface StatusConfigResponse {
   statuses: StatusDefinition[];
+  /** RAW transitions (empty when the user declares none — see transitionsCustom). */
   order: string[];
   transitions: StatusTransition[];
+  /** Whether config.md actually customizes transitions (false → show defaults read-only). */
+  transitionsCustom: boolean;
   custom: boolean;
   /** Always a concrete config (defaults when the file declares none). */
   derive: DeriveConfig;
@@ -75,6 +78,7 @@ const DEFAULT_STATUS_CONFIG: StatusConfigResponse = {
   ],
   order: ['pending', 'in_progress', 'blocked', 'review', 'completed', 'failed'],
   transitions: [],
+  transitionsCustom: false,
   custom: false,
   derive: DEFAULT_DERIVE_CONFIG,
   deriveCustom: false,
