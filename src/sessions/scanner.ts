@@ -236,9 +236,14 @@ export async function scanSessions(
     const mtime = statMtimeMs(d.transcriptPath);
     const heldOpen = openSet.has(d.transcriptPath);
     const isLive = heldOpen || (mtime !== null && now() - mtime < FRESH_MTIME_MS);
-    const status: AgentSessionStatus = isLive ? 'active' : 'stopped';
 
+    // Discovery INSERTS and REVIVES; it never downgrades. An existing row keeps
+    // its status here — active→stopped is owned exclusively by the sweep below,
+    // which weighs pid evidence first (a live-but-idle session has a stale
+    // transcript and must NOT be stopped). Only new rows take the liveness
+    // verdict directly (dead-session backfill inserts as stopped).
     const prev = getSessionById(d.sessionId);
+    const status: AgentSessionStatus = isLive ? 'active' : (prev?.status ?? 'stopped');
     const started =
       d.startedAt ?? (mtime !== null ? new Date(mtime).toISOString() : new Date(now()).toISOString());
 
@@ -258,9 +263,12 @@ export async function scanSessions(
         pidStartedAt: null,
         originalHeadSha: null,
       },
-      // Narrow revival rule: only live-process evidence may flip a stopped
-      // row back to active. `completed` always sticks (appendSession enforces).
-      { reviveStopped: isLive },
+      // Narrow revival rule: only LIVE-PROCESS evidence (a process holding the
+      // transcript open) may flip a stopped row back to active. mtime freshness
+      // alone must not — a session stopped moments ago by its SessionEnd hook
+      // still has a fresh transcript for up to 5 minutes and would flap back to
+      // active. `completed` always sticks (appendSession enforces).
+      { reviveStopped: heldOpen },
     );
 
     // Backdate `ended` for rows that just landed (or already sat) in `stopped`
@@ -277,10 +285,9 @@ export async function scanSessions(
       summary.inserted += 1;
       summary.changed = true;
     } else {
-      if (prev.status === 'stopped' && isLive) {
+      // Revival only actually happens on heldOpen (the flag above).
+      if (prev.status === 'stopped' && heldOpen) {
         summary.revived += 1;
-        summary.changed = true;
-      } else if (prev.status === 'active' && !isLive) {
         summary.changed = true;
       }
       if (

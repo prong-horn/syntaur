@@ -206,6 +206,41 @@ describe('scanSessions', () => {
     expect(getSessionById('claude-revive')!.status).toBe('active');
   });
 
+  it('does NOT revive a stopped row on mtime freshness alone (only lsof evidence revives)', async () => {
+    // Fresh transcript (just written) but no process holds it open — the
+    // session was stopped by its SessionEnd hook moments ago and must stay
+    // stopped, not flap back to active for the next 5 minutes of scan ticks.
+    await writeClaudeTranscript('claude-fresh-stopped', workspace);
+    await appendSession('', makeSession({ sessionId: 'claude-fresh-stopped' }));
+    await updateSessionStatus('', 'claude-fresh-stopped', 'stopped');
+
+    const summary = await scanSessions({ full: true }, deps());
+
+    expect(summary.revived).toBe(0);
+    expect(getSessionById('claude-fresh-stopped')!.status).toBe('stopped');
+  });
+
+  it('does NOT downgrade an active row with a live pid whose transcript went stale (idle session)', async () => {
+    const path = await writeClaudeTranscript('claude-idle', workspace);
+    await makeStale(path); // idle >5min — but the owning process is alive
+    await appendSession(
+      '',
+      makeSession({
+        sessionId: 'claude-idle',
+        pid: 4242,
+        pidStartedAt: 'Thu Jun 11 09:00:00 2026',
+        transcriptPath: path,
+      }),
+    );
+
+    await scanSessions(
+      { full: true },
+      deps({ isPidAlive: () => true, pidStartedAt: () => 'Thu Jun 11 09:00:00 2026' }),
+    );
+
+    expect(getSessionById('claude-idle')!.status).toBe('active');
+  });
+
   it('never revives a completed row', async () => {
     const path = await writeClaudeTranscript('claude-done', workspace);
     await appendSession('', makeSession({ sessionId: 'claude-done' }));

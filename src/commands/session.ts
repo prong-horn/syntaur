@@ -419,20 +419,27 @@ export async function runSessionRegister(
     ? await (deps.headSha ?? captureHeadSha)(cwd)
     : null;
 
-  await appendSession('', {
-    projectSlug: ctx?.projectSlug || null,
-    assignmentSlug: ctx?.assignmentSlug || null,
-    agent: options.agent || 'claude',
-    sessionId,
-    started: deps.now?.() ?? new Date().toISOString(),
-    status: 'active' as AgentSessionStatus,
-    path: cwd,
-    description: null,
-    transcriptPath: transcriptPath.length > 0 ? transcriptPath : null,
-    pid,
-    pidStartedAt,
-    originalHeadSha,
-  });
+  await appendSession(
+    '',
+    {
+      projectSlug: ctx?.projectSlug || null,
+      assignmentSlug: ctx?.assignmentSlug || null,
+      agent: options.agent || 'claude',
+      sessionId,
+      started: deps.now?.() ?? new Date().toISOString(),
+      status: 'active' as AgentSessionStatus,
+      path: cwd,
+      description: null,
+      transcriptPath: transcriptPath.length > 0 ? transcriptPath : null,
+      pid,
+      pidStartedAt,
+      originalHeadSha,
+    },
+    // A SessionStart firing for this exact id IS live-process evidence — e.g.
+    // `claude --resume` of a previously stopped session must flip it back to
+    // active. `completed` still sticks (appendSession enforces).
+    { reviveStopped: true },
+  );
   result.registered = true;
   return result;
 }

@@ -294,7 +294,7 @@ export function createWatcher(options: WatcherOptions): { close: () => Promise<v
     todosWatcher.on('unlink', handleTodoChange);
   }
 
-  // --- Leases DB watcher ---
+  // --- DB watcher (leases + agent sessions share syntaur.db) ---
   // SQLite WAL-mode writes mostly go to `<db>-wal`, not the main file. Watch
   // the parent directory and filter by basename to catch the main DB and its
   // -wal / -shm siblings. chokidar 4 has no glob support, so a literal pattern
@@ -322,11 +322,12 @@ export function createWatcher(options: WatcherOptions): { close: () => Promise<v
         debounceKey,
         setTimeout(() => {
           pendingEvents.delete(debounceKey);
-          const message: WsMessage = {
-            type: 'leases-updated',
-            timestamp: new Date().toISOString(),
-          };
-          onMessage(message);
+          const timestamp = new Date().toISOString();
+          onMessage({ type: 'leases-updated', timestamp });
+          // Session register/stop now write the DB directly from hook/CLI
+          // processes (no REST mutation to broadcast), so the file watcher is
+          // the dashboard's only realtime signal for those rows.
+          onMessage({ type: 'agent-sessions-updated', timestamp });
         }, debounceMs),
       );
     }

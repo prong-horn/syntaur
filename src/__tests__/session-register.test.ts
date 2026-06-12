@@ -259,10 +259,18 @@ describe('runSessionStop', () => {
     expect(getSessionById('ending')!.ended).toBeTruthy();
   });
 
-  it('register after stop does not revive the row (status only moves forward)', async () => {
-    await runSessionRegister(payload({ session_id: 'once' }), {}, DEPS);
-    await runSessionStop(JSON.stringify({ session_id: 'once', cwd }));
-    await runSessionRegister(payload({ session_id: 'once' }), {}, DEPS);
-    expect(getSessionById('once')!.status).toBe('stopped');
+  it('register after stop REVIVES the row (a new SessionStart for the id is live-process evidence — the resume case)', async () => {
+    await runSessionRegister(payload({ session_id: 'resumed' }), {}, DEPS);
+    await runSessionStop(JSON.stringify({ session_id: 'resumed', cwd }));
+    await runSessionRegister(payload({ session_id: 'resumed' }), {}, DEPS);
+    expect(getSessionById('resumed')!.status).toBe('active');
+  });
+
+  it('register never revives a completed row', async () => {
+    await runSessionRegister(payload({ session_id: 'done-for-good' }), {}, DEPS);
+    const { updateSessionStatus } = await import('../dashboard/agent-sessions.js');
+    await updateSessionStatus('', 'done-for-good', 'completed');
+    await runSessionRegister(payload({ session_id: 'done-for-good' }), {}, DEPS);
+    expect(getSessionById('done-for-good')!.status).toBe('completed');
   });
 });
