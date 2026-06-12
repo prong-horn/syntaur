@@ -99,7 +99,7 @@ export function SavedViewTableView({
                 ) : null}
                 {showCol('status') ? (
                   <td className={cellPadding}>
-                    <StatusBadge status={assignment.status} />
+                    <StatusBadge status={assignment.status} className="max-w-[150px]" />
                   </td>
                 ) : null}
                 {showCol('priority') ? (

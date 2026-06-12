@@ -158,7 +158,7 @@ function CompactAssignmentCard({ item }: { item: AssignmentBoardItem }) {
           </Link>
           <p className="truncate text-xs text-muted-foreground">{item.projectTitle ?? 'Standalone'}</p>
         </div>
-        <StatusBadge status={item.status} />
+        <StatusBadge status={item.status} className="max-w-[150px]" />
       </div>
       <div className="mt-2 flex items-center justify-between gap-2 text-[10px] uppercase tracking-[0.08em] text-muted-foreground">
         <span className="truncate">{item.assignee ?? 'Unassigned'}</span>
@@ -192,7 +192,7 @@ function ReadOnlyAssignmentCard({ item }: { item: AssignmentBoardItem }) {
           </Link>
           <p className="truncate text-xs text-muted-foreground">{item.projectTitle ?? 'Standalone'}</p>
         </div>
-        <StatusBadge status={item.status} />
+        <StatusBadge status={item.status} className="max-w-[150px]" />
       </div>
       <div className="mt-2 flex items-center justify-between gap-2">
         <TypeChip type={item.type} compact />
