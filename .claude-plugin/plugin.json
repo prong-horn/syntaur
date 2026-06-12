@@ -1,6 +1,6 @@
 {
   "name": "syntaur",
-  "version": "0.52.1",
+  "version": "0.53.0",
   "description": "Syntaur protocol skills for AI coding agents — assignment, project, plan, and session lifecycle. Cross-agent (Claude Code, Codex, Cursor, OpenCode, Gemini CLI, and more via skills.sh).",
   "author": {
     "name": "Brennen",
