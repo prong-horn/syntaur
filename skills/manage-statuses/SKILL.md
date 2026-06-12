@@ -117,6 +117,23 @@ Each attestation fact exports **five** derive fields (for `codeReview`): `codeRe
 
 **Validation & teeth.** Declared names are validated by `syntaur doctor` (the `derive-config.valid` check): bad name/type/binds and any collision of an exported field with a built-in or another declaration is reported as an error and the offending declaration is dropped (built-ins always win). A derive condition that references an **undeclared** fact still fails at recompute time (`CompileError`), exactly as before. `syntaur fact set` / `syntaur attest` reject undeclared names, wrong types, and invalid verdicts. Every `fact set` / `attest` is recorded in `statusHistory` with its actor and cause, even when no dimension moves.
 
+## Derive rules and transitions
+
+The dashboard Settings page edits the **entire** `statuses:` workflow config, not just the status list and facts. A single **Save Configuration** button writes statuses, descriptions, facts, derive rules, and transitions together as one coherent config; CLI/config-file edits and dashboard edits stay in sync because both write the same `~/.syntaur/config.md` block.
+
+- **Status descriptions** are editable inline alongside id/label/color/Done(terminal).
+- **Derive Rules** section edits the three pieces that map facts → status:
+  - **Phase ladder** — drag-reorderable rung cards (highest matching rung wins; the `*` catch-all is pinned at the lowest-priority slot and matches everything). Each rung is a status + a condition + an optional `next:` action label.
+  - **Disposition** — first-match-wins `active|blocked|parked` rules with a mandatory pinned `else:` arm.
+  - **Headline projection** — which status id the single-column board shows when parked/blocked (terminal is always `passthrough`, active always shows the `phase`).
+  - Each condition has a **dual-mode editor**: a structured builder (fact → operator → value, AND/OR groups) and a raw AQL text mode backed by the same string. Conditions too complex for the builder open in raw mode (never lossily flattened). Both modes validate live against the 14 built-in derive fields plus your declared custom facts — the exact `parseQuery`/`compileNode` checks the CLI and `syntaur doctor` run.
+  - When the config declares no custom derive rules, the section shows the built-ins read-only with a banner; editing switches to a custom config, and **Reset to default rules** restores the built-ins.
+- **Transitions** section edits which commands move an assignment between statuses, grouped into one card per from-status (command → target, optional label/description, and a `requiresReason` toggle). An empty config shows the built-in `DEFAULT_TRANSITION_TABLE` read-only (filtered to your defined statuses) with a **Customize defaults** affordance that seeds editing.
+
+**Hand-written rules survive a Settings save.** Transitions and derive rules you author directly in `config.md` are preserved across a dashboard save even if you only touched, say, the status list — the dashboard sends each section only when you change it, and the server preserves untouched sections (the old "transitions get wiped on save" bug is gone).
+
+**Cross-section integrity.** Deleting a status that ladder rungs, the headline projection, or transitions reference surfaces those exact rules in the delete dialog (even when no assignments use the status). Remap rewrites every reference to the chosen target; delete drops the referencing ladder rungs and transitions, and — because the headline projection cannot point at nothing — requires a remap target for any headline reference. Removing a fact that a remaining derive rule still references is blocked with an acknowledgement prompt, the same guard `syntaur doctor` enforces. The server re-validates everything with `validateDeriveConfig` before writing, so the dashboard can never persist a config the CLI/doctor would reject.
+
 ## Safety notes
 
 - **`remove` is destructive.** Without `--force` it refuses if any assignment references the id. Don't suggest `--force` without first running `syntaur status remove <id>` (no force) so the user sees the affected list.

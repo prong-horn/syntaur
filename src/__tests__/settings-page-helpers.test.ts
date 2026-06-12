@@ -3,8 +3,17 @@ import {
   buildStatusSavePayload,
   pruneStaleResolutions,
   sortStatusesByOrder,
+  findStatusRuleReferences,
+  headlineReferencesStatus,
+  remapStatusInDerive,
+  remapStatusInTransitions,
+  dropStatusFromDerive,
+  dropStatusFromTransitions,
 } from '../../dashboard/src/pages/settings-page-helpers';
 import type { StatusResolution } from '../../dashboard/src/hooks/useStatusConfig';
+import { toEditableDerive } from '../../dashboard/src/pages/derive-rules-helpers';
+import { toEditableTransitions } from '../../dashboard/src/pages/transitions-helpers';
+import { DEFAULT_DERIVE_CONFIG } from '../utils/derive-config.js';
 
 const baseStatuses = [
   { id: 'pending', label: 'Pending' },
@@ -78,6 +87,112 @@ describe('buildStatusSavePayload', () => {
       pendingResolutions: new Map(),
     });
     expect(result.body.statuses[0]).toEqual({ id: 'minimal', label: 'Minimal' });
+  });
+
+  it('no-wipe: omits transitions entirely when none provided (no transitions: [])', () => {
+    const result = buildStatusSavePayload({
+      statuses: baseStatuses,
+      order: ['pending', 'in_progress'],
+      pendingResolutions: new Map(),
+    });
+    expect('transitions' in result.body).toBe(false);
+  });
+
+  it('includes derive/transitions/facts when provided', () => {
+    const result = buildStatusSavePayload({
+      statuses: baseStatuses,
+      order: ['pending', 'in_progress'],
+      pendingResolutions: new Map(),
+      derive: DEFAULT_DERIVE_CONFIG,
+      transitions: [{ from: 'pending', command: 'start', to: 'in_progress' }],
+      facts: [{ name: 'shipped', type: 'bool', binds: null }],
+      factRemovalAcks: ['old'],
+    });
+    expect(result.body.derive).toEqual(DEFAULT_DERIVE_CONFIG);
+    expect(result.body.transitions).toEqual([{ from: 'pending', command: 'start', to: 'in_progress' }]);
+    expect(result.body.facts).toEqual([{ name: 'shipped', type: 'bool', binds: null }]);
+    expect(result.body.factRemovalAcks).toEqual(['old']);
+  });
+
+  it('derive: null is preserved in the body (reset-to-defaults intent)', () => {
+    const result = buildStatusSavePayload({
+      statuses: baseStatuses,
+      order: ['pending', 'in_progress'],
+      pendingResolutions: new Map(),
+      derive: null,
+    });
+    expect('derive' in result.body).toBe(true);
+    expect(result.body.derive).toBeNull();
+  });
+
+  it('omits factRemovalAcks when empty', () => {
+    const result = buildStatusSavePayload({
+      statuses: baseStatuses,
+      order: ['pending', 'in_progress'],
+      pendingResolutions: new Map(),
+      factRemovalAcks: [],
+    });
+    expect('factRemovalAcks' in result.body).toBe(false);
+  });
+});
+
+describe('findStatusRuleReferences', () => {
+  const derive = toEditableDerive(DEFAULT_DERIVE_CONFIG); // headline.parked='parked', blocked='blocked'
+  const transitions = toEditableTransitions([
+    { from: 'in_progress', command: 'block', to: 'blocked' },
+    { from: 'blocked', command: 'unblock', to: 'in_progress' },
+  ]);
+
+  it('finds ladder, headline, and transition references (never disposition)', () => {
+    const refs = findStatusRuleReferences('blocked', derive, transitions);
+    const sections = refs.map((r) => r.section);
+    expect(sections).toContain('headline');
+    expect(sections).toContain('transitions');
+    expect(sections).not.toContain('disposition');
+    // two transitions touch 'blocked'
+    expect(refs.filter((r) => r.section === 'transitions')).toHaveLength(2);
+  });
+
+  it('finds a phaseLadder rung by phase id', () => {
+    const refs = findStatusRuleReferences('review', derive, []);
+    expect(refs.some((r) => r.section === 'phaseLadder' && r.detail.includes('review'))).toBe(true);
+  });
+
+  it('headlineReferencesStatus detects parked/blocked refs', () => {
+    expect(headlineReferencesStatus('parked', derive)).toBe(true);
+    expect(headlineReferencesStatus('blocked', derive)).toBe(true);
+    expect(headlineReferencesStatus('review', derive)).toBe(false);
+  });
+});
+
+describe('remap vs delete resolution rewrites', () => {
+  const derive = toEditableDerive(DEFAULT_DERIVE_CONFIG);
+  const transitions = toEditableTransitions([
+    { from: 'in_progress', command: 'block', to: 'blocked' },
+    { from: 'blocked', command: 'unblock', to: 'in_progress' },
+  ]);
+
+  it('remap rewrites every ladder/headline/transition reference to the target', () => {
+    const d = remapStatusInDerive(derive, 'blocked', 'paused');
+    expect(d.headline.blocked).toBe('paused');
+    const t = remapStatusInTransitions(transitions, 'blocked', 'paused');
+    expect(t.find((r) => r.command === 'block')!.to).toBe('paused');
+    expect(t.find((r) => r.command === 'unblock')!.from).toBe('paused');
+  });
+
+  it('delete drops transitions touching the id (no remap)', () => {
+    const t = dropStatusFromTransitions(transitions, 'blocked');
+    expect(t).toHaveLength(0);
+  });
+
+  it('delete drops ladder rungs referencing the id but remaps headline to the target', () => {
+    const withRung = {
+      ...derive,
+      phaseLadder: [...derive.phaseLadder, { rowKey: 'x', phase: 'blocked', when: 'blocked:true', next: '' }],
+    };
+    const d = dropStatusFromDerive(withRung, 'blocked', 'paused');
+    expect(d.phaseLadder.some((r) => r.phase === 'blocked')).toBe(false);
+    expect(d.headline.blocked).toBe('paused');
   });
 });
 

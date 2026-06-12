@@ -9,6 +9,7 @@ interface StatusPillPickerProps {
   availableTransitions: AssignmentTransitionAction[];
   onSelect: (action: AssignmentTransitionAction) => void;
   disabled?: boolean;
+  className?: string;
 }
 
 interface AnchorRect {
@@ -23,6 +24,7 @@ export function StatusPillPicker({
   availableTransitions,
   onSelect,
   disabled = false,
+  className,
 }: StatusPillPickerProps) {
   const [open, setOpen] = useState(false);
   const [anchor, setAnchor] = useState<AnchorRect | null>(null);
@@ -151,13 +153,13 @@ export function StatusPillPicker({
         onKeyDown={handleTriggerKeyDown}
         title={`Status: ${currentMeta.label}. Click to change.`}
         className={cn(
-          getStatusPillClassName(currentStatus),
+          getStatusPillClassName(currentStatus, className),
           'cursor-pointer transition hover:brightness-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring/40',
           disabled && 'cursor-not-allowed opacity-60',
         )}
       >
-        <CurrentIcon className="h-3.5 w-3.5" />
-        <span>{currentMeta.label}</span>
+        <CurrentIcon className="h-3.5 w-3.5 shrink-0" />
+        <span className="min-w-0 truncate">{currentMeta.label}</span>
       </button>
 
       {open && anchor && typeof document !== 'undefined'

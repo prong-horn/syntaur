@@ -4,6 +4,7 @@ import {
   parseStatusConfig,
   serializeStatusConfig,
   validateDeriveConfig,
+  validateDeriveShape,
   type StatusConfig,
 } from '../utils/config.js';
 import { validateQuery } from '../utils/query/index.js';
@@ -149,5 +150,66 @@ describe('validateDeriveConfig', () => {
     expect(problems.some((p) => p.includes('invalid condition'))).toBe(true);
     expect(problems.some((p) => p.includes('frozen'))).toBe(true);
     expect(problems.some((p) => p.includes('else'))).toBe(true);
+  });
+});
+
+describe('validateDeriveConfig — disposition else-arm ordering (P1-3)', () => {
+  const statuses = { statuses: [{ id: 'a' }, { id: 'parked' }, { id: 'blocked' }] };
+  const headline = { terminal: 'passthrough' as const, parked: 'parked', blocked: 'blocked', active: 'phase' as const };
+  const ladder = [{ phase: 'a', when: '*' }];
+
+  it('accepts exactly one else-arm at the last index', () => {
+    const problems = validateDeriveConfig(
+      { phaseLadder: ladder, disposition: [{ when: 'blocked:true', is: 'blocked' }, { when: null, is: 'active' }], headline },
+      statuses,
+    );
+    expect(problems).toEqual([]);
+  });
+
+  it('rejects an else-FIRST config (later rules unreachable)', () => {
+    const problems = validateDeriveConfig(
+      { phaseLadder: ladder, disposition: [{ when: null, is: 'active' }, { when: 'blocked:true', is: 'blocked' }], headline },
+      statuses,
+    );
+    expect(problems.some((p) => p.includes('LAST'))).toBe(true);
+  });
+
+  it('rejects a duplicate else-arm', () => {
+    const problems = validateDeriveConfig(
+      { phaseLadder: ladder, disposition: [{ when: null, is: 'active' }, { when: null, is: 'parked' }], headline },
+      statuses,
+    );
+    expect(problems.some((p) => p.includes('exactly one'))).toBe(true);
+  });
+});
+
+describe('validateDeriveShape — deep shape-check (P1-2)', () => {
+  const headline = { parked: 'a', blocked: 'b' };
+
+  it('returns no problems for a well-formed payload', () => {
+    expect(
+      validateDeriveShape({ phaseLadder: [{ phase: 'a', when: '*', next: 'x' }], disposition: [{ when: null, is: 'active' }], headline }),
+    ).toEqual([]);
+  });
+
+  it('flags a null rung', () => {
+    const problems = validateDeriveShape({ phaseLadder: [null], disposition: [], headline });
+    expect(problems.some((p) => p.includes('phaseLadder[0]'))).toBe(true);
+  });
+
+  it('flags a non-string when', () => {
+    const problems = validateDeriveShape({ phaseLadder: [{ phase: 'a', when: 5 }], disposition: [], headline });
+    expect(problems.some((p) => p.includes('when must be a string'))).toBe(true);
+  });
+
+  it('flags a non-string next', () => {
+    const problems = validateDeriveShape({ phaseLadder: [{ phase: 'a', when: '*', next: 7 }], disposition: [], headline });
+    expect(problems.some((p) => p.includes('next must be a string'))).toBe(true);
+  });
+
+  it('flags non-array phaseLadder / disposition and bad headline', () => {
+    expect(validateDeriveShape({ phaseLadder: {}, disposition: [], headline }).some((p) => p.includes('phaseLadder must be an array'))).toBe(true);
+    expect(validateDeriveShape({ phaseLadder: [], disposition: 'x', headline }).some((p) => p.includes('disposition must be an array'))).toBe(true);
+    expect(validateDeriveShape({ phaseLadder: [], disposition: [], headline: { parked: 1, blocked: 'b' } }).some((p) => p.includes('headline.parked'))).toBe(true);
   });
 });

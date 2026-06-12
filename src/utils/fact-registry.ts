@@ -114,6 +114,40 @@ export interface RawFactDeclaration {
   binds: string | null;
 }
 
+// ── normalizeFactDeclarations ─────────────────────────────────────────────────
+
+/**
+ * Narrow raw declarations to the strict union, DROPPING malformed rows (bad
+ * name format / unknown type / invalid binds) — never throws. The single
+ * bridge every consumer crosses before the collision filter
+ * (`acceptFactDeclarations`). `validateFactDeclarations` diagnoses the raw rows
+ * so doctor can report exactly what this drops.
+ *
+ * Lives here (browser-safe) so both the Node side and the dashboard client can
+ * run the identical normalize→accept pipeline; re-exported from `config.ts` so
+ * existing Node-side imports from `config.js` keep resolving.
+ */
+export function normalizeFactDeclarations(
+  raw: RawFactDeclaration[] | null | undefined,
+): FactDeclaration[] {
+  const out: FactDeclaration[] = [];
+  for (const row of raw ?? []) {
+    if (!row || typeof row.name !== 'string') continue;
+    const name = row.name.trim();
+    if (!/^[a-z][a-zA-Z0-9]*$/.test(name)) continue;
+    const type = (row.type ?? '').trim();
+    if (type === 'bool' || type === 'number') {
+      out.push({ name, type });
+    } else if (type === 'attestation') {
+      const binds = (row.binds ?? 'none').toString().trim() || 'none';
+      if (binds === 'plan' || binds === 'commit' || binds === 'none') {
+        out.push({ name, type: 'attestation', binds });
+      }
+    }
+  }
+  return out;
+}
+
 // ── validateFactDeclarations ──────────────────────────────────────────────────
 
 /**

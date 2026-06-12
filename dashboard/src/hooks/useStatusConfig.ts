@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import type { FactDeclaration, RawFactDeclaration } from '@shared/fact-registry';
+import { DEFAULT_DERIVE_CONFIG, type DeriveConfig } from '@shared/derive-config';
 
 export interface StatusDefinition {
   id: string;
@@ -21,9 +22,18 @@ export interface StatusTransition {
 
 export interface StatusConfigResponse {
   statuses: StatusDefinition[];
+  /** RAW transitions (empty when the user declares none — see transitionsCustom). */
   order: string[];
   transitions: StatusTransition[];
+  /** Whether config.md actually customizes transitions (false → show defaults read-only). */
+  transitionsCustom: boolean;
   custom: boolean;
+  /** Always a concrete config (defaults when the file declares none). */
+  derive: DeriveConfig;
+  /** Whether the config.md actually customizes the derive rules. */
+  deriveCustom: boolean;
+  /** Built-in transition command names, for the transitions-editor pickers. */
+  knownCommands: string[];
   factDeclarations: FactDeclaration[];
   rawFacts: RawFactDeclaration[];
 }
@@ -68,7 +78,11 @@ const DEFAULT_STATUS_CONFIG: StatusConfigResponse = {
   ],
   order: ['pending', 'in_progress', 'blocked', 'review', 'completed', 'failed'],
   transitions: [],
+  transitionsCustom: false,
   custom: false,
+  derive: DEFAULT_DERIVE_CONFIG,
+  deriveCustom: false,
+  knownCommands: [],
   factDeclarations: [],
   rawFacts: [],
 };

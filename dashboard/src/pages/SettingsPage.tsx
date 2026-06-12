@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   Plus,
   Trash2,
@@ -39,7 +39,19 @@ import type {
 } from '../hooks/useStatusConfig';
 import { invalidateStatusConfigCache } from '../hooks/useStatusConfig';
 import { StatusDeleteModal } from './StatusDeleteModal';
-import { buildStatusSavePayload, pruneStaleResolutions, sortStatusesByOrder } from './settings-page-helpers';
+import { FactDeleteModal } from './FactDeleteModal';
+import {
+  buildStatusSavePayload,
+  pruneStaleResolutions,
+  sortStatusesByOrder,
+  findStatusRuleReferences,
+  headlineReferencesStatus,
+  remapStatusInDerive,
+  remapStatusInTransitions,
+  dropStatusFromDerive,
+  dropStatusFromTransitions,
+  type StatusRuleReference,
+} from './settings-page-helpers';
 import { PRESETS, type ThemeSlug } from '../themes';
 import { useTheme } from '../theme';
 import { HotkeyBindingsSection } from './HotkeyBindingsSection';
@@ -48,6 +60,27 @@ import { AgentsSection } from './AgentsSection';
 import { TerminalSection } from './TerminalSection';
 import { WorkspaceVisibilitySection } from './WorkspaceVisibilitySection';
 import { FactsSection } from './FactsSection';
+import { DeriveRulesSection } from './DeriveRulesSection';
+import { TransitionsSection } from './TransitionsSection';
+import {
+  toEditableDerive,
+  fromEditableDerive,
+  validateDeriveSection,
+  type EditableDerive,
+} from './derive-rules-helpers';
+import {
+  toEditableTransitions,
+  fromEditableTransitions,
+  defaultTransitions,
+  filterValidTransitions,
+  validateTransitions,
+  type EditableTransition,
+} from './transitions-helpers';
+import { acceptedFactsFromRows } from '../components/condition-editor-helpers';
+import { validateFactsForSave } from './facts-section-helpers';
+import { buildDeriveRegistry } from '@shared/fact-registry';
+import { DEFAULT_DERIVE_CONFIG } from '@shared/derive-config';
+import type { RawFactDeclaration } from '@shared/fact-registry';
 
 interface EditableStatus {
   rowKey: string;
@@ -154,6 +187,18 @@ function SortableStatusRow({ row, isSaved, onUpdate, onRemove }: SortableStatusR
         />
       </div>
 
+      {/* Description */}
+      <div className="min-w-[10rem] flex-1">
+        <input
+          type="text"
+          value={row.description}
+          onChange={(e) => onUpdate('description', e.target.value)}
+          aria-label="Status description"
+          placeholder="description (optional)"
+          className="editor-input w-full text-sm"
+        />
+      </div>
+
       {/* Color */}
       <ColorPicker
         value={row.color}
@@ -223,9 +268,32 @@ export function SettingsPage() {
     new Map(),
   );
   const [modalState, setModalState] = useState<
-    | { open: true; affected: AffectedResponse; pendingId: string }
+    | { open: true; affected: AffectedResponse; pendingId: string; ruleReferences: StatusRuleReference[]; headlineReferences: boolean }
     | { open: false }
   >({ open: false });
+
+  // ── Facts (lifted out of FactsSection for the unified save) ──────────────
+  const [factRows, setFactRows] = useState<RawFactDeclaration[]>([]);
+  const [pendingFactAcks, setPendingFactAcks] = useState<string[]>([]);
+  const [factModal, setFactModal] = useState<
+    | { open: true; references: Array<{ factName: string; location: string; when: string }> }
+    | { open: false }
+  >({ open: false });
+
+  // ── Derive rules ─────────────────────────────────────────────────────────
+  // `derive` is the editable model (with row keys); `deriveCustom` mirrors the
+  // server flag and flips true on any edit. `deriveDirty`/`deriveReset` drive
+  // presence semantics in the payload: untouched defaults → omit (preserve);
+  // edited → send the object; reset → send null.
+  const [derive, setDerive] = useState<EditableDerive>(() => toEditableDerive(DEFAULT_DERIVE_CONFIG));
+  const [deriveCustom, setDeriveCustom] = useState(false);
+  const [deriveDirty, setDeriveDirty] = useState(false);
+  const [deriveReset, setDeriveReset] = useState(false);
+
+  // ── Transitions ──────────────────────────────────────────────────────────
+  const [transitions, setTransitions] = useState<EditableTransition[]>([]);
+  const [transitionsCustomizing, setTransitionsCustomizing] = useState(false);
+  const [knownCommands, setKnownCommands] = useState<string[]>([]);
 
   // KeyboardSensor needs the sortable coordinate getter so arrow keys move rows
   // within the list (a bare KeyboardSensor only nudges by pixel delta).
@@ -273,24 +341,40 @@ export function SettingsPage() {
     }
   }
 
+  // Hydrate every editable section from a config response. Used on initial
+  // load, after a successful save (the POST returns the full GET shape), and
+  // after a reset — so all sections stay coherent and `dirty` clears together.
+  const hydrateSections = useCallback((data: StatusConfigResponse) => {
+    const editable = toEditable(data);
+    setStatuses(editable);
+    setCustom(data.custom);
+    setSavedStatusIds(new Set(editable.map((s) => s.id)));
+    setPendingResolutions(new Map());
+    setFactRows(data.rawFacts ?? []);
+    setPendingFactAcks([]);
+    setDerive(toEditableDerive(data.derive ?? DEFAULT_DERIVE_CONFIG));
+    setDeriveCustom(data.deriveCustom ?? false);
+    setDeriveDirty(false);
+    setDeriveReset(false);
+    setTransitions(toEditableTransitions(data.transitions ?? []));
+    setTransitionsCustomizing(data.transitionsCustom ?? false);
+    setKnownCommands(data.knownCommands ?? []);
+    setDirty(false);
+  }, []);
+
   const loadConfig = useCallback(async () => {
     try {
       const res = await fetch('/api/config/statuses');
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data: StatusConfigResponse = await res.json();
-      const editable = toEditable(data);
-      setStatuses(editable);
-      setCustom(data.custom);
-      setSavedStatusIds(new Set(editable.map((s) => s.id)));
-      setPendingResolutions(new Map());
-      setDirty(false);
+      hydrateSections(data);
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load config');
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [hydrateSections]);
 
   useEffect(() => { loadConfig(); }, [loadConfig]);
 
@@ -298,7 +382,58 @@ export function SettingsPage() {
     setTimeout(() => setFeedback(null), 3000);
   }
 
-  async function handleSave() {
+  // ── Derived: shared section inputs + cross-section validation ─────────────
+  const statusOptions = useMemo(() => statuses.map((s) => ({ id: s.id, label: s.label })), [statuses]);
+  const statusIds = useMemo(() => new Set(statuses.map((s) => s.id)), [statuses]);
+  const acceptedFacts = useMemo(() => acceptedFactsFromRows(factRows), [factRows]);
+  const deriveRegistry = useMemo(() => buildDeriveRegistry(acceptedFacts), [acceptedFacts]);
+
+  const factProblems = useMemo(() => validateFactsForSave(factRows), [factRows]);
+  const deriveProblems = useMemo(() => {
+    try {
+      return validateDeriveSection(fromEditableDerive(derive), statuses, deriveRegistry);
+    } catch {
+      return ['derive rules are malformed'];
+    }
+  }, [derive, statuses, deriveRegistry]);
+  const transitionProblems = useMemo(
+    () => (transitionsCustomizing ? validateTransitions(transitions, statusIds) : []),
+    [transitions, transitionsCustomizing, statusIds],
+  );
+  const sectionProblems = factProblems.length + deriveProblems.length + transitionProblems.length;
+
+  // ── Section change handlers (each marks the unified dirty flag) ───────────
+  const onFactsChange = useCallback((rows: RawFactDeclaration[]) => {
+    setFactRows(rows);
+    setDirty(true);
+  }, []);
+  const onDeriveChange = useCallback((next: EditableDerive) => {
+    setDerive(next);
+    setDeriveDirty(true);
+    setDeriveReset(false);
+    setDeriveCustom(true);
+    setDirty(true);
+  }, []);
+  const onDeriveReset = useCallback(() => {
+    setDerive(toEditableDerive(DEFAULT_DERIVE_CONFIG));
+    setDeriveReset(true);
+    setDeriveDirty(true);
+    setDeriveCustom(false);
+    setDirty(true);
+  }, []);
+  const onTransitionsChange = useCallback((next: EditableTransition[]) => {
+    setTransitions(next);
+    setDirty(true);
+  }, []);
+  const onTransitionsCustomize = useCallback(() => {
+    setTransitions((prev) =>
+      prev.length > 0 ? prev : toEditableTransitions(filterValidTransitions(defaultTransitions(), statusIds)),
+    );
+    setTransitionsCustomizing(true);
+    setDirty(true);
+  }, [statusIds]);
+
+  async function handleSave(acks: string[] = pendingFactAcks) {
     setSaving(true);
     setFeedback(null);
     try {
@@ -306,6 +441,10 @@ export function SettingsPage() {
         statuses,
         order: statuses.map((s) => s.id),
         pendingResolutions,
+        facts: factRows,
+        factRemovalAcks: acks,
+        derive: deriveReset ? null : deriveDirty ? fromEditableDerive(derive) : undefined,
+        transitions: transitionsCustomizing ? fromEditableTransitions(transitions) : undefined,
       });
       const res = await fetch('/api/config/statuses', {
         method: 'POST',
@@ -314,6 +453,20 @@ export function SettingsPage() {
       });
       if (!res.ok) {
         const errBody = await res.json().catch(() => null);
+        if (res.status === 409 && errBody?.error === 'unresolved-fact-references' && errBody.references) {
+          setFactModal({ open: true, references: errBody.references });
+          setSaving(false);
+          return;
+        }
+        if (errBody?.error === 'invalid-derive') {
+          throw new Error(`Invalid derive rules: ${(errBody.problems ?? []).join('; ')}`);
+        }
+        if (errBody?.error === 'invalid-transitions') {
+          throw new Error(`Invalid transitions: ${(errBody.problems ?? []).join('; ')}`);
+        }
+        if (errBody?.error === 'invalid-facts') {
+          throw new Error(`Invalid facts: ${(errBody.problems ?? []).join('; ')}`);
+        }
         if (res.status === 409 && errBody?.error === 'unresolved-orphans') {
           const ids = Array.isArray(errBody.unresolved)
             ? errBody.unresolved.map((u: { id: string }) => u.id).join(', ')
@@ -363,12 +516,7 @@ export function SettingsPage() {
         throw new Error(errBody?.error ?? `Save failed (HTTP ${res.status})`);
       }
       const data: StatusConfigSaveResponse = await res.json();
-      const editable = toEditable(data);
-      setStatuses(editable);
-      setCustom(data.custom);
-      setSavedStatusIds(new Set(editable.map((s) => s.id)));
-      setPendingResolutions(new Map());
-      setDirty(false);
+      hydrateSections(data);
       invalidateStatusConfigCache();
       const appliedMsg = data.applied
         ? ` (${data.applied.remapped} remapped, ${data.applied.deleted} deleted)`
@@ -389,12 +537,7 @@ export function SettingsPage() {
       const res = await fetch('/api/config/statuses', { method: 'DELETE' });
       if (!res.ok) throw new Error('Reset failed');
       const data: StatusConfigResponse = await res.json();
-      const editable = toEditable(data);
-      setStatuses(editable);
-      setCustom(data.custom);
-      setSavedStatusIds(new Set(editable.map((s) => s.id)));
-      setPendingResolutions(new Map());
-      setDirty(false);
+      hydrateSections(data);
       invalidateStatusConfigCache();
       setFeedback({ type: 'success', message: 'Reset to defaults' });
       clearFeedback();
@@ -439,10 +582,22 @@ export function SettingsPage() {
 
   async function removeStatus(index: number) {
     const removedId = statuses[index].id;
+    const ruleReferences = findStatusRuleReferences(removedId, derive, transitions);
+    const headlineReferences = headlineReferencesStatus(removedId, derive);
 
-    // Row added in this session (not on disk yet) — drop locally, no prompt.
+    // Row added in this session (not on disk yet) — no assignments possible.
     if (!savedStatusIds.has(removedId)) {
-      dropRowAndPrune(removedId);
+      if (ruleReferences.length === 0) {
+        dropRowAndPrune(removedId);
+        return;
+      }
+      setModalState({
+        open: true,
+        affected: { id: removedId, count: 0, truncated: false, assignments: [] },
+        pendingId: removedId,
+        ruleReferences,
+        headlineReferences,
+      });
       return;
     }
 
@@ -453,11 +608,11 @@ export function SettingsPage() {
         throw new Error(`HTTP ${res.status}`);
       }
       const affected: AffectedResponse = await res.json();
-      if (affected.count === 0) {
+      if (affected.count === 0 && ruleReferences.length === 0) {
         dropRowAndPrune(removedId);
         return;
       }
-      setModalState({ open: true, affected, pendingId: removedId });
+      setModalState({ open: true, affected, pendingId: removedId, ruleReferences, headlineReferences });
     } catch (err) {
       setFeedback({
         type: 'error',
@@ -468,9 +623,9 @@ export function SettingsPage() {
     }
   }
 
-  function handleModalResolve(resolution: StatusResolution) {
+  function handleModalResolve(resolution: StatusResolution, deriveRemapTarget: string) {
     if (!modalState.open) return;
-    const { pendingId } = modalState;
+    const { pendingId, affected, ruleReferences } = modalState;
     if (pendingId !== resolution.id) {
       setModalState({ open: false });
       return;
@@ -485,21 +640,47 @@ export function SettingsPage() {
       setModalState({ open: false });
       return;
     }
+
+    // Rewrite derive/transition references locally before the payload is built.
+    if (resolution.mode === 'remap') {
+      setDerive((d) => remapStatusInDerive(d, pendingId, deriveRemapTarget));
+      setTransitions((t) => remapStatusInTransitions(t, pendingId, deriveRemapTarget));
+    } else {
+      // delete: drop ladder rungs + transitions; headline (if referenced)
+      // remaps to the chosen target (headline cannot reference nothing).
+      setDerive((d) => dropStatusFromDerive(d, pendingId, deriveRemapTarget));
+      setTransitions((t) => dropStatusFromTransitions(t, pendingId));
+    }
+    if (ruleReferences.some((r) => r.section !== 'transitions')) {
+      setDeriveDirty(true);
+      setDeriveCustom(true);
+    }
+
     setStatuses((prev) => {
       const nextStatuses = prev.filter((s) => s.id !== pendingId);
       const nextIds = new Set(nextStatuses.map((s) => s.id));
       setPendingResolutions((prevRes) => {
         // First drop resolutions whose target is now gone (because we just
-        // removed pendingId), then add the new resolution for pendingId.
+        // removed pendingId), then add the new resolution for pendingId — but
+        // only when there are real assignments to resolve (count 0 needs none).
         const pruned = pruneStaleResolutions(prevRes, nextIds);
         const next = new Map(pruned);
-        next.set(pendingId, resolution);
+        if (affected.count > 0) next.set(pendingId, resolution);
         return next;
       });
       return nextStatuses;
     });
     setDirty(true);
     setModalState({ open: false });
+  }
+
+  function handleFactModalConfirm() {
+    if (!factModal.open) return;
+    const refs = factModal.references.map((r) => r.factName);
+    const acks = Array.from(new Set([...pendingFactAcks, ...refs]));
+    setPendingFactAcks(acks);
+    setFactModal({ open: false });
+    void handleSave(acks);
   }
 
   function handleModalCancel() {
@@ -678,14 +859,34 @@ export function SettingsPage() {
         </DndContext>
       </SectionCard>
 
-      <FactsSection />
+      <DeriveRulesSection
+        value={derive}
+        deriveCustom={deriveCustom}
+        statuses={statusOptions}
+        acceptedFacts={acceptedFacts}
+        onChange={onDeriveChange}
+        onReset={onDeriveReset}
+        disabled={saving}
+      />
+
+      <TransitionsSection
+        value={transitions}
+        customizing={transitionsCustomizing}
+        statuses={statusOptions}
+        knownCommands={knownCommands}
+        onChange={onTransitionsChange}
+        onCustomize={onTransitionsCustomize}
+        disabled={saving}
+      />
+
+      <FactsSection rows={factRows} onChange={onFactsChange} saving={saving} />
 
       {/* Save bar */}
       <div className="flex items-center gap-3">
         <button
-          className="shell-action bg-primary/10 text-primary hover:bg-primary/20"
-          onClick={handleSave}
-          disabled={saving || !dirty}
+          className="shell-action bg-primary/10 text-primary hover:bg-primary/20 disabled:opacity-50"
+          onClick={() => void handleSave()}
+          disabled={saving || !dirty || sectionProblems > 0}
         >
           <Save className="h-3.5 w-3.5" />
           {saving ? 'Saving...' : 'Save Configuration'}
@@ -699,7 +900,9 @@ export function SettingsPage() {
             >
               Discard Changes
             </button>
-            <span className="text-xs text-muted-foreground">Unsaved changes</span>
+            <span className="text-xs text-muted-foreground">
+              {sectionProblems > 0 ? 'Fix the highlighted errors to save' : 'Unsaved changes'}
+            </span>
           </>
         )}
       </div>
@@ -720,10 +923,23 @@ export function SettingsPage() {
           remaining={statuses
             .filter((s) => s.id !== modalState.affected.id && savedStatusIds.has(s.id))
             .map((s) => ({ id: s.id, label: s.label }))}
+          ruleReferences={modalState.ruleReferences}
+          headlineReferences={modalState.headlineReferences}
           onResolve={handleModalResolve}
           onCancel={handleModalCancel}
         />
       )}
+
+      {/* Fact-reference modal (unified save 409 ack) */}
+      <FactDeleteModal
+        open={factModal.open}
+        references={factModal.open ? factModal.references : []}
+        onConfirm={handleFactModalConfirm}
+        onCancel={() => {
+          setFactModal({ open: false });
+          setSaving(false);
+        }}
+      />
     </div>
     </TooltipProvider>
   );

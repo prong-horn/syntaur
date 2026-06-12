@@ -3,11 +3,16 @@ import {
   writeStatusConfig,
   deleteStatusConfig,
   DEFAULT_DERIVE_CONFIG,
+  validateDeriveConfig,
+  validateDeriveShape,
   validateFactDeclarations,
   normalizeFactDeclarations,
   type RawFactDeclaration,
+  type DeriveConfig,
+  type StatusTransition,
 } from '../utils/config.js';
 import { acceptFactDeclarations, buildDeriveRegistry } from '../utils/fact-registry.js';
+import { DEFAULT_COMMAND_TARGETS } from '../lifecycle/state-machine.js';
 import { getStatusConfig, clearStatusConfigCache, installRecordsInvalidation } from './api.js';
 import { validateDeriveCondition } from '../lifecycle/derive.js';
 import {
@@ -56,6 +61,35 @@ function buildAffectedResponse(id: string, list: AffectedAssignment[]): Affected
 
 function isString(x: unknown): x is string {
   return typeof x === 'string' && x.length > 0;
+}
+
+/**
+ * The full status-config response shape shared by GET, POST, and DELETE.
+ * `derive` always carries a concrete config (defaults when the file declares
+ * none) so the client can render the ladder unconditionally; `deriveCustom`
+ * tells it whether the file actually customizes the rules. `knownCommands` are
+ * the built-in transition command names for the transitions-editor pickers.
+ * POST/DELETE include `factDeclarations`/`rawFacts` so the unified save can
+ * rehydrate every section without a follow-up GET.
+ */
+function configResponse(config: Awaited<ReturnType<typeof getStatusConfig>>) {
+  return {
+    statuses: config.statuses,
+    order: config.order,
+    // RAW transitions (empty when the user has none) + a custom flag, so the
+    // Settings editor can show read-only defaults vs. a customized table. The
+    // materialized `config.transitions` (default-filled for runtime guards) is
+    // deliberately NOT exposed here — sending it would make the defaults view
+    // unreachable and round-trip phantom rows for undefined statuses.
+    transitions: config.rawTransitions,
+    transitionsCustom: config.transitionsCustom,
+    custom: config.custom,
+    derive: config.derive ?? DEFAULT_DERIVE_CONFIG,
+    deriveCustom: config.derive !== null,
+    knownCommands: [...DEFAULT_COMMAND_TARGETS.keys()],
+    factDeclarations: config.factDeclarations,
+    rawFacts: config.facts ?? [],
+  };
 }
 
 interface ParsedResolutions {
@@ -150,14 +184,7 @@ export function createStatusConfigRouter(
   router.get('/', async (_req: Request, res: Response) => {
     try {
       const config = await getStatusConfig();
-      res.json({
-        statuses: config.statuses,
-        order: config.order,
-        transitions: config.transitions,
-        custom: config.custom,
-        factDeclarations: config.factDeclarations,
-        rawFacts: config.facts ?? [],
-      });
+      res.json(configResponse(config));
     } catch (error) {
       console.error('Error getting status config:', error);
       res.status(500).json({ error: 'Failed to get status config' });
@@ -186,6 +213,7 @@ export function createStatusConfigRouter(
         statuses,
         order,
         transitions,
+        derive,
         facts: bodyFacts,
         factRemovalAcks,
         resolutions: rawResolutions,
@@ -195,24 +223,41 @@ export function createStatusConfigRouter(
       const currentConfig = await getStatusConfig();
 
       // ── Body-presence semantics ──────────────────────────────────────────
+      // Every section is optional; an omitted section preserves the current
+      // value. This is what kills the historical `transitions: []` wipe without
+      // breaking old facts-only clients, and lets a derive-only save round-trip.
       const hasFacts = bodyFacts !== undefined;
       const hasStatuses = statuses !== undefined;
       const hasOrder = order !== undefined;
       const hasTransitions = transitions !== undefined;
+      const hasDerive = derive !== undefined;
 
-      let effectiveStatuses = statuses;
-      let effectiveOrder = order;
-      let effectiveTransitions = transitions;
-
-      if (hasFacts && !hasStatuses && !hasOrder && !hasTransitions) {
-        // Facts-only save: default the status arrays from current config.
-        effectiveStatuses = currentConfig.statuses;
-        effectiveOrder = currentConfig.order;
-        effectiveTransitions = currentConfig.transitions;
-      } else if (!Array.isArray(effectiveStatuses) || !Array.isArray(effectiveOrder) || !Array.isArray(effectiveTransitions)) {
-        res.status(400).json({ error: 'malformed-statuses', message: 'Request body must include statuses, order, and transitions arrays' });
+      if (!hasStatuses && !hasOrder && !hasTransitions && !hasFacts && !hasDerive) {
+        res.status(400).json({ error: 'malformed-statuses', message: 'Request body must include at least one of statuses, order, transitions, derive, or facts' });
         return;
       }
+      if (hasStatuses && !Array.isArray(statuses)) {
+        res.status(400).json({ error: 'malformed-statuses', message: 'statuses must be an array' });
+        return;
+      }
+      if (hasOrder && !Array.isArray(order)) {
+        res.status(400).json({ error: 'malformed-statuses', message: 'order must be an array' });
+        return;
+      }
+      if (hasTransitions && !Array.isArray(transitions)) {
+        res.status(400).json({ error: 'malformed-transitions', message: 'transitions must be an array' });
+        return;
+      }
+
+      const effectiveStatuses = hasStatuses ? statuses : currentConfig.statuses;
+      const effectiveOrder = hasOrder ? order : currentConfig.order;
+      // Preserve the RAW transitions (what's actually in config.md), NOT the
+      // materialized default-filled `currentConfig.transitions` — otherwise a
+      // statuses-only save would persist the 17 built-in rows (including ones
+      // referencing undefined statuses) into a config that had none.
+      const effectiveTransitions: StatusTransition[] = hasTransitions
+        ? transitions
+        : currentConfig.rawTransitions;
 
       // Validate resolutions shape early.
       const parsed = parseResolutions(rawResolutions);
@@ -264,6 +309,156 @@ export function createStatusConfigRouter(
         }
         if (!oldIds.has(r.target)) {
           res.status(400).json({ error: 'invalid-remap-target', reason: 'not-in-old-config', id: r.id, target: r.target });
+          return;
+        }
+      }
+
+      // ── Validation BEFORE mutation ───────────────────────────────────────
+      // Every payload validation (facts, derive, transitions, fact-references)
+      // runs here, before scanAssignmentsByStatus/applyStatusResolutions touch
+      // any assignment file. Previously fact validation ran AFTER resolutions
+      // were applied, so an invalid-facts save could remap/delete assignments on
+      // disk and *then* 400. All checks below read only the request body and
+      // currentConfig — no disk writes — so the move is safe.
+
+      // (1) Facts: shape-check → validate → factsToWrite (defaults to current).
+      let factsToWrite: RawFactDeclaration[] | null = currentConfig.facts ?? null;
+      if (hasFacts) {
+        if (!Array.isArray(bodyFacts)) {
+          res.status(400).json({ error: 'malformed-facts', message: 'facts must be an array' });
+          return;
+        }
+        const shapedFacts: RawFactDeclaration[] = [];
+        for (let i = 0; i < bodyFacts.length; i++) {
+          const row = bodyFacts[i];
+          if (!row || typeof row !== 'object') {
+            res.status(400).json({ error: 'malformed-facts', message: `facts[${i}] must be an object` });
+            return;
+          }
+          const name = (row as Record<string, unknown>).name;
+          const type = (row as Record<string, unknown>).type;
+          if (typeof name !== 'string' || typeof type !== 'string') {
+            res.status(400).json({ error: 'malformed-facts', message: `facts[${i}] must have name and type strings` });
+            return;
+          }
+          const binds = (row as Record<string, unknown>).binds;
+          const normalizedBinds = binds === undefined ? null : binds === null ? null : typeof binds === 'string' ? binds : null;
+          shapedFacts.push({ name, type, binds: normalizedBinds });
+        }
+        const problems = validateFactDeclarations(shapedFacts);
+        if (problems.length > 0) {
+          res.status(400).json({ error: 'invalid-facts', problems });
+          return;
+        }
+        factsToWrite = shapedFacts;
+      }
+
+      // (2) Derive: presence semantics + shape-check + validateDeriveConfig
+      // against the INCOMING statuses and a registry built from the INCOMING
+      // facts (so a save that adds a fact and a rule referencing it validates).
+      let effectiveDerive: DeriveConfig | null = currentConfig.derive ?? null;
+      if (hasDerive) {
+        if (derive === null) {
+          effectiveDerive = null; // reset to built-in defaults
+        } else {
+          // Deep shape-check FIRST — validateDeriveConfig assumes correct types,
+          // so a malformed payload (null rung, numeric when/next, …) would 500
+          // and could partial-mutate via serialization after resolutions apply.
+          const shapeProblems = validateDeriveShape(derive);
+          if (shapeProblems.length > 0) {
+            res.status(400).json({ error: 'invalid-derive', problems: shapeProblems });
+            return;
+          }
+          const incomingRegistry = buildDeriveRegistry(
+            acceptFactDeclarations(normalizeFactDeclarations(factsToWrite)),
+          );
+          const problems = validateDeriveConfig(
+            derive as DeriveConfig,
+            { statuses: effectiveStatuses },
+            (when) => validateDeriveCondition(when, incomingRegistry),
+          );
+          if (problems.length > 0) {
+            res.status(400).json({ error: 'invalid-derive', problems });
+            return;
+          }
+          effectiveDerive = derive as DeriveConfig;
+        }
+      }
+
+      // (3) Transitions: shape-check rows + from/to must be defined statuses.
+      if (hasTransitions) {
+        for (let i = 0; i < transitions.length; i++) {
+          const t = transitions[i] as Record<string, unknown>;
+          const ok =
+            !!t &&
+            typeof t === 'object' &&
+            typeof t.from === 'string' &&
+            typeof t.command === 'string' &&
+            typeof t.to === 'string' &&
+            (t.label === undefined || typeof t.label === 'string') &&
+            (t.description === undefined || typeof t.description === 'string') &&
+            (t.requiresReason === undefined || typeof t.requiresReason === 'boolean');
+          if (!ok) {
+            res.status(400).json({
+              error: 'invalid-transitions',
+              problems: [`transitions[${i}] must have string from/command/to (+ optional string label/description, boolean requiresReason)`],
+            });
+            return;
+          }
+        }
+        const tproblems: string[] = [];
+        for (const t of transitions as StatusTransition[]) {
+          if (!newIds.has(t.from)) tproblems.push(`transition ${t.from} --${t.command}--> ${t.to}: "${t.from}" is not a defined status`);
+          if (!newIds.has(t.to)) tproblems.push(`transition ${t.from} --${t.command}--> ${t.to}: "${t.to}" is not a defined status`);
+        }
+        if (tproblems.length > 0) {
+          res.status(400).json({ error: 'invalid-transitions', problems: tproblems });
+          return;
+        }
+      }
+
+      // (4) Fact-reference check: a removed fact still referenced by a derive
+      // rule that REMAINS (in the incoming derive) → 409 unless acked. Evaluated
+      // against effectiveDerive so removing a fact AND its rule in one save is
+      // clean, while removing the fact but keeping the rule still 409s.
+      if (hasFacts) {
+        const currentNames = new Set((currentConfig.facts ?? []).map((f) => f.name));
+        const incomingNames = new Set((factsToWrite ?? []).map((f) => f.name));
+        const removedNames: string[] = [];
+        for (const name of currentNames) {
+          if (!incomingNames.has(name)) removedNames.push(name);
+        }
+        const acks = new Set<string>(Array.isArray(factRemovalAcks) ? factRemovalAcks.map((x: unknown) => String(x)) : []);
+        const unresolvedRefs: Array<{ factName: string; location: string; when: string }> = [];
+        if (effectiveDerive !== null && removedNames.length > 0) {
+          const acceptedAll = acceptFactDeclarations(normalizeFactDeclarations(currentConfig.facts));
+          const fullRegistry = buildDeriveRegistry(acceptedAll);
+          for (const removedName of removedNames) {
+            if (acks.has(removedName)) continue;
+            const acceptedWithout = acceptedAll.filter((d) => d.name !== removedName);
+            const withoutRegistry = buildDeriveRegistry(acceptedWithout);
+            for (let i = 0; i < effectiveDerive.phaseLadder.length; i++) {
+              const rung = effectiveDerive.phaseLadder[i];
+              if (rung.when === '*') continue;
+              const before = validateDeriveCondition(rung.when, fullRegistry);
+              const after = validateDeriveCondition(rung.when, withoutRegistry);
+              if (before === null && after !== null) {
+                unresolvedRefs.push({ factName: removedName, location: `phaseLadder[${i}]`, when: rung.when });
+              }
+            }
+            for (let i = 0; i < effectiveDerive.disposition.length; i++) {
+              const rule = effectiveDerive.disposition[i];
+              if (rule.when === null) continue;
+              const before = validateDeriveCondition(rule.when, fullRegistry);
+              const after = validateDeriveCondition(rule.when, withoutRegistry);
+              if (before === null && after !== null) {
+                unresolvedRefs.push({ factName: removedName, location: `disposition[${i}]`, when: rule.when });
+              }
+            }
+          }
+        }
+        if (unresolvedRefs.length > 0) {
+          res.status(409).json({ error: 'unresolved-fact-references', references: unresolvedRefs });
           return;
         }
       }
@@ -327,83 +522,6 @@ export function createStatusConfigRouter(
         throw err;
       }
 
-      // ── Fact validation + reference check ─────────────────────────────
-      let factsToWrite: RawFactDeclaration[] | null = currentConfig.facts ?? null;
-      if (hasFacts) {
-        // Shape-check + normalize binds undefined → null.
-        const shapedFacts: RawFactDeclaration[] = [];
-        if (!Array.isArray(bodyFacts)) {
-          res.status(400).json({ error: 'malformed-facts', message: 'facts must be an array' });
-          return;
-        }
-        for (let i = 0; i < bodyFacts.length; i++) {
-          const row = bodyFacts[i];
-          if (!row || typeof row !== 'object') {
-            res.status(400).json({ error: 'malformed-facts', message: `facts[${i}] must be an object` });
-            return;
-          }
-          const name = (row as Record<string, unknown>).name;
-          const type = (row as Record<string, unknown>).type;
-          if (typeof name !== 'string' || typeof type !== 'string') {
-            res.status(400).json({ error: 'malformed-facts', message: `facts[${i}] must have name and type strings` });
-            return;
-          }
-          const binds = (row as Record<string, unknown>).binds;
-          const normalizedBinds = binds === undefined ? null : binds === null ? null : typeof binds === 'string' ? binds : null;
-          shapedFacts.push({ name, type, binds: normalizedBinds });
-        }
-
-        const problems = validateFactDeclarations(shapedFacts);
-        if (problems.length > 0) {
-          res.status(400).json({ error: 'invalid-facts', problems });
-          return;
-        }
-
-        // Reference check: removed facts still referenced by derive rules?
-        const currentNames = new Set((currentConfig.facts ?? []).map((f) => f.name));
-        const incomingNames = new Set(shapedFacts.map((f) => f.name));
-        const removedNames: string[] = [];
-        for (const name of currentNames) {
-          if (!incomingNames.has(name)) removedNames.push(name);
-        }
-        const acks = new Set<string>(Array.isArray(factRemovalAcks) ? factRemovalAcks.map((x: unknown) => String(x)) : []);
-        const unresolvedRefs: Array<{ factName: string; location: string; when: string }> = [];
-        const deriveConfig = currentConfig.derive ?? null;
-        if (deriveConfig !== null && removedNames.length > 0) {
-          const acceptedAll = acceptFactDeclarations(normalizeFactDeclarations(currentConfig.facts));
-          const fullRegistry = buildDeriveRegistry(acceptedAll);
-          for (const removedName of removedNames) {
-            if (acks.has(removedName)) continue;
-            const acceptedWithout = acceptedAll.filter((d) => d.name !== removedName);
-            const withoutRegistry = buildDeriveRegistry(acceptedWithout);
-            for (let i = 0; i < deriveConfig.phaseLadder.length; i++) {
-              const rung = deriveConfig.phaseLadder[i];
-              if (rung.when === '*') continue;
-              const before = validateDeriveCondition(rung.when, fullRegistry);
-              const after = validateDeriveCondition(rung.when, withoutRegistry);
-              if (before === null && after !== null) {
-                unresolvedRefs.push({ factName: removedName, location: `phaseLadder[${i}]`, when: rung.when });
-              }
-            }
-            for (let i = 0; i < deriveConfig.disposition.length; i++) {
-              const rule = deriveConfig.disposition[i];
-              if (rule.when === null) continue;
-              const before = validateDeriveCondition(rule.when, fullRegistry);
-              const after = validateDeriveCondition(rule.when, withoutRegistry);
-              if (before === null && after !== null) {
-                unresolvedRefs.push({ factName: removedName, location: `disposition[${i}]`, when: rule.when });
-              }
-            }
-          }
-        }
-        if (unresolvedRefs.length > 0) {
-          res.status(409).json({ error: 'unresolved-fact-references', references: unresolvedRefs });
-          return;
-        }
-
-        factsToWrite = shapedFacts;
-      }
-
       // Step B: write the new config. If this throws, the resolutions have
       // already landed on disk; per Decision 3 the old config is still in
       // place and no assignment.invalid-status errors exist (every remap
@@ -414,7 +532,7 @@ export function createStatusConfigRouter(
           statuses: effectiveStatuses,
           order: effectiveOrder,
           transitions: effectiveTransitions,
-          derive: currentConfig.derive ?? null,
+          derive: effectiveDerive,
           facts: factsToWrite,
         });
       } catch (err) {
@@ -440,10 +558,7 @@ export function createStatusConfigRouter(
           : { mode: entry.mode, count: entry.count };
       }
       res.json({
-        statuses: config.statuses,
-        order: config.order,
-        transitions: config.transitions,
-        custom: config.custom,
+        ...configResponse(config),
         applied: { remapped: applied.remapped, deleted: applied.deleted, byId },
       });
     } catch (error) {
@@ -457,12 +572,7 @@ export function createStatusConfigRouter(
       await deleteStatusConfig();
       clearStatusConfigCache();
       const config = await getStatusConfig();
-      res.json({
-        statuses: config.statuses,
-        order: config.order,
-        transitions: config.transitions,
-        custom: config.custom,
-      });
+      res.json(configResponse(config));
     } catch (error) {
       console.error('Error resetting status config:', error);
       res.status(500).json({ error: 'Failed to reset status config' });
