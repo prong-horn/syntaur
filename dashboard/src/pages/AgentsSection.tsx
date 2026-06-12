@@ -406,30 +406,6 @@ function SortableAgentRow({
             <p className="mt-0.5 text-[11px] text-error-foreground">{row.fieldErrors.model}</p>
           )}
         </div>
-        <div>
-          <label className="text-[11px] uppercase tracking-wide text-muted-foreground/80">
-            Playbook
-          </label>
-          <select
-            value={row.playbook}
-            onChange={(e) => onPatch({ playbook: e.target.value })}
-            className={`editor-input mt-0.5 w-full ${errorClass('playbook')}`}
-          >
-            <option value="">— none —</option>
-            {playbooks.map((p) => (
-              <option key={p.slug} value={p.slug}>
-                {p.name}
-              </option>
-            ))}
-            {/* Preserve a stale/disabled slug that isn't in the enabled list. */}
-            {row.playbook && !playbooks.some((p) => p.slug === row.playbook) && (
-              <option value={row.playbook}>{row.playbook} (unavailable)</option>
-            )}
-          </select>
-          {row.fieldErrors.playbook && (
-            <p className="mt-0.5 text-[11px] text-error-foreground">{row.fieldErrors.playbook}</p>
-          )}
-        </div>
         <div className="col-span-full">
           <label className="text-[11px] uppercase tracking-wide text-muted-foreground/80">
             Launch prompt
@@ -443,10 +419,10 @@ function SortableAgentRow({
             onChange={(v) => onPatch({ launchPrompt: v })}
             knownSlugs={playbookSlugs}
             singleLine
-            rows={2}
+            rows={5}
             placeholder="@assignment Run @<playbook> end-to-end. (optional)"
             wrapperClassName="mt-0.5"
-            className={`editor-input w-full font-mono ${errorClass('launchPrompt')}`}
+            className={`editor-input w-full resize-y font-mono leading-relaxed min-h-[6rem] ${errorClass('launchPrompt')}`}
             aria-label="Launch prompt"
           />
           {row.fieldErrors.launchPrompt && (
