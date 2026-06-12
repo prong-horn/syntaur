@@ -5,7 +5,7 @@
     "name": "Brennen",
     "email": ""
   },
-  "version": "0.52.0",
+  "version": "0.52.1",
   "skills": [
     "./skills/syntaur-protocol",
     "./skills/grab-assignment",
