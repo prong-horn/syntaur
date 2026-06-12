@@ -48,6 +48,8 @@ export function LaunchPromptInput({
   const active = detectActiveToken(value, caret);
   const suggestions = active ? rankSuggestions(active.partial, knownSlugs) : [];
   const showPopup = !dismissed && suggestions.length > 0;
+  // Clamp the highlight in case the suggestion list shrank under it.
+  const activeIndex = Math.min(selected, Math.max(0, suggestions.length - 1));
 
   const normalize = (text: string) => (singleLine ? text.replace(/[\r\n]+/g, ' ') : text);
 
@@ -58,9 +60,11 @@ export function LaunchPromptInput({
     setDismissed(false);
   }
 
+  // Caret moves (clicks, Home/End, etc.) change which token is active. Don't
+  // reset `selected` here — that would fight ArrowUp/ArrowDown navigation, whose
+  // keyup also lands on this handler.
   function syncCaret(e: React.SyntheticEvent<HTMLTextAreaElement>) {
     setCaret(e.currentTarget.selectionStart ?? value.length);
-    setSelected(0); // the active token (and its suggestions) may have changed
   }
 
   function apply(suggestion: string | undefined) {
@@ -69,7 +73,9 @@ export function LaunchPromptInput({
     onChange(normalize(result.text));
     setCaret(result.caret);
     setSelected(0);
-    setDismissed(false);
+    // Caret lands inside the just-inserted token, so it would otherwise re-open
+    // immediately — keep it closed until the user types again.
+    setDismissed(true);
     requestAnimationFrame(() => {
       const el = ref.current;
       if (el) {
@@ -89,7 +95,7 @@ export function LaunchPromptInput({
       setSelected((s) => Math.max(s - 1, 0));
     } else if (e.key === 'Enter' || e.key === 'Tab') {
       e.preventDefault();
-      apply(suggestions[selected]); // apply() guards an out-of-range/undefined pick
+      apply(suggestions[activeIndex]); // apply() guards an out-of-range/undefined pick
     } else if (e.key === 'Escape') {
       e.preventDefault();
       setDismissed(true);
@@ -120,7 +126,7 @@ export function LaunchPromptInput({
               <button
                 type="button"
                 role="option"
-                aria-selected={i === selected}
+                aria-selected={i === activeIndex}
                 onMouseDown={(e) => {
                   // mousedown (not click) so the textarea keeps focus.
                   e.preventDefault();
@@ -128,7 +134,7 @@ export function LaunchPromptInput({
                 }}
                 className={cn(
                   'flex w-full items-center gap-2 px-2.5 py-1.5 text-left font-mono text-sm transition-colors hover:bg-accent',
-                  i === selected && 'bg-accent',
+                  i === activeIndex && 'bg-accent',
                 )}
               >
                 <span className="text-muted-foreground">@</span>
