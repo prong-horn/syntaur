@@ -2022,9 +2022,10 @@ function AssignmentBoardCard({
             availableTransitions={assignment.availableTransitions}
             onSelect={onPillSelect!}
             disabled={transitioning}
+            className="max-w-[150px]"
           />
         ) : (
-          <StatusBadge status={assignment.status} />
+          <StatusBadge status={assignment.status} className="max-w-[150px]" />
         )}
       </div>
 

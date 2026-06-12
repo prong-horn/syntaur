@@ -149,12 +149,12 @@ export function StatusBadge({
   const hasProgress = progress && progress.total > 0;
   const pct = hasProgress ? Math.min(1, Math.max(0, progress.checked / progress.total)) : 0;
   const description = hasProgress
-    ? `${meta.description} (${progress.checked}/${progress.total} criteria)`
-    : meta.description;
+    ? `${meta.label} — ${meta.description} (${progress.checked}/${progress.total} criteria)`
+    : `${meta.label} — ${meta.description}`;
 
   const iconNode = showIcon ? (
     hasProgress ? (
-      <span className="relative inline-flex h-3.5 w-3.5 items-center justify-center">
+      <span className="relative inline-flex h-3.5 w-3.5 shrink-0 items-center justify-center">
         <svg
           aria-hidden="true"
           viewBox="0 0 16 16"
@@ -176,14 +176,14 @@ export function StatusBadge({
         <Icon className="h-2.5 w-2.5" />
       </span>
     ) : (
-      <Icon className="h-3.5 w-3.5" />
+      <Icon className="h-3.5 w-3.5 shrink-0" />
     )
   ) : null;
 
   return (
     <span title={description} className={getStatusPillClassName(status, className)}>
       {iconNode}
-      <span>{meta.label}</span>
+      <span className="min-w-0 truncate">{meta.label}</span>
     </span>
   );
 }

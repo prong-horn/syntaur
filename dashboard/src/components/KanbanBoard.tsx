@@ -249,7 +249,7 @@ export function KanbanBoard<T>({
       <div
         className={cn(
           'grid min-w-max grid-flow-col gap-4',
-          compact ? 'auto-cols-[minmax(200px,240px)]' : 'auto-cols-[minmax(260px,320px)]',
+          compact ? 'auto-cols-[minmax(240px,280px)]' : 'auto-cols-[minmax(300px,360px)]',
         )}
       >
         {groupedColumns.map(({ column, items: columnItems }) => {
