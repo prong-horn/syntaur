@@ -1,4 +1,6 @@
-import { Plus, Trash2, Replace, Maximize2 } from 'lucide-react';
+import { useSortable } from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
+import { GripVertical, Plus, Trash2, Replace, Maximize2 } from 'lucide-react';
 import type { DashboardSlot, WidgetSize } from '@shared/saved-views-schema';
 import { WIDGET_SIZES } from '@shared/saved-views-schema';
 import { cn } from '../../lib/utils';
@@ -35,6 +37,38 @@ const SIZE_LABEL: Record<WidgetSize, string> = {
 };
 
 export function WidgetSlot({ slot, onReplace, onRemove, onResize }: WidgetSlotProps) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    setActivatorNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: slot.id });
+
+  const style = {
+    // Preserve intrinsic widget dimensions when sorting between differently
+    // sized grid cells; dnd-kit's scale terms visibly squash wide/tall cards.
+    transform: CSS.Translate.toString(transform),
+    transition,
+    zIndex: isDragging ? 50 : undefined,
+    position: isDragging ? ('relative' as const) : undefined,
+  };
+
+  const dragHandle = (
+    <button
+      ref={setActivatorNodeRef}
+      {...attributes}
+      {...listeners}
+      type="button"
+      aria-label="Drag to reorder widget"
+      className="touch-none cursor-grab text-muted-foreground/40 transition hover:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:cursor-grabbing"
+    >
+      <GripVertical className="h-4 w-4" aria-hidden="true" />
+    </button>
+  );
+
   // Absent `size` defaults to `small` (backward compatibility). The same
   // default feeds the submenu `active` check below so the checkmark and the
   // rendered size can never disagree.
@@ -44,11 +78,15 @@ export function WidgetSlot({ slot, onReplace, onRemove, onResize }: WidgetSlotPr
   if (slot.widget === null) {
     return (
       <div
+        ref={setNodeRef}
+        style={style}
         className={cn(
-          'flex items-center justify-center rounded-lg border border-dashed border-border/60 bg-card/40 p-3 shadow-sm',
+          'relative flex items-center justify-center rounded-lg border border-dashed border-border/60 bg-card/40 p-3 shadow-sm',
           sizeClass,
+          isDragging && 'opacity-0',
         )}
       >
+        <div className="absolute left-2 top-2">{dragHandle}</div>
         <button
           type="button"
           onClick={onReplace}
@@ -65,13 +103,19 @@ export function WidgetSlot({ slot, onReplace, onRemove, onResize }: WidgetSlotPr
   if (!renderer) {
     return (
       <div
+        ref={setNodeRef}
+        style={style}
         className={cn(
           'overflow-auto rounded-lg border border-border/60 bg-card/85 p-3 shadow-sm',
           sizeClass,
+          isDragging && 'opacity-0',
         )}
       >
-        <div className="rounded-md border border-border/60 bg-background/60 px-3 py-2 text-sm text-muted-foreground">
-          Unknown widget kind: {slot.widget.kind}
+        <div className="flex items-start gap-2">
+          {dragHandle}
+          <div className="flex-1 rounded-md border border-border/60 bg-background/60 px-3 py-2 text-sm text-muted-foreground">
+            Unknown widget kind: {slot.widget.kind}
+          </div>
         </div>
       </div>
     );
@@ -81,13 +125,17 @@ export function WidgetSlot({ slot, onReplace, onRemove, onResize }: WidgetSlotPr
 
   return (
     <div
+      ref={setNodeRef}
+      style={style}
       className={cn(
         'overflow-auto rounded-lg border border-border/60 bg-card/85 p-3 shadow-sm',
         sizeClass,
+        isDragging && 'opacity-0',
       )}
     >
       <header className="mb-2 flex items-center justify-between gap-2">
         <div className="flex min-w-0 items-center gap-2 text-xs uppercase tracking-[0.12em] text-muted-foreground">
+          {dragHandle}
           <Icon className="h-3.5 w-3.5" aria-hidden="true" />
           <span className="truncate">
             <WidgetTitle slot={slot} fallback={renderer.title} />
@@ -116,6 +164,30 @@ export function WidgetSlot({ slot, onReplace, onRemove, onResize }: WidgetSlotPr
           slotId: slot.id,
           onPickAnother: onReplace,
         })}
+      </div>
+    </div>
+  );
+}
+
+export function WidgetDragPreview({ slot }: { slot: DashboardSlot }) {
+  const renderer = slot.widget ? widgetRegistry[slot.widget.kind] : null;
+  const Icon = renderer?.icon;
+  const title =
+    slot.widget === null
+      ? 'Empty widget slot'
+      : renderer?.title ?? `Unknown widget kind: ${slot.widget.kind}`;
+  const size = SIZE_LABEL[slot.size ?? 'small'];
+
+  return (
+    <div
+      aria-hidden="true"
+      className="w-72 rounded-lg border border-border/70 bg-card/95 p-3 shadow-xl ring-1 ring-foreground/10"
+    >
+      <div className="flex items-center gap-2 text-xs uppercase tracking-[0.12em] text-muted-foreground">
+        <GripVertical className="h-4 w-4" aria-hidden="true" />
+        {Icon ? <Icon className="h-3.5 w-3.5" aria-hidden="true" /> : null}
+        <span className="min-w-0 flex-1 truncate">{title}</span>
+        <span className="text-[10px] tracking-normal text-muted-foreground/70">{size}</span>
       </div>
     </div>
   );
