@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Check, Copy } from 'lucide-react';
+import { copyText } from '../lib/clipboard';
 
 interface CopyButtonProps {
   value: string;
@@ -21,15 +22,11 @@ export function CopyButton({
 
   async function handleCopy() {
     if (disabled) return;
-    try {
-      if (!navigator.clipboard || typeof navigator.clipboard.writeText !== 'function') {
-        throw new Error('Clipboard API is unavailable in this context.');
-      }
-      await navigator.clipboard.writeText(value);
+    if (await copyText(value)) {
       setCopied(true);
       setTimeout(() => setCopied(false), 1500);
-    } catch (err) {
-      onError?.(err instanceof Error ? err : new Error(String(err)));
+    } else {
+      onError?.(new Error('Copy to clipboard failed in this context.'));
     }
   }
 

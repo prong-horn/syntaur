@@ -180,6 +180,10 @@ async function loadQueryItem(
       completedAt,
       statusAge,
       phaseAge,
+      // Mirror the dashboard haystack (queryFilter.ts boardItemToQueryItem) so
+      // `search:` behaves identically on the CLI and the dashboard. The shared
+      // `search` field reads `searchText ?? title`; `title:` stays title-only.
+      searchText: `${item.title ?? ''} ${item.slug ?? ''} ${item.projectTitle ?? 'standalone'} ${item.projectSlug ?? ''}`,
     };
   } catch {
     return null;

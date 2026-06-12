@@ -77,10 +77,11 @@ describe('parseOpenUrl', () => {
     );
   });
 
-  it('rejects a prompt containing a newline (single-line)', () => {
-    expect(() =>
-      parseOpenUrl('syntaur://open?assignment=a1&prompt=' + encodeURIComponent('a\nb')),
-    ).toThrowError(expect.objectContaining({ code: 'invalid-prompt' }));
+  it('accepts a prompt containing a newline', () => {
+    const result = parseOpenUrl(
+      'syntaur://open?assignment=a1&prompt=' + encodeURIComponent('a\nb'),
+    );
+    expect(result).toEqual({ kind: 'assignment', id: 'a1', prompt: 'a\nb' });
   });
 
   it('accepts a prompt at exactly MAX_OPEN_PROMPT_LENGTH and rejects one char more', () => {

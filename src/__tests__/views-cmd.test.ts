@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { mkdtemp, rm, readFile } from 'node:fs/promises';
+import { mkdtemp, rm, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { spawn } from 'node:child_process';
@@ -142,5 +142,122 @@ describe('syntaur views', () => {
   it('dedupes visibility column ids (set-like, UI parity)', async () => {
     const view = await addView(['--name', 'Vis', '--table-hidden', 'status,status,priority']);
     expect(view.config.tableColumnVisibility.hidden).toEqual(['status', 'priority']);
+  });
+});
+
+// ── AC9: `views add/update --query` persistence + validation ──────────────────
+// A config declaring the custom fact `qaPassed` so `--query qaPassed:true`
+// compiles against the project's vocabulary (resolveDeriveContext reads it).
+const CONFIG_WITH_FACT = `---
+version: "2.0"
+statuses:
+  definitions:
+    - id: draft
+      label: Draft
+    - id: in_progress
+      label: In Progress
+    - id: completed
+      label: Completed
+      terminal: true
+  order:
+    - draft
+    - in_progress
+    - completed
+  facts:
+    - name: qaPassed
+      type: bool
+---
+`;
+
+describe('AC9 — syntaur views --query', () => {
+  let syntaurHome: string;
+
+  beforeEach(async () => {
+    syntaurHome = await mkdtemp(join(tmpdir(), 'syntaur-views-q-'));
+    await writeFile(resolve(syntaurHome, 'config.md'), CONFIG_WITH_FACT);
+  });
+
+  afterEach(async () => {
+    await rm(syntaurHome, { recursive: true, force: true });
+  });
+
+  async function readStore(): Promise<SavedViewsFile> {
+    const raw = await readFile(resolve(syntaurHome, 'saved-views.json'), 'utf-8');
+    return JSON.parse(raw) as SavedViewsFile;
+  }
+
+  it('add --query persists filters.query when the query compiles against the config vocabulary', async () => {
+    const r = await runCli(
+      ['views', 'add', '--name', 'QA', '--query', 'qaPassed:true', '--json'],
+      syntaurHome,
+    );
+    expect(r.code, r.stderr).toBe(0);
+    const view = JSON.parse(r.stdout) as SavedView;
+    expect(view.config.filters.query).toBe('qaPassed:true');
+
+    const store = await readStore();
+    expect(store.views.find((v) => v.id === view.id)?.config.filters.query).toBe('qaPassed:true');
+  });
+
+  it('add --query with a built-in field query also persists', async () => {
+    const r = await runCli(
+      ['views', 'add', '--name', 'Blocked', '--query', 'disposition:blocked AND priority:high', '--json'],
+      syntaurHome,
+    );
+    expect(r.code, r.stderr).toBe(0);
+    expect((JSON.parse(r.stdout) as SavedView).config.filters.query).toBe(
+      'disposition:blocked AND priority:high',
+    );
+  });
+
+  it('an INVALID --query exits 1 with the position in the message', async () => {
+    const r = await runCli(
+      ['views', 'add', '--name', 'Bad', '--query', 'bogusfield:true'],
+      syntaurHome,
+    );
+    expect(r.code).toBe(1);
+    expect(r.stderr).toMatch(/Invalid --query/);
+    expect(r.stderr).toMatch(/at \d+/); // carries the structured error position
+    expect(r.stderr).toMatch(/Unknown field/);
+
+    // A malformed (unparseable) query also fails non-zero.
+    const r2 = await runCli(['views', 'add', '--name', 'Bad2', '--query', 'status:'], syntaurHome);
+    expect(r2.code).toBe(1);
+    expect(r2.stderr).toMatch(/Invalid --query/);
+  });
+
+  it('update --query "" CLEARS a previously-set query', async () => {
+    const add = await runCli(
+      ['views', 'add', '--name', 'Clearable', '--query', 'qaPassed:true', '--json'],
+      syntaurHome,
+    );
+    expect(add.code, add.stderr).toBe(0);
+    const view = JSON.parse(add.stdout) as SavedView;
+    expect(view.config.filters.query).toBe('qaPassed:true');
+
+    const upd = await runCli(
+      ['views', 'update', view.id, '--query', '', '--json'],
+      syntaurHome,
+    );
+    expect(upd.code, upd.stderr).toBe(0);
+    const updated = JSON.parse(upd.stdout) as SavedView;
+    expect(updated.config.filters.query).toBeUndefined();
+
+    const store = await readStore();
+    expect(store.views.find((v) => v.id === view.id)?.config.filters.query).toBeUndefined();
+  });
+
+  it('update --query replaces an existing query with a new valid one', async () => {
+    const add = await runCli(
+      ['views', 'add', '--name', 'Repl', '--query', 'qaPassed:true', '--json'],
+      syntaurHome,
+    );
+    const view = JSON.parse(add.stdout) as SavedView;
+    const upd = await runCli(
+      ['views', 'update', view.id, '--query', 'status:in_progress', '--json'],
+      syntaurHome,
+    );
+    expect(upd.code, upd.stderr).toBe(0);
+    expect((JSON.parse(upd.stdout) as SavedView).config.filters.query).toBe('status:in_progress');
   });
 });

@@ -70,7 +70,7 @@ export function AgentSessionsSection({ sessions, loading, error, onError, onNoti
                 title={session.sessionId}
               >
                 {session.sessionId.slice(0, 8)}
-                <CopyButton value={session.sessionId} />
+                <CopyButton value={session.sessionId} onError={onError} />
                 <CopyLaunchCommandButton
                   sessionId={session.sessionId}
                   disabled={!session.resumeSupported}

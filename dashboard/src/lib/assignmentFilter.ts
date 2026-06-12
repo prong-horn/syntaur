@@ -1,3 +1,12 @@
+/**
+ * Chip-based filtering helpers retained for ProjectDetail's local assignment list.
+ *
+ * Board-level and saved-view widget AQL filtering now lives in
+ * `dashboard/src/lib/queryFilter.ts` (`filterBoardItems`). AssignmentsPage and
+ * SavedViewResults route all filtering through the shared AQL evaluator.
+ * This module is NOT the source of truth for board/widget filtering — only for
+ * ProjectDetail's chip-only local filter (`filterAssignment`).
+ */
 import { toFilterValues, type FilterValue, type DateRangeFilter } from '@shared/view-prefs-schema';
 import type { AssignmentBoardItem } from '../hooks/useProjects';
 

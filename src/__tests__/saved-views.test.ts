@@ -18,12 +18,16 @@ import {
 import {
   DEFAULT_SAVED_VIEWS_FILE,
   isDashboardSlot,
+  isProjectDetailCompatible,
+  isViewFilters,
   isWidgetSize,
   WIDGET_SIZES,
   type DashboardSlot,
   type SavedViewConfig,
   type SavedViewsFile,
 } from '../utils/saved-views-schema.js';
+import { captureCurrentView, type CaptureInput } from '../utils/saved-view-builder.js';
+import type { ViewFilters } from '../utils/view-prefs-schema.js';
 // Dashboard create-view helper. savedViews.ts imports @shared only as
 // `import type` (erased at runtime), so it loads under node with no alias —
 // letting this integration test POST the exact payload the /views dialog builds.
@@ -572,5 +576,73 @@ describe('saved-views DEFAULT_SAVED_VIEWS_FILE shape', () => {
     for (const view of DEFAULT_SAVED_VIEWS_FILE.views) {
       expect(view.config.filters.status).toBe('all');
     }
+  });
+});
+
+// ── AC4: the canonical `query` filter through schema + minimize + routing ─────
+describe('AC4 — query filter schema, minimize, and ProjectDetail compatibility', () => {
+  function minimize(filters: ViewFilters): ViewFilters {
+    const input: CaptureInput = {
+      name: 'X',
+      context: { workspace: null, projectSlug: null },
+      state: {
+        viewMode: 'kanban',
+        filters,
+        sortField: 'updated',
+        sortDirection: 'desc',
+        listSectionVisibility: { collapsed: [] },
+        kanbanColumnVisibility: { hidden: [] },
+        tableColumnVisibility: { hidden: [] },
+      },
+    };
+    return captureCurrentView(input).config.filters;
+  }
+
+  function configWith(filters: ViewFilters): SavedViewConfig {
+    return {
+      viewMode: 'kanban',
+      filters,
+      sortField: 'updated',
+      sortDirection: 'desc',
+      listSectionVisibility: { collapsed: [] },
+      kanbanColumnVisibility: { hidden: [] },
+      tableColumnVisibility: { hidden: [] },
+    };
+  }
+
+  it('isViewFilters accepts a string query and rejects a non-string query', () => {
+    expect(isViewFilters({ query: 'qaPassed:true' })).toBe(true);
+    expect(isViewFilters({ query: 123 })).toBe(false);
+    expect(isViewFilters({ query: ['x'] })).toBe(false);
+    expect(isViewFilters({ query: null })).toBe(false);
+  });
+
+  it('minimizeFilters preserves, trims, and drops the query', () => {
+    expect(minimize({ query: 'qaPassed:true' }).query).toBe('qaPassed:true');
+    expect(minimize({ query: '   status:draft   ' }).query).toBe('status:draft');
+    expect(minimize({ query: '' }).query).toBeUndefined();
+    expect(minimize({ query: '   ' }).query).toBeUndefined();
+    expect(minimize({}).query).toBeUndefined();
+  });
+
+  it('isProjectDetailCompatible rejects a present NON-chip-representable query', () => {
+    // `qaPassed:true` is a fact atom — NOT chip-representable → ProjectDetail
+    // (chips-only) cannot render it.
+    expect(isProjectDetailCompatible(configWith({ query: 'qaPassed:true' }), 'syntaur')).toBe(false);
+    // An OR query is also non-chip-representable.
+    expect(
+      isProjectDetailCompatible(configWith({ query: 'status:draft OR status:review' }), 'syntaur'),
+    ).toBe(false);
+  });
+
+  it('isProjectDetailCompatible allows a chip-representable query or an absent query', () => {
+    // `status:in_progress` round-trips to chip state → compatible.
+    expect(
+      isProjectDetailCompatible(configWith({ query: 'status:in_progress' }), 'syntaur'),
+    ).toBe(true);
+    // No query at all → unaffected (compatible).
+    expect(isProjectDetailCompatible(configWith({}), 'syntaur')).toBe(true);
+    // Blank query → treated as absent → compatible.
+    expect(isProjectDetailCompatible(configWith({ query: '   ' }), 'syntaur')).toBe(true);
   });
 });

@@ -12,6 +12,7 @@ import {
 import { StatusMenu } from './StatusMenu';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './ui/tooltip';
 import { cn } from '../lib/utils';
+import { copyText } from '../lib/clipboard';
 import type { TodoItem, TodoAttachment } from '../types';
 
 // Shared todo row used by both WorkspaceTodosPage and ProjectTodosPanel. Each
@@ -463,7 +464,7 @@ export function TodoMetaBadges({ item }: { item: TodoItem }) {
                 data-no-drag
                 onClick={(e) => {
                   e.stopPropagation();
-                  navigator.clipboard.writeText(item.planDir!);
+                  void copyText(item.planDir!);
                 }}
                 className="inline-flex items-center rounded-full border border-status-completed-foreground/40 bg-status-completed/30 p-1 text-status-completed-foreground hover:bg-status-completed/50"
                 aria-label="Copy plan directory path"

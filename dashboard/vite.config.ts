@@ -23,6 +23,9 @@ export default defineConfig({
         __dirname,
         '../src/utils/workspace-visibility-schema.ts',
       ),
+      '@shared/fact-registry': resolve(__dirname, '../src/utils/fact-registry.ts'),
+      '@shared/view-filters-query': resolve(__dirname, '../src/utils/view-filters-query.ts'),
+      '@shared/query': resolve(__dirname, '../src/utils/query/index.ts'),
     },
   },
   server: {

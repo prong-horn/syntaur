@@ -10,6 +10,7 @@ import type {
 } from '@shared/saved-views-schema';
 import { isProjectDetailCompatible } from '@shared/saved-views-schema';
 import { toFilterValues, type DateRangeFilter, type DateRangeField } from '@shared/view-prefs-schema';
+import { viewFiltersToQuery, queryToViewFilters } from '@shared/view-filters-query';
 
 // The config build/minimize/merge helpers now live in a Node-safe shared module
 // (`src/utils/saved-view-builder.ts`) so the `syntaur views` CLI and this
@@ -78,6 +79,10 @@ export interface ApplyConfigSetters {
   setActivityFilter?: (v: 'all' | 'stale' | 'fresh') => void;
   setDateRange?: (v: DateRangeUiState | null) => void;
   setSearch?: (v: string) => void;
+  /** Canonical AQL query. Receives the view's stored `query` or, for legacy
+   * views without one, a query synthesized from the chip filters (lossless
+   * upgrade). Surfaces that own a query state (AssignmentsPage) pass this. */
+  setQuery?: (v: string) => void;
   setSortField?: (v: SortField) => void;
   setSortDirection?: (v: SortDirection) => void;
   setListSectionVisibility?: (v: ListSectionVisibility) => void;
@@ -96,6 +101,12 @@ export function applyConfig(view: SavedView, setters: ApplyConfigSetters): void 
   setters.setTagsFilter?.(toFilterValues(config.filters.tags));
   setters.setDateRange?.(expandDateRange(config.filters.dateRange));
   setters.setSearch?.(config.filters.search ?? '');
+  // Lossless upgrade: the effective query is the stored canonical `query` when
+  // present, else one synthesized from the chip filters (old views without a
+  // query round-trip their chips into one). The chip setters above still apply
+  // the legacy keys so a chip-representable view drives both the chips and the
+  // query identically.
+  setters.setQuery?.(config.filters.query ?? viewFiltersToQuery(config.filters));
   if (setters.setActivityFilter) {
     const a = config.filters.activity ?? 'all';
     setters.setActivityFilter(a === 'fresh' || a === 'stale' ? a : 'all');
@@ -168,6 +179,12 @@ function summarizeDateRange(dr: DateRangeFilter): string {
 }
 
 export function summarizeFilters(filters: ViewFilters): string {
+  // A non-chip-representable query owns the filter: the legacy chip keys can't
+  // express it, so summarize the raw query string instead of the (absent) chips.
+  const query = filters.query?.trim();
+  if (query && queryToViewFilters(query) === null) {
+    return `query: ${query}`;
+  }
   const parts: string[] = [];
   for (const key of ['status', 'priority', 'type', 'assignee', 'project', 'tags'] as const) {
     const vals = toFilterValues(filters[key]);

@@ -157,6 +157,43 @@ describe('AQL time semantics', () => {
   });
 });
 
+// ── AC8: the exact relative-date shapes the dashboard feature relies on ───────
+// completedAt < -1mo (non-null), >= -7d / < -7d (the activity boundary), and the
+// > -36h shape — all resolved against a FIXED injected now (never wall-clock).
+describe('AC8 — relative-date ops the saved-view/dashboard layer uses', () => {
+  it('completedAt < -1mo matches a terminal item completed long ago, misses a recent one', () => {
+    const old = { ...ITEM, status: 'completed', completedAt: '2026-04-01T10:00:00Z' };
+    const recent = { ...ITEM, status: 'completed', completedAt: '2026-06-08T10:00:00Z' };
+    expect(matches('completedAt < -1mo', old)).toBe(true); // > 1 month before now
+    expect(matches('completedAt < -1mo', recent)).toBe(false); // within the month
+    expect(matches('completedAt < -1mo', ITEM)).toBe(false); // null never matches
+  });
+
+  it('updated >= -7d / < -7d split items on the 7-day activity boundary', () => {
+    // now = 2026-06-09T12:00:00Z → 7 days ago = 2026-06-02T12:00:00Z.
+    const fresh = { ...ITEM, updated: '2026-06-09T09:00:00Z' }; // 3h ago
+    const stale = { ...ITEM, updated: '2026-05-20T10:00:00Z' }; // ~20d ago
+    expect(matches('updated >= -7d', fresh)).toBe(true);
+    expect(matches('updated >= -7d', stale)).toBe(false);
+    expect(matches('updated < -7d', stale)).toBe(true);
+    expect(matches('updated < -7d', fresh)).toBe(false);
+  });
+
+  it('created > -36h OR updated > -36h evaluates each field independently', () => {
+    const justCreated = { ...ITEM, created: '2026-06-09T06:00:00Z', updated: '2026-05-01T10:00:00Z' };
+    const justUpdated = { ...ITEM, created: '2026-05-01T10:00:00Z', updated: '2026-06-09T09:00:00Z' };
+    const cold = { ...ITEM, created: '2026-05-01T10:00:00Z', updated: '2026-05-02T10:00:00Z' };
+    expect(matches('created > -36h OR updated > -36h', justCreated)).toBe(true);
+    expect(matches('created > -36h OR updated > -36h', justUpdated)).toBe(true);
+    expect(matches('created > -36h OR updated > -36h', cold)).toBe(false);
+  });
+
+  it('statusAge >= 7d compares the duration magnitude', () => {
+    expect(matches('statusAge >= 7d', { ...ITEM, statusAge: 8 * 86_400_000 })).toBe(true);
+    expect(matches('statusAge >= 7d', { ...ITEM, statusAge: 3 * 86_400_000 })).toBe(false);
+  });
+});
+
 describe('AQL structured errors', () => {
   it('unknown field with position', () => {
     const errors = validateQuery('bogusfield:true');

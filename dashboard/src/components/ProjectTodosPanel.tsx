@@ -14,6 +14,7 @@ import {
   deleteProjectTodoAttachment,
   projectTodoAttachmentUrl,
 } from '../hooks/useProjectTodos';
+import { copyText } from '../lib/clipboard';
 import { LoadingState } from './LoadingState';
 import { ErrorState } from './ErrorState';
 import { StatCard } from './StatCard';
@@ -57,9 +58,9 @@ export function ProjectTodosPanel({ projectId }: ProjectTodosPanelProps) {
   // record the actual mousedown target to gate drags from interactive controls.
   const dragOriginRef = useRef<EventTarget | null>(null);
 
-  function copyId(e: React.MouseEvent, id: string) {
+  async function copyId(e: React.MouseEvent, id: string) {
     e.stopPropagation();
-    navigator.clipboard.writeText(id);
+    if (!(await copyText(id))) return;
     setCopiedId(id);
     setTimeout(() => setCopiedId((c) => (c === id ? null : c)), 1500);
   }

@@ -4,9 +4,13 @@ import {
   useAssignmentsBoard,
   type AssignmentBoardItem,
 } from '../../../hooks/useProjects';
-import { filterAssignment, assignmentDetailHref, type AssignmentFilterCriteria } from '../../../lib/assignmentFilter';
+import { assignmentDetailHref } from '../../../lib/assignmentFilter';
 import { useStatusConfig, getStatusLabel } from '../../../hooks/useStatusConfig';
 import { sortAssignments } from '../../../lib/sortAssignments';
+import { filterBoardItems } from '../../../lib/queryFilter';
+import { buildQueryRegistry } from '@shared/fact-registry';
+import { compileQuery } from '@shared/query';
+import { viewFiltersToQuery } from '@shared/view-filters-query';
 import { LoadingState } from '../../LoadingState';
 import { EmptyState } from '../../EmptyState';
 import { KanbanBoard, type KanbanColumn } from '../../KanbanBoard';
@@ -18,16 +22,6 @@ import { SavedViewListView } from './SavedViewListView';
 import { SavedViewTableView } from './SavedViewTableView';
 import { cn } from '../../../lib/utils';
 import type { SavedView } from '@shared/saved-views-schema';
-
-function applyViewFilters(
-  items: AssignmentBoardItem[],
-  filters: AssignmentFilterCriteria & { search?: string },
-  workspace: string | null,
-): AssignmentBoardItem[] {
-  // `search` is a saved-view filter but `filterAssignment` reads it from `options`,
-  // not `criteria` — plumb it explicitly so the results match the board exactly.
-  return items.filter((item) => filterAssignment(item, filters, { workspace, search: filters.search }));
-}
 
 interface SavedViewResultsProps {
   view: SavedView;
@@ -57,11 +51,31 @@ export function SavedViewResults({ view, compact, emptyDescription }: SavedViewR
     [statusConfig],
   );
 
+  // Build the AQL registry from custom-fact declarations (same as AssignmentsPage).
+  const registry = useMemo(
+    () => buildQueryRegistry(statusConfig.factDeclarations),
+    [statusConfig.factDeclarations],
+  );
+
   const sortedItems = useMemo(() => {
     if (!data) return [];
-    const filtered = applyViewFilters(data.assignments, view.config.filters, view.workspace);
+
+    // Effective query: use the stored AQL string when present; otherwise
+    // synthesize one from the legacy chip-filter fields (lossless round-trip).
+    const effectiveQuery = view.config.filters.query ?? viewFiltersToQuery(view.config.filters);
+
+    // Compile → null on empty / parse / compile error → match-all semantics
+    // (same as AssignmentsPage: a typo never blanks the widget).
+    let compiled = null;
+    if (effectiveQuery.trim() !== '') {
+      const result = compileQuery(effectiveQuery, registry);
+      compiled = result.query; // CompiledQuery | null
+    }
+
+    // workspace is a top-level field on SavedView (view.workspace), not inside config.
+    const filtered = filterBoardItems(data.assignments, compiled, { workspace: view.workspace });
     return sortAssignments(filtered, view.config.sortField, view.config.sortDirection);
-  }, [data, view]);
+  }, [data, view, registry]);
 
   if (boardLoading && !data) {
     return <LoadingState label="Loading assignments…" />;

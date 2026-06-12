@@ -15,7 +15,7 @@ export type OpenUrlErrorCode =
   | 'invalid-prompt';
 
 /**
- * Maximum length of an `prompt=` launch-prompt override. Bounds the
+ * Maximum length of a `prompt=` launch-prompt override. Bounds the
  * `syntaur://` URL and is enforced server-side in `parseOpenUrl` so a
  * hand-crafted direct URL can't bypass the dashboard dialog's cap.
  */
@@ -64,7 +64,7 @@ export interface ParsedOpenUrl {
    * Optional one-shot launch-prompt override (the `prompt=` query param) — the
    * dashboard's editable prompt box sends the (possibly edited) template here.
    * Only set for `kind === 'assignment'` (sessions take their first message
-   * from history). Single-line and length-bounded (`MAX_OPEN_PROMPT_LENGTH`).
+   * from history). Length-bounded (`MAX_OPEN_PROMPT_LENGTH`).
    * Presence-significant: an empty string is a deliberate override (re-resolves
    * to the fallback seed), distinct from `undefined` (no override).
    */
@@ -169,8 +169,7 @@ export function parseOpenUrl(input: string): ParsedOpenUrl {
   }
 
   // `prompt=` is presence-significant: keep an empty value (a deliberate clear)
-  // distinct from absent. Single-line + bounded so it can't break the macOS
-  // two-line applet protocol or bloat the URL.
+  // distinct from absent. Bounded so it can't bloat the URL.
   const promptVals = url.searchParams.getAll('prompt');
   if (promptVals.length > 1) {
     throw new OpenUrlError(
@@ -181,12 +180,6 @@ export function parseOpenUrl(input: string): ParsedOpenUrl {
   let prompt: string | undefined;
   if (promptVals.length === 1) {
     const value = promptVals[0];
-    if (/[\r\n]/.test(value)) {
-      throw new OpenUrlError(
-        'invalid-prompt',
-        '`prompt` query param must be a single line (no newlines)',
-      );
-    }
     if (value.length > MAX_OPEN_PROMPT_LENGTH) {
       throw new OpenUrlError(
         'invalid-prompt',

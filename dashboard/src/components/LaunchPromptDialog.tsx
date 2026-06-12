@@ -31,7 +31,7 @@ interface LaunchPromptDialogProps {
   assignmentId: string;
   /** Agent the prefill/launch targets (omit for the configured default). */
   agentId?: string;
-  /** Confirm with the (single-line) edited template — re-resolved at launch. */
+  /** Confirm with the edited template — re-resolved at launch. */
   onConfirm: (prompt: string) => void;
   onOpenChange: (open: boolean) => void;
 }
@@ -40,7 +40,7 @@ interface LaunchPromptDialogProps {
  * The editable "Open in agent" prompt box (Phase B). Prefills the effective
  * launch TEMPLATE from `GET /api/launch/prompt`, offers `@`-token autocomplete
  * (driven entirely by `lib/launch-prompt-autocomplete`), shows advisory token
- * warnings, and returns the edited single-line text. Per-launch only — the
+ * warnings, and returns the edited text. Per-launch only — the
  * edit rides one launch and is never written to config.
  */
 export function LaunchPromptDialog({
@@ -100,7 +100,7 @@ export function LaunchPromptDialog({
   const tooLong = value.length > MAX_PROMPT_LENGTH;
 
   function handleChange(e: React.ChangeEvent<HTMLTextAreaElement>) {
-    setValue(e.target.value.replace(/[\r\n]+/g, ' ')); // single-line
+    setValue(e.target.value);
     setCaret(e.target.selectionStart ?? e.target.value.length);
     setSelected(0);
     setDismissed(false);
@@ -186,7 +186,7 @@ export function LaunchPromptDialog({
               onKeyUp={syncCaret}
               onClick={syncCaret}
               className={cn(
-                'editor-input w-full font-mono text-sm',
+                'w-full rounded-md border border-border/60 bg-background/90 p-3 font-mono text-sm text-foreground outline-none transition focus:border-primary focus:ring-2 focus:ring-ring/30 min-h-[80px] resize-y',
                 tooLong && 'border-error-foreground',
               )}
             />

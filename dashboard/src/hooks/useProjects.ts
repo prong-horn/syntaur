@@ -53,6 +53,23 @@ export interface AssignmentSummary {
   archived: boolean;
   archivedAt: string | null;
   archivedReason: string | null;
+  /** Loader-derived: timestamp of terminal transition, null otherwise. */
+  completedAt: string | null;
+  /** Loader-derived: ms in current headline status; null when no history. */
+  statusAge: number | null;
+  /** Loader-derived: ms since last phase change; null when never recorded. */
+  phaseAge: number | null;
+  /** Cached phase dimension (null pre-migration). */
+  phase: string | null;
+  /** Cached disposition dimension (active|blocked|parked; null pre-migration). */
+  disposition: string | null;
+  /** A sticky status override (pin) is active. */
+  pinned: boolean;
+  /**
+   * Evaluator facts for AQL board filtering; omitted on compute error or for
+   * ProjectDetail's summary path (chips-only by design).
+   */
+  facts?: Record<string, boolean | number | string[]>;
 }
 
 export interface AssignmentBoardItem extends AssignmentSummary {

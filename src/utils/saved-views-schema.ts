@@ -14,6 +14,7 @@ import {
   isDateRange,
   toFilterValues,
 } from './view-prefs-schema.js';
+import { queryToViewFilters } from './view-filters-query.js';
 
 // Re-export shared types so frontend can pull everything from a single module via `@shared/saved-views-schema`.
 export type { ViewMode, SortField, SortDirection, ViewFilters, FilterValue, DateRangeField, DateRangeFilter };
@@ -203,6 +204,7 @@ export function isViewFilters(value: unknown): value is ViewFilters {
   if (obj.activity !== undefined && !isActivity(obj.activity)) return false;
   if (obj.dateRange !== undefined && !isDateRange(obj.dateRange)) return false;
   if (obj.search !== undefined && typeof obj.search !== 'string') return false;
+  if (obj.query !== undefined && typeof obj.query !== 'string') return false;
   // Permissive about UNKNOWN keys (forward-compat): only known keys are validated.
   return true;
 }
@@ -272,7 +274,12 @@ export function isProjectDetailCompatible(config: SavedViewConfig, slug: string)
   // ProjectDetail has no activity or search controls (it DOES support tags +
   // date range). A view using either must route to the global list instead.
   const hasSearch = typeof config.filters.search === 'string' && config.filters.search.trim().length > 0;
-  return projectOk && (!activity || activity === 'all') && !hasSearch;
+  // A query that is NOT chip-representable cannot be rendered by ProjectDetail
+  // (chips-only). A chip-representable query is fine — it is equivalent to the
+  // chip state ProjectDetail already knows how to display. (Decision 8)
+  const query = config.filters.query;
+  const hasNonChipQuery = typeof query === 'string' && query.trim().length > 0 && queryToViewFilters(query) === null;
+  return projectOk && (!activity || activity === 'all') && !hasSearch && !hasNonChipQuery;
 }
 
 // A view is compatible with a scope if it could meaningfully be applied there.

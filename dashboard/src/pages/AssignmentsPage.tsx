@@ -61,10 +61,15 @@ import { type TableColumnId, type SavedView, type ViewScope } from '@shared/save
 import { fetchViewPrefs, saveGlobalViewPrefs, saveScopeViewPrefs, useViewPrefs } from '../hooks/useViewPrefs';
 import { mergeForScope } from '@shared/view-prefs-schema';
 import { useSavedView, createSavedView, updateSavedView } from '../hooks/useSavedViews';
-import { captureCurrentView, applyConfig, mergeUpdatedConfig, minimizeDateRange, type DateRangeUiState } from '../lib/savedViews';
-import { filterAssignment } from '../lib/assignmentFilter';
+import { captureCurrentView, applyConfig, mergeUpdatedConfig, minimizeDateRange, expandDateRange, type DateRangeUiState } from '../lib/savedViews';
 import { MultiSelect } from '../components/ui/MultiSelect';
 import { DateRangeControl } from '../components/ui/DateRangeControl';
+import { QueryInput } from '../components/QueryInput';
+import { filterBoardItems } from '../lib/queryFilter';
+import { buildQueryRegistry } from '@shared/fact-registry';
+import { compileQuery } from '@shared/query';
+import { viewFiltersToQuery, queryToViewFilters } from '@shared/view-filters-query';
+import type { ViewFilters } from '@shared/saved-views-schema';
 
 const VALID_VIEWS: readonly ViewMode[] = VIEW_MODES;
 
@@ -185,6 +190,21 @@ export function AssignmentsPage() {
   const [activityFilter, setActivityFilter] = useState<ActivityFilter>(
     () => normalizeActivityFilter(staleParam),
   );
+  // Canonical AQL query — the single filter actually applied to the board. The
+  // chip states above are a bidirectional VISUAL EDITOR over the chip-representable
+  // subset of this query. Seeded from the initial chip state so the very first
+  // render (before any chip change) already filters by the URL-seeded chips.
+  const [query, setQuery] = useState<string>(() =>
+    viewFiltersToQuery({
+      status: parseStatusParam(statusParam),
+      priority: toFilterValues(prefs.filters.priority),
+      type: toFilterValues(prefs.filters.type),
+      assignee: toFilterValues(prefs.filters.assignee),
+      project: toFilterValues(prefs.filters.project),
+      tags: toFilterValues(prefs.filters.tags),
+      activity: normalizeActivityFilter(staleParam),
+    }),
+  );
   const [sortField, setSortField] = useState<SortField>(() => prefs.sortField);
   const [sortDirection, setSortDirection] = useState<SortDirection>(() => prefs.sortDirection);
   // Kanban column visibility — default empty (all columns shown).
@@ -261,19 +281,41 @@ export function AssignmentsPage() {
     setSearch('');
   }, [workspace]);
 
+  // Track the URL params we last reacted to, so we can tell a genuine URL-driven
+  // change (back/forward nav, an external link, the bootstrap seed) apart from a
+  // re-render caused by a chip toggle (where the param text is unchanged). Only
+  // the former should rebuild the canonical query (Requirement 6).
+  const lastUrlFilterParamsRef = useRef<{ status: string | null; stale: string | null }>({
+    status: statusParam,
+    stale: staleParam,
+  });
   useEffect(() => {
     const nextStatus = parseStatusParam(statusParam);
+    const nextActivity = normalizeActivityFilter(staleParam);
     // Set-equality guard: statusFilter is now string[]; a fresh array that is
     // semantically equal must NOT trigger setState (would loop with the
     // state->URL mirror below).
     if (!sameFilterValues(nextStatus, statusFilter)) {
       setStatusFilter(nextStatus);
     }
-
-    const nextActivity = normalizeActivityFilter(staleParam);
     if (nextActivity !== activityFilter) {
       setActivityFilter(nextActivity);
     }
+
+    // Requirement 6: a URL-param-driven chip change must also rebuild the
+    // canonical query. Fire ONLY when the param TEXT actually changed since we
+    // last reacted (true URL navigation / bootstrap seed) — never on a re-render
+    // caused by a chip toggle (the toggle's own handler already rebuilt the
+    // query, and rebuilding here off stale URL text would fight that). This is
+    // still the chip → query direction driven from the URL-owning handler, NOT a
+    // standalone effect watching chips. `query` is intentionally not a dep.
+    const prev = lastUrlFilterParamsRef.current;
+    const urlParamChanged = prev.status !== statusParam || prev.stale !== staleParam;
+    lastUrlFilterParamsRef.current = { status: statusParam, stale: staleParam };
+    if (urlParamChanged) {
+      syncQueryFromChips({ status: nextStatus, activity: nextActivity });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activityFilter, staleParam, statusFilter, statusParam]);
 
   useEffect(() => {
@@ -375,6 +417,26 @@ export function AssignmentsPage() {
       if (needsUrlWrite) {
         setSearchParams(nextParams, { replace: true });
       }
+      // Rebuild the canonical query from the authoritative per-scope chip state we
+      // just settled (server prefs + URL). This is the ONE place chips→query is
+      // driven on a (re)bootstrap, keeping `query` coherent with the hydrated chips
+      // without a standalone effect watching chips. The effective status/activity
+      // honor the URL when present, else the persisted prefs; the other chips come
+      // from the merged prefs `p` (which the prefs-hydrate effect also applies).
+      const effStatus = parseStatusParam(nextParams.get('status'));
+      const effActivity =
+        nextParams.get('stale') === null ? wantActivity : normalizeActivityFilter(nextParams.get('stale'));
+      setQuery(
+        viewFiltersToQuery({
+          status: effStatus,
+          priority: toFilterValues(p.filters.priority),
+          type: toFilterValues(p.filters.type),
+          assignee: toFilterValues(p.filters.assignee),
+          project: toFilterValues(p.filters.project),
+          tags: toFilterValues(p.filters.tags),
+          activity: effActivity === 'fresh' || effActivity === 'stale' ? effActivity : 'all',
+        }),
+      );
       queueMicrotask(() => {
         bootstrappedScopeRef.current = scope;
       });
@@ -407,56 +469,146 @@ export function AssignmentsPage() {
     },
     [setView, persistField],
   );
+
+  // ── Chip ↔ query bridge ─────────────────────────────────────────────────────
+  // `query` is canonical. Each chip onChange below updates its own chip state,
+  // persists the pref, THEN recomputes the canonical query from the full set of
+  // chip states (with the one being changed overridden, so we don't read stale
+  // state). This is the chip → query (write) direction. The query → chips (read)
+  // direction lives in `handleQueryChange`. Neither side uses an effect that
+  // watches the other, so there is no feedback loop.
+  //
+  // Refs mirror the current chip state so the assemble helper reads fresh values
+  // synchronously inside an event handler (a setX call does not update the
+  // closed-over state variable until the next render).
+  // Single source of truth: the per-render assignment below is canonical.
+  // useRef is initialised with null! (typed placeholder) so there is no
+  // duplicate field-list to drift out of sync with the reassignment.
+  const chipStateRef = useRef<{
+    status: string[];
+    priority: string[];
+    type: string[];
+    assignee: string[];
+    project: string[];
+    tags: string[];
+    activity: ActivityFilter;
+    dateRange: DateRangeUiState | null;
+    search: string;
+  }>(null!);
+  chipStateRef.current = {
+    status: statusFilter,
+    priority: priorityFilter,
+    type: typeFilter,
+    assignee: assigneeFilter,
+    project: projectFilter,
+    tags: tagsFilter,
+    activity: activityFilter,
+    dateRange,
+    search,
+  };
+
+  // Assemble a ViewFilters from the live chip state, applying `overrides` for the
+  // chip just changed (its setX hasn't committed yet, so read the new value here).
+  const assembleChipFilters = useCallback(
+    (overrides: Partial<ViewFilters> = {}): ViewFilters => {
+      const c = chipStateRef.current;
+      return {
+        status: c.status,
+        priority: c.priority,
+        type: c.type,
+        assignee: c.assignee,
+        project: c.project,
+        tags: c.tags,
+        activity: c.activity,
+        dateRange: minimizeDateRange(c.dateRange),
+        search: c.search,
+        ...overrides,
+      };
+    },
+    [],
+  );
+
+  // Recompute and set the canonical query from chip state + this change's override.
+  const syncQueryFromChips = useCallback(
+    (overrides: Partial<ViewFilters> = {}) => {
+      setQuery(viewFiltersToQuery(assembleChipFilters(overrides)));
+    },
+    [assembleChipFilters],
+  );
+
   // Multi-value: persist the explicit array (incl. [] to clear — prefs deep-merge
   // treats an omitted key as "preserve", so clearing must be sent explicitly).
   const handleSetStatusFilter = useCallback(
     (v: string[]) => {
       setStatusFilter(v);
       persistField({ filters: { status: v } });
+      syncQueryFromChips({ status: v });
     },
-    [persistField],
+    [persistField, syncQueryFromChips],
   );
   const handleSetPriorityFilter = useCallback(
     (v: string[]) => {
       setPriorityFilter(v);
       persistField({ filters: { priority: v } });
+      syncQueryFromChips({ priority: v });
     },
-    [persistField],
+    [persistField, syncQueryFromChips],
   );
   const handleSetTypeFilter = useCallback(
     (v: string[]) => {
       setTypeFilter(v);
       persistField({ filters: { type: v } });
+      syncQueryFromChips({ type: v });
     },
-    [persistField],
+    [persistField, syncQueryFromChips],
   );
   const handleSetAssigneeFilter = useCallback(
     (v: string[]) => {
       setAssigneeFilter(v);
       persistField({ filters: { assignee: v } });
+      syncQueryFromChips({ assignee: v });
     },
-    [persistField],
+    [persistField, syncQueryFromChips],
   );
   const handleSetProjectFilter = useCallback(
     (v: string[]) => {
       setProjectFilter(v);
       persistField({ filters: { project: v } });
+      syncQueryFromChips({ project: v });
     },
-    [persistField],
+    [persistField, syncQueryFromChips],
   );
   const handleSetTagsFilter = useCallback(
     (v: string[]) => {
       setTagsFilter(v);
       persistField({ filters: { tags: v } });
+      syncQueryFromChips({ tags: v });
     },
-    [persistField],
+    [persistField, syncQueryFromChips],
   );
   const handleSetActivityFilter = useCallback(
     (v: ActivityFilter) => {
       setActivityFilter(v);
       persistField({ filters: { activity: v } });
+      syncQueryFromChips({ activity: v });
     },
-    [persistField],
+    [persistField, syncQueryFromChips],
+  );
+  // search + dateRange are saved-view-only chips set inline in the JSX. Wrap them
+  // so they also drive the canonical query (chip → query write direction).
+  const handleSetSearch = useCallback(
+    (v: string) => {
+      setSearch(v);
+      syncQueryFromChips({ search: v });
+    },
+    [syncQueryFromChips],
+  );
+  const handleSetDateRange = useCallback(
+    (v: DateRangeUiState | null) => {
+      setDateRange(v);
+      syncQueryFromChips({ dateRange: minimizeDateRange(v) });
+    },
+    [syncQueryFromChips],
   );
   const handleSetSortField = useCallback(
     (v: SortField) => {
@@ -480,28 +632,72 @@ export function AssignmentsPage() {
     [persistField],
   );
 
+  // Query → chips (read / typed edits). The user edited the raw query in the
+  // QueryInput box: `query` is canonical, so always set it. Then, if the query is
+  // chip-representable, mirror it onto the individual chip states using the RAW
+  // STATE SETTERS (NOT the handleSetX onChange wrappers). A direct setState never
+  // re-invokes the chip onChange handlers, so there is no chip → query → chip
+  // feedback loop. When NOT representable, the chips drop into read-only fallback
+  // (see `chipsRepresentable`) and we leave their state untouched.
+  const handleQueryChange = useCallback(
+    (q: string) => {
+      setQuery(q);
+      const vf = queryToViewFilters(q);
+      if (!vf) return; // not chip-representable → read-only fallback, chips frozen
+      setStatusFilter(toFilterValues(vf.status));
+      setPriorityFilter(toFilterValues(vf.priority));
+      setTypeFilter(toFilterValues(vf.type));
+      setAssigneeFilter(toFilterValues(vf.assignee));
+      setProjectFilter(toFilterValues(vf.project));
+      setTagsFilter(toFilterValues(vf.tags));
+      setSearch(vf.search ?? '');
+      setActivityFilter(vf.activity && vf.activity !== 'all' ? vf.activity : 'all');
+      setDateRange(expandDateRange(vf.dateRange));
+    },
+    [],
+  );
+
+  // Is the canonical query expressible by the chips? Drives the chip disabled
+  // state + the "advanced query" indicator. Memoized on `query` only.
+  const chipsRepresentable = useMemo(() => queryToViewFilters(query) !== null, [query]);
+
   const buildViewState = useCallback(
-    () => ({
-      viewMode: view,
-      filters: {
-        status: statusFilter,
-        priority: priorityFilter,
-        type: typeFilter,
-        assignee: assigneeFilter,
-        project: projectFilter,
-        tags: tagsFilter,
-        activity: activityFilter,
-        dateRange: minimizeDateRange(dateRange),
-        search,
-      },
-      sortField,
-      sortDirection,
-      listSectionVisibility: { collapsed: [...collapsedGroups] },
-      kanbanColumnVisibility,
-      tableColumnVisibility,
-    }),
+    () => {
+      // `query` is the canonical filter and is ALWAYS persisted. When it is
+      // chip-representable, ALSO persist the legacy chip keys so summarizeFilters /
+      // inferLandingRoute / ProjectDetail (chips-only) keep working. When it is NOT
+      // representable, persist ONLY the query and omit the untranslatable chip keys
+      // (minimizeFilters drops empty arrays / 'all', so empties here === omitted).
+      const representable = queryToViewFilters(query) !== null;
+      const chipFilters: ViewFilters = representable
+        ? {
+            status: statusFilter,
+            priority: priorityFilter,
+            type: typeFilter,
+            assignee: assigneeFilter,
+            project: projectFilter,
+            tags: tagsFilter,
+            activity: activityFilter,
+            dateRange: minimizeDateRange(dateRange),
+            search,
+          }
+        : {};
+      return {
+        viewMode: view,
+        filters: {
+          ...chipFilters,
+          query,
+        },
+        sortField,
+        sortDirection,
+        listSectionVisibility: { collapsed: [...collapsedGroups] },
+        kanbanColumnVisibility,
+        tableColumnVisibility,
+      };
+    },
     [
       view,
+      query,
       statusFilter,
       priorityFilter,
       typeFilter,
@@ -521,15 +717,23 @@ export function AssignmentsPage() {
 
   const applyViewToState = useCallback(
     (v: SavedView) => {
+      // IMPORTANT: applyConfig sets `query` (the canonical filter) AND the chip
+      // states. The chips must be set via the RAW state setters here — NOT the
+      // handleSetX onChange wrappers — because those recompute `query` from chip
+      // state and would clobber the view's stored (possibly non-chip-representable)
+      // query during the apply burst. We still persist the applied chip values to
+      // prefs, mirroring the historical apply behavior, but we never let the chip
+      // path overwrite the canonical query that applyConfig set from the view.
       applyConfig(v, {
         setViewMode: setView,
-        setStatusFilter: handleSetStatusFilter,
-        setPriorityFilter: handleSetPriorityFilter,
-        setTypeFilter: handleSetTypeFilter,
-        setAssigneeFilter: handleSetAssigneeFilter,
-        setProjectFilter: handleSetProjectFilter,
-        setTagsFilter: handleSetTagsFilter,
-        setActivityFilter: handleSetActivityFilter,
+        setQuery,
+        setStatusFilter: (val) => { setStatusFilter(val); persistField({ filters: { status: val } }); },
+        setPriorityFilter: (val) => { setPriorityFilter(val); persistField({ filters: { priority: val } }); },
+        setTypeFilter: (val) => { setTypeFilter(val); persistField({ filters: { type: val } }); },
+        setAssigneeFilter: (val) => { setAssigneeFilter(val); persistField({ filters: { assignee: val } }); },
+        setProjectFilter: (val) => { setProjectFilter(val); persistField({ filters: { project: val } }); },
+        setTagsFilter: (val) => { setTagsFilter(val); persistField({ filters: { tags: val } }); },
+        setActivityFilter: (val) => { setActivityFilter(val); persistField({ filters: { activity: val } }); },
         setDateRange,
         setSearch,
         setSortField: handleSetSortField,
@@ -542,13 +746,7 @@ export function AssignmentsPage() {
     },
     [
       setView,
-      handleSetStatusFilter,
-      handleSetPriorityFilter,
-      handleSetTypeFilter,
-      handleSetAssigneeFilter,
-      handleSetProjectFilter,
-      handleSetTagsFilter,
-      handleSetActivityFilter,
+      persistField,
       handleSetSortField,
       handleSetSortDirection,
     ],
@@ -727,25 +925,30 @@ export function AssignmentsPage() {
     [workspaceItems],
   );
 
+  // Client AQL field registry: built-in assignment vocabulary + any custom-fact
+  // declarations from status config. One registry per declarations change so the
+  // compile cache stays warm.
+  const registry = useMemo(
+    () => buildQueryRegistry(statusConfig.factDeclarations),
+    [statusConfig.factDeclarations],
+  );
+
+  // Compile the canonical query against the registry. Empty OR invalid query →
+  // null here, which the filter step treats as MATCH-ALL (a typo never blanks the
+  // board; the parse error already shows inline in QueryInput).
+  const compiled = useMemo(() => {
+    if (query.trim() === '') return null;
+    const result = compileQuery(query, registry);
+    return result.query; // CompiledQuery on success, null on parse/compile error
+  }, [query, registry]);
+
+  // Apply the compiled predicate through the AQL evaluator. Workspace + archived
+  // stay OUTSIDE the query (page options), exactly as before. compiled === null
+  // (empty/invalid) → match-all via filterBoardItems' null-predicate path: only
+  // the page-level pre-filters (archived-exclude + workspace / _ungrouped) run.
   const filteredItems = useMemo(
-    () =>
-      boardItems.filter((assignment) =>
-        filterAssignment(
-          assignment,
-          {
-            status: statusFilter,
-            priority: priorityFilter,
-            type: typeFilter,
-            assignee: assigneeFilter,
-            project: projectFilter,
-            tags: tagsFilter,
-            activity: activityFilter,
-            dateRange: minimizeDateRange(dateRange),
-          },
-          { workspace, search },
-        ),
-      ),
-    [activityFilter, boardItems, search, statusFilter, priorityFilter, typeFilter, assigneeFilter, projectFilter, tagsFilter, dateRange, workspace],
+    () => filterBoardItems(boardItems, compiled, { workspace }),
+    [boardItems, compiled, workspace],
   );
 
   const sortedItems = useMemo(
@@ -1127,16 +1330,42 @@ export function AssignmentsPage() {
       </div>
 
       <FilterBar>
+        {/* Canonical AQL query box. Owns the filter applied to the board; the chips
+            below are a visual editor over its chip-representable subset. */}
+        <QueryInput
+          className="w-full md:min-w-[320px] md:flex-1"
+          value={query}
+          onChange={handleQueryChange}
+          registry={registry}
+          declarations={statusConfig.factDeclarations}
+          valueSources={{
+            statuses: statusConfig.order,
+            priorities: uniquePriorities,
+            types: typesConfig.definitions.map((t) => t.id),
+            assignees: uniqueAssignees.filter((a) => a !== '__unassigned__'),
+            projects: uniqueProjects.map(([slug]) => slug),
+            tags: uniqueTags,
+          }}
+        />
+        {!chipsRepresentable ? (
+          <span
+            className="inline-flex items-center rounded-md border border-amber-500/40 bg-amber-500/10 px-2 py-1 text-xs font-medium text-amber-700 dark:text-amber-300"
+            title="This query uses features the chips can't represent (OR / NOT / grouping / advanced fields). Edit it in the query box; the chips are read-only until it becomes chip-representable again."
+          >
+            advanced query — edit in the box
+          </span>
+        ) : null}
         <SearchInput
           ref={searchRef}
           value={search}
-          onChange={setSearch}
+          onChange={chipsRepresentable ? handleSetSearch : () => {}}
           placeholder="Search assignments or projects"
         />
         <MultiSelect
           ariaLabel="Status filter"
           className="max-w-[180px]"
           allLabel="All statuses"
+          disabled={!chipsRepresentable}
           options={uniqueStatuses.map((s) => ({ value: s, label: COLUMN_LABELS[s] ?? s }))}
           value={statusFilter}
           onChange={handleSetStatusFilter}
@@ -1145,6 +1374,7 @@ export function AssignmentsPage() {
           ariaLabel="Priority filter"
           className="max-w-[180px]"
           allLabel="All priorities"
+          disabled={!chipsRepresentable}
           options={uniquePriorities.map((p) => ({ value: p, label: p[0].toUpperCase() + p.slice(1) }))}
           value={priorityFilter}
           onChange={handleSetPriorityFilter}
@@ -1153,6 +1383,7 @@ export function AssignmentsPage() {
           ariaLabel="Type filter"
           className="max-w-[180px]"
           allLabel="All types"
+          disabled={!chipsRepresentable}
           options={typesConfig.definitions.map((t) => ({ value: t.id, label: getTypeLabel(typesConfig, t.id) }))}
           value={typeFilter}
           onChange={handleSetTypeFilter}
@@ -1161,6 +1392,7 @@ export function AssignmentsPage() {
           ariaLabel="Assignee filter"
           className="max-w-[180px]"
           allLabel="All assignees"
+          disabled={!chipsRepresentable}
           options={[
             { value: '__unassigned__', label: 'Unassigned' },
             ...uniqueAssignees
@@ -1174,6 +1406,7 @@ export function AssignmentsPage() {
           ariaLabel="Project filter"
           className="max-w-[180px]"
           allLabel="All projects"
+          disabled={!chipsRepresentable}
           options={[
             { value: '__standalone__', label: 'Standalone' },
             ...uniqueProjects.map(([slug, title]) => ({ value: slug, label: title })),
@@ -1185,6 +1418,7 @@ export function AssignmentsPage() {
           ariaLabel="Tags filter"
           className="max-w-[180px]"
           allLabel="Any tags"
+          disabled={!chipsRepresentable}
           options={uniqueTags.map((t) => ({ value: t, label: t }))}
           value={tagsFilter}
           onChange={handleSetTagsFilter}
@@ -1192,9 +1426,9 @@ export function AssignmentsPage() {
         <DateRangeControl
           className="max-w-[200px]"
           value={dateRange}
-          onChange={setDateRange}
+          onChange={chipsRepresentable ? handleSetDateRange : () => {}}
         />
-        <select value={activityFilter} onChange={(e) => handleSetActivityFilter(e.target.value as ActivityFilter)} className="editor-input max-w-[180px]">
+        <select value={activityFilter} disabled={!chipsRepresentable} onChange={(e) => handleSetActivityFilter(e.target.value as ActivityFilter)} className="editor-input max-w-[180px]">
           <option value="all">All activity</option>
           <option value="stale">Stale only</option>
           <option value="fresh">Fresh only</option>

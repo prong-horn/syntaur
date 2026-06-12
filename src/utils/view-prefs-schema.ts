@@ -108,6 +108,7 @@ export interface ViewFilters {
   // Saved-view-only filters (never persisted to view-prefs):
   dateRange?: DateRangeFilter;
   search?: string;
+  query?: string; // canonical AQL query string; chip-representable subset round-trips to the fields above
 }
 
 // Canonical normalization: any FilterValue -> deduped string[] of real

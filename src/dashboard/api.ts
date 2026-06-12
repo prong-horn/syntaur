@@ -13,7 +13,7 @@ import {
   type FactDeclaration,
   type RawFactDeclaration,
 } from '../utils/config.js';
-import { acceptFactDeclarations, buildDeriveRegistry } from '../lifecycle/derive.js';
+import { acceptFactDeclarations, buildDeriveRegistry, buildQueryRegistry } from '../lifecycle/derive.js';
 import type { FieldRegistry } from '../utils/query/index.js';
 import { resolvePlaybookSlug } from '../utils/playbooks.js';
 import { migrateLegacyProjectFiles, migrateLegacyArchivedProjects } from '../utils/fs-migration.js';
@@ -430,6 +430,10 @@ interface ResolvedStatusConfig {
    * reused across requests so the WeakMap compile-cache stays warm (no
    * per-request registry construction in buildDerivedDetail). */
   deriveRegistry: FieldRegistry;
+  /** Query registry built ONCE per cached resolution from the accepted list —
+   * sibling of deriveRegistry; stable object identity keeps the WeakMap
+   * compile-cache warm across saved-view query validations. */
+  queryRegistry: FieldRegistry;
 }
 
 let _cachedConfig: ResolvedStatusConfig | null = null;
@@ -471,6 +475,7 @@ export async function getStatusConfig(): Promise<ResolvedStatusConfig> {
       facts: config.statuses.facts ?? null,
       factDeclarations: accepted,
       deriveRegistry: buildDeriveRegistry(accepted),
+      queryRegistry: buildQueryRegistry(accepted),
     };
   } else {
     // Shared default builder so the dashboard and the `syntaur status` CLI
@@ -487,6 +492,7 @@ export async function getStatusConfig(): Promise<ResolvedStatusConfig> {
       facts: null,
       factDeclarations: [],
       deriveRegistry: buildDeriveRegistry([]),
+      queryRegistry: buildQueryRegistry([]),
     };
   }
 
@@ -961,7 +967,24 @@ export async function listArchived(
 }
 
 async function toStandaloneBoardItem(sr: StandaloneRecord): Promise<AssignmentBoardItem> {
-  const { terminalStatuses } = await getStatusConfig();
+  const config = await getStatusConfig();
+  const { terminalStatuses } = config;
+
+  let facts: AssignmentBoardItem['facts'];
+  try {
+    const { computeFacts } = await import('../lifecycle/facts.js');
+    facts = await computeFacts({
+      assignmentDir: sr.assignmentDir,
+      frontmatter: sr.record as unknown as import('../lifecycle/types.js').AssignmentFrontmatter,
+      body: sr.record.body,
+      projectDir: null,
+      terminalStatuses,
+      declarations: config.factDeclarations,
+    });
+  } catch (err) {
+    console.warn(`toStandaloneBoardItem: computeFacts failed for ${sr.assignmentDir}:`, err);
+  }
+
   return {
     ...toAssignmentSummary(sr.record, terminalStatuses),
     projectSlug: null,
@@ -969,6 +992,7 @@ async function toStandaloneBoardItem(sr: StandaloneRecord): Promise<AssignmentBo
     blockedReason: sr.record.blockedReason,
     projectWorkspace: sr.record.workspaceGroup ?? null,
     availableTransitions: await getStandaloneAvailableTransitions(sr.record),
+    facts,
   };
 }
 
@@ -2198,7 +2222,27 @@ async function toAssignmentBoardItem(
   projectRecord: ProjectRecord,
   assignment: AssignmentRecord,
 ): Promise<AssignmentBoardItem> {
-  const { terminalStatuses } = await getStatusConfig();
+  const config = await getStatusConfig();
+  const { terminalStatuses } = config;
+
+  const assignmentDir = resolve(projectRecord.projectPath, 'assignments', assignment.slug);
+  const projectDir = projectRecord.projectPath;
+
+  let facts: AssignmentBoardItem['facts'];
+  try {
+    const { computeFacts } = await import('../lifecycle/facts.js');
+    facts = await computeFacts({
+      assignmentDir,
+      frontmatter: assignment as unknown as import('../lifecycle/types.js').AssignmentFrontmatter,
+      body: assignment.body,
+      projectDir,
+      terminalStatuses,
+      declarations: config.factDeclarations,
+    });
+  } catch (err) {
+    console.warn(`toAssignmentBoardItem: computeFacts failed for ${assignmentDir}:`, err);
+  }
+
   return {
     ...toAssignmentSummary(assignment, terminalStatuses),
     projectSlug: projectRecord.summary.slug,
@@ -2211,6 +2255,7 @@ async function toAssignmentBoardItem(
       assignment.slug,
       assignment,
     ),
+    facts,
   };
 }
 

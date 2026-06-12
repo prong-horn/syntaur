@@ -19,10 +19,24 @@
  *    pin CLI already refuses those).
  */
 
-import type { DeriveConfig, FactDeclaration } from '../utils/config.js';
-import { compileNode, CompileError, parseQuery, type Predicate } from '../utils/query/index.js';
-import { ASSIGNMENT_FIELDS, type FieldRegistry } from '../utils/query/index.js';
+import type { DeriveConfig } from '../utils/config.js';
+import { compileNode, CompileError, parseQuery, type Predicate, type FieldRegistry } from '../utils/query/index.js';
 import type { StatusOverride } from './types.js';
+import { DERIVE_FIELDS } from '../utils/fact-registry.js';
+
+// Re-export all fact-vocabulary symbols so existing imports from this module
+// keep resolving without change.
+export type { FactDeclaration } from '../utils/fact-registry.js';
+export type { FactFieldNames } from '../utils/fact-registry.js';
+export {
+  DERIVE_FIELDS,
+  factFieldNames,
+  acceptFactDeclarations,
+  addFactFields,
+  buildDeriveRegistry,
+  buildQueryRegistry,
+  queryFieldNames,
+} from '../utils/fact-registry.js';
 
 /** The fixed built-in fact set (the 14 derived-status v3 facts). Custom facts
  * extend {@link AssignmentFacts} dynamically via the config-declared registry. */
@@ -51,150 +65,6 @@ export interface BuiltinFacts {
  */
 export type AssignmentFacts = BuiltinFacts &
   Record<string, boolean | number | string[]>;
-
-/**
- * Registry for derive conditions: facts only. Deliberately excludes
- * timestamps/durations (statusAge, created, …) and identity fields — a derive
- * rule referencing them fails validation, implementing "time-based facts are
- * payload-only flags" with teeth.
- */
-export const DERIVE_FIELDS: FieldRegistry = {
-  hasrealobjective: { kind: 'bool', get: (i) => i['hasRealObjective'] },
-  acrealtotal: { kind: 'number', get: (i) => i['acRealTotal'] },
-  acrealchecked: { kind: 'number', get: (i) => i['acRealChecked'] },
-  acallchecked: { kind: 'bool', get: (i) => i['acAllChecked'] },
-  planexists: { kind: 'bool', get: (i) => i['planExists'] },
-  planapproved: { kind: 'bool', get: (i) => i['planApproved'] },
-  workspaceset: { kind: 'bool', get: (i) => i['workspaceSet'] },
-  implementationstarted: { kind: 'bool', get: (i) => i['implementationStarted'] },
-  depssatisfied: { kind: 'bool', get: (i) => i['depsSatisfied'] },
-  unresolvedquestions: { kind: 'number', get: (i) => i['unresolvedQuestions'] },
-  blocked: { kind: 'bool' },
-  parked: { kind: 'bool' },
-  reviewrequested: { kind: 'bool', get: (i) => i['reviewRequested'] },
-  pinned: { kind: 'bool' },
-};
-
-/** Canonical export/registry names for one fact declaration. */
-export interface FactFieldNames {
-  /** Storage key in the `facts:` map = declared name verbatim. */
-  storageKey: string;
-  /** camelCase exported fact keys (attestations use all five; bool/number
-   * only use `fact`). */
-  exports: {
-    fact: string;
-    approved: string;
-    changesRequested: string;
-    by: string;
-    approvedBy: string;
-  };
-  /** Lowercased registry keys this declaration contributes (1 for bool/number,
-   * 5 for attestation) — the collision unit. */
-  registryKeys: string[];
-}
-
-/**
- * THE one canonical naming helper (Locked Decisions): every consumer derives
- * fact field names here so no path invents its own variant. For bool/number
- * the single export is `<name>`; for attestation the five exports are `<name>`,
- * `<name>Approved`, `<name>ChangesRequested`, `<name>By`, `<name>ApprovedBy`.
- */
-export function factFieldNames(decl: FactDeclaration): FactFieldNames {
-  const name = decl.name;
-  const exportNames = {
-    fact: name,
-    approved: `${name}Approved`,
-    changesRequested: `${name}ChangesRequested`,
-    by: `${name}By`,
-    approvedBy: `${name}ApprovedBy`,
-  };
-  const registryKeys =
-    decl.type === 'attestation'
-      ? [
-          exportNames.fact,
-          exportNames.approved,
-          exportNames.changesRequested,
-          exportNames.by,
-          exportNames.approvedBy,
-        ].map((k) => k.toLowerCase())
-      : [exportNames.fact.toLowerCase()];
-  return { storageKey: name, exports: exportNames, registryKeys };
-}
-
-/**
- * THE one collision filter (Locked Decisions): drop any declaration whose
- * registry keys collide (case-insensitively) with a built-in field
- * (`DERIVE_FIELDS` ∪ `ASSIGNMENT_FIELDS`) or an earlier-accepted declaration.
- * Built-ins always win; first-declared wins among duplicates. Never throws — a
- * bad config can't brick recompute; doctor (Task 4) surfaces the same collisions
- * as errors. Returns the ACCEPTED list every consumer builds from.
- */
-export function acceptFactDeclarations(declarations: FactDeclaration[]): FactDeclaration[] {
-  // DERIVE_FIELDS / ASSIGNMENT_FIELDS keys are already lowercase.
-  const taken = new Set<string>([
-    ...Object.keys(DERIVE_FIELDS),
-    ...Object.keys(ASSIGNMENT_FIELDS),
-  ]);
-  const accepted: FactDeclaration[] = [];
-  for (const decl of declarations) {
-    const keys = factFieldNames(decl).registryKeys;
-    if (keys.some((k) => taken.has(k))) continue; // collision — drop
-    for (const k of keys) taken.add(k);
-    accepted.push(decl);
-  }
-  return accepted;
-}
-
-/** Add one accepted declaration's fields to a registry (shared by derive +
- * query registry builders so both speak the identical vocabulary). */
-function addFactFields(registry: FieldRegistry, decl: FactDeclaration): void {
-  const names = factFieldNames(decl);
-  if (decl.type === 'attestation') {
-    registry[names.exports.fact.toLowerCase()] = { kind: 'bool', get: (i) => i[names.exports.fact] };
-    registry[names.exports.approved.toLowerCase()] = {
-      kind: 'bool',
-      get: (i) => i[names.exports.approved],
-    };
-    registry[names.exports.changesRequested.toLowerCase()] = {
-      kind: 'bool',
-      get: (i) => i[names.exports.changesRequested],
-    };
-    // actor sets register as `list` — `:` equality + IN lists already have
-    // contains semantics there (query/fields.ts kind 'list').
-    registry[names.exports.by.toLowerCase()] = { kind: 'list', get: (i) => i[names.exports.by] };
-    registry[names.exports.approvedBy.toLowerCase()] = {
-      kind: 'list',
-      get: (i) => i[names.exports.approvedBy],
-    };
-  } else {
-    registry[names.exports.fact.toLowerCase()] = {
-      kind: decl.type,
-      get: (i) => i[names.exports.fact],
-    };
-  }
-}
-
-/**
- * Build the DERIVE registry (facts only) from the ACCEPTED declaration list.
- * Callers run the normalize→accept pipeline first and build ONE registry per
- * config resolution (so the WeakMap compile cache stays warm across sweeps).
- */
-export function buildDeriveRegistry(accepted: FactDeclaration[]): FieldRegistry {
-  const registry: FieldRegistry = { ...DERIVE_FIELDS };
-  for (const decl of accepted) addFactFields(registry, decl);
-  return registry;
-}
-
-/**
- * Build the QUERY registry (full assignment vocabulary) from the ACCEPTED list —
- * custom entries merged over `ASSIGNMENT_FIELDS` for ls/dashboard query paths.
- * Same accepted input, same entries as {@link buildDeriveRegistry}.
- */
-export function buildQueryRegistry(accepted: FactDeclaration[]): FieldRegistry {
-  const registry: FieldRegistry = { ...ASSIGNMENT_FIELDS };
-  for (const decl of accepted) addFactFields(registry, decl);
-  return registry;
-}
 
 /** Validate one derive condition against a field registry (defaults to the
  * facts-only base). Returns an error message or null. Plugs into

@@ -55,7 +55,11 @@ export const ASSIGNMENT_FIELDS: FieldRegistry = {
   tags: { kind: 'list' },
   archived: { kind: 'bool' },
   title: { kind: 'substring' },
-  search: { kind: 'substring', get: (i) => i['title'] },
+  // `search` reads a dedicated `searchText` haystack when the item provides one
+  // (so the dashboard can match title + slug + project like its filter box),
+  // falling back to `title` when absent. Backward-compatible: title-only when no
+  // searchText. The `title` field stays title-only.
+  search: { kind: 'substring', get: (i) => i['searchText'] ?? i['title'] },
   created: { kind: 'timestamp' },
   updated: { kind: 'timestamp' },
   completedat: { kind: 'timestamp', get: (i) => i['completedAt'] },
