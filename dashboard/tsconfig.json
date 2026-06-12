@@ -22,6 +22,7 @@
       "@shared/hotkeys-catalog": ["../src/utils/hotkeysCatalog.ts"],
       "@shared/view-prefs-schema": ["../src/utils/view-prefs-schema.ts"],
       "@shared/saved-views-schema": ["../src/utils/saved-views-schema.ts"],
+      "@shared/usage-filters": ["../src/utils/usage-filters.ts"],
       "@shared/saved-view-builder": ["../src/utils/saved-view-builder.ts"],
       "@shared/agents-schema": ["../src/utils/agents-schema.ts"],
       "@shared/terminal-schema": ["../src/utils/terminal-schema.ts"],

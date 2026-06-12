@@ -741,6 +741,55 @@ describe('session view schema validators', () => {
     expect(isWidgetConfig({ kind: 'agent-sessions' })).toBe(true);
   });
 
+  for (const kind of ['token-usage', 'spend'] as const) {
+    it(`isWidgetConfig accepts ${kind} with no filters`, () => {
+      expect(isWidgetConfig({ kind })).toBe(true);
+    });
+    it(`isWidgetConfig accepts ${kind} with a full valid filter set`, () => {
+      expect(
+        isWidgetConfig({
+          kind,
+          filters: {
+            window: 'custom',
+            since: '2026-01-01',
+            until: '2026-02-01',
+            project: 'syntaur-meta',
+            workspace: 'backend',
+            model: 'claude-opus-4-8',
+            tool: 'claude',
+          },
+        }),
+      ).toBe(true);
+    });
+    it(`isWidgetConfig accepts ${kind} with unknown extra filter keys (forward-compat)`, () => {
+      expect(isWidgetConfig({ kind, filters: { window: '7d', future: 'x' } })).toBe(true);
+    });
+    it(`isWidgetConfig rejects ${kind} with an invalid window`, () => {
+      expect(isWidgetConfig({ kind, filters: { window: '13d' } })).toBe(false);
+    });
+    it(`isWidgetConfig rejects ${kind} with an impossible date`, () => {
+      expect(isWidgetConfig({ kind, filters: { window: 'custom', since: '2026-02-30' } })).toBe(false);
+    });
+    it(`isWidgetConfig rejects ${kind} with a non-string field`, () => {
+      expect(isWidgetConfig({ kind, filters: { project: 5 } })).toBe(false);
+    });
+    it(`isWidgetConfig rejects ${kind} with a null field`, () => {
+      expect(isWidgetConfig({ kind, filters: { model: null } })).toBe(false);
+    });
+    it(`isWidgetConfig rejects ${kind} with an array field`, () => {
+      expect(isWidgetConfig({ kind, filters: { tool: ['a'] } })).toBe(false);
+    });
+    it(`isWidgetConfig rejects ${kind} with non-object filters`, () => {
+      expect(isWidgetConfig({ kind, filters: 'nope' })).toBe(false);
+    });
+  }
+
+  it('isDashboardSlot rejects a slot holding a malformed usage widget (legacy fallback)', () => {
+    expect(isDashboardSlot({ id: 'slot-x', widget: { kind: 'spend', filters: { window: '13d' } } })).toBe(false);
+    // …and accepts the same slot once the config is valid (round-trip sanity).
+    expect(isDashboardSlot({ id: 'slot-x', widget: { kind: 'spend', filters: { window: '30d' } } })).toBe(true);
+  });
+
   it('createSavedView persists entityType: session when provided', () => {
     const file = JSON.parse(JSON.stringify(DEFAULT_SAVED_VIEWS_FILE));
     const result = createSavedView(file, {

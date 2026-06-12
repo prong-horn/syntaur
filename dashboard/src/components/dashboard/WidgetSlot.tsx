@@ -1,5 +1,6 @@
-import { Plus, Trash2, Replace, Maximize2 } from 'lucide-react';
-import type { DashboardSlot, WidgetSize } from '@shared/saved-views-schema';
+import { useState } from 'react';
+import { Plus, Trash2, Replace, Maximize2, Settings2 } from 'lucide-react';
+import type { DashboardSlot, WidgetConfig, WidgetSize } from '@shared/saved-views-schema';
 import { WIDGET_SIZES } from '@shared/saved-views-schema';
 import { cn } from '../../lib/utils';
 import { useSavedView } from '../../hooks/useSavedViews';
@@ -12,6 +13,8 @@ interface WidgetSlotProps {
   onReplace: () => void;
   onRemove: () => void;
   onResize: (size: WidgetSize) => void;
+  /** Persist an edited config for this slot's widget. Rejects on failure so the editor can stay open. */
+  onConfigChange: (next: WidgetConfig) => Promise<void>;
 }
 
 // Size → Tailwind classes. These MUST be literal full class strings (no string
@@ -34,7 +37,8 @@ const SIZE_LABEL: Record<WidgetSize, string> = {
   large: 'Large',
 };
 
-export function WidgetSlot({ slot, onReplace, onRemove, onResize }: WidgetSlotProps) {
+export function WidgetSlot({ slot, onReplace, onRemove, onResize, onConfigChange }: WidgetSlotProps) {
+  const [configuring, setConfiguring] = useState(false);
   // Absent `size` defaults to `small` (backward compatibility). The same
   // default feeds the submenu `active` check below so the checkmark and the
   // rendered size can never disagree.
@@ -78,6 +82,7 @@ export function WidgetSlot({ slot, onReplace, onRemove, onResize }: WidgetSlotPr
   }
 
   const Icon = renderer.icon;
+  const ConfigEditor = renderer.ConfigEditor;
 
   return (
     <div
@@ -96,6 +101,16 @@ export function WidgetSlot({ slot, onReplace, onRemove, onResize }: WidgetSlotPr
         <OverflowMenu
           items={[
             { key: 'replace', label: 'Replace…', icon: Replace, onSelect: onReplace },
+            ...(renderer.ConfigEditor
+              ? [
+                  {
+                    key: 'configure',
+                    label: 'Configure…',
+                    icon: Settings2,
+                    onSelect: () => setConfiguring(true),
+                  },
+                ]
+              : []),
             {
               key: 'size',
               label: 'Size',
@@ -117,6 +132,19 @@ export function WidgetSlot({ slot, onReplace, onRemove, onResize }: WidgetSlotPr
           onPickAnother: onReplace,
         })}
       </div>
+      {ConfigEditor ? (
+        <ConfigEditor
+          config={slot.widget}
+          open={configuring}
+          onSave={async (next) => {
+            // Propagate rejection: on failure the editor stays open + shows the
+            // error; only close after the layout persists successfully.
+            await onConfigChange(next);
+            setConfiguring(false);
+          }}
+          onCancel={() => setConfiguring(false)}
+        />
+      ) : null}
     </div>
   );
 }

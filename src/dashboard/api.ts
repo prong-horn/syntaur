@@ -580,6 +580,36 @@ export async function listWorkspaces(
 }
 
 /**
+ * Expand a workspace name to the usage rows it owns: member project slugs +
+ * standalone assignment ids (folder UUIDs). `_ungrouped` selects projects with a
+ * null `workspace` and standalones with no `workspaceGroup` (matching the
+ * `/api/projects` and `/api/workspaces` semantics). Archived members are
+ * excluded (`listProjects` already drops archived projects; standalones are
+ * filtered here). The usage router turns the result into a WHERE clause that is
+ * the disjoint union of project-scoped and standalone-scoped rows; unattributed
+ * rows (`project_slug = '' AND assignment_slug = ''`) are never members.
+ */
+export async function resolveWorkspaceMembers(
+  projectsDir: string,
+  assignmentsDir: string | undefined,
+  workspace: string,
+): Promise<{ projectSlugs: string[]; standaloneAssignmentIds: string[] }> {
+  const [projects, standalones] = await Promise.all([
+    listProjects(projectsDir), // archived projects already excluded
+    listStandaloneRecords(assignmentsDir),
+  ]);
+  const ungrouped = workspace === '_ungrouped';
+  const projectSlugs = projects
+    .filter((p) => (ungrouped ? p.workspace === null : p.workspace === workspace))
+    .map((p) => p.slug);
+  const standaloneAssignmentIds = standalones
+    .filter((sr) => sr.record.archived !== true)
+    .filter((sr) => (ungrouped ? !sr.record.workspaceGroup : sr.record.workspaceGroup === workspace))
+    .map((sr) => sr.id);
+  return { projectSlugs, standaloneAssignmentIds };
+}
+
+/**
  * Worktree/branch records for the server scanner's tmux pane auto-linking,
  * derived from the cached records snapshot instead of a second file fan-out
  * (the scanner previously re-read every assignment.md on each cold scan). A

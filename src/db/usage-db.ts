@@ -148,12 +148,28 @@ export interface UsageDailyRow {
   computed_at: string;
 }
 
+/**
+ * A workspace expanded to the rows it owns. The resulting WHERE clause is the
+ * disjoint union of project-scoped rows (`project_slug IN projectSlugs`) and
+ * standalone-scoped rows (`project_slug = '' AND assignment_slug IN
+ * standaloneAssignmentIds`). The two branches are disjoint because project rows
+ * have a non-empty `project_slug` and standalone rows have an empty one.
+ * Unattributed rows (`project_slug = '' AND assignment_slug = ''`) are never
+ * members, so they are excluded. Empty membership matches NO rows.
+ */
+export interface WorkspaceMembers {
+  projectSlugs: string[];
+  standaloneAssignmentIds: string[];
+}
+
 export interface ListEventsFilter {
   since?: string;
   until?: string;
   projectSlug?: string;
   assignmentSlug?: string;
   tool?: string;
+  model?: string;
+  workspaceMembers?: WorkspaceMembers;
 }
 
 export interface ListDailyFilter {
@@ -162,6 +178,29 @@ export interface ListDailyFilter {
   projectSlug?: string;
   assignmentSlug?: string;
   tool?: string;
+  model?: string;
+  workspaceMembers?: WorkspaceMembers;
+}
+
+/**
+ * Append the workspace-membership disjunction to a parameterized WHERE. Empty
+ * membership emits `1 = 0` so an empty workspace matches nothing (never all).
+ */
+function pushWorkspaceClause(members: WorkspaceMembers, where: string[], params: unknown[]): void {
+  const disjuncts: string[] = [];
+  if (members.projectSlugs.length > 0) {
+    disjuncts.push(`project_slug IN (${members.projectSlugs.map(() => '?').join(', ')})`);
+    params.push(...members.projectSlugs);
+  }
+  if (members.standaloneAssignmentIds.length > 0) {
+    disjuncts.push(
+      `(project_slug = '' AND assignment_slug IN (${members.standaloneAssignmentIds
+        .map(() => '?')
+        .join(', ')}))`,
+    );
+    params.push(...members.standaloneAssignmentIds);
+  }
+  where.push(disjuncts.length > 0 ? `(${disjuncts.join(' OR ')})` : '1 = 0');
 }
 
 // --- Helpers ---------------------------------------------------------------
@@ -357,6 +396,13 @@ export function listEvents(filter: ListEventsFilter = {}): UsageEventRow[] {
     where.push('tool = ?');
     params.push(filter.tool);
   }
+  if (filter.model) {
+    where.push('model = ?');
+    params.push(filter.model);
+  }
+  if (filter.workspaceMembers) {
+    pushWorkspaceClause(filter.workspaceMembers, where, params);
+  }
   const whereSql = where.length > 0 ? `WHERE ${where.join(' AND ')}` : '';
   return database
     .prepare(
@@ -443,6 +489,13 @@ export function listDaily(filter: ListDailyFilter = {}): UsageDailyRow[] {
     where.push('tool = ?');
     params.push(filter.tool);
   }
+  if (filter.model) {
+    where.push('model = ?');
+    params.push(filter.model);
+  }
+  if (filter.workspaceMembers) {
+    pushWorkspaceClause(filter.workspaceMembers, where, params);
+  }
   const whereSql = where.length > 0 ? `WHERE ${where.join(' AND ')}` : '';
   return database
     .prepare(
@@ -453,4 +506,22 @@ export function listDaily(filter: ListDailyFilter = {}): UsageDailyRow[] {
         ORDER BY day DESC, project_slug, assignment_slug, tool, model`,
     )
     .all(...params) as UsageDailyRow[];
+}
+
+/** Distinct model identifiers present in `usage_daily`, ascending. Powers the widget/config model facet. */
+export function listDistinctModels(): string[] {
+  const database = getUsageDb();
+  return database
+    .prepare('SELECT DISTINCT model FROM usage_daily ORDER BY model')
+    .all()
+    .map((r) => (r as { model: string }).model);
+}
+
+/** Distinct tool identifiers present in `usage_daily`, ascending. Powers the widget/config tool facet. */
+export function listDistinctTools(): string[] {
+  const database = getUsageDb();
+  return database
+    .prepare('SELECT DISTINCT tool FROM usage_daily ORDER BY tool')
+    .all()
+    .map((r) => (r as { tool: string }).tool);
 }

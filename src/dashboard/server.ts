@@ -712,7 +712,7 @@ export function createDashboardServer(options: DashboardServerOptions) {
   app.use('/api/leases', createLeasesRouter(broadcast));
 
   // --- Usage API (per-assignment / per-project token usage rollups) ---
-  app.use('/api/usage', createUsageRouter());
+  app.use('/api/usage', createUsageRouter(projectsDir, assignmentsDir));
 
   // --- Agent Sessions API ---
   app.use('/api/agent-sessions', createAgentSessionsRouter(projectsDir, broadcast, assignmentsDir));

@@ -11,6 +11,8 @@ import {
   listEvents,
   insertDailyBatch,
   listDaily,
+  listDistinctModels,
+  listDistinctTools,
   getMeta,
   setMeta,
   advanceMetaIso,
@@ -322,5 +324,86 @@ describe('upsertEvent monotonic guards (codex-review CRITICAL/HIGH fixes)', () =
     const rows = listEvents();
     expect(rows[0].total_tokens).toBe(7000);
     expect(rows[0].total_cost).toBeCloseTo(1.4);
+  });
+});
+
+describe('listDaily model filter', () => {
+  it('filters by model and composes with since', () => {
+    initUsageDb(dbPath);
+    insertDailyBatch([
+      makeDaily({ model: 'opus', day: '2026-05-19' }),
+      makeDaily({ model: 'sonnet', day: '2026-05-21' }),
+      makeDaily({ model: 'opus', day: '2026-05-21' }),
+    ]);
+    expect(listDaily({ model: 'opus' }).length).toBe(2);
+    expect(listDaily({ model: 'sonnet' }).length).toBe(1);
+    expect(listDaily({ model: 'opus', since: '2026-05-20' }).length).toBe(1);
+  });
+});
+
+describe('listDaily / listEvents workspaceMembers filter', () => {
+  function seedDaily() {
+    insertDailyBatch([
+      makeDaily({ projectSlug: 'p1', assignmentSlug: 'a1' }), // project member
+      makeDaily({ projectSlug: 'p2', assignmentSlug: 'a1' }), // other project
+      makeDaily({ projectSlug: '', assignmentSlug: 's1' }), // standalone member
+      makeDaily({ projectSlug: '', assignmentSlug: 's2' }), // other standalone
+      makeDaily({ projectSlug: '', assignmentSlug: '' }), // unattributed
+    ]);
+  }
+
+  it('unions member projects + standalones and excludes unattributed/others', () => {
+    initUsageDb(dbPath);
+    seedDaily();
+    const rows = listDaily({
+      workspaceMembers: { projectSlugs: ['p1'], standaloneAssignmentIds: ['s1'] },
+    });
+    expect(rows.length).toBe(2);
+    expect(rows.some((r) => r.project_slug === 'p1')).toBe(true);
+    expect(rows.some((r) => r.project_slug === '' && r.assignment_slug === 's1')).toBe(true);
+    // unattributed ('','') must NOT be included
+    expect(rows.some((r) => r.project_slug === '' && r.assignment_slug === '')).toBe(false);
+  });
+
+  it('empty membership matches no rows (never all)', () => {
+    initUsageDb(dbPath);
+    seedDaily();
+    expect(listDaily({ workspaceMembers: { projectSlugs: [], standaloneAssignmentIds: [] } }).length).toBe(0);
+  });
+
+  it('one-empty-side still filters correctly (e.g. _ungrouped with only standalones)', () => {
+    initUsageDb(dbPath);
+    seedDaily();
+    const rows = listDaily({
+      workspaceMembers: { projectSlugs: [], standaloneAssignmentIds: ['s1', 's2'] },
+    });
+    expect(rows.length).toBe(2);
+    expect(rows.every((r) => r.project_slug === '')).toBe(true);
+  });
+
+  it('composes with model on the events table too', () => {
+    initUsageDb(dbPath);
+    upsertEvent(makeEvent({ sessionId: 'm1', model: 'opus', projectSlug: 'p1', assignmentSlug: 'a1' }));
+    upsertEvent(makeEvent({ sessionId: 'm2', model: 'sonnet', projectSlug: 'p1', assignmentSlug: 'a1' }));
+    upsertEvent(makeEvent({ sessionId: 'm3', model: 'opus', projectSlug: 'p2', assignmentSlug: 'a1' }));
+    const rows = listEvents({
+      model: 'opus',
+      workspaceMembers: { projectSlugs: ['p1'], standaloneAssignmentIds: [] },
+    });
+    expect(rows.length).toBe(1);
+    expect(rows[0].session_id).toBe('m1');
+  });
+});
+
+describe('listDistinctModels / listDistinctTools', () => {
+  it('returns sorted distinct values', () => {
+    initUsageDb(dbPath);
+    insertDailyBatch([
+      makeDaily({ model: 'sonnet', tool: 'claude' }),
+      makeDaily({ model: 'opus', tool: 'claude', day: '2026-05-20' }),
+      makeDaily({ model: 'opus', tool: 'codex', day: '2026-05-19' }),
+    ]);
+    expect(listDistinctModels()).toEqual(['opus', 'sonnet']);
+    expect(listDistinctTools()).toEqual(['claude', 'codex']);
   });
 });

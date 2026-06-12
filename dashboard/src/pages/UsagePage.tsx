@@ -1,6 +1,16 @@
 import { useEffect, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { Coins } from 'lucide-react';
 import { formatTokens, formatCost } from '../lib/format';
+import {
+  USAGE_WINDOWS,
+  buildUsageApiQuery,
+  parseFilters,
+  serializeFilters,
+  type UsageWidgetFilters,
+  type UsageWindow,
+} from '@shared/usage-filters';
+import { useProjects, useWorkspaces, useUsageFacets } from '../hooks/useProjects';
 
 interface UsageDailyRow {
   day: string;
@@ -25,49 +35,67 @@ interface UsageResponse {
   summary: UsageSummaryRow[];
 }
 
-function thirtyDaysAgo(): string {
-  return new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
-}
+type GroupBy = 'project' | 'assignment';
 
-function today(): string {
-  return new Date().toISOString().slice(0, 10);
-}
+const WINDOW_LABEL: Record<UsageWindow, string> = {
+  '7d': '7 days',
+  '30d': '30 days',
+  '90d': '90 days',
+  all: 'All time',
+  custom: 'Custom',
+};
 
+const inputClass = 'bg-zinc-950 border border-zinc-700 rounded px-2 py-1 text-sm';
+
+/**
+ * Usage report page. The URL query string is the source of truth: filters are
+ * parsed from it on every render (so back/forward navigates filter history) and
+ * control edits push a new query via setSearchParams. The shared usage-filters
+ * helpers are the same ones the overview widgets use, so a widget's
+ * "View all →" link reproduces identical filters and totals here.
+ */
 export function UsagePage() {
-  const [since, setSince] = useState<string>(thirtyDaysAgo());
-  const [until, setUntil] = useState<string>(today());
-  const [project, setProject] = useState<string>('');
-  const [groupBy, setGroupBy] = useState<'project' | 'assignment'>('project');
+  const [sp, setSp] = useSearchParams();
+  const filters = parseFilters(sp);
+  const window: UsageWindow = filters.window ?? '30d';
+  const groupBy: GroupBy = sp.get('groupBy') === 'assignment' ? 'assignment' : 'project';
+
+  const { data: projects } = useProjects();
+  const { data: workspacesData } = useWorkspaces();
+  const { data: facets } = useUsageFacets();
+
   const [data, setData] = useState<UsageResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // List of project slugs available in the current window (derived from
-  // whichever response came back without a project filter applied).
-  const [knownProjects, setKnownProjects] = useState<string[]>([]);
+  // Seed the URL with the default window once, so the address bar always
+  // reflects the active filters (and back/forward has a baseline entry).
+  useEffect(() => {
+    if (!sp.get('window')) {
+      const next = serializeFilters({ window: '30d', ...filters });
+      if (groupBy === 'assignment') next.set('groupBy', 'assignment');
+      setSp(next, { replace: true });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const apiQuery = buildUsageApiQuery({ window, ...filters }).toString();
 
   useEffect(() => {
     const controller = new AbortController();
     setLoading(true);
     setError(null);
-    const params = new URLSearchParams({ since, until, groupBy });
-    if (project) params.set('project', project);
-    fetch(`/api/usage?${params.toString()}`, { signal: controller.signal })
-      .then((res) => {
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const url = apiQuery ? `/api/usage?${apiQuery}&groupBy=${groupBy}` : `/api/usage?groupBy=${groupBy}`;
+    fetch(url, { signal: controller.signal })
+      .then(async (res) => {
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({}));
+          throw new Error(body.error ?? `HTTP ${res.status}`);
+        }
         return res.json() as Promise<UsageResponse>;
       })
       .then((body) => {
         setData(body);
-        // Refresh the project dropdown options only when no filter is set
-        // (otherwise the dropdown would shrink to the filtered selection).
-        if (!project) {
-          const projects = new Set<string>();
-          for (const r of body.daily) {
-            if (r.project_slug) projects.add(r.project_slug);
-          }
-          setKnownProjects([...projects].sort());
-        }
         setLoading(false);
       })
       .catch((err) => {
@@ -75,10 +103,15 @@ export function UsagePage() {
         setError(err instanceof Error ? err.message : String(err));
         setLoading(false);
       });
-    return () => {
-      controller.abort();
-    };
-  }, [since, until, project, groupBy]);
+    return () => controller.abort();
+  }, [apiQuery, groupBy]);
+
+  /** Push a new filter set (and groupBy) into the URL. */
+  function update(next: UsageWidgetFilters, nextGroupBy: GroupBy = groupBy) {
+    const params = serializeFilters(next);
+    if (nextGroupBy === 'assignment') params.set('groupBy', 'assignment');
+    setSp(params);
+  }
 
   return (
     <div className="p-6 max-w-7xl mx-auto">
@@ -89,44 +122,108 @@ export function UsagePage() {
 
       <div className="flex flex-wrap gap-4 items-end mb-6 p-4 rounded-lg bg-zinc-900/50 border border-zinc-800">
         <label className="flex flex-col gap-1 text-sm">
-          <span className="text-zinc-400">Since</span>
-          <input
-            type="date"
-            value={since}
-            onChange={(e) => setSince(e.target.value)}
-            className="bg-zinc-950 border border-zinc-700 rounded px-2 py-1 text-sm"
-          />
-        </label>
-        <label className="flex flex-col gap-1 text-sm">
-          <span className="text-zinc-400">Until</span>
-          <input
-            type="date"
-            value={until}
-            onChange={(e) => setUntil(e.target.value)}
-            className="bg-zinc-950 border border-zinc-700 rounded px-2 py-1 text-sm"
-          />
-        </label>
-        <label className="flex flex-col gap-1 text-sm">
-          <span className="text-zinc-400">Project</span>
+          <span className="text-zinc-400">Window</span>
           <select
-            value={project}
-            onChange={(e) => setProject(e.target.value)}
-            className="bg-zinc-950 border border-zinc-700 rounded px-2 py-1 text-sm"
+            value={window}
+            onChange={(e) => update({ ...filters, window: e.target.value as UsageWindow })}
+            className={inputClass}
           >
-            <option value="">All</option>
-            {knownProjects.map((p) => (
-              <option key={p} value={p}>
-                {p}
-              </option>
+            {USAGE_WINDOWS.map((w) => (
+              <option key={w} value={w}>{WINDOW_LABEL[w]}</option>
             ))}
           </select>
         </label>
+
+        {window === 'custom' ? (
+          <>
+            <label className="flex flex-col gap-1 text-sm">
+              <span className="text-zinc-400">Since</span>
+              <input
+                type="date"
+                value={filters.since ?? ''}
+                onChange={(e) => update({ ...filters, window: 'custom', since: e.target.value || undefined })}
+                className={inputClass}
+              />
+            </label>
+            <label className="flex flex-col gap-1 text-sm">
+              <span className="text-zinc-400">Until</span>
+              <input
+                type="date"
+                value={filters.until ?? ''}
+                onChange={(e) => update({ ...filters, window: 'custom', until: e.target.value || undefined })}
+                className={inputClass}
+              />
+            </label>
+          </>
+        ) : null}
+
+        <label className="flex flex-col gap-1 text-sm">
+          <span className="text-zinc-400">Workspace</span>
+          <select
+            value={filters.workspace ?? ''}
+            onChange={(e) =>
+              update({ ...filters, workspace: e.target.value || undefined, project: undefined })
+            }
+            className={inputClass}
+          >
+            <option value="">All</option>
+            {workspacesData?.hasUngrouped ? <option value="_ungrouped">(ungrouped)</option> : null}
+            {(workspacesData?.workspaces ?? []).map((w) => (
+              <option key={w} value={w}>{w}</option>
+            ))}
+          </select>
+        </label>
+
+        <label className="flex flex-col gap-1 text-sm">
+          <span className="text-zinc-400">Project</span>
+          <select
+            value={filters.project ?? ''}
+            onChange={(e) =>
+              update({ ...filters, project: e.target.value || undefined, workspace: undefined })
+            }
+            className={inputClass}
+          >
+            <option value="">All</option>
+            {(projects ?? []).map((p) => (
+              <option key={p.slug} value={p.slug}>{p.slug}</option>
+            ))}
+          </select>
+        </label>
+
+        <label className="flex flex-col gap-1 text-sm">
+          <span className="text-zinc-400">Model</span>
+          <select
+            value={filters.model ?? ''}
+            onChange={(e) => update({ ...filters, model: e.target.value || undefined })}
+            className={inputClass}
+          >
+            <option value="">All</option>
+            {(facets?.models ?? []).map((m) => (
+              <option key={m} value={m}>{m}</option>
+            ))}
+          </select>
+        </label>
+
+        <label className="flex flex-col gap-1 text-sm">
+          <span className="text-zinc-400">Tool</span>
+          <select
+            value={filters.tool ?? ''}
+            onChange={(e) => update({ ...filters, tool: e.target.value || undefined })}
+            className={inputClass}
+          >
+            <option value="">All</option>
+            {(facets?.tools ?? []).map((t) => (
+              <option key={t} value={t}>{t}</option>
+            ))}
+          </select>
+        </label>
+
         <label className="flex flex-col gap-1 text-sm">
           <span className="text-zinc-400">Group by</span>
           <select
             value={groupBy}
-            onChange={(e) => setGroupBy(e.target.value as 'project' | 'assignment')}
-            className="bg-zinc-950 border border-zinc-700 rounded px-2 py-1 text-sm"
+            onChange={(e) => update(filters, e.target.value as GroupBy)}
+            className={inputClass}
           >
             <option value="project">Project</option>
             <option value="assignment">Assignment</option>
@@ -143,10 +240,8 @@ export function UsagePage() {
             <h2 className="text-lg font-medium mb-2">Summary</h2>
             {data.summary.length === 0 ? (
               <p className="text-zinc-500 text-sm">
-                No usage data in this window. Run{' '}
-                <code className="bg-zinc-800 px-1 py-0.5 rounded text-amber-300">
-                  syntaur usage
-                </code>{' '}
+                No usage data for these filters. Run{' '}
+                <code className="bg-zinc-800 px-1 py-0.5 rounded text-amber-300">syntaur usage</code>{' '}
                 to ingest the latest ccusage data.
               </p>
             ) : (
@@ -154,9 +249,7 @@ export function UsagePage() {
                 <thead className="bg-zinc-900 text-zinc-400">
                   <tr>
                     <th className="text-left px-3 py-2">Project</th>
-                    {groupBy === 'assignment' && (
-                      <th className="text-left px-3 py-2">Assignment</th>
-                    )}
+                    {groupBy === 'assignment' && <th className="text-left px-3 py-2">Assignment</th>}
                     <th className="text-right px-3 py-2">Tokens</th>
                     <th className="text-right px-3 py-2">Cost</th>
                     <th className="text-left px-3 py-2">Last event</th>
@@ -167,16 +260,10 @@ export function UsagePage() {
                     <tr key={i} className="border-t border-zinc-800">
                       <td className="px-3 py-2">{r.projectSlug || '(unattributed)'}</td>
                       {groupBy === 'assignment' && (
-                        <td className="px-3 py-2">
-                          {r.assignmentSlug || '(unattributed)'}
-                        </td>
+                        <td className="px-3 py-2">{r.assignmentSlug || '(unattributed)'}</td>
                       )}
-                      <td className="px-3 py-2 text-right tabular-nums">
-                        {formatTokens(r.totalTokens)}
-                      </td>
-                      <td className="px-3 py-2 text-right tabular-nums">
-                        {formatCost(r.totalCost)}
-                      </td>
+                      <td className="px-3 py-2 text-right tabular-nums">{formatTokens(r.totalTokens)}</td>
+                      <td className="px-3 py-2 text-right tabular-nums">{formatCost(r.totalCost)}</td>
                       <td className="px-3 py-2 text-zinc-400">{r.lastEventDay}</td>
                     </tr>
                   ))}
@@ -210,12 +297,8 @@ export function UsagePage() {
                       <td className="px-3 py-2 text-zinc-400">{r.model}</td>
                       <td className="px-3 py-2">{r.project_slug || '–'}</td>
                       <td className="px-3 py-2">{r.assignment_slug || '–'}</td>
-                      <td className="px-3 py-2 text-right tabular-nums">
-                        {formatTokens(r.total_tokens)}
-                      </td>
-                      <td className="px-3 py-2 text-right tabular-nums">
-                        {formatCost(r.total_cost)}
-                      </td>
+                      <td className="px-3 py-2 text-right tabular-nums">{formatTokens(r.total_tokens)}</td>
+                      <td className="px-3 py-2 text-right tabular-nums">{formatCost(r.total_cost)}</td>
                     </tr>
                   ))}
                 </tbody>

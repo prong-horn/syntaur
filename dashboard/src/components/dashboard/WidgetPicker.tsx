@@ -21,6 +21,8 @@ interface WidgetPickerProps {
 const BUILT_IN_KINDS: ReadonlyArray<Exclude<WidgetKind, 'saved-view'>> = [
   'agent-sessions',
   'inventories',
+  'token-usage',
+  'spend',
 ];
 
 export function WidgetPicker({ open, onOpenChange, onSelect }: WidgetPickerProps) {

@@ -79,6 +79,25 @@ export function Overview() {
     [layout.slots, persistLayout],
   );
 
+  // Unlike persistLayout (which swallows errors into layoutError), this RETHROWS
+  // so the widget's config dialog stays open and surfaces the failure itself.
+  const handleConfigChange = useCallback(
+    async (index: number, next: WidgetConfig) => {
+      const nextSlots = layout.slots.map((slot, i) =>
+        i === index ? { ...slot, widget: next } : slot,
+      );
+      setLayoutError(null);
+      try {
+        await setDashboardLayout(nextSlots);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        setLayoutError(message);
+        throw err instanceof Error ? err : new Error(message);
+      }
+    },
+    [layout.slots],
+  );
+
   // Build itemsById from the (still-served-by-the-API) segment payloads so
   // OverviewHero can resolve its `hero.itemId` reference. Segments are not
   // rendered as widgets anymore, but the hero remains coupled to them.
@@ -131,6 +150,7 @@ export function Overview() {
             onReplace={() => openPicker(i)}
             onRemove={() => handleRemove(i)}
             onResize={(size) => handleResize(i, size)}
+            onConfigChange={(next) => handleConfigChange(i, next)}
           />
         ))}
       </div>

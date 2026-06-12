@@ -15,9 +15,11 @@ import {
   toFilterValues,
 } from './view-prefs-schema.js';
 import { queryToViewFilters } from './view-filters-query.js';
+import { isUsageWidgetFilters, type UsageWidgetFilters } from './usage-filters.js';
 
 // Re-export shared types so frontend can pull everything from a single module via `@shared/saved-views-schema`.
 export type { ViewMode, SortField, SortDirection, ViewFilters, FilterValue, DateRangeField, DateRangeFilter };
+export type { UsageWidgetFilters };
 
 export interface ListSectionVisibility {
   collapsed: string[];
@@ -78,10 +80,21 @@ export interface SavedView {
 export type WidgetConfig =
   | { kind: 'saved-view'; viewId: string }
   | { kind: 'agent-sessions'; viewId?: string }
-  | { kind: 'inventories' };
+  | { kind: 'inventories' }
+  | { kind: 'token-usage'; filters?: UsageWidgetFilters }
+  | { kind: 'spend'; filters?: UsageWidgetFilters };
 
-export const WIDGET_KINDS = ['saved-view', 'agent-sessions', 'inventories'] as const;
+export const WIDGET_KINDS = [
+  'saved-view',
+  'agent-sessions',
+  'inventories',
+  'token-usage',
+  'spend',
+] as const;
 export type WidgetKind = (typeof WIDGET_KINDS)[number];
+
+/** The two usage-widget kinds that share `UsageWidgetFilters` + the UsageWidget component. */
+export const USAGE_WIDGET_KINDS = ['token-usage', 'spend'] as const;
 
 // Per-slot sizing on the Overview dashboard. Two-axis named tiers: width
 // (1 vs 2 columns at the `xl` breakpoint) × height (normal vs tall). The
@@ -180,6 +193,10 @@ export function isWidgetConfig(value: unknown): value is WidgetConfig {
       return typeof obj.viewId === 'string' && obj.viewId.length > 0;
     }
     return true;
+  }
+  if (obj.kind === 'token-usage' || obj.kind === 'spend') {
+    // `filters` is optional; when present it must be a valid UsageWidgetFilters.
+    return obj.filters === undefined || isUsageWidgetFilters(obj.filters);
   }
   return obj.kind === 'inventories';
 }

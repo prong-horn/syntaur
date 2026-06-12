@@ -3,6 +3,7 @@ import { useParams } from 'react-router-dom';
 import { useWebSocket } from './useWebSocket';
 import type { WsMessage } from './useWebSocket';
 import type { ServersResponse, TrackedSession, AgentSessionsResponse, AgentSession, PlaybooksResponse, PlaybookDetail, InventoriesResponse, InventoryDetail } from '../types';
+import { buildUsageApiQuery, type UsageWidgetFilters } from '@shared/usage-filters';
 
 export type ProgressCounts = Record<string, number> & { total: number };
 
@@ -761,6 +762,49 @@ export function useStandaloneAssignmentUsage(
 
 export function usePlaybooks(enabled = true): FetchState<PlaybooksResponse> {
   return useFetch<PlaybooksResponse>('/api/playbooks', 'playbooks', enabled);
+}
+
+// --- Overview usage widgets (Token Usage / Spend) ---
+// Read-only and not broadcast, so no websocketScope. `resetDataOnUrlChange` is
+// true so a filter change never renders the prior filter's totals.
+export interface UsageDailyRow {
+  day: string;
+  tool: string;
+  model: string;
+  project_slug: string;
+  assignment_slug: string;
+  total_tokens: number;
+  total_cost: number;
+}
+
+export interface UsageSummaryRow {
+  projectSlug: string;
+  assignmentSlug: string;
+  totalTokens: number;
+  totalCost: number;
+  lastEventDay: string;
+}
+
+export interface WorkspaceUsageResponse {
+  daily: UsageDailyRow[];
+  summary: UsageSummaryRow[];
+}
+
+export interface UsageFacets {
+  models: string[];
+  tools: string[];
+}
+
+/** Workspace-wide usage matching a widget's filters. */
+export function useUsage(filters: UsageWidgetFilters): FetchState<WorkspaceUsageResponse> {
+  const query = buildUsageApiQuery(filters).toString();
+  const url = query ? `/api/usage?${query}` : '/api/usage';
+  return useFetch<WorkspaceUsageResponse>(url, undefined, true, true);
+}
+
+/** Distinct models + tools present in the usage data (for filter dropdowns). */
+export function useUsageFacets(enabled = true): FetchState<UsageFacets> {
+  return useFetch<UsageFacets>('/api/usage/facets', undefined, enabled);
 }
 
 export function usePlaybook(slug: string | undefined): FetchState<PlaybookDetail> {

@@ -1,5 +1,14 @@
 import { Router } from 'express';
-import { initUsageDb, listDaily, listEvents, type ListEventsFilter } from '../db/usage-db.js';
+import {
+  initUsageDb,
+  listDaily,
+  listDistinctModels,
+  listDistinctTools,
+  listEvents,
+  type ListDailyFilter,
+  type ListEventsFilter,
+} from '../db/usage-db.js';
+import { resolveWorkspaceMembers } from './api.js';
 
 /**
  * Token-usage dashboard API. Read-only; localhost-only per existing
@@ -12,13 +21,38 @@ import { initUsageDb, listDaily, listEvents, type ListEventsFilter } from '../db
  *                                                    — event detail for one project-scoped assignment
  *   GET /standalone/:assignmentId                    — UUID-keyed standalone variant
  */
-export function createUsageRouter(): Router {
+export function createUsageRouter(
+  projectsDir: string,
+  assignmentsDir: string | undefined,
+): Router {
   const router = Router();
 
-  router.get('/', (req, res) => {
+  // Distinct model/tool facets for the widget + config-dialog dropdowns. Literal
+  // path — registered before the `/:param` routes so it is never shadowed.
+  router.get('/facets', (_req, res) => {
     try {
       initUsageDb();
-      const filter = extractCommonFilter(req.query);
+      res.json({ models: listDistinctModels(), tools: listDistinctTools() });
+    } catch (error) {
+      res.status(500).json({
+        error: error instanceof Error ? error.message : 'List failed',
+      });
+    }
+  });
+
+  router.get('/', async (req, res) => {
+    try {
+      initUsageDb();
+      const filter: ListDailyFilter = extractCommonFilter(req.query);
+      const workspace = typeof req.query.workspace === 'string' ? req.query.workspace : undefined;
+      if (workspace) {
+        // Workspace is mutually exclusive with project/assignment scoping.
+        if (filter.projectSlug !== undefined || filter.assignmentSlug !== undefined) {
+          res.status(400).json({ error: 'Specify either project/assignment or workspace, not both' });
+          return;
+        }
+        filter.workspaceMembers = await resolveWorkspaceMembers(projectsDir, assignmentsDir, workspace);
+      }
       const rows = listDaily(filter);
       res.json({
         daily: rows,
@@ -113,6 +147,7 @@ interface CommonFilter {
   since?: string;
   until?: string;
   tool?: string;
+  model?: string;
   projectSlug?: string;
   assignmentSlug?: string;
 }
@@ -122,6 +157,7 @@ function extractCommonFilter(query: Record<string, unknown>): CommonFilter {
   if (typeof query.since === 'string') out.since = query.since;
   if (typeof query.until === 'string') out.until = query.until;
   if (typeof query.tool === 'string') out.tool = query.tool;
+  if (typeof query.model === 'string') out.model = query.model;
   if (typeof query.project === 'string') out.projectSlug = query.project;
   if (typeof query.assignment === 'string') out.assignmentSlug = query.assignment;
   return out;
@@ -138,6 +174,7 @@ function eventsFilterFromDaily(common: CommonFilter): ListEventsFilter {
   if (common.since) out.since = `${common.since}T00:00:00.000Z`;
   if (common.until) out.until = `${common.until}T23:59:59.999Z`;
   if (common.tool) out.tool = common.tool;
+  if (common.model) out.model = common.model;
   if (common.projectSlug !== undefined) out.projectSlug = common.projectSlug;
   if (common.assignmentSlug !== undefined) out.assignmentSlug = common.assignmentSlug;
   return out;
