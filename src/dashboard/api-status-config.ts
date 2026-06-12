@@ -2,8 +2,14 @@ import { Router, type Request, type Response } from 'express';
 import {
   writeStatusConfig,
   deleteStatusConfig,
+  DEFAULT_DERIVE_CONFIG,
+  validateFactDeclarations,
+  normalizeFactDeclarations,
+  type RawFactDeclaration,
 } from '../utils/config.js';
+import { acceptFactDeclarations, buildDeriveRegistry } from '../utils/fact-registry.js';
 import { getStatusConfig, clearStatusConfigCache, installRecordsInvalidation } from './api.js';
+import { validateDeriveCondition } from '../lifecycle/derive.js';
 import {
   scanAssignmentsByStatus,
   applyStatusResolutions,
@@ -150,6 +156,7 @@ export function createStatusConfigRouter(
         transitions: config.transitions,
         custom: config.custom,
         factDeclarations: config.factDeclarations,
+        rawFacts: config.facts ?? [],
       });
     } catch (error) {
       console.error('Error getting status config:', error);
@@ -175,8 +182,34 @@ export function createStatusConfigRouter(
 
   router.post('/', async (req: Request, res: Response) => {
     try {
-      const { statuses, order, transitions, resolutions: rawResolutions } = req.body ?? {};
-      if (!Array.isArray(statuses) || !Array.isArray(order) || !Array.isArray(transitions)) {
+      const {
+        statuses,
+        order,
+        transitions,
+        facts: bodyFacts,
+        factRemovalAcks,
+        resolutions: rawResolutions,
+      } = req.body ?? {};
+
+      // Fetch current config early — needed for both facts-only and full saves.
+      const currentConfig = await getStatusConfig();
+
+      // ── Body-presence semantics ──────────────────────────────────────────
+      const hasFacts = bodyFacts !== undefined;
+      const hasStatuses = statuses !== undefined;
+      const hasOrder = order !== undefined;
+      const hasTransitions = transitions !== undefined;
+
+      let effectiveStatuses = statuses;
+      let effectiveOrder = order;
+      let effectiveTransitions = transitions;
+
+      if (hasFacts && !hasStatuses && !hasOrder && !hasTransitions) {
+        // Facts-only save: default the status arrays from current config.
+        effectiveStatuses = currentConfig.statuses;
+        effectiveOrder = currentConfig.order;
+        effectiveTransitions = currentConfig.transitions;
+      } else if (!Array.isArray(effectiveStatuses) || !Array.isArray(effectiveOrder) || !Array.isArray(effectiveTransitions)) {
         res.status(400).json({ error: 'malformed-statuses', message: 'Request body must include statuses, order, and transitions arrays' });
         return;
       }
@@ -194,10 +227,9 @@ export function createStatusConfigRouter(
       const resolutions = parsed.resolutions;
 
       // Compute oldIds (from current resolved config) and newIds (from request).
-      const currentConfig = await getStatusConfig();
       const oldIds = new Set(currentConfig.statuses.map((s) => s.id));
       const newIds = new Set<string>();
-      for (const s of statuses) {
+      for (const s of effectiveStatuses) {
         if (s && typeof s === 'object' && isString((s as { id: unknown }).id)) {
           newIds.add((s as { id: string }).id);
         }
@@ -295,23 +327,95 @@ export function createStatusConfigRouter(
         throw err;
       }
 
+      // ── Fact validation + reference check ─────────────────────────────
+      let factsToWrite: RawFactDeclaration[] | null = currentConfig.facts ?? null;
+      if (hasFacts) {
+        // Shape-check + normalize binds undefined → null.
+        const shapedFacts: RawFactDeclaration[] = [];
+        if (!Array.isArray(bodyFacts)) {
+          res.status(400).json({ error: 'malformed-facts', message: 'facts must be an array' });
+          return;
+        }
+        for (let i = 0; i < bodyFacts.length; i++) {
+          const row = bodyFacts[i];
+          if (!row || typeof row !== 'object') {
+            res.status(400).json({ error: 'malformed-facts', message: `facts[${i}] must be an object` });
+            return;
+          }
+          const name = (row as Record<string, unknown>).name;
+          const type = (row as Record<string, unknown>).type;
+          if (typeof name !== 'string' || typeof type !== 'string') {
+            res.status(400).json({ error: 'malformed-facts', message: `facts[${i}] must have name and type strings` });
+            return;
+          }
+          const binds = (row as Record<string, unknown>).binds;
+          const normalizedBinds = binds === undefined ? null : binds === null ? null : typeof binds === 'string' ? binds : null;
+          shapedFacts.push({ name, type, binds: normalizedBinds });
+        }
+
+        const problems = validateFactDeclarations(shapedFacts);
+        if (problems.length > 0) {
+          res.status(400).json({ error: 'invalid-facts', problems });
+          return;
+        }
+
+        // Reference check: removed facts still referenced by derive rules?
+        const currentNames = new Set((currentConfig.facts ?? []).map((f) => f.name));
+        const incomingNames = new Set(shapedFacts.map((f) => f.name));
+        const removedNames: string[] = [];
+        for (const name of currentNames) {
+          if (!incomingNames.has(name)) removedNames.push(name);
+        }
+        const acks = new Set<string>(Array.isArray(factRemovalAcks) ? factRemovalAcks.map((x: unknown) => String(x)) : []);
+        const unresolvedRefs: Array<{ factName: string; location: string; when: string }> = [];
+        const deriveConfig = currentConfig.derive ?? null;
+        if (deriveConfig !== null && removedNames.length > 0) {
+          const acceptedAll = acceptFactDeclarations(normalizeFactDeclarations(currentConfig.facts));
+          const fullRegistry = buildDeriveRegistry(acceptedAll);
+          for (const removedName of removedNames) {
+            if (acks.has(removedName)) continue;
+            const acceptedWithout = acceptedAll.filter((d) => d.name !== removedName);
+            const withoutRegistry = buildDeriveRegistry(acceptedWithout);
+            for (let i = 0; i < deriveConfig.phaseLadder.length; i++) {
+              const rung = deriveConfig.phaseLadder[i];
+              if (rung.when === '*') continue;
+              const before = validateDeriveCondition(rung.when, fullRegistry);
+              const after = validateDeriveCondition(rung.when, withoutRegistry);
+              if (before === null && after !== null) {
+                unresolvedRefs.push({ factName: removedName, location: `phaseLadder[${i}]`, when: rung.when });
+              }
+            }
+            for (let i = 0; i < deriveConfig.disposition.length; i++) {
+              const rule = deriveConfig.disposition[i];
+              if (rule.when === null) continue;
+              const before = validateDeriveCondition(rule.when, fullRegistry);
+              const after = validateDeriveCondition(rule.when, withoutRegistry);
+              if (before === null && after !== null) {
+                unresolvedRefs.push({ factName: removedName, location: `disposition[${i}]`, when: rule.when });
+              }
+            }
+          }
+        }
+        if (unresolvedRefs.length > 0) {
+          res.status(409).json({ error: 'unresolved-fact-references', references: unresolvedRefs });
+          return;
+        }
+
+        factsToWrite = shapedFacts;
+      }
+
       // Step B: write the new config. If this throws, the resolutions have
       // already landed on disk; per Decision 3 the old config is still in
       // place and no assignment.invalid-status errors exist (every remap
       // target was in oldIds, every delete is gone). Surface the partial-apply
       // 500 to the client so it can refresh and retry.
       try {
-        // Preserve derive rules (phaseLadder/disposition/headline) AND custom
-        // fact declarations across a Settings save — the request body carries
-        // only definitions/order/transitions; rebuilding the block without
-        // `derive`/`facts` would silently delete the user's rules/declarations
-        // (same silent-deletion bug class).
         await writeStatusConfig({
-          statuses,
-          order,
-          transitions,
+          statuses: effectiveStatuses,
+          order: effectiveOrder,
+          transitions: effectiveTransitions,
           derive: currentConfig.derive ?? null,
-          facts: currentConfig.facts ?? null,
+          facts: factsToWrite,
         });
       } catch (err) {
         console.error('Error saving status config after applying resolutions:', err);

@@ -47,6 +47,7 @@ import { ViewDefaultsSection } from './ViewDefaultsSection';
 import { AgentsSection } from './AgentsSection';
 import { TerminalSection } from './TerminalSection';
 import { WorkspaceVisibilitySection } from './WorkspaceVisibilitySection';
+import { FactsSection } from './FactsSection';
 
 interface EditableStatus {
   rowKey: string;
@@ -676,6 +677,8 @@ export function SettingsPage() {
           </SortableContext>
         </DndContext>
       </SectionCard>
+
+      <FactsSection />
 
       {/* Save bar */}
       <div className="flex items-center gap-3">
