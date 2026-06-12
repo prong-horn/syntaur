@@ -118,33 +118,6 @@ export function StandaloneAssignmentDetail() {
         ) : null}
       </header>
 
-      <SectionCard title="Details">
-        <dl className="space-y-3 text-sm">
-          <DetailRow label="ID" value={assignment.id} copyable />
-          <DetailRow label="Priority" value={assignment.priority} />
-          {assignment.assignee && <DetailRow label="Assignee" value={assignment.assignee} />}
-          <DetailRow
-            label="Updated"
-            value={`${formatShortDateTime(assignment.updated)} · Created ${formatShortDate(assignment.created)}`}
-          />
-          {assignment.workspace.repository && (
-            <DetailRow label="Repository" value={assignment.workspace.repository} copyable />
-          )}
-          {assignment.workspace.worktreePath && (
-            <DetailRow label="Worktree" value={assignment.workspace.worktreePath} copyable />
-          )}
-          {assignment.workspace.branch && (
-            <DetailRow label="Branch" value={assignment.workspace.branch} copyable />
-          )}
-          {assignment.workspace.parentBranch && (
-            <DetailRow label="Parent branch" value={assignment.workspace.parentBranch} copyable />
-          )}
-          {assignment.externalIds.map((entry, idx) => (
-            <ExternalIdRow key={`${entry.system}:${entry.id}:${idx}`} entry={entry} />
-          ))}
-        </dl>
-      </SectionCard>
-
       {assignment.referencedBy && assignment.referencedBy.length > 0 ? (
         <SectionCard
           title="Referenced by"
@@ -172,189 +145,222 @@ export function StandaloneAssignmentDetail() {
         </SectionCard>
       ) : null}
 
-      <AgentSessionsSection
-        sessions={sessionsData?.sessions}
-        loading={sessionsLoading}
-        error={sessionsError}
-        onError={(e) => showToast(e.message, 'error')}
-        onNotice={(m) => showToast(m, 'success')}
-      />
+      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_280px]">
+        <div className="space-y-4">
+          <ContentTabs
+            value={tab}
+            onValueChange={(value) => setSearchParams({ tab: value })}
+            items={[
+              {
+                value: 'summary',
+                label: 'Summary',
+                content: (
+                  <div className="space-y-5">
+                    <SectionCard title="Assignment">
+                      <MarkdownRenderer
+                        content={assignment.body}
+                        emptyState="This assignment does not have summary markdown yet."
+                      />
+                    </SectionCard>
+                  </div>
+                ),
+              },
+              {
+                value: 'progress',
+                label: 'Progress',
+                count: assignment.progress?.entryCount ?? 0,
+                content: (
+                  <div className="space-y-5">
+                    {assignment.progress && assignment.progress.entries.length > 0 ? (
+                      <SectionCard
+                        title="Progress"
+                        description="Reverse-chronological log of work done on this assignment."
+                      >
+                        <ol className="space-y-4">
+                          {assignment.progress.entries.map((entry, idx) => (
+                            <li key={`${entry.timestamp}-${idx}`} className="border-l-2 border-border pl-3">
+                              <div className="text-xs font-mono text-muted-foreground">{entry.timestamp}</div>
+                              <MarkdownRenderer content={entry.body} />
+                            </li>
+                          ))}
+                        </ol>
+                      </SectionCard>
+                    ) : (
+                      <EmptyState
+                        title="No progress entries yet"
+                        description="Progress entries appear here as the agent appends them to progress.md."
+                      />
+                    )}
+                  </div>
+                ),
+              },
+              {
+                value: 'comments',
+                label: 'Comments',
+                count: assignment.comments?.entryCount ?? 0,
+                content: (
+                  <div className="space-y-5">
+                    <CommentsThread
+                      projectSlug={null}
+                      assignmentSlug={assignment.id}
+                      entries={assignment.comments?.entries ?? []}
+                    />
+                  </div>
+                ),
+              },
+              {
+                value: 'plan',
+                label: 'Plan',
+                content: (
+                  <div className="space-y-5">
+                    {assignment.plan ? (
+                      <SectionCard>
+                        <MarkdownRenderer content={assignment.plan.body} emptyState="Plan file exists but is empty." />
+                        <div className="mt-3 flex justify-end">
+                          <Link
+                            to={`/assignments/${assignment.id}/plan/edit`}
+                            className="rounded border border-border px-2 py-1 text-xs text-muted-foreground hover:border-foreground/40 hover:text-foreground"
+                          >
+                            Edit plan
+                          </Link>
+                        </div>
+                      </SectionCard>
+                    ) : (
+                      <EmptyState
+                        title="No plan file yet"
+                        description="Create one via the CLI or `/plan-assignment`."
+                      />
+                    )}
+                  </div>
+                ),
+              },
+              {
+                value: 'scratchpad',
+                label: 'Scratchpad',
+                content: (
+                  <div className="space-y-5">
+                    {assignment.scratchpad ? (
+                      <SectionCard>
+                        <MarkdownRenderer content={assignment.scratchpad.body} emptyState="Scratchpad is empty." />
+                        <div className="mt-3 flex justify-end">
+                          <Link
+                            to={`/assignments/${assignment.id}/scratchpad/edit`}
+                            className="rounded border border-border px-2 py-1 text-xs text-muted-foreground hover:border-foreground/40 hover:text-foreground"
+                          >
+                            Edit scratchpad
+                          </Link>
+                        </div>
+                      </SectionCard>
+                    ) : (
+                      <EmptyState
+                        title="No scratchpad yet"
+                        description="Scratchpad is scaffolded at assignment creation time."
+                      />
+                    )}
+                  </div>
+                ),
+              },
+              {
+                value: 'handoff',
+                label: 'Handoff',
+                count: assignment.handoff?.handoffCount ?? 0,
+                content: (
+                  <div className="space-y-5">
+                    {assignment.handoff ? (
+                      <SectionCard>
+                        <MarkdownRenderer content={assignment.handoff.body} emptyState="No handoff history yet." />
+                        <div className="mt-3 flex justify-end">
+                          <Link
+                            to={`/assignments/${assignment.id}/handoff/edit`}
+                            className="rounded border border-border px-2 py-1 text-xs text-muted-foreground hover:border-foreground/40 hover:text-foreground"
+                          >
+                            Append handoff
+                          </Link>
+                        </div>
+                      </SectionCard>
+                    ) : (
+                      <EmptyState
+                        title="No handoff log yet"
+                        description="Handoffs appear here when an agent appends one."
+                      />
+                    )}
+                  </div>
+                ),
+              },
+              {
+                value: 'decisions',
+                label: 'Decisions',
+                count: assignment.decisionRecord?.decisionCount ?? 0,
+                content: (
+                  <div className="space-y-5">
+                    {assignment.decisionRecord ? (
+                      <SectionCard>
+                        <MarkdownRenderer content={assignment.decisionRecord.body} emptyState="No decision history yet." />
+                        <div className="mt-3 flex justify-end">
+                          <Link
+                            to={`/assignments/${assignment.id}/decision-record/edit`}
+                            className="rounded border border-border px-2 py-1 text-xs text-muted-foreground hover:border-foreground/40 hover:text-foreground"
+                          >
+                            Append decision
+                          </Link>
+                        </div>
+                      </SectionCard>
+                    ) : (
+                      <EmptyState
+                        title="No decision record yet"
+                        description="Decision records appear here once appended."
+                      />
+                    )}
+                  </div>
+                ),
+              },
+            ]}
+          />
+        </div>
 
-      <AssignmentUsageSection
-        summary={usageData?.summary}
-        loading={usageLoading}
-        error={usageError}
-      />
+        <div className="min-w-0 space-y-5">
+          <SectionCard title="Details">
+            <dl className="space-y-3 text-sm">
+              <DetailRow label="ID" value={assignment.id} copyable />
+              <DetailRow label="Priority" value={assignment.priority} />
+              {assignment.assignee && <DetailRow label="Assignee" value={assignment.assignee} />}
+              <DetailRow
+                label="Updated"
+                value={`${formatShortDateTime(assignment.updated)} · Created ${formatShortDate(assignment.created)}`}
+              />
+              {assignment.workspace.repository && (
+                <DetailRow label="Repository" value={assignment.workspace.repository} copyable />
+              )}
+              {assignment.workspace.worktreePath && (
+                <DetailRow label="Worktree" value={assignment.workspace.worktreePath} copyable />
+              )}
+              {assignment.workspace.branch && (
+                <DetailRow label="Branch" value={assignment.workspace.branch} copyable />
+              )}
+              {assignment.workspace.parentBranch && (
+                <DetailRow label="Parent branch" value={assignment.workspace.parentBranch} copyable />
+              )}
+              {assignment.externalIds.map((entry, idx) => (
+                <ExternalIdRow key={`${entry.system}:${entry.id}:${idx}`} entry={entry} />
+              ))}
+            </dl>
+          </SectionCard>
 
-      <ContentTabs
-        value={tab}
-        onValueChange={(value) => setSearchParams({ tab: value })}
-        items={[
-          {
-            value: 'summary',
-            label: 'Summary',
-            content: (
-              <div className="space-y-5">
-                <SectionCard title="Assignment">
-                  <MarkdownRenderer
-                    content={assignment.body}
-                    emptyState="This assignment does not have summary markdown yet."
-                  />
-                </SectionCard>
-              </div>
-            ),
-          },
-          {
-            value: 'progress',
-            label: 'Progress',
-            count: assignment.progress?.entryCount ?? 0,
-            content: (
-              <div className="space-y-5">
-                {assignment.progress && assignment.progress.entries.length > 0 ? (
-                  <SectionCard
-                    title="Progress"
-                    description="Reverse-chronological log of work done on this assignment."
-                  >
-                    <ol className="space-y-4">
-                      {assignment.progress.entries.map((entry, idx) => (
-                        <li key={`${entry.timestamp}-${idx}`} className="border-l-2 border-border pl-3">
-                          <div className="text-xs font-mono text-muted-foreground">{entry.timestamp}</div>
-                          <MarkdownRenderer content={entry.body} />
-                        </li>
-                      ))}
-                    </ol>
-                  </SectionCard>
-                ) : (
-                  <EmptyState
-                    title="No progress entries yet"
-                    description="Progress entries appear here as the agent appends them to progress.md."
-                  />
-                )}
-              </div>
-            ),
-          },
-          {
-            value: 'comments',
-            label: 'Comments',
-            count: assignment.comments?.entryCount ?? 0,
-            content: (
-              <div className="space-y-5">
-                <CommentsThread
-                  projectSlug={null}
-                  assignmentSlug={assignment.id}
-                  entries={assignment.comments?.entries ?? []}
-                />
-              </div>
-            ),
-          },
-          {
-            value: 'plan',
-            label: 'Plan',
-            content: (
-              <div className="space-y-5">
-                {assignment.plan ? (
-                  <SectionCard>
-                    <MarkdownRenderer content={assignment.plan.body} emptyState="Plan file exists but is empty." />
-                    <div className="mt-3 flex justify-end">
-                      <Link
-                        to={`/assignments/${assignment.id}/plan/edit`}
-                        className="rounded border border-border px-2 py-1 text-xs text-muted-foreground hover:border-foreground/40 hover:text-foreground"
-                      >
-                        Edit plan
-                      </Link>
-                    </div>
-                  </SectionCard>
-                ) : (
-                  <EmptyState
-                    title="No plan file yet"
-                    description="Create one via the CLI or `/plan-assignment`."
-                  />
-                )}
-              </div>
-            ),
-          },
-          {
-            value: 'scratchpad',
-            label: 'Scratchpad',
-            content: (
-              <div className="space-y-5">
-                {assignment.scratchpad ? (
-                  <SectionCard>
-                    <MarkdownRenderer content={assignment.scratchpad.body} emptyState="Scratchpad is empty." />
-                    <div className="mt-3 flex justify-end">
-                      <Link
-                        to={`/assignments/${assignment.id}/scratchpad/edit`}
-                        className="rounded border border-border px-2 py-1 text-xs text-muted-foreground hover:border-foreground/40 hover:text-foreground"
-                      >
-                        Edit scratchpad
-                      </Link>
-                    </div>
-                  </SectionCard>
-                ) : (
-                  <EmptyState
-                    title="No scratchpad yet"
-                    description="Scratchpad is scaffolded at assignment creation time."
-                  />
-                )}
-              </div>
-            ),
-          },
-          {
-            value: 'handoff',
-            label: 'Handoff',
-            count: assignment.handoff?.handoffCount ?? 0,
-            content: (
-              <div className="space-y-5">
-                {assignment.handoff ? (
-                  <SectionCard>
-                    <MarkdownRenderer content={assignment.handoff.body} emptyState="No handoff history yet." />
-                    <div className="mt-3 flex justify-end">
-                      <Link
-                        to={`/assignments/${assignment.id}/handoff/edit`}
-                        className="rounded border border-border px-2 py-1 text-xs text-muted-foreground hover:border-foreground/40 hover:text-foreground"
-                      >
-                        Append handoff
-                      </Link>
-                    </div>
-                  </SectionCard>
-                ) : (
-                  <EmptyState
-                    title="No handoff log yet"
-                    description="Handoffs appear here when an agent appends one."
-                  />
-                )}
-              </div>
-            ),
-          },
-          {
-            value: 'decisions',
-            label: 'Decisions',
-            count: assignment.decisionRecord?.decisionCount ?? 0,
-            content: (
-              <div className="space-y-5">
-                {assignment.decisionRecord ? (
-                  <SectionCard>
-                    <MarkdownRenderer content={assignment.decisionRecord.body} emptyState="No decision history yet." />
-                    <div className="mt-3 flex justify-end">
-                      <Link
-                        to={`/assignments/${assignment.id}/decision-record/edit`}
-                        className="rounded border border-border px-2 py-1 text-xs text-muted-foreground hover:border-foreground/40 hover:text-foreground"
-                      >
-                        Append decision
-                      </Link>
-                    </div>
-                  </SectionCard>
-                ) : (
-                  <EmptyState
-                    title="No decision record yet"
-                    description="Decision records appear here once appended."
-                  />
-                )}
-              </div>
-            ),
-          },
-        ]}
-      />
+          <AgentSessionsSection
+            sessions={sessionsData?.sessions}
+            loading={sessionsLoading}
+            error={sessionsError}
+            onError={(e) => showToast(e.message, 'error')}
+            onNotice={(m) => showToast(m, 'success')}
+          />
+
+          <AssignmentUsageSection
+            summary={usageData?.summary}
+            loading={usageLoading}
+            error={usageError}
+          />
+        </div>
+      </div>
 
       <MoveToWorkspaceDialog
         open={moveOpen}
