@@ -876,7 +876,7 @@ export function ProjectDetail() {
                                     </Link>
                                   </td>
                                   ) : null}
-                                  {showCol('status') ? <td className="py-4"><StatusBadge status={assignment.status} /></td> : null}
+                                  {showCol('status') ? <td className="py-4"><StatusBadge status={assignment.status} className="max-w-[150px]" /></td> : null}
                                   <td className="py-4"><TypeChip type={assignment.type} compact /></td>
                                   {showCol('priority') ? <td className="py-4 capitalize text-muted-foreground">{assignment.priority}</td> : null}
                                   {showCol('assignee') ? <td className="py-4 text-muted-foreground">{assignment.assignee ?? '\u2014'}</td> : null}
@@ -1100,7 +1100,7 @@ function AssignmentCard({
           </p>
           <p className="text-sm text-muted-foreground">Updated {formatDate(assignment.updated)}</p>
         </div>
-        <StatusBadge status={assignment.status} />
+        <StatusBadge status={assignment.status} className="max-w-[150px]" />
       </div>
       <div className="mt-4 flex flex-wrap gap-2">
         <TypeChip type={assignment.type} />
