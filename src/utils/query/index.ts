@@ -11,7 +11,7 @@ import { compileNode, CompileError, type EvalContext, type Predicate } from './e
 import { ASSIGNMENT_FIELDS, type FieldRegistry, type QueryItem } from './fields.js';
 import { parseQuery } from './parser.js';
 
-export type { QueryError, QueryNode } from './ast.js';
+export type { QueryError, QueryNode, ComparisonOp } from './ast.js';
 export { parseQuery, ParseError } from './parser.js';
 export { compileNode, CompileError } from './evaluate.js';
 export type { EvalContext, Predicate } from './evaluate.js';
