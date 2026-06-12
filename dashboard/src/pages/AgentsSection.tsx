@@ -30,6 +30,8 @@ import {
   type PromptArgPosition,
 } from '@shared/agents-schema';
 import { SectionCard } from '../components/SectionCard';
+import { LaunchPromptInput } from '../components/LaunchPromptInput';
+import { tokenWarnings } from '../lib/launch-prompt-autocomplete';
 import { slugify } from '../lib/slug';
 import {
   useAgentsConfig,
@@ -258,6 +260,12 @@ function SortableAgentRow({
   const errorClass = (field: FieldKey) =>
     row.fieldErrors[field] ? 'border-error-foreground/60' : '';
 
+  const playbookSlugs = useMemo(() => playbooks.map((p) => p.slug), [playbooks]);
+  const promptWarnings = useMemo(
+    () => tokenWarnings(row.launchPrompt, playbookSlugs),
+    [row.launchPrompt, playbookSlugs],
+  );
+
   return (
     <div
       ref={setNodeRef}
@@ -426,17 +434,30 @@ function SortableAgentRow({
           <label className="text-[11px] uppercase tracking-wide text-muted-foreground/80">
             Launch prompt
           </label>
-          <textarea
+          {/* Type `@` to pick `@assignment` or an installed playbook by slug;
+              tokens resolve at launch. Single-line — LaunchPromptInput collapses
+              pasted newlines so a value can't break the config serializer or the
+              launch URL protocol. */}
+          <LaunchPromptInput
             value={row.launchPrompt}
+            onChange={(v) => onPatch({ launchPrompt: v })}
+            knownSlugs={playbookSlugs}
+            singleLine
             rows={2}
             placeholder="@assignment Run @<playbook> end-to-end. (optional)"
-            // Single-line field: collapse pasted newlines so a value can't break
-            // the config serializer or the launch URL protocol.
-            onChange={(e) => onPatch({ launchPrompt: e.target.value.replace(/[\r\n]+/g, ' ') })}
-            className={`editor-input mt-0.5 w-full font-mono ${errorClass('launchPrompt')}`}
+            wrapperClassName="mt-0.5"
+            className={`editor-input w-full font-mono ${errorClass('launchPrompt')}`}
+            aria-label="Launch prompt"
           />
           {row.fieldErrors.launchPrompt && (
             <p className="mt-0.5 text-[11px] text-error-foreground">{row.fieldErrors.launchPrompt}</p>
+          )}
+          {promptWarnings.length > 0 && !row.fieldErrors.launchPrompt && (
+            <ul className="mt-0.5 space-y-0.5 text-[11px] text-error-foreground">
+              {promptWarnings.map((w) => (
+                <li key={w}>{w}</li>
+              ))}
+            </ul>
           )}
         </div>
         <label className="col-span-full inline-flex items-center gap-1.5 text-xs text-muted-foreground">
