@@ -6,6 +6,7 @@ interface TabItem {
   value: string;
   label: string;
   count?: number;
+  problemCount?: number;
   content: ReactNode;
 }
 
@@ -38,6 +39,15 @@ export function ContentTabs({
             {typeof item.count === 'number' ? (
               <span className="rounded-full bg-background/20 px-2 py-0.5 text-xs data-[state=active]:bg-background/20">
                 {item.count}
+              </span>
+            ) : null}
+            {item.problemCount && item.problemCount > 0 ? (
+              <span
+                className="rounded-full bg-destructive/15 px-2 py-0.5 text-xs text-destructive"
+                aria-label={`${item.problemCount} ${item.problemCount === 1 ? 'error' : 'errors'}`}
+                title={`${item.problemCount} ${item.problemCount === 1 ? 'error' : 'errors'}`}
+              >
+                {item.problemCount}
               </span>
             ) : null}
           </Tabs.Trigger>
