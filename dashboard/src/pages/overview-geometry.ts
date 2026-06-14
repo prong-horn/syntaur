@@ -4,7 +4,7 @@ import type { WidgetGeometry, WidgetSize } from '@shared/saved-views-schema';
 export { MAX_ROWS };
 
 export const ROW_HEIGHT_PX = 20;
-export const GRID_GAP_PX = 16; // matches the grid's 1rem gap; used to derive column width
+export const GRID_GAP_PX = 16; // Grid gap in px (matches the 1rem CSS gap). Exported for consumers that derive column width from container width.
 
 // Legacy enum heights in row units, approximating today's ~320px / ~560px cards at ROW_HEIGHT_PX.
 // (320/20 = 16, 560/20 = 28) — module-internal, but export so tests/UI can reference.
@@ -32,6 +32,7 @@ export function activeColumnsForWidth(width: number): number {
 }
 
 export function scaleSpan(w: number, activeColumns: number): number {
+  if (activeColumns <= 0) return 1;
   return clamp(Math.round((w / GRID_COLUMNS) * activeColumns), 1, activeColumns);
 }
 

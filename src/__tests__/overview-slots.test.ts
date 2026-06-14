@@ -156,6 +156,8 @@ describe('scaleSpan', () => {
   it('scaleSpan(8, 12) === 4', () => expect(scaleSpan(8, 12)).toBe(4));
   it('scaleSpan(8, 1) === 1 (clamps to ≥1)', () => expect(scaleSpan(8, 1)).toBe(1));
   it('scaleSpan(1, 24) === 1', () => expect(scaleSpan(1, 24)).toBe(1));
+  it('scaleSpan(8, 0) === 1 (zero column guard)', () => expect(scaleSpan(8, 0)).toBe(1));
+  it('scaleSpan(8, -5) === 1 (negative column guard)', () => expect(scaleSpan(8, -5)).toBe(1));
 });
 
 // ---------------------------------------------------------------------------
@@ -205,6 +207,14 @@ describe('pxToRows', () => {
   it('uses ROW_HEIGHT_PX default: pxToRows(40) === 2', () => {
     expect(ROW_HEIGHT_PX).toBe(20);
     expect(pxToRows(40)).toBe(2);
+  });
+  it('negative drag: pxToRows(-110, 20) === -5 (Math.round(-5.5) === -5 in JS)', () => {
+    // -110 / 20 = -5.5; JS Math.round rounds toward +∞ on .5 ties, so Math.round(-5.5) = -5
+    expect(pxToRows(-110, 20)).toBe(-5);
+  });
+  it('negative drag default rowHeight: pxToRows(-30) === -1 (Math.round(-1.5) === -1 in JS)', () => {
+    // -30 / 20 = -1.5; JS Math.round(-1.5) = -1 (rounds toward +∞)
+    expect(pxToRows(-30)).toBe(-1);
   });
 });
 

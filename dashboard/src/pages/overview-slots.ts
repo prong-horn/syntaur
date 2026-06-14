@@ -11,6 +11,7 @@ export function nextSlotId(slots: DashboardSlot[]): string {
     }
   }
   let n = maxSuffix + 1; // starts at 0 when no conforming ids exist
+  // n = maxSuffix + 1 is never already present by construction; this loop is a defensive no-op guarding against duplicate ids in malformed input.
   while (idSet.has(`slot-${n}`)) n++;
   return `slot-${n}`;
 }
