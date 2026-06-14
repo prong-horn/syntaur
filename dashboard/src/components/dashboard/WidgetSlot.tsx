@@ -3,7 +3,7 @@ import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { GripVertical, Plus, Trash2, Replace, Maximize2, Settings2 } from 'lucide-react';
 import type { DashboardSlot, WidgetConfig, WidgetSize } from '@shared/saved-views-schema';
-import { WIDGET_SIZES } from '@shared/saved-views-schema';
+import { WIDGET_SIZES, isWidgetSize } from '@shared/saved-views-schema';
 import { cn } from '../../lib/utils';
 import { useSavedView } from '../../hooks/useSavedViews';
 import { OverflowMenu } from '../OverflowMenu';
@@ -75,8 +75,9 @@ export function WidgetSlot({ slot, onReplace, onRemove, onResize, onConfigChange
 
   // Absent `size` defaults to `small` (backward compatibility). The same
   // default feeds the submenu `active` check below so the checkmark and the
-  // rendered size can never disagree.
-  const size = slot.size ?? 'small';
+  // rendered size can never disagree. WidgetGeometry slots fall back to
+  // `small` CSS class (grid-based layout will override sizing via inline style).
+  const size = isWidgetSize(slot.size) ? slot.size : 'small';
   const sizeClass = SIZE_CLASS[size];
 
   if (slot.widget === null) {
@@ -204,7 +205,7 @@ export function WidgetDragPreview({ slot }: { slot: DashboardSlot }) {
     slot.widget === null
       ? 'Empty widget slot'
       : renderer?.title ?? `Unknown widget kind: ${slot.widget.kind}`;
-  const size = SIZE_LABEL[slot.size ?? 'small'];
+  const size = SIZE_LABEL[isWidgetSize(slot.size) ? slot.size : 'small'];
 
   return (
     <div
