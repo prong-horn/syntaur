@@ -14,6 +14,7 @@ import { runCcusage, isoToCcusageDate } from '../usage/ccusage-collector.js';
 import {
   walkClaudeProjects,
   walkCodexSessions,
+  walkPiSessions,
   type SessionMeta,
 } from '../usage/cwd-extractor.js';
 import { resolveAttribution } from '../usage/session-join.js';
@@ -183,6 +184,9 @@ async function collectAndPersist(): Promise<CollectInfo> {
     metaBySession.set(meta.sessionId, meta);
   }
   for await (const meta of walkCodexSessions({ sinceMtimeMs })) {
+    metaBySession.set(meta.sessionId, meta);
+  }
+  for await (const meta of walkPiSessions({ sinceMtimeMs })) {
     metaBySession.set(meta.sessionId, meta);
   }
 

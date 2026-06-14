@@ -1,0 +1,2 @@
+{"type":"session-start","version":1,"id":"019e97a7-2b1b-7afa-b080-cbb305f1412e","timestamp":"2026-06-05T11:59:35.707Z","cwd":"/Users/test/proj"}
+{"type":"assistant","timestamp":"2026-06-05T12:05:00.000Z","message":{"usage":{"input_tokens":100,"output_tokens":50}}}
