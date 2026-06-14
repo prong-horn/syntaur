@@ -96,10 +96,13 @@ export type WidgetKind = (typeof WIDGET_KINDS)[number];
 /** The two usage-widget kinds that share `UsageWidgetFilters` + the UsageWidget component. */
 export const USAGE_WIDGET_KINDS = ['token-usage', 'spend'] as const;
 
-// Per-slot sizing on the Overview dashboard. Two-axis named tiers: width
-// (1 vs 2 columns at the `xl` breakpoint) × height (normal vs tall). The
-// size→className mapping lives in the dashboard (Tailwind only scans
+// Per-slot sizing on the Overview dashboard. Legacy named tiers are retained for
+// back-compat and map to a `{w,h}` geometry at render time; new layouts store a
+// `WidgetGeometry` directly on a `GRID_COLUMNS`-column grid. The
+// size→className/geometry mapping lives in the dashboard (Tailwind only scans
 // `dashboard/`), not here. Absent `size` defaults to `small` at render.
+export const GRID_COLUMNS = 24;
+export const MAX_ROWS = 60;
 export const WIDGET_SIZES = ['small', 'wide', 'tall', 'large'] as const;
 export type WidgetSize = (typeof WIDGET_SIZES)[number];
 
@@ -107,20 +110,37 @@ export function isWidgetSize(value: unknown): value is WidgetSize {
   return typeof value === 'string' && (WIDGET_SIZES as readonly string[]).includes(value);
 }
 
+export interface WidgetGeometry {
+  w: number;
+  h: number;
+}
+
+export function isWidgetGeometry(value: unknown): value is WidgetGeometry {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const obj = value as Record<string, unknown>;
+  return (
+    Number.isInteger(obj.w) &&
+    (obj.w as number) >= 1 &&
+    (obj.w as number) <= GRID_COLUMNS &&
+    Number.isInteger(obj.h) &&
+    (obj.h as number) >= 1 &&
+    (obj.h as number) <= MAX_ROWS
+  );
+}
+
 export interface DashboardSlot {
   id: string;
   widget: WidgetConfig | null;
   // Optional for backward compatibility: pre-sizing layouts have no `size` and
-  // render at the `small` default. Validated by `isDashboardSlot`.
-  size?: WidgetSize;
+  // render at the `small` default. Validated by `isDashboardSlot`. `size` now
+  // also accepts a `{w,h}` WidgetGeometry for new grid-based layouts.
+  size?: WidgetSize | WidgetGeometry;
 }
 
 export interface DashboardLayout {
   version: 1;
   slots: DashboardSlot[];
 }
-
-export const DEFAULT_SLOT_COUNT = 5;
 
 export interface SavedViewsFile {
   version: 1;
@@ -272,7 +292,7 @@ export function isDashboardSlot(value: unknown): value is DashboardSlot {
   if (typeof obj.id !== 'string' || obj.id.length === 0) return false;
   // Validate `size` BEFORE the null-widget early return, so an empty slot with
   // an invalid size (e.g. from a cascade-deleted view) is still rejected.
-  if (obj.size !== undefined && !isWidgetSize(obj.size)) return false;
+  if (obj.size !== undefined && !isWidgetSize(obj.size) && !isWidgetGeometry(obj.size)) return false;
   if (obj.widget === null) return true;
   return isWidgetConfig(obj.widget);
 }
