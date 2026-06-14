@@ -34,6 +34,7 @@ import { ResourceDetail } from './pages/ResourceDetail';
 import { CreateResource } from './pages/CreateResource';
 import { EditResource } from './pages/EditResource';
 import { SettingsPage } from './pages/SettingsPage';
+import { WorkflowPage } from './pages/WorkflowPage';
 import { TodosPage } from './pages/TodosPage';
 import { WorkspaceTodosPage } from './pages/WorkspaceTodosPage';
 import { SavedViewsPage } from './pages/SavedViewsPage';
@@ -78,6 +79,7 @@ export function App() {
             <Route path="/views/:id" element={<SavedViewPage />} />
             <Route path="/help" element={<HelpPage />} />
             <Route path="/settings" element={<SettingsPage />} />
+            <Route path="/workflow" element={<WorkflowPage />} />
             <Route path="/create/project" element={<CreateProject />} />
             <Route path="/projects/:slug" element={<ProjectDetail />} />
             <Route path="/projects/:slug/edit" element={<EditProject />} />
