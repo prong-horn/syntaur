@@ -267,7 +267,6 @@ export async function extractPiSessionMeta(
   } catch {
     return null;
   }
-  let cwd: string | null = null;
   try {
     const stream = handle.createReadStream({ encoding: 'utf-8' });
     let buffer = '';
@@ -293,24 +292,22 @@ export async function extractPiSessionMeta(
     if (!parsed || typeof parsed !== 'object') return null;
     const obj = parsed as Record<string, unknown>;
     if (typeof obj.cwd !== 'string' || obj.cwd.length === 0) return null;
-    cwd = obj.cwd;
+    const cwd = obj.cwd;
+
+    const startTs = await readFirstTimestamp(jsonlPath);
+    const endTs = await readLastTimestamp(jsonlPath);
+
+    return {
+      tool: 'pi',
+      sessionId,
+      cwd,
+      startTs,
+      endTs,
+      path: jsonlPath,
+    };
   } finally {
     await handle.close().catch(() => {});
   }
-
-  if (!cwd) return null;
-
-  const startTs = await readFirstTimestamp(jsonlPath);
-  const endTs = await readLastTimestamp(jsonlPath);
-
-  return {
-    tool: 'pi',
-    sessionId,
-    cwd,
-    startTs,
-    endTs,
-    path: jsonlPath,
-  };
 }
 
 export function resolvePiSessionsRoot(override?: string): string {
@@ -352,10 +349,9 @@ export async function* walkPiSessions(opts: {
       let meta: PiSessionMeta | null;
       if (cachedCwd) {
         // Derive sessionId from filename; reuse cached cwd.
-        const basename = f.name;
-        const underscoreIdx = basename.lastIndexOf('_');
+        const underscoreIdx = f.name.lastIndexOf('_');
         if (underscoreIdx === -1) continue;
-        const sessionId = basename.slice(underscoreIdx + 1).replace(/\.jsonl$/, '');
+        const sessionId = f.name.slice(underscoreIdx + 1).replace(/\.jsonl$/, '');
         if (!sessionId) continue;
         const startTs = await readFirstTimestamp(filePath);
         const endTs = await readLastTimestamp(filePath);

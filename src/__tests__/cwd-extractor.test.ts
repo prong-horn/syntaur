@@ -270,6 +270,15 @@ describe('extractPiSessionMeta', () => {
     expect(meta).toBeNull();
   });
 
+  it('returns null when first line is invalid/truncated JSON', async () => {
+    const dir = resolve(sandbox, 'pi-badjson', '--slug--');
+    await mkdir(dir, { recursive: true });
+    const filePath = resolve(dir, `2026-06-05T00-00-00-000Z_cccccccc-dddd-eeee-ffff-000000000000.jsonl`);
+    await writeFile(filePath, '{bad json\n');
+    const meta = await extractPiSessionMeta(filePath);
+    expect(meta).toBeNull();
+  });
+
   it('returns null when filename has no underscore', async () => {
     const dir = resolve(sandbox, 'pi-badname', '--slug--');
     await mkdir(dir, { recursive: true });
@@ -330,6 +339,7 @@ describe('walkPiSessions', () => {
     }
     expect(results).toHaveLength(2);
     expect(results.every((m) => m.cwd === '/Users/cache/test')).toBe(true);
+    // filenames sort so the cwd-bearing file (T10-...) is read before the no-cwd file (T11-...)
     expect(results.map((m) => m.sessionId).sort()).toEqual([
       'aaaaaaaa-1111-2222-3333-444444444444',
       'bbbbbbbb-5555-6666-7777-888888888888',
