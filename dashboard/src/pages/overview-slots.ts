@@ -24,7 +24,11 @@ export function addSlot(slots: DashboardSlot[], geometry?: WidgetGeometry): Dash
   return [...slots, newSlot];
 }
 
-export function removeSlot(slots: DashboardSlot[], index: number): DashboardSlot[] {
-  if (index < 0 || index >= slots.length) return [...slots];
-  return slots.filter((_, i) => i !== index);
+/**
+ * Returns a new array with the slot matching `id` removed.
+ * A non-existent id returns a new array equal in contents to the input (still
+ * immutable — always a copy, never the same reference).
+ */
+export function removeSlot(slots: DashboardSlot[], id: string): DashboardSlot[] {
+  return slots.filter((slot) => slot.id !== id);
 }

@@ -126,8 +126,8 @@ export function Overview() {
   );
 
   const handleRemoveSlot = useCallback(
-    (index: number) => {
-      const nextSlots = removeSlot(slots, index);
+    (id: string) => {
+      const nextSlots = removeSlot(slots, id);
       void persistLayout(nextSlots, slots);
     },
     [slots, persistLayout],
@@ -263,7 +263,7 @@ export function Overview() {
                 colWidthPx={colWidthPx}
                 onReplace={() => openPicker(i)}
                 onRemove={() => handleRemove(i)}
-                onRemoveSlot={() => handleRemoveSlot(i)}
+                onRemoveSlot={() => handleRemoveSlot(slot.id)}
                 onResize={(size) => handleResize(i, size)}
                 onConfigChange={(next) => handleConfigChange(i, next)}
               />

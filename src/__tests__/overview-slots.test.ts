@@ -84,33 +84,25 @@ describe('addSlot', () => {
 // ---------------------------------------------------------------------------
 
 describe('removeSlot', () => {
-  it('removes the element at the given index', () => {
+  it('removes the slot with the given id', () => {
     const slots = makeSlots(['slot-0', 'slot-1', 'slot-2']);
-    const result = removeSlot(slots, 1);
+    const result = removeSlot(slots, 'slot-1');
     expect(result.map((s) => s.id)).toEqual(['slot-0', 'slot-2']);
-  });
-
-  it('length shrinks by 1', () => {
-    const slots = makeSlots(['slot-0', 'slot-1']);
-    expect(removeSlot(slots, 0)).toHaveLength(1);
+    expect(result).toHaveLength(2);
   });
 
   it('does not mutate the input array', () => {
     const slots = makeSlots(['slot-0', 'slot-1']);
-    removeSlot(slots, 0);
+    removeSlot(slots, 'slot-0');
     expect(slots).toHaveLength(2);
   });
 
-  it('out-of-range index returns an equal-length copy', () => {
+  it('unknown id returns a new array equal in contents to the input', () => {
     const slots = makeSlots(['slot-0', 'slot-1']);
-    const result = removeSlot(slots, 99);
+    const result = removeSlot(slots, 'slot-99');
     expect(result).toHaveLength(2);
-    expect(result).not.toBe(slots); // new array
-  });
-
-  it('negative index returns an equal-length copy', () => {
-    const slots = makeSlots(['slot-0']);
-    expect(removeSlot(slots, -1)).toHaveLength(1);
+    expect(result.map((s) => s.id)).toEqual(['slot-0', 'slot-1']);
+    expect(result).not.toBe(slots); // new array, not the same reference
   });
 });
 
