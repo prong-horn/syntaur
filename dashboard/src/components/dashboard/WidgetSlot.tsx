@@ -1,13 +1,22 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { GripVertical, Plus, Trash2, Replace, Maximize2, Settings2 } from 'lucide-react';
+import { GRID_COLUMNS, MAX_ROWS } from '@shared/saved-views-schema';
 import type { DashboardSlot, WidgetConfig, WidgetGeometry, WidgetSize } from '@shared/saved-views-schema';
 import { cn } from '../../lib/utils';
 import { useSavedView } from '../../hooks/useSavedViews';
 import { OverflowMenu } from '../OverflowMenu';
 import { widgetRegistry } from './widgetRegistry';
-import { resolveGeometry, scaleSpan, SIZE_PRESETS } from '../../pages/overview-geometry';
+import {
+  clamp,
+  MIN_ROWS,
+  pxToCols,
+  pxToRows,
+  resolveGeometry,
+  scaleSpan,
+  SIZE_PRESETS,
+} from '../../pages/overview-geometry';
 
 interface WidgetSlotProps {
   slot: DashboardSlot;
@@ -21,8 +30,30 @@ interface WidgetSlotProps {
   onConfigChange: (next: WidgetConfig) => Promise<void>;
 }
 
-export function WidgetSlot({ slot, activeColumns, onReplace, onRemove, onResize, onConfigChange }: WidgetSlotProps) {
+export function WidgetSlot({
+  slot,
+  activeColumns,
+  colWidthPx,
+  onReplace,
+  onRemove,
+  onResize,
+  onConfigChange,
+}: WidgetSlotProps) {
   const [configuring, setConfiguring] = useState(false);
+  // Live resize preview, tracked in RENDER space (render columns, row units) so
+  // we never re-round into stored 24-col space mid-gesture (avoids drift/jitter).
+  const [preview, setPreview] = useState<{ renderW: number; h: number } | null>(null);
+  // Mutable gesture state. `lastRenderW`/`lastH` mirror the latest preview so
+  // onPointerUp can commit from this ref (synchronous) instead of stale React state.
+  const gestureRef = useRef<{
+    startX: number;
+    startY: number;
+    startRenderW: number;
+    startH: number;
+    axis: 'w' | 'h' | 'both';
+    lastRenderW: number;
+    lastH: number;
+  } | null>(null);
   const {
     attributes,
     listeners,
@@ -34,7 +65,10 @@ export function WidgetSlot({ slot, activeColumns, onReplace, onRemove, onResize,
   } = useSortable({ id: slot.id });
 
   const geom = resolveGeometry(slot.size);
-  const renderW = scaleSpan(geom.w, activeColumns);
+  // Prefer the live preview while a resize gesture is active so the grid reflows
+  // in real time; fall back to the persisted geometry otherwise.
+  const effRenderW = preview ? preview.renderW : scaleSpan(geom.w, activeColumns);
+  const effRowSpan = preview ? preview.h : geom.h;
 
   const style = {
     // Preserve intrinsic widget dimensions when sorting between differently
@@ -43,9 +77,97 @@ export function WidgetSlot({ slot, activeColumns, onReplace, onRemove, onResize,
     transition,
     zIndex: isDragging ? 50 : undefined,
     position: isDragging ? ('relative' as const) : undefined,
-    gridColumn: `span ${renderW}`,
-    gridRow: `span ${geom.h}`,
+    gridColumn: `span ${effRenderW}`,
+    gridRow: `span ${effRowSpan}`,
   };
+
+  function makeResizeHandlers(axis: 'w' | 'h' | 'both') {
+    return {
+      onPointerDown: (e: React.PointerEvent) => {
+        e.preventDefault();
+        e.stopPropagation(); // never let a handle drag start a dnd sort
+        (e.currentTarget as Element).setPointerCapture(e.pointerId);
+        const startRenderW = scaleSpan(geom.w, activeColumns);
+        gestureRef.current = {
+          startX: e.clientX,
+          startY: e.clientY,
+          startRenderW,
+          startH: geom.h,
+          axis,
+          lastRenderW: startRenderW,
+          lastH: geom.h,
+        };
+        setPreview({ renderW: startRenderW, h: geom.h });
+      },
+      onPointerMove: (e: React.PointerEvent) => {
+        const g = gestureRef.current;
+        if (!g) return;
+        let renderW = g.startRenderW;
+        let h = g.startH;
+        if (g.axis === 'w' || g.axis === 'both') {
+          renderW = clamp(g.startRenderW + pxToCols(e.clientX - g.startX, colWidthPx), 1, activeColumns);
+        }
+        if (g.axis === 'h' || g.axis === 'both') {
+          h = clamp(g.startH + pxToRows(e.clientY - g.startY), MIN_ROWS, MAX_ROWS);
+        }
+        // Stash the authoritative latest values on the ref so onPointerUp never
+        // reads stale React state (setPreview is async/batched).
+        g.lastRenderW = renderW;
+        g.lastH = h;
+        setPreview({ renderW, h });
+      },
+      onPointerUp: (e: React.PointerEvent) => {
+        const g = gestureRef.current;
+        gestureRef.current = null;
+        try {
+          (e.currentTarget as Element).releasePointerCapture(e.pointerId);
+        } catch {
+          /* pointer already released */
+        }
+        setPreview(null);
+        if (!g) return;
+        const current = resolveGeometry(slot.size);
+        // Only convert width back to stored 24-col space if this gesture touched
+        // the width axis. A height-only gesture (e.g. at 1 column, where render
+        // width is always clamped to 1) must preserve the persisted stored width
+        // rather than collapsing it through the render→stored round-trip.
+        const storedW =
+          g.axis === 'h'
+            ? current.w
+            : clamp(Math.round((g.lastRenderW / activeColumns) * GRID_COLUMNS), 1, GRID_COLUMNS);
+        const next: WidgetGeometry = { w: storedW, h: g.lastH };
+        if (next.w !== current.w || next.h !== current.h) {
+          onResize(next); // existing optimistic persist + rollback
+        }
+      },
+    };
+  }
+
+  const resizeHandleClass =
+    'absolute z-10 touch-none rounded-sm bg-transparent transition hover:bg-primary/30';
+  const resizeHandles = (
+    <>
+      {activeColumns > 1 ? (
+        <div
+          aria-hidden="true"
+          className={cn(resizeHandleClass, 'right-0 top-0 h-full w-1.5 cursor-ew-resize')}
+          {...makeResizeHandlers('w')}
+        />
+      ) : null}
+      <div
+        aria-hidden="true"
+        className={cn(resizeHandleClass, 'bottom-0 left-0 h-1.5 w-full cursor-ns-resize')}
+        {...makeResizeHandlers('h')}
+      />
+      {activeColumns > 1 ? (
+        <div
+          aria-hidden="true"
+          className={cn(resizeHandleClass, 'bottom-0 right-0 h-3 w-3 cursor-nwse-resize')}
+          {...makeResizeHandlers('both')}
+        />
+      ) : null}
+    </>
+  );
 
   const dragHandle = (
     <button
@@ -79,6 +201,7 @@ export function WidgetSlot({ slot, activeColumns, onReplace, onRemove, onResize,
           <Plus className="h-4 w-4" />
           Add widget
         </button>
+        {resizeHandles}
       </div>
     );
   }
@@ -90,7 +213,7 @@ export function WidgetSlot({ slot, activeColumns, onReplace, onRemove, onResize,
         ref={setNodeRef}
         style={style}
         className={cn(
-          'overflow-auto rounded-lg border border-border/60 bg-card/85 p-3 shadow-sm',
+          'relative overflow-auto rounded-lg border border-border/60 bg-card/85 p-3 shadow-sm',
           isDragging && 'opacity-0',
         )}
       >
@@ -100,6 +223,7 @@ export function WidgetSlot({ slot, activeColumns, onReplace, onRemove, onResize,
             Unknown widget kind: {slot.widget.kind}
           </div>
         </div>
+        {resizeHandles}
       </div>
     );
   }
@@ -112,7 +236,7 @@ export function WidgetSlot({ slot, activeColumns, onReplace, onRemove, onResize,
       ref={setNodeRef}
       style={style}
       className={cn(
-        'overflow-auto rounded-lg border border-border/60 bg-card/85 p-3 shadow-sm',
+        'relative overflow-auto rounded-lg border border-border/60 bg-card/85 p-3 shadow-sm',
         isDragging && 'opacity-0',
       )}
     >
@@ -171,6 +295,7 @@ export function WidgetSlot({ slot, activeColumns, onReplace, onRemove, onResize,
           onCancel={() => setConfiguring(false)}
         />
       ) : null}
+      {resizeHandles}
     </div>
   );
 }

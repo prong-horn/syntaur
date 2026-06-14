@@ -6,6 +6,8 @@ export { MAX_ROWS };
 export const ROW_HEIGHT_PX = 20;
 export const GRID_GAP_PX = 16; // Grid gap in px (matches the 1rem CSS gap). Exported for consumers that derive column width from container width.
 
+export const MIN_ROWS = 2; // Minimum widget height in row units (used to clamp drag-to-resize).
+
 // Legacy enum heights in row units, approximating today's ~320px / ~560px cards at ROW_HEIGHT_PX.
 // (320/20 = 16, 560/20 = 28) — module-internal, but export so tests/UI can reference.
 export const HSHORT = 16;
