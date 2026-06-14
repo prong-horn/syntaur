@@ -127,7 +127,7 @@ export async function collectAndPersist(): Promise<CollectInfo> {
 /**
  * Full collection pipeline: ingest → rollup → advance the collector heartbeat.
  *
- * `usage_collector_last_run` is a DISTINCT key from `usage_last_collector_run`
+ * `usage_collector_heartbeat` is a DISTINCT key from `usage_last_collector_run`
  * (the data high-water mark). It records *when the collector ran*, regardless
  * of whether new data arrived.
  *
@@ -136,6 +136,6 @@ export async function collectAndPersist(): Promise<CollectInfo> {
 export async function collectUsage(): Promise<CollectInfo> {
   const info = await collectAndPersist();
   runRollup();
-  advanceMetaIso('usage_collector_last_run', new Date().toISOString());
+  advanceMetaIso('usage_collector_heartbeat', new Date().toISOString());
   return info;
 }

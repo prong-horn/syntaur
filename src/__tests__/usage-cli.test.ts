@@ -173,7 +173,7 @@ exit 0
     expect(events.length).toBeGreaterThan(0);
     expect(getMeta('usage_last_collector_run')).not.toBeNull();
     // collectUsage() stamps a distinct heartbeat key on every completed run.
-    expect(getMeta('usage_collector_last_run')).not.toBeNull();
+    expect(getMeta('usage_collector_heartbeat')).not.toBeNull();
 
     const parsed = JSON.parse(logs.join(''));
     expect(parsed.daily.length).toBeGreaterThan(0);
@@ -239,6 +239,40 @@ exit 1
 
     expect(getMeta('usage_last_collector_run')).toBeNull();
     expect(warns.some((w) => w.includes('ccusage session exited'))).toBe(true);
+  });
+
+  it('heartbeat advances even when ccusage returns no new rows', async () => {
+    initSessionDb();
+    initUsageDb();
+
+    // Stub ccusage to return an empty-but-valid sessions payload (no rows).
+    const stubPath = resolve(sandbox, 'ccusage');
+    await writeFile(
+      stubPath,
+      `#!/usr/bin/env bash
+if [ "$1" = "--version" ]; then echo "ccusage 20.0.1"; exit 0; fi
+echo '{"sessions":[]}'
+exit 0
+`,
+    );
+    await chmod(stubPath, 0o755);
+    const oldPath = process.env.PATH;
+    process.env.PATH = `${sandbox}:${oldPath ?? ''}`;
+    process.env.CODEX_SESSIONS_DIR = resolve(sandbox, 'codex');
+    await mkdir(process.env.CODEX_SESSIONS_DIR, { recursive: true });
+
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    await runUsage({ json: true });
+
+    log.mockRestore();
+    process.env.PATH = oldPath;
+    delete process.env.CODEX_SESSIONS_DIR;
+
+    // Heartbeat must advance on every completed run — even a no-data run.
+    expect(getMeta('usage_collector_heartbeat')).not.toBeNull();
+    // Data high-water mark must NOT advance when no new rows arrived.
+    expect(getMeta('usage_last_collector_run')).toBeNull();
   });
 
   it('--project filter restricts the rendered set', async () => {
