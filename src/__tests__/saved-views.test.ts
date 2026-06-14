@@ -17,13 +17,16 @@ import {
 } from '../utils/saved-views.js';
 import {
   DEFAULT_SAVED_VIEWS_FILE,
+  GRID_COLUMNS,
   isDashboardSlot,
   isProjectDetailCompatible,
   isSavedView,
   isSavedViewConfig,
   isViewFilters,
   isWidgetConfig,
+  isWidgetGeometry,
   isWidgetSize,
+  MAX_ROWS,
   WIDGET_SIZES,
   type DashboardSlot,
   type SavedViewConfig,
@@ -246,6 +249,62 @@ describe('saved-views CRUD helpers', () => {
     // Invalid size on an EMPTY slot is rejected too — regression guard: the size
     // check must run BEFORE the `widget === null` early return.
     expect(isDashboardSlot({ id: 'slot-0', widget: null, size: 'huge' })).toBe(false);
+  });
+
+  describe('isWidgetGeometry', () => {
+    it('accepts valid geometry objects', () => {
+      // Typical mid-range values
+      expect(isWidgetGeometry({ w: 12, h: 8 })).toBe(true);
+      // Corner values — minimum bounds
+      expect(isWidgetGeometry({ w: 1, h: 1 })).toBe(true);
+      // Corner values — maximum bounds (GRID_COLUMNS × MAX_ROWS)
+      expect(isWidgetGeometry({ w: GRID_COLUMNS, h: MAX_ROWS })).toBe(true);
+      expect(isWidgetGeometry({ w: 24, h: 60 })).toBe(true);
+    });
+
+    it('rejects out-of-range dimensions', () => {
+      for (const bad of [
+        { w: 0, h: 8 },   // w < 1
+        { w: 25, h: 8 },  // w > GRID_COLUMNS (24)
+        { w: 12, h: 0 },  // h < 1
+        { w: 12, h: 61 }, // h > MAX_ROWS (60)
+      ]) {
+        expect(isWidgetGeometry(bad)).toBe(false);
+      }
+    });
+
+    it('rejects non-integer dimensions', () => {
+      expect(isWidgetGeometry({ w: 1.5, h: 8 })).toBe(false);
+      expect(isWidgetGeometry({ w: 12, h: 8.2 })).toBe(false);
+    });
+
+    it('rejects objects with missing properties', () => {
+      expect(isWidgetGeometry({ w: 5 })).toBe(false); // missing h
+      expect(isWidgetGeometry({ h: 5 })).toBe(false); // missing w
+      expect(isWidgetGeometry({})).toBe(false);        // both missing
+    });
+
+    it('rejects non-object values', () => {
+      for (const bad of [
+        'small',     // legacy enum string — NOT a geometry
+        null,
+        undefined,
+        [],          // empty array
+        [12, 8],     // array shaped like coords
+        42,          // number
+      ]) {
+        expect(isWidgetGeometry(bad)).toBe(false);
+      }
+    });
+  });
+
+  it('isDashboardSlot accepts and rejects WidgetGeometry as the size field', () => {
+    // Geometry on a filled slot
+    expect(isDashboardSlot({ id: 'slot-0', widget: { kind: 'agent-sessions' }, size: { w: 12, h: 8 } })).toBe(true);
+    // Geometry on an empty slot
+    expect(isDashboardSlot({ id: 'slot-0', widget: null, size: { w: 12, h: 8 } })).toBe(true);
+    // Invalid geometry on an empty slot — exercises size check BEFORE null-widget early return
+    expect(isDashboardSlot({ id: 'slot-0', widget: null, size: { w: 99, h: 8 } })).toBe(false);
   });
 
   it('setDashboardLayout round-trips slot sizes and leaves size-less slots untouched', () => {
