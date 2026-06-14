@@ -33,6 +33,7 @@ export const STATIC_PAGES = [
   { id: 'page-playbooks',   title: 'Playbooks',   basePath: '/playbooks',   keywords: [] },
   { id: 'page-memories',    title: 'Memories',    basePath: '/memories',    keywords: ['knowledge', 'learnings'] },
   { id: 'page-resources',   title: 'Resources',   basePath: '/resources',   keywords: ['knowledge', 'reference'] },
+  { id: 'page-workflow',    title: 'Workflow',    basePath: '/workflow',    keywords: ['statuses', 'transitions', 'derive', 'facts'] },
   { id: 'page-settings',    title: 'Settings',    basePath: '/settings',    keywords: [] },
   { id: 'page-help',        title: 'Help',        basePath: '/help',        keywords: ['shortcuts'] },
 ] as const;
