@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { formatDuration } from '../../dashboard/src/lib/format';
 import { buildShellMeta, getSidebarSection, isSidebarItemActive } from '../../dashboard/src/lib/routes';
+import { STATIC_PAGES } from '../../dashboard/src/hotkeys/paletteIndex';
 
 describe('dashboard route helpers', () => {
   it('maps agent sessions routes to the correct shell title and sidebar item', () => {
@@ -8,6 +9,19 @@ describe('dashboard route helpers', () => {
     expect(getSidebarSection('/agent-sessions')).toBe('/agent-sessions');
     expect(isSidebarItemActive('/agent-sessions', '/agent-sessions')).toBe(true);
     expect(isSidebarItemActive('/agent-sessions', '/servers')).toBe(false);
+  });
+
+  it('maps the workflow route to the correct shell title and sidebar item', () => {
+    expect(buildShellMeta('/workflow').title).toBe('Workflow');
+    expect(getSidebarSection('/workflow')).toBe('/workflow');
+    expect(isSidebarItemActive('/workflow', '/workflow')).toBe(true);
+    expect(isSidebarItemActive('/workflow', '/settings')).toBe(false);
+  });
+
+  it('exposes the workflow page in the command palette index', () => {
+    const entry = STATIC_PAGES.find((page) => page.basePath === '/workflow');
+    expect(entry).toBeDefined();
+    expect(entry?.title).toBe('Workflow');
   });
 });
 
