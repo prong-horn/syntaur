@@ -127,8 +127,8 @@ describe('resolveGeometry', () => {
     expect(resolveGeometry('large')).toEqual({ w: 16, h: HTALL });
   });
 
-  it('undefined → { w: 8, h: 16 }', () => {
-    expect(resolveGeometry(undefined)).toEqual({ w: 8, h: 16 });
+  it('undefined → { w: 8, h: HSHORT } (absent size = default short)', () => {
+    expect(resolveGeometry(undefined)).toEqual({ w: 8, h: HSHORT });
   });
 
   it('a passed geometry {w:13,h:7} returns unchanged', () => {
@@ -196,17 +196,17 @@ describe('pxToCols', () => {
 describe('pxToRows', () => {
   it('pxToRows(100, 20) === 5', () => expect(pxToRows(100, 20)).toBe(5));
   it('rounds: pxToRows(110, 20) === 6', () => expect(pxToRows(110, 20)).toBe(6));
-  it('uses ROW_HEIGHT_PX default: pxToRows(40) === 2', () => {
-    expect(ROW_HEIGHT_PX).toBe(20);
-    expect(pxToRows(40)).toBe(2);
+  it('uses ROW_HEIGHT_PX default: pxToRows(100) === 2', () => {
+    expect(ROW_HEIGHT_PX).toBe(50);
+    expect(pxToRows(100)).toBe(2);
   });
   it('negative drag: pxToRows(-110, 20) === -5 (Math.round(-5.5) === -5 in JS)', () => {
     // -110 / 20 = -5.5; JS Math.round rounds toward +∞ on .5 ties, so Math.round(-5.5) = -5
     expect(pxToRows(-110, 20)).toBe(-5);
   });
-  it('negative drag default rowHeight: pxToRows(-30) === -1 (Math.round(-1.5) === -1 in JS)', () => {
-    // -30 / 20 = -1.5; JS Math.round(-1.5) = -1 (rounds toward +∞)
-    expect(pxToRows(-30)).toBe(-1);
+  it('negative drag default rowHeight: pxToRows(-125) === -2 (Math.round(-2.5) === -2 in JS)', () => {
+    // -125 / 50 = -2.5; JS Math.round rounds toward +∞ on .5 ties, so Math.round(-2.5) = -2
+    expect(pxToRows(-125)).toBe(-2);
   });
 });
 
