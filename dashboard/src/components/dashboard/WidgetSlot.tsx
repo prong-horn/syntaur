@@ -10,6 +10,7 @@ import { OverflowMenu } from '../OverflowMenu';
 import { widgetRegistry } from './widgetRegistry';
 import {
   clamp,
+  GRID_GAP_PX,
   MAX_ROWS,
   MIN_ROWS,
   pxToCols,
@@ -228,7 +229,7 @@ export function WidgetSlot({
         ref={setNodeRef}
         style={style}
         className={cn(
-          'relative flex items-center justify-center rounded-lg border border-dashed border-border/60 bg-card/40 p-3 shadow-sm',
+          'relative flex items-center justify-center rounded-lg border border-dashed border-border bg-card/40 p-3 shadow-sm transition-colors hover:border-primary/40 hover:bg-card/60',
           isDragging && 'opacity-0',
         )}
       >
@@ -349,7 +350,15 @@ export function WidgetSlot({
   );
 }
 
-export function WidgetDragPreview({ slot }: { slot: DashboardSlot }) {
+export function WidgetDragPreview({
+  slot,
+  activeColumns,
+  colWidthPx,
+}: {
+  slot: DashboardSlot;
+  activeColumns: number;
+  colWidthPx: number;
+}) {
   const renderer = slot.widget ? widgetRegistry[slot.widget.kind] : null;
   const Icon = renderer?.icon;
   const title =
@@ -357,10 +366,16 @@ export function WidgetDragPreview({ slot }: { slot: DashboardSlot }) {
       ? 'Empty widget slot'
       : renderer?.title ?? `Unknown widget kind: ${slot.widget.kind}`;
 
+  const geom = resolveGeometry(slot.size);
+  const renderW = scaleSpan(geom.w, activeColumns);
+  const widthPx =
+    colWidthPx > 0 ? renderW * colWidthPx + (renderW - 1) * GRID_GAP_PX : undefined;
+
   return (
     <div
       aria-hidden="true"
-      className="w-72 rounded-lg border border-border/70 bg-card/95 p-3 shadow-xl ring-1 ring-foreground/10"
+      className="min-w-[200px] rounded-lg border border-border/70 bg-card/95 p-3 shadow-xl ring-1 ring-foreground/10"
+      style={{ width: widthPx ? `${Math.max(widthPx, 200)}px` : undefined }}
     >
       <div className="flex items-center gap-2 text-xs uppercase tracking-[0.12em] text-muted-foreground">
         <GripVertical className="h-4 w-4" aria-hidden="true" />

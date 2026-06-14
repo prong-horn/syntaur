@@ -271,7 +271,13 @@ export function Overview() {
           </div>
         </SortableContext>
         <DragOverlay dropAnimation={null}>
-          {activeSlot ? <WidgetDragPreview slot={activeSlot} /> : null}
+          {activeSlot ? (
+            <WidgetDragPreview
+              slot={activeSlot}
+              activeColumns={activeColumns}
+              colWidthPx={colWidthPx}
+            />
+          ) : null}
         </DragOverlay>
       </DndContext>
 
