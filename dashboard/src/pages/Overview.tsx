@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   closestCenter,
   DndContext,
@@ -29,7 +29,9 @@ import {
   setDashboardLayout,
 } from '../hooks/useSavedViews';
 import { useHotkey, useHotkeyScope } from '../hotkeys';
-import type { DashboardSlot, WidgetConfig, WidgetSize } from '@shared/saved-views-schema';
+import { GRID_COLUMNS } from '@shared/saved-views-schema';
+import type { DashboardSlot, WidgetConfig, WidgetGeometry, WidgetSize } from '@shared/saved-views-schema';
+import { activeColumnsForWidth, GRID_GAP_PX, ROW_HEIGHT_PX } from './overview-geometry';
 
 export function Overview() {
   const { data: overview, error, refetch } = useOverview();
@@ -41,6 +43,26 @@ export function Overview() {
   const [layoutError, setLayoutError] = useState<string | null>(null);
   const [slots, setSlots] = useState<DashboardSlot[]>(layout.slots);
   const [activeSlotId, setActiveSlotId] = useState<string | null>(null);
+
+  const gridRef = useRef<HTMLDivElement>(null);
+  const [activeColumns, setActiveColumns] = useState(GRID_COLUMNS);
+  const [colWidthPx, setColWidthPx] = useState(0);
+
+  useEffect(() => {
+    const el = gridRef.current;
+    if (!el) return;
+    const observer = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        const width = entry.contentRect.width;
+        const cols = activeColumnsForWidth(width);
+        const cw = cols > 0 ? (width - (cols - 1) * GRID_GAP_PX) / cols : 0;
+        setActiveColumns(cols);
+        setColWidthPx(cw);
+      }
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
 
   useEffect(() => {
     setSlots(layout.slots);
@@ -103,10 +125,8 @@ export function Overview() {
   );
 
   const handleResize = useCallback(
-    (index: number, size: WidgetSize) => {
-      const nextSlots = slots.map((slot, i) =>
-        i === index ? { ...slot, size } : slot,
-      );
+    (index: number, size: WidgetSize | WidgetGeometry) => {
+      const nextSlots = slots.map((slot, i) => (i === index ? { ...slot, size } : slot));
       void persistLayout(nextSlots, slots);
     },
     [slots, persistLayout],
@@ -210,12 +230,23 @@ export function Overview() {
           items={slots.map((slot) => slot.id)}
           strategy={rectSortingStrategy}
         >
-          <div className="grid grid-flow-dense grid-cols-1 gap-4 xl:grid-cols-2">
+          <div
+            ref={gridRef}
+            style={{
+              display: 'grid',
+              gridTemplateColumns: `repeat(${activeColumns}, minmax(0, 1fr))`,
+              gridAutoRows: `${ROW_HEIGHT_PX}px`,
+              gridAutoFlow: 'dense',
+              gap: `${GRID_GAP_PX}px`,
+            }}
+          >
             {slots.map((slot, i) => (
               <WidgetSlot
                 key={slot.id}
                 slot={slot}
                 index={i}
+                activeColumns={activeColumns}
+                colWidthPx={colWidthPx}
                 onReplace={() => openPicker(i)}
                 onRemove={() => handleRemove(i)}
                 onResize={(size) => handleResize(i, size)}

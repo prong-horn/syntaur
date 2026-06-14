@@ -2,44 +2,26 @@ import { useState } from 'react';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { GripVertical, Plus, Trash2, Replace, Maximize2, Settings2 } from 'lucide-react';
-import type { DashboardSlot, WidgetConfig, WidgetSize } from '@shared/saved-views-schema';
-import { WIDGET_SIZES, isWidgetSize } from '@shared/saved-views-schema';
+import type { DashboardSlot, WidgetConfig, WidgetGeometry, WidgetSize } from '@shared/saved-views-schema';
 import { cn } from '../../lib/utils';
 import { useSavedView } from '../../hooks/useSavedViews';
 import { OverflowMenu } from '../OverflowMenu';
 import { widgetRegistry } from './widgetRegistry';
+import { resolveGeometry, scaleSpan, SIZE_PRESETS } from '../../pages/overview-geometry';
 
 interface WidgetSlotProps {
   slot: DashboardSlot;
   index: number;
+  activeColumns: number;
+  colWidthPx: number;
   onReplace: () => void;
   onRemove: () => void;
-  onResize: (size: WidgetSize) => void;
+  onResize: (size: WidgetSize | WidgetGeometry) => void;
   /** Persist an edited config for this slot's widget. Rejects on failure so the editor can stay open. */
   onConfigChange: (next: WidgetConfig) => Promise<void>;
 }
 
-// Size → Tailwind classes. These MUST be literal full class strings (no string
-// interpolation) and live under `dashboard/src/` so Tailwind's content scan
-// (which only covers `dashboard/`) keeps them in the production build. Width
-// spans 2 columns at the `xl` breakpoint (the grid is single-column below
-// `xl`, so `xl:col-span-2` is a no-op there); height is a `min-h` tier rather
-// than a grid row-span so neighbouring slots stay predictable.
-const SIZE_CLASS: Record<WidgetSize, string> = {
-  small: 'min-h-[320px]',
-  wide: 'xl:col-span-2 min-h-[320px]',
-  tall: 'min-h-[560px]',
-  large: 'xl:col-span-2 min-h-[560px]',
-};
-
-const SIZE_LABEL: Record<WidgetSize, string> = {
-  small: 'Small',
-  wide: 'Wide',
-  tall: 'Tall',
-  large: 'Large',
-};
-
-export function WidgetSlot({ slot, onReplace, onRemove, onResize, onConfigChange }: WidgetSlotProps) {
+export function WidgetSlot({ slot, activeColumns, onReplace, onRemove, onResize, onConfigChange }: WidgetSlotProps) {
   const [configuring, setConfiguring] = useState(false);
   const {
     attributes,
@@ -51,6 +33,9 @@ export function WidgetSlot({ slot, onReplace, onRemove, onResize, onConfigChange
     isDragging,
   } = useSortable({ id: slot.id });
 
+  const geom = resolveGeometry(slot.size);
+  const renderW = scaleSpan(geom.w, activeColumns);
+
   const style = {
     // Preserve intrinsic widget dimensions when sorting between differently
     // sized grid cells; dnd-kit's scale terms visibly squash wide/tall cards.
@@ -58,6 +43,8 @@ export function WidgetSlot({ slot, onReplace, onRemove, onResize, onConfigChange
     transition,
     zIndex: isDragging ? 50 : undefined,
     position: isDragging ? ('relative' as const) : undefined,
+    gridColumn: `span ${renderW}`,
+    gridRow: `span ${geom.h}`,
   };
 
   const dragHandle = (
@@ -73,13 +60,6 @@ export function WidgetSlot({ slot, onReplace, onRemove, onResize, onConfigChange
     </button>
   );
 
-  // Absent `size` defaults to `small` (backward compatibility). The same
-  // default feeds the submenu `active` check below so the checkmark and the
-  // rendered size can never disagree. WidgetGeometry slots fall back to
-  // `small` CSS class (grid-based layout will override sizing via inline style).
-  const size = isWidgetSize(slot.size) ? slot.size : 'small';
-  const sizeClass = SIZE_CLASS[size];
-
   if (slot.widget === null) {
     return (
       <div
@@ -87,7 +67,6 @@ export function WidgetSlot({ slot, onReplace, onRemove, onResize, onConfigChange
         style={style}
         className={cn(
           'relative flex items-center justify-center rounded-lg border border-dashed border-border/60 bg-card/40 p-3 shadow-sm',
-          sizeClass,
           isDragging && 'opacity-0',
         )}
       >
@@ -112,7 +91,6 @@ export function WidgetSlot({ slot, onReplace, onRemove, onResize, onConfigChange
         style={style}
         className={cn(
           'overflow-auto rounded-lg border border-border/60 bg-card/85 p-3 shadow-sm',
-          sizeClass,
           isDragging && 'opacity-0',
         )}
       >
@@ -135,7 +113,6 @@ export function WidgetSlot({ slot, onReplace, onRemove, onResize, onConfigChange
       style={style}
       className={cn(
         'overflow-auto rounded-lg border border-border/60 bg-card/85 p-3 shadow-sm',
-        sizeClass,
         isDragging && 'opacity-0',
       )}
     >
@@ -164,11 +141,11 @@ export function WidgetSlot({ slot, onReplace, onRemove, onResize, onConfigChange
               key: 'size',
               label: 'Size',
               icon: Maximize2,
-              submenu: WIDGET_SIZES.map((s) => ({
-                key: `size-${s}`,
-                label: SIZE_LABEL[s],
-                active: s === size,
-                onSelect: () => onResize(s),
+              submenu: SIZE_PRESETS.map((preset) => ({
+                key: `size-${preset.label}`,
+                label: preset.label,
+                active: geom.w === preset.w && geom.h === preset.h,
+                onSelect: () => onResize({ w: preset.w, h: preset.h }),
               })),
             },
             { key: 'remove', label: 'Remove', icon: Trash2, destructive: true, onSelect: onRemove },
@@ -205,7 +182,6 @@ export function WidgetDragPreview({ slot }: { slot: DashboardSlot }) {
     slot.widget === null
       ? 'Empty widget slot'
       : renderer?.title ?? `Unknown widget kind: ${slot.widget.kind}`;
-  const size = SIZE_LABEL[isWidgetSize(slot.size) ? slot.size : 'small'];
 
   return (
     <div
@@ -216,7 +192,6 @@ export function WidgetDragPreview({ slot }: { slot: DashboardSlot }) {
         <GripVertical className="h-4 w-4" aria-hidden="true" />
         {Icon ? <Icon className="h-3.5 w-3.5" aria-hidden="true" /> : null}
         <span className="min-w-0 flex-1 truncate">{title}</span>
-        <span className="text-[10px] tracking-normal text-muted-foreground/70">{size}</span>
       </div>
     </div>
   );
