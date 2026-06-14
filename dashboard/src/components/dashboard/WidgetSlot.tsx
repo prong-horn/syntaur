@@ -2,7 +2,7 @@ import { useRef, useState } from 'react';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { GripVertical, Plus, Trash2, Replace, Maximize2, Settings2 } from 'lucide-react';
-import { GRID_COLUMNS, MAX_ROWS } from '@shared/saved-views-schema';
+import { GRID_COLUMNS } from '@shared/saved-views-schema';
 import type { DashboardSlot, WidgetConfig, WidgetGeometry, WidgetSize } from '@shared/saved-views-schema';
 import { cn } from '../../lib/utils';
 import { useSavedView } from '../../hooks/useSavedViews';
@@ -10,6 +10,7 @@ import { OverflowMenu } from '../OverflowMenu';
 import { widgetRegistry } from './widgetRegistry';
 import {
   clamp,
+  MAX_ROWS,
   MIN_ROWS,
   pxToCols,
   pxToRows,
@@ -46,6 +47,7 @@ export function WidgetSlot({
   // Mutable gesture state. `lastRenderW`/`lastH` mirror the latest preview so
   // onPointerUp can commit from this ref (synchronous) instead of stale React state.
   const gestureRef = useRef<{
+    pointerId: number;
     startX: number;
     startY: number;
     startRenderW: number;
@@ -81,14 +83,33 @@ export function WidgetSlot({
     gridRow: `span ${effRowSpan}`,
   };
 
+  // Shared no-commit teardown for cancel/lost-capture (and the tail of a normal
+  // pointerup). DISCARDS any in-progress resize: nulls the gesture, releases
+  // capture, and clears the preview so the rendered size snaps back to the
+  // persisted `slot.size`. Used by up/cancel/lost-capture so all three paths
+  // clear state identically.
+  function endGesture(e: React.PointerEvent) {
+    gestureRef.current = null;
+    try {
+      (e.currentTarget as Element).releasePointerCapture(e.pointerId);
+    } catch {
+      /* already released */
+    }
+    setPreview(null);
+  }
+
   function makeResizeHandlers(axis: 'w' | 'h' | 'both') {
     return {
       onPointerDown: (e: React.PointerEvent) => {
+        // Single-pointer: ignore a secondary pointer while a gesture is active so
+        // a second touch/pen can't hijack or restart the in-progress resize.
+        if (gestureRef.current) return;
         e.preventDefault();
         e.stopPropagation(); // never let a handle drag start a dnd sort
         (e.currentTarget as Element).setPointerCapture(e.pointerId);
         const startRenderW = scaleSpan(geom.w, activeColumns);
         gestureRef.current = {
+          pointerId: e.pointerId,
           startX: e.clientX,
           startY: e.clientY,
           startRenderW,
@@ -102,6 +123,8 @@ export function WidgetSlot({
       onPointerMove: (e: React.PointerEvent) => {
         const g = gestureRef.current;
         if (!g) return;
+        // Ignore strays from any pointer other than the one that started the gesture.
+        if (e.pointerId !== g.pointerId) return;
         let renderW = g.startRenderW;
         let h = g.startH;
         if (g.axis === 'w' || g.axis === 'both') {
@@ -118,14 +141,10 @@ export function WidgetSlot({
       },
       onPointerUp: (e: React.PointerEvent) => {
         const g = gestureRef.current;
-        gestureRef.current = null;
-        try {
-          (e.currentTarget as Element).releasePointerCapture(e.pointerId);
-        } catch {
-          /* pointer already released */
-        }
-        setPreview(null);
         if (!g) return;
+        // Only the gesture's own pointer may commit/end it.
+        if (e.pointerId !== g.pointerId) return;
+        // Commit first, from the authoritative ref values, then tear down.
         const current = resolveGeometry(slot.size);
         // Only convert width back to stored 24-col space if this gesture touched
         // the width axis. A height-only gesture (e.g. at 1 column, where render
@@ -136,9 +155,28 @@ export function WidgetSlot({
             ? current.w
             : clamp(Math.round((g.lastRenderW / activeColumns) * GRID_COLUMNS), 1, GRID_COLUMNS);
         const next: WidgetGeometry = { w: storedW, h: g.lastH };
+        // Same teardown as cancel/lost-capture — null ref, release capture, clear preview.
+        endGesture(e);
         if (next.w !== current.w || next.h !== current.h) {
           onResize(next); // existing optimistic persist + rollback
         }
+      },
+      // pointercancel (scroll takeover, palm rejection, context menu, captured
+      // element unmounting mid-gesture, etc.) does NOT fire a subsequent
+      // pointerup — discard the resize so we don't freeze at the preview span.
+      onPointerCancel: (e: React.PointerEvent) => {
+        const g = gestureRef.current;
+        if (!g) return;
+        if (e.pointerId !== g.pointerId) return;
+        endGesture(e);
+      },
+      // Backstop for capture lost for any reason (e.g. element unmount on a
+      // slots re-render/reorder) where pointercancel may not fire.
+      onLostPointerCapture: (e: React.PointerEvent) => {
+        const g = gestureRef.current;
+        if (!g) return;
+        if (e.pointerId !== g.pointerId) return;
+        endGesture(e);
       },
     };
   }
