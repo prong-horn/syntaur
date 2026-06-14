@@ -90,6 +90,7 @@ import { initSessionDb, migrateFromMarkdown, closeSessionDb } from './session-db
 import { initLeasesDb, closeLeasesDb } from '../db/leases-db.js';
 import { initUsageDb, closeUsageDb } from '../db/usage-db.js';
 import { startAutodiscovery, stopAutodiscovery } from './autodiscovery.js';
+import { startUsageCollector, stopUsageCollector } from './usage-collector.js';
 import type { WsMessage } from './types.js';
 
 export interface DashboardServerOptions {
@@ -900,6 +901,7 @@ export function createDashboardServer(options: DashboardServerOptions) {
         onAgentSessionsChanged: () =>
           broadcast({ type: 'agent-sessions-updated', timestamp: new Date().toISOString() }),
       });
+      startUsageCollector();
 
       return new Promise<void>((resolvePromise, reject) => {
         server.on('error', (err: NodeJS.ErrnoException) => {
@@ -921,6 +923,7 @@ export function createDashboardServer(options: DashboardServerOptions) {
 
     async stop(): Promise<void> {
       await stopAutodiscovery();
+      await stopUsageCollector();
       if (watcherHandle) {
         await watcherHandle.close();
       }
