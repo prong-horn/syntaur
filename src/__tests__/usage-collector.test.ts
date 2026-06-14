@@ -50,8 +50,7 @@ describe('startUsageCollector', () => {
 
     // Now let the first run finish
     resolvePending();
-    await Promise.resolve();
-    await Promise.resolve();
+    await vi.advanceTimersByTimeAsync(0);
 
     // Advance another interval — now a new run can proceed
     await vi.advanceTimersByTimeAsync(600_000);

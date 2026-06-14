@@ -37,7 +37,7 @@ export async function stopUsageCollector(): Promise<void> {
 }
 
 function run(): void {
-  if (activeRun) return;
+  if (activeRun || !savedOptions) return;
   const collectFn = savedOptions?.collect ?? collectUsage;
   activeRun = collectFn()
     .catch((err) => {
