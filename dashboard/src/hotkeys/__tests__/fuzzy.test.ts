@@ -14,8 +14,8 @@ describe('fuzzy.rankAll (R5c)', () => {
     expect(r[0].title).toBe('Draft');
   });
 
-  it('"mis" prefers Projects over Prime Project', () => {
-    const r = rankAll('mis', [entry('page', 'Prime Project'), entry('page', 'Projects')]);
+  it('"pro" prefers Projects over Prime Project', () => {
+    const r = rankAll('pro', [entry('page', 'Prime Project'), entry('page', 'Projects')]);
     expect(r[0].title).toBe('Projects');
   });
 
@@ -36,9 +36,19 @@ describe('fuzzy.rankAll (R5c)', () => {
   });
 
   it('case-insensitive matching', () => {
-    const r = rankAll('MIS', [entry('page', 'Projects')]);
+    const r = rankAll('PRO', [entry('page', 'Projects')]);
     expect(r).toHaveLength(1);
     expect(r[0].title).toBe('Projects');
+  });
+
+  it('matches an external ID folded into keywords (bare PROJ-123)', () => {
+    // buildIndex folds external IDs into `keywords`, so a prefixless ID query
+    // finds the item even though the title/subtitle do not contain it.
+    const withId = { type: 'assignment', title: 'Payment flow', keywords: ['PROJ-123', 'jira:PROJ-123'] };
+    const without = { type: 'assignment', title: 'Refund logic', keywords: [] as string[] };
+    const r = rankAll('PROJ-123', [withId, without]);
+    expect(r).toHaveLength(1);
+    expect(r[0].title).toBe('Payment flow');
   });
 });
 

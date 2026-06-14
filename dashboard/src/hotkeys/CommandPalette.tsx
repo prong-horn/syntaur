@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { compileQuery, type QueryItem } from '@shared/query';
 import { Dialog, DialogContent, DialogTitle } from '../components/ui/dialog';
 import { rankAll } from './fuzzy';
 import type { PaletteEntry } from './paletteIndex';
+import { splitPaletteQuery, PALETTE_FIELDS } from './paletteQuery';
 import { useHotkeyContext } from './HotkeyProvider';
 
 interface CommandPaletteProps {
@@ -25,7 +27,27 @@ export function CommandPalette({ entries }: CommandPaletteProps) {
   const [selected, setSelected] = useState(0);
   const listRef = useRef<HTMLDivElement>(null);
 
-  const ranked = useMemo(() => rankAll(query, entries, 50), [query, entries]);
+  // Split the raw query into an AQL filter gate + free-text terms.
+  const { aqlExpr, fuzzy } = useMemo(() => splitPaletteQuery(query), [query]);
+
+  const ranked = useMemo(() => {
+    let survivors = entries;
+    let rankText = fuzzy;
+    if (aqlExpr) {
+      const result = compileQuery(aqlExpr, PALETTE_FIELDS);
+      if (result.query) {
+        // EvalContext.now is required (resolves relative duration literals).
+        const now = Date.now();
+        const { predicate } = result.query;
+        survivors = entries.filter((e) => predicate(e as unknown as QueryItem, { now }));
+      } else {
+        // Bad gate: ignore it and rank the original query over everything (fuzzy
+        // is '' in explicit-AQL mode, which would otherwise show all entries).
+        rankText = query;
+      }
+    }
+    return rankAll(rankText, survivors, 50);
+  }, [entries, aqlExpr, fuzzy, query]);
 
   useEffect(() => {
     setSelected(0);
@@ -73,13 +95,26 @@ export function CommandPalette({ entries }: CommandPaletteProps) {
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           onKeyDown={handleKeyDown}
-          placeholder="Search projects, assignments, playbooks, servers, todos…"
+          placeholder="Search…  try  a:  p:  jira:PROJ-123  tag:backend"
           className="w-full rounded-t-xl border-0 border-b border-border/70 bg-transparent px-4 py-3 text-sm text-foreground outline-none focus:ring-0"
         />
+        {aqlExpr ? (
+          <div className="border-b border-border/70 px-4 py-1.5 text-[11px] text-muted-foreground">
+            <span className="font-medium">Filtering</span> <code className="text-foreground">{aqlExpr}</code>
+            {fuzzy ? <span> · ranking “{fuzzy}”</span> : null}
+          </div>
+        ) : query.trim() === '' ? (
+          <div className="border-b border-border/70 px-4 py-1.5 text-[11px] text-muted-foreground">
+            <span className="font-medium">Prefixes</span>{' '}
+            <code>a:</code> <code>p:</code> <code>t:</code> <code>s:</code> <code>pb:</code>
+            {' · '}
+            <code>status:</code> <code>tag:</code> <code>assignee:</code> <code>type:</code> <code>jira:</code>
+          </div>
+        ) : null}
         <div ref={listRef} className="max-h-[60vh] overflow-y-auto p-1">
           {ranked.length === 0 ? (
             <div className="px-4 py-6 text-center text-sm text-muted-foreground">
-              {query ? 'No matches' : 'Start typing to search'}
+              No matches
             </div>
           ) : (
             ranked.map((entry, idx) => {

@@ -24,6 +24,7 @@ export interface ProjectSummary {
   created: string;
   updated: string;
   tags: string[];
+  externalIds: ExternalIdInfo[];
   progress: ProgressCounts;
   needsAttention: NeedsAttention;
   workspace: string | null;
@@ -49,6 +50,7 @@ export interface AssignmentSummary {
   dependsOn: string[];
   links: string[];
   tags: string[];
+  externalIds: ExternalIdInfo[];
   created: string;
   updated: string;
   archived: boolean;

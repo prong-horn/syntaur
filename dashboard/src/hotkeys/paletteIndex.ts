@@ -1,4 +1,4 @@
-import type { ProjectSummary, AssignmentBoardItem } from '../hooks/useProjects';
+import type { ProjectSummary, AssignmentBoardItem, ExternalIdInfo } from '../hooks/useProjects';
 import type { PlaybookSummary, TrackedSession, TodoItem } from '../types';
 
 export type PaletteEntryType = 'project' | 'assignment' | 'playbook' | 'server' | 'todo' | 'page';
@@ -10,6 +10,16 @@ export interface PaletteEntry {
   subtitle?: string;
   keywords?: string[];
   route: string;
+  // AQL filter facts read by PALETTE_FIELDS (the entry IS the QueryItem the gate
+  // evaluates). Optional: entities lacking a field are correctly excluded by an
+  // atom referencing it. `assignmentType` is the assignment's frontmatter `type`,
+  // kept distinct from `type` (the entity kind, target of the `a:`/`p:`/… aliases).
+  status?: string;
+  tags?: string[];
+  assignee?: string | null;
+  assignmentType?: string | null;
+  project?: string | null;
+  externalIds?: ExternalIdInfo[];
 }
 
 // R2: only these routes have workspace-prefixed variants in App.tsx.
@@ -46,6 +56,22 @@ interface BuildInput {
   wsPrefix: string;
 }
 
+/**
+ * Flatten external IDs into fuzzy-searchable keywords: each id appears both bare
+ * (`PROJ-123`) and system-qualified (`jira:PROJ-123`), so a prefixless query finds
+ * the item via the ranker without an AQL atom.
+ */
+function externalIdKeywords(ids?: ExternalIdInfo[]): string[] {
+  if (!ids?.length) return [];
+  const out: string[] = [];
+  for (const e of ids) {
+    if (!e.id) continue;
+    out.push(e.id);
+    if (e.system) out.push(`${e.system}:${e.id}`);
+  }
+  return out;
+}
+
 export function buildIndex(input: BuildInput): PaletteEntry[] {
   const out: PaletteEntry[] = [];
 
@@ -67,8 +93,11 @@ export function buildIndex(input: BuildInput): PaletteEntry[] {
       id: `project-${m.slug}`,
       title: m.title,
       subtitle: m.slug,
-      keywords: m.tags,
+      keywords: [...(m.tags ?? []), ...externalIdKeywords(m.externalIds)],
       route: `${projectWs}/projects/${m.slug}`,
+      tags: m.tags,
+      project: m.slug,
+      externalIds: m.externalIds,
     });
     out.push({
       type: 'todo',
@@ -87,10 +116,18 @@ export function buildIndex(input: BuildInput): PaletteEntry[] {
       id: a.projectSlug === null ? `assignment-standalone-${a.id}` : `assignment-${a.projectSlug}-${a.slug}`,
       title: a.title,
       subtitle: `${a.projectTitle} \u00B7 ${a.status}`,
-      keywords: [a.projectSlug ?? 'standalone', a.assignee ?? ''].filter((s): s is string => Boolean(s)),
+      keywords: [a.projectSlug ?? 'standalone', a.assignee ?? '', ...externalIdKeywords(a.externalIds)].filter(
+        (s): s is string => Boolean(s),
+      ),
       route: a.projectSlug === null
         ? `/assignments/${a.id}`
         : `${assignWs}/projects/${a.projectSlug}/assignments/${a.slug}`,
+      status: a.status,
+      tags: a.tags,
+      assignee: a.assignee,
+      assignmentType: a.type,
+      project: a.projectSlug,
+      externalIds: a.externalIds,
     });
   }
 
@@ -102,6 +139,7 @@ export function buildIndex(input: BuildInput): PaletteEntry[] {
       subtitle: p.description,
       keywords: p.tags,
       route: `/playbooks/${p.slug}`,
+      tags: p.tags,
     });
   }
 
@@ -126,6 +164,8 @@ export function buildIndex(input: BuildInput): PaletteEntry[] {
       subtitle: t.status,
       keywords: t.tags,
       route: `${base}?focus=${encodeURIComponent(t.id)}`,
+      status: t.status,
+      tags: t.tags,
     });
   }
 

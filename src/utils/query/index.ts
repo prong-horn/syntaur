@@ -12,6 +12,8 @@ import { ASSIGNMENT_FIELDS, type FieldRegistry, type QueryItem } from './fields.
 import { parseQuery } from './parser.js';
 
 export type { QueryError, QueryNode, ComparisonOp } from './ast.js';
+export { lex, LexError } from './lexer.js';
+export type { Token, TokenType } from './lexer.js';
 export { parseQuery, ParseError } from './parser.js';
 export { compileNode, CompileError } from './evaluate.js';
 export type { EvalContext, Predicate } from './evaluate.js';

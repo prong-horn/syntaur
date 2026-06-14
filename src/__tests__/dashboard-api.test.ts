@@ -951,6 +951,99 @@ tags: []
   });
 });
 
+describe('externalIds on board summaries', () => {
+  const EXTERNAL_IDS_ASSIGNMENT_MD = `---
+id: ext-1
+slug: ext-assignment
+title: Ext Assignment
+type: feature
+status: in_progress
+priority: medium
+created: "2026-03-20T10:00:00Z"
+updated: "${RECENT_DATE}"
+assignee: codex-1
+externalIds:
+  - system: jira
+    id: ABC-7
+    url: https://jira.example.com/browse/ABC-7
+dependsOn: []
+blockedReason: null
+workspace:
+  repository: null
+  worktreePath: null
+  branch: null
+  parentBranch: null
+tags: []
+---
+
+# Ext Assignment`;
+
+  it('project summary carries externalIds (projection from the parsed record)', async () => {
+    await createProjectFiles(testDir, 'test-project', PROJECT_MD, [
+      { slug: 'test-assignment', assignmentMd: ASSIGNMENT_MD },
+    ]);
+    const projects = await listProjects(testDir);
+    expect(projects).toHaveLength(1);
+    expect(projects[0].externalIds).toEqual([
+      { system: 'jira', id: 'TEST-1', url: 'https://jira.example.com/browse/TEST-1' },
+      { system: 'linear', id: 'ENG-9', url: null },
+    ]);
+  });
+
+  it('nested assignment board summary carries externalIds', async () => {
+    await createProjectFiles(testDir, 'test-project', PROJECT_MD, [
+      { slug: 'ext-assignment', assignmentMd: EXTERNAL_IDS_ASSIGNMENT_MD },
+    ]);
+    const board = await listAssignmentsBoard(testDir);
+    const item = board.assignments.find((a) => a.slug === 'ext-assignment');
+    expect(item).toBeTruthy();
+    expect(item!.externalIds).toEqual([
+      { system: 'jira', id: 'ABC-7', url: 'https://jira.example.com/browse/ABC-7' },
+    ]);
+  });
+
+  it('standalone assignment board summary carries externalIds', async () => {
+    const assignmentsDir = resolve(testDir, 'standalone');
+    await mkdir(assignmentsDir, { recursive: true });
+    const uuid = 'eeee1111-2222-3333-4444-555566667777';
+    await mkdir(resolve(assignmentsDir, uuid), { recursive: true });
+    await writeFile(
+      resolve(assignmentsDir, uuid, 'assignment.md'),
+      `---
+id: ${uuid}
+slug: ext-standalone
+title: Ext Standalone
+project: null
+type: feature
+status: pending
+priority: medium
+created: "2026-04-20T10:00:00Z"
+updated: "2026-04-20T10:00:00Z"
+assignee: null
+externalIds:
+  - system: jira
+    id: STA-1
+    url: null
+dependsOn: []
+blockedReason: null
+workspace:
+  repository: null
+  worktreePath: null
+  branch: null
+  parentBranch: null
+tags: []
+---
+
+# Ext Standalone`,
+      'utf-8',
+    );
+    const board = await listAssignmentsBoard(testDir, assignmentsDir);
+    const item = board.assignments.find((a) => a.id === uuid);
+    expect(item).toBeTruthy();
+    expect(item!.externalIds).toEqual([{ system: 'jira', id: 'STA-1', url: null }]);
+  });
+});
+
 describe('overview', () => {
   it('returns first-run onboarding state for an empty workspace', async () => {
     const result = await getOverview(testDir);
