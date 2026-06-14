@@ -172,6 +172,8 @@ exit 0
     const events = listEvents();
     expect(events.length).toBeGreaterThan(0);
     expect(getMeta('usage_last_collector_run')).not.toBeNull();
+    // collectUsage() stamps a distinct heartbeat key on every completed run.
+    expect(getMeta('usage_collector_last_run')).not.toBeNull();
 
     const parsed = JSON.parse(logs.join(''));
     expect(parsed.daily.length).toBeGreaterThan(0);
