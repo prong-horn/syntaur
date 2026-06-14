@@ -15,7 +15,7 @@ import {
   rectSortingStrategy,
   SortableContext,
 } from '@dnd-kit/sortable';
-import { Monitor } from 'lucide-react';
+import { Monitor, Plus } from 'lucide-react';
 import { useHelp, useOverview } from '../hooks/useProjects';
 import { LoadingState } from '../components/LoadingState';
 import { ErrorState } from '../components/ErrorState';
@@ -24,6 +24,7 @@ import { OverviewHero } from '../components/OverviewHero';
 import { WidgetDragPreview, WidgetSlot } from '../components/dashboard/WidgetSlot';
 import { WidgetPicker } from '../components/dashboard/WidgetPicker';
 import { slotKeyboardCoordinates } from './overview-dnd';
+import { addSlot, removeSlot } from './overview-slots';
 import {
   useDashboardLayout,
   setDashboardLayout,
@@ -123,6 +124,19 @@ export function Overview() {
     },
     [slots, persistLayout],
   );
+
+  const handleRemoveSlot = useCallback(
+    (index: number) => {
+      const nextSlots = removeSlot(slots, index);
+      void persistLayout(nextSlots, slots);
+    },
+    [slots, persistLayout],
+  );
+
+  const handleAddSlot = useCallback(() => {
+    const nextSlots = addSlot(slots);
+    void persistLayout(nextSlots, slots);
+  }, [slots, persistLayout]);
 
   const handleResize = useCallback(
     (index: number, size: WidgetSize | WidgetGeometry) => {
@@ -249,6 +263,7 @@ export function Overview() {
                 colWidthPx={colWidthPx}
                 onReplace={() => openPicker(i)}
                 onRemove={() => handleRemove(i)}
+                onRemoveSlot={() => handleRemoveSlot(i)}
                 onResize={(size) => handleResize(i, size)}
                 onConfigChange={(next) => handleConfigChange(i, next)}
               />
@@ -259,6 +274,11 @@ export function Overview() {
           {activeSlot ? <WidgetDragPreview slot={activeSlot} /> : null}
         </DragOverlay>
       </DndContext>
+
+      <button type="button" onClick={handleAddSlot} className="shell-action inline-flex items-center gap-2">
+        <Plus className="h-4 w-4" />
+        Add slot
+      </button>
 
       {overview?.serverStats ? (
         <p className="flex items-center gap-2 text-xs text-muted-foreground">

@@ -26,6 +26,7 @@ interface WidgetSlotProps {
   colWidthPx: number;
   onReplace: () => void;
   onRemove: () => void;
+  onRemoveSlot: () => void;
   onResize: (size: WidgetSize | WidgetGeometry) => void;
   /** Persist an edited config for this slot's widget. Rejects on failure so the editor can stay open. */
   onConfigChange: (next: WidgetConfig) => Promise<void>;
@@ -37,6 +38,7 @@ export function WidgetSlot({
   colWidthPx,
   onReplace,
   onRemove,
+  onRemoveSlot,
   onResize,
   onConfigChange,
 }: WidgetSlotProps) {
@@ -231,6 +233,15 @@ export function WidgetSlot({
         )}
       >
         <div className="absolute left-2 top-2">{dragHandle}</div>
+        <button
+          type="button"
+          aria-label="Remove slot"
+          onClick={onRemoveSlot}
+          onPointerDown={(e) => e.stopPropagation()}
+          className="absolute right-2 top-2 z-10 text-muted-foreground/50 transition hover:text-destructive"
+        >
+          <Trash2 className="h-4 w-4" />
+        </button>
         <button
           type="button"
           onClick={onReplace}
