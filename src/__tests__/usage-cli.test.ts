@@ -251,7 +251,7 @@ exit 1
       stubPath,
       `#!/usr/bin/env bash
 if [ "$1" = "--version" ]; then echo "ccusage 20.0.1"; exit 0; fi
-echo '{"sessions":[]}'
+echo '{"session":[]}'
 exit 0
 `,
     );

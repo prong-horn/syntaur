@@ -339,11 +339,41 @@ describe('walkPiSessions', () => {
     }
     expect(results).toHaveLength(2);
     expect(results.every((m) => m.cwd === '/Users/cache/test')).toBe(true);
-    // filenames sort so the cwd-bearing file (T10-...) is read before the no-cwd file (T11-...)
-    expect(results.map((m) => m.sessionId).sort()).toEqual([
-      'aaaaaaaa-1111-2222-3333-444444444444',
-      'bbbbbbbb-5555-6666-7777-888888888888',
-    ]);
+    // Assert as a set so the assertion holds regardless of readdir order.
+    const byId = new Map(results.map((m) => [m.sessionId, m]));
+    expect(byId.has('aaaaaaaa-1111-2222-3333-444444444444')).toBe(true);
+    expect(byId.has('bbbbbbbb-5555-6666-7777-888888888888')).toBe(true);
+  });
+
+  it('does not drop a later cwd-bearing session when a no-cwd file sorts first', async () => {
+    const piRoot = resolve(sandbox, 'pi-fallback');
+    const slug = '--Users-test-proj--';
+    // This file sorts FIRST lexicographically and has NO cwd field on line 1.
+    await writePiTranscript(
+      piRoot,
+      slug,
+      `2026-06-05T01-00-00-000Z_aaaaaaaa-0000-0000-0000-000000000001.jsonl`,
+      [{ type: 'x', timestamp: '2026-06-05T01:00:00.000Z', id: 'x' }],
+    );
+    // This file sorts LATER and DOES have cwd on line 1.
+    await writePiTranscript(
+      piRoot,
+      slug,
+      `2026-06-05T02-00-00-000Z_bbbbbbbb-0000-0000-0000-000000000002.jsonl`,
+      [
+        { type: 'session-start', version: 1, id: 'bbbbbbbb-0000-0000-0000-000000000002', timestamp: '2026-06-05T02:00:00.000Z', cwd: '/Users/test/proj' },
+        { type: 'assistant', timestamp: '2026-06-05T02:05:00.000Z' },
+      ],
+    );
+
+    const results = [];
+    for await (const meta of walkPiSessions({ root: piRoot })) {
+      results.push(meta);
+    }
+    // The no-cwd file is correctly skipped; the later cwd-bearing file is NOT dropped.
+    expect(results).toHaveLength(1);
+    expect(results[0].sessionId).toBe('bbbbbbbb-0000-0000-0000-000000000002');
+    expect(results[0].cwd).toBe('/Users/test/proj');
   });
 });
 
