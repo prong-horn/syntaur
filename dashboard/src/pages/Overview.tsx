@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   closestCenter,
   DndContext,
@@ -15,7 +15,7 @@ import {
   rectSortingStrategy,
   SortableContext,
 } from '@dnd-kit/sortable';
-import { Monitor } from 'lucide-react';
+import { Monitor, Plus } from 'lucide-react';
 import { useHelp, useOverview } from '../hooks/useProjects';
 import { LoadingState } from '../components/LoadingState';
 import { ErrorState } from '../components/ErrorState';
@@ -24,12 +24,15 @@ import { OverviewHero } from '../components/OverviewHero';
 import { WidgetDragPreview, WidgetSlot } from '../components/dashboard/WidgetSlot';
 import { WidgetPicker } from '../components/dashboard/WidgetPicker';
 import { slotKeyboardCoordinates } from './overview-dnd';
+import { addSlot, removeSlot } from './overview-slots';
 import {
   useDashboardLayout,
   setDashboardLayout,
 } from '../hooks/useSavedViews';
 import { useHotkey, useHotkeyScope } from '../hotkeys';
-import type { DashboardSlot, WidgetConfig, WidgetSize } from '@shared/saved-views-schema';
+import { GRID_COLUMNS } from '@shared/saved-views-schema';
+import type { DashboardSlot, WidgetConfig, WidgetGeometry, WidgetSize } from '@shared/saved-views-schema';
+import { activeColumnsForWidth, GRID_GAP_PX, ROW_HEIGHT_PX } from './overview-geometry';
 
 export function Overview() {
   const { data: overview, error, refetch } = useOverview();
@@ -41,6 +44,26 @@ export function Overview() {
   const [layoutError, setLayoutError] = useState<string | null>(null);
   const [slots, setSlots] = useState<DashboardSlot[]>(layout.slots);
   const [activeSlotId, setActiveSlotId] = useState<string | null>(null);
+
+  const gridRef = useRef<HTMLDivElement>(null);
+  const [activeColumns, setActiveColumns] = useState(GRID_COLUMNS);
+  const [colWidthPx, setColWidthPx] = useState(0);
+
+  useEffect(() => {
+    const el = gridRef.current;
+    if (!el) return;
+    const observer = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        const width = entry.contentRect.width;
+        const cols = activeColumnsForWidth(width);
+        const cw = cols > 0 ? (width - (cols - 1) * GRID_GAP_PX) / cols : 0;
+        setActiveColumns(cols);
+        setColWidthPx(cw);
+      }
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
 
   useEffect(() => {
     setSlots(layout.slots);
@@ -94,19 +117,33 @@ export function Overview() {
 
   const handleRemove = useCallback(
     (index: number) => {
+      // Nullify the widget AND clear its size, so the now-empty slot doesn't keep
+      // a large geometry (which would render as a big void) and a re-added widget
+      // starts at the default size. `size: undefined` is dropped on JSON persist.
       const nextSlots = slots.map((slot, i) =>
-        i === index ? { ...slot, widget: null } : slot,
+        i === index ? { ...slot, widget: null, size: undefined } : slot,
       );
       void persistLayout(nextSlots, slots);
     },
     [slots, persistLayout],
   );
 
+  const handleRemoveSlot = useCallback(
+    (id: string) => {
+      const nextSlots = removeSlot(slots, id);
+      void persistLayout(nextSlots, slots);
+    },
+    [slots, persistLayout],
+  );
+
+  const handleAddSlot = useCallback(() => {
+    const nextSlots = addSlot(slots);
+    void persistLayout(nextSlots, slots);
+  }, [slots, persistLayout]);
+
   const handleResize = useCallback(
-    (index: number, size: WidgetSize) => {
-      const nextSlots = slots.map((slot, i) =>
-        i === index ? { ...slot, size } : slot,
-      );
+    (index: number, size: WidgetSize | WidgetGeometry) => {
+      const nextSlots = slots.map((slot, i) => (i === index ? { ...slot, size } : slot));
       void persistLayout(nextSlots, slots);
     },
     [slots, persistLayout],
@@ -210,14 +247,26 @@ export function Overview() {
           items={slots.map((slot) => slot.id)}
           strategy={rectSortingStrategy}
         >
-          <div className="grid grid-flow-dense grid-cols-1 gap-4 xl:grid-cols-2">
+          <div
+            ref={gridRef}
+            style={{
+              display: 'grid',
+              gridTemplateColumns: `repeat(${activeColumns}, minmax(0, 1fr))`,
+              gridAutoRows: `${ROW_HEIGHT_PX}px`,
+              gridAutoFlow: 'dense',
+              gap: `${GRID_GAP_PX}px`,
+            }}
+          >
             {slots.map((slot, i) => (
               <WidgetSlot
                 key={slot.id}
                 slot={slot}
                 index={i}
+                activeColumns={activeColumns}
+                colWidthPx={colWidthPx}
                 onReplace={() => openPicker(i)}
                 onRemove={() => handleRemove(i)}
+                onRemoveSlot={() => handleRemoveSlot(slot.id)}
                 onResize={(size) => handleResize(i, size)}
                 onConfigChange={(next) => handleConfigChange(i, next)}
               />
@@ -225,9 +274,20 @@ export function Overview() {
           </div>
         </SortableContext>
         <DragOverlay dropAnimation={null}>
-          {activeSlot ? <WidgetDragPreview slot={activeSlot} /> : null}
+          {activeSlot ? (
+            <WidgetDragPreview
+              slot={activeSlot}
+              activeColumns={activeColumns}
+              colWidthPx={colWidthPx}
+            />
+          ) : null}
         </DragOverlay>
       </DndContext>
+
+      <button type="button" onClick={handleAddSlot} className="shell-action inline-flex items-center gap-2">
+        <Plus className="h-4 w-4" />
+        Add slot
+      </button>
 
       {overview?.serverStats ? (
         <p className="flex items-center gap-2 text-xs text-muted-foreground">
