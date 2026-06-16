@@ -231,6 +231,48 @@ export async function resolveBranchSha(
 }
 
 /**
+ * True when `branch` is fully merged into `base` (i.e. `base` already contains
+ * every commit of `branch`). Uses `git merge-base --is-ancestor` (read-only).
+ * Caller must pass a non-null branch.
+ */
+export async function isBranchMerged(
+  repository: string,
+  branch: string,
+  base: string,
+): Promise<boolean> {
+  const result = await run('git', [
+    '-C',
+    repository,
+    'merge-base',
+    '--is-ancestor',
+    branch,
+    base,
+  ]);
+  return result.code === 0;
+}
+
+/**
+ * True when the worktree at `worktreePath` has uncommitted changes (or git can't
+ * be queried). Treats an unknown/failed status as dirty so callers stay safe.
+ */
+export async function isWorktreeDirty(worktreePath: string): Promise<boolean> {
+  const result = await run('git', ['-C', worktreePath, 'status', '--porcelain']);
+  if (result.code !== 0) return true; // unknown -> treat as dirty
+  return result.stdout.trim().length > 0;
+}
+
+/**
+ * Resolve the top-level directory of the git worktree containing `cwd`
+ * (read-only). Returns null if `cwd` is not inside a git repo.
+ */
+export async function repoTopLevel(cwd: string): Promise<string | null> {
+  const result = await run('git', ['-C', cwd, 'rev-parse', '--show-toplevel']);
+  if (result.code !== 0) return null;
+  const top = result.stdout.trim();
+  return top.length > 0 ? top : null;
+}
+
+/**
  * Return the worktree path where `branch` is currently checked out, or null if
  * it isn't checked out by any worktree. Parses `git worktree list --porcelain`
  * (blocks of `worktree <path>` / `branch refs/heads/<name>`). Used to decide

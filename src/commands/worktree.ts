@@ -7,13 +7,20 @@ import {
   deleteBranch,
   resolveBranchSha,
   listWorktrees,
+  isBranchMerged,
+  isWorktreeDirty,
+  repoTopLevel,
   type WorktreeEntry,
 } from '../utils/git-worktree.js';
 import { confirmPrompt, isInteractiveTerminal } from '../utils/prompt.js';
 import { SyntaurError, formatCliError, exitCodeFor } from '../errors.js';
 import { fileExists, writeFileForce } from '../utils/fs.js';
-import { assignmentsDir } from '../utils/paths.js';
+import { assignmentsDir, syntaurRoot } from '../utils/paths.js';
 import { readConfig } from '../utils/config.js';
+import { listAssignmentsByProject } from '../utils/assignment-walk.js';
+import { isTerminalStatus } from '../lifecycle/state-machine.js';
+import { canonicalPath } from '../utils/path-canon.js';
+import { countSessionsByPath } from '../utils/session-count.js';
 import { nowTimestamp } from '../utils/timestamp.js';
 import {
   parseAssignmentFrontmatter,
@@ -214,6 +221,249 @@ export async function runWorktreeRemove(
   return { worktreePath, branchDeleted, workspaceCleared };
 }
 
+// --- gc: classify + safely clean up worktrees -------------------------------
+
+export type GcReason =
+  | 'removable'
+  | 'dirty'
+  | 'unmerged'
+  | 'non-terminal'
+  | 'orphan'
+  | 'detached'
+  | 'current';
+
+export interface GcCandidate {
+  worktreePath: string;
+  reason: GcReason;
+  assignmentSlug: string | null;
+  projectSlug: string | null;
+  status: string | null;
+  branch: string | null;
+  merged: boolean | null;
+  dirty: boolean | null;
+  sessions: number;
+  willRemove: boolean;
+}
+
+export interface WorktreeGcOptions {
+  repository?: string;
+  base?: string;
+  apply?: boolean;
+  force?: boolean;
+  yes?: boolean;
+  deleteBranch?: boolean;
+  json?: boolean;
+}
+
+export interface WorktreeGcResult {
+  repository: string;
+  base: string;
+  candidates: GcCandidate[];
+  applied: boolean;
+}
+
+interface GcOwner {
+  assignmentSlug: string;
+  projectSlug: string | null;
+  status: string;
+  terminal: boolean;
+  worktreePathRaw: string;
+}
+
+/**
+ * Classify every worktree of `repository` and, when `options.apply`, remove the
+ * safe ones. A worktree is `removable` only when it is linked to an assignment
+ * whose status is terminal (completed/archived), its branch is merged into
+ * `base`, and its working tree is clean. `--force` also clears linked+terminal
+ * worktrees that are dirty or unmerged. Removal calls `removeWorktree` /
+ * `deleteBranch` DIRECTLY and never edits the assignment file, so `workspace.*`
+ * is preserved and the worktree stays recoverable via `syntaur open ... --recreate`.
+ */
+export async function runWorktreeGc(
+  options: WorktreeGcOptions,
+  cwd: string = process.cwd(),
+): Promise<WorktreeGcResult> {
+  const repository = options.repository ?? (await repoTopLevel(cwd)) ?? cwd;
+  const base = options.base ?? 'main';
+  const entries = await listWorktrees(repository);
+
+  // Reverse map: canonical worktree path -> owning assignment.
+  const config = await readConfig();
+  const walk = await listAssignmentsByProject(config.defaultProjectDir, assignmentsDir());
+  const owners = new Map<string, GcOwner>();
+  for (const entry of walk.withAssignmentMd) {
+    try {
+      const content = await readFile(resolve(entry.assignmentDir, 'assignment.md'), 'utf-8');
+      const fm = parseAssignmentFrontmatter(content);
+      const wp = fm.workspace?.worktreePath;
+      if (!wp) continue; // common case: assignment never got a worktree
+      owners.set(canonicalPath(wp), {
+        assignmentSlug: entry.assignmentSlug,
+        projectSlug: entry.projectSlug,
+        status: fm.status,
+        terminal: isTerminalStatus(fm.status) || fm.archived === true,
+        worktreePathRaw: wp,
+      });
+    } catch {
+      // Unreadable/malformed assignment.md -> skip; never let one abort gc.
+    }
+  }
+
+  // Never remove the worktree we're standing in, the repo's main worktree, or a
+  // bare entry.
+  const rt = await repoTopLevel(repository);
+  const ct = await repoTopLevel(cwd);
+  const repoTop = rt ? canonicalPath(rt) : null;
+  const cwdTop = ct ? canonicalPath(ct) : null;
+  const dbPath = resolve(syntaurRoot(), 'syntaur.db');
+
+  const candidates: GcCandidate[] = [];
+  for (const entry of entries) {
+    const canon = canonicalPath(entry.worktreePath);
+    const owner = owners.get(canon);
+
+    let reason: GcReason;
+    let merged: boolean | null = null;
+    let dirty: boolean | null = null;
+
+    const isCurrent =
+      entry.bare ||
+      (repoTop !== null && canon === repoTop) ||
+      (cwdTop !== null && canon === cwdTop);
+
+    if (isCurrent) {
+      reason = 'current';
+    } else if (entry.detached || entry.branch === null) {
+      reason = 'detached';
+    } else if (!owner) {
+      reason = 'orphan';
+    } else if (!owner.terminal) {
+      reason = 'non-terminal';
+    } else {
+      dirty = await isWorktreeDirty(entry.worktreePath);
+      if (dirty) {
+        reason = 'dirty';
+      } else {
+        merged = await isBranchMerged(repository, entry.branch, base);
+        reason = merged ? 'removable' : 'unmerged';
+      }
+    }
+
+    const sessionPaths = [canon, entry.worktreePath, owner?.worktreePathRaw].filter(
+      (p): p is string => typeof p === 'string' && p.length > 0,
+    );
+    const sessions = countSessionsByPath(dbPath, [...new Set(sessionPaths)]);
+
+    const willRemove =
+      reason === 'removable' ||
+      (Boolean(options.force) && (reason === 'dirty' || reason === 'unmerged'));
+
+    candidates.push({
+      worktreePath: entry.worktreePath,
+      reason,
+      assignmentSlug: owner?.assignmentSlug ?? null,
+      projectSlug: owner?.projectSlug ?? null,
+      status: owner?.status ?? null,
+      branch: entry.branch,
+      merged,
+      dirty,
+      sessions,
+      willRemove,
+    });
+  }
+
+  let applied = false;
+  if (options.apply) {
+    for (const c of candidates.filter((cand) => cand.willRemove)) {
+      if (await fileExists(c.worktreePath)) {
+        const removed = await removeWorktree(repository, c.worktreePath, {
+          force: Boolean(options.force),
+        });
+        if (!removed.ok) {
+          throw new SyntaurError(
+            `git worktree remove failed for ${c.worktreePath}: ${removed.stderr.trim() || '(no stderr)'}`,
+            { remediation: 'resolve the git error (dirty/locked?) or re-run with --force' },
+          );
+        }
+      }
+      if (options.deleteBranch && c.branch) {
+        const sha = await resolveBranchSha(repository, c.branch);
+        if (sha) {
+          console.log(
+            `Branch "${c.branch}" was at ${sha}. To recover it: git -C ${repository} branch ${c.branch} ${sha}`,
+          );
+        }
+        const del = await deleteBranch(repository, c.branch);
+        if (!del.ok) {
+          throw new SyntaurError(
+            `Worktree removed, but deleting branch "${c.branch}" failed: ${del.stderr.trim() || '(no stderr)'}`,
+            { remediation: 'delete the branch manually with `git branch -D`' },
+          );
+        }
+      }
+      // Deliberately NOT touching the assignment file: workspace.* is preserved
+      // so `syntaur open <assignment> --recreate` can rebuild the worktree.
+    }
+    applied = true;
+  }
+
+  return { repository, base, candidates, applied };
+}
+
+function printGcReport(result: WorktreeGcResult): void {
+  const { candidates, base, applied } = result;
+  if (candidates.length === 0) {
+    console.log('No worktrees found.');
+    return;
+  }
+
+  const byReason: Record<GcReason, GcCandidate[]> = {
+    removable: [],
+    dirty: [],
+    unmerged: [],
+    'non-terminal': [],
+    orphan: [],
+    detached: [],
+    current: [],
+  };
+  for (const c of candidates) byReason[c.reason].push(c);
+
+  const label = (c: GcCandidate): string => {
+    const who = c.assignmentSlug
+      ? `${c.projectSlug ?? '—'}/${c.assignmentSlug}${c.status ? ` (${c.status})` : ''}`
+      : '(no assignment)';
+    const sess =
+      c.sessions > 0
+        ? `  [${c.sessions} session${c.sessions === 1 ? '' : 's'} recorded — recoverable via \`syntaur open ${c.assignmentSlug ?? '<assignment>'} --recreate\`]`
+        : '';
+    return `  ${c.worktreePath}  ${c.branch ?? '(detached)'}  ${who}${sess}`;
+  };
+
+  const section = (title: string, reason: GcReason): void => {
+    const rows = byReason[reason];
+    if (rows.length === 0) return;
+    console.log(`\n${title} (${rows.length}):`);
+    for (const c of rows) console.log(label(c));
+  };
+
+  section(applied ? 'Removed' : `Removable — merged into ${base} + terminal + clean`, 'removable');
+  section('Dirty — linked + terminal but uncommitted changes (use --force)', 'dirty');
+  section(`Unmerged — linked + terminal but not in ${base} (use --force)`, 'unmerged');
+  section('Skipped — assignment not terminal', 'non-terminal');
+  section('Skipped — no owning assignment (orphan)', 'orphan');
+  section('Skipped — detached / no branch', 'detached');
+  section('Skipped — current / main worktree', 'current');
+
+  if (!applied) {
+    const n = byReason.removable.length;
+    console.log(
+      n > 0
+        ? `\n${n} worktree${n === 1 ? '' : 's'} removable. Re-run with --apply to remove ${n === 1 ? 'it' : 'them'} — workspace records are preserved (recoverable via \`syntaur open ... --recreate\`).`
+        : '\nNothing removable. (Use --force to also clear dirty/unmerged linked+terminal worktrees.)',
+    );
+  }
+}
+
 export const worktreeCommand = new Command('worktree')
   .description('Manage git worktrees bound to Syntaur assignments');
 
@@ -302,6 +552,50 @@ worktreeCommand
       if (workspaceCleared) console.log('Cleared the assignment workspace fields.');
     } catch (error) {
       // Surface the SyntaurError remediation hint (e.g. "re-run with --yes").
+      console.error(formatCliError(error));
+      process.exit(exitCodeFor(error));
+    }
+  });
+
+worktreeCommand
+  .command('gc')
+  .description(
+    "Find worktrees safe to clean up (branch merged into <base> AND linked assignment completed/archived AND clean) and, with --apply, remove them. Dry-run by default. Agent-session history is never deleted — removed worktrees stay recoverable via `syntaur open <assignment> --recreate`. (Uses built-in terminal statuses + the archived flag.)",
+  )
+  .option('--repository <path>', 'Repository root (defaults to the current worktree)')
+  .option('--base <branch>', 'Base branch to test "merged into"', 'main')
+  .option('--apply', 'Actually remove the removable worktrees (default is a dry run)')
+  .option('--force', 'Also remove linked+terminal worktrees that are dirty or unmerged (destructive)')
+  .option('--delete-branch', "Also delete each removed worktree's branch")
+  .option('--yes', 'Skip the confirmation prompt for a destructive --apply --force (required for non-TTY)')
+  .option('--json', 'Output as JSON')
+  .action(async (options: WorktreeGcOptions) => {
+    try {
+      // --apply --force can discard uncommitted work (dirty) or unmerged branches.
+      // Gate it behind a confirm unless --yes; off a TTY, require --yes.
+      if (options.apply && options.force && !options.yes) {
+        if (!isInteractiveTerminal()) {
+          throw new SyntaurError(
+            '--apply --force can discard dirty/unmerged worktrees, but there is no TTY to confirm.',
+            { remediation: 're-run with --yes to confirm the destructive removal' },
+          );
+        }
+        const confirmed = await confirmPrompt(
+          '--force will also remove dirty/unmerged worktrees (discarding any uncommitted work). Continue?',
+          false,
+        );
+        if (!confirmed) {
+          console.log('Aborted. Nothing was removed.');
+          return;
+        }
+      }
+      const result = await runWorktreeGc(options);
+      if (options.json) {
+        console.log(JSON.stringify(result, null, 2));
+        return;
+      }
+      printGcReport(result);
+    } catch (error) {
       console.error(formatCliError(error));
       process.exit(exitCodeFor(error));
     }
