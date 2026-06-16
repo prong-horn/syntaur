@@ -940,9 +940,13 @@ export function createDashboardServer(options: DashboardServerOptions) {
       return new Promise<void>((resolvePromise, reject) => {
         server.on('error', (err: NodeJS.ErrnoException) => {
           if (err.code === 'EADDRINUSE') {
-            reject(new Error(
-              `Port ${port} is already in use. Use --port <number> to specify a different port.`,
-            ));
+            // Preserve the code so the dashboard command can attach actionable
+            // remediation (drop --port to auto-pick, lsof to find the holder).
+            const inUse = new Error(
+              `Port ${port} is already in use.`,
+            ) as NodeJS.ErrnoException;
+            inUse.code = 'EADDRINUSE';
+            reject(inUse);
           } else {
             reject(err);
           }

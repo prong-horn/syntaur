@@ -6,6 +6,7 @@ import { readConfig } from '../utils/config.js';
 import { createDashboardServer } from '../dashboard/server.js';
 import { serversDir as getServersDir, playbooksDir as getPlaybooksDir, todosDir as getTodosDir, assignmentsDir as getAssignmentsDir } from '../utils/paths.js';
 import { fileExists } from '../utils/fs.js';
+import { SyntaurError } from '../errors.js';
 
 export interface DashboardOptions {
   port: string;
@@ -116,7 +117,20 @@ export async function dashboardCommand(options: DashboardOptions): Promise<void>
     dashboardDistPath: dashboardDist,
   });
 
-  await server.start();
+  try {
+    await server.start();
+  } catch (err) {
+    // A port collision can only surface here when the user pinned an explicit
+    // --port (the no-port path auto-selects a free port via findAvailablePort).
+    // Rethrow with actionable remediation instead of a raw EADDRINUSE.
+    if ((err as NodeJS.ErrnoException)?.code === 'EADDRINUSE') {
+      throw new SyntaurError(`Port ${port} is already in use.`, {
+        remediation: `drop --port to let Syntaur auto-pick a free port, or run "lsof -i :${port}" to find what is holding it`,
+        cause: err,
+      });
+    }
+    throw err;
+  }
 
   let viteProcess: ChildProcess | null = null;
 
