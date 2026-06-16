@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { compileQuery, type QueryItem } from '@shared/query';
 import { Dialog, DialogContent, DialogTitle } from '../components/ui/dialog';
@@ -34,6 +34,7 @@ export function CommandPalette({ entries }: CommandPaletteProps) {
   const [suggestIdx, setSuggestIdx] = useState(0);
   const listRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const listboxId = useId();
   const { search: searchCfg } = useSearchConfig();
   const statusCfg = useStatusConfig();
   const typesCfg = useTypesConfig();
@@ -200,6 +201,9 @@ export function CommandPalette({ entries }: CommandPaletteProps) {
     }
   }
 
+  const activeDescendant =
+    showSuggestions && suggestions[suggestIdx] ? `${listboxId}-option-${suggestIdx}` : undefined;
+
   return (
     <Dialog open={paletteOpen} onOpenChange={(o) => (o ? null : closePalette())}>
       <DialogContent
@@ -218,6 +222,11 @@ export function CommandPalette({ entries }: CommandPaletteProps) {
             ref={inputRef}
             autoFocus
             type="text"
+            role="combobox"
+            aria-expanded={showSuggestions}
+            aria-controls={showSuggestions ? listboxId : undefined}
+            aria-activedescendant={activeDescendant}
+            aria-autocomplete="list"
             value={query}
             onChange={(e) => {
               setQuery(e.target.value);
@@ -230,12 +239,20 @@ export function CommandPalette({ entries }: CommandPaletteProps) {
             className="w-full rounded-t-xl border-0 border-b border-border/70 bg-transparent px-4 py-3 text-sm text-foreground outline-none focus:border-primary"
           />
           {showSuggestions ? (
-            <div className="absolute left-0 right-0 top-full z-50 max-h-64 overflow-y-auto border-b border-border/70 bg-background shadow-lg">
+            <div
+              role="listbox"
+              id={listboxId}
+              aria-label="Query suggestions"
+              className="absolute left-0 right-0 top-full z-50 max-h-64 overflow-y-auto border-b border-border/70 bg-background shadow-lg"
+            >
               {suggestions.map((s, i) => {
                 const highlighted = i === suggestIdx;
                 return (
                   <button
                     key={`${s.kind}-${s.insert}-${i}`}
+                    id={`${listboxId}-option-${i}`}
+                    role="option"
+                    aria-selected={highlighted}
                     type="button"
                     // onMouseDown (not onClick) so the input keeps focus on accept.
                     onMouseDown={(ev) => {
