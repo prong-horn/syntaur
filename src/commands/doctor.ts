@@ -142,16 +142,35 @@ export const doctorCommand = new Command('doctor')
     try {
       const report = await runChecks({ only: options.only });
 
+      // --fix is currently a no-op (reserved for future auto-fixable checks).
+      // Surface that honestly: in JSON via an explicit `fix` field, and on
+      // stderr in every mode so a scripted caller never mistakes the flag for
+      // a remediation that ran.
+      const FIX_NOOP_NOTE =
+        '--fix is reserved but has no auto-fixable remediations in v1; nothing was changed.';
+
       if (options.json) {
-        process.stdout.write(renderJson(report) + '\n');
+        if (options.fix) {
+          process.stdout.write(
+            JSON.stringify(
+              { ...report, fix: { fixApplied: false, note: FIX_NOOP_NOTE } },
+              null,
+              2,
+            ) + '\n',
+          );
+        } else {
+          process.stdout.write(renderJson(report) + '\n');
+        }
       } else {
         process.stdout.write(renderHuman(report, { verbose: options.verbose ?? false }) + '\n');
       }
 
-      if (options.fix && !options.json) {
-        process.stdout.write(
-          '\nnote: --fix is reserved but has no auto-fixable remediations in v1.\n',
-        );
+      if (options.fix) {
+        if (!options.json) {
+          process.stdout.write(`\nnote: ${FIX_NOOP_NOTE}\n`);
+        }
+        // Always emit to stderr so the no-op is visible even in --json mode.
+        process.stderr.write(`note: ${FIX_NOOP_NOTE}\n`);
       }
 
       const hasError = report.summary.error > 0;
