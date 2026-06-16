@@ -459,7 +459,12 @@ export function ProjectDetail() {
     [project],
   );
 
+  // Guards the project action controls (status override / archive / move) so a
+  // double-click can't fire duplicate mutations while one is in flight.
+  const [actionPending, setActionPending] = useState(false);
+
   async function handleStatusOverride(status: string | null) {
+    setActionPending(true);
     try {
       const res = await fetch(`/api/projects/${slug}/status-override`, {
         method: 'POST',
@@ -475,10 +480,13 @@ export function ProjectDetail() {
       showToast(status ? 'Status override set' : 'Status override cleared', 'success');
     } catch (err) {
       showToast(err instanceof Error ? err.message : 'Failed to update status', 'error');
+    } finally {
+      setActionPending(false);
     }
   }
 
   async function handleArchiveProject(archived: boolean) {
+    setActionPending(true);
     try {
       const res = await fetch(`/api/projects/${slug}/${archived ? 'archive' : 'unarchive'}`, {
         method: 'POST',
@@ -493,10 +501,13 @@ export function ProjectDetail() {
       showToast(archived ? 'Project archived' : 'Project restored', 'success');
     } catch (err) {
       showToast(err instanceof Error ? err.message : 'Failed to update archive state', 'error');
+    } finally {
+      setActionPending(false);
     }
   }
 
   async function handleMoveWorkspace(workspace: string | null) {
+    setActionPending(true);
     try {
       const res = await fetch(`/api/projects/${slug}/move-workspace`, {
         method: 'POST',
@@ -512,6 +523,8 @@ export function ProjectDetail() {
       showToast(workspace ? `Moved to "${workspace}"` : 'Moved to ungrouped', 'success');
     } catch (err) {
       showToast(err instanceof Error ? err.message : 'Failed to move workspace', 'error');
+    } finally {
+      setActionPending(false);
     }
   }
 
@@ -608,16 +621,18 @@ export function ProjectDetail() {
         {project.statusOverride && (
           <button
             type="button"
-            className="shell-action border-warning-foreground/40 text-warning-foreground"
+            className="shell-action border-warning-foreground/40 text-warning-foreground disabled:cursor-not-allowed disabled:opacity-50"
             onClick={() => handleStatusOverride(null)}
+            disabled={actionPending}
             title="Clear manual status override and return to derived status"
           >
             Clear Override
           </button>
         )}
         <select
-          className="shell-action appearance-none bg-transparent text-sm"
+          className="shell-action appearance-none bg-transparent text-sm disabled:cursor-not-allowed disabled:opacity-50"
           value=""
+          disabled={actionPending}
           onChange={(e) => {
             if (e.target.value) handleStatusOverride(e.target.value);
           }}
@@ -631,8 +646,9 @@ export function ProjectDetail() {
         </select>
         <button
           type="button"
-          className="shell-action"
+          className="shell-action disabled:cursor-not-allowed disabled:opacity-50"
           onClick={() => handleArchiveProject(!project.archived)}
+          disabled={actionPending}
           title={
             project.archived
               ? 'Restore this project and its cascade-hidden assignments'
@@ -643,8 +659,9 @@ export function ProjectDetail() {
         </button>
         {workspacesData && workspacesData.workspaces.length > 0 && (
           <select
-            className="shell-action appearance-none bg-transparent text-sm"
+            className="shell-action appearance-none bg-transparent text-sm disabled:cursor-not-allowed disabled:opacity-50"
             value=""
+            disabled={actionPending}
             onChange={(e) => {
               if (e.target.value === '_ungrouped') handleMoveWorkspace(null);
               else if (e.target.value) handleMoveWorkspace(e.target.value);
@@ -664,15 +681,13 @@ export function ProjectDetail() {
           <SquarePen className="h-4 w-4" />
           <span>Edit Project</span>
         </Link>
-        <Link className="shell-action shell-action--cta" to={`${wsPrefix}/projects/${project.slug}/create/assignment`}>
-          <Plus className="h-4 w-4" />
-          <span>New Assignment</span>
-        </Link>
+        {/* "New Assignment" is the persistent primary CTA in the TopBar on every
+            project page (and a Quick Link below) — no need to repeat it here. */}
         <ExternalIdBadges externalIds={project.externalIds} />
         <span className="text-xs text-muted-foreground">Created {formatDate(project.created)}. Last source update {formatDateTime(project.updated)}.</span>
       </div>
 
-      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+      <div className="grid gap-3 grid-cols-2 sm:grid-cols-3 xl:grid-cols-5">
         <StatCard label="Assignments" value={project.progress.total} />
         <StatCard label="In Progress" value={project.progress['in_progress'] ?? 0} tone="info" />
         <StatCard label="Review" value={project.progress['review'] ?? 0} tone="info" />
@@ -680,7 +695,7 @@ export function ProjectDetail() {
         <StatCard label="Completed" value={project.progress['completed'] ?? 0} tone="success" />
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_280px]">
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_300px]">
         <div className="space-y-4">
           <ContentTabs
             value={tab}
@@ -692,10 +707,23 @@ export function ProjectDetail() {
                 content: (
                   <div className="space-y-5">
                     <SectionCard title="Project Overview">
-                      <MarkdownRenderer
-                        content={project.body}
-                        emptyState="This project does not have overview content yet."
-                      />
+                      {project.body && project.body.trim() ? (
+                        <MarkdownRenderer content={project.body} />
+                      ) : (
+                        <EmptyState
+                          title="No overview yet"
+                          description="Add a short summary so collaborators and agents know what this project is about."
+                          actions={
+                            <Link
+                              className="shell-action shell-action--cta"
+                              to={`${wsPrefix}/projects/${project.slug}/edit`}
+                            >
+                              <SquarePen className="h-4 w-4" />
+                              <span>Add overview</span>
+                            </Link>
+                          }
+                        />
+                      )}
                     </SectionCard>
                   </div>
                 ),
@@ -839,6 +867,7 @@ export function ProjectDetail() {
                               : a.status
                           }
                           dragDisabled
+                          boundedColumns
                           renderCard={(item) => (
                             <AssignmentCard projectSlug={project.slug} assignment={item} />
                           )}
@@ -1026,20 +1055,37 @@ export function ProjectDetail() {
           </SectionCard>
 
           <SectionCard title="Attention">
-            <dl className="space-y-3 text-sm">
-              <div className="flex items-center justify-between">
-                <dt className="text-muted-foreground">Blocked</dt>
-                <dd className="font-semibold text-foreground">{project.needsAttention.blockedCount}</dd>
-              </div>
-              <div className="flex items-center justify-between">
-                <dt className="text-muted-foreground">Failed</dt>
-                <dd className="font-semibold text-foreground">{project.needsAttention.failedCount}</dd>
-              </div>
-              <div className="flex items-center justify-between">
-                <dt className="text-muted-foreground">Unanswered questions</dt>
-                <dd className="font-semibold text-foreground">{project.needsAttention.openQuestions}</dd>
-              </div>
-            </dl>
+            {(() => {
+              // Only surface counts that actually need attention. Zero rows here
+              // just duplicate the stat cards / Progress Summary, so an all-clear
+              // project shows a single reassuring line instead of three "0"s.
+              const rows = [
+                { label: 'Blocked', count: project.needsAttention.blockedCount, alert: true },
+                { label: 'Failed', count: project.needsAttention.failedCount, alert: true },
+                { label: 'Unanswered questions', count: project.needsAttention.openQuestions, alert: false },
+              ].filter((row) => row.count > 0);
+
+              if (rows.length === 0) {
+                return <p className="text-sm text-muted-foreground">Nothing needs attention.</p>;
+              }
+
+              return (
+                <dl className="space-y-3 text-sm">
+                  {rows.map((row) => (
+                    <div key={row.label} className="flex items-center justify-between">
+                      <dt className="text-muted-foreground">{row.label}</dt>
+                      <dd
+                        className={`font-semibold ${
+                          row.alert ? 'text-warning-foreground' : 'text-foreground'
+                        }`}
+                      >
+                        {row.count}
+                      </dd>
+                    </div>
+                  ))}
+                </dl>
+              );
+            })()}
           </SectionCard>
 
           <SectionCard title="Quick Links">
