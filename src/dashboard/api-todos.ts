@@ -7,6 +7,8 @@ import {
   appendLogEntry,
   generateUniqueId,
   computeCounts,
+  logPath,
+  serializeLog,
 } from '../todos/parser.js';
 import { resolve as resolvePath, dirname } from 'node:path';
 import { rename, mkdir } from 'node:fs/promises';
@@ -403,6 +405,14 @@ export function createTodosRouter(
 
         checklist.items = checklist.items.filter((i) => !completedIds.has(i.id));
         await writeChecklist(todosDir, checklist);
+
+        // Trim the active log: drop fully-archived-todo entries and rewrite via
+        // the canonical serializer so the file still parses and no field (incl.
+        // status) is dropped. Without this the log grows unbounded and would
+        // re-archive the same entries on the next pass.
+        const archivedEntries = new Set(toArchive);
+        log.entries = log.entries.filter((e) => !archivedEntries.has(e));
+        await writeFileForce(logPath(todosDir, workspace), serializeLog(log));
 
         // Archived todos leave the active checklist for good — drop their attachments.
         for (const id of completedIds) {

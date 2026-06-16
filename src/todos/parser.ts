@@ -378,6 +378,20 @@ export function serializeLogEntry(entry: LogEntry): string {
   return lines.join('\n');
 }
 
+/**
+ * Serialize a full todo log file (frontmatter + header + entries) in the exact
+ * format `readLog`/`appendLogEntry` produce. Uses the canonical
+ * `serializeLogEntry` so no entry field (incl. `status`) is dropped. Callers
+ * that rewrite a trimmed log should use this rather than hand-building lines.
+ */
+export function serializeLog(log: TodoLog): string {
+  const header = `---\nworkspace: ${log.workspace}\n---\n\n# Todo Log\n`;
+  if (log.entries.length === 0) {
+    return header;
+  }
+  return header + '\n' + log.entries.map(serializeLogEntry).join('\n\n') + '\n';
+}
+
 // --- File I/O ---
 
 export function checklistPath(todosDir: string, workspace: string): string {
