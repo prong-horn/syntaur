@@ -90,6 +90,15 @@ workspace:
     expect(r.stdout).toContain(wt);
   });
 
+  it('resolves by --id and ignores --project', async () => {
+    const wt = resolve(repo, '.worktrees', 'feat-x');
+    git(repo, ['worktree', 'add', '-b', 'feat-x', wt, 'main']);
+    await writeAssignment('a', wt, 'feat-x'); // frontmatter id: id-a
+    const r = await runCli(['open', '--id', 'id-a', '--project', 'nonexistent'], home);
+    expect(r.code, r.stderr).toBe(0);
+    expect(r.stdout).toContain(wt);
+  });
+
   it('errors when no worktree is recorded', async () => {
     await writeAssignment('a', null, null);
     const r = await runCli(['open', 'a', '--project', 'p'], home);

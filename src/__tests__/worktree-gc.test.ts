@@ -159,6 +159,21 @@ describe('syntaur worktree gc', () => {
     expect(await fileExists(orphan)).toBe(true);
   });
 
+  it('protects a worktree claimed by BOTH a completed and an active assignment', async () => {
+    const wt = addWorktree('feat-shared', false);
+    // Two records point at the same worktree: one completed, one active. The
+    // active one must protect it — never removable.
+    await writeAssignment({ slug: 'a', status: 'completed', worktreePath: wt, branch: 'feat-shared' });
+    await writeAssignment({ slug: 'b', status: 'in_progress', worktreePath: wt, branch: 'feat-shared' });
+
+    const r = await runCli(['worktree', 'gc', '--repository', repo, '--apply', '--json'], home);
+    expect(r.code, r.stderr).toBe(0);
+    const cand = JSON.parse(r.stdout).candidates.find((c: { worktreePath: string }) => c.worktreePath.endsWith('feat-shared'));
+    expect(cand.reason).toBe('non-terminal');
+    expect(cand.willRemove).toBe(false);
+    expect(await fileExists(wt)).toBe(true);
+  });
+
   it('never classifies the main worktree as removable', async () => {
     const r = await runCli(['worktree', 'gc', '--repository', repo, '--json'], home);
     expect(r.code, r.stderr).toBe(0);

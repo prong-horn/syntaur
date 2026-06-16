@@ -3,23 +3,31 @@ import { getTerminal, type SyntaurConfig } from './config.js';
 import type { TerminalChoice } from './terminal-schema.js';
 
 /**
+ * Spawn a detached process, swallowing both synchronous throws AND the async
+ * `error` event (e.g. ENOENT for a missing binary) so a best-effort launch can
+ * never crash the CLI. Returns whether the spawn was attempted without a
+ * synchronous failure.
+ */
+function spawnDetached(command: string, args: string[]): boolean {
+  try {
+    const child = spawn(command, args, { detached: true, stdio: 'ignore' });
+    child.on('error', () => {}); // missing binary etc. -> async error, swallow it
+    child.unref();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Open `path` in the user's editor. Prefers `$VISUAL`/`$EDITOR`; falls back to
  * `code` (VS Code) elsewhere or macOS `open` on darwin. Best-effort: spawns
  * detached, swallows failures, and returns whether a launch was attempted.
  */
 export function openInEditor(path: string): boolean {
   const editor = process.env.VISUAL || process.env.EDITOR;
-  try {
-    if (editor) {
-      spawn(editor, [path], { detached: true, stdio: 'ignore' }).unref();
-      return true;
-    }
-    const fallback = process.platform === 'darwin' ? 'open' : 'code';
-    spawn(fallback, [path], { detached: true, stdio: 'ignore' }).unref();
-    return true;
-  } catch {
-    return false;
-  }
+  if (editor) return spawnDetached(editor, [path]);
+  return spawnDetached(process.platform === 'darwin' ? 'open' : 'code', [path]);
 }
 
 // macOS application names for `open -a <app> <path>` (opens a new window rooted
@@ -41,11 +49,6 @@ const TERMINAL_APP: Record<TerminalChoice, string> = {
  */
 export function openInTerminal(path: string, config: SyntaurConfig): boolean {
   if (process.platform !== 'darwin') return false;
-  try {
-    const app = TERMINAL_APP[getTerminal(config)] ?? 'Terminal';
-    spawn('open', ['-a', app, path], { detached: true, stdio: 'ignore' }).unref();
-    return true;
-  } catch {
-    return false;
-  }
+  const app = TERMINAL_APP[getTerminal(config)] ?? 'Terminal';
+  return spawnDetached('open', ['-a', app, path]);
 }

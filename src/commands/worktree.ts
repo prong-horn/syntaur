@@ -287,40 +287,52 @@ export async function runWorktreeGc(
   const base = options.base ?? 'main';
   const entries = await listWorktrees(repository);
 
-  // Reverse map: canonical worktree path -> owning assignment.
+  // Reverse map: canonical worktree path -> owning assignment(s). A path can be
+  // claimed by more than one assignment record; we keep ALL owners so a single
+  // completed record can never mask a still-active one (see classification).
   const config = await readConfig();
   const walk = await listAssignmentsByProject(config.defaultProjectDir, assignmentsDir());
-  const owners = new Map<string, GcOwner>();
+  const owners = new Map<string, GcOwner[]>();
   for (const entry of walk.withAssignmentMd) {
     try {
       const content = await readFile(resolve(entry.assignmentDir, 'assignment.md'), 'utf-8');
       const fm = parseAssignmentFrontmatter(content);
       const wp = fm.workspace?.worktreePath;
       if (!wp) continue; // common case: assignment never got a worktree
-      owners.set(canonicalPath(wp), {
+      const key = canonicalPath(wp);
+      const list = owners.get(key) ?? [];
+      list.push({
         assignmentSlug: entry.assignmentSlug,
         projectSlug: entry.projectSlug,
         status: fm.status,
         terminal: isTerminalStatus(fm.status) || fm.archived === true,
         worktreePathRaw: wp,
       });
+      owners.set(key, list);
     } catch {
       // Unreadable/malformed assignment.md -> skip; never let one abort gc.
     }
   }
 
-  // Never remove the worktree we're standing in, the repo's main worktree, or a
-  // bare entry.
+  // Never remove the repo's main worktree (always the FIRST entry of
+  // `git worktree list`, independent of cwd), the worktree we're standing in, or
+  // a bare entry.
   const rt = await repoTopLevel(repository);
   const ct = await repoTopLevel(cwd);
   const repoTop = rt ? canonicalPath(rt) : null;
   const cwdTop = ct ? canonicalPath(ct) : null;
+  const mainPath = entries.length > 0 ? canonicalPath(entries[0].worktreePath) : null;
   const dbPath = resolve(syntaurRoot(), 'syntaur.db');
 
   const candidates: GcCandidate[] = [];
   for (const entry of entries) {
     const canon = canonicalPath(entry.worktreePath);
-    const owner = owners.get(canon);
+    const ownerList = owners.get(canon) ?? [];
+    const primary = ownerList[0]; // for display
+    const linked = ownerList.length > 0;
+    // Safe rule: a path is terminal-eligible only if EVERY owning record is
+    // terminal. Any non-terminal (active) owner protects the worktree.
+    const allTerminal = linked && ownerList.every((o) => o.terminal);
 
     let reason: GcReason;
     let merged: boolean | null = null;
@@ -328,6 +340,7 @@ export async function runWorktreeGc(
 
     const isCurrent =
       entry.bare ||
+      (mainPath !== null && canon === mainPath) ||
       (repoTop !== null && canon === repoTop) ||
       (cwdTop !== null && canon === cwdTop);
 
@@ -335,9 +348,9 @@ export async function runWorktreeGc(
       reason = 'current';
     } else if (entry.detached || entry.branch === null) {
       reason = 'detached';
-    } else if (!owner) {
+    } else if (!linked) {
       reason = 'orphan';
-    } else if (!owner.terminal) {
+    } else if (!allTerminal) {
       reason = 'non-terminal';
     } else {
       dirty = await isWorktreeDirty(entry.worktreePath);
@@ -349,7 +362,7 @@ export async function runWorktreeGc(
       }
     }
 
-    const sessionPaths = [canon, entry.worktreePath, owner?.worktreePathRaw].filter(
+    const sessionPaths = [canon, entry.worktreePath, ...ownerList.map((o) => o.worktreePathRaw)].filter(
       (p): p is string => typeof p === 'string' && p.length > 0,
     );
     const sessions = countSessionsByPath(dbPath, [...new Set(sessionPaths)]);
@@ -361,9 +374,9 @@ export async function runWorktreeGc(
     candidates.push({
       worktreePath: entry.worktreePath,
       reason,
-      assignmentSlug: owner?.assignmentSlug ?? null,
-      projectSlug: owner?.projectSlug ?? null,
-      status: owner?.status ?? null,
+      assignmentSlug: primary?.assignmentSlug ?? null,
+      projectSlug: primary?.projectSlug ?? null,
+      status: primary?.status ?? null,
       branch: entry.branch,
       merged,
       dirty,

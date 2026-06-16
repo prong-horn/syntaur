@@ -25,9 +25,12 @@ export async function runOpen(
   assignmentArg: string | undefined,
   options: OpenOptions,
 ): Promise<{ worktreePath: string; recreated: boolean; copied: boolean; launched: 'editor' | 'terminal' | null }> {
-  const resolved = await resolveAssignmentTarget(options.id ?? assignmentArg, {
-    project: options.project,
-  });
+  // A UUID (--id) is globally unique, so it must resolve WITHOUT a project
+  // narrow (the resolver's project branch would otherwise treat it as a slug
+  // under that project). --project only applies to a positional slug.
+  const resolved = options.id
+    ? await resolveAssignmentTarget(options.id, {})
+    : await resolveAssignmentTarget(assignmentArg, { project: options.project });
   const assignmentPath = resolve(resolved.assignmentDir, 'assignment.md');
   if (!(await fileExists(assignmentPath))) {
     throw new SyntaurError(`Assignment file not found: ${assignmentPath}`, {
