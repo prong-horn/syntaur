@@ -1,13 +1,15 @@
-import { useCallback, useEffect, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ReactFlow,
   Background,
   Controls,
+  Panel,
   Handle,
   Position,
   MarkerType,
   useNodesState,
   useEdgesState,
+  useReactFlow,
   type Node,
   type Edge,
   type Connection,
@@ -15,24 +17,10 @@ import {
   type NodeChange,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
-import { AlertTriangle, HelpCircle, Flag } from 'lucide-react';
+import { AlertTriangle, HelpCircle, Flag, LayoutGrid } from 'lucide-react';
 import { cn } from '../lib/utils';
 import type { GraphStatusNode, GraphTransitionEdge } from './transitions-helpers';
-
-// ── Layout ───────────────────────────────────────────────────────────────
-// Deterministic grid: defined statuses (in display order) then ghost nodes
-// fill columns top-to-bottom, left-to-right. Positions aren't persisted
-// (YAGNI); users can drag, and drags survive prop-driven rebuilds via a
-// per-id position cache.
-const ROWS_PER_COL = 4;
-const COL_W = 230;
-const ROW_H = 120;
-
-function gridPosition(index: number): { x: number; y: number } {
-  const col = Math.floor(index / ROWS_PER_COL);
-  const row = index % ROWS_PER_COL;
-  return { x: col * COL_W, y: row * ROW_H };
-}
+import { layoutGraph } from './transitions-graph-layout';
 
 type StatusNodeData = {
   label: string;
@@ -94,6 +82,29 @@ const COLOR_NORMAL = 'oklch(var(--muted-foreground))';
 const COLOR_SELECTED = 'oklch(var(--primary))';
 const COLOR_UNDEFINED = 'oklch(var(--error-foreground))';
 
+// Re-layout control. Lives inside <ReactFlow> so it can use the flow context
+// (useReactFlow); resets cached positions then fits the view after the node
+// state has updated.
+function RelayoutPanel({ onRelayout }: { onRelayout: () => void }) {
+  const { fitView } = useReactFlow();
+  return (
+    <Panel position="top-right">
+      <button
+        type="button"
+        onClick={() => {
+          onRelayout();
+          requestAnimationFrame(() => fitView({ padding: 0.2 }));
+        }}
+        className="shell-action inline-flex items-center gap-1 text-xs"
+        title="Reset node positions to the automatic layout"
+      >
+        <LayoutGrid className="h-3 w-3" />
+        Re-layout
+      </button>
+    </Panel>
+  );
+}
+
 export interface TransitionsGraphProps {
   nodes: GraphStatusNode[];
   edges: GraphTransitionEdge[];
@@ -116,36 +127,60 @@ export function TransitionsGraph({
 }: TransitionsGraphProps) {
   const [rfNodes, setRfNodes, onNodesChange] = useNodesState<Node<StatusNodeData>>([]);
   const [rfEdges, setRfEdges] = useEdgesState<Edge>([]);
-  // Cache dragged positions by status id so prop-driven rebuilds don't reset them.
+  // Single source of each node's current position (auto-layout OR drag). A node
+  // is laid out once when it first appears, then keeps its position; dragging
+  // overwrites it. "Re-layout" clears this and bumps `layoutNonce` to re-apply.
   const positions = useRef(new Map<string, { x: number; y: number }>());
+  const [layoutNonce, setLayoutNonce] = useState(0);
 
-  // Rebuild nodes whenever the derived node set changes (by content signature).
-  // Includes `label` so a live status rename (passed through statusOptions)
-  // refreshes the node.
+  // Rebuild nodes whenever the derived node set changes (by content signature)
+  // or a re-layout is requested. NOT keyed on edges, so adding/removing an edge
+  // between existing nodes never repositions them (no thrash). `label` is in the
+  // signature so a live status rename refreshes the node.
   const nodeSig = useMemo(
     () => JSON.stringify(nodes.map((n) => [n.id, n.label, n.color ?? '', n.terminal, n.orphan, n.missing])),
     [nodes],
   );
   useEffect(() => {
+    // Compute auto-layout for any node not already positioned. Reading `edges`
+    // here (not a dep) lets new nodes rank against current edges without
+    // re-running on every edge edit.
+    const layoutPos = layoutGraph(nodes, edges, { direction: 'LR' });
+    const ids = new Set(nodes.map((n) => n.id));
+    for (const id of positions.current.keys()) {
+      if (!ids.has(id)) positions.current.delete(id); // prune removed nodes
+    }
     setRfNodes(
-      nodes.map((n, i) => ({
-        id: n.id,
-        type: 'status',
-        position: positions.current.get(n.id) ?? gridPosition(i),
-        data: {
-          label: n.label,
-          statusId: n.id,
-          color: n.color,
-          terminal: n.terminal,
-          orphan: n.orphan,
-          missing: n.missing,
-        },
-        draggable: true,
-        deletable: false,
-      })),
+      nodes.map((n) => {
+        let pos = positions.current.get(n.id);
+        if (!pos) {
+          pos = layoutPos.get(n.id) ?? { x: 0, y: 0 };
+          positions.current.set(n.id, pos);
+        }
+        return {
+          id: n.id,
+          type: 'status',
+          position: pos,
+          data: {
+            label: n.label,
+            statusId: n.id,
+            color: n.color,
+            terminal: n.terminal,
+            orphan: n.orphan,
+            missing: n.missing,
+          },
+          draggable: true,
+          deletable: false,
+        };
+      }),
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [nodeSig, setRfNodes]);
+  }, [nodeSig, layoutNonce, setRfNodes]);
+
+  const handleRelayout = useCallback(() => {
+    positions.current.clear();
+    setLayoutNonce((n) => n + 1);
+  }, []);
 
   // Rebuild edges whenever the derived edges or selection change.
   const edgeSig = useMemo(
@@ -238,6 +273,7 @@ export function TransitionsGraph({
       >
         <Background gap={16} />
         <Controls showInteractive={false} />
+        <RelayoutPanel onRelayout={handleRelayout} />
       </ReactFlow>
     </div>
   );
