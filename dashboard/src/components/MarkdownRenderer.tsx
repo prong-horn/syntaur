@@ -45,6 +45,19 @@ const components: Components = {
       {children}
     </h4>
   ),
+  // h5/h6 carry ids too so the renderer covers the full h1–h6 range the backend
+  // `nearestSection` regex (/^#{1,6}\s+.../) can emit — otherwise a hit under a
+  // `#####`/`######` heading deep-links to a hash with no matching element.
+  h5: ({ children, ...props }) => (
+    <h5 id={slugifyHeading(nodeText(children))} {...props}>
+      {children}
+    </h5>
+  ),
+  h6: ({ children, ...props }) => (
+    <h6 id={slugifyHeading(nodeText(children))} {...props}>
+      {children}
+    </h6>
+  ),
 };
 
 export function MarkdownRenderer({

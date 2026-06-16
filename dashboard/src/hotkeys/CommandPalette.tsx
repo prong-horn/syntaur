@@ -27,28 +27,54 @@ const TYPE_LABEL: Record<string, string> = {
 };
 
 /**
+ * Clamp ranges to `[0, len]`, drop empties, sort ascending, and MERGE any
+ * overlapping/adjacent ranges into disjoint, ordered spans. Defends the
+ * highlighter against unsanitized match ranges (overlaps would otherwise
+ * duplicate snippet text). Mirrors the CLI highlighter's clamp/sort/merge.
+ */
+function normalizeRanges(matches: ContentMatchRange[], len: number): Array<{ start: number; end: number }> {
+  const clamped = matches
+    .map((m) => ({
+      start: Math.max(0, Math.min(m.start, len)),
+      end: Math.max(0, Math.min(m.end, len)),
+    }))
+    .filter((m) => m.end > m.start)
+    .sort((a, b) => a.start - b.start || a.end - b.end);
+
+  const merged: Array<{ start: number; end: number }> = [];
+  for (const m of clamped) {
+    const last = merged[merged.length - 1];
+    // Adjacent (start <= last.end) ranges merge into one contiguous <mark>.
+    if (last && m.start <= last.end) {
+      last.end = Math.max(last.end, m.end);
+    } else {
+      merged.push({ ...m });
+    }
+  }
+  return merged;
+}
+
+/**
  * Render a neutral snippet with the match ranges wrapped in `<mark>`,
  * HTML-SAFELY: the text is emitted as React text nodes (auto-escaped) — never
  * `dangerouslySetInnerHTML` — so a snippet containing markup can't inject HTML.
- * Ranges are snippet-local char offsets and assumed non-overlapping & sorted.
+ * Ranges are snippet-local char offsets; they're clamped/sorted/merged here so
+ * overlapping or out-of-bounds inputs can't duplicate or drop text.
  */
 function highlightSnippet(snippet: string, matches?: ContentMatchRange[]): ReactNode {
   if (!matches || matches.length === 0) return snippet;
-  const sorted = [...matches].sort((a, b) => a.start - b.start);
+  const ranges = normalizeRanges(matches, snippet.length);
+  if (ranges.length === 0) return snippet;
   const out: ReactNode[] = [];
   let cursor = 0;
-  sorted.forEach((m, i) => {
-    const start = Math.max(0, Math.min(m.start, snippet.length));
-    const end = Math.max(start, Math.min(m.end, snippet.length));
-    if (start > cursor) out.push(<Fragment key={`t${i}`}>{snippet.slice(cursor, start)}</Fragment>);
-    if (end > start) {
-      out.push(
-        <mark key={`m${i}`} className="rounded bg-yellow-200/70 px-0.5 text-foreground dark:bg-yellow-500/30">
-          {snippet.slice(start, end)}
-        </mark>,
-      );
-    }
-    cursor = Math.max(cursor, end);
+  ranges.forEach((m, i) => {
+    if (m.start > cursor) out.push(<Fragment key={`t${i}`}>{snippet.slice(cursor, m.start)}</Fragment>);
+    out.push(
+      <mark key={`m${i}`} className="rounded bg-yellow-200/70 px-0.5 text-foreground dark:bg-yellow-500/30">
+        {snippet.slice(m.start, m.end)}
+      </mark>,
+    );
+    cursor = m.end;
   });
   if (cursor < snippet.length) out.push(<Fragment key="tail">{snippet.slice(cursor)}</Fragment>);
   return out;

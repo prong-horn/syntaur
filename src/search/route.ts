@@ -41,14 +41,17 @@ export function slugifyHeading(text: string): string {
 }
 
 /**
- * File kinds whose dashboard pane is rendered through `MarkdownRenderer` and so
- * gets heading `id`s a `#<slug(section)>` anchor can resolve against. The
- * `comments` and `progress` panes render structured components (CommentsThread /
- * progress `<li>` rows), NOT markdown headings — appending a hash there links to
- * an id that never exists, so those kinds get the `?tab=` pane WITHOUT a hash.
+ * File kinds whose dashboard pane renders its WHOLE body through
+ * `MarkdownRenderer` and so gets heading `id`s a `#<slug(section)>` anchor can
+ * resolve against. Excluded kinds, and why a hash there would dangle:
+ *   - `comments` / `progress` — render structured components (CommentsThread /
+ *     progress `<li>` rows), NOT markdown headings.
+ *   - `assignment` — the `summary` pane transforms `## Acceptance Criteria` /
+ *     `## Todos` into `SectionCard`s WITHOUT ids (AssignmentDetail.tsx), so its
+ *     headings never become element ids.
+ * These all get the `?tab=` pane WITHOUT a hash.
  */
 const ANCHORABLE_KINDS: ReadonlySet<FileKind> = new Set<FileKind>([
-  'assignment',
   'plan',
   'scratchpad',
   'handoff',

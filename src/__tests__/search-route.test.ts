@@ -75,6 +75,20 @@ describe('routeForHit', () => {
     expect(route).toBe('/projects/proj/assignments/a1?tab=decisions#why-postgres');
   });
 
+  it('omits the section anchor for assignment (summary pane builds SectionCards, no heading ids)', () => {
+    const route = routeForHit(
+      hit({
+        fileKind: 'assignment',
+        projectSlug: 'proj',
+        assignmentSlug: 'my-assignment',
+        standalone: false,
+        section: 'Acceptance Criteria',
+      }),
+    );
+    expect(route).toBe('/projects/proj/assignments/my-assignment?tab=summary');
+    expect(route).not.toContain('#');
+  });
+
   it('omits the section anchor for comments (structured pane, no heading ids)', () => {
     const route = routeForHit(
       hit({
