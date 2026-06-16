@@ -151,6 +151,65 @@ function statusToMarker(item: TodoItem): string {
   }
 }
 
+/**
+ * Escape backslash-special characters in a todo description so that prose
+ * containing `#`, `[`, or `\` is never mistaken for a structural tag/id token.
+ * Order matters: backslash must be escaped first.
+ */
+function escapeDescription(description: string): string {
+  return description.replace(/\\/g, '\\\\').replace(/#/g, '\\#').replace(/\[/g, '\\[');
+}
+
+/**
+ * Reverse of escapeDescription: `\#`→`#`, `\[`→`[`, `\\`→`\`.
+ * A single pass handles all sequences correctly because escapes are
+ * non-overlapping (a `\` always pairs with the following char).
+ */
+function unescapeDescription(escaped: string): string {
+  let out = '';
+  for (let i = 0; i < escaped.length; i++) {
+    if (escaped[i] === '\\' && i + 1 < escaped.length) {
+      const next = escaped[i + 1];
+      if (next === '\\' || next === '#' || next === '[') {
+        out += next;
+        i++;
+        continue;
+      }
+    }
+    out += escaped[i];
+  }
+  return out;
+}
+
+/**
+ * Find the index in `rest` of the first UN-escaped structural token: either a
+ * `#tag` start (`#` followed by a tag char) or a `[t:` / `[` bracket. A token is
+ * "escaped" when preceded by an odd number of backslashes. Returns the length of
+ * `rest` if no structural token exists (whole line is description).
+ */
+function findStructuralCut(rest: string): number {
+  for (let i = 0; i < rest.length; i++) {
+    const ch = rest[i];
+    if (ch !== '#' && ch !== '[') continue;
+    // Count preceding backslashes to determine escaped-ness.
+    let backslashes = 0;
+    let j = i - 1;
+    while (j >= 0 && rest[j] === '\\') {
+      backslashes++;
+      j--;
+    }
+    if (backslashes % 2 === 1) continue; // escaped — part of the description
+    if (ch === '#') {
+      // Only a structural tag if followed by a tag char.
+      if (/[a-zA-Z0-9_-]/.test(rest[i + 1] ?? '')) return i;
+    } else {
+      // ch === '[' — any unescaped bracket starts the structural tail.
+      return i;
+    }
+  }
+  return rest.length;
+}
+
 export function parseChecklistItem(line: string): TodoItem | null {
   const match = line.match(ITEM_REGEX);
   if (!match) return null;
@@ -160,23 +219,22 @@ export function parseChecklistItem(line: string): TodoItem | null {
 
   const { status, session } = parseStatus(marker);
 
-  const idMatch = rest.match(ID_REGEX);
+  // Split the line at the first UN-escaped structural token. Everything before
+  // is the (escaped) description; everything after is the structural tail from
+  // which tags / id / meta are extracted. This keeps escaped prose like `\#42`
+  // out of the tag collection.
+  const cut = findStructuralCut(rest);
+  const description = unescapeDescription(rest.slice(0, cut).trim());
+  const tail = rest.slice(cut);
+
+  const idMatch = tail.match(ID_REGEX);
   const id = idMatch ? idMatch[1] : '';
 
   const tags: string[] = [];
   let tagMatch;
   const tagRegex = new RegExp(TAG_REGEX.source, 'g');
-  while ((tagMatch = tagRegex.exec(rest)) !== null) {
+  while ((tagMatch = tagRegex.exec(tail)) !== null) {
     tags.push(tagMatch[1]);
-  }
-
-  // Description is everything before the first #tag or [t:...], trimmed
-  let description = rest;
-  const firstTagIdx = rest.search(/#[a-zA-Z0-9_-]/);
-  const firstIdIdx = rest.search(/\[t:[a-f0-9]{4}\]/);
-  const cutPoints = [firstTagIdx, firstIdIdx].filter((i) => i >= 0);
-  if (cutPoints.length > 0) {
-    description = rest.slice(0, Math.min(...cutPoints)).trim();
   }
 
   const meta = parseMetaToken(line);
@@ -201,7 +259,10 @@ export function parseChecklistItem(line: string): TodoItem | null {
 export function serializeChecklistItem(item: TodoItem): string {
   const marker = statusToMarker(item);
   const tagStr = item.tags.map((t) => `#${t}`).join(' ');
-  const parts = [`- [${marker}] ${item.description}`];
+  // Escape backslash-special chars in the description so prose `#`/`[`/`\` is
+  // never re-parsed as a structural tag/id token. Real tags and `[t:id]` below
+  // are emitted with literal, unescaped markers.
+  const parts = [`- [${marker}] ${escapeDescription(item.description)}`];
   if (tagStr) parts.push(tagStr);
   parts.push(`[t:${item.id}]`);
   const meta = serializeMetaToken(item);

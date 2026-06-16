@@ -94,6 +94,62 @@ describe('parseChecklistItem', () => {
   });
 });
 
+describe('parseChecklistItem — description with tag-like / id-like prose (B2, lossless via escaping)', () => {
+  it('(a) keeps prose after a "#42" token and invents no tag', () => {
+    const item = makeItem({
+      id: 'a3f1',
+      description: 'fix bug #42 in lexer',
+      status: 'open',
+      tags: [],
+      session: null,
+    });
+    const reparsed = parseChecklistItem(serializeChecklistItem(item));
+    expect(reparsed).toEqual(item);
+    expect(reparsed?.description).toBe('fix bug #42 in lexer');
+    expect(reparsed?.tags).toEqual([]);
+  });
+
+  it('(b) keeps literal "[t:dead]"-shaped prose and does not set id "dead"', () => {
+    const item = makeItem({
+      id: 'b7c2',
+      description: 'see [t:dead] note',
+      status: 'open',
+      tags: [],
+      session: null,
+    });
+    const reparsed = parseChecklistItem(serializeChecklistItem(item));
+    expect(reparsed).toEqual(item);
+    expect(reparsed?.description).toBe('see [t:dead] note');
+    expect(reparsed?.id).toBe('b7c2');
+  });
+
+  it('(c) description ending in "#urgent" plus a real #p1 tag → description retains "#urgent", tags == [p1]', () => {
+    const item = makeItem({
+      id: 'c3d4',
+      description: 'ship the fix and #urgent',
+      status: 'open',
+      tags: ['p1'],
+      session: null,
+    });
+    const reparsed = parseChecklistItem(serializeChecklistItem(item));
+    expect(reparsed).toEqual(item);
+    expect(reparsed?.description).toBe('ship the fix and #urgent');
+    expect(reparsed?.tags).toEqual(['p1']);
+  });
+
+  it('round-trips a description containing a literal backslash', () => {
+    const item = makeItem({
+      id: 'dddd',
+      description: 'use C:\\path and \\#notatag here',
+      status: 'open',
+      tags: ['real'],
+      session: null,
+    });
+    const reparsed = parseChecklistItem(serializeChecklistItem(item));
+    expect(reparsed).toEqual(item);
+  });
+});
+
 describe('serializeChecklistItem', () => {
   it('serializes an open item', () => {
     const item = makeItem({ id: 'a3f1', description: 'Fix link', status: 'open', tags: ['docs'], session: null });
