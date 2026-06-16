@@ -1,6 +1,8 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { ArrowLeft, Eye, FileCode2, Save } from 'lucide-react';
 import { useWorkspaces, type EditableDocumentType } from '../hooks/useProjects';
+import { useStatusConfig, getStatusLabel } from '../hooks/useStatusConfig';
+import { deriveStatusOptions } from '../lib/statusMeta';
 import {
   normalizeEditorContent,
   parseAssignmentEditorState,
@@ -183,6 +185,10 @@ function StructuredEditor({
   onChange: (content: string) => void;
   allowSlugEdit: boolean;
 }) {
+  // Drive the assignment Status <select> from the live status config so every
+  // configured status (built-in AND custom) is selectable, in configured order.
+  const statusConfig = useStatusConfig();
+
   if (documentType === 'project') {
     const state = parseProjectEditorState(content);
     return (
@@ -245,6 +251,8 @@ function StructuredEditor({
 
   if (documentType === 'assignment') {
     const state = parseAssignmentEditorState(content);
+    const statusOptions = deriveStatusOptions(statusConfig);
+    const savedStatusMissing = !statusOptions.some((option) => option.id === state.status);
     return (
       <div className="space-y-3">
         <FormGrid>
@@ -283,12 +291,16 @@ function StructuredEditor({
               onChange={(event) => onChange(normalizeEditorContent(documentType, content, { status: event.target.value }))}
               className="editor-input"
             >
-              <option value="pending">Pending</option>
-              <option value="in_progress">In Progress</option>
-              <option value="blocked">Blocked</option>
-              <option value="review">Review</option>
-              <option value="completed">Completed</option>
-              <option value="failed">Failed</option>
+              {/* Keep the currently-saved value selectable even if it's not in
+                  the configured set, so editing never silently changes status. */}
+              {savedStatusMissing ? (
+                <option value={state.status}>{getStatusLabel(statusConfig, state.status)}</option>
+              ) : null}
+              {statusOptions.map((option) => (
+                <option key={option.id} value={option.id}>
+                  {option.label}
+                </option>
+              ))}
             </select>
           </Field>
           <Field label="Priority">
