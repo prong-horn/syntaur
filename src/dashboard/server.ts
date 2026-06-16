@@ -75,6 +75,8 @@ import { createSearchConfigRouter } from './api-search-config.js';
 import { createWorkspaceVisibilityConfigRouter } from './api-workspace-visibility-config.js';
 import { createStatusConfigRouter } from './api-status-config.js';
 import { createLeasesRouter } from './api-leases.js';
+import { createSchedulesRouter } from './api-schedules.js';
+import { runTick } from '../schedules/tick.js';
 import { createUsageRouter } from './api-usage.js';
 import { createPlaybooksRouter } from './api-playbooks.js';
 import {
@@ -713,6 +715,7 @@ export function createDashboardServer(options: DashboardServerOptions) {
 
   // --- Leases API ---
   app.use('/api/leases', createLeasesRouter(broadcast));
+  app.use('/api/schedules', createSchedulesRouter(broadcast));
 
   // --- Usage API (per-assignment / per-project token usage rollups) ---
   app.use('/api/usage', createUsageRouter(projectsDir, assignmentsDir));
@@ -870,6 +873,29 @@ export function createDashboardServer(options: DashboardServerOptions) {
         }
       };
 
+      // Singleflight the watcher-triggered accelerator tick: only one fire-due
+      // tick runs at a time, and a burst of file changes mid-flight coalesces
+      // into exactly ONE rerun — so a flurry of assignment writes can't spawn
+      // overlapping full scans / concurrent launches from the dashboard process.
+      let accelTickRunning = false;
+      let accelTickQueued = false;
+      const nudgeScheduler = (): void => {
+        if (accelTickRunning) {
+          accelTickQueued = true;
+          return;
+        }
+        accelTickRunning = true;
+        void runTick({ reap: false })
+          .catch(() => {})
+          .finally(() => {
+            accelTickRunning = false;
+            if (accelTickQueued) {
+              accelTickQueued = false;
+              nudgeScheduler();
+            }
+          });
+      };
+
       watcherHandle = createWatcher({
         projectsDir,
         assignmentsDir,
@@ -881,6 +907,12 @@ export function createDashboardServer(options: DashboardServerOptions) {
         onMessage: broadcast,
         onAssignmentChanged: (projectSlug, assignmentSlug) => {
           void recomputeOne(projectSlug, assignmentSlug);
+          // Accelerator (Task 14): an assignment status change may make a
+          // state-triggered schedule due. Nudge the scheduler (the tick stays
+          // the SOLE authority and re-reads persisted state; the watcher never
+          // evaluates triggers itself and is never the source of truth). The
+          // launchd tick is the floor, so failures here are swallowed.
+          nudgeScheduler();
         },
         onConfigChanged: () => {
           clearStatusConfigCache();

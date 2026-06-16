@@ -39,6 +39,20 @@ const realSpawn: SpawnFn = (command, args, options) =>
   spawn(command, args as string[], options);
 
 /**
+ * Result of a launch — enough for the scheduler to acknowledge the launch
+ * (poll for a runtime marker / session row attributable to it). For wrapper
+ * terminals (osascript/open/sh) `pid` is the wrapper's pid, not the agent's;
+ * the launch-ack scanner matches by cwd + write-time rather than pid alone.
+ * Interactive callers ignore this value (the return was previously `void`).
+ */
+export interface LaunchHandle {
+  pid: number | undefined;
+  plan: LaunchPlan;
+  /** ISO timestamp captured once the spawn settled. */
+  startedAt: string;
+}
+
+/**
  * Commands we treat as "wrappers" that synchronously delegate to the actual
  * terminal app. These fail fast (non-zero exit + stderr) when the target app
  * or URL scheme isn't installed, so we monitor their exit code briefly.
@@ -84,7 +98,7 @@ const WRAPPER_EXIT_TIMEOUT_MS = 1500;
 export async function executeLaunchPlan(
   plan: LaunchPlan,
   spawnFn: SpawnFn = realSpawn,
-): Promise<void> {
+): Promise<LaunchHandle> {
   if (plan.terminal === 'warp') {
     // Warp's URI scheme opens a window at the cwd but does not auto-start a
     // command — there is no documented `command=` parameter. Surface this so
@@ -95,6 +109,11 @@ export async function executeLaunchPlan(
   }
   const invocation = buildTerminalInvocation(plan);
   const isWrapper = isWrapperCommand(invocation.command);
+
+  // Capture the launch timestamp at SPAWN time, not after the wrapper-exit wait:
+  // a fast agent can write its real session marker before the wrapper safety-net
+  // resolves, and launch-ack matches markers written at/after this instant.
+  const startedAt = new Date().toISOString().replace(/\.\d{3}Z$/, 'Z');
 
   let child: ChildProcess;
   try {
@@ -172,6 +191,8 @@ export async function executeLaunchPlan(
   });
 
   await registerLaunchAtBirth(plan, child);
+
+  return { pid: child.pid, plan, startedAt };
 }
 
 /**
