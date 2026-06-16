@@ -332,7 +332,7 @@ export function CommandPalette({ entries }: CommandPaletteProps) {
             onSelect={(e) => setCaret(e.currentTarget.selectionStart ?? 0)}
             onKeyDown={handleKeyDown}
             placeholder="Search…  try  a:  p:  jira:PROJ-123  tag:backend"
-            className="w-full rounded-t-xl border-0 border-b border-border/70 bg-transparent px-4 py-3 text-sm text-foreground outline-none focus:ring-0"
+            className="w-full rounded-t-xl border-0 border-b border-border/70 bg-transparent px-4 py-3 text-sm text-foreground outline-none focus:border-primary"
           />
           {showSuggestions ? (
             <div className="absolute left-0 right-0 top-full z-50 max-h-64 overflow-y-auto border-b border-border/70 bg-background shadow-lg">

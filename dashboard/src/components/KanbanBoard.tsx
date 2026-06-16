@@ -74,6 +74,14 @@ interface KanbanBoardProps<T> {
    * isn't supported. Default false — preserves existing call-site behavior.
    */
   dragDisabled?: boolean;
+  /**
+   * Optional. Caps each column's height and scrolls its cards internally, so a
+   * very tall column (e.g. 60+ completed) doesn't grow the whole page to many
+   * thousands of px. Opt-in (default false) and intended for read-only
+   * (`dragDisabled`) boards — leave OFF on draggable boards to avoid interfering
+   * with drag autoscroll. Ignored when `compact`.
+   */
+  boundedColumns?: boolean;
 }
 
 interface DropTarget {
@@ -106,7 +114,9 @@ export function KanbanBoard<T>({
   onHideColumn,
   compact = false,
   dragDisabled = false,
+  boundedColumns = false,
 }: KanbanBoardProps<T>) {
+  const bounded = boundedColumns && !compact;
   const hiddenSet = useMemo(() => new Set(hiddenColumnIds ?? []), [hiddenColumnIds]);
   const visibleColumns = useMemo(
     () => columns.filter((c) => !hiddenSet.has(c.id)),
@@ -248,7 +258,10 @@ export function KanbanBoard<T>({
       ) : null}
       <div
         className={cn(
-          'grid min-w-max grid-flow-col gap-4',
+          // items-start: columns size to their own content and align to the top
+          // instead of stretching to the tallest column (which left short columns
+          // as giant empty boxes).
+          'grid min-w-max grid-flow-col items-start gap-4',
           compact ? 'auto-cols-[minmax(240px,280px)]' : 'auto-cols-[minmax(300px,360px)]',
         )}
       >
@@ -262,6 +275,7 @@ export function KanbanBoard<T>({
               className={cn(
                 'flex flex-col rounded-lg border border-border/60 bg-card/85 shadow-sm',
                 compact ? 'min-h-[200px] p-2' : 'min-h-[320px] p-3',
+                bounded ? 'max-h-[70vh]' : '',
                 draggedItem && !validation.allowed ? 'border-dashed opacity-65' : '',
                 draggedItem && validation.allowed ? 'border-primary/30 bg-accent/30' : '',
                 isDropColumn ? 'ring-2 ring-ring/30' : '',
@@ -299,7 +313,10 @@ export function KanbanBoard<T>({
               </div>
 
               <div
-                className="flex flex-1 flex-col gap-3"
+                className={cn(
+                  'flex flex-1 flex-col gap-3',
+                  bounded ? 'min-h-0 overflow-y-auto pr-1' : '',
+                )}
                 onDragOver={(event) => handleDragOver(event, column.id, columnItems.length)}
                 onDrop={(event) => handleDrop(event, column.id, columnItems.length)}
               >

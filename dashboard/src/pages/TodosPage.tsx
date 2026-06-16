@@ -269,6 +269,7 @@ export function TodosPage() {
       await addTodo(newTodoWorkspace, newTodoText.trim());
       setNewTodoText('');
       refetch();
+      showToast('Todo added', 'success');
     } catch (err) {
       reportError(err);
     }
@@ -291,6 +292,7 @@ export function TodosPage() {
           break;
       }
       refetch();
+      showToast('Todo updated', 'success');
     } catch (err) {
       reportError(err);
     }
@@ -300,6 +302,7 @@ export function TodosPage() {
     try {
       await deleteTodo(workspace, id);
       refetch();
+      showToast('Todo deleted', 'success');
     } catch (err) {
       reportError(err);
     }
@@ -311,6 +314,7 @@ export function TodosPage() {
     try {
       await patchTodo(workspace, id, next);
       refetch();
+      showToast('Todo updated', 'success');
     } catch (err) {
       reportError(err);
       throw err;
@@ -321,6 +325,7 @@ export function TodosPage() {
     try {
       await addTodoAttachments(workspace, id, files);
       refetch();
+      showToast(files.length === 1 ? 'Attachment added' : `${files.length} attachments added`, 'success');
     } catch (err) {
       reportError(err);
     }
@@ -330,6 +335,7 @@ export function TodosPage() {
     try {
       await deleteTodoAttachment(workspace, id, attachmentId);
       refetch();
+      showToast('Attachment removed', 'success');
     } catch (err) {
       reportError(err);
     }

@@ -48,8 +48,13 @@ export function StatCard({
     </>
   );
 
+  // A zero count is not an alarm: mute alarm tones (warn/danger) to neutral when
+  // the value is 0 (or "0") so an empty "Blocked"/"Failed" card doesn't shout.
+  const isZero = value === 0 || value === '0';
+  const effectiveTone = isZero && (tone === 'warn' || tone === 'danger') ? 'default' : tone;
+
   const cardClassName = cn(
-    TONE_STYLES[tone],
+    TONE_STYLES[effectiveTone],
     to
       ? 'block transition hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40'
       : '',

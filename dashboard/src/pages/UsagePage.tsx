@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Coins } from 'lucide-react';
 import { formatTokens, formatCost } from '../lib/format';
+import { ErrorState } from '../components/ErrorState';
+import { LoadingState } from '../components/LoadingState';
 import {
   USAGE_WINDOWS,
   buildUsageApiQuery,
@@ -45,7 +47,8 @@ const WINDOW_LABEL: Record<UsageWindow, string> = {
   custom: 'Custom',
 };
 
-const inputClass = 'bg-zinc-950 border border-zinc-700 rounded px-2 py-1 text-sm';
+const inputClass =
+  'rounded-md border border-border/60 bg-background px-2 py-1 text-sm text-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-ring/30';
 
 /**
  * Usage report page. The URL query string is the source of truth: filters are
@@ -67,6 +70,8 @@ export function UsagePage() {
   const [data, setData] = useState<UsageResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // Bumped by the error-state Retry button to re-run the fetch effect.
+  const [reloadKey, setReloadKey] = useState(0);
 
   // Seed the URL with the default window once, so the address bar always
   // reflects the active filters (and back/forward has a baseline entry).
@@ -104,7 +109,7 @@ export function UsagePage() {
         setLoading(false);
       });
     return () => controller.abort();
-  }, [apiQuery, groupBy]);
+  }, [apiQuery, groupBy, reloadKey]);
 
   /** Push a new filter set (and groupBy) into the URL. */
   function update(next: UsageWidgetFilters, nextGroupBy: GroupBy = groupBy) {
@@ -116,13 +121,13 @@ export function UsagePage() {
   return (
     <div className="p-6 max-w-7xl mx-auto">
       <header className="flex items-center gap-3 mb-6">
-        <Coins className="w-6 h-6 text-amber-400" />
-        <h1 className="text-2xl font-semibold">Token usage</h1>
+        <Coins className="w-6 h-6 text-primary" />
+        <h1 className="text-2xl font-semibold text-foreground">Token usage</h1>
       </header>
 
-      <div className="flex flex-wrap gap-4 items-end mb-6 p-4 rounded-lg bg-zinc-900/50 border border-zinc-800">
+      <div className="flex flex-wrap gap-4 items-end mb-6 p-4 rounded-lg bg-card border border-border/60">
         <label className="flex flex-col gap-1 text-sm">
-          <span className="text-zinc-400">Window</span>
+          <span className="text-muted-foreground">Window</span>
           <select
             value={window}
             onChange={(e) => update({ ...filters, window: e.target.value as UsageWindow })}
@@ -137,7 +142,7 @@ export function UsagePage() {
         {window === 'custom' ? (
           <>
             <label className="flex flex-col gap-1 text-sm">
-              <span className="text-zinc-400">Since</span>
+              <span className="text-muted-foreground">Since</span>
               <input
                 type="date"
                 value={filters.since ?? ''}
@@ -146,7 +151,7 @@ export function UsagePage() {
               />
             </label>
             <label className="flex flex-col gap-1 text-sm">
-              <span className="text-zinc-400">Until</span>
+              <span className="text-muted-foreground">Until</span>
               <input
                 type="date"
                 value={filters.until ?? ''}
@@ -158,7 +163,7 @@ export function UsagePage() {
         ) : null}
 
         <label className="flex flex-col gap-1 text-sm">
-          <span className="text-zinc-400">Workspace</span>
+          <span className="text-muted-foreground">Workspace</span>
           <select
             value={filters.workspace ?? ''}
             onChange={(e) =>
@@ -175,7 +180,7 @@ export function UsagePage() {
         </label>
 
         <label className="flex flex-col gap-1 text-sm">
-          <span className="text-zinc-400">Project</span>
+          <span className="text-muted-foreground">Project</span>
           <select
             value={filters.project ?? ''}
             onChange={(e) =>
@@ -191,7 +196,7 @@ export function UsagePage() {
         </label>
 
         <label className="flex flex-col gap-1 text-sm">
-          <span className="text-zinc-400">Model</span>
+          <span className="text-muted-foreground">Model</span>
           <select
             value={filters.model ?? ''}
             onChange={(e) => update({ ...filters, model: e.target.value || undefined })}
@@ -205,7 +210,7 @@ export function UsagePage() {
         </label>
 
         <label className="flex flex-col gap-1 text-sm">
-          <span className="text-zinc-400">Tool</span>
+          <span className="text-muted-foreground">Tool</span>
           <select
             value={filters.tool ?? ''}
             onChange={(e) => update({ ...filters, tool: e.target.value || undefined })}
@@ -219,7 +224,7 @@ export function UsagePage() {
         </label>
 
         <label className="flex flex-col gap-1 text-sm">
-          <span className="text-zinc-400">Group by</span>
+          <span className="text-muted-foreground">Group by</span>
           <select
             value={groupBy}
             onChange={(e) => update(filters, e.target.value as GroupBy)}
@@ -231,22 +236,31 @@ export function UsagePage() {
         </label>
       </div>
 
-      {loading && <p className="text-zinc-400">Loading…</p>}
-      {error && <p className="text-red-400">Error: {error}</p>}
+      {loading && <LoadingState label="Loading usage…" />}
+      {error && (
+        <ErrorState
+          error={error}
+          action={
+            <button type="button" className="shell-action" onClick={() => setReloadKey((k) => k + 1)}>
+              Retry
+            </button>
+          }
+        />
+      )}
 
       {data && !loading && !error && (
         <>
           <section className="mb-8">
             <h2 className="text-lg font-medium mb-2">Summary</h2>
             {data.summary.length === 0 ? (
-              <p className="text-zinc-500 text-sm">
+              <p className="text-muted-foreground text-sm">
                 No usage data for these filters. Run{' '}
-                <code className="bg-zinc-800 px-1 py-0.5 rounded text-amber-300">syntaur usage</code>{' '}
+                <code className="bg-muted px-1 py-0.5 rounded text-primary">syntaur usage</code>{' '}
                 to ingest the latest ccusage data.
               </p>
             ) : (
-              <table className="w-full text-sm border border-zinc-800 rounded overflow-hidden">
-                <thead className="bg-zinc-900 text-zinc-400">
+              <table className="w-full text-sm border border-border/60 rounded overflow-hidden">
+                <thead className="bg-muted/50 text-muted-foreground">
                   <tr>
                     <th className="text-left px-3 py-2">Project</th>
                     {groupBy === 'assignment' && <th className="text-left px-3 py-2">Assignment</th>}
@@ -257,14 +271,14 @@ export function UsagePage() {
                 </thead>
                 <tbody>
                   {data.summary.map((r, i) => (
-                    <tr key={i} className="border-t border-zinc-800">
+                    <tr key={i} className="border-t border-border/60">
                       <td className="px-3 py-2">{r.projectSlug || '(unattributed)'}</td>
                       {groupBy === 'assignment' && (
                         <td className="px-3 py-2">{r.assignmentSlug || '(unattributed)'}</td>
                       )}
                       <td className="px-3 py-2 text-right tabular-nums">{formatTokens(r.totalTokens)}</td>
                       <td className="px-3 py-2 text-right tabular-nums">{formatCost(r.totalCost)}</td>
-                      <td className="px-3 py-2 text-zinc-400">{r.lastEventDay}</td>
+                      <td className="px-3 py-2 text-muted-foreground">{r.lastEventDay}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -275,10 +289,10 @@ export function UsagePage() {
           <section>
             <h2 className="text-lg font-medium mb-2">Daily breakdown</h2>
             {data.daily.length === 0 ? (
-              <p className="text-zinc-500 text-sm">No daily rows.</p>
+              <p className="text-muted-foreground text-sm">No daily rows.</p>
             ) : (
-              <table className="w-full text-sm border border-zinc-800 rounded overflow-hidden">
-                <thead className="bg-zinc-900 text-zinc-400">
+              <table className="w-full text-sm border border-border/60 rounded overflow-hidden">
+                <thead className="bg-muted/50 text-muted-foreground">
                   <tr>
                     <th className="text-left px-3 py-2">Day</th>
                     <th className="text-left px-3 py-2">Tool</th>
@@ -291,10 +305,10 @@ export function UsagePage() {
                 </thead>
                 <tbody>
                   {data.daily.map((r, i) => (
-                    <tr key={i} className="border-t border-zinc-800">
+                    <tr key={i} className="border-t border-border/60">
                       <td className="px-3 py-2 tabular-nums">{r.day}</td>
-                      <td className="px-3 py-2 text-zinc-400">{r.tool}</td>
-                      <td className="px-3 py-2 text-zinc-400">{r.model}</td>
+                      <td className="px-3 py-2 text-muted-foreground">{r.tool}</td>
+                      <td className="px-3 py-2 text-muted-foreground">{r.model}</td>
                       <td className="px-3 py-2">{r.project_slug || '–'}</td>
                       <td className="px-3 py-2">{r.assignment_slug || '–'}</td>
                       <td className="px-3 py-2 text-right tabular-nums">{formatTokens(r.total_tokens)}</td>

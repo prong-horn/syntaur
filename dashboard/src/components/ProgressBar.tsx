@@ -36,10 +36,15 @@ export function ProgressBar({
 
   const segments = useMemo(() => {
     let fallbackIdx = 0;
-    // Use config order to determine segment ordering
+    // Use config order to determine segment ordering, then append any statuses
+    // present in `progress` but missing from the configured order (orphan/custom
+    // statuses). Without this, a status outside config.order would be dropped —
+    // leaving an empty bar and a misleading "No assignments yet" legend even
+    // though total > 0.
+    const progressKeys = Object.keys(progress).filter((k) => k !== 'total');
     const keys = config.order.length > 0
-      ? config.order
-      : Object.keys(progress).filter((k) => k !== 'total');
+      ? [...config.order, ...progressKeys.filter((k) => !config.order.includes(k))]
+      : progressKeys;
 
     return keys.map((key) => ({
       key,
@@ -67,18 +72,24 @@ export function ProgressBar({
       </div>
 
       {showLegend ? (
-        <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
-          {segments.map((segment) => (
-            <span
-              key={segment.key}
-              className="inline-flex items-center gap-2 rounded-full border border-border/60 bg-background/80 px-2 py-1"
-            >
-              <span className={cn('h-2 w-2 rounded-full', segment.className)} />
-              <span>{toTitleCase(segment.key)}</span>
-              <span className="font-medium text-foreground">{progress[segment.key] ?? 0}</span>
-            </span>
-          ))}
-        </div>
+        // Only show statuses with a non-zero count — zero-count pills are noise
+        // that drown the real signal (a project rarely uses every status).
+        visibleSegments.length > 0 ? (
+          <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
+            {visibleSegments.map((segment) => (
+              <span
+                key={segment.key}
+                className="inline-flex items-center gap-2 rounded-full border border-border/60 bg-background/80 px-2 py-1"
+              >
+                <span className={cn('h-2 w-2 rounded-full', segment.className)} />
+                <span>{toTitleCase(segment.key)}</span>
+                <span className="font-medium text-foreground">{progress[segment.key] ?? 0}</span>
+              </span>
+            ))}
+          </div>
+        ) : (
+          <p className="text-xs text-muted-foreground/70">No assignments yet</p>
+        )
       ) : null}
     </div>
   );
