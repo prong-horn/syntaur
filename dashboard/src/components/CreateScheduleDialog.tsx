@@ -109,7 +109,7 @@ export function CreateScheduleDialog({ open, onOpenChange, onCreated }: Props) {
         <div className="space-y-3">
           <div>
             <label className={labelCls}>Assignment id / slug</label>
-            <input className={field} value={assignmentId} onChange={(e) => setAssignmentId(e.target.value)} placeholder="scheduled-agents" />
+            <input autoFocus className={field} value={assignmentId} onChange={(e) => setAssignmentId(e.target.value)} placeholder="scheduled-agents" />
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
