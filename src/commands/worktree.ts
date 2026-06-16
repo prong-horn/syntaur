@@ -5,9 +5,12 @@ import {
   createWorktreeAndRecord,
   removeWorktree,
   deleteBranch,
+  resolveBranchSha,
   listWorktrees,
   type WorktreeEntry,
 } from '../utils/git-worktree.js';
+import { confirmPrompt, isInteractiveTerminal } from '../utils/prompt.js';
+import { SyntaurError, formatCliError, exitCodeFor } from '../errors.js';
 import { fileExists, writeFileForce } from '../utils/fs.js';
 import { assignmentsDir } from '../utils/paths.js';
 import { readConfig } from '../utils/config.js';
@@ -120,6 +123,8 @@ export interface WorktreeRemoveOptions {
   repository?: string;
   deleteBranch?: boolean;
   force?: boolean;
+  /** Skip the interactive confirm before a --force (destructive) removal. */
+  yes?: boolean;
 }
 
 export async function runWorktreeRemove(
@@ -167,6 +172,14 @@ export async function runWorktreeRemove(
   // BEFORE clearing workspace.* (which would otherwise lose the branch reference).
   let branchDeleted = false;
   if (options.deleteBranch && branch) {
+    // Print the branch's short SHA first so the user can recover the deleted
+    // branch with `git branch <name> <sha>` if they change their mind.
+    const sha = await resolveBranchSha(repository, branch);
+    if (sha) {
+      console.log(
+        `Branch "${branch}" was at ${sha}. To recover it: git -C ${repository} branch ${branch} ${sha}`,
+      );
+    }
     const del = await deleteBranch(repository, branch);
     if (!del.ok) {
       throw new Error(
@@ -261,15 +274,36 @@ worktreeCommand
   .option('--repository <path>', 'Repository root (defaults to the recorded workspace.repository)')
   .option('--delete-branch', 'Also delete the branch after removing the worktree')
   .option('--force', 'Discard a dirty/locked worktree (passes --force to git)')
+  .option('--yes', 'Skip the confirmation prompt for a destructive --force removal (required for non-TTY)')
   .action(async (options: WorktreeRemoveOptions) => {
     try {
+      // --force discards uncommitted work in the worktree (unrecoverable).
+      // Gate it behind a confirm unless --yes; off a TTY, require --yes so we
+      // never silently destroy work in a script.
+      if (options.force && !options.yes) {
+        if (!isInteractiveTerminal()) {
+          throw new SyntaurError(
+            '--force discards uncommitted work in the worktree, but there is no TTY to confirm.',
+            { remediation: 're-run with --yes to confirm the destructive removal' },
+          );
+        }
+        const confirmed = await confirmPrompt(
+          '--force will discard any uncommitted work in the worktree. Continue?',
+          false,
+        );
+        if (!confirmed) {
+          console.log('Aborted. Nothing was removed.');
+          return;
+        }
+      }
       const { worktreePath, branchDeleted, workspaceCleared } = await runWorktreeRemove(options);
       console.log(`Removed worktree at ${worktreePath}`);
       if (branchDeleted) console.log('Deleted the branch.');
       if (workspaceCleared) console.log('Cleared the assignment workspace fields.');
     } catch (error) {
-      console.error('Error:', error instanceof Error ? error.message : String(error));
-      process.exit(1);
+      // Surface the SyntaurError remediation hint (e.g. "re-run with --yes").
+      console.error(formatCliError(error));
+      process.exit(exitCodeFor(error));
     }
   });
 

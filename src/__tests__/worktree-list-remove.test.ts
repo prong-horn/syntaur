@@ -96,4 +96,39 @@ describe('syntaur worktree list/remove', () => {
     expect(content).toContain('branch: null');
     expect(content).toContain('worktreePath: null');
   });
+
+  it('prints the branch SHA recovery hint before deleting the branch (U1)', async () => {
+    const create = await runCli(
+      ['worktree', 'create', '--branch', 'feat-y', '--repository', repo, '--assignment', 'a', '--project', 'p'],
+      home,
+    );
+    expect(create.code, create.stderr).toBe(0);
+    const sha = (() => {
+      const r = spawnSync('git', ['-C', repo, 'rev-parse', '--short', 'feat-y'], { encoding: 'utf-8' });
+      return r.stdout.trim();
+    })();
+
+    const remove = await runCli(['worktree', 'remove', '--assignment', 'a', '--project', 'p', '--delete-branch'], home);
+    expect(remove.code, remove.stderr).toBe(0);
+    // Recovery hint names the branch + its SHA so the user can re-create it.
+    expect(remove.stdout).toContain(`Branch "feat-y" was at ${sha}`);
+    expect(remove.stdout).toContain(`branch feat-y ${sha}`);
+  });
+
+  it('blocks --force without --yes off a TTY and leaves the worktree intact (U1)', async () => {
+    const create = await runCli(
+      ['worktree', 'create', '--branch', 'feat-z', '--repository', repo, '--assignment', 'a', '--project', 'p'],
+      home,
+    );
+    expect(create.code, create.stderr).toBe(0);
+    // Make the worktree dirty (uncommitted work that --force would discard).
+    await writeFile(resolve(repo, '.worktrees', 'feat-z', 'scratch.txt'), 'dirty\n', 'utf-8');
+
+    // Spawned with no TTY: --force without --yes must refuse and explain.
+    const remove = await runCli(['worktree', 'remove', '--assignment', 'a', '--project', 'p', '--force'], home);
+    expect(remove.code).toBe(1);
+    expect(remove.stderr).toContain('--yes');
+    // The destructive removal did not happen.
+    expect(await fileExists(resolve(repo, '.worktrees', 'feat-z'))).toBe(true);
+  });
 });

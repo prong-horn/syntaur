@@ -210,6 +210,27 @@ export async function captureHeadSha(dir: string): Promise<string | null> {
 }
 
 /**
+ * Resolve a branch's tip to its short SHA in `repository` (read-only). Used to
+ * print a recovery hint (`git branch <name> <sha>`) before a branch is deleted.
+ * Returns null if the branch can't be resolved.
+ */
+export async function resolveBranchSha(
+  repository: string,
+  branch: string,
+): Promise<string | null> {
+  const result = await run('git', [
+    '-C',
+    repository,
+    'rev-parse',
+    '--short',
+    branch,
+  ]);
+  if (result.code !== 0) return null;
+  const sha = result.stdout.trim();
+  return sha.length > 0 ? sha : null;
+}
+
+/**
  * Return the worktree path where `branch` is currently checked out, or null if
  * it isn't checked out by any worktree. Parses `git worktree list --porcelain`
  * (blocks of `worktree <path>` / `branch refs/heads/<name>`). Used to decide
