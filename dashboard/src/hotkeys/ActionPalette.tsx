@@ -243,6 +243,14 @@ export function ActionPalette({ entries }: ActionPaletteProps) {
       // Ignore bare Enter until a combo is recorded.
       return;
     }
+    if (e.key === 'Enter' && bindRecorder.combo) {
+      // A combo is already recorded — Enter CONFIRMS it (rather than
+      // re-recording itself as the "enter" combo).
+      e.preventDefault();
+      e.stopPropagation();
+      void confirmBind();
+      return;
+    }
     // Capture every other keystroke as the bind target.
     e.preventDefault();
     e.stopPropagation();
