@@ -460,12 +460,22 @@ export function ProjectDetail() {
   );
 
   async function handleStatusOverride(status: string | null) {
-    await fetch(`/api/projects/${slug}/status-override`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ status }),
-    });
-    refetch();
+    try {
+      const res = await fetch(`/api/projects/${slug}/status-override`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status }),
+      });
+      if (!res.ok) {
+        const payload = await res.json().catch(() => null);
+        showToast(payload?.error || `HTTP ${res.status}`, 'error');
+        return;
+      }
+      refetch();
+      showToast(status ? 'Status override set' : 'Status override cleared', 'success');
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Failed to update status', 'error');
+    }
   }
 
   async function handleArchiveProject(archived: boolean) {
@@ -487,12 +497,22 @@ export function ProjectDetail() {
   }
 
   async function handleMoveWorkspace(workspace: string | null) {
-    await fetch(`/api/projects/${slug}/move-workspace`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ workspace }),
-    });
-    refetch();
+    try {
+      const res = await fetch(`/api/projects/${slug}/move-workspace`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ workspace }),
+      });
+      if (!res.ok) {
+        const payload = await res.json().catch(() => null);
+        showToast(payload?.error || `HTTP ${res.status}`, 'error');
+        return;
+      }
+      refetch();
+      showToast(workspace ? `Moved to "${workspace}"` : 'Moved to ungrouped', 'success');
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Failed to move workspace', 'error');
+    }
   }
 
   if (loading) {
