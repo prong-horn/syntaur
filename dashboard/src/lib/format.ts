@@ -106,7 +106,16 @@ export function formatTokens(n: number): string {
 }
 
 export function formatCost(n: number): string {
-  return `$${n.toFixed(4)}`;
+  // Group thousands and show 2dp for readable amounts ($2,501.97); keep up to
+  // 4dp for sub-dollar values so fractions of a cent aren't rounded to $0.00.
+  if (!Number.isFinite(n)) return '$0.00';
+  const maximumFractionDigits = n !== 0 && Math.abs(n) < 1 ? 4 : 2;
+  return n.toLocaleString('en-US', {
+    style: 'currency',
+    currency: 'USD',
+    minimumFractionDigits: 2,
+    maximumFractionDigits,
+  });
 }
 
 /**
