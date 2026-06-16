@@ -18,6 +18,8 @@ import type { FieldRegistry } from '../utils/query/index.js';
 import { resolvePlaybookSlug } from '../utils/playbooks.js';
 import { migrateLegacyProjectFiles, migrateLegacyArchivedProjects } from '../utils/fs-migration.js';
 import { resolveAssignmentById, type ResolvedAssignment } from '../utils/assignment-resolver.js';
+import { latestPlanFile } from '../lifecycle/facts.js';
+import { invalidateIndex } from '../search/index.js';
 
 /**
  * Thrown by `deleteWorkspace` when references exist and cascade is false.
@@ -254,6 +256,11 @@ const standaloneRecordsCache = new Map<string, Promise<StandaloneRecord[]>>();
 export function invalidateRecordsCache(): void {
   projectRecordsCache.clear();
   standaloneRecordsCache.clear();
+  // Content-search index shares this invalidation seam: every record mutation
+  // (write routers, file watcher, broadcast, deleteWorkspace) funnels here, so
+  // clearing the search index alongside keeps `/api/search` consistent with the
+  // displayed records. Cheap + idempotent; the next getIndex() rebuilds lazily.
+  invalidateIndex();
 }
 
 /**
@@ -1256,15 +1263,18 @@ export async function getAssignmentDetail(
   }
 
   let plan: AssignmentDetail['plan'] = null;
-  const planPath = resolve(assignmentDir, 'plan.md');
-  if (await fileExists(planPath)) {
-    const planContent = await readFile(planPath, 'utf-8');
-    const parsed = parsePlan(planContent);
-    plan = {
-      status: parsed.status,
-      updated: parsed.updated,
-      body: parsed.body,
-    };
+  const planFile = await latestPlanFile(assignmentDir);
+  if (planFile) {
+    const planPath = resolve(assignmentDir, planFile);
+    if (await fileExists(planPath)) {
+      const planContent = await readFile(planPath, 'utf-8');
+      const parsed = parsePlan(planContent);
+      plan = {
+        status: parsed.status,
+        updated: parsed.updated,
+        body: parsed.body,
+      };
+    }
   }
 
   let scratchpad: AssignmentDetail['scratchpad'] = null;
@@ -1625,10 +1635,13 @@ async function buildStandaloneAssignmentDetail(
   const assignment = parseAssignmentFull(assignmentContent);
 
   let plan: AssignmentDetail['plan'] = null;
-  const planPath = resolve(assignmentDir, 'plan.md');
-  if (await fileExists(planPath)) {
-    const parsed = parsePlan(await readFile(planPath, 'utf-8'));
-    plan = { status: parsed.status, updated: parsed.updated, body: parsed.body };
+  const planFile = await latestPlanFile(assignmentDir);
+  if (planFile) {
+    const planPath = resolve(assignmentDir, planFile);
+    if (await fileExists(planPath)) {
+      const parsed = parsePlan(await readFile(planPath, 'utf-8'));
+      plan = { status: parsed.status, updated: parsed.updated, body: parsed.body };
+    }
   }
 
   let scratchpad: AssignmentDetail['scratchpad'] = null;
