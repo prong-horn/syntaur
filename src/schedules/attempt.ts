@@ -1,0 +1,397 @@
+/**
+ * Job-attempt state machine + claim-lease + dedupe + reaping (Task 7).
+ *
+ * Crash-safety contract (Codex P0): `claimJob` advances the cursor + records the
+ * consumed dedupe key and writes the `claimed` state to disk (atomic temp+rename
+ * via the store) BEFORE returning — i.e. before any launch. A crash between
+ * claim and launch therefore cannot refire the edge; it only leaves a reapable
+ * `claimed`/`launching` job. Concurrency is handled by a per-job advisory lock
+ * mirroring `src/lifecycle/recompute.ts` `acquireLock` (O_EXCL `wx` lockfile,
+ * `pid:hash` token, 30s stale takeover), plus the `claim` lease on the job.
+ *
+ * Timing invariant: `claimTtlMs > ackTimeoutMs + launchSlackMs` (asserted in
+ * `claimJob`), and the claim is RENEWED on entering `launching`, so a job is
+ * never reaped while still legitimately inside its launch-ack window.
+ */
+
+import { createHash } from 'node:crypto';
+import { open, readFile, stat, unlink } from 'node:fs/promises';
+import { resolve } from 'node:path';
+import { appendEvent } from './event-log.js';
+import { schedulesDir, readJob, writeJob } from './store.js';
+import { nowTimestamp } from '../utils/timestamp.js';
+import {
+  type ScheduledJob,
+  type JobAttemptState,
+  type JobTrigger,
+  assertTimingInvariant,
+  freshAttempt,
+  isTerminalJobState,
+} from './types.js';
+
+const LOCK_STALE_MS = 30_000;
+const LOCK_WAIT_MS = 50;
+const LOCK_MAX_WAITS = 100; // ~5s
+
+export interface AttemptDeps {
+  now: () => Date;
+  /**
+   * Liveness of the running job's launched session. Production wires this to the
+   * dashboard `computeIsLive`/`enrichSessions` heartbeat; tests inject a stub.
+   * Defaults to "assume live" so reaping never fires without an explicit signal.
+   */
+  isSessionLive?: (sessionId: string | null, pid: number | null) => boolean;
+}
+
+export interface FiredEdge {
+  dedupeKey: string;
+  /** State-trigger cursor to persist on claim (omitted for clock triggers). */
+  nextCursor?: number;
+}
+
+export type ClaimResult =
+  | { claimed: true; job: ScheduledJob }
+  | { claimed: false; reason: string };
+
+/** Acquire the per-job advisory lock; returns a release fn. Mirrors recompute.ts. */
+async function acquireJobLock(id: string): Promise<() => Promise<void>> {
+  const lockPath = resolve(schedulesDir(), `${id}.lock`);
+  const token = `${process.pid}:${createHash('sha256')
+    .update(`${Math.random()}${Date.now()}`)
+    .digest('hex')
+    .slice(0, 12)}`;
+  for (let attempt = 0; attempt <= LOCK_MAX_WAITS; attempt++) {
+    try {
+      const handle = await open(lockPath, 'wx');
+      await handle.writeFile(token, 'utf-8');
+      await handle.close();
+      return async () => {
+        try {
+          const current = await readFile(lockPath, 'utf-8');
+          if (current === token) await unlink(lockPath);
+        } catch {
+          /* already gone — fine */
+        }
+      };
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException).code;
+      if (code !== 'EEXIST') throw err;
+      try {
+        const info = await stat(lockPath);
+        if (Date.now() - info.mtimeMs > LOCK_STALE_MS) {
+          await unlink(lockPath).catch(() => {});
+          continue;
+        }
+      } catch {
+        continue;
+      }
+      await new Promise((r) => setTimeout(r, LOCK_WAIT_MS));
+    }
+  }
+  throw new Error(`Timed out waiting for schedule lock ${lockPath}`);
+}
+
+function dayStamp(d: Date): string {
+  return d.toISOString().slice(0, 10);
+}
+
+/**
+ * Claim a due edge. Persists cursor/dedupe/claim BEFORE returning. Idempotent
+ * under races: the lock serializes the read-modify-write, and a re-check inside
+ * rejects an edge another actor already consumed or a non-eligible job.
+ */
+export async function claimJob(job: ScheduledJob, edge: FiredEdge, deps: AttemptDeps): Promise<ClaimResult> {
+  assertTimingInvariant(job.timing);
+  const release = await acquireJobLock(job.id);
+  try {
+    // Re-read under the lock — never act on a stale in-memory snapshot.
+    const fresh = (await readJob(job.id)) ?? job;
+    if (fresh.attempt.state !== 'eligible') {
+      return { claimed: false, reason: `not-eligible:${fresh.attempt.state}` };
+    }
+    if (fresh.attempt.consumedEdges.includes(edge.dedupeKey)) {
+      return { claimed: false, reason: 'already-consumed' };
+    }
+    const now = deps.now();
+    const token = `${process.pid}:${createHash('sha256')
+      .update(`${Math.random()}${now.getTime()}`)
+      .digest('hex')
+      .slice(0, 12)}`;
+    const claimed: ScheduledJob = {
+      ...fresh,
+      attempt: {
+        ...fresh.attempt,
+        state: 'claimed',
+        claim: { token, expiresAt: now.getTime() + fresh.timing.claimTtlMs },
+        consumedEdges: [...fresh.attempt.consumedEdges, edge.dedupeKey],
+        cursor: edge.nextCursor ?? fresh.attempt.cursor,
+        lastFiredAt: now.toISOString().replace(/\.\d{3}Z$/, 'Z'),
+        lastError: null,
+      },
+    };
+    const written = await writeJob(claimed); // atomic, BEFORE any launch
+    await appendEvent(job.id, 'claimed', { dedupeKey: edge.dedupeKey });
+    await appendEvent(job.id, 'fired', { dedupeKey: edge.dedupeKey });
+    return { claimed: true, job: written };
+  } finally {
+    await release();
+  }
+}
+
+/** claimed → launching. Renews the claim lease so the ack window can't be reaped. */
+export async function markLaunching(job: ScheduledJob, pid: number | null, deps: AttemptDeps): Promise<ScheduledJob> {
+  const now = deps.now();
+  const next: ScheduledJob = {
+    ...job,
+    attempt: {
+      ...job.attempt,
+      state: 'launching',
+      launchPid: pid,
+      launchingSince: now.toISOString().replace(/\.\d{3}Z$/, 'Z'),
+      claim: job.attempt.claim
+        ? { ...job.attempt.claim, expiresAt: now.getTime() + job.timing.claimTtlMs }
+        : null,
+    },
+  };
+  const written = await writeJob(next);
+  await appendEvent(job.id, 'launching', { pid });
+  return written;
+}
+
+/** launching → running (ack observed). Links the session + records launch counters. */
+export async function markRunning(
+  job: ScheduledJob,
+  sessionId: string | null,
+  deps: AttemptDeps,
+): Promise<ScheduledJob> {
+  const now = deps.now();
+  const next: ScheduledJob = {
+    ...job,
+    attempt: {
+      ...job.attempt,
+      state: 'running',
+      sessionId,
+      runningSince: now.toISOString().replace(/\.\d{3}Z$/, 'Z'),
+      launchCount: job.attempt.launchCount + 1,
+      launchDayStamps: [...job.attempt.launchDayStamps, dayStamp(now)],
+      claim: null, // launch acknowledged — lease no longer needed
+    },
+  };
+  const written = await writeJob(next);
+  await appendEvent(job.id, 'ack', { sessionId });
+  await appendEvent(job.id, 'running', { sessionId });
+  return written;
+}
+
+/**
+ * Recurring (cron) success path: record the acked launch AND re-arm to
+ * `eligible` for the next occurrence in ONE atomic write. This is crash-safe —
+ * the prior `markRunning`-then-`reArm` two-step could strand a cron job in
+ * `running` forever if the process died between the writes (Codex review). The
+ * launched session keeps running independently, tracked via `sessionId` + the
+ * event log; cron runs are fire-and-forget for reaping. `consumedEdges`/`cursor`
+ * are kept so the SAME occurrence never refires — a new occurrence is a new key.
+ */
+export async function markRanAndReArm(
+  job: ScheduledJob,
+  sessionId: string | null,
+  deps: AttemptDeps,
+): Promise<ScheduledJob> {
+  const now = deps.now();
+  const next: ScheduledJob = {
+    ...job,
+    attempt: {
+      ...job.attempt,
+      state: 'eligible',
+      sessionId,
+      launchCount: job.attempt.launchCount + 1,
+      launchDayStamps: [...job.attempt.launchDayStamps, dayStamp(now)],
+      claim: null,
+      launchingSince: null,
+      runningSince: null,
+    },
+  };
+  const written = await writeJob(next);
+  await appendEvent(job.id, 'ack', { sessionId });
+  await appendEvent(job.id, 'running', { sessionId });
+  await appendEvent(job.id, 'rescheduled', { reason: 'recurring' });
+  return written;
+}
+
+/** launching → launch_failed (no ack within the window, or reaped). */
+export async function markLaunchFailed(job: ScheduledJob, reason: string): Promise<ScheduledJob> {
+  const next: ScheduledJob = {
+    ...job,
+    attempt: { ...job.attempt, state: 'launch_failed', claim: null, lastError: reason },
+  };
+  const written = await writeJob(next);
+  await appendEvent(job.id, 'launch_failed', { reason });
+  return written;
+}
+
+// ── Control verbs (Task 12 semantics, type-backed here) ───────────────────────
+
+export class TransitionError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'TransitionError';
+  }
+}
+
+/** Re-read under the lock, guard the current state, mutate, persist, log. */
+async function controlTransition(
+  id: string,
+  allowed: (s: JobAttemptState) => boolean,
+  to: JobAttemptState,
+  event: Parameters<typeof appendEvent>[1],
+  extra?: (job: ScheduledJob) => Partial<ScheduledJob['attempt']>,
+): Promise<ScheduledJob> {
+  const release = await acquireJobLock(id);
+  try {
+    const job = await readJob(id);
+    if (!job) throw new TransitionError(`No such schedule: ${id}`);
+    if (!allowed(job.attempt.state)) {
+      throw new TransitionError(`Cannot ${event} a job in state '${job.attempt.state}'`);
+    }
+    const next: ScheduledJob = {
+      ...job,
+      attempt: { ...job.attempt, state: to, ...(extra ? extra(job) : {}) },
+    };
+    const written = await writeJob(next);
+    await appendEvent(id, event);
+    return written;
+  } finally {
+    await release();
+  }
+}
+
+/** eligible|claimed → held (the tick skips held jobs). */
+export function holdJob(id: string): Promise<ScheduledJob> {
+  return controlTransition(id, (s) => s === 'eligible' || s === 'claimed', 'held', 'held', () => ({
+    claim: null,
+  }));
+}
+
+/** held → eligible. */
+export function releaseJob(id: string): Promise<ScheduledJob> {
+  return controlTransition(id, (s) => s === 'held', 'eligible', 'released');
+}
+
+/** any non-terminal → cancelled. */
+export function cancelJob(id: string): Promise<ScheduledJob> {
+  return controlTransition(id, (s) => !isTerminalJobState(s), 'cancelled', 'cancelled', () => ({
+    claim: null,
+  }));
+}
+
+/**
+ * running → killed (caller signals the linked session pid first). claimed |
+ * launching → cancelled (nothing durable to kill yet).
+ */
+export async function killJob(
+  id: string,
+  deps?: { signalTarget?: (target: { sessionId: string | null; launchPid: number | null }) => void },
+): Promise<ScheduledJob> {
+  const release = await acquireJobLock(id);
+  try {
+    const job = await readJob(id);
+    if (!job) throw new TransitionError(`No such schedule: ${id}`);
+    const s = job.attempt.state;
+    if (s === 'running') {
+      // Signal the TRACKED AGENT session (resolved from sessionId), not the
+      // wrapper `launchPid` — for osascript/open/sh launches the wrapper pid is
+      // not the agent. The caller resolves sessionId → live pid (CLI wiring).
+      deps?.signalTarget?.({ sessionId: job.attempt.sessionId, launchPid: job.attempt.launchPid });
+      const written = await writeJob({ ...job, attempt: { ...job.attempt, state: 'killed', claim: null } });
+      await appendEvent(id, 'killed', { sessionId: job.attempt.sessionId, launchPid: job.attempt.launchPid });
+      return written;
+    }
+    if (s === 'claimed' || s === 'launching') {
+      const written = await writeJob({ ...job, attempt: { ...job.attempt, state: 'cancelled', claim: null } });
+      await appendEvent(id, 'cancelled', { via: 'kill' });
+      return written;
+    }
+    throw new TransitionError(`Cannot kill a job in state '${s}'`);
+  } finally {
+    await release();
+  }
+}
+
+/**
+ * Swap a job's trigger and FULLY re-arm it — shared by the CLI and dashboard so
+ * `reschedule` is one lib verb (parity). Resets `createdAt` (the creation
+ * baseline → reacts only to future edges) AND the whole attempt via
+ * `freshAttempt()` — so a stale `cursor`/`consumedEdges` from the old trigger
+ * can never strand the new one (a rescheduled `when-status` job whose old cursor
+ * sat past the new watched history would otherwise skip every future edge).
+ */
+export async function rescheduleJob(id: string, trigger: JobTrigger): Promise<ScheduledJob> {
+  const release = await acquireJobLock(id);
+  try {
+    const job = await readJob(id);
+    if (!job) throw new TransitionError(`No such schedule: ${id}`);
+    const next: ScheduledJob = {
+      ...job,
+      trigger,
+      createdAt: nowTimestamp(),
+      attempt: freshAttempt(),
+    };
+    const written = await writeJob(next);
+    await appendEvent(id, 'rescheduled', { trigger: trigger.kind });
+    return written;
+  } finally {
+    await release();
+  }
+}
+
+/** failed | launch_failed → eligible (fresh attempt; new dedupe scope keeps the
+ *  consumed edges so the SAME edge won't refire — a clock re-fires on its next
+ *  occurrence, a state edge on a new transition). */
+export function retryJob(id: string): Promise<ScheduledJob> {
+  return controlTransition(
+    id,
+    (s) => s === 'failed' || s === 'launch_failed',
+    'eligible',
+    'retried',
+    () => ({ claim: null, lastError: null }),
+  );
+}
+
+// ── Reaping (crash recovery + stuck detection — mechanism, not policy) ─────────
+
+export interface ReapOutcome {
+  reaped: string[]; // ids moved to launch_failed (dead launches)
+  stuck: string[]; // ids flagged stuck (left for a control verb to remediate)
+}
+
+/**
+ * Crash recovery + stuck detection. PURE MECHANISM: it completes the lifecycle
+ * of demonstrably-dead launches (claim lease expired while claimed/launching →
+ * `launch_failed`) and RECORDS — but does not remediate — running jobs past
+ * their max-runtime with no live heartbeat (stuck is derivable from disk; a
+ * human/orchestrator calls `kill`/`retry`).
+ */
+export async function reapStale(jobs: ScheduledJob[], deps: AttemptDeps): Promise<ReapOutcome> {
+  const now = deps.now();
+  const isLive = deps.isSessionLive ?? (() => true);
+  const out: ReapOutcome = { reaped: [], stuck: [] };
+  for (const job of jobs) {
+    const a = job.attempt;
+    if ((a.state === 'claimed' || a.state === 'launching') && a.claim && now.getTime() > a.claim.expiresAt) {
+      await markLaunchFailed(job, `reaped: claim lease expired in state '${a.state}'`);
+      await appendEvent(job.id, 'reaped', { from: a.state });
+      out.reaped.push(job.id);
+      continue;
+    }
+    if (a.state === 'running' && job.limits.maxRuntimeMs && a.runningSince) {
+      const overrun = now.getTime() - Date.parse(a.runningSince) > job.limits.maxRuntimeMs;
+      if (overrun && !isLive(a.sessionId, a.launchPid) && a.lastError !== 'stuck:max-runtime') {
+        // Record once; leave state running (stuck is derivable). No remediation.
+        await writeJob({ ...job, attempt: { ...a, lastError: 'stuck:max-runtime' } });
+        await appendEvent(job.id, 'reaped', { stuck: 'max-runtime-no-heartbeat' });
+        out.stuck.push(job.id);
+      }
+    }
+  }
+  return out;
+}

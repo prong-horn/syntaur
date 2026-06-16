@@ -1,6 +1,6 @@
 {
   "name": "syntaur",
-  "version": "0.54.1",
+  "version": "0.55.0",
   "description": "Project workflow CLI with dashboard, Claude Code plugin, and Codex plugin",
   "homepage": "https://github.com/prong-horn/syntaur#readme",
   "repository": {
@@ -73,6 +73,7 @@
     "better-sqlite3": "^11.0.0",
     "chokidar": "^4.0.0",
     "commander": "^13.0.0",
+    "croner": "^10.0.1",
     "express": "^5.0.1",
     "fuse.js": "^7.1.0",
     "ink": "^6.8.0",

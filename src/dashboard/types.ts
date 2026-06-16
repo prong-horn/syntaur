@@ -600,6 +600,7 @@ export type WsMessageType =
   | 'playbooks-updated'
   | 'todos-updated'
   | 'leases-updated'
+  | 'schedules-updated'
   | 'connected';
 
 export interface WsMessage {

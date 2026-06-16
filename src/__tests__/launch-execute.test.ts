@@ -93,7 +93,7 @@ describe('executeLaunchPlan', () => {
     const spawnFn: SpawnFn = () => fakeChild({ fireOn: 'spawn' });
     await expect(
       executeLaunchPlan(makePlan({ terminal: 'alacritty' }), spawnFn),
-    ).resolves.toBeUndefined();
+    ).resolves.toMatchObject({ startedAt: expect.any(String) });
   });
 
   it('throws TerminalNotFoundError when spawn emits error (binary missing)', async () => {
@@ -121,7 +121,7 @@ describe('executeLaunchPlan', () => {
       fakeChild({ fireOn: 'exit', exitCode: 0 });
     await expect(
       executeLaunchPlan(makePlan({ terminal: 'terminal-app' }), spawnFn),
-    ).resolves.toBeUndefined();
+    ).resolves.toMatchObject({ startedAt: expect.any(String) });
   });
 
   it('throws TerminalNotFoundError when spawn() itself throws synchronously', async () => {
@@ -151,7 +151,7 @@ describe('executeLaunchPlan', () => {
     const spawnFn: SpawnFn = () => fakeChild({ fireOn: 'exit', exitCode: 0 });
     await expect(
       executeLaunchPlan(makePlan({ terminal: 'cmux' }), spawnFn),
-    ).resolves.toBeUndefined();
+    ).resolves.toMatchObject({ startedAt: expect.any(String) });
   });
 
   it('cmux spawn error (ENOENT) → TerminalNotFoundError', async () => {
