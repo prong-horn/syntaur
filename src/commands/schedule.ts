@@ -4,6 +4,7 @@ import { pickAgent } from '../launch/plan.js';
 import { getSessionById } from '../dashboard/agent-sessions.js';
 import { initSessionDb } from '../dashboard/session-db.js';
 import type { TerminalChoice } from '../utils/config.js';
+import { TERMINAL_CHOICES } from '../utils/terminal-schema.js';
 import {
   newJobId,
   readJob,
@@ -44,6 +45,25 @@ function parseDurationMs(input: string): number {
   const n = Number.parseInt(m[1], 10);
   const mult: Record<string, number> = { s: 1000, m: 60_000, h: 3_600_000, d: 86_400_000 };
   return n * mult[(m[2] ?? 's').toLowerCase()];
+}
+
+/**
+ * Validate the `--terminal` flag at CREATE time. An unchecked cast lets an
+ * invalid terminal persist, which `buildTerminalInvocation` (no default case)
+ * resolves to `undefined` → TypeError at fire time. Mirror config.ts's terminal
+ * validation and fail fast with the valid choices named. Returns null when
+ * unset (→ user's configured default at fire time).
+ */
+function validateTerminalChoice(value: string | undefined): TerminalChoice | null {
+  if (value == null) return null;
+  const trimmed = value.trim();
+  if (trimmed === '') return null;
+  if (!TERMINAL_CHOICES.includes(trimmed as TerminalChoice)) {
+    throw new Error(
+      `--terminal "${trimmed}" is not a known choice — expected one of ${TERMINAL_CHOICES.join('|')}`,
+    );
+  }
+  return trimmed as TerminalChoice;
 }
 
 interface TriggerOpts {
@@ -155,7 +175,7 @@ scheduleCommand
     wrap(async (opts: CreateOpts) => {
       const config = await readConfig();
       const agentId = opts.agent ?? pickAgent(config).id;
-      const terminal = (opts.terminal as TerminalChoice | undefined) ?? null;
+      const terminal = validateTerminalChoice(opts.terminal);
       const unattended = !opts.interactive;
       if (unattended) assertUnattendedTerminalSupported(terminal);
 
