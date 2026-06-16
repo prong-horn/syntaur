@@ -111,6 +111,45 @@ function serializeFrontmatterModel(model: FrontmatterModel): string {
   return `---\n${blockLines.join('\n')}\n---\n\n${model.body.replace(/^\n+/, '')}`;
 }
 
+/** Characters that force a YAML scalar to be quoted when serialized. */
+const YAML_SPECIAL_CHARS = /[:#{}[\],&*?|>!%@`]/;
+
+/**
+ * Decode a raw YAML scalar token into its logical string value.
+ *
+ * If `raw` is YAML-quoted (`"..."` or `'...'`), strip the quotes and unescape
+ * per YAML rules: inside double quotes `\"`→`"` and `\\`→`\`; inside single
+ * quotes `''`→`'`. Otherwise the value is returned verbatim. This is the inverse
+ * of `encodeScalar`.
+ */
+function decodeScalar(raw: string): string {
+  if (raw.length >= 2 && raw.startsWith('"') && raw.endsWith('"')) {
+    return raw.slice(1, -1).replace(/\\(["\\])/g, '$1');
+  }
+  if (raw.length >= 2 && raw.startsWith("'") && raw.endsWith("'")) {
+    return raw.slice(1, -1).replace(/''/g, "'");
+  }
+  return raw;
+}
+
+/**
+ * Encode a logical string value into a YAML scalar token, quoting only when
+ * required so plain values stay bare. Quotes when the value contains a YAML
+ * special character, has leading/trailing whitespace, or itself begins/ends
+ * with a quote character. When quoting, embedded `\` and `"` are escaped so the
+ * token round-trips through `decodeScalar`.
+ */
+function encodeScalar(value: string): string {
+  const needsQuoting =
+    YAML_SPECIAL_CHARS.test(value) ||
+    /^\s|\s$/.test(value) ||
+    /^["']|["']$/.test(value);
+  if (!needsQuoting) {
+    return value;
+  }
+  return `"${value.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
+}
+
 function getScalar(model: FrontmatterModel, key: string): string {
   const block = model.blocks.get(key);
   if (!block?.[0]) {
@@ -126,17 +165,48 @@ function getScalar(model: FrontmatterModel, key: string): string {
   if (rawValue === 'null') {
     return '';
   }
-  if (
-    (rawValue.startsWith('"') && rawValue.endsWith('"')) ||
-    (rawValue.startsWith("'") && rawValue.endsWith("'"))
-  ) {
-    return rawValue.slice(1, -1);
-  }
-  return rawValue;
+  return decodeScalar(rawValue);
 }
 
 function getBoolean(model: FrontmatterModel, key: string): boolean {
   return getScalar(model, key) === 'true';
+}
+
+/**
+ * Split an inline-flow payload (the text inside `[...]`) on TOP-LEVEL commas,
+ * ignoring commas nested inside quoted scalars. Returns raw element tokens.
+ */
+function splitTopLevelCommas(payload: string): string[] {
+  const elements: string[] = [];
+  let current = '';
+  let quote: '"' | "'" | null = null;
+  for (let i = 0; i < payload.length; i += 1) {
+    const ch = payload[i];
+    if (quote) {
+      current += ch;
+      if (ch === '\\' && quote === '"' && i + 1 < payload.length) {
+        // Preserve an escaped char inside double quotes verbatim.
+        current += payload[i + 1];
+        i += 1;
+      } else if (ch === quote) {
+        quote = null;
+      }
+      continue;
+    }
+    if (ch === '"' || ch === "'") {
+      quote = ch;
+      current += ch;
+      continue;
+    }
+    if (ch === ',') {
+      elements.push(current);
+      current = '';
+      continue;
+    }
+    current += ch;
+  }
+  elements.push(current);
+  return elements;
 }
 
 function getStringList(model: FrontmatterModel, key: string): string[] {
@@ -145,15 +215,25 @@ function getStringList(model: FrontmatterModel, key: string): string[] {
     return [];
   }
 
-  if (block[0].trim().endsWith('[]')) {
+  const firstLine = block[0].trim();
+  if (firstLine.endsWith('[]')) {
     return [];
   }
 
+  // Inline-flow list on the key line: `key: [a, b, "c, d"]`.
+  const inlineMatch = block[0].match(/^[^:]+:\s*\[(.*)\]\s*$/);
+  if (inlineMatch) {
+    return splitTopLevelCommas(inlineMatch[1])
+      .map((element) => decodeScalar(element.trim()))
+      .filter((element) => element.length > 0);
+  }
+
+  // Multiline block list: `key:` followed by `  - value` lines.
   return block
     .slice(1)
     .map((line) => line.trim())
     .filter((line) => line.startsWith('- '))
-    .map((line) => line.slice(2).trim());
+    .map((line) => decodeScalar(line.slice(2).trim()));
 }
 
 function formatYamlValue(value: string | null | boolean): string {
@@ -163,13 +243,7 @@ function formatYamlValue(value: string | null | boolean): string {
   if (value === null || value === '') {
     return 'null';
   }
-  if (/^\d{4}-\d{2}-\d{2}T/.test(value)) {
-    return `"${value}"`;
-  }
-  if (/[:#{}[\],&*?|>!%@`]/.test(value) || /^\s|\s$/.test(value)) {
-    return `"${value.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
-  }
-  return value;
+  return encodeScalar(value);
 }
 
 function setScalar(model: FrontmatterModel, key: string, value: string | null | boolean): void {
@@ -189,7 +263,7 @@ function setStringList(model: FrontmatterModel, key: string, values: string[]): 
     return;
   }
 
-  model.blocks.set(key, [`${key}:`, ...values.map((value) => `  - ${value}`)]);
+  model.blocks.set(key, [`${key}:`, ...values.map((value) => `  - ${encodeScalar(value)}`)]);
 }
 
 function commaListToArray(value: string): string[] {
