@@ -78,6 +78,7 @@ import { maybePromptInstall } from './utils/npx-prompt.js';
 import { maybeNudgeForNpxInstall } from './launch/index.js';
 import { spliceDashDashFromArgv } from './utils/argv-split.js';
 import { readPackageVersion } from './utils/version.js';
+import { runCommand } from './errors.js';
 
 // Skip the npx/global-install startup nudges for `update`/`upgrade` — that
 // command does its own install-kind detection and must stay read-only for
@@ -107,17 +108,11 @@ program
   .command('init')
   .description('Initialize ~/.syntaur/ directory structure and config')
   .option('--force', 'Overwrite existing config file')
-  .action(async (options) => {
-    try {
+  .action(
+    runCommand(async (options) => {
       await initCommand(options);
-    } catch (error) {
-      console.error(
-        'Error:',
-        error instanceof Error ? error.message : String(error),
-      );
-      process.exit(1);
-    }
-  });
+    }),
+  );
 
 program
   .command('create-project')
@@ -126,17 +121,11 @@ program
   .option('--slug <slug>', 'Override auto-generated slug')
   .option('--dir <path>', 'Override default project directory')
   .option('--workspace <workspace>', 'Workspace for organizational grouping')
-  .action(async (title, options) => {
-    try {
+  .action(
+    runCommand(async (title, options) => {
       await createProjectCommand(title, options);
-    } catch (error) {
-      console.error(
-        'Error:',
-        error instanceof Error ? error.message : String(error),
-      );
-      process.exit(1);
-    }
-  });
+    }),
+  );
 
 program
   .command('create-assignment')
@@ -157,17 +146,11 @@ program
   .option('--with-todos', 'Scaffold a ## Todos section in assignment.md (omitted by default; typically populated by /plan-assignment)')
   .option('--workspace <slug>', 'Workspace group slug (only valid with --one-off; mutually exclusive with --project)')
   .option('--ready', 'Create the assignment directly as ready_for_planning (skips the draft phase)')
-  .action(async (title, options) => {
-    try {
+  .action(
+    runCommand(async (title, options) => {
       await createAssignmentCommand(title, options);
-    } catch (error) {
-      console.error(
-        'Error:',
-        error instanceof Error ? error.message : String(error),
-      );
-      process.exit(1);
-    }
-  });
+    }),
+  );
 
 program
   .command('comment')
@@ -179,17 +162,11 @@ program
   .option('--type <type>', 'Comment type: question | note | feedback', 'note')
   .option('--author <name>', 'Override author (default: $USER or "unknown")')
   .option('--dir <path>', 'Override default project directory')
-  .action(async (assignment, text, options) => {
-    try {
+  .action(
+    runCommand(async (assignment, text, options) => {
       await commentCommand(assignment, text, options);
-    } catch (error) {
-      console.error(
-        'Error:',
-        error instanceof Error ? error.message : String(error),
-      );
-      process.exit(1);
-    }
-  });
+    }),
+  );
 
 program
   .command('capture')
@@ -209,20 +186,14 @@ program
   .option('--device <index>', 'AVFoundation video device index for --start (default: 1). List devices: ffmpeg -f avfoundation -list_devices true -i ""')
   .option('--fps <n>', 'Frame rate for --start (default: 30)')
   .option('--transcribe', 'Auto-transcribe captured video to a <id>.transcript.md sidecar (kind=video only; requires ELEVENLABS_API_KEY + ffmpeg)')
-  .action(async (target, options) => {
-    try {
+  .action(
+    runCommand(async (target, options) => {
       await captureCommand(target, {
         ...options,
         commandArgv: captureDashDashArgv,
       });
-    } catch (error) {
-      console.error(
-        'Error:',
-        error instanceof Error ? error.message : String(error),
-      );
-      process.exit(1);
-    }
-  });
+    }),
+  );
 
 program
   .command('request')
@@ -232,17 +203,11 @@ program
   .option('--project <slug>', 'Project slug if the target is project-nested')
   .option('--from <source>', 'Source assignment (default: $SYNTAUR_ASSIGNMENT)')
   .option('--dir <path>', 'Override default project directory')
-  .action(async (target, text, options) => {
-    try {
+  .action(
+    runCommand(async (target, text, options) => {
       await requestCommand(target, text, options);
-    } catch (error) {
-      console.error(
-        'Error:',
-        error instanceof Error ? error.message : String(error),
-      );
-      process.exit(1);
-    }
-  });
+    }),
+  );
 
 program
   .command('dashboard')
@@ -252,21 +217,15 @@ program
   .option('--server-only', 'Run only the API server without any UI', false)
   .option('--api-only', 'Deprecated alias for --server-only', false)
   .option('--no-open', 'Do not automatically open the browser')
-  .action(async (options) => {
-    try {
+  .action(
+    runCommand(async (options) => {
       const autoPort = !didUserSpecifyDashboardPort();
       await dashboardCommand({
         ...options,
         autoPort,
       });
-    } catch (error) {
-      console.error(
-        'Error:',
-        error instanceof Error ? error.message : String(error),
-      );
-      process.exit(1);
-    }
-  });
+    }),
+  );
 
 program
   .command('assign')
@@ -275,17 +234,11 @@ program
   .option('--project <slug>', 'Target project slug')
   .option('--agent <name>', 'Agent name to assign')
   .option('--dir <path>', 'Override default project directory')
-  .action(async (assignment, options) => {
-    try {
+  .action(
+    runCommand(async (assignment, options) => {
       await assignCommand(assignment, options);
-    } catch (error) {
-      console.error(
-        'Error:',
-        error instanceof Error ? error.message : String(error),
-      );
-      process.exit(1);
-    }
-  });
+    }),
+  );
 
 program
   .command('unassign')
@@ -293,17 +246,11 @@ program
   .argument('<assignment>', 'Assignment slug (UUID for standalone)')
   .option('--project <slug>', 'Target project slug')
   .option('--dir <path>', 'Override default project directory')
-  .action(async (assignment, options) => {
-    try {
+  .action(
+    runCommand(async (assignment, options) => {
       await unassignCommand(assignment, options);
-    } catch (error) {
-      console.error(
-        'Error:',
-        error instanceof Error ? error.message : String(error),
-      );
-      process.exit(1);
-    }
-  });
+    }),
+  );
 
 program
   .command('start')
@@ -312,17 +259,11 @@ program
   .option('--project <slug>', 'Target project slug')
   .option('--agent <name>', 'Agent name (sets assignee if not already set)')
   .option('--dir <path>', 'Override default project directory')
-  .action(async (assignment, options) => {
-    try {
+  .action(
+    runCommand(async (assignment, options) => {
       await startCommand(assignment, options);
-    } catch (error) {
-      console.error(
-        'Error:',
-        error instanceof Error ? error.message : String(error),
-      );
-      process.exit(1);
-    }
-  });
+    }),
+  );
 
 program
   .command('archive')
@@ -331,14 +272,11 @@ program
   .option('--project <slug>', 'Resolve <target> as an assignment within this project')
   .option('--reason <text>', 'Optional reason recorded with the archive')
   .option('--dir <path>', 'Override default project directory')
-  .action(async (target, options) => {
-    try {
+  .action(
+    runCommand(async (target, options) => {
       await archiveCommand(target, options);
-    } catch (error) {
-      console.error('Error:', error instanceof Error ? error.message : String(error));
-      process.exit(1);
-    }
-  });
+    }),
+  );
 
 program
   .command('restore')
@@ -346,14 +284,11 @@ program
   .argument('<target>', 'Assignment slug/UUID, or a project slug')
   .option('--project <slug>', 'Resolve <target> as an assignment within this project')
   .option('--dir <path>', 'Override default project directory')
-  .action(async (target, options) => {
-    try {
+  .action(
+    runCommand(async (target, options) => {
       await restoreCommand(target, options);
-    } catch (error) {
-      console.error('Error:', error instanceof Error ? error.message : String(error));
-      process.exit(1);
-    }
-  });
+    }),
+  );
 
 program
   .command('shape')
@@ -362,17 +297,11 @@ program
   .option('--project <slug>', 'Target project slug')
   .option('--agent <name>', 'Agent name (sets assignee if not already set)')
   .option('--dir <path>', 'Override default project directory')
-  .action(async (assignment, options) => {
-    try {
+  .action(
+    runCommand(async (assignment, options) => {
       await shapeCommand(assignment, options);
-    } catch (error) {
-      console.error(
-        'Error:',
-        error instanceof Error ? error.message : String(error),
-      );
-      process.exit(1);
-    }
-  });
+    }),
+  );
 
 program
   .command('plan-ready')
@@ -381,65 +310,44 @@ program
   .option('--project <slug>', 'Target project slug')
   .option('--agent <name>', 'Agent name (sets assignee if not already set)')
   .option('--dir <path>', 'Override default project directory')
-  .action(async (assignment, options) => {
-    try {
+  .action(
+    runCommand(async (assignment, options) => {
       await planReadyCommand(assignment, options);
-    } catch (error) {
-      console.error(
-        'Error:',
-        error instanceof Error ? error.message : String(error),
-      );
-      process.exit(1);
-    }
-  });
+    }),
+  );
 
 program
   .command('migrate-statuses')
   .description('Suggest pending -> ready_for_planning promotions for fleshed-out assignments (use --apply to write)')
   .option('--dir <path>', 'Override default project directory')
   .option('--apply', 'Apply the migration (default: dry-run)')
-  .action(async (options) => {
-    try {
+  .action(
+    runCommand(async (options) => {
       await migrateStatusesCommand(options);
-    } catch (error) {
-      console.error(
-        'Error:',
-        error instanceof Error ? error.message : String(error),
-      );
-      process.exit(1);
-    }
-  });
+    }),
+  );
 
 program
   .command('migrate-status-history')
   .description('Seed a synthetic statusHistory entry on assignments that lack one (use --apply to write)')
   .option('--dir <path>', 'Override default project directory')
   .option('--apply', 'Apply the migration (default: dry-run)')
-  .action(async (options) => {
-    try {
+  .action(
+    runCommand(async (options) => {
       await migrateStatusHistoryCommand(options);
-    } catch (error) {
-      console.error(
-        'Error:',
-        error instanceof Error ? error.message : String(error),
-      );
-      process.exit(1);
-    }
-  });
+    }),
+  );
 
 program
   .command('migrate-derive')
   .description('One-time migration to derived status: seed facts from current statuses, re-derive all, print a divergence report')
   .option('--dir <path>', 'Override default project directory')
   .option('--dry-run', 'Report what would change without writing')
-  .action(async (options) => {
-    try {
+  .action(
+    runCommand(async (options) => {
       await migrateDeriveCommand(options);
-    } catch (error) {
-      console.error('Error:', error instanceof Error ? error.message : String(error));
-      process.exit(1);
-    }
-  });
+    }),
+  );
 
 program
   .command('park')
@@ -449,14 +357,11 @@ program
   .option('--reason <text>', 'Why it is parked (recorded in history)')
   .option('--agent <name>', 'Acting agent id')
   .option('--dir <path>', 'Override default project directory')
-  .action(async (assignment, options) => {
-    try {
+  .action(
+    runCommand(async (assignment, options) => {
       await parkCommand(assignment, options);
-    } catch (error) {
-      console.error('Error:', error instanceof Error ? error.message : String(error));
-      process.exit(1);
-    }
-  });
+    }),
+  );
 
 program
   .command('unpark')
@@ -465,14 +370,11 @@ program
   .option('--project <slug>', 'Target project slug')
   .option('--agent <name>', 'Acting agent id')
   .option('--dir <path>', 'Override default project directory')
-  .action(async (assignment, options) => {
-    try {
+  .action(
+    runCommand(async (assignment, options) => {
       await unparkCommand(assignment, options);
-    } catch (error) {
-      console.error('Error:', error instanceof Error ? error.message : String(error));
-      process.exit(1);
-    }
-  });
+    }),
+  );
 
 program
   .command('request-review')
@@ -482,14 +384,11 @@ program
   .option('--clear', 'Clear the review request instead')
   .option('--agent <name>', 'Acting agent id')
   .option('--dir <path>', 'Override default project directory')
-  .action(async (assignment, options) => {
-    try {
+  .action(
+    runCommand(async (assignment, options) => {
       await requestReviewCommand(assignment, options);
-    } catch (error) {
-      console.error('Error:', error instanceof Error ? error.message : String(error));
-      process.exit(1);
-    }
-  });
+    }),
+  );
 
 const factCommand = program
   .command('fact')
@@ -504,14 +403,11 @@ factCommand
   .option('--project <slug>', 'Target project slug')
   .option('--agent <name>', 'Acting agent id')
   .option('--dir <path>', 'Override default project directory')
-  .action(async (assignment, name, value, options) => {
-    try {
+  .action(
+    runCommand(async (assignment, name, value, options) => {
       await factSetCommand(assignment, name, value, options);
-    } catch (error) {
-      console.error('Error:', error instanceof Error ? error.message : String(error));
-      process.exit(1);
-    }
-  });
+    }),
+  );
 
 program
   .command('attest')
@@ -523,14 +419,11 @@ program
   .option('--agent <id>', 'Acting agent id (else the bound session, else human)')
   .option('--project <slug>', 'Target project slug')
   .option('--dir <path>', 'Override default project directory')
-  .action(async (assignment, fact, options) => {
-    try {
+  .action(
+    runCommand(async (assignment, fact, options) => {
       await attestCommand(assignment, fact, options);
-    } catch (error) {
-      console.error('Error:', error instanceof Error ? error.message : String(error));
-      process.exit(1);
-    }
-  });
+    }),
+  );
 
 program
   .command('recompute')
@@ -540,14 +433,11 @@ program
   .option('--project <slug>', 'Target project slug')
   .option('--agent <name>', 'Acting agent id')
   .option('--dir <path>', 'Override default project directory')
-  .action(async (assignment, options) => {
-    try {
+  .action(
+    runCommand(async (assignment, options) => {
       await recomputeCommand(assignment, options);
-    } catch (error) {
-      console.error('Error:', error instanceof Error ? error.message : String(error));
-      process.exit(1);
-    }
-  });
+    }),
+  );
 
 program
   .command('implement')
@@ -556,17 +446,11 @@ program
   .option('--project <slug>', 'Target project slug')
   .option('--agent <name>', 'Agent name (sets assignee if not already set)')
   .option('--dir <path>', 'Override default project directory')
-  .action(async (assignment, options) => {
-    try {
+  .action(
+    runCommand(async (assignment, options) => {
       await implementCommand(assignment, options);
-    } catch (error) {
-      console.error(
-        'Error:',
-        error instanceof Error ? error.message : String(error),
-      );
-      process.exit(1);
-    }
-  });
+    }),
+  );
 
 program
   .command('complete')
@@ -574,17 +458,11 @@ program
   .argument('<assignment>', 'Assignment slug')
   .option('--project <slug>', 'Target project slug')
   .option('--dir <path>', 'Override default project directory')
-  .action(async (assignment, options) => {
-    try {
+  .action(
+    runCommand(async (assignment, options) => {
       await completeCommand(assignment, options);
-    } catch (error) {
-      console.error(
-        'Error:',
-        error instanceof Error ? error.message : String(error),
-      );
-      process.exit(1);
-    }
-  });
+    }),
+  );
 
 program
   .command('block')
@@ -593,17 +471,11 @@ program
   .option('--project <slug>', 'Target project slug')
   .option('--reason <text>', 'Reason for blocking')
   .option('--dir <path>', 'Override default project directory')
-  .action(async (assignment, options) => {
-    try {
+  .action(
+    runCommand(async (assignment, options) => {
       await blockCommand(assignment, options);
-    } catch (error) {
-      console.error(
-        'Error:',
-        error instanceof Error ? error.message : String(error),
-      );
-      process.exit(1);
-    }
-  });
+    }),
+  );
 
 program
   .command('unblock')
@@ -611,17 +483,11 @@ program
   .argument('<assignment>', 'Assignment slug')
   .option('--project <slug>', 'Target project slug')
   .option('--dir <path>', 'Override default project directory')
-  .action(async (assignment, options) => {
-    try {
+  .action(
+    runCommand(async (assignment, options) => {
       await unblockCommand(assignment, options);
-    } catch (error) {
-      console.error(
-        'Error:',
-        error instanceof Error ? error.message : String(error),
-      );
-      process.exit(1);
-    }
-  });
+    }),
+  );
 
 program
   .command('review')
@@ -629,17 +495,11 @@ program
   .argument('<assignment>', 'Assignment slug')
   .option('--project <slug>', 'Target project slug')
   .option('--dir <path>', 'Override default project directory')
-  .action(async (assignment, options) => {
-    try {
+  .action(
+    runCommand(async (assignment, options) => {
       await reviewCommand(assignment, options);
-    } catch (error) {
-      console.error(
-        'Error:',
-        error instanceof Error ? error.message : String(error),
-      );
-      process.exit(1);
-    }
-  });
+    }),
+  );
 
 program
   .command('fail')
@@ -647,17 +507,11 @@ program
   .argument('<assignment>', 'Assignment slug')
   .option('--project <slug>', 'Target project slug')
   .option('--dir <path>', 'Override default project directory')
-  .action(async (assignment, options) => {
-    try {
+  .action(
+    runCommand(async (assignment, options) => {
       await failCommand(assignment, options);
-    } catch (error) {
-      console.error(
-        'Error:',
-        error instanceof Error ? error.message : String(error),
-      );
-      process.exit(1);
-    }
-  });
+    }),
+  );
 
 program
   .command('reopen')
@@ -665,17 +519,11 @@ program
   .argument('<assignment>', 'Assignment slug')
   .option('--project <slug>', 'Target project slug')
   .option('--dir <path>', 'Override default project directory')
-  .action(async (assignment, options) => {
-    try {
+  .action(
+    runCommand(async (assignment, options) => {
       await reopenCommand(assignment, options);
-    } catch (error) {
-      console.error(
-        'Error:',
-        error instanceof Error ? error.message : String(error),
-      );
-      process.exit(1);
-    }
-  });
+    }),
+  );
 
 program
   .command('setup')
@@ -691,17 +539,11 @@ program
   .option('--agent <id>', 'Alias for --target; cross-agent target id(s) to install into')
   .option('--force', 'Overwrite existing cross-agent protocol files / skills')
   .option('--dry-run', 'Print the cross-agent install actions without writing anything')
-  .action(async (options) => {
-    try {
+  .action(
+    runCommand(async (options) => {
       await setupCommand(options);
-    } catch (error) {
-      console.error(
-        'Error:',
-        error instanceof Error ? error.message : String(error),
-      );
-      process.exit(1);
-    }
-  });
+    }),
+  );
 
 program
   .command('install-plugin')
@@ -712,17 +554,11 @@ program
   .option('--force-skills', 'Overwrite user-edited skills in ~/.claude/skills')
   .option('--skip-skills', 'Do not install protocol skills into ~/.claude/skills')
   .option('--enable', 'Enable the plugin in ~/.claude/settings.json after install')
-  .action(async (options) => {
-    try {
+  .action(
+    runCommand(async (options) => {
       await installPluginCommand({ ...options, promptForTarget: true });
-    } catch (error) {
-      console.error(
-        'Error:',
-        error instanceof Error ? error.message : String(error),
-      );
-      process.exit(1);
-    }
-  });
+    }),
+  );
 
 program
   .command('update')
@@ -736,17 +572,11 @@ program
   .option('--enable', 'Enable the plugin in settings.json during the refresh')
   .option('--pm <name>', 'Override package-manager detection (npm|pnpm|yarn|bun)')
   .option('--yes', 'Assume yes for any confirmation (non-interactive)')
-  .action(async (options) => {
-    try {
+  .action(
+    runCommand(async (options) => {
       await updateCommand({ ...options, scriptUrl: import.meta.url });
-    } catch (error) {
-      console.error(
-        'Error:',
-        error instanceof Error ? error.message : String(error),
-      );
-      process.exit(1);
-    }
-  });
+    }),
+  );
 
 program
   .command('install-statusline')
@@ -755,8 +585,8 @@ program
   )
   .option('--mode <mode>', 'replace | wrap | skip | ask (default: ask, wrap in non-TTY)', 'ask')
   .option('--link', 'Symlink the installed script to the package source (dev mode)')
-  .action(async (options: { mode?: string; link?: boolean }) => {
-    try {
+  .action(
+    runCommand(async (options: { mode?: string; link?: boolean }) => {
       const rawMode = (options.mode ?? 'ask').toLowerCase();
       const valid: StatuslineMode[] = ['replace', 'wrap', 'skip', 'ask'];
       if (!valid.includes(rawMode as StatuslineMode)) {
@@ -768,11 +598,8 @@ program
         mode: rawMode as StatuslineMode,
         link: options.link,
       });
-    } catch (error) {
-      console.error('Error:', error instanceof Error ? error.message : String(error));
-      process.exit(1);
-    }
-  });
+    }),
+  );
 
 program
   .command('uninstall-statusline')
@@ -780,14 +607,11 @@ program
     'Remove the syntaur statusLine. Restores the previously configured command from backup if present.',
   )
   .option('--keep-script', 'Leave ~/.syntaur/statusline.sh on disk (only edit settings.json)')
-  .action(async (options: { keepScript?: boolean }) => {
-    try {
+  .action(
+    runCommand(async (options: { keepScript?: boolean }) => {
       await uninstallStatuslineCommand({ keepScript: options.keepScript });
-    } catch (error) {
-      console.error('Error:', error instanceof Error ? error.message : String(error));
-      process.exit(1);
-    }
-  });
+    }),
+  );
 
 program
   .command('configure-statusline')
@@ -805,14 +629,11 @@ program
   .option('--separator <string>', 'Segment separator (default " · ")')
   .option('--wrap <path>', 'Path to an external statusline script to compose as a "wrap" segment')
   .option('--preview', 'Print the resolved config and a preview line without writing')
-  .action(async (options: { preset?: string; segments?: string; separator?: string; wrap?: string; preview?: boolean }) => {
-    try {
+  .action(
+    runCommand(async (options: { preset?: string; segments?: string; separator?: string; wrap?: string; preview?: boolean }) => {
       await configureStatuslineCommand(options);
-    } catch (error) {
-      console.error('Error:', error instanceof Error ? error.message : String(error));
-      process.exit(1);
-    }
-  });
+    }),
+  );
 
 program
   .command('uninstall-skills')
@@ -820,14 +641,11 @@ program
   .option('--claude', 'Remove from ~/.claude/skills')
   .option('--codex', 'Remove from ~/.codex/skills')
   .option('--all', 'Remove from both')
-  .action(async (options: { claude?: boolean; codex?: boolean; all?: boolean }) => {
-    try {
+  .action(
+    runCommand(async (options: { claude?: boolean; codex?: boolean; all?: boolean }) => {
       await uninstallSkillsCommand(options);
-    } catch (error) {
-      console.error('Error:', error instanceof Error ? error.message : String(error));
-      process.exit(1);
-    }
-  });
+    }),
+  );
 
 program
   .command('install-codex-plugin')
@@ -838,17 +656,11 @@ program
   .option('--link', 'Use a symlink instead of copying files (repo-local dev only)')
   .option('--force-skills', 'Overwrite user-edited skills in ~/.codex/skills')
   .option('--skip-skills', 'Do not install protocol skills into ~/.codex/skills')
-  .action(async (options) => {
-    try {
+  .action(
+    runCommand(async (options) => {
       await installCodexPluginCommand({ ...options, promptForTarget: true });
-    } catch (error) {
-      console.error(
-        'Error:',
-        error instanceof Error ? error.message : String(error),
-      );
-      process.exit(1);
-    }
-  });
+    }),
+  );
 
 program
   .command('uninstall')
@@ -858,17 +670,11 @@ program
   .option('--data', 'Remove ~/.syntaur data')
   .option('--all', 'Remove plugins and ~/.syntaur data')
   .option('--yes', 'Skip confirmation prompts')
-  .action(async (options) => {
-    try {
+  .action(
+    runCommand(async (options) => {
       await uninstallCommand(options);
-    } catch (error) {
-      console.error(
-        'Error:',
-        error instanceof Error ? error.message : String(error),
-      );
-      process.exit(1);
-    }
-  });
+    }),
+  );
 
 program
   .command('setup-adapter')
@@ -878,17 +684,11 @@ program
   .option('--assignment <slug>', 'Target assignment slug (required)')
   .option('--force', 'Overwrite existing adapter files')
   .option('--dir <path>', 'Override default project directory')
-  .action(async (framework, options) => {
-    try {
+  .action(
+    runCommand(async (framework, options) => {
       await setupAdapterCommand(framework, options);
-    } catch (error) {
-      console.error(
-        'Error:',
-        error instanceof Error ? error.message : String(error),
-      );
-      process.exit(1);
-    }
-  });
+    }),
+  );
 
 program
   .command('track-session')
@@ -918,17 +718,11 @@ program
       return n;
     },
   )
-  .action(async (options) => {
-    try {
+  .action(
+    runCommand(async (options) => {
       await trackSessionCommand(options);
-    } catch (error) {
-      console.error(
-        'Error:',
-        error instanceof Error ? error.message : String(error),
-      );
-      process.exit(1);
-    }
-  });
+    }),
+  );
 
 program
   .command('url <url>')
@@ -967,17 +761,11 @@ program
   .description('Interactive TUI browser for projects and assignments')
   .option('--agent <id>', 'Bypass the agent picker and launch the given configured agent id')
   .option('--no-worktree-prompt', 'Skip the prompt to create a worktree when one is missing')
-  .action(async (options) => {
-    try {
+  .action(
+    runCommand(async (options) => {
       await browseCommand(options);
-    } catch (error) {
-      console.error(
-        'Error:',
-        error instanceof Error ? error.message : String(error),
-      );
-      process.exit(1);
-    }
-  });
+    }),
+  );
 
 program
   .command('create-playbook')
@@ -985,96 +773,60 @@ program
   .argument('<name>', 'Playbook name')
   .option('--slug <slug>', 'Override auto-generated slug')
   .option('--description <desc>', 'Playbook description')
-  .action(async (name, options) => {
-    try {
+  .action(
+    runCommand(async (name, options) => {
       await createPlaybookCommand(name, options);
-    } catch (error) {
-      console.error(
-        'Error:',
-        error instanceof Error ? error.message : String(error),
-      );
-      process.exit(1);
-    }
-  });
+    }),
+  );
 
 program
   .command('list-playbooks')
   .description('List playbooks (disabled playbooks are excluded unless --all is passed)')
   .option('--all', 'Include disabled playbooks')
-  .action(async (options) => {
-    try {
+  .action(
+    runCommand(async (options) => {
       await listPlaybooksCommand({ all: Boolean(options?.all) });
-    } catch (error) {
-      console.error(
-        'Error:',
-        error instanceof Error ? error.message : String(error),
-      );
-      process.exit(1);
-    }
-  });
+    }),
+  );
 
 program
   .command('enable-playbook')
   .description('Enable a previously-disabled playbook')
   .argument('<slug>', 'Playbook slug')
-  .action(async (slug) => {
-    try {
+  .action(
+    runCommand(async (slug) => {
       await enablePlaybookCommand(slug);
-    } catch (error) {
-      console.error(
-        'Error:',
-        error instanceof Error ? error.message : String(error),
-      );
-      process.exit(1);
-    }
-  });
+    }),
+  );
 
 program
   .command('disable-playbook')
   .description('Disable a playbook so agents no longer load it')
   .argument('<slug>', 'Playbook slug')
-  .action(async (slug) => {
-    try {
+  .action(
+    runCommand(async (slug) => {
       await disablePlaybookCommand(slug);
-    } catch (error) {
-      console.error(
-        'Error:',
-        error instanceof Error ? error.message : String(error),
-      );
-      process.exit(1);
-    }
-  });
+    }),
+  );
 
 program
   .command('delete-playbook')
   .description('Delete a playbook from disk and regenerate the manifest')
   .argument('<slug>', 'Playbook slug')
-  .action(async (slug) => {
-    try {
+  .action(
+    runCommand(async (slug) => {
       await deletePlaybookCommand(slug);
-    } catch (error) {
-      console.error(
-        'Error:',
-        error instanceof Error ? error.message : String(error),
-      );
-      process.exit(1);
-    }
-  });
+    }),
+  );
 
 program
   .command('regen-playbook-manifest')
   .description('Rebuild ~/.syntaur/playbooks/manifest.md from current playbook files')
-  .action(async () => {
-    try {
+  .action(
+    runCommand(async () => {
       await regenPlaybookManifestCommand();
-    } catch (error) {
-      console.error(
-        'Error:',
-        error instanceof Error ? error.message : String(error),
-      );
-      process.exit(1);
-    }
-  });
+    }),
+  );
 
 program.addCommand(todoCommand);
 program.addCommand(backupCommand);
