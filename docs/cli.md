@@ -185,6 +185,72 @@ Manage plan files for an assignment.
 - `syntaur plan create [--assignment <slug> [--project <slug>]] [--force]` — write the initial `plan.md` and append the four-todo cycle to `assignment.md ## Todos`. Refuses to overwrite an existing `plan.md` without `--force`.
 - `syntaur plan version [--assignment <slug> [--project <slug>]] [--force]` — create the next `plan-v<N>.md`, supersede the prior cycle, and carry forward unchecked tasks.
 
+## `syntaur search <query>`
+
+Full-text search across all Syntaur markdown content. Searches the bodies of every file kind tracked by an assignment and returns ranked results with a snippet and location.
+
+```
+syntaur search <query> [options]
+```
+
+### File kinds searched
+
+| Kind | File |
+|------|------|
+| `assignment` | `assignment.md` |
+| `plan` | Latest plan only — `plan-v<N>.md` supersedes `plan.md` when a versioned plan exists |
+| `progress` | `progress.md` |
+| `comments` | `comments.md` |
+| `handoff` | `handoff.md` |
+| `decision-record` | `decision-record.md` |
+| `scratchpad` | `scratchpad.md` |
+| `memory` | Project memory files under `<projectDir>/memories/` |
+| `resource` | Project resource files under `<projectDir>/resources/` |
+
+### Options
+
+- `--project <slug>` — Restrict results to one project.
+- `--type <list>` — Comma-separated assignment type filter.
+- `--status <list>` — Comma-separated assignment status filter.
+- `--in <fileKinds>` — Comma-separated file-kind filter. Accepts singular or plural names (e.g. `--in comment,plans` or `--in comments,plan`).
+- `--all` — Include archived assignments and projects (excluded by default).
+- `--limit <n>` — Maximum number of results. Default: `20`.
+- `--semantic` — Use the semantic search provider when available; falls back to full-text automatically. The semantic layer is a designed-but-deferred seam — v1 uses full-text search via fuse.js.
+- `--json` — Emit results as a JSON array instead of a table.
+
+### JSON output shape
+
+Each item in the `--json` array contains:
+
+```json
+{
+  "path": "/abs/path/to/file.md",
+  "project": "project-slug",
+  "assignment": "assignment-slug",
+  "fileKind": "plan",
+  "score": 0.82,
+  "snippet": "…matched text excerpt…",
+  "line": 14,
+  "section": "## Implementation",
+  "route": "/assignments/my-assignment?tab=plan#implementation"
+}
+```
+
+The `route` field is also used by the dashboard command palette: running a search from the palette deep-links directly to the matching assignment's `?tab=<kind>` pane at the `#section` anchor.
+
+### Examples
+
+```bash
+# Find any mention of "rate limit" across all content
+syntaur search "rate limit"
+
+# Search only plans and handoffs in one project, return JSON
+syntaur search "authentication flow" --project my-api --in plans,handoff --json
+
+# Include archived assignments, cap at 5 results
+syntaur search "stripe webhook" --all --limit 5
+```
+
 ## Launch flow
 
 `syntaur browse` opens the TUI browser and, when you pick an assignment, launches an agent.

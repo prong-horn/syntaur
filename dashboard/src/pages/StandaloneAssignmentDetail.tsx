@@ -20,6 +20,7 @@ import { AssignmentUsageSection } from '../components/AssignmentUsageSection';
 import { OpenInAgentButton } from '../components/OpenInAgentButton';
 import { CreateWorktreeButton } from '../components/CreateWorktreeButton';
 import { useToast, Toaster } from '../components/Toast';
+import { useHashScroll } from '../hooks/useHashScroll';
 
 /**
  * Read-and-edit view for standalone assignments (those at
@@ -29,6 +30,8 @@ export function StandaloneAssignmentDetail() {
   const { id } = useParams<{ id: string }>();
   const [searchParams, setSearchParams] = useSearchParams();
   const tab = searchParams.get('tab') ?? 'summary';
+  // Standalone hits can carry `#section` too — honor the deep-link hash.
+  useHashScroll(tab);
   const { data: assignment, loading, error, refetch } = useAssignmentById(id);
   const { data: sessionsData, loading: sessionsLoading, error: sessionsError } = useAssignmentSessionsById(id);
   // D3: the standalone usage endpoint keys on the assignment SLUG, not the UUID

@@ -154,6 +154,7 @@ export function SessionActionButtons({ session, onMarkStopped }: SessionActionBu
                 <button
                   type="button"
                   className={btnClass}
+                  disabled={flow.pending}
                   onClick={() => onMarkStopped(session.sessionId)}
                 >
                   <Square className={iconClass} />

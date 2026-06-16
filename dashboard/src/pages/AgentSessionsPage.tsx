@@ -258,37 +258,25 @@ const [search, setSearch] = useState('');
         />
       ) : (
         <div className="surface-panel mt-4 overflow-x-auto">
-          <table className="w-full min-w-[1280px] table-fixed text-sm">
-            <colgroup>
-              <col style={{ width: '32px' }} />
-              <col style={{ width: '140px' }} />
-              <col style={{ width: '160px' }} />
-              <col style={{ width: '200px' }} />
-              <col style={{ width: '110px' }} />
-              <col style={{ width: '130px' }} />
-              <col style={{ width: '140px' }} />
-              <col style={{ width: '200px' }} />
-              <col style={{ width: '200px' }} />
-              <col style={{ width: '40px' }} />
-            </colgroup>
+          <table className="w-full min-w-[960px] table-fixed text-sm lg:min-w-[1280px]">
             <thead>
               <tr className="border-b border-border/40 text-left text-xs uppercase tracking-wider text-muted-foreground">
-                <th className="pb-2 pr-3">
+                <th className="w-[32px] pb-2 pr-3">
                   <button onClick={toggleSelectAll} className="text-muted-foreground hover:text-foreground">
                     {selectedIds.size === filteredSessions.length && filteredSessions.length > 0
                       ? <CheckSquare className="h-4 w-4" />
                       : <Square className="h-4 w-4" />}
                   </button>
                 </th>
-                <th className="pb-2 pr-3">Project</th>
-                <th className="pb-2 pr-3">Assignment</th>
-                <th className="pb-2 pr-3">Description</th>
-                <th className="pb-2 pr-3">Agent</th>
-                <th className="pb-2 pr-3">Session ID</th>
-                <th className="pb-2 pr-3">Started</th>
-                <th className="pb-2 pr-3">Path</th>
-                <th className="pb-2 pr-3">Transcript</th>
-                <th className="pb-2"></th>
+                <th className="w-[140px] pb-2 pr-3">Project</th>
+                <th className="w-[160px] pb-2 pr-3">Assignment</th>
+                <th className="w-[200px] pb-2 pr-3">Description</th>
+                <th className="w-[110px] pb-2 pr-3">Agent</th>
+                <th className="hidden w-[130px] pb-2 pr-3 lg:table-cell">Session ID</th>
+                <th className="w-[140px] pb-2 pr-3">Started</th>
+                <th className="hidden w-[200px] pb-2 pr-3 lg:table-cell">Path</th>
+                <th className="hidden w-[200px] pb-2 pr-3 lg:table-cell">Transcript</th>
+                <th className="w-[40px] pb-2"></th>
               </tr>
             </thead>
             <tbody>
@@ -425,7 +413,7 @@ function SessionRow({
           <span className="block min-w-0 truncate">{session.agent}</span>
         </span>
       </td>
-      <td className="py-2 pr-3">
+      <td className="hidden py-2 pr-3 lg:table-cell">
         <span className="flex min-w-0 items-center gap-1.5">
           <span className="block min-w-0 truncate font-mono text-xs text-muted-foreground" title={session.sessionId}>
             {shortId}
@@ -443,7 +431,7 @@ function SessionRow({
       <td className="py-2 pr-3 text-xs text-muted-foreground">
         <span className="truncate block">{formatDateTime(session.started)}</span>
       </td>
-      <td className="py-2 pr-3">
+      <td className="hidden py-2 pr-3 lg:table-cell">
         <span className="flex min-w-0 items-center gap-1.5">
           <span className="block min-w-0 truncate text-xs text-muted-foreground" title={session.path}>
             {shortPath}
@@ -451,7 +439,7 @@ function SessionRow({
           {session.path && <CopyButton value={session.path} />}
         </span>
       </td>
-      <td className="py-2 pr-3">
+      <td className="hidden py-2 pr-3 lg:table-cell">
         {session.transcriptPath ? (
           <span className="flex min-w-0 items-center gap-1.5">
             <span

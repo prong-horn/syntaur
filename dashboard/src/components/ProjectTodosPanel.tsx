@@ -17,6 +17,7 @@ import {
 import { copyText } from '../lib/clipboard';
 import { LoadingState } from './LoadingState';
 import { ErrorState } from './ErrorState';
+import { EmptyState } from './EmptyState';
 import { StatCard } from './StatCard';
 import { TodoRow } from './TodoRow';
 import { useToast, Toaster } from './Toast';
@@ -338,11 +339,12 @@ export function ProjectTodosPanel({ projectId }: ProjectTodosPanelProps) {
         <div className="flex gap-2">
           <input
             type="text"
+            aria-label="New todo description"
             placeholder="Add a todo..."
             value={newTodoText}
             onChange={(e) => setNewTodoText(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && handleAdd()}
-            className="h-9 flex-1 rounded-md border border-border/70 bg-background px-3 text-sm text-foreground placeholder:text-muted-foreground/60 focus:border-foreground/30 focus:outline-none"
+            onKeyDown={(e) => { if (e.key === 'Enter' && newTodoText.trim()) handleAdd(); }}
+            className="h-9 flex-1 rounded-md border border-border/70 bg-background px-3 text-sm text-foreground placeholder:text-muted-foreground/80 focus:border-foreground/30 focus:outline-none"
           />
           <button
             onClick={handleAdd}
@@ -358,17 +360,19 @@ export function ProjectTodosPanel({ projectId }: ProjectTodosPanelProps) {
       {/* Filters */}
       <div className="flex items-center gap-3">
         <div className="relative flex-1 max-w-sm">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Search aria-hidden="true" className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <input
             ref={searchRef}
             type="text"
+            aria-label="Search todos"
             placeholder="Search..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="h-9 w-full rounded-md border border-border/70 bg-background pl-9 pr-3 text-sm text-foreground placeholder:text-muted-foreground/60 focus:border-foreground/30 focus:outline-none"
+            className="h-9 w-full rounded-md border border-border/70 bg-background pl-9 pr-3 text-sm text-foreground placeholder:text-muted-foreground/80 focus:border-foreground/30 focus:outline-none"
           />
         </div>
         <select
+          aria-label="Filter by status"
           value={statusFilter}
           onChange={(e) => setStatusFilter(e.target.value)}
           className="h-9 rounded-md border border-border/70 bg-background px-2 text-sm text-foreground focus:border-foreground/30 focus:outline-none"
@@ -381,6 +385,7 @@ export function ProjectTodosPanel({ projectId }: ProjectTodosPanelProps) {
         </select>
         {allTags.length > 0 && (
           <select
+            aria-label="Filter by tag"
             value={tagFilter}
             onChange={(e) => setTagFilter(e.target.value)}
             className="h-9 rounded-md border border-border/70 bg-background px-2 text-sm text-foreground focus:border-foreground/30 focus:outline-none"
@@ -439,6 +444,19 @@ export function ProjectTodosPanel({ projectId }: ProjectTodosPanelProps) {
           <span>Select all in current filter ({filtered.length})</span>
         </div>
       )}
+      {filtered.length === 0 ? (
+        (data?.items?.length ?? 0) === 0 ? (
+          <EmptyState
+            title="No todos yet"
+            description="Add your first todo using the field above to start tracking work for this project."
+          />
+        ) : (
+          <EmptyState
+            title="No todos match your filters"
+            description="No todos match the current search, status, or tag filters. Try clearing or adjusting them."
+          />
+        )
+      ) : (
       <div className="space-y-3">
         {(() => {
           let flatIndex = -1;
@@ -490,6 +508,7 @@ export function ProjectTodosPanel({ projectId }: ProjectTodosPanelProps) {
           });
         })()}
       </div>
+      )}
 
       <TodoPromoteModal
         open={promoteOpen}

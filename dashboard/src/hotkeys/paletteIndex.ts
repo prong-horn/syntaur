@@ -1,7 +1,15 @@
 import type { ProjectSummary, AssignmentBoardItem, ExternalIdInfo } from '../hooks/useProjects';
 import type { PlaybookSummary, TrackedSession, TodoItem } from '../types';
+import type { ContentHit, ContentMatchRange } from '../hooks/useContentSearch';
 
-export type PaletteEntryType = 'project' | 'assignment' | 'playbook' | 'server' | 'todo' | 'page';
+export type PaletteEntryType =
+  | 'project'
+  | 'assignment'
+  | 'playbook'
+  | 'server'
+  | 'todo'
+  | 'page'
+  | 'content';
 
 export interface PaletteEntry {
   type: PaletteEntryType;
@@ -20,6 +28,11 @@ export interface PaletteEntry {
   assignmentType?: string | null;
   project?: string | null;
   externalIds?: ExternalIdInfo[];
+  // Content-hit rendering: the NEUTRAL snippet text plus snippet-local match
+  // ranges, so the palette can escape the text and wrap the ranges in `<mark>`
+  // (HTML-safe). Only set on `type: 'content'` entries.
+  snippet?: string;
+  snippetMatches?: ContentMatchRange[];
 }
 
 // R2: only these routes have workspace-prefixed variants in App.tsx.
@@ -186,4 +199,45 @@ export function buildIndex(input: BuildInput): PaletteEntry[] {
   }
 
   return out;
+}
+
+/**
+ * The `/w/<workspace>` prefix to prepend to a content hit's route, derived from
+ * the hit's OWN project workspace (never the current page's prefix). Only
+ * project-nested *assignment-pane* hits get prefixed: those are the only routes
+ * with a workspace-prefixed variant in App.tsx
+ * (`/w/:workspace/projects/:slug/assignments/:aslug`). Standalone
+ * (`/assignments/:id`) and memory/resource (`/projects/:slug/memories|resources/:slug`)
+ * routes have NO `/w/...` variant, so prefixing them would 404 — they stay
+ * unprefixed. Mirrors the per-entity prefixing at `paletteIndex.ts:106,129`.
+ */
+function wsPrefixForHit(hit: ContentHit): string {
+  const eligible =
+    !hit.standalone &&
+    Boolean(hit.projectWorkspace) &&
+    hit.fileKind !== 'memory' &&
+    hit.fileKind !== 'resource';
+  return eligible ? `/w/${hit.projectWorkspace}` : '';
+}
+
+/**
+ * Map server-ranked content hits (from `/api/search`) into `PaletteEntry[]` for
+ * the command palette's separate "Content" group. The route is the hit's
+ * precomputed UNPREFIXED `route` with the per-hit workspace prefix applied via
+ * {@link wsPrefixForHit}. The neutral `snippet` + `matches` are carried through
+ * for HTML-safe `<mark>` rendering — these entries are NOT run through the local
+ * fuzzy ranker (they're already server-ranked).
+ */
+export function contentHitsToEntries(hits: ContentHit[]): PaletteEntry[] {
+  return hits.map((hit, idx) => ({
+    type: 'content' as const,
+    // Path is unique per file; idx disambiguates multiple hits in one file.
+    id: `content-${hit.path}-${idx}`,
+    title: `${hit.assignmentSlug ?? hit.itemSlug ?? ''} › ${hit.section ?? hit.fileKind}`,
+    subtitle: hit.projectSlug ?? (hit.standalone ? 'standalone' : undefined),
+    route: `${wsPrefixForHit(hit)}${hit.route}`,
+    project: hit.projectSlug,
+    snippet: hit.snippet,
+    snippetMatches: hit.matches,
+  }));
 }

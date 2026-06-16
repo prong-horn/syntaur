@@ -1,12 +1,13 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { compileQuery, type QueryItem } from '@shared/query';
 import { Dialog, DialogContent, DialogTitle } from '../components/ui/dialog';
 import { rankAll } from './fuzzy';
-import type { PaletteEntry } from './paletteIndex';
+import { contentHitsToEntries, type PaletteEntry } from './paletteIndex';
 import { splitPaletteQuery, PALETTE_FIELDS } from './paletteQuery';
 import { suggestPalette, type Suggestion, type SuggestContext } from './paletteSuggest';
 import { useHotkeyContext } from './HotkeyProvider';
+import { useContentSearch, type ContentMatchRange } from '../hooks/useContentSearch';
 import { useSearchConfig } from '../hooks/useSearchConfig';
 import { useStatusConfig } from '../hooks/useStatusConfig';
 import { useTypesConfig } from '../hooks/useTypesConfig';
@@ -22,7 +23,62 @@ const TYPE_LABEL: Record<string, string> = {
   playbook: 'Playbook',
   server: 'Server',
   todo: 'Todo',
+  content: 'Content',
 };
+
+/**
+ * Clamp ranges to `[0, len]`, drop empties, sort ascending, and MERGE any
+ * overlapping/adjacent ranges into disjoint, ordered spans. Defends the
+ * highlighter against unsanitized match ranges (overlaps would otherwise
+ * duplicate snippet text). Mirrors the CLI highlighter's clamp/sort/merge.
+ */
+function normalizeRanges(matches: ContentMatchRange[], len: number): Array<{ start: number; end: number }> {
+  const clamped = matches
+    .map((m) => ({
+      start: Math.max(0, Math.min(m.start, len)),
+      end: Math.max(0, Math.min(m.end, len)),
+    }))
+    .filter((m) => m.end > m.start)
+    .sort((a, b) => a.start - b.start || a.end - b.end);
+
+  const merged: Array<{ start: number; end: number }> = [];
+  for (const m of clamped) {
+    const last = merged[merged.length - 1];
+    // Adjacent (start <= last.end) ranges merge into one contiguous <mark>.
+    if (last && m.start <= last.end) {
+      last.end = Math.max(last.end, m.end);
+    } else {
+      merged.push({ ...m });
+    }
+  }
+  return merged;
+}
+
+/**
+ * Render a neutral snippet with the match ranges wrapped in `<mark>`,
+ * HTML-SAFELY: the text is emitted as React text nodes (auto-escaped) — never
+ * `dangerouslySetInnerHTML` — so a snippet containing markup can't inject HTML.
+ * Ranges are snippet-local char offsets; they're clamped/sorted/merged here so
+ * overlapping or out-of-bounds inputs can't duplicate or drop text.
+ */
+function highlightSnippet(snippet: string, matches?: ContentMatchRange[]): ReactNode {
+  if (!matches || matches.length === 0) return snippet;
+  const ranges = normalizeRanges(matches, snippet.length);
+  if (ranges.length === 0) return snippet;
+  const out: ReactNode[] = [];
+  let cursor = 0;
+  ranges.forEach((m, i) => {
+    if (m.start > cursor) out.push(<Fragment key={`t${i}`}>{snippet.slice(cursor, m.start)}</Fragment>);
+    out.push(
+      <mark key={`m${i}`} className="rounded bg-yellow-200/70 px-0.5 text-foreground dark:bg-yellow-500/30">
+        {snippet.slice(m.start, m.end)}
+      </mark>,
+    );
+    cursor = m.end;
+  });
+  if (cursor < snippet.length) out.push(<Fragment key="tail">{snippet.slice(cursor)}</Fragment>);
+  return out;
+}
 
 export function CommandPalette({ entries }: CommandPaletteProps) {
   const { paletteOpen, closePalette } = useHotkeyContext();
@@ -34,6 +90,7 @@ export function CommandPalette({ entries }: CommandPaletteProps) {
   const [suggestIdx, setSuggestIdx] = useState(0);
   const listRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const listboxId = useId();
   const { search: searchCfg } = useSearchConfig();
   const statusCfg = useStatusConfig();
   const typesCfg = useTypesConfig();
@@ -108,6 +165,20 @@ export function CommandPalette({ entries }: CommandPaletteProps) {
     return rankAll(rankText, survivors, 50);
   }, [entries, aqlExpr, fuzzy, query]);
 
+  // Content search runs only while the palette is open + debounced; results are
+  // ALREADY server-ranked, so they are NOT fed through rankText/rankAll (their
+  // titles are slugs, not the typed terms — the local ranker would wrongly
+  // demote/filter them). Rendered as a separate "Content" group below.
+  const { hits: contentHits } = useContentSearch(query, paletteOpen);
+  const contentEntries = useMemo(() => contentHitsToEntries(contentHits), [contentHits]);
+
+  // Flat keyboard-nav list spanning BOTH groups: local ranked entries first,
+  // then content hits. `selected` indexes into this combined array.
+  const allEntries = useMemo(
+    () => [...ranked, ...contentEntries],
+    [ranked, contentEntries],
+  );
+
   useEffect(() => {
     setSelected(0);
   }, [query, paletteOpen]);
@@ -137,6 +208,40 @@ export function CommandPalette({ entries }: CommandPaletteProps) {
   function handleOpen(entry: PaletteEntry) {
     navigate(entry.route);
     closePalette();
+  }
+
+  // Render one result row. `idx` is the row's position in the flat keyboard-nav
+  // list (`allEntries`), spanning both the ranked group and the content group.
+  function renderEntry(entry: PaletteEntry, idx: number): ReactNode {
+    const isSelected = idx === selected;
+    const isContent = entry.type === 'content';
+    return (
+      <button
+        key={entry.id}
+        type="button"
+        data-palette-idx={idx}
+        onClick={() => handleOpen(entry)}
+        onMouseEnter={() => setSelected(idx)}
+        className={`flex w-full items-center gap-3 rounded-md px-3 py-2 text-left text-sm transition-colors ${
+          isSelected ? 'bg-accent text-accent-foreground' : 'hover:bg-accent/50 text-foreground'
+        }`}
+      >
+        <span className="shrink-0 rounded border border-border/70 bg-background/60 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+          {TYPE_LABEL[entry.type] ?? entry.type}
+        </span>
+        <span className="flex min-w-0 flex-1 flex-col">
+          <span className="truncate">{entry.title}</span>
+          {isContent && entry.snippet ? (
+            <span className="truncate text-xs text-muted-foreground">
+              {highlightSnippet(entry.snippet, entry.snippetMatches)}
+            </span>
+          ) : null}
+        </span>
+        {entry.subtitle ? (
+          <span className="shrink-0 truncate text-xs text-muted-foreground">{entry.subtitle}</span>
+        ) : null}
+      </button>
+    );
   }
 
   function acceptSuggestion(s: Suggestion) {
@@ -177,7 +282,7 @@ export function CommandPalette({ entries }: CommandPaletteProps) {
       if (e.key === 'Enter') {
         // Enter always opens the selected result — never accepts a suggestion.
         e.preventDefault();
-        const entry = ranked[selected];
+        const entry = allEntries[selected];
         if (entry) handleOpen(entry);
         return;
       }
@@ -186,19 +291,23 @@ export function CommandPalette({ entries }: CommandPaletteProps) {
       return;
     }
 
-    // Dropdown closed: navigate the results list (today's behavior).
+    // Dropdown closed: navigate the results list (today's behavior). The list
+    // spans both the local ranked group and the content group.
     if (e.key === 'ArrowDown') {
       e.preventDefault();
-      setSelected((i) => Math.min(ranked.length - 1, i + 1));
+      setSelected((i) => Math.min(allEntries.length - 1, i + 1));
     } else if (e.key === 'ArrowUp') {
       e.preventDefault();
       setSelected((i) => Math.max(0, i - 1));
     } else if (e.key === 'Enter') {
       e.preventDefault();
-      const entry = ranked[selected];
+      const entry = allEntries[selected];
       if (entry) handleOpen(entry);
     }
   }
+
+  const activeDescendant =
+    showSuggestions && suggestions[suggestIdx] ? `${listboxId}-option-${suggestIdx}` : undefined;
 
   return (
     <Dialog open={paletteOpen} onOpenChange={(o) => (o ? null : closePalette())}>
@@ -218,6 +327,11 @@ export function CommandPalette({ entries }: CommandPaletteProps) {
             ref={inputRef}
             autoFocus
             type="text"
+            role="combobox"
+            aria-expanded={showSuggestions}
+            aria-controls={showSuggestions ? listboxId : undefined}
+            aria-activedescendant={activeDescendant}
+            aria-autocomplete="list"
             value={query}
             onChange={(e) => {
               setQuery(e.target.value);
@@ -230,12 +344,20 @@ export function CommandPalette({ entries }: CommandPaletteProps) {
             className="w-full rounded-t-xl border-0 border-b border-border/70 bg-transparent px-4 py-3 text-sm text-foreground outline-none focus:border-primary"
           />
           {showSuggestions ? (
-            <div className="absolute left-0 right-0 top-full z-50 max-h-64 overflow-y-auto border-b border-border/70 bg-background shadow-lg">
+            <div
+              role="listbox"
+              id={listboxId}
+              aria-label="Query suggestions"
+              className="absolute left-0 right-0 top-full z-50 max-h-64 overflow-y-auto border-b border-border/70 bg-background shadow-lg"
+            >
               {suggestions.map((s, i) => {
                 const highlighted = i === suggestIdx;
                 return (
                   <button
                     key={`${s.kind}-${s.insert}-${i}`}
+                    id={`${listboxId}-option-${i}`}
+                    role="option"
+                    aria-selected={highlighted}
                     type="button"
                     // onMouseDown (not onClick) so the input keeps focus on accept.
                     onMouseDown={(ev) => {
@@ -276,38 +398,22 @@ export function CommandPalette({ entries }: CommandPaletteProps) {
           </div>
         ) : null}
         <div ref={listRef} className="max-h-[60vh] overflow-y-auto p-1">
-          {ranked.length === 0 ? (
+          {allEntries.length === 0 ? (
             <div className="px-4 py-6 text-center text-sm text-muted-foreground">
               No matches
             </div>
           ) : (
-            ranked.map((entry, idx) => {
-              const isSelected = idx === selected;
-              return (
-                <button
-                  key={entry.id}
-                  type="button"
-                  data-palette-idx={idx}
-                  onClick={() => handleOpen(entry)}
-                  onMouseEnter={() => setSelected(idx)}
-                  className={`flex w-full items-center gap-3 rounded-md px-3 py-2 text-left text-sm transition-colors ${
-                    isSelected
-                      ? 'bg-accent text-accent-foreground'
-                      : 'hover:bg-accent/50 text-foreground'
-                  }`}
-                >
-                  <span className="shrink-0 rounded border border-border/70 bg-background/60 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-                    {TYPE_LABEL[entry.type] ?? entry.type}
-                  </span>
-                  <span className="min-w-0 flex-1 truncate">{entry.title}</span>
-                  {entry.subtitle ? (
-                    <span className="shrink-0 truncate text-xs text-muted-foreground">
-                      {entry.subtitle}
-                    </span>
-                  ) : null}
-                </button>
-              );
-            })
+            <>
+              {ranked.map((entry, idx) => renderEntry(entry, idx))}
+              {contentEntries.length > 0 ? (
+                <>
+                  <div className="px-3 pb-1 pt-2 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                    Content
+                  </div>
+                  {contentEntries.map((entry, j) => renderEntry(entry, ranked.length + j))}
+                </>
+              ) : null}
+            </>
           )}
         </div>
         <div className="flex items-center justify-between border-t border-border/70 px-3 py-2 text-[11px] text-muted-foreground">
@@ -316,7 +422,7 @@ export function CommandPalette({ entries }: CommandPaletteProps) {
               ? `\u21E5/\u2192 accept \u00B7 \u2191\u2193 suggestions \u00B7 Esc close`
               : `\u2191\u2193 navigate \u00B7 \u21B5 open \u00B7 Esc close`}
           </span>
-          <span>{ranked.length} result{ranked.length === 1 ? '' : 's'}</span>
+          <span>{allEntries.length} result{allEntries.length === 1 ? '' : 's'}</span>
         </div>
       </DialogContent>
     </Dialog>
