@@ -1,6 +1,6 @@
 import { type DragEvent, useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { Link, useNavigate, useSearchParams, useParams } from 'react-router-dom';
-import { ChevronDown, ChevronUp, FolderKanban, Plus, Pencil, Trash2, ArrowRightLeft } from 'lucide-react';
+import { ChevronDown, ChevronUp, FilterX, FolderKanban, Plus, Pencil, Trash2, ArrowRightLeft } from 'lucide-react';
 import { CopyButton } from '../components/CopyButton';
 import { cn } from '../lib/utils';
 import {
@@ -634,6 +634,21 @@ export function AssignmentsPage() {
     },
     [persistField],
   );
+  // Reset the board's primary filters (search, status, tags, date range,
+  // activity) back to their defaults — used by the "no matches" empty state.
+  const handleClearAllFilters = useCallback(() => {
+    handleSetSearch('');
+    handleSetStatusFilter([]);
+    handleSetTagsFilter([]);
+    handleSetDateRange(null);
+    handleSetActivityFilter('all');
+  }, [
+    handleSetSearch,
+    handleSetStatusFilter,
+    handleSetTagsFilter,
+    handleSetDateRange,
+    handleSetActivityFilter,
+  ]);
 
   // Query → chips (read / typed edits). The user edited the raw query in the
   // QueryInput box: `query` is canonical, so always set it. Then, if the query is
@@ -1462,7 +1477,7 @@ export function AssignmentsPage() {
           value={dateRange}
           onChange={chipsRepresentable ? handleSetDateRange : () => {}}
         />
-        <select value={activityFilter} disabled={!chipsRepresentable} onChange={(e) => handleSetActivityFilter(e.target.value as ActivityFilter)} className="editor-input max-w-[180px]">
+        <select value={activityFilter} disabled={!chipsRepresentable} onChange={(e) => handleSetActivityFilter(e.target.value as ActivityFilter)} className="editor-input max-w-[180px]" aria-label="Filter by activity" title="Filter by activity">
           <option value="all">All activity</option>
           <option value="stale">Stale only</option>
           <option value="fresh">Fresh only</option>
@@ -1547,6 +1562,16 @@ export function AssignmentsPage() {
         <EmptyState
           title="No assignments match these filters"
           description="Adjust the search term or filters to show assignments across all projects again."
+          actions={
+            <button
+              type="button"
+              onClick={handleClearAllFilters}
+              className="shell-action shell-action--cta"
+            >
+              <FilterX className="h-4 w-4" />
+              <span>Clear all filters</span>
+            </button>
+          }
         />
       ) : view === 'table' ? (
         (() => {
@@ -1907,8 +1932,9 @@ export function AssignmentsPage() {
             }
             setDeleteTarget(null);
             refetch();
+            showToast('Assignment deleted', 'success');
           } catch (err) {
-            alert(err instanceof Error ? err.message : 'Failed to delete assignment');
+            showToast(err instanceof Error ? err.message : 'Failed to delete assignment', 'error');
           } finally {
             setDeletingKey(null);
           }
