@@ -140,7 +140,10 @@ export function WorkflowPage() {
   }
 
   // ── Derived: shared section inputs + cross-section validation ─────────────
-  const statusOptions = useMemo(() => statuses.map((s) => ({ id: s.id, label: s.label })), [statuses]);
+  const statusOptions = useMemo(
+    () => statuses.map((s) => ({ id: s.id, label: s.label, color: s.color, terminal: s.terminal })),
+    [statuses],
+  );
   const statusIds = useMemo(() => new Set(statuses.map((s) => s.id)), [statuses]);
   const acceptedFacts = useMemo(() => acceptedFactsFromRows(factRows), [factRows]);
   const deriveRegistry = useMemo(() => buildDeriveRegistry(acceptedFacts), [acceptedFacts]);
