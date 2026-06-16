@@ -18,6 +18,7 @@ import {
   useServers,
 } from '../hooks/useProjects';
 import { useAllTodos } from '../hooks/useTodos';
+import { useSearchConfig } from '../hooks/useSearchConfig';
 import { buildIndex, resolveRoute, type PaletteEntry } from './paletteIndex';
 import { buildActionsIndex, type Action } from './actionsIndex';
 import { CommandPalette } from './CommandPalette';
@@ -128,6 +129,7 @@ export function HotkeyProvider({ children }: { children: ReactNode }) {
   const playbooksState = usePlaybooks(paletteDataEnabled);
   const serversState = useServers(paletteDataEnabled);
   const todosState = useAllTodos(paletteDataEnabled);
+  const { search: searchCfg } = useSearchConfig();
 
   const paletteEntries = useMemo<PaletteEntry[]>(() => {
     const projects = projectsState.data ?? [];
@@ -138,7 +140,15 @@ export function HotkeyProvider({ children }: { children: ReactNode }) {
     const todos = todoList.flatMap((w) =>
       w.items.map((it) => ({ ...it, workspace: w.workspace })),
     );
-    return buildIndex({ projects, assignments, playbooks, servers, todos, wsPrefix });
+    return buildIndex({
+      projects,
+      assignments,
+      playbooks,
+      servers,
+      todos,
+      wsPrefix,
+      externalIds: searchCfg.externalIds,
+    });
   }, [
     projectsState.data,
     assignmentsState.data,
@@ -146,6 +156,7 @@ export function HotkeyProvider({ children }: { children: ReactNode }) {
     serversState.data,
     todosState.data,
     wsPrefix,
+    searchCfg.externalIds,
   ]);
 
   const shellMeta = useMemo(() => buildShellMeta(location.pathname), [location.pathname]);
