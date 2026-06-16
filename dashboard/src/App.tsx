@@ -19,6 +19,7 @@ import { AppendAssignmentHandoff } from './pages/AppendAssignmentHandoff';
 import { AppendAssignmentDecisionRecord } from './pages/AppendAssignmentDecisionRecord';
 import { ServersPage } from './pages/ServersPage';
 import { InventoriesPage } from './pages/InventoriesPage';
+import { SchedulesPage } from './pages/SchedulesPage';
 import { UsagePage } from './pages/UsagePage';
 import { AgentSessionsPage } from './pages/AgentSessionsPage';
 import { PlaybooksPage } from './pages/PlaybooksPage';
@@ -60,6 +61,7 @@ export function App() {
             <Route path="/assignments/:id/decision-record/edit" element={<AppendAssignmentDecisionRecord />} />
             <Route path="/servers" element={<ServersPage />} />
             <Route path="/inventories" element={<InventoriesPage />} />
+            <Route path="/schedules" element={<SchedulesPage />} />
             <Route path="/usage" element={<UsagePage />} />
             <Route path="/agent-sessions" element={<AgentSessionsPage />} />
             <Route path="/playbooks" element={<PlaybooksPage />} />

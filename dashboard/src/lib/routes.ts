@@ -18,6 +18,7 @@ const SIDEBAR_SECTIONS = [
   '/assignments',
   '/servers',
   '/inventories',
+  '/schedules',
   '/usage',
   '/agent-sessions',
   '/playbooks',
