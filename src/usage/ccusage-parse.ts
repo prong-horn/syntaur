@@ -4,14 +4,20 @@
  * Verified against ccusage 20.0.1 (capture date 2026-05-21; see
  * `src/__tests__/fixtures/ccusage-session.meta.json` for capture metadata).
  *
+ * This parser is tool-agnostic: it keys off `raw.agent` to identify the tool
+ * and handles any agent that ccusage reports. As of ccusage 20.0.1, ~15 agents
+ * are reported, including: claude, codex, opencode, amp, droid, hermes, pi,
+ * goose, kilo, copilot, gemini, kimi, qwen, openclaw, codebuff.
+ *
  * Real-world quirks observed from a 477-session capture:
  *   - Top-level shape: `{ session: SessionRow[], totals: ... }`.
  *   - Session ID lives on `period`, not `sessionId`. For codex, `period` is a
  *     path-like string of the form
  *     `YYYY/MM/DD/rollout-YYYY-MM-DDTHH-MM-SS-<uuid>`; the actual session
- *     UUID is the LAST hyphen-delimited block. For claude and opencode,
- *     `period` is the raw session id.
- *   - `agent` carries the tool name: 'claude' | 'codex' | 'opencode' | ...
+ *     UUID is the LAST hyphen-delimited block. For all other tools (claude,
+ *     opencode, pi, etc.), `period` is passed through unchanged as the session
+ *     id.
+ *   - `agent` carries the tool name (see list above).
  *   - `metadata.lastActivity` may be:
  *       date-only YYYY-MM-DD (claude),
  *       full ISO timestamp (codex),

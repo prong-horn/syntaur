@@ -117,8 +117,11 @@ export function Overview() {
 
   const handleRemove = useCallback(
     (index: number) => {
+      // Nullify the widget AND clear its size, so the now-empty slot doesn't keep
+      // a large geometry (which would render as a big void) and a re-added widget
+      // starts at the default size. `size: undefined` is dropped on JSON persist.
       const nextSlots = slots.map((slot, i) =>
-        i === index ? { ...slot, widget: null } : slot,
+        i === index ? { ...slot, widget: null, size: undefined } : slot,
       );
       void persistLayout(nextSlots, slots);
     },

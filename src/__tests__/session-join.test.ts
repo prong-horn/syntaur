@@ -170,4 +170,44 @@ describe('resolveAttribution', () => {
     });
     expect(result).toEqual({ projectSlug: null, assignmentSlug: null });
   });
+
+  // Pi-agent sessions are not registered by their own session id, so stage-1
+  // PK lookup misses. Stage-2 fuzzy cwd+time join is what picks them up.
+  it('stage-2 fuzzy cwd+time join attributes Pi usage (different session_id in DB)', () => {
+    const db = initSessionDb(dbPath);
+    // Seed a tracked session whose session_id is DIFFERENT from the Pi session UUID.
+    seedSession(db, {
+      sessionId: 'tracked-other-id',
+      projectSlug: 'pi-proj',
+      assignmentSlug: 'pi-asgn',
+      started: '2026-06-05T11:00:00.000Z',
+      ended: '2026-06-05 14:00:00', // SQLite datetime format
+      path: '/Users/test/proj',
+    });
+    // Pi session UUID — stage-1 PK lookup will miss, stage-2 should hit.
+    const result = resolveAttribution({
+      sessionId: '019e97a7-2b1b-7afa-b080-cbb305f1412e',
+      cwd: '/Users/test/proj',
+      eventTs: '2026-06-05T12:00:00.000Z',
+    });
+    expect(result).toEqual({ projectSlug: 'pi-proj', assignmentSlug: 'pi-asgn' });
+  });
+
+  it('stage-2 fuzzy join returns nulls when cwd does not match', () => {
+    const db = initSessionDb(dbPath);
+    seedSession(db, {
+      sessionId: 'tracked-other-id',
+      projectSlug: 'pi-proj',
+      assignmentSlug: 'pi-asgn',
+      started: '2026-06-05T11:00:00.000Z',
+      ended: '2026-06-05 14:00:00',
+      path: '/Users/test/proj',
+    });
+    const result = resolveAttribution({
+      sessionId: '019e97a7-2b1b-7afa-b080-cbb305f1412e',
+      cwd: '/Users/different/path',
+      eventTs: '2026-06-05T12:00:00.000Z',
+    });
+    expect(result).toEqual({ projectSlug: null, assignmentSlug: null });
+  });
 });

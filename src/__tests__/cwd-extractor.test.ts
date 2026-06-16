@@ -5,10 +5,14 @@ import { resolve, join } from 'node:path';
 import {
   extractClaudeSessionMeta,
   extractCodexSessionMeta,
+  extractPiSessionMeta,
   walkClaudeProjects,
   walkCodexSessions,
+  walkPiSessions,
   resolveCodexSessionsRoot,
+  resolvePiSessionsRoot,
 } from '../usage/cwd-extractor.js';
+import { extractSessionId } from '../usage/ccusage-parse.js';
 
 let sandbox: string;
 
@@ -214,5 +218,196 @@ describe('walkCodexSessions', () => {
     delete process.env.CODEX_HOME;
 
     expect(resolveCodexSessionsRoot()).toMatch(/\.codex\/sessions$/);
+  });
+});
+
+// --- Pi --------------------------------------------------------------------
+
+const PI_FIXTURE_UUID = '019e97a7-2b1b-7afa-b080-cbb305f1412e';
+const PI_FIXTURE_FILENAME = `2026-06-05T11-59-35-707Z_${PI_FIXTURE_UUID}.jsonl`;
+const PI_FIXTURE_ROOT = new URL('./fixtures/pi-sessions', import.meta.url).pathname;
+
+async function writePiTranscript(
+  sessionsRoot: string,
+  cwdSlug: string,
+  filename: string,
+  lines: object[],
+) {
+  const dir = resolve(sessionsRoot, cwdSlug);
+  await mkdir(dir, { recursive: true });
+  const filePath = resolve(dir, filename);
+  const body = lines.map((l) => JSON.stringify(l)).join('\n') + '\n';
+  await writeFile(filePath, body);
+  return filePath;
+}
+
+describe('extractPiSessionMeta', () => {
+  it('extracts sessionId (uuid suffix), cwd (first-line field), startTs, endTs', async () => {
+    const filePath = resolve(
+      PI_FIXTURE_ROOT,
+      '--Users-test-proj--',
+      PI_FIXTURE_FILENAME,
+    );
+    const meta = await extractPiSessionMeta(filePath);
+    expect(meta).not.toBeNull();
+    expect(meta?.tool).toBe('pi');
+    expect(meta?.sessionId).toBe(PI_FIXTURE_UUID);
+    expect(meta?.cwd).toBe('/Users/test/proj');
+    expect(meta?.startTs).toBe('2026-06-05T11:59:35.707Z');
+    expect(meta?.endTs).toBe('2026-06-05T12:05:00.000Z');
+    expect(meta?.path).toBe(filePath);
+  });
+
+  it('returns null when first line has no cwd field', async () => {
+    const dir = resolve(sandbox, 'pi-nocwd', '--slug--');
+    await mkdir(dir, { recursive: true });
+    const filePath = resolve(dir, `2026-06-05T00-00-00-000Z_aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee.jsonl`);
+    await writeFile(
+      filePath,
+      JSON.stringify({ type: 'session-start', version: 1, id: 'x', timestamp: '2026-06-05T00:00:00.000Z' }) + '\n',
+    );
+    const meta = await extractPiSessionMeta(filePath);
+    expect(meta).toBeNull();
+  });
+
+  it('returns null when first line is invalid/truncated JSON', async () => {
+    const dir = resolve(sandbox, 'pi-badjson', '--slug--');
+    await mkdir(dir, { recursive: true });
+    const filePath = resolve(dir, `2026-06-05T00-00-00-000Z_cccccccc-dddd-eeee-ffff-000000000000.jsonl`);
+    await writeFile(filePath, '{bad json\n');
+    const meta = await extractPiSessionMeta(filePath);
+    expect(meta).toBeNull();
+  });
+
+  it('returns null when filename has no underscore', async () => {
+    const dir = resolve(sandbox, 'pi-badname', '--slug--');
+    await mkdir(dir, { recursive: true });
+    const filePath = resolve(dir, 'noseparator.jsonl');
+    await writeFile(
+      filePath,
+      JSON.stringify({ type: 'session-start', version: 1, id: 'x', timestamp: '2026-06-05T00:00:00.000Z', cwd: '/x' }) + '\n',
+    );
+    const meta = await extractPiSessionMeta(filePath);
+    expect(meta).toBeNull();
+  });
+});
+
+describe('walkPiSessions', () => {
+  it('yields one entry per session file with correct sessionId and cwd', async () => {
+    const results: { sessionId: string; cwd: string }[] = [];
+    for await (const meta of walkPiSessions({ root: PI_FIXTURE_ROOT })) {
+      results.push({ sessionId: meta.sessionId, cwd: meta.cwd });
+    }
+    expect(results).toHaveLength(1);
+    expect(results[0].sessionId).toBe(PI_FIXTURE_UUID);
+    expect(results[0].cwd).toBe('/Users/test/proj');
+  });
+
+  it('respects sinceMtimeMs filter — future cutoff excludes the fixture', async () => {
+    const futureCutoff = Date.now() + 1_000_000_000;
+    const results = [];
+    for await (const meta of walkPiSessions({ root: PI_FIXTURE_ROOT, sinceMtimeMs: futureCutoff })) {
+      results.push(meta);
+    }
+    expect(results).toHaveLength(0);
+  });
+
+  it('respects sinceMtimeMs filter — past cutoff includes the fixture', async () => {
+    const pastCutoff = new Date('2020-01-01').getTime();
+    const results = [];
+    for await (const meta of walkPiSessions({ root: PI_FIXTURE_ROOT, sinceMtimeMs: pastCutoff })) {
+      results.push(meta);
+    }
+    expect(results).toHaveLength(1);
+  });
+
+  it('cwd cache reuses first-file cwd for subsequent files in same dir', async () => {
+    const piRoot = resolve(sandbox, 'pi-sessions');
+    const slug = '--Users-cache-test--';
+    await writePiTranscript(piRoot, slug, `2026-06-05T10-00-00-000Z_aaaaaaaa-1111-2222-3333-444444444444.jsonl`, [
+      { type: 'session-start', version: 1, id: 'x', timestamp: '2026-06-05T10:00:00.000Z', cwd: '/Users/cache/test' },
+      { type: 'assistant', timestamp: '2026-06-05T10:05:00.000Z' },
+    ]);
+    // Second file intentionally has no cwd — relies on dir cache.
+    await writePiTranscript(piRoot, slug, `2026-06-05T11-00-00-000Z_bbbbbbbb-5555-6666-7777-888888888888.jsonl`, [
+      { type: 'assistant', timestamp: '2026-06-05T11:05:00.000Z' },
+    ]);
+
+    const results = [];
+    for await (const meta of walkPiSessions({ root: piRoot })) {
+      results.push(meta);
+    }
+    expect(results).toHaveLength(2);
+    expect(results.every((m) => m.cwd === '/Users/cache/test')).toBe(true);
+    // Assert as a set so the assertion holds regardless of readdir order.
+    const byId = new Map(results.map((m) => [m.sessionId, m]));
+    expect(byId.has('aaaaaaaa-1111-2222-3333-444444444444')).toBe(true);
+    expect(byId.has('bbbbbbbb-5555-6666-7777-888888888888')).toBe(true);
+  });
+
+  it('does not drop a later cwd-bearing session when a no-cwd file sorts first', async () => {
+    const piRoot = resolve(sandbox, 'pi-fallback');
+    const slug = '--Users-test-proj--';
+    // This file sorts FIRST lexicographically and has NO cwd field on line 1.
+    await writePiTranscript(
+      piRoot,
+      slug,
+      `2026-06-05T01-00-00-000Z_aaaaaaaa-0000-0000-0000-000000000001.jsonl`,
+      [{ type: 'x', timestamp: '2026-06-05T01:00:00.000Z', id: 'x' }],
+    );
+    // This file sorts LATER and DOES have cwd on line 1.
+    await writePiTranscript(
+      piRoot,
+      slug,
+      `2026-06-05T02-00-00-000Z_bbbbbbbb-0000-0000-0000-000000000002.jsonl`,
+      [
+        { type: 'session-start', version: 1, id: 'bbbbbbbb-0000-0000-0000-000000000002', timestamp: '2026-06-05T02:00:00.000Z', cwd: '/Users/test/proj' },
+        { type: 'assistant', timestamp: '2026-06-05T02:05:00.000Z' },
+      ],
+    );
+
+    const results = [];
+    for await (const meta of walkPiSessions({ root: piRoot })) {
+      results.push(meta);
+    }
+    // The no-cwd file is correctly skipped; the later cwd-bearing file is NOT dropped.
+    expect(results).toHaveLength(1);
+    expect(results[0].sessionId).toBe('bbbbbbbb-0000-0000-0000-000000000002');
+    expect(results[0].cwd).toBe('/Users/test/proj');
+  });
+});
+
+describe('extractSessionId pi passthrough', () => {
+  it('passes pi period through unchanged (bare UUID)', () => {
+    const period = PI_FIXTURE_UUID;
+    expect(extractSessionId('pi', period)).toBe(PI_FIXTURE_UUID);
+  });
+
+  it('matches walker-derived sessionId for the fixture file', async () => {
+    const results = [];
+    for await (const meta of walkPiSessions({ root: PI_FIXTURE_ROOT })) {
+      results.push(meta);
+    }
+    const walkerSessionId = results[0]?.sessionId;
+    expect(walkerSessionId).toBe(extractSessionId('pi', PI_FIXTURE_UUID));
+  });
+});
+
+describe('resolvePiSessionsRoot', () => {
+  it('uses PI_AGENT_DIR env var as pi home, appends sessions/', () => {
+    process.env.PI_AGENT_DIR = '/pi/home';
+    expect(resolvePiSessionsRoot()).toBe('/pi/home/sessions');
+    delete process.env.PI_AGENT_DIR;
+  });
+
+  it('falls back to ~/.pi/agent/sessions', () => {
+    delete process.env.PI_AGENT_DIR;
+    expect(resolvePiSessionsRoot()).toMatch(/\.pi\/agent\/sessions$/);
+  });
+
+  it('override parameter takes priority', () => {
+    process.env.PI_AGENT_DIR = '/pi/home';
+    expect(resolvePiSessionsRoot('/explicit/pi-sessions')).toBe('/explicit/pi-sessions');
+    delete process.env.PI_AGENT_DIR;
   });
 });

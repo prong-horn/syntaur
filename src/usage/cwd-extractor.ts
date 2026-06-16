@@ -1,7 +1,7 @@
 /**
  * Session metadata extractor.
  *
- * Reads Claude Code and Codex JSONL session files to produce
+ * Reads Claude Code, Codex, and Pi JSONL session files to produce
  * `(sessionId, cwd, startTs, endTs)` tuples for use in the attribution
  * join. Mutates nothing; touches no DB.
  *
@@ -20,6 +20,13 @@
  *     CODEX_SESSIONS_DIR
  *     ?? path.join(CODEX_HOME, 'sessions')
  *     ?? ~/.codex/sessions
+ *
+ * - Pi: `<sessions-root>/<encoded-cwd>/<ts>_<uuid>.jsonl`. Line 1 is a
+ *   session-start envelope `{type, version, id, timestamp, cwd}`. The
+ *   sessionId is the UUID suffix of the filename (after the last `_`,
+ *   `.jsonl` stripped). Sessions root resolves via:
+ *     PI_AGENT_DIR (treated as Pi home) → <PI_AGENT_DIR>/sessions
+ *     ?? ~/.pi/agent/sessions
  */
 
 import { open, readdir, stat } from 'node:fs/promises';
@@ -52,7 +59,17 @@ export interface CodexSessionMeta {
   path: string;
 }
 
-export type SessionMeta = ClaudeSessionMeta | CodexSessionMeta;
+export interface PiSessionMeta {
+  tool: 'pi';
+  sessionId: string;
+  cwd: string;
+  startTs: string | null;
+  endTs: string | null;
+  /** Absolute path to the transcript file (for mtime-based ordering). */
+  path: string;
+}
+
+export type SessionMeta = ClaudeSessionMeta | CodexSessionMeta | PiSessionMeta;
 
 // --- Claude Code ----------------------------------------------------------
 
@@ -221,6 +238,131 @@ export function resolveCodexSessionsRoot(override?: string): string {
   const fromHomeEnv = process.env.CODEX_HOME;
   if (fromHomeEnv && fromHomeEnv.length > 0) return join(expandHome(fromHomeEnv), 'sessions');
   return join(homedir(), '.codex', 'sessions');
+}
+
+// --- Pi -------------------------------------------------------------------
+
+/**
+ * Extract session metadata from a Pi agent transcript file. Returns `null`
+ * when the file is unreadable, has no `cwd` on line 1, or fails to parse.
+ *
+ * Filename format: `<ts>_<uuid>.jsonl` — `sessionId` is the UUID suffix
+ * (after the last `_`, with `.jsonl` stripped).
+ * Line 1 format: `{type, version, id, timestamp, cwd}`.
+ */
+export async function extractPiSessionMeta(
+  jsonlPath: string,
+): Promise<PiSessionMeta | null> {
+  // Derive sessionId from filename: substring after last '_', strip '.jsonl'.
+  const basename = jsonlPath.split('/').pop() ?? '';
+  const underscoreIdx = basename.lastIndexOf('_');
+  if (underscoreIdx === -1) return null;
+  const sessionId = basename.slice(underscoreIdx + 1).replace(/\.jsonl$/, '');
+  if (!sessionId) return null;
+
+  // Read cwd from first line.
+  let handle;
+  try {
+    handle = await open(jsonlPath, 'r');
+  } catch {
+    return null;
+  }
+  try {
+    const stream = handle.createReadStream({ encoding: 'utf-8' });
+    let buffer = '';
+    let firstLine: string | null = null;
+    for await (const chunk of stream) {
+      buffer += chunk;
+      const nl = buffer.indexOf('\n');
+      if (nl !== -1) {
+        firstLine = buffer.slice(0, nl);
+        stream.destroy();
+        break;
+      }
+    }
+    if (!firstLine && buffer.length > 0) firstLine = buffer;
+    if (!firstLine) return null;
+
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(firstLine);
+    } catch {
+      return null;
+    }
+    if (!parsed || typeof parsed !== 'object') return null;
+    const obj = parsed as Record<string, unknown>;
+    if (typeof obj.cwd !== 'string' || obj.cwd.length === 0) return null;
+    const cwd = obj.cwd;
+
+    const startTs = await readFirstTimestamp(jsonlPath);
+    const endTs = await readLastTimestamp(jsonlPath);
+
+    return {
+      tool: 'pi',
+      sessionId,
+      cwd,
+      startTs,
+      endTs,
+      path: jsonlPath,
+    };
+  } finally {
+    await handle.close().catch(() => {});
+  }
+}
+
+export function resolvePiSessionsRoot(override?: string): string {
+  if (override) return expandHome(override);
+  const fromHomeEnv = process.env.PI_AGENT_DIR;
+  if (fromHomeEnv && fromHomeEnv.length > 0) return join(expandHome(fromHomeEnv), 'sessions');
+  return join(homedir(), '.pi', 'agent', 'sessions');
+}
+
+/**
+ * Yield session metadata for every Pi agent transcript under `root`
+ * (default `~/.pi/agent/sessions`). Pi organises files as
+ * `<root>/<encoded-cwd>/<ts>_<uuid>.jsonl`.
+ *
+ * One `cwd` is cached per directory after the first file in it is parsed
+ * (every file under a given dir shares the same cwd).
+ *
+ * Optional `sinceMtimeMs` bounds the walk to files modified at or after
+ * the given epoch ms.
+ */
+export async function* walkPiSessions(opts: {
+  root?: string;
+  sinceMtimeMs?: number;
+} = {}): AsyncGenerator<PiSessionMeta> {
+  const root = resolvePiSessionsRoot(opts.root);
+  const dirs = await listDirSafe(root);
+  for (const dirent of dirs) {
+    if (!dirent.isDirectory) continue;
+    const dirPath = join(root, dirent.name);
+    const files = await listDirSafe(dirPath);
+    let cachedCwd: string | null = null;
+    for (const f of files) {
+      if (!f.isFile || !f.name.endsWith('.jsonl')) continue;
+      const filePath = join(dirPath, f.name);
+      if (opts.sinceMtimeMs !== undefined) {
+        const mtime = await mtimeMs(filePath);
+        if (mtime !== null && mtime < opts.sinceMtimeMs) continue;
+      }
+      let meta: PiSessionMeta | null;
+      if (cachedCwd) {
+        // Derive sessionId from filename; reuse cached cwd.
+        const underscoreIdx = f.name.lastIndexOf('_');
+        if (underscoreIdx === -1) continue;
+        const sessionId = f.name.slice(underscoreIdx + 1).replace(/\.jsonl$/, '');
+        if (!sessionId) continue;
+        const startTs = await readFirstTimestamp(filePath);
+        const endTs = await readLastTimestamp(filePath);
+        meta = { tool: 'pi', sessionId, cwd: cachedCwd, startTs, endTs, path: filePath };
+      } else {
+        meta = await extractPiSessionMeta(filePath);
+        if (meta) cachedCwd = meta.cwd;
+      }
+      if (meta) yield meta;
+    }
+  }
 }
 
 // --- Internals ------------------------------------------------------------

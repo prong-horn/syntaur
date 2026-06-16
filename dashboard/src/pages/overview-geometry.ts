@@ -3,15 +3,26 @@ import type { WidgetGeometry, WidgetSize } from '@shared/saved-views-schema';
 
 export { MAX_ROWS };
 
-export const ROW_HEIGHT_PX = 20;
+// Row unit for widget height. Coarser (50px) than the original 20px so manual
+// height steps are bigger and cards align on shared heights more often (less
+// ragged 2D packing). Resize still snaps to this unit. NOTE: this changes the
+// pixel meaning of a stored geometry `h` — but `h` only existed from 0.54.0
+// onward (legacy enum + absent sizes are remapped below), so the only affected
+// data is geometry created during 0.54.0 testing.
+export const ROW_HEIGHT_PX = 50;
 export const GRID_GAP_PX = 16; // Grid gap in px (matches the 1rem CSS gap). Exported for consumers that derive column width from container width.
 
-export const MIN_ROWS = 2; // Minimum widget height in row units (used to clamp drag-to-resize).
+export const MIN_ROWS = 2; // Minimum widget height in row units (used to clamp drag-to-resize). 2 * 50px = 100px floor.
 
-// Legacy enum heights in row units, approximating today's ~320px / ~560px cards at ROW_HEIGHT_PX.
-// (320/20 = 16, 560/20 = 28) — module-internal, but export so tests/UI can reference.
-export const HSHORT = 16;
-export const HTALL = 28;
+// Legacy enum heights in row units, approximating today's ~300px / ~550px cards
+// at ROW_HEIGHT_PX=50 (≈ the old 320px/560px at 20px). Retuned with ROW_HEIGHT_PX
+// so legacy enum + absent sizes keep ~their previous visual height (back-compat).
+export const HSHORT = 6; // 6 * 50px = 300px
+export const HTALL = 11; // 11 * 50px = 550px
+
+// Empty slots render at this compact fixed geometry (NOT the removed widget's
+// size), so a removed large widget never leaves a giant "Add widget" void.
+export const EMPTY_SLOT_GEOMETRY: WidgetGeometry = { w: 6, h: 2 }; // ~¼ width × 100px tall
 
 export function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max);

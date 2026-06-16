@@ -10,6 +10,7 @@ import { OverflowMenu } from '../OverflowMenu';
 import { widgetRegistry } from './widgetRegistry';
 import {
   clamp,
+  EMPTY_SLOT_GEOMETRY,
   GRID_GAP_PX,
   MAX_ROWS,
   MIN_ROWS,
@@ -224,10 +225,17 @@ export function WidgetSlot({
   );
 
   if (slot.widget === null) {
+    // Empty slots render at a fixed COMPACT size (ignoring any stored `slot.size`)
+    // so a removed large widget never leaves a giant void. They stay draggable +
+    // a valid drop target, but are NOT resizable (size a widget after adding it).
     return (
       <div
         ref={setNodeRef}
-        style={style}
+        style={{
+          ...style,
+          gridColumn: `span ${scaleSpan(EMPTY_SLOT_GEOMETRY.w, activeColumns)}`,
+          gridRow: `span ${EMPTY_SLOT_GEOMETRY.h}`,
+        }}
         className={cn(
           'relative flex items-center justify-center rounded-lg border border-dashed border-border bg-card/40 p-3 shadow-sm transition-colors hover:border-primary/40 hover:bg-card/60',
           isDragging && 'opacity-0',
@@ -251,7 +259,6 @@ export function WidgetSlot({
           <Plus className="h-4 w-4" />
           Add widget
         </button>
-        {resizeHandles}
       </div>
     );
   }
@@ -366,7 +373,8 @@ export function WidgetDragPreview({
       ? 'Empty widget slot'
       : renderer?.title ?? `Unknown widget kind: ${slot.widget.kind}`;
 
-  const geom = resolveGeometry(slot.size);
+  // Empty slots ghost at the compact size they actually render at (not any stored size).
+  const geom = slot.widget === null ? EMPTY_SLOT_GEOMETRY : resolveGeometry(slot.size);
   const renderW = scaleSpan(geom.w, activeColumns);
   const widthPx =
     colWidthPx > 0 ? renderW * colWidthPx + (renderW - 1) * GRID_GAP_PX : undefined;
