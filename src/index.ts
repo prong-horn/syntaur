@@ -847,6 +847,22 @@ program.addCommand(leaseCommand);
 program.addCommand(scheduleCommand);
 program.addCommand(usageCommand);
 
+program.addHelpText(
+  'after',
+  `
+Common workflow:
+  $ syntaur setup                                  Initialize Syntaur (plugins, dashboard)
+  $ syntaur create-project "My App"                Start a new project
+  $ syntaur create-assignment --project my-app "Add login"   Add a task to a project
+  $ syntaur browse                                 Interactive TUI: pick & launch work
+  $ syntaur dashboard                              Open the local web dashboard
+  $ syntaur doctor                                 Diagnose Syntaur state & suggested fixes
+
+Run 'syntaur <command> --help' for command-specific options.
+Migration/internal commands (migrate-*, regen-playbook-manifest) are advanced; most
+workflows never need them.`,
+);
+
 // Default to dashboard when no command is given
 if (process.argv.length <= 2) {
   process.argv.push(await getDefaultCommandName());
