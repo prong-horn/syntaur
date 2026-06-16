@@ -42,6 +42,7 @@ import { DependencyPanel } from '../components/DependencyPanel';
 import { LinksPanel } from '../components/LinksPanel';
 import { CommentsThread } from '../components/CommentsThread';
 import { useHotkey, useHotkeyScope } from '../hotkeys';
+import { useHashScroll } from '../hooks/useHashScroll';
 import { cn } from '../lib/utils';
 import { useToast, Toaster } from '../components/Toast';
 
@@ -66,6 +67,8 @@ export function AssignmentDetail() {
   const [deleteLoading, setDeleteLoading] = useState(false);
   const [reviewGlowKey, setReviewGlowKey] = useState(0);
   const tab = searchParams.get('tab') ?? 'summary';
+  // Honor `#section` deep-links from the command palette once the pane renders.
+  useHashScroll(tab);
   const statusConfig = useStatusConfig();
   const { data: assignment, loading, error, refetch } = useAssignment(slug, aslug);
   const { data: project } = useProject(slug);
