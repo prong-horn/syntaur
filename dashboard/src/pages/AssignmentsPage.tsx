@@ -1172,6 +1172,7 @@ export function AssignmentsPage() {
         ),
       );
       refetch();
+      showToast(`Moved to ${getStatusLabel(statusConfig, updated.status)}`, 'success');
       return true;
     } catch (mutationError) {
       setBoardItems(previous);
@@ -2125,9 +2126,11 @@ function AssignmentBoardCard({
         <span className="rounded-full border border-border/60 px-2.5 py-1 text-xs text-muted-foreground">
           {assignment.assignee ?? 'Unassigned'}
         </span>
-        <span className="rounded-full border border-border/60 px-2.5 py-1 text-xs text-muted-foreground">
-          {assignment.dependsOn.length} dependencies
-        </span>
+        {assignment.dependsOn.length > 0 ? (
+          <span className="rounded-full border border-border/60 px-2.5 py-1 text-xs text-muted-foreground">
+            {assignment.dependsOn.length} {assignment.dependsOn.length === 1 ? 'dependency' : 'dependencies'}
+          </span>
+        ) : null}
       </div>
 
       <div className="mt-4 flex items-center justify-between gap-3 text-xs uppercase tracking-[0.08em] text-muted-foreground">

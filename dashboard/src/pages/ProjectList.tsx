@@ -18,12 +18,14 @@ import { useHotkey, useHotkeyScope, useListSelection } from '../hotkeys';
 import { ContextMenuPopover } from '../components/ContextMenuPopover';
 import { MoveToWorkspaceDialog } from '../components/MoveToWorkspaceDialog';
 import type { OverflowMenuItem } from '../components/OverflowMenu';
+import { useToast, Toaster } from '../components/Toast';
 
 export function ProjectList() {
   const { workspace } = useParams<{ workspace?: string }>();
   const wsPrefix = useWorkspacePrefix();
   const navigate = useNavigate();
   const { data: projects, loading, error, refetch } = useProjects();
+  const { toast, showToast, dismissToast } = useToast();
   const searchRef = useRef<HTMLInputElement>(null);
   useHotkeyScope('list:projects');
   const [search, setSearch] = useState('');
@@ -138,6 +140,7 @@ export function ProjectList() {
 
   return (
     <div className="space-y-5">
+      <Toaster toast={toast} onDismiss={dismissToast} />
       <FilterBar>
         <SearchInput
           ref={searchRef}
@@ -315,7 +318,7 @@ export function ProjectList() {
                 ? undefined
                 : 'This will set a manual status override on the project.',
           })}
-          onMove={({ item, fromColumnId, toColumnId, fromIndex, toIndex }) => {
+          onMove={async ({ item, fromColumnId, toColumnId, fromIndex, toIndex }) => {
             if (fromColumnId === toColumnId) {
               const currentColumnOrder = projectOrder[fromColumnId] ?? filtered
                 .filter((project) => project.status === fromColumnId)
@@ -328,13 +331,23 @@ export function ProjectList() {
               return;
             }
 
-            fetch(`/api/projects/${item.slug}/status-override`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ status: toColumnId }),
-            }).then(() => {
-              window.location.reload();
-            });
+            try {
+              const res = await fetch(`/api/projects/${item.slug}/status-override`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ status: toColumnId }),
+              });
+              if (!res.ok) {
+                const payload = await res.json().catch(() => null);
+                showToast(payload?.error || `HTTP ${res.status}`, 'error');
+                return;
+              }
+              refetch();
+              const colLabel = PROJECT_COLUMNS.find((c) => c.id === toColumnId)?.title ?? toColumnId;
+              showToast(`Moved "${item.title}" to ${colLabel}`, 'success');
+            } catch (err) {
+              showToast(err instanceof Error ? err.message : 'Failed to move project', 'error');
+            }
           }}
           getExternalDragData={(project): ExternalDragData => ({ type: 'project', id: project.slug })}
           onCardContextMenu={(project, event) => {
