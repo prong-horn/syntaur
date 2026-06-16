@@ -58,6 +58,10 @@ export function AssignmentDetail() {
   const [pendingTransition, setPendingTransition] = useState<AssignmentTransitionAction | null>(null);
   const [criteriaError, setCriteriaError] = useState<string | null>(null);
   const [savingCriterionIndex, setSavingCriterionIndex] = useState<number | null>(null);
+  // Optimistic overlay for acceptance-criterion checkboxes, keyed by index.
+  // Set immediately on toggle, removed on error (reverting to server state), and
+  // cleared wholesale once fresh assignment data lands (server is source of truth).
+  const [optimisticChecks, setOptimisticChecks] = useState<Record<number, boolean>>({});
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleteLoading, setDeleteLoading] = useState(false);
   const [reviewGlowKey, setReviewGlowKey] = useState(0);
@@ -153,6 +157,11 @@ export function AssignmentDetail() {
     () => (assignment ? splitAssignmentSummary(assignment.body) : { acceptanceCriteria: [], summaryBody: '' }),
     [assignment],
   );
+  // Fresh server data is authoritative — drop any optimistic overlay so the
+  // checkboxes reflect the canonical assignment body again.
+  useEffect(() => {
+    setOptimisticChecks({});
+  }, [assignment]);
   const todosSection = useMemo(
     () => splitTodosSection(summarySections.summaryBody),
     [summarySections.summaryBody],
@@ -290,6 +299,8 @@ export function AssignmentDetail() {
   async function toggleAcceptanceCriterion(index: number, checked: boolean) {
     setCriteriaError(null);
     setSavingCriterionIndex(index);
+    // Flip optimistically so the checkbox responds instantly.
+    setOptimisticChecks((prev) => ({ ...prev, [index]: checked }));
 
     try {
       const response = await fetch(
@@ -306,9 +317,18 @@ export function AssignmentDetail() {
         throw new Error(payload.error || `HTTP ${response.status}`);
       }
 
+      // Keep the eventual refetch for consistency; it clears the overlay.
       refetch();
     } catch (mutationError) {
-      setCriteriaError((mutationError as Error).message);
+      // Revert this criterion's optimistic flip and surface the failure.
+      setOptimisticChecks((prev) => {
+        const next = { ...prev };
+        delete next[index];
+        return next;
+      });
+      const message = (mutationError as Error).message;
+      setCriteriaError(message);
+      showToast(message || 'Failed to update acceptance criterion', 'error');
     } finally {
       setSavingCriterionIndex(null);
     }
@@ -611,6 +631,10 @@ export function AssignmentDetail() {
                           ) : null}
                           {summarySections.acceptanceCriteria.map((criterion, index) => {
                             const disabled = savingCriterionIndex !== null;
+                            const effectiveChecked =
+                              index in optimisticChecks
+                                ? optimisticChecks[index]
+                                : criterion.checked;
                             return (
                               <label
                                 key={`${index}-${criterion.text}`}
@@ -618,14 +642,14 @@ export function AssignmentDetail() {
                               >
                                 <input
                                   type="checkbox"
-                                  checked={criterion.checked}
+                                  checked={effectiveChecked}
                                   disabled={disabled}
                                   onChange={(event) => toggleAcceptanceCriterion(index, event.target.checked)}
                                   className="mt-1 h-4 w-4 rounded border-border text-primary"
                                 />
                                 <span
                                   className="criterion-label text-sm leading-6"
-                                  data-checked={criterion.checked}
+                                  data-checked={effectiveChecked}
                                 >
                                   {criterion.text}
                                 </span>
