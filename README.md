@@ -156,6 +156,27 @@ syntaur uninstall
 syntaur uninstall --all
 ```
 
+### Search
+
+`syntaur search <query>` runs full-text search across the markdown bodies of all Syntaur content — assignments, plans (latest plan version only), progress, comments, handoffs, decision records, scratchpads, project memories, and resources. Archived items are excluded unless you pass `--all`.
+
+```bash
+# Search across everything
+syntaur search "rate limit"
+
+# Narrow to one project and specific file kinds
+syntaur search "stripe webhook" --project my-api --in plans,handoff
+
+# Return structured JSON (path, project, assignment, fileKind, score, snippet, line, section, route)
+syntaur search "authentication flow" --json --limit 5
+```
+
+Key flags: `--project <slug>`, `--type <list>`, `--status <list>`, `--in <fileKinds>` (singular or plural names accepted), `--all`, `--limit <n>` (default 20), `--semantic`, `--json`.
+
+The dashboard command palette runs the same search and deep-links results to the matching assignment's `?tab=<kind>` pane and `#section` anchor. The `--semantic` flag activates the semantic provider when available; v1 falls back to full-text search via fuse.js.
+
+See [`docs/cli.md`](docs/cli.md) for the full reference.
+
 Any of these can be prefixed with `npx syntaur@latest` if you chose not to install globally.
 
 ---
