@@ -102,7 +102,14 @@ export async function buildIndex(opts: IndexOptions): Promise<SearchDoc[]> {
     }
     const assignment = parseAssignmentFull(assignmentContent);
 
-    if (assignment.archived && !includeArchived) continue;
+    // An assignment is excluded by default when EITHER it or its owning
+    // project is archived. Both flags propagate onto the docs as `archived`.
+    const projectIsArchived = entry.projectSlug
+      ? projectArchived.get(entry.projectSlug) === true
+      : false;
+    const archived = assignment.archived || projectIsArchived;
+
+    if (!includeArchived && archived) continue;
 
     const workspace = entry.projectSlug ? projectWorkspace.get(entry.projectSlug) ?? null : null;
     const identity: AssignmentIdentity = {
@@ -113,7 +120,7 @@ export async function buildIndex(opts: IndexOptions): Promise<SearchDoc[]> {
       standalone: entry.standalone,
       type: assignment.type ?? undefined,
       status: assignment.status,
-      archived: assignment.archived,
+      archived,
     };
 
     // assignment.md itself
@@ -152,7 +159,8 @@ export async function buildIndex(opts: IndexOptions): Promise<SearchDoc[]> {
     for (const m of projects) {
       if (!m.isDirectory()) continue;
       if (m.name.startsWith('.') || m.name.startsWith('_')) continue;
-      if (projectArchived.get(m.name) && !includeArchived) continue;
+      const projectIsArchived = projectArchived.get(m.name) === true;
+      if (projectIsArchived && !includeArchived) continue;
       const projectPath = resolve(projectsDir, m.name);
       const workspace = projectWorkspace.get(m.name) ?? null;
 
@@ -162,6 +170,7 @@ export async function buildIndex(opts: IndexOptions): Promise<SearchDoc[]> {
         'memory',
         m.name,
         workspace,
+        projectIsArchived,
         (content) => {
           const parsed = parseMemory(content);
           return { title: parsed.name, body: parsed.body };
@@ -173,6 +182,7 @@ export async function buildIndex(opts: IndexOptions): Promise<SearchDoc[]> {
         'resource',
         m.name,
         workspace,
+        projectIsArchived,
         (content) => {
           const parsed = parseResource(content);
           return { title: parsed.name, body: parsed.body };
@@ -215,6 +225,7 @@ async function indexItems(
   fileKind: 'memory' | 'resource',
   projectSlug: string,
   projectWorkspace: string | null,
+  archived: boolean,
   extract: (content: string) => { title: string; body: string },
 ): Promise<void> {
   if (!(await fileExists(dir))) return;
@@ -239,7 +250,7 @@ async function indexItems(
         assignmentId: null,
         standalone: false,
         itemSlug,
-        archived: false,
+        archived,
       });
     } catch {
       /* skip unreadable item */
@@ -249,10 +260,21 @@ async function indexItems(
 
 // ── cache + invalidation seam ─────────────────────────────────────────────
 
+/**
+ * A stat-only fingerprint of the indexed `.md` files. `mtimeMax` alone misses
+ * the deletion of a non-newest file (signature unchanged → stale cache), so we
+ * also track `count` and `sizeSum` — both of which change on any add OR delete.
+ */
+interface IndexSignature {
+  count: number;
+  mtimeMax: number;
+  sizeSum: number;
+}
+
 interface CacheEntry {
   docs: SearchDoc[];
   builtAt: number;
-  mtimeMax: number;
+  signature: IndexSignature;
 }
 
 const cache = new Map<string, CacheEntry>();
@@ -261,12 +283,22 @@ function cacheKey(opts: IndexOptions): string {
   return `${opts.projectsDir}|${opts.assignmentsDir}|${opts.includeArchived ?? false}`;
 }
 
+function signaturesEqual(a: IndexSignature, b: IndexSignature): boolean {
+  return a.count === b.count && a.mtimeMax === b.mtimeMax && a.sizeSum === b.sizeSum;
+}
+
 /**
- * Cheap stat-only sweep of the content dirs → current max mtime. Walks dirs
- * (O(files) `stat`s, NOT reads). Returns 0 when nothing exists.
+ * Cheap stat-only sweep of the content dirs → an {@link IndexSignature}. Walks
+ * dirs (O(files) `stat`s, NOT reads). `count` + `sizeSum` change on add/delete;
+ * `mtimeMax` changes on modification. Returns all-zeros when nothing exists.
  */
-async function maxMtime(projectsDir: string, assignmentsDir: string): Promise<number> {
-  let max = 0;
+async function indexSignature(
+  projectsDir: string,
+  assignmentsDir: string,
+): Promise<IndexSignature> {
+  let count = 0;
+  let mtimeMax = 0;
+  let sizeSum = 0;
   async function walk(dir: string): Promise<void> {
     let entries;
     try {
@@ -282,7 +314,9 @@ async function maxMtime(projectsDir: string, assignmentsDir: string): Promise<nu
       } else if (e.isFile() && e.name.endsWith('.md')) {
         try {
           const s = await stat(full);
-          if (s.mtimeMs > max) max = s.mtimeMs;
+          count += 1;
+          sizeSum += s.size;
+          if (s.mtimeMs > mtimeMax) mtimeMax = s.mtimeMs;
         } catch {
           /* ignore */
         }
@@ -291,26 +325,27 @@ async function maxMtime(projectsDir: string, assignmentsDir: string): Promise<nu
   }
   await walk(projectsDir);
   if (assignmentsDir !== projectsDir) await walk(assignmentsDir);
-  return max;
+  return { count, mtimeMax, sizeSum };
 }
 
 /**
  * Return the index for the given dirs, rebuilding only when content changed.
  *
- * Semantics: compute the current max mtime via a stat-only sweep; if a cache
- * entry for this key exists AND its `mtimeMax` is unchanged, return the cached
- * docs (no body reads); otherwise do a full `buildIndex`, replace the cache
- * entry, and return it.
+ * Semantics: compute the current {@link IndexSignature} via a stat-only sweep;
+ * if a cache entry for this key exists AND its signature is unchanged, return
+ * the cached docs (no body reads); otherwise do a full `buildIndex`, replace
+ * the cache entry, and return it. The signature changes on add, delete, and
+ * modification of any indexed `.md` file.
  */
 export async function getIndex(opts: IndexOptions): Promise<SearchDoc[]> {
   const key = cacheKey(opts);
-  const mtimeMax = await maxMtime(opts.projectsDir, opts.assignmentsDir);
+  const signature = await indexSignature(opts.projectsDir, opts.assignmentsDir);
   const existing = cache.get(key);
-  if (existing && existing.mtimeMax === mtimeMax) {
+  if (existing && signaturesEqual(existing.signature, signature)) {
     return existing.docs;
   }
   const docs = await buildIndex(opts);
-  cache.set(key, { docs, builtAt: Date.now(), mtimeMax });
+  cache.set(key, { docs, builtAt: Date.now(), signature });
   return docs;
 }
 

@@ -126,10 +126,17 @@ describe('runSearch', () => {
   });
 
   it('--in filter narrows by file kind (alias resolved)', async () => {
-    const onlyComments = await runSearch('widget', { in: ['comments'], limit: '50' });
+    // `--in` is a raw string parsed inside runSearch; `comments` is canonical.
+    const onlyComments = await runSearch('widget', { in: 'comments', limit: '50' });
     expect(onlyComments.length).toBeGreaterThan(0);
     for (const h of onlyComments) {
       expect(h.fileKind).toBe('comments');
     }
+  });
+
+  it('--in throws a clean error (caught by the command) on an unknown kind', async () => {
+    await expect(runSearch('widget', { in: 'bogus', limit: '50' })).rejects.toThrow(
+      /Unknown file kind "bogus"/,
+    );
   });
 });

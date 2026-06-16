@@ -49,7 +49,33 @@ function hit(partial: Partial<SearchHit>): SearchHit {
 }
 
 describe('routeForHit', () => {
-  it('builds a nested assignment route with tab + section anchor', () => {
+  it('builds a nested assignment route with tab + section anchor for a markdown-rendered kind', () => {
+    const route = routeForHit(
+      hit({
+        fileKind: 'plan',
+        projectSlug: 'proj',
+        assignmentSlug: 'my-assignment',
+        standalone: false,
+        section: 'Open Questions',
+      }),
+    );
+    expect(route).toBe('/projects/proj/assignments/my-assignment?tab=plan#open-questions');
+  });
+
+  it('keeps a section anchor for a decision-record hit (markdown-rendered pane)', () => {
+    const route = routeForHit(
+      hit({
+        fileKind: 'decision-record',
+        projectSlug: 'proj',
+        assignmentSlug: 'a1',
+        standalone: false,
+        section: 'Why Postgres',
+      }),
+    );
+    expect(route).toBe('/projects/proj/assignments/a1?tab=decisions#why-postgres');
+  });
+
+  it('omits the section anchor for comments (structured pane, no heading ids)', () => {
     const route = routeForHit(
       hit({
         fileKind: 'comments',
@@ -59,7 +85,22 @@ describe('routeForHit', () => {
         section: 'Open Questions',
       }),
     );
-    expect(route).toBe('/projects/proj/assignments/my-assignment?tab=comments#open-questions');
+    expect(route).toBe('/projects/proj/assignments/my-assignment?tab=comments');
+    expect(route).not.toContain('#');
+  });
+
+  it('omits the section anchor for progress (structured pane, no heading ids)', () => {
+    const route = routeForHit(
+      hit({
+        fileKind: 'progress',
+        projectSlug: 'proj',
+        assignmentSlug: 'my-assignment',
+        standalone: false,
+        section: 'Day 1',
+      }),
+    );
+    expect(route).toBe('/projects/proj/assignments/my-assignment?tab=progress');
+    expect(route).not.toContain('#');
   });
 
   it('builds a nested route without an anchor when no section', () => {

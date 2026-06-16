@@ -41,6 +41,21 @@ export function slugifyHeading(text: string): string {
 }
 
 /**
+ * File kinds whose dashboard pane is rendered through `MarkdownRenderer` and so
+ * gets heading `id`s a `#<slug(section)>` anchor can resolve against. The
+ * `comments` and `progress` panes render structured components (CommentsThread /
+ * progress `<li>` rows), NOT markdown headings — appending a hash there links to
+ * an id that never exists, so those kinds get the `?tab=` pane WITHOUT a hash.
+ */
+const ANCHORABLE_KINDS: ReadonlySet<FileKind> = new Set<FileKind>([
+  'assignment',
+  'plan',
+  'scratchpad',
+  'handoff',
+  'decision-record',
+]);
+
+/**
  * Build the UNPREFIXED deep-link for a hit:
  *   - memory   → `/projects/<projectSlug>/memories/<itemSlug>`
  *   - resource → `/projects/<projectSlug>/resources/<itemSlug>`
@@ -73,7 +88,7 @@ export function routeForHit(
 
   const tab = FILE_KIND_TO_TAB[hit.fileKind];
   let route = `${base}?tab=${tab}`;
-  if (hit.section) {
+  if (hit.section && ANCHORABLE_KINDS.has(hit.fileKind)) {
     route += `#${slugifyHeading(hit.section)}`;
   }
   return route;

@@ -15,7 +15,8 @@ export interface SearchOptions {
   project?: string;
   type?: string[];
   status?: string[];
-  in?: FileKind[];
+  /** Raw `--in` string; parsed to `FileKind[]` inside the command's try/catch. */
+  in?: string;
   all?: boolean;
   limit?: string;
   semantic?: boolean;
@@ -50,6 +51,9 @@ export async function runSearch(query: string, options: SearchOptions): Promise<
   const assignmentsDir = getAssignmentsDir();
 
   const limit = parseLimit(options.limit);
+  // Parse `--in` INSIDE the command's error path (not as a Commander coercion)
+  // so an unknown kind yields a clean one-line error, not an uncaught stack.
+  const inKinds = options.in ? parseFileKinds(options.in) : undefined;
 
   const docs = await getIndex({
     projectsDir,
@@ -66,7 +70,7 @@ export async function runSearch(query: string, options: SearchOptions): Promise<
       project: options.project,
       type: options.type,
       status: options.status,
-      in: options.in,
+      in: inKinds,
     },
     limit,
   );
@@ -99,14 +103,34 @@ function toJsonHit(hit: SearchHit): JsonHit {
 }
 
 /**
- * Wrap each match range in `**…**`. Apply ranges from the LAST backward so
- * earlier offsets don't shift as we insert markers.
+ * Wrap each match range in `**…**`. Defensive against malformed/overlapping
+ * ranges: clamp to snippet bounds, drop empties, sort ascending, MERGE
+ * overlapping/adjacent ranges, then apply the merged ranges back-to-front so
+ * earlier offsets don't shift (and markers can't interleave/corrupt).
  */
 function highlight(snippet: string, matches: MatchRange[]): string {
+  const clamped = matches
+    .map(({ start, end }) => ({
+      start: Math.max(0, Math.min(start, snippet.length)),
+      end: Math.max(0, Math.min(end, snippet.length)),
+    }))
+    .filter((r) => r.end > r.start)
+    .sort((a, b) => a.start - b.start);
+
+  const merged: MatchRange[] = [];
+  for (const r of clamped) {
+    const last = merged[merged.length - 1];
+    if (last && r.start <= last.end) {
+      // overlapping or adjacent — extend the previous range
+      last.end = Math.max(last.end, r.end);
+    } else {
+      merged.push({ ...r });
+    }
+  }
+
   let out = snippet;
-  const ordered = [...matches].sort((a, b) => b.start - a.start);
-  for (const { start, end } of ordered) {
-    if (end <= start || start < 0 || end > out.length) continue;
+  for (let i = merged.length - 1; i >= 0; i--) {
+    const { start, end } = merged[i];
     out = `${out.slice(0, start)}**${out.slice(start, end)}**${out.slice(end)}`;
   }
   return out;
@@ -157,7 +181,6 @@ export const searchCommand = new Command('search')
   .option(
     '--in <fileKinds>',
     'Comma-separated file-kind filter (e.g. comments,plans). Accepts singular or plural names.',
-    (v) => parseFileKinds(v),
   )
   .option('--all', 'Include archived assignments/projects (excluded by default)')
   .option('--limit <n>', 'Maximum number of results', String(DEFAULT_LIMIT))

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 /**
  * One ranked content-search hit returned by `GET /api/search` (`{ hits: [...] }`).
@@ -67,6 +67,10 @@ export function useContentSearch(query: string, enabled: boolean): ContentSearch
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Tracks the query of the in-flight request so a slow response for an OLDER
+  // query can be ignored if the user has since typed something newer.
+  const latestQueryRef = useRef<string | null>(null);
+
   // Debounce the raw query so each keystroke doesn't fire a fetch.
   useEffect(() => {
     const id = setTimeout(() => setDebounced(query), DEBOUNCE_MS);
@@ -78,18 +82,24 @@ export function useContentSearch(query: string, enabled: boolean): ContentSearch
 
   useEffect(() => {
     if (!active) {
-      // Inert: no request, clear any stale results.
+      // Inert: cancel any in-flight request, no new request, clear stale results.
+      latestQueryRef.current = null;
       setHits([]);
       setLoading(false);
       setError(null);
       return;
     }
 
-    let cancelled = false;
+    // Abort the previous in-flight fetch and mark this query as the latest.
+    const controller = new AbortController();
+    latestQueryRef.current = trimmed;
     setLoading(true);
     setError(null);
 
-    fetch(`/api/search?q=${encodeURIComponent(trimmed)}`)
+    // Commit a result only when THIS request is still the latest one.
+    const isCurrent = () => latestQueryRef.current === trimmed && !controller.signal.aborted;
+
+    fetch(`/api/search?q=${encodeURIComponent(trimmed)}`, { signal: controller.signal })
       .then(async (response) => {
         if (!response.ok) {
           const body = await response.json().catch(() => null);
@@ -98,13 +108,15 @@ export function useContentSearch(query: string, enabled: boolean): ContentSearch
         return response.json() as Promise<{ hits: ContentHit[] }>;
       })
       .then((json) => {
-        if (!cancelled) {
+        if (isCurrent()) {
           setHits(json.hits ?? []);
           setLoading(false);
         }
       })
       .catch((fetchError: Error) => {
-        if (!cancelled) {
+        // Ignore aborted fetches (newer query superseded this one).
+        if (fetchError.name === 'AbortError') return;
+        if (isCurrent()) {
           setError(fetchError.message);
           setHits([]);
           setLoading(false);
@@ -112,7 +124,7 @@ export function useContentSearch(query: string, enabled: boolean): ContentSearch
       });
 
     return () => {
-      cancelled = true;
+      controller.abort();
     };
   }, [active, trimmed]);
 

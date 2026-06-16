@@ -68,6 +68,27 @@ beforeEach(async () => {
     join(arDir, 'assignment.md'),
     `---\nid: asg-arch\nslug: old-task\ntitle: Old Task\ntype: chore\nstatus: completed\narchived: true\n---\n# Old Task\n\nArchived dragonfruit work.\n`,
   );
+
+  // ── archived PROJECT "zeta" — its (non-archived) assignment + memory/resource
+  //    must ALL be excluded by default, and carry archived:true when included.
+  const zeta = join(projectsDir, 'zeta');
+  await write(
+    join(zeta, 'project.md'),
+    `---\nid: p-zeta\nslug: zeta\ntitle: Zeta\nworkspace: zeta-ws\narchived: true\n---\n# Zeta project\n`,
+  );
+  const zDir = join(zeta, 'assignments', 'zeta-task');
+  await write(
+    join(zDir, 'assignment.md'),
+    `---\nid: asg-zeta\nslug: zeta-task\ntitle: Zeta Task\ntype: feature\nstatus: in_progress\narchived: false\n---\n# Zeta Task\n\nWork on the zeta papaya.\n`,
+  );
+  await write(
+    join(zeta, 'memories', 'zeta-note.md'),
+    `---\nname: Zeta note\nscope: project\n---\n# Zeta note\n\nA papaya memory.\n`,
+  );
+  await write(
+    join(zeta, 'resources', 'zeta-link.md'),
+    `---\nname: Zeta link\n---\n# Zeta link\n\nA papaya resource.\n`,
+  );
 });
 
 afterEach(async () => {
@@ -111,6 +132,28 @@ describe('buildIndex', () => {
 
     const withArchived = await buildIndex({ projectsDir, assignmentsDir, includeArchived: true });
     expect(withArchived.some((d) => d.assignmentSlug === 'old-task')).toBe(true);
+  });
+
+  it('excludes an archived project’s assignments + memories + resources by default', async () => {
+    const docs = await buildIndex({ projectsDir, assignmentsDir });
+    // None of zeta's content leaks in.
+    expect(docs.some((d) => d.projectSlug === 'zeta')).toBe(false);
+    expect(docs.some((d) => d.assignmentSlug === 'zeta-task')).toBe(false);
+    expect(docs.some((d) => d.itemSlug === 'zeta-note')).toBe(false);
+    expect(docs.some((d) => d.itemSlug === 'zeta-link')).toBe(false);
+  });
+
+  it('includes an archived project’s content (archived:true stamped) when includeArchived', async () => {
+    const docs = await buildIndex({ projectsDir, assignmentsDir, includeArchived: true });
+    const zetaDocs = docs.filter((d) => d.projectSlug === 'zeta');
+    expect(zetaDocs.length).toBeGreaterThan(0);
+    // Every zeta doc (assignment, sidecars, memory, resource) is flagged archived.
+    for (const d of zetaDocs) {
+      expect(d.archived).toBe(true);
+    }
+    expect(zetaDocs.some((d) => d.fileKind === 'assignment')).toBe(true);
+    expect(zetaDocs.some((d) => d.fileKind === 'memory')).toBe(true);
+    expect(zetaDocs.some((d) => d.fileKind === 'resource')).toBe(true);
   });
 
   it('stamps the project workspace on every project-owned doc', async () => {
