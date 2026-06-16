@@ -94,7 +94,7 @@ export function TextStep({ step, initialValue, disabled, onSubmit }: TextStepPro
         onKeyDown={handleKeyDown}
         placeholder={step.placeholder}
         disabled={disabled}
-        className="w-full border-0 border-b border-border/70 bg-transparent px-4 py-3 text-sm text-foreground outline-none focus:ring-0 disabled:opacity-60"
+        className="w-full border-0 border-b border-border/70 bg-transparent px-4 py-3 text-sm text-foreground outline-none focus:border-primary disabled:opacity-60"
       />
       {showError && step.pattern && patternFails ? (
         <div className="border-b border-border/70 bg-destructive/10 px-4 py-2 text-xs text-destructive">
@@ -195,7 +195,7 @@ export function PickerStep({ step, disabled, onSubmit }: PickerStepProps) {
         onKeyDown={handleKeyDown}
         placeholder={`Filter ${step.label.toLowerCase()}…`}
         disabled={disabled || load.phase === 'loading'}
-        className="w-full border-0 border-b border-border/70 bg-transparent px-4 py-3 text-sm text-foreground outline-none focus:ring-0 disabled:opacity-60"
+        className="w-full border-0 border-b border-border/70 bg-transparent px-4 py-3 text-sm text-foreground outline-none focus:border-primary disabled:opacity-60"
       />
       <div ref={listRef} className="max-h-[60vh] min-h-[120px] overflow-y-auto p-1">
         {load.phase === 'loading' ? (

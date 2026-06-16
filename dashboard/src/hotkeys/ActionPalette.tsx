@@ -436,7 +436,7 @@ export function ActionPalette({ entries }: ActionPaletteProps) {
               onKeyDown={handlePromptKeyDown}
               placeholder={promptAction!.requiresInput!.placeholder}
               disabled={running}
-              className="w-full border-0 border-b border-border/70 bg-transparent px-4 py-3 text-sm text-foreground outline-none focus:ring-0 disabled:opacity-60"
+              className="w-full border-0 border-b border-border/70 bg-transparent px-4 py-3 text-sm text-foreground outline-none focus:border-primary disabled:opacity-60"
             />
             {errorMessage ? (
               <div className="border-b border-border/70 bg-destructive/10 px-4 py-2 text-xs text-destructive">
@@ -458,7 +458,7 @@ export function ActionPalette({ entries }: ActionPaletteProps) {
               onKeyDown={handlePickerKeyDown}
               placeholder="Run an action: new project, new todo, toggle…"
               disabled={running}
-              className="w-full rounded-t-xl border-0 border-b border-border/70 bg-transparent px-4 py-3 text-sm text-foreground outline-none focus:ring-0 disabled:opacity-60"
+              className="w-full rounded-t-xl border-0 border-b border-border/70 bg-transparent px-4 py-3 text-sm text-foreground outline-none focus:border-primary disabled:opacity-60"
             />
             {errorMessage ? (
               <div className="border-b border-border/70 bg-destructive/10 px-4 py-2 text-xs text-destructive">

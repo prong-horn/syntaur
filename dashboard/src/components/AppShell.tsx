@@ -51,14 +51,16 @@ const GLOBAL_NAV_ITEMS: SidebarNavItem[] = [
   { to: '/archive', label: 'Archive', icon: Archive },
 ];
 
+// Only entities that live INSIDE a workspace and have no global nav entry.
+// Inventories/Usage/Todos are intentionally NOT here — they live once in the
+// global nav (their pages aggregate across workspaces with their own filters),
+// so repeating them per-workspace was pure duplication. Routes like
+// /w/:ws/usage still work; only the sidebar list is trimmed.
 const WORKSPACE_SCOPED_LABELS: Array<{ suffix: string; label: string; icon: LucideIcon }> = [
   { suffix: '/projects', label: 'Projects', icon: FolderKanban },
   { suffix: '/assignments', label: 'Assignments', icon: ListTodo },
   { suffix: '/servers', label: 'Servers', icon: Monitor },
-  { suffix: '/inventories', label: 'Inventories', icon: Boxes },
-  { suffix: '/usage', label: 'Usage', icon: Coins },
   { suffix: '/agent-sessions', label: 'Agent Sessions', icon: Activity },
-  { suffix: '/todos', label: 'Todos', icon: CheckSquare },
 ];
 
 const UTILITY_NAV_ITEMS: SidebarNavItem[] = [
@@ -103,6 +105,7 @@ export function AppShell({
                   type="button"
                   onClick={() => setMobileNavOpen(false)}
                   className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-border/70 bg-background/80"
+                  aria-label="Close navigation"
                 >
                   <X className="h-4 w-4" />
                 </button>

@@ -5,6 +5,13 @@ import {
   type ScheduleTrigger,
   type CreateScheduleInput,
 } from '../lib/schedules';
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from './ui/dialog';
 
 interface Props {
   open: boolean;
@@ -42,8 +49,6 @@ export function CreateScheduleDialog({ open, onOpenChange, onCreated }: Props) {
   const [watchAssignment, setWatchAssignment] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  if (!open) return null;
 
   function buildTrigger(): ScheduleTrigger {
     switch (kind) {
@@ -89,14 +94,17 @@ export function CreateScheduleDialog({ open, onOpenChange, onCreated }: Props) {
   const labelCls = 'block text-xs font-medium text-muted-foreground';
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-      <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-lg border bg-card p-5">
-        <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-lg font-semibold">New schedule</h2>
-          <button type="button" onClick={() => onOpenChange(false)} className="text-muted-foreground hover:text-foreground">
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-h-[90vh] overflow-y-auto">
+        <DialogHeader className="flex-row items-center justify-between space-y-0">
+          <DialogTitle>New schedule</DialogTitle>
+          <DialogClose
+            className="text-muted-foreground transition hover:text-foreground"
+            aria-label="Close"
+          >
             <X className="h-4 w-4" />
-          </button>
-        </div>
+          </DialogClose>
+        </DialogHeader>
 
         <div className="space-y-3">
           <div>
@@ -170,7 +178,7 @@ export function CreateScheduleDialog({ open, onOpenChange, onCreated }: Props) {
             {submitting ? 'Creating…' : 'Create'}
           </button>
         </div>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }

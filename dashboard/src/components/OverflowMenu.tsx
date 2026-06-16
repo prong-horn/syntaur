@@ -149,6 +149,7 @@ export function OverflowMenu({ items, align = 'end' }: OverflowMenuProps) {
         onClick={() => setOpen((v) => !v)}
         className="shell-action"
         title="More actions"
+        aria-label="More actions"
         aria-haspopup="true"
         aria-expanded={open}
       >
