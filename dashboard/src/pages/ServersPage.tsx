@@ -16,15 +16,20 @@ import { useServers, useProjects, useWorkspacePrefix } from '../hooks/useProject
 import { LoadingState } from '../components/LoadingState';
 import { ErrorState } from '../components/ErrorState';
 import { EmptyState } from '../components/EmptyState';
+import { ConfirmDialog } from '../components/ConfirmDialog';
+import { useToast, Toaster } from '../components/Toast';
 import type { TrackedSession, TrackedPane } from '../types';
 
 export function ServersPage() {
   const { workspace } = useParams<{ workspace?: string }>();
   const { data: projectsData } = useProjects();
   const { data, loading, error, refetch } = useServers();
+  const { toast, showToast, dismissToast } = useToast();
   const [registering, setRegistering] = useState(false);
   const [newSessionName, setNewSessionName] = useState('');
   const [refreshingAll, setRefreshingAll] = useState(false);
+  const [pendingDelete, setPendingDelete] = useState<string | null>(null);
+  const [removing, setRemoving] = useState(false);
   const location = useLocation();
 
   // Palette → servers: navigate with #server-<name> hash; scroll + highlight.
@@ -92,8 +97,22 @@ export function ServersPage() {
   }
 
   async function handleRemove(name: string) {
-    await fetch(`/api/servers/${encodeURIComponent(name)}`, { method: 'DELETE' });
-    refetch();
+    setRemoving(true);
+    try {
+      const res = await fetch(`/api/servers/${encodeURIComponent(name)}`, { method: 'DELETE' });
+      if (!res.ok) {
+        const payload = await res.json().catch(() => null);
+        showToast(payload?.error || `HTTP ${res.status}`, 'error');
+        return;
+      }
+      setPendingDelete(null);
+      refetch();
+      showToast(`Stopped tracking "${name}"`, 'success');
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Failed to remove session', 'error');
+    } finally {
+      setRemoving(false);
+    }
   }
 
   async function handleRefreshOne(name: string) {
@@ -163,12 +182,28 @@ export function ServersPage() {
               key={session.name}
               session={session}
               onRefresh={() => handleRefreshOne(session.name)}
-              onRemove={() => handleRemove(session.name)}
+              onRemove={() => setPendingDelete(session.name)}
               onRefetch={refetch}
             />
           ))}
         </div>
       )}
+
+      <ConfirmDialog
+        open={pendingDelete !== null}
+        title="Stop tracking session?"
+        description={`Remove "${pendingDelete ?? ''}" from tracked servers. This does not stop the tmux session itself.`}
+        confirmLabel="Stop Tracking"
+        destructive
+        loading={removing}
+        onOpenChange={(open) => {
+          if (!open && !removing) setPendingDelete(null);
+        }}
+        onConfirm={async () => {
+          if (pendingDelete) await handleRemove(pendingDelete);
+        }}
+      />
+      <Toaster toast={toast} onDismiss={dismissToast} />
     </>
   );
 }
