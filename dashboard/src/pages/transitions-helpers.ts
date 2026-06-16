@@ -222,17 +222,25 @@ export function deriveGraph(
   const statusIds = new Set(statuses.map((s) => s.id));
   const orphans = detectOrphanStatuses(rows, statuses);
 
-  const nodes: GraphStatusNode[] = statuses.map((s) => ({
-    id: s.id,
-    label: s.label,
-    color: s.color,
-    terminal: s.terminal ?? false,
-    orphan: orphans.has(s.id),
-    missing: false,
-  }));
+  // One node per defined status, in display order. Dedupe by id (first wins):
+  // duplicate status ids are a malformed-but-possible state, and the graph
+  // renderer requires unique node ids.
+  const nodes: GraphStatusNode[] = [];
+  const seen = new Set<string>();
+  for (const s of statuses) {
+    if (seen.has(s.id)) continue;
+    seen.add(s.id);
+    nodes.push({
+      id: s.id,
+      label: s.label,
+      color: s.color,
+      terminal: s.terminal ?? false,
+      orphan: orphans.has(s.id),
+      missing: false,
+    });
+  }
 
   // Ghost nodes for referenced-but-undefined status ids (e.g. `pending`).
-  const seen = new Set(statusIds);
   for (const r of rows) {
     for (const id of [r.from, r.to]) {
       if (id && !seen.has(id)) {

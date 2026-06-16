@@ -120,8 +120,10 @@ export function TransitionsGraph({
   const positions = useRef(new Map<string, { x: number; y: number }>());
 
   // Rebuild nodes whenever the derived node set changes (by content signature).
+  // Includes `label` so a live status rename (passed through statusOptions)
+  // refreshes the node.
   const nodeSig = useMemo(
-    () => nodes.map((n) => `${n.id}:${n.orphan ? 1 : 0}${n.missing ? 1 : 0}${n.terminal ? 1 : 0}${n.color ?? ''}`).join('|'),
+    () => JSON.stringify(nodes.map((n) => [n.id, n.label, n.color ?? '', n.terminal, n.orphan, n.missing])),
     [nodes],
   );
   useEffect(() => {
@@ -205,6 +207,17 @@ export function TransitionsGraph({
     [onSelectEdge],
   );
 
+  // Keyboard selection (focus an edge + Enter/Space) flows through ReactFlow's
+  // selection change, not onEdgeClick — sync it so keyboard users reach the
+  // inspector. Only act on a single-edge selection; don't clear on deselect so
+  // a programmatic selection (e.g. just-added row) isn't clobbered.
+  const handleSelectionChange = useCallback(
+    ({ edges: selected }: { edges: Edge[] }) => {
+      if (selected.length === 1) onSelectEdge(selected[0].id);
+    },
+    [onSelectEdge],
+  );
+
   return (
     <div className="h-[460px] w-full overflow-hidden rounded-md border border-border/60 bg-background">
       <ReactFlow
@@ -215,6 +228,7 @@ export function TransitionsGraph({
         onConnect={handleConnect}
         onEdgesDelete={handleEdgesDelete}
         onEdgeClick={handleEdgeClick}
+        onSelectionChange={handleSelectionChange}
         nodesConnectable={editable}
         deleteKeyCode={editable ? ['Backspace', 'Delete'] : null}
         elementsSelectable

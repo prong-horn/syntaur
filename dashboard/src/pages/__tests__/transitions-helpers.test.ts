@@ -78,6 +78,15 @@ describe('deriveGraph', () => {
     expect(edges[0].undefinedRef).toBe(true);
   });
 
+  it('dedupes duplicate status ids into a single node (first wins) for unique graph node ids', () => {
+    const statuses = [status('draft', { color: '#a' }), status('draft', { color: '#b' }), status('done')];
+    const { nodes } = deriveGraph([], statuses);
+    const draftNodes = nodes.filter((n) => n.id === 'draft');
+    expect(draftNodes).toHaveLength(1);
+    expect(draftNodes[0].color).toBe('#a');
+    expect(nodes.map((n) => n.id)).toEqual(['draft', 'done']);
+  });
+
   it('marks terminal nodes from the status option', () => {
     const statuses = [status('draft'), status('completed', { terminal: true })];
     const { nodes } = deriveGraph([row('draft', 'complete', 'completed')], statuses);

@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react';
 import { Trash2 } from 'lucide-react';
 import type { EditableTransition, StatusOption } from './transitions-helpers';
 
@@ -21,6 +22,15 @@ export function TransitionInspector({
   onDelete,
   disabled,
 }: TransitionInspectorProps) {
+  const fromRef = useRef<HTMLSelectElement>(null);
+
+  // Focus the first field when the selected transition changes (incl. a
+  // just-added row), so the keyboard "Add transition" path lands in the editor.
+  useEffect(() => {
+    if (transition && !disabled) fromRef.current?.focus();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [transition?.rowKey]);
+
   if (!transition) {
     return (
       <div className="surface-panel flex h-full min-h-[120px] items-center justify-center px-4 py-6 text-center text-xs text-muted-foreground">
@@ -38,10 +48,16 @@ export function TransitionInspector({
     onChange({ ...t, ...p });
   }
 
-  function statusSelect(value: string, onPick: (id: string) => void, ariaLabel: string) {
+  function statusSelect(
+    value: string,
+    onPick: (id: string) => void,
+    ariaLabel: string,
+    ref?: React.Ref<HTMLSelectElement>,
+  ) {
     const known = statusIds.has(value);
     return (
       <select
+        ref={ref}
         value={value}
         onChange={(e) => onPick(e.target.value)}
         disabled={disabled}
@@ -77,7 +93,7 @@ export function TransitionInspector({
 
       <label className="block space-y-1">
         <span className="text-xs font-medium text-muted-foreground">From status</span>
-        {statusSelect(t.from, (from) => patch({ from }), 'From status')}
+        {statusSelect(t.from, (from) => patch({ from }), 'From status', fromRef)}
         {fromUndefined && (
           <span className="block text-[11px] text-error-foreground">
             “{t.from}” is not a defined status
