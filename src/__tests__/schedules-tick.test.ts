@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { runTick, type TickDeps } from '../schedules/tick.js';
 import { writeJob, readJob } from '../schedules/store.js';
 import { markLaunching, claimJob } from '../schedules/attempt.js';
+import { readEvents } from '../schedules/event-log.js';
 import type { LaunchPlan } from '../launch/plan.js';
 import type { LaunchHandle } from '../launch/execute.js';
 import { freshAttempt, defaultLimits } from '../schedules/types.js';
@@ -115,10 +116,12 @@ describe('runTick', () => {
   });
 
   it('records stuck:max-runtime for an overrun running job with a dead session (B8)', async () => {
-    // A running one-shot whose maxRuntime has elapsed and whose session is dead.
+    // A recurring (cron) job stuck in `running` whose maxRuntime has elapsed and
+    // whose session is dead. Recurring jobs have no completion path (B7), so the
+    // stuck recording applies and the state is LEFT running by design.
     const job = await writeJob(
       sampleJob({
-        trigger: { kind: 'at', at: '2026-06-15T03:00:00Z' },
+        trigger: { kind: 'cron', expr: '0 3 * * *', tz: 'UTC' },
         limits: { ...defaultLimits(), maxRuntimeMs: 60_000 },
         attempt: {
           ...freshAttempt(),
@@ -141,7 +144,7 @@ describe('runTick', () => {
   it('does NOT flag a still-live overrun running job (B8)', async () => {
     const job = await writeJob(
       sampleJob({
-        trigger: { kind: 'at', at: '2026-06-15T03:00:00Z' },
+        trigger: { kind: 'cron', expr: '0 3 * * *', tz: 'UTC' },
         limits: { ...defaultLimits(), maxRuntimeMs: 60_000 },
         attempt: {
           ...freshAttempt(),
@@ -157,6 +160,88 @@ describe('runTick', () => {
     const after = await readJob(job.id);
     expect(after?.attempt.lastError).toBeNull();
     expect(after?.attempt.state).toBe('running');
+  });
+
+  it('reconciles a one-shot past grace with a dead session to completed (B7)', async () => {
+    const job = await writeJob(
+      sampleJob({
+        trigger: { kind: 'at', at: '2026-06-15T03:00:00Z' },
+        limits: { ...defaultLimits(), maxRuntimeMs: 60_000 },
+        attempt: {
+          ...freshAttempt(),
+          state: 'running',
+          sessionId: 'sess-ended',
+          launchPid: 4242,
+          runningSince: '2026-06-15T03:00:00Z',
+        },
+      }),
+    );
+    // 1h later (well past the 60s grace) and the session is dead.
+    const res = await runTick(happyDeps('2026-06-15T04:00:00Z', { isSessionLive: () => false }));
+    expect(res.completed).toContain(job.id);
+    expect((await readJob(job.id))?.attempt.state).toBe('completed');
+    const events = await readEvents(job.id);
+    expect(events.some((e) => e.type === 'completed')).toBe(true);
+  });
+
+  it('does NOT complete a one-shot still within the grace window (B7)', async () => {
+    const job = await writeJob(
+      sampleJob({
+        trigger: { kind: 'at', at: '2026-06-15T03:00:00Z' },
+        limits: { ...defaultLimits(), maxRuntimeMs: 60_000 },
+        attempt: {
+          ...freshAttempt(),
+          state: 'running',
+          sessionId: 'sess-fresh',
+          launchPid: 4242,
+          runningSince: '2026-06-15T03:00:00Z',
+        },
+      }),
+    );
+    // Only 30s elapsed — within the 60s grace — even with a dead session.
+    const res = await runTick(happyDeps('2026-06-15T03:00:30Z', { isSessionLive: () => false }));
+    expect(res.completed).toEqual([]);
+    expect((await readJob(job.id))?.attempt.state).toBe('running');
+  });
+
+  it('does NOT complete a just-acked one-shot whose session row is not written yet (B7)', async () => {
+    const job = await writeJob(
+      sampleJob({
+        trigger: { kind: 'at', at: '2026-06-15T03:00:00Z' },
+        limits: { ...defaultLimits(), maxRuntimeMs: 60_000 },
+        attempt: {
+          ...freshAttempt(),
+          state: 'running',
+          sessionId: 'sess-no-row',
+          launchPid: 4242,
+          runningSince: '2026-06-15T03:00:00Z',
+        },
+      }),
+    );
+    // Past grace, but the session id has no registry row yet → treated as live.
+    const res = await runTick(happyDeps('2026-06-15T04:00:00Z', { isSessionLive: () => true }));
+    expect(res.completed).toEqual([]);
+    expect((await readJob(job.id))?.attempt.state).toBe('running');
+  });
+
+  it('does NOT complete a recurring job stuck in running (B7)', async () => {
+    const job = await writeJob(
+      sampleJob({
+        trigger: { kind: 'cron', expr: '0 3 * * *', tz: 'UTC' },
+        limits: { ...defaultLimits(), maxRuntimeMs: 60_000 },
+        attempt: {
+          ...freshAttempt(),
+          state: 'running',
+          sessionId: 'sess-recurring',
+          launchPid: 4242,
+          runningSince: '2026-06-15T03:00:00Z',
+        },
+      }),
+    );
+    const res = await runTick(happyDeps('2026-06-15T04:00:00Z', { isSessionLive: () => false }));
+    expect(res.completed).toEqual([]);
+    // Recurring jobs get the stuck recording (B8), not completion (B7).
+    expect((await readJob(job.id))?.attempt.state).toBe('running');
   });
 
   it('reaps a launching job whose claim expired', async () => {

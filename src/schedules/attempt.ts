@@ -19,6 +19,7 @@ import { open, readFile, stat, unlink } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { appendEvent } from './event-log.js';
 import { schedulesDir, readJob, writeJob } from './store.js';
+import { isRecurring } from './triggers.js';
 import { nowTimestamp } from '../utils/timestamp.js';
 import {
   type ScheduledJob,
@@ -229,6 +230,24 @@ export async function markLaunchFailed(job: ScheduledJob, reason: string): Promi
   return written;
 }
 
+/**
+ * running → completed (terminal). The one-shot completion path: a fired
+ * one-shot has no re-arm, so once its launched session is no longer live the
+ * schedule's single job (launch the agent) is done. Reaped by `reapStale`
+ * behind a grace window so a just-acked session (row/pid not registered yet) is
+ * never prematurely terminalized. `completed` is a valid terminal state +
+ * event (see types.ts).
+ */
+export async function markCompleted(job: ScheduledJob): Promise<ScheduledJob> {
+  const next: ScheduledJob = {
+    ...job,
+    attempt: { ...job.attempt, state: 'completed', claim: null },
+  };
+  const written = await writeJob(next);
+  await appendEvent(job.id, 'completed', { reason: 'one-shot session ended' });
+  return written;
+}
+
 // ── Control verbs (Task 12 semantics, type-backed here) ───────────────────────
 
 export class TransitionError extends Error {
@@ -362,7 +381,16 @@ export function retryJob(id: string): Promise<ScheduledJob> {
 export interface ReapOutcome {
   reaped: string[]; // ids moved to launch_failed (dead launches)
   stuck: string[]; // ids flagged stuck (left for a control verb to remediate)
+  completed: string[]; // one-shot ids reconciled to completed (session ended)
 }
+
+/**
+ * Grace window before a one-shot `running` job with a dead session is
+ * reconciled to `completed`. A job's `maxRuntimeMs` takes precedence; this is
+ * the floor used when no limit is set, guarding against terminalizing a session
+ * whose registry row / pid hasn't been written yet right after launch-ack.
+ */
+const ONE_SHOT_COMPLETE_GRACE_MS = 60_000;
 
 /**
  * Crash recovery + stuck detection. PURE MECHANISM: it completes the lifecycle
@@ -374,7 +402,7 @@ export interface ReapOutcome {
 export async function reapStale(jobs: ScheduledJob[], deps: AttemptDeps): Promise<ReapOutcome> {
   const now = deps.now();
   const isLive = deps.isSessionLive ?? (() => true);
-  const out: ReapOutcome = { reaped: [], stuck: [] };
+  const out: ReapOutcome = { reaped: [], stuck: [], completed: [] };
   for (const job of jobs) {
     const a = job.attempt;
     if ((a.state === 'claimed' || a.state === 'launching') && a.claim && now.getTime() > a.claim.expiresAt) {
@@ -383,10 +411,31 @@ export async function reapStale(jobs: ScheduledJob[], deps: AttemptDeps): Promis
       out.reaped.push(job.id);
       continue;
     }
-    if (a.state === 'running' && job.limits.maxRuntimeMs && a.runningSince) {
+    if (a.state !== 'running') continue;
+
+    // ── One-shot completion reconciliation (B7) ──────────────────────────────
+    // A fired one-shot never re-arms; once its launched session is no longer
+    // live, the schedule's single job (launch the agent) is done → completed.
+    // Anti-race: only when it has a registered sessionId that is now dead/absent
+    // AND runningSince is older than the grace window (reuse maxRuntimeMs if
+    // set, else a const default). Never terminalize a one-shot with no
+    // sessionId (leave that to launch-failure/claim-lease reaping), and NEVER
+    // do this for recurring jobs.
+    if (!isRecurring(job.trigger) && a.sessionId && a.runningSince) {
+      const graceMs = job.limits.maxRuntimeMs ?? ONE_SHOT_COMPLETE_GRACE_MS;
+      const pastGrace = now.getTime() - Date.parse(a.runningSince) > graceMs;
+      if (pastGrace && !isLive(a.sessionId, a.launchPid)) {
+        await markCompleted(job);
+        out.completed.push(job.id);
+        continue;
+      }
+    }
+
+    // ── Stuck detection (B8) — mechanism, not policy ─────────────────────────
+    // Record once; leave state running (stuck is derivable). No remediation.
+    if (job.limits.maxRuntimeMs && a.runningSince) {
       const overrun = now.getTime() - Date.parse(a.runningSince) > job.limits.maxRuntimeMs;
       if (overrun && !isLive(a.sessionId, a.launchPid) && a.lastError !== 'stuck:max-runtime') {
-        // Record once; leave state running (stuck is derivable). No remediation.
         await writeJob({ ...job, attempt: { ...a, lastError: 'stuck:max-runtime' } });
         await appendEvent(job.id, 'reaped', { stuck: 'max-runtime-no-heartbeat' });
         out.stuck.push(job.id);

@@ -58,6 +58,8 @@ export interface TickResult {
   skipped: number;
   reaped: string[];
   stuck: string[];
+  /** One-shot ids reconciled to `completed` (their launched session ended). */
+  completed: string[];
 }
 
 async function defaultReadAssignment(assignmentId: string): Promise<AssignmentFrontmatter | null> {
@@ -93,7 +95,7 @@ async function defaultResolvePlan(job: ScheduledJob): Promise<LaunchPlan> {
 export async function runTick(deps: TickDeps = {}): Promise<TickResult> {
   const now = deps.now ?? (() => new Date());
   const attemptDeps = { now, isSessionLive: deps.isSessionLive };
-  const result: TickResult = { evaluated: 0, fired: [], failed: [], skipped: 0, reaped: [], stuck: [] };
+  const result: TickResult = { evaluated: 0, fired: [], failed: [], skipped: 0, reaped: [], stuck: [], completed: [] };
 
   // Reap first (crash recovery / stuck detection) — always runs, even under the
   // kill switch (reaping is mechanism, not new firing). The `fire-due`
@@ -102,6 +104,7 @@ export async function runTick(deps: TickDeps = {}): Promise<TickResult> {
     const reap = await reapStale(await listJobs(), attemptDeps);
     result.reaped = reap.reaped;
     result.stuck = reap.stuck;
+    result.completed = reap.completed;
   }
 
   // Re-list: reaping mutated some files.

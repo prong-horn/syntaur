@@ -309,7 +309,7 @@ scheduleCommand
     wrap(async () => {
       const r = await runTick({ log: (m) => console.error(m), isSessionLive: isScheduledSessionLive });
       console.log(
-        `tick: evaluated ${r.evaluated}, fired ${r.fired.length}, failed ${r.failed.length}, reaped ${r.reaped.length}, stuck ${r.stuck.length}`,
+        `tick: evaluated ${r.evaluated}, fired ${r.fired.length}, failed ${r.failed.length}, reaped ${r.reaped.length}, stuck ${r.stuck.length}, completed ${r.completed.length}`,
       );
     }),
   );
