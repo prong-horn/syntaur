@@ -1363,7 +1363,7 @@ export function createWriteRouter(
       };
       const entry = formatCommentEntry(comment);
       let next = setTopLevelField(currentContent, 'entryCount', String(currentCount + 1));
-      next = setTopLevelField(next, 'updated', `"${timestamp}"`);
+      next = setTopLevelField(next, 'updated', timestamp);
       if (next.includes('No comments yet.')) {
         next = next.replace('No comments yet.', entry.trimEnd());
       } else {
@@ -1427,7 +1427,7 @@ export function createWriteRouter(
         return;
       }
 
-      const withUpdated = setTopLevelField(next, 'updated', `"${nowTimestamp()}"`);
+      const withUpdated = setTopLevelField(next, 'updated', nowTimestamp());
       await writeFileForce(commentsPath, withUpdated);
       const assignment = await getAssignmentDetail(projectsDir, projectSlug, assignmentSlug);
       res.json({ assignment });
@@ -3162,7 +3162,7 @@ async function appendCommentTo(
   };
   const entry = formatCommentEntry(comment);
   let next = setTopLevelField(currentContent, 'entryCount', String(currentCount + 1));
-  next = setTopLevelField(next, 'updated', `"${timestamp}"`);
+  next = setTopLevelField(next, 'updated', timestamp);
   if (next.includes('No comments yet.')) {
     next = next.replace('No comments yet.', entry.trimEnd());
   } else {
@@ -3210,7 +3210,7 @@ async function toggleCommentResolvedAt(
     res.status(500).json({ error: 'Failed to update resolved flag' });
     return;
   }
-  const withUpdated = setTopLevelField(next, 'updated', `"${nowTimestamp()}"`);
+  const withUpdated = setTopLevelField(next, 'updated', nowTimestamp());
   await writeFileForce(commentsPath, withUpdated);
   const assignment = await reloadDetail();
   res.json({ assignment });
