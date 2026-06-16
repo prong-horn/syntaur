@@ -19,6 +19,7 @@ import { LoadingState } from '../components/LoadingState';
 import { ErrorState } from '../components/ErrorState';
 import { StatCard } from '../components/StatCard';
 import { TodoRow } from '../components/TodoRow';
+import { useToast, Toaster } from '../components/Toast';
 import { TodoPromoteModal } from '../components/TodoPromoteModal';
 import { TodoMoveModal } from '../components/TodoMoveModal';
 import { BundleSection } from '../components/BundleRow';
@@ -38,6 +39,7 @@ export function WorkspaceTodosPage() {
   const { workspace } = useParams<{ workspace: string }>();
   const ws = workspace || '_global';
   const { data, loading, error, refetch } = useTodos(ws);
+  const { toast, showToast, dismissToast } = useToast();
   const { data: bundlesData } = useBundles(ws);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('');
@@ -137,51 +139,81 @@ export function WorkspaceTodosPage() {
     refetch();
   }
 
+  function reportError(err: unknown) {
+    showToast(err instanceof Error ? err.message : 'Action failed', 'error');
+  }
+
   async function handleAdd() {
     if (!newTodoText.trim()) return;
-    await addTodo(ws, newTodoText.trim());
-    setNewTodoText('');
-    refetch();
+    try {
+      await addTodo(ws, newTodoText.trim());
+      setNewTodoText('');
+      refetch();
+    } catch (err) {
+      reportError(err);
+    }
   }
 
   async function handleDelete(e: React.MouseEvent, id: string, description: string) {
     e.stopPropagation();
     if (!window.confirm(`Delete "${description}"? This can't be undone.`)) return;
-    await deleteTodo(ws, id);
-    refetch();
+    try {
+      await deleteTodo(ws, id);
+      refetch();
+    } catch (err) {
+      reportError(err);
+    }
   }
 
   async function handleStatusChange(id: string, newStatus: string) {
-    switch (newStatus) {
-      case 'open':
-        await reopenTodo(ws, id);
-        break;
-      case 'in_progress':
-        await startTodo(ws, id);
-        break;
-      case 'completed':
-        await completeTodo(ws, id);
-        break;
-      case 'blocked':
-        await blockTodo(ws, id);
-        break;
+    try {
+      switch (newStatus) {
+        case 'open':
+          await reopenTodo(ws, id);
+          break;
+        case 'in_progress':
+          await startTodo(ws, id);
+          break;
+        case 'completed':
+          await completeTodo(ws, id);
+          break;
+        case 'blocked':
+          await blockTodo(ws, id);
+          break;
+      }
+      refetch();
+    } catch (err) {
+      reportError(err);
     }
-    refetch();
   }
 
   async function handlePatchDescription(id: string, next: string) {
-    await patchTodo(ws, id, next);
-    refetch();
+    // Toast AND rethrow so EditingTodoInput.commit keeps the editor open on failure.
+    try {
+      await patchTodo(ws, id, next);
+      refetch();
+    } catch (err) {
+      reportError(err);
+      throw err;
+    }
   }
 
   async function handleAddAttachments(id: string, files: File[]) {
-    await addTodoAttachments(ws, id, files);
-    refetch();
+    try {
+      await addTodoAttachments(ws, id, files);
+      refetch();
+    } catch (err) {
+      reportError(err);
+    }
   }
 
   async function handleDeleteAttachment(id: string, attachmentId: string) {
-    await deleteTodoAttachment(ws, id, attachmentId);
-    refetch();
+    try {
+      await deleteTodoAttachment(ws, id, attachmentId);
+      refetch();
+    } catch (err) {
+      reportError(err);
+    }
   }
 
   // Group the filtered todos into the three accordion sections. `renderedOrdered`
@@ -296,6 +328,7 @@ export function WorkspaceTodosPage() {
 
   return (
     <div className="space-y-4">
+      <Toaster toast={toast} onDismiss={dismissToast} />
       {/* Stats */}
       <div className="grid gap-3 grid-cols-[repeat(auto-fill,minmax(140px,1fr))]">
         <StatCard label="Open" value={counts.open} icon={CheckSquare} />

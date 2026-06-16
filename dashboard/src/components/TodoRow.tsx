@@ -245,11 +245,13 @@ function EditingTodoInput({ initialValue, onSave, onExit }: EditingTodoInputProp
     setSaving(true);
     try {
       await onSave(next);
+      onExit(); // success: close the editor (the saved value reasserts via props)
     } catch {
-      // caller surfaces errors; just close and let the prop value reassert.
-    } finally {
-      setSaving(false);
-      onExit();
+      // Save failed — the caller already surfaced the error (toast). Keep the editor
+      // open with the draft intact so the user can fix/retry instead of losing input.
+      setSaving(false); // clear before refocus: a disabled input can't take focus
+      suppressBlurRef.current = false;
+      inputRef.current?.focus();
     }
   }, [draft, onExit, onSave, triggerShake]);
 

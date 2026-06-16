@@ -4,6 +4,7 @@ import type { LucideIcon } from 'lucide-react';
 import { Activity, Archive, BookOpen, Boxes, Brain, CalendarClock, CheckSquare, Coins, Compass, FolderKanban, LayoutTemplate, LifeBuoy, Library, ListTodo, Monitor, Plus, Settings, Workflow, X, ChevronDown, Trash2 } from 'lucide-react';
 import { SidebarNav, type SidebarNavItem } from './SidebarNav';
 import { TopBar } from './TopBar';
+import { useToast, Toaster } from './Toast';
 import { useWorkspaces } from '../hooks/useProjects';
 import {
   UNGROUPED_WORKSPACE,
@@ -150,6 +151,7 @@ function ShellSidebar({
   const [deleteBlockers, setDeleteBlockers] = useState<{ projects: string[]; standalones: string[] } | null>(null);
   const [deleteLoading, setDeleteLoading] = useState(false);
   const navigate = useNavigate();
+  const { toast, showToast, dismissToast } = useToast();
 
   function toggleCollapse(ws: string) {
     setCollapsedWorkspaces((prev) => {
@@ -239,6 +241,7 @@ function ShellSidebar({
 
   return (
     <div className="flex h-full flex-col gap-3">
+      <Toaster toast={toast} onDismiss={dismissToast} />
       <div className="space-y-3">
         <Link to="/" className="inline-flex items-center gap-3" onClick={onNavigate}>
           <span className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-card text-foreground shadow-sm ring-1 ring-border/60">
@@ -370,20 +373,27 @@ function ShellSidebar({
         {creatingWorkspace ? (
           <form
             className="px-3 py-1.5"
-            onSubmit={(e) => {
+            onSubmit={async (e) => {
               e.preventDefault();
               const slug = newWorkspaceName.trim().toLowerCase().replace(/[^a-z0-9-]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '');
-              if (slug) {
-                setCreatingWorkspace(false);
-                setNewWorkspaceName('');
-                fetch('/api/workspaces', {
+              if (!slug) return;
+              setCreatingWorkspace(false);
+              setNewWorkspaceName('');
+              try {
+                const res = await fetch('/api/workspaces', {
                   method: 'POST',
                   headers: { 'Content-Type': 'application/json' },
                   body: JSON.stringify({ name: slug }),
-                }).then(() => {
-                  onNavigate?.();
-                  navigate(`/w/${slug}/projects`);
                 });
+                if (!res.ok) {
+                  const payload = await res.json().catch(() => null);
+                  showToast(payload?.error || `HTTP ${res.status}`, 'error');
+                  return; // do not navigate on failure
+                }
+                onNavigate?.();
+                navigate(`/w/${slug}/projects`);
+              } catch (err) {
+                showToast(err instanceof Error ? err.message : 'Failed to create workspace', 'error');
               }
             }}
           >

@@ -71,65 +71,35 @@ export function useProjectTodoLog(projectId: string, id?: string) {
 // --- Mutation helpers (mirror useTodos; no patch/archive helpers exist there) ---
 
 export async function addProjectTodo(projectId: string, description: string, tags?: string[]): Promise<void> {
-  await fetch(base(projectId), {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ description, tags }),
-  });
+  await postOrThrow(base(projectId), { description, tags });
 }
 
 export async function completeProjectTodo(projectId: string, id: string, summary?: string): Promise<void> {
-  await fetch(`${base(projectId)}/${id}/complete`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ summary: summary || 'Completed.' }),
-  });
+  await postOrThrow(`${base(projectId)}/${id}/complete`, { summary: summary || 'Completed.' });
 }
 
 export async function blockProjectTodo(projectId: string, id: string, reason?: string): Promise<void> {
-  await fetch(`${base(projectId)}/${id}/block`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ reason }),
-  });
+  await postOrThrow(`${base(projectId)}/${id}/block`, { reason });
 }
 
 export async function startProjectTodo(projectId: string, id: string, session?: string): Promise<void> {
-  await fetch(`${base(projectId)}/${id}/start`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ session }),
-  });
+  await postOrThrow(`${base(projectId)}/${id}/start`, { session });
 }
 
 export async function reopenProjectTodo(projectId: string, id: string): Promise<void> {
-  await fetch(`${base(projectId)}/${id}/reopen`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({}),
-  });
+  await postOrThrow(`${base(projectId)}/${id}/reopen`, {});
 }
 
 export async function unblockProjectTodo(projectId: string, id: string): Promise<void> {
-  await fetch(`${base(projectId)}/${id}/unblock`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({}),
-  });
+  await postOrThrow(`${base(projectId)}/${id}/unblock`, {});
 }
 
 export async function reorderProjectTodos(projectId: string, ids: string[]): Promise<void> {
-  await fetch(`${base(projectId)}/reorder`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ ids }),
-  });
+  await postOrThrow(`${base(projectId)}/reorder`, { ids });
 }
 
 export async function deleteProjectTodo(projectId: string, id: string): Promise<void> {
-  await fetch(`${base(projectId)}/${id}`, {
-    method: 'DELETE',
-  });
+  await deleteOrThrow(`${base(projectId)}/${id}`);
 }
 
 export async function patchProjectTodo(projectId: string, id: string, description: string): Promise<void> {
@@ -183,6 +153,19 @@ async function postOrThrow(url: string, body: unknown): Promise<unknown> {
     throw err;
   }
   return res.json().catch(() => ({}));
+}
+
+async function deleteOrThrow(url: string): Promise<void> {
+  const res = await fetch(url, { method: 'DELETE' });
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    let parsed: { error?: string } | null = null;
+    try { parsed = text ? JSON.parse(text) : null; } catch { /* fall through */ }
+    const msg = parsed?.error || text || `HTTP ${res.status}`;
+    const err = new Error(msg) as Error & { status?: number };
+    err.status = res.status;
+    throw err;
+  }
 }
 
 export async function promoteProjectTodos(

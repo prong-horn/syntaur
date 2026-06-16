@@ -101,65 +101,35 @@ export function useTodoLog(workspace: string, id?: string) {
 // --- Mutation helpers ---
 
 export async function addTodo(workspace: string, description: string, tags?: string[]): Promise<void> {
-  await fetch(`/api/todos/${encodeURIComponent(workspace)}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ description, tags }),
-  });
+  await postOrThrow(`/api/todos/${encodeURIComponent(workspace)}`, { description, tags });
 }
 
 export async function completeTodo(workspace: string, id: string, summary?: string): Promise<void> {
-  await fetch(`/api/todos/${encodeURIComponent(workspace)}/${id}/complete`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ summary: summary || 'Completed.' }),
-  });
+  await postOrThrow(`/api/todos/${encodeURIComponent(workspace)}/${id}/complete`, { summary: summary || 'Completed.' });
 }
 
 export async function blockTodo(workspace: string, id: string, reason?: string): Promise<void> {
-  await fetch(`/api/todos/${encodeURIComponent(workspace)}/${id}/block`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ reason }),
-  });
+  await postOrThrow(`/api/todos/${encodeURIComponent(workspace)}/${id}/block`, { reason });
 }
 
 export async function startTodo(workspace: string, id: string, session?: string): Promise<void> {
-  await fetch(`/api/todos/${encodeURIComponent(workspace)}/${id}/start`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ session }),
-  });
+  await postOrThrow(`/api/todos/${encodeURIComponent(workspace)}/${id}/start`, { session });
 }
 
 export async function reopenTodo(workspace: string, id: string): Promise<void> {
-  await fetch(`/api/todos/${encodeURIComponent(workspace)}/${id}/reopen`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({}),
-  });
+  await postOrThrow(`/api/todos/${encodeURIComponent(workspace)}/${id}/reopen`, {});
 }
 
 export async function unblockTodo(workspace: string, id: string): Promise<void> {
-  await fetch(`/api/todos/${encodeURIComponent(workspace)}/${id}/unblock`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({}),
-  });
+  await postOrThrow(`/api/todos/${encodeURIComponent(workspace)}/${id}/unblock`, {});
 }
 
 export async function reorderTodos(workspace: string, ids: string[]): Promise<void> {
-  await fetch(`/api/todos/${encodeURIComponent(workspace)}/reorder`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ ids }),
-  });
+  await postOrThrow(`/api/todos/${encodeURIComponent(workspace)}/reorder`, { ids });
 }
 
 export async function deleteTodo(workspace: string, id: string): Promise<void> {
-  await fetch(`/api/todos/${encodeURIComponent(workspace)}/${id}`, {
-    method: 'DELETE',
-  });
+  await deleteOrThrow(`/api/todos/${encodeURIComponent(workspace)}/${id}`);
 }
 
 export async function patchTodo(workspace: string, id: string, description: string): Promise<void> {
@@ -260,6 +230,19 @@ async function postOrThrow(url: string, body: unknown): Promise<unknown> {
     throw err;
   }
   return res.json().catch(() => ({}));
+}
+
+async function deleteOrThrow(url: string): Promise<void> {
+  const res = await fetch(url, { method: 'DELETE' });
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    let parsed: { error?: string } | null = null;
+    try { parsed = text ? JSON.parse(text) : null; } catch { /* fall through */ }
+    const msg = parsed?.error || text || `HTTP ${res.status}`;
+    const err = new Error(msg) as Error & { status?: number };
+    err.status = res.status;
+    throw err;
+  }
 }
 
 export async function promoteTodos(workspace: string, body: PromoteBody): Promise<PromoteResult> {

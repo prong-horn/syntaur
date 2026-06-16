@@ -23,16 +23,18 @@ interface AgentSessionsSectionProps {
  *
  * Mirrors the per-row affordances of the standalone /sessions page —
  * Resume / Fork / Mark-stopped — by mounting `<SessionActionButtons>` on
- * each row. Mark-stopped is fire-and-forget: PATCH is sent, then the
- * websocket `agent-sessions-updated` broadcast (subscribed to by
- * useAgentSessions / useProjects) refreshes the data.
+ * each row. On success the websocket `agent-sessions-updated` broadcast
+ * (subscribed to by useAgentSessions / useProjects) refreshes the data; on
+ * failure the PATCH throws so the caller's `onError` surfaces it (e.g. a toast)
+ * instead of a rejected session silently appearing handled.
  */
 async function patchMarkStopped(sessionId: string): Promise<void> {
-  await fetch(`/api/agent-sessions/${encodeURIComponent(sessionId)}`, {
+  const res = await fetch(`/api/agent-sessions/${encodeURIComponent(sessionId)}`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ status: 'stopped' }),
   });
+  if (!res.ok) throw new Error((await res.text().catch(() => '')) || `HTTP ${res.status}`);
 }
 
 export function AgentSessionsSection({ sessions, loading, error, onError, onNotice }: AgentSessionsSectionProps) {
@@ -84,7 +86,14 @@ export function AgentSessionsSection({ sessions, loading, error, onError, onNoti
               <StatusBadge status={session.status} />
               <span className="text-xs text-muted-foreground">{formatDateTime(session.started)}</span>
             </span>
-            <SessionActionButtons session={session} onMarkStopped={patchMarkStopped} />
+            <SessionActionButtons
+              session={session}
+              onMarkStopped={(id) =>
+                patchMarkStopped(id).catch((e) =>
+                  onError?.(e instanceof Error ? e : new Error(String(e))),
+                )
+              }
+            />
           </div>
         ))}
       </div>

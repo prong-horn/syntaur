@@ -19,6 +19,7 @@ import { LoadingState } from './LoadingState';
 import { ErrorState } from './ErrorState';
 import { StatCard } from './StatCard';
 import { TodoRow } from './TodoRow';
+import { useToast, Toaster } from './Toast';
 import { TodoPromoteModal } from './TodoPromoteModal';
 import { TodoMoveModal } from './TodoMoveModal';
 import { NON_DRAGGABLE_SELECTOR } from './KanbanBoard';
@@ -38,6 +39,7 @@ interface ProjectTodosPanelProps {
 
 export function ProjectTodosPanel({ projectId }: ProjectTodosPanelProps) {
   const { data, loading, error, refetch } = useProjectTodos(projectId);
+  const { toast, showToast, dismissToast } = useToast();
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('');
   const [tagFilter, setTagFilter] = useState<string>('');
@@ -134,51 +136,81 @@ export function ProjectTodosPanel({ projectId }: ProjectTodosPanelProps) {
     refetch();
   }
 
+  function reportError(err: unknown) {
+    showToast(err instanceof Error ? err.message : 'Action failed', 'error');
+  }
+
   async function handleAdd() {
     if (!newTodoText.trim()) return;
-    await addProjectTodo(projectId, newTodoText.trim());
-    setNewTodoText('');
-    refetch();
+    try {
+      await addProjectTodo(projectId, newTodoText.trim());
+      setNewTodoText('');
+      refetch();
+    } catch (err) {
+      reportError(err);
+    }
   }
 
   async function handleDelete(e: React.MouseEvent, id: string, description: string) {
     e.stopPropagation();
     if (!window.confirm(`Delete "${description}"? This can't be undone.`)) return;
-    await deleteProjectTodo(projectId, id);
-    refetch();
+    try {
+      await deleteProjectTodo(projectId, id);
+      refetch();
+    } catch (err) {
+      reportError(err);
+    }
   }
 
   async function handleStatusChange(id: string, newStatus: string) {
-    switch (newStatus) {
-      case 'open':
-        await reopenProjectTodo(projectId, id);
-        break;
-      case 'in_progress':
-        await startProjectTodo(projectId, id);
-        break;
-      case 'completed':
-        await completeProjectTodo(projectId, id);
-        break;
-      case 'blocked':
-        await blockProjectTodo(projectId, id);
-        break;
+    try {
+      switch (newStatus) {
+        case 'open':
+          await reopenProjectTodo(projectId, id);
+          break;
+        case 'in_progress':
+          await startProjectTodo(projectId, id);
+          break;
+        case 'completed':
+          await completeProjectTodo(projectId, id);
+          break;
+        case 'blocked':
+          await blockProjectTodo(projectId, id);
+          break;
+      }
+      refetch();
+    } catch (err) {
+      reportError(err);
     }
-    refetch();
   }
 
   async function handlePatchDescription(id: string, next: string) {
-    await patchProjectTodo(projectId, id, next);
-    refetch();
+    // Toast AND rethrow so EditingTodoInput.commit keeps the editor open on failure.
+    try {
+      await patchProjectTodo(projectId, id, next);
+      refetch();
+    } catch (err) {
+      reportError(err);
+      throw err;
+    }
   }
 
   async function handleAddAttachments(id: string, files: File[]) {
-    await addProjectTodoAttachments(projectId, id, files);
-    refetch();
+    try {
+      await addProjectTodoAttachments(projectId, id, files);
+      refetch();
+    } catch (err) {
+      reportError(err);
+    }
   }
 
   async function handleDeleteAttachment(id: string, attachmentId: string) {
-    await deleteProjectTodoAttachment(projectId, id, attachmentId);
-    refetch();
+    try {
+      await deleteProjectTodoAttachment(projectId, id, attachmentId);
+      refetch();
+    } catch (err) {
+      reportError(err);
+    }
   }
 
   // Group the filtered todos into the three accordion sections. `renderedOrdered`
@@ -292,6 +324,7 @@ export function ProjectTodosPanel({ projectId }: ProjectTodosPanelProps) {
 
   return (
     <div className="space-y-4">
+      <Toaster toast={toast} onDismiss={dismissToast} />
       {/* Stats */}
       <div className="grid gap-3 grid-cols-[repeat(auto-fill,minmax(140px,1fr))]">
         <StatCard label="Open" value={counts.open} icon={CheckSquare} />

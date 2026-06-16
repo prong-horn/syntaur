@@ -31,6 +31,7 @@ import { ErrorState } from '../components/ErrorState';
 import { StatCard } from '../components/StatCard';
 import { StatusMenu } from '../components/StatusMenu';
 import { InlineTodoText, TodoAttachments } from '../components/TodoRow';
+import { useToast, Toaster } from '../components/Toast';
 import { TodoPromoteModal, type PromoteScope } from '../components/TodoPromoteModal';
 import { NON_DRAGGABLE_SELECTOR } from '../components/KanbanBoard';
 import { TodoAccordionSection } from '../components/TodoAccordionSection';
@@ -59,6 +60,7 @@ function navigateRefTo(ref: string): string {
 
 export function TodosPage() {
   const { data, loading, error, refetch } = useAllTodos();
+  const { toast, showToast, dismissToast } = useToast();
   const navigate = useNavigate();
   const [search, setSearch] = useState('');
   const searchRef = useRef<HTMLInputElement>(null);
@@ -257,49 +259,80 @@ export function TodosPage() {
     return c;
   }, [data]);
 
+  function reportError(err: unknown) {
+    showToast(err instanceof Error ? err.message : 'Action failed', 'error');
+  }
+
   async function handleAdd() {
     if (!newTodoText.trim()) return;
-    await addTodo(newTodoWorkspace, newTodoText.trim());
-    setNewTodoText('');
-    refetch();
+    try {
+      await addTodo(newTodoWorkspace, newTodoText.trim());
+      setNewTodoText('');
+      refetch();
+    } catch (err) {
+      reportError(err);
+    }
   }
 
   async function handleStatusChange(workspace: string, id: string, newStatus: string) {
-    switch (newStatus) {
-      case 'open':
-        await reopenTodo(workspace, id);
-        break;
-      case 'in_progress':
-        await startTodo(workspace, id);
-        break;
-      case 'completed':
-        await completeTodo(workspace, id);
-        break;
-      case 'blocked':
-        await blockTodo(workspace, id);
-        break;
+    try {
+      switch (newStatus) {
+        case 'open':
+          await reopenTodo(workspace, id);
+          break;
+        case 'in_progress':
+          await startTodo(workspace, id);
+          break;
+        case 'completed':
+          await completeTodo(workspace, id);
+          break;
+        case 'blocked':
+          await blockTodo(workspace, id);
+          break;
+      }
+      refetch();
+    } catch (err) {
+      reportError(err);
     }
-    refetch();
   }
 
   async function handleDelete(workspace: string, id: string) {
-    await deleteTodo(workspace, id);
-    refetch();
+    try {
+      await deleteTodo(workspace, id);
+      refetch();
+    } catch (err) {
+      reportError(err);
+    }
   }
 
   async function handlePatchDescription(workspace: string, id: string, next: string) {
-    await patchTodo(workspace, id, next);
-    refetch();
+    // Toast AND rethrow: the inline editor (EditingTodoInput.commit) relies on the
+    // rejection to keep the editor open and preserve the draft on failure.
+    try {
+      await patchTodo(workspace, id, next);
+      refetch();
+    } catch (err) {
+      reportError(err);
+      throw err;
+    }
   }
 
   async function handleAddAttachments(workspace: string, id: string, files: File[]) {
-    await addTodoAttachments(workspace, id, files);
-    refetch();
+    try {
+      await addTodoAttachments(workspace, id, files);
+      refetch();
+    } catch (err) {
+      reportError(err);
+    }
   }
 
   async function handleDeleteAttachment(workspace: string, id: string, attachmentId: string) {
-    await deleteTodoAttachment(workspace, id, attachmentId);
-    refetch();
+    try {
+      await deleteTodoAttachment(workspace, id, attachmentId);
+      refetch();
+    } catch (err) {
+      reportError(err);
+    }
   }
 
   // Group the filtered todos into the three accordion sections. `renderedOrdered`
@@ -408,6 +441,7 @@ export function TodosPage() {
 
   return (
     <div className="space-y-4">
+      <Toaster toast={toast} onDismiss={dismissToast} />
       {/* Stats */}
       <div className="grid gap-3 grid-cols-[repeat(auto-fill,minmax(140px,1fr))]">
         <StatCard label="Open" value={totalCounts.open} icon={CheckSquare} />

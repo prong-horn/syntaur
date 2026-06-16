@@ -73,24 +73,37 @@ export function ServersPage() {
     e.preventDefault();
     if (!newSessionName.trim()) return;
     try {
-      await fetch('/api/servers', {
+      const res = await fetch('/api/servers', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: newSessionName.trim() }),
       });
+      if (!res.ok) {
+        const payload = await res.json().catch(() => null);
+        showToast(payload?.error || `HTTP ${res.status}`, 'error');
+        return;
+      }
       setNewSessionName('');
       setRegistering(false);
       refetch();
-    } catch {
-      // Error handling — refetch will show current state
+      showToast(`Tracking "${newSessionName.trim()}"`, 'success');
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Failed to register session', 'error');
     }
   }
 
   async function handleRefreshAll() {
     setRefreshingAll(true);
     try {
-      await fetch('/api/servers/refresh', { method: 'POST' });
+      const res = await fetch('/api/servers/refresh', { method: 'POST' });
+      if (!res.ok) {
+        const payload = await res.json().catch(() => null);
+        showToast(payload?.error || `HTTP ${res.status}`, 'error');
+        return;
+      }
       refetch();
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Failed to refresh sessions', 'error');
     } finally {
       setRefreshingAll(false);
     }
@@ -116,8 +129,17 @@ export function ServersPage() {
   }
 
   async function handleRefreshOne(name: string) {
-    await fetch(`/api/servers/${encodeURIComponent(name)}/refresh`, { method: 'POST' });
-    refetch();
+    try {
+      const res = await fetch(`/api/servers/${encodeURIComponent(name)}/refresh`, { method: 'POST' });
+      if (!res.ok) {
+        const payload = await res.json().catch(() => null);
+        showToast(payload?.error || `HTTP ${res.status}`, 'error');
+        return;
+      }
+      refetch();
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Failed to refresh session', 'error');
+    }
   }
 
   if (loading) return <LoadingState label="Loading servers…" />;
