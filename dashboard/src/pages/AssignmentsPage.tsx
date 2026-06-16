@@ -11,10 +11,13 @@ import {
 } from '../hooks/useProjects';
 import {
   runAssignmentTransition,
+  runAssignmentTransitionById,
   overrideAssignmentStatus,
+  overrideAssignmentStatusById,
   updateAssignmentTitle,
   updateAssignmentTitleById,
 } from '../lib/assignments';
+import { deriveStatusOptions, isTerminalStatus, resolveStatusAppearance } from '../lib/statusMeta';
 import { getAssignmentColumns } from '../lib/kanban';
 import { sortAssignments } from '../lib/sortAssignments';
 import { formatDate } from '../lib/format';
@@ -35,9 +38,9 @@ import { ContextMenuPopover } from '../components/ContextMenuPopover';
 import { ConfirmDialog } from '../components/ConfirmDialog';
 import { MoveToWorkspaceDialog } from '../components/MoveToWorkspaceDialog';
 import type { OverflowMenuItem } from '../components/OverflowMenu';
-import { StatusBadge, STATUS_META, getStatusDescription } from '../components/StatusBadge';
+import { StatusBadge, getStatusDescription } from '../components/StatusBadge';
 import { TypeChip } from '../components/TypeChip';
-import { StatusPillPicker } from '../components/StatusPillPicker';
+import { StatusPillPicker, type StatusOverrideTarget } from '../components/StatusPillPicker';
 import { InlineTitleEditor } from '../components/InlineTitleEditor';
 import { useBodyClickNavigation } from '../hooks/useBodyClickNavigation';
 import { useToast, Toaster } from '../components/Toast';
@@ -1099,6 +1102,21 @@ export function AssignmentsPage() {
     action?: AssignmentTransitionAction;
     reason?: string;
   }) {
+    // A direct status change (no transition action) goes through the override
+    // endpoint, which REJECTS terminal statuses ("use the complete/fail
+    // transition"). Guard that path so a direct-set to a terminal status never
+    // POSTs and 400s — it must be reached via its transition instead.
+    if (!action) {
+      const targetDef = statusConfig.statuses.find((s) => s.id === toColumnId);
+      if (isTerminalStatus(targetDef ?? { id: toColumnId })) {
+        showToast(
+          `Reach “${getStatusLabel(statusConfig, toColumnId)}” through its complete/fail transition.`,
+          'error',
+        );
+        return false;
+      }
+    }
+
     setTransitioningId(getAssignmentKey(item));
 
     const previous = boardItems;
@@ -1115,32 +1133,15 @@ export function AssignmentsPage() {
     );
 
     try {
-      if (item.projectSlug === null) {
-        // Standalone: use by-id route directly. Skip override (not implemented for standalone).
-        if (!action) throw new Error('Standalone assignments require a transition action, not status override.');
-        const res = await fetch(
-          `/api/assignments/${encodeURIComponent(item.id)}/transitions/${encodeURIComponent(action.command)}`,
-          {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(reason ? { reason } : {}),
-          },
-        );
-        if (!res.ok) throw new Error((await res.json()).error ?? `HTTP ${res.status}`);
-        const payload = await res.json();
-        const updated = payload.assignment;
-        setBoardItems((current) =>
-          current.map((candidate) =>
-            getAssignmentKey(candidate) === getAssignmentKey(item)
-              ? { ...candidate, status: updated.status, blockedReason: updated.blockedReason, availableTransitions: updated.availableTransitions, updated: updated.updated }
-              : candidate,
-          ),
-        );
-        return;
-      }
-      const updated = action
-        ? await runAssignmentTransition(item.projectSlug, item.slug, action, reason)
-        : await overrideAssignmentStatus(item.projectSlug, item.slug, toColumnId);
+      // Project assignments use slug-based routes; standalone use by-id routes.
+      // Both support transitions (with action) AND direct override (no action).
+      const updated = item.projectSlug === null
+        ? action
+          ? await runAssignmentTransitionById(item.id, action, reason)
+          : await overrideAssignmentStatusById(item.id, toColumnId)
+        : action
+          ? await runAssignmentTransition(item.projectSlug, item.slug, action, reason)
+          : await overrideAssignmentStatus(item.projectSlug, item.slug, toColumnId);
 
       setBoardItems((current) =>
         current.map((candidate) =>
@@ -1197,6 +1198,39 @@ export function AssignmentsPage() {
     }
 
     await applyMove({ item, toColumnId, action });
+  }
+
+  // Config-driven "Override → status" entries for a single card. Terminal targets
+  // can't go through the override endpoint, so they're disabled unless the item
+  // has an available transition to them (clicking then routes via that transition
+  // inside handleMove). The current status is always disabled.
+  function overrideTargetsFor(item: AssignmentBoardItem): StatusOverrideTarget[] {
+    return deriveStatusOptions(statusConfig).map((option) => {
+      if (option.id === item.status) {
+        return { id: option.id, label: option.label, disabled: true, disabledReason: 'Already in this status' };
+      }
+      if (option.terminal) {
+        const transition = item.availableTransitions.find(
+          (a) => a.targetStatus === option.id && !a.disabled,
+        );
+        if (!transition) {
+          return {
+            id: option.id,
+            label: option.label,
+            disabled: true,
+            disabledReason: `Reach ${option.label} via its transition when available`,
+          };
+        }
+      }
+      return { id: option.id, label: option.label };
+    });
+  }
+
+  // A picker "Override → X" click is just a direct move to X with no chosen
+  // transition; handleMove re-derives a transition when one exists (e.g. terminal
+  // targets) and otherwise routes through the override path in applyMove.
+  function handleOverride(item: AssignmentBoardItem, statusId: string) {
+    void handleMove({ item, toColumnId: statusId });
   }
 
   async function handleRenameTitle(item: AssignmentBoardItem, newTitle: string): Promise<void> {
@@ -1579,21 +1613,31 @@ export function AssignmentsPage() {
                           'appearance-none rounded-full border px-2.5 py-0.5 text-xs font-semibold tracking-wide outline-none',
                           'cursor-pointer bg-[length:12px] bg-[right_6px_center] bg-no-repeat pr-6',
                           "bg-[url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='currentColor'%3E%3Cpath fill-rule='evenodd' d='M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z'/%3E%3C/svg%3E\")]",
-                          (STATUS_META[assignment.status as keyof typeof STATUS_META] ?? STATUS_META.pending).className,
+                          resolveStatusAppearance(statusConfig.statuses, assignment.status).className,
                           transitioningId === getAssignmentKey(assignment) && 'animate-pulse opacity-60',
                         )}
+                        style={resolveStatusAppearance(statusConfig.statuses, assignment.status).style}
                       >
                         {COLUMNS.map((targetStatus) => {
-                          const action = assignment.status === targetStatus
+                          const isCurrent = assignment.status === targetStatus;
+                          const action = isCurrent
                             ? undefined
                             : getAssignmentAction(assignment, targetStatus);
-                          const disabled = action?.disabled ?? false;
+                          // Terminal targets can't be reached via override; disable
+                          // them unless a transition exists (mirrors the picker).
+                          const targetDef = statusConfig.statuses.find((s) => s.id === targetStatus);
+                          const terminalNoTransition =
+                            !isCurrent && isTerminalStatus(targetDef ?? { id: targetStatus }) && !action;
+                          const disabled = (action?.disabled ?? false) || terminalNoTransition;
+                          const disabledReason = terminalNoTransition
+                            ? `Reach ${COLUMN_LABELS[targetStatus] ?? targetStatus} via its transition when available`
+                            : action?.disabledReason ?? undefined;
                           return (
                             <option
                               key={targetStatus}
                               value={targetStatus}
                               disabled={disabled}
-                              title={disabled ? action?.disabledReason ?? undefined : undefined}
+                              title={disabled ? disabledReason : undefined}
                             >
                               {COLUMN_LABELS[targetStatus]}
                             </option>
@@ -1685,6 +1729,8 @@ export function AssignmentsPage() {
                             onPillSelect={(action) =>
                               void handleMove({ item, toColumnId: action.targetStatus, action })
                             }
+                            overrideTargets={overrideTargetsFor(item)}
+                            onOverride={(statusId) => handleOverride(item, statusId)}
                             onRenameTitle={(next) => handleRenameTitle(item, next)}
                           />
                         </div>
@@ -1759,6 +1805,8 @@ export function AssignmentsPage() {
                   onPillSelect={(action) =>
                     void handleMove({ item, toColumnId: action.targetStatus, action })
                   }
+                  overrideTargets={overrideTargetsFor(item)}
+                  onOverride={(statusId) => handleOverride(item, statusId)}
                   onRenameTitle={(next) => handleRenameTitle(item, next)}
                 />
               </div>
@@ -1957,6 +2005,8 @@ function AssignmentBoardCard({
   dragging,
   transitioning,
   onPillSelect,
+  overrideTargets,
+  onOverride,
   onRenameTitle,
 }: {
   assignment: AssignmentBoardItem;
@@ -1964,6 +2014,10 @@ function AssignmentBoardCard({
   transitioning: boolean;
   /** Present in the kanban & list render-sites; absent → read-only card. */
   onPillSelect?: (action: AssignmentTransitionAction) => void;
+  /** Config-driven direct-set targets for the status picker (per-item). */
+  overrideTargets?: StatusOverrideTarget[];
+  /** Direct-set handler paired with {@link overrideTargets}. */
+  onOverride?: (statusId: string) => void;
   /** Present in the kanban & list render-sites; absent → read-only card. */
   onRenameTitle?: (newTitle: string) => Promise<void>;
 }) {
@@ -2021,6 +2075,8 @@ function AssignmentBoardCard({
             currentStatus={assignment.status}
             availableTransitions={assignment.availableTransitions}
             onSelect={onPillSelect!}
+            overrideTargets={overrideTargets}
+            onOverride={onOverride}
             disabled={transitioning}
             className="max-w-[150px]"
           />

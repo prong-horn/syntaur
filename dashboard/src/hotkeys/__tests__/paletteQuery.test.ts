@@ -232,3 +232,71 @@ describe('PALETTE_FIELDS semantics', () => {
     expect(matches('-status:done', { type: 'assignment', status: 'done' })).toBe(false);
   });
 });
+
+describe('splitPaletteQuery — config-driven aliases', () => {
+  const aliases = { x: 'assignment', proj: 'project' } as const;
+
+  it('uses a custom alias map', () => {
+    expect(splitPaletteQuery('x:', aliases)).toEqual({ aqlExpr: 'kind:assignment', fuzzy: '' });
+    expect(splitPaletteQuery('proj:', aliases)).toEqual({ aqlExpr: 'kind:project', fuzzy: '' });
+  });
+
+  it('built-in aliases no longer apply when a custom map is supplied', () => {
+    // 'a' is not in the custom map → stays free text, not kind:assignment.
+    expect(splitPaletteQuery('a:', aliases)).toEqual({ aqlExpr: '', fuzzy: 'a:' });
+  });
+});
+
+describe('splitPaletteQuery — default-scope injection', () => {
+  const scope = (q: string, defaultScope: 'all' | 'project' | 'todo') =>
+    splitPaletteQuery(q, undefined, { defaultScope });
+
+  it('injects kind:<scope> when the box has no explicit prefix', () => {
+    expect(scope('payment', 'project')).toEqual({ aqlExpr: 'kind:project', fuzzy: 'payment' });
+    expect(scope('status:open', 'project')).toEqual({
+      aqlExpr: 'kind:project status:open',
+      fuzzy: '',
+    });
+  });
+
+  it('an explicit prefix overrides the default scope (no double-gate)', () => {
+    expect(scope('a: payment', 'project')).toEqual({
+      aqlExpr: 'kind:assignment',
+      fuzzy: 'payment',
+    });
+    expect(scope('kind:server', 'project')).toEqual({ aqlExpr: 'kind:server', fuzzy: '' });
+  });
+
+  it('the empty box and whitespace-only box search everything', () => {
+    expect(scope('', 'project')).toEqual({ aqlExpr: '', fuzzy: '' });
+    expect(scope('   ', 'project')).toEqual({ aqlExpr: '', fuzzy: '' });
+  });
+
+  it('a leading all: escape searches everything regardless of scope', () => {
+    expect(scope('all: payment', 'project')).toEqual({ aqlExpr: '', fuzzy: 'payment' });
+    expect(scope('all:', 'todo')).toEqual({ aqlExpr: '', fuzzy: '' });
+  });
+
+  it('defaultScope=all never injects', () => {
+    expect(scope('payment', 'all')).toEqual({ aqlExpr: '', fuzzy: 'payment' });
+  });
+
+  it('the injected gate compiles and filters by kind', () => {
+    const { aqlExpr } = scope('status:open', 'project');
+    const r = compileQuery(aqlExpr, PALETTE_FIELDS);
+    expect(r.query).not.toBeNull();
+    expect(r.query!.predicate({ type: 'project', status: 'open' }, { now: 0 })).toBe(true);
+    expect(r.query!.predicate({ type: 'assignment', status: 'open' }, { now: 0 })).toBe(false);
+  });
+
+  it('an explicit-boolean base is parenthesized so scope ANDs correctly', () => {
+    const { aqlExpr } = splitPaletteQuery('status:open OR status:done', undefined, {
+      defaultScope: 'project',
+    });
+    expect(aqlExpr).toBe('kind:project (status:open OR status:done)');
+    const r = compileQuery(aqlExpr, PALETTE_FIELDS);
+    expect(r.query).not.toBeNull();
+    expect(r.query!.predicate({ type: 'project', status: 'done' }, { now: 0 })).toBe(true);
+    expect(r.query!.predicate({ type: 'assignment', status: 'done' }, { now: 0 })).toBe(false);
+  });
+});

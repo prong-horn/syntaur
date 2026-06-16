@@ -7,10 +7,14 @@
  * See `claude-info/plans/2026-06-13-command-palette-search-design.md`.
  */
 import { compileQuery, lex, LexError, type FieldRegistry, type QueryItem, type Token } from '@shared/query';
-import type { PaletteEntry } from './paletteIndex';
+import type { EntityKind, DefaultScope } from '@shared/search-schema';
 
-/** Short type aliases desugar to a canonical `kind:<entityType>` atom. */
-const TYPE_ALIASES: Record<string, PaletteEntry['type']> = {
+/**
+ * Default short type aliases — desugar to a canonical `kind:<entityType>` atom.
+ * The live map is config-driven (`search.aliases`); this is the fallback used when
+ * `splitPaletteQuery` is called without an explicit map.
+ */
+const TYPE_ALIASES: Record<string, EntityKind> = {
   a: 'assignment',
   p: 'project',
   t: 'todo',
@@ -111,12 +115,62 @@ export interface SplitResult {
  * - Free text is reconstructed from original-input source spans (token positions),
  *   preserving quotes, spacing, and punctuation.
  */
-export function splitPaletteQuery(input: string): SplitResult {
+export function splitPaletteQuery(
+  input: string,
+  aliases: Record<string, EntityKind> = TYPE_ALIASES,
+  opts?: { defaultScope?: DefaultScope },
+): SplitResult {
+  const defaultScope: DefaultScope = opts?.defaultScope ?? 'all';
+
+  // `all:` escape — a leading `all:` searches everything, overriding defaultScope.
+  const escapeMatch = input.match(/^\s*all:\s*/i);
+  const escaped = escapeMatch !== null;
+  const effective = escaped ? input.slice(escapeMatch[0].length) : input;
+
+  const base = splitCore(effective, aliases);
+  const result: SplitResult = { aqlExpr: base.aqlExpr, fuzzy: base.fuzzy };
+
+  // Default-scope injection: when no explicit kind: gate is present, the box is
+  // non-empty, and we're not on the all: escape, prepend kind:<scope>. The implicit
+  // case AND-joins flatly; an explicit-boolean base is parenthesized to preserve
+  // precedence.
+  if (defaultScope !== 'all' && !escaped && input.trim() !== '' && !hasKindAtom(base.aqlExpr)) {
+    const gate = `kind:${defaultScope}`;
+    result.aqlExpr = base.aqlExpr
+      ? base.explicit
+        ? `${gate} (${base.aqlExpr})`
+        : `${gate} ${base.aqlExpr}`
+      : gate;
+  }
+  return result;
+}
+
+/** True when `aqlExpr` already contains an explicit `kind:` atom (avoids double-gating). */
+function hasKindAtom(aqlExpr: string): boolean {
+  if (!aqlExpr) return false;
+  let toks: Token[];
+  try {
+    toks = lex(aqlExpr);
+  } catch {
+    return false;
+  }
+  for (let k = 0; k < toks.length - 1; k++) {
+    if (toks[k].type === 'IDENT' && toks[k].text.toLowerCase() === 'kind' && toks[k + 1].type === 'COLON') {
+      return true;
+    }
+  }
+  return false;
+}
+
+function splitCore(
+  input: string,
+  aliases: Record<string, EntityKind>,
+): SplitResult & { explicit: boolean } {
   let tokens: Token[];
   try {
     tokens = lex(input);
   } catch (err) {
-    if (err instanceof LexError) return { aqlExpr: '', fuzzy: normalizeWs(input) };
+    if (err instanceof LexError) return { aqlExpr: '', fuzzy: normalizeWs(input), explicit: false };
     throw err;
   }
   const n = tokens.length; // tokens[n-1] is EOF with pos === input.length
@@ -138,10 +192,10 @@ export function splitPaletteQuery(input: string): SplitResult {
   if (explicit) {
     // Expand aliases, then keep the whole expression only if it compiles; else it
     // is not a usable gate, so fall back to ranking the raw input as free text.
-    const expr = normalizeWs(expandAliasesInSource(input, tokens, n));
+    const expr = normalizeWs(expandAliasesInSource(input, tokens, n, aliases));
     return compileQuery(expr, PALETTE_FIELDS).query
-      ? { aqlExpr: expr, fuzzy: '' }
-      : { aqlExpr: '', fuzzy: normalizeWs(input) };
+      ? { aqlExpr: expr, fuzzy: '', explicit: true }
+      : { aqlExpr: '', fuzzy: normalizeWs(input), explicit: true };
   }
 
   const aqlParts: string[] = [];
@@ -159,7 +213,7 @@ export function splitPaletteQuery(input: string): SplitResult {
   while (i < n - 1) {
     // 1. Type-alias prefix (optionally negated): [MINUS|NOT]? IDENT(alias) COLON
     //    → [-|NOT ]kind:<entityType>. Any value after the colon is reclassified.
-    const alias = matchAlias(tokens, i);
+    const alias = matchAlias(tokens, i, aliases);
     if (alias) {
       flushFree(i);
       aqlParts.push(alias.atom);
@@ -191,7 +245,7 @@ export function splitPaletteQuery(input: string): SplitResult {
   }
   flushFree(n - 1);
 
-  return { aqlExpr: aqlParts.join(' '), fuzzy: fuzzyParts.join(' ') };
+  return { aqlExpr: aqlParts.join(' '), fuzzy: fuzzyParts.join(' '), explicit: false };
 }
 
 /**
@@ -200,7 +254,11 @@ export function splitPaletteQuery(input: string): SplitResult {
  * token index, or null. The value after the colon is intentionally NOT consumed —
  * it is reclassified by the main walk (bare word → free text; atom → its own atom).
  */
-function matchAlias(tokens: Token[], start: number): { atom: string; end: number } | null {
+function matchAlias(
+  tokens: Token[],
+  start: number,
+  aliases: Record<string, EntityKind>,
+): { atom: string; end: number } | null {
   let j = start;
   let neg = '';
   if (tokens[j].type === 'MINUS') {
@@ -212,7 +270,7 @@ function matchAlias(tokens: Token[], start: number): { atom: string; end: number
   }
   const ident = tokens[j];
   if (!ident || ident.type !== 'IDENT') return null;
-  const entity = TYPE_ALIASES[ident.text.toLowerCase()];
+  const entity = aliases[ident.text.toLowerCase()];
   if (!entity || tokens[j + 1]?.type !== 'COLON') return null;
   return { atom: `${neg}kind:${entity}`, end: j + 2 };
 }
@@ -265,17 +323,22 @@ function matchFieldAtom(tokens: Token[], start: number, n: number): number | nul
  * `(a:)` gate correctly. The trailing space keeps a glued value (`a:payment`)
  * from fusing onto the expansion.
  */
-function expandAliasesInSource(input: string, tokens: Token[], n: number): string {
+function expandAliasesInSource(
+  input: string,
+  tokens: Token[],
+  n: number,
+  aliases: Record<string, EntityKind>,
+): string {
   let out = '';
   let cursor = 0;
   for (let k = 0; k < n; k++) {
     const t = tokens[k];
     if (
       t.type === 'IDENT' &&
-      Object.prototype.hasOwnProperty.call(TYPE_ALIASES, t.text.toLowerCase()) &&
+      Object.prototype.hasOwnProperty.call(aliases, t.text.toLowerCase()) &&
       tokens[k + 1]?.type === 'COLON'
     ) {
-      out += input.slice(cursor, t.pos) + `kind:${TYPE_ALIASES[t.text.toLowerCase()]} `;
+      out += input.slice(cursor, t.pos) + `kind:${aliases[t.text.toLowerCase()]} `;
       cursor = tokens[k + 1].pos + 1; // skip the alias IDENT and its colon
     }
   }

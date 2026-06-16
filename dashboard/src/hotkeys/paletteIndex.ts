@@ -55,6 +55,13 @@ interface BuildInput {
   servers?: TrackedSession[];
   todos?: Array<TodoItem & { workspace?: string }>;
   wsPrefix: string;
+  /**
+   * Fold external IDs into the index + carry the `externalIds` fact on entries.
+   * When false, both are dropped — which makes the `externalid:`/`jira:` haystack
+   * accessors (in paletteQuery.ts) return '' so those atoms (and bare-ID fuzzy
+   * hits) match nothing. Defaults to true (omitted === enabled).
+   */
+  externalIds?: boolean;
 }
 
 /**
@@ -76,6 +83,14 @@ function externalIdKeywords(ids?: ExternalIdInfo[]): string[] {
 export function buildIndex(input: BuildInput): PaletteEntry[] {
   const out: PaletteEntry[] = [];
 
+  // External-ID gating (default on). When off, drop both the fuzzy keywords and
+  // the `externalIds` entry fact so `externalid:`/`jira:`/bare-ID all match nothing.
+  const indexExternalIds = input.externalIds !== false;
+  const idKeywords = (ids?: ExternalIdInfo[]): string[] =>
+    indexExternalIds ? externalIdKeywords(ids) : [];
+  const idField = (ids?: ExternalIdInfo[]): ExternalIdInfo[] | undefined =>
+    indexExternalIds ? ids : undefined;
+
   for (const p of STATIC_PAGES) {
     out.push({
       type: 'page',
@@ -94,11 +109,11 @@ export function buildIndex(input: BuildInput): PaletteEntry[] {
       id: `project-${m.slug}`,
       title: m.title,
       subtitle: m.slug,
-      keywords: [...(m.tags ?? []), ...externalIdKeywords(m.externalIds)],
+      keywords: [...(m.tags ?? []), ...idKeywords(m.externalIds)],
       route: `${projectWs}/projects/${m.slug}`,
       tags: m.tags,
       project: m.slug,
-      externalIds: m.externalIds,
+      externalIds: idField(m.externalIds),
     });
     out.push({
       type: 'todo',
@@ -117,7 +132,7 @@ export function buildIndex(input: BuildInput): PaletteEntry[] {
       id: a.projectSlug === null ? `assignment-standalone-${a.id}` : `assignment-${a.projectSlug}-${a.slug}`,
       title: a.title,
       subtitle: `${a.projectTitle} \u00B7 ${a.status}`,
-      keywords: [a.projectSlug ?? 'standalone', a.assignee ?? '', ...externalIdKeywords(a.externalIds)].filter(
+      keywords: [a.projectSlug ?? 'standalone', a.assignee ?? '', ...idKeywords(a.externalIds)].filter(
         (s): s is string => Boolean(s),
       ),
       route: a.projectSlug === null
@@ -128,7 +143,7 @@ export function buildIndex(input: BuildInput): PaletteEntry[] {
       assignee: a.assignee,
       assignmentType: a.type,
       project: a.projectSlug,
-      externalIds: a.externalIds,
+      externalIds: idField(a.externalIds),
     });
   }
 

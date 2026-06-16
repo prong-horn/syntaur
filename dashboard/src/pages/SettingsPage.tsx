@@ -8,6 +8,7 @@ import { HotkeyBindingsSection } from './HotkeyBindingsSection';
 import { ViewDefaultsSection } from './ViewDefaultsSection';
 import { AgentsSection } from './AgentsSection';
 import { TerminalSection } from './TerminalSection';
+import { SearchSection } from './SearchSection';
 import { WorkspaceVisibilitySection } from './WorkspaceVisibilitySection';
 
 export function SettingsPage() {
@@ -134,6 +135,8 @@ export function SettingsPage() {
       <HotkeyBindingsSection />
 
       <TerminalSection />
+
+      <SearchSection />
 
       <WorkspaceVisibilitySection />
 

@@ -170,6 +170,11 @@ export interface HotkeyBindingsConfig {
 }
 
 import { TERMINAL_CHOICES, type TerminalChoice } from './terminal-schema.js';
+import {
+  DEFAULT_SEARCH_CONFIG,
+  normalizeSearchConfig,
+  type SearchConfig,
+} from './search-schema.js';
 export { TERMINAL_CHOICES, type TerminalChoice };
 
 import {
@@ -207,6 +212,7 @@ export interface SyntaurConfig {
   theme: ThemeConfig | null;
   hotkeys: HotkeyBindingsConfig | null;
   terminal: TerminalChoice | null;
+  searchConfig: SearchConfig | null;
   workspaceVisibility: WorkspaceVisibilityConfig;
 }
 
@@ -239,6 +245,7 @@ const DEFAULT_CONFIG: SyntaurConfig = {
   theme: null,
   hotkeys: null,
   terminal: null,
+  searchConfig: null,
   workspaceVisibility: {
     hidden: [],
   },
@@ -1266,7 +1273,10 @@ function stripTopLevelBlock(fmBlock: string, key: string): string {
     return fmBlock.replace(/\n+$/, '');
   }
 
-  const startIdx = fmBlock.indexOf(blockStart[0]);
+  // Regex match offset, not indexOf — the `${key}:` text can appear earlier inside
+  // another block's value (e.g. `search:` in an AQL string), and indexOf would cut
+  // from there, corrupting unrelated frontmatter.
+  const startIdx = blockStart.index ?? 0;
   const before = fmBlock.slice(0, startIdx);
   const after = fmBlock.slice(startIdx + blockStart[0].length);
   const remaining = after.split('\n');
@@ -1759,6 +1769,135 @@ export async function deleteStatusConfig(): Promise<void> {
   await writeFileForce(configPath, newContent);
 }
 
+/**
+ * Parse the nested `search:` block from raw config.md content. Returns null when
+ * absent (caller falls back to DEFAULT_SEARCH_CONFIG). Mirrors parseStatusConfig's
+ * manual block walk: `defaultScope`/`externalIds` are scalars, `aliases:` is a
+ * one-level prefix→kind map. Tolerant — invalid rows are dropped by
+ * normalizeSearchConfig.
+ */
+export function parseSearchConfig(content: string): SearchConfig | null {
+  const match = content.match(/^---\n([\s\S]*?)\n---/);
+  if (!match) return null;
+  const fmBlock = match[1];
+
+  const blockStart = fmBlock.match(/^search:\s*$/m);
+  if (!blockStart) return null;
+
+  // Use the regex match offset (NOT indexOf) — the literal text `search:` can
+  // appear earlier inside another block's value (e.g. an AQL derive condition
+  // `when: "search:foo"`), and indexOf would slice from there.
+  const startIdx = (blockStart.index ?? 0) + blockStart[0].length;
+  const lines = fmBlock.slice(startIdx).split('\n');
+
+  const unquote = (v: string): string => {
+    const t = v.trim();
+    if ((t.startsWith('"') && t.endsWith('"')) || (t.startsWith("'") && t.endsWith("'"))) {
+      return t.slice(1, -1);
+    }
+    return t;
+  };
+
+  const raw: { defaultScope?: string; aliases?: Record<string, string>; externalIds?: boolean } = {};
+  let inAliases = false;
+
+  for (const line of lines) {
+    if (line.trim() === '') continue;
+    const trimmed = line.trimStart();
+    const indent = line.length - trimmed.length;
+    if (indent === 0) break; // dedent out of the search: block
+
+    if (indent <= 2) {
+      inAliases = false;
+      if (trimmed === 'aliases:') {
+        inAliases = true;
+        raw.aliases = {};
+        continue;
+      }
+      const ci = trimmed.indexOf(':');
+      if (ci <= 0) continue;
+      const key = trimmed.slice(0, ci).trim();
+      const value = unquote(trimmed.slice(ci + 1).trim());
+      if (key === 'defaultScope') {
+        raw.defaultScope = value;
+      } else if (key === 'externalIds') {
+        // Only recognize real booleans; anything else stays undefined so
+        // normalizeSearchConfig falls back to the default (true).
+        const v = value.toLowerCase();
+        if (v === 'true') raw.externalIds = true;
+        else if (v === 'false') raw.externalIds = false;
+      }
+    } else if (inAliases) {
+      const ci = trimmed.indexOf(':');
+      if (ci <= 0) continue;
+      raw.aliases ??= {};
+      raw.aliases[trimmed.slice(0, ci).trim()] = unquote(trimmed.slice(ci + 1).trim());
+    }
+  }
+
+  return normalizeSearchConfig(raw);
+}
+
+/** Serialize a SearchConfig into the `search:` frontmatter block (no trailing newline). */
+export function serializeSearchConfig(search: SearchConfig): string {
+  const cfg = normalizeSearchConfig(search);
+  const lines: string[] = ['search:'];
+  lines.push(`  defaultScope: ${cfg.defaultScope}`);
+  lines.push('  aliases:');
+  for (const [prefix, kind] of Object.entries(cfg.aliases)) {
+    lines.push(`    ${prefix}: ${kind}`);
+  }
+  lines.push(`  externalIds: ${cfg.externalIds ? 'true' : 'false'}`);
+  return lines.join('\n');
+}
+
+export async function writeSearchConfig(search: SearchConfig): Promise<void> {
+  const configPath = resolve(syntaurRoot(), 'config.md');
+  const searchBlock = serializeSearchConfig(search);
+
+  if (!(await fileExists(configPath))) {
+    const content = `---\nversion: "2.0"\ndefaultProjectDir: ~/projects\n${searchBlock}\n---\n`;
+    await writeFileForce(configPath, content);
+    return;
+  }
+
+  const existing = await readFile(configPath, 'utf-8');
+  const fmMatch = existing.match(/^(---\n)([\s\S]*?)\n(---)/);
+  if (!fmMatch) {
+    const content = `---\nversion: "2.0"\n${searchBlock}\n---\n${existing}`;
+    await writeFileForce(configPath, content);
+    return;
+  }
+
+  const fmBlock = fmMatch[2];
+  const afterFrontmatter = existing.slice(fmMatch[0].length);
+  const cleanedFm = stripTopLevelBlock(fmBlock, 'search');
+
+  const newContent = `---\n${cleanedFm}\n${searchBlock}\n---${afterFrontmatter}`;
+  await writeFileForce(configPath, newContent);
+}
+
+export async function deleteSearchConfig(): Promise<void> {
+  const configPath = resolve(syntaurRoot(), 'config.md');
+  if (!(await fileExists(configPath))) return;
+
+  const existing = await readFile(configPath, 'utf-8');
+  const fmMatch = existing.match(/^(---\n)([\s\S]*?)\n(---)/);
+  if (!fmMatch) return;
+
+  const fmBlock = fmMatch[2];
+  const afterFrontmatter = existing.slice(fmMatch[0].length);
+  const cleanedFm = stripTopLevelBlock(fmBlock, 'search');
+
+  const newContent = `---\n${cleanedFm}\n---${afterFrontmatter}`;
+  await writeFileForce(configPath, newContent);
+}
+
+/** The configured search settings, or the built-in defaults when unset. */
+export function getSearchConfig(config: SyntaurConfig): SearchConfig {
+  return config.searchConfig ?? DEFAULT_SEARCH_CONFIG;
+}
+
 export async function updateIntegrationConfig(
   integrations: Partial<IntegrationConfig>,
 ): Promise<void> {
@@ -1955,6 +2094,7 @@ export async function readConfig(): Promise<SyntaurConfig> {
         return null;
       }
     })(),
+    searchConfig: parseSearchConfig(content),
     workspaceVisibility: parseWorkspaceVisibilityConfig(fmBlock),
   };
 }

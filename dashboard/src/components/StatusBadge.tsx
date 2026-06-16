@@ -11,14 +11,17 @@ import {
   StopCircle,
 } from 'lucide-react';
 import { cn } from '../lib/utils';
-
-const STATUS_PENDING_CLASS = 'border-status-pending-foreground/30 bg-status-pending text-status-pending-foreground';
-const STATUS_IN_PROGRESS_CLASS = 'border-status-in-progress-foreground/30 bg-status-in-progress text-status-in-progress-foreground';
-const STATUS_BLOCKED_CLASS = 'border-status-blocked-foreground/30 bg-status-blocked text-status-blocked-foreground';
-const STATUS_REVIEW_CLASS = 'border-status-review-foreground/30 bg-status-review text-status-review-foreground';
-const STATUS_COMPLETED_CLASS = 'border-status-completed-foreground/30 bg-status-completed text-status-completed-foreground';
-const STATUS_FAILED_CLASS = 'border-status-failed-foreground/30 bg-status-failed text-status-failed-foreground';
-const STATUS_ARCHIVED_CLASS = 'border-status-archived-foreground/30 bg-status-archived text-status-archived-foreground';
+import { useStatusConfig } from '../hooks/useStatusConfig';
+import {
+  resolveStatusAppearance,
+  STATUS_PENDING_CLASS,
+  STATUS_IN_PROGRESS_CLASS,
+  STATUS_BLOCKED_CLASS,
+  STATUS_REVIEW_CLASS,
+  STATUS_COMPLETED_CLASS,
+  STATUS_FAILED_CLASS,
+  STATUS_ARCHIVED_CLASS,
+} from '../lib/statusMeta';
 
 export const STATUS_META = {
   draft: {
@@ -124,17 +127,24 @@ export function getStatusMeta(status: string): StatusMeta {
 }
 
 /**
- * Tailwind class string for the pill chrome — shared by the read-only
- * StatusBadge and the interactive StatusPillPicker trigger so they stay
- * visually identical.
+ * Shared pill chrome (shape + border-width + padding), WITHOUT any color. Callers
+ * append a color class and/or an inline style. Shared by the read-only StatusBadge
+ * and the interactive StatusPillPicker trigger so they stay visually identical.
+ */
+export const STATUS_PILL_BASE =
+  'inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border px-2.5 py-0.5 text-xs font-medium tracking-normal shadow-[inset_0_0_0_1px_oklch(100%_0_0_/_0)] dark:shadow-[inset_0_0_0_1px_oklch(100%_0_0_/_0.04)]';
+
+/**
+ * Config-less pill class string (built-in colors only). Retained for direct
+ * callers; the config-driven path goes through {@link resolveStatusAppearance}.
  */
 export function getStatusPillClassName(status: string, extra?: string): string {
-  return cn(
-    'inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border px-2.5 py-0.5 text-xs font-medium tracking-normal',
-    'shadow-[inset_0_0_0_1px_oklch(100%_0_0_/_0)] dark:shadow-[inset_0_0_0_1px_oklch(100%_0_0_/_0.04)]',
-    getStatusMeta(status).className,
-    extra,
-  );
+  return cn(STATUS_PILL_BASE, getStatusMeta(status).className, extra);
+}
+
+/** Lucide icon for a status — built-in icon when known, else a generic dot. */
+export function getStatusIcon(status: string): typeof CircleDot {
+  return STATUS_META[status as keyof typeof STATUS_META]?.icon ?? CircleDot;
 }
 
 export function StatusBadge({
@@ -143,14 +153,18 @@ export function StatusBadge({
   showIcon = true,
   progress,
 }: StatusBadgeProps) {
-  const meta = getStatusMeta(status);
-  const Icon = meta.icon;
+  const config = useStatusConfig();
+  const appearance = resolveStatusAppearance(config.statuses, status);
+  const Icon = getStatusIcon(status);
+  const label = appearance.label;
+  const baseDescription =
+    config.statuses.find((s) => s.id === status)?.description ?? getStatusDescription(status);
 
   const hasProgress = progress && progress.total > 0;
   const pct = hasProgress ? Math.min(1, Math.max(0, progress.checked / progress.total)) : 0;
   const description = hasProgress
-    ? `${meta.label} — ${meta.description} (${progress.checked}/${progress.total} criteria)`
-    : `${meta.label} — ${meta.description}`;
+    ? `${label} — ${baseDescription} (${progress.checked}/${progress.total} criteria)`
+    : `${label} — ${baseDescription}`;
 
   const iconNode = showIcon ? (
     hasProgress ? (
@@ -181,9 +195,13 @@ export function StatusBadge({
   ) : null;
 
   return (
-    <span title={description} className={getStatusPillClassName(status, className)}>
+    <span
+      title={description}
+      className={cn(STATUS_PILL_BASE, appearance.className, className)}
+      style={appearance.style}
+    >
       {iconNode}
-      <span className="min-w-0 truncate">{meta.label}</span>
+      <span className="min-w-0 truncate">{label}</span>
     </span>
   );
 }

@@ -18,6 +18,7 @@ export default defineConfig({
       '@shared/saved-view-builder': resolve(__dirname, '../src/utils/saved-view-builder.ts'),
       '@shared/agents-schema': resolve(__dirname, '../src/utils/agents-schema.ts'),
       '@shared/terminal-schema': resolve(__dirname, '../src/utils/terminal-schema.ts'),
+      '@shared/search-schema': resolve(__dirname, '../src/utils/search-schema.ts'),
       '@shared/branch-name': resolve(__dirname, '../src/utils/branch-name.ts'),
       '@shared/todo-sections': resolve(__dirname, '../src/utils/todoSections.ts'),
       '@shared/workspace-visibility-schema': resolve(
