@@ -7,6 +7,7 @@ import { writeJob, readJob } from '../schedules/store.js';
 import { markLaunching, claimJob } from '../schedules/attempt.js';
 import type { LaunchPlan } from '../launch/plan.js';
 import type { LaunchHandle } from '../launch/execute.js';
+import { freshAttempt, defaultLimits } from '../schedules/types.js';
 import { sampleJob, sampleAssignment, statusEntry } from './schedules-helpers.js';
 
 const fakePlan = (terminal = 'terminal-app'): LaunchPlan =>
@@ -111,6 +112,51 @@ describe('runTick', () => {
     const res = await runTick(happyDeps('2026-06-15T04:00:00Z', { killSwitch: () => true }));
     expect(res.fired).toEqual([]);
     expect((await readJob(job.id))?.attempt.state).toBe('eligible');
+  });
+
+  it('records stuck:max-runtime for an overrun running job with a dead session (B8)', async () => {
+    // A running one-shot whose maxRuntime has elapsed and whose session is dead.
+    const job = await writeJob(
+      sampleJob({
+        trigger: { kind: 'at', at: '2026-06-15T03:00:00Z' },
+        limits: { ...defaultLimits(), maxRuntimeMs: 60_000 },
+        attempt: {
+          ...freshAttempt(),
+          state: 'running',
+          sessionId: 'sess-dead',
+          launchPid: 4242,
+          runningSince: '2026-06-15T03:00:00Z',
+        },
+      }),
+    );
+    // 1h later — well past the 60s maxRuntime — and the session is dead.
+    const res = await runTick(happyDeps('2026-06-15T04:00:00Z', { isSessionLive: () => false }));
+    expect(res.stuck).toContain(job.id);
+    const after = await readJob(job.id);
+    expect(after?.attempt.lastError).toBe('stuck:max-runtime');
+    // Mechanism, not policy: the job is LEFT in 'running' (no terminal state).
+    expect(after?.attempt.state).toBe('running');
+  });
+
+  it('does NOT flag a still-live overrun running job (B8)', async () => {
+    const job = await writeJob(
+      sampleJob({
+        trigger: { kind: 'at', at: '2026-06-15T03:00:00Z' },
+        limits: { ...defaultLimits(), maxRuntimeMs: 60_000 },
+        attempt: {
+          ...freshAttempt(),
+          state: 'running',
+          sessionId: 'sess-live',
+          launchPid: 4242,
+          runningSince: '2026-06-15T03:00:00Z',
+        },
+      }),
+    );
+    const res = await runTick(happyDeps('2026-06-15T04:00:00Z', { isSessionLive: () => true }));
+    expect(res.stuck).not.toContain(job.id);
+    const after = await readJob(job.id);
+    expect(after?.attempt.lastError).toBeNull();
+    expect(after?.attempt.state).toBe('running');
   });
 
   it('reaps a launching job whose claim expired', async () => {

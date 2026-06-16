@@ -21,6 +21,7 @@ import {
   rescheduleJob,
 } from '../schedules/attempt.js';
 import { runTick } from '../schedules/tick.js';
+import { isScheduledSessionLive } from '../schedules/liveness.js';
 import {
   assertUnattendedTerminalSupported,
 } from '../schedules/unattended.js';
@@ -306,7 +307,7 @@ scheduleCommand
   .description('Run one scheduler tick (the one authority): evaluate, fire due, reap')
   .action(
     wrap(async () => {
-      const r = await runTick({ log: (m) => console.error(m) });
+      const r = await runTick({ log: (m) => console.error(m), isSessionLive: isScheduledSessionLive });
       console.log(
         `tick: evaluated ${r.evaluated}, fired ${r.fired.length}, failed ${r.failed.length}, reaped ${r.reaped.length}, stuck ${r.stuck.length}`,
       );
@@ -318,7 +319,7 @@ scheduleCommand
   .description('Internal: fire currently-due jobs without reaping (accelerator path)')
   .action(
     wrap(async () => {
-      const r = await runTick({ reap: false });
+      const r = await runTick({ reap: false, isSessionLive: isScheduledSessionLive });
       console.log(`fire-due: fired ${r.fired.length}, failed ${r.failed.length}`);
     }),
   );
