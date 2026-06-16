@@ -69,22 +69,28 @@ export function TopBar({
               {formatPatternForDisplay('Mod+k')}
             </span>
           </button>
-          <Link className="shell-action" to="/help">
+          {/* Help is reachable from the sidebar/hamburger; hide it from the top
+              bar on narrow screens so the action row doesn't overflow/clip. */}
+          <Link className="shell-action hidden sm:inline-flex" to="/help">
             Help
           </Link>
-          <Link className="shell-action" to={`${wsPrefix}/create/project`}>
+          <Link className="shell-action" to={`${wsPrefix}/create/project`} aria-label="New Project">
             <Plus className="h-4 w-4" />
-            <span>New Project</span>
+            <span className="hidden sm:inline">New Project</span>
           </Link>
           {projectSlug ? (
-            <Link className="shell-action" to={`${wsPrefix}/projects/${projectSlug}/create/assignment`}>
+            <Link
+              className="shell-action"
+              to={`${wsPrefix}/projects/${projectSlug}/create/assignment`}
+              aria-label="New Assignment"
+            >
               <Plus className="h-4 w-4" />
-              <span>New Assignment</span>
+              <span className="hidden sm:inline">New Assignment</span>
             </Link>
           ) : null}
           <button type="button" onClick={toggleTheme} className="shell-action" aria-label="Toggle theme">
             {resolvedTheme === 'dark' ? <SunMedium className="h-4 w-4" /> : <MoonStar className="h-4 w-4" />}
-            <span>{resolvedTheme === 'dark' ? 'Light' : 'Dark'}</span>
+            <span className="hidden sm:inline">{resolvedTheme === 'dark' ? 'Light' : 'Dark'}</span>
           </button>
         </div>
       </div>

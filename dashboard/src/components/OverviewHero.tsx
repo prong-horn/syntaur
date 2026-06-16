@@ -44,7 +44,7 @@ export function OverviewHero({ hero, itemsById }: OverviewHeroProps) {
       aria-labelledby="overview-hero-title"
       className="rounded-xl border border-primary/20 bg-primary/5 p-6 shadow-sm"
     >
-      <p className="eyebrow">What needs you today</p>
+      <p className="eyebrow">Top priority</p>
       <h2 id="overview-hero-title" className="mt-2 text-2xl font-semibold tracking-tight text-foreground">
         {headline}
       </h2>
