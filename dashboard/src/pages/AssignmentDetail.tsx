@@ -207,7 +207,7 @@ export function AssignmentDetail() {
   }
 
   if (error || !assignment || !slug || !aslug) {
-    return <ErrorState error={error || 'Assignment not found.'} />;
+    return <ErrorState error={error || 'Assignment not found.'} onRetry={refetch} />;
   }
 
   const projectSlug = slug;

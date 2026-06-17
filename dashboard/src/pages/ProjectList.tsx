@@ -133,7 +133,7 @@ export function ProjectList() {
   }
 
   if (error || !projects) {
-    return <ErrorState error={error || 'Project list is unavailable.'} />;
+    return <ErrorState error={error || 'Project list is unavailable.'} onRetry={refetch} />;
   }
 
   const tags = Array.from(new Set(projects.flatMap((project) => project.tags))).sort();

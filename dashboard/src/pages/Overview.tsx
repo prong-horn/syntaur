@@ -223,7 +223,7 @@ export function Overview() {
       {overview ? (
         <OverviewHero hero={overview.hero} itemsById={itemsById} />
       ) : error ? (
-        <ErrorState error={error} />
+        <ErrorState error={error} onRetry={refetch} />
       ) : (
         <LoadingState label="Loading overview…" />
       )}

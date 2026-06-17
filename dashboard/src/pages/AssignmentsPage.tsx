@@ -1105,7 +1105,7 @@ export function AssignmentsPage() {
   }
 
   if (error || !data) {
-    return <ErrorState error={error || 'Assignments board is unavailable.'} />;
+    return <ErrorState error={error || 'Assignments board is unavailable.'} onRetry={refetch} />;
   }
 
   async function applyMove({
