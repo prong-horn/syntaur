@@ -78,6 +78,10 @@ export function getSidebarSection(pathname: string): SidebarSection | null {
     return '/inventories';
   }
 
+  if (normalized.startsWith('/schedules')) {
+    return '/schedules';
+  }
+
   if (normalized.startsWith('/usage')) {
     return '/usage';
   }
@@ -199,6 +203,9 @@ export function buildShellMeta(pathname: string): ShellMeta {
   } else if (parts[0] === 'inventories') {
     title = 'Inventories';
     breadcrumbs.push({ label: 'Inventories', path: `${workspacePrefix}/inventories` });
+  } else if (parts[0] === 'schedules') {
+    title = 'Schedules';
+    breadcrumbs.push({ label: 'Schedules', path: `${workspacePrefix}/schedules` });
   } else if (parts[0] === 'usage') {
     title = 'Usage';
     breadcrumbs.push({ label: 'Usage', path: `${workspacePrefix}/usage` });
