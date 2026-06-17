@@ -119,4 +119,39 @@ Body.
     expect(next).toContain('customField: keep-me');
     expect(next).toMatch(/workspace:[\s\S]*?\n  branch: new/);
   });
+
+  // AC1: findWorkspaceBlock must use the regex match offset, not
+  // indexOf('workspace:'), so an earlier scalar containing the substring
+  // 'workspace:' (e.g. a title) does not shift the splice into the wrong place.
+  it('updates the real workspace block even when the title contains "workspace:"', () => {
+    const TRICKY = `---
+id: tw
+slug: tricky-ws
+title: "Refactor the workspace: module"
+status: pending
+priority: medium
+created: "2026-04-23T12:00:00Z"
+updated: "2026-04-23T12:00:00Z"
+workspace:
+  repository: /tmp/r
+  worktreePath: /tmp/w
+  branch: old
+  parentBranch: main
+tags: []
+---
+
+Body.
+`;
+    const next = updateAssignmentWorkspace(TRICKY, { branch: 'feature/new' });
+    // Title scalar is untouched (not torn by a mis-offset splice).
+    expect(next).toContain('title: "Refactor the workspace: module"');
+    const fm = parseAssignmentFrontmatter(next);
+    expect(fm.title).toBe('Refactor the workspace: module');
+    // The REAL workspace block's branch was updated, the old value is gone.
+    expect(next).toMatch(/^  branch: feature\/new$/m);
+    expect(next).not.toMatch(/^  branch: old$/m);
+    expect(fm.workspace.branch).toBe('feature/new');
+    // Result still parses cleanly end-to-end.
+    expect(() => parseAssignmentFrontmatter(next)).not.toThrow();
+  });
 });

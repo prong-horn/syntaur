@@ -371,8 +371,16 @@ function formatYamlValue(value: string | boolean | null): string {
   if (/^(null|~|true|false|-?\d+(\.\d+)?)$/i.test(value)) {
     return `"${value}"`;
   }
-  // Quote values containing YAML-special characters that could cause parse issues
-  if (/[:#{}[\],&*?|>!%@\`]/.test(value) || /^\s|\s$/.test(value) || value === '') {
+  // Quote values containing YAML-special characters that could cause parse
+  // issues, OR a value that is itself wrapped in quote chars (e.g.
+  // `"connection refused"` / `'x'`) — otherwise parseSimpleValue strips the
+  // literal surrounding quotes on read and the value does not round-trip.
+  if (
+    /[:#{}[\],&*?|>!%@\`]/.test(value) ||
+    /^\s|\s$/.test(value) ||
+    /^["']|["']$/.test(value) ||
+    value === ''
+  ) {
     const escaped = value.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
     return `"${escaped}"`;
   }
@@ -431,7 +439,10 @@ function findWorkspaceBlock(
 ): { headerStart: number; bodyStart: number; bodyEnd: number } | null {
   const headerMatch = fmBlock.match(/^workspace:\s*$/m);
   if (!headerMatch) return null;
-  const headerStart = fmBlock.indexOf(headerMatch[0]);
+  // Regex match offset, not indexOf — guards against an earlier scalar value
+  // (e.g. a title) containing the substring "workspace:". Mirrors
+  // findStatusHistoryBlock / parseStatusHistory.
+  const headerStart = headerMatch.index ?? fmBlock.indexOf(headerMatch[0]);
   const bodyStart = headerStart + headerMatch[0].length + 1; // skip the trailing \n
   const after = fmBlock.slice(bodyStart);
   const lines = after.split('\n');
@@ -521,11 +532,13 @@ export function renameStatusInHistory(
   const esc = oldId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   // phaseFrom/phaseTo also hold status ids (phase namespace = status definitions),
   // so a rename must relabel them too. Disposition keys hold dimension values
-  // (active/blocked/...), not status ids — excluded. Values may be QUOTED when
-  // the id is a YAML keyword/number look-alike (codex r3 finding 3) — match
-  // both forms; the replacement is written unquoted only when safe.
+  // (active/blocked/...), not status ids — excluded. The OLD value may be QUOTED
+  // when its id is a YAML keyword/number look-alike — match both forms with
+  // ("?)…\2. The NEW value is (re)serialized via formatYamlValue so it is quoted
+  // exactly when needed (e.g. newId `null`/`true`/`42`), instead of reusing the
+  // old value's quote state (which dropped/mistyped keyword-id entries on parse).
   const re = new RegExp(`^(\\s+(?:from|to|phaseFrom|phaseTo):[ \\t]*)("?)${esc}\\2[ \\t]*$`, 'gm');
-  const newFm = fmMatch[2].replace(re, (_m, prefix: string, quote: string) => `${prefix}${quote}${newId}${quote}`);
+  const newFm = fmMatch[2].replace(re, (_m, prefix: string) => `${prefix}${formatYamlValue(newId)}`);
   return `${fmMatch[1]}${newFm}${fmMatch[3]}${content.slice(fmMatch[0].length)}`;
 }
 
