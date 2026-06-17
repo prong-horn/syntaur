@@ -185,6 +185,98 @@ Manage plan files for an assignment.
 - `syntaur plan create [--assignment <slug> [--project <slug>]] [--force]` — write the initial `plan.md` and append the four-todo cycle to `assignment.md ## Todos`. Refuses to overwrite an existing `plan.md` without `--force`.
 - `syntaur plan version [--assignment <slug> [--project <slug>]] [--force]` — create the next `plan-v<N>.md`, supersede the prior cycle, and carry forward unchecked tasks.
 
+## `syntaur timeline <assignment>`
+
+Show the chronological audit event log for one assignment — who changed what, when, and what the value moved from→to — newest first.
+
+```
+syntaur timeline <assignment> [options]
+```
+
+`<assignment>` is an assignment slug (paired with `--project`) or a standalone UUID.
+
+### Options
+
+- `--project <slug>` — Project the assignment belongs to (required for project-scoped assignments).
+- `--since <date>` — Only show events at or after this UTC ISO timestamp (inclusive: `at >= since`).
+- `--type <list>` — Comma-separated event-type filter (e.g. `status-change,plan-approval`).
+- `--limit <n>` — Maximum number of events to show (default: 50).
+- `--json` — Emit a JSON array instead of a table.
+
+### Tracked event types
+
+| Event type | Triggered when |
+|---|---|
+| `status-change` | Assignment status moves from one value to another |
+| `assignee-change` | Assignee is set, changed, or cleared |
+| `priority-change` | Priority field changes |
+| `archived` / `restored` | Assignment is archived or un-archived |
+| `plan-approval` | A plan file is approved or rejected |
+| `fact-set` | A structured fact is written via `syntaur fact set` |
+| `attestation` | An attestation is recorded |
+| `comment-added` | A comment is appended |
+| `comment-resolved` | A comment is resolved |
+
+### JSON output shape
+
+```json
+[
+  {
+    "id": "evt_01j…",
+    "type": "status-change",
+    "at": "2026-06-15T14:32:00.000Z",
+    "actor": "claude",
+    "from": "in-progress",
+    "to": "review",
+    "note": null
+  }
+]
+```
+
+The same events are surfaced live in the dashboard's **Activity** tab for the assignment.
+
+### Examples
+
+```bash
+# Show the full event log for an assignment
+syntaur timeline add-oauth --project my-api
+
+# Only status-change events since a specific date
+syntaur timeline add-oauth --project my-api \
+  --type status-change --since 2026-06-01T00:00:00Z
+
+# Emit JSON, capped at 10 events
+syntaur timeline add-oauth --project my-api --json --limit 10
+```
+
+## `syntaur migrate-events`
+
+One-time backfill that synthesizes audit events from existing `statusHistory` and `planApproval` fields already present in `assignment.md` files. Dry-run by default; pass `--apply` to write.
+
+```
+syntaur migrate-events [options]
+```
+
+The command is **idempotent**: each synthesized event is stored with a deterministic `source_key` derived from the originating record, so re-running the command after `--apply` inserts 0 new events.
+
+### Options
+
+- `--dir <path>` — Override the default project directory (defaults to `~/.syntaur`).
+- `--apply` — Write the backfilled events. Without this flag the command only prints what would be inserted.
+
+### Examples
+
+```bash
+# Preview what would be backfilled (dry-run)
+syntaur migrate-events
+
+# Apply the backfill
+syntaur migrate-events --apply
+
+# Target a non-default project directory
+syntaur migrate-events --apply --dir /path/to/my-projects
+```
+
 ## `syntaur search <query>`
 
 Full-text search across all Syntaur markdown content. Searches the bodies of every file kind tracked by an assignment and returns ranked results with a snippet and location.

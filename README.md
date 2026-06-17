@@ -177,6 +177,35 @@ The dashboard command palette runs the same search and deep-links results to the
 
 See [`docs/cli.md`](docs/cli.md) for the full reference.
 
+### Timeline
+
+`syntaur timeline <assignment>` shows the per-assignment audit event log — a chronological who/what/when/from→to record of every tracked change (status-change, assignee-change, priority-change, archived/restored, plan-approval, fact-set, attestation, comment-added, comment-resolved), newest first. The same events appear live on the dashboard **Activity** tab.
+
+```bash
+# Show the event log for an assignment
+syntaur timeline add-oauth --project my-api
+
+# Filter to status changes since a date, return JSON
+syntaur timeline add-oauth --project my-api \
+  --type status-change --since 2026-06-01T00:00:00Z --json
+```
+
+Key flags: `--project <slug>`, `--since <date>`, `--type <list>` (comma-separated), `--limit <n>` (default 50), `--json`.
+
+### Migrate events (one-time backfill)
+
+`syntaur migrate-events` synthesizes audit events from existing `statusHistory` and `planApproval` data already in your `assignment.md` files. Dry-run by default; pass `--apply` to write. The command is idempotent — deterministic `source_key` values mean re-running after `--apply` inserts 0 new events.
+
+```bash
+# Preview the backfill (dry-run)
+syntaur migrate-events
+
+# Apply it
+syntaur migrate-events --apply
+```
+
+Key flags: `--apply`, `--dir <path>` (project directory override).
+
 Any of these can be prefixed with `npx syntaur@latest` if you chose not to install globally.
 
 ---
