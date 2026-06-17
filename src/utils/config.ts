@@ -484,6 +484,23 @@ export function parseStatusConfig(content: string): StatusConfig | null {
     return t;
   };
 
+  // Like `unquote`, but also reverses the `\`/`"` escaping that `escapeAql`
+  // applies to the THREE escaped derive-rule fields (phaseLadder when/next,
+  // disposition when). Scoped to those reads only — the plain `unquote` above
+  // stays the decoder for every other (unescaped) scalar (is/phase/headline/
+  // facts/aliases), so no field the serializer never escapes can be
+  // over-decoded. Mirrors parseSimpleValue's escape handling.
+  const unquoteAql = (v: string): string => {
+    const t = v.trim();
+    if (t.startsWith('"') && t.endsWith('"') && t.length >= 2) {
+      return t.slice(1, -1).replace(/\\(["\\])/g, '$1');
+    }
+    if (t.startsWith("'") && t.endsWith("'") && t.length >= 2) {
+      return t.slice(1, -1);
+    }
+    return t;
+  };
+
   // Parse sub-sections: definitions, order, transitions + derive rules
   // (phaseLadder, disposition, headline — derived-status v3, persisted flat
   // under `statuses:`).
@@ -584,8 +601,8 @@ export function parseStatusConfig(content: string): StatusConfig | null {
       if (entry['phase'] && entry['when'] !== undefined) {
         phaseLadder.push({
           phase: unquote(entry['phase']),
-          when: unquote(entry['when']),
-          next: entry['next'] !== undefined ? unquote(entry['next']) : undefined,
+          when: unquoteAql(entry['when']),
+          next: entry['next'] !== undefined ? unquoteAql(entry['next']) : undefined,
         });
       }
       lineIdx += consumed - 1;
@@ -597,7 +614,7 @@ export function parseStatusConfig(content: string): StatusConfig | null {
       if (entry['else'] !== undefined) {
         disposition.push({ when: null, is: unquote(entry['else']) });
       } else if (entry['when'] !== undefined && entry['is']) {
-        disposition.push({ when: unquote(entry['when']), is: unquote(entry['is']) });
+        disposition.push({ when: unquoteAql(entry['when']), is: unquote(entry['is']) });
       }
       lineIdx += consumed - 1;
       continue;
@@ -711,6 +728,12 @@ export function buildDefaultStatusConfig(): StatusConfig {
 
 export function serializeStatusConfig(statuses: StatusConfig): string {
   const lines: string[] = [];
+  // Symmetric with `unquoteAql` in parseStatusConfig: escape backslash THEN
+  // quote so the derive-rule when/next/disposition-when fields round-trip even
+  // when they contain a literal `"` or `\`. (Previously only `"` was escaped and
+  // nothing reversed it, so a quoted AQL condition accumulated a backslash on
+  // every save→reload.)
+  const escapeAql = (s: string): string => s.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
   lines.push('statuses:');
 
   // definitions
@@ -765,15 +788,15 @@ export function serializeStatusConfig(statuses: StatusConfig): string {
     lines.push('  phaseLadder:');
     for (const rung of d.phaseLadder) {
       lines.push(`    - phase: ${rung.phase}`);
-      lines.push(`      when: "${rung.when.replace(/"/g, '\\"')}"`);
-      if (rung.next) lines.push(`      next: "${rung.next.replace(/"/g, '\\"')}"`);
+      lines.push(`      when: "${escapeAql(rung.when)}"`);
+      if (rung.next) lines.push(`      next: "${escapeAql(rung.next)}"`);
     }
     lines.push('  disposition:');
     for (const rule of d.disposition) {
       if (rule.when === null) {
         lines.push(`    - else: ${rule.is}`);
       } else {
-        lines.push(`    - when: "${rule.when.replace(/"/g, '\\"')}"`);
+        lines.push(`    - when: "${escapeAql(rule.when)}"`);
         lines.push(`      is: ${rule.is}`);
       }
     }
