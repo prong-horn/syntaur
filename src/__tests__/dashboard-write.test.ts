@@ -2784,6 +2784,22 @@ describe('parseComments preserves a body containing a "## " line (AC2)', () => {
     expect(parsed.entries[1].body).toBe('second comment');
   });
 
+  it('does not split on a body "## " heading followed by a lone **Recorded:** line', () => {
+    // Adversarial body: a markdown heading + a line that merely starts with
+    // **Recorded:** but is NOT a real comment header (no Author/Type prelude).
+    const entry = formatCommentEntry({
+      id: 'ef56',
+      timestamp: '2026-06-17T00:00:00Z',
+      author: 'alice',
+      type: 'note',
+      body: '## Meeting Notes\n\n**Recorded:** locally during testing\n\ntrailing body',
+    });
+    const parsed = parseComments(skeleton(entry));
+    expect(parsed.entries).toHaveLength(1);
+    expect(parsed.entries[0].body).toContain('## Meeting Notes');
+    expect(parsed.entries[0].body).toContain('trailing body');
+  });
+
   it('still parses a header with no blank line before **Recorded:** (backward-compat guard)', () => {
     // The header regex tolerates `## id\n**Recorded:**` (no blank line); the
     // split lookahead must not regress that older spacing.
