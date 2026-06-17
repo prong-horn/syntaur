@@ -17,6 +17,7 @@ import {
 import { copyText } from '../lib/clipboard';
 import { LoadingState } from '../components/LoadingState';
 import { ErrorState } from '../components/ErrorState';
+import { ConfirmDialog } from '../components/ConfirmDialog';
 import { StatCard } from '../components/StatCard';
 import { TodoRow } from '../components/TodoRow';
 import { useToast, Toaster } from '../components/Toast';
@@ -45,6 +46,8 @@ export function WorkspaceTodosPage() {
   const [statusFilter, setStatusFilter] = useState<string>('');
   const [tagFilter, setTagFilter] = useState<string>('');
   const [newTodoText, setNewTodoText] = useState('');
+  const [pendingDelete, setPendingDelete] = useState<{ id: string; description: string } | null>(null);
+  const [deleteLoading, setDeleteLoading] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -154,15 +157,9 @@ export function WorkspaceTodosPage() {
     }
   }
 
-  async function handleDelete(e: React.MouseEvent, id: string, description: string) {
+  function handleDelete(e: React.MouseEvent, id: string, description: string) {
     e.stopPropagation();
-    if (!window.confirm(`Delete "${description}"? This can't be undone.`)) return;
-    try {
-      await deleteTodo(ws, id);
-      refetch();
-    } catch (err) {
-      reportError(err);
-    }
+    setPendingDelete({ id, description });
   }
 
   async function handleStatusChange(id: string, newStatus: string) {
@@ -329,6 +326,31 @@ export function WorkspaceTodosPage() {
   return (
     <div className="space-y-4">
       <Toaster toast={toast} onDismiss={dismissToast} />
+
+      <ConfirmDialog
+        open={pendingDelete !== null}
+        title="Delete todo?"
+        description={`Delete "${pendingDelete?.description ?? ''}"? This can't be undone.`}
+        confirmLabel="Delete"
+        destructive
+        loading={deleteLoading}
+        onOpenChange={(open) => {
+          if (!open && !deleteLoading) setPendingDelete(null);
+        }}
+        onConfirm={async () => {
+          if (!pendingDelete) return;
+          setDeleteLoading(true);
+          try {
+            await deleteTodo(ws, pendingDelete.id);
+            refetch();
+            setPendingDelete(null);
+          } catch (err) {
+            reportError(err);
+          } finally {
+            setDeleteLoading(false);
+          }
+        }}
+      />
       {/* Stats */}
       <div className="grid gap-3 grid-cols-[repeat(auto-fill,minmax(140px,1fr))]">
         <StatCard label="Open" value={counts.open} icon={CheckSquare} />
