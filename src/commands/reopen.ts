@@ -23,14 +23,19 @@ export async function reopenCommand(
   const context = await resolveDeriveContext();
   let assignmentPath: string;
   let projectDir: string | null;
+  // The dir slug recomputeDependents matches `dependsOn` against — NOT the raw
+  // arg, which is a UUID when reopened by id (that would silently match nothing).
+  let changedSlug: string;
   if (options.project) {
     projectDir = resolve(baseDir, options.project);
     assignmentPath = resolve(projectDir, 'assignments', assignment, 'assignment.md');
+    changedSlug = assignment;
   } else {
     const resolved = await resolveAssignmentById(baseDir, assignmentsDirFn(), assignment);
     if (!resolved) return;
     assignmentPath = resolve(resolved.assignmentDir, 'assignment.md');
     projectDir = resolved.standalone ? null : resolve(resolved.assignmentDir, '..', '..');
+    changedSlug = resolved.assignmentSlug;
   }
   const derived = await recomputeAndWrite(assignmentPath, {
     cause: 'reopen',
@@ -44,7 +49,7 @@ export async function reopenCommand(
 
   // Leaving terminal flips dependents' depsSatisfied back to false.
   if (projectDir) {
-    const results = await recomputeDependents(projectDir, assignment, {
+    const results = await recomputeDependents(projectDir, changedSlug, {
       cause: 'dep-reopened',
       by: 'system',
       context,
