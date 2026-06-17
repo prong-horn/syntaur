@@ -977,18 +977,20 @@ export function AssignmentsPage() {
   // Derive list-view groups from prefs.grouping. Status (default) preserves
   // legacy behavior. Type and other dimensions are bucketed dynamically.
   // Each group is { id, label, items } in display order.
+  // AC7: group from `sortedItems` (not `filteredItems`) so the list view honors
+  // the active sort field/direction, matching the table and kanban views.
   const listGroups = useMemo(() => {
     if (grouping === 'none') {
-      return [{ id: '__all__', label: 'All assignments', items: filteredItems }];
+      return [{ id: '__all__', label: 'All assignments', items: sortedItems }];
     }
     if (grouping === 'type') {
       const groups: { id: string; label: string; items: AssignmentBoardItem[] }[] = typesConfig.definitions.map((def) => ({
         id: def.id,
         label: getTypeLabel(typesConfig, def.id),
-        items: filteredItems.filter((it) => it.type === def.id),
+        items: sortedItems.filter((it) => it.type === def.id),
       }));
       const knownIds = new Set(typesConfig.definitions.map((d) => d.id));
-      const unknown = filteredItems.filter((it) => !it.type || !knownIds.has(it.type));
+      const unknown = sortedItems.filter((it) => !it.type || !knownIds.has(it.type));
       if (unknown.length > 0) {
         groups.push({ id: UNKNOWN_TYPE_COLUMN_ID, label: 'Other', items: unknown });
       }
@@ -999,20 +1001,20 @@ export function AssignmentsPage() {
       return order.map((p) => ({
         id: p,
         label: p.charAt(0).toUpperCase() + p.slice(1),
-        items: filteredItems.filter((it) => it.priority === p),
+        items: sortedItems.filter((it) => it.priority === p),
       }));
     }
     if (grouping === 'assignee') {
-      const assignees = Array.from(new Set(filteredItems.map((it) => it.assignee ?? '__unassigned__'))).sort();
+      const assignees = Array.from(new Set(sortedItems.map((it) => it.assignee ?? '__unassigned__'))).sort();
       return assignees.map((a) => ({
         id: a,
         label: a === '__unassigned__' ? 'Unassigned' : a,
-        items: filteredItems.filter((it) => (it.assignee ?? '__unassigned__') === a),
+        items: sortedItems.filter((it) => (it.assignee ?? '__unassigned__') === a),
       }));
     }
     if (grouping === 'project') {
       const seen = new Map<string, string>();
-      for (const it of filteredItems) {
+      for (const it of sortedItems) {
         const key = it.projectSlug ?? '__standalone__';
         const label = it.projectTitle ?? 'Standalone';
         if (!seen.has(key)) seen.set(key, label);
@@ -1022,16 +1024,16 @@ export function AssignmentsPage() {
         .map(([key, label]) => ({
           id: key,
           label,
-          items: filteredItems.filter((it) => (it.projectSlug ?? '__standalone__') === key),
+          items: sortedItems.filter((it) => (it.projectSlug ?? '__standalone__') === key),
         }));
     }
     // Default: status grouping
     return COLUMNS.map((status) => ({
       id: status,
       label: COLUMN_LABELS[status] ?? status,
-      items: filteredItems.filter((it) => it.status === status),
+      items: sortedItems.filter((it) => it.status === status),
     }));
-  }, [grouping, filteredItems, typesConfig, COLUMNS, COLUMN_LABELS]);
+  }, [grouping, sortedItems, typesConfig, COLUMNS, COLUMN_LABELS]);
 
   // Add an "Other" column to the type kanban when any filtered item has a null
   // / unrecognized type slug. Mirrors the list-view bucketing so the same

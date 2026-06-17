@@ -54,7 +54,10 @@ const DURATION_MS: Record<string, number> = {
 
 const IDENT_START = /[A-Za-z_]/;
 const IDENT_CHAR = /[A-Za-z0-9_-]/;
-const DATE_RE = /^\d{4}-\d{2}-\d{2}/;
+// Anchored so a trailing digit/dash can't be swallowed into a "date" (e.g.
+// `2026-06-1623` must NOT lex as DATE `2026-06-16` + `23`). Calendar validity
+// (month/day ranges) is enforced later in the evaluator with positional errors.
+const DATE_RE = /^\d{4}-\d{2}-\d{2}(?![\d-])/;
 
 export function lex(input: string): Token[] {
   const tokens: Token[] = [];

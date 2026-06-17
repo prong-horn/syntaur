@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { resolve, join } from 'node:path';
 import { createProjectCommand } from '../commands/create-project.js';
 import { createAssignmentCommand } from '../commands/create-assignment.js';
+import { completeCommand } from '../commands/complete.js';
 import { executeTransition, executeTransitionByDir, executeAssign } from '../lifecycle/index.js';
 import { parseAssignmentFrontmatter } from '../lifecycle/frontmatter.js';
 
@@ -167,6 +168,27 @@ describe('lifecycle integration', () => {
     await executeTransition(projectDir, 'task-a', 'complete');
     content = await readAssignmentContent(projectSlug, 'task-a');
     expect(content).toContain('status: completed');
+  });
+
+  // AC10: completing a project assignment BY UUID without --project must still
+  // recompute its dependents (by the resolved slug, not the UUID). The bug
+  // skipped the recompute entirely when --project was absent.
+  it('completeCommand by UUID (no --project) recomputes dependents', async () => {
+    const fmB = parseAssignmentFrontmatter(await readAssignmentContent(projectSlug, 'task-b'));
+    const logs: string[] = [];
+    const origLog = console.log;
+    console.log = (...args: unknown[]) => {
+      logs.push(args.map(String).join(' '));
+    };
+    try {
+      await completeCommand(fmB.id, { dir: testDir }); // by UUID, NO --project
+    } finally {
+      console.log = origLog;
+    }
+    // The dependency is terminal…
+    expect(await readAssignmentContent(projectSlug, 'task-b')).toContain('status: completed');
+    // …and the dependent (task-a) was re-derived by its slug.
+    expect(logs.join('\n')).toMatch(/Re-derived \d+ dependent assignment/);
   });
 
   it('allows any known command regardless of current status (guards removed)', async () => {

@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import {
   claimJob,
   markLaunching,
+  markRunning,
   reapStale,
   holdJob,
   releaseJob,
@@ -17,6 +18,7 @@ import {
 } from '../schedules/attempt.js';
 import { writeJob, readJob } from '../schedules/store.js';
 import { evaluateTrigger } from '../schedules/triggers.js';
+import { freshAttempt } from '../schedules/types.js';
 import { sampleJob } from './schedules-helpers.js';
 
 const fixedNow = (iso: string): AttemptDeps => ({ now: () => new Date(iso) });
@@ -147,5 +149,114 @@ describe('attempt state machine', () => {
     expect(next.attempt.state).toBe('eligible');
     // createdAt was reset so it reacts only to future edges.
     expect(next.createdAt).not.toBe(job.createdAt);
+  });
+
+  // AC3: launchDayStamps are pruned to the current day on each launch.
+  it('prunes launchDayStamps to today (no unbounded growth)', async () => {
+    const job = await writeJob(
+      sampleJob({
+        attempt: {
+          ...freshAttempt(),
+          state: 'launching',
+          launchDayStamps: ['2026-06-01', '2026-06-14'],
+          claim: { token: 't', expiresAt: Date.parse('2026-06-15T04:00:00Z') },
+        },
+      }),
+    );
+    const after = await markRunning(job, 'sid', fixedNow('2026-06-15T03:00:00Z'));
+    expect(after.attempt.launchDayStamps).toEqual(['2026-06-15']);
+  });
+
+  // AC3: consumedEdges is windowed so a long-lived cron job's file can't grow
+  // without bound.
+  it('windows consumedEdges to the most recent 50 on claim', async () => {
+    const old = Array.from({ length: 50 }, (_, i) => `cron:old-${String(i).padStart(3, '0')}`);
+    const job = await writeJob(
+      sampleJob({ attempt: { ...freshAttempt(), state: 'eligible', consumedEdges: old } }),
+    );
+    const res = await claimJob(job, { dedupeKey: 'cron:new' }, fixedNow('2026-06-15T03:00:00Z'));
+    expect(res.claimed).toBe(true);
+    const onDisk = await readJob(job.id);
+    expect(onDisk?.attempt.consumedEdges.length).toBe(50);
+    expect(onDisk?.attempt.consumedEdges).toContain('cron:new');
+    expect(onDisk?.attempt.consumedEdges).not.toContain('cron:old-000'); // oldest dropped
+  });
+
+  // AC6: a transition whose precondition no longer holds is a no-op (a stale
+  // snapshot can't clobber a concurrently-changed job).
+  it('markRunning is a no-op when the on-disk state is no longer launching', async () => {
+    const job = await writeJob(
+      sampleJob({ attempt: { ...freshAttempt(), state: 'killed' } }),
+    );
+    const after = await markRunning(job, 'sid', fixedNow('2026-06-15T03:00:00Z'));
+    expect(after.attempt.state).toBe('killed');
+    expect((await readJob(job.id))?.attempt.state).toBe('killed');
+  });
+
+  // AC6: reapStale records no outcome (and doesn't clobber) when the on-disk job
+  // changed under the snapshot it was handed.
+  it('reapStale does not clobber a job that changed under the snapshot', async () => {
+    const snapshot = await writeJob(
+      sampleJob({
+        attempt: {
+          ...freshAttempt(),
+          state: 'claimed',
+          claim: { token: 't', expiresAt: Date.parse('2026-06-15T03:00:00Z') },
+        },
+      }),
+    );
+    // The job is cancelled on disk after the snapshot was taken.
+    await cancelJob(snapshot.id);
+    const out = await reapStale([snapshot], fixedNow('2026-06-15T04:00:00Z'));
+    expect(out.reaped).toEqual([]);
+    expect((await readJob(snapshot.id))?.attempt.state).toBe('cancelled');
+  });
+
+  // AC6: a stale snapshot whose claim token no longer matches (the job was
+  // reaped→retried→reclaimed into a NEW attempt) must not be advanced.
+  it('markRunning is a no-op when the on-disk claim token differs (new attempt)', async () => {
+    const onDisk = await writeJob(
+      sampleJob({
+        attempt: {
+          ...freshAttempt(),
+          state: 'launching',
+          claim: { token: 'NEW', expiresAt: Date.parse('2026-06-15T04:00:00Z') },
+        },
+      }),
+    );
+    const stale = {
+      ...onDisk,
+      attempt: { ...onDisk.attempt, claim: { token: 'OLD', expiresAt: Date.parse('2026-06-15T04:00:00Z') } },
+    };
+    const after = await markRunning(stale, 'sid', fixedNow('2026-06-15T03:00:00Z'));
+    expect(after.attempt.state).toBe('launching'); // not advanced
+    expect((await readJob(onDisk.id))?.attempt.claim?.token).toBe('NEW'); // not clobbered
+  });
+
+  // AC6: reapStale must not complete a DIFFERENT running attempt than the one its
+  // snapshot evaluated (a new run started under the same id).
+  it('reapStale does not complete a different running attempt than the snapshot', async () => {
+    const onDisk = await writeJob(
+      sampleJob({
+        trigger: { kind: 'at', at: '2026-06-14T00:00:00Z' }, // one-shot
+        attempt: {
+          ...freshAttempt(),
+          state: 'running',
+          sessionId: 'NEW-sess',
+          runningSince: '2026-06-15T03:00:00Z',
+        },
+      }),
+    );
+    // Stale snapshot: same id, but an OLD dead session past its grace window.
+    const stale = {
+      ...onDisk,
+      attempt: { ...onDisk.attempt, sessionId: 'OLD-sess', runningSince: '2026-06-14T00:00:00Z' },
+    };
+    const out = await reapStale([stale], {
+      now: () => new Date('2026-06-15T05:00:00Z'),
+      isSessionLive: () => false,
+    });
+    expect(out.completed).toEqual([]);
+    expect((await readJob(onDisk.id))?.attempt.state).toBe('running'); // not clobbered
   });
 });

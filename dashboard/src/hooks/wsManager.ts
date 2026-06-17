@@ -72,9 +72,15 @@ export function connect(): void {
   }
 
   intentionalClose = false;
-  ws = new WebSocket(getWsUrl());
+  // Capture the instance so late async handlers from an OLD socket can't act on
+  // a newer connection. Without the `ws !== socket` guards below, a stale
+  // `onclose` firing after a resubscribe would null the live `ws` and schedule a
+  // spurious reconnect, leaking sockets.
+  const socket = new WebSocket(getWsUrl());
+  ws = socket;
 
-  ws.onmessage = (event) => {
+  socket.onmessage = (event) => {
+    if (ws !== socket) return;
     try {
       const message: WsMessage = JSON.parse(event.data);
       for (const listener of listeners) {
@@ -85,7 +91,8 @@ export function connect(): void {
     }
   };
 
-  ws.onclose = () => {
+  socket.onclose = () => {
+    if (ws !== socket) return; // a newer connection already replaced us
     ws = null;
     // Do NOT reconnect for a close we initiated, or once every subscriber has
     // unmounted. A genuine drop with live subscribers still reconnects.
@@ -96,8 +103,8 @@ export function connect(): void {
     scheduleReconnect();
   };
 
-  ws.onerror = () => {
-    ws?.close();
+  socket.onerror = () => {
+    socket.close(); // close THIS socket, never a newer `ws`
   };
 }
 

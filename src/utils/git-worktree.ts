@@ -68,6 +68,16 @@ export async function removeWorktree(
   return { ok: result.code === 0, stderr: result.stderr };
 }
 
+/**
+ * Best-effort `git worktree prune` — clears stale `.git/worktrees/<name>`
+ * registrations for worktree directories that were deleted out-of-band, so the
+ * same path/branch can be re-added without git rejecting it
+ * ("already used by worktree at ...").
+ */
+export async function pruneWorktrees(repository: string): Promise<void> {
+  await run('git', ['-C', repository, 'worktree', 'prune']);
+}
+
 export interface WorktreeEntry {
   worktreePath: string;
   branch: string | null;
@@ -318,7 +328,7 @@ export async function recreateWorktree(
   // Clear stale metadata for the deleted directory so a subsequent add at the
   // same path / branch is not rejected ("already used by worktree at ..."). Best
   // effort — any real failure surfaces from the add step below.
-  await run('git', ['-C', repository, 'worktree', 'prune']);
+  await pruneWorktrees(repository);
 
   const add = async (args: string[]): Promise<void> => {
     const result = await run('git', ['-C', repository, 'worktree', 'add', ...args]);

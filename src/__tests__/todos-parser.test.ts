@@ -148,6 +148,36 @@ describe('parseChecklistItem — description with tag-like / id-like prose (B2, 
     const reparsed = parseChecklistItem(serializeChecklistItem(item));
     expect(reparsed).toEqual(item);
   });
+
+  // AC2: a newline in the description must not split the line and drop the id +
+  // tail on re-parse.
+  it('round-trips a description containing newlines (id + tail preserved)', () => {
+    const item = makeItem({
+      id: 'ee01',
+      description: 'Line one\nLine two with detail\r\nLine three',
+      status: 'open',
+      tags: ['multi'],
+      session: null,
+    });
+    const serialized = serializeChecklistItem(item);
+    expect(serialized).not.toContain('\n'); // single physical line
+    const reparsed = parseChecklistItem(serialized);
+    expect(reparsed).toEqual(item);
+  });
+
+  // AC2: a literal backslash-n in the source must NOT be decoded to a newline.
+  it('preserves a literal backslash-n (distinct from an encoded newline)', () => {
+    const item = makeItem({
+      id: 'ee02',
+      description: 'regex \\n means newline',
+      status: 'open',
+      tags: [],
+      session: null,
+    });
+    const reparsed = parseChecklistItem(serializeChecklistItem(item));
+    expect(reparsed).toEqual(item);
+    expect(reparsed?.description).toBe('regex \\n means newline');
+  });
 });
 
 describe('serializeChecklistItem', () => {

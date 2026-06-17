@@ -33,12 +33,20 @@ export class CompileError extends Error {
   }
 }
 
-/** [startOfDay, startOfNextDay) for a YYYY-MM-DD in local time. */
-function localDayBounds(date: string): [number, number] {
-  const [y, m, d] = date.split('-').map((n) => parseInt(n, 10));
-  const start = new Date(y, m - 1, d).getTime();
+/**
+ * [startOfDay, startOfNextDay) for a YYYY-MM-DD in local time. Rejects
+ * impossible calendar dates (e.g. 2026-02-30) instead of letting `new Date`
+ * silently roll them over — otherwise `created:2026-02-30` would compile and
+ * match March 2. Throws CompileError with the atom's position on invalid input.
+ */
+function localDayBounds(value: { raw: string; pos: number }): [number, number] {
+  const [y, m, d] = value.raw.split('-').map((n) => parseInt(n, 10));
+  const start = new Date(y, m - 1, d);
+  if (start.getFullYear() !== y || start.getMonth() !== m - 1 || start.getDate() !== d) {
+    throw new CompileError([{ pos: value.pos, message: `Invalid date "${value.raw}"` }]);
+  }
   const end = new Date(y, m - 1, d + 1).getTime();
-  return [start, end];
+  return [start.getTime(), end];
 }
 
 function toEpoch(value: unknown): number | null {
@@ -121,7 +129,7 @@ function compileEquality(def: FieldDef, field: string, value: QueryValue, atomPo
       };
     case 'timestamp': {
       if (value.type === 'date') {
-        const [start, end] = localDayBounds(value.raw);
+        const [start, end] = localDayBounds(value);
         return (item) => {
           const t = toEpoch(readField(def, field, item));
           return t !== null && t >= start && t < end;
@@ -194,7 +202,7 @@ function compileComparison(def: FieldDef, field: string, op: string, value: Quer
         };
       }
       if (value.type === 'date') {
-        const [start, end] = localDayBounds(value.raw);
+        const [start, end] = localDayBounds(value);
         return (item) => {
           const t = toEpoch(readField(def, field, item));
           if (t === null) return false;
