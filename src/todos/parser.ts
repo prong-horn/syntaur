@@ -40,6 +40,27 @@ const TAG_REGEX = /#([a-zA-Z0-9_-]+)/g;
 const META_TOKEN_REGEX = /\[t:[a-f0-9]{4}\]\s+<([^>]*)>\s*$/;
 const META_ENCODE_CHARS = ['%', '<', '>', '[', ']', '=', ';', '\n', '\r'];
 
+// A tag is stored inline as `#<tag>` on a single checklist line and the parser
+// only recognizes the class below (see TAG_REGEX). A tag containing whitespace,
+// a newline, or `#` would corrupt the line — splitting it, inventing tags, or
+// dropping the `[t:id]` + metadata on the next parse. Validate at every write
+// entry so such a tag is never serialized (reject, never silently sanitize).
+const VALID_TAG_REGEX = /^[a-zA-Z0-9_-]+$/;
+
+export function isValidTag(tag: unknown): tag is string {
+  return typeof tag === 'string' && VALID_TAG_REGEX.test(tag);
+}
+
+export function assertValidTags(tags: readonly unknown[]): void {
+  for (const t of tags) {
+    if (!isValidTag(t)) {
+      throw new Error(
+        `Invalid tag ${JSON.stringify(t)}: tags may contain only letters, digits, '-' and '_' (no spaces, newlines, or '#').`,
+      );
+    }
+  }
+}
+
 export function encodeMetaValue(value: string): string {
   let out = '';
   for (const ch of value) {
@@ -278,6 +299,10 @@ export function parseChecklistItem(line: string): TodoItem | null {
 
 export function serializeChecklistItem(item: TodoItem): string {
   const marker = statusToMarker(item);
+  // Last line of defense: never emit a tag that would corrupt the line. Entry
+  // points validate first (returning a clean 400 / CLI error); this guarantees
+  // file integrity regardless of caller.
+  assertValidTags(item.tags);
   const tagStr = item.tags.map((t) => `#${t}`).join(' ');
   // Escape backslash-special chars in the description so prose `#`/`[`/`\` is
   // never re-parsed as a structural tag/id token. Real tags and `[t:id]` below

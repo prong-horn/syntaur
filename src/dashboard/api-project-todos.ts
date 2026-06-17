@@ -11,6 +11,8 @@ import {
   computeCounts,
   logPath,
   serializeLog,
+  isValidTag,
+  assertValidTags,
 } from '../todos/parser.js';
 import { fileExists, writeFileForce } from '../utils/fs.js';
 import { projectTodosDir, todoPlanDir } from '../utils/paths.js';
@@ -163,6 +165,10 @@ export function createProjectTodosRouter(
         res.status(400).json({ error: 'description is required' });
         return;
       }
+      if (tags !== undefined && (!Array.isArray(tags) || !tags.every(isValidTag))) {
+        res.status(400).json({ error: "tags must be an array of [a-zA-Z0-9_-] strings (no spaces, newlines, or '#')" });
+        return;
+      }
       if (!(await projectExists(projectsDir, slug))) { notFound(res, slug); return; }
 
       const item = await projLock(slug, async () => {
@@ -291,6 +297,7 @@ export function createProjectTodosRouter(
         }
         const completedItems = checklist.items.filter((i) => completedIds.has(i.id));
         for (const item of completedItems) {
+          assertValidTags(item.tags); // defense-in-depth: never emit a corrupting tag
           archContent += `- [x] ${item.description} ${item.tags.map((t: string) => `#${t}`).join(' ')} [t:${item.id}]\n`;
         }
         archContent += '\n';
@@ -373,6 +380,10 @@ export function createProjectTodosRouter(
   router.patch('/:id', async (req, res) => {
     try {
       const slug = getProjectIdParam(params(req).projectId);
+      if (req.body.tags !== undefined && (!Array.isArray(req.body.tags) || !req.body.tags.every(isValidTag))) {
+        res.status(400).json({ error: "tags must be an array of [a-zA-Z0-9_-] strings (no spaces, newlines, or '#')" });
+        return;
+      }
       if (!(await projectExists(projectsDir, slug))) { notFound(res, slug); return; }
       const result = await projLock(slug, async () => {
         if (!(await projectExists(projectsDir, slug))) return 'gone' as const;

@@ -14,6 +14,8 @@ import {
   serializeMetaToken,
   encodeMetaValue,
   decodeMetaValue,
+  isValidTag,
+  assertValidTags,
 } from '../todos/parser.js';
 import type { TodoItem, LogEntry } from '../todos/types.js';
 
@@ -454,5 +456,50 @@ describe('archivePath', () => {
   it('generates monthly archive path', () => {
     const path = archivePath('/tmp/todos', 'syntaur', 'monthly', new Date(2026, 3, 7));
     expect(path).toContain('archive/syntaur-2026-04.md');
+  });
+});
+
+// AC5: tags are emitted raw (`#${t}`) while the description is escaped, so a tag
+// with whitespace/newline/`#` corrupts the single-line checklist entry and the
+// next parse drops the [t:id] + metadata. Validate at every entry + serializer.
+describe('tag validation prevents checklist corruption (AC5)', () => {
+  it('isValidTag accepts the parser tag class, rejects everything else', () => {
+    expect(isValidTag('api')).toBe(true);
+    expect(isValidTag('v2_x-y')).toBe(true);
+    expect(isValidTag('foo bar')).toBe(false); // space
+    expect(isValidTag('foo\nbar')).toBe(false); // newline
+    expect(isValidTag('foo#bar')).toBe(false); // hash
+    expect(isValidTag('')).toBe(false); // empty
+    expect(isValidTag(123 as unknown as string)).toBe(false); // non-string
+  });
+
+  it('assertValidTags throws on any invalid tag, passes valid arrays', () => {
+    expect(() => assertValidTags(['ok', 'a-b_c'])).not.toThrow();
+    expect(() => assertValidTags([])).not.toThrow();
+    expect(() => assertValidTags(['bad tag'])).toThrow();
+    expect(() => assertValidTags(['has\nnewline'])).toThrow();
+    expect(() => assertValidTags([123 as unknown as string])).toThrow();
+  });
+
+  it('serializeChecklistItem throws rather than emit a corrupting line', () => {
+    for (const bad of ['foo bar', 'foo\nbar', 'foo#bar', '']) {
+      const item = makeItem({ id: 'a1', description: 'task', status: 'open', tags: [bad], session: null });
+      expect(() => serializeChecklistItem(item)).toThrow();
+    }
+  });
+
+  it('valid tags still serialize and round-trip with id + meta intact (positive control)', () => {
+    const item = makeItem({
+      id: 'ab12',
+      description: 'do thing',
+      status: 'open',
+      tags: ['api', 'v2_x'],
+      session: null,
+      branch: 'feat/x',
+    });
+    const reparsed = parseChecklistItem(serializeChecklistItem(item));
+    expect(reparsed?.id).toBe('ab12');
+    expect(reparsed?.tags).toEqual(['api', 'v2_x']);
+    expect(reparsed?.branch).toBe('feat/x');
   });
 });

@@ -9,6 +9,8 @@ import {
   computeCounts,
   logPath,
   serializeLog,
+  isValidTag,
+  assertValidTags,
 } from '../todos/parser.js';
 import { resolve as resolvePath, dirname } from 'node:path';
 import { rename, mkdir } from 'node:fs/promises';
@@ -265,6 +267,10 @@ export function createTodosRouter(
         res.status(400).json({ error: 'description is required' });
         return;
       }
+      if (tags !== undefined && (!Array.isArray(tags) || !tags.every(isValidTag))) {
+        res.status(400).json({ error: "tags must be an array of [a-zA-Z0-9_-] strings (no spaces, newlines, or '#')" });
+        return;
+      }
 
       const item = await wsLock(workspace, async () => {
         const checklist = await readChecklist(todosDir, workspace);
@@ -389,6 +395,7 @@ export function createTodosRouter(
 
         const completedItems = checklist.items.filter((i) => completedIds.has(i.id));
         for (const item of completedItems) {
+          assertValidTags(item.tags); // defense-in-depth: never emit a corrupting tag
           archContent += `- [x] ${item.description} ${item.tags.map((t: string) => `#${t}`).join(' ')} [t:${item.id}]\n`;
         }
         archContent += '\n';
@@ -463,6 +470,10 @@ export function createTodosRouter(
   router.patch('/:workspace/:id', async (req, res) => {
     try {
       const workspace = getWorkspaceParam(req.params.workspace);
+      if (req.body.tags !== undefined && (!Array.isArray(req.body.tags) || !req.body.tags.every(isValidTag))) {
+        res.status(400).json({ error: "tags must be an array of [a-zA-Z0-9_-] strings (no spaces, newlines, or '#')" });
+        return;
+      }
       const result = await wsLock(workspace, async () => {
         const checklist = await readChecklist(todosDir, workspace);
         const item = checklist.items.find((i) => i.id === req.params.id);

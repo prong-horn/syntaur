@@ -12,6 +12,8 @@ import {
   checklistPath,
   logPath,
   archivePath,
+  isValidTag,
+  assertValidTags,
 } from '../todos/parser.js';
 import { ensureDir, fileExists, writeFileForce } from '../utils/fs.js';
 import { readConfig } from '../utils/config.js';
@@ -76,6 +78,11 @@ todoCommand
       const existingIds = new Set(checklist.items.map((i) => i.id));
       const id = generateUniqueId(existingIds);
       const tags = options.tags ? options.tags.split(',').map((t: string) => t.trim()) : [];
+      const badTag = tags.find((t: string) => !isValidTag(t));
+      if (badTag !== undefined) {
+        console.error(`Invalid tag ${JSON.stringify(badTag)}: tags may contain only letters, digits, '-' and '_' (no spaces, newlines, or '#').`);
+        process.exit(1);
+      }
 
       const now = nowISO();
       const item: TodoItem = {
@@ -394,6 +401,11 @@ todoCommand
       }
       if (options.add) {
         const toAdd = options.add.split(',').map((t: string) => t.trim());
+        const badTag = toAdd.find((t: string) => !isValidTag(t));
+        if (badTag !== undefined) {
+          console.error(`Invalid tag ${JSON.stringify(badTag)}: tags may contain only letters, digits, '-' and '_' (no spaces, newlines, or '#').`);
+          process.exit(1);
+        }
         for (const tag of toAdd) {
           if (!item.tags.includes(tag)) item.tags.push(tag);
         }
@@ -491,6 +503,7 @@ todoCommand
       // Add completed items as reference
       const completedItems = checklist.items.filter((i) => completedIds.has(i.id));
       for (const item of completedItems) {
+        assertValidTags(item.tags); // defense-in-depth: never emit a corrupting tag
         archContent += `- [x] ${item.description} ${item.tags.map((t) => `#${t}`).join(' ')} [t:${item.id}]\n`;
       }
       archContent += '\n';

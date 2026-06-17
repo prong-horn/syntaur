@@ -469,3 +469,68 @@ describe('cross-scope move endpoints', () => {
     expect(res.status).toBe(404);
   });
 });
+
+// AC5: tags that would corrupt the single-line checklist entry must be rejected
+// with 400 at the write boundary (POST/PATCH), and nothing must be written.
+describe('todo tag validation at the write boundary (AC5)', () => {
+  async function setup(): Promise<{ projectsDir: string; workspaceTodosDir: string }> {
+    const projectsDir = resolve(testDir, 'projects');
+    const workspaceTodosDir = resolve(testDir, 'todos');
+    await mkdir(projectsDir, { recursive: true });
+    await mkdir(workspaceTodosDir, { recursive: true });
+    await seedProject(projectsDir, 'alpha');
+    await startServer(projectsDir, workspaceTodosDir);
+    return { projectsDir, workspaceTodosDir };
+  }
+
+  it('POST project todo with a newline tag → 400 and writes nothing', async () => {
+    await setup();
+    const res = await fetch(`${baseUrl}/api/projects/alpha/todos`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ description: 'task', tags: ['foo\nbar'] }),
+    });
+    expect(res.status).toBe(400);
+    const after = await fetch(`${baseUrl}/api/projects/alpha/todos`).then((r) => r.json());
+    expect(after.items).toHaveLength(0);
+  });
+
+  it('POST workspace todo with a space tag → 400', async () => {
+    await setup();
+    const res = await fetch(`${baseUrl}/api/todos/_global`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ description: 'task', tags: ['foo bar'] }),
+    });
+    expect(res.status).toBe(400);
+  });
+
+  it('PATCH project todo with an invalid tag → 400 and tags unchanged', async () => {
+    await setup();
+    const created = await fetch(`${baseUrl}/api/projects/alpha/todos`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ description: 'task', tags: ['ok'] }),
+    }).then((r) => r.json());
+    const res = await fetch(`${baseUrl}/api/projects/alpha/todos/${created.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tags: ['bad#tag'] }),
+    });
+    expect(res.status).toBe(400);
+    const after = await fetch(`${baseUrl}/api/projects/alpha/todos`).then((r) => r.json());
+    expect(after.items[0].tags).toEqual(['ok']);
+  });
+
+  it('POST with valid tags still succeeds (201) and persists them', async () => {
+    await setup();
+    const res = await fetch(`${baseUrl}/api/projects/alpha/todos`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ description: 'task', tags: ['api', 'v2_x-y'] }),
+    });
+    expect(res.status).toBe(201);
+    const after = await fetch(`${baseUrl}/api/projects/alpha/todos`).then((r) => r.json());
+    expect(after.items[0].tags).toEqual(['api', 'v2_x-y']);
+  });
+});
