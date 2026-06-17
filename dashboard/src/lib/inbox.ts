@@ -47,6 +47,12 @@ export interface InboxItem {
   ageMs: number;
   summary: string;
   action: InboxAction;
+  /** Review-only: derived CLI verb that accepts the review, or null if none. */
+  acceptCommand?: string | null;
+  /** Review-only: derived CLI verb that reopens the review, or null if none. */
+  reopenCommand?: string | null;
+  /** Question-only: the unresolved comment's id (reply `replyTo` + resolve). */
+  commentId?: string;
 }
 
 export interface InboxResult {
@@ -202,19 +208,4 @@ export function assignmentHref(
     return `/assignments/${encodeURIComponent(item.assignmentId)}${query}`;
   }
   return `/projects/${encodeURIComponent(item.project)}/assignments/${encodeURIComponent(item.assignmentSlug)}${query}`;
-}
-
-/**
- * Parse the primary transition command for a `review` item out of its derived
- * `action.command` (e.g. `syntaur complete my-slug --project p` → `complete`).
- * The aggregation core derives the accept verb from the lifecycle status-config,
- * so we read it back from the command string rather than hardcoding `complete`.
- * Returns `null` if the shape is unexpected (the caller then disables the
- * inline action and the user falls back to the printed CLI command / jump link).
- */
-export function parseTransitionCommand(command: string): string | null {
-  // Shape: `syntaur <command> <slug> [--project <p>]`
-  const match = /^syntaur\s+([a-z0-9][a-z0-9-]*)\s/i.exec(command.trim());
-  if (!match) return null;
-  return match[1];
 }

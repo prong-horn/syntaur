@@ -132,7 +132,7 @@ describe('computeInbox — shape', () => {
     const result = await run();
     expect(result.items).toHaveLength(1);
     const item = result.items[0];
-    expect(item).toEqual({
+    expect(item).toMatchObject({
       project: 'p1',
       assignmentSlug: 'rev',
       assignmentId: 'u1',
@@ -144,6 +144,41 @@ describe('computeInbox — shape', () => {
       action: { verb: 'Accept', command: 'syntaur complete rev --project p1' },
     });
     expect(Number.isNaN(Date.parse(item.since))).toBe(false);
+  });
+
+  it('review items expose the structured acceptCommand/reopenCommand fields', async () => {
+    await seed({ id: 'u1', slug: 'rev', status: 'review', project: 'p1' });
+    const result = await run();
+    const item = result.items[0];
+    expect(item.acceptCommand).toBe('complete');
+    expect(item.reopenCommand).toBe('start');
+    expect(item.commentId).toBeUndefined();
+  });
+
+  it('question items expose the structured commentId field', async () => {
+    await seed({
+      id: 'q',
+      slug: 'qs',
+      status: 'in_progress',
+      project: 'p1',
+      comments: [
+        { id: 'c-open', timestamp: '2026-06-15T00:00:00Z', author: 'h', type: 'question', body: 'q?', resolved: false },
+      ],
+    });
+    const result = await run();
+    const q = result.items.find((i) => i.category === 'question')!;
+    expect(q.commentId).toBe('c-open');
+    expect(q.acceptCommand).toBeUndefined();
+    expect(q.reopenCommand).toBeUndefined();
+  });
+
+  it('every emitted since is canonical RFC 3339 (no millis)', async () => {
+    await seed({ id: 'u1', slug: 'rev', status: 'review', project: 'p1' });
+    const result = await run();
+    for (const item of result.items) {
+      expect(item.since).not.toMatch(/\.\d{3}Z$/);
+      expect(Number.isNaN(Date.parse(item.since))).toBe(false);
+    }
   });
 });
 
@@ -260,6 +295,60 @@ describe('computeInbox — exclusions', () => {
     const r = await run();
     expect(r.counts.question).toBe(0);
     expect(r.total).toBe(0);
+  });
+
+  it('excludes a parked-disposition assignment even with status review', async () => {
+    // Malformed pairing: disposition:parked but status:review. The up-front
+    // disposition guard drops it (a parked item is not awaiting a decision).
+    await seed({
+      id: 'pk',
+      slug: 'parked-rev',
+      status: 'review',
+      project: 'p1',
+      extraFrontmatter: ['disposition: parked'],
+    });
+    const r = await run();
+    expect(r.total).toBe(0);
+  });
+
+  it('excludes a parked-disposition assignment even with an open question', async () => {
+    await seed({
+      id: 'pkq',
+      slug: 'parked-q',
+      status: 'in_progress',
+      project: 'p1',
+      extraFrontmatter: ['disposition: parked'],
+      comments: [
+        { id: 'c1', timestamp: '2026-06-15T00:00:00Z', author: 'h', type: 'question', body: 'q?', resolved: false },
+      ],
+    });
+    const r = await run();
+    expect(r.counts.question).toBe(0);
+    expect(r.total).toBe(0);
+  });
+
+  it('excludes a terminal-disposition assignment even with status review', async () => {
+    await seed({
+      id: 'tm',
+      slug: 'terminal-rev',
+      status: 'review',
+      project: 'p1',
+      extraFrontmatter: ['disposition: terminal'],
+    });
+    const r = await run();
+    expect(r.total).toBe(0);
+  });
+
+  it('keeps a blocked-disposition assignment (only parked/terminal are dropped)', async () => {
+    await seed({
+      id: 'bd',
+      slug: 'blocked-d',
+      status: 'blocked',
+      project: 'p1',
+      extraFrontmatter: ['disposition: blocked'],
+    });
+    const r = await run();
+    expect(r.counts.blocked).toBe(1);
   });
 });
 

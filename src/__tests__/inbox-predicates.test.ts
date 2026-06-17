@@ -232,16 +232,29 @@ describe('resolveSince', () => {
     expect(resolveSince('review', a, now)).toBe('2026-06-01T00:00:00Z');
   });
 
-  it('fallback: nothing → now (always a valid RFC 3339)', () => {
+  it('fallback: nothing → now, normalized to canonical RFC 3339 (no millis)', () => {
     const a = assignment('status: review');
     const since = resolveSince('review', a, now);
     expect(Number.isNaN(Date.parse(since))).toBe(false);
-    expect(since).toBe(new Date(now).toISOString());
+    // Canonical: no millis, trailing Z.
+    expect(since).toBe('2026-06-16T12:00:00Z');
+    expect(since).not.toMatch(/\.\d{3}Z$/);
   });
 
   it('skips invalid timestamps in the chain', () => {
     const a = assignment('status: review\nupdated: not-a-date\ncreated: "2026-06-01T00:00:00Z"');
     expect(resolveSince('review', a, now)).toBe('2026-06-01T00:00:00Z');
+  });
+
+  it('normalizes a date-only timestamp to ...T00:00:00Z', () => {
+    // `created: 2026-06-01` (no time) → canonical midnight RFC 3339.
+    const a = assignment('status: review\ncreated: "2026-06-01"');
+    expect(resolveSince('review', a, now)).toBe('2026-06-01T00:00:00Z');
+  });
+
+  it('leaves an already-canonical full timestamp unchanged', () => {
+    const a = assignment('status: review\nupdated: "2026-06-17T03:54:48Z"');
+    expect(resolveSince('review', a, now)).toBe('2026-06-17T03:54:48Z');
   });
 });
 
@@ -270,10 +283,12 @@ describe('deriveReviewVerbs', () => {
     expect(v.reopen).toBe('start');
   });
 
-  it('custom config with a non-default terminal command', () => {
+  it('accept is null when the only review→terminal command is a non-CLI verb', () => {
+    // `ship` reaches a terminal status but is NOT a registered CLI verb, so it is
+    // not runnable (no `syntaur transition` fallback) → accept must be null.
     const transitions = [
       { from: 'review', command: 'ship', to: 'shipped' },
-      { from: 'review', command: 'bounce', to: 'in_progress' },
+      { from: 'review', command: 'start', to: 'in_progress' },
     ];
     const cfg: InboxStatusConfig = {
       statuses: [
@@ -286,33 +301,63 @@ describe('deriveReviewVerbs', () => {
       terminalStatuses: new Set(['shipped']),
     };
     const v = deriveReviewVerbs(cfg);
-    expect(v.accept).toBe('ship');
-    expect(v.reopen).toBe('bounce');
+    expect(v.accept).toBeNull();
+    // `start` → in_progress (active) is a known reopen verb.
+    expect(v.reopen).toBe('start');
   });
 
-  it('prefers a non-fail terminal command for accept', () => {
-    const transitions = [
+  it('prefers a non-fail terminal command for accept; fail alone → accept null', () => {
+    const both = [
       { from: 'review', command: 'fail', to: 'failed' },
       { from: 'review', command: 'complete', to: 'completed' },
     ];
-    const cfg: InboxStatusConfig = {
+    const cfgBoth: InboxStatusConfig = {
       statuses: [{ id: 'completed', terminal: true }, { id: 'failed', terminal: true }],
-      transitions,
-      transitionTable: buildTransitionTable(transitions),
+      transitions: both,
+      transitionTable: buildTransitionTable(both),
       terminalStatuses: new Set(['completed', 'failed']),
     };
-    expect(deriveReviewVerbs(cfg).accept).toBe('complete');
+    expect(deriveReviewVerbs(cfgBoth).accept).toBe('complete');
+
+    // Only `fail` reaches terminal → `fail` is explicitly excluded from accept.
+    const failOnly = [{ from: 'review', command: 'fail', to: 'failed' }];
+    const cfgFail: InboxStatusConfig = {
+      statuses: [{ id: 'failed', terminal: true }],
+      transitions: failOnly,
+      transitionTable: buildTransitionTable(failOnly),
+      terminalStatuses: new Set(['failed']),
+    };
+    expect(deriveReviewVerbs(cfgFail).accept).toBeNull();
   });
 
-  it('falls back to complete when no terminal target resolvable', () => {
-    const transitions = [{ from: 'review', command: 'bounce', to: 'in_progress' }];
+  it('accept is null when no review→terminal command resolves', () => {
+    const transitions = [{ from: 'review', command: 'start', to: 'in_progress' }];
     const cfg: InboxStatusConfig = {
       statuses: [{ id: 'in_progress' }],
       transitions,
       transitionTable: buildTransitionTable(transitions),
       terminalStatuses: new Set(['completed', 'failed']),
     };
-    expect(deriveReviewVerbs(cfg).accept).toBe('complete');
+    const v = deriveReviewVerbs(cfg);
+    expect(v.accept).toBeNull();
+    expect(v.reopen).toBe('start');
+  });
+
+  it('reopen prefers start over reopen when both target an active status', () => {
+    const transitions = [
+      { from: 'review', command: 'reopen', to: 'in_progress' },
+      { from: 'review', command: 'start', to: 'in_progress' },
+      { from: 'review', command: 'complete', to: 'completed' },
+    ];
+    const cfg: InboxStatusConfig = {
+      statuses: [{ id: 'in_progress' }, { id: 'completed', terminal: true }],
+      transitions,
+      transitionTable: buildTransitionTable(transitions),
+      terminalStatuses: new Set(['completed']),
+    };
+    const v = deriveReviewVerbs(cfg);
+    expect(v.accept).toBe('complete');
+    expect(v.reopen).toBe('start');
   });
 });
 
@@ -323,31 +368,43 @@ describe('buildAction', () => {
   const standalone = { project: null, assignmentSlug: 'uuid-2', assignmentId: 'uuid-2' };
 
   it('review (project): Accept + complete command with --project', () => {
-    expect(buildAction('review', projItem, { acceptCmd: 'complete' })).toEqual({
+    expect(buildAction('review', projItem, { acceptCommand: 'complete', reopenCommand: 'start' })).toEqual({
       verb: 'Accept',
       command: 'syntaur complete my-slug --project proj',
     });
   });
   it('review (standalone): omits --project, targets UUID', () => {
-    expect(buildAction('review', standalone, { acceptCmd: 'complete' })).toEqual({
+    expect(buildAction('review', standalone, { acceptCommand: 'complete', reopenCommand: 'start' })).toEqual({
       verb: 'Accept',
       command: 'syntaur complete uuid-2',
     });
   });
+  it('review: falls back to Reopen when accept is null', () => {
+    expect(buildAction('review', projItem, { acceptCommand: null, reopenCommand: 'start' })).toEqual({
+      verb: 'Reopen',
+      command: 'syntaur start my-slug --project proj',
+    });
+  });
+  it('review: inspect fallback when neither accept nor reopen resolves', () => {
+    expect(buildAction('review', projItem, { acceptCommand: null, reopenCommand: null })).toEqual({
+      verb: 'Review',
+      command: 'syntaur timeline my-slug --project proj',
+    });
+  });
   it('blocked: Unblock command', () => {
-    expect(buildAction('blocked', projItem, { acceptCmd: 'complete' })).toEqual({
+    expect(buildAction('blocked', projItem, {})).toEqual({
       verb: 'Unblock',
       command: 'syntaur unblock my-slug --project proj',
     });
   });
   it('question: Answer command with --reply-to', () => {
-    expect(buildAction('question', projItem, { acceptCmd: 'complete', commentId: 'cid' })).toEqual({
+    expect(buildAction('question', projItem, { commentId: 'cid' })).toEqual({
       verb: 'Answer',
       command: 'syntaur comment my-slug "<answer>" --reply-to cid --project proj',
     });
   });
   it('plan-approval: Approve plan command', () => {
-    expect(buildAction('plan-approval', projItem, { acceptCmd: 'complete' })).toEqual({
+    expect(buildAction('plan-approval', projItem, {})).toEqual({
       verb: 'Approve plan',
       command: 'syntaur plan approve my-slug --project proj',
     });

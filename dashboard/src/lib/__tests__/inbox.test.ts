@@ -4,7 +4,6 @@ import {
   commentsEndpoint,
   formatAge,
   groupInboxItems,
-  parseTransitionCommand,
   resolveCommentEndpoint,
   transitionEndpoint,
   type InboxItem,
@@ -69,18 +68,6 @@ describe('formatAge', () => {
     expect(formatAge(23 * 60 * 60_000)).toBe('23h');
     expect(formatAge(24 * 60 * 60_000)).toBe('1d');
     expect(formatAge(3 * 24 * 60 * 60_000)).toBe('3d');
-  });
-});
-
-describe('parseTransitionCommand', () => {
-  it('extracts the verb from a derived review command', () => {
-    expect(parseTransitionCommand('syntaur complete my-task --project proj')).toBe('complete');
-    expect(parseTransitionCommand('syntaur custom-accept my-task')).toBe('custom-accept');
-  });
-
-  it('returns null for an unexpected shape', () => {
-    expect(parseTransitionCommand('not a command')).toBeNull();
-    expect(parseTransitionCommand('')).toBeNull();
   });
 });
 

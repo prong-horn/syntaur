@@ -21,7 +21,6 @@ import {
   commentsEndpoint,
   formatAge,
   groupInboxItems,
-  parseTransitionCommand,
   resolveCommentEndpoint,
   transitionEndpoint,
   type EndpointDescriptor,
@@ -224,9 +223,10 @@ const ACTION_BTN = 'shell-action inline-flex items-center gap-1.5';
 
 function ReviewActions({ item, onMutated, onError, onSuccess }: RowProps) {
   const [busy, setBusy] = useState<string | null>(null);
-  // Accept command is derived (from the lifecycle status-config) and carried in
-  // `action.command`; parse it back rather than hardcoding `complete`.
-  const acceptCommand = parseTransitionCommand(item.action.command);
+  // Accept/reopen commands are derived server-side (from the lifecycle
+  // status-config) and carried STRUCTURALLY on the item — render each button
+  // only when its command is non-null (else there is no runnable CLI verb).
+  const { acceptCommand, reopenCommand } = item;
 
   async function run(command: string, verb: string) {
     setBusy(command);
@@ -241,25 +241,28 @@ function ReviewActions({ item, onMutated, onError, onSuccess }: RowProps) {
 
   return (
     <div className="flex flex-wrap items-center gap-2">
-      <button
-        type="button"
-        className={ACTION_BTN}
-        disabled={busy !== null || !acceptCommand}
-        title={acceptCommand ? undefined : 'Could not derive the accept command — use the CLI form below.'}
-        onClick={() => acceptCommand && run(acceptCommand, 'Accepted')}
-      >
-        <Check className="h-3.5 w-3.5" />
-        {busy === acceptCommand ? 'Accepting…' : 'Accept'}
-      </button>
-      <button
-        type="button"
-        className={ACTION_BTN}
-        disabled={busy !== null}
-        onClick={() => run('reopen', 'Reopened')}
-      >
-        <RotateCcw className="h-3.5 w-3.5" />
-        {busy === 'reopen' ? 'Reopening…' : 'Reopen'}
-      </button>
+      {acceptCommand ? (
+        <button
+          type="button"
+          className={ACTION_BTN}
+          disabled={busy !== null}
+          onClick={() => run(acceptCommand, 'Accepted')}
+        >
+          <Check className="h-3.5 w-3.5" />
+          {busy === acceptCommand ? 'Accepting…' : 'Accept'}
+        </button>
+      ) : null}
+      {reopenCommand ? (
+        <button
+          type="button"
+          className={ACTION_BTN}
+          disabled={busy !== null}
+          onClick={() => run(reopenCommand, 'Reopened')}
+        >
+          <RotateCcw className="h-3.5 w-3.5" />
+          {busy === reopenCommand ? 'Reopening…' : 'Reopen'}
+        </button>
+      ) : null}
     </div>
   );
 }
@@ -301,11 +304,9 @@ function QuestionActions({ item, onMutated, onError, onSuccess }: RowProps) {
   const [reply, setReply] = useState('');
   const [busy, setBusy] = useState(false);
 
-  // Post an answer (reply) then mark the question resolved. We can't target the
-  // specific commentId from the inbox payload's reply, so this posts a top-level
-  // answer comment; the question is resolved via the comment id parsed from the
-  // CLI command (`--reply-to <id>`), keeping parity with the CLI answer flow.
-  const replyToId = parseReplyToId(item.action.command);
+  // The unresolved comment's id is carried STRUCTURALLY on the item. Posting an
+  // inline reply replies to that comment (`replyTo`); Resolve marks it answered.
+  const replyToId = item.commentId;
 
   async function postReply() {
     if (!reply.trim()) return;
@@ -392,14 +393,4 @@ function PlanApprovalActions({ item }: RowProps) {
       </Link>
     </div>
   );
-}
-
-/**
- * Pull the `--reply-to <id>` comment id out of a question item's CLI command
- * (`syntaur comment <slug> "<answer>" --reply-to <commentId> ...`). Returns null
- * when absent so callers fall back to a top-level reply / the jump link.
- */
-function parseReplyToId(command: string): string | null {
-  const match = /--reply-to\s+(\S+)/.exec(command);
-  return match ? match[1] : null;
 }

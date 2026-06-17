@@ -60,6 +60,19 @@ export interface InboxItem {
   /** One-line context line. */
   summary: string;
   action: InboxAction;
+  /**
+   * Review-only: the derived CLI verb that ACCEPTS the review (terminal target),
+   * or `null` when none qualifies. Carried structurally so the dashboard POSTs
+   * `transitions/<acceptCommand>` without re-parsing `action.command`.
+   */
+  acceptCommand?: string | null;
+  /**
+   * Review-only: the derived CLI verb that REOPENS the review (active target),
+   * or `null` when none qualifies.
+   */
+  reopenCommand?: string | null;
+  /** Question-only: the unresolved comment's id (for reply `replyTo` + resolve). */
+  commentId?: string;
 }
 
 /**

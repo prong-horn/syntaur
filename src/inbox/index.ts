@@ -118,12 +118,23 @@ export async function isPlanAwaitingApproval(
 // `since` resolver (pure) — always returns a valid RFC 3339 via a fallback chain.
 // ─────────────────────────────────────────────────────────────────────────────
 
-/** A non-empty, parseable RFC-3339-ish timestamp, else null. */
+/** Strip millis to canonical RFC 3339 with a trailing `Z` (e.g. `…:00Z`). */
+function canonicalRfc3339(ms: number): string {
+  return new Date(ms).toISOString().replace(/\.\d{3}Z$/, 'Z');
+}
+
+/**
+ * A non-empty, parseable timestamp NORMALIZED to canonical RFC 3339 (UTC, no
+ * millis), else null. Normalizing here means every `since` the inbox emits is
+ * canonical: a date-only `2026-06-01` becomes `2026-06-01T00:00:00Z`, and an
+ * already-canonical `2026-06-17T03:54:48Z` round-trips unchanged.
+ */
 function validTimestamp(value: string | null | undefined): string | null {
   if (typeof value !== 'string') return null;
   const t = value.trim();
   if (t.length === 0) return null;
-  return Number.isNaN(Date.parse(t)) ? null : t;
+  const ms = Date.parse(t);
+  return Number.isNaN(ms) ? null : canonicalRfc3339(ms);
 }
 
 /** `.at` of the latest statusHistory entry (by parseable timestamp), else null. */
@@ -185,7 +196,7 @@ export function resolveSince(
     latestStatusHistoryAt(a) ??
     validTimestamp(a.updated) ??
     validTimestamp(a.created) ??
-    new Date(now).toISOString()
+    canonicalRfc3339(now)
   );
 }
 
@@ -200,54 +211,87 @@ export function computeAgeMs(since: string, now: number): number {
 // Accept-verb derivation (pure) — from the lifecycle status-config.
 // ─────────────────────────────────────────────────────────────────────────────
 
+/**
+ * The lifecycle verbs that `src/index.ts` registers as real CLI subcommands. A
+ * derived review verb is only RUNNABLE (CLI `syntaur <verb>` + dashboard
+ * `POST transitions/<verb>`) when it is one of these — there is no generic
+ * `syntaur transition` fallback. Anything outside this set is non-runnable, so
+ * the derivation rejects it (e.g. a custom `review→shipped` command named
+ * `ship`).
+ */
+export const KNOWN_TRANSITION_CLI_VERBS = new Set<string>([
+  'start',
+  'complete',
+  'fail',
+  'reopen',
+  'block',
+  'unblock',
+  'review',
+]);
+
 export interface ReviewVerbs {
-  /** Primary "Accept" command (terminal target). Defaults to 'complete'. */
-  accept: string;
-  /** "Reopen" command (active target), when one is resolvable. */
+  /**
+   * Primary "Accept" command (a known CLI verb whose target is terminal and is
+   * not `fail`), or `null` when none qualifies. NO hardcoded fallback.
+   */
+  accept: string | null;
+  /**
+   * "Reopen" command — a known CLI verb (`start`/`reopen`) whose target is an
+   * active (non-terminal) status — or `null` when none qualifies.
+   */
   reopen: string | null;
 }
 
 /**
- * Derive the accept/reopen commands available from `review`. The valid commands
- * are those `c` where `getTargetStatus('review', c, transitionTable) !== null`.
- * Classify each by its target status's disposition: a target in a TERMINAL
- * status → the primary "Accept"; a target returning to an ACTIVE (non-terminal)
- * disposition → "Reopen". Among terminal-target commands, prefer one whose
- * command is not `fail` (Accept implies a positive completion). Falls back to
- * `'complete'` when nothing resolves.
+ * Derive the accept/reopen commands available from `review`, constrained to
+ * RUNNABLE CLI verbs (`KNOWN_TRANSITION_CLI_VERBS`) and classified by their
+ * target status's disposition:
+ *
+ * - `accept`: a review-valid command whose target ∈ `terminalStatuses`, that is
+ *   NOT `fail`, and is a known CLI verb. Prefers `'complete'`; else the first
+ *   qualifier; else `null` (no hardcoded fallback — an unrunnable target yields
+ *   null so the dashboard hides the inline Accept).
+ * - `reopen`: a review-valid command in `{'start','reopen'}` (both target the
+ *   active `in_progress`, never blocked/parked). Prefers `'start'`, else
+ *   `'reopen'`, else `null`.
+ *
+ * Valid commands are those `c` where `getTargetStatus('review', c, table)` is
+ * non-null, enumerated from the declared `transitions` (from==='review') plus a
+ * sweep of `transitionTable` keys (`review:*`).
  */
 export function deriveReviewVerbs(config: InboxStatusConfig): ReviewVerbs {
   const candidates = new Set<string>();
   for (const t of config.transitions) {
     if (t.from === 'review') candidates.add(t.command);
   }
-  // The transitionTable may key commands by `from:command`; enumerate via the
-  // declared transitions (above) plus a sweep of the table keys for `review:*`.
   for (const key of config.transitionTable.keys()) {
     if (key.startsWith('review:')) candidates.add(key.slice('review:'.length));
   }
 
   const terminalAccept: string[] = [];
-  let reopen: string | null = null;
+  const activeReopen: string[] = [];
   for (const command of candidates) {
     const target = getTargetStatus('review', command, config.transitionTable);
     if (target === null) continue;
-    if (config.terminalStatuses.has(target)) {
+    const isTerminal = config.terminalStatuses.has(target);
+    if (
+      isTerminal &&
+      command !== 'fail' &&
+      KNOWN_TRANSITION_CLI_VERBS.has(command)
+    ) {
       terminalAccept.push(command);
-    } else if (reopen === null) {
-      reopen = command;
+    }
+    if (!isTerminal && (command === 'start' || command === 'reopen')) {
+      activeReopen.push(command);
     }
   }
 
-  let accept: string;
-  if (terminalAccept.length === 0) {
-    accept = 'complete';
-  } else {
-    accept =
-      terminalAccept.find((c) => c === 'complete') ??
-      terminalAccept.find((c) => c !== 'fail') ??
-      terminalAccept[0];
-  }
+  const accept =
+    terminalAccept.find((c) => c === 'complete') ?? terminalAccept[0] ?? null;
+  const reopen =
+    activeReopen.find((c) => c === 'start') ??
+    activeReopen.find((c) => c === 'reopen') ??
+    null;
   return { accept, reopen };
 }
 
@@ -270,14 +314,28 @@ function targetAndProject(item: {
 export function buildAction(
   category: InboxCategory,
   item: { project: string | null; assignmentSlug: string; assignmentId: string },
-  ctx: { acceptCmd: string; commentId?: string },
+  ctx: { acceptCommand?: string | null; reopenCommand?: string | null; commentId?: string },
 ): InboxAction {
   const { target, projectFlag } = targetAndProject(item);
   switch (category) {
     case 'review':
+      // Prefer the runnable Accept verb; else Reopen; else an inspect fallback
+      // (realistically unreachable since the default config derives 'complete').
+      if (ctx.acceptCommand) {
+        return {
+          verb: 'Accept',
+          command: `syntaur ${ctx.acceptCommand} ${target}${projectFlag}`,
+        };
+      }
+      if (ctx.reopenCommand) {
+        return {
+          verb: 'Reopen',
+          command: `syntaur ${ctx.reopenCommand} ${target}${projectFlag}`,
+        };
+      }
       return {
-        verb: 'Accept',
-        command: `syntaur ${ctx.acceptCmd} ${target}${projectFlag}`,
+        verb: 'Review',
+        command: `syntaur timeline ${target}${projectFlag}`,
       };
     case 'blocked':
       return {
@@ -340,6 +398,11 @@ export async function computeInbox(opts: ComputeInboxOptions): Promise<InboxResu
     // Skip archived up front — an archived item is not awaiting action.
     if (parsed.archived) continue;
 
+    // Skip parked/terminal-disposition assignments up front — they are not
+    // awaiting a human decision (matches the plan's exclusions, and guards a
+    // malformed `disposition:parked, status:review`). Blocked + active flow on.
+    if (parsed.disposition === 'parked' || parsed.disposition === 'terminal') continue;
+
     const project = entry.projectSlug;
     const assignmentSlug = entry.assignmentSlug;
     const assignmentId = parsed.id;
@@ -358,7 +421,12 @@ export async function computeInbox(opts: ComputeInboxOptions): Promise<InboxResu
         summary: parsed.reviewRequested
           ? 'Review requested — awaiting accept or reopen.'
           : 'Awaiting review — accept or reopen.',
-        action: buildAction('review', baseItem, { acceptCmd: reviewVerbs.accept }),
+        acceptCommand: reviewVerbs.accept,
+        reopenCommand: reviewVerbs.reopen,
+        action: buildAction('review', baseItem, {
+          acceptCommand: reviewVerbs.accept,
+          reopenCommand: reviewVerbs.reopen,
+        }),
       });
     }
 
@@ -374,7 +442,7 @@ export async function computeInbox(opts: ComputeInboxOptions): Promise<InboxResu
         summary: parsed.blockedReason
           ? `Blocked: ${parsed.blockedReason}`
           : 'Blocked — awaiting unblock.',
-        action: buildAction('blocked', baseItem, { acceptCmd: reviewVerbs.accept }),
+        action: buildAction('blocked', baseItem, {}),
       });
     }
 
@@ -394,8 +462,8 @@ export async function computeInbox(opts: ComputeInboxOptions): Promise<InboxResu
               since,
               ageMs: computeAgeMs(since, now),
               summary: summarizeQuestion(c),
+              commentId: c.id,
               action: buildAction('question', baseItem, {
-                acceptCmd: reviewVerbs.accept,
                 commentId: c.id,
               }),
             });
@@ -417,7 +485,7 @@ export async function computeInbox(opts: ComputeInboxOptions): Promise<InboxResu
           since,
           ageMs: computeAgeMs(since, now),
           summary: 'Plan awaiting approval.',
-          action: buildAction('plan-approval', baseItem, { acceptCmd: reviewVerbs.accept }),
+          action: buildAction('plan-approval', baseItem, {}),
         });
       }
     }
