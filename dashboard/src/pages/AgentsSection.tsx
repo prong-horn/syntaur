@@ -30,6 +30,7 @@ import {
   type PromptArgPosition,
 } from '@shared/agents-schema';
 import { SectionCard } from '../components/SectionCard';
+import { ConfirmDialog } from '../components/ConfirmDialog';
 import { LaunchPromptInput } from '../components/LaunchPromptInput';
 import { tokenWarnings } from '../lib/launch-prompt-autocomplete';
 import { slugify } from '../lib/slug';
@@ -464,6 +465,7 @@ export function AgentsSection() {
   const [hydrated, setHydrated] = useState<EditableAgent[]>(() => hydrate(serverState.agents));
   const [saving, setSaving] = useState(false);
   const [banner, setBanner] = useState<string | null>(null);
+  const [pendingReset, setPendingReset] = useState(false);
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(
     null,
   );
@@ -582,9 +584,6 @@ export function AgentsSection() {
 
   async function handleReset() {
     if (!serverState.custom) return;
-    if (!window.confirm('Reset agents to built-in defaults? Any custom agents will be deleted from your config.')) {
-      return;
-    }
     setSaving(true);
     setBanner(null);
     try {
@@ -622,7 +621,7 @@ export function AgentsSection() {
           <button
             type="button"
             className="shell-action text-xs"
-            onClick={handleReset}
+            onClick={() => setPendingReset(true)}
             disabled={saving}
           >
             <RotateCcw className="h-3 w-3" />
@@ -708,6 +707,22 @@ export function AgentsSection() {
           </button>
         </div>
       </div>
+
+      <ConfirmDialog
+        open={pendingReset}
+        title="Reset agents to defaults?"
+        description="Reset agents to built-in defaults? Any custom agents will be deleted from your config."
+        confirmLabel="Reset"
+        destructive
+        loading={saving}
+        onOpenChange={(open) => {
+          if (!open && !saving) setPendingReset(false);
+        }}
+        onConfirm={async () => {
+          await handleReset();
+          setPendingReset(false);
+        }}
+      />
     </SectionCard>
   );
 }

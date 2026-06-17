@@ -6,6 +6,7 @@ import {
   parseAssignmentFrontmatter,
   updateAssignmentFile,
 } from '../lifecycle/frontmatter.js';
+import { recordStatusEvent, resolveActor } from '../lifecycle/event-emit.js';
 import { listAssignmentsByProject } from './assignment-walk.js';
 import { nowTimestamp } from './timestamp.js';
 
@@ -207,6 +208,17 @@ export async function applyStatusResolutions(
 
   // 3. Remap phase
   const writtenPaths: string[] = [];
+  // Pending audit payloads — collected DURING the remap loop but emitted only
+  // AFTER all writes in this phase succeed, past the rollback boundary. A later
+  // file failure rolls earlier writes back; emitting inside the loop would leave
+  // a false event for a rolled-back file (FIX 2).
+  const pendingRemapEvents: Array<{
+    assignmentId: string;
+    projectSlug: string | null;
+    at: string;
+    from: string;
+    to: string;
+  }> = [];
   let remapped = 0;
   const byId = new Map<string, { mode: 'remap' | 'delete'; count: number; target?: string }>();
   for (const r of resolutions) {
@@ -249,6 +261,15 @@ export async function applyStatusResolutions(
           { at: now, from: r.id, to: r.target, command: 'remap', by: null },
         );
         await writeFile(a.path, next, 'utf-8');
+        // Defer the audit event past the rollback boundary (FIX 2): collect now,
+        // emit only in the success path below.
+        pendingRemapEvents.push({
+          assignmentId: fm.id,
+          projectSlug: a.projectSlug,
+          at: now,
+          from: r.id,
+          to: r.target,
+        });
         writtenPaths.push(a.path);
         remapped++;
         const bucket = byId.get(r.id);
@@ -272,6 +293,20 @@ export async function applyStatusResolutions(
       `remap write failed: ${err instanceof Error ? err.message : String(err)}`,
       'write-failed',
     );
+  }
+
+  // All remap writes succeeded — past the rollback boundary. Emit the audit
+  // events now (FIX 2): status remap, actor 'system' (null by).
+  for (const e of pendingRemapEvents) {
+    recordStatusEvent({
+      assignmentId: e.assignmentId,
+      projectSlug: e.projectSlug,
+      at: e.at,
+      actor: resolveActor(null),
+      from: e.from,
+      to: e.to,
+      command: 'remap',
+    });
   }
 
   // 4. Delete phase

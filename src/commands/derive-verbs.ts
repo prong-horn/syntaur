@@ -8,7 +8,7 @@
  */
 
 import { readFile } from 'node:fs/promises';
-import { resolve } from 'node:path';
+import { resolve, basename } from 'node:path';
 import { expandHome, assignmentsDir as assignmentsDirFn } from '../utils/paths.js';
 import { fileExists } from '../utils/fs.js';
 import { readConfig } from '../utils/config.js';
@@ -32,6 +32,7 @@ import {
   type DeriveContext,
   type RecomputeResult,
 } from '../lifecycle/recompute.js';
+import { emitEvent } from '../lifecycle/event-emit.js';
 
 export interface DeriveVerbOptions {
   project?: string;
@@ -85,6 +86,31 @@ async function inferActor(options: DeriveVerbOptions): Promise<string> {
     /* no bound session */
   }
   return 'human';
+}
+
+/**
+ * Emit a non-status audit event for a resolved derive target (best-effort).
+ * Resolves the assignment `id` from the freshly-written file and the project
+ * slug from the resolved project dir (null for standalone). Never throws.
+ */
+async function emitDeriveEvent(
+  target: ResolvedTarget,
+  type: string,
+  actor: string,
+  details: Record<string, unknown>,
+): Promise<void> {
+  try {
+    const fm = parseAssignmentFrontmatter(await readFile(target.assignmentPath, 'utf-8'));
+    emitEvent({
+      assignmentId: fm.id,
+      projectSlug: target.projectDir ? basename(target.projectDir) : null,
+      type,
+      actor,
+      details,
+    });
+  } catch {
+    /* best-effort: a failed audit emit must never break the verb */
+  }
 }
 
 function reportDerived(label: string, result: RecomputeResult): void {
@@ -147,6 +173,7 @@ async function assertFact(
 // ── plan approval ───────────────────────────────────────────────────────────
 
 export async function planApproveCommand(assignment: string, options: DeriveVerbOptions): Promise<void> {
+  let approvedFile: string | null = null;
   await assertFact(
     assignment,
     options,
@@ -156,6 +183,7 @@ export async function planApproveCommand(assignment: string, options: DeriveVerb
       if (!planFile) {
         throw new Error('No plan file found (plan.md / plan-v*.md). Write a plan before approving.');
       }
+      approvedFile = planFile;
       const planContent = await readFile(resolve(target.assignmentDir, planFile), 'utf-8');
       return updatePlanApproval(content, {
         file: planFile,
@@ -166,6 +194,9 @@ export async function planApproveCommand(assignment: string, options: DeriveVerb
     },
     'Plan approved (revision-bound)',
   );
+  // Audit event (best-effort) — emitted only after the verb succeeds.
+  const target = await resolveTarget(assignment, options);
+  await emitDeriveEvent(target, 'plan-approval', await inferActor(options), { file: approvedFile });
 }
 
 export async function planUnapproveCommand(assignment: string, options: DeriveVerbOptions): Promise<void> {
@@ -207,6 +238,9 @@ export async function factSetCommand(
     `Fact ${name} = ${canonical}`,
     { context, auditMutation: true },
   );
+  // Audit event (best-effort) — emitted only after the verb succeeds.
+  const target = await resolveTarget(assignment, options);
+  await emitDeriveEvent(target, 'fact-set', await inferActor(options), { name, value: canonical });
 }
 
 /**
@@ -275,6 +309,9 @@ export async function attestCommand(
     `Attested ${fact} (${verdict})`,
     { context, auditMutation: true },
   );
+  // Audit event (best-effort) — emitted only after the verb succeeds.
+  const target = await resolveTarget(assignment, options);
+  await emitDeriveEvent(target, 'attestation', actor, { fact, verdict });
 }
 
 // ── park / review / implementation facts ───────────────────────────────────

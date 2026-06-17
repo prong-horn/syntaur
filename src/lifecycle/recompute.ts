@@ -43,6 +43,7 @@ import {
   parseAssignmentFrontmatter,
   updateAssignmentFile,
 } from './frontmatter.js';
+import { recordStatusEvent, resolveActor } from './event-emit.js';
 import { DEFAULT_TERMINAL_STATUSES } from './types.js';
 
 const LOCK_FILE = '.derive.lock';
@@ -300,6 +301,21 @@ export async function recomputeAndWrite(
         continue; // retry the whole read-mutate-compute-write cycle
       }
       await writeFileForce(assignmentPath, next);
+
+      // Audit event (best-effort): this is the dimension-change status write
+      // (from !== to is implied by statusChanged, but recordStatusEvent
+      // self-guards on from===to regardless — R5). Actor is the recompute's
+      // own resolved `by` (null → 'system').
+      recordStatusEvent({
+        assignmentId: frontmatter.id,
+        projectSlug: frontmatter.project,
+        at,
+        actor: resolveActor(opts.by),
+        from: frontmatter.status,
+        to: dims.status,
+        command: opts.cause,
+      });
+
       return { changed: true, status: dims.status, dimensions: dims, deferredTerminal: false };
     }
     const frontmatter = parseAssignmentFrontmatter(await readFile(assignmentPath, 'utf-8'));

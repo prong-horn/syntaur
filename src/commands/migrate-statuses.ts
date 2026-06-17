@@ -9,6 +9,7 @@ import {
   updateAssignmentFile,
 } from '../lifecycle/frontmatter.js';
 import { nowTimestamp } from '../utils/timestamp.js';
+import { withSuppressedEvents } from '../lifecycle/event-emit.js';
 import type { AssignmentFrontmatter } from '../lifecycle/types.js';
 
 export interface MigrateStatusesOptions {
@@ -138,17 +139,22 @@ export async function migrateStatusesCommand(
 
   const now = nowTimestamp();
   let migrated = 0;
-  for (const c of candidates) {
-    const content = await readFile(c.assignmentMd, 'utf-8');
-    const updated = appendStatusHistoryEntry(
-      updateAssignmentFile(content, {
-        status: c.toStatus,
-        updated: now,
-      }),
-      { at: now, from: c.fromStatus, to: c.toStatus, command: 'promote', by: null },
-    );
-    await writeFileForce(c.assignmentMd, updated);
-    migrated += 1;
-  }
+  // Suppress live audit events: seeded statusHistory writes are a migration,
+  // not a real transition. (These writes don't currently flow through an
+  // instrumented path, but the guard keeps them no-emit defensively.)
+  await withSuppressedEvents(async () => {
+    for (const c of candidates) {
+      const content = await readFile(c.assignmentMd, 'utf-8');
+      const updated = appendStatusHistoryEntry(
+        updateAssignmentFile(content, {
+          status: c.toStatus,
+          updated: now,
+        }),
+        { at: now, from: c.fromStatus, to: c.toStatus, command: 'promote', by: null },
+      );
+      await writeFileForce(c.assignmentMd, updated);
+      migrated += 1;
+    }
+  });
   console.log(`Migrated ${migrated} assignment${migrated === 1 ? '' : 's'}.`);
 }

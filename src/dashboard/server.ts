@@ -79,6 +79,7 @@ import { createLeasesRouter } from './api-leases.js';
 import { createSchedulesRouter } from './api-schedules.js';
 import { runTick } from '../schedules/tick.js';
 import { createUsageRouter } from './api-usage.js';
+import { createEventsRouter } from './api-events.js';
 import { createPlaybooksRouter } from './api-playbooks.js';
 import {
   migrateLegacyProjectFiles,
@@ -721,6 +722,11 @@ export function createDashboardServer(options: DashboardServerOptions) {
 
   // --- Usage API (per-assignment / per-project token usage rollups) ---
   app.use('/api/usage', createUsageRouter(projectsDir, assignmentsDir));
+
+  // --- Events API (per-assignment audit Activity timeline) ---
+  // Best-effort read-only; routes use full `/projects/...` & `/standalone/...`
+  // paths, so mount at `/api`. Returns `{ events: [] }` rather than 500ing.
+  app.use('/api', createEventsRouter(projectsDir, assignmentsDir));
 
   // --- Agent Sessions API ---
   app.use('/api/agent-sessions', createAgentSessionsRouter(projectsDir, broadcast, assignmentsDir));

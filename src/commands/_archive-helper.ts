@@ -4,9 +4,10 @@ import { expandHome, assignmentsDir as assignmentsDirFn } from '../utils/paths.j
 import { fileExists } from '../utils/fs.js';
 import { readConfig } from '../utils/config.js';
 import { isValidSlug } from '../utils/slug.js';
-import { updateAssignmentFile } from '../lifecycle/frontmatter.js';
+import { updateAssignmentFile, parseAssignmentFrontmatter } from '../lifecycle/frontmatter.js';
 import { nowTimestamp } from '../utils/timestamp.js';
 import { resolveAssignmentById } from '../utils/assignment-resolver.js';
+import { emitEvent } from '../lifecycle/event-emit.js';
 
 export interface ArchiveOptions {
   project?: string;
@@ -90,12 +91,38 @@ async function writeArchiveState(
   await writeFile(filePath, updated, 'utf-8');
 }
 
+/**
+ * Emit an `archived`/`restored` audit event for an ASSIGNMENT target only
+ * (project archives have no assignment id and are out of v1 scope). Reads the
+ * id + project slug off the freshly-written frontmatter. Best-effort.
+ */
+async function emitArchiveEvent(
+  resolved: ResolvedTarget,
+  type: 'archived' | 'restored',
+  reason: string | null,
+): Promise<void> {
+  if (resolved.kind !== 'assignment') return;
+  try {
+    const fm = parseAssignmentFrontmatter(await readFile(resolved.filePath, 'utf-8'));
+    emitEvent({
+      assignmentId: fm.id,
+      projectSlug: fm.project,
+      type,
+      actor: 'human',
+      details: reason ? { reason } : {},
+    });
+  } catch {
+    /* best-effort */
+  }
+}
+
 export async function runArchive(target: string, options: ArchiveOptions = {}): Promise<ArchiveResult> {
   const resolved = await resolveTarget(target, options);
   if (!resolved) {
     return { success: false, message: `No assignment or project matched "${target}".` };
   }
   await writeArchiveState(resolved.filePath, true, options.reason ?? null);
+  await emitArchiveEvent(resolved, 'archived', options.reason ?? null);
   return { success: true, message: `Archived ${resolved.label}.` };
 }
 
@@ -105,6 +132,7 @@ export async function runRestore(target: string, options: ArchiveOptions = {}): 
     return { success: false, message: `No assignment or project matched "${target}".` };
   }
   await writeArchiveState(resolved.filePath, false, null);
+  await emitArchiveEvent(resolved, 'restored', null);
   return { success: true, message: `Restored ${resolved.label}.` };
 }
 

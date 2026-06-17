@@ -4,6 +4,7 @@ import { fileExists, writeFileForce } from '../utils/fs.js';
 import { nowTimestamp } from '../utils/timestamp.js';
 import { getTargetStatus } from './state-machine.js';
 import { appendStatusHistoryEntry, parseAssignmentFrontmatter, updateAssignmentFile } from './frontmatter.js';
+import { recordStatusEvent, resolveActor, emitEvent } from './event-emit.js';
 import {
   completeLinkedTodos,
   reopenLinkedTodos,
@@ -70,6 +71,13 @@ async function checkDependencies(
 export interface TransitionOptions {
   reason?: string;
   agent?: string;
+  /**
+   * Actor to attribute the audit status-event to, INDEPENDENT of `agent` (which
+   * drives assignee mutation). Dashboard transition routes pass `'human'` here
+   * so a click on an already-assigned task is recorded as `human`, not the
+   * assignee. When unset, falls back to `agent ?? frontmatter.assignee`.
+   */
+  auditActor?: string;
   transitionTable?: Map<string, string>;
   /** Guard-free custom targets: when provided (and no transitionTable), the
    * command resolves to this map's target regardless of the current status —
@@ -182,6 +190,20 @@ export async function executeTransition(
   }
   await writeFileForce(filePath, updatedContent);
 
+  // Audit event (best-effort): self-guards on from===to (R5). The audit actor
+  // is independent of `agent` (which drives assignee mutation) — dashboard
+  // routes pass `auditActor: 'human'` so a click is not recorded as the
+  // assignee (FIX 1).
+  recordStatusEvent({
+    assignmentId: frontmatter.id,
+    projectSlug: frontmatter.project,
+    at: now,
+    actor: resolveActor(options.auditActor ?? options.agent ?? frontmatter.assignee ?? null),
+    from: frontmatter.status,
+    to: targetStatus,
+    command,
+  });
+
   await applyLinkedTodosSideEffect(options.linkedTodosLookup, command, targetStatus, frontmatter);
 
   return {
@@ -208,6 +230,17 @@ export async function executeAssign(
 
   const updatedContent = updateAssignmentFile(content, updates);
   await writeFileForce(filePath, updatedContent);
+
+  // Audit event (best-effort): assignee changed from prior to `agent`.
+  if (frontmatter.assignee !== agent) {
+    emitEvent({
+      assignmentId: frontmatter.id,
+      projectSlug: frontmatter.project,
+      type: 'assignee-change',
+      actor: resolveActor(agent ?? frontmatter.assignee ?? null),
+      details: { from: frontmatter.assignee, to: agent },
+    });
+  }
 
   return {
     success: true,
@@ -310,6 +343,18 @@ export async function executeTransitionByDir(
   }
   await writeFileForce(filePath, updatedContent);
 
+  // Audit event (best-effort): self-guards on from===to (R5). The audit actor
+  // is independent of `agent` (see executeTransition / FIX 1).
+  recordStatusEvent({
+    assignmentId: frontmatter.id,
+    projectSlug: frontmatter.project,
+    at: now,
+    actor: resolveActor(options.auditActor ?? options.agent ?? frontmatter.assignee ?? null),
+    from: frontmatter.status,
+    to: targetStatus,
+    command,
+  });
+
   await applyLinkedTodosSideEffect(options.linkedTodosLookup, command, targetStatus, frontmatter);
 
   return {
@@ -336,6 +381,16 @@ export async function executeAssignByDir(
   const updatedContent = updateAssignmentFile(content, updates);
   await writeFileForce(filePath, updatedContent);
 
+  if (frontmatter.assignee !== agent) {
+    emitEvent({
+      assignmentId: frontmatter.id,
+      projectSlug: frontmatter.project,
+      type: 'assignee-change',
+      actor: resolveActor(agent ?? frontmatter.assignee ?? null),
+      details: { from: frontmatter.assignee, to: agent },
+    });
+  }
+
   return {
     success: true,
     message: `Assignment "${frontmatter.slug || assignmentDir}" assigned to '${agent}'.`,
@@ -358,6 +413,16 @@ export async function executeUnassign(
   const updatedContent = updateAssignmentFile(content, updates);
   await writeFileForce(filePath, updatedContent);
 
+  if (frontmatter.assignee !== null) {
+    emitEvent({
+      assignmentId: frontmatter.id,
+      projectSlug: frontmatter.project,
+      type: 'assignee-change',
+      actor: resolveActor(frontmatter.assignee),
+      details: { from: frontmatter.assignee, to: null },
+    });
+  }
+
   return {
     success: true,
     message: `Assignment "${assignmentSlug}" unassigned (assignee cleared).`,
@@ -378,6 +443,16 @@ export async function executeUnassignByDir(
 
   const updatedContent = updateAssignmentFile(content, updates);
   await writeFileForce(filePath, updatedContent);
+
+  if (frontmatter.assignee !== null) {
+    emitEvent({
+      assignmentId: frontmatter.id,
+      projectSlug: frontmatter.project,
+      type: 'assignee-change',
+      actor: resolveActor(frontmatter.assignee),
+      details: { from: frontmatter.assignee, to: null },
+    });
+  }
 
   return {
     success: true,

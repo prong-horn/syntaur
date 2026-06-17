@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { Archive, ArchiveRestore, ArrowRightLeft, ExternalLink } from 'lucide-react';
 import { useAssignmentById, useAssignmentSessionsById, useStandaloneAssignmentUsage, type ExternalIdInfo } from '../hooks/useProjects';
+import { useAssignmentEvents } from '../hooks/useAssignmentEvents';
 import { LoadingState } from '../components/LoadingState';
 import { ErrorState } from '../components/ErrorState';
 import { StatusBadge } from '../components/StatusBadge';
@@ -14,6 +15,7 @@ import { SectionCard } from '../components/SectionCard';
 import { MarkdownRenderer } from '../components/MarkdownRenderer';
 import { EmptyState } from '../components/EmptyState';
 import { CommentsThread } from '../components/CommentsThread';
+import { ActivityTimeline } from '../components/ActivityTimeline';
 import { MoveToWorkspaceDialog } from '../components/MoveToWorkspaceDialog';
 import { AgentSessionsSection } from '../components/AgentSessionsSection';
 import { AssignmentUsageSection } from '../components/AssignmentUsageSection';
@@ -37,6 +39,15 @@ export function StandaloneAssignmentDetail() {
   // D3: the standalone usage endpoint keys on the assignment SLUG, not the UUID
   // `id`. `assignment` is undefined until loaded, so gate on `assignment?.slug`.
   const { data: usageData, loading: usageLoading, error: usageError } = useStandaloneAssignmentUsage(assignment?.slug);
+  // Events are keyed on the standalone UUID `id` (the events table's
+  // assignment_id), unlike usage which keys on the slug.
+  const eventsUrl = id ? `/api/standalone/assignments/${id}/events` : null;
+  const {
+    events,
+    loading: eventsLoading,
+    error: eventsError,
+    refetch: refetchEvents,
+  } = useAssignmentEvents(eventsUrl);
   const [moveOpen, setMoveOpen] = useState(false);
   const [archiveError, setArchiveError] = useState<string | null>(null);
   const { toast, showToast, dismissToast } = useToast();
@@ -54,6 +65,7 @@ export function StandaloneAssignmentDetail() {
         throw new Error(payload?.error || `HTTP ${res.status}`);
       }
       refetch();
+      refetchEvents();
       showToast(archived ? 'Assignment archived' : 'Assignment restored', 'success');
     } catch (err) {
       setArchiveError(err instanceof Error ? err.message : 'Archive failed');
@@ -315,6 +327,18 @@ export function StandaloneAssignmentDetail() {
                       />
                     )}
                   </div>
+                ),
+              },
+              {
+                value: 'activity',
+                label: 'Activity',
+                count: events.length,
+                content: (
+                  <ActivityTimeline
+                    events={events}
+                    loading={eventsLoading}
+                    error={eventsError}
+                  />
                 ),
               },
             ]}

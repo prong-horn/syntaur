@@ -4,6 +4,7 @@ import { rm, readFile, open as fsOpen, stat as fsStat, realpath as fsRealpath } 
 import { spawnSync } from 'node:child_process';
 import { executeTransition } from '../lifecycle/index.js';
 import { appendStatusHistoryEntry } from '../lifecycle/frontmatter.js';
+import { recordEvent } from '../db/events-db.js';
 import { isValidSlug, slugify } from '../utils/slug.js';
 import { generateId } from '../utils/uuid.js';
 import { nowTimestamp } from '../utils/timestamp.js';
@@ -70,6 +71,59 @@ import {
   type CommentType,
 } from '../templates/index.js';
 import { parseComments } from './parser.js';
+
+/**
+ * Dashboard audit emit (best-effort): all dashboard mutations are attributed to
+ * `'human'`. `recordEvent` is best-effort and never throws, so a failed emit
+ * never 500s the route.
+ */
+function emitDashboardEvent(
+  assignmentId: string,
+  projectSlug: string | null,
+  type: string,
+  details: Record<string, unknown>,
+): void {
+  if (!assignmentId) return; // can't attribute without an id — skip silently
+  recordEvent({ assignmentId, projectSlug, type, actor: 'human', details });
+}
+
+interface TrackedFields {
+  id: string;
+  project: string | null;
+  status: string;
+  priority: string;
+  assignee: string | null;
+  archived: boolean;
+}
+
+/**
+ * Emit events for every tracked frontmatter field that changed between `before`
+ * and `after` on a raw-edit/create route (R1 diff path). `status-change` is
+ * already emitted inline at the four raw-edit sites (it needs the seeded
+ * statusHistory `command`), so it is NOT re-emitted here. All actor `'human'`.
+ */
+function emitTrackedFieldDiffs(
+  before: TrackedFields,
+  after: TrackedFields,
+  projectSlug: string | null,
+): void {
+  const id = after.id || before.id;
+  if (after.priority !== before.priority) {
+    emitDashboardEvent(id, projectSlug, 'priority-change', {
+      from: before.priority,
+      to: after.priority,
+    });
+  }
+  if (after.assignee !== before.assignee) {
+    emitDashboardEvent(id, projectSlug, 'assignee-change', {
+      from: before.assignee,
+      to: after.assignee,
+    });
+  }
+  if (after.archived !== before.archived) {
+    emitDashboardEvent(id, projectSlug, after.archived ? 'archived' : 'restored', {});
+  }
+}
 
 function extractFrontmatter(content: string): Record<string, string> | null {
   const trimmed = content.trimStart();
@@ -965,16 +1019,17 @@ export function createWriteRouter(
       await ensureDir(assignmentDir);
       // Raw create bypasses renderAssignment, so seed the statusHistory here
       // (only when the body didn't already supply one — never double-seed).
-      const seededContent =
-        parseAssignmentFull(content).statusHistory.length > 0
-          ? content
-          : appendStatusHistoryEntry(content, {
-              at: timestamp,
-              from: null,
-              to: parseAssignmentFull(content).status,
-              command: 'create',
-              by: null,
-            });
+      const parsedCreate = parseAssignmentFull(content);
+      const seededHere = parsedCreate.statusHistory.length === 0;
+      const seededContent = seededHere
+        ? appendStatusHistoryEntry(content, {
+            at: timestamp,
+            from: null,
+            to: parsedCreate.status,
+            command: 'create',
+            by: null,
+          })
+        : content;
       await writeFileForce(resolve(assignmentDir, 'assignment.md'), seededContent);
 
       try {
@@ -994,6 +1049,17 @@ export function createWriteRouter(
           // Best effort cleanup only.
         }
         throw companionError;
+      }
+
+      // Audit event (best-effort): emit AFTER all companion files are written
+      // (FIX 2) — a companion failure removes the dir, so a pre-companion emit
+      // would leave a false event. Only when we seeded the statusHistory here.
+      if (seededHere) {
+        emitDashboardEvent(parsedCreate.id, projectSlug, 'status-change', {
+          from: null,
+          to: parsedCreate.status,
+          command: 'create',
+        });
       }
 
       res.status(201).json({ slug: assignmentSlug, projectSlug });
@@ -1100,6 +1166,21 @@ export function createWriteRouter(
       }
 
       await writeFileForce(assignmentPath, nextContent);
+
+      // Audit events (best-effort): status-change inline + tracked-field diffs.
+      const assignmentId = current.id || next.id;
+      if (next.status !== current.status) {
+        emitDashboardEvent(assignmentId, projectSlug, 'status-change', {
+          from: current.status,
+          to: next.status,
+          command: 'edit',
+        });
+      }
+      emitTrackedFieldDiffs(
+        { id: current.id, project: current.project, status: current.status, priority: current.priority, assignee: current.assignee, archived: current.archived },
+        { id: next.id, project: next.project, status: next.status, priority: next.priority, assignee: next.assignee, archived: next.archived },
+        projectSlug,
+      );
 
       const assignment = await getAssignmentDetail(projectsDir, projectSlug, assignmentSlug);
       res.json({ assignment, content: nextContent });
@@ -1379,6 +1460,25 @@ export function createWriteRouter(
       }
 
       await writeFileForce(commentsPath, next);
+
+      // Audit event (best-effort): comment-added. Details = author + excerpt
+      // ONLY (no full body). Resolve the assignment id from assignment.md.
+      try {
+        const assignmentMdPath = resolve(projectsDir, projectSlug, 'assignments', assignmentSlug, 'assignment.md');
+        if (await fileExists(assignmentMdPath)) {
+          const fm = parseAssignmentFull(await readFile(assignmentMdPath, 'utf-8'));
+          emitDashboardEvent(fm.id, projectSlug, 'comment-added', {
+            commentId: comment.id,
+            author: entryAuthor,
+            commentType,
+            length: body.length,
+            excerpt: body.slice(0, 80),
+          });
+        }
+      } catch {
+        /* best-effort */
+      }
+
       const assignment = await getAssignmentDetail(projectsDir, projectSlug, assignmentSlug);
       res.status(201).json({ assignment, comment: { id: comment.id } });
     } catch (error) {
@@ -1437,6 +1537,22 @@ export function createWriteRouter(
 
       const withUpdated = setTopLevelField(next, 'updated', nowTimestamp());
       await writeFileForce(commentsPath, withUpdated);
+
+      // Audit event (best-effort): only on the actual unresolved→resolved
+      // transition (FIX 6) — an idempotent PATCH on an already-resolved comment
+      // must not emit a duplicate.
+      if (target.resolved !== true && resolved === true) {
+        try {
+          const assignmentMdPath = resolve(projectsDir, projectSlug, 'assignments', assignmentSlug, 'assignment.md');
+          if (await fileExists(assignmentMdPath)) {
+            const fm = parseAssignmentFull(await readFile(assignmentMdPath, 'utf-8'));
+            emitDashboardEvent(fm.id, projectSlug, 'comment-resolved', { commentId });
+          }
+        } catch {
+          /* best-effort */
+        }
+      }
+
       const assignment = await getAssignmentDetail(projectsDir, projectSlug, assignmentSlug);
       res.json({ assignment });
     } catch (error) {
@@ -1999,7 +2115,13 @@ export function createWriteRouter(
       return;
     }
     const content = await readFile(assignmentPath, 'utf-8');
-    await writeFileForce(assignmentPath, applyArchiveFields(content, archived, archived ? archiveReason(req.body) : null));
+    const reason = archived ? archiveReason(req.body) : null;
+    await writeFileForce(assignmentPath, applyArchiveFields(content, archived, reason));
+
+    // Audit event (best-effort).
+    const parsed = parseAssignmentFull(content);
+    emitDashboardEvent(parsed.id, projectSlug, archived ? 'archived' : 'restored', reason ? { reason } : {});
+
     const assignment = await getAssignmentDetail(projectsDir, projectSlug, assignmentSlug);
     res.json({ assignment });
   }
@@ -2039,7 +2161,13 @@ export function createWriteRouter(
     }
     const assignmentPath = resolve(resolved.assignmentDir, 'assignment.md');
     const content = await readFile(assignmentPath, 'utf-8');
-    await writeFileForce(assignmentPath, applyArchiveFields(content, archived, archived ? archiveReason(req.body) : null));
+    const reason = archived ? archiveReason(req.body) : null;
+    await writeFileForce(assignmentPath, applyArchiveFields(content, archived, reason));
+
+    // Audit event (best-effort): standalone → projectSlug null.
+    const parsed = parseAssignmentFull(content);
+    emitDashboardEvent(parsed.id || resolved.id, null, archived ? 'archived' : 'restored', reason ? { reason } : {});
+
     const assignment = await getAssignmentDetailById(projectsDir, assignmentsDir, id);
     res.json({ assignment });
   }
@@ -2083,9 +2211,19 @@ export function createWriteRouter(
         return;
       }
       let content = await readFile(assignmentPath, 'utf-8');
+      const prior = parseAssignmentFull(content);
       content = setTopLevelField(content, 'assignee', validation.value);
       content = setTopLevelField(content, 'updated', nowTimestamp());
       await writeFileForce(assignmentPath, content);
+
+      // Audit event (best-effort): assignee changed.
+      if (prior.assignee !== validation.value) {
+        emitDashboardEvent(prior.id, projectSlug, 'assignee-change', {
+          from: prior.assignee,
+          to: validation.value,
+        });
+      }
+
       const assignment = await getAssignmentDetail(projectsDir, projectSlug, assignmentSlug);
       res.json({ assignment });
     } catch (error) {
@@ -2195,6 +2333,8 @@ export function createWriteRouter(
         : undefined;
       const result = await executeTransition(projectDir, assignmentSlug, command, {
         reason: typeof reason === 'string' ? reason : undefined,
+        // Dashboard click → audit actor 'human' (independent of assignee). FIX 1.
+        auditActor: 'human',
         // Gated terminal commands: the from-specific custom mapping wins
         // (passed via the table), with the unambiguous command target as the
         // guard-free fallback for legacy/undefined statuses (codex r3
@@ -2330,16 +2470,19 @@ export function createWriteRouter(
         let normalizedContent = setTopLevelField(rawContent, 'id', id);
         // Raw create bypasses renderAssignment, so seed statusHistory here (only
         // when the body didn't already supply one — never double-seed).
-        if (parseAssignmentFull(normalizedContent).statusHistory.length === 0) {
+        const seededHere = parseAssignmentFull(normalizedContent).statusHistory.length === 0;
+        const createdStatus = parseAssignmentFull(normalizedContent).status;
+        if (seededHere) {
           normalizedContent = appendStatusHistoryEntry(normalizedContent, {
             at: timestamp,
             from: null,
-            to: parseAssignmentFull(normalizedContent).status,
+            to: createdStatus,
             command: 'create',
             by: null,
           });
         }
         await writeFileForce(resolve(assignmentDir, 'assignment.md'), normalizedContent);
+
         await writeFileForce(
           resolve(assignmentDir, 'scratchpad.md'),
           renderScratchpad({ assignmentSlug: id, timestamp }),
@@ -2360,6 +2503,16 @@ export function createWriteRouter(
           resolve(assignmentDir, 'comments.md'),
           renderComments({ assignment: id, timestamp }),
         );
+
+        // Audit event (best-effort): emit AFTER all companion files are written
+        // (FIX 2). Standalone → null projectSlug. Only when we seeded here.
+        if (seededHere) {
+          emitDashboardEvent(id, null, 'status-change', {
+            from: null,
+            to: createdStatus,
+            command: 'create',
+          });
+        }
 
         const detail = await getAssignmentDetailById(projectsDir, assignmentsDir, id);
         res.status(201).json({ assignment: detail });
@@ -2424,6 +2577,16 @@ export function createWriteRouter(
         resolve(assignmentDir, 'comments.md'),
         renderComments({ assignment: id, timestamp }),
       );
+
+      // Audit event (best-effort): emit AFTER all companion files are written
+      // (FIX 2 ordering). renderAssignment seeds an initial `create` statusHistory
+      // entry (draft); the RAW create emits a matching status-change, so the
+      // structured create must too (FIX 4). Standalone → null projectSlug.
+      emitDashboardEvent(id, null, 'status-change', {
+        from: null,
+        to: 'draft',
+        command: 'create',
+      });
 
       const detail = await getAssignmentDetailById(projectsDir, assignmentsDir, id);
       res.status(201).json({ assignment: detail });
@@ -2607,6 +2770,21 @@ export function createWriteRouter(
       }
 
       await writeFileForce(assignmentPath, nextContent);
+
+      // Audit events (best-effort): standalone → projectSlug null.
+      const assignmentId = current.id || next.id;
+      if (next.status !== current.status) {
+        emitDashboardEvent(assignmentId, null, 'status-change', {
+          from: current.status,
+          to: next.status,
+          command: 'edit',
+        });
+      }
+      emitTrackedFieldDiffs(
+        { id: current.id, project: null, status: current.status, priority: current.priority, assignee: current.assignee, archived: current.archived },
+        { id: current.id, project: null, status: next.status, priority: next.priority, assignee: next.assignee, archived: next.archived },
+        null,
+      );
 
       const assignment = await getAssignmentDetailById(projectsDir, assignmentsDir, id);
       res.json({ assignment, content: nextContent });
@@ -2864,9 +3042,19 @@ export function createWriteRouter(
         return;
       }
       let content = await readFile(assignmentPath, 'utf-8');
+      const prior = parseAssignmentFull(content);
       content = setTopLevelField(content, 'assignee', validation.value);
       content = setTopLevelField(content, 'updated', nowTimestamp());
       await writeFileForce(assignmentPath, content);
+
+      // Audit event (best-effort): standalone → projectSlug null.
+      if (prior.assignee !== validation.value) {
+        emitDashboardEvent(prior.id || id, null, 'assignee-change', {
+          from: prior.assignee,
+          to: validation.value,
+        });
+      }
+
       const assignment = await getAssignmentDetailById(projectsDir, assignmentsDir, id);
       res.json({ assignment });
     } catch (error) {
@@ -3020,6 +3208,8 @@ export function createWriteRouter(
         {
           standalone: resolved.standalone,
           reason: typeof reason === 'string' ? reason : undefined,
+          // Dashboard click → audit actor 'human' (independent of assignee). FIX 1.
+          auditActor: 'human',
           // Same resolution as the project route: from-specific mapping wins,
           // unambiguous command target as guard-free fallback for gated
           // terminal commands. NOTE: by-id historically ran guard-free for
@@ -3177,6 +3367,24 @@ async function appendCommentTo(
     next = `${next.trimEnd()}\n\n${entry}`;
   }
   await writeFileForce(commentsPath, next);
+
+  // Audit event (best-effort): comment-added. Author + excerpt ONLY.
+  try {
+    const assignmentMdPath = resolve(assignmentDir, 'assignment.md');
+    if (await fileExists(assignmentMdPath)) {
+      const fm = parseAssignmentFull(await readFile(assignmentMdPath, 'utf-8'));
+      emitDashboardEvent(fm.id, fm.project, 'comment-added', {
+        commentId: comment.id,
+        author: entryAuthor,
+        commentType,
+        length: body.length,
+        excerpt: body.slice(0, 80),
+      });
+    }
+  } catch {
+    /* best-effort */
+  }
+
   const assignment = await reloadDetail();
   res.status(201).json({ assignment, comment: { id: comment.id } });
 }
@@ -3220,6 +3428,21 @@ async function toggleCommentResolvedAt(
   }
   const withUpdated = setTopLevelField(next, 'updated', nowTimestamp());
   await writeFileForce(commentsPath, withUpdated);
+
+  // Audit event (best-effort): only on the actual unresolved→resolved
+  // transition (FIX 6) — an idempotent PATCH must not emit a duplicate.
+  if (target.resolved !== true && desired === true) {
+    try {
+      const assignmentMdPath = resolve(assignmentDir, 'assignment.md');
+      if (await fileExists(assignmentMdPath)) {
+        const fm = parseAssignmentFull(await readFile(assignmentMdPath, 'utf-8'));
+        emitDashboardEvent(fm.id, fm.project, 'comment-resolved', { commentId });
+      }
+    } catch {
+      /* best-effort */
+    }
+  }
+
   const assignment = await reloadDetail();
   res.json({ assignment });
 }
