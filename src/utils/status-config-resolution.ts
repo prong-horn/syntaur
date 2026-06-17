@@ -6,6 +6,7 @@ import {
   parseAssignmentFrontmatter,
   updateAssignmentFile,
 } from '../lifecycle/frontmatter.js';
+import { recordStatusEvent, resolveActor } from '../lifecycle/event-emit.js';
 import { listAssignmentsByProject } from './assignment-walk.js';
 import { nowTimestamp } from './timestamp.js';
 
@@ -249,6 +250,16 @@ export async function applyStatusResolutions(
           { at: now, from: r.id, to: r.target, command: 'remap', by: null },
         );
         await writeFile(a.path, next, 'utf-8');
+        // Audit event (best-effort): status remap. Actor 'system' (null by).
+        recordStatusEvent({
+          assignmentId: fm.id,
+          projectSlug: a.projectSlug,
+          at: now,
+          actor: resolveActor(null),
+          from: r.id,
+          to: r.target,
+          command: 'remap',
+        });
         writtenPaths.push(a.path);
         remapped++;
         const bucket = byId.get(r.id);

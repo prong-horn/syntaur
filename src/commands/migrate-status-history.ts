@@ -4,6 +4,7 @@ import { expandHome, assignmentsDir as getStandaloneDir } from '../utils/paths.j
 import { fileExists, writeFileForce } from '../utils/fs.js';
 import { readConfig, type SyntaurConfig } from '../utils/config.js';
 import { appendStatusHistoryEntry, parseAssignmentFrontmatter } from '../lifecycle/frontmatter.js';
+import { withSuppressedEvents } from '../lifecycle/event-emit.js';
 import { TERMINAL_STATUSES } from '../lifecycle/types.js';
 import type { AssignmentFrontmatter } from '../lifecycle/types.js';
 
@@ -147,25 +148,29 @@ export async function migrateStatusHistoryCommand(
 
   let seeded = 0;
   let failed = 0;
-  for (const t of targets) {
-    try {
-      const content = await readFile(t.assignmentMd, 'utf-8');
-      // Re-check idempotency in case the file changed since the scan.
-      if (parseAssignmentFrontmatter(content).statusHistory.length > 0) continue;
-      const seededContent = appendStatusHistoryEntry(content, {
-        at: t.seedAt,
-        from: null,
-        to: t.status,
-        command: 'seed',
-        by: null,
-      });
-      await writeFileForce(t.assignmentMd, seededContent);
-      seeded += 1;
-    } catch (err) {
-      failed += 1;
-      console.warn(`  ! skipped ${t.display}: ${(err as Error).message}`);
+  // Suppress live audit events — seeding statusHistory is a migration, not a
+  // real status transition.
+  await withSuppressedEvents(async () => {
+    for (const t of targets) {
+      try {
+        const content = await readFile(t.assignmentMd, 'utf-8');
+        // Re-check idempotency in case the file changed since the scan.
+        if (parseAssignmentFrontmatter(content).statusHistory.length > 0) continue;
+        const seededContent = appendStatusHistoryEntry(content, {
+          at: t.seedAt,
+          from: null,
+          to: t.status,
+          command: 'seed',
+          by: null,
+        });
+        await writeFileForce(t.assignmentMd, seededContent);
+        seeded += 1;
+      } catch (err) {
+        failed += 1;
+        console.warn(`  ! skipped ${t.display}: ${(err as Error).message}`);
+      }
     }
-  }
+  });
   console.log(
     `Seeded ${seeded} assignment${seeded === 1 ? '' : 's'}${failed > 0 ? `, ${failed} skipped` : ''}.`,
   );

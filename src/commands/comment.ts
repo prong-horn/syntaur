@@ -7,6 +7,8 @@ import { isValidSlug } from '../utils/slug.js';
 import { generateId } from '../utils/uuid.js';
 import { nowTimestamp } from '../utils/timestamp.js';
 import { resolveAssignmentById } from '../utils/assignment-resolver.js';
+import { parseAssignmentFrontmatter } from '../lifecycle/frontmatter.js';
+import { emitEvent } from '../lifecycle/event-emit.js';
 import { renderComments, formatCommentEntry, type Comment, type CommentType } from '../templates/index.js';
 
 export interface CommentOptions {
@@ -48,6 +50,7 @@ export async function commentCommand(
 
   let assignmentDir: string;
   let assignmentRef: string;
+  let projectSlug: string | null = null;
   if (options.project) {
     if (!isValidSlug(options.project)) {
       throw new Error(`Invalid project slug "${options.project}".`);
@@ -57,6 +60,7 @@ export async function commentCommand(
     }
     assignmentDir = resolve(baseDir, options.project, 'assignments', target);
     assignmentRef = target;
+    projectSlug = options.project;
   } else {
     const resolved = await resolveAssignmentById(baseDir, assignmentsDirFn(), target);
     if (!resolved) {
@@ -64,6 +68,7 @@ export async function commentCommand(
     }
     assignmentDir = resolved.assignmentDir;
     assignmentRef = resolved.standalone ? resolved.id : resolved.assignmentSlug;
+    projectSlug = resolved.projectSlug;
   }
 
   const commentsPath = resolve(assignmentDir, 'comments.md');
@@ -103,6 +108,30 @@ export async function commentCommand(
   }
 
   await writeFileForce(commentsPath, next);
+
+  // Audit event (best-effort): comment-added. Details carry author + a short
+  // excerpt/length ONLY — never the full body (no sensitive data in the log).
+  try {
+    const assignmentMd = resolve(assignmentDir, 'assignment.md');
+    if (await fileExists(assignmentMd)) {
+      const fm = parseAssignmentFrontmatter(await readFile(assignmentMd, 'utf-8'));
+      emitEvent({
+        assignmentId: fm.id,
+        projectSlug,
+        type: 'comment-added',
+        actor: author,
+        details: {
+          commentId: comment.id,
+          author,
+          commentType: type,
+          length: text.length,
+          excerpt: text.slice(0, 80),
+        },
+      });
+    }
+  } catch {
+    /* best-effort: a failed audit emit must never break the comment */
+  }
 
   console.log(`Added ${type} comment ${comment.id} to ${assignmentRef} (${commentsPath})`);
   if (options.replyTo) {
