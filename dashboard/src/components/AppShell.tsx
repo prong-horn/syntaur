@@ -2,18 +2,19 @@ import { useState, type ReactNode } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import type { LucideIcon } from 'lucide-react';
 import { Activity, Archive, BookOpen, Boxes, Brain, CalendarClock, CheckSquare, Coins, Compass, FolderKanban, Inbox, LayoutTemplate, LifeBuoy, Library, ListTodo, Monitor, Plus, Settings, Workflow, X, ChevronDown, Trash2 } from 'lucide-react';
-import { SidebarNav, type SidebarNavItem } from './SidebarNav';
+import { SidebarNav, SidebarNavGroup, type SidebarNavItem } from './SidebarNav';
 import { TopBar } from './TopBar';
 import { useToast, Toaster } from './Toast';
 import { useWorkspaces } from '../hooks/useProjects';
 import { useInbox } from '../hooks/useInbox';
+import { useSidebarCollapse } from '../hooks/useSidebarCollapse';
 import {
   UNGROUPED_WORKSPACE,
   visibleWorkspaces,
 } from '@shared/workspace-visibility-schema';
 import { useWorkspaceVisibilityConfig } from '../hooks/useWorkspaceVisibilityConfig';
 import { toTitleCase } from '../lib/format';
-import { isSidebarItemActive, type SidebarSection } from '../lib/routes';
+import { getSidebarSection, isSidebarItemActive, type SidebarSection } from '../lib/routes';
 import { useHotkey } from '../hotkeys';
 import {
   AlertDialog,
@@ -39,18 +40,48 @@ interface AppShellProps {
   children: ReactNode;
 }
 
-const GLOBAL_NAV_ITEMS: SidebarNavItem[] = [
+// Pinned, ungrouped daily-driver items at the top of the global zone.
+const PINNED_NAV_ITEMS: SidebarNavItem[] = [
   { to: '/', label: 'Overview', icon: Compass },
   { to: '/inbox', label: 'Needs me', icon: Inbox },
-  { to: '/playbooks', label: 'Playbooks', icon: BookOpen },
-  { to: '/memories', label: 'Memories', icon: Brain },
-  { to: '/resources', label: 'Resources', icon: Library },
-  { to: '/inventories', label: 'Inventories', icon: Boxes },
-  { to: '/schedules', label: 'Schedules', icon: CalendarClock },
-  { to: '/usage', label: 'Usage', icon: Coins },
-  { to: '/todos', label: 'Todos', icon: CheckSquare },
-  { to: '/views', label: 'Saved Views', icon: LayoutTemplate },
-  { to: '/archive', label: 'Archive', icon: Archive },
+];
+
+interface SidebarNavGroupDef {
+  id: string;
+  label: string;
+  items: SidebarNavItem[];
+}
+
+// The rest of the global nav, organized into labeled collapsible groups.
+// Servers/Agent Sessions stay workspace-scoped (see WORKSPACE_SCOPED_LABELS).
+const GLOBAL_NAV_GROUPS: SidebarNavGroupDef[] = [
+  {
+    id: 'library',
+    label: 'Library',
+    items: [
+      { to: '/playbooks', label: 'Playbooks', icon: BookOpen },
+      { to: '/memories', label: 'Memories', icon: Brain },
+      { to: '/resources', label: 'Resources', icon: Library },
+    ],
+  },
+  {
+    id: 'board',
+    label: 'Board',
+    items: [
+      { to: '/todos', label: 'Todos', icon: CheckSquare },
+      { to: '/views', label: 'Saved Views', icon: LayoutTemplate },
+      { to: '/archive', label: 'Archive', icon: Archive },
+    ],
+  },
+  {
+    id: 'operations',
+    label: 'Operations',
+    items: [
+      { to: '/inventories', label: 'Inventories', icon: Boxes },
+      { to: '/schedules', label: 'Schedules', icon: CalendarClock },
+      { to: '/usage', label: 'Usage', icon: Coins },
+    ],
+  },
 ];
 
 // Only entities that live INSIDE a workspace and have no global nav entry.
@@ -148,7 +179,7 @@ function ShellSidebar({
   // a deliberate, cheap tradeoff for an always-visible at-a-glance count vs.
   // threading the total down from every page. Injected onto the /inbox entry.
   const { total: inboxTotal } = useInbox();
-  const globalNavItems = GLOBAL_NAV_ITEMS.map((item) =>
+  const pinnedNavItems = PINNED_NAV_ITEMS.map((item) =>
     item.to === '/inbox' ? { ...item, badge: inboxTotal } : item,
   );
   const { data: workspaceData } = useWorkspaces();
@@ -156,7 +187,12 @@ function ShellSidebar({
   const hasUngrouped = workspaceData?.hasUngrouped ?? false;
   const { hidden: hiddenWorkspaces } = useWorkspaceVisibilityConfig();
   const location = useLocation();
-  const [collapsedWorkspaces, setCollapsedWorkspaces] = useState<Set<string>>(new Set());
+  const { isCollapsed: isSidebarCollapsed, toggle: toggleSidebar } = useSidebarCollapse();
+  // Active global section — used to highlight a collapsed group's header.
+  // Null inside workspace routes (those highlight via the workspace tree).
+  const activeSection = location.pathname.startsWith('/w/')
+    ? null
+    : getSidebarSection(location.pathname);
   const [creatingWorkspace, setCreatingWorkspace] = useState(false);
   const [newWorkspaceName, setNewWorkspaceName] = useState('');
   const [hoverWs, setHoverWs] = useState<string | null>(null);
@@ -165,18 +201,6 @@ function ShellSidebar({
   const [deleteLoading, setDeleteLoading] = useState(false);
   const navigate = useNavigate();
   const { toast, showToast, dismissToast } = useToast();
-
-  function toggleCollapse(ws: string) {
-    setCollapsedWorkspaces((prev) => {
-      const next = new Set(prev);
-      if (next.has(ws)) {
-        next.delete(ws);
-      } else {
-        next.add(ws);
-      }
-      return next;
-    });
-  }
 
   // Build workspace sections: named workspaces + ungrouped (only if projects without workspace exist),
   // then drop any the user has hidden from the left nav (absent from the blocklist = visible).
@@ -272,8 +296,21 @@ function ShellSidebar({
         </Link>
       </div>
 
-      {/* Global zone */}
-      <SidebarNav items={globalNavItems} onNavigate={onNavigate} />
+      {/* Global zone: pinned items + collapsible groups */}
+      <div className="space-y-1">
+        <SidebarNav items={pinnedNavItems} onNavigate={onNavigate} />
+        {GLOBAL_NAV_GROUPS.map((group) => (
+          <SidebarNavGroup
+            key={group.id}
+            label={group.label}
+            items={group.items}
+            collapsed={isSidebarCollapsed(group.id)}
+            onToggle={() => toggleSidebar(group.id)}
+            containsActive={group.items.some((item) => item.to === activeSection)}
+            onNavigate={onNavigate}
+          />
+        ))}
+      </div>
 
       {/* Divider */}
       <div className="border-t border-border/40" />
@@ -287,7 +324,7 @@ function ShellSidebar({
           const isUngrouped = ws === '_ungrouped';
           const wsLabel = isUngrouped ? 'Ungrouped' : toTitleCase(ws);
           const wsPrefix = isUngrouped ? '/w/_ungrouped' : `/w/${ws}`;
-          const isCollapsed = collapsedWorkspaces.has(ws);
+          const workspaceCollapsed = isSidebarCollapsed(`ws:${ws}`);
           const isActive = activeWorkspace === ws || (activeWorkspace === null && isUngrouped && location.pathname.startsWith('/w/_ungrouped'));
           const isHover = hoverWs === ws;
 
@@ -328,14 +365,14 @@ function ShellSidebar({
               <div className="group flex items-center">
                 <button
                   type="button"
-                  onClick={() => toggleCollapse(ws)}
+                  onClick={() => toggleSidebar(`ws:${ws}`)}
                   className={`flex flex-1 items-center gap-2 rounded-md px-3 py-1.5 text-xs font-semibold uppercase tracking-wider transition ${
                     isActive
                       ? 'text-foreground'
                       : 'text-muted-foreground/70 hover:text-muted-foreground'
                   }`}
                 >
-                  <ChevronDown className={`h-3 w-3 transition-transform ${isCollapsed ? '-rotate-90' : ''}`} />
+                  <ChevronDown className={`h-3 w-3 transition-transform ${workspaceCollapsed ? '-rotate-90' : ''}`} />
                   {wsLabel}
                 </button>
                 {!isUngrouped ? (
@@ -354,7 +391,7 @@ function ShellSidebar({
                   </button>
                 ) : null}
               </div>
-              {!isCollapsed && (
+              {!workspaceCollapsed && (
                 <nav className="ml-2 space-y-0.5">
                   {WORKSPACE_SCOPED_LABELS.map((item) => {
                     const path = `${wsPrefix}${item.suffix}`;
