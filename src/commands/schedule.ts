@@ -1,4 +1,5 @@
 import { Command } from 'commander';
+import { Cron } from 'croner';
 import { readConfig } from '../utils/config.js';
 import { pickAgent } from '../launch/plan.js';
 import { getSessionById } from '../dashboard/agent-sessions.js';
@@ -84,7 +85,26 @@ function buildTrigger(opts: TriggerOpts): JobTrigger {
   const chosen: JobTrigger[] = [];
   if (opts.at) chosen.push({ kind: 'at', at: opts.at });
   if (opts.in) chosen.push({ kind: 'in', durationMs: parseDurationMs(opts.in), anchorIso: nowTimestamp() });
-  if (opts.cron) chosen.push({ kind: 'cron', expr: opts.cron, ...(opts.tz ? { tz: opts.tz } : {}) });
+  if (opts.cron) {
+    // Validate the cron expression and timezone at create time. Croner throws on
+    // a malformed expr at construction and on an invalid IANA tz inside
+    // nextRun() — without this, a bad expr silently never fires (caught → notDue
+    // forever) and a bad tz would crash the scheduler tick. Validate expr and tz
+    // separately so the error names the actual problem.
+    try {
+      new Cron(opts.cron).nextRun();
+    } catch {
+      throw new Error(`invalid --cron expression: ${JSON.stringify(opts.cron)}`);
+    }
+    if (opts.tz) {
+      try {
+        new Cron(opts.cron, { timezone: opts.tz }).nextRun();
+      } catch {
+        throw new Error(`invalid --tz timezone: ${JSON.stringify(opts.tz)}`);
+      }
+    }
+    chosen.push({ kind: 'cron', expr: opts.cron, ...(opts.tz ? { tz: opts.tz } : {}) });
+  }
   if (opts.afterReset) {
     const provider = opts.afterReset as Provider;
     if (provider !== 'claude' && provider !== 'codex') {
@@ -181,7 +201,16 @@ scheduleCommand
 
       const limits = defaultLimits();
       if (opts.maxRuntime) limits.maxRuntimeMs = parseDurationMs(opts.maxRuntime);
-      if (opts.maxLaunchesPerDay) limits.maxLaunchesPerDay = Number.parseInt(opts.maxLaunchesPerDay, 10);
+      if (opts.maxLaunchesPerDay) {
+        // Number(), not parseInt: parseInt('1abc')===1 and parseInt('1.5')===1
+        // would silently accept garbage. A NaN/≤0 limit makes `count >= limit`
+        // always false in canFire — i.e. the cap is silently disabled.
+        const n = Number(opts.maxLaunchesPerDay);
+        if (!Number.isInteger(n) || n <= 0) {
+          throw new Error('--max-launches-per-day must be a positive integer');
+        }
+        limits.maxLaunchesPerDay = n;
+      }
       if (opts.cooldown) limits.cooldownMs = parseDurationMs(opts.cooldown);
 
       const now = nowTimestamp();

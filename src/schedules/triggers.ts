@@ -99,27 +99,32 @@ function evaluateCron(
   now: Date,
   createdAtMs: number,
 ): TriggerEvaluation {
-  let cron: Cron;
+  // Croner throws on a malformed expr at construction AND on an invalid IANA tz
+  // LATER, inside previousRuns()/nextRun(). Both must be caught here so a single
+  // bad-config job degrades to "not due" instead of throwing out of
+  // evaluateTrigger and aborting the whole scheduler tick. Validation at create
+  // time (buildTrigger) keeps bad config from being persisted in the first place;
+  // this is the runtime safety net.
   try {
-    cron = new Cron(trigger.expr, trigger.tz ? { timezone: trigger.tz } : {});
+    const cron = new Cron(trigger.expr, trigger.tz ? { timezone: trigger.tz } : {});
+    // The most recent scheduled occurrence at-or-before `now`. croner's
+    // `previousRun()` reads the REAL clock, so we use `previousRuns(1, ref)` which
+    // accepts an explicit reference — that's what makes this injected-clock-pure.
+    // croner floors to whole seconds, so the reference is `now + 1s` to include an
+    // occurrence landing exactly on `now`; the `> now` guard discards the rare
+    // sub-second overshoot (6-part second-granular crons). Each occurrence fires
+    // exactly once via its timestamp dedupe key.
+    const prevs = cron.previousRuns(1, new Date(now.getTime() + 1000));
+    let prev = prevs.length > 0 ? prevs[0] : null;
+    if (prev && prev.getTime() > now.getTime()) prev = null;
+    // Don't fire for an occurrence that predates the schedule's creation.
+    if (prev && !Number.isNaN(createdAtMs) && prev.getTime() < createdAtMs) prev = null;
+    const next = cron.nextRun(now);
+    if (!prev) return { due: false, nextFireIso: next ? iso(next) : null };
+    return { due: true, dedupeKey: `cron:${iso(prev)}`, nextFireIso: next ? iso(next) : null };
   } catch {
     return notDue;
   }
-  // The most recent scheduled occurrence at-or-before `now`. croner's
-  // `previousRun()` reads the REAL clock, so we use `previousRuns(1, ref)` which
-  // accepts an explicit reference — that's what makes this injected-clock-pure.
-  // croner floors to whole seconds, so the reference is `now + 1s` to include an
-  // occurrence landing exactly on `now`; the `> now` guard discards the rare
-  // sub-second overshoot (6-part second-granular crons). Each occurrence fires
-  // exactly once via its timestamp dedupe key.
-  const prevs = cron.previousRuns(1, new Date(now.getTime() + 1000));
-  let prev = prevs.length > 0 ? prevs[0] : null;
-  if (prev && prev.getTime() > now.getTime()) prev = null;
-  // Don't fire for an occurrence that predates the schedule's creation.
-  if (prev && !Number.isNaN(createdAtMs) && prev.getTime() < createdAtMs) prev = null;
-  const next = cron.nextRun(now);
-  if (!prev) return { due: false, nextFireIso: next ? iso(next) : null };
-  return { due: true, dedupeKey: `cron:${iso(prev)}`, nextFireIso: next ? iso(next) : null };
 }
 
 function evaluateAfterReset(

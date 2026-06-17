@@ -97,4 +97,45 @@ describe('schedule CLI', () => {
     expect(job?.trigger).toEqual({ kind: 'cron', expr: '*/10 * * * *', tz: 'UTC' });
     expect(job?.attempt.state).toBe('eligible');
   });
+
+  // AC2: a malformed --cron must be rejected at create time, persisting nothing.
+  it('rejects a malformed --cron at create time and persists no job (AC2)', async () => {
+    await run(['create', '--assignment', 'a', '--agent', 'claude', '--cron', 'not a cron']);
+    expect(await listJobs()).toHaveLength(0);
+    expect(errs.join('\n')).toMatch(/cron/i);
+  });
+
+  // AC1: an invalid IANA --tz must be rejected at create time too.
+  it('rejects an invalid --tz at create time and persists no job (AC1 create-guard)', async () => {
+    await run(['create', '--assignment', 'a', '--agent', 'claude', '--cron', '0 3 * * *', '--tz', 'Not/AZone']);
+    expect(await listJobs()).toHaveLength(0);
+    expect(errs.join('\n')).toMatch(/tz|time ?zone/i);
+  });
+
+  // AC2 (companion): reschedule reuses buildTrigger, so it must reject bad input
+  // too — and must NOT corrupt the existing valid trigger.
+  it('reschedule rejects a malformed --cron and leaves the existing trigger intact (AC2)', async () => {
+    await run(['create', '--assignment', 'a', '--agent', 'claude', '--at', '2026-06-15T12:00:00Z']);
+    const id = (await listJobs())[0].id;
+    await run(['reschedule', id, '--cron', 'still not a cron']);
+    const job = await readJob(id);
+    expect(job?.trigger).toEqual({ kind: 'at', at: '2026-06-15T12:00:00Z' });
+  });
+
+  // AC3: --max-launches-per-day must reject non-integers, partial numerics, and <= 0.
+  it('rejects bad --max-launches-per-day values and persists no job (AC3)', async () => {
+    for (const bad of ['abc', '1abc', '1.5', '0', '-3']) {
+      errs.length = 0;
+      await run(['create', '--assignment', 'a', '--agent', 'claude', '--at', '2026-06-15T12:00:00Z', '--max-launches-per-day', bad]);
+      expect(await listJobs(), `value ${JSON.stringify(bad)} should be rejected`).toHaveLength(0);
+      expect(errs.join('\n')).toMatch(/max-launches/i);
+    }
+  });
+
+  it('accepts a positive integer --max-launches-per-day (AC3 positive control)', async () => {
+    await run(['create', '--assignment', 'a', '--agent', 'claude', '--at', '2026-06-15T12:00:00Z', '--max-launches-per-day', '3']);
+    const jobs = await listJobs();
+    expect(jobs).toHaveLength(1);
+    expect(jobs[0].limits.maxLaunchesPerDay).toBe(3);
+  });
 });
