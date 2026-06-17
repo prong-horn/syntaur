@@ -18,7 +18,7 @@
 
 import { createHash } from 'node:crypto';
 import { open, readdir, readFile, unlink, stat } from 'node:fs/promises';
-import { dirname, resolve } from 'node:path';
+import { basename, dirname, resolve } from 'node:path';
 import {
   DEFAULT_DERIVE_CONFIG,
   buildDefaultStatusConfig,
@@ -432,4 +432,31 @@ export async function recomputeAll(
   }
 
   return summary;
+}
+
+/**
+ * Best-effort recompute keyed by an assignment DIRECTORY, for explicit
+ * file-mutating CLI verbs (`plan create`/`plan version`/`capture`) that change a
+ * file-derived fact (planExists / planApproved-invalidation) but don't flow
+ * through the `assertFact` spine. Resolves the derive context and infers
+ * `projectDir` from the directory layout (`<projectDir>/assignments/<slug>` →
+ * projectDir; standalone → null). EXPLICIT trigger: runs regardless of the
+ * migration gate (the verb is a deliberate per-assignment act). Never throws —
+ * the verb's primary effect already succeeded — returning null on any failure.
+ */
+export async function recomputeAssignmentDir(
+  assignmentDir: string,
+  cause: string,
+  by: string | null,
+): Promise<RecomputeResult | null> {
+  try {
+    const assignmentPath = resolve(assignmentDir, 'assignment.md');
+    if (!(await fileExists(assignmentPath))) return null;
+    const parent = dirname(assignmentDir);
+    const projectDir = basename(parent) === 'assignments' ? dirname(parent) : null;
+    const context = await resolveDeriveContext();
+    return await recomputeAndWrite(assignmentPath, { cause, by, projectDir, context });
+  } catch {
+    return null;
+  }
 }

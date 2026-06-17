@@ -4,6 +4,7 @@ import { resolve } from 'node:path';
 import { fileExists, writeFileForce } from '../utils/fs.js';
 import { assignmentsDir } from '../utils/paths.js';
 import { readConfig } from '../utils/config.js';
+import { recomputeAssignmentDir } from '../lifecycle/recompute.js';
 
 interface ContextFile {
   projectSlug?: string;
@@ -355,6 +356,11 @@ async function runPlanCreate(options: PlanCreateOptions): Promise<void> {
 
   console.log(`Created ${planPath}`);
   if (appended > 0) console.log(`Appended ${appended} plan todo(s) to assignment.md.`);
+
+  // Keep derived status current: writing a plan flips planExists (and a new
+  // plan can invalidate a stale approval). Explicit verb → recompute regardless
+  // of the migration gate; best-effort, never blocks the create.
+  await recomputeAssignmentDir(assignmentDir, 'plan-create', null);
 }
 
 interface PlanVersionOptions {
@@ -423,6 +429,11 @@ async function runPlanVersion(options: PlanVersionOptions): Promise<void> {
   );
   console.log(`Path: ${newPath}`);
   console.log(`Carried forward: ${carriedTodos.length} unchecked task(s).`);
+
+  // A new plan version invalidates any prior plan approval (digest no longer
+  // matches the latest plan file). Recompute so the derived status reflects
+  // that immediately. Explicit verb → runs regardless of the migration gate.
+  await recomputeAssignmentDir(assignmentDir, 'plan-version', null);
 }
 
 export const planCommand = new Command('plan')
