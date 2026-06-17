@@ -7,6 +7,8 @@ export interface SidebarNavItem {
   to: SidebarSection;
   label: string;
   icon: LucideIcon;
+  /** Optional numeric pill rendered next to the label (e.g. inbox count). */
+  badge?: number;
 }
 
 interface SidebarNavProps {
@@ -38,6 +40,18 @@ export function SidebarNav({ items, onNavigate }: SidebarNavProps) {
           >
             <Icon className="h-4 w-4" />
             <span>{item.label}</span>
+            {item.badge && item.badge > 0 ? (
+              <span
+                className={cn(
+                  'ml-auto inline-flex min-w-[1.25rem] items-center justify-center rounded-full px-1.5 py-0.5 text-[11px] font-semibold',
+                  isActive
+                    ? 'bg-background/20 text-background'
+                    : 'bg-foreground text-background',
+                )}
+              >
+                {item.badge}
+              </span>
+            ) : null}
           </Link>
         );
       })}

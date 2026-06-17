@@ -13,6 +13,7 @@ export interface ShellMeta {
 
 const SIDEBAR_SECTIONS = [
   '/',
+  '/inbox',
   '/projects',
   '/archive',
   '/assignments',
@@ -115,6 +116,10 @@ export function getSidebarSection(pathname: string): SidebarSection | null {
 
   if (normalized.startsWith('/workflow')) {
     return '/workflow';
+  }
+
+  if (normalized.startsWith('/inbox')) {
+    return '/inbox';
   }
 
   return null;

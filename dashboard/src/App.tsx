@@ -1,6 +1,7 @@
 import { BrowserRouter, Route, Routes } from 'react-router-dom';
 import { Layout } from './components/Layout';
 import { Overview } from './pages/Overview';
+import { InboxPage } from './pages/InboxPage';
 import { HelpPage } from './pages/Help';
 import { ProjectList } from './pages/ProjectList';
 import { Archive } from './pages/Archive';
@@ -49,6 +50,7 @@ export function App() {
         <Routes>
           <Route element={<Layout />}>
             <Route path="/" element={<Overview />} />
+            <Route path="/inbox" element={<InboxPage />} />
             <Route path="/projects" element={<ProjectList />} />
             <Route path="/archive" element={<Archive />} />
             <Route path="/assignments" element={<AssignmentsPage />} />
