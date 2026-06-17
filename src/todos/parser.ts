@@ -157,7 +157,17 @@ function statusToMarker(item: TodoItem): string {
  * Order matters: backslash must be escaped first.
  */
 function escapeDescription(description: string): string {
-  return description.replace(/\\/g, '\\\\').replace(/#/g, '\\#').replace(/\[/g, '\\[');
+  // Backslash first (so the escapes introduced below aren't double-escaped),
+  // then structural chars, then newlines/CR. A todo serializes to a single
+  // physical line; without encoding newlines the parser would split a
+  // multi-line description across lines and silently drop the id + tail (the
+  // second physical line fails ITEM_REGEX).
+  return description
+    .replace(/\\/g, '\\\\')
+    .replace(/#/g, '\\#')
+    .replace(/\[/g, '\\[')
+    .replace(/\n/g, '\\n')
+    .replace(/\r/g, '\\r');
 }
 
 /**
@@ -172,6 +182,16 @@ function unescapeDescription(escaped: string): string {
       const next = escaped[i + 1];
       if (next === '\\' || next === '#' || next === '[') {
         out += next;
+        i++;
+        continue;
+      }
+      if (next === 'n') {
+        out += '\n';
+        i++;
+        continue;
+      }
+      if (next === 'r') {
+        out += '\r';
         i++;
         continue;
       }
