@@ -373,6 +373,10 @@ export function createProjectTodosRouter(
   router.patch('/:id', async (req, res) => {
     try {
       const slug = getProjectIdParam(params(req).projectId);
+      if (req.body.description !== undefined && typeof req.body.description !== 'string') {
+        res.status(400).json({ error: 'description must be a string' });
+        return;
+      }
       if (!(await projectExists(projectsDir, slug))) { notFound(res, slug); return; }
       const result = await projLock(slug, async () => {
         if (!(await projectExists(projectsDir, slug))) return 'gone' as const;

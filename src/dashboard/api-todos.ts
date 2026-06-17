@@ -463,6 +463,10 @@ export function createTodosRouter(
   router.patch('/:workspace/:id', async (req, res) => {
     try {
       const workspace = getWorkspaceParam(req.params.workspace);
+      if (req.body.description !== undefined && typeof req.body.description !== 'string') {
+        res.status(400).json({ error: 'description must be a string' });
+        return;
+      }
       const result = await wsLock(workspace, async () => {
         const checklist = await readChecklist(todosDir, workspace);
         const item = checklist.items.find((i) => i.id === req.params.id);

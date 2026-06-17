@@ -469,3 +469,65 @@ describe('cross-scope move endpoints', () => {
     expect(res.status).toBe(404);
   });
 });
+
+// AC3: PATCH with a non-string description hits escapeDescription().replace()
+// → TypeError → misleading 500. It must be a clean 400, with the item unchanged.
+describe('todo PATCH description type validation (AC3)', () => {
+  async function setup(): Promise<void> {
+    const projectsDir = resolve(testDir, 'projects');
+    const workspaceTodosDir = resolve(testDir, 'todos');
+    await mkdir(projectsDir, { recursive: true });
+    await mkdir(workspaceTodosDir, { recursive: true });
+    await seedProject(projectsDir, 'alpha');
+    await startServer(projectsDir, workspaceTodosDir);
+  }
+
+  it('PATCH project todo with a non-string description → 400 and unchanged', async () => {
+    await setup();
+    const created = await fetch(`${baseUrl}/api/projects/alpha/todos`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ description: 'orig' }),
+    }).then((r) => r.json());
+    const res = await fetch(`${baseUrl}/api/projects/alpha/todos/${created.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ description: 123 }),
+    });
+    expect(res.status).toBe(400);
+    const after = await fetch(`${baseUrl}/api/projects/alpha/todos`).then((r) => r.json());
+    expect(after.items[0].description).toBe('orig');
+  });
+
+  it('PATCH workspace todo with a non-string description → 400', async () => {
+    await setup();
+    const created = await fetch(`${baseUrl}/api/todos/_global`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ description: 'orig' }),
+    }).then((r) => r.json());
+    const res = await fetch(`${baseUrl}/api/todos/_global/${created.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ description: { nested: true } }),
+    });
+    expect(res.status).toBe(400);
+  });
+
+  it('PATCH with a string description still updates (positive control)', async () => {
+    await setup();
+    const created = await fetch(`${baseUrl}/api/projects/alpha/todos`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ description: 'orig' }),
+    }).then((r) => r.json());
+    const res = await fetch(`${baseUrl}/api/projects/alpha/todos/${created.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ description: 'updated' }),
+    });
+    expect(res.status).toBe(200);
+    const after = await fetch(`${baseUrl}/api/projects/alpha/todos`).then((r) => r.json());
+    expect(after.items[0].description).toBe('updated');
+  });
+});
