@@ -34,6 +34,12 @@ const LOCK_STALE_MS = 30_000;
 const LOCK_WAIT_MS = 50;
 const LOCK_MAX_WAITS = 100; // ~5s
 
+// Cap on retained dedupe keys. A tick only ever checks the CURRENT occurrence's
+// key (cron emits the single most-recent past occurrence; state edges advance a
+// cursor), so retaining the most recent N is safe and keeps a long-lived cron
+// job's file from growing without bound. (AC3)
+const MAX_CONSUMED_EDGES = 50;
+
 export interface AttemptDeps {
   now: () => Date;
   /**
@@ -96,6 +102,45 @@ function dayStamp(d: Date): string {
   return d.toISOString().slice(0, 10);
 }
 
+function isoStamp(d: Date): string {
+  return d.toISOString().replace(/\.\d{3}Z$/, 'Z');
+}
+
+/**
+ * Record today's launch and drop stamps from earlier days. `launchDayStamps`
+ * only feeds `maxLaunchesPerDay` (a count of TODAY's launches), so older days
+ * are dead weight that otherwise accumulates forever on a recurring job. (AC3)
+ */
+function pruneDayStamps(stamps: string[], now: Date): string[] {
+  const today = dayStamp(now);
+  return [...stamps.filter((d) => d === today), today];
+}
+
+/**
+ * Locked read-modify-write for a single job (AC6). Acquires the per-job advisory
+ * lock ONCE, re-reads fresh from disk, applies `mutate`, and persists only when
+ * `mutate` returns a job (null = precondition no longer holds → no write). The
+ * lock is never held across a nested acquisition, so this can't deadlock with
+ * the other locked verbs. Returns whether a write happened so callers can gate
+ * their side-effects (events / outcome arrays) on an actual transition.
+ */
+async function lockedTransition(
+  id: string,
+  mutate: (fresh: ScheduledJob) => ScheduledJob | null,
+): Promise<{ written: ScheduledJob | null; fresh: ScheduledJob | null }> {
+  const release = await acquireJobLock(id);
+  try {
+    const fresh = await readJob(id);
+    if (!fresh) return { written: null, fresh: null };
+    const next = mutate(fresh);
+    if (!next) return { written: null, fresh };
+    const written = await writeJob(next);
+    return { written, fresh };
+  } finally {
+    await release();
+  }
+}
+
 /**
  * Claim a due edge. Persists cursor/dedupe/claim BEFORE returning. Idempotent
  * under races: the lock serializes the read-modify-write, and a re-check inside
@@ -124,7 +169,7 @@ export async function claimJob(job: ScheduledJob, edge: FiredEdge, deps: Attempt
         ...fresh.attempt,
         state: 'claimed',
         claim: { token, expiresAt: now.getTime() + fresh.timing.claimTtlMs },
-        consumedEdges: [...fresh.attempt.consumedEdges, edge.dedupeKey],
+        consumedEdges: [...fresh.attempt.consumedEdges, edge.dedupeKey].slice(-MAX_CONSUMED_EDGES),
         cursor: edge.nextCursor ?? fresh.attempt.cursor,
         lastFiredAt: now.toISOString().replace(/\.\d{3}Z$/, 'Z'),
         lastError: null,
@@ -139,24 +184,34 @@ export async function claimJob(job: ScheduledJob, edge: FiredEdge, deps: Attempt
   }
 }
 
+// All five transitions below take a `job` snapshot for its id but re-read fresh
+// under the lock and re-check their precondition (AC6) — a concurrent control
+// verb (kill/cancel) or a second tick can't be clobbered by a write derived
+// from a stale snapshot. A precondition miss is a no-op: no write, no event.
+
 /** claimed → launching. Renews the claim lease so the ack window can't be reaped. */
 export async function markLaunching(job: ScheduledJob, pid: number | null, deps: AttemptDeps): Promise<ScheduledJob> {
   const now = deps.now();
-  const next: ScheduledJob = {
-    ...job,
-    attempt: {
-      ...job.attempt,
-      state: 'launching',
-      launchPid: pid,
-      launchingSince: now.toISOString().replace(/\.\d{3}Z$/, 'Z'),
-      claim: job.attempt.claim
-        ? { ...job.attempt.claim, expiresAt: now.getTime() + job.timing.claimTtlMs }
-        : null,
-    },
-  };
-  const written = await writeJob(next);
-  await appendEvent(job.id, 'launching', { pid });
-  return written;
+  const token = job.attempt.claim?.token;
+  const { written, fresh } = await lockedTransition(job.id, (f) => {
+    // Match state AND claim identity: a job reaped→retried→reclaimed since this
+    // snapshot is a DIFFERENT attempt (new token) and must not be clobbered.
+    if (f.attempt.state !== 'claimed' || f.attempt.claim?.token !== token) return null;
+    return {
+      ...f,
+      attempt: {
+        ...f.attempt,
+        state: 'launching',
+        launchPid: pid,
+        launchingSince: isoStamp(now),
+        claim: f.attempt.claim
+          ? { ...f.attempt.claim, expiresAt: now.getTime() + f.timing.claimTtlMs }
+          : null,
+      },
+    };
+  });
+  if (written) await appendEvent(job.id, 'launching', { pid });
+  return written ?? fresh ?? job;
 }
 
 /** launching → running (ack observed). Links the session + records launch counters. */
@@ -166,22 +221,27 @@ export async function markRunning(
   deps: AttemptDeps,
 ): Promise<ScheduledJob> {
   const now = deps.now();
-  const next: ScheduledJob = {
-    ...job,
-    attempt: {
-      ...job.attempt,
-      state: 'running',
-      sessionId,
-      runningSince: now.toISOString().replace(/\.\d{3}Z$/, 'Z'),
-      launchCount: job.attempt.launchCount + 1,
-      launchDayStamps: [...job.attempt.launchDayStamps, dayStamp(now)],
-      claim: null, // launch acknowledged — lease no longer needed
-    },
-  };
-  const written = await writeJob(next);
-  await appendEvent(job.id, 'ack', { sessionId });
-  await appendEvent(job.id, 'running', { sessionId });
-  return written;
+  const token = job.attempt.claim?.token;
+  const { written, fresh } = await lockedTransition(job.id, (f) => {
+    if (f.attempt.state !== 'launching' || f.attempt.claim?.token !== token) return null;
+    return {
+      ...f,
+      attempt: {
+        ...f.attempt,
+        state: 'running',
+        sessionId,
+        runningSince: isoStamp(now),
+        launchCount: f.attempt.launchCount + 1,
+        launchDayStamps: pruneDayStamps(f.attempt.launchDayStamps, now),
+        claim: null, // launch acknowledged — lease no longer needed
+      },
+    };
+  });
+  if (written) {
+    await appendEvent(job.id, 'ack', { sessionId });
+    await appendEvent(job.id, 'running', { sessionId });
+  }
+  return written ?? fresh ?? job;
 }
 
 /**
@@ -199,35 +259,41 @@ export async function markRanAndReArm(
   deps: AttemptDeps,
 ): Promise<ScheduledJob> {
   const now = deps.now();
-  const next: ScheduledJob = {
-    ...job,
-    attempt: {
-      ...job.attempt,
-      state: 'eligible',
-      sessionId,
-      launchCount: job.attempt.launchCount + 1,
-      launchDayStamps: [...job.attempt.launchDayStamps, dayStamp(now)],
-      claim: null,
-      launchingSince: null,
-      runningSince: null,
-    },
-  };
-  const written = await writeJob(next);
-  await appendEvent(job.id, 'ack', { sessionId });
-  await appendEvent(job.id, 'running', { sessionId });
-  await appendEvent(job.id, 'rescheduled', { reason: 'recurring' });
-  return written;
+  const token = job.attempt.claim?.token;
+  const { written, fresh } = await lockedTransition(job.id, (f) => {
+    if (f.attempt.state !== 'launching' || f.attempt.claim?.token !== token) return null;
+    return {
+      ...f,
+      attempt: {
+        ...f.attempt,
+        state: 'eligible',
+        sessionId,
+        launchCount: f.attempt.launchCount + 1,
+        launchDayStamps: pruneDayStamps(f.attempt.launchDayStamps, now),
+        claim: null,
+        launchingSince: null,
+        runningSince: null,
+      },
+    };
+  });
+  if (written) {
+    await appendEvent(job.id, 'ack', { sessionId });
+    await appendEvent(job.id, 'running', { sessionId });
+    await appendEvent(job.id, 'rescheduled', { reason: 'recurring' });
+  }
+  return written ?? fresh ?? job;
 }
 
-/** launching → launch_failed (no ack within the window, or reaped). */
+/** claimed | launching → launch_failed (no ack within the window, or reaped). */
 export async function markLaunchFailed(job: ScheduledJob, reason: string): Promise<ScheduledJob> {
-  const next: ScheduledJob = {
-    ...job,
-    attempt: { ...job.attempt, state: 'launch_failed', claim: null, lastError: reason },
-  };
-  const written = await writeJob(next);
-  await appendEvent(job.id, 'launch_failed', { reason });
-  return written;
+  const token = job.attempt.claim?.token;
+  const { written, fresh } = await lockedTransition(job.id, (f) => {
+    if (f.attempt.state !== 'claimed' && f.attempt.state !== 'launching') return null;
+    if (f.attempt.claim?.token !== token) return null; // different attempt
+    return { ...f, attempt: { ...f.attempt, state: 'launch_failed', claim: null, lastError: reason } };
+  });
+  if (written) await appendEvent(job.id, 'launch_failed', { reason });
+  return written ?? fresh ?? job;
 }
 
 /**
@@ -239,13 +305,12 @@ export async function markLaunchFailed(job: ScheduledJob, reason: string): Promi
  * event (see types.ts).
  */
 export async function markCompleted(job: ScheduledJob): Promise<ScheduledJob> {
-  const next: ScheduledJob = {
-    ...job,
-    attempt: { ...job.attempt, state: 'completed', claim: null },
-  };
-  const written = await writeJob(next);
-  await appendEvent(job.id, 'completed', { reason: 'one-shot session ended' });
-  return written;
+  const { written, fresh } = await lockedTransition(job.id, (f) => {
+    if (f.attempt.state !== 'running') return null;
+    return { ...f, attempt: { ...f.attempt, state: 'completed', claim: null } };
+  });
+  if (written) await appendEvent(job.id, 'completed', { reason: 'one-shot session ended' });
+  return written ?? fresh ?? job;
 }
 
 // ── Control verbs (Task 12 semantics, type-backed here) ───────────────────────
@@ -406,9 +471,19 @@ export async function reapStale(jobs: ScheduledJob[], deps: AttemptDeps): Promis
   for (const job of jobs) {
     const a = job.attempt;
     if ((a.state === 'claimed' || a.state === 'launching') && a.claim && now.getTime() > a.claim.expiresAt) {
-      await markLaunchFailed(job, `reaped: claim lease expired in state '${a.state}'`);
-      await appendEvent(job.id, 'reaped', { from: a.state });
-      out.reaped.push(job.id);
+      // Re-validate state AND expiry on fresh under the lock — `markLaunching`
+      // may have renewed the claim since this snapshot was read.
+      const reason = `reaped: claim lease expired in state '${a.state}'`;
+      const { written } = await lockedTransition(job.id, (f) => {
+        if (f.attempt.state !== 'claimed' && f.attempt.state !== 'launching') return null;
+        if (!f.attempt.claim || now.getTime() <= f.attempt.claim.expiresAt) return null;
+        return { ...f, attempt: { ...f.attempt, state: 'launch_failed', claim: null, lastError: reason } };
+      });
+      if (written) {
+        await appendEvent(job.id, 'launch_failed', { reason });
+        await appendEvent(job.id, 'reaped', { from: a.state });
+        out.reaped.push(job.id);
+      }
       continue;
     }
     if (a.state !== 'running') continue;
@@ -425,8 +500,22 @@ export async function reapStale(jobs: ScheduledJob[], deps: AttemptDeps): Promis
       const graceMs = job.limits.maxRuntimeMs ?? ONE_SHOT_COMPLETE_GRACE_MS;
       const pastGrace = now.getTime() - Date.parse(a.runningSince) > graceMs;
       if (pastGrace && !isLive(a.sessionId, a.launchPid)) {
-        await markCompleted(job);
-        out.completed.push(job.id);
+        const { written } = await lockedTransition(job.id, (f) => {
+          // Same running attempt the grace/liveness check was based on — else a
+          // newer run could be completed off a stale snapshot.
+          if (
+            f.attempt.state !== 'running' ||
+            f.attempt.sessionId !== a.sessionId ||
+            f.attempt.runningSince !== a.runningSince
+          ) {
+            return null;
+          }
+          return { ...f, attempt: { ...f.attempt, state: 'completed', claim: null } };
+        });
+        if (written) {
+          await appendEvent(job.id, 'completed', { reason: 'one-shot session ended' });
+          out.completed.push(job.id);
+        }
         continue;
       }
     }
@@ -436,9 +525,21 @@ export async function reapStale(jobs: ScheduledJob[], deps: AttemptDeps): Promis
     if (job.limits.maxRuntimeMs && a.runningSince) {
       const overrun = now.getTime() - Date.parse(a.runningSince) > job.limits.maxRuntimeMs;
       if (overrun && !isLive(a.sessionId, a.launchPid) && a.lastError !== 'stuck:max-runtime') {
-        await writeJob({ ...job, attempt: { ...a, lastError: 'stuck:max-runtime' } });
-        await appendEvent(job.id, 'reaped', { stuck: 'max-runtime-no-heartbeat' });
-        out.stuck.push(job.id);
+        const { written } = await lockedTransition(job.id, (f) => {
+          if (
+            f.attempt.state !== 'running' ||
+            f.attempt.sessionId !== a.sessionId ||
+            f.attempt.runningSince !== a.runningSince ||
+            f.attempt.lastError === 'stuck:max-runtime'
+          ) {
+            return null;
+          }
+          return { ...f, attempt: { ...f.attempt, lastError: 'stuck:max-runtime' } };
+        });
+        if (written) {
+          await appendEvent(job.id, 'reaped', { stuck: 'max-runtime-no-heartbeat' });
+          out.stuck.push(job.id);
+        }
       }
     }
   }
