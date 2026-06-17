@@ -192,6 +192,26 @@ syntaur timeline add-oauth --project my-api \
 
 Key flags: `--project <slug>`, `--since <date>`, `--type <list>` (comma-separated), `--limit <n>` (default 50), `--json`.
 
+### Needs me inbox
+
+`syntaur inbox` shows a single grouped triage view of every assignment currently awaiting human action across all projects — assignments in review, blocked, with an unanswered question, or with a plan awaiting approval. Each item prints the exact action command to resolve it. Read-only; never mutates.
+
+```bash
+# Show everything awaiting your attention
+syntaur inbox
+
+# Filter to a category or project
+syntaur inbox --type review,blocked
+syntaur inbox --project my-api
+
+# Emit structured JSON (InboxResult with items[], counts, total)
+syntaur inbox --json
+```
+
+Key flags: `--project <slug>`, `--type <list>` (comma-separated; `review`, `blocked`, `question`, `plan-approval`), `--limit <n>`, `--json`.
+
+The dashboard **Needs me** view is the live GUI equivalent — same grouping, inline action controls, and a nav badge showing the total count.
+
 ### Migrate events (one-time backfill)
 
 `syntaur migrate-events` synthesizes audit events from existing `statusHistory` and `planApproval` data already in your `assignment.md` files. Dry-run by default; pass `--apply` to write. The command is idempotent — deterministic `source_key` values mean re-running after `--apply` inserts 0 new events.

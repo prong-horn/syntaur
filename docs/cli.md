@@ -343,6 +343,95 @@ syntaur search "authentication flow" --project my-api --in plans,handoff --json
 syntaur search "stripe webhook" --all --limit 5
 ```
 
+## `syntaur inbox`
+
+One triage view of everything awaiting a human across all projects and standalone assignments. Read-only — prints the exact action command for each item; never mutates.
+
+```
+syntaur inbox [options]
+```
+
+### Options
+
+- `--project <slug>` — Restrict to one project.
+- `--type <list>` — Comma-separated category filter (valid categories: `review`, `blocked`, `question`, `plan-approval`).
+- `--limit <n>` — Maximum number of items to show.
+- `--json` — Emit the structured `InboxResult` JSON instead of the grouped view.
+
+### Categories
+
+| Category | What it means | Action command |
+|---|---|---|
+| `review` | Assignment is in `review` status — awaiting accept or reopen | `syntaur complete <slug> --project <p>` (accept) or `syntaur reopen <slug> --project <p>` (reopen); exact command is derived from the lifecycle status-config |
+| `blocked` | Assignment is in `blocked` status — something is preventing progress | `syntaur unblock <slug> --project <p>` |
+| `question` | Assignment has an open (unresolved) comment of type `question` | `syntaur comment <slug> "<answer>" --reply-to <commentId> --project <p>` — posts a reply; marking the comment resolved is dashboard-only |
+| `plan-approval` | Assignment is in `ready_for_planning` status with a latest unapproved plan file | `syntaur plan approve <slug> --project <p>` |
+
+For standalone assignments (no project), omit `--project` and use the assignment UUID as the target.
+
+### What does NOT appear
+
+- Archived assignments
+- `draft`, `ready_to_implement`, `in_progress` assignments (agent is still working)
+- `ready_for_planning` assignments without a latest unapproved plan (nothing to approve)
+- Terminal statuses: `completed`, `failed`
+- `parked` disposition assignments
+- Resolved comments (`resolved: true`)
+- `note` and `feedback` comment types (only `question` awaits a human answer)
+
+### JSON output shape
+
+`--json` emits an `InboxResult` object:
+
+```json
+{
+  "items": [
+    {
+      "project": "my-api",
+      "assignmentSlug": "add-oauth",
+      "assignmentId": "dc8c06c1-531a-457f-a8f8-79692294e83e",
+      "title": "Add OAuth support",
+      "category": "review",
+      "since": "2026-06-10T12:25:03Z",
+      "ageMs": 575717277,
+      "summary": "Review requested — awaiting accept or reopen.",
+      "action": {
+        "verb": "Accept",
+        "command": "syntaur complete add-oauth --project my-api"
+      }
+    }
+  ],
+  "counts": {
+    "review": 3,
+    "blocked": 1,
+    "question": 0,
+    "plan-approval": 2
+  },
+  "total": 6
+}
+```
+
+### Examples
+
+```bash
+# Show everything awaiting your attention
+syntaur inbox
+
+# Emit structured JSON
+syntaur inbox --json
+
+# Filter to review and blocked only
+syntaur inbox --type review,blocked
+
+# Restrict to one project
+syntaur inbox --project my-api
+
+# Cap output at 10 items
+syntaur inbox --limit 10
+```
+
+The dashboard **Needs me** view is the GUI equivalent — it shows the same grouped list with inline action controls and live-updates via WebSocket whenever an assignment changes.
+
 ## Launch flow
 
 `syntaur browse` opens the TUI browser and, when you pick an assignment, launches an agent.
