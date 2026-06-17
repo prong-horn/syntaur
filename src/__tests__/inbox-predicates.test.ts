@@ -30,6 +30,10 @@ function defaultStatusConfig(): InboxStatusConfig {
     transitions: def.transitions,
     transitionTable: buildTransitionTable(def.transitions),
     terminalStatuses: new Set(def.statuses.filter((s) => s.terminal).map((s) => s.id)),
+    // Default headline blocked/parked ids (DEFAULT_DERIVE_CONFIG.headline). These
+    // are NOT valid active reopen targets; `in_progress` is absent so default
+    // `review:start -> in_progress` stays a valid reopen.
+    blockedParkedStatuses: new Set(['blocked', 'parked']),
   };
 }
 
@@ -358,6 +362,46 @@ describe('deriveReviewVerbs', () => {
     const v = deriveReviewVerbs(cfg);
     expect(v.accept).toBe('complete');
     expect(v.reopen).toBe('start');
+  });
+
+  it('reopen is null when start targets a blocked/parked headline status (target disposition, not command name)', () => {
+    // Malformed/custom `review:start -> blocked`: `start` is a reopen-eligible
+    // command name, but its TARGET is a blocked headline status, so it must NOT
+    // be labeled "Reopen".
+    const transitions = [
+      { from: 'review', command: 'start', to: 'blocked' },
+      { from: 'review', command: 'complete', to: 'completed' },
+    ];
+    const cfg: InboxStatusConfig = {
+      statuses: [
+        { id: 'blocked' },
+        { id: 'completed', terminal: true },
+      ],
+      transitions,
+      transitionTable: buildTransitionTable(transitions),
+      terminalStatuses: new Set(['completed']),
+      blockedParkedStatuses: new Set(['blocked', 'parked']),
+    };
+    const v = deriveReviewVerbs(cfg);
+    expect(v.accept).toBe('complete');
+    expect(v.reopen).toBeNull();
+  });
+
+  it('reopen=reopen when reopen targets an active (non-headline) status', () => {
+    const transitions = [
+      { from: 'review', command: 'reopen', to: 'in_progress' },
+      { from: 'review', command: 'complete', to: 'completed' },
+    ];
+    const cfg: InboxStatusConfig = {
+      statuses: [{ id: 'in_progress' }, { id: 'completed', terminal: true }],
+      transitions,
+      transitionTable: buildTransitionTable(transitions),
+      terminalStatuses: new Set(['completed']),
+      blockedParkedStatuses: new Set(['blocked', 'parked']),
+    };
+    const v = deriveReviewVerbs(cfg);
+    expect(v.accept).toBe('complete');
+    expect(v.reopen).toBe('reopen');
   });
 });
 

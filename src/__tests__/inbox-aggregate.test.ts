@@ -22,6 +22,7 @@ function statusConfig(): InboxStatusConfig {
     transitions: def.transitions,
     transitionTable: buildTransitionTable(def.transitions),
     terminalStatuses: new Set(def.statuses.filter((s) => s.terminal).map((s) => s.id)),
+    blockedParkedStatuses: new Set(['blocked', 'parked']),
   };
 }
 
@@ -336,6 +337,25 @@ describe('computeInbox — exclusions', () => {
       extraFrontmatter: ['disposition: terminal'],
     });
     const r = await run();
+    expect(r.total).toBe(0);
+  });
+
+  it('excludes a TERMINAL-status assignment with NULL disposition and an open question', async () => {
+    // Legacy/null-disposition: status is `completed` (∈ terminalStatuses) with
+    // no `disposition` field, plus an unresolved question. The terminal-STATUS
+    // guard must drop it BEFORE the status-agnostic question loop — otherwise
+    // the question would leak into the inbox.
+    await seed({
+      id: 'tnq',
+      slug: 'terminal-null-q',
+      status: 'completed',
+      project: 'p1',
+      comments: [
+        { id: 'c1', timestamp: '2026-06-15T00:00:00Z', author: 'h', type: 'question', body: 'q?', resolved: false },
+      ],
+    });
+    const r = await run();
+    expect(r.counts.question).toBe(0);
     expect(r.total).toBe(0);
   });
 

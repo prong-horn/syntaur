@@ -52,6 +52,16 @@ export interface InboxStatusConfig {
   transitionTable: Map<string, string>;
   /** Statuses whose disposition is terminal. */
   terminalStatuses: ReadonlySet<string>;
+  /**
+   * The configured blocked + parked HEADLINE status ids — statuses that are NOT
+   * valid active "reopen" targets. Callers build this from the resolved derive
+   * config's `headline.{blocked,parked}` (defaulting to `DEFAULT_DERIVE_CONFIG`
+   * when the user has no custom derive rules). Optional: when absent,
+   * `deriveReviewVerbs` treats it as the empty set (no extra exclusion).
+   * Used by `deriveReviewVerbs` so a malformed `review:start -> blocked`/`parked`
+   * is correctly NOT labeled "Reopen".
+   */
+  blockedParkedStatuses?: ReadonlySet<string>;
 }
 
 export interface ComputeInboxOptions {
@@ -251,9 +261,12 @@ export interface ReviewVerbs {
  *   NOT `fail`, and is a known CLI verb. Prefers `'complete'`; else the first
  *   qualifier; else `null` (no hardcoded fallback — an unrunnable target yields
  *   null so the dashboard hides the inline Accept).
- * - `reopen`: a review-valid command in `{'start','reopen'}` (both target the
- *   active `in_progress`, never blocked/parked). Prefers `'start'`, else
- *   `'reopen'`, else `null`.
+ * - `reopen`: a review-valid command in `{'start','reopen'}` whose target is an
+ *   ACTIVE status — non-terminal AND not a blocked/parked headline status (the
+ *   target's disposition, not just the command name, is what qualifies it). The
+ *   default `review:start -> in_progress` stays valid; a custom/malformed
+ *   `review:start -> blocked` or `review:reopen -> parked` is rejected. Prefers
+ *   `'start'`, else `'reopen'`, else `null`.
  *
  * Valid commands are those `c` where `getTargetStatus('review', c, table)` is
  * non-null, enumerated from the declared `transitions` (from==='review') plus a
@@ -268,6 +281,7 @@ export function deriveReviewVerbs(config: InboxStatusConfig): ReviewVerbs {
     if (key.startsWith('review:')) candidates.add(key.slice('review:'.length));
   }
 
+  const blockedParked = config.blockedParkedStatuses ?? new Set<string>();
   const terminalAccept: string[] = [];
   const activeReopen: string[] = [];
   for (const command of candidates) {
@@ -281,7 +295,15 @@ export function deriveReviewVerbs(config: InboxStatusConfig): ReviewVerbs {
     ) {
       terminalAccept.push(command);
     }
-    if (!isTerminal && (command === 'start' || command === 'reopen')) {
+    // reopen requires the TARGET be an active status: non-terminal AND not a
+    // blocked/parked headline status. (Disposition of the target, not the
+    // command name, is load-bearing — a review→blocked/parked target is NOT a
+    // valid reopen even when the command is `start`/`reopen`.)
+    if (
+      !isTerminal &&
+      !blockedParked.has(target) &&
+      (command === 'start' || command === 'reopen')
+    ) {
       activeReopen.push(command);
     }
   }
@@ -402,6 +424,14 @@ export async function computeInbox(opts: ComputeInboxOptions): Promise<InboxResu
     // awaiting a human decision (matches the plan's exclusions, and guards a
     // malformed `disposition:parked, status:review`). Blocked + active flow on.
     if (parsed.disposition === 'parked' || parsed.disposition === 'terminal') continue;
+
+    // Skip terminal-STATUS assignments regardless of disposition. `disposition`
+    // is nullable, so a legacy/null-disposition entry whose derived status is
+    // terminal (completed/failed) with an unresolved question would otherwise
+    // leak in via the status-agnostic question loop below. `terminalStatuses`
+    // already covers completed/failed; the review/blocked/plan-approval
+    // predicates already require non-terminal statuses, so they're unaffected.
+    if (opts.statusConfig.terminalStatuses.has(parsed.status)) continue;
 
     const project = entry.projectSlug;
     const assignmentSlug = entry.assignmentSlug;

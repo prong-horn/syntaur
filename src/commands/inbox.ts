@@ -1,5 +1,5 @@
 import { Command } from 'commander';
-import { readConfig } from '../utils/config.js';
+import { readConfig, DEFAULT_DERIVE_CONFIG } from '../utils/config.js';
 import { assignmentsDir as getAssignmentsDir } from '../utils/paths.js';
 import { getStatusConfig } from '../dashboard/api.js';
 import {
@@ -52,7 +52,12 @@ export async function runInbox(options: InboxOptions): Promise<InboxResult> {
   // so an unknown category yields a clean one-line error, not an uncaught stack.
   const types = parseTypes(options.type);
 
-  const statusConfig: InboxStatusConfig = await getStatusConfig();
+  const resolved = await getStatusConfig();
+  // The blocked/parked HEADLINE status ids are NOT valid active "reopen" targets.
+  // `derive` is null when the user has no custom derive rules → DEFAULT_DERIVE_CONFIG.
+  const headline = (resolved.derive ?? DEFAULT_DERIVE_CONFIG).headline;
+  const blockedParkedStatuses = new Set([headline.blocked, headline.parked].filter(Boolean));
+  const statusConfig: InboxStatusConfig = { ...resolved, blockedParkedStatuses };
 
   return computeInbox({
     projectsDir,

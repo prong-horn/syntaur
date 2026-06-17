@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { computeInbox } from '../inbox/index.js';
 import { INBOX_CATEGORIES, type InboxCategory } from '../inbox/types.js';
 import { getStatusConfig } from './api.js';
+import { DEFAULT_DERIVE_CONFIG } from '../utils/config.js';
 
 /**
  * Read-only "Needs me" decision inbox API. Localhost-only per the existing
@@ -60,7 +61,15 @@ export function createInboxRouter(
         if (Number.isInteger(n) && n > 0) limit = n;
       }
 
-      const statusConfig = await getStatusConfig();
+      const resolved = await getStatusConfig();
+      // The blocked/parked HEADLINE status ids are NOT valid active "reopen"
+      // targets. `derive` is null when the user has no custom derive rules →
+      // resolve to DEFAULT_DERIVE_CONFIG.
+      const headline = (resolved.derive ?? DEFAULT_DERIVE_CONFIG).headline;
+      const blockedParkedStatuses = new Set(
+        [headline.blocked, headline.parked].filter(Boolean),
+      );
+      const statusConfig = { ...resolved, blockedParkedStatuses };
       const result = await computeInbox({
         projectsDir,
         assignmentsDir,
