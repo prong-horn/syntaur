@@ -80,6 +80,7 @@ import { createSchedulesRouter } from './api-schedules.js';
 import { runTick } from '../schedules/tick.js';
 import { createUsageRouter } from './api-usage.js';
 import { createEventsRouter } from './api-events.js';
+import { createInboxRouter } from './api-inbox.js';
 import { createPlaybooksRouter } from './api-playbooks.js';
 import {
   migrateLegacyProjectFiles,
@@ -727,6 +728,10 @@ export function createDashboardServer(options: DashboardServerOptions) {
   // Best-effort read-only; routes use full `/projects/...` & `/standalone/...`
   // paths, so mount at `/api`. Returns `{ events: [] }` rather than 500ing.
   app.use('/api', createEventsRouter(projectsDir, assignmentsDir));
+
+  // --- Inbox API ("Needs me" triage view) ---
+  // Best-effort read-only; returns safe empty shape rather than 500ing.
+  app.use('/api', createInboxRouter(projectsDir, assignmentsDir));
 
   // --- Agent Sessions API ---
   app.use('/api/agent-sessions', createAgentSessionsRouter(projectsDir, broadcast, assignmentsDir));
