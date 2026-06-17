@@ -210,4 +210,73 @@ describe('resolveAttribution', () => {
     });
     expect(result).toEqual({ projectSlug: null, assignmentSlug: null });
   });
+
+  // AC1 regression: Claude's date-only `lastActivity` is snapped to UTC midnight,
+  // which never falls inside the exact `started <= event` window of a mid-day
+  // session. The day-granularity stage-2b must recover it.
+  it('stage-2b day-fallback attributes a midnight-snapped event to a mid-day session', () => {
+    const db = initSessionDb(dbPath);
+    seedSession(db, {
+      sessionId: 'tracked-other-id',
+      projectSlug: 'claude-proj',
+      assignmentSlug: 'claude-asgn',
+      started: '2026-06-10T09:00:00.000Z',
+      ended: '2026-06-10 17:00:00',
+      path: '/Users/dev/proj',
+    });
+    const result = resolveAttribution({
+      sessionId: 'untracked-claude',
+      cwd: '/Users/dev/proj',
+      eventTs: '2026-06-10T00:00:00.000Z', // date-only snap
+    });
+    expect(result).toEqual({ projectSlug: 'claude-proj', assignmentSlug: 'claude-asgn' });
+  });
+
+  // AC1 ambiguity guard: two same-cwd same-day sessions for DIFFERENT projects →
+  // the midnight fallback must not guess.
+  it('stage-2b stays unattributed when the day is ambiguous (two projects, same cwd)', () => {
+    const db = initSessionDb(dbPath);
+    seedSession(db, {
+      sessionId: 'a',
+      projectSlug: 'proj-a',
+      assignmentSlug: 'asgn-a',
+      started: '2026-06-10T08:00:00.000Z',
+      ended: '2026-06-10 11:00:00',
+      path: '/Users/dev/proj',
+    });
+    seedSession(db, {
+      sessionId: 'b',
+      projectSlug: 'proj-b',
+      assignmentSlug: 'asgn-b',
+      started: '2026-06-10T13:00:00.000Z',
+      ended: '2026-06-10 17:00:00',
+      path: '/Users/dev/proj',
+    });
+    const result = resolveAttribution({
+      sessionId: 'untracked-claude',
+      cwd: '/Users/dev/proj',
+      eventTs: '2026-06-10T00:00:00.000Z',
+    });
+    expect(result).toEqual({ projectSlug: null, assignmentSlug: null });
+  });
+
+  // AC1: 2b must NOT fire for a non-midnight full-ISO event genuinely outside the
+  // session window — that stays unattributed (no day-granularity guessing).
+  it('non-midnight event outside the exact window stays unattributed (2b does not fire)', () => {
+    const db = initSessionDb(dbPath);
+    seedSession(db, {
+      sessionId: 'tracked-other-id',
+      projectSlug: 'p',
+      assignmentSlug: 'a',
+      started: '2026-06-10T09:00:00.000Z',
+      ended: '2026-06-10 17:00:00',
+      path: '/Users/dev/proj',
+    });
+    const result = resolveAttribution({
+      sessionId: 'untracked',
+      cwd: '/Users/dev/proj',
+      eventTs: '2026-06-10T23:00:00.000Z', // full ISO, outside window, not a midnight snap
+    });
+    expect(result).toEqual({ projectSlug: null, assignmentSlug: null });
+  });
 });
