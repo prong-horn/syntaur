@@ -151,6 +151,30 @@ describe('AQL time semantics', () => {
     expect(matches('completedAt < -1m', ITEM)).toBe(false);
   });
 
+  // AC8: impossible calendar dates must compile to an error, not silently roll
+  // over (2026-02-30 → Mar 2) and filter the wrong day.
+  it('rejects impossible calendar dates instead of rolling over', () => {
+    for (const q of ['created:2026-02-30', 'created:2026-13-45', 'created > 2026-00-10']) {
+      const { query: compiled, errors } = compileQuery(q);
+      expect(compiled).toBeNull();
+      expect(errors.some((e) => /invalid date/i.test(e.message))).toBe(true);
+    }
+    // A valid date still compiles + filters.
+    const item = { ...ITEM, created: new Date(2026, 5, 16, 9, 0).toISOString() };
+    expect(matches('created:2026-06-16', item)).toBe(true);
+  });
+
+  // AC8: a trailing digit must not be swallowed into a date token.
+  it('does not lex a trailing-digit run as a date', () => {
+    // `2026-06-1623` should NOT become DATE(2026-06-16)+NUMBER(23); it must not
+    // silently match June 16.
+    const item = { ...ITEM, created: new Date(2026, 5, 16, 9, 0).toISOString() };
+    expect(matches('created:2026-06-16', item)).toBe(true); // sanity
+    const { query: compiled } = compileQuery('created:2026-06-1623');
+    // Either a compile error or a non-matching predicate — but never a silent June-16 match.
+    if (compiled) expect(compiled.predicate(item, CTX)).toBe(false);
+  });
+
   it('month/year unit aliases', () => {
     expect(matches('created > -1mo', ITEM)).toBe(true);
     expect(matches('created > -1y', ITEM)).toBe(true);
