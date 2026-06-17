@@ -1,6 +1,8 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Cloud, Download, Upload, Save } from 'lucide-react';
 import { SectionCard } from './SectionCard';
+import { ConfirmDialog } from './ConfirmDialog';
+import { formatDateTime } from '../lib/format';
 
 const VALID_CATEGORIES = ['projects', 'playbooks', 'todos', 'servers', 'config'] as const;
 type Category = (typeof VALID_CATEGORIES)[number];
@@ -25,11 +27,7 @@ function parseCategories(csv: string): Set<Category> {
 
 function formatTimestamp(iso: string | null): string {
   if (!iso) return 'never';
-  try {
-    return new Date(iso).toLocaleString();
-  } catch {
-    return iso;
-  }
+  return formatDateTime(iso);
 }
 
 export function BackupSection() {
@@ -41,6 +39,7 @@ export function BackupSection() {
   const [saving, setSaving] = useState(false);
   const [running, setRunning] = useState<'push' | 'pull' | null>(null);
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+  const [confirmRestore, setConfirmRestore] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -122,10 +121,6 @@ export function BackupSection() {
   }
 
   async function runRestore() {
-    const ok = window.confirm(
-      'Restore will overwrite local files for the selected categories with the contents of the GitHub repo. This cannot be undone. Continue?',
-    );
-    if (!ok) return;
     setRunning('pull');
     setFeedback(null);
     try {
@@ -257,7 +252,7 @@ export function BackupSection() {
           </button>
           <button
             className="shell-action"
-            onClick={runRestore}
+            onClick={() => setConfirmRestore(true)}
             disabled={!canRun}
             title={!canRun ? (dirty ? 'Save config first' : 'Set repo and pick categories') : 'Restore from backup'}
           >
@@ -275,6 +270,22 @@ export function BackupSection() {
           </span>
         </p>
       </div>
+
+      <ConfirmDialog
+        open={confirmRestore}
+        title="Restore from GitHub?"
+        description="Restore will overwrite local files for the selected categories with the contents of the GitHub repo. This cannot be undone. Continue?"
+        confirmLabel="Restore"
+        destructive
+        loading={running === 'pull'}
+        onOpenChange={(open) => {
+          if (!open && running !== 'pull') setConfirmRestore(false);
+        }}
+        onConfirm={async () => {
+          await runRestore();
+          setConfirmRestore(false);
+        }}
+      />
     </SectionCard>
   );
 }

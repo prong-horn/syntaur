@@ -18,6 +18,7 @@ import { ErrorState } from '../components/ErrorState';
 import { EmptyState } from '../components/EmptyState';
 import { ConfirmDialog } from '../components/ConfirmDialog';
 import { useToast, Toaster } from '../components/Toast';
+import { formatDateTime } from '../lib/format';
 import type { TrackedSession, TrackedPane } from '../types';
 
 export function ServersPage() {
@@ -257,14 +258,14 @@ function SessionCard({
             {session.alive ? 'alive' : 'dead'}
           </span>
           <span className="text-xs text-muted-foreground">
-            Last refreshed: {new Date(session.lastRefreshed).toLocaleString()}
+            Last refreshed: {formatDateTime(session.lastRefreshed)}
           </span>
         </div>
         <div className="flex items-center gap-1">
-          <button className="shell-action" onClick={onRefresh} title="Refresh">
+          <button className="shell-action" onClick={onRefresh} title="Refresh" aria-label="Refresh">
             <RefreshCw className="h-3.5 w-3.5" />
           </button>
-          <button className="shell-action" onClick={onRemove} title="Remove">
+          <button className="shell-action" onClick={onRemove} title="Remove" aria-label="Remove">
             <Trash2 className="h-3.5 w-3.5" />
           </button>
         </div>

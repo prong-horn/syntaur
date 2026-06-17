@@ -4,22 +4,24 @@ import { useSchedules } from '../hooks/useSchedules';
 import { LoadingState } from '../components/LoadingState';
 import { ErrorState } from '../components/ErrorState';
 import { EmptyState } from '../components/EmptyState';
+import { useToast, Toaster } from '../components/Toast';
 import { CreateScheduleDialog } from '../components/CreateScheduleDialog';
 import { cancelSchedule, describeTrigger, type Schedule } from '../lib/schedules';
 
 const TERMINAL_STATES = new Set(['completed', 'failed', 'launch_failed', 'cancelled', 'killed']);
 
 function stateClass(state: string): string {
-  if (state === 'running') return 'bg-green-500/15 text-green-400 border-green-500/30';
-  if (state === 'eligible') return 'bg-blue-500/15 text-blue-400 border-blue-500/30';
-  if (state === 'held') return 'bg-amber-500/15 text-amber-400 border-amber-500/30';
-  if (state === 'launch_failed' || state === 'failed' || state === 'killed') return 'bg-red-500/15 text-red-400 border-red-500/30';
-  return 'bg-zinc-500/15 text-zinc-400 border-zinc-500/30';
+  if (state === 'running') return 'border-success-foreground/30 bg-success text-success-foreground';
+  if (state === 'eligible') return 'border-info-foreground/30 bg-info text-info-foreground';
+  if (state === 'held') return 'border-warning-foreground/30 bg-warning text-warning-foreground';
+  if (state === 'launch_failed' || state === 'failed' || state === 'killed') return 'border-error-foreground/30 bg-error text-error-foreground';
+  return 'border-muted-foreground/30 bg-muted text-muted-foreground';
 }
 
 export function SchedulesPage() {
   const { data, loading, error, refetch } = useSchedules();
   const [creating, setCreating] = useState(false);
+  const { toast, showToast, dismissToast } = useToast();
 
   if (loading) return <LoadingState label="Loading schedules…" />;
   if (error) {
@@ -37,7 +39,7 @@ export function SchedulesPage() {
       await cancelSchedule(job.id);
       refetch();
     } catch (err) {
-      window.alert(err instanceof Error ? `Cancel failed: ${err.message}` : 'Cancel failed');
+      showToast(err instanceof Error ? `Cancel failed: ${err.message}` : 'Cancel failed', 'error');
     }
   }
 
@@ -54,7 +56,7 @@ export function SchedulesPage() {
         <button
           type="button"
           onClick={() => setCreating(true)}
-          className="flex items-center gap-1 rounded bg-primary px-3 py-1.5 text-sm text-primary-foreground"
+          className="shell-action shell-action--cta"
         >
           <Plus className="h-4 w-4" />
           New schedule
@@ -97,6 +99,7 @@ export function SchedulesPage() {
         </div>
       )}
 
+      <Toaster toast={toast} onDismiss={dismissToast} />
       <CreateScheduleDialog open={creating} onOpenChange={setCreating} onCreated={refetch} />
     </div>
   );

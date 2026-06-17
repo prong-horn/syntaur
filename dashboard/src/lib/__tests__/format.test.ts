@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { formatCost, formatTokens } from '../format';
+import { formatCost, formatTokens, formatDateTime } from '../format';
 
 describe('formatCost', () => {
   it('groups thousands and shows 2 decimals for amounts >= $1', () => {
@@ -27,5 +27,23 @@ describe('formatTokens', () => {
   it('groups thousands', () => {
     expect(formatTokens(3175604336)).toBe('3,175,604,336');
     expect(formatTokens(0)).toBe('0');
+  });
+});
+
+describe('formatDateTime', () => {
+  it('returns an em-dash for null/undefined/empty', () => {
+    expect(formatDateTime(null)).toBe('—');
+    expect(formatDateTime(undefined)).toBe('—');
+    expect(formatDateTime('')).toBe('—');
+  });
+
+  it('returns the raw value when it is not a parseable date', () => {
+    expect(formatDateTime('not-a-date')).toBe('not-a-date');
+  });
+
+  it('formats a valid ISO timestamp into a non-empty string containing the year', () => {
+    const out = formatDateTime('2026-06-15T12:00:00Z');
+    expect(out).not.toBe('—');
+    expect(out).toContain('2026');
   });
 });

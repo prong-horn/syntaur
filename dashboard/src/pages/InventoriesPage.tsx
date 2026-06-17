@@ -5,6 +5,7 @@ import { LoadingState } from '../components/LoadingState';
 import { ErrorState } from '../components/ErrorState';
 import { EmptyState } from '../components/EmptyState';
 import { ConfirmDialog } from '../components/ConfirmDialog';
+import { useToast, Toaster } from '../components/Toast';
 import type {
   InventoryDetail,
   InventoryMember,
@@ -30,11 +31,11 @@ function formatCountdown(expiresAt: string, now: number): string {
 function memberStatusClass(status: MemberStatus): string {
   switch (status) {
     case 'idle':
-      return 'bg-green-500/15 text-green-400 border-green-500/30';
+      return 'border-success-foreground/30 bg-success text-success-foreground';
     case 'leased':
-      return 'bg-amber-500/15 text-amber-400 border-amber-500/30';
+      return 'border-warning-foreground/30 bg-warning text-warning-foreground';
     case 'retired':
-      return 'bg-zinc-500/15 text-zinc-400 border-zinc-500/30';
+      return 'border-muted-foreground/30 bg-muted text-muted-foreground';
   }
 }
 
@@ -54,6 +55,7 @@ export function InventoriesPage() {
     { slug: string; lease: Lease } | null
   >(null);
   const [forceReleasing, setForceReleasing] = useState(false);
+  const { toast, showToast, dismissToast } = useToast();
 
   // Tick once per second so countdowns update.
   useEffect(() => {
@@ -109,11 +111,11 @@ export function InventoriesPage() {
       refetch();
       setForceReleaseTarget(null);
     } catch (err) {
-      // Surface as alert; ServersPage uses the same simple pattern.
-      window.alert(
+      showToast(
         err instanceof Error
           ? `Force release failed: ${err.message}`
           : 'Force release failed',
+        'error',
       );
     } finally {
       setForceReleasing(false);
@@ -161,6 +163,7 @@ export function InventoriesPage() {
           if (!open) setForceReleaseTarget(null);
         }}
       />
+      <Toaster toast={toast} onDismiss={dismissToast} />
     </div>
   );
 }
