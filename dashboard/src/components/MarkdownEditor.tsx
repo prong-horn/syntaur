@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { ArrowLeft, Eye, FileCode2, Save } from 'lucide-react';
 import { useWorkspaces, type EditableDocumentType } from '../hooks/useProjects';
 import { useStatusConfig, getStatusLabel } from '../hooks/useStatusConfig';
@@ -14,6 +14,7 @@ import {
   parseScratchpadEditorState,
 } from '../lib/documents';
 import { isValidSlug, slugify } from '../lib/slug';
+import { canSave, isSaveShortcut, shouldWarnBeforeUnload } from '../lib/editorShortcuts';
 import { MarkdownRenderer } from './MarkdownRenderer';
 
 interface MarkdownEditorProps {
@@ -62,6 +63,54 @@ export function MarkdownEditor({
   // Body-only document types: hide the Raw Markdown toggle so users can't accidentally edit
   // frontmatter. (Server enforces body-only on save regardless, so this is UX clarity.)
   const allowRawMode = documentType !== 'memory' && documentType !== 'resource';
+
+  // Keep a ref of the latest editor state so the window keydown listener can be
+  // bound once yet always act on current values (avoids a stale closure that
+  // would save outdated content).
+  const latestRef = useRef({
+    content,
+    saving,
+    validationErrorCount: validationErrors.length,
+    onSave,
+  });
+  latestRef.current = {
+    content,
+    saving,
+    validationErrorCount: validationErrors.length,
+    onSave,
+  };
+
+  // Cmd/Ctrl+S saves (only when the Save button would be enabled) and always
+  // suppresses the browser's native "save page" dialog.
+  useEffect(() => {
+    const handler = (event: KeyboardEvent) => {
+      if (!isSaveShortcut(event)) return;
+      event.preventDefault();
+      const {
+        content: latestContent,
+        saving: isSaving,
+        validationErrorCount,
+        onSave: save,
+      } = latestRef.current;
+      if (canSave({ saving: isSaving, validationErrorCount })) {
+        void save(latestContent);
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, []);
+
+  // Warn before unloading the tab/window while there are unsaved edits. No
+  // listener is attached when saved, so there is never a spurious prompt.
+  useEffect(() => {
+    if (!shouldWarnBeforeUnload(hasChanges)) return;
+    const handler = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = '';
+    };
+    window.addEventListener('beforeunload', handler);
+    return () => window.removeEventListener('beforeunload', handler);
+  }, [hasChanges]);
 
   return (
     <div className="space-y-3">
