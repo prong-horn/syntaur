@@ -6,6 +6,8 @@ import { tmpdir } from 'node:os';
 import { spawnSync } from 'node:child_process';
 import { createWriteRouter, worktreeInFlight, setTopLevelField } from '../dashboard/api-write.js';
 import { parseAssignmentFrontmatter } from '../lifecycle/frontmatter.js';
+import { parseComments } from '../dashboard/parser.js';
+import { formatCommentEntry } from '../templates/comments.js';
 
 let testDir: string;
 
@@ -2680,5 +2682,115 @@ describe('setTopLevelField (AC5: scoped to frontmatter)', () => {
     const out = setTopLevelField(content, 'archived', true);
     expect(out).toContain('archived: true');
     expect(out).not.toContain('archived: false');
+  });
+});
+
+// AC1: a newline in author/replyTo breaks parseComments' single-line header
+// regex → the whole comment is dropped on read. Reject it at the write boundary.
+describe('comment write-boundary newline validation (AC1)', () => {
+  it('rejects a project comment whose author contains a newline (400, nothing written)', async () => {
+    await createAssignmentFixture();
+    const router = createWriteRouter(testDir);
+    const res = await invokeRoute(
+      router,
+      'post',
+      '/api/projects/:slug/assignments/:aslug/comments',
+      { slug: 'test-project', aslug: 'test-assignment' },
+      { body: 'hi', type: 'note', author: 'alice\ninjected' },
+    );
+    expect(res.statusCode).toBe(400);
+    const commentsPath = resolve(testDir, 'test-project', 'assignments', 'test-assignment', 'comments.md');
+    let content = '';
+    try { content = await readFile(commentsPath, 'utf-8'); } catch { /* not created */ }
+    expect(content).not.toContain('**Author:**');
+  });
+
+  it('rejects a project comment whose replyTo contains a newline (400)', async () => {
+    await createAssignmentFixture();
+    const router = createWriteRouter(testDir);
+    const res = await invokeRoute(
+      router,
+      'post',
+      '/api/projects/:slug/assignments/:aslug/comments',
+      { slug: 'test-project', aslug: 'test-assignment' },
+      { body: 'hi', type: 'note', replyTo: 'abcd\nefgh' },
+    );
+    expect(res.statusCode).toBe(400);
+  });
+
+  it('still accepts a normal project comment (positive control)', async () => {
+    await createAssignmentFixture();
+    const router = createWriteRouter(testDir);
+    const res = await invokeRoute(
+      router,
+      'post',
+      '/api/projects/:slug/assignments/:aslug/comments',
+      { slug: 'test-project', aslug: 'test-assignment' },
+      { body: 'all good', type: 'note', author: 'alice' },
+    );
+    expect(res.statusCode).toBe(201);
+  });
+
+  it('rejects a standalone comment whose author contains a newline (400)', async () => {
+    const assignmentsDir = resolve(testDir, 'standalone');
+    await mkdir(assignmentsDir, { recursive: true });
+    const router = createWriteRouter(testDir, assignmentsDir);
+    const create = await invokeRoute(router, 'post', '/api/assignments', {}, { title: 'Task' });
+    const id = (create.payload as any).assignment.id as string;
+    const res = await invokeRoute(
+      router,
+      'post',
+      '/api/assignments/:id/comments',
+      { id },
+      { body: 'hi', type: 'note', author: 'bob\nx' },
+    );
+    expect(res.statusCode).toBe(400);
+  });
+});
+
+// AC2: parseComments split on bare `^## ` truncates a comment body that contains
+// a markdown `## ` heading. It must only split at real comment headers.
+describe('parseComments preserves a body containing a "## " line (AC2)', () => {
+  const skeleton = (entries: string) =>
+    `---\nassignment: a\nentryCount: 9\ngenerated: "2026-06-17T00:00:00Z"\nupdated: "2026-06-17T00:00:00Z"\n---\n\n# Comments\n\n${entries}`;
+
+  it('keeps the full body when it contains a "## Section" heading', () => {
+    const entry = formatCommentEntry({
+      id: 'ab12',
+      timestamp: '2026-06-17T00:00:00Z',
+      author: 'alice',
+      type: 'note',
+      body: 'intro line\n\n## Section\n\nmore body text',
+    });
+    const parsed = parseComments(skeleton(entry));
+    expect(parsed.entries).toHaveLength(1);
+    expect(parsed.entries[0].body).toContain('## Section');
+    expect(parsed.entries[0].body).toContain('more body text');
+  });
+
+  it('still separates two real comments when the first body has a "## " line', () => {
+    const first = formatCommentEntry({
+      id: 'aaaa', timestamp: '2026-06-17T00:00:00Z', author: 'alice', type: 'note',
+      body: 'before\n\n## Heading\n\nafter',
+    });
+    const second = formatCommentEntry({
+      id: 'bbbb', timestamp: '2026-06-17T01:00:00Z', author: 'bob', type: 'note',
+      body: 'second comment', replyTo: 'aaaa',
+    });
+    const parsed = parseComments(skeleton(`${first}\n${second}`));
+    expect(parsed.entries.map((e) => e.id)).toEqual(['aaaa', 'bbbb']);
+    expect(parsed.entries[0].body).toContain('## Heading');
+    expect(parsed.entries[0].body).toContain('after');
+    expect(parsed.entries[1].body).toBe('second comment');
+  });
+
+  it('still parses a header with no blank line before **Recorded:** (backward-compat guard)', () => {
+    // The header regex tolerates `## id\n**Recorded:**` (no blank line); the
+    // split lookahead must not regress that older spacing.
+    const md = skeleton('## cd34\n**Recorded:** 2026-06-17T00:00:00Z\n**Author:** alice\n**Type:** note\n\nbody here\n');
+    const parsed = parseComments(md);
+    expect(parsed.entries).toHaveLength(1);
+    expect(parsed.entries[0].id).toBe('cd34');
+    expect(parsed.entries[0].body).toContain('body here');
   });
 });

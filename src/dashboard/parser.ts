@@ -606,7 +606,11 @@ export interface ParsedComments {
 export function parseComments(fileContent: string): ParsedComments {
   const [fm, body] = extractFrontmatter(fileContent);
   const entries: ParsedComment[] = [];
-  const sections = body.split(/^## /m).slice(1);
+  // Split only at REAL comment headers — a `## <id>` line followed by the
+  // `**Recorded:**` block — so a markdown `## Heading` inside a comment body
+  // doesn't start a phantom section and truncate the body. `\n\s*` mirrors the
+  // header regex's `^\s*` tolerance (no-blank or multi-blank spacing).
+  const sections = body.split(/^## (?=[^\n]*\n\s*\*\*Recorded:\*\*\s*)/m).slice(1);
   for (const section of sections) {
     const newlineIdx = section.indexOf('\n');
     if (newlineIdx === -1) continue;

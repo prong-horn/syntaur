@@ -1422,6 +1422,16 @@ export function createWriteRouter(
         res.status(400).json({ error: 'body is required' });
         return;
       }
+      // author/replyTo are single-line metadata. A newline breaks parseComments'
+      // single-line header regex and makes the whole comment unreadable.
+      if (typeof author === 'string' && /[\r\n]/.test(author)) {
+        res.status(400).json({ error: 'author must not contain newlines' });
+        return;
+      }
+      if (typeof replyTo === 'string' && /[\r\n]/.test(replyTo)) {
+        res.status(400).json({ error: 'replyTo must not contain newlines' });
+        return;
+      }
       const commentType: CommentType = type && ['question', 'note', 'feedback'].includes(type)
         ? type
         : 'note';
@@ -3337,6 +3347,16 @@ async function appendCommentTo(
   }
   const commentType: CommentType = type && ['question', 'note', 'feedback'].includes(type) ? type : 'note';
   const timestamp = nowTimestamp();
+  // author/replyTo are single-line metadata. A newline breaks parseComments'
+  // single-line header regex and makes the whole comment unreadable, so reject it.
+  if (typeof author === 'string' && /[\r\n]/.test(author)) {
+    res.status(400).json({ error: 'author must not contain newlines' });
+    return;
+  }
+  if (typeof replyTo === 'string' && /[\r\n]/.test(replyTo)) {
+    res.status(400).json({ error: 'replyTo must not contain newlines' });
+    return;
+  }
   const entryAuthor = (typeof author === 'string' && author.trim()) ? author.trim() : 'human';
 
   let currentContent: string;
