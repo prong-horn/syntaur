@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import { CopyButton } from '../components/CopyButton';
 import { useAssignment, useProject, useServers, useAssignmentSessions, useAssignmentUsage, useWorkspacePrefix, type AssignmentTransitionAction, type ExternalIdInfo } from '../hooks/useProjects';
+import { useAssignmentEvents } from '../hooks/useAssignmentEvents';
 import { useStatusConfig } from '../hooks/useStatusConfig';
 import { formatRelativeTime, formatShortDate, formatShortDateTime } from '../lib/format';
 import { LoadingState } from '../components/LoadingState';
@@ -41,6 +42,7 @@ import { splitAssignmentSummary, splitTodosSection } from '../lib/acceptanceCrit
 import { DependencyPanel } from '../components/DependencyPanel';
 import { LinksPanel } from '../components/LinksPanel';
 import { CommentsThread } from '../components/CommentsThread';
+import { ActivityTimeline } from '../components/ActivityTimeline';
 import { useHotkey, useHotkeyScope } from '../hotkeys';
 import { useHashScroll } from '../hooks/useHashScroll';
 import { cn } from '../lib/utils';
@@ -75,6 +77,14 @@ export function AssignmentDetail() {
   const { data: serversData } = useServers();
   const { data: sessionsData, loading: sessionsLoading, error: sessionsError } = useAssignmentSessions(slug, aslug);
   const { data: usageData, loading: usageLoading, error: usageError } = useAssignmentUsage(slug, aslug);
+  const eventsUrl =
+    slug && aslug ? `/api/projects/${slug}/assignments/${aslug}/events` : null;
+  const {
+    events,
+    loading: eventsLoading,
+    error: eventsError,
+    refetch: refetchEvents,
+  } = useAssignmentEvents(eventsUrl);
 
   const enrichedDeps = useMemo(() => {
     if (!assignment || !project) return [];
@@ -239,6 +249,7 @@ export function AssignmentDetail() {
     try {
       await overrideAssignmentStatus(projectSlug, assignmentSlug, status);
       refetch();
+      refetchEvents();
     } catch (err) {
       setTransitionError((err as Error).message);
     }
@@ -256,6 +267,7 @@ export function AssignmentDetail() {
         throw new Error(payload?.error || `HTTP ${response.status}`);
       }
       refetch();
+      refetchEvents();
       showToast(archived ? 'Assignment archived' : 'Assignment restored', 'success');
     } catch (err) {
       setTransitionError((err as Error).message);
@@ -281,6 +293,7 @@ export function AssignmentDetail() {
     try {
       await runAssignmentTransition(projectSlug, assignmentSlug, action, reason);
       refetch();
+      refetchEvents();
       return true;
     } catch (mutationError) {
       setTransitionError((mutationError as Error).message);
@@ -826,6 +839,18 @@ export function AssignmentDetail() {
                       />
                     )}
                   </div>
+                ),
+              },
+              {
+                value: 'activity',
+                label: 'Activity',
+                count: events.length,
+                content: (
+                  <ActivityTimeline
+                    events={events}
+                    loading={eventsLoading}
+                    error={eventsError}
+                  />
                 ),
               },
             ]}
