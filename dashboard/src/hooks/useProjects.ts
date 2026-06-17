@@ -517,6 +517,11 @@ function useFetch<T>(
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [fetchCount, setFetchCount] = useState(0);
+  // Tracks whether `data` is currently populated. Lets a background refetch keep
+  // the existing data on screen (stale-while-revalidate) instead of blanking to
+  // the loading skeleton. A ref (not state) so the fetch effect can read it
+  // without a dependency — which would otherwise cause a refetch loop.
+  const hasDataRef = useRef(false);
 
   // When `enabled` is false the hook is inert (no request fired) — used to defer
   // heavy fetches, e.g. the command palette's indexes until it first opens.
@@ -535,18 +540,28 @@ function useFetch<T>(
   if (resetDataOnUrlChange && lastUrlRef.current !== activeUrl) {
     lastUrlRef.current = activeUrl;
     setData(null);
+    hasDataRef.current = false;
     setError(null);
+    // Clearing data + flipping loading together (React's adjust-state-during-
+    // render) guarantees the skeleton paints immediately on an entity-key change
+    // — no one-frame `data=null`/`loading=false` empty paint for naive gates.
+    setLoading(true);
   }
 
   useEffect(() => {
     if (!activeUrl) {
       setLoading(false);
       setData(null);
+      hasDataRef.current = false;
       return;
     }
 
     let cancelled = false;
-    setLoading(true);
+    // Stale-while-revalidate: only show the skeleton when there's nothing to
+    // display yet (initial load, or a resetDataOnUrlChange reset). Background /
+    // same-URL refetches (e.g. WS-triggered) keep current data on screen — this
+    // is what stops the periodic "flash."
+    setLoading(!hasDataRef.current);
     setError(null);
 
     fetch(activeUrl)
@@ -560,6 +575,7 @@ function useFetch<T>(
       .then((json) => {
         if (!cancelled) {
           setData(json);
+          hasDataRef.current = true;
           setLoading(false);
         }
       })
