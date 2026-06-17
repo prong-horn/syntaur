@@ -13,6 +13,7 @@ import { planReadyCommand } from './commands/plan-ready.js';
 import { implementCommand } from './commands/implement.js';
 import { migrateStatusesCommand } from './commands/migrate-statuses.js';
 import { migrateStatusHistoryCommand } from './commands/migrate-status-history.js';
+import { migrateEventsCommand } from './commands/migrate-events.js';
 import { migrateDeriveCommand } from './commands/migrate-derive.js';
 import {
   planApproveCommand,
@@ -71,6 +72,7 @@ import { resourceCommand } from './commands/resource.js';
 import { memoryCommand } from './commands/memory.js';
 import { lsCommand } from './commands/ls.js';
 import { searchCommand } from './commands/search.js';
+import { timelineCommand } from './commands/timeline.js';
 import { viewsCommand } from './commands/views.js';
 import { statusCommand } from './commands/status.js';
 import { workspaceCommand } from './commands/workspace.js';
@@ -337,6 +339,17 @@ program
   .action(
     runCommand(async (options) => {
       await migrateStatusHistoryCommand(options);
+    }),
+  );
+
+program
+  .command('migrate-events')
+  .description('Backfill the audit event log from statusHistory + planApproval (idempotent via source_key; use --apply to write)')
+  .option('--dir <path>', 'Override default project directory')
+  .option('--apply', 'Apply the backfill (default: dry-run)')
+  .action(
+    runCommand(async (options) => {
+      await migrateEventsCommand(options);
     }),
   );
 
@@ -843,6 +856,7 @@ program.addCommand(resourceCommand);
 program.addCommand(memoryCommand);
 program.addCommand(lsCommand);
 program.addCommand(searchCommand);
+program.addCommand(timelineCommand);
 program.addCommand(viewsCommand);
 program.addCommand(statusCommand);
 program.addCommand(workspaceCommand);
