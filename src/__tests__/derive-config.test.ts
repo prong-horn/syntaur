@@ -213,3 +213,53 @@ describe('validateDeriveShape — deep shape-check (P1-2)', () => {
     expect(validateDeriveShape({ phaseLadder: [], disposition: [], headline: { parked: 1, blocked: 'b' } }).some((p) => p.includes('headline.parked'))).toBe(true);
   });
 });
+
+// AC4: serializeStatusConfig escapes "→\" for when/next/disposition-when, but
+// the paired unquote never reversed it, so an AQL condition containing a quote
+// accumulated a backslash on every save→reload. Serialize/parse must be
+// symmetric (escape \ then ", reverse both on read).
+describe('derive config round-trips quoted AQL conditions (AC4)', () => {
+  function roundTrip(cfg: StatusConfig): StatusConfig {
+    return parseStatusConfig(`---\n${serializeStatusConfig(cfg)}\n---\n`)!;
+  }
+
+  it('preserves a phaseLadder when containing a double-quoted literal across repeated round-trips', () => {
+    const cfg = parseStatusConfig(CONFIG_WITH_DERIVE)!;
+    cfg.derive!.phaseLadder[0] = { phase: 'draft', when: 'title = "needs review"', next: 'do it' };
+    const once = roundTrip(cfg);
+    expect(once.derive!.phaseLadder[0].when).toBe('title = "needs review"');
+    // The accumulation guard: a SECOND round-trip must still be byte-stable.
+    const twice = roundTrip(once);
+    expect(twice.derive!.phaseLadder[0].when).toBe('title = "needs review"');
+    expect(twice.derive!.phaseLadder[0].next).toBe('do it');
+  });
+
+  it('preserves a disposition when containing quotes', () => {
+    const cfg = parseStatusConfig(CONFIG_WITH_DERIVE)!;
+    cfg.derive!.disposition[0] = { when: 'label = "p1"', is: 'parked' };
+    const twice = roundTrip(roundTrip(cfg));
+    expect(twice.derive!.disposition[0]).toEqual({ when: 'label = "p1"', is: 'parked' });
+  });
+
+  it('preserves a when containing a literal backslash (full escape symmetry)', () => {
+    const cfg = parseStatusConfig(CONFIG_WITH_DERIVE)!;
+    cfg.derive!.phaseLadder[0] = { phase: 'draft', when: 'note = "a\\b"', next: 'x' };
+    const twice = roundTrip(roundTrip(cfg));
+    expect(twice.derive!.phaseLadder[0].when).toBe('note = "a\\b"');
+  });
+
+  it('preserves an accepted empty-string next (does not collapse "" to undefined)', () => {
+    const cfg = parseStatusConfig(CONFIG_WITH_DERIVE)!;
+    cfg.derive!.phaseLadder[0] = { phase: 'draft', when: '*', next: '' };
+    const twice = roundTrip(roundTrip(cfg));
+    expect(twice.derive!.phaseLadder[0].next).toBe('');
+  });
+
+  it('does not over-decode fields the serializer never escapes (facts/is/headline)', () => {
+    // Regression guard for the scoped fix: plain ids must be untouched.
+    const cfg = parseStatusConfig(CONFIG_WITH_DERIVE)!;
+    const twice = roundTrip(roundTrip(cfg));
+    expect(twice.derive!.disposition).toEqual(cfg.derive!.disposition);
+    expect(twice.derive!.headline).toEqual(cfg.derive!.headline);
+  });
+});

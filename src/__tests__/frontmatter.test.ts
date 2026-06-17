@@ -270,6 +270,29 @@ describe('updateAssignmentFile', () => {
     expect(result).toContain('blockedReason: Need API key');
     expect(result).toContain('updated: "2026-03-18T16:00:00Z"');
   });
+
+  // AC2: formatYamlValue must quote a scalar that is itself wrapped in quote
+  // chars, else parseSimpleValue strips the literal quotes on read.
+  it('round-trips a blockedReason whose value is wrapped in double quotes (AC2)', () => {
+    const result = updateAssignmentFile(SIMPLE_ASSIGNMENT, {
+      blockedReason: '"connection refused"',
+    });
+    expect(parseAssignmentFrontmatter(result).blockedReason).toBe('"connection refused"');
+  });
+
+  it('round-trips a blockedReason wrapped in single quotes (AC2)', () => {
+    const result = updateAssignmentFile(SIMPLE_ASSIGNMENT, {
+      blockedReason: "'singlequoted'",
+    });
+    expect(parseAssignmentFrontmatter(result).blockedReason).toBe("'singlequoted'");
+  });
+
+  it('still round-trips a value with only interior quotes (AC2 over-trigger guard)', () => {
+    const result = updateAssignmentFile(SIMPLE_ASSIGNMENT, {
+      blockedReason: 'say "hello" now',
+    });
+    expect(parseAssignmentFrontmatter(result).blockedReason).toBe('say "hello" now');
+  });
 });
 
 const WITH_HISTORY = `---
@@ -580,6 +603,32 @@ tags: []
   it('leaves null `from` entries untouched', () => {
     const fm = parseAssignmentFrontmatter(renameStatusInHistory(FIXTURE, 'completed', 'done'));
     expect(fm.statusHistory[0].from).toBeNull();
+  });
+
+  // AC3: newId must be serialized via formatYamlValue, not by reusing the OLD
+  // value's quote state. Renaming to a YAML keyword/number look-alike must keep
+  // the entry intact and string-typed.
+  it('keeps a history entry when renaming a status to the YAML keyword null (AC3)', () => {
+    // FIXTURE: create.to = in_review, complete.from = in_review. Renaming
+    // in_review -> null writes the create entry's `to`. Unquoted `to: null`
+    // makes parseStatusHistory drop the entry (data loss).
+    const renamed = renameStatusInHistory(FIXTURE, 'in_review', 'null');
+    const fm = parseAssignmentFrontmatter(renamed);
+    expect(fm.statusHistory).toHaveLength(2); // create entry NOT dropped
+    expect(fm.statusHistory[0].to).toBe('null'); // string, intact
+    expect(fm.statusHistory[1].from).toBe('null');
+    expect(renamed).toMatch(/to: "null"/); // quoted so any YAML parser sees a string
+  });
+
+  it('quotes numeric / boolean new ids in history so they stay strings (AC3)', () => {
+    expect(renameStatusInHistory(FIXTURE, 'completed', '42')).toMatch(/to: "42"/);
+    expect(renameStatusInHistory(FIXTURE, 'completed', 'true')).toMatch(/to: "true"/);
+  });
+
+  it('still writes a plain id unquoted (AC3 over-trigger guard)', () => {
+    const renamed = renameStatusInHistory(FIXTURE, 'completed', 'done');
+    expect(renamed).toMatch(/to: done/);
+    expect(renamed).not.toMatch(/to: "done"/);
   });
 });
 
