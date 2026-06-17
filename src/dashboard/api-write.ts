@@ -132,24 +132,32 @@ function formatYamlValue(value: boolean | number | string | null): string {
   return value;
 }
 
-function setTopLevelField(
+// Exported for regression testing (AC5). Pure string transform.
+export function setTopLevelField(
   content: string,
   key: string,
   value: boolean | number | string | null,
 ): string {
   const formatted = formatYamlValue(value);
-  const fieldRegex = new RegExp(`^(${escapeRegExp(key)}:)\\s*.*$`, 'm');
 
-  if (fieldRegex.test(content)) {
-    return content.replace(fieldRegex, `$1 ${formatted}`);
-  }
-
+  // Operate ONLY within the frontmatter block. The field regex uses the `m`
+  // flag, so testing it against the whole document would match (and rewrite) a
+  // body line that happens to start with `key:` — and, when the field is absent
+  // from frontmatter, would never insert it. Scope to the frontmatter substring
+  // so both cases are safe.
   const closingIdx = content.indexOf('\n---', 4);
   if (closingIdx === -1) {
     return content;
   }
+  const frontmatter = content.slice(0, closingIdx);
+  const rest = content.slice(closingIdx);
+  const fieldRegex = new RegExp(`^(${escapeRegExp(key)}:)\\s*.*$`, 'm');
 
-  return `${content.slice(0, closingIdx)}\n${key}: ${formatted}${content.slice(closingIdx)}`;
+  if (fieldRegex.test(frontmatter)) {
+    return `${frontmatter.replace(fieldRegex, `$1 ${formatted}`)}${rest}`;
+  }
+
+  return `${frontmatter}\n${key}: ${formatted}${rest}`;
 }
 
 function escapeRegExp(value: string): string {

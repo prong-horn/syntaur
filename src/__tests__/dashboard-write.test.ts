@@ -4,7 +4,7 @@ import { mkdtemp, rm, mkdir, writeFile, readFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { spawnSync } from 'node:child_process';
-import { createWriteRouter, worktreeInFlight } from '../dashboard/api-write.js';
+import { createWriteRouter, worktreeInFlight, setTopLevelField } from '../dashboard/api-write.js';
 import { parseAssignmentFrontmatter } from '../lifecycle/frontmatter.js';
 
 let testDir: string;
@@ -2649,5 +2649,36 @@ tags: []
     );
     const detail2 = (reopen.payload as { assignment: { completedAt: string | null } }).assignment;
     expect(detail2.completedAt).toBeNull();
+  });
+});
+
+describe('setTopLevelField (AC5: scoped to frontmatter)', () => {
+  it('inserts into frontmatter and does NOT rewrite a body line starting with the key', () => {
+    const content = [
+      '---',
+      'id: abc',
+      'title: "My project"',
+      '---',
+      '',
+      '# My project',
+      '',
+      'workspace: this prose line must stay untouched',
+    ].join('\n');
+
+    const out = setTopLevelField(content, 'workspace', 'syntaur');
+
+    // Frontmatter gained the field…
+    const fmEnd = out.indexOf('\n---', 4);
+    const fm = out.slice(0, fmEnd);
+    expect(fm).toContain('workspace: syntaur');
+    // …and the body prose line is intact (not rewritten).
+    expect(out).toContain('workspace: this prose line must stay untouched');
+  });
+
+  it('updates an existing frontmatter field in place', () => {
+    const content = ['---', 'archived: false', '---', '', 'body'].join('\n');
+    const out = setTopLevelField(content, 'archived', true);
+    expect(out).toContain('archived: true');
+    expect(out).not.toContain('archived: false');
   });
 });
