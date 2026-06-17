@@ -1,11 +1,12 @@
 import { useState, type ReactNode } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import type { LucideIcon } from 'lucide-react';
-import { Activity, Archive, BookOpen, Boxes, Brain, CalendarClock, CheckSquare, Coins, Compass, FolderKanban, LayoutTemplate, LifeBuoy, Library, ListTodo, Monitor, Plus, Settings, Workflow, X, ChevronDown, Trash2 } from 'lucide-react';
+import { Activity, Archive, BookOpen, Boxes, Brain, CalendarClock, CheckSquare, Coins, Compass, FolderKanban, Inbox, LayoutTemplate, LifeBuoy, Library, ListTodo, Monitor, Plus, Settings, Workflow, X, ChevronDown, Trash2 } from 'lucide-react';
 import { SidebarNav, type SidebarNavItem } from './SidebarNav';
 import { TopBar } from './TopBar';
 import { useToast, Toaster } from './Toast';
 import { useWorkspaces } from '../hooks/useProjects';
+import { useInbox } from '../hooks/useInbox';
 import {
   UNGROUPED_WORKSPACE,
   visibleWorkspaces,
@@ -40,6 +41,7 @@ interface AppShellProps {
 
 const GLOBAL_NAV_ITEMS: SidebarNavItem[] = [
   { to: '/', label: 'Overview', icon: Compass },
+  { to: '/inbox', label: 'Needs me', icon: Inbox },
   { to: '/playbooks', label: 'Playbooks', icon: BookOpen },
   { to: '/memories', label: 'Memories', icon: Brain },
   { to: '/resources', label: 'Resources', icon: Library },
@@ -141,6 +143,14 @@ function ShellSidebar({
   activeWorkspace: string | null;
   onNavigate?: () => void;
 }) {
+  // Live "needs me" count for the nav badge. This is one extra app-wide
+  // `/api/inbox` fetch (WS-refreshed, shared via the single WS connection) —
+  // a deliberate, cheap tradeoff for an always-visible at-a-glance count vs.
+  // threading the total down from every page. Injected onto the /inbox entry.
+  const { total: inboxTotal } = useInbox();
+  const globalNavItems = GLOBAL_NAV_ITEMS.map((item) =>
+    item.to === '/inbox' ? { ...item, badge: inboxTotal } : item,
+  );
   const { data: workspaceData } = useWorkspaces();
   const workspaces = workspaceData?.workspaces ?? [];
   const hasUngrouped = workspaceData?.hasUngrouped ?? false;
@@ -263,7 +273,7 @@ function ShellSidebar({
       </div>
 
       {/* Global zone */}
-      <SidebarNav items={GLOBAL_NAV_ITEMS} onNavigate={onNavigate} />
+      <SidebarNav items={globalNavItems} onNavigate={onNavigate} />
 
       {/* Divider */}
       <div className="border-t border-border/40" />
