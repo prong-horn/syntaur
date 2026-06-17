@@ -24,6 +24,12 @@ export interface WsMessage {
 
 export type WsListener = (message: WsMessage) => void;
 
+// Coarse connection state surfaced to the UI so users can tell when data may be
+// stale. `connecting` is the initial dial; `reconnecting` is an automatic retry
+// after a genuine drop; `closed` is an intentional teardown (no subscribers).
+export type ConnectionStatus = 'connecting' | 'open' | 'reconnecting' | 'closed';
+export type ConnectionStatusListener = (status: ConnectionStatus) => void;
+
 const RECONNECT_DELAY_MS = 2000;
 
 const listeners = new Set<WsListener>();
@@ -32,6 +38,39 @@ let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 // Set true in teardown right before `ws.close()` so the resulting `onclose`
 // does NOT schedule a reconnect for a close we asked for. Reset on connect.
 let intentionalClose = false;
+
+// Connection-status broadcast. Separate from the message `listeners` set above
+// so a status-only consumer (the shell indicator) never participates in message
+// fan-out or keeps the socket alive on its own.
+let connectionStatus: ConnectionStatus = 'closed';
+const statusListeners = new Set<ConnectionStatusListener>();
+
+function setConnectionStatus(next: ConnectionStatus): void {
+  if (connectionStatus === next) return;
+  connectionStatus = next;
+  for (const listener of statusListeners) {
+    listener(next);
+  }
+}
+
+/** Current connection status (snapshot source for `useSyncExternalStore`). */
+export function getConnectionStatus(): ConnectionStatus {
+  return connectionStatus;
+}
+
+/**
+ * Subscribe to connection-status changes. Does NOT invoke the listener
+ * immediately (honours the `useSyncExternalStore` subscribe contract — read the
+ * initial value via {@link getConnectionStatus}). Returns an unsubscribe fn.
+ */
+export function subscribeConnectionStatus(
+  listener: ConnectionStatusListener,
+): () => void {
+  statusListeners.add(listener);
+  return () => {
+    statusListeners.delete(listener);
+  };
+}
 
 /**
  * Default URL resolver — reads `window.location`. Overridable via
@@ -72,12 +111,21 @@ export function connect(): void {
   }
 
   intentionalClose = false;
+  // First dial from a fully torn-down state shows "connecting"; a reconnect
+  // attempt keeps the "reconnecting" status set by the prior `onclose` (so the
+  // indicator doesn't flicker connecting↔reconnecting between retries).
+  if (connectionStatus === 'closed') setConnectionStatus('connecting');
   // Capture the instance so late async handlers from an OLD socket can't act on
   // a newer connection. Without the `ws !== socket` guards below, a stale
   // `onclose` firing after a resubscribe would null the live `ws` and schedule a
   // spurious reconnect, leaking sockets.
   const socket = new WebSocket(getWsUrl());
   ws = socket;
+
+  socket.onopen = () => {
+    if (ws !== socket) return; // a stale open from an old socket — ignore
+    setConnectionStatus('open');
+  };
 
   socket.onmessage = (event) => {
     if (ws !== socket) return;
@@ -98,8 +146,10 @@ export function connect(): void {
     // unmounted. A genuine drop with live subscribers still reconnects.
     if (intentionalClose || listeners.size === 0) {
       intentionalClose = false;
+      setConnectionStatus('closed');
       return;
     }
+    setConnectionStatus('reconnecting');
     scheduleReconnect();
   };
 
@@ -129,6 +179,10 @@ export function subscribe(listener: WsListener): () => void {
         ws.close();
         ws = null;
       }
+      // Set status here directly: after `ws = null` the eventual `onclose`
+      // early-returns on the `ws !== socket` guard and never runs, and a
+      // teardown while reconnecting has no live socket to close at all.
+      setConnectionStatus('closed');
     }
   };
 }
@@ -138,11 +192,13 @@ export function subscribe(listener: WsListener): () => void {
  */
 export function __resetWsManagerForTests(): void {
   listeners.clear();
+  statusListeners.clear();
   if (reconnectTimer) {
     clearTimeout(reconnectTimer);
     reconnectTimer = null;
   }
   ws = null;
   intentionalClose = false;
+  connectionStatus = 'closed';
   getWsUrl = defaultGetWsUrl;
 }

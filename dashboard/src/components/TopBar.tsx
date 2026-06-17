@@ -3,6 +3,7 @@ import { MoonStar, Plus, SunMedium, Menu, Search } from 'lucide-react';
 import { useTheme } from '../theme';
 import { useWorkspacePrefix } from '../hooks/useProjects';
 import { useHotkeyContext, formatPatternForDisplay } from '../hotkeys';
+import { ConnectionStatusIndicator } from './ConnectionStatusIndicator';
 
 interface Breadcrumb {
   label: string;
@@ -58,6 +59,7 @@ export function TopBar({
         </div>
 
         <div className="flex items-center gap-2">
+          <ConnectionStatusIndicator />
           <button
             type="button"
             onClick={openPalette}
