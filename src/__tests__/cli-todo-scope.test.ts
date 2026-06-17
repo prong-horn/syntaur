@@ -508,3 +508,37 @@ describe('syntaur todo move', () => {
     expect(gAfter).toContain(`[t:${id}]`);
   });
 });
+
+// AC7: moving a bundled todo across scopes would orphan its (scope-local)
+// bundle. `todo move` must refuse it, mirroring `todo promote`'s guard.
+describe('syntaur todo move — bundle guard (AC7)', () => {
+  it('refuses to move a bundled todo across scopes and leaves the source intact', async () => {
+    await seedProject('alpha');
+    await runCli(['todo', 'add', 'first', '--workspace', 'src'], syntaurHome);
+    await runCli(['todo', 'add', 'second', '--workspace', 'src'], syntaurHome);
+    const srcBefore = await readFile(resolve(syntaurHome, 'todos', 'src.md'), 'utf-8');
+    const ids = [...srcBefore.matchAll(/\[t:([a-f0-9]{4})\]/g)].map((m) => m[1]);
+    expect(ids).toHaveLength(2);
+
+    const bundleRes = await runCli(
+      ['todo', 'bundle', 'new', ids[0], ids[1], '--workspace', 'src'],
+      syntaurHome,
+    );
+    expect(bundleRes.code).toBe(0);
+
+    const moveRes = await runCli(
+      ['todo', 'move', ids[0], '--to-project', 'alpha', '--workspace', 'src'],
+      syntaurHome,
+    );
+    // Rejected with a clear bundle hint, and the source todo is NOT moved.
+    expect(moveRes.code).not.toBe(0);
+    expect(moveRes.stderr).toMatch(/bundle/i);
+    const srcAfter = await readFile(resolve(syntaurHome, 'todos', 'src.md'), 'utf-8');
+    expect(srcAfter).toContain(`[t:${ids[0]}]`);
+    const targetExists = await pathExists(resolve(projectsDir, 'alpha', 'todos', 'alpha.md'));
+    if (targetExists) {
+      const target = await readFile(resolve(projectsDir, 'alpha', 'todos', 'alpha.md'), 'utf-8');
+      expect(target).not.toContain(`[t:${ids[0]}]`);
+    }
+  });
+});

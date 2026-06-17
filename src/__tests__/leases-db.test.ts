@@ -609,3 +609,22 @@ describe('releaseLeasesByRequestedFor', () => {
     expect(res.stale).toEqual([a.lease_id]);
   });
 });
+
+describe('getLeaseEvents — per-lease truncation (AC6)', () => {
+  it('returns the NEWEST events when truncated, in ascending display order', () => {
+    initLeasesDb(dbPath);
+    createInventory({ slug: 'envs', kind: 'dev-env', default_ttl_s: 600 });
+    addMember({ inventory_slug: 'envs', member_id: 'm1' });
+    const lease = claimLease('envs', 60); // event 1: 'claimed' (oldest)
+    for (let i = 0; i < 5; i += 1) extendLease(lease.lease_id, 60); // events 2..6: 'extended'
+
+    const events = getLeaseEvents(lease.lease_id, 3);
+    expect(events).toHaveLength(3);
+    // The oldest 'claimed' event must be DROPPED (we keep the newest N), so all
+    // three returned events are the most recent 'extended' ones.
+    expect(events.every((e) => e.event === 'extended')).toBe(true);
+    // Display order is ascending by id (chronological).
+    const ids = events.map((e) => e.id);
+    expect([...ids].sort((a, b) => a - b)).toEqual(ids);
+  });
+});

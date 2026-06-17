@@ -254,4 +254,14 @@ describe('runTick', () => {
     expect(res.reaped).toContain(job.id);
     expect((await readJob(job.id))?.attempt.state).toBe('launch_failed');
   });
+
+  // AC1: a single job with an invalid timezone must NOT abort the whole tick —
+  // every other due job must still fire. On `main`, evaluateTrigger throws out
+  // of the per-job loop and runTick rejects, so the good job never fires.
+  it('does not abort the tick when one job has an invalid timezone (AC1)', async () => {
+    await writeJob(sampleJob({ trigger: { kind: 'cron', expr: '0 3 * * *', tz: 'Not/AZone' } }));
+    const good = await writeJob(sampleJob({ trigger: { kind: 'at', at: '2026-06-15T03:00:00Z' } }));
+    const res = await runTick(happyDeps('2026-06-15T04:00:00Z'));
+    expect(res.fired).toContain(good.id);
+  });
 });

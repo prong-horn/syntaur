@@ -109,4 +109,20 @@ describe('trigger evaluation', () => {
     const e = evaluateTrigger(job, { now: new Date('2026-06-15T13:00:00Z') });
     expect(e.due).toBe(false);
   });
+
+  // AC1: an invalid IANA tz throws inside croner's previousRuns/nextRun, which
+  // must be caught in evaluateCron and treated as not-due — never propagated out
+  // of evaluateTrigger (which would abort the whole scheduler tick).
+  it('cron: an invalid timezone is treated as not-due, not a thrown error (AC1)', () => {
+    const job = sampleJob({ trigger: { kind: 'cron', expr: '0 3 * * *', tz: 'Not/AZone' } });
+    const now = new Date('2026-06-15T03:00:00Z');
+    expect(() => evaluateTrigger(job, { now })).not.toThrow();
+    expect(evaluateTrigger(job, { now }).due).toBe(false);
+  });
+
+  // AC1 (companion): a malformed cron expr likewise yields not-due, not a throw.
+  it('cron: a malformed expression is treated as not-due, not a thrown error (AC1)', () => {
+    const job = sampleJob({ trigger: { kind: 'cron', expr: 'not a cron', tz: 'UTC' } });
+    expect(() => evaluateTrigger(job, { now: new Date('2026-06-15T03:00:00Z') })).not.toThrow();
+  });
 });

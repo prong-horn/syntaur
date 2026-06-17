@@ -862,6 +862,15 @@ async function moveTodo(id: string, options: MoveOptions): Promise<void> {
   }
   const item = sourceChecklist.items[idx];
 
+  // A bundle is scope-local: moving a bundled member to another scope would
+  // leave the bundle referencing a todo that no longer exists in its scope
+  // (orphaned, bricking bundle complete/worktree). Refuse, mirroring promoteTodos.
+  if (item.bundleId !== null) {
+    throw new Error(
+      `Todo [t:${id}] is part of bundle b:${item.bundleId}; run \`syntaur todo bundle remove b:${item.bundleId} ${id}\` first.`,
+    );
+  }
+
   if (targetChecklist.items.some((i) => i.id === id)) {
     throw new Error(`Todo id [t:${id}] already exists in target scope ${describeScope(targetScope)}; refusing to move (collision).`);
   }

@@ -42,7 +42,17 @@ function parseDuration(input: string | undefined, fallbackSeconds: number): numb
   const n = Number.parseInt(match[1], 10);
   const unit = (match[2] ?? 's').toLowerCase();
   const mult: Record<string, number> = { s: 1, m: 60, h: 3600, d: 86400 };
-  return n * mult[unit];
+  const seconds = n * mult[unit];
+  // Bound the duration so claim/extend's `new Date(Date.now() + seconds*1000)`
+  // can never overflow the JS Date range and throw a raw
+  // "RangeError: Invalid time value". 100 years is far beyond any real lease.
+  const MAX_DURATION_SECONDS = 100 * 365 * 86400;
+  if (seconds > MAX_DURATION_SECONDS) {
+    throw new Error(
+      `invalid duration "${input}" — too large (max ${MAX_DURATION_SECONDS}s ≈ 100 years)`,
+    );
+  }
+  return seconds;
 }
 
 function parseMetadataFlags(values: string[] | undefined): Record<string, string> | undefined {
@@ -188,6 +198,13 @@ leaseCommand
           return;
         }
         const ttl_s = parseDuration(opts.ttl, detail.inventory.default_ttl_s);
+        // Mirror the `extend` guard: a non-positive TTL would mint a lease whose
+        // expires_at == granted_at (born-expired) and instantly get swept.
+        if (ttl_s <= 0) {
+          console.error('Error: --ttl must be positive');
+          process.exit(1);
+          return;
+        }
         const waitBudgetMs =
           opts.wait !== undefined ? parseDuration(opts.wait, 0) * 1000 : 0;
 

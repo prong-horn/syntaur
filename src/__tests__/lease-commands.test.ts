@@ -285,3 +285,31 @@ describe('lease member list', () => {
     expect(errs.join('\n')).toMatch(/not found/);
   });
 });
+
+describe('lease claim duration guards', () => {
+  // AC4: claim must reject ttl <= 0 (mirrors the extend guard) rather than mint
+  // a lease whose expires_at == granted_at (born-expired).
+  it('rejects claim --ttl 0 instead of minting a born-expired lease (AC4)', async () => {
+    seedInventory('envs', 1);
+    await run(['claim', 'envs', '--ttl', '0']);
+    expect(exitCode).toBe(1);
+    expect(errs.join('\n')).toMatch(/ttl.*positive/i);
+  });
+
+  // AC5: an oversized duration must produce a clear error, not a raw
+  // `RangeError: Invalid time value` from Date.toISOString().
+  it('rejects an oversized --ttl with a clear message, not a raw RangeError (AC5)', async () => {
+    seedInventory('envs', 1);
+    await run(['claim', 'envs', '--ttl', '999999999999999d']);
+    expect(exitCode).toBe(1);
+    expect(errs.join('\n')).not.toMatch(/Invalid time value/);
+    expect(errs.join('\n')).toMatch(/duration/i);
+  });
+
+  it('still accepts a normal --ttl (positive control)', async () => {
+    seedInventory('envs', 1);
+    await run(['claim', 'envs', '--ttl', '60s']);
+    expect(exitCode).toBeNull();
+    expect(logs.join('\n')).toMatch(/Claimed m1/);
+  });
+});

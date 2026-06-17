@@ -693,19 +693,25 @@ export function listMembers(inventory_slug: string): InventoryMemberRow[] {
 }
 
 /**
- * Read lease_events. With a `lease_id`, returns that lease's event timeline in
- * chronological order (oldest first). Without, returns the most recent `limit`
- * events across all leases in reverse-chronological order (newest first).
+ * Read lease_events. With a `lease_id`, returns that lease's most recent `limit`
+ * events, displayed oldest-first (so when truncated you keep the NEWEST activity,
+ * not the oldest). Without, returns the most recent `limit` events across all
+ * leases in reverse-chronological order (newest first).
  */
 export function getLeaseEvents(lease_id?: string, limit = 50): LeaseEventRow[] {
   const database = getLeasesDb();
   if (lease_id) {
+    // Select the newest `limit` (DESC), then re-order ascending for display.
+    // The previous `ORDER BY at ASC … LIMIT ?` kept the OLDEST N and silently
+    // dropped recent events — the opposite of what a timeline viewer wants.
     return database
       .prepare(
-        `SELECT id, lease_id, event, at, detail_json
-         FROM lease_events WHERE lease_id = ?
-         ORDER BY at ASC, id ASC
-         LIMIT ?`,
+        `SELECT id, lease_id, event, at, detail_json FROM (
+           SELECT id, lease_id, event, at, detail_json
+           FROM lease_events WHERE lease_id = ?
+           ORDER BY at DESC, id DESC
+           LIMIT ?
+         ) ORDER BY at ASC, id ASC`,
       )
       .all(lease_id, limit) as LeaseEventRow[];
   }
