@@ -46,7 +46,12 @@ async function readAssignment(
   return { content, frontmatter };
 }
 
-async function checkDependencies(
+/**
+ * Resolve which of an assignment's `dependsOn` targets are not yet terminal.
+ * Exported so derive verbs (`start`/`implement`) can surface the same
+ * non-blocking unmet-dependency warning the legacy transition path emits.
+ */
+export async function checkDependencies(
   projectDir: string,
   dependsOn: string[],
   terminalStatuses?: ReadonlySet<string>,

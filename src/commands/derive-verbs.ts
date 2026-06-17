@@ -33,6 +33,7 @@ import {
   type RecomputeResult,
 } from '../lifecycle/recompute.js';
 import { emitEvent } from '../lifecycle/event-emit.js';
+import { checkDependencies } from '../lifecycle/transitions.js';
 
 export interface DeriveVerbOptions {
   project?: string;
@@ -353,6 +354,21 @@ export async function requestReviewCommand(
  * imperative `implement`/`start` status write. Preserves the legacy side
  * effect: `--agent` sets the assignee when none is set yet. */
 export async function implementStartedCommand(assignment: string, options: DeriveVerbOptions): Promise<void> {
+  const target = await resolveTarget(assignment, options);
+  const context = await resolveDeriveContext();
+
+  // Non-blocking unmet-dependency warning. We WARN, never refuse — refusing
+  // would diverge from the legacy transition behavior (transitions.ts) and
+  // could trap legitimate work; the divergence is surfaced (here + as a
+  // needs-attention reason) rather than faked in the phase ladder.
+  const fm = parseAssignmentFrontmatter(await readFile(target.assignmentPath, 'utf-8'));
+  if (fm.dependsOn.length > 0 && target.projectDir) {
+    const dep = await checkDependencies(target.projectDir, fm.dependsOn, context.terminalStatuses);
+    if (!dep.satisfied) {
+      console.warn(`Warning: starting with unmet dependencies: ${dep.unmet.join(', ')}`);
+    }
+  }
+
   await assertFact(
     assignment,
     options,
@@ -360,14 +376,15 @@ export async function implementStartedCommand(assignment: string, options: Deriv
     (content) => {
       let next = updateAssignmentFile(content, { implementationStarted: true });
       if (options.agent) {
-        const fm = parseAssignmentFrontmatter(next);
-        if (fm.assignee === null) {
+        const innerFm = parseAssignmentFrontmatter(next);
+        if (innerFm.assignee === null) {
           next = updateAssignmentFile(next, { assignee: options.agent });
         }
       }
       return next;
     },
     'Implementation started',
+    { context },
   );
 }
 
