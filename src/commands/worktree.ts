@@ -4,6 +4,7 @@ import { resolve } from 'node:path';
 import {
   createWorktreeAndRecord,
   removeWorktree,
+  pruneWorktrees,
   deleteBranch,
   resolveBranchSha,
   listWorktrees,
@@ -172,6 +173,12 @@ export async function runWorktreeRemove(
           (options.force ? '' : '\nThe worktree may be dirty or locked — re-run with --force to discard it.'),
       );
     }
+  } else {
+    // The worktree dir is already gone (deleted out-of-band). `git worktree
+    // remove` would error, but git still holds a stale `.git/worktrees/<name>`
+    // registration that blocks re-adding the same path/branch. Prune it so this
+    // teardown actually reconciles git before we clear workspace.* below.
+    await pruneWorktrees(repository);
   }
 
   // 2. Optional branch deletion. When --delete-branch was explicitly requested it
