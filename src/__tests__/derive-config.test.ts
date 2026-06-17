@@ -248,6 +248,13 @@ describe('derive config round-trips quoted AQL conditions (AC4)', () => {
     expect(twice.derive!.phaseLadder[0].when).toBe('note = "a\\b"');
   });
 
+  it('preserves an accepted empty-string next (does not collapse "" to undefined)', () => {
+    const cfg = parseStatusConfig(CONFIG_WITH_DERIVE)!;
+    cfg.derive!.phaseLadder[0] = { phase: 'draft', when: '*', next: '' };
+    const twice = roundTrip(roundTrip(cfg));
+    expect(twice.derive!.phaseLadder[0].next).toBe('');
+  });
+
   it('does not over-decode fields the serializer never escapes (facts/is/headline)', () => {
     // Regression guard for the scoped fix: plain ids must be untouched.
     const cfg = parseStatusConfig(CONFIG_WITH_DERIVE)!;

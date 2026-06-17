@@ -789,7 +789,9 @@ export function serializeStatusConfig(statuses: StatusConfig): string {
     for (const rung of d.phaseLadder) {
       lines.push(`    - phase: ${rung.phase}`);
       lines.push(`      when: "${escapeAql(rung.when)}"`);
-      if (rung.next) lines.push(`      next: "${escapeAql(rung.next)}"`);
+      // `!== undefined`, not truthy: an accepted empty-string `next: ""` must
+      // be preserved (otherwise it reparses as undefined — a round-trip loss).
+      if (rung.next !== undefined) lines.push(`      next: "${escapeAql(rung.next)}"`);
     }
     lines.push('  disposition:');
     for (const rule of d.disposition) {
