@@ -198,6 +198,38 @@ describe('migrateEventsCommand', () => {
     expect(events.every((e) => e.project_slug === null)).toBe(true);
   });
 
+  it('skips same-status statusHistory entries (from===to yields no event)', async () => {
+    // A derived same-status seed (e.g. draft→draft) must produce no backfilled
+    // event — matching the live emit's from!==to guard.
+    const sameStatusOnly: HistoryEntry[] = [
+      { at: C, from: 'draft', to: 'draft', command: 'create' },
+    ];
+    await seedProject('p1', 'a1', 'a1-id', sameStatusOnly);
+    await migrateEventsCommand({ dir: projectsDir, apply: true });
+    expect(listEventsByAssignment('a1-id')).toHaveLength(0);
+    expect(countAllEvents()).toBe(0);
+  });
+
+  it('skips a same-status entry mixed among real ones, keeping original-index source_keys', async () => {
+    // index 0: real (null→pending), index 1: same-status (skip), index 2: real.
+    // The surviving events must keep their ORIGINAL statusHistory index in the
+    // source_key so re-runs stay idempotent.
+    const mixed: HistoryEntry[] = [
+      { at: C, from: null, to: 'pending', command: 'create' },
+      { at: U, from: 'pending', to: 'pending', command: 'touch' },
+      { at: '2026-03-03T00:00:00Z', from: 'pending', to: 'in_progress', command: 'start' },
+    ];
+    await seedProject('p1', 'a1', 'a1-id', mixed);
+    await migrateEventsCommand({ dir: projectsDir, apply: true });
+
+    const events = listEventsByAssignment('a1-id');
+    expect(events).toHaveLength(2);
+    const keys = events.map((e) => e.source_key).sort();
+    expect(keys).toEqual(['backfill:a1-id:status:0', 'backfill:a1-id:status:2']);
+    // The skipped index 1 never appears.
+    expect(keys).not.toContain('backfill:a1-id:status:1');
+  });
+
   it('does not throw and writes nothing when there are no assignments', async () => {
     await mkdir(projectsDir, { recursive: true });
     await expect(migrateEventsCommand({ dir: projectsDir, apply: true })).resolves.toBeUndefined();

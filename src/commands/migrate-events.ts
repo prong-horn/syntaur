@@ -44,13 +44,20 @@ async function parseSafe(path: string): Promise<ParsedAssignmentFull | null> {
  * event carries a DETERMINISTIC `sourceKey` so re-running `--apply` inserts 0
  * (idempotency is per-event via `INSERT OR IGNORE` on `source_key`, NOT a
  * per-assignment skip):
- *   - one `status-change` per `statusHistory` entry — `backfill:<id>:status:<index>`
+ *   - one `status-change` per `statusHistory` entry whose `from !== to` —
+ *     `backfill:<id>:status:<index>` (same-status entries are skipped, matching
+ *     the live emit's from!==to guard; index stays the ORIGINAL one for idempotency)
  *   - one `plan-approval` if `planApproval` is present — `backfill:<id>:plan-approval`
  */
 function synthesizeEvents(fm: ParsedAssignmentFull): SynthEvent[] {
   const events: SynthEvent[] = [];
 
   fm.statusHistory.forEach((entry, index) => {
+    // Skip same-status entries (e.g. a derived draft→draft seed). The live emit
+    // path guards on from!==to (event-emit.ts); backfill must match (FIX 3).
+    // Keep the sourceKey indexed by the ORIGINAL statusHistory index so re-runs
+    // stay idempotent — never renumber after skipping.
+    if (entry.from === entry.to) return;
     events.push({
       type: 'status-change',
       at: entry.at,

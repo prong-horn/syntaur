@@ -71,6 +71,13 @@ async function checkDependencies(
 export interface TransitionOptions {
   reason?: string;
   agent?: string;
+  /**
+   * Actor to attribute the audit status-event to, INDEPENDENT of `agent` (which
+   * drives assignee mutation). Dashboard transition routes pass `'human'` here
+   * so a click on an already-assigned task is recorded as `human`, not the
+   * assignee. When unset, falls back to `agent ?? frontmatter.assignee`.
+   */
+  auditActor?: string;
   transitionTable?: Map<string, string>;
   /** Guard-free custom targets: when provided (and no transitionTable), the
    * command resolves to this map's target regardless of the current status —
@@ -183,12 +190,15 @@ export async function executeTransition(
   }
   await writeFileForce(filePath, updatedContent);
 
-  // Audit event (best-effort): self-guards on from===to (R5).
+  // Audit event (best-effort): self-guards on from===to (R5). The audit actor
+  // is independent of `agent` (which drives assignee mutation) — dashboard
+  // routes pass `auditActor: 'human'` so a click is not recorded as the
+  // assignee (FIX 1).
   recordStatusEvent({
     assignmentId: frontmatter.id,
     projectSlug: frontmatter.project,
     at: now,
-    actor: resolveActor(options.agent ?? frontmatter.assignee ?? null),
+    actor: resolveActor(options.auditActor ?? options.agent ?? frontmatter.assignee ?? null),
     from: frontmatter.status,
     to: targetStatus,
     command,
@@ -333,12 +343,13 @@ export async function executeTransitionByDir(
   }
   await writeFileForce(filePath, updatedContent);
 
-  // Audit event (best-effort): self-guards on from===to (R5).
+  // Audit event (best-effort): self-guards on from===to (R5). The audit actor
+  // is independent of `agent` (see executeTransition / FIX 1).
   recordStatusEvent({
     assignmentId: frontmatter.id,
     projectSlug: frontmatter.project,
     at: now,
-    actor: resolveActor(options.agent ?? frontmatter.assignee ?? null),
+    actor: resolveActor(options.auditActor ?? options.agent ?? frontmatter.assignee ?? null),
     from: frontmatter.status,
     to: targetStatus,
     command,

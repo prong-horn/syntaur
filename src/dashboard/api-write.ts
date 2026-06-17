@@ -1024,16 +1024,6 @@ export function createWriteRouter(
         : content;
       await writeFileForce(resolve(assignmentDir, 'assignment.md'), seededContent);
 
-      // Audit event (best-effort): record the assignment's initial status only
-      // when we seeded it here (mirrors the statusHistory create entry).
-      if (seededHere) {
-        emitDashboardEvent(parsedCreate.id, projectSlug, 'status-change', {
-          from: null,
-          to: parsedCreate.status,
-          command: 'create',
-        });
-      }
-
       try {
         const companions: Array<[string, string]> = [
           [resolve(assignmentDir, 'scratchpad.md'), renderScratchpad({ assignmentSlug, timestamp })],
@@ -1051,6 +1041,17 @@ export function createWriteRouter(
           // Best effort cleanup only.
         }
         throw companionError;
+      }
+
+      // Audit event (best-effort): emit AFTER all companion files are written
+      // (FIX 2) — a companion failure removes the dir, so a pre-companion emit
+      // would leave a false event. Only when we seeded the statusHistory here.
+      if (seededHere) {
+        emitDashboardEvent(parsedCreate.id, projectSlug, 'status-change', {
+          from: null,
+          to: parsedCreate.status,
+          command: 'create',
+        });
       }
 
       res.status(201).json({ slug: assignmentSlug, projectSlug });
@@ -1529,8 +1530,10 @@ export function createWriteRouter(
       const withUpdated = setTopLevelField(next, 'updated', nowTimestamp());
       await writeFileForce(commentsPath, withUpdated);
 
-      // Audit event (best-effort): only on transition to resolved=true.
-      if (resolved) {
+      // Audit event (best-effort): only on the actual unresolved→resolved
+      // transition (FIX 6) — an idempotent PATCH on an already-resolved comment
+      // must not emit a duplicate.
+      if (target.resolved !== true && resolved === true) {
         try {
           const assignmentMdPath = resolve(projectsDir, projectSlug, 'assignments', assignmentSlug, 'assignment.md');
           if (await fileExists(assignmentMdPath)) {
@@ -2322,6 +2325,8 @@ export function createWriteRouter(
         : undefined;
       const result = await executeTransition(projectDir, assignmentSlug, command, {
         reason: typeof reason === 'string' ? reason : undefined,
+        // Dashboard click → audit actor 'human' (independent of assignee). FIX 1.
+        auditActor: 'human',
         // Gated terminal commands: the from-specific custom mapping wins
         // (passed via the table), with the unambiguous command target as the
         // guard-free fallback for legacy/undefined statuses (codex r3
@@ -2470,14 +2475,6 @@ export function createWriteRouter(
         }
         await writeFileForce(resolve(assignmentDir, 'assignment.md'), normalizedContent);
 
-        // Audit event (best-effort): initial status (standalone → null slug).
-        if (seededHere) {
-          emitDashboardEvent(id, null, 'status-change', {
-            from: null,
-            to: createdStatus,
-            command: 'create',
-          });
-        }
         await writeFileForce(
           resolve(assignmentDir, 'scratchpad.md'),
           renderScratchpad({ assignmentSlug: id, timestamp }),
@@ -2498,6 +2495,16 @@ export function createWriteRouter(
           resolve(assignmentDir, 'comments.md'),
           renderComments({ assignment: id, timestamp }),
         );
+
+        // Audit event (best-effort): emit AFTER all companion files are written
+        // (FIX 2). Standalone → null projectSlug. Only when we seeded here.
+        if (seededHere) {
+          emitDashboardEvent(id, null, 'status-change', {
+            from: null,
+            to: createdStatus,
+            command: 'create',
+          });
+        }
 
         const detail = await getAssignmentDetailById(projectsDir, assignmentsDir, id);
         res.status(201).json({ assignment: detail });
@@ -2562,6 +2569,16 @@ export function createWriteRouter(
         resolve(assignmentDir, 'comments.md'),
         renderComments({ assignment: id, timestamp }),
       );
+
+      // Audit event (best-effort): emit AFTER all companion files are written
+      // (FIX 2 ordering). renderAssignment seeds an initial `create` statusHistory
+      // entry (draft); the RAW create emits a matching status-change, so the
+      // structured create must too (FIX 4). Standalone → null projectSlug.
+      emitDashboardEvent(id, null, 'status-change', {
+        from: null,
+        to: 'draft',
+        command: 'create',
+      });
 
       const detail = await getAssignmentDetailById(projectsDir, assignmentsDir, id);
       res.status(201).json({ assignment: detail });
@@ -3183,6 +3200,8 @@ export function createWriteRouter(
         {
           standalone: resolved.standalone,
           reason: typeof reason === 'string' ? reason : undefined,
+          // Dashboard click → audit actor 'human' (independent of assignee). FIX 1.
+          auditActor: 'human',
           // Same resolution as the project route: from-specific mapping wins,
           // unambiguous command target as guard-free fallback for gated
           // terminal commands. NOTE: by-id historically ran guard-free for
@@ -3402,8 +3421,9 @@ async function toggleCommentResolvedAt(
   const withUpdated = setTopLevelField(next, 'updated', nowTimestamp());
   await writeFileForce(commentsPath, withUpdated);
 
-  // Audit event (best-effort): only on transition to resolved=true.
-  if (desired) {
+  // Audit event (best-effort): only on the actual unresolved→resolved
+  // transition (FIX 6) — an idempotent PATCH must not emit a duplicate.
+  if (target.resolved !== true && desired === true) {
     try {
       const assignmentMdPath = resolve(assignmentDir, 'assignment.md');
       if (await fileExists(assignmentMdPath)) {
