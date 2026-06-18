@@ -20,6 +20,7 @@ import type { AgentSession, AgentSessionStatus } from '../dashboard/types.js';
 let testDir: string;
 let claudeRoot: string;
 let codexRoot: string;
+let piRoot: string;
 let workspace: string;
 
 function makeSession(overrides: Partial<AgentSession> = {}): AgentSession {
@@ -38,7 +39,7 @@ function makeSession(overrides: Partial<AgentSession> = {}): AgentSession {
 /** Hermetic deps: fixture roots for both descriptor-bearing targets, no lsof/ps. */
 function deps(overrides: Partial<ScannerDeps> = {}): ScannerDeps {
   return {
-    roots: { claude: claudeRoot, codex: codexRoot },
+    roots: { claude: claudeRoot, codex: codexRoot, pi: piRoot },
     autoTrack: 'all',
     openFiles: async () => new Set<string>(),
     isPidAlive: () => false,
@@ -79,6 +80,26 @@ async function writeCodexRollout(
   return path;
 }
 
+/**
+ * Write a Pi transcript fixture; returns its path. Pi lays files out as
+ * `<root>/<encoded-cwd>/<ts>_<uuid>.jsonl`; the sessionId is the filename suffix
+ * after the last `_`. Line 1 is a `{type:'session',...,cwd}` envelope.
+ */
+async function writePiTranscript(
+  sessionId: string,
+  cwd: string,
+  timestamp = '2026-06-11T08:00:00.000Z',
+): Promise<string> {
+  const dir = join(piRoot, '--encoded-cwd--');
+  await mkdir(dir, { recursive: true });
+  const path = join(dir, `2026-06-11T08-00-00-000Z_${sessionId}.jsonl`);
+  await writeFile(
+    path,
+    `${JSON.stringify({ type: 'session', version: 3, id: sessionId, timestamp, cwd })}\n${JSON.stringify({ type: 'message', timestamp: '2026-06-11T08:50:00.000Z' })}\n`,
+  );
+  return path;
+}
+
 async function makeStale(path: string): Promise<number> {
   const past = new Date(Date.now() - 60 * 60 * 1000);
   await utimes(path, past, past);
@@ -89,9 +110,11 @@ beforeEach(async () => {
   testDir = await mkdtemp(join(tmpdir(), 'syntaur-scan-test-'));
   claudeRoot = join(testDir, 'claude-projects');
   codexRoot = join(testDir, 'codex-sessions');
+  piRoot = join(testDir, 'pi-sessions');
   workspace = join(testDir, 'workspace');
   await mkdir(claudeRoot, { recursive: true });
   await mkdir(codexRoot, { recursive: true });
+  await mkdir(piRoot, { recursive: true });
   await mkdir(workspace, { recursive: true });
   resetSessionDb();
   initSessionDb(resolve(testDir, 'test.db'));
@@ -134,9 +157,22 @@ describe('sessions descriptors (claude + codex)', () => {
     expect(await getAgentTarget('codex')!.sessions!.parse(path)).toBeNull();
   });
 
+  it('pi parse extracts sessionId (from filename) + cwd/timestamps from a transcript', async () => {
+    const path = await writePiTranscript('pi-sess-1', workspace);
+    const parsed = await getAgentTarget('pi')!.sessions!.parse(path);
+
+    expect(parsed).not.toBeNull();
+    expect(parsed!.sessionId).toBe('pi-sess-1');
+    expect(parsed!.cwd).toBe(workspace);
+    expect(parsed!.startedAt).toBe('2026-06-11T08:00:00.000Z');
+    expect(parsed!.endedAt).toBe('2026-06-11T08:50:00.000Z');
+    expect(parsed!.transcriptPath).toBe(path);
+  });
+
   it('globs point at the expected roots', () => {
     expect(getAgentTarget('claude')!.sessions!.globs(claudeRoot)[0]).toContain(claudeRoot);
     expect(getAgentTarget('codex')!.sessions!.globs(codexRoot)[0]).toContain(codexRoot);
+    expect(getAgentTarget('pi')!.sessions!.globs(piRoot)[0]).toContain(piRoot);
   });
 });
 
@@ -174,6 +210,20 @@ describe('scanSessions', () => {
 
     expect(summary.discovered).toBe(2);
     expect(getSessionById('codex-both')!.agent).toBe('codex');
+  });
+
+  it('discovers and registers pi sessions (regression: pi had no sessions descriptor)', async () => {
+    await writePiTranscript('pi-live-1', workspace);
+
+    const summary = await scanSessions({ full: true }, deps());
+
+    expect(summary.discovered).toBe(1);
+    expect(summary.inserted).toBe(1);
+    const row = getSessionById('pi-live-1');
+    expect(row).not.toBeNull();
+    expect(row!.agent).toBe('pi');
+    expect(row!.path).toBe(workspace);
+    expect(row!.started).toBe('2026-06-11T08:00:00.000Z');
   });
 
   it('links project/assignment from the workspace context.json (additive upsert)', async () => {
