@@ -167,6 +167,13 @@ assignee: codex-2
 externalIds: []
 dependsOn: []
 blockedReason: Waiting on API credentials
+disposition: blocked
+statusHistory:
+  - at: "2026-03-10T10:00:00Z"
+    from: in_progress
+    to: blocked
+    command: block
+    by: human
 workspace:
   repository: null
   worktreePath: null

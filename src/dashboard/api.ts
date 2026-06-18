@@ -1,4 +1,4 @@
-import { readdir, readFile, writeFile } from 'node:fs/promises';
+import { readdir, readFile, writeFile, stat } from 'node:fs/promises';
 import { resolve, dirname, basename } from 'node:path';
 import { getTargetStatus, DEFAULT_TRANSITION_TABLE, buildTransitionTable } from '../lifecycle/index.js';
 import { fileExists, writeFileForce } from '../utils/fs.js';
@@ -110,8 +110,12 @@ import type {
 } from './types.js';
 import { listAllSessions } from './agent-sessions.js';
 import { SEGMENT_REASON } from './overviewCopy.js';
+import {
+  classifyNeedsAttention,
+  DEFAULT_STALE_THRESHOLDS,
+  type StaleReason,
+} from '../staleness/classify.js';
 
-const STALE_ASSIGNMENT_MS = 7 * 24 * 60 * 60 * 1000;
 const RECENT_PROJECTS_LIMIT = 6;
 const RECENT_ACTIVITY_LIMIT = 12;
 const RECENT_SESSIONS_LIMIT = 10;
@@ -119,8 +123,6 @@ const NEWEST_CREATED_LIMIT = 5;
 const SEGMENT_DISPLAY_CAP = 5;
 const STALE_LIMIT_DEFAULT = 50;
 const STALE_LIMIT_MAX = 200;
-
-const TERMINAL_STATUSES = new Set(['completed', 'failed', 'archived']);
 
 // --- Archive hiding helpers (cascade) ---
 // "Hidden from normal views" is enforced in the aggregating/consuming functions,
@@ -885,13 +887,10 @@ export async function getOverview(
         (total, record) => total + (record.summary.progress['failed'] ?? 0),
         0,
       ),
-      staleAssignments: activeProjectRecords.reduce(
-        (total, record) =>
-          total +
-          activeAssignments(record.assignments).filter((assignment) => isStale(assignment.updated))
-            .length,
-        0,
-      ) + activeStandaloneRecords.filter((sr) => isStale(sr.record.updated)).length,
+      // Derived from the SAME classifier verdict as the stale segment (via the
+      // pre-cap segment total) so the badge count can never diverge from the
+      // listed rows.
+      staleAssignments: segments.stale.total,
     },
     hero,
     segments,
@@ -2497,6 +2496,55 @@ function segmentSeverity(segment: OverviewSegmentId): AttentionItem['severity'] 
   }
 }
 
+const STALE_SEVERITY_RANK: Record<StaleReason['severity'], number> = { high: 3, medium: 2, low: 1 };
+
+/** Highest-severity reason (drives the displayed stale reason line). */
+function topStaleReason(reasons: StaleReason[]): StaleReason | null {
+  if (reasons.length === 0) return null;
+  return reasons
+    .slice()
+    .sort((a, b) => STALE_SEVERITY_RANK[b.severity] - STALE_SEVERITY_RANK[a.severity])[0];
+}
+
+/** Activity age from `progress.md` mtime (the honest signal — NOT assignment
+ * `updated`, which recompute bumps). `null` when there is no progress.md, so the
+ * classifier's activity-based reason fails safe (never fires on unknown). */
+async function readProgressActivityMs(progressPath: string, now: number): Promise<number | null> {
+  try {
+    const s = await stat(progressPath);
+    return Math.max(0, now - s.mtimeMs);
+  } catch {
+    return null;
+  }
+}
+
+/** Run the shared staleness classifier for one assignment record. */
+function classifyAssignmentRecord(
+  assignment: AssignmentRecord,
+  terminalStatuses: ReadonlySet<string>,
+  depsSatisfied: boolean | null,
+  lastActivityMs: number | null,
+): StaleReason[] {
+  const virtuals = deriveStatusVirtuals(assignment, terminalStatuses);
+  return classifyNeedsAttention(
+    {
+      phase: virtuals.phase,
+      disposition: virtuals.disposition,
+      isTerminal: terminalStatuses.has(assignment.status),
+      assignee: assignment.assignee ?? null,
+      blockedReason: assignment.blockedReason,
+      depsSatisfied,
+      // plan_awaiting_approval is deferred to the decision inbox's plan-approval
+      // category for now; pass values that keep that reason dormant.
+      planExists: false,
+      planApproved: true,
+      statusAgeMs: virtuals.statusAge,
+      lastActivityMs,
+    },
+    DEFAULT_STALE_THRESHOLDS,
+  );
+}
+
 async function buildOverviewSegmentBuckets(
   projectsDir: string,
   projectRecords: ProjectRecord[],
@@ -2505,6 +2553,9 @@ async function buildOverviewSegmentBuckets(
 ): Promise<OverviewSegmentBuckets> {
   const now = Date.now();
   const buckets = emptyBuckets();
+  // Resolved terminal statuses (honors renamed/custom terminals — not the
+  // module-local hardcoded TERMINAL_STATUSES) for the staleness classifier.
+  const { terminalStatuses } = await getStatusConfig();
   // Pool of all non-terminal rows (across primary segments) used to seed
   // `newestCreated`. Each entry remembers its `created` timestamp + the row
   // we'd clone into the segment.
@@ -2528,6 +2579,7 @@ async function buildOverviewSegmentBuckets(
 
     // Resolve every per-assignment getAvailableTransitions call for this project
     // in parallel, then run the synchronous classification logic below over the results.
+    const projectPath = resolve(projectsDir, record.summary.slug);
     const resolvedTransitions = await Promise.all(
       visibleAssignments.map(async (assignment) => {
         const t0 = traces ? performance.now() : 0;
@@ -2539,14 +2591,27 @@ async function buildOverviewSegmentBuckets(
           { traces, dependencyStatusMap: depMap },
         );
         if (traces) accumulatePhase(traces, 'get-available-transitions', performance.now() - t0);
-        return { assignment, availableTransitions };
+        // Inputs for the staleness classifier (resolved off already-parsed data
+        // + one progress.md stat). depsSatisfied via the in-memory depMap; no
+        // extra disk read when there are no deps.
+        const depsSatisfied =
+          assignment.dependsOn.length === 0
+            ? true
+            : (await getUnmetDependencies(projectPath, assignment.dependsOn, terminalStatuses, depMap))
+                .length === 0;
+        const lastActivityMs = await readProgressActivityMs(
+          resolve(projectPath, 'assignments', assignment.slug, 'progress.md'),
+          now,
+        );
+        return { assignment, availableTransitions, depsSatisfied, lastActivityMs };
       }),
     );
 
-    for (const { assignment, availableTransitions } of resolvedTransitions) {
+    for (const { assignment, availableTransitions, depsSatisfied, lastActivityMs } of resolvedTransitions) {
       const segmentId = STATUS_TO_SEGMENT[assignment.status];
-      const stale = isStale(assignment.updated);
-      const isTerminal = TERMINAL_STATUSES.has(assignment.status);
+      const isTerminal = terminalStatuses.has(assignment.status);
+      const staleReasons = classifyAssignmentRecord(assignment, terminalStatuses, depsSatisfied, lastActivityMs);
+      const stale = staleReasons.length > 0;
       const agingMs = Math.max(0, now - parseTimestamp(assignment.updated));
       const baseId = `${record.summary.slug}:${assignment.slug}`;
 
@@ -2581,11 +2646,12 @@ async function buildOverviewSegmentBuckets(
       }
 
       if (stale && !isTerminal) {
+        const top = topStaleReason(staleReasons);
         const staleItem: AttentionItem = {
           ...shared,
           id: `${baseId}:stale`,
           severity: 'low',
-          reason: SEGMENT_REASON.stale,
+          reason: top?.label ?? SEGMENT_REASON.stale,
           segment: 'stale',
         };
         buckets.stale.push(staleItem);
@@ -2613,15 +2679,18 @@ async function buildOverviewSegmentBuckets(
       const t0 = traces ? performance.now() : 0;
       const availableTransitions = await getStandaloneAvailableTransitions(sr.record);
       if (traces) accumulatePhase(traces, 'get-available-transitions', performance.now() - t0);
-      return { sr, availableTransitions };
+      const lastActivityMs = await readProgressActivityMs(resolve(sr.assignmentDir, 'progress.md'), now);
+      return { sr, availableTransitions, lastActivityMs };
     }),
   );
 
-  for (const { sr, availableTransitions } of resolvedStandaloneTransitions) {
+  for (const { sr, availableTransitions, lastActivityMs } of resolvedStandaloneTransitions) {
     const assignment = sr.record;
     const segmentId = STATUS_TO_SEGMENT[assignment.status];
-    const stale = isStale(assignment.updated);
-    const isTerminal = TERMINAL_STATUSES.has(assignment.status);
+    const isTerminal = terminalStatuses.has(assignment.status);
+    // Standalone assignments cannot declare dependencies → depsSatisfied is true.
+    const staleReasons = classifyAssignmentRecord(assignment, terminalStatuses, true, lastActivityMs);
+    const stale = staleReasons.length > 0;
     const agingMs = Math.max(0, now - parseTimestamp(assignment.updated));
     const baseId = `standalone:${sr.id}`;
 
@@ -2655,11 +2724,12 @@ async function buildOverviewSegmentBuckets(
     }
 
     if (stale && !isTerminal) {
+      const top = topStaleReason(staleReasons);
       buckets.stale.push({
         ...shared,
         id: `${baseId}:stale`,
         severity: 'low',
-        reason: SEGMENT_REASON.stale,
+        reason: top?.label ?? SEGMENT_REASON.stale,
         segment: 'stale',
       });
     }
@@ -2801,14 +2871,6 @@ function compareTimestamps(left: string, right: string): number {
 function parseTimestamp(timestamp: string): number {
   const parsed = Date.parse(timestamp);
   return Number.isFinite(parsed) ? parsed : 0;
-}
-
-function isStale(updated: string): boolean {
-  const timestamp = parseTimestamp(updated);
-  if (timestamp === 0) {
-    return false;
-  }
-  return Date.now() - timestamp > STALE_ASSIGNMENT_MS;
 }
 
 function countPendingAnswers(body: string): number {
