@@ -26,6 +26,7 @@ import {
 } from './cwd-extractor.js';
 import { resolveAttribution } from './session-join.js';
 import { runRollup } from './rollup-runner.js';
+import { priceForModel } from './pricing.js';
 
 export interface CollectInfo {
   isFirstRun: boolean;
@@ -91,6 +92,20 @@ export async function collectAndPersist(): Promise<CollectInfo> {
       cwd,
       eventTs: row.eventTs,
     });
+    // Cost fallback for models ccusage cannot price (e.g. pi's Synthetic-hosted
+    // Kimi models, reported with cost 0). Applied ONLY when upstream cost is 0 —
+    // a real ccusage cost is never overwritten. Computed at ingest (not as a
+    // post-hoc reprice) so a growing cumulative session carries a larger cost as
+    // its tokens grow and `upsertEvent`'s `total_cost = MAX(...)` keeps it current.
+    const totalCost =
+      row.totalCost > 0
+        ? row.totalCost
+        : (priceForModel(row.model, {
+            inputTokens: row.inputTokens,
+            outputTokens: row.outputTokens,
+            cacheCreationTokens: row.cacheCreationTokens,
+            cacheReadTokens: row.cacheReadTokens,
+          }) ?? 0);
     return {
       sessionId: row.sessionId,
       model: row.model,
@@ -101,7 +116,7 @@ export async function collectAndPersist(): Promise<CollectInfo> {
       cacheCreationTokens: row.cacheCreationTokens,
       cacheReadTokens: row.cacheReadTokens,
       totalTokens: row.totalTokens,
-      totalCost: row.totalCost,
+      totalCost,
       cwd,
       projectSlug: attr.projectSlug ?? '',
       assignmentSlug: attr.assignmentSlug ?? '',
@@ -124,8 +139,117 @@ export async function collectAndPersist(): Promise<CollectInfo> {
   return { isFirstRun, rowsIngested: enriched.length };
 }
 
+interface ZeroCostRow {
+  session_id: string;
+  model: string;
+  input_tokens: number;
+  output_tokens: number;
+  cache_creation_tokens: number;
+  cache_read_tokens: number;
+}
+
 /**
- * Full collection pipeline: ingest → rollup → advance the collector heartbeat.
+ * Backfill `total_cost` for already-stored rows that ccusage couldn't price
+ * (`total_cost = 0`) but for which we now have a fallback rate. These are
+ * historical rows that won't be re-collected (so they don't grow) — a direct set
+ * is safe. New rows are already priced at ingest in `collectAndPersist`; this
+ * catches the pre-existing $0 backlog. Idempotent (a priced row is no longer 0)
+ * and self-healing (adding a rate prices previously-unpriceable rows next run).
+ * Returns the number of rows updated.
+ */
+export function backfillZeroCostEvents(): number {
+  const db = getUsageDb();
+  const rows = db
+    .prepare(
+      `SELECT session_id, model, input_tokens, output_tokens,
+              cache_creation_tokens, cache_read_tokens
+         FROM usage_events
+        WHERE total_cost = 0`,
+    )
+    .all() as ZeroCostRow[];
+  const update = db.prepare(
+    `UPDATE usage_events SET total_cost = @cost, updated_at = @updatedAt
+      WHERE session_id = @sessionId AND model = @model`,
+  );
+  let updated = 0;
+  const tx = db.transaction(() => {
+    const updatedAt = new Date().toISOString();
+    for (const r of rows) {
+      const cost = priceForModel(r.model, {
+        inputTokens: r.input_tokens,
+        outputTokens: r.output_tokens,
+        cacheCreationTokens: r.cache_creation_tokens,
+        cacheReadTokens: r.cache_read_tokens,
+      });
+      if (cost !== null && cost > 0) {
+        update.run({ cost, updatedAt, sessionId: r.session_id, model: r.model });
+        updated += 1;
+      }
+    }
+  });
+  tx.immediate();
+  return updated;
+}
+
+interface OrphanRow {
+  session_id: string;
+  model: string;
+  cwd: string | null;
+  event_ts: string;
+}
+
+/**
+ * Re-attribute usage rows still in the unattributed bucket (empty project AND
+ * empty assignment). Once a session is registered (e.g. the pi sessions
+ * descriptor now backfills pi sessions), `resolveAttribution`'s Stage-1 PK match
+ * succeeds for rows whose session was previously unknown — repairing pi usage
+ * that was orphaned before its session existed. Uses the row's stored `cwd`.
+ * Returns the number of rows updated.
+ */
+export function reattributeOrphanEvents(): number {
+  const db = getUsageDb();
+  const rows = db
+    .prepare(
+      `SELECT session_id, model, cwd, event_ts
+         FROM usage_events
+        WHERE project_slug = '' AND assignment_slug = ''`,
+    )
+    .all() as OrphanRow[];
+  const update = db.prepare(
+    `UPDATE usage_events
+        SET project_slug = @projectSlug, assignment_slug = @assignmentSlug, updated_at = @updatedAt
+      WHERE session_id = @sessionId AND model = @model`,
+  );
+  let updated = 0;
+  const tx = db.transaction(() => {
+    const updatedAt = new Date().toISOString();
+    for (const r of rows) {
+      const attr = resolveAttribution({
+        sessionId: r.session_id,
+        cwd: r.cwd,
+        eventTs: r.event_ts,
+      });
+      const projectSlug = attr.projectSlug ?? '';
+      const assignmentSlug = attr.assignmentSlug ?? '';
+      if (projectSlug !== '' || assignmentSlug !== '') {
+        update.run({ projectSlug, assignmentSlug, updatedAt, sessionId: r.session_id, model: r.model });
+        updated += 1;
+      }
+    }
+  });
+  tx.immediate();
+  return updated;
+}
+
+/**
+ * Full collection pipeline: ingest → backfill/repair → rollup → advance the
+ * collector heartbeat.
+ *
+ * `backfillZeroCostEvents` and `reattributeOrphanEvents` run UNCONDITIONALLY
+ * before the rollup — even when `collectAndPersist` early-returns on no new
+ * ccusage data — so historical $0 rows get priced and historical orphans get
+ * attributed regardless of whether fresh usage arrived. The rollup recomputes
+ * `usage_daily` from `usage_events`, so both repairs propagate to the dashboard.
  *
  * `usage_collector_heartbeat` is a DISTINCT key from `usage_last_collector_run`
  * (the data high-water mark). It records *when the collector ran*, regardless
@@ -135,6 +259,8 @@ export async function collectAndPersist(): Promise<CollectInfo> {
  */
 export async function collectUsage(): Promise<CollectInfo> {
   const info = await collectAndPersist();
+  backfillZeroCostEvents();
+  reattributeOrphanEvents();
   runRollup();
   advanceMetaIso('usage_collector_heartbeat', new Date().toISOString());
   return info;
