@@ -57,11 +57,20 @@ export const MODEL_PRICING: Record<string, ModelRate> = {
   // source: https://platform.moonshot.ai/ — cross-checked
   //         https://openrouter.ai/moonshotai/kimi-k2.5 (retrieved 2026-06-17)
   'moonshotai/kimi-k2.5': { input: 0.6, output: 3.0, cacheRead: 0.1, cacheWrite: 0.6 },
-  // NOTE: minimaxai/minimax-m2.5 is intentionally OMITTED — no cleanly-pinned
-  // originator list price, and pi volume is ~1% (~1M tok). Per the rule above it
-  // degrades to $0 (same as today, no regression). Add once an official rate is
-  // pinned. Reseller discounts (e.g. DeepInfra K2.6 0.75/3.50/0.15) are rejected
-  // by the canonical-source rule and are NOT used here.
+  // Z.ai (Zhipu) GLM-5.2 — official z.ai platform list price.
+  // source: https://docs.z.ai/guides/overview/pricing — cross-checked
+  //         https://openrouter.ai/z-ai/glm-5 (retrieved 2026-06-18)
+  'zai-org/glm-5.2': { input: 1.4, output: 4.4, cacheRead: 0.26, cacheWrite: 1.4 },
+  // MiniMax M2.5 — official MiniMax platform list price. No separately-pinned
+  // cached-read rate is published, so cacheRead is set conservatively to the
+  // input rate (upper bound); revise if MiniMax publishes a cache rate.
+  // source: https://platform.minimax.io/docs/guides/pricing-token-plan
+  //         — cross-checked https://openrouter.ai/minimax/minimax-m2.5 (retrieved 2026-06-18)
+  'minimaxai/minimax-m2.5': { input: 0.15, output: 0.9, cacheRead: 0.15, cacheWrite: 0.15 },
+  // NOTE: opaque Synthetic tier aliases like `syn:large:text` have no public
+  // per-token rate (they route to whatever Synthetic assigns), so they remain
+  // unpriced (→ $0). Reseller discounts (e.g. DeepInfra K2.6 0.75/3.50/0.15) are
+  // rejected by the canonical-source rule and are NOT used here.
 };
 
 /**

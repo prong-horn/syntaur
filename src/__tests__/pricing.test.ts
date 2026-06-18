@@ -38,9 +38,30 @@ describe('priceForModel', () => {
     expect(cost).toBeCloseTo(1.6, 10);
   });
 
-  it('returns null for an unknown model (excluded MiniMax, and any claude/codex model)', () => {
+  it('prices the GLM-5.2 and MiniMax M2.5 pi models (input/output buckets)', () => {
+    // GLM-5.2: in 1.40, out 4.40 per million.
+    expect(
+      priceForModel('[pi] hf:zai-org/GLM-5.2', {
+        inputTokens: 1_000_000,
+        outputTokens: 1_000_000,
+        cacheCreationTokens: 0,
+        cacheReadTokens: 0,
+      }),
+    ).toBeCloseTo(1.4 + 4.4, 10);
+    // MiniMax M2.5: in 0.15, out 0.90 per million.
     expect(
       priceForModel('[pi] hf:MiniMaxAI/MiniMax-M2.5', {
+        inputTokens: 1_000_000,
+        outputTokens: 1_000_000,
+        cacheCreationTokens: 0,
+        cacheReadTokens: 0,
+      }),
+    ).toBeCloseTo(0.15 + 0.9, 10);
+  });
+
+  it('returns null for an unknown model (opaque Synthetic alias, any claude/codex model)', () => {
+    expect(
+      priceForModel('[pi] syn:large:text', {
         inputTokens: 1000,
         outputTokens: 1000,
         cacheCreationTokens: 0,
