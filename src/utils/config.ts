@@ -247,6 +247,9 @@ export interface SyntaurConfig {
   workspaceVisibility: WorkspaceVisibilityConfig;
   /** Optional per-reason staleness age-gate overrides (defaults-first; null = all defaults). */
   staleness: Partial<StaleThresholds> | null;
+  /** Opt-in: run the read-only staleness watchdog on the dashboard loop (emits
+   * staleness-detected/cleared audit events; never mutates status). Off by default. */
+  stalenessWatchdog: boolean;
 }
 
 const DEFAULT_CONFIG: SyntaurConfig = {
@@ -283,6 +286,7 @@ const DEFAULT_CONFIG: SyntaurConfig = {
     hidden: [],
   },
   staleness: null,
+  stalenessWatchdog: false,
 };
 
 const AUTO_CREATE_WORKTREE_VALUES: readonly AutoCreateWorktree[] = ['skip', 'ask', 'always'];
@@ -2240,6 +2244,7 @@ export async function readConfig(): Promise<SyntaurConfig> {
     searchConfig: parseSearchConfig(content),
     workspaceVisibility: parseWorkspaceVisibilityConfig(fmBlock),
     staleness: parseStalenessConfig(content),
+    stalenessWatchdog: String(fm['stalenessWatchdog']).toLowerCase() === 'true',
   };
 }
 

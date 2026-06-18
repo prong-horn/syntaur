@@ -827,6 +827,10 @@ export function createDashboardServer(options: DashboardServerOptions) {
 
   // --- File watcher ---
   let watcherHandle: { close: () => Promise<void> } | null = null;
+  // --- Staleness watchdog (opt-in, read-only) ---
+  // Staleness is day-scale, so a slow tick is plenty (and keeps the scan cheap).
+  const STALENESS_WATCHDOG_INTERVAL_MS = 5 * 60 * 1000;
+  let stalenessWatchdogTimer: ReturnType<typeof setInterval> | null = null;
 
   return {
     async start(): Promise<void> {
@@ -950,6 +954,43 @@ export function createDashboardServer(options: DashboardServerOptions) {
       });
       startUsageCollector();
 
+      // Read-only staleness watchdog (opt-in: config.stalenessWatchdog). Emits
+      // staleness-detected/cleared audit events on an interval so staleness can
+      // be noticed without a dashboard fetch — NEVER mutates status (decision
+      // D1). Migration-gated and dedup'd across ticks; failures are swallowed.
+      const startupConfig = await readConfig();
+      if (startupConfig.stalenessWatchdog) {
+        const { collectStaleCandidates } = await import('./api.js');
+        const { runStalenessWatchdogTick } = await import('../staleness/watchdog.js');
+        const { emitEvent } = await import('../lifecycle/event-emit.js');
+        const stalenessSeen = new Set<string>();
+        const watchdogTick = async (): Promise<void> => {
+          if (!(await migrationGate())) return;
+          try {
+            const candidates = await collectStaleCandidates(projectsDir, assignmentsDir);
+            const summary = runStalenessWatchdogTick(candidates, stalenessSeen, (e) => {
+              emitEvent({
+                assignmentId: e.assignmentId,
+                projectSlug: e.projectSlug,
+                type: e.type,
+                actor: 'system',
+                details: { reasons: e.reasons.map((r) => r.kind) },
+              });
+            });
+            if (summary.newlyStale > 0 || summary.cleared > 0) {
+              console.log(
+                `staleness watchdog: ${summary.newlyStale} newly stale, ${summary.cleared} cleared (${summary.stale}/${summary.scanned} stale).`,
+              );
+            }
+          } catch (err) {
+            console.error('staleness watchdog tick failed:', err);
+          }
+        };
+        void watchdogTick();
+        stalenessWatchdogTimer = setInterval(() => void watchdogTick(), STALENESS_WATCHDOG_INTERVAL_MS);
+        stalenessWatchdogTimer.unref?.();
+      }
+
       return new Promise<void>((resolvePromise, reject) => {
         server.on('error', (err: NodeJS.ErrnoException) => {
           if (err.code === 'EADDRINUSE') {
@@ -973,6 +1014,10 @@ export function createDashboardServer(options: DashboardServerOptions) {
     },
 
     async stop(): Promise<void> {
+      if (stalenessWatchdogTimer) {
+        clearInterval(stalenessWatchdogTimer);
+        stalenessWatchdogTimer = null;
+      }
       await stopAutodiscovery();
       await stopUsageCollector();
       if (watcherHandle) {

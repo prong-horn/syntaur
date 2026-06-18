@@ -116,6 +116,7 @@ import {
   type StaleReason,
   type StaleThresholds,
 } from '../staleness/classify.js';
+import type { StaleCandidate } from '../staleness/watchdog.js';
 
 const RECENT_PROJECTS_LIMIT = 6;
 const RECENT_ACTIVITY_LIMIT = 12;
@@ -2545,6 +2546,56 @@ function classifyAssignmentRecord(
     },
     thresholds,
   );
+}
+
+/**
+ * Read-only scan of EVERY active assignment (project + standalone, unpaged) for
+ * the staleness watchdog. Reuses the same classifier + resolved terminals +
+ * config thresholds as the overview, keyed by assignment id (stable UUID). Never
+ * writes anything.
+ */
+export async function collectStaleCandidates(
+  projectsDir: string,
+  assignmentsDir?: string,
+): Promise<StaleCandidate[]> {
+  const [projectRecords, standaloneRecords] = await Promise.all([
+    listProjectRecords(projectsDir),
+    listStandaloneRecords(assignmentsDir),
+  ]);
+  const { terminalStatuses } = await getStatusConfig();
+  const thresholds = resolveStaleThresholds((await readConfig()).staleness);
+  const now = Date.now();
+  const out: StaleCandidate[] = [];
+
+  for (const record of projectRecords) {
+    if (isProjectArchived(record.summary)) continue;
+    const projectPath = resolve(projectsDir, record.summary.slug);
+    const depMap = new Map<string, string>();
+    for (const a of record.assignments) depMap.set(a.slug, a.status);
+    for (const assignment of activeAssignments(record.assignments)) {
+      const depsSatisfied =
+        assignment.dependsOn.length === 0
+          ? true
+          : (await getUnmetDependencies(projectPath, assignment.dependsOn, terminalStatuses, depMap)).length === 0;
+      const lastActivityMs = await readProgressActivityMs(
+        resolve(projectPath, 'assignments', assignment.slug, 'progress.md'),
+        now,
+      );
+      const reasons = classifyAssignmentRecord(assignment, terminalStatuses, depsSatisfied, lastActivityMs, thresholds);
+      if (reasons.length > 0) {
+        out.push({ assignmentId: assignment.id, projectSlug: record.summary.slug, reasons });
+      }
+    }
+  }
+
+  for (const sr of standaloneRecords) {
+    if (sr.record.archived === true) continue;
+    const lastActivityMs = await readProgressActivityMs(resolve(sr.assignmentDir, 'progress.md'), now);
+    const reasons = classifyAssignmentRecord(sr.record, terminalStatuses, true, lastActivityMs, thresholds);
+    if (reasons.length > 0) out.push({ assignmentId: sr.record.id, projectSlug: null, reasons });
+  }
+
+  return out;
 }
 
 async function buildOverviewSegmentBuckets(
