@@ -4,9 +4,12 @@ import { fileExists } from '../utils/fs.js';
 import {
   extractClaudeSessionMeta,
   extractCodexSessionMeta,
+  extractPiSessionMeta,
   resolveCodexSessionsRoot,
+  resolvePiSessionsRoot,
   walkClaudeProjects,
   walkCodexSessions,
+  walkPiSessions,
   type SessionMeta,
 } from '../usage/cwd-extractor.js';
 import { loadUserDescriptors } from './user-descriptors.js';
@@ -83,6 +86,22 @@ const codexSessions: AgentSessionsDescriptor = {
   },
 };
 
+// Pi organises transcripts as `<root>/<encoded-cwd>/<ts>_<uuid>.jsonl` — one dir
+// level under the sessions root, hence the `*/*.jsonl` glob. Reuses the same
+// extractors the usage walkers do, so usage ingest and session discovery stay
+// in lock-step (without this descriptor, pi usage was ingested but pi sessions
+// were never registered).
+const piSessions: AgentSessionsDescriptor = {
+  globs: (root) => [join(root ?? resolvePiSessionsRoot(), '*', '*.jsonl')],
+  parse: async (file) => toDiscovered(await extractPiSessionMeta(file)),
+  walk: async function* (opts = {}) {
+    for await (const meta of walkPiSessions({ root: opts.root, sinceMtimeMs: opts.sinceMtimeMs })) {
+      const d = toDiscovered(meta);
+      if (d) yield d;
+    }
+  },
+};
+
 /**
  * The declarative cross-agent target registry. Adding an agent = adding an
  * entry here. `instructions` is the Tier-2 adapter (protocol files); `skillsDir`
@@ -145,6 +164,7 @@ export const AGENT_TARGETS: AgentTarget[] = [
     detect: detectDir(home('.pi')),
     skillsDir: { global: home('.pi', 'agent', 'skills') },
     instructions: { files: [{ path: 'AGENTS.md', renderer: 'codexAgents' }] },
+    sessions: piSessions,
     tier3: {
       kind: 'pi-extension',
       source: 'platforms/pi/extensions/syntaur',
