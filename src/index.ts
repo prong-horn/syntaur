@@ -449,6 +449,7 @@ program
   .option('--project <slug>', 'Target project slug')
   .option('--agent <name>', 'Acting agent id')
   .option('--dir <path>', 'Override default project directory')
+  .option('--if-migrated', 'No-op unless derive migration has run (for implicit triggers like session-end hooks)')
   .action(
     runCommand(async (assignment, options) => {
       await recomputeCommand(assignment, options);

@@ -29,11 +29,13 @@ import type { AttestationRecord } from '../lifecycle/types.js';
 import {
   recomputeAndWrite,
   resolveDeriveContext,
+  isDeriveMigrated,
   type DeriveContext,
   type RecomputeResult,
 } from '../lifecycle/recompute.js';
 import { emitEvent } from '../lifecycle/event-emit.js';
 import { checkDependencies } from '../lifecycle/transitions.js';
+import { resolveAssignmentTarget } from '../utils/assignment-target.js';
 
 export interface DeriveVerbOptions {
   project?: string;
@@ -452,8 +454,14 @@ export async function statusUnpinCommand(assignment: string, options: DeriveVerb
 
 export async function recomputeCommand(
   assignment: string | undefined,
-  options: DeriveVerbOptions & { all?: boolean },
+  options: DeriveVerbOptions & { all?: boolean; ifMigrated?: boolean },
 ): Promise<void> {
+  // `--if-migrated` makes this honor the same migration gate the implicit
+  // sweeps use (D6) — so a SessionEnd hook firing `recompute` can't re-derive
+  // pre-migration assignments during rollout. A bare `syntaur recompute`
+  // (explicit human/agent act) stays ungated.
+  if (options.ifMigrated && !(await isDeriveMigrated())) return;
+
   const context = await resolveDeriveContext();
   if (options.all) {
     const { recomputeAll } = await import('../lifecycle/recompute.js');
@@ -469,12 +477,19 @@ export async function recomputeCommand(
     for (const w of summary.warnings) console.warn(`Warning: ${w}`);
     return;
   }
-  if (!assignment) throw new Error('Provide an assignment or --all.');
-  const target = await resolveTarget(assignment, options);
-  const result = await recomputeAndWrite(target.assignmentPath, {
+  // No positional arg falls back to .syntaur/context.json in the cwd — so
+  // `syntaur recompute` works from an assignment workspace (e.g. a SessionEnd
+  // hook) without threading slugs. resolveAssignmentTarget covers all three
+  // shapes: --project + slug, bare UUID, and context.json.
+  const resolved = await resolveAssignmentTarget(assignment, {
+    project: options.project,
+    dir: options.dir,
+  });
+  const projectDir = resolved.standalone ? null : resolve(resolved.assignmentDir, '..', '..');
+  const result = await recomputeAndWrite(resolve(resolved.assignmentDir, 'assignment.md'), {
     cause: 'recompute',
     by: await inferActor(options),
-    projectDir: target.projectDir,
+    projectDir,
     context,
   });
   reportDerived(result.changed ? 'Recomputed' : 'Recomputed (no change)', result);

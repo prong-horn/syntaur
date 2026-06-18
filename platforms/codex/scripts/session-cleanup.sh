@@ -31,6 +31,19 @@ if [ ! -f "$CONTEXT_FILE" ]; then
   exit 0
 fi
 
+# Keep derived status fresh on session end — CLI-direct (NO dashboard
+# dependency, unlike the session-stop PATCH below), migration-gated, and bounded
+# (~3s; no `timeout` on stock macOS). Best-effort; never blocks teardown.
+if command -v syntaur >/dev/null 2>&1; then
+  ( cd "$CWD" 2>/dev/null && syntaur recompute --if-migrated >/dev/null 2>&1 ) &
+  syntaur_rc_pid=$!
+  ( sleep 3; kill -KILL "$syntaur_rc_pid" 2>/dev/null ) >/dev/null 2>&1 &
+  syntaur_rc_killer=$!
+  wait "$syntaur_rc_pid" 2>/dev/null || true
+  kill -KILL "$syntaur_rc_killer" 2>/dev/null
+  wait "$syntaur_rc_killer" 2>/dev/null || true
+fi
+
 RUNTIME_DIR="${SYNTAUR_RUNTIME_SESSIONS_DIR:-$HOME/.syntaur/runtime/sessions}"
 
 # Walk the ancestor-pid chain reading runtime markers. Returns the nearest
