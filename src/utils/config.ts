@@ -74,6 +74,37 @@ import {
 export { DEFAULT_DERIVE_CONFIG, validateDeriveConfig, validateDeriveShape };
 export type { PhaseRung, DispositionRule, HeadlineProjection, DeriveConfig };
 
+import type { StaleThresholds } from '../staleness/classify.js';
+
+/** Config keys for the `staleness:` block → `StaleThresholds` ms fields. Keyed
+ * on the contradiction (phase/disposition), not raw status ids. */
+const STALENESS_KEY_TO_FIELD: Record<string, keyof StaleThresholds> = {
+  inProgressNoActivity: 'inProgressNoActivityMs',
+  readyUnclaimed: 'readyUnclaimedMs',
+  reviewAging: 'reviewAgingMs',
+  blockedAging: 'blockedAgingMs',
+  planApprovalAging: 'planApprovalAgingMs',
+};
+
+const DURATION_RE = /^(\d+(?:\.\d+)?)\s*(ms|s|m|h|d)?$/;
+const DURATION_UNIT_MS: Record<string, number> = {
+  ms: 1,
+  s: 1000,
+  m: 60_000,
+  h: 3_600_000,
+  d: 86_400_000,
+};
+
+/** Parse a duration like `7d`/`12h`/`30m`/`90s`/`500ms` (or a bare number = ms)
+ * to milliseconds. Returns null when malformed or non-positive. */
+export function parseDurationMs(raw: string): number | null {
+  const m = raw.trim().match(DURATION_RE);
+  if (!m) return null;
+  const n = Number(m[1]);
+  if (!Number.isFinite(n) || n <= 0) return null;
+  return n * DURATION_UNIT_MS[m[2] ?? 'ms'];
+}
+
 /**
  * A custom-fact declaration EXACTLY as parsed from `statuses.facts` — loose
  * parse (Locked Decisions): every field is a raw string so user input
@@ -214,6 +245,8 @@ export interface SyntaurConfig {
   terminal: TerminalChoice | null;
   searchConfig: SearchConfig | null;
   workspaceVisibility: WorkspaceVisibilityConfig;
+  /** Optional per-reason staleness age-gate overrides (defaults-first; null = all defaults). */
+  staleness: Partial<StaleThresholds> | null;
 }
 
 const DEFAULT_CONFIG: SyntaurConfig = {
@@ -249,6 +282,7 @@ const DEFAULT_CONFIG: SyntaurConfig = {
   workspaceVisibility: {
     hidden: [],
   },
+  staleness: null,
 };
 
 const AUTO_CREATE_WORKTREE_VALUES: readonly AutoCreateWorktree[] = ['skip', 'ask', 'always'];
@@ -1801,6 +1835,90 @@ export async function deleteStatusConfig(): Promise<void> {
  * one-level prefix→kind map. Tolerant — invalid rows are dropped by
  * normalizeSearchConfig.
  */
+/**
+ * Parse the optional `staleness:` block into a partial `StaleThresholds`
+ * (defaults-first — only keys present here override). Values are durations
+ * (`7d`, `12h`, `30m`, `90s`, `500ms`) or bare ms numbers. Malformed/non-positive
+ * values are dropped (the gate falls back to its default). Returns null when the
+ * block is absent or yields no valid override.
+ *
+ *   staleness:
+ *     inProgressNoActivity: 14d
+ *     reviewAging: 2d
+ */
+export function parseStalenessConfig(content: string): Partial<StaleThresholds> | null {
+  const match = content.match(/^---\n([\s\S]*?)\n---/);
+  if (!match) return null;
+  const fmBlock = match[1];
+
+  const blockStart = fmBlock.match(/^staleness:\s*$/m);
+  if (!blockStart) return null;
+
+  const startIdx = (blockStart.index ?? 0) + blockStart[0].length;
+  const lines = fmBlock.slice(startIdx).split('\n');
+
+  const out: Partial<StaleThresholds> = {};
+  for (const line of lines) {
+    if (line.trim() === '') continue;
+    const trimmed = line.trimStart();
+    const indent = line.length - trimmed.length;
+    if (indent === 0) break; // dedent out of the staleness: block
+    const ci = trimmed.indexOf(':');
+    if (ci <= 0) continue;
+    const key = trimmed.slice(0, ci).trim();
+    const field = STALENESS_KEY_TO_FIELD[key];
+    if (!field) continue;
+    let value = trimmed.slice(ci + 1).trim();
+    if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
+      value = value.slice(1, -1);
+    }
+    const ms = parseDurationMs(value);
+    if (ms !== null) out[field] = ms;
+  }
+
+  return Object.keys(out).length > 0 ? out : null;
+}
+
+/**
+ * Validate the raw `staleness:` block, returning a problem string per offending
+ * entry (unknown key, or unparseable/non-positive duration). Empty array = OK
+ * (including when the block is absent). The parser fails safe by dropping these
+ * silently; this surfaces them in `syntaur doctor` so typos don't go unnoticed.
+ */
+export function validateStalenessConfig(content: string): string[] {
+  const match = content.match(/^---\n([\s\S]*?)\n---/);
+  if (!match) return [];
+  const fmBlock = match[1];
+  const blockStart = fmBlock.match(/^staleness:\s*$/m);
+  if (!blockStart) return [];
+
+  const startIdx = (blockStart.index ?? 0) + blockStart[0].length;
+  const lines = fmBlock.slice(startIdx).split('\n');
+  const problems: string[] = [];
+
+  for (const line of lines) {
+    if (line.trim() === '') continue;
+    const trimmed = line.trimStart();
+    const indent = line.length - trimmed.length;
+    if (indent === 0) break;
+    const ci = trimmed.indexOf(':');
+    if (ci <= 0) continue;
+    const key = trimmed.slice(0, ci).trim();
+    let value = trimmed.slice(ci + 1).trim();
+    if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
+      value = value.slice(1, -1);
+    }
+    if (!(key in STALENESS_KEY_TO_FIELD)) {
+      problems.push(`staleness.${key}: unknown key (expected one of ${Object.keys(STALENESS_KEY_TO_FIELD).join(', ')})`);
+      continue;
+    }
+    if (parseDurationMs(value) === null) {
+      problems.push(`staleness.${key}: "${value}" is not a positive duration (e.g. 7d, 12h, 30m, 90s, 500ms)`);
+    }
+  }
+  return problems;
+}
+
 export function parseSearchConfig(content: string): SearchConfig | null {
   const match = content.match(/^---\n([\s\S]*?)\n---/);
   if (!match) return null;
@@ -2121,6 +2239,7 @@ export async function readConfig(): Promise<SyntaurConfig> {
     })(),
     searchConfig: parseSearchConfig(content),
     workspaceVisibility: parseWorkspaceVisibilityConfig(fmBlock),
+    staleness: parseStalenessConfig(content),
   };
 }
 

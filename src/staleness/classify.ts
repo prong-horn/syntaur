@@ -56,6 +56,25 @@ export const DEFAULT_STALE_THRESHOLDS: StaleThresholds = {
   planApprovalAgingMs: 3 * DAY,
 };
 
+/**
+ * Merge user overrides (from the `staleness:` config block) over the defaults.
+ * Defaults-first: an absent or partial config keeps every unspecified gate at
+ * its default. Non-positive/non-finite overrides are ignored (defensive — the
+ * config parser already validates, but a stray value must never disable a gate).
+ */
+export function resolveStaleThresholds(
+  overrides?: Partial<StaleThresholds> | null,
+): StaleThresholds {
+  const merged = { ...DEFAULT_STALE_THRESHOLDS };
+  if (overrides) {
+    for (const key of Object.keys(merged) as (keyof StaleThresholds)[]) {
+      const v = overrides[key];
+      if (typeof v === 'number' && Number.isFinite(v) && v > 0) merged[key] = v;
+    }
+  }
+  return merged;
+}
+
 export interface NeedsAttentionInput {
   /** Derived phase (draft/ready_for_planning/ready_to_implement/in_progress/review). */
   phase: string | null;

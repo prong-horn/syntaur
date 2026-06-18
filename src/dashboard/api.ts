@@ -112,8 +112,9 @@ import { listAllSessions } from './agent-sessions.js';
 import { SEGMENT_REASON } from './overviewCopy.js';
 import {
   classifyNeedsAttention,
-  DEFAULT_STALE_THRESHOLDS,
+  resolveStaleThresholds,
   type StaleReason,
+  type StaleThresholds,
 } from '../staleness/classify.js';
 
 const RECENT_PROJECTS_LIMIT = 6;
@@ -2524,6 +2525,7 @@ function classifyAssignmentRecord(
   terminalStatuses: ReadonlySet<string>,
   depsSatisfied: boolean | null,
   lastActivityMs: number | null,
+  thresholds: StaleThresholds,
 ): StaleReason[] {
   const virtuals = deriveStatusVirtuals(assignment, terminalStatuses);
   return classifyNeedsAttention(
@@ -2541,7 +2543,7 @@ function classifyAssignmentRecord(
       statusAgeMs: virtuals.statusAge,
       lastActivityMs,
     },
-    DEFAULT_STALE_THRESHOLDS,
+    thresholds,
   );
 }
 
@@ -2556,6 +2558,8 @@ async function buildOverviewSegmentBuckets(
   // Resolved terminal statuses (honors renamed/custom terminals — not the
   // module-local hardcoded TERMINAL_STATUSES) for the staleness classifier.
   const { terminalStatuses } = await getStatusConfig();
+  // Staleness age-gates: config overrides merged over defaults (defaults-first).
+  const staleThresholds = resolveStaleThresholds((await readConfig()).staleness);
   // Pool of all non-terminal rows (across primary segments) used to seed
   // `newestCreated`. Each entry remembers its `created` timestamp + the row
   // we'd clone into the segment.
@@ -2610,7 +2614,13 @@ async function buildOverviewSegmentBuckets(
     for (const { assignment, availableTransitions, depsSatisfied, lastActivityMs } of resolvedTransitions) {
       const segmentId = STATUS_TO_SEGMENT[assignment.status];
       const isTerminal = terminalStatuses.has(assignment.status);
-      const staleReasons = classifyAssignmentRecord(assignment, terminalStatuses, depsSatisfied, lastActivityMs);
+      const staleReasons = classifyAssignmentRecord(
+        assignment,
+        terminalStatuses,
+        depsSatisfied,
+        lastActivityMs,
+        staleThresholds,
+      );
       const stale = staleReasons.length > 0;
       const agingMs = Math.max(0, now - parseTimestamp(assignment.updated));
       const baseId = `${record.summary.slug}:${assignment.slug}`;
@@ -2689,7 +2699,13 @@ async function buildOverviewSegmentBuckets(
     const segmentId = STATUS_TO_SEGMENT[assignment.status];
     const isTerminal = terminalStatuses.has(assignment.status);
     // Standalone assignments cannot declare dependencies → depsSatisfied is true.
-    const staleReasons = classifyAssignmentRecord(assignment, terminalStatuses, true, lastActivityMs);
+    const staleReasons = classifyAssignmentRecord(
+      assignment,
+      terminalStatuses,
+      true,
+      lastActivityMs,
+      staleThresholds,
+    );
     const stale = staleReasons.length > 0;
     const agingMs = Math.max(0, now - parseTimestamp(assignment.updated));
     const baseId = `standalone:${sr.id}`;
