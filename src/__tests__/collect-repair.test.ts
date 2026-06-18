@@ -130,4 +130,25 @@ describe('reattributeOrphanEvents', () => {
     expect(row.project_slug).toBe('');
     expect(row.assignment_slug).toBe('');
   });
+
+  it('never re-touches an already-attributed row (guard: only empty-attribution rows)', async () => {
+    // Even though the session resolves to proj-x/assn-y, a row already carrying
+    // an attribution must not be overwritten — the SELECT filter and the UPDATE
+    // guard both require empty project AND empty assignment.
+    await appendSession('', {
+      projectSlug: 'proj-x',
+      assignmentSlug: 'assn-y',
+      agent: 'pi',
+      sessionId: 'pi-sess-1',
+      started: '2026-06-11T08:00:00.000Z',
+      status: 'active',
+      path: '/Users/dev/proj',
+    });
+    upsertEvent(makeEvent({ projectSlug: 'proj-z', assignmentSlug: 'assn-z' }));
+
+    expect(reattributeOrphanEvents()).toBe(0);
+    const row = rowFor('pi-sess-1', PI_MODEL);
+    expect(row.project_slug).toBe('proj-z');
+    expect(row.assignment_slug).toBe('assn-z');
+  });
 });

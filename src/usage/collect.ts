@@ -159,22 +159,27 @@ interface ZeroCostRow {
  */
 export function backfillZeroCostEvents(): number {
   const db = getUsageDb();
-  const rows = db
-    .prepare(
-      `SELECT session_id, model, input_tokens, output_tokens,
-              cache_creation_tokens, cache_read_tokens
-         FROM usage_events
-        WHERE total_cost = 0`,
-    )
-    .all() as ZeroCostRow[];
+  const select = db.prepare(
+    `SELECT session_id, model, input_tokens, output_tokens,
+            cache_creation_tokens, cache_read_tokens
+       FROM usage_events
+      WHERE total_cost = 0`,
+  );
+  // The UPDATE re-asserts `total_cost = 0`: if a concurrent collector (the
+  // dashboard loop overlapping a manual `syntaur usage`) priced or ingested a
+  // real cost for the row between read and write, the guard makes this a no-op
+  // rather than clobbering it (protecting the "never overwrite a real cost" and
+  // growing-session monotonicity invariants). The SELECT runs inside the
+  // BEGIN IMMEDIATE transaction below, so read+write are atomic against other
+  // writers; the guard is belt-and-suspenders and yields an accurate count.
   const update = db.prepare(
     `UPDATE usage_events SET total_cost = @cost, updated_at = @updatedAt
-      WHERE session_id = @sessionId AND model = @model`,
+      WHERE session_id = @sessionId AND model = @model AND total_cost = 0`,
   );
   let updated = 0;
   const tx = db.transaction(() => {
     const updatedAt = new Date().toISOString();
-    for (const r of rows) {
+    for (const r of select.all() as ZeroCostRow[]) {
       const cost = priceForModel(r.model, {
         inputTokens: r.input_tokens,
         outputTokens: r.output_tokens,
@@ -182,8 +187,7 @@ export function backfillZeroCostEvents(): number {
         cacheReadTokens: r.cache_read_tokens,
       });
       if (cost !== null && cost > 0) {
-        update.run({ cost, updatedAt, sessionId: r.session_id, model: r.model });
-        updated += 1;
+        updated += update.run({ cost, updatedAt, sessionId: r.session_id, model: r.model }).changes;
       }
     }
   });
@@ -208,22 +212,25 @@ interface OrphanRow {
  */
 export function reattributeOrphanEvents(): number {
   const db = getUsageDb();
-  const rows = db
-    .prepare(
-      `SELECT session_id, model, cwd, event_ts
-         FROM usage_events
-        WHERE project_slug = '' AND assignment_slug = ''`,
-    )
-    .all() as OrphanRow[];
+  const select = db.prepare(
+    `SELECT session_id, model, cwd, event_ts
+       FROM usage_events
+      WHERE project_slug = '' AND assignment_slug = ''`,
+  );
+  // The UPDATE re-asserts the empty-attribution state: a concurrent collector
+  // that attributed the row between read and write must not be overwritten. The
+  // SELECT runs inside the BEGIN IMMEDIATE transaction below (atomic against
+  // other writers); the guard is belt-and-suspenders and yields an accurate count.
   const update = db.prepare(
     `UPDATE usage_events
         SET project_slug = @projectSlug, assignment_slug = @assignmentSlug, updated_at = @updatedAt
-      WHERE session_id = @sessionId AND model = @model`,
+      WHERE session_id = @sessionId AND model = @model
+        AND project_slug = '' AND assignment_slug = ''`,
   );
   let updated = 0;
   const tx = db.transaction(() => {
     const updatedAt = new Date().toISOString();
-    for (const r of rows) {
+    for (const r of select.all() as OrphanRow[]) {
       const attr = resolveAttribution({
         sessionId: r.session_id,
         cwd: r.cwd,
@@ -232,8 +239,9 @@ export function reattributeOrphanEvents(): number {
       const projectSlug = attr.projectSlug ?? '';
       const assignmentSlug = attr.assignmentSlug ?? '';
       if (projectSlug !== '' || assignmentSlug !== '') {
-        update.run({ projectSlug, assignmentSlug, updatedAt, sessionId: r.session_id, model: r.model });
-        updated += 1;
+        updated += update
+          .run({ projectSlug, assignmentSlug, updatedAt, sessionId: r.session_id, model: r.model })
+          .changes;
       }
     }
   });
