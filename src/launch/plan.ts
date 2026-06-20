@@ -15,7 +15,7 @@ import {
 import { resolveLaunchPrompt } from './launch-prompt.js';
 import { playbooksDir } from '../utils/paths.js';
 import { listPlaybookSlugs } from '../utils/playbooks.js';
-import { formatFallbackCwdWarning, resolveWorkspaceCwd } from './cwd.js';
+import { formatFallbackCwdWarning, isExistingDir, resolveWorkspaceCwd } from './cwd.js';
 import { getSessionById } from '../dashboard/agent-sessions.js';
 import { buildFreshArgv, buildSessionArgv } from './argv.js';
 import type { ResolvedArgv } from './types.js';
@@ -231,18 +231,42 @@ async function resolveSessionPlan(
   let cwd = session.path;
   let fallbackWarning: string | null = null;
 
-  if (session.projectSlug && session.assignmentSlug) {
-    const detail = await getAssignmentDetail(
-      input.projectsDir,
-      session.projectSlug,
-      session.assignmentSlug,
-    );
+  // The session's recorded cwd is where the agent indexed its transcript
+  // (Claude Code: ~/.claude/projects/<encoded-cwd>/<id>.jsonl); `--resume <id>`
+  // only finds the session from THAT cwd. So when session.path is a real
+  // directory it is authoritative and must win over the assignment's *current*
+  // workspace — otherwise two sessions on one assignment that ran in different
+  // cwds (e.g. repo root vs a worktree) both resolve to the same worktree and
+  // collapse onto one transcript. This mirrors resolveRecreateTarget, which
+  // already treats session.path as the authoritative path to rebuild. Only when
+  // session.path is missing/invalid do we fall back to the linked assignment's
+  // workspace cwd (and let preflight/recreate recover a deleted worktree).
+  if (!isExistingDir(session.path)) {
+    // Resolve the linked assignment the same way resolveRecreateTarget does:
+    // project-nested sessions key on (projectSlug, assignmentSlug); standalone
+    // sessions store the assignment UUID in assignmentSlug (project_slug IS
+    // NULL) and resolve by id. Either may be absent (a session with no linked
+    // assignment) → no fallback, keep session.path.
+    const detail =
+      session.projectSlug && session.assignmentSlug
+        ? await getAssignmentDetail(
+            input.projectsDir,
+            session.projectSlug,
+            session.assignmentSlug,
+          )
+        : session.assignmentSlug
+          ? await getAssignmentDetailById(
+              input.projectsDir,
+              input.assignmentsDir,
+              session.assignmentSlug,
+            )
+          : null;
     if (detail) {
       const picked = resolveWorkspaceCwd({
         worktreePath: detail.workspace.worktreePath,
         repository: detail.workspace.repository,
         branch: detail.workspace.branch,
-        assignmentSlug: session.assignmentSlug,
+        assignmentSlug: detail.slug,
       });
       if (picked.cwd !== null) {
         cwd = picked.cwd;
@@ -252,7 +276,7 @@ async function resolveSessionPlan(
         // their recorded `session.path` (may be '') rather than failing the
         // launch — only assignment launches hard-error on an invalid workspace.
         fallbackWarning = formatFallbackCwdWarning({
-          assignmentSlug: session.assignmentSlug,
+          assignmentSlug: detail.slug,
           workspaceDir: session.path,
           worktreePath: detail.workspace.worktreePath,
           branch: detail.workspace.branch,

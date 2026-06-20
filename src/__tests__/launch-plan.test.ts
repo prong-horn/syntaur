@@ -521,7 +521,7 @@ describe('resolveLaunchPlan — session mode', () => {
     expect(plan.agentId).toBe('claude');
   });
 
-  it('uses workspace.worktreePath for project sessions via slug lookup', async () => {
+  it('falls back to workspace.worktreePath when session.path no longer exists', async () => {
     const worktree = resolve(testDir, 'wt2');
     await mkdir(worktree, { recursive: true });
     await scaffoldAssignment(
@@ -539,6 +539,9 @@ describe('resolveLaunchPlan — session mode', () => {
       agent: 'claude',
       started: '2026-05-17T00:00:00Z',
       status: 'active',
+      // Intentionally a NON-existent dir: session.path is gone, so the launch
+      // must fall back to the assignment's worktree. (When session.path exists,
+      // it wins — see the split-cwd test below.)
       path: '/tmp/somewhere-else',
     });
 
@@ -552,6 +555,178 @@ describe('resolveLaunchPlan — session mode', () => {
 
     expect(plan.cwd).toBe(worktree);
     expect(plan.argv.args).toEqual(['--resume', 'sess-proj']);
+  });
+
+  it('uses session.path (not the assignment worktree) when both exist and differ', async () => {
+    // The regression case for the split-cwd bug: a session started in one cwd
+    // (e.g. the repo root) while the assignment's CURRENT worktree is elsewhere.
+    // The session's own cwd is where its transcript is indexed, so it must win —
+    // otherwise both sessions on the assignment collapse onto one transcript.
+    const worktree = resolve(testDir, 'assignment-worktree');
+    const sessionCwd = resolve(testDir, 'session-own-cwd');
+    await mkdir(worktree, { recursive: true });
+    await mkdir(sessionCwd, { recursive: true });
+    await scaffoldAssignment(
+      projectsDir,
+      'demo-project',
+      'demo-asg',
+      ASSIGNMENT_ID,
+      { worktreePath: worktree, branch: 'feat/y' },
+    );
+
+    await appendSession('', {
+      sessionId: 'sess-split-cwd',
+      projectSlug: 'demo-project',
+      assignmentSlug: 'demo-asg',
+      agent: 'claude',
+      started: '2026-05-17T00:00:00Z',
+      status: 'active',
+      path: sessionCwd,
+    });
+
+    const plan = await resolveLaunchPlan({
+      kind: 'session',
+      id: 'sess-split-cwd',
+      config: makeConfig(),
+      projectsDir,
+      assignmentsDir,
+    });
+
+    expect(plan.cwd).toBe(sessionCwd);
+    expect(plan.cwd).not.toBe(worktree);
+    expect(plan.argv.args).toEqual(['--resume', 'sess-split-cwd']);
+  });
+
+  it('fork from a split-cwd session also launches from session.path', async () => {
+    const worktree = resolve(testDir, 'assignment-worktree-fork');
+    const sessionCwd = resolve(testDir, 'session-own-cwd-fork');
+    await mkdir(worktree, { recursive: true });
+    await mkdir(sessionCwd, { recursive: true });
+    await scaffoldAssignment(
+      projectsDir,
+      'demo-project',
+      'demo-asg',
+      ASSIGNMENT_ID,
+      { worktreePath: worktree, branch: 'feat/y' },
+    );
+
+    await appendSession('', {
+      sessionId: 'sess-split-fork',
+      projectSlug: 'demo-project',
+      assignmentSlug: 'demo-asg',
+      agent: 'claude',
+      started: '2026-05-17T00:00:00Z',
+      status: 'active',
+      path: sessionCwd,
+    });
+
+    const plan = await resolveLaunchPlan({
+      kind: 'session',
+      id: 'sess-split-fork',
+      mode: 'fork',
+      config: makeConfig(),
+      projectsDir,
+      assignmentsDir,
+    });
+
+    expect(plan.cwd).toBe(sessionCwd);
+    expect(plan.argv.args).toEqual(['--resume', 'sess-split-fork', '--fork-session']);
+  });
+
+  it('standalone session with invalid session.path falls back to the standalone assignment worktree', async () => {
+    // Standalone parity: project_slug IS NULL and assignment_slug holds the
+    // assignment UUID, resolved via getAssignmentDetailById. When session.path
+    // is gone, the launch must still recover the assignment's worktree cwd —
+    // matching resolveRecreateTarget's standalone handling.
+    const id = 'bbbb2222-cccc-3333-dddd-444455556666';
+    const worktree = resolve(testDir, 'standalone-wt');
+    await mkdir(worktree, { recursive: true });
+    await scaffoldStandaloneAssignment(assignmentsDir, id, {
+      worktreePath: worktree,
+      branch: 'feat/solo',
+    });
+
+    await appendSession('', {
+      sessionId: 'sess-standalone-fallback',
+      projectSlug: null,
+      assignmentSlug: id, // standalone: assignment_slug holds the UUID
+      agent: 'claude',
+      started: '2026-06-01T00:00:00Z',
+      status: 'active',
+      path: resolve(testDir, 'gone-standalone-cwd'), // non-existent
+    });
+
+    const plan = await resolveLaunchPlan({
+      kind: 'session',
+      id: 'sess-standalone-fallback',
+      config: makeConfig(),
+      projectsDir,
+      assignmentsDir,
+    });
+
+    expect(plan.cwd).toBe(worktree);
+    expect(plan.argv.args).toEqual(['--resume', 'sess-standalone-fallback']);
+  });
+
+  it('empty session.path falls back to the assignment worktree', async () => {
+    // A session row with path '' (never recorded a cwd). isExistingDir('') is
+    // false, so it must take the fallback rather than launching in cwd ''.
+    const worktree = resolve(testDir, 'empty-path-wt');
+    await mkdir(worktree, { recursive: true });
+    await scaffoldAssignment(
+      projectsDir,
+      'demo-project',
+      'demo-asg',
+      ASSIGNMENT_ID,
+      { worktreePath: worktree, branch: 'feat/y' },
+    );
+
+    await appendSession('', {
+      sessionId: 'sess-empty-path',
+      projectSlug: 'demo-project',
+      assignmentSlug: 'demo-asg',
+      agent: 'claude',
+      started: '2026-05-17T00:00:00Z',
+      status: 'active',
+      path: '',
+    });
+
+    const plan = await resolveLaunchPlan({
+      kind: 'session',
+      id: 'sess-empty-path',
+      config: makeConfig(),
+      projectsDir,
+      assignmentsDir,
+    });
+
+    expect(plan.cwd).toBe(worktree);
+    expect(plan.argv.args).toEqual(['--resume', 'sess-empty-path']);
+  });
+
+  it('keeps the (invalid) session.path when there is no linked assignment', async () => {
+    // No project/assignment link and a non-existent path → no fallback source
+    // exists, so the launch must NOT throw; it keeps the recorded session.path.
+    const gonePath = resolve(testDir, 'gone-unlinked');
+    await appendSession('', {
+      sessionId: 'sess-unlinked-invalid',
+      projectSlug: null,
+      assignmentSlug: null,
+      agent: 'claude',
+      started: '2026-05-17T00:00:00Z',
+      status: 'active',
+      path: gonePath,
+    });
+
+    const plan = await resolveLaunchPlan({
+      kind: 'session',
+      id: 'sess-unlinked-invalid',
+      config: makeConfig(),
+      projectsDir,
+      assignmentsDir,
+    });
+
+    expect(plan.cwd).toBe(gonePath);
+    expect(plan.argv.args).toEqual(['--resume', 'sess-unlinked-invalid']);
   });
 
   it('falls back to session.path (no throw) when the assignment workspace is invalid', async () => {
@@ -868,6 +1043,56 @@ async function scaffoldAssignment(
       '',
       '## Acceptance Criteria',
       '- [ ] test',
+      '',
+    ].join('\n'),
+  );
+}
+
+/**
+ * Scaffold a STANDALONE assignment under `assignmentsDir/<uuid>/assignment.md`
+ * (`project: null`), resolvable by id via `getAssignmentDetailById` — the shape
+ * a standalone session links to (its `assignment_slug` holds this UUID). Mirrors
+ * the fixture used by `dashboard-api-session-recreate.test.ts`.
+ */
+async function scaffoldStandaloneAssignment(
+  assignmentsDir: string,
+  id: string,
+  workspace: {
+    repository?: string | null;
+    worktreePath?: string | null;
+    branch?: string | null;
+    parentBranch?: string | null;
+  } = {},
+): Promise<void> {
+  const soloDir = resolve(assignmentsDir, id);
+  await mkdir(soloDir, { recursive: true });
+  await writeFile(
+    resolve(soloDir, 'assignment.md'),
+    [
+      '---',
+      `id: ${id}`,
+      'slug: solo-task',
+      'title: "Solo Task"',
+      'project: null',
+      'type: feature',
+      'status: in_progress',
+      'priority: medium',
+      'created: "2026-06-01T00:00:00Z"',
+      'updated: "2026-06-01T00:00:00Z"',
+      'assignee: null',
+      'externalIds: []',
+      'dependsOn: []',
+      'links: []',
+      'blockedReason: null',
+      'workspace:',
+      `  repository: ${workspace.repository ?? 'null'}`,
+      `  worktreePath: ${workspace.worktreePath ?? 'null'}`,
+      `  branch: ${workspace.branch ?? 'null'}`,
+      `  parentBranch: ${workspace.parentBranch ?? 'null'}`,
+      'tags: []',
+      '---',
+      '',
+      '# Solo Task',
       '',
     ].join('\n'),
   );
