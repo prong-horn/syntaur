@@ -20,6 +20,7 @@ import { statSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { fileExists } from '../utils/fs.js';
+import { canonicalPath } from '../utils/path-canon.js';
 import { readConfig, type SessionAutoTrack } from '../utils/config.js';
 import { isSafeSessionId } from '../utils/session-id.js';
 import { AGENT_TARGETS } from '../targets/registry.js';
@@ -131,6 +132,24 @@ async function defaultOpenFiles(files: string[]): Promise<Set<string>> {
   return open;
 }
 
+/**
+ * Canonicalize (realpath) every member of an open-file set so a transcript can
+ * be matched regardless of which spelling of a symlinked root it carries.
+ * macOS `lsof` canonicalizes symlinked roots (`/var` → `/private/var`,
+ * `/tmp` → `/private/tmp`), so the raw open-set spelling can differ from a
+ * discovered `transcriptPath`; comparing both sides realpath'd keeps a live
+ * transcript under a symlinked root from being swept to stopped/stale. Applied
+ * at the consumption point (not inside `defaultOpenFiles`) so an injected
+ * `openFiles` dep — which replaces `defaultOpenFiles` entirely — is normalized
+ * too. `canonicalPath` never throws (non-existent paths fall back to a resolved
+ * spelling), so this is safe for already-swept/deleted transcripts.
+ */
+function canonicalizeOpenSet(open: Set<string>): Set<string> {
+  const out = new Set<string>();
+  for (const p of open) out.add(canonicalPath(p));
+  return out;
+}
+
 interface ContextLink {
   projectSlug: string | null;
   assignmentSlug: string | null;
@@ -222,7 +241,9 @@ export async function scanSessions(
   summary.discovered = discovered.length;
 
   // --- (2) Liveness evidence: one batched lsof pass over all transcripts.
-  const openSet = await openFiles(discovered.map((d) => d.transcriptPath));
+  const openSet = canonicalizeOpenSet(
+    await openFiles(discovered.map((d) => d.transcriptPath)),
+  );
 
   // --- (3) Upsert each discovered session.
   const contextCache = new Map<string, ContextLink | null>();
@@ -234,7 +255,7 @@ export async function scanSessions(
     }
 
     const mtime = statMtimeMs(d.transcriptPath);
-    const heldOpen = openSet.has(d.transcriptPath);
+    const heldOpen = openSet.has(canonicalPath(d.transcriptPath));
     const isLive = heldOpen || (mtime !== null && now() - mtime < FRESH_MTIME_MS);
 
     // Discovery INSERTS and REVIVES; it never downgrades. An existing row keeps
@@ -328,12 +349,14 @@ export async function scanSessions(
     // No pid AND no transcript → no signal either way; leave the row alone.
   }
 
-  const sweepOpenSet = await openFiles(
-    sweepCandidates.map((c) => c.transcriptPath).filter((p): p is string => p !== null),
+  const sweepOpenSet = canonicalizeOpenSet(
+    await openFiles(
+      sweepCandidates.map((c) => c.transcriptPath).filter((p): p is string => p !== null),
+    ),
   );
   for (const candidate of sweepCandidates) {
     if (candidate.transcriptPath) {
-      if (sweepOpenSet.has(candidate.transcriptPath)) continue;
+      if (sweepOpenSet.has(canonicalPath(candidate.transcriptPath))) continue;
       const mtime = statMtimeMs(candidate.transcriptPath);
       if (mtime !== null && now() - mtime < FRESH_MTIME_MS) continue;
       const endedAt = mtime !== null ? new Date(mtime).toISOString() : undefined;

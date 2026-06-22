@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtemp, rm, mkdir, writeFile, utimes } from 'node:fs/promises';
-import { statSync } from 'node:fs';
+import { mkdtemp, rm, mkdir, writeFile, utimes, symlink } from 'node:fs/promises';
+import { statSync, realpathSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { resolve, join } from 'node:path';
 import {
@@ -256,6 +256,37 @@ describe('scanSessions', () => {
     expect(getSessionById('claude-revive')!.status).toBe('active');
   });
 
+  it('revives a stopped row when the discovered transcript carries a symlinked-root spelling', async () => {
+    // Discovery-side companion to the sweep test below: the walker yields the
+    // symlinked spelling (root pointed through a symlink) while lsof reports
+    // the realpath. Without canonicalizing both sides at the discovery
+    // comparison, held-open evidence would be missed and the stopped row would
+    // never revive.
+    const realPath = await writeClaudeTranscript('claude-revive-sym', workspace);
+    await makeStale(realPath); // mtime says dead — lsof is the only live signal
+    await appendSession('', makeSession({ sessionId: 'claude-revive-sym' }));
+    await updateSessionStatus('', 'claude-revive-sym', 'stopped');
+
+    const claudeLink = join(testDir, 'claude-projects-link');
+    await symlink(claudeRoot, claudeLink);
+    const linkedSpelling = join(claudeLink, 'some-encoded-cwd', 'claude-revive-sym.jsonl');
+    // Sanity: the discovered spelling differs from the open-set spelling, but
+    // both resolve to the same on-disk file.
+    expect(linkedSpelling).not.toBe(realPath);
+    expect(realpathSync(linkedSpelling)).toBe(realpathSync(realPath));
+
+    const summary = await scanSessions(
+      { full: true },
+      deps({
+        roots: { claude: claudeLink, codex: codexRoot, pi: piRoot },
+        openFiles: async () => new Set([realPath]),
+      }),
+    );
+
+    expect(summary.revived).toBe(1);
+    expect(getSessionById('claude-revive-sym')!.status).toBe('active');
+  });
+
   it('does NOT revive a stopped row on mtime freshness alone (only lsof evidence revives)', async () => {
     // Fresh transcript (just written) but no process holds it open — the
     // session was stopped by its SessionEnd hook moments ago and must stay
@@ -394,6 +425,43 @@ describe('scanSessions', () => {
     );
 
     expect(getSessionById('held-row')!.status).toBe('active');
+  });
+
+  it('does not sweep a held-open transcript when lsof reports a symlinked-root spelling', async () => {
+    // Real lsof canonicalizes symlinked roots (/var → /private/var), so the
+    // open-set spelling differs from the discovered transcriptPath. A real
+    // on-disk symlink fixture makes this portable (not macOS /var-specific):
+    // the row stores the symlinked spelling while lsof reports the realpath.
+    const realDir = join(testDir, 'real-sessions');
+    await mkdir(realDir, { recursive: true });
+    const linkDir = join(testDir, 'link-sessions');
+    await symlink(realDir, linkDir);
+
+    const realTranscript = join(realDir, 'held-sym.jsonl');
+    await writeFile(realTranscript, '{}\n');
+    await makeStale(realTranscript);
+
+    const linkedSpelling = join(linkDir, 'held-sym.jsonl');
+    // Sanity: the two spellings differ but realpath-resolve to the same file.
+    expect(linkedSpelling).not.toBe(realpathSync(linkedSpelling));
+
+    await appendSession(
+      '',
+      makeSession({ sessionId: 'held-sym-row', pid: 99999, transcriptPath: linkedSpelling }),
+    );
+
+    await scanSessions(
+      { full: true },
+      // lsof reports the canonical (realDir) spelling, not the symlinked one.
+      deps({
+        isPidAlive: () => false,
+        openFiles: async () => new Set([realpathSync(linkedSpelling)]),
+      }),
+    );
+
+    // Without canonicalization on both sides the spellings mismatch and the row
+    // is swept to 'stopped'; with the fix it stays 'active'.
+    expect(getSessionById('held-sym-row')!.status).toBe('active');
   });
 
   it('incremental scans honor the mtime watermark; --full ignores it', async () => {
