@@ -32,10 +32,8 @@ export interface TriggerEvaluation {
   dedupeKey?: string;
   /** For state triggers: the cursor value to persist when the edge is claimed. */
   nextCursor?: number;
-  /** Human/next-fire display for clock triggers (and reschedule target). */
+  /** Human/next-fire display for clock triggers. */
   nextFireIso?: string | null;
-  /** For `after-reset` not-yet-matured: the tick reschedules to here. */
-  rescheduleToIso?: string;
 }
 
 function iso(d: Date): string {
@@ -73,13 +71,23 @@ function evaluateKind(trigger: JobTrigger, job: ScheduledJob, ctx: TriggerContex
   switch (trigger.kind) {
     case 'at': {
       const at = Date.parse(trigger.at);
-      const due = !Number.isNaN(at) && ctx.now.getTime() >= at;
+      // Creation baseline (same cutoff evaluateCron applies): a one-shot whose
+      // fire time predates the schedule must NOT fire — buildTrigger does not
+      // reject a past `--at`, so this is the primary guard against an
+      // already-past clock target firing immediately on the next tick.
+      const beforeCreation = !Number.isNaN(createdAtMs) && at < createdAtMs;
+      const due = !Number.isNaN(at) && ctx.now.getTime() >= at && !beforeCreation;
       return { due, dedupeKey: `at:${trigger.at}`, nextFireIso: trigger.at };
     }
     case 'in': {
       const anchor = Date.parse(trigger.anchorIso);
       const fireAt = anchor + trigger.durationMs;
-      const due = !Number.isNaN(anchor) && ctx.now.getTime() >= fireAt;
+      // Same creation-baseline cutoff. A real `--in` job stamps `anchorIso` at or
+      // after `createdAt`, so its `fireAt >= createdAt` and it is never falsely
+      // suppressed (incl. `--in 0`); the guard only catches a hand-authored/past
+      // anchor whose fire time predates creation.
+      const beforeCreation = !Number.isNaN(createdAtMs) && fireAt < createdAtMs;
+      const due = !Number.isNaN(anchor) && ctx.now.getTime() >= fireAt && !beforeCreation;
       const fireIso = Number.isNaN(anchor) ? null : iso(new Date(fireAt));
       return { due, dedupeKey: `in:${fireAt}`, nextFireIso: fireIso };
     }
@@ -136,7 +144,9 @@ function evaluateAfterReset(
   if (v.eligible) {
     return { due: true, dedupeKey: `after-reset:${trigger.anchor.windowStartIso}`, nextFireIso: predicted };
   }
-  return { due: false, nextFireIso: predicted, rescheduleToIso: v.rescheduleToIso };
+  // Not matured: surface the predicted next-fire for display and re-verify next
+  // tick. No persisted reschedule target — the prediction IS re-derived each tick.
+  return { due: false, nextFireIso: predicted };
 }
 
 function evaluateWhenStatus(

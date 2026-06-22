@@ -14,10 +14,11 @@ describe('reset-window', () => {
     expect(predictReset('codex', weekly)).toBe('2026-06-22T00:00:00Z');
   });
 
-  it('reschedules (not fires) before the predicted reset', () => {
+  it('reports not-eligible before the predicted reset', () => {
+    // verifyReset surfaces only `eligible`; the predicted next-fire is surfaced
+    // by evaluateAfterReset (see schedules-triggers.test.ts), not here.
     const v = verifyReset('claude', rolling, new Date('2026-06-15T13:59:59Z'));
     expect(v.eligible).toBe(false);
-    expect(v.rescheduleToIso).toBe('2026-06-15T14:00:00Z');
   });
 
   it('is eligible at or after the predicted reset', () => {

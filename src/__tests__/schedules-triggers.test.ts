@@ -59,13 +59,50 @@ describe('trigger evaluation', () => {
     expect(evaluateTrigger(inJob, { now: new Date('2026-06-15T01:00:00Z') }).due).toBe(true);
   });
 
-  it('after-reset: reschedules before, due after', () => {
+  // Bug #2: the creation baseline that cron already honored now applies to the
+  // `at`/`in` one-shots too — a fire time that predates creation must NOT fire.
+  it('at: does NOT fire when the fire time predates creation (#2)', () => {
+    const job = sampleJob({
+      trigger: { kind: 'at', at: '2026-06-14T12:00:00Z' }, // before createdAt
+      createdAt: '2026-06-15T00:00:00Z',
+    });
+    // now is well past `at`, but `at` predates creation → suppressed.
+    expect(evaluateTrigger(job, { now: new Date('2026-06-15T01:00:00Z') }).due).toBe(false);
+  });
+
+  it('in: does NOT fire when the computed fire time predates creation (#2)', () => {
+    const job = sampleJob({
+      trigger: { kind: 'in', durationMs: 3_600_000, anchorIso: '2026-06-14T00:00:00Z' }, // fireAt 2026-06-14T01:00Z
+      createdAt: '2026-06-15T00:00:00Z',
+    });
+    expect(evaluateTrigger(job, { now: new Date('2026-06-15T01:00:00Z') }).due).toBe(false);
+  });
+
+  it('in: still fires for --in 0 where the anchor equals createdAt (no false suppression) (#2)', () => {
+    const job = sampleJob({
+      trigger: { kind: 'in', durationMs: 0, anchorIso: '2026-06-15T00:00:00Z' }, // fireAt === createdAt
+      createdAt: '2026-06-15T00:00:00Z',
+    });
+    expect(evaluateTrigger(job, { now: new Date('2026-06-15T00:00:00Z') }).due).toBe(true);
+  });
+
+  it('at: an unparseable createdAt skips the cutoff (fires on now >= at) (#2)', () => {
+    const job = sampleJob({
+      trigger: { kind: 'at', at: '2026-06-14T12:00:00Z' },
+      createdAt: 'not-a-date', // Number.isNaN(createdAtMs) → cutoff skipped
+    });
+    expect(evaluateTrigger(job, { now: new Date('2026-06-15T01:00:00Z') }).due).toBe(true);
+  });
+
+  it('after-reset: surfaces the predicted next-fire before, due after', () => {
     const job = sampleJob({
       trigger: { kind: 'after-reset', provider: 'claude', anchor: { windowStartIso: '2026-06-15T09:00:00Z', windowKind: 'rolling-5h' } },
     });
     const before = evaluateTrigger(job, { now: new Date('2026-06-15T13:00:00Z') });
     expect(before.due).toBe(false);
-    expect(before.rescheduleToIso).toBe('2026-06-15T14:00:00Z');
+    // The predicted next-fire is still surfaced (via evaluateAfterReset) even
+    // though the dead reschedule-target field was removed.
+    expect(before.nextFireIso).toBe('2026-06-15T14:00:00Z');
     expect(evaluateTrigger(job, { now: new Date('2026-06-15T14:00:00Z') }).due).toBe(true);
   });
 

@@ -36,18 +36,17 @@ export function predictReset(_provider: Provider, anchor: ResetAnchor): string {
 export interface ResetVerification {
   /** True once `now` has reached the predicted reset → the job may fire. */
   eligible: boolean;
-  /** When not eligible, the tick reschedules the job to this ISO time. */
-  rescheduleToIso?: string;
 }
 
 /**
  * Re-verify at fire time. If `now` has reached the predicted reset the job is
- * eligible; otherwise it's a prediction that hasn't matured — reschedule to the
- * predicted time rather than firing (this is what makes `after-reset` a
- * prediction-with-re-verification, not a dumb alarm).
+ * eligible and may fire; otherwise the prediction has not matured yet and the
+ * job reports not-eligible. There is NO persisted next-fire field to reschedule
+ * to: the caller (`evaluateAfterReset`) surfaces `predictReset` as the display
+ * `nextFireIso` and re-verifies on every tick. That per-tick re-verification is
+ * what makes `after-reset` a prediction-with-re-verification, not a dumb alarm.
  */
 export function verifyReset(provider: Provider, anchor: ResetAnchor, now: Date): ResetVerification {
   const reset = predictReset(provider, anchor);
-  if (now.getTime() >= Date.parse(reset)) return { eligible: true };
-  return { eligible: false, rescheduleToIso: reset };
+  return { eligible: now.getTime() >= Date.parse(reset) };
 }

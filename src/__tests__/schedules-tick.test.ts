@@ -50,6 +50,19 @@ describe('runTick', () => {
     expect(second.fired).toEqual([]);
   });
 
+  // Bug #2: a one-shot `at` whose fire time predates the schedule's creation is
+  // skipped (not fired) on the next tick — buildTrigger does not reject a past
+  // `--at`, so evaluateTrigger's creation baseline is the runtime guard.
+  it('does not fire an `at` one-shot whose fire time predates creation (#2)', async () => {
+    const job = await writeJob(
+      sampleJob({ trigger: { kind: 'at', at: '2026-06-14T12:00:00Z' }, createdAt: '2026-06-15T00:00:00Z' }),
+    );
+    const res = await runTick(happyDeps('2026-06-15T04:00:00Z'));
+    expect(res.fired).toEqual([]);
+    expect(res.skipped).toBe(1);
+    expect((await readJob(job.id))?.attempt.state).toBe('eligible');
+  });
+
   it('does not double-fire the same cron occurrence after re-arm', async () => {
     const job = await writeJob(sampleJob({ trigger: { kind: 'cron', expr: '0 3 * * *', tz: 'UTC' } }));
     const first = await runTick(happyDeps('2026-06-15T03:00:00Z'));
