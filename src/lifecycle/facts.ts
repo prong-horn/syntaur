@@ -14,6 +14,7 @@ import { resolve } from 'node:path';
 import { fileExists } from '../utils/fs.js';
 import { captureHeadSha } from '../utils/git-worktree.js';
 import { type AssignmentFacts, factFieldNames } from './derive.js';
+import { parseAssignmentFrontmatter } from './frontmatter.js';
 import type { AssignmentFrontmatter, AttestationRecord } from './types.js';
 import type { FactDeclaration } from '../utils/config.js';
 
@@ -137,8 +138,12 @@ export async function areDependenciesSatisfied(
     if (!(await fileExists(depPath))) return false;
     try {
       const content = await readFile(depPath, 'utf-8');
-      const m = content.match(/^status:\s*(.+)$/m);
-      const status = m ? m[1].trim() : '';
+      // Use the canonical parser (not a hand-rolled regex) so a QUOTED
+      // `status: "completed"` — which formatYamlValue can emit — is stripped to
+      // its bare value and matches `terminalStatuses`. Parity with the sibling
+      // `checkDependencies` in transitions.ts. A parser throw (no frontmatter)
+      // still falls through to the catch → `return false` (fail-closed).
+      const { status } = parseAssignmentFrontmatter(content);
       if (!terminalStatuses.has(status)) return false;
     } catch {
       return false;
