@@ -79,10 +79,13 @@ export function getTargetStatus(
   // A table was provided (the dashboard passes one — custom, or the built-in
   // DEFAULT_TRANSITION_TABLE): honor `from:command` so only transitions valid
   // from the current status resolve. The kanban inline picker renders these
-  // directly and must not offer e.g. `start` on an in_progress card. Both
-  // DEFAULT_TRANSITION_TABLE and buildTransitionTable() key by `from:command`;
-  // the bare-command lookup is a defensive fallback (no current table uses it).
-  return table.get(command) ?? table.get(`${_from}:${command}`) ?? null;
+  // directly and must not offer e.g. `start` on an in_progress card. Look up the
+  // status-specific `from:command` key FIRST so a per-status guard always wins;
+  // the bare-command key is only a defensive fallback (no current table emits
+  // one — DEFAULT_TRANSITION_TABLE and buildTransitionTable() key by
+  // `from:command`). The old bare-first order would have let a future bare entry
+  // silently override the status-specific guard.
+  return table.get(`${_from}:${command}`) ?? table.get(command) ?? null;
 }
 
 /** @deprecated Guards removed — always returns true for known commands */

@@ -67,6 +67,27 @@ describe('state-machine', () => {
     it('keeps legacy pending:start edge valid', () => {
       expect(getTargetStatus('pending', 'start')).toBe('in_progress');
     });
+
+    // Bug #6: when a table is provided, the status-specific `from:command` key
+    // must win over a bare `command` key so a per-status guard is never silently
+    // overridden by a future bare entry.
+    it('looks up from:command before the bare command key (precedence)', () => {
+      const table = new Map<string, string>([
+        ['in_progress:review', 'review'],
+        ['review', 'should_not_win'],
+      ]);
+      expect(getTargetStatus('in_progress', 'review', table)).toBe('review');
+    });
+
+    it('falls back to the bare command key when no from:command entry exists', () => {
+      const table = new Map<string, string>([['review', 'review']]);
+      expect(getTargetStatus('in_progress', 'review', table)).toBe('review');
+    });
+
+    it('returns null when a table has neither from:command nor bare key', () => {
+      const table = new Map<string, string>([['pending:start', 'in_progress']]);
+      expect(getTargetStatus('in_progress', 'review', table)).toBeNull();
+    });
   });
 
   describe('isTerminalStatus', () => {
