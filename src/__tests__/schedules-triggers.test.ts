@@ -94,6 +94,15 @@ describe('trigger evaluation', () => {
     expect(evaluateTrigger(job, { now: new Date('2026-06-15T01:00:00Z') }).due).toBe(true);
   });
 
+  it('in: an unparseable createdAt skips the cutoff (fires on now >= fireAt) (#2)', () => {
+    // `in` implements the guard independently of `at`, so cover its NaN path too.
+    const job = sampleJob({
+      trigger: { kind: 'in', durationMs: 3_600_000, anchorIso: '2026-06-14T00:00:00Z' }, // fireAt 2026-06-14T01:00Z
+      createdAt: 'not-a-date',
+    });
+    expect(evaluateTrigger(job, { now: new Date('2026-06-15T01:00:00Z') }).due).toBe(true);
+  });
+
   it('after-reset: surfaces the predicted next-fire before, due after', () => {
     const job = sampleJob({
       trigger: { kind: 'after-reset', provider: 'claude', anchor: { windowStartIso: '2026-06-15T09:00:00Z', windowKind: 'rolling-5h' } },

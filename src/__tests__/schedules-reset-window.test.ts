@@ -27,6 +27,10 @@ describe('reset-window', () => {
   });
 
   it('throws on a malformed anchor', () => {
-    expect(() => predictReset('claude', { windowStartIso: 'not-a-date', windowKind: 'rolling-5h' })).toThrow();
+    const bad: ResetAnchor = { windowStartIso: 'not-a-date', windowKind: 'rolling-5h' };
+    expect(() => predictReset('claude', bad)).toThrow();
+    // verifyReset must still propagate the throw via predictReset (the contract
+    // preserved when the dead rescheduleToIso field was removed).
+    expect(() => verifyReset('claude', bad, new Date('2026-06-15T14:00:00Z'))).toThrow();
   });
 });

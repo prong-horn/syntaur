@@ -48,6 +48,16 @@ describe('areDependenciesSatisfied', () => {
     expect(await areDependenciesSatisfied(projectDir, ['no-such-dep'], terminal)).toBe(false);
   });
 
+  it('returns false (fail-closed) when the dependency file has no frontmatter', async () => {
+    // parseAssignmentFrontmatter throws when the `---` delimiters are absent;
+    // the surrounding try/catch must keep that fail-closed (exercises the
+    // parser-throw path, not just the missing-file path).
+    const dir = join(projectDir, 'assignments', 'dep-garbage');
+    await mkdir(dir, { recursive: true });
+    await writeFile(join(dir, 'assignment.md'), 'no frontmatter here\njust body text\n', 'utf-8');
+    expect(await areDependenciesSatisfied(projectDir, ['dep-garbage'], terminal)).toBe(false);
+  });
+
   it('is trivially satisfied with no dependencies or a null project dir', async () => {
     expect(await areDependenciesSatisfied(projectDir, [], terminal)).toBe(true);
     expect(await areDependenciesSatisfied(null, ['anything'], terminal)).toBe(true);
