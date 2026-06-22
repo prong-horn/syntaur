@@ -17,6 +17,10 @@ export interface LayoutOptions {
   direction?: 'LR' | 'TB';
   nodeWidth?: number;
   nodeHeight?: number;
+  /** dagre `nodesep` — gap between nodes in the same rank. */
+  nodeSep?: number;
+  /** dagre `ranksep` — gap between adjacent ranks (spine spacing). */
+  rankSep?: number;
 }
 
 /**
@@ -36,7 +40,14 @@ export function layoutGraph(
   const height = opts.nodeHeight ?? 64;
 
   const g = new graphlib.Graph();
-  g.setGraph({ rankdir: opts.direction ?? 'LR', nodesep: 40, ranksep: 90 });
+  // Generous spacing so the spine reads clearly and bundled-edge command chips
+  // have room. The caller passes only the spine subset (forward + exception
+  // edges via `spineRankEdges`) so recovery back-edges don't compress ranks.
+  g.setGraph({
+    rankdir: opts.direction ?? 'LR',
+    nodesep: opts.nodeSep ?? 64,
+    ranksep: opts.rankSep ?? 160,
+  });
   g.setDefaultEdgeLabel(() => ({}));
 
   const ids = new Set<string>();

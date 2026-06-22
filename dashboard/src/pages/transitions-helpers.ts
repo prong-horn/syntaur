@@ -262,3 +262,65 @@ export function deriveGraph(
 
   return { nodes, edges };
 }
+
+// ── Unified issue model ──────────────────────────────────────────────────────
+// `validateTransitions` (string[]), `detectOrphanStatuses` (Set), and
+// `detectUndefinedRefs` (UndefinedRef[]) each return a different shape. The
+// "N issues" affordance and the graph/table navigation need ONE list with stable
+// jump targets: `rowKey` resolves to a table row / graph edge, `statusId` to a
+// graph node. `collectTransitionIssues` composes the three into that shape
+// without changing the existing validators (still used for save gating).
+
+export type TransitionIssueKind = 'undefined-ref' | 'orphan-status';
+
+export interface TransitionIssue {
+  kind: TransitionIssueKind;
+  /** Set for `undefined-ref`: the offending transition row. */
+  rowKey?: string;
+  /** The status id involved — undefined-ref's missing id, or the orphan status. */
+  statusId?: string;
+  message: string;
+}
+
+/**
+ * Navigable, de-duplicated issue list for the Transitions editor. Undefined-ref
+ * issues come first in row order (one per missing status id a row references),
+ * then orphan-status issues in status display order. Returns `[]` for a clean,
+ * fully-reachable workflow.
+ */
+export function collectTransitionIssues(
+  rows: EditableTransition[],
+  statuses: StatusOption[],
+): TransitionIssue[] {
+  const statusIds = new Set(statuses.map((s) => s.id));
+  const labelOf = new Map(statuses.map((s) => [s.id, s.label]));
+  const byRowKey = new Map(rows.map((r) => [r.rowKey, r]));
+  const issues: TransitionIssue[] = [];
+
+  for (const ref of detectUndefinedRefs(rows, statusIds)) {
+    const r = byRowKey.get(ref.rowKey);
+    for (const id of ref.missing) {
+      issues.push({
+        kind: 'undefined-ref',
+        rowKey: ref.rowKey,
+        statusId: id,
+        message: r
+          ? `Transition ${r.from} --${r.command}--> ${r.to} references undefined status "${id}"`
+          : `Transition references undefined status "${id}"`,
+      });
+    }
+  }
+
+  const orphans = detectOrphanStatuses(rows, statuses);
+  for (const s of statuses) {
+    if (orphans.has(s.id)) {
+      issues.push({
+        kind: 'orphan-status',
+        statusId: s.id,
+        message: `Status "${labelOf.get(s.id) ?? s.id}" has no incoming transition`,
+      });
+    }
+  }
+
+  return issues;
+}

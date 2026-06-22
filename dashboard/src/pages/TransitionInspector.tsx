@@ -1,6 +1,13 @@
 import { useEffect, useRef } from 'react';
 import { Trash2 } from 'lucide-react';
 import type { EditableTransition, StatusOption } from './transitions-helpers';
+import {
+  CommandDatalist,
+  CommandInput,
+  RequiresReasonSwitch,
+  StatusSelect,
+  fieldInputClass,
+} from './transition-fields';
 
 export interface TransitionInspectorProps {
   transition: EditableTransition | null;
@@ -11,8 +18,7 @@ export interface TransitionInspectorProps {
   disabled?: boolean;
 }
 
-const inputClass =
-  'rounded-md border border-border/60 bg-background px-2 py-1 text-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30 disabled:opacity-60';
+const COMMANDS_LIST_ID = 'transition-inspector-commands';
 
 export function TransitionInspector({
   transition,
@@ -48,33 +54,6 @@ export function TransitionInspector({
     onChange({ ...t, ...p });
   }
 
-  function statusSelect(
-    value: string,
-    onPick: (id: string) => void,
-    ariaLabel: string,
-    ref?: React.Ref<HTMLSelectElement>,
-  ) {
-    const known = statusIds.has(value);
-    return (
-      <select
-        ref={ref}
-        value={value}
-        onChange={(e) => onPick(e.target.value)}
-        disabled={disabled}
-        aria-label={ariaLabel}
-        className={`${inputClass} w-full font-mono`}
-      >
-        {!known && value !== '' && <option value={value}>{value} (undefined)</option>}
-        {value === '' && <option value="">Select a status…</option>}
-        {statuses.map((s) => (
-          <option key={s.id} value={s.id}>
-            {s.label} ({s.id})
-          </option>
-        ))}
-      </select>
-    );
-  }
-
   return (
     <div className="surface-panel space-y-3 px-4 py-3">
       <div className="flex items-center justify-between">
@@ -93,7 +72,15 @@ export function TransitionInspector({
 
       <label className="block space-y-1">
         <span className="text-xs font-medium text-muted-foreground">From status</span>
-        {statusSelect(t.from, (from) => patch({ from }), 'From status', fromRef)}
+        <StatusSelect
+          value={t.from}
+          onChange={(from) => patch({ from })}
+          statuses={statuses}
+          ariaLabel="From status"
+          disabled={disabled}
+          inputRef={fromRef}
+          className="w-full"
+        />
         {fromUndefined && (
           <span className="block text-[11px] text-error-foreground">
             “{t.from}” is not a defined status
@@ -103,20 +90,25 @@ export function TransitionInspector({
 
       <label className="block space-y-1">
         <span className="text-xs font-medium text-muted-foreground">Command</span>
-        <input
-          type="text"
-          list="transition-inspector-commands"
+        <CommandInput
           value={t.command}
-          onChange={(e) => patch({ command: e.target.value })}
+          onChange={(command) => patch({ command })}
+          listId={COMMANDS_LIST_ID}
           disabled={disabled}
-          placeholder="command"
-          className={`${inputClass} w-full font-mono`}
+          className="w-full"
         />
       </label>
 
       <label className="block space-y-1">
         <span className="text-xs font-medium text-muted-foreground">To status</span>
-        {statusSelect(t.to, (to) => patch({ to }), 'To status')}
+        <StatusSelect
+          value={t.to}
+          onChange={(to) => patch({ to })}
+          statuses={statuses}
+          ariaLabel="To status"
+          disabled={disabled}
+          className="w-full"
+        />
         {toUndefined && (
           <span className="block text-[11px] text-error-foreground">
             “{t.to}” is not a defined status
@@ -132,7 +124,7 @@ export function TransitionInspector({
           onChange={(e) => patch({ label: e.target.value })}
           disabled={disabled}
           placeholder="label"
-          className={`${inputClass} w-full`}
+          className={`${fieldInputClass} w-full`}
         />
       </label>
 
@@ -144,36 +136,20 @@ export function TransitionInspector({
           disabled={disabled}
           placeholder="description"
           rows={2}
-          className={`${inputClass} w-full resize-y`}
+          className={`${fieldInputClass} w-full resize-y`}
         />
       </label>
 
       <label className="flex items-center gap-2 text-xs text-muted-foreground">
-        <button
-          type="button"
-          role="switch"
-          aria-checked={t.requiresReason}
-          aria-label="Requires reason"
-          onClick={() => patch({ requiresReason: !t.requiresReason })}
+        <RequiresReasonSwitch
+          checked={t.requiresReason}
+          onChange={(requiresReason) => patch({ requiresReason })}
           disabled={disabled}
-          className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors ${
-            t.requiresReason ? 'bg-primary' : 'bg-muted'
-          }`}
-        >
-          <span
-            className={`pointer-events-none inline-block h-4 w-4 rounded-full bg-background shadow-sm transition-transform ${
-              t.requiresReason ? 'translate-x-4' : 'translate-x-0'
-            }`}
-          />
-        </button>
+        />
         Requires a reason
       </label>
 
-      <datalist id="transition-inspector-commands">
-        {knownCommands.map((c) => (
-          <option key={c} value={c} />
-        ))}
-      </datalist>
+      <CommandDatalist id={COMMANDS_LIST_ID} commands={knownCommands} />
     </div>
   );
 }
