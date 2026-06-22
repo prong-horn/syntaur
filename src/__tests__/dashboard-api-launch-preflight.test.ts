@@ -480,6 +480,26 @@ describe('GET /api/launch/command', () => {
     });
   });
 
+  it('returns 422 (not a `cd \'\' && …` command) for an empty session.path with no linked assignment', async () => {
+    await withSessionDb(async () => {
+      const { appendSession } = await import('../dashboard/agent-sessions.js');
+      await appendSession('', {
+        projectSlug: null,
+        assignmentSlug: null,
+        agent: 'claude',
+        sessionId: 'sess-empty',
+        started: '2026-06-01T00:00:00Z',
+        status: 'active',
+        path: '',
+      });
+
+      const res = await fetch(`${commandUrl()}?session=sess-empty&mode=resume`);
+      expect(res.status).toBe(422);
+      const body = await res.json();
+      expect(body.command).toBeUndefined();
+    });
+  });
+
   it('returns 404 when the session does not exist (DB initialized, empty)', async () => {
     await withSessionDb(async () => {
       const res = await fetch(`${commandUrl()}?session=does-not-exist`);

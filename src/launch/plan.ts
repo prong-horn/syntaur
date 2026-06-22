@@ -285,6 +285,19 @@ async function resolveSessionPlan(
     }
   }
 
+  // Refuse a blank cwd: buildShellCommandLine would render `cd '' && <agent>`,
+  // a POSIX no-op that silently runs in the spawner's cwd (wrong directory, no
+  // error). A non-empty-but-stale `session.path` is intentionally preserved
+  // above — preflight/recreate recovers a deleted worktree and the literal
+  // path is visible in copied commands — so ONLY a blank cwd is unrecoverable
+  // and hard-fails, mirroring resolveAssignmentPlan's workspace-path-invalid.
+  if (!cwd.trim()) {
+    throw new LaunchError(
+      'workspace-path-invalid',
+      `Session ${input.id} has no recorded working directory and no linked assignment workspace resolved — refusing to launch in an unknown directory.`,
+    );
+  }
+
   const agent = getAgents(input.config).find((a) => a.id === session.agent);
   if (!agent) {
     throw new LaunchError(

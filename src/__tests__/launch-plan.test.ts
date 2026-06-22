@@ -703,6 +703,36 @@ describe('resolveLaunchPlan — session mode', () => {
     expect(plan.argv.args).toEqual(['--resume', 'sess-empty-path']);
   });
 
+  it('throws workspace-path-invalid for an empty session.path with no linked assignment', async () => {
+    // Empty path AND no fallback source → cwd would stay '' and render
+    // `cd '' && <agent>` (a silent wrong-dir no-op). The guard must hard-fail
+    // instead of ever returning a plan with cwd === ''.
+    await appendSession('', {
+      sessionId: 'sess-empty-unlinked',
+      projectSlug: null,
+      assignmentSlug: null,
+      agent: 'claude',
+      started: '2026-05-17T00:00:00Z',
+      status: 'active',
+      path: '',
+    });
+
+    let caught: unknown;
+    try {
+      await resolveLaunchPlan({
+        kind: 'session',
+        id: 'sess-empty-unlinked',
+        config: makeConfig(),
+        projectsDir,
+        assignmentsDir,
+      });
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(LaunchError);
+    expect((caught as LaunchError).code).toBe('workspace-path-invalid');
+  });
+
   it('keeps the (invalid) session.path when there is no linked assignment', async () => {
     // No project/assignment link and a non-existent path → no fallback source
     // exists, so the launch must NOT throw; it keeps the recorded session.path.
