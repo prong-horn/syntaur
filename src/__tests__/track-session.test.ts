@@ -27,7 +27,7 @@ describe('trackSessionCommand session-id self-resolution', () => {
   it('uses the explicit --session-id when provided', async () => {
     await trackSessionCommand(
       { agent: 'claude', sessionId: 'explicit-id-1', path: testDir },
-      { resolveSessionId: async () => 'should-not-be-used', fallbackPid: () => null },
+      { resolveSessionId: async () => ({ id: 'should-not-be-used', provenance: 'STRONG' as const }), fallbackPid: () => null },
     );
     expect(getSessionById('explicit-id-1')).not.toBeNull();
   });

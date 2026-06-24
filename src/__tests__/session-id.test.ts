@@ -11,7 +11,6 @@ import {
   mayMutateWithProvenance,
   assertMayMutate,
   type ResolverDeps,
-  type Provenance,
 } from '../utils/session-id.js';
 
 // Deps that make layers 4/5 a no-op unless a test overrides them, so each test
