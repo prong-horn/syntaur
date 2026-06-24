@@ -8,7 +8,10 @@ import {
   readRuntimeMarker,
   isSafeSessionId,
   SESSION_ID_ENV_VARS,
+  mayMutateWithProvenance,
+  assertMayMutate,
   type ResolverDeps,
+  type Provenance,
 } from '../utils/session-id.js';
 
 // Deps that make layers 4/5 a no-op unless a test overrides them, so each test
@@ -42,14 +45,16 @@ describe('resolveOwnSessionId', () => {
         { sessionId: 'explicit', legacyHint: 'hint' },
         inertDeps({ env: { CLAUDE_CODE_SESSION_ID: 'env-id' } }),
       );
-      expect(id).toBe('explicit');
+      expect(id?.id).toBe('explicit');
+      expect(id?.provenance).toBe('EXPLICIT');
     });
     it('ignores an empty explicit id and falls through', async () => {
       const id = await resolveOwnSessionId(
         { sessionId: '', legacyHint: 'hint' },
         inertDeps(),
       );
-      expect(id).toBe('hint');
+      expect(id?.id).toBe('hint');
+      expect(id?.provenance).toBe('WEAK');
     });
   });
 
@@ -65,20 +70,22 @@ describe('resolveOwnSessionId', () => {
           },
         }),
       );
-      expect(id).toBe('claude');
+      expect(id?.id).toBe('claude');
+      expect(id?.provenance).toBe('STRONG');
     });
     it('falls to OPENCODE then PI in order', async () => {
       expect(
         await resolveOwnSessionId({}, inertDeps({ env: { OPENCODE_SESSION_ID: 'opencode', PI_SESSION_ID: 'pi' } })),
-      ).toBe('opencode');
-      expect(await resolveOwnSessionId({}, inertDeps({ env: { PI_SESSION_ID: 'pi' } }))).toBe('pi');
+      ).toMatchObject({ id: 'opencode', provenance: 'STRONG' });
+      expect(await resolveOwnSessionId({}, inertDeps({ env: { PI_SESSION_ID: 'pi' } }))).toMatchObject({ id: 'pi', provenance: 'STRONG' });
     });
     it('treats empty env values as misses', async () => {
       const id = await resolveOwnSessionId(
         { legacyHint: 'hint' },
         inertDeps({ env: { CLAUDE_CODE_SESSION_ID: '', OPENCODE_SESSION_ID: '' } }),
       );
-      expect(id).toBe('hint');
+      expect(id?.id).toBe('hint');
+      expect(id?.provenance).toBe('WEAK');
     });
     it('exposes the env var list in precedence order', () => {
       expect([...SESSION_ID_ENV_VARS]).toEqual([
@@ -93,7 +100,8 @@ describe('resolveOwnSessionId', () => {
     it('returns the id from a marker at the start pid', async () => {
       writeRuntimeMarker(4242, { sessionId: 'marker-id' }, dir);
       const id = await resolveOwnSessionId({}, inertDeps({ startPid: 4242, runtimeSessionsDir: dir }));
-      expect(id).toBe('marker-id');
+      expect(id?.id).toBe('marker-id');
+      expect(id?.provenance).toBe('STRONG');
     });
 
     it('walks up the parent chain to find a marker on an ancestor', async () => {
@@ -103,7 +111,8 @@ describe('resolveOwnSessionId', () => {
         {},
         inertDeps({ startPid: 10, runtimeSessionsDir: dir, readPpid: (p) => chain[p] ?? null }),
       );
-      expect(id).toBe('grandparent');
+      expect(id?.id).toBe('grandparent');
+      expect(id?.provenance).toBe('STRONG');
     });
 
     it('skips a marker whose procStart no longer matches (pid reuse)', async () => {
@@ -112,7 +121,8 @@ describe('resolveOwnSessionId', () => {
         { legacyHint: 'hint' },
         inertDeps({ startPid: 4242, runtimeSessionsDir: dir, pidStartedAt: () => 'NEW' }),
       );
-      expect(id).toBe('hint'); // stale marker skipped, fell through to layer 6
+      expect(id?.id).toBe('hint'); // stale marker skipped, fell through to layer 6
+      expect(id?.provenance).toBe('WEAK');
     });
 
     it('accepts a marker whose procStart still matches', async () => {
@@ -121,7 +131,8 @@ describe('resolveOwnSessionId', () => {
         {},
         inertDeps({ startPid: 4242, runtimeSessionsDir: dir, pidStartedAt: () => 'SAME' }),
       );
-      expect(id).toBe('fresh');
+      expect(id?.id).toBe('fresh');
+      expect(id?.provenance).toBe('STRONG');
     });
 
     it('fails CLOSED: skips a procStart marker when the live start time is unreadable', async () => {
@@ -130,7 +141,8 @@ describe('resolveOwnSessionId', () => {
         { legacyHint: 'hint' },
         inertDeps({ startPid: 4242, runtimeSessionsDir: dir, pidStartedAt: () => null }),
       );
-      expect(id).toBe('hint'); // cannot prove the pid wasn't recycled → skip the marker
+      expect(id?.id).toBe('hint'); // cannot prove the pid wasn't recycled → skip the marker
+      expect(id?.provenance).toBe('WEAK');
     });
 
     it('reads the marker before probing ps (no ps call on marker-less levels)', async () => {
@@ -141,14 +153,17 @@ describe('resolveOwnSessionId', () => {
         {},
         inertDeps({ startPid: 4242, runtimeSessionsDir: dir, pidStartedAt }),
       );
-      expect(id).toBe('no-procstart');
+      expect(id?.id).toBe('no-procstart');
+      expect(id?.provenance).toBe('STRONG');
       expect(pidStartedAt).not.toHaveBeenCalled();
     });
   });
 
   describe('layer 6 — legacy hint (and exact-only contract)', () => {
     it('returns the legacy hint when layers 1–5 miss', async () => {
-      expect(await resolveOwnSessionId({ legacyHint: 'hint' }, inertDeps())).toBe('hint');
+      const id = await resolveOwnSessionId({ legacyHint: 'hint' }, inertDeps());
+      expect(id?.id).toBe('hint');
+      expect(id?.provenance).toBe('WEAK');
     });
     it('returns undefined when the hint is omitted (exact-only callers)', async () => {
       expect(await resolveOwnSessionId({}, inertDeps())).toBeUndefined();
@@ -157,23 +172,23 @@ describe('resolveOwnSessionId', () => {
 
   describe('session-id validation (path/URL safety)', () => {
     it('rejects an unsafe explicit id and falls through', async () => {
-      expect(
-        await resolveOwnSessionId({ sessionId: '../../etc/passwd', legacyHint: 'safe-hint' }, inertDeps()),
-      ).toBe('safe-hint');
+      const result = await resolveOwnSessionId({ sessionId: '../../etc/passwd', legacyHint: 'safe-hint' }, inertDeps());
+      expect(result?.id).toBe('safe-hint');
+      expect(result?.provenance).toBe('WEAK');
     });
     it('rejects an unsafe env id and falls through', async () => {
-      expect(
-        await resolveOwnSessionId({ legacyHint: 'safe-hint' }, inertDeps({ env: { CLAUDE_CODE_SESSION_ID: 'a/b' } })),
-      ).toBe('safe-hint');
+      const result = await resolveOwnSessionId({ legacyHint: 'safe-hint' }, inertDeps({ env: { CLAUDE_CODE_SESSION_ID: 'a/b' } }));
+      expect(result?.id).toBe('safe-hint');
+      expect(result?.provenance).toBe('WEAK');
     });
     it('rejects an unsafe legacy hint (returns undefined)', async () => {
       expect(await resolveOwnSessionId({ legacyHint: '..' }, inertDeps())).toBeUndefined();
     });
     it('rejects an unsafe marker id and falls through', async () => {
       writeRuntimeMarker(4242, { sessionId: '../escape' }, dir);
-      expect(
-        await resolveOwnSessionId({ legacyHint: 'safe-hint' }, inertDeps({ startPid: 4242, runtimeSessionsDir: dir })),
-      ).toBe('safe-hint');
+      const result = await resolveOwnSessionId({ legacyHint: 'safe-hint' }, inertDeps({ startPid: 4242, runtimeSessionsDir: dir }));
+      expect(result?.id).toBe('safe-hint');
+      expect(result?.provenance).toBe('WEAK');
     });
     it('isSafeSessionId accepts real UUID/ULID ids, rejects separators and dot-paths', () => {
       expect(isSafeSessionId('85544734-b7f3-43ac-9922-139aa62d90b9')).toBe(true);
@@ -211,6 +226,37 @@ describe('resolveOwnSessionId', () => {
     it('returns undefined when no transcript matches the cwd', async () => {
       const id = await resolveOwnSessionId({ cwd: '/no/such/workspace/xyz' }, inertDeps());
       expect(id).toBeUndefined();
+    });
+  });
+});
+
+describe('gate helpers', () => {
+  describe('mayMutateWithProvenance', () => {
+    it('returns true for STRONG', () => {
+      expect(mayMutateWithProvenance('STRONG')).toBe(true);
+    });
+    it('returns true for EXPLICIT', () => {
+      expect(mayMutateWithProvenance('EXPLICIT')).toBe(true);
+    });
+    it('returns false for WEAK', () => {
+      expect(mayMutateWithProvenance('WEAK')).toBe(false);
+    });
+  });
+
+  describe('assertMayMutate', () => {
+    it('passes for STRONG regardless of selector', () => {
+      expect(() => assertMayMutate({ id: 'x', provenance: 'STRONG' }, { hasSelector: false })).not.toThrow();
+      expect(() => assertMayMutate({ id: 'x', provenance: 'STRONG' }, { hasSelector: true })).not.toThrow();
+    });
+    it('passes for EXPLICIT regardless of selector', () => {
+      expect(() => assertMayMutate({ id: 'x', provenance: 'EXPLICIT' }, { hasSelector: false })).not.toThrow();
+      expect(() => assertMayMutate({ id: 'x', provenance: 'EXPLICIT' }, { hasSelector: true })).not.toThrow();
+    });
+    it('throws for WEAK with no selector', () => {
+      expect(() => assertMayMutate({ id: 'x', provenance: 'WEAK' }, { hasSelector: false })).toThrow(/--assignment/);
+    });
+    it('passes for WEAK with a selector', () => {
+      expect(() => assertMayMutate({ id: 'x', provenance: 'WEAK' }, { hasSelector: true })).not.toThrow();
     });
   });
 });

@@ -44,6 +44,13 @@ export const SESSION_ID_ENV_VARS = [
   'PI_SESSION_ID',
 ] as const;
 
+export type Provenance = 'STRONG' | 'WEAK' | 'EXPLICIT';
+
+export interface ResolvedSession {
+  id: string;
+  provenance: Provenance;
+}
+
 // Resolved ids become filesystem path segments (sessions/<id>/summary.md) and
 // URL path segments in the cleanup hooks. Now that ids come from widened sources
 // (env vars, ancestor markers, transcript scans), validate them so a malformed
@@ -228,20 +235,20 @@ async function resolveFromCwdScan(
 export async function resolveOwnSessionId(
   opts: ResolveSessionOpts = {},
   deps: ResolverDeps = {},
-): Promise<string | undefined> {
+): Promise<ResolvedSession | undefined> {
   // Layer 1 — explicit override.
-  if (isSafeSessionId(opts.sessionId)) return opts.sessionId;
+  if (isSafeSessionId(opts.sessionId)) return { id: opts.sessionId, provenance: 'EXPLICIT' };
 
   // Layer 2 — injected env var (clobber-proof, per-process).
   const env = deps.env ?? process.env;
   for (const key of SESSION_ID_ENV_VARS) {
     const value = env[key];
-    if (isSafeSessionId(value)) return value;
+    if (isSafeSessionId(value)) return { id: value, provenance: 'STRONG' };
   }
 
   // Layer 3 — agent side channel (seam).
   const sideChannel = await resolveSideChannelSessionId(opts, deps);
-  if (sideChannel) return sideChannel;
+  if (sideChannel) return { id: sideChannel, provenance: 'EXPLICIT' };
 
   // Layer 4 — ancestor-pid runtime marker.
   const home = deps.homeDir ?? homedir();
@@ -256,16 +263,31 @@ export async function resolveOwnSessionId(
     deps.pidStartedAt ?? captureProcessStartedAt,
     deps.maxDepth ?? 12,
   );
-  if (fromMarker) return fromMarker;
+  if (fromMarker) return { id: fromMarker, provenance: 'STRONG' };
 
   // Layer 5 — cwd/mtime transcript scan (last automatic resort).
   if (opts.cwd) {
     const fromScan = await resolveFromCwdScan(opts.cwd, deps.statMtimeMs ?? defaultStatMtimeMs);
-    if (fromScan) return fromScan;
+    if (fromScan) return { id: fromScan, provenance: 'WEAK' };
   }
 
   // Layer 6 — legacy context.json hint (only when the caller opts in).
-  if (isSafeSessionId(opts.legacyHint)) return opts.legacyHint;
+  if (isSafeSessionId(opts.legacyHint)) return { id: opts.legacyHint, provenance: 'WEAK' };
 
   return undefined;
+}
+
+export function mayMutateWithProvenance(p: Provenance): boolean {
+  return p === 'STRONG' || p === 'EXPLICIT';
+}
+
+export function assertMayMutate(
+  resolved: ResolvedSession,
+  opts: { hasSelector: boolean },
+): void {
+  if (resolved.provenance === 'WEAK' && !opts.hasSelector) {
+    throw new Error(
+      `Session id "${resolved.id}" was resolved from a weak source (transcript scan or legacy context.json hint) and cannot be used to mutate assignment state without an explicit target. Pass --assignment <slug> to confirm the target.`,
+    );
+  }
 }

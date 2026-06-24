@@ -5,7 +5,7 @@ import { fileExists, writeFileForce } from '../utils/fs.js';
 import { assignmentsDir, expandHome } from '../utils/paths.js';
 import { readConfig, type SessionAutoTrack } from '../utils/config.js';
 import { nowTimestamp } from '../utils/timestamp.js';
-import { isSafeSessionId, readPpid, resolveOwnSessionId } from '../utils/session-id.js';
+import { assertMayMutate, isSafeSessionId, readPpid, resolveOwnSessionId } from '../utils/session-id.js';
 import { captureProcessStartedAt } from '../utils/process-info.js';
 import { captureHeadSha } from '../utils/git-worktree.js';
 import { isExistingDir } from '../launch/cwd.js';
@@ -222,17 +222,18 @@ async function resolveSaveTarget(
   // Resolve the caller's OWN session id from the process, not the shared
   // context.json scalar (a co-tenant clobbers the scalar). The context scalar
   // is passed only as the last-resort legacy hint.
-  const sessionId = await resolveOwnSessionId({
+  const resolved = await resolveOwnSessionId({
     sessionId: options.sessionId,
     cwd,
     legacyHint: ctx?.sessionId,
   });
-  if (!sessionId) {
+  if (!resolved) {
     throw new Error(
       'Session not tracked. Pass --session-id <id>, or run `syntaur track-session ...` first so context.json carries a real session id.',
     );
   }
-  return { assignmentDir, slug, sessionId };
+  assertMayMutate(resolved, { hasSelector: Boolean(options.assignment) });
+  return { assignmentDir, slug, sessionId: resolved.id };
 }
 
 async function readStdin(): Promise<string> {
@@ -582,9 +583,9 @@ sessionCommand
   .option('--cwd <path>', 'Working directory for the transcript-scan fallback', process.cwd())
   .action(async (options: { cwd?: string }) => {
     try {
-      const id = await resolveOwnSessionId({ cwd: options.cwd ?? process.cwd() });
-      if (!id) process.exit(1);
-      console.log(id);
+      const resolved = await resolveOwnSessionId({ cwd: options.cwd ?? process.cwd() });
+      if (!resolved) process.exit(1);
+      console.log(resolved.id);
     } catch (error) {
       console.error('Error:', error instanceof Error ? error.message : String(error));
       process.exit(1);

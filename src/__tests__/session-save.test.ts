@@ -132,9 +132,8 @@ describe('syntaur session save', () => {
     expect(await fileExists(resolve(assignmentDir, 'sessions', 'B', 'summary.md'))).toBe(false);
   });
 
-  it('falls back to the context.json sessionId hint when no env/process id is available', async () => {
-    // Back-compat: no *_SESSION_ID env, hermetic HOME (no markers/transcripts) —
-    // the legacy scalar is the last-resort hint and still resolves.
+  it('rejects a legacy context.json hint with no --assignment (WEAK gate)', async () => {
+    // New behavior: WEAK provenance (legacy scalar) requires an explicit --assignment.
     await mkdir(resolve(home, '.syntaur'), { recursive: true });
     await writeFile(
       resolve(home, '.syntaur', 'context.json'),
@@ -142,6 +141,19 @@ describe('syntaur session save', () => {
       'utf-8',
     );
     const r = await runCli(['session', 'save'], home, 'legacy body');
+    expect(r.code).not.toBe(0);
+    expect(r.stderr).toMatch(/--assignment/);
+  });
+
+  it('accepts a legacy context.json hint when --assignment is provided', async () => {
+    // With an explicit selector, WEAK provenance is allowed.
+    await mkdir(resolve(home, '.syntaur'), { recursive: true });
+    await writeFile(
+      resolve(home, '.syntaur', 'context.json'),
+      JSON.stringify({ assignmentDir, assignmentSlug: 'a', projectSlug: 'p', sessionId: 'C' }),
+      'utf-8',
+    );
+    const r = await runCli(['session', 'save', '--assignment', 'a', '--project', 'p'], home, 'legacy body');
     expect(r.code, r.stderr).toBe(0);
     const cSummary = await readFile(resolve(assignmentDir, 'sessions', 'C', 'summary.md'), 'utf-8');
     expect(cSummary).toContain('sessionId: C');
