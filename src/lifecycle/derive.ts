@@ -54,6 +54,9 @@ export interface BuiltinFacts {
   blocked: boolean;
   parked: boolean;
   reviewRequested: boolean;
+  /** Rework requested: a new `implement` stage opened after `review`. Drops the
+   * review rung even when ACs stay checked. Asserted by the stage-fact bridge. */
+  reworkRequested: boolean;
   pinned: boolean;
 }
 

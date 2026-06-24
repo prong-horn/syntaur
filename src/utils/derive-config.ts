@@ -64,7 +64,9 @@ export const DEFAULT_DERIVE_CONFIG: DeriveConfig = {
     },
     {
       phase: 'review',
-      when: 'acAllChecked:true OR reviewRequested:true',
+      // Rework (a new `implement` stage after `review`) must leave review even
+      // when ACs stay checked — hence `AND NOT reworkRequested` (stage-fact-status-bridge).
+      when: '(acAllChecked:true OR reviewRequested:true) AND NOT reworkRequested:true',
       next: 'Complete, or address review feedback',
     },
   ],

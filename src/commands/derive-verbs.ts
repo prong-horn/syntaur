@@ -39,8 +39,10 @@ import { resolveAssignmentTarget } from '../utils/assignment-target.js';
 import {
   resolveSessionEngagement,
   latestBindingForSessionId,
+  switchSessionStage,
 } from '../utils/engagement-binding.js';
 import { assertMayMutate } from '../utils/session-id.js';
+import { assertStageFactOnOpen } from '../lifecycle/stage-fact-bridge.js';
 
 export interface DeriveVerbOptions {
   project?: string;
@@ -353,17 +355,89 @@ export async function unparkCommand(assignment: string, options: DeriveVerbOptio
   );
 }
 
+/**
+ * Drive a session-stage fact from a deliberate stage transition: gate the
+ * session's provenance, switch its engagement to `stage`, then let the
+ * stage-fact bridge assert the fact + recompute (stage-fact-status-bridge,
+ * Decisions 1/9). With no resolvable session (bare-human CLI), fall back to the
+ * legacy direct fact write — a documented escape hatch.
+ */
+async function applyStageFact(
+  assignment: string,
+  options: DeriveVerbOptions,
+  target: ResolvedTarget,
+  fm: ReturnType<typeof parseAssignmentFrontmatter>,
+  stage: 'implement' | 'review',
+  label: string,
+  context: DeriveContext,
+): Promise<void> {
+  // Refuse terminal assignments BEFORE switching the engagement — facts are
+  // frozen, so a stage switch would leave the engagement ahead of a fact that
+  // can't be written (mirrors assertFact's terminal refusal; codex r2).
+  if (context.terminalStatuses.has(fm.status)) {
+    throw new Error(
+      `Assignment is ${fm.status} (terminal) — facts are frozen. Use \`syntaur reopen\` first.`,
+    );
+  }
+  const cwd = options.cwd ?? process.cwd();
+  const se = await resolveSessionEngagement(cwd);
+  if (se) {
+    assertMayMutate(se.session, { hasSelector: true });
+    const sw = await switchSessionStage({
+      sessionId: se.session.id,
+      assignmentId: fm.id,
+      projectSlug: fm.project,
+      assignmentSlug: fm.slug,
+      stage,
+    });
+    // Rework keys on the prior stage FOR THIS ASSIGNMENT only — a session that
+    // was reviewing a DIFFERENT assignment must not mark this one as rework
+    // (codex finding). Pass the resolved path so --dir is honoured.
+    const prevStage =
+      sw.previous && sw.previous.assignment_id === fm.id ? sw.previous.stage : null;
+    await assertStageFactOnOpen({
+      assignmentPath: target.assignmentPath,
+      projectDir: target.projectDir,
+      prevStage,
+      stage,
+      by: await inferActor(options),
+    });
+    console.log(`✓ ${label}`);
+    return;
+  }
+  // Sessionless fallback (legacy escape hatch): direct fact write.
+  const write =
+    stage === 'implement' ? { implementationStarted: true } : { reviewRequested: true };
+  await assertFact(
+    assignment,
+    options,
+    stage === 'implement' ? 'implement' : 'request-review',
+    (content) => updateAssignmentFile(content, write),
+    label,
+    { context },
+  );
+}
+
 export async function requestReviewCommand(
   assignment: string,
   options: DeriveVerbOptions & { clear?: boolean },
 ): Promise<void> {
-  await assertFact(
-    assignment,
-    options,
-    options.clear ? 'review-request-clear' : 'request-review',
-    (content) => updateAssignmentFile(content, { reviewRequested: !options.clear }),
-    options.clear ? 'Review request cleared' : 'Review requested',
-  );
+  if (options.clear) {
+    // Clearing review is a deliberate explicit human act, not a stage-open —
+    // keep it a direct fact mutation (stage-fact-status-bridge Decision 10).
+    await assertFact(
+      assignment,
+      options,
+      'review-request-clear',
+      (content) => updateAssignmentFile(content, { reviewRequested: false }),
+      'Review request cleared',
+    );
+    return;
+  }
+  const target = await resolveTarget(assignment, options);
+  const context = await resolveDeriveContext();
+  const fm = parseAssignmentFrontmatter(await readFile(target.assignmentPath, 'utf-8'));
+  await applyStageFact(assignment, options, target, fm, 'review', 'Review requested', context);
 }
 
 /** Assert implementation has begun. The derived replacement for the old
@@ -385,23 +459,28 @@ export async function implementStartedCommand(assignment: string, options: Deriv
     }
   }
 
-  await assertFact(
-    assignment,
-    options,
-    'implement',
-    (content) => {
-      let next = updateAssignmentFile(content, { implementationStarted: true });
-      if (options.agent) {
-        const innerFm = parseAssignmentFrontmatter(next);
-        if (innerFm.assignee === null) {
-          next = updateAssignmentFile(next, { assignee: options.agent });
-        }
-      }
-      return next;
-    },
-    'Implementation started',
-    { context },
-  );
+  // The `--agent` assignee write stays a verb concern, DECOUPLED from the
+  // stage-fact bridge (the bridge early-returns on an empty fact delta and would
+  // otherwise drop an assignee-only update; stage-fact-status-bridge Decision 10).
+  if (options.agent && fm.assignee === null) {
+    await assertFact(
+      assignment,
+      options,
+      'implement',
+      (content) => {
+        const innerFm = parseAssignmentFrontmatter(content);
+        return innerFm.assignee === null
+          ? updateAssignmentFile(content, { assignee: options.agent! })
+          : content;
+      },
+      'Assignee set',
+      { context },
+    );
+  }
+
+  // Engagement-sourced `implementationStarted`: switch the session's engagement
+  // to the `implement` stage and let the bridge assert the fact + recompute.
+  await applyStageFact(assignment, options, target, fm, 'implement', 'Implementation started', context);
 }
 
 // ── block / unblock (fact form) ─────────────────────────────────────────────

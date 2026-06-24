@@ -36,6 +36,7 @@ const ITEM: QueryItem = {
   blocked: true,
   parked: false,
   reviewRequested: false,
+  reworkRequested: false,
   unresolvedQuestions: 1,
 };
 

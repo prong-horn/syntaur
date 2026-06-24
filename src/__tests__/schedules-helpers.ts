@@ -58,6 +58,7 @@ export function sampleAssignment(
     planApproval: null,
     parked: false,
     reviewRequested: false,
+    reworkRequested: false,
     implementationStarted: false,
     override: null,
     facts: {},

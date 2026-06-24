@@ -348,6 +348,7 @@ export function parseAssignmentFrontmatter(fileContent: string): AssignmentFront
     planApproval: parsePlanApproval(frontmatter),
     parked: getField('parked') === 'true',
     reviewRequested: getField('reviewRequested') === 'true',
+    reworkRequested: getField('reworkRequested') === 'true',
     implementationStarted: getField('implementationStarted') === 'true',
     override: parseOverride(frontmatter),
     facts: parseFactsMap(frontmatter),
@@ -403,6 +404,7 @@ export function updateAssignmentFile(
       | 'disposition'
       | 'parked'
       | 'reviewRequested'
+      | 'reworkRequested'
       | 'implementationStarted'
     >
   >,

@@ -87,6 +87,7 @@ export const ASSIGNMENT_FIELDS: FieldRegistry = {
   blocked: { kind: 'bool' },
   parked: { kind: 'bool' },
   reviewrequested: { kind: 'bool', get: (i) => i['reviewRequested'] },
+  reworkrequested: { kind: 'bool', get: (i) => i['reworkRequested'] },
   pinned: { kind: 'bool' },
 };
 

@@ -46,6 +46,7 @@ const BASE_FACTS: AssignmentFacts = {
   blocked: false,
   parked: false,
   reviewRequested: false,
+  reworkRequested: false,
   pinned: false,
 };
 
@@ -96,6 +97,23 @@ describe('deriveDimensions — phase ladder', () => {
       implementationStarted: true,
     })!;
     expect(d.phase).toBe('review');
+  });
+
+  it('rework leaves review even when ACs stay checked (the v2 review gap)', () => {
+    const base = {
+      hasRealObjective: true,
+      acRealTotal: 3,
+      acRealChecked: 3,
+      acAllChecked: true,
+      planApproved: true,
+      implementationStarted: true,
+    };
+    // With ACs checked the rung would normally hold review; asserting
+    // reworkRequested must drop it back to in_progress (rung gains AND NOT rework).
+    const reworked = derive({ ...base, reworkRequested: true } as Partial<AssignmentFacts>)!;
+    expect(reworked.phase).toBe('in_progress');
+    // sanity: without rework, ACs-checked still holds review (existing behavior)
+    expect(derive(base)!.phase).toBe('review');
   });
 
   it('REGRESSION: approval invalidated mid-build drops phase back', () => {
