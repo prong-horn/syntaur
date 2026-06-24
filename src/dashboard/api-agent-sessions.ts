@@ -5,6 +5,7 @@ import {
   listProjectSessions,
   appendSession,
   updateSessionStatus,
+  SessionResurrectionError,
   deleteSessions,
   reconcileActiveSessions,
   getSessionById,
@@ -208,6 +209,11 @@ export function createAgentSessionsRouter(
       broadcast?.({ type: 'agent-sessions-updated', timestamp: new Date().toISOString() });
       res.json({ updated: true });
     } catch (error) {
+      // A completed session is final — reviving it to active is refused, not a 500.
+      if (error instanceof SessionResurrectionError) {
+        res.status(409).json({ error: error.message });
+        return;
+      }
       res.status(500).json({ error: error instanceof Error ? error.message : 'Update failed' });
     }
   });

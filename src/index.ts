@@ -176,7 +176,7 @@ program
 program
   .command('capture')
   .description('Capture a typed proof artifact for an assignment')
-  .argument('[target]', 'Assignment slug (with --project) or UUID; falls back to .syntaur/context.json')
+  .argument('[target]', 'Assignment slug (with --project) or UUID; defaults to the session open engagement')
   .option('--kind <type>', 'Artifact kind: screenshot | video | asciinema | http | text')
   .option('--file <path>', 'Source file to ingest (forbidden for --kind=text)')
   .option('--criterion <index>', 'Optional 0-based criterion index to tag')
@@ -450,6 +450,10 @@ program
   .option('--agent <name>', 'Acting agent id')
   .option('--dir <path>', 'Override default project directory')
   .option('--if-migrated', 'No-op unless derive migration has run (for implicit triggers like session-end hooks)')
+  .option(
+    '--session-id <id>',
+    'Resolve the implicit target from this session\'s latest engagement (open-else-latest). The SessionEnd cleanup hook passes the ending session id here; explicit provenance lets it recompute after `session stop` closed the engagement.',
+  )
   .action(
     runCommand(async (assignment, options) => {
       await recomputeCommand(assignment, options);

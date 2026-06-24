@@ -7,51 +7,62 @@ import { isValidSlug } from './slug.js';
 import { resolveAssignmentById, type ResolvedAssignment } from './assignment-resolver.js';
 import { extractFrontmatter, getField } from '../dashboard/parser.js';
 import type { BundleScope } from '../todos/types.js';
+import type { EngagementBinding } from './engagement-binding.js';
 
 export interface AssignmentTargetOptions {
   project?: string;
   dir?: string;
   cwd?: string;
+  /**
+   * Resolve the active (assignment, stage) from the session's OPEN engagement
+   * (Case 3). Injected by callers — the real implementation is
+   * `resolveEngagementBinding(cwd)` from engagement-binding.ts; tests pass a
+   * stub. When unset or it resolves null, Case 3 throws the no-target selector
+   * error. This replaces the demoted `context.json` assignment scalar.
+   */
+  resolveEngagement?: () => Promise<EngagementBinding | null>;
 }
 
 export class AssignmentTargetError extends Error {}
 
+/**
+ * `.syntaur/context.json` is a WORKSPACE MARKER, not the active-assignment
+ * source. The authoritative active (assignment, stage) lives on the session's
+ * open engagement (see resolveAssignmentTarget Case 3); the legacy
+ * `projectSlug`/`assignmentSlug`/`assignmentDir` scalars were removed here to
+ * close the multi-assignment-in-one-worktree clobber.
+ */
 export interface ContextJsonShape {
-  // Assignment-scoped context (set by grab-assignment).
-  projectSlug?: string | null;
-  assignmentSlug?: string | null;
-  assignmentDir?: string | null;
   // Session metadata (populated by Claude Code's SessionStart hook). These are
   // a legacy, co-tenant-clobberable HINT — never trust the sessionId value as
   // identity (resolve that from the process via resolveOwnSessionId). Their
   // PRESENCE vs absence is still a stable signal for classification.
   sessionId?: string | null;
   transcriptPath?: string | null;
-  // Bundle-scoped context (set by bundle worktree / grab-bundle). MUTUALLY
-  // EXCLUSIVE with the assignment fields above — see classifyContext().
+  // Bundle-scoped context (set by bundle worktree / grab-bundle). A bundle
+  // worktree is NOT an assignment target — see classifyContext().
   bundleId?: string | null;
   bundleSlug?: string | null;
   bundleScope?: BundleScope | null;
   bundleScopeId?: string | null;
   todoIds?: string[] | null;
   planDir?: string | null;
+  // Workspace markers.
   branch?: string | null;
   worktreePath?: string | null;
   repository?: string | null;
   boundAt?: string | null;
 }
 
-export type ContextKind = 'assignment' | 'bundle' | 'standalone' | 'empty';
+export type ContextKind = 'bundle' | 'standalone' | 'empty';
 
 export function classifyContext(ctx: ContextJsonShape | null): ContextKind {
   if (!ctx) return 'empty';
-  const hasAssignment = Boolean(ctx.assignmentDir) || Boolean(ctx.assignmentSlug) || Boolean(ctx.projectSlug);
-  if (hasAssignment) return 'assignment';
   if (ctx.bundleId) return 'bundle';
-  // Standalone = a session-only context with no assignment/bundle binding.
-  // Classify on the PRESENCE of session metadata (sessionId or transcriptPath),
-  // not the specific id value — the value is a clobberable hint, but
-  // presence-vs-absence is stable under co-tenancy.
+  // Standalone = a session-only context with no bundle binding. Classify on the
+  // PRESENCE of session metadata (sessionId or transcriptPath), not the specific
+  // id value — the value is a clobberable hint, but presence-vs-absence is
+  // stable under co-tenancy.
   if (ctx.sessionId || ctx.transcriptPath) return 'standalone';
   return 'empty';
 }
@@ -80,18 +91,20 @@ async function readContextJson(cwd: string): Promise<ContextJsonShape | null> {
 }
 
 /**
- * Resolve an assignment target across the three input shapes used by the
- * proof-artifacts feature:
+ * Resolve an assignment target across the three input shapes:
  *
- *   1. `--project <slug> + <assignment-slug>` (positional)
+ *   1. `--project <slug> + <assignment-slug>` (positional, explicit)
  *   2. bare UUID (positional, resolves standalone or project-nested via frontmatter id)
- *   3. no positional + .syntaur/context.json fallback (must contain
- *      `assignmentDir` OR `projectSlug + assignmentSlug`)
+ *   3. no positional → the session's OPEN engagement (via `opts.resolveEngagement`).
+ *      The legacy `.syntaur/context.json` assignment scalar is NO LONGER a
+ *      resolution source — `context.json` is now a workspace marker only. With no
+ *      positional and no open engagement, this throws the selector error.
  *
- * `--dir` overrides the projects base dir for cases 1 and 2.
+ * `--dir` overrides the projects base dir for cases 1 and 3 (project-nested).
  *
  * Throws AssignmentTargetError on any unresolved input. The returned shape
- * mirrors `ResolvedAssignment` from assignment-resolver.ts.
+ * mirrors `ResolvedAssignment` from assignment-resolver.ts; Case 3 also carries
+ * the engagement `stage`.
  */
 export async function resolveAssignmentTarget(
   input: string | undefined,
@@ -149,75 +162,108 @@ export async function resolveAssignmentTarget(
     return resolved;
   }
 
-  // Case 3: no positional → .syntaur/context.json fallback
+  // Case 3: no positional → resolve from the session's OPEN engagement.
   const cwd = opts.cwd ?? process.cwd();
   const ctx = await readContextJson(cwd);
-  if (!ctx) {
-    throw new AssignmentTargetError(
-      'No assignment specified. Provide an argument, --project + slug, or run from a directory with .syntaur/context.json.',
-    );
-  }
 
-  // Bundle context: surface a clear error so assignment-only flows (e.g.,
+  // Bundle context guard: surface a clear error so assignment-only flows (e.g.
   // /plan-assignment, /complete-assignment) don't misfire inside a bundle
-  // worktree. The bundle-aware flows resolve via different helpers.
-  if (classifyContext(ctx) === 'bundle' && ctx.bundleId) {
+  // worktree. The bundle-aware flows resolve via different helpers. context.json
+  // still carries the bundle marker; only the assignment scalar was demoted.
+  if (ctx && classifyContext(ctx) === 'bundle' && ctx.bundleId) {
     throw new AssignmentTargetError(
       `Context is bound to bundle b:${ctx.bundleId}, not an assignment. Use \`syntaur todo bundle show ${ctx.bundleId}\` or the complete-bundle skill.`,
     );
   }
 
-  if (ctx.assignmentDir) {
-    const dir = expandHome(ctx.assignmentDir);
-    const assignmentMdPath = resolve(dir, 'assignment.md');
-    if (!(await fileExists(assignmentMdPath))) {
-      throw new AssignmentTargetError(
-        `.syntaur/context.json points to a missing assignment dir: ${dir}.`,
-      );
-    }
-    const id = await readAssignmentFrontmatterId(dir);
-    if (!id || id.trim() === '') {
-      throw new AssignmentTargetError(
-        `.syntaur/context.json points to an assignment with no frontmatter \`id\`: ${dir}.`,
-      );
-    }
-    const assignmentSlug = ctx.assignmentSlug ?? dir.split('/').pop() ?? '';
-    const projectSlug = ctx.projectSlug ?? null;
-    return {
-      assignmentDir: dir,
-      projectSlug,
-      assignmentSlug,
-      id,
-      standalone: projectSlug === null,
-      workspaceGroup: null,
-    };
-  }
-
-  if (ctx.projectSlug && ctx.assignmentSlug) {
-    if (!isValidSlug(ctx.projectSlug) || !isValidSlug(ctx.assignmentSlug)) {
-      throw new AssignmentTargetError(
-        `.syntaur/context.json contains invalid slugs: project="${ctx.projectSlug}" assignment="${ctx.assignmentSlug}".`,
-      );
-    }
-    const assignmentDir = resolve(baseDir, ctx.projectSlug, 'assignments', ctx.assignmentSlug);
-    const assignmentMdPath = resolve(assignmentDir, 'assignment.md');
-    if (!(await fileExists(assignmentMdPath))) {
-      throw new AssignmentTargetError(
-        `.syntaur/context.json points to a missing assignment: ${assignmentDir}.`,
-      );
-    }
-    const id = (await readAssignmentFrontmatterId(assignmentDir)) ?? ctx.assignmentSlug;
-    return {
-      assignmentDir,
-      projectSlug: ctx.projectSlug,
-      assignmentSlug: ctx.assignmentSlug,
-      id,
-      standalone: false,
-      workspaceGroup: null,
-    };
+  const binding = opts.resolveEngagement ? await opts.resolveEngagement() : null;
+  if (binding) {
+    return reconstructFromBinding(binding, baseDir);
   }
 
   throw new AssignmentTargetError(
-    '.syntaur/context.json exists but contains neither assignmentDir nor projectSlug+assignmentSlug.',
+    'No open engagement for this session. Pass --assignment <slug> (and --project) to target an assignment, or grab one first.',
   );
+}
+
+/**
+ * Rebuild a `ResolvedAssignment` from the session's open-engagement binding.
+ * Project-nested reconstructs `baseDir/<project>/assignments/<slug>`; standalone
+ * uses the resolved `assignmentId` (preferred) or the slug-as-UUID under the
+ * standalone assignments dir. Rejects a binding with no usable identity.
+ */
+async function reconstructFromBinding(
+  binding: EngagementBinding,
+  baseDir: string,
+): Promise<ResolvedAssignment> {
+  // Project-nested engagement.
+  if (binding.projectSlug) {
+    if (
+      !isValidSlug(binding.projectSlug) ||
+      !binding.assignmentSlug ||
+      !isValidSlug(binding.assignmentSlug)
+    ) {
+      throw new AssignmentTargetError(
+        `Open engagement has invalid slugs: project="${binding.projectSlug}" assignment="${binding.assignmentSlug}".`,
+      );
+    }
+    const assignmentDir = resolve(baseDir, binding.projectSlug, 'assignments', binding.assignmentSlug);
+    const assignmentMdPath = resolve(assignmentDir, 'assignment.md');
+    if (!(await fileExists(assignmentMdPath))) {
+      throw new AssignmentTargetError(
+        `Open engagement points to a missing assignment: ${assignmentDir}.`,
+      );
+    }
+    const id =
+      (await readAssignmentFrontmatterId(assignmentDir)) ??
+      binding.assignmentId ??
+      binding.assignmentSlug;
+    return {
+      assignmentDir,
+      projectSlug: binding.projectSlug,
+      assignmentSlug: binding.assignmentSlug,
+      id,
+      standalone: false,
+      workspaceGroup: null,
+      stage: binding.stage,
+    };
+  }
+
+  // Standalone engagement: prefer the resolved id, else the slug-as-UUID.
+  const standaloneId = binding.assignmentId ?? binding.assignmentSlug;
+  if (!standaloneId) {
+    throw new AssignmentTargetError(
+      'Open engagement has neither an assignment id nor a slug to resolve.',
+    );
+  }
+  // The id becomes a path segment under the standalone assignments dir — reject
+  // separators / traversal / absolute so a malformed DB binding can't resolve
+  // outside assignmentsDir(). (Project-nested slugs go through isValidSlug above.)
+  if (
+    standaloneId.includes('/') ||
+    standaloneId.includes('\\') ||
+    standaloneId.includes('..') ||
+    standaloneId.startsWith('.')
+  ) {
+    throw new AssignmentTargetError(
+      `Open engagement has an unsafe standalone assignment id: "${standaloneId}".`,
+    );
+  }
+  const dir = resolve(assignmentsDirFn(), standaloneId);
+  const assignmentMdPath = resolve(dir, 'assignment.md');
+  if (!(await fileExists(assignmentMdPath))) {
+    throw new AssignmentTargetError(
+      `Open engagement points to a missing standalone assignment: ${dir}.`,
+    );
+  }
+  const id = (await readAssignmentFrontmatterId(dir)) ?? standaloneId;
+  return {
+    assignmentDir: dir,
+    projectSlug: null,
+    assignmentSlug: standaloneId,
+    id,
+    standalone: true,
+    workspaceGroup: null,
+    stage: binding.stage,
+  };
 }

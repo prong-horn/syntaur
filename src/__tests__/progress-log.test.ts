@@ -3,15 +3,25 @@ import { mkdtemp, rm, readFile, writeFile, mkdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { spawn } from 'node:child_process';
+import {
+  initSessionDb,
+  closeSessionDb,
+  resetSessionDb,
+} from '../dashboard/session-db.js';
+import { openEngagement } from '../db/engagement-db.js';
 
 const CLI_ENTRY = resolve(__dirname, '..', '..', 'bin', 'syntaur.js');
 
 interface RunResult { code: number; stdout: string; stderr: string }
 
-async function runCli(args: string[], home: string): Promise<RunResult> {
+async function runCli(
+  args: string[],
+  home: string,
+  extraEnv: NodeJS.ProcessEnv = {},
+): Promise<RunResult> {
   return new Promise((res) => {
     const child = spawn(process.execPath, [CLI_ENTRY, ...args], {
-      env: { ...process.env, SYNTAUR_HOME: home },
+      env: { ...process.env, SYNTAUR_HOME: home, ...extraEnv },
     });
     let stdout = '';
     let stderr = '';
@@ -19,6 +29,28 @@ async function runCli(args: string[], home: string): Promise<RunResult> {
     child.stderr.on('data', (d) => (stderr += d.toString()));
     child.on('close', (code) => res({ code: code ?? -1, stdout, stderr }));
   });
+}
+
+/**
+ * Seed an OPEN engagement in `$SYNTAUR_HOME/syntaur.db` bound to project `p` /
+ * assignment `a`, so a spawned CLI process whose session resolves to `sessionId`
+ * (STRONG via injected CLAUDE_CODE_SESSION_ID) targets that assignment with no
+ * explicit --assignment flag. Mirrors the production session-db path.
+ */
+function seedOpenEngagement(home: string, sessionId: string): void {
+  resetSessionDb();
+  initSessionDb(resolve(home, 'syntaur.db'));
+  try {
+    openEngagement({
+      sessionId,
+      assignmentId: 'x',
+      projectSlug: 'p',
+      assignmentSlug: 'a',
+      startedAt: '2026-01-01T00:00:00Z',
+    });
+  } finally {
+    closeSessionDb();
+  }
 }
 
 const PROGRESS = `---
@@ -70,5 +102,25 @@ describe('syntaur progress log', () => {
     const h1 = content.indexOf('# Progress');
     expect(content.indexOf('NEWER')).toBeGreaterThan(h1);
     expect(content.indexOf('NEWER')).toBeLessThan(content.indexOf('OLDER'));
+  });
+
+  it('resolves the assignment from the session OPEN engagement when no --assignment is given', async () => {
+    const sessionId = 'sess-engagement-1';
+    seedOpenEngagement(home, sessionId);
+    const r = await runCli(['progress', 'log', 'From engagement'], home, {
+      CLAUDE_CODE_SESSION_ID: sessionId, // STRONG provenance → passes the mutation gate
+    });
+    expect(r.code, r.stderr).toBe(0);
+    const content = await readFile(progressPath, 'utf-8');
+    expect(content).toContain('From engagement');
+    expect(content).toContain('entryCount: 1');
+  });
+
+  it('errors with no explicit target and no open engagement', async () => {
+    const r = await runCli(['progress', 'log', 'orphan'], home, {
+      CLAUDE_CODE_SESSION_ID: 'sess-no-engagement', // STRONG, but no engagement open
+    });
+    expect(r.code).toBe(1);
+    expect(r.stderr).toContain('No open engagement');
   });
 });

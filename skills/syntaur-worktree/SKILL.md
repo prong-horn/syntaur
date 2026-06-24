@@ -23,8 +23,9 @@ operations:
    transactionally — rolls back the worktree on write failure).
 3. `syntaur assign` + `syntaur start` — claim the assignment for this agent
    and transition to `in_progress`.
-4. Write `.syntaur/context.json` inside the new worktree so the session is
-   bound there.
+4. Write `.syntaur/context.json` (a workspace marker) inside the new worktree,
+   then `syntaur track-session` to bind the session's engagement to the
+   assignment.
 
 ## When NOT to use this skill
 
@@ -82,12 +83,15 @@ syntaur start <assignment> --project <project-slug>   # only if status was pendi
 Skip `start` for any non-`pending` status — never rewind a `review`,
 `completed`, or `failed` assignment.
 
-## Step 5: Bind the new worktree to your session
+## Step 5: Write the workspace marker
 
-`cd` into the new worktree path. Write
-`<worktreePath>/.syntaur/context.json` mirroring the format produced by
-`/grab-assignment` (projectSlug, assignmentSlug, projectDir, assignmentDir,
-workspaceRoot, title, branch, sessionId, transcriptPath, grabbedAt).
+`cd` into the new worktree path. Write `<worktreePath>/.syntaur/context.json`
+mirroring the WORKSPACE-MARKER format produced by `/grab-assignment`:
+`repository`, `branch`, `worktreePath`, `workspaceRoot`, `grabbedAt`, plus
+`sessionId` / `transcriptPath` when known. Do NOT write `projectSlug` /
+`assignmentSlug` / `assignmentDir` / `projectDir` / `title` — context.json is a
+workspace marker, not the active-assignment source. The assignment binds in the
+next step via the session's engagement (`track-session`).
 
 If the runtime exposes a real session id (e.g. Claude Code's
 `~/.claude/sessions/`), include it. Otherwise omit `sessionId` entirely; the

@@ -124,41 +124,93 @@ describe('resolveAssignmentTarget', () => {
     expect(resolved.standalone).toBe(false);
   });
 
-  it('falls back to .syntaur/context.json (assignmentDir form)', async () => {
-    const id = 'cccccccc-dddd-eeee-ffff-000000000000';
-    const dir = resolve(assignmentsDir, id);
-    await writeAssignment(dir, id, { project: 'null' });
-    await writeContextJson(cwdRoot, { assignmentDir: dir });
-
-    const resolved = await resolveAssignmentTarget(undefined, { cwd: cwdRoot, dir: projectsDir });
-
-    expect(resolved.assignmentDir).toBe(dir);
-    expect(resolved.id).toBe(id);
-    expect(resolved.standalone).toBe(true);
-  });
-
-  it('falls back to .syntaur/context.json (projectSlug+assignmentSlug form)', async () => {
-    const projectSlug = 'ctx-proj';
-    const aslug = 'ctx-task';
-    const id = '22222222-3333-4444-5555-666666666666';
+  it('resolves from the open engagement (project-nested)', async () => {
+    const projectSlug = 'eng-proj';
+    const aslug = 'eng-task';
+    const id = '33333333-4444-5555-6666-777777777777';
     await writeProject(projectSlug);
     await writeAssignment(resolve(projectsDir, projectSlug, 'assignments', aslug), id, {
       slug: aslug,
       project: projectSlug,
     });
-    await writeContextJson(cwdRoot, { projectSlug, assignmentSlug: aslug });
 
-    const resolved = await resolveAssignmentTarget(undefined, { cwd: cwdRoot, dir: projectsDir });
+    const resolved = await resolveAssignmentTarget(undefined, {
+      cwd: cwdRoot,
+      dir: projectsDir,
+      resolveEngagement: async () => ({
+        assignmentId: id,
+        projectSlug,
+        assignmentSlug: aslug,
+        stage: 'plan',
+      }),
+    });
 
     expect(resolved.projectSlug).toBe(projectSlug);
     expect(resolved.assignmentSlug).toBe(aslug);
+    expect(resolved.standalone).toBe(false);
     expect(resolved.id).toBe(id);
+    expect(resolved.stage).toBe('plan');
   });
 
-  it('throws when no input and no context.json', async () => {
-    await expect(resolveAssignmentTarget(undefined, { cwd: cwdRoot, dir: projectsDir })).rejects.toThrow(
-      AssignmentTargetError,
-    );
+  it('resolves from the open engagement (standalone, by id)', async () => {
+    const id = 'dddddddd-eeee-ffff-0000-111111111111';
+    await writeAssignment(resolve(assignmentsDir, id), id, { project: 'null' });
+
+    const resolved = await resolveAssignmentTarget(undefined, {
+      cwd: cwdRoot,
+      dir: projectsDir,
+      resolveEngagement: async () => ({
+        assignmentId: id,
+        projectSlug: null,
+        assignmentSlug: id,
+        stage: 'implement',
+      }),
+    });
+
+    expect(resolved.standalone).toBe(true);
+    expect(resolved.assignmentSlug).toBe(id);
+    expect(resolved.id).toBe(id);
+    expect(resolved.stage).toBe('implement');
+  });
+
+  it('explicit --project + slug takes precedence over the open engagement (seam not consulted)', async () => {
+    const projectSlug = 'explicit-proj';
+    const aslug = 'explicit-task';
+    const id = '44444444-5555-6666-7777-888888888888';
+    await writeProject(projectSlug);
+    await writeAssignment(resolve(projectsDir, projectSlug, 'assignments', aslug), id, {
+      slug: aslug,
+      project: projectSlug,
+    });
+
+    let called = false;
+    const resolved = await resolveAssignmentTarget(aslug, {
+      project: projectSlug,
+      dir: projectsDir,
+      resolveEngagement: async () => {
+        called = true;
+        return { assignmentId: 'x', projectSlug: 'other', assignmentSlug: 'other', stage: 'plan' };
+      },
+    });
+
+    expect(resolved.assignmentSlug).toBe(aslug);
+    expect(called).toBe(false);
+  });
+
+  it('throws the selector error when there is no positional and no open engagement', async () => {
+    await expect(
+      resolveAssignmentTarget(undefined, {
+        cwd: cwdRoot,
+        dir: projectsDir,
+        resolveEngagement: async () => null,
+      }),
+    ).rejects.toThrow(/No open engagement/);
+  });
+
+  it('throws when no resolveEngagement seam is provided', async () => {
+    await expect(
+      resolveAssignmentTarget(undefined, { cwd: cwdRoot, dir: projectsDir }),
+    ).rejects.toThrow(AssignmentTargetError);
   });
 
   it('throws on invalid project slug', async () => {
@@ -185,34 +237,49 @@ describe('resolveAssignmentTarget', () => {
     ).rejects.toThrow(/not found/);
   });
 
-  it('throws when context.json points to a missing dir', async () => {
-    await writeContextJson(cwdRoot, { assignmentDir: resolve(tmpRoot, 'nope') });
-
+  it('throws when the open engagement points to a missing assignment', async () => {
     await expect(
-      resolveAssignmentTarget(undefined, { cwd: cwdRoot, dir: projectsDir }),
-    ).rejects.toThrow(/missing assignment dir/);
+      resolveAssignmentTarget(undefined, {
+        cwd: cwdRoot,
+        dir: projectsDir,
+        resolveEngagement: async () => ({
+          assignmentId: 'x',
+          projectSlug: 'ghost-proj',
+          assignmentSlug: 'ghost-task',
+          stage: 'plan',
+        }),
+      }),
+    ).rejects.toThrow(/missing assignment/);
   });
 
-  it('throws when context.json points to an assignment with no frontmatter id', async () => {
-    const idlessDir = resolve(assignmentsDir, 'no-id-folder');
-    await mkdir(idlessDir, { recursive: true });
-    // Write an assignment.md with no `id:` frontmatter field.
-    await writeFile(
-      resolve(idlessDir, 'assignment.md'),
-      ['---', 'slug: example', 'title: Example', '---', '', '# Example', ''].join('\n'),
-    );
-    await writeContextJson(cwdRoot, { assignmentDir: idlessDir });
+  it('surfaces a bundle-context error instead of resolving an assignment', async () => {
+    await writeContextJson(cwdRoot, { bundleId: 'b123', bundleSlug: 'my-bundle' });
 
     await expect(
-      resolveAssignmentTarget(undefined, { cwd: cwdRoot, dir: projectsDir }),
-    ).rejects.toThrow(/no frontmatter `id`/);
+      resolveAssignmentTarget(undefined, {
+        cwd: cwdRoot,
+        dir: projectsDir,
+        resolveEngagement: async () => null,
+      }),
+    ).rejects.toThrow(/bound to bundle/);
   });
 
-  it('throws when context.json has neither shape', async () => {
-    await writeContextJson(cwdRoot, { sessionId: 'abc' });
+  it('does not let a workspace-marker-only context.json resolve an assignment', async () => {
+    // context.json with only workspace markers (the demoted shape) must NOT
+    // resolve a target — only the open engagement can.
+    await writeContextJson(cwdRoot, {
+      repository: '/repo',
+      branch: 'feat/x',
+      worktreePath: '/repo/.worktrees/x',
+      sessionId: 'sess-abc',
+    });
 
     await expect(
-      resolveAssignmentTarget(undefined, { cwd: cwdRoot, dir: projectsDir }),
-    ).rejects.toThrow(/neither assignmentDir nor projectSlug/);
+      resolveAssignmentTarget(undefined, {
+        cwd: cwdRoot,
+        dir: projectsDir,
+        resolveEngagement: async () => null,
+      }),
+    ).rejects.toThrow(/No open engagement/);
   });
 });

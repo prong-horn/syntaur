@@ -2,6 +2,9 @@ import { resolve, relative, dirname } from 'node:path';
 import { copyFile, mkdir, realpath, rm, stat, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { resolveAssignmentTarget } from '../utils/assignment-target.js';
+import { resolveSessionEngagement } from '../utils/engagement-binding.js';
+import { assertMayMutate } from '../utils/session-id.js';
+import { initSessionDb } from '../dashboard/session-db.js';
 import { proofDir } from '../utils/paths.js';
 import {
   generateArtifactId,
@@ -66,6 +69,38 @@ function isUniqueConstraintError(err: unknown): boolean {
   if (e.code === 'SQLITE_CONSTRAINT_PRIMARYKEY' || e.code === 'SQLITE_CONSTRAINT_UNIQUE') return true;
   if (e.code === 'SQLITE_CONSTRAINT' && /UNIQUE|PRIMARY KEY/i.test(e.message ?? '')) return true;
   return false;
+}
+
+/**
+ * Resolve the capture's artifact-filing target with ambient-vs-targeted
+ * semantics. An explicit target (positional / `--project`) files the artifact
+ * against B via Cases 1/2; with no explicit target it files against the
+ * session's OPEN engagement A. Capture NEVER opens or switches an engagement and
+ * never charges tokens — interval-based usage attribution (usage/session-join)
+ * charges whichever engagement is open (the ambient A), so filing against an
+ * explicit B leaves token/stage attribution on A. The mutation is gated:
+ * a WEAK-provenance session with no explicit selector is refused
+ * (fail-with-selector), per the no-session/ambiguous acceptance criterion.
+ */
+async function resolveCaptureTarget(
+  target: string | undefined,
+  options: CaptureOptions,
+): Promise<ResolvedAssignment> {
+  const cwd = options.cwd ?? process.cwd();
+  // getOpenEngagement reads the session DB; ensure it is open (idempotent).
+  initSessionDb();
+  const se = await resolveSessionEngagement(cwd);
+  if (se) {
+    assertMayMutate(se.session, {
+      hasSelector: Boolean(target) || Boolean(options.project),
+    });
+  }
+  return resolveAssignmentTarget(target, {
+    project: options.project,
+    dir: options.dir,
+    cwd,
+    resolveEngagement: async () => se?.open ?? null,
+  });
 }
 
 export async function captureCommand(
@@ -159,11 +194,7 @@ export async function captureCommand(
   // --start branch: spawn ffmpeg, write pidfile + sidecar, return. No DB row
   // is created here; --stop owns the artifact insertion.
   if (options.start) {
-    const resolvedStart = await resolveAssignmentTarget(target, {
-      project: options.project,
-      dir: options.dir,
-      cwd: options.cwd,
-    });
+    const resolvedStart = await resolveCaptureTarget(target, options);
     if (!resolvedStart.id || resolvedStart.id.trim() === '') {
       throw new Error(
         `Resolved assignment is missing a frontmatter \`id\`: ${resolvedStart.assignmentDir}. Cannot record artifact.`,
@@ -241,12 +272,9 @@ export async function captureCommand(
       await rm(mp4TmpDir, { recursive: true, force: true }).catch(() => {});
     };
   } else {
-    // Resolve assignment target (--project + slug, bare UUID, or context.json fallback).
-    resolved = await resolveAssignmentTarget(target, {
-      project: options.project,
-      dir: options.dir,
-      cwd: options.cwd,
-    });
+    // Resolve the artifact-filing target: explicit (--project + slug / bare UUID)
+    // files against B; ambient files against the session's open engagement A.
+    resolved = await resolveCaptureTarget(target, options);
   }
 
   // Validate --file before copying anything.

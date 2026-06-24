@@ -32,7 +32,7 @@ Respect file ownership boundaries. The Claude Code and Codex plugins enforce the
    - `~/.syntaur/projects/<project>/resources/<slug>.md`
    - `~/.syntaur/projects/<project>/memories/<slug>.md`
 3. **Workspace files** inside the assignment's configured `workspace.worktreePath` / `workspace.repository`.
-4. **Context file:** `.syntaur/context.json` in the current working directory.
+4. **Workspace marker:** `.syntaur/context.json` in the current working directory (repository/branch/worktree markers plus legacy session/lease bookkeeping — not the active-assignment source of truth).
 
 ### Files written only via CLI (never edit directly)
 
@@ -51,16 +51,18 @@ Per-project `agent.md` / `claude.md` do NOT exist in protocol v2.0. Agent-level 
 
 ## Current Assignment Context
 
-If `.syntaur/context.json` exists in the current working directory, read it before making changes. Fields you will see:
+The **active assignment** is resolved from the session's OPEN engagement — the assignment this session is currently bound to (established by `syntaur track-session`). It is NOT read from `.syntaur/context.json`. To learn the active assignment, run `syntaur session resume` (or `--json`); to bind a different one, `grab-assignment` (which calls `track-session`).
 
-- `projectSlug` — containing project slug (`null` for standalone assignments)
-- `assignmentSlug` — assignment slug (for standalone, the UUID is the folder name; slug is display-only)
-- `projectDir` — absolute path to the project folder (`null` for standalone)
-- `assignmentDir` — absolute path to the assignment folder
+`.syntaur/context.json` is a WORKSPACE MARKER file — it identifies the workspace directory and carries legacy session and resource-lease bookkeeping. It is NOT authoritative for the active assignment. Read it for workspace markers and leases; do NOT treat `projectSlug` / `assignmentSlug` / `assignmentDir` as the active-assignment source of truth (any such scalars are non-authoritative legacy hints). Fields you may see:
+
+- `repository` — workspace repository (path or remote URL)
+- `branch` — workspace branch, if known
+- `worktreePath` — absolute path to the worktree, if this workspace is a worktree
 - `workspaceRoot` — absolute path to the code workspace
-- `sessionId` — real agent-runtime session id (never a synthesized UUID)
+- `sessionId` — real agent-runtime session id (legacy hint; never a synthesized UUID, and a co-tenant can clobber it — not authoritative for identity)
 - `transcriptPath` — absolute path to the agent's rollout/transcript file, if known
 - `leases` — array of active resource-lease records (managed by `/claim-resource` and `/release-resource`). Entry shape: `{ lease_id, inventory_slug, member_id, expires_at, metadata, claimed_at }`. Leases are NOT auto-released on session end or assignment completion in v1 — call `/release-resource` explicitly (or let the TTL expire).
+- `bundleId` and related bundle fields — present when this workspace is bound to a todo bundle (managed by the bundle skills).
 
 ## Required Reading Order
 

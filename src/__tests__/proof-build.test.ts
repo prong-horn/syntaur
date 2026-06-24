@@ -14,21 +14,34 @@ import {
   initProofDb,
   insertArtifact,
 } from '../db/proof-db.js';
+import {
+  initSessionDb,
+  closeSessionDb,
+  resetSessionDb,
+} from '../dashboard/session-db.js';
+import { openEngagement } from '../db/engagement-db.js';
 
 let testDir: string;
 let origSyntaurHome: string | undefined;
+let origSessionEnv: string | undefined;
 
 beforeEach(async () => {
   testDir = await mkdtemp(join(tmpdir(), 'syntaur-proof-build-test-'));
   origSyntaurHome = process.env.SYNTAUR_HOME;
   process.env.SYNTAUR_HOME = testDir;
+  origSessionEnv = process.env.CLAUDE_CODE_SESSION_ID;
   resetProofDb();
+  resetSessionDb();
 });
 
 afterEach(async () => {
   closeProofDb();
+  closeSessionDb();
+  resetSessionDb();
   if (origSyntaurHome === undefined) delete process.env.SYNTAUR_HOME;
   else process.env.SYNTAUR_HOME = origSyntaurHome;
+  if (origSessionEnv === undefined) delete process.env.CLAUDE_CODE_SESSION_ID;
+  else process.env.CLAUDE_CODE_SESSION_ID = origSessionEnv;
   await rm(testDir, { recursive: true, force: true });
 });
 
@@ -388,7 +401,7 @@ describe('proofBuildCommand', () => {
     expect(html).not.toMatch(/SENSITIVE/);
   });
 
-  it('builds against a standalone (UUID) assignment via .syntaur/context.json', async () => {
+  it('builds against a standalone (UUID) assignment via the session open engagement', async () => {
     const id = 'aaaaaaaa-bbbb-cccc-dddd-111111111111';
     const standaloneDir = resolve(testDir, 'assignments', id);
     await mkdir(standaloneDir, { recursive: true });
@@ -414,19 +427,37 @@ describe('proofBuildCommand', () => {
       ].join('\n'),
     );
 
-    const workingDir = resolve(testDir, 'work');
-    await mkdir(resolve(workingDir, '.syntaur'), { recursive: true });
-    await writeFile(
-      resolve(workingDir, '.syntaur', 'context.json'),
-      JSON.stringify({ assignmentDir: standaloneDir }),
-    );
-
-    await captureCommand(undefined, {
-      kind: 'text',
-      note: 'standalone-build',
-      cwd: workingDir,
-      dir: testDir,
+    // No positional + no --project: proofBuildCommand resolves the target from
+    // the session's OPEN engagement (the demoted context.json scalar is gone).
+    // Drive the seam by (a) injecting a deterministic session id so
+    // resolveOwnSessionId resolves it from env (layer 2), and (b) seeding an
+    // open engagement bound to this standalone assignment.
+    const sessionId = 'sess-proof-standalone';
+    process.env.CLAUDE_CODE_SESSION_ID = sessionId;
+    initSessionDb(resolve(testDir, 'syntaur.db'));
+    openEngagement({
+      sessionId,
+      assignmentId: id,
+      projectSlug: null,
+      assignmentSlug: id,
+      stage: 'implement',
+      startedAt: '2026-04-20T00:00:00Z',
     });
+
+    // Inject a proof artifact directly (the capture path is rewired separately).
+    initProofDb();
+    insertArtifact({
+      id: 'standalone-art',
+      assignmentId: id,
+      assignmentDir: standaloneDir,
+      criterionIndex: null,
+      kind: 'text',
+      filePath: null,
+      note: 'standalone-build',
+    });
+
+    const workingDir = resolve(testDir, 'work');
+    await mkdir(workingDir, { recursive: true });
 
     const result = await proofBuildCommand(undefined, { cwd: workingDir, dir: testDir });
     const md = await readFile(result.mdPath, 'utf-8');

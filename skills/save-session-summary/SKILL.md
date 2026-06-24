@@ -26,11 +26,11 @@ mid-assignment continuity** — distinct from `handoff.md`, which is the
 
 ## Step 1: Load Context
 
-Read `.syntaur/context.json` from the current working directory.
+The active assignment is resolved from the session's open engagement. Run `syntaur session resume --json` to read it.
 
-If the file does not exist, tell the user: "No active assignment found. Run `grab-assignment` first." and stop.
+If there is no open engagement (no active assignment), tell the user: "No active assignment for this session — grab one first." and stop. `.syntaur/context.json` is only a workspace marker; do not read the assignment from it.
 
-Extract:
+From the resolved engagement, note:
 - `assignmentDir` (absolute path) — required.
 
 **Do not read the session id from `context.json` for identity.** That scalar is
@@ -86,7 +86,7 @@ printf '%s' "$BODY" | syntaur session save
 # Pass --session-id <id> only to override (e.g. you already have $CLAUDE_CODE_SESSION_ID).
 ```
 
-Resolves the active assignment from `.syntaur/context.json` (or pass
+Resolves the active assignment from the session's open engagement (or pass
 `--assignment <slug> [--project <slug>]`). `--session-id` now defaults to the
 **resolved** session (env → process tree → transcript), falling back to the
 `context.json` hint only as a last resort — so a co-tenant that clobbered the

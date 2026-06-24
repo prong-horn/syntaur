@@ -3,8 +3,37 @@ import { mkdtemp, rm, readFile, writeFile, mkdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { spawn } from 'node:child_process';
+import {
+  initSessionDb,
+  closeSessionDb,
+  resetSessionDb,
+} from '../dashboard/session-db.js';
+import { openEngagement } from '../db/engagement-db.js';
 
 const CLI_ENTRY = resolve(__dirname, '..', '..', 'bin', 'syntaur.js');
+
+/**
+ * Seed an OPEN engagement in `$SYNTAUR_HOME/syntaur.db` bound to project `p` /
+ * assignment `a`, so a spawned `session save` whose session resolves to
+ * `sessionId` (STRONG via injected CLAUDE_CODE_SESSION_ID) targets that
+ * assignment with no explicit --assignment flag. The demoted context.json
+ * assignment scalars are no longer a resolution source — the open engagement is.
+ */
+function seedOpenEngagement(home: string, sessionId: string): void {
+  resetSessionDb();
+  initSessionDb(resolve(home, 'syntaur.db'));
+  try {
+    openEngagement({
+      sessionId,
+      assignmentId: 'x',
+      projectSlug: 'p',
+      assignmentSlug: 'a',
+      startedAt: '2026-01-01T00:00:00Z',
+    });
+  } finally {
+    closeSessionDb();
+  }
+}
 
 interface RunResult { code: number; stdout: string; stderr: string }
 
@@ -116,7 +145,9 @@ describe('syntaur session save', () => {
   it('resolves the caller\'s OWN id from env, not a clobbered context.json scalar (the reported bug)', async () => {
     // Co-tenant scenario: agent B started in the same workspace and clobbered
     // the shared scalar to 'B'. Agent A (this process, env=A) returns and saves.
-    // A's summary must land under A, never the clobbered B.
+    // A's summary must land under A, never the clobbered B. The assignment is
+    // resolved from A's OPEN engagement, not the demoted context.json scalar.
+    seedOpenEngagement(home, 'A');
     await mkdir(resolve(home, '.syntaur'), { recursive: true });
     await writeFile(
       resolve(home, '.syntaur', 'context.json'),
@@ -132,8 +163,41 @@ describe('syntaur session save', () => {
     expect(await fileExists(resolve(assignmentDir, 'sessions', 'B', 'summary.md'))).toBe(false);
   });
 
-  it('rejects a legacy context.json hint with no --assignment (WEAK gate)', async () => {
-    // New behavior: WEAK provenance (legacy scalar) requires an explicit --assignment.
+  it('resolves the assignment from the session OPEN engagement when no --assignment is given', async () => {
+    // The demoted context.json assignment scalars are NOT consulted; the target
+    // comes from the session's open engagement (STRONG provenance via env).
+    seedOpenEngagement(home, 'eng-1');
+    const r = await runCli(['session', 'save'], home, 'From engagement.', {
+      CLAUDE_CODE_SESSION_ID: 'eng-1',
+    });
+    expect(r.code, r.stderr).toBe(0);
+    const summary = await readFile(resolve(assignmentDir, 'sessions', 'eng-1', 'summary.md'), 'utf-8');
+    expect(summary).toContain('assignment: a');
+    expect(summary).toContain('From engagement.');
+  });
+
+  it('errors pointing at --assignment when there is no open engagement and no --assignment', async () => {
+    // No engagement seeded: the resolver must not fall back to the demoted
+    // context.json assignment scalar — it fails with a selector hint instead.
+    await mkdir(resolve(home, '.syntaur'), { recursive: true });
+    await writeFile(
+      resolve(home, '.syntaur', 'context.json'),
+      JSON.stringify({ assignmentDir, assignmentSlug: 'a', projectSlug: 'p' }),
+      'utf-8',
+    );
+    const r = await runCli(['session', 'save'], home, 'orphan body', {
+      CLAUDE_CODE_SESSION_ID: 'no-engagement',
+    });
+    expect(r.code).not.toBe(0);
+    expect(r.stderr).toMatch(/No open engagement/);
+    expect(r.stderr).toMatch(/--assignment/);
+  });
+
+  it('refuses to resolve the target from a legacy context.json scalar (no engagement)', async () => {
+    // The demoted context.json assignment scalars (assignmentDir/assignmentSlug/
+    // projectSlug) are no longer a resolution source. With no open engagement and
+    // no --assignment, `session save` must fail with a selector hint rather than
+    // bind to the context scalar.
     await mkdir(resolve(home, '.syntaur'), { recursive: true });
     await writeFile(
       resolve(home, '.syntaur', 'context.json'),

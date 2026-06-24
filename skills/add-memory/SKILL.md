@@ -32,8 +32,9 @@ file-ownership protocol.
 
 ## Step 1: Resolve project
 
-If `.syntaur/context.json` is present and has `projectSlug`, default to that.
-Otherwise ask the user which project to add the memory to.
+If the session has an open engagement with an active assignment (`syntaur
+session resume --json`), default to its `projectSlug`. Otherwise ask the user
+which project to add the memory to.
 
 ## Step 2: Gather inputs
 

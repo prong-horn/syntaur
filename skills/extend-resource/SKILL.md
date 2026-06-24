@@ -25,9 +25,9 @@ Examples:
 
 Extract `<lease_id>` (first positional) and `--ttl <duration>` (required). If either is missing, abort with a usage message and a hint to call `/list-resources` to see active leases.
 
-### Step 2: Pre-check assignment context
+### Step 2: Pre-check workspace context
 
-Read `.syntaur/context.json` from the current working directory. If the file is missing, OR has neither `sessionId` nor any of `projectSlug`/`assignmentSlug`/`assignmentDir`, abort with:
+Read `.syntaur/context.json` (a workspace marker) from the current working directory. If the file is missing, OR carries no workspace markers (`repository`/`branch`/`worktreePath`/`workspaceRoot`) and no `sessionId`, abort with:
 
 > "No active Syntaur context in this workspace. Grab an assignment first (`/grab-assignment <project> <slug>`) or restart the session so the SessionStart hook can populate `.syntaur/context.json`."
 

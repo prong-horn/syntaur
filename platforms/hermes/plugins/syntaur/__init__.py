@@ -57,6 +57,24 @@ def _dashboard_port():
         return "4800"
 
 
+def _resolve_boundary(cwd, session_id=None):
+    """Resolve the write boundary {assignmentDir, projectDir, workspaceRoot} from
+    the session's OPEN engagement via the CLI. context.json is a workspace marker
+    now — the active assignment lives on the engagement, so the enforcer can no
+    longer read assignmentDir/projectDir straight from the file. Returns {} on any
+    failure, which makes is_write_allowed fall back to workspace-only enforcement
+    (never fail-open)."""
+    argv = ["syntaur", "session", "boundary", "--json", "--cwd", cwd]
+    if session_id:
+        argv += ["--session-id", session_id]
+    try:
+        out = subprocess.run(argv, capture_output=True, text=True, timeout=3)
+        data = json.loads(out.stdout or "{}")
+        return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
+
+
 def _log_violation(reason):
     try:
         sys.stderr.write("[syntaur] " + reason + "\n")
@@ -80,7 +98,14 @@ def _on_pre_tool_call(tool_name=None, args=None, task_id=None, **kwargs):
         cwd = os.getcwd()
         ctx = boundary.load_context(cwd)
         if not ctx:
-            return None
+            return None  # no .syntaur/context.json → not in a workspace → allow
+        # Resolve the real assignment/project boundary from the session's open
+        # engagement and merge it over the workspace markers in context.json.
+        # If nothing resolves, is_write_allowed enforces workspace-only.
+        resolved = _resolve_boundary(cwd, ctx.get("sessionId"))
+        for k in ("assignmentDir", "projectDir", "workspaceRoot"):
+            if resolved.get(k):
+                ctx[k] = resolved[k]
         abs_path = path if os.path.isabs(path) else os.path.join(cwd, path)
         context_file = os.path.join(cwd, ".syntaur", "context.json")
         allowed, reason = boundary.is_write_allowed(abs_path, ctx, context_file)
@@ -129,8 +154,9 @@ def _make_command_handler(cmd):
             except Exception as exc:
                 return "Failed to run syntaur %s: %s" % (" ".join(cmd["argv"]), exc)
         return (
-            'Follow the Syntaur "%s" skill (installed via skills). It derives the active '
-            "assignment/session from .syntaur/context.json." % cmd["skill"]
+            'Follow the Syntaur "%s" skill (installed via skills). It resolves the active '
+            "assignment from the session's open engagement (.syntaur/context.json is a "
+            "workspace marker)." % cmd["skill"]
         )
 
     return handler

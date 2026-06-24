@@ -19,11 +19,11 @@ Optional: the user may pass `--complete` to transition directly to `completed` i
 
 ## Step 1: Load Context
 
-Read `.syntaur/context.json` from the current working directory.
+The active assignment is resolved from the session's open engagement. Run `syntaur session resume --json` to read it.
 
-If the file does not exist, tell the user: "No active assignment found. Run `grab-assignment` first."
+If there is no open engagement (no active assignment), tell the user: "No active assignment for this session — grab one first." `.syntaur/context.json` is only a workspace marker; do not read the assignment from it.
 
-Extract: `projectSlug`, `assignmentSlug`, `assignmentDir`, `projectDir`.
+From the resolved engagement, note: `projectSlug`, `assignmentSlug`, `assignmentDir`, `projectDir`.
 
 ## Step 2: Load Playbooks
 

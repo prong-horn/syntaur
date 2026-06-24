@@ -94,13 +94,16 @@ describe('launchAgent end-to-end (sandbox HOME, /bin/echo as agent)', () => {
     const ctx = JSON.parse(
       await readFile(resolve(workspaceDir, '.syntaur', 'context.json'), 'utf-8'),
     );
+    // context.json is a WORKSPACE MARKER now — it carries workspace fields, NOT
+    // the active-assignment scalars (those resolve from the session engagement).
     expect(ctx).toMatchObject({
-      projectSlug: 'demo',
-      assignmentSlug: 'demo-task',
       workspaceRoot: workspaceDir,
       branch: 'demo-branch',
-      title: 'Demo task',
     });
+    expect(ctx.projectSlug).toBeUndefined();
+    expect(ctx.assignmentSlug).toBeUndefined();
+    expect(ctx.assignmentDir).toBeUndefined();
+    expect(ctx.title).toBeUndefined();
     // No fallback warning when both worktreePath and branch are set
     const warningCalls = warnSpy.mock.calls
       .map((c) => String(c[0] ?? ''))

@@ -3,6 +3,7 @@ import { readFile, writeFile, rename, stat } from 'node:fs/promises';
 import { resolve, relative, isAbsolute, dirname } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { resolveAssignmentTarget } from '../utils/assignment-target.js';
+import { resolveEngagementBinding } from '../utils/engagement-binding.js';
 import { parseAcceptanceCriteria } from '../utils/acceptance-criteria-parse.js';
 import { fileExists } from '../utils/fs.js';
 import { proofDir } from '../utils/paths.js';
@@ -167,10 +168,12 @@ export async function proofBuildCommand(
   target: string | undefined,
   options: ProofBuildOptions = {},
 ): Promise<{ htmlPath: string; mdPath: string }> {
+  const cwd = options.cwd ?? process.cwd();
   const resolved = await resolveAssignmentTarget(target, {
     project: options.project,
     dir: options.dir,
-    cwd: options.cwd,
+    cwd,
+    resolveEngagement: () => resolveEngagementBinding(cwd),
   });
 
   const meta = await readAssignmentMeta(resolved.assignmentDir);
@@ -219,7 +222,7 @@ export const proofCommand = new Command('proof').description('Render proof artif
 proofCommand
   .command('build')
   .description('Render proof.html and proof.md for an assignment')
-  .argument('[target]', 'Assignment slug (with --project) or UUID; falls back to .syntaur/context.json')
+  .argument('[target]', 'Assignment slug (with --project) or UUID; defaults to the session open engagement')
   .option('--project <slug>', 'Project slug if the target is project-nested')
   .option('--dir <path>', 'Override default project directory')
   .action(async (target: string | undefined, options: ProofBuildOptions) => {

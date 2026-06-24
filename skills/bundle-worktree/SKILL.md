@@ -45,9 +45,9 @@ The computed worktree path is **always**
 
 ## Step 2: Pre-flight
 
-- Confirm `.syntaur/context.json` is a bundle context (has `bundleId`,
-  no assignment fields). If it's an assignment context, stop and tell the
-  user to `/grab-bundle <id>` first.
+- Confirm `.syntaur/context.json` is a bundle context (has `bundleId`). If the
+  session is instead bound to an assignment (an open engagement) with no
+  `bundleId`, stop and tell the user to `/grab-bundle <id>` first.
 - Confirm `<repository>/.git` exists.
 - Confirm the branch does NOT already exist. If it does, the CLI will
   surface a `GitWorktreeError` — surface that verbatim.

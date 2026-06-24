@@ -4,6 +4,8 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { spawn } from 'node:child_process';
 import { parseAssignmentFrontmatter } from '../lifecycle/frontmatter.js';
+import { initSessionDb, resetSessionDb } from '../dashboard/session-db.js';
+import { openEngagement } from '../db/engagement-db.js';
 
 const CLI_ENTRY = resolve(__dirname, '..', '..', 'bin', 'syntaur.js');
 const REPO_ROOT = resolve(__dirname, '..', '..');
@@ -62,6 +64,26 @@ async function setup(withMarker: boolean): Promise<Ctx> {
   const aPath = join(aDir, 'assignment.md');
   await writeFile(aPath, ASSIGNMENT);
   if (withMarker) await writeFile(join(home, 'derive-migrated'), '2026-06-17T00:00:00Z\n');
+
+  // Seed the session DB the hook subprocess reads ($SYNTAUR_HOME/syntaur.db):
+  // open an engagement for session 'abc' (the payload's session_id) bound to the
+  // assignment. recompute is keyed on this engagement via --session-id — the
+  // open-else-latest read recovers it even after the hook's `session stop`
+  // closes it. resetSessionDb()/close so the file flushes and the subprocess
+  // opens it fresh. The not-migrated test also seeds it, so the ONLY thing
+  // gating recompute there is the missing --if-migrated marker, not the target.
+  const dbPath = resolve(home, 'syntaur.db');
+  const db = initSessionDb(dbPath);
+  openEngagement({
+    sessionId: 'abc',
+    assignmentId: 'hook-test-id',
+    projectSlug: 'p1',
+    assignmentSlug: 'hook-test',
+    stage: 'implement',
+    startedAt: '2026-06-18T00:00:00Z',
+  });
+  db.close();
+  resetSessionDb();
 
   const workspace = await mkdtemp(join(tmpdir(), 'syntaur-hookws-'));
   await mkdir(join(workspace, '.syntaur'), { recursive: true });

@@ -31,19 +31,6 @@ if [ ! -f "$CONTEXT_FILE" ]; then
   exit 0
 fi
 
-# Keep derived status fresh on session end — CLI-direct (NO dashboard
-# dependency, unlike the session-stop PATCH below), migration-gated, and bounded
-# (~3s; no `timeout` on stock macOS). Best-effort; never blocks teardown.
-if command -v syntaur >/dev/null 2>&1; then
-  ( cd "$CWD" 2>/dev/null && syntaur recompute --if-migrated >/dev/null 2>&1 ) &
-  syntaur_rc_pid=$!
-  ( sleep 3; kill -KILL "$syntaur_rc_pid" 2>/dev/null ) >/dev/null 2>&1 &
-  syntaur_rc_killer=$!
-  wait "$syntaur_rc_pid" 2>/dev/null || true
-  kill -KILL "$syntaur_rc_killer" 2>/dev/null
-  wait "$syntaur_rc_killer" 2>/dev/null || true
-fi
-
 RUNTIME_DIR="${SYNTAUR_RUNTIME_SESSIONS_DIR:-$HOME/.syntaur/runtime/sessions}"
 
 # Walk the ancestor-pid chain reading runtime markers. Returns the nearest
@@ -84,6 +71,26 @@ resolve_session_from_markers() {
 }
 
 SESSION_ID=$(resolve_session_from_markers || true)
+
+# Keep derived status fresh on session end — keyed on the ending session's EXACT
+# id (the marker-resolved id, else the stdin id for runtimes that provide one).
+# Skip when NEITHER resolves, rather than fall back to ambiguous cwd own-session
+# resolution that could recompute the WRONG assignment in a shared worktree.
+# Runs BEFORE the stop PATCH below, so the engagement is still open. CLI-direct
+# (no dashboard), migration-gated, bounded (~3s; no `timeout` on stock macOS).
+STDIN_SID=$(echo "$INPUT" | jq -r '.session_id // empty' 2>/dev/null)
+RECOMPUTE_SID="${SESSION_ID:-$STDIN_SID}"
+if [ -n "$RECOMPUTE_SID" ] && command -v syntaur >/dev/null 2>&1; then
+  ( cd "$CWD" 2>/dev/null && \
+    syntaur recompute --if-migrated --session-id "$RECOMPUTE_SID" >/dev/null 2>&1 ) &
+  syntaur_rc_pid=$!
+  ( sleep 3; kill -KILL "$syntaur_rc_pid" 2>/dev/null ) >/dev/null 2>&1 &
+  syntaur_rc_killer=$!
+  wait "$syntaur_rc_pid" 2>/dev/null || true
+  kill -KILL "$syntaur_rc_killer" 2>/dev/null
+  wait "$syntaur_rc_killer" 2>/dev/null || true
+fi
+
 MISSION_SLUG=$(jq -r '.projectSlug // empty' "$CONTEXT_FILE" 2>/dev/null)
 
 # No EXACT id — do not risk stopping the wrong co-tenant session.

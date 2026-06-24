@@ -1,7 +1,8 @@
 import { spawnSync } from 'node:child_process';
 import { dirname, join, resolve } from 'node:path';
-import { cp, mkdir, readFile } from 'node:fs/promises';
+import { cp, mkdir } from 'node:fs/promises';
 import { fileExists } from '../utils/fs.js';
+import { resolveEngagementBinding } from '../utils/engagement-binding.js';
 import { isSyntaurDataInstalled } from '../utils/install.js';
 import { findPackageRoot } from '../utils/package-root.js';
 import { initCommand } from './init.js';
@@ -86,16 +87,26 @@ function isNpxAvailable(): boolean {
   }
 }
 
-interface AssignmentContext {
-  projectSlug?: string;
-  assignmentSlug?: string;
-}
-
-async function readAssignmentContext(): Promise<AssignmentContext | null> {
-  const p = resolve(process.cwd(), '.syntaur', 'context.json');
-  if (!(await fileExists(p))) return null;
+/**
+ * The project-nested assignment binding for the cwd session's OPEN engagement,
+ * sourced from the engagement edge (NOT the demoted context.json scalar).
+ * Returns null — degrading to the skip-Tier-2 path — when the session DB can't
+ * be initialized, the session has no open engagement, or the binding is
+ * standalone (no project slug). Install must never hard-fail just because no
+ * engagement/DB exists.
+ */
+async function readProjectNestedBinding(): Promise<{
+  projectSlug: string;
+  assignmentSlug: string;
+} | null> {
   try {
-    return JSON.parse(await readFile(p, 'utf-8')) as AssignmentContext;
+    // getOpenEngagement (via resolveEngagementBinding) reads the session-db
+    // connection, which throws if uninitialized. initSessionDb is idempotent.
+    const { initSessionDb } = await import('../dashboard/session-db.js');
+    initSessionDb();
+    const binding = await resolveEngagementBinding(process.cwd());
+    if (!binding?.projectSlug || !binding?.assignmentSlug) return null;
+    return { projectSlug: binding.projectSlug, assignmentSlug: binding.assignmentSlug };
   } catch {
     return null;
   }
@@ -214,8 +225,12 @@ export async function crossAgentInstallCommand(
   // --- Tier 2: protocol-instruction files (needs an assignment context) ---
   const adapterTargets = targets.filter((t) => t.instructions);
   if (adapterTargets.length > 0) {
-    const ctx = await readAssignmentContext();
-    const haveCtx = Boolean(ctx?.projectSlug && ctx?.assignmentSlug);
+    // The active project-nested assignment now comes from the cwd session's OPEN
+    // engagement, not the demoted context.json scalar. No open engagement (or a
+    // standalone binding with no project slug) → no project-nested context →
+    // skip Tier-2, exactly as before.
+    const binding = await readProjectNestedBinding();
+    const haveCtx = binding !== null;
 
     for (const t of adapterTargets) {
       if (dryRun) {
@@ -234,8 +249,8 @@ export async function crossAgentInstallCommand(
       }
       try {
         await setupAdapterCommand(t.id, {
-          project: ctx!.projectSlug!,
-          assignment: ctx!.assignmentSlug!,
+          project: binding!.projectSlug,
+          assignment: binding!.assignmentSlug,
           force,
         });
       } catch (err) {

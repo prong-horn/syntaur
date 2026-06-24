@@ -226,7 +226,13 @@ describe('scanSessions', () => {
     expect(row!.started).toBe('2026-06-11T08:00:00.000Z');
   });
 
-  it('links project/assignment from the workspace context.json (additive upsert)', async () => {
+  it('does NOT auto-bind project/assignment from the workspace context.json (unattributed)', async () => {
+    // Behavior change: the scanner no longer pulls projectSlug/assignmentSlug
+    // out of context.json to attribute a discovered session. That auto-binding
+    // clobbered the active assignment across co-located sessions. Discovered
+    // sessions stay unattributed until an explicit grab/track opens an
+    // engagement edge. The workspace marker still registers the session (the
+    // file existing is enough); only the scalar attribution is dropped.
     await mkdir(join(workspace, '.syntaur'), { recursive: true });
     await writeFile(
       join(workspace, '.syntaur', 'context.json'),
@@ -237,8 +243,9 @@ describe('scanSessions', () => {
     await scanSessions({ full: true }, deps());
 
     const row = getSessionById('claude-linked');
-    expect(row!.projectSlug).toBe('proj-x');
-    expect(row!.assignmentSlug).toBe('assn-y');
+    expect(row).not.toBeNull();
+    expect(row!.projectSlug).toBeNull();
+    expect(row!.assignmentSlug).toBeNull();
   });
 
   it('revives a stopped row to active on lsof live-process evidence', async () => {

@@ -29,15 +29,15 @@ Examples:
 
 Extract `<inventory_slug>` (required, first positional), plus optional `--ttl <duration>` and `--for <tag>`.
 
-### Step 2: Pre-check assignment context
+### Step 2: Pre-check workspace context
 
-Read `.syntaur/context.json` from the current working directory. If the file is missing, OR has neither `sessionId` nor any of `projectSlug`/`assignmentSlug`/`assignmentDir`, abort with:
+Read `.syntaur/context.json` (a workspace marker) from the current working directory. If the file is missing, OR carries no workspace markers (`repository`/`branch`/`worktreePath`/`workspaceRoot`) and no `sessionId`, abort with:
 
 > "No active Syntaur context in this workspace. Grab an assignment first (`/grab-assignment <project> <slug>`) or restart the session so the SessionStart hook can populate `.syntaur/context.json`."
 
 This guard exists because writing a leases-only context file would trip `syntaur doctor`'s workspace check.
 
-If `--for` was not provided, derive its value from the context: prefer `assignmentSlug` if present, otherwise `sessionId`.
+If `--for` was not provided, derive its value: prefer the active assignment's slug from the session's open engagement (`syntaur session resume --json`); otherwise fall back to the `sessionId` from the workspace marker.
 
 ### Step 3: Run the claim CLI
 

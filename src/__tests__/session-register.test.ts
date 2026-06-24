@@ -75,7 +75,11 @@ describe('runSessionRegister', () => {
     expect(getSessionById('real-session-1')!.pid).toBe(777);
   });
 
-  it('links project/assignment from an existing context.json and merges session fields into it', async () => {
+  it('registers an UNATTRIBUTED row even when context.json carries assignment scalars, but still merges session fields into context.json', async () => {
+    // The SessionStart hook no longer auto-binds the assignment from the cwd
+    // context.json scalar (that cwd-scalar auto-bind is the
+    // multi-assignment-in-one-worktree clobber being eliminated). The row binds
+    // its assignment via the explicit grab flow / engagement edge, NOT here.
     await mkdir(join(cwd, '.syntaur'), { recursive: true });
     await writeFile(
       join(cwd, '.syntaur', 'context.json'),
@@ -93,14 +97,17 @@ describe('runSessionRegister', () => {
     expect(result.merged).toBe(true);
     expect(result.registered).toBe(true);
     const row = getSessionById('real-session-1');
-    expect(row!.projectSlug).toBe('proj-1');
-    expect(row!.assignmentSlug).toBe('assn-1');
+    // UNATTRIBUTED despite the context.json scalars.
+    expect(row!.projectSlug).toBeNull();
+    expect(row!.assignmentSlug).toBeNull();
 
+    // The context.json field-merge (sessionId/transcriptPath) still runs and
+    // still preserves the other marker fields.
     const ctx = JSON.parse(await readFile(join(cwd, '.syntaur', 'context.json'), 'utf-8'));
     expect(ctx.sessionId).toBe('real-session-1');
     expect(ctx.transcriptPath).toBe('/tmp/transcripts/real-session-1.jsonl');
     expect(ctx.branch).toBe('feat/x'); // other fields preserved
-    expect(ctx.projectSlug).toBe('proj-1');
+    expect(ctx.projectSlug).toBe('proj-1'); // context scalar untouched (markers, not auth)
   });
 
   it('nulls a stale transcriptPath when the payload omits transcript_path', async () => {
@@ -203,7 +210,9 @@ describe('runSessionRegister', () => {
 
     const result = await runSessionRegister(payload(), {}, { ...DEPS, autoTrack: 'workspaces-only' });
     expect(result.registered).toBe(true);
-    expect(getSessionById('real-session-1')!.projectSlug).toBe('p');
+    // The context.json presence gates the DB write, but the registered row is
+    // still UNATTRIBUTED — the binding does not come from the context scalar.
+    expect(getSessionById('real-session-1')!.projectSlug).toBeNull();
   });
 
   it('is idempotent — re-registration upserts onto the existing row', async () => {

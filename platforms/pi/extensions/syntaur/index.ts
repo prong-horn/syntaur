@@ -13,16 +13,28 @@
 // pi.registerCommand(name, { description, handler }) }`. The `tool_call` handler
 // returns `{ block: true, reason }` to DENY a tool call; any other return allows.
 
-import { readFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { existsSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { isAbsolute, resolve, sep } from 'node:path';
 
 export interface SyntaurContext {
-  assignmentDir?: string;
-  projectDir?: string;
+  /** Workspace marker; the only path scalar still authoritative in context.json. */
   workspaceRoot?: string;
   sessionId?: string;
   projectSlug?: string;
+}
+
+/**
+ * The resolved write boundary for a session — mirrors the CLI's
+ * `syntaur session boundary --json` contract. The assignment/project dirs come
+ * from the session's OPEN engagement (NOT context.json, whose assignment scalars
+ * were demoted). `workspaceRoot` is the context.json marker.
+ */
+export interface SyntaurBoundary {
+  assignmentDir?: string;
+  projectDir?: string;
+  workspaceRoot?: string;
 }
 
 /** Expand a leading `~` to the home dir (the only expansion the bash hooks do). */
@@ -32,7 +44,12 @@ function expandHome(p: string): string {
   return p;
 }
 
-/** Read `<cwd>/.syntaur/context.json`; null when absent/unparseable (fail-open). */
+/**
+ * Read `<cwd>/.syntaur/context.json`. context.json is now a WORKSPACE MARKER —
+ * this only surfaces `workspaceRoot` / `sessionId` / `projectSlug`. The active
+ * assignment/project dirs live on the session's engagement (resolveBoundary).
+ * null when absent/unparseable.
+ */
 export function loadContext(cwd: string): SyntaurContext | null {
   const file = resolve(cwd, '.syntaur', 'context.json');
   let raw: string;
@@ -49,15 +66,47 @@ export function loadContext(cwd: string): SyntaurContext | null {
   }
   const str = (v: unknown): string | undefined =>
     typeof v === 'string' && v.length > 0 ? v : undefined;
-  const assignmentDir = str(data.assignmentDir);
-  const projectDir = str(data.projectDir);
   const workspaceRoot = str(data.workspaceRoot);
+  return {
+    workspaceRoot: workspaceRoot ? expandHome(workspaceRoot) : undefined,
+    sessionId: str(data.sessionId),
+    projectSlug: str(data.projectSlug),
+  };
+}
+
+/** True iff `<cwd>/.syntaur/context.json` exists (the Syntaur-workspace marker). */
+export function hasContextFile(cwd: string): boolean {
+  return existsSync(resolve(cwd, '.syntaur', 'context.json'));
+}
+
+/**
+ * Resolve the write boundary from the session's OPEN engagement by shelling out
+ * to the same CLI the bash hooks call: `syntaur session boundary --json`. Returns
+ * a {} boundary (all-empty → workspace-only enforcement) on ANY failure — the CLI
+ * itself never throws, and a missing/old CLI must NOT fail open. Paths are
+ * `~`-expanded for parity with the bash hooks.
+ */
+export function resolveBoundary(cwd: string, sessionId?: string): SyntaurBoundary {
+  const args = ['session', 'boundary', '--json'];
+  if (sessionId) args.push('--session-id', sessionId);
+  let parsed: Record<string, unknown> = {};
+  try {
+    const r = spawnSync('syntaur', args, { cwd, encoding: 'utf-8', timeout: 5000 });
+    if (r.status === 0 && typeof r.stdout === 'string' && r.stdout.trim().length > 0) {
+      parsed = JSON.parse(r.stdout) as Record<string, unknown>;
+    }
+  } catch {
+    /* CLI missing / spawn error / unparseable → empty boundary (workspace-only) */
+  }
+  const str = (v: unknown): string | undefined =>
+    typeof v === 'string' && v.length > 0 ? v : undefined;
+  const assignmentDir = str(parsed.assignmentDir);
+  const projectDir = str(parsed.projectDir);
+  const workspaceRoot = str(parsed.workspaceRoot);
   return {
     assignmentDir: assignmentDir ? expandHome(assignmentDir) : undefined,
     projectDir: projectDir ? expandHome(projectDir) : undefined,
     workspaceRoot: workspaceRoot ? expandHome(workspaceRoot) : undefined,
-    sessionId: str(data.sessionId),
-    projectSlug: str(data.projectSlug),
   };
 }
 
@@ -76,31 +125,31 @@ function basename(p: string): string {
 }
 
 /**
- * Decide whether a write to `absFilePath` is allowed under the active assignment.
- * Mirrors `platforms/claude-code/hooks/enforce-boundaries.sh` exactly:
- *  - allow under assignmentDir
+ * Decide whether a write to `absFilePath` is allowed under the resolved boundary.
+ * Mirrors `platforms/claude-code/hooks/enforce-boundaries.sh`:
+ *  - allow under assignmentDir (if resolved)
  *  - allow under projectDir/resources/ and projectDir/memories/ EXCEPT derived `_*` files
  *  - allow the `.syntaur/context.json` file itself (caller passes cwd-resolved path)
  *  - allow under workspaceRoot (if set)
  *  - otherwise block
+ *
+ * CRITICAL: no fail-open. When the boundary has no assignment/project (no open
+ * engagement) but a workspace is known, only the workspace-root (and context
+ * file) gates can match → WORKSPACE-ONLY enforcement. Every `isUnder` check is
+ * already empty-safe (`isUnder` returns false for an empty parent).
  */
 export function isWriteAllowed(
   absFilePath: string,
-  ctx: SyntaurContext,
+  boundary: SyntaurBoundary,
   contextFileAbs?: string,
 ): { allowed: boolean; reason?: string } {
-  // Parity with the bash hook (enforce-boundaries.sh:69): enforcement requires
-  // BOTH assignmentDir and projectDir. If either is missing (standalone / old /
-  // partially-written context), fail OPEN — allow everything.
-  if (!ctx.assignmentDir || !ctx.projectDir) return { allowed: true };
-
   const file = resolve(absFilePath);
 
-  if (ctx.assignmentDir && isUnder(file, ctx.assignmentDir)) return { allowed: true };
+  if (boundary.assignmentDir && isUnder(file, boundary.assignmentDir)) return { allowed: true };
 
-  if (ctx.projectDir) {
-    const resourcesDir = resolve(ctx.projectDir, 'resources');
-    const memoriesDir = resolve(ctx.projectDir, 'memories');
+  if (boundary.projectDir) {
+    const resourcesDir = resolve(boundary.projectDir, 'resources');
+    const memoriesDir = resolve(boundary.projectDir, 'memories');
     for (const dir of [resourcesDir, memoriesDir]) {
       if (isUnder(file, dir) && !basename(file).startsWith('_')) return { allowed: true };
     }
@@ -108,12 +157,14 @@ export function isWriteAllowed(
 
   if (contextFileAbs && file === resolve(contextFileAbs)) return { allowed: true };
 
-  if (ctx.workspaceRoot && isUnder(file, ctx.workspaceRoot)) return { allowed: true };
+  if (boundary.workspaceRoot && isUnder(file, boundary.workspaceRoot)) return { allowed: true };
 
-  const reason =
-    `Syntaur write boundary violation: cannot write to '${file}'. Allowed: assignment dir ` +
-    `(${ctx.assignmentDir ?? 'n/a'}), project resources/memories, workspace ` +
-    `(${ctx.workspaceRoot ?? 'n/a'}).`;
+  const reason = boundary.assignmentDir
+    ? `Syntaur write boundary violation: cannot write to '${file}'. Allowed: assignment dir ` +
+      `(${boundary.assignmentDir}), project resources/memories, workspace ` +
+      `(${boundary.workspaceRoot ?? 'n/a'}).`
+    : `Syntaur write boundary violation: cannot write to '${file}'. No active assignment for ` +
+      `this session — writes are restricted to the workspace (${boundary.workspaceRoot ?? 'n/a'}).`;
   return { allowed: false, reason };
 }
 
@@ -229,11 +280,16 @@ export default function activate(pi: {
     const path = extractWritePath(e.toolName, e.input);
     if (!path) return; // not a write → allow
     const cwd = process.cwd();
+    // context.json presence is the Syntaur-workspace marker. Absent → not a
+    // Syntaur workspace → allow (unchanged). Present → enforce. The assignment
+    // boundary is resolved from the session's OPEN engagement via the CLI — NOT
+    // the demoted context.json scalars. No engagement → workspace-only.
+    if (!hasContextFile(cwd)) return; // not a Syntaur workspace → allow
     const ctx = loadContext(cwd);
-    if (!ctx) return; // no active assignment → allow
+    const boundary = resolveBoundary(cwd, ctx?.sessionId);
     const abs = resolveAbs(path, cwd);
     const contextFileAbs = resolve(cwd, '.syntaur', 'context.json');
-    const { allowed, reason } = isWriteAllowed(abs, ctx, contextFileAbs);
+    const { allowed, reason } = isWriteAllowed(abs, boundary, contextFileAbs);
     if (!allowed) return { block: true, reason };
     return undefined;
   });
@@ -249,7 +305,6 @@ export default function activate(pi: {
       description: cmd.description,
       handler: async (_args: string, ctx: unknown) => {
         if (cmd.kind === 'passthrough' && cmd.argv) {
-          const { spawnSync } = await import('node:child_process');
           const r = spawnSync('syntaur', cmd.argv, { encoding: 'utf-8' });
           notify(ctx, (r.stdout || '') + (r.stderr || '') || `ran: syntaur ${cmd.argv.join(' ')}`);
           return;

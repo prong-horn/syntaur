@@ -1,5 +1,6 @@
 import { Command } from 'commander';
 import { resolveAssignmentTarget } from '../utils/assignment-target.js';
+import { resolveEngagementBinding } from '../utils/engagement-binding.js';
 import { initEventsDb, listEventsByAssignment, type EventRow } from '../db/events-db.js';
 
 /** Parsed `syntaur timeline` options (commander populates these from the flags). */
@@ -11,6 +12,8 @@ export interface TimelineOptions {
   type?: string[];
   /** Max rows returned (default 50). */
   limit?: number;
+  /** Working directory used to resolve the session's open engagement (Case 3). */
+  cwd?: string;
 }
 
 const DEFAULT_LIMIT = 50;
@@ -31,7 +34,12 @@ export async function runTimeline(
   assignment: string,
   options: TimelineOptions = {},
 ): Promise<TimelineEvent[]> {
-  const resolved = await resolveAssignmentTarget(assignment, { project: options.project });
+  const cwd = options.cwd ?? process.cwd();
+  const resolved = await resolveAssignmentTarget(assignment, {
+    project: options.project,
+    cwd,
+    resolveEngagement: () => resolveEngagementBinding(cwd),
+  });
 
   initEventsDb();
   const rows = listEventsByAssignment(resolved.id, {

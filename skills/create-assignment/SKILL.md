@@ -30,9 +30,9 @@ Expects arguments from the user:
 
 If no title was provided, ask the user what the assignment should be called.
 
-If neither `--project` nor `--one-off` was provided, check `.syntaur/context.json` for an active assignment. If present, default `--project` to that context's `projectSlug` and confirm with the user: "Add this assignment to project `<projectSlug>`?"
+If neither `--project` nor `--one-off` was provided, check for an active assignment via the session's open engagement (`syntaur session resume --json`). If there is one, default `--project` to its `projectSlug` and confirm with the user: "Add this assignment to project `<projectSlug>`?"
 
-If no active context and no project flag, ask the user which project to add it to, or whether it should be a one-off.
+If there is no open engagement and no project flag, ask the user which project to add it to, or whether it should be a one-off.
 
 ## Step 1: Run the CLI
 

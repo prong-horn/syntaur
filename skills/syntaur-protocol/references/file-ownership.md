@@ -64,4 +64,4 @@ When working on code (not protocol files), you may write to files within the wor
 
 - `workspace.worktreePath` or `workspace.repository` defines your code root.
 - You may create and edit source files within that workspace.
-- The `.syntaur/context.json` context file in your working directory is also writable (merge, don't overwrite — the platform SessionStart hook may have populated `sessionId` and `transcriptPath`).
+- The `.syntaur/context.json` workspace-marker file in your working directory is also writable (merge, don't overwrite — the platform SessionStart hook may have populated `sessionId` and `transcriptPath`). It marks the workspace (repository/branch/worktree); it is not the active-assignment source of truth — the active assignment resolves from the session's open engagement.

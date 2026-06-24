@@ -19,9 +19,10 @@ the bundle's own to track, only the member todos.
 
 ## Step 1: Load context
 
-Read `.syntaur/context.json` from the current working directory. It must
-contain `bundleId` (a bundle context). If it instead has assignment fields,
-stop and tell the user: "Active context is an assignment, not a bundle.
+Read `.syntaur/context.json` (a workspace marker) from the current working
+directory. It must contain `bundleId` (a bundle context). If there is no
+`bundleId` but the session has an open engagement (an active assignment), stop
+and tell the user: "This session is bound to an assignment, not a bundle.
 Use `/plan-assignment` instead, or `/grab-bundle <id>` to switch."
 
 Extract `bundleId`, `bundleScope`, `bundleScopeId`, `todoIds`, `planDir`.

@@ -6,21 +6,9 @@ import { assignmentsDir } from '../utils/paths.js';
 import { readConfig } from '../utils/config.js';
 import { nowTimestamp } from '../utils/timestamp.js';
 import { formatProgressEntry, renderProgress } from '../templates/index.js';
-
-interface ContextFile {
-  assignmentDir?: string;
-  assignmentSlug?: string;
-}
-
-async function readContext(cwd: string): Promise<ContextFile | null> {
-  const path = resolve(cwd, '.syntaur', 'context.json');
-  if (!(await fileExists(path))) return null;
-  try {
-    return JSON.parse(await readFile(path, 'utf-8')) as ContextFile;
-  } catch {
-    return null;
-  }
-}
+import { resolveSessionEngagement } from '../utils/engagement-binding.js';
+import { resolveAssignmentTarget } from '../utils/assignment-target.js';
+import { assertMayMutate } from '../utils/session-id.js';
 
 async function resolveAssignmentDir(opts: {
   assignment?: string;
@@ -37,13 +25,21 @@ async function resolveAssignmentDir(opts: {
     }
     return { dir: resolve(assignmentsDir(), opts.assignment), slug: opts.assignment };
   }
-  const ctx = await readContext(opts.cwd);
-  if (ctx?.assignmentDir) {
-    return { dir: ctx.assignmentDir, slug: ctx.assignmentSlug ?? '' };
+  // No explicit target → resolve from the session's OPEN engagement and gate
+  // the mutation. context.json's assignment scalar is no longer a resolution
+  // source (it is a workspace marker only).
+  const { initSessionDb } = await import('../dashboard/session-db.js');
+  initSessionDb(); // idempotent; no-op if already open
+  const se = await resolveSessionEngagement(opts.cwd);
+  if (se) {
+    assertMayMutate(se.session, { hasSelector: false });
   }
-  throw new Error(
-    'No active assignment. Pass --assignment <slug> [--project <slug>] or run from a workspace with .syntaur/context.json.',
-  );
+  const target = await resolveAssignmentTarget(undefined, {
+    project: opts.project,
+    cwd: opts.cwd,
+    resolveEngagement: async () => se?.open ?? null,
+  });
+  return { dir: target.assignmentDir, slug: target.assignmentSlug };
 }
 
 /**
@@ -130,7 +126,7 @@ progressCommand
   .command('log')
   .description("Append a timestamped entry to the assignment's progress.md")
   .argument('<text>', 'Progress entry text')
-  .option('--assignment <slug>', 'Assignment slug (UUID for standalone). Defaults to .syntaur/context.json')
+  .option('--assignment <slug>', "Assignment slug (UUID for standalone). Defaults to the session's open engagement")
   .option('--project <slug>', 'Project slug. Required with --assignment for a project-nested assignment')
   .action(async (text: string, options: { assignment?: string; project?: string }) => {
     try {

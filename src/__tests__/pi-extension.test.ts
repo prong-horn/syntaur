@@ -1,15 +1,33 @@
 import { describe, it, expect } from 'vitest';
-import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
+import { mkdtemp, mkdir, writeFile, rm, chmod } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, delimiter } from 'node:path';
 import activate, {
   isWriteAllowed,
   extractWritePath,
   loadContext,
+  resolveBoundary,
   CORE_COMMANDS,
 } from '../../platforms/pi/extensions/syntaur/index';
 
-const CTX = {
+/**
+ * Install a fake `syntaur` on PATH that prints the given boundary JSON for
+ * `session boundary`, so `resolveBoundary` (which shells out) is hermetic and
+ * never invokes the real/global CLI. Returns the original PATH for restoration.
+ */
+async function withFakeSyntaur(binDir: string, boundaryJson: string): Promise<string> {
+  const script = `#!/usr/bin/env bash\nif [ "$1" = "session" ] && [ "$2" = "boundary" ]; then\n  echo '${boundaryJson}'\n  exit 0\nfi\nexit 0\n`;
+  const scriptPath = join(binDir, 'syntaur');
+  await writeFile(scriptPath, script);
+  await chmod(scriptPath, 0o755);
+  const prevPath = process.env.PATH ?? '';
+  process.env.PATH = binDir + delimiter + prevPath;
+  return prevPath;
+}
+
+// A fully-resolved boundary (assignment + project + workspace), as the CLI's
+// `session boundary` would emit for an open project-nested engagement.
+const BOUNDARY = {
   assignmentDir: '/work/assign',
   projectDir: '/proj',
   workspaceRoot: '/ws',
@@ -17,37 +35,52 @@ const CTX = {
 
 describe('pi extension — isWriteAllowed (mirrors the bash boundary hook)', () => {
   it('allows writes under the assignment dir', () => {
-    expect(isWriteAllowed('/work/assign/plan.md', CTX).allowed).toBe(true);
+    expect(isWriteAllowed('/work/assign/plan.md', BOUNDARY).allowed).toBe(true);
   });
   it('blocks writes outside every boundary', () => {
-    const r = isWriteAllowed('/etc/passwd', CTX);
+    const r = isWriteAllowed('/etc/passwd', BOUNDARY);
     expect(r.allowed).toBe(false);
     expect(r.reason).toMatch(/write boundary violation/);
   });
   it('allows project resources/memories but blocks derived _ files', () => {
-    expect(isWriteAllowed('/proj/resources/foo.md', CTX).allowed).toBe(true);
-    expect(isWriteAllowed('/proj/resources/_index.md', CTX).allowed).toBe(false);
-    expect(isWriteAllowed('/proj/memories/note.md', CTX).allowed).toBe(true);
-    expect(isWriteAllowed('/proj/memories/_index.md', CTX).allowed).toBe(false);
+    expect(isWriteAllowed('/proj/resources/foo.md', BOUNDARY).allowed).toBe(true);
+    expect(isWriteAllowed('/proj/resources/_index.md', BOUNDARY).allowed).toBe(false);
+    expect(isWriteAllowed('/proj/memories/note.md', BOUNDARY).allowed).toBe(true);
+    expect(isWriteAllowed('/proj/memories/_index.md', BOUNDARY).allowed).toBe(false);
   });
   it('allows writes under the workspace root', () => {
-    expect(isWriteAllowed('/ws/src/app.ts', CTX).allowed).toBe(true);
+    expect(isWriteAllowed('/ws/src/app.ts', BOUNDARY).allowed).toBe(true);
   });
   it('does NOT mis-allow a sibling with a shared prefix (/foo vs /foobar)', () => {
-    expect(isWriteAllowed('/work/assignment-other/x', CTX).allowed).toBe(false);
-    expect(isWriteAllowed('/ws-extra/x', CTX).allowed).toBe(false);
+    expect(isWriteAllowed('/work/assignment-other/x', BOUNDARY).allowed).toBe(false);
+    expect(isWriteAllowed('/ws-extra/x', BOUNDARY).allowed).toBe(false);
   });
   it('allows the context file itself', () => {
-    expect(isWriteAllowed('/cwd/.syntaur/context.json', CTX, '/cwd/.syntaur/context.json').allowed).toBe(
-      true,
-    );
+    expect(
+      isWriteAllowed('/cwd/.syntaur/context.json', BOUNDARY, '/cwd/.syntaur/context.json').allowed,
+    ).toBe(true);
   });
-  it('fails OPEN when required context fields are missing (bash parity)', () => {
-    // Mirror enforce-boundaries.sh:69 — enforcement needs BOTH assignmentDir and
-    // projectDir; a missing/partial context allows everything.
-    expect(isWriteAllowed('/anywhere', {}).allowed).toBe(true);
-    expect(isWriteAllowed('/anywhere', { assignmentDir: '/work/assign' }).allowed).toBe(true);
-    expect(isWriteAllowed('/anywhere', { projectDir: '/proj' }).allowed).toBe(true);
+
+  // The regression this rewrite fixes: NO fail-open. With no assignment/project
+  // resolved (no open engagement) the boundary degrades to WORKSPACE-ONLY — it
+  // must still BLOCK writes outside the workspace, not allow everything.
+  it('enforces WORKSPACE-ONLY when no assignment/project resolves (no fail-open)', () => {
+    const wsOnly = { workspaceRoot: '/ws' };
+    expect(isWriteAllowed('/ws/src/app.ts', wsOnly).allowed).toBe(true);
+    const blocked = isWriteAllowed('/etc/passwd', wsOnly);
+    expect(blocked.allowed).toBe(false);
+    expect(blocked.reason).toMatch(/No active assignment/);
+  });
+  it('blocks everything (except the context file) when the boundary is entirely empty', () => {
+    // No assignment, no project, no workspace → nothing matches but the context
+    // file gate. An EMPTY dir must NOT glob to "/" and allow the filesystem.
+    expect(isWriteAllowed('/anywhere', {}).allowed).toBe(false);
+    expect(isWriteAllowed('/anywhere', { assignmentDir: '/work/assign' }).allowed).toBe(false);
+    expect(isWriteAllowed('/work/assign/x', { assignmentDir: '/work/assign' }).allowed).toBe(true);
+    // The context file is still always writable even with an empty boundary.
+    expect(
+      isWriteAllowed('/cwd/.syntaur/context.json', {}, '/cwd/.syntaur/context.json').allowed,
+    ).toBe(true);
   });
 });
 
@@ -86,18 +119,22 @@ describe('pi extension — CORE_COMMANDS shape', () => {
 });
 
 describe('pi extension — loadContext + activate registration', () => {
-  it('loadContext reads .syntaur/context.json and null when absent', async () => {
+  it('loadContext reads ONLY workspace markers (assignment scalars demoted) and null when absent', async () => {
     const tmp = await mkdtemp(join(tmpdir(), 'pi-ctx-'));
     try {
       expect(loadContext(tmp)).toBeNull();
       await mkdir(join(tmp, '.syntaur'), { recursive: true });
       await writeFile(
         join(tmp, '.syntaur', 'context.json'),
-        JSON.stringify({ assignmentDir: '/a', sessionId: 's1', projectSlug: 'p' }),
+        // assignmentDir is a demoted scalar — loadContext must NOT surface it.
+        JSON.stringify({ assignmentDir: '/a', workspaceRoot: '/ws', sessionId: 's1', projectSlug: 'p' }),
       );
       const ctx = loadContext(tmp);
-      expect(ctx?.assignmentDir).toBe('/a');
       expect(ctx?.sessionId).toBe('s1');
+      expect(ctx?.workspaceRoot).toBe('/ws');
+      expect(ctx?.projectSlug).toBe('p');
+      // The demoted assignment scalar is no longer part of SyntaurContext.
+      expect((ctx as Record<string, unknown>).assignmentDir).toBeUndefined();
     } finally {
       await rm(tmp, { recursive: true, force: true });
     }
@@ -123,9 +160,16 @@ describe('pi extension — loadContext + activate registration', () => {
     const assignmentDir = join(tmp, 'assign');
     await mkdir(assignmentDir, { recursive: true });
     await mkdir(join(tmp, '.syntaur'), { recursive: true });
+    // context.json is the workspace MARKER only; the assignment boundary is
+    // resolved from the engagement via the (faked) `syntaur session boundary`.
     await writeFile(
       join(tmp, '.syntaur', 'context.json'),
-      JSON.stringify({ assignmentDir, projectDir: join(tmp, 'proj'), workspaceRoot: assignmentDir }),
+      JSON.stringify({ workspaceRoot: tmp }),
+    );
+    const binDir = await mkdtemp(join(tmpdir(), 'pi-bin-'));
+    const prevPath = await withFakeSyntaur(
+      binDir,
+      JSON.stringify({ assignmentDir, projectDir: join(tmp, 'proj'), workspaceRoot: tmp }),
     );
     const prevCwd = process.cwd();
     process.chdir(tmp);
@@ -141,7 +185,77 @@ describe('pi extension — loadContext + activate registration', () => {
       expect(nonwrite).toBeUndefined();
     } finally {
       process.chdir(prevCwd);
+      process.env.PATH = prevPath;
       await rm(tmp, { recursive: true, force: true });
+      await rm(binDir, { recursive: true, force: true });
+    }
+  });
+
+  it('tool_call enforces WORKSPACE-ONLY (no fail-open) when the CLI resolves no assignment', async () => {
+    const handlers: Record<string, (e: unknown, c?: unknown) => unknown> = {};
+    activate({ on: (e, h) => (handlers[e] = h), registerCommand: () => {} });
+
+    const tmp = await mkdtemp(join(tmpdir(), 'pi-wsonly-'));
+    await mkdir(join(tmp, '.syntaur'), { recursive: true });
+    await writeFile(join(tmp, '.syntaur', 'context.json'), JSON.stringify({ workspaceRoot: tmp }));
+    const binDir = await mkdtemp(join(tmpdir(), 'pi-bin-'));
+    // No open engagement → the CLI returns only the workspace marker.
+    const prevPath = await withFakeSyntaur(binDir, JSON.stringify({ workspaceRoot: tmp }));
+    const prevCwd = process.cwd();
+    process.chdir(tmp);
+    try {
+      // Inside the workspace → allowed.
+      const inWs = await handlers.tool_call({
+        toolName: 'edit',
+        input: { file_path: join(tmp, 'src', 'app.ts') },
+      });
+      expect(inWs).toBeUndefined();
+      // Outside the workspace → BLOCKED (the regression: must NOT fail open).
+      const out = await handlers.tool_call({
+        toolName: 'edit',
+        input: { file_path: '/etc/passwd' },
+      });
+      expect(out).toMatchObject({ block: true });
+    } finally {
+      process.chdir(prevCwd);
+      process.env.PATH = prevPath;
+      await rm(tmp, { recursive: true, force: true });
+      await rm(binDir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('pi extension — resolveBoundary (shells out to `syntaur session boundary`)', () => {
+  it('parses the CLI JSON and ~-expands paths', async () => {
+    const binDir = await mkdtemp(join(tmpdir(), 'pi-rb-'));
+    const prevPath = await withFakeSyntaur(
+      binDir,
+      JSON.stringify({ assignmentDir: '/a', projectDir: '/p', workspaceRoot: '/w' }),
+    );
+    try {
+      const b = resolveBoundary(process.cwd());
+      expect(b).toEqual({ assignmentDir: '/a', projectDir: '/p', workspaceRoot: '/w' });
+    } finally {
+      process.env.PATH = prevPath;
+      await rm(binDir, { recursive: true, force: true });
+    }
+  });
+
+  it('returns an empty boundary (workspace-only) when the CLI is missing — never fail-open', async () => {
+    // Point PATH at an empty dir so `syntaur` cannot be found; spawn errors →
+    // {} boundary → the caller enforces workspace-only.
+    const binDir = await mkdtemp(join(tmpdir(), 'pi-empty-'));
+    const prevPath = process.env.PATH;
+    process.env.PATH = binDir;
+    try {
+      expect(resolveBoundary(process.cwd())).toEqual({
+        assignmentDir: undefined,
+        projectDir: undefined,
+        workspaceRoot: undefined,
+      });
+    } finally {
+      process.env.PATH = prevPath;
+      await rm(binDir, { recursive: true, force: true });
     }
   });
 });

@@ -56,25 +56,50 @@ if [ -z "$FILE_PATH" ]; then
 fi
 
 # --- Step 7: Check for context file ---
+# context.json is a WORKSPACE MARKER. Its mere presence means "this workspace is
+# under Syntaur enforcement"; its absence means "not a Syntaur workspace → allow".
 CONTEXT_FILE=".syntaur/context.json"
 if [ ! -f "$CONTEXT_FILE" ]; then
-  # No active assignment; allow all writes
+  # No Syntaur workspace; allow all writes (unchanged behavior).
   allow_and_exit
 fi
 
-# --- Step 8: Read context ---
-ASSIGNMENT_DIR=$(jq -r '.assignmentDir // empty' "$CONTEXT_FILE" 2>/dev/null)
-MISSION_DIR=$(jq -r '.projectDir // empty' "$CONTEXT_FILE" 2>/dev/null)
-WORKSPACE_ROOT=$(jq -r '.workspaceRoot // empty' "$CONTEXT_FILE" 2>/dev/null)
+# --- Step 8: Resolve the write boundary from the session's OPEN engagement ---
+# The assignment scalars were demoted out of context.json — the active assignment
+# now lives on the session's engagement. Ask the CLI to resolve it. Parse the
+# PreToolUse stdin payload for the calling session id and pass it explicitly so
+# co-tenant clobbering can't misattribute. If the CLI is unavailable or resolves
+# nothing, ASSIGNMENT_DIR/MISSION_DIR stay empty → we enforce WORKSPACE-ONLY
+# below (we do NOT fail open).
+ASSIGNMENT_DIR=""
+MISSION_DIR=""
+WORKSPACE_ROOT=""
 
-if [ -z "$ASSIGNMENT_DIR" ] || [ -z "$MISSION_DIR" ]; then
-  # Malformed context file; allow (defensive)
-  allow_and_exit
+# The cwd holding this context file (its parent's parent: ".syntaur/context.json").
+CONTEXT_DIR="$(cd "$(dirname "$CONTEXT_FILE")/.." 2>/dev/null && pwd)"
+[ -z "$CONTEXT_DIR" ] && CONTEXT_DIR="$(pwd)"
+
+SID=$(echo "$INPUT" | jq -r '.session_id // empty' 2>/dev/null)
+
+if command -v syntaur >/dev/null 2>&1; then
+  BOUNDARY_JSON=$(cd "$CONTEXT_DIR" 2>/dev/null && \
+    syntaur session boundary --json ${SID:+--session-id "$SID"} 2>/dev/null)
+  if [ -n "$BOUNDARY_JSON" ]; then
+    ASSIGNMENT_DIR=$(echo "$BOUNDARY_JSON" | jq -r '.assignmentDir // empty' 2>/dev/null)
+    MISSION_DIR=$(echo "$BOUNDARY_JSON" | jq -r '.projectDir // empty' 2>/dev/null)
+    WORKSPACE_ROOT=$(echo "$BOUNDARY_JSON" | jq -r '.workspaceRoot // empty' 2>/dev/null)
+  fi
 fi
 
-# --- Step 9: Expand ~ in paths ---
-ASSIGNMENT_DIR="${ASSIGNMENT_DIR/#\~/$HOME}"
-MISSION_DIR="${MISSION_DIR/#\~/$HOME}"
+# Fall back to the context.json workspace marker if the CLI did not surface one
+# (e.g. standalone session with a worktree but no engagement yet).
+if [ -z "$WORKSPACE_ROOT" ]; then
+  WORKSPACE_ROOT=$(jq -r '.workspaceRoot // empty' "$CONTEXT_FILE" 2>/dev/null)
+fi
+
+# --- Step 9: Expand ~ in paths (guarding empties) ---
+[ -n "$ASSIGNMENT_DIR" ] && ASSIGNMENT_DIR="${ASSIGNMENT_DIR/#\~/$HOME}"
+[ -n "$MISSION_DIR" ] && MISSION_DIR="${MISSION_DIR/#\~/$HOME}"
 if [ -n "$WORKSPACE_ROOT" ] && [ "$WORKSPACE_ROOT" != "null" ]; then
   WORKSPACE_ROOT="${WORKSPACE_ROOT/#\~/$HOME}"
 else
@@ -82,14 +107,18 @@ else
 fi
 
 # --- Step 10: Check allowed paths ---
+# NOTE: every prefix test is guarded by a non-empty check so an EMPTY $DIR never
+# globs to "/*" and silently allows the whole filesystem. When no assignment
+# resolves, only the workspace-root (and context file) checks can match → this is
+# WORKSPACE-ONLY enforcement, NOT fail-open.
 
 # Allow: files inside the assignment directory
-if [[ "$FILE_PATH" == "$ASSIGNMENT_DIR"/* ]]; then
+if [ -n "$ASSIGNMENT_DIR" ] && [[ "$FILE_PATH" == "$ASSIGNMENT_DIR"/* ]]; then
   allow_and_exit
 fi
 
 # Allow: files in project resources/ directory (but NOT derived _index.md)
-if [[ "$FILE_PATH" == "$MISSION_DIR/resources/"* ]]; then
+if [ -n "$MISSION_DIR" ] && [[ "$FILE_PATH" == "$MISSION_DIR/resources/"* ]]; then
   BASENAME=$(basename "$FILE_PATH")
   if [[ "$BASENAME" == _* ]]; then
     # Derived file (e.g., _index.md) -- fall through to block
@@ -100,7 +129,7 @@ if [[ "$FILE_PATH" == "$MISSION_DIR/resources/"* ]]; then
 fi
 
 # Allow: files in project memories/ directory (but NOT derived _index.md)
-if [[ "$FILE_PATH" == "$MISSION_DIR/memories/"* ]]; then
+if [ -n "$MISSION_DIR" ] && [[ "$FILE_PATH" == "$MISSION_DIR/memories/"* ]]; then
   BASENAME=$(basename "$FILE_PATH")
   if [[ "$BASENAME" == _* ]]; then
     # Derived file (e.g., _index.md) -- fall through to block
@@ -112,7 +141,7 @@ fi
 
 # Allow: the context file itself
 CONTEXT_ABS="$(cd "$(dirname "$CONTEXT_FILE")" 2>/dev/null && echo "$(pwd)/$(basename "$CONTEXT_FILE")")"
-if [ "$FILE_PATH" = "$CONTEXT_ABS" ]; then
+if [ -n "$CONTEXT_ABS" ] && [ "$FILE_PATH" = "$CONTEXT_ABS" ]; then
   allow_and_exit
 fi
 
@@ -122,7 +151,11 @@ if [ -n "$WORKSPACE_ROOT" ] && [[ "$FILE_PATH" == "$WORKSPACE_ROOT"/* ]]; then
 fi
 
 # --- Step 11: Block the write ---
-REASON="Syntaur write boundary violation: Cannot write to '$FILE_PATH'. Allowed paths: assignment dir ($ASSIGNMENT_DIR), project resources/memories, workspace ($WORKSPACE_ROOT)."
+if [ -n "$ASSIGNMENT_DIR" ]; then
+  REASON="Syntaur write boundary violation: Cannot write to '$FILE_PATH'. Allowed paths: assignment dir ($ASSIGNMENT_DIR), project resources/memories${MISSION_DIR:+ ($MISSION_DIR)}, workspace (${WORKSPACE_ROOT:-none})."
+else
+  REASON="Syntaur write boundary violation: Cannot write to '$FILE_PATH'. No active assignment for this session — writes are restricted to the workspace (${WORKSPACE_ROOT:-none}). Run /grab-assignment to bind an assignment and widen the boundary."
+fi
 
 # Escape for JSON
 REASON_ESCAPED=$(echo "$REASON" | jq -Rs '.' 2>/dev/null)

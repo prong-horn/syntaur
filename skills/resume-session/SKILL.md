@@ -2,8 +2,9 @@
 name: resume-session
 description: >-
   Re-orient a fresh Syntaur session on the active assignment without
-  re-reading the full transcript. Loads the latest saved session summary,
-  `.syntaur/context.json`, and any open handoff. Use when the user says
+  re-reading the full transcript. Resolves the active assignment from the
+  session's open engagement and loads the latest saved session summary and any
+  open handoff. Use when the user says
   "resume", "pick up where we left off", "continue this assignment", or after
   a compact / new session start. Symmetric counterpart to
   `/save-session-summary`.
@@ -28,15 +29,20 @@ freely; nothing on disk changes.
 - Saving the current session's progress — that's `/save-session-summary` (the
   symmetric write side).
 
-## Step 1: Verify there is an active context
+## Step 1: Verify there is an active assignment
 
 Run `syntaur session resume`. The CLI:
 
-1. Reads `.syntaur/context.json` from the current working directory.
-2. Aborts (exit 1) with a clear message if missing or if no `assignmentDir`
-   is set — telling the user to run `grab-assignment` first.
-3. Otherwise scans `<assignmentDir>/sessions/<sid>/summary.md` and picks the
-   most recently modified.
+1. Resolves the active assignment from the session's OPEN engagement (the
+   assignment this session is currently bound to). `.syntaur/context.json` is
+   only a workspace marker — it identifies the repository/branch/worktree, not
+   the active assignment.
+2. Aborts (exit 1) with a clear message when there is no open engagement —
+   "No active assignment for this session — grab one first" — telling the user
+   to run `grab-assignment`.
+3. Otherwise resolves the assignment dir from the engagement and scans
+   `<assignmentDir>/sessions/<sid>/summary.md`, picking the most recently
+   modified.
 4. Reads `<assignmentDir>/handoff.md` (the canonical single-file handoff per
    assignment, managed by `complete-assignment`) and reports it if its body
    has been written beyond the scaffolded placeholder.

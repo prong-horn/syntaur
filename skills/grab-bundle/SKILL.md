@@ -34,16 +34,20 @@ the user to pick.
 
 ## Pre-flight check
 
-Read `.syntaur/context.json` in the current working directory.
+First check whether this session already has an active assignment via its open
+engagement (`syntaur session resume --json`):
 
-- If it already contains assignment fields (`projectSlug`/`assignmentSlug`/
-  `assignmentDir`), warn the user: "You already have an active assignment.
-  Grabbing a bundle will replace this context. Proceed?" — stop if no.
+- If it reports an active assignment, warn the user: "You already have an active
+  assignment. Grabbing a bundle will rebind this session. Proceed?" — stop if no.
+
+Then read `.syntaur/context.json` (a workspace marker) in the current working
+directory for bundle bookkeeping:
+
 - If it already contains different bundle fields (`bundleId` set to a
   different id), warn: "Context is bound to bundle b:<old>. Switch to b:<new>?"
   — stop if no.
-- If it has only `sessionId` (platform SessionStart hook seeded it), proceed
-  and merge bundle fields on top.
+- A context.json holding only workspace-marker / `sessionId` fields is expected;
+  proceed and merge bundle fields on top.
 
 ## Step 1: Load the bundle
 

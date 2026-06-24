@@ -54,6 +54,11 @@ export async function trackSessionCommand(
     const cwd = process.cwd();
     let legacyHint: string | undefined;
     try {
+      // Read ONLY the legacy sessionId hint from context.json — NOT the demoted
+      // assignment scalars (projectSlug/assignmentSlug/assignmentDir). This is
+      // the bootstrap path: the assignment binding comes from the explicit
+      // --project/--assignment CLI args (see appendSession below), never from
+      // context.json. context.json's sessionId is a last-resort identity hint only.
       const raw = await readFile(resolve(cwd, '.syntaur', 'context.json'), 'utf-8');
       const parsed = JSON.parse(raw) as { sessionId?: string };
       if (typeof parsed.sessionId === 'string') legacyHint = parsed.sessionId;
@@ -110,6 +115,9 @@ export async function trackSessionCommand(
     ? await captureHeadSha(recordedPath)
     : null;
 
+  // Bootstrap binding: the session→assignment engagement edge is opened from the
+  // EXPLICIT --project/--assignment CLI args (appendSession opens an engagement
+  // from these). Never sourced from the demoted context.json assignment scalar.
   await appendSession('', {
     projectSlug: options.project || null,
     assignmentSlug: options.assignment || null,

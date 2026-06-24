@@ -7,20 +7,9 @@ import { readConfig } from '../utils/config.js';
 import { nowTimestamp } from '../utils/timestamp.js';
 import { updateAssignmentWorkspace, updateAssignmentFile } from '../lifecycle/frontmatter.js';
 import { validateAssignmentFile } from './doctor.js';
-
-interface ContextFile {
-  assignmentDir?: string;
-}
-
-async function readContext(cwd: string): Promise<ContextFile | null> {
-  const path = resolve(cwd, '.syntaur', 'context.json');
-  if (!(await fileExists(path))) return null;
-  try {
-    return JSON.parse(await readFile(path, 'utf-8')) as ContextFile;
-  } catch {
-    return null;
-  }
-}
+import { resolveSessionEngagement } from '../utils/engagement-binding.js';
+import { resolveAssignmentTarget } from '../utils/assignment-target.js';
+import { assertMayMutate } from '../utils/session-id.js';
 
 async function resolveAssignmentPath(opts: {
   assignment?: string;
@@ -34,11 +23,21 @@ async function resolveAssignmentPath(opts: {
     }
     return resolve(assignmentsDir(), opts.assignment, 'assignment.md');
   }
-  const ctx = await readContext(opts.cwd);
-  if (ctx?.assignmentDir) return resolve(ctx.assignmentDir, 'assignment.md');
-  throw new Error(
-    'No active assignment. Pass --assignment <slug> [--project <slug>] or run from a workspace with .syntaur/context.json.',
-  );
+  // No explicit target → resolve from the session's OPEN engagement and gate
+  // the mutation. context.json's assignment scalar is no longer a resolution
+  // source (it is a workspace marker only).
+  const { initSessionDb } = await import('../dashboard/session-db.js');
+  initSessionDb(); // idempotent; no-op if already open
+  const se = await resolveSessionEngagement(opts.cwd);
+  if (se) {
+    assertMayMutate(se.session, { hasSelector: false });
+  }
+  const target = await resolveAssignmentTarget(undefined, {
+    project: opts.project,
+    cwd: opts.cwd,
+    resolveEngagement: async () => se?.open ?? null,
+  });
+  return resolve(target.assignmentDir, 'assignment.md');
 }
 
 export interface WorkspaceSetOptions {
@@ -116,7 +115,7 @@ workspaceCommand
   .option('--worktree-path <path>', 'Worktree path (typically <repo>/.worktrees/<branch>)')
   .option('--branch <name>', 'Branch name')
   .option('--parent-branch <name>', 'Parent branch (typically main)')
-  .option('--assignment <slug>', 'Assignment slug (UUID for standalone). Defaults to .syntaur/context.json')
+  .option('--assignment <slug>', "Assignment slug (UUID for standalone). Defaults to the session's open engagement")
   .option('--project <slug>', 'Project slug. Required with --assignment for a project-nested assignment')
   .action(async (options: WorkspaceSetOptions) => {
     try {

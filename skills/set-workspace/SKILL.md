@@ -35,11 +35,14 @@ implementation code until workspace fields are set.
 
 ## Step 1: Resolve the assignment file
 
-Read `.syntaur/context.json` from the current working directory. Extract
-`assignmentDir`. The target file is `<assignmentDir>/assignment.md`.
+The active assignment is resolved from the session's open engagement — `syntaur
+workspace set` (Step 3) targets it automatically. `.syntaur/context.json` is
+only a workspace marker; do not read the assignment from it.
 
-If no context, abort with: "No active assignment. Run `grab-assignment`
-first."
+If there is no open engagement (no active assignment), the CLI aborts with "No
+active assignment for this session — grab one first." Run `grab-assignment`
+first, or pass `--assignment <slug> [--project <slug>]` to target one
+explicitly.
 
 ## Step 2: Gather inputs
 
@@ -68,8 +71,8 @@ syntaur workspace set \
   --parent-branch <parent>
 ```
 
-Targets the active assignment from `.syntaur/context.json` by default; pass
-`--assignment <slug> [--project <slug>]` to target one explicitly. The command
+Targets the active assignment from the session's open engagement by default;
+pass `--assignment <slug> [--project <slug>]` to target one explicitly. The command
 does the whole safe write in one atomic step:
 
 - **Pre-write validation** — runs the same checks as `syntaur doctor

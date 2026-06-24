@@ -12,6 +12,14 @@ import { isExistingDir } from '../launch/cwd.js';
 import { initSessionDb } from '../dashboard/session-db.js';
 import { appendSession, updateSessionStatus } from '../dashboard/agent-sessions.js';
 import type { AgentSessionStatus } from '../dashboard/types.js';
+import { resolveAssignmentTarget } from '../utils/assignment-target.js';
+import {
+  resolveEngagementBinding,
+  resolveSessionEngagement,
+  type EngagementBinding,
+} from '../utils/engagement-binding.js';
+import { getOpenEngagement } from '../db/engagement-db.js';
+import { extractFrontmatter, getField } from '../dashboard/parser.js';
 
 interface ContextFile {
   sessionId?: string;
@@ -87,51 +95,102 @@ interface ResumeOptions {
   json?: boolean;
 }
 
+/** The active assignment resolved from the session's OPEN engagement. */
+interface ResolvedAssignmentView {
+  assignmentDir: string;
+  projectSlug: string | null;
+  assignmentSlug: string | null;
+  id: string;
+  standalone: boolean;
+  title: string | null;
+}
+
 interface ResumeOutput {
   ok: boolean;
+  /** Workspace markers (branch/workspaceRoot) read from .syntaur/context.json. */
   context: ContextFile | null;
+  /** The active assignment, resolved from the session's OPEN engagement. */
+  assignment: ResolvedAssignmentView | null;
   latestSession: { sessionId: string; path: string } | null;
   openHandoff: string | null;
   warnings: string[];
 }
 
+/** Read the `title:` frontmatter field from a resolved assignment's assignment.md. */
+async function readAssignmentTitle(assignmentDir: string): Promise<string | null> {
+  const path = resolve(assignmentDir, 'assignment.md');
+  if (!(await fileExists(path))) return null;
+  try {
+    const content = await readFile(path, 'utf-8');
+    const [fm] = extractFrontmatter(content);
+    return getField(fm, 'title');
+  } catch {
+    return null;
+  }
+}
+
 async function buildResumeOutput(cwd: string): Promise<ResumeOutput> {
   const warnings: string[] = [];
+  // context.json is still read — but ONLY for workspace markers (branch /
+  // workspaceRoot) to display. The active assignment is resolved from the
+  // session's OPEN engagement, NOT the demoted context.json assignment scalar.
   const context = await readContext(cwd);
-  if (!context) {
-    return {
-      ok: false,
-      context: null,
-      latestSession: null,
-      openHandoff: null,
-      warnings: [
-        'No .syntaur/context.json in current directory. Run grab-assignment first.',
-      ],
-    };
-  }
-  if (!context.assignmentDir) {
+
+  // Resolve the active assignment from the session's open engagement. READ-ONLY:
+  // no assertMayMutate. initSessionDb is idempotent — the engagement edge lives
+  // in the sessions DB, which must be open before resolveSessionEngagement reads.
+  initSessionDb();
+  const se = await resolveSessionEngagement(cwd);
+  if (!se?.open) {
     return {
       ok: false,
       context,
+      assignment: null,
       latestSession: null,
       openHandoff: null,
       warnings: [
-        'context.json present but no assignmentDir field — only a session record exists. Nothing to resume.',
+        'No active assignment for this session. Run /grab-assignment to bind one, then resume.',
       ],
     };
   }
 
-  const latestSession = await findLatestSessionSummary(context.assignmentDir);
+  let assignment: ResolvedAssignmentView;
+  try {
+    const target = await resolveAssignmentTarget(undefined, {
+      cwd,
+      resolveEngagement: async () => se.open,
+    });
+    assignment = {
+      assignmentDir: target.assignmentDir,
+      projectSlug: target.projectSlug,
+      assignmentSlug: target.assignmentSlug,
+      id: target.id,
+      standalone: target.standalone,
+      title: await readAssignmentTitle(target.assignmentDir),
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      context,
+      assignment: null,
+      latestSession: null,
+      openHandoff: null,
+      warnings: [error instanceof Error ? error.message : String(error)],
+    };
+  }
+
+  const latestSession = await findLatestSessionSummary(assignment.assignmentDir);
   if (!latestSession) {
     warnings.push(
-      `No session summary found under ${context.assignmentDir}/sessions/. Run /save-session-summary in a prior session to leave a resume baton.`,
+      `No session summary found under ${assignment.assignmentDir}/sessions/. Run /save-session-summary in a prior session to leave a resume baton.`,
     );
   }
-  const openHandoff = await findOpenHandoff(context.assignmentDir);
+  const openHandoff = await findOpenHandoff(assignment.assignmentDir);
 
   return {
     ok: true,
     context,
+    assignment,
     latestSession: latestSession
       ? { sessionId: latestSession.sessionId, path: latestSession.path }
       : null,
@@ -147,15 +206,18 @@ function renderHumanOutput(out: ResumeOutput): string {
     for (const w of out.warnings) lines.push(`  - ${w}`);
     return lines.join('\n');
   }
-  const ctx = out.context!;
+  // Assignment dir/slugs come from the RESOLVED engagement target; branch and
+  // workspace-root are workspace markers still read from context.json.
+  const asg = out.assignment!;
+  const ctx = out.context;
   lines.push('Resuming Syntaur session');
   lines.push('');
-  lines.push(`  Project:        ${ctx.projectSlug ?? '(standalone)'}`);
-  lines.push(`  Assignment:     ${ctx.assignmentSlug ?? '(unknown)'}`);
-  if (ctx.title) lines.push(`  Title:          ${ctx.title}`);
-  if (ctx.branch) lines.push(`  Branch:         ${ctx.branch}`);
-  if (ctx.workspaceRoot) lines.push(`  Workspace root: ${ctx.workspaceRoot}`);
-  lines.push(`  Assignment dir: ${ctx.assignmentDir}`);
+  lines.push(`  Project:        ${asg.projectSlug ?? '(standalone)'}`);
+  lines.push(`  Assignment:     ${asg.assignmentSlug ?? asg.id}`);
+  if (asg.title) lines.push(`  Title:          ${asg.title}`);
+  if (ctx?.branch) lines.push(`  Branch:         ${ctx.branch}`);
+  if (ctx?.workspaceRoot) lines.push(`  Workspace root: ${ctx.workspaceRoot}`);
+  lines.push(`  Assignment dir: ${asg.assignmentDir}`);
   lines.push('');
   if (out.latestSession) {
     lines.push(`Latest session summary: ${out.latestSession.path}`);
@@ -189,6 +251,89 @@ export async function runSessionResume(
   return out;
 }
 
+// --- session boundary (read-only; the write-boundary enforcers' resolution source) ---
+
+export interface SessionBoundaryOptions {
+  sessionId?: string;
+  cwd?: string;
+  json?: boolean;
+}
+
+/** The write-boundary the enforcer hooks allow, resolved from the OPEN engagement. */
+export interface SessionBoundaryResult {
+  /** The active assignment dir (engagement-resolved), or null when none resolves. */
+  assignmentDir: string | null;
+  /** The project root (parent of `assignments/<slug>`), or null for standalone / none. */
+  projectDir: string | null;
+  /** Workspace marker read from `.syntaur/context.json`, or null. */
+  workspaceRoot: string | null;
+}
+
+/**
+ * Resolve the write boundary for the calling session from its OPEN engagement.
+ * The write-boundary enforcer hooks (claude-code / codex / pi) call this to learn
+ * the allowlist — `context.json`'s assignment scalars were demoted, so the hooks
+ * can no longer read `assignmentDir`/`projectDir` from disk.
+ *
+ * Resolution:
+ *  - session id: explicit `options.sessionId` (EXPLICIT), else self-resolve from cwd.
+ *  - open engagement → reconstruct `assignmentDir` via `resolveAssignmentTarget`.
+ *  - `projectDir` = the project root (parent of `assignments/<slug>`,
+ *    i.e. `resolve(assignmentDir, '..', '..')`) for project-nested; null for standalone.
+ *  - `workspaceRoot` is read from `<cwd>/.syntaur/context.json` (a workspace marker).
+ *
+ * NEVER throws to the caller: on ANY failure it returns all-null. Read-only and
+ * FAST — no summary/handoff scanning. The hook treats missing fields as
+ * "enforce workspace-only".
+ */
+export async function runSessionBoundary(
+  options: SessionBoundaryOptions,
+): Promise<SessionBoundaryResult> {
+  const cwd = options.cwd ?? process.cwd();
+  const empty: SessionBoundaryResult = {
+    assignmentDir: null,
+    projectDir: null,
+    workspaceRoot: null,
+  };
+
+  // Workspace marker is independent of the engagement — read it best-effort so we
+  // can still enforce workspace-only when no assignment resolves.
+  let workspaceRoot: string | null = null;
+  try {
+    const ctx = await readContext(cwd);
+    if (ctx?.workspaceRoot) workspaceRoot = expandHome(ctx.workspaceRoot);
+  } catch {
+    /* leave null */
+  }
+
+  try {
+    const resolved = await resolveOwnSessionId({ sessionId: options.sessionId, cwd });
+    if (!resolved) return { ...empty, workspaceRoot };
+
+    initSessionDb(); // idempotent — the engagement edge lives in the sessions DB
+    const row = getOpenEngagement(resolved.id);
+    if (!row) return { ...empty, workspaceRoot };
+
+    const binding: EngagementBinding = {
+      assignmentId: row.assignment_id,
+      projectSlug: row.project_slug,
+      assignmentSlug: row.assignment_slug,
+      stage: row.stage,
+    };
+    const target = await resolveAssignmentTarget(undefined, {
+      cwd,
+      resolveEngagement: async () => binding,
+    });
+    const assignmentDir = target.assignmentDir;
+    // Project root = parent of `assignments/<slug>`: resolve(dir,'..','..').
+    // Standalone assignments are not project-nested → no project resources dir.
+    const projectDir = target.standalone ? null : resolve(assignmentDir, '..', '..');
+    return { assignmentDir, projectDir, workspaceRoot };
+  } catch {
+    return { ...empty, workspaceRoot };
+  }
+}
+
 export interface SessionSaveOptions {
   sessionId?: string;
   fromFile?: string;
@@ -210,13 +355,19 @@ async function resolveSaveTarget(
       : resolve(assignmentsDir(), options.assignment);
     slug = options.assignment;
   } else {
-    if (!ctx?.assignmentDir) {
-      throw new Error(
-        'No active assignment. Pass --assignment <slug> [--project <slug>] or run from a workspace with .syntaur/context.json.',
-      );
-    }
-    assignmentDir = ctx.assignmentDir;
-    slug = ctx.assignmentSlug ?? '';
+    // No explicit target → resolve from the session's OPEN engagement. The
+    // demoted context.json assignment scalars (assignmentDir/assignmentSlug)
+    // are NO LONGER a resolution source — context.json is a workspace marker
+    // only. (context.json's sessionId is still read below, purely as the
+    // last-resort legacy session-id hint.)
+    initSessionDb(); // idempotent; the engagement edge lives in the sessions DB
+    const target = await resolveAssignmentTarget(undefined, {
+      project: options.project,
+      cwd,
+      resolveEngagement: () => resolveEngagementBinding(cwd),
+    });
+    assignmentDir = target.assignmentDir;
+    slug = target.assignmentSlug;
   }
 
   // Resolve the caller's OWN session id from the process, not the shared
@@ -423,8 +574,14 @@ export async function runSessionRegister(
   await appendSession(
     '',
     {
-      projectSlug: ctx?.projectSlug || null,
-      assignmentSlug: ctx?.assignmentSlug || null,
+      // UNATTRIBUTED on register. The SessionStart hook no longer auto-binds the
+      // assignment from the cwd context.json scalar — that cwd-scalar auto-bind is
+      // the multi-assignment-in-one-worktree clobber being eliminated. A session
+      // binds its assignment explicitly via `syntaur track-session --project
+      // --assignment` (the grab flow); on a resume/revive `appendSession` recovers
+      // the binding from the session's OWN latest engagement (reviveStopped below).
+      projectSlug: null,
+      assignmentSlug: null,
       agent: options.agent || 'claude',
       sessionId,
       started: deps.now?.() ?? new Date().toISOString(),
@@ -589,6 +746,28 @@ sessionCommand
     } catch (error) {
       console.error('Error:', error instanceof Error ? error.message : String(error));
       process.exit(1);
+    }
+  });
+
+sessionCommand
+  .command('boundary')
+  .description(
+    "Resolve the calling session's write boundary from its OPEN engagement (for the write-boundary enforcer hooks). Prints { assignmentDir, projectDir, workspaceRoot } as JSON. NEVER throws — prints {} and exits 0 on any failure.",
+  )
+  .option('--session-id <id>', "The calling session's id (else self-resolved from the process / cwd)")
+  .option('--cwd <path>', 'Working directory holding .syntaur/context.json', process.cwd())
+  .option('--json', 'Emit the boundary as JSON (default and only format)')
+  .action(async (options: SessionBoundaryOptions) => {
+    // Read-only and fail-safe: on ANY failure emit `{}` so the hook falls back
+    // to workspace-only enforcement. Always exit 0.
+    try {
+      const result = await runSessionBoundary({
+        sessionId: options.sessionId,
+        cwd: options.cwd ?? process.cwd(),
+      });
+      console.log(JSON.stringify(result));
+    } catch {
+      console.log('{}');
     }
   });
 

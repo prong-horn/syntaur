@@ -23,10 +23,16 @@ Expects up to two arguments from the user:
 
 ## Pre-flight Check
 
-Check if `.syntaur/context.json` already exists in the current working directory.
+`.syntaur/context.json` is a WORKSPACE MARKER (repository/branch/worktree/workspaceRoot plus legacy session and bundle fields) — it is NOT the active-assignment source of truth. The active assignment binds via the session's open engagement (established by `track-session` in Step 6).
 
-- If it exists AND contains BOTH `projectSlug` and `assignmentSlug`, it represents an active assignment. Warn the user: "You already have an active assignment: `<assignmentSlug>` in project `<projectSlug>`. Grabbing a new one will replace this context. Proceed?" — stop if the user says no.
-- If it exists but only has session fields (`sessionId`, `transcriptPath`) and no project/assignment, it was populated by the platform's SessionStart hook (Claude Code, etc.) and does NOT represent an active assignment. Proceed silently and merge assignment fields on top in Step 5.
+Check whether this session already has an open engagement — i.e., a different assignment is already active:
+
+```bash
+syntaur session resume --json 2>/dev/null
+```
+
+- If it reports an active assignment, warn the user: "You already have an active assignment: `<assignmentSlug>` in project `<projectSlug>`. Grabbing a new one will rebind this session. Proceed?" — stop if the user says no.
+- If there is no open engagement (no active assignment), proceed. A `.syntaur/context.json` that holds only workspace-marker / session fields is expected — it does not represent an active assignment.
 
 ## Step 1: Discover the Project (project-nested path)
 
@@ -75,25 +81,24 @@ From the assignment frontmatter extract: `title`, `workspace.repository`, `works
 
 If `workspace.repository` and `workspace.worktreePath` are both null, set them to the current working directory. Write boundaries use this path, so it must never be null while an agent is writing code.
 
-## Step 5: Create or Merge Context File
+## Step 5: Create or Merge the Workspace Marker
 
-Merge assignment context into `.syntaur/context.json`. Never overwrite — if the file already exists (e.g., platform SessionStart hook populated `sessionId` / `transcriptPath`), preserve those fields.
+`.syntaur/context.json` is a WORKSPACE MARKER — it records the repository/branch/worktree so tooling can recognize this directory as a Syntaur workspace. It is NOT the active-assignment source of truth: the assignment binds via the session's open engagement (Step 6, `track-session`). Do NOT write `projectSlug` / `assignmentSlug` / `assignmentDir` / `projectDir` / `title` — those scalars are non-authoritative.
+
+Merge workspace markers into `.syntaur/context.json`. Never overwrite — if the file already exists (e.g., platform SessionStart hook populated `sessionId` / `transcriptPath`, or a worktree skill wrote bundle/lease fields), preserve those fields.
 
 ```bash
 mkdir -p .syntaur
 ```
 
-Prepare the assignment payload:
+Prepare the workspace-marker payload:
 
 ```json
 {
-  "projectSlug": "<project-slug or null for standalone>",
-  "assignmentSlug": "<assignment-slug>",
-  "projectDir": "/absolute/path/to/project or null",
-  "assignmentDir": "/absolute/path/to/assignment",
-  "workspaceRoot": "<workspace path or current working directory>",
-  "title": "<assignment title>",
+  "repository": "<workspace.repository or null>",
   "branch": "<workspace.branch or null>",
+  "worktreePath": "<workspace.worktreePath or null>",
+  "workspaceRoot": "<workspace path or current working directory>",
   "grabbedAt": "<ISO 8601 timestamp>"
 }
 ```

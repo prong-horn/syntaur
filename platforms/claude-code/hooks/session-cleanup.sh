@@ -34,12 +34,14 @@ syntaur_bounded_stop || true
 # after the agent walks away. Best-effort, bounded (~3s, no `timeout` on macOS),
 # and migration-gated (`--if-migrated`) so it can't re-derive pre-migration
 # assignments during rollout. Resolves the assignment from the ending session's
-# cwd `.syntaur/context.json`; no-ops silently when none is present.
+# latest engagement (passed via --session-id); no-ops silently when none.
 HOOK_CWD=$(printf '%s' "$INPUT" | jq -r '.cwd // empty' 2>/dev/null)
+HOOK_SID=$(printf '%s' "$INPUT" | jq -r '.session_id // empty' 2>/dev/null)
 syntaur_bounded_recompute() {
   local cpid kpid rc
   [ -n "$HOOK_CWD" ] && [ -f "$HOOK_CWD/.syntaur/context.json" ] || return 0
-  ( cd "$HOOK_CWD" 2>/dev/null && syntaur recompute --if-migrated >/dev/null 2>&1 ) &
+  ( cd "$HOOK_CWD" 2>/dev/null && \
+    syntaur recompute --if-migrated ${HOOK_SID:+--session-id "$HOOK_SID"} >/dev/null 2>&1 ) &
   cpid=$!
   ( sleep 3; kill -KILL "$cpid" 2>/dev/null ) >/dev/null 2>&1 &
   kpid=$!

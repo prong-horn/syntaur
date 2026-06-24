@@ -38,12 +38,15 @@ todos are never deleted.**
 
 ## Step 1: Verify there is an active assignment
 
-Read `.syntaur/context.json` from the current working directory. Extract
-`assignmentSlug`, `projectSlug` (may be null for standalone), and
-`assignmentDir`.
+The active assignment is resolved from the session's open engagement. Run
+`syntaur session resume --json` to read the bound `assignmentSlug`,
+`projectSlug` (may be null for standalone), and `assignmentDir`.
+`.syntaur/context.json` is only a workspace marker — do not read the assignment
+from it.
 
-If the file is missing or has no `assignmentSlug`, abort with: "No active
-Syntaur assignment. Run `grab-assignment` first." Do not invent values.
+If there is no open engagement (no active assignment), abort with: "No active
+assignment for this session — grab one first." Run `grab-assignment` first. Do
+not invent values.
 
 ## Step 2: Confirm the prior plan was implemented
 

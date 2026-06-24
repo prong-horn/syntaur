@@ -14,7 +14,7 @@ metadata:
 
 # Clear Assignment
 
-Drop the active assignment binding from the current workspace. The assignment itself is left untouched in `~/.syntaur/projects/.../assignments/` — only the local `.syntaur/context.json` pointer is cleared so the session is no longer scoped to it.
+Drop the active assignment binding from the current session. The assignment itself is left untouched in `~/.syntaur/projects/.../assignments/` — only the session's open engagement (the binding that makes it the active assignment) is closed so the session is no longer scoped to it. `.syntaur/context.json` is a workspace marker and is not the binding — it does not hold the active assignment.
 
 This is the inverse of `grab-assignment`. Unlike `complete-assignment`, it does **not** transition lifecycle state, write a handoff, or close out the work. Use it when:
 
@@ -28,17 +28,15 @@ If the assignment is actually done, use `complete-assignment` instead so a hando
 
 Optional flags from the user:
 
-- `--keep-session` — preserve `sessionId` / `transcriptPath` fields in `context.json` (just strip the assignment fields). Default: full delete.
-- `--unassign` — also run `syntaur unassign <slug> --project <project>` so the assignment is no longer claimed by this agent. Default: leave the claim in place (only the local context is cleared).
+- `--unassign` — also run `syntaur unassign <slug> --project <project>` so the assignment is no longer claimed by this agent. Default: leave the claim in place (only the session's engagement is closed).
 
 ## Step 1: Load Context
 
-Read `.syntaur/context.json` from the current working directory.
+The active assignment is resolved from the session's open engagement. Run `syntaur session resume --json` to read it.
 
-- If the file does not exist, tell the user: "No active assignment context to clear." and stop.
-- If the file exists but contains only session fields (`sessionId`, `transcriptPath`) and no `projectSlug` / `assignmentSlug`, tell the user: "No active assignment is bound — only a platform session record exists. Nothing to clear." and stop (unless they explicitly ask to wipe the session record too).
+- If there is no open engagement, tell the user: "No active assignment is bound to this session — nothing to clear." and stop. (`.syntaur/context.json` is only a workspace marker; its presence does not mean an assignment is bound.)
 
-Otherwise extract: `projectSlug`, `assignmentSlug`, `assignmentDir`, `title`.
+From the resolved engagement, note: `projectSlug`, `assignmentSlug`, `assignmentDir`, `title`.
 
 ## Step 2: Confirm with the User
 
@@ -68,29 +66,15 @@ For standalone assignments use the UUID (the folder name) in place of the slug, 
 
 `syntaur unassign` clears the assignee on the assignment frontmatter (the inverse of `assign`) and bumps `updated`.
 
-## Step 4: Clear the Context File
+## Step 4: Close the Engagement
 
-Default behavior — delete the file entirely:
+Closing the session's open engagement is what drops the active-assignment binding — that is the operation that "clears" the assignment. The dashboard status PATCH in Step 5 (to `cleared`) closes the open engagement for a live session.
 
-```bash
-rm .syntaur/context.json
-```
-
-If the user passed `--keep-session`, preserve session fields and strip everything else instead:
-
-```bash
-jq '{sessionId, transcriptPath} | with_entries(select(.value != null))' \
-  .syntaur/context.json > .syntaur/context.json.tmp \
-  && mv .syntaur/context.json.tmp .syntaur/context.json
-```
-
-If the resulting file would be empty (`{}`), delete it instead of leaving an empty stub.
-
-Do not delete the `.syntaur/` directory itself — other tooling may use it.
+Do NOT delete or rewrite `.syntaur/context.json` to clear the assignment — it is a workspace marker and no longer carries the active assignment. Leave its repository/branch/worktree, session, and lease fields intact so other tooling keeps recognizing the workspace. Do not delete the `.syntaur/` directory.
 
 ## Step 5: Close Session (optional)
 
-If the Syntaur dashboard is running, mark this session as cleared so the dashboard does not keep showing it as active. Resolve `<session-id>` from *your* running process — prefer `$CLAUDE_CODE_SESSION_ID` (or the peer `OPENCODE_SESSION_ID` / `PI_SESSION_ID`), otherwise run `syntaur session resolve-id`. Only if neither yields an id, fall back to the `sessionId` you captured from the original `context.json` in Step 1 (before deletion) — that scalar is a shared, legacy hint a co-tenant can clobber, so don't treat it as authoritative:
+If the Syntaur dashboard is running, mark this session as cleared so the dashboard does not keep showing it as active (this also closes the session's open engagement). Resolve `<session-id>` from *your* running process — prefer `$CLAUDE_CODE_SESSION_ID` (or the peer `OPENCODE_SESSION_ID` / `PI_SESSION_ID`), otherwise run `syntaur session resolve-id`. Only if neither yields an id, fall back to the legacy `sessionId` scalar in `.syntaur/context.json` — that scalar is a shared, legacy hint a co-tenant can clobber, so don't treat it as authoritative:
 
 ```bash
 curl -s -X PATCH "http://localhost:$(cat ~/.syntaur/dashboard-port 2>/dev/null || echo 4800)/api/agent-sessions/<session-id>/status" \
@@ -99,8 +83,6 @@ curl -s -X PATCH "http://localhost:$(cat ~/.syntaur/dashboard-port 2>/dev/null |
 ```
 
 If this fails (e.g., dashboard not running, endpoint not present in the installed version), it is non-critical — silently continue.
-
-Skip this step entirely when `--keep-session` is set.
 
 ## Step 6: Report to User
 

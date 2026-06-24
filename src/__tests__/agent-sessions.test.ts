@@ -14,6 +14,7 @@ import {
   listAllSessions,
   listProjectSessions,
   updateSessionStatus,
+  SessionResurrectionError,
   reconcileActiveSessions,
   deleteSessions,
 } from '../dashboard/agent-sessions.js';
@@ -895,13 +896,35 @@ describe('appendSession engagement binding (persisted-status guard)', () => {
     expect(open?.project_slug).toBe('test-project'); // recovered from the prior engagement
   });
 
-  it('updateSessionStatus to active reopens an engagement from history', async () => {
+  it('updateSessionStatus to active reopens an engagement from history (stopped revive, clears ended)', async () => {
     await appendSession('', makeSession({ sessionId: 's-ua' }));
     await updateSessionStatus('', 's-ua', 'stopped', '2026-03-26T12:00:00.000Z');
     expect(getOpenEngagement('s-ua')).toBeNull();
 
     await updateSessionStatus('', 's-ua', 'active');
     expect(getOpenEngagement('s-ua')?.project_slug).toBe('test-project');
+    // The stale `ended` from the stop is cleared in the same revive transaction.
+    const row = getSessionDb()
+      .prepare('SELECT status, ended FROM sessions WHERE session_id = ?')
+      .get('s-ua') as { status: string; ended: string | null };
+    expect(row.status).toBe('active');
+    expect(row.ended).toBeNull();
+  });
+
+  it('refuses to resurrect a COMPLETED session to active (and leaves no open engagement)', async () => {
+    await appendSession('', makeSession({ sessionId: 's-done' }));
+    await updateSessionStatus('', 's-done', 'completed', '2026-03-26T12:00:00.000Z');
+    expect(getOpenEngagement('s-done')).toBeNull();
+
+    await expect(updateSessionStatus('', 's-done', 'active')).rejects.toBeInstanceOf(
+      SessionResurrectionError,
+    );
+    // Row stays completed; the closed cost window is NOT reopened.
+    const row = getSessionDb()
+      .prepare('SELECT status FROM sessions WHERE session_id = ?')
+      .get('s-done') as { status: string };
+    expect(row.status).toBe('completed');
+    expect(getOpenEngagement('s-done')).toBeNull();
   });
 
   it('deleteSessions removes the session AND its engagement rows (no orphans)', async () => {

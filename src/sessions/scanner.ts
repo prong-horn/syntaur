@@ -3,9 +3,10 @@
  *
  * The guaranteed floor of session tracking: walks every registered agent's
  * `sessions` descriptor (transcripts on disk), upserts each discovered session
- * into the sessions DB with its real timestamps, links project/assignment by
- * reading `<cwd>/.syntaur/context.json`, derives liveness (a process holding
- * the transcript open via lsof, else mtime freshness), and sweeps stale
+ * into the sessions DB with its real timestamps (UNATTRIBUTED — discovered
+ * sessions are not auto-bound to any assignment; an explicit grab/track opens
+ * the engagement edge), derives liveness (a process holding the transcript open
+ * via lsof, else mtime freshness), and sweeps stale
  * `active` rows to `stopped` with `ended` backdated to the transcript's last
  * mtime. Hooks and the launch path make registration instant where supported;
  * this scanner guarantees eventual consistency for everything else.
@@ -17,7 +18,6 @@
 import { execFile, execFileSync } from 'node:child_process';
 import { promisify } from 'node:util';
 import { statSync } from 'node:fs';
-import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { fileExists } from '../utils/fs.js';
 import { canonicalPath } from '../utils/path-canon.js';
@@ -150,36 +150,28 @@ function canonicalizeOpenSet(open: Set<string>): Set<string> {
   return out;
 }
 
-interface ContextLink {
-  projectSlug: string | null;
-  assignmentSlug: string | null;
-}
-
-async function readContextLink(
+/**
+ * Whether `cwd` is a Syntaur workspace — i.e. `<cwd>/.syntaur/context.json`
+ * exists — for the `autoTrack === 'workspaces-only'` gate ONLY.
+ *
+ * Intentional behavior change: the scanner no longer reads
+ * projectSlug/assignmentSlug out of context.json to auto-bind a discovered
+ * session to the cwd's assignment scalar. That auto-binding clobbered the
+ * active assignment across multiple co-located sessions/assignments. Discovered
+ * sessions are now inserted UNATTRIBUTED (project/assignment null); a session is
+ * bound to an assignment only when it explicitly grabs/tracks one (which opens
+ * an engagement edge). We still detect the workspace marker so workspaces-only
+ * autoTrack keeps skipping bare (non-workspace) cwds.
+ */
+async function isWorkspace(
   cwd: string,
-  cache: Map<string, ContextLink | null>,
-): Promise<ContextLink | null> {
+  cache: Map<string, boolean>,
+): Promise<boolean> {
   if (cache.has(cwd)) return cache.get(cwd)!;
-  let link: ContextLink | null = null;
   const path = resolve(cwd, '.syntaur', 'context.json');
-  if (await fileExists(path)) {
-    try {
-      const parsed = JSON.parse(await readFile(path, 'utf-8')) as {
-        projectSlug?: string;
-        assignmentSlug?: string;
-      };
-      link = {
-        projectSlug: typeof parsed.projectSlug === 'string' ? parsed.projectSlug : null,
-        assignmentSlug: typeof parsed.assignmentSlug === 'string' ? parsed.assignmentSlug : null,
-      };
-    } catch {
-      // Malformed context.json → standalone row, but the workspace still
-      // counts as a workspace for autoTrack gating (the file exists).
-      link = { projectSlug: null, assignmentSlug: null };
-    }
-  }
-  cache.set(cwd, link);
-  return link;
+  const present = await fileExists(path);
+  cache.set(cwd, present);
+  return present;
 }
 
 function readWatermark(): number | null {
@@ -246,10 +238,10 @@ export async function scanSessions(
   );
 
   // --- (3) Upsert each discovered session.
-  const contextCache = new Map<string, ContextLink | null>();
+  const workspaceCache = new Map<string, boolean>();
   for (const d of discovered) {
-    const link = await readContextLink(d.cwd, contextCache);
-    if (autoTrack === 'workspaces-only' && link === null) {
+    const isWs = await isWorkspace(d.cwd, workspaceCache);
+    if (autoTrack === 'workspaces-only' && !isWs) {
       summary.skipped += 1;
       continue;
     }
@@ -272,8 +264,11 @@ export async function scanSessions(
       '',
       {
         sessionId: d.sessionId,
-        projectSlug: link?.projectSlug ?? null,
-        assignmentSlug: link?.assignmentSlug ?? null,
+        // Auto-discovered sessions are UNATTRIBUTED: the scanner no longer binds
+        // them to the cwd context.json assignment scalar (see isWorkspace). An
+        // explicit grab/track opens an engagement edge to attribute them.
+        projectSlug: null,
+        assignmentSlug: null,
         agent: d.agent,
         started,
         status,
@@ -306,15 +301,11 @@ export async function scanSessions(
       summary.inserted += 1;
       summary.changed = true;
     } else {
-      // Revival only actually happens on heldOpen (the flag above).
+      // Revival only actually happens on heldOpen (the flag above). Project/
+      // assignment are no longer auto-bound from context.json here, so there is
+      // no slug-fill path to mark as changed.
       if (prev.status === 'stopped' && heldOpen) {
         summary.revived += 1;
-        summary.changed = true;
-      }
-      if (
-        (link?.projectSlug && !prev.projectSlug) ||
-        (link?.assignmentSlug && !prev.assignmentSlug)
-      ) {
         summary.changed = true;
       }
     }

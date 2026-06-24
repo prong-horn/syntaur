@@ -5,6 +5,7 @@ import { fileExists } from '../utils/fs.js';
 import { SyntaurError, formatCliError, exitCodeFor } from '../errors.js';
 import { confirmPrompt, isInteractiveTerminal } from '../utils/prompt.js';
 import { resolveAssignmentTarget } from '../utils/assignment-target.js';
+import { resolveEngagementBinding } from '../utils/engagement-binding.js';
 import { parseAssignmentFrontmatter } from '../lifecycle/frontmatter.js';
 import { readConfig } from '../utils/config.js';
 import { assignmentsDir, defaultProjectDir } from '../utils/paths.js';
@@ -19,6 +20,7 @@ interface OpenOptions {
   terminal?: boolean;
   recreate?: boolean;
   json?: boolean;
+  cwd?: string;
 }
 
 export async function runOpen(
@@ -28,9 +30,14 @@ export async function runOpen(
   // A UUID (--id) is globally unique, so it must resolve WITHOUT a project
   // narrow (the resolver's project branch would otherwise treat it as a slug
   // under that project). --project only applies to a positional slug.
+  const cwd = options.cwd ?? process.cwd();
   const resolved = options.id
-    ? await resolveAssignmentTarget(options.id, {})
-    : await resolveAssignmentTarget(assignmentArg, { project: options.project });
+    ? await resolveAssignmentTarget(options.id, { cwd, resolveEngagement: () => resolveEngagementBinding(cwd) })
+    : await resolveAssignmentTarget(assignmentArg, {
+        project: options.project,
+        cwd,
+        resolveEngagement: () => resolveEngagementBinding(cwd),
+      });
   const assignmentPath = resolve(resolved.assignmentDir, 'assignment.md');
   if (!(await fileExists(assignmentPath))) {
     throw new SyntaurError(`Assignment file not found: ${assignmentPath}`, {
@@ -90,7 +97,7 @@ export const openCommand = new Command('open')
   .description(
     "Resolve an assignment's worktree path — print it and copy it to the clipboard. Optionally open it in your editor/terminal, or recreate the worktree if its directory is missing.",
   )
-  .argument('[assignment]', 'Assignment slug (or UUID). Omit to use --id or the active .syntaur/context.json')
+  .argument('[assignment]', 'Assignment slug (or UUID). Omit to use --id or the session open engagement')
   .option('--id <uuid>', 'Resolve the assignment by its UUID (standalone or project-nested)')
   .option('--project <slug>', 'Project slug (narrows a project-nested assignment slug)')
   .option('--editor', 'Open the worktree in $VISUAL/$EDITOR (or VS Code / macOS open)')

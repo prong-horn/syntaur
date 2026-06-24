@@ -1603,6 +1603,32 @@ describe('PATCH /api/agent-sessions/:sessionId (terminal-only)', () => {
     );
     expect(res.status).toBe(200);
   });
+
+  it('returns 409 when reviving a COMPLETED session to active (no resurrection)', async () => {
+    // Mark sid-patch-1 completed via the terminal route…
+    const done = await fetch(`http://127.0.0.1:${port}/api/agent-sessions/sid-patch-1`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status: 'completed' }),
+    });
+    expect(done.status).toBe(200);
+
+    // …then attempt to revive it to active via the /status route → refused.
+    const res = await fetch(
+      `http://127.0.0.1:${port}/api/agent-sessions/sid-patch-1/status`,
+      {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: 'active' }),
+      },
+    );
+    expect(res.status).toBe(409);
+
+    const listRes = await fetch(`http://127.0.0.1:${port}/api/agent-sessions`);
+    const listBody = await listRes.json();
+    const row = listBody.sessions.find((s: any) => s.sessionId === 'sid-patch-1');
+    expect(row.status).toBe('completed');
+  });
 });
 
 describe('archive hiding + cascade + listArchived + migration', () => {

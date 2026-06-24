@@ -30,10 +30,19 @@ interface ContextFile {
 
 const ASSIGNMENT_FIELDS = ['projectSlug', 'assignmentSlug', 'projectDir', 'assignmentDir'] as const;
 const BUNDLE_FIELDS = ['bundleId', 'bundleScope', 'bundleScopeId'] as const;
+// context.json is a WORKSPACE MARKER now — these are the fields the launcher/grab
+// flow writes. The active assignment resolves from the session's open engagement,
+// NOT from this file (the legacy assignment scalars were removed).
+const WORKSPACE_MARKER_FIELDS = ['repository', 'worktreePath', 'workspaceRoot', 'branch'] as const;
 
 function hasAnyAssignmentField(ctx: ContextFile | null): boolean {
   if (!ctx) return false;
   return ASSIGNMENT_FIELDS.some((k) => typeof ctx[k] === 'string' && ctx[k]!.length > 0);
+}
+
+function hasWorkspaceMarker(ctx: ContextFile | null): boolean {
+  if (!ctx) return false;
+  return WORKSPACE_MARKER_FIELDS.some((k) => typeof ctx[k] === 'string' && ctx[k]!.length > 0);
 }
 
 function hasAnyBundleField(ctx: ContextFile | null): boolean {
@@ -124,33 +133,23 @@ const contextValid: Check = {
       }
       return pass(this, `bundle context (b:${data!.bundleId})`);
     }
-    if (!hasAnyAssignmentField(data)) {
-      return {
-        id: this.id,
-        category: this.category,
-        title: this.title,
-        status: 'error',
-        detail: '.syntaur/context.json has no sessionId, assignment, or bundle fields',
-        affected: [path],
-        autoFixable: false,
-      } satisfies CheckResult;
+    // context.json is a workspace marker — a file carrying workspace markers
+    // (or legacy assignment scalars from before the demotion) is valid. The
+    // active assignment resolves from the session's open engagement, so the
+    // assignment scalars are no longer a required part of this file's contract.
+    if (hasWorkspaceMarker(data) || hasAnyAssignmentField(data)) {
+      return pass(this, 'workspace marker context');
     }
-    const missing: string[] = [];
-    for (const key of ['projectSlug', 'assignmentSlug', 'assignmentDir'] as const) {
-      if (!data?.[key]) missing.push(key);
-    }
-    if (missing.length > 0) {
-      return {
-        id: this.id,
-        category: this.category,
-        title: this.title,
-        status: 'error',
-        detail: `.syntaur/context.json has partial assignment fields but is missing: ${missing.join(', ')}`,
-        affected: [path],
-        autoFixable: false,
-      } satisfies CheckResult;
-    }
-    return pass(this);
+    return {
+      id: this.id,
+      category: this.category,
+      title: this.title,
+      status: 'error',
+      detail:
+        '.syntaur/context.json has no recognized fields (workspace markers, session, or bundle)',
+      affected: [path],
+      autoFixable: false,
+    } satisfies CheckResult;
   },
 };
 

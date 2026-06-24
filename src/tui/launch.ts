@@ -211,14 +211,17 @@ export async function launchAgent(options: LaunchOptions): Promise<void> {
   const contextDir = resolve(workspaceDir, '.syntaur');
   await mkdir(contextDir, { recursive: true });
 
+  // context.json is a WORKSPACE MARKER file — it records repository/branch/
+  // worktree so tooling can recognize this directory as a Syntaur workspace.
+  // It is NOT the active-assignment source of truth: the assignment binds via
+  // the session's open engagement (established by `syntaur track-session`).
+  // Do NOT persist projectSlug/assignmentSlug/assignmentDir/projectDir/title
+  // here — those scalars are non-authoritative and resolve from the engagement.
   const context = {
-    projectSlug,
-    assignmentSlug,
-    projectDir,
-    assignmentDir,
-    workspaceRoot: workspaceDir,
-    title: detail.title,
+    repository: detail.workspace.repository ?? null,
     branch: detail.workspace.branch ?? null,
+    worktreePath: detail.workspace.worktreePath ?? null,
+    workspaceRoot: workspaceDir,
     grabbedAt: new Date().toISOString(),
   };
 

@@ -28,35 +28,10 @@ import {
   updateAssignmentWorkspace,
   updateAssignmentFile,
 } from '../lifecycle/frontmatter.js';
-
-interface ContextFile {
-  projectSlug?: string;
-  assignmentSlug?: string;
-  assignmentDir?: string;
-  workspaceRoot?: string;
-  // Bundle-scoped fields (this reader only cares about assignmentDir; the
-  // bundle fields are tolerated so the file parses cleanly inside a bundle worktree).
-  bundleId?: string;
-  bundleSlug?: string;
-  bundleScope?: string;
-  bundleScopeId?: string;
-  todoIds?: string[];
-  planDir?: string;
-  branch?: string;
-  worktreePath?: string;
-  repository?: string;
-  boundAt?: string;
-}
-
-async function readContext(cwd: string): Promise<ContextFile | null> {
-  const path = resolve(cwd, '.syntaur', 'context.json');
-  if (!(await fileExists(path))) return null;
-  try {
-    return JSON.parse(await readFile(path, 'utf-8')) as ContextFile;
-  } catch {
-    return null;
-  }
-}
+import { initSessionDb } from '../dashboard/session-db.js';
+import { resolveSessionEngagement } from '../utils/engagement-binding.js';
+import { resolveAssignmentTarget } from '../utils/assignment-target.js';
+import { assertMayMutate } from '../utils/session-id.js';
 
 async function resolveAssignmentPath(opts: {
   assignment?: string;
@@ -70,11 +45,21 @@ async function resolveAssignmentPath(opts: {
     }
     return resolve(assignmentsDir(), opts.assignment, 'assignment.md');
   }
-  const ctx = await readContext(opts.cwd);
-  if (ctx?.assignmentDir) return resolve(ctx.assignmentDir, 'assignment.md');
-  throw new Error(
-    'No active assignment. Pass --assignment <slug> [--project <slug>] or run from a workspace with .syntaur/context.json.',
-  );
+  // No explicit target → resolve from the session's OPEN engagement and gate the
+  // mutation (worktree create/remove edit the assignment's workspace.* block).
+  // context.json's assignment scalar (assignmentDir) is no longer a resolution
+  // source — context.json is a workspace marker only.
+  initSessionDb(); // idempotent; the engagement edge lives in the sessions DB
+  const se = await resolveSessionEngagement(opts.cwd);
+  if (se) {
+    assertMayMutate(se.session, { hasSelector: false });
+  }
+  const target = await resolveAssignmentTarget(undefined, {
+    project: opts.project,
+    cwd: opts.cwd,
+    resolveEngagement: async () => se?.open ?? null,
+  });
+  return resolve(target.assignmentDir, 'assignment.md');
 }
 
 interface WorktreeCreateOptions {
@@ -495,7 +480,7 @@ worktreeCommand
   .requiredOption('--branch <name>', 'Branch name to create (also used as worktree dir name)')
   .option('--repository <path>', 'Repository root (defaults to current working directory)')
   .option('--parent-branch <name>', 'Parent branch to fork from', 'main')
-  .option('--assignment <slug>', 'Assignment slug (UUID for standalone). Defaults to .syntaur/context.json')
+  .option('--assignment <slug>', 'Assignment slug (UUID for standalone). Defaults to the session open engagement')
   .option('--project <slug>', 'Project slug. Required when --assignment is given for a project-nested assignment')
   .option('--worktree-path <path>', 'Override the computed <repository>/.worktrees/<branch> path')
   .action(async (options: WorktreeCreateOptions) => {
@@ -539,7 +524,7 @@ worktreeCommand
   .description(
     "Remove an assignment's git worktree and clear its workspace.* fields. Branch deletion is opt-in.",
   )
-  .option('--assignment <slug>', 'Assignment slug (UUID for standalone). Defaults to .syntaur/context.json')
+  .option('--assignment <slug>', 'Assignment slug (UUID for standalone). Defaults to the session open engagement')
   .option('--project <slug>', 'Project slug. Required when --assignment is given for a project-nested assignment')
   .option('--repository <path>', 'Repository root (defaults to the recorded workspace.repository)')
   .option('--delete-branch', 'Also delete the branch after removing the worktree')
@@ -623,5 +608,4 @@ worktreeCommand
 
 export const _internal = {
   resolveAssignmentPath,
-  readContext,
 };

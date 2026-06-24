@@ -10,6 +10,12 @@ export interface ResolvedAssignment {
   id: string;
   standalone: boolean;
   workspaceGroup: string | null;
+  /**
+   * The engagement stage this target was resolved at, when resolution came from
+   * the session's open engagement (Case 3). Undefined for explicit `--project`
+   * / bare-id resolution, which carries no engagement.
+   */
+  stage?: string;
 }
 
 export async function resolveAssignmentById(

@@ -20,14 +20,14 @@ Optional: the user may provide focus areas or notes to guide the plan.
 
 ## Step 1: Load Context
 
-Read `.syntaur/context.json` from the current working directory. If the file does not exist, tell the user: "No active assignment found. Run `grab-assignment` first to claim an assignment."
+The active assignment is resolved from the session's open engagement. Run `syntaur session resume --json` to read it. If there is no open engagement (no active assignment), tell the user: "No active assignment for this session — grab one first." and stop. `.syntaur/context.json` is only a workspace marker; do not read the assignment from it.
 
-Extract:
+From the resolved engagement, note:
 - `projectSlug` — the project slug (`null` for standalone assignments)
 - `assignmentSlug` — the assignment slug
 - `assignmentDir` — absolute path to the assignment folder
 - `projectDir` — absolute path to the project folder (may be null for standalone)
-- `workspaceRoot` — absolute path to the workspace (may be null)
+- `workspaceRoot` — absolute path to the workspace (a workspace marker; may be null)
 
 ## Step 2: Load Playbooks
 

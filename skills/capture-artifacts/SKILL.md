@@ -17,7 +17,7 @@ Attach proof to your work. Reviewers should be able to scroll a single page (`pr
 
 ## Input
 
-No arguments. Reads `.syntaur/context.json` from the current working directory to identify the active assignment.
+No arguments. The active assignment is resolved from the session's open engagement (`.syntaur/context.json` is only a workspace marker, not the assignment source).
 
 ## Step 1: Decide whether to capture
 
@@ -60,7 +60,7 @@ Rules:
 - All other kinds (`screenshot`, `video`, `asciinema`) require `--file`. The CLI rejects nonexistent / non-file paths.
 - `--criterion <index>` is optional — pass the **0-based** index into the `## Acceptance Criteria` checklist when you want to anchor the artifact to a specific criterion.
 - `--transcribe` is video-only and writes a sibling `<id>.transcript.md` (requires `ELEVENLABS_API_KEY` + `ffmpeg`). `proof build` renders the transcript next to the player; clicking a phrase seeks the video.
-- If you have a `.syntaur/context.json` in the cwd, the positional target argument is unnecessary; otherwise pass `--project <slug> <assignment-slug>` or a bare assignment UUID.
+- If this session has an open engagement (active assignment), the positional target argument is unnecessary — the CLI resolves the target from the engagement. Otherwise pass `--project <slug> <assignment-slug>` or a bare assignment UUID.
 
 The CLI copies the file (if any) under `<assignmentDir>/proof/<criterion|untagged>/<id>.<ext>` and inserts a row in `~/.syntaur/syntaur.db`. Output prints the artifact id and absolute path.
 

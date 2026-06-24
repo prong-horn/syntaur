@@ -235,6 +235,12 @@ export async function appendSession(
  * `endedAt` (ISO 8601) overrides the default `datetime('now')` so sweeps can
  * backdate `ended` to the transcript's last mtime.
  */
+/**
+ * Thrown when a status update would resurrect a `completed` session to `active`.
+ * The dashboard PATCH route maps this to a 409 Conflict.
+ */
+export class SessionResurrectionError extends Error {}
+
 export async function updateSessionStatus(
   _projectDir: string,
   sessionId: string,
@@ -245,16 +251,32 @@ export async function updateSessionStatus(
   const isTerminal = status === 'completed' || status === 'stopped';
 
   if (!isTerminal) {
-    // Status update + (for an active/revive transition) reopening the engagement
-    // run in ONE IMMEDIATE transaction so the session never sits active without
-    // its binding. Reopen recovers the binding from the latest engagement.
+    // The only non-terminal status is `active` — i.e. a revive. Guard against
+    // RESURRECTING a terminal session (the route accepts `active` for any id):
+    //   - `completed` is FINAL: reviving it would reopen a closed cost window
+    //     and recover a stale binding, bypassing the narrow revive rules. Reject
+    //     (caller surfaces 409). Liveness GC / legitimate revive live elsewhere.
+    //   - `stopped → active` is the one legitimate revive (e.g. `claude --resume`
+    //     of a stopped session); clear the stale `ended` in the SAME transaction
+    //     as the flip + engagement reopen, so the row never sits active-with-ended.
+    // The current-status read + write are one IMMEDIATE transaction so a concurrent
+    // terminal transition can't slip between the check and the revive.
     const apply = db.transaction((): boolean => {
+      const current = db
+        .prepare('SELECT status FROM sessions WHERE session_id = ?')
+        .get(sessionId) as { status?: string } | undefined;
+      if (!current) return false;
+      if (current.status === 'completed') {
+        throw new SessionResurrectionError(
+          `Refusing to revive completed session "${sessionId}" to active. A completed session is final.`,
+        );
+      }
       const res = db
         .prepare(
-          'UPDATE sessions SET status = ?, updated_at = datetime(\'now\') WHERE session_id = ?',
+          'UPDATE sessions SET status = ?, ended = NULL, updated_at = datetime(\'now\') WHERE session_id = ?',
         )
         .run(status, sessionId);
-      if (res.changes > 0 && status === 'active') {
+      if (res.changes > 0) {
         reopenEngagementIfMissing(sessionId, null, new Date().toISOString());
       }
       return res.changes > 0;

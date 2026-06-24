@@ -5,38 +5,9 @@ import { fileExists, writeFileForce } from '../utils/fs.js';
 import { assignmentsDir } from '../utils/paths.js';
 import { readConfig } from '../utils/config.js';
 import { recomputeAssignmentDir } from '../lifecycle/recompute.js';
-
-interface ContextFile {
-  projectSlug?: string;
-  assignmentSlug?: string;
-  assignmentDir?: string;
-  // Bundle-scoped fields tolerated; this reader only consumes assignmentDir.
-  bundleId?: string;
-  bundleSlug?: string;
-  bundleScope?: string;
-  bundleScopeId?: string;
-  todoIds?: string[];
-  planDir?: string;
-  branch?: string;
-  worktreePath?: string;
-  repository?: string;
-  boundAt?: string;
-}
-
-async function readContextAssignmentDir(cwd: string): Promise<string | null> {
-  const path = resolve(cwd, '.syntaur', 'context.json');
-  if (!(await fileExists(path))) return null;
-  try {
-    const raw = await readFile(path, 'utf-8');
-    const ctx = JSON.parse(raw) as ContextFile;
-    if (typeof ctx.assignmentDir === 'string' && ctx.assignmentDir.length > 0) {
-      return ctx.assignmentDir;
-    }
-    return null;
-  } catch {
-    return null;
-  }
-}
+import { resolveSessionEngagement } from '../utils/engagement-binding.js';
+import { resolveAssignmentTarget } from '../utils/assignment-target.js';
+import { assertMayMutate } from '../utils/session-id.js';
 
 async function resolveAssignmentDir(opts: {
   assignment?: string;
@@ -51,11 +22,21 @@ async function resolveAssignmentDir(opts: {
     // Standalone (assignment is UUID under ~/.syntaur/assignments/)
     return resolve(assignmentsDir(), opts.assignment);
   }
-  const fromCtx = await readContextAssignmentDir(cwd);
-  if (fromCtx) return fromCtx;
-  throw new Error(
-    'No active assignment. Pass --assignment <slug> --project <slug> or run from a workspace with .syntaur/context.json.',
-  );
+  // No explicit target → resolve from the session's OPEN engagement and gate
+  // the mutation. context.json's assignment scalar is no longer a resolution
+  // source (it is a workspace marker only).
+  const { initSessionDb } = await import('../dashboard/session-db.js');
+  initSessionDb(); // idempotent; no-op if already open
+  const se = await resolveSessionEngagement(cwd);
+  if (se) {
+    assertMayMutate(se.session, { hasSelector: false });
+  }
+  const target = await resolveAssignmentTarget(undefined, {
+    project: opts.project,
+    cwd,
+    resolveEngagement: async () => se?.open ?? null,
+  });
+  return target.assignmentDir;
 }
 
 const PLAN_PATTERN = /^plan(?:-v(\d+))?\.md$/;
@@ -442,7 +423,7 @@ export const planCommand = new Command('plan')
 planCommand
   .command('create')
   .description('Create the initial plan.md and append the plan todo-cycle to assignment.md ## Todos')
-  .option('--assignment <slug>', 'Assignment slug (UUID for standalone). Defaults to .syntaur/context.json')
+  .option('--assignment <slug>', "Assignment slug (UUID for standalone). Defaults to the session's open engagement")
   .option('--project <slug>', 'Project slug. Required when --assignment is given for a project-nested assignment')
   .option('--force', 'Overwrite an existing plan.md')
   .action(async (options: PlanCreateOptions) => {
@@ -459,7 +440,7 @@ planCommand
   .description(
     'Create the next plan-v<N>.md, supersede the prior plan in assignment.md ## Todos, and carry forward unchecked tasks',
   )
-  .option('--assignment <slug>', 'Assignment slug (UUID for standalone). Defaults to .syntaur/context.json')
+  .option('--assignment <slug>', "Assignment slug (UUID for standalone). Defaults to the session's open engagement")
   .option('--project <slug>', 'Project slug. Required when --assignment is given for a project-nested assignment')
   .option('--force', 'Overwrite if the next plan-v<N>.md already exists')
   .action(async (options: PlanVersionOptions) => {

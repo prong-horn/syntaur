@@ -39,9 +39,11 @@ records current in real-time, especially after every meaningful action.
 
 ## Step 1: Verify there is an active assignment
 
-Read `.syntaur/context.json` from the current working directory. Extract
-`assignmentDir`. If missing, abort with: "No active assignment. Run
-`grab-assignment` first."
+The active assignment is resolved from the session's open engagement — `syntaur
+progress log` (Step 3) targets it automatically. `.syntaur/context.json` is only
+a workspace marker; do not read the assignment from it. If there is no open
+engagement (no active assignment), the CLI aborts with "No active assignment for
+this session — grab one first." Run `grab-assignment` first.
 
 ## Step 2: Compose the entry
 
@@ -69,7 +71,7 @@ Run:
 syntaur progress log "<your composed entry body>"
 ```
 
-The command resolves the active assignment from `.syntaur/context.json`
+The command resolves the active assignment from the session's open engagement
 (or pass `--assignment <slug> [--project <slug>]` to target one explicitly),
 then atomically:
 

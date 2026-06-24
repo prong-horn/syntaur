@@ -18,7 +18,16 @@ def _expand_home(p):
 
 
 def load_context(cwd):
-    """Read <cwd>/.syntaur/context.json; return a dict or None (fail-open)."""
+    """Read <cwd>/.syntaur/context.json; return its WORKSPACE-MARKER fields, or
+    None when absent/unparseable (caller treats None as "not in a workspace").
+
+    Deliberately does NOT surface the demoted assignment scalars
+    (assignmentDir/projectDir): the active assignment/project dirs are resolved
+    from the session's open engagement by the caller and merged in. Surfacing
+    stale legacy scalars here would let them leak through on a boundary-resolution
+    failure, so the {}-failure path could wrongly allow writes under a stale dir
+    instead of staying workspace-only.
+    """
     path = os.path.join(cwd, ".syntaur", "context.json")
     try:
         with open(path, "r", encoding="utf-8") as fh:
@@ -37,8 +46,6 @@ def load_context(cwd):
         return _expand_home(v) if v else None
 
     return {
-        "assignmentDir": home("assignmentDir"),
-        "projectDir": home("projectDir"),
         "workspaceRoot": home("workspaceRoot"),
         "sessionId": s("sessionId"),
         "projectSlug": s("projectSlug"),
@@ -67,12 +74,14 @@ def is_write_allowed(abs_file_path, ctx, context_file_abs=None):
     resources/memories (excluding derived `_*` files), equal to the context file,
     or under the workspace root. Otherwise blocked.
     """
-    # Parity with the bash hook (enforce-boundaries.sh:69): enforcement requires
-    # BOTH assignmentDir and projectDir. If either is missing (standalone / old /
-    # partially-written context), fail OPEN — allow everything.
-    if not ctx.get("assignmentDir") or not ctx.get("projectDir"):
-        return True, None
-
+    # context.json is a WORKSPACE MARKER now (the assignment scalars were
+    # demoted); the active assignment resolves from the session's open engagement.
+    # When the caller cannot supply assignmentDir/projectDir (no engagement
+    # resolved), we do NOT fail open — we enforce WORKSPACE-ONLY via the
+    # workspaceRoot marker below. Each dir check is guarded for absence, so a
+    # missing assignmentDir/projectDir simply narrows the allowlist rather than
+    # disabling it. (Assignment-record writes under ~/.syntaur go through the CLI,
+    # not the agent's file tools, so they never hit this hook.)
     f = _norm(abs_file_path)
 
     if ctx.get("assignmentDir") and _is_under(f, ctx["assignmentDir"]):

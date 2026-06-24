@@ -43,21 +43,32 @@ import {
   resetProofDb,
   listArtifactsByAssignment,
 } from '../db/proof-db.js';
+import { initSessionDb, resetSessionDb } from '../dashboard/session-db.js';
+import { openEngagement } from '../db/engagement-db.js';
 
 let testDir: string;
 let origSyntaurHome: string | undefined;
+let origSessionId: string | undefined;
 
 beforeEach(async () => {
   testDir = await mkdtemp(join(tmpdir(), 'syntaur-capture-test-'));
   origSyntaurHome = process.env.SYNTAUR_HOME;
   process.env.SYNTAUR_HOME = testDir;
+  // Deterministic session resolution: clear any inherited session id so
+  // ambient resolution only sees what a test explicitly seeds.
+  origSessionId = process.env.CLAUDE_CODE_SESSION_ID;
+  delete process.env.CLAUDE_CODE_SESSION_ID;
   resetProofDb();
+  resetSessionDb();
 });
 
 afterEach(async () => {
   closeProofDb();
+  resetSessionDb();
   if (origSyntaurHome === undefined) delete process.env.SYNTAUR_HOME;
   else process.env.SYNTAUR_HOME = origSyntaurHome;
+  if (origSessionId === undefined) delete process.env.CLAUDE_CODE_SESSION_ID;
+  else process.env.CLAUDE_CODE_SESSION_ID = origSessionId;
   await rm(testDir, { recursive: true, force: true });
 });
 
@@ -252,9 +263,7 @@ describe('captureCommand', () => {
     expect(rows[0].criterion_index).toBe(99);
   });
 
-  it('captures against a standalone (UUID) assignment via .syntaur/context.json fallback', async () => {
-    // Create a standalone assignment
-    const id = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
+  async function writeStandalone(id: string): Promise<string> {
     const standaloneDir = resolve(testDir, 'assignments', id);
     await mkdir(standaloneDir, { recursive: true });
     await writeFile(
@@ -278,25 +287,88 @@ describe('captureCommand', () => {
         '',
       ].join('\n'),
     );
+    return standaloneDir;
+  }
 
-    // Set up a working dir with .syntaur/context.json pointing at it
+  it('captures (ambient) against the standalone assignment of the session open engagement', async () => {
+    const id = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
+    await writeStandalone(id);
+
+    // The session's OPEN engagement — not a context.json scalar — is the source.
+    const sessionId = 'sess-capture-ambient';
+    initSessionDb(resolve(testDir, 'syntaur.db'));
+    openEngagement({
+      sessionId,
+      assignmentId: id,
+      projectSlug: null,
+      assignmentSlug: id,
+      stage: 'implement',
+      startedAt: '2026-01-01T00:00:00Z',
+    });
+    process.env.CLAUDE_CODE_SESSION_ID = sessionId; // STRONG provenance → passes the gate
+
     const workingDir = resolve(testDir, 'work');
-    await mkdir(resolve(workingDir, '.syntaur'), { recursive: true });
-    await writeFile(
-      resolve(workingDir, '.syntaur', 'context.json'),
-      JSON.stringify({ assignmentDir: standaloneDir }),
-    );
+    await mkdir(workingDir, { recursive: true });
 
     await captureCommand(undefined, {
       kind: 'text',
-      note: 'standalone-capture',
+      note: 'ambient-capture',
       cwd: workingDir,
       dir: testDir,
     });
 
     const rows = listArtifactsByAssignment(id);
     expect(rows).toHaveLength(1);
-    expect(rows[0].note).toBe('standalone-capture');
+    expect(rows[0].note).toBe('ambient-capture');
+  });
+
+  it('ambient capture fails-with-selector when the session has no open engagement', async () => {
+    process.env.CLAUDE_CODE_SESSION_ID = 'sess-no-engagement';
+    initSessionDb(resolve(testDir, 'syntaur.db'));
+    const workingDir = resolve(testDir, 'work');
+    await mkdir(workingDir, { recursive: true });
+
+    await expect(
+      captureCommand(undefined, { kind: 'text', note: 'x', cwd: workingDir, dir: testDir }),
+    ).rejects.toThrow(/No open engagement/);
+  });
+
+  it('targeted --project files the artifact against B without disturbing the ambient engagement A', async () => {
+    // Ambient engagement A is on a standalone assignment.
+    const aId = 'aaaaaaaa-1111-2222-3333-444444444444';
+    await writeStandalone(aId);
+    const sessionId = 'sess-capture-targeted';
+    initSessionDb(resolve(testDir, 'syntaur.db'));
+    openEngagement({
+      sessionId,
+      assignmentId: aId,
+      projectSlug: null,
+      assignmentSlug: aId,
+      stage: 'implement',
+      startedAt: '2026-01-01T00:00:00Z',
+    });
+    process.env.CLAUDE_CODE_SESSION_ID = sessionId;
+
+    // Targeted project-nested assignment B.
+    const b = await setupProjectAssignment();
+    const workingDir = resolve(testDir, 'work');
+    await mkdir(workingDir, { recursive: true });
+
+    await captureCommand(b.assignmentSlug, {
+      kind: 'text',
+      note: 'filed-against-B',
+      project: b.projectSlug,
+      cwd: workingDir,
+      dir: testDir,
+    });
+
+    // Artifact filed against B (the explicit target)…
+    const bId = await getAssignmentId(b.assignmentDir);
+    const bRows = listArtifactsByAssignment(bId);
+    expect(bRows).toHaveLength(1);
+    expect(bRows[0].note).toBe('filed-against-B');
+    // …and the ambient engagement A is untouched (no artifact, engagement still open).
+    expect(listArtifactsByAssignment(aId)).toHaveLength(0);
   });
 
   it('captures via bare UUID positional', async () => {

@@ -14,7 +14,7 @@ import { fileExists } from '../utils/fs.js';
 import { readConfig } from '../utils/config.js';
 import { isValidSlug } from '../utils/slug.js';
 import { nowTimestamp } from '../utils/timestamp.js';
-import { resolveAssignmentById } from '../utils/assignment-resolver.js';
+import { resolveAssignmentById, type ResolvedAssignment } from '../utils/assignment-resolver.js';
 import {
   parseAssignmentFrontmatter,
   updateAssignmentFile,
@@ -36,12 +36,26 @@ import {
 import { emitEvent } from '../lifecycle/event-emit.js';
 import { checkDependencies } from '../lifecycle/transitions.js';
 import { resolveAssignmentTarget } from '../utils/assignment-target.js';
+import {
+  resolveSessionEngagement,
+  latestBindingForSessionId,
+} from '../utils/engagement-binding.js';
+import { assertMayMutate } from '../utils/session-id.js';
 
 export interface DeriveVerbOptions {
   project?: string;
   dir?: string;
   agent?: string;
   reason?: string;
+  cwd?: string;
+  /**
+   * Explicit, caller-supplied session id (the SessionEnd cleanup hook passes
+   * `--session-id`). When set, the implicit recompute target is keyed on THIS
+   * session's latest engagement (open-else-latest) rather than the caller's
+   * own-session resolution — an explicit id is EXPLICIT provenance, so it may
+   * drive a mutation without a positional selector.
+   */
+  sessionId?: string;
 }
 
 interface ResolvedTarget {
@@ -477,14 +491,51 @@ export async function recomputeCommand(
     for (const w of summary.warnings) console.warn(`Warning: ${w}`);
     return;
   }
-  // No positional arg falls back to .syntaur/context.json in the cwd — so
-  // `syntaur recompute` works from an assignment workspace (e.g. a SessionEnd
-  // hook) without threading slugs. resolveAssignmentTarget covers all three
-  // shapes: --project + slug, bare UUID, and context.json.
-  const resolved = await resolveAssignmentTarget(assignment, {
-    project: options.project,
-    dir: options.dir,
-  });
+  // No positional arg resolves the active assignment from the session's OPEN
+  // engagement — so `syntaur recompute` works from an assignment workspace
+  // (e.g. a SessionEnd hook) without threading slugs. resolveAssignmentTarget
+  // covers all three shapes: --project + slug, bare UUID, and the session's
+  // open engagement. The legacy .syntaur/context.json assignment scalar is no
+  // longer a resolution source.
+  //
+  // recompute MUTATES derived assignment state, so gate the implicit
+  // (engagement-resolved) path: a session whose id was resolved from a WEAK
+  // source (transcript scan / legacy hint) cannot drive a mutation without an
+  // explicit target. The positional slug/UUID is that explicit selector.
+  const cwd = options.cwd ?? process.cwd();
+  const hasSelector = Boolean(assignment) || Boolean(options.project);
+  // The engagement edge lives in the session DB; ensure it's open first
+  // (idempotent — no-op if already initialized).
+  const { initSessionDb } = await import('../dashboard/session-db.js');
+  initSessionDb();
+
+  let resolved: ResolvedAssignment;
+  if (options.sessionId) {
+    // EXPLICIT caller-supplied session id (the SessionEnd hook). Key the target
+    // on THIS session's latest engagement (open-else-latest) — by now the hook's
+    // `session stop` has already CLOSED the ending session's engagement, so we
+    // must accept the latest closed interval. An explicit id is EXPLICIT
+    // provenance, so it may drive a mutation with no positional selector; we
+    // still run assertMayMutate for symmetry (it passes).
+    assertMayMutate({ id: options.sessionId, provenance: 'EXPLICIT' }, { hasSelector });
+    resolved = await resolveAssignmentTarget(assignment, {
+      project: options.project,
+      dir: options.dir,
+      cwd,
+      resolveEngagement: async () => latestBindingForSessionId(options.sessionId!),
+    });
+  } else {
+    // No explicit id: resolve the caller's OWN session and gate on its open
+    // engagement (WEAK-source sessions can't mutate without a selector).
+    const se = await resolveSessionEngagement(cwd);
+    if (se) assertMayMutate(se.session, { hasSelector });
+    resolved = await resolveAssignmentTarget(assignment, {
+      project: options.project,
+      dir: options.dir,
+      cwd,
+      resolveEngagement: async () => se?.open ?? null,
+    });
+  }
   const projectDir = resolved.standalone ? null : resolve(resolved.assignmentDir, '..', '..');
   const result = await recomputeAndWrite(resolve(resolved.assignmentDir, 'assignment.md'), {
     cause: 'recompute',
