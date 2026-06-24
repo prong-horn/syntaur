@@ -19,6 +19,9 @@ afterEach(async () => {
   await rm(sandbox, { recursive: true, force: true });
 });
 
+// v6: the binding lives on the engagement edge. Seed a session row (no slugs)
+// plus one engagement spanning the session window [started, ended) that carries
+// the project/assignment slugs — attribution is now interval-aware.
 function seedSession(
   db: ReturnType<typeof initSessionDb>,
   row: {
@@ -32,16 +35,27 @@ function seedSession(
 ) {
   db.prepare(
     `INSERT INTO sessions
-       (session_id, project_slug, assignment_slug, agent, started, ended, status, path)
-     VALUES (@sessionId, @projectSlug, @assignmentSlug, 'claude-code', @started, @ended, 'active', @path)`,
+       (session_id, agent, started, ended, status, path)
+     VALUES (@sessionId, 'claude-code', @started, @ended, 'active', @path)`,
   ).run({
     sessionId: row.sessionId,
-    projectSlug: row.projectSlug ?? null,
-    assignmentSlug: row.assignmentSlug ?? null,
     started: row.started,
     ended: row.ended ?? null,
     path: row.path ?? null,
   });
+  if (row.projectSlug != null || row.assignmentSlug != null) {
+    db.prepare(
+      `INSERT INTO engagement
+         (session_id, project_slug, assignment_slug, stage, started_at, ended_at)
+       VALUES (@sessionId, @projectSlug, @assignmentSlug, 'implement', @started, @ended)`,
+    ).run({
+      sessionId: row.sessionId,
+      projectSlug: row.projectSlug ?? null,
+      assignmentSlug: row.assignmentSlug ?? null,
+      started: row.started,
+      ended: row.ended ?? null,
+    });
+  }
 }
 
 describe('resolveAttribution', () => {
@@ -278,5 +292,37 @@ describe('resolveAttribution', () => {
       eventTs: '2026-06-10T23:00:00.000Z', // full ISO, outside window, not a midnight snap
     });
     expect(result).toEqual({ projectSlug: null, assignmentSlug: null });
+  });
+
+  // Engagement intervals are HALF-OPEN [started_at, ended_at): an event exactly
+  // at a switch boundary belongs to the NEW engagement, deterministically — even
+  // on the cwd-fuzzy fallback path (stage 2a). Regression for codex finding.
+  it('attributes a switch-boundary event to the new engagement (half-open)', () => {
+    const db = initSessionDb(dbPath);
+    db.prepare(
+      `INSERT INTO sessions (session_id, agent, started, ended, status, path)
+       VALUES ('tracked', 'claude', '2026-05-21T10:00:00.000Z', NULL, 'active', '/w/p')`,
+    ).run();
+    // assignment switched at exactly 12:00 — old closes, new opens at the same instant
+    db.prepare(
+      `INSERT INTO engagement (session_id, project_slug, assignment_slug, stage, started_at, ended_at)
+       VALUES ('tracked', 'proj', 'old-asg', 'plan', '2026-05-21T10:00:00.000Z', '2026-05-21T12:00:00.000Z')`,
+    ).run();
+    db.prepare(
+      `INSERT INTO engagement (session_id, project_slug, assignment_slug, stage, started_at, ended_at)
+       VALUES ('tracked', 'proj', 'new-asg', 'implement', '2026-05-21T12:00:00.000Z', NULL)`,
+    ).run();
+
+    // Stage-1 PK path: boundary event → new engagement.
+    expect(
+      resolveAttribution({ sessionId: 'tracked', cwd: null, eventTs: '2026-05-21T12:00:00.000Z' })
+        .assignmentSlug,
+    ).toBe('new-asg');
+
+    // Stage-2a cwd fallback (different session id): boundary event → new engagement.
+    expect(
+      resolveAttribution({ sessionId: 'other', cwd: '/w/p', eventTs: '2026-05-21T12:00:00.000Z' })
+        .assignmentSlug,
+    ).toBe('new-asg');
   });
 });

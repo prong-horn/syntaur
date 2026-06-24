@@ -6,6 +6,7 @@ import {
   initSessionDb,
   closeSessionDb,
   resetSessionDb,
+  getSessionDb,
   migrateFromMarkdown,
 } from '../dashboard/session-db.js';
 import {
@@ -14,7 +15,10 @@ import {
   listProjectSessions,
   updateSessionStatus,
   reconcileActiveSessions,
+  deleteSessions,
 } from '../dashboard/agent-sessions.js';
+import { getOpenEngagement } from '../db/engagement-db.js';
+import { setCumulativeTokenSource, type TokenSnapshot } from '../db/engagement-tokens.js';
 import type { AgentSession, AgentSessionStatus } from '../dashboard/types.js';
 
 let testDir: string;
@@ -41,6 +45,7 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
+  setCumulativeTokenSource(null);
   closeSessionDb();
   await rm(testDir, { recursive: true, force: true });
 });
@@ -300,6 +305,43 @@ activeSessions: 1
     expect(all).toHaveLength(2);
     expect(all.find((s) => s.sessionId === 'sess-abc')?.assignmentSlug).toBe('task-1');
     expect(all.find((s) => s.sessionId === 'sess-def')?.agent).toBe('codex');
+
+    // The active import gets an OPEN engagement; the completed import must be
+    // imported as a CLOSED engagement (no leaked open interval).
+    expect(getOpenEngagement('sess-abc')).not.toBeNull();
+    expect(getOpenEngagement('sess-def')).toBeNull();
+  });
+
+  it('does not leak an open engagement when a duplicate session_id is ignored', async () => {
+    // Same session id appears twice (e.g. across index files): terminal first,
+    // active second. INSERT OR IGNORE keeps the first (terminal) session row, so
+    // the active duplicate must NOT create an open engagement.
+    const projectsDir = resolve(testDir, 'projects');
+    const projectDir = resolve(projectsDir, 'dup-project');
+    await mkdir(projectDir, { recursive: true });
+    await writeFile(
+      resolve(projectDir, '_index-sessions.md'),
+      `---
+project: dup-project
+generated: "2026-03-26T00:00:00Z"
+activeSessions: 2
+---
+
+# Active Sessions
+
+| Assignment | Agent | Session ID | Started | Status | Path |
+|------------|-------|------------|---------|--------|------|
+| task-1 | claude | dup-sess | 2026-03-26T10:00:00Z | completed | /tmp/work |
+| task-1 | claude | dup-sess | 2026-03-26T11:00:00Z | active | /tmp/work |
+`,
+    );
+
+    await migrateFromMarkdown(projectsDir);
+
+    const all = await listAllSessions('');
+    expect(all).toHaveLength(1);
+    expect(all.find((s) => s.sessionId === 'dup-sess')?.status).toBe('completed');
+    expect(getOpenEngagement('dup-sess')).toBeNull();
   });
 
   it('skips migration if sessions already exist', async () => {
@@ -390,8 +432,8 @@ describe('v2 -> v3 schema migration (adds transcript_path)', () => {
     const version = db
       .prepare("SELECT value FROM meta WHERE key = 'schema_version'")
       .get() as { value: string };
-    // v2 chains through every migration to the current head (v5).
-    expect(version.value).toBe('5');
+    // v2 chains through every migration to the current head (v6).
+    expect(version.value).toBe('6');
   });
 
   it('falls back to mission_slug when a v2 table has both columns but project_slug is null', async () => {
@@ -472,7 +514,9 @@ describe('v2 -> v3 schema migration (adds transcript_path)', () => {
     const all = await listAllSessions('');
     expect(all).toHaveLength(1);
     expect(all[0].sessionId).toBe('legacy-mission');
-    expect(all[0].projectSlug).toBe('legacy-proj'); // values from mission_slug column survive the rename
+    // The mission_slug value survives the rename AND the v6 move onto the
+    // engagement edge — surfaced here via the chosen-engagement projection.
+    expect(all[0].projectSlug).toBe('legacy-proj');
     expect(all[0].transcriptPath).toBeNull();
 
     const { getSessionDb } = await import('../dashboard/session-db.js');
@@ -480,8 +524,11 @@ describe('v2 -> v3 schema migration (adds transcript_path)', () => {
     const cols = (db.prepare('PRAGMA table_info(sessions)').all() as Array<{ name: string }>).map(
       (c) => c.name,
     );
-    expect(cols).toContain('project_slug');
+    // v6: the scalar binding has moved off `sessions` onto `engagement`.
+    expect(cols).not.toContain('project_slug');
     expect(cols).not.toContain('mission_slug');
+    expect(cols).not.toContain('assignment_slug');
+    expect(cols).toContain('activity');
     expect(cols).toContain('transcript_path');
   });
 });
@@ -545,8 +592,8 @@ describe('v3 -> v4 schema migration (adds pid + pid_started_at)', () => {
     const version = db
       .prepare("SELECT value FROM meta WHERE key = 'schema_version'")
       .get() as { value: string };
-    // v3→v4 adds pid columns, then the chain continues to the current head (v5).
-    expect(version.value).toBe('5');
+    // v3→v4 adds pid columns, then the chain continues to the current head (v6).
+    expect(version.value).toBe('6');
   });
 });
 
@@ -608,7 +655,7 @@ describe('v4 -> v5 schema migration (adds original_head_sha)', () => {
     const version = db
       .prepare("SELECT value FROM meta WHERE key = 'schema_version'")
       .get() as { value: string };
-    expect(version.value).toBe('5');
+    expect(version.value).toBe('6');
   });
 
   it('round-trips original_head_sha through appendSession + getSessionById', async () => {
@@ -767,5 +814,131 @@ describe('updateSessionStatus explicit endedAt', () => {
     const all = await listAllSessions('');
     expect(all[0].ended).toBeTruthy();
     expect(all[0].ended).not.toBe('2026-01-02T03:04:05.000Z');
+  });
+});
+
+describe('appendSession engagement binding (persisted-status guard)', () => {
+  it('opens an engagement for a fresh active session with a binding', async () => {
+    await appendSession('', makeSession({ sessionId: 's-active' }));
+    expect(getOpenEngagement('s-active')).not.toBeNull();
+  });
+
+  it('does NOT open an engagement when re-registering a persisted completed session as active', async () => {
+    await appendSession('', makeSession({ sessionId: 's-done', status: 'completed' }));
+    expect(getOpenEngagement('s-done')).toBeNull(); // terminal → never opened
+
+    // Re-registration arrives as active, but the persisted status stays completed;
+    // an engagement must NOT be opened for a terminal session.
+    await appendSession('', makeSession({ sessionId: 's-done', status: 'active' }));
+    const all = await listAllSessions('');
+    expect(all.find((s) => s.sessionId === 's-done')?.status).toBe('completed');
+    expect(getOpenEngagement('s-done')).toBeNull();
+  });
+
+  it('does NOT open an engagement when re-registering a stopped session as active without reviveStopped', async () => {
+    await appendSession('', makeSession({ sessionId: 's-stop', status: 'stopped' }));
+    await appendSession('', makeSession({ sessionId: 's-stop', status: 'active' }));
+    expect(getOpenEngagement('s-stop')).toBeNull();
+  });
+
+  it('opens an engagement when a stopped session is revived to active', async () => {
+    await appendSession('', makeSession({ sessionId: 's-revive', status: 'stopped' }));
+    await appendSession(
+      '',
+      makeSession({ sessionId: 's-revive', status: 'active' }),
+      { reviveStopped: true },
+    );
+    expect(getOpenEngagement('s-revive')).not.toBeNull();
+  });
+
+  it('clears the stale ended timestamp when a stopped session is revived to active', async () => {
+    await appendSession('', makeSession({ sessionId: 's-rv' }));
+    await updateSessionStatus('', 's-rv', 'stopped', '2026-03-26T12:00:00.000Z');
+    expect((await listAllSessions('')).find((s) => s.sessionId === 's-rv')?.ended).toBe(
+      '2026-03-26T12:00:00.000Z',
+    );
+
+    await appendSession('', makeSession({ sessionId: 's-rv', status: 'active' }), {
+      reviveStopped: true,
+    });
+    const revived = (await listAllSessions('')).find((s) => s.sessionId === 's-rv');
+    expect(revived?.status).toBe('active');
+    expect(revived?.ended).toBeNull(); // an active session must not carry a terminal ended
+  });
+
+  it('records a CLOSED engagement for a first-seen terminal session that has a binding', async () => {
+    // e.g. the scanner discovers a stale stopped transcript with a binding.
+    await appendSession('', makeSession({ sessionId: 's-hist', status: 'stopped' }));
+    expect(getOpenEngagement('s-hist')).toBeNull(); // not open
+    const row = getSessionDb()
+      .prepare(
+        'SELECT project_slug, ended_at, close_reason FROM engagement WHERE session_id = ?',
+      )
+      .get('s-hist') as { project_slug: string; ended_at: string | null; close_reason: string } | undefined;
+    expect(row?.project_slug).toBe('test-project'); // binding preserved as a closed interval
+    expect(row?.ended_at).not.toBeNull();
+    expect(row?.close_reason).toBe('abandoned');
+  });
+
+  it('reopens an engagement from history when a stopped session is revived with no fresh binding', async () => {
+    await appendSession('', makeSession({ sessionId: 's-rb' }));
+    await updateSessionStatus('', 's-rb', 'stopped', '2026-03-26T12:00:00.000Z');
+    expect(getOpenEngagement('s-rb')).toBeNull();
+
+    // revive payload carries NO binding (e.g. resume-mode launch)
+    await appendSession(
+      '',
+      makeSession({ sessionId: 's-rb', status: 'active', projectSlug: null, assignmentSlug: null }),
+      { reviveStopped: true },
+    );
+    const open = getOpenEngagement('s-rb');
+    expect(open?.project_slug).toBe('test-project'); // recovered from the prior engagement
+  });
+
+  it('updateSessionStatus to active reopens an engagement from history', async () => {
+    await appendSession('', makeSession({ sessionId: 's-ua' }));
+    await updateSessionStatus('', 's-ua', 'stopped', '2026-03-26T12:00:00.000Z');
+    expect(getOpenEngagement('s-ua')).toBeNull();
+
+    await updateSessionStatus('', 's-ua', 'active');
+    expect(getOpenEngagement('s-ua')?.project_slug).toBe('test-project');
+  });
+
+  it('deleteSessions removes the session AND its engagement rows (no orphans)', async () => {
+    await appendSession('', makeSession({ sessionId: 's-del' }));
+    expect(getOpenEngagement('s-del')).not.toBeNull();
+
+    const n = await deleteSessions(['s-del']);
+    expect(n).toBe(1);
+    const remaining = (
+      getSessionDb()
+        .prepare('SELECT COUNT(*) AS n FROM engagement WHERE session_id = ?')
+        .get('s-del') as { n: number }
+    ).n;
+    expect(remaining).toBe(0);
+  });
+
+  it('terminal transition closes the open engagement and captures a tokens_at_close snapshot', async () => {
+    const snap: TokenSnapshot = {
+      models: { m: { input: 1, output: 1, cacheCreation: 0, cacheRead: 0, total: 2, cost: 0 } },
+      collectorRunAt: '2026-03-26T09:00:00.000Z',
+      capturedAt: '2026-03-26T10:00:00.000Z',
+    };
+    setCumulativeTokenSource(async () => snap);
+
+    await appendSession('', makeSession({ sessionId: 's-term' }));
+    expect(getOpenEngagement('s-term')).not.toBeNull();
+
+    await updateSessionStatus('', 's-term', 'completed', '2026-03-26T12:00:00.000Z');
+
+    expect(getOpenEngagement('s-term')).toBeNull();
+    const row = getSessionDb()
+      .prepare(
+        'SELECT ended_at, close_reason, tokens_at_close FROM engagement WHERE session_id = ?',
+      )
+      .get('s-term') as { ended_at: string; close_reason: string; tokens_at_close: string | null };
+    expect(row.ended_at).toBe('2026-03-26T12:00:00.000Z');
+    expect(row.close_reason).toBe('completed');
+    expect(JSON.parse(row.tokens_at_close!).models.m.total).toBe(2);
   });
 });

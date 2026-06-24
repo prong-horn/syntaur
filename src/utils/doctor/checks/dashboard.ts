@@ -65,13 +65,17 @@ const ghostSessions: Check = {
     }
     let rows: Array<{ session_id: string; project_slug: string | null; assignment_slug: string | null }>;
     try {
+      // v6: the scalar binding lives on the engagement edge. One row per
+      // (session, project) binding; DISTINCT dedups multiple engagements.
       rows = ctx.db
         .prepare(
-          'SELECT session_id, project_slug, assignment_slug FROM sessions WHERE project_slug IS NOT NULL',
+          `SELECT DISTINCT session_id, project_slug, assignment_slug
+             FROM engagement
+            WHERE project_slug IS NOT NULL`,
         )
         .all() as typeof rows;
     } catch {
-      return skipped(this, 'skipped: sessions table unreadable');
+      return skipped(this, 'skipped: engagement table unreadable');
     }
 
     const projectsDir = ctx.config.defaultProjectDir;

@@ -4,20 +4,20 @@ import { readdir } from 'node:fs/promises';
 import { syntaurRoot } from '../utils/paths.js';
 import { fileExists } from '../utils/fs.js';
 import type { AgentSession, AgentSessionStatus } from './types.js';
+import { ENGAGEMENT_DDL, ENGAGEMENT_SCHEMA_VERSION } from '../db/engagement-schema.js';
+import { backfillEngagements } from '../db/engagement-backfill.js';
 
 let db: Database.Database | null = null;
 
-const SCHEMA_VERSION = '5';
+const SCHEMA_VERSION = '6';
 
-// The base schema deliberately OMITS the project_slug indexes — they are
-// created after any legacy-schema migrations run below. Older installs may
-// have the `mission_slug` column, and creating an index that references
-// `project_slug` before the rename migration runs would fail.
+// v6 base schema: the scalar assignment binding (`project_slug`/`assignment_slug`)
+// has moved OFF `sessions` onto the `engagement` edge; `activity` (liveness) is
+// added. Fresh installs get this shape directly; existing installs reach it via
+// the v5→v6 migration below.
 const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS sessions (
   session_id TEXT PRIMARY KEY,
-  project_slug TEXT,
-  assignment_slug TEXT,
   agent TEXT NOT NULL,
   started TEXT NOT NULL,
   ended TEXT,
@@ -28,16 +28,12 @@ CREATE TABLE IF NOT EXISTS sessions (
   pid INTEGER,
   pid_started_at TEXT,
   original_head_sha TEXT,
+  activity TEXT,
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_sessions_status ON sessions(status);
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT);
-`;
-
-const POST_MIGRATION_INDEXES_SQL = `
-CREATE INDEX IF NOT EXISTS idx_sessions_project ON sessions(project_slug);
-CREATE INDEX IF NOT EXISTS idx_sessions_assignment ON sessions(project_slug, assignment_slug);
 `;
 
 /**
@@ -52,11 +48,21 @@ export function initSessionDb(dbPath?: string): Database.Database {
   db = new Database(finalPath);
   db.pragma('journal_mode = WAL');
   db.exec(SCHEMA_SQL);
+  // The engagement edge table (session↔assignment M:N). Idempotent
+  // `CREATE TABLE IF NOT EXISTS`, so it is safe to run here — outside the
+  // migration transaction — on the same footing as the base session tables.
+  // The v5→v6 migration also runs this (harmlessly) before backfilling.
+  db.exec(ENGAGEMENT_DDL);
 
-  // Track schema version
+  // Track schema versions. Each subsystem owns its own row in `meta`
+  // (mirrors usage-db.ts) so init order is irrelevant.
   db.prepare('INSERT OR IGNORE INTO meta (key, value) VALUES (?, ?)').run(
     'schema_version',
     SCHEMA_VERSION,
+  );
+  db.prepare('INSERT OR IGNORE INTO meta (key, value) VALUES (?, ?)').run(
+    'engagement_schema_version',
+    ENGAGEMENT_SCHEMA_VERSION,
   );
 
   // Run migrations inside an EXCLUSIVE transaction. This closes two races:
@@ -237,11 +243,53 @@ export function initSessionDb(dbPath?: string): Database.Database {
         UPDATE meta SET value = '5' WHERE key = 'schema_version';
       `);
     }
+
+    // --- v5 → v6: move the scalar assignment binding onto the engagement edge
+    // and add the `activity` liveness column — ONE migration. Order matters:
+    // create engagement, backfill from the still-present slug columns, THEN drop
+    // them. All inside this EXCLUSIVE transaction so it is crash-atomic.
+    const vBeforeV6 = (
+      database
+        .prepare("SELECT value FROM meta WHERE key = 'schema_version'")
+        .get() as { value: string } | undefined
+    )?.value;
+
+    if (vBeforeV6 === '5') {
+      database.exec(ENGAGEMENT_DDL); // idempotent; may already exist from init
+      const counts = backfillEngagements(database);
+      database.exec(`
+        CREATE TABLE sessions_v6 (
+          session_id TEXT PRIMARY KEY,
+          agent TEXT NOT NULL,
+          started TEXT NOT NULL,
+          ended TEXT,
+          status TEXT NOT NULL DEFAULT 'active',
+          path TEXT,
+          description TEXT,
+          transcript_path TEXT,
+          pid INTEGER,
+          pid_started_at TEXT,
+          original_head_sha TEXT,
+          activity TEXT,
+          created_at TEXT NOT NULL DEFAULT (datetime('now')),
+          updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+        INSERT INTO sessions_v6
+          SELECT session_id, agent, started, ended, status, path, description,
+                 transcript_path, pid, pid_started_at, original_head_sha, NULL,
+                 created_at, updated_at
+          FROM sessions;
+        DROP TABLE sessions;
+        ALTER TABLE sessions_v6 RENAME TO sessions;
+        CREATE INDEX IF NOT EXISTS idx_sessions_status ON sessions(status);
+        UPDATE meta SET value = '6' WHERE key = 'schema_version';
+      `);
+      console.log(
+        `engagement backfill: backfilled=${counts.backfilled} attributed=${counts.attributed} unattributed=${counts.unattributed}`,
+      );
+    }
   });
   runMigrations.exclusive();
-
-  // Create project-slug-dependent indexes now that we know the column exists.
-  db.exec(POST_MIGRATION_INDEXES_SQL);
 
   return db;
 }
@@ -309,14 +357,40 @@ export async function migrateFromMarkdown(projectsDir: string): Promise<number> 
 
   if (allSessions.length === 0) return 0;
 
+  // v6: `sessions` no longer carries the scalar binding. Insert the session row
+  // without slugs, then record the binding as an engagement edge. Raw INSERT
+  // (not engagement-db's helper) to avoid a session-db ↔ engagement-db cycle.
   const insert = database.prepare(`
-    INSERT OR IGNORE INTO sessions (session_id, project_slug, assignment_slug, agent, started, status, path)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
+    INSERT OR IGNORE INTO sessions (session_id, agent, started, status, path)
+    VALUES (?, ?, ?, ?, ?)
+  `);
+  const insertEngagement = database.prepare(`
+    INSERT INTO engagement (session_id, project_slug, assignment_slug, stage, started_at, ended_at, close_reason)
+    SELECT @sid, @ps, @as, 'implement', @started, @ended, @reason
+     WHERE NOT EXISTS (
+       SELECT 1 FROM engagement WHERE session_id = @sid AND ended_at IS NULL
+     )
   `);
 
   const insertAll = database.transaction((sessions: AgentSession[]) => {
     for (const s of sessions) {
-      insert.run(s.sessionId, s.projectSlug, s.assignmentSlug, s.agent, s.started, s.status, s.path);
+      // Only attach an engagement to the session row that actually persisted:
+      // a duplicate session_id is IGNORED here, so its (possibly different)
+      // status must not drive an engagement onto the row that already won.
+      const res = insert.run(s.sessionId, s.agent, s.started, s.status, s.path);
+      if (res.changes > 0 && (s.projectSlug || s.assignmentSlug)) {
+        // Terminal imports become CLOSED engagements (no leaked open interval);
+        // markdown has no `ended` timestamp, so fall back to `started`.
+        const terminal = s.status === 'completed' || s.status === 'stopped';
+        insertEngagement.run({
+          sid: s.sessionId,
+          ps: s.projectSlug ?? null,
+          as: s.assignmentSlug ?? null,
+          started: s.started,
+          ended: terminal ? s.started : null,
+          reason: terminal ? (s.status === 'completed' ? 'completed' : 'abandoned') : null,
+        });
+      }
     }
   });
 

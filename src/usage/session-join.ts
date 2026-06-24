@@ -1,22 +1,26 @@
 /**
- * Resolve `(sessionId, cwd, eventTs) → (projectSlug, assignmentSlug)` against
- * the existing `sessions` table (see `src/dashboard/session-db.ts`). Read-
- * only access; no schema changes to `sessions`.
+ * Resolve `(sessionId, cwd, eventTs) → (projectSlug, assignmentSlug)`.
+ *
+ * v6: the scalar binding moved off `sessions` onto the append-only `engagement`
+ * edge, so attribution is now **interval-aware** — it returns the binding of the
+ * engagement whose `[started_at, ended_at)` interval contains `eventTs`. This
+ * correctly attributes usage for a session that worked multiple assignments over
+ * its lifetime. Read-only.
  *
  * Resolution stages:
- *   1. PK match on `session_id` (fast, exact).
+ *   1. PK match on `session_id`: the engagement interval (for that session)
+ *      containing `eventTs`.
  *   2a. Fuzzy fallback by `sessions.path = cwd` within the exact `julianday()`
- *       time window — `julianday()` (not lexicographic) because `started` is
- *       ISO 8601 but `ended` is SQLite `YYYY-MM-DD HH:MM:SS`.
+ *       session window, binding via the engagement interval containing `eventTs`
+ *       — `julianday()` (not lexicographic) because `started` is ISO 8601 but
+ *       `ended`/`ended_at` may be SQLite `YYYY-MM-DD HH:MM:SS`.
  *   2b. Day-granularity fallback, only when the event timestamp is a date-only
  *       UTC-midnight snap (Claude's date-only `lastActivity`), and only when the
- *       day's same-cwd sessions resolve to exactly one project/assignment. This
- *       recovers Claude usage that 2a drops (no session starts at 00:00:00Z)
- *       without guessing on ambiguous days.
+ *       day's same-cwd engagements resolve to exactly one project/assignment.
  *
- * Returns `{projectSlug: null, assignmentSlug: null}` when neither stage
- * matches — the caller stores `''` (the schema NOT-NULL default) so the
- * unattributed bucket is queryable.
+ * Returns `{projectSlug: null, assignmentSlug: null}` when no stage matches —
+ * the caller stores `''` (the schema NOT-NULL default) so the unattributed
+ * bucket is queryable.
  */
 
 import type Database from 'better-sqlite3';
@@ -51,14 +55,19 @@ export function resolveAttribution(
 ): AttributionResult {
   const database = db ?? getSessionDb();
 
-  // Stage 1: PK match.
+  // Stage 1: PK match — the engagement interval (for this session) containing
+  // the event timestamp.
   const direct = database
     .prepare(
       `SELECT project_slug, assignment_slug
-         FROM sessions
-        WHERE session_id = ?`,
+         FROM engagement
+        WHERE session_id = ?
+          AND julianday(started_at) <= julianday(?)
+          AND (ended_at IS NULL OR julianday(ended_at) > julianday(?))
+        ORDER BY julianday(started_at) DESC
+        LIMIT 1`,
     )
-    .get(input.sessionId) as AttributionRow | undefined;
+    .get(input.sessionId, input.eventTs, input.eventTs) as AttributionRow | undefined;
   if (direct) {
     return {
       projectSlug: direct.project_slug,
@@ -66,20 +75,30 @@ export function resolveAttribution(
     };
   }
 
-  // Stage 2a: exact julianday time-window match by path. Correct for events
-  // that carry a full ISO instant (codex/opencode).
+  // Stage 2a: exact julianday time-window match by session path, binding via the
+  // engagement interval that contains the event. Correct for events that carry a
+  // full ISO instant (codex/opencode). Most-recently-started session wins.
   if (input.cwd) {
     const exact = database
       .prepare(
-        `SELECT project_slug, assignment_slug
-           FROM sessions
-          WHERE path = ?
-            AND julianday(started) <= julianday(?)
-            AND (ended IS NULL OR julianday(ended) >= julianday(?))
-          ORDER BY started DESC
+        `SELECT e.project_slug AS project_slug, e.assignment_slug AS assignment_slug
+           FROM sessions s
+           JOIN engagement e ON e.session_id = s.session_id
+          WHERE s.path = ?
+            AND julianday(s.started) <= julianday(?)
+            AND (s.ended IS NULL OR julianday(s.ended) >= julianday(?))
+            AND julianday(e.started_at) <= julianday(?)
+            AND (e.ended_at IS NULL OR julianday(e.ended_at) > julianday(?))
+          ORDER BY julianday(s.started) DESC, julianday(e.started_at) DESC
           LIMIT 1`,
       )
-      .get(input.cwd, input.eventTs, input.eventTs) as AttributionRow | undefined;
+      .get(
+        input.cwd,
+        input.eventTs,
+        input.eventTs,
+        input.eventTs,
+        input.eventTs,
+      ) as AttributionRow | undefined;
     if (exact) {
       return { projectSlug: exact.project_slug, assignmentSlug: exact.assignment_slug };
     }
@@ -88,20 +107,28 @@ export function resolveAttribution(
     // `normalizeLastActivity` snapped to UTC midnight (Claude's ccusage
     // `lastActivity` is date-only, so the exact instant window above always
     // misses — no session starts at 00:00:00Z). `date()` parses both ISO `…Z`
-    // and SQLite `YYYY-MM-DD HH:MM:SS`. Restricting to the midnight snap avoids
-    // day-matching a genuinely out-of-window full-ISO event; the ambiguity
-    // guard (exactly one distinct project/assignment) avoids guessing when two
-    // sessions shared the cwd that day.
+    // and SQLite `YYYY-MM-DD HH:MM:SS`. The ambiguity guard (exactly one
+    // distinct project/assignment) avoids guessing when two sessions shared the
+    // cwd that day.
     if (input.eventTs.endsWith('T00:00:00.000Z')) {
       const sameDay = database
         .prepare(
-          `SELECT DISTINCT project_slug, assignment_slug
-             FROM sessions
-            WHERE path = ?
-              AND date(started) <= date(?)
-              AND (ended IS NULL OR date(ended) >= date(?))`,
+          `SELECT DISTINCT e.project_slug AS project_slug, e.assignment_slug AS assignment_slug
+             FROM sessions s
+             JOIN engagement e ON e.session_id = s.session_id
+            WHERE s.path = ?
+              AND date(s.started) <= date(?)
+              AND (s.ended IS NULL OR date(s.ended) >= date(?))
+              AND date(e.started_at) <= date(?)
+              AND (e.ended_at IS NULL OR date(e.ended_at) >= date(?))`,
         )
-        .all(input.cwd, input.eventTs, input.eventTs) as AttributionRow[];
+        .all(
+          input.cwd,
+          input.eventTs,
+          input.eventTs,
+          input.eventTs,
+          input.eventTs,
+        ) as AttributionRow[];
       if (sameDay.length === 1) {
         return {
           projectSlug: sameDay[0].project_slug,
