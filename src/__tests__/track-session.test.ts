@@ -92,4 +92,16 @@ describe('trackSessionCommand session-id self-resolution', () => {
     );
     expect(getSessionById('explicit-id-2')).not.toBeNull();
   });
+
+  it('rejects an explicit but empty --session-id instead of falling through to resolution', async () => {
+    // The mock would resolve a valid STRONG id if '' wrongly fell through, so a
+    // non-throw here would prove the empty explicit value was silently ignored.
+    await expect(
+      trackSessionCommand(
+        { agent: 'claude', sessionId: '', path: testDir },
+        { resolveSessionId: async () => ({ id: 'should-not-reach', provenance: 'STRONG' as const }), fallbackPid: () => null },
+      ),
+    ).rejects.toThrow(/do not synthesize/);
+    expect(getSessionById('should-not-reach')).toBeNull();
+  });
 });
