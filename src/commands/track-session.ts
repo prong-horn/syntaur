@@ -6,7 +6,8 @@ import { readConfig } from '../utils/config.js';
 import { derivePathFromTranscript } from '../utils/transcript.js';
 import { captureProcessStartedAt } from '../utils/process-info.js';
 import { captureHeadSha } from '../utils/git-worktree.js';
-import { readPpid, resolveOwnSessionId } from '../utils/session-id.js';
+import { readPpid, resolveOwnSessionId, isSafeSessionId, assertMayMutate } from '../utils/session-id.js';
+import type { ResolvedSession } from '../utils/session-id.js';
 import { isExistingDir } from '../launch/cwd.js';
 import { initSessionDb } from '../dashboard/session-db.js';
 import { appendSession } from '../dashboard/agent-sessions.js';
@@ -41,8 +42,15 @@ export async function trackSessionCommand(
   // Self-resolve the calling session's id when not passed explicitly: env →
   // process-tree markers → transcript scan, with the cwd context.json scalar
   // only as the last-resort legacy hint. Never synthesized.
-  let sessionId = options.sessionId;
-  if (!sessionId) {
+  let resolved: ResolvedSession | undefined;
+  if (options.sessionId !== undefined) {
+    if (!isSafeSessionId(options.sessionId)) {
+      throw new Error(
+        'Could not resolve a session id. Pass --session-id <id> with the real agent-generated session id — do not synthesize one.',
+      );
+    }
+    resolved = { id: options.sessionId, provenance: 'EXPLICIT' };
+  } else {
     const cwd = process.cwd();
     let legacyHint: string | undefined;
     try {
@@ -52,13 +60,19 @@ export async function trackSessionCommand(
     } catch {
       // No context.json — fine; the resolver has five other layers.
     }
-    sessionId = await (deps.resolveSessionId ?? resolveOwnSessionId)({ cwd, legacyHint });
+    resolved = await (deps.resolveSessionId ?? resolveOwnSessionId)({ cwd, legacyHint });
   }
-  if (!sessionId) {
+  if (!resolved) {
     throw new Error(
       'Could not resolve a session id. Pass --session-id <id> with the real agent-generated session id — do not synthesize one.',
     );
   }
+  const sessionId = resolved.id;
+
+  // Gate BEFORE any side effect (DB init, git/ps probes, the appendSession
+  // write): a WEAK id (transcript scan or legacy context.json hint) may not
+  // mutate state unless an explicit --assignment selector is present.
+  assertMayMutate(resolved, { hasSelector: Boolean(options.assignment) });
 
   if (options.project) {
     const config = await readConfig();

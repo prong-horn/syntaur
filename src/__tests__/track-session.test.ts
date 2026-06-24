@@ -27,7 +27,7 @@ describe('trackSessionCommand session-id self-resolution', () => {
   it('uses the explicit --session-id when provided', async () => {
     await trackSessionCommand(
       { agent: 'claude', sessionId: 'explicit-id-1', path: testDir },
-      { resolveSessionId: async () => 'should-not-be-used', fallbackPid: () => null },
+      { resolveSessionId: async () => ({ id: 'should-not-be-used', provenance: 'STRONG' as const }), fallbackPid: () => null },
     );
     expect(getSessionById('explicit-id-1')).not.toBeNull();
   });
@@ -35,7 +35,7 @@ describe('trackSessionCommand session-id self-resolution', () => {
   it('self-resolves the calling session id when --session-id is omitted', async () => {
     await trackSessionCommand(
       { agent: 'claude', path: testDir },
-      { resolveSessionId: async () => 'resolved-from-process', fallbackPid: () => null },
+      { resolveSessionId: async () => ({ id: 'resolved-from-process', provenance: 'STRONG' as const }), fallbackPid: () => null },
     );
     const row = getSessionById('resolved-from-process');
     expect(row).not.toBeNull();
@@ -66,5 +66,42 @@ describe('trackSessionCommand session-id self-resolution', () => {
       { fallbackPid: () => 31337 },
     );
     expect(getSessionById('pid-explicit-1')!.pid).toBe(100);
+  });
+
+  it('rejects a WEAK session id with no --assignment (gate)', async () => {
+    await expect(
+      trackSessionCommand(
+        { agent: 'claude', path: testDir },
+        { resolveSessionId: async () => ({ id: 'weak-id', provenance: 'WEAK' as const }), fallbackPid: () => null },
+      ),
+    ).rejects.toThrow(/--assignment/);
+  });
+
+  it('accepts a WEAK session id when --assignment is provided', async () => {
+    await trackSessionCommand(
+      { agent: 'claude', path: testDir, assignment: 'my-assignment' },
+      { resolveSessionId: async () => ({ id: 'weak-id-2', provenance: 'WEAK' as const }), fallbackPid: () => null },
+    );
+    expect(getSessionById('weak-id-2')).not.toBeNull();
+  });
+
+  it('accepts an EXPLICIT --session-id with no --assignment', async () => {
+    await trackSessionCommand(
+      { agent: 'claude', sessionId: 'explicit-id-2', path: testDir },
+      { fallbackPid: () => null },
+    );
+    expect(getSessionById('explicit-id-2')).not.toBeNull();
+  });
+
+  it('rejects an explicit but empty --session-id instead of falling through to resolution', async () => {
+    // The mock would resolve a valid STRONG id if '' wrongly fell through, so a
+    // non-throw here would prove the empty explicit value was silently ignored.
+    await expect(
+      trackSessionCommand(
+        { agent: 'claude', sessionId: '', path: testDir },
+        { resolveSessionId: async () => ({ id: 'should-not-reach', provenance: 'STRONG' as const }), fallbackPid: () => null },
+      ),
+    ).rejects.toThrow(/do not synthesize/);
+    expect(getSessionById('should-not-reach')).toBeNull();
   });
 });
