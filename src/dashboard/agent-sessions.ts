@@ -5,13 +5,14 @@ import { getSessionDb } from './session-db.js';
 import {
   ensureOpenEngagement,
   closeOpenEngagement,
+  closeEngagementById,
   getOpenEngagement,
   getLatestEngagement,
   hasAnyEngagement,
   insertClosedEngagement,
 } from '../db/engagement-db.js';
 import { getCumulativeTokenSource, type TokenSnapshot } from '../db/engagement-tokens.js';
-import type { AgentSession, AgentSessionStatus } from './types.js';
+import type { AgentSession, AgentSessionStatus, ActivityState } from './types.js';
 
 interface SessionRow {
   session_id: string;
@@ -30,6 +31,7 @@ interface SessionRow {
   pid: number | null;
   pid_started_at: string | null;
   original_head_sha: string | null;
+  activity: string | null;
   updated_at: string | null;
 }
 
@@ -67,6 +69,7 @@ function rowToSession(row: SessionRow): AgentSession {
     pid: row.pid ?? null,
     pidStartedAt: row.pid_started_at ?? null,
     originalHeadSha: row.original_head_sha ?? null,
+    activity: (row.activity as ActivityState | null) ?? null,
     updatedAt: row.updated_at ?? null,
   };
 }
@@ -311,6 +314,61 @@ export async function updateSessionStatus(
         endedAt: endedAt ?? undefined,
       });
     }
+    return res.changes > 0;
+  });
+  return apply.immediate();
+}
+
+export interface LivenessStopInput {
+  sessionId: string;
+  /** The open engagement the scanner CAPTURED as dead (compare-and-close). */
+  engagementId?: number | null;
+  engagementStartedAt?: string | null;
+  /** Backdated end (transcript mtime), else `now`. */
+  endedAt?: string;
+  /** Pre-captured token snapshot (await the async source BEFORE calling). */
+  tokensAtClose?: TokenSnapshot | null;
+}
+
+/**
+ * Liveness-GC terminal stop+close — the dead-session garbage collector (#5,
+ * Decisions 1-2). In ONE IMMEDIATE transaction:
+ *
+ *   1. Compute `stillDead`. If the caller captured the dead engagement, this is
+ *      a **compare-and-close** of that exact `(id, started_at)` with
+ *      `close_reason='liveness_gc'` — true ONLY if that interval was still open
+ *      (a concurrent reopen/switch closed-and-replaced it ⇒ false, and the new
+ *      interval is left untouched). With no engagement captured, `stillDead` is
+ *      "the session has no current open engagement".
+ *   2. ONLY if `stillDead`, mark the session `stopped`. So a session that was
+ *      reopened/revived between the dead-detection and this call is neither
+ *      closed nor stopped (codex round 3) — its live E2 and `active` row survive.
+ *
+ * Unlike `updateSessionStatus('stopped')` this does NOT capture its own snapshot
+ * and does NOT emit a second generic `abandoned` close. It writes ONLY the
+ * `engagement` + `sessions` rows — never assignment facts/status (AC3). Returns
+ * true when the session row was actually swept to `stopped`.
+ */
+export function livenessStopSession(input: LivenessStopInput): boolean {
+  const db = getSessionDb();
+  const endedAt = input.endedAt ?? new Date().toISOString();
+  const apply = db.transaction((): boolean => {
+    const stillDead =
+      input.engagementId != null && input.engagementStartedAt != null
+        ? closeEngagementById({
+            id: input.engagementId,
+            startedAt: input.engagementStartedAt,
+            closeReason: 'liveness_gc',
+            tokensAtClose: input.tokensAtClose ?? null,
+            endedAt,
+          })
+        : getOpenEngagement(input.sessionId) === null;
+    if (!stillDead) return false;
+    const res = db
+      .prepare(
+        "UPDATE sessions SET status = 'stopped', ended = COALESCE(?, datetime('now')), updated_at = datetime('now') WHERE session_id = ? AND status = 'active'",
+      )
+      .run(input.endedAt ?? null, input.sessionId);
     return res.changes > 0;
   });
   return apply.immediate();

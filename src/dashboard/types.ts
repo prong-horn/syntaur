@@ -666,6 +666,14 @@ export interface SessionFileData {
 
 export type AgentSessionStatus = 'active' | 'completed' | 'stopped';
 
+/**
+ * Canonical liveness `activity` for a LIVE session, sourced from the Agent View
+ * (`claude agents --json`). The terminal `completed`/`failed` are session
+ * *status*, not activity; `null` (column absent) means unknown — e.g. Codex or
+ * no Agent-View feed. See decision-record.md Decision 5.
+ */
+export type ActivityState = 'working' | 'idle' | 'awaiting-input';
+
 export interface AgentSession {
   projectSlug: string | null;
   assignmentSlug: string | null;
@@ -680,6 +688,7 @@ export interface AgentSession {
   pid?: number | null;
   pidStartedAt?: string | null;
   originalHeadSha?: string | null;
+  activity?: ActivityState | null;
   updatedAt?: string | null;
 }
 

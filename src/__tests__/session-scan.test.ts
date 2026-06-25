@@ -7,15 +7,23 @@ import {
   initSessionDb,
   closeSessionDb,
   resetSessionDb,
+  getSessionDb,
 } from '../dashboard/session-db.js';
 import {
   appendSession,
   getSessionById,
   updateSessionStatus,
 } from '../dashboard/agent-sessions.js';
+import { openEngagement, type EngagementRow } from '../db/engagement-db.js';
 import { scanSessions, type ScannerDeps } from '../sessions/scanner.js';
 import { getAgentTarget } from '../targets/registry.js';
 import type { AgentSession, AgentSessionStatus } from '../dashboard/types.js';
+
+function latestEngagement(sessionId: string): EngagementRow | undefined {
+  return getSessionDb()
+    .prepare('SELECT * FROM engagement WHERE session_id = ? ORDER BY id DESC LIMIT 1')
+    .get(sessionId) as EngagementRow | undefined;
+}
 
 let testDir: string;
 let claudeRoot: string;
@@ -36,7 +44,9 @@ function makeSession(overrides: Partial<AgentSession> = {}): AgentSession {
   };
 }
 
-/** Hermetic deps: fixture roots for both descriptor-bearing targets, no lsof/ps. */
+/** Hermetic deps: fixture roots for both descriptor-bearing targets, no lsof/ps.
+ *  agentView defaults to an empty map (no Agent-View evidence) so the scanner is
+ *  never tempted to spawn `claude agents --json` in unit tests. */
 function deps(overrides: Partial<ScannerDeps> = {}): ScannerDeps {
   return {
     roots: { claude: claudeRoot, codex: codexRoot, pi: piRoot },
@@ -44,6 +54,7 @@ function deps(overrides: Partial<ScannerDeps> = {}): ScannerDeps {
     openFiles: async () => new Set<string>(),
     isPidAlive: () => false,
     pidStartedAt: () => null,
+    agentView: async () => new Map(),
     ...overrides,
   };
 }
@@ -487,5 +498,166 @@ describe('scanSessions', () => {
 
     const full = await scanSessions({ full: true }, deps());
     expect(full.discovered).toBe(1);
+  });
+});
+
+describe('scanSessions — liveness engagement GC (#5)', () => {
+  it('closes the swept session\'s open engagement with close_reason=liveness_gc', async () => {
+    const transcript = join(testDir, 'gc-orphan.jsonl');
+    await writeFile(transcript, '{}\n');
+    const mtimeMs = await makeStale(transcript);
+    await appendSession(
+      '',
+      makeSession({ sessionId: 'gc-dead', pid: 99999, transcriptPath: transcript }),
+    );
+    // Bind it to an assignment via an OPEN engagement (the dangling interval).
+    openEngagement({
+      sessionId: 'gc-dead',
+      projectSlug: 'proj',
+      assignmentSlug: 'assn',
+      stage: 'implement',
+      startedAt: '2026-06-11T08:00:00.000Z',
+    });
+
+    const summary = await scanSessions({ full: true }, deps({ isPidAlive: () => false }));
+
+    expect(summary.swept).toBe(1);
+    expect(getSessionById('gc-dead')!.status).toBe('stopped');
+    const eng = latestEngagement('gc-dead')!;
+    expect(eng.close_reason).toBe('liveness_gc');
+    expect(eng.ended_at).toBe(new Date(mtimeMs).toISOString());
+    // AC3: the GC preserves the binding (it closes the interval, never retracts
+    // the attribution) — assignment_slug survives the close.
+    expect(eng.assignment_slug).toBe('assn');
+  });
+
+  it('GC does not emit a second abandoned close (exactly one liveness_gc interval)', async () => {
+    const transcript = join(testDir, 'gc-one.jsonl');
+    await writeFile(transcript, '{}\n');
+    await makeStale(transcript);
+    await appendSession(
+      '',
+      makeSession({ sessionId: 'gc-one', pid: 99999, transcriptPath: transcript }),
+    );
+    openEngagement({
+      sessionId: 'gc-one',
+      projectSlug: 'proj',
+      assignmentSlug: 'assn',
+      stage: 'implement',
+      startedAt: '2026-06-11T08:00:00.000Z',
+    });
+
+    await scanSessions({ full: true }, deps({ isPidAlive: () => false }));
+
+    const rows = getSessionDb()
+      .prepare('SELECT close_reason FROM engagement WHERE session_id = ?')
+      .all('gc-one') as Array<{ close_reason: string | null }>;
+    expect(rows).toHaveLength(1);
+    expect(rows[0].close_reason).toBe('liveness_gc');
+  });
+
+  it('sweeps a dead session with NO engagement without throwing (no-op close)', async () => {
+    const transcript = join(testDir, 'gc-noeng.jsonl');
+    await writeFile(transcript, '{}\n');
+    await makeStale(transcript);
+    await appendSession(
+      '',
+      makeSession({ sessionId: 'gc-noeng', pid: 99999, transcriptPath: transcript }),
+    );
+
+    const summary = await scanSessions({ full: true }, deps({ isPidAlive: () => false }));
+
+    expect(summary.swept).toBe(1);
+    expect(getSessionById('gc-noeng')!.status).toBe('stopped');
+    expect(latestEngagement('gc-noeng')).toBeUndefined();
+  });
+});
+
+describe('scanSessions — Agent-View liveness + activity (#5)', () => {
+  it('keeps a session alive (not swept) when Agent View reports it live despite a dead pid', async () => {
+    const transcript = join(testDir, 'av-live.jsonl');
+    await writeFile(transcript, '{}\n');
+    await makeStale(transcript); // stale transcript + dead pid → would be swept
+    await appendSession(
+      '',
+      makeSession({ sessionId: 'av-live', pid: 99999, transcriptPath: transcript }),
+    );
+
+    const summary = await scanSessions(
+      { full: true },
+      deps({
+        isPidAlive: () => false,
+        agentView: async () => new Map([['av-live', 'working']]),
+      }),
+    );
+
+    expect(summary.swept).toBe(0);
+    const row = getSessionById('av-live')!;
+    expect(row.status).toBe('active');
+    // activity wired end-to-end: populated by the probe + surfaced by rowToSession.
+    expect(row.activity).toBe('working');
+  });
+
+  it('Agent-View absence is NOT death evidence (a live-by-pid session is not swept)', async () => {
+    await appendSession(
+      '',
+      makeSession({
+        sessionId: 'av-absent',
+        pid: 1234,
+        pidStartedAt: 'Thu Jun 11 09:00:00 2026',
+      }),
+    );
+
+    await scanSessions(
+      { full: true },
+      deps({
+        isPidAlive: () => true,
+        pidStartedAt: () => 'Thu Jun 11 09:00:00 2026',
+        agentView: async () => new Map(), // absent from Agent View
+      }),
+    );
+
+    // Absence alone never marks dead — the live pid keeps it active.
+    expect(getSessionById('av-absent')!.status).toBe('active');
+    expect(getSessionById('av-absent')!.activity ?? null).toBeNull();
+  });
+
+  it('falls back to pid/transcript when the Agent-View source throws (no regression)', async () => {
+    const transcript = join(testDir, 'av-throw.jsonl');
+    await writeFile(transcript, '{}\n');
+    await makeStale(transcript);
+    await appendSession(
+      '',
+      makeSession({ sessionId: 'av-throw', pid: 99999, transcriptPath: transcript }),
+    );
+
+    const summary = await scanSessions(
+      { full: true },
+      deps({
+        isPidAlive: () => false,
+        agentView: async () => {
+          throw new Error('claude agents --json unavailable');
+        },
+      }),
+    );
+
+    // The dead session is still swept; the throwing probe degrades to empty.
+    expect(summary.swept).toBe(1);
+    expect(getSessionById('av-throw')!.status).toBe('stopped');
+  });
+
+  it('revives a stopped row when Agent View reports it live (reuse the revival path)', async () => {
+    const path = await writeClaudeTranscript('av-revive', workspace);
+    await makeStale(path); // mtime says dead; no lsof — Agent View is the live signal
+    await appendSession('', makeSession({ sessionId: 'av-revive' }));
+    await updateSessionStatus('', 'av-revive', 'stopped');
+
+    const summary = await scanSessions(
+      { full: true },
+      deps({ agentView: async () => new Map([['av-revive', 'idle']]) }),
+    );
+
+    expect(summary.revived).toBe(1);
+    expect(getSessionById('av-revive')!.status).toBe('active');
   });
 });
