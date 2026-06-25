@@ -284,9 +284,18 @@ function buildAssignmentSummary(
 ): AssignmentUsageSummary {
   const totals = summarize(rows, 'assignment')[0];
   const windows: WindowCostResult = assignmentWindowCost(costKey);
+  // When the assignment has NO computable engagement window (e.g. usage attributed
+  // by slug to an assignment that never registered an agent session), the window
+  // ledger has nothing to attribute and `windows.cost` is 0 — but `byModel` still
+  // sums the cumulative `usage_daily` cost. Showing $0 over a non-zero breakdown is
+  // the reconciliation bug. With no window to split, the cumulative daily cost is
+  // the best (and self-consistent) estimate, so fall back to it. Whenever a real
+  // priced window exists, keep the snapshot-window cost (the M2 attribution model),
+  // including a legitimately $0-cost window.
+  const totalCost = windows.pricedWindowCount > 0 ? windows.cost : totals?.totalCost ?? 0;
   return {
     totalTokens: totals?.totalTokens ?? 0,
-    totalCost: windows.cost,
+    totalCost,
     lastEventDay: totals?.lastEventDay ?? null,
     byModel: byModelBreakdown(rows),
     pricedWindowCount: windows.pricedWindowCount,
