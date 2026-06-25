@@ -11,6 +11,9 @@ import {
   getSessionById,
 } from './agent-sessions.js';
 import { fileExists } from '../utils/fs.js';
+import { isSafeSessionId } from '../utils/session-id.js';
+import { resolveAssignmentBySlug } from '../utils/assignment-resolver.js';
+import { assignmentsDir as assignmentsDirFn } from '../utils/paths.js';
 import { derivePathFromTranscript } from '../utils/transcript.js';
 import { enrichSessions } from './session-liveness.js';
 import { getAgents, readConfig } from '../utils/config.js';
@@ -83,12 +86,44 @@ export function createAgentSessionsRouter(
         return;
       }
 
+      // L gate (1): a malformed/arbitrary session id must not open or
+      // mis-attribute an engagement. `assertMayMutate` is a no-op here (an
+      // HTTP-supplied id resolves to EXPLICIT provenance), so the real guard is
+      // format validation + assignment-existence below — not provenance.
+      if (!isSafeSessionId(sessionId)) {
+        res.status(400).json({
+          error: 'sessionId is malformed. Pass the real agent-generated session id.',
+        });
+        return;
+      }
+
       if (projectSlug) {
         const projectDir = resolve(projectsDir, projectSlug);
         if (!(await fileExists(projectDir))) {
           res.status(404).json({ error: `Project "${projectSlug}" not found` });
           return;
         }
+      }
+
+      // L gate (2) + M1: when the POST BINDS to an assignment, the assignment
+      // must exist (else this opens/mis-attributes a window for a phantom
+      // assignment). Resolve once: `.exists` gates the bind, `.id` is stored as
+      // the engagement's `assignment_id` so a later stage assertion won't split
+      // the interval to repair the id. A registration-only POST (no
+      // `assignmentSlug`) is NOT gated — it registers the bare session.
+      let assignmentId: string | null = null;
+      if (assignmentSlug) {
+        const resolvedAssignment = await resolveAssignmentBySlug(
+          projectsDir,
+          assignmentsDir ?? assignmentsDirFn(),
+          projectSlug || null,
+          assignmentSlug,
+        );
+        if (!resolvedAssignment.exists) {
+          res.status(404).json({ error: `Assignment "${assignmentSlug}" not found` });
+          return;
+        }
+        assignmentId = resolvedAssignment.id;
       }
 
       // Prefer the launch cwd recorded inside the transcript over whatever
@@ -113,6 +148,7 @@ export function createAgentSessionsRouter(
       const session = {
         projectSlug: projectSlug || null,
         assignmentSlug: assignmentSlug || null,
+        assignmentId,
         agent,
         sessionId,
         started: new Date().toISOString(),
