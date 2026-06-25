@@ -2,10 +2,16 @@
  * Resolve `(sessionId, cwd, eventTs) → (projectSlug, assignmentSlug)`.
  *
  * v6: the scalar binding moved off `sessions` onto the append-only `engagement`
- * edge, so attribution is now **interval-aware** — it returns the binding of the
- * engagement whose `[started_at, ended_at)` interval contains `eventTs`. This
- * correctly attributes usage for a session that worked multiple assignments over
- * its lifetime. Read-only.
+ * edge, so this BINDING resolution is **interval-aware** — it returns the binding
+ * of the engagement whose `[started_at, ended_at)` interval contains `eventTs`.
+ *
+ * NOTE (M2 / decision-record.md Decision 1): this resolves the *binding* only, it
+ * does NOT split *cost*. `usage_events` is cumulative per `(session_id, model)`
+ * with a date-only session-level `event_ts`, so a single cumulative row cannot be
+ * decomposed across two engagement windows within one session/model. Per-assignment
+ * COST therefore comes from engagement snapshot deltas (`usage/engagement-cost.ts`,
+ * `tokens_at_close − tokens_at_open`), not from this join. This stays a best-effort
+ * binding resolver, not a per-window cost splitter. Read-only.
  *
  * Resolution stages:
  *   1. PK match on `session_id`: the engagement interval (for that session)

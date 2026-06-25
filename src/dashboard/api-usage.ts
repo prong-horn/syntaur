@@ -9,6 +9,11 @@ import {
   type ListEventsFilter,
 } from '../db/usage-db.js';
 import { resolveWorkspaceMembers } from './api.js';
+import {
+  assignmentWindowCost,
+  projectWindowCosts,
+  type WindowCostResult,
+} from '../usage/engagement-cost.js';
 
 /**
  * Token-usage dashboard API. Read-only; localhost-only per existing
@@ -69,14 +74,12 @@ export function createUsageRouter(
     try {
       initUsageDb();
       const projectSlug = req.params.projectSlug;
-      const rows = listDaily({
-        ...extractCommonFilter(req.query),
-        projectSlug,
-      });
+      const common = extractCommonFilter(req.query);
+      const rows = listDaily({ ...common, projectSlug });
       res.json({
         projectSlug,
         daily: rows,
-        summary: summarize(rows, 'assignment'),
+        summary: projectAssignmentRollup(projectSlug, rows, common),
       });
     } catch (error) {
       res.status(500).json({
@@ -103,7 +106,13 @@ export function createUsageRouter(
         assignmentSlug,
         daily: dailyRows,
         events: eventRows,
-        summary: buildAssignmentSummary(dailyRows),
+        summary: buildAssignmentSummary(dailyRows, {
+          projectSlug,
+          assignmentSlug,
+          since: common.since,
+          until: common.until,
+          model: common.model,
+        }),
       });
     } catch (error) {
       res.status(500).json({
@@ -129,7 +138,15 @@ export function createUsageRouter(
         assignmentId: assignmentSlug,
         daily: dailyRows,
         events: eventRows,
-        summary: buildAssignmentSummary(dailyRows),
+        // Standalone: engagement stores `project_slug IS NULL` (the reader maps
+        // a null/empty projectSlug to the NULL match).
+        summary: buildAssignmentSummary(dailyRows, {
+          projectSlug: null,
+          assignmentSlug,
+          since: common.since,
+          until: common.until,
+          model: common.model,
+        }),
       });
     } catch (error) {
       res.status(500).json({
@@ -192,6 +209,10 @@ interface SummaryRow {
   totalTokens: number;
   totalCost: number;
   lastEventDay: string;
+  /** Snapshot-window confidence counts (M2) — present on per-assignment rollups. */
+  pricedWindowCount?: number;
+  uncomputableWindowCount?: number;
+  negativeDeltaCount?: number;
 }
 
 /** Per-model token/cost breakdown for one assignment. */
@@ -208,9 +229,27 @@ export interface ModelUsage {
  */
 export interface AssignmentUsageSummary {
   totalTokens: number;
+  /**
+   * Per-assignment cost from engagement SNAPSHOT windows (M2 / Decision 1) — NOT
+   * the cumulative `usage_events` row, which can't split a multi-assignment
+   * session's cost. The window-count fields flag confidence.
+   */
   totalCost: number;
   lastEventDay: string | null;
   byModel: ModelUsage[];
+  pricedWindowCount: number;
+  uncomputableWindowCount: number;
+  negativeDeltaCount: number;
+}
+
+/** The (id-or-slugs) key + filters identifying one assignment's cost windows. */
+interface AssignmentCostKey {
+  assignmentId?: string | null;
+  projectSlug: string | null;
+  assignmentSlug: string;
+  since?: string;
+  until?: string;
+  model?: string;
 }
 
 /** Group daily rows by model, summing tokens/cost (highest tokens first). */
@@ -234,18 +273,25 @@ function byModelBreakdown(rows: ReturnType<typeof listDaily>): ModelUsage[] {
 
 /**
  * Roll a single assignment's daily rows into an {@link AssignmentUsageSummary}.
- * Reuses {@link summarize} for the grand totals + `lastEventDay` (its single
- * `'assignment'` group), defaulting to zero/`null` when there are no rows.
+ * Tokens/`lastEventDay`/`byModel` come from `usage_daily` (legitimately
+ * cumulative), but `totalCost` is the SNAPSHOT-window cost for the assignment
+ * (M2) — so a session that worked this assignment then another on the same model
+ * is not over-attributed the whole cumulative.
  */
 function buildAssignmentSummary(
   rows: ReturnType<typeof listDaily>,
+  costKey: AssignmentCostKey,
 ): AssignmentUsageSummary {
   const totals = summarize(rows, 'assignment')[0];
+  const windows: WindowCostResult = assignmentWindowCost(costKey);
   return {
     totalTokens: totals?.totalTokens ?? 0,
-    totalCost: totals?.totalCost ?? 0,
+    totalCost: windows.cost,
     lastEventDay: totals?.lastEventDay ?? null,
     byModel: byModelBreakdown(rows),
+    pricedWindowCount: windows.pricedWindowCount,
+    uncomputableWindowCount: windows.uncomputableWindowCount,
+    negativeDeltaCount: windows.negativeDeltaCount,
   };
 }
 
@@ -275,4 +321,62 @@ function summarize(
     }
   }
   return [...map.values()].sort((a, b) => b.totalTokens - a.totalTokens);
+}
+
+/**
+ * Per-assignment rollup for a project's usage page (M2). The assignment SET is
+ * the UNION of (the `usage_daily` assignment keys) ∪ (the assignments that have
+ * a closed engagement snapshot window) — because in an A-then-B same-model
+ * session the cumulative `usage_events` row attributes only to the latest
+ * assignment, so an assignment with a real window but no `usage_daily` row would
+ * otherwise be MISSING entirely. Each row's `totalCost` is the snapshot-window
+ * cost (the per-assignment source of truth); tokens stay from `usage_daily`.
+ */
+function projectAssignmentRollup(
+  projectSlug: string,
+  rows: ReturnType<typeof listDaily>,
+  common: CommonFilter,
+): SummaryRow[] {
+  // Start from the usage_daily groups but RESET cost to 0 — per-assignment cost
+  // is snapshot-derived (overlaid below), never the cumulative usage_events row.
+  // A daily-only assignment with no closed window stays at 0 (its window cost is
+  // not yet computable), consistent with the assignment-detail summary.
+  const byAssignment = new Map<string, SummaryRow>();
+  for (const row of summarize(rows, 'assignment')) {
+    byAssignment.set(row.assignmentSlug, { ...row, totalCost: 0 });
+  }
+
+  const windows = projectWindowCosts({
+    projectSlug,
+    since: common.since,
+    until: common.until,
+    model: common.model,
+  });
+
+  for (const [assignmentSlug, w] of windows) {
+    const existing = byAssignment.get(assignmentSlug);
+    if (existing) {
+      existing.totalCost = w.cost;
+      existing.pricedWindowCount = w.pricedWindowCount;
+      existing.uncomputableWindowCount = w.uncomputableWindowCount;
+      existing.negativeDeltaCount = w.negativeDeltaCount;
+    } else {
+      // Present ONLY in snapshot windows (no usage_daily row) — surface it with
+      // its window cost so the A-then-B case can't drop it from the rollup.
+      byAssignment.set(assignmentSlug, {
+        projectSlug,
+        assignmentSlug,
+        totalTokens: 0,
+        totalCost: w.cost,
+        lastEventDay: '',
+        pricedWindowCount: w.pricedWindowCount,
+        uncomputableWindowCount: w.uncomputableWindowCount,
+        negativeDeltaCount: w.negativeDeltaCount,
+      });
+    }
+  }
+
+  return [...byAssignment.values()].sort(
+    (a, b) => b.totalCost - a.totalCost || b.totalTokens - a.totalTokens,
+  );
 }

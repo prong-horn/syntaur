@@ -10,6 +10,13 @@ import {
   resetUsageDb,
   upsertEvent,
 } from '../db/usage-db.js';
+import {
+  initSessionDb,
+  closeSessionDb,
+  resetSessionDb,
+} from '../dashboard/session-db.js';
+import { openEngagement, closeEngagementById } from '../db/engagement-db.js';
+import type { TokenSnapshot } from '../db/engagement-tokens.js';
 import { invalidateRecordsCache } from '../dashboard/api.js';
 import { runRollup } from '../usage/rollup-runner.js';
 import { createUsageRouter } from '../dashboard/api-usage.js';
@@ -53,7 +60,11 @@ beforeEach(async () => {
   process.env.SYNTAUR_HOME = sandbox;
   invalidateRecordsCache();
   resetUsageDb();
+  resetSessionDb();
   initUsageDb();
+  // Engagement windows (snapshot cost source) live in the SAME syntaur.db under
+  // SYNTAUR_HOME; init the session db so the cost reader sees the engagement table.
+  initSessionDb();
 
   const app = express();
   app.use('/api/usage', createUsageRouter(projectsDir, assignmentsDir));
@@ -68,10 +79,46 @@ beforeEach(async () => {
 afterEach(async () => {
   await new Promise<void>((res) => server.close(() => res()));
   closeUsageDb();
+  closeSessionDb();
   if (originalEnv === undefined) delete process.env.SYNTAUR_HOME;
   else process.env.SYNTAUR_HOME = originalEnv;
   await rm(sandbox, { recursive: true, force: true });
 });
+
+/**
+ * Seed one CLOSED engagement window so the snapshot-cost reader (M2) has a
+ * per-assignment cost. open cost 0 → close cost `costDelta`, so the window cost
+ * equals `costDelta`. Standalone (`projectSlug === ''`) stores `project_slug NULL`.
+ */
+function seedWindow(
+  projectSlug: string,
+  assignmentSlug: string,
+  costDelta: number,
+  model = 'claude-opus-4-7',
+  endedAt = '2026-05-21T12:30:00.000Z',
+): void {
+  const startedAt = '2026-05-21T11:00:00.000Z';
+  const snap = (cost: number): TokenSnapshot => ({
+    models: { [model]: { input: 0, output: 0, cacheCreation: 0, cacheRead: 0, total: 0, cost } },
+    collectorRunAt: null,
+    capturedAt: '2026-05-21T12:00:00.000Z',
+  });
+  const row = openEngagement({
+    sessionId: `win-${projectSlug}-${assignmentSlug}-${model}-${endedAt}`,
+    projectSlug: projectSlug === '' ? null : projectSlug,
+    assignmentSlug,
+    stage: 'implement',
+    startedAt,
+    tokensAtOpen: snap(0),
+  });
+  closeEngagementById({
+    id: row.id,
+    startedAt,
+    closeReason: 'switch',
+    tokensAtClose: snap(costDelta),
+    endedAt,
+  });
+}
 
 function seed(
   projectSlug: string,
@@ -143,6 +190,40 @@ describe('GET /api/usage/projects/:projectSlug', () => {
     expect(body.summary.length).toBe(2);
     expect(body.summary.every((s: { projectSlug: string }) => s.projectSlug === 'p1')).toBe(true);
   });
+
+  it('includes an assignment that has only a snapshot window (A-then-B cumulative row)', async () => {
+    // The TRUE failure shape: one session worked A then B on the same model, but
+    // the cumulative usage_events row attributes only to B (the latest). A has a
+    // real closed engagement window yet NO usage_daily row — it must still appear.
+    seed('p1', 'B', 400, 4.0); // single cumulative row, attributed to B only
+    runRollup();
+    seedWindow('p1', 'A', 1.5);
+    seedWindow('p1', 'B', 2.5);
+
+    const res = await fetch(`${baseUrl}/api/usage/projects/p1`);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    const cost = Object.fromEntries(
+      body.summary.map((s: { assignmentSlug: string; totalCost: number }) => [s.assignmentSlug, s.totalCost]),
+    );
+    // A is present (snapshot window) despite having no usage_daily row.
+    expect(body.summary.some((s: { assignmentSlug: string }) => s.assignmentSlug === 'A')).toBe(true);
+    expect(cost.A).toBeCloseTo(1.5, 6);
+    // B's cost is its WINDOW delta (2.5), NOT the whole cumulative row (4.0).
+    expect(cost.B).toBeCloseTo(2.5, 6);
+  });
+
+  it('surfaces snapshot-window confidence counts on the per-assignment summary', async () => {
+    seed('p1', 'a1', 100, 0.5);
+    runRollup();
+    seedWindow('p1', 'a1', 0.5);
+
+    const res = await fetch(`${baseUrl}/api/usage/projects/p1/assignments/a1`);
+    const body = await res.json();
+    expect(body.summary.pricedWindowCount).toBe(1);
+    expect(body.summary.uncomputableWindowCount).toBe(0);
+    expect(body.summary.negativeDeltaCount).toBe(0);
+  });
 });
 
 describe('GET /api/usage/projects/:projectSlug/assignments/:assignmentSlug', () => {
@@ -165,6 +246,8 @@ describe('GET /api/usage/projects/:projectSlug/assignments/:assignmentSlug', () 
     seed('p1', 'a1', 100, 0.5);
     seed('p1', 'a2', 200, 1.0);
     runRollup();
+    // M2: per-assignment cost is the snapshot-window delta, not the cumulative row.
+    seedWindow('p1', 'a1', 0.5);
 
     const res = await fetch(`${baseUrl}/api/usage/projects/p1/assignments/a1`);
     expect(res.status).toBe(200);
@@ -183,6 +266,9 @@ describe('GET /api/usage/projects/:projectSlug/assignments/:assignmentSlug', () 
     seed('p1', 'merge', 30, 0.25, '2026-05-21T12:00:00.000Z', 'claude-opus-4-7');
     seed('p1', 'merge', 50, 0.125, '2026-05-21T12:00:00.000Z', 'claude-sonnet-4-6');
     runRollup();
+    // M2: headline cost is the snapshot-window total (here matching the cumulative);
+    // byModel keeps the usage_daily per-model breakdown.
+    seedWindow('p1', 'merge', 0.875);
 
     const res = await fetch(`${baseUrl}/api/usage/projects/p1/assignments/merge`);
     expect(res.status).toBe(200);
@@ -217,6 +303,8 @@ describe('GET /api/usage/standalone/:assignmentId', () => {
   it('treats project_slug as empty for standalone assignments', async () => {
     seed('', 'standalone-asgn', 500, 0.7);
     runRollup();
+    // Standalone window stored with project_slug NULL; reader maps ''→NULL.
+    seedWindow('', 'standalone-asgn', 0.7);
 
     const res = await fetch(`${baseUrl}/api/usage/standalone/standalone-asgn`);
     expect(res.status).toBe(200);
