@@ -213,6 +213,22 @@ describe('GET /api/usage/projects/:projectSlug', () => {
     expect(cost.B).toBeCloseTo(2.5, 6);
   });
 
+  it('surfaces zeroed confidence counts for a project-rollup assignment with no closed window', async () => {
+    // a1 has usage_daily but NO engagement window — it must still carry the
+    // window-confidence count fields (all 0), not omit them.
+    seed('p1', 'a1', 100, 0.5);
+    runRollup();
+
+    const res = await fetch(`${baseUrl}/api/usage/projects/p1`);
+    const body = await res.json();
+    const a1 = body.summary.find((s: { assignmentSlug: string }) => s.assignmentSlug === 'a1');
+    expect(a1).toBeDefined();
+    expect(a1.totalCost).toBe(0); // snapshot-derived: no closed window yet
+    expect(a1.pricedWindowCount).toBe(0);
+    expect(a1.uncomputableWindowCount).toBe(0);
+    expect(a1.negativeDeltaCount).toBe(0);
+  });
+
   it('surfaces snapshot-window confidence counts on the per-assignment summary', async () => {
     seed('p1', 'a1', 100, 0.5);
     runRollup();

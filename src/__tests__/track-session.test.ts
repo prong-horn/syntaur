@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { resolve, join } from 'node:path';
 import {
@@ -8,6 +8,7 @@ import {
   resetSessionDb,
 } from '../dashboard/session-db.js';
 import { getSessionById } from '../dashboard/agent-sessions.js';
+import { getOpenEngagement } from '../db/engagement-db.js';
 import { trackSessionCommand } from '../commands/track-session.js';
 
 let testDir: string;
@@ -66,6 +67,32 @@ describe('trackSessionCommand session-id self-resolution', () => {
       { fallbackPid: () => 31337 },
     );
     expect(getSessionById('pid-explicit-1')!.pid).toBe(100);
+  });
+
+  it('resolves and stores assignment_id on the opened engagement (M1)', async () => {
+    // A project assignment with a frontmatter id under the projects dir.
+    const projectsDir = resolve(testDir, 'projects');
+    const asgnDir = resolve(projectsDir, 'proj', 'assignments', 'asgn');
+    await mkdir(asgnDir, { recursive: true });
+    await writeFile(
+      resolve(projectsDir, 'proj', 'project.md'),
+      `---\nslug: proj\ntitle: proj\ncreated: "2026-01-01"\nupdated: "2026-01-01"\n---\n# proj\n`,
+    );
+    await writeFile(
+      resolve(asgnDir, 'assignment.md'),
+      `---\nid: asgn-uuid-1\nslug: asgn\ntitle: asgn\nstatus: in_progress\n---\n# asgn\n`,
+    );
+
+    await trackSessionCommand(
+      { agent: 'claude', sessionId: 'track-id-1', path: testDir, dir: projectsDir, project: 'proj', assignment: 'asgn' },
+      { fallbackPid: () => null },
+    );
+
+    const open = getOpenEngagement('track-id-1');
+    expect(open).not.toBeNull();
+    expect(open!.assignment_id).toBe('asgn-uuid-1');
+    expect(open!.project_slug).toBe('proj');
+    expect(open!.assignment_slug).toBe('asgn');
   });
 
   it('rejects a WEAK session id with no --assignment (gate)', async () => {

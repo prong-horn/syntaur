@@ -114,4 +114,13 @@ describe('POST /api/agent-sessions — engagement-opening gate (L)', () => {
     const res = await post({ agent: 'claude', sessionId: 'sess-bare' });
     expect(res.status).toBe(201);
   });
+
+  it('(e) a project-only POST (no assignmentSlug) registers UNBOUND — opens no project-bound engagement', async () => {
+    await writeAssignment('proj', 'real', 'id-real'); // project exists
+    const res = await post({ agent: 'claude', sessionId: 'sess-proj-only', projectSlug: 'proj' });
+    expect(res.status).toBe(201);
+    // Binding requires an assignment selector — a bare/project-only POST is
+    // registration-only and must NOT open a project-bound engagement.
+    expect(hasAnyEngagement('sess-proj-only')).toBe(false);
+  });
 });

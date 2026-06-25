@@ -343,7 +343,15 @@ function projectAssignmentRollup(
   // not yet computable), consistent with the assignment-detail summary.
   const byAssignment = new Map<string, SummaryRow>();
   for (const row of summarize(rows, 'assignment')) {
-    byAssignment.set(row.assignmentSlug, { ...row, totalCost: 0 });
+    byAssignment.set(row.assignmentSlug, {
+      ...row,
+      totalCost: 0,
+      // Counts present on EVERY per-assignment row (a daily-only assignment with
+      // no closed window stays at 0/0/0); window overlay below replaces them.
+      pricedWindowCount: 0,
+      uncomputableWindowCount: 0,
+      negativeDeltaCount: 0,
+    });
   }
 
   const windows = projectWindowCosts({

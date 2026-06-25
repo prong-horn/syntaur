@@ -146,7 +146,10 @@ export function createAgentSessionsRouter(
         : null;
 
       const session = {
-        projectSlug: projectSlug || null,
+        // L: a POST with no assignmentSlug is registration-only (unbound) — do
+        // NOT open a project-bound engagement for an arbitrary session. Binding
+        // requires a validated assignment selector (existence-checked above).
+        projectSlug: assignmentSlug ? projectSlug || null : null,
         assignmentSlug: assignmentSlug || null,
         assignmentId,
         agent,
