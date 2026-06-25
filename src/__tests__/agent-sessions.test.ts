@@ -19,7 +19,11 @@ import {
   deleteSessions,
 } from '../dashboard/agent-sessions.js';
 import { getOpenEngagement, switchEngagement, type EngagementRow } from '../db/engagement-db.js';
-import { setCumulativeTokenSource, type TokenSnapshot } from '../db/engagement-tokens.js';
+import {
+  setCumulativeTokenSource,
+  parseSnapshot,
+  type TokenSnapshot,
+} from '../db/engagement-tokens.js';
 import type { AgentSession, AgentSessionStatus } from '../dashboard/types.js';
 
 let testDir: string;
@@ -1013,5 +1017,82 @@ describe('appendSession engagement binding (persisted-status guard)', () => {
       .prepare("SELECT status FROM sessions WHERE session_id = ?")
       .get('s-race') as { status: string };
     expect(srow.status).toBe('active');
+  });
+});
+
+describe('H2: open-baseline token snapshot on every runtime open', () => {
+  const SAMPLE: TokenSnapshot = {
+    models: {
+      'claude-opus-4-7': { input: 1, output: 2, cacheCreation: 0, cacheRead: 0, total: 3, cost: 0.5 },
+    },
+    collectorRunAt: '2026-03-26T09:00:00.000Z',
+    capturedAt: '2026-03-26T10:00:00.000Z',
+  };
+
+  it('captures tokens_at_open on a fresh-binding appendSession open', async () => {
+    setCumulativeTokenSource(async () => SAMPLE);
+    await appendSession('', makeSession({ sessionId: 'h2-fresh' }));
+
+    const open = getOpenEngagement('h2-fresh');
+    expect(open).not.toBeNull();
+    expect(parseSnapshot(open!.tokens_at_open)).toEqual(SAMPLE);
+  });
+
+  it('captures tokens_at_open on an appendSession latest-recovery (reviveStopped) reopen', async () => {
+    setCumulativeTokenSource(async () => SAMPLE);
+    await appendSession('', makeSession({ sessionId: 'h2-rec' }));
+    await updateSessionStatus('', 'h2-rec', 'stopped');
+    expect(getOpenEngagement('h2-rec')).toBeNull();
+
+    // Re-register active with NO incoming binding → recovers from latest engagement.
+    await appendSession(
+      '',
+      makeSession({ sessionId: 'h2-rec', projectSlug: null, assignmentSlug: null }),
+      { reviveStopped: true },
+    );
+
+    const open = getOpenEngagement('h2-rec');
+    expect(open).not.toBeNull();
+    expect(open!.assignment_slug).toBe('test-assignment'); // binding recovered
+    expect(parseSnapshot(open!.tokens_at_open)).toEqual(SAMPLE);
+  });
+
+  it('captures tokens_at_open on the updateSessionStatus(active) revive-reopen (AC H2)', async () => {
+    setCumulativeTokenSource(async () => SAMPLE);
+    await appendSession('', makeSession({ sessionId: 'h2-revive' }));
+    await updateSessionStatus('', 'h2-revive', 'stopped');
+    expect(getOpenEngagement('h2-revive')).toBeNull();
+
+    const revived = await updateSessionStatus('', 'h2-revive', 'active');
+    expect(revived).toBe(true);
+
+    const open = getOpenEngagement('h2-revive');
+    expect(open).not.toBeNull();
+    expect(open!.ended_at).toBeNull();
+    expect(parseSnapshot(open!.tokens_at_open)).toEqual(SAMPLE);
+  });
+
+  it('is best-effort: a snapshot-source throw does not block registration (null baseline)', async () => {
+    setCumulativeTokenSource(async () => {
+      throw new Error('collector unavailable');
+    });
+    await appendSession('', makeSession({ sessionId: 'h2-throw' }));
+
+    const open = getOpenEngagement('h2-throw');
+    expect(open).not.toBeNull(); // still registered + engagement opened
+    expect(open!.tokens_at_open).toBeNull(); // best-effort: no baseline captured
+  });
+
+  it('does not put tokens_at_open on a first-seen TERMINAL session (closed historical interval)', async () => {
+    setCumulativeTokenSource(async () => SAMPLE);
+    // A first-seen stopped session with a binding → preserved as a CLOSED interval.
+    await appendSession('', makeSession({ sessionId: 'h2-term', status: 'stopped', ended: '2026-03-26T11:00:00Z' }));
+
+    const row = getSessionDb()
+      .prepare('SELECT tokens_at_open, ended_at FROM engagement WHERE session_id = ?')
+      .get('h2-term') as { tokens_at_open: string | null; ended_at: string | null } | undefined;
+    expect(row).toBeDefined();
+    expect(row!.ended_at).not.toBeNull(); // closed historical interval
+    expect(row!.tokens_at_open).toBeNull(); // no live baseline on a closed-on-insert row
   });
 });

@@ -99,17 +99,24 @@ export async function parseSessionsIndex(
  */
 function reopenEngagementIfMissing(
   sessionId: string,
-  freshBinding: { projectSlug: string | null; assignmentSlug: string | null } | null,
+  freshBinding: {
+    assignmentId?: string | null;
+    projectSlug: string | null;
+    assignmentSlug: string | null;
+  } | null,
   freshStartedAt: string,
+  tokensAtOpen?: TokenSnapshot | null,
 ): void {
   if (getOpenEngagement(sessionId)) return;
   if (freshBinding && (freshBinding.projectSlug || freshBinding.assignmentSlug)) {
     ensureOpenEngagement({
       sessionId,
+      assignmentId: freshBinding.assignmentId ?? null,
       projectSlug: freshBinding.projectSlug,
       assignmentSlug: freshBinding.assignmentSlug,
       stage: 'implement',
       startedAt: freshStartedAt,
+      tokensAtOpen: tokensAtOpen ?? null,
     });
     return;
   }
@@ -122,6 +129,7 @@ function reopenEngagementIfMissing(
       assignmentSlug: latest.assignment_slug,
       stage: 'implement',
       startedAt: new Date().toISOString(),
+      tokensAtOpen: tokensAtOpen ?? null,
     });
   }
 }
@@ -147,6 +155,18 @@ export async function appendSession(
   opts?: { reviveStopped?: boolean },
 ): Promise<void> {
   const db = getSessionDb();
+
+  // H2: capture the open-baseline token snapshot BEFORE the synchronous
+  // transaction (better-sqlite3 txn callbacks can't await — Decision 2/11). It is
+  // best-effort and point-in-time only (a cheap `usage_events` SELECT; never forces
+  // a collector subprocess), so a failure never blocks registration. It is only
+  // *used* if `reopenEngagementIfMissing` actually opens an engagement below.
+  let openSnapshot: TokenSnapshot | null = null;
+  try {
+    openSnapshot = await getCumulativeTokenSource()(session.sessionId);
+  } catch {
+    openSnapshot = null;
+  }
 
   // The upsert, the persisted-status read, and the engagement-open run in ONE
   // IMMEDIATE transaction so no concurrent writer (a SessionEnd hook / scanner
@@ -199,16 +219,19 @@ export async function appendSession(
       .prepare('SELECT status, ended FROM sessions WHERE session_id = ?')
       .get(session.sessionId) as { status: string; ended: string | null } | undefined;
     const freshBinding = {
+      assignmentId: session.assignmentId ?? null,
       projectSlug: session.projectSlug ?? null,
       assignmentSlug: session.assignmentSlug ?? null,
     };
     if (persisted?.status === 'active') {
       // Live session: ensure an open engagement (fresh binding, else recover the
       // prior binding on a stopped->active revive that arrived with no binding).
+      // H2: thread the pre-captured open snapshot into the opened interval.
       reopenEngagementIfMissing(
         session.sessionId,
         freshBinding,
         session.started ?? new Date().toISOString(),
+        openSnapshot,
       );
     } else if (
       persisted &&
@@ -261,6 +284,17 @@ export async function updateSessionStatus(
     //   - `stopped → active` is the one legitimate revive (e.g. `claude --resume`
     //     of a stopped session); clear the stale `ended` in the SAME transaction
     //     as the flip + engagement reopen, so the row never sits active-with-ended.
+    // H2: capture the open-baseline snapshot BEFORE the synchronous transaction
+    // (the revive reopens the session's engagement, which must carry a
+    // `tokens_at_open` so its cost window is computable — AC H2's explicit
+    // "revive-reopen"). Best-effort/point-in-time; never blocks the revive.
+    let reviveSnapshot: TokenSnapshot | null = null;
+    try {
+      reviveSnapshot = await getCumulativeTokenSource()(sessionId);
+    } catch {
+      reviveSnapshot = null;
+    }
+
     // The current-status read + write are one IMMEDIATE transaction so a concurrent
     // terminal transition can't slip between the check and the revive.
     const apply = db.transaction((): boolean => {
@@ -279,7 +313,7 @@ export async function updateSessionStatus(
         )
         .run(status, sessionId);
       if (res.changes > 0) {
-        reopenEngagementIfMissing(sessionId, null, new Date().toISOString());
+        reopenEngagementIfMissing(sessionId, null, new Date().toISOString(), reviveSnapshot);
       }
       return res.changes > 0;
     });
