@@ -682,6 +682,42 @@ sessionCommand
   });
 
 sessionCommand
+  .command('scan-install')
+  .description(
+    'Install the macOS LaunchAgent that runs `session scan` on an interval (the liveness GC for Codex + dashboard-off).',
+  )
+  .option('--interval <seconds>', 'scan interval in seconds (default 300)')
+  .action(async (options: { interval?: string }) => {
+    try {
+      const { installSessionScanAgent } = await import('../schedules/launchd.js');
+      const res = installSessionScanAgent({
+        intervalSeconds: options.interval ? Number.parseInt(options.interval, 10) : undefined,
+      });
+      console.log(`Installed ${res.label} (every ${res.intervalSeconds}s) → ${res.plistPath}`);
+      console.log(
+        'Note: fires only while this Mac is awake + logged in. Non-macOS: add a cron line running `syntaur session scan`.',
+      );
+    } catch (error) {
+      console.error('Error:', error instanceof Error ? error.message : String(error));
+      process.exit(1);
+    }
+  });
+
+sessionCommand
+  .command('scan-uninstall')
+  .description('Uninstall the macOS LaunchAgent that runs `session scan`.')
+  .action(async () => {
+    try {
+      const { uninstallSessionScanAgent } = await import('../schedules/launchd.js');
+      const res = uninstallSessionScanAgent();
+      console.log(`Uninstalled ${res.label} (removed ${res.plistPath}).`);
+    } catch (error) {
+      console.error('Error:', error instanceof Error ? error.message : String(error));
+      process.exit(1);
+    }
+  });
+
+sessionCommand
   .command('stop')
   .description(
     'Mark the calling agent session stopped in the sessions DB (SessionEnd hook entry point). Reads the hook JSON payload from stdin; always exits 0.',

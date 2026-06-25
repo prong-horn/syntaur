@@ -30,8 +30,12 @@ import {
   appendSession,
   getSessionById,
   updateSessionStatus,
+  livenessStopSession,
 } from '../dashboard/agent-sessions.js';
-import type { AgentSessionStatus } from '../dashboard/types.js';
+import { getOpenEngagement } from '../db/engagement-db.js';
+import { getCumulativeTokenSource, type TokenSnapshot } from '../db/engagement-tokens.js';
+import { getAgentViewSource, type AgentViewSource } from './agent-view.js';
+import type { ActivityState, AgentSessionStatus } from '../dashboard/types.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -52,6 +56,11 @@ export interface ScannerDeps {
   openFiles?: (files: string[]) => Promise<Set<string>>;
   isPidAlive?: (pid: number) => boolean;
   pidStartedAt?: (pid: number) => string | null;
+  /**
+   * Agent-View liveness probe. Defaults to the module seam (`claude agents
+   * --json`, best-effort). Tests inject a hermetic map; absence ≠ death.
+   */
+  agentView?: AgentViewSource;
 }
 
 export interface ScanSummary {
@@ -213,10 +222,22 @@ export async function scanSessions(
   const openFiles = deps.openFiles ?? defaultOpenFiles;
   const isPidAlive = deps.isPidAlive ?? defaultIsPidAlive;
   const pidStartedAt = deps.pidStartedAt ?? defaultPidStartedAt;
+  const agentView = deps.agentView ?? getAgentViewSource();
   const targets = (deps.targets ?? AGENT_TARGETS).filter((t) => t.sessions !== undefined);
 
   const scanStartMs = now();
   const watermark = opts.full ? null : readWatermark();
+
+  // Agent-View liveness probe (best-effort, awaited BEFORE the sync sweep). A
+  // session reported here is LIVE: an additional keep-alive that also revives a
+  // wrongly-stopped row and populates `activity`. ABSENCE is never death
+  // evidence — the pid/transcript test still decides death (Decision 5).
+  let liveActivity: Map<string, ActivityState>;
+  try {
+    liveActivity = await agentView();
+  } catch {
+    liveActivity = new Map();
+  }
 
   // --- (1) Discover sessions from every descriptor.
   const discovered: Discovered[] = [];
@@ -248,7 +269,11 @@ export async function scanSessions(
 
     const mtime = statMtimeMs(d.transcriptPath);
     const heldOpen = openSet.has(canonicalPath(d.transcriptPath));
-    const isLive = heldOpen || (mtime !== null && now() - mtime < FRESH_MTIME_MS);
+    // Agent-View live evidence is an ADDITIONAL keep-alive/revive signal (like
+    // heldOpen). Absence is NOT death evidence (handled at the sweep).
+    const agentViewLive = liveActivity.has(d.sessionId);
+    const isLive =
+      heldOpen || agentViewLive || (mtime !== null && now() - mtime < FRESH_MTIME_MS);
 
     // Discovery INSERTS and REVIVES; it never downgrades. An existing row keeps
     // its status here — active→stopped is owned exclusively by the sweep below,
@@ -280,11 +305,12 @@ export async function scanSessions(
         originalHeadSha: null,
       },
       // Narrow revival rule: only LIVE-PROCESS evidence (a process holding the
-      // transcript open) may flip a stopped row back to active. mtime freshness
-      // alone must not — a session stopped moments ago by its SessionEnd hook
-      // still has a fresh transcript for up to 5 minutes and would flap back to
-      // active. `completed` always sticks (appendSession enforces).
-      { reviveStopped: heldOpen },
+      // transcript open) OR Agent-View live evidence may flip a stopped row back
+      // to active. mtime freshness alone must not — a session stopped moments ago
+      // by its SessionEnd hook still has a fresh transcript for up to 5 minutes
+      // and would flap back to active. `completed` always sticks (appendSession
+      // enforces).
+      { reviveStopped: heldOpen || agentViewLive },
     );
 
     // Backdate `ended` for rows that just landed (or already sat) in `stopped`
@@ -301,19 +327,32 @@ export async function scanSessions(
       summary.inserted += 1;
       summary.changed = true;
     } else {
-      // Revival only actually happens on heldOpen (the flag above). Project/
-      // assignment are no longer auto-bound from context.json here, so there is
-      // no slug-fill path to mark as changed.
-      if (prev.status === 'stopped' && heldOpen) {
+      // Revival happens on heldOpen OR Agent-View live evidence (the flag
+      // above). Project/assignment are no longer auto-bound from context.json
+      // here, so there is no slug-fill path to mark as changed.
+      if (prev.status === 'stopped' && (heldOpen || agentViewLive)) {
         summary.revived += 1;
         summary.changed = true;
       }
     }
   }
 
-  // --- (4) Sweep: every `active` DB row with no remaining liveness evidence
-  // flips to `stopped`, `ended` backdated to the transcript's last mtime.
+  // --- (3b) Persist Agent-View `activity` onto existing rows. Liveness metadata
+  // only — never status. Guarded by `IS NOT` so an unchanged value is not a
+  // (broadcast-triggering) write.
   const db = getSessionDb();
+  if (liveActivity.size > 0) {
+    const setActivity = db.prepare(
+      "UPDATE sessions SET activity = ?, updated_at = datetime('now') WHERE session_id = ? AND activity IS NOT ?",
+    );
+    for (const [sid, activity] of liveActivity) {
+      if (setActivity.run(activity, sid, activity).changes > 0) summary.changed = true;
+    }
+  }
+
+  // --- (4) Sweep: every `active` DB row with no remaining liveness evidence
+  // flips to `stopped` AND its dangling open engagement is closed `liveness_gc`
+  // (the GC), `ended` backdated to the transcript's last mtime.
   const activeRows = db
     .prepare("SELECT session_id, pid, pid_started_at, transcript_path FROM sessions WHERE status = 'active'")
     .all() as Array<{
@@ -325,6 +364,9 @@ export async function scanSessions(
 
   const sweepCandidates: Array<{ sessionId: string; transcriptPath: string | null }> = [];
   for (const row of activeRows) {
+    // Agent-View live evidence is an additional keep-alive: a session Claude
+    // reports live is never swept, even with a stale pid/transcript (Decision 5).
+    if (liveActivity.has(row.session_id)) continue;
     if (row.pid !== null) {
       const alive =
         isPidAlive(row.pid) &&
@@ -346,16 +388,35 @@ export async function scanSessions(
     ),
   );
   for (const candidate of sweepCandidates) {
+    let endedAt: string | undefined;
     if (candidate.transcriptPath) {
       if (sweepOpenSet.has(canonicalPath(candidate.transcriptPath))) continue;
       const mtime = statMtimeMs(candidate.transcriptPath);
       if (mtime !== null && now() - mtime < FRESH_MTIME_MS) continue;
-      const endedAt = mtime !== null ? new Date(mtime).toISOString() : undefined;
-      if (await updateSessionStatus('', candidate.sessionId, 'stopped', endedAt)) {
-        summary.swept += 1;
-        summary.changed = true;
-      }
-    } else if (await updateSessionStatus('', candidate.sessionId, 'stopped')) {
+      endedAt = mtime !== null ? new Date(mtime).toISOString() : undefined;
+    }
+    // Confirmed dead. Capture its open engagement `(id, started_at)` and a token
+    // snapshot BEFORE the sync stop+close transaction (Decisions 1-2 / the #1
+    // async/sync boundary). `livenessStopSession` compare-and-closes the CAPTURED
+    // interval with `liveness_gc` and stops the session ONLY if that close
+    // confirms it is still the dead interval — a concurrent reopen leaves both
+    // the new interval and the (now live) session untouched.
+    const open = getOpenEngagement(candidate.sessionId);
+    let snap: TokenSnapshot | null = null;
+    try {
+      snap = await getCumulativeTokenSource()(candidate.sessionId);
+    } catch {
+      snap = null;
+    }
+    if (
+      livenessStopSession({
+        sessionId: candidate.sessionId,
+        engagementId: open?.id ?? null,
+        engagementStartedAt: open?.started_at ?? null,
+        endedAt,
+        tokensAtClose: snap,
+      })
+    ) {
       summary.swept += 1;
       summary.changed = true;
     }
