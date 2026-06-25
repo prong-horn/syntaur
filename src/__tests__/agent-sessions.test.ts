@@ -18,7 +18,7 @@ import {
   reconcileActiveSessions,
   deleteSessions,
 } from '../dashboard/agent-sessions.js';
-import { getOpenEngagement } from '../db/engagement-db.js';
+import { getOpenEngagement, switchEngagement, type EngagementRow } from '../db/engagement-db.js';
 import { setCumulativeTokenSource, type TokenSnapshot } from '../db/engagement-tokens.js';
 import type { AgentSession, AgentSessionStatus } from '../dashboard/types.js';
 
@@ -963,5 +963,55 @@ describe('appendSession engagement binding (persisted-status guard)', () => {
     expect(row.ended_at).toBe('2026-03-26T12:00:00.000Z');
     expect(row.close_reason).toBe('completed');
     expect(JSON.parse(row.tokens_at_close!).models.m.total).toBe(2);
+  });
+
+  // Codex holistic-review High-1: the terminal close must compare-and-close the
+  // CAPTURED open engagement (not "the current open" re-read inside the txn) and
+  // gate the session-stop on that CAS — mirroring livenessStopSession. Otherwise
+  // a concurrent reopen/switch landing in the async token-snapshot gap gets its
+  // newer interval clobbered as 'abandoned' AND the (now live) session stopped.
+  it('terminal close does not clobber an interval reopened during the token-snapshot gap', async () => {
+    await appendSession('', makeSession({ sessionId: 's-race' }));
+    const e1 = getOpenEngagement('s-race')!;
+
+    // The async token source is exactly the gap between "decide to stop" and the
+    // sync transaction. Simulate a concurrent switch landing there: close E1 +
+    // open a NEW live E2 while the terminal stop is mid-await.
+    let e2: EngagementRow | null = null;
+    setCumulativeTokenSource(async (sessionId) => {
+      if (sessionId === 's-race' && e2 === null) {
+        e2 = switchEngagement({
+          sessionId: 's-race',
+          projectSlug: 'test-project',
+          assignmentSlug: 'test-assignment',
+          stage: 'review',
+          startedAt: '2026-03-26T11:00:00.000Z',
+        });
+      }
+      return {
+        models: {},
+        collectorRunAt: null,
+        capturedAt: '2026-03-26T10:30:00.000Z',
+      };
+    });
+
+    const stopped = await updateSessionStatus('', 's-race', 'stopped', '2026-03-26T12:00:00.000Z');
+
+    // The captured E1 close no-ops (E1 already closed by the switch), so the
+    // session-stop is skipped: E2 stays OPEN and the session stays active.
+    expect(stopped).toBe(false);
+    const open = getOpenEngagement('s-race');
+    expect(open).not.toBeNull();
+    expect(open!.id).toBe(e2!.id);
+    expect(open!.ended_at).toBeNull();
+    // E1 keeps the switch's close reason — never overwritten to 'abandoned'.
+    const e1row = getSessionDb()
+      .prepare('SELECT close_reason FROM engagement WHERE id = ?')
+      .get(e1.id) as { close_reason: string };
+    expect(e1row.close_reason).toBe('switch');
+    const srow = getSessionDb()
+      .prepare("SELECT status FROM sessions WHERE session_id = ?")
+      .get('s-race') as { status: string };
+    expect(srow.status).toBe('active');
   });
 });

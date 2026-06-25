@@ -4,7 +4,6 @@ import { fileExists } from '../utils/fs.js';
 import { getSessionDb } from './session-db.js';
 import {
   ensureOpenEngagement,
-  closeOpenEngagement,
   closeEngagementById,
   getOpenEngagement,
   getLatestEngagement,
@@ -289,11 +288,16 @@ export async function updateSessionStatus(
 
   // Terminal transition closes the session's open engagement so the one-open
   // slot is freed and its cost window is bounded (Decision 7; distinct from
-  // liveness GC of *dead* sessions — #5). Capture the best-effort token snapshot
-  // BEFORE flipping the row terminal (the tokens belong to the work done while
-  // it was live), then flip status + close in ONE IMMEDIATE transaction so a
-  // concurrent revive can't open a new engagement that this close then clobbers
-  // (codex round-2 race).
+  // liveness GC of *dead* sessions — #5). CAPTURE the open engagement
+  // `(id, started_at)` AND the best-effort token snapshot BEFORE the synchronous
+  // transaction (the tokens belong to the work done while it was live). Then, in
+  // ONE IMMEDIATE transaction, **compare-and-close that captured interval** and
+  // **gate the terminal status flip on that close succeeding** (else "the session
+  // has no open engagement"). So a concurrent reopen/switch that lands in the
+  // async snapshot gap is never clobbered and a revived session is not wrongly
+  // marked terminal — mirroring `livenessStopSession` (codex holistic High-1;
+  // Decision 7 always intended close-by-captured-id, not a re-read of current-open).
+  const captured = getOpenEngagement(sessionId);
   let snapshot: TokenSnapshot | null = null;
   try {
     snapshot = await getCumulativeTokenSource()(sessionId);
@@ -302,18 +306,21 @@ export async function updateSessionStatus(
   }
 
   const apply = db.transaction((): boolean => {
+    const stillTerminal = captured
+      ? closeEngagementById({
+          id: captured.id,
+          startedAt: captured.started_at,
+          closeReason: status === 'completed' ? 'completed' : 'abandoned',
+          tokensAtClose: snapshot,
+          endedAt: endedAt ?? new Date().toISOString(),
+        })
+      : getOpenEngagement(sessionId) === null;
+    if (!stillTerminal) return false;
     const res = db
       .prepare(
         'UPDATE sessions SET status = ?, ended = COALESCE(?, datetime(\'now\')), updated_at = datetime(\'now\') WHERE session_id = ?',
       )
       .run(status, endedAt ?? null, sessionId);
-    if (res.changes > 0) {
-      closeOpenEngagement(sessionId, {
-        closeReason: status === 'completed' ? 'completed' : 'abandoned',
-        tokensAtClose: snapshot,
-        endedAt: endedAt ?? undefined,
-      });
-    }
     return res.changes > 0;
   });
   return apply.immediate();
