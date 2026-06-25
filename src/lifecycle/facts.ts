@@ -282,6 +282,7 @@ export async function computeFactsDetailed(input: ComputeFactsInput): Promise<Co
     blocked: frontmatter.blockedReason !== null,
     parked: frontmatter.parked,
     reviewRequested: frontmatter.reviewRequested,
+    reworkRequested: frontmatter.reworkRequested,
     pinned: frontmatter.override !== null,
   };
 

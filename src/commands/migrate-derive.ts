@@ -97,6 +97,9 @@ function seedFacts(content: string, status: string, blockedReason: string | null
   if (REVIEW_STATUSES.has(status)) {
     updates.reviewRequested = true;
   }
+  // Migration policy: a migrated assignment has no rework history — materialize
+  // the scalar explicitly as false (stage-fact-status-bridge).
+  updates.reworkRequested = false;
   if (Object.keys(updates).length > 0) {
     next = updateAssignmentFile(next, updates);
   }

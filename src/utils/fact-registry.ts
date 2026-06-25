@@ -48,6 +48,7 @@ export const DERIVE_FIELDS: FieldRegistry = {
   blocked: { kind: 'bool' },
   parked: { kind: 'bool' },
   reviewrequested: { kind: 'bool', get: (i) => i['reviewRequested'] },
+  reworkrequested: { kind: 'bool', get: (i) => i['reworkRequested'] },
   pinned: { kind: 'bool' },
 };
 
@@ -350,6 +351,7 @@ export function queryFieldNames(declarations: FactDeclaration[]): string[] {
     'blocked',
     'parked',
     'reviewRequested',
+    'reworkRequested',
     'pinned',
   ];
 

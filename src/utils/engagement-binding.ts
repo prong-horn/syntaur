@@ -16,8 +16,10 @@ import { initSessionDb } from '../dashboard/session-db.js';
 import {
   getOpenEngagement,
   getLatestEngagement,
+  switchEngagement,
   type EngagementRow,
 } from '../db/engagement-db.js';
+import { getCumulativeTokenSource } from '../db/engagement-tokens.js';
 
 export interface EngagementBinding {
   assignmentId: string | null;
@@ -98,4 +100,54 @@ export function latestBindingForSessionId(
   initSessionDb(); // idempotent — engagement reads need the session-db handle
   const row = getLatestEngagement(sessionId);
   return row ? rowToBinding(row) : null;
+}
+
+export interface StageSwitchResult {
+  /** The now-open engagement at the requested stage. */
+  current: EngagementRow;
+  /** The engagement that was open before the switch, or null when none was. */
+  previous: EngagementRow | null;
+  /** False when the session was already on (assignment, stage) — no switch made. */
+  switched: boolean;
+}
+
+export interface SwitchSessionStageInput {
+  sessionId: string;
+  assignmentId: string | null;
+  projectSlug: string | null;
+  assignmentSlug: string | null;
+  stage: string;
+  /** Defaults to now. */
+  startedAt?: string;
+}
+
+/**
+ * Switch the session's open engagement to a new stage for the target assignment.
+ *
+ * - Captures the token snapshot via the async source BEFORE the synchronous
+ *   `switchEngagement` (the #1 boundary; stage-fact-status-bridge Decision 10).
+ * - **Same-(assignment,stage) skip:** if the open engagement is already there,
+ *   makes no switch (no cost-window split / no spurious stage-open event) and
+ *   returns `switched:false`. The stage-fact bridge still runs at the call site,
+ *   so a half-applied fact still repairs (Decision 7/8).
+ */
+export async function switchSessionStage(
+  input: SwitchSessionStageInput,
+): Promise<StageSwitchResult> {
+  initSessionDb();
+  const open = getOpenEngagement(input.sessionId);
+  if (open && open.stage === input.stage && open.assignment_id === input.assignmentId) {
+    return { current: open, previous: open, switched: false };
+  }
+  const snapshot = await getCumulativeTokenSource()(input.sessionId);
+  const current = switchEngagement({
+    sessionId: input.sessionId,
+    assignmentId: input.assignmentId,
+    projectSlug: input.projectSlug,
+    assignmentSlug: input.assignmentSlug,
+    stage: input.stage,
+    startedAt: input.startedAt ?? new Date().toISOString(),
+    tokensSnapshot: snapshot,
+  });
+  return { current, previous: open, switched: true };
 }

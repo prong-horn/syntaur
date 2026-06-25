@@ -159,6 +159,9 @@ export interface AssignmentFrontmatter {
   parked: boolean;
   /** Review escalation atom; feeds the review phase rung. */
   reviewRequested: boolean;
+  /** Rework requested: a new `implement` stage opened after `review`. Drops the
+   * review rung even when ACs stay checked. Asserted by the stage-fact bridge. */
+  reworkRequested: boolean;
   /** Asserted "implementation has begun" (worktrees precede planning, so workspaceSet ≠ building). */
   implementationStarted: boolean;
   /** Sticky manual pin; null = no override. */

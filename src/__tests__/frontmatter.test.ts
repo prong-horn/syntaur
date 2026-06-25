@@ -752,6 +752,7 @@ describe('asserted-fact frontmatter fields (v3)', () => {
     expect(parsed.override).toBeNull();
     expect(parsed.parked).toBe(false);
     expect(parsed.reviewRequested).toBe(false);
+    expect(parsed.reworkRequested).toBe(false);
     expect(parsed.implementationStarted).toBe(false);
   });
 
@@ -794,12 +795,14 @@ describe('asserted-fact frontmatter fields (v3)', () => {
       disposition: 'active',
       parked: false,
       reviewRequested: true,
+      reworkRequested: true,
       implementationStarted: true,
     });
     const parsed = parseAssignmentFrontmatter(content);
     expect(parsed.phase).toBe('planning');
     expect(parsed.disposition).toBe('active');
     expect(parsed.reviewRequested).toBe(true);
+    expect(parsed.reworkRequested).toBe(true);
     expect(parsed.implementationStarted).toBe(true);
   });
 });

@@ -261,6 +261,7 @@ export interface ParsedAssignmentFull {
   disposition: string | null;
   parked: boolean;
   reviewRequested: boolean;
+  reworkRequested: boolean;
   implementationStarted: boolean;
   planApproval: { file: string; digest: string; by: string | null; at: string } | null;
   override: { status: string; source: string; reason: string | null; at: string } | null;
@@ -480,6 +481,7 @@ export function parseAssignmentFull(fileContent: string): ParsedAssignmentFull {
     disposition: getField(fm, 'disposition'),
     parked: getField(fm, 'parked') === 'true',
     reviewRequested: getField(fm, 'reviewRequested') === 'true',
+    reworkRequested: getField(fm, 'reworkRequested') === 'true',
     implementationStarted: getField(fm, 'implementationStarted') === 'true',
     planApproval: (() => {
       const file = getNestedField(fm, 'planApproval', 'file');
