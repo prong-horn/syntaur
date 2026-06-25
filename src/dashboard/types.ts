@@ -677,6 +677,13 @@ export type ActivityState = 'working' | 'idle' | 'awaiting-input';
 export interface AgentSession {
   projectSlug: string | null;
   assignmentSlug: string | null;
+  /**
+   * The binding's resolved assignment frontmatter `id`, when the registering
+   * caller resolved it from the slugs (M1). Threaded into the opened engagement's
+   * `assignment_id` so a later stage assertion doesn't split the interval just to
+   * repair the id. Null/absent when unresolved (slug-only binding).
+   */
+  assignmentId?: string | null;
   agent: string;
   sessionId: string;
   started: string;

@@ -122,6 +122,22 @@ export interface SwitchSessionStageInput {
 }
 
 /**
+ * Whether the open engagement already points at the input's target. Compares by
+ * `assignment_id` when BOTH sides carry one (the authoritative identity), else by
+ * `(project_slug, assignment_slug)`. This keeps a slug-only open interval from
+ * being split just to backfill a now-resolved id (M1).
+ */
+function isSameTarget(open: EngagementRow, input: SwitchSessionStageInput): boolean {
+  if (open.assignment_id && input.assignmentId) {
+    return open.assignment_id === input.assignmentId;
+  }
+  return (
+    open.project_slug === input.projectSlug &&
+    open.assignment_slug === input.assignmentSlug
+  );
+}
+
+/**
  * Switch the session's open engagement to a new stage for the target assignment.
  *
  * - Captures the token snapshot via the async source BEFORE the synchronous
@@ -130,13 +146,20 @@ export interface SwitchSessionStageInput {
  *   makes no switch (no cost-window split / no spurious stage-open event) and
  *   returns `switched:false`. The stage-fact bridge still runs at the call site,
  *   so a half-applied fact still repairs (Decision 7/8).
+ * - **id-else-slugs target match (M1):** the skip compares by `assignment_id`
+ *   only when BOTH the open row and the input carry one; otherwise it falls back
+ *   to `(project_slug, assignment_slug)`. So a slug-only interval (e.g. a freshly
+ *   grabbed/tracked assignment whose `assignment_id` was not yet resolved) is NOT
+ *   split merely to write the id when the first resolved-id stage assertion
+ *   arrives for the SAME (assignment, stage) — splitting the cost window is worse
+ *   than a null id, and per-assignment attribution falls back to slugs anyway.
  */
 export async function switchSessionStage(
   input: SwitchSessionStageInput,
 ): Promise<StageSwitchResult> {
   initSessionDb();
   const open = getOpenEngagement(input.sessionId);
-  if (open && open.stage === input.stage && open.assignment_id === input.assignmentId) {
+  if (open && open.stage === input.stage && isSameTarget(open, input)) {
     return { current: open, previous: open, switched: false };
   }
   const snapshot = await getCumulativeTokenSource()(input.sessionId);

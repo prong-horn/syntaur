@@ -99,3 +99,44 @@ export async function resolveAssignmentById(
 
   return standaloneMatch ?? projectMatch ?? null;
 }
+
+export interface ResolvedAssignmentBySlug {
+  /** True iff the assignment.md exists and is readable at the deterministic path. */
+  exists: boolean;
+  /** The frontmatter `id`, or null when the file is missing/unreadable/idless. */
+  id: string | null;
+}
+
+/**
+ * Resolve an assignment's frontmatter `id` (and existence) from its SLUGS via the
+ * deterministic on-disk path — no directory scan. Project-nested:
+ * `<projectsDir>/<projectSlug>/assignments/<assignmentSlug>/assignment.md`;
+ * standalone (`projectSlug == null`): `<assignmentsDir>/<assignmentSlug>/assignment.md`.
+ *
+ * Returns `{exists:false, id:null}` when the file is absent/unreadable,
+ * `{exists:true, id:null}` when it exists but has no frontmatter `id`, and
+ * `{exists:true, id}` otherwise. Never throws — registration/binding callers use it
+ * best-effort: M1 (track/grab/API) takes `.id` to store `assignment_id`; the L
+ * dashboard-POST gate gates on `.exists`. Distinguishing missing-vs-idless is why
+ * this returns a struct rather than `string | null`.
+ */
+export async function resolveAssignmentBySlug(
+  projectsDir: string,
+  assignmentsDir: string,
+  projectSlug: string | null,
+  assignmentSlug: string,
+): Promise<ResolvedAssignmentBySlug> {
+  const path = projectSlug
+    ? resolve(projectsDir, projectSlug, 'assignments', assignmentSlug, 'assignment.md')
+    : resolve(assignmentsDir, assignmentSlug, 'assignment.md');
+  if (!(await fileExists(path))) return { exists: false, id: null };
+  try {
+    const content = await readFile(path, 'utf-8');
+    const [fm] = extractFrontmatter(content);
+    const id = getField(fm, 'id');
+    return { exists: true, id: id ?? null };
+  } catch {
+    // exists on disk but unreadable — treat as not-resolvable (best-effort)
+    return { exists: false, id: null };
+  }
+}

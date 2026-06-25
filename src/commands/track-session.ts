@@ -1,6 +1,7 @@
 import { resolve } from 'node:path';
 import { readFile } from 'node:fs/promises';
-import { expandHome } from '../utils/paths.js';
+import { expandHome, assignmentsDir as assignmentsDirFn } from '../utils/paths.js';
+import { resolveAssignmentBySlug } from '../utils/assignment-resolver.js';
 import { fileExists } from '../utils/fs.js';
 import { readConfig } from '../utils/config.js';
 import { derivePathFromTranscript } from '../utils/transcript.js';
@@ -79,17 +80,34 @@ export async function trackSessionCommand(
   // mutate state unless an explicit --assignment selector is present.
   assertMayMutate(resolved, { hasSelector: Boolean(options.assignment) });
 
-  if (options.project) {
+  let assignmentId: string | null = null;
+  if (options.project || options.assignment) {
     const config = await readConfig();
     const baseDir = options.dir
       ? expandHome(options.dir)
       : config.defaultProjectDir;
-    const projectDir = resolve(baseDir, options.project);
 
-    if (!(await fileExists(projectDir))) {
-      throw new Error(
-        `Project "${options.project}" not found at ${projectDir}.`,
-      );
+    if (options.project) {
+      const projectDir = resolve(baseDir, options.project);
+      if (!(await fileExists(projectDir))) {
+        throw new Error(
+          `Project "${options.project}" not found at ${projectDir}.`,
+        );
+      }
+    }
+
+    // M1: resolve the assignment's frontmatter id from its slugs so the opened
+    // engagement carries `assignment_id` up front — a later `implement` stage
+    // assertion then won't split the interval merely to repair the id.
+    if (options.assignment) {
+      assignmentId = (
+        await resolveAssignmentBySlug(
+          baseDir,
+          assignmentsDirFn(),
+          options.project || null,
+          options.assignment,
+        )
+      ).id;
     }
   }
 
@@ -121,6 +139,7 @@ export async function trackSessionCommand(
   await appendSession('', {
     projectSlug: options.project || null,
     assignmentSlug: options.assignment || null,
+    assignmentId,
     agent: options.agent,
     sessionId,
     started: new Date().toISOString(),
