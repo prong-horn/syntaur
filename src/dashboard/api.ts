@@ -107,8 +107,11 @@ import type {
   ResourceSummaryWithProject,
   PlaybookSummary,
   PlaybookDetail,
+  EngagementInfo,
 } from './types.js';
-import { listAllSessions } from './agent-sessions.js';
+import { listAllSessions, getSessionById } from './agent-sessions.js';
+import { getEngagementsByAssignmentId } from '../db/engagement-db.js';
+import { isSessionDbInitialized } from './session-db.js';
 import { SEGMENT_REASON } from './overviewCopy.js';
 import {
   classifyNeedsAttention,
@@ -1241,6 +1244,36 @@ export async function getProjectDetail(
  * Get full assignment detail with plan, scratchpad, handoff, and decision record.
  * GET /api/projects/:slug/assignments/:aslug
  */
+/**
+ * Build the slim, camelCase engagement projection for an assignment's
+ * "Session Activity" view: the full per-session stage history, agent-enriched.
+ *
+ * Reads the session DB (`getEngagementsByAssignmentId` / `getSessionById` both
+ * go through `getSessionDb()`, which throws if `initSessionDb()` never ran).
+ * The dashboard server initializes it; non-dashboard `getAssignmentDetail`
+ * callers (CLI launch/open, direct tests) may not — so degrade to no
+ * engagements rather than throwing. Agent is enriched once per distinct session
+ * (no N+1); a missing session row yields `agent: null`.
+ */
+function buildAssignmentEngagements(assignmentId: string): EngagementInfo[] {
+  if (!isSessionDbInitialized()) return [];
+  const rows = getEngagementsByAssignmentId(assignmentId);
+  const agentBySession = new Map<string, string | null>();
+  for (const r of rows) {
+    if (!agentBySession.has(r.session_id)) {
+      agentBySession.set(r.session_id, getSessionById(r.session_id)?.agent ?? null);
+    }
+  }
+  return rows.map((r) => ({
+    id: r.id,
+    sessionId: r.session_id,
+    agent: agentBySession.get(r.session_id) ?? null,
+    stage: r.stage,
+    startedAt: r.started_at,
+    endedAt: r.ended_at,
+  }));
+}
+
 export async function getAssignmentDetail(
   projectsDir: string,
   projectSlug: string,
@@ -1372,6 +1405,7 @@ export async function getAssignmentDetail(
     progress,
     comments,
     referencedBy: [],
+    engagements: buildAssignmentEngagements(assignment.id),
     availableTransitions: await getAvailableTransitions(
       projectsDir,
       projectSlug,
@@ -1715,6 +1749,7 @@ async function buildStandaloneAssignmentDetail(
     progress,
     comments,
     referencedBy: [],
+    engagements: buildAssignmentEngagements(assignment.id),
     availableTransitions: await getStandaloneAvailableTransitions(assignment),
   };
 

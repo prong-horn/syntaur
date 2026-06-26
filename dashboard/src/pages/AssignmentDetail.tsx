@@ -42,6 +42,7 @@ import { DependencyPanel } from '../components/DependencyPanel';
 import { LinksPanel } from '../components/LinksPanel';
 import { CommentsThread } from '../components/CommentsThread';
 import { ActivityTimeline } from '../components/ActivityTimeline';
+import { SessionActivityTimeline } from '../components/SessionActivityTimeline';
 import { useHotkey, useHotkeyScope } from '../hotkeys';
 import { useHashScroll } from '../hooks/useHashScroll';
 import { cn } from '../lib/utils';
@@ -835,6 +836,16 @@ export function AssignmentDetail() {
                     events={events}
                     loading={eventsLoading}
                     error={eventsError}
+                  />
+                ),
+              },
+              {
+                value: 'session-activity',
+                label: 'Session Activity',
+                count: assignment.engagements.length,
+                content: (
+                  <SessionActivityTimeline
+                    engagements={assignment.engagements}
                   />
                 ),
               },

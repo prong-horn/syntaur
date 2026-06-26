@@ -74,6 +74,22 @@ export function getLatestEngagement(sessionId: string): EngagementRow | null {
   return row ?? null;
 }
 
+/**
+ * All engagement rows for an assignment, oldest first. Powers the assignment
+ * details "Session Activity" attribution view — the full per-session stage
+ * history, distinct from the single *chosen* engagement the agent-sessions
+ * endpoint returns. Ordered by `started_at` (then `id` to tie-break rows that
+ * share a timestamp); the `idx_engagement_assignment` index covers the filter.
+ */
+export function getEngagementsByAssignmentId(assignmentId: string): EngagementRow[] {
+  return getSessionDb()
+    .prepare(
+      `SELECT * FROM engagement WHERE assignment_id = ?
+        ORDER BY started_at ASC, id ASC`,
+    )
+    .all(assignmentId) as EngagementRow[];
+}
+
 /** True if the session has any engagement row at all (open or closed). */
 export function hasAnyEngagement(sessionId: string): boolean {
   return (

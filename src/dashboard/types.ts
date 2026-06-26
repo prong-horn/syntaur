@@ -221,6 +221,24 @@ export interface ExternalIdInfo {
   url: string | null;
 }
 
+/**
+ * One session↔assignment engagement interval, projected for the dashboard's
+ * "Session Activity" attribution view. A slim camelCase view of an
+ * `EngagementRow` — token snapshots / close_reason are intentionally omitted.
+ * `agent` is enriched from the owning session row (null if that row is gone).
+ * `endedAt` null ⇒ the engagement is still open (in progress). Mirror of the
+ * SPA-side `EngagementInfo` in `dashboard/src/hooks/useProjects.ts`.
+ */
+export interface EngagementInfo {
+  id: number;
+  sessionId: string;
+  agent: string | null;
+  /** Engagement stage (plan | implement | review | …) — the attribution source, NOT the derived assignment phase. */
+  stage: string;
+  startedAt: string;
+  endedAt: string | null;
+}
+
 export interface AssignmentDetail {
   id: string;
   /** `null` for standalone assignments that live outside any project. */
@@ -293,6 +311,8 @@ export interface AssignmentDetail {
   progress: AssignmentProgress | null;
   comments: AssignmentComments | null;
   referencedBy: AssignmentReference[];
+  /** Full per-session stage-attribution history (oldest first). Empty when the session DB is not initialized (non-dashboard callers). */
+  engagements: EngagementInfo[];
   availableTransitions: AssignmentTransitionAction[];
 }
 
