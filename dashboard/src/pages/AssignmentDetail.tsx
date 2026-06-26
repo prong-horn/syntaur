@@ -595,11 +595,12 @@ export function AssignmentDetail() {
           projectSlug={slug!}
           dependencies={enrichedDeps}
           blockedReason={assignment.blockedReason}
+          onAssignmentChange={() => refetch()}
         />
       )}
 
       {assignment.enrichedLinks && assignment.enrichedLinks.length > 0 && (
-        <LinksPanel links={assignment.enrichedLinks} />
+        <LinksPanel links={assignment.enrichedLinks} onAssignmentChange={() => refetch()} />
       )}
 
       {assignment.referencedBy && assignment.referencedBy.length > 0 && (

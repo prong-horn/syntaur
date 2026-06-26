@@ -7,6 +7,7 @@ import { formatDate, formatDateTime } from '../lib/format';
 import { LoadingState } from '../components/LoadingState';
 import { ErrorState } from '../components/ErrorState';
 import { StatusBadge, getStatusDescription } from '../components/StatusBadge';
+import { AssignmentStatusPill } from '../components/AssignmentStatusPill';
 import { TypeChip } from '../components/TypeChip';
 import { ExternalIdBadges } from '../components/ExternalIdBadges';
 import { StatCard } from '../components/StatCard';
@@ -869,7 +870,7 @@ export function ProjectDetail() {
                           dragDisabled
                           boundedColumns
                           renderCard={(item) => (
-                            <AssignmentCard projectSlug={project.slug} assignment={item} />
+                            <AssignmentCard projectSlug={project.slug} assignment={item} onAssignmentChange={() => refetch()} />
                           )}
                           emptyMessage={(column) => `No ${column.title.toLowerCase()} assignments.`}
                           hiddenColumnIds={kanbanColumnVisibility.hidden}
@@ -925,7 +926,7 @@ export function ProjectDetail() {
                                     </Link>
                                   </td>
                                   ) : null}
-                                  {showCol('status') ? <td className="py-4"><StatusBadge status={assignment.status} className="max-w-[150px]" /></td> : null}
+                                  {showCol('status') ? <td className="py-4"><AssignmentStatusPill projectSlug={project.slug} slug={assignment.slug} status={assignment.status} title={assignment.title} className="max-w-[150px]" onChange={() => refetch()} /></td> : null}
                                   <td className="py-4"><TypeChip type={assignment.type} compact /></td>
                                   {showCol('priority') ? <td className="py-4 capitalize text-muted-foreground">{assignment.priority}</td> : null}
                                   {showCol('assignee') ? <td className="py-4 text-muted-foreground">{assignment.assignee ?? '\u2014'}</td> : null}
@@ -1145,9 +1146,11 @@ export function ProjectDetail() {
 function AssignmentCard({
   projectSlug,
   assignment,
+  onAssignmentChange,
 }: {
   projectSlug: string;
   assignment: AssignmentSummary;
+  onAssignmentChange?: () => void;
 }) {
   const wsPrefix = useWorkspacePrefix();
   return (
@@ -1166,7 +1169,19 @@ function AssignmentCard({
           </p>
           <p className="text-sm text-muted-foreground">Updated {formatDate(assignment.updated)}</p>
         </div>
-        <StatusBadge status={assignment.status} className="max-w-[150px]" />
+        <span
+          onClick={(e) => { e.preventDefault(); e.stopPropagation(); }}
+          onPointerDown={(e) => e.stopPropagation()}
+        >
+          <AssignmentStatusPill
+            projectSlug={projectSlug}
+            slug={assignment.slug}
+            status={assignment.status}
+            title={assignment.title}
+            className="max-w-[150px]"
+            onChange={onAssignmentChange}
+          />
+        </span>
       </div>
       <div className="mt-4 flex flex-wrap gap-2">
         <TypeChip type={assignment.type} />

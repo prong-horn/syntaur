@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { AlertCircle, ArrowUpRight, CheckCircle2, ChevronDown } from 'lucide-react';
-import { StatusBadge } from './StatusBadge';
+import { AssignmentStatusPill } from './AssignmentStatusPill';
 import { SectionCard } from './SectionCard';
 
 interface DependencyInfo {
@@ -16,9 +16,10 @@ interface DependencyPanelProps {
   projectSlug: string;
   dependencies: DependencyInfo[];
   blockedReason: string | null;
+  onAssignmentChange?: () => void;
 }
 
-export function DependencyPanel({ projectSlug, dependencies, blockedReason }: DependencyPanelProps) {
+export function DependencyPanel({ projectSlug, dependencies, blockedReason, onAssignmentChange }: DependencyPanelProps) {
   const [expanded, setExpanded] = useState(false);
 
   if (dependencies.length === 0) return null;
@@ -84,7 +85,18 @@ export function DependencyPanel({ projectSlug, dependencies, blockedReason }: De
               to={`/projects/${projectSlug}/assignments/${dep.slug}`}
               className="flex items-center gap-3 px-1 py-2.5 transition hover:bg-muted/40 first:pt-0 last:pb-0"
             >
-              <StatusBadge status={dep.status} />
+              <span
+                onClick={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                onPointerDown={(e) => e.stopPropagation()}
+              >
+                <AssignmentStatusPill
+                  projectSlug={projectSlug}
+                  slug={dep.slug}
+                  status={dep.status}
+                  title={dep.title}
+                  onChange={onAssignmentChange}
+                />
+              </span>
               <div className="min-w-0 flex-1">
                 <p className="truncate text-sm font-medium text-foreground">
                   {dep.title}
