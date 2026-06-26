@@ -104,8 +104,9 @@ describe('getEngagementsByAssignmentId', () => {
 
     const rows = getEngagementsByAssignmentId('asgn-tie');
 
-    expect(rows.map((r) => r.id)).toEqual([...rows.map((r) => r.id)].sort((a, b) => a - b));
+    // Equal started_at → rows come back in id (insertion) order, not reversed.
     expect(rows.map((r) => r.session_id)).toEqual(['sess-a', 'sess-b']);
+    expect(rows[0].id).toBeLessThan(rows[1].id);
   });
 
   it('returns an open engagement with ended_at null', () => {
