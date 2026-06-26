@@ -217,7 +217,7 @@ export function AssignmentStatusPill({
         overrideTargets={overrideTargets}
         onOverride={pickerOnOverride}
         progress={progress}
-        disabled={disabled}
+        disabled={disabled || transitioning}
         className={className}
       />
 
