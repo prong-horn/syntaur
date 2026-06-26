@@ -131,6 +131,48 @@ describe('agents config', () => {
         ]),
       ).toThrow(/invalid launchPrompt/);
     });
+
+    it('rejects an agentName containing a newline', () => {
+      expect(() =>
+        validateAgentList([{ id: 'a', label: 'A', command: 'a', agentName: 'one\ntwo' }]),
+      ).toThrow(/invalid agentName/);
+    });
+
+    it('rejects a workdir containing a newline', () => {
+      expect(() =>
+        validateAgentList([{ id: 'a', label: 'A', command: 'a', workdir: '/one\n/two' }]),
+      ).toThrow(/invalid workdir/);
+    });
+
+    it('rejects an agent setting both agentName and workdir', () => {
+      expect(() =>
+        validateAgentList([
+          { id: 'a', label: 'A', command: 'a', agentName: 'x', workdir: '/tmp' },
+        ]),
+      ).toThrow(/mutually exclusive/);
+    });
+
+    it('rejects an agent setting both agentName and model', () => {
+      expect(() =>
+        validateAgentList([
+          { id: 'a', label: 'A', command: 'a', agentName: 'x', model: 'opus' },
+        ]),
+      ).toThrow(/agentName and model/);
+    });
+
+    it('does NOT reject a shell-aliased Claude carrying agentName', () => {
+      expect(() =>
+        validateAgentList([
+          {
+            id: 'c',
+            label: 'C',
+            command: 'c',
+            resolveFromShellAliases: true,
+            agentName: 'job-applier',
+          },
+        ]),
+      ).not.toThrow();
+    });
   });
 
   describe('round-trip', () => {
@@ -205,6 +247,24 @@ describe('agents config', () => {
       await writeAgentsConfig(agents);
       const config = await readConfig();
       expect(config.agents?.[0]).toMatchObject({ id: 'claude-lp', launchPrompt });
+    });
+
+    it('round-trips agentName (Claude identity)', async () => {
+      const agents: AgentConfig[] = [
+        { id: 'claude-jobs', label: 'Claude (jobs)', command: 'claude', agentName: 'job-applier' },
+      ];
+      await writeAgentsConfig(agents);
+      const config = await readConfig();
+      expect(config.agents?.[0]).toMatchObject({ id: 'claude-jobs', agentName: 'job-applier' });
+    });
+
+    it('round-trips workdir (directory-agent launch dir)', async () => {
+      const agents: AgentConfig[] = [
+        { id: 'pi-jobs', label: 'Pi (jobs)', command: 'pi', workdir: '~/job-applier-agent' },
+      ];
+      await writeAgentsConfig(agents);
+      const config = await readConfig();
+      expect(config.agents?.[0]).toMatchObject({ id: 'pi-jobs', workdir: '~/job-applier-agent' });
     });
 
     it('getAgents returns built-in defaults when block absent', async () => {

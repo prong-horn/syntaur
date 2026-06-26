@@ -81,6 +81,44 @@ describe('continuationUrl', () => {
       continuationUrl({ kind: 'session', id: 's1' }, 'resume', undefined, undefined, '@assignment go'),
     ).toBe('syntaur://open?session=s1&mode=resume');
   });
+
+  it('emits a standalone deep link from the agent id', () => {
+    expect(continuationUrl({ kind: 'standalone', id: 'pi-jobs' })).toBe(
+      'syntaur://open?standalone=pi-jobs',
+    );
+  });
+
+  it('appends &prompt= for a standalone target', () => {
+    expect(
+      continuationUrl({ kind: 'standalone', id: 'pi-jobs' }, undefined, undefined, undefined, 'apply to 5'),
+    ).toBe('syntaur://open?standalone=pi-jobs&prompt=apply%20to%205');
+  });
+
+  it('appends &agentName= for an assignment (url-encoded)', () => {
+    expect(
+      continuationUrl(
+        { kind: 'assignment', id: 'a1' },
+        undefined,
+        undefined,
+        'claude',
+        undefined,
+        'job applier',
+      ),
+    ).toBe('syntaur://open?assignment=a1&agent=claude&agentName=job%20applier');
+  });
+
+  it('does NOT append agentName for a standalone target', () => {
+    expect(
+      continuationUrl(
+        { kind: 'standalone', id: 'pi-jobs' },
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        'job-applier',
+      ),
+    ).toBe('syntaur://open?standalone=pi-jobs');
+  });
 });
 
 describe('recreateRequest', () => {

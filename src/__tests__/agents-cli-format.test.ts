@@ -84,3 +84,50 @@ describe('CLI add/set launchPrompt', () => {
     expect(merged.launchPrompt).toBe('keep me');
   });
 });
+
+describe('CLI add/set agentName + workdir', () => {
+  it('add --agent-name sets the field (trimmed)', () => {
+    const agent = buildAgentFromOptions(
+      { id: 'a', label: 'A', command: 'claude', agentName: '  job-applier ' },
+      null,
+    );
+    expect(agent.agentName).toBe('job-applier');
+  });
+
+  it('add --workdir sets the field (trimmed)', () => {
+    const agent = buildAgentFromOptions(
+      { id: 'a', label: 'A', command: 'pi', workdir: '  ~/job-applier-agent ' },
+      null,
+    );
+    expect(agent.workdir).toBe('~/job-applier-agent');
+  });
+
+  it('add rejects agentName + workdir together (mutual exclusion)', () => {
+    expect(() =>
+      buildAgentFromOptions(
+        { id: 'a', label: 'A', command: 'pi', agentName: 'x', workdir: '/tmp' },
+        null,
+      ),
+    ).toThrow(/mutually exclusive/);
+  });
+
+  it('set --agent-name "" clears the field', () => {
+    const merged = mergeOptionsIntoAgent({ ...base, agentName: 'job-applier' }, { agentName: '' });
+    expect(merged.agentName).toBeUndefined();
+  });
+
+  it('set --workdir "" clears the field', () => {
+    const merged = mergeOptionsIntoAgent(
+      { id: 'p', label: 'P', command: 'pi', workdir: '/tmp/x' },
+      { workdir: '' },
+    );
+    expect(merged.workdir).toBeUndefined();
+  });
+
+  it('formatAgentLine surfaces agentName and workdir', () => {
+    expect(formatAgentLine({ ...base, agentName: 'job-applier' })).toContain('agentName=job-applier');
+    expect(formatAgentLine({ id: 'p', label: 'P', command: 'pi', workdir: '/tmp/x' })).toContain(
+      'workdir=/tmp/x',
+    );
+  });
+});

@@ -363,6 +363,41 @@ export function validateAgentList(agents: AgentConfig[]): void {
         `agent "${agent.id}" has invalid launchPrompt — must be a single line (no newlines)`,
       );
     }
+    if (agent.agentName !== undefined && /[\r\n]/.test(agent.agentName)) {
+      throw new AgentConfigError(
+        `agent "${agent.id}" has invalid agentName — must be a single line (no newlines)`,
+      );
+    }
+    if (agent.workdir !== undefined && /[\r\n]/.test(agent.workdir)) {
+      throw new AgentConfigError(
+        `agent "${agent.id}" has invalid workdir — must be a single line (no newlines)`,
+      );
+    }
+    // `agentName` (Claude --agent) and `workdir` (pi/codex launch dir) are two
+    // different identity adapters — an agent uses one or the other, never both.
+    if (
+      agent.agentName !== undefined &&
+      agent.agentName.trim() !== '' &&
+      agent.workdir !== undefined &&
+      agent.workdir.trim() !== ''
+    ) {
+      throw new AgentConfigError(
+        `agent "${agent.id}" sets both agentName and workdir — these are mutually exclusive`,
+      );
+    }
+    // A Claude agent definition carries its own model frontmatter, which wins on
+    // `--agent`. A profile `model` alongside `agentName` would be silently
+    // dropped at launch — fail loudly instead so the contradiction is visible.
+    if (
+      agent.agentName !== undefined &&
+      agent.agentName.trim() !== '' &&
+      agent.model !== undefined &&
+      agent.model.trim() !== ''
+    ) {
+      throw new AgentConfigError(
+        `agent "${agent.id}" sets both agentName and model — the agent definition's own model is authoritative; remove the profile model`,
+      );
+    }
     validateSessionInvocation(agent, 'resume', agent.resume);
     validateSessionInvocation(agent, 'fork', agent.fork);
     if (agent.default) defaults++;
@@ -1424,6 +1459,8 @@ function parseAgentsConfig(content: string): AgentConfig[] | null {
       ...(current.model ? { model: current.model } : {}),
       ...(current.playbook ? { playbook: current.playbook } : {}),
       ...(current.launchPrompt ? { launchPrompt: current.launchPrompt } : {}),
+      ...(current.agentName ? { agentName: current.agentName } : {}),
+      ...(current.workdir ? { workdir: current.workdir } : {}),
       ...(current.resume ? { resume: current.resume } : {}),
       ...(current.fork ? { fork: current.fork } : {}),
     });
@@ -1559,6 +1596,8 @@ const KNOWN_AGENT_SCALAR_FIELDS: ReadonlySet<string> = new Set([
   'model',
   'playbook',
   'launchPrompt',
+  'agentName',
+  'workdir',
 ]);
 
 /**
@@ -1652,6 +1691,12 @@ function assignAgentField(target: Partial<AgentConfig>, key: string, rawValue: s
     case 'launchPrompt':
       target.launchPrompt = value;
       break;
+    case 'agentName':
+      target.agentName = value;
+      break;
+    case 'workdir':
+      target.workdir = value;
+      break;
   }
 }
 
@@ -1685,6 +1730,12 @@ function serializeAgentsConfig(agents: AgentConfig[]): string {
     }
     if (a.launchPrompt) {
       lines.push(`    launchPrompt: ${yamlQuoteScalar(a.launchPrompt)}`);
+    }
+    if (a.agentName) {
+      lines.push(`    agentName: ${yamlQuoteScalar(a.agentName)}`);
+    }
+    if (a.workdir) {
+      lines.push(`    workdir: ${yamlQuoteScalar(a.workdir)}`);
     }
     if (a.args && a.args.length > 0) {
       lines.push(`    args:`);

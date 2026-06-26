@@ -32,9 +32,10 @@ describe('detectActiveToken', () => {
 });
 
 describe('rankSuggestions', () => {
-  it('empty partial returns assignment first, then all slugs', () => {
+  it('empty partial returns reserved tokens first, then all slugs', () => {
     expect(rankSuggestions('', ['e2e-dev-cycle', 'keep-records-updated'])).toEqual([
       'assignment',
+      'worktree',
       'e2e-dev-cycle',
       'keep-records-updated',
     ]);
@@ -44,8 +45,16 @@ describe('rankSuggestions', () => {
     expect(rankSuggestions('rec', ['my-rec', 'rec-a'])).toEqual(['rec-a', 'my-rec']);
   });
 
-  it('does not duplicate a playbook literally named assignment', () => {
-    expect(rankSuggestions('', ['assignment', 'x'])).toEqual(['assignment', 'x']);
+  it('ranks the worktree reserved token by prefix', () => {
+    expect(rankSuggestions('work', ['workspace-x'])).toEqual(['worktree', 'workspace-x']);
+  });
+
+  it('does not duplicate a playbook literally named assignment or worktree', () => {
+    expect(rankSuggestions('', ['assignment', 'worktree', 'x'])).toEqual([
+      'assignment',
+      'worktree',
+      'x',
+    ]);
   });
 });
 
@@ -60,15 +69,20 @@ describe('applySuggestion', () => {
 });
 
 describe('tokenWarnings — parity with the server resolveLaunchPrompt', () => {
+  // Mirror the real launch box: an assignment with a worktree, so `@assignment`
+  // and `@worktree` both resolve (no warn) on the server — matching the
+  // dashboard's "reserved tokens never warn" advisory.
   const ctx = {
     id: 'x',
     assignmentDir: '/recs',
+    worktreePath: '/wt',
     projectSlug: 'p' as string | null,
     assignmentSlug: 'a',
     knownPlaybookSlugs: KNOWN,
   };
   const cases = [
     '@assignment hi',
+    'cd @worktree and build',
     'Run @e2e-dev-cycle now',
     'Use @missing-thing',
     '@FOO and @foo_bar and @foo--bar',
@@ -82,8 +96,8 @@ describe('tokenWarnings — parity with the server resolveLaunchPrompt', () => {
     expect(tokenWarnings(text, KNOWN).length).toBe(serverWarnings);
   });
 
-  it('flags an uninstalled slug but not @assignment or a known slug', () => {
-    const w = tokenWarnings('@assignment @e2e-dev-cycle @nope', KNOWN);
+  it('flags an uninstalled slug but not @assignment, @worktree, or a known slug', () => {
+    const w = tokenWarnings('@assignment @worktree @e2e-dev-cycle @nope', KNOWN);
     expect(w).toHaveLength(1);
     expect(w[0]).toContain('nope');
   });

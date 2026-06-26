@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { buildAgentArgv, shellQuote, formatFallbackCwdWarning } from '../tui/launch.js';
-import { modelFlagArgs } from '../utils/agents-schema.js';
+import { buildSessionArgv } from '../launch/argv.js';
+import { agentNameArgs, modelFlagArgs } from '../utils/agents-schema.js';
 import type { AgentConfig } from '../utils/config.js';
 
 describe('shellQuote', () => {
@@ -272,6 +273,94 @@ describe('buildAgentArgv', () => {
       const { argv } = buildAgentArgv(agent, prompt, { SHELL: '/bin/zsh' });
       expect(argv.args[2]).toBe(`'c' 'hello world' '--x' '--model' 'opus'`);
     });
+  });
+
+  describe('agentName injection (Claude --agent)', () => {
+    it('emits --agent <name> BEFORE the prompt (position first)', () => {
+      const agent: AgentConfig = {
+        id: 'claude',
+        label: 'Claude',
+        command: 'claude',
+        agentName: 'job-applier',
+      };
+      const { argv } = buildAgentArgv(agent, prompt);
+      expect(argv.command).toBe('claude');
+      expect(argv.args).toEqual(['--agent', 'job-applier', prompt]);
+    });
+
+    it('keeps --agent first even with position "last"', () => {
+      const agent: AgentConfig = {
+        id: 'claude',
+        label: 'Claude',
+        command: 'claude',
+        args: ['--flag'],
+        promptArgPosition: 'last',
+        agentName: 'job-applier',
+      };
+      const { argv } = buildAgentArgv(agent, prompt);
+      expect(argv.args).toEqual(['--agent', 'job-applier', '--flag', prompt]);
+    });
+
+    it('suppresses a profile --model when agentName is set', () => {
+      // (Persisted config rejects agentName+model; this guards the argv path
+      // for a one-shot override applied over a base agent that carried a model.)
+      const agent: AgentConfig = {
+        id: 'claude',
+        label: 'Claude',
+        command: 'claude',
+        model: 'opus',
+        agentName: 'job-applier',
+      };
+      const { argv } = buildAgentArgv(agent, prompt);
+      expect(argv.args).not.toContain('--model');
+      expect(argv.args).toEqual(['--agent', 'job-applier', prompt]);
+    });
+
+    it('places --agent after the command in the shell-alias quoting', () => {
+      const agent: AgentConfig = {
+        id: 'c',
+        label: 'C',
+        command: 'c',
+        resolveFromShellAliases: true,
+        agentName: 'job-applier',
+      };
+      const { argv } = buildAgentArgv(agent, prompt, { SHELL: '/bin/zsh' });
+      expect(argv.args[2]).toBe(`'c' '--agent' 'job-applier' 'hello world'`);
+    });
+
+    it('does NOT inject --agent on resume (buildSessionArgv)', () => {
+      const agent: AgentConfig = {
+        id: 'claude',
+        label: 'Claude',
+        command: 'claude',
+        agentName: 'job-applier',
+        resume: { args: ['--resume', '{id}'] },
+      };
+      const { argv } = buildSessionArgv(agent, 'sess-123', 'resume');
+      expect(argv.args).not.toContain('--agent');
+      expect(argv.args).toEqual(['--resume', 'sess-123']);
+    });
+  });
+});
+
+describe('agentNameArgs', () => {
+  it('returns the flag pair when agentName is set', () => {
+    expect(
+      agentNameArgs({ id: 'x', label: 'X', command: 'claude', agentName: 'job-applier' }),
+    ).toEqual(['--agent', 'job-applier']);
+  });
+
+  it('trims surrounding whitespace', () => {
+    expect(
+      agentNameArgs({ id: 'x', label: 'X', command: 'claude', agentName: '  job-applier ' }),
+    ).toEqual(['--agent', 'job-applier']);
+  });
+
+  it('returns [] when agentName is undefined or blank', () => {
+    expect(agentNameArgs({ id: 'x', label: 'X', command: 'claude' })).toEqual([]);
+    expect(
+      agentNameArgs({ id: 'x', label: 'X', command: 'claude', agentName: '   ' }),
+    ).toEqual([]);
   });
 });
 

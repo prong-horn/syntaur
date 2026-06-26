@@ -3,11 +3,12 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { isAbsolute, resolve } from 'node:path';
 import { getAssignmentDetail } from '../dashboard/api.js';
 import type { AgentConfig } from '../utils/config.js';
-import { applyModelFlag } from '../utils/agents-schema.js';
+import { agentNameArgs, applyModelFlag } from '../utils/agents-schema.js';
 import type { BuiltArgv } from '../launch/types.js';
 import {
   formatFallbackCwdWarning,
   isExistingDir,
+  resolveLaunchCwd,
   resolveWorkspaceCwd,
 } from '../launch/cwd.js';
 import type { SpawnFn } from '../launch/execute.js';
@@ -119,16 +120,25 @@ export function buildAgentArgv(
   env: NodeJS.ProcessEnv = process.env,
 ): BuiltArgv {
   const position = agent.promptArgPosition ?? 'first';
-  // Profile model is appended after the agent's own args (and any pre-existing
-  // `--model` in those args is stripped first) so exactly one authoritative
-  // `--model` is emitted — never a duplicate, which some CLIs reject.
-  const baseArgs = applyModelFlag(agent, [...(agent.args ?? [])]);
-  const agentArgs =
+  // Claude `--agent <name>` is a command-PREFIX: it must sit immediately after
+  // the command and before the positioned prompt (with `promptArgPosition:
+  // 'first'` a naive prepend would yield `claude <prompt> --agent <name>`).
+  const prefix = agentNameArgs(agent);
+  // When an agent identity is selected its own model frontmatter wins, so the
+  // profile `--model` is suppressed on a fresh launch. Otherwise the profile
+  // model is appended after the agent's own args (any pre-existing `--model` is
+  // stripped first) so exactly one authoritative `--model` is emitted — never a
+  // duplicate, which some CLIs reject.
+  const baseArgs = agent.agentName
+    ? [...(agent.args ?? [])]
+    : applyModelFlag(agent, [...(agent.args ?? [])]);
+  const positioned =
     position === 'first'
       ? [prompt, ...baseArgs]
       : position === 'last'
         ? [...baseArgs, prompt]
         : baseArgs;
+  const agentArgs = [...prefix, ...positioned];
 
   if (agent.resolveFromShellAliases) {
     const requested = env.SHELL;
@@ -168,8 +178,10 @@ export async function launchAgent(options: LaunchOptions): Promise<void> {
 
   // Resolve + VALIDATE the working directory before writing context.json or
   // spawning. Never silently fall back to process.cwd() — refuse the launch so
-  // we don't open the agent (or write context) in the wrong directory.
-  let workspaceDir: string;
+  // we don't open the agent (or write context) in the wrong directory. This
+  // resolves the WORKTREE dir; a directory-agent (`workdir`) moves the SPAWN cwd
+  // off it below while keeping the worktree as the context-marker home.
+  let worktreeDir: string;
   if (cwdOverride) {
     // An explicit, present-but-invalid override is a caller bug — hard error
     // rather than silently falling through to the workspace fields.
@@ -180,7 +192,7 @@ export async function launchAgent(options: LaunchOptions): Promise<void> {
       exitWith(1);
       return;
     }
-    workspaceDir = cwdOverride;
+    worktreeDir = cwdOverride;
   } else {
     const picked = resolveWorkspaceCwd({
       worktreePath: detail.workspace.worktreePath,
@@ -193,7 +205,7 @@ export async function launchAgent(options: LaunchOptions): Promise<void> {
       exitWith(1);
       return;
     }
-    workspaceDir = picked.cwd;
+    worktreeDir = picked.cwd;
     // Preserve the existing missing-field warning behavior: when worktree is
     // valid but `branch` (or worktreePath) is unset we still nudge the user.
     // `picked.fallbackWarning` covers the worktree→repository fallback cases.
@@ -201,27 +213,40 @@ export async function launchAgent(options: LaunchOptions): Promise<void> {
       picked.fallbackWarning ??
       formatFallbackCwdWarning({
         assignmentSlug,
-        workspaceDir,
+        workspaceDir: worktreeDir,
         worktreePath: detail.workspace.worktreePath,
         branch: detail.workspace.branch,
       });
     if (warning) console.warn(warning);
   }
 
-  const contextDir = resolve(workspaceDir, '.syntaur');
-  await mkdir(contextDir, { recursive: true });
+  // A directory-agent spawns from its own `workdir`; the worktree stays the
+  // home for context.json + `@worktree`. An invalid workdir refuses the launch.
+  const launchCwd = resolveLaunchCwd(agent, worktreeDir);
+  if (launchCwd.invalidReason) {
+    console.error(`syntaur: ${launchCwd.invalidReason} — refusing to launch.`);
+    exitWith(1);
+    return;
+  }
+  const spawnCwd = launchCwd.spawnCwd;
+  const worktreePath = launchCwd.worktreePath;
 
   // context.json is a WORKSPACE MARKER file — it records repository/branch/
-  // worktree so tooling can recognize this directory as a Syntaur workspace.
+  // worktree so tooling can recognize this directory as a Syntaur workspace. It
+  // is written to the WORKTREE, never the agent's `workdir`: marking a global
+  // agent dir (e.g. ~/job-applier-agent) as a Syntaur workspace would be wrong.
   // It is NOT the active-assignment source of truth: the assignment binds via
   // the session's open engagement (established by `syntaur track-session`).
   // Do NOT persist projectSlug/assignmentSlug/assignmentDir/projectDir/title
   // here — those scalars are non-authoritative and resolve from the engagement.
+  const contextDir = resolve(worktreePath, '.syntaur');
+  await mkdir(contextDir, { recursive: true });
+
   const context = {
     repository: detail.workspace.repository ?? null,
     branch: detail.workspace.branch ?? null,
     worktreePath: detail.workspace.worktreePath ?? null,
-    workspaceRoot: workspaceDir,
+    workspaceRoot: worktreePath,
     grabbedAt: new Date().toISOString(),
   };
 
@@ -238,6 +263,8 @@ export async function launchAgent(options: LaunchOptions): Promise<void> {
     assignmentDir,
     projectSlug,
     assignmentSlug,
+    worktreePath,
+    spawnCwd,
     knownPlaybookSlugs,
   });
   for (const warning of warnings) console.warn(warning);
@@ -250,7 +277,7 @@ export async function launchAgent(options: LaunchOptions): Promise<void> {
   const spawnImpl = options.spawnFn ?? spawn;
   return new Promise<void>((resolvePromise) => {
     const child = spawnImpl(argv.command, argv.args, {
-      cwd: workspaceDir,
+      cwd: spawnCwd,
       stdio: 'inherit',
     });
 

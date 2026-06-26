@@ -152,6 +152,71 @@ describe('parseOpenUrl', () => {
     ).toThrowError(expect.objectContaining({ code: 'duplicate-param' }));
   });
 
+  it('parses a standalone launch', () => {
+    expect(parseOpenUrl('syntaur://open?standalone=pi-jobs')).toEqual({
+      kind: 'standalone',
+      id: 'pi-jobs',
+    });
+  });
+
+  it('carries an optional prompt override on a standalone launch', () => {
+    expect(parseOpenUrl('syntaur://open?standalone=pi-jobs&prompt=apply%20to%205')).toEqual({
+      kind: 'standalone',
+      id: 'pi-jobs',
+      prompt: 'apply to 5',
+    });
+  });
+
+  it('rejects an empty standalone value', () => {
+    expect(() => parseOpenUrl('syntaur://open?standalone=')).toThrowError(
+      expect.objectContaining({ code: 'missing-id' }),
+    );
+  });
+
+  it('rejects duplicate standalone params', () => {
+    expect(() =>
+      parseOpenUrl('syntaur://open?standalone=a&standalone=b'),
+    ).toThrowError(expect.objectContaining({ code: 'duplicate-param' }));
+  });
+
+  it('rejects combining standalone with assignment', () => {
+    expect(() =>
+      parseOpenUrl('syntaur://open?standalone=a&assignment=b'),
+    ).toThrowError(expect.objectContaining({ code: 'both-ids' }));
+  });
+
+  it('rejects combining standalone with session', () => {
+    expect(() =>
+      parseOpenUrl('syntaur://open?standalone=a&session=b'),
+    ).toThrowError(expect.objectContaining({ code: 'both-ids' }));
+  });
+
+  it('parses a one-shot agentName override on an assignment', () => {
+    expect(parseOpenUrl('syntaur://open?assignment=a1&agentName=job-applier')).toEqual({
+      kind: 'assignment',
+      id: 'a1',
+      agentName: 'job-applier',
+    });
+  });
+
+  it('treats an empty agentName as absent', () => {
+    expect(parseOpenUrl('syntaur://open?assignment=a1&agentName=')).not.toHaveProperty(
+      'agentName',
+    );
+  });
+
+  it('does not carry agentName on a session URL', () => {
+    expect(
+      parseOpenUrl('syntaur://open?session=s1&agentName=job-applier'),
+    ).not.toHaveProperty('agentName');
+  });
+
+  it('rejects duplicate agentName params', () => {
+    expect(() =>
+      parseOpenUrl('syntaur://open?assignment=a1&agentName=x&agentName=y'),
+    ).toThrowError(expect.objectContaining({ code: 'duplicate-param' }));
+  });
+
   it('parses a valid one-shot terminal override', () => {
     const result = parseOpenUrl(
       'syntaur://open?assignment=abc-123&terminal=ghostty',

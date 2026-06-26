@@ -8,7 +8,8 @@ export type ReopenMode = 'resume' | 'fork';
 
 export type ContinuationTarget =
   | { kind: 'assignment'; id: string }
-  | { kind: 'session'; id: string };
+  | { kind: 'session'; id: string }
+  | { kind: 'standalone'; id: string };
 
 /**
  * Build the `syntaur://open` deep link to (re-)fire after preflight/recreate.
@@ -18,11 +19,14 @@ export type ContinuationTarget =
  * single launch without mutating config. An optional `agentId` appends `&agent=`
  * for ASSIGNMENT targets only (so the "Open in agent" picker can launch a
  * specific runner profile); sessions pin their agent from the session record.
- * An optional `prompt` appends `&prompt=` for ASSIGNMENT targets only — the
- * editable launch box's (possibly edited) template, re-resolved server-side.
- * It is **presence-significant**: an empty string is a deliberate override and
- * is still emitted; `undefined` means "no override". Multi-line values are
- * accepted and percent-encoded normally.
+ * An optional `prompt` appends `&prompt=` for ASSIGNMENT and STANDALONE targets
+ * — the editable launch box's (possibly edited) template, re-resolved
+ * server-side. It is **presence-significant**: an empty string is a deliberate
+ * override and is still emitted; `undefined` means "no override". An optional
+ * `agentName` appends `&agentName=` for ASSIGNMENT targets only — a discovered
+ * Claude agent identity (`--agent <name>`). Multi-line values are accepted and
+ * percent-encoded normally. A `standalone` target emits
+ * `syntaur://open?standalone=<id>` and identifies the agent by id.
  */
 export function continuationUrl(
   target: ContinuationTarget,
@@ -30,6 +34,7 @@ export function continuationUrl(
   fallbackTerminal?: string,
   agentId?: string,
   prompt?: string,
+  agentName?: string,
 ): string {
   let url = `syntaur://open?${target.kind}=${encodeURIComponent(target.id)}`;
   if (target.kind === 'session' && mode) {
@@ -41,8 +46,11 @@ export function continuationUrl(
   if (agentId && target.kind === 'assignment') {
     url += `&agent=${encodeURIComponent(agentId)}`;
   }
-  if (prompt !== undefined && target.kind === 'assignment') {
+  if (prompt !== undefined && (target.kind === 'assignment' || target.kind === 'standalone')) {
     url += `&prompt=${encodeURIComponent(prompt)}`;
+  }
+  if (agentName && target.kind === 'assignment') {
+    url += `&agentName=${encodeURIComponent(agentName)}`;
   }
   return url;
 }

@@ -434,6 +434,171 @@ describe('resolveLaunchPlan — assignment mode', () => {
 
     expect(plan.terminal).toBe('iterm');
   });
+
+  it('overlays a directory-agent (workdir) onto an assignment: spawn cwd = workdir, worktree in the seed', async () => {
+    const worktree = resolve(testDir, 'wt-overlay');
+    const agentDir = resolve(testDir, 'pi-agent');
+    await mkdir(worktree, { recursive: true });
+    await mkdir(agentDir, { recursive: true });
+    await scaffoldAssignment(projectsDir, 'demo-project', 'demo-asg', ASSIGNMENT_ID, {
+      worktreePath: worktree,
+      branch: 'feat/x',
+    });
+    const agents: AgentConfig[] = [
+      { id: 'pi', label: 'Pi', command: 'pi', default: true, workdir: agentDir },
+    ];
+
+    const plan = await resolveLaunchPlan({
+      kind: 'assignment',
+      id: ASSIGNMENT_ID,
+      config: makeConfig({ agents }),
+      projectsDir,
+      assignmentsDir,
+    });
+
+    // Spawned from the agent dir, but the worktree path is injected into the seed.
+    expect(plan.cwd).toBe(agentDir);
+    expect(plan.argv.args[0]).toContain(worktree);
+    expect(plan.argv.args[0]).toContain('/grab-assignment demo-project demo-asg');
+  });
+
+  it('refuses the launch when a workdir does not exist', async () => {
+    const worktree = resolve(testDir, 'wt-badwd');
+    await mkdir(worktree, { recursive: true });
+    await scaffoldAssignment(projectsDir, 'demo-project', 'demo-asg', ASSIGNMENT_ID, {
+      worktreePath: worktree,
+      branch: 'feat/x',
+    });
+    const agents: AgentConfig[] = [
+      { id: 'pi', label: 'Pi', command: 'pi', default: true, workdir: resolve(testDir, 'gone') },
+    ];
+
+    await expect(
+      resolveLaunchPlan({
+        kind: 'assignment',
+        id: ASSIGNMENT_ID,
+        config: makeConfig({ agents }),
+        projectsDir,
+        assignmentsDir,
+      }),
+    ).rejects.toThrowError(expect.objectContaining({ code: 'workspace-path-invalid' }));
+  });
+
+  it('applies a one-shot agentName override (injects --agent, suppresses base model, warns)', async () => {
+    const worktree = resolve(testDir, 'wt-an');
+    await mkdir(worktree, { recursive: true });
+    await scaffoldAssignment(projectsDir, 'demo-project', 'demo-asg', ASSIGNMENT_ID, {
+      worktreePath: worktree,
+      branch: 'feat/x',
+    });
+    const agents: AgentConfig[] = [
+      { id: 'claude', label: 'Claude', command: 'claude', default: true, model: 'opus' },
+    ];
+
+    const plan = await resolveLaunchPlan({
+      kind: 'assignment',
+      id: ASSIGNMENT_ID,
+      config: makeConfig({ agents }),
+      projectsDir,
+      assignmentsDir,
+      agentName: 'job-applier',
+    });
+
+    expect(plan.argv.args.slice(0, 2)).toEqual(['--agent', 'job-applier']);
+    expect(plan.argv.args).not.toContain('--model');
+    expect(plan.promptWarnings?.some((w) => w.includes('suppressed'))).toBe(true);
+  });
+});
+
+describe('resolveLaunchPlan — standalone mode', () => {
+  let testDir: string;
+  let projectsDir: string;
+  let assignmentsDir: string;
+  let agentDir: string;
+
+  beforeEach(async () => {
+    testDir = await mkdtemp(join(tmpdir(), 'syntaur-launch-standalone-'));
+    projectsDir = resolve(testDir, 'projects');
+    assignmentsDir = resolve(testDir, 'assignments');
+    agentDir = resolve(testDir, 'job-applier-agent');
+    await mkdir(projectsDir, { recursive: true });
+    await mkdir(assignmentsDir, { recursive: true });
+    await mkdir(agentDir, { recursive: true });
+  });
+  afterEach(async () => {
+    await rm(testDir, { recursive: true, force: true });
+  });
+
+  const piJobs = (overrides: Partial<AgentConfig> = {}): AgentConfig => ({
+    id: 'pi-jobs',
+    label: 'Pi (jobs)',
+    command: 'pi',
+    workdir: agentDir,
+    ...overrides,
+  });
+
+  it('resolves cwd = workdir with no assignment and no seed by default', async () => {
+    const plan = await resolveLaunchPlan({
+      kind: 'standalone',
+      id: 'pi-jobs',
+      config: makeConfig({ agents: [piJobs()] }),
+      projectsDir,
+      assignmentsDir,
+    });
+    expect(plan.cwd).toBe(agentDir);
+    expect(plan.agentId).toBe('pi-jobs');
+    expect(plan.session).toBeUndefined();
+    // No template/playbook + no assignment context → empty prompt seed.
+    expect(plan.argv.args[0]).toBe('');
+  });
+
+  it('honors a standalone promptOverride', async () => {
+    const plan = await resolveLaunchPlan({
+      kind: 'standalone',
+      id: 'pi-jobs',
+      config: makeConfig({ agents: [piJobs()] }),
+      projectsDir,
+      assignmentsDir,
+      promptOverride: 'Apply to 5 jobs today.',
+    });
+    expect(plan.argv.args[0]).toBe('Apply to 5 jobs today.');
+  });
+
+  it('throws agent-not-configured for an unknown standalone id', async () => {
+    await expect(
+      resolveLaunchPlan({
+        kind: 'standalone',
+        id: 'ghost',
+        config: makeConfig({ agents: [piJobs()] }),
+        projectsDir,
+        assignmentsDir,
+      }),
+    ).rejects.toThrowError(expect.objectContaining({ code: 'agent-not-configured' }));
+  });
+
+  it('throws workspace-path-invalid when the agent has no workdir', async () => {
+    await expect(
+      resolveLaunchPlan({
+        kind: 'standalone',
+        id: 'pi-jobs',
+        config: makeConfig({ agents: [piJobs({ workdir: undefined })] }),
+        projectsDir,
+        assignmentsDir,
+      }),
+    ).rejects.toThrowError(expect.objectContaining({ code: 'workspace-path-invalid' }));
+  });
+
+  it('throws workspace-path-invalid when the workdir does not exist', async () => {
+    await expect(
+      resolveLaunchPlan({
+        kind: 'standalone',
+        id: 'pi-jobs',
+        config: makeConfig({ agents: [piJobs({ workdir: resolve(testDir, 'gone') })] }),
+        projectsDir,
+        assignmentsDir,
+      }),
+    ).rejects.toThrowError(expect.objectContaining({ code: 'workspace-path-invalid' }));
+  });
 });
 
 describe('resolveLaunchPlan — session mode', () => {

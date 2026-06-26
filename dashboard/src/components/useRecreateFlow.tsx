@@ -59,6 +59,8 @@ interface Pending {
    * survives the missing-terminal + recreate detours.
    */
   prompt?: string;
+  /** One-shot Claude `--agent <name>` identity (discovered-agent picker). */
+  agentName?: string;
 }
 
 /**
@@ -86,8 +88,16 @@ export function useRecreateFlow() {
     mode?: ReopenMode,
     agentId?: string,
     prompt?: string,
+    agentName?: string,
   ): Promise<void> {
     if (pending) return;
+    // Standalone launches have NO worktree to validate/recreate — skip the
+    // preflight POST entirely and fire the deep link directly. (Workdir is
+    // validated server-side at resolve time.)
+    if (target.kind === 'standalone') {
+      window.location.href = continuationUrl(target, mode, undefined, agentId, prompt, agentName);
+      return;
+    }
     setPending(true);
     try {
       const res = await fetch('/api/launch/preflight', {
@@ -98,12 +108,12 @@ export function useRecreateFlow() {
       if (!res.ok) {
         // Network/5xx — best effort: fire the link; the CLI/applet surfaces any
         // launch error itself.
-        window.location.href = continuationUrl(target, mode, undefined, agentId, prompt);
+        window.location.href = continuationUrl(target, mode, undefined, agentId, prompt, agentName);
         return;
       }
       const body = (await res.json()) as PreflightResponse;
       if (body.ok) {
-        window.location.href = continuationUrl(target, mode, undefined, agentId, prompt);
+        window.location.href = continuationUrl(target, mode, undefined, agentId, prompt, agentName);
         return;
       }
       if (body.reason === 'workspace-path-invalid') {
@@ -111,17 +121,17 @@ export function useRecreateFlow() {
         // directory). Offer recreate when possible; else the read-only reason.
         if (body.recreate) {
           setRecreate(body.recreate);
-          setRecreatePending({ target, mode, agentId, prompt });
+          setRecreatePending({ target, mode, agentId, prompt, agentName });
         } else {
           setWorkspaceError(body.message);
         }
         return;
       }
       setMiss(body);
-      setMissPending({ target, mode, agentId, prompt });
+      setMissPending({ target, mode, agentId, prompt, agentName });
     } catch (err) {
       console.warn('preflight failed, firing without override:', err);
-      window.location.href = continuationUrl(target, mode, undefined, agentId, prompt);
+      window.location.href = continuationUrl(target, mode, undefined, agentId, prompt, agentName);
     } finally {
       setPending(false);
     }
@@ -135,6 +145,7 @@ export function useRecreateFlow() {
       miss.suggestedFallback,
       missPending.agentId,
       missPending.prompt,
+      missPending.agentName,
     );
     setMiss(null);
     setMissPending(null);
@@ -151,13 +162,13 @@ export function useRecreateFlow() {
         projectSlug: recreate.projectSlug,
         assignmentSlug: recreate.assignmentSlug,
       });
-      const { target, mode, agentId, prompt } = recreatePending;
+      const { target, mode, agentId, prompt, agentName } = recreatePending;
       setRecreate(null);
       setRecreatePending(null);
       // The worktree now exists at the exact recorded path — re-fire the
       // original open. A `syntaur://` href triggers the OS handler without
       // unloading this page, so any non-exact note below still renders.
-      window.location.href = continuationUrl(target, mode, undefined, agentId, prompt);
+      window.location.href = continuationUrl(target, mode, undefined, agentId, prompt, agentName);
       if (!result.exact && !result.alreadyExisted) {
         setRecreateNote(
           `Recreated from ${result.baseUsed} — the original branch couldn't be ` +

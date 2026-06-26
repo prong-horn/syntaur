@@ -6,8 +6,8 @@
 // (src/launch/launch-prompt.ts) — token recognition mirrors its `TOKEN_RE`
 // (`@` at start-of-string or after whitespace, then a maximal `[A-Za-z0-9_-]+`
 // run) and the warn-vs-resolve decision mirrors its `isValidSlug` + known-set
-// check. `assignment` is the reserved token. Warnings here are advisory; the
-// server is authoritative at launch.
+// check. `assignment` and `worktree` are the reserved tokens. Warnings here are
+// advisory; the server is authoritative at launch.
 
 const SLUG_CHAR = /[A-Za-z0-9_-]/;
 /** Mirrors src/utils/slug.ts `isValidSlug`. */
@@ -15,6 +15,9 @@ const VALID_SLUG = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 /** Mirrors src/launch/launch-prompt.ts `TOKEN_RE`. */
 const TOKEN_RE = /(^|\s)@([A-Za-z0-9_-]+)/g;
 
+/** Reserved `@`-tokens the server resolves (not playbook slugs). */
+export const RESERVED_TOKENS = ['assignment', 'worktree'] as const;
+/** @deprecated kept for back-compat; prefer `RESERVED_TOKENS`. */
 export const RESERVED_TOKEN = 'assignment';
 
 export interface ActiveToken {
@@ -48,12 +51,14 @@ export function detectActiveToken(text: string, caret: number): ActiveToken | nu
 }
 
 /**
- * Rank `@`-token suggestions for a typed partial: `assignment` (reserved) first,
- * then installed playbook slugs — prefix matches before substring matches, all
- * case-insensitive. An empty partial returns every candidate.
+ * Rank `@`-token suggestions for a typed partial: reserved tokens
+ * (`assignment`, `worktree`) first, then installed playbook slugs — prefix
+ * matches before substring matches, all case-insensitive. An empty partial
+ * returns every candidate.
  */
 export function rankSuggestions(partial: string, slugs: readonly string[]): string[] {
-  const candidates = [RESERVED_TOKEN, ...slugs.filter((s) => s !== RESERVED_TOKEN)];
+  const reserved = RESERVED_TOKENS as readonly string[];
+  const candidates = [...reserved, ...slugs.filter((s) => !reserved.includes(s))];
   const p = partial.toLowerCase();
   if (p === '') return candidates;
   const prefix: string[] = [];
@@ -82,20 +87,22 @@ export function applySuggestion(
 /**
  * Advisory warnings for `@`-tokens that the launch resolver would warn on and
  * leave literal: a malformed token (fails `isValidSlug`) or a well-formed slug
- * not in the installed set. `@assignment` never warns. Decision logic mirrors
- * `resolveLaunchPrompt`; the server remains authoritative at launch.
+ * not in the installed set. Reserved tokens (`@assignment`, `@worktree`) never
+ * warn. Decision logic mirrors `resolveLaunchPrompt`; the server remains
+ * authoritative at launch.
  */
 export function tokenWarnings(
   text: string,
   knownSlugs: ReadonlySet<string> | readonly string[],
 ): string[] {
   const known = knownSlugs instanceof Set ? knownSlugs : new Set(knownSlugs);
+  const reserved = RESERVED_TOKENS as readonly string[];
   const warnings: string[] = [];
   TOKEN_RE.lastIndex = 0;
   let match: RegExpExecArray | null;
   while ((match = TOKEN_RE.exec(text)) !== null) {
     const token = match[2];
-    if (token === RESERVED_TOKEN) continue;
+    if (reserved.includes(token)) continue;
     if (!VALID_SLUG.test(token)) {
       warnings.push(`"@${token}" is not a valid playbook token — it will be left as literal text.`);
     } else if (!known.has(token)) {

@@ -156,6 +156,7 @@ export const AGENT_TARGETS: AgentTarget[] = [
     detect: detectDir(home('.claude')),
     skillsDir: { global: home('.claude', 'skills') },
     sessions: claudeSessions,
+    agentsDir: home('.claude', 'agents'),
   },
   {
     id: 'pi',

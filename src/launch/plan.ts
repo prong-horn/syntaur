@@ -13,9 +13,14 @@ import {
 // Import the resolver directly (not via ./index.js) to avoid the
 // argv→tui/launch import cycle the barrel would introduce.
 import { resolveLaunchPrompt } from './launch-prompt.js';
-import { playbooksDir } from '../utils/paths.js';
+import { expandHome, playbooksDir } from '../utils/paths.js';
 import { listPlaybookSlugs } from '../utils/playbooks.js';
-import { formatFallbackCwdWarning, isExistingDir, resolveWorkspaceCwd } from './cwd.js';
+import {
+  formatFallbackCwdWarning,
+  isExistingDir,
+  resolveLaunchCwd,
+  resolveWorkspaceCwd,
+} from './cwd.js';
 import { getSessionById } from '../dashboard/agent-sessions.js';
 import { buildFreshArgv, buildSessionArgv } from './argv.js';
 import type { ResolvedArgv } from './types.js';
@@ -60,7 +65,7 @@ export interface LaunchPlan {
 }
 
 export interface ResolveLaunchPlanInput {
-  kind: 'assignment' | 'session';
+  kind: 'assignment' | 'session' | 'standalone';
   id: string;
   /**
    * Only consulted when `kind === 'session'`. Defaults to `'resume'` so
@@ -96,6 +101,14 @@ export interface ResolveLaunchPlanInput {
    * reusing `agent.launchPrompt`). Per-launch only — never written to config.
    */
   promptOverride?: string;
+  /**
+   * Only consulted when `kind === 'assignment'`. A one-shot Claude `--agent
+   * <name>` identity, wired from `?agentName=<name>` on the incoming
+   * `syntaur://` URL (the dashboard's discovered-agent picker). When defined it
+   * is applied over the resolved agent before argv assembly, so the launched
+   * session adopts that agent definition. Presence-significant; per-launch only.
+   */
+  agentName?: string;
 }
 
 /**
@@ -130,7 +143,73 @@ export async function resolveLaunchPlan(
   if (input.kind === 'assignment') {
     return resolveAssignmentPlan(input, terminal);
   }
+  if (input.kind === 'standalone') {
+    return resolveStandalonePlan(input, terminal);
+  }
   return resolveSessionPlan(input, terminal);
+}
+
+/**
+ * Resolve a standalone launch (`kind: 'standalone'`) — a directory-agent run
+ * with NO assignment (e.g. the `pi-jobs` job-applier). The agent is identified
+ * by `input.agentId`, spawned from its validated `workdir`; no worktree, no
+ * context.json. With no template/playbook the prompt resolves to empty.
+ */
+async function resolveStandalonePlan(
+  input: ResolveLaunchPlanInput,
+  terminal: TerminalChoice,
+): Promise<LaunchPlan> {
+  const agentId = input.agentId ?? input.id;
+  if (!agentId) {
+    throw new LaunchError(
+      'agent-not-configured',
+      'A standalone launch requires an agent id.',
+    );
+  }
+  const agent = getAgents(input.config).find((a) => a.id === agentId);
+  if (!agent) {
+    throw new LaunchError(
+      'agent-not-configured',
+      `Agent "${agentId}" requested for a standalone launch is not in your agents list.`,
+    );
+  }
+
+  const wd = agent.workdir?.trim();
+  if (!wd) {
+    throw new LaunchError(
+      'workspace-path-invalid',
+      `Agent "${agent.id}" has no workdir — a standalone launch requires a valid workdir.`,
+    );
+  }
+  const expanded = expandHome(wd);
+  if (!isExistingDir(expanded)) {
+    throw new LaunchError(
+      'workspace-path-invalid',
+      `Agent "${agent.id}" workdir ${agent.workdir} (resolved ${expanded}) is not an existing directory — a standalone launch requires a valid workdir.`,
+    );
+  }
+
+  const knownPlaybookSlugs = await listPlaybookSlugs(playbooksDir());
+  const template =
+    input.promptOverride !== undefined ? input.promptOverride : agent.launchPrompt;
+  const { prompt, warnings: promptWarnings } = resolveLaunchPrompt({
+    template,
+    playbook: agent.playbook,
+    projectSlug: null,
+    knownPlaybookSlugs,
+  });
+  const { argv, shellFallbackWarning } = buildFreshArgv(agent, prompt);
+
+  return {
+    terminal,
+    cwd: expanded,
+    argv,
+    env: process.env,
+    agentId: agent.id,
+    fallbackWarning: null,
+    shellFallbackWarning,
+    promptWarnings,
+  };
 }
 
 async function resolveAssignmentPlan(
@@ -161,20 +240,8 @@ async function resolveAssignmentPlan(
     );
   }
 
-  const picked = resolveWorkspaceCwd({
-    worktreePath: detail.workspace.worktreePath,
-    repository: detail.workspace.repository,
-    branch: detail.workspace.branch,
-    assignmentSlug: resolved.assignmentSlug,
-  });
-  if (picked.cwd === null) {
-    // No valid worktree or repository directory — refuse rather than silently
-    // launching in the dashboard process cwd.
-    throw new LaunchError('workspace-path-invalid', picked.invalidReason as string);
-  }
-  const cwd = picked.cwd;
-  const fallbackWarning = picked.fallbackWarning;
-
+  // Resolve the agent FIRST: a directory-agent (`workdir`) overrides the spawn
+  // cwd, so the agent identity must be known before we settle on a cwd.
   let agent: AgentConfig;
   if (input.agentId) {
     const found = getAgents(input.config).find((a) => a.id === input.agentId);
@@ -188,6 +255,42 @@ async function resolveAssignmentPlan(
   } else {
     agent = pickAgent(input.config);
   }
+  // One-shot Claude `--agent <name>` override (presence-significant), applied
+  // over the resolved agent so the launched session adopts that identity.
+  if (input.agentName !== undefined) {
+    agent = { ...agent, agentName: input.agentName };
+  }
+
+  const picked = resolveWorkspaceCwd({
+    worktreePath: detail.workspace.worktreePath,
+    repository: detail.workspace.repository,
+    branch: detail.workspace.branch,
+    assignmentSlug: resolved.assignmentSlug,
+  });
+  if (picked.cwd === null) {
+    // No valid worktree or repository directory — refuse rather than silently
+    // launching in the dashboard process cwd.
+    throw new LaunchError('workspace-path-invalid', picked.invalidReason as string);
+  }
+  // A directory-agent overrides the spawn cwd while keeping the worktree path
+  // for context.json / `@worktree`. An invalid `workdir` refuses the launch.
+  const launchCwd = resolveLaunchCwd(agent, picked.cwd);
+  if (launchCwd.invalidReason) {
+    throw new LaunchError('workspace-path-invalid', launchCwd.invalidReason);
+  }
+  const cwd = launchCwd.spawnCwd;
+  const fallbackWarning = picked.fallbackWarning;
+
+  const promptWarningsExtra: string[] = [];
+  // Non-silent model suppression: a one-shot agentName override applied over a
+  // base agent that carried its own model drops that model (the agent
+  // definition's frontmatter model wins) — surface it rather than swallow it.
+  if (input.agentName !== undefined && input.agentName.trim() && agent.model?.trim()) {
+    promptWarningsExtra.push(
+      `profile model "${agent.model.trim()}" suppressed: agent "${input.agentName.trim()}" defines its own model`,
+    );
+  }
+
   const knownPlaybookSlugs = await listPlaybookSlugs(playbooksDir());
   // A defined promptOverride (incl. '') wins over the stored template by
   // presence — clearing the box must not silently reuse agent.launchPrompt.
@@ -200,6 +303,8 @@ async function resolveAssignmentPlan(
     assignmentDir: resolved.assignmentDir,
     projectSlug: resolved.projectSlug,
     assignmentSlug: resolved.assignmentSlug,
+    worktreePath: launchCwd.worktreePath,
+    spawnCwd: launchCwd.spawnCwd,
     knownPlaybookSlugs,
   });
   const { argv, shellFallbackWarning } = buildFreshArgv(agent, prompt);
@@ -212,7 +317,7 @@ async function resolveAssignmentPlan(
     agentId: agent.id,
     fallbackWarning,
     shellFallbackWarning,
-    promptWarnings,
+    promptWarnings: [...promptWarningsExtra, ...promptWarnings],
   };
 }
 

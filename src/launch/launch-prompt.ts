@@ -62,11 +62,28 @@ export interface ResolveLaunchPromptInput {
   playbook?: string | null;
   /** Assignment id (optional only to represent the rare slug-fallback seed). */
   id?: string;
-  /** Records directory (where assignment.md lives), for `@assignment`. */
-  assignmentDir: string;
-  /** Null for a standalone assignment. */
+  /**
+   * Records directory (where assignment.md lives), for `@assignment`. Optional:
+   * standalone launches have no assignment, so `@assignment` warns + stays
+   * literal when this is absent.
+   */
+  assignmentDir?: string;
+  /** Null for a standalone assignment (required-but-nullable — pass `null`). */
   projectSlug: string | null;
-  assignmentSlug: string;
+  /** Optional: absent for standalone launches (no assignment). */
+  assignmentSlug?: string;
+  /**
+   * Absolute worktree path, for the `@worktree` token and the directory-agent
+   * (`workdir`) default seed. Absent for standalone launches and for plain
+   * launches with no worktree; `@worktree` warns + stays literal when absent.
+   */
+  worktreePath?: string;
+  /**
+   * The directory the agent process is actually spawned from. When it differs
+   * from `worktreePath` the agent is a directory-agent (`workdir` set), which
+   * triggers the worktree-injecting default seed. Absent → no workdir agent.
+   */
+  spawnCwd?: string;
   /**
    * Installed playbook slugs, injected by the call site. When provided, a
    * well-formed `@<slug>` not in this set warns and is left literal. When
@@ -86,12 +103,28 @@ const TOKEN_RE = /(^|\s)@([A-Za-z0-9_-]+)/g;
 
 function resolveTemplate(
   template: string,
-  ctx: { id?: string; assignmentDir: string; knownPlaybookSlugs?: ReadonlySet<string> },
+  ctx: {
+    id?: string;
+    assignmentDir?: string;
+    worktreePath?: string;
+    knownPlaybookSlugs?: ReadonlySet<string>;
+  },
 ): ResolveLaunchPromptResult {
   const warnings: string[] = [];
   const prompt = template.replace(TOKEN_RE, (_match, boundary: string, token: string) => {
     if (token === 'assignment') {
+      if (!ctx.assignmentDir) {
+        warnings.push(`launchPrompt: "@assignment" has no assignment context here — left as literal text.`);
+        return boundary + '@assignment';
+      }
       return boundary + assignmentPointer(ctx.id, ctx.assignmentDir);
+    }
+    if (token === 'worktree') {
+      if (!ctx.worktreePath) {
+        warnings.push(`launchPrompt: "@worktree" has no worktree path here — left as literal text.`);
+        return boundary + '@worktree';
+      }
+      return boundary + ctx.worktreePath;
     }
     if (!isValidSlug(token)) {
       warnings.push(`launchPrompt: "@${token}" is not a valid playbook token — left as literal text.`);
@@ -115,24 +148,58 @@ function resolveTemplate(
  *   2. else `playbook` set → synthesize `<@assignment pointer> Run <clause> end-to-end.`
  *      (built directly — no `@`-token re-resolution, so a playbook literally named
  *      `assignment` cannot collide with the reserved token).
- *   3. else → today's bare `/grab-assignment` seed.
+ *   3. else directory-agent (`worktreePath` set and != `spawnCwd`) → a plain-language
+ *      seed pointing at the worktree + a `cd`/grab instruction (plain language
+ *      because a single message fires only one leading slash-command).
+ *   4. else assignment context present → today's bare `/grab-assignment` seed.
+ *   5. else (standalone, no template/playbook) → empty prompt.
  * `template` wins over `playbook`.
  */
 export function resolveLaunchPrompt(input: ResolveLaunchPromptInput): ResolveLaunchPromptResult {
-  const { template, playbook, id, assignmentDir, projectSlug, assignmentSlug, knownPlaybookSlugs } =
-    input;
+  const {
+    template,
+    playbook,
+    id,
+    assignmentDir,
+    projectSlug,
+    assignmentSlug,
+    worktreePath,
+    spawnCwd,
+    knownPlaybookSlugs,
+  } = input;
 
   if (template && template.trim()) {
-    return resolveTemplate(template, { id, assignmentDir, knownPlaybookSlugs });
+    return resolveTemplate(template, { id, assignmentDir, worktreePath, knownPlaybookSlugs });
   }
 
   const pb = playbook?.trim();
   if (pb) {
-    const pointer = assignmentPointer(id, assignmentDir);
-    return { prompt: `${pointer} Run ${runPlaybookClause(pb)} end-to-end.`, warnings: [] };
+    const clause = runPlaybookClause(pb);
+    const prompt = assignmentDir
+      ? `${assignmentPointer(id, assignmentDir)} Run ${clause} end-to-end.`
+      : `Run ${clause} end-to-end.`;
+    return { prompt, warnings: [] };
   }
 
-  return { prompt: bareGrabSeed({ projectSlug, assignmentSlug, id }), warnings: [] };
+  // Directory-agent default seed: the agent process starts in its own `workdir`,
+  // so tell it where the assignment's worktree is and how to pick the work up.
+  if (worktreePath && spawnCwd && worktreePath !== spawnCwd) {
+    const grab = bareGrabSeed({ projectSlug, assignmentSlug: assignmentSlug ?? '', id });
+    return {
+      prompt:
+        `The assignment's worktree is at ${worktreePath}. cd there, then grab the ` +
+        `assignment with ${grab} and work it end-to-end.`,
+      warnings: [],
+    };
+  }
+
+  // Standalone launch (no assignment context at all) → empty seed rather than a
+  // bogus `/grab-assignment` with no slug/id.
+  if (!assignmentSlug && !id) {
+    return { prompt: '', warnings: [] };
+  }
+
+  return { prompt: bareGrabSeed({ projectSlug, assignmentSlug: assignmentSlug ?? '', id }), warnings: [] };
 }
 
 /**
@@ -156,6 +223,14 @@ export function effectiveLaunchTemplate(input: {
   projectSlug: string | null;
   assignmentSlug: string;
   id?: string;
+  /**
+   * Set when the agent is a directory-agent (`workdir`). With no explicit
+   * `launchPrompt`/`playbook`, the box prefills a `@worktree`-based seed so that
+   * re-resolving it at launch (as `promptOverride`) injects the worktree path —
+   * a plain bare seed would drop it. The token (not the resolved path) is used
+   * so the single resolve at launch fills it in.
+   */
+  workdir?: string | null;
 }): string {
   if (input.launchPrompt && input.launchPrompt.trim()) {
     return input.launchPrompt;
@@ -163,6 +238,17 @@ export function effectiveLaunchTemplate(input: {
   const pb = input.playbook?.trim();
   if (pb) {
     return `@assignment Run ${runPlaybookClause(pb)} end-to-end.`;
+  }
+  if (input.workdir && input.workdir.trim()) {
+    const grab = bareGrabSeed({
+      projectSlug: input.projectSlug,
+      assignmentSlug: input.assignmentSlug,
+      id: input.id,
+    });
+    return (
+      `The assignment's worktree is at @worktree. cd there, then grab the ` +
+      `assignment with ${grab} and work it end-to-end.`
+    );
   }
   return bareGrabSeed({
     projectSlug: input.projectSlug,

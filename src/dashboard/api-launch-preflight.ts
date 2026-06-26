@@ -284,6 +284,7 @@ export function createLaunchPreflightRouter(
         projectSlug: resolved.projectSlug,
         assignmentSlug: resolved.assignmentSlug,
         id: resolved.id,
+        workdir: agent.workdir,
       });
       res.json({ template, knownPlaybookSlugs });
     } catch (error) {

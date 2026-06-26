@@ -11,6 +11,8 @@ import {
   type AgentConfig,
   type PromptArgPosition,
 } from '../utils/config.js';
+import { assignmentsDir, defaultProjectDir, expandHome } from '../utils/paths.js';
+import { resolveLaunchPlan, executeLaunchPlan } from '../launch/index.js';
 
 export const agentsCommand = new Command('agents').description(
   'Manage configurable agents used by `syntaur browse` and future launch flows',
@@ -33,6 +35,8 @@ agentsCommand
         if (agent.model) flags.push(`model=${agent.model}`);
         if (agent.playbook) flags.push(`playbook=${agent.playbook}`);
         if (agent.launchPrompt) flags.push(`launchPrompt=${truncateForList(agent.launchPrompt)}`);
+        if (agent.agentName) flags.push(`agentName=${agent.agentName}`);
+        if (agent.workdir) flags.push(`workdir=${truncateForList(agent.workdir)}`);
         const flagStr = flags.length > 0 ? ` [${flags.join(', ')}]` : '';
         const args = agent.args && agent.args.length > 0 ? ` ${agent.args.join(' ')}` : '';
         console.log(`  ${agent.id.padEnd(12)} ${agent.label.padEnd(20)} ${agent.command}${args}${flagStr}`);
@@ -53,6 +57,8 @@ interface AddOptions {
   model?: string;
   playbook?: string;
   launchPrompt?: string;
+  agentName?: string;
+  workdir?: string;
   dryRun?: boolean;
 }
 
@@ -68,7 +74,9 @@ agentsCommand
   .option('--resolve-from-shell-aliases', 'Run via $SHELL -i -c (for shell aliases)')
   .option('--model <model>', 'LLM model injected as --model <value> at launch')
   .option('--playbook <slug>', 'Playbook slug to run end-to-end on a fresh launch')
-  .option('--launch-prompt <text>', 'Editable launch prompt with @assignment / @<playbook> tokens')
+  .option('--launch-prompt <text>', 'Editable launch prompt with @assignment / @worktree / @<playbook> tokens')
+  .option('--agent-name <name>', 'Claude agent identity injected as --agent <name> (Claude-compatible runners)')
+  .option('--workdir <path>', 'Launch cwd override for directory-agents (pi/codex); mutually exclusive with --agent-name')
   .option('--dry-run', 'Validate and print the proposed config without writing')
   .action(async (options: AddOptions) => {
     try {
@@ -132,6 +140,8 @@ interface SetOptions {
   model?: string;
   playbook?: string;
   launchPrompt?: string;
+  agentName?: string;
+  workdir?: string;
   dryRun?: boolean;
 }
 
@@ -149,6 +159,8 @@ agentsCommand
   .option('--model <model>', 'LLM model injected as --model <value> (empty string clears)')
   .option('--playbook <slug>', 'Playbook slug to run on a fresh launch (empty string clears)')
   .option('--launch-prompt <text>', 'Editable launch prompt with @-tokens (empty string clears)')
+  .option('--agent-name <name>', 'Claude agent identity injected as --agent <name> (empty string clears)')
+  .option('--workdir <path>', 'Launch cwd override for directory-agents (empty string clears)')
   .option('--dry-run', 'Validate and print the proposed config without writing')
   .action(async (id: string, options: SetOptions) => {
     try {
@@ -217,6 +229,50 @@ agentsCommand
     }
   });
 
+interface LaunchOptions {
+  prompt?: string;
+  cwd?: string;
+}
+
+agentsCommand
+  .command('launch <id>')
+  .description('Launch a directory-agent standalone (no assignment) from its workdir')
+  .option('--prompt <text>', 'One-shot launch prompt override for this launch only')
+  .option('--cwd <path>', 'Override the agent workdir for this launch only')
+  .action(async (id: string, options: LaunchOptions) => {
+    try {
+      const config = await readConfig();
+      const agents = getAgents(config);
+      const agent = agents.find((a) => a.id === id);
+      if (!agent) {
+        throw new AgentConfigError(`unknown agent id "${id}"`);
+      }
+      // `--cwd` overrides the agent's workdir for THIS launch only: shallow-clone
+      // the agent with the expanded path and swap it into the config so
+      // resolveStandalonePlan validates the overridden dir.
+      let effectiveConfig = config;
+      if (options.cwd !== undefined) {
+        const cloned: AgentConfig = { ...agent, workdir: expandHome(options.cwd) };
+        effectiveConfig = { ...config, agents: agents.map((a) => (a.id === id ? cloned : a)) };
+      }
+      const projectsDir = config.defaultProjectDir || defaultProjectDir();
+      const plan = await resolveLaunchPlan({
+        kind: 'standalone',
+        id,
+        agentId: id,
+        config: effectiveConfig,
+        projectsDir,
+        assignmentsDir: assignmentsDir(),
+        promptOverride: options.prompt,
+      });
+      if (plan.shellFallbackWarning) console.error(plan.shellFallbackWarning);
+      for (const warning of plan.promptWarnings ?? []) console.error(warning);
+      await executeLaunchPlan(plan);
+    } catch (error) {
+      reportAndExit(error);
+    }
+  });
+
 // ---------- helpers ----------
 
 export function buildAgentFromOptions(options: AddOptions, existing: AgentConfig | null): AgentConfig {
@@ -237,6 +293,8 @@ export function buildAgentFromOptions(options: AddOptions, existing: AgentConfig
   // launchPrompt: store the author's value untrimmed (preserve intentional
   // spacing); only the emptiness gate trims.
   if (options.launchPrompt && options.launchPrompt.trim()) agent.launchPrompt = options.launchPrompt;
+  if (options.agentName && options.agentName.trim()) agent.agentName = options.agentName.trim();
+  if (options.workdir && options.workdir.trim()) agent.workdir = options.workdir.trim();
   validateAgentList([...(existing ? [] : []), agent]); // field-level sanity
   return agent;
 }
@@ -273,6 +331,16 @@ export function mergeOptionsIntoAgent(existing: AgentConfig, options: SetOptions
     // Store untrimmed (preserve author spacing); empty-after-trim clears.
     if (options.launchPrompt.trim()) merged.launchPrompt = options.launchPrompt;
     else delete merged.launchPrompt;
+  }
+  if (options.agentName !== undefined) {
+    const agentName = options.agentName.trim();
+    if (agentName) merged.agentName = agentName;
+    else delete merged.agentName;
+  }
+  if (options.workdir !== undefined) {
+    const workdir = options.workdir.trim();
+    if (workdir) merged.workdir = workdir;
+    else delete merged.workdir;
   }
   return merged;
 }
@@ -326,6 +394,8 @@ export function formatAgentLine(a: AgentConfig): string {
   if (a.model) flags.push(`model=${a.model}`);
   if (a.playbook) flags.push(`playbook=${a.playbook}`);
   if (a.launchPrompt) flags.push(`launchPrompt=${a.launchPrompt}`);
+  if (a.agentName) flags.push(`agentName=${a.agentName}`);
+  if (a.workdir) flags.push(`workdir=${a.workdir}`);
   if (a.args && a.args.length > 0) flags.push(`args=[${a.args.join(', ')}]`);
   const suffix = flags.length > 0 ? ` (${flags.join(', ')})` : '';
   return `${a.id}: ${a.label} → ${a.command}${suffix}`;

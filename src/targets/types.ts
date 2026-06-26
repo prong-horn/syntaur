@@ -125,6 +125,13 @@ export interface AgentTarget {
    * parseable on-disk transcripts). Built-in-only, like `tier3`.
    */
   sessions?: AgentSessionsDescriptor;
+  /**
+   * Directory holding this agent's user-defined agent definitions (markdown with
+   * `name`/`description`/`model` frontmatter), for `--agent <name>` identity
+   * discovery. Set for Claude (`~/.claude/agents`); absent for agents with no
+   * named-agent registry (pi/codex use directory-agents via `workdir` instead).
+   */
+  agentsDir?: string;
 }
 
 /**
