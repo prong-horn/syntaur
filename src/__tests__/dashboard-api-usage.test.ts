@@ -299,6 +299,31 @@ describe('GET /api/usage/projects/:projectSlug/assignments/:assignmentSlug', () 
     ]);
   });
 
+  it('reconciles the header total with the by-model breakdown when there is NO engagement window', async () => {
+    // The photographed bug: an assignment accrues usage_daily cost (attributed by
+    // slug) yet never had a registered agent session, so there are ZERO closed
+    // engagement windows. The window-derived header must NOT show $0 over a
+    // non-zero per-model breakdown — with no window to attribute, it falls back to
+    // the cumulative daily cost, which is exactly what `byModel` sums to.
+    seed('p1', 'nowin', 100, 0.5, '2026-05-21T12:00:00.000Z', 'claude-opus-4-7');
+    seed('p1', 'nowin', 50, 0.125, '2026-05-21T12:00:00.000Z', 'claude-sonnet-4-6');
+    runRollup();
+    // NOTE: no seedWindow() — this assignment has no engagement window at all.
+
+    const res = await fetch(`${baseUrl}/api/usage/projects/p1/assignments/nowin`);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.summary.pricedWindowCount).toBe(0); // confirms the no-window path
+    const byModelSum = body.summary.byModel.reduce(
+      (acc: number, m: { totalCost: number }) => acc + m.totalCost,
+      0,
+    );
+    expect(byModelSum).toBeCloseTo(0.625, 6);
+    // Header reconciles with its own breakdown instead of showing $0.00 over $0.625.
+    expect(body.summary.totalCost).toBeCloseTo(byModelSum, 6);
+    expect(body.summary.totalCost).toBeCloseTo(0.625, 6);
+  });
+
   it('returns a calm zero summary when the assignment has no usage', async () => {
     seed('p1', 'a1', 100, 0.5);
     runRollup();
