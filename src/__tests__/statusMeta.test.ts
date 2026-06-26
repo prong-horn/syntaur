@@ -6,6 +6,22 @@ import {
   overrideTargetsForStatus,
 } from '../../dashboard/src/lib/statusMeta';
 import type { StatusConfigResponse, StatusDefinition } from '../../dashboard/src/hooks/useStatusConfig';
+import type { AssignmentTransitionAction } from '../../dashboard/src/hooks/useProjects';
+
+// Build a complete AssignmentTransitionAction; overrideTargetsForStatus only reads
+// `targetStatus` and `disabled`, but the fixture must satisfy the full type.
+const makeTransition = (
+  overrides: Partial<AssignmentTransitionAction> & Pick<AssignmentTransitionAction, 'targetStatus'>,
+): AssignmentTransitionAction => ({
+  command: 'cmd',
+  label: 'Action',
+  description: '',
+  disabled: false,
+  disabledReason: null,
+  warning: null,
+  requiresReason: false,
+  ...overrides,
+});
 
 // The resolver is pure and React-free, so it runs under the node-env root vitest
 // (root config includes only src/__tests__/**, not dashboard/src). See plan Task 6.
@@ -169,7 +185,7 @@ describe('overrideTargetsForStatus', () => {
 
   it('disables a terminal target when available transitions only have disabled entries for it', () => {
     const transitions = [
-      { id: 'tx-1', label: 'Complete', targetStatus: 'completed', disabled: true, disabledReason: 'blocked' },
+      makeTransition({ targetStatus: 'completed', disabled: true, disabledReason: 'blocked' }),
     ];
     const targets = overrideTargetsForStatus(config, 'in_progress', transitions);
     const completedTarget = targets.find((t) => t.id === 'completed');
@@ -178,7 +194,7 @@ describe('overrideTargetsForStatus', () => {
 
   it('enables a terminal target when a live non-disabled transition to it exists', () => {
     const transitions = [
-      { id: 'tx-1', label: 'Complete', targetStatus: 'completed', disabled: false },
+      makeTransition({ targetStatus: 'completed', disabled: false }),
     ];
     const targets = overrideTargetsForStatus(config, 'in_progress', transitions);
     const completedTarget = targets.find((t) => t.id === 'completed');
