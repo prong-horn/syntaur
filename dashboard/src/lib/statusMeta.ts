@@ -1,5 +1,6 @@
 import type { CSSProperties } from 'react';
 import type { StatusConfigResponse, StatusDefinition } from '../hooks/useStatusConfig';
+import type { AssignmentTransitionAction } from '../hooks/useProjects';
 
 /**
  * Config-driven status appearance + option helpers. This module is intentionally
@@ -75,6 +76,18 @@ export interface StatusOption {
   id: string;
   label: string;
   terminal: boolean;
+}
+
+/**
+ * A config-driven "set status to X" entry, shown after the forward transitions.
+ * The parent decorates these per-assignment (e.g. disabling terminal targets that
+ * have no available transition) so the picker stays presentation-only.
+ */
+export interface StatusOverrideTarget {
+  id: string;
+  label: string;
+  disabled?: boolean;
+  disabledReason?: string;
 }
 
 function titleCase(id: string): string {
@@ -185,4 +198,37 @@ export function deriveStatusOptions(config: StatusConfigResponse): StatusOption[
   for (const id of order) push(id, byId.get(id));
   for (const s of config.statuses) push(s.id, s);
   return options;
+}
+
+/**
+ * Build the config-driven "Override → status" target list for a given status.
+ * Terminal targets are disabled unless a live (non-disabled) transition to them
+ * exists in `availableTransitions`. The current status is always disabled.
+ * When `availableTransitions` is omitted, terminal targets are always disabled
+ * (correct for override-only sites that have no transition data).
+ */
+export function overrideTargetsForStatus(
+  config: StatusConfigResponse,
+  status: string,
+  availableTransitions?: AssignmentTransitionAction[],
+): StatusOverrideTarget[] {
+  return deriveStatusOptions(config).map((option) => {
+    if (option.id === status) {
+      return { id: option.id, label: option.label, disabled: true, disabledReason: 'Already in this status' };
+    }
+    if (option.terminal) {
+      const transition = (availableTransitions ?? []).find(
+        (a) => a.targetStatus === option.id && !a.disabled,
+      );
+      if (!transition) {
+        return {
+          id: option.id,
+          label: option.label,
+          disabled: true,
+          disabledReason: `Reach ${option.label} via its transition when available`,
+        };
+      }
+    }
+    return { id: option.id, label: option.label };
+  });
 }

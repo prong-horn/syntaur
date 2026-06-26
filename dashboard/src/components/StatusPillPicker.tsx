@@ -4,19 +4,8 @@ import { cn } from '../lib/utils';
 import { STATUS_PILL_BASE, getStatusIcon } from './StatusBadge';
 import { useStatusConfig, getStatusLabel } from '../hooks/useStatusConfig';
 import { resolveStatusAppearance } from '../lib/statusMeta';
+import type { StatusOverrideTarget } from '../lib/statusMeta';
 import type { AssignmentTransitionAction } from '../hooks/useProjects';
-
-/**
- * A config-driven "set status to X" entry, shown after the forward transitions.
- * The parent decorates these per-assignment (e.g. disabling terminal targets that
- * have no available transition) so the picker stays presentation-only.
- */
-export interface StatusOverrideTarget {
-  id: string;
-  label: string;
-  disabled?: boolean;
-  disabledReason?: string;
-}
 
 interface StatusPillPickerProps {
   currentStatus: string;
