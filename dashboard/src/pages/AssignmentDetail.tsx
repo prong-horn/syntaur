@@ -19,6 +19,7 @@ import { formatRelativeTime, formatShortDate, formatShortDateTime } from '../lib
 import { LoadingState } from '../components/LoadingState';
 import { ErrorState } from '../components/ErrorState';
 import { StatusBadge } from '../components/StatusBadge';
+import { AssignmentStatusPill } from '../components/AssignmentStatusPill';
 import { TypeChip } from '../components/TypeChip';
 import { ExternalIdBadges } from '../components/ExternalIdBadges';
 import { ContentTabs } from '../components/ContentTabs';
@@ -429,7 +430,16 @@ export function AssignmentDetail() {
       <Toaster toast={toast} onDismiss={dismissToast} />
       <div className="sticky top-12 z-20 rounded-lg border border-border/60 bg-card/90 p-3 shadow-sm backdrop-blur">
         <div className="flex flex-wrap items-center gap-3">
-          <StatusBadge status={assignment.status} progress={progress} />
+          <AssignmentStatusPill
+            id={assignment.id}
+            slug={assignmentSlug}
+            projectSlug={projectSlug}
+            status={assignment.status}
+            title={assignment.title}
+            availableTransitions={assignment.availableTransitions}
+            progress={progress}
+            onChange={() => refetch()}
+          />
           {/* derived-status dimensions: phase ⊥ disposition (v3) */}
           {assignment.phase && assignment.phase !== assignment.status && (
             <span

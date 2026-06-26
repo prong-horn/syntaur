@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom';
 import { cn } from '../../../lib/utils';
 import { formatDate } from '../../../lib/format';
-import { StatusBadge } from '../../StatusBadge';
+import { AssignmentStatusPill } from '../../AssignmentStatusPill';
 import type { AssignmentBoardItem } from '../../../hooks/useProjects';
 import type { SortField, SortDirection } from '@shared/view-prefs-schema';
 import type {
@@ -26,6 +26,7 @@ interface SavedViewTableViewProps {
   sortDirection: SortDirection;
   tableColumnVisibility: TableColumnVisibility;
   compact?: boolean;
+  onAssignmentChange?: () => void;
 }
 
 export function SavedViewTableView({
@@ -34,6 +35,7 @@ export function SavedViewTableView({
   sortDirection,
   tableColumnVisibility,
   compact = false,
+  onAssignmentChange,
 }: SavedViewTableViewProps) {
   const hidden = new Set<TableColumnId>(tableColumnVisibility.hidden);
   // Title is always shown (non-hideable per Decision 9).
@@ -99,7 +101,16 @@ export function SavedViewTableView({
                 ) : null}
                 {showCol('status') ? (
                   <td className={cellPadding}>
-                    <StatusBadge status={assignment.status} className="max-w-[150px]" />
+                    <AssignmentStatusPill
+                      id={assignment.id}
+                      slug={assignment.slug}
+                      projectSlug={assignment.projectSlug}
+                      status={assignment.status}
+                      title={assignment.title}
+                      availableTransitions={assignment.availableTransitions}
+                      className="max-w-[150px]"
+                      onChange={onAssignmentChange}
+                    />
                   </td>
                 ) : null}
                 {showCol('priority') ? (
