@@ -13,6 +13,9 @@ import {
 } from '../utils/config.js';
 import { assignmentsDir, defaultProjectDir, expandHome } from '../utils/paths.js';
 import { resolveLaunchPlan, executeLaunchPlan } from '../launch/index.js';
+import { authorAgentDef, buildRegisteredAgent } from '../targets/agent-authoring.js';
+import type { RunnerKind } from '../utils/agents-schema.js';
+import { readFile } from 'node:fs/promises';
 
 export const agentsCommand = new Command('agents').description(
   'Manage configurable agents used by `syntaur browse` and future launch flows',
@@ -37,6 +40,8 @@ agentsCommand
         if (agent.launchPrompt) flags.push(`launchPrompt=${truncateForList(agent.launchPrompt)}`);
         if (agent.agentName) flags.push(`agentName=${agent.agentName}`);
         if (agent.workdir) flags.push(`workdir=${truncateForList(agent.workdir)}`);
+        if (agent.runner) flags.push(`runner=${agent.runner}`);
+        if (agent.sourcePath) flags.push(`source=${truncateForList(agent.sourcePath)}`);
         const flagStr = flags.length > 0 ? ` [${flags.join(', ')}]` : '';
         const args = agent.args && agent.args.length > 0 ? ` ${agent.args.join(' ')}` : '';
         console.log(`  ${agent.id.padEnd(12)} ${agent.label.padEnd(20)} ${agent.command}${args}${flagStr}`);
@@ -97,6 +102,71 @@ agentsCommand
         dryRun: Boolean(options.dryRun),
       });
       reportMutation('add', result);
+    } catch (error) {
+      reportAndExit(error);
+    }
+  });
+
+interface NewOptions {
+  name: string;
+  type: string;
+  model?: string;
+  description?: string;
+  instructions?: string;
+  location?: string;
+  dryRun?: boolean;
+}
+
+/** Resolve an --instructions value: `@path` reads a file, else the literal text. */
+async function readInstructions(spec: string | undefined): Promise<string> {
+  if (!spec) return '';
+  if (spec.startsWith('@')) return readFile(expandHome(spec.slice(1)), 'utf-8');
+  return spec;
+}
+
+agentsCommand
+  .command('new')
+  .description('Author a runner-native agent def on disk and register it')
+  .requiredOption('--name <name>', 'Display name')
+  .requiredOption('--type <runner>', 'Runner: claude | pi | codex')
+  .option('--model <model>', 'Model (claude agent frontmatter)')
+  .option('--description <text>', 'One-line description')
+  .option('--instructions <text|@file>', 'System prompt / instructions body, or @path to read from a file')
+  .option('--location <path>', 'claude: agents dir (default ~/.claude/agents); directory: parent dir to scaffold under')
+  .option('--dry-run', 'Author the def but do not register it')
+  .action(async (options: NewOptions) => {
+    try {
+      const runner = options.type as RunnerKind;
+      if (runner !== 'claude' && runner !== 'pi' && runner !== 'codex') {
+        throw new AgentConfigError(`invalid --type "${options.type}" — must be claude, pi, or codex`);
+      }
+      const instructions = await readInstructions(options.instructions);
+      const authored = await authorAgentDef({
+        name: options.name,
+        runner,
+        model: options.model,
+        description: options.description,
+        instructions,
+        location: options.location,
+      });
+      console.log(`Authored ${runner} def at ${authored.path}`);
+      if (options.dryRun) {
+        console.log('(dry-run: not registered)');
+        return;
+      }
+      const config = await readConfig();
+      const base = getAgents(config);
+      const agent = buildRegisteredAgent({
+        name: options.name,
+        runner,
+        sourceKind: authored.sourceKind,
+        sourcePath: authored.path,
+        sourceRepo: authored.sourceRepo,
+        description: options.description,
+        existingIds: base.map((a) => a.id),
+      });
+      await writeAgentsConfig([...base, agent]);
+      console.log(`Registered agent "${agent.id}" (${runner}).`);
     } catch (error) {
       reportAndExit(error);
     }

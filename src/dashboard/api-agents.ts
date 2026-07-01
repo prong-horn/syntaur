@@ -10,8 +10,19 @@ import {
   PROMPT_ARG_POSITIONS,
   type AgentConfig,
   type PromptArgPosition,
+  type RunnerKind,
+  type AgentSourceKind,
 } from '../utils/agents-schema.js';
 import { discoverClaudeAgents } from '../targets/agent-definitions.js';
+import { discoverAgents } from '../targets/agent-discovery.js';
+import {
+  authorAgentDef,
+  buildRegisteredAgent,
+  inferManualAdd,
+} from '../targets/agent-authoring.js';
+
+const RUNNER_KINDS_SET = new Set<string>(['claude', 'pi', 'codex']);
+const SOURCE_KINDS_SET = new Set<string>(['claude-global', 'claude-project', 'directory']);
 
 export interface AgentFieldError {
   id?: string;
@@ -353,6 +364,25 @@ function coerceAgentRow(
     if (workdir) cleaned.workdir = workdir;
   }
 
+  // runner + source pointer (flat scalars). Type-check here; the enum + identity
+  // consistency is enforced by validateAgentList in writeAgentsConfig.
+  for (const field of ['runner', 'sourceKind', 'sourcePath', 'sourceRepo'] as const) {
+    const raw = entry[field];
+    if (raw === undefined) continue;
+    if (typeof raw !== 'string') {
+      return {
+        ok: false,
+        status: 400,
+        body: {
+          error: `agents[${index}].${field} must be a string`,
+          fieldErrors: [{ id, field, message: `${field} must be a string` }],
+        },
+      };
+    }
+    const v = raw.trim();
+    if (v) (cleaned as unknown as Record<string, unknown>)[field] = v;
+  }
+
   return { ok: true, value: cleaned };
 }
 
@@ -369,6 +399,181 @@ export function createAgentsRouter(): Router {
     } catch (err) {
       console.error('Error discovering Claude agents:', err);
       res.status(500).json({ error: 'Failed to discover Claude agents' });
+    }
+  });
+
+  // Multi-source discovery for the register tray. Global config router (no
+  // implicit workspace), so the current repo is passed as `?repo=<abs>` for the
+  // claude-project + per-dir `.claude/agents` scans.
+  router.get('/discovered', async (req, res) => {
+    try {
+      const config = await readConfig();
+      const agents = config.agents ?? BUILTIN_AGENTS;
+      const repo = typeof req.query.repo === 'string' && req.query.repo ? req.query.repo : null;
+      const d = config.agentDiscovery;
+      const candidates = await discoverAgents({
+        claudeGlobal: d.claudeGlobal,
+        claudeProject: d.claudeProject,
+        directory: d.directory,
+        roots: d.roots,
+        repo,
+        agents,
+      });
+      res.json({ candidates });
+    } catch (err) {
+      console.error('Error discovering agents:', err);
+      res.status(500).json({ error: 'Failed to discover agents' });
+    }
+  });
+
+  // Append a freshly-built agent and persist. Returns null after responding on
+  // duplicate/validation error so the caller just returns.
+  async function appendAndPersist(
+    agent: AgentConfig,
+    res: Parameters<Parameters<typeof router.post>[1]>[1],
+  ): Promise<AgentConfig[] | null> {
+    const config = await readConfig();
+    const base = config.agents ?? BUILTIN_AGENTS;
+    if (agent.sourcePath && base.some((a) => a.sourcePath === agent.sourcePath)) {
+      res.status(409).json({ error: `already registered: ${agent.sourcePath}` });
+      return null;
+    }
+    const next = [...base, agent];
+    try {
+      await writeAgentsConfig(next);
+    } catch (err) {
+      if (err instanceof AgentConfigError) {
+        res.status(400).json(mapAgentErrorToFieldErrors(err));
+        return null;
+      }
+      throw err;
+    }
+    return next;
+  }
+
+  // Register a confirmed discovered candidate into the flat list.
+  router.post('/register', async (req, res) => {
+    try {
+      const b = (req.body ?? {}) as {
+        path?: string;
+        name?: string;
+        runner?: string;
+        sourceKind?: string;
+        sourceRepo?: string;
+        description?: string;
+      };
+      if (!b.path || !b.name || !b.runner || !b.sourceKind) {
+        res.status(400).json({ error: 'register requires path, name, runner, sourceKind' });
+        return;
+      }
+      if (!RUNNER_KINDS_SET.has(b.runner) || !SOURCE_KINDS_SET.has(b.sourceKind)) {
+        res.status(400).json({ error: 'invalid runner or sourceKind' });
+        return;
+      }
+      const config = await readConfig();
+      const base = config.agents ?? BUILTIN_AGENTS;
+      const agent = buildRegisteredAgent({
+        name: b.name,
+        runner: b.runner as RunnerKind,
+        sourceKind: b.sourceKind as AgentSourceKind,
+        sourcePath: b.path,
+        sourceRepo: b.sourceRepo,
+        description: b.description,
+        existingIds: base.map((a) => a.id),
+      });
+      const next = await appendAndPersist(agent, res);
+      if (!next) return;
+      res.json({ agent, agents: next, custom: true });
+    } catch (err) {
+      console.error('Error registering agent:', err);
+      res.status(500).json({ error: 'Failed to register agent' });
+    }
+  });
+
+  // Manual add: adopt an existing def by pointing at a file or folder.
+  router.post('/manual-add', async (req, res) => {
+    try {
+      const p = (req.body ?? {}).path;
+      if (typeof p !== 'string' || !p) {
+        res.status(400).json({ error: 'manual-add requires a path' });
+        return;
+      }
+      let inferred;
+      try {
+        inferred = await inferManualAdd(p);
+      } catch {
+        res.status(400).json({ error: `path not found or unreadable: ${p}` });
+        return;
+      }
+      const config = await readConfig();
+      const base = config.agents ?? BUILTIN_AGENTS;
+      const agent = buildRegisteredAgent({
+        name: inferred.name,
+        runner: inferred.runner,
+        sourceKind: inferred.sourceKind,
+        sourcePath: inferred.sourcePath,
+        description: inferred.description,
+        existingIds: base.map((a) => a.id),
+      });
+      const next = await appendAndPersist(agent, res);
+      if (!next) return;
+      res.json({ agent, agents: next, custom: true });
+    } catch (err) {
+      console.error('Error manual-adding agent:', err);
+      res.status(500).json({ error: 'Failed to manual-add agent' });
+    }
+  });
+
+  // Create-new: author a runner-native def on disk, then auto-register it.
+  router.post('/create', async (req, res) => {
+    try {
+      const b = (req.body ?? {}) as {
+        name?: string;
+        runner?: string;
+        model?: string;
+        description?: string;
+        instructions?: string;
+        location?: string;
+      };
+      if (!b.name || !b.runner || typeof b.instructions !== 'string') {
+        res.status(400).json({ error: 'create requires name, runner, instructions' });
+        return;
+      }
+      if (!RUNNER_KINDS_SET.has(b.runner)) {
+        res.status(400).json({ error: 'invalid runner' });
+        return;
+      }
+      let authored;
+      try {
+        authored = await authorAgentDef({
+          name: b.name,
+          runner: b.runner as RunnerKind,
+          model: b.model,
+          description: b.description,
+          instructions: b.instructions,
+          location: b.location,
+        });
+      } catch (err) {
+        res.status(400).json({ error: err instanceof Error ? err.message : 'failed to author def' });
+        return;
+      }
+      const config = await readConfig();
+      const base = config.agents ?? BUILTIN_AGENTS;
+      const agent = buildRegisteredAgent({
+        name: b.name,
+        runner: b.runner as RunnerKind,
+        sourceKind: authored.sourceKind,
+        sourcePath: authored.path,
+        sourceRepo: authored.sourceRepo,
+        description: b.description,
+        existingIds: base.map((a) => a.id),
+      });
+      const next = await appendAndPersist(agent, res);
+      if (!next) return;
+      res.json({ agent, path: authored.path, agents: next, custom: true });
+    } catch (err) {
+      console.error('Error creating agent:', err);
+      res.status(500).json({ error: 'Failed to create agent' });
     }
   });
 
