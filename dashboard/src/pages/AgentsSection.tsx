@@ -8,7 +8,9 @@ import {
   Info,
   Terminal,
   Fingerprint,
+  Bot,
 } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import {
   DndContext,
   closestCenter,
@@ -30,6 +32,8 @@ import {
   AGENT_ID_PATTERN,
   type AgentConfig,
   type PromptArgPosition,
+  type RunnerKind,
+  type AgentSourceKind,
 } from '@shared/agents-schema';
 import { SectionCard } from '../components/SectionCard';
 import { ConfirmDialog } from '../components/ConfirmDialog';
@@ -91,6 +95,14 @@ interface EditableAgent {
   agentName: string;
   // Directory-agent launch cwd override (mutually exclusive with agentName).
   workdir: string;
+  // Pass-through metadata for registered agents (runner badge + on-disk source
+  // pointer). Not edited here — carried untouched through a save so editing an
+  // agent in Settings never drops its runner/source. The everyday agent UX
+  // (register/create/discover) lives on the /agents surface.
+  runner: RunnerKind | undefined;
+  sourceKind: AgentSourceKind | undefined;
+  sourcePath: string;
+  sourceRepo: string;
   fieldErrors: Partial<Record<FieldKey, string>>;
 }
 
@@ -123,6 +135,10 @@ function hydrate(agents: AgentConfig[]): EditableAgent[] {
     launchPrompt: a.launchPrompt ?? '',
     agentName: a.agentName ?? '',
     workdir: a.workdir ?? '',
+    runner: a.runner,
+    sourceKind: a.sourceKind,
+    sourcePath: a.sourcePath ?? '',
+    sourceRepo: a.sourceRepo ?? '',
     fieldErrors: {},
   }));
 }
@@ -145,6 +161,10 @@ function buildPayload(rows: EditableAgent[]): AgentConfig[] {
     if (row.launchPrompt.trim()) agent.launchPrompt = row.launchPrompt;
     if (row.agentName.trim()) agent.agentName = row.agentName.trim();
     if (row.workdir.trim()) agent.workdir = row.workdir.trim();
+    if (row.runner) agent.runner = row.runner;
+    if (row.sourceKind) agent.sourceKind = row.sourceKind;
+    if (row.sourcePath.trim()) agent.sourcePath = row.sourcePath.trim();
+    if (row.sourceRepo.trim()) agent.sourceRepo = row.sourceRepo.trim();
     return agent;
   });
 }
@@ -677,6 +697,10 @@ export function AgentsSection() {
         argsText: '',
         agentName: '',
         workdir: '',
+        runner: undefined,
+        sourceKind: undefined,
+        sourcePath: '',
+        sourceRepo: '',
         promptArgPosition: 'first',
         // Default ON: most user agents are alias-or-bare-name (e.g.
         // `claude`, `cc`, `cursor-agent`) where lazy-loaded zshrc setups
@@ -764,7 +788,7 @@ export function AgentsSection() {
   return (
     <SectionCard
       title="Agents"
-      description="Configure which agents the dashboard and 'Open in agent' actions can launch. The default agent is used when no other one is specified."
+      description="Raw config for the agents the dashboard and 'Open in agent' actions can launch. The default agent is used when no other one is specified. Add, discover, and create agents on the Agents page."
       actions={
         serverState.custom ? (
           <button
@@ -779,6 +803,17 @@ export function AgentsSection() {
         ) : undefined
       }
     >
+      <div className="flex items-start gap-2 rounded-md border border-primary/30 bg-primary/[0.04] px-3 py-2 text-xs text-muted-foreground">
+        <Bot className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary" />
+        <span>
+          Add, discover, and create agents on the{' '}
+          <Link to="/agents" className="font-medium text-primary hover:underline">
+            Agents page
+          </Link>
+          . This panel is the raw config editor (badges, identity, launch prompt).
+        </span>
+      </div>
+
       {!serverState.custom && (
         <div className="flex items-start gap-2 rounded-md border border-border/60 bg-foreground/[0.02] px-3 py-2 text-xs text-muted-foreground">
           <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />
