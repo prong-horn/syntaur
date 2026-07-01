@@ -2,7 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import { Terminal, ChevronDown, Check } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { useRecreateFlow } from './useRecreateFlow';
-import { useAgentsConfig, useClaudeDiscoveredAgents } from '../hooks/useAgentsConfig';
+import { useAgentsConfig } from '../hooks/useAgentsConfig';
+import { AgentTypeBadge } from './AgentTypeBadge';
 import { LaunchPromptDialog } from './LaunchPromptDialog';
 
 interface OpenInAgentButtonProps {
@@ -57,15 +58,6 @@ export function OpenInAgentButton({
   // Agent picker (assignment only — sessions pin their agent from the record).
   const agentsState = useAgentsConfig();
   const agents = agentsState.agents;
-  // Discovered Claude agent definitions (`~/.claude/agents`) — assignment only,
-  // offered as a "Run as agent" identity overlay (`--agent <name>`). Only usable
-  // when a configured Claude-compatible base profile exists to carry the
-  // `--agent` launch (resolveAssignmentPlan needs a real agent id; a custom
-  // agents list may not include one named `claude`).
-  const discoveredClaude = useClaudeDiscoveredAgents();
-  const claudeBase = agents.find((a) => a.id === 'claude' || /claude/i.test(a.command));
-  const showClaudeIdentities =
-    target.kind === 'assignment' && discoveredClaude.length > 0 && Boolean(claudeBase);
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
   useEffect(() => {
     // `useAgentsConfig` resolves asynchronously (starts as []). Initialize once
@@ -79,10 +71,9 @@ export function OpenInAgentButton({
     });
   }, [agents]);
 
-  // Split-button menu (the chevron half) — only when there's a choice to make:
-  // multiple configured agents OR discovered Claude identities to run as.
-  const showAgentPicker =
-    target.kind === 'assignment' && (agents.length > 1 || showClaudeIdentities);
+  // Split-button menu (the chevron half) — only when there's more than one agent.
+  // Every registered agent (claude included) is in this one list, badged.
+  const showAgentPicker = target.kind === 'assignment' && agents.length > 1;
   const selectedAgent = agents.find((a) => a.id === selectedAgentId) ?? null;
   const rootRef = useRef<HTMLDivElement>(null);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -129,17 +120,6 @@ export function OpenInAgentButton({
     } else {
       void flow.open(target, undefined, agentId);
     }
-  }
-
-  // Launch the assignment with a discovered Claude agent identity overlaid
-  // (`<claude-base> --agent <name>`). The agent definition carries its own
-  // prompt + model, so we fire directly (no editable-prompt box) and let the
-  // server resolve the default seed; `agentName` rides the deep link, carried by
-  // the configured Claude base profile's id.
-  function launchAsClaudeAgent(name: string) {
-    if (!claudeBase) return;
-    setMenuOpen(false);
-    void flow.open(target, undefined, claudeBase.id, undefined, name);
   }
 
   const defaultTitle =
@@ -247,38 +227,12 @@ export function OpenInAgentButton({
                   )}
                 />
                 <span className="truncate">{a.label}</span>
+                <AgentTypeBadge agent={a} className="ml-auto" />
                 {a.default && (
-                  <span className="ml-auto text-[10px] text-muted-foreground/60">
-                    default
-                  </span>
+                  <span className="text-[10px] text-muted-foreground/60">default</span>
                 )}
               </button>
             ))}
-            {showClaudeIdentities && (
-              <>
-                <div className="mt-1 border-t border-border/60 px-2.5 pb-1 pt-1.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground/70">
-                  Run as Claude agent
-                </div>
-                {discoveredClaude.map((a) => (
-                  <button
-                    key={`claude-agent:${a.name}`}
-                    type="button"
-                    role="menuitem"
-                    onClick={() => launchAsClaudeAgent(a.name)}
-                    title={a.description ?? a.name}
-                    className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-sm text-foreground transition-colors hover:bg-accent"
-                  >
-                    <span className="size-3.5 shrink-0" />
-                    <span className="truncate">{a.name}</span>
-                    {a.model && (
-                      <span className="ml-auto text-[10px] text-muted-foreground/60">
-                        {a.model}
-                      </span>
-                    )}
-                  </button>
-                ))}
-              </>
-            )}
           </div>
         )}
       </div>

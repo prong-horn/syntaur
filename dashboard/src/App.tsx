@@ -36,6 +36,7 @@ import { ResourceDetail } from './pages/ResourceDetail';
 import { CreateResource } from './pages/CreateResource';
 import { EditResource } from './pages/EditResource';
 import { SettingsPage } from './pages/SettingsPage';
+import { AgentsPage } from './pages/AgentsPage';
 import { WorkflowPage } from './pages/WorkflowPage';
 import { TodosPage } from './pages/TodosPage';
 import { WorkspaceTodosPage } from './pages/WorkspaceTodosPage';
@@ -83,6 +84,7 @@ export function App() {
             <Route path="/views/:id" element={<SavedViewPage />} />
             <Route path="/help" element={<HelpPage />} />
             <Route path="/settings" element={<SettingsPage />} />
+            <Route path="/agents" element={<AgentsPage />} />
             <Route path="/workflow" element={<WorkflowPage />} />
             <Route path="/create/project" element={<CreateProject />} />
             <Route path="/projects/:slug" element={<ProjectDetail />} />
@@ -103,6 +105,7 @@ export function App() {
             <Route path="/w/:workspace/inventories" element={<InventoriesPage />} />
             <Route path="/w/:workspace/usage" element={<UsagePage />} />
             <Route path="/w/:workspace/agent-sessions" element={<AgentSessionsPage />} />
+            <Route path="/w/:workspace/agents" element={<AgentsPage />} />
             <Route path="/w/:workspace/todos" element={<WorkspaceTodosPage />} />
             <Route path="/w/:workspace/views" element={<SavedViewsPage />} />
             <Route path="/w/:workspace/views/:id" element={<SavedViewPage />} />

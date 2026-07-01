@@ -1,7 +1,7 @@
 import { useState, type ReactNode } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import type { LucideIcon } from 'lucide-react';
-import { Activity, Archive, BookOpen, Boxes, Brain, CalendarClock, CheckSquare, Coins, Compass, FolderKanban, Inbox, LayoutTemplate, LifeBuoy, Library, ListTodo, Monitor, Plus, Settings, Workflow, X, ChevronDown, Trash2 } from 'lucide-react';
+import { Activity, Archive, BookOpen, Bot, Boxes, Brain, CalendarClock, CheckSquare, Coins, Compass, FolderKanban, Inbox, LayoutTemplate, LifeBuoy, Library, ListTodo, Monitor, Plus, Settings, Workflow, X, ChevronDown, Trash2 } from 'lucide-react';
 import { SidebarNav, SidebarNavGroup, type SidebarNavItem } from './SidebarNav';
 import { TopBar } from './TopBar';
 import { useToast, Toaster } from './Toast';
@@ -44,6 +44,7 @@ interface AppShellProps {
 const PINNED_NAV_ITEMS: SidebarNavItem[] = [
   { to: '/', label: 'Overview', icon: Compass },
   { to: '/inbox', label: 'Needs me', icon: Inbox },
+  { to: '/agents', label: 'Agents', icon: Bot },
 ];
 
 interface SidebarNavGroupDef {

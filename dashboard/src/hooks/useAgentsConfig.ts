@@ -75,6 +75,18 @@ function normalizeRow(raw: unknown): AgentConfig | null {
   if (typeof entry.workdir === 'string') {
     agent.workdir = entry.workdir;
   }
+  if (entry.runner === 'claude' || entry.runner === 'pi' || entry.runner === 'codex') {
+    agent.runner = entry.runner;
+  }
+  if (typeof entry.sourceKind === 'string') {
+    agent.sourceKind = entry.sourceKind as AgentConfig['sourceKind'];
+  }
+  if (typeof entry.sourcePath === 'string') {
+    agent.sourcePath = entry.sourcePath;
+  }
+  if (typeof entry.sourceRepo === 'string') {
+    agent.sourceRepo = entry.sourceRepo;
+  }
   return agent;
 }
 
@@ -221,3 +233,91 @@ export async function resetAgentsConfig(): Promise<AgentsConfigResponse> {
   notify(normalized);
   return normalized;
 }
+
+/** A discovered, not-yet-registered agent candidate for the register tray. */
+export interface DiscoveredCandidate {
+  name: string;
+  runner: 'claude' | 'pi' | 'codex';
+  description?: string;
+  path: string;
+  source: 'claude-global' | 'claude-project' | 'directory';
+  recommended: boolean;
+  alreadyRegistered: boolean;
+}
+
+export async function fetchDiscoveredAgents(
+  repo?: string | null,
+): Promise<DiscoveredCandidate[]> {
+  const qs = repo ? `?repo=${encodeURIComponent(repo)}` : '';
+  const res = await fetch(`/api/config/agents/discovered${qs}`);
+  if (!res.ok) return [];
+  const data = (await res.json().catch(() => null)) as { candidates?: unknown } | null;
+  return Array.isArray(data?.candidates) ? (data!.candidates as DiscoveredCandidate[]) : [];
+}
+
+/** Fetch discovered candidates for the register tray; `reload()` re-fetches. */
+export function useDiscoveredAgents(repo?: string | null): {
+  candidates: DiscoveredCandidate[];
+  loading: boolean;
+  reload: () => void;
+} {
+  const [candidates, setCandidates] = useState<DiscoveredCandidate[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [nonce, setNonce] = useState(0);
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    fetchDiscoveredAgents(repo)
+      .then((c) => {
+        if (!cancelled) {
+          setCandidates(c);
+          setLoading(false);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setCandidates([]);
+          setLoading(false);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [repo, nonce]);
+  return { candidates, loading, reload: () => setNonce((n) => n + 1) };
+}
+
+async function postAgentsAction(path: string, body: unknown): Promise<AgentsConfigResponse> {
+  ++generation;
+  const res = await fetch(`/api/config/agents/${path}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw await readErrorBody(res);
+  const normalized = normalize(await res.json());
+  notify(normalized);
+  return normalized;
+}
+
+export interface RegisterAgentBody {
+  path: string;
+  name: string;
+  runner: 'claude' | 'pi' | 'codex';
+  sourceKind: 'claude-global' | 'claude-project' | 'directory';
+  sourceRepo?: string;
+  description?: string;
+}
+export const registerAgent = (body: RegisterAgentBody) => postAgentsAction('register', body);
+
+export const manualAddAgent = (path: string) => postAgentsAction('manual-add', { path });
+
+export interface CreateAgentBody {
+  name: string;
+  runner: 'claude' | 'pi' | 'codex';
+  model?: string;
+  description?: string;
+  instructions: string;
+  location?: string;
+}
+export const createAgent = (body: CreateAgentBody) => postAgentsAction('create', body);
