@@ -42,12 +42,10 @@ import { tokenWarnings } from '../lib/launch-prompt-autocomplete';
 import { slugify } from '../lib/slug';
 import {
   useAgentsConfig,
-  useClaudeDiscoveredAgents,
   saveAgentsConfig,
   resetAgentsConfig,
   AgentsConfigError,
   type FieldError,
-  type DiscoveredClaudeAgent,
 } from '../hooks/useAgentsConfig';
 import { continuationUrl } from '../lib/recreate-flow';
 import { usePlaybooks } from '../hooks/useProjects';
@@ -247,7 +245,6 @@ interface SortableAgentRowProps {
   index: number;
   canRemove: boolean;
   playbooks: PlaybookOption[];
-  discoveredClaude: DiscoveredClaudeAgent[];
   dirty: boolean;
   onPatch: (patch: Partial<EditableAgent>) => void;
   onSetDefault: () => void;
@@ -260,7 +257,6 @@ function SortableAgentRow({
   index,
   canRemove,
   playbooks,
-  discoveredClaude,
   dirty,
   onPatch,
   onSetDefault,
@@ -333,19 +329,6 @@ function SortableAgentRow({
     // (after which `identityMode` derives from `emptyIdentityPref`).
     onPatch(next === 'agentName' ? { workdir: '' } : { agentName: '' });
   }
-  // Discovered agent names, plus the current value if it isn't on disk (so a
-  // hand-set identity survives a round-trip).
-  const agentNameOptions = useMemo(() => {
-    const names = discoveredClaude.map((a) => a.name);
-    if (row.agentName.trim() && !names.includes(row.agentName.trim())) {
-      return [row.agentName.trim(), ...names];
-    }
-    return names;
-  }, [discoveredClaude, row.agentName]);
-  const impliedAgentModel = useMemo(
-    () => discoveredClaude.find((a) => a.name === row.agentName.trim())?.model ?? '',
-    [discoveredClaude, row.agentName],
-  );
   const hasIdentity = Boolean(row.agentName.trim() || row.workdir.trim());
   const canLaunchStandalone = !row.isNew && Boolean(row.workdir.trim()) && !dirty;
 
@@ -533,24 +516,14 @@ function SortableAgentRow({
             <label className="text-[11px] uppercase tracking-wide text-muted-foreground/80">
               Run as agent (Claude --agent)
             </label>
-            <select
+            <input
+              type="text"
               value={row.agentName}
               onChange={(e) => onPatch({ agentName: e.target.value })}
               className={`editor-input mt-0.5 w-full ${errorClass('agentName')}`}
+              placeholder="agent name (--agent)"
               aria-label="Run as Claude agent"
-            >
-              <option value="">(none)</option>
-              {agentNameOptions.map((name) => (
-                <option key={name} value={name}>
-                  {name}
-                </option>
-              ))}
-            </select>
-            {impliedAgentModel && (
-              <p className="mt-0.5 text-[11px] text-muted-foreground/70">
-                model: <span className="font-mono">{impliedAgentModel}</span> (from agent definition)
-              </p>
-            )}
+            />
             {row.fieldErrors.agentName && (
               <p className="mt-0.5 text-[11px] text-error-foreground">{row.fieldErrors.agentName}</p>
             )}
@@ -619,7 +592,6 @@ function SortableAgentRow({
 
 export function AgentsSection() {
   const serverState = useAgentsConfig();
-  const discoveredClaude = useClaudeDiscoveredAgents();
   const playbooksState = usePlaybooks();
   const playbookOptions = useMemo<PlaybookOption[]>(
     () =>
@@ -852,7 +824,6 @@ export function AgentsSection() {
                 index={i}
                 canRemove={rows.length > 1}
                 playbooks={playbookOptions}
-                discoveredClaude={discoveredClaude}
                 dirty={dirty}
                 onPatch={(patch) => patchRow(row.rowKey, patch)}
                 onSetDefault={() => setDefaultRow(row.rowKey)}
