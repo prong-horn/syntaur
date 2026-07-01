@@ -212,6 +212,22 @@ export interface AssignmentTransitionAction {
   requiresReason: boolean;
 }
 
+/**
+ * One session↔assignment engagement interval for the "Session Activity"
+ * attribution view. Slim camelCase mirror of the server `EngagementInfo`
+ * (`src/dashboard/types.ts`). `agent` null ⇒ owning session row gone;
+ * `endedAt` null ⇒ engagement still open (in progress).
+ */
+export interface EngagementInfo {
+  id: number;
+  sessionId: string;
+  agent: string | null;
+  /** Engagement stage (plan | implement | review | …) — attribution source, NOT the derived assignment phase. */
+  stage: string;
+  startedAt: string;
+  endedAt: string | null;
+}
+
 export interface AssignmentDetail {
   id: string;
   /** `null` for standalone assignments. */
@@ -245,6 +261,8 @@ export interface AssignmentDetail {
   progress: AssignmentProgress | null;
   comments: AssignmentComments | null;
   referencedBy: AssignmentReference[];
+  /** Full per-session stage-attribution history (oldest first); empty when the server's session DB is uninitialized. */
+  engagements: EngagementInfo[];
   availableTransitions: AssignmentTransitionAction[];
   // ── derived-status v3 (server-materialized; may be absent on old servers) ──
   /** Cached phase dimension (null pre-migration). */

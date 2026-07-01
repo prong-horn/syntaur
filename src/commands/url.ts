@@ -59,8 +59,18 @@ export async function urlCommand(
     projectsDir,
     assignmentsDir: assignmentsDir(),
     terminalOverride: parsed.terminal,
-    agentId: parsed.kind === 'assignment' ? parsed.agent : undefined,
-    promptOverride: parsed.kind === 'assignment' ? parsed.prompt : undefined,
+    // Standalone identifies its agent by `id`; assignment may pin one via `agent=`.
+    agentId:
+      parsed.kind === 'standalone'
+        ? parsed.id
+        : parsed.kind === 'assignment'
+          ? parsed.agent
+          : undefined,
+    promptOverride:
+      parsed.kind === 'assignment' || parsed.kind === 'standalone'
+        ? parsed.prompt
+        : undefined,
+    agentName: parsed.kind === 'assignment' ? parsed.agentName : undefined,
   });
 
   emitPlanWarnings(plan);

@@ -95,6 +95,36 @@ describe('PUT /api/config/agents', () => {
     expect(r.body.agents[0].default).toBeUndefined();
   });
 
+  it('round-trips agentName and workdir', async () => {
+    const r = await put({
+      agents: [
+        { id: 'cl', label: 'Claude', command: 'claude', agentName: 'job-applier' },
+        { id: 'pi', label: 'Pi', command: 'pi', workdir: '~/job-applier-agent' },
+      ],
+    });
+    expect(r.status).toBe(200);
+    expect(r.body.agents[0]).toMatchObject({ id: 'cl', agentName: 'job-applier' });
+    expect(r.body.agents[1]).toMatchObject({ id: 'pi', workdir: '~/job-applier-agent' });
+  });
+
+  it('400 + fieldErrors when agentName and workdir are both set', async () => {
+    const r = await put({
+      agents: [{ id: 'x', label: 'X', command: 'pi', agentName: 'a', workdir: '/tmp' }],
+    });
+    expect(r.status).toBe(400);
+    expect(r.body.error).toMatch(/mutually exclusive/);
+    expect(r.body.fieldErrors[0]).toMatchObject({ id: 'x', field: 'workdir' });
+  });
+
+  it('400 + fieldErrors when agentName and model are both set', async () => {
+    const r = await put({
+      agents: [{ id: 'x', label: 'X', command: 'claude', agentName: 'a', model: 'opus' }],
+    });
+    expect(r.status).toBe(400);
+    expect(r.body.error).toMatch(/agentName and model/);
+    expect(r.body.fieldErrors[0]).toMatchObject({ id: 'x', field: 'model' });
+  });
+
   it('400 + fieldErrors for duplicate id', async () => {
     const r = await put({
       agents: [
@@ -299,5 +329,20 @@ describe('DELETE /api/config/agents', () => {
     const body = await res.json();
     expect(body.custom).toBe(false);
     expect(body.agents).toEqual(BUILTIN_AGENTS);
+  });
+});
+
+describe('GET /api/config/agents/claude-discovered', () => {
+  // The route resolves its root from the registry's claude target (bound at
+  // module load), so this is a shape-only smoke test; hermetic parsing/dedupe
+  // is covered by agent-definitions-discovery.test.ts against a temp fixture.
+  it('returns 200 with an agents array', async () => {
+    const res = await fetch(`${baseUrl}/claude-discovered`);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(Array.isArray(body.agents)).toBe(true);
+    for (const a of body.agents) {
+      expect(typeof a.name).toBe('string');
+    }
   });
 });

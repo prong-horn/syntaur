@@ -195,6 +195,61 @@ describe('launchAgent — validated cwd resolution', () => {
     expect(errSpy).toHaveBeenCalled();
   });
 
+  it('directory-agent: spawns from workdir, writes context.json to the worktree (not workdir)', async () => {
+    const worktree = resolve(testDir, 'wt-wd');
+    const agentDir = resolve(testDir, 'agent-dir');
+    await mkdir(worktree, { recursive: true });
+    await mkdir(agentDir, { recursive: true });
+    await writeAssignment(projectsDir, 'demo', 'task', {
+      worktreePath: worktree,
+      branch: 'feat/x',
+    });
+
+    const calls: SpawnCall[] = [];
+    await launchAgent({
+      projectsDir,
+      projectSlug: 'demo',
+      assignmentSlug: 'task',
+      agent: { ...AGENT, workdir: agentDir },
+      spawnFn: fakeSpawn(calls),
+      onExit: () => {},
+    });
+
+    expect(calls).toHaveLength(1);
+    // Spawned from the agent dir...
+    expect(calls[0].cwd).toBe(agentDir);
+    // ...but context.json lands in the worktree, NOT the agent dir.
+    expect(existsSync(resolve(worktree, '.syntaur', 'context.json'))).toBe(true);
+    expect(existsSync(resolve(agentDir, '.syntaur', 'context.json'))).toBe(false);
+    // The seed points the agent at the worktree (it starts elsewhere).
+    expect(calls[0].args.join(' ')).toContain(worktree);
+  });
+
+  it('directory-agent: refuses to launch when workdir does not exist', async () => {
+    const worktree = resolve(testDir, 'wt-wd2');
+    await mkdir(worktree, { recursive: true });
+    await writeAssignment(projectsDir, 'demo', 'task', {
+      worktreePath: worktree,
+      branch: 'feat/x',
+    });
+
+    const calls: SpawnCall[] = [];
+    let code = 0;
+    await launchAgent({
+      projectsDir,
+      projectSlug: 'demo',
+      assignmentSlug: 'task',
+      agent: { ...AGENT, workdir: resolve(testDir, 'no-agent-dir') },
+      spawnFn: fakeSpawn(calls),
+      onExit: (c) => {
+        code = c;
+      },
+    });
+
+    expect(calls).toHaveLength(0);
+    expect(code).toBe(1);
+  });
+
   it('refuses an explicit cwdOverride that is not an existing directory', async () => {
     const worktree = resolve(testDir, 'wt2');
     await mkdir(worktree, { recursive: true });

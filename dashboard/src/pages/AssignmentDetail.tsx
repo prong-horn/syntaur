@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
   Archive,
@@ -15,13 +15,12 @@ import { CopyButton } from '../components/CopyButton';
 import { useAssignment, useProject, useServers, useAssignmentSessions, useAssignmentUsage, useWorkspacePrefix, type AssignmentTransitionAction, type ExternalIdInfo } from '../hooks/useProjects';
 import { useAssignmentEvents } from '../hooks/useAssignmentEvents';
 import { useStatusConfig } from '../hooks/useStatusConfig';
-import { formatRelativeTime, formatShortDate, formatShortDateTime } from '../lib/format';
+import { formatShortDate, formatShortDateTime } from '../lib/format';
 import { LoadingState } from '../components/LoadingState';
 import { ErrorState } from '../components/ErrorState';
 import { StatusBadge } from '../components/StatusBadge';
 import { AssignmentStatusPill } from '../components/AssignmentStatusPill';
 import { TypeChip } from '../components/TypeChip';
-import { ExternalIdBadges } from '../components/ExternalIdBadges';
 import { ContentTabs } from '../components/ContentTabs';
 import { SectionCard } from '../components/SectionCard';
 import { MarkdownRenderer } from '../components/MarkdownRenderer';
@@ -41,9 +40,11 @@ import {
 } from '../lib/assignments';
 import { splitAssignmentSummary, splitTodosSection } from '../lib/acceptanceCriteria';
 import { DependencyPanel } from '../components/DependencyPanel';
+import { FactsPanel } from '../components/FactsPanel';
 import { LinksPanel } from '../components/LinksPanel';
 import { CommentsThread } from '../components/CommentsThread';
 import { ActivityTimeline } from '../components/ActivityTimeline';
+import { SessionActivityTimeline } from '../components/SessionActivityTimeline';
 import { useHotkey, useHotkeyScope } from '../hotkeys';
 import { useHashScroll } from '../hooks/useHashScroll';
 import { cn } from '../lib/utils';
@@ -429,7 +430,7 @@ export function AssignmentDetail() {
     <div className="space-y-5">
       <Toaster toast={toast} onDismiss={dismissToast} />
       <div className="sticky top-12 z-20 rounded-lg border border-border/60 bg-card/90 p-3 shadow-sm backdrop-blur">
-        <div className="flex flex-wrap items-center gap-3">
+        <div className="flex items-center gap-3">
           <AssignmentStatusPill
             id={assignment.id}
             slug={assignmentSlug}
@@ -440,35 +441,21 @@ export function AssignmentDetail() {
             progress={progress}
             onChange={() => refetch()}
           />
-          {/* derived-status dimensions: phase ⊥ disposition (v3) */}
-          {assignment.phase && assignment.phase !== assignment.status && (
-            <span
-              className="rounded-full border border-border/60 px-2 py-0.5 text-[11px] text-muted-foreground"
-              title="Phase dimension — how far along the work is, independent of blockage"
-            >
-              phase: {assignment.phase}
-            </span>
-          )}
-          {assignment.disposition && assignment.disposition !== 'active' && (
-            <span
-              className="rounded-full border border-warning-foreground/40 px-2 py-0.5 text-[11px] text-warning-foreground"
-              title="Disposition dimension — orthogonal to phase"
-            >
-              {assignment.disposition}
-            </span>
-          )}
-          <TypeChip type={assignment.type} />
-          <h1 className="text-lg font-semibold text-foreground">{assignment.title}</h1>
-          <span className="text-xs text-muted-foreground">
-            Updated {formatRelativeTime(assignment.updated)}
-          </span>
+          <h1
+            className="min-w-0 flex-1 truncate text-lg font-semibold text-foreground"
+            title={assignment.title}
+          >
+            {assignment.title}
+          </h1>
           {unmetDeps.length > 0 && (
-            <span className="text-xs text-warning-foreground">
+            <span
+              className="shrink-0 whitespace-nowrap text-xs text-warning-foreground"
+              title={`Unmet dependencies: ${unmetDeps.map((d) => d.title).join(', ')}`}
+            >
               ⚠ {unmetDeps.length} unmet dep{unmetDeps.length === 1 ? '' : 's'}
             </span>
           )}
-          <ExternalIdBadges externalIds={assignment.externalIds} />
-          <span className="ml-auto flex items-center gap-2">
+          <span className="flex shrink-0 items-center gap-2">
             <OpenInAgentButton
               target={{ kind: 'assignment', id: assignment.id }}
               worktreePath={assignment.workspace?.worktreePath ?? null}
@@ -534,61 +521,6 @@ export function AssignmentDetail() {
           </p>
         ) : null}
       </div>
-
-      {/* Custom facts + attestations (server-derived; display-only). Renders
-          nothing for zero-config users and terminal assignments (derived: null). */}
-      {assignment.derived &&
-      (Object.keys(assignment.derived.customFacts ?? {}).length > 0 ||
-        (assignment.derived.attestations ?? []).length > 0) ? (
-        <SectionCard
-          title="Facts"
-          description="Custom asserted facts and review attestations, materialized server-side."
-        >
-          <div className="space-y-3">
-            {Object.keys(assignment.derived.customFacts ?? {}).length > 0 && (
-              <div className="flex flex-wrap items-center gap-2">
-                {Object.entries(assignment.derived.customFacts ?? {}).map(([name, value]) => (
-                  <span
-                    key={name}
-                    className="rounded-full border border-border/60 px-2 py-0.5 text-[11px] text-muted-foreground"
-                  >
-                    {name}: <span className="font-medium text-foreground">{String(value)}</span>
-                  </span>
-                ))}
-              </div>
-            )}
-            {(assignment.derived.attestations ?? []).map((att) => (
-              <div key={att.fact} className="flex flex-wrap items-center gap-2">
-                <span className="text-[11px] font-medium text-foreground">{att.fact}</span>
-                <span className="text-[11px] text-muted-foreground">({att.binds})</span>
-                {att.records.length === 0 ? (
-                  <span className="text-[11px] text-muted-foreground">— no attestations yet</span>
-                ) : (
-                  att.records.map((r) => (
-                    <span
-                      key={r.actor}
-                      title={`${r.verdict}${r.note ? ` — ${r.note}` : ''}${
-                        r.stale ? ' (stale — revision moved)' : ''
-                      } · ${r.at}`}
-                      className={cn(
-                        'rounded-full border px-2 py-0.5 text-[11px]',
-                        r.stale
-                          ? 'border-border/40 text-muted-foreground line-through'
-                          : r.verdict === 'approved'
-                            ? 'border-success-foreground/40 text-success-foreground'
-                            : 'border-warning-foreground/40 text-warning-foreground',
-                      )}
-                    >
-                      {r.actor}: {r.verdict === 'approved' ? 'approved' : 'changes'}
-                      {r.stale ? ' (stale)' : ''}
-                    </span>
-                  ))
-                )}
-              </div>
-            ))}
-          </div>
-        </SectionCard>
-      ) : null}
 
       {enrichedDeps.length > 0 && (
         <DependencyPanel
@@ -857,10 +789,26 @@ export function AssignmentDetail() {
                 label: 'Activity',
                 count: events.length,
                 content: (
-                  <ActivityTimeline
-                    events={events}
-                    loading={eventsLoading}
-                    error={eventsError}
+                  <div className="space-y-5">
+                    <FactsPanel
+                      customFacts={assignment.derived?.customFacts}
+                      attestations={assignment.derived?.attestations}
+                    />
+                    <ActivityTimeline
+                      events={events}
+                      loading={eventsLoading}
+                      error={eventsError}
+                    />
+                  </div>
+                ),
+              },
+              {
+                value: 'session-activity',
+                label: 'Session Activity',
+                count: assignment.engagements.length,
+                content: (
+                  <SessionActivityTimeline
+                    engagements={assignment.engagements}
                   />
                 ),
               },
@@ -874,6 +822,24 @@ export function AssignmentDetail() {
               <DetailRow label="ID" value={assignment.id} copyable />
               <DetailRow label="Priority" value={assignment.priority} />
               {assignment.assignee && <DetailRow label="Assignee" value={assignment.assignee} />}
+              {assignment.type && (
+                <DetailNodeRow label="Type">
+                  <TypeChip type={assignment.type} compact />
+                </DetailNodeRow>
+              )}
+              {assignment.phase && assignment.phase !== assignment.status && (
+                <DetailRow label="Phase" value={assignment.phase} />
+              )}
+              {assignment.disposition && assignment.disposition !== 'active' && (
+                <DetailNodeRow label="Disposition">
+                  <span
+                    className="rounded-full border border-warning-foreground/40 px-2 py-0.5 text-[11px] text-warning-foreground"
+                    title="Disposition dimension — orthogonal to phase"
+                  >
+                    {assignment.disposition}
+                  </span>
+                </DetailNodeRow>
+              )}
               <DetailRow
                 label="Updated"
                 value={`${formatShortDateTime(assignment.updated)} · Created ${formatShortDate(assignment.created)}`}
@@ -994,6 +960,17 @@ function DetailRow({ label, value, copyable }: { label: string; value: string; c
       <dd className="flex items-center gap-1.5 max-w-[60%] text-right text-foreground break-all">
         <span className="block min-w-0 truncate" title={value}>{value}</span>
         {copyable && value !== '\u2014' && <CopyButton value={value} />}
+      </dd>
+    </div>
+  );
+}
+
+function DetailNodeRow({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div className="flex items-start justify-between gap-3">
+      <dt className="text-muted-foreground">{label}</dt>
+      <dd className="flex max-w-[60%] items-center justify-end gap-1.5 text-right text-foreground">
+        {children}
       </dd>
     </div>
   );

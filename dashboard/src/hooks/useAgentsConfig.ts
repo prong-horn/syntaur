@@ -69,6 +69,12 @@ function normalizeRow(raw: unknown): AgentConfig | null {
   if (typeof entry.launchPrompt === 'string') {
     agent.launchPrompt = entry.launchPrompt;
   }
+  if (typeof entry.agentName === 'string') {
+    agent.agentName = entry.agentName;
+  }
+  if (typeof entry.workdir === 'string') {
+    agent.workdir = entry.workdir;
+  }
   return agent;
 }
 
@@ -135,6 +141,53 @@ export function invalidateAgentsConfigCache(): void {
   cachedConfig = null;
   fetchPromise = null;
   ++generation;
+}
+
+/** A Claude agent definition discovered on disk (`~/.claude/agents`). */
+export interface DiscoveredClaudeAgent {
+  name: string;
+  description?: string;
+  model?: string;
+  path: string;
+}
+
+/**
+ * Fetch the Claude agent definitions discovered on disk for the "Run as agent"
+ * picker. Returns `[]` on any error (Claude not installed, no agents dir).
+ * Lightweight one-shot fetch — no shared cache (the list is small and the
+ * picker mounts rarely).
+ */
+export function useClaudeDiscoveredAgents(): DiscoveredClaudeAgent[] {
+  const [agents, setAgents] = useState<DiscoveredClaudeAgent[]>([]);
+  useEffect(() => {
+    let cancelled = false;
+    fetch('/api/config/agents/claude-discovered')
+      .then((res) => (res.ok ? res.json() : { agents: [] }))
+      .then((data: { agents?: unknown }) => {
+        if (cancelled) return;
+        const list = Array.isArray(data.agents) ? data.agents : [];
+        const cleaned: DiscoveredClaudeAgent[] = [];
+        for (const raw of list) {
+          if (!raw || typeof raw !== 'object') continue;
+          const e = raw as Record<string, unknown>;
+          if (typeof e.name !== 'string' || !e.name) continue;
+          cleaned.push({
+            name: e.name,
+            description: typeof e.description === 'string' ? e.description : undefined,
+            model: typeof e.model === 'string' ? e.model : undefined,
+            path: typeof e.path === 'string' ? e.path : '',
+          });
+        }
+        setAgents(cleaned);
+      })
+      .catch(() => {
+        if (!cancelled) setAgents([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  return agents;
 }
 
 async function readErrorBody(res: Response): Promise<AgentsConfigError> {

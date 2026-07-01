@@ -35,7 +35,7 @@ export type SessionMode = 'resume' | 'fork';
 const SESSION_MODES: readonly SessionMode[] = ['resume', 'fork'];
 
 export interface ParsedOpenUrl {
-  kind: 'assignment' | 'session';
+  kind: 'assignment' | 'session' | 'standalone';
   id: string;
   /**
    * Optional one-shot terminal override. When present, the launch plan uses
@@ -69,6 +69,13 @@ export interface ParsedOpenUrl {
    * to the fallback seed), distinct from `undefined` (no override).
    */
   prompt?: string;
+  /**
+   * Optional one-shot Claude `--agent <name>` identity (the `agentName=` query
+   * param). The dashboard's discovered-agent picker sends a chosen agent
+   * definition here so the launched session adopts it. Only set for
+   * `kind === 'assignment'`. Length-bounded like `prompt`.
+   */
+  agentName?: string;
 }
 
 /**
@@ -112,6 +119,7 @@ export function parseOpenUrl(input: string): ParsedOpenUrl {
 
   const assignmentVals = url.searchParams.getAll('assignment');
   const sessionVals = url.searchParams.getAll('session');
+  const standaloneVals = url.searchParams.getAll('standalone');
 
   if (assignmentVals.length > 1) {
     throw new OpenUrlError(
@@ -125,15 +133,23 @@ export function parseOpenUrl(input: string): ParsedOpenUrl {
       'URL has more than one `session` query param',
     );
   }
+  if (standaloneVals.length > 1) {
+    throw new OpenUrlError(
+      'duplicate-param',
+      'URL has more than one `standalone` query param',
+    );
+  }
 
-  // Both-ids is decided by PARAM PRESENCE (`...length === 1`), not by value
-  // truthiness. `?assignment=&session=x` has BOTH params present even though
-  // assignment's value is empty — that must error as both-ids, not silently
-  // fall through to the session branch.
-  if (assignmentVals.length === 1 && sessionVals.length === 1) {
+  // Exactly one of assignment/session/standalone, decided by PARAM PRESENCE
+  // (`...length === 1`), not by value truthiness. `?assignment=&session=x` has
+  // BOTH params present even though assignment's value is empty — that must
+  // error as both-ids, not silently fall through to the session branch.
+  const kindsPresent =
+    assignmentVals.length + sessionVals.length + standaloneVals.length;
+  if (kindsPresent > 1) {
     throw new OpenUrlError(
       'both-ids',
-      'URL has both `assignment` and `session` query params — only one is allowed',
+      'URL has more than one of `assignment`, `session`, `standalone` — only one is allowed',
     );
   }
 
@@ -189,6 +205,39 @@ export function parseOpenUrl(input: string): ParsedOpenUrl {
     prompt = value;
   }
 
+  const agentNameVals = url.searchParams.getAll('agentName');
+  if (agentNameVals.length > 1) {
+    throw new OpenUrlError(
+      'duplicate-param',
+      'URL has more than one `agentName` query param',
+    );
+  }
+  let agentName: string | undefined;
+  if (agentNameVals.length === 1 && agentNameVals[0].trim() !== '') {
+    const value = agentNameVals[0];
+    if (value.length > MAX_OPEN_PROMPT_LENGTH) {
+      throw new OpenUrlError(
+        'invalid-prompt',
+        `\`agentName\` query param exceeds ${MAX_OPEN_PROMPT_LENGTH} characters`,
+      );
+    }
+    agentName = value;
+  }
+
+  if (standaloneVals.length === 1) {
+    const id = standaloneVals[0];
+    if (id.trim() === '') {
+      throw new OpenUrlError('missing-id', '`standalone` query param is empty');
+    }
+    return {
+      kind: 'standalone',
+      id,
+      ...(terminal ? { terminal } : {}),
+      // standalone identifies the agent by `id`; keep an optional prompt override.
+      ...(prompt !== undefined ? { prompt } : {}),
+    };
+  }
+
   if (assignmentVals.length === 1) {
     const id = assignmentVals[0];
     if (id.trim() === '') {
@@ -204,6 +253,7 @@ export function parseOpenUrl(input: string): ParsedOpenUrl {
       ...(agent ? { agent } : {}),
       // assignment-only; keep '' (presence-significant) — hence !== undefined.
       ...(prompt !== undefined ? { prompt } : {}),
+      ...(agentName ? { agentName } : {}),
     };
   }
 
@@ -242,6 +292,6 @@ export function parseOpenUrl(input: string): ParsedOpenUrl {
 
   throw new OpenUrlError(
     'missing-id',
-    'URL must include either `assignment=<id>` or `session=<id>`',
+    'URL must include one of `assignment=<id>`, `session=<id>`, or `standalone=<agentId>`',
   );
 }

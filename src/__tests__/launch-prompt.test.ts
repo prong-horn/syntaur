@@ -3,6 +3,7 @@ import {
   resolveLaunchPrompt,
   bareGrabSeed,
   runPlaybookClause,
+  effectiveLaunchTemplate,
 } from '../launch/launch-prompt.js';
 
 const BASE = {
@@ -186,5 +187,109 @@ describe('resolveLaunchPrompt — removable grab (criterion 4)', () => {
     expect(prompt).toBe(`Run ${runPlaybookClause('e2e-dev-cycle')}.`);
     expect(prompt).not.toContain('grab-assignment');
     expect(prompt).not.toContain('Syntaur assignment');
+  });
+});
+
+describe('resolveLaunchPrompt — @worktree token', () => {
+  const WT = '/Users/x/syntaur/.worktrees/asg';
+
+  it('resolves @worktree to the absolute worktree path', () => {
+    const { prompt, warnings } = resolveLaunchPrompt({
+      ...BASE,
+      template: 'cd @worktree and build.',
+      worktreePath: WT,
+    });
+    expect(prompt).toBe(`cd ${WT} and build.`);
+    expect(warnings).toEqual([]);
+  });
+
+  it('warns + leaves @worktree literal when no worktree path is provided', () => {
+    const { prompt, warnings } = resolveLaunchPrompt({ ...BASE, template: 'go to @worktree' });
+    expect(prompt).toBe('go to @worktree');
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toContain('@worktree');
+  });
+});
+
+describe('resolveLaunchPrompt — directory-agent (workdir) default seed', () => {
+  const WT = '/Users/x/syntaur/.worktrees/asg';
+  const AGENT_DIR = '/Users/x/job-applier-agent';
+
+  it('synthesizes a worktree-pointing seed when spawnCwd differs from worktree', () => {
+    const { prompt, warnings } = resolveLaunchPrompt({
+      ...BASE,
+      worktreePath: WT,
+      spawnCwd: AGENT_DIR,
+    });
+    expect(prompt).toContain(WT);
+    expect(prompt).toContain('cd');
+    expect(prompt).toContain('/grab-assignment proj asg');
+    expect(warnings).toEqual([]);
+  });
+
+  it('does NOT fire the workdir seed when spawnCwd equals the worktree', () => {
+    const { prompt } = resolveLaunchPrompt({
+      ...BASE,
+      worktreePath: WT,
+      spawnCwd: WT,
+    });
+    expect(prompt).toBe('/grab-assignment proj asg');
+  });
+});
+
+describe('resolveLaunchPrompt — standalone (no assignment context)', () => {
+  it('returns an empty prompt with no template/playbook and no assignment', () => {
+    const { prompt, warnings } = resolveLaunchPrompt({ projectSlug: null });
+    expect(prompt).toBe('');
+    expect(warnings).toEqual([]);
+  });
+
+  it('resolves a template but leaves @assignment/@worktree literal + warns', () => {
+    const { prompt, warnings } = resolveLaunchPrompt({
+      projectSlug: null,
+      template: 'Do @assignment in @worktree.',
+    });
+    expect(prompt).toBe('Do @assignment in @worktree.');
+    expect(warnings).toHaveLength(2);
+    expect(warnings.join(' ')).toContain('@assignment');
+    expect(warnings.join(' ')).toContain('@worktree');
+  });
+
+  it('honors a plain standalone template (promptOverride path)', () => {
+    const { prompt, warnings } = resolveLaunchPrompt({
+      projectSlug: null,
+      template: 'Apply to 5 jobs today.',
+    });
+    expect(prompt).toBe('Apply to 5 jobs today.');
+    expect(warnings).toEqual([]);
+  });
+});
+
+describe('effectiveLaunchTemplate — workdir prefill round-trips through @worktree', () => {
+  const WT = '/Users/x/syntaur/.worktrees/asg';
+
+  it('prefills a @worktree-based seed for a workdir agent with no launchPrompt', () => {
+    const template = effectiveLaunchTemplate({
+      projectSlug: 'proj',
+      assignmentSlug: 'asg',
+      id: 'a1b2c3',
+      workdir: '~/job-applier-agent',
+    });
+    expect(template).toContain('@worktree');
+    expect(template).toContain('/grab-assignment proj asg');
+    // Re-resolving as a promptOverride injects the real worktree path.
+    const { prompt } = resolveLaunchPrompt({ ...BASE, template, worktreePath: WT });
+    expect(prompt).toContain(WT);
+    expect(prompt).not.toContain('@worktree');
+  });
+
+  it('launchPrompt still wins over the workdir prefill', () => {
+    const template = effectiveLaunchTemplate({
+      launchPrompt: '@assignment then stop',
+      projectSlug: 'proj',
+      assignmentSlug: 'asg',
+      workdir: '~/job-applier-agent',
+    });
+    expect(template).toBe('@assignment then stop');
   });
 });

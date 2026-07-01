@@ -6,6 +6,8 @@ import {
   RotateCcw,
   Save,
   Info,
+  Terminal,
+  Fingerprint,
 } from 'lucide-react';
 import {
   DndContext,
@@ -36,11 +38,14 @@ import { tokenWarnings } from '../lib/launch-prompt-autocomplete';
 import { slugify } from '../lib/slug';
 import {
   useAgentsConfig,
+  useClaudeDiscoveredAgents,
   saveAgentsConfig,
   resetAgentsConfig,
   AgentsConfigError,
   type FieldError,
+  type DiscoveredClaudeAgent,
 } from '../hooks/useAgentsConfig';
+import { continuationUrl } from '../lib/recreate-flow';
 import { usePlaybooks } from '../hooks/useProjects';
 
 /** Minimal shape of the playbook options passed down to each agent row. */
@@ -60,6 +65,8 @@ type FieldKey =
   | 'model'
   | 'playbook'
   | 'launchPrompt'
+  | 'agentName'
+  | 'workdir'
   | 'row';
 
 interface EditableAgent {
@@ -80,6 +87,10 @@ interface EditableAgent {
   // Editable launch prompt (the literal first message; @assignment / @<playbook>
   // tokens resolve at launch). Single-line — see the Launch prompt textarea.
   launchPrompt: string;
+  // Claude `--agent <name>` identity (mutually exclusive with workdir).
+  agentName: string;
+  // Directory-agent launch cwd override (mutually exclusive with agentName).
+  workdir: string;
   fieldErrors: Partial<Record<FieldKey, string>>;
 }
 
@@ -110,6 +121,8 @@ function hydrate(agents: AgentConfig[]): EditableAgent[] {
     model: a.model ?? '',
     playbook: a.playbook ?? '',
     launchPrompt: a.launchPrompt ?? '',
+    agentName: a.agentName ?? '',
+    workdir: a.workdir ?? '',
     fieldErrors: {},
   }));
 }
@@ -130,6 +143,8 @@ function buildPayload(rows: EditableAgent[]): AgentConfig[] {
     if (row.playbook.trim()) agent.playbook = row.playbook.trim();
     // Store untrimmed (preserve author spacing); drop when empty-after-trim.
     if (row.launchPrompt.trim()) agent.launchPrompt = row.launchPrompt;
+    if (row.agentName.trim()) agent.agentName = row.agentName.trim();
+    if (row.workdir.trim()) agent.workdir = row.workdir.trim();
     return agent;
   });
 }
@@ -197,7 +212,9 @@ function rowsAreEqual(a: EditableAgent[], b: EditableAgent[]): boolean {
       ai.default !== bi.default ||
       ai.model !== bi.model ||
       ai.playbook !== bi.playbook ||
-      ai.launchPrompt !== bi.launchPrompt
+      ai.launchPrompt !== bi.launchPrompt ||
+      ai.agentName !== bi.agentName ||
+      ai.workdir !== bi.workdir
     ) {
       return false;
     }
@@ -210,9 +227,12 @@ interface SortableAgentRowProps {
   index: number;
   canRemove: boolean;
   playbooks: PlaybookOption[];
+  discoveredClaude: DiscoveredClaudeAgent[];
+  dirty: boolean;
   onPatch: (patch: Partial<EditableAgent>) => void;
   onSetDefault: () => void;
   onRemove: () => void;
+  onLaunchStandalone: () => void;
 }
 
 function SortableAgentRow({
@@ -220,9 +240,12 @@ function SortableAgentRow({
   index,
   canRemove,
   playbooks,
+  discoveredClaude,
+  dirty,
   onPatch,
   onSetDefault,
   onRemove,
+  onLaunchStandalone,
 }: SortableAgentRowProps) {
   const {
     attributes,
@@ -267,6 +290,45 @@ function SortableAgentRow({
     [row.launchPrompt, playbookSlugs],
   );
 
+  // Which identity affordance to show. When a field already holds a value the
+  // mode is DERIVED from the data (the two are mutually exclusive), so it always
+  // resyncs after Discard/hydrate even though this component is reused with a
+  // stable `rowKey`. Only the both-empty case needs a local preference — seeded
+  // by the command heuristic (Claude-compatible → "Run as agent"; else "Working
+  // dir") and flippable by the toggle, so a shell-aliased Claude (`id: c`,
+  // `command: c`) can still pick a `--agent` identity. No hidden value can
+  // desync, because the local preference only applies when both fields are empty.
+  const isClaudeRunner = /claude/i.test(row.command) || row.id === 'claude';
+  const [emptyIdentityPref, setEmptyIdentityPref] = useState<'agentName' | 'workdir'>(
+    isClaudeRunner ? 'agentName' : 'workdir',
+  );
+  const identityMode: 'agentName' | 'workdir' = row.agentName.trim()
+    ? 'agentName'
+    : row.workdir.trim()
+      ? 'workdir'
+      : emptyIdentityPref;
+  function switchIdentityMode(next: 'agentName' | 'workdir') {
+    setEmptyIdentityPref(next);
+    // Clear the now-hidden field so the persisted agent never carries both
+    // (after which `identityMode` derives from `emptyIdentityPref`).
+    onPatch(next === 'agentName' ? { workdir: '' } : { agentName: '' });
+  }
+  // Discovered agent names, plus the current value if it isn't on disk (so a
+  // hand-set identity survives a round-trip).
+  const agentNameOptions = useMemo(() => {
+    const names = discoveredClaude.map((a) => a.name);
+    if (row.agentName.trim() && !names.includes(row.agentName.trim())) {
+      return [row.agentName.trim(), ...names];
+    }
+    return names;
+  }, [discoveredClaude, row.agentName]);
+  const impliedAgentModel = useMemo(
+    () => discoveredClaude.find((a) => a.name === row.agentName.trim())?.model ?? '',
+    [discoveredClaude, row.agentName],
+  );
+  const hasIdentity = Boolean(row.agentName.trim() || row.workdir.trim());
+  const canLaunchStandalone = !row.isNew && Boolean(row.workdir.trim()) && !dirty;
+
   return (
     <div
       ref={setNodeRef}
@@ -294,7 +356,32 @@ function SortableAgentRow({
           />
           Default
         </label>
+        {hasIdentity && (
+          <span
+            className="inline-flex items-center gap-1 rounded bg-foreground/[0.06] px-1.5 py-0.5 text-[10px] text-muted-foreground"
+            title={
+              row.agentName.trim()
+                ? `Runs as Claude agent "${row.agentName.trim()}"`
+                : `Launches from ${row.workdir.trim()}`
+            }
+          >
+            <Fingerprint className="h-3 w-3" />
+            {row.agentName.trim() ? `agent:${row.agentName.trim()}` : 'workdir'}
+          </span>
+        )}
         <div className="ml-auto flex items-center gap-2">
+          {canLaunchStandalone && (
+            <button
+              type="button"
+              onClick={onLaunchStandalone}
+              aria-label="Launch standalone (no assignment)"
+              title="Launch this directory-agent standalone (no assignment)"
+              className="inline-flex items-center gap-1 rounded px-1.5 py-1 text-[11px] text-muted-foreground/80 transition hover:bg-foreground/[0.04] hover:text-foreground"
+            >
+              <Terminal className="h-3.5 w-3.5" />
+              Launch
+            </button>
+          )}
           <span className="text-[10px] font-mono uppercase tracking-wide text-muted-foreground/70">
             id
           </span>
@@ -407,6 +494,65 @@ function SortableAgentRow({
             <p className="mt-0.5 text-[11px] text-error-foreground">{row.fieldErrors.model}</p>
           )}
         </div>
+        <div>
+          <label className="text-[11px] uppercase tracking-wide text-muted-foreground/80">
+            Identity
+          </label>
+          <select
+            value={identityMode}
+            onChange={(e) => switchIdentityMode(e.target.value as 'agentName' | 'workdir')}
+            className="editor-input mt-0.5 w-full"
+            aria-label="Identity kind"
+          >
+            <option value="agentName">Run as agent (Claude --agent)</option>
+            <option value="workdir">Working directory (directory-agent)</option>
+          </select>
+        </div>
+        {identityMode === 'agentName' ? (
+          <div>
+            <label className="text-[11px] uppercase tracking-wide text-muted-foreground/80">
+              Run as agent (Claude --agent)
+            </label>
+            <select
+              value={row.agentName}
+              onChange={(e) => onPatch({ agentName: e.target.value })}
+              className={`editor-input mt-0.5 w-full ${errorClass('agentName')}`}
+              aria-label="Run as Claude agent"
+            >
+              <option value="">(none)</option>
+              {agentNameOptions.map((name) => (
+                <option key={name} value={name}>
+                  {name}
+                </option>
+              ))}
+            </select>
+            {impliedAgentModel && (
+              <p className="mt-0.5 text-[11px] text-muted-foreground/70">
+                model: <span className="font-mono">{impliedAgentModel}</span> (from agent definition)
+              </p>
+            )}
+            {row.fieldErrors.agentName && (
+              <p className="mt-0.5 text-[11px] text-error-foreground">{row.fieldErrors.agentName}</p>
+            )}
+          </div>
+        ) : (
+          <div>
+            <label className="text-[11px] uppercase tracking-wide text-muted-foreground/80">
+              Working directory (directory-agent)
+            </label>
+            <input
+              type="text"
+              value={row.workdir}
+              placeholder="~/job-applier-agent (optional)"
+              onChange={(e) => onPatch({ workdir: e.target.value })}
+              className={`editor-input mt-0.5 w-full font-mono ${errorClass('workdir')}`}
+              aria-label="Working directory"
+            />
+            {row.fieldErrors.workdir && (
+              <p className="mt-0.5 text-[11px] text-error-foreground">{row.fieldErrors.workdir}</p>
+            )}
+          </div>
+        )}
         <div className="col-span-full">
           <label className="text-[11px] uppercase tracking-wide text-muted-foreground/80">
             Launch prompt
@@ -453,6 +599,7 @@ function SortableAgentRow({
 
 export function AgentsSection() {
   const serverState = useAgentsConfig();
+  const discoveredClaude = useClaudeDiscoveredAgents();
   const playbooksState = usePlaybooks();
   const playbookOptions = useMemo<PlaybookOption[]>(
     () =>
@@ -528,6 +675,8 @@ export function AgentsSection() {
         label,
         command: '',
         argsText: '',
+        agentName: '',
+        workdir: '',
         promptArgPosition: 'first',
         // Default ON: most user agents are alias-or-bare-name (e.g.
         // `claude`, `cc`, `cursor-agent`) where lazy-loaded zshrc setups
@@ -668,9 +817,14 @@ export function AgentsSection() {
                 index={i}
                 canRemove={rows.length > 1}
                 playbooks={playbookOptions}
+                discoveredClaude={discoveredClaude}
+                dirty={dirty}
                 onPatch={(patch) => patchRow(row.rowKey, patch)}
                 onSetDefault={() => setDefaultRow(row.rowKey)}
                 onRemove={() => removeRow(row.rowKey)}
+                onLaunchStandalone={() => {
+                  window.location.href = continuationUrl({ kind: 'standalone', id: row.id });
+                }}
               />
             ))}
           </div>

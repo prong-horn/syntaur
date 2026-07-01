@@ -11,6 +11,7 @@ import {
   type AgentConfig,
   type PromptArgPosition,
 } from '../utils/agents-schema.js';
+import { discoverClaudeAgents } from '../targets/agent-definitions.js';
 
 export interface AgentFieldError {
   id?: string;
@@ -115,6 +116,42 @@ export function mapAgentErrorToFieldErrors(
       error: message,
       fieldErrors: [
         { id: match[1], field: 'launchPrompt', message: 'must be a single line' },
+      ],
+    };
+  }
+
+  match = message.match(/^agent "([^"]+)" has invalid agentName/);
+  if (match) {
+    return {
+      error: message,
+      fieldErrors: [{ id: match[1], field: 'agentName', message: 'must be a single line' }],
+    };
+  }
+
+  match = message.match(/^agent "([^"]+)" has invalid workdir/);
+  if (match) {
+    return {
+      error: message,
+      fieldErrors: [{ id: match[1], field: 'workdir', message: 'must be a single line' }],
+    };
+  }
+
+  match = message.match(/^agent "([^"]+)" sets both agentName and workdir/);
+  if (match) {
+    return {
+      error: message,
+      fieldErrors: [
+        { id: match[1], field: 'workdir', message: 'agentName and workdir are mutually exclusive' },
+      ],
+    };
+  }
+
+  match = message.match(/^agent "([^"]+)" sets both agentName and model/);
+  if (match) {
+    return {
+      error: message,
+      fieldErrors: [
+        { id: match[1], field: 'model', message: 'remove the profile model; the agent defines its own' },
       ],
     };
   }
@@ -286,11 +323,54 @@ function coerceAgentRow(
     if (entry.launchPrompt.trim()) cleaned.launchPrompt = entry.launchPrompt;
   }
 
+  if (entry.agentName !== undefined) {
+    if (typeof entry.agentName !== 'string') {
+      return {
+        ok: false,
+        status: 400,
+        body: {
+          error: `agents[${index}].agentName must be a string`,
+          fieldErrors: [{ id, field: 'agentName', message: 'agentName must be a string' }],
+        },
+      };
+    }
+    const agentName = entry.agentName.trim();
+    if (agentName) cleaned.agentName = agentName;
+  }
+
+  if (entry.workdir !== undefined) {
+    if (typeof entry.workdir !== 'string') {
+      return {
+        ok: false,
+        status: 400,
+        body: {
+          error: `agents[${index}].workdir must be a string`,
+          fieldErrors: [{ id, field: 'workdir', message: 'workdir must be a string' }],
+        },
+      };
+    }
+    const workdir = entry.workdir.trim();
+    if (workdir) cleaned.workdir = workdir;
+  }
+
   return { ok: true, value: cleaned };
 }
 
 export function createAgentsRouter(): Router {
   const router = Router();
+
+  // Claude agent definitions discovered on disk (`~/.claude/agents/**/*.md`),
+  // for the dashboard's "Run as agent" picker. Read-only; never throws (a
+  // missing agents dir returns []).
+  router.get('/claude-discovered', async (_req, res) => {
+    try {
+      const agents = await discoverClaudeAgents();
+      res.json({ agents });
+    } catch (err) {
+      console.error('Error discovering Claude agents:', err);
+      res.status(500).json({ error: 'Failed to discover Claude agents' });
+    }
+  });
 
   router.get('/', async (_req, res) => {
     try {

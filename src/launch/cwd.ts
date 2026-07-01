@@ -1,5 +1,7 @@
 import { existsSync, statSync } from 'node:fs';
 import { isAbsolute } from 'node:path';
+import type { AgentConfig } from '../utils/agents-schema.js';
+import { expandHome } from '../utils/paths.js';
 
 /**
  * True only for an absolute path that exists and is a directory. Wraps the
@@ -72,6 +74,47 @@ export function resolveWorkspaceCwd(
       `${shown(worktreePath)} and repository ${shown(repository)} — ` +
       `neither is an existing directory`,
   };
+}
+
+export interface LaunchCwdResult {
+  /** Directory the agent process is spawned from. */
+  spawnCwd: string;
+  /**
+   * The assignment's worktree. Equals `spawnCwd` for a normal launch; for a
+   * directory-agent (`workdir`) it stays the worktree while `spawnCwd` moves to
+   * the agent dir. This is where context.json belongs and what `@worktree`
+   * resolves to — never the agent's `workdir`.
+   */
+  worktreePath: string;
+  /** Set only when a configured `workdir` does not resolve to a directory. */
+  invalidReason: string | null;
+}
+
+/**
+ * Resolve the spawn cwd for an agent against the assignment's already-resolved
+ * worktree cwd. A directory-agent (`agent.workdir` set) is spawned from its own
+ * directory (after `~` expansion + existence check) while the worktree path is
+ * preserved separately for context.json and `@worktree`. Any other agent spawns
+ * from the worktree. Never throws: an invalid `workdir` is reported via
+ * `invalidReason` so each caller can fail in its own idiom.
+ */
+export function resolveLaunchCwd(
+  agent: AgentConfig,
+  worktreeCwd: string,
+): LaunchCwdResult {
+  const wd = agent.workdir?.trim();
+  if (wd) {
+    const expanded = expandHome(wd);
+    if (!isExistingDir(expanded)) {
+      return {
+        spawnCwd: worktreeCwd,
+        worktreePath: worktreeCwd,
+        invalidReason: `agent "${agent.id}" workdir ${agent.workdir} (resolved ${expanded}) is not an existing directory`,
+      };
+    }
+    return { spawnCwd: expanded, worktreePath: worktreeCwd, invalidReason: null };
+  }
+  return { spawnCwd: worktreeCwd, worktreePath: worktreeCwd, invalidReason: null };
 }
 
 /**

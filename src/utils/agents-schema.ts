@@ -48,6 +48,24 @@ export interface AgentConfig {
    * seed. Takes precedence over `playbook`. Single-line (see `serializeAgentsConfig`).
    */
   launchPrompt?: string;
+  /**
+   * Optional Claude agent identity, injected as `--agent <value>` (see
+   * `agentNameArgs`). When set, the launched session adopts that agent's
+   * definition (system prompt + its own model frontmatter), so any profile
+   * `model` is suppressed on a fresh launch (see `buildAgentArgv`). Mutually
+   * exclusive with `workdir`. Meaningful only for Claude-compatible runners;
+   * `--agent` is simply injected when present regardless of runner. Single-line.
+   */
+  agentName?: string;
+  /**
+   * Optional launch cwd override (absolute or `~`-prefixed) for directory-style
+   * agents (pi/codex) that load their identity from a launch directory. When set,
+   * the session is spawned from this directory instead of the worktree, and the
+   * worktree path is injected into the launch prompt (`@worktree` / a synthesized
+   * seed) so the agent can `cd` into the code. Mutually exclusive with
+   * `agentName`. Existence is validated at launch time, not at config-write time.
+   */
+  workdir?: string;
 }
 
 export const BUILTIN_AGENTS: AgentConfig[] = [
@@ -106,6 +124,17 @@ export const PROMPT_ARG_POSITIONS: readonly PromptArgPosition[] = ['first', 'las
 export function modelFlagArgs(agent: AgentConfig): string[] {
   const m = agent.model?.trim();
   return m ? ['--model', m] : [];
+}
+
+/**
+ * Argv fragment that injects the profile's Claude agent identity as
+ * `--agent <value>`, or `[]` when no `agentName` is set. These are
+ * command-prefix args: they must be placed immediately after the command and
+ * before the positioned prompt (see `buildAgentArgv`).
+ */
+export function agentNameArgs(agent: AgentConfig): string[] {
+  const n = agent.agentName?.trim();
+  return n ? ['--agent', n] : [];
 }
 
 /**
