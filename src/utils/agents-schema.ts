@@ -1,5 +1,11 @@
 export type PromptArgPosition = 'first' | 'last' | 'none';
 
+/** Runner family an agent belongs to — the intrinsic "type badge". */
+export type RunnerKind = 'claude' | 'pi' | 'codex';
+
+/** Which discovery source a registered agent's on-disk def was adopted from. */
+export type AgentSourceKind = 'claude-global' | 'claude-project' | 'directory';
+
 /**
  * Per-agent argv recipe for continuing a recorded session in a specific mode.
  *
@@ -66,6 +72,27 @@ export interface AgentConfig {
    * `agentName`. Existence is validated at launch time, not at config-write time.
    */
   workdir?: string;
+  /**
+   * Intrinsic runner family — the type badge shown in the unified agent list
+   * (claude / pi / codex). Authoritative when set; `resolveRunner` infers it for
+   * legacy rows. Never a user-toggled "mode". When set explicitly it constrains
+   * the identity field: a `claude` runner uses `agentName` (not `workdir`); a
+   * `pi`/`codex` runner uses `workdir` (not `agentName`) — enforced in
+   * `validateAgentList`.
+   */
+  runner?: RunnerKind;
+  /**
+   * Source pointer (flat scalars, NOT a nested object — so they ride the scalar
+   * config-field machinery) to the on-disk def a registered agent was adopted
+   * from. The def stays the source of truth for identity content; these exist for
+   * display, dedupe ("already registered"), and refresh. `sourcePath` is the
+   * `.md` file for a claude agent or the directory for a directory agent (===
+   * `workdir`). `sourceRepo` is the repo root for a `claude-project` def (used to
+   * reason about cross-repo `--agent` resolution).
+   */
+  sourceKind?: AgentSourceKind;
+  sourcePath?: string;
+  sourceRepo?: string;
 }
 
 export const BUILTIN_AGENTS: AgentConfig[] = [
@@ -135,6 +162,21 @@ export function modelFlagArgs(agent: AgentConfig): string[] {
 export function agentNameArgs(agent: AgentConfig): string[] {
   const n = agent.agentName?.trim();
   return n ? ['--agent', n] : [];
+}
+
+/**
+ * Resolve an agent's runner family (the type badge). Precedence: an explicit
+ * `runner` field wins; else a present `agentName` implies claude; else infer from
+ * the command/id (claude / codex); else default to pi. Pure + node-free so this
+ * module stays browser-importable (shipped Decision 8).
+ */
+export function resolveRunner(agent: AgentConfig): RunnerKind {
+  if (agent.runner) return agent.runner;
+  if (agent.agentName && agent.agentName.trim() !== '') return 'claude';
+  const cmd = agent.command ?? '';
+  if (/claude/i.test(cmd) || agent.id === 'claude') return 'claude';
+  if (/codex/i.test(cmd) || agent.id === 'codex') return 'codex';
+  return 'pi';
 }
 
 /**

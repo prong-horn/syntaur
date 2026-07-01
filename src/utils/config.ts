@@ -20,6 +20,8 @@ import {
   type AgentConfig,
   type PromptArgPosition,
   type SessionInvocation,
+  type RunnerKind,
+  type AgentSourceKind,
 } from './agents-schema.js';
 import { isValidSlug } from './slug.js';
 import {
@@ -222,6 +224,19 @@ export { type WorkspaceVisibilityConfig };
  */
 export type SessionAutoTrack = 'all' | 'workspaces-only' | 'off';
 
+/**
+ * Multi-source agent discovery settings. Sources are individually toggleable;
+ * `roots` is the depth-1 directory-scan root list (default `~`). Persisted as an
+ * `agentDiscovery:` block whose one-level keys read back as dotted `fm` keys
+ * (roots is a `:`-separated scalar to avoid list-parsing in the top-level map).
+ */
+export interface AgentDiscoveryConfig {
+  claudeGlobal: boolean;
+  claudeProject: boolean;
+  directory: boolean;
+  roots: string[];
+}
+
 export interface SyntaurConfig {
   version: string;
   defaultProjectDir: string;
@@ -250,6 +265,10 @@ export interface SyntaurConfig {
   /** Opt-in: run the read-only staleness watchdog on the dashboard loop (emits
    * staleness-detected/cleared audit events; never mutates status). Off by default. */
   stalenessWatchdog: boolean;
+  /** Default cwd for a standalone claude-agent launch (null → home at launch). */
+  standaloneDefaultCwd: string | null;
+  /** Multi-source agent discovery settings (sources on/off + scan roots). */
+  agentDiscovery: AgentDiscoveryConfig;
 }
 
 const DEFAULT_CONFIG: SyntaurConfig = {
@@ -287,11 +306,26 @@ const DEFAULT_CONFIG: SyntaurConfig = {
   },
   staleness: null,
   stalenessWatchdog: false,
+  standaloneDefaultCwd: null,
+  agentDiscovery: {
+    claudeGlobal: true,
+    claudeProject: true,
+    directory: true,
+    roots: ['~'],
+  },
 };
 
 const AUTO_CREATE_WORKTREE_VALUES: readonly AutoCreateWorktree[] = ['skip', 'ask', 'always'];
 
 const SESSION_AUTO_TRACK_VALUES: readonly SessionAutoTrack[] = ['all', 'workspaces-only', 'off'];
+
+const RUNNER_KINDS: readonly RunnerKind[] = ['claude', 'pi', 'codex'];
+
+const AGENT_SOURCE_KINDS: readonly AgentSourceKind[] = [
+  'claude-global',
+  'claude-project',
+  'directory',
+];
 
 export class AgentConfigError extends Error {}
 
@@ -396,6 +430,45 @@ export function validateAgentList(agents: AgentConfig[]): void {
     ) {
       throw new AgentConfigError(
         `agent "${agent.id}" sets both agentName and model — the agent definition's own model is authoritative; remove the profile model`,
+      );
+    }
+    // `runner` (the intrinsic type badge) — validate the enum + keep it consistent
+    // with the identity field. These checks fire only on the EXPLICIT `runner`
+    // field, never by command-sniffing, so a shell-aliased Claude with
+    // `runner: claude` is fine and a legacy row without `runner` keeps the looser
+    // rules above (shipped Decision 6 preserved).
+    if (agent.runner !== undefined && !RUNNER_KINDS.includes(agent.runner)) {
+      throw new AgentConfigError(
+        `agent "${agent.id}" has invalid runner "${agent.runner}" — must be one of ${RUNNER_KINDS.join(', ')}`,
+      );
+    }
+    if (agent.sourceKind !== undefined && !AGENT_SOURCE_KINDS.includes(agent.sourceKind)) {
+      throw new AgentConfigError(
+        `agent "${agent.id}" has invalid sourceKind "${agent.sourceKind}" — must be one of ${AGENT_SOURCE_KINDS.join(', ')}`,
+      );
+    }
+    if (agent.sourcePath !== undefined && /[\r\n]/.test(agent.sourcePath)) {
+      throw new AgentConfigError(
+        `agent "${agent.id}" has invalid sourcePath — must be a single line (no newlines)`,
+      );
+    }
+    if (agent.sourceRepo !== undefined && /[\r\n]/.test(agent.sourceRepo)) {
+      throw new AgentConfigError(
+        `agent "${agent.id}" has invalid sourceRepo — must be a single line (no newlines)`,
+      );
+    }
+    if (agent.runner === 'claude' && agent.workdir !== undefined && agent.workdir.trim() !== '') {
+      throw new AgentConfigError(
+        `agent "${agent.id}" has runner "claude" but sets workdir — a claude agent uses agentName, not workdir`,
+      );
+    }
+    if (
+      (agent.runner === 'pi' || agent.runner === 'codex') &&
+      agent.agentName !== undefined &&
+      agent.agentName.trim() !== ''
+    ) {
+      throw new AgentConfigError(
+        `agent "${agent.id}" has runner "${agent.runner}" but sets agentName — a directory agent uses workdir, not agentName`,
       );
     }
     validateSessionInvocation(agent, 'resume', agent.resume);
@@ -525,6 +598,33 @@ function parseInstalledAgents(
     installedAgents[id] = { scope };
   }
   return Object.keys(installedAgents).length > 0 ? { installedAgents } : {};
+}
+
+/**
+ * Reconstruct the agent-discovery settings from the flattened frontmatter.
+ * Sources default ON when absent; `roots` is a `:`-separated scalar (kept literal
+ * — `~` is expanded at scan time, not here). Absent → the DEFAULT_CONFIG shape.
+ */
+function parseAgentDiscoveryFromFm(fm: Record<string, string>): AgentDiscoveryConfig {
+  const flag = (key: string, def: boolean): boolean => {
+    const v = fm[key];
+    if (v === undefined) return def;
+    return String(v).toLowerCase() === 'true';
+  };
+  const rootsRaw = fm['agentDiscovery.roots'];
+  const roots =
+    rootsRaw !== undefined && String(rootsRaw).trim() !== ''
+      ? String(rootsRaw)
+          .split(':')
+          .map((r) => r.trim())
+          .filter((r) => r.length > 0)
+      : [];
+  return {
+    claudeGlobal: flag('agentDiscovery.claudeGlobal', true),
+    claudeProject: flag('agentDiscovery.claudeProject', true),
+    directory: flag('agentDiscovery.directory', true),
+    roots: roots.length > 0 ? roots : DEFAULT_CONFIG.agentDiscovery.roots.slice(),
+  };
 }
 
 export function parseStatusConfig(content: string): StatusConfig | null {
@@ -1598,6 +1698,10 @@ const KNOWN_AGENT_SCALAR_FIELDS: ReadonlySet<string> = new Set([
   'launchPrompt',
   'agentName',
   'workdir',
+  'runner',
+  'sourceKind',
+  'sourcePath',
+  'sourceRepo',
 ]);
 
 /**
@@ -1697,6 +1801,18 @@ function assignAgentField(target: Partial<AgentConfig>, key: string, rawValue: s
     case 'workdir':
       target.workdir = value;
       break;
+    case 'runner':
+      target.runner = value as AgentConfig['runner'];
+      break;
+    case 'sourceKind':
+      target.sourceKind = value as AgentConfig['sourceKind'];
+      break;
+    case 'sourcePath':
+      target.sourcePath = value;
+      break;
+    case 'sourceRepo':
+      target.sourceRepo = value;
+      break;
   }
 }
 
@@ -1736,6 +1852,18 @@ function serializeAgentsConfig(agents: AgentConfig[]): string {
     }
     if (a.workdir) {
       lines.push(`    workdir: ${yamlQuoteScalar(a.workdir)}`);
+    }
+    if (a.runner) {
+      lines.push(`    runner: ${yamlQuoteScalar(a.runner)}`);
+    }
+    if (a.sourceKind) {
+      lines.push(`    sourceKind: ${yamlQuoteScalar(a.sourceKind)}`);
+    }
+    if (a.sourcePath) {
+      lines.push(`    sourcePath: ${yamlQuoteScalar(a.sourcePath)}`);
+    }
+    if (a.sourceRepo) {
+      lines.push(`    sourceRepo: ${yamlQuoteScalar(a.sourceRepo)}`);
     }
     if (a.args && a.args.length > 0) {
       lines.push(`    args:`);
@@ -2296,6 +2424,11 @@ export async function readConfig(): Promise<SyntaurConfig> {
     workspaceVisibility: parseWorkspaceVisibilityConfig(fmBlock),
     staleness: parseStalenessConfig(content),
     stalenessWatchdog: String(fm['stalenessWatchdog']).toLowerCase() === 'true',
+    standaloneDefaultCwd: parseOptionalAbsolutePath(
+      fm['standaloneDefaultCwd'],
+      'standaloneDefaultCwd',
+    ),
+    agentDiscovery: parseAgentDiscoveryFromFm(fm),
   };
 }
 
