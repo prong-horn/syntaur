@@ -85,6 +85,18 @@ describe('agent authoring', () => {
     ).rejects.toThrow(/refusing to overwrite/);
   });
 
+  it('derives sourceRepo when authoring under <repo>/.claude/agents (Decision 3)', async () => {
+    const repo = join(tmp, 'my-repo');
+    const authored = await authorAgentDef({
+      name: 'Proj Bot',
+      runner: 'claude',
+      instructions: 'hi',
+      location: join(repo, '.claude', 'agents'),
+    });
+    expect(authored.sourceKind).toBe('claude-project');
+    expect(authored.sourceRepo).toBe(repo);
+  });
+
   it('authors a directory AGENTS.md that re-discovers as recommended (Decision 10)', async () => {
     const home = join(tmp, 'home');
     await mkdir(home, { recursive: true });

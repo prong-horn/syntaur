@@ -1,6 +1,6 @@
 import { mkdir, writeFile, access, readFile, stat } from 'node:fs/promises';
 import { homedir } from 'node:os';
-import { basename, isAbsolute, join } from 'node:path';
+import { basename, dirname, isAbsolute, join } from 'node:path';
 import { expandHome } from '../utils/paths.js';
 import { extractFrontmatter, getField, getNestedField } from '../dashboard/parser.js';
 import {
@@ -156,7 +156,17 @@ export async function authorAgentDef(input: AuthorAgentInput): Promise<AuthoredD
     ];
     await mkdir(dir, { recursive: true });
     await writeFile(path, `${fm.join('\n')}\n\n${input.instructions.trim()}\n`);
-    return { path, sourceKind: input.location ? 'claude-project' : 'claude-global' };
+    if (!input.location) {
+      return { path, sourceKind: 'claude-global' };
+    }
+    // A project agents dir is `<repo>/.claude/agents` — derive the repo root so
+    // the registered agent keeps its repo pointer (Decision 3). An arbitrary
+    // location can't yield a repo, so sourceRepo stays unset there.
+    const sourceRepo =
+      basename(dir) === 'agents' && basename(dirname(dir)) === '.claude'
+        ? dirname(dirname(dir))
+        : undefined;
+    return { path, sourceKind: 'claude-project', ...(sourceRepo ? { sourceRepo } : {}) };
   }
 
   // Directory agent: scaffold <parent>/<slug>/AGENTS.md

@@ -77,6 +77,33 @@ describe('agent discovery + source config round-trip', () => {
     });
   });
 
+  it('rejects an incompatible sourceKind↔runner combo on write', async () => {
+    await expect(
+      writeAgentsConfig([
+        {
+          id: 'bad',
+          label: 'Bad',
+          command: 'claude',
+          runner: 'claude',
+          sourceKind: 'directory',
+          agentName: 'Bad',
+        },
+      ]),
+    ).rejects.toThrow(/directory source is a pi\/codex agent/);
+    await expect(
+      writeAgentsConfig([
+        {
+          id: 'bad2',
+          label: 'Bad2',
+          command: 'pi',
+          runner: 'pi',
+          sourceKind: 'claude-global',
+          workdir: '/x/bad2',
+        },
+      ]),
+    ).rejects.toThrow(/claude-global source is a claude agent/);
+  });
+
   it('round-trips runner + source* on an agent through write/read', async () => {
     const agents: AgentConfig[] = [
       {

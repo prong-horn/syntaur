@@ -471,6 +471,24 @@ export function validateAgentList(agents: AgentConfig[]): void {
         `agent "${agent.id}" has runner "${agent.runner}" but sets agentName — a directory agent uses workdir, not agentName`,
       );
     }
+    // sourceKind ⟷ runner compatibility (only when both are explicit): a
+    // `directory` source is a pi/codex agent; a `claude-*` source is a claude
+    // agent. Blocks a directory candidate confirmed as `claude` (which would
+    // store agentName instead of workdir → a broken registration).
+    if (agent.runner !== undefined && agent.sourceKind !== undefined) {
+      const directorySource = agent.sourceKind === 'directory';
+      const claudeRunner = agent.runner === 'claude';
+      if (directorySource && claudeRunner) {
+        throw new AgentConfigError(
+          `agent "${agent.id}" has sourceKind "directory" but runner "claude" — a directory source is a pi/codex agent`,
+        );
+      }
+      if (!directorySource && !claudeRunner) {
+        throw new AgentConfigError(
+          `agent "${agent.id}" has sourceKind "${agent.sourceKind}" but runner "${agent.runner}" — a ${agent.sourceKind} source is a claude agent`,
+        );
+      }
+    }
     validateSessionInvocation(agent, 'resume', agent.resume);
     validateSessionInvocation(agent, 'fork', agent.fork);
     if (agent.default) defaults++;

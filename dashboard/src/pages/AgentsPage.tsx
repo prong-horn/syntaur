@@ -263,9 +263,10 @@ export function AgentsPage() {
                       className="rounded-md border border-border/70 bg-background px-2 py-1 text-xs"
                       aria-label="Runner"
                     >
+                      {/* directory candidates are pi/codex only — a claude
+                          runner with a directory source is an invalid combo. */}
                       <option value="pi">pi</option>
                       <option value="codex">codex</option>
-                      <option value="claude">claude</option>
                     </select>
                     <button
                       type="button"

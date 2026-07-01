@@ -35,9 +35,20 @@ export function createAgentDiscoveryConfigRouter(): Router {
         standaloneDefaultCwd?: unknown;
       };
       const d = b.agentDiscovery ?? {};
-      const roots = Array.isArray(d.roots)
-        ? d.roots.filter((r): r is string => typeof r === 'string' && r.trim() !== '').map((r) => r.trim())
-        : [];
+      // Validate each root is absolute (after ~ expansion) but store the original
+      // string so `~` stays portable; discovery expands it at scan time.
+      let roots: string[];
+      try {
+        roots = (Array.isArray(d.roots) ? d.roots : [])
+          .filter((r): r is string => typeof r === 'string' && r.trim() !== '')
+          .map((r) => {
+            requireAbsolutePath(r, 'root');
+            return r.trim();
+          });
+      } catch (err) {
+        res.status(400).json({ error: err instanceof Error ? err.message : 'invalid root' });
+        return;
+      }
       const cfg = {
         // Default-true semantics: only an explicit `false` turns a source off.
         claudeGlobal: d.claudeGlobal !== false,
