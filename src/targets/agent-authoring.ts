@@ -211,7 +211,6 @@ export async function inferManualAdd(rawPath: string): Promise<{
     return { name, runner: 'claude', sourceKind: 'claude-global', sourcePath: path, description };
   }
   // directory
-  const hasPi = await pathExists(join(path, '.pi'));
   let syntaurName: string | undefined;
   let syntaurRunner: RunnerKind | undefined;
   let syntaurDesc: string | undefined;
@@ -228,7 +227,9 @@ export async function inferManualAdd(rawPath: string): Promise<{
   }
   return {
     name: syntaurName ?? basename(path),
-    runner: syntaurRunner ?? (hasPi ? 'pi' : 'pi'),
+    // A directory (pi/codex) agent is never claude — clamp a contradictory
+    // `syntaur.runner: claude` opt-in to pi (parity with inspectDirCandidate).
+    runner: syntaurRunner === 'codex' ? 'codex' : 'pi',
     sourceKind: 'directory',
     sourcePath: path,
     description: syntaurDesc,

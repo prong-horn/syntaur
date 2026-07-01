@@ -154,5 +154,15 @@ describe('agent authoring', () => {
       sourceKind: 'directory',
       sourcePath: dir,
     });
+
+    // a directory opt-in that (wrongly) declares runner: claude → clamped to pi
+    const claudeDir = join(tmp, 'claude-dir');
+    await mkdir(claudeDir, { recursive: true });
+    await writeFile(join(claudeDir, 'AGENTS.md'), '---\nsyntaur:\n  name: cd\n  runner: claude\n---\nbody');
+    expect(await inferManualAdd(claudeDir)).toMatchObject({
+      name: 'cd',
+      runner: 'pi',
+      sourceKind: 'directory',
+    });
   });
 });
