@@ -19,6 +19,7 @@ import { formatShortDate, formatShortDateTime } from '../lib/format';
 import { LoadingState } from '../components/LoadingState';
 import { ErrorState } from '../components/ErrorState';
 import { StatusBadge } from '../components/StatusBadge';
+import { AssignmentStatusPill } from '../components/AssignmentStatusPill';
 import { TypeChip } from '../components/TypeChip';
 import { ContentTabs } from '../components/ContentTabs';
 import { SectionCard } from '../components/SectionCard';
@@ -430,7 +431,16 @@ export function AssignmentDetail() {
       <Toaster toast={toast} onDismiss={dismissToast} />
       <div className="sticky top-12 z-20 rounded-lg border border-border/60 bg-card/90 p-3 shadow-sm backdrop-blur">
         <div className="flex items-center gap-3">
-          <StatusBadge status={assignment.status} progress={progress} />
+          <AssignmentStatusPill
+            id={assignment.id}
+            slug={assignmentSlug}
+            projectSlug={projectSlug}
+            status={assignment.status}
+            title={assignment.title}
+            availableTransitions={assignment.availableTransitions}
+            progress={progress}
+            onChange={() => refetch()}
+          />
           <h1
             className="min-w-0 flex-1 truncate text-lg font-semibold text-foreground"
             title={assignment.title}
@@ -517,11 +527,12 @@ export function AssignmentDetail() {
           projectSlug={slug!}
           dependencies={enrichedDeps}
           blockedReason={assignment.blockedReason}
+          onAssignmentChange={() => refetch()}
         />
       )}
 
       {assignment.enrichedLinks && assignment.enrichedLinks.length > 0 && (
-        <LinksPanel links={assignment.enrichedLinks} />
+        <LinksPanel links={assignment.enrichedLinks} onAssignmentChange={() => refetch()} />
       )}
 
       {assignment.referencedBy && assignment.referencedBy.length > 0 && (

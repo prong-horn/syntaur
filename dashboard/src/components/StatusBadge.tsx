@@ -147,27 +147,18 @@ export function getStatusIcon(status: string): typeof CircleDot {
   return STATUS_META[status as keyof typeof STATUS_META]?.icon ?? CircleDot;
 }
 
-export function StatusBadge({
-  status,
-  className,
-  showIcon = true,
+export function StatusProgressRing({
   progress,
-}: StatusBadgeProps) {
-  const config = useStatusConfig();
-  const appearance = resolveStatusAppearance(config.statuses, status);
-  const Icon = getStatusIcon(status);
-  const label = appearance.label;
-  const baseDescription =
-    config.statuses.find((s) => s.id === status)?.description ?? getStatusDescription(status);
-
+  Icon,
+}: {
+  progress?: { checked: number; total: number };
+  Icon: typeof CircleDot;
+}) {
   const hasProgress = progress && progress.total > 0;
   const pct = hasProgress ? Math.min(1, Math.max(0, progress.checked / progress.total)) : 0;
-  const description = hasProgress
-    ? `${label} — ${baseDescription} (${progress.checked}/${progress.total} criteria)`
-    : `${label} — ${baseDescription}`;
 
-  const iconNode = showIcon ? (
-    hasProgress ? (
+  if (hasProgress) {
+    return (
       <span className="relative inline-flex h-3.5 w-3.5 shrink-0 items-center justify-center">
         <svg
           aria-hidden="true"
@@ -189,9 +180,32 @@ export function StatusBadge({
         </svg>
         <Icon className="h-2.5 w-2.5" />
       </span>
-    ) : (
-      <Icon className="h-3.5 w-3.5 shrink-0" />
-    )
+    );
+  }
+
+  return <Icon className="h-3.5 w-3.5 shrink-0" />;
+}
+
+export function StatusBadge({
+  status,
+  className,
+  showIcon = true,
+  progress,
+}: StatusBadgeProps) {
+  const config = useStatusConfig();
+  const appearance = resolveStatusAppearance(config.statuses, status);
+  const Icon = getStatusIcon(status);
+  const label = appearance.label;
+  const baseDescription =
+    config.statuses.find((s) => s.id === status)?.description ?? getStatusDescription(status);
+
+  const hasProgress = progress && progress.total > 0;
+  const description = hasProgress
+    ? `${label} — ${baseDescription} (${progress.checked}/${progress.total} criteria)`
+    : `${label} — ${baseDescription}`;
+
+  const iconNode = showIcon ? (
+    <StatusProgressRing progress={progress} Icon={Icon} />
   ) : null;
 
   return (

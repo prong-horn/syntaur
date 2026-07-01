@@ -5,7 +5,7 @@ import { useAssignmentById, useAssignmentSessionsById, useStandaloneAssignmentUs
 import { useAssignmentEvents } from '../hooks/useAssignmentEvents';
 import { LoadingState } from '../components/LoadingState';
 import { ErrorState } from '../components/ErrorState';
-import { StatusBadge } from '../components/StatusBadge';
+import { AssignmentStatusPill } from '../components/AssignmentStatusPill';
 import { TypeChip } from '../components/TypeChip';
 import { ExternalIdBadges } from '../components/ExternalIdBadges';
 import { CopyButton } from '../components/CopyButton';
@@ -81,7 +81,13 @@ export function StandaloneAssignmentDetail() {
       <Toaster toast={toast} onDismiss={dismissToast} />
       <header className="space-y-2">
         <div className="flex flex-wrap items-center gap-3">
-          <StatusBadge status={assignment.status} />
+          <AssignmentStatusPill
+            id={assignment.id}
+            status={assignment.status}
+            title={assignment.title}
+            availableTransitions={assignment.availableTransitions}
+            onChange={() => refetch()}
+          />
           <TypeChip type={assignment.type} />
           <span className="text-xs font-mono text-muted-foreground">{assignment.id}</span>
           <ExternalIdBadges externalIds={assignment.externalIds} />

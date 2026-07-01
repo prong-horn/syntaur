@@ -14,7 +14,8 @@ import { viewFiltersToQuery } from '@shared/view-filters-query';
 import { LoadingState } from '../../LoadingState';
 import { EmptyState } from '../../EmptyState';
 import { KanbanBoard, type KanbanColumn } from '../../KanbanBoard';
-import { StatusBadge, getStatusDescription } from '../../StatusBadge';
+import { getStatusDescription } from '../../StatusBadge';
+import { AssignmentStatusPill } from '../../AssignmentStatusPill';
 import { TypeChip } from '../../TypeChip';
 import { CopyButton } from '../../CopyButton';
 import { formatDate } from '../../../lib/format';
@@ -38,7 +39,7 @@ interface SavedViewResultsProps {
  * lifecycle (loading/error/not-found) stays in the host so each can show the right chrome.
  */
 export function SavedViewResults({ view, compact, emptyDescription }: SavedViewResultsProps) {
-  const { data, loading: boardLoading, error: boardError } = useAssignmentsBoard();
+  const { data, loading: boardLoading, error: boardError, refetch } = useAssignmentsBoard();
   const statusConfig = useStatusConfig();
 
   const kanbanColumns: KanbanColumn[] = useMemo(
@@ -111,7 +112,11 @@ export function SavedViewResults({ view, compact, emptyDescription }: SavedViewR
           getColumnId={(i) => i.status}
           hiddenColumnIds={view.config.kanbanColumnVisibility.hidden}
           renderCard={(item) =>
-            compact ? <CompactAssignmentCard item={item} /> : <ReadOnlyAssignmentCard item={item} />
+            compact ? (
+              <CompactAssignmentCard item={item} onAssignmentChange={refetch} />
+            ) : (
+              <ReadOnlyAssignmentCard item={item} onAssignmentChange={refetch} />
+            )
           }
         />
       );
@@ -134,16 +139,24 @@ export function SavedViewResults({ view, compact, emptyDescription }: SavedViewR
           sortDirection={view.config.sortDirection}
           tableColumnVisibility={view.config.tableColumnVisibility}
           compact={compact}
+          onAssignmentChange={refetch}
         />
       );
   }
 }
 
 /**
- * Read-only compact card for the kanban widget embedding. Mirrors the structure
- * of the full AssignmentBoardCard but without inline edit / drag affordances.
+ * Compact card for the kanban widget embedding. Mirrors the structure of the
+ * full AssignmentBoardCard but without inline edit / drag affordances; the status
+ * pill is interactive (self-contained mutation), the rest is read-only.
  */
-function CompactAssignmentCard({ item }: { item: AssignmentBoardItem }) {
+function CompactAssignmentCard({
+  item,
+  onAssignmentChange,
+}: {
+  item: AssignmentBoardItem;
+  onAssignmentChange?: () => void;
+}) {
   // Per-item workspace prefix — never use host page's workspace.
   const detailHref = assignmentDetailHref(item);
   return (
@@ -158,7 +171,16 @@ function CompactAssignmentCard({ item }: { item: AssignmentBoardItem }) {
           </Link>
           <p className="truncate text-xs text-muted-foreground">{item.projectTitle ?? 'Standalone'}</p>
         </div>
-        <StatusBadge status={item.status} className="max-w-[150px]" />
+        <AssignmentStatusPill
+          id={item.id}
+          slug={item.slug}
+          projectSlug={item.projectSlug}
+          status={item.status}
+          title={item.title}
+          availableTransitions={item.availableTransitions}
+          className="max-w-[150px]"
+          onChange={onAssignmentChange}
+        />
       </div>
       <div className="mt-2 flex items-center justify-between gap-2 text-[10px] uppercase tracking-[0.08em] text-muted-foreground">
         <span className="truncate">{item.assignee ?? 'Unassigned'}</span>
@@ -175,10 +197,17 @@ function CompactAssignmentCard({ item }: { item: AssignmentBoardItem }) {
 }
 
 /**
- * Larger read-only card for the full-page kanban (the view-detail surface). Same
- * read-only intent as the compact card, but roomier so the page feels first-class.
+ * Larger card for the full-page kanban (the view-detail surface). Roomier than
+ * the compact card so the page feels first-class; like it, only the status pill
+ * is interactive (self-contained mutation) and the rest is read-only.
  */
-function ReadOnlyAssignmentCard({ item }: { item: AssignmentBoardItem }) {
+function ReadOnlyAssignmentCard({
+  item,
+  onAssignmentChange,
+}: {
+  item: AssignmentBoardItem;
+  onAssignmentChange?: () => void;
+}) {
   const detailHref = assignmentDetailHref(item);
   return (
     <div className="rounded-lg border border-border/60 bg-background/85 p-3 shadow-sm">
@@ -192,7 +221,16 @@ function ReadOnlyAssignmentCard({ item }: { item: AssignmentBoardItem }) {
           </Link>
           <p className="truncate text-xs text-muted-foreground">{item.projectTitle ?? 'Standalone'}</p>
         </div>
-        <StatusBadge status={item.status} className="max-w-[150px]" />
+        <AssignmentStatusPill
+          id={item.id}
+          slug={item.slug}
+          projectSlug={item.projectSlug}
+          status={item.status}
+          title={item.title}
+          availableTransitions={item.availableTransitions}
+          className="max-w-[150px]"
+          onChange={onAssignmentChange}
+        />
       </div>
       <div className="mt-2 flex items-center justify-between gap-2">
         <TypeChip type={item.type} compact />

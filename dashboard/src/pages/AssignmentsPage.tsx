@@ -17,7 +17,7 @@ import {
   updateAssignmentTitle,
   updateAssignmentTitleById,
 } from '../lib/assignments';
-import { deriveStatusOptions, isTerminalStatus, resolveStatusAppearance } from '../lib/statusMeta';
+import { isTerminalStatus, resolveStatusAppearance } from '../lib/statusMeta';
 import { getAssignmentColumns } from '../lib/kanban';
 import { sortAssignments } from '../lib/sortAssignments';
 import { formatDate } from '../lib/format';
@@ -40,7 +40,7 @@ import { MoveToWorkspaceDialog } from '../components/MoveToWorkspaceDialog';
 import type { OverflowMenuItem } from '../components/OverflowMenu';
 import { StatusBadge, getStatusDescription } from '../components/StatusBadge';
 import { TypeChip } from '../components/TypeChip';
-import { StatusPillPicker, type StatusOverrideTarget } from '../components/StatusPillPicker';
+import { AssignmentStatusPill } from '../components/AssignmentStatusPill';
 import { InlineTitleEditor } from '../components/InlineTitleEditor';
 import { useBodyClickNavigation } from '../hooks/useBodyClickNavigation';
 import { useToast, Toaster } from '../components/Toast';
@@ -1218,32 +1218,6 @@ export function AssignmentsPage() {
     await applyMove({ item, toColumnId, action });
   }
 
-  // Config-driven "Override → status" entries for a single card. Terminal targets
-  // can't go through the override endpoint, so they're disabled unless the item
-  // has an available transition to them (clicking then routes via that transition
-  // inside handleMove). The current status is always disabled.
-  function overrideTargetsFor(item: AssignmentBoardItem): StatusOverrideTarget[] {
-    return deriveStatusOptions(statusConfig).map((option) => {
-      if (option.id === item.status) {
-        return { id: option.id, label: option.label, disabled: true, disabledReason: 'Already in this status' };
-      }
-      if (option.terminal) {
-        const transition = item.availableTransitions.find(
-          (a) => a.targetStatus === option.id && !a.disabled,
-        );
-        if (!transition) {
-          return {
-            id: option.id,
-            label: option.label,
-            disabled: true,
-            disabledReason: `Reach ${option.label} via its transition when available`,
-          };
-        }
-      }
-      return { id: option.id, label: option.label };
-    });
-  }
-
   // A picker "Override → X" click is just a direct move to X with no chosen
   // transition; handleMove re-derives a transition when one exists (e.g. terminal
   // targets) and otherwise routes through the override path in applyMove.
@@ -1757,7 +1731,6 @@ export function AssignmentsPage() {
                             onPillSelect={(action) =>
                               void handleMove({ item, toColumnId: action.targetStatus, action })
                             }
-                            overrideTargets={overrideTargetsFor(item)}
                             onOverride={(statusId) => handleOverride(item, statusId)}
                             onRenameTitle={(next) => handleRenameTitle(item, next)}
                           />
@@ -1833,7 +1806,6 @@ export function AssignmentsPage() {
                   onPillSelect={(action) =>
                     void handleMove({ item, toColumnId: action.targetStatus, action })
                   }
-                  overrideTargets={overrideTargetsFor(item)}
                   onOverride={(statusId) => handleOverride(item, statusId)}
                   onRenameTitle={(next) => handleRenameTitle(item, next)}
                 />
@@ -2034,7 +2006,6 @@ function AssignmentBoardCard({
   dragging,
   transitioning,
   onPillSelect,
-  overrideTargets,
   onOverride,
   onRenameTitle,
 }: {
@@ -2043,9 +2014,7 @@ function AssignmentBoardCard({
   transitioning: boolean;
   /** Present in the kanban & list render-sites; absent → read-only card. */
   onPillSelect?: (action: AssignmentTransitionAction) => void;
-  /** Config-driven direct-set targets for the status picker (per-item). */
-  overrideTargets?: StatusOverrideTarget[];
-  /** Direct-set handler paired with {@link overrideTargets}. */
+  /** Direct-set handler for the status pill's "Override → status" entries. */
   onOverride?: (statusId: string) => void;
   /** Present in the kanban & list render-sites; absent → read-only card. */
   onRenameTitle?: (newTitle: string) => Promise<void>;
@@ -2100,14 +2069,17 @@ function AssignmentBoardCard({
           </p>
         </div>
         {inlineEditEnabled ? (
-          <StatusPillPicker
-            currentStatus={assignment.status}
+          <AssignmentStatusPill
+            id={assignment.id}
+            slug={assignment.slug}
+            projectSlug={assignment.projectSlug}
+            status={assignment.status}
             availableTransitions={assignment.availableTransitions}
-            onSelect={onPillSelect!}
-            overrideTargets={overrideTargets}
-            onOverride={onOverride}
+            title={assignment.title}
             disabled={transitioning}
             className="max-w-[150px]"
+            onSelectAction={onPillSelect}
+            onSelectOverride={onOverride}
           />
         ) : (
           <StatusBadge status={assignment.status} className="max-w-[150px]" />

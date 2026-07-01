@@ -3,8 +3,25 @@ import {
   resolveStatusAppearance,
   isTerminalStatus,
   deriveStatusOptions,
+  overrideTargetsForStatus,
 } from '../../dashboard/src/lib/statusMeta';
 import type { StatusConfigResponse, StatusDefinition } from '../../dashboard/src/hooks/useStatusConfig';
+import type { AssignmentTransitionAction } from '../../dashboard/src/hooks/useProjects';
+
+// Build a complete AssignmentTransitionAction; overrideTargetsForStatus only reads
+// `targetStatus` and `disabled`, but the fixture must satisfy the full type.
+const makeTransition = (
+  overrides: Partial<AssignmentTransitionAction> & Pick<AssignmentTransitionAction, 'targetStatus'>,
+): AssignmentTransitionAction => ({
+  command: 'cmd',
+  label: 'Action',
+  description: '',
+  disabled: false,
+  disabledReason: null,
+  warning: null,
+  requiresReason: false,
+  ...overrides,
+});
 
 // The resolver is pure and React-free, so it runs under the node-env root vitest
 // (root config includes only src/__tests__/**, not dashboard/src). See plan Task 6.
@@ -135,5 +152,61 @@ describe('deriveStatusOptions', () => {
     const config = configOf({ statuses, order: ['mystery_state', 'draft'] });
     const options = deriveStatusOptions(config);
     expect(options[0]).toEqual({ id: 'mystery_state', label: 'Mystery State', terminal: false });
+  });
+});
+
+describe('overrideTargetsForStatus', () => {
+  const config = configOf({
+    statuses,
+    order: ['draft', 'planning', 'parked', 'in_progress', 'completed', 'failed'],
+  });
+
+  it('disables the current status with the "already in this status" reason', () => {
+    const targets = overrideTargetsForStatus(config, 'draft');
+    const current = targets.find((t) => t.id === 'draft');
+    expect(current?.disabled).toBe(true);
+    expect(current?.disabledReason).toBe('Already in this status');
+  });
+
+  it('disables a terminal target when no live transition to it exists', () => {
+    // No availableTransitions provided at all — terminal targets always disabled.
+    const targets = overrideTargetsForStatus(config, 'draft');
+    const completedTarget = targets.find((t) => t.id === 'completed');
+    expect(completedTarget?.disabled).toBe(true);
+    expect(completedTarget?.disabledReason).toBe('Reach Completed via its transition when available');
+  });
+
+  it('disables a terminal target when availableTransitions is omitted (override-only sites)', () => {
+    // Explicitly passing no third argument mirrors override-only call sites.
+    const targets = overrideTargetsForStatus(config, 'in_progress');
+    const failedTarget = targets.find((t) => t.id === 'failed');
+    expect(failedTarget?.disabled).toBe(true);
+  });
+
+  it('disables a terminal target when available transitions only have disabled entries for it', () => {
+    const transitions = [
+      makeTransition({ targetStatus: 'completed', disabled: true, disabledReason: 'blocked' }),
+    ];
+    const targets = overrideTargetsForStatus(config, 'in_progress', transitions);
+    const completedTarget = targets.find((t) => t.id === 'completed');
+    expect(completedTarget?.disabled).toBe(true);
+  });
+
+  it('enables a terminal target when a live non-disabled transition to it exists', () => {
+    const transitions = [
+      makeTransition({ targetStatus: 'completed', disabled: false }),
+    ];
+    const targets = overrideTargetsForStatus(config, 'in_progress', transitions);
+    const completedTarget = targets.find((t) => t.id === 'completed');
+    expect(completedTarget?.disabled).toBeUndefined();
+    expect(completedTarget?.disabledReason).toBeUndefined();
+  });
+
+  it('enables a normal non-terminal, non-current target unconditionally', () => {
+    const targets = overrideTargetsForStatus(config, 'draft');
+    const planningTarget = targets.find((t) => t.id === 'planning');
+    expect(planningTarget?.disabled).toBeUndefined();
+    expect(planningTarget?.disabledReason).toBeUndefined();
+    expect(planningTarget?.label).toBe('Planning');
   });
 });

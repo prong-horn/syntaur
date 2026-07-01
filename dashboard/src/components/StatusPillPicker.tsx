@@ -1,22 +1,11 @@
 import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { cn } from '../lib/utils';
-import { STATUS_PILL_BASE, getStatusIcon } from './StatusBadge';
+import { STATUS_PILL_BASE, getStatusIcon, StatusProgressRing } from './StatusBadge';
 import { useStatusConfig, getStatusLabel } from '../hooks/useStatusConfig';
 import { resolveStatusAppearance } from '../lib/statusMeta';
+import type { StatusOverrideTarget } from '../lib/statusMeta';
 import type { AssignmentTransitionAction } from '../hooks/useProjects';
-
-/**
- * A config-driven "set status to X" entry, shown after the forward transitions.
- * The parent decorates these per-assignment (e.g. disabling terminal targets that
- * have no available transition) so the picker stays presentation-only.
- */
-export interface StatusOverrideTarget {
-  id: string;
-  label: string;
-  disabled?: boolean;
-  disabledReason?: string;
-}
 
 interface StatusPillPickerProps {
   currentStatus: string;
@@ -25,6 +14,7 @@ interface StatusPillPickerProps {
   /** Config-driven direct-set targets, rendered as an "Override → …" section. */
   overrideTargets?: StatusOverrideTarget[];
   onOverride?: (statusId: string) => void;
+  progress?: { checked: number; total: number };
   disabled?: boolean;
   className?: string;
 }
@@ -42,6 +32,7 @@ export function StatusPillPicker({
   onSelect,
   overrideTargets,
   onOverride,
+  progress,
   disabled = false,
   className,
 }: StatusPillPickerProps) {
@@ -197,7 +188,7 @@ export function StatusPillPicker({
           disabled && 'cursor-not-allowed opacity-60',
         )}
       >
-        <CurrentIcon className="h-3.5 w-3.5 shrink-0" />
+        <StatusProgressRing progress={progress} Icon={CurrentIcon} />
         <span className="min-w-0 truncate">{triggerAppearance.label}</span>
       </button>
 

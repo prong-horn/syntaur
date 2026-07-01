@@ -130,8 +130,8 @@ export function AppShell({
 
         {mobileNavOpen ? (
           <div className="fixed inset-0 z-40 bg-overlay/40 lg:hidden">
-            <div className="h-full max-w-xs border-r border-border/70 bg-sidebar p-4 shadow-2xl">
-              <div className="mb-4 flex items-center justify-between">
+            <div className="flex h-full max-w-xs flex-col border-r border-border/70 bg-sidebar p-4 shadow-2xl">
+              <div className="mb-4 flex shrink-0 items-center justify-between">
                 <Link to="/" className="text-lg font-semibold text-foreground" onClick={() => setMobileNavOpen(false)}>
                   Syntaur
                 </Link>
@@ -144,10 +144,16 @@ export function AppShell({
                   <X className="h-4 w-4" />
                 </button>
               </div>
-              <ShellSidebar
-                activeWorkspace={workspace}
-                onNavigate={() => setMobileNavOpen(false)}
-              />
+              {/* min-h-0 + flex-1 bounds the sidebar to the space left below the
+                  header so its own h-full/overflow can size correctly — without
+                  it, the sidebar's h-full = full viewport and the header offset
+                  pushes the bottom utility zone (Settings) off-screen. */}
+              <div className="min-h-0 flex-1">
+                <ShellSidebar
+                  activeWorkspace={workspace}
+                  onNavigate={() => setMobileNavOpen(false)}
+                />
+              </div>
             </div>
           </div>
         ) : null}
@@ -280,7 +286,7 @@ function ShellSidebar({
   return (
     <div className="flex h-full flex-col gap-3">
       <Toaster toast={toast} onDismiss={dismissToast} />
-      <div className="space-y-3">
+      <div className="shrink-0 space-y-3">
         <Link to="/" className="inline-flex items-center gap-3" onClick={onNavigate}>
           <span className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-card text-foreground shadow-sm ring-1 ring-border/60">
             <svg viewBox="0 0 43 51" aria-label="Syntaur" role="img" className="h-4 w-auto" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
@@ -297,6 +303,10 @@ function ShellSidebar({
         </Link>
       </div>
 
+      {/* Scrollable middle: the global nav and workspace list share one scroll
+          area so the logo (above) and utility zone (below) stay pinned — this
+          keeps Settings reachable at any viewport height, not just tall ones. */}
+      <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto">
       {/* Global zone: pinned items + collapsible groups */}
       <div className="space-y-1">
         <SidebarNav items={pinnedNavItems} onNavigate={onNavigate} />
@@ -317,7 +327,7 @@ function ShellSidebar({
       <div className="border-t border-border/40" />
 
       {/* Workspace-scoped zones */}
-      <div className="flex-1 space-y-1 overflow-y-auto">
+      <div className="space-y-1">
         {allSections.length === 0 && !creatingWorkspace && (
           <p className="px-3 py-2 text-xs text-muted-foreground/60">No workspaces yet</p>
         )}
@@ -480,12 +490,15 @@ function ShellSidebar({
           </button>
         )}
       </div>
+      </div>
 
       {/* Divider */}
-      <div className="border-t border-border/40" />
+      <div className="shrink-0 border-t border-border/40" />
 
       {/* Utility zone */}
-      <SidebarNav items={UTILITY_NAV_ITEMS} onNavigate={onNavigate} />
+      <div className="shrink-0">
+        <SidebarNav items={UTILITY_NAV_ITEMS} onNavigate={onNavigate} />
+      </div>
 
       <AlertDialog
         open={deleteTarget !== null}
