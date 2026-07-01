@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { tmpdir, homedir } from 'node:os';
 import { resolve, join } from 'node:path';
 import {
   initSessionDb,
@@ -537,6 +537,15 @@ describe('resolveLaunchPlan — standalone mode', () => {
     ...overrides,
   });
 
+  const claudeAgent = (overrides: Partial<AgentConfig> = {}): AgentConfig => ({
+    id: 'claude-researcher',
+    label: 'Researcher',
+    command: 'claude',
+    runner: 'claude',
+    agentName: 'researcher',
+    ...overrides,
+  });
+
   it('resolves cwd = workdir with no assignment and no seed by default', async () => {
     const plan = await resolveLaunchPlan({
       kind: 'standalone',
@@ -582,6 +591,61 @@ describe('resolveLaunchPlan — standalone mode', () => {
         kind: 'standalone',
         id: 'pi-jobs',
         config: makeConfig({ agents: [piJobs({ workdir: undefined })] }),
+        projectsDir,
+        assignmentsDir,
+      }),
+    ).rejects.toThrowError(expect.objectContaining({ code: 'workspace-path-invalid' }));
+  });
+
+  // Standalone-claude (new capability): a claude agent has no workdir and launches
+  // from home / a configured default with --agent injected.
+  it('launches a claude agent standalone from home with --agent (no workdir)', async () => {
+    const plan = await resolveLaunchPlan({
+      kind: 'standalone',
+      id: 'claude-researcher',
+      config: makeConfig({ agents: [claudeAgent()] }),
+      projectsDir,
+      assignmentsDir,
+    });
+    expect(plan.cwd).toBe(homedir());
+    expect(plan.argv.args.slice(0, 2)).toEqual(['--agent', 'researcher']);
+    expect(plan.agentId).toBe('claude-researcher');
+    expect(plan.session).toBeUndefined();
+  });
+
+  it('launches a claude agent standalone from the configured standaloneDefaultCwd', async () => {
+    const plan = await resolveLaunchPlan({
+      kind: 'standalone',
+      id: 'claude-researcher',
+      config: makeConfig({ agents: [claudeAgent()], standaloneDefaultCwd: agentDir }),
+      projectsDir,
+      assignmentsDir,
+    });
+    expect(plan.cwd).toBe(agentDir);
+    expect(plan.argv.args.slice(0, 2)).toEqual(['--agent', 'researcher']);
+  });
+
+  it('suppresses --model for a claude standalone agent (agent def model wins)', async () => {
+    const plan = await resolveLaunchPlan({
+      kind: 'standalone',
+      id: 'claude-researcher',
+      config: makeConfig({ agents: [claudeAgent({ model: 'opus' })] }),
+      projectsDir,
+      assignmentsDir,
+    });
+    expect(plan.argv.args).not.toContain('--model');
+    expect(plan.argv.args.slice(0, 2)).toEqual(['--agent', 'researcher']);
+  });
+
+  it('does NOT use standaloneDefaultCwd for a non-claude agent (still throws)', async () => {
+    await expect(
+      resolveLaunchPlan({
+        kind: 'standalone',
+        id: 'pi-jobs',
+        config: makeConfig({
+          agents: [piJobs({ workdir: undefined })],
+          standaloneDefaultCwd: agentDir,
+        }),
         projectsDir,
         assignmentsDir,
       }),

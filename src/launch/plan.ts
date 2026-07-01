@@ -13,12 +13,13 @@ import {
 // Import the resolver directly (not via ./index.js) to avoid the
 // argv→tui/launch import cycle the barrel would introduce.
 import { resolveLaunchPrompt } from './launch-prompt.js';
-import { expandHome, playbooksDir } from '../utils/paths.js';
+import { playbooksDir } from '../utils/paths.js';
 import { listPlaybookSlugs } from '../utils/playbooks.js';
 import {
   formatFallbackCwdWarning,
   isExistingDir,
   resolveLaunchCwd,
+  resolveStandaloneCwd,
   resolveWorkspaceCwd,
 } from './cwd.js';
 import { getSessionById } from '../dashboard/agent-sessions.js';
@@ -174,18 +175,14 @@ async function resolveStandalonePlan(
     );
   }
 
-  const wd = agent.workdir?.trim();
-  if (!wd) {
+  const { cwd: spawnCwd, invalidReason } = resolveStandaloneCwd(
+    agent,
+    input.config.standaloneDefaultCwd,
+  );
+  if (spawnCwd === null) {
     throw new LaunchError(
       'workspace-path-invalid',
-      `Agent "${agent.id}" has no workdir — a standalone launch requires a valid workdir.`,
-    );
-  }
-  const expanded = expandHome(wd);
-  if (!isExistingDir(expanded)) {
-    throw new LaunchError(
-      'workspace-path-invalid',
-      `Agent "${agent.id}" workdir ${agent.workdir} (resolved ${expanded}) is not an existing directory — a standalone launch requires a valid workdir.`,
+      invalidReason ?? `Agent "${agent.id}" has no valid standalone launch directory.`,
     );
   }
 
@@ -202,7 +199,7 @@ async function resolveStandalonePlan(
 
   return {
     terminal,
-    cwd: expanded,
+    cwd: spawnCwd,
     argv,
     env: process.env,
     agentId: agent.id,
