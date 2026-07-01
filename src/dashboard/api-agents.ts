@@ -13,13 +13,24 @@ import {
   type RunnerKind,
   type AgentSourceKind,
 } from '../utils/agents-schema.js';
+import { access } from 'node:fs/promises';
 import { discoverClaudeAgents } from '../targets/agent-definitions.js';
 import { discoverAgents } from '../targets/agent-discovery.js';
 import {
   authorAgentDef,
   buildRegisteredAgent,
   inferManualAdd,
+  requireAbsolutePath,
 } from '../targets/agent-authoring.js';
+
+async function pathExists(p: string): Promise<boolean> {
+  try {
+    await access(p);
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 const RUNNER_KINDS_SET = new Set<string>(['claude', 'pi', 'codex']);
 const SOURCE_KINDS_SET = new Set<string>(['claude-global', 'claude-project', 'directory']);
@@ -470,14 +481,27 @@ export function createAgentsRouter(): Router {
         res.status(400).json({ error: 'invalid runner or sourceKind' });
         return;
       }
+      let regPath: string;
+      let sourceRepo: string | undefined;
+      try {
+        regPath = requireAbsolutePath(b.path);
+        sourceRepo = b.sourceRepo ? requireAbsolutePath(b.sourceRepo, 'sourceRepo') : undefined;
+      } catch (err) {
+        res.status(400).json({ error: err instanceof Error ? err.message : 'invalid path' });
+        return;
+      }
+      if (!(await pathExists(regPath))) {
+        res.status(400).json({ error: `path not found: ${regPath}` });
+        return;
+      }
       const config = await readConfig();
       const base = config.agents ?? BUILTIN_AGENTS;
       const agent = buildRegisteredAgent({
         name: b.name,
         runner: b.runner as RunnerKind,
         sourceKind: b.sourceKind as AgentSourceKind,
-        sourcePath: b.path,
-        sourceRepo: b.sourceRepo,
+        sourcePath: regPath,
+        sourceRepo,
         description: b.description,
         existingIds: base.map((a) => a.id),
       });

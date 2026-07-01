@@ -37,6 +37,13 @@ describe('discoverAgents (multi-source)', () => {
       join(repo, '.claude', 'agents', 'researcher.md'),
       '---\nname: researcher\ndescription: Researches\n---\nbody',
     );
+
+    // per-dir claude-project fixture: a depth-1 dir under `root` with its own
+    // .claude/agents (its inner def is surfaced as claude-project).
+    await write(
+      join(root, 'proj-dir', '.claude', 'agents', 'helper.md'),
+      '---\nname: helper\n---\nbody',
+    );
   });
   afterEach(async () => {
     await rm(base, { recursive: true, force: true });
@@ -66,8 +73,17 @@ describe('discoverAgents (multi-source)', () => {
       recommended: true,
       description: 'A cool agent',
     });
-    // claude-project def
-    expect(byName.get('researcher')).toMatchObject({ runner: 'claude', source: 'claude-project' });
+    // claude-project def carries the repo pointer (Decision 3)
+    expect(byName.get('researcher')).toMatchObject({
+      runner: 'claude',
+      source: 'claude-project',
+      sourceRepo: repo,
+    });
+    // per-dir claude-project def: sourceRepo is the depth-1 dir it lives under
+    expect(byName.get('helper')).toMatchObject({
+      source: 'claude-project',
+      sourceRepo: join(root, 'proj-dir'),
+    });
 
     // bare AGENTS.md (no syntaur:) and README-only dir are NOT surfaced
     expect(byName.has('bare-repo')).toBe(false);

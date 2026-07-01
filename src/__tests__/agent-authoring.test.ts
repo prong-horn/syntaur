@@ -8,6 +8,7 @@ import {
   buildRegisteredAgent,
   authorAgentDef,
   inferManualAdd,
+  requireAbsolutePath,
 } from '../targets/agent-authoring.js';
 import { discoverAgents } from '../targets/agent-discovery.js';
 
@@ -109,6 +110,18 @@ describe('agent authoring', () => {
     });
     const dirBot = cands.find((c) => c.name === 'Dir Bot');
     expect(dirBot).toMatchObject({ runner: 'pi', source: 'directory', recommended: true });
+  });
+
+  it('requires absolute paths for adoption + authoring (rejects relative)', async () => {
+    expect(() => requireAbsolutePath('relative/dir')).toThrow(/absolute/);
+    expect(requireAbsolutePath('/abs/dir')).toBe('/abs/dir');
+    await expect(inferManualAdd('relative/thing')).rejects.toThrow(/absolute/);
+    await expect(
+      authorAgentDef({ name: 'X', runner: 'claude', instructions: 'y', location: 'rel/loc' }),
+    ).rejects.toThrow(/absolute/);
+    await expect(
+      authorAgentDef({ name: 'Y', runner: 'pi', instructions: 'z', location: 'rel/loc' }),
+    ).rejects.toThrow(/absolute/);
   });
 
   it('infers a manual-add for a claude .md file and a pi directory', async () => {

@@ -241,6 +241,8 @@ export interface DiscoveredCandidate {
   description?: string;
   path: string;
   source: 'claude-global' | 'claude-project' | 'directory';
+  /** For claude-project candidates: the repo root the def belongs to. */
+  sourceRepo?: string;
   recommended: boolean;
   alreadyRegistered: boolean;
 }

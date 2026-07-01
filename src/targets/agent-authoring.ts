@@ -1,6 +1,6 @@
 import { mkdir, writeFile, access, readFile, stat } from 'node:fs/promises';
 import { homedir } from 'node:os';
-import { basename, join } from 'node:path';
+import { basename, isAbsolute, join } from 'node:path';
 import { expandHome } from '../utils/paths.js';
 import { extractFrontmatter, getField, getNestedField } from '../dashboard/parser.js';
 import {
@@ -15,6 +15,20 @@ export const RUNNER_COMMAND: Record<RunnerKind, string> = {
   pi: 'pi',
   codex: 'codex',
 };
+
+/**
+ * Expand `~` and require an absolute path. Persisted paths (register/manual-add
+ * source, create location, standalone cwd) must be absolute so they resolve the
+ * same regardless of the server's cwd — a relative path would be resolved
+ * against the dashboard process, which is never what the user means.
+ */
+export function requireAbsolutePath(raw: string, what = 'path'): string {
+  const p = expandHome(raw.trim());
+  if (!isAbsolute(p)) {
+    throw new Error(`${what} must be an absolute path (got ${JSON.stringify(raw)})`);
+  }
+  return p;
+}
 
 /** Slugify a display name into a valid agent id (`^[a-z0-9][a-z0-9_-]*$`). */
 export function slugifyAgentId(name: string): string {
@@ -123,7 +137,9 @@ export interface AuthoredDef {
 export async function authorAgentDef(input: AuthorAgentInput): Promise<AuthoredDef> {
   const slug = slugifyAgentId(input.name);
   if (input.runner === 'claude') {
-    const dir = input.location ? expandHome(input.location) : join(homedir(), '.claude', 'agents');
+    const dir = input.location
+      ? requireAbsolutePath(input.location, 'location')
+      : join(homedir(), '.claude', 'agents');
     const path = join(dir, `${slug}.md`);
     if (await pathExists(path)) {
       throw new Error(`refusing to overwrite existing def at ${path}`);
@@ -144,7 +160,7 @@ export async function authorAgentDef(input: AuthorAgentInput): Promise<AuthoredD
   }
 
   // Directory agent: scaffold <parent>/<slug>/AGENTS.md
-  const parent = input.location ? expandHome(input.location) : homedir();
+  const parent = input.location ? requireAbsolutePath(input.location, 'location') : homedir();
   const dir = join(parent, slug);
   const agentsMd = join(dir, 'AGENTS.md');
   if (await pathExists(agentsMd)) {
@@ -169,7 +185,7 @@ export async function inferManualAdd(rawPath: string): Promise<{
   sourcePath: string;
   description?: string;
 }> {
-  const path = expandHome(rawPath);
+  const path = requireAbsolutePath(rawPath);
   const info = await stat(path); // throws if missing → caller surfaces
   if (info.isFile()) {
     const content = await readFile(path, 'utf-8');

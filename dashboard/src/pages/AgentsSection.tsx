@@ -300,29 +300,6 @@ function SortableAgentRow({
     [row.launchPrompt, playbookSlugs],
   );
 
-  // Which identity affordance to show. When a field already holds a value the
-  // mode is DERIVED from the data (the two are mutually exclusive), so it always
-  // resyncs after Discard/hydrate even though this component is reused with a
-  // stable `rowKey`. Only the both-empty case needs a local preference — seeded
-  // by the command heuristic (Claude-compatible → "Run as agent"; else "Working
-  // dir") and flippable by the toggle, so a shell-aliased Claude (`id: c`,
-  // `command: c`) can still pick a `--agent` identity. No hidden value can
-  // desync, because the local preference only applies when both fields are empty.
-  const isClaudeRunner = /claude/i.test(row.command) || row.id === 'claude';
-  const [emptyIdentityPref, setEmptyIdentityPref] = useState<'agentName' | 'workdir'>(
-    isClaudeRunner ? 'agentName' : 'workdir',
-  );
-  const identityMode: 'agentName' | 'workdir' = row.agentName.trim()
-    ? 'agentName'
-    : row.workdir.trim()
-      ? 'workdir'
-      : emptyIdentityPref;
-  function switchIdentityMode(next: 'agentName' | 'workdir') {
-    setEmptyIdentityPref(next);
-    // Clear the now-hidden field so the persisted agent never carries both
-    // (after which `identityMode` derives from `emptyIdentityPref`).
-    onPatch(next === 'agentName' ? { workdir: '' } : { agentName: '' });
-  }
   const hasIdentity = Boolean(row.agentName.trim() || row.workdir.trim());
 
   return (
@@ -478,55 +455,60 @@ function SortableAgentRow({
             <p className="mt-0.5 text-[11px] text-error-foreground">{row.fieldErrors.model}</p>
           )}
         </div>
+        {/* Raw identity fields — no mode-toggle. Runner is a plain type field;
+            agentName (claude) and workdir (pi/codex) are mutually exclusive,
+            enforced at save by the runner↔identity validator. The everyday
+            badge-based UX lives on /agents. */}
         <div>
           <label className="text-[11px] uppercase tracking-wide text-muted-foreground/80">
-            Identity
+            Runner
           </label>
           <select
-            value={identityMode}
-            onChange={(e) => switchIdentityMode(e.target.value as 'agentName' | 'workdir')}
+            value={row.runner ?? ''}
+            onChange={(e) =>
+              onPatch({ runner: (e.target.value || undefined) as RunnerKind | undefined })
+            }
             className="editor-input mt-0.5 w-full"
-            aria-label="Identity kind"
+            aria-label="Runner type"
           >
-            <option value="agentName">Run as agent (Claude --agent)</option>
-            <option value="workdir">Working directory (directory-agent)</option>
+            <option value="">(infer)</option>
+            <option value="claude">claude</option>
+            <option value="pi">pi</option>
+            <option value="codex">codex</option>
           </select>
         </div>
-        {identityMode === 'agentName' ? (
-          <div>
-            <label className="text-[11px] uppercase tracking-wide text-muted-foreground/80">
-              Run as agent (Claude --agent)
-            </label>
-            <input
-              type="text"
-              value={row.agentName}
-              onChange={(e) => onPatch({ agentName: e.target.value })}
-              className={`editor-input mt-0.5 w-full ${errorClass('agentName')}`}
-              placeholder="agent name (--agent)"
-              aria-label="Run as Claude agent"
-            />
-            {row.fieldErrors.agentName && (
-              <p className="mt-0.5 text-[11px] text-error-foreground">{row.fieldErrors.agentName}</p>
-            )}
-          </div>
-        ) : (
-          <div>
-            <label className="text-[11px] uppercase tracking-wide text-muted-foreground/80">
-              Working directory (directory-agent)
-            </label>
-            <input
-              type="text"
-              value={row.workdir}
-              placeholder="~/job-applier-agent (optional)"
-              onChange={(e) => onPatch({ workdir: e.target.value })}
-              className={`editor-input mt-0.5 w-full font-mono ${errorClass('workdir')}`}
-              aria-label="Working directory"
-            />
-            {row.fieldErrors.workdir && (
-              <p className="mt-0.5 text-[11px] text-error-foreground">{row.fieldErrors.workdir}</p>
-            )}
-          </div>
-        )}
+        <div>
+          <label className="text-[11px] uppercase tracking-wide text-muted-foreground/80">
+            Agent name (Claude --agent)
+          </label>
+          <input
+            type="text"
+            value={row.agentName}
+            onChange={(e) => onPatch({ agentName: e.target.value })}
+            className={`editor-input mt-0.5 w-full ${errorClass('agentName')}`}
+            placeholder="claude agents only"
+            aria-label="Claude agent name"
+          />
+          {row.fieldErrors.agentName && (
+            <p className="mt-0.5 text-[11px] text-error-foreground">{row.fieldErrors.agentName}</p>
+          )}
+        </div>
+        <div>
+          <label className="text-[11px] uppercase tracking-wide text-muted-foreground/80">
+            Working directory
+          </label>
+          <input
+            type="text"
+            value={row.workdir}
+            placeholder="pi/codex only, e.g. ~/job-applier-agent"
+            onChange={(e) => onPatch({ workdir: e.target.value })}
+            className={`editor-input mt-0.5 w-full font-mono ${errorClass('workdir')}`}
+            aria-label="Working directory"
+          />
+          {row.fieldErrors.workdir && (
+            <p className="mt-0.5 text-[11px] text-error-foreground">{row.fieldErrors.workdir}</p>
+          )}
+        </div>
         <div className="col-span-full">
           <label className="text-[11px] uppercase tracking-wide text-muted-foreground/80">
             Launch prompt

@@ -23,12 +23,16 @@ Sources and roots are configured in **Settings → Agents** (persisted to
 
 ### Strong-marker policy
 
-A scanned directory is auto-surfaced **only** when it has one of:
+A scanned directory is surfaced as a **directory (pi/codex) agent** only when it
+has one of:
 
 - `.pi/` (⇒ inferred runner `pi`)
 - `.mcp.json`
-- `.claude/agents/`
 - an `AGENTS.md` or `SYNTAUR.md` that carries a [`syntaur:` opt-in](#the-syntaur-frontmatter-opt-in)
+
+Separately, a scanned directory with a **`.claude/agents/`** folder contributes
+its **inner Claude defs** as `claude-project` candidates (the directory itself is
+not surfaced as a directory-agent unless it also has one of the markers above).
 
 A **bare `AGENTS.md`** (no `syntaur:` block) is **not** auto-surfaced — `AGENTS.md`
 has become a generic convention in plain code repos, so surfacing every one would

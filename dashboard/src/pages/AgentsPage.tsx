@@ -34,6 +34,19 @@ export function AgentsPage() {
   const [busy, setBusy] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
   const [manualPath, setManualPath] = useState('');
+  // Per-candidate confirm drafts (directory candidates confirm name + runner
+  // before registering, since the runner is inferred/defaulted).
+  const [confirmDrafts, setConfirmDrafts] = useState<
+    Record<string, { name: string; runner: 'claude' | 'pi' | 'codex' }>
+  >({});
+
+  function closeDraft(path: string): void {
+    setConfirmDrafts((d) => {
+      const next = { ...d };
+      delete next[path];
+      return next;
+    });
+  }
 
   const pending = candidates.filter((c) => !c.alreadyRegistered);
 
@@ -49,17 +62,23 @@ export function AgentsPage() {
     }
   }
 
-  async function handleRegister(c: DiscoveredCandidate): Promise<void> {
+  async function handleRegister(
+    c: DiscoveredCandidate,
+    override?: { name: string; runner: 'claude' | 'pi' | 'codex' },
+  ): Promise<void> {
+    const name = override?.name ?? c.name;
     setBusy(c.path);
     try {
       await registerAgent({
         path: c.path,
-        name: c.name,
-        runner: c.runner,
+        name,
+        runner: override?.runner ?? c.runner,
         sourceKind: c.source,
+        sourceRepo: c.sourceRepo,
         description: c.description,
       });
-      showToast(`Registered "${c.name}"`, 'success');
+      showToast(`Registered "${name}"`, 'success');
+      closeDraft(c.path);
       reload();
     } catch (err) {
       showToast(err instanceof Error ? err.message : 'Register failed', 'error');
@@ -198,7 +217,7 @@ export function AgentsPage() {
                 key={`${c.source}:${c.path}`}
                 className="flex items-center gap-3 rounded-md border border-border/60 bg-card px-3 py-2"
               >
-                <AgentTypeBadge runner={c.runner} />
+                <AgentTypeBadge runner={confirmDrafts[c.path]?.runner ?? c.runner} />
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">
                     <span className="truncate font-medium text-foreground">{c.name}</span>
@@ -216,15 +235,75 @@ export function AgentsPage() {
                     {c.path}
                   </div>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => void handleRegister(c)}
-                  disabled={busy === c.path}
-                  className="shell-action px-2 py-1 text-xs disabled:opacity-50"
-                >
-                  <Plus className="size-3.5" />
-                  <span>Register</span>
-                </button>
+                {confirmDrafts[c.path] ? (
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="text"
+                      value={confirmDrafts[c.path].name}
+                      onChange={(e) =>
+                        setConfirmDrafts((d) => ({
+                          ...d,
+                          [c.path]: { ...d[c.path], name: e.target.value },
+                        }))
+                      }
+                      className="w-28 rounded-md border border-border/70 bg-background px-2 py-1 text-xs"
+                      aria-label="Agent name"
+                    />
+                    <select
+                      value={confirmDrafts[c.path].runner}
+                      onChange={(e) =>
+                        setConfirmDrafts((d) => ({
+                          ...d,
+                          [c.path]: {
+                            ...d[c.path],
+                            runner: e.target.value as 'claude' | 'pi' | 'codex',
+                          },
+                        }))
+                      }
+                      className="rounded-md border border-border/70 bg-background px-2 py-1 text-xs"
+                      aria-label="Runner"
+                    >
+                      <option value="pi">pi</option>
+                      <option value="codex">codex</option>
+                      <option value="claude">claude</option>
+                    </select>
+                    <button
+                      type="button"
+                      onClick={() => void handleRegister(c, confirmDrafts[c.path])}
+                      disabled={busy === c.path || !confirmDrafts[c.path].name.trim()}
+                      className="shell-action px-2 py-1 text-xs disabled:opacity-50"
+                    >
+                      <Plus className="size-3.5" />
+                      <span>Confirm</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => closeDraft(c.path)}
+                      className="shell-action px-2 py-1 text-xs text-muted-foreground"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (c.source === 'directory') {
+                        setConfirmDrafts((d) => ({
+                          ...d,
+                          [c.path]: { name: c.name, runner: c.runner },
+                        }));
+                      } else {
+                        void handleRegister(c);
+                      }
+                    }}
+                    disabled={busy === c.path}
+                    className="shell-action px-2 py-1 text-xs disabled:opacity-50"
+                  >
+                    <Plus className="size-3.5" />
+                    <span>Register</span>
+                  </button>
+                )}
               </li>
             ))}
           </ul>

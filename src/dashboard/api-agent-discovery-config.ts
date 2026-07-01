@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { readConfig, writeAgentDiscoveryConfig } from '../utils/config.js';
+import { requireAbsolutePath } from '../targets/agent-authoring.js';
 
 /**
  * GET/POST the agent-discovery settings (sources + roots) and the claude
@@ -44,10 +45,17 @@ export function createAgentDiscoveryConfigRouter(): Router {
         directory: d.directory !== false,
         roots: roots.length > 0 ? roots : ['~'],
       };
-      const cwd =
-        typeof b.standaloneDefaultCwd === 'string' && b.standaloneDefaultCwd.trim()
-          ? b.standaloneDefaultCwd.trim()
-          : null;
+      // standaloneDefaultCwd must be absolute — readConfig drops a relative one,
+      // so reject it up front instead of silently no-op'ing the save.
+      let cwd: string | null = null;
+      if (typeof b.standaloneDefaultCwd === 'string' && b.standaloneDefaultCwd.trim()) {
+        try {
+          cwd = requireAbsolutePath(b.standaloneDefaultCwd, 'standaloneDefaultCwd');
+        } catch (err) {
+          res.status(400).json({ error: err instanceof Error ? err.message : 'invalid cwd' });
+          return;
+        }
+      }
       await writeAgentDiscoveryConfig(cfg, cwd);
       res.json({ agentDiscovery: cfg, standaloneDefaultCwd: cwd });
     } catch (error) {
