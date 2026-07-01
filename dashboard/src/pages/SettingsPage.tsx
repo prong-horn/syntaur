@@ -7,6 +7,7 @@ import { useTheme } from '../theme';
 import { HotkeyBindingsSection } from './HotkeyBindingsSection';
 import { ViewDefaultsSection } from './ViewDefaultsSection';
 import { AgentsSection } from './AgentsSection';
+import { AgentDiscoverySettingsSection } from './AgentDiscoverySettingsSection';
 import { TerminalSection } from './TerminalSection';
 import { SearchSection } from './SearchSection';
 import { WorkspaceVisibilitySection } from './WorkspaceVisibilitySection';
@@ -141,6 +142,8 @@ export function SettingsPage() {
       <WorkspaceVisibilitySection />
 
       <AgentsSection />
+
+      <AgentDiscoverySettingsSection />
 
       <ViewDefaultsSection />
 

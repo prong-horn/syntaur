@@ -74,6 +74,7 @@ import { createTerminalConfigRouter } from './api-terminal-config.js';
 import { createSearchConfigRouter } from './api-search-config.js';
 import { createContentSearchRouter } from './api-search.js';
 import { createWorkspaceVisibilityConfigRouter } from './api-workspace-visibility-config.js';
+import { createAgentDiscoveryConfigRouter } from './api-agent-discovery-config.js';
 import { createStatusConfigRouter } from './api-status-config.js';
 import { createLeasesRouter } from './api-leases.js';
 import { createSchedulesRouter } from './api-schedules.js';
@@ -738,6 +739,7 @@ export function createDashboardServer(options: DashboardServerOptions) {
 
   // --- Agents Config API ---
   app.use('/api/config/agents', createAgentsRouter());
+  app.use('/api/config/agent-discovery', createAgentDiscoveryConfigRouter());
 
   // --- Launch Preflight API ---
   app.use(

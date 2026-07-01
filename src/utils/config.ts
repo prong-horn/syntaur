@@ -1304,6 +1304,50 @@ export async function deleteWorkspaceVisibilityConfig(): Promise<void> {
   await writeFileForce(configPath, newContent);
 }
 
+export function serializeAgentDiscoveryConfig(cfg: AgentDiscoveryConfig): string {
+  return [
+    'agentDiscovery:',
+    `  claudeGlobal: ${cfg.claudeGlobal}`,
+    `  claudeProject: ${cfg.claudeProject}`,
+    `  directory: ${cfg.directory}`,
+    `  roots: ${cfg.roots.join(':')}`,
+  ].join('\n');
+}
+
+/**
+ * Persist the agent-discovery block (sources + roots) plus the claude standalone
+ * default cwd scalar. Both are stripped then re-emitted so the rest of the config
+ * frontmatter is preserved. Mirrors {@link writeWorkspaceVisibilityConfig}.
+ */
+export async function writeAgentDiscoveryConfig(
+  cfg: AgentDiscoveryConfig,
+  standaloneDefaultCwd: string | null,
+): Promise<void> {
+  const configPath = resolve(syntaurRoot(), 'config.md');
+  const block = serializeAgentDiscoveryConfig(cfg);
+  const scalarLine = standaloneDefaultCwd ? `standaloneDefaultCwd: ${standaloneDefaultCwd}` : '';
+  const additions = [block, scalarLine].filter(Boolean).join('\n');
+
+  const existing = (await fileExists(configPath))
+    ? await readFile(configPath, 'utf-8')
+    : renderConfig({ defaultProjectDir: defaultProjectDir() });
+
+  const fmMatch = existing.match(/^(---\n)([\s\S]*?)\n(---)/);
+  if (!fmMatch) {
+    const content = `---\nversion: "2.0"\ndefaultProjectDir: ${defaultProjectDir()}\n${additions}\n---\n${existing}`;
+    await writeFileForce(configPath, content);
+    return;
+  }
+
+  const fmBlock = fmMatch[2];
+  const afterFrontmatter = existing.slice(fmMatch[0].length);
+  let cleanedFm = stripTopLevelBlock(fmBlock, 'agentDiscovery');
+  cleanedFm = stripTopLevelScalar(cleanedFm, 'standaloneDefaultCwd');
+  const newFm = `${cleanedFm}\n${additions}`.replace(/^\n+/, '').replace(/\n+$/, '');
+  const newContent = `---\n${newFm}\n---${afterFrontmatter}`;
+  await writeFileForce(configPath, newContent);
+}
+
 /**
  * Remove any top-level `key: <value>` scalar line from a YAML frontmatter block.
  * Used for scalar keys (terminal:) that don't have child lines, so they can't
@@ -1561,6 +1605,10 @@ function parseAgentsConfig(content: string): AgentConfig[] | null {
       ...(current.launchPrompt ? { launchPrompt: current.launchPrompt } : {}),
       ...(current.agentName ? { agentName: current.agentName } : {}),
       ...(current.workdir ? { workdir: current.workdir } : {}),
+      ...(current.runner ? { runner: current.runner } : {}),
+      ...(current.sourceKind ? { sourceKind: current.sourceKind } : {}),
+      ...(current.sourcePath ? { sourcePath: current.sourcePath } : {}),
+      ...(current.sourceRepo ? { sourceRepo: current.sourceRepo } : {}),
       ...(current.resume ? { resume: current.resume } : {}),
       ...(current.fork ? { fork: current.fork } : {}),
     });
