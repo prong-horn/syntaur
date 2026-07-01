@@ -6,7 +6,6 @@ import {
   RotateCcw,
   Save,
   Info,
-  Terminal,
   Fingerprint,
   Bot,
 } from 'lucide-react';
@@ -47,7 +46,6 @@ import {
   AgentsConfigError,
   type FieldError,
 } from '../hooks/useAgentsConfig';
-import { continuationUrl } from '../lib/recreate-flow';
 import { usePlaybooks } from '../hooks/useProjects';
 
 /** Minimal shape of the playbook options passed down to each agent row. */
@@ -245,11 +243,9 @@ interface SortableAgentRowProps {
   index: number;
   canRemove: boolean;
   playbooks: PlaybookOption[];
-  dirty: boolean;
   onPatch: (patch: Partial<EditableAgent>) => void;
   onSetDefault: () => void;
   onRemove: () => void;
-  onLaunchStandalone: () => void;
 }
 
 function SortableAgentRow({
@@ -257,11 +253,9 @@ function SortableAgentRow({
   index,
   canRemove,
   playbooks,
-  dirty,
   onPatch,
   onSetDefault,
   onRemove,
-  onLaunchStandalone,
 }: SortableAgentRowProps) {
   const {
     attributes,
@@ -330,7 +324,6 @@ function SortableAgentRow({
     onPatch(next === 'agentName' ? { workdir: '' } : { agentName: '' });
   }
   const hasIdentity = Boolean(row.agentName.trim() || row.workdir.trim());
-  const canLaunchStandalone = !row.isNew && Boolean(row.workdir.trim()) && !dirty;
 
   return (
     <div
@@ -373,18 +366,6 @@ function SortableAgentRow({
           </span>
         )}
         <div className="ml-auto flex items-center gap-2">
-          {canLaunchStandalone && (
-            <button
-              type="button"
-              onClick={onLaunchStandalone}
-              aria-label="Launch standalone (no assignment)"
-              title="Launch this directory-agent standalone (no assignment)"
-              className="inline-flex items-center gap-1 rounded px-1.5 py-1 text-[11px] text-muted-foreground/80 transition hover:bg-foreground/[0.04] hover:text-foreground"
-            >
-              <Terminal className="h-3.5 w-3.5" />
-              Launch
-            </button>
-          )}
           <span className="text-[10px] font-mono uppercase tracking-wide text-muted-foreground/70">
             id
           </span>
@@ -824,13 +805,9 @@ export function AgentsSection() {
                 index={i}
                 canRemove={rows.length > 1}
                 playbooks={playbookOptions}
-                dirty={dirty}
                 onPatch={(patch) => patchRow(row.rowKey, patch)}
                 onSetDefault={() => setDefaultRow(row.rowKey)}
                 onRemove={() => removeRow(row.rowKey)}
-                onLaunchStandalone={() => {
-                  window.location.href = continuationUrl({ kind: 'standalone', id: row.id });
-                }}
               />
             ))}
           </div>

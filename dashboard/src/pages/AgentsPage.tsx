@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { Bot, Plus, Trash2, RefreshCw, Sparkles, FolderPlus } from 'lucide-react';
+import { Bot, Plus, Trash2, RefreshCw, Sparkles, FolderPlus, Terminal } from 'lucide-react';
+import { continuationUrl } from '../lib/recreate-flow';
 import {
   useAgentsConfig,
   useDiscoveredAgents,
@@ -141,6 +142,17 @@ export function AgentsPage() {
                   {a.sourcePath ? ` · ${a.sourcePath}` : ` · ${a.command}`}
                 </div>
               </div>
+              <button
+                type="button"
+                onClick={() => {
+                  window.location.href = continuationUrl({ kind: 'standalone', id: a.id });
+                }}
+                title="Launch this agent standalone (no assignment)"
+                className="shell-action px-2 py-1 text-xs"
+              >
+                <Terminal className="size-3.5" />
+                <span>Launch</span>
+              </button>
               <button
                 type="button"
                 onClick={() => void handleRemove(a)}
