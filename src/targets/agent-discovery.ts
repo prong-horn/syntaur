@@ -145,7 +145,10 @@ async function inspectDirCandidate(
 
   return {
     name: syntaur?.name ?? basename,
-    runner: syntaur?.runner ?? 'pi',
+    // A directory agent is pi/codex by definition; a contradictory
+    // `syntaur.runner: claude` opt-in is clamped to pi so the candidate never
+    // carries an impossible directory+claude combo.
+    runner: syntaur?.runner === 'codex' ? 'codex' : 'pi',
     description: syntaur?.description,
     path: dir,
     source: 'directory',

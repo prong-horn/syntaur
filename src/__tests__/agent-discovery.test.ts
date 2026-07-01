@@ -31,6 +31,11 @@ describe('discoverAgents (multi-source)', () => {
       join(root, 'opt-in', 'AGENTS.md'),
       '---\nsyntaur:\n  name: cool-agent\n  runner: codex\n  description: A cool agent\n---\nbody',
     );
+    // a directory opt-in that (wrongly) declares runner: claude → clamped to pi
+    await write(
+      join(root, 'weird', 'AGENTS.md'),
+      '---\nsyntaur:\n  name: weird-dir\n  runner: claude\n---\nbody',
+    );
 
     // claude-project fixture under `repo`
     await write(
@@ -66,6 +71,8 @@ describe('discoverAgents (multi-source)', () => {
     expect(byName.get('pi-agent')).toMatchObject({ runner: 'pi', source: 'directory', recommended: false });
     // .mcp.json marker
     expect(byName.get('mcp-agent')).toMatchObject({ runner: 'pi', source: 'directory' });
+    // a directory can never be runner:claude — a contradictory opt-in is clamped
+    expect(byName.get('weird-dir')).toMatchObject({ runner: 'pi', source: 'directory' });
     // syntaur: opt-in wins name + runner + recommended
     expect(byName.get('cool-agent')).toMatchObject({
       runner: 'codex',
