@@ -2,10 +2,10 @@ import { resolve } from 'node:path';
 import { readFile, readdir } from 'node:fs/promises';
 import { fileExists } from '../../fs.js';
 import { parseAssignmentFull } from '../../../dashboard/parser.js';
-import { DEFAULT_STATUSES, DEFAULT_TERMINAL_STATUSES } from '../../../lifecycle/types.js';
-import { DEFAULT_ASSIGNMENT_TYPES } from '../../config.js';
+import { DEFAULT_STATUSES } from '../../../lifecycle/types.js';
 import { assignmentsDir as getStandaloneDir } from '../../paths.js';
 import { listAssignmentsByProject, type AssignmentEntry } from '../../assignment-walk.js';
+import { makeWorkflowContextResolver } from '../../../lifecycle/workflow-context.js';
 import type { CheckContext, Check, CheckResult } from '../types.js';
 
 const CATEGORY = 'assignment';
@@ -55,10 +55,10 @@ function configuredStatuses(ctx: CheckContext): Set<string> {
   return new Set(DEFAULT_STATUSES);
 }
 
-function terminalStatuses(ctx: CheckContext): Set<string> {
-  const custom = ctx.config.statuses?.statuses?.filter((s) => s.terminal).map((s) => s.id) ?? [];
-  if (custom.length > 0) return new Set(custom);
-  return new Set(DEFAULT_TERMINAL_STATUSES);
+/** projectDir for a walked assignment entry — its project root for a nested
+ * assignment (`<projectDir>/assignments/<slug>`), null for standalone. */
+function projectDirFor(a: AssignmentEntry): string | null {
+  return a.projectSlug ? resolve(a.assignmentDir, '..', '..') : null;
 }
 
 const requiredFiles: Check = {
@@ -111,19 +111,23 @@ const invalidStatus: Check = {
   title: 'Assignment statuses are valid',
   async run(ctx) {
     const { withAssignmentMd } = await listAssignments(ctx);
-    const allowed = configuredStatuses(ctx);
+    // Each assignment's status is validated against ITS OWN workflow's defined
+    // statuses (resolved via the ticket's binding), not one global set.
+    const resolver = makeWorkflowContextResolver(ctx.config);
     const results: CheckResult[] = [];
     for (const a of withAssignmentMd) {
       const path = resolve(a.assignmentDir, 'assignment.md');
       const parsed = await parseSafe(path);
       if (!parsed) continue;
+      const wctx = await resolver.forAssignment(parsed, projectDirFor(a));
+      const allowed = wctx.knownStatusIds;
       if (!allowed.has(parsed.status)) {
         results.push({
           id: this.id,
           category: this.category,
           title: this.title,
           status: 'error',
-          detail: `${a.projectSlug}/${a.assignmentSlug}: status "${parsed.status}" is not in configured statuses (${[...allowed].join(', ')})`,
+          detail: `${a.projectSlug}/${a.assignmentSlug}: status "${parsed.status}" is not in workflow "${wctx.workflowId}" statuses (${[...allowed].join(', ')})`,
           affected: [path],
           remediation: {
             kind: 'manual',
@@ -145,13 +149,16 @@ const workspaceMissing: Check = {
   title: 'Non-terminal assignments have workspace fields set',
   async run(ctx) {
     const { withAssignmentMd } = await listAssignments(ctx);
-    const terminal = terminalStatuses(ctx);
+    // Terminality is judged per the ticket's OWN workflow (a custom terminal
+    // status must exempt the ticket from the workspace requirement).
+    const resolver = makeWorkflowContextResolver(ctx.config);
     const results: CheckResult[] = [];
     for (const a of withAssignmentMd) {
       const path = resolve(a.assignmentDir, 'assignment.md');
       const parsed = await parseSafe(path);
       if (!parsed) continue;
-      if (terminal.has(parsed.status)) continue;
+      const wctx = await resolver.forAssignment(parsed, projectDirFor(a));
+      if (wctx.terminalStatuses.has(parsed.status)) continue;
       if (PRE_WORKSPACE_STATUSES.has(parsed.status)) continue; // workspace not yet expected
       const { repository, worktreePath } = parsed.workspace;
       if (repository === null && worktreePath === null) {

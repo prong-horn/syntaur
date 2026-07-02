@@ -1,8 +1,8 @@
-import { resolve } from 'node:path';
+import { basename, dirname, resolve } from 'node:path';
 import { readFile } from 'node:fs/promises';
 import { fileExists } from '../../fs.js';
 import { parseAssignmentFull } from '../../../dashboard/parser.js';
-import { DEFAULT_TERMINAL_STATUSES } from '../../../lifecycle/types.js';
+import { makeWorkflowContextResolver } from '../../../lifecycle/workflow-context.js';
 import type { CheckContext, Check, CheckResult } from '../types.js';
 
 const CATEGORY = 'workspace';
@@ -199,8 +199,11 @@ const contextTerminal: Check = {
     try {
       const content = await readFile(assignmentMd, 'utf-8');
       const parsed = parseAssignmentFull(content);
-      const terminal = terminalStatuses(ctx);
-      if (terminal.has(parsed.status)) {
+      // Terminality per the ticket's OWN workflow (custom terminal statuses).
+      const parent = dirname(data.assignmentDir);
+      const projectDir = basename(parent) === 'assignments' ? dirname(parent) : null;
+      const wctx = await makeWorkflowContextResolver(ctx.config).forAssignment(parsed, projectDir);
+      if (wctx.terminalStatuses.has(parsed.status)) {
         return {
           id: this.id,
           category: this.category,
@@ -222,12 +225,6 @@ const contextTerminal: Check = {
     }
   },
 };
-
-function terminalStatuses(ctx: CheckContext): Set<string> {
-  const custom = ctx.config.statuses?.statuses?.filter((s) => s.terminal).map((s) => s.id) ?? [];
-  if (custom.length > 0) return new Set(custom);
-  return new Set(DEFAULT_TERMINAL_STATUSES);
-}
 
 export const workspaceChecks: Check[] = [contextValid, contextAssignmentResolves, contextTerminal];
 
