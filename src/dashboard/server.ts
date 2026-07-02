@@ -75,7 +75,7 @@ import { createSearchConfigRouter } from './api-search-config.js';
 import { createContentSearchRouter } from './api-search.js';
 import { createWorkspaceVisibilityConfigRouter } from './api-workspace-visibility-config.js';
 import { createAgentDiscoveryConfigRouter } from './api-agent-discovery-config.js';
-import { createStatusConfigRouter } from './api-status-config.js';
+import { createStatusConfigRouter, createWorkflowConfigRouter } from './api-status-config.js';
 import { createLeasesRouter } from './api-leases.js';
 import { createSchedulesRouter } from './api-schedules.js';
 import { runTick } from '../schedules/tick.js';
@@ -225,6 +225,7 @@ export function createDashboardServer(options: DashboardServerOptions) {
   });
 
   app.use('/api/config/statuses', createStatusConfigRouter(projectsDir, assignmentsDir));
+  app.use('/api/config/workflows', createWorkflowConfigRouter(projectsDir, assignmentsDir));
 
   app.get('/api/config/types', async (_req, res) => {
     try {

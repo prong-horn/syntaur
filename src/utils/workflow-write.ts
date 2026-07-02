@@ -10,6 +10,7 @@
 
 import {
   readConfig,
+  writeStatusConfig,
   writeWorkflowsConfig,
   deleteLegacyStatusesBlock,
   type StatusConfig,
@@ -18,13 +19,18 @@ import {
 import { getWorkflowLibrary, DEFAULT_WORKFLOW_ID } from './workflow-resolve.js';
 import { toTitleCase } from './status-defaults.js';
 
+function hasWorkflowsBlock(config: {
+  workflows?: Record<string, WorkflowDefinition> | null;
+}): boolean {
+  return !!config.workflows && Object.keys(config.workflows).length > 0;
+}
+
 /** Was the config still legacy (top-level `statuses:`, no `workflows:` map)? */
 function hasLegacyStatusesOnly(config: {
   statuses?: StatusConfig | null;
   workflows?: Record<string, WorkflowDefinition> | null;
 }): boolean {
-  const hasWorkflows = !!config.workflows && Object.keys(config.workflows).length > 0;
-  return !hasWorkflows && !!config.statuses;
+  return !hasWorkflowsBlock(config) && !!config.statuses;
 }
 
 export interface WriteWorkflowBundleOptions {
@@ -46,6 +52,17 @@ export async function writeWorkflowBundle(
   opts: WriteWorkflowBundleOptions = {},
 ): Promise<void> {
   const config = await readConfig();
+
+  // Editing the DEFAULT workflow of a still-legacy config keeps the legacy
+  // top-level `statuses:` format — a single-workflow config never grows a
+  // `workflows:` block just from status-settings edits. The block (and the D4
+  // lift+delete) is introduced only when a real, non-default workflow is
+  // created below, or when one already exists.
+  if (!hasWorkflowsBlock(config) && workflowId === DEFAULT_WORKFLOW_ID && !opts.setDefault) {
+    await writeStatusConfig(bundle);
+    return;
+  }
+
   const wasLegacy = hasLegacyStatusesOnly(config);
 
   // getWorkflowLibrary synthesizes `{ default: <statuses|built-in> }` for a
