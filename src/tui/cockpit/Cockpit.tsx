@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { spawn } from 'node:child_process';
-import { Box, Text, useInput, useApp, useWindowSize } from 'ink';
+import { Box, Text, useInput, useApp, useWindowSize, useStdout } from 'ink';
 import { MouseProvider } from '../mouse/MouseContext.js';
+import { runWithMouseSuspended } from '../mouse/tracking.js';
 import { isMouseSequence } from '../mouse/parse.js';
 import { computeLayout, type FocusTarget } from './layout.js';
 import { LeftRail } from './LeftRail.js';
@@ -29,6 +30,7 @@ export const Cockpit: React.FC<{ projectsDir: string; assignmentsDir: string; tm
   tmuxAvailable,
 }) => {
   const { exit, suspendTerminal } = useApp();
+  const { write } = useStdout();
   const size = useWindowSize();
   const columns = size.columns || 80;
   const rows = size.rows || 24;
@@ -152,9 +154,15 @@ export const Cockpit: React.FC<{ projectsDir: string; assignmentsDir: string; tm
         setStatus('session window not found');
         return;
       }
-      await suspendTerminal(async () => {
-        await runTmuxAttach(sessionName);
-      });
+      // Re-arm mouse tracking around the suspend: tmux resets the terminal's
+      // mouse DEC private modes and Ink's resume does not re-run MouseProvider's
+      // mount effect, so without this the cockpit returns mouse-dead. The helper
+      // re-enables in a `finally`, so a failed attach never leaves mouse off.
+      await runWithMouseSuspended(write, () =>
+        suspendTerminal(async () => {
+          await runTmuxAttach(sessionName);
+        }),
+      );
       setStatus(`Detached from ${sessionName}`);
     } catch (err) {
       setStatus(`Attach failed: ${err instanceof Error ? err.message : String(err)}`);

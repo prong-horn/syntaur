@@ -25,7 +25,15 @@ export const LeftRail: React.FC<LeftRailProps> = ({
   useMouseRegions([
     {
       id: 'rail-sessions',
-      rect: { x: railRect.x, y: railRect.y, width: railRect.width, height: sessions.length + HEADER_ROWS },
+      // Clamp to the rail's available height so a long session list can't
+      // extend the hit region past the rail's bottom edge into the
+      // detail/action-bar rows.
+      rect: {
+        x: railRect.x,
+        y: railRect.y,
+        width: railRect.width,
+        height: Math.min(sessions.length + HEADER_ROWS, railRect.height),
+      },
       onClick: (e) => {
         const idx = resolveRowIndex(railRect, e.y, HEADER_ROWS);
         if (idx !== null && idx < sessions.length) onSelectSession(sessions[idx]);

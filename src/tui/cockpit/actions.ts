@@ -21,7 +21,8 @@ export interface ActionCallbacks {
  * `launchAgent`/`getAssignmentDetail` require it); Attach needs a live
  * session with tmux available and a non-null `assignmentSlug` (the tmux
  * session name is derived from project+assignment slugs) -- this is also
- * the app's graceful-degradation rule: no tmux ⇒ launch/attach disabled.
+ * the app's graceful-degradation rule: no tmux ⇒ Attach is disabled, but
+ * Launch stays enabled and degrades to an in-process hand-off (see runLaunch).
  * Quit is always enabled.
  */
 export function buildActions(
