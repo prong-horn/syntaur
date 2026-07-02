@@ -6,6 +6,7 @@ import { computeLayout, type FocusTarget } from './layout.js';
 import { LeftRail } from './LeftRail.js';
 import { DetailPane, type DetailSelection } from './DetailPane.js';
 import { ActionBar, type Action } from './ActionBar.js';
+import { buildActions, dispatchActionKey } from './actions.js';
 import { loadSessions } from '../sessions/feed.js';
 import { readConfig, getAgents, type AgentConfig } from '../../utils/config.js';
 import type { AgentSessionWithLiveness } from '../../dashboard/types.js';
@@ -82,38 +83,24 @@ export const Cockpit: React.FC<{ projectsDir: string; assignmentsDir: string; tm
       ? { kind: 'assignment', projectSlug: selectedAssignment.projectSlug, assignmentSlug: selectedAssignment.assignmentSlug }
       : { kind: 'none' };
 
-  // Context-sensitive action set. Enable rules mirror Task 15's nullability
-  // guards: Launch needs a project-nested assignment selection (non-null
-  // `projectSlug` — `launchAgent`/`getAssignmentDetail` require it); Attach
-  // needs a live session with tmux available and a non-null `assignmentSlug`
-  // (the tmux session name is derived from project+assignment slugs). `onRun`
-  // is stubbed here — Task 15 wires the real launch/attach behavior.
-  const actions: Action[] = [
-    {
-      key: 'l',
-      label: 'Launch',
-      enabled: selection.kind === 'assignment' && selection.projectSlug != null,
-      onRun: () => {
-        // TODO(Task 15): buildLaunchPlan + runLaunch (tmux or hand-off).
-      },
+  // Context-sensitive action set: enable/disable wiring lives in the pure,
+  // unit-tested `buildActions` (see actions.ts). `onRun` is stubbed here —
+  // Task 15 wires the real launch/attach behavior.
+  const actions: Action[] = buildActions(selection, tmuxAvailable, {
+    onLaunch: () => {
+      // TODO(Task 15): buildLaunchPlan + runLaunch (tmux or hand-off).
     },
-    {
-      key: 'a',
-      label: 'Attach',
-      enabled: selection.kind === 'session' && tmuxAvailable && selection.session.assignmentSlug != null,
-      onRun: () => {
-        // TODO(Task 15): tmuxSessionName + runTmuxAttach via suspendTerminal.
-      },
+    onAttach: () => {
+      // TODO(Task 15): tmuxSessionName + runTmuxAttach via suspendTerminal.
     },
-    { key: 'q', label: 'Quit', enabled: true, onRun: () => exit() },
-  ];
+    onQuit: () => exit(),
+  });
 
   useInput((input, key) => {
     if (isMouseSequence(input)) return; // mouse bytes also reach Ink input
     if (key.escape) exit();
     if (key.tab) setFocus((f) => (f === 'rail' ? 'detail' : 'rail'));
-    const action = actions.find((a) => a.key === input);
-    if (action?.enabled) action.onRun();
+    dispatchActionKey(actions, input);
   });
 
   // CRITICAL: no borders on hit-tested regions and EXPLICIT width/height from

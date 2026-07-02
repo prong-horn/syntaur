@@ -1,10 +1,35 @@
 import { describe, it, expect, vi } from 'vitest';
-import { cellWidth, layoutActions } from '../actionBarLayout.js';
+import { buttonText, cellWidth, padCell, layoutActions } from '../actionBarLayout.js';
+
+describe('buttonText', () => {
+  it('formats "[key] Label"', () => {
+    expect(buttonText({ key: 'l', label: 'Launch' })).toBe('[l] Launch');
+    expect(buttonText({ key: 'ctrl', label: 'Cancel' })).toBe('[ctrl] Cancel');
+  });
+});
 
 describe('cellWidth', () => {
-  it('accounts for the "[k] " prefix, the label, and a 2-col gap', () => {
-    expect(cellWidth('Launch')).toBe(3 + 1 + 'Launch'.length + 2);
-    expect(cellWidth('Quit')).toBe(3 + 1 + 'Quit'.length + 2);
+  it('accounts for the "[key] " prefix, the label, and a 2-col gap', () => {
+    expect(cellWidth({ key: 'l', label: 'Launch' })).toBe('[l] Launch'.length + 2);
+    expect(cellWidth({ key: 'q', label: 'Quit' })).toBe('[q] Quit'.length + 2);
+  });
+
+  it('derives width from the actual key length, not a hardcoded 1-char key', () => {
+    // Regression: the old formula hardcoded 3 cols for "[k]" and silently
+    // under-measured any multi-char key.
+    expect(cellWidth({ key: 'ctrl', label: 'Launch' })).toBe('[ctrl] Launch'.length + 2);
+    expect(cellWidth({ key: 'ctrl', label: 'Launch' })).not.toBe(cellWidth({ key: 'l', label: 'Launch' }));
+  });
+});
+
+describe('padCell', () => {
+  it('pads short text with trailing spaces to exactly width columns', () => {
+    expect(padCell('[l] Launch', 15)).toBe('[l] Launch     ');
+    expect(padCell('[l] Launch', 15)).toHaveLength(15);
+  });
+
+  it('truncates text longer than width', () => {
+    expect(padCell('[l] Launch', 5)).toBe('[l] L');
   });
 });
 
@@ -24,7 +49,7 @@ describe('layoutActions', () => {
 
   it('places the first button at barRect.x/y with barRect.height', () => {
     const layout = layoutActions(actions, barRect);
-    expect(layout[0].rect).toEqual({ x: 0, y: 23, width: cellWidth('Launch'), height: 1 });
+    expect(layout[0].rect).toEqual({ x: 0, y: 23, width: cellWidth(actions[0]), height: 1 });
   });
 
   it('lays out subsequent buttons left-to-right with no gaps or overlaps', () => {
@@ -37,5 +62,10 @@ describe('layoutActions', () => {
     const layout = layoutActions([actions[2]], { x: 10, y: 5, width: 40, height: 1 });
     expect(layout[0].rect.x).toBe(10);
     expect(layout[0].rect.y).toBe(5);
+  });
+
+  it('sizes a multi-char-key button using its own key length', () => {
+    const withCtrl = layoutActions([{ key: 'ctrl', label: 'Cancel', onRun: vi.fn(), enabled: true }], barRect);
+    expect(withCtrl[0].rect.width).toBe('[ctrl] Cancel'.length + 2);
   });
 });

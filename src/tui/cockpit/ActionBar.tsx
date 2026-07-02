@@ -2,15 +2,17 @@ import React from 'react';
 import { Box, Text } from 'ink';
 import { useMouseRegions } from '../mouse/hooks.js';
 import type { Rect, Region } from '../mouse/registry.js';
-import { layoutActions, type Action } from './actionBarLayout.js';
+import { layoutActions, buttonText, padCell, type Action } from './actionBarLayout.js';
 
 export type { Action };
 
 /**
  * Bottom-row strip of context-sensitive, mouse-clickable action buttons.
  * Buttons are laid out left-to-right within `barRect` via the shared
- * `layoutActions` helper, so the rendered `[k] Label` cells line up exactly
- * with their registered mouse regions (no borders, explicit widths).
+ * `layoutActions` helper, and each button is rendered into EXACTLY the same
+ * `rect.width` cells that get registered as its mouse hit-region — one width
+ * computation feeds both, so rendered x-range and hit x-range can never
+ * diverge (no borders on hit cells; no independent Box sizing/margins).
  * Disabled actions render dim and ignore clicks/keys.
  */
 export const ActionBar: React.FC<{ actions: Action[]; barRect: Rect }> = ({ actions, barRect }) => {
@@ -24,13 +26,16 @@ export const ActionBar: React.FC<{ actions: Action[]; barRect: Rect }> = ({ acti
 
   return (
     <Box>
-      {actions.map((a) => (
-        <Box key={a.key} marginRight={2}>
-          <Text dimColor={!a.enabled}>
-            <Text color={a.enabled ? 'cyan' : 'gray'}>[{a.key}]</Text> {a.label}
+      {layout.map(({ action, rect }) => {
+        const keyPart = `[${action.key}]`;
+        const cell = padCell(buttonText(action), rect.width);
+        return (
+          <Text key={action.key} dimColor={!action.enabled}>
+            <Text color={action.enabled ? 'cyan' : 'gray'}>{keyPart}</Text>
+            {cell.slice(keyPart.length)}
           </Text>
-        </Box>
-      ))}
+        );
+      })}
     </Box>
   );
 };
