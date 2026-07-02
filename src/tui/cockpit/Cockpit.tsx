@@ -123,13 +123,20 @@ export const Cockpit: React.FC<{ projectsDir: string; assignmentsDir: string; tm
         tmuxAvailable,
         launchInTmux,
         handOff: async (p) => {
-          await suspendTerminal(async () => {
-            await new Promise<void>((resolveChild) => {
-              const child = spawn(p.command, p.args, { cwd: p.cwd, stdio: 'inherit' });
-              child.on('exit', () => resolveChild());
-              child.on('error', () => resolveChild());
-            });
-          });
+          // Re-arm mouse tracking around the hand-off exactly like attach: the
+          // spawned agent owns the real terminal via stdio:'inherit', so disable
+          // the mouse DEC private modes first (otherwise clicks/drags leak raw
+          // SGR bytes into the child's stdin) and re-enable in the helper's
+          // `finally`. Mirrors handleAttach's suspend wrapping below.
+          await runWithMouseSuspended(write, () =>
+            suspendTerminal(async () => {
+              await new Promise<void>((resolveChild) => {
+                const child = spawn(p.command, p.args, { cwd: p.cwd, stdio: 'inherit' });
+                child.on('exit', () => resolveChild());
+                child.on('error', () => resolveChild());
+              });
+            }),
+          );
           exit();
         },
       });
