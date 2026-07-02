@@ -287,6 +287,85 @@ export async function migrateLegacyConfig(
 }
 
 /**
+ * Lift a legacy top-level `statuses:` block into `workflows.default` on disk and
+ * delete the legacy block (Decision D4: single source of truth). This is the
+ * "lift on first workflow-config write" mechanism — callers run it before the
+ * first `workflows:` write (or standalone). Idempotent and safe:
+ *
+ * - a config that already has a `workflows:` block is left untouched;
+ * - a config with neither `statuses:` nor `workflows:` is left untouched (the
+ *   resolver synthesizes the built-in default in memory);
+ * - the lift is purely textual — the `statuses:` block body is re-indented under
+ *   `workflows.default`, so even malformed rows round-trip verbatim (no reparse,
+ *   no silent deletion) and no `config.ts` import is needed (avoids a cycle).
+ *
+ * Returns `{ migrated }` — true only when a lift was written.
+ */
+export async function migrateStatusesToWorkflows(
+  configPath: string,
+): Promise<{ migrated: boolean }> {
+  if (!(await fileExists(configPath))) return { migrated: false };
+
+  let content: string;
+  try {
+    content = await readFile(configPath, 'utf-8');
+  } catch {
+    return { migrated: false };
+  }
+
+  const fmMatch = content.match(/^---\n([\s\S]*?)\n---/);
+  if (!fmMatch) return { migrated: false };
+  const fmBlock = fmMatch[1];
+  const afterFm = content.slice(fmMatch[0].length);
+
+  // Idempotent: a workflows: block already present → nothing to lift.
+  if (/^workflows:\s*$/m.test(fmBlock)) return { migrated: false };
+
+  const fmLines = fmBlock.split('\n');
+  const headerIdx = fmLines.findIndex((l) => /^statuses:\s*$/.test(l));
+  if (headerIdx === -1) return { migrated: false }; // no legacy block to lift
+
+  // Collect the indented body of the statuses: block (up to the next top-level
+  // key), then re-indent it two spaces deeper to sit under workflows.default.
+  const body: string[] = [];
+  let end = headerIdx + 1;
+  for (; end < fmLines.length; end++) {
+    const line = fmLines[end];
+    if (line.trim() === '') {
+      body.push(line);
+      continue;
+    }
+    if (line[0] !== ' ' && line[0] !== '\t') break; // sibling top-level key
+    body.push(line);
+  }
+  // Drop trailing blank lines so they stay outside the lifted block.
+  while (body.length > 0 && body[body.length - 1].trim() === '') body.pop();
+
+  const reindented = body.map((l) => (l.trim() === '' ? l : `  ${l}`));
+  const workflowBlockLines = [
+    'workflows:',
+    '  default:',
+    '    label: Default',
+    ...reindented,
+    'defaultWorkflow: default',
+  ];
+
+  const newFmLines = [
+    ...fmLines.slice(0, headerIdx),
+    ...workflowBlockLines,
+    ...fmLines.slice(end),
+  ];
+  const newContent = `---\n${newFmLines.join('\n')}\n---${afterFm}`;
+
+  try {
+    await writeFile(configPath, newContent, 'utf-8');
+  } catch {
+    return { migrated: false };
+  }
+  return { migrated: true };
+}
+
+/**
  * Format a concise summary line for startup logs. Empty string when nothing
  * material happened (caller should skip the log).
  */

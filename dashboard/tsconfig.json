@@ -34,6 +34,7 @@
       "@shared/view-filters-query": ["../src/utils/view-filters-query.ts"],
       "@shared/query": ["../src/utils/query/index.ts"],
       "@shared/derive-config": ["../src/utils/derive-config.ts"],
+      "@shared/workflow-resolve": ["../src/utils/workflow-resolve.ts"],
       "@shared/derive": ["../src/lifecycle/derive.ts"],
       "@shared/state-machine": ["../src/lifecycle/state-machine.ts"]
     }

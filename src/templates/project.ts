@@ -12,6 +12,10 @@ export interface ProjectParams {
    * frontmatter. Empty by default for new projects.
    */
   repositories?: string[];
+  /** Project-level default workflow id; emitted only when provided. */
+  defaultWorkflow?: string | null;
+  /** Project `type → workflow id` binding map; emitted only when non-empty. */
+  workflowByType?: Record<string, string>;
 }
 
 function renderRepositoriesBlock(repos: string[] | undefined): string {
@@ -21,10 +25,34 @@ function renderRepositoriesBlock(repos: string[] | undefined): string {
   return ['repositories:', ...repos.map((p) => `  - ${escapeYamlString(p)}`)].join('\n');
 }
 
+/**
+ * Render the optional project workflow-binding fields (`defaultWorkflow` scalar
+ * + `workflowByType` map). Empty string when neither is set — a project with no
+ * explicit binding is valid and resolves via the global default.
+ */
+function renderWorkflowBinding(
+  defaultWorkflow: string | null | undefined,
+  workflowByType: Record<string, string> | undefined,
+): string {
+  const lines: string[] = [];
+  if (defaultWorkflow) lines.push(`defaultWorkflow: ${defaultWorkflow}`);
+  if (workflowByType && Object.keys(workflowByType).length > 0) {
+    lines.push('workflowByType:');
+    for (const [type, workflow] of Object.entries(workflowByType)) {
+      lines.push(`  ${type}: ${workflow}`);
+    }
+  }
+  return lines.length > 0 ? `\n${lines.join('\n')}` : '';
+}
+
 export function renderProject(params: ProjectParams): string {
   const safeTitle = escapeYamlString(params.title);
   const workspaceLine = params.workspace ? `\nworkspace: ${params.workspace}` : '';
   const repositoriesBlock = renderRepositoriesBlock(params.repositories);
+  const workflowBindingBlock = renderWorkflowBinding(
+    params.defaultWorkflow,
+    params.workflowByType,
+  );
   return `---
 id: ${params.id}
 slug: ${params.slug}
@@ -36,7 +64,7 @@ created: "${params.timestamp}"
 updated: "${params.timestamp}"
 externalIds: []
 tags: []
-${repositoriesBlock}${workspaceLine}
+${repositoriesBlock}${workspaceLine}${workflowBindingBlock}
 ---
 
 # ${params.title}

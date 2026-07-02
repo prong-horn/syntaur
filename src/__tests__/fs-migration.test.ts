@@ -296,3 +296,80 @@ describe('parser alias: mission → project', () => {
     expect(parsed.slug).toBe('new-slug');
   });
 });
+
+import { migrateStatusesToWorkflows } from '../utils/fs-migration.js';
+import { parseWorkflowsConfig } from '../utils/config.js';
+
+describe('migrateStatusesToWorkflows (lift legacy statuses: → workflows.default)', () => {
+  const LEGACY_CONFIG = `---
+version: "2.0"
+defaultProjectDir: ~/projects
+statuses:
+  definitions:
+    - id: todo
+      label: Todo
+    - id: done
+      label: Done
+      terminal: true
+  order:
+    - todo
+    - done
+  transitions:
+    - from: todo
+      command: finish
+      to: done
+---
+
+# Config notes preserved.
+`;
+
+  async function writeConfig(content: string): Promise<string> {
+    const p = resolve(sandbox, 'config.md');
+    await writeFile(p, content, 'utf-8');
+    return p;
+  }
+
+  it('lifts a legacy statuses: block into workflows.default and deletes the legacy block (D4)', async () => {
+    const p = await writeConfig(LEGACY_CONFIG);
+
+    const { migrated } = await migrateStatusesToWorkflows(p);
+    const after = await readFile(p, 'utf-8');
+
+    expect(migrated).toBe(true);
+    // The workflows.default bundle round-trips the lifted statuses.
+    const workflows = parseWorkflowsConfig(after);
+    expect(Object.keys(workflows ?? {})).toEqual(['default']);
+    expect(workflows?.default.label).toBe('Default');
+    expect(workflows?.default.statuses.map((s) => s.id)).toEqual(['todo', 'done']);
+    expect(workflows?.default.statuses.find((s) => s.id === 'done')?.terminal).toBe(true);
+    expect(workflows?.default.transitions.map((t) => t.command)).toEqual(['finish']);
+    // The global default is set, the legacy top-level statuses: block is gone,
+    // and the file body is preserved.
+    expect(after).toMatch(/^defaultWorkflow: default$/m);
+    expect(after).not.toMatch(/^statuses:\s*$/m);
+    expect(after).toContain('# Config notes preserved.');
+  });
+
+  it('is idempotent — a config that already has a workflows: block is untouched', async () => {
+    const p = await writeConfig(LEGACY_CONFIG);
+    await migrateStatusesToWorkflows(p);
+    const firstPass = await readFile(p, 'utf-8');
+
+    const { migrated } = await migrateStatusesToWorkflows(p);
+    const secondPass = await readFile(p, 'utf-8');
+
+    expect(migrated).toBe(false);
+    expect(secondPass).toBe(firstPass);
+  });
+
+  it('no-ops on a config with neither statuses: nor workflows:', async () => {
+    const p = await writeConfig('---\nversion: "2.0"\n---\n');
+    const { migrated } = await migrateStatusesToWorkflows(p);
+    expect(migrated).toBe(false);
+  });
+
+  it('no-ops when the config file is absent', async () => {
+    const { migrated } = await migrateStatusesToWorkflows(resolve(sandbox, 'nope.md'));
+    expect(migrated).toBe(false);
+  });
+});
