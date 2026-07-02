@@ -1,5 +1,5 @@
-import { readFile, writeFile, rm } from 'node:fs/promises';
-import { dirname } from 'node:path';
+import { readFile, writeFile, rm, readdir } from 'node:fs/promises';
+import { dirname, resolve } from 'node:path';
 import type { AssignmentStatus } from '../lifecycle/types.js';
 import {
   appendStatusHistoryEntry,
@@ -7,7 +7,11 @@ import {
   updateAssignmentFile,
 } from '../lifecycle/frontmatter.js';
 import { recordStatusEvent, resolveActor } from '../lifecycle/event-emit.js';
-import { listAssignmentsByProject } from './assignment-walk.js';
+import { listAssignmentsByProject, type AssignmentEntry } from './assignment-walk.js';
+import { readProjectBinding } from './project-binding.js';
+import { DEFAULT_WORKFLOW_ID } from './workflow-resolve.js';
+import type { WorkflowContextResolver } from '../lifecycle/workflow-context.js';
+import { fileExists } from './fs.js';
 import { nowTimestamp } from './timestamp.js';
 
 export interface AffectedAssignment {
@@ -18,6 +22,28 @@ export interface AffectedAssignment {
   projectSlug: string | null;
   assignmentSlug: string;
   status: AssignmentStatus;
+  /** Explicit `workflow:` override on the assignment (null → resolved via binding). */
+  workflow: string | null;
+  /** The workflow this ticket RESOLVES to. `'default'` when no resolver was
+   * supplied (legacy single-workflow reads — every ticket is `default`). */
+  resolvedWorkflow: string;
+}
+
+/**
+ * Optional per-workflow scoping for the assignment scans. When a `resolver`
+ * (Task 5) is supplied, each ticket's workflow is resolved and recorded on the
+ * result; when `workflowId` is also set, only tickets RESOLVING to that
+ * workflow are included — this is what makes a per-workflow status change touch
+ * only its own tickets and leave other workflows' tickets untouched.
+ */
+export interface WorkflowScanScope {
+  workflowId?: string;
+  resolver?: WorkflowContextResolver;
+}
+
+/** Project root for binding lookup — null for standalone (no project.md). */
+function bindingProjectDir(entry: AssignmentEntry): string | null {
+  return entry.standalone ? null : entry.projectDir;
 }
 
 export type StatusResolution =
@@ -57,6 +83,7 @@ export async function scanAssignmentsByStatus(
   projectsDir: string,
   standaloneDir: string | null,
   ids: string[],
+  scope: WorkflowScanScope = {},
 ): Promise<Map<string, AffectedAssignment[]>> {
   // Always populate an entry for every requested id (possibly empty).
   // This lets `applyStatusResolutions` distinguish "stale" (id not in
@@ -90,6 +117,17 @@ export async function scanAssignmentsByStatus(
     const fm = parseAssignmentFrontmatter(content);
     if (!idSet.has(fm.status)) continue;
 
+    // Resolve the ticket's workflow (Task 5). Without a resolver every ticket
+    // is `default` — the legacy single-workflow reality — so an unscoped scan
+    // behaves exactly as before. With `scope.workflowId`, tickets resolving to
+    // a DIFFERENT workflow are skipped so the status change stays scoped.
+    let resolvedWorkflow = DEFAULT_WORKFLOW_ID;
+    if (scope.resolver) {
+      const wctx = await scope.resolver.forAssignment(fm, bindingProjectDir(entry));
+      resolvedWorkflow = wctx.workflowId;
+    }
+    if (scope.workflowId && resolvedWorkflow !== scope.workflowId) continue;
+
     const display = entry.standalone
       ? `(standalone) ${entry.assignmentSlug}`
       : `${entry.projectSlug}/${entry.assignmentSlug}`;
@@ -99,6 +137,8 @@ export async function scanAssignmentsByStatus(
       projectSlug: entry.projectSlug,
       assignmentSlug: entry.assignmentSlug,
       status: fm.status,
+      workflow: fm.workflow ?? null,
+      resolvedWorkflow,
     };
     const bucket = result.get(fm.status);
     if (bucket) bucket.push(affected);
@@ -364,9 +404,10 @@ export async function verifyNoDriftedOrphans(
   projectsDir: string,
   standaloneDir: string | null,
   droppedIds: string[],
+  scope: WorkflowScanScope = {},
 ): Promise<void> {
   if (droppedIds.length === 0) return;
-  const finalScan = await scanAssignmentsByStatus(projectsDir, standaloneDir, droppedIds);
+  const finalScan = await scanAssignmentsByStatus(projectsDir, standaloneDir, droppedIds, scope);
   const remaining: string[] = [];
   for (const id of droppedIds) {
     const list = finalScan.get(id) ?? [];
@@ -393,6 +434,7 @@ export async function scanAssignmentsReferencingStatus(
   projectsDir: string,
   standaloneDir: string | null,
   id: string,
+  scope: WorkflowScanScope = {},
 ): Promise<AffectedAssignment[]> {
   const walk = await listAssignmentsByProject(projectsDir, standaloneDir);
   const affected: AffectedAssignment[] = [];
@@ -414,6 +456,14 @@ export async function scanAssignmentsReferencingStatus(
       (e) => e.from === id || e.to === id || e.phaseFrom === id || e.phaseTo === id,
     );
     if (fm.status !== id && fm.phase !== id && fm.override?.status !== id && !inHistory) continue;
+
+    let resolvedWorkflow = DEFAULT_WORKFLOW_ID;
+    if (scope.resolver) {
+      const wctx = await scope.resolver.forAssignment(fm, bindingProjectDir(entry));
+      resolvedWorkflow = wctx.workflowId;
+    }
+    if (scope.workflowId && resolvedWorkflow !== scope.workflowId) continue;
+
     affected.push({
       path: assignmentPath,
       display: entry.standalone
@@ -422,7 +472,123 @@ export async function scanAssignmentsReferencingStatus(
       projectSlug: entry.projectSlug,
       assignmentSlug: entry.assignmentSlug,
       status: fm.status,
+      workflow: fm.workflow ?? null,
+      resolvedWorkflow,
     });
   }
   return affected;
+}
+
+export interface WorkflowUsage {
+  workflowId: string;
+  /** True for the built-in `default` workflow — never deletable. */
+  isBuiltinDefault: boolean;
+  /** True when this id is the global `defaultWorkflow`. */
+  isGlobalDefault: boolean;
+  /** Project slugs whose binding (`defaultWorkflow` or `workflowByType`) names
+   * this workflow — a dangling binding after deletion would fail the doctor
+   * `workflows.references-resolve` check, so these block deletion too. */
+  boundProjects: string[];
+  /** Tickets that RESOLVE to this workflow (headline scan, all statuses). */
+  assignments: AffectedAssignment[];
+  /** True when the workflow can be removed without first reassigning anything. */
+  deletable: boolean;
+  /** Human-readable reasons blocking deletion (empty ⇢ deletable). */
+  blockers: string[];
+}
+
+export interface WorkflowUsageOptions {
+  /** Resolver built from the CURRENT config (the workflow must still exist so
+   * its tickets resolve to it rather than falling through to `default`). */
+  resolver: WorkflowContextResolver;
+  /** Whether this id is the config's global `defaultWorkflow`. */
+  isGlobalDefault: boolean;
+  projectsDir: string;
+  standaloneDir: string | null;
+}
+
+/**
+ * Delete-in-use guard (Task 8): resolve everything that references a workflow so
+ * a caller can block or force reassignment before removing it. A workflow is
+ * `deletable` only when it is not the built-in `default`, not the global
+ * default, is bound by no project, and is resolved to by no ticket. Call this
+ * BEFORE removing the workflow from config (so its tickets still resolve to it).
+ */
+export async function scanWorkflowUsage(
+  workflowId: string,
+  opts: WorkflowUsageOptions,
+): Promise<WorkflowUsage> {
+  const isBuiltinDefault = workflowId === DEFAULT_WORKFLOW_ID;
+
+  // Projects whose binding references the workflow (even with zero tickets).
+  const boundProjects: string[] = [];
+  if (await fileExists(opts.projectsDir)) {
+    const dirents = await readdir(opts.projectsDir, { withFileTypes: true });
+    for (const d of dirents) {
+      if (!d.isDirectory() || d.name.startsWith('.') || d.name.startsWith('_')) continue;
+      const projectDir = resolve(opts.projectsDir, d.name);
+      if (!(await fileExists(resolve(projectDir, 'project.md')))) continue;
+      const binding = await readProjectBinding(projectDir);
+      const referenced =
+        binding.defaultWorkflow === workflowId ||
+        Object.values(binding.workflowByType).includes(workflowId);
+      if (referenced) boundProjects.push(d.name);
+    }
+  }
+
+  // Tickets that resolve to the workflow (headline scan across all statuses).
+  const walk = await listAssignmentsByProject(opts.projectsDir, opts.standaloneDir);
+  const assignments: AffectedAssignment[] = [];
+  for (const entry of walk.withAssignmentMd) {
+    const assignmentPath = `${entry.assignmentDir}/assignment.md`;
+    let content: string;
+    try {
+      content = await readFile(assignmentPath, 'utf-8');
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException)?.code;
+      if (code === 'ENOENT') continue;
+      throw new StatusResolutionError(
+        `failed to read ${assignmentPath}: ${err instanceof Error ? err.message : String(err)}`,
+        'scan-failed',
+      );
+    }
+    const fm = parseAssignmentFrontmatter(content);
+    const wctx = await opts.resolver.forAssignment(fm, bindingProjectDir(entry));
+    if (wctx.workflowId !== workflowId) continue;
+    assignments.push({
+      path: assignmentPath,
+      display: entry.standalone
+        ? `(standalone) ${entry.assignmentSlug}`
+        : `${entry.projectSlug}/${entry.assignmentSlug}`,
+      projectSlug: entry.projectSlug,
+      assignmentSlug: entry.assignmentSlug,
+      status: fm.status,
+      workflow: fm.workflow ?? null,
+      resolvedWorkflow: wctx.workflowId,
+    });
+  }
+
+  const blockers: string[] = [];
+  if (isBuiltinDefault) {
+    blockers.push(`the built-in "${DEFAULT_WORKFLOW_ID}" workflow cannot be deleted`);
+  }
+  if (opts.isGlobalDefault) {
+    blockers.push('it is the global defaultWorkflow — set another default before deleting');
+  }
+  if (boundProjects.length > 0) {
+    blockers.push(`bound by project(s): ${boundProjects.join(', ')}`);
+  }
+  if (assignments.length > 0) {
+    blockers.push(`${assignments.length} ticket(s) resolve to it — reassign them before deleting`);
+  }
+
+  return {
+    workflowId,
+    isBuiltinDefault,
+    isGlobalDefault: opts.isGlobalDefault,
+    boundProjects,
+    assignments,
+    deletable: blockers.length === 0,
+    blockers,
+  };
 }
