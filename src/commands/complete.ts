@@ -3,7 +3,7 @@ import { runTransition, reportResult, type LifecycleOptions } from './_lifecycle
 import { readConfig } from '../utils/config.js';
 import { expandHome, assignmentsDir as assignmentsDirFn } from '../utils/paths.js';
 import { resolveAssignmentById } from '../utils/assignment-resolver.js';
-import { recomputeDependents, resolveDeriveContext } from '../lifecycle/recompute.js';
+import { recomputeDependents, resolveRecomputeContext } from '../lifecycle/recompute.js';
 
 export interface CompleteOptions extends LifecycleOptions {}
 
@@ -35,11 +35,12 @@ export async function completeCommand(
     changedSlug = resolved.assignmentSlug;
   }
   if (projectDir) {
-    const context = await resolveDeriveContext();
+    const { context, workflowResolver } = await resolveRecomputeContext();
     const results = await recomputeDependents(projectDir, changedSlug, {
       cause: 'dep-terminal',
       by: 'system',
       context,
+      workflowResolver,
     });
     const changed = results.filter((r) => r.changed).length;
     if (changed > 0) console.log(`Re-derived ${changed} dependent assignment(s).`);

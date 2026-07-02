@@ -12,6 +12,8 @@ import {
   type DeriveConfig,
   type FactDeclaration,
   type RawFactDeclaration,
+  type SyntaurConfig,
+  type StatusConfig,
 } from '../utils/config.js';
 import { acceptFactDeclarations, buildDeriveRegistry, buildQueryRegistry } from '../lifecycle/derive.js';
 import type { FieldRegistry } from '../utils/query/index.js';
@@ -457,35 +459,54 @@ interface ResolvedStatusConfig {
   queryRegistry: FieldRegistry;
 }
 
-let _cachedConfig: ResolvedStatusConfig | null = null;
+const _cachedConfigs = new Map<string, ResolvedStatusConfig>();
 
-export async function getStatusConfig(): Promise<ResolvedStatusConfig> {
-  if (_cachedConfig) return _cachedConfig;
-
+/**
+ * Resolve the dashboard status-config view for one workflow id (default
+ * `'default'`). Backed by a per-workflow cache. For the legacy single-lifecycle
+ * config (no `workflows:` block), the `'default'` workflow resolves from the
+ * top-level `statuses:` block — byte-identical to the pre-workflow behavior, so
+ * every existing no-arg caller is unaffected. Assignment-specific surfaces
+ * (board items, projection, transitions, terminal virtuals) pass the ticket's
+ * resolved workflow id so each ticket derives against its OWN workflow.
+ */
+export async function getStatusConfig(workflowId = 'default'): Promise<ResolvedStatusConfig> {
+  const cached = _cachedConfigs.get(workflowId);
+  if (cached) return cached;
   const config = await readConfig();
+  const resolved = resolveWorkflowStatusConfig(config, workflowId);
+  _cachedConfigs.set(workflowId, resolved);
+  return resolved;
+}
 
-  if (config.statuses) {
-    const sc = config.statuses;
-    // A config may declare facts and/or derive rules without any custom status
-    // `definitions` (parseStatusConfig now preserves those rather than dropping
-    // the whole block). Fall back to the default statuses/order so the board
-    // still renders, while the declared facts/derive ride along — same
-    // no-silent-deletion contract as the parser.
+export function clearStatusConfigCache(): void {
+  _cachedConfigs.clear();
+}
+
+function resolveWorkflowStatusConfig(
+  config: SyntaurConfig,
+  workflowId: string,
+): ResolvedStatusConfig {
+  // The explicit per-workflow bundle: a named workflow, or — for the built-in
+  // `'default'` in a legacy config with no `workflows:` block — the top-level
+  // `statuses:` block. Null → no explicit config → read-only defaults branch.
+  const explicitBundle: StatusConfig | null =
+    config.workflows?.[workflowId] ?? (workflowId === 'default' ? config.statuses : null) ?? null;
+
+  if (explicitBundle) {
+    const sc = explicitBundle;
+    // A bundle may declare facts and/or derive rules without any status
+    // `definitions` (the parser preserves those rather than dropping the block).
+    // Fall back to the default statuses/order so the board still renders, while
+    // the declared facts/derive ride along — same no-silent-deletion contract.
     const defaults = sc.statuses.length === 0 ? buildDefaultStatusConfig() : null;
     const effectiveStatuses = defaults ? defaults.statuses : sc.statuses;
     const effectiveOrder = defaults ? defaults.order : sc.order;
-    const terminalSet = new Set(
-      effectiveStatuses.filter((s) => s.terminal).map((s) => s.id),
-    );
-    // If a user defines custom statuses but omits the `transitions:` block,
-    // fall back to default transitions. Without this, buildTransitionTable([])
-    // returns an empty Map and getTargetStatus returns null for every command,
-    // so the dashboard would show zero available transitions for any assignment.
-    // We materialize a FRESH table from DEFAULT_TRANSITION_TABLE entries (rather
-    // than reusing the DEFAULT_TRANSITION_TABLE reference) so getTargetStatus
-    // takes the custom-config code path and uses `from:command` lookups — this
-    // is what enforces "only emit transitions valid from current status" for
-    // users whose config has custom statuses but default transitions.
+    const terminalSet = new Set(effectiveStatuses.filter((s) => s.terminal).map((s) => s.id));
+    // Custom statuses but no `transitions:` block → materialize a FRESH table
+    // from DEFAULT_TRANSITION_TABLE entries (not the reference) so getTargetStatus
+    // takes the custom `from:command` path and only offers valid-from-status
+    // transitions.
     const hasCustomTransitions = sc.transitions.length > 0;
     const effectiveTransitions = hasCustomTransitions
       ? sc.transitions
@@ -494,7 +515,7 @@ export async function getStatusConfig(): Promise<ResolvedStatusConfig> {
           return { from, command, to };
         });
     const accepted = acceptFactDeclarations(normalizeFactDeclarations(sc.facts ?? null));
-    _cachedConfig = {
+    return {
       custom: true,
       statuses: effectiveStatuses,
       order: effectiveOrder,
@@ -509,33 +530,26 @@ export async function getStatusConfig(): Promise<ResolvedStatusConfig> {
       deriveRegistry: buildDeriveRegistry(accepted),
       queryRegistry: buildQueryRegistry(accepted),
     };
-  } else {
-    // Shared default builder so the dashboard and the `syntaur status` CLI
-    // resolve identical default statuses/order/transitions (no drift).
-    const def = buildDefaultStatusConfig();
-    _cachedConfig = {
-      custom: false,
-      statuses: def.statuses,
-      order: def.order,
-      transitions: def.transitions,
-      transitionTable: DEFAULT_TRANSITION_TABLE,
-      // No custom config at all → the Settings editor shows read-only defaults.
-      rawTransitions: [],
-      transitionsCustom: false,
-      terminalStatuses: new Set(['completed', 'failed']),
-      derive: null,
-      facts: null,
-      factDeclarations: [],
-      deriveRegistry: buildDeriveRegistry([]),
-      queryRegistry: buildQueryRegistry([]),
-    };
   }
 
-  return _cachedConfig;
-}
-
-export function clearStatusConfigCache(): void {
-  _cachedConfig = null;
+  // No explicit config for this workflow → shared default builder so the
+  // dashboard and the `syntaur status` CLI resolve identical defaults (no drift).
+  const def = buildDefaultStatusConfig();
+  return {
+    custom: false,
+    statuses: def.statuses,
+    order: def.order,
+    transitions: def.transitions,
+    transitionTable: DEFAULT_TRANSITION_TABLE,
+    rawTransitions: [],
+    transitionsCustom: false,
+    terminalStatuses: new Set(['completed', 'failed']),
+    derive: null,
+    facts: null,
+    factDeclarations: [],
+    deriveRegistry: buildDeriveRegistry([]),
+    queryRegistry: buildQueryRegistry([]),
+  };
 }
 
 /**

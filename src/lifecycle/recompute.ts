@@ -19,13 +19,18 @@
 import { createHash } from 'node:crypto';
 import { open, readdir, readFile, unlink, stat } from 'node:fs/promises';
 import { basename, dirname, resolve } from 'node:path';
-import { buildDefaultStatusConfig, readConfig } from '../utils/config.js';
+import { readConfig } from '../utils/config.js';
+import { getWorkflowBundle, DEFAULT_WORKFLOW_ID } from '../utils/workflow-resolve.js';
 import { fileExists, writeFileForce } from '../utils/fs.js';
 import { syntaurRoot } from '../utils/paths.js';
 import { nowTimestamp } from '../utils/timestamp.js';
 import { computeFacts } from './facts.js';
 import { deriveDimensions, type DerivedDimensions } from './derive.js';
 import { buildDeriveContext, type DeriveContext } from './derive-context.js';
+import {
+  makeWorkflowContextResolver,
+  type WorkflowContextResolver,
+} from './workflow-context.js';
 import {
   appendStatusHistoryEntry,
   parseAssignmentFrontmatter,
@@ -36,6 +41,7 @@ import { recordStatusEvent, resolveActor } from './event-emit.js';
 // Re-exported so the many `import { DeriveContext } from '.../recompute.js'`
 // call sites keep resolving after the interface moved to its leaf module.
 export type { DeriveContext } from './derive-context.js';
+export type { WorkflowContextResolver } from './workflow-context.js';
 
 const LOCK_FILE = '.derive.lock';
 const LOCK_STALE_MS = 30_000;
@@ -63,14 +69,36 @@ export async function markDeriveMigrated(): Promise<void> {
   await writeFileForce(resolve(syntaurRoot(), MIGRATION_MARKER), `${nowTimestamp()}\n`);
 }
 
-/** Resolve the GLOBAL/default derive context from config.md (the legacy single
- * lifecycle, or the built-in default when unconfigured). Callers doing many
- * recomputes (sweeps) resolve once and pass it down. Per-workflow resolution
- * goes through `resolveAssignmentWorkflowContext` (workflow-context.ts), which
- * shares the same {@link buildDeriveContext} constructor so the two never drift. */
-export async function resolveDeriveContext(): Promise<DeriveContext> {
+/** Resolve the derive context for ONE workflow id (default `'default'`) from
+ * config.md. For `'default'` in a legacy config with no `workflows:` block this
+ * is the top-level `statuses:` bundle — byte-identical to the pre-workflow
+ * behavior, so global/default callers are unaffected. Callers doing many
+ * recomputes across workflows should use {@link resolveRecomputeContext} +
+ * `workflowResolver` so each ticket derives against its OWN workflow. */
+export async function resolveDeriveContext(
+  workflowId: string = DEFAULT_WORKFLOW_ID,
+): Promise<DeriveContext> {
   const config = await readConfig();
-  return buildDeriveContext(config.statuses ?? buildDefaultStatusConfig());
+  return buildDeriveContext(getWorkflowBundle(config, workflowId));
+}
+
+/** Resolve BOTH the default-lifecycle context (back-compat fallback) and a
+ * per-ticket workflow resolver in a SINGLE config read. Recompute callers that
+ * act on a specific assignment pass `workflowResolver` into the recompute opts;
+ * {@link recomputeAndWrite} then resolves that ticket's own workflow context
+ * (derive/terminal/known/registry) from its fresh frontmatter + project binding.
+ * `context` stays the default-lifecycle fallback for callers that pass no
+ * resolver. The resolver memoizes contexts by workflow id and bindings by dir,
+ * so a sweep reuses one warm compile cache per workflow. */
+export async function resolveRecomputeContext(): Promise<{
+  context: DeriveContext;
+  workflowResolver: WorkflowContextResolver;
+}> {
+  const config = await readConfig();
+  return {
+    context: buildDeriveContext(getWorkflowBundle(config, DEFAULT_WORKFLOW_ID)),
+    workflowResolver: makeWorkflowContextResolver(config),
+  };
 }
 
 /** Acquire the per-assignment advisory lock. Returns a release function.
@@ -134,7 +162,14 @@ export interface RecomputeOptions {
   by: string | null;
   /** Project dir for dependency facts; null for standalone assignments. */
   projectDir: string | null;
+  /** Default-lifecycle derive context — the fallback used when no
+   * `workflowResolver` is supplied (legacy single-workflow path). */
   context: DeriveContext;
+  /** Per-ticket workflow resolver (memoized by workflow id + project dir). When
+   * present, recompute resolves THIS assignment's own workflow context from its
+   * fresh frontmatter + project binding, so each ticket derives/gates/defers
+   * against its own workflow. Absent → `context` is used. */
+  workflowResolver?: WorkflowContextResolver;
   /** Optional reason carried onto the history entry (pin/block causes). */
   reason?: string;
   /**
@@ -185,7 +220,15 @@ export async function recomputeAndWrite(
       // Terminal check on the FRESH read, inside the lock — a concurrent
       // completion between caller and lock acquisition freezes facts here.
       const originalFm = parseAssignmentFrontmatter(original);
-      if (opts.context.terminalStatuses.has(originalFm.status)) {
+      // Resolve the ticket's OWN workflow context from its fresh frontmatter +
+      // project binding (per-workflow derive/terminal/known/registry). The
+      // `workflow`/`type` binding fields don't change under a fact mutate, so
+      // resolving from `originalFm` is stable for this transaction. Absent
+      // resolver → the default-lifecycle `context` (legacy single-workflow).
+      const ctx = opts.workflowResolver
+        ? (await opts.workflowResolver.forAssignment(originalFm, opts.projectDir)).deriveContext
+        : opts.context;
+      if (ctx.terminalStatuses.has(originalFm.status)) {
         return { changed: false, status: originalFm.status, dimensions: null, deferredTerminal: true };
       }
 
@@ -199,18 +242,18 @@ export async function recomputeAndWrite(
         frontmatter,
         body: extractBody(content),
         projectDir: opts.projectDir,
-        terminalStatuses: opts.context.terminalStatuses,
-        declarations: opts.context.factDeclarations,
+        terminalStatuses: ctx.terminalStatuses,
+        declarations: ctx.factDeclarations,
       });
 
       const dims = deriveDimensions({
         facts,
-        derive: opts.context.derive,
+        derive: ctx.derive,
         currentStatus: frontmatter.status,
-        terminalStatuses: opts.context.terminalStatuses,
-        knownStatusIds: opts.context.knownStatusIds,
+        terminalStatuses: ctx.terminalStatuses,
+        knownStatusIds: ctx.knownStatusIds,
         override: frontmatter.override,
-        registry: opts.context.registry,
+        registry: ctx.registry,
       });
       if (dims === null) {
         return { changed: false, status: frontmatter.status, dimensions: null, deferredTerminal: true };
@@ -319,6 +362,9 @@ export async function recomputeDependents(
   } catch {
     return [];
   }
+  // Each dependent may resolve to a different workflow; ensure a resolver so
+  // siblings derive against their OWN workflow (built once, memoized).
+  const workflowResolver = opts.workflowResolver ?? makeWorkflowContextResolver(await readConfig());
   const results: RecomputeResult[] = [];
   for (const slug of entries) {
     if (slug === changedSlug) continue;
@@ -327,7 +373,7 @@ export async function recomputeDependents(
     try {
       const fm = parseAssignmentFrontmatter(await readFile(path, 'utf-8'));
       if (!fm.dependsOn.includes(changedSlug)) continue;
-      results.push(await recomputeAndWrite(path, { ...opts, projectDir }));
+      results.push(await recomputeAndWrite(path, { ...opts, projectDir, workflowResolver }));
     } catch {
       // unparseable sibling — doctor's territory, not ours
     }
@@ -356,10 +402,16 @@ export async function recomputeAll(
 ): Promise<SweepSummary> {
   const summary: SweepSummary = { scanned: 0, changed: 0, deferredTerminal: 0, warnings: [] };
 
+  // One resolver for the whole sweep: memoizes a derive context per workflow id
+  // (warm compile cache) and a binding per project dir, so a mixed-workflow
+  // board re-derives each ticket against its OWN workflow at near single-context
+  // cost. Built once here unless the caller already supplied one.
+  const workflowResolver = opts.workflowResolver ?? makeWorkflowContextResolver(await readConfig());
+
   const sweepOne = async (path: string, projectDir: string | null): Promise<void> => {
     summary.scanned++;
     try {
-      const result = await recomputeAndWrite(path, { ...opts, projectDir });
+      const result = await recomputeAndWrite(path, { ...opts, projectDir, workflowResolver });
       if (result.changed) summary.changed++;
       if (result.deferredTerminal) summary.deferredTerminal++;
       if (result.warning) summary.warnings.push(result.warning);
@@ -425,8 +477,14 @@ export async function recomputeAssignmentDir(
     if (!(await fileExists(assignmentPath))) return null;
     const parent = dirname(assignmentDir);
     const projectDir = basename(parent) === 'assignments' ? dirname(parent) : null;
-    const context = await resolveDeriveContext();
-    return await recomputeAndWrite(assignmentPath, { cause, by, projectDir, context });
+    const { context, workflowResolver } = await resolveRecomputeContext();
+    return await recomputeAndWrite(assignmentPath, {
+      cause,
+      by,
+      projectDir,
+      context,
+      workflowResolver,
+    });
   } catch {
     return null;
   }

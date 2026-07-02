@@ -135,6 +135,8 @@ export async function resolveAssignmentWorkflowContext(
  * project's `project.md` is read at most once). Not concurrency-guarded — used
  * within a single sweep's sequential loop.
  */
+export type WorkflowContextResolver = ReturnType<typeof makeWorkflowContextResolver>;
+
 export function makeWorkflowContextResolver(config: WorkflowConfigView) {
   const contextCache = new Map<string, WorkflowContext>();
   const bindingCache = new Map<string, ProjectWorkflowBinding>();

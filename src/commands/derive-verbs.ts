@@ -28,11 +28,12 @@ import { captureHeadSha } from '../utils/git-worktree.js';
 import type { AttestationRecord } from '../lifecycle/types.js';
 import {
   recomputeAndWrite,
-  resolveDeriveContext,
+  resolveRecomputeContext,
   isDeriveMigrated,
   type DeriveContext,
   type RecomputeResult,
 } from '../lifecycle/recompute.js';
+import { resolveAssignmentWorkflowContext } from '../lifecycle/workflow-context.js';
 import { emitEvent } from '../lifecycle/event-emit.js';
 import { checkDependencies } from '../lifecycle/transitions.js';
 import { resolveAssignmentTarget } from '../utils/assignment-target.js';
@@ -148,6 +149,29 @@ function reportDerived(label: string, result: RecomputeResult): void {
   if (result.warning) console.warn(`Warning: ${result.warning}`);
 }
 
+/** Resolve the caller-selected ticket's OWN workflow derive context — for
+ * validating fact/status vocabulary against the ticket's workflow rather than
+ * the global default. For legacy/default configs this equals the global
+ * context, so nothing changes until real workflows exist. */
+async function resolveTicketContext(
+  assignment: string,
+  options: DeriveVerbOptions,
+): Promise<DeriveContext> {
+  return resolveTicketContextForTarget(await resolveTarget(assignment, options));
+}
+
+async function resolveTicketContextForTarget(target: ResolvedTarget): Promise<DeriveContext> {
+  const config = await readConfig();
+  const fm = parseAssignmentFrontmatter(await readFile(target.assignmentPath, 'utf-8'));
+  return (
+    await resolveAssignmentWorkflowContext({
+      assignment: fm,
+      projectDir: target.projectDir,
+      config,
+    })
+  ).deriveContext;
+}
+
 /**
  * Shared spine for every fact verb. The mutation runs INSIDE
  * recomputeAndWrite's lock + CAS loop — one transaction with derivation — so
@@ -164,13 +188,16 @@ async function assertFact(
   extra?: { context?: DeriveContext; auditMutation?: boolean },
 ): Promise<RecomputeResult> {
   const target = await resolveTarget(assignment, options);
-  const context = extra?.context ?? (await resolveDeriveContext());
+  // Per-ticket workflow resolver → recomputeAndWrite derives against THIS
+  // ticket's own workflow. `context` is the default-lifecycle fallback.
+  const { context: defaultContext, workflowResolver } = await resolveRecomputeContext();
 
   const result = await recomputeAndWrite(target.assignmentPath, {
     cause,
     by: await inferActor(options),
     projectDir: target.projectDir,
-    context,
+    context: extra?.context ?? defaultContext,
+    workflowResolver,
     reason: options.reason,
     mutate: (content) => mutate(content, target),
     auditMutation: extra?.auditMutation,
@@ -238,7 +265,7 @@ export async function factSetCommand(
   value: string,
   options: DeriveVerbOptions,
 ): Promise<void> {
-  const context = await resolveDeriveContext();
+  const context = await resolveTicketContext(assignment, options);
   const decl = context.factDeclarations.find((d) => d.name === name);
   if (!decl || (decl.type !== 'bool' && decl.type !== 'number')) {
     throw new Error(
@@ -275,7 +302,7 @@ export async function attestCommand(
   fact: string,
   options: DeriveVerbOptions & { verdict?: string; note?: string },
 ): Promise<void> {
-  const context = await resolveDeriveContext();
+  const context = await resolveTicketContext(assignment, options);
   const decl = context.factDeclarations.find((d) => d.name === fact);
   if (!decl || decl.type !== 'attestation') {
     throw new Error(
@@ -435,7 +462,7 @@ export async function requestReviewCommand(
     return;
   }
   const target = await resolveTarget(assignment, options);
-  const context = await resolveDeriveContext();
+  const context = await resolveTicketContextForTarget(target);
   const fm = parseAssignmentFrontmatter(await readFile(target.assignmentPath, 'utf-8'));
   await applyStageFact(assignment, options, target, fm, 'review', 'Review requested', context);
 }
@@ -445,7 +472,7 @@ export async function requestReviewCommand(
  * effect: `--agent` sets the assignee when none is set yet. */
 export async function implementStartedCommand(assignment: string, options: DeriveVerbOptions): Promise<void> {
   const target = await resolveTarget(assignment, options);
-  const context = await resolveDeriveContext();
+  const context = await resolveTicketContextForTarget(target);
 
   // Non-blocking unmet-dependency warning. We WARN, never refuse — refusing
   // would diverge from the legacy transition behavior (transitions.ts) and
@@ -515,7 +542,7 @@ export async function statusPinCommand(
   status: string,
   options: DeriveVerbOptions,
 ): Promise<void> {
-  const context: DeriveContext = await resolveDeriveContext();
+  const context: DeriveContext = await resolveTicketContext(assignment, options);
   if (!context.knownStatusIds.has(status)) {
     throw new Error(`"${status}" is not a defined status id.`);
   }
@@ -555,14 +582,14 @@ export async function recomputeCommand(
   // (explicit human/agent act) stays ungated.
   if (options.ifMigrated && !(await isDeriveMigrated())) return;
 
-  const context = await resolveDeriveContext();
+  const { context, workflowResolver } = await resolveRecomputeContext();
   if (options.all) {
     const { recomputeAll } = await import('../lifecycle/recompute.js');
     const config = await readConfig();
     const summary = await recomputeAll(
       options.dir ? expandHome(options.dir) : config.defaultProjectDir,
       assignmentsDirFn(),
-      { cause: 'recompute', by: await inferActor(options), context },
+      { cause: 'recompute', by: await inferActor(options), context, workflowResolver },
     );
     console.log(
       `Recomputed ${summary.scanned} assignment(s): ${summary.changed} changed, ${summary.deferredTerminal} terminal (deferred).`,
@@ -621,6 +648,7 @@ export async function recomputeCommand(
     by: await inferActor(options),
     projectDir,
     context,
+    workflowResolver,
   });
   reportDerived(result.changed ? 'Recomputed' : 'Recomputed (no change)', result);
 }

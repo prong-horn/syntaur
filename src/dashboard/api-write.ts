@@ -2035,14 +2035,15 @@ export function createWriteRouter(
         });
         return;
       }
-      const { recomputeAndWrite, resolveDeriveContext } = await import('../lifecycle/recompute.js');
+      const { recomputeAndWrite, resolveRecomputeContext } = await import('../lifecycle/recompute.js');
       const { updateOverride } = await import('../lifecycle/frontmatter.js');
-      const context = await resolveDeriveContext();
+      const { context, workflowResolver } = await resolveRecomputeContext();
       const result = await recomputeAndWrite(assignmentPath, {
         cause: clearing ? 'unpin' : 'pin',
         by: 'human',
         projectDir: resolve(projectsDir, projectSlug),
         context,
+        workflowResolver,
         mutate: (content) => {
           if (clearing) return updateOverride(content, null);
           const current = parseAssignmentFull(content);
@@ -2296,10 +2297,10 @@ export function createWriteRouter(
       }
 
       const { reason } = req.body || {};
-      const { recomputeAndWrite, recomputeDependents, resolveDeriveContext } = await import(
+      const { recomputeAndWrite, recomputeDependents, resolveRecomputeContext } = await import(
         '../lifecycle/recompute.js'
       );
-      const context = await resolveDeriveContext();
+      const { context, workflowResolver } = await resolveRecomputeContext();
 
       // Derived-status v3 command routing:
       //  - block/unblock are PURE FACT mutations — they run inside the
@@ -2317,6 +2318,7 @@ export function createWriteRouter(
           by: 'human',
           projectDir,
           context,
+          workflowResolver,
           reason: typeof reason === 'string' ? reason : undefined,
           mutate: (content) =>
             updateAssignmentFile(content, {
@@ -2367,6 +2369,7 @@ export function createWriteRouter(
         by: 'human',
         projectDir,
         context,
+        workflowResolver,
       });
       if (settled.warning) {
         res.status(503).json({ error: settled.warning });
@@ -2380,6 +2383,7 @@ export function createWriteRouter(
           cause: 'dep-terminal',
           by: 'system',
           context,
+          workflowResolver,
         });
       }
 
@@ -2997,15 +3001,16 @@ export function createWriteRouter(
         });
         return;
       }
-      const { recomputeAndWrite, resolveDeriveContext } = await import('../lifecycle/recompute.js');
+      const { recomputeAndWrite, resolveRecomputeContext } = await import('../lifecycle/recompute.js');
       const { updateOverride } = await import('../lifecycle/frontmatter.js');
-      const context = await resolveDeriveContext();
+      const { context, workflowResolver } = await resolveRecomputeContext();
       const projectDirForId = resolved.standalone ? null : resolve(resolved.assignmentDir, '..', '..');
       const result = await recomputeAndWrite(assignmentPath, {
         cause: clearing ? 'unpin' : 'pin',
         by: 'human',
         projectDir: projectDirForId,
         context,
+        workflowResolver,
         mutate: (content) => {
           if (clearing) return updateOverride(content, null);
           const current = parseAssignmentFull(content);
@@ -3169,10 +3174,10 @@ export function createWriteRouter(
         res.status(400).json({ error: `Unsupported transition command "${command}"` });
         return;
       }
-      const { recomputeAndWrite, recomputeDependents, resolveDeriveContext } = await import(
+      const { recomputeAndWrite, recomputeDependents, resolveRecomputeContext } = await import(
         '../lifecycle/recompute.js'
       );
-      const context = await resolveDeriveContext();
+      const { context, workflowResolver } = await resolveRecomputeContext();
       const byIdPath = resolve(resolved.assignmentDir, 'assignment.md');
       const byIdProjectDir = resolved.standalone ? null : resolve(resolved.assignmentDir, '..', '..');
 
@@ -3186,6 +3191,7 @@ export function createWriteRouter(
           by: 'human',
           projectDir: byIdProjectDir,
           context,
+          workflowResolver,
           reason: typeof reason === 'string' ? reason : undefined,
           mutate: (content) =>
             updateAssignmentFile(content, {
@@ -3244,6 +3250,7 @@ export function createWriteRouter(
         by: 'human',
         projectDir: byIdProjectDir,
         context,
+        workflowResolver,
       });
       if (settledById.warning) {
         res.status(503).json({ error: settledById.warning });
@@ -3259,6 +3266,7 @@ export function createWriteRouter(
             cause: 'dep-terminal',
             by: 'system',
             context,
+            workflowResolver,
           });
         }
       }
