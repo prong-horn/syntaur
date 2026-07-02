@@ -4,6 +4,7 @@ import { MouseProvider } from '../mouse/MouseContext.js';
 import { isMouseSequence } from '../mouse/parse.js';
 import { computeLayout, type FocusTarget } from './layout.js';
 import { LeftRail } from './LeftRail.js';
+import { DetailPane, type DetailSelection } from './DetailPane.js';
 import { loadSessions } from '../sessions/feed.js';
 import { readConfig, getAgents, type AgentConfig } from '../../utils/config.js';
 import type { AgentSessionWithLiveness } from '../../dashboard/types.js';
@@ -77,6 +78,15 @@ export const Cockpit: React.FC<{ projectsDir: string; assignmentsDir: string; tm
     if (key.tab) setFocus((f) => (f === 'rail' ? 'detail' : 'rail'));
   });
 
+  // Session wins over assignment when both are set (e.g. a session was
+  // selected after an assignment, or vice versa) — the more recently
+  // clicked/selected item should drive the detail pane.
+  const selection: DetailSelection = selectedSession
+    ? { kind: 'session', session: selectedSession }
+    : selectedAssignment
+      ? { kind: 'assignment', projectSlug: selectedAssignment.projectSlug, assignmentSlug: selectedAssignment.assignmentSlug }
+      : { kind: 'none' };
+
   // CRITICAL: no borders on hit-tested regions and EXPLICIT width/height from
   // `layout.regions` (never flexGrow) — so each rendered Box occupies exactly
   // its layout rect and mouse (x,y) maps 1:1. Focus is shown via header color,
@@ -93,22 +103,19 @@ export const Cockpit: React.FC<{ projectsDir: string; assignmentsDir: string; tm
               sessions={sessions}
               focused={focus === 'rail'}
               active={focus === 'rail'}
-              onSelectSession={setSelectedSession}
-              onSelectAssignment={(projectSlug, assignmentSlug) =>
-                setSelectedAssignment({ projectSlug, assignmentSlug })
-              }
+              onSelectSession={(session) => {
+                setSelectedSession(session);
+                setSelectedAssignment(null);
+              }}
+              onSelectAssignment={(projectSlug, assignmentSlug) => {
+                setSelectedAssignment({ projectSlug, assignmentSlug });
+                setSelectedSession(null);
+              }}
             />
           </Box>
           <Box width={detail.width} height={detail.height} flexDirection="column">
-            <Text bold color={focus === 'detail' ? 'cyan' : undefined}>{`Detail (assignmentsDir=${assignmentsDir})`}</Text>
-            {selectedSession && (
-              <Text dimColor>session: {selectedSession.agent} {selectedSession.sessionId.slice(0, 8)}</Text>
-            )}
-            {selectedAssignment && (
-              <Text dimColor>
-                assignment: {selectedAssignment.projectSlug ?? '(standalone)'}/{selectedAssignment.assignmentSlug}
-              </Text>
-            )}
+            <Text bold color={focus === 'detail' ? 'cyan' : undefined}>Detail</Text>
+            <DetailPane projectsDir={projectsDir} assignmentsDir={assignmentsDir} selection={selection} />
           </Box>
         </Box>
         <Box height={actionBar.height}>
