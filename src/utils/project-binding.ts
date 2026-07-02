@@ -1,4 +1,4 @@
-import { readFile } from 'node:fs/promises';
+import { readFile, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { fileExists } from './fs.js';
 
@@ -72,4 +72,65 @@ export async function readProjectBinding(projectDir: string): Promise<ProjectWor
   }
 
   return { defaultWorkflow, workflowByType };
+}
+
+/** Serialize a binding to frontmatter lines (empty string when nothing to
+ * emit). `defaultWorkflow` is emitted only when non-null; `workflowByType` only
+ * when non-empty, with keys sorted for stable output. */
+function serializeBinding(binding: ProjectWorkflowBinding): string {
+  const lines: string[] = [];
+  if (binding.defaultWorkflow) lines.push(`defaultWorkflow: ${binding.defaultWorkflow}`);
+  const types = Object.keys(binding.workflowByType).sort();
+  if (types.length > 0) {
+    lines.push('workflowByType:');
+    for (const t of types) lines.push(`  ${t}: ${binding.workflowByType[t]}`);
+  }
+  return lines.join('\n');
+}
+
+/** Remove the existing `defaultWorkflow:` scalar and `workflowByType:` block
+ * from a frontmatter body, leaving every other field intact. */
+function stripBindingFromFrontmatter(fm: string): string {
+  const out: string[] = [];
+  let inBlock = false;
+  for (const line of fm.split('\n')) {
+    if (/^workflowByType:\s*$/.test(line)) {
+      inBlock = true;
+      continue;
+    }
+    if (inBlock) {
+      if (line.length > 0 && (line[0] === ' ' || line[0] === '\t')) continue; // still inside block
+      inBlock = false; // sibling key — fall through and keep it
+    }
+    if (/^defaultWorkflow:/.test(line)) continue;
+    out.push(line);
+  }
+  return out.join('\n').replace(/\n+$/, '');
+}
+
+/**
+ * Node-safe writer: replace a project's `defaultWorkflow` + `workflowByType`
+ * binding in `<projectDir>/project.md`, preserving all other frontmatter and the
+ * body. Used by `syntaur workflow bind-type` and the binding UI's server route.
+ */
+export async function setProjectWorkflowBinding(
+  projectDir: string,
+  binding: ProjectWorkflowBinding,
+): Promise<void> {
+  const projectMd = resolve(projectDir, 'project.md');
+  const content = (await fileExists(projectMd)) ? await readFile(projectMd, 'utf-8') : '';
+  const block = serializeBinding(binding);
+
+  const fmMatch = content.match(/^(---\n)([\s\S]*?)\n(---)/);
+  if (!fmMatch) {
+    // No frontmatter yet — wrap the (possibly empty) body in one.
+    const fmBody = block.length > 0 ? block : '';
+    await writeFile(projectMd, `---\n${fmBody}\n---\n${content}`, 'utf-8');
+    return;
+  }
+
+  const cleaned = stripBindingFromFrontmatter(fmMatch[2]);
+  const after = content.slice(fmMatch[0].length);
+  const newFm = block.length > 0 ? `${cleaned}\n${block}` : cleaned;
+  await writeFile(projectMd, `---\n${newFm}\n---${after}`, 'utf-8');
 }

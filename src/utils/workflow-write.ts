@@ -58,7 +58,12 @@ export async function writeWorkflowBundle(
   // `workflows:` block just from status-settings edits. The block (and the D4
   // lift+delete) is introduced only when a real, non-default workflow is
   // created below, or when one already exists.
-  if (!hasWorkflowsBlock(config) && workflowId === DEFAULT_WORKFLOW_ID && !opts.setDefault) {
+  if (
+    !hasWorkflowsBlock(config) &&
+    workflowId === DEFAULT_WORKFLOW_ID &&
+    !opts.setDefault &&
+    opts.label === undefined // a custom label can only live in the workflows: block
+  ) {
     await writeStatusConfig(bundle);
     return;
   }
