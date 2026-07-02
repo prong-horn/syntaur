@@ -47,6 +47,7 @@ import {
   formatInstallUrlHandlerError,
 } from './commands/install-url-handler.js';
 import { browseCommand } from './commands/browse.js';
+import { tuiCommand } from './commands/tui.js';
 import { createPlaybookCommand } from './commands/create-playbook.js';
 import { listPlaybooksCommand } from './commands/list-playbooks.js';
 import { enablePlaybookCommand } from './commands/enable-playbook.js';
@@ -785,6 +786,15 @@ program
   .action(
     runCommand(async (options) => {
       await browseCommand(options);
+    }),
+  );
+
+program
+  .command('tui')
+  .description('Open the fullscreen agent cockpit (browse, launch, monitor, attach)')
+  .action(
+    runCommand(async () => {
+      await tuiCommand();
     }),
   );
 
