@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import React from 'react';
 import { Text, useInput } from 'ink';
 import { render } from 'ink-testing-library';
-import { buildActions, dispatchActionKey } from '../actions.js';
+import { buildActions, dispatchActionKey, isCleanExit, describeChildFailure } from '../actions.js';
 import type { DetailSelection } from '../DetailPane.js';
 import type { Action } from '../actionBarLayout.js';
 import type { AgentSessionWithLiveness } from '../../../dashboard/types.js';
@@ -60,6 +60,18 @@ describe('buildActions', () => {
 
   it('disables Attach when the selected session has no assignmentSlug', () => {
     const selection: DetailSelection = { kind: 'session', session: session({ assignmentSlug: null }) };
+    const actions = buildActions(selection, true, callbacks());
+    expect(actions.find((a) => a.key === 'a')?.enabled).toBe(false);
+  });
+
+  it('enables Attach for a LIVE session with tmux and a non-null assignmentSlug', () => {
+    const selection: DetailSelection = { kind: 'session', session: session({ isLive: true }) };
+    const actions = buildActions(selection, true, callbacks());
+    expect(actions.find((a) => a.key === 'a')?.enabled).toBe(true);
+  });
+
+  it('disables Attach for the SAME session when it is not live (dead session)', () => {
+    const selection: DetailSelection = { kind: 'session', session: session({ isLive: false }) };
     const actions = buildActions(selection, true, callbacks());
     expect(actions.find((a) => a.key === 'a')?.enabled).toBe(false);
   });
@@ -141,5 +153,52 @@ describe('dispatchActionKey', () => {
     stdin.write('a');
     expect(cb.onAttach).toHaveBeenCalledTimes(1);
     unmount();
+  });
+});
+
+describe('isCleanExit', () => {
+  it('is clean on code 0 with no error', () => {
+    expect(isCleanExit({ code: 0 })).toBe(true);
+  });
+
+  it('is NOT clean on a non-zero code', () => {
+    expect(isCleanExit({ code: 1 })).toBe(false);
+  });
+
+  it('is NOT clean on a null code by default (strict mode, e.g. a spawn hand-off)', () => {
+    expect(isCleanExit({ code: null })).toBe(false);
+  });
+
+  it('treats a null code as clean when allowNullCode is set (e.g. a tmux detach)', () => {
+    expect(isCleanExit({ code: null }, { allowNullCode: true })).toBe(true);
+  });
+
+  it('is NOT clean whenever an error is present, even alongside code 0', () => {
+    expect(isCleanExit({ code: 0, error: new Error('boom') })).toBe(false);
+  });
+
+  it('is NOT clean for an error with a null code, even with allowNullCode set', () => {
+    expect(isCleanExit({ code: null, error: new Error('boom') }, { allowNullCode: true })).toBe(false);
+  });
+});
+
+describe('describeChildFailure', () => {
+  it('describes an ENOENT spawn error as "command not found"', () => {
+    const err = Object.assign(new Error('spawn nope ENOENT'), { code: 'ENOENT' });
+    expect(describeChildFailure({ code: null, error: err }, 'nope')).toBe('command not found (nope)');
+  });
+
+  it('describes an EACCES spawn error as "permission denied"', () => {
+    const err = Object.assign(new Error('spawn nope EACCES'), { code: 'EACCES' });
+    expect(describeChildFailure({ code: null, error: err }, 'nope')).toBe('permission denied (nope)');
+  });
+
+  it('falls back to the raw error message for other spawn errors', () => {
+    const err = Object.assign(new Error('boom'), { code: 'EWEIRD' });
+    expect(describeChildFailure({ code: null, error: err }, 'nope')).toBe('boom');
+  });
+
+  it('describes a non-zero, error-free exit by its code', () => {
+    expect(describeChildFailure({ code: 7 })).toBe('exited with code 7');
   });
 });

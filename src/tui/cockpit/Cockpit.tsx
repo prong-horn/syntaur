@@ -8,7 +8,7 @@ import { computeLayout, type FocusTarget } from './layout.js';
 import { LeftRail } from './LeftRail.js';
 import { DetailPane, type DetailSelection } from './DetailPane.js';
 import { ActionBar, type Action } from './ActionBar.js';
-import { buildActions, dispatchActionKey, runLaunch } from './actions.js';
+import { buildActions, dispatchActionKey, runLaunch, isCleanExit, describeChildFailure, type ChildOutcome } from './actions.js';
 import { loadSessions } from '../sessions/feed.js';
 import { readConfig, getAgents, type AgentConfig } from '../../utils/config.js';
 import type { AgentSessionWithLiveness } from '../../dashboard/types.js';
@@ -39,7 +39,11 @@ export const Cockpit: React.FC<{ projectsDir: string; assignmentsDir: string; tm
 
   const [agents, setAgents] = useState<AgentConfig[] | null>(null);
   const [sessions, setSessions] = useState<AgentSessionWithLiveness[]>([]);
-  const [selectedSession, setSelectedSession] = useState<AgentSessionWithLiveness | null>(null);
+  // Only the id is stored as state; the session object itself is DERIVED
+  // below from the freshest `sessions` on every render so a selection never
+  // goes stale between ~1.5s polls (liveness, transcriptPath, etc. always
+  // reflect the latest poll instead of a frozen click-time snapshot).
+  const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
   const [selectedAssignment, setSelectedAssignment] = useState<SelectedAssignment | null>(null);
   const [status, setStatus] = useState<string | null>(null);
 
@@ -91,6 +95,17 @@ export const Cockpit: React.FC<{ projectsDir: string; assignmentsDir: string; tm
     };
   }, [projectsDir, agents]);
 
+  // Re-derive the selected session from the freshest `sessions` poll every
+  // render, rather than trusting a snapshot captured at click-time — a
+  // session's liveness/transcriptPath/etc. can change between the ~1.5s
+  // polls, and a stale object would keep Attach enabled after the session
+  // died (see actions.ts's isLive gate) and would tail an obsolete
+  // transcriptPath. If the id no longer matches any row (session
+  // disappeared), this correctly derives to null and `selection` below
+  // falls through to the assignment (or none).
+  const selectedSession: AgentSessionWithLiveness | null =
+    selectedSessionId != null ? (sessions.find((s) => s.sessionId === selectedSessionId) ?? null) : null;
+
   // Session wins over assignment when both are set (e.g. a session was
   // selected after an assignment, or vice versa) — the more recently
   // clicked/selected item should drive the detail pane.
@@ -105,9 +120,11 @@ export const Cockpit: React.FC<{ projectsDir: string; assignmentsDir: string; tm
   // only enables this action for a project-nested assignment selection (see
   // guard below, duplicated defensively — mirrors the nullability guards in
   // actions.ts's doc comment). A directory-agent hand-off never touches the
-  // real terminal until `suspendTerminal` grants it; the cockpit then exits
-  // once the agent process exits (a hand-off launch REPLACES the cockpit
-  // session, matching the CLI's non-tmux `launchAgent` behavior).
+  // real terminal until `suspendTerminal` grants it; the cockpit exits ONLY
+  // on a clean (code 0) child exit (a hand-off launch REPLACES the cockpit
+  // session on success, matching the CLI's non-tmux `launchAgent` behavior).
+  // A spawn error (e.g. ENOENT) or non-zero exit must NOT silently tear down
+  // the cockpit — the user needs to see the failure and stays put.
   const handleLaunch = async (): Promise<void> => {
     if (selection.kind !== 'assignment' || selection.projectSlug == null) return;
     const { projectSlug, assignmentSlug } = selection;
@@ -119,6 +136,7 @@ export const Cockpit: React.FC<{ projectsDir: string; assignmentsDir: string; tm
     try {
       const plan = await buildLaunchPlan({ projectsDir, projectSlug, assignmentSlug, agent });
       const sessionName = tmuxSessionName(projectSlug, assignmentSlug);
+      let handOffFailure: string | null = null;
       const mode = await runLaunch(sessionName, plan, {
         tmuxAvailable,
         launchInTmux,
@@ -128,21 +146,38 @@ export const Cockpit: React.FC<{ projectsDir: string; assignmentsDir: string; tm
           // the mouse DEC private modes first (otherwise clicks/drags leak raw
           // SGR bytes into the child's stdin) and re-enable in the helper's
           // `finally`. Mirrors handleAttach's suspend wrapping below.
+          // `outcome` is captured by this closure because neither
+          // `runWithMouseSuspended` nor Ink's `suspendTerminal` propagate
+          // their callback's return value.
+          let outcome: ChildOutcome = { code: null };
           await runWithMouseSuspended(write, () =>
             suspendTerminal(async () => {
               await new Promise<void>((resolveChild) => {
                 const child = spawn(p.command, p.args, { cwd: p.cwd, stdio: 'inherit' });
-                child.on('exit', () => resolveChild());
-                child.on('error', () => resolveChild());
+                child.on('exit', (code) => {
+                  outcome = { code: (code as number | null | undefined) ?? null };
+                  resolveChild();
+                });
+                child.on('error', (err) => {
+                  outcome = { code: null, error: err as Error };
+                  resolveChild();
+                });
               });
             }),
           );
-          exit();
+          if (isCleanExit(outcome)) {
+            exit();
+            return;
+          }
+          // Stay in the cockpit and surface why instead of silently tearing
+          // it down (mirrors launchAgent's ENOENT/EACCES wording, ../launch.ts).
+          handOffFailure = describeChildFailure(outcome, p.command);
         },
       });
       if (mode === 'tmux') setStatus(`Launched in tmux (${sessionName})`);
-      // Hand-off mode never reaches here in practice — `exit()` above tears
-      // down the cockpit as soon as the suspended agent process exits.
+      else if (handOffFailure != null) setStatus(`Launch failed: ${handOffFailure}`);
+      // Otherwise (hand-off + clean exit): `exit()` above tears down the
+      // cockpit as soon as the agent process exits — nothing left to render.
     } catch (err) {
       setStatus(`Launch failed: ${err instanceof Error ? err.message : String(err)}`);
     }
@@ -165,12 +200,19 @@ export const Cockpit: React.FC<{ projectsDir: string; assignmentsDir: string; tm
       // mouse DEC private modes and Ink's resume does not re-run MouseProvider's
       // mount effect, so without this the cockpit returns mouse-dead. The helper
       // re-enables in a `finally`, so a failed attach never leaves mouse off.
+      // `result` is captured by this closure for the same reason as
+      // `outcome` above: the suspend helpers discard their callback's value.
+      let result: ChildOutcome = { code: null };
       await runWithMouseSuspended(write, () =>
         suspendTerminal(async () => {
-          await runTmuxAttach(sessionName);
+          result = await runTmuxAttach(sessionName);
         }),
       );
-      setStatus(`Detached from ${sessionName}`);
+      if (isCleanExit(result, { allowNullCode: true })) {
+        setStatus(`Detached from ${sessionName}`);
+      } else {
+        setStatus(`Attach failed: ${describeChildFailure(result)}`);
+      }
     } catch (err) {
       setStatus(`Attach failed: ${err instanceof Error ? err.message : String(err)}`);
     }
@@ -212,12 +254,12 @@ export const Cockpit: React.FC<{ projectsDir: string; assignmentsDir: string; tm
               focused={focus === 'rail'}
               active={focus === 'rail'}
               onSelectSession={(session) => {
-                setSelectedSession(session);
+                setSelectedSessionId(session.sessionId);
                 setSelectedAssignment(null);
               }}
               onSelectAssignment={(projectSlug, assignmentSlug) => {
                 setSelectedAssignment({ projectSlug, assignmentSlug });
-                setSelectedSession(null);
+                setSelectedSessionId(null);
               }}
             />
           </Box>
