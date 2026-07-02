@@ -427,6 +427,12 @@ function getTransitionDefinitions(config: ResolvedStatusConfig) {
 }
 
 interface ResolvedStatusConfig {
+  /** The workflow id this config was resolved for (`'default'` for the legacy
+   * single lifecycle). */
+  workflowId: string;
+  /** Human label for the workflow (`'Default'` for the built-in, Title Case of
+   * the id for a named workflow with no explicit label). */
+  label: string;
   custom: boolean;
   statuses: Array<{ id: string; label: string; description?: string; color?: string; terminal?: boolean }>;
   order: string[];
@@ -546,6 +552,14 @@ async function statusConfigForAssignment(
   return getStatusConfig(await resolveWorkflowIdByDir(assignment, projectDir));
 }
 
+/** Human label for a workflow id: the explicit `workflows.<id>.label`, else
+ * `'Default'` for the built-in, else Title Case of the id. */
+function workflowLabel(config: SyntaurConfig, workflowId: string): string {
+  const explicit = config.workflows?.[workflowId]?.label;
+  if (explicit) return explicit;
+  return workflowId === 'default' ? 'Default' : toTitleCase(workflowId);
+}
+
 function resolveWorkflowStatusConfig(
   config: SyntaurConfig,
   workflowId: string,
@@ -579,6 +593,8 @@ function resolveWorkflowStatusConfig(
         });
     const accepted = acceptFactDeclarations(normalizeFactDeclarations(sc.facts ?? null));
     return {
+      workflowId,
+      label: workflowLabel(config, workflowId),
       custom: true,
       statuses: effectiveStatuses,
       order: effectiveOrder,
@@ -599,6 +615,8 @@ function resolveWorkflowStatusConfig(
   // dashboard and the `syntaur status` CLI resolve identical defaults (no drift).
   const def = buildDefaultStatusConfig();
   return {
+    workflowId,
+    label: workflowLabel(config, workflowId),
     custom: false,
     statuses: def.statuses,
     order: def.order,
@@ -1126,7 +1144,7 @@ async function toStandaloneBoardItem(sr: StandaloneRecord): Promise<AssignmentBo
   }
 
   return {
-    ...toAssignmentSummary(sr.record, terminalStatuses),
+    ...toAssignmentSummary(sr.record, config),
     projectSlug: null,
     projectTitle: null,
     blockedReason: sr.record.blockedReason,
@@ -1301,10 +1319,8 @@ export async function getProjectDetail(
   const assignmentSummaries = (
     await Promise.all(
       assignments.map(async (a) => {
-        const { terminalStatuses } = await getStatusConfig(
-          await resolveWorkflowIdWithBinding(a, projectBinding),
-        );
-        return toAssignmentSummary(a, terminalStatuses);
+        const config = await getStatusConfig(await resolveWorkflowIdWithBinding(a, projectBinding));
+        return toAssignmentSummary(a, config);
       }),
     )
   ).sort((left, right) => compareTimestamps(right.updated, left.updated));
@@ -1463,10 +1479,7 @@ export async function getAssignmentDetail(
     };
   }
 
-  const { terminalStatuses } = await statusConfigForAssignment(
-    assignment,
-    resolve(projectsDir, projectSlug),
-  );
+  const wfConfig = await statusConfigForAssignment(assignment, resolve(projectsDir, projectSlug));
   const detail: AssignmentDetail = {
     id: assignment.id,
     projectSlug,
@@ -1474,6 +1487,10 @@ export async function getAssignmentDetail(
     title: assignment.title,
     status: assignment.status,
     type: assignment.type,
+    workflow: assignment.workflow,
+    resolvedWorkflow: wfConfig.workflowId,
+    workflowLabel: wfConfig.label,
+    statusLabel: statusLabelFor(wfConfig, assignment.status),
     priority: assignment.priority as AssignmentDetail['priority'],
     assignee: assignment.assignee,
     dependsOn: assignment.dependsOn,
@@ -1488,7 +1505,7 @@ export async function getAssignmentDetail(
     archived: assignment.archived,
     archivedAt: assignment.archivedAt,
     archivedReason: assignment.archivedReason,
-    ...deriveStatusVirtuals(assignment, terminalStatuses),
+    ...deriveStatusVirtuals(assignment, wfConfig.terminalStatuses),
     override: assignment.override,
     derived: await buildDerivedDetail(assignment, assignmentDir, resolve(projectsDir, projectSlug)),
     created: assignment.created,
@@ -1810,7 +1827,7 @@ async function buildStandaloneAssignmentDetail(
     comments = { updated: parsed.updated, entryCount: parsed.entryCount, entries: parsed.entries };
   }
 
-  const { terminalStatuses } = await statusConfigForAssignment(assignment, null);
+  const wfConfig = await statusConfigForAssignment(assignment, null);
   const detail: AssignmentDetail = {
     id: assignment.id,
     projectSlug: null,
@@ -1818,6 +1835,10 @@ async function buildStandaloneAssignmentDetail(
     title: assignment.title,
     status: assignment.status,
     type: assignment.type,
+    workflow: assignment.workflow,
+    resolvedWorkflow: wfConfig.workflowId,
+    workflowLabel: wfConfig.label,
+    statusLabel: statusLabelFor(wfConfig, assignment.status),
     priority: assignment.priority as AssignmentDetail['priority'],
     assignee: assignment.assignee,
     dependsOn: [], // standalone cannot declare dependencies
@@ -1832,7 +1853,7 @@ async function buildStandaloneAssignmentDetail(
     archived: assignment.archived,
     archivedAt: assignment.archivedAt,
     archivedReason: assignment.archivedReason,
-    ...deriveStatusVirtuals(assignment, terminalStatuses),
+    ...deriveStatusVirtuals(assignment, wfConfig.terminalStatuses),
     override: assignment.override,
     derived: await buildDerivedDetail(assignment, assignmentDir, null),
     created: assignment.created,
@@ -2393,9 +2414,15 @@ async function buildDerivedDetail(
   }
 }
 
+/** Display label for a status id within a resolved workflow (falls back to the
+ * raw id when the status isn't in the workflow's definitions). */
+function statusLabelFor(config: ResolvedStatusConfig, status: string): string {
+  return config.statuses.find((s) => s.id === status)?.label ?? status;
+}
+
 function toAssignmentSummary(
   assignment: AssignmentRecord,
-  terminalStatuses: ReadonlySet<string>,
+  config: ResolvedStatusConfig,
 ): AssignmentSummary {
   return {
     id: assignment.id,
@@ -2403,6 +2430,10 @@ function toAssignmentSummary(
     title: assignment.title,
     status: assignment.status,
     type: assignment.type,
+    workflow: assignment.workflow,
+    resolvedWorkflow: config.workflowId,
+    workflowLabel: config.label,
+    statusLabel: statusLabelFor(config, assignment.status),
     priority: assignment.priority as AssignmentSummary['priority'],
     assignee: assignment.assignee,
     dependsOn: assignment.dependsOn,
@@ -2414,7 +2445,7 @@ function toAssignmentSummary(
     archived: assignment.archived,
     archivedAt: assignment.archivedAt,
     archivedReason: assignment.archivedReason,
-    ...deriveStatusVirtuals(assignment, terminalStatuses),
+    ...deriveStatusVirtuals(assignment, config.terminalStatuses),
   };
 }
 
@@ -2452,7 +2483,7 @@ async function toAssignmentBoardItem(
   }
 
   return {
-    ...toAssignmentSummary(assignment, terminalStatuses),
+    ...toAssignmentSummary(assignment, config),
     projectSlug: projectRecord.summary.slug,
     projectTitle: projectRecord.summary.title,
     blockedReason: assignment.blockedReason,

@@ -50,6 +50,14 @@ export interface AssignmentSummary {
   title: string;
   status: string;
   type: string | null;
+  /** Explicit `workflow:` override stored on the assignment (null → resolved via binding). */
+  workflow: string | null;
+  /** The workflow id this ticket resolves to (drives its lifecycle/board column). */
+  resolvedWorkflow: string;
+  /** Human label of the resolved workflow (board swimlane / badge label). */
+  workflowLabel: string;
+  /** Display label of the current status WITHIN the resolved workflow. */
+  statusLabel: string;
   priority: 'low' | 'medium' | 'high' | 'critical';
   assignee: string | null;
   dependsOn: string[];
@@ -257,6 +265,14 @@ export interface AssignmentDetail {
   title: string;
   status: string;
   type: string | null;
+  /** Explicit `workflow:` override stored on the assignment (null → resolved via binding). */
+  workflow: string | null;
+  /** The workflow id this ticket resolves to (drives its lifecycle). */
+  resolvedWorkflow: string;
+  /** Human label of the resolved workflow. */
+  workflowLabel: string;
+  /** Display label of the current status WITHIN the resolved workflow. */
+  statusLabel: string;
   priority: 'low' | 'medium' | 'high' | 'critical';
   assignee: string | null;
   dependsOn: string[];
