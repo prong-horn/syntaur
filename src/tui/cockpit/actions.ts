@@ -1,5 +1,6 @@
 import type { DetailSelection } from './DetailPane.js';
 import type { Action } from './actionBarLayout.js';
+import type { launchInTmux as LaunchInTmux } from '../tmux/launch.js';
 
 export interface ActionCallbacks {
   onLaunch: () => void;
@@ -53,4 +54,38 @@ export function buildActions(
 export function dispatchActionKey(actions: Action[], input: string): void {
   const action = actions.find((a) => a.key === input);
   if (action?.enabled) action.onRun();
+}
+
+/** The resolved spawn invocation `runLaunch` hands to tmux or `handOff`. */
+export interface LaunchExecPlan {
+  command: string;
+  args: string[];
+  cwd: string;
+}
+
+export interface LaunchDeps {
+  tmuxAvailable: boolean;
+  launchInTmux: typeof LaunchInTmux;
+  handOff: (plan: LaunchExecPlan) => Promise<void>;
+}
+
+/**
+ * Launch degradation: tmux-available means launch detached into a named tmux
+ * session (Cockpit stays resident, session shows up in Live Sessions);
+ * otherwise fall back to an in-process hand-off (the caller suspends the
+ * terminal, spawns the plan with inherited stdio, and exits the cockpit once
+ * the agent exits). Kept side-effect-free besides the two injected deps so
+ * this degradation matrix is unit-testable without tmux, Ink, or a real spawn.
+ */
+export async function runLaunch(
+  sessionName: string,
+  plan: LaunchExecPlan,
+  deps: LaunchDeps,
+): Promise<'tmux' | 'handoff'> {
+  if (deps.tmuxAvailable) {
+    await deps.launchInTmux({ sessionName, cwd: plan.cwd, command: plan.command, args: plan.args });
+    return 'tmux';
+  }
+  await deps.handOff(plan);
+  return 'handoff';
 }
