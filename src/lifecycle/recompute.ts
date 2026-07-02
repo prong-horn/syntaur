@@ -19,50 +19,29 @@
 import { createHash } from 'node:crypto';
 import { open, readdir, readFile, unlink, stat } from 'node:fs/promises';
 import { basename, dirname, resolve } from 'node:path';
-import {
-  DEFAULT_DERIVE_CONFIG,
-  buildDefaultStatusConfig,
-  normalizeFactDeclarations,
-  readConfig,
-  type DeriveConfig,
-  type FactDeclaration,
-} from '../utils/config.js';
+import { buildDefaultStatusConfig, readConfig } from '../utils/config.js';
 import { fileExists, writeFileForce } from '../utils/fs.js';
 import { syntaurRoot } from '../utils/paths.js';
 import { nowTimestamp } from '../utils/timestamp.js';
 import { computeFacts } from './facts.js';
-import {
-  acceptFactDeclarations,
-  buildDeriveRegistry,
-  deriveDimensions,
-  type DerivedDimensions,
-} from './derive.js';
-import type { FieldRegistry } from '../utils/query/index.js';
+import { deriveDimensions, type DerivedDimensions } from './derive.js';
+import { buildDeriveContext, type DeriveContext } from './derive-context.js';
 import {
   appendStatusHistoryEntry,
   parseAssignmentFrontmatter,
   updateAssignmentFile,
 } from './frontmatter.js';
 import { recordStatusEvent, resolveActor } from './event-emit.js';
-import { DEFAULT_TERMINAL_STATUSES } from './types.js';
+
+// Re-exported so the many `import { DeriveContext } from '.../recompute.js'`
+// call sites keep resolving after the interface moved to its leaf module.
+export type { DeriveContext } from './derive-context.js';
 
 const LOCK_FILE = '.derive.lock';
 const LOCK_STALE_MS = 30_000;
 const LOCK_WAIT_MS = 50;
 const LOCK_MAX_WAITS = 100; // ~5s
 const CAS_RETRIES = 3;
-
-export interface DeriveContext {
-  derive: DeriveConfig;
-  terminalStatuses: ReadonlySet<string>;
-  knownStatusIds: ReadonlySet<string>;
-  /** ACCEPTED custom-fact declarations (normalize→accept output) — resolved
-   * once and passed to computeFacts so every recompute speaks one vocabulary. */
-  factDeclarations: FactDeclaration[];
-  /** Derive registry built from the accepted declarations — ONE per config
-   * resolution so the compile-condition cache stays warm across sweeps. */
-  registry: FieldRegistry;
-}
 
 /**
  * One-time migration marker (rollout safety): IMPLICIT recompute triggers —
@@ -84,22 +63,14 @@ export async function markDeriveMigrated(): Promise<void> {
   await writeFileForce(resolve(syntaurRoot(), MIGRATION_MARKER), `${nowTimestamp()}\n`);
 }
 
-/** Resolve the derive context from config.md (defaults when unconfigured).
- * Callers doing many recomputes (sweeps) resolve once and pass it down. */
+/** Resolve the GLOBAL/default derive context from config.md (the legacy single
+ * lifecycle, or the built-in default when unconfigured). Callers doing many
+ * recomputes (sweeps) resolve once and pass it down. Per-workflow resolution
+ * goes through `resolveAssignmentWorkflowContext` (workflow-context.ts), which
+ * shares the same {@link buildDeriveContext} constructor so the two never drift. */
 export async function resolveDeriveContext(): Promise<DeriveContext> {
   const config = await readConfig();
-  const statusConfig = config.statuses ?? buildDefaultStatusConfig();
-  const terminal = new Set(statusConfig.statuses.filter((s) => s.terminal).map((s) => s.id));
-  // Run the full pipeline ONCE: raw → normalize (drop malformed) → accept (drop
-  // collisions). Every consumer of this context uses the ACCEPTED list/registry.
-  const accepted = acceptFactDeclarations(normalizeFactDeclarations(config.statuses?.facts ?? null));
-  return {
-    derive: config.statuses?.derive ?? DEFAULT_DERIVE_CONFIG,
-    terminalStatuses: terminal.size > 0 ? terminal : DEFAULT_TERMINAL_STATUSES,
-    knownStatusIds: new Set(statusConfig.statuses.map((s) => s.id)),
-    factDeclarations: accepted,
-    registry: buildDeriveRegistry(accepted),
-  };
+  return buildDeriveContext(config.statuses ?? buildDefaultStatusConfig());
 }
 
 /** Acquire the per-assignment advisory lock. Returns a release function.
