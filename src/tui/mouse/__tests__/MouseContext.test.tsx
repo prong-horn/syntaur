@@ -35,7 +35,9 @@ describe('MouseProvider + useMouseRegions', () => {
         if (!emitter) return;
         const cap = (chunk: string) => emitted.push(chunk);
         emitter.on('input', cap);
-        return () => emitter.off('input', cap);
+        return () => {
+          emitter.off('input', cap);
+        };
       }, [stdinCtx]);
       return <Text>probe</Text>;
     }
