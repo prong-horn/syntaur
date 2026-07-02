@@ -1,6 +1,7 @@
 import type { DetailSelection } from './DetailPane.js';
 import type { Action } from './actionBarLayout.js';
 import type { launchInTmux as LaunchInTmux } from '../tmux/launch.js';
+import type { AgentLaunchPlan } from '../../launch/build-launch.js';
 
 export interface ActionCallbacks {
   onLaunch: () => void;
@@ -56,12 +57,13 @@ export function dispatchActionKey(actions: Action[], input: string): void {
   if (action?.enabled) action.onRun();
 }
 
-/** The resolved spawn invocation `runLaunch` hands to tmux or `handOff`. */
-export interface LaunchExecPlan {
-  command: string;
-  args: string[];
-  cwd: string;
-}
+/**
+ * The resolved spawn invocation `runLaunch` hands to tmux or `handOff`. Same
+ * shape as `AgentLaunchPlan` (`../../launch/build-launch.js`) — the only
+ * producer of this value is `buildLaunchPlan`, so this is a type alias rather
+ * than a redeclaration to avoid two independently-drifting definitions.
+ */
+export type LaunchExecPlan = AgentLaunchPlan;
 
 export interface LaunchDeps {
   tmuxAvailable: boolean;

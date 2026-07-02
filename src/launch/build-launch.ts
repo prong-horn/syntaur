@@ -86,7 +86,7 @@ export function buildAgentArgv(
 }
 
 /** The resolved spawn invocation for an agent launch: what to run, and from where. */
-export interface LaunchPlan {
+export interface AgentLaunchPlan {
   command: string;
   args: string[];
   cwd: string;
@@ -114,7 +114,7 @@ export async function buildLaunchPlan(input: {
   assignmentSlug: string;
   agent: AgentConfig;
   cwdOverride?: string;
-}): Promise<LaunchPlan> {
+}): Promise<AgentLaunchPlan> {
   const { projectsDir, projectSlug, assignmentSlug, agent, cwdOverride } = input;
 
   const detail = await getAssignmentDetail(projectsDir, projectSlug, assignmentSlug);

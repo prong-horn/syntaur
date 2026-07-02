@@ -2,7 +2,7 @@ import { spawn } from 'node:child_process';
 import type { AgentConfig } from '../utils/config.js';
 import type { SpawnFn } from '../launch/execute.js';
 import { bareGrabSeed } from '../launch/launch-prompt.js';
-import { buildLaunchPlan, type LaunchPlan } from '../launch/build-launch.js';
+import { buildLaunchPlan, type AgentLaunchPlan } from '../launch/build-launch.js';
 
 export type { ResolvedArgv, BuiltArgv } from '../launch/types.js';
 // `formatFallbackCwdWarning` now lives in ../launch/cwd.ts (a neutral module so
@@ -18,7 +18,7 @@ export { formatFallbackCwdWarning } from '../launch/cwd.js';
 // `import { buildAgentArgv, shellQuote } from '../tui/launch.js'` call sites
 // (e.g. launch-argv.test.ts, launch/argv.ts, launch/execute.ts) keep working.
 export { buildAgentArgv, shellQuote } from '../launch/build-launch.js';
-export type { LaunchPlan } from '../launch/build-launch.js';
+export type { AgentLaunchPlan } from '../launch/build-launch.js';
 
 export interface LaunchOptions {
   projectsDir: string;
@@ -107,7 +107,7 @@ export async function launchAgent(options: LaunchOptions): Promise<void> {
   const { agent } = options;
   const exitWith = options.onExit ?? ((code: number) => process.exit(code));
 
-  let plan: LaunchPlan;
+  let plan: AgentLaunchPlan;
   try {
     plan = await buildLaunchPlan({
       projectsDir: options.projectsDir,
