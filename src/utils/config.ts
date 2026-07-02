@@ -2234,6 +2234,27 @@ export async function deleteWorkflowsConfig(): Promise<void> {
 }
 
 /**
+ * Remove the legacy top-level `statuses:` block from config.md (Decision D4:
+ * once the workflow library exists, the single source of truth is
+ * `workflows.default`, so the lifted legacy block is deleted). No-op when
+ * config.md or the block is absent. The read path already prefers `workflows`
+ * over `statuses`, so this is a cleanup step, not a correctness requirement.
+ */
+export async function deleteLegacyStatusesBlock(): Promise<void> {
+  const configPath = resolve(syntaurRoot(), 'config.md');
+  if (!(await fileExists(configPath))) return;
+
+  const existing = await readFile(configPath, 'utf-8');
+  const fmMatch = existing.match(/^(---\n)([\s\S]*?)\n(---)/);
+  if (!fmMatch) return;
+  if (!/^statuses:\s*$/m.test(fmMatch[2])) return; // nothing to strip
+
+  const afterFrontmatter = existing.slice(fmMatch[0].length);
+  const cleanedFm = stripTopLevelBlock(fmMatch[2], 'statuses');
+  await writeFileForce(configPath, `---\n${cleanedFm}\n---${afterFrontmatter}`);
+}
+
+/**
  * Parse the nested `search:` block from raw config.md content. Returns null when
  * absent (caller falls back to DEFAULT_SEARCH_CONFIG). Mirrors parseStatusConfig's
  * manual block walk: `defaultScope`/`externalIds` are scalars, `aliases:` is a
