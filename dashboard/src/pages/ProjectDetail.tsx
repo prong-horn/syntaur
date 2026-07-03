@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { BookOpenText, ChevronDown, ChevronUp, GitBranch, Plus, SquarePen } from 'lucide-react';
 import { CopyButton } from '../components/CopyButton';
+import { ProjectWorkflowSection } from '../components/ProjectWorkflowSection';
 import { useProject, useWorkspaces, useWorkspacePrefix, type AssignmentSummary } from '../hooks/useProjects';
 import { formatDate, formatDateTime } from '../lib/format';
 import { LoadingState } from '../components/LoadingState';
@@ -949,6 +950,18 @@ export function ProjectDetail() {
                 value: 'todos',
                 label: 'Todos',
                 content: <ProjectTodosPanel projectId={project.slug} />,
+              },
+              {
+                value: 'workflow',
+                label: 'Workflow',
+                content: (
+                  <ProjectWorkflowSection
+                    projectSlug={project.slug}
+                    defaultWorkflow={project.defaultWorkflow}
+                    workflowByType={project.workflowByType}
+                    onSaved={() => refetch()}
+                  />
+                ),
               },
               {
                 value: 'dependencies',
