@@ -95,8 +95,8 @@ describe('Cockpit shell', () => {
     };
     const cb = { onLaunch: vi.fn(), onAttach: vi.fn(), onQuit: vi.fn() };
 
-    const withTmux = buildActions(selection, true, cb);
-    const withoutTmux = buildActions(selection, false, cb);
+    const withTmux = buildActions(selection, { tmuxAvailable: true, claudeBgAvailable: false }, cb);
+    const withoutTmux = buildActions(selection, { tmuxAvailable: false, claudeBgAvailable: false }, cb);
 
     expect(withTmux.find((a) => a.key === 'a')?.enabled).toBe(true);
     expect(withoutTmux.find((a) => a.key === 'a')?.enabled).toBe(false);
