@@ -16,6 +16,7 @@ export function resolveRowIndex(rect: Rect, mouseY: number, headerRows: number):
 
 export interface ProjectTreeProps {
   projectsDir: string;
+  contentRect: Rect;
   active: boolean;
   onSelectAssignment: (projectSlug: string | null, assignmentSlug: string) => void;
 }
