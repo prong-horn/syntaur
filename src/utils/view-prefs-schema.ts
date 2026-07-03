@@ -56,7 +56,14 @@ export const SORT_DIRECTIONS: readonly SortDirection[] = ['asc', 'desc'];
 export type Density = 'comfortable' | 'compact';
 export const DENSITIES: readonly Density[] = ['comfortable', 'compact'];
 
-export type Grouping = 'none' | 'status' | 'type' | 'priority' | 'assignee' | 'project';
+export type Grouping =
+  | 'none'
+  | 'status'
+  | 'type'
+  | 'priority'
+  | 'assignee'
+  | 'project'
+  | 'workflow';
 export const GROUPINGS: readonly Grouping[] = [
   'none',
   'status',
@@ -64,6 +71,7 @@ export const GROUPINGS: readonly Grouping[] = [
   'priority',
   'assignee',
   'project',
+  'workflow',
 ];
 
 export type Activity = 'all' | 'stale' | 'fresh';
