@@ -35,6 +35,15 @@ describe('formatAge', () => {
   });
 });
 
+describe('buildRailRows — agent column (AC2: "agent · assignment/project or description · current activity · recency")', () => {
+  it('carries the session agent separately from the work label', () => {
+    const rows = buildRailRows([session({ agent: 'codex', projectSlug: 'proj', assignmentSlug: 'a1' })], { recentExpanded: false, now: NOW });
+    const row = rows.find((r) => r.kind === 'session') as RailSessionRow;
+    expect(row.agent).toBe('codex');
+    expect(row.label).toBe('proj/a1');
+  });
+});
+
 describe('buildRailRows — label resolution (never a bare UUID)', () => {
   it('prefers projectSlug/assignmentSlug when both are present', () => {
     const rows = buildRailRows([session({ projectSlug: 'proj', assignmentSlug: 'a1' })], { recentExpanded: false, now: NOW });

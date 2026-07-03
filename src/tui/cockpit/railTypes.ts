@@ -36,6 +36,7 @@ export interface LeftRailProps {
 export interface RailSessionRow {
   kind: 'session';
   session: AgentSessionWithLiveness;
+  agent: string;
   label: string;
   glyph: string;
   glyphColor: string;
@@ -123,6 +124,7 @@ function sessionRow(s: AgentSessionWithLiveness, now: number, liveActivity: stri
   return {
     kind: 'session',
     session: s,
+    agent: s.agent,
     label: resolveLabel(s),
     glyph: s.isLive ? (waiting ? '◐' : '●') : '○',
     glyphColor: s.isLive ? (waiting ? 'yellow' : 'green') : 'gray',

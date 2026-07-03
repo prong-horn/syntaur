@@ -48,6 +48,25 @@ describe('LeftRail', () => {
     const f = lastFrame() ?? '';
     expect(f).toContain('LIVE (1)');
     expect(f).toContain('RECENT (0)');
+    expect(f).toContain('claude'); // agent column — AC2: "agent · assignment/project ... "
+    expect(f).toContain('s1');
+    unmount();
+  });
+
+  it('shows the agent name as its own column, distinct from the work label', () => {
+    const { lastFrame, unmount } = render(
+      <MouseProvider>
+        <LeftRail
+          contentRect={{ x: 0, y: 0, width: 30, height: 20 }}
+          sessions={[session('s1', { agent: 'codex' })]}
+          selectedSessionId={null}
+          focused
+          onSelectSession={vi.fn()}
+        />
+      </MouseProvider>,
+    );
+    const f = lastFrame() ?? '';
+    expect(f).toContain('codex');
     expect(f).toContain('s1');
     unmount();
   });

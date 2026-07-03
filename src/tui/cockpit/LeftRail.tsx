@@ -140,6 +140,8 @@ function renderRow(row: RailRow): React.ReactNode {
   return (
     <>
       <Text color={row.glyphColor}>{row.glyph} </Text>
+      <Text bold>{row.agent}</Text>
+      {'  '}
       {row.label}
       {row.activityText ? <Text color={row.isWaiting ? 'yellow' : undefined}> {row.activityText}</Text> : null}
       {'  '}
