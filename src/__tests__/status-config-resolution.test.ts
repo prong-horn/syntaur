@@ -6,10 +6,17 @@ import {
   scanAssignmentsByStatus,
   applyStatusResolutions,
   verifyNoDriftedOrphans,
+  scanWorkflowUsage,
   StatusResolutionError,
   type StatusResolution,
 } from '../utils/status-config-resolution.js';
 import { parseAssignmentFrontmatter } from '../lifecycle/frontmatter.js';
+import {
+  makeWorkflowContextResolver,
+  type WorkflowContextResolver,
+} from '../lifecycle/workflow-context.js';
+import { buildDefaultStatusConfig } from '../utils/status-defaults.js';
+import type { WorkflowDefinition } from '../utils/config.js';
 
 let root: string;
 let projectsDir: string;
@@ -386,5 +393,167 @@ describe('verifyNoDriftedOrphans', () => {
     ).rejects.toMatchObject({ code: 'drift-detected' });
     // Ensure the file is still on its drifted status (we didn't mutate it).
     expect(getStatus(await readFile(driftedPath, 'utf-8'))).toBe('review');
+  });
+});
+
+// ── Task 8: per-workflow scoping, re-bind remap, delete-in-use guard ─────────
+
+async function seedWf(
+  dir: string,
+  slug: string,
+  status: string,
+  workflow: string | null,
+): Promise<string> {
+  await mkdir(dir, { recursive: true });
+  const wfLine = workflow ? `\nworkflow: ${workflow}` : '';
+  const md = `---
+id: 11111111-1111-1111-1111-${slug.padEnd(12, '0').slice(0, 12)}
+slug: ${slug}
+title: ${slug}
+status: ${status}
+priority: medium${wfLine}
+---
+
+# ${slug}
+`;
+  const p = join(dir, 'assignment.md');
+  await writeFile(p, md);
+  return p;
+}
+
+async function seedProjectBinding(slug: string, bindingLines: string): Promise<void> {
+  const dir = join(projectsDir, slug);
+  await mkdir(dir, { recursive: true });
+  await writeFile(
+    join(dir, 'project.md'),
+    `---\nid: ${slug}\nslug: ${slug}\ntitle: ${slug}\n${bindingLines}\n---\n\n# ${slug}\n`,
+  );
+}
+
+function wfResolver(ids: string[], defaultWorkflow: string | null = null): WorkflowContextResolver {
+  const workflows: Record<string, WorkflowDefinition> = {};
+  for (const id of ids) workflows[id] = { label: id, ...buildDefaultStatusConfig() };
+  return makeWorkflowContextResolver({ workflows, defaultWorkflow });
+}
+
+describe('scanAssignmentsByStatus — per-workflow scoping (Task 8)', () => {
+  it('records the resolved workflow on each affected assignment', async () => {
+    await seedWf(join(projectsDir, 'p1', 'assignments', 'a1'), 'a1', 'pending', 'alpha');
+    const resolver = wfResolver(['default', 'alpha', 'beta']);
+    const result = await scanAssignmentsByStatus(projectsDir, standaloneDir, ['pending'], {
+      resolver,
+    });
+    expect(result.get('pending')![0].resolvedWorkflow).toBe('alpha');
+    expect(result.get('pending')![0].workflow).toBe('alpha');
+  });
+
+  it('a workflow-scoped scan touches only tickets resolving to that workflow', async () => {
+    await seedWf(join(projectsDir, 'p1', 'assignments', 'a1'), 'a1', 'pending', 'alpha');
+    await seedWf(join(projectsDir, 'p1', 'assignments', 'a2'), 'a2', 'pending', 'beta');
+    const resolver = wfResolver(['default', 'alpha', 'beta']);
+
+    const scoped = await scanAssignmentsByStatus(projectsDir, standaloneDir, ['pending'], {
+      resolver,
+      workflowId: 'alpha',
+    });
+    expect(scoped.get('pending')!.map((a) => a.assignmentSlug)).toEqual(['a1']);
+
+    const unscoped = await scanAssignmentsByStatus(projectsDir, standaloneDir, ['pending'], {
+      resolver,
+    });
+    expect(unscoped.get('pending')!.length).toBe(2);
+  });
+
+  it('handles a standalone ticket with a workflow override', async () => {
+    await seedWf(join(standaloneDir, 'uuid-1'), 'uuid-1', 'pending', 'alpha');
+    const resolver = wfResolver(['default', 'alpha']);
+    const scoped = await scanAssignmentsByStatus(projectsDir, standaloneDir, ['pending'], {
+      resolver,
+      workflowId: 'alpha',
+    });
+    expect(scoped.get('pending')!.map((a) => a.display)).toEqual(['(standalone) uuid-1']);
+  });
+
+  it('re-bind remap: a scoped status change leaves other workflows’ tickets untouched', async () => {
+    // Two tickets share status "shared" but resolve to different workflows.
+    await seedWf(join(projectsDir, 'p1', 'assignments', 'a1'), 'a1', 'shared', 'alpha');
+    const betaPath = await seedWf(
+      join(projectsDir, 'p1', 'assignments', 'a2'),
+      'a2',
+      'shared',
+      'beta',
+    );
+    const resolver = wfResolver(['default', 'alpha', 'beta']);
+
+    // Re-bind alpha's "shared" → "remapped" (only alpha is in scope).
+    const affected = await scanAssignmentsByStatus(projectsDir, standaloneDir, ['shared'], {
+      resolver,
+      workflowId: 'alpha',
+    });
+    const applied = await applyStatusResolutions(
+      [{ id: 'shared', mode: 'remap', target: 'remapped' }],
+      affected,
+      new Set(['remapped']),
+    );
+    expect(applied.remapped).toBe(1);
+    // beta's ticket was out of scope — its status is unchanged.
+    expect(getStatus(await readFile(betaPath, 'utf-8'))).toBe('shared');
+  });
+});
+
+describe('scanWorkflowUsage — delete-in-use guard (Task 8)', () => {
+  const base = () => ({ projectsDir, standaloneDir });
+
+  it('protects the built-in default workflow', async () => {
+    const usage = await scanWorkflowUsage('default', {
+      ...base(),
+      resolver: wfResolver(['default', 'alpha']),
+      isGlobalDefault: false,
+    });
+    expect(usage.deletable).toBe(false);
+    expect(usage.blockers.join(' ')).toContain('cannot be deleted');
+  });
+
+  it('blocks deletion while tickets resolve to the workflow', async () => {
+    await seedWf(join(projectsDir, 'p1', 'assignments', 'a1'), 'a1', 'pending', 'alpha');
+    const usage = await scanWorkflowUsage('alpha', {
+      ...base(),
+      resolver: wfResolver(['default', 'alpha']),
+      isGlobalDefault: false,
+    });
+    expect(usage.deletable).toBe(false);
+    expect(usage.assignments.map((a) => a.assignmentSlug)).toEqual(['a1']);
+    expect(usage.blockers.join(' ')).toContain('reassign');
+  });
+
+  it('blocks deletion of the global defaultWorkflow', async () => {
+    const usage = await scanWorkflowUsage('alpha', {
+      ...base(),
+      resolver: wfResolver(['default', 'alpha'], 'alpha'),
+      isGlobalDefault: true,
+    });
+    expect(usage.deletable).toBe(false);
+    expect(usage.blockers.join(' ')).toContain('global defaultWorkflow');
+  });
+
+  it('blocks deletion while a project binds the workflow (even with no tickets)', async () => {
+    await seedProjectBinding('p1', 'workflowByType:\n  bug: alpha');
+    const usage = await scanWorkflowUsage('alpha', {
+      ...base(),
+      resolver: wfResolver(['default', 'alpha']),
+      isGlobalDefault: false,
+    });
+    expect(usage.deletable).toBe(false);
+    expect(usage.boundProjects).toEqual(['p1']);
+  });
+
+  it('allows deletion of an unreferenced custom workflow', async () => {
+    const usage = await scanWorkflowUsage('gamma', {
+      ...base(),
+      resolver: wfResolver(['default', 'gamma']),
+      isGlobalDefault: false,
+    });
+    expect(usage.deletable).toBe(true);
+    expect(usage.blockers).toEqual([]);
   });
 });

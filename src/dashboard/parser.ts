@@ -91,6 +91,31 @@ function parseListField(frontmatter: string, fieldName: string): string[] {
 }
 
 /**
+ * Parse a flat nested `header:` mapping block (indented `key: value` lines) into
+ * a string map. Absent header → `{}`. Stops at the first non-indented line (a
+ * sibling top-level key). Null-valued entries are dropped. Mirrors the lifecycle
+ * parser's `parseNestedBlock` so the two parsers agree on e.g. `workflowByType`.
+ */
+function parseNestedMap(frontmatter: string, header: string): Record<string, string> {
+  const headerMatch = frontmatter.match(new RegExp(`^${header}:\\s*$`, 'm'));
+  if (!headerMatch) return {};
+  const start =
+    (headerMatch.index ?? frontmatter.indexOf(headerMatch[0])) + headerMatch[0].length + 1;
+  const out: Record<string, string> = {};
+  for (const line of frontmatter.slice(start).split('\n')) {
+    if (line.length === 0) continue;
+    if (line[0] !== ' ' && line[0] !== '\t') break; // sibling top-level key — block ended
+    const colonIdx = line.indexOf(':');
+    if (colonIdx < 0) continue;
+    const key = line.slice(0, colonIdx).trim();
+    if (!key) continue;
+    const value = parseSimpleValue(line.slice(colonIdx + 1));
+    if (value !== null) out[key] = value;
+  }
+  return out;
+}
+
+/**
  * Strip a paired surrounding `"..."` or `'...'` from a YAML scalar.
  * Mirrors `parseSimpleValue`'s quote handling for list-item entries (which
  * `parseListField` leaves raw).
@@ -127,6 +152,10 @@ export interface ParsedProject {
    */
   repositories: string[];
   externalIds: Array<{ system: string; id: string; url: string | null }>;
+  /** Project-level default workflow id; null when the field is absent. */
+  defaultWorkflow: string | null;
+  /** Project `type → workflow id` binding map; `{}` when the field is absent. */
+  workflowByType: Record<string, string>;
   body: string;
 }
 
@@ -150,6 +179,8 @@ export function parseProject(fileContent: string): ParsedProject {
     workspace: getField(fm, 'workspace'),
     repositories: parseListField(fm, 'repositories').map(unquoteYamlString),
     externalIds: parseExternalIds(fm),
+    defaultWorkflow: getField(fm, 'defaultWorkflow'),
+    workflowByType: parseNestedMap(fm, 'workflowByType'),
     body,
   };
 }
@@ -235,6 +266,8 @@ export interface ParsedAssignmentFull {
   project: string | null;
   workspaceGroup: string | null;
   type: string | null;
+  /** Explicit lifecycle-workflow override (`workflow:` id); null when unset. */
+  workflow: string | null;
   status: string;
   priority: string;
   assignee: string | null;
@@ -456,6 +489,7 @@ export function parseAssignmentFull(fileContent: string): ParsedAssignmentFull {
     project: getField(fm, 'project'),
     workspaceGroup: getField(fm, 'workspaceGroup'),
     type: getField(fm, 'type'),
+    workflow: getField(fm, 'workflow'),
     status: getField(fm, 'status') ?? 'pending',
     priority: getField(fm, 'priority') ?? 'medium',
     assignee: getField(fm, 'assignee'),

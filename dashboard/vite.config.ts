@@ -29,6 +29,7 @@ export default defineConfig({
       '@shared/view-filters-query': resolve(__dirname, '../src/utils/view-filters-query.ts'),
       '@shared/query': resolve(__dirname, '../src/utils/query/index.ts'),
       '@shared/derive-config': resolve(__dirname, '../src/utils/derive-config.ts'),
+      '@shared/workflow-resolve': resolve(__dirname, '../src/utils/workflow-resolve.ts'),
       '@shared/derive': resolve(__dirname, '../src/lifecycle/derive.ts'),
       '@shared/state-machine': resolve(__dirname, '../src/lifecycle/state-machine.ts'),
     },

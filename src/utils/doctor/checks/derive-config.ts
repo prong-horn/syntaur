@@ -18,6 +18,7 @@ import {
   validateDeriveConfig,
   validateFactDeclarations,
 } from '../../config.js';
+import { getWorkflowLibrary } from '../../workflow-resolve.js';
 import {
   acceptFactDeclarations,
   buildDeriveRegistry,
@@ -32,11 +33,17 @@ const deriveConfigValid: Check = {
   category: CATEGORY,
   title: 'Custom fact declarations and derive rules are valid',
   async run(ctx): Promise<CheckResult> {
-    const statuses = ctx.config.statuses;
-    const rawFacts = statuses?.facts ?? null;
-    const derive = statuses?.derive ?? null;
+    // Validate EVERY workflow bundle in the library (legacy single-config reads
+    // as `{ default: <statuses> }`), so a misconfigured phase ladder / facts in
+    // ANY workflow is surfaced — each problem labeled by workflow id.
+    const library = getWorkflowLibrary(ctx.config);
+    const entries = Object.entries(library);
+    const multi = entries.length > 1;
+    const toCheck = entries.filter(
+      ([, wf]) => (wf.facts && wf.facts.length > 0) || wf.derive,
+    );
 
-    if (!statuses || ((!rawFacts || rawFacts.length === 0) && !derive)) {
+    if (toCheck.length === 0) {
       return {
         id: this.id,
         category: this.category,
@@ -48,17 +55,24 @@ const deriveConfigValid: Check = {
     }
 
     const problems: string[] = [];
-    if (rawFacts && rawFacts.length > 0) {
-      problems.push(...validateFactDeclarations(rawFacts));
-    }
-    if (derive) {
-      // Build the dynamic registry from the ACCEPTED declarations so derive
-      // conditions referencing declared fact names pass, undeclared still fail.
-      const accepted = acceptFactDeclarations(normalizeFactDeclarations(rawFacts));
-      const registry = buildDeriveRegistry(accepted);
-      problems.push(
-        ...validateDeriveConfig(derive, statuses, (when) => validateDeriveCondition(when, registry)),
-      );
+    for (const [id, wf] of toCheck) {
+      const label = multi ? `[workflow ${id}] ` : '';
+      const rawFacts = wf.facts ?? null;
+      if (rawFacts && rawFacts.length > 0) {
+        for (const p of validateFactDeclarations(rawFacts)) problems.push(`${label}${p}`);
+      }
+      if (wf.derive) {
+        // Build the dynamic registry from THIS workflow's ACCEPTED declarations so
+        // its derive conditions referencing declared fact names pass, undeclared
+        // still fail. `wf` is a StatusConfig (definitions) for status-id checks.
+        const accepted = acceptFactDeclarations(normalizeFactDeclarations(rawFacts));
+        const registry = buildDeriveRegistry(accepted);
+        for (const p of validateDeriveConfig(wf.derive, wf, (when) =>
+          validateDeriveCondition(when, registry),
+        )) {
+          problems.push(`${label}${p}`);
+        }
+      }
     }
 
     if (problems.length === 0) {

@@ -77,6 +77,7 @@ import { timelineCommand } from './commands/timeline.js';
 import { inboxCommand } from './commands/inbox.js';
 import { viewsCommand } from './commands/views.js';
 import { statusCommand } from './commands/status.js';
+import { workflowCommand } from './commands/workflow.js';
 import { workspaceCommand } from './commands/workspace.js';
 import { progressCommand } from './commands/progress.js';
 import { getDefaultCommandName } from './cli-default-command.js';
@@ -146,6 +147,7 @@ program
     'medium',
   )
   .option('--type <type>', 'Assignment type (e.g. feature, bug, refactor)')
+  .option('--workflow <id>', 'Lifecycle workflow this assignment follows (defaults to the resolved binding)')
   .option('--depends-on <slugs>', 'Comma-separated dependency slugs (not allowed with --one-off)')
   .option('--links <slugs>', 'Comma-separated linked assignment slugs (projectSlug/assignmentSlug format)')
   .option('--dir <path>', 'Override default project directory (ignored for --one-off)')
@@ -876,6 +878,7 @@ program.addCommand(timelineCommand);
 program.addCommand(inboxCommand);
 program.addCommand(viewsCommand);
 program.addCommand(statusCommand);
+program.addCommand(workflowCommand);
 program.addCommand(workspaceCommand);
 program.addCommand(progressCommand);
 program.addCommand(leaseCommand);

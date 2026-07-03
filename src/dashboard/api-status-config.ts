@@ -1,7 +1,7 @@
 import { Router, type Request, type Response } from 'express';
 import {
-  writeStatusConfig,
   deleteStatusConfig,
+  readConfig,
   DEFAULT_DERIVE_CONFIG,
   validateDeriveConfig,
   validateDeriveShape,
@@ -11,6 +11,14 @@ import {
   type DeriveConfig,
   type StatusTransition,
 } from '../utils/config.js';
+import { buildDefaultStatusConfig } from '../utils/status-defaults.js';
+import { getWorkflowLibrary, DEFAULT_WORKFLOW_ID } from '../utils/workflow-resolve.js';
+import {
+  writeWorkflowBundle,
+  deleteWorkflowFromConfig,
+  setDefaultWorkflow,
+} from '../utils/workflow-write.js';
+import { makeWorkflowContextResolver } from '../lifecycle/workflow-context.js';
 import { acceptFactDeclarations, buildDeriveRegistry } from '../utils/fact-registry.js';
 import { DEFAULT_COMMAND_TARGETS } from '../lifecycle/state-machine.js';
 import { getStatusConfig, clearStatusConfigCache, installRecordsInvalidation } from './api.js';
@@ -19,6 +27,7 @@ import {
   scanAssignmentsByStatus,
   applyStatusResolutions,
   verifyNoDriftedOrphans,
+  scanWorkflowUsage,
   StatusResolutionError,
   type StatusResolution,
   type AffectedAssignment,
@@ -170,20 +179,31 @@ function mapResolutionErrorToHttp(
   }
 }
 
+/** The workflow id a request targets — from the merged `:workflowId` route
+ * param, defaulting to `default` (the legacy `/api/config/statuses` mount and
+ * the built-in workflow). */
+function requestWorkflowId(req: Request): string {
+  const id = req.params.workflowId;
+  return isString(id) ? id : DEFAULT_WORKFLOW_ID;
+}
+
 export function createStatusConfigRouter(
   projectsDir: string,
   assignmentsDir: string | null,
 ): Router {
-  const router = Router();
+  // mergeParams so a parent mount at `/api/config/workflows/:workflowId` exposes
+  // `req.params.workflowId` in these handlers; the legacy `/api/config/statuses`
+  // mount has no such param and every handler falls back to `default`.
+  const router = Router({ mergeParams: true });
   // The POST/DELETE routes rewrite assignment.md status fields (and may remove
   // assignment dirs) via applyStatusResolutions; clear the shared records cache
   // synchronously once each mutation resolves so the client's immediate refetch
   // sees fresh status counts rather than the pre-remap snapshot.
   installRecordsInvalidation(router);
 
-  router.get('/', async (_req: Request, res: Response) => {
+  router.get('/', async (req: Request, res: Response) => {
     try {
-      const config = await getStatusConfig();
+      const config = await getStatusConfig(requestWorkflowId(req));
       res.json(configResponse(config));
     } catch (error) {
       console.error('Error getting status config:', error);
@@ -198,7 +218,13 @@ export function createStatusConfigRouter(
         res.status(400).json({ error: 'malformed-id' });
         return;
       }
-      const affected = await scanAssignmentsByStatus(projectsDir, assignmentsDir, [id]);
+      // Scope to tickets resolving to THIS workflow so a status shared with
+      // another workflow doesn't over-report.
+      const resolver = makeWorkflowContextResolver(await readConfig());
+      const affected = await scanAssignmentsByStatus(projectsDir, assignmentsDir, [id], {
+        resolver,
+        workflowId: requestWorkflowId(req),
+      });
       const list = affected.get(id) ?? [];
       res.json(buildAffectedResponse(id, list));
     } catch (error) {
@@ -209,6 +235,7 @@ export function createStatusConfigRouter(
 
   router.post('/', async (req: Request, res: Response) => {
     try {
+      const workflowId = requestWorkflowId(req);
       const {
         statuses,
         order,
@@ -220,7 +247,7 @@ export function createStatusConfigRouter(
       } = req.body ?? {};
 
       // Fetch current config early — needed for both facts-only and full saves.
-      const currentConfig = await getStatusConfig();
+      const currentConfig = await getStatusConfig(workflowId);
 
       // ── Body-presence semantics ──────────────────────────────────────────
       // Every section is optional; an omitted section preserves the current
@@ -463,10 +490,13 @@ export function createStatusConfigRouter(
         }
       }
 
-      // Scan affected assignments for every dropped id.
+      // Scan affected assignments for every dropped id, SCOPED to this workflow
+      // (a shared status id in another workflow must not be touched by an edit
+      // to this one). The resolver is reused for the post-apply drift re-scan.
+      const scanScope = { resolver: makeWorkflowContextResolver(await readConfig()), workflowId };
       let affectedMap: Awaited<ReturnType<typeof scanAssignmentsByStatus>>;
       try {
-        affectedMap = await scanAssignmentsByStatus(projectsDir, assignmentsDir, droppedIds);
+        affectedMap = await scanAssignmentsByStatus(projectsDir, assignmentsDir, droppedIds, scanScope);
       } catch (err) {
         if (err instanceof StatusResolutionError) {
           const mapped = mapResolutionErrorToHttp(err, null);
@@ -509,7 +539,7 @@ export function createStatusConfigRouter(
       // references a dropped id, abort before config write so the user can
       // retry cleanly.
       try {
-        await verifyNoDriftedOrphans(projectsDir, assignmentsDir, droppedIds);
+        await verifyNoDriftedOrphans(projectsDir, assignmentsDir, droppedIds, scanScope);
       } catch (err) {
         if (err instanceof StatusResolutionError) {
           const mapped = mapResolutionErrorToHttp(err, {
@@ -528,7 +558,7 @@ export function createStatusConfigRouter(
       // target was in oldIds, every delete is gone). Surface the partial-apply
       // 500 to the client so it can refresh and retry.
       try {
-        await writeStatusConfig({
+        await writeWorkflowBundle(workflowId, {
           statuses: effectiveStatuses,
           order: effectiveOrder,
           transitions: effectiveTransitions,
@@ -550,7 +580,7 @@ export function createStatusConfigRouter(
       // lengths — otherwise the user sees inflated counts when a concurrent
       // writer moved an assignment out of scope.
       clearStatusConfigCache();
-      const config = await getStatusConfig();
+      const config = await getStatusConfig(workflowId);
       const byId: Record<string, { mode: 'remap' | 'delete'; count: number; target?: string }> = {};
       for (const [id, entry] of applied.byId) {
         byId[id] = entry.target !== undefined
@@ -567,17 +597,184 @@ export function createStatusConfigRouter(
     }
   });
 
-  router.delete('/', async (_req: Request, res: Response) => {
+  router.delete('/', async (req: Request, res: Response) => {
     try {
-      await deleteStatusConfig();
+      const workflowId = requestWorkflowId(req);
+
+      // The built-in `default` workflow is never removed — DELETE resets it to
+      // the built-in status config (legacy `/api/config/statuses` semantics).
+      if (workflowId === DEFAULT_WORKFLOW_ID) {
+        await deleteStatusConfig();
+        clearStatusConfigCache();
+        const config = await getStatusConfig(DEFAULT_WORKFLOW_ID);
+        res.json(configResponse(config));
+        return;
+      }
+
+      // A custom workflow is removed outright — but only when nothing references
+      // it. The delete-in-use guard resolves bound projects + resolving tickets.
+      const config = await readConfig();
+      const usage = await scanWorkflowUsage(workflowId, {
+        resolver: makeWorkflowContextResolver(config),
+        isGlobalDefault: config.defaultWorkflow === workflowId,
+        projectsDir,
+        standaloneDir: assignmentsDir,
+      });
+      if (!usage.deletable) {
+        res.status(409).json({
+          error: 'workflow-in-use',
+          workflowId,
+          blockers: usage.blockers,
+          boundProjects: usage.boundProjects,
+          assignments: usage.assignments.slice(0, AFFECTED_SAMPLE_CAP).map(toSummary),
+          assignmentCount: usage.assignments.length,
+        });
+        return;
+      }
+      await deleteWorkflowFromConfig(workflowId);
       clearStatusConfigCache();
-      const config = await getStatusConfig();
-      res.json(configResponse(config));
+      res.json({ deleted: true, workflowId });
     } catch (error) {
-      console.error('Error resetting status config:', error);
-      res.status(500).json({ error: 'Failed to reset status config' });
+      console.error('Error deleting workflow:', error);
+      res.status(500).json({ error: 'Failed to delete workflow' });
     }
   });
+
+  // POST /:workflowId/default — promote this workflow to the global default.
+  router.post('/default', async (req: Request, res: Response) => {
+    try {
+      const workflowId = requestWorkflowId(req);
+      const library = getWorkflowLibrary(await readConfig());
+      if (!(workflowId in library)) {
+        res.status(404).json({ error: 'unknown-workflow', workflowId });
+        return;
+      }
+      await setDefaultWorkflow(workflowId);
+      clearStatusConfigCache();
+      res.json({ defaultWorkflow: workflowId });
+    } catch (error) {
+      console.error('Error setting default workflow:', error);
+      res.status(500).json({ error: 'Failed to set default workflow' });
+    }
+  });
+
+  // POST /:workflowId/duplicate — clone this workflow's bundle into a new id.
+  router.post('/duplicate', async (req: Request, res: Response) => {
+    try {
+      const sourceId = requestWorkflowId(req);
+      const targetId = (req.body ?? {}).id;
+      const label = (req.body ?? {}).label;
+      if (!isString(targetId) || !isValidWorkflowId(targetId)) {
+        res.status(400).json({ error: 'malformed-workflow-id', id: targetId });
+        return;
+      }
+      const library = getWorkflowLibrary(await readConfig());
+      if (!library[sourceId]) {
+        res.status(404).json({ error: 'unknown-workflow', workflowId: sourceId });
+        return;
+      }
+      if (library[targetId]) {
+        res.status(409).json({ error: 'workflow-exists', workflowId: targetId });
+        return;
+      }
+      const source = library[sourceId];
+      await writeWorkflowBundle(
+        targetId,
+        {
+          statuses: source.statuses,
+          order: source.order,
+          transitions: source.transitions,
+          derive: source.derive,
+          facts: source.facts,
+        },
+        { label: isString(label) ? label : undefined },
+      );
+      clearStatusConfigCache();
+      res.status(201).json(configResponse(await getStatusConfig(targetId)));
+    } catch (error) {
+      console.error('Error duplicating workflow:', error);
+      res.status(500).json({ error: 'Failed to duplicate workflow' });
+    }
+  });
+
+  return router;
+}
+
+/** A workflow id must be a keyword-safe slug so it round-trips through config.md
+ * frontmatter keys, route params, and AQL without quoting. */
+function isValidWorkflowId(id: string): boolean {
+  return /^[a-z0-9][a-z0-9_-]*$/i.test(id) && id.length <= 64;
+}
+
+/**
+ * Workflow-library router mounted at `/api/config/workflows`: lists the library
+ * and creates new workflows, and mounts {@link createStatusConfigRouter} at
+ * `/:workflowId` for the per-workflow GET/POST/DELETE + affected/default/
+ * duplicate routes.
+ */
+export function createWorkflowConfigRouter(
+  projectsDir: string,
+  assignmentsDir: string | null,
+): Router {
+  const router = Router();
+  installRecordsInvalidation(router);
+
+  // GET /api/config/workflows — [{ id, label, isDefault, custom }]
+  router.get('/', async (_req: Request, res: Response) => {
+    try {
+      const config = await readConfig();
+      const library = getWorkflowLibrary(config);
+      const defaultWorkflow = config.defaultWorkflow ?? DEFAULT_WORKFLOW_ID;
+      const list = Object.entries(library).map(([id, wf]) => ({
+        id,
+        label: wf.label,
+        isDefault: id === defaultWorkflow,
+        // `custom` = an explicit `workflows:` entry exists (vs. the synthesized
+        // built-in default of a legacy single-config).
+        custom: !!config.workflows && id in config.workflows,
+      }));
+      res.json({ workflows: list, defaultWorkflow });
+    } catch (error) {
+      console.error('Error listing workflows:', error);
+      res.status(500).json({ error: 'Failed to list workflows' });
+    }
+  });
+
+  // POST /api/config/workflows — create a new workflow (built-in defaults unless
+  // a bundle is provided). Body: { id, label?, statuses?, order?, ... }.
+  router.post('/', async (req: Request, res: Response) => {
+    try {
+      const body = req.body ?? {};
+      const id = body.id;
+      if (!isString(id) || !isValidWorkflowId(id)) {
+        res.status(400).json({ error: 'malformed-workflow-id', id });
+        return;
+      }
+      const library = getWorkflowLibrary(await readConfig());
+      if (library[id]) {
+        res.status(409).json({ error: 'workflow-exists', workflowId: id });
+        return;
+      }
+      const seed = buildDefaultStatusConfig();
+      const bundle = {
+        statuses: Array.isArray(body.statuses) ? body.statuses : seed.statuses,
+        order: Array.isArray(body.order) ? body.order : seed.order,
+        transitions: Array.isArray(body.transitions) ? body.transitions : seed.transitions,
+        derive: body.derive ?? seed.derive,
+        facts: Array.isArray(body.facts) ? body.facts : seed.facts,
+      };
+      await writeWorkflowBundle(id, bundle, {
+        label: isString(body.label) ? body.label : undefined,
+      });
+      clearStatusConfigCache();
+      res.status(201).json(configResponse(await getStatusConfig(id)));
+    } catch (error) {
+      console.error('Error creating workflow:', error);
+      res.status(500).json({ error: 'Failed to create workflow' });
+    }
+  });
+
+  router.use('/:workflowId', createStatusConfigRouter(projectsDir, assignmentsDir));
 
   return router;
 }

@@ -133,6 +133,9 @@ export interface AssignmentFrontmatter {
   title: string;
   project: string | null;
   type: string | null;
+  /** Explicit lifecycle-workflow override (`workflow:` id). Null → resolve via
+   * project `workflowByType[type]` / project default / global default / `default`. */
+  workflow: string | null;
   status: AssignmentStatus;
   priority: 'low' | 'medium' | 'high' | 'critical';
   created: string;

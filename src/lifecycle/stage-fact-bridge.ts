@@ -26,7 +26,7 @@ import { readFile } from 'node:fs/promises';
 import { fileExists } from '../utils/fs.js';
 import { parseAssignmentFrontmatter, updateAssignmentFile } from './frontmatter.js';
 import type { AssignmentFrontmatter } from './types.js';
-import { recomputeAndWrite, resolveDeriveContext } from './recompute.js';
+import { recomputeAndWrite, resolveRecomputeContext } from './recompute.js';
 
 export interface StageFactInput {
   /** Path to the target assignment.md (the caller resolves it — honours --dir
@@ -86,13 +86,14 @@ export async function assertStageFactOnOpen(input: StageFactInput): Promise<void
   );
   if (Object.keys(pre).length === 0) return;
 
-  const context = await resolveDeriveContext();
+  const { context, workflowResolver } = await resolveRecomputeContext();
 
   const result = await recomputeAndWrite(input.assignmentPath, {
     cause: 'stage-open',
     by: input.by ?? 'system',
     projectDir: input.projectDir,
     context,
+    workflowResolver,
     mutate: (content) => {
       // Re-derive against the FRESH locked content so a concurrent same-assignment
       // stage write can't be clobbered by a stale pre-lock delta (codex r2).

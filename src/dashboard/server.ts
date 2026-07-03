@@ -75,7 +75,7 @@ import { createSearchConfigRouter } from './api-search-config.js';
 import { createContentSearchRouter } from './api-search.js';
 import { createWorkspaceVisibilityConfigRouter } from './api-workspace-visibility-config.js';
 import { createAgentDiscoveryConfigRouter } from './api-agent-discovery-config.js';
-import { createStatusConfigRouter } from './api-status-config.js';
+import { createStatusConfigRouter, createWorkflowConfigRouter } from './api-status-config.js';
 import { createLeasesRouter } from './api-leases.js';
 import { createSchedulesRouter } from './api-schedules.js';
 import { runTick } from '../schedules/tick.js';
@@ -225,6 +225,7 @@ export function createDashboardServer(options: DashboardServerOptions) {
   });
 
   app.use('/api/config/statuses', createStatusConfigRouter(projectsDir, assignmentsDir));
+  app.use('/api/config/workflows', createWorkflowConfigRouter(projectsDir, assignmentsDir));
 
   app.get('/api/config/types', async (_req, res) => {
     try {
@@ -840,7 +841,7 @@ export function createDashboardServer(options: DashboardServerOptions) {
       // watcher → per-assignment recompute (out-of-band edits re-derive);
       // config.md → recompute-all (the rules changed); boot → reconciliation
       // sweep (covers edits made while the server was down).
-      const { recomputeAndWrite, recomputeAll, resolveDeriveContext, isDeriveMigrated } = await import(
+      const { recomputeAndWrite, recomputeAll, resolveRecomputeContext, isDeriveMigrated } = await import(
         '../lifecycle/recompute.js'
       );
       let warnedMigrationPending = false;
@@ -857,7 +858,7 @@ export function createDashboardServer(options: DashboardServerOptions) {
       const recomputeOne = async (projectSlug: string | null, assignmentSlug: string): Promise<void> => {
         if (!(await migrationGate())) return;
         try {
-          const context = await resolveDeriveContext();
+          const { context, workflowResolver } = await resolveRecomputeContext();
           const projectDir = projectSlug ? resolve(projectsDir, projectSlug) : null;
           const path = projectDir
             ? resolve(projectDir, 'assignments', assignmentSlug, 'assignment.md')
@@ -868,6 +869,7 @@ export function createDashboardServer(options: DashboardServerOptions) {
             by: 'system',
             projectDir,
             context,
+            workflowResolver,
           });
           if (result.warning) console.warn(result.warning);
         } catch (err) {
@@ -877,11 +879,12 @@ export function createDashboardServer(options: DashboardServerOptions) {
       const sweepAll = async (cause: string): Promise<void> => {
         if (!(await migrationGate())) return;
         try {
-          const context = await resolveDeriveContext();
+          const { context, workflowResolver } = await resolveRecomputeContext();
           const summary = await recomputeAll(projectsDir, assignmentsDir, {
             cause,
             by: 'system',
             context,
+            workflowResolver,
           });
           if (summary.changed > 0) {
             console.log(`derive ${cause}: ${summary.changed}/${summary.scanned} assignment(s) re-derived.`);

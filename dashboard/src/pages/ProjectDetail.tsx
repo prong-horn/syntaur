@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { BookOpenText, ChevronDown, ChevronUp, GitBranch, Plus, SquarePen } from 'lucide-react';
 import { CopyButton } from '../components/CopyButton';
+import { ProjectWorkflowSection } from '../components/ProjectWorkflowSection';
+import { WorkflowSwimlanes } from '../components/WorkflowSwimlanes';
 import { useProject, useWorkspaces, useWorkspacePrefix, type AssignmentSummary } from '../hooks/useProjects';
 import { formatDate, formatDateTime } from '../lib/format';
 import { LoadingState } from '../components/LoadingState';
@@ -792,9 +794,10 @@ export function ProjectDetail() {
                             onChange={setDateRange}
                           />
                           {assignmentView === 'kanban' && (
-                            <select value={grouping === 'type' ? 'type' : 'status'} onChange={(event) => handleSetGrouping(event.target.value as Grouping)} className="editor-input max-w-[170px]" title="Group kanban by">
+                            <select value={grouping === 'type' || grouping === 'workflow' ? grouping : 'status'} onChange={(event) => handleSetGrouping(event.target.value as Grouping)} className="editor-input max-w-[170px]" title="Group kanban by">
                               <option value="status">Group: Status</option>
                               <option value="type">Group: Type</option>
+                              <option value="workflow">Group: Workflow</option>
                             </select>
                           )}
                           <ViewToggle
@@ -854,6 +857,15 @@ export function ProjectDetail() {
                               Create Assignment
                             </Link>
                           }
+                        />
+                      ) : assignmentView === 'kanban' && grouping === 'workflow' ? (
+                        <WorkflowSwimlanes
+                          items={sortedAssignments}
+                          getItemId={(a) => a.slug}
+                          renderCard={(item) => (
+                            <AssignmentCard projectSlug={project.slug} assignment={item} onAssignmentChange={() => refetch()} />
+                          )}
+                          emptyMessage={(column) => `No ${column.title.toLowerCase()} assignments.`}
                         />
                       ) : assignmentView === 'kanban' ? (
                         <KanbanBoard
@@ -949,6 +961,18 @@ export function ProjectDetail() {
                 value: 'todos',
                 label: 'Todos',
                 content: <ProjectTodosPanel projectId={project.slug} />,
+              },
+              {
+                value: 'workflow',
+                label: 'Workflow',
+                content: (
+                  <ProjectWorkflowSection
+                    projectSlug={project.slug}
+                    defaultWorkflow={project.defaultWorkflow}
+                    workflowByType={project.workflowByType}
+                    onSaved={() => refetch()}
+                  />
+                ),
               },
               {
                 value: 'dependencies',

@@ -14,7 +14,7 @@ import {
   setDashboardLayout,
 } from '../utils/saved-views.js';
 import { withLock } from './todos-locks.js';
-import { getStatusConfig } from './api.js';
+import { getUnionQueryRegistry } from './api.js';
 import { validateQuery } from '../utils/query/index.js';
 
 const SAVED_VIEWS_LOCK = 'sv:global';
@@ -121,8 +121,7 @@ export function createSavedViewsRouter(): Router {
     }
     const queryStr = result.value.config.filters.query;
     if (typeof queryStr === 'string' && queryStr.length > 0) {
-      const statusConfig = await getStatusConfig();
-      const queryErrors = validateQuery(queryStr, statusConfig.queryRegistry);
+      const queryErrors = validateQuery(queryStr, await getUnionQueryRegistry());
       if (queryErrors.length > 0) {
         res.status(400).json({ errors: queryErrors });
         return;
@@ -155,8 +154,7 @@ export function createSavedViewsRouter(): Router {
     }
     const patchQueryStr = result.value.config?.filters.query;
     if (typeof patchQueryStr === 'string' && patchQueryStr.length > 0) {
-      const statusConfig = await getStatusConfig();
-      const queryErrors = validateQuery(patchQueryStr, statusConfig.queryRegistry);
+      const queryErrors = validateQuery(patchQueryStr, await getUnionQueryRegistry());
       if (queryErrors.length > 0) {
         res.status(400).json({ errors: queryErrors });
         return;

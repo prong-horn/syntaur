@@ -3,7 +3,7 @@ import { runTransition, reportResult, type LifecycleOptions } from './_lifecycle
 import { readConfig } from '../utils/config.js';
 import { expandHome, assignmentsDir as assignmentsDirFn } from '../utils/paths.js';
 import { resolveAssignmentById } from '../utils/assignment-resolver.js';
-import { recomputeAndWrite, recomputeDependents, resolveDeriveContext } from '../lifecycle/recompute.js';
+import { recomputeAndWrite, recomputeDependents, resolveRecomputeContext } from '../lifecycle/recompute.js';
 
 export interface ReopenOptions extends LifecycleOptions {}
 
@@ -20,7 +20,7 @@ export async function reopenCommand(
 
   const config = await readConfig();
   const baseDir = options.dir ? expandHome(options.dir) : config.defaultProjectDir;
-  const context = await resolveDeriveContext();
+  const { context, workflowResolver } = await resolveRecomputeContext();
   let assignmentPath: string;
   let projectDir: string | null;
   // The dir slug recomputeDependents matches `dependsOn` against — NOT the raw
@@ -42,6 +42,7 @@ export async function reopenCommand(
     by: 'system',
     projectDir,
     context,
+    workflowResolver,
   });
   if (derived.changed) {
     console.log(`Re-derived after reopen — status: ${derived.status}`);
@@ -53,6 +54,7 @@ export async function reopenCommand(
       cause: 'dep-reopened',
       by: 'system',
       context,
+      workflowResolver,
     });
     const changed = results.filter((r) => r.changed).length;
     if (changed > 0) console.log(`Re-derived ${changed} dependent assignment(s).`);

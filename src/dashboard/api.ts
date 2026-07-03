@@ -1,6 +1,8 @@
 import { readdir, readFile, writeFile, stat } from 'node:fs/promises';
 import { resolve, dirname, basename } from 'node:path';
 import { getTargetStatus, DEFAULT_TRANSITION_TABLE, buildTransitionTable } from '../lifecycle/index.js';
+import { getWorkflowLibrary, resolveWorkflowId } from '../utils/workflow-resolve.js';
+import { readProjectBinding, type ProjectWorkflowBinding } from '../utils/project-binding.js';
 import { fileExists, writeFileForce } from '../utils/fs.js';
 import { nowTimestamp } from '../utils/timestamp.js';
 import {
@@ -12,9 +14,11 @@ import {
   type DeriveConfig,
   type FactDeclaration,
   type RawFactDeclaration,
+  type SyntaurConfig,
+  type StatusConfig,
 } from '../utils/config.js';
 import { acceptFactDeclarations, buildDeriveRegistry, buildQueryRegistry } from '../lifecycle/derive.js';
-import type { FieldRegistry } from '../utils/query/index.js';
+import { ASSIGNMENT_FIELDS, type FieldRegistry } from '../utils/query/index.js';
 import { resolvePlaybookSlug } from '../utils/playbooks.js';
 import { migrateLegacyProjectFiles, migrateLegacyArchivedProjects } from '../utils/fs-migration.js';
 import { resolveAssignmentById, type ResolvedAssignment } from '../utils/assignment-resolver.js';
@@ -423,6 +427,12 @@ function getTransitionDefinitions(config: ResolvedStatusConfig) {
 }
 
 interface ResolvedStatusConfig {
+  /** The workflow id this config was resolved for (`'default'` for the legacy
+   * single lifecycle). */
+  workflowId: string;
+  /** Human label for the workflow (`'Default'` for the built-in, Title Case of
+   * the id for a named workflow with no explicit label). */
+  label: string;
   custom: boolean;
   statuses: Array<{ id: string; label: string; description?: string; color?: string; terminal?: boolean }>;
   order: string[];
@@ -457,35 +467,123 @@ interface ResolvedStatusConfig {
   queryRegistry: FieldRegistry;
 }
 
-let _cachedConfig: ResolvedStatusConfig | null = null;
+const _cachedConfigs = new Map<string, ResolvedStatusConfig>();
 
-export async function getStatusConfig(): Promise<ResolvedStatusConfig> {
-  if (_cachedConfig) return _cachedConfig;
-
+/**
+ * Resolve the dashboard status-config view for one workflow id (default
+ * `'default'`). Backed by a per-workflow cache. For the legacy single-lifecycle
+ * config (no `workflows:` block), the `'default'` workflow resolves from the
+ * top-level `statuses:` block — byte-identical to the pre-workflow behavior, so
+ * every existing no-arg caller is unaffected. Assignment-specific surfaces
+ * (board items, projection, transitions, terminal virtuals) pass the ticket's
+ * resolved workflow id so each ticket derives against its OWN workflow.
+ */
+export async function getStatusConfig(workflowId = 'default'): Promise<ResolvedStatusConfig> {
+  const cached = _cachedConfigs.get(workflowId);
+  if (cached) return cached;
   const config = await readConfig();
+  const resolved = resolveWorkflowStatusConfig(config, workflowId);
+  _cachedConfigs.set(workflowId, resolved);
+  return resolved;
+}
 
-  if (config.statuses) {
-    const sc = config.statuses;
-    // A config may declare facts and/or derive rules without any custom status
-    // `definitions` (parseStatusConfig now preserves those rather than dropping
-    // the whole block). Fall back to the default statuses/order so the board
-    // still renders, while the declared facts/derive ride along — same
-    // no-silent-deletion contract as the parser.
+export function clearStatusConfigCache(): void {
+  _cachedConfigs.clear();
+  _cachedWorkflowMeta = null;
+}
+
+/** Cached workflow-library meta (available ids + global default) so per-ticket
+ * workflow resolution during board/detail materialization never re-reads +
+ * re-parses config.md per assignment. Rebuilt from config.md on demand; cleared
+ * alongside the status-config cache whenever config.md is written. */
+let _cachedWorkflowMeta: { available: ReadonlySet<string>; defaultWorkflow: string | null } | null =
+  null;
+
+async function getWorkflowMeta(): Promise<{
+  available: ReadonlySet<string>;
+  defaultWorkflow: string | null;
+}> {
+  if (_cachedWorkflowMeta) return _cachedWorkflowMeta;
+  const config = await readConfig();
+  _cachedWorkflowMeta = {
+    available: new Set(Object.keys(getWorkflowLibrary(config))),
+    defaultWorkflow: config.defaultWorkflow ?? null,
+  };
+  return _cachedWorkflowMeta;
+}
+
+const EMPTY_BINDING: ProjectWorkflowBinding = { defaultWorkflow: null, workflowByType: {} };
+
+/** Resolve an assignment's workflow id from its `workflow`/`type` fields and a
+ * project binding (from the already-parsed project record — no extra read).
+ * Uses the cached workflow-library meta. First-hit-wins precedence. */
+async function resolveWorkflowIdWithBinding(
+  assignment: { workflow?: string | null; type?: string | null },
+  binding: ProjectWorkflowBinding,
+): Promise<string> {
+  const meta = await getWorkflowMeta();
+  return resolveWorkflowId({
+    assignmentWorkflow: assignment.workflow ?? null,
+    assignmentType: assignment.type ?? null,
+    projectDefaultWorkflow: binding.defaultWorkflow,
+    projectWorkflowByType: binding.workflowByType,
+    globalDefaultWorkflow: meta.defaultWorkflow,
+    available: meta.available,
+  });
+}
+
+/** Resolve an assignment's workflow id reading the project binding from disk
+ * (single-record paths where the parsed project isn't already in hand).
+ * Standalone (no projectDir) → binding-less resolution. */
+async function resolveWorkflowIdByDir(
+  assignment: { workflow?: string | null; type?: string | null },
+  projectDir: string | null,
+): Promise<string> {
+  const binding = projectDir ? await readProjectBinding(projectDir) : EMPTY_BINDING;
+  return resolveWorkflowIdWithBinding(assignment, binding);
+}
+
+/** The per-ticket resolved status config (its OWN workflow). Convenience over
+ * {@link resolveWorkflowIdByDir} + {@link getStatusConfig}. */
+async function statusConfigForAssignment(
+  assignment: { workflow?: string | null; type?: string | null },
+  projectDir: string | null,
+): Promise<ResolvedStatusConfig> {
+  return getStatusConfig(await resolveWorkflowIdByDir(assignment, projectDir));
+}
+
+/** Human label for a workflow id: the explicit `workflows.<id>.label`, else
+ * `'Default'` for the built-in, else Title Case of the id. */
+function workflowLabel(config: SyntaurConfig, workflowId: string): string {
+  const explicit = config.workflows?.[workflowId]?.label;
+  if (explicit) return explicit;
+  return workflowId === 'default' ? 'Default' : toTitleCase(workflowId);
+}
+
+function resolveWorkflowStatusConfig(
+  config: SyntaurConfig,
+  workflowId: string,
+): ResolvedStatusConfig {
+  // The explicit per-workflow bundle: a named workflow, or — for the built-in
+  // `'default'` in a legacy config with no `workflows:` block — the top-level
+  // `statuses:` block. Null → no explicit config → read-only defaults branch.
+  const explicitBundle: StatusConfig | null =
+    config.workflows?.[workflowId] ?? (workflowId === 'default' ? config.statuses : null) ?? null;
+
+  if (explicitBundle) {
+    const sc = explicitBundle;
+    // A bundle may declare facts and/or derive rules without any status
+    // `definitions` (the parser preserves those rather than dropping the block).
+    // Fall back to the default statuses/order so the board still renders, while
+    // the declared facts/derive ride along — same no-silent-deletion contract.
     const defaults = sc.statuses.length === 0 ? buildDefaultStatusConfig() : null;
     const effectiveStatuses = defaults ? defaults.statuses : sc.statuses;
     const effectiveOrder = defaults ? defaults.order : sc.order;
-    const terminalSet = new Set(
-      effectiveStatuses.filter((s) => s.terminal).map((s) => s.id),
-    );
-    // If a user defines custom statuses but omits the `transitions:` block,
-    // fall back to default transitions. Without this, buildTransitionTable([])
-    // returns an empty Map and getTargetStatus returns null for every command,
-    // so the dashboard would show zero available transitions for any assignment.
-    // We materialize a FRESH table from DEFAULT_TRANSITION_TABLE entries (rather
-    // than reusing the DEFAULT_TRANSITION_TABLE reference) so getTargetStatus
-    // takes the custom-config code path and uses `from:command` lookups — this
-    // is what enforces "only emit transitions valid from current status" for
-    // users whose config has custom statuses but default transitions.
+    const terminalSet = new Set(effectiveStatuses.filter((s) => s.terminal).map((s) => s.id));
+    // Custom statuses but no `transitions:` block → materialize a FRESH table
+    // from DEFAULT_TRANSITION_TABLE entries (not the reference) so getTargetStatus
+    // takes the custom `from:command` path and only offers valid-from-status
+    // transitions.
     const hasCustomTransitions = sc.transitions.length > 0;
     const effectiveTransitions = hasCustomTransitions
       ? sc.transitions
@@ -494,7 +592,9 @@ export async function getStatusConfig(): Promise<ResolvedStatusConfig> {
           return { from, command, to };
         });
     const accepted = acceptFactDeclarations(normalizeFactDeclarations(sc.facts ?? null));
-    _cachedConfig = {
+    return {
+      workflowId,
+      label: workflowLabel(config, workflowId),
       custom: true,
       statuses: effectiveStatuses,
       order: effectiveOrder,
@@ -509,33 +609,52 @@ export async function getStatusConfig(): Promise<ResolvedStatusConfig> {
       deriveRegistry: buildDeriveRegistry(accepted),
       queryRegistry: buildQueryRegistry(accepted),
     };
-  } else {
-    // Shared default builder so the dashboard and the `syntaur status` CLI
-    // resolve identical default statuses/order/transitions (no drift).
-    const def = buildDefaultStatusConfig();
-    _cachedConfig = {
-      custom: false,
-      statuses: def.statuses,
-      order: def.order,
-      transitions: def.transitions,
-      transitionTable: DEFAULT_TRANSITION_TABLE,
-      // No custom config at all → the Settings editor shows read-only defaults.
-      rawTransitions: [],
-      transitionsCustom: false,
-      terminalStatuses: new Set(['completed', 'failed']),
-      derive: null,
-      facts: null,
-      factDeclarations: [],
-      deriveRegistry: buildDeriveRegistry([]),
-      queryRegistry: buildQueryRegistry([]),
-    };
   }
 
-  return _cachedConfig;
+  // No explicit config for this workflow → shared default builder so the
+  // dashboard and the `syntaur status` CLI resolve identical defaults (no drift).
+  const def = buildDefaultStatusConfig();
+  return {
+    workflowId,
+    label: workflowLabel(config, workflowId),
+    custom: false,
+    statuses: def.statuses,
+    order: def.order,
+    transitions: def.transitions,
+    transitionTable: DEFAULT_TRANSITION_TABLE,
+    rawTransitions: [],
+    transitionsCustom: false,
+    terminalStatuses: new Set(['completed', 'failed']),
+    derive: null,
+    facts: null,
+    factDeclarations: [],
+    deriveRegistry: buildDeriveRegistry([]),
+    queryRegistry: buildQueryRegistry([]),
+  };
 }
 
-export function clearStatusConfigCache(): void {
-  _cachedConfig = null;
+/**
+ * Build the UNION AQL query registry across every configured workflow. Each
+ * workflow contributes its own fact-derived query fields; a saved-view query may
+ * reference a field declared by ANY workflow, so validating against a single
+ * workflow's registry would wrongly reject cross-workflow queries. Merge is
+ * first-writer-wins with `default` processed first (so the default lifecycle is
+ * authoritative on any same-name field conflict) and remaining workflows sorted
+ * for determinism. Always includes the built-in `ASSIGNMENT_FIELDS` vocabulary.
+ */
+export async function getUnionQueryRegistry(): Promise<FieldRegistry> {
+  const config = await readConfig();
+  const ids = Object.keys(getWorkflowLibrary(config)).sort((a, b) =>
+    a === 'default' ? -1 : b === 'default' ? 1 : a.localeCompare(b),
+  );
+  const merged: FieldRegistry = { ...ASSIGNMENT_FIELDS };
+  for (const id of ids) {
+    const sc = await getStatusConfig(id);
+    for (const [key, spec] of Object.entries(sc.queryRegistry)) {
+      if (!(key in merged)) merged[key] = spec;
+    }
+  }
+  return merged;
 }
 
 /**
@@ -1029,7 +1148,8 @@ export async function listArchived(
 }
 
 async function toStandaloneBoardItem(sr: StandaloneRecord): Promise<AssignmentBoardItem> {
-  const config = await getStatusConfig();
+  // Standalone → the ticket's own workflow (no project binding).
+  const config = await statusConfigForAssignment(sr.record, null);
   const { terminalStatuses } = config;
 
   let facts: AssignmentBoardItem['facts'];
@@ -1048,7 +1168,7 @@ async function toStandaloneBoardItem(sr: StandaloneRecord): Promise<AssignmentBo
   }
 
   return {
-    ...toAssignmentSummary(sr.record, terminalStatuses),
+    ...toAssignmentSummary(sr.record, config),
     projectSlug: null,
     projectTitle: null,
     blockedReason: sr.record.blockedReason,
@@ -1062,7 +1182,8 @@ async function getStandaloneAvailableTransitions(
   assignment: AssignmentRecord,
 ): Promise<AssignmentTransitionAction[]> {
   // Standalone assignments have no dependencies, so skip dependency gating.
-  const config = await getStatusConfig();
+  // Commands offered come from the ticket's OWN workflow (no project binding).
+  const config = await statusConfigForAssignment(assignment, null);
   const transitionDefs = getTransitionDefinitions(config);
   const actions: AssignmentTransitionAction[] = [];
 
@@ -1212,7 +1333,21 @@ export async function getProjectDetail(
   // Consistent with the project summary: the activity timestamp ignores archived
   // children so archiving an old assignment doesn't bump it.
   const updated = getProjectActivityTimestamp(project.updated, activeAssignments(assignments));
-  const { terminalStatuses } = await getStatusConfig();
+
+  // Each assignment's terminal virtuals come from ITS OWN workflow (resolved via
+  // this project's binding — already parsed, no extra read).
+  const projectBinding: ProjectWorkflowBinding = {
+    defaultWorkflow: project.defaultWorkflow,
+    workflowByType: project.workflowByType,
+  };
+  const assignmentSummaries = (
+    await Promise.all(
+      assignments.map(async (a) => {
+        const config = await getStatusConfig(await resolveWorkflowIdWithBinding(a, projectBinding));
+        return toAssignmentSummary(a, config);
+      }),
+    )
+  ).sort((left, right) => compareTimestamps(right.updated, left.updated));
 
   return {
     slug: project.slug || slug,
@@ -1229,9 +1364,7 @@ export async function getProjectDetail(
     body: project.body,
     progress: rollup.progress,
     needsAttention: rollup.needsAttention,
-    assignments: assignments
-      .map((a) => toAssignmentSummary(a, terminalStatuses))
-      .sort((left, right) => compareTimestamps(right.updated, left.updated)),
+    assignments: assignmentSummaries,
     resources,
     memories,
     dependencyGraph,
@@ -1370,7 +1503,7 @@ export async function getAssignmentDetail(
     };
   }
 
-  const { terminalStatuses } = await getStatusConfig();
+  const wfConfig = await statusConfigForAssignment(assignment, resolve(projectsDir, projectSlug));
   const detail: AssignmentDetail = {
     id: assignment.id,
     projectSlug,
@@ -1378,6 +1511,10 @@ export async function getAssignmentDetail(
     title: assignment.title,
     status: assignment.status,
     type: assignment.type,
+    workflow: assignment.workflow,
+    resolvedWorkflow: wfConfig.workflowId,
+    workflowLabel: wfConfig.label,
+    statusLabel: statusLabelFor(wfConfig, assignment.status),
     priority: assignment.priority as AssignmentDetail['priority'],
     assignee: assignment.assignee,
     dependsOn: assignment.dependsOn,
@@ -1392,7 +1529,7 @@ export async function getAssignmentDetail(
     archived: assignment.archived,
     archivedAt: assignment.archivedAt,
     archivedReason: assignment.archivedReason,
-    ...deriveStatusVirtuals(assignment, terminalStatuses),
+    ...deriveStatusVirtuals(assignment, wfConfig.terminalStatuses),
     override: assignment.override,
     derived: await buildDerivedDetail(assignment, assignmentDir, resolve(projectsDir, projectSlug)),
     created: assignment.created,
@@ -1714,7 +1851,7 @@ async function buildStandaloneAssignmentDetail(
     comments = { updated: parsed.updated, entryCount: parsed.entryCount, entries: parsed.entries };
   }
 
-  const { terminalStatuses } = await getStatusConfig();
+  const wfConfig = await statusConfigForAssignment(assignment, null);
   const detail: AssignmentDetail = {
     id: assignment.id,
     projectSlug: null,
@@ -1722,6 +1859,10 @@ async function buildStandaloneAssignmentDetail(
     title: assignment.title,
     status: assignment.status,
     type: assignment.type,
+    workflow: assignment.workflow,
+    resolvedWorkflow: wfConfig.workflowId,
+    workflowLabel: wfConfig.label,
+    statusLabel: statusLabelFor(wfConfig, assignment.status),
     priority: assignment.priority as AssignmentDetail['priority'],
     assignee: assignment.assignee,
     dependsOn: [], // standalone cannot declare dependencies
@@ -1736,7 +1877,7 @@ async function buildStandaloneAssignmentDetail(
     archived: assignment.archived,
     archivedAt: assignment.archivedAt,
     archivedReason: assignment.archivedReason,
-    ...deriveStatusVirtuals(assignment, terminalStatuses),
+    ...deriveStatusVirtuals(assignment, wfConfig.terminalStatuses),
     override: assignment.override,
     derived: await buildDerivedDetail(assignment, assignmentDir, null),
     created: assignment.created,
@@ -2228,7 +2369,10 @@ async function buildDerivedDetail(
   assignmentDir: string,
   projectDir: string | null,
 ): Promise<AssignmentDetail['derived']> {
-  const config = await getStatusConfig();
+  // Derive against the ticket's OWN workflow (its terminal set, derive rules,
+  // fact registry, known statuses) so the dashboard projection agrees with the
+  // CLI recompute for the same ticket.
+  const config = await statusConfigForAssignment(assignment, projectDir);
   if (config.terminalStatuses.has(assignment.status)) return null;
   try {
     const { computeFactsDetailed } = await import('../lifecycle/facts.js');
@@ -2294,9 +2438,15 @@ async function buildDerivedDetail(
   }
 }
 
+/** Display label for a status id within a resolved workflow (falls back to the
+ * raw id when the status isn't in the workflow's definitions). */
+function statusLabelFor(config: ResolvedStatusConfig, status: string): string {
+  return config.statuses.find((s) => s.id === status)?.label ?? status;
+}
+
 function toAssignmentSummary(
   assignment: AssignmentRecord,
-  terminalStatuses: ReadonlySet<string>,
+  config: ResolvedStatusConfig,
 ): AssignmentSummary {
   return {
     id: assignment.id,
@@ -2304,6 +2454,10 @@ function toAssignmentSummary(
     title: assignment.title,
     status: assignment.status,
     type: assignment.type,
+    workflow: assignment.workflow,
+    resolvedWorkflow: config.workflowId,
+    workflowLabel: config.label,
+    statusLabel: statusLabelFor(config, assignment.status),
     priority: assignment.priority as AssignmentSummary['priority'],
     assignee: assignment.assignee,
     dependsOn: assignment.dependsOn,
@@ -2315,7 +2469,7 @@ function toAssignmentSummary(
     archived: assignment.archived,
     archivedAt: assignment.archivedAt,
     archivedReason: assignment.archivedReason,
-    ...deriveStatusVirtuals(assignment, terminalStatuses),
+    ...deriveStatusVirtuals(assignment, config.terminalStatuses),
   };
 }
 
@@ -2324,7 +2478,14 @@ async function toAssignmentBoardItem(
   projectRecord: ProjectRecord,
   assignment: AssignmentRecord,
 ): Promise<AssignmentBoardItem> {
-  const config = await getStatusConfig();
+  // Resolve the ticket's OWN workflow once (from the already-parsed project
+  // binding — no extra read) and reuse it for terminal virtuals, fact
+  // declarations, and the available-transitions table.
+  const workflowId = await resolveWorkflowIdWithBinding(assignment, {
+    defaultWorkflow: projectRecord.project.defaultWorkflow,
+    workflowByType: projectRecord.project.workflowByType,
+  });
+  const config = await getStatusConfig(workflowId);
   const { terminalStatuses } = config;
 
   const assignmentDir = resolve(projectRecord.projectPath, 'assignments', assignment.slug);
@@ -2346,7 +2507,7 @@ async function toAssignmentBoardItem(
   }
 
   return {
-    ...toAssignmentSummary(assignment, terminalStatuses),
+    ...toAssignmentSummary(assignment, config),
     projectSlug: projectRecord.summary.slug,
     projectTitle: projectRecord.summary.title,
     blockedReason: assignment.blockedReason,
@@ -2356,6 +2517,7 @@ async function toAssignmentBoardItem(
       projectRecord.summary.slug,
       assignment.slug,
       assignment,
+      { resolvedConfig: config },
     ),
     facts,
   };
@@ -2410,12 +2572,17 @@ async function getAvailableTransitions(
   options?: {
     dependencyStatusMap?: ReadonlyMap<string, string>;
     traces?: OverviewTraces;
+    /** Pre-resolved per-ticket status config — pass in board loops so the
+     * ticket's workflow isn't re-resolved (and project.md re-read) per call. */
+    resolvedConfig?: ResolvedStatusConfig;
   },
 ): Promise<AssignmentTransitionAction[]> {
-  const config = await getStatusConfig();
+  const projectPath = resolve(projectsDir, projectSlug);
+  // Transitions offered come from the ticket's OWN workflow (its transition
+  // table + terminal set), resolved via the project binding.
+  const config = options?.resolvedConfig ?? (await statusConfigForAssignment(assignment, projectPath));
   const transitionDefs = getTransitionDefinitions(config);
   const actions: AssignmentTransitionAction[] = [];
-  const projectPath = resolve(projectsDir, projectSlug);
   const traces = options?.traces;
 
   for (const definition of transitionDefs) {
@@ -2597,7 +2764,6 @@ export async function collectStaleCandidates(
     listProjectRecords(projectsDir),
     listStandaloneRecords(assignmentsDir),
   ]);
-  const { terminalStatuses } = await getStatusConfig();
   const thresholds = resolveStaleThresholds((await readConfig()).staleness);
   const now = Date.now();
   const out: StaleCandidate[] = [];
@@ -2605,9 +2771,18 @@ export async function collectStaleCandidates(
   for (const record of projectRecords) {
     if (isProjectArchived(record.summary)) continue;
     const projectPath = resolve(projectsDir, record.summary.slug);
+    const binding: ProjectWorkflowBinding = {
+      defaultWorkflow: record.project.defaultWorkflow,
+      workflowByType: record.project.workflowByType,
+    };
     const depMap = new Map<string, string>();
     for (const a of record.assignments) depMap.set(a.slug, a.status);
     for (const assignment of activeAssignments(record.assignments)) {
+      // Terminal set from the ticket's OWN workflow, so a custom terminal status
+      // isn't misread as "active" and wrongly flagged stale.
+      const { terminalStatuses } = await getStatusConfig(
+        await resolveWorkflowIdWithBinding(assignment, binding),
+      );
       const depsSatisfied =
         assignment.dependsOn.length === 0
           ? true
@@ -2625,6 +2800,7 @@ export async function collectStaleCandidates(
 
   for (const sr of standaloneRecords) {
     if (sr.record.archived === true) continue;
+    const { terminalStatuses } = await statusConfigForAssignment(sr.record, null);
     const lastActivityMs = await readProgressActivityMs(resolve(sr.assignmentDir, 'progress.md'), now);
     const reasons = classifyAssignmentRecord(sr.record, terminalStatuses, true, lastActivityMs, thresholds);
     if (reasons.length > 0) out.push({ assignmentId: sr.record.id, projectSlug: null, reasons });
@@ -2641,9 +2817,8 @@ async function buildOverviewSegmentBuckets(
 ): Promise<OverviewSegmentBuckets> {
   const now = Date.now();
   const buckets = emptyBuckets();
-  // Resolved terminal statuses (honors renamed/custom terminals — not the
-  // module-local hardcoded TERMINAL_STATUSES) for the staleness classifier.
-  const { terminalStatuses } = await getStatusConfig();
+  // Terminal statuses are resolved PER TICKET (its own workflow) inside the loops
+  // below — a custom terminal status must not be misread as active/stale.
   // Staleness age-gates: config overrides merged over defaults (defaults-first).
   const staleThresholds = resolveStaleThresholds((await readConfig()).staleness);
   // Pool of all non-terminal rows (across primary segments) used to seed
@@ -2670,15 +2845,24 @@ async function buildOverviewSegmentBuckets(
     // Resolve every per-assignment getAvailableTransitions call for this project
     // in parallel, then run the synchronous classification logic below over the results.
     const projectPath = resolve(projectsDir, record.summary.slug);
+    const binding: ProjectWorkflowBinding = {
+      defaultWorkflow: record.project.defaultWorkflow,
+      workflowByType: record.project.workflowByType,
+    };
     const resolvedTransitions = await Promise.all(
       visibleAssignments.map(async (assignment) => {
+        // The ticket's OWN workflow config → its transition table + terminal set.
+        const resolvedConfig = await getStatusConfig(
+          await resolveWorkflowIdWithBinding(assignment, binding),
+        );
+        const ticketTerminal = resolvedConfig.terminalStatuses;
         const t0 = traces ? performance.now() : 0;
         const availableTransitions = await getAvailableTransitions(
           projectsDir,
           record.summary.slug,
           assignment.slug,
           assignment,
-          { traces, dependencyStatusMap: depMap },
+          { traces, dependencyStatusMap: depMap, resolvedConfig },
         );
         if (traces) accumulatePhase(traces, 'get-available-transitions', performance.now() - t0);
         // Inputs for the staleness classifier (resolved off already-parsed data
@@ -2687,22 +2871,28 @@ async function buildOverviewSegmentBuckets(
         const depsSatisfied =
           assignment.dependsOn.length === 0
             ? true
-            : (await getUnmetDependencies(projectPath, assignment.dependsOn, terminalStatuses, depMap))
+            : (await getUnmetDependencies(projectPath, assignment.dependsOn, ticketTerminal, depMap))
                 .length === 0;
         const lastActivityMs = await readProgressActivityMs(
           resolve(projectPath, 'assignments', assignment.slug, 'progress.md'),
           now,
         );
-        return { assignment, availableTransitions, depsSatisfied, lastActivityMs };
+        return { assignment, availableTransitions, depsSatisfied, lastActivityMs, ticketTerminal };
       }),
     );
 
-    for (const { assignment, availableTransitions, depsSatisfied, lastActivityMs } of resolvedTransitions) {
+    for (const {
+      assignment,
+      availableTransitions,
+      depsSatisfied,
+      lastActivityMs,
+      ticketTerminal,
+    } of resolvedTransitions) {
       const segmentId = STATUS_TO_SEGMENT[assignment.status];
-      const isTerminal = terminalStatuses.has(assignment.status);
+      const isTerminal = ticketTerminal.has(assignment.status);
       const staleReasons = classifyAssignmentRecord(
         assignment,
-        terminalStatuses,
+        ticketTerminal,
         depsSatisfied,
         lastActivityMs,
         staleThresholds,
@@ -2776,18 +2966,20 @@ async function buildOverviewSegmentBuckets(
       const availableTransitions = await getStandaloneAvailableTransitions(sr.record);
       if (traces) accumulatePhase(traces, 'get-available-transitions', performance.now() - t0);
       const lastActivityMs = await readProgressActivityMs(resolve(sr.assignmentDir, 'progress.md'), now);
-      return { sr, availableTransitions, lastActivityMs };
+      // Standalone → the ticket's own workflow terminal set (no project binding).
+      const { terminalStatuses: ticketTerminal } = await statusConfigForAssignment(sr.record, null);
+      return { sr, availableTransitions, lastActivityMs, ticketTerminal };
     }),
   );
 
-  for (const { sr, availableTransitions, lastActivityMs } of resolvedStandaloneTransitions) {
+  for (const { sr, availableTransitions, lastActivityMs, ticketTerminal } of resolvedStandaloneTransitions) {
     const assignment = sr.record;
     const segmentId = STATUS_TO_SEGMENT[assignment.status];
-    const isTerminal = terminalStatuses.has(assignment.status);
+    const isTerminal = ticketTerminal.has(assignment.status);
     // Standalone assignments cannot declare dependencies → depsSatisfied is true.
     const staleReasons = classifyAssignmentRecord(
       assignment,
-      terminalStatuses,
+      ticketTerminal,
       true,
       lastActivityMs,
       staleThresholds,

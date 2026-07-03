@@ -13,6 +13,7 @@ import { crossAgentChecks } from './checks/cross-agent.js';
 import { bundleChecks } from './checks/bundles.js';
 import { pluginChecks } from './checks/plugin.js';
 import { deriveConfigChecks } from './checks/derive-config.js';
+import { workflowsChecks } from './checks/workflows.js';
 import { stalenessChecks } from './checks/staleness.js';
 
 export function allChecks(): Check[] {
@@ -31,6 +32,7 @@ export function allChecks(): Check[] {
     ...bundleChecks,
     ...pluginChecks,
     ...deriveConfigChecks,
+    ...workflowsChecks,
     ...stalenessChecks,
   ];
 }

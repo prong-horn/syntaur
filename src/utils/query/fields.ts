@@ -51,6 +51,9 @@ export const ASSIGNMENT_FIELDS: FieldRegistry = {
   type: { kind: 'enum' },
   assignee: { kind: 'string', noneSentinel: true },
   project: { kind: 'string', noneSentinel: true },
+  // Resolved lifecycle workflow (multi-workflow). Reads the effective
+  // `resolvedWorkflow` the loader computes, falling back to the raw override.
+  workflow: { kind: 'enum', get: (i) => i['resolvedWorkflow'] ?? i['workflow'] },
   tag: { kind: 'list', get: (i) => i['tags'] },
   tags: { kind: 'list' },
   archived: { kind: 'bool' },
