@@ -1,0 +1,5 @@
+not json at all
+{"broken": "json"
+{"schema": "codex-v1", "role": "agent", "delta": "some codex-shaped event we don't understand"}
+{"schema": "codex-v1", "role": "agent", "delta": "another unrecognized event shape"}
+{"foo": "bar", "baz": 42}
