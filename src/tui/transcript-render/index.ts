@@ -50,8 +50,15 @@ export function createTranscriptRenderer(options: TranscriptRendererOptions): Tr
       const rows: DisplayRow[] = [];
       for (const line of nonEmpty) {
         const parsed = parseClaudeLine(line);
-        if (parsed.kind === 'drop') continue;
+        // Every non-empty line is a parse "attempt" (plan.md's literal
+        // wording) — including recognized-but-intentionally-ignored `drop`
+        // lines (system/attachment/mode/sidechain/etc.), which a real Claude
+        // session's early lines are often mostly made of. Excluding them from
+        // the denominator let a single stray unparseable line, arriving
+        // before any real conversation content, flip a perfectly valid
+        // Claude transcript to fallback.
         attempts++;
+        if (parsed.kind === 'drop') continue;
         if (parsed.kind === 'unparseable') {
           unparseable++;
           continue;

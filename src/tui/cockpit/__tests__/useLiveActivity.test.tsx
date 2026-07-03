@@ -61,4 +61,21 @@ describe('useLiveActivity', () => {
     await vi.waitFor(() => expect(lastFrame() ?? '').toBe('[]'), { timeout: WAIT_TIMEOUT });
     unmount();
   });
+
+  it('restarts the watcher when the same session gets a new transcriptPath', async () => {
+    // Regression: watchers were keyed only by sessionId, so a later
+    // transcriptPath change for the SAME session kept tailing the old file
+    // forever instead of switching to the new one.
+    const pathA = resolve(dir, 'a.jsonl');
+    const pathB = resolve(dir, 'b.jsonl');
+    await writeFile(pathA, JSON.stringify({ type: 'assistant', message: { content: [{ type: 'tool_use', name: 'Bash', input: { command: 'first command' } }] } }) + '\n');
+    await writeFile(pathB, JSON.stringify({ type: 'assistant', message: { content: [{ type: 'tool_use', name: 'Bash', input: { command: 'second command' } }] } }) + '\n');
+
+    const { lastFrame, rerender, unmount } = render(<Probe sessions={[session({ transcriptPath: pathA })]} />);
+    await vi.waitFor(() => expect(lastFrame() ?? '').toContain('first command'), { timeout: WAIT_TIMEOUT });
+
+    rerender(<Probe sessions={[session({ transcriptPath: pathB })]} />);
+    await vi.waitFor(() => expect(lastFrame() ?? '').toContain('second command'), { timeout: WAIT_TIMEOUT });
+    unmount();
+  });
 });

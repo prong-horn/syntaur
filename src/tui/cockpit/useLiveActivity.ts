@@ -5,6 +5,8 @@ import type { AgentSessionWithLiveness } from '../../dashboard/types.js';
 
 interface Watcher {
   stop(): void;
+  /** The transcript path this watcher is tailing — lets a later path change for the same sessionId restart it. */
+  path: string;
 }
 
 /**
@@ -28,11 +30,17 @@ export function useLiveActivity(sessions: AgentSessionWithLiveness[]): Map<strin
     for (const s of sessions) {
       if (!s.isLive || !s.transcriptPath) continue;
       liveIds.add(s.sessionId);
-      if (watchers.has(s.sessionId)) continue;
 
+      const existing = watchers.get(s.sessionId);
+      if (existing) {
+        if (existing.path === s.transcriptPath) continue; // already tailing the right file
+        existing.stop(); // transcriptPath changed for this session — restart against the new file
+      }
+
+      const transcriptPath = s.transcriptPath;
       const renderer = createTranscriptRenderer({ width: ACTIVITY_RENDER_WIDTH });
       const handle = tailFile({
-        path: s.transcriptPath,
+        path: transcriptPath,
         onLines: (lines) => {
           renderer.push(lines);
           const text = renderer.lastActivity();
@@ -45,7 +53,7 @@ export function useLiveActivity(sessions: AgentSessionWithLiveness[]): Map<strin
           });
         },
       });
-      watchers.set(s.sessionId, { stop: () => handle.stop() });
+      watchers.set(s.sessionId, { stop: () => handle.stop(), path: transcriptPath });
     }
 
     for (const [id, watcher] of watchers) {

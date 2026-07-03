@@ -201,4 +201,31 @@ describe('ProjectTree', () => {
     );
     unmount();
   }, 30000);
+
+  it('PgDn/PgUp move the cursor by a full page', async () => {
+    const assignments = Array.from({ length: 10 }, (_, i) => ({ slug: `a${i}`, title: `Assignment ${i}` }));
+    await writeProject(projectsDir, 'demo', assignments);
+    const contentRect = { x: 0, y: 0, width: 40, height: 3 };
+    const { lastFrame, stdin, unmount } = render(
+      <MouseProvider>
+        <ProjectTree projectsDir={projectsDir} contentRect={contentRect} active onSelectAssignment={vi.fn()} />
+      </MouseProvider>,
+    );
+    await vi.waitFor(() => expect(lastFrame() ?? '').toContain('demo'), { timeout: WAIT_TIMEOUT });
+
+    stdin.write('\r'); // expand once — cursor stays on the project row
+    await vi.waitFor(
+      () => expect((lastFrame() ?? '').split('\n').some((l) => assignments.some((a) => l.includes(a.title)))).toBe(true),
+      { timeout: WAIT_TIMEOUT },
+    );
+
+    stdin.write('\x1b[6~'); // PgDn (viewportHeight=3): cursor moves from the project row (0) to 3
+    // The centered window has scrolled far enough that the project row is no
+    // longer visible — this is only reachable via PgDn, not a single j/k.
+    await vi.waitFor(() => expect(lastFrame() ?? '').not.toContain('demo'), { timeout: WAIT_TIMEOUT });
+
+    stdin.write('\x1b[5~'); // PgUp: back to the top
+    await vi.waitFor(() => expect(lastFrame() ?? '').toContain('demo'), { timeout: WAIT_TIMEOUT });
+    unmount();
+  }, 30000);
 });

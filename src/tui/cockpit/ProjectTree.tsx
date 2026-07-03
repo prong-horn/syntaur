@@ -80,6 +80,16 @@ export const ProjectTree: React.FC<ProjectTreeProps> = ({ projectsDir, contentRe
         return;
       }
 
+      if (key.pageUp) {
+        setCursor((c) => Math.max(0, c - viewportHeight));
+        return;
+      }
+
+      if (key.pageDown) {
+        setCursor((c) => Math.min(Math.max(0, flatList.length - 1), c + viewportHeight));
+        return;
+      }
+
       if (key.rightArrow && currentNode?.kind === 'project') {
         expandNode(currentNode.id);
         return;

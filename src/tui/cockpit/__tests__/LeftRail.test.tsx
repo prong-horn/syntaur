@@ -219,4 +219,51 @@ describe('LeftRail', () => {
     await vi.waitFor(() => expect(lastFrame() ?? '').toContain('dead'));
     unmount();
   });
+
+  it('keeps the keyboard cursor synced to the selected session when a poll re-sorts it to a new row', async () => {
+    // Regression: the cursor used to only re-sync when `selectedSessionId`
+    // itself changed, not when the SAME session moved to a different row
+    // because its waiting/working/recency rank changed — leaving subsequent
+    // arrow/PgUp/PgDn moves acting from a stale, now-wrong index.
+    const s1 = session('s1', { started: '2026-07-01T00:03:00Z' });
+    const s2 = session('s2', { started: '2026-07-01T00:02:00Z' });
+    const s3 = session('s3', { started: '2026-07-01T00:01:00Z' });
+    const onSelectSession = vi.fn();
+    const { stdin, rerender, unmount } = render(
+      <MouseProvider>
+        <LeftRail
+          contentRect={{ x: 0, y: 0, width: 30, height: 20 }}
+          sessions={[s1, s2, s3]}
+          selectedSessionId="s3"
+          focused
+          onSelectSession={onSelectSession}
+        />
+      </MouseProvider>,
+    );
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    // s3 becomes the waiting session -> it re-sorts to the TOP (rows:
+    // header, s3, s1, s2, RECENT), while still being the selected session.
+    const s3Waiting = { ...s3, waitingFor: 'permission prompt' };
+    rerender(
+      <MouseProvider>
+        <LeftRail
+          contentRect={{ x: 0, y: 0, width: 30, height: 20 }}
+          sessions={[s1, s2, s3Waiting]}
+          selectedSessionId="s3"
+          focused
+          onSelectSession={onSelectSession}
+        />
+      </MouseProvider>,
+    );
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    // Down from s3's NEW position (row 1) should land on whatever is now
+    // directly below it (s1, row 2) — a stale cursor left at the OLD row
+    // (3) would instead land on the RECENT header and never call
+    // onSelectSession at all.
+    stdin.write('\x1b[B');
+    await vi.waitFor(() => expect(onSelectSession).toHaveBeenLastCalledWith(expect.objectContaining({ sessionId: 's1' })));
+    unmount();
+  });
 });

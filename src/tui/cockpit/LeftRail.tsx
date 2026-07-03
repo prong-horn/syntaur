@@ -37,14 +37,19 @@ export const LeftRail: React.FC<LeftRailProps> = ({ contentRect, sessions, selec
   const [cursor, setCursor] = useState(0);
 
   // Keep the scroll window centered on the externally-selected session (e.g.
-  // set by a click elsewhere, or restored on mount) so it's visible without
-  // extra scrolling — never fires onSelectSession, just follows it.
+  // set by a click elsewhere, restored on mount, or moved to a new sort
+  // position because its waiting/working/recency rank changed between polls)
+  // so it's visible without extra scrolling — never fires onSelectSession,
+  // just follows it. Depends on the RESOLVED INDEX (not just the id) so a
+  // re-sort that moves the same selected session to a different row also
+  // re-syncs the cursor — otherwise PgUp/PgDn and the next arrow move would
+  // act from a stale row position.
+  const selectedIndex = selectedSessionId == null
+    ? -1
+    : rows.findIndex((r) => r.kind === 'session' && r.session.sessionId === selectedSessionId);
   useEffect(() => {
-    if (selectedSessionId == null) return;
-    const idx = rows.findIndex((r) => r.kind === 'session' && r.session.sessionId === selectedSessionId);
-    if (idx >= 0) setCursor(idx);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedSessionId]);
+    if (selectedIndex >= 0) setCursor(selectedIndex);
+  }, [selectedIndex]);
 
   // Rows shrink (RECENT collapses, sessions list changes) — keep the cursor
   // in bounds so `windowTreeRows` never receives an out-of-range index.

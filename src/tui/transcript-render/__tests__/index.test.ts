@@ -45,6 +45,50 @@ describe('createTranscriptRenderer — real Claude fixture', () => {
   });
 });
 
+describe('createTranscriptRenderer — fallback ratio denominator', () => {
+  it('a stray unparseable line among many recognized-but-dropped lines does not flip a valid transcript', () => {
+    // Regression: `attempts` used to exclude `drop`-kind lines (system,
+    // attachment, mode, etc.) from the denominator — a real session's early
+    // lines are often mostly this metadata, so a single unrelated bad line
+    // before any real conversation content would compute unparseable/attempts
+    // as 1/1 and permanently flip a perfectly valid Claude transcript.
+    const dropLines = [
+      { type: 'mode', mode: 'normal' },
+      { type: 'permission-mode', permissionMode: 'bypassPermissions' },
+      { type: 'file-history-snapshot', messageId: 'm0', snapshot: {}, isSnapshotUpdate: false },
+      { type: 'ai-title', aiTitle: 'x' },
+      { type: 'last-prompt', leafUuid: 'x' },
+      { type: 'bridge-session', bridgeSessionId: 'b', lastSequenceNum: 0 },
+      { type: 'queue-operation', operation: 'enqueue', content: 'x' },
+    ];
+    const lines = [...dropLines.map((l) => JSON.stringify(l)), 'not json at all'];
+    const renderer = createTranscriptRenderer({ width: 80 });
+    renderer.push(lines);
+
+    // Push a genuine, well-formed Claude line next — if the renderer had
+    // wrongly flipped to fallback, this would come back as extracted/sentinel
+    // fallback text instead of the parsed "❯ " prompt row.
+    const rows = renderer.push([JSON.stringify({ type: 'user', message: { content: 'hello' } })]);
+    expect(rows).toEqual([{ text: '❯ hello', style: 'user' }]);
+  });
+
+  it('still flips when unparseable lines genuinely dominate the recognized ones', () => {
+    const lines = [
+      JSON.stringify({ type: 'mode', mode: 'normal' }),
+      'not json 1',
+      'not json 2',
+      'not json 3',
+    ];
+    const renderer = createTranscriptRenderer({ width: 80 });
+    renderer.push(lines);
+    const rows = renderer.push([JSON.stringify({ type: 'user', message: { content: 'hello' } })]);
+    // Flipped to fallback: a well-formed Claude line no longer parses as one —
+    // fallback's extractor finds no known text field on this shape, so it
+    // renders nothing new (not the "❯ hello" it would have shown unflipped).
+    expect(rows).not.toContainEqual({ text: '❯ hello', style: 'user' });
+  });
+});
+
 describe('createTranscriptRenderer — malformed / non-Claude fixture', () => {
   it('flips to fallback and never emits a raw JSONL line', () => {
     const renderer = createTranscriptRenderer({ width: 80 });
