@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { RotateCcw, Save, Info } from 'lucide-react';
+import { RotateCcw, Save, Info, Plus, Copy, Trash2, Star } from 'lucide-react';
 import { LoadingState } from '../components/LoadingState';
 import { ErrorState } from '../components/ErrorState';
 import { TooltipProvider } from '../components/ui/tooltip';
@@ -9,8 +9,16 @@ import type {
   StatusResolution,
   AffectedResponse,
   StatusConfigSaveResponse,
+  WorkflowSummary,
 } from '../hooks/useStatusConfig';
 import { invalidateStatusConfigCache } from '../hooks/useStatusConfig';
+import {
+  workflowApiBase,
+  affectedEndpoint,
+  validateNewWorkflowId,
+  canDeleteWorkflow,
+  nextWorkflowAfterDelete,
+} from './workflow-switcher-helpers';
 import { StatusDeleteModal } from './StatusDeleteModal';
 import { FactDeleteModal } from './FactDeleteModal';
 import { StatusDefinitionsSection } from './StatusDefinitionsSection';
@@ -98,6 +106,32 @@ export function WorkflowPage() {
   // Active tab for the four-tab layout.
   const [activeTab, setActiveTab] = useState('statuses');
 
+  // ── Workflow switcher ────────────────────────────────────────────────────
+  // The editor edits ONE workflow at a time; `selectedWorkflowId` keys every
+  // config route below. The library list is fetched locally (not via the cached
+  // useWorkflows hook) so create/delete/set-default can refresh it immediately.
+  const [selectedWorkflowId, setSelectedWorkflowId] = useState('default');
+  const [workflows, setWorkflows] = useState<WorkflowSummary[]>([
+    { id: 'default', label: 'Default', isDefault: true, custom: false },
+  ]);
+  const [defaultWorkflow, setDefaultWorkflow] = useState('default');
+
+  const refreshWorkflows = useCallback(async () => {
+    try {
+      const res = await fetch('/api/config/workflows');
+      if (!res.ok) return;
+      const data = (await res.json()) as { workflows: WorkflowSummary[]; defaultWorkflow: string };
+      setWorkflows(data.workflows);
+      setDefaultWorkflow(data.defaultWorkflow);
+    } catch {
+      /* leave the current list in place */
+    }
+  }, []);
+
+  useEffect(() => {
+    void refreshWorkflows();
+  }, [refreshWorkflows]);
+
   // Hydrate every editable section from a config response. Used on initial
   // load, after a successful save (the POST returns the full GET shape), and
   // after a reset — so all sections stay coherent and `dirty` clears together.
@@ -121,7 +155,7 @@ export function WorkflowPage() {
 
   const loadConfig = useCallback(async () => {
     try {
-      const res = await fetch('/api/config/statuses');
+      const res = await fetch(workflowApiBase(selectedWorkflowId));
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data: StatusConfigResponse = await res.json();
       hydrateSections(data);
@@ -131,7 +165,7 @@ export function WorkflowPage() {
     } finally {
       setLoading(false);
     }
-  }, [hydrateSections]);
+  }, [hydrateSections, selectedWorkflowId]);
 
   useEffect(() => { loadConfig(); }, [loadConfig]);
 
@@ -206,7 +240,7 @@ export function WorkflowPage() {
         derive: deriveReset ? null : deriveDirty ? fromEditableDerive(derive) : undefined,
         transitions: transitionsCustomizing ? fromEditableTransitions(transitions) : undefined,
       });
-      const res = await fetch('/api/config/statuses', {
+      const res = await fetch(workflowApiBase(selectedWorkflowId), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
@@ -277,7 +311,7 @@ export function WorkflowPage() {
       }
       const data: StatusConfigSaveResponse = await res.json();
       hydrateSections(data);
-      invalidateStatusConfigCache();
+      invalidateStatusConfigCache(selectedWorkflowId);
       const appliedMsg = data.applied
         ? ` (${data.applied.remapped} remapped, ${data.applied.deleted} deleted)`
         : '';
@@ -290,11 +324,14 @@ export function WorkflowPage() {
     }
   }
 
+  // Reset is only offered for the built-in `default` workflow (custom workflows
+  // are removed via the switcher's Delete). DELETE of `default` resets it to the
+  // built-in status config and returns the fresh config shape.
   async function handleReset() {
     setSaving(true);
     setFeedback(null);
     try {
-      const res = await fetch('/api/config/statuses', { method: 'DELETE' });
+      const res = await fetch(workflowApiBase('default'), { method: 'DELETE' });
       if (!res.ok) throw new Error('Reset failed');
       const data: StatusConfigResponse = await res.json();
       hydrateSections(data);
@@ -305,6 +342,140 @@ export function WorkflowPage() {
       setFeedback({ type: 'error', message: err instanceof Error ? err.message : 'Reset failed' });
     } finally {
       setSaving(false);
+    }
+  }
+
+  // ── Switcher actions ──────────────────────────────────────────────────────
+
+  function selectWorkflow(id: string) {
+    if (id === selectedWorkflowId) return;
+    if (dirty && !window.confirm('Discard unsaved changes and switch workflow?')) return;
+    setLoading(true);
+    setDirty(false);
+    setSelectedWorkflowId(id); // triggers loadConfig via its dependency
+  }
+
+  async function handleCreateWorkflow() {
+    const raw = window.prompt('New workflow id (letters, digits, "_" or "-"):');
+    if (raw === null) return;
+    const validationError = validateNewWorkflowId(raw, workflows.map((w) => w.id));
+    if (validationError) {
+      setFeedback({ type: 'error', message: validationError });
+      return;
+    }
+    const id = raw.trim();
+    const label = window.prompt('Display label (optional):', '') ?? '';
+    try {
+      const res = await fetch('/api/config/workflows', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id, label: label.trim() || undefined }),
+      });
+      if (!res.ok) {
+        const e = await res.json().catch(() => null);
+        throw new Error(e?.error ?? `HTTP ${res.status}`);
+      }
+      invalidateStatusConfigCache();
+      await refreshWorkflows();
+      setLoading(true);
+      setDirty(false);
+      setSelectedWorkflowId(id);
+      setFeedback({ type: 'success', message: `Created workflow "${id}"` });
+      clearFeedback();
+    } catch (err) {
+      setFeedback({ type: 'error', message: err instanceof Error ? err.message : 'Create failed' });
+    }
+  }
+
+  async function handleDuplicateWorkflow() {
+    const raw = window.prompt(`Duplicate "${selectedWorkflowId}" as new id:`);
+    if (raw === null) return;
+    const validationError = validateNewWorkflowId(raw, workflows.map((w) => w.id));
+    if (validationError) {
+      setFeedback({ type: 'error', message: validationError });
+      return;
+    }
+    const id = raw.trim();
+    try {
+      const res = await fetch(
+        `/api/config/workflows/${encodeURIComponent(selectedWorkflowId)}/duplicate`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id }),
+        },
+      );
+      if (!res.ok) {
+        const e = await res.json().catch(() => null);
+        throw new Error(e?.error ?? `HTTP ${res.status}`);
+      }
+      invalidateStatusConfigCache();
+      await refreshWorkflows();
+      setLoading(true);
+      setDirty(false);
+      setSelectedWorkflowId(id);
+      setFeedback({ type: 'success', message: `Duplicated to "${id}"` });
+      clearFeedback();
+    } catch (err) {
+      setFeedback({
+        type: 'error',
+        message: err instanceof Error ? err.message : 'Duplicate failed',
+      });
+    }
+  }
+
+  async function handleSetDefaultWorkflow() {
+    try {
+      const res = await fetch(
+        `/api/config/workflows/${encodeURIComponent(selectedWorkflowId)}/default`,
+        { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' },
+      );
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      invalidateStatusConfigCache();
+      await refreshWorkflows();
+      setFeedback({
+        type: 'success',
+        message: `"${selectedWorkflowId}" is now the default workflow`,
+      });
+      clearFeedback();
+    } catch (err) {
+      setFeedback({
+        type: 'error',
+        message: err instanceof Error ? err.message : 'Failed to set default',
+      });
+    }
+  }
+
+  async function handleDeleteWorkflow() {
+    if (!canDeleteWorkflow(selectedWorkflowId)) return;
+    if (!window.confirm(`Delete workflow "${selectedWorkflowId}"? This cannot be undone.`)) return;
+    try {
+      const res = await fetch(workflowApiBase(selectedWorkflowId), { method: 'DELETE' });
+      if (!res.ok) {
+        const e = await res.json().catch(() => null);
+        if (res.status === 409 && e?.error === 'workflow-in-use') {
+          setFeedback({
+            type: 'error',
+            message: `Cannot delete "${selectedWorkflowId}": ${(e.blockers ?? []).join('; ')}`,
+          });
+          return;
+        }
+        throw new Error(e?.error ?? `HTTP ${res.status}`);
+      }
+      const nextId = nextWorkflowAfterDelete(
+        selectedWorkflowId,
+        workflows.map((w) => w.id),
+        defaultWorkflow,
+      );
+      invalidateStatusConfigCache();
+      await refreshWorkflows();
+      setLoading(true);
+      setDirty(false);
+      setSelectedWorkflowId(nextId);
+      setFeedback({ type: 'success', message: `Deleted workflow "${selectedWorkflowId}"` });
+      clearFeedback();
+    } catch (err) {
+      setFeedback({ type: 'error', message: err instanceof Error ? err.message : 'Delete failed' });
     }
   }
 
@@ -363,7 +534,7 @@ export function WorkflowPage() {
 
     // Row backed by disk — check for affected assignments.
     try {
-      const res = await fetch(`/api/config/statuses/affected/${encodeURIComponent(removedId)}`);
+      const res = await fetch(affectedEndpoint(selectedWorkflowId, removedId));
       if (!res.ok) {
         throw new Error(`HTTP ${res.status}`);
       }
@@ -450,9 +621,65 @@ export function WorkflowPage() {
   if (loading) return <LoadingState label="Loading workflow..." />;
   if (error) return <ErrorState error={error} />;
 
+  const selectedIsDefault = selectedWorkflowId === 'default';
+
   return (
     <TooltipProvider>
       <div className="space-y-6">
+        {/* Workflow switcher — pick which lifecycle workflow the tabs below edit */}
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            Workflow
+          </span>
+          <div className="flex flex-wrap items-center gap-1">
+            {workflows.map((w) => (
+              <button
+                key={w.id}
+                onClick={() => selectWorkflow(w.id)}
+                className={`inline-flex items-center gap-1 rounded-md border px-2.5 py-1 text-xs ${
+                  w.id === selectedWorkflowId
+                    ? 'border-primary/40 bg-primary/10 text-primary'
+                    : 'border-border/60 bg-muted/20 text-muted-foreground hover:bg-muted/40'
+                }`}
+              >
+                {w.label}
+                {w.id === defaultWorkflow && (
+                  <Star className="h-3 w-3 fill-current" aria-label="default workflow" />
+                )}
+              </button>
+            ))}
+          </div>
+          <div className="ml-auto flex items-center gap-1">
+            <button className="shell-action text-xs" onClick={() => void handleCreateWorkflow()}>
+              <Plus className="h-3 w-3" />
+              New
+            </button>
+            <button
+              className="shell-action text-xs"
+              onClick={() => void handleDuplicateWorkflow()}
+            >
+              <Copy className="h-3 w-3" />
+              Duplicate
+            </button>
+            <button
+              className="shell-action text-xs"
+              onClick={() => void handleSetDefaultWorkflow()}
+              disabled={selectedWorkflowId === defaultWorkflow}
+            >
+              <Star className="h-3 w-3" />
+              Set default
+            </button>
+            <button
+              className="shell-action text-xs text-error-foreground disabled:opacity-40"
+              onClick={() => void handleDeleteWorkflow()}
+              disabled={!canDeleteWorkflow(selectedWorkflowId)}
+            >
+              <Trash2 className="h-3 w-3" />
+              Delete
+            </button>
+          </div>
+        </div>
+
         {/* Config state banner */}
         <div className={`flex items-center justify-between rounded-lg border px-4 py-3 text-sm ${
           custom
@@ -461,18 +688,22 @@ export function WorkflowPage() {
         }`}>
           <div className="flex items-center gap-2">
             <Info className="h-4 w-4" />
-            {custom
-              ? 'Using custom status configuration from ~/.syntaur/config.md'
-              : 'Using default status configuration'}
+            {selectedIsDefault
+              ? custom
+                ? 'Using custom status configuration from ~/.syntaur/config.md'
+                : 'Using default status configuration'
+              : `Editing the "${selectedWorkflowId}" workflow`}
           </div>
-          <button
-            className="shell-action text-xs"
-            onClick={handleReset}
-            disabled={saving || (!custom && !dirty)}
-          >
-            <RotateCcw className="h-3 w-3" />
-            Reset to Defaults
-          </button>
+          {selectedIsDefault && (
+            <button
+              className="shell-action text-xs"
+              onClick={handleReset}
+              disabled={saving || (!custom && !dirty)}
+            >
+              <RotateCcw className="h-3 w-3" />
+              Reset to Defaults
+            </button>
+          )}
         </div>
 
         {/* Feedback banner */}
