@@ -18,7 +18,7 @@ import {
   type StatusConfig,
 } from '../utils/config.js';
 import { acceptFactDeclarations, buildDeriveRegistry, buildQueryRegistry } from '../lifecycle/derive.js';
-import type { FieldRegistry } from '../utils/query/index.js';
+import { ASSIGNMENT_FIELDS, type FieldRegistry } from '../utils/query/index.js';
 import { resolvePlaybookSlug } from '../utils/playbooks.js';
 import { migrateLegacyProjectFiles, migrateLegacyArchivedProjects } from '../utils/fs-migration.js';
 import { resolveAssignmentById, type ResolvedAssignment } from '../utils/assignment-resolver.js';
@@ -631,6 +631,30 @@ function resolveWorkflowStatusConfig(
     deriveRegistry: buildDeriveRegistry([]),
     queryRegistry: buildQueryRegistry([]),
   };
+}
+
+/**
+ * Build the UNION AQL query registry across every configured workflow. Each
+ * workflow contributes its own fact-derived query fields; a saved-view query may
+ * reference a field declared by ANY workflow, so validating against a single
+ * workflow's registry would wrongly reject cross-workflow queries. Merge is
+ * first-writer-wins with `default` processed first (so the default lifecycle is
+ * authoritative on any same-name field conflict) and remaining workflows sorted
+ * for determinism. Always includes the built-in `ASSIGNMENT_FIELDS` vocabulary.
+ */
+export async function getUnionQueryRegistry(): Promise<FieldRegistry> {
+  const config = await readConfig();
+  const ids = Object.keys(getWorkflowLibrary(config)).sort((a, b) =>
+    a === 'default' ? -1 : b === 'default' ? 1 : a.localeCompare(b),
+  );
+  const merged: FieldRegistry = { ...ASSIGNMENT_FIELDS };
+  for (const id of ids) {
+    const sc = await getStatusConfig(id);
+    for (const [key, spec] of Object.entries(sc.queryRegistry)) {
+      if (!(key in merged)) merged[key] = spec;
+    }
+  }
+  return merged;
 }
 
 /**

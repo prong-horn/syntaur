@@ -140,6 +140,7 @@ export interface ViewFilters {
   priority?: FilterValue;
   assignee?: FilterValue;
   project?: FilterValue;
+  workflow?: FilterValue;
   tags?: FilterValue;
   activity?: Activity;
   sessionStatus?: FilterValue;

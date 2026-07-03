@@ -42,6 +42,10 @@ export function boardItemToQueryItem(item: AssignmentBoardItem): QueryItem {
     type: item.type,
     assignee: item.assignee,
     project: item.projectSlug,
+    // Resolved workflow (multi-workflow) — the `workflow` AQL field reads
+    // `resolvedWorkflow` (falling back to the raw override).
+    resolvedWorkflow: item.resolvedWorkflow,
+    workflow: item.workflow,
     tags: item.tags,
     archived: item.archived,
     title: item.title,
