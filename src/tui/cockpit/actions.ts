@@ -6,7 +6,7 @@ import { isNativeLaunchEligible } from '../claude-agents/launch.js';
 import { resolveRunner } from '../../utils/agents-schema.js';
 import type { AgentConfig } from '../../utils/config.js';
 import type { AgentLaunchPlan } from '../../launch/build-launch.js';
-import type { NativeAgentState } from '../../dashboard/types.js';
+import type { AgentSessionWithLiveness, NativeAgentState } from '../../dashboard/types.js';
 
 export interface ActionCallbacks {
   onLaunch: () => void;
@@ -24,11 +24,24 @@ export interface ActionCaps {
 const NATIVE_TERMINAL_STATES: ReadonlySet<NativeAgentState> = new Set(['done', 'failed', 'stopped']);
 
 /**
+ * True when a session should be attached via the native `claude attach`
+ * path: it has a native short id and its `state` is anything OTHER than
+ * terminal (`working`, `blocked` — a permission prompt — or any future
+ * waiting-ish state all count; only done/failed/stopped disqualify it).
+ * Exported so Cockpit's `handleAttach` can pick the SAME path this enable
+ * check assumes, rather than re-deriving the rule a second time.
+ */
+export function isNativeAttachReachable(session: AgentSessionWithLiveness): boolean {
+  return session.agentShortId != null && session.state != null && !NATIVE_TERMINAL_STATES.has(session.state);
+}
+
+/**
  * Attach is enabled via ONE of two independent paths:
- *  - Native: the session has a native short id and its `state` is anything
- *    OTHER than terminal (`working`, `blocked` — a permission prompt — or any
- *    future waiting-ish state all stay attachable; only done/failed/stopped
- *    gate it off). Reachable with no tmux installed at all.
+ *  - Native (see `isNativeAttachReachable`) — reachable with no tmux
+ *    installed at all, and AUTHORITATIVE when present: a terminal-state
+ *    native session must not fall through to the tmux gate below, whose
+ *    isLive can still read stale-true off a lingering pid the native truth
+ *    already knows ended.
  *  - tmux (existing v1 gate, unchanged): tmux available, the session is LIVE,
  *    and it has a non-null `assignmentSlug` (the tmux session name is derived
  *    from project+assignment slugs).
@@ -36,11 +49,8 @@ const NATIVE_TERMINAL_STATES: ReadonlySet<NativeAgentState> = new Set(['done', '
 function attachEnabled(selection: DetailSelection, caps: ActionCaps): boolean {
   if (selection.kind !== 'session') return false;
   const { session } = selection;
-  // Native info, when present, is AUTHORITATIVE — a terminal-state native
-  // session must not fall through to the tmux gate, whose isLive can still
-  // read stale-true off a lingering pid the native truth already knows ended.
   if (session.agentShortId != null && session.state != null) {
-    return !NATIVE_TERMINAL_STATES.has(session.state);
+    return isNativeAttachReachable(session);
   }
   return caps.tmuxAvailable && session.isLive === true && session.assignmentSlug != null;
 }

@@ -16,6 +16,8 @@ export interface CockpitRegions {
   sessions: FrameContent;
   tree: FrameContent;
   detail: FrameContent;
+  /** Fixed row for launch/attach outcome text, directly above the action bar — replaces the old Detail-title status hijack. */
+  statusRow: Rect;
   actionBar: Rect;
 }
 
@@ -56,8 +58,10 @@ function splitRail(railFrame: Rect): { sessions: Rect; tree: Rect } {
 
 export function computeLayout(columns: number, rows: number): CockpitLayout {
   const borderless = columns < BORDERLESS_BELOW_COLS;
-  const bodyHeight = Math.max(1, rows - 1);
-  const actionBar: Rect = { x: 0, y: rows - 1, width: columns, height: 1 };
+  // Bottom two rows are fixed chrome: the status line, then the action bar.
+  const bodyHeight = Math.max(1, rows - 2);
+  const statusRow: Rect = { x: 0, y: Math.max(0, rows - 2), width: columns, height: 1 };
+  const actionBar: Rect = { x: 0, y: Math.max(0, rows - 1), width: columns, height: 1 };
 
   if (columns < 80) {
     const railHeight = Math.floor(bodyHeight / 2);
@@ -70,6 +74,7 @@ export function computeLayout(columns: number, rows: number): CockpitLayout {
         sessions: frameContent(sessions, borderless),
         tree: frameContent(tree, borderless),
         detail: frameContent(detailFrame, borderless),
+        statusRow,
         actionBar,
       },
     };
@@ -84,6 +89,7 @@ export function computeLayout(columns: number, rows: number): CockpitLayout {
       sessions: frameContent(sessions, borderless),
       tree: frameContent(tree, borderless),
       detail: frameContent(detailFrame, borderless),
+      statusRow,
       actionBar,
     },
   };

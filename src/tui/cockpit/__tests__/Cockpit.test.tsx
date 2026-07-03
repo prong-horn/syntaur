@@ -21,10 +21,16 @@ const WAIT_TIMEOUT = 45000;
 const mocks = vi.hoisted(() => ({
   tmuxSessionExists: vi.fn(),
   runTmuxAttach: vi.fn(),
+  runClaudeAttach: vi.fn(),
   buildLaunchPlan: vi.fn(),
   // Mutable box so tests can flip liveness between polls without redefining
   // the vi.mock factory.
   sessionLive: { value: true },
+  // Mutable box controlling whether the mocked session carries native
+  // agent-view fields — null/undefined (the default) keeps every existing
+  // test on the tmux path; a describe block below flips it on to exercise
+  // handleAttach's native dispatch.
+  sessionNative: { agentShortId: null as string | null, state: null as 'working' | 'blocked' | 'done' | 'failed' | 'stopped' | null },
 }));
 
 vi.mock('../../tmux/launch.js', async (importOriginal) => {
@@ -34,6 +40,10 @@ vi.mock('../../tmux/launch.js', async (importOriginal) => {
 
 vi.mock('../../tmux/attach.js', () => ({
   runTmuxAttach: mocks.runTmuxAttach,
+}));
+
+vi.mock('../../claude-agents/attach.js', () => ({
+  runClaudeAttach: mocks.runClaudeAttach,
 }));
 
 // Bypasses real workspace/cwd resolution so the test controls exactly which
@@ -61,15 +71,17 @@ vi.mock('../../sessions/feed.js', () => ({
       projectSlug: 'proj',
       assignmentSlug: 'a1',
       path: '/tmp/s1',
+      agentShortId: mocks.sessionNative.agentShortId,
+      state: mocks.sessionNative.state,
     } as AgentSessionWithLiveness,
   ]),
 }));
 
 describe('Cockpit shell', () => {
-  it('renders rail (Live Sessions + Projects) + detail + action bar', () => {
-    const { lastFrame, unmount } = render(<Cockpit projectsDir="/tmp/p" assignmentsDir="/tmp/a" tmuxAvailable={false} />);
+  it('renders bordered Sessions + Projects + Detail panes + action bar', () => {
+    const { lastFrame, unmount } = render(<Cockpit projectsDir="/tmp/p" assignmentsDir="/tmp/a" tmuxAvailable={false} claudeBgAvailable={false} />);
     const f = lastFrame() ?? '';
-    expect(f).toContain('Live Sessions');
+    expect(f).toContain('Sessions');
     expect(f).toContain('Projects');
     expect(f).toContain('Detail');
     // Action bar: Launch/Attach are context-sensitive (no selection yet ->
@@ -112,15 +124,18 @@ describe('Cockpit selection freshness (selectedSessionId derives from the latest
 
   it('re-derives the selected session from each poll, so Attach re-disables once the live session dies', async () => {
     const { lastFrame, stdin, unmount } = render(
-      <Cockpit projectsDir="/tmp/p" assignmentsDir="/tmp/a" tmuxAvailable={true} />,
+      <Cockpit projectsDir="/tmp/p" assignmentsDir="/tmp/a" tmuxAvailable={true} claudeBgAvailable={false} />,
     );
 
-    // Wait for the first poll to land the live session in the rail.
-    await vi.waitFor(() => expect(lastFrame() ?? '').toContain('claude'), { timeout: WAIT_TIMEOUT });
+    // Wait for the first poll to land the live session in the rail (human
+    // label "proj/a1", not the raw agent id — see railTypes.ts's label resolution).
+    await vi.waitFor(() => expect(lastFrame() ?? '').toContain('proj/a1'), { timeout: WAIT_TIMEOUT });
 
-    // Click the only session row (rail at x:0,y:0; header row 0; row 0 of the
-    // list is 0-indexed y=1 -> 1-indexed SGR y=2, x=1).
-    stdin.write('\x1b[<0;1;2M');
+    // Click the only session row. Layout: col 0 is the pane's left border
+    // (content starts at x:1), row 0 is the top border, row 1 the "Sessions"
+    // title, row 2 the "LIVE (1)" group header, row 3 the one session row ->
+    // 0-indexed (x:1, y:3) -> 1-indexed SGR (x:2, y:4).
+    stdin.write('\x1b[<0;2;4M');
 
     // Selection is a LIVE session + tmux available ⇒ Attach enabled ⇒ 'a'
     // reaches handleAttach, which calls tmuxSessionExists. Re-send 'a' on
@@ -171,11 +186,12 @@ describe('Cockpit handleAttach status reporting (surfaces child exit/error, C3)'
   it('reports the outcome of each runTmuxAttach result via the shared classification (clean/null/error/non-zero)', async () => {
     mocks.runTmuxAttach.mockResolvedValue({ code: 0 });
     const { lastFrame, stdin, unmount } = render(
-      <Cockpit projectsDir="/tmp/p" assignmentsDir="/tmp/a" tmuxAvailable={true} />,
+      <Cockpit projectsDir="/tmp/p" assignmentsDir="/tmp/a" tmuxAvailable={true} claudeBgAvailable={false} />,
     );
 
-    await vi.waitFor(() => expect(lastFrame() ?? '').toContain('claude'), { timeout: WAIT_TIMEOUT });
-    stdin.write('\x1b[<0;1;2M');
+    await vi.waitFor(() => expect(lastFrame() ?? '').toContain('proj/a1'), { timeout: WAIT_TIMEOUT });
+    // See the coordinate note in the previous describe block's click.
+    stdin.write('\x1b[<0;2;4M');
     // Re-send 'a' on every retry tick until the click's setState has flushed
     // and Attach is enabled — avoids guessing a fixed settle delay, which
     // flaked under full-suite CPU contention.
@@ -308,6 +324,13 @@ describe('Cockpit handleLaunch hand-off (no tmux) does not silently exit on a fa
     projectSlug: string,
   ) {
     await vi.waitFor(() => expect(lastFrame() ?? '').toContain(projectSlug), { timeout: WAIT_TIMEOUT });
+    // The 3-way focus cycle (rail -> tree -> detail) starts on 'rail' — the
+    // tree's keyboard handling is gated on `active` (focus === 'tree'), so a
+    // single Tab must land before arrow keys reach it. Tab is NOT idempotent
+    // (each press advances the cycle), so send it exactly once, then give it
+    // a beat to settle before the retry loop below.
+    stdin.write('\t');
+    await new Promise((resolve) => setTimeout(resolve, 200));
     // Right arrow expands the project node; expandNode is idempotent, so
     // it's safe to re-send on every retry tick until the '▾' expanded
     // chevron actually renders (avoids guessing a fixed settle delay).
@@ -347,15 +370,15 @@ describe('Cockpit handleLaunch hand-off (no tmux) does not silently exit on a fa
 
   it('a spawn ENOENT does not exit the cockpit — it surfaces "Launch failed: command not found" and stays', async () => {
     await writeProjectFixture('demo', 'task');
-    // Very short and NOT derived from the (long) mkdtemp path: the detail
-    // pane is ~72 columns wide, and "Detail — Launch failed: command not
-    // found (…)" alone is already ~45 of those, so a longer path here would
-    // word-wrap mid-string and break a plain `.toContain()` on the frame.
+    // Very short and NOT derived from the (long) mkdtemp path: the status
+    // row shows "Launch failed: command not found (…)" verbatim, and a
+    // longer path here would word-wrap mid-string and break a plain
+    // `.toContain()` on the frame.
     const badCommand = '/nope-xyz';
     mocks.buildLaunchPlan.mockResolvedValue({ command: badCommand, args: [], cwd: testDir });
 
     const { lastFrame, stdin, unmount } = render(
-      <Cockpit projectsDir={projectsDir} assignmentsDir={assignmentsDir} tmuxAvailable={false} />,
+      <Cockpit projectsDir={projectsDir} assignmentsDir={assignmentsDir} tmuxAvailable={false} claudeBgAvailable={false} />,
     );
 
     await selectAssignmentViaTree(stdin, lastFrame, 'demo');
@@ -367,7 +390,7 @@ describe('Cockpit handleLaunch hand-off (no tmux) does not silently exit on a fa
     );
     // The cockpit is still alive and rendering its normal chrome — a
     // spawn failure must NOT have torn it down via `exit()`.
-    expect(lastFrame() ?? '').toContain('Live Sessions');
+    expect(lastFrame() ?? '').toContain('Sessions');
     expect(lastFrame() ?? '').toContain('Detail');
 
     unmount();
@@ -378,7 +401,7 @@ describe('Cockpit handleLaunch hand-off (no tmux) does not silently exit on a fa
     mocks.buildLaunchPlan.mockResolvedValue({ command: '/usr/bin/true', args: [], cwd: testDir });
 
     const { lastFrame, stdin, unmount } = render(
-      <Cockpit projectsDir={projectsDir} assignmentsDir={assignmentsDir} tmuxAvailable={false} />,
+      <Cockpit projectsDir={projectsDir} assignmentsDir={assignmentsDir} tmuxAvailable={false} claudeBgAvailable={false} />,
     );
 
     await selectAssignmentViaTree(stdin, lastFrame, 'demo2');
@@ -392,4 +415,59 @@ describe('Cockpit handleLaunch hand-off (no tmux) does not silently exit on a fa
 
     unmount();
   }, 90000);
+});
+
+describe('Cockpit handleAttach native dispatch (task 14 wiring)', () => {
+  beforeEach(() => {
+    mocks.sessionLive.value = true;
+    mocks.sessionNative.agentShortId = 'ab12cd34';
+    mocks.sessionNative.state = 'working';
+    mocks.tmuxSessionExists.mockReset().mockResolvedValue(true);
+    mocks.runClaudeAttach.mockReset().mockResolvedValue({ code: 0 });
+  });
+
+  afterEach(() => {
+    mocks.sessionNative.agentShortId = null;
+    mocks.sessionNative.state = null;
+  });
+
+  it('picks runClaudeAttach over the tmux path for a native-reachable session, even with tmux available', async () => {
+    const { lastFrame, stdin, unmount } = render(
+      <Cockpit projectsDir="/tmp/p" assignmentsDir="/tmp/a" tmuxAvailable={true} claudeBgAvailable={true} />,
+    );
+    await vi.waitFor(() => expect(lastFrame() ?? '').toContain('proj/a1'), { timeout: WAIT_TIMEOUT });
+    // Coordinate matches the other rail-row clicks in this file (col 1 clears
+    // the pane's left border, row 3 is the one session row).
+    stdin.write('\x1b[<0;2;4M');
+
+    await vi.waitFor(
+      () => {
+        stdin.write('a');
+        expect(mocks.runClaudeAttach).toHaveBeenCalledTimes(1);
+      },
+      { timeout: WAIT_TIMEOUT },
+    );
+    expect(mocks.runClaudeAttach).toHaveBeenCalledWith('ab12cd34');
+    expect(mocks.tmuxSessionExists).not.toHaveBeenCalled();
+    await vi.waitFor(() => expect(lastFrame() ?? '').toContain('Detached from ab12cd34'), { timeout: WAIT_TIMEOUT });
+
+    unmount();
+  }, 30000);
+
+  it('a terminal native state disables Attach entirely (does not fall back to tmux)', async () => {
+    mocks.sessionNative.state = 'done';
+    const { lastFrame, stdin, unmount } = render(
+      <Cockpit projectsDir="/tmp/p" assignmentsDir="/tmp/a" tmuxAvailable={true} claudeBgAvailable={true} />,
+    );
+    await vi.waitFor(() => expect(lastFrame() ?? '').toContain('proj/a1'), { timeout: WAIT_TIMEOUT });
+    stdin.write('\x1b[<0;2;4M');
+    await new Promise((resolve) => setTimeout(resolve, 300));
+
+    stdin.write('a');
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    expect(mocks.runClaudeAttach).not.toHaveBeenCalled();
+    expect(mocks.tmuxSessionExists).not.toHaveBeenCalled();
+
+    unmount();
+  }, 30000);
 });

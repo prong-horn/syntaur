@@ -2,18 +2,19 @@ import { describe, it, expect } from 'vitest';
 import { computeLayout, inset } from '../layout.js';
 
 describe('computeLayout', () => {
-  it('two columns wide; rail 28..40; action bar on last row; bordered (not tiny)', () => {
+  it('two columns wide; rail 28..40; status row + action bar on the last two rows; bordered (not tiny)', () => {
     const l = computeLayout(120, 40);
     expect(l.columns).toBe(2);
     expect(l.borderless).toBe(false);
     expect(l.railWidth).toBeGreaterThanOrEqual(28);
     expect(l.railWidth).toBeLessThanOrEqual(40);
+    expect(l.regions.statusRow).toEqual({ x: 0, y: 38, width: 120, height: 1 });
     expect(l.regions.actionBar).toEqual({ x: 0, y: 39, width: 120, height: 1 });
     expect(l.regions.sessions.frame.x).toBe(0);
     expect(l.regions.tree.frame.x).toBe(0);
     expect(l.regions.detail.frame.x).toBe(l.railWidth);
     // Sessions stacked above tree, both within the rail's frame height.
-    expect(l.regions.sessions.frame.height + l.regions.tree.frame.height).toBe(39);
+    expect(l.regions.sessions.frame.height + l.regions.tree.frame.height).toBe(38);
     expect(l.regions.tree.frame.y).toBe(l.regions.sessions.frame.height);
   });
 
