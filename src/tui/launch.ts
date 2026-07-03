@@ -1,20 +1,8 @@
 import { spawn } from 'node:child_process';
-import { mkdir, writeFile } from 'node:fs/promises';
-import { isAbsolute, resolve } from 'node:path';
-import { getAssignmentDetail } from '../dashboard/api.js';
 import type { AgentConfig } from '../utils/config.js';
-import { agentNameArgs, applyModelFlag } from '../utils/agents-schema.js';
-import type { BuiltArgv } from '../launch/types.js';
-import {
-  formatFallbackCwdWarning,
-  isExistingDir,
-  resolveLaunchCwd,
-  resolveWorkspaceCwd,
-} from '../launch/cwd.js';
 import type { SpawnFn } from '../launch/execute.js';
-import { bareGrabSeed, resolveLaunchPrompt } from '../launch/launch-prompt.js';
-import { playbooksDir } from '../utils/paths.js';
-import { listPlaybookSlugs } from '../utils/playbooks.js';
+import { bareGrabSeed } from '../launch/launch-prompt.js';
+import { buildLaunchPlan, type AgentLaunchPlan } from '../launch/build-launch.js';
 
 export type { ResolvedArgv, BuiltArgv } from '../launch/types.js';
 // `formatFallbackCwdWarning` now lives in ../launch/cwd.ts (a neutral module so
@@ -22,6 +10,15 @@ export type { ResolvedArgv, BuiltArgv } from '../launch/types.js';
 // existing `import { formatFallbackCwdWarning } from '../tui/launch.js'` sites
 // (e.g. launch-argv.test.ts) keep working.
 export { formatFallbackCwdWarning } from '../launch/cwd.js';
+// `buildAgentArgv`/`shellQuote` now live in ../launch/build-launch.ts, alongside
+// `buildLaunchPlan` (which needs to call `buildAgentArgv` to build the final
+// argv) — that lets `buildLaunchPlan` be extracted here without an import cycle
+// (this module imports `buildLaunchPlan` from build-launch.ts, so build-launch.ts
+// cannot import back from here). Re-exported so existing
+// `import { buildAgentArgv, shellQuote } from '../tui/launch.js'` call sites
+// (e.g. launch-argv.test.ts, launch/argv.ts, launch/execute.ts) keep working.
+export { buildAgentArgv, shellQuote } from '../launch/build-launch.js';
+export type { AgentLaunchPlan } from '../launch/build-launch.js';
 
 export interface LaunchOptions {
   projectsDir: string;
@@ -100,184 +97,35 @@ export const INITIAL_PROMPT = (params: {
 };
 
 /**
- * POSIX single-quote shell escaping. Safe to embed in `sh -c '<result>'`.
- * Replaces ' with '\'' and wraps the whole value in single quotes.
+ * Spawn the agent for a launch. Delegates ALL of "resolve cwd → write
+ * context.json → resolve prompt → build argv" to `buildLaunchPlan`
+ * (`../launch/build-launch.ts`) so a detached tmux launch and this in-process
+ * hand-off launch share one path — this function only adds the spawn/exit
+ * lifecycle around the resulting plan.
  */
-export function shellQuote(arg: string): string {
-  if (arg === '') return "''";
-  return `'${arg.replace(/'/g, `'\\''`)}'`;
-}
-
-/**
- * Build argv for an agent launch. Handles:
- * - `resolveFromShellAliases: true` → `$SHELL -i -c '<quoted...>'`
- * - `promptArgPosition: 'first' | 'last' | 'none'`
- * - plain absolute or bare-name command.
- */
-export function buildAgentArgv(
-  agent: AgentConfig,
-  prompt: string,
-  env: NodeJS.ProcessEnv = process.env,
-): BuiltArgv {
-  const position = agent.promptArgPosition ?? 'first';
-  // Claude `--agent <name>` is a command-PREFIX: it must sit immediately after
-  // the command and before the positioned prompt (with `promptArgPosition:
-  // 'first'` a naive prepend would yield `claude <prompt> --agent <name>`).
-  const prefix = agentNameArgs(agent);
-  // When an agent identity is selected its own model frontmatter wins, so the
-  // profile `--model` is suppressed on a fresh launch. Otherwise the profile
-  // model is appended after the agent's own args (any pre-existing `--model` is
-  // stripped first) so exactly one authoritative `--model` is emitted — never a
-  // duplicate, which some CLIs reject.
-  const baseArgs = agent.agentName
-    ? [...(agent.args ?? [])]
-    : applyModelFlag(agent, [...(agent.args ?? [])]);
-  const positioned =
-    position === 'first'
-      ? [prompt, ...baseArgs]
-      : position === 'last'
-        ? [...baseArgs, prompt]
-        : baseArgs;
-  const agentArgs = [...prefix, ...positioned];
-
-  if (agent.resolveFromShellAliases) {
-    const requested = env.SHELL;
-    let shell = requested;
-    let warning: string | null = null;
-    if (!shell || !isAbsolute(shell)) {
-      warning = `syntaur: $SHELL ${
-        requested ? `("${requested}") is not absolute` : 'is unset'
-      } — falling back to /bin/sh for shell-alias resolution`;
-      shell = '/bin/sh';
-    }
-    const quoted = [agent.command, ...agentArgs].map(shellQuote).join(' ');
-    return {
-      argv: { command: shell, args: ['-i', '-c', quoted] },
-      shellFallbackWarning: warning,
-    };
-  }
-
-  return {
-    argv: { command: agent.command, args: agentArgs },
-    shellFallbackWarning: null,
-  };
-}
-
 export async function launchAgent(options: LaunchOptions): Promise<void> {
-  const { projectsDir, projectSlug, assignmentSlug, agent, cwdOverride } = options;
+  const { agent } = options;
   const exitWith = options.onExit ?? ((code: number) => process.exit(code));
 
-  const detail = await getAssignmentDetail(projectsDir, projectSlug, assignmentSlug);
-  if (!detail) {
-    console.error(`Assignment not found: ${projectSlug}/${assignmentSlug}`);
-    process.exit(1);
-  }
-
-  const projectDir = resolve(projectsDir, projectSlug);
-  const assignmentDir = resolve(projectDir, 'assignments', assignmentSlug);
-
-  // Resolve + VALIDATE the working directory before writing context.json or
-  // spawning. Never silently fall back to process.cwd() — refuse the launch so
-  // we don't open the agent (or write context) in the wrong directory. This
-  // resolves the WORKTREE dir; a directory-agent (`workdir`) moves the SPAWN cwd
-  // off it below while keeping the worktree as the context-marker home.
-  let worktreeDir: string;
-  if (cwdOverride) {
-    // An explicit, present-but-invalid override is a caller bug — hard error
-    // rather than silently falling through to the workspace fields.
-    if (!isExistingDir(cwdOverride)) {
-      console.error(
-        `syntaur: --cwd ${cwdOverride} is not an existing directory — refusing to launch.`,
-      );
-      exitWith(1);
-      return;
-    }
-    worktreeDir = cwdOverride;
-  } else {
-    const picked = resolveWorkspaceCwd({
-      worktreePath: detail.workspace.worktreePath,
-      repository: detail.workspace.repository,
-      branch: detail.workspace.branch,
-      assignmentSlug,
+  let plan: AgentLaunchPlan;
+  try {
+    plan = await buildLaunchPlan({
+      projectsDir: options.projectsDir,
+      projectSlug: options.projectSlug,
+      assignmentSlug: options.assignmentSlug,
+      agent: options.agent,
+      cwdOverride: options.cwdOverride,
     });
-    if (picked.cwd === null) {
-      console.error(`syntaur: ${picked.invalidReason} — refusing to launch.`);
-      exitWith(1);
-      return;
-    }
-    worktreeDir = picked.cwd;
-    // Preserve the existing missing-field warning behavior: when worktree is
-    // valid but `branch` (or worktreePath) is unset we still nudge the user.
-    // `picked.fallbackWarning` covers the worktree→repository fallback cases.
-    const warning =
-      picked.fallbackWarning ??
-      formatFallbackCwdWarning({
-        assignmentSlug,
-        workspaceDir: worktreeDir,
-        worktreePath: detail.workspace.worktreePath,
-        branch: detail.workspace.branch,
-      });
-    if (warning) console.warn(warning);
-  }
-
-  // A directory-agent spawns from its own `workdir`; the worktree stays the
-  // home for context.json + `@worktree`. An invalid workdir refuses the launch.
-  const launchCwd = resolveLaunchCwd(agent, worktreeDir);
-  if (launchCwd.invalidReason) {
-    console.error(`syntaur: ${launchCwd.invalidReason} — refusing to launch.`);
+  } catch (err) {
+    console.error(err instanceof Error ? err.message : String(err));
     exitWith(1);
     return;
-  }
-  const spawnCwd = launchCwd.spawnCwd;
-  const worktreePath = launchCwd.worktreePath;
-
-  // context.json is a WORKSPACE MARKER file — it records repository/branch/
-  // worktree so tooling can recognize this directory as a Syntaur workspace. It
-  // is written to the WORKTREE, never the agent's `workdir`: marking a global
-  // agent dir (e.g. ~/job-applier-agent) as a Syntaur workspace would be wrong.
-  // It is NOT the active-assignment source of truth: the assignment binds via
-  // the session's open engagement (established by `syntaur track-session`).
-  // Do NOT persist projectSlug/assignmentSlug/assignmentDir/projectDir/title
-  // here — those scalars are non-authoritative and resolve from the engagement.
-  const contextDir = resolve(worktreePath, '.syntaur');
-  await mkdir(contextDir, { recursive: true });
-
-  const context = {
-    repository: detail.workspace.repository ?? null,
-    branch: detail.workspace.branch ?? null,
-    worktreePath: detail.workspace.worktreePath ?? null,
-    workspaceRoot: worktreePath,
-    grabbedAt: new Date().toISOString(),
-  };
-
-  await writeFile(
-    resolve(contextDir, 'context.json'),
-    JSON.stringify(context, null, 2) + '\n',
-  );
-
-  const knownPlaybookSlugs = await listPlaybookSlugs(playbooksDir());
-  const { prompt, warnings } = resolveLaunchPrompt({
-    template: agent.launchPrompt,
-    playbook: agent.playbook,
-    id: detail.id,
-    assignmentDir,
-    projectSlug,
-    assignmentSlug,
-    worktreePath,
-    spawnCwd,
-    knownPlaybookSlugs,
-  });
-  for (const warning of warnings) console.warn(warning);
-
-  const { argv, shellFallbackWarning } = buildAgentArgv(agent, prompt);
-  if (shellFallbackWarning) {
-    console.warn(shellFallbackWarning);
   }
 
   const spawnImpl = options.spawnFn ?? spawn;
   return new Promise<void>((resolvePromise) => {
-    const child = spawnImpl(argv.command, argv.args, {
-      cwd: spawnCwd,
+    const child = spawnImpl(plan.command, plan.args, {
+      cwd: plan.cwd,
       stdio: 'inherit',
     });
 

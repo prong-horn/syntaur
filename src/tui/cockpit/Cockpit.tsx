@@ -1,0 +1,279 @@
+import React, { useEffect, useState } from 'react';
+import { spawn } from 'node:child_process';
+import { Box, Text, useInput, useApp, useWindowSize, useStdout } from 'ink';
+import { MouseProvider } from '../mouse/MouseContext.js';
+import { runWithMouseSuspended } from '../mouse/tracking.js';
+import { isMouseSequence } from '../mouse/parse.js';
+import { computeLayout, type FocusTarget } from './layout.js';
+import { LeftRail } from './LeftRail.js';
+import { DetailPane, type DetailSelection } from './DetailPane.js';
+import { ActionBar, type Action } from './ActionBar.js';
+import { buildActions, dispatchActionKey, runLaunch, isCleanExit, describeChildFailure, type ChildOutcome } from './actions.js';
+import { loadSessions } from '../sessions/feed.js';
+import { readConfig, getAgents, type AgentConfig } from '../../utils/config.js';
+import type { AgentSessionWithLiveness } from '../../dashboard/types.js';
+import { buildLaunchPlan } from '../../launch/build-launch.js';
+import { launchInTmux, tmuxSessionExists, tmuxSessionName } from '../tmux/launch.js';
+import { runTmuxAttach } from '../tmux/attach.js';
+
+const SESSION_POLL_INTERVAL_MS = 1500;
+const STATUS_CLEAR_MS = 4000;
+
+export interface SelectedAssignment {
+  projectSlug: string | null;
+  assignmentSlug: string;
+}
+
+export const Cockpit: React.FC<{ projectsDir: string; assignmentsDir: string; tmuxAvailable: boolean }> = ({
+  projectsDir,
+  assignmentsDir,
+  tmuxAvailable,
+}) => {
+  const { exit, suspendTerminal } = useApp();
+  const { write } = useStdout();
+  const size = useWindowSize();
+  const columns = size.columns || 80;
+  const rows = size.rows || 24;
+  const layout = computeLayout(columns, rows);
+  const [focus, setFocus] = useState<FocusTarget>('rail');
+
+  const [agents, setAgents] = useState<AgentConfig[] | null>(null);
+  const [sessions, setSessions] = useState<AgentSessionWithLiveness[]>([]);
+  // Only the id is stored as state; the session object itself is DERIVED
+  // below from the freshest `sessions` on every render so a selection never
+  // goes stale between ~1.5s polls (liveness, transcriptPath, etc. always
+  // reflect the latest poll instead of a frozen click-time snapshot).
+  const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
+  const [selectedAssignment, setSelectedAssignment] = useState<SelectedAssignment | null>(null);
+  const [status, setStatus] = useState<string | null>(null);
+
+  // Transient status line (launch/attach outcome) — self-clears so it never
+  // becomes a stale, misleading banner.
+  useEffect(() => {
+    if (!status) return;
+    const timer = setTimeout(() => setStatus(null), STATUS_CLEAR_MS);
+    timer.unref?.();
+    return () => clearTimeout(timer);
+  }, [status]);
+
+  // Load the agent list once at mount; session polling waits for it so
+  // `loadSessions` can resolve each session's resume/fork support.
+  useEffect(() => {
+    let cancelled = false;
+    readConfig()
+      .then((config) => {
+        if (!cancelled) setAgents(getAgents(config));
+      })
+      .catch(() => {
+        if (!cancelled) setAgents([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (agents === null) return;
+    let cancelled = false;
+
+    const poll = () => {
+      loadSessions({ projectsDir, agents })
+        .then((next) => {
+          if (!cancelled) setSessions(next);
+        })
+        .catch(() => {
+          // Transient read failure (e.g. DB mid-write) - keep last-known sessions.
+        });
+    };
+
+    poll();
+    const timer = setInterval(poll, SESSION_POLL_INTERVAL_MS);
+    timer.unref?.();
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [projectsDir, agents]);
+
+  // Re-derive the selected session from the freshest `sessions` poll every
+  // render, rather than trusting a snapshot captured at click-time — a
+  // session's liveness/transcriptPath/etc. can change between the ~1.5s
+  // polls, and a stale object would keep Attach enabled after the session
+  // died (see actions.ts's isLive gate) and would tail an obsolete
+  // transcriptPath. If the id no longer matches any row (session
+  // disappeared), this correctly derives to null and `selection` below
+  // falls through to the assignment (or none).
+  const selectedSession: AgentSessionWithLiveness | null =
+    selectedSessionId != null ? (sessions.find((s) => s.sessionId === selectedSessionId) ?? null) : null;
+
+  // Session wins over assignment when both are set (e.g. a session was
+  // selected after an assignment, or vice versa) — the more recently
+  // clicked/selected item should drive the detail pane.
+  const selection: DetailSelection = selectedSession
+    ? { kind: 'session', session: selectedSession }
+    : selectedAssignment
+      ? { kind: 'assignment', projectSlug: selectedAssignment.projectSlug, assignmentSlug: selectedAssignment.assignmentSlug }
+      : { kind: 'none' };
+
+  // Launch: build the plan (buildLaunchPlan — same path `launchAgent` uses)
+  // then hand off to `runLaunch`'s tmux/hand-off degradation. `buildActions`
+  // only enables this action for a project-nested assignment selection (see
+  // guard below, duplicated defensively — mirrors the nullability guards in
+  // actions.ts's doc comment). A directory-agent hand-off never touches the
+  // real terminal until `suspendTerminal` grants it; the cockpit exits ONLY
+  // on a clean (code 0) child exit (a hand-off launch REPLACES the cockpit
+  // session on success, matching the CLI's non-tmux `launchAgent` behavior).
+  // A spawn error (e.g. ENOENT) or non-zero exit must NOT silently tear down
+  // the cockpit — the user needs to see the failure and stays put.
+  const handleLaunch = async (): Promise<void> => {
+    if (selection.kind !== 'assignment' || selection.projectSlug == null) return;
+    const { projectSlug, assignmentSlug } = selection;
+    const agent = agents?.find((a) => a.default) ?? agents?.[0];
+    if (!agent) {
+      setStatus('Launch failed: no agent configured');
+      return;
+    }
+    try {
+      const plan = await buildLaunchPlan({ projectsDir, projectSlug, assignmentSlug, agent });
+      const sessionName = tmuxSessionName(projectSlug, assignmentSlug);
+      let handOffFailure: string | null = null;
+      const mode = await runLaunch(sessionName, plan, {
+        tmuxAvailable,
+        launchInTmux,
+        handOff: async (p) => {
+          // Re-arm mouse tracking around the hand-off exactly like attach: the
+          // spawned agent owns the real terminal via stdio:'inherit', so disable
+          // the mouse DEC private modes first (otherwise clicks/drags leak raw
+          // SGR bytes into the child's stdin) and re-enable in the helper's
+          // `finally`. Mirrors handleAttach's suspend wrapping below.
+          // `outcome` is captured by this closure because neither
+          // `runWithMouseSuspended` nor Ink's `suspendTerminal` propagate
+          // their callback's return value.
+          let outcome: ChildOutcome = { code: null };
+          await runWithMouseSuspended(write, () =>
+            suspendTerminal(async () => {
+              await new Promise<void>((resolveChild) => {
+                const child = spawn(p.command, p.args, { cwd: p.cwd, stdio: 'inherit' });
+                child.on('exit', (code) => {
+                  outcome = { code: (code as number | null | undefined) ?? null };
+                  resolveChild();
+                });
+                child.on('error', (err) => {
+                  outcome = { code: null, error: err as Error };
+                  resolveChild();
+                });
+              });
+            }),
+          );
+          if (isCleanExit(outcome)) {
+            exit();
+            return;
+          }
+          // Stay in the cockpit and surface why instead of silently tearing
+          // it down (mirrors launchAgent's ENOENT/EACCES wording, ../launch.ts).
+          handOffFailure = describeChildFailure(outcome, p.command);
+        },
+      });
+      if (mode === 'tmux') setStatus(`Launched in tmux (${sessionName})`);
+      else if (handOffFailure != null) setStatus(`Launch failed: ${handOffFailure}`);
+      // Otherwise (hand-off + clean exit): `exit()` above tears down the
+      // cockpit as soon as the agent process exits — nothing left to render.
+    } catch (err) {
+      setStatus(`Launch failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  };
+
+  // Attach: same tmux session-name derivation as launch. `buildActions` only
+  // enables this for a live session with tmux available and a non-null
+  // `assignmentSlug` — guarded again here defensively.
+  const handleAttach = async (): Promise<void> => {
+    if (selection.kind !== 'session') return;
+    const { session } = selection;
+    if (!tmuxAvailable || session.assignmentSlug == null) return;
+    const sessionName = tmuxSessionName(session.projectSlug, session.assignmentSlug);
+    try {
+      if (!(await tmuxSessionExists(sessionName))) {
+        setStatus('session window not found');
+        return;
+      }
+      // Re-arm mouse tracking around the suspend: tmux resets the terminal's
+      // mouse DEC private modes and Ink's resume does not re-run MouseProvider's
+      // mount effect, so without this the cockpit returns mouse-dead. The helper
+      // re-enables in a `finally`, so a failed attach never leaves mouse off.
+      // `result` is captured by this closure for the same reason as
+      // `outcome` above: the suspend helpers discard their callback's value.
+      let result: ChildOutcome = { code: null };
+      await runWithMouseSuspended(write, () =>
+        suspendTerminal(async () => {
+          result = await runTmuxAttach(sessionName);
+        }),
+      );
+      if (isCleanExit(result, { allowNullCode: true })) {
+        setStatus(`Detached from ${sessionName}`);
+      } else {
+        setStatus(`Attach failed: ${describeChildFailure(result)}`);
+      }
+    } catch (err) {
+      setStatus(`Attach failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  };
+
+  // Context-sensitive action set: enable/disable wiring lives in the pure,
+  // unit-tested `buildActions` (see actions.ts).
+  const actions: Action[] = buildActions(selection, tmuxAvailable, {
+    onLaunch: () => {
+      void handleLaunch();
+    },
+    onAttach: () => {
+      void handleAttach();
+    },
+    onQuit: () => exit(),
+  });
+
+  useInput((input, key) => {
+    if (isMouseSequence(input)) return; // mouse bytes also reach Ink input
+    if (key.escape) exit();
+    if (key.tab) setFocus((f) => (f === 'rail' ? 'detail' : 'rail'));
+    dispatchActionKey(actions, input);
+  });
+
+  // CRITICAL: no borders on hit-tested regions and EXPLICIT width/height from
+  // `layout.regions` (never flexGrow) — so each rendered Box occupies exactly
+  // its layout rect and mouse (x,y) maps 1:1. Focus is shown via header color,
+  // not a border (a border insets content by 1 cell and desyncs coordinates).
+  const { rail, detail, actionBar } = layout.regions;
+  return (
+    <MouseProvider>
+      <Box flexDirection="column" width={columns} height={rows}>
+        <Box flexDirection={layout.columns === 2 ? 'row' : 'column'} height={rows - actionBar.height}>
+          <Box width={rail.width} height={rail.height} flexDirection="column">
+            <LeftRail
+              projectsDir={projectsDir}
+              railRect={rail}
+              sessions={sessions}
+              focused={focus === 'rail'}
+              active={focus === 'rail'}
+              onSelectSession={(session) => {
+                setSelectedSessionId(session.sessionId);
+                setSelectedAssignment(null);
+              }}
+              onSelectAssignment={(projectSlug, assignmentSlug) => {
+                setSelectedAssignment({ projectSlug, assignmentSlug });
+                setSelectedSessionId(null);
+              }}
+            />
+          </Box>
+          <Box width={detail.width} height={detail.height} flexDirection="column">
+            <Text bold color={focus === 'detail' ? 'cyan' : undefined}>
+              Detail{status ? <Text color="yellow"> — {status}</Text> : null}
+            </Text>
+            <DetailPane projectsDir={projectsDir} assignmentsDir={assignmentsDir} selection={selection} />
+          </Box>
+        </Box>
+        <Box height={actionBar.height}>
+          <ActionBar actions={actions} barRect={actionBar} />
+        </Box>
+      </Box>
+    </MouseProvider>
+  );
+};

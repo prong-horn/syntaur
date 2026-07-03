@@ -15,7 +15,7 @@ export default defineConfig({
     },
   },
   test: {
-    include: ['src/__tests__/**/*.test.ts'],
+    include: ['src/__tests__/**/*.test.ts', 'src/**/__tests__/**/*.test.ts', 'src/**/__tests__/**/*.test.tsx'],
     environment: 'node',
     // Many tests spawn the built CLI (bin/syntaur.js) as a subprocess; some run
     // several spawns in one test. The default 5s budget overruns on slower CI
