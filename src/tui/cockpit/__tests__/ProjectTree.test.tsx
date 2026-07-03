@@ -99,9 +99,16 @@ describe('ProjectTree', () => {
     const row = rowOf(lastFrame() ?? '', 'demo');
     expect(row).toBeGreaterThanOrEqual(0);
 
+    // A click toggle is NOT safely resendable (double-firing would flip it
+    // back), unlike a click that just sets a selection — so unlike other
+    // click tests in this file, this one needs an explicit settle delay for
+    // the mouse region's post-commit registration effect instead of a
+    // resend-on-retry loop.
+    await new Promise((resolve) => setTimeout(resolve, 50));
     stdin.write(clickAt(0, row));
     await vi.waitFor(() => expect(lastFrame() ?? '').toContain('Assignment One'), { timeout: WAIT_TIMEOUT });
 
+    await new Promise((resolve) => setTimeout(resolve, 50));
     stdin.write(clickAt(0, row));
     await vi.waitFor(() => expect(lastFrame() ?? '').not.toContain('Assignment One'), { timeout: WAIT_TIMEOUT });
     unmount();
@@ -137,8 +144,16 @@ describe('ProjectTree', () => {
     const visible = assignments.find((a) => frame.includes(a.title));
     expect(visible).toBeDefined();
     const row = rowOf(frame, visible!.title);
-    stdin.write(clickAt(0, row));
-    await vi.waitFor(() => expect(onSelectAssignment).toHaveBeenCalledWith('demo', visible!.slug), { timeout: WAIT_TIMEOUT });
+    // Selecting a row is idempotent (repeated identical selection), so it's
+    // safe to resend on every retry tick — covers the mouse region's
+    // post-commit registration effect under load, unlike a toggle click.
+    await vi.waitFor(
+      () => {
+        stdin.write(clickAt(0, row));
+        expect(onSelectAssignment).toHaveBeenCalledWith('demo', visible!.slug);
+      },
+      { timeout: WAIT_TIMEOUT },
+    );
     unmount();
   }, 30000);
 
@@ -177,8 +192,13 @@ describe('ProjectTree', () => {
     const visible = assignments.find((a) => frame.includes(a.title));
     expect(visible).toBeDefined();
     const row = rowOf(frame, visible!.title);
-    stdin.write(clickAt(0, row));
-    await vi.waitFor(() => expect(onSelectAssignment).toHaveBeenCalledWith('demo', visible!.slug), { timeout: WAIT_TIMEOUT });
+    await vi.waitFor(
+      () => {
+        stdin.write(clickAt(0, row));
+        expect(onSelectAssignment).toHaveBeenCalledWith('demo', visible!.slug);
+      },
+      { timeout: WAIT_TIMEOUT },
+    );
     unmount();
   }, 30000);
 });

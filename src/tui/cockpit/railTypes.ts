@@ -27,6 +27,8 @@ export interface LeftRailProps {
   selectedSessionId: string | null;
   focused: boolean;
   onSelectSession: (s: AgentSessionWithLiveness) => void;
+  /** sessionId -> transcript-derived activity phrase (e.g. "editing DetailPane.tsx"), from `useLiveActivity`. */
+  liveActivity?: Map<string, string>;
 }
 
 // --- Row model (railTypes owns the single render+hit-test source, mirroring actionBarLayout.ts) ---
@@ -77,9 +79,17 @@ function isWorking(s: AgentSessionWithLiveness): boolean {
   return s.state === 'working' || s.activity === 'working';
 }
 
-function resolveActivityText(s: AgentSessionWithLiveness): string | null {
+/**
+ * `⚠ <waitingFor>` always wins (the headline attention signal). Otherwise
+ * prefer the transcript-derived `liveActivity` phrase (e.g. "editing
+ * DetailPane.tsx") over the coarse working/idle state — richer and more
+ * current, since it comes from the session's own latest transcript event
+ * rather than a coarse enum.
+ */
+function resolveActivityText(s: AgentSessionWithLiveness, liveActivity: string | null): string | null {
   if (s.waitingFor) return `⚠ ${s.waitingFor}`;
   if (isWaiting(s)) return '⚠ awaiting input';
+  if (liveActivity) return liveActivity;
   if (isWorking(s)) return 'working';
   if (s.activity === 'idle') return 'idle';
   return null;
@@ -108,7 +118,7 @@ function liveRank(s: AgentSessionWithLiveness): number {
   return 2;
 }
 
-function sessionRow(s: AgentSessionWithLiveness, now: number): RailSessionRow {
+function sessionRow(s: AgentSessionWithLiveness, now: number, liveActivity: string | null): RailSessionRow {
   const waiting = isWaiting(s);
   return {
     kind: 'session',
@@ -116,7 +126,7 @@ function sessionRow(s: AgentSessionWithLiveness, now: number): RailSessionRow {
     label: resolveLabel(s),
     glyph: s.isLive ? (waiting ? '◐' : '●') : '○',
     glyphColor: s.isLive ? (waiting ? 'yellow' : 'green') : 'gray',
-    activityText: resolveActivityText(s),
+    activityText: resolveActivityText(s, liveActivity),
     isWaiting: waiting,
     age: formatAge(recencyMs(s, now)),
   };
@@ -126,6 +136,8 @@ export interface BuildRailRowsOptions {
   recentExpanded: boolean;
   /** Injectable for tests; defaults to Date.now(). */
   now?: number;
+  /** sessionId -> transcript-derived activity phrase, from `useLiveActivity`. */
+  liveActivity?: Map<string, string>;
 }
 
 /**
@@ -150,12 +162,12 @@ export function buildRailRows(sessions: AgentSessionWithLiveness[], opts: BuildR
 
   const rows: RailRow[] = [];
   rows.push({ kind: 'group-header', group: 'live', label: `LIVE (${live.length})`, expanded: true });
-  for (const s of live) rows.push(sessionRow(s, now));
+  for (const s of live) rows.push(sessionRow(s, now, opts.liveActivity?.get(s.sessionId) ?? null));
 
   rows.push({ kind: 'group-header', group: 'recent', label: `RECENT (${recent.length})`, expanded: opts.recentExpanded });
   if (opts.recentExpanded) {
     const shown = recent.slice(0, RECENT_CAP);
-    for (const s of shown) rows.push(sessionRow(s, now));
+    for (const s of shown) rows.push(sessionRow(s, now, null));
     if (recent.length > shown.length) rows.push({ kind: 'more', count: recent.length - shown.length });
   }
 

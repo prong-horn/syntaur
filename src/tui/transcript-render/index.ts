@@ -61,6 +61,15 @@ export function createTranscriptRenderer(options: TranscriptRendererOptions): Tr
 
       if (attempts > 0 && unparseable / attempts > FALLBACK_RATIO_THRESHOLD) {
         usingFallback = true;
+        // The flip was detected mid-batch: route THIS SAME batch through the
+        // fallback renderer too, appended after any legitimately-parsed rows
+        // above. Without this, a one-shot fully-malformed transcript (no
+        // further file changes to trigger another push) would render nothing
+        // at all forever — not even the fallback's sentinel message.
+        const fallbackRows = fallbackRenderer().push(nonEmpty);
+        const last = fallbackRenderer().lastText();
+        if (last) lastActivityText = last;
+        return [...rows, ...fallbackRows];
       }
       return rows;
     },

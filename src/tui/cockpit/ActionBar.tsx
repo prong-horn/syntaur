@@ -28,6 +28,11 @@ export const ActionBar: React.FC<{ actions: Action[]; barRect: Rect }> = ({ acti
   }));
   useMouseRegions(regions);
 
+  const buttonsWidth = layout.reduce((sum, { rect }) => sum + rect.width, 0);
+  const hintGap = 2;
+  const hintBudget = Math.max(0, barRect.width - buttonsWidth - hintGap);
+  const hints = formatKeymapHints().slice(0, hintBudget);
+
   return (
     <Box>
       {layout.map(({ action, rect }) => (
@@ -35,7 +40,7 @@ export const ActionBar: React.FC<{ actions: Action[]; barRect: Rect }> = ({ acti
           {padCell(buttonText(action), rect.width)}
         </Text>
       ))}
-      <Text dimColor>  {formatKeymapHints()}</Text>
+      {hints.length > 0 && <Text dimColor>{' '.repeat(hintGap)}{hints}</Text>}
     </Box>
   );
 };

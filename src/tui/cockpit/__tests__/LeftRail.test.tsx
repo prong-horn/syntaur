@@ -2,6 +2,8 @@ import { describe, it, expect, vi } from 'vitest';
 import { render } from 'ink-testing-library';
 import { MouseProvider } from '../../mouse/MouseContext.js';
 import { LeftRail } from '../LeftRail.js';
+import { windowTreeRows } from '../../components/TreeView.js';
+import { buildRailRows } from '../railTypes.js';
 import type { AgentSessionWithLiveness } from '../../../dashboard/types.js';
 
 function session(id: string, overrides: Partial<AgentSessionWithLiveness> = {}): AgentSessionWithLiveness {
@@ -110,12 +112,13 @@ describe('LeftRail', () => {
   it('scrolled rail + click selects the correct session (viewport-aware click math)', async () => {
     const sessions = Array.from({ length: 10 }, (_, i) => session(`s${i}`));
     const onSelectSession = vi.fn();
+    const contentRect = { x: 0, y: 0, width: 30, height: 4 };
     const { stdin, unmount } = render(
       <MouseProvider>
         <LeftRail
           // height 4: rows visible per screen is small enough that scrolling
           // is required to reach later sessions.
-          contentRect={{ x: 0, y: 0, width: 30, height: 4 }}
+          contentRect={contentRect}
           sessions={sessions}
           selectedSessionId={null}
           focused
@@ -123,28 +126,97 @@ describe('LeftRail', () => {
         />
       </MouseProvider>,
     );
-    // The mouse region registers via a post-commit effect; give it a beat
-    // before the first scroll so the SGR sequence has a target to dispatch to.
+    // Enter the list (down arrow, from the non-selectable LIVE header, lands
+    // on the first session and auto-selects it — spec §5.2), confirmed via
+    // waitFor rather than a fixed delay, then PgDn to jump deep enough that
+    // scrolling is required. Each key is sent exactly once — moveCursor is
+    // NOT idempotent, so resending would over-scroll.
+    stdin.write('\x1b[B'); // down arrow: cursor -> selectableIndices[0] (s0)
+    await vi.waitFor(() => expect(onSelectSession).toHaveBeenLastCalledWith(expect.objectContaining({ sessionId: 's0' })));
+    stdin.write('\x1b[6~'); // PgDn: cursor -> selectableIndices[0 + viewHeight] (s4, viewHeight=4)
+    await vi.waitFor(() => expect(onSelectSession).toHaveBeenLastCalledWith(expect.objectContaining({ sessionId: 's4' })));
+    onSelectSession.mockClear();
+
+    // Independently derive the expected visible window from the SAME pure
+    // functions the component uses, rather than hand-deriving offsets — this
+    // is exactly the invariant under test (render slice === hit-test slice).
+    // Cursor is now at rows-index 5 (rows[0]=LIVE header, rows[1..10]=s0..s9).
+    const rows = buildRailRows(sessions, { recentExpanded: false });
+    const { start } = windowTreeRows(rows.length, 5, contentRect.height);
+    const clickedRow = rows[start + 2]; // screen row 2 (0-indexed) within the pane
+    if (clickedRow.kind !== 'session') throw new Error('test assumption violated: expected a session row');
+
+    stdin.write(clickAt(0, 2));
+    await vi.waitFor(() => expect(onSelectSession).toHaveBeenCalledWith(expect.objectContaining({ sessionId: clickedRow.session.sessionId })));
+    unmount();
+  });
+
+  it('arrow-key navigation moves the cursor and auto-selects session rows', async () => {
+    const sessions = [session('s1'), session('s2'), session('s3')];
+    const onSelectSession = vi.fn();
+    const { stdin, unmount } = render(
+      <MouseProvider>
+        <LeftRail
+          contentRect={{ x: 0, y: 0, width: 30, height: 20 }}
+          sessions={sessions}
+          selectedSessionId={null}
+          focused
+          onSelectSession={onSelectSession}
+        />
+      </MouseProvider>,
+    );
+    // Row 0: LIVE header (skipped — not selectable). Down arrow lands on the
+    // first selectable row, s1.
+    stdin.write('\x1b[B');
+    await vi.waitFor(() => expect(onSelectSession).toHaveBeenLastCalledWith(expect.objectContaining({ sessionId: 's1' })));
+    stdin.write('\x1b[B');
+    await vi.waitFor(() => expect(onSelectSession).toHaveBeenLastCalledWith(expect.objectContaining({ sessionId: 's2' })));
+    stdin.write('k');
+    await vi.waitFor(() => expect(onSelectSession).toHaveBeenLastCalledWith(expect.objectContaining({ sessionId: 's1' })));
+    unmount();
+  });
+
+  it('wheel scroll moves the cursor one row and auto-selects it', async () => {
+    const sessions = [session('s1'), session('s2')];
+    const onSelectSession = vi.fn();
+    const { stdin, unmount } = render(
+      <MouseProvider>
+        <LeftRail
+          contentRect={{ x: 0, y: 0, width: 30, height: 20 }}
+          sessions={sessions}
+          selectedSessionId={null}
+          focused
+          onSelectSession={onSelectSession}
+        />
+      </MouseProvider>,
+    );
     await new Promise((resolve) => setTimeout(resolve, 50));
-    // Scroll down enough to move the LIVE header + s0..s2 out of view.
-    // WHEEL_STEP=3 per tick; two ticks moves the offset to 6. scrollBy is NOT
-    // idempotent, so each tick is sent once with a settle delay between —
-    // resending on retry (as click below does) would over-scroll.
     stdin.write(scrollDownAt(0, 0));
+    await vi.waitFor(() => expect(onSelectSession).toHaveBeenLastCalledWith(expect.objectContaining({ sessionId: 's1' })));
+    unmount();
+  });
+
+  it('Enter toggles the RECENT header once the cursor moves onto it', async () => {
+    const dead = session('dead', { isLive: false });
+    const { lastFrame, stdin, unmount } = render(
+      <MouseProvider>
+        <LeftRail
+          contentRect={{ x: 0, y: 0, width: 30, height: 20 }}
+          sessions={[dead]}
+          selectedSessionId={null}
+          focused
+          onSelectSession={vi.fn()}
+        />
+      </MouseProvider>,
+    );
+    // No live sessions -> the only selectable row is the RECENT header. The
+    // cursor starts on the (non-selectable) LIVE header, so Down enters at
+    // the top of the selectable set — which, with nothing live, is RECENT.
+    expect(lastFrame() ?? '').not.toContain('dead');
+    stdin.write('\x1b[B');
     await new Promise((resolve) => setTimeout(resolve, 50));
-    stdin.write(scrollDownAt(0, 0));
-    await new Promise((resolve) => setTimeout(resolve, 50));
-    // With offset=6 the visible slice is rows[6..10): s5, s6, s7, s8 (row 0 is
-    // the LIVE header, so rows[6] is the 6th session = s5). Click screen row 2
-    // (0-indexed within the pane) -> visibleRows[2] -> s7. If the click math
-    // wrongly indexed into the UNSCROLLED `rows` or into `sessions` directly,
-    // this would select a different session instead.
-    await vi.waitFor(() => {
-      stdin.write(clickAt(0, 2));
-      return expect(onSelectSession).toHaveBeenCalled();
-    });
-    const selected = onSelectSession.mock.calls.at(-1)?.[0] as AgentSessionWithLiveness;
-    expect(selected.sessionId).toBe('s7');
+    stdin.write('\r');
+    await vi.waitFor(() => expect(lastFrame() ?? '').toContain('dead'));
     unmount();
   });
 });

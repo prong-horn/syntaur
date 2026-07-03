@@ -134,17 +134,14 @@ describe('Cockpit selection freshness (selectedSessionId derives from the latest
     // Click the only session row. Layout: col 0 is the pane's left border
     // (content starts at x:1), row 0 is the top border, row 1 the "Sessions"
     // title, row 2 the "LIVE (1)" group header, row 3 the one session row ->
-    // 0-indexed (x:1, y:3) -> 1-indexed SGR (x:2, y:4).
-    stdin.write('\x1b[<0;2;4M');
-
-    // Selection is a LIVE session + tmux available ⇒ Attach enabled ⇒ 'a'
-    // reaches handleAttach, which calls tmuxSessionExists. Re-send 'a' on
-    // every retry tick (harmless once selection has landed — a second 'a'
-    // dispatch just calls handleAttach again) instead of guessing a fixed
-    // settle delay for the click's setState to flush, which flaked under
-    // full-suite CPU contention.
+    // 0-indexed (x:1, y:3) -> 1-indexed SGR (x:2, y:4). Selecting a row is
+    // idempotent (repeated identical selection), so it's safe to resend on
+    // every retry tick alongside 'a' — this covers BOTH the click's setState
+    // flush AND the mouse region's post-mount registration under full-suite
+    // CPU contention, instead of guessing a fixed settle delay for either.
     await vi.waitFor(
       () => {
+        stdin.write('\x1b[<0;2;4M');
         stdin.write('a');
         expect(mocks.tmuxSessionExists).toHaveBeenCalledTimes(1);
       },
@@ -190,13 +187,11 @@ describe('Cockpit handleAttach status reporting (surfaces child exit/error, C3)'
     );
 
     await vi.waitFor(() => expect(lastFrame() ?? '').toContain('proj/a1'), { timeout: WAIT_TIMEOUT });
-    // See the coordinate note in the previous describe block's click.
-    stdin.write('\x1b[<0;2;4M');
-    // Re-send 'a' on every retry tick until the click's setState has flushed
-    // and Attach is enabled — avoids guessing a fixed settle delay, which
-    // flaked under full-suite CPU contention.
+    // See the coordinate + idempotent-resend note in the previous describe
+    // block's click.
     await vi.waitFor(
       () => {
+        stdin.write('\x1b[<0;2;4M');
         stdin.write('a');
         expect(mocks.tmuxSessionExists).toHaveBeenCalledTimes(1);
       },
@@ -436,12 +431,12 @@ describe('Cockpit handleAttach native dispatch (task 14 wiring)', () => {
       <Cockpit projectsDir="/tmp/p" assignmentsDir="/tmp/a" tmuxAvailable={true} claudeBgAvailable={true} />,
     );
     await vi.waitFor(() => expect(lastFrame() ?? '').toContain('proj/a1'), { timeout: WAIT_TIMEOUT });
-    // Coordinate matches the other rail-row clicks in this file (col 1 clears
-    // the pane's left border, row 3 is the one session row).
-    stdin.write('\x1b[<0;2;4M');
-
+    // Coordinate + idempotent-resend pattern matches the other rail-row
+    // clicks in this file (col 1 clears the pane's left border, row 3 is the
+    // one session row).
     await vi.waitFor(
       () => {
+        stdin.write('\x1b[<0;2;4M');
         stdin.write('a');
         expect(mocks.runClaudeAttach).toHaveBeenCalledTimes(1);
       },
@@ -460,8 +455,17 @@ describe('Cockpit handleAttach native dispatch (task 14 wiring)', () => {
       <Cockpit projectsDir="/tmp/p" assignmentsDir="/tmp/a" tmuxAvailable={true} claudeBgAvailable={true} />,
     );
     await vi.waitFor(() => expect(lastFrame() ?? '').toContain('proj/a1'), { timeout: WAIT_TIMEOUT });
-    stdin.write('\x1b[<0;2;4M');
-    await new Promise((resolve) => setTimeout(resolve, 300));
+    // Confirm the click actually landed (Detail pane switches off its
+    // no-selection placeholder) before asserting the negative below —
+    // otherwise a click that silently missed would make this pass for the
+    // wrong reason. The click is idempotent, so resending it is safe.
+    await vi.waitFor(
+      () => {
+        stdin.write('\x1b[<0;2;4M');
+        expect(lastFrame() ?? '').toContain('(no transcript available)');
+      },
+      { timeout: WAIT_TIMEOUT },
+    );
 
     stdin.write('a');
     await new Promise((resolve) => setTimeout(resolve, 300));

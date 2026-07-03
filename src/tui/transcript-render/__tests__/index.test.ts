@@ -56,6 +56,32 @@ describe('createTranscriptRenderer — malformed / non-Claude fixture', () => {
     }
   });
 
+  it('shows the fallback sentinel for a one-shot, fully-malformed batch (never a silent blank pane)', () => {
+    // Regression: the ratio-flip used to happen AFTER the loop that produced
+    // `rows`, so the very batch that triggered the flip was returned as the
+    // (empty) claude-parse result instead of being re-routed through
+    // fallback — a transcript that never changes again (no second push)
+    // would render nothing at all, forever.
+    const renderer = createTranscriptRenderer({ width: 80 });
+    const rows = renderer.push(loadFixture('malformed.jsonl'));
+    expect(rows.length).toBeGreaterThan(0);
+    expect(rows.some((r) => r.text.includes('unsupported transcript format'))).toBe(true);
+  });
+
+  it('surfaces extractable text from the SAME batch that triggers the flip', () => {
+    const renderer = createTranscriptRenderer({ width: 80 });
+    const lines = [
+      'not json at all',
+      JSON.stringify({ schema: 'other-agent-v1', text: 'first readable line' }),
+      JSON.stringify({ schema: 'other-agent-v1', text: 'second readable line' }),
+    ];
+    const rows = renderer.push(lines);
+    const joined = rows.map((r) => r.text).join('\n');
+    expect(joined).toContain('first readable line');
+    expect(joined).toContain('second readable line');
+    expect(joined).not.toContain('"schema"');
+  });
+
   it('keeps returning fallback rows on subsequent pushes once flipped', () => {
     const renderer = createTranscriptRenderer({ width: 80 });
     renderer.push(loadFixture('malformed.jsonl'));

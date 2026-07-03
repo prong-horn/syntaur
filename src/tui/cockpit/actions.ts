@@ -114,6 +114,14 @@ export interface LaunchDeps {
   /** Native path deps — optional so existing tmux/hand-off-only call sites and tests need no changes. */
   claudeBgAvailable?: boolean;
   launchClaudeBg?: typeof LaunchClaudeBg;
+  /**
+   * Called when a `--bg` spawn throws, before falling through to tmux/hand-off
+   * (design spec §7: "surface in status line, fall back... if available").
+   * The overall `runLaunch` result still reports the FALLBACK mode
+   * ('tmux'/'handoff') — this hook is how the caller learns the native
+   * attempt failed first, to compose a richer status message.
+   */
+  onNativeLaunchFailure?: (error: unknown) => void;
 }
 
 /** Native-launch context, when the selection's agent might be eligible for `--bg`. */
@@ -154,9 +162,10 @@ export async function runLaunch(
     try {
       await deps.launchClaudeBg({ plan, name: native.name });
       return 'claude-bg';
-    } catch {
+    } catch (err) {
       // Fall through to tmux/hand-off below — a failed --bg spawn degrades
       // exactly like native being ineligible, rather than aborting the launch.
+      deps.onNativeLaunchFailure?.(err);
     }
   }
   if (deps.tmuxAvailable) {

@@ -62,6 +62,7 @@ describe('session feed — native monitor join', () => {
     expect(s[0].waitingFor).toBe('permission prompt');
     expect(s[0].agentShortId).toBe('ab12cd34');
     expect(s[0].activity).toBe('awaiting-input');
+    expect(s[0].launcher).toBe('claude-bg');
   });
 
   it('native state overrides pid-derived liveness (a native "done" session is not live even if the pid lingers)', async () => {

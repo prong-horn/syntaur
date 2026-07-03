@@ -88,6 +88,12 @@ export async function loadSessions(opts: LoadSessionsOptions): Promise<AgentSess
       agentShortId: d.id,
       activity: stateToActivity(d.state) ?? s.activity,
       isLive: d.state != null ? LIVE_STATES.has(d.state) : s.isLive,
+      // A native monitor-join hit means the session IS being tracked by the
+      // supervisor daemon, regardless of how it was originally started —
+      // design spec §5.6: "launcher choice is per-session, recorded in the
+      // feed row." Non-native sessions carry no reliable launcher signal
+      // here, so their existing value (usually unset) is left alone.
+      launcher: 'claude-bg',
     };
   });
 }

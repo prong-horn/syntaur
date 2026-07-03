@@ -84,6 +84,22 @@ describe('buildRailRows — sort order and grouping', () => {
     expect(row.isWaiting).toBe(true);
   });
 
+  it('prefers the transcript-derived liveActivity phrase over the coarse working/idle state', () => {
+    const s = session({ sessionId: 's1', activity: 'working' });
+    const liveActivity = new Map([['s1', 'editing DetailPane.tsx']]);
+    const rows = buildRailRows([s], { recentExpanded: false, now: NOW, liveActivity });
+    const row = rows.find((r) => r.kind === 'session') as RailSessionRow;
+    expect(row.activityText).toBe('editing DetailPane.tsx');
+  });
+
+  it('⚠ waitingFor still wins over a liveActivity phrase', () => {
+    const s = session({ sessionId: 's1', waitingFor: 'permission prompt' });
+    const liveActivity = new Map([['s1', 'editing DetailPane.tsx']]);
+    const rows = buildRailRows([s], { recentExpanded: false, now: NOW, liveActivity });
+    const row = rows.find((r) => r.kind === 'session') as RailSessionRow;
+    expect(row.activityText).toBe('⚠ permission prompt');
+  });
+
   it('collapses dead sessions behind a RECENT header when not expanded', () => {
     const dead = session({ sessionId: 'dead', isLive: false });
     const rows = buildRailRows([dead], { recentExpanded: false, now: NOW });

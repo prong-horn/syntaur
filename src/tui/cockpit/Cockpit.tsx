@@ -6,6 +6,7 @@ import { runWithMouseSuspended } from '../mouse/tracking.js';
 import { isMouseSequence } from '../mouse/parse.js';
 import { computeLayout, type FocusTarget, type FrameContent } from './layout.js';
 import { LeftRail } from './LeftRail.js';
+import { useLiveActivity } from './useLiveActivity.js';
 import { ProjectTree } from './ProjectTree.js';
 import { DetailPane, type DetailSelection } from './DetailPane.js';
 import { ActionBar, type Action } from './ActionBar.js';
@@ -114,6 +115,10 @@ export const Cockpit: React.FC<CockpitProps> = ({
     };
   }, [projectsDir, agents]);
 
+  // Transcript-derived "what's happening now" phrase per live session (task
+  // 1's `lastActivity()`, otherwise unused) — the rail's activity column.
+  const liveActivity = useLiveActivity(sessions);
+
   // Re-derive the selected session from the freshest `sessions` poll every
   // render, rather than trusting a snapshot captured at click-time — a
   // session's liveness/transcriptPath/etc. can change between the ~1.5s
@@ -158,6 +163,7 @@ export const Cockpit: React.FC<CockpitProps> = ({
       const sessionName = tmuxSessionName(projectSlug, assignmentSlug);
       const nativeName = `${projectSlug}/${assignmentSlug}`;
       let handOffFailure: string | null = null;
+      let nativeLaunchFailure: string | null = null;
       const mode = await runLaunch(
         sessionName,
         plan,
@@ -166,6 +172,9 @@ export const Cockpit: React.FC<CockpitProps> = ({
           claudeBgAvailable,
           launchInTmux,
           launchClaudeBg,
+          onNativeLaunchFailure: (err) => {
+            nativeLaunchFailure = err instanceof Error ? err.message : String(err);
+          },
           handOff: async (p) => {
             // Re-arm mouse tracking around the hand-off exactly like attach: the
             // spawned agent owns the real terminal via stdio:'inherit', so disable
@@ -202,8 +211,9 @@ export const Cockpit: React.FC<CockpitProps> = ({
         },
         { agent, name: nativeName },
       );
+      const nativeFailurePrefix = nativeLaunchFailure != null ? `Native launch failed (${nativeLaunchFailure}); ` : '';
       if (mode === 'claude-bg') setStatus(`Launched natively (${nativeName})`);
-      else if (mode === 'tmux') setStatus(`Launched in tmux (${sessionName})`);
+      else if (mode === 'tmux') setStatus(`${nativeFailurePrefix}Launched in tmux (${sessionName})`);
       else if (handOffFailure != null) setStatus(`Launch failed: ${handOffFailure}`);
       // Otherwise (hand-off + clean exit): `exit()` above tears down the
       // cockpit as soon as the agent process exits — nothing left to render.
@@ -332,6 +342,7 @@ export const Cockpit: React.FC<CockpitProps> = ({
                 sessions={sessions}
                 selectedSessionId={selectedSessionId}
                 focused={focus === 'rail'}
+                liveActivity={liveActivity}
                 onSelectSession={(session) => {
                   setSelectedSessionId(session.sessionId);
                   setSelectedAssignment(null);

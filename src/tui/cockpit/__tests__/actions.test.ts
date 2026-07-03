@@ -86,4 +86,20 @@ describe('runLaunch native --bg dispatch', () => {
     expect(mode).toBe('handoff');
     expect(d.handOff).toHaveBeenCalledOnce();
   });
+
+  it('a failed --bg spawn calls onNativeLaunchFailure with the error before falling back (spec §7: surfaced in status)', async () => {
+    const err = new Error('ENOENT');
+    const onNativeLaunchFailure = vi.fn();
+    const d = deps({ launchClaudeBg: vi.fn(async () => { throw err; }), onNativeLaunchFailure });
+    const mode = await runLaunch('syntaur-p-a', plan, d, { agent: claudeAgent, name: 'proj/a1' });
+    expect(mode).toBe('tmux');
+    expect(onNativeLaunchFailure).toHaveBeenCalledWith(err);
+  });
+
+  it('does not call onNativeLaunchFailure when --bg succeeds', async () => {
+    const onNativeLaunchFailure = vi.fn();
+    const d = deps({ onNativeLaunchFailure });
+    await runLaunch('syntaur-p-a', plan, d, { agent: claudeAgent, name: 'proj/a1' });
+    expect(onNativeLaunchFailure).not.toHaveBeenCalled();
+  });
 });
