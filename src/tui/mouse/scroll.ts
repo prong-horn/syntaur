@@ -43,16 +43,28 @@ export interface Viewport {
   toBottom: () => void;
 }
 
+export interface UseViewportOptions {
+  /**
+   * Start (and while true, stay) pinned to the bottom as content grows — the
+   * transcript pane's log-viewer semantics. List panes that re-sort their
+   * content on every poll (the session rail, the project tree) have no
+   * meaningful "tail" to follow and should pass `false` so they open at the
+   * top and only move when the user scrolls. Defaults to `true`.
+   */
+  followTail?: boolean;
+}
+
 /**
  * Viewport offset for a scrollable pane of `viewHeight` rows over
- * `contentLength` total rows. Auto-follows the tail while `followTail` is
- * true (the default) so new content stays visible; the moment the user
- * scrolls up it stops following until they scroll/PgDn/End back to the
- * bottom. Pass `onWheel` straight to a `Region.onScroll` — the mouse
- * registry already routes `scroll-up`/`scroll-down` there.
+ * `contentLength` total rows. When `followTail` starts true (the default),
+ * it auto-tracks the bottom as content grows until the user scrolls up, then
+ * resumes the moment they scroll/PgDn/End back to the bottom. Pass `onWheel`
+ * straight to a `Region.onScroll` — the mouse registry already routes
+ * `scroll-up`/`scroll-down` there.
  */
-export function useViewport(contentLength: number, viewHeight: number): Viewport {
-  const [state, setState] = useState<ViewportState>({ offset: 0, followTail: true });
+export function useViewport(contentLength: number, viewHeight: number, opts?: UseViewportOptions): Viewport {
+  const initialFollowTail = opts?.followTail ?? true;
+  const [state, setState] = useState<ViewportState>({ offset: 0, followTail: initialFollowTail });
 
   // Content grew/shrank or the pane resized. While following the tail, snap
   // to the new bottom. While NOT following (user scrolled up), leave the

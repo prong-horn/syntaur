@@ -1,64 +1,91 @@
-import React from 'react';
-import { Box, Text } from 'ink';
-import { statusColors } from '../colors.js';
+import React, { useState } from 'react';
+import { Box, Text, useInput } from 'ink';
 import { useMouseRegions } from '../mouse/hooks.js';
-import { resolveRowIndex } from './railTypes.js';
-import type { LeftRailProps } from './railTypes.js';
-import { ProjectTree } from './ProjectTree.js';
-
-const HEADER_ROWS = 1; // "Live Sessions" title on row 0
+import { isMouseSequence } from '../mouse/parse.js';
+import { useViewport } from '../mouse/scroll.js';
+import { resolveRowIndex, buildRailRows, type LeftRailProps, type RailRow } from './railTypes.js';
 
 /**
- * Left rail: a mouse-clickable Live Sessions list above a keyboard-navigated
- * project/assignment tree. Row-level mouse hit-testing (v1 scope) applies
- * only to the Live Sessions list; the tree remains keyboard-driven.
+ * Left rail: the human-labeled Live/Recent session list. The Projects tree
+ * moved out to its own sibling pane (see Cockpit.tsx) now that focus is a
+ * flat rail|tree|detail cycle. Row content is entirely driven by
+ * `buildRailRows` — render and click hit-testing consume the exact same
+ * output so they can never diverge (mirrors `actionBarLayout.ts`).
  */
-export const LeftRail: React.FC<LeftRailProps> = ({
-  projectsDir,
-  railRect,
-  sessions,
-  focused,
-  active,
-  onSelectSession,
-  onSelectAssignment,
-}) => {
+export const LeftRail: React.FC<LeftRailProps> = ({ contentRect, sessions, selectedSessionId, focused, onSelectSession }) => {
+  const [recentExpanded, setRecentExpanded] = useState(false);
+  const rows = buildRailRows(sessions, { recentExpanded });
+  const viewHeight = Math.max(1, contentRect.height);
+  const viewport = useViewport(rows.length, viewHeight, { followTail: false });
+  // Click math is viewport-aware: render and hit-test the SAME slice, and the
+  // click selects INTO that slice — never `rows[idx]`, never `sessions[idx]`.
+  const visibleRows = rows.slice(viewport.offset, viewport.offset + viewHeight);
+
   useMouseRegions([
     {
       id: 'rail-sessions',
-      // Clamp to the rail's available height so a long session list can't
-      // extend the hit region past the rail's bottom edge into the
-      // detail/action-bar rows.
-      rect: {
-        x: railRect.x,
-        y: railRect.y,
-        width: railRect.width,
-        height: Math.min(sessions.length + HEADER_ROWS, railRect.height),
-      },
+      rect: contentRect,
+      onScroll: viewport.onWheel,
       onClick: (e) => {
-        const idx = resolveRowIndex(railRect, e.y, HEADER_ROWS);
-        if (idx !== null && idx < sessions.length) onSelectSession(sessions[idx]);
+        const idx = resolveRowIndex(contentRect, e.y, 0);
+        if (idx === null || idx >= visibleRows.length) return;
+        const row = visibleRows[idx];
+        if (row.kind === 'group-header' && row.group === 'recent') {
+          setRecentExpanded((v) => !v);
+        } else if (row.kind === 'session') {
+          onSelectSession(row.session);
+        }
+        // 'more' rows and the LIVE header are non-selectable — no-op.
       },
     },
   ]);
 
+  useInput(
+    (input, key) => {
+      if (isMouseSequence(input)) return;
+      if (key.upArrow || input === 'k') viewport.scrollBy(-1);
+      else if (key.downArrow || input === 'j') viewport.scrollBy(1);
+      else if (key.pageUp) viewport.scrollBy(-viewHeight);
+      else if (key.pageDown) viewport.scrollBy(viewHeight);
+      else if (key.return) {
+        // Enter mirrors a click on the row under the (list-relative) cursor —
+        // there is no separate rail cursor, so Enter toggles RECENT when it's
+        // the only collapsed group and otherwise does nothing (mouse/Enter
+        // parity for the one stateful toggle this pane owns).
+        if (visibleRows.length === 1 && visibleRows[0].kind === 'group-header' && visibleRows[0].group === 'recent') {
+          setRecentExpanded((v) => !v);
+        }
+      }
+    },
+    { isActive: focused },
+  );
+
   return (
     <Box flexDirection="column">
-      <Text bold underline color={focused ? 'cyan' : undefined}>Live Sessions</Text>
-      {sessions.length === 0 ? (
-        <Text dimColor>  (none)</Text>
-      ) : (
-        sessions.map((s) => (
-          <Text key={s.sessionId}>
-            <Text color={s.isLive ? 'green' : 'gray'}>{s.isLive ? '●' : '○'} </Text>
-            <Text color={statusColors[s.status] ?? 'white'}>{s.agent}</Text>
-            <Text dimColor> {s.sessionId.slice(0, 8)}</Text>
-          </Text>
-        ))
-      )}
-      <Box marginTop={1}>
-        <Text bold underline>Projects</Text>
-      </Box>
-      <ProjectTree projectsDir={projectsDir} active={active} onSelectAssignment={onSelectAssignment} />
+      {visibleRows.map((row, i) => (
+        <Text key={i} wrap="truncate" inverse={row.kind === 'session' && row.session.sessionId === selectedSessionId}>
+          {renderRow(row)}
+        </Text>
+      ))}
     </Box>
   );
 };
+
+function renderRow(row: RailRow): React.ReactNode {
+  if (row.kind === 'group-header') {
+    const chevron = row.group === 'recent' ? (row.expanded ? '▾' : '▸') : '▾';
+    return <Text bold>{chevron} {row.label}</Text>;
+  }
+  if (row.kind === 'more') {
+    return <Text dimColor>  …and {row.count} more</Text>;
+  }
+  return (
+    <>
+      <Text color={row.glyphColor}>{row.glyph} </Text>
+      {row.label}
+      {row.activityText ? <Text color={row.isWaiting ? 'yellow' : undefined}> {row.activityText}</Text> : null}
+      {'  '}
+      <Text dimColor>{row.age}</Text>
+    </>
+  );
+}

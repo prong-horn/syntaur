@@ -1,3 +1,4 @@
+import { basename } from 'node:path';
 import type { Rect } from '../mouse/registry.js';
 import type { AgentSessionWithLiveness } from '../../dashboard/types.js';
 
@@ -20,11 +21,142 @@ export interface ProjectTreeProps {
 }
 
 export interface LeftRailProps {
-  projectsDir: string;
-  railRect: Rect;
+  contentRect: Rect;
   sessions: AgentSessionWithLiveness[];
+  selectedSessionId: string | null;
   focused: boolean;
-  active: boolean;
   onSelectSession: (s: AgentSessionWithLiveness) => void;
-  onSelectAssignment: (projectSlug: string | null, assignmentSlug: string) => void;
+}
+
+// --- Row model (railTypes owns the single render+hit-test source, mirroring actionBarLayout.ts) ---
+
+export interface RailSessionRow {
+  kind: 'session';
+  session: AgentSessionWithLiveness;
+  label: string;
+  glyph: string;
+  glyphColor: string;
+  activityText: string | null;
+  isWaiting: boolean;
+  age: string;
+}
+
+export interface RailGroupHeaderRow {
+  kind: 'group-header';
+  group: 'live' | 'recent';
+  label: string;
+  expanded: boolean;
+}
+
+export interface RailMoreRow {
+  kind: 'more';
+  count: number;
+}
+
+export type RailRow = RailSessionRow | RailGroupHeaderRow | RailMoreRow;
+
+const RECENT_CAP = 20;
+
+/** Never a bare UUID: assignmentSlug (qualified by projectSlug when present) → description → basename of the session's working path → a generic fallback. */
+function resolveLabel(s: AgentSessionWithLiveness): string {
+  if (s.assignmentSlug) return s.projectSlug ? `${s.projectSlug}/${s.assignmentSlug}` : s.assignmentSlug;
+  if (s.description) return s.description;
+  if (s.path) {
+    const base = basename(s.path);
+    if (base) return base;
+  }
+  return 'session';
+}
+
+function isWaiting(s: AgentSessionWithLiveness): boolean {
+  return s.waitingFor != null || s.state === 'blocked' || s.activity === 'awaiting-input';
+}
+
+function isWorking(s: AgentSessionWithLiveness): boolean {
+  return s.state === 'working' || s.activity === 'working';
+}
+
+function resolveActivityText(s: AgentSessionWithLiveness): string | null {
+  if (s.waitingFor) return `⚠ ${s.waitingFor}`;
+  if (isWaiting(s)) return '⚠ awaiting input';
+  if (isWorking(s)) return 'working';
+  if (s.activity === 'idle') return 'idle';
+  return null;
+}
+
+function recencyMs(s: AgentSessionWithLiveness, now: number): number {
+  const raw = s.updatedAt ?? s.ended ?? s.started;
+  const parsed = raw ? Date.parse(raw) : NaN;
+  return Number.isFinite(parsed) ? now - parsed : Number.POSITIVE_INFINITY;
+}
+
+/** Formats an age in ms as a short relative label: `<1m`, `5m`, `3h`, `2d`. */
+export function formatAge(ms: number): string {
+  if (!Number.isFinite(ms) || ms < 0) return '';
+  const minutes = Math.floor(ms / 60000);
+  if (minutes < 1) return '<1m';
+  if (minutes < 60) return `${minutes}m`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h`;
+  return `${Math.floor(hours / 24)}d`;
+}
+
+function liveRank(s: AgentSessionWithLiveness): number {
+  if (isWaiting(s)) return 0;
+  if (isWorking(s)) return 1;
+  return 2;
+}
+
+function sessionRow(s: AgentSessionWithLiveness, now: number): RailSessionRow {
+  const waiting = isWaiting(s);
+  return {
+    kind: 'session',
+    session: s,
+    label: resolveLabel(s),
+    glyph: s.isLive ? (waiting ? '◐' : '●') : '○',
+    glyphColor: s.isLive ? (waiting ? 'yellow' : 'green') : 'gray',
+    activityText: resolveActivityText(s),
+    isWaiting: waiting,
+    age: formatAge(recencyMs(s, now)),
+  };
+}
+
+export interface BuildRailRowsOptions {
+  recentExpanded: boolean;
+  /** Injectable for tests; defaults to Date.now(). */
+  now?: number;
+}
+
+/**
+ * Pure row builder — render and click hit-testing both consume this SAME
+ * output (design's single-source invariant, mirroring `actionBarLayout.ts`).
+ * Live sessions sort waiting → working (by recency) → idle and are always
+ * shown; dead sessions collapse behind a `RECENT (N)` header, expandable to a
+ * capped, most-recent-first list with a trailing `…and N more` row.
+ */
+export function buildRailRows(sessions: AgentSessionWithLiveness[], opts: BuildRailRowsOptions): RailRow[] {
+  const now = opts.now ?? Date.now();
+  const live = sessions.filter((s) => s.isLive);
+  const recent = sessions.filter((s) => !s.isLive);
+
+  live.sort((a, b) => {
+    const ra = liveRank(a);
+    const rb = liveRank(b);
+    if (ra !== rb) return ra - rb;
+    return recencyMs(a, now) - recencyMs(b, now);
+  });
+  recent.sort((a, b) => recencyMs(a, now) - recencyMs(b, now));
+
+  const rows: RailRow[] = [];
+  rows.push({ kind: 'group-header', group: 'live', label: `LIVE (${live.length})`, expanded: true });
+  for (const s of live) rows.push(sessionRow(s, now));
+
+  rows.push({ kind: 'group-header', group: 'recent', label: `RECENT (${recent.length})`, expanded: opts.recentExpanded });
+  if (opts.recentExpanded) {
+    const shown = recent.slice(0, RECENT_CAP);
+    for (const s of shown) rows.push(sessionRow(s, now));
+    if (recent.length > shown.length) rows.push({ kind: 'more', count: recent.length - shown.length });
+  }
+
+  return rows;
 }

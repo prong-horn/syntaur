@@ -46,8 +46,10 @@ describe('nextOffset', () => {
   });
 });
 
-function ViewportProbe({ contentLength, viewHeight }: { contentLength: number; viewHeight: number }) {
-  const vp = useViewport(contentLength, viewHeight);
+function ViewportProbe({
+  contentLength, viewHeight, followTail,
+}: { contentLength: number; viewHeight: number; followTail?: boolean }) {
+  const vp = useViewport(contentLength, viewHeight, { followTail });
   return (
     <Text>
       offset={vp.offset} followTail={String(vp.followTail)} atBottom={String(vp.atBottom)}
@@ -68,6 +70,19 @@ describe('useViewport', () => {
     rerender(<ViewportProbe contentLength={50} viewHeight={10} />);
     await vi.waitFor(() => expect(lastFrame()).toContain('offset=40'));
     expect(lastFrame()).toContain('followTail=true');
+    unmount();
+  });
+
+  it('opens at the top and stays put as content grows when followTail starts false (list panes)', async () => {
+    const { lastFrame, rerender, unmount } = render(
+      <ViewportProbe contentLength={5} viewHeight={10} followTail={false} />,
+    );
+    expect(lastFrame()).toContain('offset=0');
+    expect(lastFrame()).toContain('followTail=false');
+    rerender(<ViewportProbe contentLength={50} viewHeight={10} followTail={false} />);
+    await new Promise((r) => setTimeout(r, 20));
+    expect(lastFrame()).toContain('offset=0');
+    expect(lastFrame()).toContain('followTail=false');
     unmount();
   });
 });
