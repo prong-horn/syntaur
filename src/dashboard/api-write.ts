@@ -2,7 +2,7 @@ import { Router, type Request, type Response } from 'express';
 import { resolve, basename, isAbsolute } from 'node:path';
 import { rm, readFile, open as fsOpen, stat as fsStat, realpath as fsRealpath } from 'node:fs/promises';
 import { spawnSync } from 'node:child_process';
-import { executeTransition } from '../lifecycle/index.js';
+import { executeTransition, unambiguousCommandTarget } from '../lifecycle/index.js';
 import { appendStatusHistoryEntry } from '../lifecycle/frontmatter.js';
 import { recordEvent } from '../db/events-db.js';
 import { isValidSlug, slugify } from '../utils/slug.js';
@@ -487,21 +487,6 @@ async function handleWorktreeCreate(
   }
 }
 
-/**
- * Guard-free terminal-command target (derived-status v3): the per-from custom
- * table is passed alongside, so this fallback only matters for legacy/
- * undefined statuses. Ambiguous configs (one command, multiple distinct
- * targets) return undefined — the from-table must then decide, and an unknown
- * from is correctly refused rather than guessed (codex r3 finding 1).
- */
-function unambiguousCommandTarget(
-  transitions: Array<{ command: string; to: string }>,
-  command: string,
-): string | undefined {
-  const targets = new Set(transitions.filter((t) => t.command === command).map((t) => t.to));
-  if (targets.size === 1) return [...targets][0];
-  return undefined;
-}
 
 export function createWriteRouter(
   projectsDir: string,
