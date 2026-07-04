@@ -127,3 +127,48 @@ describe('doctor: workflows.references-resolve', () => {
     expect(r.status).toBe('pass');
   });
 });
+
+describe('doctor: workflows.single-status-source', () => {
+  const singleSource = workflowsChecks.find((c) => c.id === 'workflows.single-status-source')!;
+
+  async function writeConfigMd(frontmatterBody: string): Promise<void> {
+    await writeFile(
+      join(home, '.syntaur', 'config.md'),
+      `---\nversion: "2.0"\ndefaultProjectDir: ${projectsDir}\n${frontmatterBody}---\n`,
+      'utf-8',
+    );
+  }
+
+  async function runSingle(config: SyntaurConfig): Promise<CheckResult> {
+    const r = await singleSource.run(ctxFor(config));
+    return Array.isArray(r) ? r[0] : r;
+  }
+
+  it('errors when BOTH a top-level statuses: block and a workflows: map exist', async () => {
+    await writeConfigMd('statuses:\n  definitions:\n    - id: draft\n      label: Draft\n  order:\n    - draft\n');
+    const r = await runSingle(configWith({}));
+    expect(r.status).toBe('error');
+    expect(r.detail).toContain('statuses:');
+    expect(r.detail).toContain('workflows:');
+  });
+
+  it('errors even when the statuses: block is empty/unparseable (still a colliding source)', async () => {
+    // parseStatusConfig returns null for an empty block, so config.statuses would
+    // be null — but the physical block is still a second source. Detect it by text.
+    await writeConfigMd('statuses:\n');
+    const r = await runSingle(configWith({}));
+    expect(r.status).toBe('error');
+  });
+
+  it('passes with a workflows: map and NO legacy statuses: block', async () => {
+    await writeConfigMd('workflows:\n  default:\n    label: Default\n');
+    const r = await runSingle(configWith({}));
+    expect(r.status).toBe('pass');
+  });
+
+  it('passes for a legacy statuses: block with no workflows: map', async () => {
+    await writeConfigMd('statuses:\n  definitions:\n    - id: draft\n      label: Draft\n  order:\n    - draft\n');
+    const r = await runSingle({ defaultProjectDir: projectsDir, defaultWorkflow: null } as SyntaurConfig);
+    expect(r.status).toBe('pass');
+  });
+});

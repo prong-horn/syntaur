@@ -3,6 +3,11 @@ import { mkdtemp, rm, readFile, writeFile, mkdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { spawn } from 'node:child_process';
+import {
+  writeWorkflowsConfig,
+  buildDefaultStatusConfig,
+  type WorkflowDefinition,
+} from '../utils/config.js';
 
 const CLI_ENTRY = resolve(__dirname, '..', '..', 'bin', 'syntaur.js');
 
@@ -269,5 +274,134 @@ describe('syntaur status', () => {
     // The new transition is present AND the default transitions were not wiped.
     expect(after.transitions.some((t) => t.command === 'finish')).toBe(true);
     expect(after.transitions.length).toBeGreaterThan(1);
+  });
+
+  // Fix 2: on a multi-workflow config the legacy top-level `statuses:` block no
+  // longer exists — `syntaur status` must redirect onto the GLOBAL default
+  // workflow instead of reading/creating that block.
+  describe('workflows-map redirect', () => {
+    // Seed the temp home's config.md with a `workflows:` map, preserving the
+    // beforeEach `defaultProjectDir`. writeWorkflowsConfig writes to SYNTAUR_HOME,
+    // so point it at `home` for the duration of the call.
+    async function seedWorkflows(
+      workflows: Record<string, WorkflowDefinition>,
+      defaultWorkflow: string,
+    ): Promise<void> {
+      const prev = process.env.SYNTAUR_HOME;
+      process.env.SYNTAUR_HOME = home;
+      try {
+        await writeWorkflowsConfig(workflows, defaultWorkflow);
+      } finally {
+        if (prev === undefined) delete process.env.SYNTAUR_HOME;
+        else process.env.SYNTAUR_HOME = prev;
+      }
+    }
+
+    async function readConfigMd(): Promise<string> {
+      return readFile(resolve(home, 'config.md'), 'utf-8');
+    }
+
+    it('(a) status add mutates the default workflow, creates no top-level statuses: block, and warns', async () => {
+      await seedWorkflows(
+        {
+          default: { label: 'Default', ...buildDefaultStatusConfig() },
+          other: { label: 'Other', ...buildDefaultStatusConfig() },
+        },
+        'default',
+      );
+      const add = await runCli(['status', 'add', 'newstat', '--label', 'New Stat'], home);
+      expect(add.code, add.stderr).toBe(0);
+      // Deprecation/redirect notice on stderr, naming the target workflow.
+      expect(add.stderr).toContain("workflow 'default'");
+      expect(add.stderr).toContain('dashboard Workflow editor');
+      // No legacy top-level `statuses:` block was created.
+      expect(/^statuses:/m.test(await readConfigMd())).toBe(false);
+      // The status landed in the (default) workflow — visible via list.
+      expect((await list()).statuses.some((s) => s.id === 'newstat')).toBe(true);
+    });
+
+    it('(b) status init on a workflows-map config refuses with redirect guidance', async () => {
+      await seedWorkflows({ default: { label: 'Default', ...buildDefaultStatusConfig() } }, 'default');
+      const r = await runCli(['status', 'init'], home);
+      expect(r.code).toBe(1);
+      expect(r.stderr).toContain('workflows:');
+      expect(r.stderr).toContain('conflicting');
+      // Still no legacy block.
+      expect(/^statuses:/m.test(await readConfigMd())).toBe(false);
+    });
+
+    it('(c) status list reports the workflow statuses with source: config', async () => {
+      await seedWorkflows({ default: { label: 'Default', ...buildDefaultStatusConfig() } }, 'default');
+      const listed = await list();
+      expect(listed.source).toBe('config');
+      expect(listed.statuses.some((s) => s.id === 'draft')).toBe(true);
+    });
+
+    it('(d) with defaultWorkflow: bug, status add edits workflows.bug and names it in the notice', async () => {
+      await seedWorkflows(
+        {
+          default: { label: 'Default', ...buildDefaultStatusConfig() },
+          bug: { label: 'Bug', ...buildDefaultStatusConfig() },
+        },
+        'bug',
+      );
+      const add = await runCli(['status', 'add', 'triaged', '--label', 'Triaged'], home);
+      expect(add.code, add.stderr).toBe(0);
+      expect(add.stderr).toContain("workflow 'bug'");
+      // The status is now in the global default workflow (bug), which list targets.
+      expect((await list()).statuses.some((s) => s.id === 'triaged')).toBe(true);
+    });
+
+    it('(e) status reset rewrites the target workflow to built-ins, preserving label and clearing derive/facts', async () => {
+      const withExtras: WorkflowDefinition = {
+        label: 'My Flow',
+        ...buildDefaultStatusConfig(),
+        // A custom status id + a custom fact declaration that reset must drop.
+        facts: [{ name: 'customfact', type: 'bool', binds: null }],
+      };
+      withExtras.statuses = [...withExtras.statuses, { id: 'weird', label: 'Weird' }];
+      withExtras.order = [...withExtras.order, 'weird'];
+      await seedWorkflows({ default: withExtras }, 'default');
+
+      const reset = await runCli(['status', 'reset'], home);
+      expect(reset.code, reset.stderr).toBe(0);
+      const raw = await readConfigMd();
+      // Label preserved, custom status + fact cleared, no top-level statuses: block.
+      expect(raw).toContain('My Flow');
+      expect(raw).not.toContain('customfact');
+      expect(/^statuses:/m.test(raw)).toBe(false);
+      expect((await list()).statuses.some((s) => s.id === 'weird')).toBe(false);
+      expect((await list()).statuses.some((s) => s.id === 'draft')).toBe(true);
+    });
+
+    it('(f) status rename only rewrites assignments resolving to the target workflow', async () => {
+      // Two workflows share the `in_progress` status id. defaultWorkflow = default.
+      await seedWorkflows(
+        {
+          default: { label: 'Default', ...buildDefaultStatusConfig() },
+          other: { label: 'Other', ...buildDefaultStatusConfig() },
+        },
+        'default',
+      );
+      // One assignment bound to `default` (via project default), one to `other`.
+      const defaultPath = await writeAssignment('on-default', 'in_progress');
+      const otherDir = resolve(home, 'projects', 'p', 'assignments', 'on-other');
+      await mkdir(otherDir, { recursive: true });
+      const otherPath = resolve(otherDir, 'assignment.md');
+      await writeFile(
+        otherPath,
+        `---\nid: 1111-on-other\nslug: on-other\nstatus: in_progress\nworkflow: other\nproject: p\nupdated: "2026-01-01T00:00:00Z"\n---\n# on-other\n`,
+        'utf-8',
+      );
+
+      const rename = await runCli(
+        ['status', 'rename', 'in_progress', '--to', 'building'],
+        home,
+      );
+      expect(rename.code, rename.stderr).toBe(0);
+      // The default-bound assignment was rewritten; the other-workflow one was not.
+      expect(await readFile(defaultPath, 'utf-8')).toContain('status: building');
+      expect(await readFile(otherPath, 'utf-8')).toContain('status: in_progress');
+    });
   });
 });
