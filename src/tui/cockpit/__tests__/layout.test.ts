@@ -38,6 +38,21 @@ describe('computeLayout', () => {
     expect(l.regions.detail.content).toEqual(inset(l.regions.detail.frame, 1));
     expect(l.regions.detail.content.x).toBe(l.regions.detail.frame.x + 1);
     expect(l.regions.detail.content.width).toBe(l.regions.detail.frame.width - 2);
+    expect(l.regions.detail.borderless).toBe(false);
+  });
+
+  it('a pane too short for `inset(frame, 1)` to shrink it is borderless PER-PANE, even at >=50 cols where the global flag is false', () => {
+    // 9 rows leaves the rail split (40% sessions / 60% tree) with a
+    // 2-row-tall sessions pane — too short for a 1-cell inset to do
+    // anything (see `inset`'s tiny-rect safety no-op). If this pane still
+    // claimed a border while `content === frame`, the rendered border row
+    // would desync from the mouse hit-rect registered against `content`.
+    const l = computeLayout(120, 9);
+    expect(l.borderless).toBe(false); // the GLOBAL (column-only) flag stays false
+    const sessions = l.regions.sessions;
+    expect(sessions.frame.height).toBeLessThanOrEqual(2);
+    expect(sessions.borderless).toBe(true); // but THIS pane must degrade individually
+    expect(sessions.content).toEqual(sessions.frame);
   });
 });
 

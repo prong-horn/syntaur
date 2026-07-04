@@ -298,8 +298,10 @@ export const Cockpit: React.FC<CockpitProps> = ({
   // `layout.regions` (never flexGrow) — so each rendered Box occupies exactly
   // its layout rect and mouse (x,y) maps 1:1. Bordered panes render their
   // `frame` rect with `borderStyle="round"`; children/mouse regions use the
-  // inset `content` rect — `layout.borderless` skips the border below ~50
-  // cols, where `content === frame` already (see layout.ts).
+  // inset `content` rect — each region's OWN `borderless` flag (not the
+  // top-level `layout.borderless`) skips the border below ~50 cols OR when
+  // that specific pane is too short/narrow for the inset to apply, where
+  // `content === frame` already (see layout.ts).
   const { sessions: sessionsRegion, tree: treeRegion, detail: detailRegion, statusRow, actionBar } = layout.regions;
 
   // Ink has no reliable "title cut into the border line" primitive, so the
@@ -320,7 +322,7 @@ export const Cockpit: React.FC<CockpitProps> = ({
       flexDirection="column"
       width={region.frame.width}
       height={region.frame.height}
-      borderStyle={layout.borderless ? undefined : 'round'}
+      borderStyle={region.borderless ? undefined : 'round'}
       borderColor={isFocused ? 'cyan' : undefined}
     >
       <Text color={isFocused ? 'cyan' : undefined} bold={isFocused}>{title}</Text>

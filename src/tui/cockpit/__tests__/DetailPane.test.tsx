@@ -237,4 +237,44 @@ describe('DetailPane — transcript view', () => {
     await vi.waitFor(() => expect(lastFrame() ?? '').toContain('message number 19'), { timeout: WAIT_TIMEOUT });
     unmount();
   }, 30000);
+
+  it('switching sessions resets follow-tail — a newly-selected session opens pinned to its own tail, not the previous session\'s scroll state', async () => {
+    const pathA = resolve(dir, 'a.jsonl');
+    const pathB = resolve(dir, 'b.jsonl');
+    const linesFor = (label: string) => Array.from({ length: 20 }, (_, i) => ({
+      type: 'user', message: { content: `${label} message ${i}` }, uuid: `${label}${i}`,
+    }));
+    await writeFile(pathA, linesFor('a').map((l) => JSON.stringify(l)).join('\n') + '\n');
+    await writeFile(pathB, linesFor('b').map((l) => JSON.stringify(l)).join('\n') + '\n');
+
+    const smallRect = { x: 0, y: 0, width: 60, height: 4 };
+    const { lastFrame, stdin, rerender, unmount } = render(
+      <MouseProvider>
+        <DetailPane
+          projectsDir="/tmp/p" assignmentsDir="/tmp/a"
+          selection={{ kind: 'session', session: session({ sessionId: 'a', transcriptPath: pathA }) }}
+          contentRect={smallRect} focused
+        />
+      </MouseProvider>,
+    );
+    await vi.waitFor(() => expect(lastFrame() ?? '').toContain('a message 19'), { timeout: WAIT_TIMEOUT });
+
+    stdin.write('k'); // scroll up in session A — stops following A's tail
+    await vi.waitFor(() => expect(lastFrame() ?? '').toContain('▼'), { timeout: WAIT_TIMEOUT });
+
+    // Select session B. Without a remount, `useViewport`'s stale
+    // followTail=false would carry over and pin B's view to the top.
+    rerender(
+      <MouseProvider>
+        <DetailPane
+          projectsDir="/tmp/p" assignmentsDir="/tmp/a"
+          selection={{ kind: 'session', session: session({ sessionId: 'b', transcriptPath: pathB }) }}
+          contentRect={smallRect} focused
+        />
+      </MouseProvider>,
+    );
+    await vi.waitFor(() => expect(lastFrame() ?? '').toContain('b message 19'), { timeout: WAIT_TIMEOUT });
+    expect(lastFrame() ?? '').not.toContain('b message 0');
+    unmount();
+  }, 30000);
 });
