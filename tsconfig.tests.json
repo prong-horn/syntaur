@@ -1,0 +1,30 @@
+// Type-aware probe for the test files this change touches.
+//
+// The base tsconfig EXCLUDES src/__tests__, so test-file type errors are invisible
+// to `npm run typecheck` AND to vitest (esbuild strips types without checking).
+// `extends` inherits that exclude, so a bare `include: src/**/*` here is a no-op —
+// the probe must re-list source and force the target tests back in via `files`.
+//
+// Scoped to source + the Phase 0 tests deliberately: the rest of the test tree
+// carries pre-existing type errors (extensionless dashboard cross-imports,
+// implicit-any callback params, partial SyntaurConfig casts). Fixing those is out
+// of scope for Phase 0, so we do not turn this into a repo-wide, permanently-red
+// gate. Widen `files` when a change touches other test files.
+{
+  "extends": "./tsconfig.json",
+  "include": ["src/**/*.ts", "src/**/*.tsx"],
+  "exclude": [
+    "node_modules",
+    "dist",
+    "src/__tests__",
+    "src/**/__tests__/**",
+    "src/**/*.test.ts",
+    "src/**/*.test.tsx"
+  ],
+  "files": [
+    "src/__tests__/lifecycle-commands.test.ts",
+    "src/__tests__/lifecycle-linked-todos.test.ts",
+    "src/__tests__/status-cmd.test.ts",
+    "src/__tests__/doctor-workflows.test.ts"
+  ]
+}

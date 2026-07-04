@@ -110,4 +110,68 @@ const referencesResolve: Check = {
   },
 };
 
-export const workflowsChecks: Check[] = [referencesResolve];
+/**
+ * Doctor check: config.md must not carry BOTH a top-level `statuses:` block and a
+ * `workflows:` map. The multi-workflow migration lifts the legacy block into
+ * `workflows.default`; if `syntaur status init` (or a hand edit) recreates the
+ * top-level block, `getWorkflowLibrary` ignores it while `syntaur status` (before
+ * this fix) would edit it — the two sources silently diverge.
+ */
+const singleStatusSource: Check = {
+  id: 'workflows.single-status-source',
+  category: CATEGORY,
+  title: 'Single status source (no legacy statuses: block alongside workflows:)',
+  async run(ctx): Promise<CheckResult> {
+    const hasWorkflows = !!ctx.config.workflows && Object.keys(ctx.config.workflows).length > 0;
+
+    // Detect a PHYSICALLY present top-level `statuses:` block, NOT
+    // `config.statuses !== null` — parseStatusConfig returns null for an
+    // empty/unparseable block, which is still a colliding second source. Mirror
+    // parseStatusConfig EXACTLY (config.ts:668,673): extract the frontmatter
+    // fence, then match the anchored `^statuses:\s*$` only within it — so a
+    // column-0 `statuses:` in the markdown body, or an inline `statuses: x`
+    // that the parser ignores, cannot produce a false-positive error here.
+    const configFile = resolve(ctx.syntaurRoot, 'config.md');
+    let hasLegacyBlock = false;
+    if (await fileExists(configFile)) {
+      const raw = await readFile(configFile, 'utf-8');
+      const fm = raw.match(/^---\n([\s\S]*?)\n---/);
+      hasLegacyBlock = fm !== null && /^statuses:\s*$/m.test(fm[1]);
+    }
+
+    if (hasWorkflows && hasLegacyBlock) {
+      return {
+        id: this.id,
+        category: this.category,
+        title: this.title,
+        status: 'error',
+        detail:
+          'config.md has BOTH a top-level `statuses:` block and a `workflows:` map. The ' +
+          '`workflows:` map is authoritative (getWorkflowLibrary ignores the legacy block), so ' +
+          'the two sources silently diverge.',
+        remediation: {
+          kind: 'manual',
+          suggestion:
+            'Delete the top-level `statuses:` block from ~/.syntaur/config.md — the `workflows:` map (including the `default` workflow) is the single source of truth.',
+          command: null,
+        },
+        autoFixable: false,
+      };
+    }
+
+    return {
+      id: this.id,
+      category: this.category,
+      title: this.title,
+      status: 'pass',
+      detail: hasWorkflows
+        ? 'single status source (workflows: map)'
+        : hasLegacyBlock
+          ? 'single status source (legacy statuses: block)'
+          : 'no custom status config (built-in defaults)',
+      autoFixable: false,
+    };
+  },
+};
+
+export const workflowsChecks: Check[] = [referencesResolve, singleStatusSource];
