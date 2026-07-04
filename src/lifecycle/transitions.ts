@@ -21,10 +21,17 @@ async function applyLinkedTodosSideEffect(
   command: string,
   targetStatus: string,
   frontmatter: AssignmentFrontmatter,
+  terminalStatuses?: ReadonlySet<string>,
 ): Promise<void> {
   if (!lookup) return;
   const ref = linkedAssignmentRef(frontmatter);
-  if (targetStatus === 'completed') {
+  // Auto-complete linked todos when the parent finishes via the SUCCESS path.
+  // Keyed on `command === 'complete'` reaching a terminal (not the literal
+  // status `'completed'`) so a custom workflow whose completion terminal is
+  // renamed (e.g. `done`) is handled the same as the built-in — and so `fail`,
+  // which also reaches a terminal, never completes the children.
+  const terminals = terminalStatuses ?? new Set(['completed', 'failed']);
+  if (command === 'complete' && terminals.has(targetStatus)) {
     await completeLinkedTodos(lookup, frontmatter.id, ref);
   } else if (command === 'reopen') {
     await reopenLinkedTodos(lookup, frontmatter.id, ref);
@@ -209,7 +216,13 @@ export async function executeTransition(
     command,
   });
 
-  await applyLinkedTodosSideEffect(options.linkedTodosLookup, command, targetStatus, frontmatter);
+  await applyLinkedTodosSideEffect(
+    options.linkedTodosLookup,
+    command,
+    targetStatus,
+    frontmatter,
+    options.terminalStatuses,
+  );
 
   return {
     success: true,
@@ -360,7 +373,13 @@ export async function executeTransitionByDir(
     command,
   });
 
-  await applyLinkedTodosSideEffect(options.linkedTodosLookup, command, targetStatus, frontmatter);
+  await applyLinkedTodosSideEffect(
+    options.linkedTodosLookup,
+    command,
+    targetStatus,
+    frontmatter,
+    options.terminalStatuses,
+  );
 
   return {
     success: true,

@@ -458,11 +458,12 @@ export function WorkflowPage() {
       if (!res.ok) {
         const e = await res.json().catch(() => null);
         if (res.status === 409 && e?.error === 'workflow-in-use') {
+          // Leave the dialog open (plan): surface the blockers via the banner so
+          // the user can cancel rather than silently losing the confirm context.
           setFeedback({
             type: 'error',
             message: `Cannot delete "${deletedId}": ${(e.blockers ?? []).join('; ')}`,
           });
-          setDeleteDialogOpen(false);
           return;
         }
         throw new Error(e?.error ?? `HTTP ${res.status}`);
@@ -471,12 +472,12 @@ export function WorkflowPage() {
       invalidateStatusConfigCache();
       await refreshWorkflows();
       performSwitch(nextId);
-      setDeleteDialogOpen(false);
+      setDeleteDialogOpen(false); // close on success only
       setFeedback({ type: 'success', message: `Deleted workflow "${deletedId}"` });
       clearFeedback();
     } catch (err) {
+      // Failure: leave the dialog open, error surfaced via the feedback banner.
       setFeedback({ type: 'error', message: err instanceof Error ? err.message : 'Delete failed' });
-      setDeleteDialogOpen(false);
     } finally {
       setDeleteLoading(false);
     }
