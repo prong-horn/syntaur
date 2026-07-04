@@ -15,12 +15,13 @@ import { invalidateStatusConfigCache } from '../hooks/useStatusConfig';
 import {
   workflowApiBase,
   affectedEndpoint,
-  validateNewWorkflowId,
   canDeleteWorkflow,
   nextWorkflowAfterDelete,
 } from './workflow-switcher-helpers';
 import { StatusDeleteModal } from './StatusDeleteModal';
 import { FactDeleteModal } from './FactDeleteModal';
+import { ConfirmDialog } from '../components/ConfirmDialog';
+import { WorkflowIdDialog } from './WorkflowIdDialog';
 import { StatusDefinitionsSection } from './StatusDefinitionsSection';
 import {
   buildStatusSavePayload,
@@ -115,6 +116,15 @@ export function WorkflowPage() {
     { id: 'default', label: 'Default', isDefault: true, custom: false },
   ]);
   const [defaultWorkflow, setDefaultWorkflow] = useState('default');
+
+  // Switcher dialog state (replaces window.prompt/confirm). One flag per dialog;
+  // pendingWorkflowId holds the target of a discard-confirmed switch.
+  const [pendingWorkflowId, setPendingWorkflowId] = useState<string | null>(null);
+  const [discardDialogOpen, setDiscardDialogOpen] = useState(false);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [deleteLoading, setDeleteLoading] = useState(false);
+  const [createDialogOpen, setCreateDialogOpen] = useState(false);
+  const [duplicateDialogOpen, setDuplicateDialogOpen] = useState(false);
 
   const refreshWorkflows = useCallback(async () => {
     try {
@@ -347,81 +357,68 @@ export function WorkflowPage() {
 
   // ── Switcher actions ──────────────────────────────────────────────────────
 
-  function selectWorkflow(id: string) {
-    if (id === selectedWorkflowId) return;
-    if (dirty && !window.confirm('Discard unsaved changes and switch workflow?')) return;
+  /** The actual workflow switch — bypasses the dirty guard (callers own it). */
+  function performSwitch(id: string) {
     setLoading(true);
     setDirty(false);
     setSelectedWorkflowId(id); // triggers loadConfig via its dependency
   }
 
-  async function handleCreateWorkflow() {
-    const raw = window.prompt('New workflow id (letters, digits, "_" or "-"):');
-    if (raw === null) return;
-    const validationError = validateNewWorkflowId(raw, workflows.map((w) => w.id));
-    if (validationError) {
-      setFeedback({ type: 'error', message: validationError });
+  function selectWorkflow(id: string) {
+    if (id === selectedWorkflowId) return;
+    if (dirty) {
+      setPendingWorkflowId(id);
+      setDiscardDialogOpen(true);
       return;
     }
-    const id = raw.trim();
-    const label = window.prompt('Display label (optional):', '') ?? '';
-    try {
-      const res = await fetch('/api/config/workflows', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id, label: label.trim() || undefined }),
-      });
-      if (!res.ok) {
-        const e = await res.json().catch(() => null);
-        throw new Error(e?.error ?? `HTTP ${res.status}`);
-      }
-      invalidateStatusConfigCache();
-      await refreshWorkflows();
-      setLoading(true);
-      setDirty(false);
-      setSelectedWorkflowId(id);
-      setFeedback({ type: 'success', message: `Created workflow "${id}"` });
-      clearFeedback();
-    } catch (err) {
-      setFeedback({ type: 'error', message: err instanceof Error ? err.message : 'Create failed' });
-    }
+    performSwitch(id);
   }
 
-  async function handleDuplicateWorkflow() {
-    const raw = window.prompt(`Duplicate "${selectedWorkflowId}" as new id:`);
-    if (raw === null) return;
-    const validationError = validateNewWorkflowId(raw, workflows.map((w) => w.id));
-    if (validationError) {
-      setFeedback({ type: 'error', message: validationError });
-      return;
+  function confirmDiscardSwitch() {
+    if (pendingWorkflowId !== null) performSwitch(pendingWorkflowId);
+    setDiscardDialogOpen(false);
+    setPendingWorkflowId(null);
+  }
+
+  /** Throws on server error so WorkflowIdDialog keeps itself open and shows it. */
+  async function submitCreateWorkflow(id: string, label?: string) {
+    const res = await fetch('/api/config/workflows', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id, label }),
+    });
+    if (!res.ok) {
+      const e = await res.json().catch(() => null);
+      throw new Error(e?.error ?? `HTTP ${res.status}`);
     }
-    const id = raw.trim();
-    try {
-      const res = await fetch(
-        `/api/config/workflows/${encodeURIComponent(selectedWorkflowId)}/duplicate`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ id }),
-        },
-      );
-      if (!res.ok) {
-        const e = await res.json().catch(() => null);
-        throw new Error(e?.error ?? `HTTP ${res.status}`);
-      }
-      invalidateStatusConfigCache();
-      await refreshWorkflows();
-      setLoading(true);
-      setDirty(false);
-      setSelectedWorkflowId(id);
-      setFeedback({ type: 'success', message: `Duplicated to "${id}"` });
-      clearFeedback();
-    } catch (err) {
-      setFeedback({
-        type: 'error',
-        message: err instanceof Error ? err.message : 'Duplicate failed',
-      });
+    invalidateStatusConfigCache();
+    await refreshWorkflows();
+    performSwitch(id);
+    setCreateDialogOpen(false);
+    setFeedback({ type: 'success', message: `Created workflow "${id}"` });
+    clearFeedback();
+  }
+
+  /** Throws on server error so WorkflowIdDialog keeps itself open and shows it. */
+  async function submitDuplicateWorkflow(id: string) {
+    const res = await fetch(
+      `/api/config/workflows/${encodeURIComponent(selectedWorkflowId)}/duplicate`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id }),
+      },
+    );
+    if (!res.ok) {
+      const e = await res.json().catch(() => null);
+      throw new Error(e?.error ?? `HTTP ${res.status}`);
     }
+    invalidateStatusConfigCache();
+    await refreshWorkflows();
+    performSwitch(id);
+    setDuplicateDialogOpen(false);
+    setFeedback({ type: 'success', message: `Duplicated to "${id}"` });
+    clearFeedback();
   }
 
   async function handleSetDefaultWorkflow() {
@@ -446,36 +443,42 @@ export function WorkflowPage() {
     }
   }
 
-  async function handleDeleteWorkflow() {
+  function openDeleteWorkflow() {
     if (!canDeleteWorkflow(selectedWorkflowId)) return;
-    if (!window.confirm(`Delete workflow "${selectedWorkflowId}"? This cannot be undone.`)) return;
+    setDeleteDialogOpen(true);
+  }
+
+  async function performDeleteWorkflow() {
+    setDeleteLoading(true);
+    // Snapshot: setSelectedWorkflowId below changes selectedWorkflowId before the
+    // success message reads it, so capture the deleted id up front.
+    const deletedId = selectedWorkflowId;
     try {
-      const res = await fetch(workflowApiBase(selectedWorkflowId), { method: 'DELETE' });
+      const res = await fetch(workflowApiBase(deletedId), { method: 'DELETE' });
       if (!res.ok) {
         const e = await res.json().catch(() => null);
         if (res.status === 409 && e?.error === 'workflow-in-use') {
           setFeedback({
             type: 'error',
-            message: `Cannot delete "${selectedWorkflowId}": ${(e.blockers ?? []).join('; ')}`,
+            message: `Cannot delete "${deletedId}": ${(e.blockers ?? []).join('; ')}`,
           });
+          setDeleteDialogOpen(false);
           return;
         }
         throw new Error(e?.error ?? `HTTP ${res.status}`);
       }
-      const nextId = nextWorkflowAfterDelete(
-        selectedWorkflowId,
-        workflows.map((w) => w.id),
-        defaultWorkflow,
-      );
+      const nextId = nextWorkflowAfterDelete(deletedId, workflows.map((w) => w.id), defaultWorkflow);
       invalidateStatusConfigCache();
       await refreshWorkflows();
-      setLoading(true);
-      setDirty(false);
-      setSelectedWorkflowId(nextId);
-      setFeedback({ type: 'success', message: `Deleted workflow "${selectedWorkflowId}"` });
+      performSwitch(nextId);
+      setDeleteDialogOpen(false);
+      setFeedback({ type: 'success', message: `Deleted workflow "${deletedId}"` });
       clearFeedback();
     } catch (err) {
       setFeedback({ type: 'error', message: err instanceof Error ? err.message : 'Delete failed' });
+      setDeleteDialogOpen(false);
+    } finally {
+      setDeleteLoading(false);
     }
   }
 
@@ -650,14 +653,11 @@ export function WorkflowPage() {
             ))}
           </div>
           <div className="ml-auto flex items-center gap-1">
-            <button className="shell-action text-xs" onClick={() => void handleCreateWorkflow()}>
+            <button className="shell-action text-xs" onClick={() => setCreateDialogOpen(true)}>
               <Plus className="h-3 w-3" />
               New
             </button>
-            <button
-              className="shell-action text-xs"
-              onClick={() => void handleDuplicateWorkflow()}
-            >
+            <button className="shell-action text-xs" onClick={() => setDuplicateDialogOpen(true)}>
               <Copy className="h-3 w-3" />
               Duplicate
             </button>
@@ -671,7 +671,7 @@ export function WorkflowPage() {
             </button>
             <button
               className="shell-action text-xs text-error-foreground disabled:opacity-40"
-              onClick={() => void handleDeleteWorkflow()}
+              onClick={() => openDeleteWorkflow()}
               disabled={!canDeleteWorkflow(selectedWorkflowId)}
             >
               <Trash2 className="h-3 w-3" />
@@ -838,6 +838,52 @@ export function WorkflowPage() {
             setFactModal({ open: false });
             setSaving(false);
           }}
+        />
+
+        {/* Switcher dialogs (replace window.prompt/confirm) */}
+        <ConfirmDialog
+          open={discardDialogOpen}
+          title="Discard unsaved changes?"
+          description={`Switching to "${pendingWorkflowId ?? ''}" will discard the unsaved edits to "${selectedWorkflowId}".`}
+          confirmLabel="Discard & switch"
+          destructive
+          onConfirm={confirmDiscardSwitch}
+          onOpenChange={(open) => {
+            if (!open) {
+              setDiscardDialogOpen(false);
+              setPendingWorkflowId(null);
+            }
+          }}
+        />
+        <ConfirmDialog
+          open={deleteDialogOpen}
+          title={`Delete workflow "${selectedWorkflowId}"?`}
+          description="This cannot be undone. Tickets bound to this workflow will block the delete."
+          confirmLabel="Delete"
+          destructive
+          loading={deleteLoading}
+          onConfirm={performDeleteWorkflow}
+          onOpenChange={(open) => {
+            if (!open) setDeleteDialogOpen(false);
+          }}
+        />
+        <WorkflowIdDialog
+          open={createDialogOpen}
+          onOpenChange={setCreateDialogOpen}
+          title="New workflow"
+          confirmLabel="Create"
+          existingIds={workflows.map((w) => w.id)}
+          withLabelField
+          onSubmit={submitCreateWorkflow}
+        />
+        <WorkflowIdDialog
+          open={duplicateDialogOpen}
+          onOpenChange={setDuplicateDialogOpen}
+          title={`Duplicate "${selectedWorkflowId}"`}
+          confirmLabel="Duplicate"
+          existingIds={workflows.map((w) => w.id)}
+          withLabelField={false}
+          onSubmit={submitDuplicateWorkflow}
         />
       </div>
     </TooltipProvider>
