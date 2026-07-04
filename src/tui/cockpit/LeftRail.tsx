@@ -1,64 +1,151 @@
-import React from 'react';
-import { Box, Text } from 'ink';
-import { statusColors } from '../colors.js';
+import React, { useEffect, useMemo, useState } from 'react';
+import { Box, Text, useInput } from 'ink';
 import { useMouseRegions } from '../mouse/hooks.js';
-import { resolveRowIndex } from './railTypes.js';
-import type { LeftRailProps } from './railTypes.js';
-import { ProjectTree } from './ProjectTree.js';
-
-const HEADER_ROWS = 1; // "Live Sessions" title on row 0
+import { isMouseSequence } from '../mouse/parse.js';
+import { windowTreeRows } from '../components/TreeView.js';
+import { resolveRowIndex, buildRailRows, type LeftRailProps, type RailRow } from './railTypes.js';
 
 /**
- * Left rail: a mouse-clickable Live Sessions list above a keyboard-navigated
- * project/assignment tree. Row-level mouse hit-testing (v1 scope) applies
- * only to the Live Sessions list; the tree remains keyboard-driven.
+ * Left rail: the human-labeled Live/Recent session list. The Projects tree
+ * moved out to its own sibling pane (see Cockpit.tsx) now that focus is a
+ * flat rail|tree|detail cycle. Row content is entirely driven by
+ * `buildRailRows` — render and click hit-testing consume the exact same
+ * output so they can never diverge (mirrors `actionBarLayout.ts`).
+ *
+ * Keyboard selection: per design spec §5.2, "keyboard ↑/↓ moves it [the
+ * selected row]" — there is no separate cursor/selection distinction the way
+ * the Projects tree has one. `cursor` is internal bookkeeping ONLY (which
+ * index keyboard movement starts from, and what the scroll window centers
+ * on via `windowTreeRows` — the same window the tree renders from); the row
+ * highlight is driven purely by the `selectedSessionId` prop, so a stale
+ * cursor position left over after an assignment gets selected instead can
+ * never show a session as highlighted when it isn't the actual selection.
  */
-export const LeftRail: React.FC<LeftRailProps> = ({
-  projectsDir,
-  railRect,
-  sessions,
-  focused,
-  active,
-  onSelectSession,
-  onSelectAssignment,
-}) => {
+export const LeftRail: React.FC<LeftRailProps> = ({ contentRect, sessions, selectedSessionId, focused, onSelectSession, liveActivity }) => {
+  const [recentExpanded, setRecentExpanded] = useState(false);
+  const rows = buildRailRows(sessions, { recentExpanded, liveActivity });
+  const viewHeight = Math.max(1, contentRect.height);
+
+  const selectableIndices = useMemo(
+    () => rows.reduce<number[]>((acc, r, i) => {
+      if (r.kind === 'session' || (r.kind === 'group-header' && r.group === 'recent')) acc.push(i);
+      return acc;
+    }, []),
+    [rows],
+  );
+
+  const [cursor, setCursor] = useState(0);
+
+  // Keep the scroll window centered on the externally-selected session (e.g.
+  // set by a click elsewhere, restored on mount, or moved to a new sort
+  // position because its waiting/working/recency rank changed between polls)
+  // so it's visible without extra scrolling — never fires onSelectSession,
+  // just follows it. Depends on the RESOLVED INDEX (not just the id) so a
+  // re-sort that moves the same selected session to a different row also
+  // re-syncs the cursor — otherwise PgUp/PgDn and the next arrow move would
+  // act from a stale row position.
+  const selectedIndex = selectedSessionId == null
+    ? -1
+    : rows.findIndex((r) => r.kind === 'session' && r.session.sessionId === selectedSessionId);
+  useEffect(() => {
+    if (selectedIndex >= 0) setCursor(selectedIndex);
+  }, [selectedIndex]);
+
+  // Rows shrink (RECENT collapses, sessions list changes) — keep the cursor
+  // in bounds so `windowTreeRows` never receives an out-of-range index.
+  useEffect(() => {
+    setCursor((c) => Math.min(c, Math.max(0, rows.length - 1)));
+  }, [rows.length]);
+
+  const { start, end } = windowTreeRows(rows.length, cursor, viewHeight);
+  const visibleRows = rows.slice(start, end);
+
+  const activate = (index: number) => {
+    const row = rows[index];
+    if (!row) return;
+    if (row.kind === 'group-header' && row.group === 'recent') {
+      setRecentExpanded((v) => !v);
+    } else if (row.kind === 'session') {
+      onSelectSession(row.session);
+    }
+  };
+
+  const moveCursor = (delta: number) => {
+    if (selectableIndices.length === 0) return;
+    const curPos = selectableIndices.indexOf(cursor);
+    // Starting from a non-selectable row (e.g. the LIVE header, or nothing
+    // selected yet): a downward move enters at the top, an upward move
+    // enters at the bottom — regardless of the move's magnitude (a PgDn from
+    // an unselected state just enters at the top, not "top + a page").
+    const nextPos = curPos === -1
+      ? (delta > 0 ? 0 : selectableIndices.length - 1)
+      : Math.min(Math.max(curPos + delta, 0), selectableIndices.length - 1);
+    const nextIndex = selectableIndices[nextPos];
+    setCursor(nextIndex);
+    // Moving onto a session row selects it immediately (spec §5.2); moving
+    // onto the RECENT header just parks the cursor there — Enter toggles it.
+    const row = rows[nextIndex];
+    if (row?.kind === 'session') onSelectSession(row.session);
+  };
+
   useMouseRegions([
     {
       id: 'rail-sessions',
-      // Clamp to the rail's available height so a long session list can't
-      // extend the hit region past the rail's bottom edge into the
-      // detail/action-bar rows.
-      rect: {
-        x: railRect.x,
-        y: railRect.y,
-        width: railRect.width,
-        height: Math.min(sessions.length + HEADER_ROWS, railRect.height),
-      },
+      rect: contentRect,
+      onScroll: (e) => moveCursor(e.action === 'scroll-up' ? -1 : 1),
       onClick: (e) => {
-        const idx = resolveRowIndex(railRect, e.y, HEADER_ROWS);
-        if (idx !== null && idx < sessions.length) onSelectSession(sessions[idx]);
+        // Click math is viewport-aware: render and hit-test the SAME slice,
+        // and the click selects INTO that slice — never `rows[idx]`, never
+        // `sessions[idx]`.
+        const idx = resolveRowIndex(contentRect, e.y, 0);
+        if (idx === null || idx >= visibleRows.length) return;
+        const absoluteIndex = start + idx;
+        setCursor(absoluteIndex);
+        activate(absoluteIndex);
       },
     },
   ]);
 
+  useInput(
+    (input, key) => {
+      if (isMouseSequence(input)) return;
+      if (key.upArrow || input === 'k') moveCursor(-1);
+      else if (key.downArrow || input === 'j') moveCursor(1);
+      else if (key.pageUp) moveCursor(-viewHeight);
+      else if (key.pageDown) moveCursor(viewHeight);
+      else if (key.return) activate(cursor);
+    },
+    { isActive: focused },
+  );
+
   return (
     <Box flexDirection="column">
-      <Text bold underline color={focused ? 'cyan' : undefined}>Live Sessions</Text>
-      {sessions.length === 0 ? (
-        <Text dimColor>  (none)</Text>
-      ) : (
-        sessions.map((s) => (
-          <Text key={s.sessionId}>
-            <Text color={s.isLive ? 'green' : 'gray'}>{s.isLive ? '●' : '○'} </Text>
-            <Text color={statusColors[s.status] ?? 'white'}>{s.agent}</Text>
-            <Text dimColor> {s.sessionId.slice(0, 8)}</Text>
-          </Text>
-        ))
-      )}
-      <Box marginTop={1}>
-        <Text bold underline>Projects</Text>
-      </Box>
-      <ProjectTree projectsDir={projectsDir} active={active} onSelectAssignment={onSelectAssignment} />
+      {visibleRows.map((row, i) => (
+        <Text key={i} wrap="truncate" inverse={row.kind === 'session' && row.session.sessionId === selectedSessionId}>
+          {renderRow(row)}
+        </Text>
+      ))}
     </Box>
   );
 };
+
+function renderRow(row: RailRow): React.ReactNode {
+  if (row.kind === 'group-header') {
+    const chevron = row.group === 'recent' ? (row.expanded ? '▾' : '▸') : '▾';
+    return <Text bold>{chevron} {row.label}</Text>;
+  }
+  if (row.kind === 'more') {
+    return <Text dimColor>  …and {row.count} more</Text>;
+  }
+  return (
+    <>
+      <Text color={row.glyphColor}>{row.glyph} </Text>
+      <Text bold>{row.agent}</Text>
+      {'  '}
+      {row.label}
+      {row.activityText ? <Text color={row.isWaiting ? 'yellow' : undefined}> {row.activityText}</Text> : null}
+      {'  '}
+      <Text dimColor>{row.age}</Text>
+    </>
+  );
+}

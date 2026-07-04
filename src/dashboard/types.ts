@@ -720,6 +720,12 @@ export type AgentSessionStatus = 'active' | 'completed' | 'stopped';
  */
 export type ActivityState = 'working' | 'idle' | 'awaiting-input';
 
+/** Native background-agent lifecycle state, as reported by `claude agents --json` (cockpit v2 monitor join). */
+export type NativeAgentState = 'working' | 'blocked' | 'done' | 'failed' | 'stopped';
+
+/** Which launch path a session was started through — powers Attach's native-vs-tmux dispatch. */
+export type SessionLauncher = 'claude-bg' | 'tmux' | null;
+
 export interface AgentSession {
   projectSlug: string | null;
   assignmentSlug: string | null;
@@ -743,6 +749,14 @@ export interface AgentSession {
   originalHeadSha?: string | null;
   activity?: ActivityState | null;
   updatedAt?: string | null;
+  /** Native lifecycle state from the `claude agents --json` monitor join; null when not a native-launched session or the join hasn't matched it. */
+  state?: NativeAgentState | null;
+  /** Attention reason from the native monitor join (e.g. "permission prompt"); null when not waiting. */
+  waitingFor?: string | null;
+  /** Short id `claude attach <id>` accepts, from the native monitor join; null when not a native session. */
+  agentShortId?: string | null;
+  /** How this session was launched — gates native (`claude attach`) vs tmux attach. */
+  launcher?: SessionLauncher;
 }
 
 export interface AgentSessionWithLiveness extends AgentSession {

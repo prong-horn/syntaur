@@ -3,6 +3,7 @@ import { Box, Text } from 'ink';
 import { useMouseRegions } from '../mouse/hooks.js';
 import type { Rect, Region } from '../mouse/registry.js';
 import { layoutActions, buttonText, padCell, type Action } from './actionBarLayout.js';
+import { formatKeymapHints } from './keymap.js';
 
 export type { Action };
 
@@ -13,7 +14,10 @@ export type { Action };
  * `rect.width` cells that get registered as its mouse hit-region — one width
  * computation feeds both, so rendered x-range and hit x-range can never
  * diverge (no borders on hit cells; no independent Box sizing/margins).
- * Disabled actions render dim and ignore clicks/keys.
+ * Enabled buttons render as inverse-video chips (visible buttons, not just
+ * colored text); disabled buttons render dim with no inverse and ignore
+ * clicks/keys. Non-clickable navigation hints (Tab/move/scroll/Enter/Esc —
+ * see keymap.ts) are appended after the buttons, dim.
  */
 export const ActionBar: React.FC<{ actions: Action[]; barRect: Rect }> = ({ actions, barRect }) => {
   const layout = layoutActions(actions, barRect);
@@ -24,18 +28,19 @@ export const ActionBar: React.FC<{ actions: Action[]; barRect: Rect }> = ({ acti
   }));
   useMouseRegions(regions);
 
+  const buttonsWidth = layout.reduce((sum, { rect }) => sum + rect.width, 0);
+  const hintGap = 2;
+  const hintBudget = Math.max(0, barRect.width - buttonsWidth - hintGap);
+  const hints = formatKeymapHints().slice(0, hintBudget);
+
   return (
     <Box>
-      {layout.map(({ action, rect }) => {
-        const keyPart = `[${action.key}]`;
-        const cell = padCell(buttonText(action), rect.width);
-        return (
-          <Text key={action.key} dimColor={!action.enabled}>
-            <Text color={action.enabled ? 'cyan' : 'gray'}>{keyPart}</Text>
-            {cell.slice(keyPart.length)}
-          </Text>
-        );
-      })}
+      {layout.map(({ action, rect }) => (
+        <Text key={action.key} inverse={action.enabled} dimColor={!action.enabled}>
+          {padCell(buttonText(action), rect.width)}
+        </Text>
+      ))}
+      {hints.length > 0 && <Text dimColor>{' '.repeat(hintGap)}{hints}</Text>}
     </Box>
   );
 };

@@ -62,6 +62,73 @@ describe('ActionBar', () => {
     unmount();
   });
 
+  it('renders enabled buttons as inverse-video chips and disabled ones dim with no inverse', () => {
+    const { lastFrame, unmount } = render(
+      <MouseProvider>
+        <ActionBar
+          barRect={{ x: 0, y: 0, width: 80, height: 1 }}
+          actions={[
+            { key: 'l', label: 'Launch', onRun: vi.fn(), enabled: true },
+            { key: 'a', label: 'Attach', onRun: vi.fn(), enabled: false },
+          ]}
+        />
+      </MouseProvider>,
+    );
+    const raw = lastFrame() ?? '';
+    // Inverse video is SGR 7 ([7m); dim is SGR 2 ([2m). The enabled button's
+    // text must be wrapped in an inverse code, the disabled one must not.
+    const launchIdx = raw.indexOf('Launch');
+    const attachIdx = raw.indexOf('Attach');
+    expect(raw.slice(Math.max(0, launchIdx - 10), launchIdx)).toContain('[7m');
+    expect(raw.slice(Math.max(0, attachIdx - 10), attachIdx)).not.toContain('[7m');
+    expect(raw.slice(Math.max(0, attachIdx - 10), attachIdx)).toContain('[2m');
+    unmount();
+  });
+
+  it('appends non-clickable navigation keymap hints after the buttons', () => {
+    const { lastFrame } = render(
+      <MouseProvider>
+        <ActionBar
+          barRect={{ x: 0, y: 0, width: 80, height: 1 }}
+          actions={[{ key: 'q', label: 'Quit', onRun: vi.fn(), enabled: true }]}
+        />
+      </MouseProvider>,
+    );
+    const f = lastFrame() ?? '';
+    expect(f).toContain('Tab');
+    expect(f).toContain('Focus');
+  });
+
+  it('truncates the keymap hints (never overflows the one-row bar) on a narrow width', () => {
+    // Regression: the hint string used to be appended unbounded, outside
+    // layoutActions' single width computation — on a narrow bar it could
+    // overflow past barRect.width instead of being clipped to what's left.
+    const actions: Action[] = [{ key: 'l', label: 'Launch', onRun: vi.fn(), enabled: true }];
+    const barRect = { x: 0, y: 0, width: 20, height: 1 };
+    const { lastFrame, unmount } = render(
+      <MouseProvider>
+        <ActionBar actions={actions} barRect={barRect} />
+      </MouseProvider>,
+    );
+    const line = (lastFrame() ?? '')
+      .replace(/\x1b\[[0-9;?]*[A-Za-z]/g, '') // eslint-disable-line no-control-regex
+      .split('\n')[0];
+    expect(line.length).toBeLessThanOrEqual(barRect.width);
+    unmount();
+  });
+
+  it('omits the hint entirely when the buttons already fill the bar', () => {
+    const actions: Action[] = [{ key: 'l', label: 'Launch', onRun: vi.fn(), enabled: true }];
+    const barRect = { x: 0, y: 0, width: 12, height: 1 }; // exactly "[l] Launch  ".length
+    const { lastFrame, unmount } = render(
+      <MouseProvider>
+        <ActionBar actions={actions} barRect={barRect} />
+      </MouseProvider>,
+    );
+    expect(lastFrame() ?? '').not.toContain('Tab');
+    unmount();
+  });
+
   it('ignores a mouse click on a disabled action and does not invoke its onRun', async () => {
     const onRunEnabled = vi.fn();
     const onRunDisabled = vi.fn();

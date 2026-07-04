@@ -20,7 +20,7 @@ export function TreeItem({ node, isSelected }: TreeItemProps) {
 
     return (
       <Box>
-        <Text inverse={isSelected} bold={isSelected}>
+        <Text wrap="truncate" inverse={isSelected} bold={isSelected}>
           {indent}
           <Text>{chevron} </Text>
           <Text bold>{node.label}</Text>
@@ -37,7 +37,7 @@ export function TreeItem({ node, isSelected }: TreeItemProps) {
 
   return (
     <Box>
-      <Text inverse={isSelected} bold={isSelected}>
+      <Text wrap="truncate" inverse={isSelected} bold={isSelected}>
         {indent}
         <Text dimColor>{'▪ '}</Text>
         <Text>{node.label}</Text>

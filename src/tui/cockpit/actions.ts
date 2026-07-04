@@ -1,12 +1,58 @@
 import type { DetailSelection } from './DetailPane.js';
 import type { Action } from './actionBarLayout.js';
 import type { launchInTmux as LaunchInTmux } from '../tmux/launch.js';
+import type { launchClaudeBg as LaunchClaudeBg } from '../claude-agents/launch.js';
+import { isNativeLaunchEligible } from '../claude-agents/launch.js';
+import { resolveRunner } from '../../utils/agents-schema.js';
+import type { AgentConfig } from '../../utils/config.js';
 import type { AgentLaunchPlan } from '../../launch/build-launch.js';
+import type { AgentSessionWithLiveness, NativeAgentState } from '../../dashboard/types.js';
 
 export interface ActionCallbacks {
   onLaunch: () => void;
   onAttach: () => void;
   onQuit: () => void;
+}
+
+/** Capabilities the action-bar enable matrix and launch dispatch degrade on. */
+export interface ActionCaps {
+  tmuxAvailable: boolean;
+  claudeBgAvailable: boolean;
+}
+
+/** Native states that mean the session is over — Attach against it would just fail. */
+const NATIVE_TERMINAL_STATES: ReadonlySet<NativeAgentState> = new Set(['done', 'failed', 'stopped']);
+
+/**
+ * True when a session should be attached via the native `claude attach`
+ * path: it has a native short id and its `state` is anything OTHER than
+ * terminal (`working`, `blocked` — a permission prompt — or any future
+ * waiting-ish state all count; only done/failed/stopped disqualify it).
+ * Exported so Cockpit's `handleAttach` can pick the SAME path this enable
+ * check assumes, rather than re-deriving the rule a second time.
+ */
+export function isNativeAttachReachable(session: AgentSessionWithLiveness): boolean {
+  return session.agentShortId != null && session.state != null && !NATIVE_TERMINAL_STATES.has(session.state);
+}
+
+/**
+ * Attach is enabled via ONE of two independent paths:
+ *  - Native (see `isNativeAttachReachable`) — reachable with no tmux
+ *    installed at all, and AUTHORITATIVE when present: a terminal-state
+ *    native session must not fall through to the tmux gate below, whose
+ *    isLive can still read stale-true off a lingering pid the native truth
+ *    already knows ended.
+ *  - tmux (existing v1 gate, unchanged): tmux available, the session is LIVE,
+ *    and it has a non-null `assignmentSlug` (the tmux session name is derived
+ *    from project+assignment slugs).
+ */
+function attachEnabled(selection: DetailSelection, caps: ActionCaps): boolean {
+  if (selection.kind !== 'session') return false;
+  const { session } = selection;
+  if (session.agentShortId != null && session.state != null) {
+    return isNativeAttachReachable(session);
+  }
+  return caps.tmuxAvailable && session.isLive === true && session.assignmentSlug != null;
 }
 
 /**
@@ -16,20 +62,13 @@ export interface ActionCallbacks {
  * non-TTY `lastFrame()`, so a render-only test can't distinguish enabled
  * from disabled buttons).
  *
- * Enable rules mirror Task 15's nullability guards: Launch needs a
- * project-nested assignment selection (non-null `projectSlug` --
- * `launchAgent`/`getAssignmentDetail` require it); Attach needs a LIVE
- * session (`session.isLive === true` -- the rail also lists dead sessions,
- * and `tmux attach-session` against a dead session's name is a foot-gun)
- * with tmux available and a non-null `assignmentSlug` (the tmux session
- * name is derived from project+assignment slugs) -- this is also the app's
- * graceful-degradation rule: no tmux ⇒ Attach is disabled, but Launch stays
- * enabled and degrades to an in-process hand-off (see runLaunch). Quit is
- * always enabled.
+ * Launch needs a project-nested assignment selection (non-null
+ * `projectSlug` -- `launchAgent`/`getAssignmentDetail` require it). Attach's
+ * rule is `attachEnabled` above. Quit is always enabled.
  */
 export function buildActions(
   selection: DetailSelection,
-  tmuxAvailable: boolean,
+  caps: ActionCaps,
   callbacks: ActionCallbacks,
 ): Action[] {
   return [
@@ -42,11 +81,7 @@ export function buildActions(
     {
       key: 'a',
       label: 'Attach',
-      enabled:
-        selection.kind === 'session' &&
-        tmuxAvailable &&
-        selection.session.isLive === true &&
-        selection.session.assignmentSlug != null,
+      enabled: attachEnabled(selection, caps),
       onRun: callbacks.onAttach,
     },
     { key: 'q', label: 'Quit', enabled: true, onRun: callbacks.onQuit },
@@ -76,21 +111,63 @@ export interface LaunchDeps {
   tmuxAvailable: boolean;
   launchInTmux: typeof LaunchInTmux;
   handOff: (plan: LaunchExecPlan) => Promise<void>;
+  /** Native path deps — optional so existing tmux/hand-off-only call sites and tests need no changes. */
+  claudeBgAvailable?: boolean;
+  launchClaudeBg?: typeof LaunchClaudeBg;
+  /**
+   * Called when a `--bg` spawn throws, before falling through to tmux/hand-off
+   * (design spec §7: "surface in status line, fall back... if available").
+   * The overall `runLaunch` result still reports the FALLBACK mode
+   * ('tmux'/'handoff') — this hook is how the caller learns the native
+   * attempt failed first, to compose a richer status message.
+   */
+  onNativeLaunchFailure?: (error: unknown) => void;
+}
+
+/** Native-launch context, when the selection's agent might be eligible for `--bg`. */
+export interface NativeLaunchInput {
+  agent: AgentConfig;
+  /** The `--name` value, e.g. `"<project>/<assignment>"` (design spec §5.6) — distinct from the tmux session name. */
+  name: string;
 }
 
 /**
- * Launch degradation: tmux-available means launch detached into a named tmux
- * session (Cockpit stays resident, session shows up in Live Sessions);
- * otherwise fall back to an in-process hand-off (the caller suspends the
- * terminal, spawns the plan with inherited stdio, and exits the cockpit once
- * the agent exits). Kept side-effect-free besides the two injected deps so
- * this degradation matrix is unit-testable without tmux, Ink, or a real spawn.
+ * Launch degradation, in priority order:
+ *  1. Native `claude --bg`, when `native` is supplied AND `deps.claudeBgAvailable`
+ *     AND the agent resolves to the claude runner AND Task 6's eligibility
+ *     guards pass (not shell-alias-wrapped, no `-p`/`--print`). A failed `--bg`
+ *     spawn is caught and falls through to tmux/hand-off below rather than
+ *     surfacing as a bare launch failure — the resulting 'tmux'/'handoff'
+ *     status is what the caller shows the user.
+ *  2. tmux-available: launch detached into a named tmux session (Cockpit
+ *     stays resident, session shows up in Live Sessions).
+ *  3. In-process hand-off (the caller suspends the terminal, spawns the plan
+ *     with inherited stdio, and exits the cockpit once the agent exits).
+ * Kept side-effect-free besides the injected deps so this degradation matrix
+ * is unit-testable without tmux, claude, Ink, or a real spawn.
  */
 export async function runLaunch(
   sessionName: string,
   plan: LaunchExecPlan,
   deps: LaunchDeps,
-): Promise<'tmux' | 'handoff'> {
+  native?: NativeLaunchInput,
+): Promise<'claude-bg' | 'tmux' | 'handoff'> {
+  if (
+    native &&
+    deps.claudeBgAvailable &&
+    deps.launchClaudeBg &&
+    resolveRunner(native.agent) === 'claude' &&
+    isNativeLaunchEligible(native.agent, plan.args)
+  ) {
+    try {
+      await deps.launchClaudeBg({ plan, name: native.name });
+      return 'claude-bg';
+    } catch (err) {
+      // Fall through to tmux/hand-off below — a failed --bg spawn degrades
+      // exactly like native being ineligible, rather than aborting the launch.
+      deps.onNativeLaunchFailure?.(err);
+    }
+  }
   if (deps.tmuxAvailable) {
     await deps.launchInTmux({ sessionName, cwd: plan.cwd, command: plan.command, args: plan.args });
     return 'tmux';
