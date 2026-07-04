@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtemp, rm, readFile, mkdir, writeFile } from 'node:fs/promises';
+import { mkdtemp, rm, readFile, mkdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { resolve, join } from 'node:path';
 import { createProjectCommand } from '../commands/create-project.js';

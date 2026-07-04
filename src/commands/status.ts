@@ -42,7 +42,6 @@ function renameAssignmentStatusRefs(content: string, id: string, newId: string, 
   return renameStatusInHistory(next, id, newId);
 }
 import {
-  scanAssignmentsByStatus,
   scanAssignmentsReferencingStatus,
   type AffectedAssignment,
   type WorkflowScanScope,
