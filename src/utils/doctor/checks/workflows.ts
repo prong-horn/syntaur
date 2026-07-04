@@ -124,14 +124,19 @@ const singleStatusSource: Check = {
   async run(ctx): Promise<CheckResult> {
     const hasWorkflows = !!ctx.config.workflows && Object.keys(ctx.config.workflows).length > 0;
 
-    // Detect a PHYSICALLY present top-level `statuses:` block via the raw config
-    // text (the parser's own anchor), NOT `config.statuses !== null` —
-    // parseStatusConfig returns null for an empty/unparseable block, which is
-    // still a colliding second source.
+    // Detect a PHYSICALLY present top-level `statuses:` block, NOT
+    // `config.statuses !== null` — parseStatusConfig returns null for an
+    // empty/unparseable block, which is still a colliding second source. Mirror
+    // parseStatusConfig EXACTLY (config.ts:668,673): extract the frontmatter
+    // fence, then match the anchored `^statuses:\s*$` only within it — so a
+    // column-0 `statuses:` in the markdown body, or an inline `statuses: x`
+    // that the parser ignores, cannot produce a false-positive error here.
     const configFile = resolve(ctx.syntaurRoot, 'config.md');
     let hasLegacyBlock = false;
     if (await fileExists(configFile)) {
-      hasLegacyBlock = /^statuses:/m.test(await readFile(configFile, 'utf-8'));
+      const raw = await readFile(configFile, 'utf-8');
+      const fm = raw.match(/^---\n([\s\S]*?)\n---/);
+      hasLegacyBlock = fm !== null && /^statuses:\s*$/m.test(fm[1]);
     }
 
     if (hasWorkflows && hasLegacyBlock) {

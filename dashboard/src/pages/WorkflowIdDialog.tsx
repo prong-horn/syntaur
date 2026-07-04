@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -77,6 +78,9 @@ export function WorkflowIdDialog({
         >
           <DialogHeader>
             <DialogTitle>{title}</DialogTitle>
+            <DialogDescription>
+              Enter a workflow id (lowercase letters, digits, dashes){withLabelField ? ' and an optional display label' : ''}.
+            </DialogDescription>
           </DialogHeader>
 
           <div className="space-y-3">

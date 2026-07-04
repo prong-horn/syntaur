@@ -403,5 +403,23 @@ describe('syntaur status', () => {
       expect(await readFile(defaultPath, 'utf-8')).toContain('status: building');
       expect(await readFile(otherPath, 'utf-8')).toContain('status: in_progress');
     });
+
+    it('(g) list degrades to built-ins (exit 0) when defaultWorkflow dangles; mutators hard-fail', async () => {
+      await seedWorkflows({ default: { label: 'Default', ...buildDefaultStatusConfig() } }, 'default');
+      // Point the global default at a workflow that is not in the map.
+      const cfg = await readConfigMd();
+      await writeFile(resolve(home, 'config.md'), cfg.replace(/defaultWorkflow:.*/, 'defaultWorkflow: ghost'), 'utf-8');
+
+      // Read-only `list` must NOT exit non-zero on the misconfig — the list()
+      // helper asserts code 0 internally, and it degrades to built-ins.
+      const listed = await list();
+      expect(listed.source).toBe('default');
+      expect(listed.statuses.some((s) => s.id === 'draft')).toBe(true);
+
+      // A mutator still hard-fails, naming the missing target.
+      const add = await runCli(['status', 'add', 'newstat', '--label', 'New'], home);
+      expect(add.code).toBe(1);
+      expect(add.stderr).toContain('ghost');
+    });
   });
 });

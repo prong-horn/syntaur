@@ -17,6 +17,13 @@ interface ConfirmDialogProps {
   cancelLabel?: string;
   loading?: boolean;
   destructive?: boolean;
+  /**
+   * Error to surface INSIDE the dialog (e.g. a failed destructive action that
+   * keeps the dialog open). The page-level feedback banner sits behind the
+   * AlertDialog overlay and is unreadable while the dialog is open, so failures
+   * that leave the dialog open must render here to be visible.
+   */
+  error?: string | null;
   onConfirm: () => Promise<void> | void;
   onOpenChange: (open: boolean) => void;
 }
@@ -29,6 +36,7 @@ export function ConfirmDialog({
   cancelLabel = 'Cancel',
   loading = false,
   destructive = false,
+  error = null,
   onConfirm,
   onOpenChange,
 }: ConfirmDialogProps) {
@@ -39,6 +47,11 @@ export function ConfirmDialog({
           <AlertDialogTitle>{title}</AlertDialogTitle>
           <AlertDialogDescription>{description}</AlertDialogDescription>
         </AlertDialogHeader>
+        {error ? (
+          <p role="alert" className="text-sm text-destructive">
+            {error}
+          </p>
+        ) : null}
         <AlertDialogFooter>
           <AlertDialogCancel
             disabled={loading}

@@ -123,6 +123,9 @@ export function WorkflowPage() {
   const [discardDialogOpen, setDiscardDialogOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [deleteLoading, setDeleteLoading] = useState(false);
+  // Delete failures must render INSIDE the dialog — the page feedback banner
+  // sits behind the AlertDialog overlay and is unreadable while it's open.
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [duplicateDialogOpen, setDuplicateDialogOpen] = useState(false);
 
@@ -445,11 +448,13 @@ export function WorkflowPage() {
 
   function openDeleteWorkflow() {
     if (!canDeleteWorkflow(selectedWorkflowId)) return;
+    setDeleteError(null);
     setDeleteDialogOpen(true);
   }
 
   async function performDeleteWorkflow() {
     setDeleteLoading(true);
+    setDeleteError(null);
     // Snapshot: setSelectedWorkflowId below changes selectedWorkflowId before the
     // success message reads it, so capture the deleted id up front.
     const deletedId = selectedWorkflowId;
@@ -458,12 +463,9 @@ export function WorkflowPage() {
       if (!res.ok) {
         const e = await res.json().catch(() => null);
         if (res.status === 409 && e?.error === 'workflow-in-use') {
-          // Leave the dialog open (plan): surface the blockers via the banner so
-          // the user can cancel rather than silently losing the confirm context.
-          setFeedback({
-            type: 'error',
-            message: `Cannot delete "${deletedId}": ${(e.blockers ?? []).join('; ')}`,
-          });
+          // Leave the dialog open and surface the blockers INSIDE it (the page
+          // banner is hidden behind the overlay) so the user sees why and can cancel.
+          setDeleteError(`Cannot delete "${deletedId}": ${(e.blockers ?? []).join('; ')}`);
           return;
         }
         throw new Error(e?.error ?? `HTTP ${res.status}`);
@@ -476,8 +478,8 @@ export function WorkflowPage() {
       setFeedback({ type: 'success', message: `Deleted workflow "${deletedId}"` });
       clearFeedback();
     } catch (err) {
-      // Failure: leave the dialog open, error surfaced via the feedback banner.
-      setFeedback({ type: 'error', message: err instanceof Error ? err.message : 'Delete failed' });
+      // Failure: leave the dialog open, error surfaced inside the dialog.
+      setDeleteError(err instanceof Error ? err.message : 'Delete failed');
     } finally {
       setDeleteLoading(false);
     }
@@ -863,9 +865,13 @@ export function WorkflowPage() {
           confirmLabel="Delete"
           destructive
           loading={deleteLoading}
+          error={deleteError}
           onConfirm={performDeleteWorkflow}
           onOpenChange={(open) => {
-            if (!open) setDeleteDialogOpen(false);
+            if (!open) {
+              setDeleteDialogOpen(false);
+              setDeleteError(null);
+            }
           }}
         />
         <WorkflowIdDialog

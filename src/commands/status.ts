@@ -147,16 +147,23 @@ async function requireEffectiveBundle(config: SyntaurConfig): Promise<EffectiveB
 }
 
 /** `status list`: neither source → synthesize built-ins (`source: 'default'`),
- * preserving the documented pre-init list behavior. */
+ * preserving the documented pre-init list behavior. A read-only verb must never
+ * exit non-zero on a misconfig, so a dangling global `defaultWorkflow` (target id
+ * absent from the map — which `loadEffectiveBundle` throws on for mutators, and
+ * which `doctor` flags separately) also degrades to synthesized built-ins here. */
 async function optionalEffectiveBundle(config: SyntaurConfig): Promise<EffectiveBundle> {
-  const bundle = await loadEffectiveBundle(config);
-  if (bundle) return bundle;
-  return {
+  const fallback = (): EffectiveBundle => ({
     block: buildDefaultStatusConfig(),
     origin: 'default',
     targetId: statusTargetWorkflowId(config),
     label: null,
-  };
+  });
+  try {
+    const bundle = await loadEffectiveBundle(config);
+    return bundle ?? fallback();
+  } catch {
+    return fallback();
+  }
 }
 
 function printRedirectNotice(targetId: string): void {
@@ -300,7 +307,12 @@ export async function runStatusInit(opts: { force?: boolean; dryRun?: boolean })
   await writeStatusConfig(next);
 }
 
-export async function runStatusReset(opts: { dryRun?: boolean }): Promise<void> {
+/** Which path `runStatusReset` took — lets the caller print an accurate stdout
+ * line (the generic "reverted to implicit defaults" is only true for `legacy`;
+ * the `workflow` path rewrites the bundle and prints its own note on stderr). */
+export type StatusResetMode = 'workflow' | 'legacy' | 'noop';
+
+export async function runStatusReset(opts: { dryRun?: boolean }): Promise<StatusResetMode> {
   const config = await readConfig();
   if (hasWorkflowsMap(config)) {
     const targetId = statusTargetWorkflowId(config);
@@ -316,24 +328,25 @@ export async function runStatusReset(opts: { dryRun?: boolean }): Promise<void> 
       const { label: _label, ...currentBlock } = wf;
       printBlockDiff(currentBlock, next);
       console.log(`\n(resets workflow '${targetId}' to built-in statuses/transitions; clears custom derive/facts.)`);
-      return;
+      return 'workflow';
     }
     await writeWorkflowBundle(targetId, next, { label: wf.label });
     console.error(
       `note: reset workflow '${targetId}' (the global default) to built-in statuses/transitions; custom derive/facts cleared.`,
     );
-    return;
+    return 'workflow';
   }
   const existing = await readStatusBlock();
   if (!existing) {
     if (opts.dryRun) console.log('No statuses block present — nothing to reset.');
-    return;
+    return 'noop';
   }
   if (opts.dryRun) {
     printBlockDiff(existing, null);
-    return;
+    return 'legacy';
   }
   await deleteStatusConfig();
+  return 'legacy';
 }
 
 // ----- add / set / reorder --------------------------------------------------
@@ -800,8 +813,10 @@ statusCommand
   .option('--dry-run', 'Print the diff without writing')
   .action(async (opts: { dryRun?: boolean }) => {
     try {
-      await runStatusReset(opts);
-      if (!opts.dryRun) console.log('Reset statuses to implicit defaults.');
+      const mode = await runStatusReset(opts);
+      // Only the legacy path truly reverts to implicit defaults; the workflow
+      // path rewrites the target bundle and already printed an accurate note.
+      if (!opts.dryRun && mode === 'legacy') console.log('Reset statuses to implicit defaults.');
     } catch (error) {
       fail(error);
     }
