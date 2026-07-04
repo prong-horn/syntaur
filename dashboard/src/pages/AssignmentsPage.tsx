@@ -221,7 +221,8 @@ export function AssignmentsPage() {
     () => ({ hidden: [] }),
   );
   const [grouping, setGrouping] = useState<Grouping>(() => prefs.grouping);
-  // Kanban only supports status / type grouping; any other persisted value
+  // Kanban supports status / type / workflow grouping (workflow renders as
+  // per-workflow swimlanes, matching ProjectDetail); any other persisted value
   // (set from list view) is rendered as status. The dropdown reflects this
   // coerced value when view === 'kanban' so the UI never disagrees with what
   // the board actually shows. Persisted value survives the view switch.
@@ -1483,7 +1484,8 @@ export function AssignmentsPage() {
         </select>
         <select value={view === 'kanban' ? effectiveKanbanGrouping : grouping} onChange={(e) => handleSetGrouping(e.target.value as Grouping)} className="editor-input max-w-[180px]" title="Group by">
           {GROUPINGS.map((g) => {
-            const isKanbanUnsupported = view === 'kanban' && g !== 'status' && g !== 'type';
+            const isKanbanUnsupported =
+              view === 'kanban' && g !== 'status' && g !== 'type' && g !== 'workflow';
             const label = g === 'none' ? 'No grouping' : `Group: ${g.charAt(0).toUpperCase() + g.slice(1)}`;
             return (
               <option key={g} value={g} disabled={isKanbanUnsupported}>
