@@ -13,5 +13,6 @@ export { appendLog, tailLog } from './log.js';
 export { readJobState, readAllJobStates } from './jobs.js';
 export { createDaemon, type Daemon, type DaemonDeps, type DaemonSpawnFn } from './supervisor.js';
 export { ensureDaemon, daemonRequest, sendRequest, type ClientDeps, type ExecFn } from './client.js';
+export { runAttachClient, type AttachOptions, type AttachResult, type AttachDeps } from './attach-client.js';
 export { runPtyHost, smokePtyHost, type PtyHostConfig } from './pty-host.js';
 export { runPtyHostMain, parsePtyHostArgs } from './pty-host-main.js';
