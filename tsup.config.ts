@@ -6,6 +6,7 @@ export default defineConfig({
     'src/dashboard/server.ts',
     'src/db/leases-db.ts',
     'src/launch/index.ts',
+    'src/daemon/pty-host-main.ts',
   ],
   format: ['esm'],
   target: 'node20',
@@ -14,7 +15,7 @@ export default defineConfig({
   dts: true,
   sourcemap: true,
   splitting: false,
-  external: ['better-sqlite3'],
+  external: ['better-sqlite3', 'node-pty'],
   esbuildOptions(options) {
     options.jsx = 'automatic';
   },
