@@ -40,6 +40,13 @@ export interface JobState extends Session {
   daemonId: string;
   ptySock: string;
   rvSock: string;
+  /**
+   * PID of the pty-host PROCESS (owns the sockets, survives daemon restarts) —
+   * distinct from `pid`, the agent/child pid node-pty reports. Adoption and the
+   * reconcile-scan verify liveness against this, not `pid`.
+   */
+  hostPid: number;
+  hostPidStartedAt: string | null;
   /** Serialized final screen, written on child exit for post-mortem. */
   lastScreen?: string | null;
 }
@@ -89,7 +96,17 @@ export interface CurrentPointer {
 // ── control.sock wire schema (one NDJSON object per line) ──────────────────
 
 export type ControlRequest =
-  | { op: 'dispatch'; argv: string[]; cwd: string; name?: string; env?: Record<string, string> }
+  | {
+      op: 'dispatch';
+      argv: string[];
+      cwd: string;
+      name?: string;
+      env?: Record<string, string>;
+      agent?: string;
+      cols?: number;
+      rows?: number;
+      sessionId?: string;
+    }
   | { op: 'list' }
   | { op: 'kill'; short: string; sig?: string }
   | { op: 'attach'; short: string; cols: number; rows: number }

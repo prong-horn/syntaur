@@ -247,6 +247,8 @@ export async function runPtyHost(config: PtyHostConfig, deps: PtyHostDeps = {}):
   const ptyClients = new Set<Client>();
   const rvClients = new Set<SocketLike>();
 
+  const hostPid = process.pid;
+  const hostPidStartedAt = procStart(hostPid);
   const baseState = (): JobState => ({
     short,
     agent: config.agent,
@@ -264,6 +266,8 @@ export async function runPtyHost(config: PtyHostConfig, deps: PtyHostDeps = {}):
     daemonId,
     ptySock,
     rvSock,
+    hostPid,
+    hostPidStartedAt,
   });
 
   const initial = baseState();

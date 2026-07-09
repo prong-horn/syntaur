@@ -185,6 +185,8 @@ describe('jobs state.json (real fs under SYNTAUR_HOME)', () => {
       daemonId: 'd1',
       ptySock: '/tmp/x/pty/zzz.sock',
       rvSock: '/tmp/x/rv/zzz.sock',
+      hostPid: 4200,
+      hostPidStartedAt: 'Wed Jul 9 12:00:00 2026',
       ...over,
     };
   }
