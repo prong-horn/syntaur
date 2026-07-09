@@ -128,8 +128,11 @@ function parseCheck(entry: unknown, issues: string[], ctx: string): StageCheck {
   }
   const condition = str(entry, 'condition', raw, issues, ctx);
   if (condition !== undefined) check.condition = condition;
-  if (entry.check === undefined && entry.condition === undefined) {
-    issues.push(`${ctx} has neither a 'check' nor a 'condition'`);
+  // A `not:`-only entry (the design's `- not: <check>ChangesRequested` rework
+  // hold) is a valid standalone predicate — the malformed case is having NO
+  // predicate at all (neither `check`, `condition`, nor `not`).
+  if (entry.check === undefined && entry.condition === undefined && entry.not === undefined) {
+    issues.push(`${ctx} has no predicate (needs a 'check', 'condition', or 'not')`);
   }
   if (Object.keys(raw).length > 0) check.raw = raw;
   return check;
@@ -350,7 +353,9 @@ function compact(o: Record<string, unknown>): Record<string, unknown> {
 
 function serializeCheck(c: StageCheck): Record<string, unknown> {
   const o = compact({
-    check: c.check,
+    // Drop an empty `check` so a `not:`-only entry round-trips as `{ not: … }`,
+    // not `{ check: '', not: … }` (which would fool the no-predicate guard).
+    check: c.check || undefined,
     not: c.not,
     by: c.by,
     judge: c.judge,

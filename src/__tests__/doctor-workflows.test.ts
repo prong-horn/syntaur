@@ -244,9 +244,18 @@ describe('findWorkflowStructureProblems (pure, one PASS + FAIL per rule)', () =>
         { id: 'done', terminal: true },
       ],
     };
-    expect(
-      findWorkflowStructureProblems(wf).some((p) => p.includes("neither a 'check' nor a 'condition'")),
-    ).toBe(true);
+    expect(findWorkflowStructureProblems(wf).some((p) => p.includes('no predicate'))).toBe(true);
+  });
+
+  it("PASS: a `not:`-only gate entry is a valid predicate (not 'no predicate')", () => {
+    const wf: StageWorkflow = {
+      id: 'w',
+      stages: [
+        { id: 'a', gate: [{ check: '', not: 'codeReviewedChangesRequested' }], next: [{ to: 'done' }] },
+        { id: 'done', terminal: true },
+      ],
+    };
+    expect(findWorkflowStructureProblems(wf).some((p) => p.includes('no predicate'))).toBe(false);
   });
 
   it('FAIL: duplicate stage ids (ambiguous stored status)', () => {
@@ -384,5 +393,26 @@ describe('doctor: workflows.single-workflow-source + workflows.stage-structure',
     await writeWorkflowFile('feature', goodWf);
     const r = await runCheck(structureCheck, configWith({})); // config block + dir → throws
     expect(r.status).toBe('skipped');
+  });
+
+  it('stage-structure: WARNS (not errors) for a guarded on: gate cycle', async () => {
+    // a ⇄ b via on:gate, both stages GATED → satisfiability unknown → warning
+    // (not a hard error). done is reachable via a manual route; terminal exists.
+    const guardedCycle =
+      'id: cyc\nstages:\n  - id: a\n    gate:\n      - check: x\n    next: [{ to: b }]\n  - id: b\n    gate:\n      - check: y\n    next: [{ to: a }, { to: done, on: manual }]\n  - id: done\n    terminal: true\n';
+    await writeWorkflowFile('cyc', guardedCycle);
+    const r = await runCheck(structureCheck, noBlock());
+    expect(r.status).toBe('warn');
+    expect(r.detail).toContain('cycle');
+  });
+
+  it('stage-structure: a hard error dominates a co-present warning (error > warn)', async () => {
+    // Same guarded cycle (warning) PLUS a route to an unknown stage (error).
+    const mixed =
+      'id: mixed\nstages:\n  - id: a\n    gate:\n      - check: x\n    next: [{ to: b }]\n  - id: b\n    gate:\n      - check: y\n    next: [{ to: a }, { to: done, on: manual }, { to: ghost, on: manual }]\n  - id: done\n    terminal: true\n';
+    await writeWorkflowFile('mixed', mixed);
+    const r = await runCheck(structureCheck, noBlock());
+    expect(r.status).toBe('error');
+    expect(r.detail).toContain('unknown stage "ghost"');
   });
 });

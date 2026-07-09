@@ -32,6 +32,7 @@ export default defineConfig({
       '@shared/workflow-resolve': resolve(__dirname, '../src/utils/workflow-resolve.ts'),
       '@shared/derive': resolve(__dirname, '../src/lifecycle/derive.ts'),
       '@shared/state-machine': resolve(__dirname, '../src/lifecycle/state-machine.ts'),
+      '@shared/stage-engine': resolve(__dirname, '../src/lifecycle/stage-engine.ts'),
     },
   },
   server: {

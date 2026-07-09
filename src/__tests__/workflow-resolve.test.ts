@@ -148,16 +148,21 @@ describe('getWorkflowLibrary — in-memory {default} view of a legacy config', (
   });
 });
 
-// Purity guard (WS-0): `workflow-resolve.ts` and `stage-model.ts` are aliased
-// into the dashboard SPA via `@shared`, so a stray Node import (`node:fs`,
-// `fs`, `node:path`, …) would break the browser bundle. This test reads the
-// source and fails on any Node-builtin import — a tripwire so a future edit
-// can't silently re-introduce disk I/O into the browser-safe modules. All fs
-// lives in the Node-only `workflow-library.ts` loader.
+// Purity guard (WS-0 + WS-1): `workflow-resolve.ts`, `stage-model.ts`, and the
+// stage engine `stage-engine.ts` are aliased into the dashboard SPA via
+// `@shared`, so a stray Node import (`node:fs`, `fs`, `node:path`, …) would
+// break the browser bundle. This test reads the source and fails on any
+// Node-builtin import — a tripwire so a future edit can't silently re-introduce
+// disk I/O into the browser-safe modules. All fs lives in Node-only loaders
+// (`workflow-library.ts`) and the engine takes pre-evaluated facts as input.
 describe('browser-safe purity guard', () => {
   const NODE_IMPORT = /(?:from\s+['"]|import\s*\(\s*['"]|require\(\s*['"])(?:node:|fs|path|os|child_process|crypto|stream|util|worker_threads)(?:['"/])/;
 
-  for (const rel of ['../utils/workflow-resolve.ts', '../utils/stage-model.ts']) {
+  for (const rel of [
+    '../utils/workflow-resolve.ts',
+    '../utils/stage-model.ts',
+    '../lifecycle/stage-engine.ts',
+  ]) {
     it(`${rel} imports no Node builtins`, () => {
       const src = readFileSync(new URL(rel, import.meta.url), 'utf-8');
       const offending = src
