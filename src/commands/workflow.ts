@@ -13,12 +13,9 @@ import { makeWorkflowContextResolver } from '../lifecycle/workflow-context.js';
 import { readProjectBinding, setProjectWorkflowBinding } from '../utils/project-binding.js';
 import { defaultProjectDir, assignmentsDir } from '../utils/paths.js';
 import { fileExists } from '../utils/fs.js';
-
-/** Workflow ids must be keyword-safe slugs so they round-trip through config.md
- * frontmatter keys, route params, and AQL without quoting. */
-function isValidWorkflowId(id: string): boolean {
-  return /^[a-z0-9][a-z0-9_-]*$/i.test(id) && id.length <= 64;
-}
+// Shared with the per-file storage boundary (workflow-file.ts) so the id
+// validation can't drift between the legacy CLI and the new WS-0 writers.
+import { isValidWorkflowId } from '../utils/workflow-file.js';
 
 /** Strip a WorkflowDefinition down to the writable status bundle. */
 function toBundle(wf: StatusConfig): StatusConfig {

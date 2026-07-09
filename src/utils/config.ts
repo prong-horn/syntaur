@@ -128,6 +128,24 @@ export type { RawFactDeclaration } from './fact-registry.js';
 export type { FactDeclaration } from './fact-registry.js';
 export { validateFactDeclarations, normalizeFactDeclarations } from './fact-registry.js';
 
+/**
+ * Browser-safe stage-model types (Phase 1 stage engine, WS-0) live in
+ * `stage-model.ts` (zero imports, `@shared`-aliasable); re-exported here so
+ * existing Node-side imports from `config.js` keep resolving. Mirrors the
+ * `derive-config.ts` / `fact-registry.ts` re-exports above.
+ */
+export { ROUTE_TRIGGERS } from './stage-model.js';
+export type {
+  RouteTrigger,
+  StageCheck,
+  StageRoute,
+  StageWork,
+  WorkflowStage,
+  WorkflowFlag,
+  WorkflowFlags,
+  StageWorkflow,
+} from './stage-model.js';
+
 export interface StatusConfig {
   statuses: StatusDefinition[];
   order: string[];
@@ -2234,6 +2252,39 @@ export async function deleteWorkflowsConfig(): Promise<void> {
 }
 
 /**
+ * Write ONLY the top-level `defaultWorkflow:` scalar in config.md frontmatter,
+ * leaving every block (a legacy `statuses:`, any `workflows:` map, the body)
+ * untouched. This is the per-file (WS-0) home for the default pointer: a
+ * scalar, NOT a workflow body, so it does not reintroduce a `workflows:` block
+ * and the per-file loader's single-source invariant (§4.6) stays satisfied.
+ * Mirrors {@link deleteWorkflowsConfig}'s scalar handling.
+ */
+export async function writeDefaultWorkflowScalar(defaultWorkflow: string): Promise<void> {
+  const configPath = resolve(syntaurRoot(), 'config.md');
+  const defaultLine = `defaultWorkflow: ${defaultWorkflow}`;
+
+  if (!(await fileExists(configPath))) {
+    const content = `---\nversion: "2.0"\ndefaultProjectDir: ~/projects\n${defaultLine}\n---\n`;
+    await writeFileForce(configPath, content);
+    return;
+  }
+
+  const existing = await readFile(configPath, 'utf-8');
+  const fmMatch = existing.match(/^(---\n)([\s\S]*?)\n(---)/);
+  if (!fmMatch) {
+    const content = `---\nversion: "2.0"\n${defaultLine}\n---\n${existing}`;
+    await writeFileForce(configPath, content);
+    return;
+  }
+
+  const fmBlock = fmMatch[2];
+  const afterFrontmatter = existing.slice(fmMatch[0].length);
+  const cleanedFm = fmBlock.replace(/^defaultWorkflow:[^\n]*\n?/m, '').replace(/\n+$/, '');
+  const newContent = `---\n${cleanedFm}\n${defaultLine}\n---${afterFrontmatter}`;
+  await writeFileForce(configPath, newContent);
+}
+
+/**
  * Remove the legacy top-level `statuses:` block from config.md (Decision D4:
  * once the workflow library exists, the single source of truth is
  * `workflows.default`, so the lifted legacy block is deleted). No-op when
@@ -2536,7 +2587,7 @@ export async function updateBackupConfig(
   const current = (await readConfig()).backup;
   const nextBackup: BackupConfig = {
     repo: current?.repo ?? null,
-    categories: current?.categories ?? 'projects, playbooks, todos, servers, config',
+    categories: current?.categories ?? 'projects, playbooks, todos, servers, workflows, config',
     lastBackup: current?.lastBackup ?? null,
     lastRestore: current?.lastRestore ?? null,
     ...backup,
@@ -2643,7 +2694,7 @@ export async function readConfig(): Promise<SyntaurConfig> {
     backup: fm['backup.repo'] || fm['backup.categories']
       ? {
           repo: fm['backup.repo'] && fm['backup.repo'] !== 'null' ? fm['backup.repo'] : null,
-          categories: fm['backup.categories'] || 'projects, playbooks, todos, servers, config',
+          categories: fm['backup.categories'] || 'projects, playbooks, todos, servers, workflows, config',
           lastBackup: fm['backup.lastBackup'] && fm['backup.lastBackup'] !== 'null' ? fm['backup.lastBackup'] : null,
           lastRestore: fm['backup.lastRestore'] && fm['backup.lastRestore'] !== 'null' ? fm['backup.lastRestore'] : null,
         }

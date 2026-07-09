@@ -13,7 +13,7 @@ agentDefaults:
   autoApprove: false
 backup:
   repo: null
-  categories: projects, playbooks, todos, servers, config
+  categories: projects, playbooks, todos, servers, workflows, config
   lastBackup: null
   lastRestore: null
 ---

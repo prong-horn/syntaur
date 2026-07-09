@@ -6,8 +6,16 @@ import {
   writeWorkflowBundle,
   deleteWorkflowFromConfig,
   setDefaultWorkflow,
+  writeWorkflowFile,
+  deleteWorkflowFile,
+  setDefaultWorkflowPointer,
 } from '../utils/workflow-write.js';
 import { readConfig, writeStatusConfig, type StatusConfig } from '../utils/config.js';
+import {
+  loadWorkflowLibrary,
+  invalidateWorkflowLibraryCache,
+} from '../utils/workflow-library.js';
+import type { StageWorkflow } from '../utils/stage-model.js';
 
 const originalHome = process.env.SYNTAUR_HOME;
 let home: string;
@@ -132,5 +140,65 @@ describe('deleteWorkflowFromConfig + setDefaultWorkflow (Task 10)', () => {
       'open',
       'closed',
     ]);
+  });
+});
+
+describe('per-file stage-workflow writers (WS-0)', () => {
+  const featureWf: StageWorkflow = {
+    id: 'feature',
+    label: 'Feature',
+    stages: [
+      { id: 'shaping', next: [{ to: 'done', on: 'gate' }] },
+      { id: 'done', terminal: true },
+    ],
+    flags: { hold: {} },
+    terminalFailure: 'failed',
+  };
+
+  const noBlock = { workflows: null, statuses: null };
+
+  it('write → read → delete lifecycle against a per-file dir', async () => {
+    invalidateWorkflowLibraryCache();
+    await writeWorkflowFile(featureWf);
+
+    // The loader reads it straight back, losslessly.
+    const afterWrite = loadWorkflowLibrary(noBlock);
+    expect(Object.keys(afterWrite)).toEqual(['feature']);
+    expect(afterWrite.feature).toEqual(featureWf);
+
+    await deleteWorkflowFile('feature');
+    expect(loadWorkflowLibrary(noBlock)).toEqual({});
+  });
+
+  it('deleteWorkflowFile is a no-op when the file is absent', async () => {
+    await expect(deleteWorkflowFile('nonexistent')).resolves.toBeUndefined();
+  });
+
+  it('rejects an invalid id at the write/delete/set-default boundary (path traversal / injection)', async () => {
+    await expect(writeWorkflowFile({ id: '../config', stages: [] })).rejects.toThrow(
+      'invalid workflow id',
+    );
+    await expect(deleteWorkflowFile('../config')).rejects.toThrow('invalid workflow id');
+    await expect(setDefaultWorkflowPointer('feature\nworkflows:\n  x:')).rejects.toThrow(
+      'invalid workflow id',
+    );
+    // And none of those wrote anything to config.md.
+    const config = await readConfig();
+    expect(config.workflows).toBeNull();
+  });
+
+  it('the defaultWorkflow: scalar round-trips without creating a workflows: block', async () => {
+    await writeWorkflowFile(featureWf);
+    await setDefaultWorkflowPointer('feature');
+
+    const config = await readConfig();
+    expect(config.defaultWorkflow).toBe('feature');
+    // Pointer only — no workflows: map and no legacy statuses: block.
+    expect(config.workflows).toBeNull();
+    expect(hasTopLevelStatuses(await configText())).toBe(false);
+
+    // And because no config block exists, the per-file loader stays happy
+    // (single-source invariant holds — pointer scalar is not a block).
+    expect(Object.keys(loadWorkflowLibrary(config))).toEqual(['feature']);
   });
 });

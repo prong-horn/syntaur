@@ -8,16 +8,22 @@
  * workflow-resolve import cycle (config.ts must not import workflow-resolve).
  */
 
+import { unlink } from 'node:fs/promises';
 import {
   readConfig,
   writeStatusConfig,
   writeWorkflowsConfig,
   deleteLegacyStatusesBlock,
+  writeDefaultWorkflowScalar,
   type StatusConfig,
   type WorkflowDefinition,
 } from './config.js';
 import { getWorkflowLibrary, DEFAULT_WORKFLOW_ID } from './workflow-resolve.js';
 import { toTitleCase } from './status-defaults.js';
+import { writeFileForce } from './fs.js';
+import { serializeWorkflowFile, workflowFilePath, isValidWorkflowId } from './workflow-file.js';
+import { invalidateWorkflowLibraryCache } from './workflow-library.js';
+import type { StageWorkflow } from './stage-model.js';
 
 function hasWorkflowsBlock(config: {
   workflows?: Record<string, WorkflowDefinition> | null;
@@ -116,4 +122,57 @@ export async function setDefaultWorkflow(workflowId: string): Promise<void> {
   const library: Record<string, WorkflowDefinition> = { ...getWorkflowLibrary(config) };
   await writeWorkflowsConfig(library, workflowId);
   if (hasLegacyStatusesOnly(config)) await deleteLegacyStatusesBlock();
+}
+
+// --- Per-file stage-workflow writers (Phase 1 stage engine, WS-0) -----------
+//
+// These are the NEW per-file substrate for the stage model, kept SEPARATE from
+// the legacy `StatusConfig`-based writers above (which stay wired to the live
+// dashboard editor / `syntaur status` / `syntaur workflow` and remain the source
+// of truth until WS-3's migration). They target `~/.syntaur/workflows/<id>.md`
+// yaml and invalidate the per-file loader cache. Nothing calls them on a live
+// path yet — WS-3's migration writes the first per-file workflow through here
+// (decision D1). Storing a workflow this way while a `config.md` block still
+// exists would trip the loader's single-source hard-error, which is by design:
+// the relocation must delete the block in the same commit.
+
+/**
+ * Write one workflow to `~/.syntaur/workflows/<id>.md` (yaml), creating the dir
+ * if needed. Labels live inside each file now, so the whole {@link StageWorkflow}
+ * (including `label`) round-trips. Invalidates the loader cache.
+ */
+export async function writeWorkflowFile(workflow: StageWorkflow): Promise<void> {
+  if (!workflow.id) throw new Error('writeWorkflowFile: workflow.id is required');
+  // writeFileForce mkdir -p's the parent (`~/.syntaur/workflows/`) before writing.
+  await writeFileForce(workflowFilePath(workflow.id), serializeWorkflowFile(workflow));
+  invalidateWorkflowLibraryCache();
+}
+
+/**
+ * Delete `~/.syntaur/workflows/<id>.md`. No-op if the file is absent. Invalidates
+ * the loader cache. (The built-in `default` synthesis fallback lives in the pure
+ * resolver, so removing a file never leaves callers without a usable library.)
+ */
+export async function deleteWorkflowFile(id: string): Promise<void> {
+  try {
+    await unlink(workflowFilePath(id));
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
+  }
+  invalidateWorkflowLibraryCache();
+}
+
+/**
+ * Set the global default workflow as a scalar `defaultWorkflow:` pointer in
+ * config.md frontmatter — a pointer, not a workflow body, so it does NOT
+ * reintroduce a `workflows:` block and the per-file loader's single-source
+ * invariant holds. The per-file counterpart of {@link setDefaultWorkflow}.
+ */
+export async function setDefaultWorkflowPointer(id: string): Promise<void> {
+  // Guard the scalar boundary: a newline/`:` in the id would inject a top-level
+  // frontmatter block (e.g. `workflows:`), breaking the single-source invariant.
+  if (!isValidWorkflowId(id)) {
+    throw new Error(`invalid workflow id "${id}" (must match /^[a-z0-9][a-z0-9_-]*$/, ≤64 chars)`);
+  }
+  await writeDefaultWorkflowScalar(id);
 }

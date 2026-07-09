@@ -154,7 +154,14 @@ describe('github-backup validation helpers', () => {
   });
 
   it('VALID_CATEGORIES lists expected entries', () => {
-    expect(VALID_CATEGORIES).toEqual(['projects', 'playbooks', 'todos', 'servers', 'config']);
+    expect(VALID_CATEGORIES).toEqual([
+      'projects',
+      'playbooks',
+      'todos',
+      'servers',
+      'workflows',
+      'config',
+    ]);
   });
 });
 
@@ -205,6 +212,13 @@ describe('github-backup category path resolution', () => {
     const servers = await resolveCategoryPath('servers');
     expect(todos.sourcePath).toBe(resolve(homeDir, '.syntaur', 'todos'));
     expect(servers.sourcePath).toBe(resolve(homeDir, '.syntaur', 'servers'));
+  });
+
+  it('resolves the workflows dir under syntaur root', async () => {
+    const result = await resolveCategoryPath('workflows');
+    expect(result.sourcePath).toBe(resolve(homeDir, '.syntaur', 'workflows'));
+    expect(result.repoPath).toBe('workflows');
+    expect(result.isFile).toBe(false);
   });
 
   it("projects category covers project-scoped todos (no separate 'project-todos' category)", async () => {
@@ -296,7 +310,7 @@ describe('backup config round-trip', () => {
 
     const status = await getBackupStatus();
     expect(status.repo).toBeNull();
-    expect(status.categories).toBe('projects, playbooks, todos, servers, config');
+    expect(status.categories).toBe('projects, playbooks, todos, servers, workflows, config');
     expect(status.lastBackup).toBeNull();
     expect(status.lastRestore).toBeNull();
     expect(status.locked).toBe(false);
