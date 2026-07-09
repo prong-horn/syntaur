@@ -80,6 +80,7 @@ import { statusCommand } from './commands/status.js';
 import { workflowCommand } from './commands/workflow.js';
 import { workspaceCommand } from './commands/workspace.js';
 import { progressCommand } from './commands/progress.js';
+import { ptyHostCommand } from './commands/pty-host.js';
 import { getDefaultCommandName } from './cli-default-command.js';
 import { maybePromptInstall } from './utils/npx-prompt.js';
 import { maybeNudgeForNpxInstall } from './launch/index.js';
@@ -884,6 +885,9 @@ program.addCommand(progressCommand);
 program.addCommand(leaseCommand);
 program.addCommand(scheduleCommand);
 program.addCommand(usageCommand);
+// Hidden: the daemon spawns pty-hosts via the dedicated entry; this only
+// surfaces the `--smoke` node-pty prebuild gate (Decision 1, AC-6).
+program.addCommand(ptyHostCommand, { hidden: true });
 
 program.addHelpText(
   'after',
