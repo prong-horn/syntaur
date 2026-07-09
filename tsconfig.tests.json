@@ -36,6 +36,7 @@
     "src/daemon/__tests__/protocol.test.ts",
     "src/daemon/__tests__/paths.test.ts",
     "src/daemon/__tests__/sockets.test.ts",
-    "src/daemon/__tests__/discovery.test.ts"
+    "src/daemon/__tests__/discovery.test.ts",
+    "src/daemon/__tests__/roster.test.ts"
   ]
 }

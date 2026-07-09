@@ -40,6 +40,15 @@ export function currentPointerPath(): string {
   return join(runtimeBaseDir(), 'current.json');
 }
 
+/**
+ * Roster of live pty-hosts, kept in the runtime base (NOT under a daemonId) so a
+ * restarting daemon — which owns a fresh daemonId — can still find and adopt the
+ * previous generation's still-live hosts.
+ */
+export function rosterPath(): string {
+  return join(runtimeBaseDir(), 'roster.json');
+}
+
 export function daemonDir(daemonId: string): string {
   return join(runtimeBaseDir(), daemonId);
 }
