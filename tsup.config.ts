@@ -16,6 +16,12 @@ export default defineConfig({
   sourcemap: true,
   splitting: false,
   external: ['better-sqlite3', 'node-pty'],
+  // tsup externalizes all `dependencies` by default. node-pty stays external
+  // (native prebuild resolved at runtime), but the xterm packages are CJS whose
+  // named exports (`Terminal`, `SerializeAddon`) are NOT resolvable by Node's
+  // ESM loader from an `import { Terminal }` in our ESM output — so they must be
+  // bundled (inlined) where esbuild handles the CJS→ESM interop at build time.
+  noExternal: ['@xterm/headless', '@xterm/addon-serialize'],
   esbuildOptions(options) {
     options.jsx = 'automatic';
   },

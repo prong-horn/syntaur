@@ -31,7 +31,7 @@ export interface Session {
   rows: number;
   createdAt: string;
   exitCode?: number | null;
-  exitSignal?: string | null;
+  exitSignal?: number | null;
 }
 
 /** On-disk `~/.syntaur/jobs/<short>/state.json` shape (Decision 2). */
@@ -109,7 +109,7 @@ export interface StateRecord {
   rows: number;
   updatedAt: string;
   exitCode?: number | null;
-  exitSignal?: string | null;
+  exitSignal?: number | null;
 }
 
 export interface ErrorReply {
@@ -171,7 +171,7 @@ export type PtyClientFrame =
 export type PtyHostFrame =
   | { t: 'snapshot'; data: string; cols: number; rows: number }
   | { t: 'out'; b: string } // base64
-  | { t: 'exit'; code: number | null; signal: string | null };
+  | { t: 'exit'; code: number | null; signal: number | null };
 
 /** Frames on the rv/<short>.sock (structured state, no bytes). */
 export type RvFrame =
