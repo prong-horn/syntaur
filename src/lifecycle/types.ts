@@ -104,6 +104,35 @@ export interface AttestationRecord {
 }
 
 /**
+ * One judgment solicitation (Phase 1 stage engine, WS-1; design §2.5). A
+ * request for a qualified actor to render a verdict on a judged gate check,
+ * bound to the revision it was opened against. Travels with the ticket
+ * (git-tracked, multi-machine-coherent) so "awaiting judgment ⏳" is computable.
+ *
+ * WS-1 defines the type + its pure evaluation (`evaluateCheckState`, where an
+ * open, current solicitation yields the `awaiting` state). WS-2 wires it into
+ * `AssignmentFrontmatter` + the parser/serializer on the write path; the
+ * dispatcher-driven parts (auto-solicitation, TTL/dead-judge reaping, per-revision
+ * fan-out) are Phase 4a (parent-plan decision #8). Currentness (does
+ * `revisionBinding` match the live revision?) is evaluated Node-side and passed
+ * into the engine, exactly like attestation validity.
+ */
+export interface Solicitation {
+  /** The judged check this solicitation is for. */
+  check: string;
+  /** Runner profile / judge role solicited (optional; a `by: human` check has none). */
+  judge?: string;
+  /** The commit sha / plan-digest the solicitation was opened against. */
+  revisionBinding?: string;
+  /** ISO timestamp the solicitation was opened. */
+  at: string;
+  /** The launched session (for reaping / attribution). */
+  sessionRef?: string;
+  /** Lifecycle: solicited (open) → rendered (a verdict landed) | failed (judge died / TTL). */
+  state: 'solicited' | 'rendered' | 'failed';
+}
+
+/**
  * Sticky manual status override ("pin"). Folded into the written headline
  * `status` at recompute time; the un-overridden derived headline travels in
  * API payloads only (divergence display). May not target a terminal status

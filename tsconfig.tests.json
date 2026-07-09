@@ -26,6 +26,7 @@
     "src/__tests__/lifecycle-linked-todos.test.ts",
     "src/__tests__/status-cmd.test.ts",
     "src/__tests__/doctor-workflows.test.ts",
+    "src/__tests__/stage-engine.test.ts",
     "src/__tests__/stage-model.test.ts",
     "src/__tests__/workflow-file.test.ts",
     "src/__tests__/workflow-library.test.ts",

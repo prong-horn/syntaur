@@ -18,6 +18,7 @@ import { parseAssignmentFull } from '../../../dashboard/parser.js';
 import { assignmentsDir as getStandaloneDir } from '../../paths.js';
 import type { Check, CheckResult } from '../types.js';
 import type { StageWorkflow } from '../../stage-model.js';
+import { detectAutoRouteCycles } from '../../../lifecycle/stage-engine.js';
 
 const CATEGORY = 'workflows';
 
@@ -27,50 +28,22 @@ const CATEGORY = 'workflows';
 // are STRUCTURAL checks only (graph shape); gate *satisfiability* and the check
 // vocabulary are the engine's concern (WS-1). Today the per-file library is
 // empty (no live workflow file exists yet), so the doctor check that calls this
-// passes vacuously until WS-3's migration relocates workflows.
-
-/** Detect a cycle among `on: gate` (auto-advance) routes between known stages. */
-function hasGateRouteCycle(wf: StageWorkflow): boolean {
-  const stageIds = new Set(wf.stages.map((s) => s.id));
-  const adjacency = new Map<string, string[]>();
-  for (const s of wf.stages) {
-    const outs: string[] = [];
-    for (const r of s.next ?? []) {
-      const trigger = r.on ?? 'gate'; // absent → gate (auto-advance)
-      if (trigger === 'gate' && r.to && stageIds.has(r.to)) outs.push(r.to);
-    }
-    adjacency.set(s.id, outs);
-  }
-  const WHITE = 0;
-  const GRAY = 1;
-  const BLACK = 2;
-  const color = new Map<string, number>();
-  for (const id of adjacency.keys()) color.set(id, WHITE);
-  const visit = (u: string): boolean => {
-    color.set(u, GRAY);
-    for (const v of adjacency.get(u) ?? []) {
-      const c = color.get(v);
-      if (c === GRAY) return true; // back-edge → cycle
-      if (c === WHITE && visit(v)) return true;
-    }
-    color.set(u, BLACK);
-    return false;
-  };
-  for (const id of adjacency.keys()) {
-    if (color.get(id) === WHITE && visit(id)) return true;
-  }
-  return false;
-}
+// passes vacuously until WS-3's migration relocates workflows. The `on: gate`
+// cycle analysis is the engine's `detectAutoRouteCycles` (WS-1) — error-severity
+// cycles (an unconditional gate → guaranteed livelock) are hard problems here;
+// warning-severity cycles are surfaced as a WARN by `stageStructure`.
 
 /**
  * Every structural problem in one workflow (empty = sound):
  *   - no terminal stage;
  *   - a route / on-dissent / reopen targeting an unknown stage;
  *   - an unreachable non-entry stage (no route, on-dissent, or reopen leads in);
- *   - a gate entry with no predicate (neither `check` nor `condition`) — the WS-0
- *     structural slice of "gate references an unknown check"; semantic check-name
- *     validation arrives with the engine's check catalog (WS-1);
- *   - an auto-advance (`on: gate`) route cycle.
+ *   - a gate entry with no predicate (no `check`, `condition`, nor `not`) — the
+ *     WS-0 structural slice of "gate references an unknown check"; semantic
+ *     check-name validation arrives with the engine's check catalog (WS-1);
+ *   - more than one auto-advance (`on: gate`) route out of a stage (ambiguous —
+ *     the cascade + placement need exactly one);
+ *   - an error-severity auto-advance (`on: gate`) route cycle.
  */
 export function findWorkflowStructureProblems(wf: StageWorkflow): string[] {
   const problems: string[] = [];
@@ -114,9 +87,20 @@ export function findWorkflowStructureProblems(wf: StageWorkflow): string[] {
       else problems.push(`stage "${sid}" reopen target "${s.reopen}" is not a stage`);
     }
     for (const g of s.gate ?? []) {
-      if (!g.check && !g.condition) {
-        problems.push(`stage "${sid}" has a gate entry with neither a 'check' nor a 'condition'`);
+      // A `not:`-only entry (verdict-export rework hold) is a valid predicate.
+      if (!g.check && !g.condition && !g.not) {
+        problems.push(
+          `stage "${sid}" has a gate entry with no predicate (needs a 'check', 'condition', or 'not')`,
+        );
       }
+    }
+    // More than one auto-advance (`on: gate`) route is ambiguous — the cascade
+    // fires the first and placement cannot pick a branch (WS-1 `evaluateRoutes`).
+    const gateRoutes = (s.next ?? []).filter((r) => (r.on ?? 'gate') === 'gate' && r.to);
+    if (gateRoutes.length > 1) {
+      problems.push(
+        `stage "${sid}" has ${gateRoutes.length} auto-advance (on: gate) routes — ambiguous (the cascade and placement need exactly one)`,
+      );
     }
   }
 
@@ -149,8 +133,13 @@ export function findWorkflowStructureProblems(wf: StageWorkflow): string[] {
     }
   }
 
-  if (hasGateRouteCycle(wf)) {
-    problems.push(`workflow "${label}" has an auto-advance (on: gate) route cycle`);
+  // Error-severity `on: gate` route cycles (a stage in the cycle has an
+  // unconditional/empty gate → guaranteed livelock) are hard problems. Guarded
+  // cycles are surfaced as a WARN by `stageStructure`, not here.
+  for (const c of detectAutoRouteCycles(wf)) {
+    if (c.severity === 'error') {
+      problems.push(`workflow "${label}" has an auto-advance (on: gate) route cycle: ${c.reason}`);
+    }
   }
 
   return problems;
@@ -378,6 +367,7 @@ const stageStructure: Check = {
 
     const ids = Object.keys(library);
     const problems: string[] = [];
+    const warnings: string[] = [];
 
     // Surface the parser's own issues (missing `id:`, malformed fields it
     // preserved on `raw`, …) — otherwise a file that parsed-with-problems would
@@ -395,18 +385,48 @@ const stageStructure: Check = {
         problems.push(`workflow file "${id}.md" declares id "${wf.id}" (must match its filename)`);
       }
       problems.push(...findWorkflowStructureProblems(wf));
+      // Warning-severity `on: gate` cycles (guarded, satisfiability unknown) do
+      // not fail the check — they warn. Error-severity cycles are already folded
+      // into findWorkflowStructureProblems above.
+      for (const c of detectAutoRouteCycles(wf)) {
+        if (c.severity === 'warning') warnings.push(`workflow "${id}": ${c.reason}`);
+      }
     }
 
-    if (problems.length === 0) {
+    // Aggregate severity: error if any hard problem, else warn if any warning,
+    // else pass.
+    if (problems.length > 0) {
       return {
         id: this.id,
         category: this.category,
         title: this.title,
-        status: 'pass',
-        detail:
-          ids.length === 0
-            ? 'no per-file stage workflows defined'
-            : `${ids.length} per-file workflow(s) structurally sound`,
+        status: 'error',
+        detail: problems.join('; '),
+        affected: problems,
+        remediation: {
+          kind: 'manual',
+          suggestion:
+            'Fix the workflow file(s) under ~/.syntaur/workflows/: add a terminal stage, point routes at defined stages, remove unreachable stages / auto-advance cycles, and give every gate entry a check, condition, or not.',
+          command: null,
+        },
+        autoFixable: false,
+      };
+    }
+
+    if (warnings.length > 0) {
+      return {
+        id: this.id,
+        category: this.category,
+        title: this.title,
+        status: 'warn',
+        detail: warnings.join('; '),
+        affected: warnings,
+        remediation: {
+          kind: 'manual',
+          suggestion:
+            'Review the flagged `on: gate` cycle(s): ensure the looping stages’ gates are mutually exclusive, or make one route `on: manual`/verdict so the cascade cannot livelock.',
+          command: null,
+        },
         autoFixable: false,
       };
     }
@@ -415,15 +435,11 @@ const stageStructure: Check = {
       id: this.id,
       category: this.category,
       title: this.title,
-      status: 'error',
-      detail: problems.join('; '),
-      affected: problems,
-      remediation: {
-        kind: 'manual',
-        suggestion:
-          'Fix the workflow file(s) under ~/.syntaur/workflows/: add a terminal stage, point routes at defined stages, remove unreachable stages / auto-advance cycles, and give every gate entry a check or condition.',
-        command: null,
-      },
+      status: 'pass',
+      detail:
+        ids.length === 0
+          ? 'no per-file stage workflows defined'
+          : `${ids.length} per-file workflow(s) structurally sound`,
       autoFixable: false,
     };
   },

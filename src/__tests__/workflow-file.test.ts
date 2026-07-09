@@ -84,12 +84,39 @@ stages:
     terminal: true
 `;
     const { workflow, issues } = parseWorkflowFile(raw);
-    expect(issues.some((i) => i.includes("neither a 'check' nor a 'condition'"))).toBe(true);
+    expect(issues.some((i) => i.includes('no predicate'))).toBe(true);
     // The unknown key is preserved on the check's raw passthrough, not deleted.
     expect(workflow.stages[0].gate?.[0].raw).toEqual({ bogus: true });
     // And it survives a serialize→parse round-trip.
     const round = parseWorkflowFile(serializeWorkflowFile(workflow));
     expect(round.workflow.stages[0].gate?.[0].raw).toEqual({ bogus: true });
+  });
+
+  it("treats a `not:`-only gate entry as a valid predicate (design's rework hold)", () => {
+    const raw = `id: feature
+stages:
+  - id: implementing
+    gate:
+      - check: acAllChecked
+      - not: codeReviewedChangesRequested
+    next: [{ to: reviewing }]
+  - id: reviewing
+    next: [{ to: done }]
+  - id: done
+    terminal: true
+`;
+    const { workflow, issues } = parseWorkflowFile(raw);
+    // No "no predicate" issue — `not:` alone is a valid gate entry.
+    expect(issues.some((i) => i.includes('no predicate'))).toBe(false);
+    expect(workflow.stages[0].gate?.[1].not).toBe('codeReviewedChangesRequested');
+    // Round-trips losslessly, and the `not:`-only entry serializes WITHOUT an
+    // empty `check:` key.
+    const serialized = serializeWorkflowFile(workflow);
+    expect(serialized).not.toContain("check: ''");
+    const round = parseWorkflowFile(serialized);
+    expect(round.workflow.stages[0].gate?.[1].not).toBe('codeReviewedChangesRequested');
+    expect(round.workflow.stages[0].gate?.[1].check).toBeFalsy();
+    expect(round.issues.some((i) => i.includes('no predicate'))).toBe(false);
   });
 
   it('coerces a bare-string route to { to } and preserves unknown top-level keys', () => {

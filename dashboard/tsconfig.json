@@ -36,7 +36,8 @@
       "@shared/derive-config": ["../src/utils/derive-config.ts"],
       "@shared/workflow-resolve": ["../src/utils/workflow-resolve.ts"],
       "@shared/derive": ["../src/lifecycle/derive.ts"],
-      "@shared/state-machine": ["../src/lifecycle/state-machine.ts"]
+      "@shared/state-machine": ["../src/lifecycle/state-machine.ts"],
+      "@shared/stage-engine": ["../src/lifecycle/stage-engine.ts"]
     }
   },
   "include": [
@@ -64,6 +65,7 @@
     "../src/utils/derive-config.ts",
     "../src/lifecycle/derive.ts",
     "../src/lifecycle/state-machine.ts",
+    "../src/lifecycle/stage-engine.ts",
     "../src/lifecycle/types.ts"
   ]
 }
