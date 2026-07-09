@@ -102,3 +102,56 @@ describe('watcher derive hooks', () => {
     expect(configEvents).toBeGreaterThanOrEqual(1);
   });
 });
+
+// ── WS-0: per-file workflows watcher ────────────────────────────────────────
+
+describe('watcher workflows hook', () => {
+  it('fires onConfigChanged and serves a fresh library on a ~/.syntaur/workflows change', async () => {
+    const { mkdtemp, mkdir, writeFile, rm } = await import('node:fs/promises');
+    const { tmpdir } = await import('node:os');
+    const { join } = await import('node:path');
+    const { loadWorkflowLibrary, invalidateWorkflowLibraryCache } = await import(
+      '../utils/workflow-library.js'
+    );
+
+    const originalHome = process.env.SYNTAUR_HOME;
+    const root = await mkdtemp(join(tmpdir(), 'syntaur-watch-wf-'));
+    // The loader derives the workflows dir from SYNTAUR_HOME; point both there.
+    process.env.SYNTAUR_HOME = root;
+    const wfDir = join(root, 'workflows');
+    await mkdir(wfDir, { recursive: true });
+    const wf = (label: string) => `id: feature\nlabel: ${label}\nstages:\n  - id: done\n    terminal: true\n`;
+    await writeFile(join(wfDir, 'feature.md'), wf('Feature'));
+
+    const noBlock = { workflows: null, statuses: null };
+    invalidateWorkflowLibraryCache();
+    // Prime the cache.
+    expect(loadWorkflowLibrary(noBlock).feature.label).toBe('Feature');
+
+    let configEvents = 0;
+    const watcher = createWatcher({
+      projectsDir: join(root, 'projects'),
+      workflowsDir: wfDir,
+      onMessage: () => {},
+      onConfigChanged: () => configEvents++,
+      debounceMs: 50,
+    });
+
+    try {
+      await new Promise((r) => setTimeout(r, 300)); // let chokidar settle
+      await writeFile(join(wfDir, 'feature.md'), wf('Renamed'));
+      await new Promise((r) => setTimeout(r, 700));
+
+      // Registration + recompute signal: the workflows edit fired onConfigChanged.
+      expect(configEvents).toBeGreaterThanOrEqual(1);
+      // And the library the recompute reads is fresh (cache invalidated).
+      expect(loadWorkflowLibrary(noBlock).feature.label).toBe('Renamed');
+    } finally {
+      await watcher.close();
+      invalidateWorkflowLibraryCache();
+      if (originalHome === undefined) delete process.env.SYNTAUR_HOME;
+      else process.env.SYNTAUR_HOME = originalHome;
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+});

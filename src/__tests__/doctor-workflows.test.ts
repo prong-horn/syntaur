@@ -2,9 +2,11 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { workflowsChecks } from '../utils/doctor/checks/workflows.js';
+import { workflowsChecks, findWorkflowStructureProblems } from '../utils/doctor/checks/workflows.js';
+import { invalidateWorkflowLibraryCache } from '../utils/workflow-library.js';
 import type { CheckContext, CheckResult } from '../utils/doctor/types.js';
 import type { SyntaurConfig, WorkflowDefinition } from '../utils/config.js';
+import type { StageWorkflow } from '../utils/stage-model.js';
 import { buildDefaultStatusConfig } from '../utils/status-defaults.js';
 
 const check = workflowsChecks[0];
@@ -191,5 +193,196 @@ describe('doctor: workflows.single-status-source', () => {
     await writeConfigMd('workflows:\n  default:\n    label: Default\nstatuses: some-scalar\n');
     const r = await runSingle(configWith({}));
     expect(r.status).toBe('pass');
+  });
+});
+
+// ── WS-0: per-file stage-workflow structural checks ─────────────────────────
+
+describe('findWorkflowStructureProblems (pure, one PASS + FAIL per rule)', () => {
+  const sound: StageWorkflow = {
+    id: 'feature',
+    stages: [
+      { id: 'a', next: [{ to: 'done' }] },
+      { id: 'done', terminal: true },
+    ],
+  };
+
+  it('PASS: a structurally sound workflow has no problems', () => {
+    expect(findWorkflowStructureProblems(sound)).toEqual([]);
+  });
+
+  it('FAIL: no terminal stage', () => {
+    const wf: StageWorkflow = { id: 'w', stages: [{ id: 'a', next: [{ to: 'b' }] }, { id: 'b' }] };
+    expect(findWorkflowStructureProblems(wf).some((p) => p.includes('no terminal stage'))).toBe(true);
+  });
+
+  it('FAIL: a route targets an unknown stage', () => {
+    const wf: StageWorkflow = {
+      id: 'w',
+      stages: [{ id: 'a', next: [{ to: 'ghost' }] }, { id: 'done', terminal: true }],
+    };
+    expect(
+      findWorkflowStructureProblems(wf).some((p) => p.includes('routes to unknown stage "ghost"')),
+    ).toBe(true);
+  });
+
+  it('FAIL: an unreachable non-entry stage', () => {
+    const wf: StageWorkflow = {
+      id: 'w',
+      stages: [{ id: 'a', terminal: true }, { id: 'orphan' }],
+    };
+    expect(findWorkflowStructureProblems(wf).some((p) => p.includes('"orphan" is unreachable'))).toBe(
+      true,
+    );
+  });
+
+  it('FAIL: a gate entry with no check and no condition', () => {
+    const wf: StageWorkflow = {
+      id: 'w',
+      stages: [
+        { id: 'a', gate: [{ check: '' }], next: [{ to: 'done' }] },
+        { id: 'done', terminal: true },
+      ],
+    };
+    expect(
+      findWorkflowStructureProblems(wf).some((p) => p.includes("neither a 'check' nor a 'condition'")),
+    ).toBe(true);
+  });
+
+  it('FAIL: duplicate stage ids (ambiguous stored status)', () => {
+    const wf: StageWorkflow = {
+      id: 'w',
+      stages: [
+        { id: 'review', next: [{ to: 'done' }] },
+        { id: 'review', terminal: true },
+        { id: 'done', terminal: true },
+      ],
+    };
+    expect(
+      findWorkflowStructureProblems(wf).some((p) => p.includes('duplicate stage id "review"')),
+    ).toBe(true);
+  });
+
+  it('FAIL: an auto-advance (on: gate) route cycle', () => {
+    const wf: StageWorkflow = {
+      id: 'w',
+      stages: [
+        { id: 'a', next: [{ to: 'b' }] },
+        { id: 'b', next: [{ to: 'a' }, { to: 'done' }] },
+        { id: 'done', terminal: true },
+      ],
+    };
+    const problems = findWorkflowStructureProblems(wf);
+    expect(problems.some((p) => p.includes('route cycle'))).toBe(true);
+    // ...and no false unreachable (every stage has an incoming edge or is entry).
+    expect(problems.some((p) => p.includes('unreachable'))).toBe(false);
+  });
+
+  it('FAIL: a disconnected subgraph is unreachable even though its stages have incoming edges', () => {
+    // entry → done (terminal); orphan-a ⇄ orphan-b via manual routes. Every
+    // orphan has an incoming edge, so an "any incoming edge" check would miss
+    // this — reachability from the entry stage must flag both orphans.
+    const wf: StageWorkflow = {
+      id: 'w',
+      stages: [
+        { id: 'entry', next: [{ to: 'done' }] },
+        { id: 'done', terminal: true },
+        { id: 'oa', next: [{ to: 'ob', on: 'manual' }] },
+        { id: 'ob', next: [{ to: 'oa', on: 'manual' }] },
+      ],
+    };
+    const problems = findWorkflowStructureProblems(wf);
+    expect(problems.some((p) => p.includes('"oa" is unreachable'))).toBe(true);
+    expect(problems.some((p) => p.includes('"ob" is unreachable'))).toBe(true);
+  });
+
+  it('does not flag a cycle formed by non-gate (work-start/manual) routes', () => {
+    const wf: StageWorkflow = {
+      id: 'w',
+      stages: [
+        { id: 'a', next: [{ to: 'b', on: 'work-start' }] },
+        { id: 'b', next: [{ to: 'a', on: 'manual' }, { to: 'done' }] },
+        { id: 'done', terminal: true },
+      ],
+    };
+    expect(findWorkflowStructureProblems(wf).some((p) => p.includes('route cycle'))).toBe(false);
+  });
+});
+
+describe('doctor: workflows.single-workflow-source + workflows.stage-structure', () => {
+  const dualCheck = workflowsChecks.find((c) => c.id === 'workflows.single-workflow-source')!;
+  const structureCheck = workflowsChecks.find((c) => c.id === 'workflows.stage-structure')!;
+
+  async function writeWorkflowFile(id: string, body: string): Promise<void> {
+    // SYNTAUR_HOME is `home`, so the per-file dir is `home/workflows`.
+    const dir = join(home, 'workflows');
+    await mkdir(dir, { recursive: true });
+    await writeFile(join(dir, `${id}.md`), body, 'utf-8');
+  }
+
+  const noBlock = () =>
+    ({ defaultProjectDir: projectsDir, defaultWorkflow: null, workflows: null, statuses: null }) as SyntaurConfig;
+
+  async function runCheck(check: (typeof workflowsChecks)[number], config: SyntaurConfig): Promise<CheckResult> {
+    invalidateWorkflowLibraryCache();
+    const r = await check.run(ctxFor(config));
+    return Array.isArray(r) ? r[0] : r;
+  }
+
+  const goodWf = 'id: feature\nstages:\n  - id: a\n    next: [{ to: done }]\n  - id: done\n    terminal: true\n';
+
+  it('single-workflow-source: errors when a per-file dir and a config workflows: block both exist', async () => {
+    await writeWorkflowFile('feature', goodWf);
+    // configWith supplies a workflows: block → dual source.
+    const r = await runCheck(dualCheck, configWith({}));
+    expect(r.status).toBe('error');
+    expect(r.detail).toContain('config.md');
+  });
+
+  it('single-workflow-source: passes when only the per-file dir exists (no config block)', async () => {
+    await writeWorkflowFile('feature', goodWf);
+    const r = await runCheck(dualCheck, noBlock());
+    expect(r.status).toBe('pass');
+  });
+
+  it('stage-structure: passes vacuously when no per-file workflows exist', async () => {
+    const r = await runCheck(structureCheck, noBlock());
+    expect(r.status).toBe('pass');
+    expect(r.detail).toContain('no per-file');
+  });
+
+  it('stage-structure: passes for a sound per-file workflow', async () => {
+    await writeWorkflowFile('feature', goodWf);
+    const r = await runCheck(structureCheck, noBlock());
+    expect(r.status).toBe('pass');
+  });
+
+  it('stage-structure: surfaces parser issues (e.g. a file missing its id)', async () => {
+    await writeWorkflowFile('feature', 'stages:\n  - id: done\n    terminal: true\n'); // no id:
+    const r = await runCheck(structureCheck, noBlock());
+    expect(r.status).toBe('error');
+    expect(r.detail).toContain("missing 'id'");
+  });
+
+  it('stage-structure: flags a filename≠declared-id mismatch', async () => {
+    await writeWorkflowFile('feature', 'id: other\nstages:\n  - id: done\n    terminal: true\n');
+    const r = await runCheck(structureCheck, noBlock());
+    expect(r.status).toBe('error');
+    expect(r.detail).toContain('declares id "other"');
+  });
+
+  it('stage-structure: errors for a structurally broken per-file workflow', async () => {
+    // No terminal stage + a route to an unknown stage.
+    await writeWorkflowFile('broken', 'id: broken\nstages:\n  - id: a\n    next: [{ to: ghost }]\n');
+    const r = await runCheck(structureCheck, noBlock());
+    expect(r.status).toBe('error');
+    expect(r.detail).toContain('no terminal stage');
+    expect(r.detail).toContain('unknown stage "ghost"');
+  });
+
+  it('stage-structure: skips (not errors) when the library is unreadable (dual source)', async () => {
+    await writeWorkflowFile('feature', goodWf);
+    const r = await runCheck(structureCheck, configWith({})); // config block + dir → throws
+    expect(r.status).toBe('skipped');
   });
 });

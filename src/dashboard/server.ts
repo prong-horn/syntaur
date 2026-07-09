@@ -2,7 +2,7 @@ import express from 'express';
 import { createServer } from 'node:http';
 import { resolve } from 'node:path';
 import { writeFile, unlink } from 'node:fs/promises';
-import { syntaurRoot } from '../utils/paths.js';
+import { syntaurRoot, workflowsDir } from '../utils/paths.js';
 import { WebSocketServer, WebSocket } from 'ws';
 import {
   listProjects,
@@ -924,6 +924,7 @@ export function createDashboardServer(options: DashboardServerOptions) {
         serversDir,
         playbooksDir,
         todosDir,
+        workflowsDir: workflowsDir(),
         dbPath: resolve(syntaurRoot(), 'syntaur.db'),
         configPath: resolve(syntaurRoot(), 'config.md'),
         onMessage: broadcast,

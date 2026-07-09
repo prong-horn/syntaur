@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { readFileSync } from 'node:fs';
 import { resolveWorkflowId, getWorkflowBundle, getWorkflowLibrary } from '../utils/workflow-resolve.js';
 import type { WorkflowDefinition } from '../utils/config.js';
 
@@ -145,4 +146,25 @@ describe('getWorkflowLibrary — in-memory {default} view of a legacy config', (
     expect(Object.keys(lib)).toEqual(['default']);
     expect(lib.default.order).toContain('in_progress');
   });
+});
+
+// Purity guard (WS-0): `workflow-resolve.ts` and `stage-model.ts` are aliased
+// into the dashboard SPA via `@shared`, so a stray Node import (`node:fs`,
+// `fs`, `node:path`, …) would break the browser bundle. This test reads the
+// source and fails on any Node-builtin import — a tripwire so a future edit
+// can't silently re-introduce disk I/O into the browser-safe modules. All fs
+// lives in the Node-only `workflow-library.ts` loader.
+describe('browser-safe purity guard', () => {
+  const NODE_IMPORT = /(?:from\s+['"]|import\s*\(\s*['"]|require\(\s*['"])(?:node:|fs|path|os|child_process|crypto|stream|util|worker_threads)(?:['"/])/;
+
+  for (const rel of ['../utils/workflow-resolve.ts', '../utils/stage-model.ts']) {
+    it(`${rel} imports no Node builtins`, () => {
+      const src = readFileSync(new URL(rel, import.meta.url), 'utf-8');
+      const offending = src
+        .split('\n')
+        .filter((line) => !line.trimStart().startsWith('*') && !line.trimStart().startsWith('//'))
+        .filter((line) => NODE_IMPORT.test(line));
+      expect(offending).toEqual([]);
+    });
+  }
 });
