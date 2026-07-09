@@ -10,11 +10,9 @@
 
 import { connect, type Socket } from 'node:net';
 import { execFile, spawn as childSpawn } from 'node:child_process';
-import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { SyntaurError } from '../errors.js';
 import { resolveDaemon, waitForDaemon } from './discovery.js';
-import { currentPointerPath } from './paths.js';
+import { cliEntryPath, currentPointerPath } from './paths.js';
 import { createLineDecoder, encodeFrame } from './protocol.js';
 import { probeUnixSocket, type ProbeResult } from './sockets.js';
 import type { DaemonSpawnFn } from './supervisor.js';
@@ -49,11 +47,6 @@ export interface ClientDeps {
   waitIntervalMs?: number;
 }
 
-function defaultCliEntryPath(): string {
-  // client.js lives in dist/daemon/, the CLI entry is dist/index.js.
-  return join(dirname(fileURLToPath(import.meta.url)), '..', 'index.js');
-}
-
 interface ResolvedClientDeps {
   now: () => number;
   sleep: (ms: number) => Promise<void>;
@@ -79,7 +72,7 @@ function resolveDeps(deps: ClientDeps): ResolvedClientDeps {
     spawn: deps.spawn ?? realSpawn,
     exec: deps.exec ?? realExec,
     execPath: deps.execPath ?? process.execPath,
-    cliEntryPath: deps.cliEntryPath ?? defaultCliEntryPath(),
+    cliEntryPath: deps.cliEntryPath ?? cliEntryPath(),
     platform: deps.platform ?? process.platform,
     uid: deps.uid ?? (typeof process.getuid === 'function' ? process.getuid() : 0),
     launchctlTimeoutMs: deps.launchctlTimeoutMs ?? 5000,

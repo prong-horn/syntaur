@@ -14,7 +14,8 @@
 // syntaurRoot() so it honors SYNTAUR_HOME.
 
 import { chmodSync, mkdirSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { basename, dirname, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { SyntaurError } from '../errors.js';
 import { expandHome, syntaurRoot } from '../utils/paths.js';
 
@@ -112,6 +113,34 @@ export function guardSunPath(p: string): string {
     );
   }
   return p;
+}
+
+/**
+ * Locate the built `dist/` dir by walking up from this module's URL. Robust
+ * under bundling: this code runs as `dist/index.js` (bundled) OR, per-entry, as
+ * `dist/daemon/<x>.js` — either way the nearest `dist` ancestor is the anchor.
+ * (In vitest the module is the source file, which has no `dist` segment — but
+ * the entry-path consumers inject explicit paths in tests, so the fallback is
+ * never exercised there.)
+ */
+export function distDir(): string {
+  const self = dirname(fileURLToPath(import.meta.url));
+  let dir = self;
+  for (let i = 0; i < 8 && dir !== dirname(dir); i += 1) {
+    if (basename(dir) === 'dist') return dir;
+    dir = dirname(dir);
+  }
+  return self;
+}
+
+/** Absolute path to the built CLI entry (`dist/index.js`). */
+export function cliEntryPath(): string {
+  return join(distDir(), 'index.js');
+}
+
+/** Absolute path to the built pty-host entry (`dist/daemon/pty-host-main.js`). */
+export function ptyHostMainEntry(): string {
+  return join(distDir(), 'daemon', 'pty-host-main.js');
 }
 
 /** mkdir -p with mode 0700, chmod'd afterward to defeat the process umask. */

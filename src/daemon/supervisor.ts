@@ -12,9 +12,8 @@
 import { spawn as realSpawn, type ChildProcess, type SpawnOptions } from 'node:child_process';
 import { existsSync, unlinkSync } from 'node:fs';
 import { type Server, type Socket } from 'node:net';
-import { basename, dirname, join } from 'node:path';
+import { basename } from 'node:path';
 import { randomBytes } from 'node:crypto';
-import { fileURLToPath } from 'node:url';
 import { SyntaurError } from '../errors.js';
 import { captureProcessStartedAt } from '../utils/process-info.js';
 import {
@@ -32,6 +31,7 @@ import {
   daemonLockPath,
   ensureDir0700,
   ptyDir,
+  ptyHostMainEntry,
   ptySockPath,
   rosterPath,
   runtimeBaseDir,
@@ -91,10 +91,6 @@ interface DaemonSession {
   sessionId: string | null;
 }
 
-function defaultPtyHostMainPath(): string {
-  return join(dirname(fileURLToPath(import.meta.url)), 'pty-host-main.js');
-}
-
 function inferAgent(argv: string[]): string {
   const file = argv[0] ?? 'shell';
   return basename(file).replace(/\.(js|mjs|cjs|sh)$/, '') || 'shell';
@@ -123,7 +119,7 @@ export function createDaemon(deps: DaemonDeps = {}): Daemon {
       }
     });
   const execPath = deps.execPath ?? process.execPath;
-  const ptyHostMainPath = deps.ptyHostMainPath ?? defaultPtyHostMainPath();
+  const ptyHostMainPath = deps.ptyHostMainPath ?? ptyHostMainEntry();
   const isPidAlive = deps.isPidAlive ?? realIsPidAlive;
   const procStart = deps.procStart ?? captureProcessStartedAt;
   const now = deps.now ?? (() => Date.now());

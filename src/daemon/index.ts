@@ -15,4 +15,4 @@ export { createDaemon, type Daemon, type DaemonDeps, type DaemonSpawnFn } from '
 export { ensureDaemon, daemonRequest, sendRequest, type ClientDeps, type ExecFn } from './client.js';
 export { runAttachClient, type AttachOptions, type AttachResult, type AttachDeps } from './attach-client.js';
 export { runPtyHost, smokePtyHost, type PtyHostConfig } from './pty-host.js';
-export { runPtyHostMain, parsePtyHostArgs } from './pty-host-main.js';
+export { runPtyHostMain, parsePtyHostArgs } from './pty-host-run.js';

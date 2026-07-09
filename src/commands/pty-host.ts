@@ -1,6 +1,6 @@
 import { Command } from 'commander';
 import { runCommand, SyntaurError } from '../errors.js';
-import { runPtyHostMain } from '../daemon/pty-host-main.js';
+import { runPtyHostMain } from '../daemon/pty-host-run.js';
 
 /**
  * Hidden `syntaur pty-host` command. Registered hidden (Decision 1) because a
