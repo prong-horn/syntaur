@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest';
 import { mkdtemp, rm } from 'node:fs/promises';
-import { existsSync, readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { SyntaurError } from '../../errors.js';
@@ -137,8 +137,8 @@ describe('acquireDaemonLock (real filesystem, atomic-link creation)', () => {
     });
     expect(ok).toBe(true);
     expect((JSON.parse(readFileSync(lockPath, 'utf8')) as DaemonLock).daemonId).toBe('d2');
-    // The write-temp-then-link create must clean up its temp.
-    expect(existsSync(`${lockPath}.tmp.${process.pid}`)).toBe(false);
+    // The write-temp-then-link create must clean up its (uuid-suffixed) temp.
+    expect(readdirSync(dir).filter((f) => f.includes('.tmp.'))).toEqual([]);
   });
 });
 

@@ -1,5 +1,33 @@
 import { describe, it, expect } from 'vitest';
-import { isSameProcess } from '../liveness.js';
+import { isSameProcess, processIdentity } from '../liveness.js';
+
+describe('processIdentity (tri-state)', () => {
+  it('reports dead when the pid is gone', () => {
+    expect(processIdentity(1234, 'START', { isPidAlive: () => false })).toBe('dead');
+  });
+
+  it('reports alive with no baseline (trust kill -0)', () => {
+    expect(processIdentity(1234, null, { isPidAlive: () => true })).toBe('alive');
+  });
+
+  it('reports alive when the start-time matches', () => {
+    expect(
+      processIdentity(1234, 'START', { isPidAlive: () => true, pidStartedAt: () => 'START' }),
+    ).toBe('alive');
+  });
+
+  it('reports dead when the start-time mismatches (recycled pid)', () => {
+    expect(
+      processIdentity(1234, 'START', { isPidAlive: () => true, pidStartedAt: () => 'NEW' }),
+    ).toBe('dead');
+  });
+
+  it('reports unknown when alive but the start-time is unreadable', () => {
+    expect(
+      processIdentity(1234, 'START', { isPidAlive: () => true, pidStartedAt: () => null }),
+    ).toBe('unknown');
+  });
+});
 
 describe('isSameProcess', () => {
   it('returns false when the pid is not alive', () => {

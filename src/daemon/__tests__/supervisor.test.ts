@@ -220,6 +220,28 @@ describe('supervisor', () => {
     expect(existsSync(rvSock)).toBe(false);
   });
 
+  it('reconcile does NOT reap an unknown-identity host (transient ps failure)', async () => {
+    const ptySock = join(runtime, 'oldd', 'pty', 'flaky.sock');
+    const rvSock = join(runtime, 'oldd', 'rv', 'flaky.sock');
+    mkdirSync(dirname(ptySock), { recursive: true });
+    mkdirSync(dirname(rvSock), { recursive: true });
+    writeFileSync(ptySock, '');
+    writeFileSync(rvSock, '');
+    writeJobState(jobState({ short: 'flaky', hostPid: 200, ptySock, rvSock }));
+
+    const d = daemon({
+      isPidAlive: () => true, // alive…
+      procStart: () => null, // …but start-time unreadable → identity 'unknown'
+      bindSocket: fakeBindOk(),
+      probe: async () => 'refused', // socket not answering
+    });
+    await d.start();
+    expect(d.hasSession('flaky')).toBe(false); // not adopted (socket not live)
+    // …but its sockets are left intact — identity was unconfirmed, not dead.
+    expect(existsSync(ptySock)).toBe(true);
+    expect(existsSync(rvSock)).toBe(true);
+  });
+
   it('yields to a live daemon holding the lock', async () => {
     writeFileSync(daemonLockPath(), JSON.stringify({ pid: 111, procStart: START, daemonId: 'other' }));
     const d = daemon({ isPidAlive: (pid) => pid === 111, bindSocket: fakeBindOk() });

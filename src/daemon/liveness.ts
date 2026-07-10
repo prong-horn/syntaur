@@ -28,25 +28,46 @@ export interface LivenessDeps {
 }
 
 /**
- * True when `pid` is alive AND — if a start-time baseline was recorded — the
- * current start-time still matches it. A null/empty baseline trusts `kill -0`
- * alone (matching `captureProcessStartedAt`'s documented sentinel behavior).
+ * Tri-state process identity:
+ *   'alive'   — the pid exists and (if a start-time baseline was recorded) it
+ *               still matches, so this is the SAME process.
+ *   'dead'    — the pid is gone, OR its start-time no longer matches the
+ *               baseline (a recycled pid — a different process).
+ *   'unknown' — the pid exists but its current start-time could not be read
+ *               (`ps` returned null for a live pid), so identity is unconfirmable.
  *
- * Fails CLOSED when a baseline exists but the current start-time is unknown
- * (`ps` returned null for a still-live pid): identity cannot be confirmed, so
- * we report "not the same" rather than risk adopting or signaling a recycled
- * pid. This is the safe direction — a rare false negative reaps a session that
- * reconcile can re-adopt, whereas a false positive would signal a stranger.
+ * The tri-state matters because a boolean forces one threshold for two opposite
+ * decisions. DESTRUCTIVE actions (reclaim a lock, reap a session's sockets)
+ * must require confirmed 'dead' — never act on 'unknown', or a transient `ps`
+ * hiccup would steal a live daemon's lock or reap a live session. TRUST actions
+ * (adopt-and-signal, kill) require confirmed 'alive' — never trust 'unknown', or
+ * a recycled pid could be signaled. 'unknown' is the retain/yield middle ground.
+ */
+export type ProcessIdentity = 'alive' | 'dead' | 'unknown';
+
+export function processIdentity(
+  pid: number,
+  expectedStart: string | null,
+  deps: LivenessDeps = {},
+): ProcessIdentity {
+  const alive = (deps.isPidAlive ?? isPidAlive)(pid);
+  if (!alive) return 'dead';
+  if (!expectedStart) return 'alive'; // no baseline → trust kill -0
+  const current = (deps.pidStartedAt ?? pidStartedAt)(pid);
+  if (current === null) return 'unknown'; // live but unconfirmable
+  return current === expectedStart ? 'alive' : 'dead';
+}
+
+/**
+ * True only when `pid` is the confirmed SAME process (identity 'alive'). Used by
+ * TRUST gates (attach/kill): 'unknown' returns false so a possibly-recycled pid
+ * is never signaled. Reap/reclaim gates must NOT use this — they check
+ * `processIdentity(...) === 'dead'` so they never destroy on 'unknown'.
  */
 export function isSameProcess(
   pid: number,
   expectedStart: string | null,
   deps: LivenessDeps = {},
 ): boolean {
-  const alive = (deps.isPidAlive ?? isPidAlive)(pid);
-  if (!alive) return false;
-  if (!expectedStart) return true;
-  const current = (deps.pidStartedAt ?? pidStartedAt)(pid);
-  if (current === null || current !== expectedStart) return false;
-  return true;
+  return processIdentity(pid, expectedStart, deps) === 'alive';
 }

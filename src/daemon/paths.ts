@@ -152,12 +152,11 @@ export function ptyHostMainEntry(): string {
  */
 export function ensureDir0700(dir: string): void {
   mkdirSync(dir, { recursive: true, mode: 0o700 });
-  try {
-    chmodSync(dir, 0o700);
-  } catch {
-    // chmod may fail if we don't own it — the lstat check below is authoritative.
-  }
-  const st = lstatSync(dir);
+  // lstat + reject a symlink BEFORE chmod — chmodSync follows symlinks, so a
+  // hostile `/tmp/syntaur-<uid>` symlink would otherwise have us change the mode
+  // of the link's victim target. (A complete fix against a swap between this
+  // check and chmod is O_NOFOLLOW + fchmod — a follow-up.)
+  let st = lstatSync(dir);
   if (st.isSymbolicLink()) {
     throw new SyntaurError(`Refusing to use ${dir}: it is a symlink.`, {
       remediation: 'Remove it, or set SYNTAUR_RUNTIME_DIR to a safe directory you own.',
@@ -169,6 +168,12 @@ export function ensureDir0700(dir: string): void {
       remediation: 'Remove it, or set SYNTAUR_RUNTIME_DIR to a safe directory you own.',
     });
   }
+  try {
+    chmodSync(dir, 0o700); // defeat the umask on a dir we just verified we own
+  } catch {
+    // ownership verified above; a chmod failure is surfaced by the mode check.
+  }
+  st = lstatSync(dir);
   if ((st.mode & 0o777) !== 0o700) {
     throw new SyntaurError(
       `Refusing to use ${dir}: mode is ${(st.mode & 0o777).toString(8)}, expected 700.`,

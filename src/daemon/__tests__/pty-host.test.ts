@@ -379,6 +379,20 @@ describe('runPtyHost', () => {
     expect(pty.writes).toContain('ok');
   });
 
+  it('ignores malformed frame payloads (b:null, non-numeric cols) without crashing', async () => {
+    const { pty, bind, promise } = boot();
+    await promise;
+    const sock = fakeSocket();
+    bind.connect('/tmp/syntaur-ptyhost-test/d1/pty/aaa.sock', sock);
+    // b:null would throw in Buffer.from without the payload guard.
+    expect(() => sock.recv(encodeFrame({ t: 'stdin', b: null }))).not.toThrow();
+    expect(() => sock.recv(encodeFrame({ t: 'attach', cols: 'x', rows: 'y' }))).not.toThrow();
+    expect(pty.writes).not.toContain('');
+    // a well-formed frame still applies
+    sock.recv(encodeFrame({ t: 'stdin', b: b64('good') }));
+    expect(pty.writes).toContain('good');
+  });
+
   it('propagates a fatal live-socket bind error', async () => {
     const pty = fakePty();
     await expect(

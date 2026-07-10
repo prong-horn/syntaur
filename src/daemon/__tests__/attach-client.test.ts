@@ -219,6 +219,19 @@ describe('runAttachClient', () => {
     expect(await t.promise).toMatchObject({ reason: 'socket-closed' });
   });
 
+  it('ignores a null/malformed host frame without crashing', async () => {
+    const t = setup();
+    await flush();
+    t.socket.emitConnect();
+    expect(() => t.socket.emitData('null\n')).not.toThrow();
+    expect(() => t.socket.emitData(encodeFrame({ t: 'out', b: null }))).not.toThrow();
+    // a well-formed snapshot still renders afterward
+    t.socket.emitData(encodeFrame({ t: 'snapshot', data: 'OK-SCREEN', cols: 80, rows: 24 }));
+    expect(t.stdout.text()).toContain('OK-SCREEN');
+    t.socket.emitClose();
+    await t.promise;
+  });
+
   it('debounces a resize storm to a single frame per 50ms window', async () => {
     vi.useFakeTimers();
     const t = setup();

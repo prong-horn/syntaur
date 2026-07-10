@@ -164,7 +164,15 @@ export function sendRequest(
     );
     socket.on('connect', () => socket.write(encodeFrame(req)));
     socket.on('data', (chunk: Buffer) => {
-      const frames = decoder.push(chunk);
+      let frames: ControlReply[];
+      try {
+        frames = decoder.push(chunk);
+      } catch (err) {
+        // An overlong/garbage reply must reject through cleanup, not escape the
+        // event callback and terminate the CLI.
+        finish(() => reject(err instanceof Error ? err : new Error(String(err))));
+        return;
+      }
       if (frames.length > 0) finish(() => resolvePromise(frames[0]));
     });
     socket.on('error', (err) => finish(() => reject(err)));

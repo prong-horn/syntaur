@@ -359,18 +359,27 @@ export async function runPtyHost(config: PtyHostConfig, deps: PtyHostDeps = {}):
       }
       for (const frame of frames) {
         if (!isFrameObject(frame)) continue; // guard null/array/primitive frames
+        // Validate each frame's payload fields at runtime — the wire types are
+        // advisory, and a malformed peer ({t:'stdin',b:null}, non-numeric
+        // cols/rows, …) must not throw inside a socket 'data' handler.
         switch (frame.t) {
           case 'attach':
-            handleAttach(client, frame.cols, frame.rows);
+            if (typeof frame.cols === 'number' && typeof frame.rows === 'number') {
+              handleAttach(client, frame.cols, frame.rows);
+            }
             break;
           case 'stdin':
-            pty.write(Buffer.from(frame.b, 'base64').toString('utf8'));
+            if (typeof frame.b === 'string') {
+              pty.write(Buffer.from(frame.b, 'base64').toString('utf8'));
+            }
             break;
           case 'resize':
-            applyResize(frame.cols, frame.rows);
+            if (typeof frame.cols === 'number' && typeof frame.rows === 'number') {
+              applyResize(frame.cols, frame.rows);
+            }
             break;
           case 'kill':
-            pty.kill(frame.sig);
+            pty.kill(typeof frame.sig === 'string' ? frame.sig : undefined);
             break;
         }
       }

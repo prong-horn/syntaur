@@ -7,7 +7,7 @@
 // reconcile-scan (state.json files with no roster entry) is Task 6's job.
 
 import { existsSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
-import { isSameProcess, type LivenessDeps } from './liveness.js';
+import { isSameProcess, processIdentity, type LivenessDeps } from './liveness.js';
 import type { RosterEntry, RosterFile } from './types.js';
 
 export interface RosterDeps extends LivenessDeps {
@@ -114,8 +114,11 @@ export function adoptRoster(rosterPath: string, daemonId: string, deps: RosterDe
   const dropped: RosterEntry[] = [];
 
   for (const entry of roster.entries) {
-    if (isSameProcess(entry.pid, entry.pidStartedAt, d)) adopted.push(entry);
-    else dropped.push(entry);
+    // Drop (and reap sockets) ONLY on confirmed death. A live host — or one
+    // whose identity is momentarily 'unknown' (transient `ps` failure) — is
+    // retained, so a hiccup never reaps a running session's sockets.
+    if (processIdentity(entry.pid, entry.pidStartedAt, d) === 'dead') dropped.push(entry);
+    else adopted.push(entry);
   }
 
   for (const entry of dropped) {

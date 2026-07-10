@@ -13,10 +13,14 @@
 
 import { StringDecoder } from 'node:string_decoder';
 
-/** Default cap on an un-terminated pending line. Every legitimate frame in this
- * protocol (control ops, pty/rv frames — base64 of ≤64KB PTY chunks) is far
- * smaller; exceeding it means a malformed or hostile peer. */
-export const MAX_PENDING_BYTES = 1 << 20; // 1 MiB
+/** Cap on an un-terminated pending line — a backstop against a peer that floods
+ * bytes without a newline (local OOM). Sized well above any legitimate frame:
+ * the largest is a `snapshot` (base64 of a serialized screen + scrollback),
+ * which even with a large scrollback stays far under this. Bounding by
+ * `buf.length` (UTF-16 units) rather than exact UTF-8 bytes is fine for a memory
+ * backstop — it caps resident memory to ~2× this. Per-channel byte-accurate
+ * limits are a possible refinement. */
+export const MAX_PENDING_BYTES = 32 << 20; // 32 MiB
 
 /** Serialize one frame as a single newline-terminated JSON line. */
 export function encodeFrame(obj: unknown): string {

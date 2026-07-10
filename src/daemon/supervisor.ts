@@ -22,7 +22,7 @@ import {
   writeCurrentPointer,
 } from './discovery.js';
 import { readAllJobStates, readJobState } from './jobs.js';
-import { isPidAlive as realIsPidAlive, isSameProcess } from './liveness.js';
+import { isPidAlive as realIsPidAlive, isSameProcess, processIdentity } from './liveness.js';
 import { appendLog } from './log.js';
 import {
   controlSockPath,
@@ -143,7 +143,10 @@ export function createDaemon(deps: DaemonDeps = {}): Daemon {
   const err = (code: string, error: string): ErrorReply => ({ ok: false, code, error });
 
   function sessionLive(ds: DaemonSession): boolean {
-    return isSameProcess(ds.hostPid, ds.hostPidStartedAt, liveDeps);
+    // Permissive for attach: treat 'unknown' (transient ps failure on a live
+    // pid) as live so we don't wrongly refuse a running session; only a
+    // confirmed-dead host is rejected.
+    return processIdentity(ds.hostPid, ds.hostPidStartedAt, liveDeps) !== 'dead';
   }
 
   function reapSockets(ptySock: string, rvSock: string): void {
@@ -375,9 +378,17 @@ export function createDaemon(deps: DaemonDeps = {}): Daemon {
   async function reconcileScan(): Promise<void> {
     for (const js of readAllJobStates()) {
       if (sessions.has(js.short)) continue;
-      const pidLive = isSameProcess(js.hostPid, js.hostPidStartedAt, liveDeps);
-      const sockLive = pidLive && (await probe(js.ptySock)) === 'live';
-      if (pidLive && sockLive) {
+      // Reap ONLY a confirmed-dead host. On 'unknown' (transient ps failure) we
+      // neither adopt (unless the socket proves live) nor reap — leave the
+      // state.json for a later scan rather than destroying a possibly-live host.
+      const id = processIdentity(js.hostPid, js.hostPidStartedAt, liveDeps);
+      if (id === 'dead') {
+        reapSockets(js.ptySock, js.rvSock);
+        log(`reconcile: reaped ${js.short} (dead host)`);
+        continue;
+      }
+      const sockLive = (await probe(js.ptySock)) === 'live';
+      if (sockLive) {
         sessions.set(js.short, {
           short: js.short,
           agent: js.agent,
@@ -410,8 +421,10 @@ export function createDaemon(deps: DaemonDeps = {}): Daemon {
         );
         log(`reconcile: adopted ${js.short} (missing from roster)`);
       } else {
-        reapSockets(js.ptySock, js.rvSock);
-        log(`reconcile: reaped ${js.short} (dead host)`);
+        // Not confirmed dead (id is 'alive' or 'unknown') but the socket does
+        // not answer — leave the state.json untouched for a later scan rather
+        // than reaping a host that may still be coming up or briefly unreachable.
+        log(`reconcile: left ${js.short} (host ${id}, socket not live)`);
       }
     }
   }

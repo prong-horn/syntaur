@@ -9,8 +9,9 @@
 //                 control.sock accepts (bounded wait, then an actionable error).
 
 import { linkSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
+import { randomUUID } from 'node:crypto';
 import { SyntaurError } from '../errors.js';
-import { isPidAlive, isSameProcess, pidStartedAt, type LivenessDeps } from './liveness.js';
+import { isPidAlive, pidStartedAt, processIdentity, type LivenessDeps } from './liveness.js';
 import { probeUnixSocket, type ProbeResult } from './sockets.js';
 import type { CurrentPointer, DaemonLock } from './types.js';
 
@@ -39,9 +40,13 @@ function defaultCreateExclusive(path: string, data: string): boolean {
   // at `path` is only ever visible fully-formed — never the empty window that
   // `openSync('wx')` + a separate write would expose (which a concurrent
   // contender could parse as corrupt and wrongly unlink).
-  const tmp = `${path}.tmp.${process.pid}`;
+  // A unique per-attempt temp name created EXCLUSIVELY (`wx`): a random suffix
+  // means we never collide with — or rewrite through a hard link — a temp left
+  // behind by a crash mid-create (which, with a pid-only name after pid reuse,
+  // could otherwise rewrite the live lock's content via the surviving hard link).
+  const tmp = `${path}.tmp.${process.pid}.${randomUUID()}`;
   try {
-    writeFileSync(tmp, data, { mode: 0o600 });
+    writeFileSync(tmp, data, { mode: 0o600, flag: 'wx' });
     try {
       linkSync(tmp, path);
       return true;
@@ -124,7 +129,10 @@ export function acquireDaemonLock(
       d.unlink(lockPath);
       continue;
     }
-    if (isSameProcess(existing.pid, existing.procStart, d)) return false; // live owner
+    // Reclaim ONLY a confirmed-dead owner. A live owner — or one whose identity
+    // is unknown (a transient `ps` failure on a live pid) — must be yielded to,
+    // never stolen.
+    if (processIdentity(existing.pid, existing.procStart, d) !== 'dead') return false;
     // Confirmed-dead owner: reclaim by unlinking, then retry the create.
     // (Residual: two contenders both reclaiming the same stale lock can race
     // here; a full fix is an advisory OS lock — tracked as a follow-up.)

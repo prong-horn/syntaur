@@ -87,6 +87,24 @@ describe('adoptRoster', () => {
     expect(result.dropped.map((e) => e.short)).toEqual(['recycled']);
   });
 
+  it('RETAINS (does not reap) a host whose identity is unknown (transient ps failure)', () => {
+    const unlinkSocket = vi.fn();
+    const fs = fakeRosterFs(
+      JSON.stringify({ daemonId: 'old', updatedAt: '', entries: [entry({ short: 'flaky' })] } as RosterFile),
+    );
+    const result = adoptRoster(ROSTER, 'new', {
+      ...fs,
+      isPidAlive: () => true,
+      pidStartedAt: () => null, // alive but unreadable → 'unknown'
+      pathExists: () => true,
+      unlinkSocket,
+      now: () => 0,
+    });
+    expect(result.adopted.map((e) => e.short)).toEqual(['flaky']); // kept, not reaped
+    expect(result.dropped).toEqual([]);
+    expect(unlinkSocket).not.toHaveBeenCalled();
+  });
+
   it('reaps the orphaned sockets of dropped hosts', () => {
     const dead = entry({ short: 'dead' });
     const fs = fakeRosterFs(

@@ -10,7 +10,7 @@
 // alt-screen, show cursor), and removes every listener. Like runTmuxAttach, it
 // NEVER rejects — it always resolves an AttachResult so a caller's cleanup runs.
 
-import { encodeFrame, createLineDecoder } from './protocol.js';
+import { encodeFrame, createLineDecoder, isFrameObject } from './protocol.js';
 import type { AttachReply, ErrorReply, PtyHostFrame } from './types.js';
 
 /** Reset sequences written on teardown so no raw/alt-screen/mouse state leaks. */
@@ -237,10 +237,26 @@ export function runAttachClient(opts: AttachOptions, deps: AttachDeps): Promise<
         );
         socket.on('connect', () => onConnect(socket as AttachSocket));
         socket.on('data', (chunk) => {
-          for (const frame of decoder.push(chunk)) {
-            if (frame.t === 'snapshot') {
+          let frames: PtyHostFrame[];
+          try {
+            frames = decoder.push(chunk);
+          } catch (err) {
+            // Overlong/garbage frame from the host — settle through cleanup
+            // rather than throwing out of the callback and killing the CLI.
+            settle({
+              reason: 'connect-failed',
+              code: null,
+              signal: null,
+              detached: false,
+              error: err instanceof Error ? err : new Error(String(err)),
+            });
+            return;
+          }
+          for (const frame of frames) {
+            if (!isFrameObject(frame)) continue; // ignore null/primitive frames
+            if (frame.t === 'snapshot' && typeof frame.data === 'string') {
               stdout.write(frame.data);
-            } else if (frame.t === 'out') {
+            } else if (frame.t === 'out' && typeof frame.b === 'string') {
               stdout.write(Buffer.from(frame.b, 'base64'));
             } else if (frame.t === 'exit') {
               const suffix = frame.code != null ? ` (${frame.code})` : '';
