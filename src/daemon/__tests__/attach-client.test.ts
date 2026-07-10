@@ -186,6 +186,39 @@ describe('runAttachClient', () => {
     await t.promise;
   });
 
+  it('detaches on the Ctrl-] key (leaving the session running)', async () => {
+    const t = setup();
+    await flush();
+    t.socket.emitConnect();
+    t.stdin.emitData(Buffer.from([0x1d])); // Ctrl-]
+    expect(await t.promise).toMatchObject({ reason: 'detach', detached: true });
+    assertRestored(t);
+  });
+
+  it('forwards keystrokes typed before the detach key, then detaches', async () => {
+    const t = setup();
+    await flush();
+    t.socket.emitConnect();
+    t.stdin.emitData(Buffer.from([0x68, 0x69, 0x1d])); // "hi" then Ctrl-]
+    const stdinFrame = t.socket.frames().find((f) => f.t === 'stdin');
+    expect(stdinFrame).toBeTruthy();
+    expect(Buffer.from((stdinFrame as unknown as { b: string }).b, 'base64').toString('utf8')).toBe('hi');
+    expect(await t.promise).toMatchObject({ reason: 'detach', detached: true });
+  });
+
+  it('does NOT detach on Ctrl-C (0x03) — it forwards to the agent', async () => {
+    const t = setup();
+    await flush();
+    t.socket.emitConnect();
+    t.stdin.emitData(Buffer.from([0x03])); // Ctrl-C
+    const stdinFrame = t.socket.frames().find((f) => f.t === 'stdin');
+    expect(stdinFrame).toBeTruthy();
+    expect(Buffer.from((stdinFrame as unknown as { b: string }).b, 'base64')).toEqual(Buffer.from([0x03]));
+    // still attached — close to settle the promise
+    t.socket.emitClose();
+    expect(await t.promise).toMatchObject({ reason: 'socket-closed' });
+  });
+
   it('debounces a resize storm to a single frame per 50ms window', async () => {
     vi.useFakeTimers();
     const t = setup();

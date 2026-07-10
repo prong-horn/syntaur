@@ -141,6 +141,24 @@ describe('supervisor', () => {
     expect(d.hasSession('s1')).toBe(false);
   });
 
+  it('kill does not signal a recycled host pid (procStart mismatch) but still drops the session', async () => {
+    const kills: (string | number)[] = [];
+    let startVal = START;
+    const d = daemon({
+      spawn: vi.fn(() => fakeChild(9999)),
+      procStart: () => startVal,
+      isPidAlive: () => true,
+      kill: (_pid, sig) => kills.push(sig),
+      sleep: async () => {},
+      killWaitMs: 0,
+    });
+    await d.handle({ op: 'dispatch', argv: ['bash'], cwd: '/w' }); // records hostPidStartedAt = START
+    startVal = 'RECYCLED'; // the pid now belongs to a different process
+    expect(await d.handle({ op: 'kill', short: 's1' })).toEqual({ ok: true });
+    expect(kills).toEqual([]); // never signaled the stranger
+    expect(d.hasSession('s1')).toBe(false); // but the session is forgotten
+  });
+
   it('list + status reflect dispatched sessions', async () => {
     const d = daemon({ spawn: vi.fn(() => fakeChild(9999)) });
     await d.handle({ op: 'dispatch', argv: ['/bin/bash'], cwd: '/w', name: 'shell1' });

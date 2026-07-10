@@ -61,6 +61,15 @@ export async function runPtyHostMain(argv: string[]): Promise<void> {
   const config = parsed.config as PtyHostConfig;
   process.title = `syntaur pty-host ${config.short}`;
   // Binds pty/rv sockets; the open servers keep the event loop alive until the
-  // child exits, at which point onExit tears down and exits the process.
-  await runPtyHost(config, { onExit: (code) => process.exit(code) });
+  // child exits, at which point onExit tears down and the process drains.
+  await runPtyHost(config, {
+    onExit: (code) => {
+      // runPtyHost has already ended client sockets + closed the servers. Set
+      // the code and let the loop drain so those final writes flush, rather
+      // than a bare process.exit() truncating them. A short unref'd fallback
+      // force-exits if some stray handle keeps the loop alive.
+      process.exitCode = code;
+      setTimeout(() => process.exit(code), 500).unref();
+    },
+  });
 }

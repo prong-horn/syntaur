@@ -31,6 +31,12 @@ export interface LivenessDeps {
  * True when `pid` is alive AND — if a start-time baseline was recorded — the
  * current start-time still matches it. A null/empty baseline trusts `kill -0`
  * alone (matching `captureProcessStartedAt`'s documented sentinel behavior).
+ *
+ * Fails CLOSED when a baseline exists but the current start-time is unknown
+ * (`ps` returned null for a still-live pid): identity cannot be confirmed, so
+ * we report "not the same" rather than risk adopting or signaling a recycled
+ * pid. This is the safe direction — a rare false negative reaps a session that
+ * reconcile can re-adopt, whereas a false positive would signal a stranger.
  */
 export function isSameProcess(
   pid: number,
@@ -41,6 +47,6 @@ export function isSameProcess(
   if (!alive) return false;
   if (!expectedStart) return true;
   const current = (deps.pidStartedAt ?? pidStartedAt)(pid);
-  if (current !== null && current !== expectedStart) return false;
+  if (current === null || current !== expectedStart) return false;
   return true;
 }

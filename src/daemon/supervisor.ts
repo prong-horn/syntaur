@@ -10,7 +10,7 @@
 // and SYNTAUR_RUNTIME_DIR.
 
 import { spawn as realSpawn, type ChildProcess, type SpawnOptions } from 'node:child_process';
-import { existsSync, unlinkSync } from 'node:fs';
+import { existsSync, readFileSync, unlinkSync } from 'node:fs';
 import { type Server, type Socket } from 'node:net';
 import { basename } from 'node:path';
 import { randomBytes } from 'node:crypto';
@@ -38,12 +38,13 @@ import {
   rvDir,
   rvSockPath,
 } from './paths.js';
-import { createLineDecoder, encodeFrame } from './protocol.js';
+import { createLineDecoder, encodeFrame, isFrameObject } from './protocol.js';
 import { adoptRoster, removeRosterEntry, upsertRosterEntry } from './roster.js';
 import { bindUnixSocket, probeUnixSocket, type ProbeResult } from './sockets.js';
 import type {
   ControlReply,
   ControlRequest,
+  CurrentPointer,
   ErrorReply,
   RvFrame,
   Session,
@@ -269,14 +270,18 @@ export function createDaemon(deps: DaemonDeps = {}): Daemon {
     return { ok: true, ptySock: ds.ptySock, rvSock: ds.rvSock, pid: ds.hostPid };
   }
 
-  async function escalateKill(pid: number): Promise<void> {
+  // Escalate SIGINT→SIGTERM→SIGKILL, re-verifying process identity before every
+  // signal so a recycled PID (host died, number reused) is never signaled.
+  async function escalateKill(pid: number, start: string | null): Promise<void> {
+    const same = (): boolean => isSameProcess(pid, start, liveDeps);
+    if (!same()) return;
     kill(pid, 'SIGINT');
-    if (!isPidAlive(pid)) return;
+    if (!same()) return;
     await sleep(killWaitMs);
-    if (!isPidAlive(pid)) return;
+    if (!same()) return;
     kill(pid, 'SIGTERM');
     await sleep(killWaitMs);
-    if (!isPidAlive(pid)) return;
+    if (!same()) return;
     kill(pid, 'SIGKILL');
   }
 
@@ -284,9 +289,12 @@ export function createDaemon(deps: DaemonDeps = {}): Daemon {
     const ds = sessions.get(req.short);
     if (!ds) return err('ENOSESSION', `no session ${req.short}`);
     if (req.sig) {
-      kill(ds.hostPid, req.sig as NodeJS.Signals);
+      // Verify identity before signaling an explicit signal, too.
+      if (isSameProcess(ds.hostPid, ds.hostPidStartedAt, liveDeps)) {
+        kill(ds.hostPid, req.sig as NodeJS.Signals);
+      }
     } else {
-      await escalateKill(ds.hostPid);
+      await escalateKill(ds.hostPid, ds.hostPidStartedAt);
     }
     sessions.delete(req.short);
     removeRosterEntry(req.short, daemonId, rosterPath(), rosterDeps);
@@ -455,12 +463,16 @@ export function createDaemon(deps: DaemonDeps = {}): Daemon {
       controlServer = null;
       await new Promise<void>((r) => srv.close(() => r()));
     }
-    releaseDaemonLock(daemonId, daemonLockPath(), liveDeps);
+    // Delete the pointer only if it still names us, while we still hold the
+    // lock — otherwise a daemon that started between our close() and here would
+    // have its fresh pointer clobbered.
     try {
-      unlinkSync(currentPointerPath());
+      const ptr = JSON.parse(readFileSync(currentPointerPath(), 'utf8')) as CurrentPointer;
+      if (ptr?.daemonId === daemonId) unlinkSync(currentPointerPath());
     } catch {
-      /* already gone */
+      /* missing / corrupt / not ours — leave it */
     }
+    releaseDaemonLock(daemonId, daemonLockPath(), liveDeps);
     log(`stopped daemon ${daemonId}`);
   }
 
@@ -488,24 +500,50 @@ export function createDaemon(deps: DaemonDeps = {}): Daemon {
     const ds = sessions.get(req.short);
     socket.write(encodeFrame(ds ? { ok: true } : err('ENOSESSION', `no session ${req.short}`)));
     if (!ds) return;
+    // Register the teardown synchronously so a subscriber that closes before the
+    // dynamic import resolves cannot leak the rendezvous socket.
+    let closed = false;
+    let rvSocket: Socket | null = null;
+    socket.on('close', () => {
+      closed = true;
+      rvSocket?.destroy();
+    });
     void import('node:net').then(({ connect }) => {
+      if (closed) return; // subscriber already gone
       const rv = connect(ds.rvSock, () => {});
+      rvSocket = rv;
       const decoder = createLineDecoder<RvFrame>();
       rv.on('data', (chunk) => {
-        for (const frame of decoder.push(chunk)) {
+        let frames: RvFrame[];
+        try {
+          frames = decoder.push(chunk);
+        } catch {
+          rv.destroy();
+          return;
+        }
+        for (const frame of frames) {
+          if (!isFrameObject(frame)) continue;
           socket.write(encodeFrame({ ok: true, record: frame.record }));
         }
       });
       rv.on('error', () => {});
-      socket.on('close', () => rv.destroy());
     });
   }
 
   function handleConnection(socket: Socket): void {
     const decoder = createLineDecoder<ControlRequest>();
     socket.on('data', (chunk: Buffer | string) => {
+      let frames: ControlRequest[];
+      try {
+        frames = decoder.push(chunk);
+      } catch {
+        // FrameOverflowError — a peer flooding without a newline. Reject it.
+        socket.destroy();
+        return;
+      }
       void (async () => {
-        for (const req of decoder.push(chunk)) {
+        for (const req of frames) {
+          if (!isFrameObject(req)) continue; // ignore null/array/primitive frames
           if (req.op === 'subscribe') {
             handleSubscribe(socket, req);
             continue;
@@ -516,7 +554,10 @@ export function createDaemon(deps: DaemonDeps = {}): Daemon {
             await stop();
           }
         }
-      })();
+      })().catch(() => {
+        // A malformed frame must never become an unhandled rejection that
+        // tears down the whole daemon.
+      });
     });
     socket.on('error', () => {});
   }

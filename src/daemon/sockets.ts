@@ -95,10 +95,12 @@ export async function bindUnixSocket(
 ): Promise<Server> {
   const d = resolveDeps(deps);
 
-  // (a) pre-bind probe
+  // (a) pre-bind probe. Only a definitive ECONNREFUSED/ENOENT ('refused') is
+  // treated as stale; an indeterminate 'error' fails closed (never steal a path
+  // we could not prove dead).
   if (d.pathExists(path)) {
     const r = await d.probe(path);
-    if (r === 'live') throw liveOwnerError(path);
+    if (r !== 'refused') throw liveOwnerError(path);
     d.unlink(path); // stale
   }
 
@@ -110,8 +112,9 @@ export async function bindUnixSocket(
     if ((err as NodeJS.ErrnoException).code !== 'EADDRINUSE') throw err;
 
     // (b) EADDRINUSE race — probe once more, then retry the bind exactly once.
+    // Same fail-closed rule: unlink only on a definitive 'refused'.
     const r = await d.probe(path);
-    if (r === 'live') throw liveOwnerError(path);
+    if (r !== 'refused') throw liveOwnerError(path);
     d.unlink(path);
     const retry = d.createServer(onConnection);
     await listen(retry, path);

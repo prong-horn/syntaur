@@ -122,6 +122,28 @@ describe('bindUnixSocket (injected deps)', () => {
     expect(unlink).not.toHaveBeenCalled();
     expect(createServer).toHaveBeenCalledTimes(1);
   });
+
+  it('fails closed (pre-bind) on an indeterminate probe, never unlinking', async () => {
+    const { deps, unlink, createServer } = harness({
+      pathExists: true,
+      servers: [],
+      probes: ['error'],
+    });
+    await expect(bindUnixSocket('/x/y.sock', noop, deps)).rejects.toBeInstanceOf(SyntaurError);
+    expect(unlink).not.toHaveBeenCalled();
+    expect(createServer).not.toHaveBeenCalled();
+  });
+
+  it('fails closed on EADDRINUSE with an indeterminate probe, without unlinking', async () => {
+    const { deps, unlink, createServer } = harness({
+      pathExists: false,
+      servers: ['eaddrinuse'],
+      probes: ['error'],
+    });
+    await expect(bindUnixSocket('/x/y.sock', noop, deps)).rejects.toBeInstanceOf(SyntaurError);
+    expect(unlink).not.toHaveBeenCalled();
+    expect(createServer).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe('bindUnixSocket (real sockets)', () => {

@@ -1,4 +1,8 @@
-import { describe, it, expect, vi } from 'vitest';
+import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { existsSync, readFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { SyntaurError } from '../../errors.js';
 import {
   acquireDaemonLock,
@@ -85,6 +89,56 @@ describe('acquireDaemonLock', () => {
     const fs = fakeLockFs('{ not json');
     const ok = acquireDaemonLock({ pid: 9, procStart: 's', daemonId: 'me' }, LOCK_PATH, fs);
     expect(ok).toBe(true);
+  });
+});
+
+// Exercises the REAL default createExclusive (atomic write-temp-then-link) — the
+// injected single-slot fake above cannot expose the empty-window race the link
+// approach closes.
+describe('acquireDaemonLock (real filesystem, atomic-link creation)', () => {
+  let dir: string;
+  let lockPath: string;
+  beforeEach(async () => {
+    dir = await mkdtemp(join(tmpdir(), 'syntaur-lock-'));
+    lockPath = join(dir, 'daemon.lock');
+  });
+  afterEach(async () => {
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  const liveAsSelf = { isPidAlive: () => true, pidStartedAt: () => 'PS' };
+
+  it('first acquire wins and writes a fully-formed lock (never an empty file)', () => {
+    const ok = acquireDaemonLock({ pid: process.pid, procStart: 'PS', daemonId: 'd1' }, lockPath, liveAsSelf);
+    expect(ok).toBe(true);
+    const parsed = JSON.parse(readFileSync(lockPath, 'utf8')) as DaemonLock;
+    expect(parsed.daemonId).toBe('d1'); // complete content, not an empty/partial file
+  });
+
+  it('a second acquire yields to the live holder and leaves the lock intact', () => {
+    expect(
+      acquireDaemonLock({ pid: process.pid, procStart: 'PS', daemonId: 'd1' }, lockPath, liveAsSelf),
+    ).toBe(true);
+    expect(
+      acquireDaemonLock({ pid: process.pid, procStart: 'PS', daemonId: 'd2' }, lockPath, liveAsSelf),
+    ).toBe(false);
+    expect((JSON.parse(readFileSync(lockPath, 'utf8')) as DaemonLock).daemonId).toBe('d1');
+  });
+
+  it('reclaims a stale lock left by a dead owner and leaves no temp files', () => {
+    // Write a lock owned by a pid that will read as dead.
+    acquireDaemonLock({ pid: 424242, procStart: 'OLD', daemonId: 'd1' }, lockPath, {
+      isPidAlive: () => true,
+      pidStartedAt: () => 'OLD',
+    });
+    const ok = acquireDaemonLock({ pid: process.pid, procStart: 'NEW', daemonId: 'd2' }, lockPath, {
+      isPidAlive: (pid) => pid === process.pid, // 424242 is dead
+      pidStartedAt: () => 'NEW',
+    });
+    expect(ok).toBe(true);
+    expect((JSON.parse(readFileSync(lockPath, 'utf8')) as DaemonLock).daemonId).toBe('d2');
+    // The write-temp-then-link create must clean up its temp.
+    expect(existsSync(`${lockPath}.tmp.${process.pid}`)).toBe(false);
   });
 });
 

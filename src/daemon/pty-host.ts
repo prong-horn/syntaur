@@ -13,7 +13,7 @@ import { SerializeAddon } from '@xterm/addon-serialize';
 import { captureProcessStartedAt } from '../utils/process-info.js';
 import { appendTimeline as realAppendTimeline, writeJobState as realWriteJobState } from './jobs.js';
 import { ensureDir0700, ptyDir, ptySockPath, rvDir, rvSockPath } from './paths.js';
-import { createLineDecoder, encodeFrame } from './protocol.js';
+import { createLineDecoder, encodeFrame, isFrameObject } from './protocol.js';
 import { bindUnixSocket } from './sockets.js';
 import type {
   JobState,
@@ -249,6 +249,12 @@ export async function runPtyHost(config: PtyHostConfig, deps: PtyHostDeps = {}):
 
   const hostPid = process.pid;
   const hostPidStartedAt = procStart(hostPid);
+  // Immutable session metadata, captured ONCE while the child is still alive.
+  // Recomputing these at exit (as the old baseState() did) would set createdAt
+  // to the exit time and pidStartedAt to null — the child is gone by then —
+  // corrupting the final persisted record.
+  const createdAt = nowIso();
+  const childPidStartedAt = procStart(pty.pid);
   const baseState = (): JobState => ({
     short,
     agent: config.agent,
@@ -257,11 +263,11 @@ export async function runPtyHost(config: PtyHostConfig, deps: PtyHostDeps = {}):
     name: config.name,
     state: 'working',
     pid: pty.pid,
-    pidStartedAt: procStart(pty.pid),
+    pidStartedAt: childPidStartedAt,
     sessionId: config.sessionId ?? null,
     cols: curCols,
     rows: curRows,
-    createdAt: nowIso(),
+    createdAt,
     updatedAt: nowIso(),
     daemonId,
     ptySock,
@@ -337,8 +343,22 @@ export async function runPtyHost(config: PtyHostConfig, deps: PtyHostDeps = {}):
     const client: Client = { socket, state: 'pending' };
     ptyClients.add(client);
     const decoder = createLineDecoder<PtyClientFrame>();
+    const prune = (): void => {
+      client.scheduler?.cancel();
+      ptyClients.delete(client);
+    };
     socket.on('data', (chunk) => {
-      for (const frame of decoder.push(chunk)) {
+      let frames: PtyClientFrame[];
+      try {
+        frames = decoder.push(chunk);
+      } catch {
+        // FrameOverflowError — a peer flooding without a newline. Drop it.
+        prune();
+        socket.destroy();
+        return;
+      }
+      for (const frame of frames) {
+        if (!isFrameObject(frame)) continue; // guard null/array/primitive frames
         switch (frame.t) {
           case 'attach':
             handleAttach(client, frame.cols, frame.rows);
@@ -355,10 +375,6 @@ export async function runPtyHost(config: PtyHostConfig, deps: PtyHostDeps = {}):
         }
       }
     });
-    const prune = (): void => {
-      client.scheduler?.cancel();
-      ptyClients.delete(client);
-    };
     socket.on('close', prune);
     socket.on('error', prune);
   }
@@ -373,10 +389,11 @@ export async function runPtyHost(config: PtyHostConfig, deps: PtyHostDeps = {}):
     socket.on('error', prune);
   }
 
-  const ptyServer = await bindSocket(ptySock, (s) => handlePtyConnection(s as unknown as SocketLike));
-  const rvServer = await bindSocket(rvSock, (s) => handleRvConnection(s as unknown as SocketLike));
+  let initialized = false;
+  type PendingExit = { exitCode: number; signal: number | undefined };
+  let pendingExit: PendingExit | null = null;
 
-  pty.onExit(({ exitCode, signal }) => {
+  function finalizeExit(exitCode: number, signal: number | undefined): void {
     if (exited) return;
     exited = true;
     const state = toState(exitCode, signal);
@@ -392,23 +409,63 @@ export async function runPtyHost(config: PtyHostConfig, deps: PtyHostDeps = {}):
     writeJobState(finalState);
     appendTimeline(short, { event: 'exited', code: exitCode, signal: signal ?? null });
 
+    // Notify + tear down every attached client: cancel its snapshot scheduler,
+    // send the exit frame, then end() its socket so the last frame flushes
+    // rather than the attacher only seeing a bare peer-close.
     const exitFrame: PtyHostFrame = { t: 'exit', code: exitCode, signal: signal ?? null };
-    for (const client of ptyClients) sendPty(client, exitFrame);
-    for (const socket of rvClients) sendRv(socket, { t: 'settled', record: stateRecord(state, exitCode, signal ?? null) });
+    for (const client of ptyClients) {
+      client.scheduler?.cancel();
+      sendPty(client, exitFrame);
+      try {
+        client.socket.end();
+      } catch {
+        /* ignore */
+      }
+    }
+    for (const socket of rvClients) {
+      sendRv(socket, { t: 'settled', record: stateRecord(state, exitCode, signal ?? null) });
+      try {
+        socket.end();
+      } catch {
+        /* ignore */
+      }
+    }
 
     try {
-      ptyServer.close();
+      ptyServer?.close();
     } catch {
       /* ignore */
     }
     try {
-      rvServer.close();
+      rvServer?.close();
     } catch {
       /* ignore */
     }
     screen.dispose();
     deps.onExit?.(exitCode ?? (signal ? 1 : 0));
+  }
+
+  // Register the exit listener BEFORE the first await (the socket binds). A fast
+  // child (e.g. `/bin/true`) can exit before the binds resolve; node-pty does
+  // not replay 'exit' to a late listener, so registering after the awaits would
+  // leave state.json stuck at 'working' and the host alive forever. If the exit
+  // fires before initialization completes, buffer it and replay after the binds.
+  pty.onExit(({ exitCode, signal }) => {
+    if (!initialized) {
+      pendingExit = { exitCode, signal };
+      return;
+    }
+    finalizeExit(exitCode, signal);
   });
+
+  const ptyServer = await bindSocket(ptySock, (s) => handlePtyConnection(s as unknown as SocketLike));
+  const rvServer = await bindSocket(rvSock, (s) => handleRvConnection(s as unknown as SocketLike));
+  initialized = true;
+  // Read through an assertion: TS control-flow can't see the async onExit
+  // callback assign `pendingExit`, so it narrows the raw read to `null` (then
+  // `never`). The assertion restores the real union so the guard type-checks.
+  const buffered = pendingExit as PendingExit | null;
+  if (buffered) finalizeExit(buffered.exitCode, buffered.signal);
 
   return {
     get pid() {

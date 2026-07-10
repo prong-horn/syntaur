@@ -44,7 +44,8 @@
     "examples",
     "dashboard/dist",
     "statusline",
-    "scripts/install-macos-url-handler.mjs"
+    "scripts/install-macos-url-handler.mjs",
+    "scripts/ensure-node-pty-exec.mjs"
   ],
   "scripts": {
     "build": "tsup",

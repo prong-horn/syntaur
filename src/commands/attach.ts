@@ -5,7 +5,7 @@ import { daemonRequest, runAttachClient, type AttachDeps } from '../daemon/index
 import type { AttachReply, ErrorReply } from '../daemon/types.js';
 
 export const attachCommand = new Command('attach')
-  .description('Attach to a background session (detach with Ctrl-C)')
+  .description('Attach to a background session (detach with Ctrl-] — Ctrl-C goes to the agent)')
   .argument('<short>', 'Session short id (from `syntaur bg` / `syntaur daemon status`)')
   .action(
     runCommand(async (short: string) => {

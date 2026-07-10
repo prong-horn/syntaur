@@ -13,7 +13,7 @@
 // SYNTAUR_RUNTIME_DIR overrides it (required for tests). The jobs dir hangs off
 // syntaurRoot() so it honors SYNTAUR_HOME.
 
-import { chmodSync, mkdirSync } from 'node:fs';
+import { chmodSync, lstatSync, mkdirSync } from 'node:fs';
 import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { SyntaurError } from '../errors.js';
@@ -143,12 +143,36 @@ export function ptyHostMainEntry(): string {
   return join(distDir(), 'daemon', 'pty-host-main.js');
 }
 
-/** mkdir -p with mode 0700, chmod'd afterward to defeat the process umask. */
+/**
+ * mkdir -p with mode 0700, then VERIFY the directory is safe to use: not a
+ * symlink, owned by us, and mode 0700. On a shared /tmp an attacker can
+ * pre-create `/tmp/syntaur-<uid>` (as a symlink or a dir they own), which
+ * `mkdirSync` silently no-ops over and a swallowed chmod would leave in place.
+ * Fail closed instead so we never write sockets/state into a hostile directory.
+ */
 export function ensureDir0700(dir: string): void {
   mkdirSync(dir, { recursive: true, mode: 0o700 });
   try {
     chmodSync(dir, 0o700);
   } catch {
-    // best-effort; a chmod failure shouldn't abort a bind
+    // chmod may fail if we don't own it — the lstat check below is authoritative.
+  }
+  const st = lstatSync(dir);
+  if (st.isSymbolicLink()) {
+    throw new SyntaurError(`Refusing to use ${dir}: it is a symlink.`, {
+      remediation: 'Remove it, or set SYNTAUR_RUNTIME_DIR to a safe directory you own.',
+    });
+  }
+  const uid = process.getuid?.();
+  if (uid !== undefined && st.uid !== uid) {
+    throw new SyntaurError(`Refusing to use ${dir}: it is owned by uid ${st.uid}, not ${uid}.`, {
+      remediation: 'Remove it, or set SYNTAUR_RUNTIME_DIR to a safe directory you own.',
+    });
+  }
+  if ((st.mode & 0o777) !== 0o700) {
+    throw new SyntaurError(
+      `Refusing to use ${dir}: mode is ${(st.mode & 0o777).toString(8)}, expected 700.`,
+      { remediation: 'Fix its permissions (chmod 700), or set SYNTAUR_RUNTIME_DIR elsewhere.' },
+    );
   }
 }

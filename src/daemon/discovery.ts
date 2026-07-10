@@ -8,7 +8,7 @@
 //                 a connect-probe; a contention loser polls it until the winner's
 //                 control.sock accepts (bounded wait, then an actionable error).
 
-import { openSync, closeSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
+import { linkSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
 import { SyntaurError } from '../errors.js';
 import { isPidAlive, isSameProcess, pidStartedAt, type LivenessDeps } from './liveness.js';
 import { probeUnixSocket, type ProbeResult } from './sockets.js';
@@ -34,17 +34,27 @@ function defaultReadFile(path: string): string | null {
 }
 
 function defaultCreateExclusive(path: string, data: string): boolean {
+  // Write the FULL payload to a pid-unique temp, then hard-link it into place.
+  // link() is atomic and fails EEXIST if the lock already exists, so the lock
+  // at `path` is only ever visible fully-formed — never the empty window that
+  // `openSync('wx')` + a separate write would expose (which a concurrent
+  // contender could parse as corrupt and wrongly unlink).
+  const tmp = `${path}.tmp.${process.pid}`;
   try {
-    const fd = openSync(path, 'wx');
+    writeFileSync(tmp, data, { mode: 0o600 });
     try {
-      writeFileSync(fd, data);
-    } finally {
-      closeSync(fd);
+      linkSync(tmp, path);
+      return true;
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === 'EEXIST') return false;
+      throw err;
     }
-    return true;
-  } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === 'EEXIST') return false;
-    throw err;
+  } finally {
+    try {
+      unlinkSync(tmp);
+    } catch {
+      /* temp already gone */
+    }
   }
 }
 
@@ -98,14 +108,27 @@ export function acquireDaemonLock(
   const payload = JSON.stringify(lock);
   for (let attempt = 0; attempt < 2; attempt += 1) {
     if (d.createExclusive(lockPath, payload)) return true;
-    const existing = parseLock(d.readFile(lockPath));
+    const raw = d.readFile(lockPath);
+    if (raw === null) {
+      // Lock ABSENT at read time — a contender just reclaimed a stale lock and
+      // is between its unlink and its create. Do NOT unlink (there is nothing
+      // to remove, and racing our own unlink could clobber the contender's
+      // fresh lock); simply retry the create.
+      continue;
+    }
+    const existing = parseLock(raw);
     if (existing === null) {
-      // Vanished or corrupt — treat as stale and retry the exclusive create.
+      // Present but unparseable. Atomic-link creation never exposes a corrupt
+      // or empty lock, so no live daemon holds this — it is genuine garbage
+      // (external tampering, or a crashed pre-link writer). Safe to reclaim.
       d.unlink(lockPath);
       continue;
     }
     if (isSameProcess(existing.pid, existing.procStart, d)) return false; // live owner
-    d.unlink(lockPath); // stale — remove and retry
+    // Confirmed-dead owner: reclaim by unlinking, then retry the create.
+    // (Residual: two contenders both reclaiming the same stale lock can race
+    // here; a full fix is an advisory OS lock — tracked as a follow-up.)
+    d.unlink(lockPath);
   }
   return false;
 }

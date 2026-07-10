@@ -327,6 +327,58 @@ describe('runPtyHost', () => {
     expect(s.exitSignal).toBe(15);
   });
 
+  it('replays an exit that fires BEFORE the socket binds complete (fast child)', async () => {
+    // A fast command (e.g. /bin/true) can exit before the async binds resolve.
+    // node-pty does not replay 'exit' to a late listener, so the listener must
+    // be registered before the binds and buffer an early exit.
+    const pty = fakePty();
+    const screen = fakeScreen();
+    let releaseBinds!: () => void;
+    const gate = new Promise<void>((r) => {
+      releaseBinds = r;
+    });
+    const bind = (async () => {
+      await gate; // hold both binds open
+      return { close: () => {} } as unknown as Server;
+    }) as never;
+
+    const promise = runPtyHost(baseConfig(), {
+      ptyFactory: () => pty,
+      bindSocket: bind,
+      createScreen: () => screen,
+      writeJobState,
+      appendTimeline,
+      procStart: () => 'START',
+      now: () => 0,
+    });
+
+    // Binds are blocked; the onExit listener is already registered. Fire the
+    // child's exit now — it must be buffered, not lost.
+    pty.fireExit(0, undefined);
+    expect(writeJobState).toHaveBeenCalledTimes(1); // only the initial 'working'
+
+    releaseBinds();
+    await promise;
+
+    const finalState = writeJobState.mock.calls.at(-1)?.[0] as JobState;
+    expect(finalState.state).toBe('done');
+    expect(finalState.exitCode).toBe(0);
+    expect(appendTimeline).toHaveBeenCalledWith('aaa', expect.objectContaining({ event: 'exited' }));
+  });
+
+  it('ignores a null/malformed pty frame without crashing', async () => {
+    const { pty, bind, promise } = boot();
+    await promise;
+    const sock = fakeSocket();
+    bind.connect('/tmp/syntaur-ptyhost-test/d1/pty/aaa.sock', sock);
+    expect(() => sock.recv('null\n')).not.toThrow();
+    expect(() => sock.recv('5\n')).not.toThrow();
+    expect(() => sock.recv('[1,2]\n')).not.toThrow();
+    // the connection still works afterward
+    sock.recv(encodeFrame({ t: 'stdin', b: b64('ok') }));
+    expect(pty.writes).toContain('ok');
+  });
+
   it('propagates a fatal live-socket bind error', async () => {
     const pty = fakePty();
     await expect(

@@ -80,6 +80,16 @@ export interface AttachDeps {
 const DETACH_SIGNALS = ['SIGINT', 'SIGTERM', 'SIGHUP'];
 
 /**
+ * In-band detach key: Ctrl-] (0x1d). Raw mode disables ISIG, so a keyboard
+ * Ctrl-C is delivered to the agent as a 0x03 byte (never a SIGINT) — the
+ * DETACH_SIGNALS above only fire for signals delivered out-of-band (e.g. a
+ * `kill` from another terminal). A distinct in-band key is therefore required
+ * to leave a still-running session from the keyboard, and it must not be one an
+ * agent needs (Ctrl-C/Ctrl-D/etc). Ctrl-] is effectively unused by TUI agents.
+ */
+const DETACH_KEY = 0x1d;
+
+/**
  * Attach to a session's pty. Never rejects — always resolves an AttachResult,
  * and always runs the shared restore path first.
  */
@@ -177,8 +187,20 @@ export function runAttachClient(opts: AttachOptions, deps: AttachDeps): Promise<
       }
       stdin.resume();
 
-      dataHandler = (chunk) =>
-        sock.write(encodeFrame({ t: 'stdin', b: Buffer.from(chunk).toString('base64') }));
+      dataHandler = (chunk) => {
+        const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+        const idx = buf.indexOf(DETACH_KEY);
+        if (idx !== -1) {
+          // Forward anything typed before the detach key, then detach locally,
+          // leaving the session running.
+          if (idx > 0) {
+            sock.write(encodeFrame({ t: 'stdin', b: buf.subarray(0, idx).toString('base64') }));
+          }
+          settle({ reason: 'detach', code: null, signal: null, detached: true });
+          return;
+        }
+        sock.write(encodeFrame({ t: 'stdin', b: buf.toString('base64') }));
+      };
       stdin.on('data', dataHandler);
 
       const winch = (): void => scheduleResize();
