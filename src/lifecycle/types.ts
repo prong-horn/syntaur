@@ -1,3 +1,10 @@
+// WS-2: the extended `statusHistory` hop fields reference the pure engine's
+// shapes. These are `import type` ONLY — `stage-engine.ts` already imports
+// `AttestationRecord`/`Solicitation` from here, so a value import back would be
+// a runtime cycle; type-only imports erase at compile time (codex r2 finding 8).
+import type { HopTrigger, GateSnapshotEntry, DissentCause } from './stage-engine.js';
+import type { StageRoute } from '../utils/stage-model.js';
+
 export type AssignmentStatus = string;
 
 export type TransitionCommand = string;
@@ -67,6 +74,59 @@ export interface StatusHistoryEntry {
   phaseTo?: string | null;
   dispositionFrom?: string | null;
   dispositionTo?: string | null;
+  // ── stage-engine hop fields (WS-2) ───────────────────────────────────────
+  // Present ONLY on entries the engine writes (one per hop). Absent → a flat
+  // ladder/legacy entry, unchanged. `route` is optional because the forced
+  // first move of a `manual-override`/`reopen` step has no engine route (a pure
+  // `Hop.route` is required; the forced move is written as a bare
+  // StatusHistoryEntry, never a `Hop` — codex r4).
+  /** The declared route this hop traversed; absent on a forced first move. */
+  route?: StageRoute;
+  /** How the move was triggered (`gate`/`verdict`/`manual-override`/`reopen`/…). */
+  trigger?: HopTrigger;
+  /** The gate-passage snapshot at the hop (for regression + audit). */
+  gateSnapshot?: GateSnapshotEntry[];
+  /** The (check, actor, verdict) that fired a verdict route, if any. */
+  dissent?: DissentCause;
+}
+
+/**
+ * One frozen check state, snapshotted into `frozenChecks` at terminal arrival
+ * (design §2.3 AC4). Read verbatim while `disposition: terminal` so worktree
+ * cleanup can't retroactively "break" a done ticket's gate. Absent block →
+ * `null` (not-yet-terminal / pre-migration).
+ */
+export interface FrozenCheck {
+  key: string;
+  label: string;
+  passed: boolean;
+}
+
+/**
+ * One persisted gate-override stamp (design §2.4). Written when a
+ * `manual-override` move forces a ticket forward past a FAILING gate — one per
+ * crossed failing gate. Carries `label` + the move endpoints so self-clear can
+ * match on key AND label (a positional `stage:key` alone is not reorder-safe —
+ * codex r2 finding 4). Self-clears on the next recompute where the live gate
+ * (matched key+label) passes; a reordered/removed gate is left for the doctor.
+ */
+export interface GateOverride {
+  /** The stage whose gate was overridden. */
+  stage: string;
+  /** The overridden check's positional key `${stageId}:${index}`. */
+  key: string;
+  /** The overridden check's human label (reorder-safe self-clear match). */
+  label: string;
+  /** Move source stage id. */
+  from: string;
+  /** Move target stage id. */
+  to: string;
+  /** Who forced the override (audit actor). */
+  actor: string;
+  /** ISO timestamp of the override. */
+  at: string;
+  /** Free-text reason (esp. for a backward/off-spine move recorded without a stamp). */
+  reason?: string;
 }
 
 /**
@@ -204,6 +264,19 @@ export interface AssignmentFrontmatter {
   /** Attestation records, one per (fact, actor). Revision-bound; stale records
    * contribute nothing at compute time. Absent block → []. */
   attestations: AttestationRecord[];
+  // ── stage-engine fields (WS-2; dormant until `stages-migrated`) ───────────
+  /** Open/rendered judgment solicitations (design §2.5). Absent block → []. */
+  solicitations: Solicitation[];
+  /** `dissentKey()`s already routed on — edge-trigger bookkeeping so a still-valid
+   * dissent doesn't re-route every recompute (WS-1 handoff dep 1). Absent → []. */
+  firedVerdicts: string[];
+  /** Frozen terminal check snapshot; `null` while non-terminal / pre-migration. */
+  frozenChecks: FrozenCheck[] | null;
+  /** Per-ticket manual hold (design §2.6) — suspends engine auto-movement.
+   * Fed to `EngineInput.held`. Absent → false. */
+  hold: boolean;
+  /** Persisted gate-override stamps (design §2.4). Absent block → []. */
+  gateOverrides: GateOverride[];
 }
 
 export interface TransitionResult {

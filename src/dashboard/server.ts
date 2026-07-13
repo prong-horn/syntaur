@@ -845,6 +845,11 @@ export function createDashboardServer(options: DashboardServerOptions) {
         '../lifecycle/recompute.js'
       );
       let warnedMigrationPending = false;
+      // WS-2 Decision 2: this sweep gate stays on `isDeriveMigrated()`, NOT
+      // `stages-migrated`. It gates whether IMPLICIT recompute runs at all;
+      // flipping it to the (WS-2-dormant) stages marker would freeze the live
+      // ladder board. The engine-vs-ladder choice is a branch INSIDE
+      // recomputeAndWrite, gated on `isStagesMigrated() && ctx.stageWorkflow`.
       const migrationGate = async (): Promise<boolean> => {
         if (await isDeriveMigrated()) return true;
         if (!warnedMigrationPending) {

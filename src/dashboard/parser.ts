@@ -3,7 +3,13 @@
  * Pattern copied from src/lifecycle/frontmatter.ts:3-23 (extractFrontmatter + parseSimpleValue).
  */
 
-import type { AttestationRecord, StatusHistoryEntry } from '../lifecycle/types.js';
+import type {
+  AttestationRecord,
+  FrozenCheck,
+  GateOverride,
+  Solicitation,
+  StatusHistoryEntry,
+} from '../lifecycle/types.js';
 
 export interface ParsedFile {
   frontmatter: Record<string, string>;
@@ -304,6 +310,12 @@ export interface ParsedAssignmentFull {
   facts: Record<string, string>;
   /** Attestation records (one per fact+actor). Absent block → []. */
   attestations: AttestationRecord[];
+  // ── stage-engine fields (WS-2; read-only mirror, dormant until migrated) ──
+  solicitations: Solicitation[];
+  firedVerdicts: string[];
+  frozenChecks: FrozenCheck[] | null;
+  hold: boolean;
+  gateOverrides: GateOverride[];
 }
 
 function parseExternalIds(frontmatter: string): Array<{ system: string; id: string; url: string | null }> {
@@ -480,6 +492,87 @@ function parseAttestations(frontmatter: string): AttestationRecord[] {
   return results;
 }
 
+// ── WS-2 stage-engine blocks (parity with lifecycle frontmatter.ts; keep in
+// sync). Read-only mirror for the dashboard payloads; parsed but only consumed
+// once the engine is active (Task 2.6 migrated display). ─────────────────────
+
+function parseObjectListD(frontmatter: string, header: string): Record<string, string | null>[] {
+  if (new RegExp(`^${header}:\\s*\\[\\s*\\]`, 'm').test(frontmatter)) return [];
+  const headerMatch = frontmatter.match(new RegExp(`^${header}:\\s*$`, 'm'));
+  if (!headerMatch) return [];
+  const headerStart = headerMatch.index ?? frontmatter.indexOf(headerMatch[0]);
+  const bodyStart = headerStart + headerMatch[0].length + 1;
+  const after = frontmatter.slice(bodyStart);
+  const bodyLines: string[] = [];
+  for (const line of after.split('\n')) {
+    if (line.length === 0) {
+      bodyLines.push(line);
+      continue;
+    }
+    if (line[0] !== ' ' && line[0] !== '\t') break;
+    bodyLines.push(line);
+  }
+  const results: Record<string, string | null>[] = [];
+  for (const block of bodyLines.join('\n').split(/\n\s+-\s+/).filter((b) => b.trim().length > 0)) {
+    const entry: Record<string, string | null> = {};
+    for (const line of block.split('\n')) {
+      const colonIdx = line.indexOf(':');
+      if (colonIdx < 0) continue;
+      const key = line.slice(0, colonIdx).trim().replace(/^-\s+/, '');
+      if (!key) continue;
+      entry[key] = parseSimpleValue(line.slice(colonIdx + 1));
+    }
+    results.push(entry);
+  }
+  return results;
+}
+
+function parseSolicitationsD(fm: string): Solicitation[] {
+  const out: Solicitation[] = [];
+  for (const e of parseObjectListD(fm, 'solicitations')) {
+    const state = e['state'];
+    if (!e['check'] || !e['at']) continue;
+    if (state !== 'solicited' && state !== 'rendered' && state !== 'failed') continue;
+    const s: Solicitation = { check: e['check'], at: e['at'], state };
+    if (e['judge'] != null) s.judge = e['judge'];
+    if (e['revisionBinding'] != null) s.revisionBinding = e['revisionBinding'];
+    if (e['sessionRef'] != null) s.sessionRef = e['sessionRef'];
+    out.push(s);
+  }
+  return out;
+}
+
+function parseGateOverridesD(fm: string): GateOverride[] {
+  const out: GateOverride[] = [];
+  for (const e of parseObjectListD(fm, 'gateOverrides')) {
+    if (!e['stage'] || !e['key'] || e['label'] == null || !e['from'] || !e['to'] || !e['actor'] || !e['at'])
+      continue;
+    const o: GateOverride = {
+      stage: e['stage'],
+      key: e['key'],
+      label: e['label'],
+      from: e['from'],
+      to: e['to'],
+      actor: e['actor'],
+      at: e['at'],
+    };
+    if (e['reason'] != null) o.reason = e['reason'];
+    out.push(o);
+  }
+  return out;
+}
+
+function parseFrozenChecksD(fm: string): FrozenCheck[] | null {
+  if (/^frozenChecks:\s*\[\s*\]/m.test(fm)) return [];
+  if (!/^frozenChecks:\s*$/m.test(fm)) return null;
+  const out: FrozenCheck[] = [];
+  for (const e of parseObjectListD(fm, 'frozenChecks')) {
+    if (!e['key'] || e['label'] == null || e['passed'] == null) continue;
+    out.push({ key: e['key'], label: e['label'], passed: e['passed'] === 'true' });
+  }
+  return out;
+}
+
 export function parseAssignmentFull(fileContent: string): ParsedAssignmentFull {
   const [fm, body] = extractFrontmatter(fileContent);
   return {
@@ -540,6 +633,11 @@ export function parseAssignmentFull(fileContent: string): ParsedAssignmentFull {
     })(),
     facts: parseFactsMap(fm),
     attestations: parseAttestations(fm),
+    solicitations: parseSolicitationsD(fm),
+    firedVerdicts: parseListField(fm, 'firedVerdicts').map((v) => parseSimpleValue(v) ?? v),
+    frozenChecks: parseFrozenChecksD(fm),
+    hold: getField(fm, 'hold') === 'true',
+    gateOverrides: parseGateOverridesD(fm),
   };
 }
 
