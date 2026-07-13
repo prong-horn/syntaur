@@ -44,7 +44,8 @@
     "examples",
     "dashboard/dist",
     "statusline",
-    "scripts/install-macos-url-handler.mjs"
+    "scripts/install-macos-url-handler.mjs",
+    "scripts/ensure-node-pty-exec.mjs"
   ],
   "scripts": {
     "build": "tsup",
@@ -58,7 +59,7 @@
     "mirror-skills": "node scripts/mirror-skills-to-platforms.mjs",
     "sync-plugin-version": "node scripts/sync-plugin-version.mjs",
     "build:skills-index": "node scripts/build-skills-index.mjs",
-    "postinstall": "node scripts/install-macos-url-handler.mjs",
+    "postinstall": "node scripts/ensure-node-pty-exec.mjs && node scripts/install-macos-url-handler.mjs",
     "version": "node scripts/sync-plugin-version.mjs && git add .claude-plugin/plugin.json platforms/claude-code/.claude-plugin/plugin.json platforms/codex/.codex-plugin/plugin.json",
     "prepack": "node scripts/mirror-skills-to-platforms.mjs && node scripts/sync-plugin-version.mjs",
     "prepublishOnly": "npm run build && npm ci --prefix dashboard && npm run build --prefix dashboard",
@@ -70,6 +71,8 @@
   },
   "dependencies": {
     "@inquirer/prompts": "^8.4.2",
+    "@xterm/addon-serialize": "^0.14.0",
+    "@xterm/headless": "^6.0.0",
     "better-sqlite3": "^11.0.0",
     "chokidar": "^4.0.0",
     "commander": "^13.0.0",
@@ -78,6 +81,7 @@
     "fuse.js": "^7.1.0",
     "ink": "^7.0.0",
     "ink-text-input": "^6.0.0",
+    "node-pty": "^1.1.0",
     "open": "^10.0.0",
     "react": "^19.2.4",
     "ws": "^8.0.0",

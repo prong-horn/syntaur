@@ -33,6 +33,17 @@
     "src/__tests__/workflow-write.test.ts",
     "src/__tests__/workflow-resolve.test.ts",
     "src/__tests__/github-backup.test.ts",
-    "src/__tests__/dashboard-watcher.test.ts"
+    "src/__tests__/dashboard-watcher.test.ts",
+    "src/daemon/__tests__/protocol.test.ts",
+    "src/daemon/__tests__/paths.test.ts",
+    "src/daemon/__tests__/sockets.test.ts",
+    "src/daemon/__tests__/discovery.test.ts",
+    "src/daemon/__tests__/roster.test.ts",
+    "src/daemon/__tests__/pty-host.test.ts",
+    "src/daemon/__tests__/supervisor.test.ts",
+    "src/daemon/__tests__/client.test.ts",
+    "src/daemon/__tests__/attach-client.test.ts",
+    "src/daemon/__tests__/pty-host-run.test.ts",
+    "src/daemon/__tests__/liveness.test.ts"
   ]
 }
