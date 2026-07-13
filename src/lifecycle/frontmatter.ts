@@ -2,7 +2,10 @@ import type {
   AssignmentFrontmatter,
   AttestationRecord,
   ExternalId,
+  FrozenCheck,
+  GateOverride,
   PlanApproval,
+  Solicitation,
   StatusHistoryEntry,
   StatusOverride,
   Workspace,
@@ -155,6 +158,22 @@ function parseStatusHistory(frontmatter: string): StatusHistoryEntry[] {
     if ('phaseTo' in entry) result.phaseTo = entry['phaseTo'];
     if ('dispositionFrom' in entry) result.dispositionFrom = entry['dispositionFrom'];
     if ('dispositionTo' in entry) result.dispositionTo = entry['dispositionTo'];
+    // WS-2 stage-engine hop fields — present only on engine-written entries.
+    if (entry['trigger'] != null) {
+      result.trigger = entry['trigger'] as StatusHistoryEntry['trigger'];
+    }
+    if (entry['route'] != null) {
+      const route = tryJson(entry['route']);
+      if (route !== undefined) result.route = route as StatusHistoryEntry['route'];
+    }
+    if (entry['gateSnapshot'] != null) {
+      const snap = tryJson(entry['gateSnapshot']);
+      if (Array.isArray(snap)) result.gateSnapshot = snap as StatusHistoryEntry['gateSnapshot'];
+    }
+    if (entry['dissent'] != null) {
+      const dissent = tryJson(entry['dissent']);
+      if (dissent !== undefined) result.dissent = dissent as StatusHistoryEntry['dissent'];
+    }
     results.push(result);
   }
   return results;
@@ -313,6 +332,117 @@ function parseTags(frontmatter: string): string[] {
   return results;
 }
 
+// ── WS-2 stage-engine frontmatter blocks ─────────────────────────────────────
+
+/**
+ * Shared body scan for a multi-line list-of-mappings block. Returns one
+ * string-map per `- ` item, or [] when the block is absent or inline-empty.
+ * Generalizes {@link parseAttestations}' body scan (same end-of-input safety).
+ */
+function parseObjectList(frontmatter: string, header: string): Record<string, string | null>[] {
+  if (new RegExp(`^${header}:\\s*\\[\\s*\\]`, 'm').test(frontmatter)) return [];
+  const headerMatch = frontmatter.match(new RegExp(`^${header}:\\s*$`, 'm'));
+  if (!headerMatch) return [];
+  const headerStart = headerMatch.index ?? frontmatter.indexOf(headerMatch[0]);
+  const bodyStart = headerStart + headerMatch[0].length + 1;
+  const after = frontmatter.slice(bodyStart);
+  const bodyLines: string[] = [];
+  for (const line of after.split('\n')) {
+    if (line.length === 0) {
+      bodyLines.push(line);
+      continue;
+    }
+    if (line[0] !== ' ' && line[0] !== '\t') break;
+    bodyLines.push(line);
+  }
+  const body = bodyLines.join('\n');
+  const results: Record<string, string | null>[] = [];
+  for (const block of body.split(/\n\s+-\s+/).filter((b) => b.trim().length > 0)) {
+    const entry: Record<string, string | null> = {};
+    for (const line of block.split('\n')) {
+      const colonIdx = line.indexOf(':');
+      if (colonIdx < 0) continue;
+      const key = line.slice(0, colonIdx).trim().replace(/^-\s+/, '');
+      if (!key) continue;
+      entry[key] = parseSimpleValue(line.slice(colonIdx + 1));
+    }
+    results.push(entry);
+  }
+  return results;
+}
+
+function parseSolicitations(frontmatter: string): Solicitation[] {
+  const out: Solicitation[] = [];
+  for (const entry of parseObjectList(frontmatter, 'solicitations')) {
+    const state = entry['state'];
+    if (!entry['check'] || !entry['at']) continue;
+    if (state !== 'solicited' && state !== 'rendered' && state !== 'failed') continue;
+    const s: Solicitation = { check: entry['check'], at: entry['at'], state };
+    if (entry['judge'] != null) s.judge = entry['judge'];
+    if (entry['revisionBinding'] != null) s.revisionBinding = entry['revisionBinding'];
+    if (entry['sessionRef'] != null) s.sessionRef = entry['sessionRef'];
+    out.push(s);
+  }
+  return out;
+}
+
+function parseGateOverrides(frontmatter: string): GateOverride[] {
+  const out: GateOverride[] = [];
+  for (const entry of parseObjectList(frontmatter, 'gateOverrides')) {
+    if (
+      !entry['stage'] ||
+      !entry['key'] ||
+      entry['label'] == null ||
+      !entry['from'] ||
+      !entry['to'] ||
+      !entry['actor'] ||
+      !entry['at']
+    )
+      continue;
+    const o: GateOverride = {
+      stage: entry['stage'],
+      key: entry['key'],
+      label: entry['label'],
+      from: entry['from'],
+      to: entry['to'],
+      actor: entry['actor'],
+      at: entry['at'],
+    };
+    if (entry['reason'] != null) o.reason = entry['reason'];
+    out.push(o);
+  }
+  return out;
+}
+
+/** `firedVerdicts` is a list of dissent keys (which contain colons, so each is
+ *  quoted by formatYamlValue → parse via parseSimpleValue to strip the quotes). */
+function parseFiredVerdicts(frontmatter: string): string[] {
+  if (/^firedVerdicts:\s*\[\s*\]/m.test(frontmatter)) return [];
+  const results: string[] = [];
+  const blockMatch = frontmatter.match(/^firedVerdicts:\s*\n((?:\s+-\s+.*\n?)*)/m);
+  if (blockMatch) {
+    for (const item of blockMatch[1].matchAll(/^\s+-\s+(.+)$/gm)) {
+      const v = parseSimpleValue(item[1]);
+      if (v != null) results.push(v);
+    }
+  }
+  return results;
+}
+
+/** `frozenChecks`: `null`/absent → not-frozen (`null`); inline `[]` → frozen with
+ *  no checks; block → the snapshot. The null-vs-[] distinction is load-bearing
+ *  (only a terminal ticket is frozen). */
+function parseFrozenChecks(frontmatter: string): FrozenCheck[] | null {
+  if (/^frozenChecks:\s*\[\s*\]/m.test(frontmatter)) return [];
+  if (!/^frozenChecks:\s*$/m.test(frontmatter)) return null; // absent or scalar null
+  const out: FrozenCheck[] = [];
+  for (const entry of parseObjectList(frontmatter, 'frozenChecks')) {
+    if (!entry['key'] || entry['label'] == null || entry['passed'] == null) continue;
+    out.push({ key: entry['key'], label: entry['label'], passed: entry['passed'] === 'true' });
+  }
+  return out;
+}
+
 export function parseAssignmentFrontmatter(fileContent: string): AssignmentFrontmatter {
   const [frontmatter] = extractFrontmatter(fileContent);
 
@@ -354,6 +484,11 @@ export function parseAssignmentFrontmatter(fileContent: string): AssignmentFront
     override: parseOverride(frontmatter),
     facts: parseFactsMap(frontmatter),
     attestations: parseAttestations(frontmatter),
+    solicitations: parseSolicitations(frontmatter),
+    firedVerdicts: parseFiredVerdicts(frontmatter),
+    frozenChecks: parseFrozenChecks(frontmatter),
+    hold: getField('hold') === 'true',
+    gateOverrides: parseGateOverrides(frontmatter),
   };
 }
 
@@ -408,6 +543,7 @@ export function updateAssignmentFile(
       | 'reviewRequested'
       | 'reworkRequested'
       | 'implementationStarted'
+      | 'hold'
     >
   >,
 ): string {
@@ -594,7 +730,33 @@ function renderStatusHistoryItem(entry: StatusHistoryEntry): string {
       lines.push(`    ${key}: ${formatYamlValue(entry[key] ?? null)}`);
     }
   }
+  // WS-2 stage-engine hop fields — rendered ONLY on engine-written entries, so a
+  // ladder/legacy entry stays byte-identical. `trigger` is a bare enum; the
+  // structured fields (route/gateSnapshot/dissent) are JSON scalars (single-line,
+  // round-tripped through the flat item parser + parseSimpleValue quote handling).
+  if (entry.trigger !== undefined) {
+    lines.push(`    trigger: ${formatYamlValue(entry.trigger)}`);
+  }
+  if (entry.route !== undefined) {
+    lines.push(`    route: ${formatYamlValue(JSON.stringify(entry.route))}`);
+  }
+  if (entry.gateSnapshot !== undefined) {
+    lines.push(`    gateSnapshot: ${formatYamlValue(JSON.stringify(entry.gateSnapshot))}`);
+  }
+  if (entry.dissent !== undefined) {
+    lines.push(`    dissent: ${formatYamlValue(JSON.stringify(entry.dissent))}`);
+  }
   return lines.join('\n');
+}
+
+/** JSON.parse that returns undefined instead of throwing — a hand-corrupted hop
+ *  field degrades to "absent" rather than crashing the whole parse. */
+function tryJson(raw: string): unknown {
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return undefined;
+  }
 }
 
 /**
@@ -805,4 +967,126 @@ export function appendStatusHistoryEntry(
   }
 
   return `${fmMatch[1]}${newFm}${fmMatch[3]}${fileContent.slice(fmMatch[0].length)}`;
+}
+
+// ── WS-2 stage-engine block writers ──────────────────────────────────────────
+
+/** Generic `findAttestationsBlock` — locate `header:` (block form). */
+function findListBlock(
+  fmBlock: string,
+  header: string,
+): { headerStart: number; bodyStart: number; bodyEnd: number } | null {
+  const headerMatch = fmBlock.match(new RegExp(`^${header}:\\s*$`, 'm'));
+  if (!headerMatch) return null;
+  const headerStart = headerMatch.index ?? fmBlock.indexOf(headerMatch[0]);
+  const bodyStart = headerStart + headerMatch[0].length + 1;
+  const after = fmBlock.slice(bodyStart);
+  let consumed = 0;
+  for (const line of after.split('\n')) {
+    if (line.length === 0) {
+      consumed += line.length + 1;
+      continue;
+    }
+    if (line[0] !== ' ' && line[0] !== '\t') break;
+    consumed += line.length + 1;
+  }
+  const bodyEnd = Math.min(bodyStart + consumed, fmBlock.length);
+  return { headerStart, bodyStart, bodyEnd };
+}
+
+/**
+ * Set the frontmatter key `header` to the pre-rendered `rendered` text
+ * (`header: []` / `header: null` / `header:\n  - …`). Replaces an existing block
+ * OR scalar (`[]`/`null`/`~`) form in place, else appends before the closing
+ * `---`. The single shared substrate for the WS-2 list blocks — mirrors
+ * {@link upsertAttestation}'s block handling.
+ */
+function setFrontmatterBlock(fileContent: string, header: string, rendered: string): string {
+  const fmMatch = fileContent.match(/^(---\n)([\s\S]*?)(\n---)/);
+  if (!fmMatch) {
+    throw new Error('No frontmatter found in assignment file. Expected --- delimiters.');
+  }
+  const fmBlock = fmMatch[2];
+  const scalarRegex = new RegExp(`^${header}:[ \\t]*(\\[[ \\t]*\\]|null|~)[ \\t]*$`, 'm');
+  const block = findListBlock(fmBlock, header);
+  let newFm: string;
+  if (block) {
+    const before = fmBlock.slice(0, block.headerStart);
+    const rest = fmBlock.slice(block.bodyEnd);
+    const sep = rest.length > 0 && !rest.startsWith('\n') ? '\n' : '';
+    newFm = `${before}${rendered}${sep}${rest}`;
+  } else if (scalarRegex.test(fmBlock)) {
+    newFm = fmBlock.replace(scalarRegex, rendered);
+  } else {
+    newFm = `${fmBlock.replace(/\n+$/, '')}\n${rendered}`;
+  }
+  return `${fmMatch[1]}${newFm}${fmMatch[3]}${fileContent.slice(fmMatch[0].length)}`;
+}
+
+/** Replace a whole list block with `renderedItems`; empty → inline `header: []`. */
+function replaceListBlock(fileContent: string, header: string, renderedItems: string[]): string {
+  const rendered =
+    renderedItems.length === 0 ? `${header}: []` : `${header}:\n${renderedItems.join('\n')}`;
+  return setFrontmatterBlock(fileContent, header, rendered);
+}
+
+function renderSolicitationItem(s: Solicitation): string {
+  const lines = [`  - check: ${formatYamlValue(s.check)}`];
+  if (s.judge !== undefined) lines.push(`    judge: ${formatYamlValue(s.judge)}`);
+  if (s.revisionBinding !== undefined) {
+    lines.push(`    revisionBinding: ${formatYamlValue(s.revisionBinding)}`);
+  }
+  lines.push(`    at: ${formatYamlValue(s.at)}`);
+  if (s.sessionRef !== undefined) lines.push(`    sessionRef: ${formatYamlValue(s.sessionRef)}`);
+  lines.push(`    state: ${formatYamlValue(s.state)}`);
+  return lines.join('\n');
+}
+
+/** Replace the whole `solicitations:` block with `list`. */
+export function replaceSolicitations(fileContent: string, list: Solicitation[]): string {
+  return replaceListBlock(fileContent, 'solicitations', list.map(renderSolicitationItem));
+}
+
+/** Replace the whole `firedVerdicts:` list (dissent keys). */
+export function replaceFiredVerdicts(fileContent: string, list: string[]): string {
+  return replaceListBlock(
+    fileContent,
+    'firedVerdicts',
+    list.map((v) => `  - ${formatYamlValue(v)}`),
+  );
+}
+
+function renderGateOverrideItem(o: GateOverride): string {
+  const lines = [
+    `  - stage: ${formatYamlValue(o.stage)}`,
+    `    key: ${formatYamlValue(o.key)}`,
+    `    label: ${formatYamlValue(o.label)}`,
+    `    from: ${formatYamlValue(o.from)}`,
+    `    to: ${formatYamlValue(o.to)}`,
+    `    actor: ${formatYamlValue(o.actor)}`,
+    `    at: ${formatYamlValue(o.at)}`,
+  ];
+  if (o.reason !== undefined) lines.push(`    reason: ${formatYamlValue(o.reason)}`);
+  return lines.join('\n');
+}
+
+/** Replace the whole `gateOverrides:` block with `list`. */
+export function replaceGateOverrides(fileContent: string, list: GateOverride[]): string {
+  return replaceListBlock(fileContent, 'gateOverrides', list.map(renderGateOverrideItem));
+}
+
+function renderFrozenCheckItem(c: FrozenCheck): string {
+  return [
+    `  - key: ${formatYamlValue(c.key)}`,
+    `    label: ${formatYamlValue(c.label)}`,
+    `    passed: ${formatYamlValue(c.passed)}`,
+  ].join('\n');
+}
+
+/** Write `frozenChecks:` — `null` (not frozen) / inline `[]` (frozen, no checks)
+ *  / a block. The null-vs-[] distinction is load-bearing (Task 2.3 freeze read). */
+export function writeFrozenChecks(fileContent: string, checks: FrozenCheck[] | null): string {
+  if (checks === null) return setFrontmatterBlock(fileContent, 'frozenChecks', 'frozenChecks: null');
+  if (checks.length === 0) return setFrontmatterBlock(fileContent, 'frozenChecks', 'frozenChecks: []');
+  return replaceListBlock(fileContent, 'frozenChecks', checks.map(renderFrozenCheckItem));
 }

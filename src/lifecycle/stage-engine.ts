@@ -93,10 +93,32 @@ export interface GateSnapshotEntry {
   passed: boolean;
   /** A `--force`/skip passage never actually passed → excluded from regression. */
   overridden?: boolean;
+  /** The check's OWN stage id — set by {@link crossedGates} so a multi-stage
+   * override stamps each gate against the stage it belongs to, not the move
+   * source, and so its self-clear re-evaluates that stage (codex review 2+3). */
+  stage?: string;
 }
 
-/** The trigger kind recorded on a hop (design §2.3 "Every move appends"). */
-export type HopTrigger = 'gate' | 'work-start' | 'manual' | 'verdict' | 'placement' | 'regression';
+/**
+ * The trigger kind recorded on a hop (design §2.3 "Every move appends").
+ *
+ * `advance`/`evaluateRoutes` PRODUCE only the first six (gate/work-start/manual/
+ * verdict/placement/regression). `manual-override` and `reopen` are constructed
+ * Node-side by WS-2 as the FORCED first move of a `recomputeAndWrite` engine
+ * step (a drag past a failing gate, or a reopen re-placement); they never come
+ * out of a pure `Hop`, so no engine producer switch handles them — but any
+ * CONSUMER that switches over `HopTrigger` (history serializer, dashboard hop
+ * rendering) must include the two new arms.
+ */
+export type HopTrigger =
+  | 'gate'
+  | 'work-start'
+  | 'manual'
+  | 'verdict'
+  | 'placement'
+  | 'regression'
+  | 'manual-override'
+  | 'reopen';
 
 /** The (check, actor, verdict, binding) that fired a verdict route. */
 export interface DissentCause {
@@ -360,6 +382,67 @@ export function placeTicket(workflow: StageWorkflow, input: EngineInput): string
     cur = next;
   }
   return cur.id;
+}
+
+/**
+ * Placement (as {@link placeTicket}) that STOPS at `capStageId` — it never
+ * advances past the cap even if the cap's gate passes (WS-2, for `reopen`: cap
+ * at the terminal stage's `reopen:` target so a re-opened ticket lands BEFORE
+ * the terminal, at the honest deepest reachable stage ≤ the cap). If the cap id
+ * isn't in the workflow the behavior is uncapped (the caller supplies a real
+ * reopen target).
+ */
+export function placeTicketCapped(
+  workflow: StageWorkflow,
+  input: EngineInput,
+  capStageId: string,
+): string {
+  if (workflow.stages.length === 0) return '';
+  let cur = workflow.stages[0];
+  const cap = workflow.stages.length;
+  for (let i = 0; i < cap; i++) {
+    if (cur.id === capStageId) break; // reached the cap — don't advance past it
+    if (cur.terminal) break;
+    if (!evaluateGate(cur, input).passed) break;
+    const route = spineRoute(cur, workflow);
+    if (!route) break;
+    const next = stageById(workflow, route.to);
+    if (!next) break;
+    cur = next;
+  }
+  return cur.id;
+}
+
+/**
+ * The FAILING gates crossed on the forward slice `[from, to)` of a
+ * `manual-override` move (WS-2 / codex r2 finding 3). An override "past a
+ * failing gate" bypasses the SOURCE stage's gate (and any intermediate ones) —
+ * NOT the target's own exit gate — so those are what get stamped as
+ * `GateOverride`s, each entry flagged `overridden: true`. Returns `[]` when `to`
+ * is not STRICTLY forward of `from` in declaration order (a backward / off-spine
+ * drag crosses nothing — it is re-work, not an override; codex r3 finding 3b).
+ */
+export function crossedGates(
+  workflow: StageWorkflow,
+  fromStageId: string,
+  toStageId: string,
+  input: EngineInput,
+): GateSnapshotEntry[] {
+  const fromIdx = workflow.stages.findIndex((s) => s.id === fromStageId);
+  const toIdx = workflow.stages.findIndex((s) => s.id === toStageId);
+  if (fromIdx < 0 || toIdx < 0 || toIdx <= fromIdx) return [];
+  const out: GateSnapshotEntry[] = [];
+  for (let i = fromIdx; i < toIdx; i++) {
+    const stage = workflow.stages[i];
+    const gate = evaluateGate(stage, input);
+    if (gate.passed) continue;
+    for (const c of gate.checks) {
+      if (!c.passed) {
+        out.push({ key: c.key, label: c.label, passed: false, overridden: true, stage: stage.id });
+      }
+    }
+  }
+  return out;
 }
 
 /**

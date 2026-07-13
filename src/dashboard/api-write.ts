@@ -50,6 +50,7 @@ import {
 import { resolveAssignmentById } from '../utils/assignment-resolver.js';
 import { renderProgress } from '../templates/index.js';
 import { executeTransitionByDir } from '../lifecycle/index.js';
+import { runEngineTransition, runEngineOverride } from '../lifecycle/engine-transition.js';
 import {
   renderProject,
   renderManifest,
@@ -85,6 +86,42 @@ function emitDashboardEvent(
 ): void {
   if (!assignmentId) return; // can't attribute without an id — skip silently
   recordEvent({ assignmentId, projectSlug, type, actor: 'human', details });
+}
+
+/**
+ * WS-2 (codex r3 blocker / r5): on a MIGRATED assignment the raw whole-document
+ * PATCH must not be a hidden mover. Default-deny allow-list — only inert
+ * scalar-metadata edits pass; any field that moves a ticket or alters derived/
+ * gate/pause state is rejected (the caller uses the move/transition path). `null`
+ * = no violation. `blockedReason` is NOT inert (it derives the `blocked` fact the
+ * engine's `isPaused` reads), so it is rejected too.
+ */
+export function rawPatchMoverViolation(
+  current: ReturnType<typeof parseAssignmentFull>,
+  next: ReturnType<typeof parseAssignmentFull>,
+): string | null {
+  const j = (v: unknown): string => JSON.stringify(v ?? null);
+  if (next.status !== current.status) return 'status';
+  if (next.disposition !== current.disposition) return 'disposition';
+  if (next.phase !== current.phase) return 'phase';
+  if (next.parked !== current.parked) return 'parked';
+  if (next.blockedReason !== current.blockedReason) return 'blockedReason';
+  if (next.reviewRequested !== current.reviewRequested) return 'reviewRequested';
+  if (next.reworkRequested !== current.reworkRequested) return 'reworkRequested';
+  if (next.implementationStarted !== current.implementationStarted) return 'implementationStarted';
+  if (j(next.override) !== j(current.override)) return 'override';
+  if (j(next.planApproval) !== j(current.planApproval)) return 'planApproval';
+  if (j(next.facts) !== j(current.facts)) return 'facts';
+  if (j(next.attestations) !== j(current.attestations)) return 'attestations';
+  if (j(next.statusHistory) !== j(current.statusHistory)) return 'statusHistory';
+  // WS-2 stage-engine state (codex review blocker 1) — a raw edit must not
+  // pause/resume (`hold`) or rewrite any engine bookkeeping locklessly.
+  if (next.hold !== current.hold) return 'hold';
+  if (j(next.gateOverrides) !== j(current.gateOverrides)) return 'gateOverrides';
+  if (j(next.frozenChecks) !== j(current.frozenChecks)) return 'frozenChecks';
+  if (j(next.firedVerdicts) !== j(current.firedVerdicts)) return 'firedVerdicts';
+  if (j(next.solicitations) !== j(current.solicitations)) return 'solicitations';
+  return null;
 }
 
 interface TrackedFields {
@@ -1128,6 +1165,22 @@ export function createWriteRouter(
         return;
       }
 
+      // WS-2: on an ENGINE-ACTIVE assignment (marker set AND a per-file workflow
+      // resolves — NOT the marker alone, codex review blocker 4), reject a raw
+      // edit that would move the ticket or change derived/gate/pause state — the
+      // engine is the one mover. A marker-set ladder assignment (no per-file
+      // workflow) is unaffected.
+      const { isEngineActiveForAssignment } = await import('../lifecycle/engine-transition.js');
+      if (await isEngineActiveForAssignment(assignmentPath, resolve(projectsDir, projectSlug))) {
+        const violation = rawPatchMoverViolation(current, next);
+        if (violation) {
+          res.status(400).json({
+            error: `Field "${violation}" cannot be changed via a raw edit on a stage-managed assignment — use a move/transition.`,
+          });
+          return;
+        }
+      }
+
       let nextContent = nextContentRaw;
       const now = nowTimestamp();
 
@@ -2108,9 +2161,34 @@ export function createWriteRouter(
       }
 
       const { status } = req.body || {};
+      const clearing = status === null;
+
+      // WS-2 (Decision 1): on an engine-active assignment a drag is a
+      // `manual-override` engine move (target = the dropped stage), stamping
+      // crossed failing gates. Try it FIRST — a valid STAGE id need not be a
+      // legacy status id, so it must not be pre-validated against the legacy
+      // status list (codex review major 5). `null` ⇒ not engine-active → the
+      // legacy pin path below.
+      if (clearing || typeof status === 'string') {
+        const engineOverride = await runEngineOverride({
+          assignmentPath,
+          projectDir: resolve(projectsDir, projectSlug),
+          status: clearing ? null : status,
+          by: 'human',
+        });
+        if (engineOverride) {
+          if (!engineOverride.ok) {
+            res.status(engineOverride.code).json({ error: engineOverride.message });
+            return;
+          }
+          const assignment = await getAssignmentDetail(projectsDir, projectSlug, assignmentSlug);
+          res.json({ assignment });
+          return;
+        }
+      }
+
       const config = await getStatusConfig();
       const validStatuses = config.statuses.map((s) => s.id);
-      const clearing = status === null;
       if (!clearing && (typeof status !== 'string' || !validStatuses.includes(status))) {
         res.status(400).json({ error: `Invalid status. Must be one of: ${validStatuses.join(', ')}.` });
         return;
@@ -2128,6 +2206,8 @@ export function createWriteRouter(
         });
         return;
       }
+      // Legacy pin path (unmigrated / no per-file workflow — the engine attempt
+      // above already returned for engine-active assignments).
       const { recomputeAndWrite, resolveRecomputeContext } = await import('../lifecycle/recompute.js');
       const { updateOverride } = await import('../lifecycle/frontmatter.js');
       const { context, workflowResolver } = await resolveRecomputeContext();
@@ -2429,6 +2509,48 @@ export function createWriteRouter(
         }
         const assignment = await getAssignmentDetail(projectsDir, projectSlug, assignmentSlug);
         res.json({ assignment, transition: { success: true, message: command, fromStatus: '', toStatus: result.status } });
+        return;
+      }
+
+      // WS-2 (Decision 1): on the MIGRATED path, complete/fail/reopen are ENGINE
+      // moves through the locked recompute (parity with the CLI). `null` ⇒ not
+      // migrated / no per-file workflow → fall through to the ladder below. The
+      // engine handles terminal side effects (linked-todos) internally.
+      const engineResult = await runEngineTransition({
+        assignmentPath,
+        projectDir,
+        command,
+        by: 'human',
+        reason: typeof reason === 'string' ? reason : undefined,
+        linkedTodosLookup,
+      });
+      if (engineResult) {
+        if (!engineResult.success) {
+          res.status(400).json({ error: engineResult.message });
+          return;
+        }
+        // A terminal arrival/reopen flips dependents' depsSatisfied fact.
+        await recomputeDependents(projectDir, assignmentSlug, {
+          cause: 'dep-terminal',
+          by: 'system',
+          context,
+          workflowResolver,
+        });
+        const assignment = await getAssignmentDetail(projectsDir, projectSlug, assignmentSlug);
+        res.json({ assignment, transition: engineResult });
+        return;
+      }
+
+      // WS-2 (codex review blocker 2): on an ENGINE-ACTIVE assignment, any
+      // command the engine didn't handle above (not block/unblock, not
+      // complete/fail/reopen) must NOT fall through to the lockless
+      // `executeTransition` — that would be a mover surviving the marker flip.
+      // Reject it; the migrated board drives such moves through the move API.
+      const { isEngineActiveForAssignment } = await import('../lifecycle/engine-transition.js');
+      if (await isEngineActiveForAssignment(assignmentPath, projectDir)) {
+        res.status(400).json({
+          error: `"${command}" is not available on a stage-managed assignment — use complete/fail/reopen, block/unblock, or a board move.`,
+        });
         return;
       }
 
@@ -2851,6 +2973,21 @@ export function createWriteRouter(
         return;
       }
 
+      // WS-2: same engine-active-mover guard as the project raw PATCH (both
+      // routes; codex review blocker 4 — gate on a resolved workflow, not the
+      // marker alone).
+      const byIdProjectDir = resolved.standalone ? null : resolve(resolved.assignmentDir, '..', '..');
+      const { isEngineActiveForAssignment } = await import('../lifecycle/engine-transition.js');
+      if (await isEngineActiveForAssignment(assignmentPath, byIdProjectDir)) {
+        const violation = rawPatchMoverViolation(current, next);
+        if (violation) {
+          res.status(400).json({
+            error: `Field "${violation}" cannot be changed via a raw edit on a stage-managed assignment — use a move/transition.`,
+          });
+          return;
+        }
+      }
+
       // Standalone: restore id + project + slug frontmatter (all immutable after create).
       let nextContent = nextContentRaw;
       if (current.id) nextContent = setTopLevelField(nextContent, 'id', current.id);
@@ -3079,9 +3216,33 @@ export function createWriteRouter(
         return;
       }
       const { status } = req.body || {};
+      const clearing = status === null;
+      const projectDirForId = resolved.standalone ? null : resolve(resolved.assignmentDir, '..', '..');
+
+      // WS-2 (Decision 1): engine-active → `manual-override` engine move (parity
+      // with the project route). Try it BEFORE the legacy status-id validation —
+      // a valid stage id need not be a legacy status id (codex review major 5).
+      // `null` ⇒ not engine-active → the legacy pin path below.
+      if (clearing || typeof status === 'string') {
+        const engineOverride = await runEngineOverride({
+          assignmentPath,
+          projectDir: projectDirForId,
+          status: clearing ? null : status,
+          by: 'human',
+        });
+        if (engineOverride) {
+          if (!engineOverride.ok) {
+            res.status(engineOverride.code).json({ error: engineOverride.message });
+            return;
+          }
+          const assignment = await getAssignmentDetailById(projectsDir, assignmentsDir, id);
+          res.json({ assignment });
+          return;
+        }
+      }
+
       const config = await getStatusConfig();
       const validStatuses = config.statuses.map((s) => s.id);
-      const clearing = status === null;
       if (!clearing && (typeof status !== 'string' || !validStatuses.includes(status))) {
         res.status(400).json({ error: `Invalid status. Must be one of: ${validStatuses.join(', ')}.` });
         return;
@@ -3097,7 +3258,6 @@ export function createWriteRouter(
       const { recomputeAndWrite, resolveRecomputeContext } = await import('../lifecycle/recompute.js');
       const { updateOverride } = await import('../lifecycle/frontmatter.js');
       const { context, workflowResolver } = await resolveRecomputeContext();
-      const projectDirForId = resolved.standalone ? null : resolve(resolved.assignmentDir, '..', '..');
       const result = await recomputeAndWrite(assignmentPath, {
         cause: clearing ? 'unpin' : 'pin',
         by: 'human',
@@ -3304,6 +3464,46 @@ export function createWriteRouter(
           ? await getAssignmentDetailById(projectsDir, assignmentsDir, id)
           : await getAssignmentDetail(projectsDir, resolved.projectSlug!, resolved.assignmentSlug);
         res.json({ assignment: detail, warnings: [] });
+        return;
+      }
+
+      // WS-2 (Decision 1): migrated complete/fail/reopen → ENGINE move (parity
+      // with the project route and the CLI). `null` ⇒ ladder fall-through below.
+      const engineResult = await runEngineTransition({
+        assignmentPath: byIdPath,
+        projectDir: byIdProjectDir,
+        command,
+        by: 'human',
+        reason: typeof reason === 'string' ? reason : undefined,
+        linkedTodosLookup,
+      });
+      if (engineResult) {
+        if (!engineResult.success) {
+          res.status(400).json({ error: engineResult.message, fromStatus: engineResult.fromStatus });
+          return;
+        }
+        if (byIdProjectDir) {
+          await recomputeDependents(byIdProjectDir, resolved.assignmentSlug, {
+            cause: 'dep-terminal',
+            by: 'system',
+            context,
+            workflowResolver,
+          });
+        }
+        const detail = resolved.standalone
+          ? await getAssignmentDetailById(projectsDir, assignmentsDir, id)
+          : await getAssignmentDetail(projectsDir, resolved.projectSlug!, resolved.assignmentSlug);
+        res.json({ assignment: detail, warnings: engineResult.warnings ?? [] });
+        return;
+      }
+
+      // WS-2 (codex review blocker 2): reject engine-active commands the engine
+      // didn't handle rather than falling through to the lockless legacy path.
+      const { isEngineActiveForAssignment } = await import('../lifecycle/engine-transition.js');
+      if (await isEngineActiveForAssignment(byIdPath, byIdProjectDir)) {
+        res.status(400).json({
+          error: `"${command}" is not available on a stage-managed assignment — use complete/fail/reopen, block/unblock, or a board move.`,
+        });
         return;
       }
 

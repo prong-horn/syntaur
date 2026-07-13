@@ -18,6 +18,7 @@ import {
   type TransitionResult,
 } from '../lifecycle/index.js';
 import { resolveAssignmentWorkflowContext } from '../lifecycle/workflow-context.js';
+import { runEngineTransition } from '../lifecycle/engine-transition.js';
 import { resolveAssignmentById } from '../utils/assignment-resolver.js';
 
 type WorkflowTransitionOptions = Pick<
@@ -95,8 +96,21 @@ export async function runTransition(
     if (!(await fileExists(projectDir)) || !(await fileExists(projectMdPath))) {
       throw new Error(`Project "${options.project}" not found at ${projectDir}.`);
     }
+    const assignmentPath = resolve(projectDir, 'assignments', assignment, 'assignment.md');
+    // WS-2 (Decision 1): on the MIGRATED path a terminal command is realized as
+    // an ENGINE move through the locked recompute. `null` ⇒ not migrated / no
+    // per-file workflow / not an engine command → fall through to the ladder.
+    const engineResult = await runEngineTransition({
+      assignmentPath,
+      projectDir,
+      command,
+      by: options.agent ?? null,
+      reason: options.reason,
+      linkedTodosLookup: resolveLinkedTodosLookup(baseDir),
+    });
+    if (engineResult) return engineResult;
     const workflowOpts = await resolveWorkflowTransitionOptions(
-      resolve(projectDir, 'assignments', assignment, 'assignment.md'),
+      assignmentPath,
       projectDir,
       command,
       config,
@@ -116,8 +130,18 @@ export async function runTransition(
     );
   }
   const projectDir = resolved.standalone ? null : resolve(resolved.assignmentDir, '..', '..');
+  const assignmentPath = resolve(resolved.assignmentDir, 'assignment.md');
+  const engineResult = await runEngineTransition({
+    assignmentPath,
+    projectDir,
+    command,
+    by: options.agent ?? null,
+    reason: options.reason,
+    linkedTodosLookup: resolveLinkedTodosLookup(baseDir),
+  });
+  if (engineResult) return engineResult;
   const workflowOpts = await resolveWorkflowTransitionOptions(
-    resolve(resolved.assignmentDir, 'assignment.md'),
+    assignmentPath,
     projectDir,
     command,
     config,

@@ -4,6 +4,7 @@ import { readConfig } from '../utils/config.js';
 import { expandHome, assignmentsDir as assignmentsDirFn } from '../utils/paths.js';
 import { resolveAssignmentById } from '../utils/assignment-resolver.js';
 import { recomputeAndWrite, recomputeDependents, resolveRecomputeContext } from '../lifecycle/recompute.js';
+import { isEngineActiveForAssignment } from '../lifecycle/engine-transition.js';
 
 export interface ReopenOptions extends LifecycleOptions {}
 
@@ -37,15 +38,22 @@ export async function reopenCommand(
     projectDir = resolved.standalone ? null : resolve(resolved.assignmentDir, '..', '..');
     changedSlug = resolved.assignmentSlug;
   }
-  const derived = await recomputeAndWrite(assignmentPath, {
-    cause: 'reopen',
-    by: 'system',
-    projectDir,
-    context,
-    workflowResolver,
-  });
-  if (derived.changed) {
-    console.log(`Re-derived after reopen — status: ${derived.status}`);
+  // The post-reopen re-derive lands the LADDER ticket where its facts are (not
+  // the imperative in_progress target). On the ENGINE path the reopen already
+  // re-placed the ticket deliberately WITHOUT re-cascading and ran its terminal
+  // side effects; a second default `gate` recompute here would auto-advance it
+  // forward and undo the reopen (codex re-review). Skip it when engine-active.
+  if (!(await isEngineActiveForAssignment(assignmentPath, projectDir))) {
+    const derived = await recomputeAndWrite(assignmentPath, {
+      cause: 'reopen',
+      by: 'system',
+      projectDir,
+      context,
+      workflowResolver,
+    });
+    if (derived.changed) {
+      console.log(`Re-derived after reopen — status: ${derived.status}`);
+    }
   }
 
   // Leaving terminal flips dependents' depsSatisfied back to false.

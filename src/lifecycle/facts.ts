@@ -17,6 +17,7 @@ import { type AssignmentFacts, factFieldNames } from './derive.js';
 import { parseAssignmentFrontmatter } from './frontmatter.js';
 import type { AssignmentFrontmatter, AttestationRecord } from './types.js';
 import type { FactDeclaration } from '../utils/config.js';
+import type { StageWorkflow } from '../utils/stage-model.js';
 
 /** Matches the assignment template's placeholder list items / comments. */
 const HTML_COMMENT_RE = /<!--[\s\S]*?-->/g;
@@ -131,6 +132,9 @@ export async function areDependenciesSatisfied(
   projectDir: string | null,
   dependsOn: string[],
   terminalStatuses: ReadonlySet<string>,
+  /** WS-2: resolve each dependency's OWN terminal set (mixed-workflow edges).
+   * Returns null → use the shared `terminalStatuses`. */
+  depTerminalFor?: (depFrontmatter: AssignmentFrontmatter) => Promise<ReadonlySet<string> | null>,
 ): Promise<boolean> {
   if (dependsOn.length === 0 || projectDir === null) return true;
   for (const depSlug of dependsOn) {
@@ -143,8 +147,11 @@ export async function areDependenciesSatisfied(
       // its bare value and matches `terminalStatuses`. Parity with the sibling
       // `checkDependencies` in transitions.ts. A parser throw (no frontmatter)
       // still falls through to the catch → `return false` (fail-closed).
-      const { status } = parseAssignmentFrontmatter(content);
-      if (!terminalStatuses.has(status)) return false;
+      const depFm = parseAssignmentFrontmatter(content);
+      // Test the dep's status against ITS OWN terminal set when a resolver is
+      // supplied (each dep may use a different workflow); else the shared set.
+      const depTerminal = depTerminalFor ? await depTerminalFor(depFm) : null;
+      if (!(depTerminal ?? terminalStatuses).has(depFm.status)) return false;
     } catch {
       return false;
     }
@@ -162,6 +169,10 @@ export interface ComputeFactsInput {
   /** The ACCEPTED custom-fact declarations (normalize→accept output). Absent →
    * only the 14 built-ins materialize. */
   declarations?: FactDeclaration[];
+  /** WS-2 mixed-workflow dependency correctness (codex r4): resolve EACH
+   * dependency's OWN terminal set from its frontmatter (its workflow may differ
+   * from this ticket's). Returns null → fall back to `terminalStatuses`. */
+  depTerminalFor?: (depFrontmatter: AssignmentFrontmatter) => Promise<ReadonlySet<string> | null>;
 }
 
 /**
@@ -210,7 +221,7 @@ export interface ComputeFactsResult {
 }
 
 /** Resolved-once binding environment for attestation validity. */
-interface AttestationEnv {
+export interface AttestationEnv {
   latestPlanFile: string | null;
   /** Digest of the latest plan file's CURRENT content (null when no plan). */
   planDigest: string | null;
@@ -218,7 +229,7 @@ interface AttestationEnv {
   headSha: string | null;
 }
 
-function isAttestationValid(
+export function isAttestationValid(
   record: AttestationRecord,
   binds: 'plan' | 'commit' | 'none',
   env: AttestationEnv,
@@ -232,6 +243,63 @@ function isAttestationValid(
   // binds:commit
   if (!record.commit || !env.headSha) return false;
   return record.commit === env.headSha;
+}
+
+/**
+ * Currentness of a solicitation's single `revisionBinding` string against the
+ * live revision (WS-2 / WS-1 handoff dep 2). Same binding check as
+ * {@link isAttestationValid} but on the solicitation's one-string snapshot
+ * (a commit sha for `binds:commit`, a plan digest for `binds:plan`).
+ */
+export function isSolicitationCurrent(
+  revisionBinding: string | undefined,
+  binds: 'plan' | 'commit' | 'none',
+  env: AttestationEnv,
+): boolean {
+  if (binds === 'none') return true;
+  if (!revisionBinding) return false;
+  if (binds === 'plan') return env.planDigest !== null && revisionBinding === env.planDigest;
+  return env.headSha !== null && revisionBinding === env.headSha;
+}
+
+/**
+ * Resolve the binding env forced by the WORKFLOW's judged gate `binds` (WS-2 /
+ * codex r2 blocker 1). `computeFactsDetailed`'s env is resolved lazily from the
+ * LEGACY `facts:` declarations — a stage-only judged gate (e.g. the default
+ * `codeReviewed` with `binds: commit`) has NO legacy declaration, so that env
+ * would never read HEAD and every stage attestation would validate as stale.
+ * This reads HEAD iff a gate binds `commit`, and the plan digest iff a gate
+ * binds `plan`, so the engine's evidence is bound to the same live revision.
+ */
+export async function resolveBindingEnv(
+  workflow: StageWorkflow,
+  frontmatter: Pick<AssignmentFrontmatter, 'workspace'>,
+  assignmentDir: string,
+): Promise<AttestationEnv> {
+  let needsCommit = false;
+  let needsPlan = false;
+  for (const stage of workflow.stages) {
+    for (const check of stage.gate ?? []) {
+      if (check.binds === 'commit') needsCommit = true;
+      else if (check.binds === 'plan') needsPlan = true;
+    }
+  }
+  const planFile = needsPlan ? await latestPlanFile(assignmentDir) : null;
+  const [planFileContent, headSha] = await Promise.all([
+    needsPlan && planFile
+      ? readFile(resolve(assignmentDir, planFile), 'utf-8').catch(() => null)
+      : Promise.resolve<string | null>(null),
+    (async (): Promise<string | null> => {
+      if (!needsCommit) return null;
+      const dir = frontmatter.workspace.worktreePath ?? frontmatter.workspace.repository;
+      return dir ? await captureHeadSha(dir) : null;
+    })(),
+  ]);
+  return {
+    latestPlanFile: planFile,
+    planDigest: planFileContent !== null ? planDigest(planFileContent) : null,
+    headSha,
+  };
 }
 
 /**
@@ -258,7 +326,7 @@ export async function computeFactsDetailed(input: ComputeFactsInput): Promise<Co
       ? readFile(resolve(assignmentDir, planFile), 'utf-8').catch(() => null)
       : Promise.resolve(null),
     countUnresolvedQuestions(assignmentDir),
-    areDependenciesSatisfied(projectDir, frontmatter.dependsOn, terminalStatuses),
+    areDependenciesSatisfied(projectDir, frontmatter.dependsOn, terminalStatuses, input.depTerminalFor),
   ]);
   const planFileDigest = planFileContent !== null ? planDigest(planFileContent) : null;
   const approval = frontmatter.planApproval;
