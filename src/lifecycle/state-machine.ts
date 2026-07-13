@@ -65,6 +65,25 @@ export function buildCommandTargets(
   return targets;
 }
 
+/**
+ * Guard-free terminal-command target (derived-status v3): the per-from custom
+ * table is passed alongside, so this fallback only matters for legacy/
+ * undefined statuses. Ambiguous configs (one command, multiple distinct
+ * targets) return undefined — the from-table must then decide, and an unknown
+ * from is correctly refused rather than guessed (codex r3 finding 1).
+ *
+ * NOTE: distinct from `buildCommandTargets`, which is last-wins over the whole
+ * transition list; the set-based ambiguity refusal here is the point.
+ */
+export function unambiguousCommandTarget(
+  transitions: Array<{ command: string; to: string }>,
+  command: string,
+): string | undefined {
+  const targets = new Set(transitions.filter((t) => t.command === command).map((t) => t.to));
+  if (targets.size === 1) return [...targets][0];
+  return undefined;
+}
+
 export function getTargetStatus(
   _from: AssignmentStatus,
   command: TransitionCommand,

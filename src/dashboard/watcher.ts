@@ -1,5 +1,6 @@
 import { watch } from 'chokidar';
 import { basename, dirname, isAbsolute, relative, sep } from 'node:path';
+import { invalidateWorkflowLibraryCache } from '../utils/workflow-library.js';
 import type { WsMessage } from './types.js';
 
 /** Minimal slice of `node:path` the matcher needs. Injectable so tests can
@@ -44,6 +45,11 @@ export interface WatcherOptions {
   serversDir?: string;
   playbooksDir?: string;
   todosDir?: string;
+  /** Absolute path to ~/.syntaur/workflows/. When set, changes to per-file stage
+   * workflows invalidate the workflow-library cache and fire `onConfigChanged`
+   * (the same recompute-all signal a config.md change triggers) — the config
+   * watcher is `depth:0` on config.md, so it never sees per-file workflow edits. */
+  workflowsDir?: string;
   /** Absolute path to ~/.syntaur/config.md. When set, changes trigger
    * `onConfigChanged` — derive rules may have changed, so the server runs a
    * recompute-all sweep (design v3, Piece 3 trigger set). */
@@ -72,6 +78,7 @@ export function createWatcher(options: WatcherOptions): { close: () => Promise<v
     serversDir,
     playbooksDir,
     todosDir,
+    workflowsDir,
     dbPath,
     configPath,
     onMessage,
@@ -294,6 +301,43 @@ export function createWatcher(options: WatcherOptions): { close: () => Promise<v
     todosWatcher.on('unlink', handleTodoChange);
   }
 
+  // --- Workflows watcher (per-file stage workflows) ---
+  // Per-file workflows live in ~/.syntaur/workflows/*.md. The config watcher is
+  // depth:0 on config.md, so a workflow-file edit fires nothing today. Model this
+  // on the playbooks watcher, but on change invalidate the workflow-library cache
+  // and fire the config watcher's recompute signal (a stage/route/gate change can
+  // move where tickets sit, exactly like a derive-rule change).
+  let workflowsWatcher: ReturnType<typeof watch> | null = null;
+
+  if (workflowsDir) {
+    workflowsWatcher = watch(workflowsDir, {
+      ignoreInitial: true,
+      persistent: true,
+      depth: 1,
+      ignored: ignoreDotSegmentsBelow(workflowsDir),
+    });
+
+    function handleWorkflowsChange(): void {
+      const debounceKey = '__workflows__';
+      const existing = pendingEvents.get(debounceKey);
+      if (existing) clearTimeout(existing);
+
+      pendingEvents.set(
+        debounceKey,
+        setTimeout(() => {
+          pendingEvents.delete(debounceKey);
+          // Drop the stale per-file library BEFORE the recompute reads it.
+          invalidateWorkflowLibraryCache();
+          if (onConfigChanged) onConfigChanged();
+        }, debounceMs),
+      );
+    }
+
+    workflowsWatcher.on('change', handleWorkflowsChange);
+    workflowsWatcher.on('add', handleWorkflowsChange);
+    workflowsWatcher.on('unlink', handleWorkflowsChange);
+  }
+
   // --- DB watcher (leases + agent sessions share syntaur.db) ---
   // SQLite WAL-mode writes mostly go to `<db>-wal`, not the main file. Watch
   // the parent directory and filter by basename to catch the main DB and its
@@ -375,6 +419,7 @@ export function createWatcher(options: WatcherOptions): { close: () => Promise<v
       if (serversWatcher) await serversWatcher.close();
       if (playbooksWatcher) await playbooksWatcher.close();
       if (todosWatcher) await todosWatcher.close();
+      if (workflowsWatcher) await workflowsWatcher.close();
       if (leasesDbWatcher) await leasesDbWatcher.close();
       if (configWatcher) await configWatcher.close();
     },

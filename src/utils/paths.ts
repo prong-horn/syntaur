@@ -32,6 +32,10 @@ export function playbooksDir(): string {
   return resolve(syntaurRoot(), 'playbooks');
 }
 
+export function workflowsDir(): string {
+  return resolve(syntaurRoot(), 'workflows');
+}
+
 export function todosDir(): string {
   return resolve(syntaurRoot(), 'todos');
 }

@@ -14,7 +14,7 @@ import {
 import { CopyButton } from '../components/CopyButton';
 import { useAssignment, useProject, useServers, useAssignmentSessions, useAssignmentUsage, useWorkspacePrefix, type AssignmentTransitionAction, type ExternalIdInfo } from '../hooks/useProjects';
 import { useAssignmentEvents } from '../hooks/useAssignmentEvents';
-import { useStatusConfig } from '../hooks/useStatusConfig';
+import { useStatusConfig, useWorkflows } from '../hooks/useStatusConfig';
 import { formatShortDate, formatShortDateTime } from '../lib/format';
 import { LoadingState } from '../components/LoadingState';
 import { ErrorState } from '../components/ErrorState';
@@ -51,6 +51,76 @@ import { cn } from '../lib/utils';
 import { useToast, Toaster } from '../components/Toast';
 
 const TRANSITION_PRECEDENCE = ['review', 'complete', 'shape', 'plan-ready', 'implement', 'unblock', 'start', 'block', 'fail', 'reopen'] as const;
+
+/** The Workflow detail row — a dropdown to bind a project ticket to a workflow
+ * (or inherit the resolved binding). Standalone tickets render read-only (the
+ * change route is project-scoped). */
+function WorkflowSelectRow({
+  projectSlug,
+  aslug,
+  workflow,
+  workflowLabel,
+  onChanged,
+}: {
+  projectSlug: string | null;
+  aslug: string;
+  workflow: string | null;
+  workflowLabel: string;
+  onChanged: () => void;
+}) {
+  const { workflows } = useWorkflows();
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  if (!projectSlug) {
+    return <DetailRow label="Workflow" value={workflowLabel} />;
+  }
+
+  async function change(value: string) {
+    setSaving(true);
+    setErr(null);
+    try {
+      const res = await fetch(
+        `/api/projects/${encodeURIComponent(projectSlug!)}/assignments/${encodeURIComponent(aslug)}/workflow`,
+        {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ workflow: value === '' ? null : value }),
+        },
+      );
+      if (!res.ok) {
+        const e = await res.json().catch(() => null);
+        throw new Error(e?.error ?? `HTTP ${res.status}`);
+      }
+      onChanged();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'Failed to set workflow');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <DetailNodeRow label="Workflow">
+      <div className="flex flex-col gap-1">
+        <select
+          className="rounded-md border border-border/60 bg-background px-2 py-1 text-xs"
+          value={workflow ?? ''}
+          disabled={saving}
+          onChange={(e) => void change(e.target.value)}
+        >
+          <option value="">Inherit ({workflowLabel})</option>
+          {workflows.map((w) => (
+            <option key={w.id} value={w.id}>
+              {w.label}
+            </option>
+          ))}
+        </select>
+        {err && <span className="text-[11px] text-error-foreground">{err}</span>}
+      </div>
+    </DetailNodeRow>
+  );
+}
 
 export function AssignmentDetail() {
   const { slug, aslug } = useParams<{ slug: string; aslug: string }>();
@@ -827,6 +897,13 @@ export function AssignmentDetail() {
                   <TypeChip type={assignment.type} compact />
                 </DetailNodeRow>
               )}
+              <WorkflowSelectRow
+                projectSlug={assignment.projectSlug}
+                aslug={aslug ?? ''}
+                workflow={assignment.workflow}
+                workflowLabel={assignment.workflowLabel}
+                onChanged={refetch}
+              />
               {assignment.phase && assignment.phase !== assignment.status && (
                 <DetailRow label="Phase" value={assignment.phase} />
               )}

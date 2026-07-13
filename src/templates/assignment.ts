@@ -11,6 +11,8 @@ export interface AssignmentParams {
   project?: string | null;
   workspaceGroup?: string | null;
   type?: string;
+  /** Explicit lifecycle-workflow override; emitted only when provided. */
+  workflow?: string | null;
   includeTodos?: boolean;
   status?: string;
   acceptanceCriteria?: string[];
@@ -31,6 +33,7 @@ export function renderAssignment(params: AssignmentParams): string {
     ? `\nworkspaceGroup: ${params.workspaceGroup}`
     : '';
   const typeYaml = `type: ${params.type ?? 'feature'}`;
+  const workflowLine = params.workflow ? `\nworkflow: ${params.workflow}` : '';
   const seedStatus = params.status ?? 'draft';
 
   const criteriaLines = params.acceptanceCriteria && params.acceptanceCriteria.length > 0
@@ -58,7 +61,7 @@ id: ${params.id}
 slug: ${params.slug}
 title: ${safeTitle}
 ${projectYaml}${workspaceGroupLine}
-${typeYaml}
+${typeYaml}${workflowLine}
 status: ${seedStatus}
 priority: ${params.priority}
 created: "${params.timestamp}"

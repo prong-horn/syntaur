@@ -11,6 +11,7 @@ export default defineConfig({
       // src/utils, so they need explicit (more-specific-first) aliases.
       '@shared/derive': fileURLToPath(new URL('./src/lifecycle/derive.ts', import.meta.url)),
       '@shared/state-machine': fileURLToPath(new URL('./src/lifecycle/state-machine.ts', import.meta.url)),
+      '@shared/stage-engine': fileURLToPath(new URL('./src/lifecycle/stage-engine.ts', import.meta.url)),
       '@shared': fileURLToPath(new URL('./src/utils', import.meta.url)),
     },
   },

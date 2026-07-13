@@ -325,6 +325,7 @@ export function queryFieldNames(declarations: FactDeclaration[]): string[] {
     'type',
     'assignee',
     'project',
+    'workflow',
     'tag',
     'tags',
     'archived',

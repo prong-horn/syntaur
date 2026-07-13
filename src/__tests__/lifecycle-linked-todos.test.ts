@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtemp, rm, readFile, mkdir, writeFile } from 'node:fs/promises';
+import { mkdtemp, rm, readFile, mkdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { resolve, join } from 'node:path';
 import { createProjectCommand } from '../commands/create-project.js';
@@ -95,6 +95,66 @@ describe('lifecycle linked-todos hook', () => {
     expect(checklist.items[0].status).toBe('completed');
     const log = await readFile(resolve(todosDir, '_global-log.md'), 'utf-8');
     expect(log).toContain('Auto-completed: linked assignment');
+  });
+
+  it('auto-completes linked todos when a custom workflow completes into a RENAMED terminal (e.g. `done`)', async () => {
+    // Fix 1 regression: the side effect keyed on the literal status `'completed'`,
+    // so a workflow whose completion terminal is `done` set disposition:terminal
+    // on the assignment but left linked todos open. Threading terminalStatuses +
+    // routing `complete` -> `done` must still auto-complete the children.
+    await createProjectCommand('Test Project', { dir: projectsDir });
+    const created = await createAssignmentCommand('Task', {
+      project: 'test-project',
+      dir: projectsDir,
+      silent: true,
+    });
+    const projectDir = resolve(projectsDir, 'test-project');
+    await executeTransition(projectDir, created.slug, 'start', {});
+
+    await seedLinkedTodo('_global', makeTodo('ffff', 'renamed-terminal work', {
+      status: 'in_progress',
+      linkedAssignmentId: created.id,
+      linkedAssignmentRef: `test-project/${created.slug}`,
+    }));
+
+    await executeTransition(projectDir, created.slug, 'complete', {
+      // Custom workflow: `complete` -> `done`, and `done` is the terminal set.
+      commandTargets: new Map([['complete', 'done']]),
+      terminalStatuses: new Set(['done', 'failed']),
+      linkedTodosLookup: { todosDir, projectsDir },
+    });
+
+    const checklist = await readChecklist(todosDir, '_global');
+    expect(checklist.items[0].status).toBe('completed');
+    const log = await readFile(resolve(todosDir, '_global-log.md'), 'utf-8');
+    expect(log).toContain('Auto-completed: linked assignment');
+  });
+
+  it('does NOT auto-complete linked todos when a custom workflow FAILS into a terminal', async () => {
+    // `fail` also reaches a terminal status; the children must stay open.
+    await createProjectCommand('Test Project', { dir: projectsDir });
+    const created = await createAssignmentCommand('Task', {
+      project: 'test-project',
+      dir: projectsDir,
+      silent: true,
+    });
+    const projectDir = resolve(projectsDir, 'test-project');
+    await executeTransition(projectDir, created.slug, 'start', {});
+
+    await seedLinkedTodo('_global', makeTodo('gggg', 'should stay open', {
+      status: 'in_progress',
+      linkedAssignmentId: created.id,
+      linkedAssignmentRef: `test-project/${created.slug}`,
+    }));
+
+    await executeTransition(projectDir, created.slug, 'fail', {
+      commandTargets: new Map([['fail', 'aborted']]),
+      terminalStatuses: new Set(['done', 'aborted']),
+      linkedTodosLookup: { todosDir, projectsDir },
+    });
+
+    const checklist = await readChecklist(todosDir, '_global');
+    expect(checklist.items[0].status).toBe('in_progress');
   });
 
   it('auto-reopens linked todos that were auto-completed when the assignment is reopened', async () => {

@@ -77,8 +77,13 @@ import { timelineCommand } from './commands/timeline.js';
 import { inboxCommand } from './commands/inbox.js';
 import { viewsCommand } from './commands/views.js';
 import { statusCommand } from './commands/status.js';
+import { workflowCommand } from './commands/workflow.js';
 import { workspaceCommand } from './commands/workspace.js';
 import { progressCommand } from './commands/progress.js';
+import { ptyHostCommand } from './commands/pty-host.js';
+import { daemonCommand } from './commands/daemon.js';
+import { bgCommand, setBgDashDashArgv } from './commands/bg.js';
+import { attachCommand } from './commands/attach.js';
 import { getDefaultCommandName } from './cli-default-command.js';
 import { maybePromptInstall } from './utils/npx-prompt.js';
 import { maybeNudgeForNpxInstall } from './launch/index.js';
@@ -146,6 +151,7 @@ program
     'medium',
   )
   .option('--type <type>', 'Assignment type (e.g. feature, bug, refactor)')
+  .option('--workflow <id>', 'Lifecycle workflow this assignment follows (defaults to the resolved binding)')
   .option('--depends-on <slugs>', 'Comma-separated dependency slugs (not allowed with --one-off)')
   .option('--links <slugs>', 'Comma-separated linked assignment slugs (projectSlug/assignmentSlug format)')
   .option('--dir <path>', 'Override default project directory (ignored for --one-off)')
@@ -876,11 +882,18 @@ program.addCommand(timelineCommand);
 program.addCommand(inboxCommand);
 program.addCommand(viewsCommand);
 program.addCommand(statusCommand);
+program.addCommand(workflowCommand);
 program.addCommand(workspaceCommand);
 program.addCommand(progressCommand);
 program.addCommand(leaseCommand);
 program.addCommand(scheduleCommand);
 program.addCommand(usageCommand);
+program.addCommand(daemonCommand);
+program.addCommand(bgCommand);
+program.addCommand(attachCommand);
+// Hidden: the daemon spawns pty-hosts via the dedicated entry; this only
+// surfaces the `--smoke` node-pty prebuild gate (Decision 1, AC-6).
+program.addCommand(ptyHostCommand, { hidden: true });
 
 program.addHelpText(
   'after',
@@ -904,4 +917,5 @@ if (process.argv.length <= 2) {
 }
 
 captureDashDashArgv = spliceDashDashFromArgv(process.argv);
+setBgDashDashArgv(captureDashDashArgv);
 await program.parseAsync();

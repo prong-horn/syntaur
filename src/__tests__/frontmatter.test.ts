@@ -806,3 +806,31 @@ describe('asserted-fact frontmatter fields (v3)', () => {
     expect(parsed.implementationStarted).toBe(true);
   });
 });
+
+import { parseAssignmentFull } from '../dashboard/parser.js';
+
+describe('assignment workflow: field (both parsers + updater)', () => {
+  const withWorkflow = SIMPLE_ASSIGNMENT.replace(
+    'status: pending',
+    'workflow: bugfix\nstatus: pending',
+  );
+
+  it('parseAssignmentFrontmatter reads an explicit workflow id', () => {
+    expect(parseAssignmentFrontmatter(withWorkflow).workflow).toBe('bugfix');
+  });
+
+  it('parseAssignmentFrontmatter yields null when workflow is absent', () => {
+    expect(parseAssignmentFrontmatter(SIMPLE_ASSIGNMENT).workflow).toBeNull();
+  });
+
+  it('the dashboard parseAssignmentFull reads the same workflow id (parser parity)', () => {
+    expect(parseAssignmentFull(withWorkflow).workflow).toBe('bugfix');
+    expect(parseAssignmentFull(SIMPLE_ASSIGNMENT).workflow).toBeNull();
+  });
+
+  it('updateAssignmentFile sets workflow (whitelisted) and it round-trips through both parsers', () => {
+    const updated = updateAssignmentFile(SIMPLE_ASSIGNMENT, { workflow: 'research' });
+    expect(parseAssignmentFrontmatter(updated).workflow).toBe('research');
+    expect(parseAssignmentFull(updated).workflow).toBe('research');
+  });
+});

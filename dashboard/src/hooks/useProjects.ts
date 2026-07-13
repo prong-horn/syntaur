@@ -45,6 +45,14 @@ export interface AssignmentSummary {
   title: string;
   status: string;
   type: string | null;
+  /** Explicit `workflow:` override (null → resolved via binding). */
+  workflow: string | null;
+  /** The workflow id this ticket resolves to. */
+  resolvedWorkflow: string;
+  /** Human label of the resolved workflow. */
+  workflowLabel: string;
+  /** Display label of the current status WITHIN the resolved workflow. */
+  statusLabel: string;
   priority: 'low' | 'medium' | 'high' | 'critical';
   assignee: string | null;
   dependsOn: string[];
@@ -169,6 +177,9 @@ export interface ProjectDetail {
   title: string;
   status: string;
   statusOverride: string | null;
+  /** Project-level workflow binding (Task 2). */
+  defaultWorkflow?: string | null;
+  workflowByType?: Record<string, string>;
   archived: boolean;
   archivedAt: string | null;
   archivedReason: string | null;
@@ -236,6 +247,14 @@ export interface AssignmentDetail {
   title: string;
   status: string;
   type: string | null;
+  /** Explicit `workflow:` override (null → resolved via binding). */
+  workflow: string | null;
+  /** The workflow id this ticket resolves to. */
+  resolvedWorkflow: string;
+  /** Human label of the resolved workflow. */
+  workflowLabel: string;
+  /** Display label of the current status WITHIN the resolved workflow. */
+  statusLabel: string;
   priority: AssignmentSummary['priority'];
   assignee: string | null;
   dependsOn: string[];

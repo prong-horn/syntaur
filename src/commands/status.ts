@@ -10,7 +10,11 @@ import {
   readConfig,
   type StatusConfig,
   type StatusDefinition,
+  type SyntaurConfig,
 } from '../utils/config.js';
+import { writeWorkflowBundle } from '../utils/workflow-write.js';
+import { DEFAULT_WORKFLOW_ID } from '../utils/workflow-resolve.js';
+import { makeWorkflowContextResolver } from '../lifecycle/workflow-context.js';
 import { syntaurRoot, assignmentsDir } from '../utils/paths.js';
 import { fileExists, writeFileForce } from '../utils/fs.js';
 import { nowTimestamp } from '../utils/timestamp.js';
@@ -38,9 +42,9 @@ function renameAssignmentStatusRefs(content: string, id: string, newId: string, 
   return renameStatusInHistory(next, id, newId);
 }
 import {
-  scanAssignmentsByStatus,
   scanAssignmentsReferencingStatus,
   type AffectedAssignment,
+  type WorkflowScanScope,
 } from '../utils/status-config-resolution.js';
 
 /**
@@ -71,20 +75,125 @@ async function readStatusBlock(): Promise<StatusConfig | null> {
   return parseStatusConfig(content);
 }
 
+// ----- effective status bundle (workflow-aware redirect) --------------------
+//
+// The multi-workflow migration lifted the legacy top-level `statuses:` block into
+// `workflows.default`, so `syntaur status` must operate on the GLOBAL default
+// workflow (config.defaultWorkflow, not the literal `default`). These loaders are
+// the single seam that resolves that bundle — and NEVER fall back to the legacy
+// block when a `workflows:` map exists (that fallback is the split-brain this
+// redirect kills, so getWorkflowBundle is deliberately NOT used here).
+
+type BundleOrigin = 'workflow' | 'legacy' | 'default';
+
+interface EffectiveBundle {
+  /** The status bundle to read/mutate (workflow `label` stripped off). */
+  block: StatusConfig;
+  /** Where it came from — decides the write path and `list` source. */
+  origin: BundleOrigin;
+  /** The workflow id status verbs target (the global default, or `default`). */
+  targetId: string;
+  /** The workflow's display label, preserved across writes (workflow origin only). */
+  label: string | null;
+}
+
+/** The workflow id `syntaur status` acts on: the GLOBAL default workflow (last
+ * rung of binding resolution), NOT the literal `default` — so a config with
+ * `defaultWorkflow: bug` edits `bug`. */
+function statusTargetWorkflowId(config: SyntaurConfig): string {
+  return config.defaultWorkflow ?? DEFAULT_WORKFLOW_ID;
+}
+
+function hasWorkflowsMap(config: SyntaurConfig): boolean {
+  return !!config.workflows && Object.keys(config.workflows).length > 0;
+}
+
 /**
- * Load the explicit block or throw the "run init first" guidance. Mutating verbs
- * (add/set/reorder/remove/rename/transition) require an explicit block because
- * the runtime is all-or-nothing — once any `statuses:` block exists the built-in
+ * Resolve the status bundle `syntaur status` acts on. Returns null when neither a
+ * `workflows:` map nor a legacy `statuses:` block is present.
+ */
+async function loadEffectiveBundle(config: SyntaurConfig): Promise<EffectiveBundle | null> {
+  const targetId = statusTargetWorkflowId(config);
+  if (hasWorkflowsMap(config)) {
+    const wf = config.workflows![targetId];
+    if (!wf) {
+      throw new Error(
+        `Global default workflow "${targetId}" is not defined under \`workflows:\` in config.md — ` +
+          `fix \`defaultWorkflow:\` or create the workflow via the dashboard.`,
+      );
+    }
+    const { label, ...block } = wf;
+    return { block, origin: 'workflow', targetId, label };
+  }
+  const legacy = await readStatusBlock();
+  if (legacy) return { block: legacy, origin: 'legacy', targetId, label: null };
+  return null;
+}
+
+/**
+ * Load the effective bundle or throw the "run init first" guidance. Mutating verbs
+ * (add/set/reorder/remove/rename/transition) require an explicit source because
+ * the runtime is all-or-nothing — once any status config exists the built-in
  * defaults are no longer merged.
  */
-async function requireStatusBlock(): Promise<StatusConfig> {
-  const block = await readStatusBlock();
-  if (!block) {
+async function requireEffectiveBundle(config: SyntaurConfig): Promise<EffectiveBundle> {
+  const bundle = await loadEffectiveBundle(config);
+  if (!bundle) {
     throw new Error(
       'No custom status block in config.md. Run `syntaur status init` first to materialize the built-in defaults.',
     );
   }
-  return block;
+  return bundle;
+}
+
+/** `status list`: neither source → synthesize built-ins (`source: 'default'`),
+ * preserving the documented pre-init list behavior. A read-only verb must never
+ * exit non-zero on a misconfig, so a dangling global `defaultWorkflow` (target id
+ * absent from the map — which `loadEffectiveBundle` throws on for mutators, and
+ * which `doctor` flags separately) also degrades to synthesized built-ins here. */
+async function optionalEffectiveBundle(config: SyntaurConfig): Promise<EffectiveBundle> {
+  const fallback = (): EffectiveBundle => ({
+    block: buildDefaultStatusConfig(),
+    origin: 'default',
+    targetId: statusTargetWorkflowId(config),
+    label: null,
+  });
+  try {
+    const bundle = await loadEffectiveBundle(config);
+    return bundle ?? fallback();
+  } catch {
+    return fallback();
+  }
+}
+
+function printRedirectNotice(targetId: string): void {
+  console.error(
+    `note: \`syntaur status\` edits workflow '${targetId}' (the global default); ` +
+      `prefer the dashboard Workflow editor (future: \`syntaur workflow\` subverbs).`,
+  );
+}
+
+/**
+ * Persist a mutated bundle back to the source it came from: the workflow library
+ * (label preserved + redirect notice) for a workflows-map config, or the legacy
+ * top-level block (byte-identical to prior behavior) for a legacy config.
+ */
+async function persistBundle(bundle: EffectiveBundle, after: StatusConfig): Promise<void> {
+  if (bundle.origin === 'workflow') {
+    await writeWorkflowBundle(bundle.targetId, after, { label: bundle.label ?? bundle.targetId });
+    printRedirectNotice(bundle.targetId);
+    return;
+  }
+  await writeStatusConfig(after);
+}
+
+/** Scope a remove/rename scan to the target workflow's assignments when a
+ * `workflows:` map exists, so a rename/remove never rewrites or blocks on tickets
+ * bound to OTHER workflows sharing the same status id. Legacy configs have one
+ * lifecycle → no scoping needed (byte-identical to prior behavior). */
+function scanScope(config: SyntaurConfig, bundle: EffectiveBundle): WorkflowScanScope {
+  if (bundle.origin !== 'workflow') return {};
+  return { resolver: makeWorkflowContextResolver(config), workflowId: bundle.targetId };
 }
 
 /** Minimal LCS-based line diff (`- ` removed, `+ ` added, `  ` unchanged). */
@@ -153,8 +262,9 @@ export interface StatusListResult {
 }
 
 export async function runStatusList(): Promise<StatusListResult> {
-  const block = await readStatusBlock();
-  const cfg = block ?? buildDefaultStatusConfig();
+  const config = await readConfig();
+  const bundle = await optionalEffectiveBundle(config);
+  const cfg = bundle.block;
   // Parity with the dashboard's getStatusConfig(): a custom statuses block with
   // no `transitions:` falls back to the built-in default transitions (the CLI
   // must not report `[]` where the dashboard materializes defaults).
@@ -164,13 +274,25 @@ export async function runStatusList(): Promise<StatusListResult> {
     statuses: cfg.statuses,
     order: cfg.order,
     transitions,
-    source: block ? 'config' : 'default',
+    // 'config' when a real workflow/legacy block backs it; 'default' only when
+    // neither source exists (synthesized built-ins — pre-init behavior).
+    source: bundle.origin === 'default' ? 'default' : 'config',
   };
 }
 
 // ----- init / reset ---------------------------------------------------------
 
 export async function runStatusInit(opts: { force?: boolean; dryRun?: boolean }): Promise<void> {
+  const config = await readConfig();
+  // A `workflows:` map is the authoritative source; `init` would create a second,
+  // conflicting top-level `statuses:` block that getWorkflowLibrary ignores.
+  if (hasWorkflowsMap(config)) {
+    throw new Error(
+      `Statuses live under \`workflows:\` — \`syntaur status\` verbs already edit workflow ` +
+        `'${statusTargetWorkflowId(config)}'. \`init\` would create a second, conflicting source; ` +
+        `edit the workflow directly (add/set/reorder/…) or use the dashboard Workflow editor.`,
+    );
+  }
   const existing = await readStatusBlock();
   if (existing && !opts.force) {
     throw new Error(
@@ -185,17 +307,46 @@ export async function runStatusInit(opts: { force?: boolean; dryRun?: boolean })
   await writeStatusConfig(next);
 }
 
-export async function runStatusReset(opts: { dryRun?: boolean }): Promise<void> {
+/** Which path `runStatusReset` took — lets the caller print an accurate stdout
+ * line (the generic "reverted to implicit defaults" is only true for `legacy`;
+ * the `workflow` path rewrites the bundle and prints its own note on stderr). */
+export type StatusResetMode = 'workflow' | 'legacy' | 'noop';
+
+export async function runStatusReset(opts: { dryRun?: boolean }): Promise<StatusResetMode> {
+  const config = await readConfig();
+  if (hasWorkflowsMap(config)) {
+    const targetId = statusTargetWorkflowId(config);
+    const wf = config.workflows![targetId];
+    if (!wf) {
+      throw new Error(
+        `Global default workflow "${targetId}" is not defined under \`workflows:\` in config.md — ` +
+          `fix \`defaultWorkflow:\` or create the workflow via the dashboard.`,
+      );
+    }
+    const next = buildDefaultStatusConfig();
+    if (opts.dryRun) {
+      const { label: _label, ...currentBlock } = wf;
+      printBlockDiff(currentBlock, next);
+      console.log(`\n(resets workflow '${targetId}' to built-in statuses/transitions; clears custom derive/facts.)`);
+      return 'workflow';
+    }
+    await writeWorkflowBundle(targetId, next, { label: wf.label });
+    console.error(
+      `note: reset workflow '${targetId}' (the global default) to built-in statuses/transitions; custom derive/facts cleared.`,
+    );
+    return 'workflow';
+  }
   const existing = await readStatusBlock();
   if (!existing) {
     if (opts.dryRun) console.log('No statuses block present — nothing to reset.');
-    return;
+    return 'noop';
   }
   if (opts.dryRun) {
     printBlockDiff(existing, null);
-    return;
+    return 'legacy';
   }
   await deleteStatusConfig();
+  return 'legacy';
 }
 
 // ----- add / set / reorder --------------------------------------------------
@@ -244,7 +395,9 @@ export async function runStatusAdd(id: string, opts: StatusAddOptions): Promise<
     throw new Error('--after, --before, and --at-end are mutually exclusive');
   }
 
-  const before = await requireStatusBlock();
+  const config = await readConfig();
+  const bundle = await requireEffectiveBundle(config);
+  const before = bundle.block;
   if (before.statuses.some((s) => s.id === id)) {
     throw new Error(`Status "${id}" already exists. Use \`syntaur status set\` to edit it.`);
   }
@@ -269,7 +422,7 @@ export async function runStatusAdd(id: string, opts: StatusAddOptions): Promise<
     printBlockDiff(before, after);
     return;
   }
-  await writeStatusConfig(after);
+  await persistBundle(bundle, after);
 }
 
 export interface StatusSetOptions {
@@ -284,7 +437,9 @@ export interface StatusSetOptions {
 
 export async function runStatusSet(opts: StatusSetOptions): Promise<void> {
   if (!opts.id) throw new Error('--id is required');
-  const before = await requireStatusBlock();
+  const config = await readConfig();
+  const bundle = await requireEffectiveBundle(config);
+  const before = bundle.block;
   const idx = before.statuses.findIndex((s) => s.id === opts.id);
   if (idx === -1) throw new Error(`Status "${opts.id}" does not exist.`);
 
@@ -316,11 +471,13 @@ export async function runStatusSet(opts: StatusSetOptions): Promise<void> {
     printBlockDiff(before, after);
     return;
   }
-  await writeStatusConfig(after);
+  await persistBundle(bundle, after);
 }
 
 export async function runStatusReorder(csv: string, opts: { dryRun?: boolean }): Promise<void> {
-  const before = await requireStatusBlock();
+  const config = await readConfig();
+  const bundle = await requireEffectiveBundle(config);
+  const before = bundle.block;
   const requested = csv
     .split(',')
     .map((s) => s.trim())
@@ -348,7 +505,7 @@ export async function runStatusReorder(csv: string, opts: { dryRun?: boolean }):
     printBlockDiff(before, after);
     return;
   }
-  await writeStatusConfig(after);
+  await persistBundle(bundle, after);
 }
 
 // ----- remove ---------------------------------------------------------------
@@ -361,7 +518,9 @@ export async function runStatusRemove(
   id: string,
   opts: { force?: boolean; dryRun?: boolean },
 ): Promise<void> {
-  const before = await requireStatusBlock();
+  const config = await readConfig();
+  const bundle = await requireEffectiveBundle(config);
+  const before = bundle.block;
   if (!before.statuses.some((s) => s.id === id)) {
     throw new Error(`Status "${id}" does not exist.`);
   }
@@ -369,7 +528,12 @@ export async function runStatusRemove(
   const { projectsDir, standaloneDir } = await scanDirs();
   // Rename must reach cached `phase` and history phase keys too, not just the
   // headline — a blocked/pinned assignment can reference the id only there.
-  const affected = await scanAssignmentsReferencingStatus(projectsDir, standaloneDir, id);
+  const affected = await scanAssignmentsReferencingStatus(
+    projectsDir,
+    standaloneDir,
+    id,
+    scanScope(config, bundle),
+  );
 
   if (affected.length > 0 && !opts.force) {
     throw new Error(
@@ -400,7 +564,7 @@ export async function runStatusRemove(
     }
     return;
   }
-  await writeStatusConfig(after);
+  await persistBundle(bundle, after);
 }
 
 // ----- rename (atomic across config.md + every affected assignment.md) -------
@@ -414,7 +578,9 @@ export async function runStatusRename(
   if (!/^[a-zA-Z0-9_-]+$/.test(newId)) {
     throw new Error(`Invalid new status id "${newId}" — use letters, digits, "_" or "-".`);
   }
-  const before = await requireStatusBlock();
+  const config = await readConfig();
+  const bundle = await requireEffectiveBundle(config);
+  const before = bundle.block;
   const target = before.statuses.find((s) => s.id === id);
   if (!target) throw new Error(`Status "${id}" does not exist.`);
   if (before.statuses.some((s) => s.id === newId)) {
@@ -453,7 +619,12 @@ export async function runStatusRename(
   const { projectsDir, standaloneDir } = await scanDirs();
   // Rename must reach cached `phase` and history phase keys too, not just the
   // headline — a blocked/pinned assignment can reference the id only there.
-  const affected = await scanAssignmentsReferencingStatus(projectsDir, standaloneDir, id);
+  const affected = await scanAssignmentsReferencingStatus(
+    projectsDir,
+    standaloneDir,
+    id,
+    scanScope(config, bundle),
+  );
 
   if (opts.dryRun) {
     printBlockDiff(before, after);
@@ -479,7 +650,7 @@ export async function runStatusRename(
 
   const now = nowTimestamp();
   try {
-    await writeStatusConfig(after);
+    await persistBundle(bundle, after);
     for (const a of affected) {
       const original = buffers.get(a.path)!;
       // `status rename` is a relabel, NOT a lifecycle transition: it must not
@@ -519,7 +690,9 @@ export async function runStatusTransitionAdd(opts: TransitionAddOptions): Promis
   if (!opts.from || !opts.command || !opts.to) {
     throw new Error('--from, --command, and --to are all required');
   }
-  const before = await requireStatusBlock();
+  const config = await readConfig();
+  const bundle = await requireEffectiveBundle(config);
+  const before = bundle.block;
   const ids = new Set(before.statuses.map((s) => s.id));
   if (!ids.has(opts.from)) throw new Error(`--from "${opts.from}" is not a defined status`);
   if (!ids.has(opts.to)) throw new Error(`--to "${opts.to}" is not a defined status`);
@@ -548,7 +721,7 @@ export async function runStatusTransitionAdd(opts: TransitionAddOptions): Promis
     printBlockDiff(before, after);
     return;
   }
-  await writeStatusConfig(after);
+  await persistBundle(bundle, after);
 }
 
 export async function runStatusTransitionRemove(opts: {
@@ -557,7 +730,9 @@ export async function runStatusTransitionRemove(opts: {
   dryRun?: boolean;
 }): Promise<void> {
   if (!opts.from || !opts.command) throw new Error('--from and --command are required');
-  const before = await requireStatusBlock();
+  const config = await readConfig();
+  const bundle = await requireEffectiveBundle(config);
+  const before = bundle.block;
   const base = effectiveTransitions(before);
   const remaining = base.filter((t) => !(t.from === opts.from && t.command === opts.command));
   if (remaining.length === base.length) {
@@ -576,7 +751,7 @@ export async function runStatusTransitionRemove(opts: {
     printBlockDiff(before, after);
     return;
   }
-  await writeStatusConfig(after);
+  await persistBundle(bundle, after);
 }
 
 // ----- command wiring -------------------------------------------------------
@@ -638,8 +813,10 @@ statusCommand
   .option('--dry-run', 'Print the diff without writing')
   .action(async (opts: { dryRun?: boolean }) => {
     try {
-      await runStatusReset(opts);
-      if (!opts.dryRun) console.log('Reset statuses to implicit defaults.');
+      const mode = await runStatusReset(opts);
+      // Only the legacy path truly reverts to implicit defaults; the workflow
+      // path rewrites the target bundle and already printed an accurate note.
+      if (!opts.dryRun && mode === 'legacy') console.log('Reset statuses to implicit defaults.');
     } catch (error) {
       fail(error);
     }

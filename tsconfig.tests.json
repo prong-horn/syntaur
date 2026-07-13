@@ -1,0 +1,49 @@
+// Type-aware probe for the test files this change touches.
+//
+// The base tsconfig EXCLUDES src/__tests__, so test-file type errors are invisible
+// to `npm run typecheck` AND to vitest (esbuild strips types without checking).
+// `extends` inherits that exclude, so a bare `include: src/**/*` here is a no-op —
+// the probe must re-list source and force the target tests back in via `files`.
+//
+// Scoped to source + the Phase 0 tests deliberately: the rest of the test tree
+// carries pre-existing type errors (extensionless dashboard cross-imports,
+// implicit-any callback params, partial SyntaurConfig casts). Fixing those is out
+// of scope for Phase 0, so we do not turn this into a repo-wide, permanently-red
+// gate. Widen `files` when a change touches other test files.
+{
+  "extends": "./tsconfig.json",
+  "include": ["src/**/*.ts", "src/**/*.tsx"],
+  "exclude": [
+    "node_modules",
+    "dist",
+    "src/__tests__",
+    "src/**/__tests__/**",
+    "src/**/*.test.ts",
+    "src/**/*.test.tsx"
+  ],
+  "files": [
+    "src/__tests__/lifecycle-commands.test.ts",
+    "src/__tests__/lifecycle-linked-todos.test.ts",
+    "src/__tests__/status-cmd.test.ts",
+    "src/__tests__/doctor-workflows.test.ts",
+    "src/__tests__/stage-engine.test.ts",
+    "src/__tests__/stage-model.test.ts",
+    "src/__tests__/workflow-file.test.ts",
+    "src/__tests__/workflow-library.test.ts",
+    "src/__tests__/workflow-write.test.ts",
+    "src/__tests__/workflow-resolve.test.ts",
+    "src/__tests__/github-backup.test.ts",
+    "src/__tests__/dashboard-watcher.test.ts",
+    "src/daemon/__tests__/protocol.test.ts",
+    "src/daemon/__tests__/paths.test.ts",
+    "src/daemon/__tests__/sockets.test.ts",
+    "src/daemon/__tests__/discovery.test.ts",
+    "src/daemon/__tests__/roster.test.ts",
+    "src/daemon/__tests__/pty-host.test.ts",
+    "src/daemon/__tests__/supervisor.test.ts",
+    "src/daemon/__tests__/client.test.ts",
+    "src/daemon/__tests__/attach-client.test.ts",
+    "src/daemon/__tests__/pty-host-run.test.ts",
+    "src/daemon/__tests__/liveness.test.ts"
+  ]
+}

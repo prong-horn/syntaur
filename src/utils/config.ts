@@ -5,7 +5,6 @@ import { syntaurRoot, defaultProjectDir, expandHome } from './paths.js';
 import { fileExists, writeFileForce } from './fs.js';
 import { renderConfig } from '../templates/config.js';
 import { migrateLegacyConfig } from './fs-migration.js';
-import { DEFAULT_STATUSES, DEFAULT_TRANSITION_TABLE } from '../lifecycle/index.js';
 import {
   BINDABLE_ACTION_KINDS,
   canonicalizeCombo,
@@ -129,6 +128,24 @@ export type { RawFactDeclaration } from './fact-registry.js';
 export type { FactDeclaration } from './fact-registry.js';
 export { validateFactDeclarations, normalizeFactDeclarations } from './fact-registry.js';
 
+/**
+ * Browser-safe stage-model types (Phase 1 stage engine, WS-0) live in
+ * `stage-model.ts` (zero imports, `@shared`-aliasable); re-exported here so
+ * existing Node-side imports from `config.js` keep resolving. Mirrors the
+ * `derive-config.ts` / `fact-registry.ts` re-exports above.
+ */
+export { ROUTE_TRIGGERS } from './stage-model.js';
+export type {
+  RouteTrigger,
+  StageCheck,
+  StageRoute,
+  StageWork,
+  WorkflowStage,
+  WorkflowFlag,
+  WorkflowFlags,
+  StageWorkflow,
+} from './stage-model.js';
+
 export interface StatusConfig {
   statuses: StatusDefinition[];
   order: string[];
@@ -140,6 +157,17 @@ export interface StatusConfig {
    * under `statuses.facts`; preserved verbatim so invalid rows round-trip and
    * doctor can diagnose them. Null/absent → no custom vocabulary. */
   facts?: RawFactDeclaration[] | null;
+}
+
+/**
+ * A named lifecycle workflow: a full {@link StatusConfig} bundle
+ * (`definitions`/`order`/`transitions`/`derive`/`facts`) plus a human `label`.
+ * Workflows live in a global library (`config.md` → `workflows: { <id>: … }`)
+ * referenced by id; the legacy top-level `statuses:` block reads as the
+ * built-in `default` workflow (see {@link parseWorkflowsConfig}).
+ */
+export interface WorkflowDefinition extends StatusConfig {
+  label: string;
 }
 
 export interface TypeDefinition {
@@ -252,6 +280,13 @@ export interface SyntaurConfig {
   integrations: IntegrationConfig;
   backup: BackupConfig | null;
   statuses: StatusConfig | null;
+  /** Global library of named lifecycle workflows, referenced by id. Absent →
+   * the legacy single `statuses:` lifecycle is the built-in `default` workflow.
+   * @see resolveWorkflowId */
+  workflows?: Record<string, WorkflowDefinition> | null;
+  /** Global fallback workflow id (last rung of binding resolution). Absent →
+   * `'default'`. */
+  defaultWorkflow?: string | null;
   types: TypesConfig | null;
   agents: AgentConfig[] | null;
   playbooks: PlaybooksConfig;
@@ -292,6 +327,8 @@ const DEFAULT_CONFIG: SyntaurConfig = {
   },
   backup: null,
   statuses: null,
+  workflows: null,
+  defaultWorkflow: null,
   types: null,
   agents: null,
   playbooks: {
@@ -874,132 +911,211 @@ export function parseStatusConfig(content: string): StatusConfig | null {
 }
 
 /**
- * Default per-status accent colors. Statuses without an entry fall back to
- * `'gray'` in {@link buildDefaultStatusConfig}. Shared by the dashboard's
- * `getStatusConfig()` and the `syntaur status` CLI so the two never drift.
+ * Parse the `workflows:` block — a global library of named lifecycle workflows,
+ * each a full {@link StatusConfig} bundle plus a `label`. Returns null when the
+ * block is absent (caller treats absent as "legacy `statuses:` is the built-in
+ * `default` workflow" via the resolver, not here — this stays a pure parser).
+ *
+ * Structurally this is `parseStatusConfig` one nesting level deeper: the block
+ * splits into per-workflow sub-blocks keyed by indent-2 `<id>:` lines, and each
+ * sub-block's body (indent ≥ 4) is dedented by two spaces and fed back through
+ * {@link parseStatusConfig} verbatim — so the loose, no-silent-deletion parse
+ * (facts/derive preservation, AQL unescaping) is reused rather than reimplemented.
  */
-export const DEFAULT_STATUS_COLORS: Record<string, string> = {
-  pending: 'slate',
-  in_progress: 'teal',
-  blocked: 'amber',
-  review: 'violet',
-  completed: 'emerald',
-  failed: 'rose',
-};
+export function parseWorkflowsConfig(
+  content: string,
+): Record<string, WorkflowDefinition> | null {
+  const match = content.match(/^---\n([\s\S]*?)\n---/);
+  if (!match) return null;
+  const fmBlock = match[1];
 
-/** Turn a snake_case status id into a human label ("in_progress" → "In Progress"). */
-export function toTitleCase(s: string): string {
-  return s.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+  const workflowsStart = fmBlock.match(/^workflows:\s*$/m);
+  if (!workflowsStart) return null;
+
+  const startIdx = (workflowsStart.index ?? 0) + workflowsStart[0].length;
+  const lines = fmBlock.slice(startIdx).split('\n');
+
+  const stripQuotes = (v: string): string => {
+    const t = v.trim();
+    if (
+      t.length >= 2 &&
+      ((t.startsWith('"') && t.endsWith('"')) || (t.startsWith("'") && t.endsWith("'")))
+    ) {
+      return t.slice(1, -1);
+    }
+    return t;
+  };
+
+  // Split into per-workflow sub-blocks. A new workflow starts at an indent-2
+  // `<id>:` line; the block ends at the next top-level (indent-0) key (e.g.
+  // the sibling `defaultWorkflow:` scalar, read separately in readConfig).
+  const blocks: { id: string; body: string[] }[] = [];
+  let current: { id: string; body: string[] } | null = null;
+  for (const line of lines) {
+    if (line.trim() === '') {
+      if (current) current.body.push(line);
+      continue;
+    }
+    const indent = line.length - line.trimStart().length;
+    if (indent === 0) break;
+    const trimmed = line.trimStart();
+    if (indent === 2 && trimmed.endsWith(':')) {
+      current = { id: trimmed.slice(0, -1).trim(), body: [] };
+      blocks.push(current);
+      continue;
+    }
+    if (current) current.body.push(line);
+  }
+
+  if (blocks.length === 0) return null;
+
+  const workflows: Record<string, WorkflowDefinition> = {};
+  for (const { id, body } of blocks) {
+    const dedented = body.map((l) => (l.startsWith('  ') ? l.slice(2) : l));
+    const labelLine = dedented.find(
+      (l) => l.length - l.trimStart().length === 2 && l.trimStart().startsWith('label:'),
+    );
+    const label =
+      (labelLine ? stripQuotes(labelLine.trimStart().slice('label:'.length)) : '') || id;
+    // Reuse parseStatusConfig by wrapping the dedented body under a synthetic
+    // top-level `statuses:` block. An unparseable/empty bundle still round-trips
+    // as an empty bundle so the labeled workflow id is never silently dropped.
+    const bundle =
+      parseStatusConfig(`---\nstatuses:\n${dedented.join('\n')}\n---\n`) ??
+      { statuses: [], order: [], transitions: [], derive: null, facts: null };
+    workflows[id] = { label, ...bundle };
+  }
+
+  return workflows;
 }
 
 /**
- * Materialize the built-in default status set as an explicit {@link StatusConfig}.
- *
- * `DEFAULT_CONFIG.statuses` is `null` (the runtime resolves defaults lazily), so
- * `syntaur status init` / `list` cannot read defaults from there. This builder
- * reproduces exactly what the dashboard's `getStatusConfig()` no-block branch
- * builds — same ids/labels/colors/terminal flags and the same transition table —
- * so the CLI and the dashboard share one source of truth.
+ * Default status-set primitives now live in the browser-safe `status-defaults.ts`
+ * (so `workflow-resolve.ts` can synthesize the `default` workflow without pulling
+ * Node into the dashboard bundle); re-exported here so existing Node-side imports
+ * from `config.js` keep resolving. Mirrors the `derive-config.ts` re-export above.
  */
-export function buildDefaultStatusConfig(): StatusConfig {
-  return {
-    statuses: DEFAULT_STATUSES.map((id) => ({
-      id,
-      label: toTitleCase(id),
-      color: DEFAULT_STATUS_COLORS[id] ?? 'gray',
-      terminal: id === 'completed' || id === 'failed',
-    })),
-    order: [...DEFAULT_STATUSES],
-    transitions: Array.from(DEFAULT_TRANSITION_TABLE.entries()).map(([key, to]) => {
-      const [from, command] = key.split(':');
-      return { from, command, to };
-    }),
-  };
-}
+export {
+  DEFAULT_STATUS_COLORS,
+  toTitleCase,
+  buildDefaultStatusConfig,
+} from './status-defaults.js';
 
-export function serializeStatusConfig(statuses: StatusConfig): string {
-  const lines: string[] = [];
-  // Symmetric with `unquoteAql` in parseStatusConfig: escape backslash THEN
-  // quote so the derive-rule when/next/disposition-when fields round-trip even
-  // when they contain a literal `"` or `\`. (Previously only `"` was escaped and
-  // nothing reversed it, so a quoted AQL condition accumulated a backslash on
-  // every save→reload.)
-  const escapeAql = (s: string): string => s.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
-  lines.push('statuses:');
+// Symmetric with `unquoteAql` in parseStatusConfig: escape backslash THEN
+// quote so the derive-rule when/next/disposition-when fields round-trip even
+// when they contain a literal `"` or `\`. (Previously only `"` was escaped and
+// nothing reversed it, so a quoted AQL condition accumulated a backslash on
+// every save→reload.)
+const escapeAql = (s: string): string => s.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+
+/**
+ * Emit a {@link StatusConfig} bundle body (definitions/order/transitions/facts/
+ * derive) into `lines`, with sub-section keys at `base` indent. Shared by
+ * {@link serializeStatusConfig} (base 2, under a top-level `statuses:`) and
+ * {@link serializeWorkflowsConfig} (base 4, one level deeper under each
+ * `workflows.<id>:`) so the two writers can never drift.
+ */
+function appendStatusBundle(lines: string[], bundle: StatusConfig, base: number): void {
+  const p = ' '.repeat(base); // sub-section key indent (definitions/order/…)
+  const item = ' '.repeat(base + 2); // list-item / headline-scalar indent
+  const cont = ' '.repeat(base + 4); // list-item continuation-key indent
 
   // definitions
-  lines.push('  definitions:');
-  for (const s of statuses.statuses) {
-    lines.push(`    - id: ${s.id}`);
-    lines.push(`      label: ${s.label}`);
-    if (s.description) lines.push(`      description: ${s.description}`);
-    if (s.color) lines.push(`      color: ${s.color}`);
-    if (s.icon) lines.push(`      icon: ${s.icon}`);
-    if (s.terminal) lines.push(`      terminal: true`);
+  lines.push(`${p}definitions:`);
+  for (const s of bundle.statuses) {
+    lines.push(`${item}- id: ${s.id}`);
+    lines.push(`${cont}label: ${s.label}`);
+    if (s.description) lines.push(`${cont}description: ${s.description}`);
+    if (s.color) lines.push(`${cont}color: ${s.color}`);
+    if (s.icon) lines.push(`${cont}icon: ${s.icon}`);
+    if (s.terminal) lines.push(`${cont}terminal: true`);
   }
 
   // order
-  lines.push('  order:');
-  for (const id of statuses.order) {
-    lines.push(`    - ${id}`);
+  lines.push(`${p}order:`);
+  for (const id of bundle.order) {
+    lines.push(`${item}- ${id}`);
   }
 
   // transitions
-  if (statuses.transitions.length > 0) {
-    lines.push('  transitions:');
-    for (const t of statuses.transitions) {
-      lines.push(`    - from: ${t.from}`);
-      lines.push(`      command: ${t.command}`);
-      lines.push(`      to: ${t.to}`);
-      if (t.label) lines.push(`      label: ${t.label}`);
-      if (t.description) lines.push(`      description: ${t.description}`);
-      if (t.requiresReason) lines.push(`      requiresReason: true`);
+  if (bundle.transitions.length > 0) {
+    lines.push(`${p}transitions:`);
+    for (const t of bundle.transitions) {
+      lines.push(`${item}- from: ${t.from}`);
+      lines.push(`${cont}command: ${t.command}`);
+      lines.push(`${cont}to: ${t.to}`);
+      if (t.label) lines.push(`${cont}label: ${t.label}`);
+      if (t.description) lines.push(`${cont}description: ${t.description}`);
+      if (t.requiresReason) lines.push(`${cont}requiresReason: true`);
     }
   }
 
   // custom fact declarations — emitted verbatim (RawFactDeclaration) so the
   // round-trip preserves whatever the user wrote, even invalid rows that the
   // normalize/accept pipeline later drops. Same silent-deletion class as derive.
-  if (statuses.facts && statuses.facts.length > 0) {
-    lines.push('  facts:');
-    for (const f of statuses.facts) {
-      lines.push(`    - name: ${f.name}`);
-      lines.push(`      type: ${f.type}`);
+  if (bundle.facts && bundle.facts.length > 0) {
+    lines.push(`${p}facts:`);
+    for (const f of bundle.facts) {
+      lines.push(`${item}- name: ${f.name}`);
+      lines.push(`${cont}type: ${f.type}`);
       if (f.binds !== null && f.binds !== undefined) {
-        lines.push(`      binds: ${f.binds}`);
+        lines.push(`${cont}binds: ${f.binds}`);
       }
     }
   }
 
-  // derive rules (derived-status v3) — serialized so every writeStatusConfig
-  // round-trip preserves them (the pre-v3 writer rebuilt the block from
-  // definitions/order/transitions only and silently deleted custom rules).
-  if (statuses.derive) {
-    const d = statuses.derive;
-    lines.push('  phaseLadder:');
+  // derive rules (derived-status v3) — serialized so every write round-trip
+  // preserves them (the pre-v3 writer rebuilt the block from definitions/order/
+  // transitions only and silently deleted custom rules).
+  if (bundle.derive) {
+    const d = bundle.derive;
+    lines.push(`${p}phaseLadder:`);
     for (const rung of d.phaseLadder) {
-      lines.push(`    - phase: ${rung.phase}`);
-      lines.push(`      when: "${escapeAql(rung.when)}"`);
+      lines.push(`${item}- phase: ${rung.phase}`);
+      lines.push(`${cont}when: "${escapeAql(rung.when)}"`);
       // `!== undefined`, not truthy: an accepted empty-string `next: ""` must
       // be preserved (otherwise it reparses as undefined — a round-trip loss).
-      if (rung.next !== undefined) lines.push(`      next: "${escapeAql(rung.next)}"`);
+      if (rung.next !== undefined) lines.push(`${cont}next: "${escapeAql(rung.next)}"`);
     }
-    lines.push('  disposition:');
+    lines.push(`${p}disposition:`);
     for (const rule of d.disposition) {
       if (rule.when === null) {
-        lines.push(`    - else: ${rule.is}`);
+        lines.push(`${item}- else: ${rule.is}`);
       } else {
-        lines.push(`    - when: "${escapeAql(rule.when)}"`);
-        lines.push(`      is: ${rule.is}`);
+        lines.push(`${item}- when: "${escapeAql(rule.when)}"`);
+        lines.push(`${cont}is: ${rule.is}`);
       }
     }
-    lines.push('  headline:');
-    lines.push(`    terminal: passthrough`);
-    lines.push(`    parked: ${d.headline.parked}`);
-    lines.push(`    blocked: ${d.headline.blocked}`);
-    lines.push(`    active: phase`);
+    lines.push(`${p}headline:`);
+    lines.push(`${item}terminal: passthrough`);
+    lines.push(`${item}parked: ${d.headline.parked}`);
+    lines.push(`${item}blocked: ${d.headline.blocked}`);
+    lines.push(`${item}active: phase`);
   }
+}
 
+export function serializeStatusConfig(statuses: StatusConfig): string {
+  const lines: string[] = ['statuses:'];
+  appendStatusBundle(lines, statuses, 2);
+  return lines.join('\n');
+}
+
+/**
+ * Serialize the `workflows:` block for a global workflow library. Emits only the
+ * block (mirrors {@link serializeStatusConfig} emitting only `statuses:`); the
+ * `defaultWorkflow:` scalar is written separately by {@link writeWorkflowsConfig}.
+ * Each workflow renders its `label` then its full bundle body one indent level
+ * deeper (base 4) via the shared {@link appendStatusBundle}.
+ */
+export function serializeWorkflowsConfig(
+  workflows: Record<string, WorkflowDefinition>,
+): string {
+  const lines: string[] = ['workflows:'];
+  for (const [id, wf] of Object.entries(workflows)) {
+    lines.push(`  ${id}:`);
+    lines.push(`    label: ${wf.label}`);
+    appendStatusBundle(lines, wf, 4);
+  }
   return lines.join('\n');
 }
 
@@ -2078,6 +2194,118 @@ export async function deleteStatusConfig(): Promise<void> {
 }
 
 /**
+ * Persist the global workflow library: the `workflows:` block plus the
+ * top-level `defaultWorkflow:` scalar. Mirrors {@link writeStatusConfig} — it
+ * strips any prior `workflows:` block and `defaultWorkflow:` line and rewrites
+ * both, leaving every other frontmatter block (incl. a legacy `statuses:`) and
+ * the file body untouched.
+ */
+export async function writeWorkflowsConfig(
+  workflows: Record<string, WorkflowDefinition>,
+  defaultWorkflow: string,
+): Promise<void> {
+  const configPath = resolve(syntaurRoot(), 'config.md');
+  const block = serializeWorkflowsConfig(workflows);
+  const defaultLine = `defaultWorkflow: ${defaultWorkflow}`;
+
+  if (!(await fileExists(configPath))) {
+    const content = `---\nversion: "2.0"\ndefaultProjectDir: ~/projects\n${block}\n${defaultLine}\n---\n`;
+    await writeFileForce(configPath, content);
+    return;
+  }
+
+  const existing = await readFile(configPath, 'utf-8');
+  const fmMatch = existing.match(/^(---\n)([\s\S]*?)\n(---)/);
+  if (!fmMatch) {
+    const content = `---\nversion: "2.0"\n${block}\n${defaultLine}\n---\n${existing}`;
+    await writeFileForce(configPath, content);
+    return;
+  }
+
+  const fmBlock = fmMatch[2];
+  const afterFrontmatter = existing.slice(fmMatch[0].length);
+
+  let cleanedFm = stripTopLevelBlock(fmBlock, 'workflows');
+  // Drop any prior top-level defaultWorkflow: line (stripTopLevelBlock stops at
+  // it — it's a scalar, not an indented block — so remove it explicitly).
+  cleanedFm = cleanedFm.replace(/^defaultWorkflow:[^\n]*\n?/m, '').replace(/\n+$/, '');
+
+  const newContent = `---\n${cleanedFm}\n${block}\n${defaultLine}\n---${afterFrontmatter}`;
+  await writeFileForce(configPath, newContent);
+}
+
+export async function deleteWorkflowsConfig(): Promise<void> {
+  const configPath = resolve(syntaurRoot(), 'config.md');
+  if (!(await fileExists(configPath))) return;
+
+  const existing = await readFile(configPath, 'utf-8');
+  const fmMatch = existing.match(/^(---\n)([\s\S]*?)\n(---)/);
+  if (!fmMatch) return;
+
+  const fmBlock = fmMatch[2];
+  const afterFrontmatter = existing.slice(fmMatch[0].length);
+  let cleanedFm = stripTopLevelBlock(fmBlock, 'workflows');
+  cleanedFm = cleanedFm.replace(/^defaultWorkflow:[^\n]*\n?/m, '').replace(/\n+$/, '');
+
+  const newContent = `---\n${cleanedFm}\n---${afterFrontmatter}`;
+  await writeFileForce(configPath, newContent);
+}
+
+/**
+ * Write ONLY the top-level `defaultWorkflow:` scalar in config.md frontmatter,
+ * leaving every block (a legacy `statuses:`, any `workflows:` map, the body)
+ * untouched. This is the per-file (WS-0) home for the default pointer: a
+ * scalar, NOT a workflow body, so it does not reintroduce a `workflows:` block
+ * and the per-file loader's single-source invariant (§4.6) stays satisfied.
+ * Mirrors {@link deleteWorkflowsConfig}'s scalar handling.
+ */
+export async function writeDefaultWorkflowScalar(defaultWorkflow: string): Promise<void> {
+  const configPath = resolve(syntaurRoot(), 'config.md');
+  const defaultLine = `defaultWorkflow: ${defaultWorkflow}`;
+
+  if (!(await fileExists(configPath))) {
+    const content = `---\nversion: "2.0"\ndefaultProjectDir: ~/projects\n${defaultLine}\n---\n`;
+    await writeFileForce(configPath, content);
+    return;
+  }
+
+  const existing = await readFile(configPath, 'utf-8');
+  const fmMatch = existing.match(/^(---\n)([\s\S]*?)\n(---)/);
+  if (!fmMatch) {
+    const content = `---\nversion: "2.0"\n${defaultLine}\n---\n${existing}`;
+    await writeFileForce(configPath, content);
+    return;
+  }
+
+  const fmBlock = fmMatch[2];
+  const afterFrontmatter = existing.slice(fmMatch[0].length);
+  const cleanedFm = fmBlock.replace(/^defaultWorkflow:[^\n]*\n?/m, '').replace(/\n+$/, '');
+  const newContent = `---\n${cleanedFm}\n${defaultLine}\n---${afterFrontmatter}`;
+  await writeFileForce(configPath, newContent);
+}
+
+/**
+ * Remove the legacy top-level `statuses:` block from config.md (Decision D4:
+ * once the workflow library exists, the single source of truth is
+ * `workflows.default`, so the lifted legacy block is deleted). No-op when
+ * config.md or the block is absent. The read path already prefers `workflows`
+ * over `statuses`, so this is a cleanup step, not a correctness requirement.
+ */
+export async function deleteLegacyStatusesBlock(): Promise<void> {
+  const configPath = resolve(syntaurRoot(), 'config.md');
+  if (!(await fileExists(configPath))) return;
+
+  const existing = await readFile(configPath, 'utf-8');
+  const fmMatch = existing.match(/^(---\n)([\s\S]*?)\n(---)/);
+  if (!fmMatch) return;
+  if (!/^statuses:\s*$/m.test(fmMatch[2])) return; // nothing to strip
+
+  const afterFrontmatter = existing.slice(fmMatch[0].length);
+  const cleanedFm = stripTopLevelBlock(fmMatch[2], 'statuses');
+  await writeFileForce(configPath, `---\n${cleanedFm}\n---${afterFrontmatter}`);
+}
+
+/**
  * Parse the nested `search:` block from raw config.md content. Returns null when
  * absent (caller falls back to DEFAULT_SEARCH_CONFIG). Mirrors parseStatusConfig's
  * manual block walk: `defaultScope`/`externalIds` are scalars, `aliases:` is a
@@ -2359,7 +2587,7 @@ export async function updateBackupConfig(
   const current = (await readConfig()).backup;
   const nextBackup: BackupConfig = {
     repo: current?.repo ?? null,
-    categories: current?.categories ?? 'projects, playbooks, todos, servers, config',
+    categories: current?.categories ?? 'projects, playbooks, todos, servers, workflows, config',
     lastBackup: current?.lastBackup ?? null,
     lastRestore: current?.lastRestore ?? null,
     ...backup,
@@ -2466,12 +2694,14 @@ export async function readConfig(): Promise<SyntaurConfig> {
     backup: fm['backup.repo'] || fm['backup.categories']
       ? {
           repo: fm['backup.repo'] && fm['backup.repo'] !== 'null' ? fm['backup.repo'] : null,
-          categories: fm['backup.categories'] || 'projects, playbooks, todos, servers, config',
+          categories: fm['backup.categories'] || 'projects, playbooks, todos, servers, workflows, config',
           lastBackup: fm['backup.lastBackup'] && fm['backup.lastBackup'] !== 'null' ? fm['backup.lastBackup'] : null,
           lastRestore: fm['backup.lastRestore'] && fm['backup.lastRestore'] !== 'null' ? fm['backup.lastRestore'] : null,
         }
       : null,
     statuses: parseStatusConfig(content),
+    workflows: parseWorkflowsConfig(content),
+    defaultWorkflow: fm['defaultWorkflow'] ? String(fm['defaultWorkflow']) : null,
     types: null,
     agents: normalizeAgentsFromConfig(parseAgentsConfig(content)),
     playbooks: parsePlaybooksConfig(fmBlock),

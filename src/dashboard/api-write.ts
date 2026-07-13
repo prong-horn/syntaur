@@ -2,7 +2,7 @@ import { Router, type Request, type Response } from 'express';
 import { resolve, basename, isAbsolute } from 'node:path';
 import { rm, readFile, open as fsOpen, stat as fsStat, realpath as fsRealpath } from 'node:fs/promises';
 import { spawnSync } from 'node:child_process';
-import { executeTransition } from '../lifecycle/index.js';
+import { executeTransition, unambiguousCommandTarget } from '../lifecycle/index.js';
 import { appendStatusHistoryEntry } from '../lifecycle/frontmatter.js';
 import { recordEvent } from '../db/events-db.js';
 import { isValidSlug, slugify } from '../utils/slug.js';
@@ -487,21 +487,6 @@ async function handleWorktreeCreate(
   }
 }
 
-/**
- * Guard-free terminal-command target (derived-status v3): the per-from custom
- * table is passed alongside, so this fallback only matters for legacy/
- * undefined statuses. Ambiguous configs (one command, multiple distinct
- * targets) return undefined — the from-table must then decide, and an unknown
- * from is correctly refused rather than guessed (codex r3 finding 1).
- */
-function unambiguousCommandTarget(
-  transitions: Array<{ command: string; to: string }>,
-  command: string,
-): string | undefined {
-  const targets = new Set(transitions.filter((t) => t.command === command).map((t) => t.to));
-  if (targets.size === 1) return [...targets][0];
-  return undefined;
-}
 
 export function createWriteRouter(
   projectsDir: string,
@@ -1187,6 +1172,114 @@ export function createWriteRouter(
     } catch (error) {
       console.error('Error updating assignment:', error);
       res.status(500).json({ error: `Failed to update assignment: ${(error as Error).message}` });
+    }
+  });
+
+  // Replace a project's workflow binding (defaultWorkflow scalar + workflowByType
+  // map). Both are validated against the workflow library; an empty/omitted
+  // value clears that part. Used by the ProjectDetail Workflow section (Task 13).
+  router.put('/api/projects/:slug/workflow-binding', async (req: Request, res: Response) => {
+    try {
+      const projectSlug = getParam(req.params.slug);
+      const projectDir = resolve(projectsDir, projectSlug);
+      if (!(await fileExists(resolve(projectDir, 'project.md')))) {
+        res.status(404).json({ error: 'Project not found' });
+        return;
+      }
+      const { readConfig } = await import('../utils/config.js');
+      const { getWorkflowLibrary } = await import('../utils/workflow-resolve.js');
+      const { setProjectWorkflowBinding } = await import('../utils/project-binding.js');
+      const known = new Set(Object.keys(getWorkflowLibrary(await readConfig())));
+
+      const body = req.body ?? {};
+      const defaultWorkflow =
+        body.defaultWorkflow === undefined || body.defaultWorkflow === null || body.defaultWorkflow === ''
+          ? null
+          : String(body.defaultWorkflow);
+      if (defaultWorkflow !== null && !known.has(defaultWorkflow)) {
+        res.status(400).json({ error: `Unknown workflow "${defaultWorkflow}"` });
+        return;
+      }
+      const workflowByType: Record<string, string> = {};
+      if (body.workflowByType && typeof body.workflowByType === 'object') {
+        for (const [type, wf] of Object.entries(body.workflowByType)) {
+          if (typeof wf !== 'string' || wf === '') continue;
+          if (!known.has(wf)) {
+            res.status(400).json({ error: `Unknown workflow "${wf}" for type "${type}"` });
+            return;
+          }
+          workflowByType[type] = wf;
+        }
+      }
+
+      await setProjectWorkflowBinding(projectDir, { defaultWorkflow, workflowByType });
+      const project = await getProjectDetail(projectsDir, projectSlug);
+      res.json({ project });
+    } catch (error) {
+      console.error('Error updating project workflow binding:', error);
+      res.status(500).json({ error: `Failed to update binding: ${(error as Error).message}` });
+    }
+  });
+
+  // Set (or clear) a single assignment's `workflow:` override, then re-derive
+  // against the newly-resolved workflow. Used by the AssignmentDetail workflow
+  // dropdown (Task 13). The field is written BEFORE recompute so the derive runs
+  // against the NEW workflow (recompute resolves the binding from disk).
+  router.put('/api/projects/:slug/assignments/:aslug/workflow', async (req: Request, res: Response) => {
+    try {
+      const projectSlug = getParam(req.params.slug);
+      const assignmentSlug = getParam(req.params.aslug);
+      const assignmentPath = resolve(
+        projectsDir,
+        projectSlug,
+        'assignments',
+        assignmentSlug,
+        'assignment.md',
+      );
+      if (!(await fileExists(assignmentPath))) {
+        res.status(404).json({ error: 'Assignment not found' });
+        return;
+      }
+      const workflow = (req.body ?? {}).workflow;
+      const clearing = workflow === null || workflow === undefined || workflow === '';
+      if (!clearing) {
+        if (typeof workflow !== 'string') {
+          res.status(400).json({ error: 'workflow must be a string or null' });
+          return;
+        }
+        const { readConfig } = await import('../utils/config.js');
+        const { getWorkflowLibrary } = await import('../utils/workflow-resolve.js');
+        const known = new Set(Object.keys(getWorkflowLibrary(await readConfig())));
+        if (!known.has(workflow)) {
+          res.status(400).json({ error: `Unknown workflow "${workflow}"` });
+          return;
+        }
+      }
+
+      let content = await readFile(assignmentPath, 'utf-8');
+      if (clearing) {
+        // Remove the `workflow:` line entirely (scoped to frontmatter) rather
+        // than leaving a `workflow: null` — matches the template's emit-when-set.
+        const closingIdx = content.indexOf('\n---', 4);
+        if (closingIdx !== -1) {
+          const fm = content.slice(0, closingIdx).replace(/^workflow:.*\n?/m, '');
+          content = fm + content.slice(closingIdx);
+        }
+      } else {
+        content = setTopLevelField(content, 'workflow', workflow as string);
+      }
+      content = setTopLevelField(content, 'updated', nowTimestamp());
+      await writeFileForce(assignmentPath, content);
+
+      // Re-derive against the now-resolved workflow (reads the fresh file).
+      const { recomputeAssignmentDir } = await import('../lifecycle/recompute.js');
+      await recomputeAssignmentDir(resolve(assignmentPath, '..'), 'workflow-change', 'human');
+
+      const assignment = await getAssignmentDetail(projectsDir, projectSlug, assignmentSlug);
+      res.json({ assignment });
+    } catch (error) {
+      console.error('Error setting assignment workflow:', error);
+      res.status(500).json({ error: `Failed to set workflow: ${(error as Error).message}` });
     }
   });
 
@@ -2035,14 +2128,15 @@ export function createWriteRouter(
         });
         return;
       }
-      const { recomputeAndWrite, resolveDeriveContext } = await import('../lifecycle/recompute.js');
+      const { recomputeAndWrite, resolveRecomputeContext } = await import('../lifecycle/recompute.js');
       const { updateOverride } = await import('../lifecycle/frontmatter.js');
-      const context = await resolveDeriveContext();
+      const { context, workflowResolver } = await resolveRecomputeContext();
       const result = await recomputeAndWrite(assignmentPath, {
         cause: clearing ? 'unpin' : 'pin',
         by: 'human',
         projectDir: resolve(projectsDir, projectSlug),
         context,
+        workflowResolver,
         mutate: (content) => {
           if (clearing) return updateOverride(content, null);
           const current = parseAssignmentFull(content);
@@ -2296,10 +2390,10 @@ export function createWriteRouter(
       }
 
       const { reason } = req.body || {};
-      const { recomputeAndWrite, recomputeDependents, resolveDeriveContext } = await import(
+      const { recomputeAndWrite, recomputeDependents, resolveRecomputeContext } = await import(
         '../lifecycle/recompute.js'
       );
-      const context = await resolveDeriveContext();
+      const { context, workflowResolver } = await resolveRecomputeContext();
 
       // Derived-status v3 command routing:
       //  - block/unblock are PURE FACT mutations — they run inside the
@@ -2317,6 +2411,7 @@ export function createWriteRouter(
           by: 'human',
           projectDir,
           context,
+          workflowResolver,
           reason: typeof reason === 'string' ? reason : undefined,
           mutate: (content) =>
             updateAssignmentFile(content, {
@@ -2367,6 +2462,7 @@ export function createWriteRouter(
         by: 'human',
         projectDir,
         context,
+        workflowResolver,
       });
       if (settled.warning) {
         res.status(503).json({ error: settled.warning });
@@ -2380,6 +2476,7 @@ export function createWriteRouter(
           cause: 'dep-terminal',
           by: 'system',
           context,
+          workflowResolver,
         });
       }
 
@@ -2997,15 +3094,16 @@ export function createWriteRouter(
         });
         return;
       }
-      const { recomputeAndWrite, resolveDeriveContext } = await import('../lifecycle/recompute.js');
+      const { recomputeAndWrite, resolveRecomputeContext } = await import('../lifecycle/recompute.js');
       const { updateOverride } = await import('../lifecycle/frontmatter.js');
-      const context = await resolveDeriveContext();
+      const { context, workflowResolver } = await resolveRecomputeContext();
       const projectDirForId = resolved.standalone ? null : resolve(resolved.assignmentDir, '..', '..');
       const result = await recomputeAndWrite(assignmentPath, {
         cause: clearing ? 'unpin' : 'pin',
         by: 'human',
         projectDir: projectDirForId,
         context,
+        workflowResolver,
         mutate: (content) => {
           if (clearing) return updateOverride(content, null);
           const current = parseAssignmentFull(content);
@@ -3169,10 +3267,10 @@ export function createWriteRouter(
         res.status(400).json({ error: `Unsupported transition command "${command}"` });
         return;
       }
-      const { recomputeAndWrite, recomputeDependents, resolveDeriveContext } = await import(
+      const { recomputeAndWrite, recomputeDependents, resolveRecomputeContext } = await import(
         '../lifecycle/recompute.js'
       );
-      const context = await resolveDeriveContext();
+      const { context, workflowResolver } = await resolveRecomputeContext();
       const byIdPath = resolve(resolved.assignmentDir, 'assignment.md');
       const byIdProjectDir = resolved.standalone ? null : resolve(resolved.assignmentDir, '..', '..');
 
@@ -3186,6 +3284,7 @@ export function createWriteRouter(
           by: 'human',
           projectDir: byIdProjectDir,
           context,
+          workflowResolver,
           reason: typeof reason === 'string' ? reason : undefined,
           mutate: (content) =>
             updateAssignmentFile(content, {
@@ -3244,6 +3343,7 @@ export function createWriteRouter(
         by: 'human',
         projectDir: byIdProjectDir,
         context,
+        workflowResolver,
       });
       if (settledById.warning) {
         res.status(503).json({ error: settledById.warning });
@@ -3259,6 +3359,7 @@ export function createWriteRouter(
             cause: 'dep-terminal',
             by: 'system',
             context,
+            workflowResolver,
           });
         }
       }

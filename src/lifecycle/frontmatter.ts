@@ -328,6 +328,7 @@ export function parseAssignmentFrontmatter(fileContent: string): AssignmentFront
     title: getField('title') ?? '',
     project: getField('project'),
     type: getField('type'),
+    workflow: getField('workflow'),
     status: getField('status') ?? 'pending',
     priority: (getField('priority') ?? 'medium') as AssignmentFrontmatter['priority'],
     created: getField('created') ?? '',
@@ -394,6 +395,7 @@ export function updateAssignmentFile(
     Pick<
       AssignmentFrontmatter,
       | 'status'
+      | 'workflow'
       | 'assignee'
       | 'blockedReason'
       | 'updated'

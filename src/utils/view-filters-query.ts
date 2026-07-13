@@ -107,7 +107,7 @@ function presetOp(preset: DateRangePreset): '>=' | '<' {
 }
 
 // Multi-capable chip slots (op ':' with values), in canonical emission order.
-const VALUE_SLOTS = ['status', 'type', 'priority', 'assignee', 'project', 'tags'] as const;
+const VALUE_SLOTS = ['status', 'type', 'priority', 'assignee', 'project', 'workflow', 'tags'] as const;
 type ValueSlot = (typeof VALUE_SLOTS)[number];
 
 const DATE_FIELDS: readonly DateRangeField[] = ['created', 'updated'];

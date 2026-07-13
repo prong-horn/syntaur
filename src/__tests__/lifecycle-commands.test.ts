@@ -5,8 +5,10 @@ import { resolve, join } from 'node:path';
 import { createProjectCommand } from '../commands/create-project.js';
 import { createAssignmentCommand } from '../commands/create-assignment.js';
 import { completeCommand } from '../commands/complete.js';
+import { runTransition } from '../commands/_lifecycle-helper.js';
 import { executeTransition, executeTransitionByDir, executeAssign } from '../lifecycle/index.js';
 import { parseAssignmentFrontmatter } from '../lifecycle/frontmatter.js';
+import { writeWorkflowsConfig, type WorkflowDefinition } from '../utils/config.js';
 
 let testDir: string;
 
@@ -404,5 +406,149 @@ describe('assignment links', () => {
         links: 'too/many/slashes',
       }),
     ).rejects.toThrow('Invalid link');
+  });
+});
+
+// Fix 1: runTransition must resolve the assignment's OWN workflow and thread its
+// transition table / terminal set / command target into executeTransition*, so
+// custom workflows with renamed terminal statuses work from the CLI verbs.
+describe('runTransition per-workflow context (Fix 1)', () => {
+  const projectSlug = 'wf-project';
+  let home: string;
+  let projectsDir: string;
+  let prevHome: string | undefined;
+
+  // A custom workflow whose terminal status is renamed `done` (not `completed`).
+  const customWorkflow: WorkflowDefinition = {
+    label: 'Custom',
+    statuses: [
+      { id: 'draft', label: 'Draft' },
+      { id: 'ready_for_planning', label: 'Ready for Planning' },
+      { id: 'ready_to_implement', label: 'Ready to Implement' },
+      { id: 'in_progress', label: 'In Progress' },
+      { id: 'review', label: 'Review' },
+      { id: 'done', label: 'Done', terminal: true },
+      { id: 'failed', label: 'Failed', terminal: true },
+    ],
+    order: ['draft', 'ready_for_planning', 'ready_to_implement', 'in_progress', 'review', 'done', 'failed'],
+    transitions: [
+      { from: 'draft', command: 'start', to: 'in_progress' },
+      { from: 'in_progress', command: 'complete', to: 'done' },
+      { from: 'in_progress', command: 'fail', to: 'failed' },
+      { from: 'done', command: 'reopen', to: 'in_progress' },
+      { from: 'failed', command: 'reopen', to: 'in_progress' },
+    ],
+  };
+
+  // A workflow with custom statuses but NO transitions — the empty-transitions
+  // guard must fall back to built-ins (this mirrors the live `workflows.default`,
+  // which ships without a `transitions:` block).
+  const noTransitionsWorkflow: WorkflowDefinition = {
+    label: 'No Transitions',
+    statuses: [
+      { id: 'draft', label: 'Draft' },
+      { id: 'in_progress', label: 'In Progress' },
+      { id: 'completed', label: 'Completed', terminal: true },
+      { id: 'failed', label: 'Failed', terminal: true },
+    ],
+    order: ['draft', 'in_progress', 'completed', 'failed'],
+    transitions: [],
+  };
+
+  beforeEach(async () => {
+    home = await mkdtemp(join(tmpdir(), 'syntaur-wf-transition-'));
+    prevHome = process.env.SYNTAUR_HOME;
+    process.env.SYNTAUR_HOME = home;
+    projectsDir = resolve(home, 'projects');
+    await writeWorkflowsConfig(
+      { custom: customWorkflow, notransitions: noTransitionsWorkflow },
+      'custom',
+    );
+    await createProjectCommand('WF Project', { dir: projectsDir });
+  });
+
+  afterEach(async () => {
+    if (prevHome === undefined) delete process.env.SYNTAUR_HOME;
+    else process.env.SYNTAUR_HOME = prevHome;
+    await rm(home, { recursive: true, force: true });
+  });
+
+  async function readWf(assignmentSlug: string): Promise<string> {
+    return readFile(
+      resolve(projectsDir, projectSlug, 'assignments', assignmentSlug, 'assignment.md'),
+      'utf-8',
+    );
+  }
+
+  it('(a) complete lands on the workflow-renamed terminal status with disposition terminal', async () => {
+    await createAssignmentCommand('Task Custom', {
+      project: projectSlug,
+      dir: projectsDir,
+      workflow: 'custom',
+    });
+    await runTransition('task-custom', 'start', { project: projectSlug, dir: projectsDir });
+    const result = await runTransition('task-custom', 'complete', {
+      project: projectSlug,
+      dir: projectsDir,
+    });
+    expect(result.success).toBe(true);
+    expect(result.toStatus).toBe('done');
+    const content = await readWf('task-custom');
+    expect(content).toContain('status: done');
+    expect(content).toContain('disposition: terminal');
+  });
+
+  it('(b) reopen exits the custom terminal status back to a non-terminal status', async () => {
+    await createAssignmentCommand('Task Reopen', {
+      project: projectSlug,
+      dir: projectsDir,
+      workflow: 'custom',
+    });
+    await runTransition('task-reopen', 'start', { project: projectSlug, dir: projectsDir });
+    await runTransition('task-reopen', 'complete', { project: projectSlug, dir: projectsDir });
+    const result = await runTransition('task-reopen', 'reopen', {
+      project: projectSlug,
+      dir: projectsDir,
+    });
+    expect(result.success).toBe(true);
+    expect(result.toStatus).toBe('in_progress');
+    const content = await readWf('task-reopen');
+    expect(content).toContain('status: in_progress');
+  });
+
+  it('(c) a command the custom workflow does not define refuses instead of falling back to built-ins', async () => {
+    await createAssignmentCommand('Task Refuse', {
+      project: projectSlug,
+      dir: projectsDir,
+      workflow: 'custom',
+    });
+    await runTransition('task-refuse', 'start', { project: projectSlug, dir: projectsDir });
+    // `shape` is a built-in command but the custom workflow defines no `shape`
+    // transition and no unambiguous target — a non-empty custom table must NOT
+    // fall through to the built-in guard-free target.
+    const result = await runTransition('task-refuse', 'shape', {
+      project: projectSlug,
+      dir: projectsDir,
+    });
+    expect(result.success).toBe(false);
+    const content = await readWf('task-refuse');
+    expect(content).toContain('status: in_progress');
+  });
+
+  it('(d) empty-transitions workflow still completes via built-ins (guard preserves default behavior)', async () => {
+    await createAssignmentCommand('Task Empty', {
+      project: projectSlug,
+      dir: projectsDir,
+      workflow: 'notransitions',
+    });
+    await runTransition('task-empty', 'start', { project: projectSlug, dir: projectsDir });
+    const result = await runTransition('task-empty', 'complete', {
+      project: projectSlug,
+      dir: projectsDir,
+    });
+    expect(result.success).toBe(true);
+    expect(result.toStatus).toBe('completed');
+    const content = await readWf('task-empty');
+    expect(content).toContain('status: completed');
   });
 });

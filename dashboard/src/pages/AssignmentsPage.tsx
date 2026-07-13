@@ -2,6 +2,8 @@ import { type DragEvent, useEffect, useMemo, useRef, useState, useCallback } fro
 import { Link, useNavigate, useSearchParams, useParams } from 'react-router-dom';
 import { ChevronDown, ChevronUp, FilterX, FolderKanban, Plus, Pencil, Trash2, ArrowRightLeft } from 'lucide-react';
 import { CopyButton } from '../components/CopyButton';
+import { WorkflowSwimlanes } from '../components/WorkflowSwimlanes';
+import { buildWorkflowLanes } from '../lib/workflow-board';
 import { cn } from '../lib/utils';
 import {
   useAssignmentsBoard,
@@ -219,11 +221,13 @@ export function AssignmentsPage() {
     () => ({ hidden: [] }),
   );
   const [grouping, setGrouping] = useState<Grouping>(() => prefs.grouping);
-  // Kanban only supports status / type grouping; any other persisted value
+  // Kanban supports status / type / workflow grouping (workflow renders as
+  // per-workflow swimlanes, matching ProjectDetail); any other persisted value
   // (set from list view) is rendered as status. The dropdown reflects this
   // coerced value when view === 'kanban' so the UI never disagrees with what
   // the board actually shows. Persisted value survives the view switch.
-  const effectiveKanbanGrouping: 'status' | 'type' = grouping === 'type' ? 'type' : 'status';
+  const effectiveKanbanGrouping: 'status' | 'type' | 'workflow' =
+    grouping === 'type' ? 'type' : grouping === 'workflow' ? 'workflow' : 'status';
   // Tracks group IDs the user has explicitly collapsed, keyed by the active
   // grouping's group id. Persisted via saved views: buildViewState derives the
   // serializable `listSectionVisibility` from this set, and applyConfig seeds it
@@ -1027,6 +1031,19 @@ export function AssignmentsPage() {
           items: sortedItems.filter((it) => (it.projectSlug ?? '__standalone__') === key),
         }));
     }
+    if (grouping === 'workflow') {
+      const seen = new Map<string, string>();
+      for (const it of sortedItems) {
+        if (!seen.has(it.resolvedWorkflow)) {
+          seen.set(it.resolvedWorkflow, it.workflowLabel || it.resolvedWorkflow);
+        }
+      }
+      return Array.from(seen.entries()).map(([key, label]) => ({
+        id: key,
+        label,
+        items: sortedItems.filter((it) => it.resolvedWorkflow === key),
+      }));
+    }
     // Default: status grouping
     return COLUMNS.map((status) => ({
       id: status,
@@ -1065,6 +1082,12 @@ export function AssignmentsPage() {
           ...typesConfig.definitions.flatMap((def) => filteredItems.filter((it) => it.type === def.id)),
           ...filteredItems.filter((it) => !it.type || !knownIds.has(it.type)),
         ];
+      } else if (effectiveKanbanGrouping === 'workflow') {
+        // Mirror the swimlane render order (lane → column → within) so j/k
+        // traversal matches the board even for custom-workflow statuses.
+        items = buildWorkflowLanes(filteredItems).flatMap((lane) =>
+          lane.columns.flatMap((status) => lane.items.filter((it) => it.status === status)),
+        );
       } else {
         items = COLUMNS.flatMap((status) => filteredItems.filter((it) => it.status === status));
       }
@@ -1461,7 +1484,8 @@ export function AssignmentsPage() {
         </select>
         <select value={view === 'kanban' ? effectiveKanbanGrouping : grouping} onChange={(e) => handleSetGrouping(e.target.value as Grouping)} className="editor-input max-w-[180px]" title="Group by">
           {GROUPINGS.map((g) => {
-            const isKanbanUnsupported = view === 'kanban' && g !== 'status' && g !== 'type';
+            const isKanbanUnsupported =
+              view === 'kanban' && g !== 'status' && g !== 'type' && g !== 'workflow';
             const label = g === 'none' ? 'No grouping' : `Group: ${g.charAt(0).toUpperCase() + g.slice(1)}`;
             return (
               <option key={g} value={g} disabled={isKanbanUnsupported}>
@@ -1743,6 +1767,29 @@ export function AssignmentsPage() {
             );
           })}
         </div>
+      ) : effectiveKanbanGrouping === 'workflow' ? (
+        <WorkflowSwimlanes
+          items={filteredItems}
+          getItemId={getAssignmentKey}
+          renderCard={(item, { dragging }) => {
+            const flatIdx = visibleIndexByKey.get(getAssignmentKey(item)) ?? -1;
+            return (
+              <div {...(flatIdx >= 0 ? hotkeyRowProps(flatIdx) : {})}>
+                <AssignmentBoardCard
+                  assignment={item}
+                  dragging={dragging}
+                  transitioning={transitioningId === getAssignmentKey(item)}
+                  onPillSelect={(action) =>
+                    void handleMove({ item, toColumnId: action.targetStatus, action })
+                  }
+                  onOverride={(statusId) => handleOverride(item, statusId)}
+                  onRenameTitle={(next) => handleRenameTitle(item, next)}
+                />
+              </div>
+            );
+          }}
+          emptyMessage={(column) => `No ${column.title.toLowerCase()} assignments.`}
+        />
       ) : (
         <KanbanBoard
           columns={effectiveKanbanGrouping === 'type' ? TYPE_KANBAN_COLUMNS_WITH_FALLBACK : KANBAN_COLUMNS}
