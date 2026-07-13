@@ -127,7 +127,13 @@ function AssignmentView({
       {moreAbove > 0 && <Text dimColor>▲ {moreAbove} more</Text>}
       {visible.map((line, i) => {
         if (line.text === '') return <Text key={i}> </Text>;
-        if (i === 0) return <Text key={i} bold>{line.text}</Text>;
+        // The title is always `lines[0]`; `i` is an index into the VISIBLE
+        // slice, not the content, so it must only match the title when
+        // nothing is scrolled above it (`moreAbove === 0` ⟺ the slice starts
+        // at absolute index 0 — see `sliceWithIndicators`). Matching on `i
+        // === 0` alone bolds whatever line is first on screen after
+        // scrolling, not the actual title.
+        if (moreAbove === 0 && i === 0) return <Text key={i} bold>{line.text}</Text>;
         if (line.text.startsWith('Status: ')) {
           return <Text key={i}>Status: <Text color={statusColors[detail.status] ?? 'white'}>{detail.status}</Text></Text>;
         }
@@ -215,6 +221,11 @@ export const DetailPane: React.FC<{
   if (selection.kind === 'assignment')
     return (
       <AssignmentView
+        // Keyed by assignment identity so a fresh selection remounts the view
+        // instead of reusing the previous assignment's `useViewport` scroll
+        // offset — otherwise switching assignments while scrolled would open
+        // the new one's (unrelated) content at the old scroll position.
+        key={`${selection.projectSlug ?? ''}/${selection.assignmentSlug}`}
         projectsDir={projectsDir}
         assignmentsDir={assignmentsDir}
         projectSlug={selection.projectSlug}
@@ -223,5 +234,16 @@ export const DetailPane: React.FC<{
         focused={focused}
       />
     );
-  return <TranscriptView session={selection.session} contentRect={contentRect} focused={focused} />;
+  return (
+    <TranscriptView
+      // Keyed by sessionId so a fresh selection remounts the view instead of
+      // reusing the previous session's `useViewport` state — without this, a
+      // prior session scrolled up (followTail=false) leaves a newly-selected
+      // session opening pinned to the top instead of following its tail.
+      key={selection.session.sessionId}
+      session={selection.session}
+      contentRect={contentRect}
+      focused={focused}
+    />
+  );
 };

@@ -10,6 +10,8 @@ export interface FrameContent {
   frame: Rect;
   /** The rect content renders into and mouse regions register against — `inset(frame, 1)` when bordered, else identical to `frame`. */
   content: Rect;
+  /** True when THIS pane skips its border — the global column rule, or a frame too short/narrow for `inset(frame, 1)` to actually shrink (a tiny-terminal case the global column-only rule misses). Consult this per-pane flag when deciding whether to draw a border, never the top-level `CockpitLayout.borderless` alone. */
+  borderless: boolean;
 }
 
 export interface CockpitRegions {
@@ -42,8 +44,13 @@ export function inset(rect: Rect, n: number): Rect {
   return { x: rect.x + n, y: rect.y + n, width: rect.width - n * 2, height: rect.height - n * 2 };
 }
 
-function frameContent(frame: Rect, borderless: boolean): FrameContent {
-  return { frame, content: borderless ? frame : inset(frame, 1) };
+function frameContent(frame: Rect, globalBorderless: boolean): FrameContent {
+  // A frame too short/narrow for `inset(frame, 1)` to actually shrink it
+  // (height or width <= 2) must also go borderless — otherwise the border
+  // still draws while `content === frame` (inset's no-op safety), and the
+  // rendered border row/col would desync from the mouse hit-rect.
+  const laneBorderless = globalBorderless || frame.width <= 2 || frame.height <= 2;
+  return { frame, content: laneBorderless ? frame : inset(frame, 1), borderless: laneBorderless };
 }
 
 /** Splits a rail column into a Sessions area (top, capped share) and a Projects tree area (rest). */

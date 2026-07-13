@@ -84,24 +84,31 @@ describe('DetailPane — assignment view', () => {
     await rm(testDir, { recursive: true, force: true });
   });
 
-  async function writeAssignment(acCount: number) {
+  async function writeAssignment(
+    acCount: number,
+    opts: { slug?: string; title?: string; id?: string; criterionLabel?: string } = {},
+  ) {
+    const slug = opts.slug ?? 'task';
+    const title = opts.title ?? 'Demo Task';
+    const id = opts.id ?? '11111111-1111-1111-1111-111111111111';
+    const criterionLabel = opts.criterionLabel ?? 'Criterion';
     const projectDir = resolve(projectsDir, 'demo');
-    const assignmentDir = resolve(projectDir, 'assignments', 'task');
+    const assignmentDir = resolve(projectDir, 'assignments', slug);
     await mkdir(assignmentDir, { recursive: true });
     await writeFile(
       resolve(projectDir, 'project.md'),
       ['---', 'slug: demo', 'title: demo', 'status: in_progress', 'created: "2026-01-01T00:00:00Z"', 'updated: "2026-01-01T00:00:00Z"', '---', '', '# demo', ''].join('\n'),
     );
-    const acs = Array.from({ length: acCount }, (_, i) => `- [${i % 2 === 0 ? 'x' : ' '}] Criterion ${i}`).join('\n');
+    const acs = Array.from({ length: acCount }, (_, i) => `- [${i % 2 === 0 ? 'x' : ' '}] ${criterionLabel} ${i}`).join('\n');
     await writeFile(
       resolve(assignmentDir, 'assignment.md'),
       [
-        '---', 'id: 11111111-1111-1111-1111-111111111111', 'slug: task', 'title: "Demo Task"', 'project: demo',
+        '---', `id: ${id}`, `slug: ${slug}`, `title: "${title}"`, 'project: demo',
         'type: feature', 'status: in_progress', 'priority: medium',
         'created: "2026-05-17T00:00:00Z"', 'updated: "2026-05-17T00:00:00Z"',
         'assignee: null', 'externalIds: []', 'dependsOn: []', 'links: []', 'blockedReason: null',
         'workspace:', '  repository: null', '  worktreePath: null', '  branch: null', '  parentBranch: null',
-        'tags: []', '---', '', '# Demo Task', '', '## Acceptance Criteria', '', acs, '',
+        'tags: []', '---', '', `# ${title}`, '', '## Acceptance Criteria', '', acs, '',
       ].join('\n'),
     );
   }
@@ -148,6 +155,63 @@ describe('DetailPane — assignment view', () => {
     // "more below" indicator must appear, and the pane must never exceed its height.
     expect(f).toContain('▼');
     expect(f.split('\n').filter((l) => l.trim().length > 0).length).toBeLessThanOrEqual(6);
+    unmount();
+  }, 30000);
+
+  // NOTE: this locks in current/desired behavior (AC: a newly-selected
+  // assignment always opens at its own top). It is NOT a discriminating
+  // regression test for AssignmentView's `key` prop the way the sibling
+  // TranscriptView test above is for ITS key: AssignmentView's own
+  // `getAssignmentDetail`/`getAssignmentDetailById` effect calls
+  // `setDetail(null)` synchronously on every selection change, and since a
+  // Promise's `.then` always defers to a later microtask (never
+  // synchronously, even pre-resolved), React always commits that
+  // `detail === null` (contentLength 0) frame first — which already
+  // resets `useViewport`'s offset via its own `[contentLength, viewHeight]`
+  // clamp effect, independent of whether the component remounts. The `key`
+  // is still kept as defensive/consistency hardening (matching
+  // TranscriptView's invariant, and guarding against a future synchronous
+  // or cached detail fetch), but this specific test passes with or without
+  // it given the current implementation — confirmed by temporarily
+  // removing the key and re-running this test.
+  it('switching assignments opens the new one at its own top, not the previous assignment\'s scroll position', async () => {
+    await writeAssignment(30, { slug: 'task', title: 'Demo Task', id: '11111111-1111-1111-1111-111111111111', criterionLabel: 'A-Criterion' });
+    await writeAssignment(30, { slug: 'task2', title: 'Second Task', id: '22222222-2222-2222-2222-222222222222', criterionLabel: 'B-Criterion' });
+
+    const smallRect = { x: 0, y: 0, width: 60, height: 6 };
+    const { lastFrame, stdin, rerender, unmount } = render(
+      <MouseProvider>
+        <DetailPane
+          projectsDir={projectsDir}
+          assignmentsDir={assignmentsDir}
+          selection={{ kind: 'assignment', projectSlug: 'demo', assignmentSlug: 'task' }}
+          contentRect={smallRect}
+          focused
+        />
+      </MouseProvider>,
+    );
+    await vi.waitFor(() => expect(lastFrame() ?? '').toContain('Demo Task'), { timeout: WAIT_TIMEOUT });
+
+    // Scroll down several times in the first assignment so its offset is
+    // deep enough to still be in-range (not clamped back to 0) once we
+    // switch to the second assignment's equally-long content below.
+    for (let i = 0; i < 10; i += 1) stdin.write('j');
+    await vi.waitFor(() => expect(lastFrame() ?? '').toContain('▲'), { timeout: WAIT_TIMEOUT });
+
+    // Select the second assignment.
+    rerender(
+      <MouseProvider>
+        <DetailPane
+          projectsDir={projectsDir}
+          assignmentsDir={assignmentsDir}
+          selection={{ kind: 'assignment', projectSlug: 'demo', assignmentSlug: 'task2' }}
+          contentRect={smallRect}
+          focused
+        />
+      </MouseProvider>,
+    );
+    await vi.waitFor(() => expect(lastFrame() ?? '').toContain('Second Task'), { timeout: WAIT_TIMEOUT });
+    expect(lastFrame() ?? '').not.toContain('▲');
     unmount();
   }, 30000);
 });
@@ -235,6 +299,46 @@ describe('DetailPane — transcript view', () => {
 
     stdin.write('\x1b[F'); // End key
     await vi.waitFor(() => expect(lastFrame() ?? '').toContain('message number 19'), { timeout: WAIT_TIMEOUT });
+    unmount();
+  }, 30000);
+
+  it('switching sessions resets follow-tail — a newly-selected session opens pinned to its own tail, not the previous session\'s scroll state', async () => {
+    const pathA = resolve(dir, 'a.jsonl');
+    const pathB = resolve(dir, 'b.jsonl');
+    const linesFor = (label: string) => Array.from({ length: 20 }, (_, i) => ({
+      type: 'user', message: { content: `${label} message ${i}` }, uuid: `${label}${i}`,
+    }));
+    await writeFile(pathA, linesFor('a').map((l) => JSON.stringify(l)).join('\n') + '\n');
+    await writeFile(pathB, linesFor('b').map((l) => JSON.stringify(l)).join('\n') + '\n');
+
+    const smallRect = { x: 0, y: 0, width: 60, height: 4 };
+    const { lastFrame, stdin, rerender, unmount } = render(
+      <MouseProvider>
+        <DetailPane
+          projectsDir="/tmp/p" assignmentsDir="/tmp/a"
+          selection={{ kind: 'session', session: session({ sessionId: 'a', transcriptPath: pathA }) }}
+          contentRect={smallRect} focused
+        />
+      </MouseProvider>,
+    );
+    await vi.waitFor(() => expect(lastFrame() ?? '').toContain('a message 19'), { timeout: WAIT_TIMEOUT });
+
+    stdin.write('k'); // scroll up in session A — stops following A's tail
+    await vi.waitFor(() => expect(lastFrame() ?? '').toContain('▼'), { timeout: WAIT_TIMEOUT });
+
+    // Select session B. Without a remount, `useViewport`'s stale
+    // followTail=false would carry over and pin B's view to the top.
+    rerender(
+      <MouseProvider>
+        <DetailPane
+          projectsDir="/tmp/p" assignmentsDir="/tmp/a"
+          selection={{ kind: 'session', session: session({ sessionId: 'b', transcriptPath: pathB }) }}
+          contentRect={smallRect} focused
+        />
+      </MouseProvider>,
+    );
+    await vi.waitFor(() => expect(lastFrame() ?? '').toContain('b message 19'), { timeout: WAIT_TIMEOUT });
+    expect(lastFrame() ?? '').not.toContain('b message 0');
     unmount();
   }, 30000);
 });
