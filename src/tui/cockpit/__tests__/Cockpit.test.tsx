@@ -30,6 +30,10 @@ const mocks = vi.hoisted(() => ({
   // Lets a case pin exactly which agent the cockpit launches
   // (Cockpit picks `agents.find((a) => a.default) ?? agents[0]`).
   getAgentsOverride: null as (() => unknown[]) | null,
+  // Ordered log proving the attach child runs INSIDE the mouse sandwich and
+  // that the sandwich always exits (re-arming mouse tracking) — see the
+  // tracking.js mock, which calls through to the real implementation.
+  sandwichLog: [] as string[],
   // Mutable box so tests can flip liveness between polls without redefining
   // the vi.mock factory.
   sessionLive: { value: true },
@@ -41,6 +45,7 @@ const mocks = vi.hoisted(() => ({
     agentShortId: null as string | null,
     state: null as 'working' | 'blocked' | 'done' | 'failed' | 'stopped' | null,
     syntaurdShortId: null as string | null,
+    hostedBy: null as 'syntaurd' | 'tmux' | 'claude-bg' | null,
   },
 }));
 
@@ -60,6 +65,26 @@ vi.mock('../../claude-agents/attach.js', () => ({
 vi.mock('../../syntaurd/attach.js', () => ({
   runSyntaurdAttach: mocks.runSyntaurdAttach,
 }));
+
+// Calls through to the REAL runWithMouseSuspended (so every pre-existing test
+// keeps its exact behavior, mouse writes included) while recording entry/exit.
+// Lets a test prove the attach child is wrapped in the sandwich and that the
+// `finally` re-arm still runs on failure — assertions that would otherwise
+// pass even if the branch dropped the sandwich entirely.
+vi.mock('../../mouse/tracking.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../mouse/tracking.js')>();
+  return {
+    ...actual,
+    runWithMouseSuspended: async (write: Parameters<typeof actual.runWithMouseSuspended>[0], fn: Parameters<typeof actual.runWithMouseSuspended>[1]) => {
+      mocks.sandwichLog.push('mouse-suspend:enter');
+      try {
+        return await actual.runWithMouseSuspended(write, fn);
+      } finally {
+        mocks.sandwichLog.push('mouse-suspend:exit');
+      }
+    },
+  };
+});
 
 vi.mock('../../syntaurd/launch.js', async (importOriginal) => ({
   // Spread the REAL module: Cockpit.tsx also imports the pure helpers
@@ -116,6 +141,7 @@ vi.mock('../../sessions/feed.js', () => ({
       agentShortId: mocks.sessionNative.agentShortId,
       state: mocks.sessionNative.state,
       syntaurdShortId: mocks.sessionNative.syntaurdShortId,
+      hostedBy: mocks.sessionNative.hostedBy,
     } as AgentSessionWithLiveness,
   ]),
 }));
@@ -636,14 +662,79 @@ describe('Cockpit handleAttach syntaurd dispatch (Phase B wiring)', () => {
     mocks.sessionNative.syntaurdShortId = 'sd12ab34';
     mocks.tmuxSessionExists.mockReset().mockResolvedValue(true);
     mocks.runClaudeAttach.mockReset().mockResolvedValue({ code: 0 });
-    mocks.runSyntaurdAttach.mockReset().mockResolvedValue({ code: 0 });
+    mocks.runTmuxAttach.mockReset().mockResolvedValue({ code: 0 });
+    mocks.sandwichLog.length = 0;
+    // Records its own position in the sandwich log so ordering is provable.
+    mocks.runSyntaurdAttach.mockReset().mockImplementation(async () => {
+      mocks.sandwichLog.push('syntaurd-attach');
+      return { code: 0 };
+    });
   });
 
   afterEach(() => {
     mocks.sessionNative.agentShortId = null;
     mocks.sessionNative.state = null;
     mocks.sessionNative.syntaurdShortId = null;
+    mocks.sessionNative.hostedBy = null;
   });
+
+  it('a claude-bg row whose native overlay is live still attaches natively (the backend guard must not preempt it)', async () => {
+    // Regression: the backend-aware guard sat ABOVE the native branch, so a
+    // correctly-stamped claude-bg row with a live agentShortId had Attach
+    // ENABLED by buildActions but refused by handleAttach — the enable check
+    // and the dispatch disagreed. The guard only exists to block tmux
+    // fall-through, so it must sit below native.
+    mocks.sessionNative.syntaurdShortId = null; // no daemon overlay
+    mocks.sessionNative.agentShortId = 'cc12dd34'; // but the native join IS answering
+    mocks.sessionNative.state = 'working';
+    mocks.sessionNative.hostedBy = 'claude-bg';
+    const { lastFrame, stdin, unmount } = render(
+      <Cockpit projectsDir="/tmp/p" assignmentsDir="/tmp/a" tmuxAvailable={true} claudeBgAvailable={true} syntaurdAvailable={true} />,
+    );
+    await vi.waitFor(() => expect(lastFrame() ?? '').toContain('proj/a1'), { timeout: WAIT_TIMEOUT });
+    await vi.waitFor(
+      () => {
+        stdin.write('\x1b[<0;2;4M');
+        stdin.write('a');
+        expect(mocks.runClaudeAttach).toHaveBeenCalledTimes(1);
+      },
+      { timeout: WAIT_TIMEOUT },
+    );
+    expect(mocks.runClaudeAttach).toHaveBeenCalledWith('cc12dd34');
+    expect(mocks.runSyntaurdAttach).not.toHaveBeenCalled();
+    await vi.waitFor(() => expect(lastFrame() ?? '').toContain('Detached from cc12dd34'), { timeout: WAIT_TIMEOUT });
+    expect(lastFrame() ?? '').not.toContain('Daemon unavailable');
+    unmount();
+  }, 30000);
+
+  it('a daemon-hosted row with NO overlay never falls through to a tmux attach', async () => {
+    // Daemon down past the grace window: no overlay fields, but a lingering pid
+    // keeps isLive true and tmux IS installed. `attachEnabled`'s backend-aware
+    // guard disables the action, so pressing 'a' must do NOTHING — in
+    // particular it must not attach to a tmux session that was never created.
+    // (handleAttach's own mirror of the guard is defence-in-depth for
+    // non-button dispatch paths; via the action bar this row is unreachable.)
+    mocks.sessionNative.syntaurdShortId = null;
+    mocks.sessionNative.agentShortId = null;
+    mocks.sessionNative.state = null;
+    mocks.sessionNative.hostedBy = 'syntaurd';
+    const { lastFrame, stdin, unmount } = render(
+      <Cockpit projectsDir="/tmp/p" assignmentsDir="/tmp/a" tmuxAvailable={true} claudeBgAvailable={true} syntaurdAvailable={true} />,
+    );
+    try {
+      await vi.waitFor(() => expect(lastFrame() ?? '').toContain('proj/a1'), { timeout: WAIT_TIMEOUT });
+      stdin.write('\x1b[<0;2;4M'); // select the session row
+      stdin.write('a');
+      // Give any (incorrect) dispatch a real chance to fire before asserting.
+      await new Promise((r) => setTimeout(r, 500));
+      expect(mocks.runSyntaurdAttach).not.toHaveBeenCalled();
+      expect(mocks.runClaudeAttach).not.toHaveBeenCalled();
+      expect(mocks.tmuxSessionExists).not.toHaveBeenCalled(); // never fell through to tmux
+      expect(mocks.runTmuxAttach).not.toHaveBeenCalled();
+    } finally {
+      unmount(); // never leak a polling instance into the next case
+    }
+  }, 30000);
 
   it('picks runSyntaurdAttach over native and tmux for a daemon-hosted session', async () => {
     const { lastFrame, stdin, unmount } = render(
@@ -662,6 +753,51 @@ describe('Cockpit handleAttach syntaurd dispatch (Phase B wiring)', () => {
     expect(mocks.runClaudeAttach).not.toHaveBeenCalled();
     expect(mocks.tmuxSessionExists).not.toHaveBeenCalled();
     await vi.waitFor(() => expect(lastFrame() ?? '').toContain('Detached from sd12ab34'), { timeout: WAIT_TIMEOUT });
+    unmount();
+  }, 30000);
+
+  it('runs the attach child INSIDE the mouse-suspend sandwich', async () => {
+    const { lastFrame, stdin, unmount } = render(
+      <Cockpit projectsDir="/tmp/p" assignmentsDir="/tmp/a" tmuxAvailable={true} claudeBgAvailable={true} syntaurdAvailable={true} />,
+    );
+    await vi.waitFor(() => expect(lastFrame() ?? '').toContain('proj/a1'), { timeout: WAIT_TIMEOUT });
+    await vi.waitFor(
+      () => {
+        stdin.write('\x1b[<0;2;4M');
+        stdin.write('a');
+        expect(mocks.runSyntaurdAttach).toHaveBeenCalledTimes(1);
+      },
+      { timeout: WAIT_TIMEOUT },
+    );
+    // The child must run between mouse-off and the finally that re-arms it —
+    // dropping runWithMouseSuspended would leave the cockpit mouse-dead.
+    await vi.waitFor(
+      () => expect(mocks.sandwichLog).toEqual(['mouse-suspend:enter', 'syntaurd-attach', 'mouse-suspend:exit']),
+      { timeout: WAIT_TIMEOUT },
+    );
+    unmount();
+  }, 30000);
+
+  it('re-arms mouse tracking even when the attach child fails', async () => {
+    mocks.runSyntaurdAttach.mockReset().mockImplementation(async () => {
+      mocks.sandwichLog.push('syntaurd-attach');
+      return { code: 1 };
+    });
+    const { lastFrame, stdin, unmount } = render(
+      <Cockpit projectsDir="/tmp/p" assignmentsDir="/tmp/a" tmuxAvailable={false} claudeBgAvailable={false} syntaurdAvailable={true} />,
+    );
+    await vi.waitFor(() => expect(lastFrame() ?? '').toContain('proj/a1'), { timeout: WAIT_TIMEOUT });
+    await vi.waitFor(
+      () => {
+        stdin.write('\x1b[<0;2;4M');
+        stdin.write('a');
+        expect(mocks.runSyntaurdAttach).toHaveBeenCalled();
+      },
+      { timeout: WAIT_TIMEOUT },
+    );
+    // The sandwich's `finally` must still fire on a failed attach.
+    await vi.waitFor(() => expect(mocks.sandwichLog).toContain('mouse-suspend:exit'), { timeout: WAIT_TIMEOUT });
+    expect(mocks.sandwichLog.at(-1)).toBe('mouse-suspend:exit');
     unmount();
   }, 30000);
 

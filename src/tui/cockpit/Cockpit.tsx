@@ -334,15 +334,6 @@ export const Cockpit: React.FC<CockpitProps> = ({
       return;
     }
 
-    if (session.hostedBy === 'syntaurd' || session.hostedBy === 'claude-bg') {
-      // Mirror of the backend-aware gate in actions.ts: a daemon-hosted row
-      // with no live overlay must not reach the native or tmux branches below
-      // — the tmux session it would name was never created. Defense-in-depth
-      // for non-button dispatch paths.
-      setStatus('Daemon unavailable — cannot attach; retry when the daemon is back');
-      return;
-    }
-
     if (isNativeAttachReachable(session)) {
       // Re-arm mouse tracking around the suspend exactly like the tmux path
       // below — `claude attach` owns the real terminal via stdio:'inherit'.
@@ -357,6 +348,19 @@ export const Cockpit: React.FC<CockpitProps> = ({
       } else {
         setStatus(`Attach failed: ${describeChildFailure(result)}`);
       }
+      return;
+    }
+
+    // Backend-aware gate — mirrors actions.ts's `attachEnabled` slot exactly
+    // (syntaurd → native → this → tmux). A daemon-hosted row whose overlay is
+    // absent (its daemon down / past the grace window) must not fall through to
+    // tmux: the tmux session it would name was never created, and a lingering
+    // pid can keep isLive true. It sits BELOW the native branch because a
+    // claude-bg row whose `agents --json` overlay is still answering is
+    // legitimately native-attachable — guarding above it would refuse an attach
+    // the action bar had already enabled.
+    if (session.hostedBy === 'syntaurd' || session.hostedBy === 'claude-bg') {
+      setStatus('Daemon unavailable — cannot attach; retry when the daemon is back');
       return;
     }
 

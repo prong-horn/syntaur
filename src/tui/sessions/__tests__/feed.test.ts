@@ -266,13 +266,66 @@ describe('session feed — syntaurd daemon join', () => {
     expect(s[0].syntaurdShortId).toBeUndefined();
   });
 
-  it('the two grace caches are independent — a claude-view failure does not spend syntaurd grace', async () => {
+  it('the two grace caches are independent — one source succeeding does not refund the other`s spent grace', async () => {
+    // A SHARED cache would pass a weaker version of this test, so the fixture is
+    // built to discriminate: the syntaurd source succeeds on every poll while
+    // the claude-view source fails from poll 2 on. With independent caches the
+    // native grace is spent exactly once and poll 3 degrades. With a shared
+    // cache, syntaurd's poll-2 success would reset the grace flag and poll 3
+    // would wrongly serve native state again.
     insert('s1', 'active', 4242);
-    const s = await loadSessions({
-      projectsDir: dir, agents, livenessDeps: livenessAlive,
+    const livenessDeps = livenessAlive;
+    const nativeEntry = [{ sessionId: 's1', id: 'cc12dd34', name: null, state: 'working' as const, waitingFor: null }];
+
+    // Poll 1: both sources succeed — both caches populated.
+    const p1 = await loadSessions({
+      projectsDir: dir, agents, livenessDeps,
+      agentViewDetailSource: async () => nativeEntry, syntaurdSessionSource: async () => [sdEntry()],
+    });
+    expect(p1[0].agentShortId).toBe('cc12dd34');
+    expect(p1[0].syntaurdShortId).toBe('sd12ab34');
+
+    // Poll 2: native fails (spends ITS grace), syntaurd succeeds.
+    const p2 = await loadSessions({
+      projectsDir: dir, agents, livenessDeps,
       agentViewDetailSource: async () => null, syntaurdSessionSource: async () => [sdEntry()],
     });
-    expect(s[0].syntaurdShortId).toBe('sd12ab34');
+    expect(p2[0].agentShortId).toBe('cc12dd34'); // native grace
+    expect(p2[0].syntaurdShortId).toBe('sd12ab34');
+
+    // Poll 3: native fails again — its grace is already spent, so it degrades
+    // regardless of syntaurd's continued success.
+    const p3 = await loadSessions({
+      projectsDir: dir, agents, livenessDeps,
+      agentViewDetailSource: async () => null, syntaurdSessionSource: async () => [sdEntry()],
+    });
+    expect(p3[0].agentShortId).toBeUndefined(); // fails if the caches were shared
+    expect(p3[0].syntaurdShortId).toBe('sd12ab34'); // syntaurd unaffected throughout
+  });
+
+  it('a syntaurd failure does not spend the claude-view grace', async () => {
+    // The mirror of the case above, in the other direction.
+    insert('s1', 'active', 4242);
+    const livenessDeps = livenessAlive;
+    const nativeEntry = [{ sessionId: 's1', id: 'cc12dd34', name: null, state: 'working' as const, waitingFor: null }];
+
+    await loadSessions({
+      projectsDir: dir, agents, livenessDeps,
+      agentViewDetailSource: async () => nativeEntry, syntaurdSessionSource: async () => [sdEntry()],
+    });
+    // Two consecutive syntaurd failures fully degrade the daemon overlay...
+    await loadSessions({
+      projectsDir: dir, agents, livenessDeps,
+      agentViewDetailSource: async () => nativeEntry, syntaurdSessionSource: async () => null,
+    });
+    const p3 = await loadSessions({
+      projectsDir: dir, agents, livenessDeps,
+      agentViewDetailSource: async () => nativeEntry, syntaurdSessionSource: async () => null,
+    });
+    expect(p3[0].syntaurdShortId).toBeUndefined();
+    // ...while the claude-view join keeps serving fresh state, ungraced.
+    expect(p3[0].agentShortId).toBe('cc12dd34');
+    expect(p3[0].launcher).toBe('claude-bg');
   });
 
   it('persisted hosted_by surfaces as hostedBy even when the daemon is down', async () => {
