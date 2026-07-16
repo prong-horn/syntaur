@@ -44,6 +44,21 @@
     "src/daemon/__tests__/client.test.ts",
     "src/daemon/__tests__/attach-client.test.ts",
     "src/daemon/__tests__/pty-host-run.test.ts",
-    "src/daemon/__tests__/liveness.test.ts"
+    "src/daemon/__tests__/liveness.test.ts",
+    "src/tui/syntaurd/__tests__/capability.test.ts",
+    "src/tui/syntaurd/__tests__/launch.test.ts",
+    "src/tui/syntaurd/__tests__/attach.test.ts",
+    "src/tui/syntaurd/__tests__/feed-source.test.ts",
+    "src/__tests__/session-db-migration-v7.test.ts",
+    "src/__tests__/launch-correlation.test.ts",
+    "src/tui/cockpit/__tests__/actions.test.ts",
+    "src/tui/cockpit/__tests__/actions.test.tsx",
+    "src/tui/cockpit/__tests__/Cockpit.test.tsx",
+    "src/tui/sessions/__tests__/feed.test.ts",
+    "src/tui/tmux/__tests__/launch.test.ts",
+    "src/tui/claude-agents/__tests__/launch.test.ts",
+    "src/commands/__tests__/tui.test.ts",
+    "src/__tests__/agent-sessions.test.ts",
+    "src/__tests__/engagement-migration.test.ts"
   ]
 }

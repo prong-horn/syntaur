@@ -3,7 +3,7 @@ import type { ChildProcess } from 'node:child_process';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { SyntaurError } from '../../errors.js';
-import { ensureDaemon, sendRequest, type ClientDeps } from '../client.js';
+import { ensureDaemon, queryDaemon, sendRequest, type ClientDeps } from '../client.js';
 import { bindUnixSocket } from '../sockets.js';
 import { createLineDecoder, encodeFrame } from '../protocol.js';
 import type { DaemonSpawnFn } from '../supervisor.js';
@@ -144,5 +144,30 @@ describe('sendRequest', () => {
       await new Promise<void>((r) => server.close(() => r()));
       await rm(dir, { recursive: true, force: true });
     }
+  });
+});
+
+describe('queryDaemon (non-spawning)', () => {
+  it('returns null when no live daemon is reachable — and never spawns', async () => {
+    const spawn = fakeSpawn();
+    const reply = await queryDaemon({ op: 'list' }, baseDarwin({ probe: async () => 'refused', spawn }));
+    expect(reply).toBeNull();
+    expect(spawn).not.toHaveBeenCalled();
+  });
+
+  it('sends one request against a live daemon with the short default timeout', async () => {
+    const sendRequestFn = vi.fn(async () => ({ ok: true as const, sessions: [] }));
+    const reply = await queryDaemon(
+      { op: 'list' },
+      baseDarwin({ probe: async () => 'live', sendRequest: sendRequestFn }),
+    );
+    expect(reply).toEqual({ ok: true, sessions: [] });
+    expect(sendRequestFn).toHaveBeenCalledWith(pointer.controlSock, { op: 'list' }, 1000);
+  });
+
+  it('threads an explicit timeoutMs through', async () => {
+    const sendRequestFn = vi.fn(async () => ({ ok: true as const, sessions: [] }));
+    await queryDaemon({ op: 'list' }, { ...baseDarwin({ probe: async () => 'live', sendRequest: sendRequestFn }), timeoutMs: 250 });
+    expect(sendRequestFn).toHaveBeenCalledWith(pointer.controlSock, { op: 'list' }, 250);
   });
 });

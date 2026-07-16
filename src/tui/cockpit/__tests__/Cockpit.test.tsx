@@ -23,6 +23,13 @@ const mocks = vi.hoisted(() => ({
   runTmuxAttach: vi.fn(),
   runClaudeAttach: vi.fn(),
   buildLaunchPlan: vi.fn(),
+  runSyntaurdAttach: vi.fn(),
+  launchSyntaurd: vi.fn(),
+  launchInTmuxWithPid: vi.fn(async () => null as number | null),
+  appendSession: vi.fn(async () => undefined),
+  // Lets a case pin exactly which agent the cockpit launches
+  // (Cockpit picks `agents.find((a) => a.default) ?? agents[0]`).
+  getAgentsOverride: null as (() => unknown[]) | null,
   // Mutable box so tests can flip liveness between polls without redefining
   // the vi.mock factory.
   sessionLive: { value: true },
@@ -30,12 +37,16 @@ const mocks = vi.hoisted(() => ({
   // agent-view fields — null/undefined (the default) keeps every existing
   // test on the tmux path; a describe block below flips it on to exercise
   // handleAttach's native dispatch.
-  sessionNative: { agentShortId: null as string | null, state: null as 'working' | 'blocked' | 'done' | 'failed' | 'stopped' | null },
+  sessionNative: {
+    agentShortId: null as string | null,
+    state: null as 'working' | 'blocked' | 'done' | 'failed' | 'stopped' | null,
+    syntaurdShortId: null as string | null,
+  },
 }));
 
 vi.mock('../../tmux/launch.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../tmux/launch.js')>();
-  return { ...actual, tmuxSessionExists: mocks.tmuxSessionExists };
+  return { ...actual, tmuxSessionExists: mocks.tmuxSessionExists, launchInTmuxWithPid: mocks.launchInTmuxWithPid };
 });
 
 vi.mock('../../tmux/attach.js', () => ({
@@ -45,6 +56,37 @@ vi.mock('../../tmux/attach.js', () => ({
 vi.mock('../../claude-agents/attach.js', () => ({
   runClaudeAttach: mocks.runClaudeAttach,
 }));
+
+vi.mock('../../syntaurd/attach.js', () => ({
+  runSyntaurdAttach: mocks.runSyntaurdAttach,
+}));
+
+vi.mock('../../syntaurd/launch.js', async (importOriginal) => ({
+  // Spread the REAL module: Cockpit.tsx also imports the pure helpers
+  // canInjectClaudeSessionId/injectSessionIdArgs from here — a factory
+  // exporting only launchSyntaurd would fail with a missing export instead
+  // of testing the fallback.
+  ...(await importOriginal<typeof import('../../syntaurd/launch.js')>()),
+  launchSyntaurd: mocks.launchSyntaurd,
+}));
+
+vi.mock('../../../dashboard/agent-sessions.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../../dashboard/agent-sessions.js')>()),
+  appendSession: mocks.appendSession,
+}));
+
+// Delegates to the REAL getAgents unless a case sets the override, so every
+// pre-existing test keeps its exact behavior.
+vi.mock('../../../utils/config.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../../utils/config.js')>();
+  return {
+    ...actual,
+    getAgents: ((...a) =>
+      mocks.getAgentsOverride
+        ? mocks.getAgentsOverride()
+        : actual.getAgents(...(a as Parameters<typeof actual.getAgents>))) as typeof actual.getAgents,
+  };
+});
 
 // Bypasses real workspace/cwd resolution so the test controls exactly which
 // command gets spawned by the hand-off path (a real nonexistent binary path
@@ -73,13 +115,14 @@ vi.mock('../../sessions/feed.js', () => ({
       path: '/tmp/s1',
       agentShortId: mocks.sessionNative.agentShortId,
       state: mocks.sessionNative.state,
+      syntaurdShortId: mocks.sessionNative.syntaurdShortId,
     } as AgentSessionWithLiveness,
   ]),
 }));
 
 describe('Cockpit shell', () => {
   it('renders bordered Sessions + Projects + Detail panes + action bar', () => {
-    const { lastFrame, unmount } = render(<Cockpit projectsDir="/tmp/p" assignmentsDir="/tmp/a" tmuxAvailable={false} claudeBgAvailable={false} />);
+    const { lastFrame, unmount } = render(<Cockpit projectsDir="/tmp/p" assignmentsDir="/tmp/a" tmuxAvailable={false} claudeBgAvailable={false} syntaurdAvailable={false} />);
     const f = lastFrame() ?? '';
     expect(f).toContain('Sessions');
     expect(f).toContain('Projects');
@@ -124,7 +167,7 @@ describe('Cockpit selection freshness (selectedSessionId derives from the latest
 
   it('re-derives the selected session from each poll, so Attach re-disables once the live session dies', async () => {
     const { lastFrame, stdin, unmount } = render(
-      <Cockpit projectsDir="/tmp/p" assignmentsDir="/tmp/a" tmuxAvailable={true} claudeBgAvailable={false} />,
+      <Cockpit projectsDir="/tmp/p" assignmentsDir="/tmp/a" tmuxAvailable={true} claudeBgAvailable={false} syntaurdAvailable={false} />,
     );
 
     // Wait for the first poll to land the live session in the rail (human
@@ -183,7 +226,7 @@ describe('Cockpit handleAttach status reporting (surfaces child exit/error, C3)'
   it('reports the outcome of each runTmuxAttach result via the shared classification (clean/null/error/non-zero)', async () => {
     mocks.runTmuxAttach.mockResolvedValue({ code: 0 });
     const { lastFrame, stdin, unmount } = render(
-      <Cockpit projectsDir="/tmp/p" assignmentsDir="/tmp/a" tmuxAvailable={true} claudeBgAvailable={false} />,
+      <Cockpit projectsDir="/tmp/p" assignmentsDir="/tmp/a" tmuxAvailable={true} claudeBgAvailable={false} syntaurdAvailable={false} />,
     );
 
     await vi.waitFor(() => expect(lastFrame() ?? '').toContain('proj/a1'), { timeout: WAIT_TIMEOUT });
@@ -373,7 +416,7 @@ describe('Cockpit handleLaunch hand-off (no tmux) does not silently exit on a fa
     mocks.buildLaunchPlan.mockResolvedValue({ command: badCommand, args: [], cwd: testDir });
 
     const { lastFrame, stdin, unmount } = render(
-      <Cockpit projectsDir={projectsDir} assignmentsDir={assignmentsDir} tmuxAvailable={false} claudeBgAvailable={false} />,
+      <Cockpit projectsDir={projectsDir} assignmentsDir={assignmentsDir} tmuxAvailable={false} claudeBgAvailable={false} syntaurdAvailable={false} />,
     );
 
     await selectAssignmentViaTree(stdin, lastFrame, 'demo');
@@ -396,7 +439,7 @@ describe('Cockpit handleLaunch hand-off (no tmux) does not silently exit on a fa
     mocks.buildLaunchPlan.mockResolvedValue({ command: '/usr/bin/true', args: [], cwd: testDir });
 
     const { lastFrame, stdin, unmount } = render(
-      <Cockpit projectsDir={projectsDir} assignmentsDir={assignmentsDir} tmuxAvailable={false} claudeBgAvailable={false} />,
+      <Cockpit projectsDir={projectsDir} assignmentsDir={assignmentsDir} tmuxAvailable={false} claudeBgAvailable={false} syntaurdAvailable={false} />,
     );
 
     await selectAssignmentViaTree(stdin, lastFrame, 'demo2');
@@ -409,6 +452,115 @@ describe('Cockpit handleLaunch hand-off (no tmux) does not silently exit on a fa
     expect(lastFrame() ?? '').not.toContain('Launch failed');
 
     unmount();
+  }, 90000);
+
+  it('Launch dispatches via the daemon and the cockpit stays resident', async () => {
+    await writeProjectFixture('demo', 'task');
+    mocks.launchSyntaurd.mockReset().mockResolvedValue({ short: 'sd12ab34', sessionId: 'uuid-1', registered: true });
+    mocks.buildLaunchPlan.mockResolvedValue({ command: 'codex', args: ['hi'], cwd: testDir });
+
+    const { lastFrame, stdin, unmount } = render(
+      <Cockpit projectsDir={projectsDir} assignmentsDir={assignmentsDir} tmuxAvailable={true} claudeBgAvailable={true} syntaurdAvailable={true} />,
+    );
+    await selectAssignmentViaTree(stdin, lastFrame, 'demo');
+    stdin.write('l');
+
+    await vi.waitFor(() => expect(mocks.launchSyntaurd).toHaveBeenCalledTimes(1), { timeout: WAIT_TIMEOUT });
+    expect(mocks.launchSyntaurd).toHaveBeenCalledWith(
+      expect.objectContaining({
+        plan: { command: 'codex', args: ['hi'], cwd: testDir },
+        name: 'demo/task',
+        projectSlug: 'demo',
+        assignmentSlug: 'task',
+      }),
+    );
+    await vi.waitFor(() => expect(lastFrame() ?? '').toContain('Launched via daemon (demo/task)'), { timeout: WAIT_TIMEOUT });
+    expect(lastFrame() ?? '').toContain('Sessions'); // resident — no exit()
+    unmount();
+  }, 90000);
+
+  it('a failed daemon dispatch degrades down the ladder instead of aborting the launch', async () => {
+    await writeProjectFixture('demo', 'task');
+    mocks.launchSyntaurd.mockReset().mockRejectedValue(new Error('daemon start timeout'));
+    const badCommand = '/nope-xyz';
+    mocks.buildLaunchPlan.mockResolvedValue({ command: badCommand, args: [], cwd: testDir });
+
+    const { lastFrame, stdin, unmount } = render(
+      <Cockpit projectsDir={projectsDir} assignmentsDir={assignmentsDir} tmuxAvailable={false} claudeBgAvailable={false} syntaurdAvailable={true} />,
+    );
+    await selectAssignmentViaTree(stdin, lastFrame, 'demo');
+    stdin.write('l');
+
+    await vi.waitFor(
+      () => expect(lastFrame() ?? '').toContain(`Launch failed: command not found (${badCommand})`),
+      { timeout: WAIT_TIMEOUT },
+    );
+    expect(mocks.launchSyntaurd).toHaveBeenCalledTimes(1); // syntaurd tried FIRST, then degraded to hand-off
+    expect(lastFrame() ?? '').toContain('Sessions');
+    unmount();
+  }, 90000);
+
+  it('a daemon-unavailable launch degrades to tmux AND records hostedBy=tmux provenance', async () => {
+    await writeProjectFixture('demo', 'task');
+    mocks.launchSyntaurd.mockReset().mockRejectedValue(new Error('daemon start timeout'));
+    mocks.launchInTmuxWithPid.mockReset().mockResolvedValue(4242); // pane pid
+    mocks.appendSession.mockReset().mockResolvedValue(undefined);
+    // Deterministic non-claude selection: Cockpit launches
+    // `agents.find((a) => a.default) ?? agents[0]` — pin it.
+    mocks.getAgentsOverride = () => [{ id: 'codex', command: 'codex', default: true }];
+    mocks.buildLaunchPlan.mockResolvedValue({ command: 'codex', args: ['hi'], cwd: testDir });
+    try {
+      const { lastFrame, stdin, unmount } = render(
+        <Cockpit projectsDir={projectsDir} assignmentsDir={assignmentsDir} tmuxAvailable={true} claudeBgAvailable={false} syntaurdAvailable={true} />,
+      );
+      await selectAssignmentViaTree(stdin, lastFrame, 'demo');
+      stdin.write('l');
+
+      await vi.waitFor(() => expect(lastFrame() ?? '').toContain('Launched in tmux'), { timeout: WAIT_TIMEOUT });
+      expect(mocks.launchInTmuxWithPid).toHaveBeenCalledWith(
+        expect.objectContaining({ env: expect.objectContaining({ SYNTAUR_LAUNCH_ID: expect.any(String) }) }),
+      );
+      await vi.waitFor(
+        () =>
+          expect(mocks.appendSession).toHaveBeenCalledWith(
+            '',
+            expect.objectContaining({ hostedBy: 'tmux', pid: 4242, projectSlug: 'demo', assignmentSlug: 'task' }),
+          ),
+        { timeout: WAIT_TIMEOUT },
+      );
+      unmount();
+    } finally {
+      mocks.getAgentsOverride = null;
+    }
+  }, 90000);
+
+  it('a claude tmux fallback injects --session-id and records tmux provenance', async () => {
+    await writeProjectFixture('demo', 'task');
+    mocks.launchSyntaurd.mockReset().mockRejectedValue(new Error('daemon start timeout'));
+    mocks.launchInTmuxWithPid.mockReset().mockResolvedValue(4343);
+    mocks.appendSession.mockReset().mockResolvedValue(undefined);
+    mocks.getAgentsOverride = () => [{ id: 'claude', command: 'claude', default: true }];
+    mocks.buildLaunchPlan.mockResolvedValue({ command: 'claude', args: ['hi'], cwd: testDir });
+    try {
+      const { lastFrame, stdin, unmount } = render(
+        <Cockpit projectsDir={projectsDir} assignmentsDir={assignmentsDir} tmuxAvailable={true} claudeBgAvailable={false} syntaurdAvailable={true} />,
+      );
+      await selectAssignmentViaTree(stdin, lastFrame, 'demo');
+      stdin.write('l');
+
+      await vi.waitFor(() => expect(lastFrame() ?? '').toContain('Launched in tmux'), { timeout: WAIT_TIMEOUT });
+      expect(mocks.launchInTmuxWithPid).toHaveBeenCalledWith(
+        expect.objectContaining({ args: ['--session-id', expect.any(String), 'hi'] }),
+      );
+      await vi.waitFor(
+        () =>
+          expect(mocks.appendSession).toHaveBeenCalledWith('', expect.objectContaining({ hostedBy: 'tmux' })),
+        { timeout: WAIT_TIMEOUT },
+      );
+      unmount();
+    } finally {
+      mocks.getAgentsOverride = null;
+    }
   }, 90000);
 });
 
@@ -428,7 +580,7 @@ describe('Cockpit handleAttach native dispatch (task 14 wiring)', () => {
 
   it('picks runClaudeAttach over the tmux path for a native-reachable session, even with tmux available', async () => {
     const { lastFrame, stdin, unmount } = render(
-      <Cockpit projectsDir="/tmp/p" assignmentsDir="/tmp/a" tmuxAvailable={true} claudeBgAvailable={true} />,
+      <Cockpit projectsDir="/tmp/p" assignmentsDir="/tmp/a" tmuxAvailable={true} claudeBgAvailable={true} syntaurdAvailable={false} />,
     );
     await vi.waitFor(() => expect(lastFrame() ?? '').toContain('proj/a1'), { timeout: WAIT_TIMEOUT });
     // Coordinate + idempotent-resend pattern matches the other rail-row
@@ -452,7 +604,7 @@ describe('Cockpit handleAttach native dispatch (task 14 wiring)', () => {
   it('a terminal native state disables Attach entirely (does not fall back to tmux)', async () => {
     mocks.sessionNative.state = 'done';
     const { lastFrame, stdin, unmount } = render(
-      <Cockpit projectsDir="/tmp/p" assignmentsDir="/tmp/a" tmuxAvailable={true} claudeBgAvailable={true} />,
+      <Cockpit projectsDir="/tmp/p" assignmentsDir="/tmp/a" tmuxAvailable={true} claudeBgAvailable={true} syntaurdAvailable={false} />,
     );
     await vi.waitFor(() => expect(lastFrame() ?? '').toContain('proj/a1'), { timeout: WAIT_TIMEOUT });
     // Confirm the click actually landed (Detail pane switches off its
@@ -472,6 +624,63 @@ describe('Cockpit handleAttach native dispatch (task 14 wiring)', () => {
     expect(mocks.runClaudeAttach).not.toHaveBeenCalled();
     expect(mocks.tmuxSessionExists).not.toHaveBeenCalled();
 
+    unmount();
+  }, 30000);
+});
+
+describe('Cockpit handleAttach syntaurd dispatch (Phase B wiring)', () => {
+  beforeEach(() => {
+    mocks.sessionLive.value = true;
+    mocks.sessionNative.agentShortId = 'cc12dd34'; // native ALSO reachable — syntaurd must win
+    mocks.sessionNative.state = 'working';
+    mocks.sessionNative.syntaurdShortId = 'sd12ab34';
+    mocks.tmuxSessionExists.mockReset().mockResolvedValue(true);
+    mocks.runClaudeAttach.mockReset().mockResolvedValue({ code: 0 });
+    mocks.runSyntaurdAttach.mockReset().mockResolvedValue({ code: 0 });
+  });
+
+  afterEach(() => {
+    mocks.sessionNative.agentShortId = null;
+    mocks.sessionNative.state = null;
+    mocks.sessionNative.syntaurdShortId = null;
+  });
+
+  it('picks runSyntaurdAttach over native and tmux for a daemon-hosted session', async () => {
+    const { lastFrame, stdin, unmount } = render(
+      <Cockpit projectsDir="/tmp/p" assignmentsDir="/tmp/a" tmuxAvailable={true} claudeBgAvailable={true} syntaurdAvailable={true} />,
+    );
+    await vi.waitFor(() => expect(lastFrame() ?? '').toContain('proj/a1'), { timeout: WAIT_TIMEOUT });
+    await vi.waitFor(
+      () => {
+        stdin.write('\x1b[<0;2;4M');
+        stdin.write('a');
+        expect(mocks.runSyntaurdAttach).toHaveBeenCalledTimes(1);
+      },
+      { timeout: WAIT_TIMEOUT },
+    );
+    expect(mocks.runSyntaurdAttach).toHaveBeenCalledWith('sd12ab34');
+    expect(mocks.runClaudeAttach).not.toHaveBeenCalled();
+    expect(mocks.tmuxSessionExists).not.toHaveBeenCalled();
+    await vi.waitFor(() => expect(lastFrame() ?? '').toContain('Detached from sd12ab34'), { timeout: WAIT_TIMEOUT });
+    unmount();
+  }, 30000);
+
+  it('surfaces a failed syntaurd attach without leaving the cockpit', async () => {
+    mocks.runSyntaurdAttach.mockReset().mockResolvedValue({ code: 1 });
+    const { lastFrame, stdin, unmount } = render(
+      <Cockpit projectsDir="/tmp/p" assignmentsDir="/tmp/a" tmuxAvailable={false} claudeBgAvailable={false} syntaurdAvailable={true} />,
+    );
+    await vi.waitFor(() => expect(lastFrame() ?? '').toContain('proj/a1'), { timeout: WAIT_TIMEOUT });
+    await vi.waitFor(
+      () => {
+        stdin.write('\x1b[<0;2;4M');
+        stdin.write('a');
+        expect(mocks.runSyntaurdAttach).toHaveBeenCalled();
+      },
+      { timeout: WAIT_TIMEOUT },
+    );
+    await vi.waitFor(() => expect(lastFrame() ?? '').toContain('Attach failed: exited with code 1'), { timeout: WAIT_TIMEOUT });
+    expect(lastFrame() ?? '').toContain('Sessions');
     unmount();
   }, 30000);
 });

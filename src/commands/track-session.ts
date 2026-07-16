@@ -11,7 +11,7 @@ import { readPpid, resolveOwnSessionId, isSafeSessionId, assertMayMutate } from 
 import type { ResolvedSession } from '../utils/session-id.js';
 import { isExistingDir } from '../launch/cwd.js';
 import { initSessionDb } from '../dashboard/session-db.js';
-import { appendSession } from '../dashboard/agent-sessions.js';
+import { appendSession, consumeLaunchMarkers } from '../dashboard/agent-sessions.js';
 import type { AgentSessionStatus } from '../dashboard/types.js';
 
 export interface TrackSessionOptions {
@@ -136,7 +136,13 @@ export async function trackSessionCommand(
   // Bootstrap binding: the session→assignment engagement edge is opened from the
   // EXPLICIT --project/--assignment CLI args (appendSession opens an engagement
   // from these). Never sourced from the demoted context.json assignment scalar.
+  // Launch-correlation parity with the hook path (`session register
+  // --from-hook`): a cockpit-planted placeholder is reconciled onto this id and
+  // the backend stamp picked up from the inherited env. No-op otherwise.
+  const launchMarkers = await consumeLaunchMarkers(sessionId);
+
   await appendSession('', {
+    ...launchMarkers,
     projectSlug: options.project || null,
     assignmentSlug: options.assignment || null,
     assignmentId,

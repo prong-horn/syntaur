@@ -234,16 +234,30 @@ export const DetailPane: React.FC<{
         focused={focused}
       />
     );
+  const hosting = selection.session.hostedBy ?? selection.session.launcher ?? null;
+  const attachId = selection.session.syntaurdShortId ?? selection.session.agentShortId ?? null;
   return (
-    <TranscriptView
-      // Keyed by sessionId so a fresh selection remounts the view instead of
-      // reusing the previous session's `useViewport` state — without this, a
-      // prior session scrolled up (followTail=false) leaves a newly-selected
-      // session opening pinned to the top instead of following its tail.
-      key={selection.session.sessionId}
-      session={selection.session}
-      contentRect={contentRect}
-      focused={focused}
-    />
+    <Box flexDirection="column">
+      {/* Hosting backend, visible per session. `hostedBy` is the persisted
+          column (survives daemon downtime); `launcher` is the per-poll join
+          fallback for rows that predate the v7 column. */}
+      <Text dimColor wrap="truncate">
+        {`hosted: ${hosting ?? '—'}${attachId != null ? ` · attach: ${attachId}` : ''}`}
+      </Text>
+      <TranscriptView
+        // Keyed by sessionId so a fresh selection remounts the view instead of
+        // reusing the previous session's `useViewport` state — without this, a
+        // prior session scrolled up (followTail=false) leaves a newly-selected
+        // session opening pinned to the top instead of following its tail.
+        key={selection.session.sessionId}
+        session={selection.session}
+        contentRect={{
+          ...contentRect,
+          y: contentRect.y + 1,
+          height: Math.max(0, contentRect.height - 1),
+        }}
+        focused={focused}
+      />
+    </Box>
   );
 };

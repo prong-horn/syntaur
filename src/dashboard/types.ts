@@ -723,8 +723,11 @@ export type ActivityState = 'working' | 'idle' | 'awaiting-input';
 /** Native background-agent lifecycle state, as reported by `claude agents --json` (cockpit v2 monitor join). */
 export type NativeAgentState = 'working' | 'blocked' | 'done' | 'failed' | 'stopped';
 
-/** Which launch path a session was started through — powers Attach's native-vs-tmux dispatch. */
-export type SessionLauncher = 'claude-bg' | 'tmux' | null;
+/** Which launch path a session was started through — powers Attach's syntaurd/native/tmux dispatch. */
+export type SessionLauncher = 'claude-bg' | 'tmux' | 'syntaurd' | null;
+
+/** Persisted hosting backend for the live PTY (schema v7 `hosted_by`). */
+export type SessionHostedBy = 'syntaurd' | 'tmux' | 'claude-bg';
 
 export interface AgentSession {
   projectSlug: string | null;
@@ -749,13 +752,21 @@ export interface AgentSession {
   originalHeadSha?: string | null;
   activity?: ActivityState | null;
   updatedAt?: string | null;
+  /** Persisted hosting backend ('syntaurd' | 'tmux'; null = predates the daemon). Survives daemon downtime — drives the tmux fallback gate. */
+  hostedBy?: SessionHostedBy | null;
   /** Native lifecycle state from the `claude agents --json` monitor join; null when not a native-launched session or the join hasn't matched it. */
   state?: NativeAgentState | null;
   /** Attention reason from the native monitor join (e.g. "permission prompt"); null when not waiting. */
   waitingFor?: string | null;
   /** Short id `claude attach <id>` accepts, from the native monitor join; null when not a native session. */
   agentShortId?: string | null;
-  /** How this session was launched — gates native (`claude attach`) vs tmux attach. */
+  /**
+   * Short id `syntaur attach <id>` accepts, from the daemon list join; null when
+   * not daemon-hosted or the daemon is unreachable this poll. Distinct from
+   * `agentShortId` (reserved for `claude attach`).
+   */
+  syntaurdShortId?: string | null;
+  /** How this session was launched — gates syntaurd/native/tmux attach. */
   launcher?: SessionLauncher;
 }
 

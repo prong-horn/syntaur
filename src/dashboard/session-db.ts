@@ -9,8 +9,12 @@ import { backfillEngagements } from '../db/engagement-backfill.js';
 
 let db: Database.Database | null = null;
 
-const SCHEMA_VERSION = '6';
+const SCHEMA_VERSION = '7';
 
+// v7 base schema: v6 plus `hosted_by` (which backend hosts the live PTY:
+// 'syntaurd' | 'tmux'; NULL = the session predates the daemon → eligible
+// for the tmux attach/launch fallback gate).
+//
 // v6 base schema: the scalar assignment binding (`project_slug`/`assignment_slug`)
 // has moved OFF `sessions` onto the `engagement` edge; `activity` (liveness) is
 // added. Fresh installs get this shape directly; existing installs reach it via
@@ -29,6 +33,7 @@ CREATE TABLE IF NOT EXISTS sessions (
   pid_started_at TEXT,
   original_head_sha TEXT,
   activity TEXT,
+  hosted_by TEXT,
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
@@ -287,6 +292,46 @@ export function initSessionDb(dbPath?: string): Database.Database {
       console.log(
         `engagement backfill: backfilled=${counts.backfilled} attributed=${counts.attributed} unattributed=${counts.unattributed}`,
       );
+    }
+
+    // --- v6 → v7: add hosted_by (which backend hosts the live PTY:
+    // 'syntaurd' | 'tmux'; NULL = predates the daemon → tmux-gate eligible).
+    // Table-rebuild like every step above — never ALTER TABLE ADD COLUMN.
+    const vBeforeV7 = (
+      database
+        .prepare("SELECT value FROM meta WHERE key = 'schema_version'")
+        .get() as { value: string } | undefined
+    )?.value;
+
+    if (vBeforeV7 === '6') {
+      database.exec(`
+        CREATE TABLE sessions_v7 (
+          session_id TEXT PRIMARY KEY,
+          agent TEXT NOT NULL,
+          started TEXT NOT NULL,
+          ended TEXT,
+          status TEXT NOT NULL DEFAULT 'active',
+          path TEXT,
+          description TEXT,
+          transcript_path TEXT,
+          pid INTEGER,
+          pid_started_at TEXT,
+          original_head_sha TEXT,
+          activity TEXT,
+          hosted_by TEXT,
+          created_at TEXT NOT NULL DEFAULT (datetime('now')),
+          updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+        INSERT INTO sessions_v7
+          SELECT session_id, agent, started, ended, status, path, description,
+                 transcript_path, pid, pid_started_at, original_head_sha, activity,
+                 NULL, created_at, updated_at
+          FROM sessions;
+        DROP TABLE sessions;
+        ALTER TABLE sessions_v7 RENAME TO sessions;
+        CREATE INDEX IF NOT EXISTS idx_sessions_status ON sessions(status);
+        UPDATE meta SET value = '7' WHERE key = 'schema_version';
+      `);
     }
   });
   runMigrations.exclusive();

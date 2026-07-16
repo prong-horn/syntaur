@@ -3,20 +3,33 @@ import { tmpdir } from 'node:os';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { initSessionDb, getSessionDb, resetSessionDb, closeSessionDb } from '../../../dashboard/session-db.js';
-import { loadSessions, liveOnly, resetAgentViewGrace } from '../feed.js';
+import { loadSessions, liveOnly, resetAgentViewGrace, resetSyntaurdGrace } from '../feed.js';
 import type { AgentConfig } from '../../../utils/config.js';
 import type { AgentViewDetailEntry } from '../../../sessions/agent-view.js';
+import type { SyntaurdFeedEntry } from '../../syntaurd/feed-source.js';
 
 let dir: string;
+let prevRuntimeDir: string | undefined;
 const agents: AgentConfig[] = [{ id: 'claude', label: 'Claude', command: 'claude' } as AgentConfig];
 
 beforeEach(() => {
   resetSessionDb();
   resetAgentViewGrace();
+  resetSyntaurdGrace();
   dir = mkdtempSync(resolve(tmpdir(), 'syntaur-feed-'));
+  // Point daemon discovery at the empty tmpdir: tests that do not inject a
+  // syntaurdSessionSource hit the production source, which must resolve
+  // "no daemon" deterministically — never a real daemon on this machine.
+  prevRuntimeDir = process.env.SYNTAUR_RUNTIME_DIR;
+  process.env.SYNTAUR_RUNTIME_DIR = dir;
   initSessionDb(resolve(dir, 'syntaur.db'));
 });
-afterEach(() => { closeSessionDb(); rmSync(dir, { recursive: true, force: true }); });
+afterEach(() => {
+  closeSessionDb();
+  if (prevRuntimeDir === undefined) delete process.env.SYNTAUR_RUNTIME_DIR;
+  else process.env.SYNTAUR_RUNTIME_DIR = prevRuntimeDir;
+  rmSync(dir, { recursive: true, force: true });
+});
 
 function insert(id: string, status: string, pid: number | null) {
   getSessionDb().prepare(
@@ -127,5 +140,150 @@ describe('session feed — native monitor join', () => {
     });
     expect(s).toHaveLength(1);
     expect(s[0].state).toBeUndefined();
+  });
+});
+
+describe('session feed — syntaurd daemon join', () => {
+  const livenessAlive = { isPidAlive: () => true, pidStartedAt: () => null };
+  const livenessDead = { isPidAlive: () => false, pidStartedAt: () => null };
+  const noNative = async () => [];
+
+  function sdEntry(overrides: Partial<SyntaurdFeedEntry> = {}): SyntaurdFeedEntry {
+    return { sessionId: 's1', short: 'sd12ab34', state: 'working', name: 'proj/a1', agent: 'codex', ...overrides };
+  }
+
+  it('stamps state/syntaurdShortId/launcher/activity from a matched daemon entry', async () => {
+    insert('s1', 'active', 4242);
+    const s = await loadSessions({
+      projectsDir: dir, agents, livenessDeps: livenessAlive,
+      agentViewDetailSource: noNative, syntaurdSessionSource: async () => [sdEntry()],
+    });
+    expect(s[0].state).toBe('working');
+    expect(s[0].syntaurdShortId).toBe('sd12ab34');
+    expect(s[0].launcher).toBe('syntaurd');
+    expect(s[0].activity).toBe('working');
+    expect(s[0].isLive).toBe(true);
+  });
+
+  it('daemon terminal state forces isLive=false over a lingering live pid', async () => {
+    insert('s1', 'active', 4242);
+    const s = await loadSessions({
+      projectsDir: dir, agents, livenessDeps: livenessAlive,
+      agentViewDetailSource: noNative, syntaurdSessionSource: async () => [sdEntry({ state: 'done' })],
+    });
+    expect(s[0].isLive).toBe(false);
+  });
+
+  it('daemon working state forces isLive=true over a dead pid', async () => {
+    insert('s1', 'active', 99999);
+    const s = await loadSessions({
+      projectsDir: dir, agents, livenessDeps: livenessDead,
+      agentViewDetailSource: noNative, syntaurdSessionSource: async () => [sdEntry()],
+    });
+    expect(s[0].isLive).toBe(true);
+  });
+
+  it('a blocked FIXTURE is live + awaiting-input (state handled; Phase A daemons never emit it)', async () => {
+    insert('s1', 'active', 4242);
+    const s = await loadSessions({
+      projectsDir: dir, agents, livenessDeps: livenessAlive,
+      agentViewDetailSource: noNative, syntaurdSessionSource: async () => [sdEntry({ state: 'blocked' })],
+    });
+    expect(s[0].isLive).toBe(true);
+    expect(s[0].activity).toBe('awaiting-input');
+  });
+
+  it('syntaurd join wins over the claude-view join on overlap, keeping agentShortId/waitingFor', async () => {
+    insert('s1', 'active', 4242);
+    const s = await loadSessions({
+      projectsDir: dir, agents, livenessDeps: livenessAlive,
+      agentViewDetailSource: async () => [{ sessionId: 's1', id: 'cc12dd34', name: null, state: 'working', waitingFor: null }],
+      syntaurdSessionSource: async () => [sdEntry({ state: 'done' })],
+    });
+    expect(s[0].launcher).toBe('syntaurd');
+    expect(s[0].state).toBe('done');
+    expect(s[0].isLive).toBe(false);
+    expect(s[0].agentShortId).toBe('cc12dd34');
+    expect(s[0].syntaurdShortId).toBe('sd12ab34');
+  });
+
+  it('two sources, one feed: disjoint matches stamp independently', async () => {
+    insert('s1', 'active', 4242);
+    insert('s2', 'active', 4243);
+    const s = await loadSessions({
+      projectsDir: dir, agents, livenessDeps: livenessAlive,
+      agentViewDetailSource: async () => [{ sessionId: 's2', id: 'cc12dd34', name: null, state: 'working', waitingFor: null }],
+      syntaurdSessionSource: async () => [sdEntry({ sessionId: 's1' })],
+    });
+    const s1 = s.find((r) => r.sessionId === 's1');
+    const s2 = s.find((r) => r.sessionId === 's2');
+    expect(s1?.launcher).toBe('syntaurd');
+    expect(s1?.syntaurdShortId).toBe('sd12ab34');
+    expect(s2?.launcher).toBe('claude-bg');
+    expect(s2?.agentShortId).toBe('cc12dd34');
+    expect(s2?.syntaurdShortId).toBeUndefined();
+  });
+
+  it('unmatched rows are untouched by the daemon join', async () => {
+    insert('s1', 'active', 4242);
+    const s = await loadSessions({
+      projectsDir: dir, agents, livenessDeps: livenessAlive,
+      agentViewDetailSource: noNative, syntaurdSessionSource: async () => [sdEntry({ sessionId: 'other' })],
+    });
+    expect(s[0].state).toBeUndefined();
+    expect(s[0].syntaurdShortId).toBeUndefined();
+    expect(s[0].isLive).toBe(true);
+  });
+
+  it('a successful empty daemon list clears the overlay immediately (no grace)', async () => {
+    insert('s1', 'active', 4242);
+    const livenessDeps = livenessAlive;
+    const p1 = await loadSessions({ projectsDir: dir, agents, livenessDeps, agentViewDetailSource: noNative, syntaurdSessionSource: async () => [sdEntry()] });
+    expect(p1[0].syntaurdShortId).toBe('sd12ab34');
+    const p2 = await loadSessions({ projectsDir: dir, agents, livenessDeps, agentViewDetailSource: noNative, syntaurdSessionSource: async () => [] });
+    expect(p2[0].syntaurdShortId).toBeUndefined();
+  });
+
+  it('daemon probe failure (null) reuses last-known entries for exactly one poll, then degrades', async () => {
+    insert('s1', 'active', 4242);
+    const livenessDeps = livenessAlive;
+    const p1 = await loadSessions({ projectsDir: dir, agents, livenessDeps, agentViewDetailSource: noNative, syntaurdSessionSource: async () => [sdEntry()] });
+    expect(p1[0].syntaurdShortId).toBe('sd12ab34');
+    const p2 = await loadSessions({ projectsDir: dir, agents, livenessDeps, agentViewDetailSource: noNative, syntaurdSessionSource: async () => null });
+    expect(p2[0].syntaurdShortId).toBe('sd12ab34'); // grace
+    const p3 = await loadSessions({ projectsDir: dir, agents, livenessDeps, agentViewDetailSource: noNative, syntaurdSessionSource: async () => null });
+    expect(p3[0].syntaurdShortId).toBeUndefined(); // degraded to session-db-only
+    expect(p3[0].isLive).toBe(true); // pid liveness back in charge — never crashed
+  });
+
+  it('a throwing daemon source never crashes the poll', async () => {
+    insert('s1', 'active', 4242);
+    const s = await loadSessions({
+      projectsDir: dir, agents, livenessDeps: livenessAlive,
+      agentViewDetailSource: noNative, syntaurdSessionSource: async () => { throw new Error('boom'); },
+    });
+    expect(s).toHaveLength(1);
+    expect(s[0].syntaurdShortId).toBeUndefined();
+  });
+
+  it('the two grace caches are independent — a claude-view failure does not spend syntaurd grace', async () => {
+    insert('s1', 'active', 4242);
+    const s = await loadSessions({
+      projectsDir: dir, agents, livenessDeps: livenessAlive,
+      agentViewDetailSource: async () => null, syntaurdSessionSource: async () => [sdEntry()],
+    });
+    expect(s[0].syntaurdShortId).toBe('sd12ab34');
+  });
+
+  it('persisted hosted_by surfaces as hostedBy even when the daemon is down', async () => {
+    getSessionDb().prepare(
+      "INSERT INTO sessions (session_id, agent, started, status, pid, hosted_by) VALUES ('s1', 'codex', datetime('now'), 'active', 4242, 'syntaurd')",
+    ).run();
+    const s = await loadSessions({
+      projectsDir: dir, agents, livenessDeps: livenessAlive,
+      agentViewDetailSource: noNative, syntaurdSessionSource: async () => null,
+    });
+    expect(s[0].hostedBy).toBe('syntaurd');
+    expect(s[0].syntaurdShortId).toBeUndefined();
   });
 });

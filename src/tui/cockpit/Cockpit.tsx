@@ -12,16 +12,25 @@ import { DetailPane, type DetailSelection } from './DetailPane.js';
 import { ActionBar, type Action } from './ActionBar.js';
 import {
   buildActions, dispatchActionKey, runLaunch, isCleanExit, describeChildFailure,
-  isNativeAttachReachable, type ChildOutcome,
+  isNativeAttachReachable, isSyntaurdAttachReachable, type ChildOutcome,
 } from './actions.js';
 import { loadSessions } from '../sessions/feed.js';
 import { readConfig, getAgents, type AgentConfig } from '../../utils/config.js';
 import type { AgentSessionWithLiveness } from '../../dashboard/types.js';
 import { buildLaunchPlan } from '../../launch/build-launch.js';
-import { launchInTmux, tmuxSessionExists, tmuxSessionName } from '../tmux/launch.js';
+import { tmuxSessionExists, tmuxSessionName } from '../tmux/launch.js';
 import { runTmuxAttach } from '../tmux/attach.js';
 import { launchClaudeBg } from '../claude-agents/launch.js';
 import { runClaudeAttach } from '../claude-agents/attach.js';
+import { randomUUID } from 'node:crypto';
+import {
+  launchSyntaurd as dispatchSyntaurd,
+  canInjectClaudeSessionId,
+  injectSessionIdArgs,
+} from '../syntaurd/launch.js';
+import { runSyntaurdAttach } from '../syntaurd/attach.js';
+import { launchInTmuxWithPid } from '../tmux/launch.js';
+import { appendSession } from '../../dashboard/agent-sessions.js';
 
 const SESSION_POLL_INTERVAL_MS = 1500;
 const STATUS_CLEAR_MS = 4000;
@@ -41,6 +50,7 @@ export interface CockpitProps {
   assignmentsDir: string;
   tmuxAvailable: boolean;
   claudeBgAvailable: boolean;
+  syntaurdAvailable: boolean;
 }
 
 export const Cockpit: React.FC<CockpitProps> = ({
@@ -48,6 +58,7 @@ export const Cockpit: React.FC<CockpitProps> = ({
   assignmentsDir,
   tmuxAvailable,
   claudeBgAvailable,
+  syntaurdAvailable,
 }) => {
   const { exit, suspendTerminal } = useApp();
   const { write } = useStdout();
@@ -164,13 +175,55 @@ export const Cockpit: React.FC<CockpitProps> = ({
       const nativeName = `${projectSlug}/${assignmentSlug}`;
       let handOffFailure: string | null = null;
       let nativeLaunchFailure: string | null = null;
+      let syntaurdLaunchFailure: string | null = null;
+      let syntaurdRegistered = true;
+      // Correlation id for the tmux fallback: planted in the agent's env (and,
+      // for plain-claude plans, injected as --session-id) so a later hook
+      // registration re-keys the provenance row we write below onto claude's
+      // real session id instead of duplicating it.
+      const fallbackLaunchId = randomUUID();
+      let tmuxPanePid: number | null = null;
       const mode = await runLaunch(
         sessionName,
         plan,
         {
           tmuxAvailable,
           claudeBgAvailable,
-          launchInTmux,
+          syntaurdAvailable,
+          launchSyntaurd: async ({ plan: p, name, agent: launchAgent }) => {
+            // Thin closure over the tier module: supplies the binding slugs
+            // (rail attribution via the pre-inserted row's engagement) and the
+            // cockpit's live window size so a later attach repaints at the
+            // right geometry. The UUID sessionId is generated inside
+            // dispatchSyntaurd and seeded to BOTH the daemon and session-db.
+            // `registered` is closure-captured (same idiom as the failure
+            // strings) so the status line can warn when the registry write
+            // failed.
+            const res = await dispatchSyntaurd({
+              plan: p,
+              name,
+              agent: launchAgent,
+              projectSlug,
+              assignmentSlug,
+              cols: columns,
+              rows,
+            });
+            syntaurdRegistered = res.registered;
+          },
+          onSyntaurdLaunchFailure: (err) => {
+            syntaurdLaunchFailure = err instanceof Error ? err.message : String(err);
+          },
+          launchInTmux: async (i) => {
+            // Plain-claude plans also get the id injected into the argv (ids
+            // equal from birth, belt-and-braces if hooks never fire); the env
+            // correlation below covers shell-alias plans on every tmux version.
+            const args = canInjectClaudeSessionId(agent) ? injectSessionIdArgs(i.args, fallbackLaunchId) : i.args;
+            tmuxPanePid = await launchInTmuxWithPid({
+              ...i,
+              args,
+              env: { SYNTAUR_LAUNCH_ID: fallbackLaunchId, SYNTAUR_HOSTED_BY: 'tmux' },
+            });
+          },
           launchClaudeBg,
           onNativeLaunchFailure: (err) => {
             nativeLaunchFailure = err instanceof Error ? err.message : String(err);
@@ -211,12 +264,44 @@ export const Cockpit: React.FC<CockpitProps> = ({
         },
         { agent, name: nativeName },
       );
+      const syntaurdFailurePrefix = syntaurdLaunchFailure != null ? `Daemon launch failed (${syntaurdLaunchFailure}); ` : '';
       const nativeFailurePrefix = nativeLaunchFailure != null ? `Native launch failed (${nativeLaunchFailure}); ` : '';
-      if (mode === 'claude-bg') setStatus(`Launched natively (${nativeName})`);
-      else if (mode === 'tmux') setStatus(`${nativeFailurePrefix}Launched in tmux (${sessionName})`);
+      if (mode === 'syntaurd') {
+        setStatus(
+          syntaurdRegistered
+            ? `Launched via daemon (${nativeName})`
+            : `Launched via daemon (${nativeName}) — WARNING: not registered; session will not appear in the list`,
+        );
+      }
+      else if (mode === 'claude-bg') setStatus(`${syntaurdFailurePrefix}Launched natively (${nativeName})`);
+      else if (mode === 'tmux') setStatus(`${syntaurdFailurePrefix}${nativeFailurePrefix}Launched in tmux (${sessionName})`);
       else if (handOffFailure != null) setStatus(`Launch failed: ${handOffFailure}`);
       // Otherwise (hand-off + clean exit): `exit()` above tears down the
       // cockpit as soon as the agent process exits — nothing left to render.
+
+      if (mode === 'tmux') {
+        // Provenance for the fallback path: for non-claude agents this is their
+        // FIRST-ever rail row (they never self-register); pane pid gives the
+        // scanner a real sweep signal. For claude, the planted
+        // SYNTAUR_LAUNCH_ID makes the hook's reconcile re-key this row onto the
+        // real session id — no duplicate, hosted_by preserved. Best-effort: a
+        // registry failure must never turn a successful launch into an error.
+        try {
+          await appendSession('', {
+            sessionId: fallbackLaunchId,
+            agent: agent.id,
+            started: new Date().toISOString(),
+            status: 'active',
+            path: plan.cwd,
+            pid: tmuxPanePid,
+            projectSlug,
+            assignmentSlug,
+            hostedBy: 'tmux',
+          });
+        } catch {
+          /* launch already succeeded — never surface a registry failure as a launch error */
+        }
+      }
     } catch (err) {
       setStatus(`Launch failed: ${err instanceof Error ? err.message : String(err)}`);
     }
@@ -228,6 +313,35 @@ export const Cockpit: React.FC<CockpitProps> = ({
   const handleAttach = async (): Promise<void> => {
     if (selection.kind !== 'session') return;
     const { session } = selection;
+
+    if (isSyntaurdAttachReachable(session)) {
+      // syntaurd-hosted: spawn `syntaur attach <short>` as an inherit-stdio
+      // child inside the identical mouse+suspend sandwich. The child
+      // transitively gets ensureDaemon's respawn+adopt for free, and this
+      // path needs no tmux at all. `result` is closure-captured because
+      // neither suspend helper propagates its callback's value.
+      let result: ChildOutcome = { code: null };
+      await runWithMouseSuspended(write, () =>
+        suspendTerminal(async () => {
+          result = await runSyntaurdAttach(session.syntaurdShortId as string);
+        }),
+      );
+      if (isCleanExit(result, { allowNullCode: true })) {
+        setStatus(`Detached from ${session.syntaurdShortId}`);
+      } else {
+        setStatus(`Attach failed: ${describeChildFailure(result)}`);
+      }
+      return;
+    }
+
+    if (session.hostedBy === 'syntaurd' || session.hostedBy === 'claude-bg') {
+      // Mirror of the backend-aware gate in actions.ts: a daemon-hosted row
+      // with no live overlay must not reach the native or tmux branches below
+      // — the tmux session it would name was never created. Defense-in-depth
+      // for non-button dispatch paths.
+      setStatus('Daemon unavailable — cannot attach; retry when the daemon is back');
+      return;
+    }
 
     if (isNativeAttachReachable(session)) {
       // Re-arm mouse tracking around the suspend exactly like the tmux path

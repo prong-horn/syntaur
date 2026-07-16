@@ -185,3 +185,23 @@ export async function daemonRequest(req: ControlRequest, deps: ClientDeps = {}):
   const send = deps.sendRequest ?? sendRequest;
   return send(pointer.controlSock, req);
 }
+
+/**
+ * Non-spawning one-shot: resolve an ALREADY-LIVE daemon (never auto-starts
+ * — the whole point vs `daemonRequest`, which resurrects a deliberately
+ * stopped daemon) and send one request against its control socket.
+ * Returns null when no live daemon is reachable. Defaults to a SHORT
+ * timeout (1000ms) because its consumer is the cockpit's 1.5s feed poll —
+ * the 5000ms `sendRequest` default would let a hung daemon stack polls.
+ */
+export async function queryDaemon(
+  req: ControlRequest,
+  deps: ClientDeps & { timeoutMs?: number } = {},
+): Promise<ControlReply | null> {
+  const d = resolveDeps(deps);
+  const discovery = { probe: d.probe, readFile: d.readFile, now: d.now, sleep: d.sleep };
+  const pointer = await resolveDaemon(currentPointerPath(), discovery);
+  if (!pointer) return null;
+  const send = deps.sendRequest ?? sendRequest;
+  return send(pointer.controlSock, req, deps.timeoutMs ?? 1000);
+}

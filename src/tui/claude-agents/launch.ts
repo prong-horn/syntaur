@@ -2,11 +2,17 @@ import { execFile } from 'node:child_process';
 import type { AgentConfig } from '../../utils/config.js';
 import type { AgentLaunchPlan } from '../../launch/build-launch.js';
 
-export type ExecFn = (cmd: string, args: string[], opts: { cwd: string }) => Promise<{ code: number; stdout: string }>;
+export type ExecFn = (
+  cmd: string,
+  args: string[],
+  opts: { cwd: string; env?: Record<string, string> },
+) => Promise<{ code: number; stdout: string }>;
 
+// `env: undefined` keeps Node's inherit-parent default, so call sites that pass
+// no env behave exactly as before.
 const defaultExec: ExecFn = (cmd, args, opts) =>
   new Promise((resolvePromise, reject) => {
-    execFile(cmd, args, { cwd: opts.cwd, encoding: 'utf8' }, (err, stdout) => {
+    execFile(cmd, args, { cwd: opts.cwd, env: opts.env, encoding: 'utf8' }, (err, stdout) => {
       if (err) reject(err);
       else resolvePromise({ code: 0, stdout: stdout ?? '' });
     });
@@ -49,8 +55,21 @@ export interface LaunchClaudeBgInput {
   exec?: ExecFn;
 }
 
-/** Launches a Claude agent via the native `--bg` path in `plan.cwd`. */
+/**
+ * Launches a Claude agent via the native `--bg` path in `plan.cwd`.
+ *
+ * Plants `SYNTAUR_HOSTED_BY` so the session-registration hook can stamp the
+ * backend on the row Claude creates for itself. No `SYNTAUR_LAUNCH_ID`: this
+ * tier deliberately creates NO placeholder row (`claude --bg` yields no
+ * pid/short to seed one with, and a hookless placeholder would be an
+ * unsweepable active row). Best-effort — if Claude's own daemon does not
+ * forward the dispatcher's env to the worker, rows keep `hosted_by` NULL,
+ * exactly as before.
+ */
 export async function launchClaudeBg(input: LaunchClaudeBgInput): Promise<void> {
   const exec = input.exec ?? defaultExec;
-  await exec(input.plan.command, injectBgArgs(input.plan.args, input.name), { cwd: input.plan.cwd });
+  await exec(input.plan.command, injectBgArgs(input.plan.args, input.name), {
+    cwd: input.plan.cwd,
+    env: { ...process.env, SYNTAUR_HOSTED_BY: 'claude-bg' } as Record<string, string>,
+  });
 }

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { isNativeLaunchEligible, injectBgArgs, launchClaudeBg } from '../launch.js';
+import { isNativeLaunchEligible, injectBgArgs, launchClaudeBg, type ExecFn } from '../launch.js';
 import type { AgentConfig } from '../../../utils/config.js';
 
 const agent: AgentConfig = { id: 'claude', label: 'Claude', command: 'claude' };
@@ -45,7 +45,26 @@ describe('launchClaudeBg', () => {
     expect(exec).toHaveBeenCalledWith(
       'claude',
       ['--bg', '--name', 'proj/a1', '/grab-assignment p a', '--agent', 'b'],
-      { cwd: '/repo/.worktrees/feat' },
+      expect.objectContaining({ cwd: '/repo/.worktrees/feat' }),
     );
+  });
+
+  it('plants SYNTAUR_HOSTED_BY=claude-bg in the exec env, inheriting the rest of process.env', async () => {
+    const exec = vi.fn<ExecFn>(async () => ({ code: 0, stdout: '' }));
+    await launchClaudeBg({
+      plan: { command: 'claude', args: ['hi'], cwd: '/x' },
+      name: 'proj/a1',
+      exec,
+    });
+    const opts = exec.mock.calls[0][2];
+    expect(opts.env?.SYNTAUR_HOSTED_BY).toBe('claude-bg');
+    // The parent env is inherited, not replaced — the child still needs PATH etc.
+    expect(opts.env?.PATH).toBe(process.env.PATH);
+  });
+
+  it('plants no SYNTAUR_LAUNCH_ID — the native tier creates no placeholder row', async () => {
+    const exec = vi.fn<ExecFn>(async () => ({ code: 0, stdout: '' }));
+    await launchClaudeBg({ plan: { command: 'claude', args: ['hi'], cwd: '/x' }, name: 'proj/a1', exec });
+    expect(exec.mock.calls[0][2].env?.SYNTAUR_LAUNCH_ID).toBeUndefined();
   });
 });

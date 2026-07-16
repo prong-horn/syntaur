@@ -11,7 +11,12 @@ import {
   insertClosedEngagement,
 } from '../db/engagement-db.js';
 import { getCumulativeTokenSource, type TokenSnapshot } from '../db/engagement-tokens.js';
-import type { AgentSession, AgentSessionStatus, ActivityState } from './types.js';
+import type {
+  AgentSession,
+  AgentSessionStatus,
+  ActivityState,
+  SessionHostedBy,
+} from './types.js';
 
 interface SessionRow {
   session_id: string;
@@ -31,6 +36,7 @@ interface SessionRow {
   pid_started_at: string | null;
   original_head_sha: string | null;
   activity: string | null;
+  hosted_by: string | null;
   updated_at: string | null;
 }
 
@@ -69,6 +75,7 @@ function rowToSession(row: SessionRow): AgentSession {
     pidStartedAt: row.pid_started_at ?? null,
     originalHeadSha: row.original_head_sha ?? null,
     activity: (row.activity as ActivityState | null) ?? null,
+    hostedBy: (row.hosted_by as SessionHostedBy | null) ?? null,
     updatedAt: row.updated_at ?? null,
   };
 }
@@ -174,8 +181,8 @@ export async function appendSession(
   // the status read and the open — which would otherwise leak an open engagement
   // onto a now-terminal session (codex round-2 TOCTOU).
   const upsert = db.prepare(`
-    INSERT INTO sessions (session_id, agent, started, status, path, description, transcript_path, pid, pid_started_at, original_head_sha)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO sessions (session_id, agent, started, status, path, description, transcript_path, pid, pid_started_at, original_head_sha, hosted_by)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(session_id) DO UPDATE SET
       agent             = excluded.agent,
       status            = CASE
@@ -193,6 +200,11 @@ export async function appendSession(
       pid               = COALESCE(excluded.pid,                           pid),
       pid_started_at    = COALESCE(NULLIF(excluded.pid_started_at, ''),    pid_started_at),
       original_head_sha = COALESCE(NULLIF(original_head_sha, ''), NULLIF(excluded.original_head_sha, '')),
+      -- Launch-time provenance: write-if-null, like original_head_sha above.
+      -- The value is established by whoever launched the session; a later
+      -- upsert (a hook re-registering, a stale marker in an inherited env)
+      -- may FILL it but must never rewrite it.
+      hosted_by         = COALESCE(NULLIF(hosted_by, ''), NULLIF(excluded.hosted_by, '')),
       updated_at        = datetime('now')
   `);
 
@@ -208,6 +220,7 @@ export async function appendSession(
       session.pid ?? null,
       session.pidStartedAt ?? null,
       session.originalHeadSha ?? null,
+      session.hostedBy ?? null,
       opts?.reviveStopped ? 1 : 0, // status CASE: revive guard
       opts?.reviveStopped ? 1 : 0, // ended CASE: clear stale ended on revive
     );
@@ -252,6 +265,108 @@ export async function appendSession(
     }
   });
   apply.immediate();
+}
+
+/**
+ * Re-key a cockpit-planted placeholder row onto the agent's REAL session id.
+ *
+ * The cockpit pre-inserts a row keyed by a generated UUID (carrying
+ * `hosted_by`, `pid`, and an open engagement) and plants that UUID in the
+ * worker's environment as `SYNTAUR_LAUNCH_ID`. When the agent later registers
+ * under its OWN id, this collapses the two identities so provenance survives
+ * and no duplicate row lingers.
+ *
+ * Two paths, both leaving ZERO `sessions`/`engagement` rows keyed to
+ * `launchId`:
+ *  - **migrate** (no real row yet): the placeholder simply becomes the real
+ *    row; the caller's subsequent upsert converges onto it (COALESCE fill-in).
+ *  - **merge** (the real row already registered): copy provenance write-if-null
+ *    onto the real row, close the placeholder's open engagement, re-key its
+ *    engagement history, and drop the placeholder.
+ *
+ * Never throws — a reconcile failure must not break session registration.
+ */
+export async function reconcileLaunchPlaceholder(
+  launchId: string,
+  realSessionId: string,
+): Promise<void> {
+  if (!launchId || !realSessionId || launchId === realSessionId) return;
+  try {
+    const db = getSessionDb();
+    const now = new Date().toISOString();
+    const apply = db.transaction(() => {
+      const placeholder = db
+        .prepare('SELECT session_id FROM sessions WHERE session_id = ?')
+        .get(launchId) as { session_id: string } | undefined;
+      if (!placeholder) return; // normal for non-cockpit launches
+
+      const real = db
+        .prepare('SELECT session_id FROM sessions WHERE session_id = ?')
+        .get(realSessionId) as { session_id: string } | undefined;
+
+      if (!real) {
+        // Migrate: the placeholder BECOMES the real row, keeping hosted_by,
+        // pid, slugs and its open engagement intact.
+        db.prepare('UPDATE sessions SET session_id = ?, updated_at = ? WHERE session_id = ?').run(
+          realSessionId,
+          now,
+          launchId,
+        );
+        db.prepare('UPDATE engagement SET session_id = ? WHERE session_id = ?').run(
+          realSessionId,
+          launchId,
+        );
+        return;
+      }
+
+      // Merge: the agent's hook registered before we got here. Copy provenance
+      // write-if-null so an existing value is never clobbered.
+      db.prepare(
+        `UPDATE sessions SET
+           hosted_by  = COALESCE(hosted_by,  (SELECT hosted_by FROM sessions WHERE session_id = @launch)),
+           pid        = COALESCE(pid,        (SELECT pid       FROM sessions WHERE session_id = @launch)),
+           updated_at = @now
+         WHERE session_id = @real`,
+      ).run({ launch: launchId, real: realSessionId, now });
+
+      // Close the placeholder's open engagement BEFORE re-keying: the
+      // `one_active_per_session` unique index is partial on `ended_at IS NULL`,
+      // so the real row's own open engagement would collide otherwise.
+      db.prepare(
+        `UPDATE engagement SET ended_at = @now, close_reason = 'launch-reconcile'
+          WHERE session_id = @launch AND ended_at IS NULL`,
+      ).run({ launch: launchId, now });
+      // Re-key the (now all closed) history: engagement.session_id has no FK
+      // cascade, so skipping this would orphan rows on the deleted id.
+      db.prepare('UPDATE engagement SET session_id = ? WHERE session_id = ?').run(
+        realSessionId,
+        launchId,
+      );
+      db.prepare('DELETE FROM sessions WHERE session_id = ?').run(launchId);
+    });
+    apply.immediate();
+  } catch (err) {
+    console.error(
+      `launch-reconcile failed for ${launchId} → ${realSessionId}: ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
+}
+
+/**
+ * Read the launch-correlation markers from this process's environment
+ * (hook processes inherit the worker's env), reconcile the placeholder
+ * row if one exists, and return the validated backend stamp for the
+ * caller to merge into its upsert payload. Never throws.
+ */
+export async function consumeLaunchMarkers(
+  realSessionId: string,
+): Promise<{ hostedBy?: SessionHostedBy }> {
+  const launchId = process.env.SYNTAUR_LAUNCH_ID;
+  if (launchId) await reconcileLaunchPlaceholder(launchId, realSessionId);
+  const raw = process.env.SYNTAUR_HOSTED_BY;
+  const hostedBy =
+    raw === 'syntaurd' || raw === 'tmux' || raw === 'claude-bg' ? raw : undefined;
+  return hostedBy ? { hostedBy } : {};
 }
 
 /**

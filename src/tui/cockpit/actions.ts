@@ -36,7 +36,22 @@ export function isNativeAttachReachable(session: AgentSessionWithLiveness): bool
 }
 
 /**
- * Attach is enabled via ONE of two independent paths:
+ * True when a session should be attached via `syntaur attach <short>`:
+ * it carries the daemon join's short id and a non-terminal state. Checked
+ * BEFORE the native path — mirrors the feed join precedence (syntaurd owns
+ * the PTY; its truth wins on overlap). Exported so Cockpit's `handleAttach`
+ * picks the SAME path this enable check assumes.
+ */
+export function isSyntaurdAttachReachable(session: AgentSessionWithLiveness): boolean {
+  return session.syntaurdShortId != null && session.state != null && !NATIVE_TERMINAL_STATES.has(session.state);
+}
+
+/**
+ * Attach is enabled via ONE of three independent paths, in precedence order:
+ *  - syntaurd (see `isSyntaurdAttachReachable`) — daemon-hosted sessions;
+ *    reachable with no tmux installed; AUTHORITATIVE when the short id is
+ *    present (a terminal daemon state must not fall through to gates whose
+ *    isLive could read stale-true off a lingering pid).
  *  - Native (see `isNativeAttachReachable`) — reachable with no tmux
  *    installed at all, and AUTHORITATIVE when present: a terminal-state
  *    native session must not fall through to the tmux gate below, whose
@@ -49,9 +64,19 @@ export function isNativeAttachReachable(session: AgentSessionWithLiveness): bool
 function attachEnabled(selection: DetailSelection, caps: ActionCaps): boolean {
   if (selection.kind !== 'session') return false;
   const { session } = selection;
+  if (session.syntaurdShortId != null && session.state != null) {
+    return isSyntaurdAttachReachable(session);
+  }
   if (session.agentShortId != null && session.state != null) {
     return isNativeAttachReachable(session);
   }
+  // Backend-aware guard: a daemon-hosted row whose overlay is absent (its
+  // daemon down / past the grace window) must NEVER fall through to the tmux
+  // gate — no tmux session of that name was ever created, and a lingering pid
+  // can keep isLive true. Applies to BOTH daemon backends: syntaurd (overlay
+  // repopulates within one poll of a daemon restart) and claude-bg
+  // (agentShortId repopulates when the `claude agents --json` source answers).
+  if (session.hostedBy === 'syntaurd' || session.hostedBy === 'claude-bg') return false;
   return caps.tmuxAvailable && session.isLive === true && session.assignmentSlug != null;
 }
 
@@ -122,6 +147,20 @@ export interface LaunchDeps {
    * attempt failed first, to compose a richer status message.
    */
   onNativeLaunchFailure?: (error: unknown) => void;
+  /**
+   * syntaurd (daemon) tier deps — optional like the native pair above, so
+   * existing call sites and tests need no changes. The dep signature is a thin
+   * closure: the Cockpit supplies projectSlug/assignment/cols/rows context and
+   * calls the tier module (src/tui/syntaurd/launch.ts).
+   */
+  syntaurdAvailable?: boolean;
+  launchSyntaurd?: (input: { plan: LaunchExecPlan; name: string; agent: AgentConfig }) => Promise<void>;
+  /**
+   * Called when a syntaurd dispatch throws (ensureDaemon start-timeout
+   * SyntaurError, dispatch ErrorReply), before degrading to
+   * claude-bg/tmux/hand-off — same contract as onNativeLaunchFailure.
+   */
+  onSyntaurdLaunchFailure?: (error: unknown) => void;
 }
 
 /** Native-launch context, when the selection's agent might be eligible for `--bg`. */
@@ -151,7 +190,21 @@ export async function runLaunch(
   plan: LaunchExecPlan,
   deps: LaunchDeps,
   native?: NativeLaunchInput,
-): Promise<'claude-bg' | 'tmux' | 'handoff'> {
+): Promise<'syntaurd' | 'claude-bg' | 'tmux' | 'handoff'> {
+  // Tier 0: the syntaur daemon — for ALL agents (no runner/eligibility guard:
+  // a PTY runs anything, including shell-alias plans). Gated only on `native`
+  // (agent+name context), the capability boolean, and the injected dep.
+  // try/catch matches the claude-bg branch below: ensureDaemon throws
+  // SyntaurError on start-timeout, and the tmux branch has no catch — without
+  // this, a daemon hiccup would abort a launch tmux could serve.
+  if (native && deps.syntaurdAvailable && deps.launchSyntaurd) {
+    try {
+      await deps.launchSyntaurd({ plan, name: native.name, agent: native.agent });
+      return 'syntaurd';
+    } catch (err) {
+      deps.onSyntaurdLaunchFailure?.(err);
+    }
+  }
   if (
     native &&
     deps.claudeBgAvailable &&

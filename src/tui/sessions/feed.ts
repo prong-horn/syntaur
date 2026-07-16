@@ -1,6 +1,7 @@
 import { listAllSessions } from '../../dashboard/agent-sessions.js';
 import { enrichSessions, type LivenessDeps } from '../../dashboard/session-liveness.js';
 import { productionAgentViewDetailSource, type AgentViewDetailEntry, type AgentViewDetailSource } from '../../sessions/agent-view.js';
+import { productionSyntaurdSessionSource, type SyntaurdFeedEntry, type SyntaurdSessionSource } from '../syntaurd/feed-source.js';
 import type { AgentConfig } from '../../utils/config.js';
 import type { ActivityState, AgentSessionWithLiveness, NativeAgentState } from '../../dashboard/types.js';
 
@@ -10,6 +11,8 @@ export interface LoadSessionsOptions {
   livenessDeps?: LivenessDeps;
   /** Injectable for tests; defaults to the real `claude agents --json` probe. */
   agentViewDetailSource?: AgentViewDetailSource;
+  /** Injectable for tests; defaults to the real non-spawning daemon `{op:'list'}` poll. */
+  syntaurdSessionSource?: SyntaurdSessionSource;
 }
 
 /** Non-terminal native states — the session is still doing something, or waiting on the user. */
@@ -69,14 +72,47 @@ async function resolveDetailEntries(source: AgentViewDetailSource): Promise<Agen
   return [];
 }
 
-export async function loadSessions(opts: LoadSessionsOptions): Promise<AgentSessionWithLiveness[]> {
-  const sessions = await listAllSessions(opts.projectsDir);
-  const enriched = enrichSessions(sessions, opts.agents, opts.livenessDeps);
+// Independent grace cache for the syntaurd daemon join — SEPARATE from the
+// claude-view cache above so one source's failure never consumes the
+// other's grace (two sources, one feed).
+let lastKnownSyntaurd: SyntaurdFeedEntry[] | null = null;
+let syntaurdGraceSpent = false;
 
-  const source = opts.agentViewDetailSource ?? productionAgentViewDetailSource;
-  const detail = await resolveDetailEntries(source);
+/** Test-only: clear the syntaurd grace cache between cases. */
+export function resetSyntaurdGrace(): void {
+  lastKnownSyntaurd = null;
+  syntaurdGraceSpent = false;
+}
+
+/** Same ≤1-poll grace contract as resolveDetailEntries above, for the daemon source. */
+async function resolveSyntaurdEntries(source: SyntaurdSessionSource): Promise<SyntaurdFeedEntry[]> {
+  let entries: SyntaurdFeedEntry[] | null;
+  try {
+    entries = await source();
+  } catch {
+    entries = null; // never let a probe failure throw out of the poll
+  }
+
+  if (entries !== null) {
+    lastKnownSyntaurd = entries;
+    syntaurdGraceSpent = false;
+    return entries;
+  }
+  if (!syntaurdGraceSpent && lastKnownSyntaurd !== null) {
+    syntaurdGraceSpent = true;
+    return lastKnownSyntaurd;
+  }
+  lastKnownSyntaurd = null;
+  syntaurdGraceSpent = false;
+  return [];
+}
+
+/** The v2 claude-view overlay (unchanged semantics — moved out of loadSessions verbatim). */
+function applyNativeJoin(
+  enriched: AgentSessionWithLiveness[],
+  detail: AgentViewDetailEntry[],
+): AgentSessionWithLiveness[] {
   if (detail.length === 0) return enriched;
-
   const bySessionId = new Map(detail.map((d) => [d.sessionId, d]));
   return enriched.map((s) => {
     const d = bySessionId.get(s.sessionId);
@@ -93,9 +129,50 @@ export async function loadSessions(opts: LoadSessionsOptions): Promise<AgentSess
       // design spec §5.6: "launcher choice is per-session, recorded in the
       // feed row." Non-native sessions carry no reliable launcher signal
       // here, so their existing value (usually unset) is left alone.
-      launcher: 'claude-bg',
+      launcher: 'claude-bg' as const,
     };
   });
+}
+
+/**
+ * Applied LAST — wins on overlap: syntaurd owns the PTY/process, so its exit
+ * knowledge is ground truth. Daemon terminal states force isLive=false over
+ * pid-liveness; working/blocked force true. `state` here is never null
+ * (SessionState), so isLive is unconditional. `agentShortId`/`waitingFor` from
+ * the claude-view join are left intact — `syntaurdShortId` is its own field,
+ * reserved for `syntaur attach`.
+ */
+function applySyntaurdJoin(
+  rows: AgentSessionWithLiveness[],
+  entries: SyntaurdFeedEntry[],
+): AgentSessionWithLiveness[] {
+  if (entries.length === 0) return rows;
+  const byId = new Map(entries.map((e) => [e.sessionId, e]));
+  return rows.map((s) => {
+    const e = byId.get(s.sessionId);
+    if (!e) return s;
+    return {
+      ...s,
+      state: e.state,
+      syntaurdShortId: e.short,
+      activity: stateToActivity(e.state) ?? s.activity,
+      isLive: LIVE_STATES.has(e.state),
+      launcher: 'syntaurd' as const,
+    };
+  });
+}
+
+export async function loadSessions(opts: LoadSessionsOptions): Promise<AgentSessionWithLiveness[]> {
+  const sessions = await listAllSessions(opts.projectsDir);
+  const enriched = enrichSessions(sessions, opts.agents, opts.livenessDeps);
+
+  const source = opts.agentViewDetailSource ?? productionAgentViewDetailSource;
+  const detail = await resolveDetailEntries(source);
+  const withNative = applyNativeJoin(enriched, detail);
+
+  const syntaurdSource = opts.syntaurdSessionSource ?? productionSyntaurdSessionSource;
+  const daemonEntries = await resolveSyntaurdEntries(syntaurdSource);
+  return applySyntaurdJoin(withNative, daemonEntries);
 }
 
 export function liveOnly(sessions: AgentSessionWithLiveness[]): AgentSessionWithLiveness[] {

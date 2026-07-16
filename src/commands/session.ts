@@ -10,7 +10,11 @@ import { captureProcessStartedAt } from '../utils/process-info.js';
 import { captureHeadSha } from '../utils/git-worktree.js';
 import { isExistingDir } from '../launch/cwd.js';
 import { initSessionDb } from '../dashboard/session-db.js';
-import { appendSession, updateSessionStatus } from '../dashboard/agent-sessions.js';
+import {
+  appendSession,
+  updateSessionStatus,
+  consumeLaunchMarkers,
+} from '../dashboard/agent-sessions.js';
 import type { AgentSessionStatus } from '../dashboard/types.js';
 import { resolveAssignmentTarget } from '../utils/assignment-target.js';
 import {
@@ -571,9 +575,16 @@ export async function runSessionRegister(
     ? await (deps.headSha ?? captureHeadSha)(cwd)
     : null;
 
+  // Launch-correlation: when this session was started by the cockpit, the
+  // launch planted SYNTAUR_LAUNCH_ID/SYNTAUR_HOSTED_BY in the worker's env,
+  // which this hook process inherits. Reconcile the placeholder row onto the
+  // real id and pick up the backend stamp. No-op for any other launch path.
+  const launchMarkers = await consumeLaunchMarkers(sessionId);
+
   await appendSession(
     '',
     {
+      ...launchMarkers,
       // UNATTRIBUTED on register. The SessionStart hook no longer auto-binds the
       // assignment from the cwd context.json scalar — that cwd-scalar auto-bind is
       // the multi-assignment-in-one-worktree clobber being eliminated. A session

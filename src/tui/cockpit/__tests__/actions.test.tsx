@@ -117,6 +117,48 @@ describe('buildActions', () => {
     expect(buildActions(selection, caps(false), callbacks()).find((a) => a.key === 'a')?.enabled).toBe(false);
   });
 
+  it('enables Attach for a syntaurd session with a non-terminal state, even with tmux unavailable', () => {
+    const selection: DetailSelection = {
+      kind: 'session',
+      session: session({ syntaurdShortId: 'sd12ab34', state: 'working', agentShortId: undefined, assignmentSlug: null, isLive: false }),
+    };
+    expect(buildActions(selection, caps(false), callbacks()).find((a) => a.key === 'a')?.enabled).toBe(true);
+  });
+
+  it('enables Attach for a blocked syntaurd session (state handled though Phase A never emits it)', () => {
+    const selection: DetailSelection = { kind: 'session', session: session({ syntaurdShortId: 'sd12ab34', state: 'blocked' }) };
+    expect(buildActions(selection, caps(false), callbacks()).find((a) => a.key === 'a')?.enabled).toBe(true);
+  });
+
+  it('disables Attach for a terminal syntaurd session — authoritative, no tmux fall-through', () => {
+    for (const state of ['done', 'failed', 'stopped'] as const) {
+      const selection: DetailSelection = { kind: 'session', session: session({ syntaurdShortId: 'sd12ab34', state, isLive: true }) };
+      expect(buildActions(selection, caps(true), callbacks()).find((a) => a.key === 'a')?.enabled).toBe(false);
+    }
+  });
+
+  it('syntaurd gate wins over the native gate when both short ids are present', () => {
+    const selection: DetailSelection = {
+      kind: 'session',
+      session: session({ syntaurdShortId: 'sd12ab34', agentShortId: 'cc12dd34', state: 'working' }),
+    };
+    expect(buildActions(selection, caps(false), callbacks()).find((a) => a.key === 'a')?.enabled).toBe(true);
+  });
+
+  it('daemon-hosted rows with NO overlay never fall through to the tmux gate', () => {
+    // daemon down past the grace window: no shortId/state overlay, but a
+    // lingering pid keeps isLive true and tmux is installed — the
+    // backend-aware guard must still disable Attach (the tmux session named
+    // by this row's slugs was never created). Applies to both daemon backends.
+    for (const hostedBy of ['syntaurd', 'claude-bg'] as const) {
+      const selection: DetailSelection = {
+        kind: 'session',
+        session: session({ hostedBy, syntaurdShortId: undefined, agentShortId: undefined, state: undefined, isLive: true, assignmentSlug: 'a' }),
+      };
+      expect(buildActions(selection, caps(true), callbacks()).find((a) => a.key === 'a')?.enabled).toBe(false);
+    }
+  });
+
   it('Quit is always enabled, regardless of selection or tmux availability', () => {
     const selection: DetailSelection = { kind: 'none' };
     expect(buildActions(selection, caps(false), callbacks()).find((a) => a.key === 'q')?.enabled).toBe(true);

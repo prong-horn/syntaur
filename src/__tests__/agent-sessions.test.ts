@@ -437,8 +437,8 @@ describe('v2 -> v3 schema migration (adds transcript_path)', () => {
     const version = db
       .prepare("SELECT value FROM meta WHERE key = 'schema_version'")
       .get() as { value: string };
-    // v2 chains through every migration to the current head (v6).
-    expect(version.value).toBe('6');
+    // v2 chains through every migration to the current head (v7).
+    expect(version.value).toBe('7');
   });
 
   it('falls back to mission_slug when a v2 table has both columns but project_slug is null', async () => {
@@ -597,8 +597,8 @@ describe('v3 -> v4 schema migration (adds pid + pid_started_at)', () => {
     const version = db
       .prepare("SELECT value FROM meta WHERE key = 'schema_version'")
       .get() as { value: string };
-    // v3→v4 adds pid columns, then the chain continues to the current head (v6).
-    expect(version.value).toBe('6');
+    // v3→v4 adds pid columns, then the chain continues to the current head (v7).
+    expect(version.value).toBe('7');
   });
 });
 
@@ -660,7 +660,7 @@ describe('v4 -> v5 schema migration (adds original_head_sha)', () => {
     const version = db
       .prepare("SELECT value FROM meta WHERE key = 'schema_version'")
       .get() as { value: string };
-    expect(version.value).toBe('6');
+    expect(version.value).toBe('7');
   });
 
   it('round-trips original_head_sha through appendSession + getSessionById', async () => {
