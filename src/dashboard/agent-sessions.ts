@@ -296,9 +296,24 @@ export async function reconcileLaunchPlaceholder(
     const now = new Date().toISOString();
     const apply = db.transaction(() => {
       const placeholder = db
-        .prepare('SELECT session_id FROM sessions WHERE session_id = ?')
-        .get(launchId) as { session_id: string } | undefined;
+        .prepare('SELECT session_id, transcript_path, original_head_sha FROM sessions WHERE session_id = ?')
+        .get(launchId) as
+        | { session_id: string; transcript_path: string | null; original_head_sha: string | null }
+        | undefined;
       if (!placeholder) return; // normal for non-cockpit launches
+
+      // The markers live in the WORKER's environment for the whole session, so
+      // every descendant inherits them — a subagent's SessionStart hook, or a
+      // `syntaur track-session --session-id <other>` run from inside the
+      // session, would arrive here with a DIFFERENT real id. Without this
+      // guard that re-keys the launched session's own live row onto the
+      // newcomer (migrate path), silently destroying the parent's identity and
+      // moving its engagement. A launch may only ever be claimed ONCE, by the
+      // agent it started; these columns are the durable evidence that a real
+      // registration already claimed this row (`runSessionRegister` /
+      // `trackSessionCommand` both write them; a launch placeholder never
+      // does), so anything after the first claim is refused.
+      if (placeholder.transcript_path !== null || placeholder.original_head_sha !== null) return;
 
       const real = db
         .prepare('SELECT session_id FROM sessions WHERE session_id = ?')

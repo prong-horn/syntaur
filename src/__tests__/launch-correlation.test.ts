@@ -190,6 +190,80 @@ describe('reconcileLaunchPlaceholder — merge path (hook registered first)', ()
   });
 });
 
+describe('reconcileLaunchPlaceholder — a launch may only be claimed once', () => {
+  // The markers persist in the worker's env for the whole session, so every
+  // descendant process inherits them. Under Branch A the launch id IS the live
+  // session's row, so a second consumer arriving with a different real id must
+  // never be allowed to re-key it.
+  const CHILD_ID = 'cccccccc-3333-4333-8333-cccccccccccc';
+
+  it('refuses to re-key a row a real registration already claimed (transcript evidence)', async () => {
+    await insertPlaceholder(); // launch row, keyed LAUNCH_ID
+    // Branch A: the launched agent registers under the SAME id, so the row
+    // stays keyed to LAUNCH_ID but is now a real, live session.
+    await appendSession('', {
+      sessionId: LAUNCH_ID,
+      agent: 'claude',
+      started: '2026-07-16T00:00:01.000Z',
+      status: 'active',
+      path: '/w/a',
+      projectSlug: 'proj',
+      assignmentSlug: 'a1',
+      transcriptPath: '/t/parent.jsonl',
+    });
+
+    // A subagent hook / `track-session --session-id CHILD_ID` inherits the env.
+    await reconcileLaunchPlaceholder(LAUNCH_ID, CHILD_ID);
+
+    const all = await listAllSessions('');
+    // The parent must still exist under its own id, with its binding intact.
+    const parent = all.find((s) => s.sessionId === LAUNCH_ID);
+    expect(parent).toBeDefined();
+    expect(parent?.transcriptPath).toBe('/t/parent.jsonl');
+    expect(parent?.hostedBy).toBe('syntaurd');
+    expect(parent?.assignmentSlug).toBe('a1');
+    // ...and the child must NOT have stolen it.
+    expect(all.find((s) => s.sessionId === CHILD_ID)).toBeUndefined();
+    expect(countKeyedTo(LAUNCH_ID).engagement).toBe(1); // engagement never moved
+  });
+
+  it('refuses to re-key once original_head_sha evidences a claim (no transcript yet)', async () => {
+    await insertPlaceholder();
+    await appendSession('', {
+      sessionId: LAUNCH_ID,
+      agent: 'claude',
+      started: '2026-07-16T00:00:01.000Z',
+      status: 'active',
+      path: '/w/a',
+      projectSlug: 'proj',
+      assignmentSlug: 'a1',
+      originalHeadSha: 'abc123',
+    });
+
+    await reconcileLaunchPlaceholder(LAUNCH_ID, CHILD_ID);
+
+    expect((await listAllSessions('')).find((s) => s.sessionId === LAUNCH_ID)).toBeDefined();
+    expect((await listAllSessions('')).find((s) => s.sessionId === CHILD_ID)).toBeUndefined();
+  });
+
+  it('still re-keys a PRISTINE placeholder — the intended shell-alias flow is unaffected', async () => {
+    await insertPlaceholder(); // never claimed: no transcript, no head sha
+    await reconcileLaunchPlaceholder(LAUNCH_ID, REAL_ID);
+    const all = await listAllSessions('');
+    expect(all.find((s) => s.sessionId === REAL_ID)?.hostedBy).toBe('syntaurd');
+    expect(all.find((s) => s.sessionId === LAUNCH_ID)).toBeUndefined();
+  });
+
+  it('a second consumer after a successful migrate is a no-op (the row is gone)', async () => {
+    await insertPlaceholder();
+    await reconcileLaunchPlaceholder(LAUNCH_ID, REAL_ID); // first claim wins
+    await reconcileLaunchPlaceholder(LAUNCH_ID, CHILD_ID); // a subagent, later
+    const all = await listAllSessions('');
+    expect(all.find((s) => s.sessionId === REAL_ID)).toBeDefined();
+    expect(all.find((s) => s.sessionId === CHILD_ID)).toBeUndefined();
+  });
+});
+
 describe('reconcileLaunchPlaceholder — no-op paths', () => {
   it('no-ops when launchId === realSessionId (the --session-id branch)', async () => {
     await insertPlaceholder(REAL_ID);
