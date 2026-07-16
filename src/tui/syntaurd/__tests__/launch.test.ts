@@ -65,6 +65,10 @@ describe('launchSyntaurd', () => {
       registerRow: vi.fn(async () => {}),
       generateSessionId: () => 'uuid-fixed',
       now: () => '2026-07-16T00:00:00.000Z',
+      // Default: the disambiguation probe finds nothing (it is only consulted
+      // when the dispatch request itself rejects).
+      findSession: vi.fn(async () => null),
+      pidStartedAt: () => 'Thu Jul 16 00:00:00 2026',
       ...overrides,
     };
   }
@@ -96,15 +100,76 @@ describe('launchSyntaurd', () => {
       status: 'active',
       path: '/repo/.worktrees/feat',
       pid: 4242,
+      pidStartedAt: 'Thu Jul 16 00:00:00 2026',
       projectSlug: 'proj',
       assignmentSlug: 'a1',
       hostedBy: 'syntaurd',
     });
   });
 
+  it('captures pid_started_at so a recycled pid cannot keep a dead row alive', async () => {
+    // The scanner's recycle guard short-circuits on a NULL baseline
+    // (`!row.pid_started_at || …`), so a null here would make a reused pid
+    // read as live forever.
+    const h = harness();
+    await launchSyntaurd(h);
+    const row = (h.registerRow as unknown as { mock: { calls: Array<[string, { pidStartedAt: string | null }]> } }).mock.calls[0][1];
+    expect(row.pidStartedAt).toBe('Thu Jul 16 00:00:00 2026');
+    expect(row.pidStartedAt).not.toBeNull();
+  });
+
   it('throws on an ErrorReply and does NOT insert a row', async () => {
     const h = harness({ request: vi.fn(async () => ({ ok: false as const, code: 'EEMPTYARGV', error: 'boom' })) });
     await expect(launchSyntaurd(h)).rejects.toThrow(/daemon dispatch failed/);
+    expect(h.registerRow).not.toHaveBeenCalled();
+  });
+
+  it('an ErrorReply does NOT consult the probe — the daemon already said nothing spawned', async () => {
+    const findSession = vi.fn(async () => null);
+    const h = harness({
+      request: vi.fn(async () => ({ ok: false as const, code: 'EEMPTYARGV', error: 'boom' })),
+      findSession,
+    });
+    await expect(launchSyntaurd(h)).rejects.toThrow(/daemon dispatch failed/);
+    expect(findSession).not.toHaveBeenCalled();
+  });
+
+  it('a LOST REPLY whose session actually landed resolves instead of degrading (no double launch)', async () => {
+    // sendRequest is one-shot and can reject after the supervisor already
+    // spawned the session. Throwing here would degrade down the ladder and
+    // start a SECOND agent in the same worktree.
+    const h = harness({
+      request: vi.fn(async () => { throw new Error('socket hang up'); }),
+      findSession: vi.fn(async () => ({ short: 'landed99', pid: 777, pidStartedAt: 'Thu Jul 16 01:00:00 2026' })),
+    });
+    await expect(launchSyntaurd(h)).resolves.toEqual({
+      short: 'landed99', // adopted from the probe, not the (lost) reply
+      sessionId: 'uuid-fixed',
+      registered: true,
+    });
+    expect(h.registerRow).toHaveBeenCalledWith('', expect.objectContaining({
+      pid: 777,
+      pidStartedAt: 'Thu Jul 16 01:00:00 2026', // the daemon's own spawn capture
+      hostedBy: 'syntaurd',
+    }));
+  });
+
+  it('a lost reply whose session did NOT land still degrades to the next tier', async () => {
+    const err = new Error('daemon start timeout');
+    const h = harness({
+      request: vi.fn(async () => { throw err; }),
+      findSession: vi.fn(async () => null),
+    });
+    await expect(launchSyntaurd(h)).rejects.toThrow(err);
+    expect(h.registerRow).not.toHaveBeenCalled();
+  });
+
+  it('an unusable probe degrades rather than assuming success, surfacing the ORIGINAL error', async () => {
+    const h = harness({
+      request: vi.fn(async () => { throw new Error('socket hang up'); }),
+      findSession: vi.fn(async () => { throw new Error('probe exploded'); }),
+    });
+    await expect(launchSyntaurd(h)).rejects.toThrow(/socket hang up/);
     expect(h.registerRow).not.toHaveBeenCalled();
   });
 
