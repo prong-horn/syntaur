@@ -30,10 +30,12 @@ import {
   recomputeAndWrite,
   resolveRecomputeContext,
   isDeriveMigrated,
+  isStagesMigrated,
   type DeriveContext,
   type RecomputeResult,
 } from '../lifecycle/recompute.js';
 import { resolveAssignmentWorkflowContext } from '../lifecycle/workflow-context.js';
+import { runEngineOverride } from '../lifecycle/engine-transition.js';
 import { emitEvent } from '../lifecycle/event-emit.js';
 import { checkDependencies } from '../lifecycle/transitions.js';
 import { resolveAssignmentTarget } from '../utils/assignment-target.js';
@@ -397,6 +399,11 @@ async function applyStageFact(
   stage: 'implement' | 'review',
   label: string,
   context: DeriveContext,
+  /** WS-2: on the MIGRATED session path, set this assignee inside the same
+   * work-start CAS payload (never a separate write). Null → no fold. Only the
+   * `implement` caller passes it; on the ladder path the caller writes assignee
+   * itself, so this stays null there. */
+  foldAssignee: string | null = null,
 ): Promise<void> {
   // Refuse terminal assignments BEFORE switching the engagement — facts are
   // frozen, so a stage switch would leave the engagement ahead of a fact that
@@ -428,18 +435,41 @@ async function applyStageFact(
       prevStage,
       stage,
       by: await inferActor(options),
+      // Fold the assignee-set into the work-start CAS payload (migrated only —
+      // the bridge ignores it on the ladder path). Re-checks empty against the
+      // FRESH locked content so a concurrent assignee-set can't be clobbered.
+      ...(foldAssignee
+        ? {
+            foldMutate: (content: string) => {
+              const innerFm = parseAssignmentFrontmatter(content);
+              return innerFm.assignee === null
+                ? updateAssignmentFile(content, { assignee: foldAssignee })
+                : content;
+            },
+          }
+        : {}),
     });
     console.log(`✓ ${label}`);
     return;
   }
-  // Sessionless fallback (legacy escape hatch): direct fact write.
-  const write =
-    stage === 'implement' ? { implementationStarted: true } : { reviewRequested: true };
+  // Sessionless fallback (legacy escape hatch): direct fact write. When a
+  // migrated `implement` folded its assignee here (the caller skipped the
+  // standalone assignee write), carry it in THIS locked write so it isn't
+  // dropped — re-checking empty against the fresh locked content.
   await assertFact(
     assignment,
     options,
     stage === 'implement' ? 'implement' : 'request-review',
-    (content) => updateAssignmentFile(content, write),
+    (content) => {
+      const innerFm = parseAssignmentFrontmatter(content);
+      const base =
+        stage === 'implement' ? { implementationStarted: true } : { reviewRequested: true };
+      const write =
+        foldAssignee && innerFm.assignee === null
+          ? { ...base, assignee: foldAssignee }
+          : base;
+      return updateAssignmentFile(content, write);
+    },
     label,
     { context },
   );
@@ -486,10 +516,17 @@ export async function implementStartedCommand(assignment: string, options: Deriv
     }
   }
 
+  const assigneeIfEmpty = options.agent && fm.assignee === null ? options.agent : null;
+  const migrated = await isStagesMigrated();
+
   // The `--agent` assignee write stays a verb concern, DECOUPLED from the
   // stage-fact bridge (the bridge early-returns on an empty fact delta and would
   // otherwise drop an assignee-only update; stage-fact-status-bridge Decision 10).
-  if (options.agent && fm.assignee === null) {
+  //
+  // WS-2 (codex r2 finding 5): on the MIGRATED path the assignee folds into the
+  // work-start engine CAS payload (below) instead of a separate write that would
+  // race the engine CAS — so skip the standalone assertFact when migrated.
+  if (assigneeIfEmpty && !migrated) {
     await assertFact(
       assignment,
       options,
@@ -497,7 +534,7 @@ export async function implementStartedCommand(assignment: string, options: Deriv
       (content) => {
         const innerFm = parseAssignmentFrontmatter(content);
         return innerFm.assignee === null
-          ? updateAssignmentFile(content, { assignee: options.agent! })
+          ? updateAssignmentFile(content, { assignee: assigneeIfEmpty })
           : content;
       },
       'Assignee set',
@@ -506,8 +543,18 @@ export async function implementStartedCommand(assignment: string, options: Deriv
   }
 
   // Engagement-sourced `implementationStarted`: switch the session's engagement
-  // to the `implement` stage and let the bridge assert the fact + recompute.
-  await applyStageFact(assignment, options, target, fm, 'implement', 'Implementation started', context);
+  // to the `implement` stage and let the bridge assert the fact + recompute. On
+  // the migrated session path, the assignee-set rides along in that same CAS.
+  await applyStageFact(
+    assignment,
+    options,
+    target,
+    fm,
+    'implement',
+    'Implementation started',
+    context,
+    migrated ? assigneeIfEmpty : null,
+  );
 }
 
 // ── block / unblock (fact form) ─────────────────────────────────────────────
@@ -542,6 +589,23 @@ export async function statusPinCommand(
   status: string,
   options: DeriveVerbOptions,
 ): Promise<void> {
+  // WS-2 (Decision 1): migrated → a pin is a `manual-override` engine move to
+  // stage `status` (parity with the dashboard drag), stamping the crossed
+  // failing gates. `null` ⇒ not migrated / no per-file workflow → ladder pin.
+  const target = await resolveTarget(assignment, options);
+  const engineOverride = await runEngineOverride({
+    assignmentPath: target.assignmentPath,
+    projectDir: target.projectDir,
+    status,
+    by: await inferActor(options),
+    reason: options.reason,
+  });
+  if (engineOverride) {
+    if (!engineOverride.ok) throw new Error(engineOverride.message);
+    console.log(`Pinned to ${engineOverride.status}`);
+    return;
+  }
+
   const context: DeriveContext = await resolveTicketContext(assignment, options);
   if (!context.knownStatusIds.has(status)) {
     throw new Error(`"${status}" is not a defined status id.`);
@@ -567,6 +631,21 @@ export async function statusPinCommand(
 }
 
 export async function statusUnpinCommand(assignment: string, options: DeriveVerbOptions): Promise<void> {
+  // WS-2 (Decision 1): migrated → unpin has no engine analogue (position is
+  // authoritative) → `runEngineOverride` refuses (deferred to WS-4). `null` ⇒
+  // not migrated → the ladder unpin clears the `override` field.
+  const target = await resolveTarget(assignment, options);
+  const engineOverride = await runEngineOverride({
+    assignmentPath: target.assignmentPath,
+    projectDir: target.projectDir,
+    status: null,
+    by: await inferActor(options),
+  });
+  if (engineOverride) {
+    if (!engineOverride.ok) throw new Error(engineOverride.message);
+    console.log('Unpinned');
+    return;
+  }
   await assertFact(assignment, options, 'unpin', (content) => updateOverride(content, null), 'Unpinned');
 }
 
@@ -580,6 +659,11 @@ export async function recomputeCommand(
   // sweeps use (D6) — so a SessionEnd hook firing `recompute` can't re-derive
   // pre-migration assignments during rollout. A bare `syntaur recompute`
   // (explicit human/agent act) stays ungated.
+  //
+  // WS-2 Decision 2: this gate stays on `isDeriveMigrated()`. The stage engine
+  // is chosen (or not) by a branch INSIDE recomputeAndWrite on
+  // `isStagesMigrated() && ctx.stageWorkflow`; it must never be gated here or
+  // the live ladder recompute would stop until WS-3 flips the stages marker.
   if (options.ifMigrated && !(await isDeriveMigrated())) return;
 
   const { context, workflowResolver } = await resolveRecomputeContext();

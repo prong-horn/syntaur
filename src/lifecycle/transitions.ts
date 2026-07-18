@@ -6,13 +6,14 @@ import { getTargetStatus } from './state-machine.js';
 import { appendStatusHistoryEntry, parseAssignmentFrontmatter, updateAssignmentFile } from './frontmatter.js';
 import { recordStatusEvent, resolveActor, emitEvent } from './event-emit.js';
 import {
-  completeLinkedTodos,
-  reopenLinkedTodos,
+  runTerminalSideEffects,
   type LinkedTodosLookup,
 } from './linked-todos.js';
 import type { TransitionCommand, TransitionResult, AssignmentFrontmatter } from './types.js';
 
-function linkedAssignmentRef(frontmatter: AssignmentFrontmatter): string {
+/** The linked-todo reference id for an assignment (`project/slug` or bare id).
+ *  Exported so the WS-2 engine callers compute the SAME ref. */
+export function linkedAssignmentRef(frontmatter: AssignmentFrontmatter): string {
   return frontmatter.project ? `${frontmatter.project}/${frontmatter.slug}` : frontmatter.id;
 }
 
@@ -23,19 +24,17 @@ async function applyLinkedTodosSideEffect(
   frontmatter: AssignmentFrontmatter,
   terminalStatuses?: ReadonlySet<string>,
 ): Promise<void> {
-  if (!lookup) return;
-  const ref = linkedAssignmentRef(frontmatter);
   // Auto-complete linked todos when the parent finishes via the SUCCESS path.
   // Keyed on `command === 'complete'` reaching a terminal (not the literal
   // status `'completed'`) so a custom workflow whose completion terminal is
   // renamed (e.g. `done`) is handled the same as the built-in — and so `fail`,
-  // which also reaches a terminal, never completes the children.
+  // which also reaches a terminal, never completes the children. This exact
+  // predicate is preserved verbatim (WS-2 shared helper is predicate-agnostic).
   const terminals = terminalStatuses ?? new Set(['completed', 'failed']);
-  if (command === 'complete' && terminals.has(targetStatus)) {
-    await completeLinkedTodos(lookup, frontmatter.id, ref);
-  } else if (command === 'reopen') {
-    await reopenLinkedTodos(lookup, frontmatter.id, ref);
-  }
+  await runTerminalSideEffects(lookup, frontmatter.id, linkedAssignmentRef(frontmatter), {
+    isSuccessTerminal: command === 'complete' && terminals.has(targetStatus),
+    isReopen: command === 'reopen',
+  });
 }
 
 function resolveAssignmentPath(projectDir: string, assignmentSlug: string): string {

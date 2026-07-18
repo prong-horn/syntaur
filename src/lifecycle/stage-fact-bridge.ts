@@ -26,7 +26,7 @@ import { readFile } from 'node:fs/promises';
 import { fileExists } from '../utils/fs.js';
 import { parseAssignmentFrontmatter, updateAssignmentFile } from './frontmatter.js';
 import type { AssignmentFrontmatter } from './types.js';
-import { recomputeAndWrite, resolveRecomputeContext } from './recompute.js';
+import { recomputeAndWrite, resolveRecomputeContext, isStagesMigrated } from './recompute.js';
 
 export interface StageFactInput {
   /** Path to the target assignment.md (the caller resolves it — honours --dir
@@ -42,6 +42,12 @@ export interface StageFactInput {
   prevStage?: string | null;
   /** Actor for the history entry — 'agent:<id>' | 'human' | 'system'. */
   by?: string | null;
+  /** WS-2: an extra frontmatter mutation folded into the MIGRATED work-start
+   * CAS payload (e.g. the `implement --agent` assignee-set) so it lands in the
+   * SAME write as the engine move — never a separate frontmatter write that
+   * would race the engine CAS (codex r2 finding 5). Ignored on the ladder path
+   * (the caller keeps its own separate locked write there). */
+  foldMutate?: (content: string) => string;
 }
 
 type ScalarWrites = Partial<
@@ -75,6 +81,37 @@ function computeDelta(
 
 export async function assertStageFactOnOpen(input: StageFactInput): Promise<void> {
   if (!(await fileExists(input.assignmentPath))) return; // nothing to assert against
+
+  // WS-2 (Decision 1): on the MIGRATED path a stage-open is a `work-start`
+  // ENGINE move (traverse the stage's `on: work-start` route), NOT a fact
+  // assertion — the three session-stage facts are retired in the engine world.
+  // The ladder fact-assertion below stays live for the unmigrated case.
+  if (await isStagesMigrated()) {
+    const { context, workflowResolver } = await resolveRecomputeContext();
+    const result = await recomputeAndWrite(input.assignmentPath, {
+      cause: 'work-start',
+      by: input.by ?? 'system',
+      projectDir: input.projectDir,
+      context,
+      workflowResolver,
+      engineMove: { kind: 'work-start', actor: input.by ?? undefined },
+      // Fold the assignee-set (etc.) into the SAME CAS payload as the move.
+      ...(input.foldMutate ? { mutate: (content) => input.foldMutate!(content) } : {}),
+    });
+    if (result.deferredTerminal) {
+      throw new Error(
+        `Assignment is ${result.status} (terminal) — facts are frozen. Use \`syntaur reopen\` first.`,
+      );
+    }
+    if (result.warning) throw new Error(result.warning);
+    // Only the ENGINE path retires the session-stage facts. If the marker is set
+    // but this assignment resolves to NO per-file workflow (rollout-dormant), the
+    // recompute fell through to the ladder derive WITHOUT the work-start move —
+    // so `implementationStarted`/`reviewRequested` were never asserted. Fall
+    // through to the legacy fact assertion below (codex review blocker 3). Any
+    // folded assignee already landed via the mutate above.
+    if (result.viaEngine) return;
+  }
 
   // AC4 fast-path: cheap pre-lock read to skip the recompute entirely when there
   // is clearly no fact change. This is only an OPTIMIZATION — the authoritative,

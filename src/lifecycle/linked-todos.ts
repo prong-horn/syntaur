@@ -76,6 +76,30 @@ async function lastLogEntryMatches(
   return false;
 }
 
+/**
+ * The shared terminal side-effect dispatcher (WS-2). BOTH the ladder path
+ * (`transitions.ts`) and the engine path call this, each computing
+ * `isSuccessTerminal` / `isReopen` in its OWN idiom — the ladder from
+ * `command === 'complete' && terminals.has(target)` (preserving today's exact
+ * predicate, so the ladder is byte-for-byte unchanged), the engine from
+ * `finalStage.terminal && finalStage.id !== workflow.terminalFailure`. The
+ * helper itself is predicate-agnostic → no drift. Call AFTER the status write
+ * (and, on the engine path, after lock release).
+ */
+export async function runTerminalSideEffects(
+  lookup: LinkedTodosLookup | undefined,
+  assignmentId: string,
+  assignmentRef: string,
+  opts: { isSuccessTerminal: boolean; isReopen: boolean },
+): Promise<void> {
+  if (!lookup) return;
+  if (opts.isSuccessTerminal) {
+    await completeLinkedTodos(lookup, assignmentId, assignmentRef);
+  } else if (opts.isReopen) {
+    await reopenLinkedTodos(lookup, assignmentId, assignmentRef);
+  }
+}
+
 export async function completeLinkedTodos(
   lookup: LinkedTodosLookup,
   assignmentId: string,

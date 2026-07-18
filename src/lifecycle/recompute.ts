@@ -24,7 +24,10 @@ import { getWorkflowBundle, DEFAULT_WORKFLOW_ID } from '../utils/workflow-resolv
 import { fileExists, writeFileForce } from '../utils/fs.js';
 import { syntaurRoot } from '../utils/paths.js';
 import { nowTimestamp } from '../utils/timestamp.js';
-import { computeFacts } from './facts.js';
+import { computeFacts, resolveBindingEnv } from './facts.js';
+import { computeEngineStep, type EngineMove } from './engine-step.js';
+import { appendComment } from './comment-append.js';
+import type { AssignmentFrontmatter } from './types.js';
 import { deriveDimensions, type DerivedDimensions } from './derive.js';
 import { buildDeriveContext, type DeriveContext } from './derive-context.js';
 import {
@@ -67,6 +70,27 @@ export async function isDeriveMigrated(): Promise<boolean> {
 
 export async function markDeriveMigrated(): Promise<void> {
   await writeFileForce(resolve(syntaurRoot(), MIGRATION_MARKER), `${nowTimestamp()}\n`);
+}
+
+/**
+ * The stage-engine activation marker (Phase 1 / WS-2). SEPARATE from
+ * `derive-migrated` on purpose (WS-2 Decision 2): the sweep gates
+ * (`server.ts`, `derive-verbs.ts`) stay on `isDeriveMigrated()` so the ladder
+ * keeps moving the live board; the engine-vs-ladder choice is a branch INSIDE
+ * {@link recomputeAndWrite} gated on `isStagesMigrated() && ctx.stageWorkflow`.
+ * The marker stays UNSET through WS-2 (the engine wiring is dormant, exercised
+ * only by fixtures that set it) — WS-3's migration calls
+ * {@link markStagesMigrated} after seeding per-file workflows + stage positions
+ * on all live tickets, flipping the whole board onto the engine at once.
+ */
+const STAGES_MARKER = 'stages-migrated';
+
+export async function isStagesMigrated(): Promise<boolean> {
+  return fileExists(resolve(syntaurRoot(), STAGES_MARKER));
+}
+
+export async function markStagesMigrated(): Promise<void> {
+  await writeFileForce(resolve(syntaurRoot(), STAGES_MARKER), `${nowTimestamp()}\n`);
 }
 
 /** Resolve the derive context for ONE workflow id (default `'default'`) from
@@ -188,6 +212,12 @@ export interface RecomputeOptions {
    * behavior on dimension-stable mutations bit-for-bit.
    */
   auditMutation?: boolean;
+  /**
+   * WS-2 (migrated path): the write-move that drives the engine step. Default
+   * `{kind:'gate'}` (a fact-change recompute cascades gate routes). Ignored on
+   * the ladder path (marker unset / no per-file workflow).
+   */
+  engineMove?: EngineMove;
 }
 
 export interface RecomputeResult {
@@ -199,6 +229,11 @@ export interface RecomputeResult {
   deferredTerminal: boolean;
   /** Set when CAS retries were exhausted — caller should surface it. */
   warning?: string;
+  /** WS-2: the write went through the stage engine (vs the ladder). */
+  viaEngine?: boolean;
+  /** WS-2: this write landed the ticket on a SUCCESS terminal stage — the caller
+   * runs the terminal side effects (linked-todos) after lock release (Task 2.5). */
+  successTerminal?: boolean;
 }
 
 /**
@@ -211,6 +246,16 @@ export async function recomputeAndWrite(
   opts: RecomputeOptions,
 ): Promise<RecomputeResult> {
   const assignmentDir = dirname(assignmentPath);
+  // WS-2 Decision 2: the engine-vs-ladder choice is IN here (not the sweep
+  // gates). `stages-migrated` unset OR no per-file workflow → the ladder path,
+  // byte-for-byte unchanged (golden-tested).
+  const stagesMigrated = await isStagesMigrated();
+  // Engine success is captured here and returned AFTER the lock releases, so its
+  // dissent-note copy (an external comments.md side effect) runs post-release,
+  // not while holding the assignment lock (codex review major 4).
+  let engineResult: RecomputeResult | null = null;
+  let engineDissentNotes: Array<{ author: string; body: string }> = [];
+  let engineDissentRef = '';
   const release = await acquireLock(assignmentDir);
   try {
     for (let attempt = 0; attempt < CAS_RETRIES; attempt++) {
@@ -225,10 +270,25 @@ export async function recomputeAndWrite(
       // `workflow`/`type` binding fields don't change under a fact mutate, so
       // resolving from `originalFm` is stable for this transaction. Absent
       // resolver → the default-lifecycle `context` (legacy single-workflow).
-      const ctx = opts.workflowResolver
-        ? (await opts.workflowResolver.forAssignment(originalFm, opts.projectDir)).deriveContext
-        : opts.context;
-      if (ctx.terminalStatuses.has(originalFm.status)) {
+      const wctx = opts.workflowResolver
+        ? await opts.workflowResolver.forAssignment(originalFm, opts.projectDir)
+        : null;
+      const ctx = wctx ? wctx.deriveContext : opts.context;
+      const stageWorkflow = stagesMigrated ? (wctx?.stageWorkflow ?? null) : null;
+      const engineActive = stageWorkflow !== null;
+
+      // Terminal set: the engine's own terminal STAGE ids when migrated (codex
+      // r3 finding 5 — the legacy `DeriveContext` terminal set may differ), else
+      // the workflow's `completed/failed` set.
+      const terminalStatuses =
+        engineActive && stageWorkflow
+          ? new Set(stageWorkflow.stages.filter((s) => s.terminal).map((s) => s.id))
+          : ctx.terminalStatuses;
+
+      const move: EngineMove = opts.engineMove ?? { kind: 'gate' };
+      // Terminal defer: a frozen terminal ticket does not re-derive (a `reopen`
+      // move is the only way out). Engine path uses the engine terminal set.
+      if (terminalStatuses.has(originalFm.status) && !(engineActive && move.kind === 'reopen')) {
         return { changed: false, status: originalFm.status, dimensions: null, deferredTerminal: true };
       }
 
@@ -237,14 +297,100 @@ export async function recomputeAndWrite(
       const mutated = content !== original;
       const frontmatter = mutated ? parseAssignmentFrontmatter(content) : originalFm;
 
+      // Per-dependency terminal predicate (codex r4): resolve each dependency's
+      // OWN workflow terminal set so a mixed-workflow edge isn't misclassified.
+      const depTerminalFor =
+        engineActive && opts.workflowResolver
+          ? async (depFm: AssignmentFrontmatter): Promise<ReadonlySet<string> | null> => {
+              const sw = await opts.workflowResolver!.stageWorkflowFor(depFm, opts.projectDir);
+              return sw ? new Set(sw.stages.filter((s) => s.terminal).map((s) => s.id)) : null;
+            }
+          : undefined;
+
       const facts = await computeFacts({
         assignmentDir,
         frontmatter,
         body: extractBody(content),
         projectDir: opts.projectDir,
-        terminalStatuses: ctx.terminalStatuses,
+        terminalStatuses,
         declarations: ctx.factDeclarations,
+        depTerminalFor,
       });
+
+      // ── WS-2 engine branch (dormant until `stages-migrated` + a per-file
+      //    workflow). Runs the pure engine step, assembles the single CAS
+      //    payload, writes once. Falls back to the ladder if the stored status
+      //    isn't a stage in this workflow. ─────────────────────────────────────
+      if (engineActive && stageWorkflow) {
+        const at = nowTimestamp();
+        const env = await resolveBindingEnv(stageWorkflow, frontmatter, assignmentDir);
+        const step = computeEngineStep({
+          content,
+          frontmatter,
+          facts,
+          workflow: stageWorkflow,
+          env,
+          move,
+          cause: opts.cause,
+          by: opts.by,
+          reason: opts.reason,
+          at,
+        });
+        if (step) {
+          if (!step.changed) {
+            // No engine movement — but a fact mutation still has to land.
+            if (mutated) {
+              const cur = await readFile(assignmentPath, 'utf-8');
+              if (contentHash(cur) !== hash) continue;
+              await writeFileForce(assignmentPath, content);
+              return {
+                changed: true,
+                status: step.finalStatus,
+                dimensions: null,
+                deferredTerminal: false,
+                viaEngine: true,
+              };
+            }
+            return {
+              changed: false,
+              status: step.finalStatus,
+              dimensions: null,
+              deferredTerminal: false,
+              viaEngine: true,
+            };
+          }
+          const cur = await readFile(assignmentPath, 'utf-8');
+          if (contentHash(cur) !== hash) continue;
+          await writeFileForce(assignmentPath, step.nextContent);
+          if (step.finalStatus !== originalFm.status) {
+            recordStatusEvent({
+              assignmentId: frontmatter.id,
+              projectSlug: frontmatter.project,
+              at,
+              actor: resolveActor(opts.by),
+              from: originalFm.status,
+              to: step.finalStatus,
+              command: opts.cause,
+            });
+          }
+          // Task 2.7: capture each newly-fired dissent note; the copy into
+          // comments.md runs AFTER the lock releases (major 4). Best-effort there.
+          engineDissentNotes = step.firedDissents
+            .filter((d): d is typeof d & { note: string } => Boolean(d.note))
+            .map((d) => ({ author: d.actor, body: d.note }));
+          engineDissentRef = frontmatter.slug || frontmatter.id;
+          engineResult = {
+            changed: true,
+            status: step.finalStatus,
+            dimensions: null,
+            deferredTerminal: false,
+            viaEngine: true,
+            successTerminal: step.successTerminal,
+          };
+          break;
+        }
+        // step === null → the stored status isn't a stage here; fall through.
+      }
 
       const dims = deriveDimensions({
         facts,
@@ -332,17 +478,43 @@ export async function recomputeAndWrite(
 
       return { changed: true, status: dims.status, dimensions: dims, deferredTerminal: false };
     }
-    const frontmatter = parseAssignmentFrontmatter(await readFile(assignmentPath, 'utf-8'));
-    return {
-      changed: false,
-      status: frontmatter.status,
-      dimensions: null,
-      deferredTerminal: false,
-      warning: `recompute skipped after ${CAS_RETRIES} concurrent-edit retries: ${assignmentPath}`,
-    };
+    // The loop ended. If the engine success path broke out, its result is
+    // finished post-release below; otherwise the CAS retries were exhausted.
+    if (!engineResult) {
+      const frontmatter = parseAssignmentFrontmatter(await readFile(assignmentPath, 'utf-8'));
+      return {
+        changed: false,
+        status: frontmatter.status,
+        dimensions: null,
+        deferredTerminal: false,
+        warning: `recompute skipped after ${CAS_RETRIES} concurrent-edit retries: ${assignmentPath}`,
+      };
+    }
   } finally {
     await release();
   }
+
+  // Lock released — run the engine's post-release side effects (Task 2.7 dissent
+  // note copy into comments.md; best-effort, never undoes the status move), then
+  // return the captured engine result (codex review major 4).
+  if (engineResult) {
+    for (const note of engineDissentNotes) {
+      try {
+        await appendComment({
+          assignmentDir,
+          assignmentRef: engineDissentRef,
+          author: note.author,
+          type: 'feedback',
+          body: note.body,
+        });
+      } catch {
+        /* best-effort: keep the status move even if the note copy fails */
+      }
+    }
+    return engineResult;
+  }
+  // Unreachable: the loop returned, threw, or set engineResult before breaking.
+  throw new Error(`recomputeAndWrite: no result after lock release for ${assignmentPath}`);
 }
 
 /**
