@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { Activity, CheckSquare, Square, Trash2 } from 'lucide-react';
+import { Activity, CheckSquare, ChevronDown, ChevronRight, Square, Trash2 } from 'lucide-react';
 import { CopyButton } from '../components/CopyButton';
 import { CopyLaunchCommandButton } from '../components/CopyLaunchCommandButton';
 import { SessionActionButtons } from '../components/SessionActionButtons';
@@ -11,7 +11,8 @@ import { EmptyState } from '../components/EmptyState';
 import { SearchInput } from '../components/SearchInput';
 import { FilterBar } from '../components/FilterBar';
 import { ConfirmDialog } from '../components/ConfirmDialog';
-import { formatDateTime, toTitleCase } from '../lib/format';
+import { formatCost, formatDateTime, formatTokens, toTitleCase } from '../lib/format';
+import { headerCheckState, selectableSessionIds } from '@shared/session-select';
 import type { AgentSession, AgentSessionWithLiveness } from '../types';
 
 type SessionSort =
@@ -20,7 +21,9 @@ type SessionSort =
   | 'duration_desc'
   | 'duration_asc'
   | 'assignment_asc'
-  | 'agent_asc';
+  | 'agent_asc'
+  | 'spend_desc'
+  | 'tokens_desc';
 
 interface PendingDelete {
   sessionIds: string[];
@@ -32,7 +35,7 @@ interface PendingDelete {
 export function AgentSessionsPage() {
   const { workspace } = useParams<{ workspace?: string }>();
   const { data: projectsData } = useProjects();
-  const { data, loading, error } = useAgentSessions();
+  const { data, loading, error } = useAgentSessions({ includeUsageOnly: true });
 const [search, setSearch] = useState('');
   const [startedFrom, setStartedFrom] = useState('');
   const [startedTo, setStartedTo] = useState('');
@@ -99,6 +102,7 @@ const [search, setSearch] = useState('');
         session.sessionId,
         session.path,
         session.description ?? '',
+        session.summary ?? '',
         session.transcriptPath ?? '',
       ]
         .join(' ')
@@ -110,6 +114,21 @@ const [search, setSearch] = useState('');
     return [...sessions].sort((left, right) => compareSessions(left, right, sort));
   }, [data, search, sort, startedFrom, startedTo, tick, workspace, projectsData]);
 
+  const headerState = useMemo(
+    () => headerCheckState(filteredSessions, selectedIds),
+    [filteredSessions, selectedIds],
+  );
+
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
+  function toggleExpand(sessionId: string) {
+    setExpandedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(sessionId)) next.delete(sessionId);
+      else next.add(sessionId);
+      return next;
+    });
+  }
+
   function toggleSelection(sessionId: string) {
     setSelectedIds((prev) => {
       const next = new Set(prev);
@@ -120,11 +139,11 @@ const [search, setSearch] = useState('');
   }
 
   function toggleSelectAll() {
-    if (selectedIds.size === filteredSessions.length && filteredSessions.length > 0) {
-      setSelectedIds(new Set());
-    } else {
-      setSelectedIds(new Set(filteredSessions.map((s) => s.sessionId)));
-    }
+    // Usage-only rows have no session record to act on, so they are never
+    // selected — otherwise a bulk delete would target ids that do not exist.
+    const eligible = selectableSessionIds(filteredSessions);
+    if (headerState === 'all') setSelectedIds(new Set());
+    else setSelectedIds(new Set(eligible));
   }
 
   async function handleDelete(ids: string[]) {
@@ -208,6 +227,8 @@ const [search, setSearch] = useState('');
           <option value="started_asc">Oldest first</option>
           <option value="assignment_asc">Assignment A-Z</option>
           <option value="agent_asc">Agent A-Z</option>
+          <option value="spend_desc">Most expensive</option>
+          <option value="tokens_desc">Most tokens</option>
         </select>
       </FilterBar>
 
@@ -258,20 +279,27 @@ const [search, setSearch] = useState('');
         />
       ) : (
         <div className="surface-panel mt-4 overflow-x-auto">
-          <table className="w-full min-w-[960px] table-fixed text-sm lg:min-w-[1280px]">
+          <table className="w-full min-w-[1100px] table-fixed text-sm lg:min-w-[1420px]">
             <thead>
               <tr className="border-b border-border/40 text-left text-xs uppercase tracking-wider text-muted-foreground">
                 <th className="w-[32px] pb-2 pr-3">
-                  <button onClick={toggleSelectAll} className="text-muted-foreground hover:text-foreground">
-                    {selectedIds.size === filteredSessions.length && filteredSessions.length > 0
+                  <button
+                    onClick={toggleSelectAll}
+                    className="text-muted-foreground hover:text-foreground disabled:opacity-40"
+                    disabled={selectableSessionIds(filteredSessions).length === 0}
+                    title={headerState === 'all' ? 'Clear selection' : 'Select all'}
+                  >
+                    {headerState === 'all'
                       ? <CheckSquare className="h-4 w-4" />
-                      : <Square className="h-4 w-4" />}
+                      : <Square className={headerState === 'some' ? 'h-4 w-4 text-primary' : 'h-4 w-4'} />}
                   </button>
                 </th>
                 <th className="w-[140px] pb-2 pr-3">Project</th>
                 <th className="w-[160px] pb-2 pr-3">Assignment</th>
                 <th className="w-[200px] pb-2 pr-3">Description</th>
                 <th className="w-[110px] pb-2 pr-3">Agent</th>
+                <th className="w-[90px] pb-2 pr-3 text-right">Cost</th>
+                <th className="w-[100px] pb-2 pr-3 text-right">Tokens</th>
                 <th className="hidden w-[130px] pb-2 pr-3 lg:table-cell">Session ID</th>
                 <th className="w-[140px] pb-2 pr-3">Started</th>
                 <th className="hidden w-[200px] pb-2 pr-3 lg:table-cell">Path</th>
@@ -296,6 +324,8 @@ const [search, setSearch] = useState('');
                   }
                   onMarkStopped={handleMarkStopped}
                   onCopyError={setDeleteError}
+                  expanded={expandedIds.has(session.sessionId)}
+                  onToggleExpand={() => toggleExpand(session.sessionId)}
                 />
               ))}
             </tbody>
@@ -334,6 +364,8 @@ function SessionRow({
   onDelete,
   onMarkStopped,
   onCopyError,
+  expanded,
+  onToggleExpand,
 }: {
   session: AgentSessionWithLiveness;
   selected: boolean;
@@ -341,6 +373,8 @@ function SessionRow({
   onDelete: () => void;
   onMarkStopped: (sessionId: string) => void;
   onCopyError: (message: string) => void;
+  expanded: boolean;
+  onToggleExpand: () => void;
 }) {
   const wsPrefix = useWorkspacePrefix();
   const shortId = session.sessionId.length > 12
@@ -352,11 +386,26 @@ function SessionRow({
   const shortTranscript = session.transcriptPath
     ? session.transcriptPath.replace(/^\/Users\/[^/]+/, '~')
     : '\u2014';
+  const modelBreakdown = session.usage?.models.length
+    ? session.usage.models
+        .map((m) => `${m.model}: ${formatCost(m.cost)} \u00b7 ${formatTokens(m.tokens)} tokens`)
+        .join('\n')
+    : undefined;
+  // The summary is what the expand row / description tooltip shows; a row is
+  // only worth expanding when it has a summary or a usage breakdown.
+  const canExpand = Boolean(session.summary) || Boolean(session.usage?.models.length);
+  const isAuto = session.descriptionSource === 'auto';
 
   return (
+    <>
     <tr className="border-b border-border/20 last:border-0">
       <td className="py-2 pr-3">
-        <button onClick={onToggle} className="text-muted-foreground hover:text-foreground">
+        <button
+          onClick={onToggle}
+          className="text-muted-foreground hover:text-foreground disabled:opacity-30"
+          disabled={session.usageOnly}
+          title={session.usageOnly ? 'Usage-only rows cannot be selected' : undefined}
+        >
           {selected ? <CheckSquare className="h-4 w-4" /> : <Square className="h-4 w-4" />}
         </button>
       </td>
@@ -400,8 +449,20 @@ function SessionRow({
       </td>
       <td className="py-2 pr-3">
         {session.description ? (
-          <div className="truncate text-xs text-muted-foreground" title={session.description}>
-            {session.description}
+          <div
+            className="flex items-center gap-1 truncate text-xs text-muted-foreground"
+            // Hovering the description surfaces the fuller summary without an expand.
+            title={session.summary ? `${session.description}\n\n${session.summary}` : session.description}
+          >
+            {isAuto && (
+              <span
+                className="shrink-0 rounded bg-primary/10 px-1 text-[9px] font-medium uppercase text-primary"
+                title="Auto-generated from the session transcript"
+              >
+                auto
+              </span>
+            )}
+            <span className="truncate">{session.description}</span>
           </div>
         ) : (
           <span className="text-muted-foreground">&mdash;</span>
@@ -411,7 +472,21 @@ function SessionRow({
         <span className="flex min-w-0 items-center gap-1.5">
           <Activity className="h-3 w-3 shrink-0 text-muted-foreground" />
           <span className="block min-w-0 truncate">{session.agent}</span>
+          {session.usageOnly && (
+            <span
+              className="shrink-0 rounded bg-muted px-1 py-0.5 text-[9px] font-mono uppercase tracking-wide text-muted-foreground"
+              title="Spend recorded by the usage collector for a session Syntaur never tracked — no transcript or actions available."
+            >
+              Usage only
+            </span>
+          )}
         </span>
+      </td>
+      <td className="py-2 pr-3 text-right text-xs tabular-nums" title={modelBreakdown}>
+        {session.usage ? formatCost(session.usage.totalCost) : <span className="text-muted-foreground">&mdash;</span>}
+      </td>
+      <td className="py-2 pr-3 text-right text-xs tabular-nums text-muted-foreground" title={modelBreakdown}>
+        {session.usage ? formatTokens(session.usage.totalTokens) : <span>&mdash;</span>}
       </td>
       <td className="hidden py-2 pr-3 lg:table-cell">
         <span className="flex min-w-0 items-center gap-1.5">
@@ -456,17 +531,68 @@ function SessionRow({
       </td>
       <td className="py-2">
         <div className="flex items-center gap-1.5">
-          <SessionActionButtons session={session} onMarkStopped={onMarkStopped} />
-          <button
-            onClick={onDelete}
-            className="text-muted-foreground hover:text-destructive"
-            title="Delete session"
-          >
-            <Trash2 className="h-3.5 w-3.5" />
-          </button>
+          {canExpand && (
+            <button
+              onClick={onToggleExpand}
+              className="text-muted-foreground hover:text-foreground"
+              title={expanded ? 'Hide summary' : 'Show summary'}
+              aria-expanded={expanded}
+            >
+              {expanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+            </button>
+          )}
+          {/* Usage-only rows have no sessions record: nothing to attach, stop, or delete. */}
+          {!session.usageOnly && (
+            <>
+              <SessionActionButtons session={session} onMarkStopped={onMarkStopped} />
+              <button
+                onClick={onDelete}
+                className="text-muted-foreground hover:text-destructive"
+                title="Delete session"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+              </button>
+            </>
+          )}
+          {session.usageOnly && !canExpand && <span className="text-muted-foreground">&mdash;</span>}
         </div>
       </td>
     </tr>
+    {expanded && canExpand && (
+      <tr className="border-b border-border/20 bg-muted/20">
+        <td colSpan={12} className="px-8 py-3">
+          <div className="flex flex-col gap-3 text-xs">
+            {session.summary && (
+              <div>
+                <div className="mb-1 font-medium uppercase tracking-wide text-muted-foreground">Summary</div>
+                <p className="max-w-3xl text-foreground/90">{session.summary}</p>
+              </div>
+            )}
+            {session.usage?.models.length ? (
+              <div>
+                <div className="mb-1 font-medium uppercase tracking-wide text-muted-foreground">
+                  Spend by model
+                </div>
+                <table className="text-xs">
+                  <tbody>
+                    {session.usage.models.map((m) => (
+                      <tr key={m.model}>
+                        <td className="pr-4 font-mono text-muted-foreground">{m.model}</td>
+                        <td className="pr-4 text-right tabular-nums">{formatCost(m.cost)}</td>
+                        <td className="text-right tabular-nums text-muted-foreground">
+                          {formatTokens(m.tokens)} tokens
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : null}
+          </div>
+        </td>
+      </tr>
+    )}
+    </>
   );
 }
 
@@ -508,6 +634,12 @@ function compareSessions(left: AgentSession, right: AgentSession, sort: SessionS
     case 'agent_asc':
       return left.agent.localeCompare(right.agent)
         || (left.assignmentSlug ?? '').localeCompare(right.assignmentSlug ?? '');
+    case 'spend_desc':
+      return (right.usage?.totalCost ?? 0) - (left.usage?.totalCost ?? 0)
+        || right.started.localeCompare(left.started);
+    case 'tokens_desc':
+      return (right.usage?.totalTokens ?? 0) - (left.usage?.totalTokens ?? 0)
+        || right.started.localeCompare(left.started);
     default:
       return 0;
   }

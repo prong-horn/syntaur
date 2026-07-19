@@ -64,7 +64,7 @@ afterEach(async () => {
 });
 
 describe('v6 → v7 migration (adds hosted_by)', () => {
-  it('preserves rows, adds NULL hosted_by, bumps version to 7', () => {
+  it('preserves rows, adds NULL hosted_by, bumps version to head', () => {
     buildV6Db(dbPath);
     initSessionDb(dbPath);
     const db = getSessionDb();
@@ -82,17 +82,17 @@ describe('v6 → v7 migration (adds hosted_by)', () => {
 
     expect(
       (db.prepare("SELECT value FROM meta WHERE key='schema_version'").get() as { value: string }).value,
-    ).toBe('7');
+    ).toBe('8');
   });
 
-  it('fresh install has hosted_by directly and version 7', () => {
+  it('fresh install has hosted_by directly and head version', () => {
     initSessionDb(dbPath); // no prior file
     const db = getSessionDb();
     const cols = (db.prepare('PRAGMA table_info(sessions)').all() as Array<{ name: string }>).map((c) => c.name);
     expect(cols).toContain('hosted_by');
     expect(
       (db.prepare("SELECT value FROM meta WHERE key='schema_version'").get() as { value: string }).value,
-    ).toBe('7');
+    ).toBe('8');
   });
 
   it('appendSession round-trips hostedBy; a later upsert WITHOUT it does not clobber (hook convergence)', async () => {

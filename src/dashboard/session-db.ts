@@ -9,8 +9,13 @@ import { backfillEngagements } from '../db/engagement-backfill.js';
 
 let db: Database.Database | null = null;
 
-const SCHEMA_VERSION = '7';
+const SCHEMA_VERSION = '8';
 
+// v8 base schema: v7 plus the auto-summary columns — `summary` (short blurb
+// generated from the transcript), `summarized_at`, and `description_source`
+// ('human' | 'auto' | NULL) which protects a human-written description from
+// ever being overwritten by the summarizer.
+//
 // v7 base schema: v6 plus `hosted_by` (which backend hosts the live PTY:
 // 'syntaurd' | 'tmux'; NULL = the session predates the daemon → eligible
 // for the tmux attach/launch fallback gate).
@@ -34,11 +39,42 @@ CREATE TABLE IF NOT EXISTS sessions (
   original_head_sha TEXT,
   activity TEXT,
   hosted_by TEXT,
+  summary TEXT,
+  summarized_at TEXT,
+  description_source TEXT,
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_sessions_status ON sessions(status);
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT);
+`;
+
+/**
+ * Lease + retry state for the session summarizer, one row per session.
+ *
+ * Two processes trigger summarization — the dashboard autodiscovery interval
+ * and the LaunchAgent-invoked `syntaur session scan` — and each LLM call costs
+ * money, so the claim must be atomic ACROSS processes. `claim_token` makes
+ * ownership explicit: release and finalization are token-matched, so a worker
+ * whose lease went stale can never clobber a newer worker's claim.
+ *
+ * Retry state lives here rather than in memory because the LaunchAgent is a
+ * fresh process on every run — an in-memory cooldown would be invisible to it,
+ * and a capped newest-first sweep would retry the same doomed sessions forever.
+ *
+ * Created with `CREATE TABLE IF NOT EXISTS` at init, following the
+ * ENGAGEMENT_DDL precedent below: idempotent and therefore safe outside the
+ * migration transaction.
+ */
+export const SUMMARIZE_STATE_DDL = `
+CREATE TABLE IF NOT EXISTS summarize_state (
+  session_id      TEXT PRIMARY KEY,
+  claim_token     TEXT,
+  claimed_at      TEXT,
+  next_attempt_at TEXT,
+  attempts        INTEGER NOT NULL DEFAULT 0,
+  last_error      TEXT
+);
 `;
 
 /**
@@ -58,6 +94,10 @@ export function initSessionDb(dbPath?: string): Database.Database {
   // migration transaction — on the same footing as the base session tables.
   // The v5→v6 migration also runs this (harmlessly) before backfilling.
   db.exec(ENGAGEMENT_DDL);
+  // Same footing as ENGAGEMENT_DDL: idempotent CREATE TABLE IF NOT EXISTS, so
+  // it is safe here (outside the migration transaction). The v7→v8 step re-runs
+  // it harmlessly for databases that upgrade rather than install fresh.
+  db.exec(SUMMARIZE_STATE_DDL);
 
   // Track schema versions. Each subsystem owns its own row in `meta`
   // (mirrors usage-db.ts) so init order is irrelevant.
@@ -331,6 +371,63 @@ export function initSessionDb(dbPath?: string): Database.Database {
         ALTER TABLE sessions_v7 RENAME TO sessions;
         CREATE INDEX IF NOT EXISTS idx_sessions_status ON sessions(status);
         UPDATE meta SET value = '7' WHERE key = 'schema_version';
+      `);
+    }
+
+    // --- v7 → v8: add the auto-summary columns (`summary`, `summarized_at`,
+    // `description_source`) and seed provenance. Table-rebuild like every step
+    // above — never ALTER TABLE ADD COLUMN.
+    //
+    // Two backfills ride the same transaction:
+    //   1. Every existing non-empty description predates the summarizer, and
+    //      every current writer (POST body, track-session) is caller-set, so
+    //      they are all stamped 'human' — the summarizer must never overwrite
+    //      one.
+    //   2. `path = '/'` rows are cleared. Investigation showed those sessions
+    //      genuinely ran at filesystem root (headless ping-style transcripts
+    //      record cwd:"/" throughout); NULL is honest about an unknown cwd
+    //      where '/' actively misleads. See sanitizeSessionPath.
+    const vBeforeV8 = (
+      database
+        .prepare("SELECT value FROM meta WHERE key = 'schema_version'")
+        .get() as { value: string } | undefined
+    )?.value;
+
+    if (vBeforeV8 === '7') {
+      database.exec(`
+        CREATE TABLE sessions_v8 (
+          session_id TEXT PRIMARY KEY,
+          agent TEXT NOT NULL,
+          started TEXT NOT NULL,
+          ended TEXT,
+          status TEXT NOT NULL DEFAULT 'active',
+          path TEXT,
+          description TEXT,
+          transcript_path TEXT,
+          pid INTEGER,
+          pid_started_at TEXT,
+          original_head_sha TEXT,
+          activity TEXT,
+          hosted_by TEXT,
+          summary TEXT,
+          summarized_at TEXT,
+          description_source TEXT,
+          created_at TEXT NOT NULL DEFAULT (datetime('now')),
+          updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+        INSERT INTO sessions_v8
+          SELECT session_id, agent, started, ended, status, path, description,
+                 transcript_path, pid, pid_started_at, original_head_sha, activity,
+                 hosted_by, NULL, NULL, NULL, created_at, updated_at
+          FROM sessions;
+        DROP TABLE sessions;
+        ALTER TABLE sessions_v8 RENAME TO sessions;
+        CREATE INDEX IF NOT EXISTS idx_sessions_status ON sessions(status);
+        UPDATE sessions SET description_source = 'human'
+          WHERE description IS NOT NULL AND description != '';
+        UPDATE sessions SET path = NULL WHERE path = '/';
+        ${SUMMARIZE_STATE_DDL}
+        UPDATE meta SET value = '8' WHERE key = 'schema_version';
       `);
     }
   });

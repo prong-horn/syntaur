@@ -70,13 +70,32 @@ export async function derivePathFromTranscript(
   }
 }
 
+/**
+ * Normalize a would-be session path, rejecting degenerate values.
+ *
+ * `"/"` is treated as unknown rather than as a real working directory: headless
+ * ping-style sessions record `cwd:"/"` throughout their transcript, and storing
+ * a literal `/` makes the dashboard claim a session ran at filesystem root. A
+ * null path (rendered `—`) is honest about an unknown cwd; `/` is misleading.
+ *
+ * Pure and total — never throws.
+ */
+export function sanitizeSessionPath(path: string | null | undefined): string | null {
+  if (typeof path !== 'string') return null;
+  const trimmed = path.trim();
+  if (trimmed.length === 0 || trimmed === '/') return null;
+  return trimmed;
+}
+
 function extractCwd(line: string): string | null {
   const trimmed = line.trim();
   if (trimmed.length === 0 || trimmed[0] !== '{') return null;
   try {
     const parsed = JSON.parse(trimmed) as { cwd?: unknown };
-    if (typeof parsed.cwd === 'string' && parsed.cwd.length > 0) {
-      return parsed.cwd;
+    if (typeof parsed.cwd === 'string') {
+      // Degenerate values return null so the caller's scan CONTINUES — a later
+      // line carrying a real cwd can still win within the scan window.
+      return sanitizeSessionPath(parsed.cwd);
     }
   } catch {
     // Non-JSON or truncated line — keep scanning.

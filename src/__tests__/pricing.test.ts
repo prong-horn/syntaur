@@ -95,3 +95,57 @@ describe('priceForModel', () => {
     }
   });
 });
+
+describe('MODEL_ALIASES coverage of live model strings', () => {
+  /**
+   * Every distinct model string observed on zero-cost rows in the real usage DB
+   * (2026-07-18). These are the strings the serve-time fallback must price, and
+   * the reason `MODEL_ALIASES` exists: most do not normalize to a pricing key on
+   * their own.
+   *
+   * `syn:large:text` is the ONE deliberate exception — an opaque Synthetic tier
+   * alias with no public per-token rate, left unpriced per the module's
+   * canonical-source rule rather than guessed.
+   */
+  const LIVE_MODEL_STRINGS = [
+    '[pi] kimi-k2.6',
+    '[pi] hf:zai-org/GLM-5.1',
+    '[pi] glm-5.2',
+    '[pi] z-ai/glm-5.2',
+    '[pi] moonshotai/kimi-k2.7-code',
+  ];
+  const EXPECTED_UNPRICED = ['[pi] syn:large:text'];
+
+  it.each(LIVE_MODEL_STRINGS)('prices %s', (model) => {
+    const cost = priceForModel(model, {
+      inputTokens: 1_000_000,
+      outputTokens: 0,
+      cacheCreationTokens: 0,
+      cacheReadTokens: 0,
+    });
+    expect(cost).not.toBeNull();
+    expect(cost).toBeGreaterThan(0);
+  });
+
+  it.each(EXPECTED_UNPRICED)('leaves %s unpriced by design', (model) => {
+    expect(
+      priceForModel(model, {
+        inputTokens: 1_000_000,
+        outputTokens: 0,
+        cacheCreationTokens: 0,
+        cacheReadTokens: 0,
+      }),
+    ).toBeNull();
+  });
+
+  it('resolves org-less and alternate-org spellings to one canonical key', () => {
+    expect(normalizeModelKey('[pi] glm-5.2')).toBe('zai-org/glm-5.2');
+    expect(normalizeModelKey('[pi] z-ai/glm-5.2')).toBe('zai-org/glm-5.2');
+    expect(normalizeModelKey('[pi] hf:zai-org/GLM-5.2')).toBe('zai-org/glm-5.2');
+    expect(normalizeModelKey('kimi-k2.6')).toBe('moonshotai/kimi-k2.6');
+  });
+
+  it('leaves an unknown model string untouched', () => {
+    expect(normalizeModelKey('[pi] syn:large:text')).toBe('syn:large:text');
+  });
+});

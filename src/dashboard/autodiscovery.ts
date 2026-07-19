@@ -69,6 +69,12 @@ export interface AutodiscoveryOptions {
   excludePids?: Set<number>;
   /** Invoked when the agent-session scan changed any DB row (drives the WS broadcast). */
   onAgentSessionsChanged?: () => void;
+  /**
+   * Post-scan auto-summary pass. Injectable so tests can drive the trigger
+   * without spawning an LLM; when omitted, `reconcile` builds the real one
+   * (config-gated) itself.
+   */
+  summarizeAfterScan?: (opts: { limit: number }) => Promise<Array<{ kind: string }>>;
 }
 
 let savedOptions: AutodiscoveryOptions | null = null;
@@ -100,7 +106,7 @@ export async function stopAutodiscovery(): Promise<void> {
 function runReconcile(): void {
   if (activeReconcile || !savedOptions) return;
   const opts = savedOptions;
-  activeReconcile = reconcile(opts.serversDir, opts.projectsDir, opts.excludePids, opts.assignmentsDir, opts.onAgentSessionsChanged)
+  activeReconcile = reconcile(opts.serversDir, opts.projectsDir, opts.excludePids, opts.assignmentsDir, opts.onAgentSessionsChanged, opts.summarizeAfterScan)
     .catch((err) => {
       console.error('[autodiscovery] reconcile failed:', err);
     })
@@ -288,7 +294,7 @@ export async function isProcessAlive(pid: number): Promise<boolean> {
   }
 }
 
-async function reconcile(serversDir: string, projectsDir: string, excludePids?: Set<number>, assignmentsDir?: string, onAgentSessionsChanged?: () => void): Promise<void> {
+async function reconcile(serversDir: string, projectsDir: string, excludePids?: Set<number>, assignmentsDir?: string, onAgentSessionsChanged?: () => void, summarizeAfterScan?: (opts: { limit: number }) => Promise<Array<{ kind: string }>>): Promise<void> {
   // Load all existing session files
   const names = await listSessionFiles(serversDir);
   const existingFiles = new Map<string, SessionFileData>();
@@ -328,7 +334,62 @@ async function reconcile(serversDir: string, projectsDir: string, excludePids?: 
     } catch (err) {
       console.error('[autodiscovery] session scan failed:', err);
     }
+
+    // Auto-summary rides the same interval, in its own failure domain: an LLM
+    // problem must never break session discovery.
+    try {
+      await runSummarizePass(summarizeAfterScan, onAgentSessionsChanged);
+    } catch (err) {
+      console.error('[autodiscovery] auto-summary failed:', err);
+    }
   }
+}
+
+/**
+ * True while a summarize batch is in flight. LLM calls routinely outlast the
+ * 45s tick, so without this guard overlapping batches would stack up and pay
+ * for the same sessions twice. (Cross-PROCESS safety is separate — that comes
+ * from the `summarize_state` claim table.)
+ */
+let summarizeInFlight = false;
+
+/** Default batch size per tick — small, because each item is a paid LLM call. */
+const AUTO_SUMMARIZE_LIMIT = 2;
+
+export async function runSummarizePass(
+  injected: ((opts: { limit: number }) => Promise<Array<{ kind: string }>>) | undefined,
+  onAgentSessionsChanged: (() => void) | undefined,
+): Promise<void> {
+  if (summarizeInFlight) return;
+
+  let run = injected;
+  if (!run) {
+    const { readConfig } = await import('../utils/config.js');
+    const config = await readConfig();
+    // The config key is the master switch for BOTH triggers (this interval and
+    // the LaunchAgent-invoked `session scan`), so 'off' means zero spend.
+    if (config.session.autoSummarize !== 'on') return;
+    const { summarizeMissing } = await import('../sessions/summarizer.js');
+    const { resolveBackend } = await import('../sessions/summarize-backends.js');
+    const { backend } = resolveBackend(undefined, config);
+    run = ({ limit }) => summarizeMissing({ backend, limit });
+  }
+
+  summarizeInFlight = true;
+  try {
+    const results = await run({ limit: AUTO_SUMMARIZE_LIMIT });
+    // Summary-only writes do not change any row the SCAN looks at, so the scan's
+    // own `changed` flag stays false and the SPA would never refetch. Fire the
+    // same callback here, but only when something was actually written.
+    if (results.some((r) => r.kind === 'ok')) onAgentSessionsChanged?.();
+  } finally {
+    summarizeInFlight = false;
+  }
+}
+
+/** Test helper — clear the in-flight latch between cases. */
+export function _resetSummarizeInFlightForTests(): void {
+  summarizeInFlight = false;
 }
 
 // --- Exports for testing ---

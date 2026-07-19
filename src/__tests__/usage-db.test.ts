@@ -13,6 +13,7 @@ import {
   listDaily,
   listDistinctModels,
   listDistinctTools,
+  listSessionUsage,
   getMeta,
   setMeta,
   advanceMetaIso,
@@ -405,5 +406,113 @@ describe('listDistinctModels / listDistinctTools', () => {
     ]);
     expect(listDistinctModels()).toEqual(['opus', 'sonnet']);
     expect(listDistinctTools()).toEqual(['claude', 'codex']);
+  });
+});
+
+describe('listSessionUsage', () => {
+  it('aggregates per session with a serve-time price fallback for $0 rows', () => {
+    initUsageDb(dbPath);
+    const base = {
+      tool: 'claude',
+      eventTs: '2026-07-01T10:00:00.000Z',
+      cacheCreationTokens: 0,
+      cacheReadTokens: 0,
+      cwd: '/repo',
+      projectSlug: '',
+      assignmentSlug: '',
+      rawJson: null,
+    };
+    // Priced by the collector — passed through untouched.
+    upsertEvent({
+      ...base,
+      sessionId: 's1',
+      model: 'claude-opus-4-8',
+      inputTokens: 10,
+      outputTokens: 5,
+      totalTokens: 15,
+      totalCost: 0.5,
+    });
+    // Second model on the same session — summed.
+    upsertEvent({
+      ...base,
+      sessionId: 's1',
+      model: 'claude-haiku-4-5',
+      inputTokens: 2,
+      outputTokens: 1,
+      totalTokens: 3,
+      totalCost: 0.25,
+    });
+    // Zero-cost pi row — fallback prices it (1M input × $1.40/M GLM-5.2).
+    upsertEvent({
+      ...base,
+      sessionId: 's2',
+      model: '[pi] glm-5.2',
+      tool: 'pi',
+      inputTokens: 1_000_000,
+      outputTokens: 0,
+      totalTokens: 1_000_000,
+      totalCost: 0,
+    });
+    // Zero-cost unknown model — stays zero rather than being guessed.
+    upsertEvent({
+      ...base,
+      sessionId: 's3',
+      model: '[pi] syn:large:text',
+      tool: 'pi',
+      inputTokens: 999,
+      outputTokens: 0,
+      totalTokens: 999,
+      totalCost: 0,
+    });
+
+    const usage = listSessionUsage();
+    expect(usage.get('s1')!.totalCost).toBeCloseTo(0.75, 6);
+    expect(usage.get('s1')!.totalTokens).toBe(18);
+    expect(usage.get('s1')!.models).toHaveLength(2);
+    expect(usage.get('s2')!.totalCost).toBeCloseTo(1.4, 6);
+    expect(usage.get('s3')!.totalCost).toBe(0);
+    expect(usage.get('s3')!.totalTokens).toBe(999);
+  });
+
+  it('carries metadata for orphan-row construction: latest tool/cwd and earliest event_ts', () => {
+    initUsageDb(dbPath);
+    const base = {
+      inputTokens: 1,
+      outputTokens: 1,
+      cacheCreationTokens: 0,
+      cacheReadTokens: 0,
+      totalTokens: 2,
+      totalCost: 0,
+      projectSlug: '',
+      assignmentSlug: '',
+      rawJson: null,
+    };
+    upsertEvent({
+      ...base,
+      sessionId: 's1',
+      model: 'm-old',
+      tool: 'codex',
+      eventTs: '2026-07-01T08:00:00.000Z',
+      cwd: '/old',
+    });
+    upsertEvent({
+      ...base,
+      sessionId: 's1',
+      model: 'm-new',
+      tool: 'pi',
+      eventTs: '2026-07-01T12:00:00.000Z',
+      cwd: '/new',
+    });
+
+    const entry = listSessionUsage().get('s1')!;
+    // Metadata comes from the LATEST event; firstEventTs is the earliest.
+    expect(entry.tool).toBe('pi');
+    expect(entry.cwd).toBe('/new');
+    expect(entry.firstEventTs).toBe('2026-07-01T08:00:00.000Z');
+  });
+
+  it('returns an empty map when there are no events', () => {
+    initUsageDb(dbPath);
+    expect(listSessionUsage().size).toBe(0);
   });
 });

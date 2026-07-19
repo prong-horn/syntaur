@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { derivePathFromTranscript } from '../utils/transcript.js';
+import { derivePathFromTranscript, sanitizeSessionPath } from '../utils/transcript.js';
 
 let sandbox: string;
 
@@ -72,5 +72,48 @@ describe('derivePathFromTranscript', () => {
       { type: 'user', cwd: '/Users/me/real' },
     ]);
     expect(await derivePathFromTranscript(path)).toBe('/Users/me/real');
+  });
+});
+
+describe('sanitizeSessionPath', () => {
+  it('rejects the degenerate root path', () => {
+    expect(sanitizeSessionPath('/')).toBeNull();
+  });
+
+  it('rejects empty and whitespace-only values', () => {
+    expect(sanitizeSessionPath('')).toBeNull();
+    expect(sanitizeSessionPath('   ')).toBeNull();
+    expect(sanitizeSessionPath('  /  ')).toBeNull();
+  });
+
+  it('rejects null and undefined', () => {
+    expect(sanitizeSessionPath(null)).toBeNull();
+    expect(sanitizeSessionPath(undefined)).toBeNull();
+  });
+
+  it('keeps a real path, trimmed', () => {
+    expect(sanitizeSessionPath('/Users/test/repo')).toBe('/Users/test/repo');
+    expect(sanitizeSessionPath('  /Users/test/repo  ')).toBe('/Users/test/repo');
+    // A path that merely STARTS with a slash is untouched.
+    expect(sanitizeSessionPath('/x')).toBe('/x');
+  });
+});
+
+describe('derivePathFromTranscript with degenerate cwd values', () => {
+  it('skips a cwd:"/" line and keeps scanning to a real cwd', async () => {
+    const path = await writeTranscript('degenerate-then-real.jsonl', [
+      { type: 'user', cwd: '/' },
+      { type: 'assistant', cwd: '/Users/test/real' },
+    ]);
+    expect(await derivePathFromTranscript(path)).toBe('/Users/test/real');
+  });
+
+  it('returns null when every line records cwd:"/"', async () => {
+    const path = await writeTranscript('all-degenerate.jsonl', [
+      { type: 'user', cwd: '/' },
+      { type: 'assistant', cwd: '/' },
+      { type: 'user', cwd: '/' },
+    ]);
+    expect(await derivePathFromTranscript(path)).toBeNull();
   });
 });

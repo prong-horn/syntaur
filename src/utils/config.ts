@@ -252,6 +252,16 @@ export { type WorkspaceVisibilityConfig };
  */
 export type SessionAutoTrack = 'all' | 'workspaces-only' | 'off';
 
+/** Which backend generates session auto-summaries. */
+export type SummarizeBackendName = 'claude' | 'pi';
+
+/**
+ * Master switch for automatic session summarization. Gates BOTH triggers — the
+ * dashboard interval and the LaunchAgent-invoked `syntaur session scan` — so
+ * turning it off guarantees no background LLM spend.
+ */
+export type SessionAutoSummarize = 'on' | 'off';
+
 /**
  * Multi-source agent discovery settings. Sources are individually toggleable;
  * `roots` is the depth-1 directory-scan root list (default `~`). Persisted as an
@@ -276,6 +286,8 @@ export interface SyntaurConfig {
   };
   session: {
     autoTrack: SessionAutoTrack;
+    summarizeBackend: SummarizeBackendName;
+    autoSummarize: SessionAutoSummarize;
   };
   integrations: IntegrationConfig;
   backup: BackupConfig | null;
@@ -319,6 +331,8 @@ const DEFAULT_CONFIG: SyntaurConfig = {
   },
   session: {
     autoTrack: 'all',
+    summarizeBackend: 'claude',
+    autoSummarize: 'on',
   },
   integrations: {
     claudePluginDir: null,
@@ -355,6 +369,10 @@ const DEFAULT_CONFIG: SyntaurConfig = {
 const AUTO_CREATE_WORKTREE_VALUES: readonly AutoCreateWorktree[] = ['skip', 'ask', 'always'];
 
 const SESSION_AUTO_TRACK_VALUES: readonly SessionAutoTrack[] = ['all', 'workspaces-only', 'off'];
+
+const SUMMARIZE_BACKEND_VALUES: readonly SummarizeBackendName[] = ['claude', 'pi'];
+
+const SESSION_AUTO_SUMMARIZE_VALUES: readonly SessionAutoSummarize[] = ['on', 'off'];
 
 const RUNNER_KINDS: readonly RunnerKind[] = ['claude', 'pi', 'codex'];
 
@@ -2675,6 +2693,16 @@ export async function readConfig(): Promise<SyntaurConfig> {
       )
         ? (fm['session.autoTrack'] as SessionAutoTrack)
         : DEFAULT_CONFIG.session.autoTrack,
+      summarizeBackend: SUMMARIZE_BACKEND_VALUES.includes(
+        fm['session.summarizeBackend'] as SummarizeBackendName,
+      )
+        ? (fm['session.summarizeBackend'] as SummarizeBackendName)
+        : DEFAULT_CONFIG.session.summarizeBackend,
+      autoSummarize: SESSION_AUTO_SUMMARIZE_VALUES.includes(
+        fm['session.autoSummarize'] as SessionAutoSummarize,
+      )
+        ? (fm['session.autoSummarize'] as SessionAutoSummarize)
+        : DEFAULT_CONFIG.session.autoSummarize,
     },
     integrations: {
       claudePluginDir: parseOptionalAbsolutePath(

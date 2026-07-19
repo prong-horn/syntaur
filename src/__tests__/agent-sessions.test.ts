@@ -438,7 +438,7 @@ describe('v2 -> v3 schema migration (adds transcript_path)', () => {
       .prepare("SELECT value FROM meta WHERE key = 'schema_version'")
       .get() as { value: string };
     // v2 chains through every migration to the current head (v7).
-    expect(version.value).toBe('7');
+    expect(version.value).toBe('8');
   });
 
   it('falls back to mission_slug when a v2 table has both columns but project_slug is null', async () => {
@@ -598,7 +598,7 @@ describe('v3 -> v4 schema migration (adds pid + pid_started_at)', () => {
       .prepare("SELECT value FROM meta WHERE key = 'schema_version'")
       .get() as { value: string };
     // v3→v4 adds pid columns, then the chain continues to the current head (v7).
-    expect(version.value).toBe('7');
+    expect(version.value).toBe('8');
   });
 });
 
@@ -660,7 +660,7 @@ describe('v4 -> v5 schema migration (adds original_head_sha)', () => {
     const version = db
       .prepare("SELECT value FROM meta WHERE key = 'schema_version'")
       .get() as { value: string };
-    expect(version.value).toBe('7');
+    expect(version.value).toBe('8');
   });
 
   it('round-trips original_head_sha through appendSession + getSessionById', async () => {
@@ -1094,5 +1094,39 @@ describe('H2: open-baseline token snapshot on every runtime open', () => {
     expect(row).toBeDefined();
     expect(row!.ended_at).not.toBeNull(); // closed historical interval
     expect(row!.tokens_at_open).toBeNull(); // no live baseline on a closed-on-insert row
+  });
+});
+
+describe('appendSession path sanitization (persistence boundary)', () => {
+  it('stores no path when the caller supplies the degenerate root path', async () => {
+    initSessionDb(dbPath);
+    const session = makeSession({ sessionId: 'root-path', path: '/' });
+    await appendSession(testDir, session);
+
+    const row = getSessionDb()
+      .prepare('SELECT path FROM sessions WHERE session_id = ?')
+      .get('root-path') as { path: string | null };
+    expect(row.path === null || row.path === '').toBe(true);
+  });
+
+  it('does not clobber an existing real path on a degenerate re-registration', async () => {
+    initSessionDb(dbPath);
+    await appendSession(testDir, makeSession({ sessionId: 'keep-path', path: '/Users/dev/real' }));
+    await appendSession(testDir, makeSession({ sessionId: 'keep-path', path: '/' }));
+
+    const row = getSessionDb()
+      .prepare('SELECT path FROM sessions WHERE session_id = ?')
+      .get('keep-path') as { path: string | null };
+    expect(row.path).toBe('/Users/dev/real');
+  });
+
+  it('stores a real path unchanged', async () => {
+    initSessionDb(dbPath);
+    await appendSession(testDir, makeSession({ sessionId: 'real-path', path: '/Users/dev/proj' }));
+
+    const row = getSessionDb()
+      .prepare('SELECT path FROM sessions WHERE session_id = ?')
+      .get('real-path') as { path: string | null };
+    expect(row.path).toBe('/Users/dev/proj');
   });
 });

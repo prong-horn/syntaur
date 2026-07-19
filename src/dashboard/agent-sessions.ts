@@ -11,10 +11,12 @@ import {
   insertClosedEngagement,
 } from '../db/engagement-db.js';
 import { getCumulativeTokenSource, type TokenSnapshot } from '../db/engagement-tokens.js';
+import { sanitizeSessionPath } from '../utils/transcript.js';
 import type {
   AgentSession,
   AgentSessionStatus,
   ActivityState,
+  DescriptionSource,
   SessionHostedBy,
 } from './types.js';
 
@@ -37,6 +39,9 @@ interface SessionRow {
   original_head_sha: string | null;
   activity: string | null;
   hosted_by: string | null;
+  summary: string | null;
+  summarized_at: string | null;
+  description_source: string | null;
   updated_at: string | null;
 }
 
@@ -76,6 +81,9 @@ function rowToSession(row: SessionRow): AgentSession {
     originalHeadSha: row.original_head_sha ?? null,
     activity: (row.activity as ActivityState | null) ?? null,
     hostedBy: (row.hosted_by as SessionHostedBy | null) ?? null,
+    summary: row.summary ?? null,
+    summarizedAt: row.summarized_at ?? null,
+    descriptionSource: (row.description_source as DescriptionSource | null) ?? null,
     updatedAt: row.updated_at ?? null,
   };
 }
@@ -181,8 +189,8 @@ export async function appendSession(
   // the status read and the open — which would otherwise leak an open engagement
   // onto a now-terminal session (codex round-2 TOCTOU).
   const upsert = db.prepare(`
-    INSERT INTO sessions (session_id, agent, started, status, path, description, transcript_path, pid, pid_started_at, original_head_sha, hosted_by)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO sessions (session_id, agent, started, status, path, description, transcript_path, pid, pid_started_at, original_head_sha, hosted_by, description_source)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(session_id) DO UPDATE SET
       agent             = excluded.agent,
       status            = CASE
@@ -196,6 +204,14 @@ export async function appendSession(
                           END,
       path              = COALESCE(NULLIF(excluded.path, ''),              path),
       description       = COALESCE(NULLIF(excluded.description, ''),       description),
+      -- Every caller of appendSession is human/caller-driven (POST body,
+      -- track-session, hooks), so a non-empty incoming description — i.e. one
+      -- that actually wins the COALESCE above — stamps 'human' and becomes
+      -- off-limits to the summarizer.
+      description_source = CASE
+                            WHEN NULLIF(excluded.description, '') IS NOT NULL THEN 'human'
+                            ELSE description_source
+                          END,
       transcript_path   = COALESCE(NULLIF(excluded.transcript_path, ''),   transcript_path),
       pid               = COALESCE(excluded.pid,                           pid),
       pid_started_at    = COALESCE(NULLIF(excluded.pid_started_at, ''),    pid_started_at),
@@ -214,13 +230,20 @@ export async function appendSession(
       session.agent,
       session.started,
       session.status,
-      session.path,
+      // Single sanitization chokepoint for `sessions.path`: every writer
+      // (scanner, SessionStart hook, track-session, API POST, launch) funnels
+      // through appendSession, so rejecting a degenerate cwd here covers them
+      // all — including any future caller. `''` is a non-clobbering no-op on
+      // upsert thanks to the COALESCE(NULLIF(...)) above.
+      sanitizeSessionPath(session.path) ?? '',
       session.description ?? null,
       session.transcriptPath ?? null,
       session.pid ?? null,
       session.pidStartedAt ?? null,
       session.originalHeadSha ?? null,
       session.hostedBy ?? null,
+      // Insert-path provenance; the ON CONFLICT branch stamps it on upsert.
+      session.description && session.description.length > 0 ? 'human' : null,
       opts?.reviveStopped ? 1 : 0, // status CASE: revive guard
       opts?.reviveStopped ? 1 : 0, // ended CASE: clear stale ended on revive
     );
@@ -729,5 +752,198 @@ export async function listSessionsByAssignment(
           `${SESSION_SELECT_WITH_BINDING} WHERE e.project_slug = ? AND e.assignment_slug = ? ORDER BY s.started DESC`,
         )
         .all(projectSlug, assignmentSlug) as SessionRow[]);
+  return rows.map(rowToSession);
+}
+
+// --- Summarizer lease + finalization --------------------------------------
+
+/** Outcome of {@link finalizeSummarize}. */
+export type FinalizeSummarizeResult = 'ok-desc-updated' | 'ok-desc-kept' | 'lost-lease';
+
+/** How long a claim may sit unreleased before another worker may take it. */
+const SUMMARIZE_CLAIM_STALE_MS = 10 * 60 * 1000;
+
+/**
+ * Try to take the summarize lease for `sessionId` under `token`.
+ *
+ * Claims are atomic across processes: SQLite serializes the write, and the
+ * conditional `WHERE claim_token IS NULL` means exactly one concurrent claimant
+ * observes `changes === 1`. A claim older than {@link SUMMARIZE_CLAIM_STALE_MS}
+ * is treated as abandoned (a crashed worker) and cleared first, so a dead
+ * process can never block a session forever.
+ *
+ * Returns true iff this caller now owns the lease.
+ */
+export function claimSummarize(sessionId: string, token: string, now = new Date()): boolean {
+  const db = getSessionDb();
+  const nowIso = now.toISOString();
+  const staleBefore = new Date(now.getTime() - SUMMARIZE_CLAIM_STALE_MS).toISOString();
+
+  const claim = db.transaction(() => {
+    db.prepare(
+      `UPDATE summarize_state
+          SET claim_token = NULL, claimed_at = NULL
+        WHERE session_id = ? AND claim_token IS NOT NULL AND claimed_at < ?`,
+    ).run(sessionId, staleBefore);
+
+    const res = db
+      .prepare(
+        `INSERT INTO summarize_state (session_id, claim_token, claimed_at)
+         VALUES (?, ?, ?)
+         ON CONFLICT(session_id) DO UPDATE SET
+           claim_token = excluded.claim_token,
+           claimed_at  = excluded.claimed_at
+         WHERE summarize_state.claim_token IS NULL`,
+      )
+      .run(sessionId, token, nowIso);
+    return res.changes === 1;
+  });
+  return claim();
+}
+
+/**
+ * Release a lease without recording an outcome (used for skip paths).
+ * Token-matched: a worker whose lease already went stale and was re-claimed by
+ * someone else cannot release the newer owner's claim.
+ */
+export function releaseSummarize(sessionId: string, token: string): void {
+  getSessionDb()
+    .prepare(
+      `UPDATE summarize_state
+          SET claim_token = NULL, claimed_at = NULL
+        WHERE session_id = ? AND claim_token = ?`,
+    )
+    .run(sessionId, token);
+}
+
+/**
+ * Record a failed or deliberately-deferred attempt: bump `attempts`, store the
+ * error, and push `next_attempt_at` out by `retryAfterMs` so the sweep stops
+ * re-selecting this session. Token-matched, and releases the lease.
+ *
+ * This is what makes a capped newest-first sweep fair: without persisted
+ * backoff, the same doomed rows would be picked every tick and older valid
+ * sessions would never be reached.
+ */
+export function recordSummarizeFailure(
+  sessionId: string,
+  token: string,
+  error: string,
+  retryAfterMs: number,
+  now = new Date(),
+): void {
+  const nextAttempt = new Date(now.getTime() + retryAfterMs).toISOString();
+  getSessionDb()
+    .prepare(
+      `UPDATE summarize_state
+          SET claim_token     = NULL,
+              claimed_at      = NULL,
+              attempts        = attempts + 1,
+              next_attempt_at = ?,
+              last_error      = ?
+        WHERE session_id = ? AND claim_token = ?`,
+    )
+    .run(nextAttempt, error.slice(0, 2000), sessionId, token);
+}
+
+/**
+ * Persist a generated summary, honouring description provenance, and release
+ * the lease — all in ONE transaction.
+ *
+ * The ownership check comes first: a worker whose lease expired mid-call gets
+ * `lost-lease` and writes nothing, so a slow straggler can never overwrite the
+ * work of the worker that superseded it.
+ *
+ * `description` is written only when the current one is empty or was itself
+ * auto-generated; the CASE expressions do that decision IN SQL rather than as a
+ * read-then-write, so a human description saved concurrently cannot be lost to
+ * a race. `summary` always writes — a human-owned description never suppresses
+ * the summary itself, it only means `descriptionUpdated` is false.
+ */
+export function finalizeSummarize(
+  sessionId: string,
+  token: string,
+  fields: { description: string; summary: string },
+  now = new Date(),
+): FinalizeSummarizeResult {
+  const db = getSessionDb();
+  const nowIso = now.toISOString();
+
+  const run = db.transaction((): FinalizeSummarizeResult => {
+    const state = db
+      .prepare('SELECT claim_token FROM summarize_state WHERE session_id = ?')
+      .get(sessionId) as { claim_token: string | null } | undefined;
+    if (!state || state.claim_token !== token) return 'lost-lease';
+
+    const updated = db
+      .prepare(
+        `UPDATE sessions SET
+           summary = ?,
+           summarized_at = ?,
+           description = CASE
+             WHEN description IS NULL OR description = '' OR description_source = 'auto'
+               THEN ? ELSE description END,
+           description_source = CASE
+             WHEN description IS NULL OR description = '' OR description_source = 'auto'
+               THEN 'auto' ELSE description_source END,
+           updated_at = datetime('now')
+         WHERE session_id = ?`,
+      )
+      .run(fields.summary, nowIso, fields.description, sessionId);
+
+    // The session row vanished between claim and write (deleted concurrently).
+    if (updated.changes === 0) {
+      db.prepare('DELETE FROM summarize_state WHERE session_id = ? AND claim_token = ?').run(
+        sessionId,
+        token,
+      );
+      return 'lost-lease';
+    }
+
+    // Read the post-write provenance INSIDE the transaction, so the reported
+    // flag reflects exactly what the UPDATE above decided.
+    const after = db
+      .prepare('SELECT description_source FROM sessions WHERE session_id = ?')
+      .get(sessionId) as { description_source: string | null } | undefined;
+
+    db.prepare(
+      `UPDATE summarize_state
+          SET claim_token = NULL, claimed_at = NULL,
+              next_attempt_at = NULL, attempts = 0, last_error = NULL
+        WHERE session_id = ? AND claim_token = ?`,
+    ).run(sessionId, token);
+
+    return after?.description_source === 'auto' ? 'ok-desc-updated' : 'ok-desc-kept';
+  });
+
+  return run();
+}
+
+/**
+ * Sessions eligible for an automatic summary sweep, newest first.
+ *
+ * Eligibility deliberately excludes live sessions: a session still in progress
+ * would be summarized from a partial transcript and then never revisited
+ * (`summary IS NULL` is the sweep's only trigger). Explicit-id calls have no
+ * such restriction.
+ */
+export function listSessionsNeedingSummary(limit: number, now = new Date()): AgentSession[] {
+  const rows = getSessionDb()
+    .prepare(
+      `${SESSION_SELECT_WITH_BINDING}
+        WHERE s.summary IS NULL
+          AND s.transcript_path IS NOT NULL
+          AND s.transcript_path != ''
+          AND s.status IN ('stopped', 'completed')
+          AND NOT EXISTS (
+            SELECT 1 FROM summarize_state ss
+             WHERE ss.session_id = s.session_id
+               AND ss.next_attempt_at IS NOT NULL
+               AND ss.next_attempt_at > ?
+          )
+        ORDER BY s.started DESC
+        LIMIT ?`,
+    )
+    .all(now.toISOString(), limit) as SessionRow[];
   return rows.map(rowToSession);
 }

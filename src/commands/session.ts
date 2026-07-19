@@ -674,23 +674,179 @@ sessionCommand
   )
   .option('--full', 'Ignore the incremental mtime watermark and rescan everything')
   .option('--json', 'Emit the scan summary as JSON')
-  .action(async (options: { full?: boolean; json?: boolean }) => {
+  .option('--no-summarize', 'Skip the post-scan auto-summary pass for this run')
+  .action(async (options: { full?: boolean; json?: boolean; summarize?: boolean }) => {
     try {
       const { scanSessions } = await import('../sessions/scanner.js');
       initSessionDb();
       const summary = await scanSessions({ full: options.full });
+
+      // Auto-summary rides the same interval as the scan, since this command is
+      // what the LaunchAgent runs. `session.autoSummarize` is the MASTER switch
+      // (config off ⇒ zero paid calls from the background path, regardless of
+      // flags); `--no-summarize` is a per-run override on top of it.
+      const summarization = await runScanSummarize(options.summarize !== false);
+
       if (options.json) {
-        console.log(JSON.stringify(summary));
+        // ONE JSON document — machine consumers parse stdout whole, so the
+        // summarization result is a FIELD, never an extra line.
+        console.log(JSON.stringify({ ...summary, summarization }));
       } else {
         console.log(
           `Scan complete — discovered ${summary.discovered}, inserted ${summary.inserted}, revived ${summary.revived}, swept ${summary.swept}, skipped ${summary.skipped}.`,
         );
+        if (summarization.ran) {
+          const counts = Object.entries(summarization.counts ?? {})
+            .map(([kind, n]) => `${kind} ${n}`)
+            .join(', ');
+          console.log(`Auto-summary — ${counts || 'nothing eligible'}.`);
+        }
       }
     } catch (error) {
       console.error('Error:', error instanceof Error ? error.message : String(error));
       process.exit(1);
     }
   });
+
+/** Result of the post-scan summarize pass, embedded in `scan --json` output. */
+export interface ScanSummarization {
+  ran: boolean;
+  counts?: Record<string, number>;
+  error?: string;
+}
+
+/**
+ * Run the post-scan auto-summary pass, honouring the config master switch.
+ * Never throws: a summarize failure must not fail the scan that carried it.
+ * Exported for tests — `flagEnabled` is `--no-summarize`'s inverse.
+ */
+export async function runScanSummarize(flagEnabled: boolean): Promise<ScanSummarization> {
+  if (!flagEnabled) return { ran: false };
+  try {
+    const { readConfig } = await import('../utils/config.js');
+    const config = await readConfig();
+    if (config.session.autoSummarize !== 'on') return { ran: false };
+
+    const { summarizeMissing, countByKind } = await import('../sessions/summarizer.js');
+    const { resolveBackend } = await import('../sessions/summarize-backends.js');
+    const { backend } = resolveBackend(undefined, config);
+    const results = await summarizeMissing({ backend, limit: 5 });
+    return { ran: true, counts: countByKind(results) };
+  } catch (error) {
+    return { ran: false, error: error instanceof Error ? error.message : String(error) };
+  }
+}
+
+sessionCommand
+  .command('summarize')
+  .description(
+    'Generate a short description + summary for tracked sessions from their transcripts. Runs OUTSIDE the session being summarized, so it works on any session (live or stopped) for any agent runtime.',
+  )
+  .argument('[sessionId]', 'Summarize exactly this session (any status, including live)')
+  .option('--missing', 'Summarize ended sessions that have no summary yet')
+  .option('--all', 'Re-summarize every session that has a transcript (implies --force)')
+  .option('--backend <name>', 'Override the configured backend: claude | pi')
+  .option('--force', 'Re-summarize even if a summary already exists')
+  .option('--limit <n>', 'Maximum sessions to process in batch modes (default 20)')
+  .option('--json', 'Emit results as JSON')
+  .action(
+    async (
+      sessionId: string | undefined,
+      options: {
+        missing?: boolean;
+        all?: boolean;
+        backend?: string;
+        force?: boolean;
+        limit?: string;
+        json?: boolean;
+      },
+    ) => {
+      try {
+        // Exactly one selector: an ambiguous invocation should never guess
+        // which sessions to spend money on.
+        const selectors = [sessionId ? 'sessionId' : null, options.missing ? '--missing' : null, options.all ? '--all' : null].filter(Boolean);
+        if (selectors.length !== 1) {
+          console.error(
+            selectors.length === 0
+              ? 'Error: specify exactly one of <sessionId>, --missing, or --all.'
+              : `Error: <sessionId>, --missing, and --all are mutually exclusive (got ${selectors.join(', ')}).`,
+          );
+          process.exit(1);
+        }
+
+        let limit = 20;
+        if (options.limit !== undefined) {
+          limit = Number(options.limit);
+          if (!Number.isInteger(limit) || limit <= 0) {
+            console.error(`Error: --limit must be a positive integer (got "${options.limit}").`);
+            process.exit(1);
+          }
+        }
+
+        const { readConfig } = await import('../utils/config.js');
+        const { summarizeSession, summarizeMissing, countByKind } = await import(
+          '../sessions/summarizer.js'
+        );
+        const { resolveBackend } = await import('../sessions/summarize-backends.js');
+
+        initSessionDb();
+        const config = await readConfig();
+        const { name: backendName, backend } = resolveBackend(options.backend, config);
+
+        const results = sessionId
+          ? [await summarizeSession(sessionId, { backend, force: options.force })]
+          : options.all
+            ? await summarizeAllWithTranscripts({ backend, limit })
+            : await summarizeMissing({ backend, limit });
+
+        if (options.json) {
+          console.log(JSON.stringify({ backend: backendName, results, counts: countByKind(results) }));
+        } else {
+          for (const r of results) {
+            const detail = r.error ? ` — ${r.error}` : '';
+            const desc =
+              r.kind === 'ok' && r.descriptionUpdated === false
+                ? ' (summary written; existing description kept)'
+                : '';
+            console.log(`${r.sessionId}: ${r.kind}${desc}${detail}`);
+          }
+          if (results.length === 0) console.log('No sessions matched.');
+        }
+
+        // Skips are normal outcomes; only genuine failures set a non-zero exit.
+        const failed = results.some(
+          (r) => r.kind === 'backend-error' || r.kind === 'parse-error' || r.kind === 'persist-error',
+        );
+        if (failed) process.exit(1);
+      } catch (error) {
+        console.error('Error:', error instanceof Error ? error.message : String(error));
+        process.exit(1);
+      }
+    },
+  );
+
+/**
+ * `--all`: re-summarize every session that still has a readable transcript,
+ * newest first. Description provenance still protects human-written labels.
+ */
+async function summarizeAllWithTranscripts(opts: {
+  backend: import('../sessions/summarizer.js').SummarizeBackend;
+  limit: number;
+}): Promise<import('../sessions/summarizer.js').PerSessionResult[]> {
+  const { summarizeSession } = await import('../sessions/summarizer.js');
+  const { listAllSessions } = await import('../dashboard/agent-sessions.js');
+  const { defaultProjectDir } = await import('../utils/paths.js');
+
+  const sessions = (await listAllSessions(defaultProjectDir()))
+    .filter((s) => (s.transcriptPath ?? '').length > 0)
+    .slice(0, opts.limit);
+
+  const results = [];
+  for (const session of sessions) {
+    results.push(await summarizeSession(session.sessionId, { backend: opts.backend, force: true }));
+  }
+  return results;
+}
 
 sessionCommand
   .command('scan-install')
