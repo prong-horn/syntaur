@@ -35,15 +35,20 @@ interface RunResult {
   enoent: boolean;
   timedOut: boolean;
   truncated: boolean;
+  /** The prompt could not be fully written to the child's stdin (e.g. EPIPE). */
+  stdinError: boolean;
 }
 
 /**
  * Run `binary` with the prompt piped on stdin.
  *
  * stdin is used rather than argv because a transcript excerpt can exceed
- * platform argv limits. A child that exits without draining stdin makes the
- * write emit EPIPE — expected, not a crash, so it is swallowed here and the
- * real outcome comes from the exit code.
+ * platform argv limits. A stdin write error (EPIPE — the child exited or closed
+ * its read end before draining the prompt) is captured, NOT swallowed: a
+ * backend that never received the full transcript cannot have summarized it, so
+ * callers must treat it as a failure. The error listener only prevents the
+ * write error from crashing the process as an unhandled event; the outcome is
+ * still surfaced via `stdinError`.
  */
 export function runPrompt(
   binary: string,
@@ -68,6 +73,7 @@ export function runPrompt(
     let stderr = '';
     let truncated = false;
     let timedOut = false;
+    let stdinError = false;
     let settled = false;
 
     const settle = (result: RunResult) => {
@@ -103,16 +109,25 @@ export function runPrompt(
 
     child.on('error', (err) => {
       const isEnoent = (err as NodeJS.ErrnoException).code === 'ENOENT';
-      settle({ stdout, stderr, code: null, enoent: isEnoent, timedOut, truncated });
+      settle({ stdout, stderr, code: null, enoent: isEnoent, timedOut, truncated, stdinError });
     });
     child.on('close', (code) => {
-      settle({ stdout, stderr, code, enoent: false, timedOut, truncated });
+      settle({ stdout, stderr, code, enoent: false, timedOut, truncated, stdinError });
     });
 
-    // A child that never reads stdin (or has already exited) triggers EPIPE.
-    child.stdin.on('error', () => {});
+    // Capture (don't swallow) a stdin write failure: the child exited or closed
+    // its read end before draining the prompt, so it never saw the full
+    // transcript. `close`/`error` still settles with the flag set.
+    child.stdin.on('error', () => {
+      stdinError = true;
+    });
     child.stdin.end(opts.stdin);
   });
+}
+
+/** True when the run did not complete cleanly and must be a backend error. */
+function runFailed(result: RunResult): boolean {
+  return result.enoent || result.timedOut || result.truncated || result.stdinError || result.code !== 0;
 }
 
 /** Turn a spawn outcome into the backend contract's error shape. */
@@ -120,6 +135,7 @@ function describeFailure(binary: string, result: RunResult): string {
   if (result.enoent) return `${binary} not found on PATH`;
   if (result.timedOut) return `${binary} timed out`;
   if (result.truncated) return `${binary} output exceeded the size cap`;
+  if (result.stdinError) return `${binary} closed stdin before the prompt was delivered`;
   const detail = result.stderr.trim() || result.stdout.trim();
   return `${binary} exited ${result.code}${detail ? `: ${detail.slice(0, 500)}` : ''}`;
 }
@@ -159,7 +175,7 @@ export function createClaudeBackend(binary = 'claude'): SummarizeBackend {
       stdin: prompt,
       timeoutMs: deps?.timeoutMs,
     });
-    if (result.enoent || result.timedOut || result.truncated || result.code !== 0) {
+    if (runFailed(result)) {
       return { ok: false, error: describeFailure(binary, result) };
     }
 
@@ -207,6 +223,49 @@ export async function resolveSyntheticApiKey(
   return key.length > 0 ? key : null;
 }
 
+/**
+ * Extract the assistant's final text from pi's `--mode json` output.
+ *
+ * pi emits a JSONL EVENT STREAM (session header, agent_start, message_start /
+ * message_end per message, …) — NOT a single JSON object. The summary lives in
+ * the LAST assistant `message_end` (or `message_start`) event's text content,
+ * so returning the raw stream (whose first object is the session header) would
+ * always fail the core parser. This walks the stream and returns the last
+ * assistant text it finds.
+ */
+export function extractPiAssistantText(stdout: string): string | null {
+  let latest: string | null = null;
+  for (const line of stdout.split('\n')) {
+    const trimmed = line.trim();
+    if (!trimmed.startsWith('{')) continue;
+    let event: unknown;
+    try {
+      event = JSON.parse(trimmed);
+    } catch {
+      continue;
+    }
+    if (!event || typeof event !== 'object') continue;
+    const e = event as { type?: unknown; message?: unknown };
+    if (e.type !== 'message_end' && e.type !== 'message_start') continue;
+    const msg = e.message as { role?: unknown; content?: unknown } | undefined;
+    if (!msg || msg.role !== 'assistant') continue;
+
+    const parts: string[] = [];
+    if (typeof msg.content === 'string') {
+      parts.push(msg.content);
+    } else if (Array.isArray(msg.content)) {
+      for (const block of msg.content) {
+        if (block && typeof block === 'object' && typeof (block as { text?: unknown }).text === 'string') {
+          parts.push((block as { text: string }).text);
+        }
+      }
+    }
+    const text = parts.join('').trim();
+    if (text.length > 0) latest = text; // keep the LAST non-empty assistant turn
+  }
+  return latest;
+}
+
 /** Pi backend — GLM-5.2 via Synthetic. */
 export function createPiBackend(
   binary = 'pi',
@@ -227,6 +286,8 @@ export function createPiBackend(
       '-p',
       '--model',
       opts.model ?? PI_MODEL_ID,
+      // json mode gives a deterministic event stream we can parse for the final
+      // assistant text (vs. text mode, which can interleave streaming artifacts).
       '--mode',
       'json',
       // Invariant 1: ephemeral, never written to pi's session store.
@@ -242,10 +303,17 @@ export function createPiBackend(
       env: { ...baseEnv, SYNTHETIC_API_KEY: apiKey },
       timeoutMs: deps?.timeoutMs,
     });
-    if (result.enoent || result.timedOut || result.truncated || result.code !== 0) {
+    if (runFailed(result)) {
       return { ok: false, error: describeFailure(binary, result) };
     }
-    return { ok: true, text: result.stdout };
+    const text = extractPiAssistantText(result.stdout);
+    if (text === null) {
+      return {
+        ok: false,
+        error: `pi produced no assistant text (stream: ${result.stdout.slice(0, 300)})`,
+      };
+    }
+    return { ok: true, text };
   };
 }
 

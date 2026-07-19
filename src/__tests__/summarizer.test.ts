@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -17,6 +17,7 @@ import {
   finalizeSummarize,
   listSessionsNeedingSummary,
 } from '../dashboard/agent-sessions.js';
+import * as agentSessions from '../dashboard/agent-sessions.js';
 import {
   summarizeSession,
   summarizeMissing,
@@ -309,6 +310,39 @@ describe('summarizeSession', () => {
     const res = await summarizeSession('s9', { backend: fakeBackend(goodReply) });
     expect(res.kind).toBe('skipped-claimed');
     expect(getSessionById('s9')!.summary).toBeNull();
+  });
+
+  it('re-checks under the lease and skips (without paying) if a summary landed during excerpt-building', async () => {
+    await seed('s-toctou');
+    // Two workers can both pass the up-front summary==NULL check, both build
+    // excerpts, then one finalizes+releases before the other claims. The second
+    // then legitimately owns the lease, so the token match cannot stop it — only
+    // a re-read under the lease can. Model that by returning NULL on the first
+    // read (up-front check) and a written summary on the second (post-claim).
+    const spy = vi.spyOn(agentSessions, 'getSessionById');
+    const real = agentSessions.getSessionById('s-toctou')!;
+    spy.mockReturnValueOnce({ ...real, summary: null }); // up-front check: looks unsummarized
+    spy.mockReturnValueOnce({ ...real, summary: 'written by the other worker' }); // post-claim re-read
+
+    let backendCalled = false;
+    const backend: SummarizeBackend = async () => {
+      backendCalled = true;
+      return { ok: true, text: goodReply };
+    };
+    const res = await summarizeSession('s-toctou', { backend });
+
+    expect(res.kind).toBe('skipped-exists');
+    // The whole point: no redundant paid call.
+    expect(backendCalled).toBe(false);
+    spy.mockRestore();
+  });
+
+  it('re-check is bypassed by force (explicit re-summarize)', async () => {
+    await seed('s-force-toctou');
+    getSessionDb().prepare("UPDATE sessions SET summary='old', description_source='auto' WHERE session_id='s-force-toctou'").run();
+    const res = await summarizeSession('s-force-toctou', { backend: fakeBackend(goodReply), force: true });
+    expect(res.kind).toBe('ok');
+    expect(getSessionById('s-force-toctou')!.summary).toBe('Traced and fixed it.');
   });
 
   it('does not record retry state for an explicit-id skip', async () => {

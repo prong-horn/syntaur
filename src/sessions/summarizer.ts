@@ -257,6 +257,19 @@ export async function summarizeSession(
     return { sessionId, kind: 'skipped-claimed' };
   }
 
+  // Re-read UNDER the lease and bail if a summary landed while we were building
+  // the excerpt. Without this, two workers can each see summary=NULL up front,
+  // both build excerpts, and — because claim/release are sequential — both win
+  // the lease in turn and pay for a redundant call that overwrites the first
+  // (the token match can't help; the second worker legitimately owns its lease).
+  if (!force) {
+    const fresh = getSessionById(sessionId);
+    if (fresh?.summary) {
+      releaseSummarize(sessionId, token);
+      return { sessionId, kind: 'skipped-exists' };
+    }
+  }
+
   try {
     const reply = await backend(buildPrompt(excerpt, session.agent), deps);
     if (!reply.ok) {

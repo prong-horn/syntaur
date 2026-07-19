@@ -8,6 +8,7 @@ import {
   resolveBackend,
   resolveSyntheticApiKey,
   runPrompt,
+  extractPiAssistantText,
   PI_MODEL_ID,
 } from '../sessions/summarize-backends.js';
 import type { SyntaurConfig } from '../utils/config.js';
@@ -62,6 +63,28 @@ async function readRecord(name: string): Promise<{ argv: string[]; syntheticKey:
 
 const contract = JSON.stringify({ description: 'd', summary: 's' });
 
+/**
+ * A realistic pi `--mode json` event stream carrying `assistantText` as the
+ * assistant's final message — the shape the pi backend must parse (verified
+ * against real `pi -p --mode json` output).
+ */
+function piStream(assistantText: string): string {
+  return (
+    [
+      { type: 'session', version: 3, id: 'abc', cwd: '/tmp' },
+      { type: 'agent_start' },
+      { type: 'turn_start' },
+      { type: 'message_start', message: { role: 'user', content: [{ type: 'text', text: 'prompt' }] } },
+      { type: 'message_end', message: { role: 'user', content: [{ type: 'text', text: 'prompt' }] } },
+      { type: 'message_start', message: { role: 'assistant', content: [] } },
+      { type: 'message_end', message: { role: 'assistant', content: [{ type: 'text', text: assistantText }] } },
+      { type: 'turn_end' },
+    ]
+      .map((e) => JSON.stringify(e))
+      .join('\n') + '\n'
+  );
+}
+
 describe('runPrompt', () => {
   it('pipes the prompt on stdin and captures stdout', async () => {
     const bin = await recordingStub('echoer', 'hello out');
@@ -96,12 +119,13 @@ describe('runPrompt', () => {
     expect(result.stdout.length).toBeLessThanOrEqual(1000);
   });
 
-  it('survives a child that exits without reading stdin (EPIPE)', async () => {
-    // Exits immediately; the parent's stdin write has nowhere to go.
+  it('captures a stdin write failure without crashing (EPIPE)', async () => {
+    // Exits immediately without reading stdin, so a large write has nowhere to
+    // go. This must NOT crash the process, and the failure must be observable —
+    // a backend that never received the prompt cannot have used it.
     const bin = await writeStub('quick', "#!/usr/bin/env node\nprocess.stdout.write('done');\n");
-    const result = await runPrompt(bin, [], { stdin: 'x'.repeat(200_000) });
-    expect(result.stdout).toBe('done');
-    expect(result.code).toBe(0);
+    const result = await runPrompt(bin, [], { stdin: 'x'.repeat(2_000_000) });
+    expect(result.stdinError).toBe(true);
   });
 });
 
@@ -177,12 +201,14 @@ describe('claude backend', () => {
 
 describe('pi backend', () => {
   it('injects the resolved key and passes the isolation invariants', async () => {
-    const bin = await recordingStub('pi', contract);
+    const bin = await recordingStub('pi', piStream(contract));
     // Spread process.env like real callers do — a child needs PATH to exec.
     const res = await createPiBackend(bin, {
       env: { ...process.env, SYNTHETIC_API_KEY: 'sk-test-123' },
     })('p');
 
+    // The backend extracts the assistant text from the event stream — it must
+    // NOT return the raw JSONL (whose first object is the session header).
     expect(res).toEqual({ ok: true, text: contract });
     const rec = await readRecord('pi');
     // Eager resolution: the child receives the key, never relying on pi's own
@@ -200,7 +226,7 @@ describe('pi backend', () => {
       'gcloud',
       "#!/usr/bin/env node\nprocess.stderr.write('no secret');\nprocess.exit(1);\n",
     );
-    const piBin = await recordingStub('pi', contract);
+    const piBin = await recordingStub('pi', piStream(contract));
     const res = await createPiBackend(piBin, {
       env: { ...process.env, SYNTHETIC_API_KEY: '' },
       gcloudBinary: gcloudFail,
@@ -217,7 +243,7 @@ describe('pi backend', () => {
       'gcloud',
       "#!/usr/bin/env node\nprocess.stdout.write('sk-from-gcloud\\n');\n",
     );
-    const piBin = await recordingStub('pi', contract);
+    const piBin = await recordingStub('pi', piStream(contract));
     await createPiBackend(piBin, {
       env: { ...process.env, SYNTHETIC_API_KEY: '' },
       gcloudBinary: gcloudOk,
@@ -225,6 +251,49 @@ describe('pi backend', () => {
 
     const rec = await readRecord('pi');
     expect(rec.syntheticKey).toBe('sk-from-gcloud');
+  });
+
+  it('errors when pi produces an event stream with no assistant text', async () => {
+    // e.g. an auth failure that emits only a session header + error events.
+    const headerOnly = JSON.stringify({ type: 'session', version: 3, id: 'x', cwd: '/tmp' }) + '\n';
+    const piBin = await recordingStub('pi', headerOnly);
+    const res = await createPiBackend(piBin, {
+      env: { ...process.env, SYNTHETIC_API_KEY: 'sk-test' },
+    })('p');
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.error).toMatch(/no assistant text/);
+  });
+});
+
+describe('extractPiAssistantText', () => {
+  it('returns the assistant text from a full event stream', () => {
+    expect(extractPiAssistantText(piStream(contract))).toBe(contract);
+  });
+
+  it('returns the LAST assistant message when several are present', () => {
+    const stream =
+      piStream('first answer').trimEnd() +
+      '\n' +
+      JSON.stringify({
+        type: 'message_end',
+        message: { role: 'assistant', content: [{ type: 'text', text: 'final answer' }] },
+      }) +
+      '\n';
+    expect(extractPiAssistantText(stream)).toBe('final answer');
+  });
+
+  it('ignores user messages and non-message events', () => {
+    const stream = [
+      JSON.stringify({ type: 'session', id: 'x' }),
+      JSON.stringify({ type: 'message_end', message: { role: 'user', content: [{ type: 'text', text: 'the prompt' }] } }),
+      JSON.stringify({ type: 'agent_end' }),
+    ].join('\n');
+    expect(extractPiAssistantText(stream)).toBeNull();
+  });
+
+  it('returns null for an empty or non-JSONL stream', () => {
+    expect(extractPiAssistantText('')).toBeNull();
+    expect(extractPiAssistantText('not json at all\nplain text')).toBeNull();
   });
 });
 

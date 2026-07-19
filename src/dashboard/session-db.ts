@@ -6,6 +6,7 @@ import { fileExists } from '../utils/fs.js';
 import type { AgentSession, AgentSessionStatus } from './types.js';
 import { ENGAGEMENT_DDL, ENGAGEMENT_SCHEMA_VERSION } from '../db/engagement-schema.js';
 import { backfillEngagements } from '../db/engagement-backfill.js';
+import { sanitizeSessionPath } from '../utils/transcript.js';
 
 let db: Database.Database | null = null;
 
@@ -519,7 +520,16 @@ export async function migrateFromMarkdown(projectsDir: string): Promise<number> 
       // Only attach an engagement to the session row that actually persisted:
       // a duplicate session_id is IGNORED here, so its (possibly different)
       // status must not drive an engagement onto the row that already won.
-      const res = insert.run(s.sessionId, s.agent, s.started, s.status, s.path);
+      // This legacy importer inserts directly (not via appendSession), so it
+      // must apply the same degenerate-path guard — otherwise a markdown row
+      // carrying path='/' would reintroduce the value the v8 backfill removed.
+      const res = insert.run(
+        s.sessionId,
+        s.agent,
+        s.started,
+        s.status,
+        sanitizeSessionPath(s.path) ?? '',
+      );
       if (res.changes > 0 && (s.projectSlug || s.assignmentSlug)) {
         // Terminal imports become CLOSED engagements (no leaked open interval);
         // markdown has no `ended` timestamp, so fall back to `started`.

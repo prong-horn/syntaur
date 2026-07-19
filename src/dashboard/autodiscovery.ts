@@ -335,13 +335,15 @@ async function reconcile(serversDir: string, projectsDir: string, excludePids?: 
       console.error('[autodiscovery] session scan failed:', err);
     }
 
-    // Auto-summary rides the same interval, in its own failure domain: an LLM
-    // problem must never break session discovery.
-    try {
-      await runSummarizePass(summarizeAfterScan, onAgentSessionsChanged);
-    } catch (err) {
+    // Auto-summary rides the same interval but is FIRE-AND-FORGET: a summarize
+    // batch is up to `limit` sequential ~120s LLM calls, and `reconcile` gates
+    // the whole discovery loop (activeReconcile suppresses ticks while it runs),
+    // so awaiting it would stall session scans, liveness, and server discovery
+    // for minutes. Its own in-flight guard + the persistent claim table keep it
+    // from overlapping itself; discovery must never wait on it.
+    void runSummarizePass(summarizeAfterScan, onAgentSessionsChanged).catch((err) => {
       console.error('[autodiscovery] auto-summary failed:', err);
-    }
+    });
   }
 }
 
@@ -361,7 +363,20 @@ export async function runSummarizePass(
   onAgentSessionsChanged: (() => void) | undefined,
 ): Promise<void> {
   if (summarizeInFlight) return;
+  // Latch synchronously — the config read below awaits, so a second fire-and-
+  // forget tick could otherwise slip past the guard before the first sets it.
+  summarizeInFlight = true;
+  try {
+    await runSummarizeInner(injected, onAgentSessionsChanged);
+  } finally {
+    summarizeInFlight = false;
+  }
+}
 
+async function runSummarizeInner(
+  injected: ((opts: { limit: number }) => Promise<Array<{ kind: string }>>) | undefined,
+  onAgentSessionsChanged: (() => void) | undefined,
+): Promise<void> {
   let run = injected;
   if (!run) {
     const { readConfig } = await import('../utils/config.js');
@@ -375,16 +390,11 @@ export async function runSummarizePass(
     run = ({ limit }) => summarizeMissing({ backend, limit });
   }
 
-  summarizeInFlight = true;
-  try {
-    const results = await run({ limit: AUTO_SUMMARIZE_LIMIT });
-    // Summary-only writes do not change any row the SCAN looks at, so the scan's
-    // own `changed` flag stays false and the SPA would never refetch. Fire the
-    // same callback here, but only when something was actually written.
-    if (results.some((r) => r.kind === 'ok')) onAgentSessionsChanged?.();
-  } finally {
-    summarizeInFlight = false;
-  }
+  const results = await run({ limit: AUTO_SUMMARIZE_LIMIT });
+  // Summary-only writes do not change any row the SCAN looks at, so the scan's
+  // own `changed` flag stays false and the SPA would never refetch. Fire the
+  // same callback here, but only when something was actually written.
+  if (results.some((r) => r.kind === 'ok')) onAgentSessionsChanged?.();
 }
 
 /** Test helper — clear the in-flight latch between cases. */

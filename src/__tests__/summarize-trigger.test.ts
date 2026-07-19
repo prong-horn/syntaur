@@ -50,12 +50,20 @@ describe('reconcile wiring', () => {
   it('invokes the injected summarize pass with a small batch cap', async () => {
     // reconcile runs the real scanner (guarded on DB init), so this only checks
     // the wiring; the fire/skip logic is unit-tested via runSummarizePass below.
+    // The summarize pass is FIRE-AND-FORGET (reconcile must not block on LLM
+    // calls), so the injected fn signals when it has been invoked.
     initSessionDb(dbPath);
     const calls: Array<{ limit: number }> = [];
+    let signalCalled!: () => void;
+    const called = new Promise<void>((r) => {
+      signalCalled = r;
+    });
     await reconcile(serversDir, projectsDir, undefined, undefined, undefined, async (opts) => {
       calls.push(opts);
+      signalCalled();
       return [];
     });
+    await called; // wait for the detached pass to actually run
 
     expect(calls).toHaveLength(1);
     // Each item is a paid LLM call, so the per-tick batch stays small.
@@ -63,7 +71,31 @@ describe('reconcile wiring', () => {
     expect(calls[0].limit).toBeLessThanOrEqual(5);
   });
 
-  it('does not fail reconcile when the summarize pass rejects', async () => {
+  it('returns from reconcile WITHOUT waiting for a slow summarize pass', async () => {
+    // The regression this guards: awaiting the pass would stall discovery for
+    // minutes behind sequential ~120s LLM calls. The gate below is NEVER
+    // released before reconcile resolves — so if reconcile awaited the pass,
+    // `await reconcile(...)` would hang forever and the test would time out.
+    // Reaching the line after the await is itself the proof of non-blocking (no
+    // wall-clock threshold, which would be flaky against the real scanner).
+    initSessionDb(dbPath);
+    let released!: () => void;
+    const gate = new Promise<void>((r) => {
+      released = r;
+    });
+    let passEntered = false;
+    await reconcile(serversDir, projectsDir, undefined, undefined, undefined, async () => {
+      passEntered = true;
+      await gate; // would hang forever if reconcile awaited the pass
+      return [];
+    });
+    // reconcile resolved while the (gated, still-running) pass is detached.
+    expect(passEntered).toBe(true);
+    released();
+    _resetSummarizeInFlightForTests();
+  });
+
+  it('does not surface a rejection from the detached summarize pass', async () => {
     initSessionDb(dbPath);
     await expect(
       reconcile(serversDir, projectsDir, undefined, undefined, undefined, async () => {

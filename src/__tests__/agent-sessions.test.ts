@@ -317,6 +317,36 @@ activeSessions: 1
     expect(getOpenEngagement('sess-def')).toBeNull();
   });
 
+  it('sanitizes a degenerate path="/" during import (does not bypass the boundary)', async () => {
+    // This importer inserts directly, not via appendSession, so it must apply
+    // the same guard — else a legacy '/' row reintroduces the value the v8
+    // backfill removed.
+    const projectsDir = resolve(testDir, 'projects');
+    const projectDir = resolve(projectsDir, 'root-path-project');
+    await mkdir(projectDir, { recursive: true });
+    await writeFile(
+      resolve(projectDir, '_index-sessions.md'),
+      `---
+project: root-path-project
+generated: "2026-03-26T00:00:00Z"
+activeSessions: 1
+---
+
+# Active Sessions
+
+| Assignment | Agent | Session ID | Started | Status | Path |
+|------------|-------|------------|---------|--------|------|
+| task-r | claude | sess-root | 2026-03-26T10:00:00Z | stopped | / |
+`,
+    );
+
+    await migrateFromMarkdown(projectsDir);
+    const row = getSessionDb()
+      .prepare('SELECT path FROM sessions WHERE session_id = ?')
+      .get('sess-root') as { path: string | null };
+    expect(row.path === null || row.path === '').toBe(true);
+  });
+
   it('does not leak an open engagement when a duplicate session_id is ignored', async () => {
     // Same session id appears twice (e.g. across index files): terminal first,
     // active second. INSERT OR IGNORE keeps the first (terminal) session row, so
