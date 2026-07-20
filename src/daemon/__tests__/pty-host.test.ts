@@ -11,7 +11,7 @@ import {
   type SocketLike,
 } from '../pty-host.js';
 import { encodeFrame } from '../protocol.js';
-import type { JobState } from '../types.js';
+import type { DerivedState, JobState } from '../types.js';
 
 // ── Fakes ────────────────────────────────────────────────────────────────────
 
@@ -227,7 +227,7 @@ describe('runPtyHost', () => {
     vi.useRealTimers();
   });
 
-  function boot(over: Partial<PtyHostConfig> = {}) {
+  function boot(over: Partial<PtyHostConfig> = {}, depsOver: Record<string, unknown> = {}) {
     const pty = fakePty();
     const screen = fakeScreen();
     const bind = fakeBind();
@@ -243,6 +243,7 @@ describe('runPtyHost', () => {
         appendTimeline,
         procStart: () => 'Wed Jul 9 12:00:00 2026',
         now: () => 0,
+        ...depsOver,
       }),
     };
   }
@@ -437,5 +438,143 @@ describe('runPtyHost', () => {
         }) as never,
       }),
     ).rejects.toBeInstanceOf(SyntaurError);
+  });
+
+  // ── Attention-state engine (Phase C) ────────────────────────────────────────
+
+  describe('attention-state engine', () => {
+    const RV_SOCK = '/tmp/syntaur-ptyhost-test/d1/rv/aaa.sock';
+    const PTY_SOCK = '/tmp/syntaur-ptyhost-test/d1/pty/aaa.sock';
+
+    /** Boot with a scripted adapter: `setOpinion` swaps its return value,
+     * `setThrowing` makes it throw (AC4 case). */
+    function bootWithAdapter(over: Partial<PtyHostConfig> = {}) {
+      let opinion: DerivedState = {};
+      let throwing = false;
+      const deriveState = vi.fn((): DerivedState => {
+        if (throwing) throw new Error('adapter bug');
+        return opinion;
+      });
+      const { pty, screen, bind, promise } = boot(over, {
+        deriveState,
+        deriveIdleMs: 500,
+        deriveRecheckMs: 5000,
+      });
+      return {
+        pty,
+        screen,
+        bind,
+        promise,
+        deriveState,
+        setOpinion: (o: DerivedState) => {
+          opinion = o;
+        },
+        setThrowing: (v: boolean) => {
+          throwing = v;
+        },
+      };
+    }
+
+    /** Boot, connect an rv socket, and drive one blocked transition. */
+    async function driveToBlocked(needs = 'permission prompt') {
+      const engine = bootWithAdapter();
+      await engine.promise;
+      const rv = fakeSocket();
+      engine.bind.connect(RV_SOCK, rv);
+      engine.setOpinion({ state: 'blocked', needs });
+      engine.pty.emit('x');
+      vi.advanceTimersByTime(500);
+      return { ...engine, rv };
+    }
+
+    it('persists a changed derived state, appends the timeline event, and fans out {t:state} on rv', async () => {
+      vi.useFakeTimers();
+      const { rv } = await driveToBlocked('permission prompt');
+      const last = writeJobState.mock.calls.at(-1)?.[0] as JobState;
+      expect(last).toMatchObject({ state: 'blocked', needs: 'permission prompt' });
+      expect(appendTimeline).toHaveBeenCalledWith(
+        'aaa',
+        expect.objectContaining({ event: 'state', state: 'blocked', needs: 'permission prompt' }),
+      );
+      expect(rv.frames()).toContainEqual({
+        t: 'state',
+        record: expect.objectContaining({ state: 'blocked', needs: 'permission prompt' }),
+      });
+    });
+
+    it('does not re-persist on the periodic recheck when the derived state is unchanged', async () => {
+      vi.useFakeTimers();
+      await driveToBlocked();
+      const before = writeJobState.mock.calls.length;
+      vi.advanceTimersByTime(5000); // recheck interval; opinion unchanged
+      expect(writeJobState.mock.calls.length).toBe(before);
+    });
+
+    it('an adapter throw is swallowed, keeps the last derived state, and never crashes the host (AC4)', async () => {
+      vi.useFakeTimers();
+      const { pty, bind, setThrowing } = await driveToBlocked();
+      const before = writeJobState.mock.calls.length;
+      setThrowing(true);
+      pty.emit('y');
+      expect(() => vi.advanceTimersByTime(500)).not.toThrow();
+      expect(writeJobState.mock.calls.length).toBe(before); // no write while throwing → last (blocked) state kept
+
+      // host stays alive: a subsequent stdin frame still works
+      const ptySock = fakeSocket();
+      bind.connect(PTY_SOCK, ptySock);
+      ptySock.recv(encodeFrame({ t: 'stdin', b: b64('ok') }));
+      expect(pty.writes).toContain('ok');
+    });
+
+    it('a working opinion after blocked clears needs', async () => {
+      vi.useFakeTimers();
+      const { pty, setOpinion } = await driveToBlocked();
+      setOpinion({ state: 'working' });
+      pty.emit('y');
+      vi.advanceTimersByTime(500);
+      const last = writeJobState.mock.calls.at(-1)?.[0] as JobState;
+      expect(last).toMatchObject({ state: 'working', needs: null });
+    });
+
+    it('a late rv subscriber sees the CURRENT derived state, not a stale working', async () => {
+      vi.useFakeTimers();
+      const { bind } = await driveToBlocked();
+      const rv2 = fakeSocket();
+      bind.connect(RV_SOCK, rv2);
+      expect(rv2.frames()[0]).toMatchObject({ t: 'state', record: expect.objectContaining({ state: 'blocked' }) });
+    });
+
+    it('exit wins over a pending blocked opinion and cancels further derives', async () => {
+      vi.useFakeTimers();
+      const engine = bootWithAdapter();
+      await engine.promise;
+      engine.setOpinion({ state: 'blocked', needs: 'x' });
+      engine.pty.fireExit(0, undefined); // no timer advance — exit fires before the derive would
+      const last = writeJobState.mock.calls.at(-1)?.[0] as JobState;
+      expect(last.state).toBe('done');
+
+      const before = writeJobState.mock.calls.length;
+      vi.advanceTimersByTime(10_000);
+      expect(writeJobState.mock.calls.length).toBe(before); // finalizeExit cleared the derive timer
+    });
+
+    it('a silent child (zero onData) still gets derived via the initial arm', async () => {
+      vi.useFakeTimers();
+      const engine = bootWithAdapter();
+      await engine.promise;
+      vi.advanceTimersByTime(500);
+      expect(engine.deriveState).toHaveBeenCalled();
+    });
+
+    it('a terminal opinion from the adapter is rejected (treated as no-opinion working)', async () => {
+      vi.useFakeTimers();
+      const engine = bootWithAdapter();
+      await engine.promise;
+      engine.setOpinion({ state: 'done' });
+      engine.pty.emit('x');
+      const before = writeJobState.mock.calls.length;
+      vi.advanceTimersByTime(500);
+      expect(writeJobState.mock.calls.length).toBe(before); // unchanged from initial 'working'
+    });
   });
 });

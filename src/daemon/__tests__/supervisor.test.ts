@@ -5,12 +5,12 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { SyntaurError } from '../../errors.js';
-import { createDaemon, type DaemonDeps, type DaemonSpawnFn } from '../supervisor.js';
+import { createDaemon, toSubscribeReply, type DaemonDeps, type DaemonSpawnFn } from '../supervisor.js';
 import { appendLog, tailLog } from '../log.js';
 import { writeJobState } from '../jobs.js';
 import { readRoster, writeRoster } from '../roster.js';
 import { daemonLockPath, ptySockPath, rosterPath, rvSockPath } from '../paths.js';
-import type { JobState, ListReply, RosterEntry, StatusReply } from '../types.js';
+import type { JobState, ListReply, RosterEntry, StateRecord, StatusReply } from '../types.js';
 
 const START = 'Wed Jul 9 12:00:00 2026';
 
@@ -257,6 +257,22 @@ describe('supervisor', () => {
     });
     expect(await d.start()).toBe('yielded');
     expect(existsSync(daemonLockPath())).toBe(false); // released on yield
+  });
+});
+
+describe('toSubscribeReply', () => {
+  it('preserves the t discriminator when relaying an rv frame (D9)', () => {
+    const record: StateRecord = {
+      short: 'aaa',
+      state: 'blocked',
+      needs: 'permission prompt',
+      pid: 123,
+      cols: 80,
+      rows: 24,
+      updatedAt: '2026-07-19T00:00:00.000Z',
+    };
+    expect(toSubscribeReply({ t: 'state', record })).toEqual({ ok: true, t: 'state', record });
+    expect(toSubscribeReply({ t: 'settled', record })).toEqual({ ok: true, t: 'settled', record });
   });
 });
 

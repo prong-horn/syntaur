@@ -16,6 +16,9 @@ import { ensureDir0700, ptyDir, ptySockPath, rvDir, rvSockPath } from './paths.j
 import { createLineDecoder, encodeFrame, isFrameObject } from './protocol.js';
 import { bindUnixSocket } from './sockets.js';
 import type {
+  DeriveInput,
+  DerivedState,
+  HookEvent,
   JobState,
   PtyClientFrame,
   PtyHostFrame,
@@ -28,6 +31,8 @@ import type {
 const DEFAULT_SCROLLBACK = 1000;
 const SNAPSHOT_IDLE_MS = 100;
 const SNAPSHOT_CAP_MS = 400;
+const DERIVE_IDLE_MS = 500;
+const DERIVE_RECHECK_MS = 5000;
 
 // ── PTY seam ───────────────────────────────────────────────────────────────
 
@@ -196,6 +201,10 @@ export interface PtyHostDeps {
   now?: () => number;
   idleMs?: number;
   capMs?: number;
+  /** Adapter derivation fn (Task 4 wires the registry; default: no opinion). */
+  deriveState?: (x: DeriveInput) => DerivedState;
+  deriveIdleMs?: number;
+  deriveRecheckMs?: number;
   /** Called once the child exits and everything is torn down. */
   onExit?: (code: number) => void;
 }
@@ -237,6 +246,9 @@ export async function runPtyHost(config: PtyHostConfig, deps: PtyHostDeps = {}):
   const procStart = deps.procStart ?? captureProcessStartedAt;
   const now = deps.now ?? (() => Date.now());
   const nowIso = (): string => new Date(now()).toISOString();
+  const deriveState = deps.deriveState ?? ((): DerivedState => ({}));
+  const deriveIdleMs = deps.deriveIdleMs ?? DERIVE_IDLE_MS;
+  const deriveRecheckMs = deps.deriveRecheckMs ?? DERIVE_RECHECK_MS;
 
   const { short, daemonId } = config;
   const ptySock = ptySockPath(daemonId, short);
@@ -258,6 +270,9 @@ export async function runPtyHost(config: PtyHostConfig, deps: PtyHostDeps = {}):
   let curRows = config.rows;
   let exited = false;
   let lastDataAt = now(); // Phase C: output-idle clock (deps.now seam)
+  let lastDerived: DerivedState = { state: 'working', needs: null };
+  const hookEvents: HookEvent[] = []; // Task 6's spool tailer appends (capped there)
+  let deriveTimer: ReturnType<typeof setTimeout> | null = null;
   const ptyClients = new Set<Client>();
   const rvClients = new Set<SocketLike>();
 
@@ -301,6 +316,7 @@ export async function runPtyHost(config: PtyHostConfig, deps: PtyHostDeps = {}):
     cols: curCols,
     rows: curRows,
     updatedAt: nowIso(),
+    needs: state === 'blocked' ? (lastDerived.needs ?? null) : null,
     ...(exitCode !== undefined ? { exitCode } : {}),
     ...(exitSignal !== undefined ? { exitSignal } : {}),
   });
@@ -320,10 +336,56 @@ export async function runPtyHost(config: PtyHostConfig, deps: PtyHostDeps = {}):
     }
   };
 
+  // ── Attention-state engine (Phase C) ─────────────────────────────────────
+  // Adapters only compute; this persists + fans out. Terminal states are
+  // exit-owned (finalizeExit): only working/blocked are accepted here, and
+  // nothing derives once `exited` is set. An adapter throw keeps the last
+  // state — a misbehaving adapter can never crash the host (AC4).
+  function runDerive(): void {
+    if (exited) return;
+    let derived: DerivedState;
+    try {
+      derived = deriveState({
+        screen: screen.text(),
+        hookEvents,
+        procAlive: !exited,
+        outputIdleMs: Math.max(0, now() - lastDataAt),
+        cwd: config.cwd,
+        nowMs: now(), // derive-time anchor for event-vs-output recency (r3 F2)
+      });
+    } catch {
+      return; // adapter bug: keep last state (AC4)
+    }
+    const opinion = derived.state === 'working' || derived.state === 'blocked' ? derived.state : undefined;
+    const state = opinion ?? 'working';
+    const needs = state === 'blocked' ? (derived.needs ?? null) : null;
+    if (state === lastDerived.state && needs === lastDerived.needs) return;
+    try {
+      writeJobState({ ...baseState(), state, needs });
+      appendTimeline(short, { event: 'state', state, needs });
+    } catch {
+      return; // disk hiccup: lastDerived unchanged → retried on the next trigger
+    }
+    lastDerived = { state, needs };
+    const record = stateRecord(state);
+    for (const socket of rvClients) sendRv(socket, { t: 'state', record });
+  }
+
+  function armDerive(delayMs: number): void {
+    if (deriveTimer) clearTimeout(deriveTimer);
+    deriveTimer = setTimeout(() => {
+      deriveTimer = null;
+      runDerive();
+      if (!exited) armDerive(deriveRecheckMs); // idle thresholds keep re-crossing
+    }, delayMs);
+  }
+  armDerive(deriveIdleMs); // silent children (zero onData) still get derived
+
   // PTY output → emulator (always) + live clients as {t:'out'}; pending clients
   // are excluded (their bytes are captured by the pending snapshot instead).
   pty.onData((data: string) => {
     lastDataAt = now();
+    armDerive(deriveIdleMs);
     screen.write(data);
     const frame: PtyHostFrame = { t: 'out', b: Buffer.from(data, 'utf8').toString('base64') };
     for (const client of ptyClients) {
@@ -405,7 +467,7 @@ export async function runPtyHost(config: PtyHostConfig, deps: PtyHostDeps = {}):
 
   function handleRvConnection(socket: SocketLike): void {
     rvClients.add(socket);
-    sendRv(socket, { t: 'state', record: stateRecord('working') });
+    sendRv(socket, { t: 'state', record: stateRecord(lastDerived.state ?? 'working') });
     const prune = (): void => {
       rvClients.delete(socket);
     };
@@ -420,6 +482,10 @@ export async function runPtyHost(config: PtyHostConfig, deps: PtyHostDeps = {}):
   function finalizeExit(exitCode: number, signal: number | undefined): void {
     if (exited) return;
     exited = true;
+    if (deriveTimer) {
+      clearTimeout(deriveTimer);
+      deriveTimer = null;
+    }
     const state = toState(exitCode, signal);
     const snap = screen.snapshot();
     const finalState: JobState = {

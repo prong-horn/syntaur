@@ -206,6 +206,8 @@ export interface StatusReply {
 /** One streamed frame of the `subscribe` op (after the initial OkReply). */
 export interface SubscribeStateReply {
   ok: true;
+  /** rv discriminator preserved by the relay (D9): mid-life 'state' vs terminal 'settled'. */
+  t: 'state' | 'settled';
   record: StateRecord;
 }
 

@@ -50,6 +50,7 @@ import type {
   Session,
   SessionState,
   StatusReply,
+  SubscribeStateReply,
 } from './types.js';
 
 export type DaemonSpawnFn = (command: string, args: string[], options: SpawnOptions) => ChildProcess;
@@ -106,6 +107,11 @@ export interface Daemon {
   /** Current in-memory session count (tests). */
   readonly sessionCount: number;
   hasSession(short: string): boolean;
+}
+
+/** Relay one rv frame to a subscriber, PRESERVING the t discriminator (D9). */
+export function toSubscribeReply(frame: RvFrame): SubscribeStateReply {
+  return { ok: true, t: frame.t, record: frame.record };
 }
 
 export function createDaemon(deps: DaemonDeps = {}): Daemon {
@@ -536,7 +542,8 @@ export function createDaemon(deps: DaemonDeps = {}): Daemon {
         }
         for (const frame of frames) {
           if (!isFrameObject(frame)) continue;
-          socket.write(encodeFrame({ ok: true, record: frame.record }));
+          if (frame.t !== 'state' && frame.t !== 'settled') continue;
+          socket.write(encodeFrame(toSubscribeReply(frame)));
         }
       });
       rv.on('error', () => {});
