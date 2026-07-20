@@ -223,7 +223,7 @@ describe('computeEngineStep', () => {
       stages: [
         {
           id: 'in_progress',
-          gate: [{ condition: 'acAllChecked:true' }],
+          gate: [{ check: '', condition: 'acAllChecked:true' }],
           next: [
             { to: 'review', on: 'gate' },
             { to: 'review', on: 'work-start', verb: 'request-review' },
