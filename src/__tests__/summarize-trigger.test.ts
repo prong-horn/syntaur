@@ -5,6 +5,7 @@ import { join, resolve } from 'node:path';
 import {
   reconcile,
   runSummarizePass,
+  stopAutodiscovery,
   _resetSummarizeInFlightForTests,
 } from '../dashboard/autodiscovery.js';
 import {
@@ -102,6 +103,38 @@ describe('reconcile wiring', () => {
         throw new Error('backend exploded');
       }),
     ).resolves.toBeUndefined();
+  });
+
+  it('stopAutodiscovery drains the detached summarize pass before returning (no closed-DB access)', async () => {
+    // The pass is detached from reconcile, so shutdown must drain it separately —
+    // otherwise the caller closes the session DB while a paid call is still
+    // writing to it.
+    initSessionDb(dbPath);
+    let release!: () => void;
+    const gate = new Promise<void>((r) => {
+      release = r;
+    });
+    let passFinished = false;
+    await reconcile(serversDir, projectsDir, undefined, undefined, undefined, async () => {
+      await gate;
+      passFinished = true;
+      return [];
+    });
+
+    let stopResolved = false;
+    const stopping = stopAutodiscovery().then(() => {
+      stopResolved = true;
+    });
+    // Let microtasks flush: stop must still be waiting on the gated pass.
+    await new Promise((r) => setImmediate(r));
+    expect(stopResolved).toBe(false);
+    expect(passFinished).toBe(false);
+
+    release();
+    await stopping;
+    expect(passFinished).toBe(true);
+    expect(stopResolved).toBe(true);
+    _resetSummarizeInFlightForTests();
   });
 });
 

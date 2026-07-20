@@ -37,6 +37,8 @@ interface RunResult {
   truncated: boolean;
   /** The prompt could not be fully written to the child's stdin (e.g. EPIPE). */
   stdinError: boolean;
+  /** The run was cancelled via the caller's AbortSignal (e.g. shutdown). */
+  aborted: boolean;
 }
 
 /**
@@ -58,12 +60,19 @@ export function runPrompt(
     env?: NodeJS.ProcessEnv;
     timeoutMs?: number;
     maxOutputBytes?: number;
+    signal?: AbortSignal;
   },
 ): Promise<RunResult> {
   const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const maxOutputBytes = opts.maxOutputBytes ?? MAX_OUTPUT_BYTES;
 
   return new Promise((resolve) => {
+    // Already aborted before we spawned — don't start a doomed child.
+    if (opts.signal?.aborted) {
+      resolve({ stdout: '', stderr: '', code: null, enoent: false, timedOut: false, truncated: false, stdinError: false, aborted: true });
+      return;
+    }
+
     const child = spawn(binary, args, {
       env: opts.env ?? process.env,
       stdio: ['pipe', 'pipe', 'pipe'],
@@ -74,14 +83,22 @@ export function runPrompt(
     let truncated = false;
     let timedOut = false;
     let stdinError = false;
+    let aborted = false;
     let settled = false;
 
     const settle = (result: RunResult) => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
+      if (opts.signal) opts.signal.removeEventListener('abort', onAbort);
       resolve(result);
     };
+
+    const onAbort = () => {
+      aborted = true;
+      child.kill('SIGKILL');
+    };
+    if (opts.signal) opts.signal.addEventListener('abort', onAbort, { once: true });
 
     const timer = setTimeout(() => {
       timedOut = true;
@@ -109,10 +126,10 @@ export function runPrompt(
 
     child.on('error', (err) => {
       const isEnoent = (err as NodeJS.ErrnoException).code === 'ENOENT';
-      settle({ stdout, stderr, code: null, enoent: isEnoent, timedOut, truncated, stdinError });
+      settle({ stdout, stderr, code: null, enoent: isEnoent, timedOut, truncated, stdinError, aborted });
     });
     child.on('close', (code) => {
-      settle({ stdout, stderr, code, enoent: false, timedOut, truncated, stdinError });
+      settle({ stdout, stderr, code, enoent: false, timedOut, truncated, stdinError, aborted });
     });
 
     // Capture (don't swallow) a stdin write failure: the child exited or closed
@@ -127,11 +144,19 @@ export function runPrompt(
 
 /** True when the run did not complete cleanly and must be a backend error. */
 function runFailed(result: RunResult): boolean {
-  return result.enoent || result.timedOut || result.truncated || result.stdinError || result.code !== 0;
+  return (
+    result.enoent ||
+    result.timedOut ||
+    result.truncated ||
+    result.stdinError ||
+    result.aborted ||
+    result.code !== 0
+  );
 }
 
 /** Turn a spawn outcome into the backend contract's error shape. */
 function describeFailure(binary: string, result: RunResult): string {
+  if (result.aborted) return `${binary} was aborted`;
   if (result.enoent) return `${binary} not found on PATH`;
   if (result.timedOut) return `${binary} timed out`;
   if (result.truncated) return `${binary} output exceeded the size cap`;
@@ -174,6 +199,7 @@ export function createClaudeBackend(binary = 'claude'): SummarizeBackend {
     const result = await runPrompt(binary, args, {
       stdin: prompt,
       timeoutMs: deps?.timeoutMs,
+      signal: deps?.signal,
     });
     if (runFailed(result)) {
       return { ok: false, error: describeFailure(binary, result) };
@@ -302,6 +328,7 @@ export function createPiBackend(
       stdin: prompt,
       env: { ...baseEnv, SYNTHETIC_API_KEY: apiKey },
       timeoutMs: deps?.timeoutMs,
+      signal: deps?.signal,
     });
     if (runFailed(result)) {
       return { ok: false, error: describeFailure(binary, result) };

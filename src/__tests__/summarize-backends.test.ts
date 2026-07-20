@@ -127,6 +127,23 @@ describe('runPrompt', () => {
     const result = await runPrompt(bin, [], { stdin: 'x'.repeat(2_000_000) });
     expect(result.stdinError).toBe(true);
   });
+
+  it('does not spawn when the signal is already aborted', async () => {
+    const bin = await recordingStub('preaborted', 'out');
+    const result = await runPrompt(bin, [], { stdin: 'x', signal: AbortSignal.abort() });
+    expect(result.aborted).toBe(true);
+    // The stub never ran, so its record file is absent.
+    await expect(readRecord('preaborted')).rejects.toThrow();
+  });
+
+  it('SIGKILLs an in-flight child when the signal aborts (shutdown)', async () => {
+    const controller = new AbortController();
+    const bin = await writeStub('hang', '#!/usr/bin/env node\nsetTimeout(() => {}, 60000);\n');
+    const promise = runPrompt(bin, [], { stdin: 'x', signal: controller.signal });
+    controller.abort();
+    const result = await promise;
+    expect(result.aborted).toBe(true);
+  });
 });
 
 describe('claude backend', () => {

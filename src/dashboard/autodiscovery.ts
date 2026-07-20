@@ -100,6 +100,16 @@ export async function stopAutodiscovery(): Promise<void> {
     await activeReconcile;
     activeReconcile = null;
   }
+  // The summarize pass is detached from reconcile, so it must be drained
+  // separately: abort the in-flight backend call (SIGKILLs the child) and await
+  // the pass so its lease release / failure record lands BEFORE the caller
+  // closes the session DB. Without this a paid call could finish against a
+  // closed DB, wasting the spend and logging noise.
+  if (activeSummarize) {
+    summarizeAbort?.abort();
+    await activeSummarize;
+    activeSummarize = null;
+  }
   savedOptions = null;
 }
 
@@ -341,11 +351,30 @@ async function reconcile(serversDir: string, projectsDir: string, excludePids?: 
     // so awaiting it would stall session scans, liveness, and server discovery
     // for minutes. Its own in-flight guard + the persistent claim table keep it
     // from overlapping itself; discovery must never wait on it.
-    void runSummarizePass(summarizeAfterScan, onAgentSessionsChanged).catch((err) => {
-      console.error('[autodiscovery] auto-summary failed:', err);
-    });
+    //
+    // But it must not outlive shutdown either: the DB is closed on server stop,
+    // and a summarize finishing afterward would waste a paid call and hit a
+    // closed DB. So retain the promise + an abort controller — stopAutodiscovery
+    // aborts the in-flight child and awaits the pass before the DB closes.
+    summarizeAbort = new AbortController();
+    activeSummarize = runSummarizePass(
+      summarizeAfterScan,
+      onAgentSessionsChanged,
+      summarizeAbort.signal,
+    )
+      .catch((err) => {
+        console.error('[autodiscovery] auto-summary failed:', err);
+      })
+      .finally(() => {
+        activeSummarize = null;
+        summarizeAbort = null;
+      });
   }
 }
+
+/** In-flight summarize pass + its aborter, awaited/cancelled on shutdown. */
+let activeSummarize: Promise<void> | null = null;
+let summarizeAbort: AbortController | null = null;
 
 /**
  * True while a summarize batch is in flight. LLM calls routinely outlast the
@@ -361,13 +390,14 @@ const AUTO_SUMMARIZE_LIMIT = 2;
 export async function runSummarizePass(
   injected: ((opts: { limit: number }) => Promise<Array<{ kind: string }>>) | undefined,
   onAgentSessionsChanged: (() => void) | undefined,
+  signal?: AbortSignal,
 ): Promise<void> {
   if (summarizeInFlight) return;
   // Latch synchronously — the config read below awaits, so a second fire-and-
   // forget tick could otherwise slip past the guard before the first sets it.
   summarizeInFlight = true;
   try {
-    await runSummarizeInner(injected, onAgentSessionsChanged);
+    await runSummarizeInner(injected, onAgentSessionsChanged, signal);
   } finally {
     summarizeInFlight = false;
   }
@@ -376,6 +406,7 @@ export async function runSummarizePass(
 async function runSummarizeInner(
   injected: ((opts: { limit: number }) => Promise<Array<{ kind: string }>>) | undefined,
   onAgentSessionsChanged: (() => void) | undefined,
+  signal?: AbortSignal,
 ): Promise<void> {
   let run = injected;
   if (!run) {
@@ -387,7 +418,8 @@ async function runSummarizeInner(
     const { summarizeMissing } = await import('../sessions/summarizer.js');
     const { resolveBackend } = await import('../sessions/summarize-backends.js');
     const { backend } = resolveBackend(undefined, config);
-    run = ({ limit }) => summarizeMissing({ backend, limit });
+    // Thread the abort signal into the backend so shutdown can cut a live call.
+    run = ({ limit }) => summarizeMissing({ backend, limit, deps: { signal } });
   }
 
   const results = await run({ limit: AUTO_SUMMARIZE_LIMIT });

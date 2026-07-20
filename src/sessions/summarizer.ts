@@ -33,6 +33,8 @@ export type SummarizeBackend = (
 export interface BackendDeps {
   timeoutMs?: number;
   logger?: (msg: string) => void;
+  /** Abort an in-flight backend call (e.g. on server shutdown). */
+  signal?: AbortSignal;
 }
 
 export type ResultKind =
@@ -41,10 +43,18 @@ export type ResultKind =
   | 'skipped-no-transcript'
   | 'skipped-exists'
   | 'skipped-claimed'
+  // A sweep candidate was revived to an active session before it was paid for.
+  // Summarizing a live session from a partial transcript would store a summary
+  // the sweep never refreshes (it only picks `summary IS NULL`), so skip it and
+  // let it re-qualify when it ends again.
+  | 'skipped-active'
   | 'empty-excerpt'
   | 'backend-error'
   | 'parse-error'
   | 'persist-error';
+
+/** Terminal states a sweep is allowed to summarize. */
+const SWEEPABLE_STATUSES = new Set(['stopped', 'completed']);
 
 export interface PerSessionResult {
   sessionId: string;
@@ -257,17 +267,23 @@ export async function summarizeSession(
     return { sessionId, kind: 'skipped-claimed' };
   }
 
-  // Re-read UNDER the lease and bail if a summary landed while we were building
-  // the excerpt. Without this, two workers can each see summary=NULL up front,
-  // both build excerpts, and — because claim/release are sequential — both win
-  // the lease in turn and pay for a redundant call that overwrites the first
-  // (the token match can't help; the second worker legitimately owns its lease).
-  if (!force) {
-    const fresh = getSessionById(sessionId);
-    if (fresh?.summary) {
-      releaseSummarize(sessionId, token);
-      return { sessionId, kind: 'skipped-exists' };
-    }
+  // Re-read UNDER the lease before paying. Two conditions must abort here:
+  //  1. A summary landed (another worker finished): two workers can each see
+  //     summary=NULL up front, both build excerpts, then both win the lease in
+  //     turn and pay redundantly (the token match can't help — the second
+  //     worker legitimately owns its later lease).
+  //  2. (sweep only) The candidate was revived to an active session. It was
+  //     picked while `stopped`; summarizing a live session now would store a
+  //     partial summary the sweep never refreshes. Release without pacing so it
+  //     re-qualifies when it ends.
+  const fresh = getSessionById(sessionId);
+  if (!force && fresh?.summary) {
+    releaseSummarize(sessionId, token);
+    return { sessionId, kind: 'skipped-exists' };
+  }
+  if (sweep && fresh && !SWEEPABLE_STATUSES.has(fresh.status)) {
+    releaseSummarize(sessionId, token);
+    return { sessionId, kind: 'skipped-active' };
   }
 
   try {
@@ -284,7 +300,10 @@ export async function summarizeSession(
       return { sessionId, kind: 'parse-error', error };
     }
 
-    const outcome = finalizeSummarize(sessionId, token, parsed, now);
+    // requireTerminal (sweep only) makes the persist atomic against a revive
+    // that happens DURING the backend call: if the session went active in that
+    // window, finalize writes nothing and releases without pacing.
+    const outcome = finalizeSummarize(sessionId, token, parsed, now, { requireTerminal: sweep });
     if (outcome === 'lost-lease') return { sessionId, kind: 'skipped-claimed' };
     return { sessionId, kind: 'ok', descriptionUpdated: outcome === 'ok-desc-updated' };
   } catch (err) {
@@ -313,7 +332,14 @@ function deferBarren(sessionId: string, reason: string, now: Date): void {
 export interface SummarizeMissingOptions {
   backend: SummarizeBackend;
   limit: number;
-  now?: Date;
+  /**
+   * Clock source. Called ONCE for candidate eligibility, then AGAIN per session
+   * so each claim's `claimed_at` is stamped at real acquisition time. A single
+   * frozen `now` across a long batch would record late claims minutes in the
+   * past, so another process could see them as stale (10-min threshold) and
+   * reclaim — reopening the double-pay race. Injectable for deterministic tests.
+   */
+  clock?: () => Date;
   deps?: BackendDeps;
 }
 
@@ -329,17 +355,18 @@ export interface SummarizeMissingOptions {
 export async function summarizeMissing(
   options: SummarizeMissingOptions,
 ): Promise<PerSessionResult[]> {
-  const { backend, limit, now = new Date(), deps } = options;
+  const { backend, limit, clock = () => new Date(), deps } = options;
   if (!Number.isInteger(limit) || limit <= 0) {
     throw new Error(`--limit must be a positive integer (got ${limit})`);
   }
 
-  const candidates = listSessionsNeedingSummary(limit, now);
+  const candidates = listSessionsNeedingSummary(limit, clock());
   const results: PerSessionResult[] = [];
   for (const session of candidates) {
     try {
       results.push(
-        await summarizeSession(session.sessionId, { backend, sweep: true, now, deps }),
+        // Fresh timestamp per session — see the `clock` doc above.
+        await summarizeSession(session.sessionId, { backend, sweep: true, now: clock(), deps }),
       );
     } catch (err) {
       results.push({

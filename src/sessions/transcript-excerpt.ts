@@ -73,20 +73,29 @@ function renderGenericLine(line: string): string[] {
   if (parsed === null || typeof parsed !== 'object') return [];
   const obj = parsed as Record<string, unknown>;
 
-  // Codex/pi wrap the interesting bits in a payload envelope.
-  const body = (obj.payload && typeof obj.payload === 'object' ? obj.payload : obj) as Record<
+  // Codex wraps the interesting bits in a `payload` envelope; pi (and codex)
+  // wrap the actual message in a nested `message` object:
+  //   pi:    { type: "message", message: { role, content: [{type,text}] } }
+  //   codex: { payload: { role, content } }
+  // Unwrap both, innermost first, so the role/content lookup below sees the real
+  // message rather than treating the `message` OBJECT as content (which silently
+  // dropped every pi line — its transcripts are entirely `type:"message"`).
+  let body = (obj.payload && typeof obj.payload === 'object' ? obj.payload : obj) as Record<
     string,
     unknown
   >;
+  if (body.message && typeof body.message === 'object') {
+    body = body.message as Record<string, unknown>;
+  }
 
   const role =
     typeof body.role === 'string'
       ? body.role
-      : typeof body.type === 'string'
-        ? body.type
+      : typeof obj.type === 'string'
+        ? obj.type
         : 'event';
 
-  const content = body.content ?? body.text ?? body.message ?? body.summary;
+  const content = body.content ?? body.text ?? body.summary;
   let text: string | null = null;
   if (typeof content === 'string') {
     text = content;

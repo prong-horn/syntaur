@@ -859,15 +859,25 @@ export function recordSummarizeFailure(
  * read-then-write, so a human description saved concurrently cannot be lost to
  * a race. `summary` always writes — a human-owned description never suppresses
  * the summary itself, it only means `descriptionUpdated` is false.
+ *
+ * `requireTerminal` (sweep path) makes the write conditional on the session
+ * still being stopped/completed. If it was revived to active DURING the backend
+ * call, the UPDATE matches no row, the lease is dropped without pacing, and the
+ * result is `lost-lease` — so the now-live session is left to re-qualify when it
+ * ends rather than being frozen with a partial summary.
  */
 export function finalizeSummarize(
   sessionId: string,
   token: string,
   fields: { description: string; summary: string },
   now = new Date(),
+  opts: { requireTerminal?: boolean } = {},
 ): FinalizeSummarizeResult {
   const db = getSessionDb();
   const nowIso = now.toISOString();
+  const terminalGuard = opts.requireTerminal
+    ? "AND status IN ('stopped', 'completed')"
+    : '';
 
   const run = db.transaction((): FinalizeSummarizeResult => {
     const state = db
@@ -887,11 +897,13 @@ export function finalizeSummarize(
              WHEN description IS NULL OR description = '' OR description_source = 'auto'
                THEN 'auto' ELSE description_source END,
            updated_at = datetime('now')
-         WHERE session_id = ?`,
+         WHERE session_id = ? ${terminalGuard}`,
       )
       .run(fields.summary, nowIso, fields.description, sessionId);
 
-    // The session row vanished between claim and write (deleted concurrently).
+    // Zero rows: the session row was deleted concurrently, OR (requireTerminal)
+    // it was revived to active. Either way drop the lease without pacing so it
+    // re-qualifies when it next ends.
     if (updated.changes === 0) {
       db.prepare('DELETE FROM summarize_state WHERE session_id = ? AND claim_token = ?').run(
         sessionId,

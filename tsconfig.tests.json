@@ -28,6 +28,7 @@
     "src/__tests__/summarizer.test.ts",
     "src/__tests__/summarize-backends.test.ts",
     "src/__tests__/summarize-trigger.test.ts",
+    "src/__tests__/transcript-excerpt.test.ts",
     "src/__tests__/lifecycle-commands.test.ts",
     "src/__tests__/lifecycle-linked-todos.test.ts",
     "src/__tests__/status-cmd.test.ts",

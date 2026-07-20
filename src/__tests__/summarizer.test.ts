@@ -355,6 +355,52 @@ describe('summarizeSession', () => {
     expect(state).toBeUndefined();
   });
 
+  it('sweep skips a candidate that was revived to active before its turn (no paid call, no pacing)', async () => {
+    // Picked while stopped, then a live process reattached. Summarizing a live
+    // session from a partial transcript would freeze a summary the sweep never
+    // refreshes, so skip and let it re-qualify when it ends.
+    await seed('s-revived', { status: 'active' });
+    let backendCalled = false;
+    const backend: SummarizeBackend = async () => {
+      backendCalled = true;
+      return { ok: true, text: goodReply };
+    };
+    const res = await summarizeSession('s-revived', { backend, sweep: true });
+
+    expect(res.kind).toBe('skipped-active');
+    expect(backendCalled).toBe(false);
+    // No pacing row — it must re-qualify immediately once it ends.
+    const state = getSessionDb()
+      .prepare('SELECT next_attempt_at FROM summarize_state WHERE session_id = ?')
+      .get('s-revived') as { next_attempt_at: string | null } | undefined;
+    expect(state?.next_attempt_at ?? null).toBeNull();
+  });
+
+  it('explicit-id summarize STILL works on an active session (only the sweep restricts)', async () => {
+    await seed('s-live-explicit', { status: 'active' });
+    const res = await summarizeSession('s-live-explicit', { backend: fakeBackend(goodReply) });
+    expect(res.kind).toBe('ok');
+    expect(getSessionById('s-live-explicit')!.summary).toBe('Traced and fixed it.');
+  });
+
+  it('finalize (sweep) writes nothing if the session went active DURING the backend call', async () => {
+    await seed('s-revive-mid');
+    // Flip to active while the backend "runs" — the requireTerminal guard in
+    // finalize must then refuse to persist.
+    const backend: SummarizeBackend = async () => {
+      getSessionDb().prepare("UPDATE sessions SET status='active' WHERE session_id='s-revive-mid'").run();
+      return { ok: true, text: goodReply };
+    };
+    const res = await summarizeSession('s-revive-mid', { backend, sweep: true });
+    expect(res.kind).toBe('skipped-claimed'); // finalize returned lost-lease
+    expect(getSessionById('s-revive-mid')!.summary).toBeNull();
+    // Lease dropped, no pacing — re-qualifies after it ends.
+    const state = getSessionDb()
+      .prepare('SELECT * FROM summarize_state WHERE session_id = ?')
+      .get('s-revive-mid');
+    expect(state).toBeUndefined();
+  });
+
   it('records a long backoff for a sweep-path skip', async () => {
     await seed('s11', {}, false);
     await summarizeSession('s11', { backend: fakeBackend(goodReply), sweep: true });
@@ -511,6 +557,23 @@ describe('listSessionsNeedingSummary / summarizeMissing', () => {
     await expect(summarizeMissing({ backend, limit: 0 })).rejects.toThrow(/positive integer/);
     await expect(summarizeMissing({ backend, limit: -1 })).rejects.toThrow(/positive integer/);
     await expect(summarizeMissing({ backend, limit: 1.5 })).rejects.toThrow(/positive integer/);
+  });
+
+  it('reads the clock fresh per session (not once for the whole batch)', async () => {
+    // A single frozen timestamp across a long batch would stamp late claims
+    // minutes in the past, so another process could see them as stale and
+    // reclaim. The clock is read once for eligibility + once per session.
+    await seed('k1', { started: '2026-07-02T10:00:00.000Z' });
+    await seed('k2', { started: '2026-07-01T10:00:00.000Z' });
+    let calls = 0;
+    const clock = () => {
+      calls++;
+      return new Date();
+    };
+    const results = await summarizeMissing({ backend: fakeBackend(goodReply), limit: 10, clock });
+    expect(results).toHaveLength(2);
+    // 1 (eligibility) + 1 per candidate.
+    expect(calls).toBe(3);
   });
 });
 
