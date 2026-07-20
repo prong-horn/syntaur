@@ -144,7 +144,7 @@ function parseRoute(entry: unknown, issues: string[], ctx: string): StageRoute {
     issues.push(`${ctx} must be a mapping or a string`);
     return { to: '', raw: { __malformed: entry } };
   }
-  const raw = collectUnknown(entry, ['to', 'on']) ?? {};
+  const raw = collectUnknown(entry, ['to', 'on', 'verb']) ?? {};
   const route: StageRoute = { to: str(entry, 'to', raw, issues, ctx) ?? '' };
   if (entry.to === undefined) issues.push(`${ctx} is missing 'to'`);
   if (entry.on !== undefined) {
@@ -156,6 +156,16 @@ function parseRoute(entry: unknown, issues: string[], ctx: string): StageRoute {
       // (or coercing a non-string) into a RouteTrigger.
       issues.push(`${ctx}.on "${String(on)}" is not one of ${ROUTE_TRIGGERS.join('|')}`);
       raw.on = on;
+    }
+  }
+  const verb = str(entry, 'verb', raw, issues, ctx);
+  if (verb !== undefined) {
+    // Preserved regardless (no silent deletion), but only meaningful on a
+    // work-start route — flag it elsewhere so a misplaced discriminator is
+    // surfaced instead of silently never matching (WS-3 Task 0).
+    route.verb = verb;
+    if ((route.on ?? 'gate') !== 'work-start') {
+      issues.push(`${ctx}.verb is only meaningful on an 'on: work-start' route`);
     }
   }
   if (Object.keys(raw).length > 0) route.raw = raw;
@@ -368,7 +378,7 @@ function serializeCheck(c: StageCheck): Record<string, unknown> {
 }
 
 function serializeRoute(r: StageRoute): Record<string, unknown> {
-  const o = compact({ to: r.to, on: r.on });
+  const o = compact({ to: r.to, on: r.on, verb: r.verb });
   if (r.raw) Object.assign(o, r.raw);
   return o;
 }

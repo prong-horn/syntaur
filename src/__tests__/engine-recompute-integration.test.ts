@@ -318,6 +318,50 @@ describe('runEngineTransition / runEngineOverride — the CLI+dashboard adapters
     expect(await isEngineActiveForAssignment(noWf, null)).toBe(false);
   });
 
+  it('stage-fact bridge passes the work-start verb (WS-3 Task 0): implement does not fire a request-review route', async () => {
+    await markStagesMigrated();
+    // The compiled-default shape: in_progress's ONLY work-start route carries
+    // `verb: request-review`; review routes back on `verb: rework`.
+    const wf = `id: feature
+stages:
+  - id: in_progress
+    gate: [{ condition: "acAllChecked:true" }]
+    next:
+      - { to: review, on: gate }
+      - { to: review, on: work-start, verb: request-review }
+  - id: review
+    next:
+      - { to: in_progress, on: work-start, verb: rework }
+      - { to: done, on: manual }
+  - id: done
+    terminal: true
+`;
+    await writeFile(join(home, 'workflows', 'feature.md'), wf, 'utf-8');
+    invalidateWorkflowLibraryCache();
+
+    // `implement` at in_progress → verb `implement` matches no route → NO move
+    // (pre-Task-0 this wrongly fired in_progress → review).
+    const path = await writeAssignment(
+      assignmentMd({ status: 'in_progress', acsChecked: false, extraFm: 'phase: in_progress\n' }),
+    );
+    await assertStageFactOnOpen({ assignmentPath: path, projectDir: null, stage: 'implement', by: 'human' });
+    let fm = parseAssignmentFrontmatter(await readFile(path, 'utf-8'));
+    expect(fm.status).toBe('in_progress');
+    // The engine path was taken — the retired fact was NOT asserted.
+    expect(fm.implementationStarted).toBe(false);
+
+    // `review` open → verb `request-review` matches → in_progress → review.
+    await assertStageFactOnOpen({ assignmentPath: path, projectDir: null, stage: 'review', by: 'human' });
+    fm = parseAssignmentFrontmatter(await readFile(path, 'utf-8'));
+    expect(fm.status).toBe('review');
+
+    // `implement` after review (phase mirrors `review`) → verb `rework` → back
+    // to in_progress.
+    await assertStageFactOnOpen({ assignmentPath: path, projectDir: null, stage: 'implement', by: 'human' });
+    fm = parseAssignmentFrontmatter(await readFile(path, 'utf-8'));
+    expect(fm.status).toBe('in_progress');
+  });
+
   it('stage-fact bridge: marker set + NO workflow still asserts the legacy fact (blocker 3)', async () => {
     await markStagesMigrated();
     // `workflow: null` ⇒ resolves to 'default' (not a per-file workflow) → the

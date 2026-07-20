@@ -139,6 +139,45 @@ stages:
     expect(issues.length).toBeGreaterThan(0);
     expect(workflow.stages).toEqual([]);
   });
+
+  // ── work-start verb discriminator (WS-3 Task 0 / Decision 4) ───────────────
+  it('round-trips a work-start route `verb:` as a typed field with no issues', () => {
+    const raw = `id: verbed
+stages:
+  - id: ready
+    next:
+      - { to: building, on: work-start, verb: implement }
+  - id: building
+    terminal: true
+`;
+    const { workflow, issues } = parseWorkflowFile(raw);
+    expect(issues).toEqual([]);
+    expect(workflow.stages[0].next?.[0]).toEqual({ to: 'building', on: 'work-start', verb: 'implement' });
+    const round = parseWorkflowFile(serializeWorkflowFile(workflow));
+    expect(round.issues).toEqual([]);
+    expect(round.workflow.stages[0].next?.[0]).toEqual({
+      to: 'building',
+      on: 'work-start',
+      verb: 'implement',
+    });
+  });
+
+  it('flags a `verb:` on a non-work-start route (preserved, but surfaced)', () => {
+    const raw = `id: verbed
+stages:
+  - id: a
+    next:
+      - { to: b, on: gate, verb: implement }
+      - { to: b, verb: implement }
+  - id: b
+    terminal: true
+`;
+    const { workflow, issues } = parseWorkflowFile(raw);
+    expect(issues.filter((i) => i.includes("only meaningful on an 'on: work-start' route"))).toHaveLength(2);
+    // Preserved on the typed field regardless — no silent deletion.
+    expect(workflow.stages[0].next?.[0].verb).toBe('implement');
+    expect(workflow.stages[0].next?.[1].verb).toBe('implement');
+  });
 });
 
 describe('workflowFilePath', () => {

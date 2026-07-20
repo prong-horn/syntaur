@@ -79,6 +79,26 @@ function computeDelta(
   return writes;
 }
 
+/**
+ * The work-start verb this stage-open carries on the MIGRATED path (WS-3
+ * Task 0) — the same discrimination {@link computeDelta} uses to pick the
+ * retired fact: implement-open → `implement`, review-open → `request-review`,
+ * implement-after-review → `rework`. Any other engagement stage (`plan`, …)
+ * carries no verb, so it matches only verb-less work-start routes.
+ */
+function workStartVerb(
+  stage: string,
+  prevStage: string | null | undefined,
+  fm: AssignmentFrontmatter,
+): string | undefined {
+  if (stage === 'implement') {
+    const afterReview = prevStage === 'review' || fm.phase === 'review';
+    return afterReview ? 'rework' : 'implement';
+  }
+  if (stage === 'review') return 'request-review';
+  return undefined;
+}
+
 export async function assertStageFactOnOpen(input: StageFactInput): Promise<void> {
   if (!(await fileExists(input.assignmentPath))) return; // nothing to assert against
 
@@ -88,13 +108,21 @@ export async function assertStageFactOnOpen(input: StageFactInput): Promise<void
   // The ladder fact-assertion below stays live for the unmigrated case.
   if (await isStagesMigrated()) {
     const { context, workflowResolver } = await resolveRecomputeContext();
+    // The verb discriminator (WS-3 Task 0): a cheap pre-lock read — the
+    // `phase`/`status` binding fields a verb depends on don't change under the
+    // move itself, and a verb'd route only ever matches its own verb.
+    const preFm = parseAssignmentFrontmatter(await readFile(input.assignmentPath, 'utf-8'));
     const result = await recomputeAndWrite(input.assignmentPath, {
       cause: 'work-start',
       by: input.by ?? 'system',
       projectDir: input.projectDir,
       context,
       workflowResolver,
-      engineMove: { kind: 'work-start', actor: input.by ?? undefined },
+      engineMove: {
+        kind: 'work-start',
+        actor: input.by ?? undefined,
+        verb: workStartVerb(input.stage, input.prevStage, preFm),
+      },
       // Fold the assignee-set (etc.) into the SAME CAS payload as the move.
       ...(input.foldMutate ? { mutate: (content) => input.foldMutate!(content) } : {}),
     });

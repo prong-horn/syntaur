@@ -213,4 +213,57 @@ describe('computeEngineStep', () => {
     expect(fm.status).toBe('reviewing'); // no move
     expect(fm.gateOverrides).toEqual([]); // building override cleared
   });
+
+  // ── work-start verb discriminator (WS-3 Task 0 / Decision 4) ───────────────
+  describe('work-start verb discriminator', () => {
+    // The compiled-default shape: in_progress's only work-start route carries
+    // `verb: request-review`; review routes back on `verb: rework`.
+    const VWF: StageWorkflow = {
+      id: 'v',
+      stages: [
+        {
+          id: 'in_progress',
+          gate: [{ condition: 'acAllChecked:true' }],
+          next: [
+            { to: 'review', on: 'gate' },
+            { to: 'review', on: 'work-start', verb: 'request-review' },
+          ],
+        },
+        { id: 'review', next: [{ to: 'in_progress', on: 'work-start', verb: 'rework' }] },
+      ],
+    };
+
+    function step(status: string, verb: string | undefined) {
+      const c = content(status);
+      return computeEngineStep({
+        content: c,
+        frontmatter: parseAssignmentFrontmatter(c),
+        facts: facts({ acAllChecked: false }),
+        workflow: VWF,
+        env,
+        move: { kind: 'work-start', verb },
+        cause: 'work-start',
+        by: 'human',
+        at: '2026-07-09T07:00:00Z',
+      });
+    }
+
+    it('`implement` at in_progress matches NO route (round-3 blocker) — no move', () => {
+      const s = step('in_progress', 'implement');
+      expect(s!.changed).toBe(false);
+      expect(s!.finalStatus).toBe('in_progress');
+    });
+
+    it('the matching verb moves: request-review fires in_progress → review', () => {
+      const s = step('in_progress', 'request-review');
+      expect(s!.changed).toBe(true);
+      expect(s!.finalStatus).toBe('review');
+    });
+
+    it('rework fires review → in_progress; other verbs do not', () => {
+      expect(step('review', 'rework')!.finalStatus).toBe('in_progress');
+      expect(step('review', 'implement')!.changed).toBe(false);
+      expect(step('review', undefined)!.changed).toBe(false);
+    });
+  });
 });
