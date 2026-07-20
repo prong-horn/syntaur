@@ -1,5 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Server } from 'node:net';
+import { appendFileSync, mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { SyntaurError } from '../../errors.js';
 import {
   createScreenBuffer,
@@ -7,11 +10,13 @@ import {
   scheduleQuiescentSnapshot,
   type PtyHostConfig,
   type PtyLike,
+  type PtySpawnOptions,
   type ScreenBuffer,
   type SocketLike,
 } from '../pty-host.js';
+import { jobHookSpoolPath } from '../paths.js';
 import { encodeFrame } from '../protocol.js';
-import type { DerivedState, JobState } from '../types.js';
+import type { DeriveInput, DerivedState, JobState } from '../types.js';
 
 // ── Fakes ────────────────────────────────────────────────────────────────────
 
@@ -213,17 +218,28 @@ describe('scheduleQuiescentSnapshot', () => {
 
 describe('runPtyHost', () => {
   const originalRuntime = process.env.SYNTAUR_RUNTIME_DIR;
+  const originalHome = process.env.SYNTAUR_HOME;
   let writeJobState: ReturnType<typeof vi.fn>;
   let appendTimeline: ReturnType<typeof vi.fn>;
+  let syntaurHome: string;
 
   beforeEach(() => {
     process.env.SYNTAUR_RUNTIME_DIR = '/tmp/syntaur-ptyhost-test';
+    // Task 6: runPtyHost now creates a REAL spool file under jobDir(short) =
+    // ~/.syntaur/jobs/<short>/ unless a test overrides ensureSpool/tailSpool.
+    // Redirect SYNTAUR_HOME to a throwaway tmpdir so the suite leaves no
+    // droppings in the real ~/.syntaur/jobs/.
+    syntaurHome = mkdtempSync(join(tmpdir(), 'syntaur-ptyhost-home-'));
+    process.env.SYNTAUR_HOME = syntaurHome;
     writeJobState = vi.fn();
     appendTimeline = vi.fn();
   });
   afterEach(() => {
     if (originalRuntime === undefined) delete process.env.SYNTAUR_RUNTIME_DIR;
     else process.env.SYNTAUR_RUNTIME_DIR = originalRuntime;
+    if (originalHome === undefined) delete process.env.SYNTAUR_HOME;
+    else process.env.SYNTAUR_HOME = originalHome;
+    rmSync(syntaurHome, { recursive: true, force: true });
     vi.useRealTimers();
   });
 
@@ -575,6 +591,84 @@ describe('runPtyHost', () => {
       const before = writeJobState.mock.calls.length;
       vi.advanceTimersByTime(500);
       expect(writeJobState.mock.calls.length).toBe(before); // unchanged from initial 'working'
+    });
+  });
+
+  // ── Hook spool transport (Task 6) ─────────────────────────────────────────
+  // REAL timers, REAL spool deps (no ensureSpool/tailSpool injection) — proves
+  // the actual chokidar-backed tailer end to end. SYNTAUR_HOME is already
+  // redirected to a throwaway tmpdir by this describe's beforeEach.
+
+  describe('hook spool integration', () => {
+    it('plants SYNTAUR_HOOK_SPOOL at the real (tmp-redirected) spool path in the child env', async () => {
+      let captured: PtySpawnOptions | undefined;
+      const pty = fakePty();
+      const bind = fakeBind();
+      await runPtyHost(baseConfig(), {
+        ptyFactory: (_file, _args, opts) => {
+          captured = opts;
+          return pty;
+        },
+        bindSocket: bind.bind,
+        createScreen: () => fakeScreen(),
+        writeJobState,
+        appendTimeline,
+        procStart: () => null,
+        now: () => 0,
+      });
+      const expected = jobHookSpoolPath('aaa');
+      expect(captured?.env.SYNTAUR_HOOK_SPOOL).toBe(expected);
+      // Test-isolation proof: the planted path hangs off the tmp SYNTAUR_HOME,
+      // never the real ~/.syntaur/jobs/.
+      expect(expected.startsWith(syntaurHome)).toBe(true);
+    });
+
+    it('a real spool append reaches writeJobState({state:"blocked"}) well inside the 1.5s poll budget (AC2)', async () => {
+      const deriveState = (x: DeriveInput): DerivedState =>
+        x.hookEvents.some((e) => e.event === 'Notification')
+          ? { state: 'blocked', needs: 'permission prompt' }
+          : { state: 'working', needs: null };
+
+      const { promise } = boot({}, { deriveState });
+      await promise;
+
+      const spool = jobHookSpoolPath('aaa');
+      const t0 = Date.now();
+      appendFileSync(
+        spool,
+        `${JSON.stringify({
+          event: 'Notification',
+          at: new Date().toISOString(),
+          payload: { notification_type: 'permission_prompt' },
+        })}\n`,
+      );
+      await vi.waitFor(
+        () =>
+          expect(writeJobState).toHaveBeenCalledWith(
+            expect.objectContaining({ state: 'blocked', needs: 'permission prompt' }),
+          ),
+        { timeout: 1400 },
+      );
+      expect(Date.now() - t0).toBeLessThan(1400);
+    });
+
+    it('finalizeExit stops the spool tailer', async () => {
+      const stopSpy = vi.fn();
+      const pty = fakePty();
+      const bind = fakeBind();
+      const promise = runPtyHost(baseConfig(), {
+        ptyFactory: () => pty,
+        bindSocket: bind.bind,
+        createScreen: () => fakeScreen(),
+        writeJobState,
+        appendTimeline,
+        procStart: () => null,
+        now: () => 0,
+        tailSpool: () => ({ ready: Promise.resolve(), stop: stopSpy }),
+      });
+      await promise;
+      pty.fireExit(0, undefined);
+      expect(stopSpy).toHaveBeenCalledTimes(1);
     });
   });
 });

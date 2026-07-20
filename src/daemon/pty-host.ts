@@ -12,10 +12,11 @@ import { Terminal } from '@xterm/headless';
 import { SerializeAddon } from '@xterm/addon-serialize';
 import { captureProcessStartedAt } from '../utils/process-info.js';
 import { appendTimeline as realAppendTimeline, writeJobState as realWriteJobState } from './jobs.js';
-import { ensureDir0700, ptyDir, ptySockPath, rvDir, rvSockPath } from './paths.js';
+import { ensureDir0700, jobHookSpoolPath, ptyDir, ptySockPath, rvDir, rvSockPath } from './paths.js';
 import { createLineDecoder, encodeFrame, isFrameObject } from './protocol.js';
 import { bindUnixSocket } from './sockets.js';
 import { resolveAdapter } from './adapters/registry.js';
+import { ensureSpoolFile, tailSpool, MAX_HOOK_EVENTS, type SpoolTailer } from './adapters/spool.js';
 import type {
   DeriveInput,
   DerivedState,
@@ -208,6 +209,9 @@ export interface PtyHostDeps {
   deriveRecheckMs?: number;
   /** Called once the child exits and everything is torn down. */
   onExit?: (code: number) => void;
+  /** Hook-event spool transport (Task 6); defaults to the real fs-backed impl. */
+  ensureSpool?: typeof ensureSpoolFile;
+  tailSpool?: typeof tailSpool;
 }
 
 export interface PtyHostHandle {
@@ -258,13 +262,24 @@ export async function runPtyHost(config: PtyHostConfig, deps: PtyHostDeps = {}):
   ensureDir0700(ptyDir(daemonId));
   ensureDir0700(rvDir(daemonId));
 
+  const ensureSpool = deps.ensureSpool ?? ensureSpoolFile;
+  const startSpoolTail = deps.tailSpool ?? tailSpool;
+  const spoolPath = jobHookSpoolPath(short);
+  let spoolReady = false;
+  try {
+    ensureSpool(spoolPath);
+    spoolReady = true;
+  } catch {
+    /* spool unavailable: hook-driven adapters degrade to screen heuristics */
+  }
+
   const [file, ...args] = config.argv;
   const screen = createScreen(config.cols, config.rows, config.scrollback);
   const pty = ptyFactory(file, args, {
     cols: config.cols,
     rows: config.rows,
     cwd: config.cwd,
-    env: cleanEnv(config.env),
+    env: { ...cleanEnv(config.env), ...(spoolReady ? { SYNTAUR_HOOK_SPOOL: spoolPath } : {}) },
     name: 'xterm-256color',
   });
 
@@ -383,6 +398,16 @@ export async function runPtyHost(config: PtyHostConfig, deps: PtyHostDeps = {}):
   }
   armDerive(deriveIdleMs); // silent children (zero onData) still get derived
 
+  let spoolTail: SpoolTailer = { ready: Promise.resolve(), stop: () => {} };
+  if (spoolReady) {
+    spoolTail = startSpoolTail(spoolPath, (events) => {
+      if (exited) return;
+      hookEvents.push(...events);
+      if (hookEvents.length > MAX_HOOK_EVENTS) hookEvents.splice(0, hookEvents.length - MAX_HOOK_EVENTS);
+      runDerive(); // immediate — AC2's one-poll-cycle budget
+    });
+  }
+
   // PTY output → emulator (always) + live clients as {t:'out'}; pending clients
   // are excluded (their bytes are captured by the pending snapshot instead).
   pty.onData((data: string) => {
@@ -488,6 +513,7 @@ export async function runPtyHost(config: PtyHostConfig, deps: PtyHostDeps = {}):
       clearTimeout(deriveTimer);
       deriveTimer = null;
     }
+    spoolTail.stop();
     const state = toState(exitCode, signal);
     const snap = screen.snapshot();
     const finalState: JobState = {

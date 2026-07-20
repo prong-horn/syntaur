@@ -92,6 +92,10 @@ export function jobTimelinePath(short: string): string {
   return join(jobDir(short), 'timeline.jsonl');
 }
 
+export function jobHookSpoolPath(short: string): string {
+  return join(jobDir(short), 'hooks.ndjson');
+}
+
 export function daemonLogPath(): string {
   return join(syntaurRoot(), 'daemon.log');
 }
