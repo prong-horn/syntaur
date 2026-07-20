@@ -15,6 +15,7 @@ import { appendTimeline as realAppendTimeline, writeJobState as realWriteJobStat
 import { ensureDir0700, ptyDir, ptySockPath, rvDir, rvSockPath } from './paths.js';
 import { createLineDecoder, encodeFrame, isFrameObject } from './protocol.js';
 import { bindUnixSocket } from './sockets.js';
+import { resolveAdapter } from './adapters/registry.js';
 import type {
   DeriveInput,
   DerivedState,
@@ -246,7 +247,8 @@ export async function runPtyHost(config: PtyHostConfig, deps: PtyHostDeps = {}):
   const procStart = deps.procStart ?? captureProcessStartedAt;
   const now = deps.now ?? (() => Date.now());
   const nowIso = (): string => new Date(now()).toISOString();
-  const deriveState = deps.deriveState ?? ((): DerivedState => ({}));
+  const adapter = resolveAdapter(config.agent);
+  const deriveState = deps.deriveState ?? adapter.deriveState;
   const deriveIdleMs = deps.deriveIdleMs ?? DERIVE_IDLE_MS;
   const deriveRecheckMs = deps.deriveRecheckMs ?? DERIVE_RECHECK_MS;
 

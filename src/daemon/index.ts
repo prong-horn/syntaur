@@ -16,3 +16,5 @@ export { ensureDaemon, daemonRequest, queryDaemon, sendRequest, type ClientDeps,
 export { runAttachClient, type AttachOptions, type AttachResult, type AttachDeps } from './attach-client.js';
 export { runPtyHost, smokePtyHost, type PtyHostConfig } from './pty-host.js';
 export { runPtyHostMain, parsePtyHostArgs } from './pty-host-run.js';
+export { resolveAdapter } from './adapters/registry.js';
+export type { AgentAdapter } from './adapters/types.js';
