@@ -22,6 +22,9 @@ export interface Session {
   /** Optional friendly name from `bg --name`. */
   name?: string;
   state: SessionState;
+  /** Attention text when state === 'blocked' (adapter-derived, Phase C);
+   * null/absent otherwise. */
+  needs?: string | null;
   pid: number;
   /** `ps -o lstart=` string captured at spawn; the PID-recycle guard. */
   pidStartedAt: string | null;
@@ -56,6 +59,44 @@ export interface TimelineEvent {
   at: string;
   event: string;
   [key: string]: unknown;
+}
+
+// ── Attention-state derivation (Phase C) ──────────────────────────────────
+
+/** Rendered plaintext viewport from the headless emulator (never ANSI). */
+export interface ScreenText {
+  lines: string[];
+  cols: number;
+  rows: number;
+}
+
+/** One hook event tailed from a job's hooks.ndjson spool. */
+export interface HookEvent {
+  event: string;
+  at: string;
+  payload?: unknown;
+}
+
+/** Everything an adapter may consult. `cwd` and `nowMs` are as-built
+ * additions beyond research doc §3.2 (`cwd`: codex rollout-log matching;
+ * `nowMs`: derive-time epoch anchor from the engine's `deps.now()` so an
+ * adapter can compare event timestamps against the last PTY output —
+ * `lastOutputAtMs = nowMs - outputIdleMs`; review r3 F2); recorded under D2. */
+export interface DeriveInput {
+  screen: ScreenText;
+  hookEvents: HookEvent[];
+  procAlive: boolean;
+  exitCode?: number | null;
+  outputIdleMs: number;
+  cwd: string;
+  nowMs: number;
+}
+
+/** An adapter's full current opinion (pure over DeriveInput — not a delta).
+ * `state` undefined = no opinion (engine biases to 'working'). */
+export interface DerivedState {
+  state?: SessionState;
+  needs?: string | null;
 }
 
 /** A live pty-host tracked in the daemon roster. */
@@ -121,6 +162,9 @@ export type ControlOp = ControlRequest['op'];
 export interface StateRecord {
   short: string;
   state: SessionState;
+  /** Attention text when state === 'blocked' (adapter-derived, Phase C);
+   * null/absent otherwise. */
+  needs?: string | null;
   pid: number;
   cols: number;
   rows: number;
