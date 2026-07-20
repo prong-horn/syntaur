@@ -15,6 +15,7 @@ import { migrateStatusesCommand } from './commands/migrate-statuses.js';
 import { migrateStatusHistoryCommand } from './commands/migrate-status-history.js';
 import { migrateEventsCommand } from './commands/migrate-events.js';
 import { migrateDeriveCommand } from './commands/migrate-derive.js';
+import { migrateWorkflowsCommand } from './commands/migrate-workflows.js';
 import {
   planApproveCommand,
   planUnapproveCommand,
@@ -94,12 +95,15 @@ import { runCommand } from './errors.js';
 // Skip the npx/global-install startup nudges for `update`/`upgrade` — that
 // command does its own install-kind detection and must stay read-only for
 // --check/--dry-run (a startup prompt could install before it even runs).
-// Also skip for `setup --dry-run`, which must write nothing at all.
+// Also skip for `setup --dry-run`, which must write nothing at all, and for
+// `migrate-workflows`, whose `--root <copy>` isolation is only set inside the
+// action — these hooks resolve (and could write) the REAL ~/.syntaur before
+// SYNTAUR_HOME is pointed at the copy (codex plan-review round-3 major).
 {
   const sub = process.argv[2];
   const isDryRunSetup =
     sub === 'setup' && process.argv.slice(3).includes('--dry-run');
-  if (sub !== 'update' && sub !== 'upgrade' && !isDryRunSetup) {
+  if (sub !== 'update' && sub !== 'upgrade' && sub !== 'migrate-workflows' && !isDryRunSetup) {
     await maybePromptInstall(import.meta.url);
     await maybeNudgeForNpxInstall(import.meta.url);
   }
@@ -369,6 +373,17 @@ program
   .action(
     runCommand(async (options) => {
       await migrateDeriveCommand(options);
+    }),
+  );
+
+program
+  .command('migrate-workflows')
+  .description('One-time WS-3 migration: relocate workflows to per-file yaml (deleting the config block), compile the ladder to stages, seed stored stage positions, set the stages-migrated marker')
+  .option('--root <path>', 'Migrate this syntaur home (a copy) instead of ~/.syntaur')
+  .option('--dry-run', 'Print the compile + divergence report without writing')
+  .action(
+    runCommand(async (options) => {
+      await migrateWorkflowsCommand(options);
     }),
   );
 

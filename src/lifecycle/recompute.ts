@@ -134,8 +134,12 @@ export async function resolveRecomputeContext(): Promise<{
  * itself a (microseconds-wide) TOCTOU — unlink-by-path is the POSIX ceiling
  * without fd-based locking. With cooperating writers, a 30s staleness window
  * vs ms-scale critical sections, and content-CAS behind the lock as a second
- * line of defense, the residual risk is accepted for single-host use. */
-async function acquireLock(assignmentDir: string): Promise<() => Promise<void>> {
+ * line of defense, the residual risk is accepted for single-host use.
+ *
+ * Exported (with {@link contentHash}) for WS-3's migration-only locked writer
+ * (`migrate-workflows.ts`), which needs the same lock + CAS discipline but
+ * must NOT run the ladder derive that `recomputeAndWrite` performs pre-marker. */
+export async function acquireLock(assignmentDir: string): Promise<() => Promise<void>> {
   const lockPath = resolve(assignmentDir, LOCK_FILE);
   const token = `${process.pid}:${createHash('sha256').update(`${Math.random()}${Date.now()}`).digest('hex').slice(0, 12)}`;
   for (let attempt = 0; attempt <= LOCK_MAX_WAITS; attempt++) {
@@ -170,7 +174,7 @@ async function acquireLock(assignmentDir: string): Promise<() => Promise<void>> 
   throw new Error(`Timed out waiting for ${lockPath} (held > ${(LOCK_WAIT_MS * LOCK_MAX_WAITS) / 1000}s)`);
 }
 
-function contentHash(content: string): string {
+export function contentHash(content: string): string {
   return createHash('sha256').update(content, 'utf-8').digest('hex');
 }
 
