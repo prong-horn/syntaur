@@ -20,6 +20,7 @@ import type {
   PtyClientFrame,
   PtyHostFrame,
   RvFrame,
+  ScreenText,
   SessionState,
   StateRecord,
 } from './types.js';
@@ -80,6 +81,10 @@ export interface ScreenBuffer {
   write(data: string, cb?: () => void): void;
   resize(cols: number, rows: number): void;
   snapshot(): { data: string; cols: number; rows: number };
+  /** Rendered plaintext of the VIEWPORT only (scrollback excluded): one
+   * right-trimmed string per visible row. Adapters consume this — never
+   * the ANSI snapshot(). */
+  text(): ScreenText;
   dispose(): void;
 }
 
@@ -96,6 +101,14 @@ export function createScreenBuffer(
     write: (data, cb) => term.write(data, cb),
     resize: (c, r) => term.resize(c, r),
     snapshot: () => ({ data: serializer.serialize(), cols: term.cols, rows: term.rows }),
+    text: () => {
+      const buf = term.buffer.active;
+      const lines: string[] = [];
+      for (let i = 0; i < term.rows; i += 1) {
+        lines.push(buf.getLine(buf.baseY + i)?.translateToString(true) ?? '');
+      }
+      return { lines, cols: term.cols, rows: term.rows };
+    },
     dispose: () => term.dispose(),
   };
 }
@@ -244,6 +257,7 @@ export async function runPtyHost(config: PtyHostConfig, deps: PtyHostDeps = {}):
   let curCols = config.cols;
   let curRows = config.rows;
   let exited = false;
+  let lastDataAt = now(); // Phase C: output-idle clock (deps.now seam)
   const ptyClients = new Set<Client>();
   const rvClients = new Set<SocketLike>();
 
@@ -309,6 +323,7 @@ export async function runPtyHost(config: PtyHostConfig, deps: PtyHostDeps = {}):
   // PTY output → emulator (always) + live clients as {t:'out'}; pending clients
   // are excluded (their bytes are captured by the pending snapshot instead).
   pty.onData((data: string) => {
+    lastDataAt = now();
     screen.write(data);
     const frame: PtyHostFrame = { t: 'out', b: Buffer.from(data, 'utf8').toString('base64') };
     for (const client of ptyClients) {

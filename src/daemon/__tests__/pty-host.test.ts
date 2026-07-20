@@ -80,10 +80,11 @@ function fakeBind() {
   return { bind: bind as never, connect: (path: string, s: SocketLike) => conns[path]?.(s), closed, bindSpy: bind };
 }
 
-function fakeScreen(): ScreenBuffer {
+function fakeScreen(): ScreenBuffer & { setText(lines: string[]): void } {
   let buf = '';
   let cols = 80;
   let rows = 24;
+  let textLines: string[] = [];
   return {
     write: (d) => {
       buf += d;
@@ -93,6 +94,10 @@ function fakeScreen(): ScreenBuffer {
       rows = r;
     },
     snapshot: () => ({ data: buf, cols, rows }),
+    text: () => ({ lines: textLines, cols, rows }),
+    setText: (lines) => {
+      textLines = lines;
+    },
     dispose: () => {},
   };
 }
@@ -131,6 +136,31 @@ describe('createScreenBuffer', () => {
     screen.resize(120, 40);
     expect(screen.snapshot().cols).toBe(120);
     expect(screen.snapshot().rows).toBe(40);
+    screen.dispose();
+  });
+
+  it('text() strips ANSI and right-trims', async () => {
+    const screen = createScreenBuffer(80, 24);
+    await new Promise<void>((res) => screen.write('hello \x1b[32mgreen\x1b[0m world', res));
+    const t = screen.text();
+    expect(t.lines[0]).toBe('hello green world');
+    expect(t.lines).toHaveLength(24);
+    expect(t.cols).toBe(80);
+    expect(t.rows).toBe(24);
+    screen.dispose();
+  });
+
+  it('text() is viewport-only: scrolled-off lines are excluded', async () => {
+    const screen = createScreenBuffer(80, 24);
+    const feed = Array.from({ length: 30 }, (_, i) => `L${i + 1}`).join('\r\n') + '\r\n';
+    await new Promise<void>((res) => screen.write(feed, res));
+    const t = screen.text();
+    // 31 buffer lines (L1..L30 + empty cursor line); viewport = last 24 → starts at L8.
+    expect(t.lines).toHaveLength(24);
+    expect(t.lines[0]).toBe('L8');
+    expect(t.lines[22]).toBe('L30');
+    expect(t.lines[23]).toBe('');
+    expect(t.lines).not.toContain('L1');
     screen.dispose();
   });
 });
