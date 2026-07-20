@@ -110,7 +110,7 @@ export async function runLs(
     // vocabulary (declared facts + attestation exports), then materialize each
     // item with the same declarations so the spread carries those fields.
     const context = await resolveDeriveContext();
-    const { query, errors } = compileQuery(
+    const { query, errors, warnings } = compileQuery(
       options.query,
       buildQueryRegistry(context.factDeclarations),
     );
@@ -118,6 +118,11 @@ export async function runLs(
       throw new Error(
         `Invalid --query:\n${errors.map((e) => `  at ${e.pos}: ${e.message}`).join('\n')}`,
       );
+    }
+    // WS-3 compat window: deprecated fields (pinned, phaseAge) still compile
+    // but surface a parse-time warning on stderr (design §4.5).
+    for (const w of warnings) {
+      console.error(`Warning: at ${w.pos}: ${w.message}`);
     }
     const now = Date.now();
     const enriched = await Promise.all(

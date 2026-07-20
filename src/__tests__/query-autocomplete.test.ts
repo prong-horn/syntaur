@@ -34,9 +34,12 @@ describe('AC2 — queryFieldNames exposes built-ins, exports, and declared facts
     const names = queryFieldNames([]);
     expect(names).toContain('completedAt');
     expect(names).toContain('statusAge');
-    expect(names).toContain('phaseAge');
     expect(names).toContain('planApproved');
     expect(names).toContain('status');
+    // WS-3 compat window (§4.5): deprecated fields are no longer advertised —
+    // they still parse, with a deprecation warning.
+    expect(names).not.toContain('phaseAge');
+    expect(names).not.toContain('pinned');
   });
 
   it('includes the bool declared fact name', () => {
@@ -141,15 +144,18 @@ describe('AC2 — rankFieldSuggestions ranks prefix matches first', () => {
   });
 
   it('a true prefix is ordered before a substring-only match', () => {
-    // `phase` is a prefix of `phase`/`phaseAge`; `disposition` is unrelated.
-    const ranked = rankFieldSuggestions('phase', DECLS);
-    const phaseIdx = ranked.indexOf('phase');
-    const phaseAgeIdx = ranked.indexOf('phaseAge');
-    expect(phaseIdx).toBeGreaterThanOrEqual(0);
-    expect(phaseAgeIdx).toBeGreaterThanOrEqual(0);
-    // Both are prefix matches; ensure they precede any pure-substring match such
-    // as `acRealChecked` (does not contain "phase") — sanity: not present.
-    expect(ranked).not.toContain('acRealChecked');
+    // `pro` is a prefix of `project`/`progressStaleDays`; `planApproved` only
+    // CONTAINS "pro" (apPROved) so it must rank after the prefix matches.
+    const ranked = rankFieldSuggestions('pro', DECLS);
+    const projectIdx = ranked.indexOf('project');
+    const progressIdx = ranked.indexOf('progressStaleDays');
+    const substringIdx = ranked.indexOf('planApproved');
+    expect(projectIdx).toBeGreaterThanOrEqual(0);
+    expect(progressIdx).toBeGreaterThanOrEqual(0);
+    expect(substringIdx).toBeGreaterThan(projectIdx);
+    expect(substringIdx).toBeGreaterThan(progressIdx);
+    // WS-3: the deprecated `phaseAge` is no longer suggested at all.
+    expect(rankFieldSuggestions('phase', DECLS)).not.toContain('phaseAge');
   });
 });
 

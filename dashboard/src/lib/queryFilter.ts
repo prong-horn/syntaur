@@ -36,6 +36,10 @@ export function boardItemToQueryItem(item: AssignmentBoardItem): QueryItem {
 
     // ── core frontmatter fields ──────────────────────────────────────────────
     status: item.status,
+    // WS-3 compat aliases (§4.5) live in the SHARED registry (fields.ts):
+    // `phase` falls back to `status` (the stage) and `disposition` to the
+    // blocked/parked flags when the deprecated payload mirrors are absent —
+    // identical on this browser evaluator and the CLI, by construction.
     phase: item.phase,
     disposition: item.disposition,
     priority: item.priority,

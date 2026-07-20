@@ -25,6 +25,7 @@ import { findWorkflowStructureProblems } from '../utils/doctor/checks/workflows.
 import { parseWorkflowFile, serializeWorkflowFile } from '../utils/workflow-file.js';
 import { DEFAULT_DERIVE_CONFIG } from '../utils/derive-config.js';
 import { readConfig, type StatusConfig } from '../utils/config.js';
+import { ASSIGNMENT_FIELDS, compileQuery } from '../utils/query/index.js';
 import { getWorkflowBundle } from '../utils/workflow-resolve.js';
 import { loadWorkflowLibrary, invalidateWorkflowLibraryCache } from '../utils/workflow-library.js';
 import { buildDeriveContext } from '../lifecycle/derive-context.js';
@@ -736,6 +737,82 @@ describe('syntaur migrate-workflows — the command (T3–T6)', () => {
     } finally {
       await rm(fakeReal, { recursive: true, force: true });
     }
+  });
+});
+
+// ── T7: the AQL compat window (aliases + parse-time deprecation, §4.5) ───────
+
+describe('AQL compat window (T7)', () => {
+  const registry = ASSIGNMENT_FIELDS;
+  const now = Date.now();
+
+  /** A post-compat-window item: NO phase/disposition mirrors — only the stage
+   * (`status`) and the pause flags, as the engine world stores them. */
+  const engineItem = {
+    status: 'ready_for_planning',
+    blocked: true,
+    parked: false,
+    statusAge: 5 * 24 * 60 * 60 * 1000,
+    phaseAge: null,
+    phase: null,
+    disposition: null,
+    pinned: true, // even a stale truthy value must read false (retired)
+  };
+
+  const evaluate = (expr: string, item: Record<string, unknown>): boolean => {
+    const { query, errors } = compileQuery(expr, registry);
+    expect(errors).toEqual([]);
+    return query!.predicate(item, { now });
+  };
+
+  it('`phase:` aliases to the stage (status) when the deprecated mirror is absent', () => {
+    expect(evaluate('phase:ready_for_planning', engineItem)).toBe(true);
+    expect(evaluate('phase:draft', engineItem)).toBe(false);
+    // With the mirror present (compat window), the mirror wins.
+    expect(evaluate('phase:review', { ...engineItem, phase: 'review' })).toBe(true);
+  });
+
+  it('`disposition:blocked/parked` aliases to the flag fields', () => {
+    expect(evaluate('disposition:blocked', engineItem)).toBe(true);
+    expect(evaluate('disposition:parked', engineItem)).toBe(false);
+    expect(evaluate('disposition:active', { ...engineItem, blocked: false })).toBe(true);
+  });
+
+  it('`pinned:` is deprecated — always false, with a parse-time warning', () => {
+    expect(evaluate('pinned:true', engineItem)).toBe(false);
+    expect(evaluate('pinned:false', engineItem)).toBe(true);
+    const { warnings } = compileQuery('pinned:true', registry);
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0].field).toBe('pinned');
+    expect(warnings[0].message).toMatch(/deprecated/i);
+  });
+
+  it('`phaseage:` emits a deprecation warning and evaluates as statusAge', () => {
+    const { query, warnings } = compileQuery('phaseAge > 3d', registry);
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0].message).toMatch(/statusAge/);
+    expect(query!.predicate(engineItem, { now })).toBe(true); // 5d statusAge fallback
+  });
+
+  it('warnings are collected through AND/OR/NOT nesting; clean queries carry none', () => {
+    const { warnings } = compileQuery('status:draft AND (pinned:true OR NOT phaseAge > 1d)', registry);
+    // `field` carries the query's authored casing (better for the user).
+    expect(warnings.map((w) => w.field).sort()).toEqual(['phaseAge', 'pinned']);
+    expect(compileQuery('status:draft AND phase:review', registry).warnings).toEqual([]);
+  });
+
+  // NOTE: the CLI-vs-browser dual-evaluator agreement test lives in
+  // workflow-query-filter.test.ts (which imports the dashboard's
+  // boardItemToQueryItem — a cross-import the tests-probe tsconfig cannot
+  // typecheck, per its header note).
+
+  it('queryFieldNames no longer advertises the deprecated pinned/phaseAge', async () => {
+    const { queryFieldNames } = await import('../utils/fact-registry.js');
+    const names = queryFieldNames([]);
+    expect(names).not.toContain('pinned');
+    expect(names).not.toContain('phaseAge');
+    expect(names).toContain('phase');
+    expect(names).toContain('statusAge');
   });
 });
 

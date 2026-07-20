@@ -8,7 +8,7 @@
 
 import type { QueryError, QueryNode } from './ast.js';
 import { compileNode, CompileError, type EvalContext, type Predicate } from './evaluate.js';
-import { ASSIGNMENT_FIELDS, type FieldRegistry, type QueryItem } from './fields.js';
+import { ASSIGNMENT_FIELDS, resolveField, type FieldRegistry, type QueryItem } from './fields.js';
 import { parseQuery } from './parser.js';
 
 export type { QueryError, QueryNode, ComparisonOp } from './ast.js';
@@ -30,21 +30,68 @@ export interface CompiledQuery {
   ast: QueryNode;
 }
 
+/** A non-blocking parse-time diagnostic (WS-3 compat window, design §4.5):
+ * the query still compiles, but references a deprecated field. */
+export interface QueryWarning {
+  pos: number;
+  field: string;
+  message: string;
+}
+
+/**
+ * Collect a parse-time deprecation warning for every atom referencing a field
+ * whose {@link FieldDef.deprecated} is set. Shared by the CLI (`syntaur ls`)
+ * and the dashboard query input so the two surfaces warn identically.
+ */
+export function collectDeprecationWarnings(
+  node: QueryNode,
+  registry: FieldRegistry,
+): QueryWarning[] {
+  const warnings: QueryWarning[] = [];
+  const walk = (n: QueryNode): void => {
+    switch (n.kind) {
+      case 'atom': {
+        const def = resolveField(registry, n.field);
+        if (def?.deprecated) warnings.push({ pos: n.pos, field: n.field, message: def.deprecated });
+        break;
+      }
+      case 'and':
+      case 'or':
+        for (const c of n.children) walk(c);
+        break;
+      case 'not':
+        walk(n.child);
+        break;
+      case 'all':
+        break;
+    }
+  };
+  walk(node);
+  return warnings;
+}
+
 /**
  * Parse + compile a query against a field registry. Returns the compiled
- * predicate or structured errors (never throws on user input).
+ * predicate or structured errors (never throws on user input). A successful
+ * compile also carries `warnings` — non-blocking deprecation diagnostics.
  */
 export function compileQuery(
   input: string,
   registry: FieldRegistry = ASSIGNMENT_FIELDS,
-): { query: CompiledQuery; errors: [] } | { query: null; errors: QueryError[] } {
+):
+  | { query: CompiledQuery; errors: []; warnings: QueryWarning[] }
+  | { query: null; errors: QueryError[]; warnings: [] } {
   const parsed = parseQuery(input);
-  if (!parsed.ast) return { query: null, errors: parsed.errors };
+  if (!parsed.ast) return { query: null, errors: parsed.errors, warnings: [] };
   try {
     const predicate = compileNode(parsed.ast, registry);
-    return { query: { predicate, ast: parsed.ast }, errors: [] };
+    return {
+      query: { predicate, ast: parsed.ast },
+      errors: [],
+      warnings: collectDeprecationWarnings(parsed.ast, registry),
+    };
   } catch (err) {
-    if (err instanceof CompileError) return { query: null, errors: err.errors };
+    if (err instanceof CompileError) return { query: null, errors: err.errors, warnings: [] };
     throw err;
   }
 }
