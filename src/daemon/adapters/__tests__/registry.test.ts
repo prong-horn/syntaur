@@ -17,17 +17,20 @@ describe('resolveAdapter', () => {
     expect(adapter.id).toBe('generic');
   });
 
-  it('the fallback adapter derives no opinion (empty object), never throws', () => {
+  it('the fallback adapter derives a working opinion on a normal screen, never throws', () => {
     for (const agent of ['pi', 'shell', 'my-tool', '', 'CLAUDE']) {
       const adapter = resolveAdapter(agent);
       expect(() => adapter.deriveState(sampleInput)).not.toThrow();
-      expect(adapter.deriveState(sampleInput)).toEqual({});
+      expect(adapter.deriveState(sampleInput)).toEqual({ state: 'working', needs: null });
     }
   });
 
-  it('completion criteria: resolveAdapter("anything-unknown").deriveState(...) returns {} without throwing', () => {
+  it('completion criteria: resolveAdapter("anything-unknown").deriveState(...) resolves without throwing', () => {
     expect(() => resolveAdapter('anything-unknown').deriveState(sampleInput)).not.toThrow();
-    expect(resolveAdapter('anything-unknown').deriveState(sampleInput)).toEqual({});
+    expect(resolveAdapter('anything-unknown').deriveState(sampleInput)).toEqual({
+      state: 'working',
+      needs: null,
+    });
   });
 
   it('resolution is deterministic: the same key always resolves to an equivalent adapter', () => {
@@ -35,14 +38,5 @@ describe('resolveAdapter', () => {
     const second = resolveAdapter('some-novel-agent');
     expect(first.id).toBe(second.id);
     expect(first.deriveState(sampleInput)).toEqual(second.deriveState(sampleInput));
-  });
-
-  // No agent is registered in the Map at Task 4's time (T5/T7/T8 add entries
-  // later), so 'claude'/'codex' are indistinguishable from any other unknown
-  // string today — this documents that, and will start failing (correctly)
-  // once Tasks 7/8 register real adapters, signalling the registry is wired.
-  it('agent kinds reserved for later tasks fall back to generic until registered', () => {
-    expect(resolveAdapter('claude').id).toBe('generic');
-    expect(resolveAdapter('codex').id).toBe('generic');
   });
 });

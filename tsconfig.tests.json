@@ -41,6 +41,7 @@
     "src/daemon/__tests__/roster.test.ts",
     "src/daemon/__tests__/pty-host.test.ts",
     "src/daemon/adapters/__tests__/registry.test.ts",
+    "src/daemon/__tests__/adapters-generic.test.ts",
     "src/daemon/__tests__/supervisor.test.ts",
     "src/daemon/__tests__/client.test.ts",
     "src/daemon/__tests__/attach-client.test.ts",
