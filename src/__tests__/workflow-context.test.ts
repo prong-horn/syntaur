@@ -12,6 +12,12 @@ import {
 import { DEFAULT_DERIVE_CONFIG } from '../utils/derive-config.js';
 import type { ProjectWorkflowBinding } from '../utils/project-binding.js';
 import type { StatusConfig, WorkflowDefinition } from '../utils/config.js';
+import { useHermeticSyntaurHome } from './hermetic-root.js';
+
+// Hermetic root: these tests pass fixture configs; without a sandboxed
+// SYNTAUR_HOME they read the developer’s real ~/.syntaur (ambient workflows
+// dir + stages-migrated marker) — false DUAL_SOURCE errors post-2026-07-21.
+useHermeticSyntaurHome();
 
 const EMPTY: ProjectWorkflowBinding = { defaultWorkflow: null, workflowByType: {} };
 
