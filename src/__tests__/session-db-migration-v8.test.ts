@@ -14,7 +14,7 @@ let testDir: string;
 let dbPath: string;
 let prevHome: string | undefined;
 
-/** Build a v7-shape sessions DB (hosted_by present, no launch_reservations). */
+/** Build a v7-shape sessions DB (hosted_by present, no summary columns). */
 function buildV7Db(path: string): void {
   const db = new Database(path);
   db.pragma('journal_mode = WAL');
@@ -41,15 +41,53 @@ function buildV7Db(path: string): void {
   `);
   db.prepare('INSERT INTO meta (key, value) VALUES (?, ?)').run('schema_version', '7');
   const ins = db.prepare(
-    `INSERT INTO sessions (session_id, agent, started, ended, status, path, pid, activity, hosted_by)
-     VALUES (@sid, @agent, @started, @ended, @status, @path, @pid, @activity, @hostedBy)`,
+    `INSERT INTO sessions (session_id, agent, started, ended, status, path, description, hosted_by)
+     VALUES (@sid, @agent, @started, @ended, @status, @path, @description, @hostedBy)`,
   );
-  ins.run({ sid: 'v7-row-1', agent: 'claude', started: '2026-07-01T10:00:00.000Z', ended: null, status: 'active', path: '/w/a', pid: 4242, activity: 'working', hostedBy: 'syntaurd' });
-  ins.run({ sid: 'v7-row-2', agent: 'codex', started: '2026-07-01T09:00:00.000Z', ended: '2026-07-01T12:00:00.000Z', status: 'completed', path: '/w/b', pid: null, activity: null, hostedBy: null });
+  ins.run({
+    sid: 'human-desc',
+    agent: 'claude',
+    started: '2026-07-01T10:00:00.000Z',
+    ended: null,
+    status: 'stopped',
+    path: '/w/a',
+    description: 'hand written label',
+    hostedBy: 'tmux',
+  });
+  ins.run({
+    sid: 'no-desc',
+    agent: 'codex',
+    started: '2026-07-01T09:00:00.000Z',
+    ended: '2026-07-01T12:00:00.000Z',
+    status: 'completed',
+    path: '/w/b',
+    description: null,
+    hostedBy: null,
+  });
+  ins.run({
+    sid: 'empty-desc',
+    agent: 'claude',
+    started: '2026-07-01T08:00:00.000Z',
+    ended: null,
+    status: 'stopped',
+    path: '/w/c',
+    description: '',
+    hostedBy: null,
+  });
+  ins.run({
+    sid: 'root-path',
+    agent: 'claude',
+    started: '2026-07-01T07:00:00.000Z',
+    ended: null,
+    status: 'stopped',
+    path: '/',
+    description: null,
+    hostedBy: null,
+  });
   db.close();
 }
 
-/** Build a v6-shape sessions DB (activity present, no hosted_by, no launch_reservations). */
+/** Build a v6-shape DB, to exercise the full v6 → v8 chain in one open. */
 function buildV6Db(path: string): void {
   const db = new Database(path);
   db.pragma('journal_mode = WAL');
@@ -74,26 +112,26 @@ function buildV6Db(path: string): void {
     CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT);
   `);
   db.prepare('INSERT INTO meta (key, value) VALUES (?, ?)').run('schema_version', '6');
-  const ins = db.prepare(
-    `INSERT INTO sessions (session_id, agent, started, ended, status, path, pid, activity)
-     VALUES (@sid, @agent, @started, @ended, @status, @path, @pid, @activity)`,
-  );
-  ins.run({ sid: 'v6-row-1', agent: 'claude', started: '2026-07-01T10:00:00.000Z', ended: null, status: 'active', path: '/w/a', pid: 4242, activity: 'working' });
+  db.prepare(
+    `INSERT INTO sessions (session_id, agent, started, status, path, description)
+     VALUES (?, ?, ?, ?, ?, ?)`,
+  ).run('v6-row', 'claude', '2026-07-01T10:00:00.000Z', 'stopped', '/w/a', 'from v6');
   db.close();
 }
 
-const LAUNCH_RESERVATION_COLUMNS = [
-  'launch_id',
-  'hosted_by',
-  'agent',
-  'cwd',
-  'expected_session_id',
-  'created_at',
-  'dispatched_at',
-  'claimed_by',
-  'claimed_at',
-  'canceled_at',
-];
+function schemaVersion(): string {
+  return (
+    getSessionDb()
+      .prepare("SELECT value FROM meta WHERE key='schema_version'")
+      .get() as { value: string }
+  ).value;
+}
+
+function columns(): string[] {
+  return (
+    getSessionDb().prepare('PRAGMA table_info(sessions)').all() as Array<{ name: string }>
+  ).map((c) => c.name);
+}
 
 beforeEach(async () => {
   testDir = await mkdtemp(join(tmpdir(), 'syntaur-v8-mig-'));
@@ -110,82 +148,150 @@ afterEach(async () => {
   await rm(testDir, { recursive: true, force: true });
 });
 
-describe('v7 → v8 migration (adds launch_reservations)', () => {
-  it('preserves rows, adds launch_reservations with the 10 D5 columns in order, bumps version to 8', () => {
+describe('v7 → v8 migration (summary columns + provenance backfill)', () => {
+  it('adds the summary columns and bumps the version', () => {
+    buildV7Db(dbPath);
+    initSessionDb(dbPath);
+
+    const cols = columns();
+    expect(cols).toContain('summary');
+    expect(cols).toContain('summarized_at');
+    expect(cols).toContain('description_source');
+    // Pre-existing columns survive the table rebuild.
+    expect(cols).toContain('hosted_by');
+    expect(cols).toContain('activity');
+    expect(schemaVersion()).toBe('9');
+  });
+
+  it('preserves existing row data through the rebuild', () => {
+    buildV7Db(dbPath);
+    initSessionDb(dbPath);
+
+    const row = getSessionDb()
+      .prepare('SELECT * FROM sessions WHERE session_id = ?')
+      .get('human-desc') as Record<string, unknown>;
+    expect(row).toMatchObject({
+      agent: 'claude',
+      started: '2026-07-01T10:00:00.000Z',
+      status: 'stopped',
+      path: '/w/a',
+      description: 'hand written label',
+      hosted_by: 'tmux',
+    });
+    expect(row.summary).toBeNull();
+    expect(row.summarized_at).toBeNull();
+  });
+
+  it("backfills description_source='human' for existing non-empty descriptions only", () => {
     buildV7Db(dbPath);
     initSessionDb(dbPath);
     const db = getSessionDb();
 
-    const tableRow = db
-      .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='launch_reservations'")
-      .get() as { name: string } | undefined;
-    expect(tableRow?.name).toBe('launch_reservations');
+    const get = (sid: string) =>
+      (
+        db
+          .prepare('SELECT description_source FROM sessions WHERE session_id = ?')
+          .get(sid) as { description_source: string | null }
+      ).description_source;
 
-    const cols = (db.prepare('PRAGMA table_info(launch_reservations)').all() as Array<{ name: string }>).map(
-      (c) => c.name,
-    );
-    expect(cols).toEqual(LAUNCH_RESERVATION_COLUMNS);
-
-    const rows = db
-      .prepare('SELECT session_id, agent, status, pid, activity, hosted_by FROM sessions ORDER BY session_id')
-      .all() as Array<Record<string, unknown>>;
-    expect(rows).toHaveLength(2);
-    expect(rows[0]).toMatchObject({ session_id: 'v7-row-1', agent: 'claude', status: 'active', pid: 4242, activity: 'working', hosted_by: 'syntaurd' });
-    expect(rows[1]).toMatchObject({ session_id: 'v7-row-2', agent: 'codex', status: 'completed', hosted_by: null });
-
-    expect(
-      (db.prepare("SELECT value FROM meta WHERE key='schema_version'").get() as { value: string }).value,
-    ).toBe('8');
+    // Every description that predates the summarizer was written by a human or
+    // a caller, so the summarizer must never overwrite one.
+    expect(get('human-desc')).toBe('human');
+    expect(get('no-desc')).toBeNull();
+    expect(get('empty-desc')).toBeNull();
   });
 
-  it('fresh install has launch_reservations directly and version 8', () => {
-    initSessionDb(dbPath); // no prior file
+  it("clears the degenerate path='/' rows", () => {
+    buildV7Db(dbPath);
+    initSessionDb(dbPath);
     const db = getSessionDb();
 
-    const tableRow = db
-      .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='launch_reservations'")
-      .get() as { name: string } | undefined;
-    expect(tableRow?.name).toBe('launch_reservations');
+    const path = (
+      db.prepare('SELECT path FROM sessions WHERE session_id = ?').get('root-path') as {
+        path: string | null;
+      }
+    ).path;
+    expect(path).toBeNull();
 
-    const cols = (db.prepare('PRAGMA table_info(launch_reservations)').all() as Array<{ name: string }>).map(
-      (c) => c.name,
-    );
-    expect(cols).toEqual(LAUNCH_RESERVATION_COLUMNS);
+    const remaining = (
+      db.prepare("SELECT COUNT(*) AS n FROM sessions WHERE path = '/'").get() as { n: number }
+    ).n;
+    expect(remaining).toBe(0);
 
+    // Real paths are untouched.
     expect(
-      (db.prepare("SELECT value FROM meta WHERE key='schema_version'").get() as { value: string }).value,
-    ).toBe('8');
+      (
+        db.prepare('SELECT path FROM sessions WHERE session_id = ?').get('human-desc') as {
+          path: string | null;
+        }
+      ).path,
+    ).toBe('/w/a');
   });
 
-  it('re-init after upgrade is idempotent (no throw, still version 8)', () => {
+  it('creates the summarize_state table', () => {
+    buildV7Db(dbPath);
+    initSessionDb(dbPath);
+    const cols = (
+      getSessionDb().prepare('PRAGMA table_info(summarize_state)').all() as Array<{ name: string }>
+    ).map((c) => c.name);
+    expect(cols).toEqual(
+      expect.arrayContaining([
+        'session_id',
+        'claim_token',
+        'claimed_at',
+        'next_attempt_at',
+        'attempts',
+        'last_error',
+      ]),
+    );
+  });
+
+  it('is idempotent across reopens', () => {
     buildV7Db(dbPath);
     initSessionDb(dbPath);
     closeSessionDb();
+    resetSessionDb();
+    initSessionDb(dbPath);
 
-    expect(() => initSessionDb(dbPath)).not.toThrow();
-    const db = getSessionDb();
-    expect(
-      (db.prepare("SELECT value FROM meta WHERE key='schema_version'").get() as { value: string }).value,
-    ).toBe('8');
+    expect(schemaVersion()).toBe('9');
+    expect(columns()).toContain('summary');
+    const rows = (
+      getSessionDb().prepare('SELECT COUNT(*) AS n FROM sessions').get() as { n: number }
+    ).n;
+    expect(rows).toBe(4);
   });
+});
 
-  it('v6 → v8 chain: both gated steps run in one transaction (hosted_by AND launch_reservations present)', () => {
+describe('migration chains and fresh install', () => {
+  it('carries a v6 database all the way to head in one open', () => {
     buildV6Db(dbPath);
     initSessionDb(dbPath);
-    const db = getSessionDb();
 
-    const sessionCols = (db.prepare('PRAGMA table_info(sessions)').all() as Array<{ name: string }>).map(
-      (c) => c.name,
-    );
-    expect(sessionCols).toContain('hosted_by');
+    const cols = columns();
+    expect(cols).toContain('hosted_by'); // v7 step
+    expect(cols).toContain('summary'); // v8 step
+    expect(schemaVersion()).toBe('9');
 
-    const tableRow = db
-      .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='launch_reservations'")
-      .get() as { name: string } | undefined;
-    expect(tableRow?.name).toBe('launch_reservations');
+    const row = getSessionDb()
+      .prepare('SELECT description, description_source FROM sessions WHERE session_id = ?')
+      .get('v6-row') as { description: string; description_source: string | null };
+    expect(row.description).toBe('from v6');
+    expect(row.description_source).toBe('human');
+  });
 
+  it('gives a fresh install the v8 shape directly', () => {
+    initSessionDb(dbPath); // no prior file
+
+    const cols = columns();
+    expect(cols).toContain('summary');
+    expect(cols).toContain('summarized_at');
+    expect(cols).toContain('description_source');
+    expect(schemaVersion()).toBe('9');
+    // The aux table is created at init, not only by the migration step.
     expect(
-      (db.prepare("SELECT value FROM meta WHERE key='schema_version'").get() as { value: string }).value,
-    ).toBe('8');
+      getSessionDb()
+        .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='summarize_state'")
+        .get(),
+    ).toBeTruthy();
   });
 });

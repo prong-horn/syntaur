@@ -74,24 +74,17 @@ export async function markDeriveMigrated(): Promise<void> {
 
 /**
  * The stage-engine activation marker (Phase 1 / WS-2). SEPARATE from
- * `derive-migrated` on purpose (WS-2 Decision 2): the sweep gates
- * (`server.ts`, `derive-verbs.ts`) stay on `isDeriveMigrated()` so the ladder
- * keeps moving the live board; the engine-vs-ladder choice is a branch INSIDE
- * {@link recomputeAndWrite} gated on `isStagesMigrated() && ctx.stageWorkflow`.
- * The marker stays UNSET through WS-2 (the engine wiring is dormant, exercised
- * only by fixtures that set it) — WS-3's migration calls
- * {@link markStagesMigrated} after seeding per-file workflows + stage positions
- * on all live tickets, flipping the whole board onto the engine at once.
+ * `derive-migrated` on purpose (WS-2 Decision 2) — see `utils/stages-marker.ts`,
+ * where the implementation moved (WS-3 T9b) so `config.ts` can consult it for
+ * the legacy-writer lockout without an import cycle. The marker stays UNSET
+ * through WS-2 (the engine wiring is dormant, exercised only by fixtures that
+ * set it) — WS-3's `migrate-workflows` calls {@link markStagesMigrated} after
+ * seeding per-file workflows + stage positions on all live tickets, flipping
+ * the whole board onto the engine at once. Re-exported here so the many
+ * existing `from '.../recompute.js'` import sites keep resolving.
  */
-const STAGES_MARKER = 'stages-migrated';
-
-export async function isStagesMigrated(): Promise<boolean> {
-  return fileExists(resolve(syntaurRoot(), STAGES_MARKER));
-}
-
-export async function markStagesMigrated(): Promise<void> {
-  await writeFileForce(resolve(syntaurRoot(), STAGES_MARKER), `${nowTimestamp()}\n`);
-}
+export { isStagesMigrated, markStagesMigrated } from '../utils/stages-marker.js';
+import { isStagesMigrated } from '../utils/stages-marker.js';
 
 /** Resolve the derive context for ONE workflow id (default `'default'`) from
  * config.md. For `'default'` in a legacy config with no `workflows:` block this
@@ -134,8 +127,12 @@ export async function resolveRecomputeContext(): Promise<{
  * itself a (microseconds-wide) TOCTOU — unlink-by-path is the POSIX ceiling
  * without fd-based locking. With cooperating writers, a 30s staleness window
  * vs ms-scale critical sections, and content-CAS behind the lock as a second
- * line of defense, the residual risk is accepted for single-host use. */
-async function acquireLock(assignmentDir: string): Promise<() => Promise<void>> {
+ * line of defense, the residual risk is accepted for single-host use.
+ *
+ * Exported (with {@link contentHash}) for WS-3's migration-only locked writer
+ * (`migrate-workflows.ts`), which needs the same lock + CAS discipline but
+ * must NOT run the ladder derive that `recomputeAndWrite` performs pre-marker. */
+export async function acquireLock(assignmentDir: string): Promise<() => Promise<void>> {
   const lockPath = resolve(assignmentDir, LOCK_FILE);
   const token = `${process.pid}:${createHash('sha256').update(`${Math.random()}${Date.now()}`).digest('hex').slice(0, 12)}`;
   for (let attempt = 0; attempt <= LOCK_MAX_WAITS; attempt++) {
@@ -170,7 +167,7 @@ async function acquireLock(assignmentDir: string): Promise<() => Promise<void>> 
   throw new Error(`Timed out waiting for ${lockPath} (held > ${(LOCK_WAIT_MS * LOCK_MAX_WAITS) / 1000}s)`);
 }
 
-function contentHash(content: string): string {
+export function contentHash(content: string): string {
   return createHash('sha256').update(content, 'utf-8').digest('hex');
 }
 

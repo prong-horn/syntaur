@@ -344,6 +344,12 @@ export async function computeFactsDetailed(input: ComputeFactsInput): Promise<Co
     planExists: planFile !== null,
     planApproved,
     workspaceSet: frontmatter.workspace.repository !== null && frontmatter.workspace.branch !== null,
+    // WS-3 T9 export policy: the session-stage scalars (implementationStarted /
+    // reviewRequested / reworkRequested) remain ENGINE-FED after the stage
+    // migration — the work-start bridge sets/clears them inside the same CAS
+    // payload as the engine move. They must keep exporting from frontmatter:
+    // the compiled default gates hold on `NOT reworkRequested:true`, and
+    // downstream AssignmentFacts consumers (inbox, payload mirrors) read them.
     implementationStarted: frontmatter.implementationStarted,
     depsSatisfied,
     unresolvedQuestions,

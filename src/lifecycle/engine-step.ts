@@ -48,6 +48,10 @@ export interface EngineMove {
   target?: string;
   /** Actor recorded on a forced move's `GateOverride` / history entry. */
   actor?: string;
+  /** Work-start verb (WS-3 Task 0: `implement` / `request-review` / `rework`) —
+   * matched against a route's `verb:` discriminator; a verb-less route matches
+   * any move. Only meaningful for `kind: 'work-start'`. */
+  verb?: string;
 }
 
 export interface EngineStepResult {
@@ -120,7 +124,7 @@ export function computeEngineStep(input: {
     case 'gate':
       break; // no forced move — advance from the current stage
     case 'work-start': {
-      const step = evaluateRoutes(currentStage, workflow, engineInput, 'work-start');
+      const step = evaluateRoutes(currentStage, workflow, engineInput, 'work-start', move.verb);
       const to = step ? stageById(workflow, step.route.to) : undefined;
       if (step && to) {
         forced(to, { from: currentStage.id, to: to.id, trigger: 'work-start', route: step.route });

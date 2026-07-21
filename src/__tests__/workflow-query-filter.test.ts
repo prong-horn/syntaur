@@ -122,3 +122,62 @@ describe('getUnionQueryRegistry', () => {
     expect(validateQuery('flakyRepro:true', buildQueryRegistry([])).length).toBeGreaterThan(0);
   });
 });
+
+// ── WS-3 T7: CLI and browser evaluators agree on the compat aliases (§4.5) ───
+// The aliases live in the ONE shared registry (fields.ts): `phase` falls back
+// to `status` (the stage), `disposition` to the blocked/parked flags, `pinned`
+// reads always-false, `phaseAge` evaluates as statusAge. This proves the
+// browser adapter (boardItemToQueryItem) and a CLI-style item resolve them
+// identically.
+describe('WS-3 compat aliases — dual-evaluator agreement (T7)', () => {
+  const now = Date.now();
+  const FIVE_DAYS = 5 * 24 * 60 * 60 * 1000;
+
+  it('phase/disposition/pinned/phaseAge agree between the CLI item and boardItemToQueryItem', () => {
+    // CLI-style item (ls.ts loadQueryItem shape), engine-world: no mirrors.
+    const cliItem = {
+      status: 'ready_for_planning',
+      blocked: true,
+      parked: false,
+      statusAge: FIVE_DAYS,
+      phaseAge: null,
+      phase: null,
+      disposition: null,
+    };
+    const browserItem = boardItemToQueryItem(
+      makeItem({
+        status: 'ready_for_planning',
+        phase: null,
+        disposition: null,
+        statusAge: FIVE_DAYS,
+        phaseAge: null,
+        facts: { blocked: true, parked: false },
+      }),
+    );
+    const registry = buildQueryRegistry([]);
+    for (const expr of [
+      'phase:ready_for_planning',
+      'disposition:blocked',
+      'pinned:false',
+      'phaseAge > 3d',
+    ]) {
+      const { query, errors } = compileQuery(expr, registry);
+      expect(errors).toEqual([]);
+      const cli = query!.predicate(cliItem, { now });
+      const browser = query!.predicate(browserItem, { now });
+      expect(browser).toBe(cli);
+      expect(browser).toBe(true);
+    }
+  });
+
+  it('filterBoardItems honors the aliases end-to-end (no mirrors on the item)', () => {
+    const items = [
+      makeItem({ status: 'ready_for_planning', phase: null, disposition: null, facts: { blocked: true } }),
+      makeItem({ status: 'draft', phase: null, disposition: null, facts: {} }),
+    ];
+    const { query } = compileQuery('phase:ready_for_planning AND disposition:blocked', buildQueryRegistry([]));
+    const matched = filterBoardItems(items, query);
+    expect(matched).toHaveLength(1);
+    expect(matched[0].status).toBe('ready_for_planning');
+  });
+});

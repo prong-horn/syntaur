@@ -762,8 +762,18 @@ export function useInventory(slug: string | null): FetchState<InventoryDetail> {
   );
 }
 
-export function useAgentSessions(): FetchState<AgentSessionsResponse> {
-  return useFetch<AgentSessionsResponse>('/api/agent-sessions', 'agent-sessions');
+/**
+ * `includeUsageOnly` opts into synthetic rows for sessions that exist only in
+ * usage_events (spend with no tracked session). Off by default so overview
+ * rails, widgets, and saved views keep seeing tracked sessions only.
+ */
+export function useAgentSessions(
+  options: { includeUsageOnly?: boolean } = {},
+): FetchState<AgentSessionsResponse> {
+  const url = options.includeUsageOnly
+    ? '/api/agent-sessions?includeUsageOnly=1'
+    : '/api/agent-sessions';
+  return useFetch<AgentSessionsResponse>(url, 'agent-sessions');
 }
 
 export function useAssignmentSessions(

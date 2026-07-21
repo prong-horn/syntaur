@@ -48,7 +48,7 @@ describe('priceForModel', () => {
         cacheReadTokens: 0,
       }),
     ).toBeCloseTo(1.4 + 4.4, 10);
-    // MiniMax M2.5: in 0.15, out 0.90 per million.
+    // MiniMax M2.5: official pay-as-you-go in 0.30, out 1.20 per million.
     expect(
       priceForModel('[pi] hf:MiniMaxAI/MiniMax-M2.5', {
         inputTokens: 1_000_000,
@@ -56,7 +56,7 @@ describe('priceForModel', () => {
         cacheCreationTokens: 0,
         cacheReadTokens: 0,
       }),
-    ).toBeCloseTo(0.15 + 0.9, 10);
+    ).toBeCloseTo(0.3 + 1.2, 10);
   });
 
   it('returns null for an unknown model (opaque Synthetic alias, any claude/codex model)', () => {
@@ -93,5 +93,76 @@ describe('priceForModel', () => {
     for (const key of Object.keys(MODEL_PRICING)) {
       expect(key).not.toMatch(/claude|gpt|codex/i);
     }
+  });
+});
+
+describe('MODEL_ALIASES coverage of live model strings', () => {
+  /**
+   * Every distinct model string observed on zero-cost rows in the real usage DB
+   * (2026-07-18). These are the strings the serve-time fallback must price, and
+   * the reason `MODEL_ALIASES` exists: most do not normalize to a pricing key on
+   * their own.
+   *
+   * `syn:large:text` is the ONE deliberate exception — an opaque Synthetic tier
+   * alias with no public per-token rate, left unpriced per the module's
+   * canonical-source rule rather than guessed.
+   */
+  const LIVE_MODEL_STRINGS = [
+    '[pi] kimi-k2.6',
+    '[pi] hf:zai-org/GLM-5.1',
+    '[pi] glm-5.2',
+    '[pi] z-ai/glm-5.2',
+    '[pi] moonshotai/kimi-k2.7-code',
+  ];
+  const EXPECTED_UNPRICED = ['[pi] syn:large:text'];
+
+  it.each(LIVE_MODEL_STRINGS)('prices %s', (model) => {
+    const cost = priceForModel(model, {
+      inputTokens: 1_000_000,
+      outputTokens: 0,
+      cacheCreationTokens: 0,
+      cacheReadTokens: 0,
+    });
+    expect(cost).not.toBeNull();
+    expect(cost).toBeGreaterThan(0);
+  });
+
+  it.each(EXPECTED_UNPRICED)('leaves %s unpriced by design', (model) => {
+    expect(
+      priceForModel(model, {
+        inputTokens: 1_000_000,
+        outputTokens: 0,
+        cacheCreationTokens: 0,
+        cacheReadTokens: 0,
+      }),
+    ).toBeNull();
+  });
+
+  it('resolves org-less and alternate-org spellings to one canonical key', () => {
+    expect(normalizeModelKey('[pi] glm-5.2')).toBe('zai-org/glm-5.2');
+    expect(normalizeModelKey('[pi] z-ai/glm-5.2')).toBe('zai-org/glm-5.2');
+    expect(normalizeModelKey('[pi] hf:zai-org/GLM-5.2')).toBe('zai-org/glm-5.2');
+    expect(normalizeModelKey('kimi-k2.6')).toBe('moonshotai/kimi-k2.6');
+  });
+
+  it('leaves an unknown model string untouched', () => {
+    expect(normalizeModelKey('[pi] syn:large:text')).toBe('syn:large:text');
+  });
+
+  it('prices MiniMax M2.5 with all four token buckets at the official rate', () => {
+    // Official MiniMax pay-as-you-go: 0.30 in / 1.20 out / 0.03 cache-read /
+    // 0.375 cache-write per 1M tokens. Exercise each bucket independently.
+    const rate = (bucket: 'inputTokens' | 'outputTokens' | 'cacheReadTokens' | 'cacheCreationTokens') =>
+      priceForModel('[pi] minimax-m2.5', {
+        inputTokens: 0,
+        outputTokens: 0,
+        cacheCreationTokens: 0,
+        cacheReadTokens: 0,
+        [bucket]: 1_000_000,
+      } as Parameters<typeof priceForModel>[1]);
+    expect(rate('inputTokens')).toBeCloseTo(0.3, 6);
+    expect(rate('outputTokens')).toBeCloseTo(1.2, 6);
+    expect(rate('cacheReadTokens')).toBeCloseTo(0.03, 6);
+    expect(rate('cacheCreationTokens')).toBeCloseTo(0.375, 6);
   });
 });

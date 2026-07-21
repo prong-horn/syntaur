@@ -57,16 +57,31 @@ export const MODEL_PRICING: Record<string, ModelRate> = {
   // source: https://platform.moonshot.ai/ — cross-checked
   //         https://openrouter.ai/moonshotai/kimi-k2.5 (retrieved 2026-06-17)
   'moonshotai/kimi-k2.5': { input: 0.6, output: 3.0, cacheRead: 0.1, cacheWrite: 0.6 },
+  // Moonshot Kimi K2.7 Code — official Moonshot list price ($0.95 in / $4.00 out,
+  // $0.19 cache-hit input). OpenRouter lists 0.72/3.50 for the same model, i.e. a
+  // routed-provider rate BELOW the originator's list; per the canonical-source
+  // rule above the originator's price wins and the aggregator discount is not used.
+  // source: https://platform.moonshot.ai/ (official) — cross-checked
+  //         https://openrouter.ai/moonshotai/kimi-k2.7-code (retrieved 2026-07-19)
+  'moonshotai/kimi-k2.7-code': { input: 0.95, output: 4.0, cacheRead: 0.19, cacheWrite: 0.95 },
   // Z.ai (Zhipu) GLM-5.2 — official z.ai platform list price.
   // source: https://docs.z.ai/guides/overview/pricing — cross-checked
   //         https://openrouter.ai/z-ai/glm-5 (retrieved 2026-06-18)
   'zai-org/glm-5.2': { input: 1.4, output: 4.4, cacheRead: 0.26, cacheWrite: 1.4 },
-  // MiniMax M2.5 — official MiniMax platform list price. No separately-pinned
-  // cached-read rate is published, so cacheRead is set conservatively to the
-  // input rate (upper bound); revise if MiniMax publishes a cache rate.
-  // source: https://platform.minimax.io/docs/guides/pricing-token-plan
-  //         — cross-checked https://openrouter.ai/minimax/minimax-m2.5 (retrieved 2026-06-18)
-  'minimaxai/minimax-m2.5': { input: 0.15, output: 0.9, cacheRead: 0.15, cacheWrite: 0.15 },
+  // Z.ai (Zhipu) GLM-5.1 — prior GLM model, still present in historical usage
+  // rows. Official z.ai list price is identical to GLM-5.2's.
+  // source: https://docs.z.ai/guides/overview/pricing (official, retrieved
+  //         2026-07-19) — cross-checked https://openrouter.ai/z-ai/glm-5.1,
+  //         which lists 0.966/3.036 marked "31% off" (= 69% of 1.4/4.4),
+  //         confirming 1.4/4.4 as list. The discount is rejected per the
+  //         canonical-source rule above.
+  'zai-org/glm-5.1': { input: 1.4, output: 4.4, cacheRead: 0.26, cacheWrite: 1.4 },
+  // MiniMax M2.5 — official MiniMax pay-as-you-go list price, incl. the
+  // separately-published prompt-caching read/write rates.
+  // source: https://platform.minimax.io/docs/guides/pricing-paygo (official,
+  //         retrieved 2026-07-21): input $0.30, output $1.20, cache read $0.03,
+  //         cache write $0.375 per 1M tokens.
+  'minimaxai/minimax-m2.5': { input: 0.3, output: 1.2, cacheRead: 0.03, cacheWrite: 0.375 },
   // NOTE: opaque Synthetic tier aliases like `syn:large:text` have no public
   // per-token rate (they route to whatever Synthetic assigns), so they remain
   // unpriced (→ $0). Reseller discounts (e.g. DeepInfra K2.6 0.75/3.50/0.15) are
@@ -74,17 +89,41 @@ export const MODEL_PRICING: Record<string, ModelRate> = {
 };
 
 /**
+ * Variant model strings → canonical `MODEL_PRICING` key.
+ *
+ * Agents report the same model under several spellings: org-less (`glm-5.2`),
+ * a different org prefix (`z-ai/…` vs the HuggingFace `zai-org/…`), or a bare
+ * family name. Without this map those rows normalize to a key that is not in
+ * `MODEL_PRICING` and silently stay at $0. Keys and values are both in
+ * post-strip lowercase form — i.e. what {@link normalizeModelKey} produces
+ * before the alias lookup.
+ */
+export const MODEL_ALIASES: Record<string, string> = {
+  'kimi-k2.6': 'moonshotai/kimi-k2.6',
+  'kimi-k2.5': 'moonshotai/kimi-k2.5',
+  'kimi-k2.7-code': 'moonshotai/kimi-k2.7-code',
+  'glm-5.2': 'zai-org/glm-5.2',
+  'z-ai/glm-5.2': 'zai-org/glm-5.2',
+  'glm-5.1': 'zai-org/glm-5.1',
+  'z-ai/glm-5.1': 'zai-org/glm-5.1',
+  'minimax-m2.5': 'minimaxai/minimax-m2.5',
+  'minimax/minimax-m2.5': 'minimaxai/minimax-m2.5',
+};
+
+/**
  * Canonicalize a model string into a `MODEL_PRICING` key. Strips a leading
  * `"[agent] "` bracket prefix (ccusage namespaces non-native agents this way,
- * e.g. `"[pi] hf:moonshotai/Kimi-K2.6"`) and an `hf:` provider prefix, then
- * lowercases. Pure and total — never throws.
+ * e.g. `"[pi] hf:moonshotai/Kimi-K2.6"`) and an `hf:` provider prefix,
+ * lowercases, then resolves any {@link MODEL_ALIASES} entry. Pure and total —
+ * never throws.
  */
 export function normalizeModelKey(model: string): string {
-  return model
+  const stripped = model
     .replace(/^\s*\[[^\]]*\]\s*/, '') // drop a leading "[pi] " style prefix
     .replace(/^hf:/i, '') // drop a HuggingFace-style provider prefix
     .trim()
     .toLowerCase();
+  return MODEL_ALIASES[stripped] ?? stripped;
 }
 
 /**

@@ -294,6 +294,47 @@ describe('evaluateRoutes', () => {
     expect(evaluateRoutes(wf.stages[0], wf, input(), 'work-start')?.route.to).toBe('implementing');
   });
 
+  // ── verb discriminator (WS-3 Task 0 / Decision 4) ──────────────────────────
+  it('work-start: a verb-less route matches ANY work-start move (legacy behavior preserved)', () => {
+    // No verb on the route → matches a bare move AND any verb-carrying move.
+    expect(evaluateRoutes(wf.stages[0], wf, input(), 'work-start')?.route.to).toBe('implementing');
+    expect(evaluateRoutes(wf.stages[0], wf, input(), 'work-start', 'implement')?.route.to).toBe(
+      'implementing',
+    );
+  });
+
+  it('work-start: a verb\'d route matches ONLY the same verb', () => {
+    const s = stage({
+      id: 'in_progress',
+      next: [{ to: 'review', on: 'work-start', verb: 'request-review' }],
+    });
+    const local: StageWorkflow = { id: 'w', stages: [s, stage({ id: 'review' })] };
+    // `implement` at a stage whose only work-start route is verb: request-review
+    // fires NOTHING (the round-3 blocker: it must not advance to review).
+    expect(evaluateRoutes(s, local, input(), 'work-start', 'implement')).toBeNull();
+    // A bare (verb-less) move does not match a verb'd route either.
+    expect(evaluateRoutes(s, local, input(), 'work-start')).toBeNull();
+    // The matching verb moves.
+    expect(evaluateRoutes(s, local, input(), 'work-start', 'request-review')?.route.to).toBe('review');
+  });
+
+  it('work-start: verb selects among multiple verb\'d routes', () => {
+    const s = stage({
+      id: 'review',
+      next: [
+        { to: 'in_progress', on: 'work-start', verb: 'rework' },
+        { to: 'done', on: 'work-start', verb: 'request-review' },
+      ],
+    });
+    const local: StageWorkflow = {
+      id: 'w',
+      stages: [s, stage({ id: 'in_progress' }), stage({ id: 'done' })],
+    };
+    expect(evaluateRoutes(s, local, input(), 'work-start', 'rework')?.route.to).toBe('in_progress');
+    expect(evaluateRoutes(s, local, input(), 'work-start', 'request-review')?.route.to).toBe('done');
+    expect(evaluateRoutes(s, local, input(), 'work-start', 'implement')).toBeNull();
+  });
+
   it('verdict: a valid un-fired dissent fires onDissent; a fired one does not', () => {
     const dissent = rec({ verdict: 'changes-requested', actor: 'rev' });
     const withDissent = input({ evidence: { codeReviewed: evidence([{ record: dissent, valid: true }]) } });

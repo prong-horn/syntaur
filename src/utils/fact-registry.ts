@@ -337,7 +337,8 @@ export function queryFieldNames(declarations: FactDeclaration[]): string[] {
     'statusAge',
     'phase',
     'disposition',
-    'phaseAge',
+    // `phaseAge` and `pinned` are deprecated (WS-3 compat window, §4.5) — they
+    // still compile (with a parse-time warning) but are no longer advertised.
     'hasRealObjective',
     'acRealTotal',
     'acRealChecked',
@@ -353,7 +354,6 @@ export function queryFieldNames(declarations: FactDeclaration[]): string[] {
     'parked',
     'reviewRequested',
     'reworkRequested',
-    'pinned',
   ];
 
   const custom: string[] = [];

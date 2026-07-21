@@ -57,6 +57,12 @@ export interface StageRoute {
   to: string;
   /** Trigger kind; absent → `'gate'`. Preserved verbatim if an unknown value is authored. */
   on?: RouteTrigger;
+  /** Work-start verb discriminator (WS-3, decision 4): meaningful only on
+   * `on: work-start` routes. A route WITH a verb matches only a work-start move
+   * carrying the same verb (`implement` / `request-review` / `rework`); a route
+   * WITHOUT one keeps the match-any behavior (verb-less/legacy workflows are
+   * unaffected). The parser flags a `verb:` on a non-work-start route. */
+  verb?: string;
   /** Unrecognized keys, preserved verbatim (no silent deletion). */
   raw?: Record<string, unknown>;
 }

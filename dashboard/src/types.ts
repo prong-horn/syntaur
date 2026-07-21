@@ -127,6 +127,23 @@ export interface AgentSession {
   pidStartedAt?: string | null;
   originalHeadSha?: string | null;
   updatedAt?: string | null;
+  /** Rolled-up spend joined from usage_events at serve time; null when the collector has no rows. */
+  usage?: SessionUsageSummary | null;
+  /** Synthetic row that exists only in usage_events (no tracked session) — no transcript/liveness/actions. */
+  usageOnly?: boolean;
+  /** Short auto-generated blurb from the session transcript; null until summarized. */
+  summary?: string | null;
+  /** When {@link summary} was written (ISO 8601). */
+  summarizedAt?: string | null;
+  /** Who wrote `description`: 'human' is protected from the auto-summarizer. */
+  descriptionSource?: 'human' | 'auto' | null;
+}
+
+/** Per-session spend attached to AgentSession.usage. */
+export interface SessionUsageSummary {
+  totalCost: number;
+  totalTokens: number;
+  models: Array<{ model: string; cost: number; tokens: number }>;
 }
 
 export interface AgentSessionWithLiveness extends AgentSession {

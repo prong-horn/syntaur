@@ -3,6 +3,7 @@ import {
   deleteStatusConfig,
   readConfig,
   DEFAULT_DERIVE_CONFIG,
+  LegacyWorkflowWriteLockedError,
   validateDeriveConfig,
   validateDeriveShape,
   validateFactDeclarations,
@@ -56,6 +57,20 @@ function toSummary(a: AffectedAssignment): AffectedAssignmentSummary {
     assignmentSlug: a.assignmentSlug,
     status: a.status,
   };
+}
+
+/**
+ * WS-3 T9b: the legacy config-workflow writers hard-refuse once workflows are
+ * migrated to per-file (`stages-migrated` set) — surface that refusal as a
+ * clean 409 (with the edit-per-file message) instead of a generic 500. Returns
+ * true when the response was sent.
+ */
+function respondIfWorkflowsMigrated(err: unknown, res: Response): boolean {
+  if (err instanceof LegacyWorkflowWriteLockedError) {
+    res.status(409).json({ error: 'workflows-migrated', message: err.message });
+    return true;
+  }
+  return false;
 }
 
 function buildAffectedResponse(id: string, list: AffectedAssignment[]): AffectedResponse {
@@ -566,6 +581,7 @@ export function createStatusConfigRouter(
           facts: factsToWrite,
         });
       } catch (err) {
+        if (respondIfWorkflowsMigrated(err, res)) return;
         console.error('Error saving status config after applying resolutions:', err);
         res.status(500).json({
           error: 'config-write-failed',
@@ -592,6 +608,7 @@ export function createStatusConfigRouter(
         applied: { remapped: applied.remapped, deleted: applied.deleted, byId },
       });
     } catch (error) {
+      if (respondIfWorkflowsMigrated(error, res)) return;
       console.error('Error saving status config:', error);
       res.status(500).json({ error: 'Failed to save status config' });
     }
@@ -635,6 +652,7 @@ export function createStatusConfigRouter(
       clearStatusConfigCache();
       res.json({ deleted: true, workflowId });
     } catch (error) {
+      if (respondIfWorkflowsMigrated(error, res)) return;
       console.error('Error deleting workflow:', error);
       res.status(500).json({ error: 'Failed to delete workflow' });
     }
@@ -653,6 +671,7 @@ export function createStatusConfigRouter(
       clearStatusConfigCache();
       res.json({ defaultWorkflow: workflowId });
     } catch (error) {
+      if (respondIfWorkflowsMigrated(error, res)) return;
       console.error('Error setting default workflow:', error);
       res.status(500).json({ error: 'Failed to set default workflow' });
     }
@@ -692,6 +711,7 @@ export function createStatusConfigRouter(
       clearStatusConfigCache();
       res.status(201).json(configResponse(await getStatusConfig(targetId)));
     } catch (error) {
+      if (respondIfWorkflowsMigrated(error, res)) return;
       console.error('Error duplicating workflow:', error);
       res.status(500).json({ error: 'Failed to duplicate workflow' });
     }
@@ -723,8 +743,30 @@ export function createWorkflowConfigRouter(
   router.get('/', async (_req: Request, res: Response) => {
     try {
       const config = await readConfig();
-      const library = getWorkflowLibrary(config);
       const defaultWorkflow = config.defaultWorkflow ?? DEFAULT_WORKFLOW_ID;
+
+      // WS-3 (T8): post-migration the workflows live per-file and the config
+      // block is gone — the legacy library would list only the synthesized
+      // `default`, blanking the workflow UI. The per-file library (when
+      // non-empty) is the authoritative metadata source.
+      try {
+        const { loadWorkflowLibrary } = await import('../utils/workflow-library.js');
+        const perFile = loadWorkflowLibrary(config);
+        if (Object.keys(perFile).length > 0) {
+          const list = Object.entries(perFile).map(([id, wf]) => ({
+            id,
+            label: wf.label ?? id,
+            isDefault: id === defaultWorkflow,
+            custom: true, // every per-file workflow is an explicit entry
+          }));
+          res.json({ workflows: list, defaultWorkflow });
+          return;
+        }
+      } catch {
+        /* dual-source window mid-migration — the legacy block is still live */
+      }
+
+      const library = getWorkflowLibrary(config);
       const list = Object.entries(library).map(([id, wf]) => ({
         id,
         label: wf.label,
@@ -769,6 +811,7 @@ export function createWorkflowConfigRouter(
       clearStatusConfigCache();
       res.status(201).json(configResponse(await getStatusConfig(id)));
     } catch (error) {
+      if (respondIfWorkflowsMigrated(error, res)) return;
       console.error('Error creating workflow:', error);
       res.status(500).json({ error: 'Failed to create workflow' });
     }

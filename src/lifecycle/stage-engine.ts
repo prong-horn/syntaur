@@ -449,12 +449,19 @@ export function crossedGates(
  * Evaluate whether a route fires for a given trigger. `gate` auto-advances when
  * the whole gate passes; `work-start` leaves a waiting stage on activity;
  * `verdict` fires `on-dissent` for the first un-fired valid dissent.
+ *
+ * `verb` (WS-3 Task 0) discriminates work-start moves: a route authored with
+ * `verb:` matches only a move carrying the same verb; a verb-less route keeps
+ * the match-any behavior — so `implement` at a stage whose only work-start
+ * route is `verb: request-review` fires nothing, while dormant/legacy
+ * workflows (no verbs authored) behave exactly as before.
  */
 export function evaluateRoutes(
   stage: WorkflowStage,
   _workflow: StageWorkflow,
   input: EngineInput,
   trigger: 'gate' | 'work-start' | 'verdict',
+  verb?: string,
 ): { route: StageRoute; trigger: HopTrigger; dissent?: DissentCause } | null {
   if (trigger === 'gate') {
     if (!evaluateGate(stage, input).passed) return null;
@@ -462,7 +469,9 @@ export function evaluateRoutes(
     return route ? { route, trigger: 'gate' } : null;
   }
   if (trigger === 'work-start') {
-    const route = (stage.next ?? []).find((r) => routeTrigger(r) === 'work-start');
+    const route = (stage.next ?? []).find(
+      (r) => routeTrigger(r) === 'work-start' && (r.verb === undefined || r.verb === verb),
+    );
     return route ? { route, trigger: 'work-start' } : null;
   }
   // verdict — any valid dissent on a judged gate check whose record hasn't fired.

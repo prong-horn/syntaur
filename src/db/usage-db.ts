@@ -23,6 +23,7 @@
 import Database from 'better-sqlite3';
 import { resolve } from 'node:path';
 import { syntaurRoot } from '../utils/paths.js';
+import { priceForModel } from '../usage/pricing.js';
 
 let db: Database.Database | null = null;
 
@@ -414,6 +415,107 @@ export function listEvents(filter: ListEventsFilter = {}): UsageEventRow[] {
         ORDER BY event_ts DESC`,
     )
     .all(...params) as UsageEventRow[];
+}
+
+// --- Per-session usage ----------------------------------------------------
+
+/** Per-model spend within one session. */
+export interface SessionModelUsage {
+  model: string;
+  cost: number;
+  tokens: number;
+}
+
+/**
+ * Rolled-up usage for a single session id, plus the session metadata carried by
+ * the usage rows themselves. The metadata fields exist so callers can render
+ * *usage-only* sessions — ids ccusage saw that Syntaur never tracked, which have
+ * no `sessions` row to read an agent/path/start time from.
+ */
+export interface SessionUsage {
+  totalCost: number;
+  totalTokens: number;
+  models: SessionModelUsage[];
+  /** Agent that produced the latest event (`usage_events.tool`). */
+  tool: string | null;
+  /** Working directory of the latest event. */
+  cwd: string | null;
+  /** Earliest `event_ts` seen for the session. */
+  firstEventTs: string | null;
+}
+
+/**
+ * Per-session usage totals for every session in `usage_events`, keyed by
+ * session id.
+ *
+ * Cost is the stored `total_cost` when the collector priced it, else a
+ * serve-time `tokens × list rate` fallback. The same fallback runs at ingest
+ * (`collect.ts`), but only for rows collected AFTER a model's rate was added —
+ * historical rows keep the $0 they were written with. Applying it again here
+ * prices those retroactively without rewriting data, so adding a rate to
+ * `MODEL_PRICING` immediately corrects the whole history.
+ *
+ * `tool`/`cwd` come from the session's most recent event (ties broken by model
+ * ascending, so the result is deterministic); `firstEventTs` is its earliest.
+ */
+export function listSessionUsage(): Map<string, SessionUsage> {
+  const database = getUsageDb();
+  const rows = database
+    .prepare(
+      `SELECT session_id, model, tool, event_ts,
+              input_tokens, output_tokens, cache_creation_tokens, cache_read_tokens,
+              total_tokens, total_cost, cwd
+         FROM usage_events
+        ORDER BY session_id, event_ts DESC, model ASC`,
+    )
+    .all() as Array<
+    Pick<
+      UsageEventRow,
+      | 'session_id'
+      | 'model'
+      | 'tool'
+      | 'event_ts'
+      | 'input_tokens'
+      | 'output_tokens'
+      | 'cache_creation_tokens'
+      | 'cache_read_tokens'
+      | 'total_tokens'
+      | 'total_cost'
+      | 'cwd'
+    >
+  >;
+
+  const out = new Map<string, SessionUsage>();
+  for (const row of rows) {
+    let entry = out.get(row.session_id);
+    if (!entry) {
+      // First row of a session under `event_ts DESC, model ASC` ordering is the
+      // latest event — the metadata source.
+      entry = {
+        totalCost: 0,
+        totalTokens: 0,
+        models: [],
+        tool: row.tool || null,
+        cwd: row.cwd || null,
+        firstEventTs: row.event_ts,
+      };
+      out.set(row.session_id, entry);
+    }
+    const cost =
+      row.total_cost > 0
+        ? row.total_cost
+        : (priceForModel(row.model, {
+            inputTokens: row.input_tokens,
+            outputTokens: row.output_tokens,
+            cacheCreationTokens: row.cache_creation_tokens,
+            cacheReadTokens: row.cache_read_tokens,
+          }) ?? 0);
+    entry.totalCost += cost;
+    entry.totalTokens += row.total_tokens;
+    entry.models.push({ model: row.model, cost, tokens: row.total_tokens });
+    if (row.event_ts < (entry.firstEventTs ?? row.event_ts)) entry.firstEventTs = row.event_ts;
+  }
+  return out;
 }
 
 // --- Daily rollup ---------------------------------------------------------

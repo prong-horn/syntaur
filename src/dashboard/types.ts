@@ -772,6 +772,37 @@ export interface AgentSession {
   syntaurdShortId?: string | null;
   /** How this session was launched — gates syntaurd/native/tmux attach. */
   launcher?: SessionLauncher;
+  /**
+   * Rolled-up spend for this session id, joined from `usage_events` at serve
+   * time (there is no FK — usage and sessions are independent id spaces).
+   * Null/absent when the collector has no rows for the session.
+   */
+  usage?: SessionUsageSummary | null;
+  /**
+   * True for synthetic rows that exist only in `usage_events` — spend ccusage
+   * recorded for a session Syntaur never tracked. They carry no transcript,
+   * liveness, or actions and are only emitted when the caller opts in.
+   */
+  usageOnly?: boolean;
+  /** Short auto-generated blurb from the session transcript; null until summarized. */
+  summary?: string | null;
+  /** When {@link summary} was written (ISO 8601). */
+  summarizedAt?: string | null;
+  /** Provenance guard for `description` — see {@link DescriptionSource}. */
+  descriptionSource?: DescriptionSource | null;
+}
+
+/**
+ * Who wrote `description`. 'human' is protected — the summarizer may only fill
+ * an empty description or refresh one it wrote itself ('auto').
+ */
+export type DescriptionSource = 'human' | 'auto';
+
+/** Per-session spend attached to {@link AgentSession.usage}. */
+export interface SessionUsageSummary {
+  totalCost: number;
+  totalTokens: number;
+  models: Array<{ model: string; cost: number; tokens: number }>;
 }
 
 export interface AgentSessionWithLiveness extends AgentSession {

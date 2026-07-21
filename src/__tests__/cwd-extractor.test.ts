@@ -92,6 +92,19 @@ describe('extractClaudeSessionMeta', () => {
     const meta = await extractClaudeSessionMeta(filePath);
     expect(meta).toBeNull();
   });
+
+  it('returns null when the transcript only ever records the degenerate cwd "/"', async () => {
+    // Headless ping-style sessions record cwd:"/" on every line. The cwd guard
+    // in derivePathFromTranscript (which this delegates to) rejects it, so the
+    // scanner records no path rather than claiming the session ran at root.
+    const projects = resolve(sandbox, 'projects');
+    const filePath = await writeClaudeTranscript(projects, '-', 'root-cwd', [
+      { type: 'user', cwd: '/', sessionId: 'root-cwd', timestamp: '2026-05-21T12:00:00.000Z' },
+      { type: 'assistant', cwd: '/', sessionId: 'root-cwd', timestamp: '2026-05-21T12:05:00.000Z' },
+    ]);
+    const meta = await extractClaudeSessionMeta(filePath);
+    expect(meta).toBeNull();
+  });
 });
 
 describe('walkClaudeProjects', () => {

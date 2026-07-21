@@ -21,7 +21,72 @@ import { captureProcessStartedAt } from '../utils/process-info.js';
 import { captureHeadSha } from '../utils/git-worktree.js';
 import { isExistingDir } from '../launch/cwd.js';
 import { recreateForTarget, recreateOutcomeToHttp } from './worktree-recreate.js';
-import type { AgentSessionStatus, WsMessage } from './types.js';
+import { listSessionUsage, type SessionUsage } from '../db/usage-db.js';
+import type { AgentSessionStatus, AgentSessionWithLiveness, WsMessage } from './types.js';
+
+/**
+ * Attach per-session spend to enriched session rows, and — only when the caller
+ * opts in — append synthetic rows for session ids that exist in `usage_events`
+ * but were never tracked.
+ *
+ * The orphan rows are deliberately opt-in: every other `useAgentSessions`
+ * consumer (overview rails, widgets, saved views) would otherwise start showing
+ * rows that have no transcript, no liveness, and no actions. They are appended
+ * AFTER liveness enrichment so they can never reach `reconcileActiveSessions`
+ * or the liveness probes.
+ *
+ * Usage is best-effort: when the usage DB was never initialized in this server
+ * context, sessions still render (without spend) rather than 500ing.
+ */
+function attachUsage(
+  sessions: AgentSessionWithLiveness[],
+  opts: { includeUsageOnly: boolean },
+): AgentSessionWithLiveness[] {
+  let usageBySession: Map<string, SessionUsage>;
+  try {
+    usageBySession = listSessionUsage();
+  } catch {
+    return sessions;
+  }
+
+  const summarize = (u: SessionUsage) => ({
+    totalCost: u.totalCost,
+    totalTokens: u.totalTokens,
+    models: u.models,
+  });
+
+  const withUsage: AgentSessionWithLiveness[] = sessions.map((session) => {
+    const usage = usageBySession.get(session.sessionId);
+    return { ...session, usage: usage ? summarize(usage) : null };
+  });
+  if (!opts.includeUsageOnly) return withUsage;
+
+  const tracked = new Set(sessions.map((s) => s.sessionId));
+  const orphans: AgentSessionWithLiveness[] = [];
+  for (const [sessionId, usage] of usageBySession) {
+    if (tracked.has(sessionId)) continue;
+    orphans.push({
+      projectSlug: null,
+      assignmentSlug: null,
+      agent: usage.tool || 'unknown',
+      sessionId,
+      started: usage.firstEventTs ?? '',
+      ended: null,
+      status: 'stopped',
+      path: usage.cwd ?? '',
+      description: null,
+      transcriptPath: null,
+      pid: null,
+      activity: null,
+      usage: summarize(usage),
+      usageOnly: true,
+      isLive: false,
+      resumeSupported: false,
+      forkSupported: false,
+    });
+  }
+  return [...withUsage, ...orphans];
+}
 
 export function createAgentSessionsRouter(
   projectsDir: string,
@@ -31,13 +96,14 @@ export function createAgentSessionsRouter(
   const router = Router();
 
   // GET /api/agent-sessions — all sessions across all projects
-  router.get('/', async (_req, res) => {
+  router.get('/', async (req, res) => {
     try {
       await reconcileActiveSessions(projectsDir, assignmentsDir);
       const sessions = await listAllSessions(projectsDir);
       const agents = getAgents(await readConfig());
+      const includeUsageOnly = req.query.includeUsageOnly === '1';
       res.json({
-        sessions: enrichSessions(sessions, agents),
+        sessions: attachUsage(enrichSessions(sessions, agents), { includeUsageOnly }),
         generatedAt: new Date().toISOString(),
       });
     } catch (error) {
@@ -59,7 +125,9 @@ export function createAgentSessionsRouter(
       const sessions = await listProjectSessions(projectsDir, projectSlug, assignment);
       const agents = getAgents(await readConfig());
       res.json({
-        sessions: enrichSessions(sessions, agents),
+        // Usage attached, but never orphan rows: a usage-only session has no
+        // project binding, so it cannot belong to a project-scoped listing.
+        sessions: attachUsage(enrichSessions(sessions, agents), { includeUsageOnly: false }),
         generatedAt: new Date().toISOString(),
       });
     } catch (error) {

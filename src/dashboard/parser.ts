@@ -604,9 +604,16 @@ export function parseAssignmentFull(fileContent: string): ParsedAssignmentFull {
     created: getField(fm, 'created') ?? '',
     updated: getField(fm, 'updated') ?? '',
     body,
+    // WS-3 compat window (§4.5): `phase`/`disposition` are DEPRECATED payload
+    // mirrors kept one release. Post-migration the engine maintains `phase`
+    // as a mirror of the stored stage (`status`) and `disposition` from the
+    // pause flags; consumers should migrate to `status` + the flags.
     phase: getField(fm, 'phase'),
     disposition: getField(fm, 'disposition'),
     parked: getField(fm, 'parked') === 'true',
+    // Retired session-stage facts (WS-3 T9): post-marker these stop being
+    // asserted — review/rework standing derives from the stored stage + the
+    // stage routes. The reads stay as the pre-marker fallback.
     reviewRequested: getField(fm, 'reviewRequested') === 'true',
     reworkRequested: getField(fm, 'reworkRequested') === 'true',
     implementationStarted: getField(fm, 'implementationStarted') === 'true',

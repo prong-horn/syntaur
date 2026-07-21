@@ -3,6 +3,7 @@ import { spawnSync } from 'node:child_process';
 import { resolve, isAbsolute } from 'node:path';
 import { syntaurRoot, defaultProjectDir, expandHome } from './paths.js';
 import { fileExists, writeFileForce } from './fs.js';
+import { isStagesMigrated } from './stages-marker.js';
 import { renderConfig } from '../templates/config.js';
 import { migrateLegacyConfig } from './fs-migration.js';
 import {
@@ -252,6 +253,16 @@ export { type WorkspaceVisibilityConfig };
  */
 export type SessionAutoTrack = 'all' | 'workspaces-only' | 'off';
 
+/** Which backend generates session auto-summaries. */
+export type SummarizeBackendName = 'claude' | 'pi';
+
+/**
+ * Master switch for automatic session summarization. Gates BOTH triggers — the
+ * dashboard interval and the LaunchAgent-invoked `syntaur session scan` — so
+ * turning it off guarantees no background LLM spend.
+ */
+export type SessionAutoSummarize = 'on' | 'off';
+
 /**
  * Multi-source agent discovery settings. Sources are individually toggleable;
  * `roots` is the depth-1 directory-scan root list (default `~`). Persisted as an
@@ -276,6 +287,8 @@ export interface SyntaurConfig {
   };
   session: {
     autoTrack: SessionAutoTrack;
+    summarizeBackend: SummarizeBackendName;
+    autoSummarize: SessionAutoSummarize;
   };
   integrations: IntegrationConfig;
   backup: BackupConfig | null;
@@ -319,6 +332,8 @@ const DEFAULT_CONFIG: SyntaurConfig = {
   },
   session: {
     autoTrack: 'all',
+    summarizeBackend: 'claude',
+    autoSummarize: 'on',
   },
   integrations: {
     claudePluginDir: null,
@@ -355,6 +370,10 @@ const DEFAULT_CONFIG: SyntaurConfig = {
 const AUTO_CREATE_WORKTREE_VALUES: readonly AutoCreateWorktree[] = ['skip', 'ask', 'always'];
 
 const SESSION_AUTO_TRACK_VALUES: readonly SessionAutoTrack[] = ['all', 'workspaces-only', 'off'];
+
+const SUMMARIZE_BACKEND_VALUES: readonly SummarizeBackendName[] = ['claude', 'pi'];
+
+const SESSION_AUTO_SUMMARIZE_VALUES: readonly SessionAutoSummarize[] = ['on', 'off'];
 
 const RUNNER_KINDS: readonly RunnerKind[] = ['claude', 'pi', 'codex'];
 
@@ -2126,7 +2145,32 @@ export async function deleteAgentsConfig(): Promise<void> {
   await writeFileForce(configPath, newContent);
 }
 
+/**
+ * WS-3 T9b — the legacy-writer lockout. After `syntaur migrate-workflows`
+ * flips the `stages-migrated` marker, the workflow source of truth is the
+ * per-file `~/.syntaur/workflows/<id>.md` store and the `config.md`
+ * `workflows:`/`statuses:` blocks are DELETED. The legacy editors (`syntaur
+ * status`/`syntaur workflow`, the dashboard settings API) still persist
+ * through {@link writeStatusConfig}/{@link writeWorkflowsConfig} — recreating
+ * either block would instantly re-brick the per-file loader on its next read
+ * (`DUAL_SOURCE_ERROR`, §4.6). The guard lives INSIDE the two writers (the
+ * fewest-misses point — every callsite funnels here); rewiring the editors to
+ * the stage model is Phase 2 "pipeline editor" scope. Pre-marker behavior is
+ * byte-identical.
+ */
+export class LegacyWorkflowWriteLockedError extends Error {
+  constructor() {
+    super('workflows migrated to per-file; edit `~/.syntaur/workflows/<id>.md`');
+    this.name = 'LegacyWorkflowWriteLockedError';
+  }
+}
+
+async function assertLegacyWorkflowWritesAllowed(): Promise<void> {
+  if (await isStagesMigrated()) throw new LegacyWorkflowWriteLockedError();
+}
+
 export async function writeStatusConfig(statuses: StatusConfig): Promise<void> {
+  await assertLegacyWorkflowWritesAllowed();
   const configPath = resolve(syntaurRoot(), 'config.md');
   const statusBlock = serializeStatusConfig(statuses);
 
@@ -2204,6 +2248,7 @@ export async function writeWorkflowsConfig(
   workflows: Record<string, WorkflowDefinition>,
   defaultWorkflow: string,
 ): Promise<void> {
+  await assertLegacyWorkflowWritesAllowed(); // T9b — see the class doc above
   const configPath = resolve(syntaurRoot(), 'config.md');
   const block = serializeWorkflowsConfig(workflows);
   const defaultLine = `defaultWorkflow: ${defaultWorkflow}`;
@@ -2675,6 +2720,16 @@ export async function readConfig(): Promise<SyntaurConfig> {
       )
         ? (fm['session.autoTrack'] as SessionAutoTrack)
         : DEFAULT_CONFIG.session.autoTrack,
+      summarizeBackend: SUMMARIZE_BACKEND_VALUES.includes(
+        fm['session.summarizeBackend'] as SummarizeBackendName,
+      )
+        ? (fm['session.summarizeBackend'] as SummarizeBackendName)
+        : DEFAULT_CONFIG.session.summarizeBackend,
+      autoSummarize: SESSION_AUTO_SUMMARIZE_VALUES.includes(
+        fm['session.autoSummarize'] as SessionAutoSummarize,
+      )
+        ? (fm['session.autoSummarize'] as SessionAutoSummarize)
+        : DEFAULT_CONFIG.session.autoSummarize,
     },
     integrations: {
       claudePluginDir: parseOptionalAbsolutePath(

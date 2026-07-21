@@ -17,6 +17,9 @@ import {
   SessionResurrectionError,
   reconcileActiveSessions,
   deleteSessions,
+  claimSummarize,
+  recordSummarizeFailure,
+  finalizeSummarize,
 } from '../dashboard/agent-sessions.js';
 import { getOpenEngagement, switchEngagement, type EngagementRow } from '../db/engagement-db.js';
 import {
@@ -317,6 +320,36 @@ activeSessions: 1
     expect(getOpenEngagement('sess-def')).toBeNull();
   });
 
+  it('sanitizes a degenerate path="/" during import (does not bypass the boundary)', async () => {
+    // This importer inserts directly, not via appendSession, so it must apply
+    // the same guard — else a legacy '/' row reintroduces the value the v8
+    // backfill removed.
+    const projectsDir = resolve(testDir, 'projects');
+    const projectDir = resolve(projectsDir, 'root-path-project');
+    await mkdir(projectDir, { recursive: true });
+    await writeFile(
+      resolve(projectDir, '_index-sessions.md'),
+      `---
+project: root-path-project
+generated: "2026-03-26T00:00:00Z"
+activeSessions: 1
+---
+
+# Active Sessions
+
+| Assignment | Agent | Session ID | Started | Status | Path |
+|------------|-------|------------|---------|--------|------|
+| task-r | claude | sess-root | 2026-03-26T10:00:00Z | stopped | / |
+`,
+    );
+
+    await migrateFromMarkdown(projectsDir);
+    const row = getSessionDb()
+      .prepare('SELECT path FROM sessions WHERE session_id = ?')
+      .get('sess-root') as { path: string | null };
+    expect(row.path === null || row.path === '').toBe(true);
+  });
+
   it('does not leak an open engagement when a duplicate session_id is ignored', async () => {
     // Same session id appears twice (e.g. across index files): terminal first,
     // active second. INSERT OR IGNORE keeps the first (terminal) session row, so
@@ -437,8 +470,8 @@ describe('v2 -> v3 schema migration (adds transcript_path)', () => {
     const version = db
       .prepare("SELECT value FROM meta WHERE key = 'schema_version'")
       .get() as { value: string };
-    // v2 chains through every migration to the current head (v8).
-    expect(version.value).toBe('8');
+    // v2 chains through every migration to the current head (v9).
+    expect(version.value).toBe('9');
   });
 
   it('falls back to mission_slug when a v2 table has both columns but project_slug is null', async () => {
@@ -597,8 +630,8 @@ describe('v3 -> v4 schema migration (adds pid + pid_started_at)', () => {
     const version = db
       .prepare("SELECT value FROM meta WHERE key = 'schema_version'")
       .get() as { value: string };
-    // v3→v4 adds pid columns, then the chain continues to the current head (v8).
-    expect(version.value).toBe('8');
+    // v3→v4 adds pid columns, then the chain continues to the current head (v9).
+    expect(version.value).toBe('9');
   });
 });
 
@@ -660,7 +693,7 @@ describe('v4 -> v5 schema migration (adds original_head_sha)', () => {
     const version = db
       .prepare("SELECT value FROM meta WHERE key = 'schema_version'")
       .get() as { value: string };
-    expect(version.value).toBe('8');
+    expect(version.value).toBe('9');
   });
 
   it('round-trips original_head_sha through appendSession + getSessionById', async () => {
@@ -796,6 +829,91 @@ describe('narrow revival rule (reviveStopped)', () => {
 
     const all = await listAllSessions('');
     expect(all[0].status).toBe('stopped');
+  });
+
+  it('deletes any summarize_state claim when a stopped session is revived (updateSessionStatus)', async () => {
+    const sid = 'revive-clears-claim';
+    await appendSession('', makeSession({ sessionId: sid }));
+    await updateSessionStatus('', sid, 'stopped');
+    // A summarizer is holding a lease on the stopped session.
+    expect(claimSummarize(sid, 'summarizer-token')).toBe(true);
+
+    // Revive → the claim must be gone in the SAME transaction, so a later
+    // finalize under 'summarizer-token' loses its lease.
+    await updateSessionStatus('', sid, 'active');
+    expect(getSessionDb().prepare('SELECT * FROM summarize_state WHERE session_id = ?').get(sid)).toBeUndefined();
+    expect(finalizeSummarize(sid, 'summarizer-token', { description: 'd', summary: 's' })).toBe('lost-lease');
+  });
+
+  it('deletes any summarize_state claim when a stopped session is revived (appendSession reviveStopped)', async () => {
+    const sid = 'revive-append-clears';
+    await appendSession('', makeSession({ sessionId: sid }));
+    await updateSessionStatus('', sid, 'stopped');
+    expect(claimSummarize(sid, 'tok')).toBe(true);
+
+    await appendSession('', makeSession({ sessionId: sid, status: 'active' as AgentSessionStatus }), {
+      reviveStopped: true,
+    });
+    expect(getSessionDb().prepare('SELECT * FROM summarize_state WHERE session_id = ?').get(sid)).toBeUndefined();
+  });
+
+  it('clears a stale stored summary on a genuine revive so the session re-qualifies', async () => {
+    const sid = 'revive-clears-summary';
+    await appendSession('', makeSession({ sessionId: sid }));
+    await updateSessionStatus('', sid, 'stopped');
+    // Simulate an existing auto summary.
+    getSessionDb()
+      .prepare("UPDATE sessions SET summary='old', summarized_at='2026-07-01T00:00:00Z', description_source='auto' WHERE session_id = ?")
+      .run(sid);
+
+    await appendSession('', makeSession({ sessionId: sid, status: 'active' as AgentSessionStatus }), {
+      reviveStopped: true,
+    });
+    const row = getSessionDb()
+      .prepare('SELECT summary, summarized_at FROM sessions WHERE session_id = ?')
+      .get(sid) as { summary: string | null; summarized_at: string | null };
+    expect(row.summary).toBeNull();
+    expect(row.summarized_at).toBeNull();
+  });
+
+  it('preserves a claim on an ALREADY-active session re-registered with reviveStopped (no transition)', async () => {
+    // The scanner passes reviveStopped for every live session, active ones
+    // included. Re-registering an already-active session is NOT a revive and
+    // must not wipe a legitimate explicit-summarize claim.
+    const sid = 'active-stays-claimed';
+    await appendSession(
+      '',
+      makeSession({ sessionId: sid, status: 'active' as AgentSessionStatus }),
+    );
+    expect(claimSummarize(sid, 'explicit-token')).toBe(true);
+
+    // A scanner tick re-registers the still-active session with reviveStopped.
+    await appendSession('', makeSession({ sessionId: sid, status: 'active' as AgentSessionStatus }), {
+      reviveStopped: true,
+    });
+
+    const state = getSessionDb()
+      .prepare('SELECT claim_token FROM summarize_state WHERE session_id = ?')
+      .get(sid) as { claim_token: string | null } | undefined;
+    expect(state?.claim_token).toBe('explicit-token');
+    // And the in-flight summarizer can still finalize.
+    expect(finalizeSummarize(sid, 'explicit-token', { description: 'd', summary: 's' })).not.toBe('lost-lease');
+  });
+});
+
+describe('deleteSessions summarize_state cleanup', () => {
+  it('removes the summarize_state row so a reused id is not suppressed by stale pacing', async () => {
+    const sid = 'delete-me';
+    await appendSession('', makeSession({ sessionId: sid, status: 'stopped' as AgentSessionStatus }));
+    // Give it a lease + a long backoff, as a failed summarize would.
+    claimSummarize(sid, 'tok');
+    recordSummarizeFailure(sid, 'tok', 'boom', 24 * 60 * 60 * 1000);
+    expect(getSessionDb().prepare('SELECT * FROM summarize_state WHERE session_id = ?').get(sid)).toBeDefined();
+
+    await deleteSessions([sid]);
+    // No orphan — otherwise a later session reusing this id would inherit the
+    // stale next_attempt_at and be suppressed for up to 24h.
+    expect(getSessionDb().prepare('SELECT * FROM summarize_state WHERE session_id = ?').get(sid)).toBeUndefined();
   });
 });
 
@@ -1094,5 +1212,39 @@ describe('H2: open-baseline token snapshot on every runtime open', () => {
     expect(row).toBeDefined();
     expect(row!.ended_at).not.toBeNull(); // closed historical interval
     expect(row!.tokens_at_open).toBeNull(); // no live baseline on a closed-on-insert row
+  });
+});
+
+describe('appendSession path sanitization (persistence boundary)', () => {
+  it('stores no path when the caller supplies the degenerate root path', async () => {
+    initSessionDb(dbPath);
+    const session = makeSession({ sessionId: 'root-path', path: '/' });
+    await appendSession(testDir, session);
+
+    const row = getSessionDb()
+      .prepare('SELECT path FROM sessions WHERE session_id = ?')
+      .get('root-path') as { path: string | null };
+    expect(row.path === null || row.path === '').toBe(true);
+  });
+
+  it('does not clobber an existing real path on a degenerate re-registration', async () => {
+    initSessionDb(dbPath);
+    await appendSession(testDir, makeSession({ sessionId: 'keep-path', path: '/Users/dev/real' }));
+    await appendSession(testDir, makeSession({ sessionId: 'keep-path', path: '/' }));
+
+    const row = getSessionDb()
+      .prepare('SELECT path FROM sessions WHERE session_id = ?')
+      .get('keep-path') as { path: string | null };
+    expect(row.path).toBe('/Users/dev/real');
+  });
+
+  it('stores a real path unchanged', async () => {
+    initSessionDb(dbPath);
+    await appendSession(testDir, makeSession({ sessionId: 'real-path', path: '/Users/dev/proj' }));
+
+    const row = getSessionDb()
+      .prepare('SELECT path FROM sessions WHERE session_id = ?')
+      .get('real-path') as { path: string | null };
+    expect(row.path).toBe('/Users/dev/proj');
   });
 });
