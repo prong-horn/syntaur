@@ -27,113 +27,100 @@ function callbacks() {
   return { onLaunch: vi.fn(), onAttach: vi.fn(), onQuit: vi.fn() };
 }
 
-/** ActionCaps with claudeBgAvailable pinned false — most of this file's cases predate the native path and only vary tmuxAvailable. */
-function caps(tmuxAvailable: boolean): { tmuxAvailable: boolean; claudeBgAvailable: boolean } {
-  return { tmuxAvailable, claudeBgAvailable: false };
-}
-
 describe('buildActions', () => {
   it('enables Launch for an assignment selection with a non-null projectSlug', () => {
     const selection: DetailSelection = { kind: 'assignment', projectSlug: 'proj', assignmentSlug: 'a1' };
-    const actions = buildActions(selection, caps(true), callbacks());
+    const actions = buildActions(selection, callbacks());
     expect(actions.find((a) => a.key === 'l')?.enabled).toBe(true);
   });
 
   it('disables Launch when the assignment selection has a null projectSlug (standalone)', () => {
     const selection: DetailSelection = { kind: 'assignment', projectSlug: null, assignmentSlug: 'a1' };
-    const actions = buildActions(selection, caps(true), callbacks());
+    const actions = buildActions(selection, callbacks());
     expect(actions.find((a) => a.key === 'l')?.enabled).toBe(false);
   });
 
   it('disables Launch for a session selection (Launch only applies to assignments)', () => {
     const selection: DetailSelection = { kind: 'session', session: session() };
-    const actions = buildActions(selection, caps(true), callbacks());
+    const actions = buildActions(selection, callbacks());
     expect(actions.find((a) => a.key === 'l')?.enabled).toBe(false);
   });
 
-  it('enables Attach for a session selection with tmux available and a non-null assignmentSlug', () => {
-    const selection: DetailSelection = { kind: 'session', session: session() };
-    const actions = buildActions(selection, caps(true), callbacks());
-    expect(actions.find((a) => a.key === 'a')?.enabled).toBe(true);
-  });
-
-  it('disables Attach when tmux is unavailable (graceful-degradation rule)', () => {
-    const selection: DetailSelection = { kind: 'session', session: session() };
-    const actions = buildActions(selection, caps(false), callbacks());
-    expect(actions.find((a) => a.key === 'a')?.enabled).toBe(false);
-  });
-
-  it('disables Attach when the selected session has no assignmentSlug', () => {
-    const selection: DetailSelection = { kind: 'session', session: session({ assignmentSlug: null }) };
-    const actions = buildActions(selection, caps(true), callbacks());
-    expect(actions.find((a) => a.key === 'a')?.enabled).toBe(false);
-  });
-
-  it('enables Attach for a LIVE session with tmux and a non-null assignmentSlug', () => {
+  it('disables Attach for a session with no daemon or native overlay (tmux tier removed)', () => {
+    // The strongest former-enable case: LIVE and a non-null assignmentSlug —
+    // exactly what the deleted tmux gate used to enable. With no tmux tier and
+    // no daemon/native overlay, a row reachable by neither backend is not
+    // attachable (attachEnabled's final `return false`).
     const selection: DetailSelection = { kind: 'session', session: session({ isLive: true }) };
-    const actions = buildActions(selection, caps(true), callbacks());
-    expect(actions.find((a) => a.key === 'a')?.enabled).toBe(true);
+    const actions = buildActions(selection, callbacks());
+    expect(actions.find((a) => a.key === 'a')?.enabled).toBe(false);
   });
 
-  it('disables Attach for the SAME session when it is not live (dead session)', () => {
+  it('disables Attach for a dead session', () => {
     const selection: DetailSelection = { kind: 'session', session: session({ isLive: false }) };
-    const actions = buildActions(selection, caps(true), callbacks());
+    const actions = buildActions(selection, callbacks());
     expect(actions.find((a) => a.key === 'a')?.enabled).toBe(false);
+  });
+
+  it('a pre-existing hosted_by=tmux row is not attachable (tmux tier removed)', () => {
+    // Legacy-degradation fixture: a pre-upgrade worker registered with
+    // SYNTAUR_HOSTED_BY=tmux. Post-upgrade there is no tmux code at all; the
+    // row still lists, but Attach must resolve to false (no daemon/native
+    // overlay → the unconditional final `return false`).
+    const selection: DetailSelection = {
+      kind: 'session',
+      session: session({ hostedBy: 'tmux', isLive: false, assignmentSlug: 'a1' }),
+    };
+    expect(buildActions(selection, callbacks()).find((a) => a.key === 'a')?.enabled).toBe(false);
   });
 
   it('disables both Launch and Attach when nothing is selected', () => {
     const selection: DetailSelection = { kind: 'none' };
-    const actions = buildActions(selection, caps(true), callbacks());
+    const actions = buildActions(selection, callbacks());
     expect(actions.find((a) => a.key === 'l')?.enabled).toBe(false);
     expect(actions.find((a) => a.key === 'a')?.enabled).toBe(false);
   });
 
-  it('enables Attach for a native session with a non-terminal state, even with tmux unavailable', () => {
+  it('enables Attach for a native session with a non-terminal state', () => {
     const selection: DetailSelection = {
       kind: 'session',
       session: session({ agentShortId: 'ab12cd34', state: 'working', assignmentSlug: null, isLive: false }),
     };
-    const actions = buildActions(selection, caps(false), callbacks());
+    const actions = buildActions(selection, callbacks());
     expect(actions.find((a) => a.key === 'a')?.enabled).toBe(true);
   });
 
   it('enables Attach for a native session that is blocked on a permission prompt', () => {
     const selection: DetailSelection = { kind: 'session', session: session({ agentShortId: 'ab12cd34', state: 'blocked' }) };
-    const actions = buildActions(selection, caps(false), callbacks());
+    const actions = buildActions(selection, callbacks());
     expect(actions.find((a) => a.key === 'a')?.enabled).toBe(true);
   });
 
   it('disables Attach for a native session in a terminal state (done/failed/stopped)', () => {
     for (const state of ['done', 'failed', 'stopped'] as const) {
       const selection: DetailSelection = { kind: 'session', session: session({ agentShortId: 'ab12cd34', state }) };
-      const actions = buildActions(selection, caps(true), callbacks());
+      const actions = buildActions(selection, callbacks());
       expect(actions.find((a) => a.key === 'a')?.enabled).toBe(false);
     }
   });
 
-  it('falls back to the tmux gate for a session with no native short id', () => {
-    const selection: DetailSelection = { kind: 'session', session: session({ agentShortId: undefined, state: undefined }) };
-    expect(buildActions(selection, caps(true), callbacks()).find((a) => a.key === 'a')?.enabled).toBe(true);
-    expect(buildActions(selection, caps(false), callbacks()).find((a) => a.key === 'a')?.enabled).toBe(false);
-  });
-
-  it('enables Attach for a syntaurd session with a non-terminal state, even with tmux unavailable', () => {
+  it('enables Attach for a syntaurd session with a non-terminal state', () => {
     const selection: DetailSelection = {
       kind: 'session',
       session: session({ syntaurdShortId: 'sd12ab34', state: 'working', agentShortId: undefined, assignmentSlug: null, isLive: false }),
     };
-    expect(buildActions(selection, caps(false), callbacks()).find((a) => a.key === 'a')?.enabled).toBe(true);
+    expect(buildActions(selection, callbacks()).find((a) => a.key === 'a')?.enabled).toBe(true);
   });
 
   it('enables Attach for a blocked syntaurd session (state handled though Phase A never emits it)', () => {
     const selection: DetailSelection = { kind: 'session', session: session({ syntaurdShortId: 'sd12ab34', state: 'blocked' }) };
-    expect(buildActions(selection, caps(false), callbacks()).find((a) => a.key === 'a')?.enabled).toBe(true);
+    expect(buildActions(selection, callbacks()).find((a) => a.key === 'a')?.enabled).toBe(true);
   });
 
-  it('disables Attach for a terminal syntaurd session — authoritative, no tmux fall-through', () => {
+  it('disables Attach for a terminal syntaurd session — authoritative, no daemon fall-through', () => {
     for (const state of ['done', 'failed', 'stopped'] as const) {
       const selection: DetailSelection = { kind: 'session', session: session({ syntaurdShortId: 'sd12ab34', state, isLive: true }) };
-      expect(buildActions(selection, caps(true), callbacks()).find((a) => a.key === 'a')?.enabled).toBe(false);
+      expect(buildActions(selection, callbacks()).find((a) => a.key === 'a')?.enabled).toBe(false);
     }
   });
 
@@ -142,33 +129,32 @@ describe('buildActions', () => {
       kind: 'session',
       session: session({ syntaurdShortId: 'sd12ab34', agentShortId: 'cc12dd34', state: 'working' }),
     };
-    expect(buildActions(selection, caps(false), callbacks()).find((a) => a.key === 'a')?.enabled).toBe(true);
+    expect(buildActions(selection, callbacks()).find((a) => a.key === 'a')?.enabled).toBe(true);
   });
 
-  it('daemon-hosted rows with NO overlay never fall through to the tmux gate', () => {
+  it('daemon-hosted rows with NO overlay are not attachable (backend guard precedes the unconditional false)', () => {
     // daemon down past the grace window: no shortId/state overlay, but a
-    // lingering pid keeps isLive true and tmux is installed — the
-    // backend-aware guard must still disable Attach (the tmux session named
-    // by this row's slugs was never created). Applies to both daemon backends.
+    // lingering pid keeps isLive true. The backend-aware guard disables Attach
+    // for both daemon backends before the unconditional final `return false`
+    // (there is no tmux tier below it to fall through to).
     for (const hostedBy of ['syntaurd', 'claude-bg'] as const) {
       const selection: DetailSelection = {
         kind: 'session',
         session: session({ hostedBy, syntaurdShortId: undefined, agentShortId: undefined, state: undefined, isLive: true, assignmentSlug: 'a' }),
       };
-      expect(buildActions(selection, caps(true), callbacks()).find((a) => a.key === 'a')?.enabled).toBe(false);
+      expect(buildActions(selection, callbacks()).find((a) => a.key === 'a')?.enabled).toBe(false);
     }
   });
 
-  it('Quit is always enabled, regardless of selection or tmux availability', () => {
-    const selection: DetailSelection = { kind: 'none' };
-    expect(buildActions(selection, caps(false), callbacks()).find((a) => a.key === 'q')?.enabled).toBe(true);
-    expect(buildActions(selection, caps(true), callbacks()).find((a) => a.key === 'q')?.enabled).toBe(true);
+  it('Quit is always enabled, regardless of selection', () => {
+    expect(buildActions({ kind: 'none' }, callbacks()).find((a) => a.key === 'q')?.enabled).toBe(true);
+    expect(buildActions({ kind: 'session', session: session() }, callbacks()).find((a) => a.key === 'q')?.enabled).toBe(true);
   });
 
   it('wires each action to its corresponding callback', () => {
     const cb = callbacks();
     const selection: DetailSelection = { kind: 'assignment', projectSlug: 'proj', assignmentSlug: 'a1' };
-    const actions = buildActions(selection, caps(true), cb);
+    const actions = buildActions(selection, cb);
     actions.find((a) => a.key === 'l')!.onRun();
     actions.find((a) => a.key === 'q')!.onRun();
     expect(cb.onLaunch).toHaveBeenCalledTimes(1);
@@ -196,13 +182,14 @@ describe('dispatchActionKey', () => {
     expect(onRun).not.toHaveBeenCalled();
   });
 
-  it('behavioral: pressing a disabled Attach shortcut (no tmux) does not run it, via the same key-routing Cockpit uses', () => {
+  it('behavioral: pressing a disabled Attach shortcut (no daemon/native overlay) does not run it, via the same key-routing Cockpit uses', () => {
     // Reproduces Cockpit's useInput body (`dispatchActionKey(actions, input)`)
-    // against a session-selected + tmuxAvailable=false action set, so this
-    // exercises the exact wiring a keypress goes through in the real app.
+    // against a session-selected action set whose row has no daemon/native
+    // overlay (Attach disabled), so this exercises the exact wiring a keypress
+    // goes through in the real app.
     const cb = callbacks();
     const selection: DetailSelection = { kind: 'session', session: session() };
-    const actions: Action[] = buildActions(selection, caps(false), cb);
+    const actions: Action[] = buildActions(selection, cb);
 
     function KeyHarness({ actions }: { actions: Action[] }) {
       useInput((input) => dispatchActionKey(actions, input));
@@ -215,10 +202,10 @@ describe('dispatchActionKey', () => {
     unmount();
   });
 
-  it('behavioral: pressing an enabled Attach shortcut (tmux available) runs it', () => {
+  it('behavioral: pressing an enabled Attach shortcut (daemon-reachable) runs it', () => {
     const cb = callbacks();
-    const selection: DetailSelection = { kind: 'session', session: session() };
-    const actions: Action[] = buildActions(selection, caps(true), cb);
+    const selection: DetailSelection = { kind: 'session', session: session({ syntaurdShortId: 'sd1', state: 'working' }) };
+    const actions: Action[] = buildActions(selection, cb);
 
     function KeyHarness({ actions }: { actions: Action[] }) {
       useInput((input) => dispatchActionKey(actions, input));
@@ -245,7 +232,7 @@ describe('isCleanExit', () => {
     expect(isCleanExit({ code: null })).toBe(false);
   });
 
-  it('treats a null code as clean when allowNullCode is set (e.g. a tmux detach)', () => {
+  it('treats a null code as clean when allowNullCode is set (e.g. a detach)', () => {
     expect(isCleanExit({ code: null }, { allowNullCode: true })).toBe(true);
   });
 

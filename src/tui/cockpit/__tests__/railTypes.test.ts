@@ -157,6 +157,16 @@ describe('buildRailRows — sort order and grouping', () => {
     expect(sessionRows.map((r) => r.session.sessionId)).toEqual(['newer', 'older']);
   });
 
+  it('renders a pre-existing hosted_by=tmux dead row under RECENT (stale, no crash — tmux tier removed)', () => {
+    // AC6 (Phase C): a legacy hosted_by=tmux row that has gone stale still
+    // renders in the rail as a dead RECENT entry (glyph '○'), with no tmux
+    // code present.
+    const rows = buildRailRows([session({ hostedBy: 'tmux', isLive: false })], { recentExpanded: true, now: NOW });
+    const sessionRows = rows.filter((r): r is RailSessionRow => r.kind === 'session');
+    expect(sessionRows).toHaveLength(1);
+    expect(sessionRows[0].glyph).toBe('○');
+  });
+
   it('caps the expanded RECENT list and appends a "…and N more" row', () => {
     const dead = Array.from({ length: 25 }, (_, i) => session({ sessionId: `dead-${i}`, isLive: false, started: '2026-07-03T11:00:00Z' }));
     const rows = buildRailRows(dead, { recentExpanded: true, now: NOW });

@@ -1,6 +1,5 @@
 import type { DetailSelection } from './DetailPane.js';
 import type { Action } from './actionBarLayout.js';
-import type { launchInTmux as LaunchInTmux } from '../tmux/launch.js';
 import type { launchClaudeBg as LaunchClaudeBg } from '../claude-agents/launch.js';
 import { isNativeLaunchEligible } from '../claude-agents/launch.js';
 import { resolveRunner } from '../../utils/agents-schema.js';
@@ -12,12 +11,6 @@ export interface ActionCallbacks {
   onLaunch: () => void;
   onAttach: () => void;
   onQuit: () => void;
-}
-
-/** Capabilities the action-bar enable matrix and launch dispatch degrade on. */
-export interface ActionCaps {
-  tmuxAvailable: boolean;
-  claudeBgAvailable: boolean;
 }
 
 /** Native states that mean the session is over — Attach against it would just fail. */
@@ -47,21 +40,19 @@ export function isSyntaurdAttachReachable(session: AgentSessionWithLiveness): bo
 }
 
 /**
- * Attach is enabled via ONE of three independent paths, in precedence order:
+ * Attach is enabled via ONE of two independent paths, in precedence order:
  *  - syntaurd (see `isSyntaurdAttachReachable`) — daemon-hosted sessions;
- *    reachable with no tmux installed; AUTHORITATIVE when the short id is
- *    present (a terminal daemon state must not fall through to gates whose
- *    isLive could read stale-true off a lingering pid).
- *  - Native (see `isNativeAttachReachable`) — reachable with no tmux
- *    installed at all, and AUTHORITATIVE when present: a terminal-state
- *    native session must not fall through to the tmux gate below, whose
+ *    AUTHORITATIVE when the short id is present (a terminal daemon state must
+ *    not fall through to gates whose isLive could read stale-true off a
+ *    lingering pid).
+ *  - Native (see `isNativeAttachReachable`) — AUTHORITATIVE when present: a
+ *    terminal-state native session must not fall through to a gate whose
  *    isLive can still read stale-true off a lingering pid the native truth
  *    already knows ended.
- *  - tmux (existing v1 gate, unchanged): tmux available, the session is LIVE,
- *    and it has a non-null `assignmentSlug` (the tmux session name is derived
- *    from project+assignment slugs).
+ * A row reachable by neither daemon backend is not attachable (Phase C
+ * removed the tmux tier — see the final `return false`).
  */
-function attachEnabled(selection: DetailSelection, caps: ActionCaps): boolean {
+function attachEnabled(selection: DetailSelection): boolean {
   if (selection.kind !== 'session') return false;
   const { session } = selection;
   if (session.syntaurdShortId != null && session.state != null) {
@@ -70,14 +61,9 @@ function attachEnabled(selection: DetailSelection, caps: ActionCaps): boolean {
   if (session.agentShortId != null && session.state != null) {
     return isNativeAttachReachable(session);
   }
-  // Backend-aware guard: a daemon-hosted row whose overlay is absent (its
-  // daemon down / past the grace window) must NEVER fall through to the tmux
-  // gate — no tmux session of that name was ever created, and a lingering pid
-  // can keep isLive true. Applies to BOTH daemon backends: syntaurd (overlay
-  // repopulates within one poll of a daemon restart) and claude-bg
-  // (agentShortId repopulates when the `claude agents --json` source answers).
   if (session.hostedBy === 'syntaurd' || session.hostedBy === 'claude-bg') return false;
-  return caps.tmuxAvailable && session.isLive === true && session.assignmentSlug != null;
+  // No tmux tier (Phase C): a row reachable by neither daemon backend is not attachable.
+  return false;
 }
 
 /**
@@ -93,7 +79,6 @@ function attachEnabled(selection: DetailSelection, caps: ActionCaps): boolean {
  */
 export function buildActions(
   selection: DetailSelection,
-  caps: ActionCaps,
   callbacks: ActionCallbacks,
 ): Action[] {
   return [
@@ -106,7 +91,7 @@ export function buildActions(
     {
       key: 'a',
       label: 'Attach',
-      enabled: attachEnabled(selection, caps),
+      enabled: attachEnabled(selection),
       onRun: callbacks.onAttach,
     },
     { key: 'q', label: 'Quit', enabled: true, onRun: callbacks.onQuit },
@@ -125,7 +110,7 @@ export function dispatchActionKey(actions: Action[], input: string): void {
 }
 
 /**
- * The resolved spawn invocation `runLaunch` hands to tmux or `handOff`. Same
+ * The resolved spawn invocation `runLaunch` hands to `handOff`. Same
  * shape as `AgentLaunchPlan` (`../../launch/build-launch.js`) — the only
  * producer of this value is `buildLaunchPlan`, so this is a type alias rather
  * than a redeclaration to avoid two independently-drifting definitions.
@@ -133,17 +118,15 @@ export function dispatchActionKey(actions: Action[], input: string): void {
 export type LaunchExecPlan = AgentLaunchPlan;
 
 export interface LaunchDeps {
-  tmuxAvailable: boolean;
-  launchInTmux: typeof LaunchInTmux;
   handOff: (plan: LaunchExecPlan) => Promise<void>;
-  /** Native path deps — optional so existing tmux/hand-off-only call sites and tests need no changes. */
+  /** Native path deps — optional so existing hand-off-only call sites and tests need no changes. */
   claudeBgAvailable?: boolean;
   launchClaudeBg?: typeof LaunchClaudeBg;
   /**
-   * Called when a `--bg` spawn throws, before falling through to tmux/hand-off
+   * Called when a `--bg` spawn throws, before falling through to hand-off
    * (design spec §7: "surface in status line, fall back... if available").
    * The overall `runLaunch` result still reports the FALLBACK mode
-   * ('tmux'/'handoff') — this hook is how the caller learns the native
+   * ('handoff') — this hook is how the caller learns the native
    * attempt failed first, to compose a richer status message.
    */
   onNativeLaunchFailure?: (error: unknown) => void;
@@ -158,7 +141,7 @@ export interface LaunchDeps {
   /**
    * Called when a syntaurd dispatch throws (ensureDaemon start-timeout
    * SyntaurError, dispatch ErrorReply), before degrading to
-   * claude-bg/tmux/hand-off — same contract as onNativeLaunchFailure.
+   * claude-bg/hand-off — same contract as onNativeLaunchFailure.
    */
   onSyntaurdLaunchFailure?: (error: unknown) => void;
 }
@@ -166,37 +149,37 @@ export interface LaunchDeps {
 /** Native-launch context, when the selection's agent might be eligible for `--bg`. */
 export interface NativeLaunchInput {
   agent: AgentConfig;
-  /** The `--name` value, e.g. `"<project>/<assignment>"` (design spec §5.6) — distinct from the tmux session name. */
+  /** The `--name` value, e.g. `"<project>/<assignment>"` (design spec §5.6). */
   name: string;
 }
 
 /**
- * Launch degradation, in priority order:
- *  1. Native `claude --bg`, when `native` is supplied AND `deps.claudeBgAvailable`
+ * Launch degradation, in priority order (Phase C removed the tmux tier):
+ *  1. syntaurd (the syntaur daemon), for ALL agents.
+ *  2. Native `claude --bg`, when `native` is supplied AND `deps.claudeBgAvailable`
  *     AND the agent resolves to the claude runner AND Task 6's eligibility
  *     guards pass (not shell-alias-wrapped, no `-p`/`--print`). A failed `--bg`
- *     spawn is caught and falls through to tmux/hand-off below rather than
- *     surfacing as a bare launch failure — the resulting 'tmux'/'handoff'
- *     status is what the caller shows the user.
- *  2. tmux-available: launch detached into a named tmux session (Cockpit
- *     stays resident, session shows up in Live Sessions).
+ *     spawn is caught and falls through to hand-off below rather than
+ *     surfacing as a bare launch failure — the resulting 'handoff' status is
+ *     what the caller shows the user.
  *  3. In-process hand-off (the caller suspends the terminal, spawns the plan
  *     with inherited stdio, and exits the cockpit once the agent exits).
+ * INTENDED UX change: a launch with no daemon and no claude-bg now lands in
+ * in-process hand-off rather than a detached tmux session.
  * Kept side-effect-free besides the injected deps so this degradation matrix
- * is unit-testable without tmux, claude, Ink, or a real spawn.
+ * is unit-testable without claude, Ink, or a real spawn.
  */
 export async function runLaunch(
-  sessionName: string,
   plan: LaunchExecPlan,
   deps: LaunchDeps,
   native?: NativeLaunchInput,
-): Promise<'syntaurd' | 'claude-bg' | 'tmux' | 'handoff'> {
+): Promise<'syntaurd' | 'claude-bg' | 'handoff'> {
   // Tier 0: the syntaur daemon — for ALL agents (no runner/eligibility guard:
   // a PTY runs anything, including shell-alias plans). Gated only on `native`
   // (agent+name context), the capability boolean, and the injected dep.
   // try/catch matches the claude-bg branch below: ensureDaemon throws
-  // SyntaurError on start-timeout, and the tmux branch has no catch — without
-  // this, a daemon hiccup would abort a launch tmux could serve.
+  // SyntaurError on start-timeout — without this, a daemon hiccup would abort
+  // a launch hand-off could serve.
   if (native && deps.syntaurdAvailable && deps.launchSyntaurd) {
     try {
       await deps.launchSyntaurd({ plan, name: native.name, agent: native.agent });
@@ -216,14 +199,10 @@ export async function runLaunch(
       await deps.launchClaudeBg({ plan, name: native.name });
       return 'claude-bg';
     } catch (err) {
-      // Fall through to tmux/hand-off below — a failed --bg spawn degrades
+      // Fall through to hand-off below — a failed --bg spawn degrades
       // exactly like native being ineligible, rather than aborting the launch.
       deps.onNativeLaunchFailure?.(err);
     }
-  }
-  if (deps.tmuxAvailable) {
-    await deps.launchInTmux({ sessionName, cwd: plan.cwd, command: plan.command, args: plan.args });
-    return 'tmux';
   }
   await deps.handOff(plan);
   return 'handoff';
@@ -231,10 +210,10 @@ export async function runLaunch(
 
 /**
  * How a spawned/attached child process ended, as reported by a Node child
- * 'exit'/'error' listener pair. Shared shape for both the tmux-attach child
- * (`runTmuxAttach`) and the hand-off agent child (Cockpit's `handOff`), so
- * their pass/fail decisions can share the same pure classification below
- * instead of duplicating ad hoc checks at each call site.
+ * 'exit'/'error' listener pair. Shared shape for both the syntaurd-attach
+ * child (`runSyntaurdAttach`) and the hand-off agent child (Cockpit's
+ * `handOff`), so their pass/fail decisions can share the same pure
+ * classification below instead of duplicating ad hoc checks at each call site.
  */
 export interface ChildOutcome {
   code: number | null;
@@ -248,8 +227,8 @@ export interface ChildOutcome {
  * default, since for a hand-off launch it's indistinguishable from an
  * abnormal termination and silently exiting the cockpit on it would repeat
  * the bug this type exists to prevent. Pass `allowNullCode: true` for
- * attach, where a normal `tmux detach-client` can legitimately report a
- * null code and still be a clean detach.
+ * attach, where a normal detach can legitimately report a null code and
+ * still be a clean detach.
  */
 export function isCleanExit(outcome: ChildOutcome, opts: { allowNullCode?: boolean } = {}): boolean {
   if (outcome.error) return false;

@@ -377,4 +377,22 @@ describe('session feed — syntaurd daemon join', () => {
     expect(s[0].hostedBy).toBe('syntaurd');
     expect(s[0].syntaurdShortId).toBeUndefined();
   });
+
+  it('a pre-existing hosted_by=tmux row goes stale via pid-liveness and still loads', async () => {
+    // AC6 (Phase C): a worker registered before the upgrade with
+    // SYNTAUR_HOSTED_BY=tmux persists in the db. Post-upgrade there is no tmux
+    // code at all; the row must still load (surfacing hostedBy='tmux') and go
+    // stale purely via pid-liveness (computeIsLive returns false for a dead
+    // pid — it never shells out to tmux), with no daemon/native overlay.
+    getSessionDb().prepare(
+      "INSERT INTO sessions (session_id, agent, started, status, pid, hosted_by) VALUES ('t1', 'claude', datetime('now'), 'active', 4242, 'tmux')",
+    ).run();
+    const s = await loadSessions({
+      projectsDir: dir, agents, livenessDeps: livenessDead,
+      agentViewDetailSource: noNative, syntaurdSessionSource: async () => null,
+    });
+    expect(s).toHaveLength(1);
+    expect(s[0].hostedBy).toBe('tmux');
+    expect(s[0].isLive).toBe(false);
+  });
 });
