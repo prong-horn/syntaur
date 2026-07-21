@@ -440,6 +440,20 @@ The dashboard **Needs me** view is the GUI equivalent — it shows the same grou
 syntaur browse [--agent <id>] [--no-worktree-prompt]
 ```
 
+### Launch tiers
+
+Launches degrade through three tiers, first available wins:
+
+1. **syntaur daemon** (`syntaurd`) — any agent, PTY-hosted, attach/detach,
+   attention states.
+2. **claude --bg** — native background claude, when eligible.
+3. **in-process hand-off** — the TUI suspends, the agent runs in your
+   terminal, and the TUI exits when the agent does.
+
+The tmux fallback tier was removed in Phase C (2026-07). Sessions launched
+into tmux by older versions still list (marked `hosted: tmux`), go stale
+when their process dies, and are no longer attachable from the cockpit.
+
 ### Agent selection
 
 Resolution order:

@@ -100,7 +100,7 @@ tmux *is* this architecture prewritten (server daemon + PTYs + internal screen e
 | Dependency | external install, version drift (v1 pinned flags defensively) | none beyond npm deps |
 | State/session join | name-mangling conventions | daemon *is* the session registry; joins session-db directly |
 
-**Decision (2026-07-08): we are moving off tmux.** Keep the tested tmux path only as a transitional fallback during migration (it's already isolated behind `tmux/launch.ts` + `tmux/attach.ts`); remove it once the daemon proves out (target: end of Phase C, when adapters make daemon-managed sessions strictly better than tmux ones).
+**Decision (2026-07-08): we are moving off tmux.** Keep the tested tmux path only as a transitional fallback during migration (it's already isolated behind `tmux/launch.ts` + `tmux/attach.ts`); remove it once the daemon proves out (target: end of Phase C, when adapters make daemon-managed sessions strictly better than tmux ones). *(Done — Phase C, 2026-07: `src/tui/tmux/` deleted; the ladder is syntaurd → claude-bg → hand-off.)*
 
 ## 5. Fit with the existing codebase
 

@@ -104,3 +104,38 @@ is deferred — v1 scaffolds a minimal, hand-editable def.
 syntaur agents launch <id>            # standalone
 syntaur agents list                   # shows the runner badge + source
 ```
+
+## Attention states
+
+Daemon-hosted sessions (launched from the cockpit) carry a derived attention
+state: `working`, `blocked` (+ a `needs` reason like `permission: Bash`),
+`done`, `failed`, or `stopped`. Blocked sessions surface in the cockpit rail
+as a yellow `⚠ <reason>` row sorted to the top.
+
+How each agent kind is derived:
+
+- **claude** — hook-driven. The Syntaur Claude plugin registers
+  `Notification` (permission/idle prompts), `Stop`, and `PermissionRequest`
+  hooks that append events to a per-session spool
+  (`~/.syntaur/jobs/<short>/hooks.ndjson`, path planted in the session's
+  env as `SYNTAUR_HOOK_SPOOL`). No setup needed beyond the plugin.
+- **codex** — the `notify` program (optional) + rollout-log recency + screen
+  heuristics. To wire notify, add to `~/.codex/config.toml` (Syntaur never
+  edits this file for you):
+
+  ```toml
+  notify = ["/absolute/path/to/platforms/codex/scripts/notify-spool.sh"]
+  ```
+
+  If you already have a notify program, chain it — Syntaur spools first,
+  then invokes yours with the same payload:
+
+  ```toml
+  notify = ["/absolute/path/to/notify-spool.sh", "--chain", "/your/notify", "your-arg"]
+  ```
+
+  Without notify, codex sessions degrade to screen heuristics.
+- **everything else** — screen heuristics only: strong approval-prompt
+  patterns on the prompt line (`(y/n)`, `[y/N]`, `Allow …?`, password
+  prompts, an idle bare prompt) flip to `blocked`; anything ambiguous stays
+  `working` by design.
