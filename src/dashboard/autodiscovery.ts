@@ -61,6 +61,15 @@ export function parseLsofForListeningProcesses(lsofOutput: string): ListeningPro
 let timer: ReturnType<typeof setInterval> | null = null;
 let activeReconcile: Promise<void> | null = null;
 
+/**
+ * Post-scan auto-summary pass. `signal` aborts an in-flight batch on shutdown —
+ * injected callbacks should honor it so shutdown never deadlocks on them.
+ */
+export type SummarizeAfterScan = (opts: {
+  limit: number;
+  signal?: AbortSignal;
+}) => Promise<Array<{ kind: string }>>;
+
 export interface AutodiscoveryOptions {
   serversDir: string;
   projectsDir: string;
@@ -74,7 +83,7 @@ export interface AutodiscoveryOptions {
    * without spawning an LLM; when omitted, `reconcile` builds the real one
    * (config-gated) itself.
    */
-  summarizeAfterScan?: (opts: { limit: number }) => Promise<Array<{ kind: string }>>;
+  summarizeAfterScan?: SummarizeAfterScan;
 }
 
 let savedOptions: AutodiscoveryOptions | null = null;
@@ -105,13 +114,27 @@ export async function stopAutodiscovery(): Promise<void> {
   // the pass so its lease release / failure record lands BEFORE the caller
   // closes the session DB. Without this a paid call could finish against a
   // closed DB, wasting the spend and logging noise.
+  //
+  // Bounded by a deadline: aborting should make the real pass resolve fast, but
+  // a misbehaving (e.g. signal-ignoring) callback must never deadlock shutdown.
+  // On timeout we stop waiting — the pass's own try/catch absorbs any later
+  // closed-DB error, so at worst one paid result is lost, never a hang.
   if (activeSummarize) {
     summarizeAbort?.abort();
-    await activeSummarize;
+    const pass = activeSummarize;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const deadline = new Promise<void>((r) => {
+      timer = setTimeout(r, SHUTDOWN_DRAIN_MS);
+    });
+    await Promise.race([pass, deadline]);
+    if (timer) clearTimeout(timer);
     activeSummarize = null;
   }
   savedOptions = null;
 }
+
+/** Max time stopAutodiscovery waits for an aborted summarize pass to unwind. */
+const SHUTDOWN_DRAIN_MS = 5_000;
 
 function runReconcile(): void {
   if (activeReconcile || !savedOptions) return;
@@ -304,7 +327,7 @@ export async function isProcessAlive(pid: number): Promise<boolean> {
   }
 }
 
-async function reconcile(serversDir: string, projectsDir: string, excludePids?: Set<number>, assignmentsDir?: string, onAgentSessionsChanged?: () => void, summarizeAfterScan?: (opts: { limit: number }) => Promise<Array<{ kind: string }>>): Promise<void> {
+async function reconcile(serversDir: string, projectsDir: string, excludePids?: Set<number>, assignmentsDir?: string, onAgentSessionsChanged?: () => void, summarizeAfterScan?: SummarizeAfterScan): Promise<void> {
   // Load all existing session files
   const names = await listSessionFiles(serversDir);
   const existingFiles = new Map<string, SessionFileData>();
@@ -349,30 +372,20 @@ async function reconcile(serversDir: string, projectsDir: string, excludePids?: 
     // batch is up to `limit` sequential ~120s LLM calls, and `reconcile` gates
     // the whole discovery loop (activeReconcile suppresses ticks while it runs),
     // so awaiting it would stall session scans, liveness, and server discovery
-    // for minutes. Its own in-flight guard + the persistent claim table keep it
-    // from overlapping itself; discovery must never wait on it.
-    //
-    // But it must not outlive shutdown either: the DB is closed on server stop,
-    // and a summarize finishing afterward would waste a paid call and hit a
-    // closed DB. So retain the promise + an abort controller — stopAutodiscovery
-    // aborts the in-flight child and awaits the pass before the DB closes.
-    summarizeAbort = new AbortController();
-    activeSummarize = runSummarizePass(
-      summarizeAfterScan,
-      onAgentSessionsChanged,
-      summarizeAbort.signal,
-    )
-      .catch((err) => {
-        console.error('[autodiscovery] auto-summary failed:', err);
-      })
-      .finally(() => {
-        activeSummarize = null;
-        summarizeAbort = null;
-      });
+    // for minutes. `runSummarizePass` owns its own no-overlap guard, tracked
+    // promise, and abort controller (see below), so discovery only kicks it off.
+    void runSummarizePass(summarizeAfterScan, onAgentSessionsChanged).catch((err) => {
+      console.error('[autodiscovery] auto-summary failed:', err);
+    });
   }
 }
 
-/** In-flight summarize pass + its aborter, awaited/cancelled on shutdown. */
+/**
+ * The single in-flight summarize pass and its aborter — tracked HERE (inside the
+ * no-overlap guard) rather than by the caller, so a tick that no-ops because a
+ * pass is already running cannot overwrite the real pass's tracking and let
+ * shutdown close the DB under an untracked summarizer.
+ */
 let activeSummarize: Promise<void> | null = null;
 let summarizeAbort: AbortController | null = null;
 
@@ -388,23 +401,37 @@ let summarizeInFlight = false;
 const AUTO_SUMMARIZE_LIMIT = 2;
 
 export async function runSummarizePass(
-  injected: ((opts: { limit: number }) => Promise<Array<{ kind: string }>>) | undefined,
+  injected: SummarizeAfterScan | undefined,
   onAgentSessionsChanged: (() => void) | undefined,
-  signal?: AbortSignal,
 ): Promise<void> {
+  // No-op WITHOUT touching the tracked promise/aborter: overwriting them here
+  // would strand the real in-flight pass (finding: untracked summarizer on
+  // shutdown). Latch synchronously — the config read below awaits, so a second
+  // fire-and-forget tick could otherwise slip past the guard before the first
+  // sets it.
   if (summarizeInFlight) return;
-  // Latch synchronously — the config read below awaits, so a second fire-and-
-  // forget tick could otherwise slip past the guard before the first sets it.
   summarizeInFlight = true;
+
+  const controller = new AbortController();
+  summarizeAbort = controller;
+  const pass = runSummarizeInner(injected, onAgentSessionsChanged, controller.signal);
+  // Track a never-rejecting handle so `stopAutodiscovery` can await it safely.
+  activeSummarize = pass.then(
+    () => {},
+    () => {},
+  );
   try {
-    await runSummarizeInner(injected, onAgentSessionsChanged, signal);
+    await pass;
   } finally {
     summarizeInFlight = false;
+    // Identity-guard the clear: only this pass may reset the globals.
+    if (summarizeAbort === controller) summarizeAbort = null;
+    activeSummarize = null;
   }
 }
 
 async function runSummarizeInner(
-  injected: ((opts: { limit: number }) => Promise<Array<{ kind: string }>>) | undefined,
+  injected: SummarizeAfterScan | undefined,
   onAgentSessionsChanged: (() => void) | undefined,
   signal?: AbortSignal,
 ): Promise<void> {
@@ -419,10 +446,12 @@ async function runSummarizeInner(
     const { resolveBackend } = await import('../sessions/summarize-backends.js');
     const { backend } = resolveBackend(undefined, config);
     // Thread the abort signal into the backend so shutdown can cut a live call.
-    run = ({ limit }) => summarizeMissing({ backend, limit, deps: { signal } });
+    run = ({ limit, signal: sig }) => summarizeMissing({ backend, limit, deps: { signal: sig } });
   }
 
-  const results = await run({ limit: AUTO_SUMMARIZE_LIMIT });
+  // The signal is passed to the injected seam too, so a custom/test callback can
+  // honor shutdown (finding: injected callback got no signal).
+  const results = await run({ limit: AUTO_SUMMARIZE_LIMIT, signal });
   // Summary-only writes do not change any row the SCAN looks at, so the scan's
   // own `changed` flag stays false and the SPA would never refetch. Fire the
   // same callback here, but only when something was actually written.

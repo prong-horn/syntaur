@@ -383,22 +383,55 @@ describe('summarizeSession', () => {
     expect(getSessionById('s-live-explicit')!.summary).toBe('Traced and fixed it.');
   });
 
-  it('finalize (sweep) writes nothing if the session went active DURING the backend call', async () => {
+  it('finalize (sweep) writes nothing if the session was modified DURING the backend call (revive/re-stop)', async () => {
     await seed('s-revive-mid');
-    // Flip to active while the backend "runs" — the requireTerminal guard in
-    // finalize must then refuse to persist.
+    // A real revive/re-stop bumps updated_at. Even if the session is terminal
+    // again by finalize time, the changed updated_at makes the guard refuse to
+    // persist a pre-resume summary. Bump it here as appendSession would.
     const backend: SummarizeBackend = async () => {
-      getSessionDb().prepare("UPDATE sessions SET status='active' WHERE session_id='s-revive-mid'").run();
+      getSessionDb()
+        .prepare("UPDATE sessions SET updated_at = datetime('now','+1 second') WHERE session_id='s-revive-mid'")
+        .run();
       return { ok: true, text: goodReply };
     };
     const res = await summarizeSession('s-revive-mid', { backend, sweep: true });
     expect(res.kind).toBe('skipped-claimed'); // finalize returned lost-lease
     expect(getSessionById('s-revive-mid')!.summary).toBeNull();
-    // Lease dropped, no pacing — re-qualifies after it ends.
+    // Lease dropped, no pacing — re-qualifies after it settles.
     const state = getSessionDb()
       .prepare('SELECT * FROM summarize_state WHERE session_id = ?')
       .get('s-revive-mid');
     expect(state).toBeUndefined();
+  });
+
+  it('explicit-id (non-sweep) finalize is NOT blocked by a concurrent row bump', async () => {
+    // The updated_at guard is sweep-only; an explicit re-summarize of a live
+    // session should still persist even if the row changes underneath it.
+    await seed('s-explicit-bump', { status: 'active' });
+    const backend: SummarizeBackend = async () => {
+      getSessionDb()
+        .prepare("UPDATE sessions SET updated_at = datetime('now','+1 second') WHERE session_id='s-explicit-bump'")
+        .run();
+      return { ok: true, text: goodReply };
+    };
+    const res = await summarizeSession('s-explicit-bump', { backend }); // sweep defaults false
+    expect(res.kind).toBe('ok');
+    expect(getSessionById('s-explicit-bump')!.summary).toBe('Traced and fixed it.');
+  });
+
+  it('sweep with a missing transcript on a REVIVED session skips-active without 24h pacing', async () => {
+    // deferBarren must re-check status: a revived, transcript-less session must
+    // not be suppressed for 24h — it should re-qualify when it ends.
+    await seed('s-barren-active', { status: 'active' }, false);
+    const res = await summarizeSession('s-barren-active', { backend: fakeBackend(goodReply), sweep: true });
+    expect(res.kind).toBe('skipped-active');
+    // The lease is released (token cleared) but the row may remain; what matters
+    // is that NO backoff was recorded, so it re-qualifies the moment it ends.
+    const state = getSessionDb()
+      .prepare('SELECT claim_token, next_attempt_at FROM summarize_state WHERE session_id = ?')
+      .get('s-barren-active') as { claim_token: string | null; next_attempt_at: string | null } | undefined;
+    expect(state?.claim_token ?? null).toBeNull();
+    expect(state?.next_attempt_at ?? null).toBeNull();
   });
 
   it('records a long backoff for a sweep-path skip', async () => {

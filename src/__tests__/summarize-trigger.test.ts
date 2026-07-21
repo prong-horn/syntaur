@@ -36,11 +36,23 @@ beforeEach(async () => {
   await mkdir(projectsDir, { recursive: true });
   prevHome = process.env.SYNTAUR_HOME;
   process.env.SYNTAUR_HOME = resolve(sandbox, 'home');
+  // `session.autoTrack: off` makes reconcile's scanSessions() short-circuit
+  // instead of walking the real ~/.claude transcript tree — these tests exercise
+  // the SUMMARIZE wiring, and a real scan would be slow and nondeterministic
+  // under parallel load. Individual tests that need the config (autoSummarize
+  // gating) overwrite it.
+  await mkdir(resolve(sandbox, 'home'), { recursive: true });
+  await writeFile(resolve(sandbox, 'home', 'config.md'), '---\nsession.autoTrack: off\n---\n');
   resetSessionDb();
   _resetSummarizeInFlightForTests();
 });
 
 afterEach(async () => {
+  // Drain any detached summarize pass BEFORE closing the DB, so a leaked pass
+  // from one test can neither hit a closed DB nor leave `summarizeInFlight` set
+  // (which would make the next test's runSummarizePass no-op and fail).
+  await stopAutodiscovery();
+  _resetSummarizeInFlightForTests();
   closeSessionDb();
   if (prevHome === undefined) delete process.env.SYNTAUR_HOME;
   else process.env.SYNTAUR_HOME = prevHome;
@@ -103,6 +115,47 @@ describe('reconcile wiring', () => {
         throw new Error('backend exploded');
       }),
     ).resolves.toBeUndefined();
+  });
+
+  it('a second tick does not strand the first pass: shutdown still drains the REAL in-flight pass', async () => {
+    // Regression: reconcile used to reassign the tracked promise + aborter on
+    // EVERY tick, even when runSummarizePass no-op'd (already in flight). The
+    // no-op's finally() then cleared the globals, leaving the real pass
+    // untracked → shutdown closed the DB under it.
+    initSessionDb(dbPath);
+    let release!: () => void;
+    const gate = new Promise<void>((r) => {
+      release = r;
+    });
+    let firstEntered = false;
+    let firstFinished = false;
+    let secondEntered = false;
+
+    // Tick 1: the real, long-running pass. Honors the abort signal (finding 3).
+    await reconcile(serversDir, projectsDir, undefined, undefined, undefined, async ({ signal }) => {
+      firstEntered = true;
+      await new Promise<void>((res) => {
+        signal?.addEventListener('abort', () => res(), { once: true });
+        void gate.then(res);
+      });
+      firstFinished = true;
+      return [];
+    });
+    expect(firstEntered).toBe(true);
+
+    // Tick 2: must NO-OP (in-flight guard) without touching the tracked pass.
+    await reconcile(serversDir, projectsDir, undefined, undefined, undefined, async () => {
+      secondEntered = true;
+      return [];
+    });
+    expect(secondEntered).toBe(false);
+
+    // Shutdown must still find + drain tick 1's real pass. The abort resolves it.
+    await stopAutodiscovery();
+    expect(firstFinished).toBe(true);
+
+    release();
+    _resetSummarizeInFlightForTests();
   });
 
   it('stopAutodiscovery drains the detached summarize pass before returning (no closed-DB access)', async () => {

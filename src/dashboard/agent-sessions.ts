@@ -860,24 +860,25 @@ export function recordSummarizeFailure(
  * a race. `summary` always writes — a human-owned description never suppresses
  * the summary itself, it only means `descriptionUpdated` is false.
  *
- * `requireTerminal` (sweep path) makes the write conditional on the session
- * still being stopped/completed. If it was revived to active DURING the backend
- * call, the UPDATE matches no row, the lease is dropped without pacing, and the
- * result is `lost-lease` — so the now-live session is left to re-qualify when it
- * ends rather than being frozen with a partial summary.
+ * `guardUpdatedAt` (sweep path) makes the write conditional on the session row's
+ * `updated_at` being unchanged since it was read under the lease. Any revive
+ * (stop→active) or re-stop (active→stop) goes through a writer that bumps
+ * `updated_at`, so a session that was resumed DURING the ~120s backend call —
+ * even if it ended again before finalization — no longer matches. The UPDATE
+ * then touches no row, the lease drops without pacing, and the result is
+ * `lost-lease`, leaving the session to re-qualify (summary still NULL) rather
+ * than being frozen with a pre-resume summary.
  */
 export function finalizeSummarize(
   sessionId: string,
   token: string,
   fields: { description: string; summary: string },
   now = new Date(),
-  opts: { requireTerminal?: boolean } = {},
+  opts: { guardUpdatedAt?: string } = {},
 ): FinalizeSummarizeResult {
   const db = getSessionDb();
   const nowIso = now.toISOString();
-  const terminalGuard = opts.requireTerminal
-    ? "AND status IN ('stopped', 'completed')"
-    : '';
+  const staleGuard = opts.guardUpdatedAt ? 'AND updated_at = ?' : '';
 
   const run = db.transaction((): FinalizeSummarizeResult => {
     const state = db
@@ -885,6 +886,8 @@ export function finalizeSummarize(
       .get(sessionId) as { claim_token: string | null } | undefined;
     if (!state || state.claim_token !== token) return 'lost-lease';
 
+    const params: unknown[] = [fields.summary, nowIso, fields.description, sessionId];
+    if (opts.guardUpdatedAt) params.push(opts.guardUpdatedAt);
     const updated = db
       .prepare(
         `UPDATE sessions SET
@@ -897,9 +900,9 @@ export function finalizeSummarize(
              WHEN description IS NULL OR description = '' OR description_source = 'auto'
                THEN 'auto' ELSE description_source END,
            updated_at = datetime('now')
-         WHERE session_id = ? ${terminalGuard}`,
+         WHERE session_id = ? ${staleGuard}`,
       )
-      .run(fields.summary, nowIso, fields.description, sessionId);
+      .run(...params);
 
     // Zero rows: the session row was deleted concurrently, OR (requireTerminal)
     // it was revived to active. Either way drop the lease without pacing so it

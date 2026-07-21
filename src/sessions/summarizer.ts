@@ -250,13 +250,17 @@ export async function summarizeSession(
   const transcriptPath = session.transcriptPath ?? '';
   const hasTranscript = transcriptPath.length > 0 && (await fileExists(transcriptPath));
   if (!hasTranscript) {
-    if (sweep) deferBarren(sessionId, 'no transcript', now);
+    if (sweep && deferBarren(sessionId, 'no transcript', now) === 'active') {
+      return { sessionId, kind: 'skipped-active' };
+    }
     return { sessionId, kind: 'skipped-no-transcript' };
   }
 
   const excerpt = await buildTranscriptExcerpt(transcriptPath, session.agent);
   if (!excerpt) {
-    if (sweep) deferBarren(sessionId, 'empty excerpt', now);
+    if (sweep && deferBarren(sessionId, 'empty excerpt', now) === 'active') {
+      return { sessionId, kind: 'skipped-active' };
+    }
     return { sessionId, kind: 'empty-excerpt' };
   }
 
@@ -285,6 +289,9 @@ export async function summarizeSession(
     releaseSummarize(sessionId, token);
     return { sessionId, kind: 'skipped-active' };
   }
+  // Snapshot updated_at under the lease; finalize refuses to persist if the row
+  // changed (revive/re-stop) during the backend call — see finalizeSummarize.
+  const guardUpdatedAt = sweep ? (fresh?.updatedAt ?? undefined) : undefined;
 
   try {
     const reply = await backend(buildPrompt(excerpt, session.agent), deps);
@@ -300,10 +307,10 @@ export async function summarizeSession(
       return { sessionId, kind: 'parse-error', error };
     }
 
-    // requireTerminal (sweep only) makes the persist atomic against a revive
-    // that happens DURING the backend call: if the session went active in that
-    // window, finalize writes nothing and releases without pacing.
-    const outcome = finalizeSummarize(sessionId, token, parsed, now, { requireTerminal: sweep });
+    // guardUpdatedAt (sweep only) makes the persist atomic against a revive/
+    // re-stop DURING the backend call: if the row changed in that window,
+    // finalize writes nothing and releases without pacing.
+    const outcome = finalizeSummarize(sessionId, token, parsed, now, { guardUpdatedAt });
     if (outcome === 'lost-lease') return { sessionId, kind: 'skipped-claimed' };
     return { sessionId, kind: 'ok', descriptionUpdated: outcome === 'ok-desc-updated' };
   } catch (err) {
@@ -320,13 +327,24 @@ export async function summarizeSession(
 
 /**
  * Persist a long backoff for a session with nothing to summarize. Needs a lease
- * to write state, but the session is not being processed — claim, record,
- * done.
+ * to write state, but the session is not being processed — claim, record, done.
+ *
+ * Returns 'active' when the session was revived before the barren-pacing write —
+ * in that case NO pacing is recorded (the lease is released) so it re-qualifies
+ * the moment it ends, rather than being suppressed for 24h.
  */
-function deferBarren(sessionId: string, reason: string, now: Date): void {
+function deferBarren(sessionId: string, reason: string, now: Date): 'deferred' | 'active' | 'lost' {
   const token = randomUUID();
-  if (!claimSummarize(sessionId, token, now)) return;
+  if (!claimSummarize(sessionId, token, now)) return 'lost';
+  // Re-read under the lease: a session picked while stopped may have been
+  // revived. Pacing a now-live session for 24h would wrongly suppress it.
+  const fresh = getSessionById(sessionId);
+  if (fresh && !SWEEPABLE_STATUSES.has(fresh.status)) {
+    releaseSummarize(sessionId, token);
+    return 'active';
+  }
   recordSummarizeFailure(sessionId, token, reason, RETRY_BARREN_MS, now);
+  return 'deferred';
 }
 
 export interface SummarizeMissingOptions {

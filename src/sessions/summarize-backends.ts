@@ -235,6 +235,7 @@ export function createClaudeBackend(binary = 'claude'): SummarizeBackend {
 export async function resolveSyntheticApiKey(
   env: NodeJS.ProcessEnv = process.env,
   gcloudBinary = 'gcloud',
+  signal?: AbortSignal,
 ): Promise<string | null> {
   const fromEnv = env.SYNTHETIC_API_KEY?.trim();
   if (fromEnv) return fromEnv;
@@ -242,9 +243,9 @@ export async function resolveSyntheticApiKey(
   const result = await runPrompt(
     gcloudBinary,
     ['secrets', 'versions', 'access', 'latest', '--secret=SYNTHETIC_API_KEY'],
-    { stdin: '', timeoutMs: 30_000 },
+    { stdin: '', timeoutMs: 30_000, signal }, // abortable on shutdown
   );
-  if (result.enoent || result.timedOut || result.code !== 0) return null;
+  if (result.enoent || result.timedOut || result.aborted || result.code !== 0) return null;
   const key = result.stdout.trim();
   return key.length > 0 ? key : null;
 }
@@ -299,7 +300,7 @@ export function createPiBackend(
 ): SummarizeBackend {
   return async (prompt: string, deps?: BackendDeps) => {
     const baseEnv = opts.env ?? process.env;
-    const apiKey = await resolveSyntheticApiKey(baseEnv, opts.gcloudBinary);
+    const apiKey = await resolveSyntheticApiKey(baseEnv, opts.gcloudBinary, deps?.signal);
     if (!apiKey) {
       return {
         ok: false,
