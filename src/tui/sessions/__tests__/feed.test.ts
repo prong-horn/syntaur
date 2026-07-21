@@ -149,7 +149,10 @@ describe('session feed — syntaurd daemon join', () => {
   const noNative = async () => [];
 
   function sdEntry(overrides: Partial<SyntaurdFeedEntry> = {}): SyntaurdFeedEntry {
-    return { sessionId: 's1', short: 'sd12ab34', state: 'working', name: 'proj/a1', agent: 'codex', ...overrides };
+    return {
+      sessionId: 's1', short: 'sd12ab34', state: 'working', needs: null, name: 'proj/a1', agent: 'codex',
+      ...overrides,
+    };
   }
 
   it('stamps state/syntaurdShortId/launcher/activity from a matched daemon entry', async () => {

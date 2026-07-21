@@ -169,6 +169,16 @@ describe('supervisor', () => {
     expect(st.sessions).toHaveLength(1);
   });
 
+  it('list carries a disk-written needs reason through to the wire session', async () => {
+    const d = daemon({ spawn: vi.fn(() => fakeChild(9999)) });
+    await d.handle({ op: 'dispatch', argv: ['bash'], cwd: '/w' });
+    writeJobState(
+      jobState({ short: 's1', state: 'blocked', needs: 'permission prompt', hostPid: 9999, hostPidStartedAt: START }),
+    );
+    const listed = (await d.handle({ op: 'list' })) as ListReply;
+    expect(listed.sessions[0]).toMatchObject({ state: 'blocked', needs: 'permission prompt' });
+  });
+
   it('startup adopts live roster hosts and drops dead ones', async () => {
     writeRoster(
       {

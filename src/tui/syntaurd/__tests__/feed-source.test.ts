@@ -9,8 +9,15 @@ describe('makeSyntaurdSessionSource (production projection + failure contract)',
   it('projects ListReply sessions to feed entries', async () => {
     const source = makeSyntaurdSessionSource(async () => ({ ok: true, sessions: [wireSession()] }) as never);
     expect(await source()).toEqual([
-      { sessionId: 'uuid-1', short: 'sd12ab34', state: 'working', name: 'p/a', agent: 'codex' },
+      { sessionId: 'uuid-1', short: 'sd12ab34', state: 'working', name: 'p/a', agent: 'codex', needs: null },
     ]);
+  });
+
+  it('projects a blocked session needs text through to the feed entry', async () => {
+    const source = makeSyntaurdSessionSource(async () =>
+      ({ ok: true, sessions: [wireSession({ state: 'blocked', needs: 'permission prompt' })] }) as never);
+    const entries = await source();
+    expect(entries?.[0].needs).toBe('permission prompt');
   });
 
   it('filters sessions without a sessionId join key — live-and-empty yields [], not null', async () => {

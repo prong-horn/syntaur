@@ -8,6 +8,8 @@ export interface SyntaurdFeedEntry {
   /** Short id `syntaur attach <short>` accepts. */
   short: string;
   state: SessionState;
+  /** Adapter-derived attention text (state === 'blocked'); null otherwise. */
+  needs: string | null;
   name: string | null;
   agent: string;
 }
@@ -43,7 +45,14 @@ export const makeSyntaurdSessionSource = (query: QueryFn = queryDaemon): Syntaur
   const out: SyntaurdFeedEntry[] = [];
   for (const s of sessions) {
     if (typeof s.sessionId !== 'string' || s.sessionId === '') continue;
-    out.push({ sessionId: s.sessionId, short: s.short, state: s.state, name: s.name ?? null, agent: s.agent });
+    out.push({
+      sessionId: s.sessionId,
+      short: s.short,
+      state: s.state,
+      needs: s.needs ?? null,
+      name: s.name ?? null,
+      agent: s.agent,
+    });
   }
   return out;
 };

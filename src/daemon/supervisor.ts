@@ -178,6 +178,7 @@ export function createDaemon(deps: DaemonDeps = {}): Daemon {
       cwd: ds.cwd,
       name: ds.name,
       state,
+      ...(js?.needs !== undefined ? { needs: js.needs } : {}),
       pid: js?.pid ?? ds.hostPid,
       pidStartedAt: js?.pidStartedAt ?? ds.hostPidStartedAt,
       sessionId: ds.sessionId,
