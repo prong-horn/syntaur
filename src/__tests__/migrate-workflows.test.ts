@@ -673,6 +673,42 @@ describe('syntaur migrate-workflows — the command (T3–T6)', () => {
     await expect(migrateWorkflowsCommand({ root: home })).rejects.toThrow(/collides with a stage id/i);
   });
 
+  it('a genuine stage named `blocked` beats the IMPLICIT pause-flag id — honored by the history walk, never pause-remapped (codex code-r4)', async () => {
+    await seedHome(FIXTURES, STANDALONE);
+    await migrateWorkflowsCommand({ root: home });
+
+    // Post-strip state + a relocated workflow whose REAL stage is `blocked`
+    // (parser-clean, no authored flags — only the ctx-implicit pause ids could
+    // shadow it). A bound ticket sits AT that stage with history ending there.
+    await writeFile(
+      join(home, 'workflows', 'pauselike.md'),
+      'id: pauselike\nstages:\n  - id: draft\n  - id: blocked\n  - id: done\n    terminal: true\n',
+      'utf-8',
+    );
+    const dir = join(home, 'projects', 'proj', 'assignments', 'stage-named-blocked');
+    await mkdir(dir, { recursive: true });
+    await writeFile(
+      join(dir, 'assignment.md'),
+      ticketMd({
+        slug: 'stage-named-blocked',
+        status: 'blocked',
+        phase: null,
+        workflow: 'pauselike',
+        history: [{ from: 'draft', to: 'blocked' }],
+      }),
+      'utf-8',
+    );
+    await unlink(join(home, 'stages-migrated'));
+    invalidateWorkflowLibraryCache();
+    await migrateWorkflowsCommand({ root: home });
+
+    // Without stage-priority the implicit flag set would skip `blocked` in the
+    // history walk, placeTicket() to draft, and pause-remap (relabel history).
+    const fm = await fmOf(asg('stage-named-blocked'));
+    expect(fm.status).toBe('blocked');
+    expect(fm.statusHistory.at(-1)?.to).toBe('blocked'); // history NOT relabeled
+  });
+
   it('marker write is idempotent: a completed migration re-run leaves stages-migrated byte-identical', async () => {
     await seedHome(FIXTURES, STANDALONE);
     await migrateWorkflowsCommand({ root: home });

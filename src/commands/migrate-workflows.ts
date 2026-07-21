@@ -363,7 +363,16 @@ export async function computeSeedDecision(
   }
 
   const stageIds = new Set(workflow.stages.map((s) => s.id));
-  const flags = new Set([...Object.keys(workflow.flags ?? {}), ...flagStatusIds(ctx)]);
+  // Flag ids = authored workflow flags ∪ the derive context's implicit pause
+  // ids (blocked/parked) — MINUS this workflow's stage ids (codex code-r4): a
+  // workflow with a genuine stage named `blocked` must have visits to it
+  // honored by the history walk and never pause-remapped. Authored flag/stage
+  // collisions never reach here (the relocated-file gate rejects them); this
+  // subtraction only ever drops ctx-sourced implicit ids that this workflow
+  // uses as real stages.
+  const flags = new Set(
+    [...Object.keys(workflow.flags ?? {}), ...flagStatusIds(ctx)].filter((f) => !stageIds.has(f)),
+  );
 
   // stage := phase ?? last-non-flag statusHistory.to ?? placeTicket() — each
   // candidate validated against the compiled stage set; an orphan/deleted id
