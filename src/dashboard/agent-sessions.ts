@@ -372,9 +372,6 @@ export async function reconcileLaunchPlaceholder(
 // (a pre-dispatch `active` session would open an engagement and strand on a
 // failed dispatch; see launch.ts's WHY-not-insert-before-dispatch comment).
 
-/** Reservations older than this are swept opportunistically on reserve. */
-export const LAUNCH_RESERVATION_TTL_MS = 24 * 60 * 60 * 1000;
-
 export interface LaunchReservation {
   launchId: string;
   hostedBy: string;

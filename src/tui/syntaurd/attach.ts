@@ -21,9 +21,9 @@ export interface SyntaurdAttachResult {
 
 /**
  * Runs `syntaur attach <shortId>` (via process.execPath) with inherited
- * stdio and reports how it ended. Mirrors runTmuxAttach/runClaudeAttach's
- * never-reject contract exactly (so the caller's `finally` — re-arming
- * mouse tracking — always runs): on `'exit'` resolves `{ code }` (coercing
+ * stdio and reports how it ended. Mirrors runClaudeAttach's never-reject
+ * contract exactly (so the caller's `finally` — re-arming mouse tracking —
+ * always runs): on `'exit'` resolves `{ code }` (coercing
  * an undefined exit code to `null`); on `'error'` resolves
  * `{ code: null, error }` instead of throwing. Detach (Ctrl-]) and
  * session-exit both surface as a 0 exit — parity with the existing tiers.

@@ -14,8 +14,8 @@ export interface ClaudeAttachResult {
 
 /**
  * Runs `claude attach <shortId>` with inherited stdio and reports how it
- * ended. Mirrors `runTmuxAttach`'s never-reject contract exactly (so a
- * caller's `finally` — e.g. re-arming mouse tracking — always runs): on
+ * ended. Never rejects (so a caller's `finally` — e.g. re-arming mouse
+ * tracking — always runs): on
  * `'exit'` resolves `{ code }` (coercing an undefined exit code to `null`);
  * on `'error'` (e.g. the claude binary missing) resolves `{ code: null,
  * error }` instead of throwing.

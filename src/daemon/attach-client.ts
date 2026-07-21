@@ -7,8 +7,8 @@
 // EVERY exit (clean detach, {t:'exit'} frame, connect failure, mid-session
 // socket close, and SIGINT/SIGTERM/SIGHUP) — it drops raw mode, restores the
 // saved `stty -g`, emits reset sequences (mouse off, bracketed-paste off, leave
-// alt-screen, show cursor), and removes every listener. Like runTmuxAttach, it
-// NEVER rejects — it always resolves an AttachResult so a caller's cleanup runs.
+// alt-screen, show cursor), and removes every listener. It NEVER rejects —
+// it always resolves an AttachResult so a caller's cleanup runs.
 
 import { encodeFrame, createLineDecoder, isFrameObject } from './protocol.js';
 import type { AttachReply, ErrorReply, PtyHostFrame } from './types.js';

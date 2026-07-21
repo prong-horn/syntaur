@@ -162,7 +162,6 @@ export const Cockpit: React.FC<CockpitProps> = ({
       const plan = await buildLaunchPlan({ projectsDir, projectSlug, assignmentSlug, agent });
       const nativeName = `${projectSlug}/${assignmentSlug}`;
       let handOffFailure: string | null = null;
-      let nativeLaunchFailure: string | null = null;
       let syntaurdLaunchFailure: string | null = null;
       let syntaurdRegistered = true;
       const mode = await runLaunch(
@@ -194,9 +193,6 @@ export const Cockpit: React.FC<CockpitProps> = ({
             syntaurdLaunchFailure = err instanceof Error ? err.message : String(err);
           },
           launchClaudeBg,
-          onNativeLaunchFailure: (err) => {
-            nativeLaunchFailure = err instanceof Error ? err.message : String(err);
-          },
           handOff: async (p) => {
             // Re-arm mouse tracking around the hand-off exactly like attach: the
             // spawned agent owns the real terminal via stdio:'inherit', so disable

@@ -619,7 +619,7 @@ describe('pending-launch reservation — end to end (Phase C Task 17)', () => {
   }
 
   // sabotage-verified: commented out `pid = COALESCE(excluded.pid, pid)` in
-  // appendSession's ON CONFLICT clause (session-db.ts's upsert). Row count
+  // appendSession's ON CONFLICT clause (agent-sessions.ts:200's upsert). Row count
   // stayed 1 — session_id is a PRIMARY KEY, so a literal second row is
   // structurally impossible regardless — but the `pid` assertion below
   // failed (stayed NULL instead of 4242): launchSyntaurd's own registerRow
@@ -763,6 +763,7 @@ describe('pending-launch reservation — end to end (Phase C Task 17)', () => {
           throw err;
         }),
         generateSessionId: () => FIXED_ID,
+        sleep: async () => {},
       }),
     ).rejects.toThrow(err);
 
@@ -787,6 +788,7 @@ describe('pending-launch reservation — end to end (Phase C Task 17)', () => {
           throw err;
         }),
         generateSessionId: () => FIXED_ID,
+        sleep: async () => {},
       }),
     ).rejects.toThrow(err);
 
