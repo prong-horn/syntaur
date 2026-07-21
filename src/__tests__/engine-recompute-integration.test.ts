@@ -340,26 +340,72 @@ stages:
     invalidateWorkflowLibraryCache();
 
     // `implement` at in_progress → verb `implement` matches no route → NO move
-    // (pre-Task-0 this wrongly fired in_progress → review).
+    // (pre-Task-0 this wrongly fired in_progress → review). The retired scalar
+    // stays ENGINE-FED in the same CAS payload (WS-3 T9 export policy).
     const path = await writeAssignment(
       assignmentMd({ status: 'in_progress', acsChecked: false, extraFm: 'phase: in_progress\n' }),
     );
     await assertStageFactOnOpen({ assignmentPath: path, projectDir: null, stage: 'implement', by: 'human' });
     let fm = parseAssignmentFrontmatter(await readFile(path, 'utf-8'));
     expect(fm.status).toBe('in_progress');
-    // The engine path was taken — the retired fact was NOT asserted.
-    expect(fm.implementationStarted).toBe(false);
+    expect(fm.implementationStarted).toBe(true); // engine-fed, no move
 
     // `review` open → verb `request-review` matches → in_progress → review.
     await assertStageFactOnOpen({ assignmentPath: path, projectDir: null, stage: 'review', by: 'human' });
     fm = parseAssignmentFrontmatter(await readFile(path, 'utf-8'));
     expect(fm.status).toBe('review');
+    expect(fm.reviewRequested).toBe(true);
 
     // `implement` after review (phase mirrors `review`) → verb `rework` → back
-    // to in_progress.
+    // to in_progress, with reworkRequested fed in the same payload.
     await assertStageFactOnOpen({ assignmentPath: path, projectDir: null, stage: 'implement', by: 'human' });
     fm = parseAssignmentFrontmatter(await readFile(path, 'utf-8'));
     expect(fm.status).toBe('in_progress');
+    expect(fm.reworkRequested).toBe(true);
+  });
+
+  it('rework does NOT bounce back through a passing gate: the engine-fed reworkRequested holds it (T9)', async () => {
+    await markStagesMigrated();
+    // The compiled-default shape: in_progress auto-advances to review on
+    // `acAllChecked:true AND NOT reworkRequested:true`. With ALL ACs CHECKED, a
+    // rework move would bounce straight back unless the verb feeds the scalar.
+    const wf = `id: feature
+stages:
+  - id: in_progress
+    gate: [{ condition: "acAllChecked:true AND NOT reworkRequested:true" }]
+    next:
+      - { to: review, on: gate }
+      - { to: review, on: work-start, verb: request-review }
+  - id: review
+    next:
+      - { to: in_progress, on: work-start, verb: rework }
+      - { to: done, on: manual }
+  - id: done
+    terminal: true
+`;
+    await writeFile(join(home, 'workflows', 'feature.md'), wf, 'utf-8');
+    invalidateWorkflowLibraryCache();
+
+    const path = await writeAssignment(
+      assignmentMd({ status: 'review', acsChecked: true, extraFm: 'phase: review\n' }),
+    );
+    // implement-after-review → verb rework → review → in_progress, and STAYS
+    // (reworkRequested=true holds the gate despite acAllChecked).
+    await assertStageFactOnOpen({ assignmentPath: path, projectDir: null, stage: 'implement', by: 'human' });
+    let fm = parseAssignmentFrontmatter(await readFile(path, 'utf-8'));
+    expect(fm.status).toBe('in_progress');
+    expect(fm.reworkRequested).toBe(true);
+
+    // A subsequent plain gate recompute must ALSO hold.
+    await recompute(path, { kind: 'gate' });
+    fm = parseAssignmentFrontmatter(await readFile(path, 'utf-8'));
+    expect(fm.status).toBe('in_progress');
+
+    // request-review clears the hold and moves back to review.
+    await assertStageFactOnOpen({ assignmentPath: path, projectDir: null, stage: 'review', by: 'human' });
+    fm = parseAssignmentFrontmatter(await readFile(path, 'utf-8'));
+    expect(fm.status).toBe('review');
+    expect(fm.reworkRequested).toBe(false);
   });
 
   it('stage-fact bridge: marker set + NO workflow still asserts the legacy fact (blocker 3)', async () => {

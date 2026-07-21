@@ -713,6 +713,84 @@ describe('syntaur migrate-workflows — the command (T3–T6)', () => {
     expect(await isStagesMigrated()).toBe(true);
   });
 
+  // ── T8: dashboard payload mirrors + workflow-metadata rewire ──────────────
+  it('T8: workflow metadata reads the per-file library post-relocation (non-empty, incl. test)', async () => {
+    await seedHome(FIXTURES, STANDALONE);
+    const { effectiveWorkflowIds, clearStatusConfigCache } = await import('../dashboard/api.js');
+    // Pre-migration: the legacy config block is the source.
+    expect((await effectiveWorkflowIds(await readConfig())).sort()).toEqual(['default', 'test']);
+
+    await migrateWorkflowsCommand({ root: home });
+    clearStatusConfigCache();
+    invalidateWorkflowLibraryCache();
+    // Post-relocation the config block is GONE — the per-file library must be
+    // the metadata source, or `test` would vanish and the workflow UI break.
+    expect((await effectiveWorkflowIds(await readConfig())).sort()).toEqual(['default', 'test']);
+  });
+
+  it('T8: detail payload keeps the deprecated mirrors; nextAction == active stage guidance', async () => {
+    await seedHome(FIXTURES, STANDALONE);
+    await migrateWorkflowsCommand({ root: home });
+
+    // Author a `guidance:` on the active ticket's stage (the compiled default
+    // ships none — the mirror maps to whatever the stage declares).
+    const wfPath = join(home, 'workflows', 'default.md');
+    const { workflow } = parseWorkflowFile(await readFile(wfPath, 'utf-8'));
+    workflow.stages.find((s) => s.id === 'ready_to_implement')!.guidance = 'Start implementing';
+    await writeFile(wfPath, serializeWorkflowFile(workflow), 'utf-8');
+    invalidateWorkflowLibraryCache();
+
+    const { getAssignmentDetail, clearStatusConfigCache } = await import('../dashboard/api.js');
+    clearStatusConfigCache();
+    const detail = await getAssignmentDetail(join(home, 'projects'), 'proj', 'active-phase');
+    expect(detail).not.toBeNull();
+    // The four deprecated §4.5 mirrors are still in the payload…
+    expect(detail!.phase).toBe('ready_to_implement');
+    expect(detail).toHaveProperty('disposition'); // mirror carried (null — never stored on this ticket)
+    expect(detail!.derived).not.toBeNull();
+    // …and on the engine-active path they mirror the STORED stage + guidance.
+    expect(detail!.derived!.derivedStatus).toBe('ready_to_implement');
+    expect(detail!.derived!.nextAction).toBe('Start implementing');
+  });
+
+  // ── T9b: legacy config-workflow writers hard-refuse post-marker ───────────
+  it('T9b: writeStatusConfig / writeWorkflowsConfig / writeWorkflowBundle / setDefaultWorkflow refuse post-marker; the loader never bricks', async () => {
+    await seedHome(FIXTURES, STANDALONE);
+    await migrateWorkflowsCommand({ root: home });
+
+    const { writeStatusConfig, writeWorkflowsConfig } = await import('../utils/config.js');
+    const { writeWorkflowBundle, setDefaultWorkflow, deleteWorkflowFromConfig } = await import(
+      '../utils/workflow-write.js'
+    );
+    const { buildDefaultStatusConfig } = await import('../utils/status-defaults.js');
+    const bundle = buildDefaultStatusConfig();
+
+    await expect(writeStatusConfig(bundle)).rejects.toThrow(/migrated to per-file/);
+    await expect(
+      writeWorkflowsConfig({ default: { label: 'Default', ...bundle } }, 'default'),
+    ).rejects.toThrow(/migrated to per-file/);
+    await expect(writeWorkflowBundle('custom', bundle)).rejects.toThrow(/migrated to per-file/);
+    await expect(setDefaultWorkflow('default')).rejects.toThrow(/migrated to per-file/);
+    // Post-strip, `test` is absent from the LEGACY library → a delete attempt
+    // is a no-op that must NOT regrow the block.
+    await deleteWorkflowFromConfig('test');
+
+    const configRaw = await readFile(join(home, 'config.md'), 'utf-8');
+    expect(configRaw).not.toMatch(/^workflows:\s*$/m);
+    expect(configRaw).not.toMatch(/^statuses:\s*$/m);
+    invalidateWorkflowLibraryCache();
+    expect(() => loadWorkflowLibrary({ workflows: null, statuses: null })).not.toThrow();
+  });
+
+  it('T9b: pre-marker the legacy writers work unchanged', async () => {
+    await seedHome(FIXTURES, STANDALONE);
+    const { writeWorkflowBundle } = await import('../utils/workflow-write.js');
+    const { buildDefaultStatusConfig } = await import('../utils/status-defaults.js');
+    await writeWorkflowBundle('extra', buildDefaultStatusConfig(), { label: 'Extra' });
+    const config = await readConfig();
+    expect(config.workflows && 'extra' in config.workflows).toBe(true);
+  });
+
   // ── Startup-hook isolation (round-3 major): an npx-style CLI invocation ───
   it('CLI invocation of migrate-workflows skips the startup nudges — zero writes to the ambient root', async () => {
     await seedHome(FIXTURES, STANDALONE);

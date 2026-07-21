@@ -123,8 +123,18 @@ export async function assertStageFactOnOpen(input: StageFactInput): Promise<void
         actor: input.by ?? undefined,
         verb: workStartVerb(input.stage, input.prevStage, preFm),
       },
-      // Fold the assignee-set (etc.) into the SAME CAS payload as the move.
-      ...(input.foldMutate ? { mutate: (content) => input.foldMutate!(content) } : {}),
+      // Keep the retired session-stage facts ENGINE-FED (WS-3 T9 export
+      // policy): the compiled default gates hold on `NOT reworkRequested:true`,
+      // so the rework/review verbs must set/clear the scalars in the SAME CAS
+      // payload as the move — else a rework's landing gate immediately passes
+      // and the cascade bounces the ticket straight back to review. The
+      // assignee-set (etc.) folds into the same payload after the delta.
+      mutate: (content) => {
+        const writes = computeDelta(input.stage, input.prevStage, parseAssignmentFrontmatter(content));
+        const withDelta =
+          Object.keys(writes).length > 0 ? updateAssignmentFile(content, writes) : content;
+        return input.foldMutate ? input.foldMutate(withDelta) : withDelta;
+      },
     });
     if (result.deferredTerminal) {
       throw new Error(

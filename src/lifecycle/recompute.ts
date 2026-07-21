@@ -74,24 +74,17 @@ export async function markDeriveMigrated(): Promise<void> {
 
 /**
  * The stage-engine activation marker (Phase 1 / WS-2). SEPARATE from
- * `derive-migrated` on purpose (WS-2 Decision 2): the sweep gates
- * (`server.ts`, `derive-verbs.ts`) stay on `isDeriveMigrated()` so the ladder
- * keeps moving the live board; the engine-vs-ladder choice is a branch INSIDE
- * {@link recomputeAndWrite} gated on `isStagesMigrated() && ctx.stageWorkflow`.
- * The marker stays UNSET through WS-2 (the engine wiring is dormant, exercised
- * only by fixtures that set it) — WS-3's migration calls
- * {@link markStagesMigrated} after seeding per-file workflows + stage positions
- * on all live tickets, flipping the whole board onto the engine at once.
+ * `derive-migrated` on purpose (WS-2 Decision 2) — see `utils/stages-marker.ts`,
+ * where the implementation moved (WS-3 T9b) so `config.ts` can consult it for
+ * the legacy-writer lockout without an import cycle. The marker stays UNSET
+ * through WS-2 (the engine wiring is dormant, exercised only by fixtures that
+ * set it) — WS-3's `migrate-workflows` calls {@link markStagesMigrated} after
+ * seeding per-file workflows + stage positions on all live tickets, flipping
+ * the whole board onto the engine at once. Re-exported here so the many
+ * existing `from '.../recompute.js'` import sites keep resolving.
  */
-const STAGES_MARKER = 'stages-migrated';
-
-export async function isStagesMigrated(): Promise<boolean> {
-  return fileExists(resolve(syntaurRoot(), STAGES_MARKER));
-}
-
-export async function markStagesMigrated(): Promise<void> {
-  await writeFileForce(resolve(syntaurRoot(), STAGES_MARKER), `${nowTimestamp()}\n`);
-}
+export { isStagesMigrated, markStagesMigrated } from '../utils/stages-marker.js';
+import { isStagesMigrated } from '../utils/stages-marker.js';
 
 /** Resolve the derive context for ONE workflow id (default `'default'`) from
  * config.md. For `'default'` in a legacy config with no `workflows:` block this

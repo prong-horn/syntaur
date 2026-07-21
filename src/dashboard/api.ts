@@ -506,10 +506,31 @@ async function getWorkflowMeta(): Promise<{
   if (_cachedWorkflowMeta) return _cachedWorkflowMeta;
   const config = await readConfig();
   _cachedWorkflowMeta = {
-    available: new Set(Object.keys(getWorkflowLibrary(config))),
+    available: new Set(await effectiveWorkflowIds(config)),
     defaultWorkflow: config.defaultWorkflow ?? null,
   };
   return _cachedWorkflowMeta;
+}
+
+/**
+ * The effective workflow-id set (WS-3, T8): once the migration relocates
+ * workflows to per-file `~/.syntaur/workflows/<id>.md` and deletes the
+ * `config.md` block, the LEGACY library synthesizes only `default` — reading it
+ * alone would silently re-bind every non-default ticket. Per-file library
+ * (when non-empty) is authoritative; the legacy config library remains the
+ * pre-migration source. A mid-migration dual-source read falls back to legacy.
+ */
+export async function effectiveWorkflowIds(
+  config: Awaited<ReturnType<typeof readConfig>>,
+): Promise<string[]> {
+  try {
+    const { loadWorkflowLibrary } = await import('../utils/workflow-library.js');
+    const perFile = Object.keys(loadWorkflowLibrary(config));
+    if (perFile.length > 0) return perFile;
+  } catch {
+    /* dual-source window mid-migration — the legacy block is still live */
+  }
+  return Object.keys(getWorkflowLibrary(config));
 }
 
 const EMPTY_BINDING: ProjectWorkflowBinding = { defaultWorkflow: null, workflowByType: {} };
@@ -2414,9 +2435,34 @@ async function buildDerivedDetail(
       }
     }
 
+    // WS-3 compat window (§4.5): `derivedStatus`/`nextAction` are DEPRECATED
+    // payload mirrors kept one release. When the stage engine is active for
+    // this assignment (marker + per-file workflow + stored status is a stage),
+    // the honest mirror is the STORED stage and its `guidance:` — the ladder's
+    // re-ranked headline would contradict the frozen stage position.
+    let derivedStatus = dims.derivedStatus;
+    let nextAction = dims.nextAction;
+    try {
+      const { isStagesMigrated } = await import('../lifecycle/recompute.js');
+      if (await isStagesMigrated()) {
+        const { makeWorkflowContextResolver } = await import('../lifecycle/workflow-context.js');
+        const sw = await makeWorkflowContextResolver(await readConfig()).stageWorkflowFor(
+          assignment,
+          projectDir,
+        );
+        const stage = sw?.stages.find((s) => s.id === assignment.status);
+        if (stage) {
+          derivedStatus = assignment.status;
+          nextAction = stage.guidance ?? null;
+        }
+      }
+    } catch {
+      /* dual-source window mid-migration — keep the ladder mirror */
+    }
+
     return {
-      derivedStatus: dims.derivedStatus,
-      nextAction: dims.nextAction,
+      derivedStatus,
+      nextAction,
       facts: facts as unknown as Record<string, boolean | number | string[]>,
       customFacts,
       attestations: attestations.map((a) => ({
