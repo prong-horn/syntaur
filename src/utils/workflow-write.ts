@@ -15,9 +15,11 @@ import {
   writeWorkflowsConfig,
   deleteLegacyStatusesBlock,
   writeDefaultWorkflowScalar,
+  LegacyWorkflowWriteLockedError,
   type StatusConfig,
   type WorkflowDefinition,
 } from './config.js';
+import { isStagesMigrated } from './stages-marker.js';
 import { getWorkflowLibrary, DEFAULT_WORKFLOW_ID } from './workflow-resolve.js';
 import { toTitleCase } from './status-defaults.js';
 import { writeFileForce } from './fs.js';
@@ -57,6 +59,10 @@ export async function writeWorkflowBundle(
   bundle: StatusConfig,
   opts: WriteWorkflowBundleOptions = {},
 ): Promise<void> {
+  // WS-3 T9b: fail fast post-migration — the inner writeStatusConfig/
+  // writeWorkflowsConfig writers carry the same guard (fewest-misses point),
+  // but refusing here surfaces the lockout before any config read.
+  if (await isStagesMigrated()) throw new LegacyWorkflowWriteLockedError();
   const config = await readConfig();
 
   // Editing the DEFAULT workflow of a still-legacy config keeps the legacy

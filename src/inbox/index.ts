@@ -448,6 +448,10 @@ export async function computeInbox(opts: ComputeInboxOptions): Promise<InboxResu
         category: 'review',
         since,
         ageMs: computeAgeMs(since, now),
+        // Cosmetic retired-fact read (WS-3 T9): `reviewRequested` stays
+        // ENGINE-FED post-marker (the bridge writes it in the work-start CAS
+        // payload), so this summary pick stays coherent in both worlds;
+        // `isReview` itself keys off the derived status, not this scalar.
         summary: parsed.reviewRequested
           ? 'Review requested — awaiting accept or reopen.'
           : 'Awaiting review — accept or reopen.',
