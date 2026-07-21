@@ -251,6 +251,12 @@ async function loadExpectedWorkflows(
         if (workflow.id && workflow.id !== stem) {
           problems.push(`declares id "${workflow.id}" but the filename stem is "${stem}" (the identity)`);
         }
+        // A flag id shadowing a stage id corrupts seeding (codex code-r3): the
+        // last-non-flag history walk would skip genuine visits to that stage,
+        // and a ticket legitimately AT it would be treated as a pause-remap.
+        for (const f of Object.keys(workflow.flags ?? {})) {
+          if (stageIds.has(f)) problems.push(`flag "${f}" collides with a stage id`);
+        }
         if (problems.length > 0) {
           throw new Error(
             `relocated workflow ${resolve(dir, file)} is invalid (${problems.join('; ')}) — ` +

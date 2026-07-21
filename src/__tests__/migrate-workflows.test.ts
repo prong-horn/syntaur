@@ -661,6 +661,16 @@ describe('syntaur migrate-workflows — the command (T3–T6)', () => {
     );
     invalidateWorkflowLibraryCache();
     await expect(migrateWorkflowsCommand({ root: home })).rejects.toThrow(/filename stem/i);
+
+    // A flag id shadowing a stage id corrupts the seeding history-walk/remap
+    // (codex code-r3): must also abort before seeding.
+    await writeFile(
+      join(home, 'workflows', 'broken.md'),
+      'id: broken\nstages:\n  - id: draft\n  - id: review\n  - id: done\n    terminal: true\nflags:\n  review: {}\n',
+      'utf-8',
+    );
+    invalidateWorkflowLibraryCache();
+    await expect(migrateWorkflowsCommand({ root: home })).rejects.toThrow(/collides with a stage id/i);
   });
 
   it('marker write is idempotent: a completed migration re-run leaves stages-migrated byte-identical', async () => {
