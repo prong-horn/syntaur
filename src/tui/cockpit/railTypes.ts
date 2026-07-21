@@ -73,7 +73,7 @@ function resolveLabel(s: AgentSessionWithLiveness): string {
 }
 
 function isWaiting(s: AgentSessionWithLiveness): boolean {
-  return s.waitingFor != null || s.state === 'blocked' || s.activity === 'awaiting-input';
+  return s.needs != null || s.waitingFor != null || s.state === 'blocked' || s.activity === 'awaiting-input';
 }
 
 function isWorking(s: AgentSessionWithLiveness): boolean {
@@ -81,14 +81,18 @@ function isWorking(s: AgentSessionWithLiveness): boolean {
 }
 
 /**
- * `⚠ <waitingFor>` always wins (the headline attention signal). Otherwise
- * prefer the transcript-derived `liveActivity` phrase (e.g. "editing
- * DetailPane.tsx") over the coarse working/idle state — richer and more
- * current, since it comes from the session's own latest transcript event
- * rather than a coarse enum.
+ * `⚠ <needs|waitingFor>` always wins (the headline attention signal). `needs`
+ * (syntaurd daemon-adapter provenance) wins over `waitingFor` (claude-native
+ * monitor provenance) when both are present — the daemon adapter sees the
+ * live screen/hooks, while the native view is a slower external poll (D4).
+ * Otherwise prefer the transcript-derived `liveActivity` phrase (e.g.
+ * "editing DetailPane.tsx") over the coarse working/idle state — richer and
+ * more current, since it comes from the session's own latest transcript
+ * event rather than a coarse enum.
  */
 function resolveActivityText(s: AgentSessionWithLiveness, liveActivity: string | null): string | null {
-  if (s.waitingFor) return `⚠ ${s.waitingFor}`;
+  const reason = s.needs ?? s.waitingFor;
+  if (reason) return `⚠ ${reason}`;
   if (isWaiting(s)) return '⚠ awaiting input';
   if (liveActivity) return liveActivity;
   if (isWorking(s)) return 'working';

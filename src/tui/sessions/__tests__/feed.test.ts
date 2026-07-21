@@ -196,6 +196,41 @@ describe('session feed — syntaurd daemon join', () => {
     expect(s[0].activity).toBe('awaiting-input');
   });
 
+  it.each(['claude', 'codex', 'sh'])('a blocked %s daemon entry stamps needs, awaiting-input, and isLive (Phase C end-to-end)', async (agent) => {
+    insert('s1', 'active', 4242);
+    const s = await loadSessions({
+      projectsDir: dir, agents, livenessDeps: livenessAlive,
+      agentViewDetailSource: noNative,
+      syntaurdSessionSource: async () => [sdEntry({ agent, state: 'blocked', needs: 'permission prompt' })],
+    });
+    expect(s[0].needs).toBe('permission prompt');
+    expect(s[0].activity).toBe('awaiting-input');
+    expect(s[0].isLive).toBe(true);
+  });
+
+  it('preserves the native waitingFor while ALSO stamping the daemon needs — both survive on the same row', async () => {
+    insert('s1', 'active', 4242);
+    const s = await loadSessions({
+      projectsDir: dir, agents, livenessDeps: livenessAlive,
+      agentViewDetailSource: async () => [{ sessionId: 's1', id: 'cc12dd34', name: null, state: 'blocked', waitingFor: 'native reason' }],
+      syntaurdSessionSource: async () => [sdEntry({ state: 'blocked', needs: 'permission: Bash' })],
+    });
+    expect(s[0].waitingFor).toBe('native reason');
+    expect(s[0].needs).toBe('permission: Bash');
+    expect(s[0].agentShortId).toBe('cc12dd34');
+    expect(s[0].syntaurdShortId).toBe('sd12ab34');
+  });
+
+  it('clears needs when the daemon reports the session no longer blocked', async () => {
+    insert('s1', 'active', 4242);
+    const s = await loadSessions({
+      projectsDir: dir, agents, livenessDeps: livenessAlive,
+      agentViewDetailSource: noNative,
+      syntaurdSessionSource: async () => [sdEntry({ state: 'working', needs: null })],
+    });
+    expect(s[0].needs).toBeNull();
+  });
+
   it('syntaurd join wins over the claude-view join on overlap, keeping agentShortId/waitingFor', async () => {
     insert('s1', 'active', 4242);
     const s = await loadSessions({

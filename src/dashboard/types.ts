@@ -758,6 +758,10 @@ export interface AgentSession {
   state?: NativeAgentState | null;
   /** Attention reason from the native monitor join (e.g. "permission prompt"); null when not waiting. */
   waitingFor?: string | null;
+  /** Adapter-derived attention reason from the syntaurd daemon join (Phase C);
+   * null/absent when not blocked or not daemon-hosted. Distinct provenance
+   * from `waitingFor` (claude-native view). */
+  needs?: string | null;
   /** Short id `claude attach <id>` accepts, from the native monitor join; null when not a native session. */
   agentShortId?: string | null;
   /**

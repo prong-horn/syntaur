@@ -140,7 +140,8 @@ function applyNativeJoin(
  * pid-liveness; working/blocked force true. `state` here is never null
  * (SessionState), so isLive is unconditional. `agentShortId`/`waitingFor` from
  * the claude-view join are left intact — `syntaurdShortId` is its own field,
- * reserved for `syntaur attach`.
+ * reserved for `syntaur attach`. `needs` is stamped here (daemon-adapter
+ * provenance) — still never `waitingFor`.
  */
 function applySyntaurdJoin(
   rows: AgentSessionWithLiveness[],
@@ -154,6 +155,7 @@ function applySyntaurdJoin(
     return {
       ...s,
       state: e.state,
+      needs: e.needs,
       syntaurdShortId: e.short,
       activity: stateToActivity(e.state) ?? s.activity,
       isLive: LIVE_STATES.has(e.state),

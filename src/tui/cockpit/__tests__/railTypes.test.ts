@@ -109,6 +109,39 @@ describe('buildRailRows — sort order and grouping', () => {
     expect(row.activityText).toBe('⚠ permission prompt');
   });
 
+  it('surfaces the daemon needs as a yellow ⚠ marker (Phase C)', () => {
+    const rows = buildRailRows([session({ needs: 'permission: Bash' })], { recentExpanded: false, now: NOW });
+    const row = rows.find((r) => r.kind === 'session') as RailSessionRow;
+    expect(row.activityText).toBe('⚠ permission: Bash');
+    expect(row.isWaiting).toBe(true);
+    expect(row.glyph).toBe('◐');
+    expect(row.glyphColor).toBe('yellow');
+  });
+
+  it('needs wins the text over waitingFor when both are set (D4 preservation)', () => {
+    const s = session({ needs: 'daemon reason', waitingFor: 'native reason' });
+    const rows = buildRailRows([s], { recentExpanded: false, now: NOW });
+    const row = rows.find((r) => r.kind === 'session') as RailSessionRow;
+    expect(row.activityText).toBe('⚠ daemon reason');
+  });
+
+  it('⚠ needs still wins over a liveActivity phrase', () => {
+    const s = session({ sessionId: 's1', needs: 'permission: Bash' });
+    const liveActivity = new Map([['s1', 'editing DetailPane.tsx']]);
+    const rows = buildRailRows([s], { recentExpanded: false, now: NOW, liveActivity });
+    const row = rows.find((r) => r.kind === 'session') as RailSessionRow;
+    expect(row.activityText).toBe('⚠ permission: Bash');
+  });
+
+  it('sorts a needs-only session before working before idle within LIVE', () => {
+    const idle = session({ sessionId: 'idle', activity: 'idle', started: '2026-07-03T11:59:50Z' });
+    const working = session({ sessionId: 'working', activity: 'working', started: '2026-07-03T11:59:00Z' });
+    const needsRow = session({ sessionId: 'needs', needs: 'permission: Bash', started: '2026-07-03T11:00:00Z' });
+    const rows = buildRailRows([idle, working, needsRow], { recentExpanded: false, now: NOW });
+    const sessionRows = rows.filter((r): r is RailSessionRow => r.kind === 'session');
+    expect(sessionRows.map((r) => r.session.sessionId)).toEqual(['needs', 'working', 'idle']);
+  });
+
   it('collapses dead sessions behind a RECENT header when not expanded', () => {
     const dead = session({ sessionId: 'dead', isLive: false });
     const rows = buildRailRows([dead], { recentExpanded: false, now: NOW });

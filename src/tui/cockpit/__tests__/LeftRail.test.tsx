@@ -285,4 +285,45 @@ describe('LeftRail', () => {
     await vi.waitFor(() => expect(onSelectSession).toHaveBeenLastCalledWith(expect.objectContaining({ sessionId: 's1' })));
     unmount();
   });
+
+  it('re-sorts a session to the top and renders ⚠ <needs> when a daemon join blocks it (Phase C)', async () => {
+    const s1 = session('s1', { started: '2026-07-01T00:03:00Z' });
+    const s2 = session('s2', { started: '2026-07-01T00:02:00Z' });
+    const s3 = session('s3', { started: '2026-07-01T00:01:00Z' });
+    const { lastFrame, rerender, unmount } = render(
+      <MouseProvider>
+        <LeftRail
+          contentRect={{ x: 0, y: 0, width: 30, height: 20 }}
+          sessions={[s1, s2, s3]}
+          selectedSessionId="s3"
+          focused
+          onSelectSession={vi.fn()}
+        />
+      </MouseProvider>,
+    );
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    // s3 becomes daemon-blocked with a `needs` reason -> it re-sorts to the
+    // TOP (rows: header, s3, s1, s2, RECENT) and renders the specific ⚠ text.
+    const s3Blocked = { ...s3, state: 'blocked' as const, needs: 'permission: Bash' };
+    rerender(
+      <MouseProvider>
+        <LeftRail
+          contentRect={{ x: 0, y: 0, width: 30, height: 20 }}
+          sessions={[s1, s2, s3Blocked]}
+          selectedSessionId="s3"
+          focused
+          onSelectSession={vi.fn()}
+        />
+      </MouseProvider>,
+    );
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    const f = lastFrame() ?? '';
+    expect(f).toContain('⚠ permission: Bash');
+    const rows = buildRailRows([s1, s2, s3Blocked], { recentExpanded: false, now: Date.now() });
+    const sessionRows = rows.filter((r) => r.kind === 'session');
+    expect(sessionRows[0]?.session.sessionId).toBe('s3');
+    unmount();
+  });
 });

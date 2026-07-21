@@ -60,6 +60,8 @@
     "src/tui/cockpit/__tests__/actions.test.tsx",
     "src/tui/cockpit/__tests__/Cockpit.test.tsx",
     "src/tui/sessions/__tests__/feed.test.ts",
+    "src/tui/cockpit/__tests__/railTypes.test.ts",
+    "src/tui/cockpit/__tests__/LeftRail.test.tsx",
     "src/tui/tmux/__tests__/launch.test.ts",
     "src/tui/claude-agents/__tests__/launch.test.ts",
     "src/commands/__tests__/tui.test.ts",
