@@ -45,16 +45,22 @@ function listWorkflowFiles(dir: string): string[] {
   return entries.filter((f) => f.endsWith('.md') && !f.startsWith('.')).sort();
 }
 
-/** A live `config.md` block that would collide with the per-file dir. */
-function hasConfigBlock(config: WorkflowLibraryConfigInput): boolean {
-  const hasWorkflows = !!config.workflows && Object.keys(config.workflows).length > 0;
-  const hasStatuses = config.statuses !== null && config.statuses !== undefined;
-  if (hasWorkflows || hasStatuses) return true;
-  // An empty/unparseable physical `statuses:`/`workflows:` block still occupies
-  // config.md as a colliding second source, but `parseStatusConfig` /
-  // `parseWorkflowsConfig` return null for those — so the in-memory config does
-  // not reflect it. Detect the raw frontmatter block, mirroring the doctor
-  // `single-status-source` regex.
+/**
+ * A live `config.md` block that would collide with the per-file dir.
+ *
+ * Decided by the PHYSICAL ambient config.md ONLY — never by the caller's
+ * in-memory config object. The dir is ambient state (`syntaurRoot()`), so the
+ * colliding block must be judged from the same root: an injected config that
+ * came from anywhere else (a test fixture, a stale pre-migration cache in a
+ * long-running dashboard) says nothing about whether THIS machine is
+ * dual-sourced. Trusting the object produced false DUAL_SOURCE errors after
+ * the 2026-07-21 live migration (fixture config block + the real migrated
+ * dir), and would brick a stale-config dashboard instead of letting the dir
+ * win — the correct post-migration outcome. The physical check also catches
+ * empty/unparseable blocks the parsers return null for (mirroring the doctor
+ * `single-status-source` regex), so it is strictly the stronger signal.
+ */
+function hasConfigBlock(): boolean {
   return configFileHasPhysicalBlock();
 }
 
@@ -100,17 +106,19 @@ function dirSignature(dir: string, files: string[]): string {
  * per-file parse issues. Shared spine of {@link loadWorkflowLibrary} /
  * {@link loadWorkflowIssues}.
  *
- * - dir has files **and** a `config.md` block → **throws** {@link DUAL_SOURCE_ERROR}.
+ * - dir has files **and** a PHYSICAL ambient `config.md` block → **throws**
+ *   {@link DUAL_SOURCE_ERROR} (the injected config object is never consulted
+ *   for this — see {@link hasConfigBlock}).
  * - dir has files (no block) → parse each `<id>.md`, keyed by its FILENAME stem
  *   (the authoritative on-disk identity — unique per dir, referenced by bindings,
  *   and what `writeWorkflowFile` writes).
  * - dir absent/empty → empty (legacy ladder library untouched; see module note).
  */
-function loadWorkflows(config: WorkflowLibraryConfigInput): LoadedWorkflows {
+function loadWorkflows(_config: WorkflowLibraryConfigInput): LoadedWorkflows {
   const dir = workflowsDir();
   const files = listWorkflowFiles(dir);
 
-  if (files.length > 0 && hasConfigBlock(config)) {
+  if (files.length > 0 && hasConfigBlock()) {
     throw new Error(DUAL_SOURCE_ERROR);
   }
   if (files.length === 0) return { library: {}, issues: {} };

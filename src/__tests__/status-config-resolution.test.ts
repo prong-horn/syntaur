@@ -17,6 +17,12 @@ import {
 } from '../lifecycle/workflow-context.js';
 import { buildDefaultStatusConfig } from '../utils/status-defaults.js';
 import type { WorkflowDefinition } from '../utils/config.js';
+import { useHermeticSyntaurHome } from './hermetic-root.js';
+
+// Hermetic root: these tests pass fixture configs; without a sandboxed
+// SYNTAUR_HOME they read the developer’s real ~/.syntaur (ambient workflows
+// dir + stages-migrated marker) — false DUAL_SOURCE errors post-2026-07-21.
+useHermeticSyntaurHome();
 
 let root: string;
 let projectsDir: string;

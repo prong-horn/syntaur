@@ -342,7 +342,14 @@ describe('doctor: workflows.single-workflow-source + workflows.stage-structure',
 
   it('single-workflow-source: errors when a per-file dir and a config workflows: block both exist', async () => {
     await writeWorkflowFile('feature', goodWf);
-    // configWith supplies a workflows: block → dual source.
+    // Dual-source is judged from the PHYSICAL ambient config.md (an injected
+    // in-memory config proves nothing about this machine — see the loader's
+    // hasConfigBlock), so seed the real block alongside the dir.
+    await writeFile(
+      join(home, 'config.md'),
+      '---\nversion: "2.0"\nworkflows:\n  default:\n    label: D\n---\n',
+      'utf-8',
+    );
     const r = await runCheck(dualCheck, configWith({}));
     expect(r.status).toBe('error');
     expect(r.detail).toContain('config.md');
@@ -391,7 +398,13 @@ describe('doctor: workflows.single-workflow-source + workflows.stage-structure',
 
   it('stage-structure: skips (not errors) when the library is unreadable (dual source)', async () => {
     await writeWorkflowFile('feature', goodWf);
-    const r = await runCheck(structureCheck, configWith({})); // config block + dir → throws
+    // Physical block + dir = the real dual-source brick the loader throws on.
+    await writeFile(
+      join(home, 'config.md'),
+      '---\nversion: "2.0"\nworkflows:\n  default:\n    label: D\n---\n',
+      'utf-8',
+    );
+    const r = await runCheck(structureCheck, configWith({}));
     expect(r.status).toBe('skipped');
   });
 

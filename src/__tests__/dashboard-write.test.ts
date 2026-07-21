@@ -8,6 +8,12 @@ import { createWriteRouter, worktreeInFlight, setTopLevelField } from '../dashbo
 import { parseAssignmentFrontmatter } from '../lifecycle/frontmatter.js';
 import { parseComments } from '../dashboard/parser.js';
 import { formatCommentEntry } from '../templates/comments.js';
+import { useHermeticSyntaurHome } from './hermetic-root.js';
+
+// Hermetic root: these tests pass fixture configs; without a sandboxed
+// SYNTAUR_HOME they read the developer’s real ~/.syntaur (ambient workflows
+// dir + stages-migrated marker) — false DUAL_SOURCE errors post-2026-07-21.
+useHermeticSyntaurHome();
 
 let testDir: string;
 

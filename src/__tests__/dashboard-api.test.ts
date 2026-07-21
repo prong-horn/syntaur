@@ -24,6 +24,12 @@ import {
 } from '../dashboard/session-db.js';
 import { compileQuery } from '../utils/query/index.js';
 import { boardItemToQueryItem } from '../../dashboard/src/lib/queryFilter';
+import { useHermeticSyntaurHome } from './hermetic-root.js';
+
+// Hermetic root: these tests pass fixture configs; without a sandboxed
+// SYNTAUR_HOME they read the developer’s real ~/.syntaur (ambient workflows
+// dir + stages-migrated marker) — false DUAL_SOURCE errors post-2026-07-21.
+useHermeticSyntaurHome();
 
 let testDir: string;
 

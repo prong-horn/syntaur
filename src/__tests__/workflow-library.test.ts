@@ -76,14 +76,29 @@ describe('loadWorkflowLibrary — single-source per-file loader (WS-0, D1)', () 
     expect(loadWorkflowLibrary(config)).toEqual({});
   });
 
-  it('(c) both a per-file dir AND a config block → hard-errors (no dual-source window)', async () => {
+  it('(c) both a per-file dir AND a PHYSICAL config.md block → hard-errors (no dual-source window)', async () => {
+    await writeWorkflowFile('feature', FEATURE_MD);
+    await writeFile(
+      resolve(home, 'config.md'),
+      '---\nversion: "2.0"\nworkflows:\n  default:\n    label: D\n---\n',
+      'utf-8',
+    );
+    expect(() => loadWorkflowLibrary(emptyConfig)).toThrow(DUAL_SOURCE_ERROR);
+  });
+
+  it('(c) an INJECTED config block does NOT trip dual-source when the ambient config.md has none', async () => {
+    // The dir is AMBIENT state, so the colliding block is judged from the
+    // ambient config.md only. An injected config that came from anywhere else
+    // (a test fixture, a stale pre-migration cache in a long-running dashboard)
+    // says nothing about this machine — post-2026-07-21-migration, trusting it
+    // produced false DUAL_SOURCE errors in 16 unsandboxed tests, and would have
+    // bricked a stale-config dashboard instead of letting the dir win.
     await writeWorkflowFile('feature', FEATURE_MD);
     const withWorkflows: WorkflowLibraryConfigInput = { workflows: { default: {} }, statuses: null };
-    expect(() => loadWorkflowLibrary(withWorkflows)).toThrow(DUAL_SOURCE_ERROR);
+    expect(Object.keys(loadWorkflowLibrary(withWorkflows))).toEqual(['feature']); // dir wins
 
-    // The legacy `statuses:` block is equally a colliding second source.
     const withStatuses: WorkflowLibraryConfigInput = { workflows: null, statuses: { statuses: [] } };
-    expect(() => loadWorkflowLibrary(withStatuses)).toThrow(DUAL_SOURCE_ERROR);
+    expect(Object.keys(loadWorkflowLibrary(withStatuses))).toEqual(['feature']);
   });
 
   it('(c) also errors on an EMPTY/unparseable physical config block the in-memory config misses', async () => {
