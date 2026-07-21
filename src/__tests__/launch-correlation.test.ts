@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -19,6 +19,12 @@ import {
   cancelLaunch,
   getLaunchReservation,
 } from '../dashboard/agent-sessions.js';
+import { writeJobState } from '../daemon/jobs.js';
+import { launchSyntaurd } from '../tui/syntaurd/launch.js';
+import { loadSessions } from '../tui/sessions/feed.js';
+import { buildRailRows } from '../tui/cockpit/railTypes.js';
+import type { AgentConfig } from '../utils/config.js';
+import type { JobState } from '../daemon/types.js';
 
 let testDir: string;
 let dbPath: string;
@@ -561,5 +567,425 @@ describe('launch_reservations lifecycle', () => {
     reserveLaunch({ launchId: LAUNCH_ID, hostedBy: 'syntaurd', expectedSessionId: 'real-A' });
     const all = await listAllSessions('');
     expect(all.find((s) => s.sessionId === LAUNCH_ID)).toBeUndefined();
+  });
+});
+
+// ── End-to-end: real db + real launchSyntaurd/registerRow/consumeLaunchMarkers
+// composed together, fakes ONLY at the daemon-request seam (Phase C Task 17).
+// This is AC8's proof that Phase B's residuals actually close when the real
+// pieces run together, not just in isolation (T15/T16's unit-level coverage).
+describe('pending-launch reservation — end to end (Phase C Task 17)', () => {
+  const claudeAgent: AgentConfig = { id: 'claude', label: 'Claude', command: 'claude' };
+  const claudeAliasAgent: AgentConfig = { ...claudeAgent, resolveFromShellAliases: true };
+  const codexAgent: AgentConfig = { id: 'codex', label: 'Codex', command: 'codex' };
+  const basePlan = { command: 'claude', args: ['hi'], cwd: '/w' };
+
+  let prevRuntimeDir: string | undefined;
+  beforeEach(() => {
+    // The real (uninjected) findSession probe consults the daemon socket
+    // pointer on every ambiguous-rejection path below (b1-b3, c, e) —
+    // redirect it into the tmp home so these tests never brush against a
+    // REAL syntaurd that happens to be running on this machine.
+    prevRuntimeDir = process.env.SYNTAUR_RUNTIME_DIR;
+    process.env.SYNTAUR_RUNTIME_DIR = resolve(testDir, 'runtime');
+  });
+  afterEach(() => {
+    if (prevRuntimeDir === undefined) delete process.env.SYNTAUR_RUNTIME_DIR;
+    else process.env.SYNTAUR_RUNTIME_DIR = prevRuntimeDir;
+  });
+
+  /** A durable jobs-dir record for the ambiguous-recovery poll — mirrors launch.test.ts's fixture. */
+  function jobStateFixture(overrides: Partial<JobState> = {}): JobState {
+    return {
+      short: 'jjb1234',
+      agent: 'codex',
+      argv: ['codex', 'hi'],
+      cwd: '/w',
+      state: 'working',
+      pid: 999,
+      pidStartedAt: null,
+      sessionId: 'b-fixed-id',
+      cols: 80,
+      rows: 24,
+      createdAt: '2026-07-16T00:00:00.000Z',
+      updatedAt: '2026-07-16T00:00:00.000Z',
+      daemonId: 'd1',
+      ptySock: '/tmp/jjb1234.pty.sock',
+      rvSock: '/tmp/jjb1234.rv.sock',
+      hostPid: process.pid,
+      hostPidStartedAt: null,
+      ...overrides,
+    };
+  }
+
+  // sabotage-verified: commented out `pid = COALESCE(excluded.pid, pid)` in
+  // appendSession's ON CONFLICT clause (session-db.ts's upsert). Row count
+  // stayed 1 — session_id is a PRIMARY KEY, so a literal second row is
+  // structurally impossible regardless — but the `pid` assertion below
+  // failed (stayed NULL instead of 4242): launchSyntaurd's own registerRow
+  // call could no longer fill it onto the hook's already-created row. The
+  // guarantee this test actually isolates is the upsert's write-if-null
+  // MERGE onto the same row, not the row count (which the schema already
+  // guarantees). Restored after confirming; no sabotage code is committed.
+  it('(a) hook-wins-race BOUND: the hook row and the launch placeholder are the SAME upsert target — exactly one row', async () => {
+    const FIXED_ID = 'a-fixed-id';
+    const request = vi.fn(async () => {
+      // Simulates the agent's session-registration hook, which runs (and
+      // completes) strictly before the daemon reply resolves — no timers.
+      process.env.SYNTAUR_LAUNCH_ID = FIXED_ID;
+      process.env.SYNTAUR_HOSTED_BY = 'syntaurd';
+      const markers = await consumeLaunchMarkers(FIXED_ID); // REAL — Branch A, claims 'won'
+      await appendSession('', {
+        sessionId: FIXED_ID,
+        agent: 'claude',
+        started: '2026-07-16T00:00:00.000Z',
+        status: 'active',
+        path: '/w',
+        projectSlug: null,
+        assignmentSlug: null,
+        ...markers,
+      });
+      return { ok: true as const, short: 's1', pid: 4242 };
+    });
+
+    await launchSyntaurd({
+      plan: basePlan,
+      name: 'proj/a1',
+      agent: claudeAgent,
+      projectSlug: 'proj',
+      assignmentSlug: 'a1',
+      request,
+      generateSessionId: () => FIXED_ID,
+    });
+
+    const db = getSessionDb();
+    const count = (db.prepare('SELECT COUNT(*) AS n FROM sessions').get() as { n: number }).n;
+    expect(count).toBe(1);
+    const row = db.prepare('SELECT session_id, hosted_by, pid FROM sessions').get() as {
+      session_id: string;
+      hosted_by: string | null;
+      pid: number | null;
+    };
+    expect(row.session_id).toBe(FIXED_ID);
+    expect(row.hosted_by).toBe('syntaurd');
+    expect(row.pid).toBe(4242);
+  });
+
+  it('(a2) hook-wins-race UNBOUND (shell-alias): the documented OPEN residual — two rows, claimed_by stays NULL (review r2 F1, excluded mode)', async () => {
+    const FIXED_ID = 'a2-fixed-id';
+    const REAL_CLAUDE_ID = 'a2-real-claude-id';
+    const request = vi.fn(async () => {
+      process.env.SYNTAUR_LAUNCH_ID = FIXED_ID;
+      process.env.SYNTAUR_HOSTED_BY = 'syntaurd';
+      // The hook id (from the launch) differs from the real registration id:
+      // a shell-alias claude generates its OWN session id, never told the
+      // cockpit's launch id via --session-id (canInjectClaudeSessionId is false).
+      const markers = await consumeLaunchMarkers(REAL_CLAUDE_ID);
+      await appendSession('', {
+        sessionId: REAL_CLAUDE_ID,
+        agent: 'claude',
+        started: '2026-07-16T00:00:00.000Z',
+        status: 'active',
+        path: '/w',
+        projectSlug: null,
+        assignmentSlug: null,
+        ...markers,
+      });
+      return { ok: true as const, short: 's2', pid: 4343 };
+    });
+
+    await launchSyntaurd({
+      plan: { command: '/bin/zsh', args: ['-i', '-c', "claude 'hi'"], cwd: '/w' },
+      name: 'proj/a1',
+      agent: claudeAliasAgent, // non-injectable — expectedSessionId is null (unbound)
+      projectSlug: 'proj',
+      assignmentSlug: 'a1',
+      request,
+      generateSessionId: () => FIXED_ID,
+    });
+
+    const all = await listAllSessions('');
+    expect(all).toHaveLength(2); // the documented, deliberately-open residual
+
+    const placeholder = all.find((s) => s.sessionId === FIXED_ID);
+    expect(placeholder).toBeDefined();
+    expect(placeholder?.pid).toBe(4343); // pty-host pid — the self-heal signal for the scanner sweep
+    expect(placeholder?.hostedBy).toBe('syntaurd');
+
+    const real = all.find((s) => s.sessionId === REAL_CLAUDE_ID);
+    expect(real).toBeDefined();
+    expect(real?.pid).toBeNull(); // untouched — the hook never learns the daemon pid
+
+    expect(getLaunchReservation(FIXED_ID)?.claimedBy).toBeNull();
+  });
+
+  // sabotage-verified: commented out the entire jobs-dir poll `for` loop in
+  // launchSyntaurd (launch.ts — the `readJobs()` / hostIdentity scan block
+  // inside the ambiguous-rejection catch). This test's real writeJobState
+  // evidence was then never consulted: launchSyntaurd rejected with the
+  // original dispatch error instead of resolving, and zero rows were
+  // registered. Restored after confirming; no sabotage code is committed.
+  it('(b1) daemon-death ambiguity: real jobs-dir evidence with a live host adopts — no double row, reservation stays uncanceled', async () => {
+    const FIXED_ID = 'b1-fixed-id';
+    writeJobState(jobStateFixture({ sessionId: FIXED_ID, hostPid: process.pid, hostPidStartedAt: null }));
+
+    const result = await launchSyntaurd({
+      plan: { command: 'codex', args: ['hi'], cwd: '/w' },
+      name: 'proj/a1',
+      agent: codexAgent,
+      projectSlug: 'proj',
+      assignmentSlug: 'a1',
+      request: vi.fn(async () => {
+        throw new Error('socket hang up');
+      }),
+      generateSessionId: () => FIXED_ID,
+    });
+
+    expect(result).toEqual({ short: 'jjb1234', sessionId: FIXED_ID, registered: true });
+    const all = await listAllSessions('');
+    expect(all.filter((s) => s.sessionId === FIXED_ID)).toHaveLength(1);
+    expect(all.find((s) => s.sessionId === FIXED_ID)?.pid).toBe(process.pid);
+    expect(getLaunchReservation(FIXED_ID)?.canceledAt).toBeNull();
+  });
+
+  it('(b2) daemon-death ambiguity: nothing landed (no job state) → degrades and cancels the reservation, zero rows', async () => {
+    const FIXED_ID = 'b2-fixed-id';
+    const err = new Error('socket hang up');
+
+    await expect(
+      launchSyntaurd({
+        plan: { command: 'codex', args: ['hi'], cwd: '/w' },
+        name: 'proj/a1',
+        agent: codexAgent,
+        projectSlug: 'proj',
+        assignmentSlug: 'a1',
+        request: vi.fn(async () => {
+          throw err;
+        }),
+        generateSessionId: () => FIXED_ID,
+      }),
+    ).rejects.toThrow(err);
+
+    expect(getLaunchReservation(FIXED_ID)?.canceledAt).toBeTruthy();
+    const all = await listAllSessions('');
+    expect(all.filter((s) => s.sessionId === FIXED_ID)).toHaveLength(0);
+  });
+
+  it('(b3) daemon-death ambiguity: a DEAD host pid in the jobs dir is not adopted — degrades and cancels, zero rows (review r2 F2)', async () => {
+    const FIXED_ID = 'b3-fixed-id';
+    const err = new Error('socket hang up');
+    writeJobState(jobStateFixture({ sessionId: FIXED_ID, hostPid: 999999999, hostPidStartedAt: null }));
+
+    await expect(
+      launchSyntaurd({
+        plan: { command: 'codex', args: ['hi'], cwd: '/w' },
+        name: 'proj/a1',
+        agent: codexAgent,
+        projectSlug: 'proj',
+        assignmentSlug: 'a1',
+        request: vi.fn(async () => {
+          throw err;
+        }),
+        generateSessionId: () => FIXED_ID,
+      }),
+    ).rejects.toThrow(err);
+
+    expect(getLaunchReservation(FIXED_ID)?.canceledAt).toBeTruthy();
+    const all = await listAllSessions('');
+    expect(all.filter((s) => s.sessionId === FIXED_ID)).toHaveLength(0);
+  });
+
+  it('(c) failed dispatch cancels the reservation; an immediate retry of a NEW identity succeeds, and retrying the SAME identity revives the canceled row (requirement 4, claim-protected)', async () => {
+    const FAIL_ID = 'c-fail-id';
+    await expect(
+      launchSyntaurd({
+        plan: basePlan,
+        name: 'proj/a1',
+        agent: claudeAgent,
+        projectSlug: 'proj',
+        assignmentSlug: 'a1',
+        request: vi.fn(async () => ({ ok: false as const, code: 'EEMPTYARGV', error: 'boom' })),
+        generateSessionId: () => FAIL_ID,
+      }),
+    ).rejects.toThrow(/daemon dispatch failed/);
+    expect(getLaunchReservation(FAIL_ID)?.canceledAt).toBeTruthy();
+    expect((await listAllSessions('')).find((s) => s.sessionId === FAIL_ID)).toBeUndefined();
+
+    // Immediate retry with a fresh identity: unaffected by the prior failure.
+    const NEW_ID = 'c-new-id';
+    const result = await launchSyntaurd({
+      plan: basePlan,
+      name: 'proj/a1',
+      agent: claudeAgent,
+      projectSlug: 'proj',
+      assignmentSlug: 'a1',
+      request: vi.fn(async () => ({ ok: true as const, short: 'ccnew1', pid: 5151 })),
+      generateSessionId: () => NEW_ID,
+    });
+    expect(result).toEqual({ short: 'ccnew1', sessionId: NEW_ID, registered: true });
+    expect((await listAllSessions('')).filter((s) => s.sessionId === NEW_ID)).toHaveLength(1);
+
+    // Same-identity variant: fail under a fresh id, then retry THAT SAME id —
+    // reserveLaunch must revive the canceled row rather than refuse it.
+    const SAME_ID = 'c-same-id';
+    await expect(
+      launchSyntaurd({
+        plan: basePlan,
+        name: 'proj/a1',
+        agent: claudeAgent,
+        projectSlug: 'proj',
+        assignmentSlug: 'a1',
+        request: vi.fn(async () => ({ ok: false as const, code: 'EEMPTYARGV', error: 'boom' })),
+        generateSessionId: () => SAME_ID,
+      }),
+    ).rejects.toThrow(/daemon dispatch failed/);
+    expect(getLaunchReservation(SAME_ID)?.canceledAt).toBeTruthy();
+
+    const result2 = await launchSyntaurd({
+      plan: basePlan,
+      name: 'proj/a1',
+      agent: claudeAgent,
+      projectSlug: 'proj',
+      assignmentSlug: 'a1',
+      request: vi.fn(async () => ({ ok: true as const, short: 'ccsame1', pid: 6161 })),
+      generateSessionId: () => SAME_ID,
+    });
+    expect(result2).toEqual({ short: 'ccsame1', sessionId: SAME_ID, registered: true });
+    const revived = getLaunchReservation(SAME_ID);
+    expect(revived?.canceledAt).toBeNull();
+    expect(revived?.claimedBy).toBeNull();
+    expect(revived?.expectedSessionId).toBe(SAME_ID); // reserveLaunch REVIVED the canceled row
+  });
+
+  it('(d) a reservation with no dispatch never surfaces in the feed or rail', async () => {
+    const ok = reserveLaunch({
+      launchId: 'd-launch-id',
+      hostedBy: 'syntaurd',
+      agent: 'claude',
+      cwd: '/w',
+      expectedSessionId: 'd-launch-id',
+    });
+    expect(ok).toBe(true);
+
+    const sessions = await loadSessions({
+      projectsDir: '',
+      agents: [claudeAgent],
+      livenessDeps: { isPidAlive: () => true, pidStartedAt: () => null },
+      agentViewDetailSource: async () => [],
+      syntaurdSessionSource: async () => [],
+    });
+    expect(sessions).toEqual([]); // reservations are never sessions rows
+
+    const rows = buildRailRows(sessions, { recentExpanded: true });
+    expect(rows.every((r) => r.kind === 'group-header')).toBe(true);
+    expect(rows).toHaveLength(2); // LIVE (0) + RECENT (0) headers only
+  });
+
+  it('(e) the TTL sweep runs on the real launchSyntaurd path, removing an abandoned reservation', async () => {
+    const db = getSessionDb();
+    db.prepare(
+      `INSERT INTO launch_reservations (launch_id, hosted_by, agent, cwd, expected_session_id, created_at)
+       VALUES (?, ?, ?, ?, ?, datetime('now', '-2 day'))`,
+    ).run('e-stale-launch', 'syntaurd', null, null, null);
+    expect(getLaunchReservation('e-stale-launch')).not.toBeNull();
+
+    await launchSyntaurd({
+      plan: { command: 'codex', args: ['hi'], cwd: '/w' },
+      name: 'proj/a1',
+      agent: codexAgent,
+      projectSlug: 'proj',
+      assignmentSlug: 'a1',
+      request: vi.fn(async () => ({ ok: true as const, short: 'eeok1', pid: 7171 })),
+      generateSessionId: () => 'e-launch-id',
+    });
+
+    expect(getLaunchReservation('e-stale-launch')).toBeNull();
+  });
+
+  it('(f1) intruder-AFTER: a subagent/track-session claim arriving after the root is refused — root row untouched, no stamp for the intruder (review r1 F1)', async () => {
+    const FIXED_ID = 'f1-fixed-id';
+    await insertPlaceholder(FIXED_ID); // pristine placeholder — never claimed
+    reserveLaunch({
+      launchId: FIXED_ID,
+      hostedBy: 'syntaurd',
+      agent: 'claude',
+      cwd: '/w/a',
+      expectedSessionId: FIXED_ID,
+    });
+    process.env.SYNTAUR_LAUNCH_ID = FIXED_ID;
+    process.env.SYNTAUR_HOSTED_BY = 'syntaurd';
+
+    // The root's real session id IS the launch id (Branch A --session-id
+    // injection) — reconcile no-ops (already at the target id) and the claim wins.
+    const rootMarkers = await consumeLaunchMarkers(FIXED_ID);
+    expect(rootMarkers).toEqual({ hostedBy: 'syntaurd' });
+    expect(getLaunchReservation(FIXED_ID)?.claimedBy).toBe(FIXED_ID);
+
+    // A subagent hook / `track-session --session-id <other>` inherits the SAME
+    // env and arrives AFTER the root.
+    const intruderMarkers = await consumeLaunchMarkers('f1-intruder-id');
+    expect(intruderMarkers).toEqual({}); // refused — no backend stamp
+    await appendSession('', {
+      sessionId: 'f1-intruder-id',
+      agent: 'claude',
+      started: '2026-07-16T00:01:00.000Z',
+      status: 'active',
+      path: '/w/b',
+      projectSlug: null,
+      assignmentSlug: null,
+      ...intruderMarkers,
+    });
+
+    const all = await listAllSessions('');
+    expect(all).toHaveLength(2); // ROW COUNT: root + the intruder's own unrelated row — nothing stolen
+    const root = all.find((s) => s.sessionId === FIXED_ID);
+    expect(root).toBeDefined();
+    expect(root?.hostedBy).toBe('syntaurd');
+    expect(root?.pid).toBe(4242); // insertPlaceholder's fixture pid, untouched
+    const intruder = all.find((s) => s.sessionId === 'f1-intruder-id');
+    expect(intruder).toBeDefined();
+    expect(intruder?.hostedBy).toBeNull(); // no stamp — the claim was refused
+    expect(countKeyedTo(FIXED_ID).engagement).toBe(1); // the root's engagement never moved
+  });
+
+  // sabotage-verified: dropping ONLY claimLaunch's pre-check
+  // (`if (row.expected_session_id !== realSessionId) return 'lost';`) does
+  // NOT fail this test — the CAS UPDATE's WHERE clause independently
+  // enforces the same identity match (the same double-guard Task 15 already
+  // documented at case (g) above). Dropping BOTH the pre-check AND the CAS
+  // WHERE's `AND expected_session_id = @real` DOES fail it: the intruder's
+  // claim then reads 'won', consumeLaunchMarkers reconciles the placeholder
+  // onto 'f2-intruder-id', and the root's later claim reads 'lost' — the
+  // root loses its own launch. Verified both combinations locally, reverted
+  // after confirming; no sabotage code is committed.
+  it('(f2) intruder-FIRST: a claim arriving before the root still loses — the root still wins arriving second (review r1 F1)', async () => {
+    const FIXED_ID = 'f2-fixed-id';
+    await insertPlaceholder(FIXED_ID);
+    reserveLaunch({
+      launchId: FIXED_ID,
+      hostedBy: 'syntaurd',
+      agent: 'claude',
+      cwd: '/w/a',
+      expectedSessionId: FIXED_ID,
+    });
+    process.env.SYNTAUR_LAUNCH_ID = FIXED_ID;
+    process.env.SYNTAUR_HOSTED_BY = 'syntaurd';
+
+    const intruderMarkers = await consumeLaunchMarkers('f2-intruder-id');
+    expect(intruderMarkers).toEqual({});
+    expect(getLaunchReservation(FIXED_ID)?.claimedBy).toBeNull(); // still unclaimed
+    let all = await listAllSessions('');
+    expect(all.find((s) => s.sessionId === FIXED_ID)).toBeDefined(); // placeholder untouched
+    expect(all.find((s) => s.sessionId === 'f2-intruder-id')).toBeUndefined(); // no row for the refused intruder
+
+    const rootMarkers = await consumeLaunchMarkers(FIXED_ID);
+    expect(rootMarkers).toEqual({ hostedBy: 'syntaurd' });
+    expect(getLaunchReservation(FIXED_ID)?.claimedBy).toBe(FIXED_ID);
+
+    all = await listAllSessions('');
+    expect(all).toHaveLength(1); // ROW COUNT: only the root's row
+    const root = all.find((s) => s.sessionId === FIXED_ID);
+    expect(root).toBeDefined();
+    expect(root?.hostedBy).toBe('syntaurd');
   });
 });
