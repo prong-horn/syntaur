@@ -348,6 +348,7 @@ interface TicketSpec {
   phase?: string | null;
   disposition?: string;
   blockedReason?: string;
+  workflow?: string;
   history?: Array<{ from: string | null; to: string }>;
   body?: string;
 }
@@ -365,6 +366,7 @@ function ticketMd(spec: TicketSpec): string {
   const phase = spec.phase === undefined ? '' : `phase: ${spec.phase ?? 'null'}\n`;
   const disposition = spec.disposition ? `disposition: ${spec.disposition}\n` : '';
   const blocked = spec.blockedReason ? `blockedReason: "${spec.blockedReason}"\n` : '';
+  const workflow = spec.workflow ? `workflow: ${spec.workflow}\n` : '';
   return `---
 id: id-${spec.slug}
 slug: ${spec.slug}
@@ -375,7 +377,7 @@ priority: medium
 created: "2026-06-01T00:00:00Z"
 updated: "2026-06-01T00:00:00Z"
 assignee: null
-${history}${phase}${disposition}${blocked}---
+${history}${phase}${disposition}${blocked}${workflow}---
 # T
 ${spec.body ?? '\n## Objective\n\nTBD\n\n## Acceptance Criteria\n\n- [ ] one\n'}`;
 }
@@ -604,6 +606,41 @@ describe('syntaur migrate-workflows — the command (T3–T6)', () => {
     expect(await readFile(join(home, 'config.md'), 'utf-8')).toMatch(/^workflows:\s*$/m);
     expect(await isStagesMigrated()).toBe(false);
     expect((await fmOf(asg('blocked-one'))).status).toBe('blocked');
+  });
+
+  it('post-strip re-run loads the relocated per-file set — a test-bound ticket is NOT reseeded into default stages (codex code-r1 blocker)', async () => {
+    await seedHome(
+      [...FIXTURES, { slug: 'test-bound', status: 'pending', phase: 'pending', workflow: 'test' }],
+      STANDALONE,
+    );
+    await migrateWorkflowsCommand({ root: home });
+    // Apply #1: `pending` is a valid stage of the relocated manual-only `test`
+    // workflow → the ticket is untouched.
+    expect((await fmOf(asg('test-bound'))).status).toBe('pending');
+    const testMdBefore = await readFile(join(home, 'workflows', 'test.md'), 'utf-8');
+
+    // Simulate a post-strip pre-marker crash: block gone, per-file set written,
+    // marker missing. The re-run must load the expected set from DISK (incl.
+    // `test`) — recompiling from the now-synthesized {default}-only library
+    // would shrink availableIds and reseed this ticket into a default stage.
+    await unlink(join(home, 'stages-migrated'));
+    invalidateWorkflowLibraryCache();
+    await migrateWorkflowsCommand({ root: home });
+
+    expect((await fmOf(asg('test-bound'))).status).toBe('pending'); // NOT draft
+    expect(await readFile(join(home, 'workflows', 'test.md'), 'utf-8')).toBe(testMdBefore);
+    expect(await isStagesMigrated()).toBe(true);
+  });
+
+  it('marker write is idempotent: a completed migration re-run leaves stages-migrated byte-identical', async () => {
+    await seedHome(FIXTURES, STANDALONE);
+    await migrateWorkflowsCommand({ root: home });
+    // Sentinel content: an idempotent marker write must not touch an existing
+    // marker (a rewrite would replace this with a fresh timestamp).
+    await writeFile(join(home, 'stages-migrated'), 'sentinel\n', 'utf-8');
+    invalidateWorkflowLibraryCache();
+    await migrateWorkflowsCommand({ root: home });
+    expect(await readFile(join(home, 'stages-migrated'), 'utf-8')).toBe('sentinel\n');
   });
 
   // ── T5: seeding (terminal-safe, validated) + pause remap ──────────────────
@@ -846,7 +883,11 @@ describe('AQL compat window (T7)', () => {
   it('`phase:` aliases to the stage (status) when the deprecated mirror is absent', () => {
     expect(evaluate('phase:ready_for_planning', engineItem)).toBe(true);
     expect(evaluate('phase:draft', engineItem)).toBe(false);
-    // With the mirror present (compat window), the mirror wins.
+    // The ACCESSOR prefers a present `phase` value — but post-marker the
+    // MATERIALIZATION layers (ls.ts loadQueryItem, api.ts deriveStatusVirtuals)
+    // set `phase := status`, so a query item never carries a stale mirror
+    // (preserved terminals keep e.g. frontmatter `phase: review` forever —
+    // codex code-r1). This item-level test only pins the accessor fallback.
     expect(evaluate('phase:review', { ...engineItem, phase: 'review' })).toBe(true);
   });
 

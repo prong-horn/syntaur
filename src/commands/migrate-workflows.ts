@@ -43,7 +43,7 @@ import { expandHome, syntaurRoot } from '../utils/paths.js';
 import { fileExists, writeFileForce } from '../utils/fs.js';
 import { getWorkflowBundle, getWorkflowLibrary, DEFAULT_WORKFLOW_ID } from '../utils/workflow-resolve.js';
 import { setDefaultWorkflowPointer, writeWorkflowFile } from '../utils/workflow-write.js';
-import { serializeWorkflowFile, workflowFilePath } from '../utils/workflow-file.js';
+import { parseWorkflowFile, serializeWorkflowFile, workflowFilePath } from '../utils/workflow-file.js';
 import { readProjectBinding, type ProjectWorkflowBinding } from '../utils/project-binding.js';
 import type { StageWorkflow, WorkflowStage } from '../utils/stage-model.js';
 import {
@@ -155,8 +155,9 @@ interface ExpectedWorkflow {
   id: string;
   workflow: StageWorkflow;
   content: string;
-  /** How it was produced — drives the report + seeding semantics. */
-  mode: 'compiled' | 'manual-only';
+  /** How it was produced — drives the report + seeding semantics. `relocated`
+   * = read verbatim from an already-migrated `<root>/workflows/<id>.md`. */
+  mode: 'compiled' | 'manual-only' | 'relocated';
   report?: LadderCompileReport;
 }
 
@@ -183,6 +184,62 @@ function buildExpectedWorkflows(config: {
     }
   }
   return out;
+}
+
+/**
+ * The expected per-file workflow set for THIS run. Post-strip (the `workflows:`
+ * block is gone but `<root>/workflows/` has files) the on-disk per-file
+ * workflows ARE the migrated truth — a re-run must load them VERBATIM, never
+ * recompile from the now-synthesized built-in library. Compiling would shrink
+ * `availableIds` to `{default}` and reseed every ticket bound to a relocated
+ * non-default workflow (e.g. `test`) into default stages — the codex code-review
+ * r1 blocker. With the block still present (first run, or a mid-relocation
+ * crash), compile from the config exactly as before.
+ */
+async function loadExpectedWorkflows(
+  config: {
+    workflows?: Record<string, WorkflowDefinition> | null;
+    statuses?: StatusConfig | null;
+  },
+  root: string,
+): Promise<ExpectedWorkflow[]> {
+  const hasBlock =
+    (config.workflows !== undefined &&
+      config.workflows !== null &&
+      Object.keys(config.workflows).length > 0) ||
+    (config.statuses !== undefined && config.statuses !== null);
+  if (!hasBlock) {
+    const dir = resolve(root, 'workflows');
+    let files: string[] = [];
+    try {
+      files = (await readdir(dir)).filter((f) => f.endsWith('.md')).sort();
+    } catch {
+      files = [];
+    }
+    if (files.length > 0) {
+      const out: ExpectedWorkflow[] = [];
+      for (const file of files) {
+        const raw = await readFile(resolve(dir, file), 'utf-8');
+        const { workflow, issues } = parseWorkflowFile(raw);
+        if (issues.length > 0) {
+          throw new Error(
+            `relocated workflow ${resolve(dir, file)} has structural issues (${issues.join('; ')}) — ` +
+              `refusing to seed against it. Fix the file and re-run.`,
+          );
+        }
+        out.push({ id: workflow.id ?? file.replace(/\.md$/, ''), workflow, content: raw, mode: 'relocated' });
+      }
+      return out;
+    }
+  }
+  return buildExpectedWorkflows(config);
+}
+
+/** Terminal stage ids straight from the stage model — authoritative in every
+ * mode (compiled, manual-only, and relocated-from-disk, where a config-derived
+ * DeriveContext would wrongly describe the synthesized built-in default). */
+function workflowTerminalIds(workflow: StageWorkflow): Set<string> {
+  return new Set(workflow.stages.filter((s) => s.terminal).map((s) => s.id));
 }
 
 // ── Target walk (mirrors migrate-derive.ts, incl. standalone) ────────────────
@@ -258,7 +315,11 @@ export async function computeSeedDecision(
 
   // Terminal preservation (round-1 blocker 2): `status` verbatim, NEVER
   // reseeded from `phase` (89 live completed tickets carry `phase: review`).
-  if (ctx.terminalStatuses.has(fm.status)) {
+  // Terminal ids come from the STAGE MODEL (union with the derive context) —
+  // in relocated-from-disk mode the config-derived ctx describes the
+  // synthesized built-in, not this workflow (codex code-review r1).
+  const terminals = new Set([...workflowTerminalIds(workflow), ...ctx.terminalStatuses]);
+  if (terminals.has(fm.status)) {
     return {
       target,
       row: { ref: target.ref, before: fm.status, after: fm.status, kind: 'preserved-terminal' },
@@ -266,7 +327,7 @@ export async function computeSeedDecision(
   }
 
   const stageIds = new Set(workflow.stages.map((s) => s.id));
-  const flags = flagStatusIds(ctx);
+  const flags = new Set([...Object.keys(workflow.flags ?? {}), ...flagStatusIds(ctx)]);
 
   // stage := phase ?? last-non-flag statusHistory.to ?? placeTicket() — each
   // candidate validated against the compiled stage set; an orphan/deleted id
@@ -335,11 +396,17 @@ export async function migrateWorkflowsCommand(options: MigrateWorkflowsOptions):
 
   const config = await readConfig();
   const originalDefault = config.defaultWorkflow ?? DEFAULT_WORKFLOW_ID;
-  const expected = buildExpectedWorkflows(config);
+  const expected = await loadExpectedWorkflows(config, root);
 
   // ── Compile report (T1/T2 output + D1 note) — printed in BOTH modes ───────
   const mode = options.dryRun ? '[dry-run] ' : '';
   for (const wf of expected) {
+    if (wf.mode === 'relocated') {
+      console.log(
+        `${mode}workflow "${wf.id}": already relocated — using ~/.syntaur/workflows/${wf.id}.md verbatim (re-run).`,
+      );
+      continue;
+    }
     if (wf.mode === 'manual-only') {
       console.log(
         `${mode}workflow "${wf.id}": transitions block (state machine) → relocated verbatim, MANUAL-ONLY ` +
@@ -473,8 +540,11 @@ export async function migrateWorkflowsCommand(options: MigrateWorkflowsOptions):
   // ── Apply: seeding + pause remap via the migration-only writer (T5) ───────
   // Terminal race guard: if a ticket reached a terminal status between the
   // pre-pass and the locked write, preserve it verbatim (any workflow's set).
+  // Union of the derive contexts AND every expected workflow's stage-model
+  // terminals (authoritative for relocated-from-disk workflows).
   const isAnyTerminal = (status: string): boolean => {
     for (const ctx of contextByWorkflow.values()) if (ctx.terminalStatuses.has(status)) return true;
+    for (const e of expected) if (workflowTerminalIds(e.workflow).has(status)) return true;
     return false;
   };
   for (const d of decisions) {

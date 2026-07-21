@@ -8,6 +8,7 @@ import { parseAssignmentFrontmatter } from '../lifecycle/frontmatter.js';
 import { computeFacts } from '../lifecycle/facts.js';
 import { buildQueryRegistry } from '../lifecycle/derive.js';
 import { resolveDeriveContext } from '../lifecycle/recompute.js';
+import { isStagesMigrated } from '../utils/stages-marker.js';
 import { compileQuery, type QueryItem } from '../utils/query/index.js';
 import type { FactDeclaration } from '../utils/config.js';
 import type { AssignmentBoardItem } from '../dashboard/types.js';
@@ -125,10 +126,15 @@ export async function runLs(
       console.error(`Warning: at ${w.pos}: ${w.message}`);
     }
     const now = Date.now();
+    // Post-migration the stage IS `status`: the `phase` alias must resolve to
+    // it, not the stale frontmatter mirror — preserved-terminal tickets keep
+    // e.g. `phase: review` verbatim forever (codex code-review r1). Pre-marker
+    // the ladder's cached `phase` remains the real value.
+    const stagesMigrated = await isStagesMigrated();
     const enriched = await Promise.all(
       items.map(async (item) => ({
         item,
-        q: await loadQueryItem(item, context.terminalStatuses, now, context.factDeclarations),
+        q: await loadQueryItem(item, context.terminalStatuses, now, context.factDeclarations, stagesMigrated),
       })),
     );
     items = enriched.filter(({ q }) => q !== null && query.predicate(q, { now })).map(({ item }) => item);
@@ -147,6 +153,7 @@ async function loadQueryItem(
   terminalStatuses: ReadonlySet<string>,
   now: number,
   declarations: FactDeclaration[],
+  stagesMigrated: boolean,
 ): Promise<QueryItem | null> {
   const path = assignmentMdPath(item);
   if (!(await fileExists(path))) return null;
@@ -171,7 +178,10 @@ async function loadQueryItem(
     return {
       ...facts,
       status: fm.status,
-      phase: fm.phase,
+      // Post-marker the stage IS the status; the frontmatter `phase` is only a
+      // mirror (stale forever on preserved terminals). Pre-marker it is the
+      // ladder's real cached phase.
+      phase: stagesMigrated ? fm.status : fm.phase,
       disposition: fm.disposition,
       priority: fm.priority,
       type: fm.type,
@@ -184,7 +194,9 @@ async function loadQueryItem(
       updated: fm.updated,
       completedAt,
       statusAge,
-      phaseAge,
+      // Post-marker `phaseTo` entries stop being written, so the frontmatter-
+      // derived phaseAge freezes — the deprecated alias falls to statusAge.
+      phaseAge: stagesMigrated ? statusAge : phaseAge,
       // Mirror the dashboard haystack (queryFilter.ts boardItemToQueryItem) so
       // `search:` behaves identically on the CLI and the dashboard. The shared
       // `search` field reads `searchText ?? title`; `title:` stays title-only.

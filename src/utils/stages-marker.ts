@@ -23,5 +23,10 @@ export async function isStagesMigrated(): Promise<boolean> {
 }
 
 export async function markStagesMigrated(): Promise<void> {
-  await writeFileForce(resolve(syntaurRoot(), STAGES_MARKER), `${nowTimestamp()}\n`);
+  // Idempotent: a completed migration re-run must be a true no-op (codex code
+  // review r1) — rewriting the timestamp would make re-runs observable state
+  // changes and snapshot-based recovery checks timing-dependent.
+  const marker = resolve(syntaurRoot(), STAGES_MARKER);
+  if (await fileExists(marker)) return;
+  await writeFileForce(marker, `${nowTimestamp()}\n`);
 }

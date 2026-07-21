@@ -2,6 +2,8 @@ import { readdir, readFile, writeFile, stat } from 'node:fs/promises';
 import { resolve, dirname, basename } from 'node:path';
 import { getTargetStatus, DEFAULT_TRANSITION_TABLE, buildTransitionTable } from '../lifecycle/index.js';
 import { getWorkflowLibrary, resolveWorkflowId } from '../utils/workflow-resolve.js';
+import { isStagesMigrated } from '../utils/stages-marker.js';
+import type { StageWorkflow } from '../utils/stage-model.js';
 import { readProjectBinding, type ProjectWorkflowBinding } from '../utils/project-binding.js';
 import { fileExists, writeFileForce } from '../utils/fs.js';
 import { nowTimestamp } from '../utils/timestamp.js';
@@ -482,7 +484,22 @@ export async function getStatusConfig(workflowId = 'default'): Promise<ResolvedS
   const cached = _cachedConfigs.get(workflowId);
   if (cached) return cached;
   const config = await readConfig();
-  const resolved = resolveWorkflowStatusConfig(config, workflowId);
+  // Warm the sync marker peek used by deriveStatusVirtuals — every record
+  // materialization flow awaits a getStatusConfig() before building virtuals.
+  if (_stagesMigratedCache === null) _stagesMigratedCache = await isStagesMigrated();
+  // Post-migration the config block is gone: a per-file StageWorkflow is the
+  // source of truth for this id. Without this, getStatusConfig('test') fell
+  // through to the built-in DEFAULT statuses/transitions and non-default
+  // workflow tickets got default lifecycle affordances (codex code-review r1).
+  let resolved: ResolvedStatusConfig | null = null;
+  const explicitBundle =
+    config.workflows?.[workflowId] ?? (workflowId === 'default' ? config.statuses : null) ?? null;
+  if (!explicitBundle) {
+    const { loadWorkflowLibrary } = await import('../utils/workflow-library.js');
+    const stageWorkflow = loadWorkflowLibrary(config)[workflowId];
+    if (stageWorkflow) resolved = stageWorkflowStatusConfig(workflowId, stageWorkflow);
+  }
+  resolved ??= resolveWorkflowStatusConfig(config, workflowId);
   _cachedConfigs.set(workflowId, resolved);
   return resolved;
 }
@@ -490,6 +507,44 @@ export async function getStatusConfig(workflowId = 'default'): Promise<ResolvedS
 export function clearStatusConfigCache(): void {
   _cachedConfigs.clear();
   _cachedWorkflowMeta = null;
+  _stagesMigratedCache = null;
+}
+
+/** Sync peek for materialization helpers (deriveStatusVirtuals) — warmed by
+ * getStatusConfig, reset with the config caches. `false` = pre-marker
+ * behavior, the safe default. */
+let _stagesMigratedCache: boolean | null = null;
+
+/** Materialize the dashboard status-config view from a per-file StageWorkflow
+ * (post-migration). The ENGINE owns movement for stage workflows (WS-2 rejects
+ * legacy transition commands on engine-active tickets), so no legacy transition
+ * table is synthesized — an empty table means the board offers no legacy
+ * affordances for these tickets. */
+function stageWorkflowStatusConfig(workflowId: string, wf: StageWorkflow): ResolvedStatusConfig {
+  const statuses = wf.stages.map((s) => ({
+    id: s.id,
+    label: s.label ?? toTitleCase(s.id),
+    ...(s.color ? { color: s.color } : {}),
+    ...(s.terminal ? { terminal: true } : {}),
+  }));
+  const terminalSet = new Set(wf.stages.filter((s) => s.terminal).map((s) => s.id));
+  return {
+    workflowId,
+    label: wf.label ?? (workflowId === 'default' ? 'Default' : toTitleCase(workflowId)),
+    custom: true,
+    statuses,
+    order: wf.stages.map((s) => s.id),
+    transitions: [],
+    transitionTable: new Map(),
+    rawTransitions: [],
+    transitionsCustom: true,
+    terminalStatuses: terminalSet.size > 0 ? terminalSet : new Set(['completed', 'failed']),
+    derive: null,
+    facts: null,
+    factDeclarations: [],
+    deriveRegistry: buildDeriveRegistry([]),
+    queryRegistry: buildQueryRegistry([]),
+  };
 }
 
 /** Cached workflow-library meta (available ids + global default) so per-ticket
@@ -2373,8 +2428,12 @@ function deriveStatusVirtuals(
   return {
     completedAt,
     statusAge,
-    phaseAge,
-    phase: assignment.phase,
+    // Post-marker the stage IS `status` — the frontmatter `phase` mirror is
+    // stale forever on preserved terminals (89 completed carry phase: review),
+    // and `phaseTo` history entries stop being written so phaseAge freezes.
+    // Sync peek warmed by getStatusConfig; false = pre-marker behavior.
+    phaseAge: _stagesMigratedCache ? statusAge : phaseAge,
+    phase: _stagesMigratedCache ? assignment.status : assignment.phase,
     disposition: assignment.disposition,
     pinned: assignment.override !== null,
   };

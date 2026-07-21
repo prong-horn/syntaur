@@ -6,7 +6,8 @@ import express from 'express';
 import type { AddressInfo } from 'node:net';
 import type { Server } from 'node:http';
 import { createWorkflowConfigRouter } from '../dashboard/api-status-config.js';
-import { clearStatusConfigCache } from '../dashboard/api.js';
+import { clearStatusConfigCache, getStatusConfig } from '../dashboard/api.js';
+import { invalidateWorkflowLibraryCache } from '../utils/workflow-library.js';
 
 const originalHome = process.env.HOME;
 const originalSyntaurHome = process.env.SYNTAUR_HOME;
@@ -193,10 +194,31 @@ describe('post-migration workflow routes (WS-3)', () => {
     expect((await dup.json()).error).toBe('workflows-migrated');
 
     // No route recreated a config block — the per-file loader stays healthy.
-    const { loadWorkflowLibrary, invalidateWorkflowLibraryCache } = await import(
-      '../utils/workflow-library.js'
-    );
+    const { loadWorkflowLibrary } = await import('../utils/workflow-library.js');
     invalidateWorkflowLibraryCache();
     expect(() => loadWorkflowLibrary({ workflows: null, statuses: null })).not.toThrow();
+  });
+});
+
+describe('getStatusConfig — per-file StageWorkflow fallback (post-migration)', () => {
+  it('resolves a per-file workflow (no config block) to ITS stages, not built-in defaults (codex code-r1)', async () => {
+    const wfDir = join(tmpHome, '.syntaur', 'workflows');
+    await mkdir(wfDir, { recursive: true });
+    await writeFile(
+      join(wfDir, 'test.md'),
+      'id: test\nlabel: Test\nstages:\n  - id: pending\n  - id: in_progress\n  - id: completed\n    terminal: true\n  - id: failed\n    terminal: true\n',
+    );
+    invalidateWorkflowLibraryCache();
+    clearStatusConfigCache();
+
+    const cfg = await getStatusConfig('test');
+    expect(cfg.statuses.map((s) => s.id)).toEqual(['pending', 'in_progress', 'completed', 'failed']);
+    expect([...cfg.terminalStatuses].sort()).toEqual(['completed', 'failed']);
+    expect(cfg.label).toBe('Test');
+    // Engine-owned workflow: NO legacy transition affordances synthesized —
+    // an empty table means the board can't offer default lifecycle commands.
+    expect(cfg.transitions).toEqual([]);
+    expect(cfg.transitionTable.size).toBe(0);
+    expect(cfg.custom).toBe(true);
   });
 });
