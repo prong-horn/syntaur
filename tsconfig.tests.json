@@ -55,6 +55,7 @@
     "src/tui/syntaurd/__tests__/attach.test.ts",
     "src/tui/syntaurd/__tests__/feed-source.test.ts",
     "src/__tests__/session-db-migration-v7.test.ts",
+    "src/__tests__/session-db-migration-v8.test.ts",
     "src/__tests__/launch-correlation.test.ts",
     "src/tui/cockpit/__tests__/actions.test.ts",
     "src/tui/cockpit/__tests__/actions.test.tsx",

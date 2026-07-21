@@ -9,8 +9,12 @@ import { backfillEngagements } from '../db/engagement-backfill.js';
 
 let db: Database.Database | null = null;
 
-const SCHEMA_VERSION = '7';
+const SCHEMA_VERSION = '8';
 
+// v8: adds `launch_reservations` — pending-launch reservation records, never
+// sessions rows; a failed dispatch must never strand an active session row.
+// See Phase C plan D5.
+//
 // v7 base schema: v6 plus `hosted_by` (which backend hosts the live PTY:
 // 'syntaurd' | 'tmux'; NULL = the session predates the daemon → eligible
 // for the tmux attach/launch fallback gate).
@@ -39,6 +43,18 @@ CREATE TABLE IF NOT EXISTS sessions (
 );
 CREATE INDEX IF NOT EXISTS idx_sessions_status ON sessions(status);
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT);
+CREATE TABLE IF NOT EXISTS launch_reservations (
+  launch_id TEXT PRIMARY KEY,
+  hosted_by TEXT NOT NULL,
+  agent TEXT,
+  cwd TEXT,
+  expected_session_id TEXT,
+  created_at TEXT NOT NULL,
+  dispatched_at TEXT,
+  claimed_by TEXT,
+  claimed_at TEXT,
+  canceled_at TEXT
+);
 `;
 
 /**
@@ -331,6 +347,33 @@ export function initSessionDb(dbPath?: string): Database.Database {
         ALTER TABLE sessions_v7 RENAME TO sessions;
         CREATE INDEX IF NOT EXISTS idx_sessions_status ON sessions(status);
         UPDATE meta SET value = '7' WHERE key = 'schema_version';
+      `);
+    }
+
+    // --- v7 → v8: launch_reservations (pending-launch reservation, Phase C).
+    // A NEW table — no sessions rebuild; the version-gated CREATE IF NOT EXISTS
+    // is idempotent and crash-atomic inside the exclusive transaction.
+    const vBeforeV8 = (
+      database
+        .prepare("SELECT value FROM meta WHERE key = 'schema_version'")
+        .get() as { value: string } | undefined
+    )?.value;
+
+    if (vBeforeV8 === '7') {
+      database.exec(`
+        CREATE TABLE IF NOT EXISTS launch_reservations (
+          launch_id TEXT PRIMARY KEY,
+          hosted_by TEXT NOT NULL,
+          agent TEXT,
+          cwd TEXT,
+          expected_session_id TEXT,
+          created_at TEXT NOT NULL,
+          dispatched_at TEXT,
+          claimed_by TEXT,
+          claimed_at TEXT,
+          canceled_at TEXT
+        );
+        UPDATE meta SET value = '8' WHERE key = 'schema_version';
       `);
     }
   });
