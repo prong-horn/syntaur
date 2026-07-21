@@ -4,7 +4,7 @@ import {
   type DispatchRequest,
 } from '../launch.js';
 import type { AgentConfig } from '../../../utils/config.js';
-import type { ControlRequest } from '../../../daemon/types.js';
+import type { ControlRequest, JobState } from '../../../daemon/types.js';
 
 const plan = { command: 'codex', args: ['hi', '--flag'], cwd: '/repo/.worktrees/feat' };
 const claudeAgent: AgentConfig = { id: 'claude', label: 'Claude', command: 'claude' };
@@ -69,6 +69,42 @@ describe('launchSyntaurd', () => {
       // when the dispatch request itself rejects).
       findSession: vi.fn(async () => null),
       pidStartedAt: () => 'Thu Jul 16 00:00:00 2026',
+      // Reservation + durable-jobs-dir seams (Task 16). Defaults: reserve
+      // succeeds (today's dispatch-first behavior stays reachable via
+      // overrides), the jobs dir is empty, host identity reads 'alive'
+      // (irrelevant when nothing is found), and the poll's sleep is instant.
+      reservation: {
+        reserve: vi.fn(() => true),
+        markDispatched: vi.fn(() => {}),
+        cancel: vi.fn(() => {}),
+      },
+      readJobStates: vi.fn((): JobState[] => []),
+      processIdentity: vi.fn(() => 'alive' as const),
+      sleep: vi.fn(async () => {}),
+      ...overrides,
+    };
+  }
+
+  /** A durable jobs-dir record for the ambiguous-recovery poll. */
+  function jobStateFixture(overrides: Partial<JobState> = {}): JobState {
+    return {
+      short: 'jj11kk22',
+      agent: 'codex',
+      argv: ['codex', 'hi', '--flag'],
+      cwd: '/repo/.worktrees/feat',
+      state: 'working',
+      pid: 999,
+      pidStartedAt: null,
+      sessionId: 'uuid-fixed',
+      cols: 100,
+      rows: 30,
+      createdAt: '2026-07-16T00:00:00.000Z',
+      updatedAt: '2026-07-16T00:00:00.000Z',
+      daemonId: 'd1',
+      ptySock: '/tmp/jj11kk22.pty.sock',
+      rvSock: '/tmp/jj11kk22.rv.sock',
+      hostPid: 888,
+      hostPidStartedAt: 'START',
       ...overrides,
     };
   }
@@ -206,5 +242,180 @@ describe('launchSyntaurd', () => {
     await launchSyntaurd(harness({ request, agent: aliasAgent, plan: { command: '/bin/zsh', args: ['-i', '-c', "claude 'hi'"], cwd: '/x' } }));
     const req = request.mock.calls[0][0] as unknown as DispatchRequest;
     expect(req.argv).toEqual(['/bin/zsh', '-i', '-c', "claude 'hi'"]);
+  });
+
+  describe('pending-launch reservation (Phase C Task 16)', () => {
+    it('(a) reserves BEFORE dispatching, binding expectedSessionId when --session-id is injectable', async () => {
+      const reserve = vi.fn(() => true);
+      const registerRow = vi.fn(async () => {});
+      let registerRowCallsAtRequestTime = -1;
+      const request = vi.fn(async (_req: ControlRequest) => {
+        registerRowCallsAtRequestTime = registerRow.mock.calls.length;
+        return { ok: true as const, short: 'ab12cd34', pid: 4242 };
+      });
+      const h = harness({
+        agent: claudeAgent,
+        plan: { command: 'claude', args: ['hi'], cwd: '/x' },
+        request,
+        registerRow,
+        reservation: { reserve, markDispatched: vi.fn(), cancel: vi.fn() },
+      });
+      await launchSyntaurd(h);
+      expect(reserve.mock.invocationCallOrder[0]).toBeLessThan(request.mock.invocationCallOrder[0]);
+      expect(reserve).toHaveBeenCalledWith({
+        launchId: 'uuid-fixed',
+        hostedBy: 'syntaurd',
+        agent: 'claude',
+        cwd: '/x',
+        expectedSessionId: 'uuid-fixed',
+      });
+      // No sessions write of any kind before the dispatch reply/recovery
+      // resolves — registerRow must still be at zero calls when `request` fires.
+      expect(registerRowCallsAtRequestTime).toBe(0);
+    });
+
+    it('(a) binds expectedSessionId to null when --session-id is NOT injectable', async () => {
+      const reserve = vi.fn(() => true);
+      const h = harness({
+        agent: codexAgent, // non-claude runner — not injectable
+        reservation: { reserve, markDispatched: vi.fn(), cancel: vi.fn() },
+      });
+      await launchSyntaurd(h);
+      expect(reserve).toHaveBeenCalledWith({
+        launchId: 'uuid-fixed',
+        hostedBy: 'syntaurd',
+        agent: 'codex',
+        cwd: '/repo/.worktrees/feat',
+        expectedSessionId: null,
+      });
+    });
+
+    it('(b) marks the reservation dispatched immediately before the request is sent', async () => {
+      const markDispatched = vi.fn();
+      const request = vi.fn(async (_req: ControlRequest) => ({ ok: true as const, short: 'ab12cd34', pid: 4242 }));
+      const h = harness({
+        request,
+        reservation: { reserve: vi.fn(() => true), markDispatched, cancel: vi.fn() },
+      });
+      await launchSyntaurd(h);
+      expect(markDispatched).toHaveBeenCalledWith('uuid-fixed');
+      expect(markDispatched.mock.invocationCallOrder[0]).toBeLessThan(request.mock.invocationCallOrder[0]);
+    });
+
+    it('(c) an ErrorReply cancels the reservation, throws, and registers no row', async () => {
+      const cancel = vi.fn();
+      const h = harness({
+        request: vi.fn(async () => ({ ok: false as const, code: 'EEMPTYARGV', error: 'boom' })),
+        reservation: { reserve: vi.fn(() => true), markDispatched: vi.fn(), cancel },
+      });
+      await expect(launchSyntaurd(h)).rejects.toThrow(/daemon dispatch failed/);
+      expect(cancel).toHaveBeenCalledWith('uuid-fixed');
+      expect(h.registerRow).not.toHaveBeenCalled();
+    });
+
+    it('(d) ambiguous rejection + null probe + a live host in the jobs-dir scan adopts (no double launch)', async () => {
+      const cancel = vi.fn();
+      const processIdentitySpy = vi.fn(() => 'alive' as const);
+      const readJobStates = vi.fn(() => [jobStateFixture({ state: 'working', hostPid: 888, hostPidStartedAt: 'START' })]);
+      const h = harness({
+        request: vi.fn(async () => { throw new Error('socket hang up'); }),
+        findSession: vi.fn(async () => null),
+        readJobStates,
+        processIdentity: processIdentitySpy,
+        reservation: { reserve: vi.fn(() => true), markDispatched: vi.fn(), cancel },
+      });
+      await expect(launchSyntaurd(h)).resolves.toEqual({
+        short: 'jj11kk22',
+        sessionId: 'uuid-fixed',
+        registered: true,
+      });
+      expect(processIdentitySpy).toHaveBeenCalledWith(888, 'START');
+      expect(h.registerRow).toHaveBeenCalledWith('', expect.objectContaining({ pid: 888, pidStartedAt: 'START' }));
+      expect(cancel).not.toHaveBeenCalled();
+    });
+
+    it.each(['dead', 'unknown'] as const)(
+      '(d2) a jobs-dir hit with host identity %s is NOT adopted (TRUST gate) — cancels + degrades with the original error',
+      async (identity) => {
+        const cancel = vi.fn();
+        const err = new Error('socket hang up');
+        const readJobStates = vi.fn(() => [jobStateFixture()]);
+        const h = harness({
+          request: vi.fn(async () => { throw err; }),
+          findSession: vi.fn(async () => null),
+          readJobStates,
+          processIdentity: vi.fn(() => identity),
+          reservation: { reserve: vi.fn(() => true), markDispatched: vi.fn(), cancel },
+        });
+        await expect(launchSyntaurd(h)).rejects.toThrow(err);
+        expect(cancel).toHaveBeenCalledWith('uuid-fixed');
+        expect(h.registerRow).not.toHaveBeenCalled();
+      },
+    );
+
+    it('(d3) a delayed job-state write inside the poll window still adopts (review r3 F1)', async () => {
+      // readJobStates misses on the first two scans (the host's spawn->first-
+      // write startup gap) and only lands on the third — a single scan would
+      // have missed this and double-launched.
+      const cancel = vi.fn();
+      const readJobStates = vi
+        .fn<() => JobState[]>()
+        .mockReturnValueOnce([])
+        .mockReturnValueOnce([])
+        .mockReturnValue([jobStateFixture()]);
+      const sleep = vi.fn(async () => {});
+      const h = harness({
+        request: vi.fn(async () => { throw new Error('socket hang up'); }),
+        findSession: vi.fn(async () => null),
+        readJobStates,
+        processIdentity: vi.fn(() => 'alive' as const),
+        sleep,
+        reservation: { reserve: vi.fn(() => true), markDispatched: vi.fn(), cancel },
+      });
+      await expect(launchSyntaurd(h)).resolves.toEqual({
+        short: 'jj11kk22',
+        sessionId: 'uuid-fixed',
+        registered: true,
+      });
+      expect(cancel).not.toHaveBeenCalled();
+      expect(sleep).toHaveBeenCalledTimes(2);
+      expect(sleep).toHaveBeenCalledWith(100); // JOBS_SCAN_INTERVAL_MS
+    });
+
+    it('(e) a jobs-dir hit with only a TERMINAL state polls the full window then degrades', async () => {
+      const cancel = vi.fn();
+      const err = new Error('socket hang up');
+      const readJobStates = vi.fn(() => [jobStateFixture({ state: 'failed' })]);
+      const processIdentitySpy = vi.fn(() => 'alive' as const);
+      const h = harness({
+        request: vi.fn(async () => { throw err; }),
+        findSession: vi.fn(async () => null),
+        readJobStates,
+        processIdentity: processIdentitySpy,
+        reservation: { reserve: vi.fn(() => true), markDispatched: vi.fn(), cancel },
+      });
+      await expect(launchSyntaurd(h)).rejects.toThrow(err);
+      expect(readJobStates).toHaveBeenCalledTimes(20); // JOBS_SCAN_ATTEMPTS — full window
+      // The terminal-state row never matches the scan predicate, so the
+      // liveness gate is never consulted for it.
+      expect(processIdentitySpy).not.toHaveBeenCalled();
+      expect(cancel).toHaveBeenCalledWith('uuid-fixed');
+      expect(h.registerRow).not.toHaveBeenCalled();
+    });
+
+    it('(h) a failed reserve (returns false) proceeds with legacy dispatch-first semantics', async () => {
+      const h = harness({
+        reservation: { reserve: vi.fn(() => false), markDispatched: vi.fn(), cancel: vi.fn() },
+      });
+      await expect(launchSyntaurd(h)).resolves.toEqual({
+        short: 'ab12cd34',
+        sessionId: 'uuid-fixed',
+        registered: true,
+      });
+      expect(h.registerRow).toHaveBeenCalledWith(
+        '',
+        expect.objectContaining({ sessionId: 'uuid-fixed', hostedBy: 'syntaurd' }),
+      );
+    });
   });
 });

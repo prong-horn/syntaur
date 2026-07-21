@@ -1,12 +1,26 @@
 import { randomUUID } from 'node:crypto';
 import { SyntaurError } from '../../errors.js';
 import { daemonRequest, queryDaemon } from '../../daemon/client.js';
-import { appendSession } from '../../dashboard/agent-sessions.js';
+import {
+  appendSession,
+  cancelLaunch,
+  markLaunchDispatched,
+  reserveLaunch,
+} from '../../dashboard/agent-sessions.js';
+import { readAllJobStates } from '../../daemon/jobs.js';
+import { processIdentity } from '../../daemon/liveness.js';
 import { captureProcessStartedAt } from '../../utils/process-info.js';
 import { resolveRunner } from '../../utils/agents-schema.js';
 import type { ControlReply, ControlRequest, DispatchReply, ErrorReply, ListReply } from '../../daemon/types.js';
 import type { AgentConfig } from '../../utils/config.js';
 import type { AgentLaunchPlan } from '../../launch/build-launch.js';
+
+/** Bounded jobs-dir poll (review r3 F1): the pty-host spawns the agent BEFORE
+ * writing its first state.json (pty-host.ts:236-281), so a single scan taken
+ * during that startup gap would miss a landed launch. 20 x 100ms = a 2s window
+ * that dwarfs a host's typical spawn->first-state-write time. */
+const JOBS_SCAN_ATTEMPTS = 20;
+const JOBS_SCAN_INTERVAL_MS = 100;
 
 export type DispatchRequest = Extract<ControlRequest, { op: 'dispatch' }>;
 export type RequestFn = (req: ControlRequest) => Promise<ControlReply>;
@@ -83,6 +97,18 @@ export interface LaunchSyntaurdInput {
   findSession?: (sessionId: string) => Promise<DispatchedSession | null>;
   /** Injectable clock seam for the placeholder row's pid start time — tests only. */
   pidStartedAt?: (pid: number) => string | null;
+  /** Reservation seams — tests only; default to the real agent-sessions fns. */
+  reservation?: {
+    reserve: typeof reserveLaunch;
+    markDispatched: typeof markLaunchDispatched;
+    cancel: typeof cancelLaunch;
+  };
+  /** Durable jobs-dir scan seam — tests only. */
+  readJobStates?: typeof readAllJobStates;
+  /** Host-identity seam — tests only (review r2 F2). */
+  processIdentity?: typeof processIdentity;
+  /** Poll-delay seam — tests only (review r3 F1). */
+  sleep?: (ms: number) => Promise<void>;
 }
 
 /** A daemon session confirmed to exist by the post-failure reconciliation probe. */
@@ -149,6 +175,30 @@ export async function launchSyntaurd(input: LaunchSyntaurdInput): Promise<Launch
     rows: input.rows ?? 24,
   });
 
+  const rsv = input.reservation ?? {
+    reserve: reserveLaunch,
+    markDispatched: markLaunchDispatched,
+    cancel: cancelLaunch,
+  };
+  const readJobs = input.readJobStates ?? readAllJobStates;
+  const hostIdentity = input.processIdentity ?? processIdentity;
+  const sleep = input.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
+
+  // Reserve BEFORE dispatch: durable, claimable, cancellable — and NOT a
+  // sessions row, so it opens no engagement and the WHY-not-insert-before-
+  // dispatch trap below stays answered. A failed reserve (false) degrades to
+  // today's dispatch-first semantics rather than blocking the launch.
+  // expectedSessionId (review r1 F1): when the argv injects --session-id
+  // (Branch A claude), the root's future real id IS this launch id — bind
+  // the claim to it so no inherited-marker process can ever claim first.
+  rsv.reserve({
+    launchId: sessionId,
+    hostedBy: 'syntaurd',
+    agent: input.agent.id,
+    cwd: input.plan.cwd,
+    expectedSessionId: canInjectClaudeSessionId(input.agent) ? sessionId : null,
+  });
+
   // Three outcomes, and only ONE of them may degrade to the next tier:
   //  - ErrorReply  → the daemon answered "no". Definitely nothing spawned;
   //                  throwing is correct and the ladder degrades.
@@ -158,6 +208,7 @@ export async function launchSyntaurd(input: LaunchSyntaurdInput): Promise<Launch
   //  - DispatchReply → success.
   let session: DispatchedSession;
   try {
+    rsv.markDispatched(sessionId);
     const reply = (await request(dispatchRequest)) as DispatchReply | ErrorReply;
     if (!reply.ok) {
       throw new SyntaurError(`daemon dispatch failed: ${reply.error}`, {
@@ -167,6 +218,7 @@ export async function launchSyntaurd(input: LaunchSyntaurdInput): Promise<Launch
     session = { short: reply.short, pid: reply.pid, pidStartedAt: null };
   } catch (err) {
     if (err instanceof SyntaurError && err.message.startsWith('daemon dispatch failed:')) {
+      rsv.cancel(sessionId); // definite refusal: nothing spawned; retries must never block
       throw err; // definite refusal — degrade
     }
     // A probe that itself fails means "unconfirmed" — degrade with the
@@ -177,7 +229,40 @@ export async function launchSyntaurd(input: LaunchSyntaurdInput): Promise<Launch
     } catch {
       landed = null;
     }
-    if (!landed) throw err; // unconfirmed — degrade, exactly as before
+    if (!landed) {
+      // Durable evidence that OUTLIVES the daemon (residual 2): the detached
+      // pty-host writes ~/.syntaur/jobs/<short>/state.json carrying the
+      // dispatch-supplied sessionId even if the daemon died after spawning.
+      // BOUNDED POLL (review r3 F1): the host spawns its agent BEFORE the
+      // first writeJobState (pty-host.ts:234-281), so a SINGLE scan taken
+      // during the host's startup gap would miss a landed launch, cancel,
+      // and double-launch. Poll across a window that dwarfs host boot time
+      // instead. (Marking the reservation from the pty-host itself was
+      // rejected: the daemon tier has zero session-db/dashboard deps, and
+      // crossing that boundary for this path isn't warranted.)
+      // Adoption stays a TRUST action (review r2 F2): processIdentity
+      // 'alive' only — 'dead' (incl. recycled) and 'unknown' never adopt;
+      // degrading after the window cannot double-launch a LIVE agent, and
+      // the only remaining window is a host taking >2s to write its first
+      // state record (test-pinned).
+      for (let i = 0; i < JOBS_SCAN_ATTEMPTS && !landed; i++) {
+        if (i > 0) await sleep(JOBS_SCAN_INTERVAL_MS);
+        try {
+          const js = readJobs().find(
+            (s) => s.sessionId === sessionId && s.state !== 'done' && s.state !== 'failed' && s.state !== 'stopped',
+          );
+          if (js && hostIdentity(js.hostPid, js.hostPidStartedAt) === 'alive') {
+            landed = { short: js.short, pid: js.hostPid, pidStartedAt: js.hostPidStartedAt };
+          }
+        } catch {
+          /* unreadable jobs dir this attempt — keep polling */
+        }
+      }
+    }
+    if (!landed) {
+      rsv.cancel(sessionId); // genuinely nothing landed — free the identity, then degrade
+      throw err; // unconfirmed — degrade with the ORIGINAL dispatch error
+    }
     // The session IS running; the reply was merely lost. Adopting it here is
     // what prevents a duplicate agent in the same worktree.
     session = landed;
@@ -188,12 +273,12 @@ export async function launchSyntaurd(input: LaunchSyntaurdInput): Promise<Launch
   // only row source — without it the session cannot join the rail. pid = the
   // pty-host pid, a real liveness signal for the scanner sweep.
   // Registration MUST NOT throw (the daemon session IS running; a throw would
-  // make runLaunch degrade to tmux and double-launch), but its failure MUST
-  // NOT be silent either. Contract: one bounded retry, then report
-  // registered:false so the caller surfaces a warning status.
+  // make runLaunch degrade to the next tier and double-launch), but its
+  // failure MUST NOT be silent either. Contract: one bounded retry, then
+  // report registered:false so the caller surfaces a warning status.
   // WHY not insert-before-dispatch: appendSession opens an engagement in the
   // same txn and status is forward-only — a failed dispatch would strand an
-  // active row (compensating 'stopped' would then block the tmux fallback's
+  // active row (compensating 'stopped' would then block the fallback tier's
   // re-registration of the same identity). Dispatch-first + retry has no such
   // trap; the un-registered window is one poll tick.
   // pid_started_at is captured (not left NULL) because the scanner's recycle
