@@ -632,6 +632,37 @@ describe('syntaur migrate-workflows — the command (T3–T6)', () => {
     expect(await isStagesMigrated()).toBe(true);
   });
 
+  it('post-strip re-run rejects a STRUCTURALLY invalid relocated file before seeding (codex code-r2)', async () => {
+    await seedHome(FIXTURES, STANDALONE);
+    await migrateWorkflowsCommand({ root: home });
+    const seededSnapshot = await snapshotTree(join(home, 'projects'));
+
+    // A relocated file that parses clean but fails the doctor's structural
+    // rules: no terminal stage + a route to an unknown stage. And simulate the
+    // post-strip pre-marker crash so the loader takes the from-disk path.
+    await writeFile(
+      join(home, 'workflows', 'broken.md'),
+      'id: broken\nstages:\n  - id: a\n    next: [{ to: ghost }]\n',
+      'utf-8',
+    );
+    await unlink(join(home, 'stages-migrated'));
+    invalidateWorkflowLibraryCache();
+
+    await expect(migrateWorkflowsCommand({ root: home })).rejects.toThrow(/is invalid/i);
+    // Aborted before any seeding write; marker stays unset.
+    expect(await snapshotTree(join(home, 'projects'))).toEqual(seededSnapshot);
+    expect(await isStagesMigrated()).toBe(false);
+
+    // Filename/id mismatch is equally structural: broken.md fixed but renamed id.
+    await writeFile(
+      join(home, 'workflows', 'broken.md'),
+      'id: other\nstages:\n  - id: a\n    terminal: true\n',
+      'utf-8',
+    );
+    invalidateWorkflowLibraryCache();
+    await expect(migrateWorkflowsCommand({ root: home })).rejects.toThrow(/filename stem/i);
+  });
+
   it('marker write is idempotent: a completed migration re-run leaves stages-migrated byte-identical', async () => {
     await seedHome(FIXTURES, STANDALONE);
     await migrateWorkflowsCommand({ root: home });

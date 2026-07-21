@@ -221,13 +221,43 @@ async function loadExpectedWorkflows(
       for (const file of files) {
         const raw = await readFile(resolve(dir, file), 'utf-8');
         const { workflow, issues } = parseWorkflowFile(raw);
-        if (issues.length > 0) {
+        // Reject the seeding-corruption class before accepting a relocated file
+        // (codex code-r2): parser issues, duplicate stage ids, routes/on-dissent/
+        // reopen targeting unknown stages, and a declared-id/filename mismatch
+        // (the filename stem is the identity — same convention as
+        // loadWorkflowLibrary). Deliberately NOT enforced here: reachability and
+        // no-terminal — a manual-only relocation (decision D1, e.g. `test`) has
+        // no routes BY DESIGN, so those doctor rules would make the migration
+        // reject its own apply-#1 output on every re-run; the doctor surfaces
+        // them to the human as standing structural findings instead.
+        const stem = file.replace(/\.md$/, '');
+        const problems = [...issues];
+        const stageIds = new Set<string>();
+        for (const s of workflow.stages) {
+          if (s.id && stageIds.has(s.id)) problems.push(`duplicate stage id "${s.id}"`);
+          if (s.id) stageIds.add(s.id);
+        }
+        for (const s of workflow.stages) {
+          for (const r of s.next ?? []) {
+            if (r.to && !stageIds.has(r.to)) problems.push(`stage "${s.id}" routes to unknown stage "${r.to}"`);
+          }
+          if (s.onDissent && !stageIds.has(s.onDissent)) {
+            problems.push(`stage "${s.id}" on-dissent targets unknown stage "${s.onDissent}"`);
+          }
+          if (s.reopen && !stageIds.has(s.reopen)) {
+            problems.push(`stage "${s.id}" reopen targets unknown stage "${s.reopen}"`);
+          }
+        }
+        if (workflow.id && workflow.id !== stem) {
+          problems.push(`declares id "${workflow.id}" but the filename stem is "${stem}" (the identity)`);
+        }
+        if (problems.length > 0) {
           throw new Error(
-            `relocated workflow ${resolve(dir, file)} has structural issues (${issues.join('; ')}) — ` +
+            `relocated workflow ${resolve(dir, file)} is invalid (${problems.join('; ')}) — ` +
               `refusing to seed against it. Fix the file and re-run.`,
           );
         }
-        out.push({ id: workflow.id ?? file.replace(/\.md$/, ''), workflow, content: raw, mode: 'relocated' });
+        out.push({ id: stem, workflow, content: raw, mode: 'relocated' });
       }
       return out;
     }
