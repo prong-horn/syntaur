@@ -11,6 +11,7 @@ import {
 import {
   appendSession,
   getSessionById,
+  updateSessionStatus,
   claimSummarize,
   releaseSummarize,
   recordSummarizeFailure,
@@ -383,40 +384,29 @@ describe('summarizeSession', () => {
     expect(getSessionById('s-live-explicit')!.summary).toBe('Traced and fixed it.');
   });
 
-  it('finalize (sweep) writes nothing if the session was modified DURING the backend call (revive/re-stop)', async () => {
+  it('finalize is lost-lease when the session is REVIVED during the backend call (claim invalidated)', async () => {
     await seed('s-revive-mid');
-    // A real revive/re-stop bumps updated_at. Even if the session is terminal
-    // again by finalize time, the changed updated_at makes the guard refuse to
-    // persist a pre-resume summary. Bump it here as appendSession would.
+    // A genuine revive deletes this session's summarize_state row IN the revive
+    // transaction, so finalize finds no matching claim — no timestamp guard, so
+    // this holds even for a sub-second stop→active→stopped flip.
     const backend: SummarizeBackend = async () => {
-      getSessionDb()
-        .prepare("UPDATE sessions SET updated_at = datetime('now','+1 second') WHERE session_id='s-revive-mid'")
-        .run();
+      await updateSessionStatus('', 's-revive-mid', 'active'); // deletes the claim
       return { ok: true, text: goodReply };
     };
     const res = await summarizeSession('s-revive-mid', { backend, sweep: true });
     expect(res.kind).toBe('skipped-claimed'); // finalize returned lost-lease
     expect(getSessionById('s-revive-mid')!.summary).toBeNull();
-    // Lease dropped, no pacing — re-qualifies after it settles.
-    const state = getSessionDb()
-      .prepare('SELECT * FROM summarize_state WHERE session_id = ?')
-      .get('s-revive-mid');
-    expect(state).toBeUndefined();
   });
 
-  it('explicit-id (non-sweep) finalize is NOT blocked by a concurrent row bump', async () => {
-    // The updated_at guard is sweep-only; an explicit re-summarize of a live
-    // session should still persist even if the row changes underneath it.
-    await seed('s-explicit-bump', { status: 'active' });
+  it('the same protection applies to an explicit-id summarize (claim invalidation is universal)', async () => {
+    await seed('s-explicit-revive');
     const backend: SummarizeBackend = async () => {
-      getSessionDb()
-        .prepare("UPDATE sessions SET updated_at = datetime('now','+1 second') WHERE session_id='s-explicit-bump'")
-        .run();
+      await updateSessionStatus('', 's-explicit-revive', 'active');
       return { ok: true, text: goodReply };
     };
-    const res = await summarizeSession('s-explicit-bump', { backend }); // sweep defaults false
-    expect(res.kind).toBe('ok');
-    expect(getSessionById('s-explicit-bump')!.summary).toBe('Traced and fixed it.');
+    const res = await summarizeSession('s-explicit-revive', { backend }); // sweep defaults false
+    expect(res.kind).toBe('skipped-claimed');
+    expect(getSessionById('s-explicit-revive')!.summary).toBeNull();
   });
 
   it('sweep with a missing transcript on a REVIVED session skips-active without 24h pacing', async () => {

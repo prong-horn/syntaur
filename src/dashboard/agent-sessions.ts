@@ -260,6 +260,14 @@ export async function appendSession(
       assignmentSlug: session.assignmentSlug ?? null,
     };
     if (persisted?.status === 'active') {
+      // Revive invalidates any in-flight summarize claim: a summarizer holding a
+      // lease on this (previously stopped) session must not persist a pre-resume
+      // summary. Gated on reviveStopped so routine active re-registration doesn't
+      // disturb a legitimate in-flight claim. Same transaction as the flip, so
+      // the summarizer's later finalize sees the deleted claim → lost-lease.
+      if (opts?.reviveStopped) {
+        db.prepare('DELETE FROM summarize_state WHERE session_id = ?').run(session.sessionId);
+      }
       // Live session: ensure an open engagement (fresh binding, else recover the
       // prior binding on a stopped->active revive that arrived with no binding).
       // H2: thread the pre-captured open snapshot into the opened interval.
@@ -466,6 +474,13 @@ export async function updateSessionStatus(
         )
         .run(status, sessionId);
       if (res.changes > 0) {
+        // A genuine stopped→active revive invalidates any in-flight summarize
+        // claim in the SAME transaction — the summarizer's finalize then loses
+        // its lease rather than persisting a pre-resume summary. `current.status`
+        // is the PRIOR status, so this fires only on a real transition.
+        if (current.status !== 'active') {
+          db.prepare('DELETE FROM summarize_state WHERE session_id = ?').run(sessionId);
+        }
         reopenEngagementIfMissing(sessionId, null, new Date().toISOString(), reviveSnapshot);
       }
       return res.changes > 0;
@@ -629,6 +644,10 @@ export async function deleteSessions(sessionIds: string[]): Promise<number> {
   const placeholders = sessionIds.map(() => '?').join(', ');
   const run = db.transaction((): number => {
     db.prepare(`DELETE FROM engagement WHERE session_id IN (${placeholders})`).run(...sessionIds);
+    // Also drop summarize_state (lease + retry pacing) — otherwise the rows
+    // orphan, and a later session that reuses the same id could inherit a stale
+    // `next_attempt_at` and be suppressed for up to 24h.
+    db.prepare(`DELETE FROM summarize_state WHERE session_id IN (${placeholders})`).run(...sessionIds);
     const result = db
       .prepare(`DELETE FROM sessions WHERE session_id IN (${placeholders})`)
       .run(...sessionIds);
@@ -860,25 +879,20 @@ export function recordSummarizeFailure(
  * a race. `summary` always writes — a human-owned description never suppresses
  * the summary itself, it only means `descriptionUpdated` is false.
  *
- * `guardUpdatedAt` (sweep path) makes the write conditional on the session row's
- * `updated_at` being unchanged since it was read under the lease. Any revive
- * (stop→active) or re-stop (active→stop) goes through a writer that bumps
- * `updated_at`, so a session that was resumed DURING the ~120s backend call —
- * even if it ended again before finalization — no longer matches. The UPDATE
- * then touches no row, the lease drops without pacing, and the result is
- * `lost-lease`, leaving the session to re-qualify (summary still NULL) rather
- * than being frozen with a pre-resume summary.
+ * The lease token is the sole authority: a revive (stop→active) deletes this
+ * session's `summarize_state` row in the same transaction as the flip (see
+ * `appendSession` / `updateSessionStatus`), so a summarizer that was mid-call
+ * when the session resumed finds no matching claim here and returns `lost-lease`
+ * — it never persists a pre-resume summary, regardless of sub-second timing.
  */
 export function finalizeSummarize(
   sessionId: string,
   token: string,
   fields: { description: string; summary: string },
   now = new Date(),
-  opts: { guardUpdatedAt?: string } = {},
 ): FinalizeSummarizeResult {
   const db = getSessionDb();
   const nowIso = now.toISOString();
-  const staleGuard = opts.guardUpdatedAt ? 'AND updated_at = ?' : '';
 
   const run = db.transaction((): FinalizeSummarizeResult => {
     const state = db
@@ -886,8 +900,6 @@ export function finalizeSummarize(
       .get(sessionId) as { claim_token: string | null } | undefined;
     if (!state || state.claim_token !== token) return 'lost-lease';
 
-    const params: unknown[] = [fields.summary, nowIso, fields.description, sessionId];
-    if (opts.guardUpdatedAt) params.push(opts.guardUpdatedAt);
     const updated = db
       .prepare(
         `UPDATE sessions SET
@@ -900,9 +912,9 @@ export function finalizeSummarize(
              WHEN description IS NULL OR description = '' OR description_source = 'auto'
                THEN 'auto' ELSE description_source END,
            updated_at = datetime('now')
-         WHERE session_id = ? ${staleGuard}`,
+         WHERE session_id = ?`,
       )
-      .run(...params);
+      .run(fields.summary, nowIso, fields.description, sessionId);
 
     // Zero rows: the session row was deleted concurrently, OR (requireTerminal)
     // it was revived to active. Either way drop the lease without pacing so it

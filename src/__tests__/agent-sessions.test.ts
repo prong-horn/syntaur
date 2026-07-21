@@ -17,6 +17,9 @@ import {
   SessionResurrectionError,
   reconcileActiveSessions,
   deleteSessions,
+  claimSummarize,
+  recordSummarizeFailure,
+  finalizeSummarize,
 } from '../dashboard/agent-sessions.js';
 import { getOpenEngagement, switchEngagement, type EngagementRow } from '../db/engagement-db.js';
 import {
@@ -826,6 +829,48 @@ describe('narrow revival rule (reviveStopped)', () => {
 
     const all = await listAllSessions('');
     expect(all[0].status).toBe('stopped');
+  });
+
+  it('deletes any summarize_state claim when a stopped session is revived (updateSessionStatus)', async () => {
+    const sid = 'revive-clears-claim';
+    await appendSession('', makeSession({ sessionId: sid }));
+    await updateSessionStatus('', sid, 'stopped');
+    // A summarizer is holding a lease on the stopped session.
+    expect(claimSummarize(sid, 'summarizer-token')).toBe(true);
+
+    // Revive → the claim must be gone in the SAME transaction, so a later
+    // finalize under 'summarizer-token' loses its lease.
+    await updateSessionStatus('', sid, 'active');
+    expect(getSessionDb().prepare('SELECT * FROM summarize_state WHERE session_id = ?').get(sid)).toBeUndefined();
+    expect(finalizeSummarize(sid, 'summarizer-token', { description: 'd', summary: 's' })).toBe('lost-lease');
+  });
+
+  it('deletes any summarize_state claim when a stopped session is revived (appendSession reviveStopped)', async () => {
+    const sid = 'revive-append-clears';
+    await appendSession('', makeSession({ sessionId: sid }));
+    await updateSessionStatus('', sid, 'stopped');
+    expect(claimSummarize(sid, 'tok')).toBe(true);
+
+    await appendSession('', makeSession({ sessionId: sid, status: 'active' as AgentSessionStatus }), {
+      reviveStopped: true,
+    });
+    expect(getSessionDb().prepare('SELECT * FROM summarize_state WHERE session_id = ?').get(sid)).toBeUndefined();
+  });
+});
+
+describe('deleteSessions summarize_state cleanup', () => {
+  it('removes the summarize_state row so a reused id is not suppressed by stale pacing', async () => {
+    const sid = 'delete-me';
+    await appendSession('', makeSession({ sessionId: sid, status: 'stopped' as AgentSessionStatus }));
+    // Give it a lease + a long backoff, as a failed summarize would.
+    claimSummarize(sid, 'tok');
+    recordSummarizeFailure(sid, 'tok', 'boom', 24 * 60 * 60 * 1000);
+    expect(getSessionDb().prepare('SELECT * FROM summarize_state WHERE session_id = ?').get(sid)).toBeDefined();
+
+    await deleteSessions([sid]);
+    // No orphan — otherwise a later session reusing this id would inherit the
+    // stale next_attempt_at and be suppressed for up to 24h.
+    expect(getSessionDb().prepare('SELECT * FROM summarize_state WHERE session_id = ?').get(sid)).toBeUndefined();
   });
 });
 

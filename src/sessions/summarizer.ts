@@ -289,9 +289,9 @@ export async function summarizeSession(
     releaseSummarize(sessionId, token);
     return { sessionId, kind: 'skipped-active' };
   }
-  // Snapshot updated_at under the lease; finalize refuses to persist if the row
-  // changed (revive/re-stop) during the backend call — see finalizeSummarize.
-  const guardUpdatedAt = sweep ? (fresh?.updatedAt ?? undefined) : undefined;
+  // A revive DURING the backend call deletes this session's claim (see
+  // appendSession / updateSessionStatus), so finalize's token check alone
+  // catches it — no timestamp/status guard needed here.
 
   try {
     const reply = await backend(buildPrompt(excerpt, session.agent), deps);
@@ -307,10 +307,9 @@ export async function summarizeSession(
       return { sessionId, kind: 'parse-error', error };
     }
 
-    // guardUpdatedAt (sweep only) makes the persist atomic against a revive/
-    // re-stop DURING the backend call: if the row changed in that window,
-    // finalize writes nothing and releases without pacing.
-    const outcome = finalizeSummarize(sessionId, token, parsed, now, { guardUpdatedAt });
+    // A revive during the backend call deleted the claim → finalize returns
+    // lost-lease and writes nothing (leaving the session to re-qualify).
+    const outcome = finalizeSummarize(sessionId, token, parsed, now);
     if (outcome === 'lost-lease') return { sessionId, kind: 'skipped-claimed' };
     return { sessionId, kind: 'ok', descriptionUpdated: outcome === 'ok-desc-updated' };
   } catch (err) {
