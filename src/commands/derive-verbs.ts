@@ -452,6 +452,34 @@ async function applyStageFact(
     console.log(`✓ ${label}`);
     return;
   }
+  // Sessionless, MIGRATED (WS-3 T9): the bare retired-fact write below would
+  // ride the engine branch as a GATE move — the fact lands but the work-start
+  // route never fires, so `request-review` would stop moving tickets. Route
+  // through the bridge instead: it fires the verb'd work-start engine move
+  // with the retired-fact delta AND the assignee fold in the same CAS payload
+  // (and falls back to the ladder fact assertion when no per-file workflow
+  // resolves). Pre-marker behavior below is byte-identical.
+  if (await isStagesMigrated()) {
+    await assertStageFactOnOpen({
+      assignmentPath: target.assignmentPath,
+      projectDir: target.projectDir,
+      prevStage: null,
+      stage,
+      by: await inferActor(options),
+      ...(foldAssignee
+        ? {
+            foldMutate: (content: string) => {
+              const innerFm = parseAssignmentFrontmatter(content);
+              return innerFm.assignee === null
+                ? updateAssignmentFile(content, { assignee: foldAssignee })
+                : content;
+            },
+          }
+        : {}),
+    });
+    console.log(`✓ ${label}`);
+    return;
+  }
   // Sessionless fallback (legacy escape hatch): direct fact write. When a
   // migrated `implement` folded its assignee here (the caller skipped the
   // standalone assignee write), carry it in THIS locked write so it isn't

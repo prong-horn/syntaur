@@ -106,6 +106,9 @@ export function rawPatchMoverViolation(
   if (next.phase !== current.phase) return 'phase';
   if (next.parked !== current.parked) return 'parked';
   if (next.blockedReason !== current.blockedReason) return 'blockedReason';
+  // WS-3 T9: the retired session-stage scalars stay rejected post-migration —
+  // they are ENGINE-FED (set/cleared inside the work-start CAS payload), so a
+  // raw edit would desync the compiled gates' `NOT reworkRequested:true` hold.
   if (next.reviewRequested !== current.reviewRequested) return 'reviewRequested';
   if (next.reworkRequested !== current.reworkRequested) return 'reworkRequested';
   if (next.implementationStarted !== current.implementationStarted) return 'implementationStarted';

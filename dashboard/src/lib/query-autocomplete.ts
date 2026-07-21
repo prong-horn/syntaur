@@ -226,8 +226,9 @@ export function getValueSuggestions(
     case 'tags':
       candidates = [...sources.tags];
       break;
+    // `pinned` is deprecated (WS-3 compat window, §4.5) — no longer advertised
+    // here; typing it manually still parses (with a deprecation warning).
     case 'archived':
-    case 'pinned':
     case 'blocked':
     case 'parked':
       candidates = ['true', 'false'];

@@ -19,7 +19,7 @@ import {
   getValueSuggestions,
   applySuggestion,
 } from '../lib/query-autocomplete';
-import type { QueryError } from '@shared/query';
+import type { QueryError, QueryWarning } from '@shared/query';
 
 // ── Props ─────────────────────────────────────────────────────────────────────
 
@@ -74,6 +74,7 @@ export function QueryInput({
   // Compile after debounce so we don't re-parse on every keystroke.
   const debouncedValue = useDebounced(value, DEBOUNCE_MS);
   const [errors, setErrors] = useState<QueryError[]>([]);
+  const [warnings, setWarnings] = useState<QueryWarning[]>([]);
   const [suggestions, setSuggestions] = useState<string[]>([]);
   const [suggestionKind, setSuggestionKind] = useState<'field' | 'value'>('field');
   const [activeSuggestion, setActiveSuggestion] = useState<number>(-1);
@@ -87,15 +88,20 @@ export function QueryInput({
   useEffect(() => {
     if (debouncedValue.trim() === '') {
       setErrors([]);
+      setWarnings([]);
       onCompiled?.(null);
       return;
     }
     const result = compileQuery(debouncedValue, registry);
     if (result.errors.length > 0) {
       setErrors(result.errors);
+      setWarnings([]);
       onCompiled?.(null);
     } else {
       setErrors([]);
+      // WS-3 compat window: deprecated fields (pinned, phaseAge) compile with
+      // a non-blocking parse-time warning — mirrored from `syntaur ls`.
+      setWarnings(result.warnings);
       onCompiled?.(result.query);
     }
   }, [debouncedValue, registry, onCompiled]);
@@ -271,6 +277,17 @@ export function QueryInput({
           {errors.map((err, i) => (
             <li key={i} className="font-mono text-xs text-destructive">
               at {err.pos}: {err.message}
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {/* Non-blocking deprecation warnings (WS-3 compat window, §4.5) */}
+      {!hasErrors && warnings.length > 0 && debouncedValue.trim() !== '' && (
+        <ul className="space-y-0.5" role="status" aria-live="polite">
+          {warnings.map((w, i) => (
+            <li key={i} className="font-mono text-xs text-amber-500">
+              at {w.pos}: {w.message}
             </li>
           ))}
         </ul>

@@ -3,6 +3,7 @@ import { spawnSync } from 'node:child_process';
 import { resolve, isAbsolute } from 'node:path';
 import { syntaurRoot, defaultProjectDir, expandHome } from './paths.js';
 import { fileExists, writeFileForce } from './fs.js';
+import { isStagesMigrated } from './stages-marker.js';
 import { renderConfig } from '../templates/config.js';
 import { migrateLegacyConfig } from './fs-migration.js';
 import {
@@ -2144,7 +2145,32 @@ export async function deleteAgentsConfig(): Promise<void> {
   await writeFileForce(configPath, newContent);
 }
 
+/**
+ * WS-3 T9b — the legacy-writer lockout. After `syntaur migrate-workflows`
+ * flips the `stages-migrated` marker, the workflow source of truth is the
+ * per-file `~/.syntaur/workflows/<id>.md` store and the `config.md`
+ * `workflows:`/`statuses:` blocks are DELETED. The legacy editors (`syntaur
+ * status`/`syntaur workflow`, the dashboard settings API) still persist
+ * through {@link writeStatusConfig}/{@link writeWorkflowsConfig} — recreating
+ * either block would instantly re-brick the per-file loader on its next read
+ * (`DUAL_SOURCE_ERROR`, §4.6). The guard lives INSIDE the two writers (the
+ * fewest-misses point — every callsite funnels here); rewiring the editors to
+ * the stage model is Phase 2 "pipeline editor" scope. Pre-marker behavior is
+ * byte-identical.
+ */
+export class LegacyWorkflowWriteLockedError extends Error {
+  constructor() {
+    super('workflows migrated to per-file; edit `~/.syntaur/workflows/<id>.md`');
+    this.name = 'LegacyWorkflowWriteLockedError';
+  }
+}
+
+async function assertLegacyWorkflowWritesAllowed(): Promise<void> {
+  if (await isStagesMigrated()) throw new LegacyWorkflowWriteLockedError();
+}
+
 export async function writeStatusConfig(statuses: StatusConfig): Promise<void> {
+  await assertLegacyWorkflowWritesAllowed();
   const configPath = resolve(syntaurRoot(), 'config.md');
   const statusBlock = serializeStatusConfig(statuses);
 
@@ -2222,6 +2248,7 @@ export async function writeWorkflowsConfig(
   workflows: Record<string, WorkflowDefinition>,
   defaultWorkflow: string,
 ): Promise<void> {
+  await assertLegacyWorkflowWritesAllowed(); // T9b — see the class doc above
   const configPath = resolve(syntaurRoot(), 'config.md');
   const block = serializeWorkflowsConfig(workflows);
   const defaultLine = `defaultWorkflow: ${defaultWorkflow}`;

@@ -32,6 +32,10 @@ export interface FieldDef {
   order?: string[];
   /** Accept `field:none` as a null/empty check. */
   noneSentinel?: boolean;
+  /** WS-3 compat window (design §4.5): a human-readable deprecation message.
+   * The field still compiles and evaluates, but `compileQuery` surfaces a
+   * parse-time warning so queries migrate before the field is removed. */
+  deprecated?: string;
 }
 
 export type FieldRegistry = Record<string, FieldDef>;
@@ -68,10 +72,23 @@ export const ASSIGNMENT_FIELDS: FieldRegistry = {
   completedat: { kind: 'timestamp', get: (i) => i['completedAt'] },
   statusage: { kind: 'duration', get: (i) => i['statusAge'] },
 
-  // ── derived-status dimensions ────────────────────────────────────────────
-  phase: { kind: 'enum' },
-  disposition: { kind: 'enum' },
-  phaseage: { kind: 'duration', get: (i) => i['phaseAge'] },
+  // ── derived-status dimensions (WS-3 compat aliases, design §4.5) ─────────
+  // Post-migration the stored stage IS `status`; `phase` reads the deprecated
+  // payload mirror while it lasts and aliases to the stage after. `disposition`
+  // aliases to the pause FLAGS. `phaseage` is removed — it evaluates as
+  // statusAge (post-migration the stage is the status, so the two coincide)
+  // and emits a parse-time deprecation warning.
+  phase: { kind: 'enum', get: (i) => i['phase'] ?? i['status'] },
+  disposition: {
+    kind: 'enum',
+    get: (i) =>
+      i['disposition'] ?? (i['blocked'] ? 'blocked' : i['parked'] ? 'parked' : 'active'),
+  },
+  phaseage: {
+    kind: 'duration',
+    get: (i) => i['phaseAge'] ?? i['statusAge'],
+    deprecated: '`phaseAge` is removed (stages ARE the status now) — use `statusAge`',
+  },
 
   // ── objective facts ──────────────────────────────────────────────────────
   hasrealobjective: { kind: 'bool', get: (i) => i['hasRealObjective'] },
@@ -91,7 +108,13 @@ export const ASSIGNMENT_FIELDS: FieldRegistry = {
   parked: { kind: 'bool' },
   reviewrequested: { kind: 'bool', get: (i) => i['reviewRequested'] },
   reworkrequested: { kind: 'bool', get: (i) => i['reworkRequested'] },
-  pinned: { kind: 'bool' },
+  // WS-3 compat: pinning is retired (zero live pins) — always false, with a
+  // parse-time deprecation warning (design §4.5).
+  pinned: {
+    kind: 'bool',
+    get: () => false,
+    deprecated: '`pinned` is deprecated (pinning was retired) — it always evaluates false',
+  },
 };
 
 /**

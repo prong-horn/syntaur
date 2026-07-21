@@ -6,7 +6,8 @@ import express from 'express';
 import type { AddressInfo } from 'node:net';
 import type { Server } from 'node:http';
 import { createWorkflowConfigRouter } from '../dashboard/api-status-config.js';
-import { clearStatusConfigCache } from '../dashboard/api.js';
+import { clearStatusConfigCache, getStatusConfig } from '../dashboard/api.js';
+import { invalidateWorkflowLibraryCache } from '../utils/workflow-library.js';
 
 const originalHome = process.env.HOME;
 const originalSyntaurHome = process.env.SYNTAUR_HOME;
@@ -145,5 +146,79 @@ describe('workflow library routes', () => {
     expect(Array.isArray(body.statuses)).toBe(true);
     const list = await (await get()).json();
     expect(list.workflows.some((w: { id: string }) => w.id === 'default')).toBe(true);
+  });
+});
+
+// ── WS-3 (T8 + T9b): the post-migration settings surface ─────────────────────
+describe('post-migration workflow routes (WS-3)', () => {
+  async function migrateFixture(): Promise<void> {
+    const { markStagesMigrated } = await import('../lifecycle/recompute.js');
+    const { invalidateWorkflowLibraryCache } = await import('../utils/workflow-library.js');
+    const root = process.env.SYNTAUR_HOME!;
+    await mkdir(join(root, 'workflows'), { recursive: true });
+    await writeFile(
+      join(root, 'workflows', 'default.md'),
+      'id: default\nstages:\n  - id: draft\n    next: [{ to: done, on: manual }]\n  - id: done\n    terminal: true\n',
+      'utf-8',
+    );
+    await writeFile(
+      join(root, 'workflows', 'test.md'),
+      'id: test\nlabel: test\nstages:\n  - id: pending\n  - id: done\n    terminal: true\n',
+      'utf-8',
+    );
+    await markStagesMigrated();
+    invalidateWorkflowLibraryCache();
+    clearStatusConfigCache();
+  }
+
+  it('T8: GET lists the PER-FILE library once migrated (metadata non-empty, incl. test)', async () => {
+    await migrateFixture();
+    const body = await (await get()).json();
+    expect(body.workflows.map((w: { id: string }) => w.id).sort()).toEqual(['default', 'test']);
+    expect(body.workflows.find((w: { id: string }) => w.id === 'test').label).toBe('test');
+    expect(body.workflows.find((w: { id: string }) => w.id === 'default').isDefault).toBe(true);
+  });
+
+  it('T9b: create / promote-default / duplicate hard-refuse with 409 workflows-migrated', async () => {
+    await migrateFixture();
+    const create = await post('', { id: 'newflow' });
+    expect(create.status).toBe(409);
+    expect((await create.json()).error).toBe('workflows-migrated');
+
+    const promote = await post('/default/default', {});
+    expect(promote.status).toBe(409);
+    expect((await promote.json()).error).toBe('workflows-migrated');
+
+    const dup = await post('/default/duplicate', { id: 'copyflow' });
+    expect(dup.status).toBe(409);
+    expect((await dup.json()).error).toBe('workflows-migrated');
+
+    // No route recreated a config block — the per-file loader stays healthy.
+    const { loadWorkflowLibrary } = await import('../utils/workflow-library.js');
+    invalidateWorkflowLibraryCache();
+    expect(() => loadWorkflowLibrary({ workflows: null, statuses: null })).not.toThrow();
+  });
+});
+
+describe('getStatusConfig — per-file StageWorkflow fallback (post-migration)', () => {
+  it('resolves a per-file workflow (no config block) to ITS stages, not built-in defaults (codex code-r1)', async () => {
+    const wfDir = join(tmpHome, '.syntaur', 'workflows');
+    await mkdir(wfDir, { recursive: true });
+    await writeFile(
+      join(wfDir, 'test.md'),
+      'id: test\nlabel: Test\nstages:\n  - id: pending\n  - id: in_progress\n  - id: completed\n    terminal: true\n  - id: failed\n    terminal: true\n',
+    );
+    invalidateWorkflowLibraryCache();
+    clearStatusConfigCache();
+
+    const cfg = await getStatusConfig('test');
+    expect(cfg.statuses.map((s) => s.id)).toEqual(['pending', 'in_progress', 'completed', 'failed']);
+    expect([...cfg.terminalStatuses].sort()).toEqual(['completed', 'failed']);
+    expect(cfg.label).toBe('Test');
+    // Engine-owned workflow: NO legacy transition affordances synthesized —
+    // an empty table means the board can't offer default lifecycle commands.
+    expect(cfg.transitions).toEqual([]);
+    expect(cfg.transitionTable.size).toBe(0);
+    expect(cfg.custom).toBe(true);
   });
 });
