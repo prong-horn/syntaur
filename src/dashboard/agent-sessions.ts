@@ -367,6 +367,159 @@ export async function reconcileLaunchPlaceholder(
   }
 }
 
+// ── Pending-launch reservations (Phase C, plan D5) ─────────────────────────
+// Durable pre-dispatch records with their own lifecycle — NEVER sessions rows
+// (a pre-dispatch `active` session would open an engagement and strand on a
+// failed dispatch; see launch.ts's WHY-not-insert-before-dispatch comment).
+
+/** Reservations older than this are swept opportunistically on reserve. */
+export const LAUNCH_RESERVATION_TTL_MS = 24 * 60 * 60 * 1000;
+
+export interface LaunchReservation {
+  launchId: string;
+  hostedBy: string;
+  agent: string | null;
+  cwd: string | null;
+  /** Root-identity claim binding (review r1/r2 F1): the real session id
+   * this launch WILL register as, when knowable pre-dispatch (Branch A
+   * claude injects `--session-id <launchId>`, so it equals launchId).
+   * NULL = no root identity establishable → the mode is EXCLUDED from
+   * claiming ('unbound': no write, legacy evidence-guard path). */
+  expectedSessionId: string | null;
+  createdAt: string;
+  dispatchedAt: string | null;
+  claimedBy: string | null;
+  claimedAt: string | null;
+  canceledAt: string | null;
+}
+
+/** Reserve BEFORE dispatch. Returns false (never throws) when the write
+ * failed — the caller proceeds with today's dispatch-first semantics. */
+export function reserveLaunch(input: {
+  launchId: string;
+  hostedBy: SessionHostedBy;
+  agent?: string | null;
+  cwd?: string | null;
+  expectedSessionId?: string | null;
+}): boolean {
+  try {
+    const db = getSessionDb();
+    // Opportunistic TTL sweep: abandoned/canceled/claimed rows are all
+    // transient bookkeeping — age them out wholesale (requirement 4).
+    db.prepare("DELETE FROM launch_reservations WHERE created_at < datetime('now', '-1 day')").run();
+    // Upsert-revive (review r2 F3): a CANCELED reservation for the same
+    // identity is resurrected as a fresh row (all lifecycle fields cleared),
+    // so a same-identity retry stays claim-protected instead of falling to
+    // the legacy path. A LIVE (uncanceled) conflicting row refuses the DO
+    // UPDATE's WHERE → 0 changes → false → legacy (identity genuinely in use).
+    const res = db.prepare(
+      `INSERT INTO launch_reservations (launch_id, hosted_by, agent, cwd, expected_session_id, created_at)
+       VALUES (@id, @hostedBy, @agent, @cwd, @expected, @now)
+       ON CONFLICT(launch_id) DO UPDATE SET
+         hosted_by = excluded.hosted_by, agent = excluded.agent, cwd = excluded.cwd,
+         expected_session_id = excluded.expected_session_id, created_at = excluded.created_at,
+         dispatched_at = NULL, claimed_by = NULL, claimed_at = NULL, canceled_at = NULL
+       WHERE launch_reservations.canceled_at IS NOT NULL`,
+    ).run({
+      id: input.launchId,
+      hostedBy: input.hostedBy,
+      agent: input.agent ?? null,
+      cwd: input.cwd ?? null,
+      expected: input.expectedSessionId ?? null,
+      now: new Date().toISOString(),
+    });
+    return res.changes === 1;
+  } catch {
+    return false;
+  }
+}
+
+/** Stamp the moment the dispatch request was actually sent. Best-effort. */
+export function markLaunchDispatched(launchId: string): void {
+  try {
+    getSessionDb()
+      .prepare('UPDATE launch_reservations SET dispatched_at = @now WHERE launch_id = @id AND dispatched_at IS NULL')
+      .run({ id: launchId, now: new Date().toISOString() });
+  } catch {
+    /* best-effort */
+  }
+}
+
+/** Cancel on definite refusal/degrade so a retry of the same identity is
+ * never blocked. A CLAIMED reservation is never canceled (claim wins). */
+export function cancelLaunch(launchId: string): void {
+  try {
+    getSessionDb()
+      .prepare(
+        'UPDATE launch_reservations SET canceled_at = @now WHERE launch_id = @id AND claimed_by IS NULL AND canceled_at IS NULL',
+      )
+      .run({ id: launchId, now: new Date().toISOString() });
+  } catch {
+    /* best-effort */
+  }
+}
+
+export type LaunchClaimResult = 'won' | 'lost' | 'unbound' | 'none';
+
+/** Identity-bound claim (review r1 F1 + r2 F1).
+ * BOUND (`expected_session_id` set — Branch A): only that exact id can win,
+ * enforced INSIDE the CAS WHERE — an intruder can never claim first;
+ * idempotent for the owner; canceled → 'lost'.
+ * UNBOUND (`expected_session_id` NULL — shell-alias claude; no root-identity
+ * mechanism exists): EXCLUDED from the claim protocol — writes NOTHING,
+ * returns 'unbound'; callers take today's evidence-guard path unchanged
+ * (the hook-race residual stays open for this mode, documented in D5).
+ * 'none' = no reservation row (legacy launch or failed reserve). */
+export function claimLaunch(launchId: string, realSessionId: string): LaunchClaimResult {
+  try {
+    const db = getSessionDb();
+    const row = db
+      .prepare('SELECT expected_session_id FROM launch_reservations WHERE launch_id = ?')
+      .get(launchId) as { expected_session_id: string | null } | undefined;
+    if (!row) return 'none';
+    if (row.expected_session_id === null) return 'unbound';
+    if (row.expected_session_id !== realSessionId) return 'lost';
+    const res = db
+      .prepare(
+        `UPDATE launch_reservations
+            SET claimed_by = @real, claimed_at = @now
+          WHERE launch_id = @id AND expected_session_id = @real
+            AND (claimed_by IS NULL OR claimed_by = @real) AND canceled_at IS NULL`,
+      )
+      .run({ id: launchId, real: realSessionId, now: new Date().toISOString() });
+    return res.changes === 1 ? 'won' : 'lost'; // 0 ⇒ canceled
+  } catch {
+    return 'none'; // reservation machinery unavailable → legacy path
+  }
+}
+
+/** Read one reservation (launch wiring + tests). Null when absent/unreadable. */
+export function getLaunchReservation(launchId: string): LaunchReservation | null {
+  try {
+    const r = getSessionDb()
+      .prepare(
+        `SELECT launch_id, hosted_by, agent, cwd, expected_session_id, created_at, dispatched_at, claimed_by, claimed_at, canceled_at
+           FROM launch_reservations WHERE launch_id = ?`,
+      )
+      .get(launchId) as Record<string, string | null> | undefined;
+    if (!r) return null;
+    return {
+      launchId: r.launch_id as string,
+      hostedBy: r.hosted_by as string,
+      agent: r.agent,
+      cwd: r.cwd,
+      expectedSessionId: r.expected_session_id,
+      createdAt: r.created_at as string,
+      dispatchedAt: r.dispatched_at,
+      claimedBy: r.claimed_by,
+      claimedAt: r.claimed_at,
+      canceledAt: r.canceled_at,
+    };
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Read the launch-correlation markers from this process's environment
  * (hook processes inherit the worker's env), reconcile the placeholder
@@ -377,7 +530,24 @@ export async function consumeLaunchMarkers(
   realSessionId: string,
 ): Promise<{ hostedBy?: SessionHostedBy }> {
   const launchId = process.env.SYNTAUR_LAUNCH_ID;
-  if (launchId) await reconcileLaunchPlaceholder(launchId, realSessionId);
+  if (launchId) {
+    const claim = claimLaunch(launchId, realSessionId);
+    if (claim === 'lost') {
+      // Deterministic R3 guard — BOUND reservations only (review r1 F1):
+      // the launch injected `--session-id`, so the root's real id is known
+      // and this claimant provably is not it (a subagent's SessionStart, or
+      // `track-session --session-id <other>` run inside the worker) —
+      // regardless of arrival order. Refuse the reconcile AND the backend
+      // stamp; the true root always gets 'won', even claiming later.
+      return {};
+    }
+    // 'won': the proven root. 'unbound' (no deterministic root identity —
+    // shell-alias claude) and 'none' (legacy launch / failed reserve): take
+    // today's path unchanged — the transcript_path/original_head_sha
+    // evidence guard inside reconcileLaunchPlaceholder stays the
+    // belt-and-braces (documented accepted residual, no worse than Phase B).
+    await reconcileLaunchPlaceholder(launchId, realSessionId);
+  }
   const raw = process.env.SYNTAUR_HOSTED_BY;
   const hostedBy =
     raw === 'syntaurd' || raw === 'tmux' || raw === 'claude-bg' ? raw : undefined;

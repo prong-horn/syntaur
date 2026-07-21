@@ -13,6 +13,11 @@ import {
   listAllSessions,
   reconcileLaunchPlaceholder,
   consumeLaunchMarkers,
+  reserveLaunch,
+  markLaunchDispatched,
+  claimLaunch,
+  cancelLaunch,
+  getLaunchReservation,
 } from '../dashboard/agent-sessions.js';
 
 let testDir: string;
@@ -361,5 +366,200 @@ describe('consumeLaunchMarkers', () => {
       assignmentSlug: null,
     });
     expect((await listAllSessions('')).find((s) => s.sessionId === REAL_ID)?.hostedBy).toBe('claude-bg');
+  });
+});
+
+describe('launch_reservations lifecycle', () => {
+  it('(a) reserve creates a fresh row with null lifecycle fields', () => {
+    const ok = reserveLaunch({
+      launchId: LAUNCH_ID,
+      hostedBy: 'syntaurd',
+      agent: 'claude',
+      cwd: '/w/a',
+      expectedSessionId: 'real-A',
+    });
+    expect(ok).toBe(true);
+    const r = getLaunchReservation(LAUNCH_ID);
+    expect(r).toMatchObject({
+      launchId: LAUNCH_ID,
+      hostedBy: 'syntaurd',
+      agent: 'claude',
+      cwd: '/w/a',
+      expectedSessionId: 'real-A',
+      dispatchedAt: null,
+      claimedBy: null,
+      claimedAt: null,
+      canceledAt: null,
+    });
+    expect(r?.createdAt).toBeTruthy();
+  });
+
+  it('(b) markLaunchDispatched stamps once; a second call does not move the timestamp', () => {
+    reserveLaunch({ launchId: LAUNCH_ID, hostedBy: 'syntaurd', expectedSessionId: 'real-A' });
+    markLaunchDispatched(LAUNCH_ID);
+    expect(getLaunchReservation(LAUNCH_ID)?.dispatchedAt).toBeTruthy();
+
+    // Force a distinguishable stamp so a second call's no-op is unambiguous
+    // regardless of clock resolution.
+    getSessionDb()
+      .prepare('UPDATE launch_reservations SET dispatched_at = ? WHERE launch_id = ?')
+      .run('2020-01-01T00:00:00.000Z', LAUNCH_ID);
+    markLaunchDispatched(LAUNCH_ID);
+    expect(getLaunchReservation(LAUNCH_ID)?.dispatchedAt).toBe('2020-01-01T00:00:00.000Z');
+  });
+
+  it('(c) bound claim: winner/loser/idempotent re-claim, and intruder-first cannot win regardless of arrival order (review r1 F1)', () => {
+    reserveLaunch({ launchId: LAUNCH_ID, hostedBy: 'syntaurd', expectedSessionId: 'real-A' });
+    expect(claimLaunch(LAUNCH_ID, 'real-A')).toBe('won');
+    expect(claimLaunch(LAUNCH_ID, 'real-B')).toBe('lost');
+    expect(claimLaunch(LAUNCH_ID, 'real-A')).toBe('won'); // idempotent re-claim by the owner
+
+    // Intruder-FIRST: on a FRESH bound reservation, the intruder calling
+    // BEFORE the root must still lose (claimed_by stays NULL), and the root
+    // must still win when it arrives later — the identity check lives
+    // inside the CAS WHERE, so arrival order can never decide the winner.
+    // SABOTAGE-VERIFIED locally (see Task 15 report / the (g) comment
+    // below for the full breakdown): claimLaunch has two redundant identity
+    // checks; commenting out BOTH (the pre-check and the CAS WHERE's
+    // `expected_session_id = @real`) makes this block fail — the intruder
+    // wins. Reverted after confirming; no sabotage code is committed.
+    const OTHER_LAUNCH_ID = 'dddddddd-4444-4444-8444-dddddddddddd';
+    reserveLaunch({ launchId: OTHER_LAUNCH_ID, hostedBy: 'syntaurd', expectedSessionId: 'real-A' });
+    expect(claimLaunch(OTHER_LAUNCH_ID, 'real-B')).toBe('lost');
+    expect(getLaunchReservation(OTHER_LAUNCH_ID)?.claimedBy).toBeNull();
+    expect(claimLaunch(OTHER_LAUNCH_ID, 'real-A')).toBe('won');
+  });
+
+  it("(c2) unbound claim writes nothing — 'unbound' both times (review r2 F1, excluded mode)", () => {
+    reserveLaunch({ launchId: LAUNCH_ID, hostedBy: 'syntaurd' }); // no expectedSessionId
+    expect(claimLaunch(LAUNCH_ID, 'real-A')).toBe('unbound');
+    expect(getLaunchReservation(LAUNCH_ID)?.claimedBy).toBeNull();
+    expect(claimLaunch(LAUNCH_ID, 'real-B')).toBe('unbound');
+    expect(getLaunchReservation(LAUNCH_ID)?.claimedBy).toBeNull();
+  });
+
+  it('(d) a canceled reservation refuses claims; cancel is a no-op once claimed', () => {
+    reserveLaunch({ launchId: LAUNCH_ID, hostedBy: 'syntaurd', expectedSessionId: 'real-A' });
+    cancelLaunch(LAUNCH_ID);
+    expect(getLaunchReservation(LAUNCH_ID)?.canceledAt).toBeTruthy();
+    expect(claimLaunch(LAUNCH_ID, 'real-A')).toBe('lost');
+
+    const OTHER_LAUNCH_ID = 'eeeeeeee-5555-4555-8555-eeeeeeeeeeee';
+    reserveLaunch({ launchId: OTHER_LAUNCH_ID, hostedBy: 'syntaurd', expectedSessionId: 'real-A' });
+    expect(claimLaunch(OTHER_LAUNCH_ID, 'real-A')).toBe('won');
+    cancelLaunch(OTHER_LAUNCH_ID); // claim wins — cancel must not touch it
+    expect(getLaunchReservation(OTHER_LAUNCH_ID)?.canceledAt).toBeNull();
+  });
+
+  it('(d2) reserveLaunch revives a canceled row fresh; refuses a LIVE conflicting id (review r2 F3)', () => {
+    reserveLaunch({ launchId: LAUNCH_ID, hostedBy: 'syntaurd', expectedSessionId: 'real-A' });
+    markLaunchDispatched(LAUNCH_ID);
+    cancelLaunch(LAUNCH_ID);
+    expect(getLaunchReservation(LAUNCH_ID)?.canceledAt).toBeTruthy();
+
+    const revivedOk = reserveLaunch({ launchId: LAUNCH_ID, hostedBy: 'tmux', expectedSessionId: 'real-C' });
+    expect(revivedOk).toBe(true);
+    const revived = getLaunchReservation(LAUNCH_ID);
+    expect(revived).toMatchObject({
+      hostedBy: 'tmux',
+      expectedSessionId: 'real-C',
+      dispatchedAt: null,
+      claimedBy: null,
+      claimedAt: null,
+      canceledAt: null,
+    });
+    expect(revived?.createdAt).toBeTruthy();
+
+    // A LIVE (uncanceled) conflicting id refuses — 0 changes → false — and
+    // the live row is untouched.
+    const liveOk = reserveLaunch({ launchId: LAUNCH_ID, hostedBy: 'syntaurd', expectedSessionId: 'real-D' });
+    expect(liveOk).toBe(false);
+    expect(getLaunchReservation(LAUNCH_ID)).toEqual(revived);
+  });
+
+  it("(e) claimLaunch returns 'none' when no reservation row exists (legacy launch)", () => {
+    expect(claimLaunch('never-reserved', 'x')).toBe('none');
+  });
+
+  it('(f) reserveLaunch opportunistically sweeps rows older than the TTL', () => {
+    const db = getSessionDb();
+    db.prepare(
+      `INSERT INTO launch_reservations (launch_id, hosted_by, agent, cwd, expected_session_id, created_at)
+       VALUES (?, ?, ?, ?, ?, datetime('now', '-2 day'))`,
+    ).run('stale-launch', 'syntaurd', null, null, null);
+    expect(getLaunchReservation('stale-launch')).not.toBeNull();
+
+    reserveLaunch({ launchId: LAUNCH_ID, hostedBy: 'syntaurd', expectedSessionId: 'real-A' });
+
+    expect(getLaunchReservation('stale-launch')).toBeNull();
+    expect(getLaunchReservation(LAUNCH_ID)).not.toBeNull();
+  });
+
+  it('(g) claim-first integration, BOUND: the proven root always wins, regardless of arrival order; the loser stamps nothing (review r1 F1)', async () => {
+    // Normal order: the root claims first.
+    await insertPlaceholder(); // placeholder keyed to LAUNCH_ID
+    reserveLaunch({ launchId: LAUNCH_ID, hostedBy: 'syntaurd', expectedSessionId: 'real-A' });
+    process.env.SYNTAUR_LAUNCH_ID = LAUNCH_ID;
+    process.env.SYNTAUR_HOSTED_BY = 'syntaurd';
+
+    const won = await consumeLaunchMarkers('real-A');
+    expect(won).toEqual({ hostedBy: 'syntaurd' });
+    let all = await listAllSessions('');
+    expect(all.find((s) => s.sessionId === 'real-A')).toBeDefined();
+    expect(all.find((s) => s.sessionId === LAUNCH_ID)).toBeUndefined();
+
+    const lost = await consumeLaunchMarkers('real-B');
+    expect(lost).toEqual({});
+    all = await listAllSessions('');
+    expect(all.find((s) => s.sessionId === 'real-B')).toBeUndefined();
+
+    // Intruder-FIRST order, on a fresh identical fixture: the intruder
+    // arriving BEFORE the root must still lose and leave the placeholder
+    // untouched; the root must still migrate normally when it arrives
+    // later. SABOTAGE-VERIFIED locally (see Task 15 report): claimLaunch
+    // enforces identity TWICE — a pre-check (`if (row.expected_session_id
+    // !== realSessionId) return 'lost'`) and, redundantly, inside the CAS
+    // UPDATE's WHERE (`AND expected_session_id = @real`). Each check is
+    // independently sufficient for this scenario, so commenting out either
+    // ONE alone does not fail this test — but commenting out BOTH does:
+    // the intruder then wins the CAS and re-keys the placeholder onto
+    // 'real-B2' instead of refusing. Verified all three combinations
+    // locally, reverted; no sabotage code is committed.
+    const OTHER_LAUNCH_ID = 'ffffffff-6666-4666-8666-ffffffffffff';
+    await insertPlaceholder(OTHER_LAUNCH_ID);
+    reserveLaunch({ launchId: OTHER_LAUNCH_ID, hostedBy: 'syntaurd', expectedSessionId: 'real-A2' });
+    process.env.SYNTAUR_LAUNCH_ID = OTHER_LAUNCH_ID;
+
+    const intruderFirst = await consumeLaunchMarkers('real-B2');
+    expect(intruderFirst).toEqual({});
+    all = await listAllSessions('');
+    expect(all.find((s) => s.sessionId === OTHER_LAUNCH_ID)).toBeDefined(); // untouched
+    expect(all.find((s) => s.sessionId === 'real-B2')).toBeUndefined();
+
+    const rootAfter = await consumeLaunchMarkers('real-A2');
+    expect(rootAfter).toEqual({ hostedBy: 'syntaurd' });
+    all = await listAllSessions('');
+    expect(all.find((s) => s.sessionId === 'real-A2')).toBeDefined();
+    expect(all.find((s) => s.sessionId === OTHER_LAUNCH_ID)).toBeUndefined();
+  });
+
+  it('(g2) claim-first integration, UNBOUND: behaves exactly like today, and claimed_by stays NULL (review r2 F1, excluded mode)', async () => {
+    await insertPlaceholder();
+    reserveLaunch({ launchId: LAUNCH_ID, hostedBy: 'syntaurd' }); // no expectedSessionId
+    process.env.SYNTAUR_LAUNCH_ID = LAUNCH_ID;
+    process.env.SYNTAUR_HOSTED_BY = 'syntaurd';
+
+    const markers = await consumeLaunchMarkers(REAL_ID);
+    expect(markers).toEqual({ hostedBy: 'syntaurd' });
+    const all = await listAllSessions('');
+    expect(all.find((s) => s.sessionId === REAL_ID)).toBeDefined();
+    expect(all.find((s) => s.sessionId === LAUNCH_ID)).toBeUndefined();
+    expect(getLaunchReservation(LAUNCH_ID)?.claimedBy).toBeNull();
+  });
+
+  it('(h) a reservation alone produces no session row — no ghost sessions in the feed', async () => {
+    reserveLaunch({ launchId: LAUNCH_ID, hostedBy: 'syntaurd', expectedSessionId: 'real-A' });
+    const all = await listAllSessions('');
+    expect(all.find((s) => s.sessionId === LAUNCH_ID)).toBeUndefined();
   });
 });
