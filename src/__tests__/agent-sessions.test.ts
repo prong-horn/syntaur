@@ -857,6 +857,25 @@ describe('narrow revival rule (reviveStopped)', () => {
     expect(getSessionDb().prepare('SELECT * FROM summarize_state WHERE session_id = ?').get(sid)).toBeUndefined();
   });
 
+  it('clears a stale stored summary on a genuine revive so the session re-qualifies', async () => {
+    const sid = 'revive-clears-summary';
+    await appendSession('', makeSession({ sessionId: sid }));
+    await updateSessionStatus('', sid, 'stopped');
+    // Simulate an existing auto summary.
+    getSessionDb()
+      .prepare("UPDATE sessions SET summary='old', summarized_at='2026-07-01T00:00:00Z', description_source='auto' WHERE session_id = ?")
+      .run(sid);
+
+    await appendSession('', makeSession({ sessionId: sid, status: 'active' as AgentSessionStatus }), {
+      reviveStopped: true,
+    });
+    const row = getSessionDb()
+      .prepare('SELECT summary, summarized_at FROM sessions WHERE session_id = ?')
+      .get(sid) as { summary: string | null; summarized_at: string | null };
+    expect(row.summary).toBeNull();
+    expect(row.summarized_at).toBeNull();
+  });
+
   it('preserves a claim on an ALREADY-active session re-registered with reviveStopped (no transition)', async () => {
     // The scanner passes reviveStopped for every live session, active ones
     // included. Re-registering an already-active session is NOT a revive and

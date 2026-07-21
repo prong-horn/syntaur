@@ -270,13 +270,18 @@ export async function appendSession(
       assignmentSlug: session.assignmentSlug ?? null,
     };
     if (persisted?.status === 'active') {
-      // Revive invalidates any in-flight summarize claim, but ONLY on a genuine
-      // stopped→active transition — never for a session that was already active
-      // (the scanner re-registers live sessions with reviveStopped every tick).
-      // Same transaction as the flip, so the summarizer's finalize sees the
-      // deleted claim → lost-lease.
+      // Genuine stopped→active revive (NOT an already-active scanner
+      // re-registration): drop any in-flight summarize claim AND clear the
+      // stored summary. The session will do more work before ending again, so
+      // the pre-resume summary is stale; clearing it re-qualifies the row for
+      // the `summary IS NULL` sweep once it re-stops. Same transaction as the
+      // flip. (The auto description refreshes on the next summary; a human
+      // description is preserved by description_source.)
       if (opts?.reviveStopped && priorStatus === 'stopped') {
         db.prepare('DELETE FROM summarize_state WHERE session_id = ?').run(session.sessionId);
+        db.prepare(
+          'UPDATE sessions SET summary = NULL, summarized_at = NULL WHERE session_id = ?',
+        ).run(session.sessionId);
       }
       // Live session: ensure an open engagement (fresh binding, else recover the
       // prior binding on a stopped->active revive that arrived with no binding).
@@ -484,12 +489,15 @@ export async function updateSessionStatus(
         )
         .run(status, sessionId);
       if (res.changes > 0) {
-        // A genuine stopped→active revive invalidates any in-flight summarize
-        // claim in the SAME transaction — the summarizer's finalize then loses
-        // its lease rather than persisting a pre-resume summary. `current.status`
-        // is the PRIOR status, so this fires only on a real transition.
+        // A genuine stopped→active revive (current.status is the PRIOR status,
+        // so this fires only on a real transition) invalidates any in-flight
+        // summarize claim AND clears the now-stale stored summary, so the row
+        // re-qualifies for the sweep after it does more work and re-stops.
         if (current.status !== 'active') {
           db.prepare('DELETE FROM summarize_state WHERE session_id = ?').run(sessionId);
+          db.prepare(
+            'UPDATE sessions SET summary = NULL, summarized_at = NULL WHERE session_id = ?',
+          ).run(sessionId);
         }
         reopenEngagementIfMissing(sessionId, null, new Date().toISOString(), reviveSnapshot);
       }

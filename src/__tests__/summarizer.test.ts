@@ -546,6 +546,25 @@ describe('listSessionsNeedingSummary / summarizeMissing', () => {
     expect(listSessionsNeedingSummary(10).map((s) => s.sessionId)).not.toContain('d1');
   });
 
+  it('re-qualifies a session that was summarized, then resumed and re-stopped', async () => {
+    // stopped → summarized → resumed (more work) → stopped again. The stale
+    // pre-resume summary must be cleared on the revive so the sweep picks it up
+    // again; otherwise the dashboard shows the old summary forever.
+    await seed('r1');
+    await summarizeSession('r1', { backend: fakeBackend(goodReply) });
+    expect(getSessionById('r1')!.summary).toBe('Traced and fixed it.');
+    expect(listSessionsNeedingSummary(10).map((s) => s.sessionId)).not.toContain('r1');
+
+    // Resume (revive clears summary + summarized_at) …
+    await updateSessionStatus('', 'r1', 'active');
+    expect(getSessionById('r1')!.summary).toBeNull();
+    expect(getSessionById('r1')!.summarizedAt ?? null).toBeNull();
+
+    // … then re-stop: eligible again.
+    await updateSessionStatus('', 'r1', 'stopped');
+    expect(listSessionsNeedingSummary(10).map((s) => s.sessionId)).toContain('r1');
+  });
+
   it('summarizes a batch and returns one result per session, each carrying its id', async () => {
     await seed('m1', { started: '2026-07-02T10:00:00.000Z' });
     await seed('m2', { started: '2026-07-01T10:00:00.000Z' });

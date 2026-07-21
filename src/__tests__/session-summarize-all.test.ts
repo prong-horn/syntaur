@@ -61,6 +61,16 @@ describe('summarizeAllWithTranscripts (--all)', () => {
     expect(results).toHaveLength(5);
   });
 
+  it('help text reflects the unlimited --all / 20-default --missing behavior', async () => {
+    const { sessionCommand } = await import('../commands/session.js');
+    const summarize = sessionCommand.commands.find((c) => c.name() === 'summarize');
+    expect(summarize).toBeDefined();
+    const help = summarize!.helpInformation();
+    // Regression: help must not promise a 20-cap for --all.
+    expect(help).toMatch(/--all[^\n]*unlimited/i);
+    expect(help).toMatch(/--missing[^\n]*20/i);
+  });
+
   it('skips sessions with no transcript', async () => {
     await appendSession('', {
       projectSlug: null,

@@ -743,11 +743,11 @@ sessionCommand
     'Generate a short description + summary for tracked sessions from their transcripts. Runs OUTSIDE the session being summarized, so it works on any session (live or stopped) for any agent runtime.',
   )
   .argument('[sessionId]', 'Summarize exactly this session (any status, including live)')
-  .option('--missing', 'Summarize ended sessions that have no summary yet')
-  .option('--all', 'Re-summarize every session that has a transcript (implies --force)')
+  .option('--missing', 'Summarize ended sessions that have no summary yet (default limit 20)')
+  .option('--all', 'Re-summarize EVERY session that has a transcript, unlimited unless --limit is given (implies --force)')
   .option('--backend <name>', 'Override the configured backend: claude | pi')
   .option('--force', 'Re-summarize even if a summary already exists')
-  .option('--limit <n>', 'Maximum sessions to process in batch modes (default 20)')
+  .option('--limit <n>', 'Cap sessions processed: --missing defaults to 20, --all is unlimited without this')
   .option('--json', 'Emit results as JSON')
   .action(
     async (
