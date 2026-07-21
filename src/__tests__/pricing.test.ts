@@ -48,7 +48,7 @@ describe('priceForModel', () => {
         cacheReadTokens: 0,
       }),
     ).toBeCloseTo(1.4 + 4.4, 10);
-    // MiniMax M2.5: in 0.15, out 0.90 per million.
+    // MiniMax M2.5: official pay-as-you-go in 0.30, out 1.20 per million.
     expect(
       priceForModel('[pi] hf:MiniMaxAI/MiniMax-M2.5', {
         inputTokens: 1_000_000,
@@ -56,7 +56,7 @@ describe('priceForModel', () => {
         cacheCreationTokens: 0,
         cacheReadTokens: 0,
       }),
-    ).toBeCloseTo(0.15 + 0.9, 10);
+    ).toBeCloseTo(0.3 + 1.2, 10);
   });
 
   it('returns null for an unknown model (opaque Synthetic alias, any claude/codex model)', () => {
@@ -147,5 +147,22 @@ describe('MODEL_ALIASES coverage of live model strings', () => {
 
   it('leaves an unknown model string untouched', () => {
     expect(normalizeModelKey('[pi] syn:large:text')).toBe('syn:large:text');
+  });
+
+  it('prices MiniMax M2.5 with all four token buckets at the official rate', () => {
+    // Official MiniMax pay-as-you-go: 0.30 in / 1.20 out / 0.03 cache-read /
+    // 0.375 cache-write per 1M tokens. Exercise each bucket independently.
+    const rate = (bucket: 'inputTokens' | 'outputTokens' | 'cacheReadTokens' | 'cacheCreationTokens') =>
+      priceForModel('[pi] minimax-m2.5', {
+        inputTokens: 0,
+        outputTokens: 0,
+        cacheCreationTokens: 0,
+        cacheReadTokens: 0,
+        [bucket]: 1_000_000,
+      } as Parameters<typeof priceForModel>[1]);
+    expect(rate('inputTokens')).toBeCloseTo(0.3, 6);
+    expect(rate('outputTokens')).toBeCloseTo(1.2, 6);
+    expect(rate('cacheReadTokens')).toBeCloseTo(0.03, 6);
+    expect(rate('cacheCreationTokens')).toBeCloseTo(0.375, 6);
   });
 });

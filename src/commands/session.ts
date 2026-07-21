@@ -774,8 +774,13 @@ sessionCommand
           process.exit(1);
         }
 
-        let limit = 20;
-        if (options.limit !== undefined) {
+        // `--missing` defaults to a small batch (it re-runs on every scan);
+        // `--all` means EVERY session with a transcript, so it is unlimited
+        // unless the user explicitly caps it. An explicit `--limit` applies to
+        // whichever selector is in use.
+        const explicitLimit = options.limit !== undefined;
+        let limit = options.all ? Infinity : 20;
+        if (explicitLimit) {
           limit = Number(options.limit);
           if (!Number.isInteger(limit) || limit <= 0) {
             console.error(`Error: --limit must be a positive integer (got "${options.limit}").`);
@@ -827,9 +832,11 @@ sessionCommand
 
 /**
  * `--all`: re-summarize every session that still has a readable transcript,
- * newest first. Description provenance still protects human-written labels.
+ * newest first. `limit` is `Infinity` for a bare `--all` (process everything);
+ * an explicit `--limit` caps it. Description provenance still protects
+ * human-written labels. Exported for tests.
  */
-async function summarizeAllWithTranscripts(opts: {
+export async function summarizeAllWithTranscripts(opts: {
   backend: import('../sessions/summarizer.js').SummarizeBackend;
   limit: number;
 }): Promise<import('../sessions/summarizer.js').PerSessionResult[]> {

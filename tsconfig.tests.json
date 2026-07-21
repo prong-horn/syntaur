@@ -33,6 +33,7 @@
     "src/__tests__/usage-db.test.ts",
     "src/__tests__/cwd-extractor.test.ts",
     "src/__tests__/transcript-derive-path.test.ts",
+    "src/__tests__/session-summarize-all.test.ts",
     "src/__tests__/lifecycle-commands.test.ts",
     "src/__tests__/lifecycle-linked-todos.test.ts",
     "src/__tests__/status-cmd.test.ts",

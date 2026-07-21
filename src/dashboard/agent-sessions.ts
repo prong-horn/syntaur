@@ -225,6 +225,16 @@ export async function appendSession(
   `);
 
   const apply = db.transaction(() => {
+    // Prior status, read BEFORE the upsert: `reviveStopped` is passed by the
+    // scanner for ANY live session (heldOpen/agentViewLive), including ones
+    // already active, so `persisted.status === 'active'` alone does NOT imply a
+    // revive. Only a genuine stopped→active transition may invalidate a claim.
+    const priorStatus = (
+      db.prepare('SELECT status FROM sessions WHERE session_id = ?').get(session.sessionId) as
+        | { status?: string }
+        | undefined
+    )?.status;
+
     upsert.run(
       session.sessionId,
       session.agent,
@@ -260,12 +270,12 @@ export async function appendSession(
       assignmentSlug: session.assignmentSlug ?? null,
     };
     if (persisted?.status === 'active') {
-      // Revive invalidates any in-flight summarize claim: a summarizer holding a
-      // lease on this (previously stopped) session must not persist a pre-resume
-      // summary. Gated on reviveStopped so routine active re-registration doesn't
-      // disturb a legitimate in-flight claim. Same transaction as the flip, so
-      // the summarizer's later finalize sees the deleted claim → lost-lease.
-      if (opts?.reviveStopped) {
+      // Revive invalidates any in-flight summarize claim, but ONLY on a genuine
+      // stopped→active transition — never for a session that was already active
+      // (the scanner re-registers live sessions with reviveStopped every tick).
+      // Same transaction as the flip, so the summarizer's finalize sees the
+      // deleted claim → lost-lease.
+      if (opts?.reviveStopped && priorStatus === 'stopped') {
         db.prepare('DELETE FROM summarize_state WHERE session_id = ?').run(session.sessionId);
       }
       // Live session: ensure an open engagement (fresh binding, else recover the

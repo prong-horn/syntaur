@@ -76,12 +76,12 @@ export const MODEL_PRICING: Record<string, ModelRate> = {
   //         confirming 1.4/4.4 as list. The discount is rejected per the
   //         canonical-source rule above.
   'zai-org/glm-5.1': { input: 1.4, output: 4.4, cacheRead: 0.26, cacheWrite: 1.4 },
-  // MiniMax M2.5 — official MiniMax platform list price. No separately-pinned
-  // cached-read rate is published, so cacheRead is set conservatively to the
-  // input rate (upper bound); revise if MiniMax publishes a cache rate.
-  // source: https://platform.minimax.io/docs/guides/pricing-token-plan
-  //         — cross-checked https://openrouter.ai/minimax/minimax-m2.5 (retrieved 2026-06-18)
-  'minimaxai/minimax-m2.5': { input: 0.15, output: 0.9, cacheRead: 0.15, cacheWrite: 0.15 },
+  // MiniMax M2.5 — official MiniMax pay-as-you-go list price, incl. the
+  // separately-published prompt-caching read/write rates.
+  // source: https://platform.minimax.io/docs/guides/pricing-paygo (official,
+  //         retrieved 2026-07-21): input $0.30, output $1.20, cache read $0.03,
+  //         cache write $0.375 per 1M tokens.
+  'minimaxai/minimax-m2.5': { input: 0.3, output: 1.2, cacheRead: 0.03, cacheWrite: 0.375 },
   // NOTE: opaque Synthetic tier aliases like `syn:large:text` have no public
   // per-token rate (they route to whatever Synthetic assigns), so they remain
   // unpriced (→ $0). Reseller discounts (e.g. DeepInfra K2.6 0.75/3.50/0.15) are

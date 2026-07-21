@@ -856,6 +856,30 @@ describe('narrow revival rule (reviveStopped)', () => {
     });
     expect(getSessionDb().prepare('SELECT * FROM summarize_state WHERE session_id = ?').get(sid)).toBeUndefined();
   });
+
+  it('preserves a claim on an ALREADY-active session re-registered with reviveStopped (no transition)', async () => {
+    // The scanner passes reviveStopped for every live session, active ones
+    // included. Re-registering an already-active session is NOT a revive and
+    // must not wipe a legitimate explicit-summarize claim.
+    const sid = 'active-stays-claimed';
+    await appendSession(
+      '',
+      makeSession({ sessionId: sid, status: 'active' as AgentSessionStatus }),
+    );
+    expect(claimSummarize(sid, 'explicit-token')).toBe(true);
+
+    // A scanner tick re-registers the still-active session with reviveStopped.
+    await appendSession('', makeSession({ sessionId: sid, status: 'active' as AgentSessionStatus }), {
+      reviveStopped: true,
+    });
+
+    const state = getSessionDb()
+      .prepare('SELECT claim_token FROM summarize_state WHERE session_id = ?')
+      .get(sid) as { claim_token: string | null } | undefined;
+    expect(state?.claim_token).toBe('explicit-token');
+    // And the in-flight summarizer can still finalize.
+    expect(finalizeSummarize(sid, 'explicit-token', { description: 'd', summary: 's' })).not.toBe('lost-lease');
+  });
 });
 
 describe('deleteSessions summarize_state cleanup', () => {
