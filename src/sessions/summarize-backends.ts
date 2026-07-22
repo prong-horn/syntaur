@@ -25,8 +25,8 @@ import { extractFirstJsonObject, type BackendDeps, type SummarizeBackend } from 
 const DEFAULT_TIMEOUT_MS = 120_000;
 const MAX_OUTPUT_BYTES = 256 * 1024;
 
-/** GLM-5.2 as pi exposes it (`pi --list-models`: provider synthetic). */
-export const PI_MODEL_ID = 'hf:zai-org/GLM-5.2';
+/** GLM-5.2 as pi exposes it (`pi --list-models`: provider `opencode-go`). */
+export const PI_MODEL_ID = 'opencode-go/glm-5.2';
 
 interface RunResult {
   stdout: string;
@@ -225,32 +225,6 @@ export function createClaudeBackend(binary = 'claude'): SummarizeBackend {
 }
 
 /**
- * Resolve the Synthetic API key BEFORE spawning.
- *
- * pi's own lazy resolution is unreliable in non-interactive contexts, so the
- * key is materialized here and injected into the child env. Env var first, then
- * gcloud Secret Manager. Returns null when neither yields a key — the caller
- * fails fast rather than spawning a call that cannot authenticate.
- */
-export async function resolveSyntheticApiKey(
-  env: NodeJS.ProcessEnv = process.env,
-  gcloudBinary = 'gcloud',
-  signal?: AbortSignal,
-): Promise<string | null> {
-  const fromEnv = env.SYNTHETIC_API_KEY?.trim();
-  if (fromEnv) return fromEnv;
-
-  const result = await runPrompt(
-    gcloudBinary,
-    ['secrets', 'versions', 'access', 'latest', '--secret=SYNTHETIC_API_KEY'],
-    { stdin: '', timeoutMs: 30_000, signal }, // abortable on shutdown
-  );
-  if (result.enoent || result.timedOut || result.aborted || result.code !== 0) return null;
-  const key = result.stdout.trim();
-  return key.length > 0 ? key : null;
-}
-
-/**
  * Extract the assistant's final text from pi's `--mode json` output.
  *
  * pi emits a JSONL EVENT STREAM (session header, agent_start, message_start /
@@ -293,22 +267,18 @@ export function extractPiAssistantText(stdout: string): string | null {
   return latest;
 }
 
-/** Pi backend — GLM-5.2 via Synthetic. */
+/**
+ * Pi backend — GLM-5.2 via the `opencode-go` provider.
+ *
+ * pi authenticates itself (its own stored login), so — unlike the retired
+ * Synthetic path — there is NO API key to resolve or inject: the backend just
+ * spawns `pi`. Verified end-to-end against `opencode-go/glm-5.2`.
+ */
 export function createPiBackend(
   binary = 'pi',
-  opts: { env?: NodeJS.ProcessEnv; gcloudBinary?: string; model?: string } = {},
+  opts: { env?: NodeJS.ProcessEnv; model?: string } = {},
 ): SummarizeBackend {
   return async (prompt: string, deps?: BackendDeps) => {
-    const baseEnv = opts.env ?? process.env;
-    const apiKey = await resolveSyntheticApiKey(baseEnv, opts.gcloudBinary, deps?.signal);
-    if (!apiKey) {
-      return {
-        ok: false,
-        error:
-          'SYNTHETIC_API_KEY unavailable (not in env, and gcloud secret lookup failed) — cannot run the pi backend',
-      };
-    }
-
     const args = [
       '-p',
       '--model',
@@ -327,7 +297,7 @@ export function createPiBackend(
 
     const result = await runPrompt(binary, args, {
       stdin: prompt,
-      env: { ...baseEnv, SYNTHETIC_API_KEY: apiKey },
+      env: opts.env ?? process.env,
       timeoutMs: deps?.timeoutMs,
       signal: deps?.signal,
     });

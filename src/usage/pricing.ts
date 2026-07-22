@@ -121,6 +121,10 @@ export function normalizeModelKey(model: string): string {
   const stripped = model
     .replace(/^\s*\[[^\]]*\]\s*/, '') // drop a leading "[pi] " style prefix
     .replace(/^hf:/i, '') // drop a HuggingFace-style provider prefix
+    // drop pi's `opencode-go` provider prefix (incl. regional variants like
+    // `opencode-go-tyler-eu/`) so `opencode-go/glm-5.2` resolves via the same
+    // family aliases as the bare `glm-5.2`.
+    .replace(/^opencode-go(?:-[a-z0-9-]+)?\//i, '')
     .trim()
     .toLowerCase();
   return MODEL_ALIASES[stripped] ?? stripped;

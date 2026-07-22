@@ -145,6 +145,24 @@ describe('MODEL_ALIASES coverage of live model strings', () => {
     expect(normalizeModelKey('kimi-k2.6')).toBe('moonshotai/kimi-k2.6');
   });
 
+  it('strips the opencode-go provider prefix (the current pi provider)', () => {
+    // pi now routes GLM/Kimi/MiniMax through the opencode-go provider, so usage
+    // rows arrive as `[pi] opencode-go/<model>` — they must price like the bare
+    // family name.
+    expect(normalizeModelKey('[pi] opencode-go/glm-5.2')).toBe('zai-org/glm-5.2');
+    expect(normalizeModelKey('[pi] opencode-go-tyler-eu/glm-5.2')).toBe('zai-org/glm-5.2');
+    expect(normalizeModelKey('[pi] opencode-go/kimi-k2.6')).toBe('moonshotai/kimi-k2.6');
+    expect(normalizeModelKey('[pi] opencode-go/minimax-m2.5')).toBe('minimaxai/minimax-m2.5');
+    expect(
+      priceForModel('[pi] opencode-go/glm-5.2', {
+        inputTokens: 1_000_000,
+        outputTokens: 0,
+        cacheCreationTokens: 0,
+        cacheReadTokens: 0,
+      }),
+    ).toBeCloseTo(1.4, 6);
+  });
+
   it('leaves an unknown model string untouched', () => {
     expect(normalizeModelKey('[pi] syn:large:text')).toBe('syn:large:text');
   });

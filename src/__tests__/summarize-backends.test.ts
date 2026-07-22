@@ -6,7 +6,6 @@ import {
   createClaudeBackend,
   createPiBackend,
   resolveBackend,
-  resolveSyntheticApiKey,
   runPrompt,
   extractPiAssistantText,
   PI_MODEL_ID,
@@ -217,66 +216,46 @@ describe('claude backend', () => {
 });
 
 describe('pi backend', () => {
-  it('injects the resolved key and passes the isolation invariants', async () => {
+  it('spawns pi with the opencode-go model + isolation flags, extracting the assistant text', async () => {
     const bin = await recordingStub('pi', piStream(contract));
-    // Spread process.env like real callers do — a child needs PATH to exec.
-    const res = await createPiBackend(bin, {
-      env: { ...process.env, SYNTHETIC_API_KEY: 'sk-test-123' },
-    })('p');
+    // pi self-authenticates — no API key is resolved or injected.
+    const res = await createPiBackend(bin, { env: { ...process.env } })('p');
 
     // The backend extracts the assistant text from the event stream — it must
     // NOT return the raw JSONL (whose first object is the session header).
     expect(res).toEqual({ ok: true, text: contract });
     const rec = await readRecord('pi');
-    // Eager resolution: the child receives the key, never relying on pi's own
-    // (known-unreliable) lazy lookup.
-    expect(rec.syntheticKey).toBe('sk-test-123');
     expect(rec.argv).toContain('--no-session');
     expect(rec.argv).toContain('--no-tools');
     expect(rec.argv).toContain('--no-extensions');
     expect(rec.argv).toContain('--no-skills');
     expect(rec.argv[rec.argv.indexOf('--model') + 1]).toBe(PI_MODEL_ID);
+    // No Synthetic key is injected any more.
+    expect(rec.syntheticKey).toBeNull();
   });
 
-  it('fails fast without spawning when no key can be resolved', async () => {
-    const gcloudFail = await writeStub(
-      'gcloud',
-      "#!/usr/bin/env node\nprocess.stderr.write('no secret');\nprocess.exit(1);\n",
-    );
-    const piBin = await recordingStub('pi', piStream(contract));
-    const res = await createPiBackend(piBin, {
-      env: { ...process.env, SYNTHETIC_API_KEY: '' },
-      gcloudBinary: gcloudFail,
-    })('p');
-
-    expect(res.ok).toBe(false);
-    if (!res.ok) expect(res.error).toMatch(/SYNTHETIC_API_KEY unavailable/);
-    // pi must never have run — a call that cannot authenticate is pure waste.
-    await expect(readRecord('pi')).rejects.toThrow();
-  });
-
-  it('falls back to gcloud when the env var is absent', async () => {
-    const gcloudOk = await writeStub(
-      'gcloud',
-      "#!/usr/bin/env node\nprocess.stdout.write('sk-from-gcloud\\n');\n",
-    );
-    const piBin = await recordingStub('pi', piStream(contract));
-    await createPiBackend(piBin, {
-      env: { ...process.env, SYNTHETIC_API_KEY: '' },
-      gcloudBinary: gcloudOk,
-    })('p');
-
+  it('honors a model override', async () => {
+    const bin = await recordingStub('pi', piStream(contract));
+    await createPiBackend(bin, { env: { ...process.env }, model: 'opencode-go/kimi-k2.6' })('p');
     const rec = await readRecord('pi');
-    expect(rec.syntheticKey).toBe('sk-from-gcloud');
+    expect(rec.argv[rec.argv.indexOf('--model') + 1]).toBe('opencode-go/kimi-k2.6');
+  });
+
+  it('surfaces a non-zero pi exit as a backend error', async () => {
+    const bin = await writeStub(
+      'pi-fail',
+      "#!/usr/bin/env node\nprocess.stderr.write('pi auth failed');\nprocess.exit(1);\n",
+    );
+    const res = await createPiBackend(bin, { env: { ...process.env } })('p');
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.error).toContain('pi auth failed');
   });
 
   it('errors when pi produces an event stream with no assistant text', async () => {
-    // e.g. an auth failure that emits only a session header + error events.
+    // e.g. a failure that emits only a session header + error events.
     const headerOnly = JSON.stringify({ type: 'session', version: 3, id: 'x', cwd: '/tmp' }) + '\n';
     const piBin = await recordingStub('pi', headerOnly);
-    const res = await createPiBackend(piBin, {
-      env: { ...process.env, SYNTHETIC_API_KEY: 'sk-test' },
-    })('p');
+    const res = await createPiBackend(piBin, { env: { ...process.env } })('p');
     expect(res.ok).toBe(false);
     if (!res.ok) expect(res.error).toMatch(/no assistant text/);
   });
@@ -314,22 +293,6 @@ describe('extractPiAssistantText', () => {
   });
 });
 
-describe('resolveSyntheticApiKey', () => {
-  it('prefers the environment variable', async () => {
-    const key = await resolveSyntheticApiKey({ SYNTHETIC_API_KEY: 'sk-env' }, 'gcloud-not-used');
-    expect(key).toBe('sk-env');
-  });
-
-  it('returns null when gcloud is unavailable', async () => {
-    const key = await resolveSyntheticApiKey({}, resolve(sandbox, 'no-gcloud'));
-    expect(key).toBeNull();
-  });
-
-  it('ignores a blank env value and falls through', async () => {
-    const key = await resolveSyntheticApiKey({ SYNTHETIC_API_KEY: '   ' }, resolve(sandbox, 'no-gcloud'));
-    expect(key).toBeNull();
-  });
-});
 
 describe('resolveBackend', () => {
   // resolveBackend only reads session.summarizeBackend, so a minimal stub keeps
