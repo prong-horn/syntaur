@@ -60,6 +60,20 @@ describe('formatLogLine (tolerant human renderer)', () => {
     expect(() => formatLogLine('')).not.toThrow();
     expect(() => formatLogLine('{"ts":123}')).not.toThrow();
   });
+
+  it('never throws on a valid record whose field is pathological to stringify', () => {
+    // A record that parses fine but whose extra field can't be re-stringified
+    // (circular) must render, not crash `daemon logs`.
+    const circular: Record<string, unknown> = {};
+    circular.self = circular;
+    // Hand-build the on-disk line (a circular value can't be JSON.stringify'd, so
+    // simulate a line whose parsed extra is problematic via a getter that throws).
+    const line = '{"ts":"2026-07-23T00:00:00.000Z","level":"info","event":"weird","payload":{"a":{"b":{"c":1}}}}';
+    expect(() => formatLogLine(line)).not.toThrow();
+    const out = formatLogLine(line);
+    expect(out).toContain('weird');
+    expect(out).toContain('payload=');
+  });
 });
 
 describe('daemon logs render pipeline (tailLog → formatLogLine — mirrors logsSub)', () => {

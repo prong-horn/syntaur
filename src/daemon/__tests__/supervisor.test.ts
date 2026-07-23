@@ -122,6 +122,21 @@ describe('supervisor', () => {
     expect(log).toHaveBeenCalledWith('dispatch', expect.objectContaining({ short: 's1', agent: 'bash', argv: ['bash'] }));
   });
 
+  it('emits the dispatch log BEFORE spawn() (pre-spawn timestamp for the cold-start join)', async () => {
+    delete process.env.SYNTAUR_SCROLLBACK;
+    const order: string[] = [];
+    const spawn = vi.fn<DaemonSpawnFn>(() => {
+      order.push('spawn');
+      return fakeChild(9999);
+    });
+    const log = vi.fn((event: string) => {
+      if (event === 'dispatch') order.push('log:dispatch');
+    });
+    const d = daemon({ spawn, log });
+    await d.handle({ op: 'dispatch', argv: ['bash'], cwd: '/w' });
+    expect(order).toEqual(['log:dispatch', 'spawn']);
+  });
+
   it('omits --scrollback for invalid/oversized values (emulator default applies)', async () => {
     delete process.env.SYNTAUR_SCROLLBACK;
     for (const bad of [-1, 1.5, 999999999]) {

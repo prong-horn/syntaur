@@ -74,9 +74,19 @@ export function formatLogLine(line: string): string {
   const r = parsed as Record<string, unknown>;
   if (typeof r.event !== 'string' || typeof r.ts !== 'string') return trimmed; // not a LogRecord → raw
   const level = typeof r.level === 'string' ? r.level : 'info';
+  // Per-value guard: JSON.stringify can throw (circular/pathological input) and
+  // this renderer must never throw regardless of what's on disk.
+  const render = (v: unknown): string => {
+    if (typeof v === 'string') return v;
+    try {
+      return JSON.stringify(v) ?? String(v);
+    } catch {
+      return '[unrenderable]';
+    }
+  };
   const extras = Object.entries(r)
     .filter(([k]) => k !== 'ts' && k !== 'level' && k !== 'event')
-    .map(([k, v]) => `${k}=${typeof v === 'string' ? v : JSON.stringify(v)}`)
+    .map(([k, v]) => `${k}=${render(v)}`)
     .join(' ');
   return `${r.ts} [${level}] ${r.event}${extras ? ` ${extras}` : ''}`;
 }

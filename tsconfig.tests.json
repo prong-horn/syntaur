@@ -66,6 +66,7 @@
     "src/daemon/__tests__/attach-client.test.ts",
     "src/daemon/__tests__/pty-host-run.test.ts",
     "src/daemon/__tests__/log.test.ts",
+    "src/commands/__tests__/daemon-logs.test.ts",
     "src/daemon/__tests__/liveness.test.ts",
     "src/tui/syntaurd/__tests__/capability.test.ts",
     "src/tui/syntaurd/__tests__/launch.test.ts",
