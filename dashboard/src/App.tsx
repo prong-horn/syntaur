@@ -23,6 +23,7 @@ import { InventoriesPage } from './pages/InventoriesPage';
 import { SchedulesPage } from './pages/SchedulesPage';
 import { UsagePage } from './pages/UsagePage';
 import { AgentSessionsPage } from './pages/AgentSessionsPage';
+import { AgentSessionDetail } from './pages/AgentSessionDetail';
 import { PlaybooksPage } from './pages/PlaybooksPage';
 import { PlaybookDetail } from './pages/PlaybookDetail';
 import { CreatePlaybook } from './pages/CreatePlaybook';
@@ -67,6 +68,7 @@ export function App() {
             <Route path="/schedules" element={<SchedulesPage />} />
             <Route path="/usage" element={<UsagePage />} />
             <Route path="/agent-sessions" element={<AgentSessionsPage />} />
+            <Route path="/agent-sessions/:id" element={<AgentSessionDetail />} />
             <Route path="/playbooks" element={<PlaybooksPage />} />
             <Route path="/playbooks/create" element={<CreatePlaybook />} />
             <Route path="/playbooks/:slug" element={<PlaybookDetail />} />
@@ -105,6 +107,7 @@ export function App() {
             <Route path="/w/:workspace/inventories" element={<InventoriesPage />} />
             <Route path="/w/:workspace/usage" element={<UsagePage />} />
             <Route path="/w/:workspace/agent-sessions" element={<AgentSessionsPage />} />
+            <Route path="/w/:workspace/agent-sessions/:id" element={<AgentSessionDetail />} />
             <Route path="/w/:workspace/agents" element={<AgentsPage />} />
             <Route path="/w/:workspace/todos" element={<WorkspaceTodosPage />} />
             <Route path="/w/:workspace/views" element={<SavedViewsPage />} />

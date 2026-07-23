@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams } from 'react-router-dom';
 import { useWebSocket } from './useWebSocket';
 import type { WsMessage } from './useWebSocket';
-import type { ServersResponse, TrackedSession, AgentSessionsResponse, AgentSession, PlaybooksResponse, PlaybookDetail, InventoriesResponse, InventoryDetail } from '../types';
+import type { ServersResponse, TrackedSession, AgentSessionsResponse, AgentSessionDetailResponse, AgentSession, PlaybooksResponse, PlaybookDetail, InventoriesResponse, InventoryDetail } from '../types';
 import { buildUsageApiQuery, type UsageWidgetFilters } from '@shared/usage-filters';
 
 export type ProgressCounts = Record<string, number> & { total: number };
@@ -774,6 +774,15 @@ export function useAgentSessions(
     ? '/api/agent-sessions?includeUsageOnly=1'
     : '/api/agent-sessions';
   return useFetch<AgentSessionsResponse>(url, 'agent-sessions');
+}
+
+export function useAgentSession(
+  sessionId: string | undefined,
+): FetchState<AgentSessionDetailResponse> {
+  const url = sessionId ? `/api/agent-sessions/by-id/${sessionId}` : null;
+  // Entity-keyed: reset on id change so a previous session's detail is never
+  // painted on a new id. WS-refetches on 'agent-sessions-updated' broadcasts.
+  return useFetch<AgentSessionDetailResponse>(url, 'agent-sessions', true, true);
 }
 
 export function useAssignmentSessions(
