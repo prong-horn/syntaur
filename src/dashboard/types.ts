@@ -818,9 +818,13 @@ export interface AgentSessionsResponse {
 
 // ── Phase D: browser-attach detail + token ────────────────────────────────
 
-/** Final serialized screen of a settled (terminal) daemon session. */
+/** Final serialized screen of a settled (terminal) daemon session. The serialize
+ * format does NOT encode terminal size, so `cols`/`rows` (the dimensions the
+ * screen was captured at) must be restored before writing it or it can wrap. */
 export interface SettledScreen {
   lastScreen: string | null;
+  cols: number;
+  rows: number;
   exitCode?: number | null;
   exitSignal?: number | null;
   state: DaemonSessionState;

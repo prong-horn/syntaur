@@ -158,6 +158,8 @@ export type DaemonSessionState = 'working' | 'blocked' | 'done' | 'failed' | 'st
 
 export interface SettledScreen {
   lastScreen: string | null;
+  cols: number;
+  rows: number;
   exitCode?: number | null;
   exitSignal?: number | null;
   state: DaemonSessionState;

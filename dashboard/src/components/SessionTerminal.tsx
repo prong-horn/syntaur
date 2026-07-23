@@ -22,6 +22,10 @@ interface SessionTerminalProps {
   viewOnly?: boolean;
   /** Settled mode: render this final screen and open no socket. */
   settledScreen?: string | null;
+  /** Dimensions the settled screen was serialized at (serialize omits size, so
+   * restoring at a different size would wrap/truncate). */
+  settledCols?: number;
+  settledRows?: number;
   /** Fired on exit / unavailable / transport loss so the page can refetch. */
   onClose?: (reason: CloseReason) => void;
 }
@@ -52,7 +56,15 @@ function utf8ToBase64(s: string): string {
   return btoa(bin);
 }
 
-export function SessionTerminal({ short, token, viewOnly, settledScreen, onClose }: SessionTerminalProps): JSX.Element {
+export function SessionTerminal({
+  short,
+  token,
+  viewOnly,
+  settledScreen,
+  settledCols,
+  settledRows,
+  onClose,
+}: SessionTerminalProps): JSX.Element {
   const containerRef = useRef<HTMLDivElement>(null);
   const sockRef = useRef<TerminalSocket | null>(null);
   const isLive = Boolean(short && token) && settledScreen == null;
@@ -61,13 +73,31 @@ export function SessionTerminal({ short, token, viewOnly, settledScreen, onClose
     const container = containerRef.current;
     if (!container) return;
 
+    // Settled mode: construct at the RECORDED dimensions (serialize omits size,
+    // so fitting to the container would wrap/truncate the final screen), write
+    // it, and open no socket.
+    if (!isLive) {
+      const settledTerm = new Terminal({
+        cols: settledCols && settledCols > 0 ? settledCols : 80,
+        rows: settledRows && settledRows > 0 ? settledRows : 24,
+        fontFamily: "'JetBrains Mono', ui-monospace, monospace",
+        fontSize: 13,
+        cursorBlink: false,
+        scrollback: 5000,
+        theme: resolveTheme(),
+        disableStdin: true,
+      });
+      settledTerm.open(container);
+      if (settledScreen) settledTerm.write(settledScreen);
+      return () => settledTerm.dispose();
+    }
+
     const term = new Terminal({
       fontFamily: "'JetBrains Mono', ui-monospace, monospace",
       fontSize: 13,
-      cursorBlink: isLive,
+      cursorBlink: true,
       scrollback: 5000,
       theme: resolveTheme(),
-      disableStdin: !isLive,
     });
     const fit = new FitAddon();
     term.loadAddon(fit);
@@ -76,12 +106,6 @@ export function SessionTerminal({ short, token, viewOnly, settledScreen, onClose
       fit.fit();
     } catch {
       /* container not yet measured */
-    }
-
-    // Settled mode: write the final screen, no socket.
-    if (!isLive) {
-      if (settledScreen) term.write(settledScreen);
-      return () => term.dispose();
     }
 
     const sock = createTerminalSocket({
@@ -118,7 +142,7 @@ export function SessionTerminal({ short, token, viewOnly, settledScreen, onClose
       term.dispose();
     };
     // Recreate on a new attach (new token) or a mode switch.
-  }, [short, token, isLive, settledScreen]);
+  }, [short, token, isLive, settledScreen, settledCols, settledRows]);
 
   // Toggle control in place, without tearing the socket down.
   useEffect(() => {

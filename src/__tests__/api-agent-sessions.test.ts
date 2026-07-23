@@ -200,12 +200,19 @@ describe('Phase D — GET /by-id/:sessionId + POST pty-token', () => {
       short: 'cd34',
       state: 'done',
       live: false,
-      jobState: jobState({ short: 'cd34', state: 'done', lastScreen: 'bye', exitCode: 0 }),
+      jobState: jobState({ short: 'cd34', state: 'done', lastScreen: 'bye', exitCode: 0, cols: 120, rows: 40 }),
     };
     const res = await fetch(`${dBase}/by-id/sess-done`);
     const { session } = await res.json();
     expect(session.attachable).toBe(false);
-    expect(session.settled).toEqual({ lastScreen: 'bye', exitCode: 0, exitSignal: null, state: 'done' });
+    expect(session.settled).toEqual({
+      lastScreen: 'bye',
+      cols: 120,
+      rows: 40,
+      exitCode: 0,
+      exitSignal: null,
+      state: 'done',
+    });
   });
 
   it('a non-terminal session with the daemon down is daemonUnavailable (no lastScreen)', async () => {

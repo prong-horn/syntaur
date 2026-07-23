@@ -113,7 +113,12 @@ export function AgentSessionDetail(): JSX.Element {
           ) : mintError ? (
             <ErrorState error={mintError} onRetry={retryMint} />
           ) : session.settled ? (
-            <SessionTerminal settledScreen={session.settled.lastScreen} viewOnly />
+            <SessionTerminal
+              settledScreen={session.settled.lastScreen}
+              settledCols={session.settled.cols}
+              settledRows={session.settled.rows}
+              viewOnly
+            />
           ) : session.daemonUnavailable ? (
             <EmptyState
               title="Session unavailable"

@@ -146,6 +146,8 @@ export function createAgentSessionsRouter(
         if (st && TERMINAL_DAEMON_STATES.has(st) && resolution.jobState) {
           detail.settled = {
             lastScreen: resolution.jobState.lastScreen ?? null,
+            cols: resolution.jobState.cols,
+            rows: resolution.jobState.rows,
             exitCode: resolution.jobState.exitCode ?? null,
             exitSignal: resolution.jobState.exitSignal ?? null,
             state: st,
