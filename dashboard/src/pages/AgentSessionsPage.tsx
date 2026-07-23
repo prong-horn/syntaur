@@ -490,9 +490,19 @@ function SessionRow({
       </td>
       <td className="hidden py-2 pr-3 lg:table-cell">
         <span className="flex min-w-0 items-center gap-1.5">
-          <span className="block min-w-0 truncate font-mono text-xs text-muted-foreground" title={session.sessionId}>
-            {shortId}
-          </span>
+          {session.usageOnly ? (
+            <span className="block min-w-0 truncate font-mono text-xs text-muted-foreground" title={session.sessionId}>
+              {shortId}
+            </span>
+          ) : (
+            <Link
+              to={`${wsPrefix}/agent-sessions/${session.sessionId}`}
+              className="block min-w-0 truncate font-mono text-xs text-muted-foreground hover:text-foreground hover:underline"
+              title={session.sessionId}
+            >
+              {shortId}
+            </Link>
+          )}
           <CopyButton value={session.sessionId} />
           <CopyLaunchCommandButton
             sessionId={session.sessionId}

@@ -1,9 +1,15 @@
 import express from 'express';
 import { createServer } from 'node:http';
+import { connect as netConnect } from 'node:net';
 import { resolve } from 'node:path';
 import { writeFile, unlink } from 'node:fs/promises';
 import { syntaurRoot, workflowsDir } from '../utils/paths.js';
 import { WebSocketServer, WebSocket } from 'ws';
+import { queryDaemon } from '../daemon/client.js';
+import type { AttachReply, ErrorReply } from '../daemon/types.js';
+import { createPtyBridge, MAX_WS_PAYLOAD_BYTES, type BridgeUpstream, type BridgeWs } from './pty-bridge.js';
+import { createPtyTokenRegistry } from './pty-token.js';
+import { authorizePtyUpgrade } from './pty-upgrade-auth.js';
 import {
   listProjects,
   listAssignmentsBoard,
@@ -121,18 +127,52 @@ export function createDashboardServer(options: DashboardServerOptions) {
   const app = express();
   const server = createServer(app);
 
-  // --- WebSocket ---
+  // --- WebSocket (JSON broadcast channel) ---
   const wss = new WebSocketServer({ noServer: true });
   const clients = new Set<WebSocket>();
 
+  // --- WebSocket (per-session pty attach — Phase D) ---
+  // A second noServer ws on /ws/agent-sessions/<short>/pty, gated by the
+  // loopback+token authorization seam, relayed to the daemon pty socket by the
+  // bridge. maxPayload caps one inbound browser message (backpressure defense).
+  const ptyTokens = createPtyTokenRegistry();
+  const ptyWss = new WebSocketServer({ noServer: true, maxPayload: MAX_WS_PAYLOAD_BYTES });
+  const ptyBridge = createPtyBridge({
+    attachOp: async (short, cols, rows) =>
+      // The attach op only ever yields AttachReply | ErrorReply; queryDaemon is
+      // typed to the full ControlReply union, so narrow with a cast.
+      (await queryDaemon({ op: 'attach', short, cols, rows })) as AttachReply | ErrorReply | null,
+    connectPty: (sock) => netConnect(sock) as unknown as BridgeUpstream,
+  });
+
   server.on('upgrade', (request, socket, head) => {
-    if (request.url === '/ws') {
+    const path = (request.url ?? '').split('?')[0];
+    if (path === '/ws') {
       wss.handleUpgrade(request, socket, head, (ws) => {
         wss.emit('connection', ws, request);
       });
-    } else {
-      socket.destroy();
+      return;
     }
+    if (path.startsWith('/ws/agent-sessions/') && path.endsWith('/pty')) {
+      if (ptyBridge.isStopping()) {
+        socket.destroy();
+        return;
+      }
+      const auth = authorizePtyUpgrade(request, { tokenRegistry: ptyTokens });
+      if (!auth.ok) {
+        socket.destroy();
+        return;
+      }
+      ptyWss.handleUpgrade(request, socket, head, (ws) => {
+        ptyBridge.handleConnection(ws as unknown as BridgeWs, {
+          short: auth.short,
+          cols: auth.cols,
+          rows: auth.rows,
+        });
+      });
+      return;
+    }
+    socket.destroy();
   });
 
   wss.on('connection', (ws) => {
@@ -736,7 +776,7 @@ export function createDashboardServer(options: DashboardServerOptions) {
   app.use('/api', createInboxRouter(projectsDir, assignmentsDir));
 
   // --- Agent Sessions API ---
-  app.use('/api/agent-sessions', createAgentSessionsRouter(projectsDir, broadcast, assignmentsDir));
+  app.use('/api/agent-sessions', createAgentSessionsRouter(projectsDir, broadcast, assignmentsDir, { ptyTokens }));
 
   // --- Agents Config API ---
   app.use('/api/config/agents', createAgentsRouter());
@@ -807,6 +847,7 @@ export function createDashboardServer(options: DashboardServerOptions) {
       if (
         req.path.startsWith('/api') ||
         req.path === '/ws' ||
+        req.path.startsWith('/ws/') ||
         req.path.startsWith('/assets')
       ) {
         res.status(404).json({ error: 'Not Found' });
@@ -1037,6 +1078,9 @@ export function createDashboardServer(options: DashboardServerOptions) {
       closeSessionDb();
       closeLeasesDb();
       closeUsageDb();
+      // Tear down pty bridges (browser ws + upstream unix sockets) BEFORE
+      // closing the HTTP server, so no relay callback fires after teardown.
+      ptyBridge.stop();
       for (const client of clients) {
         client.terminate();
       }
