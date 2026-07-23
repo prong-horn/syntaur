@@ -82,6 +82,13 @@
     "src/tui/claude-agents/__tests__/launch.test.ts",
     "src/commands/__tests__/tui.test.ts",
     "src/__tests__/agent-sessions.test.ts",
-    "src/__tests__/engagement-migration.test.ts"
+    "src/__tests__/engagement-migration.test.ts",
+    "src/__tests__/api-agent-sessions.test.ts",
+    "src/dashboard/__tests__/daemon-join.test.ts",
+    "src/dashboard/__tests__/pty-token.test.ts",
+    "src/dashboard/__tests__/pty-bridge.test.ts",
+    "src/dashboard/__tests__/pty-upgrade-auth.test.ts",
+    "src/dashboard/__tests__/snapshot-restore.test.ts",
+    "src/dashboard/__tests__/pty-upgrade-integration.test.ts"
   ]
 }
