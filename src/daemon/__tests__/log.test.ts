@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { appendLog, formatLogLine, tailLog } from '../log.js';
+import { appendLog, formatLogLine, renderLogValue, tailLog } from '../log.js';
 
 describe('appendLog (structured NDJSON emitter)', () => {
   it('writes one JSON record per line with ts/level/event + fields', () => {
@@ -61,18 +61,31 @@ describe('formatLogLine (tolerant human renderer)', () => {
     expect(() => formatLogLine('{"ts":123}')).not.toThrow();
   });
 
-  it('never throws on a valid record whose field is pathological to stringify', () => {
-    // A record that parses fine but whose extra field can't be re-stringified
-    // (circular) must render, not crash `daemon logs`.
-    const circular: Record<string, unknown> = {};
-    circular.self = circular;
-    // Hand-build the on-disk line (a circular value can't be JSON.stringify'd, so
-    // simulate a line whose parsed extra is problematic via a getter that throws).
-    const line = '{"ts":"2026-07-23T00:00:00.000Z","level":"info","event":"weird","payload":{"a":{"b":{"c":1}}}}';
-    expect(() => formatLogLine(line)).not.toThrow();
+  it('renders a nested object field via renderLogValue', () => {
+    const line = '{"ts":"2026-07-23T00:00:00.000Z","level":"info","event":"weird","payload":{"a":{"b":1}}}';
     const out = formatLogLine(line);
     expect(out).toContain('weird');
-    expect(out).toContain('payload=');
+    expect(out).toContain('payload={"a":{"b":1}}');
+  });
+});
+
+describe('renderLogValue (never-throws field renderer)', () => {
+  it('renders primitives and plain objects', () => {
+    expect(renderLogValue('s1')).toBe('s1');
+    expect(renderLogValue(42)).toBe('42');
+    expect(renderLogValue(['a', 'b'])).toBe('["a","b"]');
+    expect(renderLogValue({ a: 1 })).toBe('{"a":1}');
+  });
+
+  it('returns [unrenderable] for values JSON.stringify throws on — never throws', () => {
+    // These reliably make JSON.stringify throw; without the guard the call
+    // (and `daemon logs`) would crash. This is the real regression test for the
+    // round-1 never-throw fix.
+    const circular: Record<string, unknown> = {};
+    circular.self = circular;
+    expect(() => renderLogValue(circular)).not.toThrow();
+    expect(renderLogValue(circular)).toBe('[unrenderable]');
+    expect(renderLogValue(10n)).toBe('[unrenderable]'); // BigInt
   });
 });
 

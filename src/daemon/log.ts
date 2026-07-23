@@ -74,21 +74,26 @@ export function formatLogLine(line: string): string {
   const r = parsed as Record<string, unknown>;
   if (typeof r.event !== 'string' || typeof r.ts !== 'string') return trimmed; // not a LogRecord → raw
   const level = typeof r.level === 'string' ? r.level : 'info';
-  // Per-value guard: JSON.stringify can throw (circular/pathological input) and
-  // this renderer must never throw regardless of what's on disk.
-  const render = (v: unknown): string => {
-    if (typeof v === 'string') return v;
-    try {
-      return JSON.stringify(v) ?? String(v);
-    } catch {
-      return '[unrenderable]';
-    }
-  };
   const extras = Object.entries(r)
     .filter(([k]) => k !== 'ts' && k !== 'level' && k !== 'event')
-    .map(([k, v]) => `${k}=${render(v)}`)
+    .map(([k, v]) => `${k}=${renderLogValue(v)}`)
     .join(' ');
   return `${r.ts} [${level}] ${r.event}${extras ? ` ${extras}` : ''}`;
+}
+
+/**
+ * Render a single log field value to a compact string. Never throws:
+ * JSON.stringify can throw on circular refs, BigInt, or pathological input, and
+ * the log renderer must degrade to `[unrenderable]` rather than crash
+ * `daemon logs`. Exported so the never-throw guard is directly testable.
+ */
+export function renderLogValue(v: unknown): string {
+  if (typeof v === 'string') return v;
+  try {
+    return JSON.stringify(v) ?? String(v);
+  } catch {
+    return '[unrenderable]';
+  }
 }
 
 /** Return the last `n` non-empty lines of the daemon log (newest last, raw). */
