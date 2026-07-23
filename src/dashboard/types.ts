@@ -815,3 +815,44 @@ export interface AgentSessionsResponse {
   sessions: AgentSessionWithLiveness[];
   generatedAt: string;
 }
+
+// ── Phase D: browser-attach detail + token ────────────────────────────────
+
+/** Final serialized screen of a settled (terminal) daemon session. */
+export interface SettledScreen {
+  lastScreen: string | null;
+  exitCode?: number | null;
+  exitSignal?: number | null;
+  state: DaemonSessionState;
+}
+
+/** Terminal-or-not daemon lifecycle state (from src/daemon/types.ts). */
+export type DaemonSessionState = 'working' | 'blocked' | 'done' | 'failed' | 'stopped';
+
+/** GET /api/agent-sessions/by-id/:sessionId — one session enriched with the
+ * daemon join for the browser-attach detail page. */
+export interface AgentSessionDetail extends AgentSessionWithLiveness {
+  /** Daemon `short` when daemon-hosted (from the list/disk join); null otherwise. */
+  syntaurdShortId: string | null;
+  /** True only for a live, non-terminal daemon session — gates the terminal pane. */
+  attachable: boolean;
+  /** Daemon-derived live lifecycle state (non-terminal) when attachable. */
+  syntaurdState?: DaemonSessionState | null;
+  /** Set when the session is daemon-hosted but not currently reachable and not
+   * terminal — the page shows a retryable banner, no terminal, no lastScreen. */
+  daemonUnavailable?: boolean;
+  /** Present for a terminal session — the pane renders the final screen. */
+  settled?: SettledScreen | null;
+}
+
+export interface AgentSessionDetailResponse {
+  session: AgentSessionDetail;
+  generatedAt: string;
+}
+
+/** POST /api/agent-sessions/by-id/:sessionId/pty-token response. */
+export interface PtyTokenResponse {
+  token: string;
+  short: string;
+  expiresAt: number;
+}
