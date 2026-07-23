@@ -31,6 +31,23 @@ import type {
 } from './types.js';
 
 const DEFAULT_SCROLLBACK = 1000;
+/** Upper bound for a caller-supplied scrollback; guards against unbounded
+ * emulator memory. Anything above (or invalid) falls back to the default. */
+export const MAX_SCROLLBACK = 100_000;
+
+/**
+ * Coerce an untrusted scrollback value (string flag, request field, or env) to
+ * a valid depth, or `undefined` to signal "use the default". Rejects NaN,
+ * negative, fractional, and out-of-range values so a bad input never reaches
+ * xterm's `scrollback` option.
+ */
+export function parseScrollback(raw: unknown): number | undefined {
+  if (raw === undefined || raw === null || raw === '') return undefined;
+  const n = typeof raw === 'number' ? raw : Number(raw);
+  if (!Number.isSafeInteger(n) || n < 0 || n > MAX_SCROLLBACK) return undefined;
+  return n;
+}
+
 const SNAPSHOT_IDLE_MS = 100;
 const SNAPSHOT_CAP_MS = 400;
 const DERIVE_IDLE_MS = 500;

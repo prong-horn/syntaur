@@ -24,6 +24,7 @@ import {
 import { readAllJobStates, readJobState } from './jobs.js';
 import { isPidAlive as realIsPidAlive, isSameProcess, processIdentity } from './liveness.js';
 import { appendLog } from './log.js';
+import { parseScrollback } from './pty-host.js';
 import {
   controlSockPath,
   currentPointerPath,
@@ -46,6 +47,7 @@ import type {
   ControlRequest,
   CurrentPointer,
   ErrorReply,
+  LogLevel,
   RvFrame,
   Session,
   SessionState,
@@ -70,7 +72,7 @@ export interface DaemonDeps {
   connectPtyFrame?: (sock: string, frameLine: string) => void;
   genDaemonId?: () => string;
   genShort?: () => string;
-  log?: (message: string) => void;
+  log?: (event: string, fields?: Record<string, unknown>, level?: LogLevel) => void;
   /** Wait between kill-escalation stages. */
   killWaitMs?: number;
 }
@@ -135,8 +137,12 @@ export function createDaemon(deps: DaemonDeps = {}): Daemon {
   const probe = deps.probe ?? ((p) => probeUnixSocket(p));
   const genDaemonId = deps.genDaemonId ?? (() => randomBytes(4).toString('hex'));
   const genShort = deps.genShort ?? (() => randomBytes(4).toString('hex'));
-  const log = deps.log ?? ((m) => appendLog(m));
+  const log = deps.log ?? ((event, fields, level) => appendLog(event, fields, level));
   const killWaitMs = deps.killWaitMs ?? 2000;
+  // Daemon-start scrollback default: read the env ONCE here (not per-dispatch —
+  // req.env is the caller's, but a running daemon's own env is fixed at start).
+  // A per-dispatch `scrollback` field overrides this; both fall back to DEFAULT.
+  const defaultScrollback = parseScrollback(process.env.SYNTAUR_SCROLLBACK);
   const liveDeps = { isPidAlive, pidStartedAt: procStart };
   const rosterDeps = { isPidAlive, pidStartedAt: procStart, now };
   const nowIso = (): string => new Date(now()).toISOString();
@@ -210,6 +216,7 @@ export function createDaemon(deps: DaemonDeps = {}): Daemon {
     const cols = req.cols ?? 80;
     const rows = req.rows ?? 24;
     const agent = req.agent ?? inferAgent(req.argv);
+    const scrollback = parseScrollback(req.scrollback) ?? defaultScrollback;
     const ptySock = ptySockPath(daemonId, short);
     const rvSock = rvSockPath(daemonId, short);
 
@@ -227,11 +234,17 @@ export function createDaemon(deps: DaemonDeps = {}): Daemon {
       String(cols),
       '--rows',
       String(rows),
+      ...(scrollback !== undefined ? ['--scrollback', String(scrollback)] : []),
       ...(req.name ? ['--name', req.name] : []),
       ...(req.sessionId ? ['--session-id', req.sessionId] : []),
       '--',
       ...req.argv,
     ];
+    // Pre-spawn dispatch record: `ts` is stamped before spawn() so the cold-start
+    // spike measures spawned.at − dispatch.ts as a positive interval (a post-spawn
+    // log could postdate the child's own `spawned` event). `short` is the job-dir
+    // join key; `agent` is used only to group the percentiles.
+    log('dispatch', { short, agent, argv: req.argv });
     const child = spawn(execPath, args, {
       detached: true,
       stdio: 'ignore',
@@ -265,7 +278,7 @@ export function createDaemon(deps: DaemonDeps = {}): Daemon {
       rosterPath(),
       rosterDeps,
     );
-    log(`dispatch ${short} agent=${agent} hostPid=${hostPid} argv=${JSON.stringify(req.argv)}`);
+    log('dispatch_ok', { short, hostPid });
     return { ok: true, short, pid: hostPid };
   }
 
@@ -309,7 +322,7 @@ export function createDaemon(deps: DaemonDeps = {}): Daemon {
     sessions.delete(req.short);
     removeRosterEntry(req.short, daemonId, rosterPath(), rosterDeps);
     reapSockets(ds.ptySock, ds.rvSock);
-    log(`kill ${req.short} hostPid=${ds.hostPid} sig=${req.sig ?? 'escalate'}`);
+    log('kill', { short: req.short, hostPid: ds.hostPid, sig: req.sig ?? 'escalate' });
     return { ok: true };
   }
 
@@ -377,7 +390,7 @@ export function createDaemon(deps: DaemonDeps = {}): Daemon {
         sessionId: js?.sessionId ?? null,
       });
     }
-    log(`adopt: adopted=${result.adopted.length} dropped=${result.dropped.length}`);
+    log('adopt', { adopted: result.adopted.length, dropped: result.dropped.length });
   }
 
   /** Scan job state.json beyond the roster: adopt live hosts (pid + socket
@@ -391,7 +404,7 @@ export function createDaemon(deps: DaemonDeps = {}): Daemon {
       const id = processIdentity(js.hostPid, js.hostPidStartedAt, liveDeps);
       if (id === 'dead') {
         reapSockets(js.ptySock, js.rvSock);
-        log(`reconcile: reaped ${js.short} (dead host)`);
+        log('reconcile', { action: 'reaped', short: js.short, reason: 'dead host' });
         continue;
       }
       const sockLive = (await probe(js.ptySock)) === 'live';
@@ -426,12 +439,12 @@ export function createDaemon(deps: DaemonDeps = {}): Daemon {
           rosterPath(),
           rosterDeps,
         );
-        log(`reconcile: adopted ${js.short} (missing from roster)`);
+        log('reconcile', { action: 'adopted', short: js.short, reason: 'missing from roster' });
       } else {
         // Not confirmed dead (id is 'alive' or 'unknown') but the socket does
         // not answer — leave the state.json untouched for a later scan rather
         // than reaping a host that may still be coming up or briefly unreachable.
-        log(`reconcile: left ${js.short} (host ${id}, socket not live)`);
+        log('reconcile', { action: 'left', short: js.short, host: id, reason: 'socket not live' });
       }
     }
   }
@@ -445,7 +458,7 @@ export function createDaemon(deps: DaemonDeps = {}): Daemon {
       liveDeps,
     );
     if (!acquired) {
-      log('startup: lock held by a live daemon — yielding');
+      log('startup', { action: 'yield', reason: 'lock held by a live daemon' }, 'warn');
       return 'yielded';
     }
 
@@ -460,7 +473,7 @@ export function createDaemon(deps: DaemonDeps = {}): Daemon {
       if (e instanceof SyntaurError) {
         // Another daemon owns control.sock despite the lock — release and yield.
         releaseDaemonLock(daemonId, daemonLockPath(), liveDeps);
-        log('startup: control.sock owned by a live daemon — yielding');
+        log('startup', { action: 'yield', reason: 'control.sock owned by a live daemon' }, 'warn');
         return 'yielded';
       }
       throw e;
@@ -473,7 +486,7 @@ export function createDaemon(deps: DaemonDeps = {}): Daemon {
     adoptFromRoster();
     await reconcileScan();
     startedAt = nowIso();
-    log(`started daemon ${daemonId} pid=${process.pid}`);
+    log('started', { daemonId, pid: process.pid });
     return 'started';
   }
 
@@ -493,7 +506,7 @@ export function createDaemon(deps: DaemonDeps = {}): Daemon {
       /* missing / corrupt / not ours — leave it */
     }
     releaseDaemonLock(daemonId, daemonLockPath(), liveDeps);
-    log(`stopped daemon ${daemonId}`);
+    log('stopped', { daemonId });
   }
 
   // ── socket transport ───────────────────────────────────────────────────

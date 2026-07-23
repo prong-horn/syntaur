@@ -16,9 +16,10 @@ export const bgCommand = new Command('bg')
   .option('--name <name>', 'Friendly name for the session')
   .option('--cols <n>', 'Initial terminal columns', '80')
   .option('--rows <n>', 'Initial terminal rows', '24')
+  .option('--scrollback <n>', 'Emulator scrollback lines (default 1000, max 100000)')
   .argument('[argv...]', 'Command to run (prefer `-- <cmd> [args]`)')
   .action(
-    runCommand(async (positional: string[], opts: { name?: string; cols: string; rows: string }) => {
+    runCommand(async (positional: string[], opts: { name?: string; cols: string; rows: string; scrollback?: string }) => {
       const argv = dashDashArgv.length > 0 ? dashDashArgv : positional;
       if (!argv || argv.length === 0) {
         throw new SyntaurError('`syntaur bg` needs a command to run.', {
@@ -32,6 +33,8 @@ export const bgCommand = new Command('bg')
         name: opts.name,
         cols: Number(opts.cols) || 80,
         rows: Number(opts.rows) || 24,
+        // Pass the raw parsed number through; the daemon validates + clamps it.
+        ...(opts.scrollback !== undefined ? { scrollback: Number(opts.scrollback) } : {}),
       })) as DispatchReply | ErrorReply;
       if (!reply.ok) {
         throw new SyntaurError(`dispatch failed: ${reply.error}`, {

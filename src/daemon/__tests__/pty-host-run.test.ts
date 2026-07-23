@@ -36,4 +36,19 @@ describe('parsePtyHostArgs', () => {
     expect(() => parsePtyHostArgs(['--short', 'a', '--', 'bash'])).toThrow(SyntaurError);
     expect(() => parsePtyHostArgs(['--short', 'a', '--daemon-id', 'd'])).toThrow(SyntaurError); // no tail
   });
+
+  const base = ['--short', 'a', '--daemon-id', 'd', '--'];
+  it('parses a valid --scrollback into config.scrollback', () => {
+    expect(parsePtyHostArgs(['--short', 'a', '--daemon-id', 'd', '--scrollback', '5000', '--', 'bash']).config)
+      .toMatchObject({ scrollback: 5000 });
+  });
+  it('leaves scrollback undefined when omitted (→ emulator default)', () => {
+    expect(parsePtyHostArgs([...base, 'bash']).config?.scrollback).toBeUndefined();
+  });
+  it('rejects invalid/out-of-range --scrollback to undefined (falls back to default)', () => {
+    for (const bad of ['-5', 'abc', '1.5', '999999999']) {
+      expect(parsePtyHostArgs(['--short', 'a', '--daemon-id', 'd', '--scrollback', bad, '--', 'bash']).config?.scrollback)
+        .toBeUndefined();
+    }
+  });
 });
