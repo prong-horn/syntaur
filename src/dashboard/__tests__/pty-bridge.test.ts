@@ -6,7 +6,6 @@ import {
   MAX_COLS,
   HIGH_WATER_BYTES,
   LOW_WATER_BYTES,
-  INPUT_QUEUE_MAX_BYTES,
   RESIZE_DEBOUNCE_MS,
   type BridgeWs,
   type BridgeUpstream,
@@ -17,12 +16,17 @@ import type { AttachReply, ErrorReply, PtyHostFrame } from '../../daemon/types.j
 class FakeWs implements BridgeWs {
   sent: string[] = [];
   closed = false;
+  terminated = false;
   bufferedAmount = 0;
   private h: Record<string, (...a: any[]) => void> = {};
   send(d: string): void {
     this.sent.push(d);
   }
   close(): void {
+    this.closed = true;
+  }
+  terminate(): void {
+    this.terminated = true;
     this.closed = true;
   }
   on(ev: string, cb: (...a: any[]) => void): void {
@@ -168,6 +172,19 @@ describe('createPtyBridge — view-only gate + validation', () => {
     expect(resizes).toEqual([{ t: 'resize', cols: 130, rows: 50 }]);
   });
 
+  it('drops stdin whose payload is not canonical bounded base64', async () => {
+    const { ws, upstream, bridge } = setup();
+    await attach(ws, upstream, bridge);
+    upstream.written.length = 0;
+    ws.msg(JSON.stringify({ t: 'take-control' }));
+    for (const bad of ['!!!!', 'abc', 'aa=a', 'A'.repeat((512 << 10) + 4)]) {
+      ws.msg(JSON.stringify({ t: 'stdin', b: bad }));
+    }
+    expect(upstream.frames().filter((f) => f.t === 'stdin')).toEqual([]);
+    ws.msg(JSON.stringify({ t: 'stdin', b: 'QQ==' })); // valid
+    expect(upstream.frames().filter((f) => f.t === 'stdin')).toEqual([{ t: 'stdin', b: 'QQ==' }]);
+  });
+
   it('rejects binary ws frames and tolerates malformed JSON without throwing', async () => {
     const { ws, upstream, bridge } = setup();
     await attach(ws, upstream, bridge);
@@ -211,8 +228,10 @@ describe('createPtyBridge — readiness gate (frames before upstream)', () => {
     const { ws, bridge } = setup();
     bridge.handleConnection(ws, { short: 'ab12', cols: 80, rows: 24 });
     ws.msg(JSON.stringify({ t: 'take-control' }));
-    const big = 'A'.repeat(INPUT_QUEUE_MAX_BYTES + 10);
-    ws.msg(JSON.stringify({ t: 'stdin', b: big }));
+    // Each frame is valid, bounded base64 (≤512 KiB); enough of them overflow the
+    // 1 MiB pre-ready queue and close the connection.
+    const chunk = 'A'.repeat(400_000); // %4 == 0, valid base64
+    for (let i = 0; i < 4 && !ws.closed; i += 1) ws.msg(JSON.stringify({ t: 'stdin', b: chunk }));
     expect(ws.frames().at(-1)).toEqual({ t: 'unavailable' });
     expect(ws.closed).toBe(true);
   });
@@ -222,6 +241,8 @@ describe('createPtyBridge — unavailability paths', () => {
   it.each([
     ['null reply', { reply: null }],
     ['error reply', { reply: { ok: false, code: 'EDEAD', error: 'dead' } as ErrorReply }],
+    ['malformed reply (no ptySock)', { reply: { ok: true, pid: 1 } as unknown as AttachReply }],
+    ['malformed reply (numeric ptySock)', { reply: { ok: true, ptySock: 5432, rvSock: '', pid: 1 } as unknown as AttachReply }],
     ['attachOp throws', { attachThrows: true }],
     ['connectPty throws', { connectThrows: true }],
   ])('sends {t:unavailable} and closes on %s', async (_label, opts) => {
@@ -302,13 +323,45 @@ describe('createPtyBridge — lifecycle', () => {
     expect(upstream.written).toEqual([]);
   });
 
-  it('stop() tears down a connected bridge and is idempotent', async () => {
+  it('stop() tears down a connected bridge (force-terminating the ws) and is idempotent', async () => {
     const { ws, upstream, bridge } = setup();
     await attach(ws, upstream, bridge);
     bridge.stop();
     bridge.stop(); // idempotent, no throw
-    expect(ws.closed).toBe(true);
+    expect(ws.terminated).toBe(true); // forceful, so a stuck peer can't hang stop()
     expect(upstream.destroyed).toBe(true);
+  });
+
+  it('relays two attachers independently (coexistence; last-attacher-wins is daemon-side)', async () => {
+    const upstreams: FakeUpstream[] = [];
+    const bridge = createPtyBridge({
+      attachOp: async () => okReply,
+      connectPty: () => {
+        const u = new FakeUpstream();
+        upstreams.push(u);
+        return u;
+      },
+    });
+    const a = new FakeWs();
+    const b = new FakeWs();
+    bridge.handleConnection(a, { short: 'ab12', cols: 80, rows: 24 });
+    bridge.handleConnection(b, { short: 'ab12', cols: 90, rows: 30 });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(upstreams).toHaveLength(2);
+    upstreams[0].connect();
+    upstreams[1].connect();
+    // Each attacher receives its own upstream's output.
+    upstreams[0].data(encodeFrame({ t: 'out', b: 'QQ==' }));
+    upstreams[1].data(encodeFrame({ t: 'out', b: 'Qg==' }));
+    expect(a.frames().filter((f) => f.t === 'out')).toEqual([{ t: 'out', b: 'QQ==' }]);
+    expect(b.frames().filter((f) => f.t === 'out')).toEqual([{ t: 'out', b: 'Qg==' }]);
+    // Each attacher's input goes to its own upstream (after taking control).
+    a.msg(JSON.stringify({ t: 'take-control' }));
+    a.msg(JSON.stringify({ t: 'stdin', b: 'QQ==' }));
+    expect(upstreams[0].frames().filter((f) => f.t === 'stdin')).toEqual([{ t: 'stdin', b: 'QQ==' }]);
+    expect(upstreams[1].frames().filter((f) => f.t === 'stdin')).toEqual([]);
+    bridge.stop();
+    expect(a.terminated && b.terminated).toBe(true);
   });
 
   it('rejects a new connection while stopping', async () => {

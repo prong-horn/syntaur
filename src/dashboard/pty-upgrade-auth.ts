@@ -10,6 +10,9 @@
 import { DEFAULT_COLS, DEFAULT_ROWS, MAX_COLS, MAX_ROWS, isLoopbackAddress, validDim } from './pty-bridge.js';
 
 const PTY_PATH = /^\/ws\/agent-sessions\/([^/]+)\/pty$/;
+/** Daemon short ids are short alphanumerics (see supervisor genShort). Enforce
+ * the shape before touching the token so a hostile path can't smuggle anything. */
+const SHORT_RE = /^[A-Za-z0-9]{1,32}$/;
 
 export interface UpgradeRequestLike {
   url?: string;
@@ -41,7 +44,13 @@ export function authorizePtyUpgrade(request: UpgradeRequestLike, deps: PtyUpgrad
   }
   const match = PTY_PATH.exec(url.pathname);
   if (!match) return { ok: false, reason: 'bad-path' };
-  const short = decodeURIComponent(match[1]);
+  let short: string;
+  try {
+    short = decodeURIComponent(match[1]); // throws URIError on malformed %-encoding
+  } catch {
+    return { ok: false, reason: 'bad-path' };
+  }
+  if (!SHORT_RE.test(short)) return { ok: false, reason: 'bad-path' };
 
   const token = url.searchParams.get('token');
   if (!token) return { ok: false, reason: 'no-token' };

@@ -23,14 +23,21 @@ export function AgentSessionDetail(): JSX.Element {
   const [attach, setAttach] = useState<{ token: string; short: string } | null>(null);
   const [viewOnly, setViewOnly] = useState(true);
   const [mintError, setMintError] = useState<string | null>(null);
+  // Bumped to force a fresh mint after a close/retry. Without it, a plain
+  // refetch that leaves the session attachable would not re-run the mint effect
+  // (its deps are unchanged), leaving the pane stuck (review F4).
+  const [mintGen, setMintGen] = useState(0);
 
-  // Mint a token whenever the session is attachable and we don't already hold one.
+  // Mint a token per (id, attachable, mintGen). A normal background refetch does
+  // not change these, so it never spends a redundant token; a close/retry bumps
+  // mintGen to mint again.
   useEffect(() => {
     if (!id || !session?.attachable) {
       setAttach(null);
       return;
     }
     let cancelled = false;
+    setMintError(null);
     void (async () => {
       try {
         const res = await fetch(`/api/agent-sessions/by-id/${id}/pty-token`, { method: 'POST' });
@@ -47,7 +54,6 @@ export function AgentSessionDetail(): JSX.Element {
         }
         const body = (await res.json()) as { token: string; short: string };
         setAttach({ token: body.token, short: body.short });
-        setMintError(null);
       } catch {
         if (!cancelled) setMintError('Could not prepare the terminal.');
       }
@@ -55,15 +61,23 @@ export function AgentSessionDetail(): JSX.Element {
     return () => {
       cancelled = true;
     };
-  }, [id, session?.attachable, refetch]);
+  }, [id, session?.attachable, mintGen, refetch]);
 
   const handleClose = useCallback(
     (_reason: CloseReason) => {
       setAttach(null); // token is spent — never reconnect with it
+      setMintGen((g) => g + 1); // re-mint if still attachable after the refetch
       refetch(); // pull fresh detail → settled screen or a retryable state
     },
     [refetch],
   );
+
+  const retryMint = useCallback(() => {
+    setMintError(null);
+    setAttach(null);
+    setMintGen((g) => g + 1);
+    refetch();
+  }, [refetch]);
 
   if (loading && !session) return <LoadingState label="Loading session…" />;
   if (error) return <ErrorState error={error} onRetry={refetch} />;
@@ -97,7 +111,7 @@ export function AgentSessionDetail(): JSX.Element {
           ) : session.attachable && !attach && !mintError ? (
             <LoadingState label="Connecting…" />
           ) : mintError ? (
-            <ErrorState error={mintError} onRetry={refetch} />
+            <ErrorState error={mintError} onRetry={retryMint} />
           ) : session.settled ? (
             <SessionTerminal settledScreen={session.settled.lastScreen} viewOnly />
           ) : session.daemonUnavailable ? (

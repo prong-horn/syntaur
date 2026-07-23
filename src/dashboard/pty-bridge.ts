@@ -47,10 +47,23 @@ export function validDim(n: unknown, max: number): number | null {
   return null;
 }
 
+/** Max base64 length for one stdin frame (well under the ws maxPayload). */
+export const MAX_STDIN_B64 = 512 << 10;
+const BASE64_RE = /^[A-Za-z0-9+/]*={0,2}$/;
+
+/** Canonical, length-bounded base64 — rejects malformed/oversized stdin before
+ * it reaches the PTY host (whose Buffer.from(...,'base64') is permissive). */
+export function isBoundedBase64(s: string): boolean {
+  return s.length <= MAX_STDIN_B64 && s.length % 4 === 0 && BASE64_RE.test(s);
+}
+
 /** Minimal WebSocket surface (a subset of `ws`). */
 export interface BridgeWs {
   send(data: string): void;
   close(): void;
+  /** Forceful close — destroys the socket immediately (ws.terminate()). Used at
+   * teardown so a non-cooperative peer can't hang stop()/server.close(). */
+  terminate?(): void;
   readonly bufferedAmount: number;
   on(event: 'message', cb: (data: unknown, isBinary: boolean) => void): void;
   on(event: 'close', cb: () => void): void;
@@ -143,7 +156,11 @@ export function createPtyBridge(deps: PtyBridgeDeps): PtyBridge {
       /* ignore */
     }
     try {
-      conn.ws.close();
+      // Forceful close so a non-cooperative peer can't keep the close handshake
+      // pending and hang stop()/server.close(); fall back to close() if the
+      // transport has no terminate().
+      if (conn.ws.terminate) conn.ws.terminate();
+      else conn.ws.close();
     } catch {
       /* ignore */
     }
@@ -158,6 +175,16 @@ export function createPtyBridge(deps: PtyBridgeDeps): PtyBridge {
     teardown(conn);
   }
 
+  /** Write one frame upstream, updating the congestion flag on a full buffer.
+   * Every upstream write (attach, resize, stdin) routes through here so a failed
+   * write always pauses further stdin (review F2). */
+  function rawWriteUpstream(conn: Conn, obj: unknown): boolean {
+    if (conn.closed || !conn.upstream) return false;
+    const ok = conn.upstream.write(encodeFrame(obj));
+    if (!ok) conn.congested = true;
+    return ok;
+  }
+
   /** base64 stdin → upstream, honoring reverse backpressure + the bounded queue. */
   function writeStdin(conn: Conn, b: string): void {
     if (conn.closed || !conn.upstream) return;
@@ -165,8 +192,7 @@ export function createPtyBridge(deps: PtyBridgeDeps): PtyBridge {
       queueInput(conn, b);
       return;
     }
-    const ok = conn.upstream.write(encodeFrame({ t: 'stdin', b }));
-    if (!ok) conn.congested = true;
+    rawWriteUpstream(conn, { t: 'stdin', b });
   }
 
   function queueInput(conn: Conn, b: string): void {
@@ -192,8 +218,7 @@ export function createPtyBridge(deps: PtyBridgeDeps): PtyBridge {
     if (conn.resizeTimer) clearTimeout(conn.resizeTimer);
     conn.resizeTimer = setTimeout(() => {
       conn.resizeTimer = null;
-      if (conn.closed || !conn.upstream) return;
-      conn.upstream.write(encodeFrame({ t: 'resize', cols, rows }));
+      rawWriteUpstream(conn, { t: 'resize', cols, rows });
     }, RESIZE_DEBOUNCE_MS);
   }
 
@@ -218,13 +243,13 @@ export function createPtyBridge(deps: PtyBridgeDeps): PtyBridge {
 
   function onUpstreamConnect(conn: Conn, cols: number, rows: number): void {
     if (conn.closed || !conn.upstream) return;
-    conn.upstream.write(encodeFrame({ t: 'attach', cols, rows }));
+    rawWriteUpstream(conn, { t: 'attach', cols, rows });
     conn.ready = true;
     if (conn.pendingControl !== undefined) conn.controlGranted = conn.pendingControl;
     if (conn.pendingResize) {
       const { cols: c, rows: r } = conn.pendingResize;
       conn.pendingResize = null;
-      conn.upstream.write(encodeFrame({ t: 'resize', cols: c, rows: r }));
+      rawWriteUpstream(conn, { t: 'resize', cols: c, rows: r });
     }
     drainQueue(conn); // queued stdin was only accepted post-take-control
   }
@@ -287,7 +312,7 @@ export function createPtyBridge(deps: PtyBridgeDeps): PtyBridge {
     }
 
     if (t === 'stdin') {
-      if (typeof frame.b !== 'string') return;
+      if (typeof frame.b !== 'string' || !isBoundedBase64(frame.b)) return; // reject malformed/oversized base64
       const granted = conn.ready ? conn.controlGranted : conn.pendingControl === true;
       if (!granted) return; // view-only gate
       if (!conn.ready) {
@@ -308,7 +333,9 @@ export function createPtyBridge(deps: PtyBridgeDeps): PtyBridge {
       reply = null;
     }
     if (stopping || conn.closed) return; // late callback after stop/close — ignore
-    if (!reply || reply.ok !== true) {
+    // A malformed reply (missing/non-string ptySock) must NOT reach connectPty —
+    // with net.connect a number would be treated as a TCP port (review F5).
+    if (!reply || reply.ok !== true || typeof reply.ptySock !== 'string' || reply.ptySock.length === 0) {
       unavailable(conn);
       return;
     }
