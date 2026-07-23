@@ -108,6 +108,58 @@ describe('supervisor', () => {
     expect(readRoster(rosterPath()).entries.map((e) => e.short)).toContain('s1');
   });
 
+  it('threads a validated scrollback into spawn args and emits a pre-spawn structured dispatch log', async () => {
+    delete process.env.SYNTAUR_SCROLLBACK;
+    const spawn = vi.fn<DaemonSpawnFn>(() => fakeChild(9999));
+    const log = vi.fn();
+    const d = daemon({ spawn, log });
+    await d.handle({ op: 'dispatch', argv: ['bash'], cwd: '/w', scrollback: 5000 });
+    const args = spawn.mock.calls[0][1];
+    const i = args.indexOf('--scrollback');
+    expect(i).toBeGreaterThan(-1);
+    expect(args[i + 1]).toBe('5000');
+    // pre-spawn dispatch record carrying the cold-start join keys
+    expect(log).toHaveBeenCalledWith('dispatch', expect.objectContaining({ short: 's1', agent: 'bash', argv: ['bash'] }));
+  });
+
+  it('emits the dispatch log BEFORE spawn() (pre-spawn timestamp for the cold-start join)', async () => {
+    delete process.env.SYNTAUR_SCROLLBACK;
+    const order: string[] = [];
+    const spawn = vi.fn<DaemonSpawnFn>(() => {
+      order.push('spawn');
+      return fakeChild(9999);
+    });
+    const log = vi.fn((event: string) => {
+      if (event === 'dispatch') order.push('log:dispatch');
+    });
+    const d = daemon({ spawn, log });
+    await d.handle({ op: 'dispatch', argv: ['bash'], cwd: '/w' });
+    expect(order).toEqual(['log:dispatch', 'spawn']);
+  });
+
+  it('omits --scrollback for invalid/oversized values (emulator default applies)', async () => {
+    delete process.env.SYNTAUR_SCROLLBACK;
+    for (const bad of [-1, 1.5, 999999999]) {
+      const spawn = vi.fn<DaemonSpawnFn>(() => fakeChild(9999));
+      const d = daemon({ spawn });
+      await d.handle({ op: 'dispatch', argv: ['bash'], cwd: '/w', scrollback: bad });
+      expect(spawn.mock.calls[0][1]).not.toContain('--scrollback');
+    }
+  });
+
+  it('applies SYNTAUR_SCROLLBACK as the daemon-start default when no per-dispatch value', async () => {
+    process.env.SYNTAUR_SCROLLBACK = '8000';
+    try {
+      const spawn = vi.fn<DaemonSpawnFn>(() => fakeChild(9999));
+      const d = daemon({ spawn });
+      await d.handle({ op: 'dispatch', argv: ['bash'], cwd: '/w' });
+      const args = spawn.mock.calls[0][1];
+      expect(args[args.indexOf('--scrollback') + 1]).toBe('8000');
+    } finally {
+      delete process.env.SYNTAUR_SCROLLBACK;
+    }
+  });
+
   it('attach returns socket paths for a live session and errors for dead/unknown', async () => {
     const spawn = vi.fn(() => fakeChild(9999));
     const live = daemon({ spawn, isPidAlive: () => true });
@@ -293,15 +345,19 @@ describe('daemon log', () => {
     logPath = join(dir, 'daemon.log');
   });
 
-  it('appends timestamped lines and tails the last N', () => {
-    appendLog('first', { path: logPath, now: () => 0 });
-    appendLog('second', { path: logPath, now: () => 1000 });
-    appendLog('third', { path: logPath, now: () => 2000 });
+  it('appends structured NDJSON records and tails the last N', () => {
+    appendLog('first', {}, 'info', { path: logPath, now: () => 0 });
+    appendLog('second', {}, 'info', { path: logPath, now: () => 1000 });
+    appendLog('third', {}, 'info', { path: logPath, now: () => 2000 });
     const tail = tailLog(2, { path: logPath });
     expect(tail).toHaveLength(2);
-    expect(tail[0]).toContain('second');
-    expect(tail[1]).toContain('third');
-    expect(tail[1]).toMatch(/^\d{4}-\d\d-\d\dT/); // ISO timestamp prefix
+    // Raw lines are NDJSON now: parse and assert the structured shape.
+    const second = JSON.parse(tail[0]);
+    const third = JSON.parse(tail[1]);
+    expect(second.event).toBe('second');
+    expect(third.event).toBe('third');
+    expect(third.ts).toMatch(/^\d{4}-\d\d-\d\dT/); // ISO timestamp
+    expect(third.level).toBe('info');
   });
 
   it('returns [] for a missing log', () => {

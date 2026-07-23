@@ -6,7 +6,7 @@
 // the bundle rewrites import.meta.url to index.js).
 
 import { SyntaurError } from '../errors.js';
-import { runPtyHost, smokePtyHost, type PtyHostConfig } from './pty-host.js';
+import { parseScrollback, runPtyHost, smokePtyHost, type PtyHostConfig } from './pty-host.js';
 
 export interface ParsedPtyHostArgs {
   smoke: boolean;
@@ -45,6 +45,9 @@ export function parsePtyHostArgs(argv: string[]): ParsedPtyHostArgs {
     cwd: get('--cwd') ?? process.cwd(),
     cols: Number(get('--cols') ?? '80'),
     rows: Number(get('--rows') ?? '24'),
+    // Validated here too: pty-host can be invoked directly, not only via the
+    // daemon. An invalid/absent flag → undefined → createScreen's default.
+    scrollback: parseScrollback(get('--scrollback')),
     name: get('--name'),
     sessionId: get('--session-id') ?? null,
   };

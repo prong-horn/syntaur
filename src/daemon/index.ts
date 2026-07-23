@@ -9,7 +9,7 @@ export {
   jobsDir,
   runtimeBaseDir,
 } from './paths.js';
-export { appendLog, tailLog } from './log.js';
+export { appendLog, tailLog, formatLogLine } from './log.js';
 export { readJobState, readAllJobStates } from './jobs.js';
 export { createDaemon, type Daemon, type DaemonDeps, type DaemonSpawnFn } from './supervisor.js';
 export { ensureDaemon, daemonRequest, queryDaemon, sendRequest, type ClientDeps, type ExecFn } from './client.js';

@@ -1,6 +1,6 @@
 import { Command } from 'commander';
 import { runCommand, SyntaurError } from '../errors.js';
-import { createDaemon, sendRequest, tailLog } from '../daemon/index.js';
+import { createDaemon, sendRequest, tailLog, formatLogLine } from '../daemon/index.js';
 import { resolveDaemon } from '../daemon/discovery.js';
 import { currentPointerPath } from '../daemon/paths.js';
 import type { ControlReply, ControlRequest, StatusReply } from '../daemon/types.js';
@@ -66,7 +66,7 @@ const logsSub = new Command('logs')
   .option('-n, --lines <n>', 'Number of lines to show', '50')
   .action(
     runCommand(async (opts: { lines: string }) => {
-      const lines = tailLog(Number(opts.lines) || 50);
+      const lines = tailLog(Number(opts.lines) || 50).map(formatLogLine);
       if (lines.length === 0) console.log('(no daemon log yet)');
       else console.log(lines.join('\n'));
     }),

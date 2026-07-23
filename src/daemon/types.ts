@@ -146,6 +146,9 @@ export type ControlRequest =
       agent?: string;
       cols?: number;
       rows?: number;
+      /** Emulator scrollback depth; validated (non-negative safe int ≤ 100_000)
+       * daemon-side, falling back to the daemon default then DEFAULT_SCROLLBACK. */
+      scrollback?: number;
       sessionId?: string;
     }
   | { op: 'list' }
@@ -157,6 +160,20 @@ export type ControlRequest =
   | { op: 'stop' };
 
 export type ControlOp = ControlRequest['op'];
+
+// ── daemon.log structured records (one NDJSON object per line on disk) ──────
+
+export type LogLevel = 'info' | 'warn' | 'error';
+
+/** One structured line in ~/.syntaur/daemon.log. `event` + `ts` are the fields
+ * the human renderer and the cold-start measurement spike key on; anything else
+ * is free-form context. Rendered back to human-readable text by `daemon logs`. */
+export interface LogRecord {
+  ts: string;
+  level: LogLevel;
+  event: string;
+  [key: string]: unknown;
+}
 
 /** State record streamed over the rv socket and the `subscribe` op. */
 export interface StateRecord {
