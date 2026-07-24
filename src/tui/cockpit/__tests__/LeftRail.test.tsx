@@ -1,3 +1,4 @@
+import './forceColor.js'; // MUST be first — pins color on before ink imports (see file)
 import { describe, it, expect, vi } from 'vitest';
 import { render } from 'ink-testing-library';
 import { MouseProvider } from '../../mouse/MouseContext.js';
