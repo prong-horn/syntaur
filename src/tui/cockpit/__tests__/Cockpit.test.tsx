@@ -20,6 +20,12 @@ const WAIT_TIMEOUT = 45000;
 // top-level code, per ESM/vitest module-hoisting) can close over them.
 const mocks = vi.hoisted(() => ({
   runClaudeAgentView: vi.fn(),
+  runClaudeAttach: vi.fn(),
+  // Mutable box: whether the mocked claude registers the hidden `attach <id>`
+  // command (checkClaudeAttachCommand). true = modern claude (direct attach);
+  // false = old claude, where blind `claude attach` would prompt-swallow into
+  // a NEW session — the cockpit must fall back to the Agent View picker.
+  claudeAttachCommand: { value: true },
   buildLaunchPlan: vi.fn(),
   runSyntaurdAttach: vi.fn(),
   launchSyntaurd: vi.fn(),
@@ -47,7 +53,13 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock('../../claude-agents/attach.js', () => ({
+  runClaudeAttach: mocks.runClaudeAttach,
   runClaudeAgentView: mocks.runClaudeAgentView,
+}));
+
+vi.mock('../../claude-agents/capability.js', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  checkClaudeAttachCommand: vi.fn(async () => mocks.claudeAttachCommand.value),
 }));
 
 vi.mock('../../syntaurd/attach.js', () => ({
@@ -473,15 +485,18 @@ describe('Cockpit handleAttach native dispatch (task 14 wiring)', () => {
     mocks.sessionLive.value = true;
     mocks.sessionNative.agentShortId = 'ab12cd34';
     mocks.sessionNative.state = 'working';
+    mocks.claudeAttachCommand.value = true;
     mocks.runClaudeAgentView.mockReset().mockResolvedValue({ code: 0 });
+    mocks.runClaudeAttach.mockReset().mockResolvedValue({ code: 0 });
   });
 
   afterEach(() => {
     mocks.sessionNative.agentShortId = null;
     mocks.sessionNative.state = null;
+    mocks.claudeAttachCommand.value = true;
   });
 
-  it('picks runClaudeAgentView for a native-reachable session', async () => {
+  it('direct-attaches with the short id when claude registers the hidden attach command', async () => {
     const { lastFrame, stdin, unmount } = render(
       <Cockpit projectsDir="/tmp/p" assignmentsDir="/tmp/a" claudeBgAvailable={true} syntaurdAvailable={false} />,
     );
@@ -493,13 +508,33 @@ describe('Cockpit handleAttach native dispatch (task 14 wiring)', () => {
       () => {
         stdin.write('\x1b[<0;2;4M');
         stdin.write('a');
+        expect(mocks.runClaudeAttach).toHaveBeenCalledTimes(1);
+      },
+      { timeout: WAIT_TIMEOUT },
+    );
+    expect(mocks.runClaudeAttach).toHaveBeenCalledWith('ab12cd34');
+    expect(mocks.runClaudeAgentView).not.toHaveBeenCalled();
+    await vi.waitFor(() => expect(lastFrame() ?? '').toContain('Detached from ab12cd34'), { timeout: WAIT_TIMEOUT });
+
+    unmount();
+  }, 30000);
+
+  it('REGRESSION (0.78.0): an old claude without the hidden attach command falls back to the Agent View picker — never a blind `claude attach` that would open a NEW session', async () => {
+    mocks.claudeAttachCommand.value = false;
+    const { lastFrame, stdin, unmount } = render(
+      <Cockpit projectsDir="/tmp/p" assignmentsDir="/tmp/a" claudeBgAvailable={true} syntaurdAvailable={false} />,
+    );
+    await vi.waitFor(() => expect(lastFrame() ?? '').toContain('proj/a1'), { timeout: WAIT_TIMEOUT });
+    await vi.waitFor(
+      () => {
+        stdin.write('\x1b[<0;2;4M');
+        stdin.write('a');
         expect(mocks.runClaudeAgentView).toHaveBeenCalledTimes(1);
       },
       { timeout: WAIT_TIMEOUT },
     );
-    // claude has no `attach` subcommand and `claude agents` takes no positional
-    // id — the picker is opened with no args (see claude-agents/attach.ts).
     expect(mocks.runClaudeAgentView).toHaveBeenCalledWith();
+    expect(mocks.runClaudeAttach).not.toHaveBeenCalled();
     await vi.waitFor(() => expect(lastFrame() ?? '').toContain('select ab12cd34 there to attach'), { timeout: WAIT_TIMEOUT });
 
     unmount();
@@ -537,7 +572,9 @@ describe('Cockpit handleAttach syntaurd dispatch (Phase B wiring)', () => {
     mocks.sessionNative.agentShortId = 'cc12dd34'; // native ALSO reachable — syntaurd must win
     mocks.sessionNative.state = 'working';
     mocks.sessionNative.syntaurdShortId = 'sd12ab34';
+    mocks.claudeAttachCommand.value = true;
     mocks.runClaudeAgentView.mockReset().mockResolvedValue({ code: 0 });
+    mocks.runClaudeAttach.mockReset().mockResolvedValue({ code: 0 });
     mocks.sandwichLog.length = 0;
     // Records its own position in the sandwich log so ordering is provable.
     mocks.runSyntaurdAttach.mockReset().mockImplementation(async () => {
@@ -571,15 +608,13 @@ describe('Cockpit handleAttach syntaurd dispatch (Phase B wiring)', () => {
       () => {
         stdin.write('\x1b[<0;2;4M');
         stdin.write('a');
-        expect(mocks.runClaudeAgentView).toHaveBeenCalledTimes(1);
+        expect(mocks.runClaudeAttach).toHaveBeenCalledTimes(1);
       },
       { timeout: WAIT_TIMEOUT },
     );
-    // claude has no `attach` subcommand and `claude agents` takes no positional
-    // id — the picker is opened with no args (see claude-agents/attach.ts).
-    expect(mocks.runClaudeAgentView).toHaveBeenCalledWith();
+    expect(mocks.runClaudeAttach).toHaveBeenCalledWith('cc12dd34');
     expect(mocks.runSyntaurdAttach).not.toHaveBeenCalled();
-    await vi.waitFor(() => expect(lastFrame() ?? '').toContain('select cc12dd34 there to attach'), { timeout: WAIT_TIMEOUT });
+    await vi.waitFor(() => expect(lastFrame() ?? '').toContain('Detached from cc12dd34'), { timeout: WAIT_TIMEOUT });
     expect(lastFrame() ?? '').not.toContain('Daemon unavailable');
     unmount();
   }, 30000);
@@ -604,6 +639,7 @@ describe('Cockpit handleAttach syntaurd dispatch (Phase B wiring)', () => {
       // Give any (incorrect) dispatch a real chance to fire before asserting.
       await new Promise((r) => setTimeout(r, 500));
       expect(mocks.runSyntaurdAttach).not.toHaveBeenCalled();
+      expect(mocks.runClaudeAttach).not.toHaveBeenCalled();
       expect(mocks.runClaudeAgentView).not.toHaveBeenCalled();
     } finally {
       unmount(); // never leak a polling instance into the next case

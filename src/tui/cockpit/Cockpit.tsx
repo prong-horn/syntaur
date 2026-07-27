@@ -19,7 +19,8 @@ import { readConfig, getAgents, type AgentConfig } from '../../utils/config.js';
 import type { AgentSessionWithLiveness } from '../../dashboard/types.js';
 import { buildLaunchPlan } from '../../launch/build-launch.js';
 import { launchClaudeBg } from '../claude-agents/launch.js';
-import { runClaudeAgentView } from '../claude-agents/attach.js';
+import { runClaudeAttach, runClaudeAgentView } from '../claude-agents/attach.js';
+import { checkClaudeAttachCommand } from '../claude-agents/capability.js';
 import { launchSyntaurd as dispatchSyntaurd } from '../syntaurd/launch.js';
 import { runSyntaurdAttach } from '../syntaurd/attach.js';
 
@@ -275,20 +276,32 @@ export const Cockpit: React.FC<CockpitProps> = ({
     }
 
     if (isNativeAttachReachable(session)) {
+      // Direct one-click attach via claude's HIDDEN `attach <id>` command —
+      // but only when the installed claude actually registers it. On an older
+      // claude the unrecognized word is consumed as the [prompt] argument and
+      // a NEW session launches prompted "attach <short>" (the 0.78.0 bug), so
+      // the probe gates the argv and we degrade to the Agent View picker.
+      // Probed BEFORE suspending (it's a fast cached execFile, no TTY needs).
+      const directAttach = await checkClaudeAttachCommand();
       // Re-arm mouse tracking around the suspend exactly like the syntaurd path
-      // above — `claude attach` owns the real terminal via stdio:'inherit'.
+      // above — the claude child owns the real terminal via stdio:'inherit'.
       let result: ChildOutcome = { code: null };
       await runWithMouseSuspended(write, () =>
         suspendTerminal(async () => {
-          result = await runClaudeAgentView();
+          result = directAttach
+            ? await runClaudeAttach(session.agentShortId as string)
+            : await runClaudeAgentView();
         }),
       );
       if (isCleanExit(result, { allowNullCode: true })) {
-        // Claude's Agent View is a picker — `claude agents` accepts no session
-        // id — so name the row the user wants rather than claiming we attached
-        // to it (there is no `claude attach`; see ../claude-agents/attach.ts).
-        setStatus(`Returned from Claude Agent View — select ${session.agentShortId} there to attach`);
+        setStatus(
+          directAttach
+            ? `Detached from ${session.agentShortId}`
+            : `Returned from Claude Agent View — select ${session.agentShortId} there to attach (this claude lacks direct attach)`,
+        );
       } else {
+        // With direct attach, a stale overlay id exits 1 with claude's own
+        // "No job matching '<id>'" on the inherited stderr — mirror it here.
         setStatus(`Attach failed: ${describeChildFailure(result)}`);
       }
       return;

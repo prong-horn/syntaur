@@ -26,3 +26,42 @@ export async function checkClaudeBgAvailable(probe: ProbeFn = defaultProbe): Pro
 export function resetClaudeBgAvailableCache(): void {
   cache = null;
 }
+
+export type AttachProbeFn = () => Promise<{ stdout: string }>;
+
+const defaultAttachProbe: AttachProbeFn = () =>
+  execFileAsync('claude', ['attach', '--help'], { timeout: 5000 }) as Promise<{ stdout: string }>;
+
+let attachCache: Promise<boolean> | null = null;
+
+/**
+ * True when the installed claude registers the `attach <id>` subcommand.
+ *
+ * `claude attach` is a HIDDEN commander command (absent from `claude --help`;
+ * present on 2.1.218+, verified 2026-07-27), so the only reliable probe is
+ * invoking `claude attach --help` and checking WHICH usage text comes back:
+ * a claude that registers it prints `Usage: claude attach <id>`; an older
+ * claude prints the GENERAL help (`Usage: claude [options] [command]
+ * [prompt]`) because `--help` is handled globally — same exit 0, different
+ * text, so we must match the output, not the exit code.
+ *
+ * This gate matters because claude's CLI treats an unrecognized leading word
+ * as the PROMPT: on an old claude, spawning `claude attach <short>` doesn't
+ * fail — it silently launches a brand-new session prompted "attach <short>"
+ * (user-reported against 0.78.0 from a second machine with an older claude).
+ * Callers must fall back to the Agent View picker when this resolves false.
+ * Never rejects: probe failure (binary missing, exec error) resolves false.
+ */
+export async function checkClaudeAttachCommand(probe: AttachProbeFn = defaultAttachProbe): Promise<boolean> {
+  if (!attachCache) {
+    attachCache = probe()
+      .then(({ stdout }) => /^\s*Usage: claude attach\b/m.test(stdout))
+      .catch(() => false);
+  }
+  return attachCache;
+}
+
+/** Test-only: clear the memoized attach-command probe between cases. */
+export function resetClaudeAttachCommandCache(): void {
+  attachCache = null;
+}
