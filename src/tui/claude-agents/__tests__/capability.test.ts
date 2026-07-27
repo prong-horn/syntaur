@@ -47,6 +47,13 @@ describe('checkClaudeAttachCommand', () => {
     }))).toBe(false);
   });
 
+  it('true when the usage arrives on STDERR (some CLI versions print help there)', async () => {
+    expect(await checkClaudeAttachCommand(async () => ({
+      stdout: '',
+      stderr: 'Usage: claude attach <id>\n  Open the background session in this terminal.',
+    }))).toBe(true);
+  });
+
   it('false when the probe rejects (claude missing), and never rejects', async () => {
     expect(await checkClaudeAttachCommand(async () => { throw new Error('ENOENT'); })).toBe(false);
   });

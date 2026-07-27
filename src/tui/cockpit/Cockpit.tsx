@@ -297,7 +297,10 @@ export const Cockpit: React.FC<CockpitProps> = ({
         setStatus(
           directAttach
             ? `Detached from ${session.agentShortId}`
-            : `Returned from Claude Agent View — select ${session.agentShortId} there to attach (this claude lacks direct attach)`,
+            // Kept short — the status row truncates at terminal width, and
+            // the id must survive truncation (it's what the user selects in
+            // the picker). Full context lives in the fallback docs.
+            : `Picker opened for ${session.agentShortId} — claude lacks attach; run claude update`,
         );
       } else {
         // With direct attach, a stale overlay id exits 1 with claude's own

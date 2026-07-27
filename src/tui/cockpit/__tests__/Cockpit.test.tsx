@@ -535,7 +535,7 @@ describe('Cockpit handleAttach native dispatch (task 14 wiring)', () => {
     );
     expect(mocks.runClaudeAgentView).toHaveBeenCalledWith();
     expect(mocks.runClaudeAttach).not.toHaveBeenCalled();
-    await vi.waitFor(() => expect(lastFrame() ?? '').toContain('select ab12cd34 there to attach'), { timeout: WAIT_TIMEOUT });
+    await vi.waitFor(() => expect(lastFrame() ?? '').toContain('Picker opened for ab12cd34'), { timeout: WAIT_TIMEOUT });
 
     unmount();
   }, 30000);

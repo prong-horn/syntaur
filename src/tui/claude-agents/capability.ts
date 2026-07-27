@@ -27,10 +27,28 @@ export function resetClaudeBgAvailableCache(): void {
   cache = null;
 }
 
-export type AttachProbeFn = () => Promise<{ stdout: string }>;
+export type AttachProbeFn = () => Promise<{ stdout: string; stderr?: string }>;
 
-const defaultAttachProbe: AttachProbeFn = () =>
-  execFileAsync('claude', ['attach', '--help'], { timeout: 5000 }) as Promise<{ stdout: string }>;
+const defaultAttachProbe: AttachProbeFn = async () => {
+  try {
+    // 15s, not 5s: a cold-start claude (first run after an update, slow disk)
+    // can exceed 5s just printing help; a timed-out probe must not silently
+    // demote a fully capable claude to the picker fallback.
+    return (await execFileAsync('claude', ['attach', '--help'], { timeout: 15000 })) as {
+      stdout: string;
+      stderr: string;
+    };
+  } catch (err) {
+    // execFile rejects on non-zero exit but still attaches the captured
+    // output. Some CLI versions/paths print usage to stderr or exit non-zero
+    // for help on a hidden command — the usage TEXT is the capability
+    // evidence, not the exit code, so surface whatever was captured and let
+    // the matcher decide. A rejection with no usable output matches nothing
+    // and resolves false as before.
+    const e = err as { stdout?: unknown; stderr?: unknown };
+    return { stdout: String(e.stdout ?? ''), stderr: String(e.stderr ?? '') };
+  }
+};
 
 let attachCache: Promise<boolean> | null = null;
 
@@ -55,7 +73,7 @@ let attachCache: Promise<boolean> | null = null;
 export async function checkClaudeAttachCommand(probe: AttachProbeFn = defaultAttachProbe): Promise<boolean> {
   if (!attachCache) {
     attachCache = probe()
-      .then(({ stdout }) => /^\s*Usage: claude attach\b/m.test(stdout))
+      .then(({ stdout, stderr }) => /^\s*Usage: claude attach\b/m.test(`${stdout}\n${stderr ?? ''}`))
       .catch(() => false);
   }
   return attachCache;
