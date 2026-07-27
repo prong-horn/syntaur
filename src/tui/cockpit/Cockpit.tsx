@@ -19,7 +19,7 @@ import { readConfig, getAgents, type AgentConfig } from '../../utils/config.js';
 import type { AgentSessionWithLiveness } from '../../dashboard/types.js';
 import { buildLaunchPlan } from '../../launch/build-launch.js';
 import { launchClaudeBg } from '../claude-agents/launch.js';
-import { runClaudeAttach } from '../claude-agents/attach.js';
+import { runClaudeAgentView } from '../claude-agents/attach.js';
 import { launchSyntaurd as dispatchSyntaurd } from '../syntaurd/launch.js';
 import { runSyntaurdAttach } from '../syntaurd/attach.js';
 
@@ -280,11 +280,14 @@ export const Cockpit: React.FC<CockpitProps> = ({
       let result: ChildOutcome = { code: null };
       await runWithMouseSuspended(write, () =>
         suspendTerminal(async () => {
-          result = await runClaudeAttach(session.agentShortId as string);
+          result = await runClaudeAgentView();
         }),
       );
       if (isCleanExit(result, { allowNullCode: true })) {
-        setStatus(`Detached from ${session.agentShortId}`);
+        // Claude's Agent View is a picker — `claude agents` accepts no session
+        // id — so name the row the user wants rather than claiming we attached
+        // to it (there is no `claude attach`; see ../claude-agents/attach.ts).
+        setStatus(`Returned from Claude Agent View — select ${session.agentShortId} there to attach`);
       } else {
         setStatus(`Attach failed: ${describeChildFailure(result)}`);
       }
