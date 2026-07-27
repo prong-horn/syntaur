@@ -1,34 +1,11 @@
 import { Command } from 'commander';
 import { execFile, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
-import { accessSync, constants } from 'node:fs';
-import { join, delimiter } from 'node:path';
 import { runCommand } from '../errors.js';
-import { checkClaudeAttachCommand } from '../tui/claude-agents/capability.js';
+import { checkClaudeAttachCommand, resolveClaudeAttachBinary, scanPathForClaude } from '../tui/claude-agents/capability.js';
 import { buildClaudeAttachArgv } from '../tui/claude-agents/attach.js';
 
 const execFileAsync = promisify(execFile);
-
-/**
- * Every `claude` executable reachable on PATH, in resolution order. More than
- * one entry (or a first entry that isn't the expected install) means a
- * wrapper/shim shadows the real binary — the classic reason the cockpit's
- * probe can disagree with a login shell's `claude attach --help`.
- */
-export function scanPathForClaude(pathEnv: string | undefined = process.env.PATH): string[] {
-  const hits: string[] = [];
-  for (const dir of (pathEnv ?? '').split(delimiter)) {
-    if (!dir) continue;
-    const candidate = join(dir, 'claude');
-    try {
-      accessSync(candidate, constants.X_OK);
-      hits.push(candidate);
-    } catch {
-      /* not here */
-    }
-  }
-  return hits;
-}
 
 /**
  * Diagnose the cockpit's claude-attach decision from INSIDE syntaur's own
@@ -59,23 +36,27 @@ export const attachDoctorCommand = new Command('attach-doctor')
         console.log(`\n2. claude --version FAILED: ${err instanceof Error ? err.message : String(err)}`);
       }
 
-      // 3. The raw probe, exactly as the cockpit runs it.
-      console.log('\n3. Raw probe (`claude attach --help`, 15s timeout):');
-      try {
-        const { stdout, stderr } = await execFileAsync('claude', ['attach', '--help'], { timeout: 15000 });
-        console.log(`   exit: 0`);
-        console.log(`   stdout: ${JSON.stringify(stdout.slice(0, 100))}`);
-        console.log(`   stderr: ${JSON.stringify(stderr.slice(0, 100))}`);
-      } catch (err) {
-        const e = err as { code?: unknown; stdout?: unknown; stderr?: unknown; message?: string };
-        console.log(`   exit/err: ${String(e.code ?? e.message)}`);
-        console.log(`   stdout: ${JSON.stringify(String(e.stdout ?? '').slice(0, 100))}`);
-        console.log(`   stderr: ${JSON.stringify(String(e.stderr ?? '').slice(0, 100))}`);
+      // 3. Per-candidate probe — a shim can answer differently than the real
+      // binary, so every candidate is probed the way the resolver does.
+      console.log('\n3. Per-candidate probe (`<candidate> attach --help`, 15s timeout):');
+      for (const candidate of claudes) {
+        try {
+          const { stdout, stderr } = await execFileAsync(candidate, ['attach', '--help'], { timeout: 15000 });
+          const ok = /^\s*Usage: claude attach\b/m.test(`${stdout}\n${stderr}`);
+          console.log(`   ${ok ? 'ATTACH OK ' : 'NO ATTACH '} ${candidate}`);
+          console.log(`              stdout: ${JSON.stringify(stdout.slice(0, 80))}`);
+        } catch (err) {
+          const e = err as { code?: unknown; stdout?: unknown; message?: string };
+          const cap = String(e.stdout ?? '');
+          const ok = /^\s*Usage: claude attach\b/m.test(cap);
+          console.log(`   ${ok ? 'ATTACH OK ' : 'PROBE ERR '} ${candidate} (${String(e.code ?? e.message)})`);
+        }
       }
 
-      // 4. The cockpit's actual verdict (same memoized function it calls).
+      // 4. The cockpit's actual verdict + the binary it will spawn.
       const direct = await checkClaudeAttachCommand();
-      console.log(`\n4. Cockpit verdict — checkClaudeAttachCommand(): ${direct ? 'DIRECT ATTACH (claude attach <id>)' : 'FALLBACK (Agent View picker)'}`);
+      const resolved = await resolveClaudeAttachBinary();
+      console.log(`\n4. Cockpit verdict — ${direct ? `DIRECT ATTACH via ${resolved}` : 'FALLBACK (Agent View picker) — no candidate supports attach'}`);
 
       // 5. Live background sessions the ids come from.
       try {
@@ -91,10 +72,11 @@ export const attachDoctorCommand = new Command('attach-doctor')
       // 6. Optionally run the exact attach the cockpit would run.
       if (short) {
         const argv = buildClaudeAttachArgv(short);
-        console.log(`\n6. Running the exact cockpit attach now: claude ${argv.join(' ')}`);
+        const bin = resolved ?? 'claude';
+        console.log(`\n6. Running the exact cockpit attach now: ${bin} ${argv.join(' ')}`);
         console.log('   (this is interactive — detach/exit to return; what renders IS what the cockpit shows)\n');
         await new Promise<void>((resolvePromise) => {
-          const child = spawn('claude', argv, { stdio: 'inherit' });
+          const child = spawn(bin, argv, { stdio: 'inherit' });
           child.on('exit', (code) => {
             console.log(`\n   attach child exited with code ${code}`);
             resolvePromise();

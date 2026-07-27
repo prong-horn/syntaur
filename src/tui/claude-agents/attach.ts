@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process';
+import { resolveClaudeAttachBinary } from './capability.js';
 
 /**
  * Argv for directly attaching to a session hosted by Claude Code's own
@@ -41,25 +42,32 @@ export interface ClaudeAttachResult {
   error?: Error;
 }
 
-function runClaude(argv: string[], spawnFn?: SpawnLike): Promise<ClaudeAttachResult> {
+function runClaude(binary: string, argv: string[], spawnFn?: SpawnLike): Promise<ClaudeAttachResult> {
   const spawnImpl: SpawnLike = spawnFn ?? ((c, a, o) => spawn(c, a, o) as unknown as MinimalChild);
   return new Promise<ClaudeAttachResult>((resolvePromise) => {
-    const child = spawnImpl('claude', argv, { stdio: 'inherit' });
+    const child = spawnImpl(binary, argv, { stdio: 'inherit' });
     child.on('exit', (code) => resolvePromise({ code: (code as number | null | undefined) ?? null }));
     child.on('error', (err) => resolvePromise({ code: null, error: err as Error }));
   });
 }
 
 /**
- * Runs `claude attach <shortId>` with inherited stdio and reports how it
- * ended. GATE BEHIND `checkClaudeAttachCommand()` — see buildClaudeAttachArgv.
+ * Runs `<resolved-claude> attach <shortId>` with inherited stdio and reports
+ * how it ended. Spawns the binary `resolveClaudeAttachBinary()` verified —
+ * NEVER bare `claude` — because a PATH shim (e.g. cmux's) can shadow the real
+ * install and swallow the hidden subcommand into a new-session prompt while a
+ * fully capable claude sits shadowed behind it (root-caused live, 2026-07-27).
+ * GATE BEHIND `checkClaudeAttachCommand()`; if resolution comes back null
+ * despite the gate (racing PATH changes), falls back to bare `claude` rather
+ * than failing the spawn outright.
  * Never rejects (so a caller's `finally` — e.g. re-arming mouse tracking —
  * always runs): on `'exit'` resolves `{ code }` (coercing an undefined exit
  * code to `null`); on `'error'` (e.g. the claude binary missing) resolves
  * `{ code: null, error }` instead of throwing.
  */
-export function runClaudeAttach(shortId: string, spawnFn?: SpawnLike): Promise<ClaudeAttachResult> {
-  return runClaude(buildClaudeAttachArgv(shortId), spawnFn);
+export async function runClaudeAttach(shortId: string, spawnFn?: SpawnLike): Promise<ClaudeAttachResult> {
+  const binary = (await resolveClaudeAttachBinary()) ?? 'claude';
+  return runClaude(binary, buildClaudeAttachArgv(shortId), spawnFn);
 }
 
 /**
@@ -68,5 +76,8 @@ export function runClaudeAttach(shortId: string, spawnFn?: SpawnLike): Promise<C
  * never-reject contract as runClaudeAttach.
  */
 export function runClaudeAgentView(spawnFn?: SpawnLike): Promise<ClaudeAttachResult> {
-  return runClaude(buildClaudeAgentViewArgv(), spawnFn);
+  // Bare `claude` on purpose: the picker is the degraded path taken exactly
+  // when no attach-capable binary resolved, and `agents` is a PUBLIC
+  // subcommand every claude (and well-behaved shim) forwards.
+  return runClaude('claude', buildClaudeAgentViewArgv(), spawnFn);
 }

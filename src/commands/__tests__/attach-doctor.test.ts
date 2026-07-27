@@ -2,7 +2,8 @@ import { describe, it, expect } from 'vitest';
 import { mkdtemp, writeFile, chmod } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, delimiter } from 'node:path';
-import { scanPathForClaude, attachDoctorCommand } from '../attach-doctor.js';
+import { attachDoctorCommand } from '../attach-doctor.js';
+import { scanPathForClaude } from '../../tui/claude-agents/capability.js';
 
 describe('attach-doctor', () => {
   it('scanPathForClaude finds executables in PATH order and skips non-executable dirs', async () => {

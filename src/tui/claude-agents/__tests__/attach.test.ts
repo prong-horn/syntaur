@@ -1,4 +1,13 @@
 import { describe, it, expect, vi } from 'vitest';
+
+// runClaudeAttach spawns the binary resolveClaudeAttachBinary() verified (a
+// PATH shim can shadow the real claude — see capability.ts). Pin it here so
+// these units are hermetic and assert the resolved-binary spawn contract.
+vi.mock('../capability.js', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  resolveClaudeAttachBinary: vi.fn(async () => '/resolved/claude'),
+}));
+
 import {
   buildClaudeAttachArgv,
   buildClaudeAgentViewArgv,
@@ -35,10 +44,10 @@ describe('claude direct attach (hidden `claude attach <id>`)', () => {
     expect(buildClaudeAttachArgv('ab12cd34')).toEqual(['attach', 'ab12cd34']);
   });
 
-  it('spawns claude attach <id> with inherited stdio', async () => {
+  it('spawns the RESOLVED binary (never bare `claude` — a shim could shadow it) with inherited stdio', async () => {
     const spawnFn = vi.fn(() => fakeChild(0));
     await runClaudeAttach('ab12cd34', spawnFn as never);
-    expect(spawnFn).toHaveBeenCalledWith('claude', ['attach', 'ab12cd34'], { stdio: 'inherit' });
+    expect(spawnFn).toHaveBeenCalledWith('/resolved/claude', ['attach', 'ab12cd34'], { stdio: 'inherit' });
   });
 
   it('resolves { code } propagating a non-zero exit (e.g. "No job matching")', async () => {
