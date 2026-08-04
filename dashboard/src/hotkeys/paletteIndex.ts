@@ -40,6 +40,7 @@ export const WORKSPACE_CAPABLE_ROUTES = new Set<string>([
   '/projects',
   '/assignments',
   '/servers',
+  '/agent-sessions',
   '/todos',
 ]);
 
@@ -53,6 +54,7 @@ export const STATIC_PAGES = [
   { id: 'page-assignments', title: 'Assignments', basePath: '/assignments', keywords: [] },
   { id: 'page-todos',       title: 'Todos',       basePath: '/todos',       keywords: ['tasks'] },
   { id: 'page-servers',     title: 'Servers',     basePath: '/servers',     keywords: ['sessions'] },
+  { id: 'page-agent-sessions', title: 'Agent Sessions', basePath: '/agent-sessions', keywords: ['sessions', 'runs', 'claude', 'codex'] },
   { id: 'page-playbooks',   title: 'Playbooks',   basePath: '/playbooks',   keywords: [] },
   { id: 'page-memories',    title: 'Memories',    basePath: '/memories',    keywords: ['knowledge', 'learnings'] },
   { id: 'page-resources',   title: 'Resources',   basePath: '/resources',   keywords: ['knowledge', 'reference'] },
