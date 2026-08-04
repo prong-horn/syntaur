@@ -63,7 +63,6 @@ export function AgentSessionsPage() {
   const [sort, setSort] = useState<SessionSort>(DEFAULT_SESSION_SORT);
   const [page, setPage] = useState(0);
   const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
-  const [, setTick] = useState(0);
 
   // Debounced search: filtering is a server round-trip now, so the raw input
   // must not become a request per keystroke.
@@ -75,7 +74,7 @@ export function AgentSessionsPage() {
     setPage(0);
   }, [debouncedSearch, startedFrom, startedTo, sort, pageSize, workspace]);
 
-  const { data, loading, error } = useAgentSessions({
+  const { data, loading, error, refetch } = useAgentSessions({
     includeUsageOnly: true,
     page,
     pageSize,
@@ -90,15 +89,20 @@ export function AgentSessionsPage() {
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [pendingDelete, setPendingDelete] = useState<PendingDelete | null>(null);
 
+  // Live sessions keep their elapsed durations fresh by refetching the current
+  // page every 30s. This used to bump a `tick` counter that the client-side
+  // filter/sort memo depended on; that memo is gone, so a bare re-render would
+  // now change nothing — durations are ranked server-side. Refetching the same
+  // URL is what actually updates them.
   const hasActiveSessions = data?.sessions.some((session) => session.status === 'active') ?? false;
   useEffect(() => {
     if (!hasActiveSessions) {
       return;
     }
 
-    const interval = window.setInterval(() => setTick((current) => current + 1), 30000);
+    const interval = window.setInterval(() => refetch(), 30000);
     return () => window.clearInterval(interval);
-  }, [hasActiveSessions]);
+  }, [hasActiveSessions, refetch]);
 
   // Filtering, sorting, and paging all happen server-side now, so the response
   // IS the page. No client-side narrowing remains — that is what lets a filter

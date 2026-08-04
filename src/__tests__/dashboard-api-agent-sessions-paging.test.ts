@@ -196,6 +196,30 @@ describe('paged filtering spans the whole set, not the page', () => {
     expect(underscore.sessions).toHaveLength(0);
   });
 
+  it('matches a query spanning two fields, as the old concatenated search did', async () => {
+    // The client joined every searchable field with spaces and ran one
+    // includes(), so "alpha task" matched project 'alpha' + assignment 'task'.
+    // Per-column ORs would match neither.
+    await seedSession('cross-field', { projectSlug: 'alpha', assignmentSlug: 'task' });
+    await seedSession('unrelated', { projectSlug: 'beta', assignmentSlug: 'other' });
+
+    const body = await get(`?pageSize=10&search=${encodeURIComponent('alpha task')}`);
+    expect(body.sessions.map((s) => s.sessionId)).toEqual(['cross-field']);
+  });
+
+  it('sorts a live session by elapsed time, not as zero-length', async () => {
+    // A live session (ended IS NULL) has duration `now - started`. Ordering it
+    // in SQL via COALESCE(ended, started) would make it zero-length and sort it
+    // last under duration_desc — the opposite end from where it belongs.
+    await seedSession('live-long', { started: '2020-01-01T00:00:00.000Z', status: 'active' });
+    await seedSession('finished-short', {
+      started: '2026-07-01T10:00:00.000Z', ended: '2026-07-01T10:05:00.000Z', status: 'completed',
+    });
+
+    const body = await get('?pageSize=10&sort=duration_desc');
+    expect(body.sessions[0].sessionId).toBe('live-long');
+  });
+
   it('filters by local calendar date using the caller timezone offset', async () => {
     // 2026-07-02T02:30Z is 2026-07-01 at 20:30 in UTC-6, so a filter for the
     // local day 2026-07-01 must include it. Comparing the bare date against the
@@ -316,6 +340,38 @@ describe('workspace scoping', () => {
 
     const ungrouped = await get('?pageSize=50&workspace=_ungrouped&includeUsageOnly=1');
     expect(ungrouped.sessions.map((s) => s.sessionId).sort()).toEqual(['orphan-x', 'unbound']);
+  });
+
+  it('does not resurface a filtered-out tracked session as a synthetic orphan', async () => {
+    // Regression: "orphan" means "a usage id with no sessions row". If that set
+    // is computed from the POST-FILTER session list, any tracked session the
+    // filter excluded re-enters as a fake usageOnly row — with null project,
+    // wrong metadata, and an inflated totalCount.
+    await seedSession('alpha-sess', { projectSlug: 'alpha', assignmentSlug: 'task' });
+    seedUsage('alpha-sess', { cost: 3 });
+    workspaceMembers['gridiron'] = { projectSlugs: ['alpha'], standaloneAssignmentIds: [] };
+    workspaceMembers['_ungrouped'] = { projectSlugs: [], standaloneAssignmentIds: [] };
+
+    const ungrouped = await get('?pageSize=50&workspace=_ungrouped&includeUsageOnly=1');
+    expect(ungrouped.sessions).toHaveLength(0);
+    expect(ungrouped.page?.totalCount).toBe(0);
+
+    // And it is still correctly present in its own workspace, as a real row.
+    const named = await get('?pageSize=50&workspace=gridiron&includeUsageOnly=1');
+    expect(named.sessions.map((s) => s.sessionId)).toEqual(['alpha-sess']);
+    expect(named.sessions[0].usageOnly).toBeFalsy();
+  });
+
+  it('does not resurface a search-excluded tracked session as an orphan', async () => {
+    // Same defect via a different filter: the session is excluded by `search`,
+    // but its id/cwd could still satisfy the orphan haystack.
+    await seedSession('zz-distinct-id', { description: 'nothing matching here' });
+    seedUsage('zz-distinct-id', { cost: 2, cwd: '/Users/test/repo' });
+
+    const body = await get('?pageSize=50&includeUsageOnly=1&search=zz-distinct-id');
+    // It matches on sessionId, so it must come back exactly once, as a real row.
+    expect(body.sessions).toHaveLength(1);
+    expect(body.sessions[0].usageOnly).toBeFalsy();
   });
 
   it('returns nothing for a workspace with no members rather than everything', async () => {

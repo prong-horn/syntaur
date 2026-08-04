@@ -804,8 +804,14 @@ export function useAgentSessions(
   // turn them into the right UTC instants (see localDateToUtcBounds). Sent only
   // alongside a date so the URL — and therefore the fetch cache key — is
   // unchanged for every query that does not filter by date.
-  if (options.startedFrom || options.startedTo) {
-    params.set('tzOffset', String(new Date().getTimezoneOffset()));
+  //
+  // The offset is taken FOR THE FILTERED DATE, not for `now`: in a DST-observing
+  // zone, filtering a July date while browsing in January would otherwise apply
+  // the January offset and shift the day boundary by an hour. Midday avoids the
+  // ambiguous hour at a DST transition.
+  const anchorDate = options.startedFrom || options.startedTo;
+  if (anchorDate) {
+    params.set('tzOffset', String(new Date(`${anchorDate}T12:00:00`).getTimezoneOffset()));
   }
   const qs = params.toString();
   const url = qs ? `/api/agent-sessions?${qs}` : '/api/agent-sessions';

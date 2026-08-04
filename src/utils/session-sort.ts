@@ -42,9 +42,24 @@ export function isSessionSort(value: unknown): value is SessionSort {
  * served by the ordered-id-list path in `listSessionsPage`.
  */
 export type UsageSort = Extract<SessionSort, 'spend_desc' | 'tokens_desc'>;
-/** The SQL-orderable sorts — the complement of UsageSort. */
-export type ColumnSort = Exclude<SessionSort, UsageSort>;
+/** Sorts routed through the JS merge path — see requiresMergeSort below. */
+export type MergeSort = Extract<SessionSort, 'spend_desc' | 'tokens_desc' | 'duration_asc' | 'duration_desc'>;
+/** The genuinely SQL-orderable sorts. */
+export type SqlSort = Exclude<SessionSort, MergeSort>;
 
 export function isUsageSort(sort: SessionSort): sort is UsageSort {
   return sort === 'spend_desc' || sort === 'tokens_desc';
+}
+
+/**
+ * Sorts that SQL cannot express faithfully, so they take the JS merge path.
+ *
+ * - spend/tokens: cost is computed in JS (see UsageSort above).
+ * - duration: a LIVE session's duration is `now - started`, which is what the
+ *   client always showed. SQL would have to embed a clock in the ORDER BY;
+ *   `COALESCE(ended, started)` instead makes live sessions zero-length and sorts
+ *   them last — the opposite end from where users expect them.
+ */
+export function requiresMergeSort(sort: SessionSort): sort is MergeSort {
+  return isUsageSort(sort) || sort === 'duration_asc' || sort === 'duration_desc';
 }

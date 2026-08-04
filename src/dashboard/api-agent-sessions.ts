@@ -5,6 +5,7 @@ import {
   listSessionsPage,
   listSessionSortKeys,
   listSessionsForIds,
+  listAllSessionIds,
   type SessionPageQuery,
   type SessionSortKey,
   type WorkspaceScope,
@@ -31,7 +32,7 @@ import { listSessionUsage, type SessionUsage } from '../db/usage-db.js';
 import {
   DEFAULT_SESSION_SORT,
   isSessionSort,
-  isUsageSort,
+  requiresMergeSort,
   type SessionSort,
 } from '../utils/session-sort.js';
 import { resolveShortForSession, type SessionResolution } from './daemon-join.js';
@@ -181,7 +182,10 @@ function orphanPassesFilters(
 
   const search = q.search?.trim().toLowerCase();
   if (search) {
-    const haystack = [sessionId, usage.tool ?? '', usage.cwd ?? ''].join(' ').toLowerCase();
+    // Mirror the row the client will actually see: `usageOnlyRow` labels a
+    // tool-less orphan 'unknown', and the old client haystack included `agent`,
+    // so a search for "unknown" has to match here too.
+    const haystack = [sessionId, usage.tool || 'unknown', usage.cwd ?? ''].join(' ').toLowerCase();
     if (!haystack.includes(search)) return false;
   }
   return true;
@@ -244,8 +248,13 @@ function compareKeys(a: MergeKey, b: MergeKey, sort: SessionSort, now: number): 
   }
 }
 
-/** Paging defaults + ceiling, following the `api-search.ts` idiom. */
-const DEFAULT_PAGE_SIZE = 100;
+/**
+ * Ceiling on `pageSize`, following the `api-search.ts` idiom. There is no
+ * DEFAULT_PAGE_SIZE here on purpose: the PRESENCE of `pageSize` is what opts a
+ * caller into paging, so a missing or malformed value must fall through to the
+ * unpaged path rather than silently apply a default. The client owns the
+ * default (AgentSessionsPage.DEFAULT_PAGE_SIZE).
+ */
 const MAX_PAGE_SIZE = 500;
 
 /**
@@ -325,9 +334,11 @@ export function createAgentSessionsRouter(
     q: SessionPageQuery,
     opts: { includeUsageOnly: boolean; agents: ReturnType<typeof getAgents> },
   ): Promise<{ sessions: AgentSessionWithLiveness[]; totalCount: number }> {
-    const usageSort = isUsageSort(q.sort);
+    // Must agree with listSessionsPage's own guard, or a sort it refuses to
+    // order in SQL would be routed to it and come back empty.
+    const mergeSort = requiresMergeSort(q.sort);
 
-    if (!opts.includeUsageOnly && !usageSort) {
+    if (!opts.includeUsageOnly && !mergeSort) {
       const { sessions, totalCount } = listSessionsPage(q);
       return {
         sessions: attachUsage(enrichSessions(sessions, opts.agents), { includeUsageOnly: false }),
@@ -363,7 +374,13 @@ export function createAgentSessionsRouter(
     });
 
     if (opts.includeUsageOnly) {
-      const tracked = new Set(trackedKeys.map((k) => k.sessionId));
+      // UNFILTERED on purpose. "Orphan" means "a usage id with no sessions row",
+      // which is a question about existence, not about the current filters.
+      // Deriving it from `trackedKeys` (the post-filter list) made every session
+      // the filter excluded look like an orphan, so it came back as a synthetic
+      // usageOnly row with a null project and inflated totalCount — e.g. a
+      // session in a named workspace reappearing under _ungrouped.
+      const tracked = listAllSessionIds();
       for (const [sessionId, usage] of usageBySession) {
         if (tracked.has(sessionId)) continue;
         const started = usage.firstEventTs ?? '';
@@ -523,8 +540,10 @@ export function createAgentSessionsRouter(
       const sort = isSessionSort(sortRaw) ? sortRaw : DEFAULT_SESSION_SORT;
       const search = typeof req.query.search === 'string' ? req.query.search : undefined;
 
+      // getTimezoneOffset() is always an integer number of minutes; a fractional
+      // or non-numeric value is malformed input, not a real zone.
       const tzOffset = Number(req.query.tzOffset);
-      const offsetMinutes = Number.isFinite(tzOffset) ? tzOffset : 0;
+      const offsetMinutes = Number.isInteger(tzOffset) ? tzOffset : 0;
       const startedFromUtc =
         typeof req.query.startedFrom === 'string'
           ? localDateToUtcBounds(req.query.startedFrom, offsetMinutes, 'start')

@@ -11,7 +11,7 @@ import {
   insertClosedEngagement,
 } from '../db/engagement-db.js';
 import { getCumulativeTokenSource, type TokenSnapshot } from '../db/engagement-tokens.js';
-import { isUsageSort, type ColumnSort, type SessionSort } from '../utils/session-sort.js';
+import { requiresMergeSort, type SessionSort, type SqlSort } from '../utils/session-sort.js';
 import { sanitizeSessionPath } from '../utils/transcript.js';
 import type {
   AgentSession,
@@ -817,8 +817,14 @@ export interface SessionPageResult {
   totalCount: number;
 }
 
-/** Columns the free-text search scans, matching what the client searched before. */
-const SEARCH_COLUMNS = [
+/**
+ * The free-text search haystack: every searchable column concatenated with
+ * spaces, mirroring the client's old `[...].join(' ')` exactly. Concatenated
+ * rather than OR-ed per column so a query spanning two fields ("alpha task",
+ * where the project is `alpha` and the assignment is `task`) still matches, as
+ * it did before.
+ */
+const SEARCH_HAYSTACK = [
   'e.project_slug',
   'e.assignment_slug',
   's.agent',
@@ -827,7 +833,9 @@ const SEARCH_COLUMNS = [
   's.description',
   's.summary',
   's.transcript_path',
-];
+]
+  .map((col) => `COALESCE(${col}, '')`)
+  .join(" || ' ' || ");
 
 /**
  * ORDER BY fragment per sort. Every ordering ends with `s.session_id` so a row
@@ -838,17 +846,16 @@ const SEARCH_COLUMNS = [
  * `spend_desc` / `tokens_desc` are absent by design: cost is computed in JS, so
  * there is no column to order on. They take the ordered-id path instead.
  */
-const ORDER_BY: Record<ColumnSort, string> = {
-  started_desc: 's.started DESC, s.session_id DESC',
+const ORDER_BY: Record<SqlSort, string> = {
+  started_desc: 's.started DESC, s.session_id ASC',
   started_asc: 's.started ASC, s.session_id ASC',
-  // Duration = ended - started; a live session (ended IS NULL) has no duration
-  // and sorts last in both directions rather than being treated as zero.
-  duration_desc:
-    "(julianday(COALESCE(s.ended, s.started)) - julianday(s.started)) DESC, s.ended IS NULL, s.session_id DESC",
-  duration_asc:
-    "(julianday(COALESCE(s.ended, s.started)) - julianday(s.started)) ASC, s.ended IS NULL, s.session_id ASC",
-  assignment_asc: "COALESCE(e.assignment_slug, '') ASC, COALESCE(e.project_slug, '') ASC, s.session_id ASC",
-  agent_asc: "s.agent ASC, COALESCE(e.assignment_slug, '') ASC, s.session_id ASC",
+
+  // COLLATE NOCASE: the client sorted with localeCompare (case-insensitive),
+  // while SQLite's default BINARY collation puts all uppercase before lowercase.
+  assignment_asc:
+    "COALESCE(e.assignment_slug, '') COLLATE NOCASE ASC, COALESCE(e.project_slug, '') COLLATE NOCASE ASC, s.session_id ASC",
+  agent_asc:
+    "s.agent COLLATE NOCASE ASC, COALESCE(e.assignment_slug, '') COLLATE NOCASE ASC, s.session_id ASC",
 };
 
 /**
@@ -864,9 +871,8 @@ function buildSessionFilters(q: SessionPageQuery): { sql: string; params: unknow
 
   const search = q.search?.trim();
   if (search) {
-    const ors = SEARCH_COLUMNS.map((col) => `instr(lower(COALESCE(${col}, '')), lower(?)) > 0`);
-    clauses.push(`(${ors.join(' OR ')})`);
-    for (let i = 0; i < SEARCH_COLUMNS.length; i += 1) params.push(search);
+    clauses.push(`instr(lower(${SEARCH_HAYSTACK}), lower(?)) > 0`);
+    params.push(search);
   }
 
   if (q.startedFromUtc) {
@@ -937,9 +943,9 @@ export function listSessionsPage(q: SessionPageQuery): SessionPageResult {
       .get(...params) as { n: number }
   ).n;
 
-  // Usage sorts cannot be expressed as ORDER BY, so the caller pages them via
-  // listSessionsForIds after ordering by the JS-computed aggregate.
-  if (isUsageSort(q.sort)) {
+  // Some sorts cannot be expressed as ORDER BY (JS-computed cost, and live
+  // durations that depend on `now`); the caller pages those via the merge path.
+  if (requiresMergeSort(q.sort)) {
     return { sessions: [], totalCount };
   }
 
@@ -999,6 +1005,20 @@ export function listSessionSortKeys(q: SessionPageQuery): SessionSortKey[] {
     projectSlug: r.project_slug ?? null,
     agent: r.agent,
   }));
+}
+
+/**
+ * Every tracked session id, UNFILTERED.
+ *
+ * Used to decide what counts as a usage-only "orphan". That question is about
+ * existence — does this usage id have a `sessions` row at all — and must never
+ * be answered from a filtered list, or any session the filter excluded would be
+ * misread as an orphan and resurface as a synthetic row.
+ */
+export function listAllSessionIds(): Set<string> {
+  const db = getSessionDb();
+  const rows = db.prepare('SELECT session_id FROM sessions').all() as Array<{ session_id: string }>;
+  return new Set(rows.map((r) => r.session_id));
 }
 
 /** Hydrate a specific set of session ids, preserving the caller's order. */
