@@ -43,8 +43,28 @@ function MessageCard({
   );
 }
 
+/** Rows the recent-sessions rail shows; it has no cap of its own. */
+const RAIL_PAGE_SIZE = 10;
+
 export function AgentSessionsWidget({ viewId, slotId, onPickAnother }: AgentSessionsWidgetProps) {
-  const { data, loading: sessionsLoading, error: sessionsError } = useAgentSessions();
+  // Two fixes for the Overview's session payload:
+  //
+  //  1. BOUNDED. RecentSessionsRail renders every session handed to it and has
+  //     no internal cap, so the bound has to come from the request. Unbounded,
+  //     this pulled the entire session set (~2.9 MB) onto the Overview page.
+  //  2. DISABLED when a saved view is bound. In that branch the body renders
+  //     <SessionViewResults>, which does its own fetch — so both components were
+  //     issuing the same request. `enabled` gives each state exactly one owner.
+  const {
+    data,
+    loading: sessionsLoading,
+    error: sessionsError,
+  } = useAgentSessions({
+    pageSize: RAIL_PAGE_SIZE,
+    page: 0,
+    sort: 'started_desc',
+    enabled: !viewId,
+  });
   const { view, loading: viewLoading, ready } = useSavedView(viewId ?? null);
   const { layout } = useDashboardLayout();
   const { showToast } = useToast();

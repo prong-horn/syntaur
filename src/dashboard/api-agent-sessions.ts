@@ -2,6 +2,12 @@ import { Router } from 'express';
 import { resolve } from 'node:path';
 import {
   listAllSessions,
+  listSessionsPage,
+  listSessionSortKeys,
+  listSessionsForIds,
+  type SessionPageQuery,
+  type SessionSortKey,
+  type WorkspaceScope,
   listProjectSessions,
   appendSession,
   updateSessionStatus,
@@ -22,6 +28,12 @@ import { captureHeadSha } from '../utils/git-worktree.js';
 import { isExistingDir } from '../launch/cwd.js';
 import { recreateForTarget, recreateOutcomeToHttp } from './worktree-recreate.js';
 import { listSessionUsage, type SessionUsage } from '../db/usage-db.js';
+import {
+  DEFAULT_SESSION_SORT,
+  isSessionSort,
+  isUsageSort,
+  type SessionSort,
+} from '../utils/session-sort.js';
 import { resolveShortForSession, type SessionResolution } from './daemon-join.js';
 import type { PtyTokenRegistry } from './pty-token.js';
 import type {
@@ -37,6 +49,18 @@ import type {
 export interface AgentSessionsRouterDeps {
   ptyTokens?: PtyTokenRegistry;
   resolveShort?: (sessionId: string) => Promise<SessionResolution | null>;
+  /**
+   * Workspace membership lookup, injected rather than imported: it lives in
+   * `api.ts`, which already imports THIS module to mount the router, so a direct
+   * import would close a cycle. Defaults to a no-member scope, which makes an
+   * un-wired router behave as if every workspace were empty rather than
+   * silently ignoring the filter.
+   */
+  resolveWorkspaceMembers?: (
+    projectsDir: string,
+    assignmentsDir: string | undefined,
+    workspace: string,
+  ) => Promise<{ projectSlugs: string[]; standaloneAssignmentIds: string[] }>;
 }
 
 const TERMINAL_DAEMON_STATES: ReadonlySet<DaemonSessionState> = new Set(['done', 'failed', 'stopped']);
@@ -105,6 +129,168 @@ function attachUsage(
   return [...withUsage, ...orphans];
 }
 
+/**
+ * Build the synthetic row for a session id that has usage events but was never
+ * tracked. Extracted so `attachUsage` (full-set path) and the paged merge path
+ * cannot drift apart in what an orphan row looks like.
+ */
+function usageOnlyRow(sessionId: string, usage: SessionUsage): AgentSessionWithLiveness {
+  return {
+    projectSlug: null,
+    assignmentSlug: null,
+    agent: usage.tool || 'unknown',
+    sessionId,
+    started: usage.firstEventTs ?? '',
+    ended: null,
+    status: 'stopped',
+    path: usage.cwd ?? '',
+    description: null,
+    transcriptPath: null,
+    pid: null,
+    activity: null,
+    usage: { totalCost: usage.totalCost, totalTokens: usage.totalTokens, models: usage.models },
+    usageOnly: true,
+    isLive: false,
+    resumeSupported: false,
+    forkSupported: false,
+  };
+}
+
+/**
+ * Apply the paged query's filters to a synthetic usage-only row.
+ *
+ * These rows exist only in JS, so they cannot ride the SQL WHERE clause and the
+ * predicates have to be mirrored here. They carry no project, assignment,
+ * description, summary or transcript, so the searchable surface is narrower than
+ * a tracked session's — matching what the client saw when it searched these same
+ * fields on these same rows.
+ */
+function orphanPassesFilters(
+  sessionId: string,
+  usage: SessionUsage,
+  started: string,
+  q: SessionPageQuery,
+): boolean {
+  if (q.startedFromUtc && (!started || started < q.startedFromUtc)) return false;
+  if (q.startedToUtc && (!started || started > q.startedToUtc)) return false;
+
+  // An orphan has no engagement, so it is workspace-less: claimed by
+  // `_ungrouped`, excluded from every named workspace. This mirrors the old
+  // client behavior, where a null projectSlug resolved to a null workspace.
+  if (q.workspaceScope && !q.workspaceScope.ungrouped) return false;
+
+  const search = q.search?.trim().toLowerCase();
+  if (search) {
+    const haystack = [sessionId, usage.tool ?? '', usage.cwd ?? ''].join(' ').toLowerCase();
+    if (!haystack.includes(search)) return false;
+  }
+  return true;
+}
+
+/** A merge-path ranking key: a session's sortable fields, without its payload. */
+interface MergeKey extends SessionSortKey {
+  cost: number;
+  tokens: number;
+  orphan: boolean;
+}
+
+function durationMinutes(key: MergeKey, now: number): number {
+  const started = Date.parse(key.started);
+  const ended = key.ended ? Date.parse(key.ended) : now;
+  if (Number.isNaN(started) || Number.isNaN(ended)) return 0;
+  return Math.max(0, Math.floor((ended - started) / 60000));
+}
+
+/**
+ * Ranking for the merge path — a faithful port of the comparator the page used
+ * to run client-side (`compareSessions` in AgentSessionsPage), so that turning
+ * on `includeUsageOnly` does not silently change the order.
+ *
+ * Every branch ends with `sessionId` so the ordering is total: without a tie
+ * break, two rows with equal keys can swap between requests and a row is then
+ * duplicated on one page and missing from the next.
+ *
+ * `now` is passed in rather than read per comparison so a live session's
+ * duration cannot shift mid-sort and break the comparator's transitivity.
+ */
+function compareKeys(a: MergeKey, b: MergeKey, sort: SessionSort, now: number): number {
+  switch (sort) {
+    case 'started_asc':
+      return a.started.localeCompare(b.started) || a.sessionId.localeCompare(b.sessionId);
+    case 'started_desc':
+      return b.started.localeCompare(a.started) || a.sessionId.localeCompare(b.sessionId);
+    case 'duration_asc':
+      return durationMinutes(a, now) - durationMinutes(b, now) || a.sessionId.localeCompare(b.sessionId);
+    case 'duration_desc':
+      return durationMinutes(b, now) - durationMinutes(a, now) || a.sessionId.localeCompare(b.sessionId);
+    case 'assignment_asc':
+      return (
+        (a.assignmentSlug ?? '').localeCompare(b.assignmentSlug ?? '')
+        || (a.projectSlug ?? '').localeCompare(b.projectSlug ?? '')
+        || a.sessionId.localeCompare(b.sessionId)
+      );
+    case 'agent_asc':
+      return (
+        a.agent.localeCompare(b.agent)
+        || (a.assignmentSlug ?? '').localeCompare(b.assignmentSlug ?? '')
+        || a.sessionId.localeCompare(b.sessionId)
+      );
+    case 'spend_desc':
+      return b.cost - a.cost || b.started.localeCompare(a.started) || a.sessionId.localeCompare(b.sessionId);
+    case 'tokens_desc':
+      return (
+        b.tokens - a.tokens || b.started.localeCompare(a.started) || a.sessionId.localeCompare(b.sessionId)
+      );
+  }
+}
+
+/** Paging defaults + ceiling, following the `api-search.ts` idiom. */
+const DEFAULT_PAGE_SIZE = 100;
+const MAX_PAGE_SIZE = 500;
+
+/**
+ * Parse a positive integer query param, ignoring anything malformed rather than
+ * erroring — same contract as `api-inbox.ts`'s `limit`.
+ */
+function positiveIntParam(raw: unknown): number | undefined {
+  if (typeof raw !== 'string') return undefined;
+  const n = Number(raw);
+  return Number.isInteger(n) && n > 0 ? n : undefined;
+}
+
+function nonNegativeIntParam(raw: unknown): number | undefined {
+  if (typeof raw !== 'string') return undefined;
+  const n = Number(raw);
+  return Number.isInteger(n) && n >= 0 ? n : undefined;
+}
+
+/**
+ * Convert an inclusive local calendar date (YYYY-MM-DD) plus the caller's UTC
+ * offset into the precise UTC instant bounds of that local day.
+ *
+ * This preserves the behavior paging replaced: the client used to compare each
+ * session's `started` against a LOCAL calendar date (`toLocalDateKey`, which
+ * reads getFullYear/getMonth/getDate). Comparing a bare YYYY-MM-DD against UTC
+ * ISO timestamps server-side would shift every boundary by the offset, so a
+ * session started at 6pm local on the `to` date could drop out of its own range.
+ *
+ * `offsetMinutes` is `Date.prototype.getTimezoneOffset()` — minutes to ADD to
+ * local time to reach UTC (positive west of Greenwich). Absent or malformed
+ * offsets fall back to 0 (UTC), which is the pre-existing behavior for a client
+ * that does not send one.
+ */
+export function localDateToUtcBounds(
+  date: string,
+  offsetMinutes: number,
+  edge: 'start' | 'end',
+): string | undefined {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return undefined;
+  const base = edge === 'start' ? `${date}T00:00:00.000Z` : `${date}T23:59:59.999Z`;
+  const ms = Date.parse(base);
+  if (Number.isNaN(ms)) return undefined;
+  return new Date(ms + offsetMinutes * 60_000).toISOString();
+}
+
 export function createAgentSessionsRouter(
   projectsDir: string,
   broadcast?: (msg: WsMessage) => void,
@@ -113,6 +299,126 @@ export function createAgentSessionsRouter(
 ): Router {
   const router = Router();
   const resolveShort = deps.resolveShort ?? ((sessionId: string) => resolveShortForSession(sessionId));
+  const resolveWorkspaceMembers =
+    deps.resolveWorkspaceMembers
+    ?? (async () => ({ projectSlugs: [], standaloneAssignmentIds: [] }));
+
+  /**
+   * One page of the session list.
+   *
+   * Two paths, because the row set is not always one table:
+   *
+   *  - **SQL paging** when `includeUsageOnly` is off and the sort is a column
+   *    sort. LIMIT/OFFSET straight against `sessions`; nothing beyond the page
+   *    is ever materialized.
+   *  - **Merge paging** when usage-only orphan rows are in play (the row set is
+   *    a union of `sessions` and synthetic rows built from the usage aggregate)
+   *    or when the sort is spend/tokens (cost is computed in JS, so there is no
+   *    column to ORDER BY). This ranks lightweight keys for the whole filtered
+   *    union, slices, and only then hydrates.
+   *
+   * The merge path still avoids the original problem: it materializes ids and
+   * sort keys, not full rows, and liveness enrichment plus usage attachment run
+   * on the page alone.
+   */
+  async function pageSessions(
+    q: SessionPageQuery,
+    opts: { includeUsageOnly: boolean; agents: ReturnType<typeof getAgents> },
+  ): Promise<{ sessions: AgentSessionWithLiveness[]; totalCount: number }> {
+    const usageSort = isUsageSort(q.sort);
+
+    if (!opts.includeUsageOnly && !usageSort) {
+      const { sessions, totalCount } = listSessionsPage(q);
+      return {
+        sessions: attachUsage(enrichSessions(sessions, opts.agents), { includeUsageOnly: false }),
+        totalCount,
+      };
+    }
+
+    // Ranking keys for every tracked session that passes the filters.
+    const trackedKeys = listSessionSortKeys(q);
+
+    // Usage aggregate: needed for orphan rows and for the spend/tokens ordering.
+    // Best-effort, exactly like attachUsage — a missing usage DB must not 500 a
+    // plain session listing.
+    let usageBySession = new Map<string, SessionUsage>();
+    try {
+      usageBySession = listSessionUsage();
+    } catch {
+      usageBySession = new Map();
+    }
+
+    const keys: MergeKey[] = trackedKeys.map((k) => {
+      const u = usageBySession.get(k.sessionId);
+      return {
+        ...k,
+        // Zero-fill: a tracked session with no usage events participates in the
+        // spend/token orderings as a zero-cost row, exactly as the old
+        // client-side comparator did (`right.usage?.totalCost ?? 0`). Ranking
+        // only over the usage map would silently drop these rows.
+        cost: u?.totalCost ?? 0,
+        tokens: u?.totalTokens ?? 0,
+        orphan: false,
+      };
+    });
+
+    if (opts.includeUsageOnly) {
+      const tracked = new Set(trackedKeys.map((k) => k.sessionId));
+      for (const [sessionId, usage] of usageBySession) {
+        if (tracked.has(sessionId)) continue;
+        const started = usage.firstEventTs ?? '';
+        if (!orphanPassesFilters(sessionId, usage, started, q)) continue;
+        keys.push({
+          sessionId,
+          started,
+          ended: null,
+          assignmentSlug: null,
+          projectSlug: null,
+          agent: usage.tool || 'unknown',
+          cost: usage.totalCost,
+          tokens: usage.totalTokens,
+          orphan: true,
+        });
+      }
+    }
+
+    // One `now` for the whole sort: a live session's duration must not advance
+    // between comparisons, or the comparator stops being transitive.
+    const now = Date.now();
+    keys.sort((a, b) => compareKeys(a, b, q.sort, now));
+
+    const totalCount = keys.length;
+    const slice = keys.slice(q.page * q.pageSize, q.page * q.pageSize + q.pageSize);
+
+    const trackedIds = slice.filter((k) => !k.orphan).map((k) => k.sessionId);
+    const hydrated = new Map(
+      listSessionsForIds(trackedIds).map((s) => [s.sessionId, s]),
+    );
+    // Enrich only the page's real sessions; synthetic rows never reach the
+    // liveness probes (they have no pid and no transcript).
+    const enriched = new Map(
+      enrichSessions([...hydrated.values()], opts.agents).map((s) => [s.sessionId, s]),
+    );
+
+    const out: AgentSessionWithLiveness[] = [];
+    for (const key of slice) {
+      if (key.orphan) {
+        const usage = usageBySession.get(key.sessionId);
+        if (usage) out.push(usageOnlyRow(key.sessionId, usage));
+        continue;
+      }
+      const row = enriched.get(key.sessionId);
+      if (!row) continue; // deleted between the key scan and hydration
+      const usage = usageBySession.get(key.sessionId);
+      out.push({
+        ...row,
+        usage: usage
+          ? { totalCost: usage.totalCost, totalTokens: usage.totalTokens, models: usage.models }
+          : null,
+      });
+    }
+    return { sessions: out, totalCount };
+  }
 
   // GET /api/agent-sessions/by-id/:sessionId — one session enriched with the
   // daemon join (short id, attachability, live state, or the settled final
@@ -191,16 +497,68 @@ export function createAgentSessionsRouter(
     }
   });
 
-  // GET /api/agent-sessions — all sessions across all projects
+  // GET /api/agent-sessions — sessions across all projects.
+  //
+  // Paging is OPT-IN on the presence of `pageSize`: without it this returns the
+  // full set exactly as it always has, so existing consumers are unaffected.
   router.get('/', async (req, res) => {
     try {
       await reconcileActiveSessions(projectsDir, assignmentsDir);
-      const sessions = await listAllSessions(projectsDir);
       const agents = getAgents(await readConfig());
       const includeUsageOnly = req.query.includeUsageOnly === '1';
+
+      const pageSizeRaw = positiveIntParam(req.query.pageSize);
+      if (pageSizeRaw === undefined) {
+        const sessions = await listAllSessions(projectsDir);
+        res.json({
+          sessions: attachUsage(enrichSessions(sessions, agents), { includeUsageOnly }),
+          generatedAt: new Date().toISOString(),
+        });
+        return;
+      }
+
+      const pageSize = Math.min(pageSizeRaw, MAX_PAGE_SIZE);
+      const page = nonNegativeIntParam(req.query.page) ?? 0;
+      const sortRaw = req.query.sort;
+      const sort = isSessionSort(sortRaw) ? sortRaw : DEFAULT_SESSION_SORT;
+      const search = typeof req.query.search === 'string' ? req.query.search : undefined;
+
+      const tzOffset = Number(req.query.tzOffset);
+      const offsetMinutes = Number.isFinite(tzOffset) ? tzOffset : 0;
+      const startedFromUtc =
+        typeof req.query.startedFrom === 'string'
+          ? localDateToUtcBounds(req.query.startedFrom, offsetMinutes, 'start')
+          : undefined;
+      const startedToUtc =
+        typeof req.query.startedTo === 'string'
+          ? localDateToUtcBounds(req.query.startedTo, offsetMinutes, 'end')
+          : undefined;
+
+      // Workspace membership is resolved from disk (project frontmatter +
+      // standalone records), once per request — never per row.
+      let workspaceScope: WorkspaceScope | null = null;
+      const workspace = typeof req.query.workspace === 'string' ? req.query.workspace : undefined;
+      if (workspace) {
+        const members = await resolveWorkspaceMembers(projectsDir, assignmentsDir, workspace);
+        workspaceScope = {
+          projectSlugs: members.projectSlugs,
+          standaloneAssignmentIds: members.standaloneAssignmentIds,
+          ungrouped: workspace === '_ungrouped',
+        };
+      }
+
+      const query = { page, pageSize, search, startedFromUtc, startedToUtc, workspaceScope, sort };
+      const result = await pageSessions(query, { includeUsageOnly, agents });
+
       res.json({
-        sessions: attachUsage(enrichSessions(sessions, agents), { includeUsageOnly }),
+        sessions: result.sessions,
         generatedAt: new Date().toISOString(),
+        page: {
+          page,
+          pageSize,
+          totalCount: result.totalCount,
+          pageCount: Math.max(1, Math.ceil(result.totalCount / pageSize)),
+        },
       });
     } catch (error) {
       res.status(500).json({ error: error instanceof Error ? error.message : 'Failed to list sessions' });

@@ -55,7 +55,12 @@ export function CreateSessionViewDialog({
 }: CreateSessionViewDialogProps) {
   const isEdit = !!initialView;
   const { data: projects } = useProjects();
-  const { data: sessionsData } = useAgentSessions();
+  // Needs the FULL set: it derives the agent facet list from every session, so a
+  // bounded page would offer an incomplete set of choices. Deferred instead of
+  // bounded — `enabled` holds the request until the dialog actually opens, the
+  // same seam the command palette uses for its indexes. A closed dialog costs
+  // nothing.
+  const { data: sessionsData } = useAgentSessions({ enabled: open });
 
   const [name, setName] = useState('');
   const [project, setProject] = useState<string[]>([]);

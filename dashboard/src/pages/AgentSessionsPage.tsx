@@ -4,7 +4,7 @@ import { Activity, CheckSquare, ChevronDown, ChevronRight, Square, Trash2 } from
 import { CopyButton } from '../components/CopyButton';
 import { CopyLaunchCommandButton } from '../components/CopyLaunchCommandButton';
 import { SessionActionButtons } from '../components/SessionActionButtons';
-import { useAgentSessions, useProjects, useWorkspacePrefix } from '../hooks/useProjects';
+import { useAgentSessions, useWorkspacePrefix } from '../hooks/useProjects';
 import { LoadingState } from '../components/LoadingState';
 import { ErrorState } from '../components/ErrorState';
 import { EmptyState } from '../components/EmptyState';
@@ -13,17 +13,40 @@ import { FilterBar } from '../components/FilterBar';
 import { ConfirmDialog } from '../components/ConfirmDialog';
 import { formatCost, formatDateTime, formatTokens, toTitleCase } from '../lib/format';
 import { headerCheckState, selectableSessionIds } from '@shared/session-select';
-import type { AgentSession, AgentSessionWithLiveness } from '../types';
+import type { AgentSessionWithLiveness } from '../types';
+import { DEFAULT_SESSION_SORT, SESSION_SORTS, type SessionSort } from '@shared/session-sort';
 
-type SessionSort =
-  | 'started_desc'
-  | 'started_asc'
-  | 'duration_desc'
-  | 'duration_asc'
-  | 'assignment_asc'
-  | 'agent_asc'
-  | 'spend_desc'
-  | 'tokens_desc';
+/**
+ * Sort labels, keyed exhaustively by SessionSort so the dropdown cannot drift
+ * from the sorts the server supports. It had drifted: duration_asc/duration_desc
+ * existed in the type and in the comparator but were never offered here.
+ */
+const SORT_LABELS: Record<SessionSort, string> = {
+  started_desc: 'Newest first',
+  started_asc: 'Oldest first',
+  duration_desc: 'Longest first',
+  duration_asc: 'Shortest first',
+  assignment_asc: 'Assignment A-Z',
+  agent_asc: 'Agent A-Z',
+  spend_desc: 'Most expensive',
+  tokens_desc: 'Most tokens',
+};
+
+const PAGE_SIZE_OPTIONS = [50, 100, 250, 500] as const;
+const DEFAULT_PAGE_SIZE = 100;
+
+/**
+ * Hold a rapidly-changing value still for `delay` ms. Search is a server
+ * round-trip now, so without this every keystroke is a request.
+ */
+function useDebounced<T>(value: T, delay: number): T {
+  const [settled, setSettled] = useState(value);
+  useEffect(() => {
+    const timer = window.setTimeout(() => setSettled(value), delay);
+    return () => window.clearTimeout(timer);
+  }, [value, delay]);
+  return settled;
+}
 
 interface PendingDelete {
   sessionIds: string[];
@@ -34,13 +57,34 @@ interface PendingDelete {
 
 export function AgentSessionsPage() {
   const { workspace } = useParams<{ workspace?: string }>();
-  const { data: projectsData } = useProjects();
-  const { data, loading, error } = useAgentSessions({ includeUsageOnly: true });
-const [search, setSearch] = useState('');
+  const [search, setSearch] = useState('');
   const [startedFrom, setStartedFrom] = useState('');
   const [startedTo, setStartedTo] = useState('');
-  const [sort, setSort] = useState<SessionSort>('started_desc');
-  const [tick, setTick] = useState(0);
+  const [sort, setSort] = useState<SessionSort>(DEFAULT_SESSION_SORT);
+  const [page, setPage] = useState(0);
+  const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
+  const [, setTick] = useState(0);
+
+  // Debounced search: filtering is a server round-trip now, so the raw input
+  // must not become a request per keystroke.
+  const debouncedSearch = useDebounced(search, 250);
+
+  // Reset to the first page whenever the result set changes underneath the
+  // user — otherwise narrowing a filter while on page 12 shows an empty table.
+  useEffect(() => {
+    setPage(0);
+  }, [debouncedSearch, startedFrom, startedTo, sort, pageSize, workspace]);
+
+  const { data, loading, error } = useAgentSessions({
+    includeUsageOnly: true,
+    page,
+    pageSize,
+    search: debouncedSearch || undefined,
+    startedFrom: startedFrom || undefined,
+    startedTo: startedTo || undefined,
+    workspace: workspace ?? undefined,
+    sort,
+  });
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
@@ -56,67 +100,35 @@ const [search, setSearch] = useState('');
     return () => window.clearInterval(interval);
   }, [hasActiveSessions]);
 
-  // Prune stale selections when data changes
+  // Filtering, sorting, and paging all happen server-side now, so the response
+  // IS the page. No client-side narrowing remains — that is what lets a filter
+  // reach sessions far outside the loaded page.
+  const pageSessions = data?.sessions ?? [];
+  const pageMeta = data?.page;
+  const totalCount = pageMeta?.totalCount ?? pageSessions.length;
+  const pageCount = pageMeta?.pageCount ?? 1;
+
+  // Clamp forward when a filter change shrinks the set beneath the current page.
   useEffect(() => {
-    setSelectedIds((prev) => {
-      if (prev.size === 0) return prev;
-      const validIds = new Set(data?.sessions.map((s) => s.sessionId) ?? []);
-      const next = new Set([...prev].filter((id) => validIds.has(id)));
-      return next.size === prev.size ? prev : next;
-    });
-  }, [data]);
-
-  const filteredSessions = useMemo(() => {
-    if (!data) {
-      return [];
+    if (pageMeta && page > 0 && page > pageMeta.pageCount - 1) {
+      setPage(pageMeta.pageCount - 1);
     }
-    if (workspace && !projectsData) return [];
+  }, [pageMeta, page]);
 
-    const query = search.trim().toLowerCase();
-    const sessions = data.sessions.filter((session) => {
-      if (workspace && projectsData) {
-        const projectWorkspace = projectsData.find((m) => m.slug === session.projectSlug)?.workspace ?? null;
-        if (workspace === '_ungrouped') {
-          if (projectWorkspace !== null) return false;
-        } else {
-          if (projectWorkspace !== workspace) return false;
-        }
-      }
+  // NOTE: the old "prune stale selections whenever data changes" effect is gone
+  // on purpose. It filtered `selectedIds` down to ids present in `data`, which
+  // was safe when `data` was every session — but `data` is now ONE PAGE, so it
+  // would discard every selection made on any other page the instant the user
+  // paged away. Selection is instead pruned at the point of action (below, after
+  // a successful delete), which is the only moment a stale id actually matters.
 
-      const startedDay = toLocalDateKey(session.started);
-      if (startedFrom && (!startedDay || startedDay < startedFrom)) {
-        return false;
-      }
-      if (startedTo && (!startedDay || startedDay > startedTo)) {
-        return false;
-      }
-
-      if (!query) {
-        return true;
-      }
-
-      const haystack = [
-        session.projectSlug ?? '',
-        session.assignmentSlug ?? '',
-        session.agent,
-        session.sessionId,
-        session.path,
-        session.description ?? '',
-        session.summary ?? '',
-        session.transcriptPath ?? '',
-      ]
-        .join(' ')
-        .toLowerCase();
-
-      return haystack.includes(query);
-    });
-
-    return [...sessions].sort((left, right) => compareSessions(left, right, sort));
-  }, [data, search, sort, startedFrom, startedTo, tick, workspace, projectsData]);
-
+  // Header checkbox reflects THIS PAGE. Select-all deliberately does not reach
+  // rows the user cannot see: `handleDelete` is destructive, and a header
+  // checkbox that silently arms a delete across thousands of unseen rows is the
+  // more dangerous default. The absolute count is always shown in the action bar.
   const headerState = useMemo(
-    () => headerCheckState(filteredSessions, selectedIds),
-    [filteredSessions, selectedIds],
+    () => headerCheckState(pageSessions, selectedIds),
+    [pageSessions, selectedIds],
   );
 
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
@@ -141,9 +153,20 @@ const [search, setSearch] = useState('');
   function toggleSelectAll() {
     // Usage-only rows have no session record to act on, so they are never
     // selected — otherwise a bulk delete would target ids that do not exist.
-    const eligible = selectableSessionIds(filteredSessions);
-    if (headerState === 'all') setSelectedIds(new Set());
-    else setSelectedIds(new Set(eligible));
+    const eligible = selectableSessionIds(pageSessions);
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (headerState === 'all') {
+        // Clear SUBTRACTS this page only. Replacing the set with an empty one
+        // would silently drop selections the user built up on other pages.
+        for (const id of eligible) next.delete(id);
+      } else {
+        // Select UNIONS this page into the existing selection, so paging
+        // through and selecting accumulates rather than overwrites.
+        for (const id of eligible) next.add(id);
+      }
+      return next;
+    });
   }
 
   async function handleDelete(ids: string[]) {
@@ -194,7 +217,9 @@ const [search, setSearch] = useState('');
   if (error) return <ErrorState error={error} />;
   if (!data) return null;
 
-  const hasAnySessions = data.sessions.length > 0;
+  // Whole-set emptiness, not page emptiness: an out-of-range page must not
+  // claim no sessions were ever registered.
+  const hasAnySessions = totalCount > 0 || data.sessions.length > 0;
 
   return (
     <>
@@ -222,13 +247,17 @@ const [search, setSearch] = useState('');
             className="editor-input min-w-[150px]"
           />
         </label>
-        <select value={sort} onChange={(event) => setSort(event.target.value as SessionSort)} className="editor-input max-w-[200px]">
-          <option value="started_desc">Newest first</option>
-          <option value="started_asc">Oldest first</option>
-          <option value="assignment_asc">Assignment A-Z</option>
-          <option value="agent_asc">Agent A-Z</option>
-          <option value="spend_desc">Most expensive</option>
-          <option value="tokens_desc">Most tokens</option>
+        <select
+          value={sort}
+          onChange={(event) => setSort(event.target.value as SessionSort)}
+          aria-label="Sort sessions"
+          className="editor-input max-w-[200px]"
+        >
+          {SESSION_SORTS.map((value) => (
+            <option key={value} value={value}>
+              {SORT_LABELS[value]}
+            </option>
+          ))}
         </select>
       </FilterBar>
 
@@ -272,7 +301,7 @@ const [search, setSearch] = useState('');
           title="No agent sessions"
           description="No agent sessions have been registered yet. Use /grab-assignment or syntaur track-session to register one."
         />
-      ) : filteredSessions.length === 0 ? (
+      ) : totalCount === 0 ? (
         <EmptyState
           title="No agent sessions match these filters"
           description="Adjust the status, search term, date range, or sorting controls to show sessions again."
@@ -286,7 +315,7 @@ const [search, setSearch] = useState('');
                   <button
                     onClick={toggleSelectAll}
                     className="text-muted-foreground hover:text-foreground disabled:opacity-40"
-                    disabled={selectableSessionIds(filteredSessions).length === 0}
+                    disabled={selectableSessionIds(pageSessions).length === 0}
                     title={headerState === 'all' ? 'Clear selection' : 'Select all'}
                   >
                     {headerState === 'all'
@@ -308,7 +337,7 @@ const [search, setSearch] = useState('');
               </tr>
             </thead>
             <tbody>
-              {filteredSessions.map((session) => (
+              {pageSessions.map((session) => (
                 <SessionRow
                   key={session.sessionId}
                   session={session}
@@ -331,6 +360,61 @@ const [search, setSearch] = useState('');
             </tbody>
           </table>
         </div>
+      )}
+
+      {totalCount > 0 && (
+        <nav
+          aria-label="Pagination"
+          className="mt-3 flex flex-wrap items-center justify-between gap-3 text-sm text-muted-foreground"
+        >
+          <div>
+            {pageCount > 1 ? (
+              <>
+                Page <span className="text-foreground">{Math.min(page, pageCount - 1) + 1}</span> of{' '}
+                <span className="text-foreground">{pageCount}</span>
+                {' · '}
+              </>
+            ) : null}
+            <span className="text-foreground">{totalCount.toLocaleString()}</span>
+            {totalCount === 1 ? ' session' : ' sessions'}
+          </div>
+
+          <div className="flex items-center gap-2">
+            <label className="flex items-center gap-2">
+              <span className="sr-only">Sessions per page</span>
+              <select
+                value={pageSize}
+                onChange={(event) => setPageSize(Number(event.target.value))}
+                aria-label="Sessions per page"
+                className="rounded-md border border-border/70 bg-background/80 px-2 py-1 text-sm text-foreground"
+              >
+                {PAGE_SIZE_OPTIONS.map((size) => (
+                  <option key={size} value={size}>
+                    {size} / page
+                  </option>
+                ))}
+              </select>
+            </label>
+            <button
+              type="button"
+              onClick={() => setPage((current) => Math.max(0, current - 1))}
+              disabled={page <= 0}
+              aria-label="Previous page"
+              className="rounded-md border border-border/70 bg-background/80 px-3 py-1 text-sm text-foreground transition hover:bg-accent/40 disabled:opacity-40 disabled:hover:bg-background/80"
+            >
+              Previous
+            </button>
+            <button
+              type="button"
+              onClick={() => setPage((current) => Math.min(pageCount - 1, current + 1))}
+              disabled={page >= pageCount - 1}
+              aria-label="Next page"
+              className="rounded-md border border-border/70 bg-background/80 px-3 py-1 text-sm text-foreground transition hover:bg-accent/40 disabled:opacity-40 disabled:hover:bg-background/80"
+            >
+              Next
+            </button>
+          </div>
+        </nav>
       )}
 
       <ConfirmDialog
@@ -606,51 +690,5 @@ function SessionRow({
   );
 }
 
-function toLocalDateKey(value: string): string | null {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return null;
-  }
 
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
-}
 
-function getDurationMinutes(session: AgentSession): number {
-  const started = Date.parse(session.started);
-  const ended = session.ended ? Date.parse(session.ended) : Date.now();
-  if (Number.isNaN(started) || Number.isNaN(ended)) {
-    return 0;
-  }
-
-  return Math.max(0, Math.floor((ended - started) / 60000));
-}
-
-function compareSessions(left: AgentSession, right: AgentSession, sort: SessionSort): number {
-  switch (sort) {
-    case 'started_asc':
-      return left.started.localeCompare(right.started);
-    case 'started_desc':
-      return right.started.localeCompare(left.started);
-    case 'duration_asc':
-      return getDurationMinutes(left) - getDurationMinutes(right);
-    case 'duration_desc':
-      return getDurationMinutes(right) - getDurationMinutes(left);
-    case 'assignment_asc':
-      return (left.assignmentSlug ?? '').localeCompare(right.assignmentSlug ?? '')
-        || (left.projectSlug ?? '').localeCompare(right.projectSlug ?? '');
-    case 'agent_asc':
-      return left.agent.localeCompare(right.agent)
-        || (left.assignmentSlug ?? '').localeCompare(right.assignmentSlug ?? '');
-    case 'spend_desc':
-      return (right.usage?.totalCost ?? 0) - (left.usage?.totalCost ?? 0)
-        || right.started.localeCompare(left.started);
-    case 'tokens_desc':
-      return (right.usage?.totalTokens ?? 0) - (left.usage?.totalTokens ?? 0)
-        || right.started.localeCompare(left.started);
-    default:
-      return 0;
-  }
-}

@@ -185,9 +185,18 @@ export interface PtyTokenResponse {
   expiresAt: number;
 }
 
+export interface SessionPageMeta {
+  page: number;
+  pageSize: number;
+  totalCount: number;
+  pageCount: number;
+}
+
 export interface AgentSessionsResponse {
   sessions: AgentSessionWithLiveness[];
   generatedAt: string;
+  /** Present only when the request opted into paging via `pageSize`. */
+  page?: SessionPageMeta;
 }
 
 // --- Todos ---

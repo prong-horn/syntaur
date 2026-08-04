@@ -4,6 +4,7 @@ import { useWebSocket } from './useWebSocket';
 import type { WsMessage } from './useWebSocket';
 import type { ServersResponse, TrackedSession, AgentSessionsResponse, AgentSessionDetailResponse, AgentSession, PlaybooksResponse, PlaybookDetail, InventoriesResponse, InventoryDetail } from '../types';
 import { buildUsageApiQuery, type UsageWidgetFilters } from '@shared/usage-filters';
+import type { SessionSort } from '@shared/session-sort';
 
 export type ProgressCounts = Record<string, number> & { total: number };
 
@@ -767,13 +768,50 @@ export function useInventory(slug: string | null): FetchState<InventoryDetail> {
  * usage_events (spend with no tracked session). Off by default so overview
  * rails, widgets, and saved views keep seeing tracked sessions only.
  */
+export interface AgentSessionsQuery {
+  includeUsageOnly?: boolean;
+  /** Presence of `pageSize` is what opts into paging; omit it for the full set. */
+  pageSize?: number;
+  page?: number;
+  search?: string;
+  startedFrom?: string;
+  startedTo?: string;
+  workspace?: string | null;
+  sort?: SessionSort;
+  /**
+   * Defer the request until the consumer actually needs it (a dialog opening).
+   * Plumbed to useFetch's own `enabled`, the same seam the command palette uses
+   * to hold back its indexes.
+   */
+  enabled?: boolean;
+}
+
 export function useAgentSessions(
-  options: { includeUsageOnly?: boolean } = {},
+  options: AgentSessionsQuery = {},
 ): FetchState<AgentSessionsResponse> {
-  const url = options.includeUsageOnly
-    ? '/api/agent-sessions?includeUsageOnly=1'
-    : '/api/agent-sessions';
-  return useFetch<AgentSessionsResponse>(url, 'agent-sessions');
+  const params = new URLSearchParams();
+  if (options.includeUsageOnly) params.set('includeUsageOnly', '1');
+  if (options.pageSize !== undefined) {
+    params.set('pageSize', String(options.pageSize));
+    params.set('page', String(options.page ?? 0));
+  }
+  if (options.search) params.set('search', options.search);
+  if (options.startedFrom) params.set('startedFrom', options.startedFrom);
+  if (options.startedTo) params.set('startedTo', options.startedTo);
+  if (options.workspace) params.set('workspace', options.workspace);
+  if (options.sort) params.set('sort', options.sort);
+  // The date filters are LOCAL calendar dates; the server needs the offset to
+  // turn them into the right UTC instants (see localDateToUtcBounds). Sent only
+  // alongside a date so the URL — and therefore the fetch cache key — is
+  // unchanged for every query that does not filter by date.
+  if (options.startedFrom || options.startedTo) {
+    params.set('tzOffset', String(new Date().getTimezoneOffset()));
+  }
+  const qs = params.toString();
+  const url = qs ? `/api/agent-sessions?${qs}` : '/api/agent-sessions';
+  // URL-keyed: a websocket 'agent-sessions-updated' broadcast refetches THIS
+  // url, so a live update refreshes the current page rather than the full set.
+  return useFetch<AgentSessionsResponse>(url, 'agent-sessions', options.enabled ?? true);
 }
 
 export function useAgentSession(
