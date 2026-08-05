@@ -1465,3 +1465,56 @@ describe('setSessionPinned / setSessionArchived / setSessionName', () => {
     expect(getSessionById('released')?.descriptionSource).toBe('auto');
   });
 });
+
+describe('paged listing stays index-driven (performance regression guard)', () => {
+  /**
+   * The paged query orders by `pinned_at IS NULL, pinned_at DESC, started …`,
+   * which `idx_sessions_started` cannot satisfy. Without the dedicated partial
+   * indexes the plan degrades from an index scan to a full table scan plus a
+   * temp B-tree — every page sorting the entire table, which is exactly the
+   * cost server-side paging exists to remove. Nothing else would notice: the
+   * results stay correct, only the plan gets worse.
+   */
+  function scanStep(orderBy: string): string {
+    const db = getSessionDb();
+    const rows = db
+      .prepare(
+        `EXPLAIN QUERY PLAN
+         SELECT s.*, e.project_slug AS project_slug
+           FROM sessions s
+           LEFT JOIN engagement e ON e.id = (
+             SELECT e2.id FROM engagement e2
+              WHERE e2.session_id = s.session_id
+              ORDER BY (e2.ended_at IS NULL) DESC, e2.started_at DESC, e2.id DESC
+              LIMIT 1
+           )
+          WHERE s.archived_at IS NULL
+          ORDER BY ${orderBy}
+          LIMIT 25 OFFSET 0`,
+      )
+      .all() as Array<{ detail: string }>;
+    return rows.find((r) => r.detail.startsWith('SCAN s'))?.detail ?? '(no SCAN s step)';
+  }
+
+  it('uses a dedicated index for the default (newest-first) view', () => {
+    expect(scanStep('s.pinned_at IS NULL, s.pinned_at DESC, s.started DESC, s.session_id ASC'))
+      .toContain('idx_sessions_pinned_started_desc');
+  });
+
+  it('uses a dedicated index for the oldest-first view', () => {
+    expect(scanStep('s.pinned_at IS NULL, s.pinned_at DESC, s.started ASC, s.session_id ASC'))
+      .toContain('idx_sessions_pinned_started_asc');
+  });
+
+  it('both pinned-paging indexes exist after a fresh init', () => {
+    const names = (
+      getSessionDb()
+        .prepare("SELECT name FROM sqlite_master WHERE type='index' AND tbl_name='sessions'")
+        .all() as Array<{ name: string }>
+    ).map((i) => i.name);
+    expect(names).toContain('idx_sessions_pinned_started_desc');
+    expect(names).toContain('idx_sessions_pinned_started_asc');
+    // main's index must survive the v10 rebuild too.
+    expect(names).toContain('idx_sessions_started');
+  });
+});

@@ -555,6 +555,37 @@ export function initSessionDb(dbPath?: string): Database.Database {
   // Idempotent, so running it on every init is free.
   db.exec('CREATE INDEX IF NOT EXISTS idx_sessions_started ON sessions(started);');
 
+  // Pinned-first paging indexes. Same placement and reasoning as the line above,
+  // and doubly required here: `pinned_at` / `archived_at` do not exist until the
+  // v9→v10 migration has run, so these CANNOT live in SCHEMA_SQL (which executes
+  // BEFORE migrations, against a table that may still be v9-shaped).
+  //
+  // Why they exist: the paged list orders by
+  //   pinned_at IS NULL, pinned_at DESC, started <dir>, session_id
+  // and `idx_sessions_started` cannot satisfy that leading pin term. Without
+  // these, EXPLAIN QUERY PLAN degrades from
+  //   SCAN s USING INDEX idx_sessions_started   ->   SCAN s
+  // i.e. every page full-scans and sorts the whole table, defeating the point of
+  // server-side paging. Measured on a 3000-row fixture; these restore the index
+  // scan for both started directions.
+  //
+  // PARTIAL on `archived_at IS NULL` because that is the default view and
+  // carries essentially all traffic. The Shown / Archived-only views fall back
+  // to a scan, which is the right trade: they are deliberate, rare, and a full
+  // index would tax every write to serve them.
+  //
+  // Only the two `started` sorts are covered. `assignment_asc` / `agent_asc`
+  // order on joined engagement columns and were ALREADY unindexed before this
+  // change, so the pin prefix costs them nothing.
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_sessions_pinned_started_desc
+      ON sessions((pinned_at IS NULL), pinned_at DESC, started DESC, session_id)
+      WHERE archived_at IS NULL;
+    CREATE INDEX IF NOT EXISTS idx_sessions_pinned_started_asc
+      ON sessions((pinned_at IS NULL), pinned_at DESC, started ASC, session_id)
+      WHERE archived_at IS NULL;
+  `);
+
   return db;
 }
 
