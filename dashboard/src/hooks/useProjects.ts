@@ -808,14 +808,15 @@ export function useAgentSessions(
   // alongside a date so the URL — and therefore the fetch cache key — is
   // unchanged for every query that does not filter by date.
   //
-  // The offset is taken FOR THE FILTERED DATE, not for `now`: in a DST-observing
-  // zone, filtering a July date while browsing in January would otherwise apply
-  // the January offset and shift the day boundary by an hour. Midday avoids the
-  // ambiguous hour at a DST transition.
-  const anchorDate = options.startedFrom || options.startedTo;
-  if (anchorDate) {
-    params.set('tzOffset', String(new Date(`${anchorDate}T12:00:00`).getTimezoneOffset()));
-  }
+  // One offset PER DATE, not one for the request: the offset is taken for the
+  // filtered date rather than for `now` (filtering a July date while browsing in
+  // January would otherwise apply January's offset), and each bound gets its own
+  // so a range spanning a DST change is correct at both ends. Midday avoids the
+  // ambiguous hour at a transition.
+  const offsetForDate = (date: string): string =>
+    String(new Date(`${date}T12:00:00`).getTimezoneOffset());
+  if (options.startedFrom) params.set('tzOffsetFrom', offsetForDate(options.startedFrom));
+  if (options.startedTo) params.set('tzOffsetTo', offsetForDate(options.startedTo));
   const qs = params.toString();
   const url = qs ? `/api/agent-sessions?${qs}` : '/api/agent-sessions';
   // URL-keyed: a websocket 'agent-sessions-updated' broadcast refetches THIS

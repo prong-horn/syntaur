@@ -205,6 +205,16 @@ interface MergeKey extends SessionSortKey {
   orphan: boolean;
 }
 
+/**
+ * String comparison matching SQLite's COLLATE NOCASE, which the SQL path uses:
+ * case-insensitive but accent-SENSITIVE. Plain localeCompare is accent- and
+ * case-sensitive, so the two paths could order the same rows differently.
+ */
+const NOCASE_COLLATOR = new Intl.Collator(undefined, { sensitivity: 'accent' });
+function nocase(a: string | null, b: string | null): number {
+  return NOCASE_COLLATOR.compare(a ?? '', b ?? '');
+}
+
 function durationMinutes(key: MergeKey, now: number): number {
   const started = Date.parse(key.started);
   const ended = key.ended ? Date.parse(key.ended) : now;
@@ -236,14 +246,14 @@ function compareKeys(a: MergeKey, b: MergeKey, sort: SessionSort, now: number): 
       return durationMinutes(b, now) - durationMinutes(a, now) || a.sessionId.localeCompare(b.sessionId);
     case 'assignment_asc':
       return (
-        (a.assignmentSlug ?? '').localeCompare(b.assignmentSlug ?? '')
-        || (a.projectSlug ?? '').localeCompare(b.projectSlug ?? '')
+        nocase(a.assignmentSlug, b.assignmentSlug)
+        || nocase(a.projectSlug, b.projectSlug)
         || a.sessionId.localeCompare(b.sessionId)
       );
     case 'agent_asc':
       return (
-        a.agent.localeCompare(b.agent)
-        || (a.assignmentSlug ?? '').localeCompare(b.assignmentSlug ?? '')
+        nocase(a.agent, b.agent)
+        || nocase(a.assignmentSlug, b.assignmentSlug)
         || a.sessionId.localeCompare(b.sessionId)
       );
     case 'spend_desc':
@@ -339,7 +349,7 @@ export function createAgentSessionsRouter(
    */
   async function pageSessions(
     q: SessionPageQuery,
-    opts: { includeUsageOnly: boolean; agents: ReturnType<typeof getAgents> },
+    opts: { agents: ReturnType<typeof getAgents> },
   ): Promise<{ sessions: AgentSessionWithLiveness[]; totalCount: number }> {
     // Must agree with listSessionsPage's own guard, or a sort it refuses to
     // order in SQL would be routed to it and come back empty.
@@ -534,6 +544,15 @@ export function createAgentSessionsRouter(
 
       const pageSizeRaw = positiveIntParam(req.query.pageSize);
       if (pageSizeRaw === undefined) {
+        // The unpaged path cannot apply attribution (it has no filter layer), so
+        // honoring the param here would be a lie. Reject rather than silently
+        // return every session to a caller that asked for a subset.
+        if (req.query.attribution !== undefined) {
+          res.status(400).json({
+            error: '`attribution` requires `pageSize` — it is only applied on the paged path.',
+          });
+          return;
+        }
         const sessions = await listAllSessions(projectsDir);
         res.json({
           sessions: attachUsage(enrichSessions(sessions, agents), { includeUsageOnly }),
@@ -559,15 +578,24 @@ export function createAgentSessionsRouter(
 
       // getTimezoneOffset() is always an integer number of minutes; a fractional
       // or non-numeric value is malformed input, not a real zone.
-      const tzOffset = Number(req.query.tzOffset);
-      const offsetMinutes = Number.isInteger(tzOffset) ? tzOffset : 0;
+      // Each bound carries its OWN offset. A range spanning a DST change has two
+      // different offsets, so anchoring both ends on one of them puts the other
+      // boundary an hour out — enough to pull in or drop a late-evening session.
+      // `tzOffset` remains accepted as a single-offset fallback.
+      const intParam = (raw: unknown): number | undefined => {
+        const n = Number(raw);
+        return typeof raw === 'string' && Number.isInteger(n) ? n : undefined;
+      };
+      const sharedOffset = intParam(req.query.tzOffset) ?? 0;
+      const offsetFrom = intParam(req.query.tzOffsetFrom) ?? sharedOffset;
+      const offsetTo = intParam(req.query.tzOffsetTo) ?? sharedOffset;
       const startedFromUtc =
         typeof req.query.startedFrom === 'string'
-          ? localDateToUtcBounds(req.query.startedFrom, offsetMinutes, 'start')
+          ? localDateToUtcBounds(req.query.startedFrom, offsetFrom, 'start')
           : undefined;
       const startedToUtc =
         typeof req.query.startedTo === 'string'
-          ? localDateToUtcBounds(req.query.startedTo, offsetMinutes, 'end')
+          ? localDateToUtcBounds(req.query.startedTo, offsetTo, 'end')
           : undefined;
 
       // Workspace membership is resolved from disk (project frontmatter +
@@ -586,7 +614,7 @@ export function createAgentSessionsRouter(
       const query = {
         page, pageSize, search, startedFromUtc, startedToUtc, workspaceScope, sort, attribution,
       };
-      const result = await pageSessions(query, { includeUsageOnly, agents });
+      const result = await pageSessions(query, { agents });
 
       // Bucket counts for the filter control, so the user can see what a given
       // view is hiding. Each is the same query with only `attribution` swapped,
@@ -594,7 +622,7 @@ export function createAgentSessionsRouter(
       const countFor = async (a: SessionAttribution): Promise<number> =>
         a === attribution
           ? result.totalCount
-          : (await pageSessions({ ...query, attribution: a, page: 0, pageSize: 1 }, { includeUsageOnly, agents }))
+          : (await pageSessions({ ...query, attribution: a, page: 0, pageSize: 1 }, { agents }))
               .totalCount;
       const [trackedCount, assignedCount, unassignedCount, usageOnlyCount] = await Promise.all([
         countFor('tracked'),

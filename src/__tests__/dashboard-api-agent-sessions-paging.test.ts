@@ -187,6 +187,28 @@ describe('paged filtering spans the whole set, not the page', () => {
     expect(body.sessions.map((s) => s.sessionId)).toEqual(['needle-session']);
   });
 
+  it('uses each date\'s own offset across a DST boundary', async () => {
+    // A range spanning a DST change has two different UTC offsets. Anchoring
+    // both bounds on the FROM date's offset makes the TO boundary an hour wrong.
+    //
+    // Winter 420 (UTC-7) for the from-date, summer 360 (UTC-6) for the to-date.
+    // Correct `to` bound for local 2026-07-15 is 2026-07-16T05:59:59.999Z.
+    //
+    // These two rows discriminate between all three behaviors:
+    //   at-0300 (2026-07-16T03:00Z = Jul 15 21:00 local summer) -> INCLUDE
+    //   at-0630 (2026-07-16T06:30Z = Jul 16 00:30 local summer) -> EXCLUDE
+    // UTC(0) bound 07-15T23:59:59Z excludes both; a single winter offset (420)
+    // bound 07-16T06:59:59Z includes both. Only per-date offsets give one row.
+    await seedSession('at-0300', { started: '2026-07-16T03:00:00.000Z' });
+    await seedSession('at-0630', { started: '2026-07-16T06:30:00.000Z' });
+
+    const body = await get(
+      '?pageSize=10&startedFrom=2026-01-15&startedTo=2026-07-15'
+      + '&tzOffsetFrom=420&tzOffsetTo=360',
+    );
+    expect(body.sessions.map((s) => s.sessionId)).toEqual(['at-0300']);
+  });
+
   it('treats % and _ as literal characters, not SQL wildcards', async () => {
     await seedSession('literal-pct', { description: 'progress 50% done' });
     await seedSession('literal-other', { description: 'nothing special' });
@@ -324,6 +346,26 @@ describe('attribution filtering', () => {
       'usage-only': 2,
       all: 5,
     });
+  });
+
+  it('rejects attribution on the unpaged path instead of silently ignoring it', async () => {
+    // The unpaged branch has no filter layer, so honoring `attribution` there is
+    // impossible; silently returning every session to a caller that asked for a
+    // subset is the dangerous outcome.
+    await seedMixed();
+    const response = await fetch(`${baseUrl}/api/agent-sessions?attribution=assigned`);
+    expect(response.status).toBe(400);
+    const body = (await response.json()) as { error: string };
+    expect(body.error).toMatch(/requires .?pageSize/);
+  });
+
+  it('leaves the unpaged path working when no attribution is sent', async () => {
+    await seedMixed();
+    const response = await fetch(`${baseUrl}/api/agent-sessions?includeUsageOnly=1`);
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as PagedBody;
+    expect(body.sessions).toHaveLength(5);
+    expect(body.page).toBeUndefined();
   });
 
   it('falls back to the default on an unknown attribution', async () => {
