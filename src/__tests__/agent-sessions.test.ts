@@ -1506,6 +1506,22 @@ describe('paged listing stays index-driven (performance regression guard)', () =
       .toContain('idx_sessions_pinned_started_asc');
   });
 
+  it('uses a dedicated index for the archived-only view', () => {
+    const db = getSessionDb();
+    const rows = db
+      .prepare(
+        `EXPLAIN QUERY PLAN
+         SELECT s.* FROM sessions s
+          WHERE s.archived_at IS NOT NULL
+          ORDER BY s.pinned_at IS NULL, s.pinned_at DESC, s.started DESC, s.session_id ASC
+          LIMIT 25`,
+      )
+      .all() as Array<{ detail: string }>;
+    expect(rows.find((r) => r.detail.startsWith('SCAN s'))?.detail).toContain(
+      'idx_sessions_archived_pinned_started_desc',
+    );
+  });
+
   it('both pinned-paging indexes exist after a fresh init', () => {
     const names = (
       getSessionDb()

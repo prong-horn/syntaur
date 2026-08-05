@@ -594,7 +594,18 @@ export function AgentSessionsPage() {
             return;
           }
 
-          await handleDelete(pendingDelete.sessionIds);
+          // Re-narrow at CONFIRM time, not just at open time. `pendingDelete`
+          // is a snapshot; between opening the dialog and confirming, a row can
+          // leave the view — archived from another session, or dropped by the
+          // periodic refetch — and the snapshot would still delete it. Deleting
+          // is irreversible, so it must act only on what is still visible.
+          const visible = new Set(selectableSessionIds(pageSessions));
+          const stillActionable = pendingDelete.sessionIds.filter((id) => visible.has(id));
+          if (stillActionable.length === 0) {
+            setPendingDelete(null);
+            return;
+          }
+          await handleDelete(stillActionable);
         }}
       />
     </>

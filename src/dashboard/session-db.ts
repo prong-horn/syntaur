@@ -584,7 +584,25 @@ export function initSessionDb(dbPath?: string): Database.Database {
     CREATE INDEX IF NOT EXISTS idx_sessions_pinned_started_asc
       ON sessions((pinned_at IS NULL), pinned_at DESC, started ASC, session_id)
       WHERE archived_at IS NULL;
+
+    -- The mirror pair for the Archived-only view. Cheap: a partial index over
+    -- archived rows only, which is by nature a small slice — archiving is what
+    -- you do to get things OUT of the way. This is also the view you land on to
+    -- unarchive, so it is worth keeping index-driven.
+    CREATE INDEX IF NOT EXISTS idx_sessions_archived_pinned_started_desc
+      ON sessions((pinned_at IS NULL), pinned_at DESC, started DESC, session_id)
+      WHERE archived_at IS NOT NULL;
+    CREATE INDEX IF NOT EXISTS idx_sessions_archived_pinned_started_asc
+      ON sessions((pinned_at IS NULL), pinned_at DESC, started ASC, session_id)
+      WHERE archived_at IS NOT NULL;
   `);
+
+  // NOT indexed: the `archived: 'show'` view, which applies no archived
+  // predicate at all and so matches neither partial index. Covering it needs
+  // FULL indexes over the whole table in both directions — doubling the write
+  // cost of every session upsert to serve the one view that deliberately asks
+  // for everything at once, and is reached far less often than the default.
+  // Left as a scan on purpose; revisit if that view ever becomes hot.
 
   return db;
 }
