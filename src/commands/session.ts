@@ -844,8 +844,18 @@ export async function summarizeAllWithTranscripts(opts: {
   const { listAllSessions } = await import('../dashboard/agent-sessions.js');
   const { defaultProjectDir } = await import('../utils/paths.js');
 
-  const sessions = (await listAllSessions(defaultProjectDir()))
+  // Archive is a PRESENTATION concern, never a summarization one: an archived
+  // session must still be re-summarizable, exactly like the automatic sweep in
+  // listSessionsNeedingSummary stays unfiltered.
+  //
+  // Re-sorted newest-first because listAllSessions returns PINNED rows first,
+  // and this command documents "newest first" — under an explicit --limit, pin
+  // order would otherwise let an old pinned session displace a newer one from
+  // the batch. Pinning is a display concern; it must not decide which sessions
+  // a maintenance command processes.
+  const sessions = (await listAllSessions(defaultProjectDir(), { includeArchived: true }))
     .filter((s) => (s.transcriptPath ?? '').length > 0)
+    .sort((a, b) => b.started.localeCompare(a.started))
     .slice(0, opts.limit);
 
   const results = [];

@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useState } from 'react';
+import { Fragment, useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { Activity, CheckSquare, ChevronDown, ChevronRight, Square, Trash2 } from 'lucide-react';
 import { CopyButton } from '../components/CopyButton';
 import { CopyLaunchCommandButton } from '../components/CopyLaunchCommandButton';
 import { SessionActionButtons } from '../components/SessionActionButtons';
+import { cn } from '../lib/utils';
 import { useAgentSessions, useWorkspacePrefix } from '../hooks/useProjects';
 import { LoadingState } from '../components/LoadingState';
 import { ErrorState } from '../components/ErrorState';
@@ -21,12 +22,30 @@ import {
   SESSION_ATTRIBUTIONS,
   type SessionAttribution,
 } from '@shared/session-attribution';
+import {
+  ARCHIVED_FILTERS,
+  ARCHIVED_LABELS,
+  DEFAULT_ARCHIVED_FILTER,
+  type ArchivedFilter,
+} from '@shared/session-archived';
 
 /**
  * Sort labels, keyed exhaustively by SessionSort so the dropdown cannot drift
  * from the sorts the server supports. It had drifted: duration_asc/duration_desc
  * existed in the type and in the comparator but were never offered here.
  */
+/**
+ * Column count of the sessions table header. The expanded detail row and the
+ * pinned-group separator both span the full width, so they share this constant
+ * rather than each hardcoding a number that silently drifts from the header.
+ */
+const SESSION_TABLE_COLUMN_COUNT = 12;
+
+/** Pinned AND not archived — "archived wins for visibility". */
+function isEffectivelyPinned(s: { pinnedAt?: string | null; archivedAt?: string | null }): boolean {
+  return Boolean(s.pinnedAt) && !s.archivedAt;
+}
+
 const SORT_LABELS: Record<SessionSort, string> = {
   started_desc: 'Newest first',
   started_asc: 'Oldest first',
@@ -71,6 +90,7 @@ export function AgentSessionsPage() {
   // roughly 3:1, so including them by default buries the ad-hoc sessions this
   // page is most useful for. Per-model spend lives on /usage.
   const [attribution, setAttribution] = useState<SessionAttribution>(DEFAULT_SESSION_ATTRIBUTION);
+  const [archived, setArchived] = useState<ArchivedFilter>(DEFAULT_ARCHIVED_FILTER);
   const [page, setPage] = useState(0);
   const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
 
@@ -82,7 +102,7 @@ export function AgentSessionsPage() {
   // user — otherwise narrowing a filter while on page 12 shows an empty table.
   useEffect(() => {
     setPage(0);
-  }, [debouncedSearch, startedFrom, startedTo, sort, pageSize, workspace, attribution]);
+  }, [debouncedSearch, startedFrom, startedTo, sort, pageSize, workspace, attribution, archived]);
 
   const { data, loading, error, refetch } = useAgentSessions({
     // No `includeUsageOnly`: `attribution` supersedes it and is explicit about
@@ -95,6 +115,7 @@ export function AgentSessionsPage() {
     workspace: workspace ?? undefined,
     sort,
     attribution,
+    archived,
   });
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [deleting, setDeleting] = useState(false);
@@ -229,6 +250,43 @@ export function AgentSessionsPage() {
     }
   }
 
+  // Curation (pin / archive / name) uses the same fire-and-forget contract as
+  // mark-stopped: PATCH, then let the `agent-sessions-updated` broadcast drive
+  // the refetch. No optimistic local state, matching this file's convention.
+  async function patchCuration(
+    sessionId: string,
+    body: { pinned?: boolean; archived?: boolean; name?: string | null },
+  ) {
+    try {
+      const response = await fetch(
+        `/api/agent-sessions/${encodeURIComponent(sessionId)}/curation`,
+        {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        },
+      );
+      if (!response.ok) {
+        const payload = await response.json().catch(() => null);
+        setDeleteError(payload?.error || `Failed to update session: HTTP ${response.status}`);
+      }
+    } catch (err) {
+      setDeleteError((err as Error).message);
+    }
+  }
+
+  // Rename uses window.prompt deliberately: this page has no inline-edit
+  // affordance and no modal form component, and a name is a single short
+  // string. Cancel (null) is a no-op; an empty string CLEARS the name, which
+  // the server treats as releasing the row back to the auto-summarizer.
+  function handleRename(sessionId: string) {
+    const current = pageSessions.find((x) => x.sessionId === sessionId)?.description ?? '';
+    const next = window.prompt('Name this session (leave blank to clear):', current);
+    if (next === null) return;
+    if (next.trim() === current.trim()) return;
+    void patchCuration(sessionId, { name: next });
+  }
+
   if (loading) return <LoadingState label="Loading agent sessions..." />;
   if (error) return <ErrorState error={error} />;
   if (!data) return null;
@@ -278,6 +336,18 @@ export function AgentSessionsPage() {
               </option>
             );
           })}
+        </select>
+        <select
+          value={archived}
+          onChange={(event) => setArchived(event.target.value as ArchivedFilter)}
+          aria-label="Archived session visibility"
+          className="editor-input max-w-[200px]"
+        >
+          {ARCHIVED_FILTERS.map((value) => (
+            <option key={value} value={value}>
+              {ARCHIVED_LABELS[value]}
+            </option>
+          ))}
         </select>
         <select
           value={sort}
@@ -369,25 +439,58 @@ export function AgentSessionsPage() {
               </tr>
             </thead>
             <tbody>
-              {pageSessions.map((session) => (
-                <SessionRow
-                  key={session.sessionId}
-                  session={session}
-                  selected={selectedIds.has(session.sessionId)}
-                  onToggle={() => toggleSelection(session.sessionId)}
-                  onDelete={() =>
-                    setPendingDelete({
-                      sessionIds: [session.sessionId],
-                      title: `Delete session ${session.sessionId.slice(0, 8)}...?`,
-                      description: `Remove this ${session.agent} session record${session.assignmentSlug ? ` for ${session.assignmentSlug}` : ''}. This cannot be undone.`,
-                      confirmLabel: 'Delete Session',
-                    })
-                  }
-                  onMarkStopped={handleMarkStopped}
-                  onCopyError={setDeleteError}
-                  expanded={expandedIds.has(session.sessionId)}
-                  onToggleExpand={() => toggleExpand(session.sessionId)}
-                />
+              {pageSessions.map((session, index) => (
+                <Fragment key={session.sessionId}>
+                  {/* Pinned sessions lead the whole result set (the SQL ORDER BY
+                      carries it), so the group can only ever appear at the top of
+                      page 0. Banding on a later page would be a lie — every row
+                      there is unpinned by construction. */}
+                  {page === 0 && index === 0 && isEffectivelyPinned(session) && (
+                    <tr className="bg-accent/30">
+                      <td
+                        colSpan={SESSION_TABLE_COLUMN_COUNT}
+                        className="px-4 py-1 text-xs font-medium uppercase tracking-[0.08em] text-muted-foreground"
+                      >
+                        Pinned
+                      </td>
+                    </tr>
+                  )}
+                  {page === 0
+                    && index > 0
+                    && isEffectivelyPinned(pageSessions[index - 1])
+                    && !isEffectivelyPinned(session) && (
+                    <tr className="bg-accent/30">
+                      <td
+                        colSpan={SESSION_TABLE_COLUMN_COUNT}
+                        className="px-4 py-1 text-xs font-medium uppercase tracking-[0.08em] text-muted-foreground"
+                      >
+                        All sessions
+                      </td>
+                    </tr>
+                  )}
+                  <SessionRow
+                    session={session}
+                    selected={selectedIds.has(session.sessionId)}
+                    onToggle={() => toggleSelection(session.sessionId)}
+                    onDelete={() =>
+                      setPendingDelete({
+                        sessionIds: [session.sessionId],
+                        title: `Delete session ${session.sessionId.slice(0, 8)}...?`,
+                        description: `Remove this ${session.agent} session record${session.assignmentSlug ? ` for ${session.assignmentSlug}` : ''}. This cannot be undone.`,
+                        confirmLabel: 'Delete Session',
+                      })
+                    }
+                    onMarkStopped={handleMarkStopped}
+                    onTogglePin={(id, pinned) => void patchCuration(id, { pinned })}
+                    onToggleArchive={(id, archivedNext) =>
+                      void patchCuration(id, { archived: archivedNext })
+                    }
+                    onRename={handleRename}
+                    onCopyError={setDeleteError}
+                    expanded={expandedIds.has(session.sessionId)}
+                    onToggleExpand={() => toggleExpand(session.sessionId)}
+                  />
+                </Fragment>
               ))}
             </tbody>
           </table>
@@ -479,6 +582,9 @@ function SessionRow({
   onToggle,
   onDelete,
   onMarkStopped,
+  onTogglePin,
+  onToggleArchive,
+  onRename,
   onCopyError,
   expanded,
   onToggleExpand,
@@ -488,6 +594,9 @@ function SessionRow({
   onToggle: () => void;
   onDelete: () => void;
   onMarkStopped: (sessionId: string) => void;
+  onTogglePin: (sessionId: string, pinned: boolean) => void;
+  onToggleArchive: (sessionId: string, archived: boolean) => void;
+  onRename: (sessionId: string) => void;
   onCopyError: (message: string) => void;
   expanded: boolean;
   onToggleExpand: () => void;
@@ -514,7 +623,16 @@ function SessionRow({
 
   return (
     <>
-    <tr className="border-b border-border/20 last:border-0">
+    <tr
+      className={cn(
+        'border-b border-border/20 last:border-0',
+        // A left accent marks the pinned group without adding a 13th column.
+        isEffectivelyPinned(session) && 'border-l-2 border-l-primary bg-accent/20',
+        // Archived rows are only visible in the Shown / Archived-only modes;
+        // dimming keeps that state obvious at a glance.
+        session.archivedAt && 'opacity-60',
+      )}
+    >
       <td className="py-2 pr-3">
         <button
           onClick={onToggle}
@@ -670,7 +788,13 @@ function SessionRow({
           {/* Usage-only rows have no sessions record: nothing to attach, stop, or delete. */}
           {!session.usageOnly && (
             <>
-              <SessionActionButtons session={session} onMarkStopped={onMarkStopped} />
+              <SessionActionButtons
+                session={session}
+                onMarkStopped={onMarkStopped}
+                onTogglePin={onTogglePin}
+                onToggleArchive={onToggleArchive}
+                onRename={onRename}
+              />
               <button
                 onClick={onDelete}
                 className="text-muted-foreground hover:text-destructive"
@@ -686,7 +810,7 @@ function SessionRow({
     </tr>
     {expanded && canExpand && (
       <tr className="border-b border-border/20 bg-muted/20">
-        <td colSpan={12} className="px-8 py-3">
+        <td colSpan={SESSION_TABLE_COLUMN_COUNT} className="px-8 py-3">
           <div className="flex flex-col gap-3 text-xs">
             {session.summary && (
               <div>

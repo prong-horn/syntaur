@@ -12,6 +12,13 @@ import {
 import {
   appendSession,
   listAllSessions,
+  listAllSessionIds,
+  listSessionsByAssignment,
+  listSessionsNeedingSummary,
+  getSessionById,
+  setSessionPinned,
+  setSessionArchived,
+  setSessionName,
   listProjectSessions,
   updateSessionStatus,
   SessionResurrectionError,
@@ -471,7 +478,7 @@ describe('v2 -> v3 schema migration (adds transcript_path)', () => {
       .prepare("SELECT value FROM meta WHERE key = 'schema_version'")
       .get() as { value: string };
     // v2 chains through every migration to the current head (v9).
-    expect(version.value).toBe('9');
+    expect(version.value).toBe('10');
   });
 
   it('falls back to mission_slug when a v2 table has both columns but project_slug is null', async () => {
@@ -631,7 +638,7 @@ describe('v3 -> v4 schema migration (adds pid + pid_started_at)', () => {
       .prepare("SELECT value FROM meta WHERE key = 'schema_version'")
       .get() as { value: string };
     // v3→v4 adds pid columns, then the chain continues to the current head (v9).
-    expect(version.value).toBe('9');
+    expect(version.value).toBe('10');
   });
 });
 
@@ -693,7 +700,7 @@ describe('v4 -> v5 schema migration (adds original_head_sha)', () => {
     const version = db
       .prepare("SELECT value FROM meta WHERE key = 'schema_version'")
       .get() as { value: string };
-    expect(version.value).toBe('9');
+    expect(version.value).toBe('10');
   });
 
   it('round-trips original_head_sha through appendSession + getSessionById', async () => {
@@ -1246,5 +1253,210 @@ describe('appendSession path sanitization (persistence boundary)', () => {
       .prepare('SELECT path FROM sessions WHERE session_id = ?')
       .get('real-path') as { path: string | null };
     expect(row.path).toBe('/Users/dev/proj');
+  });
+});
+
+// --- Curation flags: pin + archive + name (schema v10) ----------------------
+
+describe('archived exclusion on the UNPAGED reads (Overview rail, TUI, assignment detail)', () => {
+  it('listAllSessions excludes archived by default and includes them on opt-in', async () => {
+    await appendSession('', makeSession({ sessionId: 'keep' }));
+    await appendSession('', makeSession({ sessionId: 'gone' }));
+    setSessionArchived('gone', true);
+
+    expect((await listAllSessions('')).map((s) => s.sessionId)).toEqual(['keep']);
+    expect(
+      (await listAllSessions('', { includeArchived: true })).map((s) => s.sessionId).sort(),
+    ).toEqual(['gone', 'keep']);
+  });
+
+  it('listProjectSessions excludes archived in BOTH branches', async () => {
+    await appendSession('', makeSession({ projectSlug: 'p', assignmentSlug: 'a', sessionId: 'keep' }));
+    await appendSession('', makeSession({ projectSlug: 'p', assignmentSlug: 'a', sessionId: 'gone' }));
+    setSessionArchived('gone', true);
+
+    expect((await listProjectSessions('', 'p')).map((s) => s.sessionId)).toEqual(['keep']);
+    expect((await listProjectSessions('', 'p', 'a')).map((s) => s.sessionId)).toEqual(['keep']);
+    expect(
+      (await listProjectSessions('', 'p', undefined, { includeArchived: true }))
+        .map((s) => s.sessionId).sort(),
+    ).toEqual(['gone', 'keep']);
+    expect(
+      (await listProjectSessions('', 'p', 'a', { includeArchived: true }))
+        .map((s) => s.sessionId).sort(),
+    ).toEqual(['gone', 'keep']);
+  });
+
+  it('listSessionsByAssignment excludes archived in BOTH branches', async () => {
+    await appendSession('', makeSession({ projectSlug: 'p', assignmentSlug: 'a', sessionId: 'keep' }));
+    await appendSession('', makeSession({ projectSlug: 'p', assignmentSlug: 'a', sessionId: 'gone' }));
+    await appendSession('', makeSession({ projectSlug: null, assignmentSlug: 'solo', sessionId: 'lone-keep' }));
+    await appendSession('', makeSession({ projectSlug: null, assignmentSlug: 'solo', sessionId: 'lone-gone' }));
+    setSessionArchived('gone', true);
+    setSessionArchived('lone-gone', true);
+
+    expect((await listSessionsByAssignment('p', 'a')).map((s) => s.sessionId)).toEqual(['keep']);
+    expect((await listSessionsByAssignment(null, 'solo')).map((s) => s.sessionId)).toEqual(['lone-keep']);
+    expect(
+      (await listSessionsByAssignment('p', 'a', { includeArchived: true }))
+        .map((s) => s.sessionId).sort(),
+    ).toEqual(['gone', 'keep']);
+    expect(
+      (await listSessionsByAssignment(null, 'solo', { includeArchived: true }))
+        .map((s) => s.sessionId).sort(),
+    ).toEqual(['lone-gone', 'lone-keep']);
+  });
+
+  it('pins lead the unpaged listAllSessions too', async () => {
+    await appendSession('', makeSession({ sessionId: 'ord-new', started: '2026-03-28T10:00:00Z' }));
+    await appendSession('', makeSession({ sessionId: 'ord-old', started: '2026-03-01T10:00:00Z' }));
+    expect((await listAllSessions('')).map((s) => s.sessionId)).toEqual(['ord-new', 'ord-old']);
+
+    // Pinning the OLDEST must hoist it — an outcome plain `started DESC` cannot
+    // produce by accident.
+    setSessionPinned('ord-old', true);
+    expect((await listAllSessions('')).map((s) => s.sessionId)).toEqual(['ord-old', 'ord-new']);
+  });
+});
+
+describe('the deliberately-unfiltered readers (regression guards)', () => {
+  it('GUARD: listSessionsNeedingSummary must NOT filter archived sessions', async () => {
+    // `summary IS NULL` is the sweep's ONLY trigger, so a session is summarized
+    // once ever. If this sweep excluded archived rows, a session archived before
+    // it was summarized would be permanently un-summarizable with no recovery
+    // path. Do not "fix" this by adding an archived_at term to that query.
+    await appendSession(
+      '',
+      makeSession({ sessionId: 'needs-summary', status: 'stopped', transcriptPath: '/t/x.jsonl' }),
+    );
+    setSessionArchived('needs-summary', true);
+
+    expect(listSessionsNeedingSummary(50).map((s) => s.sessionId)).toContain('needs-summary');
+  });
+
+  it('GUARD: getSessionById resolves archived sessions, so unarchive is reachable', async () => {
+    await appendSession('', makeSession({ sessionId: 'hidden' }));
+    setSessionArchived('hidden', true);
+
+    expect(getSessionById('hidden')?.sessionId).toBe('hidden');
+    setSessionArchived('hidden', false);
+    expect(getSessionById('hidden')?.archivedAt).toBeNull();
+    expect((await listAllSessions('')).map((s) => s.sessionId)).toContain('hidden');
+  });
+
+  it('GUARD: re-registering an archived session does NOT clear the flags', async () => {
+    // appendSession's upsert names both its INSERT columns and its DO UPDATE SET
+    // columns explicitly, so omission preserves. The job is to NOT add clearing
+    // logic — if someone adds pinned_at/archived_at to that SET list, this fails.
+    await appendSession('', makeSession({ sessionId: 'revived', status: 'stopped' }));
+    setSessionPinned('revived', true);
+    setSessionArchived('revived', true);
+    const before = getSessionById('revived');
+
+    await appendSession('', makeSession({ sessionId: 'revived', status: 'active' }), {
+      reviveStopped: true,
+    });
+
+    const after = getSessionById('revived');
+    expect(after?.status).toBe('active');
+    expect(after?.pinnedAt).toBe(before?.pinnedAt);
+    expect(after?.archivedAt).toBe(before?.archivedAt);
+  });
+
+  it('GUARD: listAllSessionIds includes archived — it is a persistence set', async () => {
+    await appendSession('', makeSession({ sessionId: 'visible' }));
+    await appendSession('', makeSession({ sessionId: 'hidden2' }));
+    setSessionArchived('hidden2', true);
+
+    expect((await listAllSessions('')).map((s) => s.sessionId)).not.toContain('hidden2');
+    const ids = listAllSessionIds();
+    expect(ids.has('hidden2')).toBe(true);
+    expect(ids.has('visible')).toBe(true);
+  });
+});
+
+describe('setSessionPinned / setSessionArchived / setSessionName', () => {
+  it('return false for an unknown session id', () => {
+    expect(setSessionPinned('no-such-session', true)).toBe(false);
+    expect(setSessionArchived('no-such-session', true)).toBe(false);
+    expect(setSessionName('no-such-session', 'x')).toBe(false);
+  });
+
+  it('round-trips pin and archive', async () => {
+    await appendSession('', makeSession({ sessionId: 'toggle' }));
+    expect(setSessionPinned('toggle', true)).toBe(true);
+    expect(getSessionById('toggle')?.pinnedAt).toBeTruthy();
+    expect(setSessionPinned('toggle', false)).toBe(true);
+    expect(getSessionById('toggle')?.pinnedAt).toBeNull();
+
+    expect(setSessionArchived('toggle', true)).toBe(true);
+    expect(getSessionById('toggle')?.archivedAt).toBeTruthy();
+    expect(setSessionArchived('toggle', false)).toBe(true);
+    expect(getSessionById('toggle')?.archivedAt).toBeNull();
+  });
+
+  it('archiving does not change status, activity, or ended', async () => {
+    await appendSession('', makeSession({ sessionId: 'live-arch', status: 'active' }));
+    const before = getSessionById('live-arch');
+    setSessionArchived('live-arch', true);
+    const after = getSessionById('live-arch');
+
+    expect(after?.status).toBe('active');
+    expect(after?.ended ?? null).toBe(before?.ended ?? null);
+    expect(after?.activity ?? null).toBe(before?.activity ?? null);
+  });
+
+  it('pin and archive are independent; archived wins for visibility', async () => {
+    await appendSession('', makeSession({ sessionId: 'both' }));
+    setSessionPinned('both', true);
+    setSessionArchived('both', true);
+    const row = getSessionById('both');
+    expect(row?.pinnedAt).toBeTruthy();
+    expect(row?.archivedAt).toBeTruthy();
+    expect((await listAllSessions('')).map((s) => s.sessionId)).not.toContain('both');
+  });
+
+  it('naming writes description with human provenance, and trims', async () => {
+    await appendSession('', makeSession({ sessionId: 'named' }));
+    expect(setSessionName('named', '  My session  ')).toBe(true);
+    const row = getSessionById('named');
+    expect(row?.description).toBe('My session');
+    expect(row?.descriptionSource).toBe('human');
+  });
+
+  it("GUARD: the auto-summarizer must not overwrite a human-assigned name", async () => {
+    // This is the whole reason a name is `description` + source='human' rather
+    // than a new column: the summarizer already honours that provenance flag.
+    await appendSession('', makeSession({ sessionId: 'protected', status: 'stopped' }));
+    setSessionName('protected', 'Hand-written name');
+
+    expect(claimSummarize('protected', 'tok')).toBe(true);
+    finalizeSummarize('protected', 'tok', {
+      description: 'auto-generated description',
+      summary: 'auto summary',
+    });
+
+    const row = getSessionById('protected');
+    expect(row?.description).toBe('Hand-written name');
+    expect(row?.descriptionSource).toBe('human');
+    // The summary itself is NOT provenance-guarded — only the description is.
+    expect(row?.summary).toBe('auto summary');
+  });
+
+  it('clearing a name releases the row back to the summarizer', async () => {
+    await appendSession('', makeSession({ sessionId: 'released', status: 'stopped' }));
+    setSessionName('released', 'Temporary');
+    expect(setSessionName('released', '   ')).toBe(true); // blank == clear
+
+    expect(getSessionById('released')?.description).toBeNull();
+    expect(getSessionById('released')?.descriptionSource).toBeNull();
+
+    expect(claimSummarize('released', 'tok2')).toBe(true);
+    finalizeSummarize('released', 'tok2', {
+      description: 'auto-generated description',
+      summary: 'auto summary',
+    });
+    expect(getSessionById('released')?.description).toBe('auto-generated description');
+    expect(getSessionById('released')?.descriptionSource).toBe('auto');
   });
 });

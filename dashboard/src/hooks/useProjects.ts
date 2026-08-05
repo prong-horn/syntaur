@@ -6,6 +6,7 @@ import type { ServersResponse, TrackedSession, AgentSessionsResponse, AgentSessi
 import { buildUsageApiQuery, type UsageWidgetFilters } from '@shared/usage-filters';
 import type { SessionSort } from '@shared/session-sort';
 import type { SessionAttribution } from '@shared/session-attribution';
+import type { ArchivedFilter } from '@shared/session-archived';
 
 export type ProgressCounts = Record<string, number> & { total: number };
 
@@ -780,6 +781,8 @@ export interface AgentSessionsQuery {
   workspace?: string | null;
   sort?: SessionSort;
   attribution?: SessionAttribution;
+  /** Archived visibility. Defaults to 'hide'; only the Agent Sessions page sets it. */
+  archived?: ArchivedFilter;
   /**
    * Defer the request until the consumer actually needs it (a dialog opening).
    * Plumbed to useFetch's own `enabled`, the same seam the command palette uses
@@ -803,6 +806,10 @@ export function useAgentSessions(
   if (options.workspace) params.set('workspace', options.workspace);
   if (options.sort) params.set('sort', options.sort);
   if (options.attribution) params.set('attribution', options.attribution);
+  // Only sent when non-default, so the Overview widget's URL — and therefore its
+  // fetch cache key — is unchanged. That is also what keeps the widget on the
+  // archived-excluding default without any widget-side code.
+  if (options.archived && options.archived !== 'hide') params.set('archived', options.archived);
   // The date filters are LOCAL calendar dates; the server needs the offset to
   // turn them into the right UTC instants (see localDateToUtcBounds). Sent only
   // alongside a date so the URL — and therefore the fetch cache key — is

@@ -10,8 +10,15 @@ import { sanitizeSessionPath } from '../utils/transcript.js';
 
 let db: Database.Database | null = null;
 
-const SCHEMA_VERSION = '9';
+const SCHEMA_VERSION = '10';
 
+// v10 base schema: v9 plus the two session curation flags — `pinned_at`
+// (non-NULL ⇒ the session sorts ahead of the active sort on every browsing
+// surface, most-recently-pinned first) and `archived_at` (non-NULL ⇒ the
+// session is hidden from the default list queries but is never deleted).
+// Nullable ISO-8601 TEXT timestamps rather than INTEGER booleans so pin order
+// is deterministic and archiving is auditable.
+//
 // v9 base schema: v8 plus `launch_reservations` — pending-launch reservation
 // records, never sessions rows; a failed dispatch must never strand an active
 // session row. See Phase C plan D5.
@@ -47,6 +54,8 @@ CREATE TABLE IF NOT EXISTS sessions (
   summary TEXT,
   summarized_at TEXT,
   description_source TEXT,
+  pinned_at TEXT,
+  archived_at TEXT,
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
@@ -477,6 +486,62 @@ export function initSessionDb(dbPath?: string): Database.Database {
           canceled_at TEXT
         );
         UPDATE meta SET value = '9' WHERE key = 'schema_version';
+      `);
+    }
+
+    // --- v9 → v10: add the curation flags (`pinned_at`, `archived_at`).
+    // Table-rebuild like every step above — never ALTER TABLE ADD COLUMN.
+    //
+    // The copy is POSITIONAL: the 16 v9 payload columns in order, then
+    // NULL, NULL for the two new flags, then the created_at/updated_at
+    // audit pair. A slip mis-assigns data silently rather than erroring,
+    // so session-db-migration-v10.test.ts asserts PRAGMA table_info order
+    // with toEqual and seeds a distinct value in every payload column.
+    //
+    // Note this rebuild also drops `idx_sessions_started` (added alongside
+    // paging). It is NOT recreated here: the tail of initSessionDb re-ensures
+    // it after all migrations run, which is the mechanism that already covers
+    // every earlier rebuild. The v10 migration test asserts it survives.
+    const vBeforeV10 = (
+      database
+        .prepare("SELECT value FROM meta WHERE key = 'schema_version'")
+        .get() as { value: string } | undefined
+    )?.value;
+
+    if (vBeforeV10 === '9') {
+      database.exec(`
+        CREATE TABLE sessions_v10 (
+          session_id TEXT PRIMARY KEY,
+          agent TEXT NOT NULL,
+          started TEXT NOT NULL,
+          ended TEXT,
+          status TEXT NOT NULL DEFAULT 'active',
+          path TEXT,
+          description TEXT,
+          transcript_path TEXT,
+          pid INTEGER,
+          pid_started_at TEXT,
+          original_head_sha TEXT,
+          activity TEXT,
+          hosted_by TEXT,
+          summary TEXT,
+          summarized_at TEXT,
+          description_source TEXT,
+          pinned_at TEXT,
+          archived_at TEXT,
+          created_at TEXT NOT NULL DEFAULT (datetime('now')),
+          updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+        INSERT INTO sessions_v10
+          SELECT session_id, agent, started, ended, status, path, description,
+                 transcript_path, pid, pid_started_at, original_head_sha, activity,
+                 hosted_by, summary, summarized_at, description_source,
+                 NULL, NULL, created_at, updated_at
+          FROM sessions;
+        DROP TABLE sessions;
+        ALTER TABLE sessions_v10 RENAME TO sessions;
+        CREATE INDEX IF NOT EXISTS idx_sessions_status ON sessions(status);
+        UPDATE meta SET value = '10' WHERE key = 'schema_version';
       `);
     }
   });

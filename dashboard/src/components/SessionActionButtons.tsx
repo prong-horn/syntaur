@@ -1,4 +1,4 @@
-import { Terminal, GitFork, Square } from 'lucide-react';
+import { Terminal, GitFork, Square, Pin, PinOff, Archive, ArchiveRestore, Pencil } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './ui/tooltip';
 import { cn } from '../lib/utils';
 import { useRecreateFlow } from './useRecreateFlow';
@@ -13,6 +13,23 @@ interface SessionActionButtonsProps {
    * row — no local optimistic state.
    */
   onMarkStopped: (sessionId: string) => void;
+  /**
+   * Invoked when the user toggles the pin. The callback should PATCH
+   * `/api/agent-sessions/<sessionId>/curation` with `{ pinned }` and rely on
+   * the websocket refresh — no local optimistic state. Omit to hide the control.
+   */
+  onTogglePin?: (sessionId: string, pinned: boolean) => void;
+  /**
+   * Invoked when the user toggles archive. Same contract as {@link onTogglePin},
+   * with `{ archived }`. Omit to hide the control.
+   */
+  onToggleArchive?: (sessionId: string, archived: boolean) => void;
+  /**
+   * Invoked when the user renames the session. Same contract, with `{ name }`.
+   * A name is `description` written with `description_source = 'human'`, which
+   * the auto-summarizer will not overwrite. Omit to hide the control.
+   */
+  onRename?: (sessionId: string) => void;
 }
 
 /**
@@ -45,10 +62,32 @@ interface SessionActionButtonsProps {
  * (claude/codex/pi do carry recipes and inherit them via getAgents).
  *
  *   | Terminal (Reopen) | never (only when neither R nor F) | always | (none) |
+ *
+ * Plus the two curation toggles:
+ *
+ *   | Pin / PinOff    | usageOnly, or no onTogglePin     | never | PATCH /api/agent-sessions/<id>/curation |
+ *   | Archive/Restore | usageOnly, or no onToggleArchive | never | PATCH /api/agent-sessions/<id>/curation |
+ *   | Pencil (Rename) | usageOnly, or no onRename        | never | PATCH /api/agent-sessions/<id>/curation |
+ *
+ * The `usageOnly` gate lives INSIDE this component rather than only at the call
+ * site (D12): a usage-only row is synthesized from usage_events and has no DB
+ * row, so a curation PATCH would 404. `AgentSessionsPage` wraps this component
+ * in a `!session.usageOnly` guard but `AgentSessionsSection` does not, so the
+ * internal gate is what makes the component correct at both call sites.
  */
-export function SessionActionButtons({ session, onMarkStopped }: SessionActionButtonsProps) {
+export function SessionActionButtons({
+  session,
+  onMarkStopped,
+  onTogglePin,
+  onToggleArchive,
+  onRename,
+}: SessionActionButtonsProps) {
   const flow = useRecreateFlow();
   const sessionTarget = { kind: 'session' as const, id: session.sessionId };
+  // D12/H7: synthetic usage-only rows have no DB row to curate.
+  const curatable = !session.usageOnly;
+  const isPinned = Boolean(session.pinnedAt);
+  const isArchived = Boolean(session.archivedAt);
 
   const iconClass = 'size-3.5';
   const btnClass = cn(
@@ -165,6 +204,75 @@ export function SessionActionButtons({ session, onMarkStopped }: SessionActionBu
                 {session.resumeSupported
                   ? 'Tell the dashboard this session has ended so Resume re-enables'
                   : 'Tell the dashboard this session has ended'}
+              </TooltipContent>
+            </Tooltip>
+          )}
+
+          {curatable && onRename && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  type="button"
+                  className={btnClass}
+                  aria-label={session.description ? 'Rename session' : 'Name session'}
+                  onClick={() => onRename(session.sessionId)}
+                >
+                  <Pencil className={iconClass} />
+                  <span>{session.description ? 'Rename' : 'Name'}</span>
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="top">
+                {session.descriptionSource === 'auto'
+                  ? 'Replace the auto-generated summary with your own name — the summarizer will stop overwriting it'
+                  : 'Give this session a name you will recognise later'}
+              </TooltipContent>
+            </Tooltip>
+          )}
+
+          {curatable && onTogglePin && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  type="button"
+                  className={btnClass}
+                  aria-pressed={isPinned}
+                  aria-label={isPinned ? 'Unpin session' : 'Pin session'}
+                  onClick={() => onTogglePin(session.sessionId, !isPinned)}
+                >
+                  {isPinned ? <PinOff className={iconClass} /> : <Pin className={iconClass} />}
+                  <span>{isPinned ? 'Unpin' : 'Pin'}</span>
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="top">
+                {isPinned
+                  ? 'Stop keeping this session at the top of the list'
+                  : 'Keep this session at the top of the list and on the Overview page'}
+              </TooltipContent>
+            </Tooltip>
+          )}
+
+          {curatable && onToggleArchive && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  type="button"
+                  className={btnClass}
+                  aria-pressed={isArchived}
+                  aria-label={isArchived ? 'Unarchive session' : 'Archive session'}
+                  onClick={() => onToggleArchive(session.sessionId, !isArchived)}
+                >
+                  {isArchived ? (
+                    <ArchiveRestore className={iconClass} />
+                  ) : (
+                    <Archive className={iconClass} />
+                  )}
+                  <span>{isArchived ? 'Unarchive' : 'Archive'}</span>
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="top">
+                {isArchived
+                  ? 'Bring this session back into the default list'
+                  : 'Hide this session from the default list — nothing is deleted'}
               </TooltipContent>
             </Tooltip>
           )}

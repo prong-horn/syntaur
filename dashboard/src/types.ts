@@ -138,6 +138,10 @@ export interface AgentSession {
   summarizedAt?: string | null;
   /** Who wrote `description`: 'human' is protected from the auto-summarizer. */
   descriptionSource?: 'human' | 'auto' | null;
+  /** When the session was pinned (ISO 8601); null when unpinned. Pinned sessions lead the result set. */
+  pinnedAt?: string | null;
+  /** When the session was archived (ISO 8601); null when not archived. Hidden from the default list. */
+  archivedAt?: string | null;
 }
 
 /** Per-session spend attached to AgentSession.usage. */

@@ -18,6 +18,7 @@ export default defineConfig({
       '@shared/session-select': resolve(__dirname, '../src/utils/session-select.ts'),
       '@shared/session-sort': resolve(__dirname, '../src/utils/session-sort.ts'),
       '@shared/session-attribution': resolve(__dirname, '../src/utils/session-attribution.ts'),
+      '@shared/session-archived': resolve(__dirname, '../src/utils/session-archived.ts'),
       '@shared/saved-view-builder': resolve(__dirname, '../src/utils/saved-view-builder.ts'),
       '@shared/agents-schema': resolve(__dirname, '../src/utils/agents-schema.ts'),
       '@shared/terminal-schema': resolve(__dirname, '../src/utils/terminal-schema.ts'),

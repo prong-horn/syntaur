@@ -16,6 +16,9 @@ import {
   deleteSessions,
   reconcileActiveSessions,
   getSessionById,
+  setSessionPinned,
+  setSessionArchived,
+  setSessionName,
 } from './agent-sessions.js';
 import { fileExists } from '../utils/fs.js';
 import { isSafeSessionId } from '../utils/session-id.js';
@@ -42,6 +45,11 @@ import {
   isSessionAttribution,
   type SessionAttribution,
 } from '../utils/session-attribution.js';
+import {
+  DEFAULT_ARCHIVED_FILTER,
+  isArchivedFilter,
+  type ArchivedFilter,
+} from '../utils/session-archived.js';
 import { resolveShortForSession, type SessionResolution } from './daemon-join.js';
 import type { PtyTokenRegistry } from './pty-token.js';
 import type {
@@ -234,7 +242,34 @@ function durationMinutes(key: MergeKey, now: number): number {
  * `now` is passed in rather than read per comparison so a live session's
  * duration cannot shift mid-sort and break the comparator's transitivity.
  */
+/**
+ * Effective pin — pinned AND not archived would be the full rule, but the
+ * archived filter has already excluded archived rows from `keys` by the time
+ * this runs (it lives in buildSessionFilters, which feeds listSessionSortKeys).
+ * So a non-null `pinnedAt` here means pinned-and-visible.
+ */
+function comparePinnedFirst(a: MergeKey, b: MergeKey): number {
+  const aPinned = a.pinnedAt !== null;
+  const bPinned = b.pinnedAt !== null;
+  if (aPinned !== bPinned) return aPinned ? -1 : 1;
+  if (aPinned && bPinned && a.pinnedAt !== b.pinnedAt) {
+    // Most recently pinned first. Code-unit comparison to match the SQL path's
+    // BINARY collation on the same column.
+    return (a.pinnedAt ?? '') > (b.pinnedAt ?? '') ? -1 : 1;
+  }
+  return 0;
+}
+
+/**
+ * The spend/tokens (and duration) sorts bypass the SQL ORDER BY entirely, so
+ * PINNED_FIRST does not reach them. Applying it here is what keeps pinned
+ * sessions leading under those sorts too — without this they silently stop
+ * leading for exactly the sorts a user reaches for when hunting expensive work.
+ */
 function compareKeys(a: MergeKey, b: MergeKey, sort: SessionSort, now: number): number {
+  const byPin = comparePinnedFirst(a, b);
+  if (byPin !== 0) return byPin;
+
   switch (sort) {
     case 'started_asc':
       return a.started.localeCompare(b.started) || a.sessionId.localeCompare(b.sessionId);
@@ -316,6 +351,13 @@ export function localDateToUtcBounds(
   if (Number.isNaN(ms)) return undefined;
   return new Date(ms + offsetMinutes * 60_000).toISOString();
 }
+
+/**
+ * Cap on a user-assigned session name. Names render in a table cell and are
+ * concatenated into the server-side search haystack; an unbounded string would
+ * blow out both. Generous enough for a descriptive sentence.
+ */
+const MAX_SESSION_NAME_LENGTH = 200;
 
 export function createAgentSessionsRouter(
   projectsDir: string,
@@ -413,6 +455,8 @@ export function createAgentSessionsRouter(
           cost: usage.totalCost,
           tokens: usage.totalTokens,
           orphan: true,
+          // A usage-only row has no `sessions` row, so it cannot be pinned.
+          pinnedAt: null,
         });
       }
     }
@@ -553,7 +597,18 @@ export function createAgentSessionsRouter(
           });
           return;
         }
-        const sessions = await listAllSessions(projectsDir);
+        // Unlike `attribution`, archived CAN be honored here: listAllSessions
+        // takes the same option, and 'only' is a one-line narrowing of the set
+        // it already returned. So this path answers the param rather than
+        // rejecting it.
+        const unpagedArchived: ArchivedFilter = isArchivedFilter(req.query.archived)
+          ? req.query.archived
+          : DEFAULT_ARCHIVED_FILTER;
+        const all = await listAllSessions(projectsDir, {
+          includeArchived: unpagedArchived !== 'hide',
+        });
+        const sessions =
+          unpagedArchived === 'only' ? all.filter((sess) => sess.archivedAt) : all;
         res.json({
           sessions: attachUsage(enrichSessions(sessions, agents), { includeUsageOnly }),
           generatedAt: new Date().toISOString(),
@@ -574,6 +629,9 @@ export function createAgentSessionsRouter(
         : includeUsageOnly
           ? 'all'
           : DEFAULT_SESSION_ATTRIBUTION;
+      const archived: ArchivedFilter = isArchivedFilter(req.query.archived)
+        ? req.query.archived
+        : DEFAULT_ARCHIVED_FILTER;
       const search = typeof req.query.search === 'string' ? req.query.search : undefined;
 
       // getTimezoneOffset() is always an integer number of minutes; a fractional
@@ -613,6 +671,7 @@ export function createAgentSessionsRouter(
 
       const query = {
         page, pageSize, search, startedFromUtc, startedToUtc, workspaceScope, sort, attribution,
+        archived,
       };
       const result = await pageSessions(query, { agents });
 
@@ -640,6 +699,7 @@ export function createAgentSessionsRouter(
           totalCount: result.totalCount,
           pageCount: Math.max(1, Math.ceil(result.totalCount / pageSize)),
           attribution,
+          archived,
           attributionCounts: {
             tracked: trackedCount,
             assigned: assignedCount,
@@ -864,6 +924,65 @@ export function createAgentSessionsRouter(
         res.status(409).json({ error: error.message });
         return;
       }
+      res.status(500).json({ error: error instanceof Error ? error.message : 'Update failed' });
+    }
+  });
+
+  // PATCH /api/agent-sessions/:sessionId/curation — pin/unpin, archive/unarchive,
+  // and/or name, in one call.
+  //
+  // A separate route from PATCH /:sessionId because that route's contract is
+  // "terminal status only" and 400s on anything else — a message existing tests
+  // assert. One route for all three flags also keeps a combined edit atomic
+  // (e.g. unarchive and rename in the same action).
+  router.patch('/:sessionId/curation', async (req, res) => {
+    try {
+      const { sessionId } = req.params;
+      if (!isSafeSessionId(sessionId)) {
+        res.status(400).json({ error: 'Invalid session id' });
+        return;
+      }
+
+      const body = (req.body ?? {}) as { pinned?: unknown; archived?: unknown; name?: unknown };
+      const { pinned, archived, name } = body;
+      const badPinned = pinned !== undefined && typeof pinned !== 'boolean';
+      const badArchived = archived !== undefined && typeof archived !== 'boolean';
+      // `null` is a MEANINGFUL name value — it clears the name — so it is
+      // accepted here, unlike the booleans where null is just malformed.
+      const badName = name !== undefined && name !== null && typeof name !== 'string';
+      if (badPinned || badArchived || badName) {
+        res.status(400).json({
+          error: 'pinned/archived must be boolean; name must be a string or null',
+        });
+        return;
+      }
+      if (pinned === undefined && archived === undefined && name === undefined) {
+        res.status(400).json({ error: 'one of pinned, archived, or name is required' });
+        return;
+      }
+      if (typeof name === 'string' && name.length > MAX_SESSION_NAME_LENGTH) {
+        res.status(400).json({
+          error: `name must be ${MAX_SESSION_NAME_LENGTH} characters or fewer`,
+        });
+        return;
+      }
+
+      // Deliberately resolves ARCHIVED sessions too — getSessionById never
+      // filters, which is exactly what makes unarchive reachable.
+      if (!getSessionById(sessionId)) {
+        res.status(404).json({ error: `Session "${sessionId}" not found` });
+        return;
+      }
+
+      // `typeof x === 'boolean'`, NOT a truthiness check — `{ pinned: false }`
+      // must UNPIN, and a truthy gate would silently drop every unpin request.
+      if (typeof pinned === 'boolean') setSessionPinned(sessionId, pinned);
+      if (typeof archived === 'boolean') setSessionArchived(sessionId, archived);
+      if (name !== undefined) setSessionName(sessionId, name);
+
+      broadcast?.({ type: 'agent-sessions-updated', timestamp: new Date().toISOString() });
+      res.json({ updated: true });
+    } catch (error) {
       res.status(500).json({ error: error instanceof Error ? error.message : 'Update failed' });
     }
   });
