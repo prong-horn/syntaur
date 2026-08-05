@@ -54,7 +54,9 @@ interface SidebarNavGroupDef {
 }
 
 // The rest of the global nav, organized into labeled collapsible groups.
-// Servers/Agent Sessions stay workspace-scoped (see WORKSPACE_SCOPED_LABELS).
+// Servers stays workspace-scoped (see WORKSPACE_SCOPED_LABELS); Agent Sessions
+// does not — many sessions carry projectSlug: null and belong to no workspace
+// at all, so filing the page under one workspace was actively misleading.
 const GLOBAL_NAV_GROUPS: SidebarNavGroupDef[] = [
   {
     id: 'library',
@@ -81,20 +83,21 @@ const GLOBAL_NAV_GROUPS: SidebarNavGroupDef[] = [
       { to: '/inventories', label: 'Inventories', icon: Boxes },
       { to: '/schedules', label: 'Schedules', icon: CalendarClock },
       { to: '/usage', label: 'Usage', icon: Coins },
+      { to: '/agent-sessions', label: 'Agent Sessions', icon: Activity },
     ],
   },
 ];
 
 // Only entities that live INSIDE a workspace and have no global nav entry.
-// Inventories/Usage/Todos are intentionally NOT here — they live once in the
-// global nav (their pages aggregate across workspaces with their own filters),
-// so repeating them per-workspace was pure duplication. Routes like
-// /w/:ws/usage still work; only the sidebar list is trimmed.
+// Inventories/Usage/Todos/Agent Sessions are intentionally NOT here — they live
+// once in the global nav (their pages aggregate across workspaces with their own
+// filters), so repeating them per-workspace was pure duplication. Routes like
+// /w/:ws/usage and /w/:ws/agent-sessions still work; only the sidebar list is
+// trimmed.
 const WORKSPACE_SCOPED_LABELS: Array<{ suffix: string; label: string; icon: LucideIcon }> = [
   { suffix: '/projects', label: 'Projects', icon: FolderKanban },
   { suffix: '/assignments', label: 'Assignments', icon: ListTodo },
   { suffix: '/servers', label: 'Servers', icon: Monitor },
-  { suffix: '/agent-sessions', label: 'Agent Sessions', icon: Activity },
 ];
 
 const UTILITY_NAV_ITEMS: SidebarNavItem[] = [
