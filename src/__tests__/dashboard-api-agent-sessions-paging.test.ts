@@ -89,7 +89,11 @@ function seedUsage(sessionId: string, opts: { cost: number; totalTokens?: number
 
 interface PagedBody {
   sessions: AgentSessionWithLiveness[];
-  page?: { page: number; pageSize: number; totalCount: number; pageCount: number };
+  page?: {
+    page: number; pageSize: number; totalCount: number; pageCount: number;
+    attribution?: string;
+    attributionCounts?: Record<string, number>;
+  };
 }
 
 async function get(query: string): Promise<PagedBody> {
@@ -120,7 +124,7 @@ describe('GET /api/agent-sessions paging', () => {
     await seedMany(25);
     const body = await get('?pageSize=10&page=0');
     expect(body.sessions).toHaveLength(10);
-    expect(body.page).toEqual({ page: 0, pageSize: 10, totalCount: 25, pageCount: 3 });
+    expect(body.page).toMatchObject({ page: 0, pageSize: 10, totalCount: 25, pageCount: 3 });
   });
 
   it('returns the remainder on the last page, and nothing past the end', async () => {
@@ -259,6 +263,88 @@ describe('usage-only rows in the paged union', () => {
     }
     expect(ids).toHaveLength(9);
     expect(ids).toContain('orphan-old');
+  });
+});
+
+describe('attribution filtering', () => {
+  async function seedMixed(): Promise<void> {
+    await seedSession('with-assignment', { projectSlug: 'alpha', assignmentSlug: 'task' });
+    await seedSession('adhoc-1');
+    await seedSession('adhoc-2');
+    seedUsage('spend-orphan-1', { cost: 1 });
+    seedUsage('spend-orphan-2', { cost: 2 });
+  }
+
+  it('defaults to real sessions and excludes spend-only rows', async () => {
+    await seedMixed();
+    const body = await get('?pageSize=50');
+    expect(body.sessions.map((s) => s.sessionId).sort()).toEqual([
+      'adhoc-1', 'adhoc-2', 'with-assignment',
+    ]);
+    expect(body.page?.totalCount).toBe(3);
+  });
+
+  it('isolates ad-hoc sessions — the ones with no assignment', async () => {
+    await seedMixed();
+    const body = await get('?pageSize=50&attribution=unassigned');
+    expect(body.sessions.map((s) => s.sessionId).sort()).toEqual(['adhoc-1', 'adhoc-2']);
+    // Ad-hoc sessions are REAL sessions, not synthetic spend rows: they must
+    // keep the properties that make them actionable.
+    expect(body.sessions.every((s) => !s.usageOnly)).toBe(true);
+  });
+
+  it('isolates assigned sessions', async () => {
+    await seedMixed();
+    const body = await get('?pageSize=50&attribution=assigned');
+    expect(body.sessions.map((s) => s.sessionId)).toEqual(['with-assignment']);
+  });
+
+  it('isolates spend-only rows', async () => {
+    await seedMixed();
+    const body = await get('?pageSize=50&attribution=usage-only');
+    expect(body.sessions.map((s) => s.sessionId).sort()).toEqual([
+      'spend-orphan-1', 'spend-orphan-2',
+    ]);
+    expect(body.sessions.every((s) => s.usageOnly)).toBe(true);
+  });
+
+  it('shows everything under `all`', async () => {
+    await seedMixed();
+    const body = await get('?pageSize=50&attribution=all');
+    expect(body.page?.totalCount).toBe(5);
+  });
+
+  it('reports counts for every bucket so the filter can show what it hides', async () => {
+    await seedMixed();
+    const body = await get('?pageSize=50');
+    expect(body.page?.attributionCounts).toEqual({
+      tracked: 3,
+      assigned: 1,
+      unassigned: 2,
+      'usage-only': 2,
+      all: 5,
+    });
+  });
+
+  it('falls back to the default on an unknown attribution', async () => {
+    await seedMixed();
+    const body = await get('?pageSize=50&attribution=nonsense');
+    expect(body.page?.attribution).toBe('tracked');
+    expect(body.page?.totalCount).toBe(3);
+  });
+
+  it('composes with paging, search, and sort', async () => {
+    await seedMany(12, 'adhoc');
+    await seedSession('bound', { projectSlug: 'alpha', assignmentSlug: 'task' });
+    seedUsage('orphan-x', { cost: 5 });
+
+    const p0 = await get('?pageSize=5&page=0&attribution=unassigned&sort=started_desc');
+    expect(p0.sessions).toHaveLength(5);
+    expect(p0.page?.totalCount).toBe(12);
+    expect(p0.sessions.every((s) => !s.usageOnly)).toBe(true);
+
+    const searched = await get('?pageSize=5&attribution=unassigned&search=adhoc-0003');
+    expect(searched.sessions.map((s) => s.sessionId)).toEqual(['adhoc-0003']);
   });
 });
 

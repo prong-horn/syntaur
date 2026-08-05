@@ -5,6 +5,7 @@ import type { WsMessage } from './useWebSocket';
 import type { ServersResponse, TrackedSession, AgentSessionsResponse, AgentSessionDetailResponse, AgentSession, PlaybooksResponse, PlaybookDetail, InventoriesResponse, InventoryDetail } from '../types';
 import { buildUsageApiQuery, type UsageWidgetFilters } from '@shared/usage-filters';
 import type { SessionSort } from '@shared/session-sort';
+import type { SessionAttribution } from '@shared/session-attribution';
 
 export type ProgressCounts = Record<string, number> & { total: number };
 
@@ -778,6 +779,7 @@ export interface AgentSessionsQuery {
   startedTo?: string;
   workspace?: string | null;
   sort?: SessionSort;
+  attribution?: SessionAttribution;
   /**
    * Defer the request until the consumer actually needs it (a dialog opening).
    * Plumbed to useFetch's own `enabled`, the same seam the command palette uses
@@ -800,6 +802,7 @@ export function useAgentSessions(
   if (options.startedTo) params.set('startedTo', options.startedTo);
   if (options.workspace) params.set('workspace', options.workspace);
   if (options.sort) params.set('sort', options.sort);
+  if (options.attribution) params.set('attribution', options.attribution);
   // The date filters are LOCAL calendar dates; the server needs the offset to
   // turn them into the right UTC instants (see localDateToUtcBounds). Sent only
   // alongside a date so the URL — and therefore the fetch cache key — is

@@ -35,6 +35,13 @@ import {
   requiresMergeSort,
   type SessionSort,
 } from '../utils/session-sort.js';
+import {
+  DEFAULT_SESSION_ATTRIBUTION,
+  includesTrackedRows,
+  includesUsageOnlyRows,
+  isSessionAttribution,
+  type SessionAttribution,
+} from '../utils/session-attribution.js';
 import { resolveShortForSession, type SessionResolution } from './daemon-join.js';
 import type { PtyTokenRegistry } from './pty-token.js';
 import type {
@@ -337,8 +344,9 @@ export function createAgentSessionsRouter(
     // Must agree with listSessionsPage's own guard, or a sort it refuses to
     // order in SQL would be routed to it and come back empty.
     const mergeSort = requiresMergeSort(q.sort);
+    const wantsOrphans = includesUsageOnlyRows(q.attribution ?? DEFAULT_SESSION_ATTRIBUTION);
 
-    if (!opts.includeUsageOnly && !mergeSort) {
+    if (!wantsOrphans && !mergeSort) {
       const { sessions, totalCount } = listSessionsPage(q);
       return {
         sessions: attachUsage(enrichSessions(sessions, opts.agents), { includeUsageOnly: false }),
@@ -373,7 +381,7 @@ export function createAgentSessionsRouter(
       };
     });
 
-    if (opts.includeUsageOnly) {
+    if (wantsOrphans) {
       // UNFILTERED on purpose. "Orphan" means "a usage id with no sessions row",
       // which is a question about existence, not about the current filters.
       // Deriving it from `trackedKeys` (the post-filter list) made every session
@@ -538,6 +546,15 @@ export function createAgentSessionsRouter(
       const page = nonNegativeIntParam(req.query.page) ?? 0;
       const sortRaw = req.query.sort;
       const sort = isSessionSort(sortRaw) ? sortRaw : DEFAULT_SESSION_SORT;
+      // `attribution` governs when supplied. Otherwise fall back to the legacy
+      // `includeUsageOnly` flag so existing callers keep their exact behavior:
+      // includeUsageOnly=1 meant "sessions plus spend-only rows" ('all'), and
+      // its absence meant "sessions only" — which is what 'tracked' is.
+      const attribution: SessionAttribution = isSessionAttribution(req.query.attribution)
+        ? req.query.attribution
+        : includeUsageOnly
+          ? 'all'
+          : DEFAULT_SESSION_ATTRIBUTION;
       const search = typeof req.query.search === 'string' ? req.query.search : undefined;
 
       // getTimezoneOffset() is always an integer number of minutes; a fractional
@@ -566,8 +583,25 @@ export function createAgentSessionsRouter(
         };
       }
 
-      const query = { page, pageSize, search, startedFromUtc, startedToUtc, workspaceScope, sort };
+      const query = {
+        page, pageSize, search, startedFromUtc, startedToUtc, workspaceScope, sort, attribution,
+      };
       const result = await pageSessions(query, { includeUsageOnly, agents });
+
+      // Bucket counts for the filter control, so the user can see what a given
+      // view is hiding. Each is the same query with only `attribution` swapped,
+      // at page 0 — we read totalCount and discard the rows.
+      const countFor = async (a: SessionAttribution): Promise<number> =>
+        a === attribution
+          ? result.totalCount
+          : (await pageSessions({ ...query, attribution: a, page: 0, pageSize: 1 }, { includeUsageOnly, agents }))
+              .totalCount;
+      const [trackedCount, assignedCount, unassignedCount, usageOnlyCount] = await Promise.all([
+        countFor('tracked'),
+        countFor('assigned'),
+        countFor('unassigned'),
+        countFor('usage-only'),
+      ]);
 
       res.json({
         sessions: result.sessions,
@@ -577,6 +611,14 @@ export function createAgentSessionsRouter(
           pageSize,
           totalCount: result.totalCount,
           pageCount: Math.max(1, Math.ceil(result.totalCount / pageSize)),
+          attribution,
+          attributionCounts: {
+            tracked: trackedCount,
+            assigned: assignedCount,
+            unassigned: unassignedCount,
+            'usage-only': usageOnlyCount,
+            all: trackedCount + usageOnlyCount,
+          },
         },
       });
     } catch (error) {

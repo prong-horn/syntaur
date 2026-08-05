@@ -15,6 +15,12 @@ import { formatCost, formatDateTime, formatTokens, toTitleCase } from '../lib/fo
 import { headerCheckState, selectableSessionIds } from '@shared/session-select';
 import type { AgentSessionWithLiveness } from '../types';
 import { DEFAULT_SESSION_SORT, SESSION_SORTS, type SessionSort } from '@shared/session-sort';
+import {
+  ATTRIBUTION_LABELS,
+  DEFAULT_SESSION_ATTRIBUTION,
+  SESSION_ATTRIBUTIONS,
+  type SessionAttribution,
+} from '@shared/session-attribution';
 
 /**
  * Sort labels, keyed exhaustively by SessionSort so the dropdown cannot drift
@@ -61,6 +67,10 @@ export function AgentSessionsPage() {
   const [startedFrom, setStartedFrom] = useState('');
   const [startedTo, setStartedTo] = useState('');
   const [sort, setSort] = useState<SessionSort>(DEFAULT_SESSION_SORT);
+  // Defaults to real sessions only. Spend-only rows outnumber real sessions
+  // roughly 3:1, so including them by default buries the ad-hoc sessions this
+  // page is most useful for. Per-model spend lives on /usage.
+  const [attribution, setAttribution] = useState<SessionAttribution>(DEFAULT_SESSION_ATTRIBUTION);
   const [page, setPage] = useState(0);
   const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
 
@@ -72,10 +82,11 @@ export function AgentSessionsPage() {
   // user — otherwise narrowing a filter while on page 12 shows an empty table.
   useEffect(() => {
     setPage(0);
-  }, [debouncedSearch, startedFrom, startedTo, sort, pageSize, workspace]);
+  }, [debouncedSearch, startedFrom, startedTo, sort, pageSize, workspace, attribution]);
 
   const { data, loading, error, refetch } = useAgentSessions({
-    includeUsageOnly: true,
+    // No `includeUsageOnly`: `attribution` supersedes it and is explicit about
+    // which population is shown.
     page,
     pageSize,
     search: debouncedSearch || undefined,
@@ -83,6 +94,7 @@ export function AgentSessionsPage() {
     startedTo: startedTo || undefined,
     workspace: workspace ?? undefined,
     sort,
+    attribution,
   });
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [deleting, setDeleting] = useState(false);
@@ -251,6 +263,22 @@ export function AgentSessionsPage() {
             className="editor-input min-w-[150px]"
           />
         </label>
+        <select
+          value={attribution}
+          onChange={(event) => setAttribution(event.target.value as SessionAttribution)}
+          aria-label="Filter sessions by attribution"
+          className="editor-input max-w-[240px]"
+        >
+          {SESSION_ATTRIBUTIONS.map((value) => {
+            const count = pageMeta?.attributionCounts?.[value];
+            return (
+              <option key={value} value={value}>
+                {ATTRIBUTION_LABELS[value]}
+                {count === undefined ? '' : ` (${count.toLocaleString()})`}
+              </option>
+            );
+          })}
+        </select>
         <select
           value={sort}
           onChange={(event) => setSort(event.target.value as SessionSort)}

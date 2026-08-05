@@ -12,6 +12,11 @@ import {
 } from '../db/engagement-db.js';
 import { getCumulativeTokenSource, type TokenSnapshot } from '../db/engagement-tokens.js';
 import { requiresMergeSort, type SessionSort, type SqlSort } from '../utils/session-sort.js';
+import {
+  DEFAULT_SESSION_ATTRIBUTION,
+  includesTrackedRows,
+  type SessionAttribution,
+} from '../utils/session-attribution.js';
 import { sanitizeSessionPath } from '../utils/transcript.js';
 import type {
   AgentSession,
@@ -810,6 +815,8 @@ export interface SessionPageQuery {
   startedToUtc?: string;
   workspaceScope?: WorkspaceScope | null;
   sort: SessionSort;
+  /** Which population to include; see session-attribution.ts. */
+  attribution?: SessionAttribution;
 }
 
 export interface SessionPageResult {
@@ -882,6 +889,19 @@ function buildSessionFilters(q: SessionPageQuery): { sql: string; params: unknow
   if (q.startedToUtc) {
     clauses.push('s.started <= ?');
     params.push(q.startedToUtc);
+  }
+
+  // Attribution. Only the assigned/unassigned split is expressible here; the
+  // orphan side of the axis lives in JS, since those rows have no `sessions`
+  // row to filter (see pageSessions).
+  const attribution = q.attribution ?? DEFAULT_SESSION_ATTRIBUTION;
+  if (attribution === 'assigned') {
+    clauses.push('e.assignment_slug IS NOT NULL');
+  } else if (attribution === 'unassigned') {
+    clauses.push('e.assignment_slug IS NULL');
+  } else if (!includesTrackedRows(attribution)) {
+    // 'usage-only': no tracked row qualifies.
+    clauses.push('0');
   }
 
   const scope = q.workspaceScope;
