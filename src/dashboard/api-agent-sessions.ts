@@ -97,7 +97,7 @@ const TERMINAL_DAEMON_STATES: ReadonlySet<DaemonSessionState> = new Set(['done',
  */
 function attachUsage(
   sessions: AgentSessionWithLiveness[],
-  opts: { includeUsageOnly: boolean },
+  opts: { includeUsageOnly: boolean; knownSessionIds?: Set<string> },
 ): AgentSessionWithLiveness[] {
   let usageBySession: Map<string, SessionUsage>;
   try {
@@ -118,7 +118,11 @@ function attachUsage(
   });
   if (!opts.includeUsageOnly) return withUsage;
 
-  const tracked = new Set(sessions.map((s) => s.sessionId));
+  // "Orphan" means NO persisted row anywhere — not merely "absent from this
+  // response". Callers that NARROW `sessions` (the archived filter) MUST pass
+  // knownSessionIds, or every row they filtered out returns as a synthetic
+  // usage-only row with a null project and a bogus 'stopped' status.
+  const tracked = opts.knownSessionIds ?? new Set(sessions.map((s) => s.sessionId));
   const orphans: AgentSessionWithLiveness[] = [];
   for (const [sessionId, usage] of usageBySession) {
     if (tracked.has(sessionId)) continue;
@@ -189,6 +193,14 @@ function orphanPassesFilters(
 ): boolean {
   if (q.startedFromUtc && (!started || started < q.startedFromUtc)) return false;
   if (q.startedToUtc && (!started || started > q.startedToUtc)) return false;
+
+  // A usage-only row is synthesized from usage_events and has NO `sessions`
+  // row, so it has no archived_at and can never be archived. Under
+  // `archived: 'only'` — "show me exactly the archived sessions" — it therefore
+  // does not qualify. Under 'hide' and 'show' it does, because it is not
+  // archived. Without this the archived-only view returns every orphan and its
+  // attribution counts are inflated to match.
+  if ((q.archived ?? DEFAULT_ARCHIVED_FILTER) === 'only') return false;
 
   // An orphan has no engagement, so it is workspace-less: claimed by
   // `_ungrouped`, excluded from every named workspace. This mirrors the old
@@ -610,7 +622,13 @@ export function createAgentSessionsRouter(
         const sessions =
           unpagedArchived === 'only' ? all.filter((sess) => sess.archivedAt) : all;
         res.json({
-          sessions: attachUsage(enrichSessions(sessions, agents), { includeUsageOnly }),
+          sessions: attachUsage(enrichSessions(sessions, agents), {
+            includeUsageOnly,
+            // The archived filter above narrowed the array; without the full id
+            // set, every archived tracked session with usage would come back as
+            // a synthetic usage-only row.
+            knownSessionIds: listAllSessionIds(),
+          }),
           generatedAt: new Date().toISOString(),
         });
         return;

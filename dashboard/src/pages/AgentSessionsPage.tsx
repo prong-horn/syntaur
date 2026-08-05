@@ -41,9 +41,18 @@ import {
  */
 const SESSION_TABLE_COLUMN_COUNT = 12;
 
-/** Pinned AND not archived — "archived wins for visibility". */
-function isEffectivelyPinned(s: { pinnedAt?: string | null; archivedAt?: string | null }): boolean {
-  return Boolean(s.pinnedAt) && !s.archivedAt;
+/**
+ * Pinned, matching the SQL ordering EXACTLY.
+ *
+ * The server orders on `s.pinned_at IS NULL` with no archived term, so a
+ * pinned-and-archived row genuinely does sort first in the Shown / Archived-only
+ * views. An `&& !archivedAt` guard here — which an earlier revision had — would
+ * disagree with that: the row would lead the table while rendering without the
+ * pinned accent and without a group band. The predicate and the ORDER BY must
+ * be the same rule or the grouping lies about the ordering.
+ */
+function isEffectivelyPinned(s: { pinnedAt?: string | null }): boolean {
+  return Boolean(s.pinnedAt);
 }
 
 const SORT_LABELS: Record<SessionSort, string> = {
@@ -167,6 +176,20 @@ export function AgentSessionsPage() {
     () => headerCheckState(pageSessions, selectedIds),
     [pageSessions, selectedIds],
   );
+
+  // Bulk actions operate on selected AND VISIBLE rows only.
+  //
+  // Selection survives a filter change and a refetch, so an id can outlive the
+  // row it points at — archive a selected session, or switch the archived
+  // filter, and it is gone from the table while still in `selectedIds`. Acting
+  // on the raw set would then delete a row the user can no longer see.
+  // Intersecting here covers every filter (search, dates, workspace,
+  // attribution, archived) and every mutation, rather than patching each
+  // state transition separately.
+  const actionableIds = useMemo(() => {
+    const visible = new Set(selectableSessionIds(pageSessions));
+    return [...selectedIds].filter((id) => visible.has(id));
+  }, [pageSessions, selectedIds]);
 
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
   function toggleExpand(sessionId: string) {
@@ -369,19 +392,19 @@ export function AgentSessionsPage() {
         </div>
       ) : null}
 
-      {selectedIds.size > 0 && (
+      {actionableIds.length > 0 && (
         <div className="mt-4 flex items-center gap-3 rounded border border-border/40 bg-muted/30 px-4 py-2 text-sm">
           <span className="text-muted-foreground">
-            {selectedIds.size} session{selectedIds.size !== 1 ? 's' : ''} selected
+            {actionableIds.length} session{actionableIds.length !== 1 ? 's' : ''} selected
           </span>
           <button
             className="shell-action text-destructive"
             onClick={() =>
               setPendingDelete({
-                sessionIds: [...selectedIds],
-                title: `Delete ${selectedIds.size} selected session${selectedIds.size === 1 ? '' : 's'}?`,
+                sessionIds: actionableIds,
+                title: `Delete ${actionableIds.length} selected session${actionableIds.length === 1 ? '' : 's'}?`,
                 description: 'This removes the selected agent session records from the dashboard. This cannot be undone.',
-                confirmLabel: selectedIds.size === 1 ? 'Delete Session' : 'Delete Sessions',
+                confirmLabel: actionableIds.length === 1 ? 'Delete Session' : 'Delete Sessions',
               })
             }
             disabled={deleting}
@@ -441,11 +464,14 @@ export function AgentSessionsPage() {
             <tbody>
               {pageSessions.map((session, index) => (
                 <Fragment key={session.sessionId}>
-                  {/* Pinned sessions lead the whole result set (the SQL ORDER BY
-                      carries it), so the group can only ever appear at the top of
-                      page 0. Banding on a later page would be a lie — every row
-                      there is unpinned by construction. */}
-                  {page === 0 && index === 0 && isEffectivelyPinned(session) && (
+                  {/* Pinned rows lead the whole result set, so on page 0 the
+                      group starts at the top. But there is no cap on pins: with
+                      more of them than `pageSize` they overflow onto later
+                      pages, and the pinned→unpinned boundary can fall anywhere.
+                      So the band is derived from THIS page's rows on EVERY page
+                      — a leading pinned row opens the group, and the boundary
+                      closes it — rather than assuming page 0 holds them all. */}
+                  {index === 0 && isEffectivelyPinned(session) && (
                     <tr className="bg-accent/30">
                       <td
                         colSpan={SESSION_TABLE_COLUMN_COUNT}
@@ -455,8 +481,7 @@ export function AgentSessionsPage() {
                       </td>
                     </tr>
                   )}
-                  {page === 0
-                    && index > 0
+                  {index > 0
                     && isEffectivelyPinned(pageSessions[index - 1])
                     && !isEffectivelyPinned(session) && (
                     <tr className="bg-accent/30">

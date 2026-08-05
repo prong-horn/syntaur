@@ -1401,6 +1401,11 @@ describe('setSessionPinned / setSessionArchived / setSessionName', () => {
     setSessionArchived('live-arch', true);
     const after = getSessionById('live-arch');
 
+    // Assert the archive actually HAPPENED — without this the test would pass
+    // against a no-op setter, proving nothing about non-destructiveness.
+    expect(before?.archivedAt).toBeNull();
+    expect(after?.archivedAt).toBeTruthy();
+
     expect(after?.status).toBe('active');
     expect(after?.ended ?? null).toBe(before?.ended ?? null);
     expect(after?.activity ?? null).toBe(before?.activity ?? null);

@@ -685,3 +685,75 @@ describe('naming a session (D14)', () => {
     expect((await curate('bad%20id!', { name: 'x' })).status).toBe(400);
   });
 });
+
+describe('archived sessions never resurface as synthetic usage-only rows', () => {
+  it('paged: an archived tracked session with usage is hidden, not re-synthesized', async () => {
+    await seedSession('arch-usage');
+    seedUsage('arch-usage', { cost: 1.5, totalTokens: 100 });
+    setSessionArchived('arch-usage', true);
+
+    const hidden = await get('?pageSize=50&page=0&attribution=all');
+    const row = hidden.sessions.find((x) => x.sessionId === 'arch-usage');
+    // Absent entirely — NOT present as an "untracked" usage-only row.
+    expect(row).toBeUndefined();
+
+    const shown = await get('?pageSize=50&page=0&attribution=all&archived=show');
+    const real = shown.sessions.find((x) => x.sessionId === 'arch-usage');
+    expect(real).toBeDefined();
+    expect(real?.usageOnly).toBeFalsy();
+  });
+
+  it('unpaged: the same, on the includeUsageOnly route', async () => {
+    // The unpaged path narrows its array in JS, so it must hand attachUsage the
+    // full persisted id set or every filtered-out row returns as an orphan.
+    await seedSession('arch-unpaged');
+    seedUsage('arch-unpaged', { cost: 2 });
+    setSessionArchived('arch-unpaged', true);
+
+    const body = await get('?includeUsageOnly=1');
+    expect(body.sessions.find((x) => x.sessionId === 'arch-unpaged')).toBeUndefined();
+  });
+
+  it('unpaged archived=only does not turn every visible session into an orphan', async () => {
+    await seedSession('visible-with-usage');
+    seedUsage('visible-with-usage', { cost: 3 });
+    await seedSession('really-archived');
+    setSessionArchived('really-archived', true);
+
+    const body = await get('?includeUsageOnly=1&archived=only');
+    expect(body.sessions.map((x) => x.sessionId)).toEqual(['really-archived']);
+  });
+
+  it('archived=only excludes usage-only orphans, which can never be archived', async () => {
+    // An orphan has no `sessions` row, so it has no archived_at at all.
+    seedUsage('pure-orphan', { cost: 4 });
+    await seedSession('an-archived-one');
+    setSessionArchived('an-archived-one', true);
+
+    const only = await get('?pageSize=50&page=0&attribution=all&archived=only');
+    expect(only.sessions.map((x) => x.sessionId)).toEqual(['an-archived-one']);
+    expect(only.page?.totalCount).toBe(1);
+  });
+
+  it('usage-only orphans still appear under hide and show', async () => {
+    seedUsage('pure-orphan-2', { cost: 5 });
+    const hide = await get('?pageSize=50&page=0&attribution=usage-only');
+    expect(hide.sessions.map((x) => x.sessionId)).toContain('pure-orphan-2');
+    const show = await get('?pageSize=50&page=0&attribution=usage-only&archived=show');
+    expect(show.sessions.map((x) => x.sessionId)).toContain('pure-orphan-2');
+  });
+});
+
+describe('a user-assigned name survives ordinary re-registration', () => {
+  it('re-registering without a description preserves the name', async () => {
+    // This is the realistic path: the SessionStart hook and `session register`
+    // send no description, so the upsert's COALESCE(NULLIF(...)) preserves.
+    await seedSession('keeps-name');
+    await curate('keeps-name', { name: 'My hand-written name' });
+
+    await seedSession('keeps-name', { status: 'active' });
+
+    expect(getSessionById('keeps-name')?.description).toBe('My hand-written name');
+    expect(getSessionById('keeps-name')?.descriptionSource).toBe('human');
+  });
+});
