@@ -23,6 +23,14 @@ export function SessionViewResults({
   view,
   emptyDescription,
 }: SessionViewResultsProps) {
+  // DELIBERATELY UNBOUNDED — do not add a pageSize here.
+  //
+  // A saved view applies its own predicates and sort across the COMPLETE session
+  // set and only then applies `config.limit`, which is optional. Fetching an
+  // arbitrary server page first would filter a page instead of the set, silently
+  // dropping older sessions that match the view. Bounding this correctly needs
+  // server-side support for the saved-view predicates; until then the full fetch
+  // is the correct trade.
   const { data, loading, error } = useAgentSessions();
 
   const filtered = useMemo(() => {

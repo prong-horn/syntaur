@@ -51,6 +51,11 @@ CREATE TABLE IF NOT EXISTS sessions (
   updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_sessions_status ON sessions(status);
+-- Every paged listing orders by started (the default sort). Without this the
+-- endpoint full-scans and sorts sessions on every page request, which is the
+-- cost paging exists to remove. Re-ensured after migrations run (see the tail
+-- of initSessionDb) because the pre-v9 rebuild migrations DROP this table.
+CREATE INDEX IF NOT EXISTS idx_sessions_started ON sessions(started);
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT);
 CREATE TABLE IF NOT EXISTS launch_reservations (
   launch_id TEXT PRIMARY KEY,
@@ -476,6 +481,14 @@ export function initSessionDb(dbPath?: string): Database.Database {
     }
   });
   runMigrations.exclusive();
+
+  // Indexes, re-ensured AFTER migrations. SCHEMA_SQL runs before them, and the
+  // pre-v9 migrations rebuild `sessions` via CREATE/INSERT/DROP/RENAME — which
+  // silently drops any index SCHEMA_SQL just created. Each of those migrations
+  // recreates `idx_sessions_status` inline, so a database upgrading from an old
+  // version would otherwise arrive at v9 without `idx_sessions_started`.
+  // Idempotent, so running it on every init is free.
+  db.exec('CREATE INDEX IF NOT EXISTS idx_sessions_started ON sessions(started);');
 
   return db;
 }

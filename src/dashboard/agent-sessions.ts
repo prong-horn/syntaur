@@ -11,6 +11,12 @@ import {
   insertClosedEngagement,
 } from '../db/engagement-db.js';
 import { getCumulativeTokenSource, type TokenSnapshot } from '../db/engagement-tokens.js';
+import { requiresMergeSort, type SessionSort, type SqlSort } from '../utils/session-sort.js';
+import {
+  DEFAULT_SESSION_ATTRIBUTION,
+  includesTrackedRows,
+  type SessionAttribution,
+} from '../utils/session-attribution.js';
 import { sanitizeSessionPath } from '../utils/transcript.js';
 import type {
   AgentSession,
@@ -302,6 +308,12 @@ export async function appendSession(
       // historical attribution survives — without occupying the one-open slot.
       insertClosedEngagement({
         sessionId: session.sessionId,
+        // assignmentId was being dropped here while the open path
+        // (reopenEngagementIfMissing) carried it, so a session first seen in a
+        // terminal state lost its standalone-assignment binding entirely. That
+        // is the only link a standalone session has to a workspace, so those
+        // rows could never match a named-workspace filter.
+        assignmentId: freshBinding.assignmentId,
         projectSlug: freshBinding.projectSlug,
         assignmentSlug: freshBinding.assignmentSlug,
         startedAt: session.started ?? new Date().toISOString(),
@@ -777,6 +789,268 @@ export async function listAllSessions(_projectsDir: string): Promise<AgentSessio
     .prepare(`${SESSION_SELECT_WITH_BINDING} ORDER BY s.started DESC`)
     .all() as SessionRow[];
   return rows.map(rowToSession);
+}
+
+/**
+ * Workspace membership, resolved from disk by the caller.
+ *
+ * Project slugs alone are not enough: a named workspace can contain STANDALONE
+ * assignments (which have no project), and `_ungrouped` means projects with no
+ * workspace *plus* standalones with no workspaceGroup. See
+ * `resolveWorkspaceMembers` in `api.ts`, which returns both halves.
+ */
+export interface WorkspaceScope {
+  projectSlugs: string[];
+  standaloneAssignmentIds: string[];
+  /** True for the `_ungrouped` pseudo-workspace, which also claims orphan rows. */
+  ungrouped: boolean;
+}
+
+export interface SessionPageQuery {
+  page: number;
+  pageSize: number;
+  search?: string;
+  /** Inclusive UTC instant bounds, precomputed by the route from local dates. */
+  startedFromUtc?: string;
+  startedToUtc?: string;
+  workspaceScope?: WorkspaceScope | null;
+  sort: SessionSort;
+  /** Which population to include; see session-attribution.ts. */
+  attribution?: SessionAttribution;
+}
+
+export interface SessionPageResult {
+  sessions: AgentSession[];
+  totalCount: number;
+}
+
+/**
+ * The free-text search haystack: every searchable column concatenated with
+ * spaces, mirroring the client's old `[...].join(' ')` exactly. Concatenated
+ * rather than OR-ed per column so a query spanning two fields ("alpha task",
+ * where the project is `alpha` and the assignment is `task`) still matches, as
+ * it did before.
+ */
+const SEARCH_HAYSTACK = [
+  'e.project_slug',
+  'e.assignment_slug',
+  's.agent',
+  's.session_id',
+  's.path',
+  's.description',
+  's.summary',
+  's.transcript_path',
+]
+  .map((col) => `COALESCE(${col}, '')`)
+  .join(" || ' ' || ");
+
+/**
+ * ORDER BY fragment per sort. Every ordering ends with `s.session_id` so a row
+ * can never appear on two pages, or be skipped between them, when the primary
+ * key ties — which `started` does routinely for sessions registered in the same
+ * second.
+ *
+ * `spend_desc` / `tokens_desc` are absent by design: cost is computed in JS, so
+ * there is no column to order on. They take the ordered-id path instead.
+ */
+const ORDER_BY: Record<SqlSort, string> = {
+  started_desc: 's.started DESC, s.session_id ASC',
+  started_asc: 's.started ASC, s.session_id ASC',
+
+  // COLLATE NOCASE: the client sorted with localeCompare (case-insensitive),
+  // while SQLite's default BINARY collation puts all uppercase before lowercase.
+  assignment_asc:
+    "COALESCE(e.assignment_slug, '') COLLATE NOCASE ASC, COALESCE(e.project_slug, '') COLLATE NOCASE ASC, s.session_id ASC",
+  agent_asc:
+    "s.agent COLLATE NOCASE ASC, COALESCE(e.assignment_slug, '') COLLATE NOCASE ASC, s.session_id ASC",
+};
+
+/**
+ * Build the shared WHERE fragment + bound parameters for a paged listing.
+ *
+ * Search is a LITERAL substring match, not a LIKE pattern: the client used
+ * JavaScript `includes()`, where `%` and `_` are ordinary characters. `instr()`
+ * preserves that; a naive LIKE would silently turn them into wildcards.
+ */
+function buildSessionFilters(q: SessionPageQuery): { sql: string; params: unknown[] } {
+  const clauses: string[] = [];
+  const params: unknown[] = [];
+
+  const search = q.search?.trim();
+  if (search) {
+    clauses.push(`instr(lower(${SEARCH_HAYSTACK}), lower(?)) > 0`);
+    params.push(search);
+  }
+
+  if (q.startedFromUtc) {
+    clauses.push('s.started >= ?');
+    params.push(q.startedFromUtc);
+  }
+  if (q.startedToUtc) {
+    clauses.push('s.started <= ?');
+    params.push(q.startedToUtc);
+  }
+
+  // Attribution. Only the assigned/unassigned split is expressible here; the
+  // orphan side of the axis lives in JS, since those rows have no `sessions`
+  // row to filter (see pageSessions).
+  const attribution = q.attribution ?? DEFAULT_SESSION_ATTRIBUTION;
+  if (attribution === 'assigned') {
+    clauses.push('e.assignment_slug IS NOT NULL');
+  } else if (attribution === 'unassigned') {
+    clauses.push('e.assignment_slug IS NULL');
+  } else if (!includesTrackedRows(attribution)) {
+    // 'usage-only': no tracked row qualifies.
+    clauses.push('0');
+  }
+
+  const scope = q.workspaceScope;
+  if (scope) {
+    // A session belongs to the workspace if its chosen engagement points at one
+    // of the workspace's projects OR at one of its standalone assignments.
+    const parts: string[] = [];
+    if (scope.projectSlugs.length > 0) {
+      parts.push(`e.project_slug IN (${scope.projectSlugs.map(() => '?').join(', ')})`);
+      params.push(...scope.projectSlugs);
+    }
+    if (scope.standaloneAssignmentIds.length > 0) {
+      parts.push(`e.assignment_id IN (${scope.standaloneAssignmentIds.map(() => '?').join(', ')})`);
+      params.push(...scope.standaloneAssignmentIds);
+    }
+    if (scope.ungrouped) {
+      // Unattributed sessions (no engagement, or an engagement with neither a
+      // project nor an assignment) read as workspace-less, which is exactly what
+      // `_ungrouped` means. This mirrors the client's old lookup, where a null
+      // projectSlug resolved to a null workspace.
+      parts.push('(e.project_slug IS NULL AND e.assignment_id IS NULL)');
+    }
+    // No members at all: a named workspace with nothing in it matches nothing,
+    // rather than degrading into "no filter".
+    clauses.push(parts.length > 0 ? `(${parts.join(' OR ')})` : '0');
+  }
+
+  return { sql: clauses.length > 0 ? `WHERE ${clauses.join(' AND ')}` : '', params };
+}
+
+/**
+ * One page of sessions, filtered and sorted in SQL.
+ *
+ * Deliberately separate from `listAllSessions` rather than a parameterization of
+ * it: the unpaged path is still used by every consumer that wants the full set,
+ * and by the endpoint when no `pageSize` is supplied.
+ *
+ * Usage-only rows are NOT produced here — this queries the `sessions` table. The
+ * route unions them in (see `attachUsage`), because the synthetic rows are built
+ * from the usage aggregate rather than from any session row.
+ */
+export function listSessionsPage(q: SessionPageQuery): SessionPageResult {
+  const db = getSessionDb();
+  const { sql: where, params } = buildSessionFilters(q);
+
+  const totalCount = (
+    db
+      .prepare(
+        `SELECT COUNT(*) AS n
+           FROM sessions s
+           LEFT JOIN engagement e ON e.id = (
+             SELECT e2.id FROM engagement e2
+              WHERE e2.session_id = s.session_id
+              ORDER BY (e2.ended_at IS NULL) DESC, e2.started_at DESC, e2.id DESC
+              LIMIT 1
+           )
+         ${where}`,
+      )
+      .get(...params) as { n: number }
+  ).n;
+
+  // Some sorts cannot be expressed as ORDER BY (JS-computed cost, and live
+  // durations that depend on `now`); the caller pages those via the merge path.
+  if (requiresMergeSort(q.sort)) {
+    return { sessions: [], totalCount };
+  }
+
+  const rows = db
+    .prepare(
+      `${SESSION_SELECT_WITH_BINDING} ${where} ORDER BY ${ORDER_BY[q.sort]} LIMIT ? OFFSET ?`,
+    )
+    .all(...params, q.pageSize, q.page * q.pageSize) as SessionRow[];
+  return { sessions: rows.map(rowToSession), totalCount };
+}
+
+/**
+ * Every session id passing the filters, in no particular order, paired with the
+ * fields the usage sorts need to order and tie-break. Used by the spend/tokens
+ * path, which must rank over the FULL filtered set — including tracked sessions
+ * with no usage events, which participate as zero-cost rows exactly as the old
+ * client-side comparator did (`right.usage?.totalCost ?? 0`).
+ */
+export interface SessionSortKey {
+  sessionId: string;
+  started: string;
+  ended: string | null;
+  assignmentSlug: string | null;
+  projectSlug: string | null;
+  agent: string;
+}
+
+export function listSessionSortKeys(q: SessionPageQuery): SessionSortKey[] {
+  const db = getSessionDb();
+  const { sql: where, params } = buildSessionFilters(q);
+  const rows = db
+    .prepare(
+      `SELECT s.session_id AS session_id, s.started AS started, s.ended AS ended, s.agent AS agent,
+              e.assignment_slug AS assignment_slug, e.project_slug AS project_slug
+         FROM sessions s
+         LEFT JOIN engagement e ON e.id = (
+           SELECT e2.id FROM engagement e2
+            WHERE e2.session_id = s.session_id
+            ORDER BY (e2.ended_at IS NULL) DESC, e2.started_at DESC, e2.id DESC
+            LIMIT 1
+         )
+       ${where}`,
+    )
+    .all(...params) as Array<{
+    session_id: string;
+    started: string;
+    ended: string | null;
+    agent: string;
+    assignment_slug: string | null;
+    project_slug: string | null;
+  }>;
+  return rows.map((r) => ({
+    sessionId: r.session_id,
+    started: r.started,
+    ended: r.ended ?? null,
+    assignmentSlug: r.assignment_slug ?? null,
+    projectSlug: r.project_slug ?? null,
+    agent: r.agent,
+  }));
+}
+
+/**
+ * Every tracked session id, UNFILTERED.
+ *
+ * Used to decide what counts as a usage-only "orphan". That question is about
+ * existence — does this usage id have a `sessions` row at all — and must never
+ * be answered from a filtered list, or any session the filter excluded would be
+ * misread as an orphan and resurface as a synthetic row.
+ */
+export function listAllSessionIds(): Set<string> {
+  const db = getSessionDb();
+  const rows = db.prepare('SELECT session_id FROM sessions').all() as Array<{ session_id: string }>;
+  return new Set(rows.map((r) => r.session_id));
+}
+
+/** Hydrate a specific set of session ids, preserving the caller's order. */
+export function listSessionsForIds(sessionIds: string[]): AgentSession[] {
+  if (sessionIds.length === 0) return [];
+  const db = getSessionDb();
+  const placeholders = sessionIds.map(() => '?').join(', ');
+  const rows = db
+    .prepare(`${SESSION_SELECT_WITH_BINDING} WHERE s.session_id IN (${placeholders})`)
+    .all(...sessionIds) as SessionRow[];
+  const bySessionId = new Map(rows.map((r) => [r.session_id, rowToSession(r)]));
+  return sessionIds.map((id) => bySessionId.get(id)).filter((s): s is AgentSession => s !== undefined);
 }
 
 /**

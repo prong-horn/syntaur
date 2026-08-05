@@ -1,3 +1,4 @@
+import type { SessionAttribution } from '@shared/session-attribution';
 export interface TrackedSession {
   name: string;
   kind?: 'tmux' | 'process';
@@ -185,9 +186,21 @@ export interface PtyTokenResponse {
   expiresAt: number;
 }
 
+export interface SessionPageMeta {
+  page: number;
+  pageSize: number;
+  totalCount: number;
+  pageCount: number;
+  attribution: SessionAttribution;
+  /** Row counts per attribution bucket, so the filter can show what it hides. */
+  attributionCounts: Record<SessionAttribution, number>;
+}
+
 export interface AgentSessionsResponse {
   sessions: AgentSessionWithLiveness[];
   generatedAt: string;
+  /** Present only when the request opted into paging via `pageSize`. */
+  page?: SessionPageMeta;
 }
 
 // --- Todos ---

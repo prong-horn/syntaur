@@ -27,6 +27,7 @@ import {
   invalidateRecordsCache,
   clearStatusConfigCache,
   WorkspaceBlockedError,
+  resolveWorkspaceMembers,
 } from './api.js';
 import { resolveAssignmentById } from '../utils/assignment-resolver.js';
 import { listSessionsByAssignment, reconcileActiveSessions } from './agent-sessions.js';
@@ -776,7 +777,13 @@ export function createDashboardServer(options: DashboardServerOptions) {
   app.use('/api', createInboxRouter(projectsDir, assignmentsDir));
 
   // --- Agent Sessions API ---
-  app.use('/api/agent-sessions', createAgentSessionsRouter(projectsDir, broadcast, assignmentsDir, { ptyTokens }));
+  app.use(
+    '/api/agent-sessions',
+    createAgentSessionsRouter(projectsDir, broadcast, assignmentsDir, {
+      ptyTokens,
+      resolveWorkspaceMembers,
+    }),
+  );
 
   // --- Agents Config API ---
   app.use('/api/config/agents', createAgentsRouter());
