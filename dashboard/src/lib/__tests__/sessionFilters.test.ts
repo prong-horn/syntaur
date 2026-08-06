@@ -181,3 +181,58 @@ describe('applySessionLimit', () => {
     expect(applySessionLimit(sessions, 100)).toHaveLength(5);
   });
 });
+
+describe('sortSessions pinned-first (saved-view widgets)', () => {
+  // Load-bearing for the Overview widget bound to a saved view: it re-sorts the
+  // unpaged response through sortSessions, discarding the server's pin order.
+  const fixtures = [
+    makeSession({ sessionId: 'plain-new', started: '2026-06-20T00:00:00Z' }),
+    makeSession({ sessionId: 'pin-old', started: '2026-06-01T00:00:00Z', pinnedAt: '2026-06-21T00:00:00Z' }),
+    makeSession({ sessionId: 'plain-old', started: '2026-06-02T00:00:00Z' }),
+    makeSession({ sessionId: 'pin-new', started: '2026-06-03T00:00:00Z', pinnedAt: '2026-06-22T00:00:00Z' }),
+  ];
+
+  it.each(['started', 'lastActivity', 'projectName', 'agentName'] as const)(
+    'keeps pinned sessions first for sortField %s in BOTH directions',
+    (field) => {
+      for (const direction of ['asc', 'desc'] as const) {
+        const ids = sortSessions(fixtures, field, direction).map((s) => s.sessionId);
+        expect(ids.slice(0, 2).sort()).toEqual(['pin-new', 'pin-old']);
+      }
+    },
+  );
+
+  it('orders most-recently-pinned first within the pinned group', () => {
+    const ids = sortSessions(fixtures, 'started', 'desc').map((s) => s.sessionId);
+    expect(ids.slice(0, 2)).toEqual(['pin-new', 'pin-old']);
+  });
+
+  it('treats a pinned AND archived session as pinned, matching the SQL ORDER BY', () => {
+    // The server orders on `pinned_at IS NULL` with no archived term. If this
+    // comparator disagreed, a row would lead the table while rendering without
+    // the pinned styling.
+    const withArchived = [
+      makeSession({ sessionId: 'plain', started: '2026-06-20T00:00:00Z' }),
+      makeSession({
+        sessionId: 'pinned-archived',
+        started: '2026-06-01T00:00:00Z',
+        pinnedAt: '2026-06-21T00:00:00Z',
+        archivedAt: '2026-06-21T00:00:00Z',
+      }),
+    ];
+    expect(sortSessions(withArchived, 'started', 'desc')[0].sessionId).toBe('pinned-archived');
+  });
+
+  it('uses code-unit comparison for pinnedAt, matching SQLite BINARY', () => {
+    const pins = [
+      makeSession({ sessionId: 'p-upper', started: '2026-06-01T00:00:00Z', pinnedAt: 'B-pin' }),
+      makeSession({ sessionId: 'p-lower', started: '2026-06-01T00:00:00Z', pinnedAt: 'a-pin' }),
+    ];
+    // BINARY: 'a-pin' > 'B-pin', so newest-first puts 'a-pin' first.
+    // localeCompare would invert this.
+    expect(sortSessions(pins, 'started', 'desc').map((s) => s.sessionId)).toEqual([
+      'p-lower',
+      'p-upper',
+    ]);
+  });
+});

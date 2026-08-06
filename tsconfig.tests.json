@@ -74,6 +74,7 @@
     "src/tui/syntaurd/__tests__/feed-source.test.ts",
     "src/__tests__/session-db-migration-v7.test.ts",
     "src/__tests__/session-db-migration-v9.test.ts",
+    "src/__tests__/session-db-migration-v10.test.ts",
     "src/__tests__/launch-correlation.test.ts",
     "src/tui/cockpit/__tests__/actions.test.ts",
     "src/tui/cockpit/__tests__/actions.test.tsx",

@@ -160,7 +160,7 @@ describe('v7 → v8 migration (summary columns + provenance backfill)', () => {
     // Pre-existing columns survive the table rebuild.
     expect(cols).toContain('hosted_by');
     expect(cols).toContain('activity');
-    expect(schemaVersion()).toBe('9');
+    expect(schemaVersion()).toBe('10');
   });
 
   it('preserves existing row data through the rebuild', () => {
@@ -253,7 +253,7 @@ describe('v7 → v8 migration (summary columns + provenance backfill)', () => {
     resetSessionDb();
     initSessionDb(dbPath);
 
-    expect(schemaVersion()).toBe('9');
+    expect(schemaVersion()).toBe('10');
     expect(columns()).toContain('summary');
     const rows = (
       getSessionDb().prepare('SELECT COUNT(*) AS n FROM sessions').get() as { n: number }
@@ -270,7 +270,7 @@ describe('migration chains and fresh install', () => {
     const cols = columns();
     expect(cols).toContain('hosted_by'); // v7 step
     expect(cols).toContain('summary'); // v8 step
-    expect(schemaVersion()).toBe('9');
+    expect(schemaVersion()).toBe('10');
 
     const row = getSessionDb()
       .prepare('SELECT description, description_source FROM sessions WHERE session_id = ?')
@@ -286,7 +286,7 @@ describe('migration chains and fresh install', () => {
     expect(cols).toContain('summary');
     expect(cols).toContain('summarized_at');
     expect(cols).toContain('description_source');
-    expect(schemaVersion()).toBe('9');
+    expect(schemaVersion()).toBe('10');
     // The aux table is created at init, not only by the migration step.
     expect(
       getSessionDb()

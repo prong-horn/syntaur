@@ -6,7 +6,7 @@ import { join, resolve } from 'node:path';
 import type { AddressInfo } from 'node:net';
 import { initUsageDb, closeUsageDb, resetUsageDb, upsertEvent } from '../db/usage-db.js';
 import { initSessionDb, closeSessionDb, resetSessionDb } from '../dashboard/session-db.js';
-import { appendSession } from '../dashboard/agent-sessions.js';
+import { appendSession, setSessionPinned, setSessionArchived, getSessionById } from '../dashboard/agent-sessions.js';
 import { createAgentSessionsRouter, localDateToUtcBounds } from '../dashboard/api-agent-sessions.js';
 import type { AgentSessionWithLiveness } from '../dashboard/types.js';
 
@@ -522,5 +522,238 @@ describe('localDateToUtcBounds', () => {
     expect(localDateToUtcBounds('2026-07-01', 0, 'start')).toBe('2026-07-01T00:00:00.000Z');
     expect(localDateToUtcBounds('07/01/2026', 0, 'start')).toBeUndefined();
     expect(localDateToUtcBounds('', 0, 'start')).toBeUndefined();
+  });
+});
+
+// --- Curation under paging: pin, archive, name ------------------------------
+
+function curate(sessionId: string, body: unknown): Promise<Response> {
+  return fetch(`${baseUrl}/api/agent-sessions/${sessionId}/curation`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+}
+
+describe('pinned-first ordering spans the whole result set', () => {
+  it('hoists a pinned session from a later page onto page 0', async () => {
+    // 25 sessions, newest last. Under `started_desc` the OLDEST (s-0000) sits
+    // on the final page. Pinning it must move it to the top of page 0 — the
+    // behaviour a client-side comparator could not produce, because it only
+    // ever sees the loaded page.
+    await seedMany(25);
+    expect(setSessionPinned('s-0000', true)).toBe(true);
+
+    const first = await get('?pageSize=10&page=0');
+    expect(first.sessions[0]?.sessionId).toBe('s-0000');
+    expect(first.page?.totalCount).toBe(25);
+  });
+
+  it.each(['started_desc', 'started_asc', 'assignment_asc', 'agent_asc'] as const)(
+    'keeps pinned sessions leading under the SQL sort %s',
+    async (sort) => {
+      await seedMany(12);
+      expect(setSessionPinned('s-0005', true)).toBe(true);
+
+      const body = await get(`?pageSize=5&page=0&sort=${sort}`);
+      expect(body.sessions[0]?.sessionId).toBe('s-0005');
+    },
+  );
+
+  it.each(['spend_desc', 'tokens_desc', 'duration_desc', 'duration_asc'] as const)(
+    'keeps pinned sessions leading under the MERGE sort %s',
+    async (sort) => {
+      // These sorts bypass the SQL ORDER BY entirely and rank in JS, so they
+      // need their own pinned-first pass. Give another session the highest
+      // spend/tokens so it would otherwise win the ordering outright.
+      await seedMany(6);
+      seedUsage('s-0003', { cost: 99, totalTokens: 999999 });
+      expect(setSessionPinned('s-0001', true)).toBe(true);
+
+      const body = await get(`?pageSize=5&page=0&sort=${sort}`);
+      expect(body.sessions[0]?.sessionId).toBe('s-0001');
+    },
+  );
+
+  it('orders most-recently-pinned first within the pinned group', async () => {
+    await seedMany(6);
+    setSessionPinned('s-0000', true);
+    await new Promise((r) => setTimeout(r, 5)); // distinct ISO stamps
+    setSessionPinned('s-0002', true);
+
+    const body = await get('?pageSize=6&page=0');
+    expect(body.sessions.slice(0, 2).map((x) => x.sessionId)).toEqual(['s-0002', 's-0000']);
+  });
+});
+
+describe('archived filtering under paging', () => {
+  it('hides archived rows by default and corrects totalCount', async () => {
+    await seedMany(10);
+    expect(setSessionArchived('s-0009', true)).toBe(true);
+
+    const body = await get('?pageSize=50&page=0');
+    expect(body.sessions.map((x) => x.sessionId)).not.toContain('s-0009');
+    // The COUNT query must apply the same filter, or the pager advertises
+    // pages for rows the page query will never return.
+    expect(body.page?.totalCount).toBe(9);
+  });
+
+  it('archived=show includes them; archived=only returns exactly them', async () => {
+    await seedMany(10);
+    setSessionArchived('s-0009', true);
+    setSessionArchived('s-0008', true);
+
+    const shown = await get('?pageSize=50&page=0&archived=show');
+    expect(shown.page?.totalCount).toBe(10);
+
+    const only = await get('?pageSize=50&page=0&archived=only');
+    expect(only.sessions.map((x) => x.sessionId).sort()).toEqual(['s-0008', 's-0009']);
+    expect(only.page?.totalCount).toBe(2);
+  });
+
+  it('reaches an archived session far outside the loaded page', async () => {
+    // The point of server-side filtering: archived=only must find a row that
+    // client-side narrowing of page 0 could never have seen.
+    await seedMany(60);
+    setSessionArchived('s-0000', true);
+
+    const only = await get('?pageSize=10&page=0&archived=only');
+    expect(only.sessions.map((x) => x.sessionId)).toEqual(['s-0000']);
+  });
+
+  it('an unknown archived value falls back to the default rather than 400ing', async () => {
+    await seedMany(3);
+    setSessionArchived('s-0000', true);
+    const body = await get('?pageSize=50&page=0&archived=bogus');
+    expect(body.sessions.map((x) => x.sessionId)).not.toContain('s-0000');
+  });
+
+  it('attribution bucket counts respect the current archived view', async () => {
+    await seedMany(5);
+    setSessionArchived('s-0004', true);
+    const body = await get('?pageSize=50&page=0');
+    // 4 visible, not 5 — the counts share the query's archived clause.
+    expect(body.page?.attributionCounts?.tracked).toBe(4);
+  });
+});
+
+describe('naming a session (D14)', () => {
+  it('sets a name and marks it human-authored', async () => {
+    await seedSession('named');
+    expect((await curate('named', { name: '  Refactor the parser  ' })).status).toBe(200);
+
+    const row = getSessionById('named');
+    expect(row?.description).toBe('Refactor the parser'); // trimmed
+    expect(row?.descriptionSource).toBe('human');
+  });
+
+  it('clearing the name releases the row back to the summarizer', async () => {
+    await seedSession('named2');
+    await curate('named2', { name: 'Temporary label' });
+    expect((await curate('named2', { name: '' })).status).toBe(200);
+
+    const row = getSessionById('named2');
+    expect(row?.description).toBeNull();
+    // Source back to null, NOT frozen at 'human' — otherwise an empty name
+    // would block auto-summarization of that session forever.
+    expect(row?.descriptionSource).toBeNull();
+  });
+
+  it('a named session is findable by the server-side search', async () => {
+    await seedMany(30);
+    await curate('s-0000', { name: 'zebra-marker' });
+
+    const body = await get('?pageSize=10&page=0&search=zebra-marker');
+    expect(body.sessions.map((x) => x.sessionId)).toEqual(['s-0000']);
+  });
+
+  it('rejects a non-string name and an over-long one', async () => {
+    await seedSession('named3');
+    expect((await curate('named3', { name: 42 })).status).toBe(400);
+    expect((await curate('named3', { name: 'x'.repeat(201) })).status).toBe(400);
+    expect((await curate('named3', { name: 'x'.repeat(200) })).status).toBe(200);
+  });
+
+  it('accepts null to clear, and 400s on an empty body', async () => {
+    await seedSession('named4');
+    expect((await curate('named4', { name: null })).status).toBe(200);
+    expect((await curate('named4', {})).status).toBe(400);
+  });
+
+  it('404s for an unknown session and 400s for a malformed id', async () => {
+    expect((await curate('no-such-session', { name: 'x' })).status).toBe(404);
+    expect((await curate('bad%20id!', { name: 'x' })).status).toBe(400);
+  });
+});
+
+describe('archived sessions never resurface as synthetic usage-only rows', () => {
+  it('paged: an archived tracked session with usage is hidden, not re-synthesized', async () => {
+    await seedSession('arch-usage');
+    seedUsage('arch-usage', { cost: 1.5, totalTokens: 100 });
+    setSessionArchived('arch-usage', true);
+
+    const hidden = await get('?pageSize=50&page=0&attribution=all');
+    const row = hidden.sessions.find((x) => x.sessionId === 'arch-usage');
+    // Absent entirely — NOT present as an "untracked" usage-only row.
+    expect(row).toBeUndefined();
+
+    const shown = await get('?pageSize=50&page=0&attribution=all&archived=show');
+    const real = shown.sessions.find((x) => x.sessionId === 'arch-usage');
+    expect(real).toBeDefined();
+    expect(real?.usageOnly).toBeFalsy();
+  });
+
+  it('unpaged: the same, on the includeUsageOnly route', async () => {
+    // The unpaged path narrows its array in JS, so it must hand attachUsage the
+    // full persisted id set or every filtered-out row returns as an orphan.
+    await seedSession('arch-unpaged');
+    seedUsage('arch-unpaged', { cost: 2 });
+    setSessionArchived('arch-unpaged', true);
+
+    const body = await get('?includeUsageOnly=1');
+    expect(body.sessions.find((x) => x.sessionId === 'arch-unpaged')).toBeUndefined();
+  });
+
+  it('unpaged archived=only does not turn every visible session into an orphan', async () => {
+    await seedSession('visible-with-usage');
+    seedUsage('visible-with-usage', { cost: 3 });
+    await seedSession('really-archived');
+    setSessionArchived('really-archived', true);
+
+    const body = await get('?includeUsageOnly=1&archived=only');
+    expect(body.sessions.map((x) => x.sessionId)).toEqual(['really-archived']);
+  });
+
+  it('archived=only excludes usage-only orphans, which can never be archived', async () => {
+    // An orphan has no `sessions` row, so it has no archived_at at all.
+    seedUsage('pure-orphan', { cost: 4 });
+    await seedSession('an-archived-one');
+    setSessionArchived('an-archived-one', true);
+
+    const only = await get('?pageSize=50&page=0&attribution=all&archived=only');
+    expect(only.sessions.map((x) => x.sessionId)).toEqual(['an-archived-one']);
+    expect(only.page?.totalCount).toBe(1);
+  });
+
+  it('usage-only orphans still appear under hide and show', async () => {
+    seedUsage('pure-orphan-2', { cost: 5 });
+    const hide = await get('?pageSize=50&page=0&attribution=usage-only');
+    expect(hide.sessions.map((x) => x.sessionId)).toContain('pure-orphan-2');
+    const show = await get('?pageSize=50&page=0&attribution=usage-only&archived=show');
+    expect(show.sessions.map((x) => x.sessionId)).toContain('pure-orphan-2');
+  });
+});
+
+describe('a user-assigned name survives ordinary re-registration', () => {
+  it('re-registering without a description preserves the name', async () => {
+    // This is the realistic path: the SessionStart hook and `session register`
+    // send no description, so the upsert's COALESCE(NULLIF(...)) preserves.
+    await seedSession('keeps-name');
+    await curate('keeps-name', { name: 'My hand-written name' });
+
+    await seedSession('keeps-name', { status: 'active' });
+
+    expect(getSessionById('keeps-name')?.description).toBe('My hand-written name');
+    expect(getSessionById('keeps-name')?.descriptionSource).toBe('human');
   });
 });

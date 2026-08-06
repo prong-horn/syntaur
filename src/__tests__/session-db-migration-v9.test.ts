@@ -139,10 +139,10 @@ describe('v8 → v9 migration (adds launch_reservations)', () => {
 
     expect(
       (db.prepare("SELECT value FROM meta WHERE key='schema_version'").get() as { value: string }).value,
-    ).toBe('9');
+    ).toBe('10');
   });
 
-  it('fresh install has launch_reservations directly and version 9', () => {
+  it('fresh install has launch_reservations directly and head version', () => {
     initSessionDb(dbPath); // no prior file
     const db = getSessionDb();
 
@@ -158,10 +158,10 @@ describe('v8 → v9 migration (adds launch_reservations)', () => {
 
     expect(
       (db.prepare("SELECT value FROM meta WHERE key='schema_version'").get() as { value: string }).value,
-    ).toBe('9');
+    ).toBe('10');
   });
 
-  it('re-init after upgrade is idempotent (no throw, still version 9)', () => {
+  it('re-init after upgrade is idempotent (no throw, still at head version)', () => {
     buildV8Db(dbPath);
     initSessionDb(dbPath);
     closeSessionDb();
@@ -170,7 +170,7 @@ describe('v8 → v9 migration (adds launch_reservations)', () => {
     const db = getSessionDb();
     expect(
       (db.prepare("SELECT value FROM meta WHERE key='schema_version'").get() as { value: string }).value,
-    ).toBe('9');
+    ).toBe('10');
   });
 
   it('v7 → v9 chain: both gated steps run in one transaction (summary cols AND launch_reservations present)', () => {
@@ -192,6 +192,6 @@ describe('v8 → v9 migration (adds launch_reservations)', () => {
 
     expect(
       (db.prepare("SELECT value FROM meta WHERE key='schema_version'").get() as { value: string }).value,
-    ).toBe('9');
+    ).toBe('10');
   });
 });

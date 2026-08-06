@@ -82,7 +82,7 @@ describe('v6 → v7 migration (adds hosted_by)', () => {
 
     expect(
       (db.prepare("SELECT value FROM meta WHERE key='schema_version'").get() as { value: string }).value,
-    ).toBe('9');
+    ).toBe('10');
   });
 
   it('fresh install has hosted_by directly and head version', () => {
@@ -92,7 +92,7 @@ describe('v6 → v7 migration (adds hosted_by)', () => {
     expect(cols).toContain('hosted_by');
     expect(
       (db.prepare("SELECT value FROM meta WHERE key='schema_version'").get() as { value: string }).value,
-    ).toBe('9');
+    ).toBe('10');
   });
 
   it('appendSession round-trips hostedBy; a later upsert WITHOUT it does not clobber (hook convergence)', async () => {

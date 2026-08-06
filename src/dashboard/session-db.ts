@@ -10,8 +10,15 @@ import { sanitizeSessionPath } from '../utils/transcript.js';
 
 let db: Database.Database | null = null;
 
-const SCHEMA_VERSION = '9';
+const SCHEMA_VERSION = '10';
 
+// v10 base schema: v9 plus the two session curation flags — `pinned_at`
+// (non-NULL ⇒ the session sorts ahead of the active sort on every browsing
+// surface, most-recently-pinned first) and `archived_at` (non-NULL ⇒ the
+// session is hidden from the default list queries but is never deleted).
+// Nullable ISO-8601 TEXT timestamps rather than INTEGER booleans so pin order
+// is deterministic and archiving is auditable.
+//
 // v9 base schema: v8 plus `launch_reservations` — pending-launch reservation
 // records, never sessions rows; a failed dispatch must never strand an active
 // session row. See Phase C plan D5.
@@ -47,6 +54,8 @@ CREATE TABLE IF NOT EXISTS sessions (
   summary TEXT,
   summarized_at TEXT,
   description_source TEXT,
+  pinned_at TEXT,
+  archived_at TEXT,
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
@@ -479,6 +488,62 @@ export function initSessionDb(dbPath?: string): Database.Database {
         UPDATE meta SET value = '9' WHERE key = 'schema_version';
       `);
     }
+
+    // --- v9 → v10: add the curation flags (`pinned_at`, `archived_at`).
+    // Table-rebuild like every step above — never ALTER TABLE ADD COLUMN.
+    //
+    // The copy is POSITIONAL: the 16 v9 payload columns in order, then
+    // NULL, NULL for the two new flags, then the created_at/updated_at
+    // audit pair. A slip mis-assigns data silently rather than erroring,
+    // so session-db-migration-v10.test.ts asserts PRAGMA table_info order
+    // with toEqual and seeds a distinct value in every payload column.
+    //
+    // Note this rebuild also drops `idx_sessions_started` (added alongside
+    // paging). It is NOT recreated here: the tail of initSessionDb re-ensures
+    // it after all migrations run, which is the mechanism that already covers
+    // every earlier rebuild. The v10 migration test asserts it survives.
+    const vBeforeV10 = (
+      database
+        .prepare("SELECT value FROM meta WHERE key = 'schema_version'")
+        .get() as { value: string } | undefined
+    )?.value;
+
+    if (vBeforeV10 === '9') {
+      database.exec(`
+        CREATE TABLE sessions_v10 (
+          session_id TEXT PRIMARY KEY,
+          agent TEXT NOT NULL,
+          started TEXT NOT NULL,
+          ended TEXT,
+          status TEXT NOT NULL DEFAULT 'active',
+          path TEXT,
+          description TEXT,
+          transcript_path TEXT,
+          pid INTEGER,
+          pid_started_at TEXT,
+          original_head_sha TEXT,
+          activity TEXT,
+          hosted_by TEXT,
+          summary TEXT,
+          summarized_at TEXT,
+          description_source TEXT,
+          pinned_at TEXT,
+          archived_at TEXT,
+          created_at TEXT NOT NULL DEFAULT (datetime('now')),
+          updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+        INSERT INTO sessions_v10
+          SELECT session_id, agent, started, ended, status, path, description,
+                 transcript_path, pid, pid_started_at, original_head_sha, activity,
+                 hosted_by, summary, summarized_at, description_source,
+                 NULL, NULL, created_at, updated_at
+          FROM sessions;
+        DROP TABLE sessions;
+        ALTER TABLE sessions_v10 RENAME TO sessions;
+        CREATE INDEX IF NOT EXISTS idx_sessions_status ON sessions(status);
+        UPDATE meta SET value = '10' WHERE key = 'schema_version';
+      `);
+    }
   });
   runMigrations.exclusive();
 
@@ -489,6 +554,55 @@ export function initSessionDb(dbPath?: string): Database.Database {
   // version would otherwise arrive at v9 without `idx_sessions_started`.
   // Idempotent, so running it on every init is free.
   db.exec('CREATE INDEX IF NOT EXISTS idx_sessions_started ON sessions(started);');
+
+  // Pinned-first paging indexes. Same placement and reasoning as the line above,
+  // and doubly required here: `pinned_at` / `archived_at` do not exist until the
+  // v9→v10 migration has run, so these CANNOT live in SCHEMA_SQL (which executes
+  // BEFORE migrations, against a table that may still be v9-shaped).
+  //
+  // Why they exist: the paged list orders by
+  //   pinned_at IS NULL, pinned_at DESC, started <dir>, session_id
+  // and `idx_sessions_started` cannot satisfy that leading pin term. Without
+  // these, EXPLAIN QUERY PLAN degrades from
+  //   SCAN s USING INDEX idx_sessions_started   ->   SCAN s
+  // i.e. every page full-scans and sorts the whole table, defeating the point of
+  // server-side paging. Measured on a 3000-row fixture; these restore the index
+  // scan for both started directions.
+  //
+  // PARTIAL on `archived_at IS NULL` because that is the default view and
+  // carries essentially all traffic. The Shown / Archived-only views fall back
+  // to a scan, which is the right trade: they are deliberate, rare, and a full
+  // index would tax every write to serve them.
+  //
+  // Only the two `started` sorts are covered. `assignment_asc` / `agent_asc`
+  // order on joined engagement columns and were ALREADY unindexed before this
+  // change, so the pin prefix costs them nothing.
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_sessions_pinned_started_desc
+      ON sessions((pinned_at IS NULL), pinned_at DESC, started DESC, session_id)
+      WHERE archived_at IS NULL;
+    CREATE INDEX IF NOT EXISTS idx_sessions_pinned_started_asc
+      ON sessions((pinned_at IS NULL), pinned_at DESC, started ASC, session_id)
+      WHERE archived_at IS NULL;
+
+    -- The mirror pair for the Archived-only view. Cheap: a partial index over
+    -- archived rows only, which is by nature a small slice — archiving is what
+    -- you do to get things OUT of the way. This is also the view you land on to
+    -- unarchive, so it is worth keeping index-driven.
+    CREATE INDEX IF NOT EXISTS idx_sessions_archived_pinned_started_desc
+      ON sessions((pinned_at IS NULL), pinned_at DESC, started DESC, session_id)
+      WHERE archived_at IS NOT NULL;
+    CREATE INDEX IF NOT EXISTS idx_sessions_archived_pinned_started_asc
+      ON sessions((pinned_at IS NULL), pinned_at DESC, started ASC, session_id)
+      WHERE archived_at IS NOT NULL;
+  `);
+
+  // NOT indexed: the `archived: 'show'` view, which applies no archived
+  // predicate at all and so matches neither partial index. Covering it needs
+  // FULL indexes over the whole table in both directions — doubling the write
+  // cost of every session upsert to serve the one view that deliberately asks
+  // for everything at once, and is reached far less often than the default.
+  // Left as a scan on purpose; revisit if that view ever becomes hot.
 
   return db;
 }

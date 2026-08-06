@@ -135,7 +135,16 @@ export function filterSessions(
 }
 
 /**
- * Sort sessions by the given field and direction.
+ * Sort sessions by the given field and direction, with PINNED sessions leading
+ * regardless of field or direction.
+ *
+ * This mirrors the server's `PINNED_FIRST` ORDER BY prefix. It is load-bearing
+ * for one path: a saved-view-bound Overview widget re-sorts the unpaged
+ * response through here (`SessionViewResults`), which would otherwise discard
+ * the server's pin ordering and drop an old pinned session below newer
+ * unpinned ones. The unbound rail passes the server order through untouched
+ * and does not depend on this.
+ *
  * Unknown sort fields fall back to `started` desc (defensive).
  * Returns a new array — does not mutate input.
  */
@@ -145,6 +154,18 @@ export function sortSessions(
   sortDirection: SortDirection,
 ): AgentSessionWithLiveness[] {
   const sorted = [...sessions].sort((a, b) => {
+    // Pinned-first is a PRIMARY key and must short-circuit BEFORE the direction
+    // flip below — otherwise `desc` would invert the pin group and push pinned
+    // sessions to the bottom. Matches the SQL rule exactly: pinned regardless of
+    // archived, most-recently-pinned first, code-unit comparison to agree with
+    // SQLite's BINARY collation on the same column.
+    const aPinned = Boolean(a.pinnedAt);
+    const bPinned = Boolean(b.pinnedAt);
+    if (aPinned !== bPinned) return aPinned ? -1 : 1;
+    if (aPinned && bPinned && a.pinnedAt !== b.pinnedAt) {
+      return (a.pinnedAt ?? '') > (b.pinnedAt ?? '') ? -1 : 1;
+    }
+
     let cmp = 0;
     switch (sortField) {
       case 'started':

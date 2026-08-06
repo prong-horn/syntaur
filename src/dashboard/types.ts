@@ -790,6 +790,20 @@ export interface AgentSession {
   summarizedAt?: string | null;
   /** Provenance guard for `description` — see {@link DescriptionSource}. */
   descriptionSource?: DescriptionSource | null;
+  /**
+   * When the session was pinned (ISO 8601); null/absent when unpinned. Pinned
+   * sessions lead the entire result set — the SQL ORDER BY carries it, so they
+   * occupy the top of page 0. A re-pin stamps a fresh timestamp.
+   */
+  pinnedAt?: string | null;
+  /**
+   * When the session was archived (ISO 8601); null/absent when not archived.
+   * Archived sessions are hidden from the default paged list and from the
+   * unpaged `listAllSessions` / `listProjectSessions` / `listSessionsByAssignment`.
+   * Never hidden from `getSessionById`, `listSessionsNeedingSummary`, or
+   * liveness sweeps.
+   */
+  archivedAt?: string | null;
 }
 
 /**

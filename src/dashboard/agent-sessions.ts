@@ -12,6 +12,7 @@ import {
 } from '../db/engagement-db.js';
 import { getCumulativeTokenSource, type TokenSnapshot } from '../db/engagement-tokens.js';
 import { requiresMergeSort, type SessionSort, type SqlSort } from '../utils/session-sort.js';
+import { DEFAULT_ARCHIVED_FILTER, type ArchivedFilter } from '../utils/session-archived.js';
 import {
   DEFAULT_SESSION_ATTRIBUTION,
   includesTrackedRows,
@@ -48,6 +49,8 @@ interface SessionRow {
   summary: string | null;
   summarized_at: string | null;
   description_source: string | null;
+  pinned_at: string | null;
+  archived_at: string | null;
   updated_at: string | null;
 }
 
@@ -70,6 +73,52 @@ SELECT s.*,
      LIMIT 1
   )`;
 
+/**
+ * Options for the UNPAGED human-browsing list queries.
+ *
+ * D3 — WHO FILTERS AND WHO DOES NOT. `listAllSessions`, `listProjectSessions`,
+ * and `listSessionsByAssignment` default to hiding archived sessions because
+ * every one of their callers is a human-browsing surface: the Overview
+ * `recentSessions` rail, the assignment-detail list, and the TUI cockpit rail.
+ * (The PAGED Agent Sessions list filters separately, in `buildSessionFilters`.)
+ *
+ * Everything else MUST keep resolving archived sessions and is deliberately
+ * outside this option:
+ *   - getSessionById            — else an archived session 404s and can never
+ *                                 be unarchived; it also backs every mutation
+ *                                 route's 404 pre-check, resume/attach,
+ *                                 worktree recreate, and schedule-kill.
+ *   - listSessionsNeedingSummary — D4. `summary IS NULL` is the sweep's only
+ *                                 trigger, so summarization happens ONCE, EVER.
+ *                                 Filtering here would make a session archived
+ *                                 before it was summarized permanently
+ *                                 un-summarizable, with no recovery path.
+ *   - reconcileActiveSessions   — liveness GC. Filtering would leak phantom
+ *                                 `active` rows and open engagements forever.
+ *   - Raw SQL outside this module (usage/session-join.ts, utils/session-count.ts,
+ *     sessions/scanner.ts, db/engagement-backfill.ts) — an in-module filter
+ *     cannot reach them, and must not: dropping archived rows would corrupt cost
+ *     attribution and greenlight deleting a still-referenced worktree.
+ *
+ * A later refactor must not route any of the above through these helpers.
+ */
+export interface SessionListOptions {
+  /** Include archived sessions in the result. Default false. */
+  includeArchived?: boolean;
+}
+
+/**
+ * Pinned-first, then most-recently-pinned, then newest, for the UNPAGED reads.
+ * `s.pinned_at IS NULL` yields 0 for pinned rows and 1 for unpinned, so pinned
+ * rows lead. `session_id` last so the order is TOTAL — two rows can share a
+ * pinned_at and a started, and SQLite leaves such ties unspecified.
+ *
+ * The paged list has its own per-sort fragments (see ORDER_BY); this constant
+ * is only for the callers that take the whole set.
+ */
+const SESSION_LIST_ORDER_BY =
+  'ORDER BY s.pinned_at IS NULL, s.pinned_at DESC, s.started DESC, s.session_id';
+
 function rowToSession(row: SessionRow): AgentSession {
   return {
     sessionId: row.session_id,
@@ -90,6 +139,8 @@ function rowToSession(row: SessionRow): AgentSession {
     summary: row.summary ?? null,
     summarizedAt: row.summarized_at ?? null,
     descriptionSource: (row.description_source as DescriptionSource | null) ?? null,
+    pinnedAt: row.pinned_at ?? null,
+    archivedAt: row.archived_at ?? null,
     updatedAt: row.updated_at ?? null,
   };
 }
@@ -783,10 +834,84 @@ export function livenessStopSession(input: LivenessStopInput): boolean {
 /**
  * List all sessions across all projects.
  */
-export async function listAllSessions(_projectsDir: string): Promise<AgentSession[]> {
+/**
+ * Pin or unpin a session. Pure display flag — does NOT touch `status`,
+ * `activity`, `ended`, or any engagement row.
+ *
+ * Pinning always stamps a FRESH `pinned_at` rather than COALESCE-ing an
+ * existing one, because "most recently pinned first" is the documented ordering
+ * intent — a re-pin deliberately re-hoists the row.
+ *
+ * Returns false when no session row matched the id.
+ */
+export function setSessionPinned(sessionId: string, pinned: boolean): boolean {
   const db = getSessionDb();
+  const res = db
+    .prepare(
+      "UPDATE sessions SET pinned_at = ?, updated_at = datetime('now') WHERE session_id = ?",
+    )
+    .run(pinned ? new Date().toISOString() : null, sessionId);
+  return res.changes > 0;
+}
+
+/**
+ * Archive or unarchive a session. Non-destructive: the row, its summary, and
+ * its engagement edges all survive — archiving only hides the session from the
+ * default list queries (see {@link SessionListOptions} and buildSessionFilters).
+ *
+ * Does NOT touch `status`, `activity`, `ended`, or any engagement row, so
+ * archiving a LIVE session does not end it and liveness GC still sweeps it.
+ *
+ * Returns false when no session row matched the id.
+ */
+export function setSessionArchived(sessionId: string, archived: boolean): boolean {
+  const db = getSessionDb();
+  const res = db
+    .prepare(
+      "UPDATE sessions SET archived_at = ?, updated_at = datetime('now') WHERE session_id = ?",
+    )
+    .run(archived ? new Date().toISOString() : null, sessionId);
+  return res.changes > 0;
+}
+
+/**
+ * D14 — name a session.
+ *
+ * A "name" is NOT a new column: it is `description` written with
+ * `description_source = 'human'`. That provenance flag already exists and is
+ * already honoured by the auto-summarizer, whose UPDATE only writes when the
+ * description is empty or its source is 'auto' (see finalizeSummarize). So a
+ * user-assigned name is permanent by construction — the summarizer stops
+ * touching the row — which is exactly the semantics a name should have.
+ *
+ * Passing an empty/blank name CLEARS both fields back to NULL, releasing the
+ * row so the summarizer may adopt it again. That is deliberate: "remove the
+ * name I gave this" should restore the default behaviour, not freeze an empty
+ * string in place with a 'human' flag that blocks summarization forever.
+ *
+ * Returns false when no session row matched the id.
+ */
+export function setSessionName(sessionId: string, name: string | null): boolean {
+  const db = getSessionDb();
+  const trimmed = name?.trim() ?? '';
+  const res = db
+    .prepare(
+      `UPDATE sessions
+          SET description = ?, description_source = ?, updated_at = datetime('now')
+        WHERE session_id = ?`,
+    )
+    .run(trimmed === '' ? null : trimmed, trimmed === '' ? null : 'human', sessionId);
+  return res.changes > 0;
+}
+
+export async function listAllSessions(
+  _projectsDir: string,
+  opts?: SessionListOptions,
+): Promise<AgentSession[]> {
+  const db = getSessionDb();
+  const where = opts?.includeArchived ? '' : ' WHERE s.archived_at IS NULL';
   const rows = db
-    .prepare(`${SESSION_SELECT_WITH_BINDING} ORDER BY s.started DESC`)
+    .prepare(`${SESSION_SELECT_WITH_BINDING}${where} ${SESSION_LIST_ORDER_BY}`)
     .all() as SessionRow[];
   return rows.map(rowToSession);
 }
@@ -817,6 +942,8 @@ export interface SessionPageQuery {
   sort: SessionSort;
   /** Which population to include; see session-attribution.ts. */
   attribution?: SessionAttribution;
+  /** Archived visibility; see session-archived.ts. Defaults to hiding them. */
+  archived?: ArchivedFilter;
 }
 
 export interface SessionPageResult {
@@ -853,16 +980,31 @@ const SEARCH_HAYSTACK = [
  * `spend_desc` / `tokens_desc` are absent by design: cost is computed in JS, so
  * there is no column to order on. They take the ordered-id path instead.
  */
+/**
+ * Pinned-first, prefixed onto EVERY ordering below.
+ *
+ * `s.pinned_at IS NULL` yields 0 for pinned rows and 1 for unpinned, so pinned
+ * rows lead; `pinned_at DESC` puts the most recently pinned first within that
+ * group. Because this rides the SQL ORDER BY, pinned sessions lead the entire
+ * RESULT SET — they occupy the top of page 0 — rather than merely leading
+ * whichever page happens to be loaded, which is all a client-side comparator
+ * could achieve once paging moved server-side.
+ *
+ * Any new entry in ORDER_BY must carry this prefix, or pins silently stop
+ * leading under that one sort.
+ */
+const PINNED_FIRST = 's.pinned_at IS NULL, s.pinned_at DESC,';
+
 const ORDER_BY: Record<SqlSort, string> = {
-  started_desc: 's.started DESC, s.session_id ASC',
-  started_asc: 's.started ASC, s.session_id ASC',
+  started_desc: `${PINNED_FIRST} s.started DESC, s.session_id ASC`,
+  started_asc: `${PINNED_FIRST} s.started ASC, s.session_id ASC`,
 
   // COLLATE NOCASE: the client sorted with localeCompare (case-insensitive),
   // while SQLite's default BINARY collation puts all uppercase before lowercase.
   assignment_asc:
-    "COALESCE(e.assignment_slug, '') COLLATE NOCASE ASC, COALESCE(e.project_slug, '') COLLATE NOCASE ASC, s.session_id ASC",
+    `${PINNED_FIRST} COALESCE(e.assignment_slug, '') COLLATE NOCASE ASC, COALESCE(e.project_slug, '') COLLATE NOCASE ASC, s.session_id ASC`,
   agent_asc:
-    "s.agent COLLATE NOCASE ASC, COALESCE(e.assignment_slug, '') COLLATE NOCASE ASC, s.session_id ASC",
+    `${PINNED_FIRST} s.agent COLLATE NOCASE ASC, COALESCE(e.assignment_slug, '') COLLATE NOCASE ASC, s.session_id ASC`,
 };
 
 /**
@@ -902,6 +1044,17 @@ function buildSessionFilters(q: SessionPageQuery): { sql: string; params: unknow
   } else if (!includesTrackedRows(attribution)) {
     // 'usage-only': no tracked row qualifies.
     clauses.push('0');
+  }
+
+  // Archived. Applied HERE rather than at any call site so it reaches all three
+  // consumers of this fragment — the page query, the COUNT query (or the pager
+  // reports pages for rows it will not return), and listSessionSortKeys (or the
+  // spend/tokens merge ranks over rows the page cannot show).
+  const archived = q.archived ?? DEFAULT_ARCHIVED_FILTER;
+  if (archived === 'hide') {
+    clauses.push('s.archived_at IS NULL');
+  } else if (archived === 'only') {
+    clauses.push('s.archived_at IS NOT NULL');
   }
 
   const scope = q.workspaceScope;
@@ -991,6 +1144,9 @@ export interface SessionSortKey {
   assignmentSlug: string | null;
   projectSlug: string | null;
   agent: string;
+  /** Non-null ⇒ pinned. The merge path must apply pinned-first itself, since
+   *  it bypasses the SQL ORDER BY that carries it for every other sort. */
+  pinnedAt: string | null;
 }
 
 export function listSessionSortKeys(q: SessionPageQuery): SessionSortKey[] {
@@ -999,6 +1155,7 @@ export function listSessionSortKeys(q: SessionPageQuery): SessionSortKey[] {
   const rows = db
     .prepare(
       `SELECT s.session_id AS session_id, s.started AS started, s.ended AS ended, s.agent AS agent,
+              s.pinned_at AS pinned_at,
               e.assignment_slug AS assignment_slug, e.project_slug AS project_slug
          FROM sessions s
          LEFT JOIN engagement e ON e.id = (
@@ -1014,6 +1171,7 @@ export function listSessionSortKeys(q: SessionPageQuery): SessionSortKey[] {
     started: string;
     ended: string | null;
     agent: string;
+    pinned_at: string | null;
     assignment_slug: string | null;
     project_slug: string | null;
   }>;
@@ -1024,6 +1182,7 @@ export function listSessionSortKeys(q: SessionPageQuery): SessionSortKey[] {
     assignmentSlug: r.assignment_slug ?? null,
     projectSlug: r.project_slug ?? null,
     agent: r.agent,
+    pinnedAt: r.pinned_at ?? null,
   }));
 }
 
@@ -1072,20 +1231,24 @@ export async function listProjectSessions(
   _projectsDir: string,
   projectSlug: string,
   assignmentSlug?: string,
+  opts?: SessionListOptions,
 ): Promise<AgentSession[]> {
   const db = getSessionDb();
+  const archived = opts?.includeArchived ? '' : ' AND s.archived_at IS NULL';
 
   if (assignmentSlug) {
     const rows = db
       .prepare(
-        `${SESSION_SELECT_WITH_BINDING} WHERE e.project_slug = ? AND e.assignment_slug = ? ORDER BY s.started DESC`,
+        `${SESSION_SELECT_WITH_BINDING} WHERE e.project_slug = ? AND e.assignment_slug = ?${archived} ${SESSION_LIST_ORDER_BY}`,
       )
       .all(projectSlug, assignmentSlug) as SessionRow[];
     return rows.map(rowToSession);
   }
 
   const rows = db
-    .prepare(`${SESSION_SELECT_WITH_BINDING} WHERE e.project_slug = ? ORDER BY s.started DESC`)
+    .prepare(
+      `${SESSION_SELECT_WITH_BINDING} WHERE e.project_slug = ?${archived} ${SESSION_LIST_ORDER_BY}`,
+    )
     .all(projectSlug) as SessionRow[];
   return rows.map(rowToSession);
 }
@@ -1217,17 +1380,19 @@ export async function reconcileActiveSessions(
 export async function listSessionsByAssignment(
   projectSlug: string | null,
   assignmentSlug: string,
+  opts?: SessionListOptions,
 ): Promise<AgentSession[]> {
   const db = getSessionDb();
+  const archived = opts?.includeArchived ? '' : ' AND s.archived_at IS NULL';
   const rows = projectSlug === null
     ? (db
         .prepare(
-          `${SESSION_SELECT_WITH_BINDING} WHERE e.assignment_slug = ? AND e.project_slug IS NULL ORDER BY s.started DESC`,
+          `${SESSION_SELECT_WITH_BINDING} WHERE e.assignment_slug = ? AND e.project_slug IS NULL${archived} ${SESSION_LIST_ORDER_BY}`,
         )
         .all(assignmentSlug) as SessionRow[])
     : (db
         .prepare(
-          `${SESSION_SELECT_WITH_BINDING} WHERE e.project_slug = ? AND e.assignment_slug = ? ORDER BY s.started DESC`,
+          `${SESSION_SELECT_WITH_BINDING} WHERE e.project_slug = ? AND e.assignment_slug = ?${archived} ${SESSION_LIST_ORDER_BY}`,
         )
         .all(projectSlug, assignmentSlug) as SessionRow[]);
   return rows.map(rowToSession);
