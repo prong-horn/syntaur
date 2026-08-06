@@ -34,7 +34,14 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v6
         with:
-          node-version: "24"
+          # Pinned exactly, not floating "24". Node 24.19.0 tightened the
+          # assertion in RemoveEnvironmentCleanupHook, which better-sqlite3
+          # 11.x trips from Statement::~Statement() during worker teardown:
+          # a vitest worker dies with `Assertion failed: (env) != nullptr`,
+          # tinypool reports "Channel closed", and the release fails with no
+          # test having actually failed. 24.18.0 is what shipped 0.79.0.
+          # Lift this once better-sqlite3 is upgraded (11.x -> 13.x).
+          node-version: "24.18.0"
           registry-url: "https://registry.npmjs.org"
 
       - name: Upgrade npm for trusted publishing
@@ -125,7 +132,8 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v6
         with:
-          node-version: "24"
+          # Kept in step with the release job above.
+          node-version: "24.18.0"
 
       - name: Generate .well-known skills index
         run: node scripts/build-skills-index.mjs --out-dir _site/.well-known/agent-skills
