@@ -12,7 +12,13 @@ import { EmptyState } from '../components/EmptyState';
 import { SearchInput } from '../components/SearchInput';
 import { FilterBar } from '../components/FilterBar';
 import { ConfirmDialog } from '../components/ConfirmDialog';
-import { formatCost, formatDateTime, formatTokens, toTitleCase } from '../lib/format';
+import {
+  formatCost,
+  formatDateTime,
+  formatTokens,
+  formatTokensCompact,
+  toTitleCase,
+} from '../lib/format';
 import { headerCheckState, selectableSessionIds } from '@shared/session-select';
 import type { AgentSessionWithLiveness } from '../types';
 import { DEFAULT_SESSION_SORT, SESSION_SORTS, type SessionSort } from '@shared/session-sort';
@@ -39,7 +45,7 @@ import {
  * pinned-group separator both span the full width, so they share this constant
  * rather than each hardcoding a number that silently drifts from the header.
  */
-const SESSION_TABLE_COLUMN_COUNT = 12;
+const SESSION_TABLE_COLUMN_COUNT = 13;
 
 /**
  * Pinned, matching the SQL ordering EXACTLY.
@@ -459,6 +465,11 @@ export function AgentSessionsPage() {
                   <th className="w-[110px] pb-2 pr-3">Agent</th>
                   <th className="w-[90px] pb-2 pr-3 text-right">Cost</th>
                   <th className="w-[100px] pb-2 pr-3 text-right">Tokens</th>
+                  {/* Input and output are not a breakdown of Tokens — cache
+                      reads make up nearly all of that figure — so they get
+                      their own column rather than sitting under a total they
+                      visibly fail to sum to. */}
+                  <th className="w-[110px] pb-2 pr-3 text-right">In / Out</th>
                   <th className="hidden w-[130px] pb-2 pr-3 lg:table-cell">Session ID</th>
                   <th className="w-[140px] pb-2 pr-3">Started</th>
                   <th className="hidden w-[200px] pb-2 pr-3 lg:table-cell">Path</th>
@@ -661,6 +672,34 @@ function SessionRow({
         .map((m) => `${m.model}: ${formatCost(m.cost)} \u00b7 ${formatTokens(m.tokens)} tokens`)
         .join('\n')
     : undefined;
+  // Absent when the server predates the input/output split — render an em dash
+  // rather than "0 / 0", which would claim this session used no tokens.
+  const tokenSplit =
+    session.usage
+    && typeof session.usage.totalInputTokens === 'number'
+    && typeof session.usage.totalOutputTokens === 'number'
+      ? {
+          input: session.usage.totalInputTokens,
+          output: session.usage.totalOutputTokens,
+          cache: session.usage.totalCacheTokens ?? null,
+        }
+      : null;
+  // Spelled out because Total is not Input + Output: cache reads are the bulk
+  // of it, and without the Cache line the two columns look like they disagree.
+  const tokenBreakdown = session.usage
+    ? [
+        ...(tokenSplit
+          ? [
+              `Input ${formatTokens(tokenSplit.input)}`,
+              `Output ${formatTokens(tokenSplit.output)}`,
+              ...(tokenSplit.cache === null
+                ? []
+                : [`Cache (creation + read) ${formatTokens(tokenSplit.cache)}`]),
+            ]
+          : []),
+        `Total ${formatTokens(session.usage.totalTokens)}`,
+      ].join('\n')
+    : undefined;
   // The summary is what the expand row / description tooltip shows; a row is
   // only worth expanding when it has a summary or a usage breakdown.
   const canExpand = Boolean(session.summary) || Boolean(session.usage?.models.length);
@@ -764,8 +803,19 @@ function SessionRow({
       <td className="py-2 pr-3 text-right text-xs tabular-nums" title={modelBreakdown}>
         {session.usage ? formatCost(session.usage.totalCost) : <span className="text-muted-foreground">&mdash;</span>}
       </td>
-      <td className="py-2 pr-3 text-right text-xs tabular-nums text-muted-foreground" title={modelBreakdown}>
+      <td className="py-2 pr-3 text-right text-xs tabular-nums text-muted-foreground" title={tokenBreakdown}>
         {session.usage ? formatTokens(session.usage.totalTokens) : <span>&mdash;</span>}
+      </td>
+      <td className="py-2 pr-3 text-right text-xs tabular-nums text-muted-foreground" title={tokenBreakdown}>
+        {tokenSplit ? (
+          <>
+            {formatTokensCompact(tokenSplit.input)}
+            <span className="px-0.5 opacity-40">/</span>
+            {formatTokensCompact(tokenSplit.output)}
+          </>
+        ) : (
+          <span>&mdash;</span>
+        )}
       </td>
       <td className="hidden py-2 pr-3 lg:table-cell">
         <span className="flex min-w-0 items-center gap-1.5">

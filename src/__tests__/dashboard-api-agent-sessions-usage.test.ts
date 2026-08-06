@@ -67,6 +67,8 @@ function seedUsage(
     cost: number;
     inputTokens?: number;
     outputTokens?: number;
+    cacheCreationTokens?: number;
+    cacheReadTokens?: number;
     totalTokens?: number;
     cwd?: string | null;
     eventTs?: string;
@@ -79,8 +81,8 @@ function seedUsage(
     eventTs: opts.eventTs ?? '2026-07-01T11:00:00.000Z',
     inputTokens: opts.inputTokens ?? 0,
     outputTokens: opts.outputTokens ?? 0,
-    cacheCreationTokens: 0,
-    cacheReadTokens: 0,
+    cacheCreationTokens: opts.cacheCreationTokens ?? 0,
+    cacheReadTokens: opts.cacheReadTokens ?? 0,
     totalTokens: opts.totalTokens ?? (opts.inputTokens ?? 0) + (opts.outputTokens ?? 0),
     totalCost: opts.cost,
     // `??` would swallow an explicit null, which some cases need to assert.
@@ -110,6 +112,25 @@ describe('GET /api/agent-sessions usage enrichment', () => {
     expect(session.usage?.models).toEqual([
       { model: 'claude-opus-4-8', cost: 1.25, tokens: 5000 },
     ]);
+  });
+
+  it('reports input, output, and cache tokens alongside the total', async () => {
+    await seedSession('s-split');
+    seedUsage('s-split', {
+      model: 'claude-opus-4-8',
+      cost: 2,
+      inputTokens: 100,
+      outputTokens: 20,
+      cacheCreationTokens: 1_000,
+      cacheReadTokens: 500_000,
+      totalTokens: 501_120,
+    });
+
+    const [session] = await getSessions();
+    expect(session.usage?.totalInputTokens).toBe(100);
+    expect(session.usage?.totalOutputTokens).toBe(20);
+    expect(session.usage?.totalCacheTokens).toBe(501_000);
+    expect(session.usage?.totalTokens).toBe(501_120);
   });
 
   it('applies the token×rate fallback to historical $0 rows at serve time', async () => {
@@ -171,6 +192,24 @@ describe('usage-only (orphan) rows', () => {
 
     const sessions = await getSessions();
     expect(sessions.map((s) => s.sessionId)).toEqual(['s-tracked']);
+  });
+
+  it('carry the input/output/cache split too — a separate construction site', async () => {
+    seedUsage('s-orphan-split', {
+      model: 'claude-opus-4-8',
+      cost: 3,
+      inputTokens: 7,
+      outputTokens: 11,
+      cacheCreationTokens: 100,
+      cacheReadTokens: 900,
+      totalTokens: 1_018,
+    });
+
+    const sessions = await getSessions('?includeUsageOnly=1');
+    const orphan = sessions.find((s) => s.sessionId === 's-orphan-split');
+    expect(orphan!.usage?.totalInputTokens).toBe(7);
+    expect(orphan!.usage?.totalOutputTokens).toBe(11);
+    expect(orphan!.usage?.totalCacheTokens).toBe(1_000);
   });
 
   it('are appended with includeUsageOnly=1, in a contract-exact shape', async () => {

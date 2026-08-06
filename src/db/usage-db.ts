@@ -435,6 +435,19 @@ export interface SessionModelUsage {
 export interface SessionUsage {
   totalCost: number;
   totalTokens: number;
+  /**
+   * Prompt and completion tokens, kept apart from {@link totalTokens}.
+   *
+   * These are NOT a partition of `totalTokens`, which also carries cache
+   * creation and cache read. For a long Claude session the cache read term
+   * dominates by two or three orders of magnitude — 1.0M input against 1.37B
+   * cache read is typical — so a UI that shows input+output beside the total
+   * has to say what the remainder is, or it reads as a bug.
+   */
+  totalInputTokens: number;
+  totalOutputTokens: number;
+  /** Cache creation + cache read, i.e. `totalTokens - (input + output)`. */
+  totalCacheTokens: number;
   models: SessionModelUsage[];
   /** Agent that produced the latest event (`usage_events.tool`). */
   tool: string | null;
@@ -494,6 +507,9 @@ export function listSessionUsage(): Map<string, SessionUsage> {
       entry = {
         totalCost: 0,
         totalTokens: 0,
+        totalInputTokens: 0,
+        totalOutputTokens: 0,
+        totalCacheTokens: 0,
         models: [],
         tool: row.tool || null,
         cwd: row.cwd || null,
@@ -512,6 +528,9 @@ export function listSessionUsage(): Map<string, SessionUsage> {
           }) ?? 0);
     entry.totalCost += cost;
     entry.totalTokens += row.total_tokens;
+    entry.totalInputTokens += row.input_tokens;
+    entry.totalOutputTokens += row.output_tokens;
+    entry.totalCacheTokens += row.cache_creation_tokens + row.cache_read_tokens;
     entry.models.push({ model: row.model, cost, tokens: row.total_tokens });
     if (row.event_ts < (entry.firstEventTs ?? row.event_ts)) entry.firstEventTs = row.event_ts;
   }

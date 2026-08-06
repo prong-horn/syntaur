@@ -57,6 +57,7 @@ import type {
   AgentSessionStatus,
   AgentSessionWithLiveness,
   DaemonSessionState,
+  SessionUsageSummary,
   WsMessage,
 } from './types.js';
 
@@ -95,6 +96,24 @@ const TERMINAL_DAEMON_STATES: ReadonlySet<DaemonSessionState> = new Set(['done',
  * Usage is best-effort: when the usage DB was never initialized in this server
  * context, sessions still render (without spend) rather than 500ing.
  */
+/**
+ * The one place a `SessionUsage` becomes the `usage` field on the wire.
+ *
+ * Three call sites build this (the paged path, the unpaged path, and the
+ * synthetic usage-only rows); when they each spelled the object out, adding a
+ * field meant remembering all three. They don't, so it doesn't.
+ */
+function toUsageSummary(u: SessionUsage): SessionUsageSummary {
+  return {
+    totalCost: u.totalCost,
+    totalTokens: u.totalTokens,
+    totalInputTokens: u.totalInputTokens,
+    totalOutputTokens: u.totalOutputTokens,
+    totalCacheTokens: u.totalCacheTokens,
+    models: u.models,
+  };
+}
+
 function attachUsage(
   sessions: AgentSessionWithLiveness[],
   opts: { includeUsageOnly: boolean; knownSessionIds?: Set<string> },
@@ -106,11 +125,7 @@ function attachUsage(
     return sessions;
   }
 
-  const summarize = (u: SessionUsage) => ({
-    totalCost: u.totalCost,
-    totalTokens: u.totalTokens,
-    models: u.models,
-  });
+  const summarize = toUsageSummary;
 
   const withUsage: AgentSessionWithLiveness[] = sessions.map((session) => {
     const usage = usageBySession.get(session.sessionId);
@@ -168,7 +183,7 @@ function usageOnlyRow(sessionId: string, usage: SessionUsage): AgentSessionWithL
     transcriptPath: null,
     pid: null,
     activity: null,
-    usage: { totalCost: usage.totalCost, totalTokens: usage.totalTokens, models: usage.models },
+    usage: toUsageSummary(usage),
     usageOnly: true,
     isLive: false,
     resumeSupported: false,
@@ -503,9 +518,7 @@ export function createAgentSessionsRouter(
       const usage = usageBySession.get(key.sessionId);
       out.push({
         ...row,
-        usage: usage
-          ? { totalCost: usage.totalCost, totalTokens: usage.totalTokens, models: usage.models }
-          : null,
+        usage: usage ? toUsageSummary(usage) : null,
       });
     }
     return { sessions: out, totalCount };

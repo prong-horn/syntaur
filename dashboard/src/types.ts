@@ -148,6 +148,21 @@ export interface AgentSession {
 export interface SessionUsageSummary {
   totalCost: number;
   totalTokens: number;
+  /**
+   * Prompt and completion tokens. These do NOT sum to `totalTokens` — the
+   * remainder is `totalCacheTokens`, which for a long session is typically two
+   * or three orders of magnitude larger than either. Render them as their own
+   * quantity, never as a breakdown that should add up to the total.
+   *
+   * Optional on purpose. The server always sends them, but a browser holding a
+   * newer bundle can be talking to a server that hasn't restarted yet, and
+   * these were absent before that build. Treating them as guaranteed made one
+   * missing number blank the entire page.
+   */
+  totalInputTokens?: number;
+  totalOutputTokens?: number;
+  /** Cache creation + cache read. */
+  totalCacheTokens?: number;
   models: Array<{ model: string; cost: number; tokens: number }>;
 }
 

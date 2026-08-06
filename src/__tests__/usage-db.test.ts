@@ -474,6 +474,52 @@ describe('listSessionUsage', () => {
     expect(usage.get('s3')!.totalTokens).toBe(999);
   });
 
+  it('sums input, output, and cache tokens apart from the total', () => {
+    initUsageDb(dbPath);
+    const base = {
+      tool: 'claude',
+      eventTs: '2026-07-01T10:00:00.000Z',
+      cwd: '/repo',
+      projectSlug: '',
+      assignmentSlug: '',
+      rawJson: null,
+      totalCost: 1,
+    };
+    // Two models on one session, with cache dwarfing input+output — which is
+    // the whole reason these are reported beside `totalTokens` rather than as
+    // a breakdown of it.
+    upsertEvent({
+      ...base,
+      sessionId: 's1',
+      model: 'claude-opus-4-8',
+      inputTokens: 100,
+      outputTokens: 20,
+      cacheCreationTokens: 1_000,
+      cacheReadTokens: 500_000,
+      totalTokens: 501_120,
+    });
+    upsertEvent({
+      ...base,
+      sessionId: 's1',
+      model: 'claude-haiku-4-5',
+      inputTokens: 5,
+      outputTokens: 3,
+      cacheCreationTokens: 0,
+      cacheReadTokens: 2_000,
+      totalTokens: 2_008,
+    });
+
+    const s1 = listSessionUsage().get('s1')!;
+    expect(s1.totalInputTokens).toBe(105);
+    expect(s1.totalOutputTokens).toBe(23);
+    expect(s1.totalCacheTokens).toBe(503_000);
+    expect(s1.totalTokens).toBe(503_128);
+    // The reason the fields exist: input + output is nowhere near the total,
+    // and only the cache term closes the gap.
+    expect(s1.totalInputTokens + s1.totalOutputTokens).not.toBe(s1.totalTokens);
+    expect(s1.totalInputTokens + s1.totalOutputTokens + s1.totalCacheTokens).toBe(s1.totalTokens);
+  });
+
   it('carries metadata for orphan-row construction: latest tool/cwd and earliest event_ts', () => {
     initUsageDb(dbPath);
     const base = {

@@ -102,7 +102,25 @@ export function formatCount(value: number, singular: string, plural = `${singula
 }
 
 export function formatTokens(n: number): string {
+  // Guarded because a field the type promises can still be missing at runtime:
+  // the SPA and the server are deployed together but not restarted together, so
+  // a browser holding a newer bundle can be talking to an older API. Without
+  // this, one absent number threw inside render and blanked the whole page.
+  if (!Number.isFinite(n)) return '0';
   return n.toLocaleString('en-US');
+}
+
+/**
+ * Abbreviated token count for dense table cells — "1.4M", "38.2K", "912".
+ *
+ * The Agent Sessions table shows input and output side by side inside one
+ * narrow column, where two grouped numbers ("1,041,407 / 2,812,110") do not
+ * fit. Anywhere the exact figure matters — tooltips, detail panes — use
+ * {@link formatTokens} instead.
+ */
+export function formatTokensCompact(n: number): string {
+  if (!Number.isFinite(n)) return '0';
+  return n.toLocaleString('en-US', { notation: 'compact', maximumFractionDigits: 1 });
 }
 
 export function formatCost(n: number): string {

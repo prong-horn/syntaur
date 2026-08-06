@@ -399,11 +399,29 @@
      background. When the viewport is wide enough that nothing overflows, sticky
      resolves to the cell's natural position and this is inert. */
   .table-sticky-actions {
+    --sticky-actions-rule: oklch(var(--border) / 0.2);
     position: sticky;
     right: 0;
     z-index: 10;
     background-color: oklch(var(--card));
-    border-left: 1px solid oklch(var(--border) / 0.6);
+    /* The table collapses its borders, and a z-indexed sticky cell paints above
+       the collapsed border grid — so the header underline and every row
+       separator would stop dead at this column, leaving it an unruled block.
+       Redraw both as inset shadows, which paint above the cell's own background
+       (and above the pinned tint below): 1px left divider + the row's rule. */
+    box-shadow:
+      inset 1px 0 0 oklch(var(--border) / 0.6),
+      inset 0 -1px 0 var(--sticky-actions-rule);
+  }
+
+  /* The header rule is heavier than a row separator (border-border/40). */
+  thead .table-sticky-actions {
+    --sticky-actions-rule: oklch(var(--border) / 0.4);
+  }
+
+  /* Mirrors `last:border-0` on the row, so the final row stays unruled. */
+  tbody tr:last-child .table-sticky-actions {
+    --sticky-actions-rule: transparent;
   }
 
   /* Row tints have to layer as a background-image: a second background-color

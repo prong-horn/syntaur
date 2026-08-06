@@ -816,6 +816,14 @@ export type DescriptionSource = 'human' | 'auto';
 export interface SessionUsageSummary {
   totalCost: number;
   totalTokens: number;
+  /**
+   * Prompt and completion tokens. These do NOT sum to `totalTokens` — the
+   * remainder is {@link totalCacheTokens}, which usually dwarfs both. See
+   * `SessionUsage` in `src/db/usage-db.ts`.
+   */
+  totalInputTokens: number;
+  totalOutputTokens: number;
+  totalCacheTokens: number;
   models: Array<{ model: string; cost: number; tokens: number }>;
 }
 
