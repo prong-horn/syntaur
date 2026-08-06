@@ -392,6 +392,26 @@
     box-shadow: var(--ring-border-strong);
   }
 
+  /* Right-hand actions column of a table that scrolls horizontally inside
+     `overflow-x-auto` (Agent Sessions). The cell pins to the scrollport's right
+     edge and the rest of the row slides beneath it, so it has to paint its own
+     opaque fill rather than inherit the row's — hence the repeat of the panel
+     background. When the viewport is wide enough that nothing overflows, sticky
+     resolves to the cell's natural position and this is inert. */
+  .table-sticky-actions {
+    position: sticky;
+    right: 0;
+    z-index: 10;
+    background-color: oklch(var(--card));
+    border-left: 1px solid oklch(var(--border) / 0.6);
+  }
+
+  /* Row tints have to layer as a background-image: a second background-color
+     would replace the opaque fill above and let scrolled content show through. */
+  .table-sticky-actions--pinned {
+    background-image: linear-gradient(oklch(var(--accent) / 0.2), oklch(var(--accent) / 0.2));
+  }
+
   /* Pill chip — landing's nav/shell button language */
   .shell-action {
     display: inline-flex;
