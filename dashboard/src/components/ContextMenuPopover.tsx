@@ -1,4 +1,5 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from 'react';
+import { createPortal } from 'react-dom';
 import { Link } from 'react-router-dom';
 import { cn } from '../lib/utils';
 import type { OverflowMenuItem } from './OverflowMenu';
@@ -8,12 +9,21 @@ interface ContextMenuPopoverProps {
   anchor: { x: number; y: number } | null;
   items: OverflowMenuItem[];
   onClose: () => void;
+  /**
+   * The element that opened the menu, when one exists (right-click callers have
+   * no trigger and omit this). Mousedown inside it is treated as inside the
+   * menu, so a trigger that toggles on click isn't closed here and immediately
+   * reopened by its own click handler. `OverflowMenu` gets this for free by
+   * wrapping trigger and dropdown in one ref'd element; a fixed-position menu
+   * cannot, so the trigger is named explicitly.
+   */
+  anchorRef?: RefObject<HTMLElement | null>;
 }
 
 const MENU_WIDTH = 220;
 const VIEWPORT_PADDING = 8;
 
-export function ContextMenuPopover({ anchor, items, onClose }: ContextMenuPopoverProps) {
+export function ContextMenuPopover({ anchor, items, onClose, anchorRef }: ContextMenuPopoverProps) {
   const ref = useRef<HTMLDivElement>(null);
   const [position, setPosition] = useState<{ left: number; top: number } | null>(null);
 
@@ -37,7 +47,11 @@ export function ContextMenuPopover({ anchor, items, onClose }: ContextMenuPopove
   useEffect(() => {
     if (!anchor) return;
     function handleMouseDown(event: MouseEvent) {
-      if (ref.current && !ref.current.contains(event.target as Node)) {
+      const target = event.target as Node;
+      if (anchorRef?.current?.contains(target)) {
+        return;
+      }
+      if (ref.current && !ref.current.contains(target)) {
         onClose();
       }
     }
@@ -59,11 +73,16 @@ export function ContextMenuPopover({ anchor, items, onClose }: ContextMenuPopove
       document.removeEventListener('contextmenu', handleMouseDown);
       window.removeEventListener('scroll', handleScroll, true);
     };
-  }, [anchor, onClose]);
+  }, [anchor, onClose, anchorRef]);
 
   if (!anchor || items.length === 0) return null;
 
-  return (
+  // Portal to the body. `position: fixed` escapes overflow clipping but not
+  // stacking: mounted inside a positioned ancestor — a sticky table cell, say —
+  // the menu is confined to that ancestor's stacking context and any later
+  // sibling with the same z-index paints straight over it. Outside-click
+  // detection is unaffected, since `contains` walks the real DOM.
+  return createPortal(
     <div
       ref={ref}
       role="menu"
@@ -139,6 +158,7 @@ export function ContextMenuPopover({ anchor, items, onClose }: ContextMenuPopove
           );
         })}
       </TooltipProvider>
-    </div>
+    </div>,
+    document.body,
   );
 }

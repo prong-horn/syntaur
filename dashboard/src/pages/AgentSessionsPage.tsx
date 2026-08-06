@@ -432,93 +432,102 @@ export function AgentSessionsPage() {
           description="Adjust the status, search term, date range, or sorting controls to show sessions again."
         />
       ) : (
-        <div className="surface-panel mt-4 overflow-x-auto">
-          <table className="w-full min-w-[1100px] table-fixed text-sm lg:min-w-[1420px]">
-            <thead>
-              <tr className="border-b border-border/40 text-left text-xs uppercase tracking-wider text-muted-foreground">
-                <th className="w-[32px] pb-2 pr-3">
-                  <button
-                    onClick={toggleSelectAll}
-                    className="text-muted-foreground hover:text-foreground disabled:opacity-40"
-                    disabled={selectableSessionIds(pageSessions).length === 0}
-                    title={headerState === 'all' ? 'Clear selection' : 'Select all'}
-                  >
-                    {headerState === 'all'
-                      ? <CheckSquare className="h-4 w-4" />
-                      : <Square className={headerState === 'some' ? 'h-4 w-4 text-primary' : 'h-4 w-4'} />}
-                  </button>
-                </th>
-                <th className="w-[140px] pb-2 pr-3">Project</th>
-                <th className="w-[160px] pb-2 pr-3">Assignment</th>
-                <th className="w-[200px] pb-2 pr-3">Description</th>
-                <th className="w-[110px] pb-2 pr-3">Agent</th>
-                <th className="w-[90px] pb-2 pr-3 text-right">Cost</th>
-                <th className="w-[100px] pb-2 pr-3 text-right">Tokens</th>
-                <th className="hidden w-[130px] pb-2 pr-3 lg:table-cell">Session ID</th>
-                <th className="w-[140px] pb-2 pr-3">Started</th>
-                <th className="hidden w-[200px] pb-2 pr-3 lg:table-cell">Path</th>
-                <th className="hidden w-[200px] pb-2 pr-3 lg:table-cell">Transcript</th>
-                <th className="w-[40px] pb-2"></th>
-              </tr>
-            </thead>
-            <tbody>
-              {pageSessions.map((session, index) => (
-                <Fragment key={session.sessionId}>
-                  {/* Pinned rows lead the whole result set, so on page 0 the
-                      group starts at the top. But there is no cap on pins: with
-                      more of them than `pageSize` they overflow onto later
-                      pages, and the pinned→unpinned boundary can fall anywhere.
-                      So the band is derived from THIS page's rows on EVERY page
-                      — a leading pinned row opens the group, and the boundary
-                      closes it — rather than assuming page 0 holds them all. */}
-                  {index === 0 && isEffectivelyPinned(session) && (
-                    <tr className="bg-accent/30">
-                      <td
-                        colSpan={SESSION_TABLE_COLUMN_COUNT}
-                        className="px-4 py-1 text-xs font-medium uppercase tracking-[0.08em] text-muted-foreground"
-                      >
-                        Pinned
-                      </td>
-                    </tr>
-                  )}
-                  {index > 0
-                    && isEffectivelyPinned(pageSessions[index - 1])
-                    && !isEffectivelyPinned(session) && (
-                    <tr className="bg-accent/30">
-                      <td
-                        colSpan={SESSION_TABLE_COLUMN_COUNT}
-                        className="px-4 py-1 text-xs font-medium uppercase tracking-[0.08em] text-muted-foreground"
-                      >
-                        All sessions
-                      </td>
-                    </tr>
-                  )}
-                  <SessionRow
-                    session={session}
-                    selected={selectedIds.has(session.sessionId)}
-                    onToggle={() => toggleSelection(session.sessionId)}
-                    onDelete={() =>
-                      setPendingDelete({
-                        sessionIds: [session.sessionId],
-                        title: `Delete session ${session.sessionId.slice(0, 8)}...?`,
-                        description: `Remove this ${session.agent} session record${session.assignmentSlug ? ` for ${session.assignmentSlug}` : ''}. This cannot be undone.`,
-                        confirmLabel: 'Delete Session',
-                      })
-                    }
-                    onMarkStopped={handleMarkStopped}
-                    onTogglePin={(id, pinned) => void patchCuration(id, { pinned })}
-                    onToggleArchive={(id, archivedNext) =>
-                      void patchCuration(id, { archived: archivedNext })
-                    }
-                    onRename={handleRename}
-                    onCopyError={setDeleteError}
-                    expanded={expandedIds.has(session.sessionId)}
-                    onToggleExpand={() => toggleExpand(session.sessionId)}
-                  />
-                </Fragment>
-              ))}
-            </tbody>
-          </table>
+        <div className="surface-panel mt-4">
+          {/* The scrollport is the inner div, not the panel: a sticky cell stops
+              at the scroll container's padding edge, so scrolling the panel
+              itself would leave the actions column floating 0.75rem short of the
+              edge, with row content sliding through the gap beside it. */}
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[1100px] table-fixed text-sm lg:min-w-[1420px]">
+              <thead>
+                <tr className="border-b border-border/40 text-left text-xs uppercase tracking-wider text-muted-foreground">
+                  <th className="w-[32px] pb-2 pr-3">
+                    <button
+                      onClick={toggleSelectAll}
+                      className="text-muted-foreground hover:text-foreground disabled:opacity-40"
+                      disabled={selectableSessionIds(pageSessions).length === 0}
+                      title={headerState === 'all' ? 'Clear selection' : 'Select all'}
+                    >
+                      {headerState === 'all'
+                        ? <CheckSquare className="h-4 w-4" />
+                        : <Square className={headerState === 'some' ? 'h-4 w-4 text-primary' : 'h-4 w-4'} />}
+                    </button>
+                  </th>
+                  <th className="w-[140px] pb-2 pr-3">Project</th>
+                  <th className="w-[160px] pb-2 pr-3">Assignment</th>
+                  <th className="w-[200px] pb-2 pr-3">Description</th>
+                  <th className="w-[110px] pb-2 pr-3">Agent</th>
+                  <th className="w-[90px] pb-2 pr-3 text-right">Cost</th>
+                  <th className="w-[100px] pb-2 pr-3 text-right">Tokens</th>
+                  <th className="hidden w-[130px] pb-2 pr-3 lg:table-cell">Session ID</th>
+                  <th className="w-[140px] pb-2 pr-3">Started</th>
+                  <th className="hidden w-[200px] pb-2 pr-3 lg:table-cell">Path</th>
+                  <th className="hidden w-[200px] pb-2 pr-3 lg:table-cell">Transcript</th>
+                  {/* Actions stay pinned to the right edge: the table is far wider
+                      than the viewport, and Pin is meant to be the quickest thing
+                      on the row rather than something you scroll sideways to find. */}
+                  <th className="table-sticky-actions w-[104px] pb-2 pl-2"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {pageSessions.map((session, index) => (
+                  <Fragment key={session.sessionId}>
+                    {/* Pinned rows lead the whole result set, so on page 0 the
+                        group starts at the top. But there is no cap on pins: with
+                        more of them than `pageSize` they overflow onto later
+                        pages, and the pinned→unpinned boundary can fall anywhere.
+                        So the band is derived from THIS page's rows on EVERY page
+                        — a leading pinned row opens the group, and the boundary
+                        closes it — rather than assuming page 0 holds them all. */}
+                    {index === 0 && isEffectivelyPinned(session) && (
+                      <tr className="bg-accent/30">
+                        <td
+                          colSpan={SESSION_TABLE_COLUMN_COUNT}
+                          className="px-4 py-1 text-xs font-medium uppercase tracking-[0.08em] text-muted-foreground"
+                        >
+                          Pinned
+                        </td>
+                      </tr>
+                    )}
+                    {index > 0
+                      && isEffectivelyPinned(pageSessions[index - 1])
+                      && !isEffectivelyPinned(session) && (
+                      <tr className="bg-accent/30">
+                        <td
+                          colSpan={SESSION_TABLE_COLUMN_COUNT}
+                          className="px-4 py-1 text-xs font-medium uppercase tracking-[0.08em] text-muted-foreground"
+                        >
+                          All sessions
+                        </td>
+                      </tr>
+                    )}
+                    <SessionRow
+                      session={session}
+                      selected={selectedIds.has(session.sessionId)}
+                      onToggle={() => toggleSelection(session.sessionId)}
+                      onDelete={() =>
+                        setPendingDelete({
+                          sessionIds: [session.sessionId],
+                          title: `Delete session ${session.sessionId.slice(0, 8)}...?`,
+                          description: `Remove this ${session.agent} session record${session.assignmentSlug ? ` for ${session.assignmentSlug}` : ''}. This cannot be undone.`,
+                          confirmLabel: 'Delete Session',
+                        })
+                      }
+                      onMarkStopped={handleMarkStopped}
+                      onTogglePin={(id, pinned) => void patchCuration(id, { pinned })}
+                      onToggleArchive={(id, archivedNext) =>
+                        void patchCuration(id, { archived: archivedNext })
+                      }
+                      onRename={handleRename}
+                      onCopyError={setDeleteError}
+                      expanded={expandedIds.has(session.sessionId)}
+                      onToggleExpand={() => toggleExpand(session.sessionId)}
+                    />
+                  </Fragment>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
 
@@ -809,7 +818,12 @@ function SessionRow({
           <span className="text-muted-foreground">&mdash;</span>
         )}
       </td>
-      <td className="py-2">
+      <td
+        className={cn(
+          'table-sticky-actions py-2 pl-2',
+          isEffectivelyPinned(session) && 'table-sticky-actions--pinned',
+        )}
+      >
         <div className="flex items-center gap-1.5">
           {canExpand && (
             <button
@@ -823,22 +837,15 @@ function SessionRow({
           )}
           {/* Usage-only rows have no sessions record: nothing to attach, stop, or delete. */}
           {!session.usageOnly && (
-            <>
-              <SessionActionButtons
-                session={session}
-                onMarkStopped={onMarkStopped}
-                onTogglePin={onTogglePin}
-                onToggleArchive={onToggleArchive}
-                onRename={onRename}
-              />
-              <button
-                onClick={onDelete}
-                className="text-muted-foreground hover:text-destructive"
-                title="Delete session"
-              >
-                <Trash2 className="h-3.5 w-3.5" />
-              </button>
-            </>
+            <SessionActionButtons
+              session={session}
+              layout="compact"
+              onMarkStopped={onMarkStopped}
+              onTogglePin={onTogglePin}
+              onToggleArchive={onToggleArchive}
+              onRename={onRename}
+              onDelete={() => onDelete()}
+            />
           )}
           {session.usageOnly && !canExpand && <span className="text-muted-foreground">&mdash;</span>}
         </div>
