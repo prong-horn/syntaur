@@ -448,9 +448,6 @@ export async function scanSessions(
   const sweepCandidates: Array<{
     sessionId: string;
     transcriptPath: string | null;
-    /** Transcript mtime, carried from the candidacy pass so the loop below
-     *  does not stat the same file twice. */
-    mtimeMs: number | null;
     /** Swept by the no-transcript rule (measured from `started`). */
     noTranscript: boolean;
     closeReason: string;
@@ -479,7 +476,6 @@ export async function scanSessions(
       sweepCandidates.push({
         sessionId: row.session_id,
         transcriptPath: row.transcript_path,
-        mtimeMs: stampMs,
         noTranscript: false,
         closeReason: idleRuleFired ? 'idle-sweep' : 'liveness_gc',
       });
@@ -488,7 +484,6 @@ export async function scanSessions(
       sweepCandidates.push({
         sessionId: row.session_id,
         transcriptPath: null,
-        mtimeMs: null,
         noTranscript: false,
         closeReason: idleRuleFired ? 'idle-sweep' : 'liveness_gc',
       });
@@ -499,7 +494,6 @@ export async function scanSessions(
       sweepCandidates.push({
         sessionId: row.session_id,
         transcriptPath: null,
-        mtimeMs: null,
         noTranscript: true,
         closeReason: 'idle-sweep',
       });
@@ -521,13 +515,12 @@ export async function scanSessions(
       // keep-alive; it is NOT a replacement for this check, and widening this
       // constant instead would regress the shipped liveness GC.
       //
-      // RE-STAT deliberately, rather than reusing `candidate.mtimeMs`: an
-      // `await` gap sits between the candidacy pass and here (the batched lsof
-      // spawn, then a token-source read per candidate). A session that resumed
-      // in that window has a freshly-appended transcript, and only current
-      // filesystem evidence catches it. Reusing the carried mtime would stop a
-      // live session and backdate `ended` to a stale value. The carried
-      // `mtimeMs` is for close-reason classification only.
+      // RE-STAT deliberately, rather than reusing the candidacy-pass mtime: an
+      // `await` gap sits between that pass and here (the batched lsof spawn,
+      // then a token-source read per candidate). A session that resumed in that
+      // window has a freshly-appended transcript, and only current filesystem
+      // evidence catches it — reusing the earlier value would stop a live
+      // session and backdate `ended` to a stale timestamp.
       const mtime = statMtimeMs(candidate.transcriptPath);
       if (mtime !== null && now() - mtime < FRESH_MTIME_MS) continue;
       endedAt = mtime !== null ? new Date(mtime).toISOString() : undefined;
