@@ -97,6 +97,18 @@ const DURATION_UNIT_MS: Record<string, number> = {
   d: 86_400_000,
 };
 
+/**
+ * `session.idleSweepHours` — finite and > 0, else the default. Mirrors the
+ * finite-guard in `parseDurationMs` below.
+ */
+function parseIdleSweepHours(raw: unknown): number {
+  if (raw === undefined || raw === null || raw === '') {
+    return DEFAULT_CONFIG.session.idleSweepHours;
+  }
+  const n = Number(raw);
+  return Number.isFinite(n) && n > 0 ? n : DEFAULT_CONFIG.session.idleSweepHours;
+}
+
 /** Parse a duration like `7d`/`12h`/`30m`/`90s`/`500ms` (or a bare number = ms)
  * to milliseconds. Returns null when malformed or non-positive. */
 export function parseDurationMs(raw: string): number | null {
@@ -289,6 +301,9 @@ export interface SyntaurConfig {
     autoTrack: SessionAutoTrack;
     summarizeBackend: SummarizeBackendName;
     autoSummarize: SessionAutoSummarize;
+    /** Hours a session's transcript may sit idle before the scanner's
+     *  Agent-View keep-alive expires and the row is swept `stopped`. */
+    idleSweepHours: number;
   };
   integrations: IntegrationConfig;
   backup: BackupConfig | null;
@@ -334,6 +349,7 @@ const DEFAULT_CONFIG: SyntaurConfig = {
     autoTrack: 'all',
     summarizeBackend: 'claude',
     autoSummarize: 'on',
+    idleSweepHours: 6,
   },
   integrations: {
     claudePluginDir: null,
@@ -2730,6 +2746,10 @@ export async function readConfig(): Promise<SyntaurConfig> {
       )
         ? (fm['session.autoSummarize'] as SessionAutoSummarize)
         : DEFAULT_CONFIG.session.autoSummarize,
+      // The only numeric key in this block — the three siblings are enums. Guard
+      // the VALUE (finite and positive), not the key: a zero/negative/NaN
+      // threshold would sweep every active row on the next scan.
+      idleSweepHours: parseIdleSweepHours(fm['session.idleSweepHours']),
     },
     integrations: {
       claudePluginDir: parseOptionalAbsolutePath(

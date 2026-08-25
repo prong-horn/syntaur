@@ -30,7 +30,12 @@ no longer depends on it:
   upserts every discovered session with its real transcript timestamps, links
   project/assignment from `<cwd>/.syntaur/context.json`, derives liveness
   (lsof transcript-open, else mtime freshness), and sweeps stale `active` rows
-  to `stopped` (`ended` backdated to last mtime). Runs on the dashboard's
+  to `stopped` (`ended` backdated to last mtime). Agent-View presence
+  (`claude agents --json`) is an additional keep-alive, but a TIME-BOUNDED one:
+  past `session.idleSweepHours` of transcript silence a listed session is swept
+  anyway, and the same bound applies to the revive rule so a swept row is not
+  revived on the next scan. A row with neither a pid nor a transcript is swept on
+  its age since `started` and counted separately as `swept_no_transcript`. Runs on the dashboard's
   autodiscovery interval (and at start) plus standalone via the CLI. This is
   **Codex's only tracking path** (no SessionStart hook) and the retroactive
   backfill for everything.
@@ -43,6 +48,8 @@ no longer depends on it:
   resume-mode, plus an immediate DB row).
 - Config: `session.autoTrack: all | workspaces-only | off` in
   `~/.syntaur/config.md` (default `all`) gates all three paths.
+  `session.idleSweepHours` (default `6`) is how long a transcript may sit idle
+  before the scanner stops treating Agent-View presence as liveness.
 
 ## Generic runtime marker (layer 4)
 
