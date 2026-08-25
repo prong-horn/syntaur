@@ -693,7 +693,11 @@ sessionCommand
         console.log(JSON.stringify({ ...summary, summarization }));
       } else {
         console.log(
-          `Scan complete — discovered ${summary.discovered}, inserted ${summary.inserted}, revived ${summary.revived}, swept ${summary.swept}, skipped ${summary.skipped}.`,
+          `Scan complete — discovered ${summary.discovered}, inserted ${summary.inserted}, revived ${summary.revived}, swept ${summary.swept}${
+            summary.swept_no_transcript > 0
+              ? ` (${summary.swept_no_transcript} without transcript)`
+              : ''
+          }, skipped ${summary.skipped}.`,
         );
         if (summarization.ran) {
           const counts = Object.entries(summarization.counts ?? {})

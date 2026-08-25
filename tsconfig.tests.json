@@ -22,6 +22,8 @@
     "src/**/*.test.tsx"
   ],
   "files": [
+    "src/__tests__/session-scan.test.ts",
+    "src/__tests__/liveness-stop-session.test.ts",
     "src/__tests__/session-select.test.ts",
     "src/__tests__/dashboard-api-agent-sessions-usage.test.ts",
     "src/__tests__/session-db-migration-v8.test.ts",

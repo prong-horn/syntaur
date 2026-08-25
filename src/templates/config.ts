@@ -11,6 +11,8 @@ onboarding:
 agentDefaults:
   trustLevel: medium
   autoApprove: false
+session:
+  idleSweepHours: 6
 backup:
   repo: null
   categories: projects, playbooks, todos, servers, workflows, config

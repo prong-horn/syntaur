@@ -785,6 +785,12 @@ export interface LivenessStopInput {
   endedAt?: string;
   /** Pre-captured token snapshot (await the async source BEFORE calling). */
   tokensAtClose?: TokenSnapshot | null;
+  /**
+   * Close reason for the swept engagement. Defaults to `liveness_gc` — the
+   * scanner overrides it with `idle-sweep` when the transcript-idle rule fired
+   * rather than pid evidence.
+   */
+  closeReason?: string;
 }
 
 /**
@@ -793,7 +799,8 @@ export interface LivenessStopInput {
  *
  *   1. Compute `stillDead`. If the caller captured the dead engagement, this is
  *      a **compare-and-close** of that exact `(id, started_at)` with
- *      `close_reason='liveness_gc'` — true ONLY if that interval was still open
+ *      `close_reason` (`liveness_gc` unless the caller overrides) — true ONLY
+ *      if that interval was still open
  *      (a concurrent reopen/switch closed-and-replaced it ⇒ false, and the new
  *      interval is left untouched). With no engagement captured, `stillDead` is
  *      "the session has no current open engagement".
@@ -815,7 +822,7 @@ export function livenessStopSession(input: LivenessStopInput): boolean {
         ? closeEngagementById({
             id: input.engagementId,
             startedAt: input.engagementStartedAt,
-            closeReason: 'liveness_gc',
+            closeReason: input.closeReason ?? 'liveness_gc',
             tokensAtClose: input.tokensAtClose ?? null,
             endedAt,
           })

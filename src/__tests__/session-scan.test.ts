@@ -55,6 +55,10 @@ function deps(overrides: Partial<ScannerDeps> = {}): ScannerDeps {
     isPidAlive: () => false,
     pidStartedAt: () => null,
     agentView: async () => new Map(),
+    // Pin the idle threshold: without it `scanSessions` falls back to
+    // readConfig() and every test in this file reads the developer's real
+    // ~/.syntaur/config.md.
+    idleSweepHours: 6,
     ...overrides,
   };
 }
@@ -113,6 +117,13 @@ async function writePiTranscript(
 
 async function makeStale(path: string): Promise<number> {
   const past = new Date(Date.now() - 60 * 60 * 1000);
+  await utimes(path, past, past);
+  return statSync(path).mtimeMs;
+}
+
+/** Backdate a transcript by an arbitrary number of hours (makeStale is fixed at 1). */
+async function makeOld(path: string, hours: number): Promise<number> {
+  const past = new Date(Date.now() - hours * 60 * 60 * 1000);
   await utimes(path, past, past);
   return statSync(path).mtimeMs;
 }
@@ -659,5 +670,300 @@ describe('scanSessions — Agent-View liveness + activity (#5)', () => {
 
     expect(summary.revived).toBe(1);
     expect(getSessionById('av-revive')!.status).toBe('active');
+  });
+});
+
+describe('scanSessions — transcript-idle sweep (session.idleSweepHours)', () => {
+  // AC6 matrix. The third case (live pid + old mtime -> active) is already
+  // covered at "does NOT downgrade an active row with a live pid whose
+  // transcript went stale" and is deliberately not duplicated here.
+
+  it('AC6: sweeps an active row with a null pid whose transcript is older than the threshold', async () => {
+    const transcript = join(testDir, 'idle-old.jsonl');
+    await writeFile(transcript, '{}\n');
+    const mtimeMs = await makeOld(transcript, 7);
+    await appendSession(
+      '',
+      makeSession({ sessionId: 'idle-old', pid: null, transcriptPath: transcript }),
+    );
+
+    const summary = await scanSessions({ full: true }, deps());
+
+    expect(summary.swept).toBe(1);
+    const row = getSessionById('idle-old')!;
+    expect(row.status).toBe('stopped');
+    expect(row.ended).toBe(new Date(mtimeMs).toISOString());
+  });
+
+  it('AC6: leaves an active row with a null pid and a fresh transcript active', async () => {
+    const transcript = join(testDir, 'idle-fresh.jsonl');
+    await writeFile(transcript, '{}\n');
+    await appendSession(
+      '',
+      makeSession({ sessionId: 'idle-fresh', pid: null, transcriptPath: transcript }),
+    );
+
+    const summary = await scanSessions({ full: true }, deps());
+
+    expect(summary.swept).toBe(0);
+    expect(getSessionById('idle-fresh')!.status).toBe('active');
+  });
+
+  it('THE FIX: sweeps an Agent-View-listed session once its transcript passes the threshold', async () => {
+    // The companion to "keeps a session alive ... despite a dead pid", which
+    // uses a 1h-stale transcript and stays active. At >6h the keep-alive expires.
+    // Without this test nothing distinguishes the fix from the status quo.
+    const transcript = join(testDir, 'av-idle.jsonl');
+    await writeFile(transcript, '{}\n');
+    const mtimeMs = await makeOld(transcript, 7);
+    await appendSession(
+      '',
+      makeSession({ sessionId: 'av-idle', pid: 99999, transcriptPath: transcript }),
+    );
+
+    const summary = await scanSessions(
+      { full: true },
+      deps({
+        isPidAlive: () => false,
+        agentView: async () => new Map([['av-idle', 'idle' as const]]),
+      }),
+    );
+
+    expect(summary.swept).toBe(1);
+    const row = getSessionById('av-idle')!;
+    expect(row.status).toBe('stopped');
+    expect(row.ended).toBe(new Date(mtimeMs).toISOString());
+  });
+
+  it('THE FLAP GUARD: a swept idle row is NOT revived while Agent View still lists it', async () => {
+    // The revive rule shares the sweep's time-bounded helper. If it did not, this
+    // second scan would flip the row back to active every tick.
+    const path = await writeClaudeTranscript('av-flap', workspace);
+    await makeOld(path, 7);
+    await appendSession(
+      '',
+      makeSession({ sessionId: 'av-flap', pid: 99999, transcriptPath: path }),
+    );
+    const agentView = async () => new Map([['av-flap', 'idle' as const]]);
+
+    const first = await scanSessions({ full: true }, deps({ isPidAlive: () => false, agentView }));
+    expect(first.swept).toBe(1);
+    expect(getSessionById('av-flap')!.status).toBe('stopped');
+
+    const second = await scanSessions({ full: true }, deps({ isPidAlive: () => false, agentView }));
+
+    expect(second.revived).toBe(0);
+    expect(getSessionById('av-flap')!.status).toBe('stopped');
+  });
+
+  it('AC3: closes the idle-swept session\'s open engagement with close_reason=idle-sweep', async () => {
+    const transcript = join(testDir, 'idle-eng.jsonl');
+    await writeFile(transcript, '{}\n');
+    await makeOld(transcript, 7);
+    await appendSession(
+      '',
+      makeSession({ sessionId: 'idle-eng', pid: 99999, transcriptPath: transcript }),
+    );
+    openEngagement({
+      sessionId: 'idle-eng',
+      projectSlug: 'proj',
+      assignmentSlug: 'assn',
+      stage: 'implement',
+      startedAt: '2026-06-11T08:00:00.000Z',
+    });
+
+    await scanSessions(
+      { full: true },
+      deps({
+        isPidAlive: () => false,
+        agentView: async () => new Map([['idle-eng', 'idle' as const]]),
+      }),
+    );
+
+    const eng = latestEngagement('idle-eng')!;
+    expect(eng.close_reason).toBe('idle-sweep');
+    expect(eng.assignment_slug).toBe('assn');
+  });
+
+  it('AC5: sweeps a row with no transcript at all once `started` passes the threshold', async () => {
+    await appendSession(
+      '',
+      makeSession({
+        sessionId: 'no-tp-old',
+        pid: null,
+        transcriptPath: null,
+        started: new Date(Date.now() - 7 * 60 * 60 * 1000).toISOString(),
+      }),
+    );
+
+    const summary = await scanSessions({ full: true }, deps());
+
+    expect(summary.swept).toBe(1);
+    expect(summary.swept_no_transcript).toBe(1);
+    expect(getSessionById('no-tp-old')!.status).toBe('stopped');
+  });
+
+  it('AC5: leaves a recently-started row with no transcript active', async () => {
+    await appendSession(
+      '',
+      makeSession({
+        sessionId: 'no-tp-fresh',
+        pid: null,
+        transcriptPath: null,
+        started: new Date().toISOString(),
+      }),
+    );
+
+    const summary = await scanSessions({ full: true }, deps());
+
+    expect(summary.swept).toBe(0);
+    expect(summary.swept_no_transcript).toBe(0);
+    expect(getSessionById('no-tp-fresh')!.status).toBe('active');
+  });
+
+  it('self-protection: the session running the scan (live pid + fresh transcript) is never swept', async () => {
+    const path = await writeClaudeTranscript('self-scan', workspace);
+    await appendSession(
+      '',
+      makeSession({
+        sessionId: 'self-scan',
+        pid: 4321,
+        pidStartedAt: 'Thu Jun 11 09:00:00 2026',
+        transcriptPath: path,
+      }),
+    );
+
+    const summary = await scanSessions(
+      { full: true },
+      deps({
+        isPidAlive: () => true,
+        pidStartedAt: () => 'Thu Jun 11 09:00:00 2026',
+        agentView: async () => new Map([['self-scan', 'working' as const]]),
+      }),
+    );
+
+    expect(summary.swept).toBe(0);
+    expect(getSessionById('self-scan')!.status).toBe('active');
+  });
+
+  it('idempotency: a second scan over the same swept row does not re-sweep or re-close', async () => {
+    const transcript = join(testDir, 'idle-twice.jsonl');
+    await writeFile(transcript, '{}\n');
+    await makeOld(transcript, 7);
+    await appendSession(
+      '',
+      makeSession({ sessionId: 'idle-twice', pid: 99999, transcriptPath: transcript }),
+    );
+    openEngagement({
+      sessionId: 'idle-twice',
+      projectSlug: 'proj',
+      assignmentSlug: 'assn',
+      stage: 'implement',
+      startedAt: '2026-06-11T08:00:00.000Z',
+    });
+    const agentView = async () => new Map([['idle-twice', 'idle' as const]]);
+
+    const first = await scanSessions({ full: true }, deps({ isPidAlive: () => false, agentView }));
+    const second = await scanSessions({ full: true }, deps({ isPidAlive: () => false, agentView }));
+
+    expect(first.swept).toBe(1);
+    expect(second.swept).toBe(0);
+    const rows = getSessionDb()
+      .prepare('SELECT close_reason FROM engagement WHERE session_id = ?')
+      .all('idle-twice') as Array<{ close_reason: string | null }>;
+    expect(rows).toHaveLength(1);
+    expect(rows[0].close_reason).toBe('idle-sweep');
+  });
+
+  it('honours a configured threshold rather than a hardcoded 6h', async () => {
+    const transcript = join(testDir, 'idle-cfg.jsonl');
+    await writeFile(transcript, '{}\n');
+    await makeOld(transcript, 2);
+    await appendSession(
+      '',
+      makeSession({ sessionId: 'idle-cfg', pid: 99999, transcriptPath: transcript }),
+    );
+    const agentView = async () => new Map([['idle-cfg', 'idle' as const]]);
+
+    // 2h-old transcript: alive under the 6h default, swept under a 1h threshold.
+    const kept = await scanSessions(
+      { full: true },
+      deps({ isPidAlive: () => false, agentView }),
+    );
+    expect(kept.swept).toBe(0);
+    expect(getSessionById('idle-cfg')!.status).toBe('active');
+
+    const swept = await scanSessions(
+      { full: true },
+      deps({ isPidAlive: () => false, agentView, idleSweepHours: 1 }),
+    );
+    expect(swept.swept).toBe(1);
+    expect(getSessionById('idle-cfg')!.status).toBe('stopped');
+  });
+});
+
+describe('scanSessions — idle sweep hardening (code-review regressions)', () => {
+  it('re-stats before stopping: a transcript appended after candidacy is NOT swept', async () => {
+    // TOCTOU guard. An await gap (the batched lsof spawn, then a token read per
+    // candidate) sits between the candidacy pass and the stop decision. A
+    // session that resumes in that window must survive. `openFiles` is the seam
+    // that runs inside the gap, so freshening the transcript there reproduces it.
+    const transcript = join(testDir, 'toctou.jsonl');
+    await writeFile(transcript, '{}\n');
+    await makeOld(transcript, 7);
+    await appendSession(
+      '',
+      makeSession({ sessionId: 'toctou', pid: 99999, transcriptPath: transcript }),
+    );
+
+    const summary = await scanSessions(
+      { full: true },
+      deps({
+        isPidAlive: () => false,
+        agentView: async () => new Map([['toctou', 'idle' as const]]),
+        // `openFiles` runs TWICE per scan: once over discovered transcripts
+        // (before candidacy) and once over the sweep candidates (after). Only
+        // the second call sits in the TOCTOU window, so freshen there — doing it
+        // on the first call would keep the row alive at candidacy and prove
+        // nothing.
+        openFiles: (() => {
+          let calls = 0;
+          return async () => {
+            if (++calls === 2) {
+              const wokeAt = new Date();
+              await utimes(transcript, wokeAt, wokeAt);
+            }
+            return new Set<string>();
+          };
+        })(),
+      }),
+    );
+
+    expect(summary.swept).toBe(0);
+    expect(getSessionById('toctou')!.status).toBe('active');
+  });
+
+  it('a non-finite idle threshold falls back to the default instead of disabling the sweep', async () => {
+    // hours * 3_600_000 overflows to Infinity, which would make the Agent-View
+    // keep-alive unbounded again — the exact bug this change fixes.
+    const transcript = join(testDir, 'overflow.jsonl');
+    await writeFile(transcript, '{}\n');
+    await makeOld(transcript, 7);
+    await appendSession(
+      '',
+      makeSession({ sessionId: 'overflow', pid: 99999, transcriptPath: transcript }),
+    );
+
+    const summary = await scanSessions(
+      { full: true },
+      deps({
+        isPidAlive: () => false,
+        agentView: async () => new Map([['overflow', 'idle' as const]]),
+        idleSweepHours: 1e303,
+      }),
+    );
+
+    expect(summary.swept).toBe(1);
+    expect(getSessionById('overflow')!.status).toBe('stopped');
   });
 });
