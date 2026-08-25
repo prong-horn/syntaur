@@ -901,3 +901,69 @@ describe('scanSessions — transcript-idle sweep (session.idleSweepHours)', () =
     expect(getSessionById('idle-cfg')!.status).toBe('stopped');
   });
 });
+
+describe('scanSessions — idle sweep hardening (code-review regressions)', () => {
+  it('re-stats before stopping: a transcript appended after candidacy is NOT swept', async () => {
+    // TOCTOU guard. An await gap (the batched lsof spawn, then a token read per
+    // candidate) sits between the candidacy pass and the stop decision. A
+    // session that resumes in that window must survive. `openFiles` is the seam
+    // that runs inside the gap, so freshening the transcript there reproduces it.
+    const transcript = join(testDir, 'toctou.jsonl');
+    await writeFile(transcript, '{}\n');
+    await makeOld(transcript, 7);
+    await appendSession(
+      '',
+      makeSession({ sessionId: 'toctou', pid: 99999, transcriptPath: transcript }),
+    );
+
+    const summary = await scanSessions(
+      { full: true },
+      deps({
+        isPidAlive: () => false,
+        agentView: async () => new Map([['toctou', 'idle' as const]]),
+        // `openFiles` runs TWICE per scan: once over discovered transcripts
+        // (before candidacy) and once over the sweep candidates (after). Only
+        // the second call sits in the TOCTOU window, so freshen there — doing it
+        // on the first call would keep the row alive at candidacy and prove
+        // nothing.
+        openFiles: (() => {
+          let calls = 0;
+          return async () => {
+            if (++calls === 2) {
+              const wokeAt = new Date();
+              await utimes(transcript, wokeAt, wokeAt);
+            }
+            return new Set<string>();
+          };
+        })(),
+      }),
+    );
+
+    expect(summary.swept).toBe(0);
+    expect(getSessionById('toctou')!.status).toBe('active');
+  });
+
+  it('a non-finite idle threshold falls back to the default instead of disabling the sweep', async () => {
+    // hours * 3_600_000 overflows to Infinity, which would make the Agent-View
+    // keep-alive unbounded again — the exact bug this change fixes.
+    const transcript = join(testDir, 'overflow.jsonl');
+    await writeFile(transcript, '{}\n');
+    await makeOld(transcript, 7);
+    await appendSession(
+      '',
+      makeSession({ sessionId: 'overflow', pid: 99999, transcriptPath: transcript }),
+    );
+
+    const summary = await scanSessions(
+      { full: true },
+      deps({
+        isPidAlive: () => false,
+        agentView: async () => new Map([['overflow', 'idle' as const]]),
+        idleSweepHours: 1e303,
+      }),
+    );
+
+    expect(summary.swept).toBe(1);
+    expect(getSessionById('overflow')!.status).toBe('stopped');
+  });
+});

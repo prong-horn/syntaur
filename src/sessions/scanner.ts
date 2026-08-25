@@ -40,6 +40,9 @@ import type { ActivityState, AgentSessionStatus } from '../dashboard/types.js';
 const execFileAsync = promisify(execFile);
 
 const FRESH_MTIME_MS = 5 * 60 * 1000;
+/** Fallback when a configured/injected `idleSweepHours` yields a non-finite
+ *  millisecond span. Mirrors `DEFAULT_CONFIG.session.idleSweepHours` (6). */
+const DEFAULT_IDLE_SWEEP_MS = 6 * 60 * 60 * 1000;
 
 /**
  * Is Agent-View presence still valid keep-alive evidence for this session?
@@ -270,8 +273,19 @@ export async function scanSessions(
 
   // Resolved AFTER the early return on purpose: a caller injecting
   // `deps.autoTrack: 'off'` must not trigger a config read it opted out of.
-  const idleSweepMs =
+  //
+  // Guard the PRODUCT, not just the hours: a finite-but-enormous value
+  // (`session.idleSweepHours: 1e303`, or an injected dep) overflows to Infinity
+  // here, which makes the Agent-View keep-alive unbounded again and stops
+  // no-transcript rows ever crossing the threshold — silently restoring the
+  // exact bug this change fixes. This also covers `deps.idleSweepHours`, which
+  // bypasses the config parser entirely.
+  const idleSweepMsRaw =
     (deps.idleSweepHours ?? (await cfg()).session.idleSweepHours) * 60 * 60 * 1000;
+  const idleSweepMs =
+    Number.isFinite(idleSweepMsRaw) && idleSweepMsRaw > 0
+      ? idleSweepMsRaw
+      : DEFAULT_IDLE_SWEEP_MS;
 
   const now = deps.now ?? (() => Date.now());
   const statMtimeMs = deps.statMtimeMs ?? defaultStatMtimeMs;
@@ -506,8 +520,16 @@ export async function scanSessions(
       // transcript-bearing row. The idle threshold bounds the Agent-View
       // keep-alive; it is NOT a replacement for this check, and widening this
       // constant instead would regress the shipped liveness GC.
-      const mtime = candidate.mtimeMs;
-      if (mtime !== null && nowMs - mtime < FRESH_MTIME_MS) continue;
+      //
+      // RE-STAT deliberately, rather than reusing `candidate.mtimeMs`: an
+      // `await` gap sits between the candidacy pass and here (the batched lsof
+      // spawn, then a token-source read per candidate). A session that resumed
+      // in that window has a freshly-appended transcript, and only current
+      // filesystem evidence catches it. Reusing the carried mtime would stop a
+      // live session and backdate `ended` to a stale value. The carried
+      // `mtimeMs` is for close-reason classification only.
+      const mtime = statMtimeMs(candidate.transcriptPath);
+      if (mtime !== null && now() - mtime < FRESH_MTIME_MS) continue;
       endedAt = mtime !== null ? new Date(mtime).toISOString() : undefined;
     }
     // No-transcript sweeps leave `endedAt` undefined: there is no honest
