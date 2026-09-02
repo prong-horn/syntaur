@@ -45,6 +45,7 @@ import { LinksPanel } from '../components/LinksPanel';
 import { CommentsThread } from '../components/CommentsThread';
 import { ActivityTimeline } from '../components/ActivityTimeline';
 import { SessionActivityTimeline } from '../components/SessionActivityTimeline';
+import { ChatTab } from '../components/chat/ChatTab';
 import { useHotkey, useHotkeyScope } from '../hotkeys';
 import { useHashScroll } from '../hooks/useHashScroll';
 import { cn } from '../lib/utils';
@@ -713,6 +714,13 @@ export function AssignmentDetail() {
                     </SectionCard>
                   </div>
                 ),
+              },
+              {
+                // Phase 2 keeps `summary` as the default tab; §5.7's "arguably
+                // the new default" is left for Brennen to call.
+                value: 'chat',
+                label: 'Chat',
+                content: <ChatTab assignmentId={assignment.id} />,
               },
               {
                 value: 'plan',
