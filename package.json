@@ -70,6 +70,7 @@
     "node": ">=20.0.0"
   },
   "dependencies": {
+    "@agentclientprotocol/sdk": "^1.4.0",
     "@inquirer/prompts": "^8.4.2",
     "@xterm/addon-serialize": "^0.14.0",
     "@xterm/headless": "^6.0.0",
