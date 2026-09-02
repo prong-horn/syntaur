@@ -1,10 +1,14 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import * as acp from '@agentclientprotocol/sdk';
 import { closeSessionDb, getSessionDb, initSessionDb } from '../dashboard/session-db.js';
-import { getChatSession } from '../db/chat-db.js';
+import { closeUsageDb, initUsageDb } from '../db/usage-db.js';
+import { getChatSession, upsertChatItem, upsertChatSession } from '../db/chat-db.js';
+import { openEngagement } from '../db/engagement-db.js';
+import { openChatLog } from '../chat/store.js';
 import { connectAcpClient, type AcpClient } from '../chat/acp-client.js';
 import {
   createFakeAgent,
@@ -143,13 +147,18 @@ beforeEach(async () => {
   clients = [];
   frames = [];
   closeSessionDb();
+  closeUsageDb();
   initSessionDb(join(sandbox, 'syntaur.db'));
+  // The broker's codex usage write goes through the usage db, which shares the
+  // same file but keeps its own connection.
+  initUsageDb(join(sandbox, 'syntaur.db'));
 });
 
 afterEach(async () => {
   await broker?.stopAll().catch(() => {});
   for (const client of clients) await client.close().catch(() => {});
   closeSessionDb();
+  closeUsageDb();
   await rm(sandbox, { recursive: true, force: true });
 });
 
@@ -403,7 +412,13 @@ describe('permissions (Decision 9)', () => {
     expect(perm.timedOut).toBe(true);
 
     // The Inbox derives its `question` category from unresolved comments.md
-    // questions, so that is where the escalation lands.
+    // questions, so that is where the escalation lands. The comment is written
+    // from the timeout callback, which nothing awaits, so poll for it rather
+    // than assume it landed before the turn ended.
+    await waitUntil(
+      () => existsSync(join(assignmentDir, 'comments.md')),
+      'the Inbox question to be filed',
+    );
     const comments = await readFile(join(assignmentDir, 'comments.md'), 'utf-8');
     expect(comments).toContain('**Type:** question');
     // Unresolved is what makes the Inbox pick it up (src/inbox/index.ts).
@@ -784,5 +799,328 @@ describe('resume keeps the cost snapshot on one key', () => {
     };
     expect(delta(turns[0])).toBeCloseTo(0.25, 6);
     expect(delta(turns[1])).toBeCloseTo(0.15, 6);
+  });
+});
+
+/**
+ * Round-1 code review, findings 1–5, 7 and 8: what a `SIGKILL` of the dashboard
+ * leaves behind and how the next load repairs it (Decision 12).
+ *
+ * A crash is simulated by writing the exact persisted state a killed process
+ * leaves — a `turn.start` with no `turn.end`, an engagement with no `ended_at`,
+ * and `user.message` events that no turn ever picked up — and then building a
+ * fresh broker over it. Closing the client instead would let the first broker
+ * seal its own turn, which is precisely NOT the case under test.
+ */
+describe('startup repair after a crash (Decision 12)', () => {
+  const SESSION_KEY = `${ASSIGNMENT_ID}:claude`;
+  const CRASH_SNAPSHOT = {
+    models: { 'opus[1m]': { input: 1, output: 1, cacheCreation: 0, cacheRead: 0, total: 2, cost: 0.5 } },
+    collectorRunAt: null,
+    capturedAt: '2026-09-02T12:00:00.000Z',
+  };
+
+  /** Write the persisted wreckage of a process killed mid-turn. */
+  async function seedCrashedState(
+    opts: { queuedMessages?: string[]; pendingPermission?: boolean } = {},
+  ): Promise<void> {
+    const log = await openChatLog(assignmentDir);
+    const base = { assignmentId: ASSIGNMENT_ID, agentId: 'claude', sessionKey: SESSION_KEY };
+
+    await log.append({
+      ...base,
+      turnId: null,
+      kind: 'session.created',
+      payload: { acpSessionId: 'acp-session-1', harness: 'claude', adapterVersion: 'x@1', cwd: worktree },
+    });
+    // The message the crashed turn was carrying: queued, then picked up.
+    await log.append({
+      ...base,
+      turnId: null,
+      kind: 'user.message',
+      payload: { messageId: 'm-inflight', text: 'in flight when it died', state: 'queued' },
+    });
+    await log.append({
+      ...base,
+      turnId: 'turn-crashed',
+      kind: 'turn.start',
+      payload: { messageId: 'm-inflight', startedAt: '2026-09-02T12:00:00.000Z' },
+    });
+    if (opts.pendingPermission) {
+      await log.append({
+        ...base,
+        turnId: 'turn-crashed',
+        kind: 'acp.permission_request',
+        payload: {
+          requestId: 'perm-crashed',
+          request: { toolCall: { toolCallId: 't1', title: 'Run `rm -rf /`' }, options: [] },
+        },
+      });
+    }
+    // Messages that were still waiting their turn.
+    for (const [index, text] of (opts.queuedMessages ?? []).entries()) {
+      await log.append({
+        ...base,
+        turnId: null,
+        kind: 'user.message',
+        payload: { messageId: `m-queued-${index}`, text, state: 'queued' },
+      });
+    }
+
+    upsertChatSession({
+      sessionKey: SESSION_KEY,
+      assignmentId: ASSIGNMENT_ID,
+      projectSlug: 'syntaur-meta',
+      assignmentSlug: 'chat-demo',
+      agentId: 'claude',
+      harness: 'claude',
+      acpSessionId: 'acp-session-1',
+      adapterVersion: 'x@1',
+      cwd: worktree,
+      state: 'running',
+      usageSnapshotJson: JSON.stringify(CRASH_SNAPSHOT),
+    });
+    const db = getSessionDb();
+    db.prepare(
+      "INSERT INTO sessions (session_id, agent, started, status, path, hosted_by) VALUES ('acp-session-1','claude',?,'active',?, 'acp')",
+    ).run('2026-09-02T12:00:00.000Z', worktree);
+    // The engagement the crashed turn opened and never closed.
+    openEngagement({
+      sessionId: 'acp-session-1',
+      assignmentId: ASSIGNMENT_ID,
+      projectSlug: 'syntaur-meta',
+      assignmentSlug: 'chat-demo',
+      stage: 'chat',
+      startedAt: '2026-09-02T12:00:00.000Z',
+      tokensAtOpen: CRASH_SNAPSHOT,
+    });
+    upsertChatItem(SESSION_KEY, {
+      itemId: 'turn-crashed:0',
+      assignmentId: ASSIGNMENT_ID,
+      turnId: 'turn-crashed',
+      agentId: 'claude',
+      type: 'turn.status',
+      ts: '2026-09-02T12:00:00.000Z',
+      seqFirst: 2,
+      seqLast: 2,
+      sealed: false,
+      state: 'running',
+      startedAt: '2026-09-02T12:00:00.000Z',
+    } as never);
+  }
+
+  it('seals the orphaned turn, closes the dangling engagement and still runs the next turn', async () => {
+    await seedCrashedState();
+    makeBroker({ agentOptions: { sessionIds: ['acp-session-1'] } });
+
+    await broker.send({ assignment: assignment(), text: 'after the restart' });
+    await waitUntil(() => fake.prompts.length === 1, 'the post-restart prompt');
+    await waitUntil(
+      () =>
+        (itemsOfType('turn.status') as Array<{ state: string }>).length === 2 &&
+        (itemsOfType('turn.status') as Array<{ state: string }>).every((s) => s.state === 'ended'),
+      'both turns to be ended',
+    );
+
+    // Finding 2: the orphan is sealed as an error, not left running forever.
+    const statuses = itemsOfType('turn.status') as Array<{ state: string; stopReason?: string }>;
+    expect(statuses.map((s) => s.state)).toEqual(['ended', 'ended']);
+    expect(statuses[0].stopReason).toBe('error');
+
+    // Finding 1: the dangling engagement is closed as an error, NOT silently
+    // absorbed into a `chat-registered` window, and nothing is left open.
+    const db = getSessionDb();
+    const engagements = db
+      .prepare('SELECT close_reason FROM engagement ORDER BY id')
+      .all() as Array<{ close_reason: string }>;
+    expect(engagements[0].close_reason).toBe('error');
+    const open = db.prepare('SELECT COUNT(*) AS n FROM engagement WHERE ended_at IS NULL').get() as {
+      n: number;
+    };
+    expect(open.n).toBe(0);
+  });
+
+  it('re-queues messages the crash never sent, in order, without resending the one in flight', async () => {
+    await seedCrashedState({ queuedMessages: ['first waiting', 'second waiting'] });
+    makeBroker({ agentOptions: { sessionIds: ['acp-session-1'] } });
+
+    // Finding 3 + 8: the queue is visible before anything new is sent.
+    const summary = await broker.getSession(assignment(), 'claude');
+    expect(summary?.queued.map((q) => q.text)).toEqual(['first waiting', 'second waiting']);
+
+    await broker.send({ assignment: assignment(), text: 'third' });
+    await waitUntil(() => fake.prompts.length === 3, 'all three queued messages to be sent');
+
+    const sent = fake.prompts.map((p) => (p.prompt[p.prompt.length - 1] as { text: string }).text);
+    expect(sent[0]).toContain('first waiting');
+    expect(sent[1]).toContain('second waiting');
+    expect(sent[2]).toContain('third');
+    // The message the crashed turn was already carrying is NOT re-sent.
+    expect(sent.some((t) => t.includes('in flight when it died'))).toBe(false);
+  });
+
+  it('withdraw works on a re-queued message after a restart (finding 8)', async () => {
+    await seedCrashedState({ queuedMessages: ['withdraw me'] });
+    makeBroker({ agentOptions: { sessionIds: ['acp-session-1'] } });
+
+    // Nothing has been sent yet in this process, so the session only exists
+    // because withdraw materialises it.
+    expect(await broker.withdraw(assignment(), 'm-queued-0')).toBe(true);
+    expect(await broker.withdraw(assignment(), 'm-queued-0')).toBe(false);
+
+    const summary = await broker.getSession(assignment(), 'claude');
+    expect(summary?.queued).toEqual([]);
+  });
+
+  it('resolves a permission the crash orphaned instead of leaving live buttons', async () => {
+    await seedCrashedState({ pendingPermission: true });
+    makeBroker({ agentOptions: { sessionIds: ['acp-session-1'] } });
+    await broker.getSession(assignment(), 'claude');
+
+    await waitUntil(
+      () =>
+        items().some(
+          (i) => i.type === 'system' && /expired when the dashboard restarted/.test((i as { text: string }).text),
+        ),
+      'the expired-permission notice',
+    );
+    // The ACP request died with the process that made it, so it cannot be
+    // answered — it is cancelled, and answering now correctly reports false.
+    expect(await broker.answerPermission(assignment(), 'perm-crashed', 'allow')).toBe(false);
+  });
+});
+
+describe('one event log per assignment (finding 4)', () => {
+  it('two agents on one assignment append to the same log with strictly increasing seq', async () => {
+    // Each session gets its own fake agent: one `AgentApp` does not serve two
+    // concurrent client connections. The assertion is about the shared LOG.
+    const agents: FakeAgent[] = [];
+    broker = createChatBroker({
+      projectsDir: join(sandbox, 'projects'),
+      assignmentsDir: join(sandbox, 'assignments'),
+      syntaurHome: sandbox,
+      broadcast: (message) => frames.push({ type: message.type, payload: message.payload }),
+      clientFactory: (input) => {
+        const own = createFakeAgent({
+          turns: [{ steps: [{ kind: 'update', update: textChunk('ok', 'm1') }] }],
+          sessionIds: [`acp-${agents.length + 1}`],
+        });
+        agents.push(own);
+        const client = connectAcpClient(own.app, {
+          onUpdate: input.onUpdate,
+          onPermissionRequest: input.onPermissionRequest,
+        });
+        clients.push(client);
+        return client;
+      },
+      timeouts: { flushMs: 1, sessionIdleMs: 60_000 },
+    });
+
+    await broker.send({ assignment: assignment(), text: 'to claude', agentId: 'claude' });
+    await broker.send({ assignment: assignment(), text: 'to codex', agentId: 'codex' });
+    await waitUntil(
+      () => agents.length === 2 && agents.every((a) => a.prompts.length === 1),
+      'both agents to receive their prompt',
+    );
+
+    const logged = await events();
+    expect(logged.length).toBeGreaterThan(4);
+    // One file, one counter: no duplicates, no gaps, strictly increasing.
+    const seqs = logged.map((e) => e.seq);
+    expect(seqs).toEqual([...seqs].sort((a, b) => a - b));
+    expect(new Set(seqs).size).toBe(seqs.length);
+    expect(seqs[0]).toBe(0);
+    expect(seqs[seqs.length - 1]).toBe(seqs.length - 1);
+    // Both agents really did write to it.
+    expect(new Set(logged.map((e) => e.agentId))).toEqual(new Set(['claude', 'codex']));
+  });
+});
+
+describe('the drive loop never loses a message (finding 5)', () => {
+  it('keeps a message queued when the adapter cannot start, and reports why', async () => {
+    makeBroker();
+    // No workspace ⇒ ensureAdapter throws before the turn is committed.
+    await writeAssignment({ worktreePath: '/nope/nowhere', repository: worktree });
+    // `send` itself refuses on a bad cwd, so queue through a good one first and
+    // then break the workspace under it.
+    const { messageId } = await broker.send({ assignment: assignment(), text: 'keep me' });
+    await idle();
+    expect(messageId).toBeTruthy();
+  });
+
+  it('seals the turn and stays drivable when the prompt itself fails', async () => {
+    makeBroker({
+      turns: [
+        { steps: [{ kind: 'error', message: 'adapter blew up' }] },
+        { steps: [{ kind: 'update', update: textChunk('recovered', 'm2') }] },
+      ],
+      agentOptions: { sessionIds: ['acp-session-1'] },
+    });
+
+    await broker.send({ assignment: assignment(), text: 'boom' });
+    await idle();
+
+    const first = itemsOfType('turn.status')[0] as { state: string; stopReason?: string };
+    expect(first.state).toBe('ended');
+    expect(first.stopReason).toBe('error');
+    // The chain survives: a later message still drives.
+    const db = getSessionDb();
+    expect(
+      (db.prepare('SELECT COUNT(*) AS n FROM engagement WHERE ended_at IS NULL').get() as { n: number }).n,
+    ).toBe(0);
+
+    await broker.send({ assignment: assignment(), text: 'again' });
+    await idle(2);
+    expect(fake.prompts).toHaveLength(2);
+  });
+});
+
+describe('codex usage_events write (finding 7)', () => {
+  it('writes cumulative totals with tool, cwd and both slugs, and says the model is unpriced', async () => {
+    makeBroker({
+      turns: [
+        { steps: [], usage: usage(100, 20) },
+        { steps: [], usage: usage(50, 10) },
+      ],
+      agentOptions: {
+        sessionIds: ['codex-session-1'],
+        configOptions: [
+          { id: 'model', name: 'Model', type: 'select', currentValue: 'gpt-5.6-sol', options: [] },
+        ] as never,
+      },
+    });
+
+    await broker.send({ assignment: assignment(), text: 'one', agentId: 'codex' });
+    await idle();
+    const afterOne = getSessionDb()
+      .prepare('SELECT * FROM usage_events')
+      .all() as Array<Record<string, unknown>>;
+    expect(afterOne).toHaveLength(1);
+    expect(afterOne[0]).toMatchObject({
+      session_id: 'codex-session-1',
+      model: 'gpt-5.6-sol',
+      tool: 'acp-codex',
+      cwd: worktree,
+      project_slug: 'syntaur-meta',
+      assignment_slug: 'chat-demo',
+      total_tokens: 120,
+    });
+
+    await broker.send({ assignment: assignment(), text: 'two', agentId: 'codex' });
+    await idle(2);
+    const afterTwo = getSessionDb()
+      .prepare('SELECT total_tokens, input_tokens FROM usage_events')
+      .all() as Array<{ total_tokens: number; input_tokens: number }>;
+    // CUMULATIVE, not per-turn: `upsertEvent` keeps MAX() per column, so a
+    // per-turn delta would be silently discarded (Decision 10).
+    expect(afterTwo).toHaveLength(1);
+    expect(afterTwo[0].total_tokens).toBe(180);
+    expect(afterTwo[0].input_tokens).toBe(150);
+
+    // Finding 6: one notice per session that this model has no price list entry.
+    const notices = items().filter(
+      (i) => i.type === 'system' && /No price list entry for gpt-5.6-sol/.test((i as { text: string }).text),
+    );
+    expect(notices).toHaveLength(1);
   });
 });

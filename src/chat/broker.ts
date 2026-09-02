@@ -23,10 +23,14 @@
  *    (Decision 10). Assignment cost is the per-model `cost` delta between an
  *    engagement's open and close snapshots, and the collector runs on its own
  *    schedule — a snapshot taken at turn close would usually predate the turn it
- *    closes. Both adapters return per-turn token buckets on `PromptResponse.usage`
- *    and claude reports a per-turn `cost.amount` on the turn's last
- *    `usage_update`, so the broker keeps one cumulative snapshot per session and
- *    every turn is a priced window.
+ *    closes. Both adapters return per-turn token buckets on `PromptResponse.usage`;
+ *    claude additionally reports the session's CUMULATIVE cost on `usage_update`,
+ *    so the broker stores that figure absolutely and a turn's own cost is the
+ *    delta across it (Decision 11). Every turn is therefore a priced window.
+ *  - **A crash is repaired on the next load, from the event log** (Decision 12).
+ *    A SIGKILL leaves a `turn.start` with no `turn.end`, an engagement with no
+ *    `ended_at`, and queued messages that were never sent. `repairSession` seals,
+ *    closes and rehydrates all three before the first `drive`.
  *
  * Idle teardown is a requirement, not a nicety: a claude adapter group is
  * ~620 MB with the user's MCP servers forked into it (RESULTS.md row 19).
@@ -44,6 +48,7 @@ import { appendSession, updateSessionStatus } from '../dashboard/agent-sessions.
 import {
   closeEngagementById,
   closeOpenEngagement,
+  getOpenEngagement,
   openEngagement,
 } from '../db/engagement-db.js';
 import type { ModelTokens, TokenSnapshot } from '../db/engagement-tokens.js';
@@ -54,6 +59,7 @@ import {
   clearChatSessionPid,
   getChatSession,
   listChatItems,
+  listChatSessions,
   upsertChatSession,
 } from '../db/chat-db.js';
 import { adapterVersion as readAdapterVersion, spawnAcpClient, type AcpClient } from './acp-client.js';
@@ -65,7 +71,11 @@ import { buildStandingContext, buildTurnPrompt } from './prompt-framing.js';
 import { openChatLog, type ChatLog } from './store.js';
 import type {
   AgentDefinition,
+  ChatEvent,
   ChatEventKind,
+  PermissionRequestPayload,
+  PermissionResponsePayload,
+  TurnStartPayload,
   ChatItem,
   ChatSessionState,
   ChatSessionSummary,
@@ -221,6 +231,8 @@ interface Session {
   pendingPermissions: Map<string, PendingPermission>;
   permissionSeq: number;
   cumulative: TokenSnapshot;
+  /** One "no rate for <model>" notice per session, not one per turn. */
+  unpricedNoticeSent: boolean;
   lastTurnAt: string | null;
   idleTimer: ReturnType<typeof setTimeout> | null;
   flushTimer: ReturnType<typeof setTimeout> | null;
@@ -229,6 +241,14 @@ interface Session {
   /** Serialises `drive` so two sends cannot both spawn an adapter. */
   driving: Promise<void>;
 }
+
+/** Probe value for "is this model in the price list at all?". */
+const ZERO_BUCKETS = {
+  inputTokens: 0,
+  outputTokens: 0,
+  cacheCreationTokens: 0,
+  cacheReadTokens: 0,
+};
 
 const EMPTY_TOKENS: ModelTokens = {
   input: 0,
@@ -244,8 +264,26 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
   const now = () => (options.clock ? options.clock.now() : Date.now());
   const iso = () => new Date(now()).toISOString();
   const sessions = new Map<string, Session>();
+  /**
+   * One `ChatLog` per assignment DIRECTORY, not per session (finding 4). Every
+   * agent on an assignment appends to the same `events.jsonl`, and each log
+   * instance owns its own `seq` counter and append chain — two instances would
+   * hand out duplicate `seq` values and interleave torn lines. The promise is
+   * cached (not the resolved log) so concurrent `ensureSession` calls await the
+   * same open rather than racing to create two.
+   */
+  const logs = new Map<string, Promise<ChatLog>>();
   const clientFactory: ClientFactory = options.clientFactory ?? defaultClientFactory;
   let stopping = false;
+
+  function sharedLog(assignmentDir: string): Promise<ChatLog> {
+    let log = logs.get(assignmentDir);
+    if (!log) {
+      log = openChatLog(assignmentDir);
+      logs.set(assignmentDir, log);
+    }
+    return log;
+  }
 
   // --- events, items, broadcast -------------------------------------------
 
@@ -389,7 +427,7 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
     }
 
     const harness = HARNESSES[definition.harness as Harness];
-    const log = await openChatLog(assignment.assignmentDir);
+    const log = await sharedLog(assignment.assignmentDir);
     const row = getChatSession(assignment.id, definition.id);
     const session: Session = {
       key,
@@ -420,6 +458,7 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
       inFlight: null,
       pendingPermissions: new Map(),
       permissionSeq: 0,
+      unpricedNoticeSent: false,
       cumulative: parseSnapshot(row?.usage_snapshot_json) ?? {
         models: {},
         collectorRunAt: null,
@@ -434,12 +473,177 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
     };
 
     // The normalizer must pick up where the persisted log left off, so a restart
-    // does not restart the per-scope ordinals and collide item ids.
-    const events = await log.readAll();
+    // does not restart the per-scope ordinals and collide item ids. Every agent
+    // on the assignment shares one log, so replay ONLY this session's events —
+    // ingesting another agent's would consume this normalizer's ordinals and
+    // re-attribute its items.
+    const events = (await log.readAll()).filter((event) => event.sessionKey === key);
     for (const event of events) session.normalizer.ingest(event);
 
     sessions.set(key, session);
+    // Repair anything the previous process left mid-flight, BEFORE this session
+    // can drive (Decision 12).
+    await repairSession(session, events);
     return session;
+  }
+
+  /**
+   * Startup repair (Decision 12). A `SIGKILL` of the dashboard runs no
+   * `finishTurn`, so it leaves three kinds of wreckage. The event log is the
+   * source of truth for all of it; the index and the engagement table are
+   * brought back into line with it. `events` is already narrowed to this
+   * session — repairing another agent's turns from a shared log would seal
+   * turns that are still running.
+   *
+   *  1. **Orphaned turns** — a `turn.start` with no `turn.end`/`turn.cancel`.
+   *     Left alone the UI shows a `turn.status` stuck in `running` forever and a
+   *     new turn stacks beside it. A synthetic `turn.end` with
+   *     `stopReason: 'error'` is appended, which seals the item through the
+   *     normal path.
+   *  2. **A dangling engagement** — `ended_at IS NULL` for this ACP session.
+   *     `registerAgentSession` would otherwise close it as `chat-registered`,
+   *     filing the crashed turn's spend under a registration window; and on any
+   *     path that skips registration, `openEngagement` throws on the
+   *     `one_active_per_session` index. It is closed here with reason `error`
+   *     and the persisted cumulative snapshot.
+   *  3. **Unsent queued messages and unanswered permissions.** Queued messages
+   *     are re-enqueued in order so they send on the next drive. A pending
+   *     permission cannot be answered — the ACP request died with the adapter
+   *     process that made it — so it is resolved as `cancelled` rather than
+   *     left as live buttons that would 409.
+   */
+  async function repairSession(session: Session, events: ChatEvent[]): Promise<void> {
+    const openTurns = new Map<string, string | null>(); // turnId -> messageId
+    const queued = new Map<string, { messageId: string; text: string }>();
+    /**
+     * Every message a `turn.start` ever carried. The log's `user.message` event
+     * is written ONCE, at queue time, and keeps `state: 'queued'` forever — it
+     * is the derived item that flips to `sent`. So "still queued" cannot be read
+     * off the last event's state; it means no turn ever picked the message up.
+     */
+    const everSent = new Set<string>();
+    const openPermissions = new Map<string, string>(); // requestId -> title
+
+    for (const event of events) {
+      switch (event.kind) {
+        case 'turn.start': {
+          const payload = (event.payload ?? {}) as Partial<TurnStartPayload>;
+          if (payload.messageId) everSent.add(payload.messageId);
+          if (event.turnId) openTurns.set(event.turnId, payload.messageId ?? null);
+          break;
+        }
+        case 'turn.end':
+        case 'turn.cancel':
+          if (event.turnId) openTurns.delete(event.turnId);
+          break;
+        case 'user.message': {
+          const payload = event.payload as { messageId: string; text: string; state?: string };
+          if (payload.state === 'queued') queued.set(payload.messageId, payload);
+          else queued.delete(payload.messageId); // withdrawn
+          break;
+        }
+        case 'acp.permission_request': {
+          const payload = event.payload as PermissionRequestPayload;
+          openPermissions.set(
+            payload.requestId,
+            payload.request?.toolCall?.title ?? payload.requestId,
+          );
+          break;
+        }
+        case 'acp.permission_response': {
+          const payload = event.payload as PermissionResponsePayload;
+          openPermissions.delete(payload.requestId);
+          break;
+        }
+      }
+    }
+
+    // Anything a turn already picked up is not re-queued — including the message
+    // an in-flight turn was carrying when the process died, which reached the
+    // agent and is sealed with that turn rather than sent twice.
+    for (const messageId of everSent) queued.delete(messageId);
+
+    if (openTurns.size === 0 && queued.size === 0 && openPermissions.size === 0) {
+      // Still close a dangling engagement even with a clean log — an engagement
+      // can outlive its turn if the process died between the two writes.
+      closeDanglingEngagement(session);
+      return;
+    }
+
+    for (const [requestId, title] of openPermissions) {
+      await record(session, 'acp.permission_response', { requestId, cancelled: true }, null);
+      await record(
+        session,
+        'system',
+        { level: 'warn', text: `The request to run ${title} expired when the dashboard restarted` },
+        null,
+      );
+    }
+
+    for (const turnId of openTurns.keys()) {
+      await record(
+        session,
+        'turn.end',
+        {
+          stopReason: 'error',
+          endedAt: iso(),
+          error: 'the dashboard stopped while this turn was running',
+        },
+        turnId,
+      );
+    }
+
+    closeDanglingEngagement(session);
+
+    if (queued.size > 0) {
+      session.queue.push(...queued.values());
+      await record(
+        session,
+        'system',
+        {
+          level: 'info',
+          text: `Resuming ${queued.size} message${queued.size === 1 ? '' : 's'} queued before the dashboard restarted`,
+        },
+        null,
+      );
+    }
+    flush(session);
+  }
+
+  /** Close an engagement the previous process left open for this ACP session. */
+  function closeDanglingEngagement(session: Session): void {
+    if (!session.acpSessionId) return;
+    const open = getOpenEngagement(session.acpSessionId);
+    if (!open) return;
+    closeEngagementById({
+      id: open.id,
+      startedAt: open.started_at,
+      closeReason: 'error',
+      // The persisted snapshot is the last thing the crashed process knew; using
+      // it keeps the window computable and prices the crashed turn at whatever
+      // it had actually spent.
+      tokensAtClose: snapshotOf(session),
+      endedAt: iso(),
+    });
+  }
+
+  /**
+   * Materialise every session this assignment has on disk, so `withdraw`,
+   * `cancel` and `answerPermission` see the rehydrated queue and permission
+   * state after a restart instead of an empty in-memory map (finding 8).
+   */
+  async function ensureAssignmentSessions(assignment: ResolvedAssignment): Promise<Session[]> {
+    const agentIds = new Set(listChatSessions(assignment.id).map((row) => row.agent_id));
+    for (const agentId of agentIds) {
+      try {
+        await ensureSession(assignment, agentId);
+      } catch {
+        // A definition that has since been deleted or broken must not stop the
+        // others from being reachable.
+      }
+    }
+    if (agentIds.size === 0) await ensureSession(assignment, null).catch(() => undefined);
+    return [...sessions.values()].filter((s) => s.assignment.id === assignment.id);
   }
 
   /** Read `workspace.*` from assignment.md and resolve the adapter's cwd. */
@@ -769,7 +973,17 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
 
   function drive(session: Session): Promise<void> {
     // Serialise: two sends arriving together must not both spawn an adapter.
-    session.driving = session.driving.then(() => driveOnce(session)).catch(() => {});
+    // The chain must never be broken by a rejection — a dead chain means the
+    // queue stops draining and the chat silently stops accepting work — but it
+    // must not swallow either, so failures are surfaced before being absorbed.
+    session.driving = session.driving
+      .then(() => driveOnce(session))
+      .catch((err) => {
+        console.error(
+          `syntaur chat: drive failed for ${session.key}:`,
+          err instanceof Error ? err.stack ?? err.message : err,
+        );
+      });
     return session.driving;
   }
 
@@ -785,11 +999,13 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
       const message = err instanceof Error ? err.message : String(err);
       await record(session, 'system', { level: 'error', text: message }, null);
       setState(session, 'error', message);
+      // The message stays queued: the adapter never saw it, so a later send (or
+      // a fixed PATH / workspace) can still deliver it.
+      flush(session);
       return;
     }
 
     if (session.queue[0] !== next) return; // withdrawn while the adapter came up
-    session.queue.shift();
 
     const turnId = randomUUID();
     const startedAt = iso();
@@ -824,6 +1040,11 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
     }
 
     await record(session, 'turn.start', { messageId: next.messageId, startedAt }, turnId);
+    // Dequeue only now that the turn is committed. Shifting earlier meant any
+    // throw between the shift and the send dropped the message with no turn and
+    // no trace (finding 5).
+    const at = session.queue.indexOf(next);
+    if (at >= 0) session.queue.splice(at, 1);
     setState(session, 'running');
 
     let blocks: ContentBlock[];
@@ -873,7 +1094,25 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
       failure = err instanceof Error ? err : new Error(String(err));
     }
 
-    await finishTurn(session, turn, response, failure);
+    try {
+      await finishTurn(session, turn, response, failure);
+    } catch (err) {
+      // The turn is committed: it MUST be sealed and its engagement closed, or
+      // the next start trips the one-open-per-session index.
+      const message = err instanceof Error ? err.message : String(err);
+      console.error(`syntaur chat: finishTurn failed for ${session.key}:`, err);
+      session.inFlight = null;
+      closeEngagementById({
+        id: turn.engagementId,
+        startedAt: turn.engagementStartedAt,
+        closeReason: 'error',
+        tokensAtClose: snapshotOf(session),
+        endedAt: iso(),
+      });
+      await record(session, 'system', { level: 'error', text: message }, null).catch(() => {});
+      setState(session, 'error', message);
+      flush(session);
+    }
     void drive(session);
   }
 
@@ -1011,6 +1250,16 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
     const key = modelKey(session);
     const totals = session.cumulative.models[key];
     if (!totals) return;
+    // codex reports no cost of its own, so an unpriced model silently books
+    // every turn at $0. Say so once rather than letting the rail quietly read
+    // zero (Decision 10).
+    if (!session.unpricedNoticeSent && priceForModel(key, ZERO_BUCKETS) === null) {
+      session.unpricedNoticeSent = true;
+      void record(session, 'system', {
+        level: 'info',
+        text: `No price list entry for ${key}, so this chat's turns are costed at $0. Token counts are still recorded.`,
+      }, null);
+    }
     try {
       upsertEvent({
         sessionId: session.acpSessionId,
@@ -1079,10 +1328,11 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
     },
 
     async withdraw(assignment, messageId) {
-      // Search every live session for the assignment rather than assuming the
-      // default agent — the message may have been addressed to another one.
-      const session = [...sessions.values()].find(
-        (s) => s.assignment.id === assignment.id && s.queue.some((q) => q.messageId === messageId),
+      // Search every session for the assignment rather than assuming the default
+      // agent — the message may have been addressed to another one, and after a
+      // restart none of them are in memory until they are materialised.
+      const session = (await ensureAssignmentSessions(assignment)).find((s) =>
+        s.queue.some((q) => q.messageId === messageId),
       );
       if (!session) return false;
       const at = session.queue.findIndex((q) => q.messageId === messageId);
@@ -1095,16 +1345,16 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
 
     async cancel(assignment, agentId) {
       // Cancel the turn that is actually running, whichever agent owns it.
-      const running = [...sessions.values()].find(
-        (s) => s.assignment.id === assignment.id && s.inFlight !== null && (!agentId || s.agentId === agentId),
+      const running = (await ensureAssignmentSessions(assignment)).find(
+        (s) => s.inFlight !== null && (!agentId || s.agentId === agentId),
       );
       if (!running) return false;
       return cancelTurn(running);
     },
 
     async answerPermission(assignment, requestId, optionId) {
-      const session = [...sessions.values()].find(
-        (s) => s.assignment.id === assignment.id && s.pendingPermissions.has(requestId),
+      const session = (await ensureAssignmentSessions(assignment)).find((s) =>
+        s.pendingPermissions.has(requestId),
       );
       const pending = session?.pendingPermissions.get(requestId);
       if (!session || !pending) return false;
