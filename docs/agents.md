@@ -1,5 +1,10 @@
 # Agent library
 
+> This page covers the **terminal-launch** agent library — profiles that open an
+> agent in a terminal or PTY. The assignment **Chat** tab uses a different,
+> ACP-based agent definition at `~/.syntaur/agents/<id>.md`; see
+> [assignment-chat.md](./assignment-chat.md).
+
 Syntaur keeps a flat list of named **agents**. Each agent has a **runner** type
 badge — `claude`, `pi`, or `codex` — and launches the same two ways: **standalone**
 or **onto an assignment**. Agents enter the list three ways: **discover → register**,
