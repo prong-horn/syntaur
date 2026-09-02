@@ -822,7 +822,12 @@ describe('startup repair after a crash (Decision 12)', () => {
 
   /** Write the persisted wreckage of a process killed mid-turn. */
   async function seedCrashedState(
-    opts: { queuedMessages?: string[]; pendingPermission?: boolean } = {},
+    opts: {
+      queuedMessages?: string[];
+      pendingPermission?: boolean;
+      /** Already-answered permission ids the log holds, e.g. [0, 1]. */
+      answeredPermissionSeqs?: number[];
+    } = {},
   ): Promise<void> {
     const log = await openChatLog(assignmentDir);
     const base = { assignmentId: ASSIGNMENT_ID, agentId: 'claude', sessionKey: SESSION_KEY };
@@ -855,6 +860,21 @@ describe('startup repair after a crash (Decision 12)', () => {
           requestId: 'perm-crashed',
           request: { toolCall: { toolCallId: 't1', title: 'Run `rm -rf /`' }, options: [] },
         },
+      });
+    }
+    for (const seq of opts.answeredPermissionSeqs ?? []) {
+      const requestId = `${SESSION_KEY}:perm:${seq}`;
+      await log.append({
+        ...base,
+        turnId: 'turn-crashed',
+        kind: 'acp.permission_request',
+        payload: { requestId, request: { toolCall: { toolCallId: `t${seq}`, title: `Run ${seq}` }, options: [] } },
+      });
+      await log.append({
+        ...base,
+        turnId: 'turn-crashed',
+        kind: 'acp.permission_response',
+        payload: { requestId, optionId: 'allow' },
       });
     }
     // Messages that were still waiting their turn.
@@ -970,6 +990,99 @@ describe('startup repair after a crash (Decision 12)', () => {
 
     const summary = await broker.getSession(assignment(), 'claude');
     expect(summary?.queued).toEqual([]);
+  });
+
+  it('sends re-queued messages on session load alone, with no new message (round 2, finding 2)', async () => {
+    await seedCrashedState({ queuedMessages: ['first waiting', 'second waiting'] });
+    makeBroker({ agentOptions: { sessionIds: ['acp-session-1'] } });
+
+    // Opening the Chat tab calls GET .../chat/session and nothing else. The
+    // docs promise recovered messages are "re-queued and sent in order", so
+    // this alone must drain them.
+    await broker.getSession(assignment(), 'claude');
+    await waitUntil(() => fake.prompts.length === 2, 'both recovered messages to be sent');
+
+    const sent = fake.prompts.map((p) => (p.prompt[p.prompt.length - 1] as { text: string }).text);
+    expect(sent[0]).toContain('first waiting');
+    expect(sent[1]).toContain('second waiting');
+  });
+
+  it('repairs exactly once under two concurrent loads (round 2, finding 1)', async () => {
+    await seedCrashedState();
+    makeBroker({ agentOptions: { sessionIds: ['acp-session-1'] } });
+
+    // Two tabs hitting the broker at the same instant: one construction, one
+    // repair, and nothing may drive a half-repaired session.
+    const [a, b] = await Promise.all([
+      broker.getSession(assignment(), 'claude'),
+      broker.send({ assignment: assignment(), text: 'from the other tab' }),
+    ]);
+    expect(a).not.toBeNull();
+    expect(b.messageId).toBeTruthy();
+    await idle(2);
+
+    const db = getSessionDb();
+    const engagements = db
+      .prepare("SELECT close_reason FROM engagement WHERE stage = 'chat' ORDER BY id")
+      .all() as Array<{ close_reason: string }>;
+    // The crashed turn's engagement is closed ONCE, as an error — never
+    // re-absorbed as a `chat-registered` window by a racing drive.
+    expect(engagements.filter((e) => e.close_reason === 'error')).toHaveLength(1);
+    expect(
+      db
+        .prepare("SELECT COUNT(*) AS n FROM engagement WHERE stage = 'chat' AND close_reason = 'chat-registered'")
+        .get(),
+    ).toEqual({ n: 0 });
+
+    // The decisive check: repair ran ONCE. Two concurrent constructions would
+    // each seal the orphan, appending two `turn.end` events for one turnId —
+    // invisible in the item list, because the normalizer ignores the second.
+    const logged = await events();
+    const sealEvents = logged.filter(
+      (e) => e.kind === 'turn.end' && e.turnId === 'turn-crashed',
+    );
+    expect(sealEvents).toHaveLength(1);
+    const resumeNotices = logged.filter(
+      (e) => e.kind === 'system' && /Resuming \d+ message/.test((e.payload as { text: string }).text),
+    );
+    expect(resumeNotices.length).toBeLessThanOrEqual(1);
+
+    const statuses = itemsOfType('turn.status') as Array<{ state: string; stopReason?: string }>;
+    expect(statuses).toHaveLength(2);
+    expect(statuses.filter((t) => t.stopReason === 'error')).toHaveLength(1);
+    expect(statuses.every((t) => t.state === 'ended')).toBe(true);
+    expect(fake.prompts).toHaveLength(1);
+  });
+
+  it('continues the permission id sequence across a restart (round 2, finding 3)', async () => {
+    await seedCrashedState({ answeredPermissionSeqs: [0, 1] });
+    makeBroker({
+      turns: [
+        {
+          steps: [
+            {
+              kind: 'permission',
+              request: {
+                toolCall: { toolCallId: 't-new', title: 'Run something new' },
+                options: [{ optionId: 'allow', name: 'Allow', kind: 'allow_once' }],
+              },
+            },
+          ],
+        },
+      ],
+      agentOptions: { sessionIds: ['acp-session-1'] },
+    });
+
+    await broker.send({ assignment: assignment(), text: 'ask me' });
+    await waitUntil(
+      () => itemsOfType('permission.request').some((i) => (i as { requestId: string }).requestId.endsWith(':perm:2')),
+      'a permission id that continues the sequence',
+    );
+
+    const ids = (itemsOfType('permission.request') as Array<{ requestId: string }>).map((i) => i.requestId);
+    // perm:0 and perm:1 are the log's; the new one must not reuse either.
+    expect(ids).toContain(`${SESSION_KEY}:perm:2`);
+    expect(new Set(ids).size).toBe(ids.length);
   });
 
   it('resolves a permission the crash orphaned instead of leaving live buttons', async () => {

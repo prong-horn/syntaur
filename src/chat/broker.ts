@@ -265,6 +265,17 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
   const iso = () => new Date(now()).toISOString();
   const sessions = new Map<string, Session>();
   /**
+   * Sessions still being built. `ensureSession` must not publish into
+   * `sessions` until `repairSession` has finished, or a concurrent `send` from
+   * another tab can take the half-repaired session and `drive` it — opening an
+   * engagement against an unsealed orphan, or letting `registerAgentSession`
+   * absorb the dangling engagement as `chat-registered` again (round 2,
+   * finding 1). Caching the in-flight promise keeps two concurrent calls for
+   * the same key sharing ONE construction and ONE repair, the same shape as
+   * `logs` below.
+   */
+  const constructing = new Map<string, Promise<Session>>();
+  /**
    * One `ChatLog` per assignment DIRECTORY, not per session (finding 4). Every
    * agent on an assignment appends to the same `events.jsonl`, and each log
    * instance owns its own `seq` counter and append chain — two instances would
@@ -425,7 +436,23 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
       existing.assignment = assignment;
       return existing;
     }
+    // A construction already under way owns the repair; join it rather than
+    // building (and repairing) a second session for the same key.
+    const pending = constructing.get(key);
+    if (pending) return pending;
 
+    const build = buildSession(assignment, definition, key).finally(() => {
+      constructing.delete(key);
+    });
+    constructing.set(key, build);
+    return build;
+  }
+
+  async function buildSession(
+    assignment: ResolvedAssignment,
+    definition: AgentDefinition,
+    key: string,
+  ): Promise<Session> {
     const harness = HARNESSES[definition.harness as Harness];
     const log = await sharedLog(assignment.assignmentDir);
     const row = getChatSession(assignment.id, definition.id);
@@ -480,10 +507,16 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
     const events = (await log.readAll()).filter((event) => event.sessionKey === key);
     for (const event of events) session.normalizer.ingest(event);
 
-    sessions.set(key, session);
-    // Repair anything the previous process left mid-flight, BEFORE this session
-    // can drive (Decision 12).
+    // Repair anything the previous process left mid-flight BEFORE the session is
+    // reachable, so nothing can drive a half-repaired session (Decision 12).
     await repairSession(session, events);
+    sessions.set(key, session);
+
+    // Messages recovered by the repair are sent without waiting for the human to
+    // type something new — the docs promise they are "re-queued and sent in
+    // order", and opening the Chat tab only calls `getSession` (round 2,
+    // finding 2).
+    if (session.queue.length > 0 && !session.inFlight && !stopping) void drive(session);
     return session;
   }
 
@@ -523,6 +556,13 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
      */
     const everSent = new Set<string>();
     const openPermissions = new Map<string, string>(); // requestId -> title
+    /**
+     * Highest `perm:<n>` suffix this session has ever minted. `permissionSeq`
+     * restarts at 0 on load, so without this a new request would reuse an id
+     * the log already holds and collide with a still-rendered item (round 2,
+     * finding 3).
+     */
+    let maxPermissionSeq = -1;
 
     for (const event of events) {
       switch (event.kind) {
@@ -548,6 +588,8 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
             payload.requestId,
             payload.request?.toolCall?.title ?? payload.requestId,
           );
+          const suffix = Number(payload.requestId.split(':perm:')[1]);
+          if (Number.isInteger(suffix)) maxPermissionSeq = Math.max(maxPermissionSeq, suffix);
           break;
         }
         case 'acp.permission_response': {
@@ -562,6 +604,10 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
     // an in-flight turn was carrying when the process died, which reached the
     // agent and is sealed with that turn rather than sent twice.
     for (const messageId of everSent) queued.delete(messageId);
+
+    // Continue the id sequence rather than restarting it, whether or not there
+    // is anything else to repair.
+    session.permissionSeq = maxPermissionSeq + 1;
 
     if (openTurns.size === 0 && queued.size === 0 && openPermissions.size === 0) {
       // Still close a dangling engagement even with a clean log — an engagement
