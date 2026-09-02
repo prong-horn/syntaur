@@ -525,9 +525,10 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
 
     const previous = session.acpSessionId;
     let resumed = false;
+    let resumeResponse: acp.ResumeSessionResponse | null = null;
     if (previous) {
       try {
-        await client.resumeSession(previous, cwd);
+        resumeResponse = await client.resumeSession(previous, cwd);
         resumed = true;
       } catch (err) {
         // Decision 7's fallback: a new session, a system row saying so, and the
@@ -542,6 +543,12 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
     }
 
     if (resumed) {
+      // `ResumeSessionResponse` carries `modes` and `configOptions` just like
+      // `session/new`, and the adapter really does send them. Without this the
+      // resumed session forgot its model and the cumulative cost snapshot split
+      // across two keys (`opus[1m]` and the harness-id fallback), which made the
+      // engagement window delta read zero.
+      if (resumeResponse) readSessionConfig(session, resumeResponse);
       await record(session, 'session.resumed', {
         acpSessionId: previous,
         harness: session.harness.id,
@@ -615,7 +622,11 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
     closeOpenEngagement(session.acpSessionId, { closeReason: 'chat-registered', endedAt: iso() });
   }
 
-  function readSessionConfig(session: Session, response: acp.NewSessionResponse): void {
+  /** Both `session/new` and `session/resume` return `modes` + `configOptions`. */
+  function readSessionConfig(
+    session: Session,
+    response: Pick<acp.NewSessionResponse, 'modes' | 'configOptions'>,
+  ): void {
     session.mode = response.modes?.currentModeId ?? session.mode;
     for (const option of response.configOptions ?? []) {
       const value = (option as { id?: string; currentValue?: unknown }).currentValue;
@@ -913,8 +924,17 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
 
   // --- usage (Decision 10) -------------------------------------------------
 
+  /**
+   * The key a session's cumulative tokens accumulate under. The adapter's
+   * reported model wins; failing that, an existing sole key in the persisted
+   * snapshot is reused so a restart cannot split one session's cost across two
+   * keys; the harness id is the last resort.
+   */
   function modelKey(session: Session): string {
-    return session.model ?? session.harness.id;
+    if (session.model) return session.model;
+    const existing = Object.keys(session.cumulative.models);
+    if (existing.length === 1) return existing[0];
+    return session.harness.id;
   }
 
   function snapshotOf(session: Session): TokenSnapshot {

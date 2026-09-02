@@ -741,3 +741,48 @@ describe('cumulative cost (Decision 11)', () => {
     expect(costs[1]).toBe(0);
   });
 });
+
+describe('resume keeps the cost snapshot on one key', () => {
+  it('reads modes and config options back from session/resume', async () => {
+    // A resumed session that forgot its model accumulated under the harness-id
+    // fallback instead, splitting one session's cost across two keys and making
+    // the engagement window delta read zero.
+    makeBroker({
+      turns: [
+        { steps: [{ kind: 'update', update: usageUpdate(10, 1000, 0.25) }], usage: usage(10, 5) },
+        { steps: [{ kind: 'update', update: usageUpdate(20, 1000, 0.40) }], usage: usage(10, 5) },
+      ],
+      agentOptions: {
+        sessionIds: ['acp-session-1'],
+        configOptions: [
+          { id: 'model', name: 'Model', type: 'select', currentValue: 'opus[1m]', options: [] },
+        ] as never,
+      },
+    });
+
+    await broker.send({ assignment: assignment(), text: 'one' });
+    await idle();
+    // Drop the client so the next send has to respawn and resume.
+    for (const client of clients) await client.close();
+
+    await broker.send({ assignment: assignment(), text: 'two' });
+    await idle(2);
+    expect(fake.calls).toContain('session/resume');
+
+    const row = getChatSession(ASSIGNMENT_ID, 'claude');
+    const models = JSON.parse(row!.usage_snapshot_json!).models as Record<string, unknown>;
+    expect(Object.keys(models)).toEqual(['opus[1m]']);
+
+    const db = getSessionDb();
+    const turns = db
+      .prepare("SELECT tokens_at_open, tokens_at_close FROM engagement WHERE stage='chat' ORDER BY id")
+      .all() as Array<{ tokens_at_open: string; tokens_at_close: string }>;
+    const delta = (r: { tokens_at_open: string; tokens_at_close: string }) => {
+      const o = JSON.parse(r.tokens_at_open).models['opus[1m]']?.cost ?? 0;
+      const c = JSON.parse(r.tokens_at_close).models['opus[1m]']?.cost ?? 0;
+      return c - o;
+    };
+    expect(delta(turns[0])).toBeCloseTo(0.25, 6);
+    expect(delta(turns[1])).toBeCloseTo(0.15, 6);
+  });
+});
