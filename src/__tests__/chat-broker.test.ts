@@ -1085,6 +1085,37 @@ describe('startup repair after a crash (Decision 12)', () => {
     expect(new Set(ids).size).toBe(ids.length);
   });
 
+  it('shuts down a session that finishes building after stopAll (round 3)', async () => {
+    await seedCrashedState();
+    makeBroker({ agentOptions: { sessionIds: ['acp-session-1'] } });
+
+    // Start a load and shut down while it is still inside `buildSession`.
+    // `ensureSession` yields on `loadAgentDefinitions` before anything is
+    // published, and `stopAll` runs to completion synchronously against an
+    // empty session map — exactly the window the finding describes.
+    const loading = broker.getSession(assignment(), 'claude');
+    await broker.stopAll();
+    await loading;
+
+    // The session must not have slipped into a map the shutdown already walked:
+    // it is stopped either way, which is only true if stopAll joined the
+    // construction (or the construction saw `stopping` and stood down).
+    const row = getChatSession(ASSIGNMENT_ID, 'claude');
+    expect(row?.state).toBe('stopped');
+    const db = getSessionDb();
+    expect(
+      (db.prepare("SELECT status FROM sessions WHERE session_id = 'acp-session-1'").get() as {
+        status: string;
+      }).status,
+    ).toBe('stopped');
+
+    // Nothing left running or dangling.
+    expect(clients.every((c) => !c.alive())).toBe(true);
+    expect(
+      (db.prepare('SELECT COUNT(*) AS n FROM engagement WHERE ended_at IS NULL').get() as { n: number }).n,
+    ).toBe(0);
+  });
+
   it('resolves a permission the crash orphaned instead of leaving live buttons', async () => {
     await seedCrashedState({ pendingPermission: true });
     makeBroker({ agentOptions: { sessionIds: ['acp-session-1'] } });

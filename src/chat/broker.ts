@@ -510,6 +510,14 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
     // Repair anything the previous process left mid-flight BEFORE the session is
     // reachable, so nothing can drive a half-repaired session (Decision 12).
     await repairSession(session, events);
+
+    if (stopping) {
+      // `stopAll` began while this session was being built. Publishing now would
+      // put it into a map the shutdown pass has already walked, leaving a
+      // session nothing ever tears down (round 3). Shut it down here instead.
+      await shutdownSession(session);
+      return session;
+    }
     sessions.set(key, session);
 
     // Messages recovered by the repair are sent without waiting for the human to
@@ -518,6 +526,26 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
     // finding 2).
     if (session.queue.length > 0 && !session.inFlight && !stopping) void drive(session);
     return session;
+  }
+
+  /**
+   * Release everything a session holds and mark it stopped. Used both by
+   * `stopAll` for published sessions and by `buildSession` for one that
+   * finished building after shutdown started.
+   */
+  async function shutdownSession(session: Session): Promise<void> {
+    if (session.flushTimer) clearTimeout(session.flushTimer);
+    if (session.idleTimer) clearTimeout(session.idleTimer);
+    if (session.client) {
+      const client = session.client;
+      session.client = null;
+      await client.close().catch(() => {});
+    }
+    session.state = 'stopped';
+    persistSession(session);
+    if (session.acpSessionId) {
+      await updateSessionStatus('', session.acpSessionId, 'stopped', iso()).catch(() => false);
+    }
   }
 
   /**
@@ -1431,6 +1459,14 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
 
     async stopAll() {
       stopping = true;
+      // Join every construction in flight first. A session still inside
+      // `buildSession` would otherwise finish after this pass and publish itself
+      // into a map nobody walks again; `stopping` is already true, so each one
+      // shuts itself down instead of publishing. Loop because a construction can
+      // start one more time before the flag is observed.
+      for (let guard = 0; guard < 10 && constructing.size > 0; guard += 1) {
+        await Promise.allSettled([...constructing.values()]);
+      }
       for (const session of sessions.values()) {
         if (session.flushTimer) clearTimeout(session.flushTimer);
         if (session.idleTimer) clearTimeout(session.idleTimer);
