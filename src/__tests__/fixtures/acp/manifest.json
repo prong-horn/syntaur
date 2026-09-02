@@ -1,11 +1,12 @@
 {
-  "generated": "2026-09-02T00:20:38.194Z",
+  "generated": "2026-09-02T11:13:54.969Z",
   "envelope": "{seq, ts, t, dir: \"in\"|\"out\", msg} per line; t = ms since adapter spawn; dir is from the client's point of view",
   "volatile": [
-    "absolute paths under scripts/spike/acp/out/target-<adapter> (the disposable target clones)",
+    "absolute paths under scripts/spike/acp/out/target-<adapter> (the disposable target clones) and scripts/spike/acp/out/perm",
     "sessionId values",
-    "tool-call ids (toolu_… / call_…)",
+    "tool-call ids (toolu_… / call_… / exec-…)",
     "usage_update numbers and _meta[\"_claude/rateLimit\"]",
+    "timestamps and model output text",
     "e-mail addresses (already replaced with [redacted-email] at capture time)"
   ],
   "runs": {
@@ -20,7 +21,7 @@
         "@agentclientprotocol/sdk": "1.4.0"
       },
       "target": "/Users/brennen/syntaur/.worktrees/feat/acp-adapter-spike/scripts/spike/acp/out/target-claude",
-      "sourceCommit": "2b3e02b4844b60544b8824c6ac4f3de0457ba2b9"
+      "sourceCommit": "35dbef5d719ead5089ed648bc612bdc976a96e5f"
     },
     "codex": {
       "run": "codex-full",
@@ -33,7 +34,7 @@
         "@agentclientprotocol/sdk": "1.4.0"
       },
       "target": "/Users/brennen/syntaur/.worktrees/feat/acp-adapter-spike/scripts/spike/acp/out/target-codex",
-      "sourceCommit": "2b3e02b4844b60544b8824c6ac4f3de0457ba2b9"
+      "sourceCommit": "35dbef5d719ead5089ed648bc612bdc976a96e5f"
     }
   },
   "scenarios": [
@@ -676,23 +677,24 @@
       "title": "Tool calls (read + search)",
       "adapter": "claude",
       "pass": true,
-      "ms": 17361,
+      "ms": 19231,
+      "sourceCommit": "35dbef5d719ead5089ed648bc612bdc976a96e5f",
       "files": [
         "claude/05-tool-calls.ndjson"
       ],
       "notes": [
-        "toolu_01WVgfc9FizdhZEbBFihaUKy: kind=read \"Read File\" pending→completed content=1 locations=1 rawInput=true rawOutput=true",
-        "toolu_01NXEQ1xfSbb8hfxDPX7K8y4: kind=execute \"Terminal\" pending→completed content=2 locations=0 rawInput=true rawOutput=true",
-        "narration lengths=[61,0]",
-        "text=\"I'll read package.json and search for the string in parallel.The version in package.json is **0.79.0**.\\n\\n`createDashboardServer` appears in 14 files (paths relative to the repo root):\\n\\n**Source and te\"",
-        "checks={\"twoCalls\":true,\"allCompleted\":true,\"allTitled\":true,\"allRenderable\":true,\"searchKind\":true}",
+        "toolu_015HNEhtmpAuo5ZvzwHb1XQ3: kind=read \"Read File\" pending→completed content=1 locations=1 rawInput=true rawOutput=true renderedChars=6983",
+        "toolu_019PRoLvf3dL1Tuxr5DL46Gz: kind=execute \"Terminal\" pending→completed content=2 locations=0 rawInput=true rawOutput=true renderedChars=1772",
+        "narration lengths=[60,0]",
+        "text=\"Reading the package.json and running a repo-wide search now.The version in package.json is **0.79.0**.\\n\\n`createDashboardServer` appears in 18 files:\\n\\n- `src/dashboard/server.ts`\\n- `src/dashboard/index\"",
+        "checks={\"twoCalls\":true,\"allCompleted\":true,\"allTitled\":true,\"allRenderable\":true,\"searchKind\":true,\"versionReported\":true,\"searchHitReported\":true}",
         "recorded (not required)={\"inProgressSeen\":false,\"allContent\":true,\"allRawInput\":true,\"allRawOutput\":true,\"readKind\":true,\"locations\":true}",
         "search tool kind used: execute (agent chose a shell grep)"
       ],
       "metrics": {
         "currentModeId": "auto",
         "toolCalls": {
-          "toolu_01WVgfc9FizdhZEbBFihaUKy": {
+          "toolu_015HNEhtmpAuo5ZvzwHb1XQ3": {
             "title": "Read File",
             "kind": "read",
             "statuses": [
@@ -702,9 +704,10 @@
             "content": 1,
             "locations": 1,
             "rawInput": true,
-            "rawOutput": true
+            "rawOutput": true,
+            "renderedChars": 6983
           },
-          "toolu_01NXEQ1xfSbb8hfxDPX7K8y4": {
+          "toolu_019PRoLvf3dL1Tuxr5DL46Gz": {
             "title": "Terminal",
             "kind": "execute",
             "statuses": [
@@ -714,19 +717,47 @@
             "content": 2,
             "locations": 0,
             "rawInput": true,
-            "rawOutput": true
+            "rawOutput": true,
+            "renderedChars": 1772
           }
         },
         "narrationBeforeToolCalls": [
-          "I'll read package.json and search for the string in parallel.",
+          "Reading the package.json and running a repo-wide search now.",
           ""
         ],
+        "coverage": {
+          "version": "0.79.0",
+          "versionInReply": true,
+          "hits": 18,
+          "pathsInReply": [
+            "claude-info/plans/2026-03-20-chunk6-dashboard.md",
+            "claude-info/plans/2026-03-20-chunk6-dashboard.md.pre-review.md",
+            "claude-info/plans/2026-04-07-quick-todos-lite.md",
+            "claude-info/plans/2026-04-12-syntaur-desktop-app.md",
+            "claude-info/plans/2026-04-12-syntaur-desktop-app.md.pre-review.md",
+            "claude-info/plans/2026-04-20-projects-comments-protocol-refactor-lite.md",
+            "claude-info/plans/assignment-chat-design.md",
+            "claude-info/plans/scratch/2026-04-12-syntaur-desktop-app-discovery.md",
+            "docs/superpowers/plans/2026-03-22-server-tracker.md",
+            "scripts/spike/acp/scenarios.ts",
+            "src/__tests__/fixtures/acp/claude/05-tool-calls.ndjson",
+            "src/__tests__/fixtures/acp/codex/05-tool-calls.ndjson",
+            "src/__tests__/fixtures/acp/manifest.json",
+            "src/commands/dashboard.ts",
+            "src/dashboard/__tests__/pty-upgrade-integration.test.ts",
+            "src/dashboard/index.ts",
+            "src/dashboard/pty-token.ts",
+            "src/dashboard/server.ts"
+          ]
+        },
         "checks": {
           "twoCalls": true,
           "allCompleted": true,
           "allTitled": true,
           "allRenderable": true,
-          "searchKind": true
+          "searchKind": true,
+          "versionReported": true,
+          "searchHitReported": true
         },
         "recorded": {
           "inProgressSeen": false,
@@ -1061,28 +1092,51 @@
       "title": "Cancel mid-turn + process hygiene",
       "adapter": "claude",
       "pass": true,
-      "ms": 10291,
+      "ms": 37951,
+      "sourceCommit": "35dbef5d719ead5089ed648bc612bdc976a96e5f",
       "files": [
-        "claude/12-cancel.ndjson"
+        "claude/12-cancel.inherited.ndjson",
+        "claude/12-cancel.low.ndjson"
       ],
       "notes": [
-        "stop=cancelled err=- cancelMs=29 chunks streamed before cancel=3, after=0",
-        "process tree after cancel: 34082:node | 34088:/Users/brennen/.nvm/versions/node/v22.22.1/lib/node_modules/@agentclientprotocol/claude-agent-acp/node_modules/@anthropic-ai/claude-agent-sdk-darwin-arm64/claude",
+        "part A (effort=xhigh): first chunk at 25441, updates before cancel={\"available_commands_update\":2,\"usage_update\":1,\"agent_message_chunk\":1}, stop=cancelled err=- cancelMs=11, survivors after close()=0",
+        "part B (effort=low): stop=cancelled err=- cancelMs=21 first chunk at 4035ms, chunks streamed before cancel=3, after=0",
+        "process tree after cancel: 43300:node | 43301:/Users/brennen/.nvm/versions/node/v22.22.1/lib/node_modules/@agentclientprotocol/claude-agent-acp/node_modules/@anthropic-ai/claude-agent-sdk-darwin-arm64/claude | 43831:npm exec @playwright/mcp@latest | 43857:npm exec @upstash/context7-mcp | 44003:npm exec firebase-tools@latest mcp | 44048:node | 44073:node | 44120:node",
         "after SIGTERM to adapter pid only: none",
         "after close() (group kill): none"
       ],
       "metrics": {
         "currentModeId": "auto",
-        "cancel": {
+        "inherited": {
+          "effort": "xhigh",
+          "firstChunkMs": 25441,
+          "silentMs": 25441,
+          "updateKindsBeforeCancel": {
+            "available_commands_update": 2,
+            "usage_update": 1,
+            "agent_message_chunk": 1
+          },
           "stop": "cancelled",
-          "cancelMs": 29,
-          "firstChunkMs": 3837,
+          "cancelMs": 11,
+          "survivorsAfterClose": []
+        },
+        "cancel": {
+          "effort": "low",
+          "stop": "cancelled",
+          "cancelMs": 21,
+          "firstChunkMs": 4035,
           "chunksBefore": 3,
           "chunksAfterExtra": 0
         },
         "treeAfterCancel": [
-          "34082:node",
-          "34088:/Users/brennen/.nvm/versions/node/v22.22.1/lib/node_modules/@agentclientprotocol/claude-agent-acp/node_modules/@anthropic-ai/claude-agent-sdk-darwin-arm64/claude"
+          "43300:node",
+          "43301:/Users/brennen/.nvm/versions/node/v22.22.1/lib/node_modules/@agentclientprotocol/claude-agent-acp/node_modules/@anthropic-ai/claude-agent-sdk-darwin-arm64/claude",
+          "43831:npm exec @playwright/mcp@latest",
+          "43857:npm exec @upstash/context7-mcp",
+          "44003:npm exec firebase-tools@latest mcp",
+          "44048:node",
+          "44073:node",
+          "44120:node"
         ],
         "survivorsAfterAdapterSigterm": [],
         "survivorsAfterClose": []
@@ -1092,32 +1146,34 @@
       "id": "13-queue-vs-steer",
       "title": "Second prompt during a turn; steering",
       "adapter": "claude",
-      "pass": true,
-      "ms": 129052,
+      "pass": false,
+      "ms": 157685,
+      "sourceCommit": "35dbef5d719ead5089ed648bc612bdc976a96e5f",
       "files": [
         "claude/13-queue-vs-steer.ndjson"
       ],
       "notes": [
-        "second prompt mid-turn → queued; A: {\"stop\":\"end_turn\",\"ms\":32827}  B: {\"stop\":\"end_turn\",\"ms\":33148}  QUEUED in stream=true user echoes=0",
-        "steer → {\"outcome\":\"injected\"}  C: {\"err\":\"timeout after 90000ms: prompt\",\"ms\":92005,\"doneAt\":1788307315584} STEERED in stream=true textLen=7",
-        "steer while idle (promptRequired) → {\"outcome\":\"injected\"}"
+        "second prompt mid-turn → queued; A: {\"stop\":\"end_turn\",\"ms\":61499}  B: {\"stop\":\"end_turn\",\"ms\":61271}  QUEUED in stream=true user echoes=0",
+        "steer → {\"outcome\":\"injected\"}  C: {\"err\":\"timeout after 90000ms: prompt\",\"ms\":92006,\"doneAt\":1788347318984} STEERED in stream=true textLen=7",
+        "steer while idle (promptRequired) → {\"outcome\":\"injected\"}",
+        "FAIL: session/prompt request(s) never resolved: C (steered prompt)"
       ],
       "metrics": {
         "currentModeId": "auto",
         "queue": {
           "a": {
             "stop": "end_turn",
-            "ms": 32827,
-            "doneAt": 1788307221256
+            "ms": 61499,
+            "doneAt": 1788347225205
           },
           "b": {
             "stop": "end_turn",
-            "ms": 33148,
-            "doneAt": 1788307223579
+            "ms": 61271,
+            "doneAt": 1788347226978
           },
           "userEchoes": 0,
           "sawQUEUED": true,
-          "textLen": 5327,
+          "textLen": 5323,
           "classification": "queued"
         },
         "steer": {
@@ -1126,15 +1182,18 @@
           },
           "c": {
             "err": "timeout after 90000ms: prompt",
-            "ms": 92005,
-            "doneAt": 1788307315584
+            "ms": 92006,
+            "doneAt": 1788347318984
           },
           "sawSTEERED": true,
           "textLen": 7
         },
         "steerIdle": {
           "outcome": "injected"
-        }
+        },
+        "unresolved": [
+          "C (steered prompt)"
+        ]
       }
     },
     {
@@ -2778,35 +2837,37 @@
       "title": "Tool calls (read + search)",
       "adapter": "codex",
       "pass": true,
-      "ms": 19038,
+      "ms": 22879,
+      "sourceCommit": "35dbef5d719ead5089ed648bc612bdc976a96e5f",
       "files": [
         "codex/05-tool-calls.ndjson"
       ],
       "notes": [
-        "exec-559cb30b-7e02-4e8b-9926-7f0c083744aa: kind=execute \"sed -n '/\"version\"[[:space:]]*:/p' package.json\" in_progress→completed content=1 locations=0 rawInput=true rawOutput=true",
-        "exec-0dff6170-04fd-4804-9d54-3afaabd51520: kind=search \"Search for 'createDashboardServer' in .\" in_progress→completed content=0 locations=0 rawInput=false rawOutput=true",
-        "narration lengths=[279,0]",
+        "exec-322b39ac-42c6-490b-a091-7ba11b706c6c: kind=read \"Read file '/Users/brennen/syntaur/.worktrees/feat/acp-adapter-spike/scripts/spike/acp/out/target-codex/package.json'\" in_progress→completed content=0 locations=1 rawInput=false rawOutput=true renderedChars=3182",
+        "exec-313676b4-8262-44f2-98fa-3cdd6efaaa62: kind=search \"Search for 'createDashboardServer' in .\" in_progress→completed content=0 locations=0 rawInput=false rawOutput=true renderedChars=891",
+        "narration lengths=[64,0]",
         "text=\"Warning: Skill descriptions were shortened to fit the skills context budget. Codex can still see every skill, but some descriptions are shorter. Disable unused skills or plugins to leave more room for\"",
-        "checks={\"twoCalls\":true,\"allCompleted\":true,\"allTitled\":true,\"allRenderable\":true,\"searchKind\":true}",
-        "recorded (not required)={\"inProgressSeen\":true,\"allContent\":false,\"allRawInput\":false,\"allRawOutput\":true,\"readKind\":false,\"locations\":false}",
+        "checks={\"twoCalls\":true,\"allCompleted\":true,\"allTitled\":true,\"allRenderable\":true,\"searchKind\":true,\"versionReported\":true,\"searchHitReported\":true}",
+        "recorded (not required)={\"inProgressSeen\":true,\"allContent\":false,\"allRawInput\":false,\"allRawOutput\":true,\"readKind\":true,\"locations\":true}",
         "search tool kind used: search"
       ],
       "metrics": {
         "currentModeId": "agent",
         "toolCalls": {
-          "exec-559cb30b-7e02-4e8b-9926-7f0c083744aa": {
-            "title": "sed -n '/\"version\"[[:space:]]*:/p' package.json",
-            "kind": "execute",
+          "exec-322b39ac-42c6-490b-a091-7ba11b706c6c": {
+            "title": "Read file '/Users/brennen/syntaur/.worktrees/feat/acp-adapter-spike/scripts/spike/acp/out/target-codex/package.json'",
+            "kind": "read",
             "statuses": [
               "in_progress",
               "completed"
             ],
-            "content": 1,
-            "locations": 0,
-            "rawInput": true,
-            "rawOutput": true
+            "content": 0,
+            "locations": 1,
+            "rawInput": false,
+            "rawOutput": true,
+            "renderedChars": 3182
           },
-          "exec-0dff6170-04fd-4804-9d54-3afaabd51520": {
+          "exec-313676b4-8262-44f2-98fa-3cdd6efaaa62": {
             "title": "Search for 'createDashboardServer' in .",
             "kind": "search",
             "statuses": [
@@ -2816,27 +2877,55 @@
             "content": 0,
             "locations": 0,
             "rawInput": false,
-            "rawOutput": true
+            "rawOutput": true,
+            "renderedChars": 891
           }
         },
         "narrationBeforeToolCalls": [
-          "Warning: Skill descriptions were shortened to fit the skills context budget. Codex can still see every skill, but some descriptions are shorter. Disable unused skills or plugins to leave more room for the rest.\n\nI’ll inspect `package.json`, then run a separate repository search.",
+          "I’ll inspect the local files only and keep both checks separate.",
           ""
         ],
+        "coverage": {
+          "version": "0.79.0",
+          "versionInReply": true,
+          "hits": 18,
+          "pathsInReply": [
+            "claude-info/plans/2026-03-20-chunk6-dashboard.md",
+            "claude-info/plans/2026-03-20-chunk6-dashboard.md.pre-review.md",
+            "claude-info/plans/2026-04-07-quick-todos-lite.md",
+            "claude-info/plans/2026-04-12-syntaur-desktop-app.md",
+            "claude-info/plans/2026-04-12-syntaur-desktop-app.md.pre-review.md",
+            "claude-info/plans/2026-04-20-projects-comments-protocol-refactor-lite.md",
+            "claude-info/plans/assignment-chat-design.md",
+            "claude-info/plans/scratch/2026-04-12-syntaur-desktop-app-discovery.md",
+            "docs/superpowers/plans/2026-03-22-server-tracker.md",
+            "scripts/spike/acp/scenarios.ts",
+            "src/__tests__/fixtures/acp/claude/05-tool-calls.ndjson",
+            "src/__tests__/fixtures/acp/codex/05-tool-calls.ndjson",
+            "src/__tests__/fixtures/acp/manifest.json",
+            "src/commands/dashboard.ts",
+            "src/dashboard/__tests__/pty-upgrade-integration.test.ts",
+            "src/dashboard/index.ts",
+            "src/dashboard/pty-token.ts",
+            "src/dashboard/server.ts"
+          ]
+        },
         "checks": {
           "twoCalls": true,
           "allCompleted": true,
           "allTitled": true,
           "allRenderable": true,
-          "searchKind": true
+          "searchKind": true,
+          "versionReported": true,
+          "searchHitReported": true
         },
         "recorded": {
           "inProgressSeen": true,
           "allContent": false,
           "allRawInput": false,
           "allRawOutput": true,
-          "readKind": false,
-          "locations": false
+          "readKind": true,
+          "locations": true
         }
       }
     },
@@ -2956,6 +3045,38 @@
             "written": true,
             "stop": "end_turn",
             "failed": false
+          }
+        }
+      }
+    },
+    {
+      "id": "07n-sandbox-denied",
+      "title": "Negative control: sandbox-denied command, no escalation (codex)",
+      "adapter": "codex",
+      "pass": null,
+      "ms": 11822,
+      "sourceCommit": "35dbef5d719ead5089ed648bc612bdc976a96e5f",
+      "files": [
+        "codex/07n-sandbox-denied.ndjson"
+      ],
+      "notes": [
+        "denied exec: {\"toolCalls\":0,\"toolKinds\":[],\"statuses\":[],\"permissionRequests\":0,\"written\":false,\"stop\":\"end_turn\",\"updateKinds\":{\"available_commands_update\":1,\"session_info_update\":3,\"agent_message_chunk\":52,\"usage_update\":2}}",
+        "text=\"Running the command exactly once, without escalation.`zsh:1: operation not permitted: /Users/brennen/syntaur/.worktrees/feat/acp-adapter-spike/scripts/spike/acp/out/perm/codex-denied`\""
+      ],
+      "metrics": {
+        "currentModeId": "agent",
+        "denied": {
+          "toolCalls": 0,
+          "toolKinds": [],
+          "statuses": [],
+          "permissionRequests": 0,
+          "written": false,
+          "stop": "end_turn",
+          "updateKinds": {
+            "available_commands_update": 1,
+            "session_info_update": 3,
+            "agent_message_chunk": 52,
+            "usage_update": 2
           }
         }
       }
@@ -3136,29 +3257,47 @@
       "title": "Cancel mid-turn + process hygiene",
       "adapter": "codex",
       "pass": true,
-      "ms": 6995,
+      "ms": 9193,
+      "sourceCommit": "35dbef5d719ead5089ed648bc612bdc976a96e5f",
       "files": [
-        "codex/12-cancel.ndjson"
+        "codex/12-cancel.inherited.ndjson",
+        "codex/12-cancel.low.ndjson"
       ],
       "notes": [
-        "stop=cancelled err=- cancelMs=5 chunks streamed before cancel=1, after=0",
-        "process tree after cancel: 11894:node | 11895:/Users/brennen/.nvm/versions/node/v22.22.1/bin/node | 11896:/Users/brennen/.nvm/versions/node/v22.22.1/lib/node_modules/@agentclientprotocol/codex-acp/node_modules/@openai/codex-darwin-arm64/vendor/aarch64-apple-darwin/bin/codex | 11956:/Applications/ChatGPT.app/Contents/Resources/cua_node/bin/node_repl",
+        "part A (reasoning_effort=xhigh): first chunk at 1613, updates before cancel={\"available_commands_update\":1,\"session_info_update\":1,\"agent_message_chunk\":1}, stop=cancelled err=- cancelMs=19, survivors after close()=0",
+        "part B (reasoning_effort=low): stop=cancelled err=- cancelMs=14 first chunk at 1511ms, chunks streamed before cancel=1, after=0",
+        "process tree after cancel: 42743:node | 42744:/Users/brennen/.nvm/versions/node/v22.22.1/bin/node | 42745:/Users/brennen/.nvm/versions/node/v22.22.1/lib/node_modules/@agentclientprotocol/codex-acp/node_modules/@openai/codex-darwin-arm64/vendor/aarch64-apple-darwin/bin/codex | 42823:/Applications/ChatGPT.app/Contents/Resources/cua_node/bin/node_repl",
         "after SIGTERM to adapter pid only: none",
         "after close() (group kill): none"
       ],
       "metrics": {
         "currentModeId": "agent",
-        "cancel": {
+        "inherited": {
+          "effort": "xhigh",
+          "firstChunkMs": 1613,
+          "silentMs": 1613,
+          "updateKindsBeforeCancel": {
+            "available_commands_update": 1,
+            "session_info_update": 1,
+            "agent_message_chunk": 1
+          },
           "stop": "cancelled",
-          "cancelMs": 5,
+          "cancelMs": 19,
+          "survivorsAfterClose": []
+        },
+        "cancel": {
+          "effort": "low",
+          "stop": "cancelled",
+          "cancelMs": 14,
+          "firstChunkMs": 1511,
           "chunksBefore": 1,
           "chunksAfterExtra": 0
         },
         "treeAfterCancel": [
-          "11894:node",
-          "11895:/Users/brennen/.nvm/versions/node/v22.22.1/bin/node",
-          "11896:/Users/brennen/.nvm/versions/node/v22.22.1/lib/node_modules/@agentclientprotocol/codex-acp/node_modules/@openai/codex-darwin-arm64/vendor/aarch64-apple-darwin/bin/codex",
-          "11956:/Applications/ChatGPT.app/Contents/Resources/cua_node/bin/node_repl"
+          "42743:node",
+          "42744:/Users/brennen/.nvm/versions/node/v22.22.1/bin/node",
+          "42745:/Users/brennen/.nvm/versions/node/v22.22.1/lib/node_modules/@agentclientprotocol/codex-acp/node_modules/@openai/codex-darwin-arm64/vendor/aarch64-apple-darwin/bin/codex",
+          "42823:/Applications/ChatGPT.app/Contents/Resources/cua_node/bin/node_repl"
         ],
         "survivorsAfterAdapterSigterm": [],
         "survivorsAfterClose": []
@@ -3168,32 +3307,34 @@
       "id": "13-queue-vs-steer",
       "title": "Second prompt during a turn; steering",
       "adapter": "codex",
-      "pass": true,
-      "ms": 278455,
+      "pass": false,
+      "ms": 275871,
+      "sourceCommit": "35dbef5d719ead5089ed648bc612bdc976a96e5f",
       "files": [
         "codex/13-queue-vs-steer.ndjson"
       ],
       "notes": [
-        "second prompt mid-turn → interleaved; A: {\"err\":\"timeout after 240000ms: prompt\",\"ms\":242005}  B: {\"stop\":\"end_turn\",\"ms\":36203}  QUEUED in stream=true user echoes=0",
-        "steer → {\"outcome\":\"injected\"}  C: {\"stop\":\"end_turn\",\"ms\":35351,\"doneAt\":1788307486022} STEERED in stream=true textLen=7711",
-        "steer while idle (promptRequired) → {\"outcome\":\"startedNewTurn\"}"
+        "second prompt mid-turn → interleaved; A: {\"err\":\"timeout after 240000ms: prompt\",\"ms\":242004}  B: {\"stop\":\"end_turn\",\"ms\":34487}  QUEUED in stream=true user echoes=0",
+        "steer → {\"outcome\":\"injected\"}  C: {\"stop\":\"end_turn\",\"ms\":32865,\"doneAt\":1788309971989} STEERED in stream=true textLen=7330",
+        "steer while idle (promptRequired) → {\"outcome\":\"startedNewTurn\"}",
+        "FAIL: session/prompt request(s) never resolved: A (first prompt)"
       ],
       "metrics": {
         "currentModeId": "agent",
         "queue": {
           "a": {
             "err": "timeout after 240000ms: prompt",
-            "ms": 242005,
-            "doneAt": 1788307450671
+            "ms": 242004,
+            "doneAt": 1788309939121
           },
           "b": {
             "stop": "end_turn",
-            "ms": 36203,
-            "doneAt": 1788307246871
+            "ms": 34487,
+            "doneAt": 1788309733605
           },
           "userEchoes": 0,
           "sawQUEUED": true,
-          "textLen": 8169,
+          "textLen": 7284,
           "classification": "interleaved"
         },
         "steer": {
@@ -3202,15 +3343,18 @@
           },
           "c": {
             "stop": "end_turn",
-            "ms": 35351,
-            "doneAt": 1788307486022
+            "ms": 32865,
+            "doneAt": 1788309971989
           },
           "sawSTEERED": true,
-          "textLen": 7711
+          "textLen": 7330
         },
         "steerIdle": {
           "outcome": "startedNewTurn"
-        }
+        },
+        "unresolved": [
+          "A (first prompt)"
+        ]
       }
     },
     {

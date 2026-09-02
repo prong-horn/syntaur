@@ -60,7 +60,7 @@ function validateTranscript(file: string, rel: string) {
   const lines = fs.readFileSync(file, 'utf8').split('\n').filter(Boolean);
   if (lines.length === 0) return problems.push(`${rel}: empty`);
   const dirs = new Set<string>();
-  let prevSeq = 0;
+  let prevSeq = -1; // seq is 0-based
   for (const [i, line] of lines.entries()) {
     let f: { seq?: unknown; ts?: unknown; t?: unknown; dir?: unknown; msg?: unknown };
     try {
