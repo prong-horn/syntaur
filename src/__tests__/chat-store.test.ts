@@ -1,0 +1,343 @@
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
+import { closeSessionDb, initSessionDb } from '../dashboard/session-db.js';
+import {
+  applyChatPatch,
+  countChatItems,
+  deleteChatItem,
+  deleteChatItems,
+  getChatSession,
+  getChatSessionByKey,
+  listChatItemRows,
+  listChatItems,
+  listChatSessions,
+  upsertChatItem,
+  upsertChatSession,
+} from '../db/chat-db.js';
+import { CHAT_SCHEMA_VERSION } from '../db/chat-schema.js';
+import { ChatNormalizer } from '../chat/normalizer.js';
+import { chatLogPath, openChatLog, readEvents, rebuildChatIndex, replayItems } from '../chat/store.js';
+import type { ChatEvent, ChatItem } from '../chat/types.js';
+import { fixtureEvents, listFixtures } from './helpers/acp-fixtures.js';
+
+/**
+ * Task 5 — `chat/events.jsonl` (the source of truth) and the SQLite index built
+ * from it. The invariant under test is Decision 2's: replaying the log through a
+ * fresh normalizer reproduces the live index exactly.
+ */
+
+let sandbox: string;
+let assignmentDir: string;
+
+const ASSIGNMENT_ID = 'assignment-1';
+const SESSION_KEY = 'assignment-1:claude';
+
+function item(overrides: Partial<ChatItem> & Pick<ChatItem, 'itemId'>): ChatItem {
+  return {
+    assignmentId: ASSIGNMENT_ID,
+    turnId: 't1',
+    agentId: 'claude',
+    type: 'system',
+    ts: '2026-09-02T12:00:00.000Z',
+    seqFirst: 0,
+    seqLast: 0,
+    sealed: true,
+    level: 'info',
+    text: 'hello',
+    ...overrides,
+  } as ChatItem;
+}
+
+beforeEach(async () => {
+  sandbox = await mkdtemp(join(tmpdir(), 'syntaur-chat-store-'));
+  assignmentDir = join(sandbox, 'assignment');
+  await mkdir(assignmentDir, { recursive: true });
+  closeSessionDb();
+  initSessionDb(join(sandbox, 'syntaur.db'));
+});
+
+afterEach(async () => {
+  closeSessionDb();
+  await rm(sandbox, { recursive: true, force: true });
+});
+
+describe('event log', () => {
+  it('creates chat/ on first use and assigns monotonic seqs', async () => {
+    const log = await openChatLog(assignmentDir);
+    expect(log.path).toBe(chatLogPath(assignmentDir));
+    const a = await log.append({
+      assignmentId: ASSIGNMENT_ID,
+      agentId: 'claude',
+      sessionKey: SESSION_KEY,
+      turnId: null,
+      kind: 'user.message',
+      payload: { messageId: 'm1', text: 'hi' },
+    });
+    const b = await log.append({
+      assignmentId: ASSIGNMENT_ID,
+      agentId: 'claude',
+      sessionKey: SESSION_KEY,
+      turnId: 't1',
+      kind: 'turn.start',
+      payload: { messageId: 'm1' },
+    });
+    expect(a.seq).toBe(0);
+    expect(b.seq).toBe(1);
+    expect(await log.readAll()).toHaveLength(2);
+    const raw = await readFile(log.path, 'utf-8');
+    expect(raw.endsWith('\n')).toBe(true);
+    expect(raw.trim().split('\n')).toHaveLength(2);
+  });
+
+  it('recovers seq across a reopen', async () => {
+    const first = await openChatLog(assignmentDir);
+    for (let i = 0; i < 3; i++) {
+      await first.append({
+        assignmentId: ASSIGNMENT_ID,
+        agentId: 'claude',
+        sessionKey: SESSION_KEY,
+        turnId: null,
+        kind: 'system',
+        payload: { level: 'info', text: `n${i}` },
+      });
+    }
+    const second = await openChatLog(assignmentDir);
+    expect(second.nextSeq).toBe(3);
+    const next = await second.append({
+      assignmentId: ASSIGNMENT_ID,
+      agentId: 'claude',
+      sessionKey: SESSION_KEY,
+      turnId: null,
+      kind: 'system',
+      payload: { level: 'info', text: 'n3' },
+    });
+    expect(next.seq).toBe(3);
+    expect((await second.readAll()).map((e) => e.seq)).toEqual([0, 1, 2, 3]);
+  });
+
+  it('tolerates a torn final line and keeps appending after it', async () => {
+    const log = await openChatLog(assignmentDir);
+    await log.append({
+      assignmentId: ASSIGNMENT_ID,
+      agentId: 'claude',
+      sessionKey: SESSION_KEY,
+      turnId: null,
+      kind: 'system',
+      payload: { level: 'info', text: 'first' },
+    });
+    // Simulate a crash mid-append.
+    await writeFile(log.path, (await readFile(log.path, 'utf-8')) + '{"seq":1,"ts":"2026', 'utf-8');
+
+    const events = await readEvents(log.path);
+    expect(events).toHaveLength(1);
+
+    const reopened = await openChatLog(assignmentDir);
+    expect(reopened.nextSeq).toBe(1);
+    await reopened.append({
+      assignmentId: ASSIGNMENT_ID,
+      agentId: 'claude',
+      sessionKey: SESSION_KEY,
+      turnId: null,
+      kind: 'system',
+      payload: { level: 'info', text: 'second' },
+    });
+    const after = await readEvents(log.path);
+    expect(after.map((e) => e.seq)).toEqual([0, 1]);
+  });
+
+  it('serialises concurrent appends without losing or duplicating a seq', async () => {
+    const log = await openChatLog(assignmentDir);
+    await Promise.all(
+      Array.from({ length: 25 }, (_, i) =>
+        log.append({
+          assignmentId: ASSIGNMENT_ID,
+          agentId: 'claude',
+          sessionKey: SESSION_KEY,
+          turnId: null,
+          kind: 'system',
+          payload: { level: 'info', text: `n${i}` },
+        }),
+      ),
+    );
+    const events = await log.readAll();
+    expect(events.map((e) => e.seq)).toEqual(Array.from({ length: 25 }, (_, i) => i));
+  });
+
+  it('readAfter pages forward', async () => {
+    const log = await openChatLog(assignmentDir);
+    for (let i = 0; i < 5; i++) {
+      await log.append({
+        assignmentId: ASSIGNMENT_ID,
+        agentId: 'claude',
+        sessionKey: SESSION_KEY,
+        turnId: null,
+        kind: 'system',
+        payload: { level: 'info', text: `n${i}` },
+      });
+    }
+    expect((await log.readAfter(2)).map((e) => e.seq)).toEqual([3, 4]);
+  });
+
+  it('an empty or missing log reads as no events', async () => {
+    expect(await readEvents(join(sandbox, 'nope.jsonl'))).toEqual([]);
+    const log = await openChatLog(assignmentDir);
+    expect(await log.readAll()).toEqual([]);
+    expect(log.nextSeq).toBe(0);
+  });
+});
+
+describe('chat_items index', () => {
+  it('registers its own schema version alongside the others', () => {
+    const db = initSessionDb();
+    const rows = db.prepare('SELECT key, value FROM meta').all() as Array<{ key: string; value: string }>;
+    const chat = rows.find((r) => r.key === 'chat_schema_version');
+    expect(chat?.value).toBe(CHAT_SCHEMA_VERSION);
+    // Three independent keys — the sessions table's own version is not this one.
+    expect(rows.find((r) => r.key === 'schema_version')?.value).not.toBe(undefined);
+    expect(rows.find((r) => r.key === 'engagement_schema_version')?.value).toBe('1');
+  });
+
+  it('upsert is idempotent by item_id', () => {
+    upsertChatItem(SESSION_KEY, item({ itemId: 't1:0', text: 'v1' }));
+    upsertChatItem(SESSION_KEY, item({ itemId: 't1:0', text: 'v2', seqLast: 5 }));
+    const items = listChatItems(ASSIGNMENT_ID);
+    expect(items).toHaveLength(1);
+    expect((items[0] as { text: string }).text).toBe('v2');
+    expect(items[0].seqLast).toBe(5);
+  });
+
+  it('a retract patch deletes the row', () => {
+    applyChatPatch(SESSION_KEY, { op: 'upsert', item: item({ itemId: 't1:0' }) });
+    expect(countChatItems(ASSIGNMENT_ID)).toBe(1);
+    applyChatPatch(SESSION_KEY, { op: 'retract', itemId: 't1:0' });
+    expect(countChatItems(ASSIGNMENT_ID)).toBe(0);
+    // Retracting an unknown id is a no-op, not an error.
+    deleteChatItem('nope');
+  });
+
+  it('pages newest-first and returns each page oldest-first', () => {
+    for (let i = 0; i < 10; i++) {
+      upsertChatItem(SESSION_KEY, item({ itemId: `t1:${i}`, seqFirst: i, seqLast: i }));
+    }
+    const newest = listChatItems(ASSIGNMENT_ID, { limit: 3 });
+    expect(newest.map((i) => i.seqFirst)).toEqual([7, 8, 9]);
+    const older = listChatItems(ASSIGNMENT_ID, { limit: 3, beforeSeq: newest[0].seqFirst });
+    expect(older.map((i) => i.seqFirst)).toEqual([4, 5, 6]);
+  });
+
+  it('keeps assignments apart', () => {
+    upsertChatItem(SESSION_KEY, item({ itemId: 't1:0' }));
+    upsertChatItem('other:claude', item({ itemId: 't2:0', assignmentId: 'assignment-2' }));
+    expect(countChatItems(ASSIGNMENT_ID)).toBe(1);
+    expect(deleteChatItems('assignment-2')).toBe(1);
+    expect(countChatItems(ASSIGNMENT_ID)).toBe(1);
+  });
+});
+
+describe('chat_sessions', () => {
+  const base = {
+    sessionKey: SESSION_KEY,
+    assignmentId: ASSIGNMENT_ID,
+    projectSlug: 'syntaur-meta',
+    assignmentSlug: 'chat',
+    agentId: 'claude',
+    harness: 'claude',
+    state: 'spawning',
+  };
+
+  it('upserts and reads back by (assignment, agent) and by key', () => {
+    upsertChatSession({ ...base, acpSessionId: 'acp-1', pid: 4242 });
+    const row = getChatSession(ASSIGNMENT_ID, 'claude');
+    expect(row?.acp_session_id).toBe('acp-1');
+    expect(row?.pid).toBe(4242);
+    expect(row?.state).toBe('spawning');
+    expect(getChatSessionByKey(SESSION_KEY)?.session_key).toBe(SESSION_KEY);
+    expect(getChatSession(ASSIGNMENT_ID, 'codex')).toBeNull();
+    expect(listChatSessions(ASSIGNMENT_ID)).toHaveLength(1);
+  });
+
+  it('a state transition never erases the ACP session id resume needs', () => {
+    upsertChatSession({ ...base, acpSessionId: 'acp-1', adapterVersion: 'x@1', cwd: '/tmp/w' });
+    upsertChatSession({ ...base, state: 'idle' });
+    const row = getChatSession(ASSIGNMENT_ID, 'claude');
+    expect(row?.state).toBe('idle');
+    expect(row?.acp_session_id).toBe('acp-1');
+    expect(row?.adapter_version).toBe('x@1');
+    expect(row?.cwd).toBe('/tmp/w');
+  });
+});
+
+describe('rebuild == live', () => {
+  async function seedFromFixture(name: string): Promise<{ events: ChatEvent[]; live: ChatItem[] }> {
+    const fixture = listFixtures().find((f) => f.name === name)!;
+    const raw = fixtureEvents(fixture.path, { assignmentId: ASSIGNMENT_ID, agentId: 'claude' });
+    const log = await openChatLog(assignmentDir);
+    const events: ChatEvent[] = [];
+    // Write the log the way the broker does — one append per event — and index
+    // each patch as it is produced, exactly like the live path.
+    const normalizer = new ChatNormalizer({
+      assignmentId: ASSIGNMENT_ID,
+      agentId: 'claude',
+      sessionKey: SESSION_KEY,
+    });
+    for (const e of raw) {
+      const stored = await log.append({
+        assignmentId: ASSIGNMENT_ID,
+        agentId: 'claude',
+        sessionKey: SESSION_KEY,
+        turnId: e.turnId,
+        kind: e.kind,
+        payload: e.payload,
+        ts: e.ts,
+      });
+      events.push(stored);
+      for (const patch of normalizer.ingest(stored)) applyChatPatch(SESSION_KEY, patch);
+    }
+    return { events, live: listChatItems(ASSIGNMENT_ID, { limit: 1000 }) };
+  }
+
+  it('a rebuilt index equals the live index, row for row', async () => {
+    const { live } = await seedFromFixture('claude/07-permissions.ndjson');
+    const liveRows = listChatItemRows(ASSIGNMENT_ID);
+    expect(live.length).toBeGreaterThan(5);
+
+    const result = await rebuildChatIndex(assignmentDir, ASSIGNMENT_ID);
+    expect(result.deleted).toBe(liveRows.length);
+    expect(result.items).toBe(liveRows.length);
+    expect(listChatItemRows(ASSIGNMENT_ID)).toEqual(liveRows);
+  });
+
+  it('holds for a transcript with tool cards, a fold and a plan', async () => {
+    await seedFromFixture('claude/08-plan-events.ndjson');
+    const liveRows = listChatItemRows(ASSIGNMENT_ID);
+    await rebuildChatIndex(assignmentDir, ASSIGNMENT_ID);
+    expect(listChatItemRows(ASSIGNMENT_ID)).toEqual(liveRows);
+  });
+
+  it('a rebuild removes rows the fold retracted rather than resurrecting them', async () => {
+    await seedFromFixture('claude/05-tool-calls.ndjson');
+    const liveRows = listChatItemRows(ASSIGNMENT_ID);
+    // The narration bubble folded into the card, so it is not in the index.
+    expect(liveRows.some((r) => r.type === 'agent.work')).toBe(true);
+    const card = JSON.parse(liveRows.find((r) => r.type === 'agent.work')!.json) as {
+      lead?: string;
+    };
+    expect(card.lead).toBeDefined();
+
+    await rebuildChatIndex(assignmentDir, ASSIGNMENT_ID);
+    expect(listChatItemRows(ASSIGNMENT_ID)).toEqual(liveRows);
+  });
+
+  it('replayItems matches what the index holds', async () => {
+    const { events, live } = await seedFromFixture('codex/05-tool-calls.ndjson');
+    expect(replayItems(events, ASSIGNMENT_ID)).toEqual(live);
+  });
+
+  it('rebuilding an assignment with no log clears its index', async () => {
+    upsertChatItem(SESSION_KEY, item({ itemId: 'stale:0' }));
+    const result = await rebuildChatIndex(assignmentDir, ASSIGNMENT_ID);
+    expect(result).toEqual({ events: 0, items: 0, deleted: 1 });
+  });
+});

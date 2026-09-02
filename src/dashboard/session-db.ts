@@ -5,6 +5,7 @@ import { syntaurRoot } from '../utils/paths.js';
 import { fileExists } from '../utils/fs.js';
 import type { AgentSession, AgentSessionStatus } from './types.js';
 import { ENGAGEMENT_DDL, ENGAGEMENT_SCHEMA_VERSION } from '../db/engagement-schema.js';
+import { CHAT_DDL, CHAT_SCHEMA_VERSION } from '../db/chat-schema.js';
 import { backfillEngagements } from '../db/engagement-backfill.js';
 import { sanitizeSessionPath } from '../utils/transcript.js';
 
@@ -129,6 +130,11 @@ export function initSessionDb(dbPath?: string): Database.Database {
   // it is safe here (outside the migration transaction). The v7→v8 step re-runs
   // it harmlessly for databases that upgrade rather than install fresh.
   db.exec(SUMMARIZE_STATE_DDL);
+  // Assignment chat (`chat_sessions` / `chat_items`). Same footing again:
+  // idempotent CREATE TABLE IF NOT EXISTS, executed outside the migration
+  // transaction. Both tables are a rebuildable index over
+  // `<assignmentDir>/chat/events.jsonl`, never a source of truth.
+  db.exec(CHAT_DDL);
 
   // Track schema versions. Each subsystem owns its own row in `meta`
   // (mirrors usage-db.ts) so init order is irrelevant.
@@ -139,6 +145,10 @@ export function initSessionDb(dbPath?: string): Database.Database {
   db.prepare('INSERT OR IGNORE INTO meta (key, value) VALUES (?, ?)').run(
     'engagement_schema_version',
     ENGAGEMENT_SCHEMA_VERSION,
+  );
+  db.prepare('INSERT OR IGNORE INTO meta (key, value) VALUES (?, ?)').run(
+    'chat_schema_version',
+    CHAT_SCHEMA_VERSION,
   );
 
   // Run migrations inside an EXCLUSIVE transaction. This closes two races:
