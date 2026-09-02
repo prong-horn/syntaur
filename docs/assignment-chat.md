@@ -34,8 +34,12 @@ sit around. The next message re-attaches to the same agent session with
 `session/resume`, so the agent still remembers the conversation. If the resume
 fails, a new session starts and the chat says so.
 
-A dashboard restart takes the adapters with it. That is fine — the next message
-resumes.
+A dashboard restart takes the adapters with it, and the next session load
+repairs whatever was in flight: a turn that was running is sealed and marked as
+having failed, messages that were still queued are re-queued and sent in order,
+and a permission prompt that was waiting is marked expired (it cannot be
+answered — the request died with the adapter). The next message resumes the same
+agent session.
 
 ## Agent definitions — `~/.syntaur/agents/<id>.md`
 
