@@ -1,0 +1,1 @@
+{"seq":0,"ts":"2026-09-02T00:05:03.948Z","t":1,"dir":"out","msg":{"jsonrpc":"2.0","id":0,"method":"initialize","params":{"protocolVersion":1,"clientCapabilities":{},"clientInfo":{"name":"syntaur-acp-spike","version":"0.0.0"}}}}
