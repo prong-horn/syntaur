@@ -1,0 +1,6488 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`normalizer golden snapshots > claude/02-handshake.ndjson normalizes to a stable item list 1`] = `
+[
+  {
+    "contextSize": 1000000,
+    "contextUsed": 37541,
+    "cost": 0.7517400000000001,
+    "durationMs": 4666,
+    "endedAt": "2026-09-01T23:55:47.358Z",
+    "itemId": "2:0",
+    "sealed": true,
+    "seqFirst": 4,
+    "seqLast": 12,
+    "startedAt": "2026-09-01T23:55:42.692Z",
+    "state": "ended",
+    "stopReason": "end_turn",
+    "turnId": "2",
+    "type": "turn.status",
+    "usage": {
+      "cachedReadTokens": 0,
+      "cachedWriteTokens": 37509,
+      "inputTokens": 1,
+      "outputTokens": 31,
+      "totalTokens": 37541,
+    },
+  },
+  {
+    "itemId": "2:1",
+    "messageId": "msg_011Cedd6ouQ7SXTt2WtVgZ4T",
+    "sealed": true,
+    "seqFirst": 8,
+    "seqLast": 8,
+    "text": "PONG",
+    "turnId": "2",
+    "type": "agent.message",
+  },
+  {
+    "itemId": "session:assignment-fixture:claude:0",
+    "level": "info",
+    "sealed": true,
+    "seqFirst": 14,
+    "seqLast": 14,
+    "text": "Session title: Reply with exactly the single word PONG and nothing else.",
+    "turnId": null,
+    "type": "system",
+  },
+]
+`;
+
+exports[`normalizer golden snapshots > claude/03-system-prompt.ndjson normalizes to a stable item list 1`] = `
+[
+  {
+    "contextSize": 1000000,
+    "contextUsed": 37751,
+    "cost": 0.76092,
+    "durationMs": 6187,
+    "endedAt": "2026-09-01T23:55:55.282Z",
+    "itemId": "2:0",
+    "sealed": true,
+    "seqFirst": 4,
+    "seqLast": 13,
+    "startedAt": "2026-09-01T23:55:49.095Z",
+    "state": "ended",
+    "stopReason": "end_turn",
+    "turnId": "2",
+    "type": "turn.status",
+    "usage": {
+      "cachedReadTokens": 0,
+      "cachedWriteTokens": 37553,
+      "inputTokens": 1,
+      "outputTokens": 197,
+      "totalTokens": 37751,
+    },
+  },
+  {
+    "itemId": "2:1",
+    "messageId": "msg_011Cedd7HCinnDNGYy2oQw1Z",
+    "sealed": true,
+    "seqFirst": 8,
+    "seqLast": 9,
+    "text": {
+      "head": "PLANNER: I'm Claude Code (running Claude Fable 5), Anthropic's CLI-based coding ",
+      "len": 181,
+      "sha": "8d9210658c1c",
+    },
+    "turnId": "2",
+    "type": "agent.message",
+  },
+  {
+    "contextSize": 1000000,
+    "contextUsed": 39240,
+    "cost": 0.8326830000000001,
+    "durationMs": 2082,
+    "endedAt": "2026-09-01T23:55:57.364Z",
+    "itemId": "3:0",
+    "sealed": true,
+    "seqFirst": 14,
+    "seqLast": 22,
+    "startedAt": "2026-09-01T23:55:55.282Z",
+    "state": "ended",
+    "stopReason": "end_turn",
+    "turnId": "3",
+    "type": "turn.status",
+    "usage": {
+      "cachedReadTokens": 37553,
+      "cachedWriteTokens": 1670,
+      "inputTokens": 1,
+      "outputTokens": 16,
+      "totalTokens": 39240,
+    },
+  },
+  {
+    "itemId": "3:1",
+    "level": "info",
+    "sealed": true,
+    "seqFirst": 15,
+    "seqLast": 15,
+    "text": "Session title: Who are you? Answer in one sentence.",
+    "turnId": "3",
+    "type": "system",
+  },
+  {
+    "itemId": "3:2",
+    "messageId": "msg_011Cedd7aQpnT8FEDk5SU8Z8",
+    "sealed": true,
+    "seqFirst": 17,
+    "seqLast": 19,
+    "text": "PLANNER: 2+2 = 4",
+    "turnId": "3",
+    "type": "agent.message",
+  },
+]
+`;
+
+exports[`normalizer golden snapshots > claude/04-streaming.ndjson normalizes to a stable item list 1`] = `
+[
+  {
+    "contextSize": 1000000,
+    "contextUsed": 38262,
+    "cost": 0.566358,
+    "durationMs": 14127,
+    "endedAt": "2026-09-01T23:56:13.211Z",
+    "itemId": "2:0",
+    "sealed": true,
+    "seqFirst": 4,
+    "seqLast": 23,
+    "startedAt": "2026-09-01T23:55:59.084Z",
+    "state": "ended",
+    "stopReason": "end_turn",
+    "turnId": "2",
+    "type": "turn.status",
+    "usage": {
+      "cachedReadTokens": 11588,
+      "cachedWriteTokens": 25963,
+      "inputTokens": 1,
+      "outputTokens": 710,
+      "totalTokens": 38262,
+    },
+  },
+  {
+    "itemId": "2:1",
+    "messageId": "msg_011Cedd81jaWZzXrA4HDtUvi",
+    "sealed": true,
+    "seqFirst": 8,
+    "seqLast": 19,
+    "text": {
+      "head": "## Origins and Design
+
+JSON-RPC is a lightweight remote procedure call protocol ",
+      "len": 1737,
+      "sha": "70b41c3a7e56",
+    },
+    "turnId": "2",
+    "type": "agent.message",
+  },
+]
+`;
+
+exports[`normalizer golden snapshots > claude/05-tool-calls.ndjson normalizes to a stable item list 1`] = `
+[
+  {
+    "contextSize": 1000000,
+    "contextUsed": 41759,
+    "cost": 0.7649210000000001,
+    "durationMs": 16913,
+    "endedAt": "2026-09-02T00:41:07.676Z",
+    "itemId": "2:0",
+    "sealed": true,
+    "seqFirst": 4,
+    "seqLast": 62,
+    "startedAt": "2026-09-02T00:40:50.763Z",
+    "state": "ended",
+    "stopReason": "end_turn",
+    "turnId": "2",
+    "type": "turn.status",
+    "usage": {
+      "cachedReadTokens": 45701,
+      "cachedWriteTokens": 33082,
+      "inputTokens": 3,
+      "outputTokens": 1151,
+      "totalTokens": 79937,
+    },
+  },
+  {
+    "itemId": "2:2",
+    "lead": "Reading the package.json and running a repo-wide search now.",
+    "sealed": true,
+    "seqFirst": 8,
+    "seqLast": 20,
+    "summary": {
+      "durationMs": 8658,
+      "edits": 0,
+      "failed": 0,
+      "reads": 1,
+      "runs": 1,
+    },
+    "tools": [
+      {
+        "content": [
+          {
+            "text": {
+              "head": "\`\`\`
+1	{
+2	  "name": "syntaur",
+3	  "version": "0.79.0",
+4	  "description": "Proj",
+              "len": 3493,
+              "sha": "79719ef946d8",
+            },
+            "type": "text",
+          },
+        ],
+        "kind": "read",
+        "locations": [
+          {
+            "line": 1,
+            "path": "/Users/brennen/syntaur/.worktrees/feat/acp-adapter-spike/scripts/spike/acp/out/target-claude/package.json",
+          },
+        ],
+        "rawInput": {
+          "file_path": "/Users/brennen/syntaur/.worktrees/feat/acp-adapter-spike/scripts/spike/acp/out/target-claude/package.json",
+        },
+        "rawOutput": {
+          "head": "1	{
+2	  "name": "syntaur",
+3	  "version": "0.79.0",
+4	  "description": "Project ",
+          "len": 3490,
+          "sha": "48a5bfe60682",
+        },
+        "status": "completed",
+        "title": "Read package.json",
+        "toolCallId": "toolu_015HNEhtmpAuo5ZvzwHb1XQ3",
+      },
+      {
+        "content": [
+          {
+            "text": {
+              "head": "\`\`\`console
+docs/superpowers/plans/2026-03-22-server-tracker.md
+scripts/spike/acp",
+              "len": 869,
+              "sha": "10e392420f34",
+            },
+            "type": "text",
+          },
+        ],
+        "kind": "execute",
+        "locations": [],
+        "rawInput": {
+          "command": "grep -rl --exclude-dir=.git --exclude-dir=node_modules "createDashboardServer" .",
+          "description": "Search repo for createDashboardServer occurrences",
+        },
+        "rawOutput": {
+          "head": "docs/superpowers/plans/2026-03-22-server-tracker.md
+scripts/spike/acp/scenarios.",
+          "len": 854,
+          "sha": "4122e6a56c2e",
+        },
+        "status": "completed",
+        "title": "grep -rl --exclude-dir=.git --exclude-dir=node_modules "createDashboardServer" .",
+        "toolCallId": "toolu_019PRoLvf3dL1Tuxr5DL46Gz",
+      },
+    ],
+    "turnId": "2",
+    "type": "agent.work",
+  },
+  {
+    "itemId": "2:3",
+    "messageId": "msg_011CedgZ7AJgrQPpfSjMPpvB",
+    "sealed": true,
+    "seqFirst": 22,
+    "seqLast": 58,
+    "text": {
+      "head": "The version in package.json is **0.79.0**.
+
+\`createDashboardServer\` appears in 1",
+      "len": 1086,
+      "sha": "7abf2c5bc859",
+    },
+    "turnId": "2",
+    "type": "agent.message",
+  },
+]
+`;
+
+exports[`normalizer golden snapshots > claude/06-edits.ndjson normalizes to a stable item list 1`] = `
+[
+  {
+    "itemId": "session:assignment-fixture:claude:0",
+    "level": "info",
+    "sealed": true,
+    "seqFirst": 6,
+    "seqLast": 6,
+    "text": "Config ? → null",
+    "turnId": null,
+    "type": "system",
+  },
+  {
+    "contextSize": 1000000,
+    "contextUsed": 47996,
+    "cost": 0.8431609999999999,
+    "durationMs": 10823,
+    "endedAt": "2026-09-01T23:57:31.512Z",
+    "itemId": "3:0",
+    "sealed": true,
+    "seqFirst": 8,
+    "seqLast": 31,
+    "startedAt": "2026-09-01T23:57:20.689Z",
+    "state": "ended",
+    "stopReason": "end_turn",
+    "turnId": "3",
+    "type": "turn.status",
+    "usage": {
+      "cachedReadTokens": 96841,
+      "cachedWriteTokens": 36401,
+      "inputTokens": 5,
+      "outputTokens": 365,
+      "totalTokens": 133612,
+    },
+  },
+  {
+    "itemId": "3:2",
+    "lead": "I'll read README.md and add the line at the top.",
+    "sealed": true,
+    "seqFirst": 11,
+    "seqLast": 24,
+    "summary": {
+      "durationMs": 5051,
+      "edits": 1,
+      "failed": 0,
+      "reads": 1,
+      "runs": 0,
+    },
+    "tools": [
+      {
+        "content": [
+          {
+            "text": {
+              "head": "\`\`\`
+1	# Syntaur
+2	
+3	Syntaur is a local project and assignment workflow for codi",
+              "len": 22446,
+              "sha": "5f0d03d6a844",
+            },
+            "type": "text",
+          },
+        ],
+        "kind": "read",
+        "locations": [
+          {
+            "line": 1,
+            "path": "/Users/brennen/syntaur/.worktrees/feat/acp-adapter-spike/scripts/spike/acp/out/target-claude/README.md",
+          },
+        ],
+        "rawInput": {
+          "file_path": "/Users/brennen/syntaur/.worktrees/feat/acp-adapter-spike/scripts/spike/acp/out/target-claude/README.md",
+        },
+        "rawOutput": {
+          "head": "1	# Syntaur
+2	
+3	Syntaur is a local project and assignment workflow for coding a",
+          "len": 22443,
+          "sha": "70e0ed5a0084",
+        },
+        "status": "completed",
+        "title": "Read README.md",
+        "toolCallId": "toolu_01LyR7cDScgdsbZ1kqFcZEqF",
+      },
+      {
+        "content": [
+          {
+            "newText": {
+              "head": "<!-- acp-spike: edited by claude -->
+# Syntaur
+
+Syntaur is a local project and a",
+              "len": 188,
+              "sha": "abd2d601b89e",
+            },
+            "oldText": {
+              "head": "# Syntaur
+
+Syntaur is a local project and assignment workflow for coding agents.",
+              "len": 151,
+              "sha": "c296af1decba",
+            },
+            "path": "/Users/brennen/syntaur/.worktrees/feat/acp-adapter-spike/scripts/spike/acp/out/target-claude/README.md",
+            "type": "diff",
+          },
+        ],
+        "kind": "edit",
+        "locations": [
+          {
+            "line": 1,
+            "path": "/Users/brennen/syntaur/.worktrees/feat/acp-adapter-spike/scripts/spike/acp/out/target-claude/README.md",
+          },
+        ],
+        "rawInput": {
+          "file_path": "/Users/brennen/syntaur/.worktrees/feat/acp-adapter-spike/scripts/spike/acp/out/target-claude/README.md",
+          "new_string": "<!-- acp-spike: edited by claude -->
+# Syntaur",
+          "old_string": "# Syntaur",
+          "replace_all": false,
+        },
+        "rawOutput": {
+          "head": "The file /Users/brennen/syntaur/.worktrees/feat/acp-adapter-spike/scripts/spike/",
+          "len": 208,
+          "sha": "2d62d9483f92",
+        },
+        "status": "completed",
+        "title": "Edit README.md",
+        "toolCallId": "toolu_019vb4sHgCNCnYg3QKVGGMVq",
+      },
+    ],
+    "turnId": "3",
+    "type": "agent.work",
+  },
+  {
+    "itemId": "3:3",
+    "messageId": "msg_011CeddEacRYbG1mKagEc5ms",
+    "sealed": true,
+    "seqFirst": 27,
+    "seqLast": 28,
+    "text": "DONE",
+    "turnId": "3",
+    "type": "agent.message",
+  },
+]
+`;
+
+exports[`normalizer golden snapshots > claude/07-permissions.ndjson normalizes to a stable item list 1`] = `
+[
+  {
+    "itemId": "session:assignment-fixture:claude:0",
+    "level": "info",
+    "sealed": true,
+    "seqFirst": 6,
+    "seqLast": 6,
+    "text": "Config ? → null",
+    "turnId": null,
+    "type": "system",
+  },
+  {
+    "contextSize": 1000000,
+    "contextUsed": 40588,
+    "cost": 0.173544,
+    "durationMs": 16007,
+    "endedAt": "2026-09-02T00:18:25.991Z",
+    "itemId": "3:0",
+    "sealed": true,
+    "seqFirst": 8,
+    "seqLast": 64,
+    "startedAt": "2026-09-02T00:18:09.984Z",
+    "state": "ended",
+    "stopReason": "end_turn",
+    "turnId": "3",
+    "type": "turn.status",
+    "usage": {
+      "cachedReadTokens": 75134,
+      "cachedWriteTokens": 1849,
+      "inputTokens": 3,
+      "outputTokens": 1228,
+      "totalTokens": 78214,
+    },
+  },
+  {
+    "itemId": "3:1",
+    "sealed": true,
+    "seqFirst": 11,
+    "seqLast": 17,
+    "summary": {
+      "durationMs": 11870,
+      "edits": 0,
+      "failed": 0,
+      "reads": 0,
+      "runs": 1,
+    },
+    "tools": [
+      {
+        "content": [
+          {
+            "text": {
+              "head": "\`\`\`console
+total 536
+drwxr-xr-x@ 29 brennen  staff     928 Sep  1 18:04 .
+drwxr-",
+              "len": 1827,
+              "sha": "f1e299a46ee4",
+            },
+            "type": "text",
+          },
+        ],
+        "kind": "execute",
+        "locations": [],
+        "rawInput": {
+          "command": "ls -la",
+          "description": "List files in current directory",
+        },
+        "rawOutput": {
+          "head": "total 536
+drwxr-xr-x@ 29 brennen  staff     928 Sep  1 18:04 .
+drwxr-xr-x@ 23 br",
+          "len": 1812,
+          "sha": "28c0397203ce",
+        },
+        "status": "completed",
+        "title": "ls -la",
+        "toolCallId": "toolu_01MnLdxmixxuVwAiqBiMH2Rt",
+      },
+    ],
+    "turnId": "3",
+    "type": "agent.work",
+  },
+  {
+    "itemId": "3:2",
+    "messageId": "msg_011CedepRmBN9A97MNj8VUVD",
+    "sealed": true,
+    "seqFirst": 19,
+    "seqLast": 61,
+    "text": {
+      "head": "Here's the output of \`ls -la\`:
+
+\`\`\`
+total 536
+drwxr-xr-x@ 29 brennen  staff     ",
+      "len": 1852,
+      "sha": "52172ba3ee1b",
+    },
+    "turnId": "3",
+    "type": "agent.message",
+  },
+  {
+    "itemId": "session:assignment-fixture:claude:1",
+    "level": "info",
+    "sealed": true,
+    "seqFirst": 66,
+    "seqLast": 66,
+    "text": "Session title: Run the shell command \`ls -la\` and show me the output.",
+    "turnId": null,
+    "type": "system",
+  },
+  {
+    "itemId": "session:assignment-fixture:claude:2",
+    "level": "info",
+    "sealed": true,
+    "seqFirst": 70,
+    "seqLast": 70,
+    "text": "Config ? → null",
+    "turnId": null,
+    "type": "system",
+  },
+  {
+    "contextSize": 1000000,
+    "contextUsed": 31704,
+    "cost": 0.146868,
+    "durationMs": 15400,
+    "endedAt": "2026-09-02T00:18:42.072Z",
+    "itemId": "6:0",
+    "sealed": true,
+    "seqFirst": 72,
+    "seqLast": 101,
+    "startedAt": "2026-09-02T00:18:26.672Z",
+    "state": "ended",
+    "stopReason": "end_turn",
+    "turnId": "6",
+    "type": "turn.status",
+    "usage": {
+      "cachedReadTokens": 93076,
+      "cachedWriteTokens": 679,
+      "inputTokens": 6,
+      "outputTokens": 788,
+      "totalTokens": 94549,
+    },
+  },
+  {
+    "itemId": "6:2",
+    "lead": "I'll run the first command with escalated permissions since the target path is outside the workspace sandbox.",
+    "sealed": true,
+    "seqFirst": 75,
+    "seqLast": 85,
+    "summary": {
+      "durationMs": 5793,
+      "edits": 0,
+      "failed": 0,
+      "reads": 0,
+      "runs": 1,
+    },
+    "tools": [
+      {
+        "content": [
+          {
+            "text": "Write "hi" to perm/claude-x outside workspace",
+            "type": "text",
+          },
+        ],
+        "kind": "execute",
+        "locations": [],
+        "rawInput": {
+          "command": "echo hi > /Users/brennen/syntaur/.worktrees/feat/acp-adapter-spike/scripts/spike/acp/out/perm/claude-x",
+          "dangerouslyDisableSandbox": true,
+          "description": "Write "hi" to perm/claude-x outside workspace",
+        },
+        "rawOutput": "(Bash completed with no output)",
+        "status": "completed",
+        "title": "echo hi > /Users/brennen/syntaur/.worktrees/feat/acp-adapter-spike/scripts/spike/acp/out/perm/claude-x",
+        "toolCallId": "toolu_01JBov1DL4VPkDqVHzBerK8d",
+      },
+    ],
+    "turnId": "6",
+    "type": "agent.work",
+  },
+  {
+    "answer": "allow",
+    "itemId": "6:3",
+    "options": [
+      {
+        "kind": "reject_once",
+        "name": "Deny",
+        "optionId": "reject",
+      },
+      {
+        "kind": "allow_once",
+        "name": "Allow Once",
+        "optionId": "allow",
+      },
+      {
+        "_meta": {
+          "permission": {
+            "changes": [
+              {
+                "description": "Allow Bash calls matching echo hi *",
+                "lifetime": {
+                  "scope": "persistent",
+                  "storage": "project_local",
+                },
+                "operation": "add",
+                "ruleBehavior": "allow",
+                "targets": [
+                  {
+                    "matcher": {
+                      "provider": "claudeCode",
+                      "type": "provider_rule",
+                      "value": "echo hi *",
+                    },
+                    "toolName": "Bash",
+                    "type": "tool",
+                  },
+                ],
+                "type": "policy_rule",
+              },
+              {
+                "description": "Allow filesystem access under /Users/brennen/syntaur/.worktrees/feat/acp-adapter-spike/scripts/spike/acp/out/perm",
+                "lifetime": {
+                  "scope": "session",
+                },
+                "operation": "add",
+                "ruleBehavior": "allow",
+                "targets": [
+                  {
+                    "matcher": {
+                      "path": "/Users/brennen/syntaur/.worktrees/feat/acp-adapter-spike/scripts/spike/acp/out/perm",
+                      "type": "directory",
+                    },
+                    "type": "filesystem",
+                  },
+                ],
+                "type": "policy_rule",
+              },
+            ],
+            "version": 1,
+          },
+        },
+        "kind": "allow_always",
+        "name": "Always Allow",
+        "optionId": "allow_always",
+      },
+    ],
+    "requestId": "perm-0",
+    "sealed": true,
+    "seqFirst": 81,
+    "seqLast": 82,
+    "toolCall": {
+      "kind": "execute",
+      "title": "echo hi > /Users/brennen/syntaur/.worktrees/feat/acp-adapter-spike/scripts/spike/acp/out/perm/claude-x",
+      "toolCallId": "toolu_01JBov1DL4VPkDqVHzBerK8d",
+    },
+    "turnId": "6",
+    "type": "permission.request",
+  },
+  {
+    "itemId": "6:5",
+    "lead": "The first command succeeded — \`claude-x\` was written. Now the second:",
+    "sealed": true,
+    "seqFirst": 87,
+    "seqLast": 94,
+    "summary": {
+      "durationMs": 3822,
+      "edits": 0,
+      "failed": 1,
+      "reads": 0,
+      "runs": 1,
+    },
+    "tools": [
+      {
+        "content": [
+          {
+            "text": "\`\`\`
+User refused permission to run tool
+\`\`\`",
+            "type": "text",
+          },
+        ],
+        "kind": "execute",
+        "locations": [],
+        "rawInput": {
+          "command": "echo bye > /Users/brennen/syntaur/.worktrees/feat/acp-adapter-spike/scripts/spike/acp/out/perm/claude-y",
+          "dangerouslyDisableSandbox": true,
+          "description": "Write "bye" to perm/claude-y outside workspace",
+        },
+        "rawOutput": "User refused permission to run tool",
+        "status": "failed",
+        "title": "echo bye > /Users/brennen/syntaur/.worktrees/feat/acp-adapter-spike/scripts/spike/acp/out/perm/claude-y",
+        "toolCallId": "toolu_017KsDvRU9SZPjBPyAYatAW5",
+      },
+    ],
+    "turnId": "6",
+    "type": "agent.work",
+  },
+  {
+    "answer": "reject",
+    "itemId": "6:6",
+    "options": [
+      {
+        "kind": "reject_once",
+        "name": "Deny",
+        "optionId": "reject",
+      },
+      {
+        "kind": "allow_once",
+        "name": "Allow Once",
+        "optionId": "allow",
+      },
+      {
+        "_meta": {
+          "permission": {
+            "changes": [
+              {
+                "description": "Allow Bash calls matching echo bye *",
+                "lifetime": {
+                  "scope": "persistent",
+                  "storage": "project_local",
+                },
+                "operation": "add",
+                "ruleBehavior": "allow",
+                "targets": [
+                  {
+                    "matcher": {
+                      "provider": "claudeCode",
+                      "type": "provider_rule",
+                      "value": "echo bye *",
+                    },
+                    "toolName": "Bash",
+                    "type": "tool",
+                  },
+                ],
+                "type": "policy_rule",
+              },
+              {
+                "description": "Allow filesystem access under /Users/brennen/syntaur/.worktrees/feat/acp-adapter-spike/scripts/spike/acp/out/perm",
+                "lifetime": {
+                  "scope": "session",
+                },
+                "operation": "add",
+                "ruleBehavior": "allow",
+                "targets": [
+                  {
+                    "matcher": {
+                      "path": "/Users/brennen/syntaur/.worktrees/feat/acp-adapter-spike/scripts/spike/acp/out/perm",
+                      "type": "directory",
+                    },
+                    "type": "filesystem",
+                  },
+                ],
+                "type": "policy_rule",
+              },
+            ],
+            "version": 1,
+          },
+        },
+        "kind": "allow_always",
+        "name": "Always Allow",
+        "optionId": "allow_always",
+      },
+    ],
+    "requestId": "perm-1",
+    "sealed": true,
+    "seqFirst": 92,
+    "seqLast": 93,
+    "toolCall": {
+      "kind": "execute",
+      "title": "echo bye > /Users/brennen/syntaur/.worktrees/feat/acp-adapter-spike/scripts/spike/acp/out/perm/claude-y",
+      "toolCallId": "toolu_017KsDvRU9SZPjBPyAYatAW5",
+    },
+    "turnId": "6",
+    "type": "permission.request",
+  },
+  {
+    "itemId": "6:7",
+    "messageId": "msg_011Ceder8B4ePuMVB2oxCNCF",
+    "sealed": true,
+    "seqFirst": 97,
+    "seqLast": 98,
+    "text": {
+      "head": "Both commands are done, with different outcomes:
+
+1. \`echo hi > .../perm/claude-",
+      "len": 304,
+      "sha": "b66522d05d21",
+    },
+    "turnId": "6",
+    "type": "agent.message",
+  },
+  {
+    "contextSize": 1000000,
+    "contextUsed": 31979,
+    "cost": 0.192106,
+    "durationMs": 6559,
+    "endedAt": "2026-09-02T00:18:48.632Z",
+    "itemId": "7:0",
+    "sealed": true,
+    "seqFirst": 102,
+    "seqLast": 114,
+    "startedAt": "2026-09-02T00:18:42.073Z",
+    "state": "ended",
+    "stopReason": "cancelled",
+    "turnId": "7",
+    "type": "turn.status",
+    "usage": {
+      "cachedReadTokens": 31558,
+      "cachedWriteTokens": 243,
+      "inputTokens": 2,
+      "outputTokens": 176,
+      "totalTokens": 31979,
+    },
+  },
+  {
+    "itemId": "7:1",
+    "level": "info",
+    "sealed": true,
+    "seqFirst": 103,
+    "seqLast": 103,
+    "text": "Session title: Execute shell commands with permission escalation",
+    "turnId": "7",
+    "type": "system",
+  },
+  {
+    "itemId": "7:2",
+    "sealed": true,
+    "seqFirst": 105,
+    "seqLast": 108,
+    "summary": {
+      "durationMs": 4649,
+      "edits": 0,
+      "failed": 0,
+      "reads": 0,
+      "runs": 1,
+    },
+    "tools": [
+      {
+        "content": [
+          {
+            "text": "Write "hold" to perm/claude-hold outside workspace",
+            "type": "text",
+          },
+        ],
+        "kind": "execute",
+        "locations": [],
+        "rawInput": {
+          "command": "echo hold > /Users/brennen/syntaur/.worktrees/feat/acp-adapter-spike/scripts/spike/acp/out/perm/claude-hold",
+          "dangerouslyDisableSandbox": true,
+          "description": "Write "hold" to perm/claude-hold outside workspace",
+        },
+        "status": "running",
+        "title": "echo hold > /Users/brennen/syntaur/.worktrees/feat/acp-adapter-spike/scripts/spike/acp/out/perm/claude-hold",
+        "toolCallId": "toolu_01L9mXdB57nUY29J7HLqupTh",
+      },
+    ],
+    "turnId": "7",
+    "type": "agent.work",
+  },
+  {
+    "cancelled": true,
+    "itemId": "7:3",
+    "options": [
+      {
+        "kind": "reject_once",
+        "name": "Deny",
+        "optionId": "reject",
+      },
+      {
+        "kind": "allow_once",
+        "name": "Allow Once",
+        "optionId": "allow",
+      },
+      {
+        "_meta": {
+          "permission": {
+            "changes": [
+              {
+                "description": "Allow Bash calls matching echo hold *",
+                "lifetime": {
+                  "scope": "persistent",
+                  "storage": "project_local",
+                },
+                "operation": "add",
+                "ruleBehavior": "allow",
+                "targets": [
+                  {
+                    "matcher": {
+                      "provider": "claudeCode",
+                      "type": "provider_rule",
+                      "value": "echo hold *",
+                    },
+                    "toolName": "Bash",
+                    "type": "tool",
+                  },
+                ],
+                "type": "policy_rule",
+              },
+              {
+                "description": "Allow filesystem access under /Users/brennen/syntaur/.worktrees/feat/acp-adapter-spike/scripts/spike/acp/out/perm",
+                "lifetime": {
+                  "scope": "session",
+                },
+                "operation": "add",
+                "ruleBehavior": "allow",
+                "targets": [
+                  {
+                    "matcher": {
+                      "path": "/Users/brennen/syntaur/.worktrees/feat/acp-adapter-spike/scripts/spike/acp/out/perm",
+                      "type": "directory",
+                    },
+                    "type": "filesystem",
+                  },
+                ],
+                "type": "policy_rule",
+              },
+            ],
+            "version": 1,
+          },
+        },
+        "kind": "allow_always",
+        "name": "Always Allow",
+        "optionId": "allow_always",
+      },
+    ],
+    "requestId": "perm-2",
+    "sealed": true,
+    "seqFirst": 109,
+    "seqLast": 112,
+    "toolCall": {
+      "kind": "execute",
+      "title": "echo hold > /Users/brennen/syntaur/.worktrees/feat/acp-adapter-spike/scripts/spike/acp/out/perm/claude-hold",
+      "toolCallId": "toolu_01L9mXdB57nUY29J7HLqupTh",
+    },
+    "turnId": "7",
+    "type": "permission.request",
+  },
+  {
+    "itemId": "7:4",
+    "level": "info",
+    "sealed": true,
+    "seqFirst": 111,
+    "seqLast": 111,
+    "text": "Cancel requested",
+    "turnId": "7",
+    "type": "system",
+  },
+]
+`;
+
+exports[`normalizer golden snapshots > claude/08-plan-events.ndjson normalizes to a stable item list 1`] = `
+[
+  {
+    "contextSize": 1000000,
+    "contextUsed": 43481,
+    "cost": 1.1731120000000002,
+    "durationMs": 37415,
+    "endedAt": "2026-09-01T23:58:49.497Z",
+    "itemId": "2:0",
+    "sealed": true,
+    "seqFirst": 4,
+    "seqLast": 74,
+    "startedAt": "2026-09-01T23:58:12.082Z",
+    "state": "ended",
+    "stopReason": "end_turn",
+    "turnId": "2",
+    "type": "turn.status",
+    "usage": {
+      "cachedReadTokens": 435252,
+      "cachedWriteTokens": 31830,
+      "inputTokens": 21,
+      "outputTokens": 2021,
+      "totalTokens": 469124,
+    },
+  },
+  {
+    "itemId": "2:2",
+    "lead": "I'll load the task tools, create the three-item list, and work through it.",
+    "sealed": true,
+    "seqFirst": 8,
+    "seqLast": 47,
+    "summary": {
+      "durationMs": 23247,
+      "edits": 0,
+      "failed": 0,
+      "reads": 0,
+      "runs": 2,
+    },
+    "tools": [
+      {
+        "content": [
+          {
+            "text": "Tool: TaskCreate",
+            "type": "text",
+          },
+          {
+            "text": "Tool: TaskUpdate",
+            "type": "text",
+          },
+          {
+            "text": "Tool: TaskList",
+            "type": "text",
+          },
+        ],
+        "kind": "other",
+        "locations": [],
+        "rawInput": {
+          "max_results": 3,
+          "query": "select:TaskCreate,TaskUpdate,TaskList",
+        },
+        "rawOutput": [
+          {
+            "tool_name": "TaskCreate",
+            "type": "tool_reference",
+          },
+          {
+            "tool_name": "TaskUpdate",
+            "type": "tool_reference",
+          },
+          {
+            "tool_name": "TaskList",
+            "type": "tool_reference",
+          },
+        ],
+        "status": "completed",
+        "title": "ToolSearch",
+        "toolCallId": "toolu_01R1GuWbhgcsFPnKY7oS3Fjf",
+      },
+      {
+        "content": [
+          {
+            "text": "\`\`\`console
+     103 package.json
+\`\`\`",
+            "type": "text",
+          },
+        ],
+        "kind": "execute",
+        "locations": [],
+        "rawInput": {
+          "command": "wc -l package.json",
+          "description": "Count lines in package.json",
+        },
+        "rawOutput": "     103 package.json",
+        "status": "completed",
+        "title": "wc -l package.json",
+        "toolCallId": "toolu_018BaG33FMwUr4mVSEk5CeHv",
+      },
+      {
+        "content": [
+          {
+            "text": "\`\`\`console
+       3
+\`\`\`",
+            "type": "text",
+          },
+        ],
+        "kind": "execute",
+        "locations": [],
+        "rawInput": {
+          "command": "find src -maxdepth 1 -type f | wc -l",
+          "description": "Count files directly inside src/ (non-recursive)",
+        },
+        "rawOutput": "       3",
+        "status": "completed",
+        "title": "find src -maxdepth 1 -type f | wc -l",
+        "toolCallId": "toolu_01NrkYknrimCHqDyrGawgYne",
+      },
+    ],
+    "turnId": "2",
+    "type": "agent.work",
+  },
+  {
+    "entries": [
+      {
+        "content": "Count the lines in package.json",
+        "priority": "medium",
+        "status": "completed",
+      },
+      {
+        "content": "Count the files directly inside src/",
+        "priority": "medium",
+        "status": "completed",
+      },
+      {
+        "content": "Report both numbers",
+        "priority": "medium",
+        "status": "completed",
+      },
+    ],
+    "itemId": "2:3",
+    "sealed": true,
+    "seqFirst": 17,
+    "seqLast": 57,
+    "turnId": "2",
+    "type": "agent.plan",
+  },
+  {
+    "itemId": "2:4",
+    "messageId": "msg_011CeddLGtEqD8ZesDeVUNEq",
+    "sealed": true,
+    "seqFirst": 60,
+    "seqLast": 71,
+    "text": {
+      "head": "\`package.json\` has **103 lines**, and \`src/\` contains **3 files** directly insid",
+      "len": 188,
+      "sha": "eebe42f01244",
+    },
+    "turnId": "2",
+    "type": "agent.message",
+  },
+]
+`;
+
+exports[`normalizer golden snapshots > claude/09-thoughts.ndjson normalizes to a stable item list 1`] = `
+[
+  {
+    "contextSize": 1000000,
+    "contextUsed": 37679,
+    "cost": 0.75813,
+    "durationMs": 5518,
+    "endedAt": "2026-09-01T23:58:56.836Z",
+    "itemId": "3:0",
+    "sealed": true,
+    "seqFirst": 7,
+    "seqLast": 14,
+    "startedAt": "2026-09-01T23:58:51.318Z",
+    "state": "ended",
+    "stopReason": "end_turn",
+    "turnId": "3",
+    "type": "turn.status",
+    "usage": {
+      "cachedReadTokens": 0,
+      "cachedWriteTokens": 37526,
+      "inputTokens": 1,
+      "outputTokens": 152,
+      "totalTokens": 37679,
+    },
+  },
+  {
+    "itemId": "3:1",
+    "messageId": "msg_011CeddLhvsiStNJNvHVxYSS",
+    "sealed": true,
+    "seqFirst": 10,
+    "seqLast": 10,
+    "text": "639",
+    "turnId": "3",
+    "type": "agent.message",
+  },
+]
+`;
+
+exports[`normalizer golden snapshots > claude/10-commands-config.ndjson normalizes to a stable item list 1`] = `
+[
+  {
+    "durationMs": 1088,
+    "endedAt": "2026-09-01T23:59:01.136Z",
+    "itemId": "2:0",
+    "sealed": true,
+    "seqFirst": 5,
+    "seqLast": 9,
+    "startedAt": "2026-09-01T23:59:00.048Z",
+    "state": "ended",
+    "stopReason": "end_turn",
+    "turnId": "2",
+    "type": "turn.status",
+    "usage": {
+      "cachedReadTokens": 0,
+      "cachedWriteTokens": 0,
+      "inputTokens": 0,
+      "outputTokens": 0,
+      "totalTokens": 0,
+    },
+  },
+  {
+    "itemId": "2:1",
+    "messageId": "30038ea0-8809-41bb-abad-e5af7a8e36cb",
+    "sealed": true,
+    "seqFirst": 7,
+    "seqLast": 7,
+    "text": {
+      "head": "## Context Usage
+
+**Model:** claude-fable-5  
+**Tokens:** 19.2k / 1m (2%)
+
+### E",
+      "len": 29313,
+      "sha": "7c92d63e5f21",
+    },
+    "turnId": "2",
+    "type": "agent.message",
+  },
+  {
+    "itemId": "2:2",
+    "level": "info",
+    "sealed": false,
+    "seqFirst": 8,
+    "seqLast": 8,
+    "text": {
+      "head": "## Context Usage
+
+**Model:** claude-fable-5  
+**Tokens:** 19.2k / 1m (2%)
+
+### E",
+      "len": 29315,
+      "sha": "2ed9c4b4757f",
+    },
+    "turnId": "2",
+    "type": "system",
+  },
+  {
+    "contextSize": 1000000,
+    "contextUsed": 53352,
+    "cost": 0.533665,
+    "durationMs": 1862,
+    "endedAt": "2026-09-01T23:59:03.002Z",
+    "itemId": "4:0",
+    "sealed": true,
+    "seqFirst": 12,
+    "seqLast": 19,
+    "startedAt": "2026-09-01T23:59:01.140Z",
+    "state": "ended",
+    "stopReason": "end_turn",
+    "turnId": "4",
+    "type": "turn.status",
+    "usage": {
+      "cachedReadTokens": 0,
+      "cachedWriteTokens": 53341,
+      "inputTokens": 1,
+      "outputTokens": 10,
+      "totalTokens": 53352,
+    },
+  },
+  {
+    "itemId": "4:1",
+    "messageId": "msg_011CeddMFnXy4rNyGowx6Aef",
+    "sealed": true,
+    "seqFirst": 14,
+    "seqLast": 15,
+    "text": "Claude Fable 5",
+    "turnId": "4",
+    "type": "agent.message",
+  },
+]
+`;
+
+exports[`normalizer golden snapshots > claude/11-usage.ndjson normalizes to a stable item list 1`] = `
+[
+  {
+    "contextSize": 1000000,
+    "contextUsed": 37560,
+    "cost": 0.532668,
+    "durationMs": 5293,
+    "endedAt": "2026-09-01T23:59:10.066Z",
+    "itemId": "2:0",
+    "sealed": true,
+    "seqFirst": 4,
+    "seqLast": 12,
+    "startedAt": "2026-09-01T23:59:04.773Z",
+    "state": "ended",
+    "stopReason": "end_turn",
+    "turnId": "2",
+    "type": "turn.status",
+    "usage": {
+      "cachedReadTokens": 11588,
+      "cachedWriteTokens": 25916,
+      "inputTokens": 1,
+      "outputTokens": 55,
+      "totalTokens": 37560,
+    },
+  },
+  {
+    "itemId": "2:1",
+    "messageId": "msg_011CeddMhd3VtAuNtBzcT1Jz",
+    "sealed": true,
+    "seqFirst": 8,
+    "seqLast": 8,
+    "text": "PONG",
+    "turnId": "2",
+    "type": "agent.message",
+  },
+]
+`;
+
+exports[`normalizer golden snapshots > claude/12-cancel.inherited.ndjson normalizes to a stable item list 1`] = `
+[
+  {
+    "contextSize": 1000000,
+    "contextUsed": 37515,
+    "cost": 0,
+    "durationMs": 25452,
+    "endedAt": "2026-09-02T00:41:34.990Z",
+    "itemId": "2:0",
+    "sealed": true,
+    "seqFirst": 4,
+    "seqLast": 11,
+    "startedAt": "2026-09-02T00:41:09.538Z",
+    "state": "ended",
+    "stopReason": "cancelled",
+    "turnId": "2",
+    "type": "turn.status",
+    "usage": {
+      "cachedReadTokens": 0,
+      "cachedWriteTokens": 0,
+      "inputTokens": 0,
+      "outputTokens": 0,
+      "totalTokens": 0,
+    },
+  },
+  {
+    "itemId": "2:1",
+    "messageId": "msg_011CedgZouFZkjqd4MPm31Xb",
+    "sealed": true,
+    "seqFirst": 8,
+    "seqLast": 8,
+    "text": "# From Locked Files to Distributed Graphs: A History of Version Control Systems",
+    "turnId": "2",
+    "type": "agent.message",
+  },
+  {
+    "itemId": "2:2",
+    "level": "info",
+    "sealed": true,
+    "seqFirst": 9,
+    "seqLast": 9,
+    "text": "Cancel requested",
+    "turnId": "2",
+    "type": "system",
+  },
+]
+`;
+
+exports[`normalizer golden snapshots > claude/12-cancel.low.ndjson normalizes to a stable item list 1`] = `
+[
+  {
+    "contextSize": 1000000,
+    "contextUsed": 37516,
+    "cost": 0,
+    "durationMs": 6057,
+    "endedAt": "2026-09-02T00:41:42.926Z",
+    "itemId": "3:0",
+    "sealed": true,
+    "seqFirst": 7,
+    "seqLast": 15,
+    "startedAt": "2026-09-02T00:41:36.869Z",
+    "state": "ended",
+    "stopReason": "cancelled",
+    "turnId": "3",
+    "type": "turn.status",
+    "usage": {
+      "cachedReadTokens": 0,
+      "cachedWriteTokens": 0,
+      "inputTokens": 0,
+      "outputTokens": 0,
+      "totalTokens": 0,
+    },
+  },
+  {
+    "itemId": "3:1",
+    "messageId": "msg_011CedgbpbyuSDjEEAzkvNh5",
+    "sealed": true,
+    "seqFirst": 10,
+    "seqLast": 12,
+    "text": {
+      "head": "# From SCCS to Git: A History of Version Control Systems
+
+## Introduction
+
+Few c",
+      "len": 345,
+      "sha": "5cb47bad4bb4",
+    },
+    "turnId": "3",
+    "type": "agent.message",
+  },
+  {
+    "itemId": "3:2",
+    "level": "info",
+    "sealed": true,
+    "seqFirst": 13,
+    "seqLast": 13,
+    "text": "Cancel requested",
+    "turnId": "3",
+    "type": "system",
+  },
+  {
+    "itemId": "session:assignment-fixture:claude:0",
+    "level": "info",
+    "sealed": true,
+    "seqFirst": 16,
+    "seqLast": 16,
+    "text": {
+      "head": "Session title: Write a very long, detailed essay of at least 3000 words on the h",
+      "len": 151,
+      "sha": "5d5f46391a68",
+    },
+    "turnId": null,
+    "type": "system",
+  },
+]
+`;
+
+exports[`normalizer golden snapshots > claude/13-queue-vs-steer.ndjson normalizes to a stable item list 1`] = `
+[
+  {
+    "durationMs": 61499,
+    "endedAt": "2026-09-02T11:07:05.205Z",
+    "itemId": "2:0",
+    "sealed": true,
+    "seqFirst": 4,
+    "seqLast": 51,
+    "startedAt": "2026-09-02T11:06:03.706Z",
+    "state": "ended",
+    "stopReason": "end_turn",
+    "turnId": "2",
+    "type": "turn.status",
+    "usage": {
+      "cachedReadTokens": 0,
+      "cachedWriteTokens": 36486,
+      "inputTokens": 1,
+      "outputTokens": 3804,
+      "totalTokens": 40291,
+    },
+  },
+  {
+    "contextSize": 1000000,
+    "contextUsed": 41032,
+    "cost": 0.523768,
+    "durationMs": 61271,
+    "endedAt": "2026-09-02T11:07:06.978Z",
+    "itemId": "3:0",
+    "sealed": true,
+    "seqFirst": 7,
+    "seqLast": 57,
+    "startedAt": "2026-09-02T11:06:05.707Z",
+    "state": "ended",
+    "stopReason": "end_turn",
+    "turnId": "3",
+    "type": "turn.status",
+    "usage": {
+      "cachedReadTokens": 36486,
+      "cachedWriteTokens": 4538,
+      "inputTokens": 1,
+      "outputTokens": 7,
+      "totalTokens": 41032,
+    },
+  },
+  {
+    "itemId": "3:1",
+    "messageId": "msg_011CeeWDc4tXKb9JZ9FFXVGQ",
+    "sealed": true,
+    "seqFirst": 9,
+    "seqLast": 47,
+    "text": {
+      "head": "## The Shell as a Replaceable Part
+
+The most consequential decision in the histo",
+      "len": 5317,
+      "sha": "329aaad5de7b",
+    },
+    "turnId": "3",
+    "type": "agent.message",
+  },
+  {
+    "itemId": "3:2",
+    "messageId": "msg_011CeeWJ2bdsaV2Ssr7MXw2U",
+    "sealed": true,
+    "seqFirst": 53,
+    "seqLast": 54,
+    "text": "QUEUED",
+    "turnId": "3",
+    "type": "agent.message",
+  },
+  {
+    "contextSize": 1000000,
+    "contextUsed": 42516,
+    "cost": 0.559285,
+    "itemId": "4:0",
+    "sealed": false,
+    "seqFirst": 58,
+    "seqLast": 68,
+    "startedAt": "2026-09-02T11:07:06.978Z",
+    "state": "running",
+    "turnId": "4",
+    "type": "turn.status",
+  },
+  {
+    "itemId": "4:1",
+    "level": "info",
+    "sealed": true,
+    "seqFirst": 59,
+    "seqLast": 59,
+    "text": "Session title: Write a detailed essay of about 800 words on the history of the Unix shell. Do not stop early.",
+    "turnId": "4",
+    "type": "system",
+  },
+  {
+    "itemId": "4:2",
+    "messageId": "msg_011CeeWJJbJwg2aUMjNekfgB",
+    "sealed": false,
+    "seqFirst": 65,
+    "seqLast": 66,
+    "text": "STEERED",
+    "turnId": "4",
+    "type": "agent.message",
+  },
+]
+`;
+
+exports[`normalizer golden snapshots > claude/14-load-resume.p1.ndjson normalizes to a stable item list 1`] = `
+[
+  {
+    "contextSize": 1000000,
+    "contextUsed": 36953,
+    "cost": 0.523018,
+    "durationMs": 4712,
+    "endedAt": "2026-09-02T00:02:01.922Z",
+    "itemId": "2:0",
+    "sealed": true,
+    "seqFirst": 4,
+    "seqLast": 12,
+    "startedAt": "2026-09-02T00:01:57.210Z",
+    "state": "ended",
+    "stopReason": "end_turn",
+    "turnId": "2",
+    "type": "turn.status",
+    "usage": {
+      "cachedReadTokens": 11588,
+      "cachedWriteTokens": 25226,
+      "inputTokens": 1,
+      "outputTokens": 138,
+      "totalTokens": 36953,
+    },
+  },
+  {
+    "itemId": "2:1",
+    "messageId": "msg_011CeddaLSwLbot6XUWPNRhF",
+    "sealed": true,
+    "seqFirst": 8,
+    "seqLast": 8,
+    "text": "OK",
+    "turnId": "2",
+    "type": "agent.message",
+  },
+]
+`;
+
+exports[`normalizer golden snapshots > claude/14-load-resume.p2.ndjson normalizes to a stable item list 1`] = `
+[
+  {
+    "itemId": "replay:1:0",
+    "level": "info",
+    "sealed": true,
+    "seqFirst": 2,
+    "seqLast": 2,
+    "text": "Replaying session history",
+    "turnId": null,
+    "type": "system",
+  },
+  {
+    "itemId": "replay:1:1",
+    "messageId": "151fac82-4996-4c45-b072-d87ab705b78d",
+    "sealed": true,
+    "seqFirst": 3,
+    "seqLast": 3,
+    "state": "replayed",
+    "text": "Remember this: the code word is PELICAN. Reply with exactly OK.",
+    "turnId": null,
+    "type": "user.message",
+  },
+  {
+    "itemId": "replay:1:2",
+    "messageId": "msg_011CeddaLSwLbot6XUWPNRhF",
+    "sealed": true,
+    "seqFirst": 4,
+    "seqLast": 4,
+    "text": "OK",
+    "turnId": null,
+    "type": "agent.message",
+  },
+  {
+    "contextSize": 1000000,
+    "contextUsed": 37683,
+    "cost": 0.054394,
+    "durationMs": 2563,
+    "endedAt": "2026-09-02T00:02:06.204Z",
+    "itemId": "2:0",
+    "sealed": true,
+    "seqFirst": 6,
+    "seqLast": 15,
+    "startedAt": "2026-09-02T00:02:03.641Z",
+    "state": "ended",
+    "stopReason": "end_turn",
+    "turnId": "2",
+    "type": "turn.status",
+    "usage": {
+      "cachedReadTokens": 36814,
+      "cachedWriteTokens": 861,
+      "inputTokens": 1,
+      "outputTokens": 7,
+      "totalTokens": 37683,
+    },
+  },
+  {
+    "itemId": "2:1",
+    "messageId": "msg_011CeddakmRTVrMQN5gwEMCt",
+    "sealed": true,
+    "seqFirst": 10,
+    "seqLast": 11,
+    "text": "PELICAN",
+    "turnId": "2",
+    "type": "agent.message",
+  },
+]
+`;
+
+exports[`normalizer golden snapshots > claude/14-load-resume.p3.ndjson normalizes to a stable item list 1`] = `
+[
+  {
+    "itemId": "session:assignment-fixture:claude:0",
+    "level": "info",
+    "sealed": true,
+    "seqFirst": 2,
+    "seqLast": 2,
+    "text": "Agent session resumed (436f844f-16f2-468e-904d-534bca3464ae)",
+    "turnId": null,
+    "type": "system",
+  },
+  {
+    "contextSize": 1000000,
+    "contextUsed": 38413,
+    "cost": 0.052635,
+    "durationMs": 2707,
+    "endedAt": "2026-09-02T00:02:10.682Z",
+    "itemId": "2:0",
+    "sealed": true,
+    "seqFirst": 4,
+    "seqLast": 13,
+    "startedAt": "2026-09-02T00:02:07.975Z",
+    "state": "ended",
+    "stopReason": "end_turn",
+    "turnId": "2",
+    "type": "turn.status",
+    "usage": {
+      "cachedReadTokens": 37675,
+      "cachedWriteTokens": 730,
+      "inputTokens": 1,
+      "outputTokens": 7,
+      "totalTokens": 38413,
+    },
+  },
+  {
+    "itemId": "2:1",
+    "messageId": "msg_011Ceddb57UhcYZVnk2jZx42",
+    "sealed": true,
+    "seqFirst": 8,
+    "seqLast": 9,
+    "text": "PELICAN",
+    "turnId": "2",
+    "type": "agent.message",
+  },
+]
+`;
+
+exports[`normalizer golden snapshots > claude/15-crash.early-exit.ndjson normalizes to a stable item list 1`] = `[]`;
+
+exports[`normalizer golden snapshots > claude/15-crash.ndjson normalizes to a stable item list 1`] = `
+[
+  {
+    "contextSize": 1000000,
+    "contextUsed": 36824,
+    "itemId": "2:0",
+    "sealed": false,
+    "seqFirst": 4,
+    "seqLast": 7,
+    "startedAt": "2026-09-02T00:02:12.458Z",
+    "state": "running",
+    "turnId": "2",
+    "type": "turn.status",
+  },
+]
+`;
+
+exports[`normalizer golden snapshots > claude/16-embedded-context.ndjson normalizes to a stable item list 1`] = `
+[
+  {
+    "contextSize": 1000000,
+    "contextUsed": 39444,
+    "cost": 0.574458,
+    "durationMs": 4855,
+    "endedAt": "2026-09-02T00:02:23.854Z",
+    "itemId": "2:0",
+    "sealed": true,
+    "seqFirst": 4,
+    "seqLast": 12,
+    "startedAt": "2026-09-02T00:02:18.999Z",
+    "state": "ended",
+    "stopReason": "end_turn",
+    "turnId": "2",
+    "type": "turn.status",
+    "usage": {
+      "cachedReadTokens": 11588,
+      "cachedWriteTokens": 27663,
+      "inputTokens": 1,
+      "outputTokens": 192,
+      "totalTokens": 39444,
+    },
+  },
+  {
+    "itemId": "2:1",
+    "messageId": "msg_011CeddbxDGsgQHiXcwKbUE3",
+    "sealed": true,
+    "seqFirst": 8,
+    "seqLast": 8,
+    "text": "acp-adapter-spike, 7",
+    "turnId": "2",
+    "type": "agent.message",
+  },
+]
+`;
+
+exports[`normalizer golden snapshots > claude/17-subagent.ndjson normalizes to a stable item list 1`] = `
+[
+  {
+    "contextSize": 1000000,
+    "contextUsed": 38990,
+    "cost": 1.0663602499999998,
+    "durationMs": 60751,
+    "endedAt": "2026-09-02T00:03:26.235Z",
+    "itemId": "2:0",
+    "sealed": true,
+    "seqFirst": 4,
+    "seqLast": 61,
+    "startedAt": "2026-09-02T00:02:25.484Z",
+    "state": "ended",
+    "stopReason": "end_turn",
+    "turnId": "2",
+    "type": "turn.status",
+    "usage": {
+      "cachedReadTokens": 48435,
+      "cachedWriteTokens": 26525,
+      "inputTokens": 3,
+      "outputTokens": 1383,
+      "totalTokens": 76346,
+    },
+  },
+  {
+    "itemId": "2:2",
+    "lead": "I'll dispatch an Explore subagent to summarize the purpose of \`src/\`.",
+    "sealed": true,
+    "seqFirst": 8,
+    "seqLast": 48,
+    "summary": {
+      "durationMs": 56404,
+      "edits": 0,
+      "failed": 0,
+      "reads": 0,
+      "runs": 10,
+    },
+    "tools": [
+      {
+        "content": [
+          {
+            "text": {
+              "head": "The \`src/\` directory at \`/Users/brennen/syntaur/.worktrees/feat/acp-adapter-spik",
+              "len": 1868,
+              "sha": "0782ec8ad498",
+            },
+            "type": "text",
+          },
+        ],
+        "kind": "think",
+        "locations": [],
+        "rawInput": {
+          "description": "Summarize src/ directory purpose",
+          "prompt": {
+            "head": "Explore the src/ directory under /Users/brennen/syntaur/.worktrees/feat/acp-adap",
+            "len": 555,
+            "sha": "168d586909c1",
+          },
+          "run_in_background": false,
+          "subagent_type": "Explore",
+        },
+        "rawOutput": [
+          {
+            "text": {
+              "head": "The \`src/\` directory at \`/Users/brennen/syntaur/.worktrees/feat/acp-adapter-spik",
+              "len": 1868,
+              "sha": "0782ec8ad498",
+            },
+            "type": "text",
+          },
+        ],
+        "status": "completed",
+        "title": "Summarize src/ directory purpose",
+        "toolCallId": "toolu_01N4c2gdWMBnzXv97wxTWiM5",
+      },
+      {
+        "content": [
+          {
+            "text": {
+              "head": "\`\`\`console
+total 232
+drwxr-xr-x@ 15 brennen  staff    480 Sep  1 17:55 .
+drwxr-x",
+              "len": 1828,
+              "sha": "005ecf693f47",
+            },
+            "type": "text",
+          },
+        ],
+        "kind": "execute",
+        "locations": [],
+        "rawInput": {
+          "command": {
+            "head": "ls -la /Users/brennen/syntaur/.worktrees/feat/acp-adapter-spike/scripts/spike/ac",
+            "len": 212,
+            "sha": "f6e829fe1532",
+          },
+          "description": "List spike/acp directory tree",
+        },
+        "rawOutput": {
+          "head": "total 232
+drwxr-xr-x@ 15 brennen  staff    480 Sep  1 17:55 .
+drwxr-xr-x@  3 bre",
+          "len": 1813,
+          "sha": "990ef5ec17fd",
+        },
+        "status": "completed",
+        "title": {
+          "head": "ls -la /Users/brennen/syntaur/.worktrees/feat/acp-adapter-spike/scripts/spike/ac",
+          "len": 212,
+          "sha": "f6e829fe1532",
+        },
+        "toolCallId": "toolu_019EJ8iLWzKBtidjeMJGvkQ3",
+      },
+      {
+        "content": [
+          {
+            "text": {
+              "head": "\`\`\`console
+/Users/brennen/syntaur/.worktrees/feat/acp-adapter-spike/scripts/spik",
+              "len": 610,
+              "sha": "a1a368fdc137",
+            },
+            "type": "text",
+          },
+        ],
+        "kind": "execute",
+        "locations": [],
+        "rawInput": {
+          "command": {
+            "head": "find /Users/brennen/syntaur/.worktrees/feat/acp-adapter-spike/scripts/spike -typ",
+            "len": 146,
+            "sha": "5ba62b0b744a",
+          },
+          "description": "Find src directories under spike",
+        },
+        "rawOutput": {
+          "head": "/Users/brennen/syntaur/.worktrees/feat/acp-adapter-spike/scripts/spike/acp/out/t",
+          "len": 595,
+          "sha": "0081cc1772f5",
+        },
+        "status": "completed",
+        "title": {
+          "head": "find /Users/brennen/syntaur/.worktrees/feat/acp-adapter-spike/scripts/spike -typ",
+          "len": 146,
+          "sha": "5ba62b0b744a",
+        },
+        "toolCallId": "toolu_01Sp51ckjKs3VzK2bjxGDAG4",
+      },
+      {
+        "content": [
+          {
+            "text": {
+              "head": "\`\`\`console
+.
+./platforms
+./bin
+./references
+./statusline
+./.agents
+./research-fi",
+              "len": 4799,
+              "sha": "7febcffee2b9",
+            },
+            "type": "text",
+          },
+        ],
+        "kind": "execute",
+        "locations": [],
+        "rawInput": {
+          "command": {
+            "head": "find . -maxdepth 2 -not -path "*/node_modules/*" -not -path "*/.git/*" | head -6",
+            "len": 274,
+            "sha": "bc23f97abe45",
+          },
+          "description": "List target-claude and src tree",
+        },
+        "rawOutput": {
+          "head": ".
+./platforms
+./bin
+./references
+./statusline
+./.agents
+./research-findings.md
+.",
+          "len": 4784,
+          "sha": "a637fb3b51a9",
+        },
+        "status": "completed",
+        "title": {
+          "head": "find . -maxdepth 2 -not -path "*/node_modules/*" -not -path "*/.git/*" | head -6",
+          "len": 274,
+          "sha": "bc23f97abe45",
+        },
+        "toolCallId": "toolu_01RFhsLTGRAqwHmskGy8XH8B",
+      },
+      {
+        "content": [
+          {
+            "text": {
+              "head": "\`\`\`console
+{
+  "name": "syntaur",
+  "version": "0.79.0",
+  "description": "Proje",
+              "len": 6059,
+              "sha": "b906d820eb60",
+            },
+            "type": "text",
+          },
+        ],
+        "kind": "execute",
+        "locations": [],
+        "rawInput": {
+          "command": "cat package.json; echo "=== README head ==="; head -80 README.md",
+          "description": "Read package.json and README",
+        },
+        "rawOutput": {
+          "head": "{
+  "name": "syntaur",
+  "version": "0.79.0",
+  "description": "Project workflow",
+          "len": 6044,
+          "sha": "5e131f0de003",
+        },
+        "status": "completed",
+        "title": "cat package.json; echo "=== README head ==="; head -80 README.md",
+        "toolCallId": "toolu_01RrDA2w4HfRN6MrGuqB5na6",
+      },
+      {
+        "content": [
+          {
+            "text": {
+              "head": "\`\`\`console
+__tests__
+cli-default-command.ts
+commands
+daemon
+dashboard
+db
+errors.",
+              "len": 619,
+              "sha": "f7f627ba0b9d",
+            },
+            "type": "text",
+          },
+        ],
+        "kind": "execute",
+        "locations": [],
+        "rawInput": {
+          "command": "ls src/; echo "=== top-level dirs with counts ==="; for d in src/*/; do echo "$d $(find $d -type f | wc -l)"; done",
+          "description": "List src subdirectories with file counts",
+        },
+        "rawOutput": {
+          "head": "__tests__
+cli-default-command.ts
+commands
+daemon
+dashboard
+db
+errors.ts
+inbox
+in",
+          "len": 604,
+          "sha": "7c7987485f37",
+        },
+        "status": "completed",
+        "title": "ls src/; echo "=== top-level dirs with counts ==="; for d in src/*/; do echo "$d $(find $d -type f | wc -l)"; done",
+        "toolCallId": "toolu_01GS99FRYmixzHdV3psNgQqZ",
+      },
+      {
+        "content": [
+          {
+            "text": {
+              "head": "\`\`\`console
+import { Command, InvalidArgumentError } from 'commander';
+import { i",
+              "len": 7435,
+              "sha": "a706961076ea",
+            },
+            "type": "text",
+          },
+        ],
+        "kind": "execute",
+        "locations": [],
+        "rawInput": {
+          "command": "head -120 src/index.ts; echo "=== COMMANDS ==="; ls src/commands/ | head -90",
+          "description": "Read index.ts head and list commands",
+        },
+        "rawOutput": {
+          "head": "import { Command, InvalidArgumentError } from 'commander';
+import { initCommand ",
+          "len": 7420,
+          "sha": "3260fe831f60",
+        },
+        "status": "completed",
+        "title": "head -120 src/index.ts; echo "=== COMMANDS ==="; ls src/commands/ | head -90",
+        "toolCallId": "toolu_01HsXNhx5zUxNEEBb7tx7rmo",
+      },
+      {
+        "content": [
+          {
+            "text": {
+              "head": "\`\`\`console
+.command('init'
+.command('create-project'
+.command('create-assignment",
+              "len": 2685,
+              "sha": "62605e4f9239",
+            },
+            "type": "text",
+          },
+        ],
+        "kind": "execute",
+        "locations": [],
+        "rawInput": {
+          "command": {
+            "head": "grep -o "\\.command('[^']*'" src/index.ts | head -60; echo "=== dashboard files =",
+            "len": 212,
+            "sha": "2b797971d40d",
+          },
+          "description": "Extract CLI command names and list module files",
+        },
+        "rawOutput": {
+          "head": ".command('init'
+.command('create-project'
+.command('create-assignment'
+.command(",
+          "len": 2670,
+          "sha": "e64294482014",
+        },
+        "status": "completed",
+        "title": {
+          "head": "grep -o "\\.command('[^']*'" src/index.ts | head -60; echo "=== dashboard files =",
+          "len": 212,
+          "sha": "2b797971d40d",
+        },
+        "toolCallId": "toolu_01GqhwFHeDkEHGsDnJLfFbrh",
+      },
+      {
+        "content": [
+          {
+            "text": {
+              "head": "\`\`\`console
+__tests__
+claude.ts
+codex.ts
+generic.ts
+registry.ts
+spool.ts
+types.ts",
+              "len": 3511,
+              "sha": "20116f9f6001",
+            },
+            "type": "text",
+          },
+        ],
+        "kind": "execute",
+        "locations": [],
+        "rawInput": {
+          "command": {
+            "head": "ls src/daemon/adapters/ 2>/dev/null; echo "=== lifecycle/index head ==="; head -",
+            "len": 241,
+            "sha": "218f64899f4d",
+          },
+          "description": "Inspect adapters, lifecycle, launch, targets",
+        },
+        "rawOutput": {
+          "head": "__tests__
+claude.ts
+codex.ts
+generic.ts
+registry.ts
+spool.ts
+types.ts
+=== lifecy",
+          "len": 3496,
+          "sha": "0d8306dbf299",
+        },
+        "status": "completed",
+        "title": {
+          "head": "ls src/daemon/adapters/ 2>/dev/null; echo "=== lifecycle/index head ==="; head -",
+          "len": 241,
+          "sha": "218f64899f4d",
+        },
+        "toolCallId": "toolu_01GxS6JXHZGfbmKMT7hrSf8Z",
+      },
+      {
+        "content": [
+          {
+            "text": {
+              "head": "\`\`\`console
+import express from 'express';
+import { createServer } from 'node:htt",
+              "len": 3998,
+              "sha": "19ba1f27a0d5",
+            },
+            "type": "text",
+          },
+        ],
+        "kind": "execute",
+        "locations": [],
+        "rawInput": {
+          "command": "head -60 src/dashboard/server.ts; echo "=== state machine ==="; head -60 src/lifecycle/state-machine.ts",
+          "description": "Read dashboard server and state machine",
+        },
+        "rawOutput": {
+          "head": "import express from 'express';
+import { createServer } from 'node:http';
+import ",
+          "len": 3983,
+          "sha": "51cd184ccf60",
+        },
+        "status": "completed",
+        "title": "head -60 src/dashboard/server.ts; echo "=== state machine ==="; head -60 src/lifecycle/state-machine.ts",
+        "toolCallId": "toolu_01AWaKteqiYsJmHxA3GE7p1T",
+      },
+      {
+        "content": [
+          {
+            "text": {
+              "head": "\`\`\`console
+// AgentAdapter contract (research doc §3.2, adapted per plan D2: bui",
+              "len": 1928,
+              "sha": "9a6f37d6d1d0",
+            },
+            "type": "text",
+          },
+        ],
+        "kind": "execute",
+        "locations": [],
+        "rawInput": {
+          "command": {
+            "head": "head -25 src/daemon/adapters/types.ts; echo "=== daemon/index ==="; head -25 src",
+            "len": 210,
+            "sha": "53d3e483fec5",
+          },
+          "description": "Inspect adapters, daemon index, tui cockpit, templates",
+        },
+        "rawOutput": {
+          "head": "// AgentAdapter contract (research doc §3.2, adapted per plan D2: buildArgv
+// s",
+          "len": 1913,
+          "sha": "9b0fda5d04ba",
+        },
+        "status": "completed",
+        "title": {
+          "head": "head -25 src/daemon/adapters/types.ts; echo "=== daemon/index ==="; head -25 src",
+          "len": 210,
+          "sha": "53d3e483fec5",
+        },
+        "toolCallId": "toolu_01Sr643UquxViLnxEyFUUcZA",
+      },
+    ],
+    "turnId": "2",
+    "type": "agent.work",
+  },
+  {
+    "itemId": "2:3",
+    "messageId": "msg_011CeddgDC3TxzKhP3ocmDEP",
+    "sealed": true,
+    "seqFirst": 50,
+    "seqLast": 58,
+    "text": {
+      "head": "Here is the Explore subagent's summary, relayed verbatim:
+
+The \`src/\` directory ",
+      "len": 1927,
+      "sha": "e07f59c38fe7",
+    },
+    "turnId": "2",
+    "type": "agent.message",
+  },
+]
+`;
+
+exports[`normalizer golden snapshots > claude/19-concurrency.implementer.ndjson normalizes to a stable item list 1`] = `
+[
+  {
+    "itemId": "session:assignment-fixture:claude:0",
+    "level": "info",
+    "sealed": true,
+    "seqFirst": 6,
+    "seqLast": 6,
+    "text": "Config ? → null",
+    "turnId": null,
+    "type": "system",
+  },
+  {
+    "contextSize": 1000000,
+    "contextUsed": 37401,
+    "cost": 0.620304,
+    "durationMs": 9243,
+    "endedAt": "2026-09-02T00:03:43.704Z",
+    "itemId": "3:0",
+    "sealed": true,
+    "seqFirst": 8,
+    "seqLast": 31,
+    "startedAt": "2026-09-02T00:03:34.461Z",
+    "state": "ended",
+    "stopReason": "end_turn",
+    "turnId": "3",
+    "type": "turn.status",
+    "usage": {
+      "cachedReadTokens": 85534,
+      "cachedWriteTokens": 25806,
+      "inputTokens": 5,
+      "outputTokens": 372,
+      "totalTokens": 111717,
+    },
+  },
+  {
+    "itemId": "3:1",
+    "sealed": true,
+    "seqFirst": 11,
+    "seqLast": 24,
+    "summary": {
+      "durationMs": 5040,
+      "edits": 1,
+      "failed": 0,
+      "reads": 1,
+      "runs": 0,
+    },
+    "tools": [
+      {
+        "content": [
+          {
+            "text": {
+              "head": "\`\`\`
+1	# Syntaur
+2	
+3	Syntaur is a local project and assignment workflow for codi",
+              "len": 186,
+              "sha": "fea757ba0bc0",
+            },
+            "type": "text",
+          },
+        ],
+        "kind": "read",
+        "locations": [
+          {
+            "line": 1,
+            "path": "/Users/brennen/syntaur/.worktrees/feat/acp-adapter-spike/scripts/spike/acp/out/target-claude/README.md",
+          },
+        ],
+        "rawInput": {
+          "file_path": "/Users/brennen/syntaur/.worktrees/feat/acp-adapter-spike/scripts/spike/acp/out/target-claude/README.md",
+          "limit": 5,
+        },
+        "rawOutput": {
+          "head": "1	# Syntaur
+2	
+3	Syntaur is a local project and assignment workflow for coding a",
+          "len": 178,
+          "sha": "166c5092bb1d",
+        },
+        "status": "completed",
+        "title": "Read README.md (1 - 5)",
+        "toolCallId": "toolu_01XjXmNcEdDvywp5FRSJoJje",
+      },
+      {
+        "content": [
+          {
+            "newText": {
+              "head": "<!-- acp-spike: concurrent edit -->
+# Syntaur
+
+Syntaur is a local project and as",
+              "len": 187,
+              "sha": "b5a1fa93118b",
+            },
+            "oldText": {
+              "head": "# Syntaur
+
+Syntaur is a local project and assignment workflow for coding agents.",
+              "len": 151,
+              "sha": "c296af1decba",
+            },
+            "path": "/Users/brennen/syntaur/.worktrees/feat/acp-adapter-spike/scripts/spike/acp/out/target-claude/README.md",
+            "type": "diff",
+          },
+        ],
+        "kind": "edit",
+        "locations": [
+          {
+            "line": 1,
+            "path": "/Users/brennen/syntaur/.worktrees/feat/acp-adapter-spike/scripts/spike/acp/out/target-claude/README.md",
+          },
+        ],
+        "rawInput": {
+          "file_path": "/Users/brennen/syntaur/.worktrees/feat/acp-adapter-spike/scripts/spike/acp/out/target-claude/README.md",
+          "new_string": "<!-- acp-spike: concurrent edit -->
+# Syntaur",
+          "old_string": "# Syntaur",
+          "replace_all": false,
+        },
+        "rawOutput": {
+          "head": "The file /Users/brennen/syntaur/.worktrees/feat/acp-adapter-spike/scripts/spike/",
+          "len": 208,
+          "sha": "2d62d9483f92",
+        },
+        "status": "completed",
+        "title": "Edit README.md",
+        "toolCallId": "toolu_019eu3TNae87otBpQzYFWMLn",
+      },
+    ],
+    "turnId": "3",
+    "type": "agent.work",
+  },
+  {
+    "itemId": "3:2",
+    "messageId": "msg_011Ceddi1Ans4Ts6DPMmW3j4",
+    "sealed": true,
+    "seqFirst": 27,
+    "seqLast": 28,
+    "text": "DONE",
+    "turnId": "3",
+    "type": "agent.message",
+  },
+  {
+    "itemId": "session:assignment-fixture:claude:1",
+    "level": "info",
+    "sealed": true,
+    "seqFirst": 32,
+    "seqLast": 32,
+    "text": {
+      "head": "Session title: Insert the line <!-- acp-spike: concurrent edit --> as the very f",
+      "len": 143,
+      "sha": "d92b3df4b403",
+    },
+    "turnId": null,
+    "type": "system",
+  },
+]
+`;
+
+exports[`normalizer golden snapshots > claude/19-concurrency.planner.ndjson normalizes to a stable item list 1`] = `
+[
+  {
+    "itemId": "session:assignment-fixture:claude:0",
+    "level": "info",
+    "sealed": true,
+    "seqFirst": 6,
+    "seqLast": 6,
+    "text": "Config ? → null",
+    "turnId": null,
+    "type": "system",
+  },
+  {
+    "contextSize": 1000000,
+    "contextUsed": 48222,
+    "cost": 1.281162,
+    "durationMs": 71565,
+    "endedAt": "2026-09-02T00:04:46.026Z",
+    "itemId": "3:0",
+    "sealed": true,
+    "seqFirst": 8,
+    "seqLast": 80,
+    "startedAt": "2026-09-02T00:03:34.461Z",
+    "state": "ended",
+    "stopReason": "end_turn",
+    "turnId": "3",
+    "type": "turn.status",
+    "usage": {
+      "cachedReadTokens": 311000,
+      "cachedWriteTokens": 36089,
+      "inputTokens": 14,
+      "outputTokens": 4931,
+      "totalTokens": 352034,
+    },
+  },
+  {
+    "itemId": "3:2",
+    "lead": "I'll read package.json to understand the CLI structure, then write the plan.",
+    "sealed": true,
+    "seqFirst": 11,
+    "seqLast": 17,
+    "summary": {
+      "durationMs": 4000,
+      "edits": 0,
+      "failed": 0,
+      "reads": 1,
+      "runs": 0,
+    },
+    "tools": [
+      {
+        "content": [
+          {
+            "text": {
+              "head": "\`\`\`
+1	{
+2	  "name": "syntaur",
+3	  "version": "0.79.0",
+4	  "description": "Proj",
+              "len": 3493,
+              "sha": "79719ef946d8",
+            },
+            "type": "text",
+          },
+        ],
+        "kind": "read",
+        "locations": [
+          {
+            "line": 1,
+            "path": "/Users/brennen/syntaur/.worktrees/feat/acp-adapter-spike/scripts/spike/acp/out/target-claude/package.json",
+          },
+        ],
+        "rawInput": {
+          "file_path": "/Users/brennen/syntaur/.worktrees/feat/acp-adapter-spike/scripts/spike/acp/out/target-claude/package.json",
+        },
+        "rawOutput": {
+          "head": "1	{
+2	  "name": "syntaur",
+3	  "version": "0.79.0",
+4	  "description": "Project ",
+          "len": 3490,
+          "sha": "48a5bfe60682",
+        },
+        "status": "completed",
+        "title": "Read package.json",
+        "toolCallId": "toolu_01L4Vg6SwKs272x2XJAVmMsa",
+      },
+    ],
+    "turnId": "3",
+    "type": "agent.work",
+  },
+  {
+    "itemId": "3:4",
+    "lead": {
+      "head": "The CLI is \`syntaur\` (v0.79.0), entry at \`bin/syntaur.js\`, built with commander ",
+      "len": 168,
+      "sha": "4b366b778b66",
+    },
+    "sealed": true,
+    "seqFirst": 19,
+    "seqLast": 69,
+    "summary": {
+      "durationMs": 59310,
+      "edits": 1,
+      "failed": 0,
+      "reads": 2,
+      "runs": 2,
+    },
+    "tools": [
+      {
+        "content": [
+          {
+            "text": "\`\`\`
+1	#!/usr/bin/env node
+2	import '../dist/index.js';
+\`\`\`",
+            "type": "text",
+          },
+        ],
+        "kind": "read",
+        "locations": [
+          {
+            "line": 1,
+            "path": "/Users/brennen/syntaur/.worktrees/feat/acp-adapter-spike/scripts/spike/acp/out/target-claude/bin/syntaur.js",
+          },
+        ],
+        "rawInput": {
+          "file_path": "/Users/brennen/syntaur/.worktrees/feat/acp-adapter-spike/scripts/spike/acp/out/target-claude/bin/syntaur.js",
+        },
+        "rawOutput": "1	#!/usr/bin/env node
+2	import '../dist/index.js';
+3	",
+        "status": "completed",
+        "title": "Read bin/syntaur.js",
+        "toolCallId": "toolu_011FphRAndmdmyqs5FnKeb7u",
+      },
+      {
+        "content": [
+          {
+            "text": {
+              "head": "\`\`\`console
+/Users/brennen/syntaur/.worktrees/feat/acp-adapter-spike/scripts/spik",
+              "len": 859,
+              "sha": "19fdc3052f8b",
+            },
+            "type": "text",
+          },
+        ],
+        "kind": "execute",
+        "locations": [],
+        "rawInput": {
+          "command": {
+            "head": "grep -rn "new Command\\|program.name\\|\\.version(" /Users/brennen/syntaur/.worktre",
+            "len": 468,
+            "sha": "4910b9c84ed5",
+          },
+          "description": "Find where the commander program is defined",
+        },
+        "rawOutput": {
+          "head": "/Users/brennen/syntaur/.worktrees/feat/acp-adapter-spike/scripts/spike/acp/out/t",
+          "len": 844,
+          "sha": "41c2c5be77b4",
+        },
+        "status": "completed",
+        "title": {
+          "head": "grep -rn "new Command\\|program.name\\|\\.version(" /Users/brennen/syntaur/.worktre",
+          "len": 468,
+          "sha": "4910b9c84ed5",
+        },
+        "toolCallId": "toolu_017FMKJrqDbH5G1eCxJWSr6K",
+      },
+      {
+        "content": [
+          {
+            "text": {
+              "head": "\`\`\`
+100	// \`migrate-workflows\`, whose \`--root <copy>\` isolation is only set insi",
+              "len": 1177,
+              "sha": "a601a1c965c9",
+            },
+            "type": "text",
+          },
+        ],
+        "kind": "read",
+        "locations": [
+          {
+            "line": 100,
+            "path": "/Users/brennen/syntaur/.worktrees/feat/acp-adapter-spike/scripts/spike/acp/out/target-claude/src/index.ts",
+          },
+        ],
+        "rawInput": {
+          "file_path": "/Users/brennen/syntaur/.worktrees/feat/acp-adapter-spike/scripts/spike/acp/out/target-claude/src/index.ts",
+          "limit": 30,
+          "offset": 100,
+        },
+        "rawOutput": {
+          "head": "100	// \`migrate-workflows\`, whose \`--root <copy>\` isolation is only set inside t",
+          "len": 1169,
+          "sha": "c08cc381b2c8",
+        },
+        "status": "completed",
+        "title": "Read src/index.ts (100 - 129)",
+        "toolCallId": "toolu_011qNDqaPwfcgUX9rjiRRVe3",
+      },
+      {
+        "content": [
+          {
+            "newText": {
+              "head": "# Plan: \`--version\` flag for the \`syntaur\` CLI
+
+## Context
+
+The request is to ad",
+              "len": 1891,
+              "sha": "935919d53c5e",
+            },
+            "oldText": null,
+            "path": "/Users/brennen/.claude/plans/read-package-json-and-write-keen-reef.md",
+            "type": "diff",
+          },
+        ],
+        "kind": "edit",
+        "locations": [
+          {
+            "path": "/Users/brennen/.claude/plans/read-package-json-and-write-keen-reef.md",
+          },
+        ],
+        "rawInput": {
+          "content": {
+            "head": "# Plan: \`--version\` flag for the \`syntaur\` CLI
+
+## Context
+
+The request is to ad",
+            "len": 1891,
+            "sha": "935919d53c5e",
+          },
+          "file_path": "/Users/brennen/.claude/plans/read-package-json-and-write-keen-reef.md",
+        },
+        "rawOutput": {
+          "head": "File created successfully at: /Users/brennen/.claude/plans/read-package-json-and",
+          "len": 165,
+          "sha": "403dabf8372a",
+        },
+        "status": "completed",
+        "title": "Write /Users/brennen/.claude/plans/read-package-json-and-write-keen-reef.md",
+        "toolCallId": "toolu_017JKsNzuUQS94mRPpDKDgnY",
+      },
+      {
+        "content": [
+          {
+            "text": "Tool: ExitPlanMode",
+            "type": "text",
+          },
+        ],
+        "kind": "other",
+        "locations": [],
+        "rawInput": {
+          "max_results": 1,
+          "query": "select:ExitPlanMode",
+        },
+        "rawOutput": [
+          {
+            "tool_name": "ExitPlanMode",
+            "type": "tool_reference",
+          },
+        ],
+        "status": "completed",
+        "title": "ToolSearch",
+        "toolCallId": "toolu_01YXcVkiG197bM334G7sfu5z",
+      },
+      {
+        "content": [
+          {
+            "text": {
+              "head": "# Plan: \`--version\` flag for the \`syntaur\` CLI
+
+## Context
+
+The request is to ad",
+              "len": 1891,
+              "sha": "935919d53c5e",
+            },
+            "type": "text",
+          },
+        ],
+        "kind": "switch_mode",
+        "locations": [],
+        "rawInput": {
+          "plan": {
+            "head": "# Plan: \`--version\` flag for the \`syntaur\` CLI
+
+## Context
+
+The request is to ad",
+            "len": 1891,
+            "sha": "935919d53c5e",
+          },
+          "planFilePath": "/Users/brennen/.claude/plans/read-package-json-and-write-keen-reef.md",
+        },
+        "rawOutput": {
+          "head": "User has approved your plan. You can now start coding. Start with updating your ",
+          "len": 2172,
+          "sha": "ca098fa33dc5",
+        },
+        "status": "completed",
+        "title": "Exited Plan Mode",
+        "toolCallId": "toolu_01TJvD2CSS6Yx1sLeeLeGpYZ",
+      },
+      {
+        "content": [
+          {
+            "text": {
+              "head": "\`\`\`console
+ls: /Users/brennen/syntaur/.worktrees/feat/acp-adapter-spike/scripts/",
+              "len": 308,
+              "sha": "b3f4e754e21f",
+            },
+            "type": "text",
+          },
+        ],
+        "kind": "execute",
+        "locations": [],
+        "rawInput": {
+          "command": {
+            "head": "ls /Users/brennen/syntaur/.worktrees/feat/acp-adapter-spike/scripts/spike/acp/ou",
+            "len": 249,
+            "sha": "2fced944e336",
+          },
+          "description": "Check if dist build and node_modules exist",
+        },
+        "rawOutput": {
+          "head": "ls: /Users/brennen/syntaur/.worktrees/feat/acp-adapter-spike/scripts/spike/acp/o",
+          "len": 293,
+          "sha": "92c307addff5",
+        },
+        "status": "completed",
+        "title": {
+          "head": "ls /Users/brennen/syntaur/.worktrees/feat/acp-adapter-spike/scripts/spike/acp/ou",
+          "len": 249,
+          "sha": "2fced944e336",
+        },
+        "toolCallId": "toolu_01JnC7A7FvC94gV9FvVwKJSj",
+      },
+    ],
+    "turnId": "3",
+    "type": "agent.work",
+  },
+  {
+    "answer": "default",
+    "itemId": "3:5",
+    "options": [
+      {
+        "kind": "allow_always",
+        "name": "Yes, and bypass permissions",
+        "optionId": "bypassPermissions",
+      },
+      {
+        "kind": "allow_always",
+        "name": "Yes, and use "auto" mode",
+        "optionId": "auto",
+      },
+      {
+        "kind": "allow_always",
+        "name": "Yes, and auto-accept edits",
+        "optionId": "acceptEdits",
+      },
+      {
+        "kind": "allow_once",
+        "name": "Yes, and manually approve edits",
+        "optionId": "default",
+      },
+      {
+        "kind": "reject_once",
+        "name": "No, keep planning",
+        "optionId": "plan",
+      },
+    ],
+    "requestId": "perm-0",
+    "sealed": true,
+    "seqFirst": 56,
+    "seqLast": 57,
+    "toolCall": {
+      "kind": "switch_mode",
+      "title": "Ready to code?",
+      "toolCallId": "toolu_01TJvD2CSS6Yx1sLeeLeGpYZ",
+    },
+    "turnId": "3",
+    "type": "permission.request",
+  },
+  {
+    "itemId": "3:6",
+    "level": "info",
+    "sealed": true,
+    "seqFirst": 58,
+    "seqLast": 58,
+    "text": "Mode → default",
+    "turnId": "3",
+    "type": "system",
+  },
+  {
+    "itemId": "3:7",
+    "level": "info",
+    "sealed": true,
+    "seqFirst": 59,
+    "seqLast": 59,
+    "text": "Config ? → null",
+    "turnId": "3",
+    "type": "system",
+  },
+  {
+    "itemId": "3:8",
+    "messageId": "msg_011Ceddn7WeVrYUep7jykPPp",
+    "sealed": true,
+    "seqFirst": 71,
+    "seqLast": 77,
+    "text": {
+      "head": "The work is complete without any file changes needed: **the \`syntaur\` CLI alread",
+      "len": 1071,
+      "sha": "349bf938dbd1",
+    },
+    "turnId": "3",
+    "type": "agent.message",
+  },
+]
+`;
+
+exports[`normalizer golden snapshots > claude/20-client-death.ndjson normalizes to a stable item list 1`] = `
+[
+  {
+    "contextSize": 1000000,
+    "contextUsed": 36826,
+    "itemId": "2:0",
+    "sealed": false,
+    "seqFirst": 4,
+    "seqLast": 7,
+    "startedAt": "2026-09-02T00:03:27.867Z",
+    "state": "running",
+    "turnId": "2",
+    "type": "turn.status",
+  },
+]
+`;
+
+exports[`normalizer golden snapshots > codex/02-handshake.ndjson normalizes to a stable item list 1`] = `
+[
+  {
+    "contextSize": 258400,
+    "contextUsed": 23326,
+    "durationMs": 3027,
+    "endedAt": "2026-09-01T23:55:44.591Z",
+    "itemId": "2:0",
+    "sealed": true,
+    "seqFirst": 4,
+    "seqLast": 13,
+    "startedAt": "2026-09-01T23:55:41.564Z",
+    "state": "ended",
+    "stopReason": "end_turn",
+    "turnId": "2",
+    "type": "turn.status",
+    "usage": {
+      "cachedReadTokens": 6912,
+      "inputTokens": 16408,
+      "outputTokens": 6,
+      "thoughtTokens": 0,
+      "totalTokens": 23326,
+    },
+  },
+  {
+    "itemId": "2:1",
+    "level": "info",
+    "sealed": true,
+    "seqFirst": 6,
+    "seqLast": 6,
+    "text": "Session info updated",
+    "turnId": "2",
+    "type": "system",
+  },
+  {
+    "itemId": "2:2",
+    "level": "info",
+    "sealed": true,
+    "seqFirst": 7,
+    "seqLast": 7,
+    "text": {
+      "head": "Warning: Skill descriptions were shortened to fit the skills context budget. Cod",
+      "len": 212,
+      "sha": "7c8ee8ec2b22",
+    },
+    "turnId": "2",
+    "type": "system",
+  },
+  {
+    "itemId": "2:3",
+    "messageId": "msg_0b908920a20dfbe9016a9766005c7c87d0ad4d3ec115098d08",
+    "sealed": true,
+    "seqFirst": 8,
+    "seqLast": 9,
+    "text": "PONG",
+    "turnId": "2",
+    "type": "agent.message",
+  },
+  {
+    "itemId": "2:4",
+    "level": "info",
+    "sealed": true,
+    "seqFirst": 11,
+    "seqLast": 11,
+    "text": "Session info updated",
+    "turnId": "2",
+    "type": "system",
+  },
+  {
+    "itemId": "2:5",
+    "level": "info",
+    "sealed": true,
+    "seqFirst": 12,
+    "seqLast": 12,
+    "text": "Session title: Reply with exactly the single word PONG and nothing else.",
+    "turnId": "2",
+    "type": "system",
+  },
+]
+`;
+
+exports[`normalizer golden snapshots > codex/03-system-prompt.ndjson normalizes to a stable item list 1`] = `
+[
+  {
+    "contextSize": 258400,
+    "contextUsed": 23332,
+    "durationMs": 3619,
+    "endedAt": "2026-09-02T00:08:14.013Z",
+    "itemId": "2:0",
+    "sealed": true,
+    "seqFirst": 4,
+    "seqLast": 25,
+    "startedAt": "2026-09-02T00:08:10.394Z",
+    "state": "ended",
+    "stopReason": "end_turn",
+    "turnId": "2",
+    "type": "turn.status",
+    "usage": {
+      "cachedReadTokens": 6912,
+      "inputTokens": 16402,
+      "outputTokens": 18,
+      "thoughtTokens": 0,
+      "totalTokens": 23332,
+    },
+  },
+  {
+    "itemId": "2:1",
+    "level": "info",
+    "sealed": true,
+    "seqFirst": 6,
+    "seqLast": 6,
+    "text": "Session info updated",
+    "turnId": "2",
+    "type": "system",
+  },
+  {
+    "itemId": "2:2",
+    "level": "info",
+    "sealed": true,
+    "seqFirst": 7,
+    "seqLast": 7,
+    "text": {
+      "head": "Warning: Skill descriptions were shortened to fit the skills context budget. Cod",
+      "len": 212,
+      "sha": "7c8ee8ec2b22",
+    },
+    "turnId": "2",
+    "type": "system",
+  },
+  {
+    "itemId": "2:3",
+    "messageId": "msg_0347be1e86d32965016a9768ed9d6887d0a58df28a5e561554",
+    "sealed": true,
+    "seqFirst": 8,
+    "seqLast": 21,
+    "text": "I’m Codex, your AI coding collaborator for this shared workspace.",
+    "turnId": "2",
+    "type": "agent.message",
+  },
+  {
+    "itemId": "2:4",
+    "level": "info",
+    "sealed": true,
+    "seqFirst": 23,
+    "seqLast": 23,
+    "text": "Session info updated",
+    "turnId": "2",
+    "type": "system",
+  },
+  {
+    "itemId": "2:5",
+    "level": "info",
+    "sealed": true,
+    "seqFirst": 24,
+    "seqLast": 24,
+    "text": "Session title: Who are you? Answer in one sentence.",
+    "turnId": "2",
+    "type": "system",
+  },
+  {
+    "contextSize": 258400,
+    "contextUsed": 23363,
+    "durationMs": 4480,
+    "endedAt": "2026-09-02T00:08:18.696Z",
+    "itemId": "4:0",
+    "sealed": true,
+    "seqFirst": 28,
+    "seqLast": 50,
+    "startedAt": "2026-09-02T00:08:14.216Z",
+    "state": "ended",
+    "stopReason": "end_turn",
+    "turnId": "4",
+    "type": "turn.status",
+    "usage": {
+      "cachedReadTokens": 12032,
+      "inputTokens": 11312,
+      "outputTokens": 19,
+      "thoughtTokens": 0,
+      "totalTokens": 23363,
+    },
+  },
+  {
+    "itemId": "4:1",
+    "level": "info",
+    "sealed": true,
+    "seqFirst": 30,
+    "seqLast": 30,
+    "text": "Session info updated",
+    "turnId": "4",
+    "type": "system",
+  },
+  {
+    "itemId": "4:2",
+    "level": "info",
+    "sealed": false,
+    "seqFirst": 31,
+    "seqLast": 31,
+    "text": {
+      "head": "Warning: Skill descriptions were shortened to fit the skills context budget. Cod",
+      "len": 212,
+      "sha": "7c8ee8ec2b22",
+    },
+    "turnId": "4",
+    "type": "system",
+  },
+  {
+    "itemId": "4:3",
+    "messageId": "msg_0ab4245c9c9450ae016a9768f24ec887d0b93a9369146e347c",
+    "sealed": true,
+    "seqFirst": 32,
+    "seqLast": 46,
+    "text": "PLANNER: I’m Codex, your AI coding collaborator and planner.",
+    "turnId": "4",
+    "type": "agent.message",
+  },
+  {
+    "itemId": "4:4",
+    "level": "info",
+    "sealed": true,
+    "seqFirst": 48,
+    "seqLast": 48,
+    "text": "Session info updated",
+    "turnId": "4",
+    "type": "system",
+  },
+  {
+    "itemId": "4:5",
+    "level": "info",
+    "sealed": true,
+    "seqFirst": 49,
+    "seqLast": 49,
+    "text": {
+      "head": "Session title: <system> You are PLANNER. Start every reply with the exact token ",
+      "len": 171,
+      "sha": "9b6477d7fbb5",
+    },
+    "turnId": "4",
+    "type": "system",
+  },
+  {
+    "contextSize": 258400,
+    "contextUsed": 23388,
+    "durationMs": 1657,
+    "endedAt": "2026-09-02T00:08:20.353Z",
+    "itemId": "5:0",
+    "sealed": true,
+    "seqFirst": 51,
+    "seqLast": 60,
+    "startedAt": "2026-09-02T00:08:18.696Z",
+    "state": "ended",
+    "stopReason": "end_turn",
+    "turnId": "5",
+    "type": "turn.status",
+    "usage": {
+      "cachedReadTokens": 22272,
+      "inputTokens": 1107,
+      "outputTokens": 9,
+      "thoughtTokens": 0,
+      "totalTokens": 23388,
+    },
+  },
+  {
+    "itemId": "5:1",
+    "level": "info",
+    "sealed": true,
+    "seqFirst": 52,
+    "seqLast": 52,
+    "text": "Session info updated",
+    "turnId": "5",
+    "type": "system",
+  },
+  {
+    "itemId": "5:2",
+    "messageId": "msg_0ab4245c9c9450ae016a9768f41f5c87d088de4140d9a2a519",
+    "sealed": true,
+    "seqFirst": 53,
+    "seqLast": 57,
+    "text": "PLANNER: 4",
+    "turnId": "5",
+    "type": "agent.message",
+  },
+  {
+    "itemId": "5:3",
+    "level": "info",
+    "sealed": true,
+    "seqFirst": 59,
+    "seqLast": 59,
+    "text": "Session info updated",
+    "turnId": "5",
+    "type": "system",
+  },
+]
+`;
+
+exports[`normalizer golden snapshots > codex/04-streaming.ndjson normalizes to a stable item list 1`] = `
+[
+  {
+    "contextSize": 258400,
+    "contextUsed": 23473,
+    "durationMs": 4919,
+    "endedAt": "2026-09-01T23:55:59.583Z",
+    "itemId": "2:0",
+    "sealed": true,
+    "seqFirst": 4,
+    "seqLast": 137,
+    "startedAt": "2026-09-01T23:55:54.664Z",
+    "state": "ended",
+    "stopReason": "end_turn",
+    "turnId": "2",
+    "type": "turn.status",
+    "usage": {
+      "cachedReadTokens": 5888,
+      "inputTokens": 17455,
+      "outputTokens": 130,
+      "thoughtTokens": 0,
+      "totalTokens": 23473,
+    },
+  },
+  {
+    "itemId": "2:1",
+    "level": "info",
+    "sealed": true,
+    "seqFirst": 6,
+    "seqLast": 6,
+    "text": "Session info updated",
+    "turnId": "2",
+    "type": "system",
+  },
+  {
+    "itemId": "2:2",
+    "level": "info",
+    "sealed": true,
+    "seqFirst": 7,
+    "seqLast": 7,
+    "text": {
+      "head": "Warning: Skill descriptions were shortened to fit the skills context budget. Cod",
+      "len": 212,
+      "sha": "7c8ee8ec2b22",
+    },
+    "turnId": "2",
+    "type": "system",
+  },
+  {
+    "itemId": "2:3",
+    "messageId": "msg_079510d6f869a8ff016a97660d353087d0bea625563af92512",
+    "sealed": true,
+    "seqFirst": 8,
+    "seqLast": 133,
+    "text": {
+      "head": "## Overview
+
+JSON-RPC is a lightweight remote procedure call protocol encoded in",
+      "len": 623,
+      "sha": "8c01c27ba384",
+    },
+    "turnId": "2",
+    "type": "agent.message",
+  },
+  {
+    "itemId": "2:4",
+    "level": "info",
+    "sealed": true,
+    "seqFirst": 135,
+    "seqLast": 135,
+    "text": "Session info updated",
+    "turnId": "2",
+    "type": "system",
+  },
+  {
+    "itemId": "2:5",
+    "level": "info",
+    "sealed": true,
+    "seqFirst": 136,
+    "seqLast": 136,
+    "text": {
+      "head": "Session title: Write three short paragraphs about the JSON-RPC protocol. Put a m",
+      "len": 189,
+      "sha": "6c3d1a772073",
+    },
+    "turnId": "2",
+    "type": "system",
+  },
+]
+`;
+
+exports[`normalizer golden snapshots > codex/05-tool-calls.ndjson normalizes to a stable item list 1`] = `
+[
+  {
+    "contextSize": 258400,
+    "contextUsed": 25595,
+    "durationMs": 21901,
+    "endedAt": "2026-09-02T00:41:15.129Z",
+    "itemId": "2:0",
+    "sealed": true,
+    "seqFirst": 4,
+    "seqLast": 329,
+    "startedAt": "2026-09-02T00:40:53.228Z",
+    "state": "ended",
+    "stopReason": "end_turn",
+    "turnId": "2",
+    "type": "turn.status",
+    "usage": {
+      "cachedReadTokens": 24320,
+      "inputTokens": 679,
+      "outputTokens": 596,
+      "thoughtTokens": 297,
+      "totalTokens": 25595,
+    },
+  },
+  {
+    "itemId": "2:1",
+    "level": "info",
+    "sealed": true,
+    "seqFirst": 6,
+    "seqLast": 6,
+    "text": "Session info updated",
+    "turnId": "2",
+    "type": "system",
+  },
+  {
+    "itemId": "2:2",
+    "level": "info",
+    "sealed": true,
+    "seqFirst": 7,
+    "seqLast": 7,
+    "text": {
+      "head": "Warning: Skill descriptions were shortened to fit the skills context budget. Cod",
+      "len": 212,
+      "sha": "7c8ee8ec2b22",
+    },
+    "turnId": "2",
+    "type": "system",
+  },
+  {
+    "itemId": "2:3",
+    "sealed": true,
+    "seqFirst": 8,
+    "seqLast": 9,
+    "text": "
+
+**Planning tool usage sequence**",
+    "turnId": "2",
+    "type": "agent.thought",
+  },
+  {
+    "itemId": "2:5",
+    "lead": "I’ll inspect the local files only and keep both checks separate.",
+    "sealed": true,
+    "seqFirst": 10,
+    "seqLast": 27,
+    "summary": {
+      "durationMs": 13241,
+      "edits": 0,
+      "failed": 0,
+      "reads": 2,
+      "runs": 0,
+    },
+    "tools": [
+      {
+        "content": [
+          {
+            "text": {
+              "head": "{
+  "name": "syntaur",
+  "version": "0.79.0",
+  "description": "Project workflow",
+              "len": 3182,
+              "sha": "2d6b03f99645",
+            },
+            "type": "text",
+          },
+        ],
+        "kind": "read",
+        "locations": [
+          {
+            "path": "/Users/brennen/syntaur/.worktrees/feat/acp-adapter-spike/scripts/spike/acp/out/target-codex/package.json",
+          },
+        ],
+        "rawOutput": {
+          "exit_code": 0,
+          "formatted_output": {
+            "head": "{
+  "name": "syntaur",
+  "version": "0.79.0",
+  "description": "Project workflow",
+            "len": 3182,
+            "sha": "2d6b03f99645",
+          },
+        },
+        "status": "completed",
+        "title": "Read file '/Users/brennen/syntaur/.worktrees/feat/acp-adapter-spike/scripts/spike/acp/out/target-codex/package.json'",
+        "toolCallId": "exec-322b39ac-42c6-490b-a091-7ba11b706c6c",
+      },
+      {
+        "content": [
+          {
+            "text": {
+              "head": "./scripts/spike/acp/scenarios.ts
+./claude-info/plans/2026-04-20-projects-comment",
+              "len": 891,
+              "sha": "4f48be82c822",
+            },
+            "type": "text",
+          },
+        ],
+        "kind": "search",
+        "locations": [],
+        "rawOutput": {
+          "exit_code": 0,
+          "formatted_output": {
+            "head": "./scripts/spike/acp/scenarios.ts
+./claude-info/plans/2026-04-20-projects-comment",
+            "len": 891,
+            "sha": "4f48be82c822",
+          },
+        },
+        "status": "completed",
+        "title": "Search for 'createDashboardServer' in .",
+        "toolCallId": "exec-313676b4-8262-44f2-98fa-3cdd6efaaa62",
+      },
+    ],
+    "turnId": "2",
+    "type": "agent.work",
+  },
+  {
+    "itemId": "2:6",
+    "sealed": true,
+    "seqFirst": 29,
+    "seqLast": 32,
+    "text": "
+
+**Evaluating comprehensive repository file listing**
+
+**Confirming complete file path count**",
+    "turnId": "2",
+    "type": "agent.thought",
+  },
+  {
+    "itemId": "2:7",
+    "messageId": "msg_018470ac3bf3561b016a9770a65c4c87d0ba7400a837b36e93",
+    "sealed": true,
+    "seqFirst": 33,
+    "seqLast": 325,
+    "text": {
+      "head": "\`package.json\` version: \`0.79.0\`
+
+Files containing \`createDashboardServer\`:
+
+\`\`\`",
+      "len": 943,
+      "sha": "6c3a27542f65",
+    },
+    "turnId": "2",
+    "type": "agent.message",
+  },
+  {
+    "itemId": "2:8",
+    "level": "info",
+    "sealed": true,
+    "seqFirst": 327,
+    "seqLast": 327,
+    "text": "Session info updated",
+    "turnId": "2",
+    "type": "system",
+  },
+  {
+    "itemId": "2:9",
+    "level": "info",
+    "sealed": true,
+    "seqFirst": 328,
+    "seqLast": 328,
+    "text": {
+      "head": "Session title: Two read-only tasks in the current working directory (a local che",
+      "len": 430,
+      "sha": "fb6a75d36a94",
+    },
+    "turnId": "2",
+    "type": "system",
+  },
+]
+`;
+
+exports[`normalizer golden snapshots > codex/06-edits.ndjson normalizes to a stable item list 1`] = `
+[
+  {
+    "contextSize": 258400,
+    "contextUsed": 23554,
+    "durationMs": 10827,
+    "endedAt": "2026-09-02T00:08:59.623Z",
+    "itemId": "3:0",
+    "sealed": true,
+    "seqFirst": 6,
+    "seqLast": 30,
+    "startedAt": "2026-09-02T00:08:48.796Z",
+    "state": "ended",
+    "stopReason": "end_turn",
+    "turnId": "3",
+    "type": "turn.status",
+    "usage": {
+      "cachedReadTokens": 22272,
+      "inputTokens": 1223,
+      "outputTokens": 59,
+      "thoughtTokens": 52,
+      "totalTokens": 23554,
+    },
+  },
+  {
+    "itemId": "3:1",
+    "level": "info",
+    "sealed": true,
+    "seqFirst": 8,
+    "seqLast": 8,
+    "text": "Session info updated",
+    "turnId": "3",
+    "type": "system",
+  },
+  {
+    "itemId": "3:2",
+    "level": "info",
+    "sealed": true,
+    "seqFirst": 9,
+    "seqLast": 9,
+    "text": {
+      "head": "Warning: Skill descriptions were shortened to fit the skills context budget. Cod",
+      "len": 212,
+      "sha": "7c8ee8ec2b22",
+    },
+    "turnId": "3",
+    "type": "system",
+  },
+  {
+    "itemId": "3:3",
+    "sealed": true,
+    "seqFirst": 10,
+    "seqLast": 11,
+    "text": "
+
+**Planning concise patch application**",
+    "turnId": "3",
+    "type": "agent.thought",
+  },
+  {
+    "itemId": "3:5",
+    "lead": "I’m making the single requested README edit.",
+    "sealed": true,
+    "seqFirst": 12,
+    "seqLast": 22,
+    "summary": {
+      "durationMs": 5845,
+      "edits": 1,
+      "failed": 0,
+      "reads": 0,
+      "runs": 0,
+    },
+    "tools": [
+      {
+        "content": [
+          {
+            "newText": {
+              "head": "<!-- acp-spike: edited by codex -->
+# Syntaur
+
+Syntaur is a local project and as",
+              "len": 20707,
+              "sha": "dfb35eff3769",
+            },
+            "oldText": {
+              "head": "# Syntaur
+
+Syntaur is a local project and assignment workflow for coding agents.",
+              "len": 20671,
+              "sha": "f0fa43fc6bd6",
+            },
+            "path": "/Users/brennen/syntaur/.worktrees/feat/acp-adapter-spike/scripts/spike/acp/out/target-codex/README.md",
+            "type": "diff",
+          },
+        ],
+        "kind": "edit",
+        "locations": [],
+        "status": "completed",
+        "title": "Editing files",
+        "toolCallId": "exec-16b4ba5f-b636-4aa3-a562-a2893e23dec2",
+      },
+    ],
+    "turnId": "3",
+    "type": "agent.work",
+  },
+  {
+    "itemId": "3:6",
+    "sealed": true,
+    "seqFirst": 24,
+    "seqLast": 25,
+    "text": "
+
+**Verifying minimal code changes**",
+    "turnId": "3",
+    "type": "agent.thought",
+  },
+  {
+    "itemId": "3:7",
+    "messageId": "msg_0ef1dd5677929933016a97691b7e0487d0b716f2a5cfd82e47",
+    "sealed": true,
+    "seqFirst": 26,
+    "seqLast": 26,
+    "text": "DONE",
+    "turnId": "3",
+    "type": "agent.message",
+  },
+  {
+    "itemId": "3:8",
+    "level": "info",
+    "sealed": true,
+    "seqFirst": 28,
+    "seqLast": 28,
+    "text": "Session info updated",
+    "turnId": "3",
+    "type": "system",
+  },
+  {
+    "itemId": "3:9",
+    "level": "info",
+    "sealed": true,
+    "seqFirst": 29,
+    "seqLast": 29,
+    "text": {
+      "head": "Session title: Insert the line <!-- acp-spike: edited by codex --> as the very f",
+      "len": 223,
+      "sha": "1de42afcf227",
+    },
+    "turnId": "3",
+    "type": "system",
+  },
+]
+`;
+
+exports[`normalizer golden snapshots > codex/07-permissions.ndjson normalizes to a stable item list 1`] = `
+[
+  {
+    "contextSize": 258400,
+    "contextUsed": 23559,
+    "durationMs": 12691,
+    "endedAt": "2026-09-02T00:18:20.262Z",
+    "itemId": "3:0",
+    "sealed": true,
+    "seqFirst": 6,
+    "seqLast": 66,
+    "startedAt": "2026-09-02T00:18:07.571Z",
+    "state": "ended",
+    "stopReason": "cancelled",
+    "turnId": "3",
+    "type": "turn.status",
+    "usage": {
+      "cachedReadTokens": 19200,
+      "inputTokens": 4191,
+      "outputTokens": 168,
+      "thoughtTokens": 0,
+      "totalTokens": 23559,
+    },
+  },
+  {
+    "itemId": "3:1",
+    "level": "info",
+    "sealed": true,
+    "seqFirst": 8,
+    "seqLast": 8,
+    "text": "Session info updated",
+    "turnId": "3",
+    "type": "system",
+  },
+  {
+    "itemId": "3:2",
+    "level": "info",
+    "sealed": true,
+    "seqFirst": 9,
+    "seqLast": 9,
+    "text": {
+      "head": "Warning: Skill descriptions were shortened to fit the skills context budget. Cod",
+      "len": 212,
+      "sha": "7c8ee8ec2b22",
+    },
+    "turnId": "3",
+    "type": "system",
+  },
+  {
+    "itemId": "3:5",
+    "lead": "I’ll run each command separately with its own permission request, stopping immediately if either is refused.",
+    "sealed": true,
+    "seqFirst": 10,
+    "seqLast": 34,
+    "summary": {
+      "durationMs": 6745,
+      "edits": 0,
+      "failed": 0,
+      "reads": 0,
+      "runs": 1,
+    },
+    "tools": [
+      {
+        "content": [
+          {
+            "terminalId": "exec-066c3a1c-8991-4a1d-9a0c-94c9633412a5",
+            "type": "terminal",
+          },
+        ],
+        "kind": "execute",
+        "locations": [],
+        "rawInput": {
+          "command": "echo hi > /Users/brennen/syntaur/.worktrees/feat/acp-adapter-spike/scripts/spike/acp/out/perm/codex-x",
+          "cwd": "/Users/brennen/syntaur/.worktrees/feat/acp-adapter-spike/scripts/spike/acp/out/target-codex",
+        },
+        "rawOutput": {
+          "exit_code": 0,
+          "formatted_output": "",
+        },
+        "status": "completed",
+        "title": "echo hi > /Users/brennen/syntaur/.worktrees/feat/acp-adapter-spike/scripts/spike/acp/out/perm/codex-x",
+        "toolCallId": "exec-066c3a1c-8991-4a1d-9a0c-94c9633412a5",
+      },
+    ],
+    "turnId": "3",
+    "type": "agent.work",
+  },
+  {
+    "itemId": "3:4",
+    "level": "info",
+    "sealed": true,
+    "seqFirst": 29,
+    "seqLast": 29,
+    "text": "Session info updated",
+    "turnId": "3",
+    "type": "system",
+  },
+  {
+    "answer": "allow_once",
+    "itemId": "3:6",
+    "options": [
+      {
+        "kind": "allow_once",
+        "name": "Yes, proceed",
+        "optionId": "allow_once",
+      },
+      {
+        "kind": "allow_always",
+        "name": {
+          "head": "Yes, and don't ask again for commands that start with \`echo hi > /Users/brennen/",
+          "len": 157,
+          "sha": "d89af09426ba",
+        },
+        "optionId": "accept_execpolicy_amendment",
+      },
+      {
+        "kind": "reject_once",
+        "name": "No, and tell Codex what to do differently",
+        "optionId": "cancel",
+      },
+    ],
+    "requestId": "perm-0",
+    "sealed": true,
+    "seqFirst": 31,
+    "seqLast": 32,
+    "toolCall": {
+      "kind": "execute",
+      "title": "Run command",
+      "toolCallId": "exec-066c3a1c-8991-4a1d-9a0c-94c9633412a5",
+    },
+    "turnId": "3",
+    "type": "permission.request",
+  },
+  {
+    "itemId": "3:7",
+    "level": "info",
+    "sealed": true,
+    "seqFirst": 33,
+    "seqLast": 33,
+    "text": "Session info updated",
+    "turnId": "3",
+    "type": "system",
+  },
+  {
+    "itemId": "3:8",
+    "sealed": true,
+    "seqFirst": 36,
+    "seqLast": 37,
+    "text": "
+
+**Reporting initial success**",
+    "turnId": "3",
+    "type": "agent.thought",
+  },
+  {
+    "itemId": "3:11",
+    "lead": "First command succeeded (exit code 0, no output). Now requesting permission for the second command.",
+    "sealed": true,
+    "seqFirst": 38,
+    "seqLast": 62,
+    "summary": {
+      "durationMs": 2873,
+      "edits": 0,
+      "failed": 1,
+      "reads": 0,
+      "runs": 1,
+    },
+    "tools": [
+      {
+        "content": [
+          {
+            "terminalId": "exec-35edc2d7-37ea-4cb6-b20d-fca598c90df8",
+            "type": "terminal",
+          },
+        ],
+        "kind": "execute",
+        "locations": [],
+        "rawInput": {
+          "command": "echo bye > /Users/brennen/syntaur/.worktrees/feat/acp-adapter-spike/scripts/spike/acp/out/perm/codex-y",
+          "cwd": "/Users/brennen/syntaur/.worktrees/feat/acp-adapter-spike/scripts/spike/acp/out/target-codex",
+        },
+        "rawOutput": {
+          "exit_code": null,
+          "formatted_output": "",
+        },
+        "status": "failed",
+        "title": "echo bye > /Users/brennen/syntaur/.worktrees/feat/acp-adapter-spike/scripts/spike/acp/out/perm/codex-y",
+        "toolCallId": "exec-35edc2d7-37ea-4cb6-b20d-fca598c90df8",
+      },
+    ],
+    "turnId": "3",
+    "type": "agent.work",
+  },
+  {
+    "itemId": "3:10",
+    "level": "info",
+    "sealed": true,
+    "seqFirst": 58,
+    "seqLast": 58,
+    "text": "Session info updated",
+    "turnId": "3",
+    "type": "system",
+  },
+  {
+    "answer": "cancel",
+    "itemId": "3:12",
+    "options": [
+      {
+        "kind": "allow_once",
+        "name": "Yes, proceed",
+        "optionId": "allow_once",
+      },
+      {
+        "kind": "allow_always",
+        "name": {
+          "head": "Yes, and don't ask again for commands that start with \`echo bye > /Users/brennen",
+          "len": 158,
+          "sha": "380c3d30caca",
+        },
+        "optionId": "accept_execpolicy_amendment",
+      },
+      {
+        "kind": "reject_once",
+        "name": "No, and tell Codex what to do differently",
+        "optionId": "cancel",
+      },
+    ],
+    "requestId": "perm-1",
+    "sealed": true,
+    "seqFirst": 60,
+    "seqLast": 61,
+    "toolCall": {
+      "kind": "execute",
+      "title": "Run command",
+      "toolCallId": "exec-35edc2d7-37ea-4cb6-b20d-fca598c90df8",
+    },
+    "turnId": "3",
+    "type": "permission.request",
+  },
+  {
+    "itemId": "3:13",
+    "level": "info",
+    "sealed": true,
+    "seqFirst": 63,
+    "seqLast": 63,
+    "text": "Session info updated",
+    "turnId": "3",
+    "type": "system",
+  },
+  {
+    "itemId": "3:14",
+    "level": "info",
+    "sealed": true,
+    "seqFirst": 65,
+    "seqLast": 65,
+    "text": "Session info updated",
+    "turnId": "3",
+    "type": "system",
+  },
+  {
+    "contextSize": 258400,
+    "contextUsed": 24130,
+    "durationMs": 8280,
+    "endedAt": "2026-09-02T00:18:28.543Z",
+    "itemId": "4:0",
+    "sealed": true,
+    "seqFirst": 67,
+    "seqLast": 91,
+    "startedAt": "2026-09-02T00:18:20.263Z",
+    "state": "ended",
+    "stopReason": "cancelled",
+    "turnId": "4",
+    "type": "turn.status",
+    "usage": {
+      "cachedReadTokens": 23296,
+      "inputTokens": 644,
+      "outputTokens": 190,
+      "thoughtTokens": 26,
+      "totalTokens": 24130,
+    },
+  },
+  {
+    "itemId": "4:1",
+    "level": "info",
+    "sealed": true,
+    "seqFirst": 68,
+    "seqLast": 68,
+    "text": "Session info updated",
+    "turnId": "4",
+    "type": "system",
+  },
+  {
+    "itemId": "4:2",
+    "sealed": true,
+    "seqFirst": 69,
+    "seqLast": 70,
+    "text": "
+
+**Drafting new command with commentary**",
+    "turnId": "4",
+    "type": "agent.thought",
+  },
+  {
+    "itemId": "4:5",
+    "lead": "Requesting permission for the outside-workspace write now.",
+    "sealed": true,
+    "seqFirst": 71,
+    "seqLast": 87,
+    "summary": {
+      "durationMs": 5596,
+      "edits": 0,
+      "failed": 1,
+      "reads": 0,
+      "runs": 1,
+    },
+    "tools": [
+      {
+        "content": [
+          {
+            "terminalId": "exec-11813922-843b-4217-89e1-eb96e803c3e5",
+            "type": "terminal",
+          },
+        ],
+        "kind": "execute",
+        "locations": [],
+        "rawInput": {
+          "command": "echo hold > /Users/brennen/syntaur/.worktrees/feat/acp-adapter-spike/scripts/spike/acp/out/perm/codex-hold",
+          "cwd": "/Users/brennen/syntaur/.worktrees/feat/acp-adapter-spike/scripts/spike/acp/out/target-codex",
+        },
+        "rawOutput": {
+          "exit_code": null,
+          "formatted_output": "",
+        },
+        "status": "failed",
+        "title": "echo hold > /Users/brennen/syntaur/.worktrees/feat/acp-adapter-spike/scripts/spike/acp/out/perm/codex-hold",
+        "toolCallId": "exec-11813922-843b-4217-89e1-eb96e803c3e5",
+      },
+    ],
+    "turnId": "4",
+    "type": "agent.work",
+  },
+  {
+    "itemId": "4:4",
+    "level": "info",
+    "sealed": true,
+    "seqFirst": 82,
+    "seqLast": 82,
+    "text": "Session info updated",
+    "turnId": "4",
+    "type": "system",
+  },
+  {
+    "cancelled": true,
+    "itemId": "4:6",
+    "options": [
+      {
+        "kind": "allow_once",
+        "name": "Yes, proceed",
+        "optionId": "allow_once",
+      },
+      {
+        "kind": "allow_always",
+        "name": {
+          "head": "Yes, and don't ask again for commands that start with \`echo hold > /Users/brenne",
+          "len": 162,
+          "sha": "833f64cf008e",
+        },
+        "optionId": "accept_execpolicy_amendment",
+      },
+      {
+        "kind": "reject_once",
+        "name": "No, and tell Codex what to do differently",
+        "optionId": "cancel",
+      },
+    ],
+    "requestId": "perm-2",
+    "sealed": true,
+    "seqFirst": 84,
+    "seqLast": 86,
+    "toolCall": {
+      "kind": "execute",
+      "title": "Run command",
+      "toolCallId": "exec-11813922-843b-4217-89e1-eb96e803c3e5",
+    },
+    "turnId": "4",
+    "type": "permission.request",
+  },
+  {
+    "itemId": "4:7",
+    "level": "info",
+    "sealed": true,
+    "seqFirst": 85,
+    "seqLast": 85,
+    "text": "Cancel requested",
+    "turnId": "4",
+    "type": "system",
+  },
+  {
+    "itemId": "4:8",
+    "level": "info",
+    "sealed": true,
+    "seqFirst": 88,
+    "seqLast": 88,
+    "text": "Session info updated",
+    "turnId": "4",
+    "type": "system",
+  },
+  {
+    "itemId": "4:9",
+    "level": "info",
+    "sealed": true,
+    "seqFirst": 90,
+    "seqLast": 90,
+    "text": "Session info updated",
+    "turnId": "4",
+    "type": "system",
+  },
+  {
+    "contextSize": 258400,
+    "contextUsed": 23749,
+    "durationMs": 12970,
+    "endedAt": "2026-09-02T00:18:42.029Z",
+    "itemId": "7:0",
+    "sealed": true,
+    "seqFirst": 96,
+    "seqLast": 120,
+    "startedAt": "2026-09-02T00:18:29.059Z",
+    "state": "ended",
+    "stopReason": "end_turn",
+    "turnId": "7",
+    "type": "turn.status",
+    "usage": {
+      "cachedReadTokens": 23296,
+      "inputTokens": 448,
+      "outputTokens": 5,
+      "thoughtTokens": 0,
+      "totalTokens": 23749,
+    },
+  },
+  {
+    "itemId": "7:1",
+    "level": "info",
+    "sealed": true,
+    "seqFirst": 98,
+    "seqLast": 98,
+    "text": "Session info updated",
+    "turnId": "7",
+    "type": "system",
+  },
+  {
+    "itemId": "7:2",
+    "level": "info",
+    "sealed": false,
+    "seqFirst": 99,
+    "seqLast": 99,
+    "text": {
+      "head": "Warning: Skill descriptions were shortened to fit the skills context budget. Cod",
+      "len": 212,
+      "sha": "7c8ee8ec2b22",
+    },
+    "turnId": "7",
+    "type": "system",
+  },
+  {
+    "itemId": "7:3",
+    "messageId": "msg_0e429b17b1a7b470016a976b577d5c87d0b7d4fb6deeab280b",
+    "sealed": true,
+    "seqFirst": 100,
+    "seqLast": 105,
+    "text": "Running the requested write command.",
+    "turnId": "7",
+    "type": "agent.message",
+  },
+  {
+    "itemId": "7:4",
+    "sealed": true,
+    "seqFirst": 107,
+    "seqLast": 108,
+    "text": "
+
+**Escalating command shell redirection issue**",
+    "turnId": "7",
+    "type": "agent.thought",
+  },
+  {
+    "itemId": "7:5",
+    "level": "info",
+    "sealed": true,
+    "seqFirst": 109,
+    "seqLast": 109,
+    "text": "Session info updated",
+    "turnId": "7",
+    "type": "system",
+  },
+  {
+    "itemId": "7:6",
+    "sealed": true,
+    "seqFirst": 110,
+    "seqLast": 114,
+    "summary": {
+      "durationMs": 3039,
+      "edits": 0,
+      "failed": 0,
+      "reads": 0,
+      "runs": 1,
+    },
+    "tools": [
+      {
+        "content": [
+          {
+            "terminalId": "exec-23bf65b2-b19f-4a6e-a73a-e57eefb2aa1a",
+            "type": "terminal",
+          },
+        ],
+        "kind": "execute",
+        "locations": [],
+        "rawInput": {
+          "command": {
+            "head": "echo read-only > /Users/brennen/syntaur/.worktrees/feat/acp-adapter-spike/script",
+            "len": 121,
+            "sha": "c78f21fc6c08",
+          },
+          "cwd": "/Users/brennen/syntaur/.worktrees/feat/acp-adapter-spike/scripts/spike/acp/out/target-codex",
+        },
+        "rawOutput": {
+          "exit_code": 0,
+          "formatted_output": "",
+        },
+        "status": "completed",
+        "title": {
+          "head": "echo read-only > /Users/brennen/syntaur/.worktrees/feat/acp-adapter-spike/script",
+          "len": 121,
+          "sha": "c78f21fc6c08",
+        },
+        "toolCallId": "exec-23bf65b2-b19f-4a6e-a73a-e57eefb2aa1a",
+      },
+    ],
+    "turnId": "7",
+    "type": "agent.work",
+  },
+  {
+    "answer": "allow_once",
+    "itemId": "7:7",
+    "options": [
+      {
+        "kind": "allow_once",
+        "name": "Yes, proceed",
+        "optionId": "allow_once",
+      },
+      {
+        "kind": "allow_always",
+        "name": {
+          "head": "Yes, and don't ask again for commands that start with \`echo read-only > /Users/b",
+          "len": 177,
+          "sha": "24e43c0663bc",
+        },
+        "optionId": "accept_execpolicy_amendment",
+      },
+      {
+        "kind": "reject_once",
+        "name": "No, and tell Codex what to do differently",
+        "optionId": "cancel",
+      },
+    ],
+    "requestId": "perm-3",
+    "sealed": true,
+    "seqFirst": 111,
+    "seqLast": 112,
+    "toolCall": {
+      "kind": "execute",
+      "title": "Run command",
+      "toolCallId": "exec-23bf65b2-b19f-4a6e-a73a-e57eefb2aa1a",
+    },
+    "turnId": "7",
+    "type": "permission.request",
+  },
+  {
+    "itemId": "7:8",
+    "level": "info",
+    "sealed": true,
+    "seqFirst": 113,
+    "seqLast": 113,
+    "text": "Session info updated",
+    "turnId": "7",
+    "type": "system",
+  },
+  {
+    "itemId": "7:9",
+    "messageId": "msg_0e429b17b1a7b470016a976b61c99487d09e16a241c155cfba",
+    "sealed": true,
+    "seqFirst": 116,
+    "seqLast": 116,
+    "text": "DONE",
+    "turnId": "7",
+    "type": "agent.message",
+  },
+  {
+    "itemId": "7:10",
+    "level": "info",
+    "sealed": true,
+    "seqFirst": 118,
+    "seqLast": 118,
+    "text": "Session info updated",
+    "turnId": "7",
+    "type": "system",
+  },
+  {
+    "itemId": "7:11",
+    "level": "info",
+    "sealed": true,
+    "seqFirst": 119,
+    "seqLast": 119,
+    "text": {
+      "head": "Session title: Run the shell command \`echo read-only > /Users/brennen/syntaur/.w",
+      "len": 296,
+      "sha": "0d7109a8d726",
+    },
+    "turnId": "7",
+    "type": "system",
+  },
+  {
+    "contextSize": 258400,
+    "contextUsed": 23789,
+    "durationMs": 16001,
+    "endedAt": "2026-09-02T00:18:58.258Z",
+    "itemId": "10:0",
+    "sealed": true,
+    "seqFirst": 125,
+    "seqLast": 147,
+    "startedAt": "2026-09-02T00:18:42.257Z",
+    "state": "ended",
+    "stopReason": "end_turn",
+    "turnId": "10",
+    "type": "turn.status",
+    "usage": {
+      "cachedReadTokens": 23296,
+      "inputTokens": 488,
+      "outputTokens": 5,
+      "thoughtTokens": 0,
+      "totalTokens": 23789,
+    },
+  },
+  {
+    "itemId": "10:1",
+    "level": "info",
+    "sealed": true,
+    "seqFirst": 127,
+    "seqLast": 127,
+    "text": "Session info updated",
+    "turnId": "10",
+    "type": "system",
+  },
+  {
+    "itemId": "10:2",
+    "level": "info",
+    "sealed": false,
+    "seqFirst": 128,
+    "seqLast": 128,
+    "text": {
+      "head": "Warning: Skill descriptions were shortened to fit the skills context budget. Cod",
+      "len": 212,
+      "sha": "7c8ee8ec2b22",
+    },
+    "turnId": "10",
+    "type": "system",
+  },
+  {
+    "itemId": "10:4",
+    "lead": "I’m running that exact command now.",
+    "sealed": true,
+    "seqFirst": 129,
+    "seqLast": 141,
+    "summary": {
+      "durationMs": 13173,
+      "edits": 0,
+      "failed": 0,
+      "reads": 0,
+      "runs": 1,
+    },
+    "tools": [
+      {
+        "content": [
+          {
+            "terminalId": "exec-41aae206-37e5-49fb-a6ba-90d289fe36d2",
+            "type": "terminal",
+          },
+        ],
+        "kind": "execute",
+        "locations": [],
+        "rawInput": {
+          "command": {
+            "head": "/bin/zsh -lc 'echo agent > /Users/brennen/syntaur/.worktrees/feat/acp-adapter-sp",
+            "len": 128,
+            "sha": "11f1e1b953af",
+          },
+          "cwd": "/Users/brennen/syntaur/.worktrees/feat/acp-adapter-spike/scripts/spike/acp/out/target-codex",
+        },
+        "rawOutput": {
+          "exit_code": 0,
+          "formatted_output": "",
+        },
+        "status": "completed",
+        "title": "echo agent > /Users/brennen/syntaur/.worktrees/feat/acp-adapter-spike/scripts/spike/acp/out/perm/codex-mode-agent",
+        "toolCallId": "exec-41aae206-37e5-49fb-a6ba-90d289fe36d2",
+      },
+      {
+        "content": [
+          {
+            "text": {
+              "head": "Status: Approved
+Action: exec /bin/zsh -lc 'echo agent > /Users/brennen/syntaur/",
+              "len": 341,
+              "sha": "0e82d2516a96",
+            },
+            "type": "text",
+          },
+        ],
+        "kind": "think",
+        "locations": [],
+        "rawInput": {
+          "action": {
+            "command": {
+              "head": "/bin/zsh -lc 'echo agent > /Users/brennen/syntaur/.worktrees/feat/acp-adapter-sp",
+              "len": 128,
+              "sha": "11f1e1b953af",
+            },
+            "cwd": "/Users/brennen/syntaur/.worktrees/feat/acp-adapter-spike/scripts/spike/acp/out/target-codex",
+            "source": "unifiedExec",
+            "type": "command",
+          },
+          "review": {
+            "rationale": null,
+            "riskLevel": null,
+            "status": "inProgress",
+            "userAuthorization": null,
+          },
+          "reviewId": "73ae4c5d-ffaf-48b4-acd4-f53ae11c7da0",
+          "startedAtMs": 1788308333748,
+          "targetItemId": "exec-41aae206-37e5-49fb-a6ba-90d289fe36d2",
+          "threadId": "01a05f7b-7767-7f32-ab77-74b7e539f07b",
+          "turnId": "01a05f7b-784b-72a3-ad16-117bfb69f8a1",
+        },
+        "rawOutput": {
+          "action": {
+            "command": {
+              "head": "/bin/zsh -lc 'echo agent > /Users/brennen/syntaur/.worktrees/feat/acp-adapter-sp",
+              "len": 128,
+              "sha": "11f1e1b953af",
+            },
+            "cwd": "/Users/brennen/syntaur/.worktrees/feat/acp-adapter-spike/scripts/spike/acp/out/target-codex",
+            "source": "unifiedExec",
+            "type": "command",
+          },
+          "completedAtMs": 1788308337439,
+          "decisionSource": "agent",
+          "review": {
+            "rationale": {
+              "head": "The user explicitly authorized writing the literal content to this single specif",
+              "len": 141,
+              "sha": "172b2d2658b4",
+            },
+            "riskLevel": "low",
+            "status": "approved",
+            "userAuthorization": "high",
+          },
+          "reviewId": "73ae4c5d-ffaf-48b4-acd4-f53ae11c7da0",
+          "startedAtMs": 1788308333748,
+          "targetItemId": "exec-41aae206-37e5-49fb-a6ba-90d289fe36d2",
+          "threadId": "01a05f7b-7767-7f32-ab77-74b7e539f07b",
+          "turnId": "01a05f7b-784b-72a3-ad16-117bfb69f8a1",
+        },
+        "status": "completed",
+        "title": "Guardian Review",
+        "toolCallId": "guardian_assessment:73ae4c5d-ffaf-48b4-acd4-f53ae11c7da0",
+      },
+    ],
+    "turnId": "10",
+    "type": "agent.work",
+  },
+  {
+    "itemId": "10:5",
+    "messageId": "msg_0b18bffa5c2f1f40016a976b7221d887d0af2c1962e24bf378",
+    "sealed": true,
+    "seqFirst": 143,
+    "seqLast": 143,
+    "text": "DONE",
+    "turnId": "10",
+    "type": "agent.message",
+  },
+  {
+    "itemId": "10:6",
+    "level": "info",
+    "sealed": true,
+    "seqFirst": 145,
+    "seqLast": 145,
+    "text": "Session info updated",
+    "turnId": "10",
+    "type": "system",
+  },
+  {
+    "itemId": "10:7",
+    "level": "info",
+    "sealed": true,
+    "seqFirst": 146,
+    "seqLast": 146,
+    "text": {
+      "head": "Session title: Run the shell command \`echo agent > /Users/brennen/syntaur/.workt",
+      "len": 288,
+      "sha": "7573949c2556",
+    },
+    "turnId": "10",
+    "type": "system",
+  },
+  {
+    "contextSize": 258400,
+    "contextUsed": 22195,
+    "durationMs": 7130,
+    "endedAt": "2026-09-02T00:19:05.615Z",
+    "itemId": "13:0",
+    "sealed": true,
+    "seqFirst": 152,
+    "seqLast": 170,
+    "startedAt": "2026-09-02T00:18:58.485Z",
+    "state": "ended",
+    "stopReason": "end_turn",
+    "turnId": "13",
+    "type": "turn.status",
+    "usage": {
+      "cachedReadTokens": 21248,
+      "inputTokens": 942,
+      "outputTokens": 5,
+      "thoughtTokens": 0,
+      "totalTokens": 22195,
+    },
+  },
+  {
+    "itemId": "13:1",
+    "level": "info",
+    "sealed": true,
+    "seqFirst": 154,
+    "seqLast": 154,
+    "text": "Session info updated",
+    "turnId": "13",
+    "type": "system",
+  },
+  {
+    "itemId": "13:2",
+    "level": "info",
+    "sealed": false,
+    "seqFirst": 155,
+    "seqLast": 155,
+    "text": {
+      "head": "Warning: Skill descriptions were shortened to fit the skills context budget. Cod",
+      "len": 212,
+      "sha": "7c8ee8ec2b22",
+    },
+    "turnId": "13",
+    "type": "system",
+  },
+  {
+    "itemId": "13:4",
+    "lead": "Running the requested marker-file command.",
+    "sealed": true,
+    "seqFirst": 156,
+    "seqLast": 164,
+    "summary": {
+      "durationMs": 4654,
+      "edits": 0,
+      "failed": 0,
+      "reads": 0,
+      "runs": 1,
+    },
+    "tools": [
+      {
+        "content": [
+          {
+            "terminalId": "exec-34f30598-0253-426a-bf64-b91da68b5ca8",
+            "type": "terminal",
+          },
+        ],
+        "kind": "execute",
+        "locations": [],
+        "rawInput": {
+          "command": {
+            "head": "echo agent-full-access > /Users/brennen/syntaur/.worktrees/feat/acp-adapter-spik",
+            "len": 137,
+            "sha": "dd227aaed6c8",
+          },
+          "cwd": "/Users/brennen/syntaur/.worktrees/feat/acp-adapter-spike/scripts/spike/acp/out/target-codex",
+        },
+        "rawOutput": {
+          "exit_code": 0,
+          "formatted_output": "",
+        },
+        "status": "completed",
+        "title": {
+          "head": "echo agent-full-access > /Users/brennen/syntaur/.worktrees/feat/acp-adapter-spik",
+          "len": 137,
+          "sha": "dd227aaed6c8",
+        },
+        "toolCallId": "exec-34f30598-0253-426a-bf64-b91da68b5ca8",
+      },
+    ],
+    "turnId": "13",
+    "type": "agent.work",
+  },
+  {
+    "itemId": "13:5",
+    "messageId": "msg_020d76151411c0f8016a976b79782c87d0ab873dc767301bf1",
+    "sealed": true,
+    "seqFirst": 166,
+    "seqLast": 166,
+    "text": "DONE",
+    "turnId": "13",
+    "type": "agent.message",
+  },
+  {
+    "itemId": "13:6",
+    "level": "info",
+    "sealed": true,
+    "seqFirst": 168,
+    "seqLast": 168,
+    "text": "Session info updated",
+    "turnId": "13",
+    "type": "system",
+  },
+  {
+    "itemId": "13:7",
+    "level": "info",
+    "sealed": true,
+    "seqFirst": 169,
+    "seqLast": 169,
+    "text": {
+      "head": "Session title: Run the shell command \`echo agent-full-access > /Users/brennen/sy",
+      "len": 312,
+      "sha": "9eb8e995a0c6",
+    },
+    "turnId": "13",
+    "type": "system",
+  },
+]
+`;
+
+exports[`normalizer golden snapshots > codex/07n-sandbox-denied.ndjson normalizes to a stable item list 1`] = `
+[
+  {
+    "contextSize": 258400,
+    "contextUsed": 23553,
+    "durationMs": 10943,
+    "endedAt": "2026-09-02T00:41:27.058Z",
+    "itemId": "3:0",
+    "sealed": true,
+    "seqFirst": 6,
+    "seqLast": 65,
+    "startedAt": "2026-09-02T00:41:16.115Z",
+    "state": "ended",
+    "stopReason": "end_turn",
+    "turnId": "3",
+    "type": "turn.status",
+    "usage": {
+      "cachedReadTokens": 22272,
+      "inputTokens": 1235,
+      "outputTokens": 46,
+      "thoughtTokens": 0,
+      "totalTokens": 23553,
+    },
+  },
+  {
+    "itemId": "3:1",
+    "level": "info",
+    "sealed": true,
+    "seqFirst": 8,
+    "seqLast": 8,
+    "text": "Session info updated",
+    "turnId": "3",
+    "type": "system",
+  },
+  {
+    "itemId": "3:2",
+    "level": "info",
+    "sealed": true,
+    "seqFirst": 9,
+    "seqLast": 9,
+    "text": {
+      "head": "Warning: Skill descriptions were shortened to fit the skills context budget. Cod",
+      "len": 212,
+      "sha": "7c8ee8ec2b22",
+    },
+    "turnId": "3",
+    "type": "system",
+  },
+  {
+    "itemId": "3:3",
+    "messageId": "msg_0662f2953432fc2d016a9770b0f43c87d0a24a1655f93c59fc",
+    "sealed": true,
+    "seqFirst": 10,
+    "seqLast": 18,
+    "text": "Running the command exactly once, without escalation.",
+    "turnId": "3",
+    "type": "agent.message",
+  },
+  {
+    "itemId": "3:4",
+    "messageId": "msg_0662f2953432fc2d016a9770b5f54087d0a1458b737a0c2553",
+    "sealed": true,
+    "seqFirst": 20,
+    "seqLast": 61,
+    "text": {
+      "head": "\`zsh:1: operation not permitted: /Users/brennen/syntaur/.worktrees/feat/acp-adap",
+      "len": 130,
+      "sha": "698b2d6532c3",
+    },
+    "turnId": "3",
+    "type": "agent.message",
+  },
+  {
+    "itemId": "3:5",
+    "level": "info",
+    "sealed": true,
+    "seqFirst": 63,
+    "seqLast": 63,
+    "text": "Session info updated",
+    "turnId": "3",
+    "type": "system",
+  },
+  {
+    "itemId": "3:6",
+    "level": "info",
+    "sealed": true,
+    "seqFirst": 64,
+    "seqLast": 64,
+    "text": {
+      "head": "Session title: Run exactly this shell command once: \`echo probe > /Users/brennen",
+      "len": 314,
+      "sha": "f7b1c86e6749",
+    },
+    "turnId": "3",
+    "type": "system",
+  },
+]
+`;
+
+exports[`normalizer golden snapshots > codex/08-plan-events.ndjson normalizes to a stable item list 1`] = `
+[
+  {
+    "contextSize": 258400,
+    "contextUsed": 24718,
+    "durationMs": 39152,
+    "endedAt": "2026-09-01T23:59:41.696Z",
+    "itemId": "2:0",
+    "sealed": true,
+    "seqFirst": 4,
+    "seqLast": 113,
+    "startedAt": "2026-09-01T23:59:02.544Z",
+    "state": "ended",
+    "stopReason": "end_turn",
+    "turnId": "2",
+    "type": "turn.status",
+    "usage": {
+      "cachedReadTokens": 24320,
+      "inputTokens": 364,
+      "outputTokens": 34,
+      "thoughtTokens": 0,
+      "totalTokens": 24718,
+    },
+  },
+  {
+    "itemId": "2:1",
+    "level": "info",
+    "sealed": true,
+    "seqFirst": 6,
+    "seqLast": 6,
+    "text": "Session info updated",
+    "turnId": "2",
+    "type": "system",
+  },
+  {
+    "itemId": "2:2",
+    "level": "info",
+    "sealed": true,
+    "seqFirst": 7,
+    "seqLast": 7,
+    "text": {
+      "head": "Warning: Skill descriptions were shortened to fit the skills context budget. Cod",
+      "len": 212,
+      "sha": "7c8ee8ec2b22",
+    },
+    "turnId": "2",
+    "type": "system",
+  },
+  {
+    "itemId": "2:3",
+    "sealed": true,
+    "seqFirst": 8,
+    "seqLast": 9,
+    "text": "
+
+**Planning three-item update sequence**",
+    "turnId": "2",
+    "type": "agent.thought",
+  },
+  {
+    "itemId": "2:4",
+    "messageId": "msg_029665a0abf3825e016a9766cc1ac887d0b77b9eef45dd9fc9",
+    "sealed": true,
+    "seqFirst": 10,
+    "seqLast": 31,
+    "text": "I’ll keep the plan to exactly those three items and update each status before and after its read-only check.",
+    "turnId": "2",
+    "type": "agent.message",
+  },
+  {
+    "entries": [
+      {
+        "content": "Count the lines in package.json",
+        "priority": "medium",
+        "status": "completed",
+      },
+      {
+        "content": "Count the files directly inside src/",
+        "priority": "medium",
+        "status": "completed",
+      },
+      {
+        "content": "Report both numbers",
+        "priority": "medium",
+        "status": "completed",
+      },
+    ],
+    "itemId": "2:5",
+    "sealed": true,
+    "seqFirst": 32,
+    "seqLast": 78,
+    "turnId": "2",
+    "type": "agent.plan",
+  },
+  {
+    "itemId": "2:6",
+    "sealed": true,
+    "seqFirst": 36,
+    "seqLast": 48,
+    "summary": {
+      "durationMs": 21432,
+      "edits": 0,
+      "failed": 0,
+      "reads": 1,
+      "runs": 1,
+    },
+    "tools": [
+      {
+        "content": [
+          {
+            "terminalId": "exec-5feb9932-b5ac-4428-a80c-7c46672d649a",
+            "type": "terminal",
+          },
+        ],
+        "kind": "execute",
+        "locations": [],
+        "rawInput": {
+          "command": "wc -l package.json",
+          "cwd": "/Users/brennen/syntaur/.worktrees/feat/acp-adapter-spike/scripts/spike/acp/out/target-codex",
+        },
+        "rawOutput": {
+          "exit_code": 0,
+          "formatted_output": "     103 package.json
+",
+        },
+        "status": "completed",
+        "title": "wc -l package.json",
+        "toolCallId": "exec-5feb9932-b5ac-4428-a80c-7c46672d649a",
+      },
+      {
+        "content": [
+          {
+            "text": "       3
+",
+            "type": "text",
+          },
+        ],
+        "kind": "read",
+        "locations": [],
+        "rawOutput": {
+          "exit_code": 0,
+          "formatted_output": "       3
+",
+        },
+        "status": "completed",
+        "title": "List files in 'src'",
+        "toolCallId": "exec-4927cf6b-44e6-4bec-9256-7ecb4f1f11e8",
+      },
+    ],
+    "turnId": "2",
+    "type": "agent.work",
+  },
+  {
+    "itemId": "2:7",
+    "sealed": true,
+    "seqFirst": 39,
+    "seqLast": 40,
+    "text": "
+
+**Separating completion and progress updates**",
+    "turnId": "2",
+    "type": "agent.thought",
+  },
+  {
+    "itemId": "2:8",
+    "sealed": true,
+    "seqFirst": 45,
+    "seqLast": 46,
+    "text": "
+
+**Counting files in source directory**",
+    "turnId": "2",
+    "type": "agent.thought",
+  },
+  {
+    "itemId": "2:9",
+    "sealed": true,
+    "seqFirst": 50,
+    "seqLast": 53,
+    "text": "
+
+**Preparing commentary report before completion**
+
+**Planning sequential task completion and reporting**",
+    "turnId": "2",
+    "type": "agent.thought",
+  },
+  {
+    "itemId": "2:10",
+    "messageId": "msg_029665a0abf3825e016a9766e995dc87d081ef428d73a745b5",
+    "sealed": true,
+    "seqFirst": 58,
+    "seqLast": 77,
+    "text": "\`package.json\` has 103 lines. There are 3 files directly inside \`src/\`.",
+    "turnId": "2",
+    "type": "agent.message",
+  },
+  {
+    "itemId": "2:11",
+    "messageId": "msg_029665a0abf3825e016a9766ed0a1087d0976bf09f8c219023",
+    "sealed": true,
+    "seqFirst": 80,
+    "seqLast": 109,
+    "text": {
+      "head": "- \`package.json\`: **103 lines**
+- Files directly inside \`src/\`: **3**
+
+All three",
+      "len": 121,
+      "sha": "f682bd42e5d2",
+    },
+    "turnId": "2",
+    "type": "agent.message",
+  },
+  {
+    "itemId": "2:12",
+    "level": "info",
+    "sealed": true,
+    "seqFirst": 111,
+    "seqLast": 111,
+    "text": "Session info updated",
+    "turnId": "2",
+    "type": "system",
+  },
+  {
+    "itemId": "2:13",
+    "level": "info",
+    "sealed": true,
+    "seqFirst": 112,
+    "seqLast": 112,
+    "text": {
+      "head": "Session title: Use your todo/plan tool to create a list with exactly three items",
+      "len": 328,
+      "sha": "271220aa7738",
+    },
+    "turnId": "2",
+    "type": "system",
+  },
+]
+`;
+
+exports[`normalizer golden snapshots > codex/09-thoughts.ndjson normalizes to a stable item list 1`] = `
+[
+  {
+    "contextSize": 258400,
+    "contextUsed": 23339,
+    "durationMs": 3644,
+    "endedAt": "2026-09-01T23:59:45.925Z",
+    "itemId": "3:0",
+    "sealed": true,
+    "seqFirst": 6,
+    "seqLast": 14,
+    "startedAt": "2026-09-01T23:59:42.281Z",
+    "state": "ended",
+    "stopReason": "end_turn",
+    "turnId": "3",
+    "type": "turn.status",
+    "usage": {
+      "cachedReadTokens": 6912,
+      "inputTokens": 16422,
+      "outputTokens": 5,
+      "thoughtTokens": 0,
+      "totalTokens": 23339,
+    },
+  },
+  {
+    "itemId": "3:1",
+    "level": "info",
+    "sealed": true,
+    "seqFirst": 8,
+    "seqLast": 8,
+    "text": "Session info updated",
+    "turnId": "3",
+    "type": "system",
+  },
+  {
+    "itemId": "3:2",
+    "level": "info",
+    "sealed": true,
+    "seqFirst": 9,
+    "seqLast": 9,
+    "text": {
+      "head": "Warning: Skill descriptions were shortened to fit the skills context budget. Cod",
+      "len": 212,
+      "sha": "7c8ee8ec2b22",
+    },
+    "turnId": "3",
+    "type": "system",
+  },
+  {
+    "itemId": "3:3",
+    "messageId": "msg_0c15fd400acddb83016a9766f1bdb487d0bcd5517b8bbfc608",
+    "sealed": true,
+    "seqFirst": 10,
+    "seqLast": 10,
+    "text": "639",
+    "turnId": "3",
+    "type": "agent.message",
+  },
+  {
+    "itemId": "3:4",
+    "level": "info",
+    "sealed": true,
+    "seqFirst": 12,
+    "seqLast": 12,
+    "text": "Session info updated",
+    "turnId": "3",
+    "type": "system",
+  },
+  {
+    "itemId": "3:5",
+    "level": "info",
+    "sealed": true,
+    "seqFirst": 13,
+    "seqLast": 13,
+    "text": {
+      "head": "Session title: Think carefully and step by step: what is the sum of the first 20",
+      "len": 129,
+      "sha": "c86b47f0cb12",
+    },
+    "turnId": "3",
+    "type": "system",
+  },
+]
+`;
+
+exports[`normalizer golden snapshots > codex/10-commands-config.ndjson normalizes to a stable item list 1`] = `
+[
+  {
+    "contextSize": 258400,
+    "contextUsed": 23596,
+    "durationMs": 7807,
+    "endedAt": "2026-09-01T23:59:55.829Z",
+    "itemId": "2:0",
+    "sealed": true,
+    "seqFirst": 5,
+    "seqLast": 60,
+    "startedAt": "2026-09-01T23:59:48.022Z",
+    "state": "ended",
+    "stopReason": "end_turn",
+    "turnId": "2",
+    "type": "turn.status",
+    "usage": {
+      "cachedReadTokens": 6912,
+      "inputTokens": 16397,
+      "outputTokens": 287,
+      "thoughtTokens": 236,
+      "totalTokens": 23596,
+    },
+  },
+  {
+    "itemId": "2:1",
+    "level": "info",
+    "sealed": true,
+    "seqFirst": 6,
+    "seqLast": 6,
+    "text": "Session info updated",
+    "turnId": "2",
+    "type": "system",
+  },
+  {
+    "itemId": "2:2",
+    "level": "info",
+    "sealed": true,
+    "seqFirst": 7,
+    "seqLast": 7,
+    "text": {
+      "head": "Warning: Skill descriptions were shortened to fit the skills context budget. Cod",
+      "len": 212,
+      "sha": "7c8ee8ec2b22",
+    },
+    "turnId": "2",
+    "type": "system",
+  },
+  {
+    "itemId": "2:3",
+    "sealed": true,
+    "seqFirst": 8,
+    "seqLast": 11,
+    "text": "
+
+**Assessing user /context request**
+
+**Clarifying unsupported /context command**",
+    "turnId": "2",
+    "type": "agent.thought",
+  },
+  {
+    "itemId": "2:4",
+    "messageId": "msg_0df89409326c2c6b016a9766fb4eec87d0ab848b70fea5afdc",
+    "sealed": true,
+    "seqFirst": 12,
+    "seqLast": 56,
+    "text": {
+      "head": "Current context: \`target-codex\` worktree on the Syntaur ACP adapter spike, with ",
+      "len": 187,
+      "sha": "a7b5581dc480",
+    },
+    "turnId": "2",
+    "type": "agent.message",
+  },
+  {
+    "itemId": "2:5",
+    "level": "info",
+    "sealed": true,
+    "seqFirst": 58,
+    "seqLast": 58,
+    "text": "Session info updated",
+    "turnId": "2",
+    "type": "system",
+  },
+  {
+    "itemId": "2:6",
+    "level": "info",
+    "sealed": true,
+    "seqFirst": 59,
+    "seqLast": 59,
+    "text": "Session title: /context",
+    "turnId": "2",
+    "type": "system",
+  },
+  {
+    "contextSize": 258400,
+    "contextUsed": 27208,
+    "durationMs": 1593,
+    "endedAt": "2026-09-01T23:59:57.424Z",
+    "itemId": "4:0",
+    "sealed": true,
+    "seqFirst": 63,
+    "seqLast": 72,
+    "startedAt": "2026-09-01T23:59:55.831Z",
+    "state": "ended",
+    "stopReason": "end_turn",
+    "turnId": "4",
+    "type": "turn.status",
+    "usage": {
+      "cachedReadTokens": 6912,
+      "inputTokens": 20287,
+      "outputTokens": 9,
+      "thoughtTokens": 0,
+      "totalTokens": 27208,
+    },
+  },
+  {
+    "itemId": "4:1",
+    "level": "info",
+    "sealed": true,
+    "seqFirst": 64,
+    "seqLast": 64,
+    "text": "Session info updated",
+    "turnId": "4",
+    "type": "system",
+  },
+  {
+    "itemId": "4:2",
+    "messageId": "msg_0df89409326c2c6b016a9766fd303c87d08fc79eb492d6909f",
+    "sealed": true,
+    "seqFirst": 65,
+    "seqLast": 69,
+    "text": "GPT-5.6",
+    "turnId": "4",
+    "type": "agent.message",
+  },
+  {
+    "itemId": "4:3",
+    "level": "info",
+    "sealed": true,
+    "seqFirst": 71,
+    "seqLast": 71,
+    "text": "Session info updated",
+    "turnId": "4",
+    "type": "system",
+  },
+]
+`;
+
+exports[`normalizer golden snapshots > codex/11-usage.ndjson normalizes to a stable item list 1`] = `
+[
+  {
+    "contextSize": 258400,
+    "contextUsed": 23323,
+    "durationMs": 2664,
+    "endedAt": "2026-09-02T00:00:00.705Z",
+    "itemId": "2:0",
+    "sealed": true,
+    "seqFirst": 4,
+    "seqLast": 13,
+    "startedAt": "2026-09-01T23:59:58.041Z",
+    "state": "ended",
+    "stopReason": "end_turn",
+    "turnId": "2",
+    "type": "turn.status",
+    "usage": {
+      "cachedReadTokens": 19200,
+      "inputTokens": 4117,
+      "outputTokens": 6,
+      "thoughtTokens": 0,
+      "totalTokens": 23323,
+    },
+  },
+  {
+    "itemId": "2:1",
+    "level": "info",
+    "sealed": true,
+    "seqFirst": 6,
+    "seqLast": 6,
+    "text": "Session info updated",
+    "turnId": "2",
+    "type": "system",
+  },
+  {
+    "itemId": "2:2",
+    "level": "info",
+    "sealed": true,
+    "seqFirst": 7,
+    "seqLast": 7,
+    "text": {
+      "head": "Warning: Skill descriptions were shortened to fit the skills context budget. Cod",
+      "len": 212,
+      "sha": "7c8ee8ec2b22",
+    },
+    "turnId": "2",
+    "type": "system",
+  },
+  {
+    "itemId": "2:3",
+    "messageId": "msg_0daa4a5bbced8c29016a976700835c87d0894bafe89ec25ff4",
+    "sealed": true,
+    "seqFirst": 8,
+    "seqLast": 9,
+    "text": "PONG",
+    "turnId": "2",
+    "type": "agent.message",
+  },
+  {
+    "itemId": "2:4",
+    "level": "info",
+    "sealed": true,
+    "seqFirst": 11,
+    "seqLast": 11,
+    "text": "Session info updated",
+    "turnId": "2",
+    "type": "system",
+  },
+  {
+    "itemId": "2:5",
+    "level": "info",
+    "sealed": true,
+    "seqFirst": 12,
+    "seqLast": 12,
+    "text": "Session title: Reply with exactly the single word PONG.",
+    "turnId": "2",
+    "type": "system",
+  },
+]
+`;
+
+exports[`normalizer golden snapshots > codex/12-cancel.inherited.ndjson normalizes to a stable item list 1`] = `
+[
+  {
+    "durationMs": 1632,
+    "endedAt": "2026-09-02T00:41:29.257Z",
+    "itemId": "2:0",
+    "sealed": true,
+    "seqFirst": 4,
+    "seqLast": 10,
+    "startedAt": "2026-09-02T00:41:27.625Z",
+    "state": "ended",
+    "stopReason": "cancelled",
+    "turnId": "2",
+    "type": "turn.status",
+  },
+  {
+    "itemId": "2:1",
+    "level": "info",
+    "sealed": true,
+    "seqFirst": 6,
+    "seqLast": 6,
+    "text": "Session info updated",
+    "turnId": "2",
+    "type": "system",
+  },
+  {
+    "itemId": "2:2",
+    "messageId": "noid:7",
+    "sealed": true,
+    "seqFirst": 7,
+    "seqLast": 7,
+    "text": {
+      "head": "Warning: Skill descriptions were shortened to fit the skills context budget. Cod",
+      "len": 212,
+      "sha": "7c8ee8ec2b22",
+    },
+    "turnId": "2",
+    "type": "agent.message",
+  },
+  {
+    "itemId": "2:3",
+    "level": "info",
+    "sealed": true,
+    "seqFirst": 8,
+    "seqLast": 8,
+    "text": "Cancel requested",
+    "turnId": "2",
+    "type": "system",
+  },
+  {
+    "itemId": "2:4",
+    "level": "info",
+    "sealed": true,
+    "seqFirst": 9,
+    "seqLast": 9,
+    "text": "Session info updated",
+    "turnId": "2",
+    "type": "system",
+  },
+]
+`;
+
+exports[`normalizer golden snapshots > codex/12-cancel.low.ndjson normalizes to a stable item list 1`] = `
+[
+  {
+    "durationMs": 3526,
+    "endedAt": "2026-09-02T00:41:33.327Z",
+    "itemId": "3:0",
+    "sealed": true,
+    "seqFirst": 6,
+    "seqLast": 12,
+    "startedAt": "2026-09-02T00:41:29.801Z",
+    "state": "ended",
+    "stopReason": "cancelled",
+    "turnId": "3",
+    "type": "turn.status",
+  },
+  {
+    "itemId": "3:1",
+    "level": "info",
+    "sealed": true,
+    "seqFirst": 8,
+    "seqLast": 8,
+    "text": "Session info updated",
+    "turnId": "3",
+    "type": "system",
+  },
+  {
+    "itemId": "3:2",
+    "messageId": "noid:9",
+    "sealed": true,
+    "seqFirst": 9,
+    "seqLast": 9,
+    "text": {
+      "head": "Warning: Skill descriptions were shortened to fit the skills context budget. Cod",
+      "len": 212,
+      "sha": "7c8ee8ec2b22",
+    },
+    "turnId": "3",
+    "type": "agent.message",
+  },
+  {
+    "itemId": "3:3",
+    "level": "info",
+    "sealed": true,
+    "seqFirst": 10,
+    "seqLast": 10,
+    "text": "Cancel requested",
+    "turnId": "3",
+    "type": "system",
+  },
+  {
+    "itemId": "3:4",
+    "level": "info",
+    "sealed": true,
+    "seqFirst": 11,
+    "seqLast": 11,
+    "text": "Session info updated",
+    "turnId": "3",
+    "type": "system",
+  },
+]
+`;
+
+exports[`normalizer golden snapshots > codex/13-queue-vs-steer.ndjson normalizes to a stable item list 1`] = `
+[
+  {
+    "itemId": "2:0",
+    "sealed": false,
+    "seqFirst": 4,
+    "seqLast": 4,
+    "startedAt": "2026-09-02T00:41:37.117Z",
+    "state": "running",
+    "turnId": "2",
+    "type": "turn.status",
+  },
+  {
+    "itemId": "2:1",
+    "level": "info",
+    "sealed": true,
+    "seqFirst": 6,
+    "seqLast": 6,
+    "text": "Session info updated",
+    "turnId": "2",
+    "type": "system",
+  },
+  {
+    "contextSize": 258400,
+    "contextUsed": 25001,
+    "durationMs": 34487,
+    "endedAt": "2026-09-02T00:42:13.605Z",
+    "itemId": "3:0",
+    "sealed": true,
+    "seqFirst": 7,
+    "seqLast": 1299,
+    "startedAt": "2026-09-02T00:41:39.118Z",
+    "state": "ended",
+    "stopReason": "end_turn",
+    "turnId": "3",
+    "type": "turn.status",
+    "usage": {
+      "cachedReadTokens": 22272,
+      "inputTokens": 2722,
+      "outputTokens": 7,
+      "thoughtTokens": 0,
+      "totalTokens": 25001,
+    },
+  },
+  {
+    "itemId": "3:1",
+    "level": "info",
+    "sealed": true,
+    "seqFirst": 8,
+    "seqLast": 8,
+    "text": {
+      "head": "Warning: Skill descriptions were shortened to fit the skills context budget. Cod",
+      "len": 212,
+      "sha": "7c8ee8ec2b22",
+    },
+    "turnId": "3",
+    "type": "system",
+  },
+  {
+    "itemId": "3:2",
+    "sealed": true,
+    "seqFirst": 9,
+    "seqLast": 12,
+    "text": "
+
+**Planning detailed Unix shell history essay**
+
+**Outlining major Unix shells and features**",
+    "turnId": "3",
+    "type": "agent.thought",
+  },
+  {
+    "itemId": "3:3",
+    "messageId": "msg_0a63a19e0e99aea8016a9770cb97a487d0ae975ad8b3ff7af0",
+    "sealed": true,
+    "seqFirst": 13,
+    "seqLast": 1291,
+    "text": {
+      "head": "# The History of the Unix Shell
+
+The Unix shell began as a practical solution to",
+      "len": 7066,
+      "sha": "fa6d32b59613",
+    },
+    "turnId": "3",
+    "type": "agent.message",
+  },
+  {
+    "itemId": "3:4",
+    "messageId": "msg_0a63a19e0e99aea8016a9770e56be887d099206948889fb7fb",
+    "sealed": true,
+    "seqFirst": 1293,
+    "seqLast": 1295,
+    "text": "QUEUED",
+    "turnId": "3",
+    "type": "agent.message",
+  },
+  {
+    "itemId": "3:5",
+    "level": "info",
+    "sealed": true,
+    "seqFirst": 1297,
+    "seqLast": 1297,
+    "text": "Session info updated",
+    "turnId": "3",
+    "type": "system",
+  },
+  {
+    "itemId": "3:6",
+    "level": "info",
+    "sealed": true,
+    "seqFirst": 1298,
+    "seqLast": 1298,
+    "text": "Session title: Ignore any previous task. Reply with exactly the single word QUEUED.",
+    "turnId": "3",
+    "type": "system",
+  },
+  {
+    "contextSize": 258400,
+    "contextUsed": 26627,
+    "durationMs": 32865,
+    "endedAt": "2026-09-02T00:46:11.989Z",
+    "itemId": "4:0",
+    "sealed": true,
+    "seqFirst": 1300,
+    "seqLast": 2623,
+    "startedAt": "2026-09-02T00:45:39.124Z",
+    "state": "ended",
+    "stopReason": "end_turn",
+    "turnId": "4",
+    "type": "turn.status",
+    "usage": {
+      "cachedReadTokens": 24320,
+      "inputTokens": 2300,
+      "outputTokens": 7,
+      "thoughtTokens": 0,
+      "totalTokens": 26627,
+    },
+  },
+  {
+    "itemId": "4:1",
+    "level": "info",
+    "sealed": true,
+    "seqFirst": 1301,
+    "seqLast": 1301,
+    "text": "Session info updated",
+    "turnId": "4",
+    "type": "system",
+  },
+  {
+    "itemId": "4:2",
+    "sealed": true,
+    "seqFirst": 1304,
+    "seqLast": 1307,
+    "text": "
+
+**Drafting detailed Unix shell history essay**
+
+**Planning essay paragraph word counts**",
+    "turnId": "4",
+    "type": "agent.thought",
+  },
+  {
+    "itemId": "4:3",
+    "messageId": "msg_0a63a19e0e99aea8016a9771b9625487d08f75191707db7133",
+    "sealed": true,
+    "seqFirst": 1308,
+    "seqLast": 2616,
+    "text": {
+      "head": "# The History of the Unix Shell
+
+The Unix shell is one of computing’s most durab",
+      "len": 7323,
+      "sha": "2ad1008a9f9c",
+    },
+    "turnId": "4",
+    "type": "agent.message",
+  },
+  {
+    "itemId": "4:4",
+    "messageId": "msg_0a63a19e0e99aea8016a9771d3cee487d09c76e424abe0ba63",
+    "sealed": true,
+    "seqFirst": 2618,
+    "seqLast": 2620,
+    "text": "STEERED",
+    "turnId": "4",
+    "type": "agent.message",
+  },
+  {
+    "itemId": "4:5",
+    "level": "info",
+    "sealed": true,
+    "seqFirst": 2622,
+    "seqLast": 2622,
+    "text": "Session info updated",
+    "turnId": "4",
+    "type": "system",
+  },
+]
+`;
+
+exports[`normalizer golden snapshots > codex/14-load-resume.p1.ndjson normalizes to a stable item list 1`] = `
+[
+  {
+    "contextSize": 258400,
+    "contextUsed": 23330,
+    "durationMs": 2926,
+    "endedAt": "2026-09-02T00:04:49.698Z",
+    "itemId": "2:0",
+    "sealed": true,
+    "seqFirst": 4,
+    "seqLast": 12,
+    "startedAt": "2026-09-02T00:04:46.772Z",
+    "state": "ended",
+    "stopReason": "end_turn",
+    "turnId": "2",
+    "type": "turn.status",
+    "usage": {
+      "cachedReadTokens": 6912,
+      "inputTokens": 16413,
+      "outputTokens": 5,
+      "thoughtTokens": 0,
+      "totalTokens": 23330,
+    },
+  },
+  {
+    "itemId": "2:1",
+    "level": "info",
+    "sealed": true,
+    "seqFirst": 6,
+    "seqLast": 6,
+    "text": "Session info updated",
+    "turnId": "2",
+    "type": "system",
+  },
+  {
+    "itemId": "2:2",
+    "level": "info",
+    "sealed": true,
+    "seqFirst": 7,
+    "seqLast": 7,
+    "text": {
+      "head": "Warning: Skill descriptions were shortened to fit the skills context budget. Cod",
+      "len": 212,
+      "sha": "7c8ee8ec2b22",
+    },
+    "turnId": "2",
+    "type": "system",
+  },
+  {
+    "itemId": "2:3",
+    "messageId": "msg_0f42bdee7c6e1a13016a97682181f487d08a982f550017a901",
+    "sealed": true,
+    "seqFirst": 8,
+    "seqLast": 8,
+    "text": "OK",
+    "turnId": "2",
+    "type": "agent.message",
+  },
+  {
+    "itemId": "2:4",
+    "level": "info",
+    "sealed": true,
+    "seqFirst": 10,
+    "seqLast": 10,
+    "text": "Session info updated",
+    "turnId": "2",
+    "type": "system",
+  },
+  {
+    "itemId": "2:5",
+    "level": "info",
+    "sealed": true,
+    "seqFirst": 11,
+    "seqLast": 11,
+    "text": "Session title: Remember this: the code word is PELICAN. Reply with exactly OK.",
+    "turnId": "2",
+    "type": "system",
+  },
+]
+`;
+
+exports[`normalizer golden snapshots > codex/14-load-resume.p2.ndjson normalizes to a stable item list 1`] = `
+[
+  {
+    "itemId": "replay:1:0",
+    "level": "info",
+    "sealed": true,
+    "seqFirst": 2,
+    "seqLast": 2,
+    "text": "Replaying session history",
+    "turnId": null,
+    "type": "system",
+  },
+  {
+    "itemId": "replay:1:1",
+    "level": "info",
+    "sealed": true,
+    "seqFirst": 4,
+    "seqLast": 4,
+    "text": "Session info updated",
+    "turnId": null,
+    "type": "system",
+  },
+  {
+    "itemId": "replay:1:2",
+    "level": "info",
+    "sealed": true,
+    "seqFirst": 5,
+    "seqLast": 5,
+    "text": "Session title: Remember this: the code word is PELICAN. Reply with exactly OK.",
+    "turnId": null,
+    "type": "system",
+  },
+  {
+    "itemId": "replay:1:3",
+    "messageId": "item-1",
+    "sealed": true,
+    "seqFirst": 6,
+    "seqLast": 6,
+    "state": "replayed",
+    "text": "Remember this: the code word is PELICAN. Reply with exactly OK.",
+    "turnId": null,
+    "type": "user.message",
+  },
+  {
+    "itemId": "replay:1:4",
+    "messageId": "item-2",
+    "sealed": true,
+    "seqFirst": 7,
+    "seqLast": 7,
+    "text": "OK",
+    "turnId": null,
+    "type": "agent.message",
+  },
+  {
+    "contextSize": 258400,
+    "contextUsed": 23355,
+    "durationMs": 3168,
+    "endedAt": "2026-09-02T00:04:53.523Z",
+    "itemId": "2:0",
+    "sealed": true,
+    "seqFirst": 9,
+    "seqLast": 16,
+    "startedAt": "2026-09-02T00:04:50.355Z",
+    "state": "ended",
+    "stopReason": "end_turn",
+    "turnId": "2",
+    "type": "turn.status",
+    "usage": {
+      "cachedReadTokens": 22272,
+      "inputTokens": 1076,
+      "outputTokens": 7,
+      "thoughtTokens": 0,
+      "totalTokens": 23355,
+    },
+  },
+  {
+    "itemId": "2:1",
+    "level": "info",
+    "sealed": true,
+    "seqFirst": 10,
+    "seqLast": 10,
+    "text": "Session info updated",
+    "turnId": "2",
+    "type": "system",
+  },
+  {
+    "itemId": "2:2",
+    "messageId": "msg_0f42bdee7c6e1a13016a976825363487d084f04445e42203d3",
+    "sealed": true,
+    "seqFirst": 11,
+    "seqLast": 13,
+    "text": "PELICAN",
+    "turnId": "2",
+    "type": "agent.message",
+  },
+  {
+    "itemId": "2:3",
+    "level": "info",
+    "sealed": true,
+    "seqFirst": 15,
+    "seqLast": 15,
+    "text": "Session info updated",
+    "turnId": "2",
+    "type": "system",
+  },
+]
+`;
+
+exports[`normalizer golden snapshots > codex/14-load-resume.p3.ndjson normalizes to a stable item list 1`] = `
+[
+  {
+    "itemId": "session:assignment-fixture:codex:0",
+    "level": "info",
+    "sealed": true,
+    "seqFirst": 2,
+    "seqLast": 2,
+    "text": "Agent session resumed (01a05f6e-b7bd-7601-b5fd-d75d37afd222)",
+    "turnId": null,
+    "type": "system",
+  },
+  {
+    "contextSize": 258400,
+    "contextUsed": 23380,
+    "durationMs": 4055,
+    "endedAt": "2026-09-02T00:04:57.955Z",
+    "itemId": "2:0",
+    "sealed": true,
+    "seqFirst": 4,
+    "seqLast": 13,
+    "startedAt": "2026-09-02T00:04:53.900Z",
+    "state": "ended",
+    "stopReason": "end_turn",
+    "turnId": "2",
+    "type": "turn.status",
+    "usage": {
+      "cachedReadTokens": 22272,
+      "inputTokens": 1101,
+      "outputTokens": 7,
+      "thoughtTokens": 0,
+      "totalTokens": 23380,
+    },
+  },
+  {
+    "itemId": "2:1",
+    "level": "info",
+    "sealed": true,
+    "seqFirst": 5,
+    "seqLast": 5,
+    "text": "Session info updated",
+    "turnId": "2",
+    "type": "system",
+  },
+  {
+    "itemId": "2:2",
+    "level": "info",
+    "sealed": true,
+    "seqFirst": 7,
+    "seqLast": 7,
+    "text": "Session info updated",
+    "turnId": "2",
+    "type": "system",
+  },
+  {
+    "itemId": "2:3",
+    "messageId": "msg_0f42bdee7c6e1a13016a976829b8b087d0b6b263248a399aee",
+    "sealed": true,
+    "seqFirst": 8,
+    "seqLast": 10,
+    "text": "PELICAN",
+    "turnId": "2",
+    "type": "agent.message",
+  },
+  {
+    "itemId": "2:4",
+    "level": "info",
+    "sealed": true,
+    "seqFirst": 12,
+    "seqLast": 12,
+    "text": "Session info updated",
+    "turnId": "2",
+    "type": "system",
+  },
+]
+`;
+
+exports[`normalizer golden snapshots > codex/15-crash.early-exit.ndjson normalizes to a stable item list 1`] = `[]`;
+
+exports[`normalizer golden snapshots > codex/15-crash.ndjson normalizes to a stable item list 1`] = `
+[
+  {
+    "itemId": "2:0",
+    "sealed": false,
+    "seqFirst": 4,
+    "seqLast": 4,
+    "startedAt": "2026-09-02T00:04:59.165Z",
+    "state": "running",
+    "turnId": "2",
+    "type": "turn.status",
+  },
+  {
+    "itemId": "2:1",
+    "level": "info",
+    "sealed": true,
+    "seqFirst": 6,
+    "seqLast": 6,
+    "text": "Session info updated",
+    "turnId": "2",
+    "type": "system",
+  },
+  {
+    "itemId": "2:2",
+    "messageId": "noid:7",
+    "sealed": false,
+    "seqFirst": 7,
+    "seqLast": 7,
+    "text": {
+      "head": "Warning: Skill descriptions were shortened to fit the skills context budget. Cod",
+      "len": 212,
+      "sha": "7c8ee8ec2b22",
+    },
+    "turnId": "2",
+    "type": "agent.message",
+  },
+]
+`;
+
+exports[`normalizer golden snapshots > codex/16-embedded-context.ndjson normalizes to a stable item list 1`] = `
+[
+  {
+    "contextSize": 258400,
+    "contextUsed": 24881,
+    "durationMs": 2894,
+    "endedAt": "2026-09-02T00:05:07.471Z",
+    "itemId": "2:0",
+    "sealed": true,
+    "seqFirst": 4,
+    "seqLast": 20,
+    "startedAt": "2026-09-02T00:05:04.577Z",
+    "state": "ended",
+    "stopReason": "end_turn",
+    "turnId": "2",
+    "type": "turn.status",
+    "usage": {
+      "cachedReadTokens": 6912,
+      "inputTokens": 17956,
+      "outputTokens": 13,
+      "thoughtTokens": 0,
+      "totalTokens": 24881,
+    },
+  },
+  {
+    "itemId": "2:1",
+    "level": "info",
+    "sealed": true,
+    "seqFirst": 6,
+    "seqLast": 6,
+    "text": "Session info updated",
+    "turnId": "2",
+    "type": "system",
+  },
+  {
+    "itemId": "2:2",
+    "level": "info",
+    "sealed": true,
+    "seqFirst": 7,
+    "seqLast": 7,
+    "text": {
+      "head": "Warning: Skill descriptions were shortened to fit the skills context budget. Cod",
+      "len": 212,
+      "sha": "7c8ee8ec2b22",
+    },
+    "turnId": "2",
+    "type": "system",
+  },
+  {
+    "itemId": "2:3",
+    "messageId": "msg_0b39a8a16d7b8bed016a9768334c7087d0b943179a892e4186",
+    "sealed": true,
+    "seqFirst": 8,
+    "seqLast": 16,
+    "text": "acp-adapter-spike, 7",
+    "turnId": "2",
+    "type": "agent.message",
+  },
+  {
+    "itemId": "2:4",
+    "level": "info",
+    "sealed": true,
+    "seqFirst": 18,
+    "seqLast": 18,
+    "text": "Session info updated",
+    "turnId": "2",
+    "type": "system",
+  },
+  {
+    "itemId": "2:5",
+    "level": "info",
+    "sealed": true,
+    "seqFirst": 19,
+    "seqLast": 19,
+    "text": {
+      "head": "Session title: Using only the attached assignment document (do not read any file",
+      "len": 210,
+      "sha": "389dfb152292",
+    },
+    "turnId": "2",
+    "type": "system",
+  },
+]
+`;
+
+exports[`normalizer golden snapshots > codex/19-concurrency.implementer.ndjson normalizes to a stable item list 1`] = `
+[
+  {
+    "contextSize": 258400,
+    "contextUsed": 24368,
+    "durationMs": 26700,
+    "endedAt": "2026-09-02T00:05:42.292Z",
+    "itemId": "3:0",
+    "sealed": true,
+    "seqFirst": 6,
+    "seqLast": 37,
+    "startedAt": "2026-09-02T00:05:15.592Z",
+    "state": "ended",
+    "stopReason": "end_turn",
+    "turnId": "3",
+    "type": "turn.status",
+    "usage": {
+      "cachedReadTokens": 23296,
+      "inputTokens": 1067,
+      "outputTokens": 5,
+      "thoughtTokens": 0,
+      "totalTokens": 24368,
+    },
+  },
+  {
+    "itemId": "3:1",
+    "level": "info",
+    "sealed": true,
+    "seqFirst": 8,
+    "seqLast": 8,
+    "text": "Session info updated",
+    "turnId": "3",
+    "type": "system",
+  },
+  {
+    "itemId": "3:2",
+    "level": "info",
+    "sealed": true,
+    "seqFirst": 9,
+    "seqLast": 9,
+    "text": {
+      "head": "Warning: Skill descriptions were shortened to fit the skills context budget. Cod",
+      "len": 212,
+      "sha": "7c8ee8ec2b22",
+    },
+    "turnId": "3",
+    "type": "system",
+  },
+  {
+    "itemId": "3:3",
+    "sealed": true,
+    "seqFirst": 10,
+    "seqLast": 11,
+    "text": "
+
+**Planning minimal commentary patch**",
+    "turnId": "3",
+    "type": "agent.thought",
+  },
+  {
+    "itemId": "3:4",
+    "sealed": true,
+    "seqFirst": 12,
+    "seqLast": 31,
+    "summary": {
+      "durationMs": 21537,
+      "edits": 2,
+      "failed": 0,
+      "reads": 0,
+      "runs": 3,
+    },
+    "tools": [
+      {
+        "content": [
+          {
+            "newText": {
+              "head": "# Syntaur
+
+Syntaur is a local project and assignment workflow for coding agents.",
+              "len": 20707,
+              "sha": "ec7b9d36d313",
+            },
+            "oldText": {
+              "head": "# Syntaur
+
+Syntaur is a local project and assignment workflow for coding agents.",
+              "len": 20671,
+              "sha": "f0fa43fc6bd6",
+            },
+            "path": "/Users/brennen/syntaur/.worktrees/feat/acp-adapter-spike/scripts/spike/acp/out/target-codex/README.md",
+            "type": "diff",
+          },
+        ],
+        "kind": "edit",
+        "locations": [],
+        "status": "completed",
+        "title": "Editing files",
+        "toolCallId": "exec-5e3cf09e-e429-4f40-b142-fa0d85a7bf14",
+      },
+      {
+        "content": [
+          {
+            "terminalId": "exec-75eb08d5-8a8b-4cdd-9be0-a56aabc4c498",
+            "type": "terminal",
+          },
+        ],
+        "kind": "execute",
+        "locations": [],
+        "rawInput": {
+          "command": "git diff -- README.md",
+          "cwd": "/Users/brennen/syntaur/.worktrees/feat/acp-adapter-spike/scripts/spike/acp/out/target-codex",
+        },
+        "rawOutput": {
+          "exit_code": 0,
+          "formatted_output": {
+            "head": "diff --git a/README.md b/README.md
+index 39b8b0a..fb7e848 100644
+--- a/README.md",
+            "len": 395,
+            "sha": "700fd3a5d858",
+          },
+        },
+        "status": "completed",
+        "title": "git diff -- README.md",
+        "toolCallId": "exec-75eb08d5-8a8b-4cdd-9be0-a56aabc4c498",
+      },
+      {
+        "content": [
+          {
+            "terminalId": "exec-66e8bbbd-9a6a-457a-9463-59eb6642f497",
+            "type": "terminal",
+          },
+        ],
+        "kind": "execute",
+        "locations": [],
+        "rawInput": {
+          "command": "/bin/zsh -lc "sed -n '1,5p' README.md; tail -n 4 README.md"",
+          "cwd": "/Users/brennen/syntaur/.worktrees/feat/acp-adapter-spike/scripts/spike/acp/out/target-codex",
+        },
+        "rawOutput": {
+          "exit_code": 0,
+          "formatted_output": {
+            "head": "# Syntaur
+
+Syntaur is a local project and assignment workflow for coding agents.",
+            "len": 362,
+            "sha": "ec7dcdc14d36",
+          },
+        },
+        "status": "completed",
+        "title": ""sed -n '1,5p' README.md; tail -n 4 README.md"",
+        "toolCallId": "exec-66e8bbbd-9a6a-457a-9463-59eb6642f497",
+      },
+      {
+        "content": [
+          {
+            "newText": {
+              "head": "<!-- acp-spike: concurrent edit -->
+# Syntaur
+
+Syntaur is a local project and as",
+              "len": 20707,
+              "sha": "2248b7c26e25",
+            },
+            "oldText": {
+              "head": "# Syntaur
+
+Syntaur is a local project and assignment workflow for coding agents.",
+              "len": 20707,
+              "sha": "ec7b9d36d313",
+            },
+            "path": "/Users/brennen/syntaur/.worktrees/feat/acp-adapter-spike/scripts/spike/acp/out/target-codex/README.md",
+            "type": "diff",
+          },
+        ],
+        "kind": "edit",
+        "locations": [],
+        "status": "completed",
+        "title": "Editing files",
+        "toolCallId": "exec-23eadf36-07a7-41aa-92f8-db567ed28be0",
+      },
+      {
+        "content": [
+          {
+            "terminalId": "exec-502f29df-dd1f-401b-9afe-5bb506cfc085",
+            "type": "terminal",
+          },
+        ],
+        "kind": "execute",
+        "locations": [],
+        "rawInput": {
+          "command": "git diff -- README.md",
+          "cwd": "/Users/brennen/syntaur/.worktrees/feat/acp-adapter-spike/scripts/spike/acp/out/target-codex",
+        },
+        "rawOutput": {
+          "exit_code": 0,
+          "formatted_output": {
+            "head": "diff --git a/README.md b/README.md
+index 39b8b0a..93cfa80 100644
+--- a/README.md",
+            "len": 305,
+            "sha": "d2af601aad8f",
+          },
+        },
+        "status": "completed",
+        "title": "git diff -- README.md",
+        "toolCallId": "exec-502f29df-dd1f-401b-9afe-5bb506cfc085",
+      },
+    ],
+    "turnId": "3",
+    "type": "agent.work",
+  },
+  {
+    "itemId": "3:5",
+    "sealed": true,
+    "seqFirst": 15,
+    "seqLast": 16,
+    "text": "
+
+**Verifying patch application on first line**",
+    "turnId": "3",
+    "type": "agent.thought",
+  },
+  {
+    "itemId": "3:6",
+    "sealed": true,
+    "seqFirst": 20,
+    "seqLast": 21,
+    "text": "
+
+**Adjusting patch application to prepend changes**",
+    "turnId": "3",
+    "type": "agent.thought",
+  },
+  {
+    "itemId": "3:7",
+    "sealed": true,
+    "seqFirst": 28,
+    "seqLast": 29,
+    "text": "
+
+**Verifying code changes with diff**",
+    "turnId": "3",
+    "type": "agent.thought",
+  },
+  {
+    "itemId": "3:8",
+    "messageId": "msg_0d20360b869f3d1c016a976856267c87d084eb1310327200ca",
+    "sealed": true,
+    "seqFirst": 33,
+    "seqLast": 33,
+    "text": "DONE",
+    "turnId": "3",
+    "type": "agent.message",
+  },
+  {
+    "itemId": "3:9",
+    "level": "info",
+    "sealed": true,
+    "seqFirst": 35,
+    "seqLast": 35,
+    "text": "Session info updated",
+    "turnId": "3",
+    "type": "system",
+  },
+  {
+    "itemId": "3:10",
+    "level": "info",
+    "sealed": true,
+    "seqFirst": 36,
+    "seqLast": 36,
+    "text": {
+      "head": "Session title: Insert the line <!-- acp-spike: concurrent edit --> as the very f",
+      "len": 143,
+      "sha": "d92b3df4b403",
+    },
+    "turnId": "3",
+    "type": "system",
+  },
+]
+`;
+
+exports[`normalizer golden snapshots > codex/19-concurrency.planner.ndjson normalizes to a stable item list 1`] = `
+[
+  {
+    "contextSize": 258400,
+    "contextUsed": 31686,
+    "durationMs": 26310,
+    "endedAt": "2026-09-02T00:05:41.902Z",
+    "itemId": "3:0",
+    "sealed": true,
+    "seqFirst": 6,
+    "seqLast": 250,
+    "startedAt": "2026-09-02T00:05:15.592Z",
+    "state": "ended",
+    "stopReason": "end_turn",
+    "turnId": "3",
+    "type": "turn.status",
+    "usage": {
+      "cachedReadTokens": 26368,
+      "inputTokens": 4904,
+      "outputTokens": 414,
+      "thoughtTokens": 214,
+      "totalTokens": 31686,
+    },
+  },
+  {
+    "itemId": "3:1",
+    "level": "info",
+    "sealed": true,
+    "seqFirst": 8,
+    "seqLast": 8,
+    "text": "Session info updated",
+    "turnId": "3",
+    "type": "system",
+  },
+  {
+    "itemId": "3:2",
+    "level": "info",
+    "sealed": true,
+    "seqFirst": 9,
+    "seqLast": 9,
+    "text": {
+      "head": "Warning: Skill descriptions were shortened to fit the skills context budget. Cod",
+      "len": 212,
+      "sha": "7c8ee8ec2b22",
+    },
+    "turnId": "3",
+    "type": "system",
+  },
+  {
+    "itemId": "3:3",
+    "sealed": true,
+    "seqFirst": 10,
+    "seqLast": 11,
+    "text": "
+
+**Clarifying plan requirements**",
+    "turnId": "3",
+    "type": "agent.thought",
+  },
+  {
+    "itemId": "3:5",
+    "lead": {
+      "head": "I’ll inspect the package metadata and CLI entry points, then return a concise th",
+      "len": 125,
+      "sha": "63f922403547",
+    },
+    "sealed": true,
+    "seqFirst": 12,
+    "seqLast": 47,
+    "summary": {
+      "durationMs": 18489,
+      "edits": 0,
+      "failed": 0,
+      "reads": 1,
+      "runs": 2,
+    },
+    "tools": [
+      {
+        "content": [
+          {
+            "text": {
+              "head": "{
+  "name": "syntaur",
+  "version": "0.79.0",
+  "description": "Project workflow",
+              "len": 3182,
+              "sha": "2d6b03f99645",
+            },
+            "type": "text",
+          },
+        ],
+        "kind": "read",
+        "locations": [
+          {
+            "path": "/Users/brennen/syntaur/.worktrees/feat/acp-adapter-spike/scripts/spike/acp/out/target-codex/package.json",
+          },
+        ],
+        "rawOutput": {
+          "exit_code": 0,
+          "formatted_output": {
+            "head": "{
+  "name": "syntaur",
+  "version": "0.79.0",
+  "description": "Project workflow",
+            "len": 3182,
+            "sha": "2d6b03f99645",
+          },
+        },
+        "status": "completed",
+        "title": "Read file '/Users/brennen/syntaur/.worktrees/feat/acp-adapter-spike/scripts/spike/acp/out/target-codex/package.json'",
+        "toolCallId": "exec-cdd561d0-f780-4b81-9b94-b2c2856ece56",
+      },
+      {
+        "content": [
+          {
+            "terminalId": "exec-89d51056-67bd-4b50-8956-5cc9568c2e63",
+            "type": "terminal",
+          },
+        ],
+        "kind": "execute",
+        "locations": [],
+        "rawInput": {
+          "command": {
+            "head": "/bin/zsh -lc "sed -n '1,200p' bin/syntaur.js && rg -n \\"new Command|\\\\.version\\\\",
+            "len": 142,
+            "sha": "84af77227c20",
+          },
+          "cwd": "/Users/brennen/syntaur/.worktrees/feat/acp-adapter-spike/scripts/spike/acp/out/target-codex",
+        },
+        "rawOutput": {
+          "exit_code": 0,
+          "formatted_output": {
+            "head": "src/schedules/attempt.ts:501:      const pastGrace = now.getTime() - Date.parse(",
+            "len": 6988,
+            "sha": "b3fcbda9799d",
+          },
+        },
+        "status": "completed",
+        "title": {
+          "head": ""sed -n '1,200p' bin/syntaur.js && rg -n \\"new Command|\\\\.version\\\\(|parseAsync|",
+          "len": 129,
+          "sha": "76289cb4304c",
+        },
+        "toolCallId": "exec-89d51056-67bd-4b50-8956-5cc9568c2e63",
+      },
+      {
+        "content": [
+          {
+            "terminalId": "exec-00ea3908-5a80-4144-95cc-efa966d425fa",
+            "type": "terminal",
+          },
+        ],
+        "kind": "execute",
+        "locations": [],
+        "rawInput": {
+          "command": {
+            "head": "/bin/zsh -lc "sed -n '1,145p' src/index.ts && sed -n '1,160p' src/utils/version.",
+            "len": 148,
+            "sha": "e0b67583f76e",
+          },
+          "cwd": "/Users/brennen/syntaur/.worktrees/feat/acp-adapter-spike/scripts/spike/acp/out/target-codex",
+        },
+        "rawOutput": {
+          "exit_code": 0,
+          "formatted_output": {
+            "head": "import { Command, InvalidArgumentError } from 'commander';
+import { initCommand ",
+            "len": 17074,
+            "sha": "dfb41966a402",
+          },
+        },
+        "status": "completed",
+        "title": {
+          "head": ""sed -n '1,145p' src/index.ts && sed -n '1,160p' src/utils/version.ts && rg -n \\",
+          "len": 135,
+          "sha": "b59ac57de5d7",
+        },
+        "toolCallId": "exec-00ea3908-5a80-4144-95cc-efa966d425fa",
+      },
+    ],
+    "turnId": "3",
+    "type": "agent.work",
+  },
+  {
+    "itemId": "3:6",
+    "sealed": true,
+    "seqFirst": 38,
+    "seqLast": 39,
+    "text": "
+
+**Planning CLI entrypoints exploration**",
+    "turnId": "3",
+    "type": "agent.thought",
+  },
+  {
+    "itemId": "3:7",
+    "sealed": true,
+    "seqFirst": 44,
+    "seqLast": 45,
+    "text": "
+
+**Inspecting version retrieval logic**",
+    "turnId": "3",
+    "type": "agent.thought",
+  },
+  {
+    "itemId": "3:8",
+    "sealed": true,
+    "seqFirst": 49,
+    "seqLast": 52,
+    "text": "
+
+**Planning version flag integration**
+
+**Verifying version flag test coverage**",
+    "turnId": "3",
+    "type": "agent.thought",
+  },
+  {
+    "itemId": "3:9",
+    "messageId": "msg_0f5af8692b97fde7016a97685235e087d0aed955dd2c245a46",
+    "sealed": true,
+    "seqFirst": 53,
+    "seqLast": 246,
+    "text": {
+      "head": "\`--version\` is already implemented: \`package.json\` declares version \`0.79.0\`, an",
+      "len": 745,
+      "sha": "6c91db1a5302",
+    },
+    "turnId": "3",
+    "type": "agent.message",
+  },
+  {
+    "itemId": "3:10",
+    "level": "info",
+    "sealed": true,
+    "seqFirst": 248,
+    "seqLast": 248,
+    "text": "Session info updated",
+    "turnId": "3",
+    "type": "system",
+  },
+  {
+    "itemId": "3:11",
+    "level": "info",
+    "sealed": true,
+    "seqFirst": 249,
+    "seqLast": 249,
+    "text": {
+      "head": "Session title: Read package.json and write a three-step plan for adding a --vers",
+      "len": 124,
+      "sha": "32fa71d4a736",
+    },
+    "turnId": "3",
+    "type": "system",
+  },
+]
+`;
+
+exports[`normalizer golden snapshots > codex/20-client-death.ndjson normalizes to a stable item list 1`] = `
+[
+  {
+    "itemId": "2:0",
+    "sealed": false,
+    "seqFirst": 4,
+    "seqLast": 4,
+    "startedAt": "2026-09-02T00:05:08.052Z",
+    "state": "running",
+    "turnId": "2",
+    "type": "turn.status",
+  },
+  {
+    "itemId": "2:1",
+    "level": "info",
+    "sealed": true,
+    "seqFirst": 6,
+    "seqLast": 6,
+    "text": "Session info updated",
+    "turnId": "2",
+    "type": "system",
+  },
+  {
+    "itemId": "2:2",
+    "messageId": "noid:7",
+    "sealed": false,
+    "seqFirst": 7,
+    "seqLast": 7,
+    "text": {
+      "head": "Warning: Skill descriptions were shortened to fit the skills context budget. Cod",
+      "len": 212,
+      "sha": "7c8ee8ec2b22",
+    },
+    "turnId": "2",
+    "type": "agent.message",
+  },
+]
+`;
