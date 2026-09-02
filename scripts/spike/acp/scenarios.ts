@@ -88,6 +88,31 @@ function leakedNotices(h: Harness, list: CollectedUpdate[]): string[] {
 }
 const toolUpdates = (h: Harness, list = h.updates) => h.updatesOfKind('tool_call_update', list);
 
+/** Characters a renderer could actually show from tool-call content blocks (text and diffs; a `terminal` ref is not text). */
+const blockChars = (blocks: acp.ToolCallContent[] | null | undefined) =>
+  (blocks ?? []).reduce(
+    (n, b) =>
+      n +
+      (b.type === 'content' && b.content.type === 'text' ? b.content.text.length
+        : b.type === 'diff' ? (b.oldText?.length ?? 0) + b.newText.length
+        : 0),
+    0,
+  );
+/** Characters of string values anywhere inside rawInput/rawOutput (codex reports through rawOutput.formatted_output). */
+const rawChars = (raw: unknown): number =>
+  typeof raw === 'string' ? raw.length
+    : raw && typeof raw === 'object' ? Object.values(raw as Record<string, unknown>).reduce<number>((n, v) => n + rawChars(v), 0)
+    : 0;
+
+/** Resolve a prompt with a bound, reporting either the stop reason or the timeout/error. */
+async function settleStop(p: Promise<acp.PromptResponse>, timeoutMs = 30_000): Promise<{ stop?: string; err?: string }> {
+  try {
+    return { stop: (await withTimeout(p, timeoutMs, 'prompt after cancel')).stopReason };
+  } catch (e) {
+    return { err: (e as Error).message.slice(0, 200) };
+  }
+}
+
 function git(target: string, ...args: string[]): string {
   return execFileSync('git', ['-C', target, ...args], { encoding: 'utf8' }).trim();
 }
@@ -232,7 +257,7 @@ export const scenarios: Scenario[] = [
       );
       const calls = toolCalls(h, r.updates);
       const ups = toolUpdates(h, r.updates);
-      const byId = new Map<string, { title: string; kind?: string; statuses: string[]; content: number; locations: number; rawInput: boolean; rawOutput: boolean }>();
+      const byId = new Map<string, { title: string; kind?: string; statuses: string[]; content: number; locations: number; rawInput: boolean; rawOutput: boolean; renderedChars: number }>();
       for (const c of calls) {
         byId.set(c.update.toolCallId, {
           title: c.update.title,
@@ -242,6 +267,7 @@ export const scenarios: Scenario[] = [
           locations: c.update.locations?.length ?? 0,
           rawInput: c.update.rawInput != null,
           rawOutput: c.update.rawOutput != null,
+          renderedChars: blockChars(c.update.content) + rawChars(c.update.rawOutput),
         });
       }
       for (const u of ups) {
@@ -252,12 +278,13 @@ export const scenarios: Scenario[] = [
         e.locations += u.update.locations?.length ?? 0;
         e.rawInput ||= u.update.rawInput != null;
         e.rawOutput ||= u.update.rawOutput != null;
+        e.renderedChars += blockChars(u.update.content) + rawChars(u.update.rawOutput);
       }
-      // narration: agent text between the previous update and each tool_call
+      // narration: agent text (real reply chunks only — see replyText) between the previous update and each tool_call
       const narration: string[] = [];
       let buf = '';
       for (const u of r.updates) {
-        if (u.update.sessionUpdate === 'agent_message_chunk' && u.update.content.type === 'text') buf += u.update.content.text;
+        if (u.update.sessionUpdate === 'agent_message_chunk' && u.update.content.type === 'text' && (u.update as any).messageId != null) buf += u.update.content.text;
         else if (u.update.sessionUpdate === 'tool_call') {
           narration.push(buf.trim());
           buf = '';
@@ -265,24 +292,33 @@ export const scenarios: Scenario[] = [
       }
       ctx.metric('toolCalls', Object.fromEntries(byId));
       ctx.metric('narrationBeforeToolCalls', narration);
-      for (const [id, e] of byId) ctx.note(`${id}: kind=${e.kind} "${e.title}" ${e.statuses.join('→')} content=${e.content} locations=${e.locations} rawInput=${e.rawInput} rawOutput=${e.rawOutput}`);
+      for (const [id, e] of byId) ctx.note(`${id}: kind=${e.kind} "${e.title}" ${e.statuses.join('→')} content=${e.content} locations=${e.locations} rawInput=${e.rawInput} rawOutput=${e.rawOutput} renderedChars=${e.renderedChars}`);
       ctx.note(`narration lengths=${JSON.stringify(narration.map((n) => n.length))}`);
       ctx.note(`text=${JSON.stringify(h.agentText(r.updates).slice(0, 200))}`);
       const kindSet = new Set([...byId.values()].map((e) => e.kind));
       const entries = [...byId.values()];
       // Pass on what a chat renderer needs from every tool call: a terminal status, an id/kind/title, and
-      // something to show (content blocks or rawOutput), plus a search-shaped call. Everything else in
-      // §5.9a step 5 is RECORDED per adapter, not required: claude-agent-acp 0.70 goes pending → completed
-      // (never in_progress) and puts content+rawInput+rawOutput+locations on every call; codex-acp 1.7
-      // parses shell commands into read/search/execute calls that carry only title (+locations for read,
-      // +terminal content/rawInput for unparsed commands) and report through rawOutput.formatted_output.
+      // something to show (non-empty text in content blocks or in rawOutput), plus a search-shaped call —
+      // and on the calls having done the job: the final reply names the target's package.json version and
+      // at least one file that really contains createDashboardServer. Everything else in §5.9a step 5 is
+      // RECORDED per adapter, not required: claude-agent-acp 0.70 goes pending → completed (never
+      // in_progress) and puts content+rawInput+rawOutput+locations on every call; codex-acp 1.7 parses shell
+      // commands into read/search/execute calls that carry only title (+locations for read, +terminal
+      // content/rawInput for unparsed commands) and report through rawOutput.formatted_output.
       const inProgressSeen = entries.some((e) => e.statuses.includes('in_progress'));
+      const version = JSON.parse(fs.readFileSync(path.join(ctx.target, 'package.json'), 'utf8')).version as string;
+      const hits = git(ctx.target, 'grep', '-l', 'createDashboardServer').split('\n').filter(Boolean);
+      const reply = replyText(h, r.updates);
+      const pathsInReply = hits.filter((f) => reply.includes(f) || reply.includes(path.basename(f)));
+      ctx.metric('coverage', { version, versionInReply: reply.includes(version), hits: hits.length, pathsInReply });
       const checks = {
         twoCalls: calls.length >= 2,
         allCompleted: entries.every((e) => e.statuses.at(-1) === 'completed'),
         allTitled: entries.every((e) => typeof e.title === 'string' && e.title.length > 0 && typeof e.kind === 'string'),
-        allRenderable: entries.every((e) => e.content > 0 || e.rawOutput),
+        allRenderable: entries.every((e) => e.renderedChars > 0),
         searchKind: kindSet.has('search') || kindSet.has('execute'),
+        versionReported: reply.includes(version),
+        searchHitReported: pathsInReply.length > 0,
       };
       const recorded = {
         inProgressSeen,
@@ -441,6 +477,44 @@ export const scenarios: Scenario[] = [
     },
   },
   {
+    id: '07n-sandbox-denied',
+    title: 'Negative control: sandbox-denied command, no escalation (codex)',
+    adapters: ['codex'],
+    async run(ctx) {
+      // Retained evidence for a finding first seen in an overwritten 07 run: when codex's sandbox denies a command and
+      // the model does not escalate, does the ACP stream carry any tool_call for it? Same out-of-workspace write as 07,
+      // in the "ask" mode, everything the client is asked it allows — the point is what arrives unprompted.
+      fs.mkdirSync(permDir, { recursive: true });
+      const f = path.join(permDir, `${ctx.adapter}-denied`);
+      try { fs.unlinkSync(f); } catch {}
+      const h = await ctx.spawn(undefined, { policy: allowAll });
+      const { s } = await initAndNew(h, ctx);
+      await h.setMode(s.sessionId, MODES[ctx.adapter].ask);
+      const r = await h.prompt(
+        s.sessionId,
+        `Run exactly this shell command once: \`echo probe > ${f}\`. Do not request escalated permissions and do not retry with a different command: if the sandbox blocks it, quote the error text you received and stop.`,
+      );
+      const calls = toolCalls(h, r.updates);
+      const statuses = toolUpdates(h, r.updates).map((u) => u.update.status).filter(Boolean);
+      const written = fs.existsSync(f);
+      try { fs.unlinkSync(f); } catch {}
+      const obs = {
+        toolCalls: calls.length,
+        toolKinds: calls.map((c) => `${c.update.kind}:${c.update.title}`),
+        statuses,
+        permissionRequests: h.permissions.length,
+        written,
+        stop: r.response.stopReason,
+        updateKinds: kinds(r.updates),
+      };
+      ctx.metric('denied', obs);
+      ctx.note(`denied exec: ${JSON.stringify(obs)}`);
+      ctx.note(`text=${JSON.stringify(replyText(h, r.updates).slice(-300))}`);
+      await h.close();
+      return null;
+    },
+  },
+  {
     id: '08-plan-events',
     title: 'Plan / todo events',
     adapters: ['claude', 'codex'],
@@ -553,32 +627,59 @@ export const scenarios: Scenario[] = [
     title: 'Cancel mid-turn + process hygiene',
     adapters: ['claude', 'codex'],
     async run(ctx) {
-      const h = await ctx.spawn(undefined, { quiet: true });
+      const essay = 'Write a very long, detailed essay of at least 3000 words on the history of version control systems, from SCCS to git. Do not stop early.';
+      const effortKey = ctx.adapter === 'claude' ? 'effort' : 'reasoning_effort';
+      const effortOf = (sess: acp.NewSessionResponse) => ((sess.configOptions ?? []).find((o) => o.id === effortKey) as { currentValue?: unknown } | undefined)?.currentValue ?? null;
+
+      // Part A — at the session's inherited effort (whatever the user's local config sets; xhigh on this machine):
+      // how long until any progress signal at all, and does session/cancel work while the model is still silent?
+      // Cancel at the first agent_message_chunk or at 45 s, whichever comes first. Chunk presence is recorded, not required.
+      const hA = await ctx.spawn('inherited', { quiet: true });
+      const { s: sA } = await initAndNew(hA, ctx);
+      const inheritedEffort = effortOf(sA);
+      const pA = hA.promptNoWait(sA.sessionId, essay);
+      const tA = Date.now();
+      let firstChunkMsA: number | null = null;
+      try {
+        await hA.waitFor(() => hA.updatesOfKind('agent_message_chunk').length > 0, 45_000, 'first agent_message_chunk');
+        firstChunkMsA = Date.now() - tA;
+      } catch (e) {
+        ctx.note(`part A (${effortKey}=${inheritedEffort}): ${(e as Error).message}`);
+      }
+      const silentMs = firstChunkMsA ?? Date.now() - tA;
+      const kindsBeforeCancelA = kinds(hA.updates);
+      const t0A = Date.now();
+      await hA.cancel(sA.sessionId);
+      const ra = await settleStop(pA);
+      const cancelMsA = Date.now() - t0A;
+      const treeA = hA.descendants();
+      await hA.close();
+      const survivorsA = Harness.alive(treeA.map((d) => d.pid));
+      const partAMetric = { effort: inheritedEffort, firstChunkMs: firstChunkMsA, silentMs, updateKindsBeforeCancel: kindsBeforeCancelA, stop: ra.stop, err: ra.err, cancelMs: cancelMsA, survivorsAfterClose: survivorsA.map((p) => `${p.pid} ${p.cmd}`) };
+      ctx.metric('inherited', partAMetric);
+      ctx.note(`part A (${effortKey}=${inheritedEffort}): first chunk at ${firstChunkMsA ?? `none within ${silentMs}ms`}, updates before cancel=${JSON.stringify(kindsBeforeCancelA)}, stop=${ra.stop} err=${ra.err ?? '-'} cancelMs=${cancelMsA}, survivors after close()=${survivorsA.length}`);
+      const partA = ra.stop === 'cancelled' && survivorsA.length === 0;
+
+      // Part B — effort=low so the turn is streaming when cancelled: latency from session/cancel to the response,
+      // nothing after it, and process hygiene (SIGTERM to the adapter pid alone is recorded; close() must leave nothing).
+      const h = await ctx.spawn('low', { quiet: true });
       const { s } = await initAndNew(h, ctx);
-      // At the default effort claude-agent-acp 0.70 emitted nothing for >45 s on this prompt (the model thinks first and no
-      // agent_thought_chunk is surfaced); at effort=low the first chunk arrives in ~4 s. The scenario is about cancelling a
-      // streaming turn, so pin low effort here and record the default-effort latency as a finding.
-      if (ctx.adapter === 'claude') await h.setConfigOption(s.sessionId, 'effort', 'low');
-      const p = h.promptNoWait(s.sessionId, 'Write a very long, detailed essay of at least 3000 words on the history of version control systems, from SCCS to git. Do not stop early.');
+      await h.setConfigOption(s.sessionId, effortKey, 'low');
+      const p = h.promptNoWait(s.sessionId, essay);
       const tPrompt = Date.now();
-      // §5.9a says cancel after 5 s; first-token latency can exceed that, so wait for streaming to start (≤ 30 s) then 2 s more
       try {
         await h.waitFor(() => h.updatesOfKind('agent_message_chunk').length > 0, 30_000, 'first agent_message_chunk');
       } catch (e) {
-        ctx.note((e as Error).message);
+        ctx.note(`part B: ${(e as Error).message}`);
       }
       const firstChunkMs = h.updatesOfKind('agent_message_chunk').length ? Date.now() - tPrompt : null;
       await sleep(2000);
       const chunksBefore = h.updatesOfKind('agent_message_chunk').length;
       const t0 = Date.now();
       await h.cancel(s.sessionId);
-      let stop: string | undefined;
-      let err: string | undefined;
-      try {
-        stop = (await withTimeout(p, 30_000, 'prompt after cancel')).stopReason;
-      } catch (e) {
-        err = (e as Error).message;
-      }
+      const rb = await settleStop(p);
+      const stop = rb.stop;
+      const err = rb.err;
       const cancelMs = Date.now() - t0;
       await sleep(1000);
       const chunksAfter = h.updatesOfKind('agent_message_chunk').length;
@@ -589,17 +690,18 @@ export const scenarios: Scenario[] = [
       await Promise.race([h.exit, sleep(5000)]);
       await sleep(1500);
       const survivors = Harness.alive(tree.map((d) => d.pid));
-      ctx.metric('cancel', { stop, err, cancelMs, firstChunkMs, chunksBefore, chunksAfterExtra: chunksAfter - chunksBefore });
+      ctx.metric('cancel', { effort: 'low', stop, err, cancelMs, firstChunkMs, chunksBefore, chunksAfterExtra: chunksAfter - chunksBefore });
       ctx.metric('treeAfterCancel', groupAfterCancel);
       ctx.metric('survivorsAfterAdapterSigterm', survivors);
-      ctx.note(`stop=${stop} err=${err ?? '-'} cancelMs=${cancelMs} chunks streamed before cancel=${chunksBefore}, after=${chunksAfter - chunksBefore}`);
+      ctx.note(`part B (${effortKey}=low): stop=${stop} err=${err ?? '-'} cancelMs=${cancelMs} first chunk at ${firstChunkMs}ms, chunks streamed before cancel=${chunksBefore}, after=${chunksAfter - chunksBefore}`);
       ctx.note(`process tree after cancel: ${groupAfterCancel.join(' | ')}`);
       ctx.note(`after SIGTERM to adapter pid only: ${survivors.length ? survivors.map((s) => `${s.pid} ${s.cmd}`).join(' | ') : 'none'}`);
       await h.close(); // process-group SIGTERM → SIGKILL → descendants
       const afterClose = Harness.alive(tree.map((d) => d.pid));
       ctx.metric('survivorsAfterClose', afterClose);
       ctx.note(`after close() (group kill): ${afterClose.length ? afterClose.map((s) => `${s.pid} ${s.cmd}`).join(' | ') : 'none'}`);
-      return stop === 'cancelled' && cancelMs < 10_000 && chunksBefore > 0 && afterClose.length === 0;
+      const partB = stop === 'cancelled' && cancelMs < 10_000 && chunksBefore > 0 && afterClose.length === 0;
+      return partA && partB;
     },
   },
   {
@@ -656,9 +758,14 @@ export const scenarios: Scenario[] = [
       ctx.note(`steer while idle (promptRequired) → ${JSON.stringify(idle)}`);
       ctx.metric('steerIdle', idle);
       await h.close();
-      // pass: the second prompt is not lost (answered or explicitly rejected) and mid-turn steering returns an outcome
+      // pass: every session/prompt this client sent resolves (queued or merged is fine, an orphaned request is not) and
+      // mid-turn steering returns an outcome. The classification and timings are the Decision 6 evidence either way.
       const steerOk = typeof steer === 'object' && steer !== null && !('error' in steer);
-      return (classification === 'rejected' || sawQUEUED || rb.stop === 'end_turn') && steerOk;
+      const orphaned = (r: { err?: string }) => r.err?.startsWith('timeout') === true; // an explicit JSON-RPC error IS a resolution
+      const unresolved = [orphaned(ra) ? 'A (first prompt)' : '', orphaned(rb) ? 'B (second prompt)' : '', orphaned(rc) ? 'C (steered prompt)' : ''].filter(Boolean);
+      if (unresolved.length) ctx.note(`FAIL: session/prompt request(s) never resolved: ${unresolved.join(', ')}`);
+      ctx.metric('unresolved', unresolved);
+      return unresolved.length === 0 && steerOk;
     },
   },
   {

@@ -17,8 +17,14 @@ node fixtures.ts --claude claude-full --codex codex-full
   spawned adapter process (`label` distinguishes multiple processes in one
   scenario, e.g. `19-concurrency.planner` / `.implementer`).
 - `codex/…` — the same for `codex-acp`.
-- `manifest.json` — run ids, adapter/CLI versions, and for every scenario × adapter:
-  pass/fail, duration, notes, headline metrics, and the transcript files.
+- `manifest.json` — run ids, adapter/CLI versions, the source commit each
+  adapter operated on, and for every scenario × adapter: pass/fail, duration,
+  notes, headline metrics, source commit, and the transcript files.
+
+## Capture
+
+<!-- capture:start -->
+<!-- capture:end -->
 
 ## Envelope
 

@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Creates (or resets) a disposable target checkout the adapters operate in, so edit
 # scenarios never dirty the spike branch. One target per adapter lets both suites run
-# at once. Always reset to the source repo's current HEAD; prints "<path> <commit>".
+# at once. Always reset to the source repo's current HEAD (tracked, untracked and
+# ignored files alike); prints "<path> <commit>".
 set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
 repo="$(git -C "$here" rev-parse --show-toplevel)"
@@ -15,5 +16,5 @@ if [ ! -d "$target/.git" ]; then
 fi
 git -C "$target" fetch -q "$repo" "$src"
 git -C "$target" reset -q --hard "$src"
-git -C "$target" clean -qfd
+git -C "$target" clean -qfdx
 echo "$target $src"

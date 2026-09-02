@@ -9,7 +9,8 @@ Assignment: `syntaur-meta/acp-adapter-spike`.
 
 ## Prerequisites
 
-- Node 22.22+ (the scripts are `.ts` run with native type stripping — no build).
+- Node ≥ 22 with native type stripping on (`process.features.typescript` set —
+  default since 22.18/23.6; the scripts are `.ts` run with no build step).
 - `claude-agent-acp` 0.70.x and `codex-acp` 1.7.x on `PATH`
   (`npm i -g @agentclientprotocol/claude-agent-acp @agentclientprotocol/codex-acp`).
 - `claude auth status` → `"loggedIn": true`; `codex login status` → `Logged in using ChatGPT`.
@@ -34,7 +35,9 @@ node fixtures.ts --claude claude-full --codex codex-full   # export to src/__tes
 Adapters run with `cwd = out/target-<adapter>`, one clone of this repo per adapter
 on a throwaway branch, so edit scenarios never touch the real tree and both suites
 can run at once. `target.sh <name>` creates the clone and resets it to the source
-repo's current `HEAD` before every run; the commit is recorded in `out/<run>/run.json`.
+repo's current `HEAD` before every run (`reset --hard` + `clean -fdx`); the commit
+is recorded in `out/<run>/run.json` and on every `results.json` row as
+`sourceCommit`, because a `--only` rerun may happen after `HEAD` moved.
 Permission scenarios write probe files under `out/perm/` (outside every cwd and
 `/tmp`, which codex's workspace-write sandbox treats as writable).
 
@@ -53,9 +56,13 @@ A full run (no `--only`) wipes `out/<run>` first. Output per run:
   logging `Stream` wrapper with e-mail redaction, permission policies, update
   collector, session helpers, extension-method calls (`ext`), exact-PID liveness
   (`Harness.alive`) and descendant checks, measurements, preflight.
-- `scenarios.ts` — scenario registry (ids match §5.9a step numbers).
+- `scenarios.ts` — scenario registry (ids match §5.9a step numbers; `07n` is a
+  codex-only negative control for a sandbox-denied command, `12` runs two adapter
+  processes, `inherited` effort then `low`).
 - `run.ts` — preflight, runner, matrix, `run.json`.
-- `fixtures.ts` — copies a run's transcripts into the repo fixtures dir + `manifest.json`.
+- `fixtures.ts` — copies a run's transcripts into the repo fixtures dir, writes
+  `manifest.json` and the README capture block; refuses (exit 1) on a missing
+  scenario row, missing transcript, malformed envelope, or one-directional transcript.
 - `target.sh` — disposable per-adapter target clone.
 - `smoke.ts` — minimal end-to-end check.
 - `tsconfig.json` / `package.json` — spike-local typecheck and pinned dev deps.

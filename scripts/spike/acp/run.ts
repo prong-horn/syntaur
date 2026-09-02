@@ -28,7 +28,8 @@ console.log(`run=${runName} adapters=${adapters.join(',')}`);
 console.log(JSON.stringify(pre));
 
 for (const adapter of adapters) {
-  // one disposable clone per adapter, reset to this repo's HEAD, so both suites can run concurrently
+  // one disposable clone per adapter, reset to this repo's HEAD, so both suites can run concurrently. run.json keeps
+  // the latest reset; each results row carries its own sourceCommit because a --only rerun may happen after HEAD moved.
   const [target, sourceCommit] = execFileSync(path.join(here, 'target.sh'), [`target-${adapter}`], { encoding: 'utf8' }).trim().split(' ');
   const runInfoPath = path.join(runDir, 'run.json');
   const runInfo = fs.existsSync(runInfoPath) ? JSON.parse(fs.readFileSync(runInfoPath, 'utf8')) : { run: runName, startedAt: new Date().toISOString(), targets: {} };
@@ -68,7 +69,7 @@ for (const adapter of adapters) {
     };
     console.log(`\n=== [${adapter}] ${sc.id} — ${sc.title}`);
     const t0 = Date.now();
-    const result: ScenarioResult = { id: sc.id, title: sc.title, adapter, pass: null, notes, metrics, ms: 0 };
+    const result: ScenarioResult = { id: sc.id, title: sc.title, adapter, pass: null, notes, metrics, ms: 0, sourceCommit };
     try {
       result.pass = await sc.run(ctx);
     } catch (e) {
@@ -85,7 +86,7 @@ for (const adapter of adapters) {
       // leave the target clean for the next scenario
       try {
         execFileSync('git', ['-C', target, 'checkout', '-q', '--', '.']);
-        execFileSync('git', ['-C', target, 'clean', '-qfd']);
+        execFileSync('git', ['-C', target, 'clean', '-qfdx']);
       } catch {}
     }
     result.ms = Date.now() - t0;

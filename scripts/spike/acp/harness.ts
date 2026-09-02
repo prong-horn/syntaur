@@ -511,6 +511,7 @@ export interface ScenarioResult {
   metrics?: Record<string, unknown>;
   error?: string;
   frames?: string; // path to the transcript
+  sourceCommit?: string; // commit of this repo the target clone was reset to for this row (a --only rerun can differ from the run's first rows)
   ms: number;
 }
 
@@ -565,7 +566,9 @@ export function preflight(): Record<string, string> {
   for (const k of ['claude-agent-acp', 'codex-acp', 'claude', 'codex'] as const) if (out[k].startsWith('unavailable')) problems.push(`${k}: ${out[k]}`);
   if (!/"loggedIn":\s*true/.test(out['claude auth status'])) problems.push(`claude not logged in: ${out['claude auth status']}`);
   if (!/Logged in/.test(out['codex login status'])) problems.push(`codex not logged in: ${out['codex login status']}`);
+  // The scripts are .ts run without a build step, so the actual requirement is native type stripping, not a version number.
   if (Number(process.versions.node.split('.')[0]) < 22) problems.push(`node ${process.version} (need ≥ 22 for native .ts type stripping)`);
+  else if (!(process.features as { typescript?: unknown }).typescript) problems.push(`node ${process.version} has process.features.typescript unset (native type stripping is off)`);
   if (!/^1\.4\./.test(out['@agentclientprotocol/sdk'])) problems.push(`@agentclientprotocol/sdk ${out['@agentclientprotocol/sdk']} (expected 1.4.x)`);
   if (!/^0\.70\./.test(out['claude-agent-acp'])) problems.push(`claude-agent-acp version ${out['claude-agent-acp']} (expected 0.70.x)`);
   if (!/ 1\.7\./.test(out['codex-acp'])) problems.push(`codex-acp version ${out['codex-acp']} (expected 1.7.x)`);
