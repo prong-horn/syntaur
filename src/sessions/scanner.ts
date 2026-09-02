@@ -359,6 +359,16 @@ export async function scanSessions(
     // transcript and must NOT be stopped). Only new rows take the liveness
     // verdict directly (dead-session backfill inserts as stopped).
     const prev = getSessionById(d.sessionId);
+    // An assignment-chat session is registered under the ACP session id, which
+    // IS the underlying Claude Code transcript id / codex rollout id — so the
+    // scanner will find that transcript and would otherwise fight the broker for
+    // the row. The broker owns those rows' `active`/`stopped` transitions
+    // outright (idle teardown, adapter exit, shutdown, resume), so skip them
+    // here and in the step-(4) sweep below. Decision 1.
+    if (prev?.hostedBy === 'acp') {
+      summary.skipped += 1;
+      continue;
+    }
     const status: AgentSessionStatus = isLive ? 'active' : (prev?.status ?? 'stopped');
     const started =
       d.startedAt ?? (mtime !== null ? new Date(mtime).toISOString() : new Date(now()).toISOString());
@@ -433,9 +443,13 @@ export async function scanSessions(
   // backdated to the transcript's last mtime. The close reason is per-rule:
   // `idle-sweep` when the transcript-idle rule retired the row, `liveness_gc`
   // for the classic pid-evidence GC.
+  // `hosted_by = 'acp'` is excluded: the chat broker owns those rows (Decision 1).
+  // Without this guard the sweep would retire a live chat session the moment its
+  // adapter pid was unknown, and close the engagement its turn is still using.
   const activeRows = db
     .prepare(
-      "SELECT session_id, pid, pid_started_at, transcript_path, started FROM sessions WHERE status = 'active'",
+      "SELECT session_id, pid, pid_started_at, transcript_path, started FROM sessions" +
+        " WHERE status = 'active' AND (hosted_by IS NULL OR hosted_by != 'acp')",
     )
     .all() as Array<{
     session_id: string;

@@ -89,6 +89,8 @@ import { runTick } from '../schedules/tick.js';
 import { createUsageRouter } from './api-usage.js';
 import { createEventsRouter } from './api-events.js';
 import { createInboxRouter } from './api-inbox.js';
+import { createChatRouter } from './api-chat.js';
+import { createChatBroker } from '../chat/broker.js';
 import { createPlaybooksRouter } from './api-playbooks.js';
 import {
   migrateLegacyProjectFiles,
@@ -776,6 +778,17 @@ export function createDashboardServer(options: DashboardServerOptions) {
   // Best-effort read-only; returns safe empty shape rather than 500ing.
   app.use('/api', createInboxRouter(projectsDir, assignmentsDir));
 
+  // --- Assignment chat API + ACP session broker ---
+  // The broker is the only thing in Syntaur that owns an agent process. It is
+  // constructed after initSessionDb (its chat tables live in the same file) and
+  // torn down FIRST in stop(), while the DBs are still open.
+  const chatBroker = createChatBroker({
+    projectsDir,
+    assignmentsDir,
+    broadcast: (message) => broadcast(message as WsMessage),
+  });
+  app.use('/api', createChatRouter(projectsDir, assignmentsDir, { broker: chatBroker }));
+
   // --- Agent Sessions API ---
   app.use(
     '/api/agent-sessions',
@@ -1077,6 +1090,11 @@ export function createDashboardServer(options: DashboardServerOptions) {
         clearInterval(stalenessWatchdogTimer);
         stalenessWatchdogTimer = null;
       }
+      // Chat first: stopAll() cancels in-flight turns, seals their `turn.status`
+      // rows, closes their engagements and tears down the adapter process
+      // groups — all of which WRITE, so it has to happen while the session and
+      // usage DBs are still open.
+      await chatBroker.stopAll().catch(() => {});
       await stopAutodiscovery();
       await stopUsageCollector();
       if (watcherHandle) {

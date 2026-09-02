@@ -89,6 +89,13 @@ export function computeIsLive(
 ): boolean {
   if (session.status !== 'active') return false;
 
+  // An assignment-chat session is hosted by the dashboard's own ACP client, so
+  // `active` IS the liveness fact — the broker writes it and clears it. Its
+  // adapter pid is not on the row after a restart and its transcript is the
+  // underlying agent's, so the pid/mtime heuristics below would report a live
+  // chat as dead. Decision 1.
+  if (session.hostedBy === 'acp') return true;
+
   const d = resolveDeps(deps);
 
   const pid = session.pid;

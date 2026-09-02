@@ -16,10 +16,20 @@ export interface WsMessage {
     | 'todos-updated'
     | 'leases-updated'
     | 'schedules-updated'
+    | 'chat-item'
+    | 'chat-session'
     | 'connected';
   projectSlug?: string;
   assignmentSlug?: string;
   timestamp: string;
+  /**
+   * Frame body. Every other type is a refetch HINT — the consumer re-reads the
+   * record over REST — but the chat stream would hit REST ~36 times a second on
+   * codex, so `chat-item` and `chat-session` carry their payload inline
+   * (`ChatItemFrame` / `ChatSessionFrame` in `lib/chat-types.ts`). Consumers
+   * filter by `payload.assignmentId`.
+   */
+  payload?: unknown;
 }
 
 export type WsListener = (message: WsMessage) => void;

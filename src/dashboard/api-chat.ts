@@ -1,0 +1,208 @@
+/**
+ * Assignment-chat REST API.
+ *
+ * Mounted at `/api` (the routes carry their own `/assignments/...` prefix, the
+ * way `api-events.ts` and `api-inbox.ts` do). Every route resolves the
+ * assignment through `resolveAssignmentById`, so a project-nested slug and a
+ * standalone UUID work identically.
+ *
+ * The chat STREAM does not live here — items arrive over `/ws` as `chat-item`
+ * frames (Decision 3). These routes are history paging, the session summary, and
+ * the four writes.
+ *
+ * Localhost-only, per the existing dashboard convention.
+ */
+
+import { Router, type Request, type Response } from 'express';
+import { resolveAssignmentById } from '../utils/assignment-resolver.js';
+import { resolveCommand, HARNESSES } from '../chat/harnesses.js';
+import { ChatSendError, type ChatBroker } from '../chat/broker.js';
+import type { Harness } from '../chat/types.js';
+
+const MAX_MESSAGE_CHARS = 100_000;
+
+export interface ChatRouterDeps {
+  broker: ChatBroker;
+}
+
+export function createChatRouter(
+  projectsDir: string,
+  assignmentsDir: string,
+  deps: ChatRouterDeps,
+): Router {
+  const router = Router();
+  const { broker } = deps;
+
+  /** Resolve `:id`, or answer 404 and return null. */
+  async function resolveOr404(req: Request, res: Response) {
+    // Express 5 types `params` values as `string | string[]`; these routes take
+    // a single segment.
+    const id = String(req.params.id);
+    const assignment = await resolveAssignmentById(projectsDir, assignmentsDir, id);
+    if (!assignment) {
+      res.status(404).json({ error: `No assignment with id ${JSON.stringify(id)}` });
+      return null;
+    }
+    return assignment;
+  }
+
+  /** `ChatSendError` carries its own status; anything else is a 500. */
+  function fail(res: Response, err: unknown): void {
+    if (err instanceof ChatSendError) {
+      res.status(err.status).json({ error: err.message });
+      return;
+    }
+    const message = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ error: message });
+  }
+
+  // --- history -------------------------------------------------------------
+
+  router.get('/assignments/:id/chat/items', async (req, res) => {
+    try {
+      const assignment = await resolveOr404(req, res);
+      if (!assignment) return;
+      const before = Number(req.query.before);
+      const limit = Number(req.query.limit);
+      const items = broker.items(assignment, {
+        ...(Number.isFinite(before) ? { beforeSeq: before } : {}),
+        ...(Number.isFinite(limit) && limit > 0 ? { limit } : {}),
+      });
+      res.json({
+        items,
+        // `null` means "nothing older" — the SPA stops paging on it.
+        oldestSeq: items.length > 0 ? items[0].seqFirst : null,
+      });
+    } catch (err) {
+      fail(res, err);
+    }
+  });
+
+  router.get('/assignments/:id/chat/session', async (req, res) => {
+    try {
+      const assignment = await resolveOr404(req, res);
+      if (!assignment) return;
+      const agentId = typeof req.query.agent === 'string' ? req.query.agent : null;
+      res.json({ session: await broker.getSession(assignment, agentId) });
+    } catch (err) {
+      fail(res, err);
+    }
+  });
+
+  // --- writes --------------------------------------------------------------
+
+  router.post('/assignments/:id/chat/messages', async (req, res) => {
+    try {
+      const assignment = await resolveOr404(req, res);
+      if (!assignment) return;
+      const body = (req.body ?? {}) as { agentId?: string; text?: string };
+      if (typeof body.text !== 'string' || body.text.trim().length === 0) {
+        res.status(400).json({ error: 'text is required' });
+        return;
+      }
+      if (body.text.length > MAX_MESSAGE_CHARS) {
+        res.status(413).json({ error: `Message is longer than ${MAX_MESSAGE_CHARS} characters` });
+        return;
+      }
+      const { messageId } = await broker.send({
+        assignment,
+        agentId: body.agentId ?? null,
+        text: body.text,
+      });
+      res.status(202).json({ messageId });
+    } catch (err) {
+      fail(res, err);
+    }
+  });
+
+  /**
+   * Withdraw a QUEUED message. Keyed on the `messageId` minted at queue time —
+   * the item id is `${scopeId}:${ordinal}` and is not known to the client until
+   * the item exists.
+   */
+  router.delete('/assignments/:id/chat/messages/:messageId', async (req, res) => {
+    try {
+      const assignment = await resolveOr404(req, res);
+      if (!assignment) return;
+      const withdrawn = await broker.withdraw(assignment, String(req.params.messageId));
+      if (!withdrawn) {
+        res.status(409).json({ error: 'That message is not queued — it has already been sent' });
+        return;
+      }
+      res.json({ withdrawn: true });
+    } catch (err) {
+      fail(res, err);
+    }
+  });
+
+  router.post('/assignments/:id/chat/cancel', async (req, res) => {
+    try {
+      const assignment = await resolveOr404(req, res);
+      if (!assignment) return;
+      const body = (req.body ?? {}) as { agentId?: string };
+      const cancelled = await broker.cancel(assignment, body.agentId ?? null);
+      res.json({ cancelled });
+    } catch (err) {
+      fail(res, err);
+    }
+  });
+
+  router.post('/assignments/:id/chat/permissions/:requestId', async (req, res) => {
+    try {
+      const assignment = await resolveOr404(req, res);
+      if (!assignment) return;
+      const body = (req.body ?? {}) as { optionId?: string };
+      if (typeof body.optionId !== 'string' || body.optionId.length === 0) {
+        res.status(400).json({ error: 'optionId is required' });
+        return;
+      }
+      const answered = await broker.answerPermission(assignment, String(req.params.requestId), body.optionId);
+      if (!answered) {
+        res.status(409).json({ error: 'That permission request is no longer pending' });
+        return;
+      }
+      res.json({ answered: true });
+    } catch (err) {
+      fail(res, err);
+    }
+  });
+
+  /** Rebuild `chat_items` from `chat/events.jsonl` (Decision 2's recovery path). */
+  router.post('/assignments/:id/chat/reindex', async (req, res) => {
+    try {
+      const assignment = await resolveOr404(req, res);
+      if (!assignment) return;
+      res.json(await broker.reindex(assignment));
+    } catch (err) {
+      fail(res, err);
+    }
+  });
+
+  // --- agents --------------------------------------------------------------
+
+  router.get('/chat/agents', async (_req, res) => {
+    try {
+      const { definitions, errors } = await broker.listAgents();
+      res.json({
+        agents: definitions.map((definition) => {
+          const spec = HARNESSES[definition.harness as Harness];
+          const resolved = resolveCommand(spec);
+          return {
+            id: definition.id,
+            name: definition.name,
+            color: definition.color,
+            harness: definition.harness,
+            default: definition.default,
+            // The install hint when the adapter is not on PATH; null when it is.
+            missing: resolved.path ? null : resolved.installHint,
+          };
+        }),
+        errors,
+      });
+    } catch (err) {
+      fail(res, err);
+    }
+  });
+
+  return router;
+}
