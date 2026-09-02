@@ -1,0 +1,12 @@
+import { Harness } from './harness.ts';
+const adapter = (process.argv[2] ?? 'claude') as 'claude' | 'codex';
+const h = await Harness.spawn({ adapter, cwd: process.cwd() + '/out/target-' + adapter, runDir: 'out/smoke', scenario: 'smoke-' + adapter });
+const init = await h.initialize();
+console.log('init:', JSON.stringify(init).slice(0, 400));
+const s = await h.newSession();
+console.log('session:', s.sessionId, 'modes:', JSON.stringify(s.modes?.availableModes?.map(m => m.id)), 'configs:', JSON.stringify(s.configOptions?.map(c => c.id)));
+const r = await h.prompt(s.sessionId, 'Reply with exactly the single word PONG and nothing else.', { timeoutMs: 90_000 });
+console.log('\nstop:', r.response.stopReason, 'ms:', r.ms, 'updates:', r.updates.length, 'text:', JSON.stringify(h.agentText(r.updates)));
+console.log('frames:', h.frames.length, 'bad lines:', h.badStdoutLines.length, 'rssKb:', h.rssKb(), 'pgroup:', h.orphans().map(o => o.cmd).join(' | '));
+await h.close();
+console.log('exit:', JSON.stringify(await h.exit), 'orphans after close:', h.orphans().length);

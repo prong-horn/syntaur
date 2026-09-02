@@ -1,0 +1,20 @@
+{
+  "name": "syntaur-acp-spike",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "Throwaway ACP client harness: validates claude-agent-acp and codex-acp as assignment-chat backends (assignment acp-adapter-spike)",
+  "scripts": {
+    "target": "./target.sh",
+    "spike": "node run.ts",
+    "fixtures": "node fixtures.ts",
+    "typecheck": "tsc -p ."
+  },
+  "dependencies": {
+    "@agentclientprotocol/sdk": "1.4.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.0",
+    "typescript": "^5.9.2"
+  }
+}
