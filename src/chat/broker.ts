@@ -619,7 +619,16 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
       // the broker owns its lifecycle, so it revives it itself.
       { reviveStopped: true },
     );
-    closeOpenEngagement(session.acpSessionId, { closeReason: 'chat-registered', endedAt: iso() });
+    // `appendSession` auto-opens an engagement for an active row; close it at
+    // once so the per-turn engagements own every interval. It carries the same
+    // snapshot at both ends so the window is computable-and-zero rather than
+    // counting against `uncomputableWindowCount` on the usage rail.
+    const snapshot = snapshotOf(session);
+    closeOpenEngagement(session.acpSessionId, {
+      closeReason: 'chat-registered',
+      tokensAtClose: snapshot,
+      endedAt: iso(),
+    });
   }
 
   /** Both `session/new` and `session/resume` return `modes` + `configOptions`. */
