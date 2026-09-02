@@ -19,7 +19,6 @@ import { isHarnessId } from './harnesses.js';
 import type { AgentDefinition, RespondsTo } from './types.js';
 
 const RESPONDS_TO: readonly RespondsTo[] = ['mentions', 'all-human', 'none'];
-const ROLE_MODES = ['edits', 'ask', 'plan'];
 
 /**
  * The shared base prompt. Short on purpose — the spike measured a fresh claude

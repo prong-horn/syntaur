@@ -106,10 +106,22 @@ export function redactEmails(s: string): string {
 }
 
 /**
+ * The three harness-independent role names a definition may use for `mode`.
+ * Anything else is passed to the adapter untouched — mode ids drift between
+ * releases (`dontAsk` is advertised by the installed 0.70.0 dist and absent from
+ * its main branch), so the catalog validates nothing it cannot know.
+ */
+export const ROLE_MODES = ['edits', 'ask', 'plan'] as const;
+export type RoleMode = (typeof ROLE_MODES)[number];
+
+export function isRoleMode(mode: string): mode is RoleMode {
+  return (ROLE_MODES as readonly string[]).includes(mode);
+}
+
+/**
  * Resolve a definition's `mode` — one of the three role names, or a raw adapter
  * mode id passed through untouched.
  */
 export function resolveModeId(spec: HarnessSpec, mode: string): string {
-  if (mode === 'edits' || mode === 'ask' || mode === 'plan') return spec.modeIds[mode];
-  return mode;
+  return isRoleMode(mode) ? spec.modeIds[mode] : mode;
 }
