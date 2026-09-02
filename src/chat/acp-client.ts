@@ -167,6 +167,18 @@ interface ProcessBinding {
 
 function makeClient(conn: acp.ClientConnection, proc: ProcessBinding): AcpClient {
   let exited: { code: number | null; signal: NodeJS.Signals | null } | null = null;
+  // A transport-only client has no process to watch, so connection closure is
+  // the only liveness signal it has — and the broker relies on `alive()` to
+  // decide whether it must respawn and resume.
+  let connectionClosed = false;
+  conn.closed.then(
+    () => {
+      connectionClosed = true;
+    },
+    () => {
+      connectionClosed = true;
+    },
+  );
   const exit = new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((resolve) => {
     if (!proc.child) return; // transport-only client: never exits
     proc.child.on('exit', (code, signal) => {
@@ -232,6 +244,7 @@ function makeClient(conn: acp.ClientConnection, proc: ProcessBinding): AcpClient
     stderr: proc.stderr,
 
     alive(): boolean {
+      if (connectionClosed) return false;
       if (!proc.child) return true;
       return exited === null && proc.child.exitCode === null && proc.child.signalCode === null;
     },
@@ -242,6 +255,7 @@ function makeClient(conn: acp.ClientConnection, proc: ProcessBinding): AcpClient
       } catch {
         // Already closed; the group teardown below is what matters.
       }
+      connectionClosed = true;
       if (!proc.child || pid === null) return;
       if (exited !== null) return;
 

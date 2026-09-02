@@ -647,6 +647,8 @@ export type WsMessageType =
   | 'todos-updated'
   | 'leases-updated'
   | 'schedules-updated'
+  | 'chat-item'
+  | 'chat-session'
   | 'connected';
 
 export interface WsMessage {
@@ -654,6 +656,13 @@ export interface WsMessage {
   projectSlug?: string | null;
   assignmentSlug?: string;
   timestamp: string;
+  /**
+   * Frame body. Every other message type is a refetch HINT — the client
+   * re-reads the affected record over REST — but the chat stream would hit REST
+   * ~36 times a second on codex, so `chat-item` and `chat-session` carry their
+   * payload inline (Decision 3). Consumers filter by `payload.assignmentId`.
+   */
+  payload?: unknown;
 }
 
 // --- Server Tracker Types ---
@@ -727,7 +736,13 @@ export type NativeAgentState = 'working' | 'blocked' | 'done' | 'failed' | 'stop
 export type SessionLauncher = 'claude-bg' | 'tmux' | 'syntaurd' | null;
 
 /** Persisted hosting backend for the live PTY (schema v7 `hosted_by`). */
-export type SessionHostedBy = 'syntaurd' | 'tmux' | 'claude-bg';
+/**
+ * `'acp'` is an assignment-chat session hosted by the dashboard's own ACP
+ * client. The broker owns those rows' `active`/`stopped` transitions outright,
+ * so the transcript scanner skips them in both its discovery upsert and its
+ * idle sweep (Decision 1).
+ */
+export type SessionHostedBy = 'syntaurd' | 'tmux' | 'claude-bg' | 'acp';
 
 export interface AgentSession {
   projectSlug: string | null;
