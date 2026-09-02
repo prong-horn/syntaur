@@ -178,8 +178,13 @@ interface InFlightTurn {
   startedMs: number;
   engagementId: number;
   engagementStartedAt: string;
-  /** claude reports the turn's cost on its last `usage_update`. */
-  cost: number | null;
+  /**
+   * The session's CUMULATIVE cost as last reported by `usage_update`
+   * (claude only). The turn's own cost is this minus {@link costAtOpen}.
+   */
+  reportedCumulativeCost: number | null;
+  /** The session's cumulative cost when this turn started. */
+  costAtOpen: number;
   idleTimer: ReturnType<typeof setTimeout> | null;
   maxTimer: ReturnType<typeof setTimeout> | null;
   cancelled: boolean;
@@ -632,7 +637,8 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
       armTurnIdle(session, turn);
       const update = notification.update as { sessionUpdate?: string; cost?: { amount?: number } | null };
       if (update.sessionUpdate === 'usage_update' && typeof update.cost?.amount === 'number') {
-        turn.cost = update.cost.amount;
+        // Cumulative for the session, not for this turn — see Decision 11.
+        turn.reportedCumulativeCost = update.cost.amount;
       }
     }
     await record(session, 'acp.update', notification.update);
@@ -785,7 +791,8 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
       startedMs: now(),
       engagementId: engagement.id,
       engagementStartedAt: engagement.started_at,
-      cost: null,
+      reportedCumulativeCost: null,
+      costAtOpen: session.cumulative.models[modelKey(session)]?.cost ?? 0,
       idleTimer: null,
       maxTimer: null,
       cancelled: false,
@@ -862,8 +869,14 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
     session.lastTurnAt = iso();
 
     const usage = response?.usage ?? null;
-    const cost = turn.cost ?? priceUsage(session, usage);
-    if (usage) addUsage(session, usage, cost);
+    // claude reports a cumulative session cost; this turn's cost is the delta.
+    // codex reports none, so its buckets are priced instead (0 until OpenAI
+    // rates land in MODEL_PRICING).
+    const cost =
+      turn.reportedCumulativeCost !== null
+        ? Math.max(0, turn.reportedCumulativeCost - turn.costAtOpen)
+        : priceUsage(session, usage);
+    addUsage(session, usage, cost, turn.reportedCumulativeCost);
 
     const stopReason = failure ? 'error' : (response?.stopReason ?? 'end_turn');
     await record(
@@ -912,16 +925,33 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
     };
   }
 
-  function addUsage(session: Session, usage: acp.Usage, cost: number | null): void {
+  /**
+   * Fold a turn into the session's cumulative snapshot.
+   *
+   * Tokens always accumulate. Cost is different per harness (Decision 11): when
+   * the adapter reports a cumulative figure (claude) it is authoritative and is
+   * stored ABSOLUTELY — adding it would compound a running total and inflate the
+   * assignment's cost several-fold. Otherwise (codex) the priced per-turn value
+   * accumulates.
+   */
+  function addUsage(
+    session: Session,
+    usage: acp.Usage | null,
+    cost: number | null,
+    reportedCumulativeCost: number | null,
+  ): void {
     const key = modelKey(session);
     const current = session.cumulative.models[key] ?? { ...EMPTY_TOKENS };
     session.cumulative.models[key] = {
-      input: current.input + (usage.inputTokens ?? 0),
-      output: current.output + (usage.outputTokens ?? 0),
-      cacheCreation: current.cacheCreation + (usage.cachedWriteTokens ?? 0),
-      cacheRead: current.cacheRead + (usage.cachedReadTokens ?? 0),
-      total: current.total + (usage.totalTokens ?? 0),
-      cost: current.cost + (cost ?? 0),
+      input: current.input + (usage?.inputTokens ?? 0),
+      output: current.output + (usage?.outputTokens ?? 0),
+      cacheCreation: current.cacheCreation + (usage?.cachedWriteTokens ?? 0),
+      cacheRead: current.cacheRead + (usage?.cachedReadTokens ?? 0),
+      total: current.total + (usage?.totalTokens ?? 0),
+      cost:
+        reportedCumulativeCost !== null
+          ? Math.max(current.cost, reportedCumulativeCost)
+          : current.cost + (cost ?? 0),
     };
     session.cumulative.capturedAt = new Date(now()).toISOString();
   }

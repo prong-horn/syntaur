@@ -5,7 +5,6 @@ exports[`normalizer golden snapshots > claude/02-handshake.ndjson normalizes to 
   {
     "contextSize": 1000000,
     "contextUsed": 37541,
-    "cost": 0.7517400000000001,
     "durationMs": 4666,
     "endedAt": "2026-09-01T23:55:47.358Z",
     "itemId": "2:0",
@@ -53,7 +52,6 @@ exports[`normalizer golden snapshots > claude/03-system-prompt.ndjson normalizes
   {
     "contextSize": 1000000,
     "contextUsed": 37751,
-    "cost": 0.76092,
     "durationMs": 6187,
     "endedAt": "2026-09-01T23:55:55.282Z",
     "itemId": "2:0",
@@ -90,7 +88,6 @@ exports[`normalizer golden snapshots > claude/03-system-prompt.ndjson normalizes
   {
     "contextSize": 1000000,
     "contextUsed": 39240,
-    "cost": 0.8326830000000001,
     "durationMs": 2082,
     "endedAt": "2026-09-01T23:55:57.364Z",
     "itemId": "3:0",
@@ -138,7 +135,6 @@ exports[`normalizer golden snapshots > claude/04-streaming.ndjson normalizes to 
   {
     "contextSize": 1000000,
     "contextUsed": 38262,
-    "cost": 0.566358,
     "durationMs": 14127,
     "endedAt": "2026-09-01T23:56:13.211Z",
     "itemId": "2:0",
@@ -182,7 +178,6 @@ exports[`normalizer golden snapshots > claude/05-tool-calls.ndjson normalizes to
   {
     "contextSize": 1000000,
     "contextUsed": 41759,
-    "cost": 0.7649210000000001,
     "durationMs": 16913,
     "endedAt": "2026-09-02T00:41:07.676Z",
     "itemId": "2:0",
@@ -320,7 +315,6 @@ exports[`normalizer golden snapshots > claude/06-edits.ndjson normalizes to a st
   {
     "contextSize": 1000000,
     "contextUsed": 47996,
-    "cost": 0.8431609999999999,
     "durationMs": 10823,
     "endedAt": "2026-09-01T23:57:31.512Z",
     "itemId": "3:0",
@@ -466,7 +460,6 @@ exports[`normalizer golden snapshots > claude/07-permissions.ndjson normalizes t
   {
     "contextSize": 1000000,
     "contextUsed": 40588,
-    "cost": 0.173544,
     "durationMs": 16007,
     "endedAt": "2026-09-02T00:18:25.991Z",
     "itemId": "3:0",
@@ -575,7 +568,6 @@ drwxr-xr-x@ 29 brennen  staff     ",
   {
     "contextSize": 1000000,
     "contextUsed": 31704,
-    "cost": 0.146868,
     "durationMs": 15400,
     "endedAt": "2026-09-02T00:18:42.072Z",
     "itemId": "6:0",
@@ -846,7 +838,6 @@ User refused permission to run tool
   {
     "contextSize": 1000000,
     "contextUsed": 31979,
-    "cost": 0.192106,
     "durationMs": 6559,
     "endedAt": "2026-09-02T00:18:48.632Z",
     "itemId": "7:0",
@@ -1007,7 +998,6 @@ exports[`normalizer golden snapshots > claude/08-plan-events.ndjson normalizes t
   {
     "contextSize": 1000000,
     "contextUsed": 43481,
-    "cost": 1.1731120000000002,
     "durationMs": 37415,
     "endedAt": "2026-09-01T23:58:49.497Z",
     "itemId": "2:0",
@@ -1171,7 +1161,6 @@ exports[`normalizer golden snapshots > claude/09-thoughts.ndjson normalizes to a
   {
     "contextSize": 1000000,
     "contextUsed": 37679,
-    "cost": 0.75813,
     "durationMs": 5518,
     "endedAt": "2026-09-01T23:58:56.836Z",
     "itemId": "3:0",
@@ -1267,7 +1256,6 @@ exports[`normalizer golden snapshots > claude/10-commands-config.ndjson normaliz
   {
     "contextSize": 1000000,
     "contextUsed": 53352,
-    "cost": 0.533665,
     "durationMs": 1862,
     "endedAt": "2026-09-01T23:59:03.002Z",
     "itemId": "4:0",
@@ -1305,7 +1293,6 @@ exports[`normalizer golden snapshots > claude/11-usage.ndjson normalizes to a st
   {
     "contextSize": 1000000,
     "contextUsed": 37560,
-    "cost": 0.532668,
     "durationMs": 5293,
     "endedAt": "2026-09-01T23:59:10.066Z",
     "itemId": "2:0",
@@ -1343,7 +1330,6 @@ exports[`normalizer golden snapshots > claude/12-cancel.inherited.ndjson normali
   {
     "contextSize": 1000000,
     "contextUsed": 37515,
-    "cost": 0,
     "durationMs": 25452,
     "endedAt": "2026-09-02T00:41:34.990Z",
     "itemId": "2:0",
@@ -1391,7 +1377,6 @@ exports[`normalizer golden snapshots > claude/12-cancel.low.ndjson normalizes to
   {
     "contextSize": 1000000,
     "contextUsed": 37516,
-    "cost": 0,
     "durationMs": 6057,
     "endedAt": "2026-09-02T00:41:42.926Z",
     "itemId": "3:0",
@@ -1481,7 +1466,6 @@ exports[`normalizer golden snapshots > claude/13-queue-vs-steer.ndjson normalize
   {
     "contextSize": 1000000,
     "contextUsed": 41032,
-    "cost": 0.523768,
     "durationMs": 61271,
     "endedAt": "2026-09-02T11:07:06.978Z",
     "itemId": "3:0",
@@ -1530,7 +1514,6 @@ The most consequential decision in the histo",
   {
     "contextSize": 1000000,
     "contextUsed": 42516,
-    "cost": 0.559285,
     "itemId": "4:0",
     "sealed": false,
     "seqFirst": 58,
@@ -1568,7 +1551,6 @@ exports[`normalizer golden snapshots > claude/14-load-resume.p1.ndjson normalize
   {
     "contextSize": 1000000,
     "contextUsed": 36953,
-    "cost": 0.523018,
     "durationMs": 4712,
     "endedAt": "2026-09-02T00:02:01.922Z",
     "itemId": "2:0",
@@ -1637,7 +1619,6 @@ exports[`normalizer golden snapshots > claude/14-load-resume.p2.ndjson normalize
   {
     "contextSize": 1000000,
     "contextUsed": 37683,
-    "cost": 0.054394,
     "durationMs": 2563,
     "endedAt": "2026-09-02T00:02:06.204Z",
     "itemId": "2:0",
@@ -1685,7 +1666,6 @@ exports[`normalizer golden snapshots > claude/14-load-resume.p3.ndjson normalize
   {
     "contextSize": 1000000,
     "contextUsed": 38413,
-    "cost": 0.052635,
     "durationMs": 2707,
     "endedAt": "2026-09-02T00:02:10.682Z",
     "itemId": "2:0",
@@ -1742,7 +1722,6 @@ exports[`normalizer golden snapshots > claude/16-embedded-context.ndjson normali
   {
     "contextSize": 1000000,
     "contextUsed": 39444,
-    "cost": 0.574458,
     "durationMs": 4855,
     "endedAt": "2026-09-02T00:02:23.854Z",
     "itemId": "2:0",
@@ -1780,7 +1759,6 @@ exports[`normalizer golden snapshots > claude/17-subagent.ndjson normalizes to a
   {
     "contextSize": 1000000,
     "contextUsed": 38990,
-    "cost": 1.0663602499999998,
     "durationMs": 60751,
     "endedAt": "2026-09-02T00:03:26.235Z",
     "itemId": "2:0",
@@ -2268,7 +2246,6 @@ exports[`normalizer golden snapshots > claude/19-concurrency.implementer.ndjson 
   {
     "contextSize": 1000000,
     "contextUsed": 37401,
-    "cost": 0.620304,
     "durationMs": 9243,
     "endedAt": "2026-09-02T00:03:43.704Z",
     "itemId": "3:0",
@@ -2428,7 +2405,6 @@ exports[`normalizer golden snapshots > claude/19-concurrency.planner.ndjson norm
   {
     "contextSize": 1000000,
     "contextUsed": 48222,
-    "cost": 1.281162,
     "durationMs": 71565,
     "endedAt": "2026-09-02T00:04:46.026Z",
     "itemId": "3:0",

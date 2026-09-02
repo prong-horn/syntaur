@@ -531,12 +531,13 @@ export class ChatNormalizer {
     if (!turn) return; // pre-turn adapter noise; the event log still has it
     turn.status.contextUsed = update.used;
     turn.status.contextSize = update.size;
-    // claude reports a PER-TURN cost on the last usage_update of the turn
-    // (0.17 / 0.15 / 0.19 across the three prompts of fixture 07), so the latest
-    // value wins rather than accumulating.
-    if (update.cost && typeof update.cost.amount === 'number') {
-      turn.status.cost = update.cost.amount;
-    }
+    // `usage_update.cost` is the SESSION's CUMULATIVE cost, not this turn's —
+    // the ACP schema says so ("Cumulative session cost") and both the spike
+    // fixtures and a live run confirm it: fixture 07's two prompts in one
+    // session report 0.146868 then 0.192106, and a cancelled turn reports
+    // exactly the previous turn's figure. So it is NOT put on the status row
+    // here; the broker subtracts the pre-turn value and reports the difference
+    // on `turn.end`.
     turn.status.seqLast = event.seq;
     patches.push({ op: 'upsert', item: turn.status });
   }
@@ -621,7 +622,8 @@ export class ChatNormalizer {
       payload.durationMs ??
       Math.max(0, Date.parse(status.endedAt) - Date.parse(status.startedAt) || 0);
     if (payload.usage) status.usage = payload.usage as Usage;
-    // claude's per-turn cost already landed via usage_update; codex's arrives here.
+    // The turn's OWN cost, computed by the broker as the delta between the
+    // session's cumulative cost before and after the turn (Decision 11).
     if (typeof payload.cost === 'number') status.cost = payload.cost;
     status.seqLast = event.seq;
     patches.push({ op: 'upsert', item: status });

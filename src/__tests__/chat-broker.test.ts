@@ -210,6 +210,7 @@ describe('first message', () => {
       durationMs?: number;
     };
     expect(status.state).toBe('ended');
+    // First turn of the session, so the cumulative figure IS this turn's cost.
     expect(status.cost).toBe(0.19);
     expect(status.usage?.totalTokens).toBe(160);
 
@@ -413,10 +414,12 @@ describe('permissions (Decision 9)', () => {
 
 describe('engagements and the sessions row (Decisions 1 and 10)', () => {
   it('registers the sessions row under the ACP session id and opens one engagement per turn', async () => {
+    // `usage_update.cost` is the SESSION's cumulative cost (Decision 11), so the
+    // second turn reports 0.18 — a running total, not 0.07 again.
     makeBroker({
       turns: [
         { steps: [{ kind: 'update', update: usageUpdate(50, 1000, 0.11) }], usage: usage(30, 10) },
-        { steps: [{ kind: 'update', update: usageUpdate(90, 1000, 0.07) }], usage: usage(20, 5) },
+        { steps: [{ kind: 'update', update: usageUpdate(90, 1000, 0.18) }], usage: usage(20, 5) },
       ],
       agentOptions: { sessionIds: ['acp-session-1'] },
     });
@@ -465,6 +468,8 @@ describe('engagements and the sessions row (Decisions 1 and 10)', () => {
 
     const second = JSON.parse(turns[1].tokens_at_close!) as { models: Record<string, { cost: number }> };
     const secondOpen = JSON.parse(turns[1].tokens_at_open!) as { models: Record<string, { cost: number }> };
+    // The window delta is this turn's own cost — 0.18 cumulative minus the 0.11
+    // already spent — which is exactly what `assignmentWindowCost` prices.
     expect(second.models[key].cost - secondOpen.models[key].cost).toBeCloseTo(0.07, 6);
 
     // claude writes NO usage_events — ccusage already records this session id.
@@ -480,6 +485,9 @@ describe('engagements and the sessions row (Decisions 1 and 10)', () => {
     expect(row?.acp_session_id).toBe('acp-session-1');
     expect(row?.harness).toBe('claude');
     expect(row?.cwd).toBe(worktree);
+    // The snapshot holds the adapter's cumulative figure verbatim, NOT the sum
+    // of the per-turn deltas — adding a running total to itself would inflate
+    // the assignment's cost several-fold.
     expect(JSON.parse(row!.usage_snapshot_json!).models[key].cost).toBeCloseTo(0.18, 6);
   });
 });
@@ -680,3 +688,56 @@ function usage(input: number, output: number): acp.Usage {
     cachedWriteTokens: 0,
   };
 }
+
+describe('cumulative cost (Decision 11)', () => {
+  it('reports each turn its own cost, not the running session total', async () => {
+    // The ACP schema documents `usage_update.cost` as the CUMULATIVE session
+    // cost, and both the spike fixtures and a live claude run confirm it. A
+    // broker that added it up would bill turn 3 at $0.75 when it cost $0.33.
+    makeBroker({
+      turns: [
+        { steps: [{ kind: 'update', update: usageUpdate(10, 1000, 0.34) }], usage: usage(10, 5) },
+        { steps: [{ kind: 'update', update: usageUpdate(20, 1000, 0.42) }], usage: usage(10, 5) },
+        { steps: [{ kind: 'update', update: usageUpdate(30, 1000, 0.75) }], usage: usage(10, 5) },
+      ],
+      agentOptions: { sessionIds: ['acp-session-1'] },
+    });
+
+    for (const text of ['one', 'two', 'three']) {
+      await broker.send({ assignment: assignment(), text });
+      await idle(['one', 'two', 'three'].indexOf(text) + 1);
+    }
+
+    const costs = (itemsOfType('turn.status') as Array<{ cost?: number }>).map((s) => s.cost);
+    expect(costs[0]).toBeCloseTo(0.34, 6);
+    expect(costs[1]).toBeCloseTo(0.08, 6);
+    expect(costs[2]).toBeCloseTo(0.33, 6);
+
+    // The session's stored total is the adapter's own figure, not 0.34+0.42+0.75.
+    const row = getChatSession(ASSIGNMENT_ID, 'claude');
+    const models = JSON.parse(row!.usage_snapshot_json!).models as Record<string, { cost: number }>;
+    expect(models[Object.keys(models)[0]].cost).toBeCloseTo(0.75, 6);
+  });
+
+  it('a cancelled turn that spends nothing costs zero', async () => {
+    makeBroker({
+      turns: [
+        { steps: [{ kind: 'update', update: usageUpdate(10, 1000, 0.5) }], usage: usage(10, 5) },
+        // A cancelled turn reports the SAME cumulative figure — no delta.
+        { steps: [{ kind: 'update', update: usageUpdate(10, 1000, 0.5) }, { kind: 'awaitCancel' }] },
+      ],
+      agentOptions: { sessionIds: ['acp-session-1'] },
+    });
+
+    await broker.send({ assignment: assignment(), text: 'one' });
+    await idle();
+    await broker.send({ assignment: assignment(), text: 'two' });
+    await waitUntil(() => fake.prompts.length === 2, 'the second prompt');
+    await broker.cancel(assignment(), null);
+    await idle(2);
+
+    const costs = (itemsOfType('turn.status') as Array<{ cost?: number }>).map((s) => s.cost);
+    expect(costs[0]).toBeCloseTo(0.5, 6);
+    expect(costs[1]).toBe(0);
+  });
+});

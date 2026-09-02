@@ -276,24 +276,38 @@ describe('session/load replay scope', () => {
 });
 
 describe('turn status', () => {
-  it('11: a turn carries duration, context usage and (on claude) a per-turn cost', () => {
-    const claude = normalizeFixture('claude/11-usage.ndjson');
-    const status = claude.find((i) => i.type === 'turn.status') as
-      | (ChatItem & { state: string; cost?: number; contextUsed?: number; durationMs?: number })
-      | undefined;
-    expect(status).toBeDefined();
-    expect(status?.state).toBe('ended');
-    expect(status?.contextUsed).toBeGreaterThan(0);
-    expect(status?.cost).toBeGreaterThan(0);
-    expect(status?.durationMs).toBeGreaterThan(0);
+  it('11: a turn carries duration and context usage, and never the cumulative cost', () => {
+    for (const adapter of ['claude', 'codex'] as const) {
+      const items = normalizeFixture(`${adapter}/11-usage.ndjson`);
+      const status = items.find((i) => i.type === 'turn.status') as
+        | (ChatItem & { state: string; cost?: number; contextUsed?: number; durationMs?: number })
+        | undefined;
+      expect(status).toBeDefined();
+      expect(status?.state).toBe('ended');
+      expect(status?.contextUsed).toBeGreaterThan(0);
+      expect(status?.durationMs).toBeGreaterThan(0);
+      // `usage_update.cost` is the SESSION's cumulative cost (Decision 11), so
+      // the normalizer never puts it on the row. The turn's own cost arrives on
+      // `turn.end`, computed by the broker as the cumulative delta — and a
+      // fixture replay has no broker, hence no cost here.
+      expect(status?.cost).toBeUndefined();
+    }
+  });
 
-    const codex = normalizeFixture('codex/11-usage.ndjson');
-    const codexStatus = codex.find((i) => i.type === 'turn.status') as
-      | (ChatItem & { contextUsed?: number; cost?: number })
-      | undefined;
-    expect(codexStatus?.contextUsed).toBeGreaterThan(0);
-    // codex sends no `cost` on usage_update; the broker prices it at turn close.
-    expect(codexStatus?.cost).toBeUndefined();
+  it('claude reports a cumulative session cost, not a per-turn one', () => {
+    // Fixture 07's second session runs two prompts: 0.146868 then 0.192106.
+    // A per-turn reading would make the second turn cost more than the first
+    // for a shorter piece of work; it is the running total.
+    const costs: number[] = [];
+    const fixture = FIXTURES.find((f) => f.name === 'claude/07-permissions.ndjson')!;
+    for (const event of fixtureEvents(fixture.path, { agentId: 'claude' })) {
+      if (event.kind !== 'acp.update') continue;
+      const update = event.payload as { sessionUpdate: string; cost?: { amount: number } | null };
+      if (update.sessionUpdate === 'usage_update' && update.cost) costs.push(update.cost.amount);
+    }
+    expect(costs).toEqual([0.173544, 0.146868, 0.192106]);
+    // The two that share a session are non-decreasing.
+    expect(costs[2]).toBeGreaterThan(costs[1]);
   });
 
   it('12: a cancelled turn ends with stopReason cancelled', () => {
