@@ -59,6 +59,7 @@ import {
   clearChatSessionPid,
   getChatItem,
   getChatSession,
+  latestHarnessCommands,
   listChatItems,
   listChatItemsByTurn,
   listChatItemsSince,
@@ -66,6 +67,7 @@ import {
   upsertChatSession,
 } from '../db/chat-db.js';
 import { adapterVersion as readAdapterVersion, spawnAcpClient, type AcpClient } from './acp-client.js';
+import { commandsEqual, parseAvailableCommands, type ChatCommand, type ChatCommandsSource } from './commands.js';
 import { loadAgentDefinitions, resolveAgent, toAgentSummary } from './agents.js';
 import { readParticipants, writeParticipants } from './participants.js';
 import { DEFAULT_HOP_BUDGET, parseMentions, routeAgentReply, routeHuman } from './router.js';
@@ -286,6 +288,9 @@ interface Session {
   flushTimer: ReturnType<typeof setTimeout> | null;
   pendingPatches: Map<string, ItemPatch>;
   error: string | null;
+  /** Harness slash commands last advertised for this session. */
+  commands: ChatCommand[];
+  commandsSource: ChatCommandsSource | null;
   /** Serialises `drive` so two sends cannot both spawn an adapter. */
   driving: Promise<void>;
 }
@@ -551,7 +556,28 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
       error: session.error,
       cwd: session.cwd,
       cwdTier: session.cwdTier,
+      commands: session.commands,
+      commandsSource: session.commandsSource,
     };
+  }
+
+  function sessionCommandsFromRow(
+    harness: HarnessSpec,
+    row: { commands_json?: string | null } | null,
+  ): { commands: ChatCommand[]; commandsSource: ChatCommandsSource | null } {
+    if (row?.commands_json) {
+      try {
+        return {
+          commands: JSON.parse(row.commands_json) as ChatCommand[],
+          commandsSource: 'session',
+        };
+      } catch {
+        // fall through to harness cache
+      }
+    }
+    const cached = latestHarnessCommands(harness.id);
+    if (cached) return { commands: cached, commandsSource: 'harness-cache' };
+    return { commands: [], commandsSource: null };
   }
 
   function persistSession(session: Session): void {
@@ -571,6 +597,7 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
       state: session.state,
       lastTurnAt: session.lastTurnAt,
       lastDeliveredSeq: session.lastDeliveredSeq,
+      commandsJson: session.commands.length > 0 ? JSON.stringify(session.commands) : null,
     });
   }
 
@@ -617,6 +644,7 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
     const harness = HARNESSES[definition.harness as Harness];
     const log = await sharedLog(assignment.assignmentDir);
     const row = getChatSession(assignment.id, definition.id);
+    const commandState = sessionCommandsFromRow(harness, row);
     const session: Session = {
       key,
       assignment,
@@ -660,6 +688,8 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
       flushTimer: null,
       pendingPatches: new Map(),
       error: null,
+      commands: commandState.commands,
+      commandsSource: commandState.commandsSource,
       driving: Promise.resolve(),
     };
 
@@ -1285,14 +1315,27 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
 
   async function onUpdate(session: Session, notification: acp.SessionNotification): Promise<void> {
     const turn = session.inFlight;
+    const update = notification.update as {
+      sessionUpdate?: string;
+      cost?: { amount?: number } | null;
+      availableCommands?: unknown;
+    };
     if (turn) {
       // Any activity resets the idle watchdog. claude's silent window at the
       // inherited xhigh effort is 25 s, so this has to be minutes, not seconds.
       armTurnIdle(session, turn);
-      const update = notification.update as { sessionUpdate?: string; cost?: { amount?: number } | null };
       if (update.sessionUpdate === 'usage_update' && typeof update.cost?.amount === 'number') {
         // Cumulative for the session, not for this turn — see Decision 11.
         turn.reportedCumulativeCost = update.cost.amount;
+      }
+    }
+    if (update.sessionUpdate === 'available_commands_update') {
+      const parsed = parseAvailableCommands(update);
+      if (!commandsEqual(session.commands, parsed)) {
+        session.commands = parsed;
+        session.commandsSource = 'session';
+        persistSession(session);
+        emitSession(session);
       }
     }
     await record(session, 'acp.update', notification.update);

@@ -12,6 +12,7 @@
  */
 
 import { getSessionDb } from '../dashboard/session-db.js';
+import type { ChatCommand } from '../chat/commands.js';
 import type { ChatItem, ChatItemRow, ChatSessionRow, ItemPatch } from '../chat/types.js';
 
 // --- sessions --------------------------------------------------------------
@@ -33,6 +34,7 @@ export interface UpsertChatSessionInput {
   lastTurnAt?: string | null;
   /** Highest chat-level `seq` this session has been shown (Decision 4). */
   lastDeliveredSeq?: number;
+  commandsJson?: string | null;
 }
 
 /**
@@ -46,11 +48,11 @@ export function upsertChatSession(input: UpsertChatSessionInput): void {
       `INSERT INTO chat_sessions (
          session_key, assignment_id, project_slug, assignment_slug, agent_id, harness,
          acp_session_id, adapter_version, cwd, pid, profile_json, usage_snapshot_json,
-         state, created_at, last_turn_at, last_delivered_seq
+         state, created_at, last_turn_at, last_delivered_seq, commands_json
        ) VALUES (
          @sessionKey, @assignmentId, @projectSlug, @assignmentSlug, @agentId, @harness,
          @acpSessionId, @adapterVersion, @cwd, @pid, @profileJson, @usageSnapshotJson,
-         @state, @now, @lastTurnAt, @lastDeliveredSeq
+         @state, @now, @lastTurnAt, @lastDeliveredSeq, @commandsJson
        )
        ON CONFLICT(session_key) DO UPDATE SET
          assignment_id       = excluded.assignment_id,
@@ -68,7 +70,8 @@ export function upsertChatSession(input: UpsertChatSessionInput): void {
          last_turn_at        = COALESCE(excluded.last_turn_at,        chat_sessions.last_turn_at),
          -- The cursor only ever moves forward, so a writer that has not read it
          -- (a state transition, say) cannot rewind another's progress.
-         last_delivered_seq  = MAX(excluded.last_delivered_seq, chat_sessions.last_delivered_seq)`,
+         last_delivered_seq  = MAX(excluded.last_delivered_seq, chat_sessions.last_delivered_seq),
+         commands_json       = COALESCE(excluded.commands_json, chat_sessions.commands_json)`,
     )
     .run({
       sessionKey: input.sessionKey,
@@ -87,7 +90,26 @@ export function upsertChatSession(input: UpsertChatSessionInput): void {
       now: new Date().toISOString(),
       lastTurnAt: input.lastTurnAt ?? null,
       lastDeliveredSeq: input.lastDeliveredSeq ?? 0,
+      commandsJson: input.commandsJson ?? null,
     });
+}
+
+/** Newest persisted command list for a harness — the per-harness cache (Decision 1). */
+export function latestHarnessCommands(harness: string): ChatCommand[] | null {
+  const row = getSessionDb()
+    .prepare(
+      `SELECT commands_json FROM chat_sessions
+        WHERE harness = ? AND commands_json IS NOT NULL
+        ORDER BY COALESCE(last_turn_at, created_at) DESC
+        LIMIT 1`,
+    )
+    .get(harness) as { commands_json: string } | undefined;
+  if (!row?.commands_json) return null;
+  try {
+    return JSON.parse(row.commands_json) as ChatCommand[];
+  } catch {
+    return null;
+  }
 }
 
 /** Clear the adapter pid — the process is gone; the ACP session id survives. */

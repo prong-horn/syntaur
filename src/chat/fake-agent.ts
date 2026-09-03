@@ -35,6 +35,10 @@ export interface FakeAgentOptions {
   agentInfo?: { name: string; version: string };
   modes?: acp.NewSessionResponse['modes'];
   configOptions?: acp.NewSessionResponse['configOptions'];
+  /** When set, emitted after `session/new` and again at the start of every prompt. */
+  availableCommands?: acp.AvailableCommand[];
+  /** `session/set_config_option` response — defaults to echoing `configOptions`. */
+  setConfigOptionResponse?: acp.SetSessionConfigOptionResponse;
   /** Session ids handed out by `session/new`, in order. Defaults to `fake-session-<n>`. */
   sessionIds?: string[];
   /** When set, `session/resume` rejects with this message. */
@@ -83,6 +87,20 @@ export function createFakeAgent(options: FakeAgentOptions = {}): FakeAgent {
       cancelled.set(sessionId, list);
     });
 
+  const emitCommands = async (
+    client: { notify: (method: string, params: unknown) => Promise<void> },
+    sessionId: string,
+  ): Promise<void> => {
+    if (!options.availableCommands?.length) return;
+    await client.notify(acp.methods.client.session.update, {
+      sessionId,
+      update: {
+        sessionUpdate: 'available_commands_update',
+        availableCommands: options.availableCommands,
+      },
+    });
+  };
+
   const app = acp
     .agent({ name: 'fake-acp-agent' })
     .onRequest(acp.methods.agent.initialize, () => {
@@ -94,11 +112,13 @@ export function createFakeAgent(options: FakeAgentOptions = {}): FakeAgent {
         authMethods: [],
       } satisfies acp.InitializeResponse;
     })
-    .onRequest(acp.methods.agent.session.new, (ctx) => {
+    .onRequest(acp.methods.agent.session.new, async (ctx) => {
       calls.push('session/new');
       newSessionRequests.push(ctx.params);
+      const sessionId = nextSessionId();
+      await emitCommands(ctx.client, sessionId);
       return {
-        sessionId: nextSessionId(),
+        sessionId,
         ...(options.modes ? { modes: options.modes } : {}),
         ...(options.configOptions ? { configOptions: options.configOptions } : {}),
       } as acp.NewSessionResponse;
@@ -131,7 +151,10 @@ export function createFakeAgent(options: FakeAgentOptions = {}): FakeAgent {
         method: 'session/set_config_option',
         params: ctx.params as unknown as Record<string, unknown>,
       });
-      return { configOptions: [] } as unknown as acp.SetSessionConfigOptionResponse;
+      return (
+        options.setConfigOptionResponse ??
+        ({ configOptions: options.configOptions ?? [] } as unknown as acp.SetSessionConfigOptionResponse)
+      );
     })
     .onNotification(acp.methods.agent.session.cancel, (ctx) => {
       calls.push('session/cancel');
@@ -142,6 +165,7 @@ export function createFakeAgent(options: FakeAgentOptions = {}): FakeAgent {
     .onRequest(acp.methods.agent.session.prompt, async (ctx) => {
       calls.push('session/prompt');
       prompts.push(ctx.params);
+      await emitCommands(ctx.client, ctx.params.sessionId);
       const turn = turns[Math.min(turnIndex, turns.length - 1)] ?? { steps: [] };
       turnIndex += 1;
       const sessionId = ctx.params.sessionId;

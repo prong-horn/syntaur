@@ -1351,3 +1351,88 @@ describe('codex pricing (Task 6)', () => {
     expect(noticeCount()).toBe(1);
   });
 });
+
+describe('slash commands', () => {
+  const sampleCommands = [
+    { name: 'context', description: 'Show context usage', input: { hint: '[--json]' } },
+    { name: 'plan', description: 'Turn plan mode on.', input: null },
+  ] as acp.AvailableCommand[];
+
+  function commandUpdateFrameCount(): number {
+    let count = 0;
+    let prev: string | null = null;
+    for (const frame of frames) {
+      if (frame.type !== 'chat-session') continue;
+      const session = (frame.payload as { session: { commands: unknown[] } }).session;
+      const key = JSON.stringify(session.commands);
+      if (session.commands.length > 0 && key !== prev) {
+        count += 1;
+        prev = key;
+      }
+    }
+    return count;
+  }
+
+  it('captures available_commands_update once per distinct list and persists it', async () => {
+    makeBroker({
+      turns: [
+        { steps: [{ kind: 'update', update: textChunk('ok', 'm1') }] },
+        { steps: [{ kind: 'update', update: textChunk('again', 'm2') }] },
+      ],
+      agentOptions: { availableCommands: sampleCommands },
+    });
+
+    await broker.send({ assignment: assignment(), text: 'hello' });
+    await idle();
+    await broker.send({ assignment: assignment(), text: 'second' });
+    await idle(2);
+
+    expect(commandUpdateFrameCount()).toBe(1);
+    const row = getChatSession(ASSIGNMENT_ID, 'claude');
+    expect(JSON.parse(row!.commands_json!)).toEqual([
+      {
+        name: 'context',
+        description: 'Show context usage',
+        inputHint: '[--json]',
+        action: { kind: 'prompt' },
+      },
+      {
+        name: 'plan',
+        description: 'Turn plan mode on.',
+        inputHint: null,
+        action: { kind: 'prompt' },
+      },
+    ]);
+
+    const summary = await broker.getSession(assignment(), 'claude');
+    expect(summary?.commandsSource).toBe('session');
+    expect(summary?.commands).toHaveLength(2);
+  });
+
+  it('serves harness-cache commands to a new agent before its first session', async () => {
+    const commandsJson = JSON.stringify([
+      {
+        name: 'status',
+        description: 'Display session configuration and token usage.',
+        inputHint: null,
+        action: { kind: 'prompt' },
+      },
+    ]);
+    upsertChatSession({
+      sessionKey: `${ASSIGNMENT_ID}:claude`,
+      assignmentId: ASSIGNMENT_ID,
+      projectSlug: 'syntaur-meta',
+      assignmentSlug: 'chat-demo',
+      agentId: 'claude',
+      harness: 'codex',
+      state: 'idle',
+      commandsJson,
+      lastTurnAt: '2026-09-03T12:00:00.000Z',
+    });
+
+    makeBroker({ turns: [{ steps: [] }] });
+    const summary = await broker.getSession(assignment(), 'codex');
+    expect(summary?.commandsSource).toBe('harness-cache');
+    expect(summary?.commands[0]?.name).toBe('status');
+  });
+});

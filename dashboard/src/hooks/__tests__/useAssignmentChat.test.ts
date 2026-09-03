@@ -107,6 +107,8 @@ describe('applyFrame', () => {
     cumulative: null,
     queued: [],
     lastDeliveredSeq: 0,
+    commands: [],
+    commandsSource: null,
   };
 
   it('applies a chat-item patch for this assignment', () => {

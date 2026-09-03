@@ -574,5 +574,49 @@ describe('chat schema v1 → v2 (Task 3)', () => {
       getSessionDbForTest().prepare('PRAGMA table_info(chat_sessions)').all() as Array<{ name: string }>
     ).map((c) => c.name);
     expect(columns).toContain('last_delivered_seq');
+    expect(columns).toContain('commands_json');
+  });
+
+  it('migrates chat schema v2 → v3 by adding commands_json', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'syntaur-chat-v2-'));
+    const dbPath = join(dir, 'syntaur.db');
+    closeSessionDb();
+    const Database = (await import('better-sqlite3')).default;
+    const raw = new Database(dbPath);
+    raw.exec(`
+      CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+      CREATE TABLE chat_sessions (
+        session_key         TEXT PRIMARY KEY,
+        assignment_id       TEXT NOT NULL,
+        project_slug        TEXT,
+        assignment_slug     TEXT,
+        agent_id            TEXT NOT NULL,
+        harness             TEXT NOT NULL,
+        acp_session_id      TEXT,
+        adapter_version     TEXT,
+        cwd                 TEXT,
+        pid                 INTEGER,
+        profile_json        TEXT,
+        usage_snapshot_json TEXT,
+        state               TEXT NOT NULL DEFAULT 'none',
+        created_at          TEXT NOT NULL,
+        last_turn_at        TEXT,
+        last_delivered_seq  INTEGER NOT NULL DEFAULT 0
+      );
+      INSERT INTO meta (key, value) VALUES ('chat_schema_version', '2');
+    `);
+    raw.close();
+
+    const db = initSessionDb(dbPath);
+    const columns = (db.prepare('PRAGMA table_info(chat_sessions)').all() as Array<{ name: string }>).map(
+      (c) => c.name,
+    );
+    expect(columns).toContain('commands_json');
+    expect(
+      (db.prepare("SELECT value FROM meta WHERE key = 'chat_schema_version'").get() as { value: string })
+        .value,
+    ).toBe('3');
+    closeSessionDb();
+    await rm(dir, { recursive: true, force: true });
   });
 });

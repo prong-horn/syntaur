@@ -291,7 +291,7 @@ export class ChatNormalizer {
         this.ingestUsage(event, update as { used: number; size: number; cost?: { amount: number } | null }, patches);
         break;
       case 'available_commands_update':
-        // Event log only — phase 3 uses it for `/command` autocomplete.
+        // Broker owns command state; the event stays on the log for replay.
         break;
       default:
         this.system(event, 'info', updateText(update), patches);
