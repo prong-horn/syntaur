@@ -19,9 +19,9 @@ daemon — was deleted in v0.80.
 ## How a turn works
 
 1. You send a message. It is persisted immediately and shown as **queued**.
-2. On the first message the server spawns the adapter (`claude-agent-acp` or
-   `codex-acp`) with `cwd` set to the assignment's worktree, runs `initialize`
-   and `session/new`, and sends the **standing context** — the agent definition's
+2. On the first message the server spawns the adapter (`claude-agent-acp`,
+   `codex-acp`, or `cursor-agent acp`) with `cwd` set to the assignment's worktree,
+   runs `initialize` and `session/new`, and sends the **standing context** — the agent definition's
    system prompt, plus `assignment.md`, the current plan and the newest entries
    of `progress.md` as embedded file attachments.
 3. Later messages carry only your text; the standing context is sent once per
@@ -36,16 +36,17 @@ when a second prompt or a steer is injected mid-turn.
 
 **Sessions are torn down when idle** (10 minutes after the last turn). A claude
 adapter and the MCP servers it forks are roughly 620 MB, so an idle chat does not
-sit around. The next message re-attaches to the same agent session with
-`session/resume`, so the agent still remembers the conversation. If the resume
-fails, a new session starts and the chat says so.
+sit around. The next message re-attaches to the same agent session: claude and
+codex use `session/resume` (replay nothing); cursor uses `session/load` (replay
+history into the broker's log without duplicating chat items). If reattach fails,
+a new session starts and the chat says so.
 
 A dashboard restart takes the adapters with it, and the next session load
 repairs whatever was in flight: a turn that was running is sealed and marked as
 having failed, messages that were still queued are re-queued and sent in order,
-and a permission prompt that was waiting is marked expired (it cannot be
-answered — the request died with the adapter). The next message resumes the same
-agent session.
+and a permission or question prompt that was waiting is marked expired (it cannot
+be answered — the request died with the adapter). The next message reattaches
+(resume, load, or new — see above).
 
 ## Agent definitions — `~/.syntaur/agents/<id>.md`
 
@@ -56,10 +57,10 @@ Frontmatter configures the agent; the body is its system prompt.
 id: planner              # must match the filename
 name: Planner
 color: violet            # violet | emerald | amber | sky | rose
-harness: claude          # claude | codex
+harness: claude          # claude | codex | cursor
 model: claude-opus-5     # optional; passed through to the adapter
 mode: plan               # optional; see "Modes" below
-effort: high             # optional
+effort: high             # optional (ignored on cursor — pin effort inside the model value)
 mcpServers: [syntaur]    # optional
 env: { FOO: bar }        # optional
 respondsTo: mentions     # mentions | all-human | none (default: mentions)
@@ -71,21 +72,28 @@ You are the planner for this assignment. Read assignment.md, produce a plan, and
 end with a short summary in chat. Never edit code.
 ```
 
-Two builtins — `claude` and `codex` — exist so a fresh install works with no
+Two builtins — `claude`, `codex`, and `cursor` — exist so a fresh install works with no
 files at all. A file with the same `id` replaces the builtin entirely. Invalid
 definitions are reported on `GET /api/chat/agents` and skipped; they never take
 the rest of the directory down.
+
+**Cursor:** effort is not a separate config option — pin it inside the model value
+(e.g. `composer-2.5[fast=true]`, `claude-fable-5-1[thinking=true,context=300k,effort=high]`).
+Cursor has no `session/resume`; the broker re-attaches with `session/load` instead.
+Team-level MCP servers from the Cursor dashboard are unavailable in ACP mode.
+Cursor does not emit `usage_update`; the chat shows one system row saying turns
+are not costed rather than a silent $0.
 
 ### Modes
 
 `mode` takes one of three harness-independent role names, or a raw adapter mode
 id passed straight through:
 
-| Role    | claude        | codex                                            |
-|---------|---------------|--------------------------------------------------|
-| `edits` | `acceptEdits` | `agent`                                          |
-| `ask`   | `default`     | `read-only` — the only codex mode that asks you  |
-| `plan`  | `plan`        | `read-only`                                      |
+| Role    | claude        | codex                                            | cursor        |
+|---------|---------------|--------------------------------------------------|---------------|
+| `edits` | `acceptEdits` | `agent`                                          | `agent`       |
+| `ask`   | `default`     | `read-only` — the only codex mode that asks you  | `ask`         |
+| `plan`  | `plan`        | `read-only`                                      | `plan`        |
 
 codex routes approvals by mode: in `agent` mode escalations go to codex's own
 Guardian reviewer and you never see them, and `agent-full-access` never asks. If
@@ -112,6 +120,7 @@ status row.
 | Work card | A run of tool calls, one line: "Worked 18s · read 1 · edited 1" |
 | Plan checklist | The agent's todo list; pinned above the composer while its turn runs |
 | Permission card | The agent wants to do something that needs approval — answer inline |
+| Question card | Cursor asked a multiple-choice question — pick an option inline |
 | Thin status row | "Planner · 3m 02s · 41.2k tokens · $0.19 · end_turn", with an **Activity** disclosure holding that turn's thinking and full tool detail |
 | Thin grey row | Session lifecycle, mode/config changes, adapter notices |
 
@@ -154,6 +163,10 @@ and its turns book at $0 with the token counts still recorded.
 `npm i -g @agentclientprotocol/claude-agent-acp` (or `…/codex-acp`). The composer
 shows the exact command.
 
+**"cursor-agent is not on PATH"** — install the Cursor CLI:
+`curl https://cursor.com/install -fsS | bash` (see [cursor.com/docs/cli/installation](https://cursor.com/docs/cli/installation)).
+Then run `cursor-agent login` (or `agent login`) before chatting.
+
 **The agent is running from home** — the assignment has no `workspace.worktreePath`,
 `workspace.repository`, or project `repositories` entry that exists on disk, so
 the agent falls back to the home directory (`~`). A system row in the chat says
@@ -163,13 +176,13 @@ a different mode. The four-tier resolution chain is: worktree → repository →
 project repository → home.
 
 **The adapter fails to start** — the chat shows the adapter's own error plus the
-output of `claude auth status` / `codex login status`. Both adapters work off a
-subscription login; no API key is required.
+output of `claude auth status` / `codex login status` / `cursor-agent status`.
+All three work off a subscription login; no API key is required.
 
 **The slash-command picker is empty** — the harness has not sent
 `available_commands_update` yet for that agent, and no other session of the same
 harness has a cached list. Send any message to open a session, or check that the
-adapter on PATH is current (`claude-agent-acp` / `codex-acp`).
+adapter on PATH is current (`claude-agent-acp` / `codex-acp` / `cursor-agent`).
 
 ## Several agents in one chat
 
