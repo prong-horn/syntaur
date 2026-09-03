@@ -644,11 +644,98 @@ describe('per-target crash repair (Decision 12 extended)', () => {
     expect((turnsOf('implementer')[0] as { state: string }).state).toBe('ended');
   });
 
-  it('persists the delivery cursor column across a reload', async () => {
-    makeBroker({ planner: [justSays('planned')] });
+});
+
+describe('the history delta and its cursor (Task 4)', () => {
+  it('quotes what the other agent said, once, and not the agent’s own trigger back', async () => {
+    makeBroker({
+      planner: [justSays('planner here', 'p1')],
+      implementer: [justSays('implementer here', 'i1'), justSays('again', 'i2')],
+    });
+
+    await broker.send({ assignment: assignment(), text: '@planner @implementer one' });
+    await idleAll(2);
+    await broker.send({ assignment: assignment(), text: '@implementer two' });
+    await idleAll(3);
+
+    const second = prompts('implementer')[1] as never as { prompt: Array<{ text: string }> };
+    const history = second.prompt.map((b) => b.text).find((t) => t.includes('<chat-history>'));
+    expect(history).toBeDefined();
+    // The planner's sealed reply is new to the implementer…
+    expect(history).toContain('planner here');
+    // …its own reply is not quoted back to it…
+    expect(history).not.toContain('implementer here');
+    // …neither is the first message, which was its own turn-1 trigger…
+    expect(history).not.toContain('one');
+    // …and neither is THIS turn's trigger, which is appended separately.
+    expect(history).not.toContain('two');
+    expect(promptText(second)).toContain('two');
+  });
+
+  it('leaves the cursor where it was after an error turn, so the next turn re-delivers', async () => {
+    makeBroker({
+      planner: [justSays('planner here', 'p1')],
+      implementer: [{ steps: [{ kind: 'error', message: 'adapter blew up' }] }, justSays('recovered', 'i2')],
+    });
+
+    await broker.send({ assignment: assignment(), text: '@planner one' });
+    await idleAll(1);
+    await broker.send({ assignment: assignment(), text: '@implementer two' });
+    await idleAll(2);
+
+    expect((await broker.getSession(assignment(), 'implementer'))?.lastDeliveredSeq).toBe(0);
+
+    await broker.send({ assignment: assignment(), text: '@implementer three' });
+    await idleAll(3);
+    // The planner's reply was never actually delivered, so it is sent again.
+    const retry = prompts('implementer')[1] as never as { prompt: Array<{ text: string }> };
+    expect(retry.prompt.map((b) => b.text).join('\n')).toContain('planner here');
+  });
+
+  it('advances the cursor after a cancelled turn — the agent did see the prompt', async () => {
+    makeBroker({
+      planner: [justSays('planner here', 'p1')],
+      implementer: [{ steps: [{ kind: 'awaitCancel' }] }],
+    });
+
+    await broker.send({ assignment: assignment(), text: '@planner one' });
+    await idleAll(1);
+    await broker.send({ assignment: assignment(), text: '@implementer two' });
+    await waitUntil(() => prompts('implementer').length === 1, 'the implementer prompt');
+    expect(await broker.cancel(assignment(), 'implementer')).toBe(true);
+    await idleAll(2);
+
+    const cursor = (await broker.getSession(assignment(), 'implementer'))?.lastDeliveredSeq ?? 0;
+    expect(cursor).toBeGreaterThan(0);
+  });
+
+  it('persists the cursor across a broker restart', async () => {
+    makeBroker({
+      planner: [justSays('planner here', 'p1')],
+      implementer: [justSays('implementer here', 'i1')],
+    });
+    await broker.send({ assignment: assignment(), text: '@planner one' });
+    await idleAll(1);
+    await broker.send({ assignment: assignment(), text: '@implementer two' });
+    await idleAll(2);
+    const before = (await broker.getSession(assignment(), 'implementer'))?.lastDeliveredSeq ?? 0;
+    expect(before).toBeGreaterThan(0);
+
+    await broker.stopAll();
+    makeBroker({ implementer: [justSays('after', 'i2')] });
+    expect((await broker.getSession(assignment(), 'implementer'))?.lastDeliveredSeq).toBe(before);
+  });
+
+  it('sends the roster and the agent’s own identity in the standing context', async () => {
+    makeBroker({ planner: [justSays('planned', 'p1')] });
     await broker.send({ assignment: assignment(), text: '@planner go' });
     await idleAll(1);
-    const summary = await broker.getSession(assignment(), 'planner');
-    expect(summary?.lastDeliveredSeq).toBe(0);
+
+    const first = prompts('planner')[0] as never as { prompt: Array<{ text?: string }> };
+    const standing = first.prompt.map((b) => b.text ?? '').join('\n');
+    expect(standing).toContain('You are @planner (Planner)');
+    expect(standing).toContain('Participants:');
+    expect(standing).toContain('@implementer — Implementer, claude');
+    expect(standing).toContain('Human: the assignment owner');
   });
 });

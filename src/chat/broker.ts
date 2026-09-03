@@ -57,9 +57,11 @@ import { priceForModel } from '../usage/pricing.js';
 import {
   applyChatPatch,
   clearChatSessionPid,
+  getChatItem,
   getChatSession,
   listChatItems,
   listChatItemsByTurn,
+  listChatItemsSince,
   listChatSessions,
   upsertChatSession,
 } from '../db/chat-db.js';
@@ -70,7 +72,12 @@ import { DEFAULT_HOP_BUDGET, parseMentions, routeAgentReply, routeHuman } from '
 import { HARNESSES, probeAuth, resolveCommand } from './harnesses.js';
 import { ChatNormalizer } from './normalizer.js';
 import { applyProfile, newSessionMeta, profileEnv, resolveSessionProfile, serializeProfile } from './profile.js';
-import { buildStandingContext, buildTurnPrompt, type TurnPromptTrigger } from './prompt-framing.js';
+import {
+  buildStandingContext,
+  buildTurnPrompt,
+  selectChatHistory,
+  type TurnPromptTrigger,
+} from './prompt-framing.js';
 import { openChatLog, type ChatLog } from './store.js';
 import { HUMAN_AGENT_ID, SYSTEM_AGENT_ID } from './types.js';
 import type {
@@ -84,6 +91,7 @@ import type {
   PermissionResponsePayload,
   TurnStartPayload,
   TurnTrigger,
+  HandoffItem,
   UserMessageItem,
   UserMessagePayload,
   ChatItem,
@@ -315,6 +323,8 @@ interface AssignmentScope {
   normalizer: ChatNormalizer;
   /** `messageId` → the routed user message, for `withdraw`'s delivery check. */
   messages: Map<string, UserMessageItem>;
+  /** `handoffId` → the row, so a hop's prompt can exclude its own trigger. */
+  handoffs: Map<string, HandoffItem>;
 }
 
 export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
@@ -377,6 +387,7 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
             sessionKey: key,
           }),
           messages: new Map(),
+          handoffs: new Map(),
         };
         // Pick up where the persisted log left off, so a restart does not
         // restart the ordinals and collide item ids.
@@ -393,8 +404,9 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
 
   /** Keep the routed user messages to hand — `withdraw` needs `deliveredTo`. */
   function noteScopeItem(scope: AssignmentScope, patch: ItemPatch): void {
-    if (patch.op !== 'upsert' || patch.item.type !== 'user.message') return;
-    scope.messages.set(patch.item.messageId, patch.item);
+    if (patch.op !== 'upsert') return;
+    if (patch.item.type === 'user.message') scope.messages.set(patch.item.messageId, patch.item);
+    else if (patch.item.type === 'handoff') scope.handoffs.set(patch.item.handoffId, patch.item);
   }
 
   /**
@@ -1287,6 +1299,72 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
     };
   }
 
+  /**
+   * The standing context, with the roster: who this agent is and who else is in
+   * the room. Sent once per adapter session (§2.4).
+   */
+  async function buildStanding(session: Session): Promise<ContentBlock[]> {
+    const { definitions, participants } = await routingContext(session.assignment);
+    const roster = participants.agents
+      .map((id) => definitions.find((d) => d.id === id))
+      .filter((d): d is AgentDefinition => d !== undefined);
+    return buildStandingContext({
+      definition: session.definition,
+      harness: session.harness,
+      assignmentDir: session.assignment.assignmentDir,
+      context: {
+        projectSlug: session.assignment.projectSlug,
+        assignmentSlug: session.assignment.assignmentSlug,
+        worktreePath: session.cwd,
+        branch: session.branch,
+        agent: session.definition,
+        roster,
+      },
+    });
+  }
+
+  /**
+   * The `<chat-history>` delta for this turn, with the trigger itself excluded —
+   * it is appended as the last `<chat-event>` and must not be quoted twice.
+   */
+  async function buildHistory(session: Session, trigger: TurnTrigger) {
+    const scope = await assignmentScope(session.assignment);
+    const excludeItemIds = new Set<string>();
+    const excludeTurnIds = new Set<string>();
+
+    if (trigger.kind === 'human') {
+      const message = scope.messages.get(trigger.messageId);
+      if (message) excludeItemIds.add(message.itemId);
+    } else {
+      const handoff = scope.handoffs.get(trigger.handoffId);
+      if (handoff) {
+        excludeItemIds.add(handoff.itemId);
+        // The delegator's sealed replies ARE the trigger text, so the whole
+        // turn they came from is excluded rather than just the last bubble.
+        const source = handoff.triggerItemId ? getChatItem(handoff.triggerItemId) : null;
+        if (source?.turnId) excludeTurnIds.add(source.turnId);
+      }
+    }
+
+    const selection = selectChatHistory({
+      items: listChatItemsSince(session.assignment.id, session.lastDeliveredSeq),
+      agentId: session.agentId,
+      sinceSeq: session.lastDeliveredSeq,
+      excludeItemIds,
+      excludeTurnIds,
+    });
+
+    // The trigger counts as delivered too: it is the last `<chat-event>` of this
+    // very prompt. Without it the cursor would stop short of the trigger's own
+    // row and the next turn would quote the agent its previous trigger back.
+    const triggerSeq =
+      trigger.kind === 'human'
+        ? (scope.messages.get(trigger.messageId)?.seqFirst ?? null)
+        : (scope.handoffs.get(trigger.handoffId)?.seqFirst ?? null);
+    const highest = Math.max(selection.highestSeq ?? -1, triggerSeq ?? -1);
+    return { ...selection, highestSeq: highest >= 0 ? highest : null };
+  }
+
   async function driveOnce(session: Session): Promise<void> {
     if (stopping) return;
     if (session.inFlight) return; // Decision 6 — one prompt in flight, always
@@ -1360,27 +1438,22 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
     if (at >= 0) session.queue.splice(at, 1);
     setState(session, 'running');
 
+    // What this session has not been shown yet (Decision 4). The cursor is
+    // TWO-PHASE: the candidate is computed here, with the prompt, and committed
+    // only when the turn ends without an error — a prompt that never reached the
+    // agent must be re-delivered, not skipped.
+    const history = await buildHistory(session, next.trigger);
+    turn.deliveredSeqCandidate = history.highestSeq;
+
     let blocks: ContentBlock[];
     try {
-      const standing = session.standingSent
-        ? undefined
-        : await buildStandingContext({
-            definition: session.definition,
-            harness: session.harness,
-            assignmentDir: session.assignment.assignmentDir,
-            context: {
-              projectSlug: session.assignment.projectSlug,
-              assignmentSlug: session.assignment.assignmentSlug,
-              worktreePath: session.cwd,
-              branch: session.branch,
-            },
-          });
-      blocks = buildTurnPrompt(promptTrigger(session, next), { standing });
+      const standing = session.standingSent ? undefined : await buildStanding(session);
+      blocks = buildTurnPrompt(promptTrigger(session, next), { standing, history });
       // Sent once per adapter session (§2.4); a later turn carries only the
       // trigger and the history the session has not seen.
       session.standingSent = true;
     } catch (err) {
-      blocks = buildTurnPrompt(promptTrigger(session, next));
+      blocks = buildTurnPrompt(promptTrigger(session, next), { history });
       await record(session, 'system', {
         level: 'warn',
         text: `Could not build the standing context: ${(err as Error).message}`,
@@ -1475,6 +1548,13 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
       tokensAtClose: snapshotOf(session),
       endedAt: iso(),
     });
+
+    // Commit the delivery cursor for every stop reason but `error`: the agent
+    // saw the prompt even if the turn was cancelled, but a prompt that FAILED
+    // never reached it, so the next turn re-delivers (Decision 4).
+    if (stopReason !== 'error' && turn.deliveredSeqCandidate !== null) {
+      session.lastDeliveredSeq = Math.max(session.lastDeliveredSeq, turn.deliveredSeqCandidate);
+    }
 
     recordUsageEvent(session);
     persistSession(session);

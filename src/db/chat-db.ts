@@ -193,6 +193,30 @@ export function listChatItems(assignmentId: string, options: ListChatItemsOption
   return rows.reverse().map((r) => JSON.parse(r.json) as ChatItem);
 }
 
+export function getChatItem(itemId: string): ChatItem | null {
+  const row = getSessionDb()
+    .prepare('SELECT json FROM chat_items WHERE item_id = ? LIMIT 1')
+    .get(itemId) as { json: string } | undefined;
+  return row ? (JSON.parse(row.json) as ChatItem) : null;
+}
+
+/**
+ * Items an agent may not have been shown yet, oldest first. Bounded: only the
+ * newest `limit` are considered, which is far above the 12-item prompt cap and
+ * keeps a very long chat from scanning its whole history every turn.
+ */
+export function listChatItemsSince(assignmentId: string, afterSeq: number, limit = 500): ChatItem[] {
+  const rows = getSessionDb()
+    .prepare(
+      `SELECT json FROM chat_items
+        WHERE assignment_id = ? AND seq_first > ?
+        ORDER BY seq_first DESC, item_id DESC
+        LIMIT ?`,
+    )
+    .all(assignmentId, afterSeq, Math.max(1, limit)) as Array<{ json: string }>;
+  return rows.reverse().map((r) => JSON.parse(r.json) as ChatItem);
+}
+
 /** Every item a turn produced, oldest first — what `finishTurn` routes on. */
 export function listChatItemsByTurn(assignmentId: string, turnId: string): ChatItem[] {
   const rows = getSessionDb()
