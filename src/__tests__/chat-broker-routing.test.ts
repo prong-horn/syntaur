@@ -107,7 +107,14 @@ async function writeParticipantsFile(participants: Participants): Promise<void> 
  * client factory. Each session needs its OWN `AgentApp` — one app does not
  * serve two concurrent client connections.
  */
-function makeBroker(scripts: Record<string, FakeTurn[]>, opts: { hopBudget?: number } = {}): void {
+function makeBroker(
+  scripts: Record<string, FakeTurn[]>,
+  opts: {
+    hopBudget?: number;
+    /** Per-agent overrides handed to `createFakeAgent` (resume failures, rotated ids). */
+    fakeOptions?: Record<string, { resumeError?: string; sessionIds?: string[] }>;
+  } = {},
+): void {
   fakes = new Map();
   clientsByAgent = new Map();
   broker = createChatBroker({
@@ -119,9 +126,11 @@ function makeBroker(scripts: Record<string, FakeTurn[]>, opts: { hopBudget?: num
     broadcast: (message) =>
       frames.push({ type: message.type, payload: structuredClone(message.payload) }),
     clientFactory: (input) => {
+      const overrides = opts.fakeOptions?.[input.agentId] ?? {};
       const fake = createFakeAgent({
         turns: scripts[input.agentId] ?? [{ steps: [] }],
-        sessionIds: [`acp-${input.agentId}`],
+        sessionIds: overrides.sessionIds ?? [`acp-${input.agentId}`],
+        ...(overrides.resumeError === undefined ? {} : { resumeError: overrides.resumeError }),
       });
       fakes.set(input.agentId, fake);
       const client = connectAcpClient(fake.app, {
@@ -946,5 +955,100 @@ describe('detaching an agent (code review round 1, finding 1)', () => {
     release();
     await idleAll(2);
     expect(prompts('planner')).toHaveLength(2);
+  });
+});
+
+describe('surviving a dashboard restart with two agents (criterion 1)', () => {
+  /**
+   * A dashboard restart kills every adapter with it (spike Decision 8) and
+   * phase 2 promised the next message re-attaches through `session/resume`
+   * (Decision 7), falling back to `session/new` plus a `system` row when the
+   * adapter has forgotten the session. Phase 2 proved that for one agent; these
+   * two prove it holds when a chat has two, independently — one agent's failed
+   * resume must not cost the other its history.
+   */
+
+  /** ACP session ids the broker persisted, keyed by agent id. */
+  function persistedAcpSessions(): Record<string, string> {
+    const rows = getSessionDb()
+      .prepare('SELECT agent_id, acp_session_id FROM chat_sessions')
+      .all() as Array<{ agent_id: string; acp_session_id: string }>;
+    return Object.fromEntries(rows.map((r) => [r.agent_id, r.acp_session_id]));
+  }
+
+  /** Kill the broker and its adapters the way a dashboard restart does. */
+  async function restart(): Promise<void> {
+    await broker.stopAll();
+    for (const client of clients) await client.close().catch(() => {});
+    clients = [];
+  }
+
+  it('resumes BOTH agents’ ACP sessions on the next message', async () => {
+    makeBroker({ planner: [justSays('planned', 'p1')], implementer: [justSays('built', 'i1')] });
+    await broker.send({ assignment: assignment(), text: '@planner @implementer start' });
+    await idleAll(2);
+
+    const before = persistedAcpSessions();
+    expect(before).toEqual({ planner: 'acp-planner', implementer: 'acp-implementer' });
+
+    await restart();
+
+    // A fresh broker over the same home, DB and event log — the server coming
+    // back up. Nothing but the persisted state connects it to the first one.
+    makeBroker({ planner: [justSays('again', 'p2')], implementer: [justSays('again', 'i2')] });
+    await broker.send({ assignment: assignment(), text: '@planner @implementer carry on' });
+    await waitUntil(
+      () => prompts('planner').length === 1 && prompts('implementer').length === 1,
+      'both agents to be prompted after the restart',
+    );
+
+    for (const id of ['planner', 'implementer']) {
+      expect(fakes.get(id)?.calls).toContain('session/resume');
+      expect(fakes.get(id)?.calls).not.toContain('session/new');
+      // Resumed, so the standing context is NOT re-sent: the agent still has it.
+      expect(prompts(id)[0].prompt.some((b) => b.type === 'resource')).toBe(false);
+    }
+    // The same ACP sessions, not rotated ones.
+    expect(persistedAcpSessions()).toEqual(before);
+  });
+
+  it('falls back to session/new with a system row for the agent whose resume fails, and resumes the other', async () => {
+    makeBroker({ planner: [justSays('planned', 'p1')], implementer: [justSays('built', 'i1')] });
+    await broker.send({ assignment: assignment(), text: '@planner @implementer start' });
+    await idleAll(2);
+    const before = persistedAcpSessions();
+
+    await restart();
+
+    makeBroker(
+      { planner: [justSays('again', 'p2')], implementer: [justSays('again', 'i2')] },
+      {
+        fakeOptions: {
+          planner: { resumeError: 'session not found', sessionIds: ['acp-planner-2'] },
+        },
+      },
+    );
+    await broker.send({ assignment: assignment(), text: '@planner @implementer carry on' });
+    await waitUntil(
+      () => prompts('planner').length === 1 && prompts('implementer').length === 1,
+      'both agents to be prompted after the restart',
+    );
+
+    // The planner could not resume: a new ACP session, the standing context
+    // re-sent, and the room told why.
+    expect(fakes.get('planner')?.calls).toContain('session/new');
+    expect(prompts('planner')[0].prompt.some((b) => b.type === 'resource')).toBe(true);
+    await waitUntil(
+      () => systemTexts().some((t) => /Could not resume/.test(t)),
+      'the rotation system row',
+    );
+
+    // The implementer is untouched by its neighbour's failure.
+    expect(fakes.get('implementer')?.calls).toContain('session/resume');
+    expect(fakes.get('implementer')?.calls).not.toContain('session/new');
+
+    const after = persistedAcpSessions();
+    expect(after.planner).toBe('acp-planner-2');
+    expect(after.implementer).toBe(before.implementer);
   });
 });

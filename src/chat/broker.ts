@@ -42,7 +42,7 @@ import { readFile } from 'node:fs/promises';
 import type * as acp from '@agentclientprotocol/sdk';
 import type { ResolvedAssignment } from '../utils/assignment-resolver.js';
 import { extractFrontmatter, getNestedField } from '../dashboard/parser.js';
-import { resolveWorkspaceCwd } from '../launch/cwd.js';
+import { resolveWorkspaceCwd } from '../utils/workspace-cwd.js';
 import { appendComment } from '../lifecycle/comment-append.js';
 import { appendSession, updateSessionStatus } from '../dashboard/agent-sessions.js';
 import {

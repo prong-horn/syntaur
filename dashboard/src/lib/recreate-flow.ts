@@ -1,8 +1,9 @@
-// Pure, React-free helpers for the "recreate a deleted worktree" flow. Kept
-// dependency-free so the backend Vitest suite (which already imports other
-// dashboard/src/lib helpers) can unit-test the continuation-URL and request
-// routing — including the side-effect-free Cancel path — without a frontend
-// test runner.
+// The `syntaur://` continuation-URL half of the recreate flow. The routing
+// half (`recreateRequest`) moved to `recreate.ts` because worktree recreation
+// needs it and is not launch code; it is re-exported here so the launch-side
+// components keep one import site.
+
+export { recreateRequest, type RecreateIdentity } from './recreate';
 
 export type ReopenMode = 'resume' | 'fork';
 
@@ -53,42 +54,4 @@ export function continuationUrl(
     url += `&agentName=${encodeURIComponent(agentName)}`;
   }
   return url;
-}
-
-/** Identity carried by a preflight `recreate` payload — enough to route the POST. */
-export interface RecreateIdentity {
-  kind: 'assignment' | 'session';
-  id: string;
-  projectSlug: string | null;
-  assignmentSlug: string | null;
-}
-
-/**
- * Resolve the server-authoritative recreate endpoint for an identity. The
- * server re-derives the path/repo/branch from persisted state, so the request
- * carries no path — only the route identifies the target:
- *   - session            -> /api/agent-sessions/:id/worktree/recreate
- *   - project assignment -> /api/projects/:slug/assignments/:aslug/worktree/recreate
- *   - standalone          -> /api/assignments/:id/worktree/recreate
- */
-export function recreateRequest(identity: RecreateIdentity): {
-  method: 'POST';
-  url: string;
-} {
-  if (identity.kind === 'session') {
-    return {
-      method: 'POST',
-      url: `/api/agent-sessions/${encodeURIComponent(identity.id)}/worktree/recreate`,
-    };
-  }
-  if (identity.projectSlug && identity.assignmentSlug) {
-    return {
-      method: 'POST',
-      url: `/api/projects/${encodeURIComponent(identity.projectSlug)}/assignments/${encodeURIComponent(identity.assignmentSlug)}/worktree/recreate`,
-    };
-  }
-  return {
-    method: 'POST',
-    url: `/api/assignments/${encodeURIComponent(identity.id)}/worktree/recreate`,
-  };
 }

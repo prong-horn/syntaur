@@ -54,4 +54,4 @@ export {
   nudgeStampDir,
   nudgeStampPath,
   type InstallKind,
-} from './install-detection.js';
+} from '../utils/install-detection.js';

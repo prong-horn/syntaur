@@ -1,6 +1,6 @@
 import { getAssignmentDetail, getAssignmentDetailById } from './api.js';
 import { getSessionById } from './agent-sessions.js';
-import { isExistingDir } from '../launch/cwd.js';
+import { isExistingDir } from '../utils/workspace-cwd.js';
 
 /**
  * Identifies a thing whose deleted worktree may need recreating. Assignments

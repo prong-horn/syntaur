@@ -9,7 +9,7 @@ import { captureProcessStartedAt } from '../utils/process-info.js';
 import { captureHeadSha } from '../utils/git-worktree.js';
 import { readPpid, resolveOwnSessionId, isSafeSessionId, assertMayMutate } from '../utils/session-id.js';
 import type { ResolvedSession } from '../utils/session-id.js';
-import { isExistingDir } from '../launch/cwd.js';
+import { isExistingDir } from '../utils/workspace-cwd.js';
 import { initSessionDb } from '../dashboard/session-db.js';
 import { appendSession, consumeLaunchMarkers } from '../dashboard/agent-sessions.js';
 import type { AgentSessionStatus } from '../dashboard/types.js';

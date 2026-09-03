@@ -1,5 +1,5 @@
 import type { AssignmentDetail, AssignmentTransitionAction } from '../hooks/useProjects';
-import { recreateRequest, type RecreateIdentity } from './recreate-flow';
+import { recreateRequest, type RecreateIdentity } from './recreate';
 
 interface TransitionResponse {
   assignment: AssignmentDetail;

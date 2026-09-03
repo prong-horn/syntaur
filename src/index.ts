@@ -88,7 +88,7 @@ import { attachCommand } from './commands/attach.js';
 import { attachDoctorCommand } from './commands/attach-doctor.js';
 import { getDefaultCommandName } from './cli-default-command.js';
 import { maybePromptInstall } from './utils/npx-prompt.js';
-import { maybeNudgeForNpxInstall } from './launch/index.js';
+import { maybeNudgeForNpxInstall } from './utils/install-detection.js';
 import { spliceDashDashFromArgv } from './utils/argv-split.js';
 import { readPackageVersion } from './utils/version.js';
 import { runCommand } from './errors.js';

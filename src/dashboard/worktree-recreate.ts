@@ -1,4 +1,4 @@
-import { isExistingDir } from '../launch/cwd.js';
+import { isExistingDir } from '../utils/workspace-cwd.js';
 import { recreateWorktree } from '../utils/git-worktree.js';
 import { assertRepoRoot, worktreeInFlight } from './api-write.js';
 import {

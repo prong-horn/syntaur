@@ -21,7 +21,7 @@ import {
   shouldNudgeForNpx,
   nudgeMessage,
   maybeNudgeForNpxInstall,
-} from '../launch/install-detection.js';
+} from '../utils/install-detection.js';
 
 // Injected realpath that returns the input unchanged. Used for classifier
 // table tests where the paths are fictional file:// URLs that don't exist

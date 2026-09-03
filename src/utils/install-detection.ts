@@ -1,8 +1,8 @@
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve, join } from 'node:path';
 import { realpathSync, readFileSync, mkdirSync } from 'node:fs';
-import { syntaurRoot } from '../utils/paths.js';
-import { fileExists, writeFileForce } from '../utils/fs.js';
+import { syntaurRoot } from './paths.js';
+import { fileExists, writeFileForce } from './fs.js';
 
 export type InstallKind = 'npx' | 'global' | 'local' | 'unknown';
 

@@ -8,7 +8,7 @@ import {
   type AgentConfig,
 } from '../utils/config.js';
 import { probeTerminalInstalled } from '../utils/terminal-probe.js';
-import { isExistingDir } from '../launch/cwd.js';
+import { isExistingDir } from '../utils/workspace-cwd.js';
 import {
   resolveLaunchPlan,
   buildShellCommandLine,

@@ -29,7 +29,7 @@ import { enrichSessions } from './session-liveness.js';
 import { getAgents, readConfig } from '../utils/config.js';
 import { captureProcessStartedAt } from '../utils/process-info.js';
 import { captureHeadSha } from '../utils/git-worktree.js';
-import { isExistingDir } from '../launch/cwd.js';
+import { isExistingDir } from '../utils/workspace-cwd.js';
 import { recreateForTarget, recreateOutcomeToHttp } from './worktree-recreate.js';
 import { listSessionUsage, type SessionUsage } from '../db/usage-db.js';
 import {

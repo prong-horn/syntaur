@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react';
 import { Loader2, Send } from 'lucide-react';
-import { applySuggestion, detectActiveToken } from '../../lib/launch-prompt-autocomplete';
+import { applySuggestion, detectActiveToken } from '../../lib/mention-autocomplete';
 import { agentColorClasses, rankAgentTokens } from '../../lib/chat-format';
 import { cn } from '../../lib/utils';
 import type { ChatAgentSummary } from '../../lib/chat-types';
@@ -8,7 +8,7 @@ import type { ChatAgentSummary } from '../../lib/chat-types';
 /**
  * The composer, with `@agent` autocomplete over the ATTACHED agents.
  *
- * Tokenizing and insertion are the launch-prompt primitives verbatim
+ * Tokenizing and insertion are the shared mention primitives
  * (`detectActiveToken` / `applySuggestion`), so what the box offers and what
  * `parseMentions` reads on the server are the same grammar: `@` at start or
  * after whitespace, then `[A-Za-z0-9_-]+`. Only the ranking differs — the

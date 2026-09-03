@@ -1,7 +1,7 @@
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { realpathSync } from 'node:fs';
-import { detectInstallKind, type InstallKind } from '../launch/index.js';
+import { detectInstallKind, type InstallKind } from '../utils/install-detection.js';
 import { compareSemver } from '../utils/npx-prompt.js';
 import { readPackageVersion } from '../utils/version.js';
 import { getConfiguredOrLegacyManagedPluginDir, getDefaultPluginTargetDir } from '../utils/install.js';

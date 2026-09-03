@@ -8,7 +8,7 @@ import { nowTimestamp } from '../utils/timestamp.js';
 import { assertMayMutate, isSafeSessionId, readPpid, resolveOwnSessionId } from '../utils/session-id.js';
 import { captureProcessStartedAt } from '../utils/process-info.js';
 import { captureHeadSha } from '../utils/git-worktree.js';
-import { isExistingDir } from '../launch/cwd.js';
+import { isExistingDir } from '../utils/workspace-cwd.js';
 import { initSessionDb } from '../dashboard/session-db.js';
 import {
   appendSession,

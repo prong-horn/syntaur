@@ -19,7 +19,7 @@
 
 import { createReadStream } from 'node:fs';
 import { createInterface } from 'node:readline';
-import { parseClaudeLine } from '../tui/transcript-render/claude.js';
+import { parseClaudeLine } from './claude-transcript-line.js';
 
 /** Hard cap on the rendered excerpt handed to a backend. */
 const MAX_EXCERPT_BYTES = 24_000;

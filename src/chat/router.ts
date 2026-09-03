@@ -33,11 +33,11 @@ import type { AgentDefinition, Participants, TurnTrigger } from './types.js';
 export const DEFAULT_HOP_BUDGET = 4;
 
 /**
- * The launch-prompt token grammar, verbatim from
- * `dashboard/src/lib/launch-prompt-autocomplete.ts` and
- * `src/launch/launch-prompt.ts`: `@` at start-of-string or after whitespace,
- * then a maximal `[A-Za-z0-9_-]` run. The composer's autocomplete offers agent
- * ids under the same grammar, so what the user sees is what the router reads.
+ * The mention token grammar, verbatim from
+ * `dashboard/src/lib/mention-autocomplete.ts`: `@` at start-of-string or after
+ * whitespace, then a maximal `[A-Za-z0-9_-]` run. The composer's autocomplete
+ * offers agent ids under the same grammar, so what the user sees is what the
+ * router reads.
  */
 const TOKEN_RE = /(^|\s)@([A-Za-z0-9_-]+)/g;
 

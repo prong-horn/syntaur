@@ -2,7 +2,7 @@ import { spawn } from 'node:child_process';
 import { readFile } from 'node:fs/promises';
 import { updateAssignmentWorkspace } from '../lifecycle/frontmatter.js';
 import { writeFileForce } from './fs.js';
-import { isExistingDir } from '../launch/cwd.js';
+import { isExistingDir } from './workspace-cwd.js';
 
 export interface CreateWorktreeOptions {
   repository: string;
