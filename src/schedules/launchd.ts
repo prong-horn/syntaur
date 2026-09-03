@@ -43,8 +43,8 @@ export interface LaunchAgentSpec {
   errLog: string;
 }
 
-/** Per-agent fixed config (label, CLI command, log filenames, default cadence). */
-interface AgentConfig {
+/** Per-LaunchAgent fixed config (label, CLI command, log filenames, cadence). */
+interface LaunchAgentConfig {
   label: string;
   command: string[];
   outLogName: string;
@@ -52,7 +52,7 @@ interface AgentConfig {
   defaultIntervalSeconds: number;
 }
 
-const TICK_AGENT: AgentConfig = {
+const TICK_AGENT: LaunchAgentConfig = {
   label: LAUNCH_AGENT_LABEL,
   command: ['schedule', 'tick'],
   outLogName: 'schedule-tick.out.log',
@@ -149,7 +149,7 @@ function defaultRun(command: string, args: string[]): { code: number; stderr: st
 }
 
 function resolveSpec(
-  config: AgentConfig,
+  config: LaunchAgentConfig,
   deps: LaunchdDeps,
 ): { spec: LaunchAgentSpec; plistPath: string; home: string; uid: number } {
   const home = deps.homeDir ?? homedir();
@@ -178,7 +178,7 @@ export interface InstallResult {
  * `bootout` any prior instance (ignored if absent) and `bootstrap` the new one.
  * Throws `LaunchAgentRefusalError` with the launchctl stderr on failure.
  */
-function installAgent(config: AgentConfig, deps: LaunchdDeps): InstallResult {
+function installAgent(config: LaunchAgentConfig, deps: LaunchdDeps): InstallResult {
   const { spec, plistPath, home, uid } = resolveSpec(config, deps);
   const mkdirp = deps.mkdirp ?? ((p: string) => mkdirSync(p, { recursive: true }));
   const writeFile = deps.writeFile ?? ((p: string, c: string) => writeFileSync(p, c));
@@ -206,7 +206,7 @@ function installAgent(config: AgentConfig, deps: LaunchdDeps): InstallResult {
 }
 
 /** Uninstall: `bootout` the agent and remove the plist. Best-effort bootout. */
-function uninstallAgent(config: AgentConfig, deps: LaunchdDeps): { plistPath: string; label: string } {
+function uninstallAgent(config: LaunchAgentConfig, deps: LaunchdDeps): { plistPath: string; label: string } {
   const { spec, plistPath, uid } = resolveSpec(config, deps);
   const run = deps.run ?? defaultRun;
   const removeFile = deps.removeFile ?? ((p: string) => rmSync(p, { force: true }));

@@ -76,7 +76,7 @@ SELECT s.*,
  * D3 — WHO FILTERS AND WHO DOES NOT. `listAllSessions`, `listProjectSessions`,
  * and `listSessionsByAssignment` default to hiding archived sessions because
  * every one of their callers is a human-browsing surface: the Overview
- * `recentSessions` rail, the assignment-detail list, and the TUI cockpit rail.
+ * `recentSessions` rail and the assignment-detail list.
  * (The PAGED Agent Sessions list filters separately, in `buildSessionFilters`.)
  *
  * Everything else MUST keep resolving archived sessions and is deliberately
