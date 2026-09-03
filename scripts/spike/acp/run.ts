@@ -14,7 +14,7 @@ const flag = (name: string, dflt?: string) => {
   return i >= 0 ? args[i + 1] : dflt;
 };
 const adapterArg = flag('adapter', 'both')!;
-const adapters: Adapter[] = adapterArg === 'both' ? ['claude', 'codex'] : [adapterArg as Adapter];
+const adapters: Adapter[] = adapterArg === 'both' ? ['claude', 'codex'] : adapterArg === 'cursor' ? ['cursor'] : [adapterArg as Adapter];
 const only = flag('only')?.split(',').map((s) => s.trim().padStart(2, '0'));
 const runName = flag('run') ?? new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
 const runDir = path.join(here, 'out', runName);
@@ -22,7 +22,7 @@ const runDir = path.join(here, 'out', runName);
 if (!only) fs.rmSync(runDir, { recursive: true, force: true });
 fs.mkdirSync(runDir, { recursive: true });
 
-const pre = preflight(); // throws on missing binaries, wrong versions, or no login
+const pre = preflight(adapters); // throws on missing binaries, wrong versions, or no login
 fs.writeFileSync(path.join(runDir, 'preflight.json'), JSON.stringify(pre, null, 2));
 console.log(`run=${runName} adapters=${adapters.join(',')}`);
 console.log(JSON.stringify(pre));

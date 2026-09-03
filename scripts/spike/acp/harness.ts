@@ -11,11 +11,12 @@ import fs from 'node:fs';
 import path from 'node:path';
 import * as acp from '@agentclientprotocol/sdk';
 
-export type Adapter = 'claude' | 'codex';
+export type Adapter = 'claude' | 'codex' | 'cursor';
 
 export const ADAPTERS: Record<Adapter, { bin: string; args: string[] }> = {
   claude: { bin: 'claude-agent-acp', args: [] },
   codex: { bin: 'codex-acp', args: [] },
+  cursor: { bin: 'cursor-agent', args: ['acp'] },
 };
 
 export interface Frame {
@@ -37,6 +38,20 @@ export interface PermissionEvent {
   request: acp.RequestPermissionRequest;
   response?: acp.RequestPermissionResponse;
   respondedAt?: string;
+}
+
+export interface ExtRequestEvent {
+  ts: string;
+  method: string;
+  params: unknown;
+  response?: unknown;
+  respondedAt?: string;
+}
+
+export interface ExtNotificationEvent {
+  ts: string;
+  method: string;
+  params: unknown;
 }
 
 export type PermissionPolicy = (
@@ -83,12 +98,21 @@ export const holdForever: PermissionPolicy = (_req, { harness }) =>
     harness.heldPermissions.push(resolve);
   });
 
+/** Pass-through parser for cursor extension methods (SDK requires a parser for custom names). */
+const passthrough = <T>(v: unknown) => v as T;
+
 export class Harness {
   readonly frames: Frame[] = [];
   readonly updates: CollectedUpdate[] = [];
   readonly permissions: PermissionEvent[] = [];
+  readonly extRequests: ExtRequestEvent[] = [];
+  readonly extNotifications: ExtNotificationEvent[] = [];
   readonly badStdoutLines: string[] = [];
   readonly heldPermissions: Array<(r: acp.RequestPermissionResponse) => void> = [];
+  /** Resolve a pending cursor/ask_question (set by the probe when it wants to answer). */
+  pendingAskQuestion?: (answer: unknown) => void;
+  /** Resolve a pending cursor/create_plan (set by the probe when it wants to accept). */
+  pendingCreatePlan?: (answer: unknown) => void;
   readonly stderrPath: string;
   readonly framesPath: string;
   readonly startedAt = Date.now();
@@ -201,10 +225,46 @@ export class Harness {
         ev.respondedAt = now();
         return response;
       })
+      .onRequest('cursor/create_plan', passthrough, async (ctx) => {
+        const ev: ExtRequestEvent = { ts: now(), method: 'cursor/create_plan', params: ctx.params };
+        this.extRequests.push(ev);
+        this.log(`ext request cursor/create_plan keys=${Object.keys(ctx.params as object).join(',')}`);
+        const response = await new Promise<unknown>((resolve) => {
+          this.pendingCreatePlan = resolve;
+        });
+        ev.response = response;
+        ev.respondedAt = now();
+        this.pendingCreatePlan = undefined;
+        return response;
+      })
+      .onRequest('cursor/ask_question', passthrough, async (ctx) => {
+        const ev: ExtRequestEvent = { ts: now(), method: 'cursor/ask_question', params: ctx.params };
+        this.extRequests.push(ev);
+        this.log(`ext request cursor/ask_question keys=${Object.keys(ctx.params as object).join(',')}`);
+        const response = await new Promise<unknown>((resolve) => {
+          this.pendingAskQuestion = resolve;
+        });
+        ev.response = response;
+        ev.respondedAt = now();
+        this.pendingAskQuestion = undefined;
+        return response;
+      })
       .onNotification(acp.methods.client.session.update, (ctx) => {
         const u = ctx.params;
         this.updates.push({ ts: now(), sessionId: u.sessionId, update: u.update });
         if (!this.opts.quiet) this.render(u.update);
+      })
+      .onNotification('cursor/update_todos', passthrough, (ctx) => {
+        this.extNotifications.push({ ts: now(), method: 'cursor/update_todos', params: ctx.params });
+        this.log(`ext notification cursor/update_todos`);
+      })
+      .onNotification('cursor/task', passthrough, (ctx) => {
+        this.extNotifications.push({ ts: now(), method: 'cursor/task', params: ctx.params });
+        this.log(`ext notification cursor/task`);
+      })
+      .onNotification('cursor/generate_image', passthrough, (ctx) => {
+        this.extNotifications.push({ ts: now(), method: 'cursor/generate_image', params: ctx.params });
+        this.log(`ext notification cursor/generate_image`);
       })
       .connect(logged);
   }
@@ -539,8 +599,13 @@ export function appendResult(runDir: string, r: ScenarioResult): void {
   fs.writeFileSync(p, JSON.stringify(list, null, 2));
 }
 
+/** `cursor-agent status` prints the account email; keep only login state. */
+function sanitizeCursorAuth(raw: string): string {
+  return redactEmails(raw.replace(/\s+/g, ' ').slice(0, 200));
+}
+
 /** §5.9a step 1: versions + auth probes. Throws when a binary is missing or nobody is logged in. */
-export function preflight(): Record<string, string> {
+export function preflight(adapters: Adapter[] = ['claude', 'codex']): Record<string, string> {
   const v = (bin: string, args: string[]) => {
     try {
       // codex prints `login status` on stderr, so capture both
@@ -552,26 +617,35 @@ export function preflight(): Record<string, string> {
       return `unavailable (${(e as Error).message.split('\n')[0]})`;
     }
   };
-  const out = {
+  const out: Record<string, string> = {
     node: process.version,
     'claude-agent-acp': v('claude-agent-acp', ['--version']),
     'codex-acp': v('codex-acp', ['--version']),
     claude: v('claude', ['--version']),
     codex: v('codex', ['--version']),
+    'cursor-agent': v('cursor-agent', ['--version']),
     '@agentclientprotocol/sdk': JSON.parse(fs.readFileSync(new URL('./node_modules/@agentclientprotocol/sdk/package.json', import.meta.url), 'utf8')).version,
     'claude auth status': sanitizeClaudeAuth(v('claude', ['auth', 'status'])),
     'codex login status': v('codex', ['login', 'status']),
+    'cursor-agent status': sanitizeCursorAuth(v('cursor-agent', ['status'])),
   };
   const problems: string[] = [];
-  for (const k of ['claude-agent-acp', 'codex-acp', 'claude', 'codex'] as const) if (out[k].startsWith('unavailable')) problems.push(`${k}: ${out[k]}`);
-  if (!/"loggedIn":\s*true/.test(out['claude auth status'])) problems.push(`claude not logged in: ${out['claude auth status']}`);
-  if (!/Logged in/.test(out['codex login status'])) problems.push(`codex not logged in: ${out['codex login status']}`);
+  const need = new Set(adapters);
+  if (need.has('claude') || need.has('codex')) {
+    for (const k of ['claude-agent-acp', 'codex-acp', 'claude', 'codex'] as const) if (out[k].startsWith('unavailable')) problems.push(`${k}: ${out[k]}`);
+    if (need.has('claude') && !/"loggedIn":\s*true/.test(out['claude auth status'])) problems.push(`claude not logged in: ${out['claude auth status']}`);
+    if (need.has('codex') && !/Logged in/.test(out['codex login status'])) problems.push(`codex not logged in: ${out['codex login status']}`);
+  }
+  if (need.has('cursor')) {
+    if (out['cursor-agent'].startsWith('unavailable')) problems.push(`cursor-agent: ${out['cursor-agent']}`);
+    if (!/Logged in/.test(out['cursor-agent status'])) problems.push(`cursor not logged in: ${out['cursor-agent status']}`);
+  }
   // The scripts are .ts run without a build step, so the actual requirement is native type stripping, not a version number.
   if (Number(process.versions.node.split('.')[0]) < 22) problems.push(`node ${process.version} (need ≥ 22 for native .ts type stripping)`);
   else if (!(process.features as { typescript?: unknown }).typescript) problems.push(`node ${process.version} has process.features.typescript unset (native type stripping is off)`);
   if (!/^1\.4\./.test(out['@agentclientprotocol/sdk'])) problems.push(`@agentclientprotocol/sdk ${out['@agentclientprotocol/sdk']} (expected 1.4.x)`);
-  if (!/^0\.70\./.test(out['claude-agent-acp'])) problems.push(`claude-agent-acp version ${out['claude-agent-acp']} (expected 0.70.x)`);
-  if (!/ 1\.7\./.test(out['codex-acp'])) problems.push(`codex-acp version ${out['codex-acp']} (expected 1.7.x)`);
+  if (need.has('claude') && !/^0\.70\./.test(out['claude-agent-acp'])) problems.push(`claude-agent-acp version ${out['claude-agent-acp']} (expected 0.70.x)`);
+  if (need.has('codex') && !/ 1\.7\./.test(out['codex-acp'])) problems.push(`codex-acp version ${out['codex-acp']} (expected 1.7.x)`);
   if (problems.length) throw new Error('preflight failed:\n  ' + problems.join('\n  '));
   return out;
 }

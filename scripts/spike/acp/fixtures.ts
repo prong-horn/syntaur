@@ -17,9 +17,9 @@ const flag = (name: string) => {
   const i = args.indexOf(`--${name}`);
   return i >= 0 ? args[i + 1] : undefined;
 };
-const runs = { claude: flag('claude'), codex: flag('codex') } as const;
-if (!runs.claude && !runs.codex) {
-  console.error('usage: node fixtures.ts --claude <run> --codex <run>');
+const runs = { claude: flag('claude'), codex: flag('codex'), cursor: flag('cursor') } as const;
+if (!runs.claude && !runs.codex && !runs.cursor) {
+  console.error('usage: node fixtures.ts --claude <run> --codex <run> [--cursor <run>]');
   process.exit(2);
 }
 
@@ -77,17 +77,15 @@ function validateTranscript(file: string, rel: string) {
   if (dirs.size < 2 && !rel.includes('.early-exit')) problems.push(`${rel}: only "${[...dirs][0]}" frames`);
 }
 
-for (const adapter of ['claude', 'codex'] as const) {
+for (const adapter of ['claude', 'codex', 'cursor'] as const) {
   const run = runs[adapter];
   if (!run) continue;
   const runDir = path.join(here, 'out', run);
-  const results: ScenarioResult[] = JSON.parse(fs.readFileSync(path.join(runDir, 'results.json'), 'utf8'));
   const pre = JSON.parse(fs.readFileSync(path.join(runDir, 'preflight.json'), 'utf8')) as Record<string, string>;
   // versions only — the auth-status lines carry account details
   const versions = Object.fromEntries(
     Object.entries(pre).filter(([k]) => !/status/.test(k)),
   );
-  // run.json records the target clone + the commit it was reset to (written by run.ts)
   const runJsonPath = path.join(runDir, 'run.json');
   const targetInfo = fs.existsSync(runJsonPath)
     ? (JSON.parse(fs.readFileSync(runJsonPath, 'utf8')) as {
@@ -103,6 +101,42 @@ for (const adapter of ['claude', 'codex'] as const) {
   const outDir = path.join(fixturesDir, adapter);
   fs.rmSync(outDir, { recursive: true, force: true });
   fs.mkdirSync(outDir, { recursive: true });
+
+  if (adapter === 'cursor') {
+    // cursor-probe.ts writes *.cursor.ndjson directly (no scenarios.ts rows)
+    const cursorScenarios = [
+      { id: '03-system-prompt', title: 'System prompt transport' },
+      { id: '06-edits-permissions', title: 'Agent mode edit + permission + usage' },
+      { id: '08-create-plan', title: 'Plan mode create_plan extension' },
+      { id: '09-ask-question', title: 'ask_question extension' },
+      { id: '14-session-load', title: 'session/load replay' },
+    ];
+    for (const sc of cursorScenarios) {
+      const files: string[] = [];
+      for (const name of [`${sc.id}.ndjson`, `${sc.id}.load.ndjson`]) {
+        const src = path.join(runDir, name);
+        if (!fs.existsSync(src)) continue;
+        validateTranscript(src, `${adapter}/${name}`);
+        fs.copyFileSync(src, path.join(outDir, name));
+        files.push(`${adapter}/${name}`);
+      }
+      const main = path.join(runDir, `${sc.id}.ndjson`);
+      if (!fs.existsSync(main)) problems.push(`${adapter}/${sc.id}: transcript missing`);
+      manifest.scenarios.push({
+        id: sc.id,
+        title: sc.title,
+        adapter,
+        pass: null,
+        ms: 0,
+        ...(targetInfo?.sourceCommit ? { sourceCommit: targetInfo.sourceCommit } : {}),
+        files,
+        notes: [],
+      });
+    }
+    continue;
+  }
+
+  const results: ScenarioResult[] = JSON.parse(fs.readFileSync(path.join(runDir, 'results.json'), 'utf8'));
   // later reruns of the same scenario (via --only) replace earlier rows
   const latest = new Map<string, ScenarioResult>();
   for (const r of results) latest.set(r.id, r);

@@ -207,3 +207,17 @@ spike curiosity.
 - Whether Syntaur wants client-side `terminal` support to render live command output (codex-acp's `execute` calls reference a `terminalId`).
 - Re-measuring 19's CPU percentages with one suite at a time, if the numbers ever matter.
 - `claude-agent-acp` inherits `settingSources` (user hooks, MCP servers, allow rules); codex-acp inherits `~/.codex/config.toml` (plugins, MCP servers, model, effort). Syntaur must pin both per session (phase 2).
+
+## Cursor addendum (2026-09-03, assignment-chat-cursor-harness Task 0)
+
+Measured against `cursor-agent` 2026.09.02-c22c1a3 with live probes (`scripts/spike/acp/cursor-probe.ts`). Fixtures: `src/__tests__/fixtures/acp/cursor/`.
+
+| Scenario | Finding |
+|---|---|
+| 03 system prompt | `_meta.systemPrompt.append` **not** honoured; `<system>` prepend on first prompt **is** honoured → `systemPromptTransport: 'prompt'` |
+| 06 edits + permissions | Agent-mode file edit works; **no** `usage_update`; shell permission options are standard `allow_once` / `allow_always` / `reject_once` with ids `allow-once`, `allow-always`, `reject-once` (observed in 03, not 06) |
+| 08 create_plan | Blocking `cursor/create_plan` with `{ toolCallId, name, overview, plan, todos, isProject, phases }`; accept with `{ outcome: { outcome: 'accepted' } }` |
+| 09 ask_question | Not observed live in agent mode (agent asked in prose); docs shape used for implementation |
+| 14 session/load | Replays `user_message_chunk`, `agent_thought_chunk`, `agent_message_chunk`, `tool_call`, `tool_call_update`; response carries `modes`, `models`, `configOptions`; no `session/resume` |
+
+Usage: cursor emits no `usage_update` → `HarnessSpec.usage: { kind: 'none' }`. Reattach: `loadSession: true`, no resume → broker uses `session/load`.
