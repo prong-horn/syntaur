@@ -3,6 +3,7 @@ import { Layout } from './components/Layout';
 import { Overview } from './pages/Overview';
 import { InboxPage } from './pages/InboxPage';
 import { HelpPage } from './pages/Help';
+import { NotFoundPage } from './pages/NotFound';
 import { ProjectList } from './pages/ProjectList';
 import { Archive } from './pages/Archive';
 import { ProjectDetail } from './pages/ProjectDetail';
@@ -119,6 +120,9 @@ export function App() {
             <Route path="/w/:workspace/projects/:slug/assignments/:aslug/scratchpad/edit" element={<EditAssignmentScratchpad />} />
             <Route path="/w/:workspace/projects/:slug/assignments/:aslug/handoff/edit" element={<AppendAssignmentHandoff />} />
             <Route path="/w/:workspace/projects/:slug/assignments/:aslug/decision-record/edit" element={<AppendAssignmentDecisionRecord />} />
+
+            {/* Anything unmatched — a stale link or a retired page — says so instead of rendering nothing. */}
+            <Route path="*" element={<NotFoundPage />} />
           </Route>
         </Routes>
       </HotkeyProvider>
