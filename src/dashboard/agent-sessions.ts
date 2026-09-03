@@ -42,10 +42,7 @@ interface SessionRow {
   path: string | null;
   description: string | null;
   transcript_path: string | null;
-  pid: number | null;
-  pid_started_at: string | null;
   original_head_sha: string | null;
-  activity: string | null;
   hosted_by: string | null;
   summary: string | null;
   summarized_at: string | null;
@@ -97,7 +94,7 @@ SELECT s.*,
  *   - reconcileActiveSessions   — liveness GC. Filtering would leak phantom
  *                                 `active` rows and open engagements forever.
  *   - Raw SQL outside this module (usage/session-join.ts, utils/session-count.ts,
- *     sessions/scanner.ts, db/engagement-backfill.ts) — an in-module filter
+ *     db/engagement-backfill.ts) — an in-module filter
  *     cannot reach them, and must not: dropping archived rows would corrupt cost
  *     attribution and greenlight deleting a still-referenced worktree.
  *
@@ -132,10 +129,7 @@ function rowToSession(row: SessionRow): AgentSession {
     path: row.path ?? '',
     description: row.description ?? null,
     transcriptPath: row.transcript_path ?? null,
-    pid: row.pid ?? null,
-    pidStartedAt: row.pid_started_at ?? null,
     originalHeadSha: row.original_head_sha ?? null,
-    activity: (row.activity as ActivityState | null) ?? null,
     hostedBy: (row.hosted_by as SessionHostedBy | null) ?? null,
     summary: row.summary ?? null,
     summarizedAt: row.summarized_at ?? null,
@@ -161,6 +155,21 @@ function rowToSession(row: SessionRow): AgentSession {
  */
 export function withLiveness(sessions: AgentSession[]): AgentSessionWithLiveness[] {
   return sessions.map((session) => ({ ...session, isLive: session.status === 'active' }));
+}
+
+/**
+ * The session heartbeat: bump `updated_at` so the stale sweep does not read the
+ * row as abandoned (phase 4, Decision 4).
+ *
+ * Deliberately NOT an upsert — a touch for an id we do not track is a no-op,
+ * because SessionStart registration is what creates rows. Returns whether a row
+ * moved.
+ */
+export function touchSession(sessionId: string): boolean {
+  const res = getSessionDb()
+    .prepare("UPDATE sessions SET updated_at = datetime('now') WHERE session_id = ?")
+    .run(sessionId);
+  return res.changes > 0;
 }
 
 export async function parseSessionsIndex(
@@ -261,8 +270,8 @@ export async function appendSession(
   // the status read and the open — which would otherwise leak an open engagement
   // onto a now-terminal session (codex round-2 TOCTOU).
   const upsert = db.prepare(`
-    INSERT INTO sessions (session_id, agent, started, status, path, description, transcript_path, pid, pid_started_at, original_head_sha, hosted_by, description_source)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO sessions (session_id, agent, started, status, path, description, transcript_path, original_head_sha, hosted_by, description_source)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(session_id) DO UPDATE SET
       agent             = excluded.agent,
       status            = CASE
@@ -285,8 +294,6 @@ export async function appendSession(
                             ELSE description_source
                           END,
       transcript_path   = COALESCE(NULLIF(excluded.transcript_path, ''),   transcript_path),
-      pid               = COALESCE(excluded.pid,                           pid),
-      pid_started_at    = COALESCE(NULLIF(excluded.pid_started_at, ''),    pid_started_at),
       original_head_sha = COALESCE(NULLIF(original_head_sha, ''), NULLIF(excluded.original_head_sha, '')),
       -- Launch-time provenance: write-if-null, like original_head_sha above.
       -- The value is established by whoever launched the session; a later
@@ -320,8 +327,6 @@ export async function appendSession(
       sanitizeSessionPath(session.path) ?? '',
       session.description ?? null,
       session.transcriptPath ?? null,
-      session.pid ?? null,
-      session.pidStartedAt ?? null,
       session.originalHeadSha ?? null,
       session.hostedBy ?? null,
       // Insert-path provenance; the ON CONFLICT branch stamps it on upsert.
@@ -389,290 +394,6 @@ export async function appendSession(
     }
   });
   apply.immediate();
-}
-
-/**
- * Re-key a cockpit-planted placeholder row onto the agent's REAL session id.
- *
- * The cockpit pre-inserts a row keyed by a generated UUID (carrying
- * `hosted_by`, `pid`, and an open engagement) and plants that UUID in the
- * worker's environment as `SYNTAUR_LAUNCH_ID`. When the agent later registers
- * under its OWN id, this collapses the two identities so provenance survives
- * and no duplicate row lingers.
- *
- * Two paths, both leaving ZERO `sessions`/`engagement` rows keyed to
- * `launchId`:
- *  - **migrate** (no real row yet): the placeholder simply becomes the real
- *    row; the caller's subsequent upsert converges onto it (COALESCE fill-in).
- *  - **merge** (the real row already registered): copy provenance write-if-null
- *    onto the real row, close the placeholder's open engagement, re-key its
- *    engagement history, and drop the placeholder.
- *
- * Never throws — a reconcile failure must not break session registration.
- */
-export async function reconcileLaunchPlaceholder(
-  launchId: string,
-  realSessionId: string,
-): Promise<void> {
-  if (!launchId || !realSessionId || launchId === realSessionId) return;
-  try {
-    const db = getSessionDb();
-    const now = new Date().toISOString();
-    const apply = db.transaction(() => {
-      const placeholder = db
-        .prepare('SELECT session_id, transcript_path, original_head_sha FROM sessions WHERE session_id = ?')
-        .get(launchId) as
-        | { session_id: string; transcript_path: string | null; original_head_sha: string | null }
-        | undefined;
-      if (!placeholder) return; // normal for non-cockpit launches
-
-      // The markers live in the WORKER's environment for the whole session, so
-      // every descendant inherits them — a subagent's SessionStart hook, or a
-      // `syntaur track-session --session-id <other>` run from inside the
-      // session, would arrive here with a DIFFERENT real id. Without this
-      // guard that re-keys the launched session's own live row onto the
-      // newcomer (migrate path), silently destroying the parent's identity and
-      // moving its engagement. A launch may only ever be claimed ONCE, by the
-      // agent it started; these columns are the durable evidence that a real
-      // registration already claimed this row (`runSessionRegister` /
-      // `trackSessionCommand` both write them; a launch placeholder never
-      // does), so anything after the first claim is refused.
-      if (placeholder.transcript_path !== null || placeholder.original_head_sha !== null) return;
-
-      const real = db
-        .prepare('SELECT session_id FROM sessions WHERE session_id = ?')
-        .get(realSessionId) as { session_id: string } | undefined;
-
-      if (!real) {
-        // Migrate: the placeholder BECOMES the real row, keeping hosted_by,
-        // pid, slugs and its open engagement intact.
-        db.prepare('UPDATE sessions SET session_id = ?, updated_at = ? WHERE session_id = ?').run(
-          realSessionId,
-          now,
-          launchId,
-        );
-        db.prepare('UPDATE engagement SET session_id = ? WHERE session_id = ?').run(
-          realSessionId,
-          launchId,
-        );
-        return;
-      }
-
-      // Merge: the agent's hook registered before we got here. Copy provenance
-      // write-if-null so an existing value is never clobbered.
-      db.prepare(
-        `UPDATE sessions SET
-           hosted_by  = COALESCE(hosted_by,  (SELECT hosted_by FROM sessions WHERE session_id = @launch)),
-           pid        = COALESCE(pid,        (SELECT pid       FROM sessions WHERE session_id = @launch)),
-           updated_at = @now
-         WHERE session_id = @real`,
-      ).run({ launch: launchId, real: realSessionId, now });
-
-      // Close the placeholder's open engagement BEFORE re-keying: the
-      // `one_active_per_session` unique index is partial on `ended_at IS NULL`,
-      // so the real row's own open engagement would collide otherwise.
-      db.prepare(
-        `UPDATE engagement SET ended_at = @now, close_reason = 'launch-reconcile'
-          WHERE session_id = @launch AND ended_at IS NULL`,
-      ).run({ launch: launchId, now });
-      // Re-key the (now all closed) history: engagement.session_id has no FK
-      // cascade, so skipping this would orphan rows on the deleted id.
-      db.prepare('UPDATE engagement SET session_id = ? WHERE session_id = ?').run(
-        realSessionId,
-        launchId,
-      );
-      db.prepare('DELETE FROM sessions WHERE session_id = ?').run(launchId);
-    });
-    apply.immediate();
-  } catch (err) {
-    console.error(
-      `launch-reconcile failed for ${launchId} → ${realSessionId}: ${err instanceof Error ? err.message : String(err)}`,
-    );
-  }
-}
-
-// ── Pending-launch reservations (Phase C, plan D5) ─────────────────────────
-// Durable pre-dispatch records with their own lifecycle — NEVER sessions rows
-// (a pre-dispatch `active` session would open an engagement and strand on a
-// failed dispatch; see launch.ts's WHY-not-insert-before-dispatch comment).
-
-export interface LaunchReservation {
-  launchId: string;
-  hostedBy: string;
-  agent: string | null;
-  cwd: string | null;
-  /** Root-identity claim binding (review r1/r2 F1): the real session id
-   * this launch WILL register as, when knowable pre-dispatch (Branch A
-   * claude injects `--session-id <launchId>`, so it equals launchId).
-   * NULL = no root identity establishable → the mode is EXCLUDED from
-   * claiming ('unbound': no write, legacy evidence-guard path). */
-  expectedSessionId: string | null;
-  createdAt: string;
-  dispatchedAt: string | null;
-  claimedBy: string | null;
-  claimedAt: string | null;
-  canceledAt: string | null;
-}
-
-/** Reserve BEFORE dispatch. Returns false (never throws) when the write
- * failed — the caller proceeds with today's dispatch-first semantics. */
-export function reserveLaunch(input: {
-  launchId: string;
-  hostedBy: SessionHostedBy;
-  agent?: string | null;
-  cwd?: string | null;
-  expectedSessionId?: string | null;
-}): boolean {
-  try {
-    const db = getSessionDb();
-    // Opportunistic TTL sweep: abandoned/canceled/claimed rows are all
-    // transient bookkeeping — age them out wholesale (requirement 4).
-    db.prepare("DELETE FROM launch_reservations WHERE created_at < datetime('now', '-1 day')").run();
-    // Upsert-revive (review r2 F3): a CANCELED reservation for the same
-    // identity is resurrected as a fresh row (all lifecycle fields cleared),
-    // so a same-identity retry stays claim-protected instead of falling to
-    // the legacy path. A LIVE (uncanceled) conflicting row refuses the DO
-    // UPDATE's WHERE → 0 changes → false → legacy (identity genuinely in use).
-    const res = db.prepare(
-      `INSERT INTO launch_reservations (launch_id, hosted_by, agent, cwd, expected_session_id, created_at)
-       VALUES (@id, @hostedBy, @agent, @cwd, @expected, @now)
-       ON CONFLICT(launch_id) DO UPDATE SET
-         hosted_by = excluded.hosted_by, agent = excluded.agent, cwd = excluded.cwd,
-         expected_session_id = excluded.expected_session_id, created_at = excluded.created_at,
-         dispatched_at = NULL, claimed_by = NULL, claimed_at = NULL, canceled_at = NULL
-       WHERE launch_reservations.canceled_at IS NOT NULL`,
-    ).run({
-      id: input.launchId,
-      hostedBy: input.hostedBy,
-      agent: input.agent ?? null,
-      cwd: input.cwd ?? null,
-      expected: input.expectedSessionId ?? null,
-      now: new Date().toISOString(),
-    });
-    return res.changes === 1;
-  } catch {
-    return false;
-  }
-}
-
-/** Stamp the moment the dispatch request was actually sent. Best-effort. */
-export function markLaunchDispatched(launchId: string): void {
-  try {
-    getSessionDb()
-      .prepare('UPDATE launch_reservations SET dispatched_at = @now WHERE launch_id = @id AND dispatched_at IS NULL')
-      .run({ id: launchId, now: new Date().toISOString() });
-  } catch {
-    /* best-effort */
-  }
-}
-
-/** Cancel on definite refusal/degrade so a retry of the same identity is
- * never blocked. A CLAIMED reservation is never canceled (claim wins). */
-export function cancelLaunch(launchId: string): void {
-  try {
-    getSessionDb()
-      .prepare(
-        'UPDATE launch_reservations SET canceled_at = @now WHERE launch_id = @id AND claimed_by IS NULL AND canceled_at IS NULL',
-      )
-      .run({ id: launchId, now: new Date().toISOString() });
-  } catch {
-    /* best-effort */
-  }
-}
-
-export type LaunchClaimResult = 'won' | 'lost' | 'unbound' | 'none';
-
-/** Identity-bound claim (review r1 F1 + r2 F1).
- * BOUND (`expected_session_id` set — Branch A): only that exact id can win,
- * enforced INSIDE the CAS WHERE — an intruder can never claim first;
- * idempotent for the owner; canceled → 'lost'.
- * UNBOUND (`expected_session_id` NULL — shell-alias claude; no root-identity
- * mechanism exists): EXCLUDED from the claim protocol — writes NOTHING,
- * returns 'unbound'; callers take today's evidence-guard path unchanged
- * (the hook-race residual stays open for this mode, documented in D5).
- * 'none' = no reservation row (legacy launch or failed reserve). */
-export function claimLaunch(launchId: string, realSessionId: string): LaunchClaimResult {
-  try {
-    const db = getSessionDb();
-    const row = db
-      .prepare('SELECT expected_session_id FROM launch_reservations WHERE launch_id = ?')
-      .get(launchId) as { expected_session_id: string | null } | undefined;
-    if (!row) return 'none';
-    if (row.expected_session_id === null) return 'unbound';
-    if (row.expected_session_id !== realSessionId) return 'lost';
-    const res = db
-      .prepare(
-        `UPDATE launch_reservations
-            SET claimed_by = @real, claimed_at = @now
-          WHERE launch_id = @id AND expected_session_id = @real
-            AND (claimed_by IS NULL OR claimed_by = @real) AND canceled_at IS NULL`,
-      )
-      .run({ id: launchId, real: realSessionId, now: new Date().toISOString() });
-    return res.changes === 1 ? 'won' : 'lost'; // 0 ⇒ canceled
-  } catch {
-    return 'none'; // reservation machinery unavailable → legacy path
-  }
-}
-
-/** Read one reservation (launch wiring + tests). Null when absent/unreadable. */
-export function getLaunchReservation(launchId: string): LaunchReservation | null {
-  try {
-    const r = getSessionDb()
-      .prepare(
-        `SELECT launch_id, hosted_by, agent, cwd, expected_session_id, created_at, dispatched_at, claimed_by, claimed_at, canceled_at
-           FROM launch_reservations WHERE launch_id = ?`,
-      )
-      .get(launchId) as Record<string, string | null> | undefined;
-    if (!r) return null;
-    return {
-      launchId: r.launch_id as string,
-      hostedBy: r.hosted_by as string,
-      agent: r.agent,
-      cwd: r.cwd,
-      expectedSessionId: r.expected_session_id,
-      createdAt: r.created_at as string,
-      dispatchedAt: r.dispatched_at,
-      claimedBy: r.claimed_by,
-      claimedAt: r.claimed_at,
-      canceledAt: r.canceled_at,
-    };
-  } catch {
-    return null;
-  }
-}
-
-/**
- * Read the launch-correlation markers from this process's environment
- * (hook processes inherit the worker's env), reconcile the placeholder
- * row if one exists, and return the validated backend stamp for the
- * caller to merge into its upsert payload. Never throws.
- */
-export async function consumeLaunchMarkers(
-  realSessionId: string,
-): Promise<{ hostedBy?: SessionHostedBy }> {
-  const launchId = process.env.SYNTAUR_LAUNCH_ID;
-  if (launchId) {
-    const claim = claimLaunch(launchId, realSessionId);
-    if (claim === 'lost') {
-      // Deterministic R3 guard — BOUND reservations only (review r1 F1):
-      // the launch injected `--session-id`, so the root's real id is known
-      // and this claimant provably is not it (a subagent's SessionStart, or
-      // `track-session --session-id <other>` run inside the worker) —
-      // regardless of arrival order. Refuse the reconcile AND the backend
-      // stamp; the true root always gets 'won', even claiming later.
-      return {};
-    }
-    // 'won': the proven root. 'unbound' (no deterministic root identity —
-    // shell-alias claude) and 'none' (legacy launch / failed reserve): take
-    // today's path unchanged — the transcript_path/original_head_sha
-    // evidence guard inside reconcileLaunchPlaceholder stays the
-    // belt-and-braces (documented accepted residual, no worse than Phase B).
-    await reconcileLaunchPlaceholder(launchId, realSessionId);
-  }
-  const raw = process.env.SYNTAUR_HOSTED_BY;
-  const hostedBy =
-    raw === 'syntaurd' || raw === 'tmux' || raw === 'claude-bg' ? raw : undefined;
-  return hostedBy ? { hostedBy } : {};
 }
 
 /**
@@ -760,7 +481,7 @@ export async function updateSessionStatus(
   // **gate the terminal status flip on that close succeeding** (else "the session
   // has no open engagement"). So a concurrent reopen/switch that lands in the
   // async snapshot gap is never clobbered and a revived session is not wrongly
-  // marked terminal — mirroring `livenessStopSession` (codex holistic High-1;
+  // marked terminal (codex holistic High-1;
   // Decision 7 always intended close-by-captured-id, not a re-read of current-open).
   const captured = getOpenEngagement(sessionId);
   let snapshot: TokenSnapshot | null = null;
@@ -786,68 +507,6 @@ export async function updateSessionStatus(
         'UPDATE sessions SET status = ?, ended = COALESCE(?, datetime(\'now\')), updated_at = datetime(\'now\') WHERE session_id = ?',
       )
       .run(status, endedAt ?? null, sessionId);
-    return res.changes > 0;
-  });
-  return apply.immediate();
-}
-
-export interface LivenessStopInput {
-  sessionId: string;
-  /** The open engagement the scanner CAPTURED as dead (compare-and-close). */
-  engagementId?: number | null;
-  engagementStartedAt?: string | null;
-  /** Backdated end (transcript mtime), else `now`. */
-  endedAt?: string;
-  /** Pre-captured token snapshot (await the async source BEFORE calling). */
-  tokensAtClose?: TokenSnapshot | null;
-  /**
-   * Close reason for the swept engagement. Defaults to `liveness_gc` — the
-   * scanner overrides it with `idle-sweep` when the transcript-idle rule fired
-   * rather than pid evidence.
-   */
-  closeReason?: string;
-}
-
-/**
- * Liveness-GC terminal stop+close — the dead-session garbage collector (#5,
- * Decisions 1-2). In ONE IMMEDIATE transaction:
- *
- *   1. Compute `stillDead`. If the caller captured the dead engagement, this is
- *      a **compare-and-close** of that exact `(id, started_at)` with
- *      `close_reason` (`liveness_gc` unless the caller overrides) — true ONLY
- *      if that interval was still open
- *      (a concurrent reopen/switch closed-and-replaced it ⇒ false, and the new
- *      interval is left untouched). With no engagement captured, `stillDead` is
- *      "the session has no current open engagement".
- *   2. ONLY if `stillDead`, mark the session `stopped`. So a session that was
- *      reopened/revived between the dead-detection and this call is neither
- *      closed nor stopped (codex round 3) — its live E2 and `active` row survive.
- *
- * Unlike `updateSessionStatus('stopped')` this does NOT capture its own snapshot
- * and does NOT emit a second generic `abandoned` close. It writes ONLY the
- * `engagement` + `sessions` rows — never assignment facts/status (AC3). Returns
- * true when the session row was actually swept to `stopped`.
- */
-export function livenessStopSession(input: LivenessStopInput): boolean {
-  const db = getSessionDb();
-  const endedAt = input.endedAt ?? new Date().toISOString();
-  const apply = db.transaction((): boolean => {
-    const stillDead =
-      input.engagementId != null && input.engagementStartedAt != null
-        ? closeEngagementById({
-            id: input.engagementId,
-            startedAt: input.engagementStartedAt,
-            closeReason: input.closeReason ?? 'liveness_gc',
-            tokensAtClose: input.tokensAtClose ?? null,
-            endedAt,
-          })
-        : getOpenEngagement(input.sessionId) === null;
-    if (!stillDead) return false;
-    const res = db
-      .prepare(
-        "UPDATE sessions SET status = 'stopped', ended = COALESCE(?, datetime('now')), updated_at = datetime('now') WHERE session_id = ? AND status = 'active'",
-      )
-      .run(input.endedAt ?? null, input.sessionId);
     return res.changes > 0;
   });
   return apply.immediate();

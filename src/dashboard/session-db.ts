@@ -11,7 +11,7 @@ import { sanitizeSessionPath } from '../utils/transcript.js';
 
 let db: Database.Database | null = null;
 
-const SCHEMA_VERSION = '10';
+const SCHEMA_VERSION = '11';
 
 // v10 base schema: v9 plus the two session curation flags — `pinned_at`
 // (non-NULL ⇒ the session sorts ahead of the active sort on every browsing
@@ -19,6 +19,14 @@ const SCHEMA_VERSION = '10';
 // session is hidden from the default list queries but is never deleted).
 // Nullable ISO-8601 TEXT timestamps rather than INTEGER booleans so pin order
 // is deterministic and archiving is auditable.
+//
+// v11 base schema: v10 minus everything the terminal-launch stack owned —
+// the whole `launch_reservations` table, and the `pid`, `pid_started_at` and
+// `activity` columns, which lost their last reader when `computeIsLive`, the
+// transcript scanner and the Agent View went (phase 4, Decision 6).
+// `transcript_path` STAYS: the summarizer chain, `listSessionsNeedingSummary`,
+// the session commands, the doctor workspace check, context leases and
+// engagement backfill all read it.
 //
 // v9 base schema: v8 plus `launch_reservations` — pending-launch reservation
 // records, never sessions rows; a failed dispatch must never strand an active
@@ -47,10 +55,7 @@ CREATE TABLE IF NOT EXISTS sessions (
   path TEXT,
   description TEXT,
   transcript_path TEXT,
-  pid INTEGER,
-  pid_started_at TEXT,
   original_head_sha TEXT,
-  activity TEXT,
   hosted_by TEXT,
   summary TEXT,
   summarized_at TEXT,
@@ -67,32 +72,20 @@ CREATE INDEX IF NOT EXISTS idx_sessions_status ON sessions(status);
 -- of initSessionDb) because the pre-v9 rebuild migrations DROP this table.
 CREATE INDEX IF NOT EXISTS idx_sessions_started ON sessions(started);
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT);
-CREATE TABLE IF NOT EXISTS launch_reservations (
-  launch_id TEXT PRIMARY KEY,
-  hosted_by TEXT NOT NULL,
-  agent TEXT,
-  cwd TEXT,
-  expected_session_id TEXT,
-  created_at TEXT NOT NULL,
-  dispatched_at TEXT,
-  claimed_by TEXT,
-  claimed_at TEXT,
-  canceled_at TEXT
-);
 `;
 
 /**
  * Lease + retry state for the session summarizer, one row per session.
  *
- * Two processes trigger summarization — the dashboard autodiscovery interval
- * and the LaunchAgent-invoked `syntaur session scan` — and each LLM call costs
- * money, so the claim must be atomic ACROSS processes. `claim_token` makes
- * ownership explicit: release and finalization are token-matched, so a worker
- * whose lease went stale can never clobber a newer worker's claim.
+ * Summarization is triggered by the dashboard autodiscovery interval and by
+ * `syntaur session summarize` run by hand, and each LLM call costs money, so the
+ * claim must be atomic ACROSS processes. `claim_token` makes ownership explicit:
+ * release and finalization are token-matched, so a worker whose lease went stale
+ * can never clobber a newer worker's claim.
  *
- * Retry state lives here rather than in memory because the LaunchAgent is a
- * fresh process on every run — an in-memory cooldown would be invisible to it,
- * and a capped newest-first sweep would retry the same doomed sessions forever.
+ * Retry state lives on disk rather than in memory because a summarize run may
+ * be a fresh process — an in-memory cooldown would be invisible to it, and a
+ * capped newest-first sweep would retry the same doomed sessions forever.
  *
  * Created with `CREATE TABLE IF NOT EXISTS` at init, following the
  * ENGAGEMENT_DDL precedent below: idempotent and therefore safe outside the
@@ -575,6 +568,67 @@ export function initSessionDb(dbPath?: string): Database.Database {
         ALTER TABLE sessions_v10 RENAME TO sessions;
         CREATE INDEX IF NOT EXISTS idx_sessions_status ON sessions(status);
         UPDATE meta SET value = '10' WHERE key = 'schema_version';
+      `);
+    }
+
+    // --- v10 → v11: drop everything the terminal-launch stack owned.
+    //
+    // The `launch_reservations` table goes outright — its only readers were
+    // `reserveLaunch` / `claimLaunch` / `consumeLaunchMarkers`, all deleted.
+    //
+    // `sessions` is rebuilt without `pid`, `pid_started_at` and `activity`.
+    // Each was WRITTEN (`appendSession`, the register routes) but READ only by
+    // code that is gone: `computeIsLive`'s pid + start-time guard
+    // (`session-liveness.ts`, deleted in Task 3), the transcript scanner's
+    // `SELECT session_id, pid, pid_started_at, ...` liveness query and the
+    // Agent View's `activity` join (both deleted in Task 4), and
+    // `reconcileLaunchPlaceholder`'s `pid = COALESCE(...)` copy (deleted with
+    // the reservations). `transcript_path` is KEPT — a dozen readers outside
+    // the scanner still use it.
+    //
+    // The copy is POSITIONAL, like every step above. `hosted_by` is copied as
+    // `CASE WHEN hosted_by = 'acp' THEN 'acp' ELSE NULL END`, so historical
+    // `syntaurd` / `tmux` / `claude-bg` rows become NULL and the TypeScript
+    // union `'acp' | null` matches what is actually in the table.
+    const vBeforeV11 = (
+      database
+        .prepare("SELECT value FROM meta WHERE key = 'schema_version'")
+        .get() as { value: string } | undefined
+    )?.value;
+
+    if (vBeforeV11 === '10') {
+      database.exec(`
+        CREATE TABLE sessions_v11 (
+          session_id TEXT PRIMARY KEY,
+          agent TEXT NOT NULL,
+          started TEXT NOT NULL,
+          ended TEXT,
+          status TEXT NOT NULL DEFAULT 'active',
+          path TEXT,
+          description TEXT,
+          transcript_path TEXT,
+          original_head_sha TEXT,
+          hosted_by TEXT,
+          summary TEXT,
+          summarized_at TEXT,
+          description_source TEXT,
+          pinned_at TEXT,
+          archived_at TEXT,
+          created_at TEXT NOT NULL DEFAULT (datetime('now')),
+          updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+        INSERT INTO sessions_v11
+          SELECT session_id, agent, started, ended, status, path, description,
+                 transcript_path, original_head_sha,
+                 CASE WHEN hosted_by = 'acp' THEN 'acp' ELSE NULL END,
+                 summary, summarized_at, description_source,
+                 pinned_at, archived_at, created_at, updated_at
+          FROM sessions;
+        DROP TABLE sessions;
+        ALTER TABLE sessions_v11 RENAME TO sessions;
+        CREATE INDEX IF NOT EXISTS idx_sessions_status ON sessions(status);
+        DROP TABLE IF EXISTS launch_reservations;
+        UPDATE meta SET value = '11' WHERE key = 'schema_version';
       `);
     }
   });

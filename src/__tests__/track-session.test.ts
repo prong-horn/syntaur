@@ -53,21 +53,6 @@ describe('trackSessionCommand session-id self-resolution', () => {
     ).rejects.toThrow(/Could not resolve a session id/);
   });
 
-  it('defaults the owning pid via the fallback when --pid is omitted', async () => {
-    await trackSessionCommand(
-      { agent: 'claude', sessionId: 'pid-default-1', path: testDir },
-      { fallbackPid: () => 31337 },
-    );
-    expect(getSessionById('pid-default-1')!.pid).toBe(31337);
-  });
-
-  it('prefers an explicit --pid over the fallback', async () => {
-    await trackSessionCommand(
-      { agent: 'claude', sessionId: 'pid-explicit-1', path: testDir, pid: 100 },
-      { fallbackPid: () => 31337 },
-    );
-    expect(getSessionById('pid-explicit-1')!.pid).toBe(100);
-  });
 
   it('resolves and stores assignment_id on the opened engagement (M1)', async () => {
     // A project assignment with a frontmatter id under the projects dir.

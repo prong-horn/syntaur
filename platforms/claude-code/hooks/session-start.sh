@@ -71,21 +71,13 @@ syntaur_plugin_drift_warn() {
 }
 syntaur_plugin_drift_warn || true
 
-# Capture the terminal-session PID that owns this Claude process. Claude
-# Code's SessionStart payload does NOT include a parent PID, so we approximate
-# by walking up one level from the hook's own PID — the shell that owns claude.
-PID="$(ps -o ppid= -p $$ 2>/dev/null | tr -d '[:space:]' || true)"
-if [ -n "$PID" ] && ! printf '%s' "$PID" | grep -q '^[0-9]\+$'; then
-  PID=""
-fi
-
 # Register EVERY session via the CLI (context.json merge + direct DB write).
 # ~4s deadline stays under the hook's `timeout: 5` budget. A stale CLI without
-# the subcommand exits non-zero — swallowed; the scanner is the safety net.
-if [ -n "$PID" ]; then
-  printf '%s' "$INPUT" | syntaur_bounded 4 session register --from-hook --pid "$PID" >/dev/null 2>&1 || true
-else
-  printf '%s' "$INPUT" | syntaur_bounded 4 session register --from-hook >/dev/null 2>&1 || true
-fi
+# the subcommand exits non-zero — swallowed; the row simply is not tracked.
+#
+# The owning terminal PID used to be captured here and passed as `--pid`, for a
+# liveness probe that no longer exists: `sessions.pid` was dropped in schema v11
+# and liveness is now `status === 'active'` plus the stale sweep (Decision 4).
+printf '%s' "$INPUT" | syntaur_bounded 4 session register --from-hook >/dev/null 2>&1 || true
 
 exit 0

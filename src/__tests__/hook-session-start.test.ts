@@ -94,7 +94,7 @@ const STDIN = JSON.stringify({
 });
 
 describe('claude-code session-start.sh (thin wrapper)', () => {
-  it('invokes `syntaur session register --from-hook --pid <n>` with the payload on stdin — no context.json required', async () => {
+  it('invokes `syntaur session register --from-hook` with the payload on stdin — no context.json required', async () => {
     const recordDir = await mkdtemp(join(tmpdir(), 'syntaur-record-'));
     const binDir = await makeRecordingSyntaur(recordDir);
     try {
@@ -104,7 +104,9 @@ describe('claude-code session-start.sh (thin wrapper)', () => {
 
       const argv = await readFile(join(recordDir, 'argv'), 'utf-8');
       expect(argv).toContain('session register --from-hook');
-      expect(argv).toMatch(/--pid \d+/);
+      // `--pid` is gone: `sessions.pid` was dropped in schema v11 and liveness
+      // is `status === 'active'` plus the stale sweep (phase 4, Decision 4).
+      expect(argv).not.toMatch(/--pid/);
 
       const stdin = await readFile(join(recordDir, 'stdin'), 'utf-8');
       expect(JSON.parse(stdin)).toEqual(JSON.parse(STDIN));

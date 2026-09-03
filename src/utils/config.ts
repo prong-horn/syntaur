@@ -250,9 +250,9 @@ export type SessionAutoTrack = 'all' | 'workspaces-only' | 'off';
 export type SummarizeBackendName = 'claude' | 'pi';
 
 /**
- * Master switch for automatic session summarization. Gates BOTH triggers — the
- * dashboard interval and the LaunchAgent-invoked `syntaur session scan` — so
- * turning it off guarantees no background LLM spend.
+ * Master switch for automatic session summarization, which runs on the
+ * dashboard's discovery interval — turning it off guarantees no background LLM
+ * spend.
  */
 export type SessionAutoSummarize = 'on' | 'off';
 

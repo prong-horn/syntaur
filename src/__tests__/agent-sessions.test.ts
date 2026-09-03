@@ -478,7 +478,7 @@ describe('v2 -> v3 schema migration (adds transcript_path)', () => {
       .prepare("SELECT value FROM meta WHERE key = 'schema_version'")
       .get() as { value: string };
     // v2 chains through every migration to the current head (v9).
-    expect(version.value).toBe('10');
+    expect(version.value).toBe('11');
   });
 
   it('falls back to mission_slug when a v2 table has both columns but project_slug is null', async () => {
@@ -573,13 +573,14 @@ describe('v2 -> v3 schema migration (adds transcript_path)', () => {
     expect(cols).not.toContain('project_slug');
     expect(cols).not.toContain('mission_slug');
     expect(cols).not.toContain('assignment_slug');
-    expect(cols).toContain('activity');
+    // `activity` was added by v5→v6 and dropped again by v11 (Agent View gone).
+    expect(cols).not.toContain('activity');
     expect(cols).toContain('transcript_path');
   });
 });
 
-describe('v3 -> v4 schema migration (adds pid + pid_started_at)', () => {
-  it('preserves existing rows and exposes pid/pidStartedAt as null; columns added; version bumped to 4', async () => {
+describe('v3 -> v4 schema migration (adds pid + pid_started_at, later dropped by v11)', () => {
+  it('preserves existing rows through the whole ladder; the pid columns are gone at head', async () => {
     // beforeEach already created a v4 db. Tear it down and reseed as v3.
     closeSessionDb();
     resetSessionDb();
@@ -622,23 +623,24 @@ describe('v3 -> v4 schema migration (adds pid + pid_started_at)', () => {
     const row2 = all.find((s) => s.sessionId === 'v3-row-2');
     expect(row1?.projectSlug).toBe('p1');
     expect(row1?.transcriptPath).toBe('/tmp/t1.jsonl');
-    expect(row1?.pid ?? null).toBeNull();
-    expect(row1?.pidStartedAt ?? null).toBeNull();
+
     expect(row2?.agent).toBe('codex');
-    expect(row2?.pid ?? null).toBeNull();
+
 
     const { getSessionDb } = await import('../dashboard/session-db.js');
     const db = getSessionDb();
     const columns = db.prepare('PRAGMA table_info(sessions)').all() as Array<{ name: string }>;
     const names = columns.map((c) => c.name);
-    expect(names).toContain('pid');
-    expect(names).toContain('pid_started_at');
+    // v3→v4 added them; v11 dropped them again — `initSessionDb` runs the whole
+    // ladder, so head is what a caller actually sees.
+    expect(names).not.toContain('pid');
+    expect(names).not.toContain('pid_started_at');
 
     const version = db
       .prepare("SELECT value FROM meta WHERE key = 'schema_version'")
       .get() as { value: string };
-    // v3→v4 adds pid columns, then the chain continues to the current head (v9).
-    expect(version.value).toBe('10');
+    // v3→v4 adds the pid columns, then the chain continues to head, which drops them.
+    expect(version.value).toBe('11');
   });
 });
 
@@ -687,7 +689,9 @@ describe('v4 -> v5 schema migration (adds original_head_sha)', () => {
     const row1 = all.find((s) => s.sessionId === 'v4-row-1');
     const row2 = all.find((s) => s.sessionId === 'v4-row-2');
     expect(row1?.projectSlug).toBe('p1');
-    expect(row1?.pid).toBe(4242);
+    // `pid` was seeded on the v4-shape row; v11 drops the column entirely, so
+    // it never reaches the mapped `AgentSession`.
+    expect('pid' in (row1 as object)).toBe(false);
     expect(row1?.originalHeadSha ?? null).toBeNull();
     expect(row2?.agent).toBe('codex');
     expect(row2?.originalHeadSha ?? null).toBeNull();
@@ -700,7 +704,7 @@ describe('v4 -> v5 schema migration (adds original_head_sha)', () => {
     const version = db
       .prepare("SELECT value FROM meta WHERE key = 'schema_version'")
       .get() as { value: string };
-    expect(version.value).toBe('10');
+    expect(version.value).toBe('11');
   });
 
   it('round-trips original_head_sha through appendSession + getSessionById', async () => {
@@ -1096,7 +1100,7 @@ describe('appendSession engagement binding (persisted-status guard)', () => {
 
   // Codex holistic-review High-1: the terminal close must compare-and-close the
   // CAPTURED open engagement (not "the current open" re-read inside the txn) and
-  // gate the session-stop on that CAS — mirroring livenessStopSession. Otherwise
+  // gate the session-stop on that CAS. Otherwise
   // a concurrent reopen/switch landing in the async token-snapshot gap gets its
   // newer interval clobbered as 'abandoned' AND the (now live) session stopped.
   it('terminal close does not clobber an interval reopened during the token-snapshot gap', async () => {
@@ -1408,7 +1412,6 @@ describe('setSessionPinned / setSessionArchived / setSessionName', () => {
 
     expect(after?.status).toBe('active');
     expect(after?.ended ?? null).toBe(before?.ended ?? null);
-    expect(after?.activity ?? null).toBe(before?.activity ?? null);
   });
 
   it('pin and archive are independent; archived wins for visibility', async () => {

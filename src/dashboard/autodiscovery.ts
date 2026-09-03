@@ -76,7 +76,7 @@ export interface AutodiscoveryOptions {
   assignmentsDir?: string;
   intervalMs?: number;
   excludePids?: Set<number>;
-  /** Invoked when the agent-session scan changed any DB row (drives the WS broadcast). */
+  /** Invoked when the stale sweep changed any DB row (drives the WS broadcast). */
   onAgentSessionsChanged?: () => void;
   /**
    * Post-scan auto-summary pass. Injectable so tests can drive the trigger
@@ -354,24 +354,25 @@ async function reconcile(serversDir: string, projectsDir: string, excludePids?: 
     clearScanCache();
   }
 
-  // Universal agent-session scan rides the same interval. Skipped entirely
-  // when the session DB was never initialized (unit tests calling reconcile
-  // directly); isolated failure domain otherwise — a scan error must never
-  // break server/tmux discovery.
+  // The transcript scanner is gone (phase 4, Decision 4). What rides this
+  // interval now is the stale sweep — a time-based `active → stopped` pass over
+  // non-`acp` rows — and the auto-summary. Skipped entirely when the session DB
+  // was never initialized (unit tests calling reconcile directly); isolated
+  // failure domains otherwise, so one failure never breaks server/tmux discovery.
   const { isSessionDbInitialized } = await import('./session-db.js');
   if (isSessionDbInitialized()) {
     try {
-      const { scanSessions } = await import('../sessions/scanner.js');
-      const summary = await scanSessions({});
-      if (summary.changed) onAgentSessionsChanged?.();
+      const { sweepStaleSessions } = await import('../sessions/stale-sweep.js');
+      const swept = await sweepStaleSessions();
+      if (swept.swept.length > 0) onAgentSessionsChanged?.();
     } catch (err) {
-      console.error('[autodiscovery] session scan failed:', err);
+      console.error('[autodiscovery] stale sweep failed:', err);
     }
 
     // Auto-summary rides the same interval but is FIRE-AND-FORGET: a summarize
     // batch is up to `limit` sequential ~120s LLM calls, and `reconcile` gates
     // the whole discovery loop (activeReconcile suppresses ticks while it runs),
-    // so awaiting it would stall session scans, liveness, and server discovery
+    // so awaiting it would stall the stale sweep and server discovery
     // for minutes. `runSummarizePass` owns its own no-overlap guard, tracked
     // promise, and abort controller (see below), so discovery only kicks it off.
     void runSummarizePass(summarizeAfterScan, onAgentSessionsChanged).catch((err) => {
@@ -439,8 +440,8 @@ async function runSummarizeInner(
   if (!run) {
     const { readConfig } = await import('../utils/config.js');
     const config = await readConfig();
-    // The config key is the master switch for BOTH triggers (this interval and
-    // the LaunchAgent-invoked `session scan`), so 'off' means zero spend.
+    // The config key is the master switch for background summarization, so
+    // 'off' means zero spend.
     if (config.session.autoSummarize !== 'on') return;
     const { summarizeMissing } = await import('../sessions/summarizer.js');
     const { resolveBackend } = await import('../sessions/summarize-backends.js');

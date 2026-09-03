@@ -22,8 +22,6 @@
     "src/**/*.test.tsx"
   ],
   "files": [
-    "src/__tests__/session-scan.test.ts",
-    "src/__tests__/liveness-stop-session.test.ts",
     "src/__tests__/session-select.test.ts",
     "src/__tests__/dashboard-api-agent-sessions-usage.test.ts",
     "src/__tests__/session-db-migration-v8.test.ts",
@@ -81,8 +79,9 @@
     "src/commands/__tests__/daemon-logs.test.ts",
     "src/daemon/__tests__/liveness.test.ts",
     "src/__tests__/session-db-migration-v7.test.ts",
-    "src/__tests__/session-db-migration-v9.test.ts",
     "src/__tests__/session-db-migration-v10.test.ts",
+    "src/__tests__/session-db-migration-v11.test.ts",
+    "src/__tests__/stale-sweep.test.ts",
     "src/__tests__/agent-sessions.test.ts",
     "src/__tests__/engagement-migration.test.ts",
     "src/__tests__/api-agent-sessions.test.ts",

@@ -5,15 +5,14 @@ import { fileExists, writeFileForce } from '../utils/fs.js';
 import { assignmentsDir, expandHome } from '../utils/paths.js';
 import { readConfig, type SessionAutoTrack } from '../utils/config.js';
 import { nowTimestamp } from '../utils/timestamp.js';
-import { assertMayMutate, isSafeSessionId, readPpid, resolveOwnSessionId } from '../utils/session-id.js';
-import { captureProcessStartedAt } from '../utils/process-info.js';
+import { assertMayMutate, isSafeSessionId, resolveOwnSessionId } from '../utils/session-id.js';
 import { captureHeadSha } from '../utils/git-worktree.js';
 import { isExistingDir } from '../utils/workspace-cwd.js';
 import { initSessionDb } from '../dashboard/session-db.js';
 import {
   appendSession,
   updateSessionStatus,
-  consumeLaunchMarkers,
+  touchSession,
 } from '../dashboard/agent-sessions.js';
 import type { AgentSessionStatus } from '../dashboard/types.js';
 import { resolveAssignmentTarget } from '../utils/assignment-target.js';
@@ -491,17 +490,12 @@ function parseHookPayload(rawStdin: string): HookPayload | null {
 export interface SessionRegisterOptions {
   fromHook?: boolean;
   agent?: string;
-  pid?: string;
 }
 
 /** Injectable seams for tests; production callers pass nothing. */
 export interface SessionRegisterDeps {
   /** Override the configured `session.autoTrack` (skips readConfig). */
   autoTrack?: SessionAutoTrack;
-  /** Owning pid when --pid is absent. Defaults to readPpid(process.ppid) —
-   * the shell that owns the agent, matching the bash hook's `ps -o ppid= -p $$`. */
-  fallbackPid?: () => number | null;
-  pidStartedAt?: (pid: number) => string | null;
   headSha?: (cwd: string) => Promise<string | null>;
   now?: () => string;
 }
@@ -566,25 +560,13 @@ export async function runSessionRegister(
 
   initSessionDb();
 
-  const optPid = options.pid !== undefined ? Number.parseInt(String(options.pid), 10) : NaN;
-  const pid = Number.isInteger(optPid) && optPid > 0
-    ? optPid
-    : (deps.fallbackPid ?? (() => readPpid(process.ppid)))();
-  const pidStartedAt = pid !== null ? (deps.pidStartedAt ?? captureProcessStartedAt)(pid) : null;
   const originalHeadSha = isExistingDir(cwd)
     ? await (deps.headSha ?? captureHeadSha)(cwd)
     : null;
 
-  // Launch-correlation: when this session was started by the cockpit, the
-  // launch planted SYNTAUR_LAUNCH_ID/SYNTAUR_HOSTED_BY in the worker's env,
-  // which this hook process inherits. Reconcile the placeholder row onto the
-  // real id and pick up the backend stamp. No-op for any other launch path.
-  const launchMarkers = await consumeLaunchMarkers(sessionId);
-
   await appendSession(
     '',
     {
-      ...launchMarkers,
       // UNATTRIBUTED on register. The SessionStart hook no longer auto-binds the
       // assignment from the cwd context.json scalar — that cwd-scalar auto-bind is
       // the multi-assignment-in-one-worktree clobber being eliminated. A session
@@ -600,8 +582,6 @@ export async function runSessionRegister(
       path: cwd,
       description: null,
       transcriptPath: transcriptPath.length > 0 ? transcriptPath : null,
-      pid,
-      pidStartedAt,
       originalHeadSha,
     },
     // A SessionStart firing for this exact id IS live-process evidence — e.g.
@@ -653,7 +633,6 @@ sessionCommand
   )
   .option('--from-hook', 'Read the SessionStart JSON payload from stdin')
   .option('--agent <name>', 'Agent name for the session row', 'claude')
-  .option('--pid <pid>', 'Owning process pid for liveness checks (defaults to the grandparent pid)')
   .action(async (options: SessionRegisterOptions) => {
     if (!options.fromHook) {
       console.error('session register currently requires --from-hook (stdin JSON payload).');
@@ -666,80 +645,6 @@ sessionCommand
       /* always exit 0 */
     }
   });
-
-sessionCommand
-  .command('scan')
-  .description(
-    'Reconcile the sessions DB against on-disk agent transcripts: upsert every discovered session, link workspaces, revive on live-process evidence, sweep stale active rows.',
-  )
-  .option('--full', 'Ignore the incremental mtime watermark and rescan everything')
-  .option('--json', 'Emit the scan summary as JSON')
-  .option('--no-summarize', 'Skip the post-scan auto-summary pass for this run')
-  .action(async (options: { full?: boolean; json?: boolean; summarize?: boolean }) => {
-    try {
-      const { scanSessions } = await import('../sessions/scanner.js');
-      initSessionDb();
-      const summary = await scanSessions({ full: options.full });
-
-      // Auto-summary rides the same interval as the scan, since this command is
-      // what the LaunchAgent runs. `session.autoSummarize` is the MASTER switch
-      // (config off ⇒ zero paid calls from the background path, regardless of
-      // flags); `--no-summarize` is a per-run override on top of it.
-      const summarization = await runScanSummarize(options.summarize !== false);
-
-      if (options.json) {
-        // ONE JSON document — machine consumers parse stdout whole, so the
-        // summarization result is a FIELD, never an extra line.
-        console.log(JSON.stringify({ ...summary, summarization }));
-      } else {
-        console.log(
-          `Scan complete — discovered ${summary.discovered}, inserted ${summary.inserted}, revived ${summary.revived}, swept ${summary.swept}${
-            summary.swept_no_transcript > 0
-              ? ` (${summary.swept_no_transcript} without transcript)`
-              : ''
-          }, skipped ${summary.skipped}.`,
-        );
-        if (summarization.ran) {
-          const counts = Object.entries(summarization.counts ?? {})
-            .map(([kind, n]) => `${kind} ${n}`)
-            .join(', ');
-          console.log(`Auto-summary — ${counts || 'nothing eligible'}.`);
-        }
-      }
-    } catch (error) {
-      console.error('Error:', error instanceof Error ? error.message : String(error));
-      process.exit(1);
-    }
-  });
-
-/** Result of the post-scan summarize pass, embedded in `scan --json` output. */
-export interface ScanSummarization {
-  ran: boolean;
-  counts?: Record<string, number>;
-  error?: string;
-}
-
-/**
- * Run the post-scan auto-summary pass, honouring the config master switch.
- * Never throws: a summarize failure must not fail the scan that carried it.
- * Exported for tests — `flagEnabled` is `--no-summarize`'s inverse.
- */
-export async function runScanSummarize(flagEnabled: boolean): Promise<ScanSummarization> {
-  if (!flagEnabled) return { ran: false };
-  try {
-    const { readConfig } = await import('../utils/config.js');
-    const config = await readConfig();
-    if (config.session.autoSummarize !== 'on') return { ran: false };
-
-    const { summarizeMissing, countByKind } = await import('../sessions/summarizer.js');
-    const { resolveBackend } = await import('../sessions/summarize-backends.js');
-    const { backend } = resolveBackend(undefined, config);
-    const results = await summarizeMissing({ backend, limit: 5 });
-    return { ran: true, counts: countByKind(results) };
-  } catch (error) {
-    return { ran: false, error: error instanceof Error ? error.message : String(error) };
-  }
-}
 
 sessionCommand
   .command('summarize')
@@ -869,39 +774,63 @@ export async function summarizeAllWithTranscripts(opts: {
   return results;
 }
 
-sessionCommand
-  .command('scan-install')
-  .description(
-    'Install the macOS LaunchAgent that runs `session scan` on an interval (the liveness GC for Codex + dashboard-off).',
-  )
-  .option('--interval <seconds>', 'scan interval in seconds (default 300)')
-  .action(async (options: { interval?: string }) => {
-    try {
-      const { installSessionScanAgent } = await import('../schedules/launchd.js');
-      const res = installSessionScanAgent({
-        intervalSeconds: options.interval ? Number.parseInt(options.interval, 10) : undefined,
-      });
-      console.log(`Installed ${res.label} (every ${res.intervalSeconds}s) → ${res.plistPath}`);
-      console.log(
-        'Note: fires only while this Mac is awake + logged in. Non-macOS: add a cron line running `syntaur session scan`.',
-      );
-    } catch (error) {
-      console.error('Error:', error instanceof Error ? error.message : String(error));
-      process.exit(1);
-    }
-  });
+/**
+ * The session heartbeat (phase 4, Decision 4). One `UPDATE sessions SET
+ * updated_at` for the hook's session id — nothing else. The stale sweep decides
+ * a session is dead from `updated_at` alone, and until this existed nothing
+ * moved it mid-session (only register, revive and a status change did), so a
+ * session longer than the idle window would have been swept alive.
+ *
+ * Never throws and never creates a row: a touch for an id we do not track is a
+ * no-op, because the SessionStart hook is what registers.
+ */
+export async function runSessionTouch(rawStdin: string): Promise<SessionTouchResult> {
+  const result: SessionTouchResult = { touched: false, sessionId: null };
+  const payload = parseHookPayload(rawStdin);
+  if (!payload) return result;
+  let sessionId = isSafeSessionId(payload.session_id) ? payload.session_id : null;
+  if (!sessionId && payload.cwd) {
+    const ctx = await readContext(payload.cwd);
+    if (isSafeSessionId(ctx?.sessionId)) sessionId = ctx!.sessionId!;
+  }
+  if (!sessionId) return result;
+  result.sessionId = sessionId;
+
+  initSessionDb();
+  result.touched = touchSession(sessionId);
+  return result;
+}
+
+export interface SessionTouchResult {
+  touched: boolean;
+  sessionId: string | null;
+}
 
 sessionCommand
-  .command('scan-uninstall')
-  .description('Uninstall the macOS LaunchAgent that runs `session scan`.')
-  .action(async () => {
+  .command('touch')
+  .description(
+    "Bump the calling session's last-activity stamp so the stale sweep does not mark it stopped (PostToolUse / UserPromptSubmit hook entry point). Reads the hook JSON payload from stdin; always exits 0.",
+  )
+  .option('--from-hook', 'Read the hook JSON payload from stdin')
+  .option('--session-id <id>', 'Touch this session id instead of reading stdin')
+  .action(async (options: { fromHook?: boolean; sessionId?: string }) => {
     try {
-      const { uninstallSessionScanAgent } = await import('../schedules/launchd.js');
-      const res = uninstallSessionScanAgent();
-      console.log(`Uninstalled ${res.label} (removed ${res.plistPath}).`);
-    } catch (error) {
-      console.error('Error:', error instanceof Error ? error.message : String(error));
-      process.exit(1);
+      if (options.sessionId) {
+        if (!isSafeSessionId(options.sessionId)) {
+          console.error('Invalid session id.');
+          process.exit(1);
+        }
+        initSessionDb();
+        touchSession(options.sessionId);
+        return;
+      }
+      if (!options.fromHook) {
+        console.error('session touch requires --from-hook (stdin JSON payload) or --session-id.');
+        process.exit(1);
+      }
+      await runSessionTouch(await readStdin());
+    } catch {
+      /* hook path: always exit 0 */
     }
   });
 

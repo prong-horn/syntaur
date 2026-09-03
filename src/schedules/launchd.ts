@@ -1,16 +1,17 @@
 /**
- * launchd LaunchAgent installer. Hosts two periodic agents, both config-driven
- * off `AgentConfig`: `com.syntaur.schedule.tick` (the scheduler tick) and
- * `com.syntaur.session.scan` (the liveness-GC `session scan` — #5). We mirror the
- * *discipline* of `src/commands/install-url-handler.ts` — typed refusal on
- * failure, surfaced stderr. The impure surface (`launchctl`, fs) is behind
- * injectable deps so `buildPlist` (pure) is fully unit-tested and
- * install/uninstall are driveable without touching the real system.
+ * launchd LaunchAgent installer. Hosts one periodic agent,
+ * `com.syntaur.schedule.tick` (the scheduler tick); the liveness-GC
+ * `com.syntaur.session.scan` agent went with the transcript scanner in phase 4
+ * (its label is kept below so `schedule uninstall` documentation and the
+ * release note can name what to bootout). Typed refusal on failure, surfaced
+ * stderr. The impure surface (`launchctl`, fs) is behind injectable deps so
+ * `buildPlist` (pure) is fully unit-tested and install/uninstall are driveable
+ * without touching the real system.
  *
- * macOS-only for the auto-fire; the on-demand `syntaur schedule tick` /
- * `syntaur session scan` work everywhere (non-macOS: a documented cron line).
- * The Mac must be awake + logged in for an agent to fire (wake-from-sleep is a
- * deliberate cut — documented in `schedule install` / `session scan-install`).
+ * macOS-only for the auto-fire; the on-demand `syntaur schedule tick` works
+ * everywhere (non-macOS: a documented cron line). The Mac must be awake +
+ * logged in for an agent to fire (wake-from-sleep is a deliberate cut —
+ * documented in `schedule install`).
  */
 
 import { execFileSync } from 'node:child_process';
@@ -57,17 +58,6 @@ const TICK_AGENT: AgentConfig = {
   outLogName: 'schedule-tick.out.log',
   errLogName: 'schedule-tick.err.log',
   defaultIntervalSeconds: 60,
-};
-
-const SCAN_AGENT: AgentConfig = {
-  label: SESSION_SCAN_LABEL,
-  command: ['session', 'scan'],
-  outLogName: 'session-scan.out.log',
-  errLogName: 'session-scan.err.log',
-  // The dashboard's 45s reconcile loop is the fast path; this scheduled scan is
-  // the floor for dashboard-off + Codex. 5 min keeps dangling intervals + dead
-  // rows bounded without churn.
-  defaultIntervalSeconds: 300,
 };
 
 /** Serialize the LaunchAgent plist. PURE — the unit test asserts its keys. */
@@ -235,14 +225,3 @@ export function uninstallLaunchAgent(deps: LaunchdDeps = {}): { plistPath: strin
   return uninstallAgent(TICK_AGENT, deps);
 }
 
-/** Install the liveness-GC scan LaunchAgent (`com.syntaur.session.scan`) — runs
- *  `syntaur session scan` on an interval so the engagement GC + dead-row sweep
- *  cover Codex + dashboard-off (Decision 6). */
-export function installSessionScanAgent(deps: LaunchdDeps = {}): InstallResult {
-  return installAgent(SCAN_AGENT, deps);
-}
-
-/** Uninstall the liveness-GC scan LaunchAgent. */
-export function uninstallSessionScanAgent(deps: LaunchdDeps = {}): { plistPath: string; label: string } {
-  return uninstallAgent(SCAN_AGENT, deps);
-}

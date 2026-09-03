@@ -18,7 +18,6 @@ let cwd: string;
 const DEPS: SessionRegisterDeps = {
   autoTrack: 'all',
   fallbackPid: () => 4242,
-  pidStartedAt: () => 'Thu Jun 11 10:00:00 2026',
   headSha: async () => 'abc1234',
   now: () => '2026-06-11T10:00:00.000Z',
 };
@@ -59,8 +58,6 @@ describe('runSessionRegister', () => {
     expect(row!.agent).toBe('claude');
     expect(row!.path).toBe(cwd);
     expect(row!.transcriptPath).toBe('/tmp/transcripts/real-session-1.jsonl');
-    expect(row!.pid).toBe(4242);
-    expect(row!.pidStartedAt).toBe('Thu Jun 11 10:00:00 2026');
     expect(row!.originalHeadSha).toBe('abc1234');
     expect(row!.started).toBe('2026-06-11T10:00:00.000Z');
   });
@@ -70,10 +67,6 @@ describe('runSessionRegister', () => {
     expect(existsSync(join(cwd, '.syntaur'))).toBe(false);
   });
 
-  it('uses --pid over the fallback pid', async () => {
-    await runSessionRegister(payload(), { pid: '777' }, DEPS);
-    expect(getSessionById('real-session-1')!.pid).toBe(777);
-  });
 
   it('registers an UNATTRIBUTED row even when context.json carries assignment scalars, but still merges session fields into context.json', async () => {
     // The SessionStart hook no longer auto-binds the assignment from the cwd

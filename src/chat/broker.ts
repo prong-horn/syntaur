@@ -1174,8 +1174,6 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
         path: cwd,
         description: null,
         transcriptPath: null,
-        pid: session.client?.pid ?? null,
-        pidStartedAt: null,
         originalHeadSha: null,
         hostedBy: 'acp',
       },

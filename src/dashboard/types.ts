@@ -764,10 +764,7 @@ export interface AgentSession {
   path: string;
   description?: string | null;
   transcriptPath?: string | null;
-  pid?: number | null;
-  pidStartedAt?: string | null;
   originalHeadSha?: string | null;
-  activity?: ActivityState | null;
   updatedAt?: string | null;
   /** Persisted hosting backend ('syntaurd' | 'tmux'; null = predates the daemon). Survives daemon downtime — drives the tmux fallback gate. */
   hostedBy?: SessionHostedBy | null;

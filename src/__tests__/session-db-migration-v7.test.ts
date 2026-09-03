@@ -71,18 +71,19 @@ describe('v6 → v7 migration (adds hosted_by)', () => {
 
     const cols = (db.prepare('PRAGMA table_info(sessions)').all() as Array<{ name: string }>).map((c) => c.name);
     expect(cols).toContain('hosted_by');
-    expect(cols).toContain('activity');
+    // `activity` was dropped in v11 (it lost its last reader with the Agent View).
+    expect(cols).not.toContain('activity');
 
     const rows = db
-      .prepare('SELECT session_id, agent, status, pid, activity, hosted_by FROM sessions ORDER BY session_id')
+      .prepare('SELECT session_id, agent, status, hosted_by FROM sessions ORDER BY session_id')
       .all() as Array<Record<string, unknown>>;
     expect(rows).toHaveLength(2);
-    expect(rows[0]).toMatchObject({ session_id: 'v6-row-1', agent: 'claude', status: 'active', pid: 4242, activity: 'working', hosted_by: null });
+    expect(rows[0]).toMatchObject({ session_id: 'v6-row-1', agent: 'claude', status: 'active', hosted_by: null });
     expect(rows[1]).toMatchObject({ session_id: 'v6-row-2', agent: 'codex', status: 'completed', hosted_by: null });
 
     expect(
       (db.prepare("SELECT value FROM meta WHERE key='schema_version'").get() as { value: string }).value,
-    ).toBe('10');
+    ).toBe('11');
   });
 
   it('fresh install has hosted_by directly and head version', () => {
@@ -92,7 +93,7 @@ describe('v6 → v7 migration (adds hosted_by)', () => {
     expect(cols).toContain('hosted_by');
     expect(
       (db.prepare("SELECT value FROM meta WHERE key='schema_version'").get() as { value: string }).value,
-    ).toBe('10');
+    ).toBe('11');
   });
 
   it('appendSession round-trips hostedBy; a later upsert WITHOUT it does not clobber (hook convergence)', async () => {

@@ -159,8 +159,9 @@ describe('v7 → v8 migration (summary columns + provenance backfill)', () => {
     expect(cols).toContain('description_source');
     // Pre-existing columns survive the table rebuild.
     expect(cols).toContain('hosted_by');
-    expect(cols).toContain('activity');
-    expect(schemaVersion()).toBe('10');
+    // `activity` was dropped in v11 (it lost its last reader with the Agent View).
+    expect(cols).not.toContain('activity');
+    expect(schemaVersion()).toBe('11');
   });
 
   it('preserves existing row data through the rebuild', () => {
@@ -176,7 +177,8 @@ describe('v7 → v8 migration (summary columns + provenance backfill)', () => {
       status: 'stopped',
       path: '/w/a',
       description: 'hand written label',
-      hosted_by: 'tmux',
+      // v11 nulls every non-`acp` hosted_by so the union matches the data.
+      hosted_by: null,
     });
     expect(row.summary).toBeNull();
     expect(row.summarized_at).toBeNull();
@@ -253,7 +255,7 @@ describe('v7 → v8 migration (summary columns + provenance backfill)', () => {
     resetSessionDb();
     initSessionDb(dbPath);
 
-    expect(schemaVersion()).toBe('10');
+    expect(schemaVersion()).toBe('11');
     expect(columns()).toContain('summary');
     const rows = (
       getSessionDb().prepare('SELECT COUNT(*) AS n FROM sessions').get() as { n: number }
@@ -270,7 +272,7 @@ describe('migration chains and fresh install', () => {
     const cols = columns();
     expect(cols).toContain('hosted_by'); // v7 step
     expect(cols).toContain('summary'); // v8 step
-    expect(schemaVersion()).toBe('10');
+    expect(schemaVersion()).toBe('11');
 
     const row = getSessionDb()
       .prepare('SELECT description, description_source FROM sessions WHERE session_id = ?')
@@ -286,7 +288,7 @@ describe('migration chains and fresh install', () => {
     expect(cols).toContain('summary');
     expect(cols).toContain('summarized_at');
     expect(cols).toContain('description_source');
-    expect(schemaVersion()).toBe('10');
+    expect(schemaVersion()).toBe('11');
     // The aux table is created at init, not only by the migration step.
     expect(
       getSessionDb()

@@ -124,8 +124,6 @@ export interface AgentSession {
   path: string;
   description?: string | null;
   transcriptPath?: string | null;
-  pid?: number | null;
-  pidStartedAt?: string | null;
   originalHeadSha?: string | null;
   updatedAt?: string | null;
   /** Rolled-up spend joined from usage_events at serve time; null when the collector has no rows. */

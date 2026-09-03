@@ -5,13 +5,12 @@ import { resolveAssignmentBySlug } from '../utils/assignment-resolver.js';
 import { fileExists } from '../utils/fs.js';
 import { readConfig } from '../utils/config.js';
 import { derivePathFromTranscript } from '../utils/transcript.js';
-import { captureProcessStartedAt } from '../utils/process-info.js';
 import { captureHeadSha } from '../utils/git-worktree.js';
-import { readPpid, resolveOwnSessionId, isSafeSessionId, assertMayMutate } from '../utils/session-id.js';
+import { resolveOwnSessionId, isSafeSessionId, assertMayMutate } from '../utils/session-id.js';
 import type { ResolvedSession } from '../utils/session-id.js';
 import { isExistingDir } from '../utils/workspace-cwd.js';
 import { initSessionDb } from '../dashboard/session-db.js';
-import { appendSession, consumeLaunchMarkers } from '../dashboard/agent-sessions.js';
+import { appendSession } from '../dashboard/agent-sessions.js';
 import type { AgentSessionStatus } from '../dashboard/types.js';
 
 export interface TrackSessionOptions {
@@ -23,13 +22,11 @@ export interface TrackSessionOptions {
   dir?: string;
   description?: string;
   transcriptPath?: string;
-  pid?: number;
 }
 
 /** Injectable seams for tests; production callers pass nothing. */
 export interface TrackSessionDeps {
   resolveSessionId?: typeof resolveOwnSessionId;
-  fallbackPid?: () => number | null;
 }
 
 export async function trackSessionCommand(
@@ -121,12 +118,6 @@ export async function trackSessionCommand(
   const derivedPath = await derivePathFromTranscript(options.transcriptPath);
   const recordedPath = derivedPath ?? options.path ?? process.cwd();
 
-  // Default the owning pid to the grandparent — the shell that owns the agent
-  // (this CLI's parent is the agent/skill shell) — matching the hook's
-  // `ps -o ppid= -p $$`, so the one-line skill call loses no liveness data.
-  const pid = options.pid ?? (deps.fallbackPid ?? (() => readPpid(process.ppid)))();
-  const pidStartedAt = pid !== null ? captureProcessStartedAt(pid) : null;
-
   // Best-effort capture of the worktree's HEAD sha so a later recreate of a
   // deleted worktree can be exact. Never blocks registration on git.
   const originalHeadSha = isExistingDir(recordedPath)
@@ -136,13 +127,7 @@ export async function trackSessionCommand(
   // Bootstrap binding: the session→assignment engagement edge is opened from the
   // EXPLICIT --project/--assignment CLI args (appendSession opens an engagement
   // from these). Never sourced from the demoted context.json assignment scalar.
-  // Launch-correlation parity with the hook path (`session register
-  // --from-hook`): a cockpit-planted placeholder is reconciled onto this id and
-  // the backend stamp picked up from the inherited env. No-op otherwise.
-  const launchMarkers = await consumeLaunchMarkers(sessionId);
-
   await appendSession('', {
-    ...launchMarkers,
     projectSlug: options.project || null,
     assignmentSlug: options.assignment || null,
     assignmentId,
@@ -153,8 +138,6 @@ export async function trackSessionCommand(
     path: recordedPath,
     description: options.description || null,
     transcriptPath: options.transcriptPath ?? null,
-    pid,
-    pidStartedAt,
     originalHeadSha,
   });
 

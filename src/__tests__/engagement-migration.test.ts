@@ -92,7 +92,8 @@ describe('v5 → v6 migration shape', () => {
     const sessionCols = (
       db.prepare('PRAGMA table_info(sessions)').all() as Array<{ name: string }>
     ).map((c) => c.name);
-    expect(sessionCols).toContain('activity');
+    // `activity` was added by v5→v6 and dropped again by v11 (Agent View gone).
+    expect(sessionCols).not.toContain('activity');
     expect(sessionCols).not.toContain('project_slug');
     expect(sessionCols).not.toContain('assignment_slug');
 
@@ -103,7 +104,7 @@ describe('v5 → v6 migration shape', () => {
 
     expect(
       (db.prepare("SELECT value FROM meta WHERE key='schema_version'").get() as { value: string }).value,
-    ).toBe('10');
+    ).toBe('11');
     expect(
       (db.prepare("SELECT value FROM meta WHERE key='engagement_schema_version'").get() as { value: string }).value,
     ).toBe('1');
@@ -113,7 +114,7 @@ describe('v5 → v6 migration shape', () => {
     initSessionDb(dbPath); // no prior file
     const db = getSessionDb();
     const cols = (db.prepare('PRAGMA table_info(sessions)').all() as Array<{ name: string }>).map((c) => c.name);
-    expect(cols).toContain('activity');
+    expect(cols).not.toContain('activity');
     expect(cols).not.toContain('project_slug');
     const tables = (db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all() as Array<{ name: string }>).map((t) => t.name);
     expect(tables).toContain('engagement');
@@ -184,7 +185,7 @@ describe('backfill', () => {
     const db = getSessionDb();
     expect(
       (db.prepare("SELECT value FROM meta WHERE key='schema_version'").get() as { value: string }).value,
-    ).toBe('10');
+    ).toBe('11');
     expect(
       (db.prepare('SELECT COUNT(*) AS n FROM engagement').get() as { n: number }).n,
     ).toBe(4);

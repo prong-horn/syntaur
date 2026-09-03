@@ -744,17 +744,6 @@ program
   .option('--path <path>', 'Full path to session on disk (defaults to cwd)')
   .option('--dir <path>', 'Override default project directory')
   .option('--description <text>', 'Description of what this session is for')
-  .option(
-    '--pid <n>',
-    'Process ID owning this session — enables liveness detection so Resume is disabled while the process is still running.',
-    (v) => {
-      const n = Number.parseInt(v, 10);
-      if (!Number.isFinite(n) || n <= 0) {
-        throw new InvalidArgumentError('--pid must be a positive integer');
-      }
-      return n;
-    },
-  )
   .action(
     runCommand(async (options) => {
       await trackSessionCommand(options);

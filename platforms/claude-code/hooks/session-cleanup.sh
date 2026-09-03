@@ -15,7 +15,7 @@ command -v syntaur >/dev/null 2>&1 || exit 0
 
 # Bounded SIGKILL watchdog (portable — no `timeout` on stock macOS). ~4s stays
 # under the hook's `timeout: 5` budget. A stale CLI without the subcommand
-# exits non-zero — swallowed; the scanner sweeps the row on its next tick.
+# exits non-zero — swallowed; the stale sweep closes the row on its next tick.
 syntaur_bounded_stop() {
   local cpid kpid rc
   printf '%s' "$INPUT" | syntaur session stop --from-hook >/dev/null 2>&1 &

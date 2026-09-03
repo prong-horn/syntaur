@@ -15,11 +15,12 @@ let dbPath: string;
 let prevHome: string | undefined;
 
 /**
- * The exact v10 `sessions` column order. Asserted with toEqual (not
- * toContain) because the v9→v10 copy step is POSITIONAL — a swapped pair
- * mis-assigns data silently instead of erroring.
+ * The exact HEAD (v11) `sessions` column order. Asserted with toEqual (not
+ * toContain) because every rebuild step is POSITIONAL — a swapped pair
+ * mis-assigns data silently instead of erroring. `initSessionDb` runs the whole
+ * ladder, so a v9 database lands here, not at v10.
  */
-const V10_SESSION_COLUMNS = [
+const HEAD_SESSION_COLUMNS = [
   'session_id',
   'agent',
   'started',
@@ -28,10 +29,7 @@ const V10_SESSION_COLUMNS = [
   'path',
   'description',
   'transcript_path',
-  'pid',
-  'pid_started_at',
   'original_head_sha',
-  'activity',
   'hosted_by',
   'summary',
   'summarized_at',
@@ -192,13 +190,13 @@ afterEach(async () => {
   await rm(testDir, { recursive: true, force: true });
 });
 
-describe('v9 → v10 migration (adds pinned_at + archived_at)', () => {
-  it('preserves every row and column value, adds the flags as NULL, keeps idx_sessions_status, bumps to 10', () => {
+describe('v9 → head migration (curation flags in, launch columns out)', () => {
+  it('preserves every row and column value, adds the flags as NULL, keeps idx_sessions_status, bumps to 11', () => {
     buildV9Db(dbPath);
     initSessionDb(dbPath);
 
     // THE assertion that catches a positional slip: exact order, not membership.
-    expect(columns()).toEqual(V10_SESSION_COLUMNS);
+    expect(columns()).toEqual(HEAD_SESSION_COLUMNS);
 
     const rows = getSessionDb()
       .prepare('SELECT * FROM sessions ORDER BY session_id')
@@ -213,11 +211,9 @@ describe('v9 → v10 migration (adds pinned_at + archived_at)', () => {
       path: '/w/a',
       description: 'desc-one',
       transcript_path: '/t/one.jsonl',
-      pid: 4242,
-      pid_started_at: '2026-07-01T09:59:00.000Z',
       original_head_sha: 'sha-one',
-      activity: 'working',
-      hosted_by: 'syntaurd',
+      // v11 nulls every non-`acp` hosted_by so the union matches the data.
+      hosted_by: null,
       summary: 'summary-one',
       summarized_at: '2026-07-01T11:05:00.000Z',
       description_source: 'auto',
@@ -244,55 +240,55 @@ describe('v9 → v10 migration (adds pinned_at + archived_at)', () => {
     // actually covers it — without it, paging silently full-scans.
     expect(indexNames()).toContain('idx_sessions_started');
 
-    expect(schemaVersion()).toBe('10');
+    expect(schemaVersion()).toBe('11');
   });
 
-  it('fresh install has the v10 shape directly and version 10', () => {
+  it('fresh install has the head shape directly and version 11', () => {
     initSessionDb(dbPath); // no prior file
-    // Proves SCHEMA_SQL and the v9→v10 rebuild DDL stayed column-for-column in sync.
-    expect(columns()).toEqual(V10_SESSION_COLUMNS);
+    // Proves SCHEMA_SQL and the rebuild DDL stayed column-for-column in sync.
+    expect(columns()).toEqual(HEAD_SESSION_COLUMNS);
     expect(indexNames()).toContain('idx_sessions_status');
     expect(indexNames()).toContain('idx_sessions_started');
-    expect(schemaVersion()).toBe('10');
+    expect(schemaVersion()).toBe('11');
   });
 
-  it('re-init after upgrade is idempotent (no throw, still version 10)', () => {
+  it('re-init after upgrade is idempotent (no throw, still version 11)', () => {
     buildV9Db(dbPath);
     initSessionDb(dbPath);
     closeSessionDb();
 
     expect(() => initSessionDb(dbPath)).not.toThrow();
-    expect(schemaVersion()).toBe('10');
-    expect(columns()).toEqual(V10_SESSION_COLUMNS);
+    expect(schemaVersion()).toBe('11');
+    expect(columns()).toEqual(HEAD_SESSION_COLUMNS);
   });
 
-  it('v8 → v10 chain: both gated steps run in one open (launch_reservations AND the curation flags)', () => {
+  it('v8 → head chain: every gated step runs in one open, and launch_reservations ends up gone', () => {
     buildV8Db(dbPath);
     initSessionDb(dbPath);
 
-    expect(columns()).toEqual(V10_SESSION_COLUMNS);
+    expect(columns()).toEqual(HEAD_SESSION_COLUMNS);
 
+    // v9 creates `launch_reservations`; v11 drops it again. A single open must
+    // land on the final answer, not an intermediate one.
     const tableRow = getSessionDb()
       .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='launch_reservations'")
       .get() as { name: string } | undefined;
-    expect(tableRow?.name).toBe('launch_reservations');
+    expect(tableRow).toBeUndefined();
 
-    // The v8 payload survives two rebuilds.
+    // The v8 payload survives three rebuilds.
     const row = getSessionDb()
       .prepare('SELECT * FROM sessions WHERE session_id = ?')
       .get('v8-row-1') as Record<string, unknown>;
     expect(row).toMatchObject({
       agent: 'claude',
       status: 'active',
-      pid: 4242,
-      activity: 'working',
-      hosted_by: 'syntaurd',
+      hosted_by: null,
       summary: 'did a thing',
       description_source: 'auto',
       pinned_at: null,
       archived_at: null,
     });
 
-    expect(schemaVersion()).toBe('10');
+    expect(schemaVersion()).toBe('11');
   });
 });

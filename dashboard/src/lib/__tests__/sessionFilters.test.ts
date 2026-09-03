@@ -14,8 +14,6 @@ function makeSession(overrides: Partial<AgentSessionWithLiveness> = {}): AgentSe
     path: '/tmp/test',
     description: null,
     transcriptPath: null,
-    pid: null,
-    pidStartedAt: null,
     originalHeadSha: null,
     updatedAt: '2026-06-01T00:00:00Z',
     isLive: true,
