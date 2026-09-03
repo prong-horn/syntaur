@@ -1699,6 +1699,9 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
             matchedCommand.action.value,
           );
           readSessionConfig(session, configResponse);
+          if (matchedCommand.action.configId === 'collaboration_mode') {
+            session.mode = matchedCommand.action.value;
+          }
         } catch (err) {
           await record(session, 'system', {
             level: 'warn',
