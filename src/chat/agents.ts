@@ -15,10 +15,13 @@ import { resolve } from 'node:path';
 import { parse as yamlParse } from 'yaml';
 import { syntaurRoot } from '../utils/paths.js';
 import { extractFrontmatter } from '../dashboard/parser.js';
-import { isHarnessId } from './harnesses.js';
-import type { AgentDefinition, RespondsTo } from './types.js';
+import { HARNESSES, isHarnessId, resolveCommand } from './harnesses.js';
+import type { AgentDefinition, ChatAgentSummary, Harness, RespondsTo } from './types.js';
 
 const RESPONDS_TO: readonly RespondsTo[] = ['mentions', 'all-human', 'none'];
+
+/** A ZWJ emoji sequence is three code points; a word is not an avatar. */
+const MAX_AVATAR_CODEPOINTS = 4;
 
 /**
  * The shared base prompt. Short on purpose — the spike measured a fresh claude
@@ -39,8 +42,9 @@ export const BUILTIN_AGENT_DEFINITIONS: AgentDefinition[] = [
     name: 'Claude',
     color: 'violet',
     harness: 'claude',
-    respondsTo: 'all-human',
+    respondsTo: 'mentions',
     default: true,
+    description: 'The general-purpose Claude Code agent.',
     systemPrompt: BASE_SYSTEM_PROMPT,
     source: null,
   },
@@ -49,8 +53,9 @@ export const BUILTIN_AGENT_DEFINITIONS: AgentDefinition[] = [
     name: 'Codex',
     color: 'emerald',
     harness: 'codex',
-    respondsTo: 'all-human',
+    respondsTo: 'mentions',
     default: false,
+    description: 'The general-purpose codex agent.',
     systemPrompt: BASE_SYSTEM_PROMPT,
     source: null,
   },
@@ -116,7 +121,10 @@ export function parseAgentDefinition(
     );
   }
 
-  const respondsToRaw = fm.respondsTo === undefined || fm.respondsTo === null ? 'all-human' : fm.respondsTo;
+  // `mentions` is the default so `all-human` stays a deliberate opt-in
+  // (Decision 2) — two agents that both answer every unmentioned message is
+  // exactly the ping-pong the router exists to prevent.
+  const respondsToRaw = fm.respondsTo === undefined || fm.respondsTo === null ? 'mentions' : fm.respondsTo;
   if (typeof respondsToRaw !== 'string' || !RESPONDS_TO.includes(respondsToRaw as RespondsTo)) {
     throw new AgentDefinitionError(
       file,
@@ -139,6 +147,21 @@ export function parseAgentDefinition(
     throw new AgentDefinitionError(file, '`env` must be a map of string values');
   }
 
+  const description = str(fm.description);
+  if (fm.description !== undefined && fm.description !== null && !description) {
+    throw new AgentDefinitionError(file, '`description` must be a string');
+  }
+
+  const avatar = str(fm.avatar);
+  if (fm.avatar !== undefined && fm.avatar !== null && !avatar) {
+    throw new AgentDefinitionError(file, '`avatar` must be a string');
+  }
+  // Code points, not UTF-16 units, so a single emoji (up to a ZWJ sequence)
+  // counts as one glyph and a word does not sneak through as an "avatar".
+  if (avatar && [...avatar].length > MAX_AVATAR_CODEPOINTS) {
+    throw new AgentDefinitionError(file, '`avatar` must be an emoji or one to two characters');
+  }
+
   return {
     id,
     name: str(fm.name) ?? id,
@@ -151,6 +174,8 @@ export function parseAgentDefinition(
     env: env as Record<string, string> | undefined,
     respondsTo: respondsToRaw as RespondsTo,
     default: fm.default === true,
+    description,
+    avatar,
     // A definition with no body still works — it just contributes no prompt of
     // its own, and the base prompt carries the chat rules.
     systemPrompt: body.trim().length > 0 ? body.trim() : BASE_SYSTEM_PROMPT,
@@ -200,6 +225,41 @@ export async function loadAgentDefinitions(
   }
 
   return { definitions: list, errors };
+}
+
+/**
+ * The definition's avatar, or its name's first character. Two characters of
+ * fallback would be ambiguous against a two-letter avatar, so it is one.
+ */
+export function agentAvatar(definition: AgentDefinition): string {
+  if (definition.avatar) return definition.avatar;
+  return ([...definition.name][0] ?? [...definition.id][0] ?? '?').toUpperCase();
+}
+
+/**
+ * What the API reports per definition — everything the picker shows, including
+ * the fields it shows READ-ONLY because they live in `~/.syntaur/agents/<id>.md`
+ * rather than in `participants.json` (plan review round 1, finding 11).
+ */
+export function toAgentSummary(definition: AgentDefinition): ChatAgentSummary {
+  const spec = HARNESSES[definition.harness as Harness];
+  const resolved = resolveCommand(spec);
+  return {
+    id: definition.id,
+    name: definition.name,
+    color: definition.color,
+    harness: definition.harness,
+    model: definition.model ?? null,
+    mode: definition.mode ?? null,
+    effort: definition.effort ?? null,
+    respondsTo: definition.respondsTo,
+    description: definition.description ?? null,
+    avatar: agentAvatar(definition),
+    default: definition.default,
+    source: definition.source,
+    // The install hint when the adapter is not on PATH; null when it is.
+    missing: resolved.path ? null : resolved.installHint,
+  };
 }
 
 /** The requested id, else the default, else the first definition. */

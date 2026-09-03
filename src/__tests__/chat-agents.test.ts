@@ -5,10 +5,12 @@ import { tmpdir } from 'node:os';
 import {
   BASE_SYSTEM_PROMPT,
   BUILTIN_AGENT_DEFINITIONS,
+  agentAvatar,
   agentsDir,
   loadAgentDefinitions,
   parseAgentDefinition,
   resolveAgent,
+  toAgentSummary,
 } from '../chat/agents.js';
 import { HARNESSES, isHarnessId, resolveCommand, resolveModeId } from '../chat/harnesses.js';
 
@@ -218,7 +220,9 @@ describe('parseAgentDefinition validation', () => {
     expect(def.systemPrompt).toBe(BASE_SYSTEM_PROMPT);
     expect(def.name).toBe('planner');
     expect(def.color).toBe('slate');
-    expect(def.respondsTo).toBe('all-human');
+    // `mentions` is the parser default too, so `all-human` is opt-in fan-out
+    // everywhere (Decision 2), not just for the builtins.
+    expect(def.respondsTo).toBe('mentions');
     expect(def.default).toBe(false);
   });
 
@@ -240,5 +244,72 @@ describe('resolveAgent', () => {
     expect(resolveAgent(definitions)?.id).toBe('claude');
     expect(resolveAgent(definitions, 'nope')).toBeNull();
     expect(resolveAgent([], undefined)).toBeNull();
+  });
+});
+
+describe('description, avatar and the API summary (Task 1)', () => {
+  it('parses `description` and `avatar`', () => {
+    const def = parseAgentDefinition(
+      'planner.md',
+      'planner',
+      ['---', 'id: planner', 'harness: claude', 'description: Plans, never edits', 'avatar: "🗺️"', '---', 'x'].join('\n'),
+    );
+    expect(def.description).toBe('Plans, never edits');
+    expect(def.avatar).toBe('🗺️');
+  });
+
+  it('rejects an avatar longer than an emoji', () => {
+    expect(() =>
+      parseAgentDefinition(
+        'planner.md',
+        'planner',
+        ['---', 'id: planner', 'harness: claude', 'avatar: planner', '---', 'x'].join('\n'),
+      ),
+    ).toThrow(/`avatar` must be an emoji/);
+  });
+
+  it('falls back to the name initial when no avatar is set', () => {
+    const def = parseAgentDefinition(
+      'planner.md',
+      'planner',
+      ['---', 'id: planner', 'name: Planner', 'harness: claude', '---', 'x'].join('\n'),
+    );
+    expect(agentAvatar(def)).toBe('P');
+  });
+
+  it('summarizes a definition with everything the picker shows read-only', () => {
+    const def = parseAgentDefinition(
+      'planner.md',
+      'planner',
+      [
+        '---',
+        'id: planner',
+        'name: Planner',
+        'harness: claude',
+        'model: claude-opus-5',
+        'mode: plan',
+        'effort: high',
+        'respondsTo: mentions',
+        'description: Plans, never edits',
+        '---',
+        'x',
+      ].join('\n'),
+    );
+    expect(toAgentSummary(def)).toMatchObject({
+      id: 'planner',
+      name: 'Planner',
+      harness: 'claude',
+      model: 'claude-opus-5',
+      mode: 'plan',
+      effort: 'high',
+      respondsTo: 'mentions',
+      description: 'Plans, never edits',
+      avatar: 'P',
+      source: 'planner.md',
+    });
+  });
+
+  it('reports both builtins as `mentions`, so neither answers every message', () => {
+    expect(BUILTIN_AGENT_DEFINITIONS.map((d) => d.respondsTo)).toEqual(['mentions', 'mentions']);
   });
 });

@@ -63,7 +63,8 @@ import {
   upsertChatSession,
 } from '../db/chat-db.js';
 import { adapterVersion as readAdapterVersion, spawnAcpClient, type AcpClient } from './acp-client.js';
-import { loadAgentDefinitions, resolveAgent } from './agents.js';
+import { loadAgentDefinitions, resolveAgent, toAgentSummary } from './agents.js';
+import { readParticipants, writeParticipants } from './participants.js';
 import { HARNESSES, probeAuth, resolveCommand } from './harnesses.js';
 import { ChatNormalizer } from './normalizer.js';
 import { applyProfile, newSessionMeta, profileEnv, resolveSessionProfile, serializeProfile } from './profile.js';
@@ -71,6 +72,7 @@ import { buildStandingContext, buildTurnPrompt } from './prompt-framing.js';
 import { openChatLog, type ChatLog } from './store.js';
 import type {
   AgentDefinition,
+  ChatAgentSummary,
   ChatEvent,
   ChatEventKind,
   PermissionRequestPayload,
@@ -85,6 +87,7 @@ import type {
   Harness,
   HarnessSpec,
   ItemPatch,
+  Participants,
   SessionProfile,
 } from './types.js';
 
@@ -176,6 +179,15 @@ export interface ChatBroker {
     agentId?: string | null,
   ): Promise<ChatSessionSummary | null>;
   listAgents(): Promise<{ definitions: AgentDefinition[]; errors: string[] }>;
+  /** The assignment's attached agents, default and hop budget (Decision 1). */
+  getParticipants(
+    assignment: ResolvedAssignment,
+  ): Promise<{ participants: Participants; agents: ChatAgentSummary[] }>;
+  /** Validate, persist and broadcast a new participant set. */
+  setParticipants(
+    assignment: ResolvedAssignment,
+    next: Participants,
+  ): Promise<{ participants: Participants; agents: ChatAgentSummary[] }>;
   items(assignment: ResolvedAssignment, opts: { beforeSeq?: number; limit?: number }): ChatItem[];
   reindex(assignment: ResolvedAssignment): Promise<{ events: number; items: number }>;
   stopAll(): Promise<void>;
@@ -1464,6 +1476,28 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
     },
 
     listAgents: () => loadAgentDefinitions(options.syntaurHome),
+
+    async getParticipants(assignment) {
+      const { definitions } = await loadAgentDefinitions(options.syntaurHome);
+      return {
+        participants: await readParticipants(assignment.assignmentDir, definitions),
+        agents: definitions.map(toAgentSummary),
+      };
+    },
+
+    async setParticipants(assignment, next) {
+      const { definitions } = await loadAgentDefinitions(options.syntaurHome);
+      const participants = await writeParticipants(assignment.assignmentDir, next, definitions);
+      const agents = definitions.map(toAgentSummary);
+      options.broadcast({
+        type: 'chat-participants',
+        projectSlug: assignment.projectSlug,
+        assignmentSlug: assignment.assignmentSlug,
+        timestamp: iso(),
+        payload: { assignmentId: assignment.id, participants, agents },
+      });
+      return { participants, agents };
+    },
 
     items: (assignment, opts) => listChatItems(assignment.id, opts),
 

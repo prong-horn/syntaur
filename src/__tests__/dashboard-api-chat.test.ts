@@ -464,3 +464,83 @@ describe('/ws chat frames', () => {
     ws.close();
   });
 });
+
+describe('participants routes (Task 1, Decision 1)', () => {
+  it('reports the derived default and every definition', async () => {
+    await boot();
+    const res = await fetch(url(`/assignments/${ASSIGNMENT_ID}/chat/participants`));
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      participants: { agents: string[]; defaultAgent: string | null };
+      agents: Array<{ id: string; respondsTo: string; avatar: string; source: string | null }>;
+    };
+    expect(body.participants.agents).toEqual(['claude', 'codex']);
+    expect(body.participants.defaultAgent).toBe('claude');
+    // The widened summary: `respondsTo`, model/mode/effort, avatar and the
+    // definition path the picker shows read-only.
+    expect(body.agents.map((a) => a.id)).toEqual(['claude', 'codex']);
+    expect(body.agents[0].respondsTo).toBe('mentions');
+    expect(body.agents[0].avatar).toBe('C');
+    expect(body.agents[0].source).toBeNull();
+  });
+
+  it('persists a PUT, broadcasts chat-participants and reads back', async () => {
+    await boot();
+    const frames: Array<{ type: string; payload: unknown }> = [];
+    const ws = new WebSocket(`${baseUrl.replace('http', 'ws')}/ws`);
+    await new Promise<void>((r) => ws.on('open', () => r()));
+    ws.on('message', (data) => frames.push(JSON.parse(String(data))));
+
+    const res = await fetch(url(`/assignments/${ASSIGNMENT_ID}/chat/participants`), {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ agents: ['codex'], defaultAgent: 'codex', hopBudget: 2 }),
+    });
+    expect(res.status).toBe(200);
+    expect(((await res.json()) as { participants: unknown }).participants).toEqual({
+      agents: ['codex'],
+      defaultAgent: 'codex',
+      hopBudget: 2,
+    });
+
+    await waitUntil(() => frames.some((f) => f.type === 'chat-participants'), 'a chat-participants frame');
+    const frame = frames.find((f) => f.type === 'chat-participants')!;
+    expect((frame.payload as { assignmentId: string }).assignmentId).toBe(ASSIGNMENT_ID);
+    expect((frame.payload as { participants: { defaultAgent: string } }).participants.defaultAgent).toBe(
+      'codex',
+    );
+
+    const reread = (await (
+      await fetch(url(`/assignments/${ASSIGNMENT_ID}/chat/participants`))
+    ).json()) as { participants: { agents: string[] } };
+    expect(reread.participants.agents).toEqual(['codex']);
+    ws.close();
+  });
+
+  it('rejects an unknown id with 400', async () => {
+    await boot();
+    const res = await fetch(url(`/assignments/${ASSIGNMENT_ID}/chat/participants`), {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ agents: ['ghost'], defaultAgent: null }),
+    });
+    expect(res.status).toBe(400);
+    expect(((await res.json()) as { error: string }).error).toContain('ghost');
+  });
+
+  it('rejects a default that is not attached with 400', async () => {
+    await boot();
+    const res = await fetch(url(`/assignments/${ASSIGNMENT_ID}/chat/participants`), {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ agents: ['claude'], defaultAgent: 'codex' }),
+    });
+    expect(res.status).toBe(400);
+  });
+
+  it('404s for an assignment that does not exist', async () => {
+    await boot();
+    const res = await fetch(url('/assignments/00000000-0000-4000-8000-000000000999/chat/participants'));
+    expect(res.status).toBe(404);
+  });
+});

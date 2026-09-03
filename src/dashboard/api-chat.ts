@@ -15,9 +15,10 @@
 
 import { Router, type Request, type Response } from 'express';
 import { resolveAssignmentById } from '../utils/assignment-resolver.js';
-import { resolveCommand, HARNESSES } from '../chat/harnesses.js';
+import { toAgentSummary } from '../chat/agents.js';
 import { ChatSendError, type ChatBroker } from '../chat/broker.js';
-import type { Harness } from '../chat/types.js';
+import { ParticipantsError } from '../chat/participants.js';
+import type { Participants } from '../chat/types.js';
 
 const MAX_MESSAGE_CHARS = 100_000;
 
@@ -46,9 +47,9 @@ export function createChatRouter(
     return assignment;
   }
 
-  /** `ChatSendError` carries its own status; anything else is a 500. */
+  /** `ChatSendError` and `ParticipantsError` carry a status; anything else is a 500. */
   function fail(res: Response, err: unknown): void {
-    if (err instanceof ChatSendError) {
+    if (err instanceof ChatSendError || err instanceof ParticipantsError) {
       res.status(err.status).json({ error: err.message });
       return;
     }
@@ -183,22 +184,45 @@ export function createChatRouter(
   router.get('/chat/agents', async (_req, res) => {
     try {
       const { definitions, errors } = await broker.listAgents();
-      res.json({
-        agents: definitions.map((definition) => {
-          const spec = HARNESSES[definition.harness as Harness];
-          const resolved = resolveCommand(spec);
-          return {
-            id: definition.id,
-            name: definition.name,
-            color: definition.color,
-            harness: definition.harness,
-            default: definition.default,
-            // The install hint when the adapter is not on PATH; null when it is.
-            missing: resolved.path ? null : resolved.installHint,
-          };
+      res.json({ agents: definitions.map(toAgentSummary), errors });
+    } catch (err) {
+      fail(res, err);
+    }
+  });
+
+  // --- participants (Decision 1) -------------------------------------------
+
+  router.get('/assignments/:id/chat/participants', async (req, res) => {
+    try {
+      const assignment = await resolveOr404(req, res);
+      if (!assignment) return;
+      res.json(await broker.getParticipants(assignment));
+    } catch (err) {
+      fail(res, err);
+    }
+  });
+
+  /**
+   * Replace the participant set. The body is the same `{ agents, defaultAgent,
+   * hopBudget? }` shape the GET reports; the broker validates it against the
+   * definitions on disk and broadcasts `chat-participants`.
+   */
+  router.put('/assignments/:id/chat/participants', async (req, res) => {
+    try {
+      const assignment = await resolveOr404(req, res);
+      if (!assignment) return;
+      const body = (req.body ?? {}) as Partial<Participants>;
+      if (!Array.isArray(body.agents)) {
+        res.status(400).json({ error: 'agents must be a list of agent ids' });
+        return;
+      }
+      res.json(
+        await broker.setParticipants(assignment, {
+          agents: body.agents,
+          defaultAgent: body.defaultAgent ?? null,
+          ...(body.hopBudget === undefined ? {} : { hopBudget: body.hopBudget }),
         }),
-        errors,
-      });
+      );
     } catch (err) {
       fail(res, err);
     }
