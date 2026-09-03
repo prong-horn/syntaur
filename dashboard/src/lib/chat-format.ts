@@ -162,3 +162,75 @@ export function agentColorClasses(color: string): string {
       return 'bg-muted text-muted-foreground';
   }
 }
+
+// --- the chat / activity split (Decision 5) --------------------------------
+
+export interface TurnActivity {
+  thoughts: ChatItem[];
+  work: ChatItem[];
+  /** Tool rows across the turn's work cards — what the disclosure expands to. */
+  toolCount: number;
+}
+
+/**
+ * Group a turn's thoughts and work cards by `turnId`. Presentation only: no
+ * event, item or index changes, so the split can be tuned without touching
+ * persistence (Decision 5).
+ */
+export function groupByTurn(items: readonly ChatItem[]): Map<string, TurnActivity> {
+  const groups = new Map<string, TurnActivity>();
+  for (const item of items) {
+    if (!item.turnId) continue;
+    if (item.type !== 'agent.thought' && item.type !== 'agent.work') continue;
+    let group = groups.get(item.turnId);
+    if (!group) {
+      group = { thoughts: [], work: [], toolCount: 0 };
+      groups.set(item.turnId, group);
+    }
+    if (item.type === 'agent.thought') group.thoughts.push(item);
+    else {
+      group.work.push(item);
+      group.toolCount += item.tools.length;
+    }
+  }
+  return groups;
+}
+
+/** "2 thoughts · 5 tool calls", or empty when the turn produced neither. */
+export function activitySummary(activity: TurnActivity): string {
+  const parts: string[] = [];
+  if (activity.thoughts.length > 0) {
+    parts.push(`${activity.thoughts.length} thought${activity.thoughts.length === 1 ? '' : 's'}`);
+  }
+  if (activity.toolCount > 0) {
+    parts.push(`${activity.toolCount} tool call${activity.toolCount === 1 ? '' : 's'}`);
+  }
+  return parts.join(' · ');
+}
+
+/**
+ * What belongs in the chat column. Everything but a thought: work cards stay,
+ * collapsed to their header line, and their full tool rows are reachable from
+ * the turn's Activity disclosure.
+ */
+export function isChatColumnItem(item: Pick<ChatItem, 'type'>): boolean {
+  return item.type !== 'agent.thought';
+}
+
+/**
+ * Rank `@agent` suggestions for a typed partial: prefix matches first, then
+ * substring, both case-insensitive. Same shape as the launch-prompt ranking,
+ * without its reserved tokens — the candidates here are the attached agents.
+ */
+export function rankAgentTokens(partial: string, ids: readonly string[]): string[] {
+  const p = partial.toLowerCase();
+  if (p === '') return [...ids];
+  const prefix: string[] = [];
+  const substring: string[] = [];
+  for (const id of ids) {
+    const lower = id.toLowerCase();
+    if (lower.startsWith(p)) prefix.push(id);
+    else if (lower.includes(p)) substring.push(id);
+  }
+  return [...prefix, ...substring];
+}

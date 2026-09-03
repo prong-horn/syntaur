@@ -11,6 +11,10 @@ import {
   summarizeTurn,
   summarizeWork,
   workInProgress,
+  groupByTurn,
+  activitySummary,
+  isChatColumnItem,
+  rankAgentTokens,
 } from '../chat-format';
 import { capRawIo, prettyJson, stripAnsi, toDiffLines, RAW_IO_CAP } from '../chat-blocks';
 import type { AgentWorkItem, ChatItem } from '../chat-types';
@@ -252,5 +256,90 @@ describe('raw I/O', () => {
     expect(capped.length).toBeLessThan(big.length + 60);
     expect(capped).toContain('truncated at');
     expect(capRawIo('small')).toBe('small');
+  });
+});
+
+/**
+ * Task 7 — the chat-versus-activity split (Decision 5) is presentation only:
+ * the chat column keeps the conversation, and each turn's thoughts and full
+ * tool rows go behind a disclosure on that turn's status row.
+ */
+describe('groupByTurn', () => {
+  const row = (over: Partial<ChatItem> & Pick<ChatItem, 'itemId' | 'type'>): ChatItem =>
+    ({
+      assignmentId: 'a1',
+      turnId: 't1',
+      agentId: 'planner',
+      ts: '2026-09-02T12:00:00.000Z',
+      seqFirst: 0,
+      seqLast: 0,
+      sealed: true,
+      ...over,
+    }) as ChatItem;
+
+  it('collects a turn’s thoughts and work cards under its turn id', () => {
+    const groups = groupByTurn([
+      row({ itemId: 'a', type: 'agent.thought', text: 'hmm' } as never),
+      row({
+        itemId: 'b',
+        type: 'agent.work',
+        tools: [{ toolCallId: 'x' }, { toolCallId: 'y' }],
+        summary: {},
+      } as never),
+      row({ itemId: 'c', type: 'agent.message', text: 'done' } as never),
+      row({ itemId: 'd', turnId: 't2', type: 'agent.thought', text: 'other turn' } as never),
+    ]);
+    expect(groups.get('t1')?.thoughts.map((i) => i.itemId)).toEqual(['a']);
+    expect(groups.get('t1')?.work.map((i) => i.itemId)).toEqual(['b']);
+    expect(groups.get('t1')?.toolCount).toBe(2);
+    expect(groups.get('t2')?.thoughts).toHaveLength(1);
+  });
+
+  it('ignores items outside any turn', () => {
+    const groups = groupByTurn([row({ itemId: 'a', turnId: null, type: 'agent.thought' } as never)]);
+    expect(groups.size).toBe(0);
+  });
+
+  it('summarises what the disclosure holds', () => {
+    expect(activitySummary({ thoughts: [1, 2], work: [1], toolCount: 5 } as never)).toBe(
+      '2 thoughts · 5 tool calls',
+    );
+    expect(activitySummary({ thoughts: [1], work: [], toolCount: 1 } as never)).toBe(
+      '1 thought · 1 tool call',
+    );
+    expect(activitySummary({ thoughts: [], work: [], toolCount: 0 } as never)).toBe('');
+  });
+});
+
+describe('isChatColumnItem', () => {
+  it('keeps the conversation and drops thoughts', () => {
+    const kinds: Array<ChatItem['type']> = [
+      'user.message',
+      'agent.message',
+      'handoff',
+      'agent.work',
+      'agent.plan',
+      'permission.request',
+      'turn.status',
+      'system',
+    ];
+    for (const type of kinds) {
+      expect(isChatColumnItem({ type } as ChatItem)).toBe(true);
+    }
+    expect(isChatColumnItem({ type: 'agent.thought' } as ChatItem)).toBe(false);
+  });
+});
+
+describe('rankAgentTokens', () => {
+  it('offers every attached agent for a bare @', () => {
+    expect(rankAgentTokens('', ['planner', 'implementer'])).toEqual(['planner', 'implementer']);
+  });
+
+  it('puts prefix matches before substring matches, case-insensitively', () => {
+    expect(rankAgentTokens('IM', ['planner', 'implementer', 'trim'])).toEqual(['implementer', 'trim']);
+  });
+
+  it('offers nothing when nothing matches', () => {
+    expect(rankAgentTokens('zzz', ['planner'])).toEqual([]);
   });
 });
