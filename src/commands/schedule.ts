@@ -18,7 +18,7 @@ import {
 } from '../schedules/attempt.js';
 import { runTick } from '../schedules/tick.js';
 import { readDashboardPort, restDispatcher } from '../schedules/dispatch.js';
-import { messageTurnOpenVia } from '../schedules/liveness.js';
+import { messageTurnProbeVia } from '../schedules/liveness.js';
 import { installLaunchAgent, uninstallLaunchAgent } from '../schedules/launchd.js';
 import {
   type ScheduledJob,
@@ -48,11 +48,11 @@ function parseDurationMs(input: string): number {
  */
 async function restTickDeps(): Promise<{
   dashboardPort: number | null;
-  isMessageTurnOpen?: ReturnType<typeof messageTurnOpenVia>;
+  probeMessageTurn?: ReturnType<typeof messageTurnProbeVia>;
 }> {
   const port = await readDashboardPort();
   if (port === null) return { dashboardPort: null };
-  return { dashboardPort: port, isMessageTurnOpen: messageTurnOpenVia(restDispatcher({ port })) };
+  return { dashboardPort: port, probeMessageTurn: messageTurnProbeVia(restDispatcher({ port })) };
 }
 
 interface TriggerOpts {

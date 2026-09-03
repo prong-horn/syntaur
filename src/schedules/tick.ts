@@ -34,7 +34,7 @@ import {
   DispatchError,
   type ChatDispatcher,
 } from './dispatch.js';
-import { messageTurnOpenVia, type IsMessageTurnOpen } from './liveness.js';
+import { messageTurnProbeVia, type ProbeMessageTurn } from './liveness.js';
 import {
   claimJob,
   markDispatching,
@@ -55,8 +55,10 @@ export interface TickDeps {
   dashboardPort?: number | null;
   /** Fully-built dispatcher; overrides `chatBroker`/`dashboardPort` (tests). */
   dispatcher?: ChatDispatcher;
-  /** Whether a dispatched message's turn is still open. Defaults to the dispatcher's. */
-  isMessageTurnOpen?: IsMessageTurnOpen;
+  /** Where a dispatched message's turn stands. Defaults to the dispatcher's probe. */
+  probeMessageTurn?: ProbeMessageTurn;
+  /** Ceiling on an UNKNOWN message state before a `running` job is terminalized. */
+  stateUnknownCeilingMs?: number;
   killSwitch?: () => boolean;
   log?: (message: string) => void;
   /** When false, skip the reap pass (the `fire-due` accelerator path). Default true. */
@@ -113,9 +115,15 @@ function resolveDispatcher(deps: TickDeps): ChatDispatcher | null {
 export async function runTick(deps: TickDeps = {}): Promise<TickResult> {
   const now = deps.now ?? (() => new Date());
   const dispatcher = resolveDispatcher(deps);
-  const isMessageTurnOpen =
-    deps.isMessageTurnOpen ?? (dispatcher ? messageTurnOpenVia(dispatcher) : undefined);
-  const attemptDeps = { now, ...(isMessageTurnOpen ? { isMessageTurnOpen } : {}) };
+  const probeMessageTurn =
+    deps.probeMessageTurn ?? (dispatcher ? messageTurnProbeVia(dispatcher) : undefined);
+  const attemptDeps = {
+    now,
+    ...(probeMessageTurn ? { probeMessageTurn } : {}),
+    ...(deps.stateUnknownCeilingMs === undefined
+      ? {}
+      : { stateUnknownCeilingMs: deps.stateUnknownCeilingMs }),
+  };
   const result: TickResult = { evaluated: 0, fired: [], failed: [], skipped: 0, reaped: [], stuck: [], completed: [] };
 
   // Reap first (crash recovery / stuck detection) — always runs, even under the

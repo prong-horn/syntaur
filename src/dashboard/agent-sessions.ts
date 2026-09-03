@@ -19,6 +19,7 @@ import {
   type SessionAttribution,
 } from '../utils/session-attribution.js';
 import { sanitizeSessionPath } from '../utils/transcript.js';
+import { sweepStaleSessions, type StaleSweepOptions } from '../sessions/stale-sweep.js';
 import type {
   AgentSession,
   AgentSessionWithLiveness,
@@ -989,6 +990,31 @@ async function readAssignmentStatus(
  * Standalone sessions (project_slug NULL) are resolved via assignmentsDir.
  * Returns the number of sessions that were updated.
  */
+/**
+ * The dashboard tick's session-maintenance pass: reconcile, THEN sweep.
+ *
+ * The order is load-bearing and is why this is one function rather than two
+ * calls at the call site. A session bound to an assignment that has finished
+ * must be reconciled to `completed` (or `stopped`, for a failed assignment)
+ * from the assignment's own status; only a session nobody can account for that
+ * way is a candidate for the time-based stale sweep. Run the other way round, a
+ * finished assignment's long-idle session would be recorded as `stopped` —
+ * "we lost track of it" — instead of `completed`, which is a different and
+ * wrong fact about the work.
+ *
+ * `reconcileActiveSessions` reads assignment.md files, so it is given the same
+ * `projectsDir` / `assignmentsDir` the watcher already carries.
+ */
+export async function runSessionMaintenance(
+  projectsDir: string,
+  assignmentsDir?: string,
+  sweepOptions: StaleSweepOptions = {},
+): Promise<{ reconciled: number; swept: string[]; engagementsClosed: number }> {
+  const reconciled = await reconcileActiveSessions(projectsDir, assignmentsDir);
+  const sweep = await sweepStaleSessions(sweepOptions);
+  return { reconciled, ...sweep };
+}
+
 export async function reconcileActiveSessions(
   projectsDir: string,
   assignmentsDir?: string,

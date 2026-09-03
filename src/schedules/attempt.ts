@@ -14,7 +14,7 @@
  * never reaped while still legitimately inside its dispatch window.
  *
  * Phase 4 (Decision 3): an attempt is a CHAT MESSAGE. It carries a `messageId`
- * and nothing else — no session id, no pid. Liveness is `isMessageTurnOpen`,
+ * and nothing else — no session id, no pid. Liveness is `probeMessageTurn`,
  * and killing withdraws the queued message or cancels the running turn through
  * the broker.
  */
@@ -26,6 +26,7 @@ import { appendEvent } from './event-log.js';
 import { schedulesDir, readJob, writeJob } from './store.js';
 import { isRecurring } from './triggers.js';
 import { nowTimestamp } from '../utils/timestamp.js';
+import type { MessageTurnLiveness } from './liveness.js';
 import {
   type ScheduledJob,
   type JobAttemptState,
@@ -48,12 +49,19 @@ const MAX_CONSUMED_EDGES = 50;
 export interface AttemptDeps {
   now: () => Date;
   /**
-   * Whether the dispatched message's turn is still open. Production wires this
-   * to `messageTurnOpenVia` over the in-process broker or the chat REST route;
-   * tests inject a stub. Defaults to "assume open" so reaping never fires
-   * without an explicit signal.
+   * Where the dispatched message's turn stands — `open`, `ended`, or `unknown`.
+   * Production wires this to `messageTurnProbeVia` over the in-process broker or
+   * the chat REST route; tests inject a stub. Defaults to `unknown`, so reaping
+   * never fires on an absent signal until the ceiling below.
    */
-  isMessageTurnOpen?: (assignmentId: string, messageId: string) => Promise<boolean>;
+  probeMessageTurn?: (assignmentId: string, messageId: string) => Promise<MessageTurnLiveness>;
+  /**
+   * How long a `running` job may sit with an UNKNOWN message state before it is
+   * terminalized anyway. Without a ceiling a bad `messageId`, a reindexed chat
+   * or a permanently-down dashboard leaves the job `running` forever, because
+   * `unknown` reads as open. Default 2 h.
+   */
+  stateUnknownCeilingMs?: number;
 }
 
 export interface FiredEdge {
@@ -486,6 +494,14 @@ export interface ReapOutcome {
 const ONE_SHOT_COMPLETE_GRACE_MS = 60_000;
 
 /**
+ * Default ceiling on how long a `running` job may report an UNKNOWN message
+ * state before `reapStale` terminalizes it (code review finding 5). Generous on
+ * purpose: a dashboard restart or a brief network blip must not cost a live job,
+ * and two hours is far longer than either.
+ */
+const STATE_UNKNOWN_CEILING_MS = 2 * 60 * 60 * 1000;
+
+/**
  * Crash recovery + stuck detection. PURE MECHANISM: it completes the lifecycle
  * of demonstrably-dead dispatches (claim lease expired while
  * claimed/dispatching → `dispatch_failed`) and RECORDS — but does not remediate
@@ -494,7 +510,8 @@ const ONE_SHOT_COMPLETE_GRACE_MS = 60_000;
  */
 export async function reapStale(jobs: ScheduledJob[], deps: AttemptDeps): Promise<ReapOutcome> {
   const now = deps.now();
-  const isOpen = deps.isMessageTurnOpen ?? (async () => true);
+  const probe = deps.probeMessageTurn ?? (async () => 'unknown' as MessageTurnLiveness);
+  const unknownCeilingMs = deps.stateUnknownCeilingMs ?? STATE_UNKNOWN_CEILING_MS;
   const out: ReapOutcome = { reaped: [], stuck: [], completed: [] };
   for (const job of jobs) {
     const a = job.attempt;
@@ -524,10 +541,40 @@ export async function reapStale(jobs: ScheduledJob[], deps: AttemptDeps): Promis
     // maxRuntimeMs if set, else a const default). Never terminalize a one-shot
     // with no `messageId` (leave that to the claim-lease reaping), and NEVER do
     // this for recurring jobs.
+    const liveness = a.messageId ? await probe(job.assignmentId, a.messageId) : 'unknown';
+
+    // ── The state-unknown ceiling (code review finding 5) ────────────────────
+    // `unknown` reads as open, which is correct until it is not: a job nobody
+    // can resolve must not sit in `running` for ever. Past the ceiling it is
+    // terminalized as a failed dispatch, naming the reason so the event log
+    // distinguishes "we could not tell" from "the turn ended".
+    if (liveness === 'unknown' && a.runningSince) {
+      const unknownFor = now.getTime() - Date.parse(a.runningSince);
+      if (unknownFor > unknownCeilingMs) {
+        const reason = `state_unknown: the chat could not resolve message ${a.messageId ?? '(none)'} for ${Math.round(unknownFor / 60000)}m`;
+        const { written } = await lockedTransition(job.id, (f) => {
+          if (
+            f.attempt.state !== 'running' ||
+            f.attempt.messageId !== a.messageId ||
+            f.attempt.runningSince !== a.runningSince
+          ) {
+            return null;
+          }
+          return { ...f, attempt: { ...f.attempt, state: 'dispatch_failed', claim: null, lastError: reason } };
+        });
+        if (written) {
+          await appendEvent(job.id, 'dispatch_failed', { reason });
+          await appendEvent(job.id, 'reaped', { reason: 'state_unknown', messageId: a.messageId });
+          out.reaped.push(job.id);
+        }
+        continue;
+      }
+    }
+
     if (!isRecurring(job.trigger) && a.messageId && a.runningSince) {
       const graceMs = job.limits.maxRuntimeMs ?? ONE_SHOT_COMPLETE_GRACE_MS;
       const pastGrace = now.getTime() - Date.parse(a.runningSince) > graceMs;
-      if (pastGrace && !(await isOpen(job.assignmentId, a.messageId))) {
+      if (pastGrace && liveness === 'ended') {
         const { written } = await lockedTransition(job.id, (f) => {
           // Same running attempt the grace/liveness check was based on — else a
           // newer run could be completed off a stale snapshot.
@@ -552,8 +599,7 @@ export async function reapStale(jobs: ScheduledJob[], deps: AttemptDeps): Promis
     // Record once; leave state running (stuck is derivable). No remediation.
     if (job.limits.maxRuntimeMs && a.runningSince) {
       const overrun = now.getTime() - Date.parse(a.runningSince) > job.limits.maxRuntimeMs;
-      const stillOpen = a.messageId ? await isOpen(job.assignmentId, a.messageId) : true;
-      if (overrun && !stillOpen && a.lastError !== 'stuck:max-runtime') {
+      if (overrun && liveness === 'ended' && a.lastError !== 'stuck:max-runtime') {
         const { written } = await lockedTransition(job.id, (f) => {
           if (
             f.attempt.state !== 'running' ||

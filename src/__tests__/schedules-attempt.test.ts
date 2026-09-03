@@ -17,6 +17,7 @@ import {
   type AttemptDeps,
 } from '../schedules/attempt.js';
 import { writeJob, readJob } from '../schedules/store.js';
+import { readEvents } from '../schedules/event-log.js';
 import { evaluateTrigger } from '../schedules/triggers.js';
 import { freshAttempt } from '../schedules/types.js';
 import { sampleJob } from './schedules-helpers.js';
@@ -96,7 +97,7 @@ describe('attempt state machine', () => {
     });
     const out = await reapStale([job], {
       now: () => new Date('2026-06-15T03:30:00Z'),
-      isMessageTurnOpen: async () => false,
+      probeMessageTurn: async () => 'ended',
     });
     expect(out.stuck).toContain(job.id);
     // Mechanism, not policy: state stays running; stuck is recorded, not remediated.
@@ -294,9 +295,74 @@ describe('attempt state machine', () => {
     };
     const out = await reapStale([stale], {
       now: () => new Date('2026-06-15T05:00:00Z'),
-      isMessageTurnOpen: async () => false,
+      probeMessageTurn: async () => 'ended',
     });
     expect(out.completed).toEqual([]);
     expect((await readJob(onDisk.id))?.attempt.state).toBe('running'); // not clobbered
+  });
+});
+
+describe('the state-unknown ceiling (code review finding 5)', () => {
+  /**
+   * `probeMessageTurn` answers `unknown` when the chat cannot be reached, has
+   * been reindexed, or never saw the id. Treating that as "still open" is the
+   * right DEFAULT — reaping a live job on a missing signal is the failure mode
+   * the conservative ordering exists to prevent — but held forever it strands a
+   * job in `running` with no way out. The ceiling bounds it: past
+   * `stateUnknownCeilingMs` an unknowable job is terminalized rather than left.
+   */
+  const runningSince = '2026-06-15T03:00:00Z';
+  const runningJob = () => ({
+    ...sampleJob({ trigger: { kind: 'at' as const, at: '2026-06-14T00:00:00Z' } }),
+    attempt: {
+      ...freshAttempt(),
+      state: 'running' as const,
+      messageId: 'msg-unknowable',
+      runningSince,
+    },
+  });
+
+  it('keeps an unknown-state job running while it is inside the ceiling', async () => {
+    const job = await writeJob(runningJob());
+    const out = await reapStale([job], {
+      now: () => new Date('2026-06-15T04:00:00Z'), // 1h — inside the 2h default
+      probeMessageTurn: async () => 'unknown',
+    });
+    expect(out.reaped).toEqual([]);
+    expect((await readJob(job.id))?.attempt.state).toBe('running');
+  });
+
+  it('terminalizes an unknown-state job past the ceiling, with reason state_unknown', async () => {
+    const job = await writeJob(runningJob());
+    const out = await reapStale([job], {
+      now: () => new Date('2026-06-15T06:00:00Z'), // 3h — past the 2h default
+      probeMessageTurn: async () => 'unknown',
+    });
+    expect(out.reaped).toContain(job.id);
+    const after = await readJob(job.id);
+    expect(after?.attempt.state).toBe('dispatch_failed');
+    expect(after?.attempt.lastError).toMatch(/state_unknown/);
+    const events = await readEvents(job.id);
+    expect(events.some((e) => e.type === 'reaped' && (e.data as { reason?: string })?.reason === 'state_unknown')).toBe(true);
+  });
+
+  it('honours a configured ceiling', async () => {
+    const job = await writeJob(runningJob());
+    const out = await reapStale([job], {
+      now: () => new Date('2026-06-15T04:00:00Z'), // 1h
+      probeMessageTurn: async () => 'unknown',
+      stateUnknownCeilingMs: 30 * 60 * 1000, // …but a 30-minute ceiling
+    });
+    expect(out.reaped).toContain(job.id);
+  });
+
+  it('never applies the ceiling to a turn the chat says is genuinely OPEN', async () => {
+    const job = await writeJob(runningJob());
+    const out = await reapStale([job], {
+      now: () => new Date('2026-06-16T03:00:00Z'), // a full day later
+      probeMessageTurn: async () => 'open',
+    });
+    expect(out.reaped).toEqual([]);
+    expect((await readJob(job.id))?.attempt.state).toBe('running');
   });
 });

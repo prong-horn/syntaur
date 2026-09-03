@@ -64,6 +64,7 @@
     "src/__tests__/session-db-migration-v10.test.ts",
     "src/__tests__/session-db-migration-v11.test.ts",
     "src/__tests__/stale-sweep.test.ts",
+    "src/__tests__/session-maintenance.test.ts",
     "src/__tests__/agent-sessions.test.ts",
     "src/__tests__/engagement-migration.test.ts",
     "src/__tests__/api-agent-sessions.test.ts",

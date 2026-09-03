@@ -199,7 +199,7 @@ describe('runTick', () => {
     );
     // 1h later — well past the 60s maxRuntime — and the turn has ended.
     const res = await runTick(
-      happyDeps('2026-06-15T04:00:00Z', { isMessageTurnOpen: async () => false }),
+      happyDeps('2026-06-15T04:00:00Z', { probeMessageTurn: async () => 'ended' }),
     );
     expect(res.stuck).toContain(job.id);
     const after = await readJob(job.id);
@@ -217,7 +217,7 @@ describe('runTick', () => {
       }),
     );
     const res = await runTick(
-      happyDeps('2026-06-15T04:00:00Z', { isMessageTurnOpen: async () => true }),
+      happyDeps('2026-06-15T04:00:00Z', { probeMessageTurn: async () => 'open' }),
     );
     expect(res.stuck).not.toContain(job.id);
     const after = await readJob(job.id);
@@ -235,7 +235,7 @@ describe('runTick', () => {
     );
     // 1h later (well past the 60s grace) and the turn has ended.
     const res = await runTick(
-      happyDeps('2026-06-15T04:00:00Z', { isMessageTurnOpen: async () => false }),
+      happyDeps('2026-06-15T04:00:00Z', { probeMessageTurn: async () => 'ended' }),
     );
     expect(res.completed).toContain(job.id);
     expect((await readJob(job.id))?.attempt.state).toBe('completed');
@@ -253,7 +253,7 @@ describe('runTick', () => {
     );
     // Only 30s elapsed — within the 60s grace — even with an ended turn.
     const res = await runTick(
-      happyDeps('2026-06-15T03:00:30Z', { isMessageTurnOpen: async () => false }),
+      happyDeps('2026-06-15T03:00:30Z', { probeMessageTurn: async () => 'ended' }),
     );
     expect(res.completed).toEqual([]);
     expect((await readJob(job.id))?.attempt.state).toBe('running');
@@ -284,7 +284,7 @@ describe('runTick', () => {
       }),
     );
     const res = await runTick(
-      happyDeps('2026-06-15T04:00:00Z', { isMessageTurnOpen: async () => false }),
+      happyDeps('2026-06-15T04:00:00Z', { probeMessageTurn: async () => 'ended' }),
     );
     expect(res.completed).toEqual([]);
     // Recurring jobs get the stuck recording (B8), not completion (B7).

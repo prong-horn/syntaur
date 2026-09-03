@@ -355,18 +355,19 @@ async function reconcile(serversDir: string, projectsDir: string, excludePids?: 
   }
 
   // The transcript scanner is gone (phase 4, Decision 4). What rides this
-  // interval now is the stale sweep — a time-based `active → stopped` pass over
-  // non-`acp` rows — and the auto-summary. Skipped entirely when the session DB
-  // was never initialized (unit tests calling reconcile directly); isolated
-  // failure domains otherwise, so one failure never breaks server/tmux discovery.
+  // interval now is session maintenance — `reconcileActiveSessions` and THEN
+  // the time-based stale sweep, in that order (plan Task 4) — plus the
+  // auto-summary. Skipped entirely when the session DB was never initialized
+  // (unit tests calling reconcile directly); isolated failure domains
+  // otherwise, so one failure never breaks server/tmux discovery.
   const { isSessionDbInitialized } = await import('./session-db.js');
   if (isSessionDbInitialized()) {
     try {
-      const { sweepStaleSessions } = await import('../sessions/stale-sweep.js');
-      const swept = await sweepStaleSessions();
-      if (swept.swept.length > 0) onAgentSessionsChanged?.();
+      const { runSessionMaintenance } = await import('./agent-sessions.js');
+      const result = await runSessionMaintenance(projectsDir, assignmentsDir);
+      if (result.reconciled > 0 || result.swept.length > 0) onAgentSessionsChanged?.();
     } catch (err) {
-      console.error('[autodiscovery] stale sweep failed:', err);
+      console.error('[autodiscovery] session maintenance failed:', err);
     }
 
     // Auto-summary rides the same interval but is FIRE-AND-FORGET: a summarize
