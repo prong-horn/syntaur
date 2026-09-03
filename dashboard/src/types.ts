@@ -157,37 +157,16 @@ export interface AgentSessionWithLiveness extends AgentSession {
   isLive: boolean;
 }
 
-// ── Phase D: browser-attach detail + token ────────────────────────────────
-
-export type DaemonSessionState = 'working' | 'blocked' | 'done' | 'failed' | 'stopped';
-
-export interface SettledScreen {
-  lastScreen: string | null;
-  cols: number;
-  rows: number;
-  exitCode?: number | null;
-  exitSignal?: number | null;
-  state: DaemonSessionState;
-}
-
-export interface AgentSessionDetail extends AgentSessionWithLiveness {
-  syntaurdShortId: string | null;
-  attachable: boolean;
-  syntaurdState?: DaemonSessionState | null;
-  needs?: string | null;
-  daemonUnavailable?: boolean;
-  settled?: SettledScreen | null;
-}
+/**
+ * One session's detail payload. Phase 4 removed the daemon join that used to
+ * enrich it (short id, attachability, live state, the settled final screen) —
+ * the chat owns its adapters directly and there is no browser terminal.
+ */
+export type AgentSessionDetail = AgentSessionWithLiveness;
 
 export interface AgentSessionDetailResponse {
   session: AgentSessionDetail;
   generatedAt: string;
-}
-
-export interface PtyTokenResponse {
-  token: string;
-  short: string;
-  expiresAt: number;
 }
 
 export interface SessionPageMeta {

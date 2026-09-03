@@ -99,15 +99,16 @@ describe('v6 → v7 migration (adds hosted_by)', () => {
   it('appendSession round-trips hostedBy; a later upsert WITHOUT it does not clobber (hook convergence)', async () => {
     initSessionDb(dbPath);
     const { appendSession, listAllSessions } = await import('../dashboard/agent-sessions.js');
+    // `'acp'` is the only backend left (phase 4): the chat's own sessions.
     await appendSession('', {
       sessionId: 'sd-1', agent: 'codex', started: '2026-07-01T10:00:00.000Z',
-      status: 'active', path: '/w/a', projectSlug: null, assignmentSlug: null, hostedBy: 'syntaurd',
+      status: 'active', path: '/w/a', projectSlug: null, assignmentSlug: null, hostedBy: 'acp',
     });
     await appendSession('', {
       sessionId: 'sd-1', agent: 'codex', started: '2026-07-01T10:00:00.000Z',
       status: 'active', path: '/w/a', projectSlug: null, assignmentSlug: null,
     });
     const all = await listAllSessions('');
-    expect(all.find((s) => s.sessionId === 'sd-1')?.hostedBy).toBe('syntaurd');
+    expect(all.find((s) => s.sessionId === 'sd-1')?.hostedBy).toBe('acp');
   });
 });

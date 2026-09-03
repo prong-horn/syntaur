@@ -49,21 +49,16 @@ import {
   isArchivedFilter,
   type ArchivedFilter,
 } from '../utils/session-archived.js';
-import { resolveShortForSession, type SessionResolution } from './daemon-join.js';
-import type { PtyTokenRegistry } from './pty-token.js';
 import type {
   AgentSessionDetail,
   AgentSessionStatus,
   AgentSessionWithLiveness,
-  DaemonSessionState,
   WsMessage,
 } from './types.js';
 
 /** Phase D browser-attach seams: the shared token registry + the daemon join
  * (injectable so the detail/mint routes are unit-testable without a daemon). */
 export interface AgentSessionsRouterDeps {
-  ptyTokens?: PtyTokenRegistry;
-  resolveShort?: (sessionId: string) => Promise<SessionResolution | null>;
   /**
    * Workspace membership lookup, injected rather than imported: it lives in
    * `api.ts`, which already imports THIS module to mount the router, so a direct
@@ -78,7 +73,6 @@ export interface AgentSessionsRouterDeps {
   ) => Promise<{ projectSlugs: string[]; standaloneAssignmentIds: string[] }>;
 }
 
-const TERMINAL_DAEMON_STATES: ReadonlySet<DaemonSessionState> = new Set(['done', 'failed', 'stopped']);
 
 /**
  * Attach per-session spend to enriched session rows, and — only when the caller
@@ -369,7 +363,6 @@ export function createAgentSessionsRouter(
   deps: AgentSessionsRouterDeps = {},
 ): Router {
   const router = Router();
-  const resolveShort = deps.resolveShort ?? ((sessionId: string) => resolveShortForSession(sessionId));
   const resolveWorkspaceMembers =
     deps.resolveWorkspaceMembers
     ?? (async () => ({ projectSlugs: [], standaloneAssignmentIds: [] }));
@@ -501,9 +494,10 @@ export function createAgentSessionsRouter(
     return { sessions: out, totalCount };
   }
 
-  // GET /api/agent-sessions/by-id/:sessionId — one session enriched with the
-  // daemon join (short id, attachability, live state, or the settled final
-  // screen). Registered before /:projectSlug so `by-id` matches literally.
+  // GET /api/agent-sessions/by-id/:sessionId — one session. The daemon join
+  // (short id, attachability, live state, settled final screen) went with the
+  // daemon in phase 4; what is left is the row plus its liveness flag.
+  // Registered before /:projectSlug so `by-id` matches literally.
   router.get('/by-id/:sessionId', async (req, res) => {
     try {
       const { sessionId } = req.params;
@@ -516,64 +510,10 @@ export function createAgentSessionsRouter(
         res.status(404).json({ error: `Session "${sessionId}" not found` });
         return;
       }
-      const [enriched] = withLiveness([base]);
-      const resolution = await resolveShort(sessionId);
-      const detail: AgentSessionDetail = {
-        ...enriched,
-        syntaurdShortId: resolution?.short ?? null,
-        attachable: false,
-      };
-      if (resolution?.live) {
-        detail.attachable = true;
-        detail.syntaurdState = resolution.state;
-        if (resolution.needs != null) detail.needs = resolution.needs;
-      } else if (resolution) {
-        const st = resolution.jobState?.state ?? resolution.state;
-        if (st && TERMINAL_DAEMON_STATES.has(st) && resolution.jobState) {
-          detail.settled = {
-            lastScreen: resolution.jobState.lastScreen ?? null,
-            cols: resolution.jobState.cols,
-            rows: resolution.jobState.rows,
-            exitCode: resolution.jobState.exitCode ?? null,
-            exitSignal: resolution.jobState.exitSignal ?? null,
-            state: st,
-          };
-        } else {
-          // daemon-hosted but not reachable and not terminal → retryable
-          detail.daemonUnavailable = true;
-        }
-      }
+      const [detail] = withLiveness([base]);
       res.json({ session: detail, generatedAt: new Date().toISOString() });
     } catch (error) {
       res.status(500).json({ error: error instanceof Error ? error.message : 'Failed to load session' });
-    }
-  });
-
-  // POST /api/agent-sessions/by-id/:sessionId/pty-token — mint a single-use,
-  // short-lived token for the pty WebSocket upgrade. Only for a live session.
-  router.post('/by-id/:sessionId/pty-token', async (req, res) => {
-    try {
-      const { sessionId } = req.params;
-      if (!isSafeSessionId(sessionId)) {
-        res.status(400).json({ error: 'Invalid session id' });
-        return;
-      }
-      if (!deps.ptyTokens) {
-        res.status(503).json({ error: 'Browser attach is not enabled' });
-        return;
-      }
-      const resolution = await resolveShort(sessionId);
-      if (!resolution) {
-        res.status(404).json({ error: `Session "${sessionId}" not found` });
-        return;
-      }
-      if (!resolution.live) {
-        res.status(409).json({ error: 'Session is not live and cannot be attached' });
-        return;
-      }
-      res.json(deps.ptyTokens.mint(resolution.short));
-    } catch (error) {
-      res.status(500).json({ error: error instanceof Error ? error.message : 'Failed to mint token' });
     }
   });
 

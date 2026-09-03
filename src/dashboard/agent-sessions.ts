@@ -23,7 +23,6 @@ import type {
   AgentSession,
   AgentSessionWithLiveness,
   AgentSessionStatus,
-  ActivityState,
   DescriptionSource,
   SessionHostedBy,
 } from './types.js';

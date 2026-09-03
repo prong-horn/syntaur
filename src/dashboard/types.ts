@@ -723,19 +723,8 @@ export interface SessionFileData {
 
 export type AgentSessionStatus = 'active' | 'completed' | 'stopped';
 
-/**
- * Canonical liveness `activity` for a LIVE session, sourced from the Agent View
- * (`claude agents --json`). The terminal `completed`/`failed` are session
- * *status*, not activity; `null` (column absent) means unknown — e.g. Codex or
- * no Agent-View feed. See decision-record.md Decision 5.
- */
-export type ActivityState = 'working' | 'idle' | 'awaiting-input';
 
-/** Native background-agent lifecycle state, as reported by `claude agents --json` (cockpit v2 monitor join). */
-export type NativeAgentState = 'working' | 'blocked' | 'done' | 'failed' | 'stopped';
 
-/** Which launch path a session was started through — powers Attach's syntaurd/native/tmux dispatch. */
-export type SessionLauncher = 'claude-bg' | 'tmux' | 'syntaurd' | null;
 
 /** Persisted hosting backend for the live PTY (schema v7 `hosted_by`). */
 /**
@@ -744,7 +733,7 @@ export type SessionLauncher = 'claude-bg' | 'tmux' | 'syntaurd' | null;
  * so the transcript scanner skips them in both its discovery upsert and its
  * idle sweep (Decision 1).
  */
-export type SessionHostedBy = 'syntaurd' | 'tmux' | 'claude-bg' | 'acp';
+export type SessionHostedBy = 'acp';
 
 export interface AgentSession {
   projectSlug: string | null;
@@ -766,26 +755,12 @@ export interface AgentSession {
   transcriptPath?: string | null;
   originalHeadSha?: string | null;
   updatedAt?: string | null;
-  /** Persisted hosting backend ('syntaurd' | 'tmux'; null = predates the daemon). Survives daemon downtime — drives the tmux fallback gate. */
-  hostedBy?: SessionHostedBy | null;
-  /** Native lifecycle state from the `claude agents --json` monitor join; null when not a native-launched session or the join hasn't matched it. */
-  state?: NativeAgentState | null;
-  /** Attention reason from the native monitor join (e.g. "permission prompt"); null when not waiting. */
-  waitingFor?: string | null;
-  /** Adapter-derived attention reason from the syntaurd daemon join (Phase C);
-   * null/absent when not blocked or not daemon-hosted. Distinct provenance
-   * from `waitingFor` (claude-native view). */
-  needs?: string | null;
-  /** Short id `claude attach <id>` accepts, from the native monitor join; null when not a native session. */
-  agentShortId?: string | null;
   /**
-   * Short id `syntaur attach <id>` accepts, from the daemon list join; null when
-   * not daemon-hosted or the daemon is unreachable this poll. Distinct from
-   * `agentShortId` (reserved for `claude attach`).
+   * Who hosts this session's process. `'acp'` means the dashboard's own chat
+   * broker owns it, which exempts the row from the stale sweep; null is every
+   * other session (a hook-registered terminal, or one predating the chat).
    */
-  syntaurdShortId?: string | null;
-  /** How this session was launched — gates syntaurd/native/tmux attach. */
-  launcher?: SessionLauncher;
+  hostedBy?: SessionHostedBy | null;
   /**
    * Rolled-up spend for this session id, joined from `usage_events` at serve
    * time (there is no FK — usage and sessions are independent id spaces).
@@ -846,47 +821,14 @@ export interface AgentSessionsResponse {
   generatedAt: string;
 }
 
-// ── Phase D: browser-attach detail + token ────────────────────────────────
-
-/** Final serialized screen of a settled (terminal) daemon session. The serialize
- * format does NOT encode terminal size, so `cols`/`rows` (the dimensions the
- * screen was captured at) must be restored before writing it or it can wrap. */
-export interface SettledScreen {
-  lastScreen: string | null;
-  cols: number;
-  rows: number;
-  exitCode?: number | null;
-  exitSignal?: number | null;
-  state: DaemonSessionState;
-}
-
-/** Terminal-or-not daemon lifecycle state (from src/daemon/types.ts). */
-export type DaemonSessionState = 'working' | 'blocked' | 'done' | 'failed' | 'stopped';
-
-/** GET /api/agent-sessions/by-id/:sessionId — one session enriched with the
- * daemon join for the browser-attach detail page. */
-export interface AgentSessionDetail extends AgentSessionWithLiveness {
-  /** Daemon `short` when daemon-hosted (from the list/disk join); null otherwise. */
-  syntaurdShortId: string | null;
-  /** True only for a live, non-terminal daemon session — gates the terminal pane. */
-  attachable: boolean;
-  /** Daemon-derived live lifecycle state (non-terminal) when attachable. */
-  syntaurdState?: DaemonSessionState | null;
-  /** Set when the session is daemon-hosted but not currently reachable and not
-   * terminal — the page shows a retryable banner, no terminal, no lastScreen. */
-  daemonUnavailable?: boolean;
-  /** Present for a terminal session — the pane renders the final screen. */
-  settled?: SettledScreen | null;
-}
+/**
+ * One session's detail payload. Phase 4 removed the daemon join that used to
+ * enrich it (short id, attachability, live state, the settled final screen) —
+ * the chat owns its adapters directly and there is no browser terminal.
+ */
+export type AgentSessionDetail = AgentSessionWithLiveness;
 
 export interface AgentSessionDetailResponse {
   session: AgentSessionDetail;
   generatedAt: string;
-}
-
-/** POST /api/agent-sessions/by-id/:sessionId/pty-token response. */
-export interface PtyTokenResponse {
-  token: string;
-  short: string;
-  expiresAt: number;
 }

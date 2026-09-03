@@ -74,11 +74,6 @@ import { statusCommand } from './commands/status.js';
 import { workflowCommand } from './commands/workflow.js';
 import { workspaceCommand } from './commands/workspace.js';
 import { progressCommand } from './commands/progress.js';
-import { ptyHostCommand } from './commands/pty-host.js';
-import { daemonCommand } from './commands/daemon.js';
-import { bgCommand, setBgDashDashArgv } from './commands/bg.js';
-import { attachCommand } from './commands/attach.js';
-import { attachDoctorCommand } from './commands/attach-doctor.js';
 import { getDefaultCommandName } from './cli-default-command.js';
 import { maybePromptInstall } from './utils/npx-prompt.js';
 import { maybeNudgeForNpxInstall } from './utils/install-detection.js';
@@ -842,13 +837,6 @@ program.addCommand(progressCommand);
 program.addCommand(leaseCommand);
 program.addCommand(scheduleCommand);
 program.addCommand(usageCommand);
-program.addCommand(daemonCommand);
-program.addCommand(bgCommand);
-program.addCommand(attachCommand);
-program.addCommand(attachDoctorCommand);
-// Hidden: the daemon spawns pty-hosts via the dedicated entry; this only
-// surfaces the `--smoke` node-pty prebuild gate (Decision 1, AC-6).
-program.addCommand(ptyHostCommand, { hidden: true });
 
 program.addHelpText(
   'after',
@@ -872,5 +860,4 @@ if (process.argv.length <= 2) {
 }
 
 captureDashDashArgv = spliceDashDashFromArgv(process.argv);
-setBgDashDashArgv(captureDashDashArgv);
 await program.parseAsync();
