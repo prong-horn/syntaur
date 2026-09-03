@@ -7,6 +7,8 @@ import {
   defaultTiming,
 } from '../schedules/types.js';
 import { newJobId } from '../schedules/store.js';
+import type { ChatDispatcher } from '../schedules/dispatch.js';
+import type { MessageTurnState } from '../chat/message-state.js';
 import type { AssignmentFrontmatter, StatusHistoryEntry } from '../lifecycle/types.js';
 
 export function sampleJob(overrides: Partial<ScheduledJob> = {}): ScheduledJob {
@@ -14,9 +16,7 @@ export function sampleJob(overrides: Partial<ScheduledJob> = {}): ScheduledJob {
     id: newJobId(),
     assignmentId: 'scheduled-agents',
     agentId: 'claude',
-    promptTemplate: 'plan @assignment',
-    playbook: null,
-    terminalPreference: 'terminal-app',
+    message: 'Pick up the plan and implement the next task.',
     unattended: true,
     limits: defaultLimits(),
     trigger: { kind: 'cron', expr: '0 3 * * *' },
@@ -32,7 +32,10 @@ export function sampleJob(overrides: Partial<ScheduledJob> = {}): ScheduledJob {
 export function sampleAssignment(
   overrides: Partial<AssignmentFrontmatter> = {},
 ): AssignmentFrontmatter {
+  // `Partial<T>` lets an override set a required field to `undefined`, which the
+  // spread would widen — the cast pins the result back to the real shape.
   return {
+    workflow: null,
     id: 'a-1',
     slug: 'scheduled-agents',
     title: 'Scheduled agents',
@@ -64,9 +67,63 @@ export function sampleAssignment(
     facts: {},
     attestations: [],
     ...overrides,
-  };
+  } as AssignmentFrontmatter;
 }
 
 export function statusEntry(to: string, at: string): StatusHistoryEntry {
   return { at, from: null, to, command: 'derive', by: 'system' };
+}
+
+
+export interface FakeDispatcher extends ChatDispatcher {
+  /** Every `send` this dispatcher accepted, in order. */
+  sent: Array<{ assignmentId: string; agentId: string | null; text: string }>;
+  withdrawn: Array<{ assignmentId: string; messageId: string }>;
+  cancelled: Array<{ assignmentId: string; agentId: string | null }>;
+}
+
+export interface FakeDispatcherOptions {
+  /** Agent ids the chat reports as attached. Default: the sample job's agent. */
+  attached?: string[];
+  /** Message ids handed out by `send`, in order. Default: `msg-1`, `msg-2`, … */
+  messageIds?: string[];
+  /** State reported for a dispatched message. Default: still running. */
+  state?: MessageTurnState | null;
+  /** When set, `send` rejects with it. */
+  sendError?: string;
+  /** Whether `withdraw` succeeds. Default false (already sent). */
+  withdrawSucceeds?: boolean;
+}
+
+/** A `ChatDispatcher` with no chat behind it — the schedules suites' stand-in. */
+export function fakeDispatcher(options: FakeDispatcherOptions = {}): FakeDispatcher {
+  let minted = 0;
+  const sent: FakeDispatcher['sent'] = [];
+  const withdrawn: FakeDispatcher['withdrawn'] = [];
+  const cancelled: FakeDispatcher['cancelled'] = [];
+  return {
+    sent,
+    withdrawn,
+    cancelled,
+    async attachedAgents() {
+      return options.attached ?? ['claude'];
+    },
+    async send(assignmentId, agentId, text) {
+      if (options.sendError) throw new Error(options.sendError);
+      sent.push({ assignmentId, agentId, text });
+      minted += 1;
+      return options.messageIds?.[minted - 1] ?? `msg-${minted}`;
+    },
+    async withdraw(assignmentId, messageId) {
+      withdrawn.push({ assignmentId, messageId });
+      return options.withdrawSucceeds === true;
+    },
+    async cancel(assignmentId, agentId) {
+      cancelled.push({ assignmentId, agentId });
+      return true;
+    },
+    async messageState() {
+      return options.state === undefined ? { state: 'running' } : options.state;
+    },
+  };
 }

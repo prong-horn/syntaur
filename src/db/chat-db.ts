@@ -250,3 +250,36 @@ export function listChatItemRows(assignmentId: string): ChatItemRow[] {
     )
     .all(assignmentId) as ChatItemRow[];
 }
+
+// --- one message and the turns it triggered ---------------------------------
+
+/**
+ * The `user.message` item for a minted `messageId`, or null when the chat has
+ * never seen it. Filtered in SQL (`json_extract`) rather than by paging the
+ * whole history: a scheduled dispatch's message may be arbitrarily far back.
+ */
+export function getUserMessageItem(assignmentId: string, messageId: string): ChatItem | null {
+  const row = getSessionDb()
+    .prepare(
+      `SELECT json FROM chat_items
+        WHERE assignment_id = ? AND type = 'user.message'
+          AND json_extract(json, '$.messageId') = ?
+        LIMIT 1`,
+    )
+    .get(assignmentId, messageId) as { json: string } | undefined;
+  return row ? (JSON.parse(row.json) as ChatItem) : null;
+}
+
+/** Every `turn.status` whose trigger is this human message, oldest first. */
+export function listTurnsForMessage(assignmentId: string, messageId: string): ChatItem[] {
+  const rows = getSessionDb()
+    .prepare(
+      `SELECT json FROM chat_items
+        WHERE assignment_id = ? AND type = 'turn.status'
+          AND json_extract(json, '$.trigger.kind') = 'human'
+          AND json_extract(json, '$.trigger.messageId') = ?
+        ORDER BY seq_first, item_id`,
+    )
+    .all(assignmentId, messageId) as Array<{ json: string }>;
+  return rows.map((r) => JSON.parse(r.json) as ChatItem);
+}

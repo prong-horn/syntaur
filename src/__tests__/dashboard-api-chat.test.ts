@@ -246,6 +246,56 @@ describe('POST /assignments/:id/chat/messages', () => {
   });
 });
 
+describe('GET /assignments/:id/chat/messages/:messageId (Task 1, Decision 3)', () => {
+  const state = async (messageId: string) =>
+    fetch(url(`/assignments/${ASSIGNMENT_ID}/chat/messages/${encodeURIComponent(messageId)}`));
+
+  it('reports `ended` once the message’s turn has finished', async () => {
+    await boot();
+    const res = await fetch(url(`/assignments/${ASSIGNMENT_ID}/chat/messages`), {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ text: 'hello' }),
+    });
+    const { messageId } = (await res.json()) as { messageId: string };
+
+    await waitUntil(
+      () =>
+        broker
+          .items({ id: ASSIGNMENT_ID } as never, { limit: 50 })
+          .some((i) => i.type === 'turn.status' && (i as { state: string }).state === 'ended'),
+      'the turn to end',
+    );
+
+    const got = await state(messageId);
+    expect(got.status).toBe(200);
+    const body = (await got.json()) as { state: string; stopReason?: string };
+    expect(body.state).toBe('ended');
+    expect(body.stopReason).toBe('end_turn');
+  });
+
+  it('reports `running` while the turn is open, and 404s an id the chat never saw', async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    await boot([{ steps: [{ kind: 'gate', gate }] }]);
+
+    const res = await fetch(url(`/assignments/${ASSIGNMENT_ID}/chat/messages`), {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ text: 'hold' }),
+    });
+    const { messageId } = (await res.json()) as { messageId: string };
+    await waitUntil(() => fake.prompts.length === 1, 'the prompt');
+
+    const open = (await (await state(messageId)).json()) as { state: string };
+    expect(open.state).toBe('running');
+
+    // A 404 is "unknown", which the scheduler must NOT read as finished.
+    expect((await state('00000000-0000-4000-8000-000000000000')).status).toBe(404);
+    release();
+  });
+});
+
 describe('DELETE /assignments/:id/chat/messages/:messageId', () => {
   it('withdraws a queued message and 409s once it is gone', async () => {
     let release!: () => void;

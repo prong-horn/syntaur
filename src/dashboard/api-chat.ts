@@ -18,6 +18,7 @@ import { resolveAssignmentById } from '../utils/assignment-resolver.js';
 import { toAgentSummary } from '../chat/agents.js';
 import { ChatSendError, type ChatBroker } from '../chat/broker.js';
 import { ParticipantsError } from '../chat/participants.js';
+import { messageTurnState } from '../chat/message-state.js';
 import type { Participants } from '../chat/types.js';
 
 const MAX_MESSAGE_CHARS = 100_000;
@@ -111,6 +112,27 @@ export function createChatRouter(
         text: body.text,
       });
       res.status(202).json({ messageId });
+    } catch (err) {
+      fail(res, err);
+    }
+  });
+
+  /**
+   * Where one dispatched message stands. Added for the launchd `schedule tick`
+   * CLI (Decision 3): a tick running outside the dashboard has no broker, so it
+   * polls this instead of a pid. A 404 means the chat has never seen the id,
+   * which the scheduler treats as "unknown", not "finished".
+   */
+  router.get('/assignments/:id/chat/messages/:messageId', async (req, res) => {
+    try {
+      const assignment = await resolveOr404(req, res);
+      if (!assignment) return;
+      const state = messageTurnState(assignment.id, String(req.params.messageId));
+      if (!state) {
+        res.status(404).json({ error: 'No such message in this chat' });
+        return;
+      }
+      res.json(state);
     } catch (err) {
       fail(res, err);
     }

@@ -18,13 +18,13 @@ export interface ScheduleTrigger {
 export interface Schedule {
   id: string;
   assignmentId: string;
-  agentId: string;
-  promptTemplate: string | null;
-  playbook: string | null;
-  terminalPreference: string | null;
+  /** Null = the assignment's default chat agent answers. */
+  agentId: string | null;
+  /** The chat message posted on every fire. */
+  message: string;
   unattended: boolean;
   trigger: ScheduleTrigger;
-  attempt: { state: string; sessionId: string | null; lastError: string | null };
+  attempt: { state: string; messageId: string | null; lastError: string | null };
   note: string | null;
   createdAt: string;
   updatedAt: string;
@@ -32,11 +32,10 @@ export interface Schedule {
 
 export interface CreateScheduleInput {
   assignmentId: string;
-  agentId: string;
+  message: string;
+  agentId?: string | null;
   trigger: ScheduleTrigger;
   unattended: boolean;
-  terminalPreference?: string | null;
-  promptTemplate?: string | null;
   note?: string | null;
 }
 

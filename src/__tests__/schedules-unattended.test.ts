@@ -2,12 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import {
-  canFire,
-  assertUnattendedTerminalSupported,
-  isKillSwitchEngaged,
-  UnattendedRefusalError,
-} from '../schedules/unattended.js';
+import { canFire, isKillSwitchEngaged } from '../schedules/unattended.js';
 import { sampleJob } from './schedules-helpers.js';
 
 const at = (iso: string) => ({ now: () => new Date(iso) });
@@ -22,12 +17,6 @@ describe('unattended gating', () => {
     delete process.env.SYNTAUR_SCHEDULES_DIR;
     delete process.env.SYNTAUR_SCHEDULES_DISABLED;
     await rm(dir, { recursive: true, force: true });
-  });
-
-  it('refuses an unattended Warp schedule', () => {
-    expect(() => assertUnattendedTerminalSupported('warp')).toThrow(UnattendedRefusalError);
-    expect(() => assertUnattendedTerminalSupported('terminal-app')).not.toThrow();
-    expect(() => assertUnattendedTerminalSupported(null)).not.toThrow();
   });
 
   it('allows a fresh unattended job', () => {

@@ -25,9 +25,7 @@ function sampleJob(overrides: Partial<ScheduledJob> = {}): ScheduledJob {
     id: newJobId(),
     assignmentId: 'scheduled-agents',
     agentId: 'claude',
-    promptTemplate: 'plan @assignment',
-    playbook: null,
-    terminalPreference: 'terminal-app',
+    message: 'Pick up the plan and implement the next task.',
     unattended: true,
     limits: defaultLimits(),
     trigger: { kind: 'cron', expr: '0 3 * * *' },
@@ -102,8 +100,38 @@ describe('schedules store', () => {
 
   it('rejects a job missing a required field', () => {
     const job = sampleJob();
-    const text = serializeJobFile(job).replace(/^agentId: .*$/m, '');
+    const text = serializeJobFile(job).replace(/^unattended: .*$/m, '');
     expect(() => parseJobFile(text)).toThrow(ScheduleParseError);
+  });
+
+  it('round-trips a job with no agent (the assignment default answers)', () => {
+    const job = sampleJob({ agentId: null });
+    expect(parseJobFile(serializeJobFile(job)).agentId).toBeNull();
+  });
+
+  // Backward compatibility is waived (Decision 3): a pre-chat job is refused by
+  // name rather than silently migrated into a message nobody chose.
+  it('refuses a pre-chat job, naming `message` and the fields that date it', () => {
+    const preChat = [
+      '---',
+      'id: "job-old"',
+      'assignmentId: "scheduled-agents"',
+      'agentId: "claude"',
+      'promptTemplate: "plan @assignment"',
+      'playbook: null',
+      'terminalPreference: "terminal-app"',
+      'unattended: true',
+      `limits: ${JSON.stringify(defaultLimits())}`,
+      'trigger: {"kind":"cron","expr":"0 3 * * *"}',
+      `timing: ${JSON.stringify(defaultTiming())}`,
+      'note: null',
+      'createdAt: "2026-06-15T00:00:00Z"',
+      'updatedAt: "2026-06-15T00:00:00Z"',
+      `attempt: ${JSON.stringify(freshAttempt())}`,
+      '---',
+      '',
+    ].join('\n');
+    expect(() => parseJobFile(preChat)).toThrow(/message.*promptTemplate/s);
   });
 
   it('deletes the job file and its event log', async () => {

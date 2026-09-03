@@ -1,84 +1,59 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtemp, rm } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { resolve, join } from 'node:path';
-import { initSessionDb, closeSessionDb, resetSessionDb } from '../dashboard/session-db.js';
-import { appendSession } from '../dashboard/agent-sessions.js';
-import type { AgentSession } from '../dashboard/types.js';
-import { isScheduledSessionLive } from '../schedules/liveness.js';
+import { describe, it, expect } from 'vitest';
+import { messageTurnOpenVia } from '../schedules/liveness.js';
+import type { ChatDispatcher } from '../schedules/dispatch.js';
+import type { MessageTurnState } from '../chat/message-state.js';
 
-let testDir: string;
-let dbPath: string;
+/**
+ * Phase 4 (Decision 3): a scheduled attempt's liveness is its dispatched
+ * message's turn, not a pid. The property that matters most survives the
+ * rewrite: an UNKNOWN answer reads as OPEN, so a missing signal never
+ * terminalizes a live job.
+ */
 
-// A pid that is essentially never alive (process.kill(0) → ESRCH).
-const DEAD_PID = 2_147_483_646;
-
-function makeSession(overrides: Partial<AgentSession> = {}): AgentSession {
+function dispatcherReturning(
+  result: MessageTurnState | null | (() => never),
+): ChatDispatcher {
   return {
-    projectSlug: null,
-    assignmentSlug: null,
-    agent: 'claude',
-    sessionId: `sess-${Math.random().toString(36).slice(2, 10)}`,
-    started: '2026-06-15T00:00:00Z',
-    status: 'active',
-    path: '/tmp/test',
-    ...overrides,
+    attachedAgents: async () => [],
+    send: async () => 'msg',
+    withdraw: async () => false,
+    cancel: async () => false,
+    messageState: async () => {
+      if (typeof result === 'function') return result();
+      return result;
+    },
   };
 }
 
-beforeEach(async () => {
-  testDir = await mkdtemp(join(tmpdir(), 'syntaur-liveness-test-'));
-  dbPath = resolve(testDir, 'test.db');
-  resetSessionDb();
-  initSessionDb(dbPath);
-});
-
-afterEach(async () => {
-  closeSessionDb();
-  await rm(testDir, { recursive: true, force: true });
-});
-
-describe('isScheduledSessionLive', () => {
-  it('returns true for a registered session whose pid is alive', async () => {
-    // `process.pid` is the running test process → genuinely alive. No
-    // pidStartedAt → no start-time guard, so computeIsLive trusts the pid.
-    const session = makeSession({ pid: process.pid });
-    await appendSession('', session);
-    expect(isScheduledSessionLive(session.sessionId, null)).toBe(true);
+describe('messageTurnOpenVia', () => {
+  it('is open while the message is queued', async () => {
+    const open = messageTurnOpenVia(dispatcherReturning({ state: 'queued' }));
+    expect(await open('a-1', 'msg-1')).toBe(true);
   });
 
-  it('returns false for a registered session whose pid is dead', async () => {
-    const session = makeSession({ pid: DEAD_PID });
-    await appendSession('', session);
-    expect(isScheduledSessionLive(session.sessionId, null)).toBe(false);
+  it('is open while a turn it triggered is running', async () => {
+    const open = messageTurnOpenVia(dispatcherReturning({ state: 'running' }));
+    expect(await open('a-1', 'msg-1')).toBe(true);
   });
 
-  it('returns false for a recycled pid (start-time mismatch)', async () => {
-    // pid is alive (this process) but the stored start time differs from the
-    // real one → computeIsLive treats it as a different (recycled) process.
-    const session = makeSession({
-      pid: process.pid,
-      pidStartedAt: 'Thu Jan  1 00:00:00 1970',
-    });
-    await appendSession('', session);
-    expect(isScheduledSessionLive(session.sessionId, null)).toBe(false);
+  it('is closed once every turn has ended', async () => {
+    const open = messageTurnOpenVia(
+      dispatcherReturning({ state: 'ended', stopReason: 'end_turn' }),
+    );
+    expect(await open('a-1', 'msg-1')).toBe(false);
   });
 
-  it('returns true for a known session id with no registry row yet', () => {
-    // The row may not be written right after launch-ack — treat as live/unknown.
-    // Never fall back to a (possibly dead wrapper) launchPid here.
-    expect(isScheduledSessionLive('not-in-db', DEAD_PID)).toBe(true);
+  it('is OPEN when the chat has never seen the message (unknown, not finished)', async () => {
+    const open = messageTurnOpenVia(dispatcherReturning(null));
+    expect(await open('a-1', 'msg-gone')).toBe(true);
   });
 
-  it('returns true for a null session with a live launchPid', () => {
-    expect(isScheduledSessionLive(null, process.pid)).toBe(true);
-  });
-
-  it('returns false for a null session with a dead launchPid', () => {
-    expect(isScheduledSessionLive(null, DEAD_PID)).toBe(false);
-  });
-
-  it('returns true for a null session with a null launchPid (unknown)', () => {
-    expect(isScheduledSessionLive(null, null)).toBe(true);
+  it('is OPEN when the chat cannot be reached at all', async () => {
+    const open = messageTurnOpenVia(
+      dispatcherReturning(() => {
+        throw new Error('ECONNREFUSED');
+      }),
+    );
+    expect(await open('a-1', 'msg-1')).toBe(true);
   });
 });

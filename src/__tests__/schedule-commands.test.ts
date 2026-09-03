@@ -57,7 +57,7 @@ describe('schedule CLI', () => {
   });
 
   it('creates a cron job and lists it', async () => {
-    await run(['create', '--assignment', 'scheduled-agents', '--agent', 'claude', '--cron', '0 3 * * *', '--tz', 'UTC']);
+    await run(['create', '--assignment', 'scheduled-agents', '--message', 'work the plan', '--cron', '0 3 * * *', '--tz', 'UTC']);
     const jobs = await listJobs();
     expect(jobs).toHaveLength(1);
     expect(jobs[0].trigger).toEqual({ kind: 'cron', expr: '0 3 * * *', tz: 'UTC' });
@@ -67,19 +67,33 @@ describe('schedule CLI', () => {
     expect(logs.join('\n')).toContain(jobs[0].id);
   });
 
-  it('refuses an unattended Warp schedule', async () => {
-    await run(['create', '--assignment', 'a', '--agent', 'claude', '--in', '5h', '--terminal', 'warp']);
-    expect(errs.join('\n')).toMatch(/warp/i);
+  it('persists the message and leaves the agent unset by default', async () => {
+    await run(['create', '--assignment', 'a', '--message', 'work the plan', '--in', '5h']);
+    const jobs = await listJobs();
+    expect(jobs).toHaveLength(1);
+    expect(jobs[0].message).toBe('work the plan');
+    // No --agent → the assignment's default chat agent answers.
+    expect(jobs[0].agentId).toBeNull();
+  });
+
+  it('pins --agent when one is named', async () => {
+    await run(['create', '--assignment', 'a', '--message', 'plan it', '--agent', 'planner', '--in', '5h']);
+    expect((await listJobs())[0].agentId).toBe('planner');
+  });
+
+  it('refuses a create with no --message', async () => {
+    await run(['create', '--assignment', 'a', '--in', '5h']);
+    expect(errs.join('\n')).toMatch(/message/i);
     expect(await listJobs()).toHaveLength(0);
   });
 
   it('errors when no trigger is given', async () => {
-    await run(['create', '--assignment', 'a', '--agent', 'claude']);
+    await run(['create', '--assignment', 'a', '--message', 'work the plan']);
     expect(errs.join('\n')).toMatch(/trigger is required/);
   });
 
   it('hold → release → cancel transitions via the CLI', async () => {
-    await run(['create', '--assignment', 'a', '--agent', 'claude', '--at', '2026-06-15T12:00:00Z']);
+    await run(['create', '--assignment', 'a', '--message', 'work the plan', '--at', '2026-06-15T12:00:00Z']);
     const id = (await listJobs())[0].id;
     await run(['hold', id]);
     expect((await readJob(id))?.attempt.state).toBe('held');
@@ -90,7 +104,7 @@ describe('schedule CLI', () => {
   });
 
   it('reschedule swaps the trigger and re-arms', async () => {
-    await run(['create', '--assignment', 'a', '--agent', 'claude', '--at', '2026-06-15T12:00:00Z']);
+    await run(['create', '--assignment', 'a', '--message', 'work the plan', '--at', '2026-06-15T12:00:00Z']);
     const id = (await listJobs())[0].id;
     await run(['reschedule', id, '--cron', '*/10 * * * *', '--tz', 'UTC']);
     const job = await readJob(id);
@@ -100,14 +114,14 @@ describe('schedule CLI', () => {
 
   // AC2: a malformed --cron must be rejected at create time, persisting nothing.
   it('rejects a malformed --cron at create time and persists no job (AC2)', async () => {
-    await run(['create', '--assignment', 'a', '--agent', 'claude', '--cron', 'not a cron']);
+    await run(['create', '--assignment', 'a', '--message', 'work the plan', '--cron', 'not a cron']);
     expect(await listJobs()).toHaveLength(0);
     expect(errs.join('\n')).toMatch(/cron/i);
   });
 
   // AC1: an invalid IANA --tz must be rejected at create time too.
   it('rejects an invalid --tz at create time and persists no job (AC1 create-guard)', async () => {
-    await run(['create', '--assignment', 'a', '--agent', 'claude', '--cron', '0 3 * * *', '--tz', 'Not/AZone']);
+    await run(['create', '--assignment', 'a', '--message', 'work the plan', '--cron', '0 3 * * *', '--tz', 'Not/AZone']);
     expect(await listJobs()).toHaveLength(0);
     expect(errs.join('\n')).toMatch(/tz|time ?zone/i);
   });
@@ -115,7 +129,7 @@ describe('schedule CLI', () => {
   // AC2 (companion): reschedule reuses buildTrigger, so it must reject bad input
   // too — and must NOT corrupt the existing valid trigger.
   it('reschedule rejects a malformed --cron and leaves the existing trigger intact (AC2)', async () => {
-    await run(['create', '--assignment', 'a', '--agent', 'claude', '--at', '2026-06-15T12:00:00Z']);
+    await run(['create', '--assignment', 'a', '--message', 'work the plan', '--at', '2026-06-15T12:00:00Z']);
     const id = (await listJobs())[0].id;
     await run(['reschedule', id, '--cron', 'still not a cron']);
     const job = await readJob(id);
@@ -126,14 +140,14 @@ describe('schedule CLI', () => {
   it('rejects bad --max-launches-per-day values and persists no job (AC3)', async () => {
     for (const bad of ['abc', '1abc', '1.5', '0', '-3']) {
       errs.length = 0;
-      await run(['create', '--assignment', 'a', '--agent', 'claude', '--at', '2026-06-15T12:00:00Z', '--max-launches-per-day', bad]);
+      await run(['create', '--assignment', 'a', '--message', 'work the plan', '--at', '2026-06-15T12:00:00Z', '--max-launches-per-day', bad]);
       expect(await listJobs(), `value ${JSON.stringify(bad)} should be rejected`).toHaveLength(0);
       expect(errs.join('\n')).toMatch(/max-launches/i);
     }
   });
 
   it('accepts a positive integer --max-launches-per-day (AC3 positive control)', async () => {
-    await run(['create', '--assignment', 'a', '--agent', 'claude', '--at', '2026-06-15T12:00:00Z', '--max-launches-per-day', '3']);
+    await run(['create', '--assignment', 'a', '--message', 'work the plan', '--at', '2026-06-15T12:00:00Z', '--max-launches-per-day', '3']);
     const jobs = await listJobs();
     expect(jobs).toHaveLength(1);
     expect(jobs[0].limits.maxLaunchesPerDay).toBe(3);

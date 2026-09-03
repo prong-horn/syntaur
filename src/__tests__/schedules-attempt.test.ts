@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
   claimJob,
-  markLaunching,
+  markDispatching,
   markRunning,
   reapStale,
   holdJob,
@@ -76,26 +76,27 @@ describe('attempt state machine', () => {
     await expect(claimJob(job, { dedupeKey: 'e' }, fixedNow('2026-06-15T03:00:00Z'))).rejects.toThrow();
   });
 
-  it('reaps a launching job whose claim lease expired → launch_failed', async () => {
+  it('reaps a dispatching job whose claim lease expired → dispatch_failed', async () => {
     let job = await writeJob(sampleJob());
     const claim = await claimJob(job, { dedupeKey: 'e' }, fixedNow('2026-06-15T03:00:00Z'));
     if (!claim.claimed) throw new Error('expected claim');
-    job = await markLaunching(claim.job, 4321, fixedNow('2026-06-15T03:00:00Z'));
+    job = await markDispatching(claim.job, 'msg-1', fixedNow('2026-06-15T03:00:00Z'));
+    expect(job.attempt.messageId).toBe('msg-1');
     // Well past the claim TTL (default 120s).
     const out = await reapStale([await readJob(job.id) as NonNullable<Awaited<ReturnType<typeof readJob>>>], fixedNow('2026-06-15T03:10:00Z'));
     expect(out.reaped).toContain(job.id);
-    expect((await readJob(job.id))?.attempt.state).toBe('launch_failed');
+    expect((await readJob(job.id))?.attempt.state).toBe('dispatch_failed');
   });
 
-  it('flags a running job past max-runtime with no heartbeat as stuck (no remediation)', async () => {
+  it('flags a running job past max-runtime whose turn has ended as stuck (no remediation)', async () => {
     const base = sampleJob({ limits: { ...sampleJob().limits, maxRuntimeMs: 1000 } });
     const job = await writeJob({
       ...base,
-      attempt: { ...base.attempt, state: 'running', runningSince: '2026-06-15T03:00:00Z', sessionId: 's', launchPid: 9 },
+      attempt: { ...base.attempt, state: 'running', runningSince: '2026-06-15T03:00:00Z', messageId: 'msg-1' },
     });
     const out = await reapStale([job], {
       now: () => new Date('2026-06-15T03:30:00Z'),
-      isSessionLive: () => false,
+      isMessageTurnOpen: async () => false,
     });
     expect(out.stuck).toContain(job.id);
     // Mechanism, not policy: state stays running; stuck is recorded, not remediated.
@@ -115,23 +116,60 @@ describe('attempt state machine', () => {
     await expect(holdJob(job.id)).rejects.toThrow(TransitionError);
   });
 
-  it('kill from running → killed and signals the pid; retry re-arms launch_failed', async () => {
+  it('kill from running cancels the turn through the chat; retry re-arms dispatch_failed', async () => {
     const base = sampleJob();
     const running = await writeJob({
       ...base,
-      attempt: { ...base.attempt, state: 'running', launchPid: 777, sessionId: 's' },
+      attempt: { ...base.attempt, state: 'running', messageId: 'msg-1' },
     });
-    let signalled: { sessionId: string | null; launchPid: number | null } | null = null;
-    await killJob(running.id, { signalTarget: (t) => { signalled = t; } });
-    expect(signalled).toEqual({ sessionId: 's', launchPid: 777 });
+    const withdrawn: string[] = [];
+    const cancelled: Array<{ assignmentId: string; agentId: string | null }> = [];
+    await killJob(running.id, {
+      // Already delivered — a withdraw is refused, so kill must fall through
+      // to cancelling the running turn.
+      withdrawMessage: async (_a, messageId) => {
+        withdrawn.push(messageId);
+        return false;
+      },
+      cancelTurn: async (assignmentId, agentId) => {
+        cancelled.push({ assignmentId, agentId });
+        return true;
+      },
+    });
+    expect(withdrawn).toEqual(['msg-1']);
+    expect(cancelled).toEqual([{ assignmentId: base.assignmentId, agentId: base.agentId }]);
     expect((await readJob(running.id))?.attempt.state).toBe('killed');
 
     const failed = await writeJob({
       ...sampleJob(),
-      attempt: { ...base.attempt, state: 'launch_failed', lastError: 'x' },
+      attempt: { ...base.attempt, state: 'dispatch_failed', lastError: 'x' },
     });
     await retryJob(failed.id);
     expect((await readJob(failed.id))?.attempt.state).toBe('eligible');
+  });
+
+  it('kill withdraws a still-queued message and never cancels', async () => {
+    const base = sampleJob();
+    const dispatching = await writeJob({
+      ...base,
+      attempt: {
+        ...base.attempt,
+        state: 'dispatching',
+        messageId: 'msg-queued',
+        claim: { token: 't', expiresAt: Date.parse('2026-06-15T04:00:00Z') },
+      },
+    });
+    let cancels = 0;
+    await killJob(dispatching.id, {
+      withdrawMessage: async () => true,
+      cancelTurn: async () => {
+        cancels += 1;
+        return true;
+      },
+    });
+    expect(cancels).toBe(0);
+    // Nothing had started, so the job is cancelled rather than killed.
+    expect((await readJob(dispatching.id))?.attempt.state).toBe('cancelled');
   });
 
   it('reschedule swaps the trigger and FULLY re-arms (resets cursor + dedupe)', async () => {
@@ -151,20 +189,22 @@ describe('attempt state machine', () => {
     expect(next.createdAt).not.toBe(job.createdAt);
   });
 
-  // AC3: launchDayStamps are pruned to the current day on each launch.
+  // AC3: launchDayStamps are pruned to the current day on each dispatch.
   it('prunes launchDayStamps to today (no unbounded growth)', async () => {
     const job = await writeJob(
       sampleJob({
         attempt: {
           ...freshAttempt(),
-          state: 'launching',
+          state: 'dispatching',
+          messageId: 'msg-1',
           launchDayStamps: ['2026-06-01', '2026-06-14'],
           claim: { token: 't', expiresAt: Date.parse('2026-06-15T04:00:00Z') },
         },
       }),
     );
-    const after = await markRunning(job, 'sid', fixedNow('2026-06-15T03:00:00Z'));
+    const after = await markRunning(job, fixedNow('2026-06-15T03:00:00Z'));
     expect(after.attempt.launchDayStamps).toEqual(['2026-06-15']);
+    expect(after.attempt.dispatchCount).toBe(1);
   });
 
   // AC3: consumedEdges is windowed so a long-lived cron job's file can't grow
@@ -184,11 +224,11 @@ describe('attempt state machine', () => {
 
   // AC6: a transition whose precondition no longer holds is a no-op (a stale
   // snapshot can't clobber a concurrently-changed job).
-  it('markRunning is a no-op when the on-disk state is no longer launching', async () => {
+  it('markRunning is a no-op when the on-disk state is no longer dispatching', async () => {
     const job = await writeJob(
       sampleJob({ attempt: { ...freshAttempt(), state: 'killed' } }),
     );
-    const after = await markRunning(job, 'sid', fixedNow('2026-06-15T03:00:00Z'));
+    const after = await markRunning(job, fixedNow('2026-06-15T03:00:00Z'));
     expect(after.attempt.state).toBe('killed');
     expect((await readJob(job.id))?.attempt.state).toBe('killed');
   });
@@ -219,7 +259,7 @@ describe('attempt state machine', () => {
       sampleJob({
         attempt: {
           ...freshAttempt(),
-          state: 'launching',
+          state: 'dispatching',
           claim: { token: 'NEW', expiresAt: Date.parse('2026-06-15T04:00:00Z') },
         },
       }),
@@ -228,8 +268,8 @@ describe('attempt state machine', () => {
       ...onDisk,
       attempt: { ...onDisk.attempt, claim: { token: 'OLD', expiresAt: Date.parse('2026-06-15T04:00:00Z') } },
     };
-    const after = await markRunning(stale, 'sid', fixedNow('2026-06-15T03:00:00Z'));
-    expect(after.attempt.state).toBe('launching'); // not advanced
+    const after = await markRunning(stale, fixedNow('2026-06-15T03:00:00Z'));
+    expect(after.attempt.state).toBe('dispatching'); // not advanced
     expect((await readJob(onDisk.id))?.attempt.claim?.token).toBe('NEW'); // not clobbered
   });
 
@@ -242,19 +282,19 @@ describe('attempt state machine', () => {
         attempt: {
           ...freshAttempt(),
           state: 'running',
-          sessionId: 'NEW-sess',
+          messageId: 'NEW-msg',
           runningSince: '2026-06-15T03:00:00Z',
         },
       }),
     );
-    // Stale snapshot: same id, but an OLD dead session past its grace window.
+    // Stale snapshot: same id, but an OLD ended message past its grace window.
     const stale = {
       ...onDisk,
-      attempt: { ...onDisk.attempt, sessionId: 'OLD-sess', runningSince: '2026-06-14T00:00:00Z' },
+      attempt: { ...onDisk.attempt, messageId: 'OLD-msg', runningSince: '2026-06-14T00:00:00Z' },
     };
     const out = await reapStale([stale], {
       now: () => new Date('2026-06-15T05:00:00Z'),
-      isSessionLive: () => false,
+      isMessageTurnOpen: async () => false,
     });
     expect(out.completed).toEqual([]);
     expect((await readJob(onDisk.id))?.attempt.state).toBe('running'); // not clobbered

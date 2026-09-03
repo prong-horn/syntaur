@@ -6,6 +6,9 @@
  * out. Host/authority ops (`tick`, `install`, `uninstall`) stay CLI/launchd-only
  * by design. The watcher is a pure accelerator wired in server.ts; this router
  * is the human/agent control surface.
+ *
+ * A schedule posts a chat message (Decision 3, phase 4), so `kill` reaches the
+ * in-process broker through the `chat` dispatcher this router is handed.
  */
 
 import { Router } from 'express';
@@ -25,7 +28,6 @@ import {
   killJob,
   rescheduleJob,
 } from '../schedules/attempt.js';
-import { assertUnattendedTerminalSupported } from '../schedules/unattended.js';
 import {
   type ScheduledJob,
   type JobTrigger,
@@ -33,23 +35,27 @@ import {
   defaultLimits,
   defaultTiming,
 } from '../schedules/types.js';
-import { getSessionById } from './agent-sessions.js';
-import { initSessionDb } from './session-db.js';
-import type { TerminalChoice } from '../utils/config.js';
+import type { ChatDispatcher } from '../schedules/dispatch.js';
 import type { WsMessage } from './types.js';
 
 interface CreateBody {
   assignmentId?: string;
-  agentId?: string;
+  agentId?: string | null;
+  message?: string;
   trigger?: JobTrigger;
   unattended?: boolean;
-  terminalPreference?: TerminalChoice | null;
-  promptTemplate?: string | null;
-  playbook?: string | null;
   note?: string | null;
 }
 
-export function createSchedulesRouter(broadcast?: (message: WsMessage) => void): Router {
+export interface SchedulesRouterDeps {
+  /** The in-process chat, so `kill` can withdraw or cancel (Decision 3). */
+  chat?: ChatDispatcher;
+}
+
+export function createSchedulesRouter(
+  broadcast?: (message: WsMessage) => void,
+  deps: SchedulesRouterDeps = {},
+): Router {
   const router = Router();
 
   const notify = () =>
@@ -82,8 +88,12 @@ export function createSchedulesRouter(broadcast?: (message: WsMessage) => void):
   router.post('/', async (req, res) => {
     try {
       const body = (req.body ?? {}) as CreateBody;
-      if (!body.assignmentId || !body.agentId) {
-        res.status(400).json({ error: 'assignmentId and agentId are required' });
+      if (!body.assignmentId) {
+        res.status(400).json({ error: 'assignmentId is required' });
+        return;
+      }
+      if (typeof body.message !== 'string' || body.message.trim().length === 0) {
+        res.status(400).json({ error: 'message is required' });
         return;
       }
       if (!body.trigger || typeof body.trigger.kind !== 'string') {
@@ -91,17 +101,13 @@ export function createSchedulesRouter(broadcast?: (message: WsMessage) => void):
         return;
       }
       const unattended = body.unattended !== false;
-      const terminal = body.terminalPreference ?? null;
-      if (unattended) assertUnattendedTerminalSupported(terminal);
 
       const now = nowTimestamp();
       const job: ScheduledJob = {
         id: newJobId(),
         assignmentId: body.assignmentId,
-        agentId: body.agentId,
-        promptTemplate: body.promptTemplate ?? null,
-        playbook: body.playbook ?? null,
-        terminalPreference: terminal,
+        agentId: body.agentId ?? null,
+        message: body.message,
         unattended,
         limits: defaultLimits(),
         trigger: body.trigger,
@@ -137,29 +143,20 @@ export function createSchedulesRouter(broadcast?: (message: WsMessage) => void):
   verb('release', releaseJob);
   verb('retry', retryJob);
 
-  // POST /api/schedules/:id/kill — kill the tracked agent session (not the wrapper).
+  // POST /api/schedules/:id/kill — withdraw the queued message, or cancel the
+  // running turn (Decision 3). There is no pid to signal any more.
   router.post('/:id/kill', async (req, res) => {
     try {
+      const chat = deps.chat;
       const job = await killJob(req.params.id, {
-        signalTarget: ({ sessionId, launchPid }) => {
-          let pid: number | null = null;
-          if (sessionId) {
-            try {
-              initSessionDb();
-              pid = getSessionById(sessionId)?.pid ?? null;
-            } catch {
-              pid = null;
+        ...(chat
+          ? {
+              withdrawMessage: (assignmentId: string, messageId: string) =>
+                chat.withdraw(assignmentId, messageId),
+              cancelTurn: (assignmentId: string, agentId: string | null) =>
+                chat.cancel(assignmentId, agentId),
             }
-          }
-          pid = pid ?? launchPid;
-          if (pid) {
-            try {
-              process.kill(pid, 'SIGTERM');
-            } catch {
-              /* already gone */
-            }
-          }
-        },
+          : {}),
       });
       notify();
       res.json({ schedule: job });

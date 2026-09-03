@@ -3,15 +3,20 @@
  *
  * Crash-safety contract (Codex P0): `claimJob` advances the cursor + records the
  * consumed dedupe key and writes the `claimed` state to disk (atomic temp+rename
- * via the store) BEFORE returning — i.e. before any launch. A crash between
- * claim and launch therefore cannot refire the edge; it only leaves a reapable
- * `claimed`/`launching` job. Concurrency is handled by a per-job advisory lock
- * mirroring `src/lifecycle/recompute.ts` `acquireLock` (O_EXCL `wx` lockfile,
- * `pid:hash` token, 30s stale takeover), plus the `claim` lease on the job.
+ * via the store) BEFORE returning — i.e. before anything is dispatched. A crash
+ * between claim and dispatch therefore cannot refire the edge; it only leaves a
+ * reapable `claimed`/`dispatching` job. Concurrency is handled by a per-job
+ * advisory lock mirroring `src/lifecycle/recompute.ts` `acquireLock` (O_EXCL
+ * `wx` lockfile, `pid:hash` token, 30s stale takeover), plus the `claim` lease.
  *
  * Timing invariant: `claimTtlMs > ackTimeoutMs + launchSlackMs` (asserted in
- * `claimJob`), and the claim is RENEWED on entering `launching`, so a job is
- * never reaped while still legitimately inside its launch-ack window.
+ * `claimJob`), and the claim is RENEWED on entering `dispatching`, so a job is
+ * never reaped while still legitimately inside its dispatch window.
+ *
+ * Phase 4 (Decision 3): an attempt is a CHAT MESSAGE. It carries a `messageId`
+ * and nothing else — no session id, no pid. Liveness is `isMessageTurnOpen`,
+ * and killing withdraws the queued message or cancels the running turn through
+ * the broker.
  */
 
 import { createHash } from 'node:crypto';
@@ -43,11 +48,12 @@ const MAX_CONSUMED_EDGES = 50;
 export interface AttemptDeps {
   now: () => Date;
   /**
-   * Liveness of the running job's launched session. Production wires this to the
-   * dashboard `computeIsLive`/`enrichSessions` heartbeat; tests inject a stub.
-   * Defaults to "assume live" so reaping never fires without an explicit signal.
+   * Whether the dispatched message's turn is still open. Production wires this
+   * to `messageTurnOpenVia` over the in-process broker or the chat REST route;
+   * tests inject a stub. Defaults to "assume open" so reaping never fires
+   * without an explicit signal.
    */
-  isSessionLive?: (sessionId: string | null, pid: number | null) => boolean;
+  isMessageTurnOpen?: (assignmentId: string, messageId: string) => Promise<boolean>;
 }
 
 export interface FiredEdge {
@@ -189,8 +195,15 @@ export async function claimJob(job: ScheduledJob, edge: FiredEdge, deps: Attempt
 // verb (kill/cancel) or a second tick can't be clobbered by a write derived
 // from a stale snapshot. A precondition miss is a no-op: no write, no event.
 
-/** claimed → launching. Renews the claim lease so the ack window can't be reaped. */
-export async function markLaunching(job: ScheduledJob, pid: number | null, deps: AttemptDeps): Promise<ScheduledJob> {
+/**
+ * claimed → dispatching. Records the accepted `messageId` and renews the claim
+ * lease so the dispatch window can't be reaped.
+ */
+export async function markDispatching(
+  job: ScheduledJob,
+  messageId: string,
+  deps: AttemptDeps,
+): Promise<ScheduledJob> {
   const now = deps.now();
   const token = job.attempt.claim?.token;
   const { written, fresh } = await lockedTransition(job.id, (f) => {
@@ -201,107 +214,104 @@ export async function markLaunching(job: ScheduledJob, pid: number | null, deps:
       ...f,
       attempt: {
         ...f.attempt,
-        state: 'launching',
-        launchPid: pid,
-        launchingSince: isoStamp(now),
+        state: 'dispatching',
+        messageId,
+        dispatchedAt: isoStamp(now),
         claim: f.attempt.claim
           ? { ...f.attempt.claim, expiresAt: now.getTime() + f.timing.claimTtlMs }
           : null,
       },
     };
   });
-  if (written) await appendEvent(job.id, 'launching', { pid });
+  if (written) await appendEvent(job.id, 'dispatching', { messageId });
   return written ?? fresh ?? job;
 }
 
-/** launching → running (ack observed). Links the session + records launch counters. */
-export async function markRunning(
-  job: ScheduledJob,
-  sessionId: string | null,
-  deps: AttemptDeps,
-): Promise<ScheduledJob> {
+/**
+ * dispatching → running. The chat accepted the message, which IS the ack
+ * (Decision 3) — the attempt now runs for as long as the message's turn does.
+ */
+export async function markRunning(job: ScheduledJob, deps: AttemptDeps): Promise<ScheduledJob> {
   const now = deps.now();
   const token = job.attempt.claim?.token;
+  let messageId: string | null = null;
   const { written, fresh } = await lockedTransition(job.id, (f) => {
-    if (f.attempt.state !== 'launching' || f.attempt.claim?.token !== token) return null;
+    if (f.attempt.state !== 'dispatching' || f.attempt.claim?.token !== token) return null;
+    messageId = f.attempt.messageId;
     return {
       ...f,
       attempt: {
         ...f.attempt,
         state: 'running',
-        sessionId,
         runningSince: isoStamp(now),
-        launchCount: f.attempt.launchCount + 1,
+        dispatchCount: f.attempt.dispatchCount + 1,
         launchDayStamps: pruneDayStamps(f.attempt.launchDayStamps, now),
-        claim: null, // launch acknowledged — lease no longer needed
+        claim: null, // message accepted — lease no longer needed
       },
     };
   });
   if (written) {
-    await appendEvent(job.id, 'ack', { sessionId });
-    await appendEvent(job.id, 'running', { sessionId });
+    await appendEvent(job.id, 'ack', { messageId });
+    await appendEvent(job.id, 'running', { messageId });
   }
   return written ?? fresh ?? job;
 }
 
 /**
- * Recurring (cron) success path: record the acked launch AND re-arm to
+ * Recurring (cron) success path: record the accepted dispatch AND re-arm to
  * `eligible` for the next occurrence in ONE atomic write. This is crash-safe —
  * the prior `markRunning`-then-`reArm` two-step could strand a cron job in
  * `running` forever if the process died between the writes (Codex review). The
- * launched session keeps running independently, tracked via `sessionId` + the
+ * dispatched turn keeps running independently, tracked via `messageId` + the
  * event log; cron runs are fire-and-forget for reaping. `consumedEdges`/`cursor`
  * are kept so the SAME occurrence never refires — a new occurrence is a new key.
  */
-export async function markRanAndReArm(
-  job: ScheduledJob,
-  sessionId: string | null,
-  deps: AttemptDeps,
-): Promise<ScheduledJob> {
+export async function markRanAndReArm(job: ScheduledJob, deps: AttemptDeps): Promise<ScheduledJob> {
   const now = deps.now();
   const token = job.attempt.claim?.token;
+  let messageId: string | null = null;
   const { written, fresh } = await lockedTransition(job.id, (f) => {
-    if (f.attempt.state !== 'launching' || f.attempt.claim?.token !== token) return null;
+    if (f.attempt.state !== 'dispatching' || f.attempt.claim?.token !== token) return null;
+    messageId = f.attempt.messageId;
     return {
       ...f,
       attempt: {
         ...f.attempt,
         state: 'eligible',
-        sessionId,
-        launchCount: f.attempt.launchCount + 1,
+        dispatchCount: f.attempt.dispatchCount + 1,
         launchDayStamps: pruneDayStamps(f.attempt.launchDayStamps, now),
         claim: null,
-        launchingSince: null,
+        dispatchedAt: null,
         runningSince: null,
       },
     };
   });
   if (written) {
-    await appendEvent(job.id, 'ack', { sessionId });
-    await appendEvent(job.id, 'running', { sessionId });
+    await appendEvent(job.id, 'ack', { messageId });
+    await appendEvent(job.id, 'running', { messageId });
     await appendEvent(job.id, 'rescheduled', { reason: 'recurring' });
   }
   return written ?? fresh ?? job;
 }
 
-/** claimed | launching → launch_failed (no ack within the window, or reaped). */
-export async function markLaunchFailed(job: ScheduledJob, reason: string): Promise<ScheduledJob> {
+/** claimed | dispatching → dispatch_failed (the chat refused it, or reaped). */
+export async function markDispatchFailed(job: ScheduledJob, reason: string): Promise<ScheduledJob> {
   const token = job.attempt.claim?.token;
   const { written, fresh } = await lockedTransition(job.id, (f) => {
-    if (f.attempt.state !== 'claimed' && f.attempt.state !== 'launching') return null;
+    if (f.attempt.state !== 'claimed' && f.attempt.state !== 'dispatching') return null;
     if (f.attempt.claim?.token !== token) return null; // different attempt
-    return { ...f, attempt: { ...f.attempt, state: 'launch_failed', claim: null, lastError: reason } };
+    return { ...f, attempt: { ...f.attempt, state: 'dispatch_failed', claim: null, lastError: reason } };
   });
-  if (written) await appendEvent(job.id, 'launch_failed', { reason });
+  if (written) await appendEvent(job.id, 'dispatch_failed', { reason });
   return written ?? fresh ?? job;
 }
 
 /**
  * running → completed (terminal). The one-shot completion path: a fired
- * one-shot has no re-arm, so once its launched session is no longer live the
- * schedule's single job (launch the agent) is done. Reaped by `reapStale`
- * behind a grace window so a just-acked session (row/pid not registered yet) is
- * never prematurely terminalized. `completed` is a valid terminal state +
+ * one-shot has no re-arm, so once its dispatched message's turn has ended the
+ * schedule's single job (get the agent working) is done. Reaped by `reapStale`
+ * behind a grace window so a just-accepted message whose turn has not started
+ * yet is never prematurely terminalized. `completed` is a valid terminal state +
  * event (see types.ts).
  */
 export async function markCompleted(job: ScheduledJob): Promise<ScheduledJob> {
@@ -368,29 +378,47 @@ export function cancelJob(id: string): Promise<ScheduledJob> {
   }));
 }
 
+export interface KillDeps {
+  /** Withdraw the still-queued message; false once a target has started it. */
+  withdrawMessage?: (assignmentId: string, messageId: string) => Promise<boolean>;
+  /** Cancel the agent's running turn (`session/cancel` through the broker). */
+  cancelTurn?: (assignmentId: string, agentId: string | null) => Promise<boolean>;
+}
+
 /**
- * running → killed (caller signals the linked session pid first). claimed |
- * launching → cancelled (nothing durable to kill yet).
+ * running → killed, claimed | dispatching → cancelled.
+ *
+ * There is no pid to signal (Decision 3). A job whose message is still QUEUED is
+ * withdrawn — it never reaches an agent at all; one whose turn is already
+ * running is cancelled through the broker, which is `session/cancel` and
+ * resolves in tens of milliseconds on both adapters. A withdraw that comes too
+ * late (a target started between the read and the call) falls through to a
+ * cancel, so "kill" always stops what is actually running.
  */
-export async function killJob(
-  id: string,
-  deps?: { signalTarget?: (target: { sessionId: string | null; launchPid: number | null }) => void },
-): Promise<ScheduledJob> {
+export async function killJob(id: string, deps?: KillDeps): Promise<ScheduledJob> {
   const release = await acquireJobLock(id);
   try {
     const job = await readJob(id);
     if (!job) throw new TransitionError(`No such schedule: ${id}`);
     const s = job.attempt.state;
-    if (s === 'running') {
-      // Signal the TRACKED AGENT session (resolved from sessionId), not the
-      // wrapper `launchPid` — for osascript/open/sh launches the wrapper pid is
-      // not the agent. The caller resolves sessionId → live pid (CLI wiring).
-      deps?.signalTarget?.({ sessionId: job.attempt.sessionId, launchPid: job.attempt.launchPid });
-      const written = await writeJob({ ...job, attempt: { ...job.attempt, state: 'killed', claim: null } });
-      await appendEvent(id, 'killed', { sessionId: job.attempt.sessionId, launchPid: job.attempt.launchPid });
+    const { messageId } = job.attempt;
+    if (s === 'running' || s === 'dispatching') {
+      let withdrawn = false;
+      if (messageId && deps?.withdrawMessage) {
+        withdrawn = await deps.withdrawMessage(job.assignmentId, messageId).catch(() => false);
+      }
+      if (!withdrawn && deps?.cancelTurn) {
+        await deps.cancelTurn(job.assignmentId, job.agentId).catch(() => false);
+      }
+      const to = s === 'running' ? 'killed' : 'cancelled';
+      const written = await writeJob({ ...job, attempt: { ...job.attempt, state: to, claim: null } });
+      await appendEvent(id, to === 'killed' ? 'killed' : 'cancelled', {
+        messageId,
+        via: withdrawn ? 'withdraw' : 'cancel',
+      });
       return written;
     }
-    if (s === 'claimed' || s === 'launching') {
+    if (s === 'claimed') {
       const written = await writeJob({ ...job, attempt: { ...job.attempt, state: 'cancelled', claim: null } });
       await appendEvent(id, 'cancelled', { via: 'kill' });
       return written;
@@ -428,13 +456,13 @@ export async function rescheduleJob(id: string, trigger: JobTrigger): Promise<Sc
   }
 }
 
-/** failed | launch_failed → eligible (fresh attempt; new dedupe scope keeps the
- *  consumed edges so the SAME edge won't refire — a clock re-fires on its next
- *  occurrence, a state edge on a new transition). */
+/** failed | dispatch_failed → eligible (fresh attempt; new dedupe scope keeps
+ *  the consumed edges so the SAME edge won't refire — a clock re-fires on its
+ *  next occurrence, a state edge on a new transition). */
 export function retryJob(id: string): Promise<ScheduledJob> {
   return controlTransition(
     id,
-    (s) => s === 'failed' || s === 'launch_failed',
+    (s) => s === 'failed' || s === 'dispatch_failed',
     'eligible',
     'retried',
     () => ({ claim: null, lastError: null }),
@@ -444,43 +472,43 @@ export function retryJob(id: string): Promise<ScheduledJob> {
 // ── Reaping (crash recovery + stuck detection — mechanism, not policy) ─────────
 
 export interface ReapOutcome {
-  reaped: string[]; // ids moved to launch_failed (dead launches)
+  reaped: string[]; // ids moved to dispatch_failed (dead dispatches)
   stuck: string[]; // ids flagged stuck (left for a control verb to remediate)
   completed: string[]; // one-shot ids reconciled to completed (session ended)
 }
 
 /**
- * Grace window before a one-shot `running` job with a dead session is
+ * Grace window before a one-shot `running` job whose turn has ended is
  * reconciled to `completed`. A job's `maxRuntimeMs` takes precedence; this is
- * the floor used when no limit is set, guarding against terminalizing a session
- * whose registry row / pid hasn't been written yet right after launch-ack.
+ * the floor used when no limit is set, guarding against terminalizing a message
+ * whose turn has not started yet right after the dispatch was accepted.
  */
 const ONE_SHOT_COMPLETE_GRACE_MS = 60_000;
 
 /**
  * Crash recovery + stuck detection. PURE MECHANISM: it completes the lifecycle
- * of demonstrably-dead launches (claim lease expired while claimed/launching →
- * `launch_failed`) and RECORDS — but does not remediate — running jobs past
- * their max-runtime with no live heartbeat (stuck is derivable from disk; a
- * human/orchestrator calls `kill`/`retry`).
+ * of demonstrably-dead dispatches (claim lease expired while
+ * claimed/dispatching → `dispatch_failed`) and RECORDS — but does not remediate
+ * — running jobs past their max-runtime whose turn has ended (stuck is derivable
+ * from disk; a human/orchestrator calls `kill`/`retry`).
  */
 export async function reapStale(jobs: ScheduledJob[], deps: AttemptDeps): Promise<ReapOutcome> {
   const now = deps.now();
-  const isLive = deps.isSessionLive ?? (() => true);
+  const isOpen = deps.isMessageTurnOpen ?? (async () => true);
   const out: ReapOutcome = { reaped: [], stuck: [], completed: [] };
   for (const job of jobs) {
     const a = job.attempt;
-    if ((a.state === 'claimed' || a.state === 'launching') && a.claim && now.getTime() > a.claim.expiresAt) {
-      // Re-validate state AND expiry on fresh under the lock — `markLaunching`
+    if ((a.state === 'claimed' || a.state === 'dispatching') && a.claim && now.getTime() > a.claim.expiresAt) {
+      // Re-validate state AND expiry on fresh under the lock — `markDispatching`
       // may have renewed the claim since this snapshot was read.
       const reason = `reaped: claim lease expired in state '${a.state}'`;
       const { written } = await lockedTransition(job.id, (f) => {
-        if (f.attempt.state !== 'claimed' && f.attempt.state !== 'launching') return null;
+        if (f.attempt.state !== 'claimed' && f.attempt.state !== 'dispatching') return null;
         if (!f.attempt.claim || now.getTime() <= f.attempt.claim.expiresAt) return null;
-        return { ...f, attempt: { ...f.attempt, state: 'launch_failed', claim: null, lastError: reason } };
+        return { ...f, attempt: { ...f.attempt, state: 'dispatch_failed', claim: null, lastError: reason } };
       });
       if (written) {
-        await appendEvent(job.id, 'launch_failed', { reason });
+        await appendEvent(job.id, 'dispatch_failed', { reason });
         await appendEvent(job.id, 'reaped', { from: a.state });
         out.reaped.push(job.id);
       }
@@ -489,23 +517,23 @@ export async function reapStale(jobs: ScheduledJob[], deps: AttemptDeps): Promis
     if (a.state !== 'running') continue;
 
     // ── One-shot completion reconciliation (B7) ──────────────────────────────
-    // A fired one-shot never re-arms; once its launched session is no longer
-    // live, the schedule's single job (launch the agent) is done → completed.
-    // Anti-race: only when it has a registered sessionId that is now dead/absent
-    // AND runningSince is older than the grace window (reuse maxRuntimeMs if
-    // set, else a const default). Never terminalize a one-shot with no
-    // sessionId (leave that to launch-failure/claim-lease reaping), and NEVER
-    // do this for recurring jobs.
-    if (!isRecurring(job.trigger) && a.sessionId && a.runningSince) {
+    // A fired one-shot never re-arms; once its dispatched message's turn has
+    // ended, the schedule's single job (get the agent working) is done →
+    // completed. Anti-race: only when it has a `messageId` whose turn has
+    // finished AND `runningSince` is older than the grace window (reuse
+    // maxRuntimeMs if set, else a const default). Never terminalize a one-shot
+    // with no `messageId` (leave that to the claim-lease reaping), and NEVER do
+    // this for recurring jobs.
+    if (!isRecurring(job.trigger) && a.messageId && a.runningSince) {
       const graceMs = job.limits.maxRuntimeMs ?? ONE_SHOT_COMPLETE_GRACE_MS;
       const pastGrace = now.getTime() - Date.parse(a.runningSince) > graceMs;
-      if (pastGrace && !isLive(a.sessionId, a.launchPid)) {
+      if (pastGrace && !(await isOpen(job.assignmentId, a.messageId))) {
         const { written } = await lockedTransition(job.id, (f) => {
           // Same running attempt the grace/liveness check was based on — else a
           // newer run could be completed off a stale snapshot.
           if (
             f.attempt.state !== 'running' ||
-            f.attempt.sessionId !== a.sessionId ||
+            f.attempt.messageId !== a.messageId ||
             f.attempt.runningSince !== a.runningSince
           ) {
             return null;
@@ -513,7 +541,7 @@ export async function reapStale(jobs: ScheduledJob[], deps: AttemptDeps): Promis
           return { ...f, attempt: { ...f.attempt, state: 'completed', claim: null } };
         });
         if (written) {
-          await appendEvent(job.id, 'completed', { reason: 'one-shot session ended' });
+          await appendEvent(job.id, 'completed', { reason: 'one-shot turn ended' });
           out.completed.push(job.id);
         }
         continue;
@@ -524,11 +552,12 @@ export async function reapStale(jobs: ScheduledJob[], deps: AttemptDeps): Promis
     // Record once; leave state running (stuck is derivable). No remediation.
     if (job.limits.maxRuntimeMs && a.runningSince) {
       const overrun = now.getTime() - Date.parse(a.runningSince) > job.limits.maxRuntimeMs;
-      if (overrun && !isLive(a.sessionId, a.launchPid) && a.lastError !== 'stuck:max-runtime') {
+      const stillOpen = a.messageId ? await isOpen(job.assignmentId, a.messageId) : true;
+      if (overrun && !stillOpen && a.lastError !== 'stuck:max-runtime') {
         const { written } = await lockedTransition(job.id, (f) => {
           if (
             f.attempt.state !== 'running' ||
-            f.attempt.sessionId !== a.sessionId ||
+            f.attempt.messageId !== a.messageId ||
             f.attempt.runningSince !== a.runningSince ||
             f.attempt.lastError === 'stuck:max-runtime'
           ) {

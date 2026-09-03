@@ -32,11 +32,10 @@ const KINDS: Array<{ value: Kind; label: string }> = [
 
 export function CreateScheduleDialog({ open, onOpenChange, onCreated }: Props) {
   const [assignmentId, setAssignmentId] = useState('');
-  const [agentId, setAgentId] = useState('claude');
+  const [agentId, setAgentId] = useState('');
   const [kind, setKind] = useState<Kind>('cron');
   const [unattended, setUnattended] = useState(true);
-  const [terminal, setTerminal] = useState('');
-  const [prompt, setPrompt] = useState('');
+  const [message, setMessage] = useState('');
   // Trigger params
   const [cronExpr, setCronExpr] = useState('0 3 * * *');
   const [tz, setTz] = useState('');
@@ -73,13 +72,13 @@ export function CreateScheduleDialog({ open, onOpenChange, onCreated }: Props) {
     try {
       const input: CreateScheduleInput = {
         assignmentId: assignmentId.trim(),
-        agentId: agentId.trim(),
+        message: message.trim(),
+        agentId: agentId.trim() || null,
         trigger: buildTrigger(),
         unattended,
-        terminalPreference: terminal.trim() || null,
-        promptTemplate: prompt.trim() || null,
       };
       if (!input.assignmentId) throw new Error('Assignment id is required');
+      if (!input.message) throw new Error('A message is required — it is what gets posted into the chat');
       await createSchedule(input);
       onCreated();
       onOpenChange(false);
@@ -111,15 +110,14 @@ export function CreateScheduleDialog({ open, onOpenChange, onCreated }: Props) {
             <label className={labelCls}>Assignment id / slug</label>
             <input autoFocus className={field} value={assignmentId} onChange={(e) => setAssignmentId(e.target.value)} placeholder="scheduled-agents" />
           </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className={labelCls}>Agent</label>
-              <input className={field} value={agentId} onChange={(e) => setAgentId(e.target.value)} />
-            </div>
-            <div>
-              <label className={labelCls}>Terminal (optional)</label>
-              <input className={field} value={terminal} onChange={(e) => setTerminal(e.target.value)} placeholder="default" />
-            </div>
+          <div>
+            <label className={labelCls}>Agent (optional)</label>
+            <input
+              className={field}
+              value={agentId}
+              onChange={(e) => setAgentId(e.target.value)}
+              placeholder="the assignment's default agent"
+            />
           </div>
 
           <div>
@@ -161,8 +159,16 @@ export function CreateScheduleDialog({ open, onOpenChange, onCreated }: Props) {
           )}
 
           <div>
-            <label className={labelCls}>Prompt template (optional)</label>
-            <input className={field} value={prompt} onChange={(e) => setPrompt(e.target.value)} placeholder="plan @assignment" />
+            <label className={labelCls}>Message</label>
+            <textarea
+              className={`${field} min-h-[72px]`}
+              value={message}
+              onChange={(e) => setMessage(e.target.value)}
+              placeholder="Pick up the plan and implement the next task."
+            />
+            <p className="mt-1 text-xs text-muted-foreground">
+              Posted into the assignment's chat on every fire.
+            </p>
           </div>
           <label className="flex items-center gap-2 text-sm">
             <input type="checkbox" checked={unattended} onChange={(e) => setUnattended(e.target.checked)} />

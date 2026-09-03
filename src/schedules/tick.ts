@@ -1,12 +1,18 @@
 /**
  * The tick — the ONE scheduler authority (Task 10). It reads all jobs from
  * disk, evaluates every trigger family against PERSISTED state, fires those that
- * are due (claim → resolve-at-fire-time → launch → launch-ack), and reaps stale
- * attempts. It is MECHANISM, not policy: it detects + records stuck/failed and
- * stops — no remediation (that lives behind the control verbs). The dashboard
- * watcher is a pure accelerator that calls `runTick`; it is never the source of
- * truth. Every effecting dependency is injectable so the whole tick is
- * unit-testable with an injected clock / launcher / ack / assignment reader.
+ * are due (claim → dispatch into the assignment's chat → record the accepted
+ * `messageId`), and reaps stale attempts. It is MECHANISM, not policy: it
+ * detects + records stuck/failed and stops — no remediation (that lives behind
+ * the control verbs). The dashboard watcher is a pure accelerator that calls
+ * `runTick`; it is never the source of truth. Every effecting dependency is
+ * injectable so the whole tick is unit-testable with an injected clock and a
+ * fake dispatcher.
+ *
+ * Phase 4 (Decision 3): firing is a chat message, not a terminal. Inside the
+ * dashboard server the tick holds the broker (`chatBroker`); as the launchd
+ * `schedule tick` CLI it talks to the running dashboard (`dashboardPort`). With
+ * neither, a due job records an error — there is no terminal fallback.
  */
 
 import { readFile } from 'node:fs/promises';
@@ -15,36 +21,42 @@ import { readConfig } from '../utils/config.js';
 import { assignmentsDir, defaultProjectDir } from '../utils/paths.js';
 import { resolveAssignmentById } from '../utils/assignment-resolver.js';
 import { parseAssignmentFrontmatter } from '../lifecycle/frontmatter.js';
-import { resolveLaunchPlan } from '../launch/plan.js';
-import { executeLaunchPlan, type LaunchHandle } from '../launch/execute.js';
-import type { LaunchPlan } from '../launch/plan.js';
 import type { AssignmentFrontmatter } from '../lifecycle/types.js';
+import type { ChatBroker } from '../chat/broker.js';
 import { appendEvent } from './event-log.js';
 import { listJobs } from './store.js';
 import { evaluateTrigger, isRecurring } from './triggers.js';
 import { canFire, isKillSwitchEngaged } from './unattended.js';
-import { awaitLaunchAck, type AckResult } from './launch-ack.js';
+import {
+  assertAgentAttached,
+  inProcessDispatcher,
+  restDispatcher,
+  DispatchError,
+  type ChatDispatcher,
+} from './dispatch.js';
+import { messageTurnOpenVia, type IsMessageTurnOpen } from './liveness.js';
 import {
   claimJob,
-  markLaunching,
+  markDispatching,
   markRunning,
-  markLaunchFailed,
+  markDispatchFailed,
   markRanAndReArm,
   reapStale,
 } from './attempt.js';
-import { watchedAssignmentId, type ScheduledJob } from './types.js';
+import { watchedAssignmentId } from './types.js';
 
 export interface TickDeps {
   now?: () => Date;
   /** Parsed frontmatter of a watched assignment (state triggers). */
   readAssignment?: (assignmentId: string) => Promise<AssignmentFrontmatter | null>;
-  /** Resolve a launch plan at FIRE time (recomputes cwd/worktree). */
-  resolvePlan?: (job: ScheduledJob) => Promise<LaunchPlan>;
-  /** Spawn the terminal. Defaults to `executeLaunchPlan`. */
-  launch?: (plan: LaunchPlan) => Promise<LaunchHandle>;
-  /** Poll for launch-ack. Defaults to `awaitLaunchAck`. */
-  ack?: (handle: LaunchHandle, ackTimeoutMs: number) => Promise<AckResult>;
-  isSessionLive?: (sessionId: string | null, pid: number | null) => boolean;
+  /** In-process chat (the tick is running inside the dashboard server). */
+  chatBroker?: ChatBroker;
+  /** Port of a running dashboard (the launchd `schedule tick` CLI path). */
+  dashboardPort?: number | null;
+  /** Fully-built dispatcher; overrides `chatBroker`/`dashboardPort` (tests). */
+  dispatcher?: ChatDispatcher;
+  /** Whether a dispatched message's turn is still open. Defaults to the dispatcher's. */
+  isMessageTurnOpen?: IsMessageTurnOpen;
   killSwitch?: () => boolean;
   log?: (message: string) => void;
   /** When false, skip the reap pass (the `fire-due` accelerator path). Default true. */
@@ -58,7 +70,7 @@ export interface TickResult {
   skipped: number;
   reaped: string[];
   stuck: string[];
-  /** One-shot ids reconciled to `completed` (their launched session ended). */
+  /** One-shot ids reconciled to `completed` (their dispatched turn ended). */
   completed: string[];
 }
 
@@ -75,26 +87,35 @@ async function defaultReadAssignment(assignmentId: string): Promise<AssignmentFr
   }
 }
 
-async function defaultResolvePlan(job: ScheduledJob): Promise<LaunchPlan> {
-  const config = await readConfig();
-  const projectsDir = config.defaultProjectDir || defaultProjectDir();
-  return resolveLaunchPlan({
-    kind: 'assignment',
-    id: job.assignmentId,
-    config,
-    projectsDir,
-    assignmentsDir: assignmentsDir(),
-    terminalOverride: job.terminalPreference ?? undefined,
-    agentId: job.agentId,
-    promptOverride: job.promptTemplate ?? undefined,
-  });
+/**
+ * The chat this tick dispatches into, or null when there is none: no broker in
+ * process and no dashboard listening. Null is not an error here — it becomes
+ * one on each job that is actually due, which is where the user can see it.
+ */
+function resolveDispatcher(deps: TickDeps): ChatDispatcher | null {
+  if (deps.dispatcher) return deps.dispatcher;
+  if (deps.chatBroker) {
+    return inProcessDispatcher({
+      broker: deps.chatBroker,
+      resolveAssignment: async (id) => {
+        const config = await readConfig();
+        const projectsDir = config.defaultProjectDir || defaultProjectDir();
+        return resolveAssignmentById(projectsDir, assignmentsDir(), id);
+      },
+    });
+  }
+  if (deps.dashboardPort) return restDispatcher({ port: deps.dashboardPort });
+  return null;
 }
 
 /** Run one tick across all jobs. Idempotent and safe to run concurrently with
  *  other actors (claim-lease + dedupe make double-fire impossible). */
 export async function runTick(deps: TickDeps = {}): Promise<TickResult> {
   const now = deps.now ?? (() => new Date());
-  const attemptDeps = { now, isSessionLive: deps.isSessionLive };
+  const dispatcher = resolveDispatcher(deps);
+  const isMessageTurnOpen =
+    deps.isMessageTurnOpen ?? (dispatcher ? messageTurnOpenVia(dispatcher) : undefined);
+  const attemptDeps = { now, ...(isMessageTurnOpen ? { isMessageTurnOpen } : {}) };
   const result: TickResult = { evaluated: 0, fired: [], failed: [], skipped: 0, reaped: [], stuck: [], completed: [] };
 
   // Reap first (crash recovery / stuck detection) — always runs, even under the
@@ -143,31 +164,28 @@ export async function runTick(deps: TickDeps = {}): Promise<TickResult> {
     let current = claim.job;
 
     try {
-      const plan = await (deps.resolvePlan ?? defaultResolvePlan)(current);
-      if (current.unattended && plan.terminal === 'warp') {
-        current = await markLaunchFailed(current, 'warp cannot auto-start an unattended job');
-        result.failed.push(current.id);
-        continue;
+      if (!dispatcher) {
+        throw new DispatchError(
+          'the dashboard is not running, so there is no chat to post into — start it with `syntaur dashboard`',
+        );
       }
-      const handle = await (deps.launch ?? executeLaunchPlan)(plan);
-      current = await markLaunching(current, handle.pid ?? null, attemptDeps);
-      const ackFn = deps.ack ?? ((h, t) => awaitLaunchAck(h, t));
-      const ack = await ackFn(handle, current.timing.ackTimeoutMs);
-      if (ack.acked) {
-        // Recurring (cron): record the run AND re-arm in one atomic write
-        // (crash-safe). One-shot: stay `running` (a session-end observer / reaper
-        // takes it terminal later).
-        current = isRecurring(current.trigger)
-          ? await markRanAndReArm(current, ack.sessionId ?? null, attemptDeps)
-          : await markRunning(current, ack.sessionId ?? null, attemptDeps);
-        result.fired.push(current.id);
-      } else {
-        current = await markLaunchFailed(current, 'launch-ack timeout');
-        result.failed.push(current.id);
-      }
+      // Refuse before sending: a message into a room with nobody in it is an
+      // error on the schedule, not a chat row nobody answers.
+      await assertAgentAttached(dispatcher, current.assignmentId, current.agentId);
+      const messageId = await dispatcher.send(current.assignmentId, current.agentId, current.message);
+      current = await markDispatching(current, messageId, attemptDeps);
+      // Recurring (cron): record the run AND re-arm in one atomic write
+      // (crash-safe). One-shot: stay `running` until the turn ends (reapStale
+      // reconciles it).
+      current = isRecurring(current.trigger)
+        ? await markRanAndReArm(current, attemptDeps)
+        : await markRunning(current, attemptDeps);
+      result.fired.push(current.id);
     } catch (err) {
-      current = await markLaunchFailed(current, err instanceof Error ? err.message : String(err));
-      await appendEvent(current.id, 'failed', { error: err instanceof Error ? err.message : String(err) });
+      const reason = err instanceof Error ? err.message : String(err);
+      current = await markDispatchFailed(current, reason);
+      await appendEvent(current.id, 'failed', { error: reason });
+      deps.log?.(`schedule ${current.id} dispatch failed: ${reason}`);
       result.failed.push(current.id);
     }
   }

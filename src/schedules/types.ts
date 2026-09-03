@@ -1,11 +1,12 @@
 /**
  * Type model for the scheduled-agents feature (see the assignment's plan.md).
  *
- * A `ScheduledJob` persists **intent** (which assignment, which agent, which
- * prompt/playbook, which trigger, what unattended limits) — never a resolved
- * execution spec. The cwd/worktree/prompt are recomputed at fire time by the
- * tick via `resolveLaunchPlan`, so a job survives the assignment moving branches
- * or worktrees.
+ * A `ScheduledJob` persists **intent** (which assignment, which chat agent,
+ * which message, which trigger, what unattended limits) — never a resolved
+ * execution spec. On tick the message is posted into the assignment's chat
+ * (Decision 3, phase 4): in-process through the broker inside the dashboard
+ * server, otherwise over the chat REST route on the running dashboard. There is
+ * no terminal, no pid and no launch plan.
  *
  * The store is per-file + markdown frontmatter (auditable like an assignment),
  * NOT SQLite — a deliberate divergence from the leases/sessions precedent
@@ -13,8 +14,6 @@
  * mutable attempt state lives in the job file's frontmatter (one authoritative
  * record per job); the JSONL event log alongside it is append-only narration.
  */
-
-import type { TerminalChoice } from '../utils/config.js';
 
 /** Quota providers whose rolling reset window an `after-reset` trigger predicts. */
 export type Provider = 'claude' | 'codex';
@@ -61,17 +60,18 @@ export type JobTrigger =
 
 /**
  * `held` is a non-terminal pause (the tick skips it). The terminal set is
- * `TERMINAL_JOB_STATES`. `launch_failed` is distinct from `failed`: the wrapper
- * spawned but no agent ack arrived within the launch-ack window.
+ * `TERMINAL_JOB_STATES`. `dispatch_failed` is distinct from `failed`: the
+ * message never reached the chat at all (no agent attached, no dashboard, a
+ * refused send).
  */
 export type JobAttemptState =
   | 'eligible'
   | 'claimed'
-  | 'launching'
+  | 'dispatching'
   | 'running'
   | 'completed'
   | 'failed'
-  | 'launch_failed'
+  | 'dispatch_failed'
   | 'held'
   | 'cancelled'
   | 'killed';
@@ -79,7 +79,7 @@ export type JobAttemptState =
 export const TERMINAL_JOB_STATES: ReadonlySet<JobAttemptState> = new Set([
   'completed',
   'failed',
-  'launch_failed',
+  'dispatch_failed',
   'cancelled',
   'killed',
 ]);
@@ -104,7 +104,7 @@ export interface JobClaim {
 /**
  * The single authoritative mutable record per job. Persisted (atomic temp+rename)
  * inside the claimed transition BEFORE launch, so a crash post-claim/pre-launch
- * cannot refire an edge — worst case is a reapable `claimed`/`launching` job.
+ * cannot refire an edge — worst case is a reapable `claimed`/`dispatching` job.
  */
 export interface JobAttempt {
   state: JobAttemptState;
@@ -117,16 +117,19 @@ export interface JobAttempt {
   cursor: number;
   /** Current claim lease; null when not claimed. */
   claim: JobClaim | null;
-  /** Tracked session id linked at launch-ack; null until `running`. */
-  sessionId: string | null;
-  /** Wrapper/agent pid captured from the LaunchHandle; null until launched. */
-  launchPid: number | null;
-  /** Total successful launches (feeds maxLaunchesPerDay with `launchDayStamps`). */
-  launchCount: number;
-  /** ISO day-stamps (YYYY-MM-DD) of recent launches, for per-day rate limiting. */
+  /**
+   * The chat message the dispatch minted — the ONLY handle on a dispatched
+   * attempt (Decision 3). There is no session id and no pid: liveness is the
+   * message's own turn state, and killing withdraws or cancels through the
+   * broker.
+   */
+  messageId: string | null;
+  /** Total accepted dispatches (feeds maxLaunchesPerDay with `launchDayStamps`). */
+  dispatchCount: number;
+  /** ISO day-stamps (YYYY-MM-DD) of recent dispatches, for per-day rate limiting. */
   launchDayStamps: string[];
   lastFiredAt: string | null;
-  launchingSince: string | null;
+  dispatchedAt: string | null;
   runningSince: string | null;
   lastError: string | null;
 }
@@ -137,12 +140,11 @@ export function freshAttempt(): JobAttempt {
     consumedEdges: [],
     cursor: 0,
     claim: null,
-    sessionId: null,
-    launchPid: null,
-    launchCount: 0,
+    messageId: null,
+    dispatchCount: 0,
     launchDayStamps: [],
     lastFiredAt: null,
-    launchingSince: null,
+    dispatchedAt: null,
     runningSince: null,
     lastError: null,
   };
@@ -182,7 +184,7 @@ export function defaultLimits(): UnattendedLimits {
 /**
  * Claim/ack timing. Invariant (enforced by `assertTimingInvariant`):
  * `claimTtlMs > ackTimeoutMs + launchSlackMs` — so a job is never reaped while
- * still legitimately inside its launch-ack window.
+ * still legitimately inside its dispatch window.
  */
 export interface JobTiming {
   claimTtlMs: number;
@@ -206,15 +208,15 @@ export function assertTimingInvariant(t: JobTiming): void {
 
 export interface ScheduledJob {
   id: string;
-  /** Target assignment the launched agent works on. */
+  /** Target assignment whose chat the message is posted into. */
   assignmentId: string;
-  agentId: string;
-  /** Launch-prompt template; null when a playbook drives the prompt. */
-  promptTemplate: string | null;
-  /** Playbook slug; null when `promptTemplate` drives the prompt. */
-  playbook: string | null;
-  /** Terminal to launch in; null = user's configured default at fire time. */
-  terminalPreference: TerminalChoice | null;
+  /**
+   * Which attached chat agent to address; null lets the assignment's default
+   * agent (and any `respondsTo: all-human` participant) answer.
+   */
+  agentId: string | null;
+  /** The message posted into the assignment's chat on every fire. */
+  message: string;
   /** Unattended (non-interactive) permission mode — the distinct trust model. */
   unattended: boolean;
   limits: UnattendedLimits;
@@ -241,12 +243,12 @@ export type JobEventType =
   | 'created'
   | 'fired'
   | 'claimed'
-  | 'launching'
+  | 'dispatching'
   | 'ack'
   | 'running'
   | 'completed'
   | 'failed'
-  | 'launch_failed'
+  | 'dispatch_failed'
   | 'reaped'
   | 'held'
   | 'released'

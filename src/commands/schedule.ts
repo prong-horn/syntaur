@@ -1,11 +1,5 @@
 import { Command } from 'commander';
 import { Cron } from 'croner';
-import { readConfig } from '../utils/config.js';
-import { pickAgent } from '../launch/plan.js';
-import { getSessionById } from '../dashboard/agent-sessions.js';
-import { initSessionDb } from '../dashboard/session-db.js';
-import type { TerminalChoice } from '../utils/config.js';
-import { TERMINAL_CHOICES } from '../utils/terminal-schema.js';
 import {
   newJobId,
   readJob,
@@ -23,10 +17,8 @@ import {
   rescheduleJob,
 } from '../schedules/attempt.js';
 import { runTick } from '../schedules/tick.js';
-import { isScheduledSessionLive } from '../schedules/liveness.js';
-import {
-  assertUnattendedTerminalSupported,
-} from '../schedules/unattended.js';
+import { readDashboardPort, restDispatcher } from '../schedules/dispatch.js';
+import { messageTurnOpenVia } from '../schedules/liveness.js';
 import { installLaunchAgent, uninstallLaunchAgent } from '../schedules/launchd.js';
 import {
   type ScheduledJob,
@@ -49,22 +41,18 @@ function parseDurationMs(input: string): number {
 }
 
 /**
- * Validate the `--terminal` flag at CREATE time. An unchecked cast lets an
- * invalid terminal persist, which `buildTerminalInvocation` (no default case)
- * resolves to `undefined` → TypeError at fire time. Mirror config.ts's terminal
- * validation and fail fast with the valid choices named. Returns null when
- * unset (→ user's configured default at fire time).
+ * Where a `schedule tick`/`fire-due` run outside the dashboard posts its
+ * messages. The CLI never holds a broker, so it goes through the chat REST
+ * routes on the running dashboard; with none running, every due job records an
+ * error (Decision 3 — no terminal fallback).
  */
-function validateTerminalChoice(value: string | undefined): TerminalChoice | null {
-  if (value == null) return null;
-  const trimmed = value.trim();
-  if (trimmed === '') return null;
-  if (!TERMINAL_CHOICES.includes(trimmed as TerminalChoice)) {
-    throw new Error(
-      `--terminal "${trimmed}" is not a known choice — expected one of ${TERMINAL_CHOICES.join('|')}`,
-    );
-  }
-  return trimmed as TerminalChoice;
+async function restTickDeps(): Promise<{
+  dashboardPort: number | null;
+  isMessageTurnOpen?: ReturnType<typeof messageTurnOpenVia>;
+}> {
+  const port = await readDashboardPort();
+  if (port === null) return { dashboardPort: null };
+  return { dashboardPort: port, isMessageTurnOpen: messageTurnOpenVia(restDispatcher({ port })) };
 }
 
 interface TriggerOpts {
@@ -157,10 +145,8 @@ export const scheduleCommand = new Command('schedule').description(
 
 interface CreateOpts extends TriggerOpts {
   assignment: string;
+  message?: string;
   agent?: string;
-  prompt?: string;
-  playbook?: string;
-  terminal?: string;
   interactive?: boolean;
   maxRuntime?: string;
   maxLaunchesPerDay?: string;
@@ -170,12 +156,12 @@ interface CreateOpts extends TriggerOpts {
 
 scheduleCommand
   .command('create')
-  .description('Create a scheduled job')
-  .requiredOption('--assignment <id>', 'Target assignment id/slug the agent works on')
-  .option('--agent <id>', 'Agent runner id (default: configured default agent)')
-  .option('--prompt <template>', 'Launch-prompt template (@tokens allowed)')
-  .option('--playbook <slug>', 'Playbook slug to drive the prompt')
-  .option('--terminal <choice>', 'Terminal to launch in (default: configured)')
+  .description('Create a scheduled job — it posts a message into the assignment\'s chat')
+  .requiredOption('--assignment <id>', 'Target assignment id/slug whose chat the message goes to')
+  // A plain option, validated in the action, so a missing --message is our own
+  // `Error: ...` line rather than commander's raw usage dump.
+  .option('--message <text>', 'The chat message to post on every fire')
+  .option('--agent <id>', 'Chat agent id to address (default: the assignment\'s default agent)')
   .option('--interactive', 'Interactive (not unattended) — skips the unattended trust gates')
   .option('--at <ts>', 'Clock trigger: fire at an ISO timestamp')
   .option('--in <duration>', 'Clock trigger: fire after a duration (e.g. 5h)')
@@ -193,11 +179,10 @@ scheduleCommand
   .option('--note <text>', 'Human note')
   .action(
     wrap(async (opts: CreateOpts) => {
-      const config = await readConfig();
-      const agentId = opts.agent ?? pickAgent(config).id;
-      const terminal = validateTerminalChoice(opts.terminal);
+      if (!opts.message || opts.message.trim().length === 0) {
+        throw new Error('--message is required — it is what gets posted into the assignment\'s chat');
+      }
       const unattended = !opts.interactive;
-      if (unattended) assertUnattendedTerminalSupported(terminal);
 
       const limits = defaultLimits();
       if (opts.maxRuntime) limits.maxRuntimeMs = parseDurationMs(opts.maxRuntime);
@@ -217,10 +202,8 @@ scheduleCommand
       const job: ScheduledJob = {
         id: newJobId(),
         assignmentId: opts.assignment,
-        agentId,
-        promptTemplate: opts.prompt ?? null,
-        playbook: opts.playbook ?? null,
-        terminalPreference: terminal,
+        agentId: opts.agent ?? null,
+        message: opts.message,
         unattended,
         limits,
         trigger: buildTrigger(opts),
@@ -296,32 +279,20 @@ controlVerb('release', releaseJob, 'Released');
 
 scheduleCommand
   .command('kill')
-  .description('Kill a running scheduled job (signals the launched session)')
+  .description('Kill a running scheduled job (withdraws its queued message, or cancels its turn)')
   .argument('<id>', 'Schedule id')
   .action(
     wrap(async (id: string) => {
+      const port = await readDashboardPort();
+      if (port === null) {
+        throw new Error(
+          'the dashboard is not running, so the chat cannot be reached — start it with `syntaur dashboard`, or use `syntaur schedule cancel` to just mark the job',
+        );
+      }
+      const chat = restDispatcher({ port });
       const job = await killJob(id, {
-        signalTarget: ({ sessionId, launchPid }) => {
-          // Prefer the tracked agent session's live pid; fall back to the
-          // wrapper launchPid only if the session can't be resolved.
-          let pid: number | null = null;
-          if (sessionId) {
-            try {
-              initSessionDb();
-              pid = getSessionById(sessionId)?.pid ?? null;
-            } catch {
-              pid = null;
-            }
-          }
-          pid = pid ?? launchPid;
-          if (pid) {
-            try {
-              process.kill(pid, 'SIGTERM');
-            } catch {
-              /* already gone */
-            }
-          }
-        },
+        withdrawMessage: (assignmentId, messageId) => chat.withdraw(assignmentId, messageId),
+        cancelTurn: (assignmentId, agentId) => chat.cancel(assignmentId, agentId),
       });
       console.log(`Killed ${id} → ${job.attempt.state}`);
     }),
@@ -356,7 +327,7 @@ scheduleCommand
   .description('Run one scheduler tick (the one authority): evaluate, fire due, reap')
   .action(
     wrap(async () => {
-      const r = await runTick({ log: (m) => console.error(m), isSessionLive: isScheduledSessionLive });
+      const r = await runTick({ log: (m) => console.error(m), ...(await restTickDeps()) });
       console.log(
         `tick: evaluated ${r.evaluated}, fired ${r.fired.length}, failed ${r.failed.length}, reaped ${r.reaped.length}, stuck ${r.stuck.length}, completed ${r.completed.length}`,
       );
@@ -368,7 +339,7 @@ scheduleCommand
   .description('Internal: fire currently-due jobs without reaping (accelerator path)')
   .action(
     wrap(async () => {
-      const r = await runTick({ reap: false, isSessionLive: isScheduledSessionLive });
+      const r = await runTick({ reap: false, ...(await restTickDeps()) });
       console.log(`fire-due: fired ${r.fired.length}, failed ${r.failed.length}`);
     }),
   );

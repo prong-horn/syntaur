@@ -52,9 +52,7 @@ const FIELD_ORDER: ReadonlyArray<keyof ScheduledJob> = [
   'id',
   'assignmentId',
   'agentId',
-  'promptTemplate',
-  'playbook',
-  'terminalPreference',
+  'message',
   'unattended',
   'limits',
   'trigger',
@@ -75,7 +73,8 @@ function renderBody(job: ScheduledJob): string {
     `# Schedule: ${describeTrigger(job.trigger)}`,
     '',
     `- Assignment: \`${job.assignmentId}\``,
-    `- Agent: \`${job.agentId}\``,
+    `- Agent: ${job.agentId ? `\`${job.agentId}\`` : '(the assignment default)'}`,
+    `- Message: ${job.message}`,
     `- Mode: ${job.unattended ? 'unattended' : 'interactive'}`,
     `- State: \`${job.attempt.state}\``,
   ];
@@ -126,6 +125,24 @@ export function parseJobFile(content: string): ScheduledJob {
   return validateJob(raw);
 }
 
+/**
+ * A phase-3 job file carries `promptTemplate` / `playbook` /
+ * `terminalPreference` and no `message`. Backward compatibility is waived
+ * (Decision 3): rather than migrate it into a chat message nobody chose, refuse
+ * it by name so the release note's "rewrite your schedules" is what happens.
+ */
+function requireMessage(raw: Record<string, unknown>): string {
+  const value = raw.message;
+  if (typeof value === 'string' && value.trim().length > 0) return value;
+  if ('promptTemplate' in raw || 'terminalPreference' in raw || 'playbook' in raw) {
+    throw new ScheduleParseError(
+      'Field `message` is missing — this is a pre-chat schedule (it still has `promptTemplate`/`playbook`/`terminalPreference`). ' +
+        'Schedules now post a chat message; delete this job and recreate it with `--message`.',
+    );
+  }
+  throw new ScheduleParseError('Field `message` is missing or invalid');
+}
+
 function req<T>(raw: Record<string, unknown>, key: string, check: (v: unknown) => v is T): T {
   const v = raw[key];
   if (!check(v)) throw new ScheduleParseError(`Field \`${key}\` is missing or invalid`);
@@ -142,10 +159,8 @@ function validateJob(raw: Record<string, unknown>): ScheduledJob {
   const job: ScheduledJob = {
     id: req(raw, 'id', isString),
     assignmentId: req(raw, 'assignmentId', isString),
-    agentId: req(raw, 'agentId', isString),
-    promptTemplate: req(raw, 'promptTemplate', isStringOrNull),
-    playbook: req(raw, 'playbook', isStringOrNull),
-    terminalPreference: req(raw, 'terminalPreference', isStringOrNull) as ScheduledJob['terminalPreference'],
+    agentId: req(raw, 'agentId', isStringOrNull),
+    message: requireMessage(raw),
     unattended: req(raw, 'unattended', isBool),
     limits: req(raw, 'limits', isObject) as unknown as UnattendedLimits,
     trigger: req(raw, 'trigger', isObject) as unknown as JobTrigger,
@@ -190,8 +205,11 @@ export async function listJobs(): Promise<ScheduledJob[]> {
     if (!name.endsWith('.md')) continue;
     try {
       jobs.push(parseJobFile(await readFile(resolve(schedulesDir(), name), 'utf-8')));
-    } catch {
-      // A corrupt/half-written file must not poison the whole sweep.
+    } catch (err) {
+      // A corrupt/half-written file must not poison the whole sweep — but it
+      // must not vanish silently either. A pre-chat job (no `message`) lands
+      // here after upgrading, and the user needs to be told which file to fix.
+      console.error(`syntaur: skipping schedule ${name}: ${err instanceof Error ? err.message : String(err)}`);
     }
   }
   jobs.sort((a, b) => (a.createdAt < b.createdAt ? -1 : a.createdAt > b.createdAt ? 1 : 0));

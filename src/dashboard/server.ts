@@ -86,6 +86,7 @@ import { createStatusConfigRouter, createWorkflowConfigRouter } from './api-stat
 import { createLeasesRouter } from './api-leases.js';
 import { createSchedulesRouter } from './api-schedules.js';
 import { runTick } from '../schedules/tick.js';
+import { inProcessDispatcher } from '../schedules/dispatch.js';
 import { createUsageRouter } from './api-usage.js';
 import { createEventsRouter } from './api-events.js';
 import { createInboxRouter } from './api-inbox.js';
@@ -764,7 +765,6 @@ export function createDashboardServer(options: DashboardServerOptions) {
 
   // --- Leases API ---
   app.use('/api/leases', createLeasesRouter(broadcast));
-  app.use('/api/schedules', createSchedulesRouter(broadcast));
 
   // --- Usage API (per-assignment / per-project token usage rollups) ---
   app.use('/api/usage', createUsageRouter(projectsDir, assignmentsDir));
@@ -788,6 +788,16 @@ export function createDashboardServer(options: DashboardServerOptions) {
     broadcast: (message) => broadcast(message as WsMessage),
   });
   app.use('/api', createChatRouter(projectsDir, assignmentsDir, { broker: chatBroker }));
+
+  // --- Schedules API ---
+  // Mounted after the broker: a schedule fires by posting into an assignment's
+  // chat (Decision 3), so `kill` needs the in-process dispatcher to withdraw a
+  // queued message or cancel a running turn.
+  const chatDispatcher = inProcessDispatcher({
+    broker: chatBroker,
+    resolveAssignment: (id) => resolveAssignmentById(projectsDir, assignmentsDir, id),
+  });
+  app.use('/api/schedules', createSchedulesRouter(broadcast, { chat: chatDispatcher }));
 
   // --- Agent Sessions API ---
   app.use(
@@ -973,7 +983,7 @@ export function createDashboardServer(options: DashboardServerOptions) {
           return;
         }
         accelTickRunning = true;
-        void runTick({ reap: false })
+        void runTick({ reap: false, chatBroker })
           .catch(() => {})
           .finally(() => {
             accelTickRunning = false;
