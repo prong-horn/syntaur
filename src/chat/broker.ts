@@ -67,7 +67,7 @@ import {
   upsertChatSession,
 } from '../db/chat-db.js';
 import { adapterVersion as readAdapterVersion, spawnAcpClient, type AcpClient } from './acp-client.js';
-import { commandsEqual, parseAvailableCommands, type ChatCommand, type ChatCommandsSource } from './commands.js';
+import { commandsEqual, detectCommand, parseAvailableCommands, type ChatCommand, type ChatCommandsSource } from './commands.js';
 import { loadAgentDefinitions, resolveAgent, toAgentSummary } from './agents.js';
 import { readParticipants, writeParticipants } from './participants.js';
 import { DEFAULT_HOP_BUDGET, parseMentions, routeAgentReply, routeHuman } from './router.js';
@@ -75,6 +75,7 @@ import { HARNESSES, probeAuth, resolveCommand } from './harnesses.js';
 import { ChatNormalizer } from './normalizer.js';
 import { applyProfile, newSessionMeta, profileEnv, profileForTier, resolveSessionProfile, serializeProfile } from './profile.js';
 import {
+  buildCommandPrompt,
   buildStandingContext,
   buildTurnPrompt,
   selectChatHistory,
@@ -1307,7 +1308,7 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
       if (typeof value !== 'string') continue;
       if (id === session.harness.configIds.model) session.model = value;
       else if (id === session.harness.configIds.effort) session.effort = value;
-      else if (id === 'mode') session.mode = value;
+      else if (id === 'mode' || id === 'collaboration_mode') session.mode = value;
     }
   }
 
@@ -1548,6 +1549,52 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
     return { ...selection, highestSeq: highest >= 0 ? highest : null };
   }
 
+  /** One internal turn that delivers standing context before a first slash command (Task 2a). */
+  async function deliverStandingAck(session: Session): Promise<void> {
+    const turnId = randomUUID();
+    const startedAt = iso();
+    const tokensAtOpen = snapshotOf(session);
+    const engagement = openEngagement({
+      sessionId: session.acpSessionId!,
+      assignmentId: session.assignment.id,
+      projectSlug: session.assignment.projectSlug,
+      assignmentSlug: session.assignment.assignmentSlug,
+      stage: 'chat',
+      startedAt,
+      tokensAtOpen,
+    });
+    const turn: InFlightTurn = {
+      turnId,
+      trigger: { kind: 'human', messageId: `standing:${turnId}` },
+      startedAt,
+      startedMs: now(),
+      engagementId: engagement.id,
+      engagementStartedAt: engagement.started_at,
+      reportedCumulativeCost: null,
+      costAtOpen: session.cumulative.models[modelKey(session)]?.cost ?? 0,
+      idleTimer: null,
+      maxTimer: null,
+      cancelled: false,
+      deliveredSeqCandidate: session.lastDeliveredSeq,
+    };
+    session.inFlight = turn;
+    await record(session, 'turn.start', { trigger: turn.trigger, startedAt }, turnId);
+    const standing = await buildStanding(session);
+    const blocks = buildTurnPrompt(
+      { author: 'human', text: 'OK', ts: new Date(now()) },
+      { standing },
+    );
+    session.standingSent = true;
+    let response: acp.PromptResponse | null = null;
+    let failure: Error | null = null;
+    try {
+      response = await session.client!.prompt(session.acpSessionId!, blocks);
+    } catch (err) {
+      failure = err instanceof Error ? err : new Error(String(err));
+    }
+    await finishTurn(session, turn, response, failure);
+  }
+
   async function driveOnce(session: Session): Promise<void> {
     if (stopping) return;
     if (session.inFlight) return; // Decision 6 — one prompt in flight, always
@@ -1567,6 +1614,15 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
     }
 
     if (session.queue[0] !== next) return; // withdrawn while the adapter came up
+
+    const { participants } = await routingContext(session.assignment);
+    const humanCommand =
+      next.trigger.kind === 'human' ? detectCommand(next.text, participants.agents) : null;
+
+    // Task 2a: a slash command must be the only prompt block; standing goes in its own turn.
+    if (humanCommand && !session.standingSent) {
+      await deliverStandingAck(session);
+    }
 
     const turnId = randomUUID();
     const startedAt = iso();
@@ -1625,22 +1681,47 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
     // TWO-PHASE: the candidate is computed here, with the prompt, and committed
     // only when the turn ends without an error — a prompt that never reached the
     // agent must be re-delivered, not skipped.
-    const history = await buildHistory(session, next.trigger);
-    turn.deliveredSeqCandidate = history.highestSeq;
+    const history = humanCommand ? null : await buildHistory(session, next.trigger);
+    turn.deliveredSeqCandidate = humanCommand ? session.lastDeliveredSeq : history!.highestSeq;
 
-    let blocks: ContentBlock[];
-    try {
-      const standing = session.standingSent ? undefined : await buildStanding(session);
-      blocks = buildTurnPrompt(promptTrigger(session, next), { standing, history });
-      // Sent once per adapter session (§2.4); a later turn carries only the
-      // trigger and the history the session has not seen.
-      session.standingSent = true;
-    } catch (err) {
-      blocks = buildTurnPrompt(promptTrigger(session, next), { history });
-      await record(session, 'system', {
-        level: 'warn',
-        text: `Could not build the standing context: ${(err as Error).message}`,
-      });
+    const matchedCommand = humanCommand
+      ? session.commands.find((c) => c.name === humanCommand.name) ?? null
+      : null;
+
+    let blocks: ContentBlock[] | null = null;
+    let configResponse: acp.SetSessionConfigOptionResponse | null = null;
+    if (humanCommand) {
+      if (matchedCommand?.action.kind === 'set-config') {
+        try {
+          configResponse = await session.client!.setConfigOption(
+            session.acpSessionId!,
+            matchedCommand.action.configId,
+            matchedCommand.action.value,
+          );
+          readSessionConfig(session, configResponse);
+        } catch (err) {
+          await record(session, 'system', {
+            level: 'warn',
+            text: (err as Error).message,
+          });
+        }
+      } else {
+        blocks = buildCommandPrompt(humanCommand.line);
+      }
+    } else {
+      try {
+        const standing = session.standingSent ? undefined : await buildStanding(session);
+        blocks = buildTurnPrompt(promptTrigger(session, next), { standing, history: history! });
+        // Sent once per adapter session (§2.4); a later turn carries only the
+        // trigger and the history the session has not seen.
+        session.standingSent = true;
+      } catch (err) {
+        blocks = buildTurnPrompt(promptTrigger(session, next), { history: history! });
+        await record(session, 'system', {
+          level: 'warn',
+          text: `Could not build the standing context: ${(err as Error).message}`,
+        });
+      }
     }
 
     armTurnIdle(session, turn);
@@ -1657,10 +1738,16 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
 
     let response: acp.PromptResponse | null = null;
     let failure: Error | null = null;
-    try {
-      response = await session.client!.prompt(session.acpSessionId!, blocks);
-    } catch (err) {
-      failure = err instanceof Error ? err : new Error(String(err));
+    if (humanCommand && matchedCommand?.action.kind === 'set-config') {
+      const label = `/${humanCommand.name} → ${matchedCommand.action.configId} = ${matchedCommand.action.value}`;
+      await record(session, 'system', { level: 'info', text: label });
+      response = { stopReason: 'end_turn' } as acp.PromptResponse;
+    } else {
+      try {
+        response = await session.client!.prompt(session.acpSessionId!, blocks!);
+      } catch (err) {
+        failure = err instanceof Error ? err : new Error(String(err));
+      }
     }
 
     try {

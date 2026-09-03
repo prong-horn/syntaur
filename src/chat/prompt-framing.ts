@@ -297,6 +297,16 @@ export function buildTurnPrompt(
   return blocks;
 }
 
+/** A slash-command turn: the raw `/name args` line first, optional standing after (Task 2a). */
+export function buildCommandPrompt(
+  line: string,
+  options: { standing?: ContentBlock[] } = {},
+): ContentBlock[] {
+  const blocks: ContentBlock[] = [textBlock(line)];
+  if (options.standing?.length) blocks.push(...options.standing);
+  return blocks;
+}
+
 /**
  * Escaping for text that goes INSIDE a `<chat-event>`: angles so a quote cannot
  * forge a tag, and double quotes so it cannot forge an attribute either.

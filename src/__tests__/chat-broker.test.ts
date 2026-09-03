@@ -1436,3 +1436,96 @@ describe('slash commands', () => {
     expect(summary?.commands[0]?.name).toBe('status');
   });
 });
+
+describe('command turns', () => {
+  const codexPlanCommand = [
+    {
+      name: 'plan',
+      description: 'Turn plan mode on.',
+      input: null,
+      _meta: {
+        commandAction: {
+          kind: 'setConfigOption',
+          configId: 'collaboration_mode',
+          value: 'plan',
+        },
+      },
+    },
+    {
+      name: 'goal',
+      description: 'Set a goal.',
+      input: { hint: '[objective]' },
+      _meta: { commandAction: { kind: 'prefixPrompt' } },
+    },
+  ] as acp.AvailableCommand[];
+
+  it('sends @codex /goal as a single raw block with no chat-event wrapper', async () => {
+    makeBroker({
+      turns: [{ steps: [{ kind: 'update', update: textChunk('done', 'm1') }] }],
+      agentOptions: { availableCommands: codexPlanCommand },
+    });
+    await broker.send({ assignment: assignment(), agentId: 'codex', text: '@codex /goal ship it' });
+    await idle();
+
+    const commandPrompt = fake.prompts.find((p) =>
+      p.prompt.some((b) => b.type === 'text' && (b as { text: string }).text === '/goal ship it'),
+    );
+    expect(commandPrompt).toBeTruthy();
+    expect(commandPrompt!.prompt).toHaveLength(1);
+    expect((commandPrompt!.prompt[0] as { text: string }).text).toBe('/goal ship it');
+  });
+
+  it('leaves lastDeliveredSeq unchanged on a command turn', async () => {
+    makeBroker({
+      turns: [
+        { steps: [{ kind: 'update', update: textChunk('first', 'm1') }] },
+        { steps: [{ kind: 'update', update: textChunk('context', 'm2') }] },
+      ],
+      agentOptions: { availableCommands: [{ name: 'context', description: 'ctx', input: null }] },
+    });
+    await broker.send({ assignment: assignment(), text: 'hello' });
+    await idle();
+    const before = (await broker.getSession(assignment(), 'claude'))!.lastDeliveredSeq;
+
+    await broker.send({ assignment: assignment(), text: '/context' });
+    await idle(2);
+    const afterCommand = (await broker.getSession(assignment(), 'claude'))!.lastDeliveredSeq;
+    expect(afterCommand).toBe(before);
+  });
+
+  it('runs set-config commands client-side with a system row', async () => {
+    makeBroker({
+      turns: [{ steps: [] }],
+      agentOptions: {
+        availableCommands: codexPlanCommand,
+        configOptions: [{ id: 'collaboration_mode', currentValue: 'default' }] as never,
+        setConfigOptionResponse: {
+          configOptions: [{ id: 'collaboration_mode', currentValue: 'plan' }],
+        } as never,
+      },
+    });
+    await broker.send({ assignment: assignment(), agentId: 'codex', text: '/plan' });
+    await idle();
+
+    expect(fake.configCalls.some((c) => c.method === 'session/set_config_option')).toBe(true);
+    const systems = itemsOfType('system') as Array<{ text: string }>;
+    expect(systems.some((s) => s.text.includes('collaboration_mode = plan'))).toBe(true);
+    expect((await broker.getSession(assignment(), 'codex'))?.mode).toBe('plan');
+    expect(fake.prompts.some((p) => p.prompt.some((b) => (b as { text?: string }).text?.startsWith('/plan')))).toBe(
+      false,
+    );
+  });
+
+  it('sends an unlisted /command as raw text', async () => {
+    makeBroker({
+      turns: [{ steps: [{ kind: 'update', update: textChunk('ok', 'm1') }] }],
+      agentOptions: { availableCommands: [] },
+    });
+    await broker.send({ assignment: assignment(), text: '/nope' });
+    await idle();
+    const nopePrompt = fake.prompts.find((p) =>
+      p.prompt.some((b) => b.type === 'text' && (b as { text: string }).text === '/nope'),
+    );
+    expect((nopePrompt!.prompt[0] as { text: string }).text).toBe('/nope');
+  });
+});
