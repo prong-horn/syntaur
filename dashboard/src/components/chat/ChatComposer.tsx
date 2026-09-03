@@ -1,28 +1,35 @@
 import { useRef, useState } from 'react';
 import { Loader2, Send } from 'lucide-react';
 import { applySuggestion, detectActiveToken } from '../../lib/mention-autocomplete';
+import {
+  addressedAgentId,
+  applyCommand,
+  detectActiveCommand,
+  rankCommands,
+} from '../../lib/command-autocomplete';
 import { agentColorClasses, rankAgentTokens } from '../../lib/chat-format';
 import { cn } from '../../lib/utils';
-import type { ChatAgentSummary } from '../../lib/chat-types';
+import type { ChatAgentSummary, ChatCommand, ChatCommandsSource } from '../../lib/chat-types';
 
 /**
- * The composer, with `@agent` autocomplete over the ATTACHED agents.
- *
- * Tokenizing and insertion are the shared mention primitives
- * (`detectActiveToken` / `applySuggestion`), so what the box offers and what
- * `parseMentions` reads on the server are the same grammar: `@` at start or
- * after whitespace, then `[A-Za-z0-9_-]+`. Only the ranking differs — the
- * candidates here are agents, not playbooks.
+ * The composer, with `@agent` and `/command` autocomplete over the ATTACHED agents.
  */
 
 export interface ChatComposerProps {
   agents: ChatAgentSummary[];
   defaultAgentId: string | null;
+  commandsByAgent: Map<string, { commands: ChatCommand[]; source: ChatCommandsSource | null }>;
   disabled?: boolean;
   onSend: (text: string) => Promise<void>;
 }
 
-export function ChatComposer({ agents, defaultAgentId, disabled, onSend }: ChatComposerProps) {
+export function ChatComposer({
+  agents,
+  defaultAgentId,
+  commandsByAgent,
+  disabled,
+  onSend,
+}: ChatComposerProps) {
   const [draft, setDraft] = useState('');
   const [caret, setCaret] = useState(0);
   const [selected, setSelected] = useState(0);
@@ -30,20 +37,43 @@ export function ChatComposer({ agents, defaultAgentId, disabled, onSend }: ChatC
   const [sending, setSending] = useState(false);
   const ref = useRef<HTMLTextAreaElement>(null);
 
-  const active = detectActiveToken(draft, caret);
-  const suggestions = active ? rankAgentTokens(active.partial, agents.map((a) => a.id)) : [];
-  const showPopup = !dismissed && suggestions.length > 0;
+  const attachedIds = agents.map((a) => a.id);
+  const activeMention = detectActiveToken(draft, caret);
+  const activeCommand = activeMention ? null : detectActiveCommand(draft, caret, attachedIds);
+  const mentionSuggestions = activeMention ? rankAgentTokens(activeMention.partial, attachedIds) : [];
+  const addressedId = addressedAgentId(draft, attachedIds, defaultAgentId);
+  const commandState = addressedId ? commandsByAgent.get(addressedId) : undefined;
+  const commandSuggestions =
+    activeCommand && commandState ? rankCommands(activeCommand.partial, commandState.commands) : [];
+  const popupKind = activeMention && mentionSuggestions.length > 0 ? 'mention' : activeCommand ? 'command' : null;
+  const suggestions = popupKind === 'mention' ? mentionSuggestions : commandSuggestions.map((c) => c.name);
+  const showPopup = !dismissed && popupKind !== null && suggestions.length > 0;
+  const showCommandEmpty = !dismissed && activeCommand && commandSuggestions.length === 0;
   const activeIndex = Math.min(selected, Math.max(0, suggestions.length - 1));
   const canSend = draft.trim().length > 0 && !sending && !disabled;
 
-  function apply(id: string | undefined): void {
-    if (!active || !id) return;
-    const result = applySuggestion(draft, active, id);
+  function applyMention(id: string | undefined): void {
+    if (!activeMention || !id) return;
+    const result = applySuggestion(draft, activeMention, id);
     setDraft(result.text);
     setCaret(result.caret);
     setSelected(0);
-    // The caret lands inside the token just inserted, which would re-open the
-    // popup at once — keep it closed until the user types again.
+    setDismissed(true);
+    requestAnimationFrame(() => {
+      const el = ref.current;
+      if (el) {
+        el.focus();
+        el.setSelectionRange(result.caret, result.caret);
+      }
+    });
+  }
+
+  function applyCommandSuggestion(name: string | undefined): void {
+    if (!activeCommand || !name) return;
+    const result = applyCommand(draft, activeCommand, name);
+    setDraft(result.text);
+    setCaret(result.caret);
+    setSelected(0);
     setDismissed(true);
     requestAnimationFrame(() => {
       const el = ref.current;
@@ -82,7 +112,8 @@ export function ChatComposer({ agents, defaultAgentId, disabled, onSend }: ChatC
       }
       if (event.key === 'Enter' || event.key === 'Tab') {
         event.preventDefault();
-        apply(suggestions[activeIndex]);
+        if (popupKind === 'mention') applyMention(suggestions[activeIndex]);
+        else applyCommandSuggestion(suggestions[activeIndex]);
         return;
       }
       if (event.key === 'Escape') {
@@ -91,7 +122,6 @@ export function ChatComposer({ agents, defaultAgentId, disabled, onSend }: ChatC
         return;
       }
     }
-    // Enter sends, Shift+Enter is a newline — the chat convention.
     if (event.key === 'Enter' && !event.shiftKey) {
       event.preventDefault();
       void submit();
@@ -102,8 +132,10 @@ export function ChatComposer({ agents, defaultAgentId, disabled, onSend }: ChatC
     agents.length === 0
       ? 'No agents are attached — open “Manage agents” to add one'
       : defaultAgentId
-        ? `Message @${defaultAgentId} or mention an agent… (Enter to send, Shift+Enter for a newline)`
+        ? `Message @${defaultAgentId}, type / for commands… (Enter to send, Shift+Enter for a newline)`
         : 'Mention an agent to start… (Enter to send, Shift+Enter for a newline)';
+
+  const addressedAgent = addressedId ? agents.find((a) => a.id === addressedId) : undefined;
 
   return (
     <div className="flex items-end gap-2">
@@ -131,40 +163,74 @@ export function ChatComposer({ agents, defaultAgentId, disabled, onSend }: ChatC
             role="listbox"
             className="absolute bottom-full left-0 right-0 z-30 mb-1 max-h-48 overflow-auto rounded-md border border-border/70 bg-background py-1 shadow-lg"
           >
-            {suggestions.map((id, index) => {
-              const agent = agents.find((a) => a.id === id);
-              return (
-                <li key={id}>
-                  <button
-                    type="button"
-                    role="option"
-                    aria-selected={index === activeIndex}
-                    onMouseDown={(event) => {
-                      // mousedown (not click) so the textarea keeps focus.
-                      event.preventDefault();
-                      apply(id);
-                    }}
-                    className={cn(
-                      'flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-sm transition-colors hover:bg-accent',
-                      index === activeIndex && 'bg-accent',
-                    )}
-                  >
-                    <span
+            {popupKind === 'command' && addressedAgent && (
+              <li className="px-2.5 py-1 text-[10px] uppercase tracking-wide text-muted-foreground">
+                Commands · @{addressedAgent.id} · {commandState?.commands.length ?? 0}
+                {commandState?.source === 'harness-cache' ? ' · cached' : ''}
+              </li>
+            )}
+            {popupKind === 'mention'
+              ? suggestions.map((id, index) => {
+                  const agent = agents.find((a) => a.id === id);
+                  return (
+                    <li key={id}>
+                      <button
+                        type="button"
+                        role="option"
+                        aria-selected={index === activeIndex}
+                        onMouseDown={(event) => {
+                          event.preventDefault();
+                          applyMention(id);
+                        }}
+                        className={cn(
+                          'flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-sm transition-colors hover:bg-accent',
+                          index === activeIndex && 'bg-accent',
+                        )}
+                      >
+                        <span
+                          className={cn(
+                            'flex h-5 w-5 items-center justify-center rounded text-[10px] font-medium',
+                            agentColorClasses(agent?.color ?? 'slate'),
+                          )}
+                          aria-hidden
+                        >
+                          {agent?.avatar ?? '?'}
+                        </span>
+                        <span className="font-mono">@{id}</span>
+                        <span className="truncate text-xs text-muted-foreground">{agent?.name}</span>
+                      </button>
+                    </li>
+                  );
+                })
+              : commandSuggestions.map((command, index) => (
+                  <li key={command.name}>
+                    <button
+                      type="button"
+                      role="option"
+                      aria-selected={index === activeIndex}
+                      onMouseDown={(event) => {
+                        event.preventDefault();
+                        applyCommandSuggestion(command.name);
+                      }}
                       className={cn(
-                        'flex h-5 w-5 items-center justify-center rounded text-[10px] font-medium',
-                        agentColorClasses(agent?.color ?? 'slate'),
+                        'flex w-full flex-col items-start gap-0.5 px-2.5 py-1.5 text-left text-sm transition-colors hover:bg-accent',
+                        index === activeIndex && 'bg-accent',
                       )}
-                      aria-hidden
                     >
-                      {agent?.avatar ?? '?'}
-                    </span>
-                    <span className="font-mono">@{id}</span>
-                    <span className="truncate text-xs text-muted-foreground">{agent?.name}</span>
-                  </button>
-                </li>
-              );
-            })}
+                      <span className="font-mono">/{command.name}</span>
+                      <span className="line-clamp-1 text-xs text-muted-foreground">{command.description}</span>
+                      {command.inputHint && (
+                        <span className="font-mono text-[10px] text-muted-foreground">{command.inputHint}</span>
+                      )}
+                    </button>
+                  </li>
+                ))}
           </ul>
+        )}
+        {showCommandEmpty && addressedId && (
+          <div className="absolute bottom-full left-0 right-0 z-30 mb-1 rounded-md border border-border/70 bg-background px-2.5 py-2 text-xs text-muted-foreground shadow-lg">
+            No commands advertised by @{addressedId} yet
+          </div>
         )}
       </div>
       <button

@@ -13,7 +13,7 @@ import { EmptyState } from '../EmptyState';
 import { AgentPickerPanel } from './AgentPickerPanel';
 import { ChatComposer } from './ChatComposer';
 import { ChatItemView, PlanCard } from './items';
-import type { AgentPlanItem, ChatAgentSummary, ChatSessionState } from '../../lib/chat-types';
+import type { AgentPlanItem, ChatAgentSummary, ChatCommand, ChatCommandsSource, ChatSessionState } from '../../lib/chat-types';
 
 /**
  * The Chat tab: one chip per attached agent, a scrolling item list, a pinned
@@ -83,6 +83,14 @@ export function ChatTab({ assignmentId }: ChatTabProps) {
     activity,
   ]);
   const missing = attached.filter((agent) => agent.missing);
+
+  const commandsByAgent = useMemo(() => {
+    const map = new Map<string, { commands: ChatCommand[]; source: ChatCommandsSource | null }>();
+    for (const [agentId, session] of sessions) {
+      map.set(agentId, { commands: session.commands ?? [], source: session.commandsSource ?? null });
+    }
+    return map;
+  }, [sessions]);
 
   // Follow the stream only while the reader is already at the bottom, so
   // scrolling back through history is not yanked away by the next chunk.
@@ -236,6 +244,7 @@ export function ChatTab({ assignmentId }: ChatTabProps) {
         <ChatComposer
           agents={attached}
           defaultAgentId={participants?.defaultAgent ?? null}
+          commandsByAgent={commandsByAgent}
           disabled={attached.length === 0}
           onSend={(text) => send(text)}
         />
