@@ -3,6 +3,9 @@ import { mkdtemp, mkdir, rm } from 'node:fs/promises';
 import { homedir, tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { resolveChatCwd } from '../chat/chat-cwd.js';
+import { profileForTier, resolveSessionProfile } from '../chat/profile.js';
+import { HARNESSES } from '../chat/harnesses.js';
+import type { AgentDefinition } from '../chat/types.js';
 
 describe('resolveChatCwd', () => {
   let base: string;
@@ -109,5 +112,38 @@ describe('resolveChatCwd', () => {
       projectRepositories: [projectRepo],
     });
     expect(r.tier).toBe('worktree');
+  });
+});
+
+describe('profileForTier', () => {
+  const definition = (mode?: string): AgentDefinition => ({
+    id: 'claude',
+    name: 'Claude',
+    color: 'violet',
+    harness: 'claude',
+    ...(mode ? { mode } : {}),
+    respondsTo: 'mentions',
+    default: true,
+    systemPrompt: '',
+    source: null,
+  });
+
+  it('pins `ask` at the home tier when the definition leaves mode unset', () => {
+    const profile = resolveSessionProfile(definition(), HARNESSES.claude);
+    expect(profile.mode.kind).toBe('inherit');
+    const effective = profileForTier(profile, 'home');
+    expect(effective.mode).toEqual({ kind: 'pinned', value: 'ask' });
+    // Pure: the session's own profile is untouched, so a later worktree tier
+    // gets the definition's mode back.
+    expect(profile.mode.kind).toBe('inherit');
+  });
+
+  it('keeps a pinned mode at the home tier and leaves other tiers alone', () => {
+    const pinned = resolveSessionProfile(definition('edits'), HARNESSES.claude);
+    expect(profileForTier(pinned, 'home')).toBe(pinned);
+    const inherit = resolveSessionProfile(definition(), HARNESSES.claude);
+    for (const tier of ['worktree', 'repository', 'project', null] as const) {
+      expect(profileForTier(inherit, tier)).toBe(inherit);
+    }
   });
 });

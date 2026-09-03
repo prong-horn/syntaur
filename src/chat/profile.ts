@@ -23,6 +23,7 @@ import {
   type AppliedProfile,
   type HarnessSpec,
   type SessionProfile,
+  type CwdTier,
 } from './types.js';
 
 /** Every field inherits unless the definition sets it. */
@@ -144,4 +145,18 @@ export function parseProfile(json: string | null): SessionProfile | null {
   } catch {
     return null;
   }
+}
+
+/**
+ * The profile a session actually runs with at a given cwd tier. At the `home`
+ * tier a definition with no pinned mode opens in the read-only `ask` role:
+ * codex's `agent` mode auto-approves inside a sandbox whose root would be the
+ * whole home directory. Pure — the session's own profile is never mutated, so
+ * a worktree created later gets the definition's mode back.
+ */
+export function profileForTier(profile: SessionProfile, tier: CwdTier | null): SessionProfile {
+  if (tier === 'home' && profile.mode.kind === 'inherit') {
+    return { ...profile, mode: pin('ask') };
+  }
+  return profile;
 }

@@ -112,6 +112,12 @@ export function ChatTab({ assignmentId }: ChatTabProps) {
     );
   }
 
+  // Where the agents run: the default agent's session, else any session that
+  // has resolved a directory. Every agent in one chat resolves the same chain.
+  const cwdSession =
+    (participants?.defaultAgent ? sessions.get(participants.defaultAgent) : undefined) ??
+    [...sessions.values()].find((s) => s.cwd);
+
   return (
     <div className="flex h-[calc(100vh-18rem)] min-h-[26rem] flex-col gap-3">
       <div className="flex flex-wrap items-center gap-2">
@@ -151,6 +157,14 @@ export function ChatTab({ assignmentId }: ChatTabProps) {
           Manage agents
         </button>
       </div>
+      {cwdSession?.cwd && (
+        <div className="px-1 text-xs text-muted-foreground" data-testid="chat-cwd">
+          Running in <code className="font-mono">{cwdSession.cwd}</code>
+          {cwdSession.cwdTier ? ` (${cwdSession.cwdTier})` : ''}
+          {cwdSession.cwdTier === 'home' &&
+            ' — no worktree on this assignment; create one from the assignment header.'}
+        </div>
+      )}
 
       {missing.map((agent) => (
         <div

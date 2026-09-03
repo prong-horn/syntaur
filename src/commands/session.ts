@@ -2,7 +2,7 @@ import { Command } from 'commander';
 import { readFile, readdir, stat } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { fileExists, writeFileForce } from '../utils/fs.js';
-import { assignmentsDir, expandHome } from '../utils/paths.js';
+import { assignmentsDir, expandHome, syntaurRoot } from '../utils/paths.js';
 import { readConfig, type SessionAutoTrack } from '../utils/config.js';
 import { nowTimestamp } from '../utils/timestamp.js';
 import { assertMayMutate, isSafeSessionId, resolveOwnSessionId } from '../utils/session-id.js';
@@ -534,7 +534,15 @@ export async function runSessionRegister(
   // session never inherits a stale path), and resolve the newest-mtime
   // session summary for mid-assignment continuity.
   const contextPath = resolve(cwd, '.syntaur', 'context.json');
-  const hasContextFile = await fileExists(contextPath);
+  // Two cases are never a workspace marker: a chat session the broker spawned
+  // at the home tier (it sets SYNTAUR_SKIP_CONTEXT_MERGE=1), and
+  // `<syntaurRoot>/context.json` itself — the Syntaur home is not a workspace,
+  // so a session started in `~` must neither merge into that file nor be
+  // tracked as if it were inside a workspace.
+  const skipMerge =
+    process.env.SYNTAUR_SKIP_CONTEXT_MERGE === '1' ||
+    contextPath === resolve(syntaurRoot(), 'context.json');
+  const hasContextFile = !skipMerge && (await fileExists(contextPath));
   const ctx = hasContextFile ? await readContext(cwd) : null;
   if (ctx) {
     try {

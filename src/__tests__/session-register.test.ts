@@ -103,6 +103,42 @@ describe('runSessionRegister', () => {
     expect(ctx.projectSlug).toBe('proj-1'); // context scalar untouched (markers, not auth)
   });
 
+  it('skips the context.json merge (but still registers) when SYNTAUR_SKIP_CONTEXT_MERGE=1', async () => {
+    // The chat broker sets this for a session it spawned at the home tier, so
+    // the SessionStart hook never rewrites an unrelated workspace marker.
+    await mkdir(join(cwd, '.syntaur'), { recursive: true });
+    const original = JSON.stringify({ projectSlug: 'proj-1', sessionId: 'previous-session' });
+    await writeFile(join(cwd, '.syntaur', 'context.json'), original);
+    process.env.SYNTAUR_SKIP_CONTEXT_MERGE = '1';
+    try {
+      const result = await runSessionRegister(payload(), {}, DEPS);
+      expect(result.merged).toBe(false);
+      expect(result.registered).toBe(true);
+    } finally {
+      delete process.env.SYNTAUR_SKIP_CONTEXT_MERGE;
+    }
+    expect(await readFile(join(cwd, '.syntaur', 'context.json'), 'utf-8')).toBe(original);
+  });
+
+  it('never treats <syntaurRoot>/context.json as a workspace marker', async () => {
+    // A session started in `~` finds `~/.syntaur/context.json`; the Syntaur home
+    // is not a workspace, so that file is neither merged into nor a tracking gate.
+    const previousHome = process.env.SYNTAUR_HOME;
+    process.env.SYNTAUR_HOME = join(cwd, '.syntaur');
+    await mkdir(join(cwd, '.syntaur'), { recursive: true });
+    const original = JSON.stringify({ projectSlug: 'proj-1', sessionId: 'previous-session' });
+    await writeFile(join(cwd, '.syntaur', 'context.json'), original);
+    try {
+      const result = await runSessionRegister(payload(), {}, { ...DEPS, autoTrack: 'workspaces-only' });
+      expect(result.merged).toBe(false);
+      expect(result.registered).toBe(false);
+    } finally {
+      if (previousHome === undefined) delete process.env.SYNTAUR_HOME;
+      else process.env.SYNTAUR_HOME = previousHome;
+    }
+    expect(await readFile(join(cwd, '.syntaur', 'context.json'), 'utf-8')).toBe(original);
+  });
+
   it('nulls a stale transcriptPath when the payload omits transcript_path', async () => {
     await mkdir(join(cwd, '.syntaur'), { recursive: true });
     await writeFile(

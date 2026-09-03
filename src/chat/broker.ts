@@ -71,7 +71,7 @@ import { readParticipants, writeParticipants } from './participants.js';
 import { DEFAULT_HOP_BUDGET, parseMentions, routeAgentReply, routeHuman } from './router.js';
 import { HARNESSES, probeAuth, resolveCommand } from './harnesses.js';
 import { ChatNormalizer } from './normalizer.js';
-import { applyProfile, newSessionMeta, profileEnv, resolveSessionProfile, serializeProfile } from './profile.js';
+import { applyProfile, newSessionMeta, profileEnv, profileForTier, resolveSessionProfile, serializeProfile } from './profile.js';
 import {
   buildStandingContext,
   buildTurnPrompt,
@@ -79,7 +79,7 @@ import {
   type TurnPromptTrigger,
 } from './prompt-framing.js';
 import { openChatLog, type ChatLog } from './store.js';
-import { HUMAN_AGENT_ID, SYSTEM_AGENT_ID, pin } from './types.js';
+import { HUMAN_AGENT_ID, SYSTEM_AGENT_ID } from './types.js';
 import type {
   AgentDefinition,
   AgentMessageItem,
@@ -1087,7 +1087,7 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
       args: [...session.harness.args],
       cwd,
       env: {
-        ...profileEnv(session.profile),
+        ...profileEnv(profileForTier(session.profile, session.cwdTier)),
         // Prevent the SessionStart hook from merging into ~/.syntaur/context.json
         // when the session is running from the home directory.
         ...(session.cwdTier === 'home' ? { SYNTAUR_SKIP_CONTEXT_MERGE: '1' } : {}),
@@ -1109,10 +1109,9 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
     const cwd = await resolveCwd(session);
     session.cwd = cwd;
 
-    // Home-tier mode override: default to `ask` when the definition has no pinned mode.
-    if (session.cwdTier === 'home' && session.profile.mode.kind === 'inherit') {
-      session.profile = { ...session.profile, mode: pin('ask') };
-    }
+    // The home tier runs read-only unless the definition pins a mode; see
+    // `profileForTier`. It is applied where the profile is USED, never stored,
+    // so a later move to a worktree restores the definition's own mode.
 
     // Emit a system row when the cwd/tier changes (e.g. worktree created later).
     if (previousCwd && previousCwd !== cwd) {
@@ -1181,14 +1180,15 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
         cwd,
       }, null);
     } else {
-      const meta = newSessionMeta(session.profile, session.harness, session.definition.systemPrompt);
+      const profile = profileForTier(session.profile, session.cwdTier);
+      const meta = newSessionMeta(profile, session.harness, session.definition.systemPrompt);
       const created = await client.newSession({ cwd, mcpServers: meta.mcpServers, _meta: meta._meta });
       session.acpSessionId = created.sessionId;
       readSessionConfig(session, created);
       const { applied, errors } = await applyProfile(
         client,
         created.sessionId,
-        session.profile,
+        profile,
         session.harness,
       );
       if (applied.mode) session.mode = applied.mode;

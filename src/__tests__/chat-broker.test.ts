@@ -41,6 +41,7 @@ let worktree: string;
 let broker: ChatBroker;
 let fake: FakeAgent;
 let clients: AcpClient[];
+let spawns: Array<{ cwd: string; env: Record<string, string> | undefined }> = [];
 let frames: Array<{ type: string; payload: unknown }>;
 
 const ASSIGNMENT_ID = 'f71fedf9-e696-4149-ab99-c6e60cdca77b';
@@ -98,6 +99,7 @@ function makeBroker(options: { turns?: FakeTurn[]; agentOptions?: Parameters<typ
       onUpdate: input.onUpdate,
       onPermissionRequest: input.onPermissionRequest,
     });
+    spawns.push({ cwd: input.cwd, env: input.env });
     clients.push(client);
     return client;
   };
@@ -145,6 +147,7 @@ beforeEach(async () => {
   await writeAssignment();
   await writeFile(join(assignmentDir, 'progress.md'), '# Progress\n\nnothing yet\n', 'utf-8');
   clients = [];
+  spawns = [];
   frames = [];
   closeSessionDb();
   closeUsageDb();
@@ -235,6 +238,12 @@ describe('first message', () => {
     await idle();
     const { homedir } = await import('node:os');
     expect(fake.newSessionRequests[0].cwd).toBe(homedir());
+    // The home tier is read-only unless the definition pins a mode: claude's
+    // `ask` role id is `default`, applied through session/set_mode.
+    expect(fake.calls).toContain('session/set_mode');
+    expect((await broker.getSession(assignment(), 'claude'))?.mode).toBe('default');
+    // And the SessionStart hook is told not to merge into ~/.syntaur/context.json.
+    expect(spawns[0]?.env?.SYNTAUR_SKIP_CONTEXT_MERGE).toBe('1');
   });
 
   it('falls back to the repository when the worktree is missing', async () => {
@@ -243,6 +252,8 @@ describe('first message', () => {
     await broker.send({ assignment: assignment(), text: 'hi' });
     await idle();
     expect(fake.newSessionRequests[0].cwd).toBe(worktree);
+    expect(spawns[0]?.env?.SYNTAUR_SKIP_CONTEXT_MERGE).toBeUndefined();
+    expect(fake.calls).not.toContain('session/set_mode');
   });
 });
 

@@ -79,13 +79,10 @@ syntaur_plugin_drift_warn || true
 # liveness probe that no longer exists: `sessions.pid` was dropped in schema v11
 # and liveness is now `status === 'active'` plus the stale sweep (Decision 4).
 #
-# Skip context.json merge when running from the home directory (the chat broker
-# sets SYNTAUR_SKIP_CONTEXT_MERGE=1 for home-tier sessions to prevent writing
-# to ~/.syntaur/context.json, which is an unrelated workspace marker).
-CWD_FROM_INPUT=$(printf '%s' "$INPUT" | jq -r '.cwd // empty' 2>/dev/null)
-if [ "${SYNTAUR_SKIP_CONTEXT_MERGE:-}" = "1" ] || [ "$CWD_FROM_INPUT" = "$HOME" ]; then
-  exit 0
-fi
+# A chat session the broker spawned at the home tier carries
+# SYNTAUR_SKIP_CONTEXT_MERGE=1; the CLI honours it (and never treats
+# ~/.syntaur/context.json as a workspace marker), so the session is still
+# registered — only the context.json merge is skipped. Nothing to do here.
 printf '%s' "$INPUT" | syntaur_bounded 4 session register --from-hook >/dev/null 2>&1 || true
 
 exit 0
