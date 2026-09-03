@@ -1005,12 +1005,33 @@ async function readAssignmentStatus(
  * `reconcileActiveSessions` reads assignment.md files, so it is given the same
  * `projectsDir` / `assignmentsDir` the watcher already carries.
  */
+export interface SessionMaintenanceDeps {
+  /** Override the reconcile pass (tests inject a failing one). */
+  reconcile?: (projectsDir: string, assignmentsDir?: string) => Promise<number>;
+  /** Where a reconcile failure is reported. Defaults to `console.error`. */
+  log?: (message: string, err: unknown) => void;
+}
+
 export async function runSessionMaintenance(
   projectsDir: string,
   assignmentsDir?: string,
   sweepOptions: StaleSweepOptions = {},
+  deps: SessionMaintenanceDeps = {},
 ): Promise<{ reconciled: number; swept: string[]; engagementsClosed: number }> {
-  const reconciled = await reconcileActiveSessions(projectsDir, assignmentsDir);
+  const reconcile = deps.reconcile ?? reconcileActiveSessions;
+  const log = deps.log ?? ((message: string, err: unknown) => console.error(message, err));
+
+  // The reconcile reads `assignment.md` files, so a corrupt one or a transient
+  // FS error can throw. It must not cost the tick its sweep: before the
+  // reconcile was added the tick ALWAYS swept, and adding a step in front of it
+  // must not quietly take that away (review round 2, finding 2).
+  let reconciled = 0;
+  try {
+    reconciled = await reconcile(projectsDir, assignmentsDir);
+  } catch (err) {
+    log('[sessions] reconcileActiveSessions failed; sweeping anyway:', err);
+  }
+
   const sweep = await sweepStaleSessions(sweepOptions);
   return { reconciled, ...sweep };
 }

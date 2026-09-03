@@ -109,3 +109,28 @@ describe('runSessionMaintenance', () => {
     expect(statusOf('sess-fresh')).toBe('active');
   });
 });
+
+describe('runSessionMaintenance failure isolation (review round 2, finding 2)', () => {
+  it('still sweeps when the reconcile throws', async () => {
+    await writeAssignment('live-task', 'in_progress');
+    await seed('sess-stale-2', 'live-task', 9 * HOUR);
+    const logged: unknown[] = [];
+
+    // A corrupt assignment.md or a transient FS error must not cost the tick its
+    // sweep: before the reconcile was added, the tick ALWAYS swept, and adding a
+    // step must not take that away.
+    const result = await runSessionMaintenance(projectsDir, undefined, { idleMs: 6 * HOUR }, {
+      reconcile: async () => {
+        throw new Error('EIO: corrupt assignment.md');
+      },
+      log: (_m, err) => logged.push(err),
+    });
+
+    expect(result.reconciled).toBe(0);
+    expect(result.swept).toEqual(['sess-stale-2']);
+    expect(statusOf('sess-stale-2')).toBe('stopped');
+    // The failure is reported, not swallowed silently.
+    expect(logged).toHaveLength(1);
+    expect((logged[0] as Error).message).toMatch(/corrupt assignment.md/);
+  });
+});

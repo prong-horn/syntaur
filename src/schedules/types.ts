@@ -131,6 +131,14 @@ export interface JobAttempt {
   lastFiredAt: string | null;
   dispatchedAt: string | null;
   runningSince: string | null;
+  /**
+   * When the chat FIRST could not resolve this attempt's message — the clock the
+   * state-unknown ceiling is measured from. Null whenever the last probe was a
+   * definite `open` or `ended`, so a brief outage does not accumulate toward the
+   * ceiling across unrelated blips. Persisted with the attempt, so a dashboard
+   * restart mid-outage does not silently reset the grace period.
+   */
+  stateUnknownSince: string | null;
   lastError: string | null;
 }
 
@@ -146,6 +154,7 @@ export function freshAttempt(): JobAttempt {
     lastFiredAt: null,
     dispatchedAt: null,
     runningSince: null,
+    stateUnknownSince: null,
     lastError: null,
   };
 }

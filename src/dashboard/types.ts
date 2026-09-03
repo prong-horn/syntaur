@@ -726,12 +726,15 @@ export type AgentSessionStatus = 'active' | 'completed' | 'stopped';
 
 
 
-/** Persisted hosting backend for the live PTY (schema v7 `hosted_by`). */
 /**
- * `'acp'` is an assignment-chat session hosted by the dashboard's own ACP
- * client. The broker owns those rows' `active`/`stopped` transitions outright,
- * so the transcript scanner skips them in both its discovery upsert and its
- * idle sweep (Decision 1).
+ * Who hosts a tracked session's process (`sessions.hosted_by`).
+ *
+ * `'acp'` — and, since schema v11, nothing else — is an assignment-chat session
+ * hosted by the dashboard's own ACP client. The broker owns those rows'
+ * `active`/`stopped` transitions outright, which is why the stale sweep exempts
+ * them (Decision 1). Every other row is `null`: a hook-registered terminal
+ * session, or one predating the chat. The old PTY backends (`syntaurd`, `tmux`,
+ * `claude-bg`) went with the daemon and were nulled by the v11 rebuild.
  */
 export type SessionHostedBy = 'acp';
 

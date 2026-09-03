@@ -312,6 +312,9 @@ describe('the state-unknown ceiling (code review finding 5)', () => {
    * `stateUnknownCeilingMs` an unknowable job is terminalized rather than left.
    */
   const runningSince = '2026-06-15T03:00:00Z';
+  // The clock the ceiling measures runs from the FIRST unknown probe (review
+  // round 2, finding 1), so these seed it directly rather than relying on
+  // `runningSince`.
   const runningJob = () => ({
     ...sampleJob({ trigger: { kind: 'at' as const, at: '2026-06-14T00:00:00Z' } }),
     attempt: {
@@ -319,6 +322,7 @@ describe('the state-unknown ceiling (code review finding 5)', () => {
       state: 'running' as const,
       messageId: 'msg-unknowable',
       runningSince,
+      stateUnknownSince: runningSince,
     },
   });
 
@@ -364,5 +368,88 @@ describe('the state-unknown ceiling (code review finding 5)', () => {
     });
     expect(out.reaped).toEqual([]);
     expect((await readJob(job.id))?.attempt.state).toBe('running');
+  });
+});
+
+describe('the ceiling is measured from the first unknown probe (review round 2, finding 1)', () => {
+  /**
+   * The release note promises "two hours of unresolvable-state grace". Measured
+   * from `runningSince`, a job that ran healthy for 110 minutes and then lost
+   * the dashboard would get ten minutes — not two hours. The clock has to start
+   * when the state first becomes unknowable, so the attempt records
+   * `stateUnknownSince` and the ceiling is measured from that.
+   */
+  const runningSince = '2026-06-15T03:00:00Z';
+  const runningJob = () => ({
+    ...sampleJob({ trigger: { kind: 'at' as const, at: '2026-06-14T00:00:00Z' } }),
+    attempt: {
+      ...freshAttempt(),
+      state: 'running' as const,
+      messageId: 'msg-unknowable',
+      runningSince,
+    },
+  });
+
+  it('starts the clock at the first unknown probe, not at runningSince', async () => {
+    const job = await writeJob(runningJob());
+    // 110 minutes of healthy running, then the first unknown probe.
+    const firstUnknown = await reapStale([job], {
+      now: () => new Date('2026-06-15T04:50:00Z'),
+      probeMessageTurn: async () => 'unknown',
+    });
+    expect(firstUnknown.reaped).toEqual([]);
+    const after = await readJob(job.id);
+    expect(after?.attempt.state).toBe('running');
+    // The moment it became unknowable is persisted, so a restart cannot lose it.
+    expect(after?.attempt.stateUnknownSince).toBe('2026-06-15T04:50:00Z');
+  });
+
+  it('does NOT terminalize until the ceiling has elapsed since that first probe', async () => {
+    const job = await writeJob(runningJob());
+    await reapStale([job], {
+      now: () => new Date('2026-06-15T04:50:00Z'), // first unknown, t+110m
+      probeMessageTurn: async () => 'unknown',
+    });
+    // t+3h10m overall, but only 80 minutes unknown — inside the 2h ceiling.
+    const stillRunning = await reapStale([(await readJob(job.id))!], {
+      now: () => new Date('2026-06-15T06:10:00Z'),
+      probeMessageTurn: async () => 'unknown',
+    });
+    expect(stillRunning.reaped).toEqual([]);
+    expect((await readJob(job.id))?.attempt.state).toBe('running');
+
+    // t+3h51m overall, 2h1m unknown — past the ceiling.
+    const reaped = await reapStale([(await readJob(job.id))!], {
+      now: () => new Date('2026-06-15T06:51:00Z'),
+      probeMessageTurn: async () => 'unknown',
+    });
+    expect(reaped.reaped).toContain(job.id);
+    const after = await readJob(job.id);
+    expect(after?.attempt.state).toBe('dispatch_failed');
+    expect(after?.attempt.lastError).toMatch(/state_unknown/);
+  });
+
+  it('clears the marker when the chat can answer again, so a blip does not accumulate', async () => {
+    const job = await writeJob(runningJob());
+    await reapStale([job], {
+      now: () => new Date('2026-06-15T03:30:00Z'),
+      probeMessageTurn: async () => 'unknown',
+    });
+    expect((await readJob(job.id))?.attempt.stateUnknownSince).toBe('2026-06-15T03:30:00Z');
+
+    // The dashboard comes back and reports the turn genuinely open.
+    await reapStale([(await readJob(job.id))!], {
+      now: () => new Date('2026-06-15T03:40:00Z'),
+      probeMessageTurn: async () => 'open',
+    });
+    expect((await readJob(job.id))?.attempt.stateUnknownSince).toBeNull();
+
+    // A later blip therefore starts a FRESH two hours, not a resumed one.
+    await reapStale([(await readJob(job.id))!], {
+      now: () => new Date('2026-06-15T09:00:00Z'),
+      probeMessageTurn: async () => 'unknown',
+    });
+    expect((await readJob(job.id))?.attempt.state).toBe('running');
+    expect((await readJob(job.id))?.attempt.stateUnknownSince).toBe('2026-06-15T09:00:00Z');
   });
 });

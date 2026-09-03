@@ -545,18 +545,36 @@ export async function reapStale(jobs: ScheduledJob[], deps: AttemptDeps): Promis
 
     // ── The state-unknown ceiling (code review finding 5) ────────────────────
     // `unknown` reads as open, which is correct until it is not: a job nobody
-    // can resolve must not sit in `running` for ever. Past the ceiling it is
-    // terminalized as a failed dispatch, naming the reason so the event log
-    // distinguishes "we could not tell" from "the turn ended".
-    if (liveness === 'unknown' && a.runningSince) {
-      const unknownFor = now.getTime() - Date.parse(a.runningSince);
+    // can resolve must not sit in `running` for ever.
+    //
+    // The clock starts at the FIRST unknown probe, not at `runningSince` (review
+    // round 2, finding 1). Measured from `runningSince` the grace period would
+    // shrink with every healthy minute — a job that ran fine for 110 minutes and
+    // then lost the dashboard would get ten, not the two hours the release note
+    // promises. `stateUnknownSince` is persisted so a restart mid-outage does
+    // not reset it, and cleared on any definite answer so unrelated blips never
+    // accumulate.
+    if (liveness === 'unknown') {
+      const since = a.stateUnknownSince;
+      if (!since) {
+        // First unknown probe: start the clock and let this pass go by.
+        await lockedTransition(job.id, (f) =>
+          f.attempt.state === 'running' &&
+          f.attempt.messageId === a.messageId &&
+          !f.attempt.stateUnknownSince
+            ? { ...f, attempt: { ...f.attempt, stateUnknownSince: isoStamp(now) } }
+            : null,
+        );
+        continue;
+      }
+      const unknownFor = now.getTime() - Date.parse(since);
       if (unknownFor > unknownCeilingMs) {
         const reason = `state_unknown: the chat could not resolve message ${a.messageId ?? '(none)'} for ${Math.round(unknownFor / 60000)}m`;
         const { written } = await lockedTransition(job.id, (f) => {
           if (
             f.attempt.state !== 'running' ||
             f.attempt.messageId !== a.messageId ||
-            f.attempt.runningSince !== a.runningSince
+            f.attempt.stateUnknownSince !== since
           ) {
             return null;
           }
@@ -569,6 +587,16 @@ export async function reapStale(jobs: ScheduledJob[], deps: AttemptDeps): Promis
         }
         continue;
       }
+      // Inside the ceiling — still treated as open, nothing else to decide.
+      continue;
+    }
+
+    // A definite answer clears the marker, so the next outage starts a fresh
+    // ceiling rather than resuming a stale one.
+    if (a.stateUnknownSince) {
+      await lockedTransition(job.id, (f) =>
+        f.attempt.stateUnknownSince ? { ...f, attempt: { ...f.attempt, stateUnknownSince: null } } : null,
+      );
     }
 
     if (!isRecurring(job.trigger) && a.messageId && a.runningSince) {
