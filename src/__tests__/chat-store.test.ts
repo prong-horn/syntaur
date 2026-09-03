@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { closeSessionDb, initSessionDb } from '../dashboard/session-db.js';
+import { closeSessionDb, getSessionDb as getSessionDbForTest, initSessionDb } from '../dashboard/session-db.js';
 import {
   applyChatPatch,
   countChatItems,
@@ -460,5 +460,119 @@ describe('rebuild == live across the assignment scope (Task 5)', () => {
     const live = listChatItems(ASSIGNMENT_ID, { limit: 1000 });
     const events = await readEvents(chatLogPath(assignmentDir));
     expect(replayItems(events, ASSIGNMENT_ID)).toEqual(live);
+  });
+});
+
+describe('chat schema v1 → v2 (Task 3)', () => {
+  /**
+   * The first chat migration: `chat_sessions.last_delivered_seq` (Decision 4).
+   * The DDL declares it for a fresh database, so the step has to be guarded by
+   * a `PRAGMA table_info` check rather than by the version alone.
+   */
+  it('adds last_delivered_seq to a v1 database and keeps its rows', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'syntaur-chat-v1-'));
+    const dbPath = join(dir, 'syntaur.db');
+    closeSessionDb();
+
+    // Build a v1 database by hand: the pre-v2 chat DDL and the v1 version row.
+    const Database = (await import('better-sqlite3')).default;
+    const raw = new Database(dbPath);
+    raw.exec(`
+      CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+      CREATE TABLE chat_sessions (
+        session_key         TEXT PRIMARY KEY,
+        assignment_id       TEXT NOT NULL,
+        project_slug        TEXT,
+        assignment_slug     TEXT,
+        agent_id            TEXT NOT NULL,
+        harness             TEXT NOT NULL,
+        acp_session_id      TEXT,
+        adapter_version     TEXT,
+        cwd                 TEXT,
+        pid                 INTEGER,
+        profile_json        TEXT,
+        usage_snapshot_json TEXT,
+        state               TEXT NOT NULL DEFAULT 'none',
+        created_at          TEXT NOT NULL,
+        last_turn_at        TEXT
+      );
+      INSERT INTO meta (key, value) VALUES ('chat_schema_version', '1');
+      INSERT INTO chat_sessions (session_key, assignment_id, agent_id, harness, state, created_at)
+        VALUES ('a1:claude', 'a1', 'claude', 'claude', 'idle', '2026-09-02T12:00:00.000Z');
+    `);
+    raw.close();
+
+    const db = initSessionDb(dbPath);
+    const columns = (db.prepare('PRAGMA table_info(chat_sessions)').all() as Array<{ name: string }>).map(
+      (c) => c.name,
+    );
+    expect(columns).toContain('last_delivered_seq');
+    expect(
+      (db.prepare("SELECT value FROM meta WHERE key = 'chat_schema_version'").get() as { value: string })
+        .value,
+    ).toBe('2');
+    // The existing row survives and defaults to the start of the log.
+    expect(
+      db.prepare("SELECT last_delivered_seq FROM chat_sessions WHERE session_key = 'a1:claude'").get(),
+    ).toEqual({ last_delivered_seq: 0 });
+
+    // Idempotent: a second init is a no-op, not a duplicate-column error.
+    closeSessionDb();
+    expect(() => initSessionDb(dbPath)).not.toThrow();
+    closeSessionDb();
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it('does not trip over a v2-shaped table whose version row still says v1', async () => {
+    // The DDL runs (idempotently) BEFORE the migration, so a database whose
+    // `chat_sessions` was recreated from the current DDL can reach the step
+    // with the column already present. Without the PRAGMA guard the ALTER
+    // fails with "duplicate column name" and rolls the whole init back.
+    const dir = await mkdtemp(join(tmpdir(), 'syntaur-chat-v1-shape2-'));
+    const dbPath = join(dir, 'syntaur.db');
+    closeSessionDb();
+    const Database = (await import('better-sqlite3')).default;
+    const raw = new Database(dbPath);
+    raw.exec(`
+      CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+      CREATE TABLE chat_sessions (
+        session_key         TEXT PRIMARY KEY,
+        assignment_id       TEXT NOT NULL,
+        project_slug        TEXT,
+        assignment_slug     TEXT,
+        agent_id            TEXT NOT NULL,
+        harness             TEXT NOT NULL,
+        acp_session_id      TEXT,
+        adapter_version     TEXT,
+        cwd                 TEXT,
+        pid                 INTEGER,
+        profile_json        TEXT,
+        usage_snapshot_json TEXT,
+        state               TEXT NOT NULL DEFAULT 'none',
+        created_at          TEXT NOT NULL,
+        last_turn_at        TEXT,
+        last_delivered_seq  INTEGER NOT NULL DEFAULT 0
+      );
+      INSERT INTO meta (key, value) VALUES ('chat_schema_version', '1');
+    `);
+    raw.close();
+
+    expect(() => initSessionDb(dbPath)).not.toThrow();
+    expect(
+      (
+        getSessionDbForTest()
+          .prepare("SELECT value FROM meta WHERE key = 'chat_schema_version'")
+          .get() as { value: string }
+      ).value,
+    ).toBe('2');
+    closeSessionDb();
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it('declares the column on a fresh database without running the migration', () => {
+    const columns = (
+      getSessionDbForTest().prepare('PRAGMA table_info(chat_sessions)').all() as Array<{ name: string }>
+    ).map((c) => c.name);
+    expect(columns).toContain('last_delivered_seq');
   });
 });

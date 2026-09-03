@@ -31,6 +31,8 @@ export interface UpsertChatSessionInput {
   usageSnapshotJson?: string | null;
   state: string;
   lastTurnAt?: string | null;
+  /** Highest chat-level `seq` this session has been shown (Decision 4). */
+  lastDeliveredSeq?: number;
 }
 
 /**
@@ -44,11 +46,11 @@ export function upsertChatSession(input: UpsertChatSessionInput): void {
       `INSERT INTO chat_sessions (
          session_key, assignment_id, project_slug, assignment_slug, agent_id, harness,
          acp_session_id, adapter_version, cwd, pid, profile_json, usage_snapshot_json,
-         state, created_at, last_turn_at
+         state, created_at, last_turn_at, last_delivered_seq
        ) VALUES (
          @sessionKey, @assignmentId, @projectSlug, @assignmentSlug, @agentId, @harness,
          @acpSessionId, @adapterVersion, @cwd, @pid, @profileJson, @usageSnapshotJson,
-         @state, @now, @lastTurnAt
+         @state, @now, @lastTurnAt, @lastDeliveredSeq
        )
        ON CONFLICT(session_key) DO UPDATE SET
          assignment_id       = excluded.assignment_id,
@@ -63,7 +65,10 @@ export function upsertChatSession(input: UpsertChatSessionInput): void {
          profile_json        = COALESCE(excluded.profile_json,        chat_sessions.profile_json),
          usage_snapshot_json = COALESCE(excluded.usage_snapshot_json, chat_sessions.usage_snapshot_json),
          state               = excluded.state,
-         last_turn_at        = COALESCE(excluded.last_turn_at,        chat_sessions.last_turn_at)`,
+         last_turn_at        = COALESCE(excluded.last_turn_at,        chat_sessions.last_turn_at),
+         -- The cursor only ever moves forward, so a writer that has not read it
+         -- (a state transition, say) cannot rewind another's progress.
+         last_delivered_seq  = MAX(excluded.last_delivered_seq, chat_sessions.last_delivered_seq)`,
     )
     .run({
       sessionKey: input.sessionKey,
@@ -81,6 +86,7 @@ export function upsertChatSession(input: UpsertChatSessionInput): void {
       state: input.state,
       now: new Date().toISOString(),
       lastTurnAt: input.lastTurnAt ?? null,
+      lastDeliveredSeq: input.lastDeliveredSeq ?? 0,
     });
 }
 
@@ -185,6 +191,18 @@ export function listChatItems(assignmentId: string, options: ListChatItemsOption
     )
     .all(...params, limit) as Array<{ json: string }>;
   return rows.reverse().map((r) => JSON.parse(r.json) as ChatItem);
+}
+
+/** Every item a turn produced, oldest first — what `finishTurn` routes on. */
+export function listChatItemsByTurn(assignmentId: string, turnId: string): ChatItem[] {
+  const rows = getSessionDb()
+    .prepare(
+      `SELECT json FROM chat_items
+        WHERE assignment_id = ? AND turn_id = ?
+        ORDER BY seq_first, item_id`,
+    )
+    .all(assignmentId, turnId) as Array<{ json: string }>;
+  return rows.map((r) => JSON.parse(r.json) as ChatItem);
 }
 
 export function countChatItems(assignmentId: string): number {

@@ -660,19 +660,9 @@ export class ChatNormalizer {
     this.ordinals.set(scopeId, (this.ordinals.get(scopeId) ?? 0) + 1);
     this.turns.push({ turnId, status, startedAt: status.startedAt, cancelRequested: false, plan: null });
 
-    // The queued bubble this turn is carrying becomes `sent` and joins the turn.
-    // Phase-2 lines carry a flat `messageId`; phase-3 lines a `trigger`.
-    const triggeredBy =
-      payload.trigger?.kind === 'human' ? payload.trigger.messageId : payload.messageId;
-    if (triggeredBy) {
-      const user = this.userMessages.get(triggeredBy);
-      if (user) {
-        user.state = 'sent';
-        user.turnId = turnId;
-        user.seqLast = event.seq;
-        patches.push({ op: 'upsert', item: user });
-      }
-    }
+    // A user message's delivery state lives ONLY in the assignment scope, which
+    // no agent normalizer ever sees (Decision 3). `user.message.delivered`
+    // maintains it; nothing is flipped from here.
     patches.push({ op: 'upsert', item: status });
   }
 

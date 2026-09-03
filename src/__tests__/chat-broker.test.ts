@@ -1175,8 +1175,13 @@ describe('one event log per assignment (finding 4)', () => {
     expect(new Set(seqs).size).toBe(seqs.length);
     expect(seqs[0]).toBe(0);
     expect(seqs[seqs.length - 1]).toBe(seqs.length - 1);
-    // Both agents really did write to it.
-    expect(new Set(logged.map((e) => e.agentId))).toEqual(new Set(['claude', 'codex']));
+    // Both agents really did write to it — alongside the `human`-authored
+    // routing rows, which live in the assignment scope (Decision 3).
+    const authors = new Set(logged.map((e) => e.agentId));
+    expect(authors).toEqual(new Set(['human', 'claude', 'codex']));
+    expect(new Set(logged.map((e) => e.sessionKey))).toEqual(
+      new Set([`${ASSIGNMENT_ID}:@assignment`, `${ASSIGNMENT_ID}:claude`, `${ASSIGNMENT_ID}:codex`]),
+    );
   });
 });
 

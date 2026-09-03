@@ -19,9 +19,14 @@
  *
  * Its own `chat_schema_version` row in the shared `meta` table — distinct from
  * the `sessions` table's `schema_version` and from `engagement_schema_version`.
+ *
+ * v2 adds `chat_sessions.last_delivered_seq`: the highest chat-level `seq` an
+ * agent session has been shown, so a restart neither re-sends nor skips the
+ * history delta (Decision 4). It is declared here for a FRESH database and
+ * added by the 1→2 step in `session-db.ts` for an existing one.
  */
 
-export const CHAT_SCHEMA_VERSION = '1';
+export const CHAT_SCHEMA_VERSION = '2';
 
 export const CHAT_DDL = `
 CREATE TABLE IF NOT EXISTS chat_sessions (
@@ -39,7 +44,8 @@ CREATE TABLE IF NOT EXISTS chat_sessions (
   usage_snapshot_json TEXT,
   state               TEXT NOT NULL DEFAULT 'none',
   created_at          TEXT NOT NULL,
-  last_turn_at        TEXT
+  last_turn_at        TEXT,
+  last_delivered_seq  INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS idx_chat_sessions_assignment ON chat_sessions(assignment_id);
 CREATE INDEX IF NOT EXISTS idx_chat_sessions_acp ON chat_sessions(acp_session_id);

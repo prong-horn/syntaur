@@ -59,26 +59,32 @@ import {
   clearChatSessionPid,
   getChatSession,
   listChatItems,
+  listChatItemsByTurn,
   listChatSessions,
   upsertChatSession,
 } from '../db/chat-db.js';
 import { adapterVersion as readAdapterVersion, spawnAcpClient, type AcpClient } from './acp-client.js';
 import { loadAgentDefinitions, resolveAgent, toAgentSummary } from './agents.js';
 import { readParticipants, writeParticipants } from './participants.js';
+import { DEFAULT_HOP_BUDGET, parseMentions, routeAgentReply, routeHuman } from './router.js';
 import { HARNESSES, probeAuth, resolveCommand } from './harnesses.js';
 import { ChatNormalizer } from './normalizer.js';
 import { applyProfile, newSessionMeta, profileEnv, resolveSessionProfile, serializeProfile } from './profile.js';
-import { buildStandingContext, buildTurnPrompt } from './prompt-framing.js';
+import { buildStandingContext, buildTurnPrompt, type TurnPromptTrigger } from './prompt-framing.js';
 import { openChatLog, type ChatLog } from './store.js';
+import { HUMAN_AGENT_ID, SYSTEM_AGENT_ID } from './types.js';
 import type {
   AgentDefinition,
+  AgentMessageItem,
   ChatAgentSummary,
   ChatEvent,
   ChatEventKind,
+  HandoffPayload,
   PermissionRequestPayload,
   PermissionResponsePayload,
   TurnStartPayload,
   TurnTrigger,
+  UserMessageItem,
   UserMessagePayload,
   ChatItem,
   ChatSessionState,
@@ -118,6 +124,8 @@ export const DEFAULT_TIMEOUTS: BrokerTimeouts = {
 };
 
 export interface ClientFactoryInput {
+  /** Which agent definition this adapter is being spawned for. */
+  agentId: string;
   harness: HarnessSpec;
   command: string;
   args: string[];
@@ -150,6 +158,8 @@ export interface CreateChatBrokerOptions {
   syntaurHome?: string;
   clock?: { now(): number };
   timeouts?: Partial<BrokerTimeouts>;
+  /** Routing knobs; `participants.json` overrides `hopBudget` per assignment. */
+  routing?: { hopBudget?: number };
 }
 
 /** A send that cannot proceed — the router turns this into an HTTP 409. */
@@ -250,6 +260,12 @@ interface Session {
   queue: Array<{ text: string; trigger: TurnTrigger }>;
   /** Highest chat-level `seq` this session has been shown (Decision 4). */
   lastDeliveredSeq: number;
+  /**
+   * The hop budget in force when this session was last routed to. Only the
+   * prompt's "Hop n of B" line reads it; the router always re-reads
+   * `participants.json`, which is the authority.
+   */
+  hopBudget: number;
   inFlight: InFlightTurn | null;
   pendingPermissions: Map<string, PendingPermission>;
   permissionSeq: number;
@@ -282,6 +298,25 @@ const EMPTY_TOKENS: ModelTokens = {
   cost: 0,
 };
 
+/**
+ * The scope routing-level rows are written under (Decision 3). A fan-out user
+ * message, a `handoff` and a routing notice belong to no agent session, so they
+ * get a session key of their own — one the SPA never asks about and
+ * `rebuildChatIndex` treats like any other.
+ */
+export function assignmentScopeKey(assignmentId: string): string {
+  return `${assignmentId}:@assignment`;
+}
+
+/** The assignment scope's live normalizer, plus what the broker reads back. */
+interface AssignmentScope {
+  key: string;
+  log: ChatLog;
+  normalizer: ChatNormalizer;
+  /** `messageId` → the routed user message, for `withdraw`'s delivery check. */
+  messages: Map<string, UserMessageItem>;
+}
+
 export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
   const timeouts: BrokerTimeouts = { ...DEFAULT_TIMEOUTS, ...(options.timeouts ?? {}) };
   const now = () => (options.clock ? options.clock.now() : Date.now());
@@ -307,6 +342,8 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
    * same open rather than racing to create two.
    */
   const logs = new Map<string, Promise<ChatLog>>();
+  /** One assignment scope per assignment directory (Decision 3). */
+  const assignmentScopes = new Map<string, Promise<AssignmentScope>>();
   const clientFactory: ClientFactory = options.clientFactory ?? defaultClientFactory;
   let stopping = false;
 
@@ -317,6 +354,90 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
       logs.set(assignmentDir, log);
     }
     return log;
+  }
+
+  /**
+   * One assignment scope per assignment directory, cached like `sharedLog` and
+   * for the same reason: its normalizer owns the per-scope ordinals that make
+   * item ids stable, so two instances would hand out colliding ids. The cached
+   * value is the PROMISE, so two concurrent callers share one replay.
+   */
+  function assignmentScope(assignment: ResolvedAssignment): Promise<AssignmentScope> {
+    let pending = assignmentScopes.get(assignment.assignmentDir);
+    if (!pending) {
+      pending = (async () => {
+        const log = await sharedLog(assignment.assignmentDir);
+        const key = assignmentScopeKey(assignment.id);
+        const scope: AssignmentScope = {
+          key,
+          log,
+          normalizer: new ChatNormalizer({
+            assignmentId: assignment.id,
+            agentId: SYSTEM_AGENT_ID,
+            sessionKey: key,
+          }),
+          messages: new Map(),
+        };
+        // Pick up where the persisted log left off, so a restart does not
+        // restart the ordinals and collide item ids.
+        for (const event of await log.readAll()) {
+          if (event.sessionKey !== key) continue;
+          for (const patch of scope.normalizer.ingest(event)) noteScopeItem(scope, patch);
+        }
+        return scope;
+      })();
+      assignmentScopes.set(assignment.assignmentDir, pending);
+    }
+    return pending;
+  }
+
+  /** Keep the routed user messages to hand — `withdraw` needs `deliveredTo`. */
+  function noteScopeItem(scope: AssignmentScope, patch: ItemPatch): void {
+    if (patch.op !== 'upsert' || patch.item.type !== 'user.message') return;
+    scope.messages.set(patch.item.messageId, patch.item);
+  }
+
+  /**
+   * Append a routing-level event to the assignment scope (Decision 3). No agent
+   * session owns these rows, so there is no per-session flush window: each patch
+   * is broadcast immediately.
+   */
+  async function recordAssignment(
+    assignment: ResolvedAssignment,
+    kind: ChatEventKind,
+    payload: unknown,
+    opts: { agentId: string; turnId?: string | null },
+  ): Promise<ChatEvent> {
+    const scope = await assignmentScope(assignment);
+    const event = await scope.log.append({
+      assignmentId: assignment.id,
+      agentId: opts.agentId,
+      sessionKey: scope.key,
+      turnId: opts.turnId ?? null,
+      kind,
+      payload,
+      ts: iso(),
+    });
+    for (const patch of scope.normalizer.ingest(event)) {
+      noteScopeItem(scope, patch);
+      applyChatPatch(scope.key, patch);
+      options.broadcast({
+        type: 'chat-item',
+        projectSlug: assignment.projectSlug,
+        assignmentSlug: assignment.assignmentSlug,
+        timestamp: iso(),
+        payload: { assignmentId: assignment.id, patch },
+      });
+    }
+    return event;
+  }
+
+  /** Definitions and the participant set, read together on every routing pass. */
+  async function routingContext(assignment: ResolvedAssignment) {
+    const { definitions } = await loadAgentDefinitions(options.syntaurHome);
+    const stored = await readParticipants(assignment.assignmentDir, definitions);
+    const hopBudget = stored.hopBudget ?? options.routing?.hopBudget ?? DEFAULT_HOP_BUDGET;
+    return { definitions, participants: { ...stored, hopBudget } };
   }
 
   // --- events, items, broadcast -------------------------------------------
@@ -434,6 +555,7 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
       usageSnapshotJson: JSON.stringify(session.cumulative),
       state: session.state,
       lastTurnAt: session.lastTurnAt,
+      lastDeliveredSeq: session.lastDeliveredSeq,
     });
   }
 
@@ -506,7 +628,8 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
       // Decision 7 — `resume` replays nothing but the agent still remembers).
       standingSent: Boolean(row?.acp_session_id),
       queue: [],
-      lastDeliveredSeq: 0,
+      lastDeliveredSeq: row?.last_delivered_seq ?? 0,
+      hopBudget: options.routing?.hopBudget ?? DEFAULT_HOP_BUDGET,
       inFlight: null,
       pendingPermissions: new Map(),
       permissionSeq: 0,
@@ -529,12 +652,16 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
     // on the assignment shares one log, so replay ONLY this session's events —
     // ingesting another agent's would consume this normalizer's ordinals and
     // re-attribute its items.
-    const events = (await log.readAll()).filter((event) => event.sessionKey === key);
+    const all = await log.readAll();
+    const events = all.filter((event) => event.sessionKey === key);
     for (const event of events) session.normalizer.ingest(event);
 
     // Repair anything the previous process left mid-flight BEFORE the session is
     // reachable, so nothing can drive a half-repaired session (Decision 12).
-    await repairSession(session, events);
+    // Repair reads the whole log, not just this key: since Decision 3 a message
+    // routed to this agent and a handoff aimed at it live in the ASSIGNMENT
+    // scope, and neither is visible under its own key.
+    await repairSession(session, events, all);
 
     if (stopping) {
       // `stopAll` began while this session was being built. Publishing now would
@@ -598,14 +725,19 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
    *     process that made it — so it is resolved as `cancelled` rather than
    *     left as live buttons that would 409.
    */
-  async function repairSession(session: Session, events: ChatEvent[]): Promise<void> {
-    const openTurns = new Map<string, string | null>(); // turnId -> unused marker
-    const queued = new Map<string, { messageId: string; text: string }>();
+  async function repairSession(
+    session: Session,
+    events: ChatEvent[],
+    allEvents: ChatEvent[],
+  ): Promise<void> {
+    const scopeKey = assignmentScopeKey(session.assignment.id);
+    const openTurns = new Set<string>();
     /**
-     * Every message a `turn.start` ever carried. The log's `user.message` event
-     * is written ONCE, at queue time, and keeps `state: 'queued'` forever — it
-     * is the derived item that flips to `sent`. So "still queued" cannot be read
-     * off the last event's state; it means no turn ever picked the message up.
+     * Every trigger a `turn.start` of THIS session ever carried, keyed the way
+     * the recovery pass keys its candidates. The log's `user.message` event is
+     * written ONCE, at queue time, and keeps `state: 'queued'` forever — it is
+     * the derived item that moves on. So "still queued" cannot be read off the
+     * last event's state; it means no turn of this agent's ever picked it up.
      */
     const everSent = new Set<string>();
     const openPermissions = new Map<string, string>(); // requestId -> title
@@ -621,20 +753,14 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
       switch (event.kind) {
         case 'turn.start': {
           const trigger = triggerOf(event);
-          if (trigger?.kind === 'human') everSent.add(trigger.messageId);
-          if (event.turnId) openTurns.set(event.turnId, null);
+          if (trigger) everSent.add(triggerKey(trigger));
+          if (event.turnId) openTurns.add(event.turnId);
           break;
         }
         case 'turn.end':
         case 'turn.cancel':
           if (event.turnId) openTurns.delete(event.turnId);
           break;
-        case 'user.message': {
-          const payload = event.payload as UserMessagePayload;
-          if (payload.state === 'withdrawn') queued.delete(payload.messageId);
-          else queued.set(payload.messageId, payload);
-          break;
-        }
         case 'acp.permission_request': {
           const payload = event.payload as PermissionRequestPayload;
           openPermissions.set(
@@ -653,16 +779,60 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
       }
     }
 
-    // Anything a turn already picked up is not re-queued — including the message
+    /**
+     * What this agent should still run, in log order. Routing is NEVER re-run
+     * and no new `handoff` is written: a chain survives a crash exactly as far
+     * as its already-recorded handoffs and nothing beyond them is invented.
+     */
+    const pending = new Map<string, { text: string; trigger: TurnTrigger }>();
+    for (const event of allEvents) {
+      if (event.sessionKey === scopeKey) {
+        if (event.kind === 'user.message') {
+          const payload = event.payload as UserMessagePayload;
+          if (payload.state === 'withdrawn') {
+            pending.delete(triggerKey({ kind: 'human', messageId: payload.messageId }));
+          } else if ((payload.targets ?? []).includes(session.agentId)) {
+            pending.set(triggerKey({ kind: 'human', messageId: payload.messageId }), {
+              text: payload.text,
+              trigger: { kind: 'human', messageId: payload.messageId },
+            });
+          }
+        } else if (event.kind === 'handoff') {
+          const payload = event.payload as HandoffPayload;
+          if (payload.toAgentId !== session.agentId) continue;
+          const trigger: TurnTrigger = {
+            kind: 'handoff',
+            handoffId: payload.handoffId,
+            fromAgentId: payload.fromAgentId,
+            hop: payload.hop,
+          };
+          pending.set(triggerKey(trigger), { text: payload.text, trigger });
+        }
+      } else if (event.sessionKey === session.key && event.kind === 'user.message') {
+        // A phase-2 line: `user.message` under the handling agent's own key,
+        // with no `targets`. The key IS the routing (Decision 3).
+        const payload = event.payload as UserMessagePayload;
+        const key = triggerKey({ kind: 'human', messageId: payload.messageId });
+        if (payload.state === 'withdrawn') pending.delete(key);
+        else if (payload.targets === undefined) {
+          pending.set(key, {
+            text: payload.text,
+            trigger: { kind: 'human', messageId: payload.messageId },
+          });
+        }
+      }
+    }
+
+    // Anything a turn already picked up is not re-queued — including the trigger
     // an in-flight turn was carrying when the process died, which reached the
     // agent and is sealed with that turn rather than sent twice.
-    for (const messageId of everSent) queued.delete(messageId);
+    for (const key of everSent) pending.delete(key);
 
     // Continue the id sequence rather than restarting it, whether or not there
     // is anything else to repair.
     session.permissionSeq = maxPermissionSeq + 1;
 
-    if (openTurns.size === 0 && queued.size === 0 && openPermissions.size === 0) {
+    if (openTurns.size === 0 && pending.size === 0 && openPermissions.size === 0) {
       // Still close a dangling engagement even with a clean log — an engagement
       // can outlive its turn if the process died between the two writes.
       closeDanglingEngagement(session);
@@ -679,7 +849,7 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
       );
     }
 
-    for (const turnId of openTurns.keys()) {
+    for (const turnId of openTurns) {
       await record(
         session,
         'turn.end',
@@ -694,19 +864,14 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
 
     closeDanglingEngagement(session);
 
-    if (queued.size > 0) {
-      for (const message of queued.values()) {
-        session.queue.push({
-          text: message.text,
-          trigger: { kind: 'human', messageId: message.messageId },
-        });
-      }
+    if (pending.size > 0) {
+      session.queue.push(...pending.values());
       await record(
         session,
         'system',
         {
           level: 'info',
-          text: `Resuming ${queued.size} message${queued.size === 1 ? '' : 's'} queued before the dashboard restarted`,
+          text: `Resuming ${pending.size} message${pending.size === 1 ? '' : 's'} queued before the dashboard restarted`,
         },
         null,
       );
@@ -738,6 +903,15 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
    */
   async function ensureAssignmentSessions(assignment: ResolvedAssignment): Promise<Session[]> {
     const agentIds = new Set(listChatSessions(assignment.id).map((row) => row.agent_id));
+    // Attached agents count even before they have a row: `withdraw`, `cancel`
+    // and the SPA's initial load must all see the same set (round 1, finding
+    // 12), and an agent attached in the picker has no row until it first runs.
+    try {
+      const { participants } = await routingContext(assignment);
+      for (const agentId of participants.agents) agentIds.add(agentId);
+    } catch {
+      // Unreadable definitions must not hide the sessions that DO have rows.
+    }
     for (const agentId of agentIds) {
       try {
         await ensureSession(assignment, agentId);
@@ -789,6 +963,7 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
       );
     }
     return clientFactory({
+      agentId: session.agentId,
       harness: session.harness,
       command: resolved.path,
       args: [...session.harness.args],
@@ -1091,6 +1266,27 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
     return session.driving;
   }
 
+  /**
+   * The turn's trigger as the prompt sees it (§2.4): who wrote it, what they
+   * wrote, and — for an agent-to-agent hop — where in the chain this turn sits,
+   * so a triggered agent knows it was handed the conversation rather than
+   * addressed by the human.
+   */
+  function promptTrigger(
+    session: Session,
+    entry: { text: string; trigger: TurnTrigger },
+  ): TurnPromptTrigger {
+    if (entry.trigger.kind === 'human') {
+      return { author: 'human', text: entry.text, ts: new Date(now()) };
+    }
+    return {
+      author: { agentId: entry.trigger.fromAgentId },
+      text: entry.text,
+      ts: new Date(now()),
+      hop: { n: entry.trigger.hop, budget: session.hopBudget },
+    };
+  }
+
   async function driveOnce(session: Session): Promise<void> {
     if (stopping) return;
     if (session.inFlight) return; // Decision 6 — one prompt in flight, always
@@ -1145,6 +1341,18 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
     }
 
     await record(session, 'turn.start', { trigger: next.trigger, startedAt }, turnId);
+    // One `user.message.delivered` per target, right after its `turn.start`:
+    // the assignment-scope item's `deliveredTo` grows and its state moves
+    // queued → partial → sent (Decision 3). The per-agent normalizer never
+    // touches that row.
+    if (next.trigger.kind === 'human') {
+      await recordAssignment(
+        session.assignment,
+        'user.message.delivered',
+        { messageId: next.trigger.messageId, agentId: session.agentId, turnId },
+        { agentId: HUMAN_AGENT_ID, turnId },
+      );
+    }
     // Dequeue only now that the turn is committed. Shifting earlier meant any
     // throw between the shift and the send dropped the message with no turn and
     // no trace (finding 5).
@@ -1167,12 +1375,12 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
               branch: session.branch,
             },
           });
-      blocks = buildTurnPrompt(next.text, { standing, now: new Date(now()) });
+      blocks = buildTurnPrompt(promptTrigger(session, next), { standing });
       // Sent once per adapter session (§2.4); a later turn carries only the
-      // user's message.
+      // trigger and the history the session has not seen.
       session.standingSent = true;
     } catch (err) {
-      blocks = buildTurnPrompt(next.text, { now: new Date(now()) });
+      blocks = buildTurnPrompt(promptTrigger(session, next));
       await record(session, 'system', {
         level: 'warn',
         text: `Could not build the standing context: ${(err as Error).message}`,
@@ -1271,8 +1479,110 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
     recordUsageEvent(session);
     persistSession(session);
     flush(session);
+
+    // A cancelled or failed turn never hops: there is no sealed reply to hand
+    // on, and inventing one would restart a chain the human just stopped.
+    if (!failure && stopReason !== 'cancelled') {
+      try {
+        await routeReply(session, turn);
+      } catch (err) {
+        await record(session, 'system', {
+          level: 'warn',
+          text: `Could not route this reply to another agent: ${(err as Error).message}`,
+        }, null);
+        flush(session);
+      }
+    }
+
     if (session.client?.alive()) setState(session, 'ready');
     armSessionIdle(session);
+  }
+
+  /**
+   * What a sealed reply hands on (§5.6). The router decides; this only gathers
+   * the evidence and records the result: the turn's sealed `agent.message`
+   * text, whether the turn produced any work card, and the trigger it was
+   * answering. Reading the turn's items back from the index rather than
+   * tracking them live is deliberate — the index is exactly what the normalizer
+   * produced, folds and retractions included.
+   */
+  async function routeReply(session: Session, turn: InFlightTurn): Promise<void> {
+    const { definitions, participants } = await routingContext(session.assignment);
+    session.hopBudget = participants.hopBudget ?? DEFAULT_HOP_BUDGET;
+
+    const turnItems = listChatItemsByTurn(session.assignment.id, turn.turnId);
+    const replies = turnItems.filter(
+      (item): item is AgentMessageItem => item.type === 'agent.message' && item.sealed,
+    );
+    const hadToolActivity = turnItems.some((item) => item.type === 'agent.work');
+    const text = replies.map((reply) => reply.text).join('\n\n');
+
+    const parsed = parseMentions(text, participants.agents);
+    const result = routeAgentReply({
+      fromAgentId: session.agentId,
+      mentions: parsed.mentioned,
+      unknown: parsed.unknown,
+      hadToolActivity,
+      trigger: turn.trigger,
+      participants,
+      definitions,
+    });
+
+    for (const notice of result.notices) {
+      await recordAssignment(
+        session.assignment,
+        'route.notice',
+        { level: 'warn', text: notice },
+        { agentId: SYSTEM_AGENT_ID },
+      );
+    }
+
+    const triggerItemId = replies[replies.length - 1]?.itemId ?? null;
+    for (const hop of result.hops) {
+      // Materialise the target BEFORE the `handoff` event is written. Building a
+      // session runs `repairSession`, which re-enqueues every recorded handoff
+      // the target never started — so writing the event first and building
+      // second would have repair and this loop each enqueue the same hop, and
+      // the target would run it twice.
+      const target = await ensureSession(session.assignment, hop.toAgentId);
+      // The id is minted BEFORE the event so the same value keys the payload,
+      // the target turn's trigger and the repair pass (round 2, finding 7).
+      const handoffId = randomUUID();
+      await recordAssignment(
+        session.assignment,
+        'handoff',
+        {
+          handoffId,
+          fromAgentId: session.agentId,
+          toAgentId: hop.toAgentId,
+          triggerItemId,
+          text,
+          hop: hop.hop,
+          budget: participants.hopBudget ?? DEFAULT_HOP_BUDGET,
+        },
+        { agentId: session.agentId },
+      );
+      target.hopBudget = session.hopBudget;
+      enqueue(target, {
+        text,
+        trigger: { kind: 'handoff', handoffId, fromAgentId: session.agentId, hop: hop.hop },
+      });
+      void drive(target);
+    }
+  }
+
+  /**
+   * Add a turn to an agent's queue, at most once per trigger. One trigger is one
+   * turn: a message is delivered to a target once and a handoff is answered
+   * once, whether it arrived from the router or from crash recovery.
+   */
+  function enqueue(session: Session, entry: { text: string; trigger: TurnTrigger }): boolean {
+    const key = triggerKey(entry.trigger);
+    if (session.queue.some((queued) => triggerKey(queued.trigger) === key)) return false;
+    if (session.inFlight && triggerKey(session.inFlight.trigger) === key) return false;
+    session.queue.push(entry);
+    emitSession(session);
+    return true;
   }
 
   // --- usage (Decision 10) -------------------------------------------------
@@ -1419,41 +1729,117 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
   return {
     async send({ assignment, agentId, text }) {
       if (!text.trim()) throw new ChatSendError('Message is empty', 400);
-      const session = await ensureSession(assignment, agentId);
-      // Refuse before anything is created when there is no workspace to run in.
-      await resolveCwd(session);
+      const { definitions, participants } = await routingContext(assignment);
+      if (definitions.length === 0) throw new ChatSendError('No agent definitions are available', 404);
+
+      // The composer's explicit pick counts as a mention (Decision 2), ahead of
+      // anything the text names, so "send to @implementer" from the picker and
+      // "@implementer do it" in the text route identically.
+      const parsed = parseMentions(text, participants.agents);
+      const unknown = [...parsed.unknown];
+      let mentions = parsed.mentioned;
+      if (agentId) {
+        if (!definitions.some((d) => d.id === agentId)) {
+          throw new ChatSendError(`No agent definition ${JSON.stringify(agentId)}`, 404);
+        }
+        if (participants.agents.includes(agentId)) {
+          mentions = [agentId, ...mentions.filter((id) => id !== agentId)];
+        } else if (!unknown.includes(agentId)) {
+          unknown.push(agentId);
+        }
+      }
+
+      const { targets, notices } = routeHuman({ mentions, unknown, participants, definitions });
+
+      // Refuse before anything is recorded when there is no workspace to run in
+      // — the phase-2 contract, now checked once for the whole fan-out because
+      // every agent on an assignment runs in the same cwd.
+      const targetSessions: Session[] = [];
+      for (const target of targets) targetSessions.push(await ensureSession(assignment, target));
+      if (targetSessions[0]) await resolveCwd(targetSessions[0]);
 
       const messageId = randomUUID();
-      session.queue.push({ text, trigger: { kind: 'human', messageId } });
-      await record(session, 'user.message', { messageId, text, state: 'queued' }, null);
-      flush(session);
-      emitSession(session);
-      void drive(session);
+      await recordAssignment(
+        assignment,
+        'user.message',
+        {
+          messageId,
+          text,
+          state: 'queued',
+          mentions,
+          targets,
+          unknown,
+        },
+        { agentId: HUMAN_AGENT_ID },
+      );
+      for (const notice of notices) {
+        await recordAssignment(
+          assignment,
+          'route.notice',
+          { level: 'warn', text: notice },
+          { agentId: SYSTEM_AGENT_ID },
+        );
+      }
+      if (targets.length === 0) {
+        await recordAssignment(
+          assignment,
+          'route.notice',
+          {
+            level: 'warn',
+            text: 'No agent is attached to this assignment, so nothing was started. Attach one from “Manage agents”.',
+          },
+          { agentId: SYSTEM_AGENT_ID },
+        );
+      }
+
+      for (const session of targetSessions) {
+        enqueue(session, { text, trigger: { kind: 'human', messageId } });
+        void drive(session);
+      }
       return { messageId };
     },
 
     async withdraw(assignment, messageId) {
-      // Search every session for the assignment rather than assuming the default
-      // agent — the message may have been addressed to another one, and after a
-      // restart none of them are in memory until they are materialised.
+      // A fan-out message sits in EVERY target's queue, so all of them are
+      // searched — and after a restart none of them are in memory until they
+      // are materialised (round 1, finding 4).
+      const all = await ensureAssignmentSessions(assignment);
+      const scope = await assignmentScope(assignment);
+      const item = scope.messages.get(messageId);
+      // Once any target has started, the message has reached an agent and
+      // cannot be unsent.
+      if ((item?.deliveredTo ?? []).length > 0) return false;
+
       const matches = (entry: { trigger: TurnTrigger }) =>
         entry.trigger.kind === 'human' && entry.trigger.messageId === messageId;
-      const session = (await ensureAssignmentSessions(assignment)).find((s) => s.queue.some(matches));
-      if (!session) return false;
-      session.queue.splice(session.queue.findIndex(matches), 1);
-      await record(session, 'user.message', { messageId, text: '', state: 'withdrawn' }, null);
-      flush(session);
-      emitSession(session);
+      let removed = 0;
+      for (const session of all) {
+        const before = session.queue.length;
+        session.queue = session.queue.filter((entry) => !matches(entry));
+        if (session.queue.length !== before) {
+          removed += before - session.queue.length;
+          emitSession(session);
+        }
+      }
+      if (removed === 0) return false;
+      await recordAssignment(
+        assignment,
+        'user.message',
+        { messageId, text: '', state: 'withdrawn' },
+        { agentId: HUMAN_AGENT_ID },
+      );
       return true;
     },
 
     async cancel(assignment, agentId) {
-      // Cancel the turn that is actually running, whichever agent owns it.
-      const running = (await ensureAssignmentSessions(assignment)).find(
+      // With an id, cancel that agent; without one, cancel every agent that is
+      // mid-turn — a fan-out or a hop chain can have several running at once.
+      const running = (await ensureAssignmentSessions(assignment)).filter(
         (s) => s.inFlight !== null && (!agentId || s.agentId === agentId),
       );
-      if (!running) return false;
-      return cancelTurn(running);
+      if (running.length === 0) return false;
+      const results = await Promise.all(running.map((session) => cancelTurn(session)));
+      return results.some(Boolean);
     },
 
     async answerPermission(assignment, requestId, optionId) {
@@ -1582,6 +1968,10 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
  * A `turn.start`'s trigger. Phase-2 log lines carry a flat `messageId` and no
  * `trigger`; they are read as the human message they were (Decision 3).
  */
+function triggerKey(trigger: TurnTrigger): string {
+  return trigger.kind === 'human' ? `human:${trigger.messageId}` : `handoff:${trigger.handoffId}`;
+}
+
 function triggerOf(event: ChatEvent): TurnTrigger | null {
   const payload = (event.payload ?? {}) as Partial<TurnStartPayload>;
   if (payload.trigger) return payload.trigger;

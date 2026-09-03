@@ -162,6 +162,29 @@ export function initSessionDb(dbPath?: string): Database.Database {
   // `db` assignment across the closure boundary.
   const database = db;
   const runMigrations = database.transaction(() => {
+    // --- chat v1 → v2: `chat_sessions.last_delivered_seq` (Decision 4) ---
+    // The first chat migration. `CHAT_DDL` above already declares the column
+    // for a FRESH database, so the ALTER is guarded by a PRAGMA check rather
+    // than by the version alone — a database created at v2 would otherwise
+    // trip "duplicate column name" the first time an older row is present.
+    const chatVersion = (
+      database
+        .prepare("SELECT value FROM meta WHERE key = 'chat_schema_version'")
+        .get() as { value: string } | undefined
+    )?.value;
+
+    if (chatVersion === '1') {
+      const chatColumns = (
+        database.prepare('PRAGMA table_info(chat_sessions)').all() as Array<{ name: string }>
+      ).map((c) => c.name);
+      if (!chatColumns.includes('last_delivered_seq')) {
+        database.exec(
+          'ALTER TABLE chat_sessions ADD COLUMN last_delivered_seq INTEGER NOT NULL DEFAULT 0',
+        );
+      }
+      database.exec("UPDATE meta SET value = '2' WHERE key = 'chat_schema_version'");
+    }
+
     // --- v1 → v2: make project/assignment nullable, add description ---
     const vBeforeV2 = (
       database
