@@ -58,6 +58,7 @@ export function ChatTab({ assignmentId }: ChatTabProps) {
     participants,
     agents,
     attached,
+    chips,
     loading,
     error,
     hasMore,
@@ -114,10 +115,11 @@ export function ChatTab({ assignmentId }: ChatTabProps) {
   return (
     <div className="flex h-[calc(100vh-18rem)] min-h-[26rem] flex-col gap-3">
       <div className="flex flex-wrap items-center gap-2">
-        {attached.map((agent) => (
+        {chips.map((agent) => (
           <AgentChip
             key={agent.id}
             agent={agent}
+            detached={!attached.some((a) => a.id === agent.id)}
             isDefault={participants?.defaultAgent === agent.id}
             state={sessions.get(agent.id)?.state ?? 'none'}
             model={sessions.get(agent.id)?.model ?? null}
@@ -126,7 +128,7 @@ export function ChatTab({ assignmentId }: ChatTabProps) {
             onCancel={() => void cancel(agent.id)}
           />
         ))}
-        {attached.length === 0 && (
+        {chips.length === 0 && (
           <span className="text-xs text-muted-foreground">No agents attached</span>
         )}
         <span className="flex-1" />
@@ -239,6 +241,7 @@ export function ChatTab({ assignmentId }: ChatTabProps) {
 /** One agent's presence chip: who, what state, how long it has been working. */
 function AgentChip({
   agent,
+  detached,
   isDefault,
   state,
   model,
@@ -247,6 +250,8 @@ function AgentChip({
   onCancel,
 }: {
   agent: ChatAgentSummary;
+  /** Still finishing a turn after being detached — kept for its interrupt. */
+  detached: boolean;
   isDefault: boolean;
   state: ChatSessionState;
   model: string | null;
@@ -256,7 +261,10 @@ function AgentChip({
 }) {
   return (
     <div
-      className="group inline-flex items-center gap-1.5 rounded-md border border-border/60 bg-background px-1.5 py-1"
+      className={cn(
+        'group inline-flex items-center gap-1.5 rounded-md border bg-background px-1.5 py-1',
+        detached ? 'border-amber-500/50 border-dashed' : 'border-border/60',
+      )}
       title={`${agent.name} · ${agent.harness}${model ? ` · ${model}` : ''}`}
     >
       <span
@@ -269,7 +277,11 @@ function AgentChip({
         {agent.avatar}
       </span>
       <span className="text-xs font-medium">{agent.name}</span>
-      {isDefault && <span className="text-[10px] text-muted-foreground">default</span>}
+      {detached ? (
+        <span className="text-[10px] text-amber-600 dark:text-amber-400">detached</span>
+      ) : (
+        isDefault && <span className="text-[10px] text-muted-foreground">default</span>
+      )}
       {workingMs === null ? (
         <span className={cn('rounded px-1.5 py-0.5 text-[10px]', STATE_TONES[state])}>
           {STATE_LABELS[state]}

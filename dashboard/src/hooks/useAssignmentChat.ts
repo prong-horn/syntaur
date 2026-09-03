@@ -5,6 +5,7 @@ import {
   applyFrame,
   authorOf,
   cancelChatTurn,
+  chipAgents,
   emptyChatState,
   fetchChatItems,
   fetchChatParticipants,
@@ -40,6 +41,11 @@ export interface UseAssignmentChatResult {
   agents: ChatAgentSummary[];
   /** The attached definitions, in participant order. */
   attached: ChatAgentSummary[];
+  /**
+   * Who gets a header chip: the attached set plus anyone still mid-turn, so a
+   * detached agent keeps its interrupt until its cancel resolves.
+   */
+  chips: ChatAgentSummary[];
   loading: boolean;
   error: string | null;
   hasMore: boolean;
@@ -150,6 +156,28 @@ export function useAssignmentChat(assignmentId: string | null): UseAssignmentCha
       .filter((a): a is ChatAgentSummary => a !== undefined);
   }, [state.participants, state.agents]);
 
+  const chips = useMemo(() => {
+    const attachedIds = attached.map((agent) => agent.id);
+    return chipAgents(attachedIds, working).map(
+      (id) =>
+        state.agents.find((agent) => agent.id === id) ?? {
+          id,
+          name: id,
+          color: 'slate',
+          harness: 'claude' as const,
+          model: null,
+          mode: null,
+          effort: null,
+          respondsTo: 'mentions' as const,
+          description: null,
+          avatar: ([...id][0] ?? '?').toUpperCase(),
+          default: false,
+          source: null,
+          missing: null,
+        },
+    );
+  }, [attached, working, state.agents]);
+
   const resolveAuthor = useCallback(
     (item: { agentId: string }) => authorOf(item, state.agents),
     [state.agents],
@@ -246,6 +274,7 @@ export function useAssignmentChat(assignmentId: string | null): UseAssignmentCha
     participants: state.participants,
     agents: state.agents,
     attached,
+    chips,
     loading,
     error,
     hasMore: state.hasMore,

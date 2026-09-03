@@ -172,6 +172,19 @@ is shown read-only next to the file it comes from, because that is where it
 lives. Delete a definition and it drops out of the set silently; nothing else
 breaks.
 
+**Detaching stops the agent.** Its turn is cancelled, everything queued for it
+is dropped with a `system` row per message saying so, and its adapter is torn
+down. Nothing keeps running off-screen: a detached agent has no chip and no
+interrupt button, so a turn left to "finish quietly" would be spend you cannot
+see or stop. A crash restart will not bring it back either — recovery re-queues
+only for agents that are still attached.
+
+**At most eight agents** can be attached at once, and that is a ceiling rather
+than a target. Every agent given a turn re-sends its whole standing context
+first — about 37 k tokens on claude and 23 k on codex before the first word — so
+a message fanned out to four agents costs four full turns. Two or three is the
+useful shape.
+
 ### Where a message goes
 
 - `@mention` one or more attached agents and each one gets its own turn from the
@@ -206,6 +219,12 @@ Three things stop a chain running away:
   names nobody but the agent that handed it over ends the chain. "Thanks
   @planner" is where a conversation stops, not where it loops.
 - **Self-mentions are ignored**, and a cancelled or failed turn never hands off.
+
+A mention is a mention wherever it appears in a reply, so an agent that writes
+"ask @implementer about it" in passing really does hand off. Ids inside backticks
+or a fenced code block are **not** mentions — quoting `@planner` is talking about
+the planner rather than to them — but ordinary prose is taken at face value, and
+the budget and the bare-acknowledgement filter are what bound the result.
 
 ### What one agent sees of another
 

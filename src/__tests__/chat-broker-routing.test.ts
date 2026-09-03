@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { closeSessionDb, initSessionDb } from '../dashboard/session-db.js';
+import { closeSessionDb, getSessionDb, initSessionDb } from '../dashboard/session-db.js';
 import { closeUsageDb, initUsageDb } from '../db/usage-db.js';
 import { openChatLog, readEvents } from '../chat/store.js';
 import { connectAcpClient, type AcpClient } from '../chat/acp-client.js';
@@ -26,6 +26,7 @@ let broker: ChatBroker;
 let clients: AcpClient[];
 let frames: Array<{ type: string; payload: unknown }>;
 let fakes: Map<string, FakeAgent>;
+let clientsByAgent: Map<string, AcpClient>;
 
 const ASSIGNMENT_ID = 'c0ffee00-0000-4000-8000-00000000cafe';
 const SCOPE_KEY = assignmentScopeKey(ASSIGNMENT_ID);
@@ -53,6 +54,16 @@ const itemsOfType = (type: ChatItem['type']) => items().filter((i) => i.type ===
 const events = (): Promise<ChatEvent[]> => readEvents(join(assignmentDir, 'chat', 'events.jsonl'));
 const systemTexts = () => (itemsOfType('system') as Array<{ text: string }>).map((i) => i.text);
 const prompts = (agentId: string) => fakes.get(agentId)?.prompts ?? [];
+
+/** The queue length from the last `chat-session` frame for an agent. */
+function lastSessionQueued(agentId: string): number | null {
+  for (let i = frames.length - 1; i >= 0; i--) {
+    if (frames[i].type !== 'chat-session') continue;
+    const payload = frames[i].payload as { agentId: string; session: { queued: unknown[] } };
+    if (payload.agentId === agentId) return payload.session.queued.length;
+  }
+  return null;
+}
 const promptText = (p: { prompt: unknown[] }) => (p.prompt[p.prompt.length - 1] as { text: string }).text;
 
 /** Turns that have started and finished, per agent id. */
@@ -98,6 +109,7 @@ async function writeParticipantsFile(participants: Participants): Promise<void> 
  */
 function makeBroker(scripts: Record<string, FakeTurn[]>, opts: { hopBudget?: number } = {}): void {
   fakes = new Map();
+  clientsByAgent = new Map();
   broker = createChatBroker({
     projectsDir: join(sandbox, 'projects'),
     assignmentsDir: join(sandbox, 'assignments'),
@@ -117,6 +129,7 @@ function makeBroker(scripts: Record<string, FakeTurn[]>, opts: { hopBudget?: num
         onPermissionRequest: input.onPermissionRequest,
       });
       clients.push(client);
+      clientsByAgent.set(input.agentId, client);
       return client;
     },
     timeouts: { flushMs: 1, sessionIdleMs: 60_000, shutdownGraceMs: 200 },
@@ -609,6 +622,47 @@ describe('per-target crash repair (Decision 12 extended)', () => {
     expect(handoffEvents).toHaveLength(1);
   });
 
+  it('does not resurrect a detached agent (code review round 1, finding 3)', async () => {
+    await seed([
+      {
+        kind: 'user.message',
+        payload: {
+          messageId: 'm-fanout',
+          text: 'two targets',
+          state: 'queued',
+          mentions: ['planner', 'implementer'],
+          targets: ['planner', 'implementer'],
+          unknown: [],
+        },
+      },
+      {
+        agentId: 'planner',
+        kind: 'handoff',
+        payload: {
+          handoffId: 'h-orphan',
+          fromAgentId: 'planner',
+          toAgentId: 'implementer',
+          triggerItemId: null,
+          text: 'over to you',
+          hop: 1,
+          budget: 4,
+        },
+      },
+    ]);
+    // The implementer was detached before the restart. Neither the fan-out nor
+    // the recorded hand-off may bring it back to life.
+    await writeParticipantsFile({ agents: ['planner'], defaultAgent: 'planner' });
+    makeBroker({ planner: [justSays('planned', 'p1')], implementer: [justSays('done', 'i1')] });
+
+    await broker.getSession(assignment(), 'planner');
+    await waitUntil(() => prompts('planner').length === 1, 'the recovered planner prompt');
+    await broker.getSession(assignment(), 'implementer');
+    await new Promise((r) => setTimeout(r, 40));
+
+    expect(prompts('implementer')).toHaveLength(0);
+    expect((await broker.getSession(assignment(), 'implementer'))?.queued).toEqual([]);
+  });
+
   it('does not re-queue a hop the target already started', async () => {
     await seed([
       {
@@ -737,5 +791,160 @@ describe('the history delta and its cursor (Task 4)', () => {
     expect(standing).toContain('Participants:');
     expect(standing).toContain('@implementer — Implementer, claude');
     expect(standing).toContain('Human: the assignment owner');
+  });
+});
+
+describe('an adapter dying mid-turn (code review round 1, finding 2)', () => {
+  it('seals the dead agent’s turn, drains its queue and leaves the other agent alone', async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    makeBroker({
+      // The planner is held open so its adapter can be killed mid-prompt.
+      planner: [{ steps: [{ kind: 'gate', gate }] }, justSays('after the death', 'p2')],
+      implementer: [justSays('unaffected', 'i1')],
+    });
+
+    await broker.send({ assignment: assignment(), text: '@planner hold' });
+    await waitUntil(() => prompts('planner').length === 1, 'the planner prompt');
+    // A second message queues behind the in-flight turn.
+    await broker.send({ assignment: assignment(), text: '@planner queued behind it' });
+    await waitUntil(
+      () => (lastSessionQueued('planner') ?? 0) === 1,
+      'the queued planner message',
+    );
+
+    // Kill the planner's adapter while its prompt is in flight — the real
+    // "the adapter died" case, not a prompt that merely threw.
+    const plannerClient = clients[0];
+    await plannerClient.close();
+
+    // The turn must seal itself rather than sitting `running` forever.
+    await waitUntil(
+      () =>
+        (turnsOf('planner') as Array<{ state: string; stopReason?: string }>).some(
+          (t) => t.state === 'ended' && t.stopReason === 'error',
+        ),
+      'the planner turn to seal as an error',
+      8000,
+    );
+
+    // The queue is not stranded: the session respawns and drains it.
+    await waitUntil(
+      () => (fakes.get('planner')?.prompts.length ?? 0) >= 1 && (lastSessionQueued('planner') ?? 1) === 0,
+      'the queued planner message to drain',
+      8000,
+    );
+
+    // The other agent is untouched and still works.
+    await broker.send({ assignment: assignment(), text: '@implementer still there?' });
+    await waitUntil(() => prompts('implementer').length === 1, 'the implementer prompt');
+
+    release();
+    await waitUntil(
+      () =>
+        (itemsOfType('turn.status') as Array<{ state: string }>).length >= 3 &&
+        (itemsOfType('turn.status') as Array<{ state: string }>).every((t) => t.state === 'ended'),
+      'every turn to end',
+      8000,
+    );
+    // No engagement is left open — the dead turn's was closed with it.
+    const db = getSessionDb();
+    expect(
+      (db.prepare('SELECT COUNT(*) AS n FROM engagement WHERE ended_at IS NULL').get() as { n: number }).n,
+    ).toBe(0);
+  });
+});
+
+describe('detaching an agent (code review round 1, finding 1)', () => {
+  it('cancels its turn, withdraws its queue with a row each, and tears its adapter down', async () => {
+    makeBroker({
+      planner: [justSays('planned', 'p1')],
+      implementer: [{ steps: [{ kind: 'awaitCancel' }] }, justSays('never runs', 'i2')],
+    });
+
+    await broker.send({ assignment: assignment(), text: '@implementer one' });
+    await waitUntil(() => prompts('implementer').length === 1, 'the implementer prompt');
+    await broker.send({ assignment: assignment(), text: '@implementer two' });
+    await broker.send({ assignment: assignment(), text: '@implementer three' });
+    await waitUntil(() => (lastSessionQueued('implementer') ?? 0) === 2, 'two queued entries');
+
+    const before = itemsOfType('system').length;
+    await broker.setParticipants(assignment(), { agents: ['planner'], defaultAgent: 'planner' });
+
+    // The in-flight prompt is cancelled, not left to finish off-screen.
+    await waitUntil(
+      () =>
+        (turnsOf('implementer') as Array<{ state: string; stopReason?: string }>).every(
+          (t) => t.state === 'ended',
+        ),
+      'the implementer turn to end',
+    );
+    const turns = turnsOf('implementer') as Array<{ stopReason?: string }>;
+    expect(turns).toHaveLength(1);
+    expect(turns[0].stopReason).toBe('cancelled');
+
+    // Both queued entries are withdrawn, one row each, and nothing is left.
+    const withdrawalRows = (itemsOfType('system') as Array<{ text: string }>)
+      .slice(before)
+      .filter((row) => /withdraw/i.test(row.text) && row.text.includes('@implementer'));
+    expect(withdrawalRows).toHaveLength(2);
+    expect((await broker.getSession(assignment(), 'implementer'))?.queued).toEqual([]);
+
+    // The adapter is gone, and the second scripted turn never ran.
+    await waitUntil(
+      () => clientsByAgent.get('implementer')?.alive() === false,
+      'the implementer adapter to be torn down',
+    );
+    expect(prompts('implementer')).toHaveLength(1);
+    expect((await broker.getSession(assignment(), 'implementer'))?.state).toBe('stopped');
+  });
+
+  it('treats a later mention of the detached agent as unknown', async () => {
+    makeBroker({ planner: [justSays('planned', 'p1')], implementer: [justSays('done', 'i1')] });
+    await broker.setParticipants(assignment(), { agents: ['planner'], defaultAgent: 'planner' });
+
+    const before = itemsOfType('system').length;
+    await broker.send({ assignment: assignment(), text: '@implementer are you there' });
+    await idleAll(1);
+    await new Promise((r) => setTimeout(r, 30));
+
+    // Nothing is routed to it; the default answers and the room is told.
+    expect(prompts('implementer')).toHaveLength(0);
+    expect(prompts('planner')).toHaveLength(1);
+    expect(
+      (itemsOfType('system') as Array<{ text: string }>)
+        .slice(before)
+        .some((row) => row.text.includes('@implementer')),
+    ).toBe(true);
+  });
+
+  it('leaves an attached agent’s queue alone when a different agent is detached', async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    makeBroker({
+      planner: [{ steps: [{ kind: 'gate', gate }] }, justSays('second', 'p2')],
+      implementer: [justSays('done', 'i1')],
+      reviewer: [justSays('ok', 'r1')],
+    });
+    await writeParticipantsFile({
+      agents: ['planner', 'implementer', 'reviewer'],
+      defaultAgent: 'planner',
+    });
+
+    await broker.send({ assignment: assignment(), text: '@planner hold' });
+    await waitUntil(() => prompts('planner').length === 1, 'the planner prompt');
+    await broker.send({ assignment: assignment(), text: '@planner queued' });
+    await waitUntil(() => (lastSessionQueued('planner') ?? 0) === 1, 'the queued planner entry');
+
+    await broker.setParticipants(assignment(), {
+      agents: ['planner', 'implementer'],
+      defaultAgent: 'planner',
+    });
+
+    // Detaching the reviewer must not touch the planner's in-flight turn or queue.
+    expect((await broker.getSession(assignment(), 'planner'))?.queued).toHaveLength(1);
+    release();
+    await idleAll(2);
+    expect(prompts('planner')).toHaveLength(2);
   });
 });

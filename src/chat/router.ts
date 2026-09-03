@@ -41,6 +41,23 @@ export const DEFAULT_HOP_BUDGET = 4;
  */
 const TOKEN_RE = /(^|\s)@([A-Za-z0-9_-]+)/g;
 
+/** A fenced block: three or more backticks or tildes, to the matching fence. */
+const FENCE_RE = /(^|\n)([ \t]*)(`{3,}|~{3,})[^\n]*\n[\s\S]*?(?:\n[ \t]*\3[^\n]*(?=\n|$)|$)/g;
+/** An inline code span: a run of backticks to its matching run. */
+const CODE_SPAN_RE = /(`+)(?:[^`]|(?!\1)`)*\1/g;
+
+/**
+ * Blank out code so an id QUOTED in it is not read as a mention. An agent
+ * writing "run `syntaur chat --to @planner`" is talking about the planner, not
+ * handing off to it — and the code review found real replies doing exactly
+ * that. Replaced space-for-character so every other offset is unchanged; an
+ * unterminated fence or backtick matches nothing and is left as prose.
+ */
+function maskCode(text: string): string {
+  const blank = (match: string): string => match.replace(/[^\n]/g, ' ');
+  return text.replace(FENCE_RE, blank).replace(CODE_SPAN_RE, blank);
+}
+
 export interface ParsedMentions {
   /** Attached ids named by a token, canonical casing, first-appearance order. */
   mentioned: string[];
@@ -60,9 +77,10 @@ export function parseMentions(text: string, attachedIds: readonly string[]): Par
   const seenKnown = new Set<string>();
   const seenUnknown = new Set<string>();
 
+  const scanned = maskCode(text);
   TOKEN_RE.lastIndex = 0;
   let match: RegExpExecArray | null;
-  while ((match = TOKEN_RE.exec(text)) !== null) {
+  while ((match = TOKEN_RE.exec(scanned)) !== null) {
     const token = match[2];
     const id = byLower.get(token.toLowerCase());
     if (id) {

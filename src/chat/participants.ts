@@ -23,6 +23,15 @@ import type { AgentDefinition, Participants } from './types.js';
 export const MIN_HOP_BUDGET = 1;
 export const MAX_HOP_BUDGET = 10;
 
+/**
+ * How many agents may be attached at once. Cost, not correctness: one
+ * unmentioned message can fan out to every `all-human` agent, and each turn
+ * re-sends that agent's whole standing context — ~37 k tokens on claude, ~23 k
+ * on codex — before the first word (§5.9b). Eight is already a lot of money per
+ * message; two or three is the useful shape.
+ */
+export const MAX_ATTACHED_AGENTS = 8;
+
 /** A rejected write — the routes turn this into an HTTP 400. */
 export class ParticipantsError extends Error {
   constructor(
@@ -76,6 +85,13 @@ export async function writeParticipants(
     if (typeof id !== 'string' || !known.has(id)) {
       throw new ParticipantsError(`No agent definition ${JSON.stringify(id)}`);
     }
+  }
+
+  if (agents.length > MAX_ATTACHED_AGENTS) {
+    throw new ParticipantsError(
+      `At most ${MAX_ATTACHED_AGENTS} agents can be attached to one assignment (got ${agents.length}); ` +
+        'every attached agent costs a full standing context per turn it is given.',
+    );
   }
 
   const defaultAgent = next.defaultAgent ?? null;

@@ -69,6 +69,30 @@ describe('parseMentions', () => {
     expect(unknown).toEqual(['nobody']);
   });
 
+  it('ignores a mention inside an inline code span', () => {
+    const { mentioned } = parseMentions(
+      'the ids are `@planner` and `@implementer` — ask @reviewer instead',
+      ['planner', 'implementer', 'reviewer'],
+    );
+    // Quoting an id is talking ABOUT an agent, not to it.
+    expect(mentioned).toEqual(['reviewer']);
+  });
+
+  it('ignores mentions inside a fenced code block', () => {
+    const text = ['Run this:', '```sh', 'syntaur chat --to @planner', '```', 'then tell @implementer'].join(
+      '\n',
+    );
+    expect(parseMentions(text, ['planner', 'implementer']).mentioned).toEqual(['implementer']);
+  });
+
+  it('does not report a code-span id as unknown either', () => {
+    expect(parseMentions('`@nobody` is not a thing', ['planner']).unknown).toEqual([]);
+  });
+
+  it('leaves an unterminated backtick alone rather than swallowing the rest', () => {
+    expect(parseMentions('a stray ` tick then @planner', ['planner']).mentioned).toEqual(['planner']);
+  });
+
   it('stops the token at punctuation', () => {
     expect(parseMentions('over to @implementer, please', ['implementer']).mentioned).toEqual([
       'implementer',

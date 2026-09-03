@@ -3,6 +3,7 @@ import { mkdtemp, mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promis
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import {
+  MAX_ATTACHED_AGENTS,
   ParticipantsError,
   participantsPath,
   readParticipants,
@@ -136,6 +137,27 @@ describe('writeParticipants', () => {
       definitions,
     );
     expect(written.agents).toEqual(['claude', 'codex']);
+  });
+
+  it('refuses more than the attached-agent cap', async () => {
+    const many = Array.from({ length: MAX_ATTACHED_AGENTS + 1 }, (_, i) => def(`a${i}`));
+    await expect(
+      writeParticipants(
+        assignmentDir,
+        { agents: many.map((d) => d.id), defaultAgent: 'a0' },
+        many,
+      ),
+    ).rejects.toThrow(new RegExp(String(MAX_ATTACHED_AGENTS)));
+  });
+
+  it('accepts exactly the cap', async () => {
+    const many = Array.from({ length: MAX_ATTACHED_AGENTS }, (_, i) => def(`a${i}`));
+    const written = await writeParticipants(
+      assignmentDir,
+      { agents: many.map((d) => d.id), defaultAgent: 'a0' },
+      many,
+    );
+    expect(written.agents).toHaveLength(MAX_ATTACHED_AGENTS);
   });
 
   it('accepts an empty set with no default', async () => {

@@ -713,6 +713,58 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
   }
 
   /**
+   * Detaching an agent stops it (Decision 7). The in-flight turn is cancelled,
+   * every queued entry is withdrawn with a `system` row naming it, and the
+   * adapter is torn down once the cancelled prompt resolves.
+   *
+   * Letting the turn "finish and idle out" was the other option, and the code
+   * review killed it: a detached agent has no chip and no cancel button, so a
+   * turn that keeps running is unbounded spend nobody can see or stop.
+   *
+   * A withdrawn entry does NOT mark its `user.message` withdrawn: the same
+   * message may still be queued for, or running on, an agent that is still
+   * attached. The row says what was dropped and for whom.
+   */
+  async function detachSession(session: Session): Promise<void> {
+    const dropped = session.queue.splice(0, session.queue.length);
+    for (const entry of dropped) {
+      await recordAssignment(
+        session.assignment,
+        'route.notice',
+        {
+          level: 'warn',
+          text:
+            `@${session.agentId} was detached from this chat, so a queued message for it was ` +
+            `withdrawn: ${firstLineOf(entry.text)}`,
+        },
+        { agentId: SYSTEM_AGENT_ID },
+      );
+    }
+
+    if (session.inFlight) {
+      await cancelTurn(session).catch(() => false);
+      // Give the cancelled prompt a moment to resolve so its own `turn.end`
+      // wins; the shutdown below seals nothing itself.
+      await Promise.race([
+        waitFor(() => session.inFlight === null, timeouts.shutdownGraceMs),
+        sleep(timeouts.shutdownGraceMs),
+      ]);
+      await recordAssignment(
+        session.assignment,
+        'route.notice',
+        {
+          level: 'warn',
+          text: `@${session.agentId} was detached from this chat, so its turn was cancelled.`,
+        },
+        { agentId: SYSTEM_AGENT_ID },
+      );
+    }
+
+    await shutdownSession(session);
+    emitSession(session);
+  }
+
+  /**
    * Startup repair (Decision 12). A `SIGKILL` of the dashboard runs no
    * `finishTurn`, so it leaves three kinds of wreckage. The event log is the
    * source of truth for all of it; the index and the engagement table are
@@ -840,6 +892,20 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
     // agent and is sealed with that turn rather than sent twice.
     for (const key of everSent) pending.delete(key);
 
+    // An agent detached since the crash must not be resurrected by its own
+    // history (code review round 1, finding 3). Decision 7 withdraws the queue
+    // at detach time, so this is the guarantee rather than the common path —
+    // and it FAILS OPEN: an unreadable participants file must not silently
+    // discard recovered work.
+    if (pending.size > 0) {
+      try {
+        const { participants } = await routingContext(session.assignment);
+        if (!participants.agents.includes(session.agentId)) pending.clear();
+      } catch {
+        // Definitions or participants unreadable — recover everything.
+      }
+    }
+
     // Continue the id sequence rather than restarting it, whether or not there
     // is anything else to repair.
     session.permissionSeq = maxPermissionSeq + 1;
@@ -877,7 +943,10 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
     closeDanglingEngagement(session);
 
     if (pending.size > 0) {
-      session.queue.push(...pending.values());
+      // Through `enqueue()` rather than a bare push, so "one queue entry per
+      // trigger" is enforced in ONE place for both routing and recovery
+      // (code review round 1, finding 6).
+      for (const entry of pending.values()) enqueue(session, entry);
       await record(
         session,
         'system',
@@ -1953,7 +2022,17 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
 
     async setParticipants(assignment, next) {
       const { definitions } = await loadAgentDefinitions(options.syntaurHome);
+      // Materialise every session the CURRENT set knows about before the write,
+      // so an agent about to be detached is reachable even if nothing has
+      // touched it since the dashboard started.
+      const before = await ensureAssignmentSessions(assignment);
+      const previous = await readParticipants(assignment.assignmentDir, definitions);
       const participants = await writeParticipants(assignment.assignmentDir, next, definitions);
+      const detached = previous.agents.filter((id) => !participants.agents.includes(id));
+      for (const agentId of detached) {
+        const session = before.find((s) => s.agentId === agentId);
+        if (session) await detachSession(session);
+      }
       const agents = definitions.map(toAgentSummary);
       options.broadcast({
         type: 'chat-participants',
@@ -2048,6 +2127,12 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
  * A `turn.start`'s trigger. Phase-2 log lines carry a flat `messageId` and no
  * `trigger`; they are read as the human message they were (Decision 3).
  */
+/** One line of a message, for a notice that has to stay readable. */
+function firstLineOf(text: string): string {
+  const line = text.trim().split('\n')[0] ?? '';
+  return line.length > 80 ? `${line.slice(0, 79)}…` : line;
+}
+
 function triggerKey(trigger: TurnTrigger): string {
   return trigger.kind === 'human' ? `human:${trigger.messageId}` : `handoff:${trigger.handoffId}`;
 }

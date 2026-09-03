@@ -261,6 +261,23 @@ export function workingByAgent(items: Iterable<ChatItem>, nowMs: number): Map<st
   return working;
 }
 
+/**
+ * The agents to show chips for: everyone attached, plus anyone with a turn
+ * still open. A detach cancels and tears down (Decision 7), but between the
+ * click and the cancel resolving the agent is still spending — and an agent
+ * with no chip has no interrupt button (code review round 1, finding 5).
+ */
+export function chipAgents(
+  attachedIds: readonly string[],
+  working: ReadonlyMap<string, WorkingState>,
+): string[] {
+  const ids = [...attachedIds];
+  for (const agentId of working.keys()) {
+    if (!ids.includes(agentId)) ids.push(agentId);
+  }
+  return ids;
+}
+
 export interface ItemAuthor {
   id: string;
   name: string;

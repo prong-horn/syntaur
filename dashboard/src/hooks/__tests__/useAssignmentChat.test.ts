@@ -3,6 +3,7 @@ import {
   applyFrame,
   applyPatch,
   authorOf,
+  chipAgents,
   emptyChatState,
   mergePage,
   openTurn,
@@ -315,6 +316,25 @@ describe('authorOf', () => {
       color: 'slate',
       avatar: 'G',
     });
+  });
+});
+
+describe('chipAgents', () => {
+  const working = (ids: string[]) =>
+    new Map(ids.map((id) => [id, { since: '2026-09-02T12:00:00.000Z', elapsedMs: 1 }]));
+
+  it('is the attached set when nobody unattached is running', () => {
+    expect(chipAgents(['planner', 'implementer'], working([]))).toEqual(['planner', 'implementer']);
+  });
+
+  it('keeps a chip for a detached agent whose turn is still open', () => {
+    // Between the detach and the cancel resolving, the agent is still spending;
+    // dropping its chip would drop its interrupt button too.
+    expect(chipAgents(['planner'], working(['implementer']))).toEqual(['planner', 'implementer']);
+  });
+
+  it('does not duplicate an attached agent that is working', () => {
+    expect(chipAgents(['planner'], working(['planner']))).toEqual(['planner']);
   });
 });
 
