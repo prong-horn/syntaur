@@ -9,10 +9,12 @@ An assignment can have several agents in one chat: `@mention` the one you want,
 or let the default answer, and agents can hand the conversation to each other.
 See [Several agents in one chat](#several-agents-in-one-chat).
 
-This is not the terminal-launch flow in [`agents.md`](./agents.md). Nothing opens
-a terminal, nothing scans a transcript afterwards: the dashboard server *is* the
-agent's client, speaking the [Agent Client Protocol](https://agentclientprotocol.com)
-over stdio to an adapter it owns.
+This is how an assignment is worked. Nothing opens a terminal, nothing scans a
+transcript afterwards: the dashboard server *is* the agent's client, speaking the
+[Agent Client Protocol](https://agentclientprotocol.com) over stdio to an adapter
+it owns. The terminal-launch stack it replaced — the `syntaur://` deep link,
+launch prompts, `AgentConfig` profiles, the transcript scanner and the `syntaurd`
+daemon — was deleted in v0.80.
 
 ## How a turn works
 
@@ -137,6 +139,14 @@ A chat session also registers as a normal agent session, keyed by its ACP sessio
 id — which *is* the underlying Claude Code transcript id or codex rollout id — so
 it appears in the Agent Sessions rail and each turn opens and closes an
 `engagement` row. That is what puts per-turn cost on the assignment's usage rail.
+The row is stamped `hosted_by = 'acp'`, which is also what exempts it from the
+stale sweep: the broker writes its `active` / `stopped` itself.
+
+claude reports its own cumulative cost, so a claude turn is priced by the
+adapter. codex reports token buckets only, so Syntaur prices those from the
+OpenAI list rates in `MODEL_PRICING` (`gpt-5.6-sol`, `gpt-5.6-terra`, … ). If a
+codex session ever reports a model with no entry there, the chat says so once
+and its turns book at $0 with the token counts still recorded.
 
 ## Troubleshooting
 
@@ -267,7 +277,21 @@ collapsed to one line, plan cards, permission cards, turn status and system rows
 Thinking and the full tool detail — diffs, terminal output, raw I/O — sit behind
 an **Activity** disclosure on each turn's status row.
 
+## Scheduled messages
+
+A schedule can post into a chat unattended. `syntaur schedule create --assignment
+<id> --message "<text>" [--agent <id>] --cron '0 3 * * *'` sends that message on
+every fire — in-process when the dashboard's own tick runs it, otherwise over the
+chat REST route on the running dashboard. The attempt is tracked by the returned
+`messageId` alone: it is "running" while the message is queued or a turn it
+triggered is open, and `syntaur schedule kill` withdraws the queued message or
+cancels the running turn.
+
+A schedule whose assignment has no attached agent — or whose dashboard is not
+running — records an error on the schedule. There is no terminal fallback.
+
 ## Not in this phase
 
-Per-agent mode and model pickers, slash commands, and workflow-issued messages
-(an agent turn started by a stage transition rather than by a person).
+Per-agent mode and model pickers, slash commands, and ACP v2 (both adapters
+speak v1 only; the SDK's `experimental/v2` is not negotiated until one of them
+ships it).

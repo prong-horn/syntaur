@@ -18,38 +18,36 @@ Each agent's job is only to make its real id reachable by layer 2, 3, or 4 — i
 to **normalize the key**, never to synthesize an id. Per-agent status and the
 exact injector below.
 
-## Session TRACKING vs id resolution (scanner is the universal floor)
+## Session TRACKING vs id resolution
 
 Id resolution (above) answers "what is MY session id, right now, in-process."
-Session **tracking** — every session eventually appearing in the sessions DB —
-no longer depends on it:
+Session **tracking** — a session appearing in the sessions DB — is a separate
+question, and since v0.80 there are exactly three ways it happens:
 
-- **Floor — filesystem scanner** (`syntaur session scan`,
-  `src/sessions/scanner.ts`): walks each registry target's `sessions` descriptor
-  (`AgentTarget.sessions` in `src/targets/registry.ts`; claude + codex today),
-  upserts every discovered session with its real transcript timestamps, links
-  project/assignment from `<cwd>/.syntaur/context.json`, derives liveness
-  (lsof transcript-open, else mtime freshness), and sweeps stale `active` rows
-  to `stopped` (`ended` backdated to last mtime). Agent-View presence
-  (`claude agents --json`) is an additional keep-alive, but a TIME-BOUNDED one:
-  past `session.idleSweepHours` of transcript silence a listed session is swept
-  anyway, and the same bound applies to the revive rule so a swept row is not
-  revived on the next scan. A row with neither a pid nor a transcript is swept on
-  its age since `started` and counted separately as `swept_no_transcript`. Runs on the dashboard's
-  autodiscovery interval (and at start) plus standalone via the CLI. This is
-  **Codex's only tracking path** (no SessionStart hook) and the retroactive
-  backfill for everything.
-- **Fast path — hooks**: Claude's SessionStart/SessionEnd hooks are thin
-  wrappers over `syntaur session register|stop --from-hook` (direct DB writes,
-  zero tokens, no dashboard needed). Every session registers — standalone ones
-  included.
-- **Birth path — launcher**: `executeLaunchPlan` writes a runtime marker for
-  any agent it spawns (pending — no sessionId — for fresh/fork; with the id for
-  resume-mode, plus an immediate DB row).
-- Config: `session.autoTrack: all | workspaces-only | off` in
-  `~/.syntaur/config.md` (default `all`) gates all three paths.
-  `session.idleSweepHours` (default `6`) is how long a transcript may sit idle
-  before the scanner stops treating Agent-View presence as liveness.
+- **Hooks** (Claude Code): SessionStart/SessionEnd are thin wrappers over
+  `syntaur session register|stop --from-hook` (direct DB writes, zero tokens, no
+  dashboard needed). Every session registers — standalone ones included. A
+  rate-limited `syntaur session touch --from-hook` on PostToolUse and
+  UserPromptSubmit keeps the row's `updated_at` moving while it works.
+- **The chat broker**: an assignment-chat session registers itself under its ACP
+  session id with `hosted_by = 'acp'`, and the broker writes `active` /
+  `stopped` itself.
+- **`syntaur track-session`**: explicit registration, for anything else.
+
+The **transcript scanner is gone** (v0.80). There is no longer a filesystem
+floor that discovers sessions nobody registered, no `lsof` liveness and no
+`claude agents --json` join. What replaces the scanner's idle sweep is a
+time-based one: an `active`, non-`acp` row whose `updated_at` has not moved for
+`session.idleSweepHours` (default 6) is marked `stopped` and its open engagement
+closed with reason `stale-sweep`, on the dashboard's autodiscovery interval.
+
+**Codex terminal sessions are therefore no longer discovered automatically.**
+Codex has no SessionStart hook, so a codex session tracked today is one the chat
+broker owns or one `syntaur track-session` registered by hand. The usage
+collector is unaffected — it reads codex's rollout files itself.
+
+Config: `session.autoTrack: all | workspaces-only | off` in `~/.syntaur/config.md`
+(default `all`) gates hook and `track-session` registration.
 
 ## Generic runtime marker (layer 4)
 
@@ -66,10 +64,9 @@ stamp a marker that both the resolver and the Codex cleanup hook read:
 Helpers: `writeRuntimeMarker` / `readRuntimeMarker` in `src/utils/session-id.ts`.
 Override the dir in tests/hooks via `$SYNTAUR_RUNTIME_SESSIONS_DIR`.
 
-The launch path also writes **pending** markers (no `sessionId`) at spawn time
-for fresh/fork launches — ids are never synthesized. `readRuntimeMarker`
-rejects pending markers, so they never resolve an id until backfilled; the
-scanner registers those sessions from their transcripts instead.
+`readRuntimeMarker` rejects a **pending** marker (one with no `sessionId`), so
+an incomplete marker never resolves an id. The launch path that used to write
+those markers went in v0.80.
 
 ---
 
@@ -149,13 +146,13 @@ id on an existing hook's stdin. If/when it does, an early hook can
 Codex cleanup hook will resolve it exactly.
 
 **Honest floor today:**
-- The **session scanner** is Codex's tracking path: its `sessions` descriptor
-  walks `~/.codex/sessions/**/rollout-*.jsonl` and registers every session with
-  real timestamps — no hook required.
+- There is **no automatic tracking path for a codex terminal session** since the
+  scanner went in v0.80. Register one explicitly with `syntaur track-session`,
+  or work the assignment through the dashboard's Chat tab, where the broker owns
+  the session outright.
 - `session-cleanup.sh` no longer trusts the clobbered scalar; it resolves only
-  from an exact runtime marker and otherwise **skips** (the scanner's sweep
-  marks the dead session stopped on its next tick). It never mis-stops a
-  co-tenant.
+  from an exact runtime marker and otherwise **skips** (the stale sweep marks
+  the dead session stopped on a later tick). It never mis-stops a co-tenant.
 - For attribution that must be exact now, pass explicit `--session-id`
   (sourced from `payload.id` of the matching `~/.codex/sessions/.../rollout-*.jsonl`,
   as `platforms/codex/scripts/resolve-session.sh` already does on a cwd basis).

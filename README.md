@@ -112,7 +112,7 @@ A full install (CLI + both plugins + skills) touches the following locations:
 | `~/.codex/plugins/syntaur/` (or chosen dir) | Codex plugin directory (commands, hooks, mirrored skills) | `syntaur install-codex-plugin` |
 | `~/.codex/skills/<skill>/` | Protocol skills (when not using the plugin path) | `npx skills add prong-horn/syntaur -a codex` OR `syntaur install-codex-plugin --force-skills` |
 | `~/.agents/plugins/marketplace.json` | Codex marketplace entry | `syntaur install-codex-plugin` |
-| `<repo>/.syntaur/context.json` | Per-workspace agent context (current assignment, session id, transcript path) | Written by the `grab-assignment` skill and SessionStart hooks |
+| `<repo>/.syntaur/context.json` | Per-workspace agent context (current assignment, session id) | Written by the `grab-assignment` skill and SessionStart hooks |
 
 ### Plugin install paths
 
@@ -144,6 +144,29 @@ syntaur setup \
 ```
 
 ---
+
+## Working an assignment
+
+Open the dashboard, open an assignment, and use its **Chat** tab. Sending a
+message there spawns a real coding agent in the assignment's worktree — the
+dashboard server speaks the Agent Client Protocol to a `claude-agent-acp` or
+`codex-acp` adapter it owns — and renders the work as a conversation: streaming
+replies, tool cards with diffs and command output, a plan checklist, inline
+permission prompts, and per-turn cost. Several agents can share one chat and
+hand work to each other by `@mention`.
+
+```bash
+syntaur dashboard
+npm i -g @agentclientprotocol/claude-agent-acp   # or …/codex-acp
+```
+
+See [docs/assignment-chat.md](docs/assignment-chat.md) for agent definitions,
+routing, hand-offs and where the data lives.
+
+Syntaur used to launch an agent into a terminal for you — an "Open in agent"
+button, a `syntaur://` deep link, a transcript scanner and a PTY daemon. All of
+it was removed in v0.80; see the
+[release note](docs/releases/v0.80.md) if you are upgrading an existing install.
 
 ## Common Commands
 

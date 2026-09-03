@@ -7,7 +7,7 @@ description: Use when the user asks to track, register, or log this Claude Code 
 
 Attach a description and/or a project+assignment link to the current agent session's row in the Syntaur dashboard.
 
-Plain registration is automatic now — the SessionStart hook registers every session (and the background scanner backfills any the hook missed), so this skill only matters for the one remaining manual case: adding a description or an explicit project/assignment link. The CLI self-resolves the calling session's id (env → process-tree markers → transcript scan); never pass a synthesized id.
+Plain registration is automatic for Claude Code — the SessionStart hook registers every session. There is no background scanner any more (v0.80), so for an agent WITHOUT hooks (codex, pi) this skill is the only way its terminal session is tracked at all; for Claude Code it still matters for adding a description or an explicit project/assignment link. The CLI self-resolves the calling session's id (env → process-tree markers → transcript scan); never pass a synthesized id.
 
 ## Usage
 
