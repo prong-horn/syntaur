@@ -152,9 +152,11 @@ export interface SessionUsageSummary {
 }
 
 export interface AgentSessionWithLiveness extends AgentSession {
+  /**
+   * `status === 'active'`. The resume/fork capability flags went with the
+   * terminal profiles they were derived from (phase 4).
+   */
   isLive: boolean;
-  resumeSupported: boolean;
-  forkSupported: boolean;
 }
 
 // ── Phase D: browser-attach detail + token ────────────────────────────────

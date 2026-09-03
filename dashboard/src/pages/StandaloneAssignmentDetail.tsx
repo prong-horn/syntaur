@@ -19,7 +19,7 @@ import { ActivityTimeline } from '../components/ActivityTimeline';
 import { MoveToWorkspaceDialog } from '../components/MoveToWorkspaceDialog';
 import { AgentSessionsSection } from '../components/AgentSessionsSection';
 import { AssignmentUsageSection } from '../components/AssignmentUsageSection';
-import { OpenInAgentButton } from '../components/OpenInAgentButton';
+import { ChatTab } from '../components/chat/ChatTab';
 import { CreateWorktreeButton } from '../components/CreateWorktreeButton';
 import { useToast, Toaster } from '../components/Toast';
 import { useHashScroll } from '../hooks/useHashScroll';
@@ -92,12 +92,6 @@ export function StandaloneAssignmentDetail() {
           <span className="text-xs font-mono text-muted-foreground">{assignment.id}</span>
           <ExternalIdBadges externalIds={assignment.externalIds} />
           <div className="ml-auto flex items-center gap-2">
-            <OpenInAgentButton
-              target={{ kind: 'assignment', id: assignment.id }}
-              worktreePath={assignment.workspace?.worktreePath ?? null}
-              repository={assignment.workspace?.repository ?? null}
-              size="compact"
-            />
             {!assignment.workspace?.worktreePath && (
               <CreateWorktreeButton
                 assignmentId={assignment.id}
@@ -185,6 +179,11 @@ export function StandaloneAssignmentDetail() {
                     </SectionCard>
                   </div>
                 ),
+              },
+              {
+                value: 'chat',
+                label: 'Chat',
+                content: <ChatTab assignmentId={assignment.id} />,
               },
               {
                 value: 'progress',

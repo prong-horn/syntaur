@@ -52,7 +52,6 @@ import { regenPlaybookManifestCommand } from './commands/regen-playbook-manifest
 import { todoCommand } from './commands/todo.js';
 import { backupCommand } from './commands/backup.js';
 import { doctorCommand } from './commands/doctor.js';
-import { agentsCommand } from './commands/agents.js';
 import { commentCommand } from './commands/comment.js';
 import { captureCommand } from './commands/capture.js';
 import { proofCommand } from './commands/proof.js';
@@ -835,7 +834,6 @@ program
 program.addCommand(todoCommand);
 program.addCommand(backupCommand);
 program.addCommand(doctorCommand);
-program.addCommand(agentsCommand);
 program.addCommand(proofCommand);
 program.addCommand(planCommand);
 program.addCommand(sessionCommand);

@@ -2,7 +2,6 @@ import { Fragment, useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { Activity, CheckSquare, ChevronDown, ChevronRight, Square, Trash2 } from 'lucide-react';
 import { CopyButton } from '../components/CopyButton';
-import { CopyLaunchCommandButton } from '../components/CopyLaunchCommandButton';
 import { SessionActionButtons } from '../components/SessionActionButtons';
 import { cn } from '../lib/utils';
 import { useAgentSessions, useWorkspacePrefix } from '../hooks/useProjects';
@@ -519,7 +518,6 @@ export function AgentSessionsPage() {
                         void patchCuration(id, { archived: archivedNext })
                       }
                       onRename={handleRename}
-                      onCopyError={setDeleteError}
                       expanded={expandedIds.has(session.sessionId)}
                       onToggleExpand={() => toggleExpand(session.sessionId)}
                     />
@@ -630,7 +628,6 @@ function SessionRow({
   onTogglePin,
   onToggleArchive,
   onRename,
-  onCopyError,
   expanded,
   onToggleExpand,
 }: {
@@ -642,7 +639,6 @@ function SessionRow({
   onTogglePin: (sessionId: string, pinned: boolean) => void;
   onToggleArchive: (sessionId: string, archived: boolean) => void;
   onRename: (sessionId: string) => void;
-  onCopyError: (message: string) => void;
   expanded: boolean;
   onToggleExpand: () => void;
 }) {
@@ -783,13 +779,6 @@ function SessionRow({
             </Link>
           )}
           <CopyButton value={session.sessionId} />
-          <CopyLaunchCommandButton
-            sessionId={session.sessionId}
-            disabled={!session.resumeSupported}
-            disabledReason="Resume not supported for this agent"
-            onError={(e) => onCopyError(e.message)}
-            onNotice={(m) => onCopyError(m)}
-          />
         </span>
       </td>
       <td className="py-2 pr-3 text-xs text-muted-foreground">

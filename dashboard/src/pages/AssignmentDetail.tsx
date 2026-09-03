@@ -30,7 +30,6 @@ import { AssignmentUsageSection } from '../components/AssignmentUsageSection';
 import { AssignmentTransitionDialog } from '../components/AssignmentTransitionDialog';
 import { ConfirmDialog } from '../components/ConfirmDialog';
 import { OverflowMenu, type OverflowMenuItem } from '../components/OverflowMenu';
-import { OpenInAgentButton } from '../components/OpenInAgentButton';
 import { CreateWorktreeButton } from '../components/CreateWorktreeButton';
 import {
   deleteAssignment,
@@ -527,11 +526,6 @@ export function AssignmentDetail() {
             </span>
           )}
           <span className="flex shrink-0 items-center gap-2">
-            <OpenInAgentButton
-              target={{ kind: 'assignment', id: assignment.id }}
-              worktreePath={assignment.workspace?.worktreePath ?? null}
-              repository={assignment.workspace?.repository ?? null}
-            />
             {!assignment.workspace?.worktreePath && slug && aslug && (
               <CreateWorktreeButton
                 projectSlug={slug}

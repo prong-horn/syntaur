@@ -6,7 +6,6 @@ import { assignmentChecks } from './checks/assignment.js';
 import { dashboardChecks } from './checks/dashboard.js';
 import { integrationChecks } from './checks/integrations.js';
 import { workspaceChecks } from './checks/workspace.js';
-import { agentChecks } from './checks/agents.js';
 import { skillsChecks } from './checks/skills.js';
 import { crossAgentChecks } from './checks/cross-agent.js';
 import { bundleChecks } from './checks/bundles.js';
@@ -24,7 +23,6 @@ export function allChecks(): Check[] {
     ...dashboardChecks,
     ...integrationChecks,
     ...workspaceChecks,
-    ...agentChecks,
     ...skillsChecks,
     ...crossAgentChecks,
     ...bundleChecks,

@@ -1,6 +1,6 @@
 // Declarative per-agent target descriptors for cross-agent skill installability.
 //
-// The model deliberately mirrors the data-driven `AgentConfig` registry in
+// The model deliberately mirrors the data-driven agent registry in
 // Vercel Labs' `skills` CLI (skills.sh) — one thin data record per agent, with
 // no behavioral code beyond a `detect()` probe — PLUS the one field skills.sh
 // omits: an `instructions` emit strategy (Tier 2 — per-agent protocol/adapter

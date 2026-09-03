@@ -21,6 +21,7 @@ import {
 import { sanitizeSessionPath } from '../utils/transcript.js';
 import type {
   AgentSession,
+  AgentSessionWithLiveness,
   AgentSessionStatus,
   ActivityState,
   DescriptionSource,
@@ -148,6 +149,20 @@ function rowToSession(row: SessionRow): AgentSession {
 /**
  * Query sessions for a specific project.
  */
+/**
+ * Attach the one liveness flag the UI still reads.
+ *
+ * This used to be derived from a pid, a pid start-time guard, a transcript
+ * mtime and the session's terminal profile (for the resume/fork capability
+ * flags). None of those exist any more:
+ * chat sessions are owned by the broker, which writes `active` / `stopped`
+ * itself, and hook-registered terminal sessions are stopped by the SessionEnd
+ * hook or by the stale sweep. So `active` IS the liveness fact (Decision 4).
+ */
+export function withLiveness(sessions: AgentSession[]): AgentSessionWithLiveness[] {
+  return sessions.map((session) => ({ ...session, isLive: session.status === 'active' }));
+}
+
 export async function parseSessionsIndex(
   _projectDir: string,
   projectSlug: string,

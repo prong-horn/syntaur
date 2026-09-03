@@ -198,8 +198,6 @@ describe('usage-only (orphan) rows', () => {
     expect(orphan!.started).toBe('2026-07-02T09:00:00.000Z');
     expect(orphan!.status).toBe('stopped');
     expect(orphan!.isLive).toBe(false);
-    expect(orphan!.resumeSupported).toBe(false);
-    expect(orphan!.forkSupported).toBe(false);
     expect(orphan!.projectSlug).toBeNull();
     expect(orphan!.assignmentSlug).toBeNull();
     expect(orphan!.transcriptPath).toBeNull();

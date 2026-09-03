@@ -26,8 +26,7 @@
  * layers 1, 2, and 4 are effectively synchronous.
  *
  * All process/env/fs touch points are injectable via `ResolverDeps` so unit
- * tests can drive every layer deterministically (mirrors the `LivenessDeps`
- * pattern in `src/dashboard/session-liveness.ts`).
+ * tests can drive every layer deterministically.
  */
 
 import { execFileSync } from 'node:child_process';

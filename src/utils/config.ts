@@ -13,30 +13,11 @@ import {
   isReservedCombo,
   type BindableActionKind,
 } from './hotkeysCatalog.js';
-import {
-  AGENT_ID_PATTERN,
-  BUILTIN_AGENTS,
-  PROMPT_ARG_POSITIONS,
-  type AgentConfig,
-  type PromptArgPosition,
-  type SessionInvocation,
-  type RunnerKind,
-  type AgentSourceKind,
-} from './agents-schema.js';
 import { isValidSlug } from './slug.js';
 import {
   type FactDeclaration,
   type RawFactDeclaration,
 } from './fact-registry.js';
-
-export {
-  AGENT_ID_PATTERN,
-  BUILTIN_AGENTS,
-  PROMPT_ARG_POSITIONS,
-  type AgentConfig,
-  type PromptArgPosition,
-  type SessionInvocation,
-};
 
 export interface StatusDefinition {
   id: string;
@@ -275,18 +256,6 @@ export type SummarizeBackendName = 'claude' | 'pi';
  */
 export type SessionAutoSummarize = 'on' | 'off';
 
-/**
- * Multi-source agent discovery settings. Sources are individually toggleable;
- * `roots` is the depth-1 directory-scan root list (default `~`). Persisted as an
- * `agentDiscovery:` block whose one-level keys read back as dotted `fm` keys
- * (roots is a `:`-separated scalar to avoid list-parsing in the top-level map).
- */
-export interface AgentDiscoveryConfig {
-  claudeGlobal: boolean;
-  claudeProject: boolean;
-  directory: boolean;
-  roots: string[];
-}
 
 export interface SyntaurConfig {
   version: string;
@@ -316,7 +285,6 @@ export interface SyntaurConfig {
    * `'default'`. */
   defaultWorkflow?: string | null;
   types: TypesConfig | null;
-  agents: AgentConfig[] | null;
   playbooks: PlaybooksConfig;
   theme: ThemeConfig | null;
   hotkeys: HotkeyBindingsConfig | null;
@@ -330,8 +298,6 @@ export interface SyntaurConfig {
   stalenessWatchdog: boolean;
   /** Default cwd for a standalone claude-agent launch (null → home at launch). */
   standaloneDefaultCwd: string | null;
-  /** Multi-source agent discovery settings (sources on/off + scan roots). */
-  agentDiscovery: AgentDiscoveryConfig;
 }
 
 const DEFAULT_CONFIG: SyntaurConfig = {
@@ -361,7 +327,6 @@ const DEFAULT_CONFIG: SyntaurConfig = {
   workflows: null,
   defaultWorkflow: null,
   types: null,
-  agents: null,
   playbooks: {
     disabled: [],
   },
@@ -375,12 +340,6 @@ const DEFAULT_CONFIG: SyntaurConfig = {
   staleness: null,
   stalenessWatchdog: false,
   standaloneDefaultCwd: null,
-  agentDiscovery: {
-    claudeGlobal: true,
-    claudeProject: true,
-    directory: true,
-    roots: ['~'],
-  },
 };
 
 const AUTO_CREATE_WORKTREE_VALUES: readonly AutoCreateWorktree[] = ['skip', 'ask', 'always'];
@@ -391,214 +350,10 @@ const SUMMARIZE_BACKEND_VALUES: readonly SummarizeBackendName[] = ['claude', 'pi
 
 const SESSION_AUTO_SUMMARIZE_VALUES: readonly SessionAutoSummarize[] = ['on', 'off'];
 
-const RUNNER_KINDS: readonly RunnerKind[] = ['claude', 'pi', 'codex'];
 
-const AGENT_SOURCE_KINDS: readonly AgentSourceKind[] = [
-  'claude-global',
-  'claude-project',
-  'directory',
-];
 
-export class AgentConfigError extends Error {}
 
-/**
- * Validate an agent command string.
- * - Absolute paths (after ~ expansion) are accepted verbatim.
- * - Bare names (no "/" after expansion) are accepted for PATH lookup at launch time.
- * - Relative paths (contain "/" but not absolute) are rejected.
- */
-export function parseAgentCommand(value: string, agentId?: string): string {
-  if (typeof value !== 'string' || value.trim() === '') {
-    throw new AgentConfigError(
-      `agent${agentId ? ` "${agentId}"` : ''} has empty command`,
-    );
-  }
-  const expanded = expandHome(value.trim());
-  if (isAbsolute(expanded)) {
-    return resolve(expanded);
-  }
-  if (expanded.includes('/')) {
-    throw new AgentConfigError(
-      `agent${agentId ? ` "${agentId}"` : ''} command "${value}" is a relative path — use an absolute path or a bare binary name`,
-    );
-  }
-  return expanded;
-}
 
-export function validateAgentList(agents: AgentConfig[]): void {
-  const seen = new Set<string>();
-  let defaults = 0;
-  for (const agent of agents) {
-    if (!AGENT_ID_PATTERN.test(agent.id)) {
-      throw new AgentConfigError(
-        `agent id "${agent.id}" is invalid — must match /^[a-z0-9][a-z0-9_-]*$/`,
-      );
-    }
-    if (seen.has(agent.id)) {
-      throw new AgentConfigError(`duplicate agent id "${agent.id}"`);
-    }
-    seen.add(agent.id);
-    if (!agent.label || agent.label.trim() === '') {
-      throw new AgentConfigError(`agent "${agent.id}" has empty label`);
-    }
-    parseAgentCommand(agent.command, agent.id);
-    if (
-      agent.promptArgPosition !== undefined &&
-      !PROMPT_ARG_POSITIONS.includes(agent.promptArgPosition)
-    ) {
-      throw new AgentConfigError(
-        `agent "${agent.id}" has invalid promptArgPosition "${agent.promptArgPosition}" — expected first|last|none`,
-      );
-    }
-    if (agent.model !== undefined && /[\r\n]/.test(agent.model)) {
-      throw new AgentConfigError(
-        `agent "${agent.id}" has invalid model — must be a single line (no newlines)`,
-      );
-    }
-    if (
-      agent.playbook !== undefined &&
-      agent.playbook.trim() !== '' &&
-      !isValidSlug(agent.playbook)
-    ) {
-      throw new AgentConfigError(
-        `agent "${agent.id}" has invalid playbook "${agent.playbook}" — must be a valid playbook slug`,
-      );
-    }
-    if (agent.launchPrompt !== undefined && /[\r\n]/.test(agent.launchPrompt)) {
-      throw new AgentConfigError(
-        `agent "${agent.id}" has invalid launchPrompt — must be a single line (no newlines)`,
-      );
-    }
-    if (agent.agentName !== undefined && /[\r\n]/.test(agent.agentName)) {
-      throw new AgentConfigError(
-        `agent "${agent.id}" has invalid agentName — must be a single line (no newlines)`,
-      );
-    }
-    if (agent.workdir !== undefined && /[\r\n]/.test(agent.workdir)) {
-      throw new AgentConfigError(
-        `agent "${agent.id}" has invalid workdir — must be a single line (no newlines)`,
-      );
-    }
-    // `agentName` (Claude --agent) and `workdir` (pi/codex launch dir) are two
-    // different identity adapters — an agent uses one or the other, never both.
-    if (
-      agent.agentName !== undefined &&
-      agent.agentName.trim() !== '' &&
-      agent.workdir !== undefined &&
-      agent.workdir.trim() !== ''
-    ) {
-      throw new AgentConfigError(
-        `agent "${agent.id}" sets both agentName and workdir — these are mutually exclusive`,
-      );
-    }
-    // A Claude agent definition carries its own model frontmatter, which wins on
-    // `--agent`. A profile `model` alongside `agentName` would be silently
-    // dropped at launch — fail loudly instead so the contradiction is visible.
-    if (
-      agent.agentName !== undefined &&
-      agent.agentName.trim() !== '' &&
-      agent.model !== undefined &&
-      agent.model.trim() !== ''
-    ) {
-      throw new AgentConfigError(
-        `agent "${agent.id}" sets both agentName and model — the agent definition's own model is authoritative; remove the profile model`,
-      );
-    }
-    // `runner` (the intrinsic type badge) — validate the enum + keep it consistent
-    // with the identity field. These checks fire only on the EXPLICIT `runner`
-    // field, never by command-sniffing, so a shell-aliased Claude with
-    // `runner: claude` is fine and a legacy row without `runner` keeps the looser
-    // rules above (shipped Decision 6 preserved).
-    if (agent.runner !== undefined && !RUNNER_KINDS.includes(agent.runner)) {
-      throw new AgentConfigError(
-        `agent "${agent.id}" has invalid runner "${agent.runner}" — must be one of ${RUNNER_KINDS.join(', ')}`,
-      );
-    }
-    if (agent.sourceKind !== undefined && !AGENT_SOURCE_KINDS.includes(agent.sourceKind)) {
-      throw new AgentConfigError(
-        `agent "${agent.id}" has invalid sourceKind "${agent.sourceKind}" — must be one of ${AGENT_SOURCE_KINDS.join(', ')}`,
-      );
-    }
-    if (agent.sourcePath !== undefined && /[\r\n]/.test(agent.sourcePath)) {
-      throw new AgentConfigError(
-        `agent "${agent.id}" has invalid sourcePath — must be a single line (no newlines)`,
-      );
-    }
-    if (agent.sourceRepo !== undefined && /[\r\n]/.test(agent.sourceRepo)) {
-      throw new AgentConfigError(
-        `agent "${agent.id}" has invalid sourceRepo — must be a single line (no newlines)`,
-      );
-    }
-    if (agent.runner === 'claude' && agent.workdir !== undefined && agent.workdir.trim() !== '') {
-      throw new AgentConfigError(
-        `agent "${agent.id}" has runner "claude" but sets workdir — a claude agent uses agentName, not workdir`,
-      );
-    }
-    if (
-      (agent.runner === 'pi' || agent.runner === 'codex') &&
-      agent.agentName !== undefined &&
-      agent.agentName.trim() !== ''
-    ) {
-      throw new AgentConfigError(
-        `agent "${agent.id}" has runner "${agent.runner}" but sets agentName — a directory agent uses workdir, not agentName`,
-      );
-    }
-    // sourceKind ⟷ runner compatibility (only when both are explicit): a
-    // `directory` source is a pi/codex agent; a `claude-*` source is a claude
-    // agent. Blocks a directory candidate confirmed as `claude` (which would
-    // store agentName instead of workdir → a broken registration).
-    if (agent.runner !== undefined && agent.sourceKind !== undefined) {
-      const directorySource = agent.sourceKind === 'directory';
-      const claudeRunner = agent.runner === 'claude';
-      if (directorySource && claudeRunner) {
-        throw new AgentConfigError(
-          `agent "${agent.id}" has sourceKind "directory" but runner "claude" — a directory source is a pi/codex agent`,
-        );
-      }
-      if (!directorySource && !claudeRunner) {
-        throw new AgentConfigError(
-          `agent "${agent.id}" has sourceKind "${agent.sourceKind}" but runner "${agent.runner}" — a ${agent.sourceKind} source is a claude agent`,
-        );
-      }
-    }
-    validateSessionInvocation(agent, 'resume', agent.resume);
-    validateSessionInvocation(agent, 'fork', agent.fork);
-    if (agent.default) defaults++;
-  }
-  if (defaults > 1) {
-    throw new AgentConfigError(
-      `more than one agent is marked default: true (only one is allowed)`,
-    );
-  }
-}
-
-function validateSessionInvocation(
-  agent: AgentConfig,
-  mode: 'resume' | 'fork',
-  invocation: SessionInvocation | undefined,
-): void {
-  if (invocation === undefined) return;
-  if (!Array.isArray(invocation.args)) {
-    throw new AgentConfigError(
-      `agent "${agent.id}" ${mode}.args must be an array of strings`,
-    );
-  }
-  for (const a of invocation.args) {
-    if (typeof a !== 'string') {
-      throw new AgentConfigError(
-        `agent "${agent.id}" ${mode}.args must contain only strings`,
-      );
-    }
-  }
-  if (
-    invocation.command !== undefined &&
-    (typeof invocation.command !== 'string' || invocation.command.trim() === '')
-  ) {
-    throw new AgentConfigError(
-      `agent "${agent.id}" ${mode}.command must be a non-empty string when present`,
-    );
-  }
-}
 
 function cloneDefaultConfig(): SyntaurConfig {
   return {
@@ -620,14 +375,6 @@ function cloneDefaultConfig(): SyntaurConfig {
           definitions: DEFAULT_CONFIG.types.definitions.map((d) => ({ ...d })),
           default: DEFAULT_CONFIG.types.default,
         }
-      : null,
-    agents: DEFAULT_CONFIG.agents
-      ? DEFAULT_CONFIG.agents.map((a) => ({
-          ...a,
-          ...(a.args ? { args: [...a.args] } : {}),
-          ...(a.resume ? { resume: { ...a.resume, args: [...a.resume.args] } } : {}),
-          ...(a.fork ? { fork: { ...a.fork, args: [...a.fork.args] } } : {}),
-        }))
       : null,
     playbooks: {
       disabled: [...DEFAULT_CONFIG.playbooks.disabled],
@@ -690,32 +437,6 @@ function parseInstalledAgents(
   return Object.keys(installedAgents).length > 0 ? { installedAgents } : {};
 }
 
-/**
- * Reconstruct the agent-discovery settings from the flattened frontmatter.
- * Sources default ON when absent; `roots` is a `:`-separated scalar (kept literal
- * — `~` is expanded at scan time, not here). Absent → the DEFAULT_CONFIG shape.
- */
-function parseAgentDiscoveryFromFm(fm: Record<string, string>): AgentDiscoveryConfig {
-  const flag = (key: string, def: boolean): boolean => {
-    const v = fm[key];
-    if (v === undefined) return def;
-    return String(v).toLowerCase() === 'true';
-  };
-  const rootsRaw = fm['agentDiscovery.roots'];
-  const roots =
-    rootsRaw !== undefined && String(rootsRaw).trim() !== ''
-      ? String(rootsRaw)
-          .split(':')
-          .map((r) => r.trim())
-          .filter((r) => r.length > 0)
-      : [];
-  return {
-    claudeGlobal: flag('agentDiscovery.claudeGlobal', true),
-    claudeProject: flag('agentDiscovery.claudeProject', true),
-    directory: flag('agentDiscovery.directory', true),
-    roots: roots.length > 0 ? roots : DEFAULT_CONFIG.agentDiscovery.roots.slice(),
-  };
-}
 
 export function parseStatusConfig(content: string): StatusConfig | null {
   const match = content.match(/^---\n([\s\S]*?)\n---/);
@@ -1473,49 +1194,7 @@ export async function deleteWorkspaceVisibilityConfig(): Promise<void> {
   await writeFileForce(configPath, newContent);
 }
 
-export function serializeAgentDiscoveryConfig(cfg: AgentDiscoveryConfig): string {
-  return [
-    'agentDiscovery:',
-    `  claudeGlobal: ${cfg.claudeGlobal}`,
-    `  claudeProject: ${cfg.claudeProject}`,
-    `  directory: ${cfg.directory}`,
-    `  roots: ${cfg.roots.join(':')}`,
-  ].join('\n');
-}
 
-/**
- * Persist the agent-discovery block (sources + roots) plus the claude standalone
- * default cwd scalar. Both are stripped then re-emitted so the rest of the config
- * frontmatter is preserved. Mirrors {@link writeWorkspaceVisibilityConfig}.
- */
-export async function writeAgentDiscoveryConfig(
-  cfg: AgentDiscoveryConfig,
-  standaloneDefaultCwd: string | null,
-): Promise<void> {
-  const configPath = resolve(syntaurRoot(), 'config.md');
-  const block = serializeAgentDiscoveryConfig(cfg);
-  const scalarLine = standaloneDefaultCwd ? `standaloneDefaultCwd: ${standaloneDefaultCwd}` : '';
-  const additions = [block, scalarLine].filter(Boolean).join('\n');
-
-  const existing = (await fileExists(configPath))
-    ? await readFile(configPath, 'utf-8')
-    : renderConfig({ defaultProjectDir: defaultProjectDir() });
-
-  const fmMatch = existing.match(/^(---\n)([\s\S]*?)\n(---)/);
-  if (!fmMatch) {
-    const content = `---\nversion: "2.0"\ndefaultProjectDir: ${defaultProjectDir()}\n${additions}\n---\n${existing}`;
-    await writeFileForce(configPath, content);
-    return;
-  }
-
-  const fmBlock = fmMatch[2];
-  const afterFrontmatter = existing.slice(fmMatch[0].length);
-  let cleanedFm = stripTopLevelBlock(fmBlock, 'agentDiscovery');
-  cleanedFm = stripTopLevelScalar(cleanedFm, 'standaloneDefaultCwd');
-  const newFm = `${cleanedFm}\n${additions}`.replace(/^\n+/, '').replace(/\n+$/, '');
-  const newContent = `---\n${newFm}\n---${afterFrontmatter}`;
-  await writeFileForce(configPath, newContent);
-}
 
 /**
  * Remove any top-level `key: <value>` scalar line from a YAML frontmatter block.
@@ -1688,223 +1367,8 @@ function parseOptionalAbsolutePath(
   return resolve(expanded);
 }
 
-function parseAgentsConfig(content: string): AgentConfig[] | null {
-  const match = content.match(/^---\n([\s\S]*?)\n---/);
-  if (!match) return null;
-  const fmBlock = match[1];
 
-  const agentsStart = fmBlock.match(/^agents:\s*$/m);
-  if (!agentsStart) return null;
 
-  const startIdx = fmBlock.indexOf(agentsStart[0]) + agentsStart[0].length;
-  const remaining = fmBlock.slice(startIdx);
-  const lines = remaining.split('\n');
-
-  const agents: AgentConfig[] = [];
-  let current: Partial<AgentConfig> & { args?: string[] } | null = null;
-  let argsCapture: string[] | null = null;
-  let argsBaseIndent = 0;
-  // Active nested block state (e.g. `resume:` or `fork:` sub-mapping under an
-  // agent). When `nestedKey` is one of `resume` / `fork`, lines at deeper
-  // indent are parsed as that invocation's `command` / `args` fields. When
-  // `nestedKey === '__skip__'` we swallow the indented block without
-  // recording anything — this is the forward-compat path for unknown nested
-  // keys added in future syntaur versions.
-  let nestedKey: string | null = null;
-  let nestedInvocation: SessionInvocation | null = null;
-  let nestedBaseIndent = 0;
-
-  function flushCurrent() {
-    if (!current) return;
-    if (!current.id || !current.command || !current.label) {
-      current = null;
-      return;
-    }
-    agents.push({
-      id: current.id,
-      label: current.label,
-      command: current.command,
-      ...(current.args && current.args.length > 0 ? { args: current.args } : {}),
-      ...(current.promptArgPosition
-        ? { promptArgPosition: current.promptArgPosition }
-        : {}),
-      ...(current.default ? { default: true } : {}),
-      ...(current.resolveFromShellAliases ? { resolveFromShellAliases: true } : {}),
-      ...(current.model ? { model: current.model } : {}),
-      ...(current.playbook ? { playbook: current.playbook } : {}),
-      ...(current.launchPrompt ? { launchPrompt: current.launchPrompt } : {}),
-      ...(current.agentName ? { agentName: current.agentName } : {}),
-      ...(current.workdir ? { workdir: current.workdir } : {}),
-      ...(current.runner ? { runner: current.runner } : {}),
-      ...(current.sourceKind ? { sourceKind: current.sourceKind } : {}),
-      ...(current.sourcePath ? { sourcePath: current.sourcePath } : {}),
-      ...(current.sourceRepo ? { sourceRepo: current.sourceRepo } : {}),
-      ...(current.resume ? { resume: current.resume } : {}),
-      ...(current.fork ? { fork: current.fork } : {}),
-    });
-    current = null;
-    argsCapture = null;
-    nestedKey = null;
-    nestedInvocation = null;
-  }
-
-  function closeNestedBlock() {
-    if (!nestedKey) return;
-    if (current && (nestedKey === 'resume' || nestedKey === 'fork') && nestedInvocation) {
-      // Only attach when args were populated — empty invocation is a no-op.
-      if (Array.isArray(nestedInvocation.args)) {
-        current[nestedKey] = nestedInvocation;
-      }
-    }
-    nestedKey = null;
-    nestedInvocation = null;
-    argsCapture = null;
-  }
-
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-    const trimmed = line.trimStart();
-    const indent = line.length - trimmed.length;
-
-    if (indent === 0 && trimmed !== '' && !trimmed.startsWith('#')) {
-      closeNestedBlock();
-      break; // new top-level key
-    }
-
-    // Continue capturing list items for the active argsCapture target.
-    if (argsCapture) {
-      if (indent > argsBaseIndent && trimmed.startsWith('- ')) {
-        argsCapture.push(decodeYamlScalar(trimmed.slice(2).trim()));
-        continue;
-      } else {
-        argsCapture = null;
-      }
-    }
-
-    if (indent === 2 && trimmed.startsWith('- ')) {
-      closeNestedBlock();
-      flushCurrent();
-      current = {};
-      const rest = trimmed.slice(2).trim();
-      const colonIdx = rest.indexOf(':');
-      if (colonIdx > 0) {
-        const k = rest.slice(0, colonIdx).trim();
-        const v = rest.slice(colonIdx + 1).trim();
-        assignAgentField(current, k, v);
-      }
-      continue;
-    }
-
-    if (!current) continue;
-
-    // Inside a nested block (resume / fork / skip-unknown).
-    if (nestedKey && indent > nestedBaseIndent) {
-      const colonIdx = trimmed.indexOf(':');
-      if (colonIdx <= 0) continue;
-      const k = trimmed.slice(0, colonIdx).trim();
-      const v = trimmed.slice(colonIdx + 1).trim();
-      if (nestedKey === 'resume' || nestedKey === 'fork') {
-        if (!nestedInvocation) nestedInvocation = { args: [] };
-        if (k === 'args' && v === '') {
-          nestedInvocation.args = [];
-          argsCapture = nestedInvocation.args;
-          argsBaseIndent = indent;
-          continue;
-        }
-        if (k === 'command' && v !== '') {
-          nestedInvocation.command = decodeYamlScalar(v);
-          continue;
-        }
-        // Unknown nested-of-nested: ignore for forward compat.
-      }
-      // nestedKey === '__skip__' → swallow without recording.
-      continue;
-    }
-
-    // Returning out to indent 4 (or shallower) — close any open nested block.
-    if (nestedKey && indent <= nestedBaseIndent) {
-      closeNestedBlock();
-    }
-
-    if (indent >= 4 && current) {
-      const colonIdx = trimmed.indexOf(':');
-      if (colonIdx <= 0) continue;
-      const k = trimmed.slice(0, colonIdx).trim();
-      const v = trimmed.slice(colonIdx + 1).trim();
-      if (k === 'args' && v === '') {
-        argsCapture = [];
-        argsBaseIndent = indent;
-        current.args = argsCapture;
-        continue;
-      }
-      // Recognized nested mapping blocks: resume / fork. Empty value + no
-      // recognized scalar field → enter nested mode.
-      if ((k === 'resume' || k === 'fork') && v === '') {
-        nestedKey = k;
-        nestedInvocation = { args: [] };
-        nestedBaseIndent = indent;
-        continue;
-      }
-      // Unknown key with empty value at agent-field indent: forward-compat
-      // skip. Older parsers would crash here once a future version emits
-      // a new nested block; this branch lets us pass through gracefully.
-      if (v === '' && !KNOWN_AGENT_SCALAR_FIELDS.has(k)) {
-        nestedKey = '__skip__';
-        nestedInvocation = null;
-        nestedBaseIndent = indent;
-        continue;
-      }
-      assignAgentField(current, k, v);
-    }
-  }
-  closeNestedBlock();
-  flushCurrent();
-
-  if (agents.length === 0) return [];
-  return agents;
-}
-
-const KNOWN_AGENT_SCALAR_FIELDS: ReadonlySet<string> = new Set([
-  'id',
-  'label',
-  'command',
-  'promptArgPosition',
-  'default',
-  'resolveFromShellAliases',
-  'model',
-  'playbook',
-  'launchPrompt',
-  'agentName',
-  'workdir',
-  'runner',
-  'sourceKind',
-  'sourcePath',
-  'sourceRepo',
-]);
-
-/**
- * Normalize and validate an agents list parsed from config.md. On any
- * AgentConfigError, log a warning and fall back to built-in defaults so a
- * malformed user config does not brick `syntaur browse`. Returns the
- * normalized list (with `command` resolved through `parseAgentCommand`).
- */
-function normalizeAgentsFromConfig(agents: AgentConfig[] | null): AgentConfig[] | null {
-  if (agents === null) return null;
-  try {
-    const normalized = agents.map((agent) => ({
-      ...agent,
-      command: parseAgentCommand(agent.command, agent.id),
-    }));
-    validateAgentList(normalized);
-    return normalized;
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    console.warn(
-      `Warning: ~/.syntaur/config.md agents block is invalid (${msg}) — using built-in defaults`,
-    );
-    return null;
-  }
-}
 
 /**
  * Decode a YAML-ish scalar:
@@ -1943,61 +1407,11 @@ function decodeYamlScalar(value: string): string {
   return trimmed;
 }
 
-function assignAgentField(target: Partial<AgentConfig>, key: string, rawValue: string): void {
-  const value = decodeYamlScalar(rawValue);
-  switch (key) {
-    case 'id':
-      target.id = value;
-      break;
-    case 'label':
-      target.label = value;
-      break;
-    case 'command':
-      target.command = value;
-      break;
-    case 'promptArgPosition':
-      target.promptArgPosition = value as PromptArgPosition;
-      break;
-    case 'default':
-      target.default = value === 'true';
-      break;
-    case 'resolveFromShellAliases':
-      target.resolveFromShellAliases = value === 'true';
-      break;
-    case 'model':
-      target.model = value;
-      break;
-    case 'playbook':
-      target.playbook = value;
-      break;
-    case 'launchPrompt':
-      target.launchPrompt = value;
-      break;
-    case 'agentName':
-      target.agentName = value;
-      break;
-    case 'workdir':
-      target.workdir = value;
-      break;
-    case 'runner':
-      target.runner = value as AgentConfig['runner'];
-      break;
-    case 'sourceKind':
-      target.sourceKind = value as AgentConfig['sourceKind'];
-      break;
-    case 'sourcePath':
-      target.sourcePath = value;
-      break;
-    case 'sourceRepo':
-      target.sourceRepo = value;
-      break;
-  }
-}
 
 function yamlQuoteScalar(value: string): string {
   if (/[\r\n]/.test(value)) {
-    throw new AgentConfigError(
-      `value contains newlines, which the agents config serializer does not support: ${JSON.stringify(value)}`,
+    throw new Error(
+      `value contains newlines, which the config serializer does not support: ${JSON.stringify(value)}`,
     );
   }
   if (value === '' || /[:#{}[\],&*?|>!%@`"'\\\t]/.test(value) || /^\s|\s$/.test(value)) {
@@ -2010,117 +1424,9 @@ function yamlQuoteScalar(value: string): string {
   return value;
 }
 
-function serializeAgentsConfig(agents: AgentConfig[]): string {
-  const lines: string[] = ['agents:'];
-  for (const a of agents) {
-    lines.push(`  - id: ${yamlQuoteScalar(a.id)}`);
-    lines.push(`    label: ${yamlQuoteScalar(a.label)}`);
-    lines.push(`    command: ${yamlQuoteScalar(a.command)}`);
-    if (a.model) {
-      lines.push(`    model: ${yamlQuoteScalar(a.model)}`);
-    }
-    if (a.playbook) {
-      lines.push(`    playbook: ${yamlQuoteScalar(a.playbook)}`);
-    }
-    if (a.launchPrompt) {
-      lines.push(`    launchPrompt: ${yamlQuoteScalar(a.launchPrompt)}`);
-    }
-    if (a.agentName) {
-      lines.push(`    agentName: ${yamlQuoteScalar(a.agentName)}`);
-    }
-    if (a.workdir) {
-      lines.push(`    workdir: ${yamlQuoteScalar(a.workdir)}`);
-    }
-    if (a.runner) {
-      lines.push(`    runner: ${yamlQuoteScalar(a.runner)}`);
-    }
-    if (a.sourceKind) {
-      lines.push(`    sourceKind: ${yamlQuoteScalar(a.sourceKind)}`);
-    }
-    if (a.sourcePath) {
-      lines.push(`    sourcePath: ${yamlQuoteScalar(a.sourcePath)}`);
-    }
-    if (a.sourceRepo) {
-      lines.push(`    sourceRepo: ${yamlQuoteScalar(a.sourceRepo)}`);
-    }
-    if (a.args && a.args.length > 0) {
-      lines.push(`    args:`);
-      for (const arg of a.args) {
-        lines.push(`      - ${yamlQuoteScalar(arg)}`);
-      }
-    }
-    if (a.promptArgPosition && a.promptArgPosition !== 'first') {
-      lines.push(`    promptArgPosition: ${a.promptArgPosition}`);
-    }
-    if (a.default) {
-      lines.push(`    default: true`);
-    }
-    if (a.resolveFromShellAliases) {
-      lines.push(`    resolveFromShellAliases: true`);
-    }
-    if (a.resume) {
-      appendSessionInvocation(lines, 'resume', a.resume);
-    }
-    if (a.fork) {
-      appendSessionInvocation(lines, 'fork', a.fork);
-    }
-  }
-  return lines.join('\n');
-}
 
-function appendSessionInvocation(
-  lines: string[],
-  key: 'resume' | 'fork',
-  invocation: SessionInvocation,
-): void {
-  lines.push(`    ${key}:`);
-  if (invocation.command !== undefined) {
-    lines.push(`      command: ${yamlQuoteScalar(invocation.command)}`);
-  }
-  lines.push(`      args:`);
-  for (const arg of invocation.args) {
-    lines.push(`        - ${yamlQuoteScalar(arg)}`);
-  }
-}
 
-export async function writeAgentsConfig(agents: AgentConfig[]): Promise<void> {
-  validateAgentList(agents);
-  const configPath = resolve(syntaurRoot(), 'config.md');
-  const agentsBlock = serializeAgentsConfig(agents);
 
-  const existing = (await fileExists(configPath))
-    ? await readFile(configPath, 'utf-8')
-    : renderConfig({ defaultProjectDir: defaultProjectDir() });
-
-  const fmMatch = existing.match(/^(---\n)([\s\S]*?)\n(---)/);
-  if (!fmMatch) {
-    const content = `---\nversion: "2.0"\ndefaultProjectDir: ${defaultProjectDir()}\n${agentsBlock}\n---\n${existing}`;
-    await writeFileForce(configPath, content.replace(/\n\n---/, '\n---'));
-    return;
-  }
-
-  const fmBlock = fmMatch[2];
-  const afterFrontmatter = existing.slice(fmMatch[0].length);
-  const cleanedFm = stripTopLevelBlock(fmBlock, 'agents');
-  const newFm = `${cleanedFm}\n${agentsBlock}`.replace(/^\n+/, '').replace(/\n+$/, '');
-  const newContent = `---\n${newFm}\n---${afterFrontmatter}`;
-  await writeFileForce(configPath, newContent);
-}
-
-export async function deleteAgentsConfig(): Promise<void> {
-  const configPath = resolve(syntaurRoot(), 'config.md');
-  if (!(await fileExists(configPath))) return;
-
-  const existing = await readFile(configPath, 'utf-8');
-  const fmMatch = existing.match(/^(---\n)([\s\S]*?)\n(---)/);
-  if (!fmMatch) return;
-
-  const fmBlock = fmMatch[2];
-  const afterFrontmatter = existing.slice(fmMatch[0].length);
-  const cleanedFm = stripTopLevelBlock(fmBlock, 'agents');
-  const newContent = `---\n${cleanedFm}\n---${afterFrontmatter}`;
-  await writeFileForce(configPath, newContent);
-}
 
 /**
  * WS-3 T9b — the legacy-writer lockout. After `syntaur migrate-workflows`
@@ -2739,7 +2045,6 @@ export async function readConfig(): Promise<SyntaurConfig> {
     workflows: parseWorkflowsConfig(content),
     defaultWorkflow: fm['defaultWorkflow'] ? String(fm['defaultWorkflow']) : null,
     types: null,
-    agents: normalizeAgentsFromConfig(parseAgentsConfig(content)),
     playbooks: parsePlaybooksConfig(fmBlock),
     theme: parseThemeConfig(content),
     hotkeys: parseHotkeyBindingsConfig(content),
@@ -2760,7 +2065,6 @@ export async function readConfig(): Promise<SyntaurConfig> {
       fm['standaloneDefaultCwd'],
       'standaloneDefaultCwd',
     ),
-    agentDiscovery: parseAgentDiscoveryFromFm(fm),
   };
 }
 
@@ -2768,30 +2072,6 @@ export function getAssignmentTypes(config: SyntaurConfig): TypesConfig {
   return config.types ?? DEFAULT_ASSIGNMENT_TYPES;
 }
 
-export function getAgents(config: SyntaurConfig): AgentConfig[] {
-  if (config.agents === null) return BUILTIN_AGENTS;
-  // For agents whose id matches any builtin (claude/codex/pi/openclaw/hermes),
-  // inherit that builtin's resume/fork for whichever the user omitted. Builtins
-  // without a recipe (openclaw/hermes) have nothing to inherit, so an omitted
-  // field stays omitted. Omission means "inherit", not
-  // "disable": there is no syntax to express intentional disable, and the
-  // dashboard agent editor (api-agents coerceAgentRow) silently drops these
-  // fields, so omission is frequently accidental. User-provided values win;
-  // non-builtin agents pass through untouched. Inputs are never mutated.
-  const builtinById = new Map(BUILTIN_AGENTS.map((a) => [a.id, a]));
-  return config.agents.map((agent) => {
-    const builtin = builtinById.get(agent.id);
-    if (!builtin) return agent;
-    const resume = agent.resume ?? builtin.resume;
-    const fork = agent.fork ?? builtin.fork;
-    if (resume === agent.resume && fork === agent.fork) return agent;
-    return {
-      ...agent,
-      ...(resume ? { resume } : {}),
-      ...(fork ? { fork } : {}),
-    };
-  });
-}
 
 export class TerminalConfigError extends Error {}
 
@@ -2844,28 +2124,4 @@ export function getTerminal(config: SyntaurConfig): TerminalChoice {
   return 'terminal-app';
 }
 
-export interface AgentsMutation {
-  kind: 'add' | 'remove' | 'set' | 'reorder';
-  apply: (current: AgentConfig[]) => AgentConfig[];
-}
 
-/**
- * Apply a mutation to the agents list, validate, and either write or return the
- * proposed new list (for --dry-run). Always runs full validation.
- */
-export async function updateAgentsConfig(
-  mutation: AgentsMutation,
-  options: { dryRun?: boolean } = {},
-): Promise<{ previous: AgentConfig[]; next: AgentConfig[]; written: boolean }> {
-  const config = await readConfig();
-  const previous = config.agents ?? [...BUILTIN_AGENTS];
-  const next = mutation.apply(previous);
-  validateAgentList(next);
-
-  if (options.dryRun) {
-    return { previous, next, written: false };
-  }
-
-  await writeAgentsConfig(next);
-  return { previous, next, written: true };
-}

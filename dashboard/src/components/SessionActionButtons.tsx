@@ -1,7 +1,5 @@
 import { useRef, useState } from 'react';
 import {
-  Terminal,
-  GitFork,
   Square,
   Pin,
   PinOff,
@@ -16,10 +14,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './ui/t
 import { ContextMenuPopover } from './ContextMenuPopover';
 import type { OverflowMenuItem } from './OverflowMenu';
 import { cn } from '../lib/utils';
-import { useRecreateFlow } from './useRecreateFlow';
 import type { AgentSessionWithLiveness } from '../types';
-
-const REOPEN_UNAVAILABLE = 'Reopen unavailable — this agent has no resume/fork command configured';
 
 interface SessionActionButtonsProps {
   session: AgentSessionWithLiveness;
@@ -96,34 +91,17 @@ interface RowAction {
  *
  * Affordances, in render order:
  *
- *   | Icon            | Hidden when           | Disabled when     | Action |
- *   |-----------------|-----------------------|-------------------|--------|
- *   | Terminal (R)    | !resumeSupported      | isLive === true   | open?session=<id>&mode=resume |
- *   | GitFork (F)     | !forkSupported        | never             | open?session=<id>&mode=fork |
- *   | Square (Stop)   | status !== 'active'   | never             | PATCH /api/agent-sessions/<id> |
- *   | Pencil (Rename) | usageOnly, or no onRename        | never | PATCH /api/agent-sessions/<id>/curation |
- *   | Pin / PinOff    | usageOnly, or no onTogglePin     | never | PATCH /api/agent-sessions/<id>/curation |
- *   | Archive/Restore | usageOnly, or no onToggleArchive | never | PATCH /api/agent-sessions/<id>/curation |
- *   | Trash2 (Delete) | usageOnly, or no onDelete        | never | caller confirms, then DELETE |
+ *   | Icon            | Hidden when           | Action |
+ *   |-----------------|-----------------------|--------|
+ *   | Square (Stop)   | status !== 'active'   | PATCH /api/agent-sessions/<id> |
+ *   | Pencil (Rename) | usageOnly, or no onRename        | PATCH /api/agent-sessions/<id>/curation |
+ *   | Pin / PinOff    | usageOnly, or no onTogglePin     | PATCH /api/agent-sessions/<id>/curation |
+ *   | Archive/Restore | usageOnly, or no onToggleArchive | PATCH /api/agent-sessions/<id>/curation |
+ *   | Trash2 (Delete) | usageOnly, or no onDelete        | caller confirms, then DELETE |
  *
- * Resume/Fork are preflight-gated through {@link useRecreateFlow}: a missing
- * worktree raises the recreate popup (instead of a dead `cd` in the terminal),
- * and the clicked `mode` is preserved through recreate so a fork never silently
- * degrades into a resume.
- *
- * Resume's disabled state exists to prevent two processes from interleaving
- * writes into the same transcript file — the server reports `isLive: true`
- * when the original process may still be running, and the tooltip points
- * the user at Fork instead.
- *
- * Fallback: when neither resume nor fork is supported, we render a disabled
- * "Reopen" affordance + reason tooltip rather than collapsing the row to
- * id + status, so the box always explains why reopen isn't available. This
- * applies both to a custom agent whose config defines no resume/fork, and to
- * the builtin launch-only agents (openclaw/hermes) that ship without a recipe
- * (claude/codex/pi do carry recipes and inherit them via getAgents).
- *
- *   | Terminal (Reopen) | never (only when neither R nor F) | always | (none) |
+ * Resume and Fork are GONE (phase 4): they re-fired a deep link into a
+ * terminal, and their capability flags came from the agent's terminal profile.
+ * What is left is session curation, which the chat does not replace.
  *
  * The `usageOnly` gate lives INSIDE this component rather than only at the call
  * site (D12): a usage-only row is synthesized from usage_events and has no DB
@@ -131,7 +109,7 @@ interface RowAction {
  * in a `!session.usageOnly` guard but `AgentSessionsSection` does not, so the
  * internal gate is what makes the component correct at both call sites.
  *
- * Layout. Seven labelled buttons overflow the Agent Sessions table's last
+ * Layout. Labelled buttons overflow the Agent Sessions table's last
  * column, which pushed Pin and Archive off the right edge of the viewport — the
  * whole point of the feature was that they be the *quickest* thing on the row.
  * `layout="compact"` therefore keeps Pin visible (it is the one action you take
@@ -150,10 +128,8 @@ export function SessionActionButtons({
   onDelete,
   layout = 'inline',
 }: SessionActionButtonsProps) {
-  const flow = useRecreateFlow();
   const [menuAnchor, setMenuAnchor] = useState<{ x: number; y: number } | null>(null);
   const menuButtonRef = useRef<HTMLButtonElement>(null);
-  const sessionTarget = { kind: 'session' as const, id: session.sessionId };
   // D12/H7: synthetic usage-only rows have no DB row to curate.
   const curatable = !session.usageOnly;
   const isPinned = Boolean(session.pinnedAt);
@@ -171,56 +147,14 @@ export function SessionActionButtons({
   // as the TooltipTrigger (same pattern as OverflowMenu / ContextMenuPopover).
   const disabledTriggerClass = 'inline-flex outline-none focus-visible:ring-1 focus-visible:ring-ring rounded-sm';
 
-  const reopenUnavailable = !session.resumeSupported && !session.forkSupported;
-
   const actions: RowAction[] = [];
-
-  if (reopenUnavailable) {
-    actions.push({
-      key: 'reopen',
-      label: 'Reopen',
-      icon: Terminal,
-      tooltip: REOPEN_UNAVAILABLE,
-      disabledReason: REOPEN_UNAVAILABLE,
-    });
-  }
-
-  if (session.resumeSupported) {
-    actions.push({
-      key: 'resume',
-      label: 'Resume',
-      ariaLabel: 'Resume session',
-      icon: Terminal,
-      tooltip: 'Continue this session in its agent (same session id, same transcript)',
-      disabled: flow.pending,
-      disabledReason: session.isLive
-        ? 'Session appears active — fork instead to avoid transcript corruption'
-        : undefined,
-      onSelect: () => void flow.open(sessionTarget, 'resume'),
-    });
-  }
-
-  if (session.forkSupported) {
-    actions.push({
-      key: 'fork',
-      label: 'Fork',
-      ariaLabel: 'Fork session',
-      icon: GitFork,
-      tooltip: 'Branch a new session from this point — safe even when the original is still running',
-      disabled: flow.pending,
-      onSelect: () => void flow.open(sessionTarget, 'fork'),
-    });
-  }
 
   if (session.status === 'active') {
     actions.push({
       key: 'mark-stopped',
       label: 'Mark stopped',
       icon: Square,
-      tooltip: session.resumeSupported
-        ? 'Tell the dashboard this session has ended so Resume re-enables'
-        : 'Tell the dashboard this session has ended',
-      disabled: flow.pending,
+      tooltip: 'Tell the dashboard this session has ended',
       onSelect: () => onMarkStopped(session.sessionId),
     });
   }
@@ -323,14 +257,11 @@ export function SessionActionButtons({
 
   if (layout === 'inline') {
     return (
-      <>
-        <TooltipProvider delayDuration={200}>
-          <div className="inline-flex items-center gap-1">
-            {actions.map((action) => renderActionButton(action, false))}
-          </div>
-        </TooltipProvider>
-        {flow.dialogs}
-      </>
+      <TooltipProvider delayDuration={200}>
+        <div className="inline-flex items-center gap-1">
+          {actions.map((action) => renderActionButton(action, false))}
+        </div>
+      </TooltipProvider>
     );
   }
 
@@ -393,7 +324,6 @@ export function SessionActionButtons({
         anchorRef={menuButtonRef}
         onClose={() => setMenuAnchor(null)}
       />
-      {flow.dialogs}
     </>
   );
 }

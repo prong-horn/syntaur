@@ -1,6 +1,5 @@
 import { Activity } from 'lucide-react';
 import { CopyButton } from './CopyButton';
-import { CopyLaunchCommandButton } from './CopyLaunchCommandButton';
 import { StatusBadge } from './StatusBadge';
 import { SectionCard } from './SectionCard';
 import { EmptyState } from './EmptyState';
@@ -37,7 +36,7 @@ async function patchMarkStopped(sessionId: string): Promise<void> {
   if (!res.ok) throw new Error((await res.text().catch(() => '')) || `HTTP ${res.status}`);
 }
 
-export function AgentSessionsSection({ sessions, loading, error, onError, onNotice }: AgentSessionsSectionProps) {
+export function AgentSessionsSection({ sessions, loading, error, onError }: AgentSessionsSectionProps) {
   if (loading && !sessions) return null;
 
   if (error && !sessions) {
@@ -73,13 +72,6 @@ export function AgentSessionsSection({ sessions, loading, error, onError, onNoti
               >
                 {session.sessionId.slice(0, 8)}
                 <CopyButton value={session.sessionId} onError={onError} />
-                <CopyLaunchCommandButton
-                  sessionId={session.sessionId}
-                  disabled={!session.resumeSupported}
-                  disabledReason="Resume not supported for this agent"
-                  onError={onError}
-                  onNotice={onNotice}
-                />
               </span>
             </span>
             <span className="flex items-center gap-2">

@@ -19,8 +19,6 @@ function makeSession(overrides: Partial<AgentSessionWithLiveness> = {}): AgentSe
     originalHeadSha: null,
     updatedAt: '2026-06-01T00:00:00Z',
     isLive: true,
-    resumeSupported: false,
-    forkSupported: false,
     ...overrides,
   };
 }

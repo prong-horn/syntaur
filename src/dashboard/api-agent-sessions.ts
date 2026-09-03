@@ -19,14 +19,13 @@ import {
   setSessionPinned,
   setSessionArchived,
   setSessionName,
+  withLiveness,
 } from './agent-sessions.js';
 import { fileExists } from '../utils/fs.js';
 import { isSafeSessionId } from '../utils/session-id.js';
 import { resolveAssignmentBySlug } from '../utils/assignment-resolver.js';
 import { assignmentsDir as assignmentsDirFn } from '../utils/paths.js';
 import { derivePathFromTranscript } from '../utils/transcript.js';
-import { enrichSessions } from './session-liveness.js';
-import { getAgents, readConfig } from '../utils/config.js';
 import { captureProcessStartedAt } from '../utils/process-info.js';
 import { captureHeadSha } from '../utils/git-worktree.js';
 import { isExistingDir } from '../utils/workspace-cwd.js';
@@ -142,8 +141,6 @@ function attachUsage(
       usage: summarize(usage),
       usageOnly: true,
       isLive: false,
-      resumeSupported: false,
-      forkSupported: false,
     });
   }
   return [...withUsage, ...orphans];
@@ -171,8 +168,6 @@ function usageOnlyRow(sessionId: string, usage: SessionUsage): AgentSessionWithL
     usage: { totalCost: usage.totalCost, totalTokens: usage.totalTokens, models: usage.models },
     usageOnly: true,
     isLive: false,
-    resumeSupported: false,
-    forkSupported: false,
   };
 }
 
@@ -403,7 +398,6 @@ export function createAgentSessionsRouter(
    */
   async function pageSessions(
     q: SessionPageQuery,
-    opts: { agents: ReturnType<typeof getAgents> },
   ): Promise<{ sessions: AgentSessionWithLiveness[]; totalCount: number }> {
     // Must agree with listSessionsPage's own guard, or a sort it refuses to
     // order in SQL would be routed to it and come back empty.
@@ -413,7 +407,7 @@ export function createAgentSessionsRouter(
     if (!wantsOrphans && !mergeSort) {
       const { sessions, totalCount } = listSessionsPage(q);
       return {
-        sessions: attachUsage(enrichSessions(sessions, opts.agents), { includeUsageOnly: false }),
+        sessions: attachUsage(withLiveness(sessions), { includeUsageOnly: false }),
         totalCount,
       };
     }
@@ -488,7 +482,7 @@ export function createAgentSessionsRouter(
     // Enrich only the page's real sessions; synthetic rows never reach the
     // liveness probes (they have no pid and no transcript).
     const enriched = new Map(
-      enrichSessions([...hydrated.values()], opts.agents).map((s) => [s.sessionId, s]),
+      withLiveness([...hydrated.values()]).map((s) => [s.sessionId, s] as const),
     );
 
     const out: AgentSessionWithLiveness[] = [];
@@ -526,8 +520,7 @@ export function createAgentSessionsRouter(
         res.status(404).json({ error: `Session "${sessionId}" not found` });
         return;
       }
-      const agents = getAgents(await readConfig());
-      const [enriched] = enrichSessions([base], agents);
+      const [enriched] = withLiveness([base]);
       const resolution = await resolveShort(sessionId);
       const detail: AgentSessionDetail = {
         ...enriched,
@@ -595,7 +588,6 @@ export function createAgentSessionsRouter(
   router.get('/', async (req, res) => {
     try {
       await reconcileActiveSessions(projectsDir, assignmentsDir);
-      const agents = getAgents(await readConfig());
       const includeUsageOnly = req.query.includeUsageOnly === '1';
 
       const pageSizeRaw = positiveIntParam(req.query.pageSize);
@@ -622,7 +614,7 @@ export function createAgentSessionsRouter(
         const sessions =
           unpagedArchived === 'only' ? all.filter((sess) => sess.archivedAt) : all;
         res.json({
-          sessions: attachUsage(enrichSessions(sessions, agents), {
+          sessions: attachUsage(withLiveness(sessions), {
             includeUsageOnly,
             // The archived filter above narrowed the array; without the full id
             // set, every archived tracked session with usage would come back as
@@ -691,7 +683,7 @@ export function createAgentSessionsRouter(
         page, pageSize, search, startedFromUtc, startedToUtc, workspaceScope, sort, attribution,
         archived,
       };
-      const result = await pageSessions(query, { agents });
+      const result = await pageSessions(query);
 
       // Bucket counts for the filter control, so the user can see what a given
       // view is hiding. Each is the same query with only `attribution` swapped,
@@ -699,7 +691,7 @@ export function createAgentSessionsRouter(
       const countFor = async (a: SessionAttribution): Promise<number> =>
         a === attribution
           ? result.totalCount
-          : (await pageSessions({ ...query, attribution: a, page: 0, pageSize: 1 }, { agents }))
+          : (await pageSessions({ ...query, attribution: a, page: 0, pageSize: 1 }))
               .totalCount;
       const [trackedCount, assignedCount, unassignedCount, usageOnlyCount] = await Promise.all([
         countFor('tracked'),
@@ -744,11 +736,10 @@ export function createAgentSessionsRouter(
       }
       await reconcileActiveSessions(projectsDir, assignmentsDir);
       const sessions = await listProjectSessions(projectsDir, projectSlug, assignment);
-      const agents = getAgents(await readConfig());
       res.json({
         // Usage attached, but never orphan rows: a usage-only session has no
         // project binding, so it cannot belong to a project-scoped listing.
-        sessions: attachUsage(enrichSessions(sessions, agents), { includeUsageOnly: false }),
+        sessions: attachUsage(withLiveness(sessions), { includeUsageOnly: false }),
         generatedAt: new Date().toISOString(),
       });
     } catch (error) {

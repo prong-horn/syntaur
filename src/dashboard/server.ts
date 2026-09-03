@@ -30,8 +30,7 @@ import {
   resolveWorkspaceMembers,
 } from './api.js';
 import { resolveAssignmentById } from '../utils/assignment-resolver.js';
-import { listSessionsByAssignment, reconcileActiveSessions } from './agent-sessions.js';
-import { enrichSessions } from './session-liveness.js';
+import { listSessionsByAssignment, reconcileActiveSessions, withLiveness } from './agent-sessions.js';
 import { createWatcher } from './watcher.js';
 import { fileExists } from '../utils/fs.js';
 import {
@@ -40,7 +39,6 @@ import {
   writeHotkeyBindingsConfig,
   deleteHotkeyBindingsConfig,
   readConfig,
-  getAgents,
   getAssignmentTypes,
 } from '../utils/config.js';
 import {
@@ -75,11 +73,9 @@ import { withLock } from './todos-locks.js';
 import { createWriteRouter } from './api-write.js';
 import { createServersRouter } from './api-servers.js';
 import { createAgentSessionsRouter } from './api-agent-sessions.js';
-import { createAgentsRouter } from './api-agents.js';
 import { createSearchConfigRouter } from './api-search-config.js';
 import { createContentSearchRouter } from './api-search.js';
 import { createWorkspaceVisibilityConfigRouter } from './api-workspace-visibility-config.js';
-import { createAgentDiscoveryConfigRouter } from './api-agent-discovery-config.js';
 import { createStatusConfigRouter, createWorkflowConfigRouter } from './api-status-config.js';
 import { createLeasesRouter } from './api-leases.js';
 import { createSchedulesRouter } from './api-schedules.js';
@@ -723,9 +719,8 @@ export function createDashboardServer(options: DashboardServerOptions) {
         resolved.standalone ? null : resolved.projectSlug,
         resolved.standalone ? resolved.id : resolved.assignmentSlug,
       );
-      const agents = getAgents(await readConfig());
       res.json({
-        sessions: enrichSessions(sessions, agents),
+        sessions: withLiveness(sessions),
         generatedAt: new Date().toISOString(),
       });
     } catch (error) {
@@ -806,8 +801,6 @@ export function createDashboardServer(options: DashboardServerOptions) {
   );
 
   // --- Agents Config API ---
-  app.use('/api/config/agents', createAgentsRouter());
-  app.use('/api/config/agent-discovery', createAgentDiscoveryConfigRouter());
 
   // --- Playbooks API ---
   app.use('/api/playbooks', createPlaybooksRouter(playbooksDir));
