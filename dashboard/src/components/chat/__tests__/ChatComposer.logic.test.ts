@@ -4,8 +4,8 @@ import {
   applyCommand,
   detectActiveCommand,
   rankCommands,
-} from '../command-autocomplete';
-import type { ChatCommand, ChatCommandsSource } from '../chat-types';
+} from '../../../lib/command-autocomplete';
+import type { ChatCommand, ChatCommandsSource } from '../../../lib/chat-types';
 
 const agents = ['planner', 'codex'];
 const commands: ChatCommand[] = [

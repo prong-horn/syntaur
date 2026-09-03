@@ -507,10 +507,11 @@ describe('chat schema v1 → v2 (Task 3)', () => {
       (c) => c.name,
     );
     expect(columns).toContain('last_delivered_seq');
+    expect(columns).toContain('commands_json');
     expect(
       (db.prepare("SELECT value FROM meta WHERE key = 'chat_schema_version'").get() as { value: string })
         .value,
-    ).toBe('2');
+    ).toBe('3');
     // The existing row survives and defaults to the start of the log.
     expect(
       db.prepare("SELECT last_delivered_seq FROM chat_sessions WHERE session_key = 'a1:claude'").get(),
@@ -564,7 +565,7 @@ describe('chat schema v1 → v2 (Task 3)', () => {
           .prepare("SELECT value FROM meta WHERE key = 'chat_schema_version'")
           .get() as { value: string }
       ).value,
-    ).toBe('2');
+    ).toBe('3');
     closeSessionDb();
     await rm(dir, { recursive: true, force: true });
   });
