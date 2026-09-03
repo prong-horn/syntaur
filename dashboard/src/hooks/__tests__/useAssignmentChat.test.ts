@@ -98,6 +98,7 @@ describe('applyFrame', () => {
     lastTurnAt: null,
     cumulative: null,
     queued: [],
+    lastDeliveredSeq: 0,
   };
 
   it('applies a chat-item patch for this assignment', () => {

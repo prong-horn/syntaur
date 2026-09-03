@@ -649,6 +649,7 @@ export type WsMessageType =
   | 'schedules-updated'
   | 'chat-item'
   | 'chat-session'
+  | 'chat-participants'
   | 'connected';
 
 export interface WsMessage {
@@ -659,8 +660,9 @@ export interface WsMessage {
   /**
    * Frame body. Every other message type is a refetch HINT — the client
    * re-reads the affected record over REST — but the chat stream would hit REST
-   * ~36 times a second on codex, so `chat-item` and `chat-session` carry their
-   * payload inline (Decision 3). Consumers filter by `payload.assignmentId`.
+   * ~36 times a second on codex, so `chat-item`, `chat-session` and
+   * `chat-participants` carry their payload inline (Decision 3). Consumers
+   * filter by `payload.assignmentId`.
    */
   payload?: unknown;
 }

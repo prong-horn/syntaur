@@ -76,6 +76,8 @@ import type {
   PermissionRequestPayload,
   PermissionResponsePayload,
   TurnStartPayload,
+  TurnTrigger,
+  UserMessagePayload,
   ChatItem,
   ChatSessionState,
   ChatSessionSummary,
@@ -127,7 +129,7 @@ export type ClientFactory = (input: ClientFactoryInput) => AcpClient;
 
 export interface BrokerBroadcast {
   (message: {
-    type: 'chat-item' | 'chat-session';
+    type: 'chat-item' | 'chat-session' | 'chat-participants';
     projectSlug?: string | null;
     assignmentSlug?: string;
     timestamp: string;
@@ -183,7 +185,8 @@ export interface ChatBroker {
 
 interface InFlightTurn {
   turnId: string;
-  messageId: string;
+  /** What this turn is answering — a human message or a handoff hop. */
+  trigger: TurnTrigger;
   startedAt: string;
   startedMs: number;
   engagementId: number;
@@ -198,6 +201,12 @@ interface InFlightTurn {
   idleTimer: ReturnType<typeof setTimeout> | null;
   maxTimer: ReturnType<typeof setTimeout> | null;
   cancelled: boolean;
+  /**
+   * The highest chat-level `seq` this turn's prompt actually carried. The cursor
+   * is two-phase (Decision 4): computed when the prompt is built, committed at
+   * `turn.end` for every stop reason but `error`, so a failed prompt re-delivers.
+   */
+  deliveredSeqCandidate: number | null;
 }
 
 interface PendingPermission {
@@ -226,7 +235,9 @@ interface Session {
   effort: string | null;
   state: ChatSessionState;
   standingSent: boolean;
-  queue: Array<{ messageId: string; text: string }>;
+  queue: Array<{ text: string; trigger: TurnTrigger }>;
+  /** Highest chat-level `seq` this session has been shown (Decision 4). */
+  lastDeliveredSeq: number;
   inFlight: InFlightTurn | null;
   pendingPermissions: Map<string, PendingPermission>;
   permissionSeq: number;
@@ -389,7 +400,8 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
       effort: session.effort,
       lastTurnAt: session.lastTurnAt,
       cumulative: session.cumulative.models[modelKey(session)] ?? null,
-      queued: session.queue.map((q) => ({ messageId: q.messageId, text: q.text })),
+      queued: session.queue.map((q) => ({ text: q.text, trigger: q.trigger })),
+      lastDeliveredSeq: session.lastDeliveredSeq,
       error: session.error,
     };
   }
@@ -482,6 +494,7 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
       // Decision 7 — `resume` replays nothing but the agent still remembers).
       standingSent: Boolean(row?.acp_session_id),
       queue: [],
+      lastDeliveredSeq: 0,
       inFlight: null,
       pendingPermissions: new Map(),
       permissionSeq: 0,
@@ -574,7 +587,7 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
    *     left as live buttons that would 409.
    */
   async function repairSession(session: Session, events: ChatEvent[]): Promise<void> {
-    const openTurns = new Map<string, string | null>(); // turnId -> messageId
+    const openTurns = new Map<string, string | null>(); // turnId -> unused marker
     const queued = new Map<string, { messageId: string; text: string }>();
     /**
      * Every message a `turn.start` ever carried. The log's `user.message` event
@@ -595,9 +608,9 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
     for (const event of events) {
       switch (event.kind) {
         case 'turn.start': {
-          const payload = (event.payload ?? {}) as Partial<TurnStartPayload>;
-          if (payload.messageId) everSent.add(payload.messageId);
-          if (event.turnId) openTurns.set(event.turnId, payload.messageId ?? null);
+          const trigger = triggerOf(event);
+          if (trigger?.kind === 'human') everSent.add(trigger.messageId);
+          if (event.turnId) openTurns.set(event.turnId, null);
           break;
         }
         case 'turn.end':
@@ -605,9 +618,9 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
           if (event.turnId) openTurns.delete(event.turnId);
           break;
         case 'user.message': {
-          const payload = event.payload as { messageId: string; text: string; state?: string };
-          if (payload.state === 'queued') queued.set(payload.messageId, payload);
-          else queued.delete(payload.messageId); // withdrawn
+          const payload = event.payload as UserMessagePayload;
+          if (payload.state === 'withdrawn') queued.delete(payload.messageId);
+          else queued.set(payload.messageId, payload);
           break;
         }
         case 'acp.permission_request': {
@@ -670,7 +683,12 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
     closeDanglingEngagement(session);
 
     if (queued.size > 0) {
-      session.queue.push(...queued.values());
+      for (const message of queued.values()) {
+        session.queue.push({
+          text: message.text,
+          trigger: { kind: 'human', messageId: message.messageId },
+        });
+      }
       await record(
         session,
         'system',
@@ -1096,7 +1114,7 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
 
     const turn: InFlightTurn = {
       turnId,
-      messageId: next.messageId,
+      trigger: next.trigger,
       startedAt,
       startedMs: now(),
       engagementId: engagement.id,
@@ -1106,6 +1124,7 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
       idleTimer: null,
       maxTimer: null,
       cancelled: false,
+      deliveredSeqCandidate: null,
     };
     session.inFlight = turn;
     if (session.idleTimer) {
@@ -1113,7 +1132,7 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
       session.idleTimer = null;
     }
 
-    await record(session, 'turn.start', { messageId: next.messageId, startedAt }, turnId);
+    await record(session, 'turn.start', { trigger: next.trigger, startedAt }, turnId);
     // Dequeue only now that the turn is committed. Shifting earlier meant any
     // throw between the shift and the send dropped the message with no turn and
     // no trace (finding 5).
@@ -1393,7 +1412,7 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
       await resolveCwd(session);
 
       const messageId = randomUUID();
-      session.queue.push({ messageId, text });
+      session.queue.push({ text, trigger: { kind: 'human', messageId } });
       await record(session, 'user.message', { messageId, text, state: 'queued' }, null);
       flush(session);
       emitSession(session);
@@ -1405,12 +1424,11 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
       // Search every session for the assignment rather than assuming the default
       // agent — the message may have been addressed to another one, and after a
       // restart none of them are in memory until they are materialised.
-      const session = (await ensureAssignmentSessions(assignment)).find((s) =>
-        s.queue.some((q) => q.messageId === messageId),
-      );
+      const matches = (entry: { trigger: TurnTrigger }) =>
+        entry.trigger.kind === 'human' && entry.trigger.messageId === messageId;
+      const session = (await ensureAssignmentSessions(assignment)).find((s) => s.queue.some(matches));
       if (!session) return false;
-      const at = session.queue.findIndex((q) => q.messageId === messageId);
-      session.queue.splice(at, 1);
+      session.queue.splice(session.queue.findIndex(matches), 1);
       await record(session, 'user.message', { messageId, text: '', state: 'withdrawn' }, null);
       flush(session);
       emitSession(session);
@@ -1525,6 +1543,17 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
 }
 
 // --- helpers ---------------------------------------------------------------
+
+/**
+ * A `turn.start`'s trigger. Phase-2 log lines carry a flat `messageId` and no
+ * `trigger`; they are read as the human message they were (Decision 3).
+ */
+function triggerOf(event: ChatEvent): TurnTrigger | null {
+  const payload = (event.payload ?? {}) as Partial<TurnStartPayload>;
+  if (payload.trigger) return payload.trigger;
+  if (payload.messageId) return { kind: 'human', messageId: payload.messageId };
+  return null;
+}
 
 /**
  * The option to answer with when denying (Decision 9). codex offers no

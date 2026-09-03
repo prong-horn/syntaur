@@ -586,8 +586,11 @@ export class ChatNormalizer {
     this.turns.push({ turnId, status, startedAt: status.startedAt, cancelRequested: false, plan: null });
 
     // The queued bubble this turn is carrying becomes `sent` and joins the turn.
-    if (payload.messageId) {
-      const user = this.userMessages.get(payload.messageId);
+    // Phase-2 lines carry a flat `messageId`; phase-3 lines a `trigger`.
+    const triggeredBy =
+      payload.trigger?.kind === 'human' ? payload.trigger.messageId : payload.messageId;
+    if (triggeredBy) {
+      const user = this.userMessages.get(triggeredBy);
       if (user) {
         user.state = 'sent';
         user.turnId = turnId;

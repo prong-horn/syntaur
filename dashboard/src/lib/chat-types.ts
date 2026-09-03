@@ -14,6 +14,7 @@
 
 export type ChatItemType =
   | 'user.message'
+  | 'handoff'
   | 'agent.message'
   | 'agent.thought'
   | 'agent.work'
@@ -34,13 +35,33 @@ export interface ChatItemBase {
   sealed: boolean;
 }
 
-export type UserMessageState = 'queued' | 'sent' | 'withdrawn' | 'replayed';
+/**
+ * `queued` = no target started, `partial` = some did, `sent` = every target did.
+ * `replayed` is a user bubble the adapter replayed during a `session/load`.
+ */
+export type UserMessageState = 'queued' | 'partial' | 'sent' | 'withdrawn' | 'replayed';
 
 export interface UserMessageItem extends ChatItemBase {
   type: 'user.message';
   messageId: string;
   text: string;
   state: UserMessageState;
+  /** Absent on a replayed bubble and on a phase-2 row — neither was routed. */
+  targets?: string[];
+  deliveredTo?: string[];
+  mentions?: string[];
+  unknown?: string[];
+}
+
+/** One agent handing the conversation to another (§5.3's `handoff` row). */
+export interface HandoffItem extends ChatItemBase {
+  type: 'handoff';
+  handoffId: string;
+  fromAgentId: string;
+  toAgentId: string;
+  triggerItemId: string | null;
+  hop: number;
+  budget: number;
 }
 
 export interface AgentMessageItem extends ChatItemBase {
@@ -162,6 +183,7 @@ export interface SystemItem extends ChatItemBase {
 
 export type ChatItem =
   | UserMessageItem
+  | HandoffItem
   | AgentMessageItem
   | AgentThoughtItem
   | AgentWorkItem
@@ -192,6 +214,11 @@ export interface ModelTokens {
   cost: number;
 }
 
+/** What a queued turn is answering; mirrors `TurnTrigger` in `src/chat/types.ts`. */
+export type TurnTrigger =
+  | { kind: 'human'; messageId: string }
+  | { kind: 'handoff'; handoffId: string; fromAgentId: string; hop: number };
+
 export interface ChatSessionSummary {
   assignmentId: string;
   agentId: string;
@@ -204,16 +231,39 @@ export interface ChatSessionSummary {
   effort: string | null;
   lastTurnAt: string | null;
   cumulative: ModelTokens | null;
-  queued: Array<{ messageId: string; text: string }>;
+  queued: Array<{ text: string; trigger: TurnTrigger }>;
+  /** Highest chat-level `seq` this session has been shown (Decision 4). */
+  lastDeliveredSeq: number;
   error?: string | null;
 }
+
+/**
+ * The per-assignment participant set — `<assignmentDir>/chat/participants.json`
+ * (Decision 1).
+ */
+export interface Participants {
+  agents: string[];
+  defaultAgent: string | null;
+  hopBudget?: number;
+}
+
+export type RespondsTo = 'mentions' | 'all-human' | 'none';
 
 export interface ChatAgentSummary {
   id: string;
   name: string;
   color: string;
   harness: 'claude' | 'codex';
+  model: string | null;
+  mode: string | null;
+  effort: string | null;
+  respondsTo: RespondsTo;
+  description: string | null;
+  /** An emoji or one to two characters; the name's initial when unset. */
+  avatar: string;
   default: boolean;
+  /** Absolute path of the definition file; null for a builtin. */
+  source: string | null;
   /** Null when the adapter binary resolved on PATH; the install hint otherwise. */
   missing: string | null;
 }
@@ -229,7 +279,13 @@ export interface ChatSessionFrame {
   session: ChatSessionSummary;
 }
 
-export type ChatWsFrame = ChatItemFrame | ChatSessionFrame;
+export interface ChatParticipantsFrame {
+  assignmentId: string;
+  participants: Participants;
+  agents: ChatAgentSummary[];
+}
+
+export type ChatWsFrame = ChatItemFrame | ChatSessionFrame | ChatParticipantsFrame;
 
 /** Narrowing helper — a `chat-item` frame always carries a `patch`. */
 export function isChatItemFrame(frame: ChatWsFrame): frame is ChatItemFrame {

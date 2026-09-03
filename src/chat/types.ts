@@ -42,6 +42,9 @@ export type Harness = 'claude' | 'codex';
  */
 export type ChatEventKind =
   | 'user.message'
+  | 'user.message.delivered'
+  | 'handoff'
+  | 'route.notice'
   | 'turn.start'
   | 'turn.end'
   | 'turn.cancel'
@@ -71,16 +74,74 @@ export interface ChatEvent {
   payload: unknown;
 }
 
-/** `user.message` payload — `messageId` is minted at queue time and is what DELETE targets. */
+/**
+ * The author ids assignment-scope rows carry (Decision 3). A `user.message` and
+ * a routing notice belong to no agent session, so `event.agentId` names the
+ * human or Syntaur itself; the SPA resolves both to a name and a colour.
+ */
+export const HUMAN_AGENT_ID = 'human';
+export const SYSTEM_AGENT_ID = 'system';
+
+/**
+ * `user.message` payload — `messageId` is minted at queue time and is what
+ * DELETE targets. Recorded in the ASSIGNMENT scope (Decision 3), so one event
+ * carries the whole routing decision for a fan-out.
+ *
+ * A later state-only event (the `withdrawn` flip) carries just `messageId` and
+ * `state`; the routing fields are absent there, and absent on every phase-2 log
+ * line, which is why they are optional.
+ */
 export interface UserMessagePayload {
   messageId: string;
   text: string;
+  state?: UserMessageState;
+  /** Every `@token` in the text that named an attached agent, in first-appearance order. */
+  mentions?: string[];
+  /** The agents the router actually enqueued a turn for. */
+  targets?: string[];
+  /** `@token`s that named no attached agent — one `route.notice` each. */
+  unknown?: string[];
 }
 
-/** `turn.start` payload. */
-export interface TurnStartPayload {
+/** `user.message.delivered` payload — one per target, right after its `turn.start`. */
+export interface UserMessageDeliveredPayload {
   messageId: string;
+  agentId: string;
+  turnId: string;
+}
+
+/**
+ * What a turn is answering. A human trigger names the message; a handoff trigger
+ * names the `handoffId` minted before the `handoff` event was recorded, which is
+ * also how crash repair decides per target whether a hop was ever started
+ * (Decision 3).
+ */
+export type TurnTrigger =
+  | { kind: 'human'; messageId: string }
+  | { kind: 'handoff'; handoffId: string; fromAgentId: string; hop: number };
+
+/** `turn.start` payload. Phase-2 lines carry a flat `messageId` instead. */
+export interface TurnStartPayload {
+  trigger: TurnTrigger;
   startedAt: string;
+  /** Phase-2 shape, still read by `repairSession` when `trigger` is absent. */
+  messageId?: string;
+}
+
+/**
+ * `handoff` payload. It carries the delegator's sealed reply text so crash
+ * repair can re-enqueue the hop from the log alone, without re-running routing
+ * (Decision 3).
+ */
+export interface HandoffPayload {
+  handoffId: string;
+  fromAgentId: string;
+  toAgentId: string;
+  /** The item id of the reply that triggered the hop; null when it had none. */
+  triggerItemId: string | null;
+  text: string;
+  hop: number;
+  budget: number;
 }
 
 /** `turn.end` payload — the resolved `session/prompt` response plus timing. */
@@ -141,6 +202,7 @@ export type AcpUpdatePayload = SessionUpdate;
 
 export type ChatItemType =
   | 'user.message'
+  | 'handoff'
   | 'agent.message'
   | 'agent.thought'
   | 'agent.work'
@@ -162,13 +224,41 @@ export interface ChatItemBase {
   sealed: boolean;
 }
 
-export type UserMessageState = 'queued' | 'sent' | 'withdrawn' | 'replayed';
+/**
+ * `queued` = no target started, `partial` = some did, `sent` = every target did.
+ * `replayed` is a user bubble the adapter replayed during a `session/load`.
+ */
+export type UserMessageState = 'queued' | 'partial' | 'sent' | 'withdrawn' | 'replayed';
 
 export interface UserMessageItem extends ChatItemBase {
   type: 'user.message';
   messageId: string;
   text: string;
   state: UserMessageState;
+  /**
+   * Routing, present on every message Syntaur routed. All four are ABSENT on a
+   * bubble the adapter replayed during a `session/load` (`state: 'replayed'`),
+   * which carries no routing at all, and on a phase-2 row.
+   */
+  targets?: string[];
+  /** Targets whose turn has actually started — grows as the fan-out lands. */
+  deliveredTo?: string[];
+  /** Attached agents named by an `@token`, in first-appearance order. */
+  mentions?: string[];
+  /** `@token`s that named no attached agent. */
+  unknown?: string[];
+}
+
+/** One agent handing the conversation to another (§5.3's `handoff` row). */
+export interface HandoffItem extends ChatItemBase {
+  type: 'handoff';
+  handoffId: string;
+  fromAgentId: string;
+  toAgentId: string;
+  /** The reply that caused the hop, for the "linking the trigger" affordance. */
+  triggerItemId: string | null;
+  hop: number;
+  budget: number;
 }
 
 export interface AgentMessageItem extends ChatItemBase {
@@ -255,6 +345,7 @@ export interface SystemItem extends ChatItemBase {
 
 export type ChatItem =
   | UserMessageItem
+  | HandoffItem
   | AgentMessageItem
   | AgentThoughtItem
   | AgentWorkItem
@@ -296,10 +387,46 @@ export interface ChatSessionSummary {
   effort: string | null;
   lastTurnAt: string | null;
   cumulative: ModelTokens | null;
-  /** Queued (not yet sent) user messages, oldest first. */
-  queued: Array<{ messageId: string; text: string }>;
+  /**
+   * Queued (not yet sent) turns for this agent, oldest first. A human-triggered
+   * entry is withdrawable — the SPA reads its `messageId` off the trigger.
+   */
+  queued: Array<{ text: string; trigger: TurnTrigger }>;
+  /** Highest chat-level `seq` this session has been shown (Decision 4). */
+  lastDeliveredSeq: number;
   /** Set when the session cannot run (no valid cwd, adapter missing, …). */
   error?: string | null;
+}
+
+/**
+ * The per-assignment participant set — `<assignmentDir>/chat/participants.json`
+ * (Decision 1). Ids are always filtered to definitions that still exist.
+ */
+export interface Participants {
+  agents: string[];
+  defaultAgent: string | null;
+  /** Agent-to-agent hops allowed per chain; defaults to 4. */
+  hopBudget?: number;
+}
+
+/** What `GET /chat/agents` and the participants routes report per definition. */
+export interface ChatAgentSummary {
+  id: string;
+  name: string;
+  color: string;
+  harness: Harness;
+  model: string | null;
+  mode: string | null;
+  effort: string | null;
+  respondsTo: RespondsTo;
+  description: string | null;
+  /** An emoji or one to two characters; the name's initial when unset. */
+  avatar: string;
+  default: boolean;
+  /** Absolute path of the definition file; null for a builtin. */
+  source: string | null;
+  /** The install hint when the adapter is not on PATH; null when it is. */
+  missing: string | null;
 }
 
 // --- Session profile (§5.11) ----------------------------------------------
@@ -344,6 +471,10 @@ export interface AgentDefinition {
   env?: Record<string, string>;
   respondsTo: RespondsTo;
   default: boolean;
+  /** One line for the roster the other agents see in their `<context>`. */
+  description?: string;
+  /** An emoji or one to two characters; the name's initial when unset. */
+  avatar?: string;
   /** The definition body — the system prompt. */
   systemPrompt: string;
   /** Absolute path of the file this came from; null for builtins. */
@@ -389,6 +520,7 @@ export interface ChatSessionRow {
   state: string;
   created_at: string;
   last_turn_at: string | null;
+  last_delivered_seq: number;
 }
 
 export interface ChatItemRow {
@@ -418,7 +550,13 @@ export interface ChatSessionFrame {
   session: ChatSessionSummary;
 }
 
-export type ChatWsFrame = ChatItemFrame | ChatSessionFrame;
+export interface ChatParticipantsFrame {
+  assignmentId: string;
+  participants: Participants;
+  agents: ChatAgentSummary[];
+}
+
+export type ChatWsFrame = ChatItemFrame | ChatSessionFrame | ChatParticipantsFrame;
 
 /** Re-exported so callers need not import the SDK for prompt building. */
 export type { ContentBlock };

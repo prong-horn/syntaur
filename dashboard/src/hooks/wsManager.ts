@@ -18,6 +18,7 @@ export interface WsMessage {
     | 'schedules-updated'
     | 'chat-item'
     | 'chat-session'
+    | 'chat-participants'
     | 'connected';
   projectSlug?: string;
   assignmentSlug?: string;
@@ -25,9 +26,10 @@ export interface WsMessage {
   /**
    * Frame body. Every other type is a refetch HINT — the consumer re-reads the
    * record over REST — but the chat stream would hit REST ~36 times a second on
-   * codex, so `chat-item` and `chat-session` carry their payload inline
-   * (`ChatItemFrame` / `ChatSessionFrame` in `lib/chat-types.ts`). Consumers
-   * filter by `payload.assignmentId`.
+   * codex, so `chat-item`, `chat-session` and `chat-participants` carry their
+   * payload inline (`ChatItemFrame` / `ChatSessionFrame` /
+   * `ChatParticipantsFrame` in `lib/chat-types.ts`). Consumers filter by
+   * `payload.assignmentId`.
    */
   payload?: unknown;
 }
