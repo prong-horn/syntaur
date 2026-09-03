@@ -19,9 +19,17 @@
  *   disagree, the originator's official price wins; if the originator publishes
  *   no price, the model is OMITTED here (→ unknown → $0) rather than guessed.
  *
- * This table contains ONLY models ccusage cannot price. It must never list a
- * model ccusage already prices (claude/codex), so the fallback can never inflate
- * a legitimately-zero claude/codex row.
+ * This table lists models whose usage reaches Syntaur UNPRICED. Historically
+ * that meant only pi's Synthetic-hosted models; since phase 4 it also means the
+ * OpenAI models the assignment chat's `codex-acp` adapter reports, because that
+ * usage never passes through ccusage at all — the broker prices it here itself
+ * (Decision 10). Anthropic models are still absent: ccusage prices every claude
+ * row, and the broker takes claude's own cumulative `usage_update.cost`.
+ *
+ * Adding the OpenAI rows cannot inflate a ccusage codex row: the collector's
+ * fallback fires only when the reported cost is 0, and a codex row that ccusage
+ * legitimately costed at zero has zero token buckets, which price to zero here
+ * too.
  */
 
 /** USD per *million* tokens, per token bucket. Divided by 1e6 at use. */
@@ -82,10 +90,42 @@ export const MODEL_PRICING: Record<string, ModelRate> = {
   //         retrieved 2026-07-21): input $0.30, output $1.20, cache read $0.03,
   //         cache write $0.375 per 1M tokens.
   'minimaxai/minimax-m2.5': { input: 0.3, output: 1.2, cacheRead: 0.03, cacheWrite: 0.375 },
+  // --- OpenAI GPT-5.x, for the assignment chat's `codex-acp` sessions -------
+  //
+  // The adapter reports a bare model id on the session's `model` config option
+  // (`gpt-5.6-sol` / `gpt-5.6-terra` in the captured fixtures) and no cost of
+  // its own, so without these every codex chat turn books at $0.
+  //
+  // `cacheWrite` is set to the input rate throughout: OpenAI's prompt caching is
+  // automatic and publishes no separate write rate, only the discounted
+  // cached-input read rate, so cache-creation tokens bill as ordinary input.
+  //
+  // source: https://developers.openai.com/api/docs/pricing (official, retrieved
+  //         2026-09-03). Third-party trackers list Sol at $5.00/$30.00; per the
+  //         canonical-source rule above the originator's page wins.
+  'gpt-5.6-sol': { input: 4.0, output: 20.0, cacheRead: 0.4, cacheWrite: 4.0 },
+  'gpt-5.6-terra': { input: 2.0, output: 12.0, cacheRead: 0.2, cacheWrite: 2.0 },
+  'gpt-5.6-luna': { input: 0.2, output: 1.2, cacheRead: 0.02, cacheWrite: 0.2 },
+  // The <272K-context tier for the models that publish two; codex sessions run
+  // well inside it.
+  'gpt-5.5': { input: 5.0, output: 30.0, cacheRead: 0.5, cacheWrite: 5.0 },
+  'gpt-5.5-pro': { input: 30.0, output: 180.0, cacheRead: 30.0, cacheWrite: 30.0 },
+  'gpt-5.4': { input: 2.5, output: 15.0, cacheRead: 0.25, cacheWrite: 2.5 },
+  'gpt-5.4-mini': { input: 0.75, output: 4.5, cacheRead: 0.075, cacheWrite: 0.75 },
+  'gpt-5.4-nano': { input: 0.2, output: 1.25, cacheRead: 0.02, cacheWrite: 0.2 },
+  'gpt-5.4-pro': { input: 30.0, output: 180.0, cacheRead: 30.0, cacheWrite: 30.0 },
+  'gpt-5.2': { input: 1.75, output: 14.0, cacheRead: 0.175, cacheWrite: 1.75 },
+  'gpt-5.1': { input: 1.25, output: 10.0, cacheRead: 0.125, cacheWrite: 1.25 },
+  'gpt-5': { input: 1.25, output: 10.0, cacheRead: 0.125, cacheWrite: 1.25 },
+  'gpt-5-mini': { input: 0.25, output: 2.0, cacheRead: 0.025, cacheWrite: 0.25 },
+  'gpt-5-nano': { input: 0.05, output: 0.4, cacheRead: 0.005, cacheWrite: 0.05 },
   // NOTE: opaque Synthetic tier aliases like `syn:large:text` have no public
   // per-token rate (they route to whatever Synthetic assigns), so they remain
   // unpriced (→ $0). Reseller discounts (e.g. DeepInfra K2.6 0.75/3.50/0.15) are
   // rejected by the canonical-source rule and are NOT used here.
+  //
+  // The `-pro` tiers publish no cached-input rate ("—"), so their `cacheRead`
+  // is the input rate: an unpublished discount is never assumed.
 };
 
 /**

@@ -59,7 +59,7 @@ describe('priceForModel', () => {
     ).toBeCloseTo(0.3 + 1.2, 10);
   });
 
-  it('returns null for an unknown model (opaque Synthetic alias, any claude/codex model)', () => {
+  it('returns null for an unknown model (opaque Synthetic alias, any claude model)', () => {
     expect(
       priceForModel('[pi] syn:large:text', {
         inputTokens: 1000,
@@ -89,10 +89,38 @@ describe('priceForModel', () => {
     ).toBe(0);
   });
 
-  it('contains ONLY models ccusage cannot price — never a claude/codex model (anti-inflation guard)', () => {
+  // Anthropic models must stay OUT: ccusage prices every claude row and the chat
+  // broker takes claude's own cumulative `usage_update.cost`, so a fallback rate
+  // here could only ever double-count. OpenAI models are IN as of phase 4 — the
+  // chat's `codex-acp` usage never reaches ccusage at all (Decision 10).
+  it('lists no Anthropic model (anti-double-count guard)', () => {
     for (const key of Object.keys(MODEL_PRICING)) {
-      expect(key).not.toMatch(/claude|gpt|codex/i);
+      expect(key).not.toMatch(/claude/i);
     }
+  });
+
+  it('prices the models the codex-acp adapter reports', () => {
+    // The adapter's `model` config option carries a bare id; these two are what
+    // the captured spike fixtures show.
+    for (const model of ['gpt-5.6-sol', 'gpt-5.6-terra']) {
+      const cost = priceForModel(model, {
+        inputTokens: 1_000_000,
+        outputTokens: 0,
+        cacheCreationTokens: 0,
+        cacheReadTokens: 0,
+      });
+      expect(cost, model).not.toBeNull();
+      expect(cost, model).toBeGreaterThan(0);
+    }
+    // Sol's official list price: $4.00 in / $20.00 out / $0.40 cached-read per 1M.
+    expect(
+      priceForModel('gpt-5.6-sol', {
+        inputTokens: 1_000_000,
+        outputTokens: 1_000_000,
+        cacheCreationTokens: 0,
+        cacheReadTokens: 1_000_000,
+      }),
+    ).toBeCloseTo(24.4, 6);
   });
 });
 

@@ -1225,7 +1225,7 @@ describe('the drive loop never loses a message (finding 5)', () => {
 });
 
 describe('codex usage_events write (finding 7)', () => {
-  it('writes cumulative totals with tool, cwd and both slugs, and says the model is unpriced', async () => {
+  it('writes cumulative totals with tool, cwd and both slugs', async () => {
     makeBroker({
       turns: [
         { steps: [], usage: usage(100, 20) },
@@ -1266,10 +1266,79 @@ describe('codex usage_events write (finding 7)', () => {
     expect(afterTwo[0].total_tokens).toBe(180);
     expect(afterTwo[0].input_tokens).toBe(150);
 
-    // Finding 6: one notice per session that this model has no price list entry.
+    // `gpt-5.6-sol` has had a price list entry since Task 6, so there is no
+    // unpriced notice — the "no price list entry" path is covered against a
+    // model that really has none, in `codex pricing (Task 6)` below.
     const notices = items().filter(
-      (i) => i.type === 'system' && /No price list entry for gpt-5.6-sol/.test((i as { text: string }).text),
+      (i) => i.type === 'system' && /No price list entry/.test((i as { text: string }).text),
     );
-    expect(notices).toHaveLength(1);
+    expect(notices).toEqual([]);
+  });
+});
+
+describe('codex pricing (Task 6)', () => {
+  /**
+   * codex-acp reports token buckets but NO cost of its own, so a codex turn is
+   * priced Syntaur-side from `MODEL_PRICING` (Decision 10). Before the OpenAI
+   * rates existed, every one of those turns booked at $0 and the assignment's
+   * usage rail read zero however much was spent.
+   */
+  async function runCodexTurn(model: string): Promise<void> {
+    makeBroker({
+      turns: [
+        {
+          steps: [{ kind: 'update', update: textChunk('Done.', 'm1') }],
+          // 1M input + 1M output at sol's list price = $4.00 + $20.00.
+          usage: usage(1_000_000, 1_000_000),
+        },
+      ],
+      agentOptions: {
+        sessionIds: ['acp-codex-1'],
+        configOptions: [{ id: 'model', currentValue: model }] as never,
+      },
+    });
+    await broker.send({ assignment: assignment(), agentId: 'codex', text: 'go' });
+    await idle();
+  }
+
+  it('books a non-zero cost delta on the turn’s engagement', async () => {
+    await runCodexTurn('gpt-5.6-sol');
+
+    const turn = getSessionDb()
+      .prepare(
+        "SELECT tokens_at_open, tokens_at_close FROM engagement WHERE stage = 'chat' ORDER BY id LIMIT 1",
+      )
+      .get() as { tokens_at_open: string | null; tokens_at_close: string | null };
+    const open = JSON.parse(turn.tokens_at_open!) as { models: Record<string, { cost: number }> };
+    const close = JSON.parse(turn.tokens_at_close!) as { models: Record<string, { cost: number }> };
+    const delta = close.models['gpt-5.6-sol'].cost - (open.models['gpt-5.6-sol']?.cost ?? 0);
+    expect(delta).toBeCloseTo(24.0, 6);
+  });
+
+  it('writes the priced cumulative total into usage_events for the rail to roll up', async () => {
+    await runCodexTurn('gpt-5.6-sol');
+
+    const row = getSessionDb()
+      .prepare('SELECT model, tool, total_cost, total_tokens FROM usage_events WHERE session_id = ?')
+      .get('acp-codex-1') as
+      | { model: string; tool: string; total_cost: number; total_tokens: number }
+      | undefined;
+    expect(row).toBeTruthy();
+    expect(row!.model).toBe('gpt-5.6-sol');
+    expect(row!.tool).toBe('acp-codex');
+    expect(row!.total_tokens).toBe(2_000_000);
+    expect(row!.total_cost).toBeCloseTo(24.0, 6);
+  });
+
+  it('still says so, once, when the model has no price list entry', async () => {
+    await runCodexTurn('gpt-6-unreleased');
+    // The notice is recorded fire-and-forget from `recordUsageEvent`, so it can
+    // land just after the turn's own items — poll rather than assert instantly.
+    const noticeCount = () =>
+      (itemsOfType('system') as Array<{ text: string }>).filter((i) =>
+        /No price list entry/.test(i.text),
+      ).length;
+    await waitUntil(() => noticeCount() === 1, 'the unpriced-model notice');
+    expect(noticeCount()).toBe(1);
   });
 });
