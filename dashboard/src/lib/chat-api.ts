@@ -13,10 +13,16 @@ import type {
   ChatAgentSummary,
   ChatItem,
   ChatItemFrame,
+  ChatParticipantsFrame,
   ChatSessionFrame,
   ChatSessionSummary,
   ItemPatch,
+  Participants,
 } from './chat-types';
+
+/** The author sentinels the server stamps on assignment-scope rows. */
+export const HUMAN_AGENT_ID = 'human';
+export const SYSTEM_AGENT_ID = 'system';
 
 export interface ChatItemsPage {
   items: ChatItem[];
@@ -69,6 +75,27 @@ export function fetchChatAgents(): Promise<{ agents: ChatAgentSummary[]; errors:
   return request<{ agents: ChatAgentSummary[]; errors: string[] }>('/api/chat/agents');
 }
 
+export interface ChatParticipantsPayload {
+  participants: Participants;
+  agents: ChatAgentSummary[];
+}
+
+export function fetchChatParticipants(assignmentId: string): Promise<ChatParticipantsPayload> {
+  return request<ChatParticipantsPayload>(
+    `/api/assignments/${encodeURIComponent(assignmentId)}/chat/participants`,
+  );
+}
+
+export function putChatParticipants(
+  assignmentId: string,
+  next: Participants,
+): Promise<ChatParticipantsPayload> {
+  return request<ChatParticipantsPayload>(
+    `/api/assignments/${encodeURIComponent(assignmentId)}/chat/participants`,
+    { method: 'PUT', body: JSON.stringify(next) },
+  );
+}
+
 export function sendChatMessage(
   assignmentId: string,
   text: string,
@@ -110,7 +137,12 @@ export function answerChatPermission(
 export interface ChatState {
   /** Keyed by `itemId`; render order is `sortItems`. */
   items: Map<string, ChatItem>;
-  session: ChatSessionSummary | null;
+  /** One entry per agent that has a session — a chat holds several now. */
+  sessions: Map<string, ChatSessionSummary>;
+  /** The attached set; null until the first load answers. */
+  participants: Participants | null;
+  /** Every definition on disk, for the picker and for author resolution. */
+  agents: ChatAgentSummary[];
   /** `seqFirst` of the oldest loaded item, for backwards paging. */
   oldestSeq: number | null;
   /** False once a page comes back short of the limit. */
@@ -118,7 +150,14 @@ export interface ChatState {
 }
 
 export function emptyChatState(): ChatState {
-  return { items: new Map(), session: null, oldestSeq: null, hasMore: true };
+  return {
+    items: new Map(),
+    sessions: new Map(),
+    participants: null,
+    agents: [],
+    oldestSeq: null,
+    hasMore: true,
+  };
 }
 
 /** Chat order: by the seq the item first appeared at, ties broken by id. */
@@ -165,15 +204,28 @@ export function mergePage(state: ChatState, page: ChatItemsPage, limit: number):
 export function applyFrame(
   state: ChatState,
   assignmentId: string,
-  type: 'chat-item' | 'chat-session',
+  type: 'chat-item' | 'chat-session' | 'chat-participants',
   payload: unknown,
 ): ChatState {
   if (!payload || typeof payload !== 'object') return state;
-  const frame = payload as Partial<ChatItemFrame & ChatSessionFrame>;
+  const frame = payload as Partial<ChatItemFrame & ChatSessionFrame & ChatParticipantsFrame>;
   if (frame.assignmentId !== assignmentId) return state;
 
   if (type === 'chat-item' && frame.patch) return applyPatch(state, frame.patch);
-  if (type === 'chat-session' && frame.session) return { ...state, session: frame.session };
+  if (type === 'chat-session' && frame.session && frame.agentId) {
+    // Upsert BY AGENT: a chat holds one session per participant, and a frame
+    // for the implementer must not evict the planner's.
+    const sessions = new Map(state.sessions);
+    sessions.set(frame.agentId, frame.session);
+    return { ...state, sessions };
+  }
+  if (type === 'chat-participants' && frame.participants) {
+    return {
+      ...state,
+      participants: frame.participants,
+      agents: frame.agents ?? state.agents,
+    };
+  }
   return state;
 }
 
@@ -185,17 +237,65 @@ export function openTurn(items: Iterable<ChatItem>): { startedAt: string } | nul
   return null;
 }
 
+export interface WorkingState {
+  since: string;
+  elapsedMs: number;
+}
+
 /**
- * The elapsed working time, measured on SYNTAUR's clock. claude-agent-acp emits
- * no thinking signal at all — it is silent for ~25 s at the inherited xhigh
- * effort — so the spinner cannot be driven by adapter activity (RESULTS.md §09).
+ * Who is working, and for how long, measured on SYNTAUR's clock. Two things
+ * make this the only honest source: claude-agent-acp emits no thinking signal
+ * at all and is silent for ~25 s at the inherited xhigh effort (RESULTS.md §09),
+ * and with several agents in one chat "working" is per agent, not per chat.
  */
-export function workingFor(items: Iterable<ChatItem>, nowMs: number): { since: string; elapsedMs: number } | null {
-  const turn = openTurn(items);
-  if (!turn) return null;
-  const started = Date.parse(turn.startedAt);
+export function workingByAgent(items: Iterable<ChatItem>, nowMs: number): Map<string, WorkingState> {
+  const working = new Map<string, WorkingState>();
+  for (const item of items) {
+    if (item.type !== 'turn.status' || item.state !== 'running') continue;
+    const started = Date.parse(item.startedAt);
+    working.set(item.agentId, {
+      since: item.startedAt,
+      elapsedMs: Number.isFinite(started) ? Math.max(0, nowMs - started) : 0,
+    });
+  }
+  return working;
+}
+
+export interface ItemAuthor {
+  id: string;
+  name: string;
+  color: string;
+  avatar: string;
+}
+
+/**
+ * Who wrote a row. Every item carries an author now — the human's messages and
+ * Syntaur's own routing notices included — so the chat can show an avatar and a
+ * colour on all of them rather than assuming one agent owns the whole tab.
+ */
+export function authorOf(item: { agentId: string }, agents: readonly ChatAgentSummary[]): ItemAuthor {
+  if (item.agentId === HUMAN_AGENT_ID) {
+    return { id: HUMAN_AGENT_ID, name: 'You', color: 'primary', avatar: 'Y' };
+  }
+  if (item.agentId === SYSTEM_AGENT_ID) {
+    return { id: SYSTEM_AGENT_ID, name: 'Syntaur', color: 'slate', avatar: 'S' };
+  }
+  const agent = agents.find((a) => a.id === item.agentId);
+  if (agent) {
+    return { id: agent.id, name: agent.name, color: agent.color, avatar: agent.avatar };
+  }
+  // A definition deleted since the row was written still renders as itself.
   return {
-    since: turn.startedAt,
-    elapsedMs: Number.isFinite(started) ? Math.max(0, nowMs - started) : 0,
+    id: item.agentId,
+    name: item.agentId,
+    color: 'slate',
+    avatar: ([...item.agentId][0] ?? '?').toUpperCase(),
   };
+}
+
+/** The `messageId` a queued entry can be withdrawn by; null for a hop. */
+export function withdrawableMessageId(entry: {
+  trigger: { kind: string; messageId?: string };
+}): string | null {
+  return entry.trigger.kind === 'human' ? (entry.trigger.messageId ?? null) : null;
 }

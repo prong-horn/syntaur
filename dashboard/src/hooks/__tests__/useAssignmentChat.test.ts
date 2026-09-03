@@ -2,14 +2,21 @@ import { describe, expect, it } from 'vitest';
 import {
   applyFrame,
   applyPatch,
+  authorOf,
   emptyChatState,
   mergePage,
   openTurn,
   sortItems,
-  workingFor,
+  withdrawableMessageId,
+  workingByAgent,
   type ChatState,
 } from '../../lib/chat-api';
-import type { ChatItem, ChatSessionSummary, ItemPatch } from '../../lib/chat-types';
+import type {
+  ChatAgentSummary,
+  ChatItem,
+  ChatSessionSummary,
+  ItemPatch,
+} from '../../lib/chat-types';
 
 /**
  * Task 8 — the pure reducer behind `useAssignmentChat`. It lives in
@@ -118,13 +125,56 @@ describe('applyFrame', () => {
     expect(after).toBe(before);
   });
 
-  it('replaces the session on a chat-session frame', () => {
+  it('upserts a chat-session frame by agent id', () => {
     const state = applyFrame(emptyChatState(), ASSIGNMENT, 'chat-session', {
       assignmentId: ASSIGNMENT,
       agentId: 'claude',
       session,
     });
-    expect(state.session).toEqual(session);
+    expect(state.sessions.get('claude')).toEqual(session);
+  });
+
+  it('keeps one session per agent — a second agent does not evict the first', () => {
+    let state = applyFrame(emptyChatState(), ASSIGNMENT, 'chat-session', {
+      assignmentId: ASSIGNMENT,
+      agentId: 'planner',
+      session: { ...session, agentId: 'planner' },
+    });
+    state = applyFrame(state, ASSIGNMENT, 'chat-session', {
+      assignmentId: ASSIGNMENT,
+      agentId: 'implementer',
+      session: { ...session, agentId: 'implementer', state: 'idle' },
+    });
+    expect([...state.sessions.keys()].sort()).toEqual(['implementer', 'planner']);
+    expect(state.sessions.get('planner')?.state).toBe('running');
+    expect(state.sessions.get('implementer')?.state).toBe('idle');
+  });
+
+  it('replaces the participant set and the roster on a chat-participants frame', () => {
+    const agents: ChatAgentSummary[] = [
+      {
+        id: 'planner',
+        name: 'Planner',
+        color: 'violet',
+        harness: 'claude',
+        model: null,
+        mode: null,
+        effort: null,
+        respondsTo: 'mentions',
+        description: null,
+        avatar: 'P',
+        default: true,
+        source: '/agents/planner.md',
+        missing: null,
+      },
+    ];
+    const state = applyFrame(emptyChatState(), ASSIGNMENT, 'chat-participants', {
+      assignmentId: ASSIGNMENT,
+      participants: { agents: ['planner'], defaultAgent: 'planner', hopBudget: 3 },
+      agents,
+    });
+    expect(state.participants).toEqual({ agents: ['planner'], defaultAgent: 'planner', hopBudget: 3 });
+    expect(state.agents).toEqual(agents);
   });
 
   it('tolerates a malformed or absent payload', () => {
@@ -188,20 +238,90 @@ describe('the working indicator', () => {
 
   it('is driven by Syntaur’s own clock, because claude sends no thinking signal', () => {
     const now = Date.parse('2026-09-02T12:00:25.400Z');
-    expect(workingFor([running], now)).toEqual({
+    expect(workingByAgent([running], now).get('claude')).toEqual({
       since: '2026-09-02T12:00:00.000Z',
       elapsedMs: 25_400,
     });
   });
 
-  it('is null once the turn ends', () => {
+  it('is per agent — two agents can be working at once', () => {
+    const other = item({
+      itemId: 't2:0',
+      agentId: 'implementer',
+      turnId: 't2',
+      type: 'turn.status',
+      state: 'running',
+      startedAt: '2026-09-02T12:00:10.000Z',
+    } as Partial<ChatItem> & { itemId: string });
+    const working = workingByAgent([running, other], Date.parse('2026-09-02T12:00:20.000Z'));
+    expect([...working.keys()].sort()).toEqual(['claude', 'implementer']);
+    expect(working.get('claude')?.elapsedMs).toBe(20_000);
+    expect(working.get('implementer')?.elapsedMs).toBe(10_000);
+  });
+
+  it('is empty once the turn ends', () => {
     expect(openTurn([ended])).toBeNull();
-    expect(workingFor([ended], Date.now())).toBeNull();
-    expect(workingFor([], Date.now())).toBeNull();
+    expect(workingByAgent([ended], Date.now()).size).toBe(0);
+    expect(workingByAgent([], Date.now()).size).toBe(0);
   });
 
   it('never reports negative elapsed time', () => {
-    expect(workingFor([running], Date.parse('2026-09-02T11:59:00.000Z'))?.elapsedMs).toBe(0);
+    expect(
+      workingByAgent([running], Date.parse('2026-09-02T11:59:00.000Z')).get('claude')?.elapsedMs,
+    ).toBe(0);
+  });
+});
+
+describe('authorOf', () => {
+  const agents: ChatAgentSummary[] = [
+    {
+      id: 'planner',
+      name: 'Planner',
+      color: 'violet',
+      harness: 'claude',
+      model: null,
+      mode: null,
+      effort: null,
+      respondsTo: 'mentions',
+      description: null,
+      avatar: '🗺️',
+      default: true,
+      source: null,
+      missing: null,
+    },
+  ];
+
+  it('names the human “You”', () => {
+    expect(authorOf({ agentId: 'human' }, agents)).toMatchObject({ name: 'You' });
+  });
+
+  it('names Syntaur’s own routing notices', () => {
+    expect(authorOf({ agentId: 'system' }, agents)).toMatchObject({ name: 'Syntaur' });
+  });
+
+  it('resolves an attached agent to its name, colour and avatar', () => {
+    expect(authorOf({ agentId: 'planner' }, agents)).toEqual({
+      id: 'planner',
+      name: 'Planner',
+      color: 'violet',
+      avatar: '🗺️',
+    });
+  });
+
+  it('still renders a row whose definition has since been deleted', () => {
+    expect(authorOf({ agentId: 'ghost' }, agents)).toEqual({
+      id: 'ghost',
+      name: 'ghost',
+      color: 'slate',
+      avatar: 'G',
+    });
+  });
+});
+
+describe('withdrawableMessageId', () => {
+  it('gives the messageId for a human trigger and nothing for a hop', () => {
+    expect(withdrawableMessageId({ trigger: { kind: 'human', messageId: 'm1' } })).toBe('m1');
+    expect(withdrawableMessageId({ trigger: { kind: 'handoff' } })).toBeNull();
   });
 });
 

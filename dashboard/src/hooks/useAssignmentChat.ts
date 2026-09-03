@@ -3,35 +3,54 @@ import { useWebSocket, type WsMessage } from './useWebSocket';
 import {
   answerChatPermission,
   applyFrame,
+  authorOf,
   cancelChatTurn,
   emptyChatState,
-  fetchChatAgents,
   fetchChatItems,
+  fetchChatParticipants,
   fetchChatSession,
   mergePage,
+  putChatParticipants,
   sendChatMessage,
   sortItems,
   withdrawChatMessage,
-  workingFor,
+  workingByAgent,
   type ChatState,
+  type ItemAuthor,
+  type WorkingState,
 } from '../lib/chat-api';
-import type { ChatAgentSummary, ChatItem, ChatSessionSummary } from '../lib/chat-types';
+import type {
+  ChatAgentSummary,
+  ChatItem,
+  ChatSessionSummary,
+  Participants,
+} from '../lib/chat-types';
 
 const PAGE_SIZE = 200;
 /** The working indicator ticks on Syntaur's clock — claude sends no thinking signal. */
 const TICK_MS = 1000;
 
+const CHAT_FRAMES = new Set(['chat-item', 'chat-session', 'chat-participants']);
+
 export interface UseAssignmentChatResult {
   items: ChatItem[];
-  session: ChatSessionSummary | null;
+  /** One entry per agent that has a session, keyed by agent id. */
+  sessions: Map<string, ChatSessionSummary>;
+  participants: Participants | null;
   agents: ChatAgentSummary[];
+  /** The attached definitions, in participant order. */
+  attached: ChatAgentSummary[];
   loading: boolean;
   error: string | null;
   hasMore: boolean;
-  working: { since: string; elapsedMs: number } | null;
+  /** Who is working right now, and for how long, per agent. */
+  working: Map<string, WorkingState>;
+  authorOf: (item: { agentId: string }) => ItemAuthor;
   send: (text: string, agentId?: string | null) => Promise<void>;
   withdraw: (messageId: string) => Promise<void>;
-  cancel: () => Promise<void>;
+  /** With an id, cancel that agent; without one, every in-flight agent. */
+  cancel: (agentId?: string | null) => Promise<void>;
+  setParticipants: (next: Participants) => Promise<void>;
   answerPermission: (requestId: string, optionId: string) => Promise<void>;
   loadOlder: () => Promise<void>;
   refresh: () => void;
@@ -40,14 +59,17 @@ export interface UseAssignmentChatResult {
 /**
  * Load an assignment's chat and keep it live.
  *
- * History comes from REST; everything after that arrives as `chat-item` /
- * `chat-session` frames on the shared `/ws` connection. The broadcast is a flat
- * fan-out with no topics (Decision 3), so frames for other assignments are
- * filtered out here.
+ * History comes from REST; everything after that arrives as `chat-item`,
+ * `chat-session` and `chat-participants` frames on the shared `/ws` connection.
+ * The broadcast is a flat fan-out with no topics (Decision 3), so frames for
+ * other assignments are filtered out here.
+ *
+ * A chat holds SEVERAL agents now, so the session is a map keyed by agent id
+ * and every item resolves its own author rather than inheriting one from the
+ * tab.
  */
 export function useAssignmentChat(assignmentId: string | null): UseAssignmentChatResult {
   const [state, setState] = useState<ChatState>(emptyChatState);
-  const [agents, setAgents] = useState<ChatAgentSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [reloadCount, setReloadCount] = useState(0);
@@ -67,17 +89,27 @@ export function useAssignmentChat(assignmentId: string | null): UseAssignmentCha
     setError(null);
     void (async () => {
       try {
-        const [page, session, agentList] = await Promise.all([
+        const [page, roster] = await Promise.all([
           fetchChatItems(assignmentId, { limit: PAGE_SIZE }),
-          fetchChatSession(assignmentId),
-          fetchChatAgents(),
+          fetchChatParticipants(assignmentId),
         ]);
         if (cancelled) return;
+        // One read per attached agent. The server materialises attached agents
+        // itself now, so this is a read rather than a create.
+        const summaries = await Promise.all(
+          roster.participants.agents.map((agentId) =>
+            fetchChatSession(assignmentId, agentId).catch(() => ({ session: null })),
+          ),
+        );
+        if (cancelled) return;
+        const sessions = new Map<string, ChatSessionSummary>();
+        for (const { session } of summaries) if (session) sessions.set(session.agentId, session);
         setState((prev) => ({
           ...mergePage({ ...emptyChatState(), items: prev.items }, page, PAGE_SIZE),
-          session: session.session,
+          sessions,
+          participants: roster.participants,
+          agents: roster.agents,
         }));
-        setAgents(agentList.agents);
       } catch (err) {
         if (!cancelled) setError(err instanceof Error ? err.message : String(err));
       } finally {
@@ -93,22 +125,42 @@ export function useAssignmentChat(assignmentId: string | null): UseAssignmentCha
     useCallback(
       (message: WsMessage) => {
         if (!assignmentId) return;
-        if (message.type !== 'chat-item' && message.type !== 'chat-session') return;
-        setState((prev) => applyFrame(prev, assignmentId, message.type as 'chat-item' | 'chat-session', message.payload));
+        if (!CHAT_FRAMES.has(message.type)) return;
+        setState((prev) =>
+          applyFrame(
+            prev,
+            assignmentId,
+            message.type as 'chat-item' | 'chat-session' | 'chat-participants',
+            message.payload,
+          ),
+        );
       },
       [assignmentId],
     ),
   );
 
   const items = useMemo(() => sortItems(state.items.values()), [state.items]);
-  const working = useMemo(() => workingFor(items, nowMs), [items, nowMs]);
+  const working = useMemo(() => workingByAgent(items, nowMs), [items, nowMs]);
+  const anyWorking = working.size > 0;
 
-  // Only tick while a turn is open; an idle chat costs no renders.
+  const attached = useMemo(() => {
+    const ids = state.participants?.agents ?? [];
+    return ids
+      .map((id) => state.agents.find((a) => a.id === id))
+      .filter((a): a is ChatAgentSummary => a !== undefined);
+  }, [state.participants, state.agents]);
+
+  const resolveAuthor = useCallback(
+    (item: { agentId: string }) => authorOf(item, state.agents),
+    [state.agents],
+  );
+
+  // Only tick while some agent is working; an idle chat costs no renders.
   useEffect(() => {
-    if (!working) return;
+    if (!anyWorking) return;
     const timer = setInterval(() => setNowMs(Date.now()), TICK_MS);
     return () => clearInterval(timer);
-  }, [working !== null]);
+  }, [anyWorking]);
 
   const send = useCallback(
     async (text: string, agentId?: string | null) => {
@@ -136,14 +188,32 @@ export function useAssignmentChat(assignmentId: string | null): UseAssignmentCha
     [assignmentId],
   );
 
-  const cancel = useCallback(async () => {
-    if (!assignmentId) return;
-    try {
-      await cancelChatTurn(assignmentId, state.session?.agentId ?? null);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    }
-  }, [assignmentId, state.session?.agentId]);
+  const cancel = useCallback(
+    async (agentId?: string | null) => {
+      if (!assignmentId) return;
+      try {
+        await cancelChatTurn(assignmentId, agentId ?? null);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : String(err));
+      }
+    },
+    [assignmentId],
+  );
+
+  const setParticipants = useCallback(
+    async (next: Participants) => {
+      if (!assignmentId) return;
+      setError(null);
+      try {
+        const saved = await putChatParticipants(assignmentId, next);
+        setState((prev) => ({ ...prev, participants: saved.participants, agents: saved.agents }));
+      } catch (err) {
+        setError(err instanceof Error ? err.message : String(err));
+        throw err;
+      }
+    },
+    [assignmentId],
+  );
 
   const answerPermission = useCallback(
     async (requestId: string, optionId: string) => {
@@ -172,15 +242,19 @@ export function useAssignmentChat(assignmentId: string | null): UseAssignmentCha
 
   return {
     items,
-    session: state.session,
-    agents,
+    sessions: state.sessions,
+    participants: state.participants,
+    agents: state.agents,
+    attached,
     loading,
     error,
     hasMore: state.hasMore,
     working,
+    authorOf: resolveAuthor,
     send,
     withdraw,
     cancel,
+    setParticipants,
     answerPermission,
     loadOlder,
     refresh,

@@ -44,7 +44,8 @@ export interface ChatTabProps {
 export function ChatTab({ assignmentId }: ChatTabProps) {
   const {
     items,
-    session,
+    sessions,
+    attached,
     agents,
     loading,
     error,
@@ -62,7 +63,11 @@ export function ChatTab({ assignmentId }: ChatTabProps) {
   const listRef = useRef<HTMLDivElement | null>(null);
   const pinnedAtBottom = useRef(true);
 
-  const agent = agents.find((a) => a.id === (session?.agentId ?? '')) ?? agents.find((a) => a.default) ?? agents[0];
+  // Task 7 replaces this header with one chip per attached agent; until then it
+  // shows the first attached agent, which is the default in a one-agent chat.
+  const agent = attached[0] ?? agents.find((a) => a.default) ?? agents[0];
+  const session = agent ? (sessions.get(agent.id) ?? null) : null;
+  const workingNow = agent ? (working.get(agent.id) ?? null) : null;
   const agentName = agent?.name ?? session?.agentId ?? 'Agent';
   const agentColor = agent?.color ?? 'slate';
   const state: ChatSessionState = session?.state ?? 'none';
@@ -120,14 +125,14 @@ export function ChatTab({ assignmentId }: ChatTabProps) {
         </span>
         <span className={cn('rounded px-2 py-0.5 text-[11px]', STATE_TONES[state])}>{STATE_LABELS[state]}</span>
         {session?.model && <span className="text-[11px] text-muted-foreground">{session.model}</span>}
-        {working && (
-          <span className="text-[11px] text-muted-foreground">working {formatDuration(working.elapsedMs)}</span>
+        {workingNow && (
+          <span className="text-[11px] text-muted-foreground">working {formatDuration(workingNow?.elapsedMs)}</span>
         )}
         <span className="flex-1" />
-        {working && (
+        {workingNow && (
           <button
             type="button"
-            onClick={() => void cancel()}
+            onClick={() => void cancel(agent?.id ?? null)}
             className="inline-flex items-center gap-1 rounded-md border border-border px-2 py-1 text-xs hover:bg-muted"
           >
             <Square className="h-3 w-3" />
