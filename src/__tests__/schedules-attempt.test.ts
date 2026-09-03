@@ -24,16 +24,19 @@ import { sampleJob } from './schedules-helpers.js';
 
 const fixedNow = (iso: string): AttemptDeps => ({ now: () => new Date(iso) });
 
+// File-scoped so EVERY describe below writes into a throwaway dir — a describe
+// without this override lands its jobs in the real `~/.syntaur/schedules`.
+let dir: string;
+beforeEach(async () => {
+  dir = await mkdtemp(join(tmpdir(), 'syntaur-attempt-'));
+  process.env.SYNTAUR_SCHEDULES_DIR = dir;
+});
+afterEach(async () => {
+  delete process.env.SYNTAUR_SCHEDULES_DIR;
+  await rm(dir, { recursive: true, force: true });
+});
+
 describe('attempt state machine', () => {
-  let dir: string;
-  beforeEach(async () => {
-    dir = await mkdtemp(join(tmpdir(), 'syntaur-attempt-'));
-    process.env.SYNTAUR_SCHEDULES_DIR = dir;
-  });
-  afterEach(async () => {
-    delete process.env.SYNTAUR_SCHEDULES_DIR;
-    await rm(dir, { recursive: true, force: true });
-  });
 
   it('claimJob persists the cursor + dedupe BEFORE launch', async () => {
     const job = await writeJob(sampleJob({ trigger: { kind: 'when-status', status: 's' } }));
