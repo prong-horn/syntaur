@@ -290,17 +290,33 @@ describe('prompt framing', () => {
   });
 
   it('wraps the user message in a chat-event block', () => {
-    const blocks = buildTurnPrompt('run <the> tests', { now: new Date('2026-09-02T12:00:00.000Z') });
+    const blocks = buildTurnPrompt({
+      author: 'human',
+      text: 'run <the> tests',
+      ts: new Date('2026-09-02T12:00:00.000Z'),
+    });
     expect(blocks).toHaveLength(1);
     expect(text(blocks[0])).toBe(
       '<chat-event author="human" ts="2026-09-02T12:00:00.000Z">\nrun &lt;the&gt; tests\n</chat-event>',
     );
   });
 
+  it('attributes an agent-triggered turn to the delegating agent and names the hop', () => {
+    const blocks = buildTurnPrompt({
+      author: { agentId: 'planner' },
+      text: 'over to you',
+      ts: new Date('2026-09-02T12:00:00.000Z'),
+      hop: { n: 2, budget: 4 },
+    });
+    const body = text(blocks[0]);
+    expect(body).toContain('Hop 2 of 4 in an agent-to-agent chain.');
+    expect(body).toContain('<chat-event author="agent:planner" ts="2026-09-02T12:00:00.000Z">');
+  });
+
   it('prepends the standing context on the first turn only', () => {
     const standing = [{ type: 'text', text: '<system>x</system>' } as ContentBlock];
-    expect(buildTurnPrompt('hi', { standing })).toHaveLength(2);
-    expect(buildTurnPrompt('hi')).toHaveLength(1);
+    expect(buildTurnPrompt({ author: 'human', text: 'hi' }, { standing })).toHaveLength(2);
+    expect(buildTurnPrompt({ author: 'human', text: 'hi' })).toHaveLength(1);
   });
 
   it('escapes an assignment title in the context section', () => {
