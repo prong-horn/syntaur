@@ -603,3 +603,83 @@ describe('turn.status carries its trigger (Task 5)', () => {
     expect(([...items.values()][0] as { trigger?: unknown }).trigger).toBeUndefined();
   });
 });
+
+describe('cursor extension events', () => {
+  const base = {
+    assignmentId: 'a1',
+    agentId: 'cursor',
+    sessionKey: 'a1:cursor',
+    turnId: 'turn-1',
+    ts: '2026-09-02T12:00:00.000Z',
+  };
+
+  it('maps update_todos onto the plan item', () => {
+    const normalizer = new ChatNormalizer({ assignmentId: 'a1', agentId: 'cursor', sessionKey: 'a1:cursor' });
+    const items = new Map<string, ChatItem>();
+    applyPatches(
+      items,
+      normalizer.ingest({
+        ...base,
+        seq: 1,
+        kind: 'turn.start',
+        payload: { startedAt: base.ts, trigger: { kind: 'human', messageId: 'm1' } },
+      }),
+    );
+    applyPatches(
+      items,
+      normalizer.ingest({
+        ...base,
+        seq: 2,
+        kind: 'acp.ext',
+        payload: {
+          method: 'cursor/update_todos',
+          params: { todos: [{ content: 'Ship it', status: 'in_progress' }] },
+        },
+      }),
+    );
+    const plan = [...items.values()].find((i) => i.type === 'agent.plan');
+    expect(plan).toBeDefined();
+    expect((plan as { entries: Array<{ content: string }> }).entries[0]?.content).toBe('Ship it');
+  });
+
+  it('folds question.answered into the question card', () => {
+    const normalizer = new ChatNormalizer({ assignmentId: 'a1', agentId: 'cursor', sessionKey: 'a1:cursor' });
+    const items = new Map<string, ChatItem>();
+    applyPatches(
+      items,
+      normalizer.ingest({
+        ...base,
+        seq: 1,
+        kind: 'turn.start',
+        payload: { startedAt: base.ts, trigger: { kind: 'human', messageId: 'm1' } },
+      }),
+    );
+    applyPatches(
+      items,
+      normalizer.ingest({
+        ...base,
+        seq: 2,
+        kind: 'acp.ext',
+        payload: {
+          method: 'cursor/ask_question',
+          requestId: 'req-1',
+          params: {
+            title: 'Pick',
+            questions: [{ id: 'q1', prompt: 'Which?', options: [{ id: 'a', label: 'A' }] }],
+          },
+        },
+      }),
+    );
+    applyPatches(
+      items,
+      normalizer.ingest({
+        ...base,
+        seq: 3,
+        kind: 'question.answered',
+        payload: { requestId: 'req-1', optionId: 'a', by: 'human' },
+      }),
+    );
+    const question = [...items.values()].find((i) => i.type === 'question') as { answer: string | null };
+    expect(question?.answer).toBe('A');
+  });
+});

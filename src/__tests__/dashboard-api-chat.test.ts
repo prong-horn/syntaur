@@ -69,6 +69,8 @@ async function boot(turns: FakeTurn[] = [{ steps: [{ kind: 'update', update: tex
       const client = connectAcpClient(fake.app, {
         onUpdate: input.onUpdate,
         onPermissionRequest: input.onPermissionRequest,
+        onExtRequest: input.onExtRequest,
+        onExtNotification: input.onExtNotification,
       });
       clients.push(client);
       return client;
@@ -145,7 +147,7 @@ describe('GET /api/chat/agents', () => {
       agents: Array<{ id: string; harness: string; default: boolean; missing: string | null }>;
       errors: string[];
     };
-    expect(body.agents.map((a) => a.id)).toEqual(['claude', 'codex']);
+    expect(body.agents.map((a) => a.id)).toEqual(['claude', 'codex', 'cursor']);
     expect(body.agents.find((a) => a.id === 'claude')?.default).toBe(true);
     expect(body.errors).toEqual([]);
     // `missing` is either null (installed on this machine) or the install hint.
@@ -523,11 +525,11 @@ describe('participants routes (Task 1, Decision 1)', () => {
       participants: { agents: string[]; defaultAgent: string | null };
       agents: Array<{ id: string; respondsTo: string; avatar: string; source: string | null }>;
     };
-    expect(body.participants.agents).toEqual(['claude', 'codex']);
+    expect(body.participants.agents).toEqual(['claude', 'codex', 'cursor']);
     expect(body.participants.defaultAgent).toBe('claude');
     // The widened summary: `respondsTo`, model/mode/effort, avatar and the
     // definition path the picker shows read-only.
-    expect(body.agents.map((a) => a.id)).toEqual(['claude', 'codex']);
+    expect(body.agents.map((a) => a.id)).toEqual(['claude', 'codex', 'cursor']);
     expect(body.agents[0].respondsTo).toBe('mentions');
     expect(body.agents[0].avatar).toBe('C');
     expect(body.agents[0].source).toBeNull();

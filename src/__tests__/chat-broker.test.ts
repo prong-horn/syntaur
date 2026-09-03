@@ -98,6 +98,8 @@ function makeBroker(options: { turns?: FakeTurn[]; agentOptions?: Parameters<typ
     const client = connectAcpClient(fake.app, {
       onUpdate: input.onUpdate,
       onPermissionRequest: input.onPermissionRequest,
+      onExtRequest: input.onExtRequest,
+      onExtNotification: input.onExtNotification,
     });
     spawns.push({ cwd: input.cwd, env: input.env });
     clients.push(client);
@@ -663,7 +665,7 @@ describe('history and reindex', () => {
     makeBroker();
     const { definitions, errors } = await broker.listAgents();
     expect(errors).toEqual([]);
-    expect(definitions.map((d) => d.id)).toEqual(['claude', 'codex']);
+    expect(definitions.map((d) => d.id)).toEqual(['claude', 'codex', 'cursor']);
   });
 
   it('reports the session summary before anything has been sent', async () => {
@@ -1527,5 +1529,137 @@ describe('command turns', () => {
       p.prompt.some((b) => b.type === 'text' && (b as { text: string }).text === '/nope'),
     );
     expect((nopePrompt!.prompt[0] as { text: string }).text).toBe('/nope');
+  });
+});
+
+describe('cursor harness reattach and extensions', () => {
+  async function attachCursor(): Promise<void> {
+    await broker.setParticipants(assignment(), { agents: ['cursor'], defaultAgent: 'cursor' });
+  }
+
+  it('reattaches via session/load without duplicating replayed items', async () => {
+    makeBroker({
+      turns: [{ steps: [{ kind: 'update', update: textChunk('loaded turn', 'm-load') }] }],
+      agentOptions: {
+        resumeSupported: false,
+        sessionIds: ['cursor-session-1'],
+        loadReplay: [
+          textChunk('chunk one', 'replay-1'),
+          textChunk('chunk two', 'replay-2'),
+        ],
+        configOptions: [
+          { id: 'model', currentValue: 'composer-2.5[fast=true]' },
+          { id: 'mode', currentValue: 'agent' },
+        ] as never,
+      },
+    });
+    await attachCursor();
+    await broker.send({ assignment: assignment(), agentId: 'cursor', text: 'first' });
+    await idle();
+    const countAfterFirst = itemsOfType('agent.message').length;
+    expect(fake.calls).toContain('session/new');
+
+    await waitUntil(() => lastSessionFrame()?.state === 'idle', 'idle teardown', 2000);
+    await broker.send({ assignment: assignment(), agentId: 'cursor', text: 'second' });
+    await idle(2);
+
+    const logged = await events();
+    expect(logged.filter((e) => e.kind === 'session.load')).toHaveLength(1);
+    expect(logged.filter((e) => e.kind === 'session.loaded')).toHaveLength(1);
+    expect(fake.calls.filter((c) => c === 'session/resume')).toHaveLength(0);
+    expect(fake.calls.filter((c) => c === 'session/load')).toHaveLength(1);
+    expect(itemsOfType('agent.message').length).toBeGreaterThanOrEqual(countAfterFirst);
+    expect((await broker.getSession(assignment(), 'cursor'))?.effort).toBeNull();
+    expect((await broker.getSession(assignment(), 'cursor'))?.model).toBe('composer-2.5[fast=true]');
+  });
+
+  it('accepts create_plan and renders the plan text', async () => {
+    makeBroker({
+      turns: [
+        {
+          steps: [
+            {
+              kind: 'extRequest',
+              method: 'cursor/create_plan',
+              params: {
+                toolCallId: 'tool-plan',
+                name: 'My plan',
+                overview: 'Overview',
+                plan: '# Steps\n\n1. Do it',
+              },
+            },
+            { kind: 'update', update: textChunk('done', 'm-plan') },
+          ],
+        },
+      ],
+      agentOptions: { resumeSupported: false },
+    });
+    await attachCursor();
+    await broker.send({ assignment: assignment(), agentId: 'cursor', text: 'plan this' });
+    await idle();
+    const planMessage = itemsOfType('agent.message').find((m) =>
+      (m as { text: string }).text.includes('My plan'),
+    );
+    expect(planMessage).toBeDefined();
+    expect(fake.extAnswers[0]).toEqual({ outcome: { outcome: 'accepted' } });
+  });
+
+  it('answers ask_question through the broker route', async () => {
+    makeBroker({
+      turns: [
+        {
+          steps: [
+            {
+              kind: 'extRequest',
+              method: 'cursor/ask_question',
+              params: {
+                toolCallId: 'tool-q',
+                title: 'Pick one',
+                questions: [
+                  {
+                    id: 'q1',
+                    prompt: 'Which?',
+                    options: [
+                      { id: 'a', label: 'A' },
+                      { id: 'b', label: 'B' },
+                    ],
+                  },
+                ],
+              },
+            },
+            { kind: 'update', update: textChunk('thanks', 'm-q') },
+          ],
+        },
+      ],
+      agentOptions: { resumeSupported: false },
+    });
+    await attachCursor();
+    const sendP = broker.send({ assignment: assignment(), agentId: 'cursor', text: 'ask me' });
+    await waitUntil(() => itemsOfType('question').length > 0, 'question card');
+    const question = itemsOfType('question')[0] as { requestId: string };
+    const answered = await broker.answerQuestion(assignment(), question.requestId, { optionId: 'a' });
+    expect(answered).toBe(true);
+    await sendP;
+    await idle();
+    const card = itemsOfType('question')[0] as { answer: string | null };
+    expect(card.answer).toBe('A');
+    expect(fake.extAnswers[0]).toEqual({
+      outcome: { outcome: 'answered', answers: [{ questionId: 'q1', selectedOptionIds: ['a'] }] },
+    });
+  });
+
+  it('posts the cursor no-usage notice once', async () => {
+    makeBroker({
+      turns: [{ steps: [{ kind: 'update', update: textChunk('hi', 'm1') }] }],
+      agentOptions: { resumeSupported: false },
+    });
+    await attachCursor();
+    await broker.send({ assignment: assignment(), agentId: 'cursor', text: 'one' });
+    await broker.send({ assignment: assignment(), agentId: 'cursor', text: 'two' });
+    await idle(2);
+    const notices = itemsOfType('system').filter((s) =>
+      (s as { text: string }).text.includes('cursor reports no usage'),
+    );
+    expect(notices).toHaveLength(1);
   });
 });

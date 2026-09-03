@@ -165,6 +165,7 @@ export function normalizeModelKey(model: string): string {
     // `opencode-go-tyler-eu/`) so `opencode-go/glm-5.2` resolves via the same
     // family aliases as the bare `glm-5.2`.
     .replace(/^opencode-go(?:-[a-z0-9-]+)?\//i, '')
+    .replace(/\[[^\]]*\]$/, '') // drop cursor model suffixes like [thinking=true,…]
     .trim()
     .toLowerCase();
   return MODEL_ALIASES[stripped] ?? stripped;

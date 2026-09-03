@@ -39,6 +39,10 @@ export interface AcpClientHandlers {
   onPermissionRequest: (
     request: acp.RequestPermissionRequest,
   ) => Promise<acp.RequestPermissionResponse>;
+  /** Cursor extension requests (`cursor/create_plan`, `cursor/ask_question`, …). */
+  onExtRequest?: (method: string, params: unknown) => Promise<unknown>;
+  /** Cursor extension notifications (`cursor/update_todos`, …). */
+  onExtNotification?: (method: string, params: unknown) => void;
 }
 
 export interface AcpClient {
@@ -73,11 +77,20 @@ export interface AcpClient {
  * Connect a client over an arbitrary ACP `Stream` (or, in tests, straight to an
  * `AgentApp`). Owns no process — `close()` only closes the connection.
  */
-export function connectAcpClient(
-  target: acp.Stream | acp.AgentApp,
+/** Pass-through parser for extension methods absent from the SDK catalog. */
+const passthrough = <T>(params: T): T => params;
+
+const CURSOR_EXT_REQUESTS = ['cursor/create_plan', 'cursor/ask_question'] as const;
+const CURSOR_EXT_NOTIFICATIONS = [
+  'cursor/update_todos',
+  'cursor/task',
+  'cursor/generate_image',
+] as const;
+
+function wireClientBuilder(
   handlers: AcpClientHandlers,
-): AcpClient {
-  const app = acp
+): ReturnType<typeof acp.client> {
+  let builder = acp
     .client({ name: 'syntaur' })
     .onRequest(acp.methods.client.session.requestPermission, (ctx) =>
       handlers.onPermissionRequest(ctx.params),
@@ -85,6 +98,28 @@ export function connectAcpClient(
     .onNotification(acp.methods.client.session.update, (ctx) => {
       handlers.onUpdate(ctx.params);
     });
+  if (handlers.onExtRequest) {
+    for (const method of CURSOR_EXT_REQUESTS) {
+      builder = builder.onRequest(method, passthrough, (ctx) =>
+        handlers.onExtRequest!(method, ctx.params),
+      );
+    }
+  }
+  if (handlers.onExtNotification) {
+    for (const method of CURSOR_EXT_NOTIFICATIONS) {
+      builder = builder.onNotification(method, passthrough, (ctx) => {
+        handlers.onExtNotification!(method, ctx.params);
+      });
+    }
+  }
+  return builder;
+}
+
+export function connectAcpClient(
+  target: acp.Stream | acp.AgentApp,
+  handlers: AcpClientHandlers,
+): AcpClient {
+  const app = wireClientBuilder(handlers);
   // The overloads are (Stream) and (AgentApp); a union argument needs the split.
   const conn =
     target instanceof acp.AgentApp ? app.connect(target) : app.connect(target as acp.Stream);
@@ -136,14 +171,12 @@ export function spawnAcpClient(options: SpawnAcpClientOptions): AcpClient {
     Readable.toWeb(forSdk) as ReadableStream<Uint8Array>,
   );
 
-  const app = acp
-    .client({ name: 'syntaur' })
-    .onRequest(acp.methods.client.session.requestPermission, (ctx) =>
-      options.onPermissionRequest(ctx.params),
-    )
-    .onNotification(acp.methods.client.session.update, (ctx) => {
-      options.onUpdate(ctx.params);
-    });
+  const app = wireClientBuilder({
+    onUpdate: options.onUpdate,
+    onPermissionRequest: options.onPermissionRequest,
+    onExtRequest: options.onExtRequest,
+    onExtNotification: options.onExtNotification,
+  });
 
   const conn = app.connect(stream);
   return makeClient(conn, { child, stderr: () => stderrRing, onExit: options.onExit });

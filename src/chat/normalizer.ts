@@ -48,6 +48,7 @@ import type {
   AgentPlanItem,
   AgentThoughtItem,
   AgentWorkItem,
+  AcpExtPayload,
   ChatEvent,
   ChatItem,
   HandoffItem,
@@ -56,6 +57,8 @@ import type {
   PermissionRequestItem,
   PermissionRequestPayload,
   PermissionResponsePayload,
+  QuestionAnsweredPayload,
+  QuestionItem,
   SystemItem,
   SystemLevel,
   SystemPayload,
@@ -115,6 +118,7 @@ export class ChatNormalizer {
   /** `toolCallId` → the work card that owns the row (updates can arrive late). */
   private readonly toolOwners = new Map<string, AgentWorkItem>();
   private readonly permissions = new Map<string, PermissionRequestItem>();
+  private readonly questions = new Map<string, QuestionItem>();
 
   /** Has any chunk in this session carried a `messageId`? */
   private idsSeen = false;
@@ -212,6 +216,12 @@ export class ChatNormalizer {
         break;
       case 'acp.permission_response':
         this.ingestPermissionResponse(event, patches);
+        break;
+      case 'acp.ext':
+        this.ingestExt(event, patches);
+        break;
+      case 'question.answered':
+        this.ingestQuestionAnswered(event, patches);
         break;
       case 'session.load':
         this.replayCount += 1;
@@ -728,6 +738,80 @@ export class ChatNormalizer {
     patches.push({ op: 'upsert', item });
   }
 
+  private ingestExt(event: ChatEvent, patches: ItemPatch[]): void {
+    const payload = event.payload as AcpExtPayload;
+    switch (payload.method) {
+      case 'cursor/update_todos':
+        this.ingestPlan(event, todosToPlanEntries(payload.params), patches);
+        break;
+      case 'cursor/create_plan': {
+        const params = payload.params as { name?: string; overview?: string; plan?: string };
+        const title = params.name?.trim();
+        const body = [params.overview, params.plan].filter((s) => typeof s === 'string' && s.trim()).join('\n\n');
+        const text = [title, body].filter(Boolean).join('\n\n');
+        const item: AgentMessageItem = {
+          ...this.base(event, 'agent.message'),
+          type: 'agent.message',
+          messageId: `ext:${event.seq}`,
+          text: text || title || 'Plan',
+          sealed: true,
+        };
+        patches.push({ op: 'upsert', item });
+        break;
+      }
+      case 'cursor/ask_question': {
+        const params = payload.params as {
+          title?: string;
+          questions?: Array<{
+            id: string;
+            prompt: string;
+            options?: Array<{ id: string; label: string }>;
+          }>;
+        };
+        const first = params.questions?.[0];
+        const requestId = payload.requestId ?? `q:${event.seq}`;
+        const item: QuestionItem = {
+          ...this.base(event, 'question'),
+          type: 'question',
+          requestId,
+          text: params.title ?? first?.prompt ?? 'The agent has a question',
+          options:
+            first?.options?.map((option) => ({ id: option.id, label: option.label })) ?? null,
+          answer: null,
+          sealed: false,
+        };
+        this.questions.set(requestId, item);
+        patches.push({ op: 'upsert', item });
+        break;
+      }
+      case 'cursor/task':
+        this.system(event, 'info', 'Agent task update', patches);
+        break;
+      case 'cursor/generate_image':
+        this.system(event, 'info', 'Image generation requested', patches);
+        break;
+      default:
+        this.system(event, 'info', `Extension ${payload.method}`, patches);
+    }
+  }
+
+  private ingestQuestionAnswered(event: ChatEvent, patches: ItemPatch[]): void {
+    const payload = event.payload as QuestionAnsweredPayload;
+    const item = this.questions.get(payload.requestId);
+    if (!item) return;
+    if (payload.optionId) {
+      const label = item.options?.find((o) => o.id === payload.optionId)?.label;
+      item.answer = label ?? payload.optionId;
+    } else if (payload.text) {
+      item.answer = payload.text;
+    }
+    if (payload.by === 'cancel') item.cancelled = true;
+    if (payload.by === 'timeout') item.timedOut = true;
+    item.sealed = true;
+    item.seqLast = event.seq;
+    patches.push({ op: 'upsert', item });
+  }
+
   private system(event: ChatEvent, level: SystemLevel, text: string, patches: ItemPatch[]): void {
     if (!text) return;
     const item: SystemItem = {
@@ -907,6 +991,16 @@ function updateText(update: SessionUpdate): string {
     default:
       return `Unhandled update: ${update.sessionUpdate}`;
   }
+}
+
+function todosToPlanEntries(params: unknown): PlanEntry[] {
+  const todos =
+    (params as { todos?: Array<{ content?: string; status?: string }> })?.todos ?? [];
+  return todos.map((todo) => ({
+    content: todo.content ?? '',
+    status: (todo.status as PlanEntry['status']) ?? 'pending',
+    priority: 'medium' as const,
+  }));
 }
 
 function sessionEventText(event: ChatEvent): string {

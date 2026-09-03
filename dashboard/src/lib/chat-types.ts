@@ -20,6 +20,7 @@ export type ChatItemType =
   | 'agent.work'
   | 'agent.plan'
   | 'permission.request'
+  | 'question'
   | 'turn.status'
   | 'system';
 
@@ -151,6 +152,16 @@ export interface PermissionRequestItem extends ChatItemBase {
   timedOut?: boolean;
 }
 
+export interface QuestionItem extends ChatItemBase {
+  type: 'question';
+  requestId: string;
+  text: string;
+  options: Array<{ id: string; label: string }> | null;
+  answer: string | null;
+  cancelled?: boolean;
+  timedOut?: boolean;
+}
+
 export interface TurnUsage {
   totalTokens: number;
   inputTokens: number;
@@ -191,6 +202,7 @@ export type ChatItem =
   | AgentWorkItem
   | AgentPlanItem
   | PermissionRequestItem
+  | QuestionItem
   | TurnStatusItem
   | SystemItem;
 
@@ -240,7 +252,7 @@ export type ChatCommandsSource = 'session' | 'harness-cache';
 export interface ChatSessionSummary {
   assignmentId: string;
   agentId: string;
-  harness: 'claude' | 'codex';
+  harness: 'claude' | 'codex' | 'cursor';
   acpSessionId: string | null;
   adapterVersion: string | null;
   state: ChatSessionState;
@@ -277,7 +289,7 @@ export interface ChatAgentSummary {
   id: string;
   name: string;
   color: string;
-  harness: 'claude' | 'codex';
+  harness: 'claude' | 'codex' | 'cursor';
   model: string | null;
   mode: string | null;
   effort: string | null;

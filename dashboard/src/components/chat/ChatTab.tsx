@@ -69,6 +69,7 @@ export function ChatTab({ assignmentId }: ChatTabProps) {
     cancel,
     setParticipants,
     answerPermission,
+    answerQuestion,
     loadOlder,
   } = useAssignmentChat(assignmentId);
 
@@ -228,6 +229,7 @@ export function ChatTab({ assignmentId }: ChatTabProps) {
                 activityOf,
                 onWithdraw: (messageId) => void withdraw(messageId),
                 onAnswerPermission: (requestId, optionId) => void answerPermission(requestId, optionId),
+                onAnswerQuestion: (requestId, answer) => void answerQuestion(requestId, answer),
               }}
             />
           ))

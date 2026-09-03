@@ -17,6 +17,8 @@ import * as acp from '@agentclientprotocol/sdk';
 export type FakeStep =
   | { kind: 'update'; update: acp.SessionUpdate }
   | { kind: 'permission'; request: Omit<acp.RequestPermissionRequest, 'sessionId'> }
+  | { kind: 'extRequest'; method: string; params: unknown }
+  | { kind: 'extNotification'; method: string; params: unknown }
   /** Wait for the client to `session/cancel`; resolves the turn `cancelled`. */
   | { kind: 'awaitCancel' }
   /** Fail the prompt with a JSON-RPC error. */
@@ -33,6 +35,10 @@ export interface FakeTurn {
 export interface FakeAgentOptions {
   turns?: FakeTurn[];
   agentInfo?: { name: string; version: string };
+  /** Merged into `initialize`'s `agentCapabilities`. */
+  agentCapabilities?: Partial<acp.AgentCapabilities>;
+  /** When false, `session/resume` rejects with a method-not-found error. */
+  resumeSupported?: boolean;
   modes?: acp.NewSessionResponse['modes'];
   configOptions?: acp.NewSessionResponse['configOptions'];
   /** When set, emitted after `session/new` and again at the start of every prompt. */
@@ -59,6 +65,8 @@ export interface FakeAgent {
   readonly configCalls: Array<{ method: string; params: Record<string, unknown> }>;
   /** Permission responses the client returned, in order. */
   readonly permissionAnswers: acp.RequestPermissionResponse[];
+  /** Extension request responses the client returned, in order. */
+  readonly extAnswers: unknown[];
   /** Append more turns after construction. */
   push(turn: FakeTurn): void;
 }
@@ -70,6 +78,7 @@ export function createFakeAgent(options: FakeAgentOptions = {}): FakeAgent {
   const prompts: acp.PromptRequest[] = [];
   const configCalls: Array<{ method: string; params: Record<string, unknown> }> = [];
   const permissionAnswers: acp.RequestPermissionResponse[] = [];
+  const extAnswers: unknown[] = [];
   const cancelled = new Map<string, Array<() => void>>();
   let turnIndex = 0;
   let sessionCount = 0;
@@ -107,7 +116,7 @@ export function createFakeAgent(options: FakeAgentOptions = {}): FakeAgent {
       calls.push('initialize');
       return {
         protocolVersion: acp.PROTOCOL_VERSION,
-        agentCapabilities: { loadSession: true },
+        agentCapabilities: { loadSession: true, ...(options.agentCapabilities ?? {}) },
         agentInfo: options.agentInfo ?? { name: 'fake-acp-agent', version: '0.0.1' },
         authMethods: [],
       } satisfies acp.InitializeResponse;
@@ -125,6 +134,9 @@ export function createFakeAgent(options: FakeAgentOptions = {}): FakeAgent {
     })
     .onRequest(acp.methods.agent.session.resume, (ctx) => {
       calls.push('session/resume');
+      if (options.resumeSupported === false) {
+        throw new acp.RequestError(-32601, 'Method not found');
+      }
       // A RequestError carries its message across the wire; a plain Error is
       // flattened to "Internal error" by the connection layer.
       if (options.resumeError) throw new acp.RequestError(-32002, options.resumeError);
@@ -186,6 +198,14 @@ export function createFakeAgent(options: FakeAgentOptions = {}): FakeAgent {
             permissionAnswers.push(answer);
             break;
           }
+          case 'extRequest': {
+            const answer = await ctx.client.request(step.method, step.params);
+            extAnswers.push(answer);
+            break;
+          }
+          case 'extNotification':
+            await ctx.client.notify(step.method, step.params);
+            break;
           case 'awaitCancel':
             await waitForCancel(sessionId);
             return { stopReason: 'cancelled' } as acp.PromptResponse;
@@ -210,6 +230,7 @@ export function createFakeAgent(options: FakeAgentOptions = {}): FakeAgent {
     prompts,
     configCalls,
     permissionAnswers,
+    extAnswers,
     push(turn) {
       turns.push(turn);
     },

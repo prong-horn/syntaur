@@ -171,6 +171,22 @@ describe('applyProfile', () => {
     expect(errors).toHaveLength(1);
     expect(errors[0]).toMatch(/^mode dontAsk:/);
   });
+
+  it('reports pinned effort as ignored for cursor', async () => {
+    const { fake, c, sessionId } = await client();
+    const profile = resolveSessionProfile(
+      { ...BASE, harness: 'cursor', model: 'composer-2.5', mode: 'agent', effort: 'high' },
+      HARNESSES.cursor,
+    );
+    const { applied, errors } = await applyProfile(c, sessionId, profile, HARNESSES.cursor);
+    expect(applied).toEqual({ mode: 'agent', model: 'composer-2.5' });
+    expect(errors).toEqual(['effort high: ignored — Cursor has no effort config id']);
+    expect(fake.configCalls.map((call) => call.method)).toEqual([
+      'session/set_mode',
+      'session/set_config_option',
+    ]);
+    await c.close();
+  });
 });
 
 describe('prompt framing', () => {

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useWebSocket, type WsMessage } from './useWebSocket';
 import {
   answerChatPermission,
+  answerChatQuestion,
   applyFrame,
   authorOf,
   cancelChatTurn,
@@ -58,6 +59,7 @@ export interface UseAssignmentChatResult {
   cancel: (agentId?: string | null) => Promise<void>;
   setParticipants: (next: Participants) => Promise<void>;
   answerPermission: (requestId: string, optionId: string) => Promise<void>;
+  answerQuestion: (requestId: string, answer: { optionId?: string; text?: string }) => Promise<void>;
   loadOlder: () => Promise<void>;
   refresh: () => void;
 }
@@ -255,6 +257,18 @@ export function useAssignmentChat(assignmentId: string | null): UseAssignmentCha
     [assignmentId],
   );
 
+  const answerQuestion = useCallback(
+    async (requestId: string, answer: { optionId?: string; text?: string }) => {
+      if (!assignmentId) return;
+      try {
+        await answerChatQuestion(assignmentId, requestId, answer);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : String(err));
+      }
+    },
+    [assignmentId],
+  );
+
   const loadOlder = useCallback(async () => {
     if (!assignmentId || loadingOlder.current || !state.hasMore || state.oldestSeq === null) return;
     loadingOlder.current = true;
@@ -285,6 +299,7 @@ export function useAssignmentChat(assignmentId: string | null): UseAssignmentCha
     cancel,
     setParticipants,
     answerPermission,
+    answerQuestion,
     loadOlder,
     refresh,
   };

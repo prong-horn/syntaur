@@ -132,6 +132,17 @@ export function answerChatPermission(
   );
 }
 
+export function answerChatQuestion(
+  assignmentId: string,
+  requestId: string,
+  answer: { optionId?: string; text?: string },
+): Promise<{ answered: boolean }> {
+  return request<{ answered: boolean }>(
+    `/api/assignments/${encodeURIComponent(assignmentId)}/chat/questions/${encodeURIComponent(requestId)}`,
+    { method: 'POST', body: JSON.stringify(answer) },
+  );
+}
+
 // --- pure reducer ----------------------------------------------------------
 
 export interface ChatState {

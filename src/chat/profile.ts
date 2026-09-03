@@ -117,11 +117,15 @@ export async function applyProfile(
     }
   }
   if (profile.effort.kind === 'pinned') {
-    try {
-      await client.setConfigOption(sessionId, harness.configIds.effort, profile.effort.value);
-      applied.effort = profile.effort.value;
-    } catch (err) {
-      errors.push(`${harness.configIds.effort} ${profile.effort.value}: ${(err as Error).message}`);
+    if (harness.configIds.effort) {
+      try {
+        await client.setConfigOption(sessionId, harness.configIds.effort, profile.effort.value);
+        applied.effort = profile.effort.value;
+      } catch (err) {
+        errors.push(`${harness.configIds.effort} ${profile.effort.value}: ${(err as Error).message}`);
+      }
+    } else {
+      errors.push(`effort ${profile.effort.value}: ignored — ${harness.label} has no effort config id`);
     }
   }
 

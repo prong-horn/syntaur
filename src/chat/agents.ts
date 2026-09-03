@@ -59,6 +59,17 @@ export const BUILTIN_AGENT_DEFINITIONS: AgentDefinition[] = [
     systemPrompt: BASE_SYSTEM_PROMPT,
     source: null,
   },
+  {
+    id: 'cursor',
+    name: 'Cursor',
+    color: 'sky',
+    harness: 'cursor',
+    respondsTo: 'mentions',
+    default: false,
+    description: 'The Cursor CLI agent.',
+    systemPrompt: BASE_SYSTEM_PROMPT,
+    source: null,
+  },
 ];
 
 export class AgentDefinitionError extends Error {
@@ -117,7 +128,7 @@ export function parseAgentDefinition(
   if (!isHarnessId(harness)) {
     throw new AgentDefinitionError(
       file,
-      `\`harness\` must be one of claude, codex (got ${JSON.stringify(harness ?? null)})`,
+      `\`harness\` must be one of claude, codex, cursor (got ${JSON.stringify(harness ?? null)})`,
     );
   }
 

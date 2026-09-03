@@ -42,6 +42,7 @@ import type {
   ChatItem,
   HandoffItem,
   PermissionRequestItem,
+  QuestionItem,
   SystemItem,
   ToolKind,
   ToolRow,
@@ -58,6 +59,7 @@ export interface ItemViewContext {
   activityOf: (turnId: string | null) => TurnActivity | undefined;
   onWithdraw: (messageId: string) => void;
   onAnswerPermission: (requestId: string, optionId: string) => void;
+  onAnswerQuestion: (requestId: string, answer: { optionId?: string; text?: string }) => void;
 }
 
 /** An author's colour chip: the avatar, then the name. */
@@ -373,6 +375,63 @@ export function PermissionCard({
   );
 }
 
+export function QuestionCard({
+  item,
+  onAnswer,
+}: {
+  item: QuestionItem;
+  onAnswer: (requestId: string, answer: { optionId?: string; text?: string }) => void;
+}) {
+  const [freeText, setFreeText] = useState('');
+  const answered = item.answer !== null || item.cancelled || item.timedOut;
+  const options = item.options ?? [];
+  return (
+    <div className="rounded-lg border border-sky-500/40 bg-sky-500/5 px-3 py-2">
+      <div className="text-sm text-foreground">{item.text}</div>
+      {answered ? (
+        <div className="mt-1.5 text-xs text-muted-foreground">
+          {item.timedOut
+            ? 'No answer in time — the turn moved on.'
+            : item.cancelled
+              ? 'Cancelled with the turn.'
+              : `Answered: ${item.answer}`}
+        </div>
+      ) : options.length > 0 ? (
+        <div className="mt-2 flex flex-wrap gap-2">
+          {options.map((option) => (
+            <button
+              key={option.id}
+              type="button"
+              onClick={() => onAnswer(item.requestId, { optionId: option.id })}
+              className="rounded-md border border-border bg-background px-2.5 py-1 text-xs font-medium hover:bg-muted"
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
+      ) : (
+        <div className="mt-2 flex gap-2">
+          <input
+            type="text"
+            value={freeText}
+            onChange={(event) => setFreeText(event.target.value)}
+            className="min-w-0 flex-1 rounded-md border border-border bg-background px-2 py-1 text-xs"
+            placeholder="Your answer…"
+          />
+          <button
+            type="button"
+            disabled={freeText.trim().length === 0}
+            onClick={() => onAnswer(item.requestId, { text: freeText.trim() })}
+            className="rounded-md bg-primary px-2.5 py-1 text-xs font-medium text-primary-foreground disabled:opacity-50"
+          >
+            Send
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function TurnStatusRow({
   item,
   author,
@@ -464,6 +523,8 @@ export function ChatItemView({ item, context }: { item: ChatItem; context: ItemV
       return <PlanCard item={item} />;
     case 'permission.request':
       return <PermissionCard item={item} onAnswer={context.onAnswerPermission} />;
+    case 'question':
+      return <QuestionCard item={item} onAnswer={context.onAnswerQuestion} />;
     case 'turn.status':
       return (
         <TurnStatusRow

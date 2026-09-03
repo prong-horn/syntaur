@@ -190,6 +190,32 @@ export function createChatRouter(
     }
   });
 
+  router.post('/assignments/:id/chat/questions/:requestId', async (req, res) => {
+    try {
+      const assignment = await resolveOr404(req, res);
+      if (!assignment) return;
+      const body = (req.body ?? {}) as { optionId?: string; text?: string };
+      if (
+        (typeof body.optionId !== 'string' || body.optionId.length === 0) &&
+        (typeof body.text !== 'string' || body.text.trim().length === 0)
+      ) {
+        res.status(400).json({ error: 'optionId or text is required' });
+        return;
+      }
+      const answered = await broker.answerQuestion(assignment, String(req.params.requestId), {
+        ...(body.optionId ? { optionId: body.optionId } : {}),
+        ...(body.text ? { text: body.text } : {}),
+      });
+      if (!answered) {
+        res.status(409).json({ error: 'That question is no longer pending' });
+        return;
+      }
+      res.json({ answered: true });
+    } catch (err) {
+      fail(res, err);
+    }
+  });
+
   /** Rebuild `chat_items` from `chat/events.jsonl` (Decision 2's recovery path). */
   router.post('/assignments/:id/chat/reindex', async (req, res) => {
     try {

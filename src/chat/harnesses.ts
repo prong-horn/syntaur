@@ -25,9 +25,9 @@ export const HARNESSES: Record<Harness, HarnessSpec> = {
     args: [],
     systemPromptTransport: 'meta',
     configIds: { model: 'model', effort: 'effort' },
-    // `auto` is 0.70.0's current mode; the three role names map to the modes the
-    // adapter advertises. `plan` executes no tools.
     modeIds: { edits: 'acceptEdits', ask: 'default', plan: 'plan' },
+    reattach: 'resume',
+    usage: { kind: 'adapter-cost', basis: 'cumulative' },
     installHint: 'npm i -g @agentclientprotocol/claude-agent-acp',
     authProbe: { command: 'claude', args: ['auth', 'status'] },
   },
@@ -38,12 +38,24 @@ export const HARNESSES: Record<Harness, HarnessSpec> = {
     args: [],
     systemPromptTransport: 'prompt',
     configIds: { model: 'model', effort: 'reasoning_effort' },
-    // codex-acp 1.7 routes approvals by mode: only `read-only` sends
-    // session/request_permission (`agent` hands escalations to Guardian and
-    // `agent-full-access` never asks). All three keep a workspace-write sandbox.
     modeIds: { edits: 'agent', ask: 'read-only', plan: 'read-only' },
+    reattach: 'resume',
+    usage: { kind: 'tokens' },
     installHint: 'npm i -g @agentclientprotocol/codex-acp',
     authProbe: { command: 'codex', args: ['login', 'status'] },
+  },
+  cursor: {
+    id: 'cursor',
+    label: 'Cursor',
+    command: 'cursor-agent',
+    args: ['acp'],
+    systemPromptTransport: 'prompt',
+    configIds: { model: 'model' },
+    modeIds: { edits: 'agent', ask: 'ask', plan: 'plan' },
+    reattach: 'load',
+    usage: { kind: 'none' },
+    installHint: 'curl https://cursor.com/install -fsS | bash',
+    authProbe: { command: 'cursor-agent', args: ['status'] },
   },
 };
 

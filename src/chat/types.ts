@@ -29,7 +29,7 @@ import type {
 } from '@agentclientprotocol/sdk';
 import type { ModelTokens } from '../db/engagement-tokens.js';
 
-export type Harness = 'claude' | 'codex';
+export type Harness = 'claude' | 'codex' | 'cursor';
 
 // --- Event log -------------------------------------------------------------
 
@@ -51,6 +51,8 @@ export type ChatEventKind =
   | 'acp.update'
   | 'acp.permission_request'
   | 'acp.permission_response'
+  | 'acp.ext'
+  | 'question.answered'
   | 'session.created'
   | 'session.resumed'
   | 'session.load'
@@ -163,6 +165,21 @@ export interface PermissionResponsePayload {
   timedOut?: boolean;
 }
 
+/** `acp.ext` payload — a Cursor extension request or notification. */
+export interface AcpExtPayload {
+  method: string;
+  params: unknown;
+  requestId?: string;
+}
+
+/** `question.answered` payload. */
+export interface QuestionAnsweredPayload {
+  requestId: string;
+  optionId?: string;
+  text?: string;
+  by: 'human' | 'timeout' | 'cancel';
+}
+
 /** `system` payload. */
 export interface SystemPayload {
   level: SystemLevel;
@@ -186,6 +203,8 @@ export interface SessionCreatedPayload {
   applied?: AppliedProfile;
   modes?: unknown;
   configOptions?: unknown;
+  /** Present on `session.resumed` when the adapter reattached via `session/load`. */
+  via?: 'resume' | 'load';
 }
 
 /** What `applyProfile` actually pinned on the adapter session. */
@@ -208,6 +227,7 @@ export type ChatItemType =
   | 'agent.work'
   | 'agent.plan'
   | 'permission.request'
+  | 'question'
   | 'turn.status'
   | 'system';
 
@@ -323,6 +343,16 @@ export interface PermissionRequestItem extends ChatItemBase {
   timedOut?: boolean;
 }
 
+export interface QuestionItem extends ChatItemBase {
+  type: 'question';
+  requestId: string;
+  text: string;
+  options: Array<{ id: string; label: string }> | null;
+  answer: string | null;
+  cancelled?: boolean;
+  timedOut?: boolean;
+}
+
 export interface TurnStatusItem extends ChatItemBase {
   type: 'turn.status';
   state: 'running' | 'ended';
@@ -353,6 +383,7 @@ export type ChatItem =
   | AgentWorkItem
   | AgentPlanItem
   | PermissionRequestItem
+  | QuestionItem
   | TurnStatusItem
   | SystemItem;
 
@@ -503,6 +534,11 @@ export interface HarnessModeIds {
   plan: string;
 }
 
+export type HarnessUsageSpec =
+  | { kind: 'adapter-cost'; basis: 'cumulative' | 'per-turn' }
+  | { kind: 'tokens' }
+  | { kind: 'none' };
+
 export interface HarnessSpec {
   id: Harness;
   label: string;
@@ -510,8 +546,11 @@ export interface HarnessSpec {
   args: string[];
   /** `meta` = `_meta.systemPrompt.append` on `session/new`; `prompt` = a `<system>` block. */
   systemPromptTransport: 'meta' | 'prompt';
-  configIds: { model: string; effort: string };
+  configIds: { model: string; effort?: string };
   modeIds: HarnessModeIds;
+  /** How a broker restart reattaches when a previous `acpSessionId` exists. */
+  reattach: 'resume' | 'load';
+  usage: HarnessUsageSpec;
   installHint: string;
   /** Run only to explain a failed `initialize`, never as a gate. */
   authProbe: { command: string; args: string[] };

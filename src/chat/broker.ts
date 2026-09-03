@@ -144,6 +144,8 @@ export interface ClientFactoryInput {
   env: Record<string, string>;
   onUpdate: (notification: acp.SessionNotification) => void;
   onPermissionRequest: (request: acp.RequestPermissionRequest) => Promise<acp.RequestPermissionResponse>;
+  onExtRequest?: (method: string, params: unknown) => Promise<unknown>;
+  onExtNotification?: (method: string, params: unknown) => void;
   onExit: (info: { code: number | null; signal: NodeJS.Signals | null }) => void;
 }
 
@@ -194,6 +196,11 @@ export interface ChatBroker {
     assignment: ResolvedAssignment,
     requestId: string,
     optionId: string,
+  ): Promise<boolean>;
+  answerQuestion(
+    assignment: ResolvedAssignment,
+    requestId: string,
+    answer: { optionId?: string; text?: string },
   ): Promise<boolean>;
   getSession(
     assignment: ResolvedAssignment,
@@ -249,6 +256,18 @@ interface PendingPermission {
   options: acp.PermissionOption[];
 }
 
+interface PendingQuestion {
+  resolve: (response: unknown) => void;
+  timer: ReturnType<typeof setTimeout>;
+  toolCallId: string;
+  questions: Array<{
+    id: string;
+    prompt: string;
+    options?: Array<{ id: string; label: string }>;
+    allowMultiple?: boolean;
+  }>;
+}
+
 interface Session {
   key: string;
   assignment: ResolvedAssignment;
@@ -259,6 +278,7 @@ interface Session {
   log: ChatLog;
   normalizer: ChatNormalizer;
   client: AcpClient | null;
+  capabilities: acp.AgentCapabilities | null;
   acpSessionId: string | null;
   adapterVersion: string | null;
   cwd: string | null;
@@ -280,7 +300,11 @@ interface Session {
   hopBudget: number;
   inFlight: InFlightTurn | null;
   pendingPermissions: Map<string, PendingPermission>;
+  pendingQuestions: Map<string, PendingQuestion>;
   permissionSeq: number;
+  questionSeq: number;
+  /** While `session/load` replays history, content updates are dropped. */
+  loading: boolean;
   cumulative: TokenSnapshot;
   /** One "no rate for <model>" notice per session, not one per turn. */
   unpricedNoticeSent: boolean;
@@ -660,6 +684,7 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
         sessionKey: key,
       }),
       client: null,
+      capabilities: null,
       acpSessionId: row?.acp_session_id ?? null,
       adapterVersion: row?.adapter_version ?? null,
       cwd: row?.cwd ?? null,
@@ -677,7 +702,10 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
       hopBudget: options.routing?.hopBudget ?? DEFAULT_HOP_BUDGET,
       inFlight: null,
       pendingPermissions: new Map(),
+      pendingQuestions: new Map(),
       permissionSeq: 0,
+      questionSeq: 0,
+      loading: false,
       unpricedNoticeSent: false,
       cumulative: parseSnapshot(row?.usage_snapshot_json) ?? {
         models: {},
@@ -1127,6 +1155,8 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
         void onUpdate(session, notification);
       },
       onPermissionRequest: (request) => onPermissionRequest(session, request),
+      onExtRequest: (method, params) => onExtRequest(session, method, params),
+      onExtNotification: (method, params) => onExtNotification(session, method, params),
       onExit: (info) => {
         void onExit(session, info);
       },
@@ -1177,40 +1207,73 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
       );
     }
     session.adapterVersion = readAdapterVersion(init);
+    session.capabilities = init.agentCapabilities ?? null;
 
     const previous = session.acpSessionId;
-    let resumed = false;
-    let resumeResponse: acp.ResumeSessionResponse | null = null;
+    let attached = false;
     if (previous) {
-      try {
-        resumeResponse = await client.resumeSession(previous, cwd);
-        resumed = true;
-      } catch (err) {
-        // Decision 7's fallback: a new session, a system row saying so, and the
-        // standing context again because this agent has never seen it.
+      if (session.harness.reattach === 'resume') {
+        try {
+          const resumeResponse = await client.resumeSession(previous, cwd);
+          if (resumeResponse) readSessionConfig(session, resumeResponse);
+          await record(session, 'session.resumed', {
+            acpSessionId: previous,
+            harness: session.harness.id,
+            adapterVersion: session.adapterVersion,
+            cwd,
+            via: 'resume',
+          }, null);
+          attached = true;
+        } catch (err) {
+          await record(session, 'session.rotated', {
+            acpSessionId: previous,
+            text: `Could not resume the previous agent session (${(err as Error).message}) — started a new one`,
+          }, null);
+          session.standingSent = false;
+          session.acpSessionId = null;
+        }
+      } else if (session.capabilities?.loadSession) {
+        await record(session, 'session.load', { acpSessionId: previous }, null);
+        session.loading = true;
+        let loadResponse: acp.LoadSessionResponse | null = null;
+        let loadError: Error | null = null;
+        try {
+          loadResponse = await client.loadSession(previous, cwd);
+        } catch (err) {
+          loadError = err instanceof Error ? err : new Error(String(err));
+        } finally {
+          session.loading = false;
+          await record(session, 'session.loaded', {}, null);
+        }
+        if (loadResponse && !loadError) {
+          readSessionConfig(session, loadResponse);
+          await record(session, 'session.resumed', {
+            acpSessionId: previous,
+            harness: session.harness.id,
+            adapterVersion: session.adapterVersion,
+            cwd,
+            via: 'load',
+          }, null);
+          attached = true;
+        } else {
+          await record(session, 'session.rotated', {
+            acpSessionId: previous,
+            text: `Could not load the previous agent session (${loadError?.message ?? 'unknown error'}) — started a new one`,
+          }, null);
+          session.standingSent = false;
+          session.acpSessionId = null;
+        }
+      } else {
         await record(session, 'session.rotated', {
           acpSessionId: previous,
-          text: `Could not resume the previous agent session (${(err as Error).message}) — started a new one`,
+          text: 'Previous agent session could not be reattached — started a new one',
         }, null);
         session.standingSent = false;
         session.acpSessionId = null;
       }
     }
 
-    if (resumed) {
-      // `ResumeSessionResponse` carries `modes` and `configOptions` just like
-      // `session/new`, and the adapter really does send them. Without this the
-      // resumed session forgot its model and the cumulative cost snapshot split
-      // across two keys (`opus[1m]` and the harness-id fallback), which made the
-      // engagement window delta read zero.
-      if (resumeResponse) readSessionConfig(session, resumeResponse);
-      await record(session, 'session.resumed', {
-        acpSessionId: previous,
-        harness: session.harness.id,
-        adapterVersion: session.adapterVersion,
-        cwd,
-      }, null);
-    } else {
+    if (!attached) {
       const profile = profileForTier(session.profile, session.cwdTier);
       const meta = newSessionMeta(profile, session.harness, session.definition.systemPrompt);
       const created = await client.newSession({ cwd, mcpServers: meta.mcpServers, _meta: meta._meta });
@@ -1302,15 +1365,25 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
     response: Pick<acp.NewSessionResponse, 'modes' | 'configOptions'>,
   ): void {
     session.mode = response.modes?.currentModeId ?? session.mode;
+    const effortId = session.harness.configIds.effort;
     for (const option of response.configOptions ?? []) {
       const value = (option as { id?: string; currentValue?: unknown }).currentValue;
       const id = (option as { id?: string }).id;
       if (typeof value !== 'string') continue;
       if (id === session.harness.configIds.model) session.model = value;
-      else if (id === session.harness.configIds.effort) session.effort = value;
+      else if (effortId && id === effortId) session.effort = value;
       else if (id === 'mode' || id === 'collaboration_mode') session.mode = value;
     }
   }
+
+  const LOAD_REPLAY_SKIP = new Set([
+    'user_message_chunk',
+    'agent_message_chunk',
+    'agent_thought_chunk',
+    'tool_call',
+    'tool_call_update',
+    'plan',
+  ]);
 
   // --- adapter callbacks ---------------------------------------------------
 
@@ -1321,13 +1394,22 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
       cost?: { amount?: number } | null;
       availableCommands?: unknown;
     };
+    if (session.loading && update.sessionUpdate && LOAD_REPLAY_SKIP.has(update.sessionUpdate)) {
+      return;
+    }
     if (turn) {
       // Any activity resets the idle watchdog. claude's silent window at the
       // inherited xhigh effort is 25 s, so this has to be minutes, not seconds.
       armTurnIdle(session, turn);
       if (update.sessionUpdate === 'usage_update' && typeof update.cost?.amount === 'number') {
-        // Cumulative for the session, not for this turn — see Decision 11.
-        turn.reportedCumulativeCost = update.cost.amount;
+        const usageSpec = session.harness.usage;
+        if (usageSpec.kind === 'adapter-cost' && usageSpec.basis === 'per-turn') {
+          turn.reportedCumulativeCost =
+            (turn.reportedCumulativeCost ?? turn.costAtOpen) + update.cost.amount;
+        } else {
+          // Cumulative for the session, not for this turn — see Decision 11.
+          turn.reportedCumulativeCost = update.cost.amount;
+        }
       }
     }
     if (update.sessionUpdate === 'available_commands_update') {
@@ -1361,6 +1443,60 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
       });
       void record(session, 'acp.permission_request', { requestId, request });
     });
+  }
+
+  function onExtRequest(
+    session: Session,
+    method: string,
+    params: unknown,
+  ): Promise<unknown> {
+    if (method === 'cursor/create_plan') {
+      const requestId = `${session.key}:ext:${session.questionSeq++}`;
+      void record(session, 'acp.ext', { method, params, requestId });
+      return Promise.resolve({ outcome: { outcome: 'accepted' } });
+    }
+    if (method === 'cursor/ask_question') {
+      const requestId = `${session.key}:question:${session.questionSeq++}`;
+      const body = params as {
+        toolCallId?: string;
+        title?: string;
+        questions?: Array<{
+          id: string;
+          prompt: string;
+          options?: Array<{ id: string; label: string }>;
+          allowMultiple?: boolean;
+        }>;
+      };
+      void record(session, 'acp.ext', { method, params, requestId });
+      return new Promise<unknown>((resolveQuestion) => {
+        const timer = setTimeout(() => {
+          void timeoutQuestion(session, requestId);
+        }, timeouts.permissionMs);
+        timer.unref?.();
+        session.pendingQuestions.set(requestId, {
+          resolve: resolveQuestion,
+          timer,
+          toolCallId: body.toolCallId ?? requestId,
+          questions: body.questions ?? [],
+        });
+      });
+    }
+    const requestId = `${session.key}:ext:${session.questionSeq++}`;
+    void record(session, 'acp.ext', { method, params, requestId });
+    return Promise.resolve({});
+  }
+
+  function onExtNotification(session: Session, method: string, params: unknown): void {
+    void record(session, 'acp.ext', { method, params });
+  }
+
+  async function timeoutQuestion(session: Session, requestId: string): Promise<void> {
+    const pending = session.pendingQuestions.get(requestId);
+    if (!pending) return;
+    session.pendingQuestions.delete(requestId);
+    clearTimeout(pending.timer);
+    pending.resolve({ outcome: { outcome: 'cancelled' } });
+    await record(session, 'question.answered', { requestId, by: 'timeout' });
   }
 
   async function timeoutPermission(session: Session, requestId: string, title: string): Promise<void> {
@@ -1440,6 +1576,12 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
       pending.resolve({ outcome: { outcome: 'cancelled' } });
       session.pendingPermissions.delete(requestId);
       await record(session, 'acp.permission_response', { requestId, cancelled: true }, turn.turnId);
+    }
+    for (const [requestId, pending] of session.pendingQuestions) {
+      clearTimeout(pending.timer);
+      pending.resolve({ outcome: { outcome: 'cancelled' } });
+      session.pendingQuestions.delete(requestId);
+      await record(session, 'question.answered', { requestId, by: 'cancel' }, turn.turnId);
     }
     await session.client.cancel(session.acpSessionId).catch(() => {});
     return true;
@@ -2014,25 +2156,57 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
    * silently discarded.
    */
   function recordUsageEvent(session: Session): void {
-    if (session.harness.id !== 'codex' || !session.acpSessionId) return;
+    if (!session.acpSessionId) return;
+    const usageSpec = session.harness.usage;
+    if (usageSpec.kind === 'none') {
+      if (!session.unpricedNoticeSent) {
+        session.unpricedNoticeSent = true;
+        void record(
+          session,
+          'system',
+          {
+            level: 'info',
+            text: 'cursor reports no usage; this chat\'s turns are not costed',
+          },
+          null,
+        );
+      }
+      return;
+    }
+    if (usageSpec.kind === 'adapter-cost' && session.harness.id === 'claude') {
+      // ccusage already records the underlying Claude Code session under this id.
+      return;
+    }
     const key = modelKey(session);
     const totals = session.cumulative.models[key];
     if (!totals) return;
-    // codex reports no cost of its own, so an unpriced model silently books
-    // every turn at $0. Say so once rather than letting the rail quietly read
-    // zero (Decision 10).
-    if (!session.unpricedNoticeSent && priceForModel(key, ZERO_BUCKETS) === null) {
+    const tool =
+      usageSpec.kind === 'tokens'
+        ? session.harness.id === 'codex'
+          ? 'acp-codex'
+          : 'acp-cursor'
+        : 'acp-cursor';
+    if (
+      usageSpec.kind === 'tokens' &&
+      !session.unpricedNoticeSent &&
+      priceForModel(key, ZERO_BUCKETS) === null
+    ) {
       session.unpricedNoticeSent = true;
-      void record(session, 'system', {
-        level: 'info',
-        text: `No price list entry for ${key}, so this chat's turns are costed at $0. Token counts are still recorded.`,
-      }, null);
+      void record(
+        session,
+        'system',
+        {
+          level: 'info',
+          text: `No price list entry for ${key}, so this chat's turns are costed at $0. Token counts are still recorded.`,
+        },
+        null,
+      );
     }
     try {
       upsertEvent({
         sessionId: session.acpSessionId,
         model: key,
-        tool: 'acp-codex',
+        tool,
         eventTs: iso(),
         inputTokens: totals.input,
         outputTokens: totals.output,
@@ -2040,8 +2214,6 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
         cacheReadTokens: totals.cacheRead,
         totalTokens: totals.total,
         totalCost: totals.cost,
-        // The upsert only preserves the stored slugs when the incoming ones are
-        // empty, so every write carries them.
         cwd: session.cwd,
         projectSlug: session.assignment.projectSlug ?? '',
         assignmentSlug: session.assignment.assignmentSlug,
@@ -2209,6 +2381,38 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
       return true;
     },
 
+    async answerQuestion(assignment, requestId, answer) {
+      const session = (await ensureAssignmentSessions(assignment)).find((s) =>
+        s.pendingQuestions.has(requestId),
+      );
+      const pending = session?.pendingQuestions.get(requestId);
+      if (!session || !pending) return false;
+      session.pendingQuestions.delete(requestId);
+      clearTimeout(pending.timer);
+      const question = pending.questions[0];
+      if (answer.optionId) {
+        pending.resolve({
+          outcome: {
+            outcome: 'answered',
+            answers: [{ questionId: question?.id ?? 'q1', selectedOptionIds: [answer.optionId] }],
+          },
+        });
+        await record(session, 'question.answered', { requestId, optionId: answer.optionId, by: 'human' });
+      } else if (answer.text) {
+        pending.resolve({
+          outcome: {
+            outcome: 'answered',
+            answers: [{ questionId: question?.id ?? 'q1', selectedOptionIds: [answer.text] }],
+          },
+        });
+        await record(session, 'question.answered', { requestId, text: answer.text, by: 'human' });
+      } else {
+        return false;
+      }
+      flush(session);
+      return true;
+    },
+
     async getSession(assignment, agentId) {
       const session = await ensureSession(assignment, agentId ?? null);
       return summarize(session);
@@ -2307,6 +2511,12 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
           session.pendingPermissions.delete(requestId);
           await record(session, 'acp.permission_response', { requestId, cancelled: true });
         }
+        for (const [requestId, pending] of session.pendingQuestions) {
+          clearTimeout(pending.timer);
+          pending.resolve({ outcome: { outcome: 'cancelled' } });
+          session.pendingQuestions.delete(requestId);
+          await record(session, 'question.answered', { requestId, by: 'cancel' });
+        }
 
         if (session.client) {
           await record(session, 'system', { level: 'info', text: 'Dashboard stopped' }, null);
@@ -2370,6 +2580,8 @@ const defaultClientFactory: ClientFactory = (input) =>
     env: input.env,
     onUpdate: input.onUpdate,
     onPermissionRequest: input.onPermissionRequest,
+    onExtRequest: input.onExtRequest,
+    onExtNotification: input.onExtNotification,
     onExit: input.onExit,
   });
 

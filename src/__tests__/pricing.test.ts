@@ -13,6 +13,11 @@ describe('normalizeModelKey', () => {
   it('leaves an already-normalized key unchanged', () => {
     expect(normalizeModelKey('moonshotai/kimi-k2.6')).toBe('moonshotai/kimi-k2.6');
   });
+
+  it('strips a trailing cursor model suffix', () => {
+    expect(normalizeModelKey('claude-fable-5-1[thinking=true,context=300k]')).toBe('claude-fable-5-1');
+    expect(normalizeModelKey('composer-2.5[fast=true]')).toBe('composer-2.5');
+  });
 });
 
 describe('priceForModel', () => {

@@ -49,6 +49,12 @@ describe('harness catalog', () => {
     // Only codex's read-only mode asks the client for permission.
     expect(HARNESSES.codex.modeIds.ask).toBe('read-only');
     expect(HARNESSES.claude.modeIds.ask).toBe('default');
+    expect(HARNESSES.cursor.command).toBe('cursor-agent');
+    expect(HARNESSES.cursor.args).toEqual(['acp']);
+    expect(HARNESSES.cursor.systemPromptTransport).toBe('prompt');
+    expect(HARNESSES.cursor.reattach).toBe('load');
+    expect(HARNESSES.cursor.usage).toEqual({ kind: 'none' });
+    expect(HARNESSES.cursor.configIds.effort).toBeUndefined();
   });
 
   it('maps the three role names and passes raw mode ids through', () => {
@@ -62,6 +68,7 @@ describe('harness catalog', () => {
   it('recognises harness ids and rejects anything else', () => {
     expect(isHarnessId('claude')).toBe(true);
     expect(isHarnessId('codex')).toBe(true);
+    expect(isHarnessId('cursor')).toBe(true);
     expect(isHarnessId('goose')).toBe(false);
     expect(isHarnessId(undefined)).toBe(false);
   });
@@ -85,7 +92,7 @@ describe('loadAgentDefinitions', () => {
   it('falls back to the builtins when the directory is absent', async () => {
     const { definitions, errors } = await loadAgentDefinitions(sandbox);
     expect(errors).toEqual([]);
-    expect(definitions.map((d) => d.id)).toEqual(['claude', 'codex']);
+    expect(definitions.map((d) => d.id)).toEqual(['claude', 'codex', 'cursor']);
     expect(definitions.find((d) => d.id === 'claude')?.default).toBe(true);
     expect(definitions.every((d) => d.source === null)).toBe(true);
   });
@@ -142,7 +149,7 @@ describe('loadAgentDefinitions', () => {
       ['---', 'id: planner', 'name: Planner', 'harness: codex', '---', 'Plan only.'].join('\n'),
     );
     const { definitions } = await loadAgentDefinitions(sandbox);
-    expect(definitions.map((d) => d.id)).toEqual(['claude', 'codex', 'planner']);
+    expect(definitions.map((d) => d.id)).toEqual(['claude', 'codex', 'cursor', 'planner']);
     expect(definitions.find((d) => d.id === 'planner')?.harness).toBe('codex');
   });
 
@@ -164,7 +171,7 @@ describe('loadAgentDefinitions', () => {
     const { definitions, errors } = await loadAgentDefinitions(sandbox);
     expect(errors).toHaveLength(1);
     expect(errors[0]).toMatch(/harness/);
-    expect(definitions.map((d) => d.id)).toEqual(['claude', 'codex', 'planner']);
+    expect(definitions.map((d) => d.id)).toEqual(['claude', 'codex', 'cursor', 'planner']);
   });
 });
 
@@ -310,6 +317,6 @@ describe('description, avatar and the API summary (Task 1)', () => {
   });
 
   it('reports both builtins as `mentions`, so neither answers every message', () => {
-    expect(BUILTIN_AGENT_DEFINITIONS.map((d) => d.respondsTo)).toEqual(['mentions', 'mentions']);
+    expect(BUILTIN_AGENT_DEFINITIONS.map((d) => d.respondsTo)).toEqual(['mentions', 'mentions', 'mentions']);
   });
 });
