@@ -245,39 +245,6 @@ or a fenced code block are **not** mentions — quoting `@planner` is talking ab
 the planner rather than to them — but ordinary prose is taken at face value, and
 the budget and the bare-acknowledgement filter are what bound the result.
 
-## Slash commands
-
-Each harness advertises its skills and slash commands on `session/new` through
-ACP's `available_commands_update`. The broker captures that list per session,
-persists it, and serves it on the `chat-session` frame and
-`GET /api/assignments/:id/chat/session`. Before an agent's first session opens,
-the composer shows the newest list its harness has advertised elsewhere, marked
-**cached**.
-
-| Harness | Typical count (2026-09-03) | Notes |
-|---------|---------------------------|-------|
-| claude (`claude-agent-acp`) | ~221 | Includes plugin and skill commands; `/context` returns the usage table |
-| codex (`codex-acp`) | ~140 | Skills and plugin commands appear as `$name` entries; `/plan` sets collaboration mode client-side |
-| cursor | ~117 | Same ACP surface; no extra Syntaur work beyond capture and the picker |
-
-Type `/` at the start of the message, or right after a leading `@mention`, to
-open a picker scoped to the **addressed agent** — the first attached mention, else
-the default. Selecting a command inserts `/name `; sending is unchanged and an
-unlisted `/command` is allowed.
-
-A command turn is delivered as a **raw** `/name args` line — no `<chat-event>`
-wrapper and no `<chat-history>` delta — so the harness recognises it the same way
-as in a terminal. The delivery cursor does not move on that turn; the next
-ordinary message carries whatever history the command skipped. On a brand-new
-session whose standing context has not been sent yet, the broker delivers standing
-context in a short internal turn first, then sends the command alone (Task 2a).
-
-codex marks some commands with `_meta.commandAction.kind = setConfigOption` (for
-example `/plan` → `collaboration_mode = plan`). Those run client-side: Syntaur
-calls `session/set_config_option`, writes a thin `system` row, and closes the
-turn without a prompt. `prefixPrompt` commands (for example `/goal`) are sent as
-text like claude commands.
-
 ### What one agent sees of another
 
 Each turn's prompt carries the participant roster and the agent's own identity:
@@ -318,6 +285,39 @@ The chat column stays a conversation: messages, hand-off rows, work cards
 collapsed to one line, plan cards, permission cards, turn status and system rows.
 Thinking and the full tool detail — diffs, terminal output, raw I/O — sit behind
 an **Activity** disclosure on each turn's status row.
+
+## Slash commands
+
+Each harness advertises its skills and slash commands on `session/new` through
+ACP's `available_commands_update`. The broker captures that list per session,
+persists it, and serves it on the `chat-session` frame and
+`GET /api/assignments/:id/chat/session`. Before an agent's first session opens,
+the composer shows the newest list its harness has advertised elsewhere, marked
+**cached**.
+
+| Harness | Typical count (2026-09-03) | Notes |
+|---------|---------------------------|-------|
+| claude (`claude-agent-acp`) | ~221 | Includes plugin and skill commands; `/context` returns the usage table |
+| codex (`codex-acp`) | ~140 | Skills and plugin commands appear as `$name` entries; `/plan` sets collaboration mode client-side |
+| cursor | ~117 | Same ACP surface; no extra Syntaur work beyond capture and the picker |
+
+Type `/` at the start of the message, or right after a leading `@mention`, to
+open a picker scoped to the **addressed agent** — the first attached mention, else
+the default. Selecting a command inserts `/name `; sending is unchanged and an
+unlisted `/command` is allowed.
+
+A command turn is delivered as a **raw** `/name args` line — no `<chat-event>`
+wrapper and no `<chat-history>` delta — so the harness recognises it the same way
+as in a terminal. The delivery cursor does not move on that turn; the next
+ordinary message carries whatever history the command skipped. On a brand-new
+session whose standing context has not been sent yet, the broker delivers standing
+context in a short internal turn first, then sends the command alone (Task 2a).
+
+codex marks some commands with `_meta.commandAction.kind = setConfigOption` (for
+example `/plan` → `collaboration_mode = plan`). Those run client-side: Syntaur
+calls `session/set_config_option`, writes a thin `system` row, and closes the
+turn without a prompt. `prefixPrompt` commands (for example `/goal`) are sent as
+text like claude commands.
 
 ## Scheduled messages
 

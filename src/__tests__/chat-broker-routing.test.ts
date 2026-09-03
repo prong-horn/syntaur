@@ -336,6 +336,29 @@ describe('agent-to-agent hops', () => {
     expect(prompts('planner')).toHaveLength(1);
   });
 
+  it('never treats a handoff whose text starts with "/" as a slash command', async () => {
+    // Only a HUMAN trigger can be a command turn. A delegator's reply that
+    // happens to start with "/" is quoted to the target like any other hop —
+    // wrapped, attributed, never delivered as a raw command block.
+    makeBroker({
+      planner: [worksThenSays('/context please @implementer', 'p1')],
+      implementer: [justSays('ok @planner', 'i1')],
+    });
+
+    await broker.send({ assignment: assignment(), text: '@planner outline it' });
+    await idleAll(2);
+    await new Promise((r) => setTimeout(r, 30));
+
+    const prompt = prompts('implementer')[0] as { prompt: Array<{ text?: string }> };
+    expect(prompt).toBeTruthy();
+    const text = promptText(prompt as never);
+    expect(text).toContain('author="agent:planner"');
+    expect(text).toContain('/context please');
+    for (const block of prompt.prompt) {
+      expect(block.text?.startsWith('/')).not.toBe(true);
+    }
+  });
+
   it('stops a mutual chain at the hop budget with a system row and exactly `budget` hops', async () => {
     await writeParticipantsFile({
       agents: ['planner', 'implementer'],
