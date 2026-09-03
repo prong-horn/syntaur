@@ -26,7 +26,6 @@ import { isSafeSessionId } from '../utils/session-id.js';
 import { resolveAssignmentBySlug } from '../utils/assignment-resolver.js';
 import { assignmentsDir as assignmentsDirFn } from '../utils/paths.js';
 import { derivePathFromTranscript } from '../utils/transcript.js';
-import { captureProcessStartedAt } from '../utils/process-info.js';
 import { captureHeadSha } from '../utils/git-worktree.js';
 import { isExistingDir } from '../utils/workspace-cwd.js';
 import { recreateForTarget, recreateOutcomeToHttp } from './worktree-recreate.js';
@@ -686,7 +685,7 @@ export function createAgentSessionsRouter(
   // POST /api/agent-sessions — register a new session
   router.post('/', async (req, res) => {
     try {
-      const { projectSlug, assignmentSlug, agent, sessionId, path, description, transcriptPath, pid: rawPid } =
+      const { projectSlug, assignmentSlug, agent, sessionId, path, description, transcriptPath } =
         req.body;
 
       if (!agent) {
@@ -749,12 +748,6 @@ export function createAgentSessionsRouter(
       const derivedPath = await derivePathFromTranscript(transcriptPath);
       const recordedPath = derivedPath ?? path ?? '';
 
-      const pid =
-        typeof rawPid === 'number' && Number.isFinite(rawPid) && rawPid > 0
-          ? rawPid
-          : null;
-      const pidStartedAt = pid !== null ? captureProcessStartedAt(pid) : null;
-
       // Best-effort capture of the worktree's HEAD sha so a later recreate of a
       // deleted worktree can be exact. Never blocks registration on git.
       const originalHeadSha = isExistingDir(recordedPath)
@@ -775,8 +768,6 @@ export function createAgentSessionsRouter(
         path: recordedPath,
         description: description || null,
         transcriptPath: transcriptPath || null,
-        pid,
-        pidStartedAt,
         originalHeadSha,
       };
 
