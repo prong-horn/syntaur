@@ -379,6 +379,8 @@ export type ChatSessionState =
 /** The four-tier cwd resolution chain for chat sessions. */
 export type CwdTier = 'worktree' | 'repository' | 'project' | 'home';
 
+export type { ChatCommand, ChatCommandAction, ChatCommandsSource } from './commands.js';
+
 /** Payload of the `chat-session` WS frame and of `GET …/chat/session`. */
 export interface ChatSessionSummary {
   assignmentId: string;
@@ -405,6 +407,10 @@ export interface ChatSessionSummary {
   cwd?: string | null;
   /** Which tier of the resolution chain produced the cwd. */
   cwdTier?: CwdTier | null;
+  /** Harness slash commands advertised for this session. */
+  commands: import('./commands.js').ChatCommand[];
+  /** Where {@link commands} came from — live session or per-harness cache. */
+  commandsSource: import('./commands.js').ChatCommandsSource | null;
 }
 
 /**
@@ -530,6 +536,7 @@ export interface ChatSessionRow {
   created_at: string;
   last_turn_at: string | null;
   last_delivered_seq: number;
+  commands_json: string | null;
 }
 
 export interface ChatItemRow {

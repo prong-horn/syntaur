@@ -224,6 +224,19 @@ export type TurnTrigger =
 /** The four-tier cwd resolution chain for chat sessions. */
 export type CwdTier = 'worktree' | 'repository' | 'project' | 'home';
 
+export type ChatCommandAction =
+  | { kind: 'prompt' }
+  | { kind: 'set-config'; configId: string; value: string };
+
+export interface ChatCommand {
+  name: string;
+  description: string;
+  inputHint: string | null;
+  action: ChatCommandAction;
+}
+
+export type ChatCommandsSource = 'session' | 'harness-cache';
+
 export interface ChatSessionSummary {
   assignmentId: string;
   agentId: string;
@@ -244,6 +257,8 @@ export interface ChatSessionSummary {
   cwd?: string | null;
   /** Which tier of the resolution chain produced the cwd. */
   cwdTier?: CwdTier | null;
+  commands: ChatCommand[];
+  commandsSource: ChatCommandsSource | null;
 }
 
 /**
