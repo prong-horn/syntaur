@@ -194,7 +194,7 @@ export function ChatTab({ assignmentId }: ChatTabProps) {
         {column.length === 0 ? (
           <EmptyState
             title="No messages yet"
-            description="Send a message to start an agent in this assignment's worktree. Mention an agent with @ to address it directly; anything unmentioned goes to the default agent."
+            description="Send a message to start an agent. It will run in the assignment's worktree, repository, or home directory. Mention an agent with @ to address it directly; anything unmentioned goes to the default agent."
           />
         ) : (
           column.map((item) => (

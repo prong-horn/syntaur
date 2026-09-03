@@ -154,9 +154,13 @@ and its turns book at $0 with the token counts still recorded.
 `npm i -g @agentclientprotocol/claude-agent-acp` (or `…/codex-acp`). The composer
 shows the exact command.
 
-**The send is refused with a workspace error** — the assignment has no valid
-`workspace.worktreePath` or `workspace.repository`. The agent has to run
-somewhere; set one in `assignment.md`.
+**The agent is running from home** — the assignment has no `workspace.worktreePath`,
+`workspace.repository`, or project `repositories` entry that exists on disk, so
+the agent falls back to the home directory (`~`). A system row in the chat says
+so and suggests creating a worktree from the assignment header. At the home tier
+the session defaults to `ask` mode (read-only) unless the agent definition pins
+a different mode. The four-tier resolution chain is: worktree → repository →
+project repository → home.
 
 **The adapter fails to start** — the chat shows the adapter's own error plus the
 output of `claude auth status` / `codex login status`. Both adapters work off a

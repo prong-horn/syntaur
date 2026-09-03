@@ -221,6 +221,9 @@ export type TurnTrigger =
   | { kind: 'human'; messageId: string }
   | { kind: 'handoff'; handoffId: string; fromAgentId: string; hop: number };
 
+/** The four-tier cwd resolution chain for chat sessions. */
+export type CwdTier = 'worktree' | 'repository' | 'project' | 'home';
+
 export interface ChatSessionSummary {
   assignmentId: string;
   agentId: string;
@@ -237,6 +240,10 @@ export interface ChatSessionSummary {
   /** Highest chat-level `seq` this session has been shown (Decision 4). */
   lastDeliveredSeq: number;
   error?: string | null;
+  /** Resolved working directory for this session. */
+  cwd?: string | null;
+  /** Which tier of the resolution chain produced the cwd. */
+  cwdTier?: CwdTier | null;
 }
 
 /**

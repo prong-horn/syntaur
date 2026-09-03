@@ -35,6 +35,8 @@ export interface ContextSectionInput {
   assignmentTitle?: string | null;
   worktreePath: string | null;
   branch?: string | null;
+  /** Which tier of the resolution chain produced the cwd. */
+  cwdTier?: 'worktree' | 'repository' | 'project' | 'home' | null;
   /** Who this session IS — omitted by phase-2 callers with one agent. */
   agent?: AgentDefinition;
   /** Every agent attached to the assignment, this one included. */
@@ -84,11 +86,18 @@ export async function buildStandingContext(input: StandingContextInput): Promise
  */
 export function buildContextSection(context: ContextSectionInput): string {
   const others = (context.roster ?? []).filter((entry) => entry.id !== context.agent?.id);
+  const tier = context.cwdTier ?? (context.worktreePath ? 'worktree' : null);
+  const cwdLabel = context.worktreePath
+    ? `${context.worktreePath} (${tier ?? 'worktree'})`
+    : '(unresolved)';
   const lines = [
     `Project: ${context.projectSlug ?? '(standalone)'}`,
     `Assignment: ${context.assignmentSlug}${context.assignmentTitle ? ` — ${escapeAngles(context.assignmentTitle)}` : ''}`,
-    `Worktree: ${context.worktreePath ?? '(unresolved)'}`,
+    `Working directory: ${cwdLabel}`,
     ...(context.branch ? [`Branch: ${context.branch}`] : []),
+    ...(tier === 'home'
+      ? ['There is no workspace configured for this assignment. Code changes should wait until a worktree is created.']
+      : []),
     ...(context.agent ? [`You are @${context.agent.id} (${escapeAngles(context.agent.name)})`] : []),
     ...(others.length > 0
       ? ['Participants:', ...(context.roster ?? []).map(rosterLine), 'Human: the assignment owner']

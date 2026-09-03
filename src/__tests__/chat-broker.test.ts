@@ -228,15 +228,13 @@ describe('first message', () => {
     expect(user.text).toBe('hi');
   });
 
-  it('refuses to send — and creates nothing — when the workspace has no valid cwd', async () => {
+  it('falls back to homedir when the workspace has no valid cwd', async () => {
     await writeAssignment({ worktreePath: '/nope/nowhere', repository: '/nope/nowhere' });
     makeBroker();
-    await expect(broker.send({ assignment: assignment(), text: 'hi' })).rejects.toBeInstanceOf(
-      ChatSendError,
-    );
-    expect(await events()).toEqual([]);
-    expect(items()).toEqual([]);
-    expect(fake.calls).toEqual([]);
+    await broker.send({ assignment: assignment(), text: 'hi' });
+    await idle();
+    const { homedir } = await import('node:os');
+    expect(fake.newSessionRequests[0].cwd).toBe(homedir());
   });
 
   it('falls back to the repository when the worktree is missing', async () => {

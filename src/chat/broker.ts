@@ -42,7 +42,7 @@ import { readFile } from 'node:fs/promises';
 import type * as acp from '@agentclientprotocol/sdk';
 import type { ResolvedAssignment } from '../utils/assignment-resolver.js';
 import { extractFrontmatter, getNestedField } from '../dashboard/parser.js';
-import { resolveWorkspaceCwd } from '../utils/workspace-cwd.js';
+import { resolveChatCwd, type CwdTier } from './chat-cwd.js';
 import { appendComment } from '../lifecycle/comment-append.js';
 import { appendSession, updateSessionStatus } from '../dashboard/agent-sessions.js';
 import {
@@ -79,7 +79,7 @@ import {
   type TurnPromptTrigger,
 } from './prompt-framing.js';
 import { openChatLog, type ChatLog } from './store.js';
-import { HUMAN_AGENT_ID, SYSTEM_AGENT_ID } from './types.js';
+import { HUMAN_AGENT_ID, SYSTEM_AGENT_ID, pin } from './types.js';
 import type {
   AgentDefinition,
   AgentMessageItem,
@@ -259,6 +259,7 @@ interface Session {
   acpSessionId: string | null;
   adapterVersion: string | null;
   cwd: string | null;
+  cwdTier: CwdTier | null;
   branch: string | null;
   model: string | null;
   mode: string | null;
@@ -548,6 +549,8 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
       queued: session.queue.map((q) => ({ text: q.text, trigger: q.trigger })),
       lastDeliveredSeq: session.lastDeliveredSeq,
       error: session.error,
+      cwd: session.cwd,
+      cwdTier: session.cwdTier,
     };
   }
 
@@ -631,6 +634,7 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
       acpSessionId: row?.acp_session_id ?? null,
       adapterVersion: row?.adapter_version ?? null,
       cwd: row?.cwd ?? null,
+      cwdTier: null,
       branch: null,
       model: null,
       mode: null,
@@ -1005,7 +1009,11 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
     return [...sessions.values()].filter((s) => s.assignment.id === assignment.id);
   }
 
-  /** Read `workspace.*` from assignment.md and resolve the adapter's cwd. */
+  /**
+   * Read `workspace.*` from assignment.md and resolve the adapter's cwd.
+   * Uses the chat-specific resolver that adds project-repository and home
+   * fallback tiers — a chat is never refused for a missing worktree.
+   */
   async function resolveCwd(session: Session): Promise<string> {
     const path = resolve(session.assignment.assignmentDir, 'assignment.md');
     let frontmatter = '';
@@ -1017,20 +1025,49 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
     const worktreePath = getNestedField(frontmatter, 'workspace', 'worktreePath');
     const repository = getNestedField(frontmatter, 'workspace', 'repository');
     const branch = getNestedField(frontmatter, 'workspace', 'branch');
-    const result = resolveWorkspaceCwd({
+
+    // Read project.md repositories for the project-tier fallback.
+    let projectRepositories: string[] = [];
+    if (session.assignment.projectSlug) {
+      try {
+        const projectPath = resolve(
+          options.projectsDir,
+          session.assignment.projectSlug,
+          'project.md',
+        );
+        const [projectFm] = extractFrontmatter(await readFile(projectPath, 'utf-8'));
+        projectRepositories = parseRepositories(projectFm);
+      } catch {
+        // Missing or unreadable project.md — skip the project tier.
+      }
+    }
+
+    const result = resolveChatCwd({
       worktreePath,
       repository,
       branch,
       assignmentSlug: session.assignment.assignmentSlug,
+      projectRepositories,
     });
-    if (!result.cwd) {
-      throw new ChatSendError(
-        result.invalidReason ??
-          `No workspace for ${session.assignment.assignmentSlug}: set workspace.worktreePath or workspace.repository in assignment.md`,
-      );
-    }
     session.branch = branch;
+    session.cwdTier = result.tier;
     return result.cwd;
+  }
+
+  /**
+   * Parse `repositories:` from project.md frontmatter. Handles both YAML
+   * block-style (`repositories:\n  - /path`) and inline empty (`repositories: []`).
+   */
+  function parseRepositories(frontmatter: string): string[] {
+    const inlineEmpty = frontmatter.match(/^repositories:\s*\[\s*\]/m);
+    if (inlineEmpty) return [];
+    const block = frontmatter.match(/^repositories:\s*\n((?:\s+-\s+.*\n?)*)/m);
+    if (!block) return [];
+    return block[1]
+      .split('\n')
+      .map((line) => line.replace(/^\s+-\s+/, '').trim())
+      .filter((line) => line.length > 0)
+      .map((line) => line.replace(/^["']|["']$/g, ''));
   }
 
   // --- adapter lifecycle ---------------------------------------------------
@@ -1049,7 +1086,12 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
       command: resolved.path,
       args: [...session.harness.args],
       cwd,
-      env: profileEnv(session.profile),
+      env: {
+        ...profileEnv(session.profile),
+        // Prevent the SessionStart hook from merging into ~/.syntaur/context.json
+        // when the session is running from the home directory.
+        ...(session.cwdTier === 'home' ? { SYNTAUR_SKIP_CONTEXT_MERGE: '1' } : {}),
+      },
       onUpdate: (notification) => {
         void onUpdate(session, notification);
       },
@@ -1063,8 +1105,27 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
   async function ensureAdapter(session: Session): Promise<void> {
     if (session.client?.alive() && session.acpSessionId) return;
 
+    const previousCwd = session.cwd;
     const cwd = await resolveCwd(session);
     session.cwd = cwd;
+
+    // Home-tier mode override: default to `ask` when the definition has no pinned mode.
+    if (session.cwdTier === 'home' && session.profile.mode.kind === 'inherit') {
+      session.profile = { ...session.profile, mode: pin('ask') };
+    }
+
+    // Emit a system row when the cwd/tier changes (e.g. worktree created later).
+    if (previousCwd && previousCwd !== cwd) {
+      await record(session, 'system', {
+        level: 'info',
+        text: `Working directory changed to ${cwd} (${session.cwdTier})`,
+      }, null);
+      // Tear down the existing session so it starts fresh at the new cwd.
+      if (session.client) {
+        await shutdownSession(session);
+      }
+    }
+
     setState(session, 'spawning');
 
     const client = spawn(session, cwd);
@@ -1148,6 +1209,17 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
 
     await registerAgentSession(session, cwd);
     setState(session, 'ready', null);
+
+    // Announce where the session is running.
+    if (session.cwdTier && session.cwdTier !== 'worktree') {
+      const tierMessages: Record<string, string> = {
+        repository: `Running in ${cwd} (repository fallback)`,
+        project: `Running in ${cwd} (project repository) — this assignment has no worktree; create one from the assignment header`,
+        home: `Running in ${cwd} — this assignment has no worktree; create one from the assignment header`,
+      };
+      const text = tierMessages[session.cwdTier];
+      if (text) await record(session, 'system', { level: 'info', text }, null);
+    }
   }
 
   /**
@@ -1384,6 +1456,7 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
         assignmentSlug: session.assignment.assignmentSlug,
         worktreePath: session.cwd,
         branch: session.branch,
+        cwdTier: session.cwdTier,
         agent: session.definition,
         roster,
       },

@@ -208,7 +208,7 @@ describe('POST /assignments/:id/chat/messages', () => {
     }
   });
 
-  it('409s with the reason when the workspace has no valid cwd', async () => {
+  it('falls back to homedir when the workspace has no valid cwd', async () => {
     await boot();
     await writeFile(
       join(assignmentDir, 'assignment.md'),
@@ -230,9 +230,8 @@ describe('POST /assignments/:id/chat/messages', () => {
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ text: 'hello' }),
     });
-    expect(res.status).toBe(409);
-    expect(((await res.json()) as { error: string }).error).toMatch(/worktreePath|repository|workspace/i);
-    expect(fake.calls).toEqual([]);
+    // No longer a 409 — the chat falls back to the home directory.
+    expect(res.status).toBe(202);
   });
 
   it('404s for an unknown agent id', async () => {

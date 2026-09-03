@@ -376,6 +376,9 @@ export type ChatSessionState =
   | 'stopped'
   | 'error';
 
+/** The four-tier cwd resolution chain for chat sessions. */
+export type CwdTier = 'worktree' | 'repository' | 'project' | 'home';
+
 /** Payload of the `chat-session` WS frame and of `GET …/chat/session`. */
 export interface ChatSessionSummary {
   assignmentId: string;
@@ -398,6 +401,10 @@ export interface ChatSessionSummary {
   lastDeliveredSeq: number;
   /** Set when the session cannot run (no valid cwd, adapter missing, …). */
   error?: string | null;
+  /** Resolved working directory for this session. */
+  cwd?: string | null;
+  /** Which tier of the resolution chain produced the cwd. */
+  cwdTier?: CwdTier | null;
 }
 
 /**
