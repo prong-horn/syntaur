@@ -204,7 +204,7 @@ export function isHandlerNudgeDisabled(): boolean {
 }
 
 export function nudgeMessage(): string {
-  return 'syntaur: running from npx — the syntaur:// deep-link handler is not registered. Install durably with `npm i -g syntaur` to enable "Open in agent" buttons.';
+  return 'syntaur: running from npx — install durably with `npm i -g syntaur` so the CLI, its hooks and the dashboard all point at one copy.';
 }
 
 export async function shouldNudgeForNpx(hash: string | null): Promise<boolean> {

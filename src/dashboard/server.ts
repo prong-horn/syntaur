@@ -76,8 +76,6 @@ import { createWriteRouter } from './api-write.js';
 import { createServersRouter } from './api-servers.js';
 import { createAgentSessionsRouter } from './api-agent-sessions.js';
 import { createAgentsRouter } from './api-agents.js';
-import { createLaunchPreflightRouter } from './api-launch-preflight.js';
-import { createTerminalConfigRouter } from './api-terminal-config.js';
 import { createSearchConfigRouter } from './api-search-config.js';
 import { createContentSearchRouter } from './api-search.js';
 import { createWorkspaceVisibilityConfigRouter } from './api-workspace-visibility-config.js';
@@ -328,7 +326,6 @@ export function createDashboardServer(options: DashboardServerOptions) {
     }
   });
 
-  app.use('/api/config/terminal', createTerminalConfigRouter());
   app.use('/api/config/search', createSearchConfigRouter());
   app.use('/api/search', createContentSearchRouter(projectsDir, assignmentsDir));
   app.use('/api/config/workspace-visibility', createWorkspaceVisibilityConfigRouter());
@@ -811,12 +808,6 @@ export function createDashboardServer(options: DashboardServerOptions) {
   // --- Agents Config API ---
   app.use('/api/config/agents', createAgentsRouter());
   app.use('/api/config/agent-discovery', createAgentDiscoveryConfigRouter());
-
-  // --- Launch Preflight API ---
-  app.use(
-    '/api/launch',
-    createLaunchPreflightRouter(projectsDir, assignmentsDir),
-  );
 
   // --- Playbooks API ---
   app.use('/api/playbooks', createPlaybooksRouter(playbooksDir));

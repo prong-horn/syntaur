@@ -9,7 +9,7 @@ import {
   type UpdateDeps,
   type UpdateOptions,
 } from '../commands/update.js';
-import type { InstallKind } from '../launch/index.js';
+import type { InstallKind } from '../utils/install-detection.js';
 
 const SCRIPT_URL = 'file:///opt/x/bin/syntaur.js';
 

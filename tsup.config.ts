@@ -5,7 +5,6 @@ export default defineConfig({
     'src/index.ts',
     'src/dashboard/server.ts',
     'src/db/leases-db.ts',
-    'src/launch/index.ts',
     'src/daemon/pty-host-main.ts',
   ],
   format: ['esm'],

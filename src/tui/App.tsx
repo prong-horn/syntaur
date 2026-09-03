@@ -6,14 +6,12 @@ import { useSearch } from './hooks/useSearch.js';
 import { TreeView } from './components/TreeView.js';
 import { SearchBar } from './components/SearchBar.js';
 import { StatusBar } from './components/StatusBar.js';
-import type { LaunchOptions } from './launch.js';
 
 interface AppProps {
   projectsDir: string;
-  onLaunch: (options: Omit<LaunchOptions, 'agent' | 'cwdOverride'>) => void;
 }
 
-export function App({ projectsDir, onLaunch }: AppProps) {
+export function App({ projectsDir }: AppProps) {
   const { exit } = useApp();
   const { stdout } = useStdout();
   const terminalHeight = stdout?.rows ?? 24;
@@ -89,14 +87,11 @@ export function App({ projectsDir, onLaunch }: AppProps) {
     }
 
     if (key.return && currentNode) {
+      // Enter expands a project. On an assignment it used to launch an agent in
+      // a terminal; agents are worked in the dashboard's Chat tab now, so there
+      // is nothing to do here.
       if (currentNode.kind === 'project') {
         toggle(currentNode.id);
-      } else if (currentNode.kind === 'assignment') {
-        onLaunch({
-          projectsDir,
-          projectSlug: currentNode.projectSlug,
-          assignmentSlug: currentNode.slug,
-        });
       }
       return;
     }

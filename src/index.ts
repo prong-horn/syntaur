@@ -42,13 +42,7 @@ import { setupCommand } from './commands/setup.js';
 import { uninstallCommand } from './commands/uninstall.js';
 import { setupAdapterCommand } from './commands/setup-adapter.js';
 import { trackSessionCommand } from './commands/track-session.js';
-import { urlCommand, formatUrlCommandError } from './commands/url.js';
-import {
-  installUrlHandlerCommand,
-  formatInstallUrlHandlerError,
-} from './commands/install-url-handler.js';
 import { browseCommand } from './commands/browse.js';
-import { tuiCommand } from './commands/tui.js';
 import { createPlaybookCommand } from './commands/create-playbook.js';
 import { listPlaybooksCommand } from './commands/list-playbooks.js';
 import { enablePlaybookCommand } from './commands/enable-playbook.js';
@@ -769,54 +763,11 @@ program
   );
 
 program
-  .command('url <url>')
-  .description(
-    'Open an assignment or session in the configured terminal + agent (handles syntaur:// deep links)',
-  )
-  .option(
-    '--print-plan',
-    'Print the launch plan to stdout (two lines: terminal id, shell command) instead of executing. Used internally by the macOS URL handler applet so Apple Events come from the applet rather than from a subprocess.',
-  )
-  .action(async (url: string, options: { printPlan?: boolean }) => {
-    try {
-      await urlCommand(url, { printPlan: options.printPlan });
-    } catch (error) {
-      console.error(formatUrlCommandError(error));
-      process.exit(1);
-    }
-  });
-
-program
-  .command('install-url-handler')
-  .description(
-    'Register the syntaur:// deep-link handler with the OS. macOS-only today. Refuses to register from an npx cache or unrecognized install.',
-  )
-  .action(async () => {
-    try {
-      await installUrlHandlerCommand({ scriptUrl: import.meta.url });
-    } catch (error) {
-      console.error(formatInstallUrlHandlerError(error));
-      process.exit(1);
-    }
-  });
-
-program
   .command('browse')
   .description('Interactive TUI browser for projects and assignments')
-  .option('--agent <id>', 'Bypass the agent picker and launch the given configured agent id')
-  .option('--no-worktree-prompt', 'Skip the prompt to create a worktree when one is missing')
   .action(
     runCommand(async (options) => {
       await browseCommand(options);
-    }),
-  );
-
-program
-  .command('tui')
-  .description('Open the fullscreen agent cockpit (browse, launch, monitor, attach)')
-  .action(
-    runCommand(async () => {
-      await tuiCommand();
     }),
   );
 
@@ -919,7 +870,7 @@ Common workflow:
   $ syntaur setup                                  Initialize Syntaur (plugins, dashboard)
   $ syntaur create-project "My App"                Start a new project
   $ syntaur create-assignment --project my-app "Add login"   Add a task to a project
-  $ syntaur browse                                 Interactive TUI: pick & launch work
+  $ syntaur browse                                 Interactive TUI: browse projects & assignments
   $ syntaur dashboard                              Open the local web dashboard
   $ syntaur doctor                                 Diagnose Syntaur state & suggested fixes
 

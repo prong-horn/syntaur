@@ -28,10 +28,6 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
     },
-    "./launch": {
-      "types": "./dist/launch/index.d.ts",
-      "import": "./dist/launch/index.js"
-    },
     "./dist/dashboard/server.js": "./dist/dashboard/server.js"
   },
   "files": [
@@ -44,7 +40,6 @@
     "examples",
     "dashboard/dist",
     "statusline",
-    "scripts/install-macos-url-handler.mjs",
     "scripts/ensure-node-pty-exec.mjs"
   ],
   "scripts": {
@@ -59,7 +54,7 @@
     "mirror-skills": "node scripts/mirror-skills-to-platforms.mjs",
     "sync-plugin-version": "node scripts/sync-plugin-version.mjs",
     "build:skills-index": "node scripts/build-skills-index.mjs",
-    "postinstall": "node scripts/ensure-node-pty-exec.mjs && node scripts/install-macos-url-handler.mjs",
+    "postinstall": "node scripts/ensure-node-pty-exec.mjs",
     "version": "node scripts/sync-plugin-version.mjs && git add .claude-plugin/plugin.json platforms/claude-code/.claude-plugin/plugin.json platforms/codex/.codex-plugin/plugin.json",
     "prepack": "node scripts/mirror-skills-to-platforms.mjs && node scripts/sync-plugin-version.mjs",
     "prepublishOnly": "npm run build && npm ci --prefix dashboard && npm run build --prefix dashboard",

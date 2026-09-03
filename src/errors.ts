@@ -2,8 +2,8 @@
  * Shared CLI error type + a thin wrapper so command actions print an actionable
  * remediation instead of a bare `Error: <msg>`.
  *
- * Modeled on `TerminalNotFoundError` (src/launch/execute.ts): the error carries
- * a `remediation` string that the wrapper surfaces as a `→ try: <…>` hint.
+ * The error carries a `remediation` string that the wrapper surfaces as a
+ * `→ try: <…>` hint.
  */
 export class SyntaurError extends Error {
   /** Actionable next step printed as `→ try: <remediation>` on stderr. */

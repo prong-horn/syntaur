@@ -1519,53 +1519,14 @@ export async function writeAgentDiscoveryConfig(
 
 /**
  * Remove any top-level `key: <value>` scalar line from a YAML frontmatter block.
- * Used for scalar keys (terminal:) that don't have child lines, so they can't
- * use the block-style `stripTopLevelBlock`. No-op when the key is absent.
+ * Used for scalar keys that don't have child lines, so they can't use the
+ * block-style `stripTopLevelBlock`. No-op when the key is absent.
  */
 function stripTopLevelScalar(fmBlock: string, key: string): string {
   const lines = fmBlock.split('\n');
   const keyRegex = new RegExp(`^${key}:\\s*\\S`);
   const filtered = lines.filter((line) => !keyRegex.test(line));
   return filtered.join('\n').replace(/\n+$/, '');
-}
-
-export async function writeTerminalConfig(terminal: TerminalChoice): Promise<void> {
-  const configPath = resolve(syntaurRoot(), 'config.md');
-  const terminalLine = `terminal: ${terminal}`;
-
-  const existing = (await fileExists(configPath))
-    ? await readFile(configPath, 'utf-8')
-    : renderConfig({ defaultProjectDir: defaultProjectDir() });
-
-  const fmMatch = existing.match(/^(---\n)([\s\S]*?)\n(---)/);
-  if (!fmMatch) {
-    const content = `---\nversion: "2.0"\ndefaultProjectDir: ${defaultProjectDir()}\n${terminalLine}\n---\n${existing}`;
-    await writeFileForce(configPath, content);
-    return;
-  }
-
-  const fmBlock = fmMatch[2];
-  const afterFrontmatter = existing.slice(fmMatch[0].length);
-  const cleanedFm = stripTopLevelScalar(fmBlock, 'terminal');
-  const newFm = `${cleanedFm}\n${terminalLine}`.replace(/^\n+/, '');
-  const normalizedFm = newFm.replace(/\n+$/, '');
-  const newContent = `---\n${normalizedFm}\n---${afterFrontmatter}`;
-  await writeFileForce(configPath, newContent);
-}
-
-export async function deleteTerminalConfig(): Promise<void> {
-  const configPath = resolve(syntaurRoot(), 'config.md');
-  if (!(await fileExists(configPath))) return;
-
-  const existing = await readFile(configPath, 'utf-8');
-  const fmMatch = existing.match(/^(---\n)([\s\S]*?)\n(---)/);
-  if (!fmMatch) return;
-
-  const fmBlock = fmMatch[2];
-  const afterFrontmatter = existing.slice(fmMatch[0].length);
-  const cleanedFm = stripTopLevelScalar(fmBlock, 'terminal');
-  const newContent = `---\n${cleanedFm}\n---${afterFrontmatter}`;
-  await writeFileForce(configPath, newContent);
 }
 
 function parseHotkeyBindingsConfig(content: string): HotkeyBindingsConfig | null {

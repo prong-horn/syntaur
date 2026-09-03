@@ -12,7 +12,6 @@ import {
   type PromptArgPosition,
 } from '../utils/config.js';
 import { assignmentsDir, defaultProjectDir, expandHome } from '../utils/paths.js';
-import { resolveLaunchPlan, executeLaunchPlan } from '../launch/index.js';
 import { authorAgentDef, buildRegisteredAgent } from '../targets/agent-authoring.js';
 import type { RunnerKind } from '../utils/agents-schema.js';
 import { readFile } from 'node:fs/promises';
@@ -294,50 +293,6 @@ agentsCommand
         dryRun: Boolean(options.dryRun),
       });
       reportMutation('reorder', result);
-    } catch (error) {
-      reportAndExit(error);
-    }
-  });
-
-interface LaunchOptions {
-  prompt?: string;
-  cwd?: string;
-}
-
-agentsCommand
-  .command('launch <id>')
-  .description('Launch a directory-agent standalone (no assignment) from its workdir')
-  .option('--prompt <text>', 'One-shot launch prompt override for this launch only')
-  .option('--cwd <path>', 'Override the agent workdir for this launch only')
-  .action(async (id: string, options: LaunchOptions) => {
-    try {
-      const config = await readConfig();
-      const agents = getAgents(config);
-      const agent = agents.find((a) => a.id === id);
-      if (!agent) {
-        throw new AgentConfigError(`unknown agent id "${id}"`);
-      }
-      // `--cwd` overrides the agent's workdir for THIS launch only: shallow-clone
-      // the agent with the expanded path and swap it into the config so
-      // resolveStandalonePlan validates the overridden dir.
-      let effectiveConfig = config;
-      if (options.cwd !== undefined) {
-        const cloned: AgentConfig = { ...agent, workdir: expandHome(options.cwd) };
-        effectiveConfig = { ...config, agents: agents.map((a) => (a.id === id ? cloned : a)) };
-      }
-      const projectsDir = config.defaultProjectDir || defaultProjectDir();
-      const plan = await resolveLaunchPlan({
-        kind: 'standalone',
-        id,
-        agentId: id,
-        config: effectiveConfig,
-        projectsDir,
-        assignmentsDir: assignmentsDir(),
-        promptOverride: options.prompt,
-      });
-      if (plan.shellFallbackWarning) console.error(plan.shellFallbackWarning);
-      for (const warning of plan.promptWarnings ?? []) console.error(warning);
-      await executeLaunchPlan(plan);
     } catch (error) {
       reportAndExit(error);
     }
