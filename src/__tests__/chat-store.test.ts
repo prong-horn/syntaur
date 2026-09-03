@@ -341,3 +341,124 @@ describe('rebuild == live', () => {
     expect(result).toEqual({ events: 0, items: 0, deleted: 1 });
   });
 });
+
+describe('rebuild == live across the assignment scope (Task 5)', () => {
+  const ASSIGNMENT_SCOPE = `${ASSIGNMENT_ID}:@assignment`;
+  const PLANNER_KEY = `${ASSIGNMENT_ID}:planner`;
+  const IMPLEMENTER_KEY = `${ASSIGNMENT_ID}:implementer`;
+
+  /**
+   * A two-agent chat as the broker writes it: the routing rows in the
+   * assignment scope, each agent's turn under its own key, and all of it
+   * interleaved in one `events.jsonl` (Decision 3). `rebuildChatIndex` builds
+   * one normalizer per distinct `sessionKey`, so this is the case that proves
+   * the new key needs nothing else.
+   */
+  async function seedTwoAgents(): Promise<void> {
+    const log = await openChatLog(assignmentDir);
+    const normalizers = new Map<string, ChatNormalizer>();
+    const write = async (
+      sessionKey: string,
+      agentId: string,
+      turnId: string | null,
+      kind: ChatEvent['kind'],
+      payload: unknown,
+    ) => {
+      const stored = await log.append({
+        assignmentId: ASSIGNMENT_ID,
+        agentId,
+        sessionKey,
+        turnId,
+        kind,
+        payload,
+      });
+      let normalizer = normalizers.get(sessionKey);
+      if (!normalizer) {
+        normalizer = new ChatNormalizer({ assignmentId: ASSIGNMENT_ID, agentId, sessionKey });
+        normalizers.set(sessionKey, normalizer);
+      }
+      for (const patch of normalizer.ingest(stored)) applyChatPatch(sessionKey, patch);
+    };
+
+    await write(ASSIGNMENT_SCOPE, 'human', null, 'user.message', {
+      messageId: 'm1',
+      text: '@planner @implementer go',
+      state: 'queued',
+      mentions: ['planner', 'implementer'],
+      targets: ['planner', 'implementer'],
+      unknown: [],
+    });
+    await write(PLANNER_KEY, 'planner', 'turn-p', 'turn.start', {
+      startedAt: '2026-09-02T12:00:00.000Z',
+      trigger: { kind: 'human', messageId: 'm1' },
+    });
+    await write(ASSIGNMENT_SCOPE, 'human', null, 'user.message.delivered', {
+      messageId: 'm1',
+      agentId: 'planner',
+      turnId: 'turn-p',
+    });
+    await write(IMPLEMENTER_KEY, 'implementer', 'turn-i', 'turn.start', {
+      startedAt: '2026-09-02T12:00:01.000Z',
+      trigger: { kind: 'human', messageId: 'm1' },
+    });
+    await write(ASSIGNMENT_SCOPE, 'human', null, 'user.message.delivered', {
+      messageId: 'm1',
+      agentId: 'implementer',
+      turnId: 'turn-i',
+    });
+    await write(PLANNER_KEY, 'planner', 'turn-p', 'acp.update', {
+      sessionUpdate: 'agent_message_chunk',
+      messageId: 'pm1',
+      content: { type: 'text', text: 'Done — over to you @implementer' },
+    });
+    await write(PLANNER_KEY, 'planner', 'turn-p', 'turn.end', {
+      stopReason: 'end_turn',
+      endedAt: '2026-09-02T12:00:05.000Z',
+      durationMs: 5000,
+    });
+    await write(ASSIGNMENT_SCOPE, 'planner', null, 'handoff', {
+      handoffId: 'h1',
+      fromAgentId: 'planner',
+      toAgentId: 'implementer',
+      triggerItemId: 'turn-p:1',
+      text: 'Done — over to you @implementer',
+      hop: 1,
+      budget: 4,
+    });
+    await write(ASSIGNMENT_SCOPE, 'system', null, 'route.notice', {
+      level: 'warn',
+      text: 'No agent @reviewer is attached to this assignment.',
+    });
+    await write(IMPLEMENTER_KEY, 'implementer', 'turn-i', 'turn.end', {
+      stopReason: 'end_turn',
+      endedAt: '2026-09-02T12:00:06.000Z',
+      durationMs: 5000,
+    });
+  }
+
+  it('rebuilds routing rows, handoffs and two agents’ turns identically', async () => {
+    await seedTwoAgents();
+    const liveRows = listChatItemRows(ASSIGNMENT_ID);
+    // The routing rows really are there, authored by three different parties.
+    expect(liveRows.filter((r) => r.type === 'handoff')).toHaveLength(1);
+    expect(new Set(liveRows.map((r) => r.agent_id))).toEqual(
+      new Set(['human', 'planner', 'implementer', 'system']),
+    );
+    const message = JSON.parse(liveRows.find((r) => r.type === 'user.message')!.json) as {
+      state: string;
+      deliveredTo: string[];
+    };
+    expect(message.state).toBe('sent');
+    expect(message.deliveredTo).toEqual(['planner', 'implementer']);
+
+    await rebuildChatIndex(assignmentDir, ASSIGNMENT_ID);
+    expect(listChatItemRows(ASSIGNMENT_ID)).toEqual(liveRows);
+  });
+
+  it('replayItems reproduces the interleaved stream', async () => {
+    await seedTwoAgents();
+    const live = listChatItems(ASSIGNMENT_ID, { limit: 1000 });
+    const events = await readEvents(chatLogPath(assignmentDir));
+    expect(replayItems(events, ASSIGNMENT_ID)).toEqual(live);
+  });
+});

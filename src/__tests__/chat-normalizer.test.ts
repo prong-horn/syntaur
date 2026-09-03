@@ -361,3 +361,245 @@ describe('pure helpers', () => {
     expect(rawOutputText({ a: 1 })).toBe('{"a":1}');
   });
 });
+
+/**
+ * Task 5 — the assignment scope (`${assignmentId}:@assignment`, Decision 3).
+ * Routing rows belong to no agent session: a fan-out `user.message`, the
+ * `handoff` rows between agents, and the router's notices all live here, and
+ * each item's author comes from the EVENT rather than from the normalizer's own
+ * agent id.
+ */
+describe('assignment scope (Task 5)', () => {
+  const ASSIGNMENT = 'assignment-1';
+  const SCOPE = `${ASSIGNMENT}:@assignment`;
+
+  function scope(): { normalizer: ChatNormalizer; items: Map<string, ChatItem>; seq: number } {
+    return {
+      normalizer: new ChatNormalizer({ assignmentId: ASSIGNMENT, agentId: 'system', sessionKey: SCOPE }),
+      items: new Map<string, ChatItem>(),
+      seq: 0,
+    };
+  }
+
+  function feed(
+    ctx: { normalizer: ChatNormalizer; items: Map<string, ChatItem>; seq: number },
+    kind: ChatEvent['kind'],
+    payload: unknown,
+    agentId = 'human',
+  ): void {
+    applyPatches(
+      ctx.items,
+      ctx.normalizer.ingest({
+        seq: ctx.seq++,
+        ts: `2026-09-02T12:00:0${ctx.seq}.000Z`,
+        assignmentId: ASSIGNMENT,
+        agentId,
+        sessionKey: SCOPE,
+        turnId: null,
+        kind,
+        payload,
+      }),
+    );
+  }
+
+  const userMessage = (targets: string[]) => ({
+    messageId: 'm1',
+    text: '@planner @implementer go',
+    state: 'queued',
+    mentions: targets,
+    targets,
+    unknown: [],
+  });
+
+  it('records a fan-out user message with its routing and nobody delivered yet', () => {
+    const ctx = scope();
+    feed(ctx, 'user.message', userMessage(['planner', 'implementer']));
+    const item = [...ctx.items.values()][0] as ChatItem & {
+      targets: string[];
+      deliveredTo: string[];
+      mentions: string[];
+      state: string;
+    };
+    expect(item.type).toBe('user.message');
+    expect(item.targets).toEqual(['planner', 'implementer']);
+    expect(item.deliveredTo).toEqual([]);
+    expect(item.mentions).toEqual(['planner', 'implementer']);
+    expect(item.state).toBe('queued');
+    // The author is the EVENT's, not the normalizer's own `system` id.
+    expect(item.agentId).toBe('human');
+  });
+
+  it('goes queued → partial → sent as each target starts', () => {
+    const ctx = scope();
+    feed(ctx, 'user.message', userMessage(['planner', 'implementer']));
+    const read = () =>
+      [...ctx.items.values()].find((i) => i.type === 'user.message') as ChatItem & {
+        state: string;
+        deliveredTo: string[];
+      };
+
+    feed(ctx, 'user.message.delivered', { messageId: 'm1', agentId: 'planner', turnId: 't1' }, 'planner');
+    expect(read().state).toBe('partial');
+    expect(read().deliveredTo).toEqual(['planner']);
+
+    feed(
+      ctx,
+      'user.message.delivered',
+      { messageId: 'm1', agentId: 'implementer', turnId: 't2' },
+      'implementer',
+    );
+    expect(read().state).toBe('sent');
+    expect(read().deliveredTo).toEqual(['planner', 'implementer']);
+  });
+
+  it('ignores a repeated delivery for the same target', () => {
+    const ctx = scope();
+    feed(ctx, 'user.message', userMessage(['planner', 'implementer']));
+    feed(ctx, 'user.message.delivered', { messageId: 'm1', agentId: 'planner', turnId: 't1' }, 'planner');
+    feed(ctx, 'user.message.delivered', { messageId: 'm1', agentId: 'planner', turnId: 't1' }, 'planner');
+    const item = [...ctx.items.values()].find((i) => i.type === 'user.message') as ChatItem & {
+      state: string;
+      deliveredTo: string[];
+    };
+    expect(item.deliveredTo).toEqual(['planner']);
+    expect(item.state).toBe('partial');
+  });
+
+  it('marks a single-target message sent as soon as its one target starts', () => {
+    const ctx = scope();
+    feed(ctx, 'user.message', userMessage(['planner']));
+    feed(ctx, 'user.message.delivered', { messageId: 'm1', agentId: 'planner', turnId: 't1' }, 'planner');
+    expect(
+      ([...ctx.items.values()].find((i) => i.type === 'user.message') as { state: string }).state,
+    ).toBe('sent');
+  });
+
+  it('withdraws a message and keeps it withdrawn', () => {
+    const ctx = scope();
+    feed(ctx, 'user.message', userMessage(['planner']));
+    feed(ctx, 'user.message', { messageId: 'm1', text: '', state: 'withdrawn' });
+    expect(
+      ([...ctx.items.values()].find((i) => i.type === 'user.message') as { state: string }).state,
+    ).toBe('withdrawn');
+  });
+
+  it('renders a handoff as a sealed row authored by the delegator', () => {
+    const ctx = scope();
+    feed(
+      ctx,
+      'handoff',
+      {
+        handoffId: 'h1',
+        fromAgentId: 'planner',
+        toAgentId: 'implementer',
+        triggerItemId: 'turn-1:2',
+        text: 'over to you @implementer',
+        hop: 1,
+        budget: 4,
+      },
+      'planner',
+    );
+    const item = [...ctx.items.values()][0] as ChatItem & {
+      fromAgentId: string;
+      toAgentId: string;
+      hop: number;
+      budget: number;
+      triggerItemId: string | null;
+    };
+    expect(item.type).toBe('handoff');
+    expect(item.agentId).toBe('planner');
+    expect(item.sealed).toBe(true);
+    expect(item.fromAgentId).toBe('planner');
+    expect(item.toAgentId).toBe('implementer');
+    expect(item.hop).toBe(1);
+    expect(item.budget).toBe(4);
+    expect(item.triggerItemId).toBe('turn-1:2');
+  });
+
+  it('renders a route notice as a system row authored by the system', () => {
+    const ctx = scope();
+    feed(ctx, 'route.notice', { level: 'warn', text: 'No agent @reviewer is attached' }, 'system');
+    const item = [...ctx.items.values()][0] as ChatItem & { level: string; text: string };
+    expect(item.type).toBe('system');
+    expect(item.level).toBe('warn');
+    expect(item.text).toContain('@reviewer');
+    expect(item.agentId).toBe('system');
+  });
+
+  it('keeps stable ids across a replay of the same scope', () => {
+    const events: ChatEvent[] = [];
+    const ctx = scope();
+    const original = ctx.normalizer.ingest.bind(ctx.normalizer);
+    ctx.normalizer.ingest = (event: ChatEvent) => {
+      events.push(event);
+      return original(event);
+    };
+    feed(ctx, 'user.message', userMessage(['planner']));
+    feed(ctx, 'user.message.delivered', { messageId: 'm1', agentId: 'planner', turnId: 't1' }, 'planner');
+    feed(ctx, 'handoff', {
+      handoffId: 'h1',
+      fromAgentId: 'planner',
+      toAgentId: 'implementer',
+      triggerItemId: null,
+      text: 'go',
+      hop: 1,
+      budget: 4,
+    }, 'planner');
+
+    const replayed = new ChatNormalizer({ assignmentId: ASSIGNMENT, agentId: 'system', sessionKey: SCOPE });
+    const rebuilt = new Map<string, ChatItem>();
+    for (const event of events) applyPatches(rebuilt, replayed.ingest(event));
+    expect([...rebuilt.values()]).toEqual([...ctx.items.values()]);
+  });
+});
+
+describe('turn.status carries its trigger (Task 5)', () => {
+  it('labels a hop turn with the handoff it answers', () => {
+    const normalizer = new ChatNormalizer({
+      assignmentId: 'a1',
+      agentId: 'implementer',
+      sessionKey: 'a1:implementer',
+    });
+    const items = new Map<string, ChatItem>();
+    applyPatches(
+      items,
+      normalizer.ingest({
+        seq: 0,
+        ts: '2026-09-02T12:00:00.000Z',
+        assignmentId: 'a1',
+        agentId: 'implementer',
+        sessionKey: 'a1:implementer',
+        turnId: 'turn-1',
+        kind: 'turn.start',
+        payload: {
+          startedAt: '2026-09-02T12:00:00.000Z',
+          trigger: { kind: 'handoff', handoffId: 'h1', fromAgentId: 'planner', hop: 1 },
+        },
+      }),
+    );
+    const status = [...items.values()][0] as ChatItem & {
+      trigger?: { kind: string; hop?: number };
+    };
+    expect(status.type).toBe('turn.status');
+    expect(status.trigger).toEqual({ kind: 'handoff', handoffId: 'h1', fromAgentId: 'planner', hop: 1 });
+  });
+
+  it('leaves the trigger off a phase-2 turn.start that has none', () => {
+    const normalizer = new ChatNormalizer({ assignmentId: 'a1', agentId: 'claude', sessionKey: 'a1:claude' });
+    const items = new Map<string, ChatItem>();
+    applyPatches(
+      items,
+      normalizer.ingest({
+        seq: 0,
+        ts: '2026-09-02T12:00:00.000Z',
+        assignmentId: 'a1',
+        agentId: 'claude',
+        sessionKey: 'a1:claude',
+        turnId: 'turn-1',
+        kind: 'turn.start',
+        payload: { messageId: 'm1', startedAt: '2026-09-02T12:00:00.000Z' },
+      }),
+    );
+    expect(([...items.values()][0] as { trigger?: unknown }).trigger).toBeUndefined();
+  });
+});

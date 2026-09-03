@@ -50,6 +50,8 @@ import type {
   AgentWorkItem,
   ChatEvent,
   ChatItem,
+  HandoffItem,
+  HandoffPayload,
   ItemPatch,
   PermissionRequestItem,
   PermissionRequestPayload,
@@ -62,7 +64,9 @@ import type {
   TurnEndPayload,
   TurnStartPayload,
   TurnStatusItem,
+  UserMessageDeliveredPayload,
   UserMessageItem,
+  UserMessagePayload,
   UserMessageState,
 } from './types.js';
 
@@ -158,7 +162,11 @@ export class ChatNormalizer {
       itemId: this.nextItemId(scopeId),
       assignmentId: this.assignmentId,
       turnId: this.replayScope ? null : (this.currentTurn?.turnId ?? null),
-      agentId: this.agentId,
+      // The AUTHOR is the event's, not the instance's. In an agent scope the two
+      // are always the same id; in the assignment scope (Decision 3) one
+      // normalizer carries rows written by the human, by each handing-off agent
+      // and by Syntaur itself, and each must render as its own author.
+      agentId: event.agentId || this.agentId,
       type,
       ts: event.ts,
       seqFirst: event.seq,
@@ -176,6 +184,17 @@ export class ChatNormalizer {
       case 'user.message':
         this.ingestUserMessage(event, patches);
         break;
+      case 'user.message.delivered':
+        this.ingestUserMessageDelivered(event, patches);
+        break;
+      case 'handoff':
+        this.ingestHandoff(event, patches);
+        break;
+      case 'route.notice': {
+        const notice = event.payload as SystemPayload;
+        this.system(event, notice.level ?? 'warn', notice.text, patches);
+        break;
+      }
       case 'turn.start':
         this.ingestTurnStart(event, patches);
         break;
@@ -545,9 +564,11 @@ export class ChatNormalizer {
   // --- Syntaur events ------------------------------------------------------
 
   private ingestUserMessage(event: ChatEvent, patches: ItemPatch[]): void {
-    const payload = event.payload as { messageId: string; text: string; state?: UserMessageState };
+    const payload = event.payload as UserMessagePayload;
     const existing = this.userMessages.get(payload.messageId);
     if (existing) {
+      // A later event for the same message is a STATE change (the withdrawal);
+      // it never rewrites the text or the routing.
       existing.state = payload.state ?? existing.state;
       existing.seqLast = event.seq;
       patches.push({ op: 'upsert', item: existing });
@@ -559,9 +580,60 @@ export class ChatNormalizer {
       messageId: payload.messageId,
       text: payload.text,
       state: payload.state ?? 'queued',
+      // Routing is present only on a message Syntaur routed. A phase-2 row and a
+      // bubble the adapter replayed carry none, and the absence is the record
+      // that they were never routed (Decision 6).
+      ...(payload.targets
+        ? {
+            targets: [...payload.targets],
+            deliveredTo: [],
+            mentions: [...(payload.mentions ?? [])],
+            unknown: [...(payload.unknown ?? [])],
+          }
+        : {}),
       sealed: true,
     };
     this.userMessages.set(payload.messageId, item);
+    patches.push({ op: 'upsert', item });
+  }
+
+  /**
+   * One target's turn started. `deliveredTo` grows and the state follows it:
+   * `queued` while nobody has started, `partial` once someone has, `sent` once
+   * every target has (Decision 3). This is the ONLY place a user message leaves
+   * `queued` — the per-agent normalizer never sees the row.
+   */
+  private ingestUserMessageDelivered(event: ChatEvent, patches: ItemPatch[]): void {
+    const payload = event.payload as UserMessageDeliveredPayload;
+    const item = this.userMessages.get(payload.messageId);
+    if (!item) return;
+    const deliveredTo = item.deliveredTo ?? [];
+    if (!deliveredTo.includes(payload.agentId)) deliveredTo.push(payload.agentId);
+    item.deliveredTo = deliveredTo;
+    const targets = item.targets ?? [];
+    // A withdrawal is terminal: a target that starts anyway (it cannot, but the
+    // log is the source of truth) must not resurrect the bubble.
+    if (item.state !== 'withdrawn') {
+      item.state = deliveredTo.length >= targets.length ? 'sent' : 'partial';
+    }
+    item.seqLast = event.seq;
+    patches.push({ op: 'upsert', item });
+  }
+
+  /** One agent handing the conversation to another (§5.3's `handoff` row). */
+  private ingestHandoff(event: ChatEvent, patches: ItemPatch[]): void {
+    const payload = event.payload as HandoffPayload;
+    const item: HandoffItem = {
+      ...this.base(event, 'handoff'),
+      type: 'handoff',
+      handoffId: payload.handoffId,
+      fromAgentId: payload.fromAgentId,
+      toAgentId: payload.toAgentId,
+      triggerItemId: payload.triggerItemId ?? null,
+      hop: payload.hop,
+      budget: payload.budget,
+      sealed: true,
+    };
     patches.push({ op: 'upsert', item });
   }
 
@@ -573,7 +645,7 @@ export class ChatNormalizer {
       itemId: `${scopeId}:${this.ordinals.get(scopeId) ?? 0}`,
       assignmentId: this.assignmentId,
       turnId,
-      agentId: this.agentId,
+      agentId: event.agentId || this.agentId,
       type: 'turn.status',
       ts: event.ts,
       seqFirst: event.seq,
@@ -581,6 +653,9 @@ export class ChatNormalizer {
       sealed: false,
       state: 'running',
       startedAt: payload.startedAt ?? event.ts,
+      // Set only when the event has one, so a phase-2 row stays exactly as it
+      // was — including in the 46 golden fixture snapshots.
+      ...(payload.trigger ? { trigger: payload.trigger } : {}),
     };
     this.ordinals.set(scopeId, (this.ordinals.get(scopeId) ?? 0) + 1);
     this.turns.push({ turnId, status, startedAt: status.startedAt, cancelRequested: false, plan: null });

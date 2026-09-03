@@ -326,6 +326,8 @@ export interface PermissionRequestItem extends ChatItemBase {
 export interface TurnStatusItem extends ChatItemBase {
   type: 'turn.status';
   state: 'running' | 'ended';
+  /** What the turn answered; absent on a phase-2 row that carried no trigger. */
+  trigger?: TurnTrigger;
   stopReason?: StopReason | 'error';
   startedAt: string;
   endedAt?: string;
