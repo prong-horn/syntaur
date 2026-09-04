@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import express from 'express';
 import { createServer, type Server } from 'node:http';
-import { mkdtemp, mkdir, rm } from 'node:fs/promises';
+import { mkdtemp, mkdir, rm, writeFile, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import type { AddressInfo } from 'node:net';
@@ -200,6 +200,24 @@ describe('chat agents API', () => {
   it('refuses deleting codex with no file', async () => {
     const res = await fetch(url('/chat/agents/codex'), { method: 'DELETE' });
     expect(res.status).toBe(409);
+  });
+
+  it('rejects path traversal ids on create and delete', async () => {
+    const sentinel = join(sandbox, 'sentinel.txt');
+    await writeFile(sentinel, 'keep');
+    const encoded = '..%2F..%2Fsentinel';
+
+    const post = await fetch(url(`/chat/agents/${encoded}`), {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(plannerInput),
+    });
+    expect(post.status).toBe(400);
+    expect(await readFile(sentinel, 'utf-8')).toBe('keep');
+
+    const del = await fetch(url(`/chat/agents/${encoded}`), { method: 'DELETE' });
+    expect(del.status).toBe(400);
+    expect(await readFile(sentinel, 'utf-8')).toBe('keep');
   });
 
   it('broadcasts chat-agents after save', async () => {

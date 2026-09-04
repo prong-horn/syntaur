@@ -61,6 +61,7 @@ import {
   applyChatPatch,
   clearChatSessionPid,
   deleteChatSession,
+  deleteChatSessionsForAgent,
   getChatItem,
   getChatSession,
   getHarnessOptions,
@@ -2022,6 +2023,7 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
           deleteChatSession(session.key);
           sessions.delete(session.key);
         }
+        deleteChatSessionsForAgent(id);
         const { definitions } = await loadAgentDefinitions(options.syntaurHome);
         for (const assignment of touched.values()) {
           const { participants: current } = await readParticipantsDetailed(

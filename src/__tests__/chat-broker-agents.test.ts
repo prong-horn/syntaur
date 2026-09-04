@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { closeSessionDb, initSessionDb } from '../dashboard/session-db.js';
 import { closeUsageDb, initUsageDb } from '../db/usage-db.js';
-import { getChatSessionByKey, getHarnessOptions } from '../db/chat-db.js';
+import { getChatSession, getChatSessionByKey, getHarnessOptions, upsertChatSession } from '../db/chat-db.js';
 import { connectAcpClient, type AcpClient } from '../chat/acp-client.js';
 import { createFakeAgent, textChunk, type FakeAgent, type FakeTurn } from '../chat/fake-agent.js';
 import { createChatBroker, ChatSendError, type ChatBroker, type ClientFactory } from '../chat/broker.js';
@@ -597,18 +597,26 @@ describe.sequential('live session bookkeeping (Task 5)', () => {
   });
 
   it('construction race: saveAgent updates the session definition before publish', async () => {
-    await writeAgentDefinition(sandbox, plannerInput({ description: 'Before' }));
+    await writeAgentDefinition(sandbox, plannerInput({ description: 'Before', systemPrompt: 'Before body' }));
     makeAssignmentBroker({
       planner: [{ steps: [{ kind: 'update', update: textChunk('OK', 'm1') }] }],
     });
 
-    const sendP = broker.send({ assignment: assignment(), text: '@planner race' });
-    await Promise.resolve();
-    const saveP = broker.saveAgent(plannerInput({ description: 'After race' }));
-    await Promise.all([sendP, saveP]);
+    const sessionP = broker.getSession(assignment(), 'planner');
+    const saveP = broker.saveAgent(
+      plannerInput({ description: 'After race', systemPrompt: 'After race body' }),
+    );
+    const [summary] = await Promise.all([sessionP, saveP]);
+    expect(summary).not.toBeNull();
 
-    const { definitions } = await broker.listAgents();
-    expect(definitions.find((d) => d.id === 'planner')?.description).toBe('After race');
+    await broker.send({ assignment: assignment(), text: '@planner check definition' });
+    await waitUntil(() => (fakes.get('planner')?.newSessionRequests.length ?? 0) >= 1, 'session/new');
+
+    const meta = fakes.get('planner')!.newSessionRequests[0]!._meta as {
+      systemPrompt?: { append?: string };
+    };
+    expect(meta.systemPrompt?.append).toContain('After race body');
+    expect(meta.systemPrompt?.append).not.toContain('Before body');
   });
 
   it('allows re-creating a deleted agent without restarting the broker', async () => {
@@ -640,6 +648,53 @@ describe.sequential('live session bookkeeping (Task 5)', () => {
     expect(tail).toContain('session/new');
     const { definitions } = await broker.listAgents();
     expect(definitions.find((d) => d.id === 'planner')?.description).toBe('Recreated version');
+  });
+
+  it('construction race: deleteAgent aborts session construction', async () => {
+    await writeAgentDefinition(sandbox, plannerInput());
+    makeAssignmentBroker({
+      planner: [{ steps: [{ kind: 'update', update: textChunk('OK', 'm1') }] }],
+    });
+
+    const sessionP = broker.getSession(assignment(), 'planner');
+    const deleteP = broker.deleteAgent('planner');
+    expect(await sessionP).toBeNull();
+    await deleteP;
+    expect(await broker.getSession(assignment(), 'planner')).toBeNull();
+  });
+
+  it('drops orphaned chat_sessions rows when deleting an agent', async () => {
+    await writeAgentDefinition(sandbox, plannerInput());
+    makeAssignmentBroker({
+      planner: [{ steps: [{ kind: 'update', update: textChunk('OK', 'm1') }] }],
+    });
+
+    upsertChatSession({
+      sessionKey: sessionKey('planner'),
+      assignmentId: ASSIGNMENT_ID,
+      projectSlug: 'syntaur-meta',
+      assignmentSlug: 'chat-demo',
+      agentId: 'planner',
+      harness: 'claude',
+      acpSessionId: 'stale-acp-id',
+      state: 'idle',
+    });
+    expect(getChatSession(ASSIGNMENT_ID, 'planner')).not.toBeNull();
+
+    await broker.deleteAgent('planner');
+    expect(getChatSession(ASSIGNMENT_ID, 'planner')).toBeNull();
+
+    await broker.saveAgent(plannerInput({ description: 'Fresh row' }));
+    await writeParticipantsFile({ agents: ['planner'], defaultAgent: 'planner' });
+    expect(getChatSession(ASSIGNMENT_ID, 'planner')).toBeNull();
+
+    await broker.send({ assignment: assignment(), text: '@planner after stale row' });
+    await idleTurns(1);
+
+    const fake = fakes.get('planner')!;
+    expect(fake.calls).toContain('session/new');
+    expect(fake.calls).not.toContain('session/resume');
+    expect(fake.calls).not.toContain('session/load');
   });
 
   it('construction race: deleteAgent rejects send with 404 and leaves no session', async () => {

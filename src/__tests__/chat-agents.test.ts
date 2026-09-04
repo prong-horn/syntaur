@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, rm, writeFile, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import {
@@ -615,6 +615,16 @@ describe('deleteAgentDefinition (Task 1)', () => {
     const { definitions } = await loadAgentDefinitions(sandbox);
     expect(definitions.filter((d) => d.default)).toHaveLength(1);
     expect(definitions.find((d) => d.default)?.id).toBe('claude');
+  });
+
+  it('rejects path traversal ids before touching the filesystem', async () => {
+    const sentinel = join(sandbox, 'sentinel.txt');
+    await writeFile(sentinel, 'keep');
+    await expect(deleteAgentDefinition(sandbox, '../x')).rejects.toMatchObject({
+      status: 400,
+      message: expect.stringContaining('lowercase slug'),
+    });
+    expect(await readFile(sentinel, 'utf-8')).toBe('keep');
   });
 });
 

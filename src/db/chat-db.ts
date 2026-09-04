@@ -129,6 +129,11 @@ export function deleteChatSession(sessionKey: string): void {
   getSessionDb().prepare('DELETE FROM chat_sessions WHERE session_key = ?').run(sessionKey);
 }
 
+/** Drop every persisted row for an agent id (used when a definition is deleted). */
+export function deleteChatSessionsForAgent(agentId: string): void {
+  getSessionDb().prepare('DELETE FROM chat_sessions WHERE agent_id = ?').run(agentId);
+}
+
 export function getChatSession(assignmentId: string, agentId: string): ChatSessionRow | null {
   const row = getSessionDb()
     .prepare('SELECT * FROM chat_sessions WHERE assignment_id = ? AND agent_id = ? LIMIT 1')

@@ -43,6 +43,13 @@ const AGENT_COLOR_SET = new Set<string>(AGENT_COLORS);
 const SLUG_ERROR =
   '`id` must be a lowercase slug such as `planner` (letters, digits, single hyphens)';
 
+/** Reject ids that would escape `agentsDir` when interpolated into a filename. */
+export function assertWritableAgentId(id: string): void {
+  if (!isValidSlug(id) || id.length > 64) {
+    throw new AgentWriteError(400, SLUG_ERROR);
+  }
+}
+
 const COLOR_ERROR = '`color` must be one of violet, emerald, amber, sky, rose, slate';
 
 /**
@@ -273,6 +280,7 @@ export function serializeAgentDefinition(input: AgentDefinitionInput): string {
 
 /** One validator for reads and writes: serialize then parse. */
 export function validateAgentInput(root: string, input: AgentDefinitionInput): AgentDefinition {
+  assertWritableAgentId(input.id);
   const file = resolve(agentsDir(root), `${input.id}.md`);
   return parseAgentDefinition(file, input.id, serializeAgentDefinition(input));
 }
@@ -329,6 +337,7 @@ export async function writeAgentDefinition(
   root: string,
   input: AgentDefinitionInput,
 ): Promise<AgentDefinition> {
+  assertWritableAgentId(input.id);
   const { definitions: before } = await loadAgentDefinitions(root);
   if (input.default === false) {
     const current = resolveAgent(before, null);
@@ -363,6 +372,7 @@ export async function deleteAgentDefinition(
   root: string,
   id: string,
 ): Promise<{ restoredBuiltin: boolean }> {
+  assertWritableAgentId(id);
   const path = resolve(agentsDir(root), `${id}.md`);
   let existed = false;
   try {

@@ -4,6 +4,7 @@ import {
   AgentDefinitionError,
   AgentWriteError,
   agentsDir,
+  assertWritableAgentId,
   loadAgentDefinitions,
   toAgentSummary,
 } from '../chat/agents.js';
@@ -101,6 +102,7 @@ export function createChatAgentsRouter({ broker, syntaurHome }: ChatAgentsRouter
   router.post('/chat/agents/:id', async (req, res) => {
     try {
       const id = String(req.params.id);
+      assertWritableAgentId(id);
       const path = resolve(agentsDir(home), `${id}.md`);
       if (await fileExists(path)) {
         res.status(409).json({ error: `Agent ${JSON.stringify(id)} already exists` });
@@ -119,6 +121,7 @@ export function createChatAgentsRouter({ broker, syntaurHome }: ChatAgentsRouter
   router.put('/chat/agents/:id', async (req, res) => {
     try {
       const id = String(req.params.id);
+      assertWritableAgentId(id);
       const { definitions } = await broker.listAgents();
       if (!definitions.some((d) => d.id === id)) {
         res.status(404).json({ error: `No agent definition ${JSON.stringify(id)}` });
@@ -137,6 +140,7 @@ export function createChatAgentsRouter({ broker, syntaurHome }: ChatAgentsRouter
   router.delete('/chat/agents/:id', async (req, res) => {
     try {
       const id = String(req.params.id);
+      assertWritableAgentId(id);
       const result = await broker.deleteAgent(id);
       res.json({
         deleted: id,
