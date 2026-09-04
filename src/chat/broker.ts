@@ -37,7 +37,6 @@
  */
 
 import { randomUUID } from 'node:crypto';
-import { existsSync } from 'node:fs';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -76,7 +75,7 @@ import {
 } from '../db/chat-db.js';
 import { adapterVersion as readAdapterVersion, spawnAcpClient, type AcpClient } from './acp-client.js';
 import { commandsEqual, detectCommand, parseAvailableCommands, type ChatCommand, type ChatCommandsSource } from './commands.js';
-import { deleteAgentDefinition, loadAgentDefinitions, resolveAgent, toAgentSummary, writeAgentDefinition, AgentDefinitionError, AgentWriteError, agentsDir } from './agents.js';
+import { deleteAgentDefinition, loadAgentDefinitions, resolveAgent, toAgentSummary, writeAgentDefinition, AgentDefinitionError, AgentWriteError } from './agents.js';
 import { readParticipants, readParticipantsDetailed, writeParticipants } from './participants.js';
 import { DEFAULT_HOP_BUDGET, parseMentions, routeAgentReply, routeHuman } from './router.js';
 import { HARNESSES, HARNESS_IDS, probeAuth, resolveCommand, type CommandResolution } from './harnesses.js';
@@ -424,8 +423,6 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
   let definitionsRev = 0;
   /** Agents being deleted — checked synchronously so in-flight construction aborts. */
   const pendingAgentDeletes = new Set<string>();
-  /** Custom agents removed this broker lifetime — ensureSession must refuse them. */
-  const removedAgentIds = new Set<string>();
   let agentWrites: Promise<unknown> = Promise.resolve();
 
   const TEST_PROMPT =
@@ -936,9 +933,6 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
           : 'No agent definitions are available',
         404,
       );
-    }
-    if (removedAgentIds.has(definition.id)) {
-      throw new ChatSendError(`No agent definition ${JSON.stringify(definition.id)}`, 404);
     }
 
     const key = `${assignment.id}:${definition.id}`;
@@ -2009,18 +2003,11 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
   async function deleteAgent(id: string): Promise<{ restoredBuiltin: boolean }> {
     const home = options.syntaurHome ?? syntaurRoot();
     pendingAgentDeletes.add(id);
-    const builtinIds = new Set(['claude', 'codex', 'cursor']);
-    if (!builtinIds.has(id) && existsSync(join(agentsDir(home), `${id}.md`))) {
-      removedAgentIds.add(id);
-    }
     const run = agentWrites.then(async () => {
       try {
       await invalidateStandingForParticipant(id);
       const result = await deleteAgentDefinition(home, id);
       definitionsRev += 1;
-      if (!result.restoredBuiltin) {
-        removedAgentIds.add(id);
-      }
       if (result.restoredBuiltin) {
         const { definitions } = await loadAgentDefinitions(options.syntaurHome);
         const builtin = definitions.find((d) => d.id === id);
@@ -2032,6 +2019,7 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
           if (session.agentId !== id) continue;
           touched.set(session.assignment.id, session.assignment);
           await detachSession(session);
+          deleteChatSession(session.key);
           sessions.delete(session.key);
         }
         const { definitions } = await loadAgentDefinitions(options.syntaurHome);
@@ -2954,25 +2942,12 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
     setState(session, 'idle');
   }
 
-  function removedAgentMentioned(text: string, explicitAgentId?: string | null): string | null {
-    for (const id of removedAgentIds) {
-      if (explicitAgentId === id) return id;
-      const re = new RegExp(`@${id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i');
-      if (re.test(text)) return id;
-    }
-    return null;
-  }
-
   // --- public surface ------------------------------------------------------
 
   return {
     async send({ assignment, agentId, text }) {
       if (!text.trim()) throw new ChatSendError('Message is empty', 400);
       const { definitions, participants } = await routingContext(assignment);
-      const removed = removedAgentMentioned(text, agentId);
-      if (removed) {
-        throw new ChatSendError(`No agent definition ${JSON.stringify(removed)}`, 404);
-      }
       if (definitions.length === 0) throw new ChatSendError('No agent definitions are available', 404);
 
       // The composer's explicit pick counts as a mention (Decision 2), ahead of
@@ -3132,7 +3107,6 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
     },
 
     async getSession(assignment, agentId) {
-      if (agentId && removedAgentIds.has(agentId)) return null;
       try {
         const session = await ensureSession(assignment, agentId ?? null);
         return summarize(session);

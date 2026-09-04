@@ -611,6 +611,37 @@ describe.sequential('live session bookkeeping (Task 5)', () => {
     expect(definitions.find((d) => d.id === 'planner')?.description).toBe('After race');
   });
 
+  it('allows re-creating a deleted agent without restarting the broker', async () => {
+    await writeParticipantsFile({ agents: ['planner'], defaultAgent: 'planner' });
+    makeAssignmentBroker({
+      planner: [
+        { steps: [{ kind: 'update', update: textChunk('OK', 'm1') }] },
+        { steps: [{ kind: 'update', update: textChunk('OK2', 'm2') }] },
+      ],
+    });
+
+    await broker.saveAgent(plannerInput({ description: 'First version' }));
+    await broker.send({ assignment: assignment(), text: '@planner hello' });
+    await idleTurns(1);
+    const fake = fakes.get('planner')!;
+    const callsBefore = fake.calls.length;
+
+    await broker.deleteAgent('planner');
+    await broker.saveAgent(plannerInput({ description: 'Recreated version' }));
+    await writeParticipantsFile({ agents: ['planner'], defaultAgent: 'planner' });
+
+    expect(await broker.getSession(assignment(), 'planner')).not.toBeNull();
+
+    await broker.send({ assignment: assignment(), text: '@planner again' });
+    await idleTurns(2);
+
+    const tail = fake.calls.slice(callsBefore);
+    expect(tail).toContain('initialize');
+    expect(tail).toContain('session/new');
+    const { definitions } = await broker.listAgents();
+    expect(definitions.find((d) => d.id === 'planner')?.description).toBe('Recreated version');
+  });
+
   it('construction race: deleteAgent rejects send with 404 and leaves no session', async () => {
     await writeAgentDefinition(sandbox, plannerInput());
     makeAssignmentBroker({
