@@ -824,6 +824,32 @@ describe('the history delta and its cursor (Task 4)', () => {
     expect(standing).toContain('@implementer — Implementer, claude');
     expect(standing).toContain('Human: the assignment owner');
   });
+
+  it('carries an updated description in the roster after saveAgent', async () => {
+    await writeAgent('planner', { default: true, description: 'Alpha plans' });
+    makeBroker({ planner: [justSays('planned', 'p1'), justSays('again', 'p2')] });
+    await broker.send({ assignment: assignment(), text: '@planner go' });
+    await idleAll(1);
+
+    await broker.saveAgent({
+      id: 'planner',
+      name: 'Planner',
+      color: 'amber',
+      harness: 'claude',
+      respondsTo: 'mentions',
+      default: true,
+      description: 'Beta plans',
+      systemPrompt: 'You are the planner.',
+    });
+    await broker.send({ assignment: assignment(), text: '@planner once more' });
+    await idleAll(2);
+
+    const latest = prompts('planner').at(-1) as { prompt: Array<{ text?: string }> };
+    expect(latest).toBeDefined();
+    const standing = latest.prompt.map((b) => b.text ?? '').join('\n');
+    expect(standing).toContain('<context>');
+    expect(standing).toContain('Beta plans');
+  });
 });
 
 describe('an adapter dying mid-turn (code review round 1, finding 2)', () => {

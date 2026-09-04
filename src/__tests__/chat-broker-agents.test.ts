@@ -1,15 +1,19 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtemp, mkdir, rm } from 'node:fs/promises';
+import { mkdtemp, mkdir, rm, writeFile, readFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { closeSessionDb, initSessionDb } from '../dashboard/session-db.js';
-import { getHarnessOptions } from '../db/chat-db.js';
+import { closeUsageDb, initUsageDb } from '../db/usage-db.js';
+import { getChatSessionByKey, getHarnessOptions } from '../db/chat-db.js';
 import { connectAcpClient, type AcpClient } from '../chat/acp-client.js';
 import { createFakeAgent, textChunk, type FakeAgent, type FakeTurn } from '../chat/fake-agent.js';
 import { createChatBroker, ChatSendError, type ChatBroker, type ClientFactory } from '../chat/broker.js';
 import { HARNESSES } from '../chat/harnesses.js';
 import { writeAgentDefinition } from '../chat/agents.js';
+import { participantsPath } from '../chat/participants.js';
+import type { ChatItem, Harness, Participants } from '../chat/types.js';
+import type { ResolvedAssignment } from '../utils/assignment-resolver.js';
 
 let sandbox: string;
 let broker: ChatBroker;
@@ -205,5 +209,430 @@ describe.sequential('throwaway harness refresh and agent test', () => {
     makeBroker();
     await broker.refreshHarness('claude');
     expect(existsSync(join(sandbox, 'projects'))).toBe(false);
+  });
+});
+
+// --- Task 5: live session bookkeeping ----------------------------------------
+
+const ASSIGNMENT_ID = 'a0a0a0a0-0000-4000-8000-00000000a5e5';
+
+let assignmentDir: string;
+let worktree: string;
+let frames: Array<{ type: string; payload: unknown }>;
+let fakes: Map<string, FakeAgent>;
+let spawnHarnesses: Harness[];
+let resolvedHarnesses: Harness[];
+
+const assignment = (): ResolvedAssignment => ({
+  assignmentDir,
+  projectSlug: 'syntaur-meta',
+  assignmentSlug: 'chat-demo',
+  id: ASSIGNMENT_ID,
+  standalone: false,
+  workspaceGroup: null,
+});
+
+const sessionKey = (agentId: string) => `${ASSIGNMENT_ID}:${agentId}`;
+
+async function waitUntil(predicate: () => boolean, what: string, timeoutMs = 8000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (predicate()) return;
+    await new Promise((r) => setTimeout(r, 5));
+  }
+  throw new Error(`timed out waiting for ${what}`);
+}
+
+const items = (): ChatItem[] => broker.items(assignment(), { limit: 500 });
+const systemTexts = () =>
+  items()
+    .filter((i) => i.type === 'system')
+    .map((i) => (i as { text: string }).text);
+
+async function writeAssignmentMd(): Promise<void> {
+  await writeFile(
+    join(assignmentDir, 'assignment.md'),
+    [
+      '---',
+      `id: ${ASSIGNMENT_ID}`,
+      'slug: chat-demo',
+      'title: "Chat demo"',
+      'status: ready_to_implement',
+      'project: syntaur-meta',
+      'workspace:',
+      `  repository: ${worktree}`,
+      `  worktreePath: ${worktree}`,
+      '  branch: feat/chat-demo',
+      '---',
+      '',
+      '# Chat demo',
+    ].join('\n'),
+    'utf-8',
+  );
+}
+
+async function writeParticipantsFile(participants: Participants): Promise<void> {
+  await mkdir(join(assignmentDir, 'chat'), { recursive: true });
+  await writeFile(participantsPath(assignmentDir), `${JSON.stringify(participants, null, 2)}\n`, 'utf-8');
+}
+
+const plannerInput = (overrides: Record<string, unknown> = {}) => ({
+  id: 'planner',
+  name: 'Planner',
+  color: 'amber' as const,
+  harness: 'claude' as const,
+  model: 'claude-opus-5',
+  mode: 'plan' as const,
+  respondsTo: 'mentions' as const,
+  default: false,
+  description: 'Plans things',
+  systemPrompt: 'You are the planner.',
+  ...overrides,
+});
+
+const fakeModes = {
+  currentModeId: 'plan',
+  availableModes: [
+    { id: 'plan', name: 'Plan' },
+    { id: 'acceptEdits', name: 'Edits' },
+    { id: 'default', name: 'Default' },
+  ],
+};
+
+const fakeConfigOptions = [
+  {
+    id: 'model',
+    name: 'Model',
+    type: 'select' as const,
+    currentValue: 'claude-opus-5',
+    options: [
+      { value: 'claude-opus-5', name: 'Opus' },
+      { value: 'claude-sonnet-5', name: 'Sonnet' },
+    ],
+  },
+];
+
+function makeAssignmentBroker(
+  scripts: Record<string, FakeTurn[]> = {},
+  opts: { sessionIds?: Record<string, string[]> } = {},
+): void {
+  fakes = new Map();
+  spawnHarnesses = [];
+  resolvedHarnesses = [];
+  frames = [];
+  broker = createChatBroker({
+    projectsDir: join(sandbox, 'projects'),
+    assignmentsDir: join(sandbox, 'assignments'),
+    syntaurHome: sandbox,
+    broadcast: (message) =>
+      frames.push({ type: message.type, payload: structuredClone(message.payload) }),
+    clientFactory: (input) => {
+      spawnHarnesses.push(input.harness.id);
+      let fake = fakes.get(input.agentId);
+      if (!fake) {
+        fake = createFakeAgent({
+          turns: scripts[input.agentId] ?? [{ steps: [{ kind: 'update', update: textChunk('OK', 'm1') }] }],
+          sessionIds: opts.sessionIds?.[input.agentId] ?? [`acp-${input.agentId}`],
+          modes: fakeModes,
+          configOptions: fakeConfigOptions,
+          agentCapabilities: { loadSession: true },
+        });
+        fakes.set(input.agentId, fake);
+      }
+      const client = connectAcpClient(fake.app, {
+        onUpdate: input.onUpdate,
+        onPermissionRequest: input.onPermissionRequest,
+        onExtRequest: input.onExtRequest,
+        onExtNotification: input.onExtNotification,
+      });
+      clients.push(client);
+      return client;
+    },
+    commandResolver: (spec) => {
+      resolvedHarnesses.push(spec.id);
+      return alwaysInstalled();
+    },
+    authProber: authOk,
+    timeouts: { flushMs: 1, sessionIdleMs: 60_000, shutdownGraceMs: 300 },
+  });
+}
+
+async function idleTurns(count = 1): Promise<void> {
+  await waitUntil(() => {
+    const turns = items().filter((i) => i.type === 'turn.status') as Array<{ state: string }>;
+    return turns.length >= count && turns.every((t) => t.state === 'ended');
+  }, `${count} turn(s) to finish`);
+}
+
+function staleSessionFrames(agentId: string): boolean[] {
+  return frames
+    .filter((f) => f.type === 'chat-session')
+    .map((f) => f.payload as { agentId: string; session: { staleDefinition?: boolean } })
+    .filter((p) => p.agentId === agentId)
+    .map((p) => Boolean(p.session.staleDefinition));
+}
+
+describe.sequential('live session bookkeeping (Task 5)', () => {
+  beforeEach(async () => {
+    sandbox = await mkdtemp(join(tmpdir(), 'syntaur-chat-broker-bookkeeping-'));
+    assignmentDir = join(sandbox, 'projects', 'syntaur-meta', 'assignments', 'chat-demo');
+    worktree = join(sandbox, 'worktree');
+    clients = [];
+    frames = [];
+    fakes = new Map();
+    prevHome = process.env.SYNTAUR_HOME;
+    process.env.SYNTAUR_HOME = sandbox;
+    closeSessionDb();
+    closeUsageDb();
+    initSessionDb(join(sandbox, 'syntaur.db'));
+    initUsageDb(join(sandbox, 'syntaur.db'));
+    await mkdir(assignmentDir, { recursive: true });
+    await mkdir(worktree, { recursive: true });
+    await writeAssignmentMd();
+    await writeParticipantsFile({ agents: ['planner'], defaultAgent: 'planner' });
+  });
+
+  afterEach(async () => {
+    if (broker) await broker.stopAll().catch(() => {});
+    for (const client of clients) await client.close().catch(() => {});
+    await new Promise((r) => setTimeout(r, 20));
+    closeSessionDb();
+    closeUsageDb();
+    if (prevHome === undefined) delete process.env.SYNTAUR_HOME;
+    else process.env.SYNTAUR_HOME = prevHome;
+    await rm(sandbox, { recursive: true, force: true });
+  });
+
+  it('save while idle-with-live-client re-attaches and re-applies pins', async () => {
+    await writeAgentDefinition(sandbox, plannerInput());
+    makeAssignmentBroker({ planner: [{ steps: [{ kind: 'update', update: textChunk('OK', 'm1') }] }] });
+
+    await broker.send({ assignment: assignment(), text: '@planner hello' });
+    await idleTurns(1);
+    const before = await broker.getSession(assignment(), 'planner');
+    expect(before?.acpSessionId).toBe('acp-planner');
+    const clientBefore = clients[0];
+    expect(clientBefore.alive()).toBe(true);
+
+    await broker.saveAgent(
+      plannerInput({ model: 'claude-sonnet-5', mode: 'edits', description: 'Updated plans' }),
+    );
+    expect(clientBefore.alive()).toBe(false);
+
+    const fake = fakes.get('planner')!;
+    const callsBefore = fake.calls.length;
+    await broker.send({ assignment: assignment(), text: '@planner again' });
+    await idleTurns(2);
+
+    const tail = fake.calls.slice(callsBefore);
+    expect(tail).toContain('session/resume');
+    expect(tail).not.toContain('session/new');
+    expect(fake.configCalls.some((c) => c.method === 'session/set_config_option' && c.params.value === 'claude-sonnet-5')).toBe(true);
+    expect(fake.configCalls.some((c) => c.method === 'session/set_mode' && c.params.modeId === 'acceptEdits')).toBe(true);
+    expect(systemTexts().some((t) => t.includes("Applied @planner's updated definition"))).toBe(true);
+  });
+
+  it('save while a turn runs marks staleDefinition then re-applies pins after', async () => {
+    await writeAgentDefinition(sandbox, plannerInput());
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    makeAssignmentBroker({
+      planner: [{ steps: [{ kind: 'gate', gate }, { kind: 'update', update: textChunk('OK', 'm1') }] }],
+    });
+
+    const sendP = broker.send({ assignment: assignment(), text: '@planner hold' });
+    await waitUntil(
+      () => fakes.has('planner') && (fakes.get('planner')?.prompts.length ?? 0) === 1,
+      'prompt started',
+    );
+    await broker.saveAgent(plannerInput({ model: 'claude-sonnet-5', mode: 'edits' }));
+    expect(staleSessionFrames('planner').some(Boolean)).toBe(true);
+
+    release();
+    await sendP;
+    await idleTurns(1);
+
+    await broker.send({ assignment: assignment(), text: '@planner after' });
+    await idleTurns(2);
+    expect(systemTexts().some((t) => t.includes("Applied @planner's updated definition"))).toBe(true);
+  });
+
+  it('harness change drops the persisted session row and opens with session/new', async () => {
+    await writeAgentDefinition(sandbox, plannerInput());
+    makeAssignmentBroker(
+      {
+        planner: [{ steps: [{ kind: 'update', update: textChunk('OK', 'm1') }] }],
+      },
+      { sessionIds: { planner: ['acp-planner'] } },
+    );
+
+    await broker.send({ assignment: assignment(), text: '@planner hello' });
+    await idleTurns(1);
+    expect(getChatSessionByKey(sessionKey('planner'))?.acp_session_id).toBe('acp-planner');
+
+    const fake = fakes.get('planner')!;
+    fake.calls.length = 0;
+    fake.configCalls.length = 0;
+
+    await broker.saveAgent(plannerInput({ harness: 'codex' }));
+    expect(getChatSessionByKey(sessionKey('planner'))).toBeNull();
+
+    await broker.send({ assignment: assignment(), text: '@planner on codex' });
+    await idleTurns(2);
+    expect(fake.calls).toContain('session/new');
+    expect(fake.calls).not.toContain('session/resume');
+    expect(fake.calls).not.toContain('session/load');
+    expect(resolvedHarnesses.at(-1)).toBe('codex');
+  });
+
+  it('delete an attached agent mid-turn detaches and rewrites participants', async () => {
+    await writeAgentDefinition(sandbox, {
+      id: 'implementer',
+      name: 'Implementer',
+      color: 'sky',
+      harness: 'claude',
+      respondsTo: 'mentions',
+      default: false,
+      systemPrompt: 'You implement.',
+    });
+    await writeParticipantsFile({ agents: ['implementer'], defaultAgent: 'implementer' });
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    makeAssignmentBroker({
+      implementer: [{ steps: [{ kind: 'gate', gate }, { kind: 'update', update: textChunk('OK', 'm1') }] }],
+    });
+
+    const sendP = broker.send({ assignment: assignment(), text: '@implementer hold' });
+    await waitUntil(
+      () => fakes.has('implementer') && (fakes.get('implementer')?.prompts.length ?? 0) === 1,
+      'prompt started',
+    );
+    await broker.deleteAgent('implementer');
+    release();
+    await sendP.catch(() => {});
+
+    const participants = JSON.parse(await readFile(participantsPath(assignmentDir), 'utf-8')) as Participants;
+    expect(participants.agents).not.toContain('implementer');
+    expect(systemTexts().some((t) => t.includes('@implementer is no longer in this chat'))).toBe(true);
+    expect(frames.some((f) => f.type === 'chat-participants')).toBe(true);
+  });
+
+  it('delete claude.md override while idle restores builtin without detaching', async () => {
+    await writeAgentDefinition(sandbox, {
+      id: 'claude',
+      name: 'Claude override',
+      color: 'violet',
+      harness: 'claude',
+      respondsTo: 'mentions',
+      default: true,
+      systemPrompt: 'Override prompt.',
+    });
+    await writeParticipantsFile({ agents: ['claude'], defaultAgent: 'claude' });
+    makeAssignmentBroker(
+      { claude: [{ steps: [{ kind: 'update', update: textChunk('OK', 'm1') }] }] },
+      { sessionIds: { claude: ['acp-claude'] } },
+    );
+
+    await broker.send({ assignment: assignment(), text: '@claude hello' });
+    await idleTurns(1);
+    const client = clients[0];
+    expect(client.alive()).toBe(true);
+
+    await broker.deleteAgent('claude');
+    expect(client.alive()).toBe(false);
+    const participants = JSON.parse(await readFile(participantsPath(assignmentDir), 'utf-8')) as Participants;
+    expect(participants.agents).toContain('claude');
+
+    const fake = fakes.get('claude')!;
+    fake.calls.length = 0;
+    await broker.send({ assignment: assignment(), text: '@claude again' });
+    await idleTurns(2);
+    expect(fake.calls).toContain('session/resume');
+    expect(systemTexts().some((t) => t.includes('@claude is back to its built-in definition'))).toBe(true);
+  });
+
+  it('delete claude.md cursor override tears down and respawns on builtin harness', async () => {
+    await writeAgentDefinition(sandbox, {
+      id: 'claude',
+      name: 'Claude cursor',
+      color: 'violet',
+      harness: 'cursor',
+      respondsTo: 'mentions',
+      default: true,
+      systemPrompt: 'Cursor override.',
+    });
+    await writeParticipantsFile({ agents: ['claude'], defaultAgent: 'claude' });
+    makeAssignmentBroker(
+      { claude: [{ steps: [{ kind: 'update', update: textChunk('OK', 'm1') }] }] },
+      { sessionIds: { claude: ['acp-claude'] } },
+    );
+
+    await broker.send({ assignment: assignment(), text: '@claude hello' });
+    await idleTurns(1);
+    expect(spawnHarnesses).toContain('cursor');
+
+    await broker.deleteAgent('claude');
+    expect(getChatSessionByKey(sessionKey('claude'))).toBeNull();
+
+    spawnHarnesses.length = 0;
+    await broker.send({ assignment: assignment(), text: '@claude builtin' });
+    await idleTurns(2);
+    expect(spawnHarnesses[0]).toBe('claude');
+    expect(fakes.get('claude')!.calls).toContain('session/new');
+  });
+
+  it('drops ghost participant ids lazily with one system row', async () => {
+    await writeAgentDefinition(sandbox, plannerInput());
+    await writeParticipantsFile({ agents: ['planner', 'ghost'], defaultAgent: 'planner' });
+    makeAssignmentBroker();
+
+    const first = await broker.getParticipants(assignment());
+    expect(first.participants.agents).toEqual(['planner']);
+    expect(systemTexts().filter((t) => t.includes('@ghost is no longer in this chat'))).toHaveLength(1);
+
+    const second = await broker.getParticipants(assignment());
+    expect(second.participants.agents).toEqual(['planner']);
+    expect(systemTexts().filter((t) => t.includes('@ghost is no longer in this chat'))).toHaveLength(1);
+  });
+
+  it('construction race: saveAgent updates the session definition before publish', async () => {
+    await writeAgentDefinition(sandbox, plannerInput({ description: 'Before' }));
+    makeAssignmentBroker({
+      planner: [{ steps: [{ kind: 'update', update: textChunk('OK', 'm1') }] }],
+    });
+
+    const sendP = broker.send({ assignment: assignment(), text: '@planner race' });
+    await Promise.resolve();
+    const saveP = broker.saveAgent(plannerInput({ description: 'After race' }));
+    await Promise.all([sendP, saveP]);
+
+    const { definitions } = await broker.listAgents();
+    expect(definitions.find((d) => d.id === 'planner')?.description).toBe('After race');
+  });
+
+  it('construction race: deleteAgent rejects send with 404 and leaves no session', async () => {
+    await writeAgentDefinition(sandbox, plannerInput());
+    makeAssignmentBroker({
+      planner: [{ steps: [{ kind: 'update', update: textChunk('OK', 'm1') }] }],
+    });
+
+    const sendP = broker.send({ assignment: assignment(), text: '@planner delete race' });
+    const deleteP = broker.deleteAgent('planner');
+    await expect(sendP).rejects.toBeInstanceOf(ChatSendError);
+    await deleteP;
+    expect(await broker.getSession(assignment(), 'planner')).toBeNull();
+  });
+
+  it('write chain survives a rejected save then valid save and delete', async () => {
+    await writeAgentDefinition(sandbox, plannerInput());
+    makeAssignmentBroker();
+
+    await expect(broker.saveAgent(plannerInput({ color: 'purple' as never }))).rejects.toMatchObject({
+      status: 400,
+    });
+    await broker.saveAgent(plannerInput({ description: 'Recovered' }));
+    await broker.deleteAgent('planner');
+    const { definitions } = await broker.listAgents();
+    expect(definitions.some((d) => d.id === 'planner')).toBe(false);
   });
 });
