@@ -115,12 +115,24 @@ export function buildContextSection(context: ContextSectionInput): string {
 }
 
 /** `@id — Name, harness, model if pinned, one line of who they are`. */
-function rosterLine(entry: AgentDefinition): string {
+export function rosterLine(entry: AgentDefinition): string {
   const parts = [escapeAngles(entry.name), entry.harness];
   if (entry.model) parts.push(entry.model);
   const blurb = entry.description ?? firstLine(entry.systemPrompt);
   if (blurb) parts.push(escapeAngles(blurb));
   return `@${entry.id} — ${parts.join(', ')}`;
+}
+
+/**
+ * Whether a definition edit changes what the standing block or its fingerprint
+ * carry for this agent — the roster line and this agent's system prompt.
+ */
+export function agentStandingInputsChanged(
+  before: AgentDefinition | undefined,
+  after: AgentDefinition,
+): boolean {
+  if (!before) return true;
+  return rosterLine(before) !== rosterLine(after) || before.systemPrompt !== after.systemPrompt;
 }
 
 function firstLine(text: string): string {

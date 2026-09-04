@@ -100,6 +100,7 @@ import {
   buildTurnPrompt,
   selectChatHistory,
   standingFingerprint,
+  agentStandingInputsChanged,
   type TurnPromptTrigger,
 } from './prompt-framing.js';
 import { openChatLog, type ChatLog } from './store.js';
@@ -509,12 +510,7 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
     before: AgentDefinition | undefined,
     after: AgentDefinition,
   ): boolean {
-    if (!before) return true;
-    return (
-      before.name !== after.name ||
-      (before.description ?? null) !== (after.description ?? null) ||
-      (before.avatar ?? null) !== (after.avatar ?? null)
-    );
+    return agentStandingInputsChanged(before, after);
   }
 
   async function repairDroppedParticipants(
@@ -938,10 +934,9 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
     });
   }
 
-  async function markStandingDelivered(session: Session): Promise<void> {
+  async function markStandingDelivered(session: Session, fingerprint: string): Promise<void> {
     session.standingSent = true;
-    const { definitions, participants } = await routingContext(session.assignment);
-    session.standingFingerprint = standingFingerprint(session.definition, definitions, participants);
+    session.standingFingerprint = fingerprint;
     persistSession(session);
   }
 
@@ -1114,8 +1109,17 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
         session.profile = resolveSessionProfile(fresh, session.harness);
         harnessRotated = true;
       } else {
+        const prevPrompt = session.definition.systemPrompt;
         session.definition = fresh;
         session.profile = resolveSessionProfile(fresh, session.harness);
+        const freshProfileJson = serializeProfile(session.profile);
+        if (
+          freshProfileJson !== expectedProfileJson ||
+          (row && row.profile_json !== freshProfileJson)
+        ) {
+          session.definitionStale = true;
+          session.stalePromptChanged = prevPrompt !== fresh.systemPrompt;
+        }
       }
     }
 
@@ -2400,12 +2404,12 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
    * The standing context, with the roster: who this agent is and who else is in
    * the room. Sent once per adapter session (§2.4).
    */
-  async function buildStanding(session: Session): Promise<ContentBlock[]> {
+  async function buildStanding(session: Session): Promise<{ blocks: ContentBlock[]; fingerprint: string }> {
     const { definitions, participants } = await routingContext(session.assignment);
     const roster = participants.agents
       .map((id) => definitions.find((d) => d.id === id))
       .filter((d): d is AgentDefinition => d !== undefined);
-    return buildStandingContext({
+    const blocks = await buildStandingContext({
       definition: session.definition,
       harness: session.harness,
       assignmentDir: session.assignment.assignmentDir,
@@ -2419,6 +2423,10 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
         roster,
       },
     });
+    return {
+      blocks,
+      fingerprint: standingFingerprint(session.definition, definitions, participants),
+    };
   }
 
   /**
@@ -2493,12 +2501,11 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
     };
     session.inFlight = turn;
     await record(session, 'turn.start', { trigger: turn.trigger, startedAt }, turnId);
-    const standing = await buildStanding(session);
+    const built = await buildStanding(session);
     const blocks = buildTurnPrompt(
       { author: 'human', text: 'OK', ts: new Date(now()) },
-      { standing },
+      { standing: built.blocks },
     );
-    await markStandingDelivered(session);
     let response: acp.PromptResponse | null = null;
     let failure: Error | null = null;
     try {
@@ -2506,6 +2513,7 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
     } catch (err) {
       failure = err instanceof Error ? err : new Error(String(err));
     }
+    if (!failure) await markStandingDelivered(session, built.fingerprint);
     await finishTurn(session, turn, response, failure);
   }
 
@@ -2604,6 +2612,7 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
 
     let blocks: ContentBlock[] | null = null;
     let configResponse: acp.SetSessionConfigOptionResponse | null = null;
+    let pendingStandingFingerprint: string | undefined;
     if (humanCommand) {
       if (matchedCommand?.action.kind === 'set-config') {
         try {
@@ -2627,11 +2636,13 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
       }
     } else {
       try {
-        const standing = session.standingSent ? undefined : await buildStanding(session);
+        let standing: ContentBlock[] | undefined;
+        if (!session.standingSent) {
+          const built = await buildStanding(session);
+          standing = built.blocks;
+          pendingStandingFingerprint = built.fingerprint;
+        }
         blocks = buildTurnPrompt(promptTrigger(session, next), { standing, history: history! });
-        // Sent once per adapter session (§2.4); a later turn carries only the
-        // trigger and the history the session has not seen.
-        if (!session.standingSent) await markStandingDelivered(session);
       } catch (err) {
         blocks = buildTurnPrompt(promptTrigger(session, next), { history: history! });
         await record(session, 'system', {
@@ -2665,6 +2676,10 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
       } catch (err) {
         failure = err instanceof Error ? err : new Error(String(err));
       }
+    }
+
+    if (!failure && pendingStandingFingerprint) {
+      await markStandingDelivered(session, pendingStandingFingerprint);
     }
 
     try {

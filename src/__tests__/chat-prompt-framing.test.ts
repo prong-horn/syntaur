@@ -3,6 +3,8 @@ import {
   buildContextSection,
   buildTurnPrompt,
   selectChatHistory,
+  agentStandingInputsChanged,
+  rosterLine,
   HISTORY_MAX_CHARS,
   HISTORY_MAX_ITEMS,
 } from '../chat/prompt-framing.js';
@@ -54,6 +56,21 @@ function item(overrides: Partial<ChatItem> & Pick<ChatItem, 'type'>): ChatItem {
     ...overrides,
   } as ChatItem;
 }
+
+describe('agentStandingInputsChanged', () => {
+  it('detects model changes on the roster line', () => {
+    const before = def('planner', { model: 'claude-opus-5' });
+    const after = def('planner', { model: 'claude-sonnet-5' });
+    expect(rosterLine(before)).not.toBe(rosterLine(after));
+    expect(agentStandingInputsChanged(before, after)).toBe(true);
+  });
+
+  it('ignores avatar-only edits', () => {
+    const before = def('planner', { avatar: 'a.png' });
+    const after = def('planner', { avatar: 'b.png' });
+    expect(agentStandingInputsChanged(before, after)).toBe(false);
+  });
+});
 
 describe('buildContextSection', () => {
   it('names the agent, the roster and the human', () => {

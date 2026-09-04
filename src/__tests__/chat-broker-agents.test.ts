@@ -766,6 +766,60 @@ describe.sequential('live session bookkeeping (Task 5)', () => {
     expect(fake.calls).not.toContain('session/load');
   });
 
+  it('construction race: same-harness save applies new pins after resume', async () => {
+    await writeAgentDefinition(sandbox, plannerInput({ model: 'claude-opus-5' }));
+    makeAssignmentBroker({
+      planner: [{ steps: [{ kind: 'update', update: textChunk('OK', 'm1') }] }],
+    });
+    await broker.send({ assignment: assignment(), text: '@planner hello' });
+    await idleTurns(1);
+    const acpId = getChatSession(ASSIGNMENT_ID, 'planner')!.acp_session_id;
+    expect(acpId).toBeTruthy();
+    await broker.stopAll();
+
+    let releaseConstructionLoad!: () => void;
+    const constructionLoadGate = new Promise<void>((resolve) => {
+      releaseConstructionLoad = resolve;
+    });
+    let gatedOnce = false;
+    makeAssignmentBroker(
+      { planner: [{ steps: [{ kind: 'update', update: textChunk('OK2', 'm2') }] }] },
+      {
+        loadDefinitions: async (root) => {
+          if (!gatedOnce) {
+            gatedOnce = true;
+            const result = await loadAgentDefinitions(root);
+            await constructionLoadGate;
+            return result;
+          }
+          return loadAgentDefinitions(root);
+        },
+      },
+    );
+
+    const sessionP = broker.getSession(assignment(), 'planner');
+    const saveP = broker.saveAgent(plannerInput({ model: 'claude-sonnet-5' }));
+    await saveP;
+    releaseConstructionLoad();
+    await sessionP;
+
+    await broker.send({ assignment: assignment(), text: '@planner after race' });
+    await waitUntil(() => fakes.has('planner'), 'planner adapter');
+    await idleTurns(2);
+
+    const fake = fakes.get('planner')!;
+    const resumeAt = fake.calls.indexOf('session/resume');
+    expect(resumeAt).toBeGreaterThanOrEqual(0);
+    expect(
+      fake.configCalls.some(
+        (c) => c.method === 'session/set_config_option' && c.params.value === 'claude-sonnet-5',
+      ),
+    ).toBe(true);
+    expect(fake.calls.indexOf('session/set_config_option')).toBeGreaterThan(resumeAt);
+    expect(getChatSession(ASSIGNMENT_ID, 'planner')?.acp_session_id).toBe(acpId);
+    expect(systemTexts().some((t) => t.includes("Applied @planner's updated definition"))).toBe(true);
+  });
+
   it('rejects traversal ids on save, delete, and test', async () => {
     const sentinel = join(sandbox, 'sentinel.txt');
     await writeFile(sentinel, 'keep');
@@ -897,6 +951,75 @@ describe.sequential('live session bookkeeping (Task 5)', () => {
       .join('\n');
     expect(promptText).toContain('Plans v2');
     expect(promptText).not.toContain('Plans v1');
+  });
+
+  it('does not commit standing until the prompt succeeds', async () => {
+    await writeAgentDefinition(sandbox, plannerInput());
+    makeAssignmentBroker({
+      planner: [
+        { steps: [{ kind: 'error', message: 'standing failed' }] },
+        { steps: [{ kind: 'update', update: textChunk('OK', 'm2') }] },
+      ],
+    });
+
+    await broker.send({ assignment: assignment(), text: '@planner hello' });
+    await idleTurns(1);
+    expect(getChatSession(ASSIGNMENT_ID, 'planner')?.standing_fingerprint).toBeNull();
+
+    await broker.send({ assignment: assignment(), text: '@planner retry' });
+    await idleTurns(2);
+
+    const fake = fakes.get('planner')!;
+    const retryPrompt = fake.prompts[1]!.prompt
+      .map((b) => (b as { text?: string }).text ?? '')
+      .join('\n');
+    expect(retryPrompt).toContain('<context>');
+    expect(getChatSession(ASSIGNMENT_ID, 'planner')?.standing_fingerprint).toBeTruthy();
+  });
+
+  it('commits standing fingerprint after a successful first prompt', async () => {
+    await writeAgentDefinition(sandbox, plannerInput());
+    makeAssignmentBroker({
+      planner: [{ steps: [{ kind: 'update', update: textChunk('OK', 'm1') }] }],
+    });
+
+    await broker.send({ assignment: assignment(), text: '@planner hello' });
+    await idleTurns(1);
+
+    const fake = fakes.get('planner')!;
+    const promptText = fake.prompts[0]!.prompt
+      .map((b) => (b as { text?: string }).text ?? '')
+      .join('\n');
+    expect(promptText).toContain('<context>');
+    expect(getChatSession(ASSIGNMENT_ID, 'planner')?.standing_fingerprint).toBeTruthy();
+  });
+
+  it('re-sends standing when a roster model changes', async () => {
+    await writeAgentDefinition(sandbox, plannerInput({ model: 'claude-opus-5', description: 'Plans' }));
+    await writeParticipantsFile({ agents: ['planner', 'codex'], defaultAgent: 'planner' });
+    makeAssignmentBroker({
+      planner: [{ steps: [{ kind: 'update', update: textChunk('OK', 'm1') }] }],
+      codex: [{ steps: [{ kind: 'update', update: textChunk('OK codex', 'c1') }] }],
+    });
+    await broker.send({ assignment: assignment(), text: '@planner hello' });
+    await idleTurns(1);
+    await broker.send({ assignment: assignment(), text: '@codex hello' });
+    await idleTurns(2);
+    const codexFake = fakes.get('codex')!;
+    const promptsBefore = codexFake.prompts.length;
+
+    await broker.saveAgent(plannerInput({ model: 'claude-sonnet-5', description: 'Plans' }));
+
+    await broker.send({ assignment: assignment(), text: '@codex roster check' });
+    await idleTurns(3);
+
+    const promptText = codexFake.prompts
+      .slice(promptsBefore)
+      .map((p) => p.prompt.map((b) => (b as { text?: string }).text ?? '').join('\n'))
+      .join('\n');
+    expect(promptText).toContain('<context>');
+    expect(promptText).toContain('@planner — Planner, claude, claude-sonnet-5, Plans');
+    expect(promptText).not.toContain('claude-opus-5');
   });
 
   it('drops orphaned chat_sessions rows when deleting an agent', async () => {
