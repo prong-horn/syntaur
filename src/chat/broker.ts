@@ -59,19 +59,23 @@ import {
   clearChatSessionPid,
   getChatItem,
   getChatSession,
+  getHarnessOptions,
   latestHarnessCommands,
   listChatItems,
   listChatItemsByTurn,
   listChatItemsSince,
   listChatSessions,
+  setHarnessAuth,
   upsertChatSession,
+  upsertHarnessOptions,
 } from '../db/chat-db.js';
 import { adapterVersion as readAdapterVersion, spawnAcpClient, type AcpClient } from './acp-client.js';
 import { commandsEqual, detectCommand, parseAvailableCommands, type ChatCommand, type ChatCommandsSource } from './commands.js';
 import { loadAgentDefinitions, resolveAgent, toAgentSummary } from './agents.js';
 import { readParticipants, writeParticipants } from './participants.js';
 import { DEFAULT_HOP_BUDGET, parseMentions, routeAgentReply, routeHuman } from './router.js';
-import { HARNESSES, probeAuth, resolveCommand } from './harnesses.js';
+import { HARNESSES, HARNESS_IDS, probeAuth, resolveCommand } from './harnesses.js';
+import { parseHarnessOptions } from './harness-options.js';
 import { ChatNormalizer } from './normalizer.js';
 import { applyProfile, newSessionMeta, profileEnv, profileForTier, resolveSessionProfile, serializeProfile } from './profile.js';
 import {
@@ -88,6 +92,7 @@ import type {
   AgentMessageItem,
   ChatAgentSummary,
   ChatEvent,
+  ChatHarnessSummary,
   ChatEventKind,
   HandoffPayload,
   PermissionRequestPayload,
@@ -207,6 +212,7 @@ export interface ChatBroker {
     agentId?: string | null,
   ): Promise<ChatSessionSummary | null>;
   listAgents(): Promise<{ definitions: AgentDefinition[]; errors: string[] }>;
+  harnesses(): ChatHarnessSummary[];
   /** The assignment's attached agents, default and hop budget (Decision 1). */
   getParticipants(
     assignment: ResolvedAssignment,
@@ -1198,6 +1204,7 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
       // Only now is the auth probe worth its latency — it EXPLAINS a failure,
       // it is never a gate.
       const probe = probeAuth(session.harness);
+      setHarnessAuth(session.harness.id, 'failed', probe);
       await client.close();
       session.client = null;
       setState(session, 'error', `${(err as Error).message} — ${probe}`);
@@ -1360,6 +1367,23 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
   }
 
   /** Both `session/new` and `session/resume` return `modes` + `configOptions`. */
+  function noteHarnessOptions(
+    harness: Harness,
+    adapterVersion: string | null,
+    response: Pick<acp.NewSessionResponse, 'modes' | 'configOptions'>,
+  ): void {
+    const configOptions = response.configOptions;
+    if (!Array.isArray(configOptions) || configOptions.length === 0) return;
+    const { options, modes } = parseHarnessOptions(response);
+    upsertHarnessOptions({
+      harness,
+      adapterVersion,
+      capturedAt: iso(),
+      options,
+      modes,
+    });
+  }
+
   function readSessionConfig(
     session: Session,
     response: Pick<acp.NewSessionResponse, 'modes' | 'configOptions'>,
@@ -1374,6 +1398,29 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
       else if (effortId && id === effortId) session.effort = value;
       else if (id === 'mode' || id === 'collaboration_mode') session.mode = value;
     }
+    noteHarnessOptions(session.harness.id, session.adapterVersion, response);
+  }
+
+  function harnessSummaries(): ChatHarnessSummary[] {
+    return HARNESS_IDS.map((id) => {
+      const spec = HARNESSES[id];
+      const resolved = resolveCommand(spec);
+      const { record, auth } = getHarnessOptions(id);
+      return {
+        id,
+        label: spec.label,
+        command: spec.command,
+        args: [...spec.args],
+        installed: resolved.path,
+        installHint: spec.installHint,
+        modelConfigId: spec.configIds.model,
+        effortConfigId: spec.configIds.effort ?? null,
+        roleModes: spec.modeIds,
+        systemPromptTransport: spec.systemPromptTransport,
+        options: record,
+        auth,
+      };
+    });
   }
 
   const LOAD_REPLAY_SKIP = new Set([
@@ -2419,6 +2466,8 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
     },
 
     listAgents: () => loadAgentDefinitions(options.syntaurHome),
+
+    harnesses: () => harnessSummaries(),
 
     async getParticipants(assignment) {
       const { definitions } = await loadAgentDefinitions(options.syntaurHome);

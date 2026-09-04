@@ -13,7 +13,15 @@
 
 import { getSessionDb } from '../dashboard/session-db.js';
 import type { ChatCommand } from '../chat/commands.js';
-import type { ChatItem, ChatItemRow, ChatSessionRow, ItemPatch } from '../chat/types.js';
+import type {
+  ChatItem,
+  ChatItemRow,
+  ChatSessionRow,
+  Harness,
+  HarnessAuthState,
+  HarnessOptionsRecord,
+  ItemPatch,
+} from '../chat/types.js';
 
 // --- sessions --------------------------------------------------------------
 
@@ -304,4 +312,136 @@ export function listTurnsForMessage(assignmentId: string, messageId: string): Ch
     )
     .all(assignmentId, messageId) as Array<{ json: string }>;
   return rows.map((r) => JSON.parse(r.json) as ChatItem);
+}
+
+// --- harness options (chat schema v4) ----------------------------------------
+
+export function upsertHarnessOptions(record: HarnessOptionsRecord): void {
+  const now = new Date().toISOString();
+  getSessionDb()
+    .prepare(
+      `INSERT INTO chat_harness_options (
+         harness, adapter_version, captured_at, record_json, auth_state, auth_detail, auth_at
+       ) VALUES (
+         @harness, @adapterVersion, @capturedAt, @recordJson, 'ok', NULL, @authAt
+       )
+       ON CONFLICT(harness) DO UPDATE SET
+         adapter_version = excluded.adapter_version,
+         captured_at     = excluded.captured_at,
+         record_json     = excluded.record_json,
+         auth_state      = 'ok',
+         auth_detail     = NULL,
+         auth_at         = excluded.auth_at`,
+    )
+    .run({
+      harness: record.harness,
+      adapterVersion: record.adapterVersion,
+      capturedAt: record.capturedAt,
+      recordJson: JSON.stringify(record),
+      authAt: now,
+    });
+}
+
+export function setHarnessAuth(
+  harness: Harness,
+  state: 'ok' | 'failed' | 'unknown',
+  detail: string | null,
+): void {
+  const now = new Date().toISOString();
+  getSessionDb()
+    .prepare(
+      `INSERT INTO chat_harness_options (harness, auth_state, auth_detail, auth_at)
+       VALUES (@harness, @state, @detail, @authAt)
+       ON CONFLICT(harness) DO UPDATE SET
+         auth_state  = excluded.auth_state,
+         auth_detail = excluded.auth_detail,
+         auth_at     = excluded.auth_at`,
+    )
+    .run({ harness, state, detail, authAt: now });
+}
+
+export function getHarnessOptions(harness: Harness): {
+  record: HarnessOptionsRecord | null;
+  auth: HarnessAuthState;
+} {
+  const row = getSessionDb()
+    .prepare(
+      `SELECT adapter_version, captured_at, record_json, auth_state, auth_detail, auth_at
+         FROM chat_harness_options WHERE harness = ?`,
+    )
+    .get(harness) as
+    | {
+        adapter_version: string | null;
+        captured_at: string | null;
+        record_json: string | null;
+        auth_state: string;
+        auth_detail: string | null;
+        auth_at: string | null;
+      }
+    | undefined;
+
+  if (!row) {
+    return { record: null, auth: { state: 'unknown', detail: null, at: null } };
+  }
+
+  let record: HarnessOptionsRecord | null = null;
+  if (row.record_json) {
+    try {
+      record = JSON.parse(row.record_json) as HarnessOptionsRecord;
+    } catch {
+      record = null;
+    }
+  }
+
+  const authState = row.auth_state === 'ok' || row.auth_state === 'failed' ? row.auth_state : 'unknown';
+  return {
+    record,
+    auth: {
+      state: authState,
+      detail: row.auth_detail,
+      at: row.auth_at,
+    },
+  };
+}
+
+export function listHarnessOptions(): Array<{
+  harness: Harness;
+  record: HarnessOptionsRecord | null;
+  auth: HarnessAuthState;
+}> {
+  const rows = getSessionDb()
+    .prepare(
+      `SELECT harness, adapter_version, captured_at, record_json, auth_state, auth_detail, auth_at
+         FROM chat_harness_options ORDER BY harness`,
+    )
+    .all() as Array<{
+    harness: string;
+    adapter_version: string | null;
+    captured_at: string | null;
+    record_json: string | null;
+    auth_state: string;
+    auth_detail: string | null;
+    auth_at: string | null;
+  }>;
+
+  return rows.map((row) => {
+    let record: HarnessOptionsRecord | null = null;
+    if (row.record_json) {
+      try {
+        record = JSON.parse(row.record_json) as HarnessOptionsRecord;
+      } catch {
+        record = null;
+      }
+    }
+    const authState = row.auth_state === 'ok' || row.auth_state === 'failed' ? row.auth_state : 'unknown';
+    return {
+      harness: row.harness as Harness,
+      record,
+      auth: {
+        state: authState,
+        detail: row.auth_detail,
+        at: row.auth_at,
+      },
+    };
+  });
 }

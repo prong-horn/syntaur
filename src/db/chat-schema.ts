@@ -26,7 +26,7 @@
  * added by the 1→2 step in `session-db.ts` for an existing one.
  */
 
-export const CHAT_SCHEMA_VERSION = '3';
+export const CHAT_SCHEMA_VERSION = '4';
 
 export const CHAT_DDL = `
 CREATE TABLE IF NOT EXISTS chat_sessions (
@@ -66,4 +66,14 @@ CREATE TABLE IF NOT EXISTS chat_items (
 );
 CREATE INDEX IF NOT EXISTS idx_chat_items_assignment_seq ON chat_items(assignment_id, seq_first);
 CREATE INDEX IF NOT EXISTS idx_chat_items_assignment_turn ON chat_items(assignment_id, turn_id);
+
+CREATE TABLE IF NOT EXISTS chat_harness_options (
+  harness         TEXT PRIMARY KEY,
+  adapter_version TEXT,
+  captured_at     TEXT,
+  record_json     TEXT,
+  auth_state      TEXT NOT NULL DEFAULT 'unknown',
+  auth_detail     TEXT,
+  auth_at         TEXT
+);
 `;

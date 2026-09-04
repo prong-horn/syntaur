@@ -194,6 +194,27 @@ export function initSessionDb(dbPath?: string): Database.Database {
       database.exec("UPDATE meta SET value = '3' WHERE key = 'chat_schema_version'");
     }
 
+    const chatVersionAfterV3 = (
+      database
+        .prepare("SELECT value FROM meta WHERE key = 'chat_schema_version'")
+        .get() as { value: string } | undefined
+    )?.value;
+
+    if (chatVersionAfterV3 === '3') {
+      database.exec(`
+        CREATE TABLE IF NOT EXISTS chat_harness_options (
+          harness         TEXT PRIMARY KEY,
+          adapter_version TEXT,
+          captured_at     TEXT,
+          record_json     TEXT,
+          auth_state      TEXT NOT NULL DEFAULT 'unknown',
+          auth_detail     TEXT,
+          auth_at         TEXT
+        );
+      `);
+      database.exec("UPDATE meta SET value = '4' WHERE key = 'chat_schema_version'");
+    }
+
     // --- v1 → v2: make project/assignment nullable, add description ---
     const vBeforeV2 = (
       database

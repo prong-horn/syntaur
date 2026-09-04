@@ -567,6 +567,56 @@ export type HarnessUsageSpec =
   | { kind: 'tokens' }
   | { kind: 'none' };
 
+export interface HarnessOptionChoice {
+  value: string;
+  name: string;
+  description: string | null;
+}
+
+export interface HarnessOption {
+  id: string;
+  name: string;
+  category: string | null;
+  currentValue: string | null;
+  choices: HarnessOptionChoice[];
+}
+
+export type HarnessModes =
+  | {
+      currentModeId: string;
+      available: Array<{ id: string; name: string; description: string | null }>;
+    }
+  | null;
+
+export interface HarnessOptionsRecord {
+  harness: Harness;
+  adapterVersion: string | null;
+  capturedAt: string;
+  options: HarnessOption[];
+  modes: HarnessModes;
+}
+
+export interface HarnessAuthState {
+  state: 'ok' | 'failed' | 'unknown';
+  detail: string | null;
+  at: string | null;
+}
+
+export interface ChatHarnessSummary {
+  id: Harness;
+  label: string;
+  command: string;
+  args: string[];
+  installed: string | null;
+  installHint: string;
+  modelConfigId: string;
+  effortConfigId: string | null;
+  roleModes: HarnessModeIds;
+  systemPromptTransport: 'meta' | 'prompt';
+  options: HarnessOptionsRecord | null;
+  auth: HarnessAuthState;
+}
+
 export interface HarnessSpec {
   id: Harness;
   label: string;
