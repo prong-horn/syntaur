@@ -46,7 +46,7 @@ function makeBroker(
         const update = (notification as { update?: { sessionUpdate?: string; content?: { type?: string; text?: string } } })
           .update;
         if (update?.sessionUpdate === 'agent_message_chunk' && update.content?.type === 'text') {
-          probeChunks.push(update.content.text);
+          probeChunks.push(update.content.text ?? '');
         }
       },
       onPermissionRequest: input.onPermissionRequest,

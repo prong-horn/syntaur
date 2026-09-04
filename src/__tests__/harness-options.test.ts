@@ -2,15 +2,16 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { parseHarnessOptions } from '../chat/harness-options.js';
+import type * as acp from '@agentclientprotocol/sdk';
 
 const cursorFixturePath = resolve(
   import.meta.dirname,
   'fixtures/acp/cursor/06-edits-permissions.ndjson',
 );
 
-function cursorSessionNewResponse(): { modes: unknown; configOptions: unknown } {
+function cursorSessionNewResponse(): Pick<acp.NewSessionResponse, 'modes' | 'configOptions'> {
   const line = readFileSync(cursorFixturePath, 'utf-8').trim().split('\n')[3]!;
-  const msg = JSON.parse(line).msg as { result: { modes: unknown; configOptions: unknown } };
+  const msg = JSON.parse(line).msg as { result: Pick<acp.NewSessionResponse, 'modes' | 'configOptions'> };
   return msg.result;
 }
 
@@ -55,7 +56,7 @@ describe('parseHarnessOptions', () => {
             { value: 'high', name: 'High' },
           ],
         },
-        { id: 'ignored', type: 'text', currentValue: 'x' },
+        { id: 'ignored', type: 'text', currentValue: 'x' } as unknown as acp.SessionConfigOption,
       ],
     });
     expect(options.map((o) => o.id)).toEqual(['model', 'effort']);

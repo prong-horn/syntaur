@@ -56,7 +56,7 @@ Frontmatter configures the agent; the body is its system prompt.
 ---
 id: planner              # must match the filename
 name: Planner
-color: violet            # violet | emerald | amber | sky | rose
+color: violet            # violet | emerald | amber | sky | rose | slate
 harness: claude          # claude | codex | cursor
 model: claude-opus-5     # optional; passed through to the adapter
 mode: plan               # optional; see "Modes" below
@@ -72,10 +72,36 @@ You are the planner for this assignment. Read assignment.md, produce a plan, and
 end with a short summary in chat. Never edit code.
 ```
 
-Two builtins — `claude`, `codex`, and `cursor` — exist so a fresh install works with no
+Three builtins — `claude`, `codex`, and `cursor` — exist so a fresh install works with no
 files at all. A file with the same `id` replaces the builtin entirely. Invalid
 definitions are reported on `GET /api/chat/agents` and skipped; they never take
 the rest of the directory down.
+
+### Editing agents in the dashboard
+
+The **Agents** page (`/agents`) is a validated editor over the same file format
+above. Creating or saving writes `~/.syntaur/agents/<id>.md`; deleting an
+override file restores the builtin with that id. Exactly one agent may be marked
+`default: true` — saving a new default clears the flag on other file-backed
+definitions, and you cannot unset the current default without making another
+agent default first.
+
+Model and effort pickers show the values each adapter last advertised in
+`configOptions` on `session/new`, cached per harness in `syntaur.db`
+(`chat_harness_options`). Use **Refresh** on the harness row (or the editor's
+refresh button) to open a throwaway session in a temp directory and fetch the
+latest list when nothing is cached or auth failed.
+
+**Test** opens the same throwaway path with the saved definition, sends a fixed
+prompt (`"Reply with the single word OK…"`), and shows the reply or the
+adapter's spawn/auth error. It costs one short turn on the harness you chose and
+writes nothing to any assignment log.
+
+Edits land on the next session open for that agent. An idle open session is
+shut down on save so the next message re-attaches with the new pins; a running
+turn finishes on the old definition and the chat shows a stale-definition notice.
+A changed system prompt cannot reach a resumed ACP session — the chat says it
+takes effect at the next new session.
 
 **Cursor:** effort is not a separate config option — pin it inside the model value
 (e.g. `composer-2.5[fast=true]`, `claude-fable-5-1[thinking=true,context=300k,effort=high]`).
@@ -140,6 +166,9 @@ up in your Inbox.
   scope key rather than under any agent's, because they belong to the room.
 - `<assignment>/chat/participants.json` — who is attached, which one is the
   default, and the hop budget.
+- `chat_harness_options` in `~/.syntaur/syntaur.db` — per-harness cached
+  `configOptions` and auth state from the last successful adapter open (or a
+  harness refresh).
 - `chat_items` / `chat_sessions` in `~/.syntaur/syntaur.db` — a **rebuildable
   index** for paging. `POST /api/assignments/:id/chat/reindex` replays the log
   and reproduces it exactly.
@@ -183,6 +212,10 @@ All three work off a subscription login; no API key is required.
 `available_commands_update` yet for that agent, and no other session of the same
 harness has a cached list. Send any message to open a session, or check that the
 adapter on PATH is current (`claude-agent-acp` / `codex-acp` / `cursor-agent`).
+
+**The model picker is empty** — the adapter is not installed, nothing has been
+cached yet, or the last refresh failed (check the auth detail on the harness row
+and use **Refresh**).
 
 ## Several agents in one chat
 
