@@ -317,7 +317,6 @@ function makeAssignmentBroker(
     sessionIds?: Record<string, string[]>;
     loadDefinitions?: (root: string) => ReturnType<typeof loadAgentDefinitions>;
     availableCommands?: Record<string, acp.AvailableCommand[]>;
-    standingContextGate?: () => void | Promise<void>;
   } = {},
 ): void {
   fakes = new Map();
@@ -329,7 +328,6 @@ function makeAssignmentBroker(
     assignmentsDir: join(sandbox, 'assignments'),
     syntaurHome: sandbox,
     loadDefinitions: opts.loadDefinitions,
-    standingContextGate: opts.standingContextGate,
     broadcast: (message) =>
       frames.push({ type: message.type, payload: structuredClone(message.payload) }),
     clientFactory: (input) => {
@@ -1002,10 +1000,14 @@ describe.sequential('live session bookkeeping (Task 5)', () => {
 const rosterAgentLines = (text: string): string[] =>
   text.split('\n').filter((line) => /^@\S+ —/.test(line));
 
-/** Gate the Nth `buildStanding` call (1-based) so earlier standing deliveries can finish. */
-function gateStandingSnapshot(
+/** Hold the Nth `loadDefinitions` call — `buildStanding` loads via `routingContext`. */
+function gateDefinitionsLoad(
   nth: number,
-): { standingContextGate: () => Promise<void>; waitEntered: () => Promise<void>; release: () => void } {
+): {
+  loadDefinitions: (root: string) => ReturnType<typeof loadAgentDefinitions>;
+  waitEntered: () => Promise<void>;
+  release: () => void;
+} {
   let invocations = 0;
   let entered = false;
   let releaseGate!: () => void;
@@ -1013,11 +1015,15 @@ function gateStandingSnapshot(
     releaseGate = resolve;
   });
   return {
-    standingContextGate: async () => {
+    loadDefinitions: async (root) => {
       invocations += 1;
-      if (invocations < nth) return;
-      entered = true;
-      await gate;
+      const n = invocations;
+      const result = await loadAgentDefinitions(root);
+      if (n === nth) {
+        entered = true;
+        await gate;
+      }
+      return result;
     },
     waitEntered: () => waitUntil(() => entered, 'standing snapshot gate'),
     release: () => releaseGate(),
@@ -1104,7 +1110,7 @@ const plannerSlashCommands = [
   it('does not commit standing when save lands during the standing snapshot window', async () => {
     await writeAgentDefinition(sandbox, plannerInput({ description: 'Plans v1' }));
     await writeParticipantsFile({ agents: ['planner', 'codex'], defaultAgent: 'planner' });
-    const standingGate = gateStandingSnapshot(2);
+    const standingGate = gateDefinitionsLoad(13);
     makeAssignmentBroker(
       {
         planner: [{ steps: [{ kind: 'update', update: textChunk('OK', 'm1') }] }],
@@ -1113,7 +1119,7 @@ const plannerSlashCommands = [
           { steps: [{ kind: 'update', update: textChunk('OK2', 'c2') }] },
         ],
       },
-      { standingContextGate: standingGate.standingContextGate },
+      { loadDefinitions: standingGate.loadDefinitions },
     );
     await broker.send({ assignment: assignment(), text: '@planner hello' });
     await idleTurns(1);
@@ -1146,11 +1152,7 @@ const plannerSlashCommands = [
   it('does not commit standing when save lands during slash-command snapshot window', async () => {
     await writeAgentDefinition(sandbox, plannerInput({ description: 'Plans v1' }));
     await writeParticipantsFile({ agents: ['planner', 'codex'], defaultAgent: 'planner' });
-    let releaseStandingContextGate!: () => void;
-    let gateEntered = false;
-    const standingContextGate = new Promise<void>((resolve) => {
-      releaseStandingContextGate = resolve;
-    });
+    const standingGate = gateDefinitionsLoad(6);
     makeAssignmentBroker(
       {
         planner: [
@@ -1161,19 +1163,16 @@ const plannerSlashCommands = [
       },
       {
         availableCommands: { planner: plannerSlashCommands },
-        standingContextGate: async () => {
-          gateEntered = true;
-          await standingContextGate;
-        },
+        loadDefinitions: standingGate.loadDefinitions,
       },
     );
 
     const sendP = broker.send({ assignment: assignment(), text: '@planner /plan' });
-    await waitUntil(() => gateEntered, 'standing snapshot gate');
+    await standingGate.waitEntered();
     const fingerprintBefore = getChatSession(ASSIGNMENT_ID, 'planner')?.standing_fingerprint ?? null;
 
     await broker.saveAgent(plannerInput({ description: 'Plans v2' }));
-    releaseStandingContextGate();
+    standingGate.release();
     await sendP;
     await idleTurns(2);
 
@@ -1272,7 +1271,7 @@ const plannerSlashCommands = [
   it('does not commit standing when setParticipants lands during the standing snapshot window', async () => {
     await writeAgentDefinition(sandbox, plannerInput({ description: 'Plans' }));
     await writeParticipantsFile({ agents: ['planner', 'codex'], defaultAgent: 'planner' });
-    const standingGate = gateStandingSnapshot(2);
+    const standingGate = gateDefinitionsLoad(13);
     makeAssignmentBroker(
       {
         planner: [{ steps: [{ kind: 'update', update: textChunk('OK', 'm1') }] }],
@@ -1281,7 +1280,7 @@ const plannerSlashCommands = [
           { steps: [{ kind: 'update', update: textChunk('OK2', 'c2') }] },
         ],
       },
-      { standingContextGate: standingGate.standingContextGate },
+      { loadDefinitions: standingGate.loadDefinitions },
     );
     await broker.send({ assignment: assignment(), text: '@planner hello' });
     await idleTurns(1);

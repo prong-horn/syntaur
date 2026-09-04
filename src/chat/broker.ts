@@ -205,8 +205,6 @@ export interface CreateChatBrokerOptions {
   routing?: { hopBudget?: number };
   /** Injected by tests; defaults to `loadAgentDefinitions`. */
   loadDefinitions?: (root: string) => Promise<LoadAgentDefinitionsResult>;
-  /** Test hook: awaited at the start of `buildStanding`, after the generation is captured. */
-  standingContextGate?: () => void | Promise<void>;
 }
 
 /** A send that cannot proceed — the router turns this into an HTTP 409. */
@@ -2432,7 +2430,6 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
     session: Session,
   ): Promise<{ blocks: ContentBlock[]; fingerprint: string; gen: number }> {
     const gen = session.standingGen;
-    await options.standingContextGate?.();
     const { definitions, participants } = await routingContext(session.assignment);
     const roster = participants.agents
       .map((id) => definitions.find((d) => d.id === id))
