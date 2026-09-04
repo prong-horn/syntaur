@@ -356,6 +356,7 @@ export interface HarnessModeIds {
   edits: string;
   ask: string;
   plan: string;
+  bypass: string;
 }
 
 export interface HarnessOptionChoice {

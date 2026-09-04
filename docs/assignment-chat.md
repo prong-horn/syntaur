@@ -115,11 +115,22 @@ are not costed rather than a silent $0.
 `mode` takes one of three harness-independent role names, or a raw adapter mode
 id passed straight through:
 
-| Role    | claude        | codex                                            | cursor        |
-|---------|---------------|--------------------------------------------------|---------------|
-| `edits` | `acceptEdits` | `agent`                                          | `agent`       |
-| `ask`   | `default`     | `read-only` — the only codex mode that asks you  | `ask`         |
-| `plan`  | `plan`        | `read-only`                                      | `plan`        |
+| Role     | claude              | codex                                            | cursor        |
+|----------|---------------------|--------------------------------------------------|---------------|
+| `edits`  | `acceptEdits`       | `agent`                                          | `agent`       |
+| `ask`    | `default`           | `read-only` — the only codex mode that asks you  | `ask`         |
+| `plan`   | `plan`              | `read-only`                                      | `plan`        |
+| `bypass` | `bypassPermissions` | `agent-full-access`                              | `agent`       |
+
+`bypass` is the most permissive role: the agent is never asked to approve
+anything. cursor has no such mode of its own — its `agent` is already its most
+permissive — so `bypass` and `edits` are the same thing there.
+
+**`bypass` is honoured even at the home tier.** The read-only default described
+under "The agent is running from home" only applies when a definition pins no
+mode at all; an explicit `bypass` is taken at its word, which means an agent
+with no worktree auto-approves everything in your home directory. Pin it on
+agents you keep in a worktree.
 
 codex routes approvals by mode: in `agent` mode escalations go to codex's own
 Guardian reviewer and you never see them, and `agent-full-access` never asks. If

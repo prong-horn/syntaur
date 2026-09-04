@@ -562,6 +562,12 @@ export interface HarnessModeIds {
   edits: string;
   ask: string;
   plan: string;
+  /**
+   * The harness's most permissive mode — approvals are not asked for. claude
+   * and codex each have a true one; cursor does not, so it maps to the same id
+   * as `edits` (see the catalog).
+   */
+  bypass: string;
 }
 
 export type HarnessUsageSpec =

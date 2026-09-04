@@ -25,7 +25,7 @@ export const HARNESSES: Record<Harness, HarnessSpec> = {
     args: [],
     systemPromptTransport: 'meta',
     configIds: { model: 'model', effort: 'effort' },
-    modeIds: { edits: 'acceptEdits', ask: 'default', plan: 'plan' },
+    modeIds: { edits: 'acceptEdits', ask: 'default', plan: 'plan', bypass: 'bypassPermissions' },
     reattach: 'resume',
     usage: { kind: 'adapter-cost', basis: 'cumulative' },
     installHint: 'npm i -g @agentclientprotocol/claude-agent-acp',
@@ -38,7 +38,7 @@ export const HARNESSES: Record<Harness, HarnessSpec> = {
     args: [],
     systemPromptTransport: 'prompt',
     configIds: { model: 'model', effort: 'reasoning_effort' },
-    modeIds: { edits: 'agent', ask: 'read-only', plan: 'read-only' },
+    modeIds: { edits: 'agent', ask: 'read-only', plan: 'read-only', bypass: 'agent-full-access' },
     reattach: 'resume',
     usage: { kind: 'tokens' },
     installHint: 'npm i -g @agentclientprotocol/codex-acp',
@@ -51,7 +51,7 @@ export const HARNESSES: Record<Harness, HarnessSpec> = {
     args: ['acp'],
     systemPromptTransport: 'prompt',
     configIds: { model: 'model' },
-    modeIds: { edits: 'agent', ask: 'ask', plan: 'plan' },
+    modeIds: { edits: 'agent', ask: 'ask', plan: 'plan', bypass: 'agent' },
     reattach: 'load',
     usage: { kind: 'none' },
     installHint: 'curl https://cursor.com/install -fsS | bash',
@@ -118,12 +118,12 @@ export function redactEmails(s: string): string {
 }
 
 /**
- * The three harness-independent role names a definition may use for `mode`.
+ * The harness-independent role names a definition may use for `mode`.
  * Anything else is passed to the adapter untouched — mode ids drift between
  * releases (`dontAsk` is advertised by the installed 0.70.0 dist and absent from
  * its main branch), so the catalog validates nothing it cannot know.
  */
-export const ROLE_MODES = ['edits', 'ask', 'plan'] as const;
+export const ROLE_MODES = ['edits', 'ask', 'plan', 'bypass'] as const;
 export type RoleMode = (typeof ROLE_MODES)[number];
 
 export function isRoleMode(mode: string): mode is RoleMode {

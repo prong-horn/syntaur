@@ -24,7 +24,7 @@ function claudeHarness(overrides: Partial<ChatHarnessSummary> = {}): ChatHarness
     installHint: 'npm i -g @agentclientprotocol/claude-agent-acp',
     modelConfigId: 'model',
     effortConfigId: 'effort',
-    roleModes: { edits: 'acceptEdits', ask: 'default', plan: 'plan' },
+    roleModes: { edits: 'acceptEdits', ask: 'default', plan: 'plan', bypass: 'bypassPermissions' },
     systemPromptTransport: 'meta',
     options: {
       harness: 'claude',
@@ -66,7 +66,7 @@ function cursorHarness(overrides: Partial<ChatHarnessSummary> = {}): ChatHarness
     installHint: 'curl https://cursor.com/install -fsS | bash',
     modelConfigId: 'model',
     effortConfigId: null,
-    roleModes: { edits: 'agent', ask: 'ask', plan: 'plan' },
+    roleModes: { edits: 'agent', ask: 'ask', plan: 'plan', bypass: 'agent' },
     systemPromptTransport: 'prompt',
     options: {
       harness: 'cursor',
@@ -213,6 +213,22 @@ describe('modeChoices and badges', () => {
   it('labels role modes from the harness catalog', () => {
     const choices = modeChoices(claudeHarness());
     expect(choices.find((c) => c.value === 'edits')?.label).toBe('edits (acceptEdits)');
+  });
+
+  it('offers bypass with the adapter mode id it resolves to', () => {
+    expect(modeChoices(claudeHarness()).find((c) => c.value === 'bypass')?.label).toBe(
+      'bypass (bypassPermissions)',
+    );
+    // cursor has no dedicated bypass mode; the label shows the `agent` it maps to.
+    expect(modeChoices(cursorHarness()).find((c) => c.value === 'bypass')?.label).toBe(
+      'bypass (agent)',
+    );
+  });
+
+  it('keeps bypass out of the custom bucket when a draft pins it', () => {
+    const choices = modeChoices(claudeHarness()).map((c) => c.value);
+    expect(choices).toContain('bypass');
+    expect(choices.indexOf('bypass')).toBeLessThan(choices.indexOf('__custom__'));
   });
 
   it('badges builtin, file, and override summaries', () => {

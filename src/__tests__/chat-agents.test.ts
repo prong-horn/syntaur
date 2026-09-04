@@ -44,6 +44,18 @@ async function writeDefinition(id: string, content: string): Promise<void> {
 }
 
 describe('harness catalog', () => {
+  it('maps the bypass role to each harness most permissive mode', () => {
+    expect(resolveModeId(HARNESSES.claude, 'bypass')).toBe('bypassPermissions');
+    expect(resolveModeId(HARNESSES.codex, 'bypass')).toBe('agent-full-access');
+    // cursor has no dedicated bypass; `agent` is already its most permissive.
+    expect(resolveModeId(HARNESSES.cursor, 'bypass')).toBe('agent');
+    expect(resolveModeId(HARNESSES.cursor, 'bypass')).toBe(HARNESSES.cursor.modeIds.edits);
+  });
+
+  it('accepts bypass as a definition mode and still passes raw ids through', () => {
+    expect(resolveModeId(HARNESSES.claude, 'dontAsk')).toBe('dontAsk');
+  });
+
   it('carries the measured per-adapter differences', () => {
     expect(HARNESSES.claude.command).toBe('claude-agent-acp');
     expect(HARNESSES.codex.command).toBe('codex-acp');

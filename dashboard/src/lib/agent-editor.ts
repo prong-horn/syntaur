@@ -309,6 +309,10 @@ export function modeChoices(harness: ChatHarnessSummary | null): ModeChoice[] {
       value: 'plan',
       label: roles ? `plan (${roles.plan})` : 'plan',
     },
+    {
+      value: 'bypass',
+      label: roles ? `bypass (${roles.bypass})` : 'bypass',
+    },
     { value: '__custom__', label: 'custom' },
   ];
   return base;

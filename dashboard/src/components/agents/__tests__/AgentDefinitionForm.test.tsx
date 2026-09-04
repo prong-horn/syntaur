@@ -14,7 +14,7 @@ const claudeHarness: ChatHarnessSummary = {
   installHint: 'npm i -g @agentclientprotocol/claude-agent-acp',
   modelConfigId: 'model',
   effortConfigId: 'effort',
-  roleModes: { edits: 'acceptEdits', ask: 'default', plan: 'plan' },
+  roleModes: { edits: 'acceptEdits', ask: 'default', plan: 'plan', bypass: 'bypassPermissions' },
   systemPromptTransport: 'meta',
   options: {
     harness: 'claude',
