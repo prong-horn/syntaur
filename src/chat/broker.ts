@@ -148,6 +148,8 @@ export interface BrokerTimeouts {
   flushMs: number;
   /** How long `stopAll` waits for a cancelled prompt to resolve. */
   shutdownGraceMs: number;
+  /** Cap on throwaway harness refresh and agent test prompts. */
+  throwawayMs: number;
 }
 
 export const DEFAULT_TIMEOUTS: BrokerTimeouts = {
@@ -157,6 +159,7 @@ export const DEFAULT_TIMEOUTS: BrokerTimeouts = {
   sessionIdleMs: 10 * 60_000,
   flushMs: 50,
   shutdownGraceMs: 2_000,
+  throwawayMs: 60_000,
 };
 
 export interface ClientFactoryInput {
@@ -197,8 +200,6 @@ export interface CreateChatBrokerOptions {
   /** Injected by tests so spawn/auth does not depend on adapters on PATH. */
   commandResolver?: (spec: HarnessSpec) => CommandResolution;
   authProber?: (spec: HarnessSpec) => string;
-  /** Override the 60 s cap on throwaway test prompts (tests only). */
-  throwawayTimeoutMs?: number;
   clock?: { now(): number };
   timeouts?: Partial<BrokerTimeouts>;
   /** Routing knobs; `participants.json` overrides `hopBudget` per assignment. */
@@ -446,7 +447,6 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
 
   const TEST_PROMPT =
     'This is a connection test from Syntaur. Reply with the single word OK and nothing else. Do not use tools.';
-  const throwawayTimeoutMs = options.throwawayTimeoutMs ?? 60_000;
   const loadDefinitions = options.loadDefinitions ?? loadAgentDefinitions;
   const syntaurHome = () => options.syntaurHome ?? syntaurRoot();
   const loadDefs = (): Promise<LoadAgentDefinitionsResult> => loadDefinitions(syntaurHome());
@@ -988,7 +988,13 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
     const pending = constructing.get(key);
     if (pending) return pending;
 
-    const build = buildSession(assignment, definition, key, builtAtRev).finally(() => {
+    const { participants: participantsAtBuild } = await readParticipantsDetailed(
+      assignment.assignmentDir,
+      definitions,
+    );
+    const attachedAtBuild = participantsAtBuild.agents.includes(definition.id);
+
+    const build = buildSession(assignment, definition, key, builtAtRev, attachedAtBuild).finally(() => {
       constructing.delete(key);
     });
     constructing.set(key, build);
@@ -1000,6 +1006,7 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
     definition: AgentDefinition,
     key: string,
     builtAtRev: number,
+    attachedAtBuild: boolean,
   ): Promise<Session> {
     if (pendingAgentDeletes.has(definition.id)) {
       throw new ChatSendError(`No agent definition ${JSON.stringify(definition.id)}`, 404);
@@ -1162,12 +1169,22 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
       throw new ChatSendError(`No agent definition ${JSON.stringify(definition.id)}`, 404);
     }
 
+    const { definitions: defsForPublish } = await loadDefs();
+    const { participants: participantsForPublish } = await readParticipantsDetailed(
+      assignment.assignmentDir,
+      defsForPublish,
+    );
+    if (!participantsForPublish.agents.includes(definition.id)) {
+      if (attachedAtBuild) {
+        await shutdownSession(session);
+        throw new ChatSendError(`@${definition.id} is not attached to this chat`, 409);
+      }
+      // Detached before this build began: repair already dropped pending work;
+      // publish an idle shell so getSession can report state without driving.
+      sessions.set(key, session);
+      return session;
+    }
     if (row?.acp_session_id) {
-      const { definitions: defsForPublish } = await loadDefs();
-      const { participants: participantsForPublish } = await readParticipantsDetailed(
-        assignment.assignmentDir,
-        defsForPublish,
-      );
       const publishStandingFingerprint = standingFingerprint(
         session.definition,
         defsForPublish,
@@ -2057,7 +2074,7 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
     const run = (async () => {
       const spec = HARNESSES[id];
       if (!spec) throw new ChatSendError(`Unknown harness ${JSON.stringify(id)}`, 404);
-      await openThrowaway({ harness: spec, definition: null, prompt: null, timeoutMs: 60_000 });
+      await openThrowaway({ harness: spec, definition: null, prompt: null, timeoutMs: timeouts.throwawayMs });
       const summary = harnessSummaries().find((h) => h.id === id);
       if (!summary) throw new ChatSendError(`Unknown harness ${JSON.stringify(id)}`, 404);
       return summary;
@@ -2082,7 +2099,7 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
         harness: HARNESSES[def.harness],
         definition: def,
         prompt: TEST_PROMPT,
-        timeoutMs: throwawayTimeoutMs,
+        timeoutMs: timeouts.throwawayMs,
       });
       return result as AgentTestResult;
     })();
@@ -3107,12 +3124,34 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
 
       const { targets, notices } = routeHuman({ mentions, unknown, participants, definitions });
 
-      // Refuse before anything is recorded when there is no workspace to run in
-      // — the phase-2 contract, now checked once for the whole fan-out because
-      // every agent on an assignment runs in the same cwd.
       const targetSessions: Session[] = [];
-      for (const target of targets) targetSessions.push(await ensureSession(assignment, target));
+      const routingNotices = [...notices];
+      for (const target of targets) {
+        try {
+          targetSessions.push(await ensureSession(assignment, target));
+        } catch (err) {
+          if (err instanceof ChatSendError && err.status === 409) {
+            routingNotices.push(`@${target} was detached while the message was being routed`);
+            continue;
+          }
+          throw err;
+        }
+      }
       if (targetSessions[0]) await resolveCwd(targetSessions[0]);
+
+      const { definitions: defsAfter } = await loadDefs();
+      const { participants: participantsNow } = await readParticipantsDetailed(
+        assignment.assignmentDir,
+        defsAfter,
+      );
+      const activeSessions: Session[] = [];
+      for (const session of targetSessions) {
+        if (participantsNow.agents.includes(session.agentId)) {
+          activeSessions.push(session);
+        } else {
+          routingNotices.push(`@${session.agentId} was detached while the message was being routed`);
+        }
+      }
 
       const messageId = randomUUID();
       await recordAssignment(
@@ -3128,7 +3167,7 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
         },
         { agentId: HUMAN_AGENT_ID },
       );
-      for (const notice of notices) {
+      for (const notice of routingNotices) {
         await recordAssignment(
           assignment,
           'route.notice',
@@ -3148,7 +3187,7 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
         );
       }
 
-      for (const session of targetSessions) {
+      for (const session of activeSessions) {
         enqueue(session, { text, trigger: { kind: 'human', messageId } });
         void drive(session);
       }
@@ -3249,7 +3288,7 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
         const session = await ensureSession(assignment, agentId ?? null);
         return summarize(session);
       } catch (err) {
-        if (err instanceof ChatSendError && err.status === 404) return null;
+        if (err instanceof ChatSendError && (err.status === 404 || err.status === 409)) return null;
         throw err;
       }
     },

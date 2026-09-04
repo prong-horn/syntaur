@@ -154,8 +154,7 @@ describe.sequential('throwaway harness refresh and agent test', () => {
       },
       commandResolver: alwaysInstalled,
       authProber: authOk,
-      throwawayTimeoutMs: 200,
-      timeouts: { flushMs: 1 },
+      timeouts: { flushMs: 1, throwawayMs: 200 },
     });
     const result = await broker.testAgent('planner');
     expect(result.ok).toBe(false);
@@ -748,6 +747,65 @@ describe.sequential('live session bookkeeping (Task 5)', () => {
     expect(promptText).toContain('@claude');
   });
 
+  it('construction race: detach during session build does not publish or spawn', async () => {
+    await writeAgentDefinition(sandbox, plannerInput({ description: 'Plans' }));
+    await writeParticipantsFile({ agents: ['planner', 'codex'], defaultAgent: 'planner' });
+    makeAssignmentBroker({
+      planner: [{ steps: [{ kind: 'update', update: textChunk('OK', 'm1') }] }],
+      codex: [{ steps: [{ kind: 'update', update: textChunk('OK codex', 'c1') }] }],
+    });
+    await broker.send({ assignment: assignment(), text: '@planner hello' });
+    await idleTurns(1);
+    await broker.send({ assignment: assignment(), text: '@codex hello' });
+    await idleTurns(2);
+    await broker.stopAll();
+
+    const standingGate = gateDefinitionsLoad(2);
+    makeAssignmentBroker(
+      {
+        planner: [{ steps: [{ kind: 'update', update: textChunk('OK2', 'm2') }] }],
+        codex: [{ steps: [{ kind: 'update', update: textChunk('OK codex2', 'c2') }] }],
+      },
+      { loadDefinitions: standingGate.loadDefinitions },
+    );
+
+    const sessionP = broker.getSession(assignment(), 'codex');
+    await standingGate.waitEntered();
+    await broker.setParticipants(assignment(), { agents: ['planner'], defaultAgent: 'planner' });
+    standingGate.release();
+    expect(await sessionP).toBeNull();
+    expect(fakes.has('codex')).toBe(false);
+    expect(spawnHarnesses).not.toContain('codex');
+  });
+
+  it('construction race: detach during send records a notice and does not prompt', async () => {
+    await writeAgentDefinition(sandbox, plannerInput({ description: 'Plans' }));
+    await writeParticipantsFile({ agents: ['planner', 'codex'], defaultAgent: 'planner' });
+    const standingGate = gateDefinitionsLoad(2);
+    makeAssignmentBroker(
+      {
+        planner: [{ steps: [{ kind: 'update', update: textChunk('OK', 'm1') }] }],
+        codex: [{ steps: [{ kind: 'update', update: textChunk('OK codex', 'c1') }] }],
+      },
+      { loadDefinitions: standingGate.loadDefinitions },
+    );
+
+    const sendP = broker.send({ assignment: assignment(), text: '@codex hi' });
+    await standingGate.waitEntered();
+    await broker.setParticipants(assignment(), { agents: ['planner'], defaultAgent: 'planner' });
+    standingGate.release();
+    const { messageId } = await sendP;
+
+    expect(messageId).toBeTruthy();
+    expect(items().some((i) => i.type === 'user.message' && (i as { messageId: string }).messageId === messageId)).toBe(
+      true,
+    );
+    expect(
+      systemTexts().some((t) => t.includes('@codex was detached while the message was being routed')),
+    ).toBe(true);
+    expect(fakes.get('codex')?.prompts.length ?? 0).toBe(0);
+  });
+
   it('allows re-creating a deleted agent without restarting the broker', async () => {
     await writeParticipantsFile({ agents: ['planner'], defaultAgent: 'planner' });
     makeAssignmentBroker({
@@ -1200,7 +1258,7 @@ const plannerSlashCommands = [
   it('does not commit standing when save lands during the standing snapshot window', async () => {
     await writeAgentDefinition(sandbox, plannerInput({ description: 'Plans v1' }));
     await writeParticipantsFile({ agents: ['planner', 'codex'], defaultAgent: 'planner' });
-    const standingGate = gateDefinitionsLoad(13);
+    const standingGate = gateDefinitionsLoad(17);
     makeAssignmentBroker(
       {
         planner: [{ steps: [{ kind: 'update', update: textChunk('OK', 'm1') }] }],
@@ -1242,7 +1300,7 @@ const plannerSlashCommands = [
   it('does not commit standing when save lands during slash-command snapshot window', async () => {
     await writeAgentDefinition(sandbox, plannerInput({ description: 'Plans v1' }));
     await writeParticipantsFile({ agents: ['planner', 'codex'], defaultAgent: 'planner' });
-    const standingGate = gateDefinitionsLoad(6);
+    const standingGate = gateDefinitionsLoad(8);
     makeAssignmentBroker(
       {
         planner: [
@@ -1361,7 +1419,7 @@ const plannerSlashCommands = [
   it('does not commit standing when setParticipants lands during the standing snapshot window', async () => {
     await writeAgentDefinition(sandbox, plannerInput({ description: 'Plans' }));
     await writeParticipantsFile({ agents: ['planner', 'codex'], defaultAgent: 'planner' });
-    const standingGate = gateDefinitionsLoad(13);
+    const standingGate = gateDefinitionsLoad(17);
     makeAssignmentBroker(
       {
         planner: [{ steps: [{ kind: 'update', update: textChunk('OK', 'm1') }] }],
