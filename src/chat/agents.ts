@@ -252,14 +252,14 @@ export function serializeAgentDefinition(input: AgentDefinitionInput): string {
     name: input.name,
     color: input.color,
     harness: input.harness,
-    respondsTo: input.respondsTo,
-    default: input.default,
   };
   if (input.model) fm.model = input.model;
   if (input.mode) fm.mode = input.mode;
   if (input.effort) fm.effort = input.effort;
   if (input.mcpServers && input.mcpServers.length > 0) fm.mcpServers = input.mcpServers;
   if (input.env && Object.keys(input.env).length > 0) fm.env = input.env;
+  fm.respondsTo = input.respondsTo;
+  fm.default = input.default;
   if (input.description) fm.description = input.description;
   if (input.avatar) fm.avatar = input.avatar;
 

@@ -8,7 +8,8 @@ import {
 } from '../../lib/agent-editor';
 import { agentColorClasses } from '../../lib/chat-format';
 import { cn } from '../../lib/utils';
-import type { ChatHarnessSummary } from '../../lib/chat-types';
+import type { AgentTestResult, ChatHarnessSummary } from '../../lib/chat-types';
+import { AgentTestResultLine } from './AgentTestResultLine';
 
 export interface AgentDefinitionFormProps {
   draft: AgentDraft;
@@ -22,6 +23,7 @@ export interface AgentDefinitionFormProps {
   onTest?: () => void;
   dirty: boolean;
   saving: boolean;
+  testResult?: AgentTestResult | 'loading' | null;
   serverError?: string | null;
   defaultUnsetError?: string | null;
 }
@@ -132,6 +134,7 @@ export function AgentDefinitionForm({
   onTest,
   dirty,
   saving,
+  testResult = null,
   serverError,
   defaultUnsetError,
 }: AgentDefinitionFormProps) {
@@ -425,6 +428,7 @@ export function AgentDefinitionForm({
       </div>
 
       {serverError ? <p className="text-sm text-destructive">{serverError}</p> : null}
+      <AgentTestResultLine testResult={testResult} className="mt-1" />
 
       <div className="flex flex-wrap items-center gap-2">
         <button

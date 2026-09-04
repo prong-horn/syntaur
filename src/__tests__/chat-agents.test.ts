@@ -401,6 +401,33 @@ const fullInput = (): AgentDefinitionInput => ({
 });
 
 describe('serialize and validate (Task 1)', () => {
+  it('serialises frontmatter keys in Decision 1 order', () => {
+    const input = fullInput();
+    const serialized = serializeAgentDefinition(input);
+    const fm = serialized.split('---')[1].trim();
+    const keys: string[] = [];
+    for (const line of fm.split('\n')) {
+      if (/^\s/.test(line)) continue;
+      const match = line.match(/^([A-Za-z0-9_]+):/);
+      if (match) keys.push(match[1]);
+    }
+    expect(keys).toEqual([
+      'id',
+      'name',
+      'color',
+      'harness',
+      'model',
+      'mode',
+      'effort',
+      'mcpServers',
+      'env',
+      'respondsTo',
+      'default',
+      'description',
+      'avatar',
+    ]);
+  });
+
   it('round-trips every field through serialize and parse', () => {
     const input = fullInput();
     const serialized = serializeAgentDefinition(input);

@@ -234,8 +234,9 @@ The attached set lives in `<assignment>/chat/participants.json`:
 `~/.syntaur/agents/`, pick the default, set the hop budget. Everything else a
 definition declares — harness, model, mode, `respondsTo`, description, avatar —
 is shown read-only next to the file it comes from, because that is where it
-lives. Delete a definition and it drops out of the set silently; nothing else
-breaks.
+lives. Delete a definition and every affected chat gets a `system` row, the
+participants file is rewritten to drop the id (or, for a builtin override, the
+builtin is restored); nothing else breaks.
 
 **Detaching stops the agent.** Its turn is cancelled, everything queued for it
 is dropped with a `system` row per message saying so, and its adapter is torn

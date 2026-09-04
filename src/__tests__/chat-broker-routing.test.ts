@@ -850,6 +850,36 @@ describe('the history delta and its cursor (Task 4)', () => {
     expect(standing).toContain('<context>');
     expect(standing).toContain('Beta plans');
   });
+
+  it('refreshes the roster on other agents when planner description changes', async () => {
+    await writeParticipantsFile({ agents: ['planner', 'codex'], defaultAgent: 'planner' });
+    makeBroker({
+      planner: [justSays('planned', 'p1')],
+      codex: [justSays('coded', 'c1'), justSays('coded again', 'c2')],
+    });
+
+    await broker.send({ assignment: assignment(), text: '@codex hello' });
+    await idleAll(1);
+
+    await broker.saveAgent({
+      id: 'planner',
+      name: 'Planner',
+      color: 'amber',
+      harness: 'claude',
+      respondsTo: 'mentions',
+      default: true,
+      description: 'Beta plans',
+      systemPrompt: 'You are the planner.',
+    });
+    await broker.send({ assignment: assignment(), text: '@codex once more' });
+    await idleAll(2);
+
+    const latest = prompts('codex').at(-1) as { prompt: Array<{ text?: string }> };
+    expect(latest).toBeDefined();
+    const standing = latest.prompt.map((b) => b.text ?? '').join('\n');
+    expect(standing).toContain('<context>');
+    expect(standing).toContain('Beta plans');
+  });
 });
 
 describe('an adapter dying mid-turn (code review round 1, finding 2)', () => {

@@ -87,7 +87,6 @@ async function boot() {
     },
     commandResolver: alwaysInstalled,
     authProber: authOk,
-    throwawayReplyFallback: () => fake.chunks.join(''),
     timeouts: { flushMs: 1 },
   });
   app.use('/api', createChatRouter(join(sandbox, 'projects'), join(sandbox, 'assignments'), { broker }));

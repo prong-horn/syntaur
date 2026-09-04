@@ -187,8 +187,6 @@ export interface CreateChatBrokerOptions {
   authProber?: (spec: HarnessSpec) => string;
   /** Override the 60 s cap on throwaway test prompts (tests only). */
   throwawayTimeoutMs?: number;
-  /** In-process fake agents do not deliver chunks via onUpdate; tests provide this. */
-  throwawayReplyFallback?: () => string | null;
   clock?: { now(): number };
   timeouts?: Partial<BrokerTimeouts>;
   /** Routing knobs; `participants.json` overrides `hopBudget` per assignment. */
@@ -471,6 +469,38 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
     return definitionFingerprint(a) !== definitionFingerprint(b);
   }
 
+  /** Standing context is per-session; roster edits must refresh every agent in the room. */
+  async function invalidateStandingForParticipant(agentId: string): Promise<void> {
+    const { definitions } = await loadAgentDefinitions(options.syntaurHome);
+    const assignmentsToInvalidate = new Set<string>();
+    for (const session of sessions.values()) {
+      const { participants } = await readParticipantsDetailed(
+        session.assignment.assignmentDir,
+        definitions,
+      );
+      if (participants.agents.includes(agentId)) {
+        assignmentsToInvalidate.add(session.assignment.id);
+      }
+    }
+    for (const session of sessions.values()) {
+      if (assignmentsToInvalidate.has(session.assignment.id)) {
+        session.standingSent = false;
+      }
+    }
+  }
+
+  function rosterPresentationChanged(
+    before: AgentDefinition | undefined,
+    after: AgentDefinition,
+  ): boolean {
+    if (!before) return true;
+    return (
+      before.name !== after.name ||
+      (before.description ?? null) !== (after.description ?? null) ||
+      (before.avatar ?? null) !== (after.avatar ?? null)
+    );
+  }
+
   async function repairDroppedParticipants(
     assignment: ResolvedAssignment,
     dropped: string[],
@@ -581,27 +611,27 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
         .map(([, promise]) => promise),
     );
 
-    const touchedAssignments = new Set<string>();
+    const touchedAssignments = new Map<string, ResolvedAssignment>();
     for (const session of [...sessions.values()]) {
       if (session.agentId !== id) continue;
-      touchedAssignments.add(session.assignment.id);
+      touchedAssignments.set(session.assignment.id, session.assignment);
       const prevPrompt = session.definition.systemPrompt;
-      const prevDescription = session.definition.description ?? null;
-      const prevName = session.definition.name;
       const harnessChanged = session.harness.id !== newDef.harness;
       session.definition = newDef;
       session.profile = resolveSessionProfile(newDef, HARNESSES[newDef.harness as Harness]);
       session.harness = HARNESSES[newDef.harness as Harness];
       session.definitionStale = true;
       session.stalePromptChanged = prevPrompt !== newDef.systemPrompt;
-      if (
-        !harnessChanged &&
-        (prevDescription !== (newDef.description ?? null) || prevName !== newDef.name)
-      ) {
-        session.standingSent = false;
-      }
 
       if (harnessChanged) {
+        if (opts.restoredBuiltin) {
+          await record(
+            session,
+            'system',
+            { level: 'info', text: `@${id} is back to its built-in definition` },
+            null,
+          );
+        }
         await tearDownForHarnessChange(session);
         continue;
       }
@@ -625,20 +655,16 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
     }
 
     if (opts.restoredBuiltin) {
-      for (const assignmentId of touchedAssignments) {
-        const session = [...sessions.values()].find(
-          (s) => s.assignment.id === assignmentId && s.agentId === id,
-        );
-        if (!session) continue;
-        const { definitions } = await loadAgentDefinitions(options.syntaurHome);
-        const participants = await readParticipants(session.assignment.assignmentDir, definitions);
+      const { definitions } = await loadAgentDefinitions(options.syntaurHome);
+      for (const assignment of touchedAssignments.values()) {
+        const participants = await readParticipants(assignment.assignmentDir, definitions);
         options.broadcast({
           type: 'chat-participants',
-          projectSlug: session.assignment.projectSlug,
-          assignmentSlug: session.assignment.assignmentSlug,
+          projectSlug: assignment.projectSlug,
+          assignmentSlug: assignment.assignmentSlug,
           timestamp: iso(),
           payload: {
-            assignmentId: session.assignment.id,
+            assignmentId: assignment.id,
             participants,
             agents: definitions.map((d) => toAgentSummary(d, commandResolver)),
           },
@@ -1460,6 +1486,25 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
     });
   }
 
+  async function swapHarnessInPlace(session: Session, fresh: AgentDefinition): Promise<void> {
+    if (session.inFlight) {
+      await cancelTurn(session).catch(() => false);
+      await Promise.race([
+        waitFor(() => session.inFlight === null, timeouts.shutdownGraceMs),
+        sleep(timeouts.shutdownGraceMs),
+      ]);
+    }
+    await shutdownSession(session);
+    deleteChatSession(session.key);
+    session.acpSessionId = null;
+    session.standingSent = false;
+    session.definition = fresh;
+    session.harness = HARNESSES[fresh.harness as Harness];
+    session.profile = resolveSessionProfile(fresh, session.harness);
+    session.definitionStale = false;
+    session.stalePromptChanged = false;
+  }
+
   async function ensureAdapter(session: Session): Promise<void> {
     const { definitions } = await loadAgentDefinitions(options.syntaurHome);
     const fresh = definitions.find((d) => d.id === session.agentId);
@@ -1467,10 +1512,13 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
       throw new ChatSendError(`No agent definition ${JSON.stringify(session.agentId)}`, 404);
     }
     if (definitionChanged(session.definition, fresh)) {
-      session.definition = fresh;
-      session.harness = HARNESSES[fresh.harness as Harness];
-      session.profile = resolveSessionProfile(fresh, session.harness);
-      session.definitionStale = true;
+      if (session.harness.id !== fresh.harness) {
+        await swapHarnessInPlace(session, fresh);
+      } else {
+        session.definition = fresh;
+        session.profile = resolveSessionProfile(fresh, session.harness);
+        session.definitionStale = true;
+      }
     }
 
     if (session.client?.alive() && session.acpSessionId) {
@@ -1744,7 +1792,6 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
     timeoutMs: number;
   }): Promise<AgentTestResult | void> {
     const started = now();
-    const probeDir = await mkdtemp(join(tmpdir(), 'syntaur-chat-probe-'));
     const resolved = commandResolver(input.harness);
     if (!resolved.path) {
       throw new ChatSendError(
@@ -1752,6 +1799,8 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
         503,
       );
     }
+
+    const probeDir = await mkdtemp(join(tmpdir(), 'syntaur-chat-probe-'));
 
     const profile = input.definition
       ? resolveSessionProfile(input.definition, input.harness)
@@ -1764,6 +1813,7 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
     let effort: string | null = null;
     let profileErrors: string[] = [];
     let client: AcpClient | null = null;
+    let timeoutHandle: ReturnType<typeof setTimeout> | null = null;
 
     try {
       client = clientFactory({
@@ -1845,17 +1895,14 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
       try {
         const response = await Promise.race([
           client.prompt(sessionId, blocks),
-          new Promise<never>((_, reject) =>
-            setTimeout(() => reject(new Error(`timed out after ${input.timeoutMs}ms`)), input.timeoutMs),
-          ),
+          new Promise<never>((_, reject) => {
+            timeoutHandle = setTimeout(
+              () => reject(new Error(`timed out after ${input.timeoutMs}ms`)),
+              input.timeoutMs,
+            );
+            timeoutHandle.unref?.();
+          }),
         ]);
-        const drainDeadline = now() + 500;
-        while (!reply.trim() && now() < drainDeadline) {
-          await new Promise((r) => setTimeout(r, 5));
-        }
-        if (!reply.trim() && options.throwawayReplyFallback) {
-          reply = options.throwawayReplyFallback() ?? '';
-        }
         stopReason = response.stopReason ?? null;
       } catch (err) {
         await client.cancel(sessionId).catch(() => {});
@@ -1885,6 +1932,7 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
         error: null,
       };
     } finally {
+      if (timeoutHandle) clearTimeout(timeoutHandle);
       if (client) await client.close().catch(() => {});
       await rm(probeDir, { recursive: true, force: true }).catch(() => {});
     }
@@ -1935,6 +1983,8 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
   async function saveAgent(input: AgentDefinitionInput): Promise<AgentDefinition> {
     const home = options.syntaurHome ?? syntaurRoot();
     const run = agentWrites.then(async () => {
+      const { definitions: before } = await loadAgentDefinitions(home);
+      const old = before.find((d) => d.id === input.id);
       let definition: AgentDefinition;
       try {
         definition = await writeAgentDefinition(home, input);
@@ -1943,6 +1993,9 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
           throw new AgentWriteError(400, err.reason);
         }
         throw err;
+      }
+      if (rosterPresentationChanged(old, definition)) {
+        await invalidateStandingForParticipant(definition.id);
       }
       definitionsRev += 1;
       await applyDefinitionToSessions(input.id, definition);
@@ -1962,6 +2015,7 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
     }
     const run = agentWrites.then(async () => {
       try {
+      await invalidateStandingForParticipant(id);
       const result = await deleteAgentDefinition(home, id);
       definitionsRev += 1;
       if (!result.restoredBuiltin) {

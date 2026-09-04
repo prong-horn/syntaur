@@ -1,8 +1,9 @@
-import { Loader2, Pencil, Play, Trash2 } from 'lucide-react';
-import { agentBadges, BUILTIN_DELETE_TITLE, formatTestResult } from '../../lib/agent-editor';
+import { Pencil, Play, Trash2 } from 'lucide-react';
+import { agentBadges, BUILTIN_DELETE_TITLE } from '../../lib/agent-editor';
 import { agentColorClasses } from '../../lib/chat-format';
 import { cn } from '../../lib/utils';
 import type { AgentTestResult, ChatAgentSummary } from '../../lib/chat-types';
+import { AgentTestResultLine } from './AgentTestResultLine';
 
 export interface AgentListRowProps {
   agent: ChatAgentSummary;
@@ -70,21 +71,7 @@ export function AgentListRow({
           {agent.description ? (
             <p className="mt-1 text-xs text-muted-foreground">{agent.description}</p>
           ) : null}
-          {testResult === 'loading' ? (
-            <p className="mt-2 inline-flex items-center gap-1 text-xs text-muted-foreground">
-              <Loader2 className="h-3 w-3 animate-spin" />
-              Testing…
-            </p>
-          ) : testResult ? (
-            <p
-              className={cn(
-                'mt-2 text-xs',
-                testResult.ok ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400',
-              )}
-            >
-              {formatTestResult(testResult)}
-            </p>
-          ) : null}
+          <AgentTestResultLine testResult={testResult} className="mt-2" />
         </div>
         <div className="flex shrink-0 items-center gap-1">
           <button

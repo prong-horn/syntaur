@@ -20,6 +20,7 @@ import {
   testChatAgent,
   updateChatAgent,
 } from '../lib/chat-api';
+import type { AgentTestResult } from '../lib/chat-types';
 
 export function AgentEditorPage() {
   const { id: routeId } = useParams<{ id: string }>();
@@ -37,6 +38,7 @@ export function AgentEditorPage() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [testResult, setTestResult] = useState<AgentTestResult | 'loading' | null>(null);
   const autoRefreshed = useRef<Set<string>>(new Set());
 
   useEffect(() => {
@@ -159,11 +161,42 @@ export function AgentEditorPage() {
   async function handleTest(): Promise<void> {
     if (!draft || dirty) return;
     setServerError(null);
+    setTestResult('loading');
     try {
-      await testChatAgent(draft.id);
-      showToast('Test completed', 'success');
+      const result = await testChatAgent(draft.id);
+      setTestResult(result);
+      if (result.ok) {
+        showToast(
+          [
+            result.reply ? `Reply: ${result.reply}` : 'OK',
+            result.model ? `model ${result.model}` : null,
+            result.mode ? `mode ${result.mode}` : null,
+            `${(result.durationMs / 1000).toFixed(1)} s`,
+          ]
+            .filter(Boolean)
+            .join(' · '),
+          'success',
+        );
+      } else {
+        const detail = result.error ?? result.profileErrors.join('; ') ?? 'Test failed';
+        showToast(detail, 'error');
+        setServerError(detail);
+      }
     } catch (err) {
-      setServerError(err instanceof Error ? err.message : 'Test failed');
+      const message = err instanceof Error ? err.message : 'Test failed';
+      setTestResult({
+        ok: false,
+        reply: null,
+        stopReason: null,
+        model: null,
+        mode: null,
+        effort: null,
+        profileErrors: [],
+        durationMs: 0,
+        error: message,
+      });
+      setServerError(message);
+      showToast(message, 'error');
     }
   }
 
@@ -193,6 +226,7 @@ export function AgentEditorPage() {
         onTest={isCreate ? undefined : () => void handleTest()}
         dirty={dirty}
         saving={saving}
+        testResult={testResult}
         serverError={serverError}
         defaultUnsetError={defaultUnsetError}
       />

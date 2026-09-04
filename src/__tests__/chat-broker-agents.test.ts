@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtemp, mkdir, rm, writeFile, readFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, rm, writeFile, readFile, readdir } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -10,7 +10,7 @@ import { connectAcpClient, type AcpClient } from '../chat/acp-client.js';
 import { createFakeAgent, textChunk, type FakeAgent, type FakeTurn } from '../chat/fake-agent.js';
 import { createChatBroker, ChatSendError, type ChatBroker, type ClientFactory } from '../chat/broker.js';
 import { HARNESSES } from '../chat/harnesses.js';
-import { writeAgentDefinition } from '../chat/agents.js';
+import { writeAgentDefinition, AgentWriteError } from '../chat/agents.js';
 import { participantsPath } from '../chat/participants.js';
 import type { ChatItem, Harness, Participants } from '../chat/types.js';
 import type { ResolvedAssignment } from '../utils/assignment-resolver.js';
@@ -42,17 +42,9 @@ function makeBroker(
     turns: [{ steps: [{ kind: 'update', update: textChunk('OK') }], stopReason: 'end_turn' }],
     ...agentOptions,
   });
-  const probeChunks: string[] = [];
   const clientFactory: ClientFactory = (input) => {
     const client = connectAcpClient(fake.app, {
-      onUpdate: (notification) => {
-        input.onUpdate(notification);
-        const update = (notification as { update?: { sessionUpdate?: string; content?: { type?: string; text?: string } } })
-          .update;
-        if (update?.sessionUpdate === 'agent_message_chunk' && update.content?.type === 'text') {
-          probeChunks.push(update.content.text ?? '');
-        }
-      },
+      onUpdate: input.onUpdate,
       onPermissionRequest: input.onPermissionRequest,
       onExtRequest: input.onExtRequest,
       onExtNotification: input.onExtNotification,
@@ -68,7 +60,6 @@ function makeBroker(
     clientFactory,
     commandResolver: resolver,
     authProber: authOk,
-    throwawayReplyFallback: () => probeChunks.join('') || fake.chunks.join(''),
     timeouts: { flushMs: 1 },
   });
 }
@@ -163,7 +154,6 @@ describe.sequential('throwaway harness refresh and agent test', () => {
       commandResolver: alwaysInstalled,
       authProber: authOk,
       throwawayTimeoutMs: 200,
-      throwawayReplyFallback: () => fake.chunks.join(''),
       timeouts: { flushMs: 1 },
     });
     const result = await broker.testAgent('planner');
@@ -203,6 +193,14 @@ describe.sequential('throwaway harness refresh and agent test', () => {
       message: expect.stringContaining(HARNESSES.claude.installHint),
     });
     expect(fake.calls).not.toContain('initialize');
+  });
+
+  it('does not leak probe dirs when the adapter is missing', async () => {
+    const before = (await readdir(tmpdir())).filter((name) => name.startsWith('syntaur-chat-probe-'));
+    makeBroker({}, () => ({ path: null, installHint: 'install me' }));
+    await expect(broker.refreshHarness('claude')).rejects.toMatchObject({ status: 503 });
+    const after = (await readdir(tmpdir())).filter((name) => name.startsWith('syntaur-chat-probe-'));
+    expect(after.length).toBe(before.length);
   });
 
   it('leaves no events.jsonl under the scratch home', async () => {
@@ -573,6 +571,9 @@ describe.sequential('live session bookkeeping (Task 5)', () => {
 
     await broker.deleteAgent('claude');
     expect(getChatSessionByKey(sessionKey('claude'))).toBeNull();
+    expect(systemTexts().some((t) => t.includes('@claude is back to its built-in definition'))).toBe(
+      true,
+    );
 
     spawnHarnesses.length = 0;
     await broker.send({ assignment: assignment(), text: '@claude builtin' });
@@ -627,12 +628,40 @@ describe.sequential('live session bookkeeping (Task 5)', () => {
     await writeAgentDefinition(sandbox, plannerInput());
     makeAssignmentBroker();
 
-    await expect(broker.saveAgent(plannerInput({ color: 'purple' as never }))).rejects.toMatchObject({
-      status: 400,
-    });
+    await expect(broker.saveAgent(plannerInput({ color: 'purple' as never }))).rejects.toSatisfy(
+      (err: unknown) =>
+        err instanceof AgentWriteError && err.status === 400 && !err.message.includes('/'),
+    );
     await broker.saveAgent(plannerInput({ description: 'Recovered' }));
     await broker.deleteAgent('planner');
     const { definitions } = await broker.listAgents();
     expect(definitions.some((d) => d.id === 'planner')).toBe(false);
+  });
+
+  it('ensureAdapter respawns when a hand-edited harness change is detected', async () => {
+    await writeAgentDefinition(sandbox, plannerInput({ harness: 'claude' }));
+    await writeParticipantsFile({ agents: ['planner'], defaultAgent: 'planner' });
+    makeAssignmentBroker(
+      { planner: [{ steps: [{ kind: 'update', update: textChunk('OK', 'm1') }] }] },
+      { sessionIds: { planner: ['acp-planner'] } },
+    );
+
+    await broker.send({ assignment: assignment(), text: '@planner hello' });
+    await idleTurns(1);
+    const fake = fakes.get('planner')!;
+    fake.calls.length = 0;
+
+    const agentPath = join(sandbox, 'agents', 'planner.md');
+    const content = await readFile(agentPath, 'utf-8');
+    await writeFile(agentPath, content.replace(/^harness: claude/m, 'harness: codex'));
+
+    await broker.send({ assignment: assignment(), text: '@planner on codex' });
+    await idleTurns(2);
+
+    expect(fake.calls).toContain('initialize');
+    expect(fake.calls).toContain('session/new');
+    expect(fake.calls).not.toContain('session/resume');
+    const summary = await broker.getSession(assignment(), 'planner');
+    expect(summary?.harness).toBe('codex');
   });
 });
