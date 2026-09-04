@@ -658,6 +658,96 @@ describe.sequential('live session bookkeeping (Task 5)', () => {
     expect(promptText).not.toContain('Before roster');
   });
 
+  it('construction race: saveAgent during session build rechecks standing fingerprint', async () => {
+    await writeAgentDefinition(sandbox, plannerInput({ description: 'Before roster' }));
+    await writeParticipantsFile({ agents: ['planner', 'codex'], defaultAgent: 'planner' });
+    makeAssignmentBroker({
+      planner: [{ steps: [{ kind: 'update', update: textChunk('OK', 'm1') }] }],
+      codex: [{ steps: [{ kind: 'update', update: textChunk('OK codex', 'c1') }] }],
+    });
+    await broker.send({ assignment: assignment(), text: '@planner hello' });
+    await idleTurns(1);
+    await broker.send({ assignment: assignment(), text: '@codex hello' });
+    await idleTurns(2);
+    expect(getChatSession(ASSIGNMENT_ID, 'planner')?.standing_fingerprint).toBeTruthy();
+    expect(getChatSession(ASSIGNMENT_ID, 'codex')?.standing_fingerprint).toBeTruthy();
+    await broker.stopAll();
+
+    const standingGate = gateDefinitionsLoad(2);
+    makeAssignmentBroker(
+      {
+        planner: [{ steps: [{ kind: 'update', update: textChunk('OK2', 'm2') }] }],
+        codex: [{ steps: [{ kind: 'update', update: textChunk('OK codex2', 'c2') }] }],
+      },
+      { loadDefinitions: standingGate.loadDefinitions },
+    );
+
+    const sessionP = broker.getSession(assignment(), 'codex');
+    await standingGate.waitEntered();
+    const saveP = broker.saveAgent(plannerInput({ description: 'After roster' }));
+    await saveP;
+    standingGate.release();
+    expect(await sessionP).not.toBeNull();
+
+    await broker.send({ assignment: assignment(), text: '@codex roster check' });
+    await waitUntil(() => (fakes.get('codex')?.prompts.length ?? 0) >= 1, 'codex prompt');
+    await idleTurns(1);
+
+    const promptText = fakes
+      .get('codex')!
+      .prompts[0]!.prompt.map((b) => (b as { text?: string }).text ?? '')
+      .join('\n');
+    expect(promptText).toContain('<context>');
+    expect(promptText).toContain('After roster');
+    expect(promptText).not.toContain('Before roster');
+  });
+
+  it('construction race: setParticipants during session build rechecks standing fingerprint', async () => {
+    await writeAgentDefinition(sandbox, plannerInput({ description: 'Plans' }));
+    await writeParticipantsFile({ agents: ['planner', 'codex'], defaultAgent: 'planner' });
+    makeAssignmentBroker({
+      planner: [{ steps: [{ kind: 'update', update: textChunk('OK', 'm1') }] }],
+      codex: [{ steps: [{ kind: 'update', update: textChunk('OK codex', 'c1') }] }],
+    });
+    await broker.send({ assignment: assignment(), text: '@planner hello' });
+    await idleTurns(1);
+    await broker.send({ assignment: assignment(), text: '@codex hello' });
+    await idleTurns(2);
+    expect(getChatSession(ASSIGNMENT_ID, 'planner')?.standing_fingerprint).toBeTruthy();
+    expect(getChatSession(ASSIGNMENT_ID, 'codex')?.standing_fingerprint).toBeTruthy();
+    await broker.stopAll();
+
+    const standingGate = gateDefinitionsLoad(2);
+    makeAssignmentBroker(
+      {
+        planner: [{ steps: [{ kind: 'update', update: textChunk('OK2', 'm2') }] }],
+        codex: [{ steps: [{ kind: 'update', update: textChunk('OK codex2', 'c2') }] }],
+      },
+      { loadDefinitions: standingGate.loadDefinitions },
+    );
+
+    const sessionP = broker.getSession(assignment(), 'codex');
+    await standingGate.waitEntered();
+    await broker.setParticipants(assignment(), {
+      agents: ['planner', 'codex', 'claude'],
+      defaultAgent: 'planner',
+    });
+    standingGate.release();
+    expect(await sessionP).not.toBeNull();
+
+    await broker.send({ assignment: assignment(), text: '@codex roster check' });
+    await waitUntil(() => (fakes.get('codex')?.prompts.length ?? 0) >= 1, 'codex prompt');
+    await idleTurns(1);
+
+    const promptText = fakes
+      .get('codex')!
+      .prompts[0]!.prompt.map((b) => (b as { text?: string }).text ?? '')
+      .join('\n');
+    expect(promptText).toContain('<context>');
+    expect(rosterAgentLines(promptText)).toHaveLength(3);
+    expect(promptText).toContain('@claude');
+  });
+
   it('allows re-creating a deleted agent without restarting the broker', async () => {
     await writeParticipantsFile({ agents: ['planner'], defaultAgent: 'planner' });
     makeAssignmentBroker({

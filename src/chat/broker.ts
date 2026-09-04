@@ -1162,6 +1162,22 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
       throw new ChatSendError(`No agent definition ${JSON.stringify(definition.id)}`, 404);
     }
 
+    if (row?.acp_session_id) {
+      const { definitions: defsForPublish } = await loadDefs();
+      const { participants: participantsForPublish } = await readParticipantsDetailed(
+        assignment.assignmentDir,
+        defsForPublish,
+      );
+      const publishStandingFingerprint = standingFingerprint(
+        session.definition,
+        defsForPublish,
+        participantsForPublish,
+      );
+      if ((row.standing_fingerprint ?? null) !== publishStandingFingerprint) {
+        invalidateStanding(session);
+      }
+    }
+
     sessions.set(key, session);
 
     // Messages recovered by the repair are sent without waiting for the human to
@@ -1474,6 +1490,8 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
       // Unreadable definitions must not hide the sessions that DO have rows.
     }
     for (const agentId of agentIds) {
+      const key = `${assignment.id}:${agentId}`;
+      if (constructing.has(key)) continue;
       try {
         await ensureSession(assignment, agentId);
       } catch {
