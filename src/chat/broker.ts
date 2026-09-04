@@ -327,6 +327,8 @@ interface Session {
   effort: string | null;
   state: ChatSessionState;
   standingSent: boolean;
+  /** Bumped on every standing invalidation; guards post-prompt commits. */
+  standingGen: number;
   /** Persisted sha256 of the last standing block this adapter session was shown. */
   standingFingerprint: string | null;
   queue: Array<{ text: string; trigger: TurnTrigger }>;
@@ -501,9 +503,15 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
     }
     for (const session of sessions.values()) {
       if (assignmentsToInvalidate.has(session.assignment.id)) {
-        session.standingSent = false;
+        invalidateStanding(session);
       }
     }
+  }
+
+  /** Invalidate standing and bump the generation so in-flight commits are dropped. */
+  function invalidateStanding(session: Session): void {
+    session.standingGen += 1;
+    session.standingSent = false;
   }
 
   function rosterPresentationChanged(
@@ -934,7 +942,12 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
     });
   }
 
-  async function markStandingDelivered(session: Session, fingerprint: string): Promise<void> {
+  async function markStandingDelivered(
+    session: Session,
+    fingerprint: string,
+    gen: number,
+  ): Promise<void> {
+    if (gen !== session.standingGen) return;
     session.standingSent = true;
     session.standingFingerprint = fingerprint;
     persistSession(session);
@@ -1008,9 +1021,11 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
       defsForStanding,
       participantsForStanding,
     );
+    let standingGen = 0;
     let standingSent = Boolean(row?.acp_session_id);
     if (row?.acp_session_id && row.standing_fingerprint !== currentStandingFingerprint) {
       standingSent = false;
+      standingGen = 1;
     }
     const commandState = sessionCommandsFromRow(harness, row);
     const session: Session = {
@@ -1038,6 +1053,7 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
       effort: null,
       state: row ? 'idle' : 'none',
       standingSent,
+      standingGen,
       standingFingerprint: row?.standing_fingerprint ?? null,
       queue: [],
       lastDeliveredSeq: row?.last_delivered_seq ?? 0,
@@ -1102,8 +1118,8 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
         deleteChatSession(key);
         session.acpSessionId = null;
         session.adapterVersion = null;
-        session.standingSent = false;
         session.standingFingerprint = null;
+        invalidateStanding(session);
         session.definition = fresh;
         session.harness = HARNESSES[fresh.harness as Harness];
         session.profile = resolveSessionProfile(fresh, session.harness);
@@ -1569,7 +1585,7 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
     await shutdownSession(session);
     deleteChatSession(session.key);
     session.acpSessionId = null;
-    session.standingSent = false;
+    invalidateStanding(session);
     session.standingFingerprint = null;
     session.definition = fresh;
     session.harness = HARNESSES[fresh.harness as Harness];
@@ -1665,7 +1681,7 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
             acpSessionId: previous,
             text: `Could not resume the previous agent session (${(err as Error).message}) — started a new one`,
           }, null);
-          session.standingSent = false;
+          invalidateStanding(session);
           session.acpSessionId = null;
         }
       } else if (session.capabilities?.loadSession) {
@@ -1696,7 +1712,7 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
             acpSessionId: previous,
             text: `Could not load the previous agent session (${loadError?.message ?? 'unknown error'}) — started a new one`,
           }, null);
-          session.standingSent = false;
+          invalidateStanding(session);
           session.acpSessionId = null;
         }
       } else {
@@ -1704,7 +1720,7 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
           acpSessionId: previous,
           text: 'Previous agent session could not be reattached — started a new one',
         }, null);
-        session.standingSent = false;
+        invalidateStanding(session);
         session.acpSessionId = null;
       }
     }
@@ -1738,7 +1754,7 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
       for (const error of errors) {
         await record(session, 'system', { level: 'warn', text: `Could not pin ${error}` }, null);
       }
-      session.standingSent = false;
+      invalidateStanding(session);
       session.definitionStale = false;
       session.stalePromptChanged = false;
     }
@@ -2404,8 +2420,11 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
    * The standing context, with the roster: who this agent is and who else is in
    * the room. Sent once per adapter session (§2.4).
    */
-  async function buildStanding(session: Session): Promise<{ blocks: ContentBlock[]; fingerprint: string }> {
+  async function buildStanding(
+    session: Session,
+  ): Promise<{ blocks: ContentBlock[]; fingerprint: string; gen: number }> {
     const { definitions, participants } = await routingContext(session.assignment);
+    const gen = session.standingGen;
     const roster = participants.agents
       .map((id) => definitions.find((d) => d.id === id))
       .filter((d): d is AgentDefinition => d !== undefined);
@@ -2426,6 +2445,7 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
     return {
       blocks,
       fingerprint: standingFingerprint(session.definition, definitions, participants),
+      gen,
     };
   }
 
@@ -2513,7 +2533,7 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
     } catch (err) {
       failure = err instanceof Error ? err : new Error(String(err));
     }
-    if (!failure) await markStandingDelivered(session, built.fingerprint);
+    if (!failure) await markStandingDelivered(session, built.fingerprint, built.gen);
     await finishTurn(session, turn, response, failure);
   }
 
@@ -2612,7 +2632,7 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
 
     let blocks: ContentBlock[] | null = null;
     let configResponse: acp.SetSessionConfigOptionResponse | null = null;
-    let pendingStandingFingerprint: string | undefined;
+    let pendingStanding: { fingerprint: string; gen: number } | undefined;
     if (humanCommand) {
       if (matchedCommand?.action.kind === 'set-config') {
         try {
@@ -2640,7 +2660,7 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
         if (!session.standingSent) {
           const built = await buildStanding(session);
           standing = built.blocks;
-          pendingStandingFingerprint = built.fingerprint;
+          pendingStanding = { fingerprint: built.fingerprint, gen: built.gen };
         }
         blocks = buildTurnPrompt(promptTrigger(session, next), { standing, history: history! });
       } catch (err) {
@@ -2678,8 +2698,8 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
       }
     }
 
-    if (!failure && pendingStandingFingerprint) {
-      await markStandingDelivered(session, pendingStandingFingerprint);
+    if (!failure && pendingStanding) {
+      await markStandingDelivered(session, pendingStanding.fingerprint, pendingStanding.gen);
     }
 
     try {

@@ -14,6 +14,7 @@ import { writeAgentDefinition, AgentWriteError, loadAgentDefinitions } from '../
 import { participantsPath } from '../chat/participants.js';
 import type { ChatItem, Harness, Participants } from '../chat/types.js';
 import type { ResolvedAssignment } from '../utils/assignment-resolver.js';
+import type * as acp from '@agentclientprotocol/sdk';
 
 let sandbox: string;
 let broker: ChatBroker;
@@ -315,6 +316,7 @@ function makeAssignmentBroker(
   opts: {
     sessionIds?: Record<string, string[]>;
     loadDefinitions?: (root: string) => ReturnType<typeof loadAgentDefinitions>;
+    availableCommands?: Record<string, acp.AvailableCommand[]>;
   } = {},
 ): void {
   fakes = new Map();
@@ -337,6 +339,7 @@ function makeAssignmentBroker(
           sessionIds: opts.sessionIds?.[input.agentId] ?? [`acp-${input.agentId}`],
           modes: fakeModes,
           configOptions: fakeConfigOptions,
+          availableCommands: opts.availableCommands?.[input.agentId],
           agentCapabilities: { loadSession: true },
         });
         fakes.set(input.agentId, fake);
@@ -992,6 +995,83 @@ describe.sequential('live session bookkeeping (Task 5)', () => {
       .join('\n');
     expect(promptText).toContain('<context>');
     expect(getChatSession(ASSIGNMENT_ID, 'planner')?.standing_fingerprint).toBeTruthy();
+  });
+
+  const plannerSlashCommands = [
+    { name: 'plan', description: 'Turn plan mode on.', input: null },
+  ] as acp.AvailableCommand[];
+
+  it('does not commit standing when invalidated during an in-flight normal prompt', async () => {
+    await writeAgentDefinition(sandbox, plannerInput({ description: 'Plans v1' }));
+    await writeParticipantsFile({ agents: ['planner', 'codex'], defaultAgent: 'planner' });
+    makeAssignmentBroker({
+      planner: [{ steps: [{ kind: 'update', update: textChunk('OK', 'm1') }] }],
+      codex: [
+        { steps: [{ kind: 'hang' }] },
+        { steps: [{ kind: 'update', update: textChunk('OK codex', 'c2') }] },
+      ],
+    });
+    await broker.send({ assignment: assignment(), text: '@planner hello' });
+    await idleTurns(1);
+    await broker.send({ assignment: assignment(), text: '@codex hello' });
+    await waitUntil(() => (fakes.get('codex')?.prompts.length ?? 0) >= 1, 'codex standing prompt');
+    const fingerprintBefore = getChatSession(ASSIGNMENT_ID, 'codex')?.standing_fingerprint ?? null;
+
+    await broker.saveAgent(plannerInput({ description: 'Plans v2' }));
+    expect(await broker.cancel(assignment(), 'codex')).toBe(true);
+    await idleTurns(2);
+
+    expect(getChatSession(ASSIGNMENT_ID, 'codex')?.standing_fingerprint).toBe(fingerprintBefore);
+
+    const promptsBefore = fakes.get('codex')!.prompts.length;
+    await broker.send({ assignment: assignment(), text: '@codex again' });
+    await idleTurns(3);
+    const promptText = fakes
+      .get('codex')!
+      .prompts.slice(promptsBefore)
+      .map((p) => p.prompt.map((b) => (b as { text?: string }).text ?? '').join('\n'))
+      .join('\n');
+    expect(promptText).toContain('<context>');
+    expect(promptText).toContain('Plans v2');
+    expect(promptText).not.toContain('Plans v1');
+  });
+
+  it('does not commit standing when invalidated during slash-command standing ack', async () => {
+    await writeAgentDefinition(sandbox, plannerInput({ description: 'Plans v1' }));
+    await writeParticipantsFile({ agents: ['planner', 'codex'], defaultAgent: 'planner' });
+    makeAssignmentBroker(
+      {
+        planner: [
+          { steps: [{ kind: 'hang' }] },
+          { steps: [{ kind: 'update', update: textChunk('cmd', 'c1') }] },
+          { steps: [{ kind: 'update', update: textChunk('ack2', 'ack2') }] },
+        ],
+      },
+      { availableCommands: { planner: plannerSlashCommands } },
+    );
+
+    const sendP = broker.send({ assignment: assignment(), text: '@planner /plan' });
+    await waitUntil(() => (fakes.get('planner')?.prompts.length ?? 0) >= 1, 'standing ack prompt');
+    const fingerprintBefore = getChatSession(ASSIGNMENT_ID, 'planner')?.standing_fingerprint ?? null;
+
+    await broker.saveAgent(plannerInput({ description: 'Plans v2' }));
+    expect(await broker.cancel(assignment(), 'planner')).toBe(true);
+    await sendP;
+    await idleTurns(2);
+
+    expect(getChatSession(ASSIGNMENT_ID, 'planner')?.standing_fingerprint).toBe(fingerprintBefore);
+
+    const promptsBefore = fakes.get('planner')!.prompts.length;
+    await broker.send({ assignment: assignment(), text: '@planner /plan' });
+    await waitUntil(() => fakes.get('planner')!.prompts.length > promptsBefore, 'standing ack retry');
+    await idleTurns(2);
+    const standingPrompt = fakes
+      .get('planner')!
+      .prompts.slice(promptsBefore)[0]!.prompt.map((b) => (b as { text?: string }).text ?? '')
+      .join('\n');
+    expect(standingPrompt).toContain('<context>');
+    expect(standingPrompt).toContain('Plans v2');
+    expect(standingPrompt).not.toContain('Plans v1');
   });
 
   it('re-sends standing when a roster model changes', async () => {
