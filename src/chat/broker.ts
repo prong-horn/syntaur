@@ -3179,6 +3179,7 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
       }
 
       const messageId = randomUUID();
+      const deliveredTargets = activeSessions.map((s) => s.agentId);
       await recordAssignment(
         assignment,
         'user.message',
@@ -3187,7 +3188,7 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
           text,
           state: 'queued',
           mentions,
-          targets,
+          targets: deliveredTargets,
           unknown,
         },
         { agentId: HUMAN_AGENT_ID },

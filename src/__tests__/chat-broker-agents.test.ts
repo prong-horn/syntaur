@@ -820,6 +820,63 @@ describe.sequential('live session bookkeeping (Task 5)', () => {
     expect(fakes.get('codex')?.prompts.length ?? 0).toBe(0);
   });
 
+  it('records only delivered targets on a skipped human message so recovery does not resurrect it', async () => {
+    await writeAgentDefinition(sandbox, plannerInput({ description: 'Plans' }));
+    await writeParticipantsFile({ agents: ['planner', 'codex'], defaultAgent: 'planner' });
+    const standingGate = gateDefinitionsLoad(2);
+    makeAssignmentBroker(
+      {
+        planner: [{ steps: [{ kind: 'update', update: textChunk('OK', 'm1') }] }],
+        codex: [{ steps: [{ kind: 'update', update: textChunk('OK codex', 'c1') }] }],
+      },
+      { loadDefinitions: standingGate.loadDefinitions },
+    );
+
+    const sendP = broker.send({ assignment: assignment(), text: '@codex hi' });
+    await standingGate.waitEntered();
+    await broker.setParticipants(assignment(), { agents: ['planner'], defaultAgent: 'planner' });
+    standingGate.release();
+    const { messageId } = await sendP;
+
+    const userMessage = items().find(
+      (i) => i.type === 'user.message' && (i as { messageId: string }).messageId === messageId,
+    ) as { targets?: string[]; mentions?: string[] } | undefined;
+    expect(userMessage?.targets ?? []).not.toContain('codex');
+    expect(userMessage?.mentions ?? []).toContain('codex');
+
+    await broker.setParticipants(assignment(), {
+      agents: ['planner', 'codex'],
+      defaultAgent: 'planner',
+    });
+    await broker.stopAll();
+    clients = [];
+    fakes = new Map();
+
+    makeAssignmentBroker({
+      planner: [{ steps: [{ kind: 'update', update: textChunk('OK', 'm2') }] }],
+      codex: [
+        { steps: [{ kind: 'update', update: textChunk('OK after reattach', 'c1') }] },
+        { steps: [{ kind: 'update', update: textChunk('OK new', 'c2') }] },
+      ],
+    });
+
+    const promptTexts = () =>
+      (fakes.get('codex')?.prompts ?? []).map((p) =>
+        p.prompt.map((b) => (b as { text?: string }).text ?? '').join('\n'),
+      );
+
+    await broker.send({ assignment: assignment(), text: '@codex hello' });
+    await waitUntil(() => (fakes.get('codex')?.prompts.length ?? 0) >= 1, 'codex materialized');
+    await idleTurns(1);
+    expect(promptTexts().join('\n')).not.toContain('@codex hi');
+    expect(promptTexts().join('\n')).toContain('@codex hello');
+
+    await broker.send({ assignment: assignment(), text: '@codex follow up' });
+    await waitUntil(() => (fakes.get('codex')?.prompts.length ?? 0) >= 2, 'codex follow-up prompt');
+    await idleTurns(1);
+    expect(promptTexts().join('\n')).toContain('@codex follow up');
+  });
+
   it('construction race: detach during hand-off construction records a notice and does not prompt', async () => {
     await writeAgentDefinition(sandbox, plannerInput({ description: 'Plans' }));
     await writeParticipantsFile({ agents: ['planner', 'codex'], defaultAgent: 'planner' });
