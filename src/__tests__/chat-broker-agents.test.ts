@@ -625,12 +625,15 @@ describe.sequential('live session bookkeeping (Task 5)', () => {
       },
       {
         loadDefinitions: async (root) => {
-          const result = await loadAgentDefinitions(root);
+          // Gate on entry: getSession → ensureSession → loadDefs() runs in the same
+          // tick as getSession; save/delete loader calls are later microtasks.
           if (!gatedOnce) {
             gatedOnce = true;
+            const result = await loadAgentDefinitions(root);
             await constructionLoadGate;
+            return result;
           }
-          return result;
+          return loadAgentDefinitions(root);
         },
       },
     );
@@ -694,12 +697,15 @@ describe.sequential('live session bookkeeping (Task 5)', () => {
       { planner: [{ steps: [{ kind: 'update', update: textChunk('OK', 'm1') }] }] },
       {
         loadDefinitions: async (root) => {
-          const result = await loadAgentDefinitions(root);
+          // Gate on entry: getSession → ensureSession → loadDefs() runs in the same
+          // tick as getSession; save/delete loader calls are later microtasks.
           if (!gatedOnce) {
             gatedOnce = true;
+            const result = await loadAgentDefinitions(root);
             await constructionLoadGate;
+            return result;
           }
-          return result;
+          return loadAgentDefinitions(root);
         },
       },
     );
@@ -730,12 +736,15 @@ describe.sequential('live session bookkeeping (Task 5)', () => {
       { planner: [{ steps: [{ kind: 'update', update: textChunk('OK2', 'm2') }] }] },
       {
         loadDefinitions: async (root) => {
-          const result = await loadAgentDefinitions(root);
+          // Gate on entry: getSession → ensureSession → loadDefs() runs in the same
+          // tick as getSession; save/delete loader calls are later microtasks.
           if (!gatedOnce) {
             gatedOnce = true;
+            const result = await loadAgentDefinitions(root);
             await constructionLoadGate;
+            return result;
           }
-          return result;
+          return loadAgentDefinitions(root);
         },
       },
     );
@@ -848,6 +857,7 @@ describe.sequential('live session bookkeeping (Task 5)', () => {
     await broker.saveAgent(plannerInput({ harness: 'codex', model: 'claude-opus-5' }));
     await broker.send({ assignment: assignment(), text: '@planner new harness' });
     await idleTurns(2);
+    await broker.stopAll();
 
     const { listChatItems } = await import('../db/chat-db.js');
     const { rebuildChatIndex } = await import('../chat/store.js');

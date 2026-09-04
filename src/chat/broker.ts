@@ -2743,7 +2743,7 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
       session.lastDeliveredSeq = Math.max(session.lastDeliveredSeq, turn.deliveredSeqCandidate);
     }
 
-    recordUsageEvent(session);
+    await recordUsageEvent(session);
     persistSession(session);
     flush(session);
 
@@ -2927,13 +2927,13 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
    * keeps `MAX(existing, incoming)` per column, so a per-turn delta would be
    * silently discarded.
    */
-  function recordUsageEvent(session: Session): void {
+  async function recordUsageEvent(session: Session): Promise<void> {
     if (!session.acpSessionId) return;
     const usageSpec = session.harness.usage;
     if (usageSpec.kind === 'none') {
       if (!session.unpricedNoticeSent) {
         session.unpricedNoticeSent = true;
-        void record(
+        await record(
           session,
           'system',
           {
@@ -2964,7 +2964,7 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
       priceForModel(key, ZERO_BUCKETS) === null
     ) {
       session.unpricedNoticeSent = true;
-      void record(
+      await record(
         session,
         'system',
         {
