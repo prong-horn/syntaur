@@ -232,7 +232,7 @@ export function createChatRouter(
   router.get('/chat/agents', async (_req, res) => {
     try {
       const { definitions, errors } = await broker.listAgents();
-      res.json({ agents: definitions.map(toAgentSummary), errors });
+      res.json({ agents: definitions.map((d) => toAgentSummary(d)), errors });
     } catch (err) {
       fail(res, err);
     }

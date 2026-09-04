@@ -455,11 +455,14 @@ export interface Participants {
   hopBudget?: number;
 }
 
+/** Named colours accepted by the agent-definition loader and editor. */
+export type AgentColor = 'violet' | 'emerald' | 'amber' | 'sky' | 'rose' | 'slate';
+
 /** What `GET /chat/agents` and the participants routes report per definition. */
 export interface ChatAgentSummary {
   id: string;
   name: string;
-  color: string;
+  color: AgentColor;
   harness: Harness;
   model: string | null;
   mode: string | null;
@@ -471,6 +474,10 @@ export interface ChatAgentSummary {
   default: boolean;
   /** Absolute path of the definition file; null for a builtin. */
   source: string | null;
+  /** True when `source` is null (a builtin, not a file). */
+  builtin: boolean;
+  /** True when a file overrides a builtin with the same id. */
+  overridesBuiltin: boolean;
   /** The install hint when the adapter is not on PATH; null when it is. */
   missing: string | null;
 }
@@ -507,7 +514,7 @@ export type RespondsTo = 'mentions' | 'all-human' | 'none';
 export interface AgentDefinition {
   id: string;
   name: string;
-  color: string;
+  color: AgentColor;
   harness: Harness;
   model?: string;
   /** A role name (`edits` | `ask` | `plan`) or a raw adapter mode id. */
@@ -523,8 +530,29 @@ export interface AgentDefinition {
   avatar?: string;
   /** The definition body — the system prompt. */
   systemPrompt: string;
+  /** True when the file has no body and the base prompt is in effect. */
+  promptIsDefault?: boolean;
   /** Absolute path of the file this came from; null for builtins. */
   source: string | null;
+}
+
+/** Writable agent-definition fields (the dashboard form and write API). */
+export interface AgentDefinitionInput {
+  id: string;
+  name: string;
+  color: AgentColor;
+  harness: Harness;
+  model?: string;
+  mode?: string;
+  effort?: string;
+  mcpServers?: string[];
+  env?: Record<string, string>;
+  respondsTo: RespondsTo;
+  default: boolean;
+  description?: string;
+  avatar?: string;
+  /** Empty string means no body (the base prompt applies). */
+  systemPrompt: string;
 }
 
 /** The three role names a definition may use for `mode`, mapped per harness. */

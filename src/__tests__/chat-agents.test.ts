@@ -3,15 +3,23 @@ import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import {
+  AGENT_COLORS,
+  AgentDefinitionError,
+  AgentWriteError,
   BASE_SYSTEM_PROMPT,
   BUILTIN_AGENT_DEFINITIONS,
   agentAvatar,
   agentsDir,
+  deleteAgentDefinition,
   loadAgentDefinitions,
   parseAgentDefinition,
   resolveAgent,
+  serializeAgentDefinition,
   toAgentSummary,
+  validateAgentInput,
+  writeAgentDefinition,
 } from '../chat/agents.js';
+import type { AgentDefinitionInput } from '../chat/types.js';
 import { HARNESSES, isHarnessId, resolveCommand, resolveModeId } from '../chat/harnesses.js';
 
 /**
@@ -173,6 +181,23 @@ describe('loadAgentDefinitions', () => {
     expect(errors[0]).toMatch(/harness/);
     expect(definitions.map((d) => d.id)).toEqual(['claude', 'codex', 'cursor', 'planner']);
   });
+
+  it('skips My Agent.md and ids with spaces for the slug reason', async () => {
+    await writeDefinition(
+      'My Agent',
+      ['---', 'id: My Agent', 'harness: claude', '---', 'x'].join('\n'),
+    );
+    await writeDefinition(
+      'bad id',
+      ['---', 'id: bad id', 'harness: claude', '---', 'x'].join('\n'),
+    );
+    const { definitions, errors } = await loadAgentDefinitions(sandbox);
+    expect(definitions.map((d) => d.id)).toEqual(['claude', 'codex', 'cursor']);
+    expect(errors).toHaveLength(2);
+    for (const err of errors) {
+      expect(err).toMatch(/lowercase slug/);
+    }
+  });
 });
 
 describe('parseAgentDefinition validation', () => {
@@ -225,12 +250,40 @@ describe('parseAgentDefinition validation', () => {
   it('accepts a definition with no body and falls back to the base prompt', () => {
     const def = parseAgentDefinition('planner.md', 'planner', ['---', 'id: planner', 'harness: claude', '---'].join('\n'));
     expect(def.systemPrompt).toBe(BASE_SYSTEM_PROMPT);
+    expect(def.promptIsDefault).toBe(true);
     expect(def.name).toBe('planner');
     expect(def.color).toBe('slate');
     // `mentions` is the parser default too, so `all-human` is opt-in fan-out
     // everywhere (Decision 2), not just for the builtins.
     expect(def.respondsTo).toBe('mentions');
     expect(def.default).toBe(false);
+  });
+
+  it('rejects an invalid colour', () => {
+    expect(() =>
+      parseAgentDefinition(
+        'planner.md',
+        'planner',
+        ['---', 'id: planner', 'harness: claude', 'color: purple', '---', 'x'].join('\n'),
+      ),
+    ).toThrow(/`color` must be one of violet, emerald, amber, sky, rose, slate/);
+  });
+
+  it('rejects an id that is not a slug', () => {
+    expect(() =>
+      parseAgentDefinition(
+        'bad.md',
+        'bad',
+        ['---', 'id: bad', 'harness: claude', '---', 'x'].join('\n'),
+      ),
+    ).not.toThrow();
+    expect(() =>
+      parseAgentDefinition(
+        'UPPER.md',
+        'UPPER',
+        ['---', 'id: UPPER', 'harness: claude', '---', 'x'].join('\n'),
+      ),
+    ).toThrow(/lowercase slug/);
   });
 
   it('handles CRLF line endings', () => {
@@ -313,10 +366,233 @@ describe('description, avatar and the API summary (Task 1)', () => {
       description: 'Plans, never edits',
       avatar: 'P',
       source: 'planner.md',
+      builtin: false,
+      overridesBuiltin: false,
     });
   });
 
   it('reports both builtins as `mentions`, so neither answers every message', () => {
     expect(BUILTIN_AGENT_DEFINITIONS.map((d) => d.respondsTo)).toEqual(['mentions', 'mentions', 'mentions']);
   });
+
+  it('reports every builtin with promptIsDefault', () => {
+    for (const builtin of BUILTIN_AGENT_DEFINITIONS) {
+      expect(builtin.promptIsDefault).toBe(true);
+      expect(toAgentSummary(builtin).builtin).toBe(true);
+    }
+  });
 });
+
+const fullInput = (): AgentDefinitionInput => ({
+  id: 'planner',
+  name: 'Planner',
+  color: 'amber',
+  harness: 'claude',
+  model: 'claude-opus-5',
+  mode: 'plan',
+  effort: 'high',
+  mcpServers: ['syntaur', 'context7'],
+  env: { FOO: 'bar' },
+  respondsTo: 'mentions',
+  default: false,
+  description: 'Plans, never edits',
+  avatar: '🗺️',
+  systemPrompt: 'You plan, you do not edit.',
+});
+
+describe('serialize and validate (Task 1)', () => {
+  it('round-trips every field through serialize and parse', () => {
+    const input = fullInput();
+    const serialized = serializeAgentDefinition(input);
+    const def = parseAgentDefinition('planner.md', 'planner', serialized);
+    expect(def).toMatchObject({
+      id: input.id,
+      name: input.name,
+      color: input.color,
+      harness: input.harness,
+      model: input.model,
+      mode: input.mode,
+      effort: input.effort,
+      mcpServers: input.mcpServers,
+      env: input.env,
+      respondsTo: input.respondsTo,
+      default: input.default,
+      description: input.description,
+      avatar: input.avatar,
+      systemPrompt: input.systemPrompt,
+      source: 'planner.md',
+    });
+    expect(validateAgentInput(sandbox, input)).toMatchObject({
+      id: input.id,
+      systemPrompt: input.systemPrompt,
+    });
+  });
+
+  it('serialises an empty prompt with no body and reloads with promptIsDefault', () => {
+    const input = { ...fullInput(), systemPrompt: '' };
+    const serialized = serializeAgentDefinition(input);
+    expect(serialized.endsWith('---\n')).toBe(true);
+    expect(serialized).not.toContain(BASE_SYSTEM_PROMPT);
+    const def = parseAgentDefinition('planner.md', 'planner', serialized);
+    expect(def.promptIsDefault).toBe(true);
+    expect(def.systemPrompt).toBe(BASE_SYSTEM_PROMPT);
+  });
+
+  it('exposes AgentDefinitionError.reason without the file path', () => {
+    try {
+      parseAgentDefinition('/secret/agents/planner.md', 'planner', 'no frontmatter');
+    } catch (err) {
+      expect(err).toBeInstanceOf(AgentDefinitionError);
+      const e = err as AgentDefinitionError;
+      expect(e.reason).toBe('no frontmatter block');
+      expect(e.reason).not.toContain('/secret');
+      expect(e.message).toContain('/secret');
+    }
+  });
+
+  it('lists the closed colour set', () => {
+    expect(AGENT_COLORS).toEqual(['violet', 'emerald', 'amber', 'sky', 'rose', 'slate']);
+  });
+});
+
+describe('writeAgentDefinition (Task 1)', () => {
+  it('flips the other file default when a new file claims default', async () => {
+    await writeAgentDefinition(sandbox, {
+      id: 'alpha',
+      name: 'Alpha',
+      color: 'violet',
+      harness: 'claude',
+      respondsTo: 'mentions',
+      default: true,
+      systemPrompt: '',
+    });
+    await writeAgentDefinition(sandbox, {
+      id: 'planner',
+      name: 'Planner',
+      color: 'amber',
+      harness: 'codex',
+      respondsTo: 'mentions',
+      default: true,
+      systemPrompt: 'Plan.',
+    });
+    const { definitions } = await loadAgentDefinitions(sandbox);
+    const defaults = definitions.filter((d) => d.default);
+    expect(defaults).toHaveLength(1);
+    expect(defaults[0]?.id).toBe('planner');
+    const alpha = definitions.find((d) => d.id === 'alpha');
+    expect(alpha?.default).toBe(false);
+    const alphaRaw = await readDefinitionRaw('alpha');
+    expect(alphaRaw).toMatch(/default: false/);
+  });
+
+  it('rejects claude override with default false while claude is the default', async () => {
+    await expect(
+      writeAgentDefinition(sandbox, {
+        id: 'claude',
+        name: 'Claude',
+        color: 'violet',
+        harness: 'claude',
+        respondsTo: 'mentions',
+        default: false,
+        systemPrompt: '',
+      }),
+    ).rejects.toMatchObject({
+      status: 400,
+      message: '`claude` is the default agent — make another agent the default first',
+    });
+  });
+
+  it('accepts claude override with default false once another agent is default', async () => {
+    await writeAgentDefinition(sandbox, {
+      id: 'planner',
+      name: 'Planner',
+      color: 'amber',
+      harness: 'codex',
+      respondsTo: 'mentions',
+      default: true,
+      systemPrompt: '',
+    });
+    const def = await writeAgentDefinition(sandbox, {
+      id: 'claude',
+      name: 'Claude',
+      color: 'violet',
+      harness: 'claude',
+      respondsTo: 'mentions',
+      default: false,
+      systemPrompt: '',
+    });
+    expect(def.default).toBe(false);
+    expect(def.source).toContain('claude.md');
+  });
+
+  it('writes a claude override from the builtin with no body when the prompt is default', async () => {
+    const builtin = BUILTIN_AGENT_DEFINITIONS.find((d) => d.id === 'claude')!;
+    await writeAgentDefinition(sandbox, {
+      id: builtin.id,
+      name: builtin.name,
+      color: builtin.color,
+      harness: builtin.harness,
+      respondsTo: builtin.respondsTo,
+      default: true,
+      description: builtin.description,
+      systemPrompt: '',
+    });
+    const raw = await readDefinitionRaw('claude');
+    expect(raw.trimEnd()).toMatch(/---\n[\s\S]*---$/);
+    expect(raw).not.toContain(BASE_SYSTEM_PROMPT);
+    const { definitions } = await loadAgentDefinitions(sandbox);
+    const claude = definitions.find((d) => d.id === 'claude');
+    expect(claude?.promptIsDefault).toBe(true);
+    expect(toAgentSummary(claude!).overridesBuiltin).toBe(true);
+  });
+});
+
+describe('deleteAgentDefinition (Task 1)', () => {
+  it('restores the builtin after deleting an override', async () => {
+    await writeAgentDefinition(sandbox, {
+      id: 'claude',
+      name: 'Custom Claude',
+      color: 'violet',
+      harness: 'claude',
+      respondsTo: 'mentions',
+      default: true,
+      systemPrompt: 'Custom.',
+    });
+    const { restoredBuiltin } = await deleteAgentDefinition(sandbox, 'claude');
+    expect(restoredBuiltin).toBe(true);
+    const { definitions } = await loadAgentDefinitions(sandbox);
+    const claude = definitions.find((d) => d.id === 'claude');
+    expect(claude?.source).toBeNull();
+    expect(claude?.name).toBe('Claude');
+  });
+
+  it('refuses to delete a builtin with no file', async () => {
+    await expect(deleteAgentDefinition(sandbox, 'codex')).rejects.toMatchObject({
+      status: 409,
+      message: '`codex` is built in and has no file to delete — create one with the same id to override it',
+    });
+    expect(await deleteAgentDefinition(sandbox, 'codex').catch((e) => e)).toBeInstanceOf(AgentWriteError);
+  });
+
+  it('leaves exactly one default after deleting the default file', async () => {
+    await writeAgentDefinition(sandbox, {
+      id: 'planner',
+      name: 'Planner',
+      color: 'amber',
+      harness: 'codex',
+      respondsTo: 'mentions',
+      default: true,
+      systemPrompt: '',
+    });
+    await deleteAgentDefinition(sandbox, 'planner');
+    const { definitions } = await loadAgentDefinitions(sandbox);
+    expect(definitions.filter((d) => d.default)).toHaveLength(1);
+    expect(definitions.find((d) => d.default)?.id).toBe('claude');
+  });
+});
+
+async function readDefinitionRaw(id: string): Promise<string> {
+  const { readFile } = await import('node:fs/promises');
+  const { join } = await import('node:path');
+  return readFile(join(agentsDir(sandbox), `${id}.md`), 'utf-8');
+}

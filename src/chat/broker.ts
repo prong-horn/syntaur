@@ -2424,7 +2424,7 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
       const { definitions } = await loadAgentDefinitions(options.syntaurHome);
       return {
         participants: await readParticipants(assignment.assignmentDir, definitions),
-        agents: definitions.map(toAgentSummary),
+        agents: definitions.map((d) => toAgentSummary(d)),
       };
     },
 
@@ -2441,7 +2441,7 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
         const session = before.find((s) => s.agentId === agentId);
         if (session) await detachSession(session);
       }
-      const agents = definitions.map(toAgentSummary);
+      const agents = definitions.map((d) => toAgentSummary(d));
       options.broadcast({
         type: 'chat-participants',
         projectSlug: assignment.projectSlug,
