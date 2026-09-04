@@ -73,6 +73,28 @@ describe('chat schema v3 → v4 migration', () => {
       .get() as { name: string } | undefined;
     expect(table?.name).toBe('chat_harness_options');
     expect(chatSchemaVersion()).toBe('4');
+    const columns = (
+      getSessionDb().prepare('PRAGMA table_info(chat_sessions)').all() as Array<{ name: string }>
+    ).map((c) => c.name);
+    expect(columns).toContain('standing_fingerprint');
+  });
+
+  it('adds standing_fingerprint when reopening a v4 db that predates the column', () => {
+    const db = new Database(dbPath);
+    db.exec(`
+      CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT);
+      INSERT INTO meta (key, value) VALUES ('chat_schema_version', '4');
+      INSERT INTO meta (key, value) VALUES ('schema_version', '11');
+      INSERT INTO meta (key, value) VALUES ('engagement_schema_version', '1');
+    `);
+    db.exec(CHAT_DDL.replace(',\n  standing_fingerprint TEXT', ''));
+    db.close();
+    initSessionDb(dbPath);
+    const columns = (
+      getSessionDb().prepare('PRAGMA table_info(chat_sessions)').all() as Array<{ name: string }>
+    ).map((c) => c.name);
+    expect(columns).toContain('standing_fingerprint');
+    expect(chatSchemaVersion()).toBe('4');
   });
 
   it('is idempotent across reopens', () => {

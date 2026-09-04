@@ -43,6 +43,7 @@ export interface UpsertChatSessionInput {
   /** Highest chat-level `seq` this session has been shown (Decision 4). */
   lastDeliveredSeq?: number;
   commandsJson?: string | null;
+  standingFingerprint?: string | null;
 }
 
 /**
@@ -56,11 +57,11 @@ export function upsertChatSession(input: UpsertChatSessionInput): void {
       `INSERT INTO chat_sessions (
          session_key, assignment_id, project_slug, assignment_slug, agent_id, harness,
          acp_session_id, adapter_version, cwd, pid, profile_json, usage_snapshot_json,
-         state, created_at, last_turn_at, last_delivered_seq, commands_json
+         state, created_at, last_turn_at, last_delivered_seq, commands_json, standing_fingerprint
        ) VALUES (
          @sessionKey, @assignmentId, @projectSlug, @assignmentSlug, @agentId, @harness,
          @acpSessionId, @adapterVersion, @cwd, @pid, @profileJson, @usageSnapshotJson,
-         @state, @now, @lastTurnAt, @lastDeliveredSeq, @commandsJson
+         @state, @now, @lastTurnAt, @lastDeliveredSeq, @commandsJson, @standingFingerprint
        )
        ON CONFLICT(session_key) DO UPDATE SET
          assignment_id       = excluded.assignment_id,
@@ -79,7 +80,8 @@ export function upsertChatSession(input: UpsertChatSessionInput): void {
          -- The cursor only ever moves forward, so a writer that has not read it
          -- (a state transition, say) cannot rewind another's progress.
          last_delivered_seq  = MAX(excluded.last_delivered_seq, chat_sessions.last_delivered_seq),
-         commands_json       = COALESCE(excluded.commands_json, chat_sessions.commands_json)`,
+         commands_json       = COALESCE(excluded.commands_json, chat_sessions.commands_json),
+         standing_fingerprint = COALESCE(excluded.standing_fingerprint, chat_sessions.standing_fingerprint)`,
     )
     .run({
       sessionKey: input.sessionKey,
@@ -99,6 +101,7 @@ export function upsertChatSession(input: UpsertChatSessionInput): void {
       lastTurnAt: input.lastTurnAt ?? null,
       lastDeliveredSeq: input.lastDeliveredSeq ?? 0,
       commandsJson: input.commandsJson ?? null,
+      standingFingerprint: input.standingFingerprint ?? null,
     });
 }
 

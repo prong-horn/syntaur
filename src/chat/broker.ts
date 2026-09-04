@@ -99,6 +99,7 @@ import {
   buildStandingContext,
   buildTurnPrompt,
   selectChatHistory,
+  standingFingerprint,
   type TurnPromptTrigger,
 } from './prompt-framing.js';
 import { openChatLog, type ChatLog } from './store.js';
@@ -325,6 +326,8 @@ interface Session {
   effort: string | null;
   state: ChatSessionState;
   standingSent: boolean;
+  /** Persisted sha256 of the last standing block this adapter session was shown. */
+  standingFingerprint: string | null;
   queue: Array<{ text: string; trigger: TurnTrigger }>;
   /** Highest chat-level `seq` this session has been shown (Decision 4). */
   lastDeliveredSeq: number;
@@ -931,7 +934,15 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
       lastTurnAt: session.lastTurnAt,
       lastDeliveredSeq: session.lastDeliveredSeq,
       commandsJson: session.commands.length > 0 ? JSON.stringify(session.commands) : null,
+      standingFingerprint: session.standingFingerprint,
     });
+  }
+
+  async function markStandingDelivered(session: Session): Promise<void> {
+    session.standingSent = true;
+    const { definitions, participants } = await routingContext(session.assignment);
+    session.standingFingerprint = standingFingerprint(session.definition, definitions, participants);
+    persistSession(session);
   }
 
   // --- session lookup ------------------------------------------------------
@@ -940,6 +951,7 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
     assignment: ResolvedAssignment,
     agentId?: string | null,
   ): Promise<Session> {
+    const builtAtRev = definitionsRev;
     const { definitions, errors } = await loadDefs();
     const definition = resolveAgent(definitions, agentId ?? null);
     if (!definition) {
@@ -962,7 +974,7 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
     const pending = constructing.get(key);
     if (pending) return pending;
 
-    const build = buildSession(assignment, definition, key).finally(() => {
+    const build = buildSession(assignment, definition, key, builtAtRev).finally(() => {
       constructing.delete(key);
     });
     constructing.set(key, build);
@@ -973,12 +985,13 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
     assignment: ResolvedAssignment,
     definition: AgentDefinition,
     key: string,
+    builtAtRev: number,
   ): Promise<Session> {
     if (pendingAgentDeletes.has(definition.id)) {
       throw new ChatSendError(`No agent definition ${JSON.stringify(definition.id)}`, 404);
     }
-    const builtAtRev = definitionsRev;
-    const harness = HARNESSES[definition.harness as Harness];
+    const initialHarnessId = definition.harness;
+    const harness = HARNESSES[initialHarnessId as Harness];
     const log = await sharedLog(assignment.assignmentDir);
     let row = getChatSession(assignment.id, definition.id);
     let harnessRotated = false;
@@ -990,6 +1003,20 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
     const profile = resolveSessionProfile(definition, harness);
     const expectedProfileJson = serializeProfile(profile);
     const definitionStaleFromRow = Boolean(row && row.profile_json !== expectedProfileJson);
+    const { definitions: defsForStanding } = await loadDefs();
+    const { participants: participantsForStanding } = await readParticipantsDetailed(
+      assignment.assignmentDir,
+      defsForStanding,
+    );
+    const currentStandingFingerprint = standingFingerprint(
+      definition,
+      defsForStanding,
+      participantsForStanding,
+    );
+    let standingSent = Boolean(row?.acp_session_id);
+    if (row?.acp_session_id && row.standing_fingerprint !== currentStandingFingerprint) {
+      standingSent = false;
+    }
     const commandState = sessionCommandsFromRow(harness, row);
     const session: Session = {
       key,
@@ -1015,9 +1042,8 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
       mode: null,
       effort: null,
       state: row ? 'idle' : 'none',
-      // A resumed ACP session already holds the standing context (spike
-      // Decision 7 — `resume` replays nothing but the agent still remembers).
-      standingSent: Boolean(row?.acp_session_id),
+      standingSent,
+      standingFingerprint: row?.standing_fingerprint ?? null,
       queue: [],
       lastDeliveredSeq: row?.last_delivered_seq ?? 0,
       hopBudget: options.routing?.hopBudget ?? DEFAULT_HOP_BUDGET,
@@ -1045,18 +1071,6 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
       stalePromptChanged: false,
       builtAtRev,
     };
-
-    if (harnessRotated) {
-      await record(
-        session,
-        'system',
-        {
-          level: 'info',
-          text: `@${definition.id}'s harness changed to ${harness.id} — starting a new session`,
-        },
-        null,
-      );
-    }
 
     // The normalizer must pick up where the persisted log left off, so a restart
     // does not restart the per-scope ordinals and collide item ids. Every agent
@@ -1089,9 +1103,32 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
         await shutdownSession(session);
         throw new ChatSendError(`No agent definition ${JSON.stringify(definition.id)}`, 404);
       }
-      session.definition = fresh;
-      session.profile = resolveSessionProfile(fresh, HARNESSES[fresh.harness as Harness]);
-      session.harness = HARNESSES[fresh.harness as Harness];
+      if (fresh.harness !== initialHarnessId) {
+        deleteChatSession(key);
+        session.acpSessionId = null;
+        session.adapterVersion = null;
+        session.standingSent = false;
+        session.standingFingerprint = null;
+        session.definition = fresh;
+        session.harness = HARNESSES[fresh.harness as Harness];
+        session.profile = resolveSessionProfile(fresh, session.harness);
+        harnessRotated = true;
+      } else {
+        session.definition = fresh;
+        session.profile = resolveSessionProfile(fresh, session.harness);
+      }
+    }
+
+    if (harnessRotated) {
+      await record(
+        session,
+        'system',
+        {
+          level: 'info',
+          text: `@${session.definition.id}'s harness changed to ${session.harness.id} — starting a new session`,
+        },
+        null,
+      );
     }
 
     if (pendingAgentDeletes.has(definition.id)) {
@@ -1529,6 +1566,7 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
     deleteChatSession(session.key);
     session.acpSessionId = null;
     session.standingSent = false;
+    session.standingFingerprint = null;
     session.definition = fresh;
     session.harness = HARNESSES[fresh.harness as Harness];
     session.profile = resolveSessionProfile(fresh, session.harness);
@@ -2460,7 +2498,7 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
       { author: 'human', text: 'OK', ts: new Date(now()) },
       { standing },
     );
-    session.standingSent = true;
+    await markStandingDelivered(session);
     let response: acp.PromptResponse | null = null;
     let failure: Error | null = null;
     try {
@@ -2593,7 +2631,7 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
         blocks = buildTurnPrompt(promptTrigger(session, next), { standing, history: history! });
         // Sent once per adapter session (§2.4); a later turn carries only the
         // trigger and the history the session has not seen.
-        session.standingSent = true;
+        if (!session.standingSent) await markStandingDelivered(session);
       } catch (err) {
         blocks = buildTurnPrompt(promptTrigger(session, next), { history: history! });
         await record(session, 'system', {

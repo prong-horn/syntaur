@@ -212,7 +212,28 @@ export function initSessionDb(dbPath?: string): Database.Database {
           auth_at         TEXT
         );
       `);
+      const chatColumns = (
+        database.prepare('PRAGMA table_info(chat_sessions)').all() as Array<{ name: string }>
+      ).map((c) => c.name);
+      if (!chatColumns.includes('standing_fingerprint')) {
+        database.exec('ALTER TABLE chat_sessions ADD COLUMN standing_fingerprint TEXT');
+      }
       database.exec("UPDATE meta SET value = '4' WHERE key = 'chat_schema_version'");
+    }
+
+    const chatVersionAfterV4 = (
+      database
+        .prepare("SELECT value FROM meta WHERE key = 'chat_schema_version'")
+        .get() as { value: string } | undefined
+    )?.value;
+
+    if (chatVersionAfterV4 === '4') {
+      const chatColumns = (
+        database.prepare('PRAGMA table_info(chat_sessions)').all() as Array<{ name: string }>
+      ).map((c) => c.name);
+      if (!chatColumns.includes('standing_fingerprint')) {
+        database.exec('ALTER TABLE chat_sessions ADD COLUMN standing_fingerprint TEXT');
+      }
     }
 
     // --- v1 → v2: make project/assignment nullable, add description ---

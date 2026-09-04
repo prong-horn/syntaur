@@ -170,8 +170,10 @@ up in your Inbox.
   `configOptions` and auth state from the last successful adapter open (or a
   harness refresh).
 - `chat_items` / `chat_sessions` in `~/.syntaur/syntaur.db` — a **rebuildable
-  index** for paging. `POST /api/assignments/:id/chat/reindex` replays the log
-  and reproduces it exactly.
+  index** for paging. `chat_sessions.standing_fingerprint` records the sha256 of
+  the roster lines and system prompt last sent as standing context, so a restart
+  can tell when that block needs to be re-sent. `POST /api/assignments/:id/chat/reindex`
+  replays the log and reproduces it exactly.
 
 A chat session also registers as a normal agent session, keyed by its ACP session
 id — which *is* the underlying Claude Code transcript id or codex rollout id — so

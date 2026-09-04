@@ -668,6 +668,7 @@ export interface ChatSessionRow {
   last_turn_at: string | null;
   last_delivered_seq: number;
   commands_json: string | null;
+  standing_fingerprint: string | null;
 }
 
 export interface ChatItemRow {

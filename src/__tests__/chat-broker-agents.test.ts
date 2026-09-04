@@ -601,14 +601,28 @@ describe.sequential('live session bookkeeping (Task 5)', () => {
   });
 
   it('construction race: saveAgent updates the session definition before publish', async () => {
-    await writeAgentDefinition(sandbox, plannerInput({ description: 'Before', systemPrompt: 'Before body' }));
+    await writeAgentDefinition(sandbox, plannerInput({ description: 'Before roster' }));
+    await writeParticipantsFile({ agents: ['planner', 'codex'], defaultAgent: 'planner' });
+    makeAssignmentBroker({
+      planner: [{ steps: [{ kind: 'update', update: textChunk('OK', 'm1') }] }],
+      codex: [{ steps: [{ kind: 'update', update: textChunk('OK codex', 'c1') }] }],
+    });
+    await broker.send({ assignment: assignment(), text: '@planner hello' });
+    await idleTurns(1);
+    await broker.send({ assignment: assignment(), text: '@codex hello' });
+    await idleTurns(2);
+    await broker.stopAll();
+
     let releaseConstructionLoad!: () => void;
     const constructionLoadGate = new Promise<void>((resolve) => {
       releaseConstructionLoad = resolve;
     });
     let gatedOnce = false;
     makeAssignmentBroker(
-      { planner: [{ steps: [{ kind: 'update', update: textChunk('OK', 'm1') }] }] },
+      {
+        planner: [{ steps: [{ kind: 'update', update: textChunk('OK2', 'm2') }] }],
+        codex: [{ steps: [{ kind: 'update', update: textChunk('OK codex2', 'c2') }] }],
+      },
       {
         loadDefinitions: async (root) => {
           const result = await loadAgentDefinitions(root);
@@ -621,22 +635,21 @@ describe.sequential('live session bookkeeping (Task 5)', () => {
       },
     );
 
-    const sessionP = broker.getSession(assignment(), 'planner');
-    const saveP = broker.saveAgent(
-      plannerInput({ description: 'After race', systemPrompt: 'After race body' }),
-    );
+    const sessionP = broker.getSession(assignment(), 'codex');
+    const saveP = broker.saveAgent(plannerInput({ description: 'After roster' }));
+    await saveP;
     releaseConstructionLoad();
-    const [summary] = await Promise.all([sessionP, saveP]);
-    expect(summary).not.toBeNull();
+    expect(await sessionP).not.toBeNull();
 
-    await broker.send({ assignment: assignment(), text: '@planner check definition' });
-    await waitUntil(() => (fakes.get('planner')?.newSessionRequests.length ?? 0) >= 1, 'session/new');
+    await broker.send({ assignment: assignment(), text: '@codex roster check' });
+    await waitUntil(() => (fakes.get('codex')?.prompts.length ?? 0) >= 1, 'codex prompt');
 
-    const meta = fakes.get('planner')!.newSessionRequests[0]!._meta as {
-      systemPrompt?: { append?: string };
-    };
-    expect(meta.systemPrompt?.append).toContain('After race body');
-    expect(meta.systemPrompt?.append).not.toContain('Before body');
+    const fake = fakes.get('codex')!;
+    const promptText = fake.prompts[0]!.prompt
+      .map((b) => (b as { text?: string }).text ?? '')
+      .join('\n');
+    expect(promptText).toContain('After roster');
+    expect(promptText).not.toContain('Before roster');
   });
 
   it('allows re-creating a deleted agent without restarting the broker', async () => {
@@ -697,6 +710,51 @@ describe.sequential('live session bookkeeping (Task 5)', () => {
     expect(await sessionP).toBeNull();
     await deleteP;
     expect(await broker.getSession(assignment(), 'planner')).toBeNull();
+  });
+
+  it('construction race: saveAgent harness change opens a fresh adapter session', async () => {
+    await writeAgentDefinition(sandbox, plannerInput({ harness: 'claude' }));
+    makeAssignmentBroker({
+      planner: [{ steps: [{ kind: 'update', update: textChunk('OK', 'm1') }] }],
+    });
+    await broker.send({ assignment: assignment(), text: '@planner hello' });
+    await idleTurns(1);
+    await broker.stopAll();
+
+    let releaseConstructionLoad!: () => void;
+    const constructionLoadGate = new Promise<void>((resolve) => {
+      releaseConstructionLoad = resolve;
+    });
+    let gatedOnce = false;
+    makeAssignmentBroker(
+      { planner: [{ steps: [{ kind: 'update', update: textChunk('OK2', 'm2') }] }] },
+      {
+        loadDefinitions: async (root) => {
+          const result = await loadAgentDefinitions(root);
+          if (!gatedOnce) {
+            gatedOnce = true;
+            await constructionLoadGate;
+          }
+          return result;
+        },
+      },
+    );
+
+    const sessionP = broker.getSession(assignment(), 'planner');
+    const saveP = broker.saveAgent(plannerInput({ harness: 'codex', model: 'claude-opus-5' }));
+    await saveP;
+    releaseConstructionLoad();
+    const summary = await sessionP;
+    expect(summary?.harness).toBe('codex');
+
+    await broker.send({ assignment: assignment(), text: '@planner on codex' });
+    await idleTurns(2);
+
+    const fake = fakes.get('planner')!;
+    expect(fake.calls).toContain('initialize');
+    expect(fake.calls).toContain('session/new');
+    expect(fake.calls).not.toContain('session/resume');
+    expect(fake.calls).not.toContain('session/load');
   });
 
   it('rejects traversal ids on save, delete, and test', async () => {
@@ -774,6 +832,61 @@ describe.sequential('live session bookkeeping (Task 5)', () => {
     expect(fake.calls).toContain('session/new');
     expect(fake.calls).not.toContain('session/resume');
     expect(systemTexts().some((t) => t.includes("@planner's harness changed to codex"))).toBe(true);
+  });
+
+  it('harness rotation during build leaves a rebuildable chat index', async () => {
+    await writeAgentDefinition(sandbox, plannerInput({ harness: 'claude', model: 'claude-opus-5' }));
+    makeAssignmentBroker({
+      planner: [{ steps: [{ kind: 'update', update: textChunk('OK', 'm1') }] }],
+    });
+    await broker.send({ assignment: assignment(), text: '@planner hello' });
+    await idleTurns(1);
+    await broker.stopAll();
+    makeAssignmentBroker({
+      planner: [{ steps: [{ kind: 'update', update: textChunk('OK2', 'm2') }] }],
+    });
+    await broker.saveAgent(plannerInput({ harness: 'codex', model: 'claude-opus-5' }));
+    await broker.send({ assignment: assignment(), text: '@planner new harness' });
+    await idleTurns(2);
+
+    const { listChatItems } = await import('../db/chat-db.js');
+    const { rebuildChatIndex } = await import('../chat/store.js');
+    const live = listChatItems(ASSIGNMENT_ID, { limit: 500 });
+    const result = await rebuildChatIndex(assignmentDir, ASSIGNMENT_ID);
+    const rebuilt = listChatItems(ASSIGNMENT_ID, { limit: 500 });
+    expect(rebuilt.map((i) => i.itemId).sort()).toEqual(live.map((i) => i.itemId).sort());
+    expect(result.items).toBe(live.length);
+  });
+
+  it('re-sends standing after restart when a roster description changes', async () => {
+    await writeAgentDefinition(sandbox, plannerInput({ description: 'Plans v1' }));
+    await writeParticipantsFile({ agents: ['planner', 'codex'], defaultAgent: 'planner' });
+    makeAssignmentBroker({
+      planner: [{ steps: [{ kind: 'update', update: textChunk('OK', 'm1') }] }],
+      codex: [{ steps: [{ kind: 'update', update: textChunk('OK codex', 'c1') }] }],
+    });
+    await broker.send({ assignment: assignment(), text: '@planner hello' });
+    await idleTurns(1);
+    await broker.send({ assignment: assignment(), text: '@codex hello' });
+    await idleTurns(2);
+    expect(getChatSession(ASSIGNMENT_ID, 'codex')?.standing_fingerprint).toBeTruthy();
+
+    await broker.stopAll();
+    makeAssignmentBroker({
+      planner: [{ steps: [{ kind: 'update', update: textChunk('OK', 'm2') }] }],
+      codex: [{ steps: [{ kind: 'update', update: textChunk('OK codex2', 'c2') }] }],
+    });
+    await broker.saveAgent(plannerInput({ description: 'Plans v2' }));
+
+    await broker.send({ assignment: assignment(), text: '@codex roster check' });
+    await idleTurns(3);
+
+    const fake = fakes.get('codex')!;
+    const promptText = fake.prompts[0]!.prompt
+      .map((b) => (b as { text?: string }).text ?? '')
+      .join('\n');
+    expect(promptText).toContain('Plans v2');
+    expect(promptText).not.toContain('Plans v1');
   });
 
   it('drops orphaned chat_sessions rows when deleting an agent', async () => {

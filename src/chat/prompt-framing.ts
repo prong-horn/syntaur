@@ -11,6 +11,7 @@
  * `resource` with no tool calls, at ~1.6–1.7 k tokens (RESULTS.md row 16).
  */
 
+import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { latestPlanFile } from '../lifecycle/facts.js';
@@ -124,6 +125,22 @@ function rosterLine(entry: AgentDefinition): string {
 
 function firstLine(text: string): string {
   return text.trim().split('\n')[0]?.trim() ?? '';
+}
+
+/**
+ * Fingerprint of the standing roster + this agent's system prompt — must match
+ * what `buildStanding` would send so a persisted session can detect roster edits.
+ */
+export function standingFingerprint(
+  agent: AgentDefinition,
+  definitions: readonly AgentDefinition[],
+  participants: { agents: readonly string[] },
+): string {
+  const roster = participants.agents
+    .map((id) => definitions.find((d) => d.id === id))
+    .filter((d): d is AgentDefinition => d !== undefined);
+  const lines = roster.map(rosterLine);
+  return createHash('sha256').update([...lines, agent.systemPrompt].join('\n')).digest('hex');
 }
 
 /**

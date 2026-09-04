@@ -24,6 +24,11 @@
  * agent session has been shown, so a restart neither re-sends nor skips the
  * history delta (Decision 4). It is declared here for a FRESH database and
  * added by the 1→2 step in `session-db.ts` for an existing one.
+ *
+ * v4 adds `chat_harness_options` (migration in `session-db.ts`) and
+ * `chat_sessions.standing_fingerprint`: a sha256 of the roster lines and this
+ * agent's system prompt as `buildStanding` would produce them, so a restart can
+ * tell when the standing block needs to be re-sent.
  */
 
 export const CHAT_SCHEMA_VERSION = '4';
@@ -46,7 +51,8 @@ CREATE TABLE IF NOT EXISTS chat_sessions (
   created_at          TEXT NOT NULL,
   last_turn_at        TEXT,
   last_delivered_seq  INTEGER NOT NULL DEFAULT 0,
-  commands_json       TEXT
+  commands_json       TEXT,
+  standing_fingerprint TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_chat_sessions_assignment ON chat_sessions(assignment_id);
 CREATE INDEX IF NOT EXISTS idx_chat_sessions_acp ON chat_sessions(acp_session_id);
