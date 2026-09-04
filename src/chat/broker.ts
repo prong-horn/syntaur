@@ -205,6 +205,8 @@ export interface CreateChatBrokerOptions {
   routing?: { hopBudget?: number };
   /** Injected by tests; defaults to `loadAgentDefinitions`. */
   loadDefinitions?: (root: string) => Promise<LoadAgentDefinitionsResult>;
+  /** Test hook: awaited at the start of `buildStanding`, after the generation is captured. */
+  standingContextGate?: () => void | Promise<void>;
 }
 
 /** A send that cannot proceed — the router turns this into an HTTP 409. */
@@ -486,6 +488,12 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
 
   function definitionChanged(a: AgentDefinition, b: AgentDefinition): boolean {
     return definitionFingerprint(a) !== definitionFingerprint(b);
+  }
+
+  function participantAgentsChanged(before: readonly string[], after: readonly string[]): boolean {
+    if (before.length !== after.length) return true;
+    const afterSet = new Set(after);
+    return before.some((id) => !afterSet.has(id));
   }
 
   /** Standing context is per-session; roster edits must refresh every agent in the room. */
@@ -2423,8 +2431,9 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
   async function buildStanding(
     session: Session,
   ): Promise<{ blocks: ContentBlock[]; fingerprint: string; gen: number }> {
-    const { definitions, participants } = await routingContext(session.assignment);
     const gen = session.standingGen;
+    await options.standingContextGate?.();
+    const { definitions, participants } = await routingContext(session.assignment);
     const roster = participants.agents
       .map((id) => definitions.find((d) => d.id === id))
       .filter((d): d is AgentDefinition => d !== undefined);
@@ -3270,6 +3279,9 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
       const before = await ensureAssignmentSessions(assignment);
       const previous = await readParticipants(assignment.assignmentDir, definitions);
       const participants = await writeParticipants(assignment.assignmentDir, next, definitions);
+      if (participantAgentsChanged(previous.agents, participants.agents)) {
+        for (const session of before) invalidateStanding(session);
+      }
       const detached = previous.agents.filter((id) => !participants.agents.includes(id));
       for (const agentId of detached) {
         const session = before.find((s) => s.agentId === agentId);

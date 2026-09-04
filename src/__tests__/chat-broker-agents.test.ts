@@ -317,6 +317,7 @@ function makeAssignmentBroker(
     sessionIds?: Record<string, string[]>;
     loadDefinitions?: (root: string) => ReturnType<typeof loadAgentDefinitions>;
     availableCommands?: Record<string, acp.AvailableCommand[]>;
+    standingContextGate?: () => void | Promise<void>;
   } = {},
 ): void {
   fakes = new Map();
@@ -328,6 +329,7 @@ function makeAssignmentBroker(
     assignmentsDir: join(sandbox, 'assignments'),
     syntaurHome: sandbox,
     loadDefinitions: opts.loadDefinitions,
+    standingContextGate: opts.standingContextGate,
     broadcast: (message) =>
       frames.push({ type: message.type, payload: structuredClone(message.payload) }),
     clientFactory: (input) => {
@@ -997,7 +999,32 @@ describe.sequential('live session bookkeeping (Task 5)', () => {
     expect(getChatSession(ASSIGNMENT_ID, 'planner')?.standing_fingerprint).toBeTruthy();
   });
 
-  const plannerSlashCommands = [
+const rosterAgentLines = (text: string): string[] =>
+  text.split('\n').filter((line) => /^@\S+ —/.test(line));
+
+/** Gate the Nth `buildStanding` call (1-based) so earlier standing deliveries can finish. */
+function gateStandingSnapshot(
+  nth: number,
+): { standingContextGate: () => Promise<void>; waitEntered: () => Promise<void>; release: () => void } {
+  let invocations = 0;
+  let entered = false;
+  let releaseGate!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    releaseGate = resolve;
+  });
+  return {
+    standingContextGate: async () => {
+      invocations += 1;
+      if (invocations < nth) return;
+      entered = true;
+      await gate;
+    },
+    waitEntered: () => waitUntil(() => entered, 'standing snapshot gate'),
+    release: () => releaseGate(),
+  };
+}
+
+const plannerSlashCommands = [
     { name: 'plan', description: 'Turn plan mode on.', input: null },
   ] as acp.AvailableCommand[];
 
@@ -1072,6 +1099,219 @@ describe.sequential('live session bookkeeping (Task 5)', () => {
     expect(standingPrompt).toContain('<context>');
     expect(standingPrompt).toContain('Plans v2');
     expect(standingPrompt).not.toContain('Plans v1');
+  });
+
+  it('does not commit standing when save lands during the standing snapshot window', async () => {
+    await writeAgentDefinition(sandbox, plannerInput({ description: 'Plans v1' }));
+    await writeParticipantsFile({ agents: ['planner', 'codex'], defaultAgent: 'planner' });
+    const standingGate = gateStandingSnapshot(2);
+    makeAssignmentBroker(
+      {
+        planner: [{ steps: [{ kind: 'update', update: textChunk('OK', 'm1') }] }],
+        codex: [
+          { steps: [{ kind: 'update', update: textChunk('OK', 'c1') }] },
+          { steps: [{ kind: 'update', update: textChunk('OK2', 'c2') }] },
+        ],
+      },
+      { standingContextGate: standingGate.standingContextGate },
+    );
+    await broker.send({ assignment: assignment(), text: '@planner hello' });
+    await idleTurns(1);
+
+    const sendP = broker.send({ assignment: assignment(), text: '@codex hello' });
+    await standingGate.waitEntered();
+    const fingerprintBefore = getChatSession(ASSIGNMENT_ID, 'codex')?.standing_fingerprint ?? null;
+
+    await broker.saveAgent(plannerInput({ description: 'Plans v2' }));
+    standingGate.release();
+    await sendP;
+    await idleTurns(2);
+
+    expect(getChatSession(ASSIGNMENT_ID, 'codex')?.standing_fingerprint).toBe(fingerprintBefore);
+
+    const promptsBefore = fakes.get('codex')!.prompts.length;
+    await broker.send({ assignment: assignment(), text: '@codex again' });
+    await waitUntil(() => fakes.get('codex')!.prompts.length > promptsBefore, 'codex standing retry');
+    await idleTurns(1);
+    const promptText = fakes
+      .get('codex')!
+      .prompts.slice(promptsBefore)
+      .map((p) => p.prompt.map((b) => (b as { text?: string }).text ?? '').join('\n'))
+      .join('\n');
+    expect(promptText).toContain('<context>');
+    expect(promptText).toContain('Plans v2');
+    expect(promptText).not.toContain('Plans v1');
+  });
+
+  it('does not commit standing when save lands during slash-command snapshot window', async () => {
+    await writeAgentDefinition(sandbox, plannerInput({ description: 'Plans v1' }));
+    await writeParticipantsFile({ agents: ['planner', 'codex'], defaultAgent: 'planner' });
+    let releaseStandingContextGate!: () => void;
+    let gateEntered = false;
+    const standingContextGate = new Promise<void>((resolve) => {
+      releaseStandingContextGate = resolve;
+    });
+    makeAssignmentBroker(
+      {
+        planner: [
+          { steps: [{ kind: 'update', update: textChunk('ack', 'ack') }] },
+          { steps: [{ kind: 'update', update: textChunk('cmd', 'c1') }] },
+          { steps: [{ kind: 'update', update: textChunk('ack2', 'ack2') }] },
+        ],
+      },
+      {
+        availableCommands: { planner: plannerSlashCommands },
+        standingContextGate: async () => {
+          gateEntered = true;
+          await standingContextGate;
+        },
+      },
+    );
+
+    const sendP = broker.send({ assignment: assignment(), text: '@planner /plan' });
+    await waitUntil(() => gateEntered, 'standing snapshot gate');
+    const fingerprintBefore = getChatSession(ASSIGNMENT_ID, 'planner')?.standing_fingerprint ?? null;
+
+    await broker.saveAgent(plannerInput({ description: 'Plans v2' }));
+    releaseStandingContextGate();
+    await sendP;
+    await idleTurns(2);
+
+    expect(getChatSession(ASSIGNMENT_ID, 'planner')?.standing_fingerprint).toBe(fingerprintBefore);
+
+    const promptsBefore = fakes.get('planner')!.prompts.length;
+    await broker.send({ assignment: assignment(), text: '@planner /plan' });
+    await waitUntil(() => fakes.get('planner')!.prompts.length > promptsBefore, 'standing ack retry');
+    await idleTurns(2);
+    const standingPrompt = fakes
+      .get('planner')!
+      .prompts.slice(promptsBefore)[0]!.prompt.map((b) => (b as { text?: string }).text ?? '')
+      .join('\n');
+    expect(standingPrompt).toContain('<context>');
+    expect(standingPrompt).toContain('Plans v2');
+    expect(standingPrompt).not.toContain('Plans v1');
+  });
+
+  it('re-sends standing when a participant is attached', async () => {
+    await writeAgentDefinition(sandbox, plannerInput({ description: 'Plans' }));
+    await writeParticipantsFile({ agents: ['planner', 'codex'], defaultAgent: 'planner' });
+    makeAssignmentBroker({
+      planner: [
+        { steps: [{ kind: 'update', update: textChunk('OK', 'm1') }] },
+        { steps: [{ kind: 'update', update: textChunk('OK2', 'm2') }] },
+      ],
+      codex: [
+        { steps: [{ kind: 'update', update: textChunk('OK codex', 'c1') }] },
+        { steps: [{ kind: 'update', update: textChunk('OK codex2', 'c2') }] },
+      ],
+    });
+    await broker.send({ assignment: assignment(), text: '@planner hello' });
+    await idleTurns(1);
+    await broker.send({ assignment: assignment(), text: '@codex hello' });
+    await idleTurns(2);
+    expect(getChatSession(ASSIGNMENT_ID, 'planner')?.standing_fingerprint).toBeTruthy();
+    expect(getChatSession(ASSIGNMENT_ID, 'codex')?.standing_fingerprint).toBeTruthy();
+
+    const plannerPromptsBefore = fakes.get('planner')!.prompts.length;
+    const codexPromptsBefore = fakes.get('codex')!.prompts.length;
+    await broker.setParticipants(assignment(), {
+      agents: ['planner', 'codex', 'claude'],
+      defaultAgent: 'planner',
+    });
+
+    await broker.send({ assignment: assignment(), text: '@planner after attach' });
+    await broker.send({ assignment: assignment(), text: '@codex after attach' });
+    await idleTurns(4);
+
+    const plannerStanding = fakes
+      .get('planner')!
+      .prompts.slice(plannerPromptsBefore)[0]!.prompt.map((b) => (b as { text?: string }).text ?? '')
+      .join('\n');
+    const codexStanding = fakes
+      .get('codex')!
+      .prompts.slice(codexPromptsBefore)[0]!.prompt.map((b) => (b as { text?: string }).text ?? '')
+      .join('\n');
+    expect(rosterAgentLines(plannerStanding)).toHaveLength(3);
+    expect(rosterAgentLines(codexStanding)).toHaveLength(3);
+    expect(plannerStanding).toContain('@claude');
+    expect(codexStanding).toContain('@claude');
+  });
+
+  it('re-sends standing when a participant is detached', async () => {
+    await writeAgentDefinition(sandbox, plannerInput({ description: 'Plans' }));
+    await writeParticipantsFile({ agents: ['planner', 'codex', 'claude'], defaultAgent: 'planner' });
+    makeAssignmentBroker({
+      planner: [
+        { steps: [{ kind: 'update', update: textChunk('OK', 'm1') }] },
+        { steps: [{ kind: 'update', update: textChunk('OK2', 'm2') }] },
+      ],
+      codex: [{ steps: [{ kind: 'update', update: textChunk('OK codex', 'c1') }] }],
+      claude: [{ steps: [{ kind: 'update', update: textChunk('OK claude', 'c1') }] }],
+    });
+    await broker.send({ assignment: assignment(), text: '@planner hello' });
+    await idleTurns(1);
+    await broker.send({ assignment: assignment(), text: '@codex hello' });
+    await broker.send({ assignment: assignment(), text: '@claude hello' });
+    await idleTurns(3);
+
+    const promptsBefore = fakes.get('planner')!.prompts.length;
+    await broker.setParticipants(assignment(), { agents: ['planner', 'claude'], defaultAgent: 'planner' });
+
+    await broker.send({ assignment: assignment(), text: '@planner after detach' });
+    await waitUntil(() => fakes.get('planner')!.prompts.length > promptsBefore, 'planner standing retry');
+    await idleTurns(1);
+    const standingPrompt = fakes
+      .get('planner')!
+      .prompts.slice(promptsBefore)[0]!.prompt.map((b) => (b as { text?: string }).text ?? '')
+      .join('\n');
+    expect(standingPrompt).toContain('<context>');
+    expect(rosterAgentLines(standingPrompt)).toHaveLength(2);
+    expect(standingPrompt).not.toContain('@codex');
+  });
+
+  it('does not commit standing when setParticipants lands during the standing snapshot window', async () => {
+    await writeAgentDefinition(sandbox, plannerInput({ description: 'Plans' }));
+    await writeParticipantsFile({ agents: ['planner', 'codex'], defaultAgent: 'planner' });
+    const standingGate = gateStandingSnapshot(2);
+    makeAssignmentBroker(
+      {
+        planner: [{ steps: [{ kind: 'update', update: textChunk('OK', 'm1') }] }],
+        codex: [
+          { steps: [{ kind: 'update', update: textChunk('OK', 'c1') }] },
+          { steps: [{ kind: 'update', update: textChunk('OK2', 'c2') }] },
+        ],
+      },
+      { standingContextGate: standingGate.standingContextGate },
+    );
+    await broker.send({ assignment: assignment(), text: '@planner hello' });
+    await idleTurns(1);
+
+    const sendP = broker.send({ assignment: assignment(), text: '@codex hello' });
+    await standingGate.waitEntered();
+    const fingerprintBefore = getChatSession(ASSIGNMENT_ID, 'codex')?.standing_fingerprint ?? null;
+
+    await broker.setParticipants(assignment(), {
+      agents: ['planner', 'codex', 'claude'],
+      defaultAgent: 'planner',
+    });
+    standingGate.release();
+    await sendP;
+    await idleTurns(2);
+
+    expect(getChatSession(ASSIGNMENT_ID, 'codex')?.standing_fingerprint).toBe(fingerprintBefore);
+
+    const promptsBefore = fakes.get('codex')!.prompts.length;
+    await broker.send({ assignment: assignment(), text: '@codex after attach' });
+    await waitUntil(() => fakes.get('codex')!.prompts.length > promptsBefore, 'codex standing retry');
+    await idleTurns(1);
+    const promptText = fakes
+      .get('codex')!
+      .prompts.slice(promptsBefore)
+      .map((p) => p.prompt.map((b) => (b as { text?: string }).text ?? '').join('\n'))
+      .join('\n');
+    expect(promptText).toContain('<context>');
+    expect(rosterAgentLines(promptText)).toHaveLength(3);
+    expect(promptText).toContain('@claude');
   });
 
   it('re-sends standing when a roster model changes', async () => {
