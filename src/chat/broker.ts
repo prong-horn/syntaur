@@ -2880,16 +2880,32 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
       );
     }
 
-    const triggerItemId = replies[replies.length - 1]?.itemId ?? null;
+    const routingNotices: string[] = [];
+    const activeHops: Array<{ hop: (typeof result.hops)[number]; target: Session }> = [];
     for (const hop of result.hops) {
-      // Materialise the target BEFORE the `handoff` event is written. Building a
-      // session runs `repairSession`, which re-enqueues every recorded handoff
-      // the target never started — so writing the event first and building
-      // second would have repair and this loop each enqueue the same hop, and
-      // the target would run it twice.
-      const target = await ensureSession(session.assignment, hop.toAgentId);
-      // The id is minted BEFORE the event so the same value keys the payload,
-      // the target turn's trigger and the repair pass (round 2, finding 7).
+      try {
+        activeHops.push({ hop, target: await ensureSession(session.assignment, hop.toAgentId) });
+      } catch (err) {
+        if (err instanceof ChatSendError && err.status === 409) {
+          routingNotices.push(`@${hop.toAgentId} was detached while the hand-off was being routed`);
+          continue;
+        }
+        throw err;
+      }
+    }
+
+    const { definitions: defsAfter } = await loadDefs();
+    const { participants: participantsNow } = await readParticipantsDetailed(
+      session.assignment.assignmentDir,
+      defsAfter,
+    );
+
+    const triggerItemId = replies[replies.length - 1]?.itemId ?? null;
+    for (const { hop, target } of activeHops) {
+      if (!participantsNow.agents.includes(target.agentId)) {
+        routingNotices.push(`@${target.agentId} was detached while the hand-off was being routed`);
+        continue;
+      }
       const handoffId = randomUUID();
       await recordAssignment(
         session.assignment,
@@ -2911,6 +2927,15 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
         trigger: { kind: 'handoff', handoffId, fromAgentId: session.agentId, hop: hop.hop },
       });
       void drive(target);
+    }
+
+    for (const notice of routingNotices) {
+      await recordAssignment(
+        session.assignment,
+        'route.notice',
+        { level: 'warn', text: notice },
+        { agentId: SYSTEM_AGENT_ID },
+      );
     }
   }
 

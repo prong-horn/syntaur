@@ -7,11 +7,11 @@ import { closeSessionDb, initSessionDb } from '../dashboard/session-db.js';
 import { closeUsageDb, initUsageDb } from '../db/usage-db.js';
 import { getChatSession, getChatSessionByKey, getHarnessOptions, upsertChatSession } from '../db/chat-db.js';
 import { connectAcpClient, type AcpClient } from '../chat/acp-client.js';
-import { createFakeAgent, textChunk, type FakeAgent, type FakeTurn } from '../chat/fake-agent.js';
+import { createFakeAgent, textChunk, toolCall, type FakeAgent, type FakeTurn } from '../chat/fake-agent.js';
 import { createChatBroker, ChatSendError, type ChatBroker, type ClientFactory } from '../chat/broker.js';
 import { HARNESSES } from '../chat/harnesses.js';
 import { writeAgentDefinition, AgentWriteError, loadAgentDefinitions } from '../chat/agents.js';
-import { participantsPath } from '../chat/participants.js';
+import { participantsPath, writeParticipants } from '../chat/participants.js';
 import type { ChatItem, Harness, Participants } from '../chat/types.js';
 import type { ResolvedAssignment } from '../utils/assignment-resolver.js';
 import type * as acp from '@agentclientprotocol/sdk';
@@ -242,10 +242,22 @@ async function waitUntil(predicate: () => boolean, what: string, timeoutMs = 800
 }
 
 const items = (): ChatItem[] => broker.items(assignment(), { limit: 500 });
+const handoffs = () => items().filter((i) => i.type === 'handoff');
 const systemTexts = () =>
   items()
     .filter((i) => i.type === 'system')
     .map((i) => (i as { text: string }).text);
+
+/** A reply that did work and then named someone — the normal hand-off shape. */
+const worksThenSays = (text: string, id = 'm1'): FakeTurn => ({
+  steps: [
+    {
+      kind: 'update',
+      update: toolCall(`tool-${id}`, { title: 'Read a file', kind: 'read', status: 'completed' }),
+    },
+    { kind: 'update', update: textChunk(text, id) },
+  ],
+});
 
 async function writeAssignmentMd(): Promise<void> {
   await writeFile(
@@ -771,6 +783,7 @@ describe.sequential('live session bookkeeping (Task 5)', () => {
 
     const sessionP = broker.getSession(assignment(), 'codex');
     await standingGate.waitEntered();
+    await writeParticipantsFile({ agents: ['planner'], defaultAgent: 'planner' });
     await broker.setParticipants(assignment(), { agents: ['planner'], defaultAgent: 'planner' });
     standingGate.release();
     expect(await sessionP).toBeNull();
@@ -792,6 +805,7 @@ describe.sequential('live session bookkeeping (Task 5)', () => {
 
     const sendP = broker.send({ assignment: assignment(), text: '@codex hi' });
     await standingGate.waitEntered();
+    await writeParticipantsFile({ agents: ['planner'], defaultAgent: 'planner' });
     await broker.setParticipants(assignment(), { agents: ['planner'], defaultAgent: 'planner' });
     standingGate.release();
     const { messageId } = await sendP;
@@ -804,6 +818,79 @@ describe.sequential('live session bookkeeping (Task 5)', () => {
       systemTexts().some((t) => t.includes('@codex was detached while the message was being routed')),
     ).toBe(true);
     expect(fakes.get('codex')?.prompts.length ?? 0).toBe(0);
+  });
+
+  it('construction race: detach during hand-off construction records a notice and does not prompt', async () => {
+    await writeAgentDefinition(sandbox, plannerInput({ description: 'Plans' }));
+    await writeParticipantsFile({ agents: ['planner', 'codex'], defaultAgent: 'planner' });
+    let armCodexBuild = false;
+    let buildSessionLoads = 0;
+    const standingGate = gateDefinitionsWhen(({ stack }) => {
+      if (!armCodexBuild || !stack.includes('buildSession')) return false;
+      buildSessionLoads += 1;
+      return buildSessionLoads === 4;
+    });
+    makeAssignmentBroker(
+      {
+        planner: [worksThenSays('Outlined. Over to @codex', 'p1')],
+        codex: [{ steps: [{ kind: 'update', update: textChunk('OK codex', 'c1') }] }],
+      },
+      { loadDefinitions: standingGate.loadDefinitions },
+    );
+
+    armCodexBuild = true;
+    const sendP = broker.send({ assignment: assignment(), text: '@planner outline it' });
+    await standingGate.waitEntered();
+    await broker.setParticipants(assignment(), { agents: ['planner'], defaultAgent: 'planner' });
+    standingGate.release();
+    await sendP;
+    await waitUntil(
+      () =>
+        handoffs().length === 0 &&
+        (fakes.get('codex')?.prompts.length ?? 0) === 0 &&
+        systemTexts().some((t) => t.includes('@codex was detached while the hand-off was being routed')),
+      'hand-off construction notice',
+    );
+  });
+
+  it('detach during hand-off re-validation records a notice and does not prompt', async () => {
+    await writeAgentDefinition(sandbox, plannerInput({ description: 'Plans' }));
+    await writeParticipantsFile({ agents: ['planner', 'codex'], defaultAgent: 'planner' });
+    let detachOnHandoffRoute = false;
+    const routeDetachGate = gateDefinitionsWhen(
+      ({ stack }) =>
+        detachOnHandoffRoute && stack.includes('routeReply') && stack.includes('ensureSession'),
+    );
+    makeAssignmentBroker(
+      {
+        planner: [
+          { steps: [{ kind: 'update', update: textChunk('OK', 'm1') }] },
+          worksThenSays('Outlined. Over to @codex', 'p2'),
+        ],
+        codex: [{ steps: [{ kind: 'update', update: textChunk('OK codex', 'c1') }] }],
+      },
+      { loadDefinitions: routeDetachGate.loadDefinitions },
+    );
+
+    await broker.send({ assignment: assignment(), text: '@planner hello' });
+    await idleTurns(1);
+    await broker.send({ assignment: assignment(), text: '@codex hello' });
+    await waitUntil(() => (fakes.get('codex')?.prompts.length ?? 0) >= 1, 'codex materialized');
+    const codexPromptsBefore = fakes.get('codex')?.prompts.length ?? 0;
+
+    detachOnHandoffRoute = true;
+    const sendP = broker.send({ assignment: assignment(), text: '@planner outline it' });
+    await routeDetachGate.waitEntered();
+    await broker.setParticipants(assignment(), { agents: ['planner'], defaultAgent: 'planner' });
+    routeDetachGate.release();
+    await sendP;
+    await waitUntil(
+      () =>
+        handoffs().length === 0 &&
+        (fakes.get('codex')?.prompts.length ?? 0) === codexPromptsBefore &&
+        systemTexts().some((t) => t.includes('@codex was detached while the hand-off was being routed')),
+      'hand-off re-validation notice',
+    );
   });
 
   it('allows re-creating a deleted agent without restarting the broker', async () => {
@@ -1178,6 +1265,37 @@ function gateDefinitionsLoad(
   };
 }
 
+/** Arm a gate on the next `loadDefinitions` call matching `when`. */
+function gateDefinitionsWhen(
+  when: (ctx: { n: number; stack: string }) => boolean,
+): {
+  loadDefinitions: (root: string) => ReturnType<typeof loadAgentDefinitions>;
+  waitEntered: () => Promise<void>;
+  release: () => void;
+} {
+  let invocations = 0;
+  let entered = false;
+  let releaseGate!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    releaseGate = resolve;
+  });
+  return {
+    loadDefinitions: async (root) => {
+      invocations += 1;
+      const n = invocations;
+      const stack = new Error().stack ?? '';
+      const result = await loadAgentDefinitions(root);
+      if (!entered && when({ n, stack })) {
+        entered = true;
+        await gate;
+      }
+      return result;
+    },
+    waitEntered: () => waitUntil(() => entered, 'standing snapshot gate'),
+    release: () => releaseGate(),
+  };
+}
+
 const plannerSlashCommands = [
     { name: 'plan', description: 'Turn plan mode on.', input: null },
   ] as acp.AvailableCommand[];
@@ -1258,7 +1376,10 @@ const plannerSlashCommands = [
   it('does not commit standing when save lands during the standing snapshot window', async () => {
     await writeAgentDefinition(sandbox, plannerInput({ description: 'Plans v1' }));
     await writeParticipantsFile({ agents: ['planner', 'codex'], defaultAgent: 'planner' });
-    const standingGate = gateDefinitionsLoad(17);
+    let armStandingGate = false;
+    const standingGate = gateDefinitionsWhen(
+      ({ stack }) => armStandingGate && stack.includes('buildStanding'),
+    );
     makeAssignmentBroker(
       {
         planner: [{ steps: [{ kind: 'update', update: textChunk('OK', 'm1') }] }],
@@ -1272,6 +1393,7 @@ const plannerSlashCommands = [
     await broker.send({ assignment: assignment(), text: '@planner hello' });
     await idleTurns(1);
 
+    armStandingGate = true;
     const sendP = broker.send({ assignment: assignment(), text: '@codex hello' });
     await standingGate.waitEntered();
     const fingerprintBefore = getChatSession(ASSIGNMENT_ID, 'codex')?.standing_fingerprint ?? null;
@@ -1419,7 +1541,10 @@ const plannerSlashCommands = [
   it('does not commit standing when setParticipants lands during the standing snapshot window', async () => {
     await writeAgentDefinition(sandbox, plannerInput({ description: 'Plans' }));
     await writeParticipantsFile({ agents: ['planner', 'codex'], defaultAgent: 'planner' });
-    const standingGate = gateDefinitionsLoad(17);
+    let armStandingGate = false;
+    const standingGate = gateDefinitionsWhen(
+      ({ stack }) => armStandingGate && stack.includes('buildStanding'),
+    );
     makeAssignmentBroker(
       {
         planner: [{ steps: [{ kind: 'update', update: textChunk('OK', 'm1') }] }],
@@ -1433,6 +1558,7 @@ const plannerSlashCommands = [
     await broker.send({ assignment: assignment(), text: '@planner hello' });
     await idleTurns(1);
 
+    armStandingGate = true;
     const sendP = broker.send({ assignment: assignment(), text: '@codex hello' });
     await standingGate.waitEntered();
     const fingerprintBefore = getChatSession(ASSIGNMENT_ID, 'codex')?.standing_fingerprint ?? null;
