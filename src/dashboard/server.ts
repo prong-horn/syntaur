@@ -80,6 +80,7 @@ import { createUsageRouter } from './api-usage.js';
 import { createEventsRouter } from './api-events.js';
 import { createInboxRouter } from './api-inbox.js';
 import { createChatRouter } from './api-chat.js';
+import { createChatAgentsRouter } from './api-chat-agents.js';
 import { createChatBroker } from '../chat/broker.js';
 import { createPlaybooksRouter } from './api-playbooks.js';
 import {
@@ -745,6 +746,7 @@ export function createDashboardServer(options: DashboardServerOptions) {
     broadcast: (message) => broadcast(message as WsMessage),
   });
   app.use('/api', createChatRouter(projectsDir, assignmentsDir, { broker: chatBroker }));
+  app.use('/api', createChatAgentsRouter({ broker: chatBroker }));
 
   // --- Schedules API ---
   // Mounted after the broker: a schedule fires by posting into an assignment's

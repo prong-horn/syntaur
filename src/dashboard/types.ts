@@ -650,6 +650,7 @@ export type WsMessageType =
   | 'chat-item'
   | 'chat-session'
   | 'chat-participants'
+  | 'chat-agents'
   | 'connected';
 
 export interface WsMessage {

@@ -15,7 +15,6 @@
 
 import { Router, type Request, type Response } from 'express';
 import { resolveAssignmentById } from '../utils/assignment-resolver.js';
-import { toAgentSummary } from '../chat/agents.js';
 import { ChatSendError, type ChatBroker } from '../chat/broker.js';
 import { ParticipantsError } from '../chat/participants.js';
 import { messageTurnState } from '../chat/message-state.js';
@@ -231,8 +230,9 @@ export function createChatRouter(
 
   router.get('/chat/agents', async (_req, res) => {
     try {
-      const { definitions, errors } = await broker.listAgents();
-      res.json({ agents: definitions.map((d) => toAgentSummary(d)), errors });
+      const agents = await broker.agentSummaries();
+      const { errors } = await broker.listAgents();
+      res.json({ agents, errors });
     } catch (err) {
       fail(res, err);
     }
