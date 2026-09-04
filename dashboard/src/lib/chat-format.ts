@@ -158,6 +158,8 @@ export function agentColorClasses(color: string): string {
       return 'bg-sky-500/15 text-sky-600 dark:text-sky-400';
     case 'rose':
       return 'bg-rose-500/15 text-rose-600 dark:text-rose-400';
+    case 'slate':
+      return 'bg-muted text-muted-foreground';
     default:
       return 'bg-muted text-muted-foreground';
   }

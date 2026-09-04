@@ -8,6 +8,7 @@ import {
   isChatColumnItem,
   pinnedPlan,
 } from '../../lib/chat-format';
+import { staleNote } from '../../lib/agent-editor';
 import { cn } from '../../lib/utils';
 import { EmptyState } from '../EmptyState';
 import { AgentPickerPanel } from './AgentPickerPanel';
@@ -184,6 +185,17 @@ export function ChatTab({ assignmentId }: ChatTabProps) {
           <code className="font-mono">{agent.missing}</code>.
         </div>
       ))}
+      {[...sessions.values()]
+        .map((session) => staleNote(session))
+        .filter((note): note is string => note !== null)
+        .map((note) => (
+          <div
+            key={note}
+            className="rounded-md border border-border/60 bg-muted/20 px-3 py-2 text-xs text-muted-foreground"
+          >
+            {note}
+          </div>
+        ))}
       {[...sessions.values()]
         .filter((session) => session.error)
         .map((session) => (

@@ -10,7 +10,12 @@
  */
 
 import type {
+  AgentDefinition,
+  AgentDefinitionInput,
+  AgentTestResult,
   ChatAgentSummary,
+  ChatAgentsFrame,
+  ChatHarnessSummary,
   ChatItem,
   ChatItemFrame,
   ChatParticipantsFrame,
@@ -73,6 +78,56 @@ export function fetchChatSession(
 
 export function fetchChatAgents(): Promise<{ agents: ChatAgentSummary[]; errors: string[] }> {
   return request<{ agents: ChatAgentSummary[]; errors: string[] }>('/api/chat/agents');
+}
+
+export function fetchChatAgent(id: string): Promise<{ definition: AgentDefinition }> {
+  return request<{ definition: AgentDefinition }>(`/api/chat/agents/${encodeURIComponent(id)}`);
+}
+
+export function createChatAgent(
+  id: string,
+  input: AgentDefinitionInput,
+): Promise<{ agent: ChatAgentSummary; definition: AgentDefinition }> {
+  return request<{ agent: ChatAgentSummary; definition: AgentDefinition }>(
+    `/api/chat/agents/${encodeURIComponent(id)}`,
+    { method: 'POST', body: JSON.stringify(input) },
+  );
+}
+
+export function updateChatAgent(
+  id: string,
+  input: AgentDefinitionInput,
+): Promise<{ agent: ChatAgentSummary; definition: AgentDefinition }> {
+  return request<{ agent: ChatAgentSummary; definition: AgentDefinition }>(
+    `/api/chat/agents/${encodeURIComponent(id)}`,
+    { method: 'PUT', body: JSON.stringify(input) },
+  );
+}
+
+export function deleteChatAgent(
+  id: string,
+): Promise<{ deleted: string; restoredBuiltin: boolean; agents: ChatAgentSummary[] }> {
+  return request<{ deleted: string; restoredBuiltin: boolean; agents: ChatAgentSummary[] }>(
+    `/api/chat/agents/${encodeURIComponent(id)}`,
+    { method: 'DELETE' },
+  );
+}
+
+export function testChatAgent(id: string): Promise<AgentTestResult> {
+  return request<AgentTestResult>(`/api/chat/agents/${encodeURIComponent(id)}/test`, {
+    method: 'POST',
+  });
+}
+
+export function fetchChatHarnesses(): Promise<{ harnesses: ChatHarnessSummary[] }> {
+  return request<{ harnesses: ChatHarnessSummary[] }>('/api/chat/harnesses');
+}
+
+export function refreshChatHarness(id: string): Promise<{ harness: ChatHarnessSummary }> {
+  return request<{ harness: ChatHarnessSummary }>(
+    `/api/chat/harnesses/${encodeURIComponent(id)}/refresh`,
+    { method: 'POST' },
+  );
 }
 
 export interface ChatParticipantsPayload {
@@ -215,10 +270,17 @@ export function mergePage(state: ChatState, page: ChatItemsPage, limit: number):
 export function applyFrame(
   state: ChatState,
   assignmentId: string,
-  type: 'chat-item' | 'chat-session' | 'chat-participants',
+  type: 'chat-item' | 'chat-session' | 'chat-participants' | 'chat-agents',
   payload: unknown,
 ): ChatState {
   if (!payload || typeof payload !== 'object') return state;
+
+  if (type === 'chat-agents') {
+    const frame = payload as Partial<ChatAgentsFrame>;
+    if (frame.agents) return { ...state, agents: frame.agents };
+    return state;
+  }
+
   const frame = payload as Partial<ChatItemFrame & ChatSessionFrame & ChatParticipantsFrame>;
   if (frame.assignmentId !== assignmentId) return state;
 

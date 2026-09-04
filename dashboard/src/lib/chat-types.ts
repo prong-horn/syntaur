@@ -271,6 +271,8 @@ export interface ChatSessionSummary {
   cwdTier?: CwdTier | null;
   commands: ChatCommand[];
   commandsSource: ChatCommandsSource | null;
+  /** True when the on-disk definition changed but a running turn still uses the old pins. */
+  staleDefinition?: boolean;
 }
 
 /**
@@ -285,11 +287,15 @@ export interface Participants {
 
 export type RespondsTo = 'mentions' | 'all-human' | 'none';
 
+export type Harness = 'claude' | 'codex' | 'cursor';
+
+export type AgentColor = 'violet' | 'emerald' | 'amber' | 'sky' | 'rose' | 'slate';
+
 export interface ChatAgentSummary {
   id: string;
   name: string;
-  color: string;
-  harness: 'claude' | 'codex' | 'cursor';
+  color: AgentColor;
+  harness: Harness;
   model: string | null;
   mode: string | null;
   effort: string | null;
@@ -300,8 +306,118 @@ export interface ChatAgentSummary {
   default: boolean;
   /** Absolute path of the definition file; null for a builtin. */
   source: string | null;
+  /** True when `source` is null (a builtin, not a file). */
+  builtin: boolean;
+  /** True when a file overrides a builtin with the same id. */
+  overridesBuiltin: boolean;
   /** Null when the adapter binary resolved on PATH; the install hint otherwise. */
   missing: string | null;
+}
+
+export interface AgentDefinition {
+  id: string;
+  name: string;
+  color: AgentColor;
+  harness: Harness;
+  model?: string;
+  mode?: string;
+  effort?: string;
+  mcpServers?: string[];
+  env?: Record<string, string>;
+  respondsTo: RespondsTo;
+  default: boolean;
+  description?: string;
+  avatar?: string;
+  systemPrompt: string;
+  promptIsDefault?: boolean;
+  source: string | null;
+  builtin?: boolean;
+  overridesBuiltin?: boolean;
+}
+
+export interface AgentDefinitionInput {
+  id: string;
+  name: string;
+  color: AgentColor;
+  harness: Harness;
+  model?: string;
+  mode?: string;
+  effort?: string;
+  mcpServers?: string[];
+  env?: Record<string, string>;
+  respondsTo: RespondsTo;
+  default: boolean;
+  description?: string;
+  avatar?: string;
+  systemPrompt: string;
+}
+
+export interface HarnessModeIds {
+  edits: string;
+  ask: string;
+  plan: string;
+}
+
+export interface HarnessOptionChoice {
+  value: string;
+  name: string;
+  description: string | null;
+}
+
+export interface HarnessOption {
+  id: string;
+  name: string;
+  category: string | null;
+  currentValue: string | null;
+  choices: HarnessOptionChoice[];
+}
+
+export type HarnessModes =
+  | {
+      currentModeId: string;
+      available: Array<{ id: string; name: string; description: string | null }>;
+    }
+  | null;
+
+export interface HarnessOptionsRecord {
+  harness: Harness;
+  adapterVersion: string | null;
+  capturedAt: string;
+  options: HarnessOption[];
+  modes: HarnessModes;
+}
+
+export interface HarnessAuthState {
+  state: 'ok' | 'failed' | 'unknown';
+  detail: string | null;
+  at: string | null;
+}
+
+export interface ChatHarnessSummary {
+  id: Harness;
+  label: string;
+  command: string;
+  args: string[];
+  installed: string | null;
+  installHint: string;
+  modelConfigId: string;
+  effortConfigId: string | null;
+  roleModes: HarnessModeIds;
+  systemPromptTransport: 'meta' | 'prompt';
+  options: HarnessOptionsRecord | null;
+  auth: HarnessAuthState;
+}
+
+export interface AgentTestResult {
+  ok: boolean;
+  reply: string | null;
+  stopReason: string | null;
+  model: string | null;
+  mode: string | null;
+  effort: string | null;
+  profileErrors: string[];
+  durationMs: number;
+  error: string | null;
 }
 
 export interface ChatItemFrame {
@@ -321,7 +437,15 @@ export interface ChatParticipantsFrame {
   agents: ChatAgentSummary[];
 }
 
-export type ChatWsFrame = ChatItemFrame | ChatSessionFrame | ChatParticipantsFrame;
+export interface ChatAgentsFrame {
+  agents: ChatAgentSummary[];
+}
+
+export type ChatWsFrame =
+  | ChatItemFrame
+  | ChatSessionFrame
+  | ChatParticipantsFrame
+  | ChatAgentsFrame;
 
 /** Narrowing helper — a `chat-item` frame always carries a `patch`. */
 export function isChatItemFrame(frame: ChatWsFrame): frame is ChatItemFrame {

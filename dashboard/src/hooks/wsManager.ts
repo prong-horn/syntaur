@@ -19,6 +19,7 @@ export interface WsMessage {
     | 'chat-item'
     | 'chat-session'
     | 'chat-participants'
+    | 'chat-agents'
     | 'connected';
   projectSlug?: string;
   assignmentSlug?: string;

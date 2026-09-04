@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom';
 import { useEffect, useState } from 'react';
 import { Loader2 } from 'lucide-react';
 import {
@@ -102,7 +103,11 @@ export function AgentPickerPanel({
           <DialogDescription>
             Attach the agents that can be messaged here and pick the one that answers a message with
             no <code className="font-mono">@mention</code>. Harness, model, mode and reply policy come
-            from each agent&rsquo;s definition file.
+            from each agent&rsquo;s definition —{' '}
+            <Link to="/agents" className="text-primary underline">
+              edit them on the Agents page
+            </Link>
+            .
           </DialogDescription>
         </DialogHeader>
 
@@ -144,6 +149,12 @@ export function AgentPickerPanel({
                     {agent.name}
                   </label>
                   <span className="font-mono text-[11px] text-muted-foreground">@{agent.id}</span>
+                  <Link
+                    to={`/agents/${agent.id}/edit`}
+                    className="text-[11px] text-primary underline"
+                  >
+                    edit
+                  </Link>
                   <span className="flex-1" />
                   <label className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
                     <input

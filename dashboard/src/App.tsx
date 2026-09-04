@@ -22,6 +22,8 @@ import { AppendAssignmentDecisionRecord } from './pages/AppendAssignmentDecision
 import { ServersPage } from './pages/ServersPage';
 import { InventoriesPage } from './pages/InventoriesPage';
 import { SchedulesPage } from './pages/SchedulesPage';
+import { AgentsPage } from './pages/AgentsPage';
+import { AgentEditorPage } from './pages/AgentEditorPage';
 import { UsagePage } from './pages/UsagePage';
 import { AgentSessionsPage } from './pages/AgentSessionsPage';
 import { AgentSessionDetail } from './pages/AgentSessionDetail';
@@ -66,6 +68,9 @@ export function App() {
             <Route path="/servers" element={<ServersPage />} />
             <Route path="/inventories" element={<InventoriesPage />} />
             <Route path="/schedules" element={<SchedulesPage />} />
+            <Route path="/agents" element={<AgentsPage />} />
+            <Route path="/agents/new" element={<AgentEditorPage />} />
+            <Route path="/agents/:id/edit" element={<AgentEditorPage />} />
             <Route path="/usage" element={<UsagePage />} />
             <Route path="/agent-sessions" element={<AgentSessionsPage />} />
             <Route path="/agent-sessions/:id" element={<AgentSessionDetail />} />

@@ -168,6 +168,8 @@ describe('applyFrame', () => {
         avatar: 'P',
         default: true,
         source: '/agents/planner.md',
+        builtin: false,
+        overridesBuiltin: false,
         missing: null,
       },
     ];
@@ -290,6 +292,8 @@ describe('authorOf', () => {
       avatar: '🗺️',
       default: true,
       source: null,
+      builtin: false,
+      overridesBuiltin: false,
       missing: null,
     },
   ];

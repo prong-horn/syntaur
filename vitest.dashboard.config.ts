@@ -2,6 +2,9 @@ import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
+  esbuild: {
+    jsx: 'automatic',
+  },
   resolve: {
     alias: {
       // Lifecycle modules live outside src/utils — explicit, more-specific-first.
@@ -12,7 +15,7 @@ export default defineConfig({
     },
   },
   test: {
-    include: ['dashboard/src/**/*.test.ts'],
+    include: ['dashboard/src/**/*.test.{ts,tsx}'],
     environment: 'node',
     testTimeout: 30000,
   },

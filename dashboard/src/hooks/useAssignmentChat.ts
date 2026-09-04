@@ -32,7 +32,7 @@ const PAGE_SIZE = 200;
 /** The working indicator ticks on Syntaur's clock — claude sends no thinking signal. */
 const TICK_MS = 1000;
 
-const CHAT_FRAMES = new Set(['chat-item', 'chat-session', 'chat-participants']);
+const CHAT_FRAMES = new Set(['chat-item', 'chat-session', 'chat-participants', 'chat-agents']);
 
 export interface UseAssignmentChatResult {
   items: ChatItem[];
@@ -138,7 +138,7 @@ export function useAssignmentChat(assignmentId: string | null): UseAssignmentCha
           applyFrame(
             prev,
             assignmentId,
-            message.type as 'chat-item' | 'chat-session' | 'chat-participants',
+            message.type as 'chat-item' | 'chat-session' | 'chat-participants' | 'chat-agents',
             message.payload,
           ),
         );
@@ -165,7 +165,7 @@ export function useAssignmentChat(assignmentId: string | null): UseAssignmentCha
         state.agents.find((agent) => agent.id === id) ?? {
           id,
           name: id,
-          color: 'slate',
+          color: 'slate' as const,
           harness: 'claude' as const,
           model: null,
           mode: null,
@@ -175,6 +175,8 @@ export function useAssignmentChat(assignmentId: string | null): UseAssignmentCha
           avatar: ([...id][0] ?? '?').toUpperCase(),
           default: false,
           source: null,
+          builtin: false,
+          overridesBuiltin: false,
           missing: null,
         },
     );
