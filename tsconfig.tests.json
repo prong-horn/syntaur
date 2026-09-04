@@ -71,5 +71,6 @@
     "src/__tests__/chat-agents.test.ts",
     "src/__tests__/harness-options.test.ts",
     "src/__tests__/session-db-migration-chat-v4.test.ts",
+    "src/__tests__/chat-broker-agents.test.ts",
   ]
 }

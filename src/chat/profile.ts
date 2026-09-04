@@ -27,6 +27,17 @@ import {
 } from './types.js';
 
 /** Every field inherits unless the definition sets it. */
+export function inheritedProfile(): SessionProfile {
+  return {
+    mode: INHERIT,
+    model: INHERIT,
+    effort: INHERIT,
+    settingSources: INHERIT,
+    mcpServers: INHERIT,
+    env: INHERIT,
+  };
+}
+
 export function resolveSessionProfile(
   definition: AgentDefinition,
   _harness: HarnessSpec,

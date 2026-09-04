@@ -617,6 +617,18 @@ export interface ChatHarnessSummary {
   auth: HarnessAuthState;
 }
 
+export interface AgentTestResult {
+  ok: boolean;
+  reply: string | null;
+  stopReason: string | null;
+  model: string | null;
+  mode: string | null;
+  effort: string | null;
+  profileErrors: string[];
+  durationMs: number;
+  error: string | null;
+}
+
 export interface HarnessSpec {
   id: Harness;
   label: string;

@@ -37,7 +37,9 @@
  */
 
 import { randomUUID } from 'node:crypto';
-import { resolve } from 'node:path';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { join, resolve } from 'node:path';
+import { tmpdir } from 'node:os';
 import { readFile } from 'node:fs/promises';
 import type * as acp from '@agentclientprotocol/sdk';
 import type { ResolvedAssignment } from '../utils/assignment-resolver.js';
@@ -74,10 +76,11 @@ import { commandsEqual, detectCommand, parseAvailableCommands, type ChatCommand,
 import { loadAgentDefinitions, resolveAgent, toAgentSummary } from './agents.js';
 import { readParticipants, writeParticipants } from './participants.js';
 import { DEFAULT_HOP_BUDGET, parseMentions, routeAgentReply, routeHuman } from './router.js';
-import { HARNESSES, HARNESS_IDS, probeAuth, resolveCommand } from './harnesses.js';
+import { HARNESSES, HARNESS_IDS, probeAuth, resolveCommand, type CommandResolution } from './harnesses.js';
 import { parseHarnessOptions } from './harness-options.js';
-import { ChatNormalizer } from './normalizer.js';
-import { applyProfile, newSessionMeta, profileEnv, profileForTier, resolveSessionProfile, serializeProfile } from './profile.js';
+import { ChatNormalizer, blockText } from './normalizer.js';
+import { applyProfile, inheritedProfile, newSessionMeta, profileEnv, profileForTier, resolveSessionProfile, serializeProfile } from './profile.js';
+import { textBlock } from './prompt-framing.js';
 import {
   buildCommandPrompt,
   buildStandingContext,
@@ -90,6 +93,7 @@ import { HUMAN_AGENT_ID, SYSTEM_AGENT_ID } from './types.js';
 import type {
   AgentDefinition,
   AgentMessageItem,
+  AgentTestResult,
   ChatAgentSummary,
   ChatEvent,
   ChatHarnessSummary,
@@ -174,6 +178,13 @@ export interface CreateChatBrokerOptions {
   clientFactory?: ClientFactory;
   /** Injected by tests; defaults to the machine's `~/.syntaur`. */
   syntaurHome?: string;
+  /** Injected by tests so spawn/auth does not depend on adapters on PATH. */
+  commandResolver?: (spec: HarnessSpec) => CommandResolution;
+  authProber?: (spec: HarnessSpec) => string;
+  /** Override the 60 s cap on throwaway test prompts (tests only). */
+  throwawayTimeoutMs?: number;
+  /** In-process fake agents do not deliver chunks via onUpdate; tests provide this. */
+  throwawayReplyFallback?: () => string | null;
   clock?: { now(): number };
   timeouts?: Partial<BrokerTimeouts>;
   /** Routing knobs; `participants.json` overrides `hopBudget` per assignment. */
@@ -213,6 +224,8 @@ export interface ChatBroker {
   ): Promise<ChatSessionSummary | null>;
   listAgents(): Promise<{ definitions: AgentDefinition[]; errors: string[] }>;
   harnesses(): ChatHarnessSummary[];
+  refreshHarness(id: Harness): Promise<ChatHarnessSummary>;
+  testAgent(id: string): Promise<AgentTestResult>;
   /** The assignment's attached agents, default and hop budget (Decision 1). */
   getParticipants(
     assignment: ResolvedAssignment,
@@ -366,6 +379,8 @@ interface AssignmentScope {
 
 export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
   const timeouts: BrokerTimeouts = { ...DEFAULT_TIMEOUTS, ...(options.timeouts ?? {}) };
+  const commandResolver = options.commandResolver ?? resolveCommand;
+  const authProber = options.authProber ?? probeAuth;
   const now = () => (options.clock ? options.clock.now() : Date.now());
   const iso = () => new Date(now()).toISOString();
   const sessions = new Map<string, Session>();
@@ -393,6 +408,12 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
   const assignmentScopes = new Map<string, Promise<AssignmentScope>>();
   const clientFactory: ClientFactory = options.clientFactory ?? defaultClientFactory;
   let stopping = false;
+  const refreshing = new Map<Harness, Promise<ChatHarnessSummary>>();
+  const testing = new Map<string, Promise<AgentTestResult>>();
+
+  const TEST_PROMPT =
+    'This is a connection test from Syntaur. Reply with the single word OK and nothing else. Do not use tools.';
+  const throwawayTimeoutMs = options.throwawayTimeoutMs ?? 60_000;
 
   function sharedLog(assignmentDir: string): Promise<ChatLog> {
     let log = logs.get(assignmentDir);
@@ -1138,7 +1159,7 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
   // --- adapter lifecycle ---------------------------------------------------
 
   function spawn(session: Session, cwd: string): AcpClient {
-    const resolved = resolveCommand(session.harness);
+    const resolved = commandResolver(session.harness);
     if (!resolved.path) {
       throw new ChatSendError(
         `${session.harness.command} is not on PATH — install it with: ${resolved.installHint}`,
@@ -1203,7 +1224,7 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
     } catch (err) {
       // Only now is the auth probe worth its latency — it EXPLAINS a failure,
       // it is never a gate.
-      const probe = probeAuth(session.harness);
+      const probe = authProber(session.harness);
       setHarnessAuth(session.harness.id, 'failed', probe);
       await client.close();
       session.client = null;
@@ -1404,7 +1425,7 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
   function harnessSummaries(): ChatHarnessSummary[] {
     return HARNESS_IDS.map((id) => {
       const spec = HARNESSES[id];
-      const resolved = resolveCommand(spec);
+      const resolved = commandResolver(spec);
       const { record, auth } = getHarnessOptions(id);
       return {
         id,
@@ -1421,6 +1442,201 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
         auth,
       };
     });
+  }
+
+  async function openThrowaway(input: {
+    harness: HarnessSpec;
+    definition: AgentDefinition | null;
+    prompt: string | null;
+    timeoutMs: number;
+  }): Promise<AgentTestResult | void> {
+    const started = now();
+    const probeDir = await mkdtemp(join(tmpdir(), 'syntaur-chat-probe-'));
+    const resolved = commandResolver(input.harness);
+    if (!resolved.path) {
+      throw new ChatSendError(
+        `${input.harness.command} is not on PATH — install it with: ${resolved.installHint}`,
+        503,
+      );
+    }
+
+    const profile = input.definition
+      ? resolveSessionProfile(input.definition, input.harness)
+      : inheritedProfile();
+    const systemPrompt = input.definition?.systemPrompt ?? '';
+
+    let reply = '';
+    let model: string | null = null;
+    let mode: string | null = null;
+    let effort: string | null = null;
+    let profileErrors: string[] = [];
+    let client: AcpClient | null = null;
+
+    try {
+      client = clientFactory({
+        agentId: input.definition?.id ?? `probe:${input.harness.id}`,
+        harness: input.harness,
+        command: resolved.path,
+        args: [...input.harness.args],
+        cwd: probeDir,
+        env: { ...profileEnv(profile), SYNTAUR_SKIP_CONTEXT_MERGE: '1' },
+        onUpdate: (notification) => {
+          const raw = notification as acp.SessionNotification | acp.SessionUpdate;
+          const update = 'update' in raw && raw.update ? raw.update : (raw as acp.SessionUpdate);
+          if (update.sessionUpdate === 'agent_message_chunk') {
+            reply += blockText(update.content as ContentBlock);
+          }
+        },
+        onPermissionRequest: async (request) => ({
+          outcome: { outcome: 'selected', optionId: rejectOption(request.options ?? []) },
+        }),
+        onExtRequest: async (method) => {
+          if (method === 'cursor/create_plan') return { outcome: { outcome: 'accepted' } };
+          if (method === 'cursor/ask_question') return { outcome: { outcome: 'cancelled' } };
+          return {};
+        },
+        onExit: () => {},
+      });
+
+      let init: acp.InitializeResponse;
+      try {
+        init = await client.initialize();
+      } catch (err) {
+        const probe = authProber(input.harness);
+        setHarnessAuth(input.harness.id, 'failed', probe);
+        await client.close();
+        throw new ChatSendError(
+          `${input.harness.command} failed to start: ${(err as Error).message}. ${probe}`,
+          503,
+        );
+      }
+
+      const adapterVersion = readAdapterVersion(init);
+      const meta = newSessionMeta(profile, input.harness, systemPrompt);
+      const newResp = await client.newSession({
+        cwd: probeDir,
+        mcpServers: meta.mcpServers,
+        _meta: meta._meta,
+      });
+      const sessionId = newResp.sessionId;
+      noteHarnessOptions(input.harness.id, adapterVersion, newResp);
+
+      const effortId = input.harness.configIds.effort;
+      for (const option of newResp.configOptions ?? []) {
+        const value = (option as { id?: string; currentValue?: unknown }).currentValue;
+        const id = (option as { id?: string }).id;
+        if (typeof value !== 'string') continue;
+        if (id === input.harness.configIds.model) model = value;
+        else if (effortId && id === effortId) effort = value;
+        else if (id === 'mode' || id === 'collaboration_mode') mode = value;
+      }
+      mode = newResp.modes?.currentModeId ?? mode;
+
+      if (input.definition) {
+        const applied = await applyProfile(client, sessionId, profile, input.harness);
+        profileErrors = applied.errors;
+        model = applied.applied.model ?? model;
+        mode = applied.applied.mode ?? mode;
+        effort = applied.applied.effort ?? effort;
+      }
+
+      if (!input.prompt) return;
+
+      const blocks: ContentBlock[] = [];
+      if (input.harness.systemPromptTransport === 'prompt' && systemPrompt.trim()) {
+        blocks.push(textBlock(`<system>\n${systemPrompt.trim()}\n</system>`));
+      }
+      blocks.push(textBlock(input.prompt));
+
+      let stopReason: string | null = null;
+      try {
+        const response = await Promise.race([
+          client.prompt(sessionId, blocks),
+          new Promise<never>((_, reject) =>
+            setTimeout(() => reject(new Error(`timed out after ${input.timeoutMs}ms`)), input.timeoutMs),
+          ),
+        ]);
+        const drainDeadline = now() + 500;
+        while (!reply.trim() && now() < drainDeadline) {
+          await new Promise((r) => setTimeout(r, 5));
+        }
+        if (!reply.trim() && options.throwawayReplyFallback) {
+          reply = options.throwawayReplyFallback() ?? '';
+        }
+        stopReason = response.stopReason ?? null;
+      } catch (err) {
+        await client.cancel(sessionId).catch(() => {});
+        return {
+          ok: false,
+          reply: reply.trim() || null,
+          stopReason,
+          model,
+          mode,
+          effort,
+          profileErrors,
+          durationMs: now() - started,
+          error: (err as Error).message,
+        };
+      }
+
+      const trimmed = reply.trim();
+      return {
+        ok: stopReason === 'end_turn' && trimmed.length > 0,
+        reply: trimmed || null,
+        stopReason,
+        model,
+        mode,
+        effort,
+        profileErrors,
+        durationMs: now() - started,
+        error: null,
+      };
+    } finally {
+      if (client) await client.close().catch(() => {});
+      await rm(probeDir, { recursive: true, force: true }).catch(() => {});
+    }
+  }
+
+  async function refreshHarness(id: Harness): Promise<ChatHarnessSummary> {
+    const existing = refreshing.get(id);
+    if (existing) return existing;
+    const run = (async () => {
+      const spec = HARNESSES[id];
+      if (!spec) throw new ChatSendError(`Unknown harness ${JSON.stringify(id)}`, 404);
+      await openThrowaway({ harness: spec, definition: null, prompt: null, timeoutMs: 60_000 });
+      const summary = harnessSummaries().find((h) => h.id === id);
+      if (!summary) throw new ChatSendError(`Unknown harness ${JSON.stringify(id)}`, 404);
+      return summary;
+    })();
+    refreshing.set(id, run);
+    try {
+      return await run;
+    } finally {
+      refreshing.delete(id);
+    }
+  }
+
+  async function testAgent(id: string): Promise<AgentTestResult> {
+    const existing = testing.get(id);
+    if (existing) return existing;
+    const run = (async () => {
+      const { definitions } = await loadAgentDefinitions(options.syntaurHome);
+      const def = definitions.find((d) => d.id === id);
+      if (!def) throw new ChatSendError(`No agent definition ${JSON.stringify(id)}`, 404);
+      const result = await openThrowaway({
+        harness: HARNESSES[def.harness],
+        definition: def,
+        prompt: TEST_PROMPT,
+        timeoutMs: throwawayTimeoutMs,
+      });
+      return result as AgentTestResult;
+    })();
+    testing.set(id, run);
+    try {
+      return await run;
+    } finally {
+      testing.delete(id);
+    }
   }
 
   const LOAD_REPLAY_SKIP = new Set([
@@ -2469,11 +2685,15 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
 
     harnesses: () => harnessSummaries(),
 
+    refreshHarness,
+
+    testAgent,
+
     async getParticipants(assignment) {
       const { definitions } = await loadAgentDefinitions(options.syntaurHome);
       return {
         participants: await readParticipants(assignment.assignmentDir, definitions),
-        agents: definitions.map((d) => toAgentSummary(d)),
+        agents: definitions.map((d) => toAgentSummary(d, commandResolver)),
       };
     },
 
@@ -2490,7 +2710,7 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
         const session = before.find((s) => s.agentId === agentId);
         if (session) await detachSession(session);
       }
-      const agents = definitions.map((d) => toAgentSummary(d));
+      const agents = definitions.map((d) => toAgentSummary(d, commandResolver));
       options.broadcast({
         type: 'chat-participants',
         projectSlug: assignment.projectSlug,

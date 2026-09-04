@@ -13,14 +13,21 @@
 
 import * as acp from '@agentclientprotocol/sdk';
 
+function chunkText(block: acp.ContentBlock | undefined): string {
+  if (block?.type === 'text') return block.text;
+  return '';
+}
+
 /** One scripted step inside a turn. */
 export type FakeStep =
   | { kind: 'update'; update: acp.SessionUpdate }
   | { kind: 'permission'; request: Omit<acp.RequestPermissionRequest, 'sessionId'> }
   | { kind: 'extRequest'; method: string; params: unknown }
   | { kind: 'extNotification'; method: string; params: unknown }
-  /** Wait for the client to `session/cancel`; resolves the turn `cancelled`. */
+  /** Resolve the prompt with `cancelled` when the client calls `session/cancel`. */
   | { kind: 'awaitCancel' }
+  /** Never resolve until `session/cancel` (for timeout tests). */
+  | { kind: 'hang' }
   /** Fail the prompt with a JSON-RPC error. */
   | { kind: 'error'; message: string }
   /** Resolve a deferred the test controls, so a turn can be held open. */
@@ -47,14 +54,20 @@ export interface FakeAgentOptions {
   setConfigOptionResponse?: acp.SetSessionConfigOptionResponse;
   /** Session ids handed out by `session/new`, in order. Defaults to `fake-session-<n>`. */
   sessionIds?: string[];
-  /** When set, `session/resume` rejects with this message. */
+  /** `session/resume` rejects with this message. */
   resumeError?: string;
   /** Replayed as `session/update`s before the `session/load` response. */
   loadReplay?: acp.SessionUpdate[];
+  /** When set, `initialize` rejects with this message. */
+  initializeError?: string;
+  /** When set, `session/set_config_option` rejects with this message. */
+  setConfigOptionError?: string;
 }
 
 export interface FakeAgent {
   app: acp.AgentApp;
+  /** Text chunks the fake emitted during the latest prompts (in-process tests). */
+  readonly chunks: string[];
   /** Every request the fake received, in order — `['initialize', 'session/new', …]`. */
   readonly calls: string[];
   /** `session/new` request params, in order. */
@@ -79,6 +92,7 @@ export function createFakeAgent(options: FakeAgentOptions = {}): FakeAgent {
   const configCalls: Array<{ method: string; params: Record<string, unknown> }> = [];
   const permissionAnswers: acp.RequestPermissionResponse[] = [];
   const extAnswers: unknown[] = [];
+  const chunks: string[] = [];
   const cancelled = new Map<string, Array<() => void>>();
   let turnIndex = 0;
   let sessionCount = 0;
@@ -114,6 +128,7 @@ export function createFakeAgent(options: FakeAgentOptions = {}): FakeAgent {
     .agent({ name: 'fake-acp-agent' })
     .onRequest(acp.methods.agent.initialize, () => {
       calls.push('initialize');
+      if (options.initializeError) throw new Error(options.initializeError);
       return {
         protocolVersion: acp.PROTOCOL_VERSION,
         agentCapabilities: { loadSession: true, ...(options.agentCapabilities ?? {}) },
@@ -163,6 +178,7 @@ export function createFakeAgent(options: FakeAgentOptions = {}): FakeAgent {
         method: 'session/set_config_option',
         params: ctx.params as unknown as Record<string, unknown>,
       });
+      if (options.setConfigOptionError) throw new Error(options.setConfigOptionError);
       return (
         options.setConfigOptionResponse ??
         ({ configOptions: options.configOptions ?? [] } as unknown as acp.SetSessionConfigOptionResponse)
@@ -185,6 +201,7 @@ export function createFakeAgent(options: FakeAgentOptions = {}): FakeAgent {
       for (const step of turn.steps) {
         switch (step.kind) {
           case 'update':
+            chunks.push(chunkText(step.update.content as acp.ContentBlock));
             await ctx.client.notify(acp.methods.client.session.update, {
               sessionId,
               update: step.update,
@@ -209,6 +226,9 @@ export function createFakeAgent(options: FakeAgentOptions = {}): FakeAgent {
           case 'awaitCancel':
             await waitForCancel(sessionId);
             return { stopReason: 'cancelled' } as acp.PromptResponse;
+          case 'hang':
+            await waitForCancel(sessionId);
+            return { stopReason: 'cancelled' } as acp.PromptResponse;
           case 'gate':
             await step.gate;
             break;
@@ -231,6 +251,7 @@ export function createFakeAgent(options: FakeAgentOptions = {}): FakeAgent {
     configCalls,
     permissionAnswers,
     extAnswers,
+    chunks,
     push(turn) {
       turns.push(turn);
     },
