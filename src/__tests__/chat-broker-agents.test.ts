@@ -10,7 +10,7 @@ import { connectAcpClient, type AcpClient } from '../chat/acp-client.js';
 import { createFakeAgent, textChunk, type FakeAgent, type FakeTurn } from '../chat/fake-agent.js';
 import { createChatBroker, ChatSendError, type ChatBroker, type ClientFactory } from '../chat/broker.js';
 import { HARNESSES } from '../chat/harnesses.js';
-import { writeAgentDefinition, AgentWriteError } from '../chat/agents.js';
+import { writeAgentDefinition, AgentWriteError, loadAgentDefinitions } from '../chat/agents.js';
 import { participantsPath } from '../chat/participants.js';
 import type { ChatItem, Harness, Participants } from '../chat/types.js';
 import type { ResolvedAssignment } from '../utils/assignment-resolver.js';
@@ -312,7 +312,10 @@ const fakeConfigOptions = [
 
 function makeAssignmentBroker(
   scripts: Record<string, FakeTurn[]> = {},
-  opts: { sessionIds?: Record<string, string[]> } = {},
+  opts: {
+    sessionIds?: Record<string, string[]>;
+    loadDefinitions?: (root: string) => ReturnType<typeof loadAgentDefinitions>;
+  } = {},
 ): void {
   fakes = new Map();
   spawnHarnesses = [];
@@ -322,6 +325,7 @@ function makeAssignmentBroker(
     projectsDir: join(sandbox, 'projects'),
     assignmentsDir: join(sandbox, 'assignments'),
     syntaurHome: sandbox,
+    loadDefinitions: opts.loadDefinitions,
     broadcast: (message) =>
       frames.push({ type: message.type, payload: structuredClone(message.payload) }),
     clientFactory: (input) => {
@@ -598,14 +602,30 @@ describe.sequential('live session bookkeeping (Task 5)', () => {
 
   it('construction race: saveAgent updates the session definition before publish', async () => {
     await writeAgentDefinition(sandbox, plannerInput({ description: 'Before', systemPrompt: 'Before body' }));
-    makeAssignmentBroker({
-      planner: [{ steps: [{ kind: 'update', update: textChunk('OK', 'm1') }] }],
+    let releaseConstructionLoad!: () => void;
+    const constructionLoadGate = new Promise<void>((resolve) => {
+      releaseConstructionLoad = resolve;
     });
+    let gatedOnce = false;
+    makeAssignmentBroker(
+      { planner: [{ steps: [{ kind: 'update', update: textChunk('OK', 'm1') }] }] },
+      {
+        loadDefinitions: async (root) => {
+          const result = await loadAgentDefinitions(root);
+          if (!gatedOnce) {
+            gatedOnce = true;
+            await constructionLoadGate;
+          }
+          return result;
+        },
+      },
+    );
 
     const sessionP = broker.getSession(assignment(), 'planner');
     const saveP = broker.saveAgent(
       plannerInput({ description: 'After race', systemPrompt: 'After race body' }),
     );
+    releaseConstructionLoad();
     const [summary] = await Promise.all([sessionP, saveP]);
     expect(summary).not.toBeNull();
 
@@ -652,15 +672,108 @@ describe.sequential('live session bookkeeping (Task 5)', () => {
 
   it('construction race: deleteAgent aborts session construction', async () => {
     await writeAgentDefinition(sandbox, plannerInput());
-    makeAssignmentBroker({
-      planner: [{ steps: [{ kind: 'update', update: textChunk('OK', 'm1') }] }],
+    let releaseConstructionLoad!: () => void;
+    const constructionLoadGate = new Promise<void>((resolve) => {
+      releaseConstructionLoad = resolve;
     });
+    let gatedOnce = false;
+    makeAssignmentBroker(
+      { planner: [{ steps: [{ kind: 'update', update: textChunk('OK', 'm1') }] }] },
+      {
+        loadDefinitions: async (root) => {
+          const result = await loadAgentDefinitions(root);
+          if (!gatedOnce) {
+            gatedOnce = true;
+            await constructionLoadGate;
+          }
+          return result;
+        },
+      },
+    );
 
     const sessionP = broker.getSession(assignment(), 'planner');
     const deleteP = broker.deleteAgent('planner');
+    releaseConstructionLoad();
     expect(await sessionP).toBeNull();
     await deleteP;
     expect(await broker.getSession(assignment(), 'planner')).toBeNull();
+  });
+
+  it('rejects traversal ids on save, delete, and test', async () => {
+    const sentinel = join(sandbox, 'sentinel.txt');
+    await writeFile(sentinel, 'keep');
+    makeAssignmentBroker();
+
+    await expect(
+      broker.saveAgent({
+        id: '../x',
+        name: 'Bad',
+        color: 'amber',
+        harness: 'claude',
+        respondsTo: 'mentions',
+        default: false,
+        systemPrompt: '',
+      }),
+    ).rejects.toMatchObject({ status: 400 });
+    await expect(broker.deleteAgent('../x')).rejects.toMatchObject({ status: 400 });
+    await expect(broker.testAgent('../x')).rejects.toMatchObject({ status: 400 });
+    expect(await readFile(sentinel, 'utf-8')).toBe('keep');
+  });
+
+  it('applies saved pins to an unmaterialised session after restart', async () => {
+    await writeAgentDefinition(sandbox, plannerInput({ model: 'claude-opus-5' }));
+    makeAssignmentBroker({
+      planner: [{ steps: [{ kind: 'update', update: textChunk('OK', 'm1') }] }],
+    });
+    await broker.send({ assignment: assignment(), text: '@planner hello' });
+    await idleTurns(1);
+    const acpId = getChatSession(ASSIGNMENT_ID, 'planner')!.acp_session_id;
+    expect(acpId).toBeTruthy();
+
+    await broker.stopAll();
+    makeAssignmentBroker({
+      planner: [{ steps: [{ kind: 'update', update: textChunk('OK', 'm2') }] }],
+    });
+    await broker.saveAgent(plannerInput({ model: 'claude-sonnet-5' }));
+
+    await broker.send({ assignment: assignment(), text: '@planner after save' });
+    await idleTurns(2);
+
+    const fake = fakes.get('planner')!;
+    expect(fake.calls).toContain('session/resume');
+    expect(fake.calls).not.toContain('session/new');
+    expect(
+      fake.configCalls.some(
+        (c) => c.method === 'session/set_config_option' && c.params.value === 'claude-sonnet-5',
+      ),
+    ).toBe(true);
+    expect(systemTexts().some((t) => t.includes("Applied @planner's updated definition"))).toBe(true);
+    expect(getChatSession(ASSIGNMENT_ID, 'planner')?.acp_session_id).toBe(acpId);
+  });
+
+  it('rotates an unmaterialised session when the saved harness changes', async () => {
+    await writeAgentDefinition(sandbox, plannerInput({ harness: 'claude', model: 'claude-opus-5' }));
+    makeAssignmentBroker({
+      planner: [{ steps: [{ kind: 'update', update: textChunk('OK', 'm1') }] }],
+    });
+    await broker.send({ assignment: assignment(), text: '@planner hello' });
+    await idleTurns(1);
+    expect(getChatSession(ASSIGNMENT_ID, 'planner')?.harness).toBe('claude');
+
+    await broker.stopAll();
+    makeAssignmentBroker({
+      planner: [{ steps: [{ kind: 'update', update: textChunk('OK', 'm2') }] }],
+    });
+    await broker.saveAgent(plannerInput({ harness: 'codex', model: 'claude-opus-5' }));
+
+    await broker.send({ assignment: assignment(), text: '@planner new harness' });
+    await idleTurns(2);
+
+    const fake = fakes.get('planner')!;
+    expect(fake.calls).toContain('initialize');
+    expect(fake.calls).toContain('session/new');
+    expect(fake.calls).not.toContain('session/resume');
+    expect(systemTexts().some((t) => t.includes("@planner's harness changed to codex"))).toBe(true);
   });
 
   it('drops orphaned chat_sessions rows when deleting an agent', async () => {
