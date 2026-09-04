@@ -200,13 +200,15 @@ export function createFakeAgent(options: FakeAgentOptions = {}): FakeAgent {
 
       for (const step of turn.steps) {
         switch (step.kind) {
-          case 'update':
-            chunks.push(chunkText(step.update.content as acp.ContentBlock));
+          case 'update': {
+            const content = (step.update as { content?: acp.ContentBlock }).content;
+            chunks.push(chunkText(content));
             await ctx.client.notify(acp.methods.client.session.update, {
               sessionId,
               update: step.update,
             });
             break;
+          }
           case 'permission': {
             const answer = await ctx.client.request(acp.methods.client.session.requestPermission, {
               sessionId,

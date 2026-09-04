@@ -45,6 +45,7 @@ import type * as acp from '@agentclientprotocol/sdk';
 import type { ResolvedAssignment } from '../utils/assignment-resolver.js';
 import { extractFrontmatter, getNestedField } from '../dashboard/parser.js';
 import { resolveChatCwd, type CwdTier } from './chat-cwd.js';
+import { syntaurRoot } from '../utils/paths.js';
 import { appendComment } from '../lifecycle/comment-append.js';
 import { appendSession, updateSessionStatus } from '../dashboard/agent-sessions.js';
 import {
@@ -59,6 +60,7 @@ import { priceForModel } from '../usage/pricing.js';
 import {
   applyChatPatch,
   clearChatSessionPid,
+  deleteChatSession,
   getChatItem,
   getChatSession,
   getHarnessOptions,
@@ -73,8 +75,8 @@ import {
 } from '../db/chat-db.js';
 import { adapterVersion as readAdapterVersion, spawnAcpClient, type AcpClient } from './acp-client.js';
 import { commandsEqual, detectCommand, parseAvailableCommands, type ChatCommand, type ChatCommandsSource } from './commands.js';
-import { loadAgentDefinitions, resolveAgent, toAgentSummary } from './agents.js';
-import { readParticipants, writeParticipants } from './participants.js';
+import { deleteAgentDefinition, loadAgentDefinitions, resolveAgent, toAgentSummary, writeAgentDefinition } from './agents.js';
+import { readParticipants, readParticipantsDetailed, writeParticipants } from './participants.js';
 import { DEFAULT_HOP_BUDGET, parseMentions, routeAgentReply, routeHuman } from './router.js';
 import { HARNESSES, HARNESS_IDS, probeAuth, resolveCommand, type CommandResolution } from './harnesses.js';
 import { parseHarnessOptions } from './harness-options.js';
@@ -92,6 +94,7 @@ import { openChatLog, type ChatLog } from './store.js';
 import { HUMAN_AGENT_ID, SYSTEM_AGENT_ID } from './types.js';
 import type {
   AgentDefinition,
+  AgentDefinitionInput,
   AgentMessageItem,
   AgentTestResult,
   ChatAgentSummary,
@@ -162,7 +165,7 @@ export type ClientFactory = (input: ClientFactoryInput) => AcpClient;
 
 export interface BrokerBroadcast {
   (message: {
-    type: 'chat-item' | 'chat-session' | 'chat-participants';
+    type: 'chat-item' | 'chat-session' | 'chat-participants' | 'chat-agents';
     projectSlug?: string | null;
     assignmentSlug?: string;
     timestamp: string;
@@ -226,6 +229,9 @@ export interface ChatBroker {
   harnesses(): ChatHarnessSummary[];
   refreshHarness(id: Harness): Promise<ChatHarnessSummary>;
   testAgent(id: string): Promise<AgentTestResult>;
+  saveAgent(input: AgentDefinitionInput): Promise<AgentDefinition>;
+  deleteAgent(id: string): Promise<{ restoredBuiltin: boolean }>;
+  agentSummaries(): Promise<ChatAgentSummary[]>;
   /** The assignment's attached agents, default and hop budget (Decision 1). */
   getParticipants(
     assignment: ResolvedAssignment,
@@ -337,6 +343,12 @@ interface Session {
   commandsSource: ChatCommandsSource | null;
   /** Serialises `drive` so two sends cannot both spawn an adapter. */
   driving: Promise<void>;
+  /** Bumped when the on-disk definition changes; live sessions re-read on next open. */
+  definitionStale: boolean;
+  /** Set when a stale apply should warn that the system prompt needs a new session. */
+  stalePromptChanged: boolean;
+  /** `definitionsRev` at construction start — detects mid-build saves. */
+  builtAtRev: number;
 }
 
 /** Probe value for "is this model in the price list at all?". */
@@ -410,10 +422,215 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
   let stopping = false;
   const refreshing = new Map<Harness, Promise<ChatHarnessSummary>>();
   const testing = new Map<string, Promise<AgentTestResult>>();
+  let definitionsRev = 0;
+  let agentWrites: Promise<unknown> = Promise.resolve();
 
   const TEST_PROMPT =
     'This is a connection test from Syntaur. Reply with the single word OK and nothing else. Do not use tools.';
   const throwawayTimeoutMs = options.throwawayTimeoutMs ?? 60_000;
+
+  async function agentSummaries(): Promise<ChatAgentSummary[]> {
+    const { definitions } = await loadAgentDefinitions(options.syntaurHome);
+    return definitions.map((d) => toAgentSummary(d, commandResolver));
+  }
+
+  async function broadcastAgents(): Promise<void> {
+    options.broadcast({
+      type: 'chat-agents',
+      projectSlug: null,
+      timestamp: iso(),
+      payload: { agents: await agentSummaries() },
+    });
+  }
+
+  function definitionFingerprint(def: AgentDefinition): string {
+    return JSON.stringify({
+      name: def.name,
+      color: def.color,
+      harness: def.harness,
+      model: def.model ?? null,
+      mode: def.mode ?? null,
+      effort: def.effort ?? null,
+      mcpServers: def.mcpServers ?? null,
+      env: def.env ?? null,
+      respondsTo: def.respondsTo,
+      default: def.default,
+      description: def.description ?? null,
+      avatar: def.avatar ?? null,
+      systemPrompt: def.systemPrompt,
+      promptIsDefault: def.promptIsDefault ?? false,
+    });
+  }
+
+  function definitionChanged(a: AgentDefinition, b: AgentDefinition): boolean {
+    return definitionFingerprint(a) !== definitionFingerprint(b);
+  }
+
+  async function repairDroppedParticipants(
+    assignment: ResolvedAssignment,
+    dropped: string[],
+    participants: Participants,
+    definitions: readonly AgentDefinition[],
+  ): Promise<Participants> {
+    if (dropped.length === 0) return participants;
+    const repaired = await writeParticipants(assignment.assignmentDir, participants, definitions);
+    for (const id of dropped) {
+      await recordAssignment(
+        assignment,
+        'system',
+        {
+          level: 'info',
+          text: `@${id} is no longer in this chat — its agent definition no longer exists`,
+        },
+        { agentId: SYSTEM_AGENT_ID },
+      );
+    }
+    options.broadcast({
+      type: 'chat-participants',
+      projectSlug: assignment.projectSlug,
+      assignmentSlug: assignment.assignmentSlug,
+      timestamp: iso(),
+      payload: {
+        assignmentId: assignment.id,
+        participants: repaired,
+        agents: definitions.map((d) => toAgentSummary(d, commandResolver)),
+      },
+    });
+    return repaired;
+  }
+
+  async function applyPins(session: Session, client: AcpClient, sessionId: string): Promise<void> {
+    const profile = profileForTier(session.profile, session.cwdTier);
+    const { applied, errors } = await applyProfile(client, sessionId, profile, session.harness);
+    const parts: string[] = [];
+    if (applied.mode) {
+      session.mode = applied.mode;
+      parts.push(`mode ${applied.mode}`);
+    }
+    if (applied.model) {
+      session.model = applied.model;
+      parts.push(`model ${applied.model}`);
+    }
+    if (applied.effort) {
+      session.effort = applied.effort;
+      parts.push(`effort ${applied.effort}`);
+    }
+    const detail = parts.length > 0 ? parts.join(', ') : 'no pinned fields';
+    await record(
+      session,
+      'system',
+      { level: 'info', text: `Applied @${session.agentId}'s updated definition: ${detail}` },
+      null,
+    );
+    if (session.stalePromptChanged) {
+      await record(
+        session,
+        'system',
+        { level: 'warn', text: 'The new system prompt takes effect at the next new session' },
+        null,
+      );
+      session.stalePromptChanged = false;
+    }
+    for (const error of errors) {
+      await record(session, 'system', { level: 'warn', text: `Could not pin ${error}` }, null);
+    }
+    session.definitionStale = false;
+    emitSession(session);
+  }
+
+  async function tearDownForHarnessChange(session: Session): Promise<void> {
+    const dropped = session.queue.splice(0, session.queue.length);
+    for (const entry of dropped) {
+      await recordAssignment(
+        session.assignment,
+        'route.notice',
+        {
+          level: 'warn',
+          text:
+            `@${session.agentId}'s harness changed — a queued message was withdrawn: ` +
+            `${firstLineOf(entry.text)}`,
+        },
+        { agentId: SYSTEM_AGENT_ID },
+      );
+    }
+    if (session.inFlight) {
+      await cancelTurn(session).catch(() => false);
+      await Promise.race([
+        waitFor(() => session.inFlight === null, timeouts.shutdownGraceMs),
+        sleep(timeouts.shutdownGraceMs),
+      ]);
+    }
+    await shutdownSession(session);
+    deleteChatSession(session.key);
+    sessions.delete(session.key);
+  }
+
+  async function applyDefinitionToSessions(
+    id: string,
+    newDef: AgentDefinition,
+    opts: { restoredBuiltin?: boolean } = {},
+  ): Promise<void> {
+    await Promise.allSettled(
+      [...constructing.entries()]
+        .filter(([key]) => key.endsWith(`:${id}`))
+        .map(([, promise]) => promise),
+    );
+
+    const touchedAssignments = new Set<string>();
+    for (const session of [...sessions.values()]) {
+      if (session.agentId !== id) continue;
+      touchedAssignments.add(session.assignment.id);
+      const prevPrompt = session.definition.systemPrompt;
+      const harnessChanged = session.harness.id !== newDef.harness;
+      session.definition = newDef;
+      session.profile = resolveSessionProfile(newDef, HARNESSES[newDef.harness as Harness]);
+      session.harness = HARNESSES[newDef.harness as Harness];
+      session.definitionStale = true;
+      session.stalePromptChanged = prevPrompt !== newDef.systemPrompt;
+
+      if (harnessChanged) {
+        await tearDownForHarnessChange(session);
+        continue;
+      }
+
+      const clientAlive = session.client?.alive() ?? false;
+      const idle = !session.inFlight && session.queue.length === 0;
+      if (clientAlive && idle) {
+        await shutdownSession(session);
+      }
+
+      if (opts.restoredBuiltin) {
+        await record(
+          session,
+          'system',
+          { level: 'info', text: `@${id} is back to its built-in definition` },
+          null,
+        );
+      }
+    }
+
+    if (opts.restoredBuiltin) {
+      for (const assignmentId of touchedAssignments) {
+        const session = [...sessions.values()].find(
+          (s) => s.assignment.id === assignmentId && s.agentId === id,
+        );
+        if (!session) continue;
+        const { definitions } = await loadAgentDefinitions(options.syntaurHome);
+        const participants = await readParticipants(session.assignment.assignmentDir, definitions);
+        options.broadcast({
+          type: 'chat-participants',
+          projectSlug: session.assignment.projectSlug,
+          assignmentSlug: session.assignment.assignmentSlug,
+          timestamp: iso(),
+          payload: {
+            assignmentId: session.assignment.id,
+            participants,
+            agents: definitions.map((d) => toAgentSummary(d, commandResolver)),
+          },
+        });
+      }
+    }
+  }
 
   function sharedLog(assignmentDir: string): Promise<ChatLog> {
     let log = logs.get(assignmentDir);
@@ -505,9 +722,18 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
   /** Definitions and the participant set, read together on every routing pass. */
   async function routingContext(assignment: ResolvedAssignment) {
     const { definitions } = await loadAgentDefinitions(options.syntaurHome);
-    const stored = await readParticipants(assignment.assignmentDir, definitions);
-    const hopBudget = stored.hopBudget ?? options.routing?.hopBudget ?? DEFAULT_HOP_BUDGET;
-    return { definitions, participants: { ...stored, hopBudget } };
+    const { participants: raw, dropped } = await readParticipantsDetailed(
+      assignment.assignmentDir,
+      definitions,
+    );
+    const participants = await repairDroppedParticipants(
+      assignment,
+      dropped,
+      raw,
+      definitions,
+    );
+    const hopBudget = participants.hopBudget ?? options.routing?.hopBudget ?? DEFAULT_HOP_BUDGET;
+    return { definitions, participants: { ...participants, hopBudget } };
   }
 
   // --- events, items, broadcast -------------------------------------------
@@ -610,6 +836,7 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
       cwdTier: session.cwdTier,
       commands: session.commands,
       commandsSource: session.commandsSource,
+      staleDefinition: session.definitionStale || undefined,
     };
   }
 
@@ -693,6 +920,7 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
     definition: AgentDefinition,
     key: string,
   ): Promise<Session> {
+    const builtAtRev = definitionsRev;
     const harness = HARNESSES[definition.harness as Harness];
     const log = await sharedLog(assignment.assignmentDir);
     const row = getChatSession(assignment.id, definition.id);
@@ -747,6 +975,9 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
       commands: commandState.commands,
       commandsSource: commandState.commandsSource,
       driving: Promise.resolve(),
+      definitionStale: false,
+      stalePromptChanged: false,
+      builtAtRev,
     };
 
     // The normalizer must pick up where the persisted log left off, so a restart
@@ -772,6 +1003,19 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
       await shutdownSession(session);
       return session;
     }
+
+    if (definitionsRev !== builtAtRev) {
+      const { definitions } = await loadAgentDefinitions(options.syntaurHome);
+      const fresh = definitions.find((d) => d.id === definition.id);
+      if (!fresh) {
+        await shutdownSession(session);
+        throw new ChatSendError(`No agent definition ${JSON.stringify(definition.id)}`, 404);
+      }
+      session.definition = fresh;
+      session.profile = resolveSessionProfile(fresh, HARNESSES[fresh.harness as Harness]);
+      session.harness = HARNESSES[fresh.harness as Harness];
+    }
+
     sessions.set(key, session);
 
     // Messages recovered by the repair are sent without waiting for the human to
@@ -1191,7 +1435,24 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
   }
 
   async function ensureAdapter(session: Session): Promise<void> {
-    if (session.client?.alive() && session.acpSessionId) return;
+    const { definitions } = await loadAgentDefinitions(options.syntaurHome);
+    const fresh = definitions.find((d) => d.id === session.agentId);
+    if (!fresh) {
+      throw new ChatSendError(`No agent definition ${JSON.stringify(session.agentId)}`, 404);
+    }
+    if (definitionChanged(session.definition, fresh)) {
+      session.definition = fresh;
+      session.harness = HARNESSES[fresh.harness as Harness];
+      session.profile = resolveSessionProfile(fresh, session.harness);
+      session.definitionStale = true;
+    }
+
+    if (session.client?.alive() && session.acpSessionId) {
+      if (session.definitionStale && !session.inFlight) {
+        await applyPins(session, session.client, session.acpSessionId);
+      }
+      return;
+    }
 
     const previousCwd = session.cwd;
     const cwd = await resolveCwd(session);
@@ -1301,6 +1562,10 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
       }
     }
 
+    if (attached && session.definitionStale && session.acpSessionId) {
+      await applyPins(session, client, session.acpSessionId);
+    }
+
     if (!attached) {
       const profile = profileForTier(session.profile, session.cwdTier);
       const meta = newSessionMeta(profile, session.harness, session.definition.systemPrompt);
@@ -1327,6 +1592,8 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
         await record(session, 'system', { level: 'warn', text: `Could not pin ${error}` }, null);
       }
       session.standingSent = false;
+      session.definitionStale = false;
+      session.stalePromptChanged = false;
     }
 
     await registerAgentSession(session, cwd);
@@ -1637,6 +1904,81 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
     } finally {
       testing.delete(id);
     }
+  }
+
+  async function saveAgent(input: AgentDefinitionInput): Promise<AgentDefinition> {
+    const home = options.syntaurHome ?? syntaurRoot();
+    const run = agentWrites.then(async () => {
+      const definition = await writeAgentDefinition(home, input);
+      definitionsRev += 1;
+      await applyDefinitionToSessions(input.id, definition);
+      await broadcastAgents();
+      return definition;
+    });
+    agentWrites = run.catch(() => undefined);
+    return run;
+  }
+
+  async function deleteAgent(id: string): Promise<{ restoredBuiltin: boolean }> {
+    const home = options.syntaurHome ?? syntaurRoot();
+    const run = agentWrites.then(async () => {
+      const result = await deleteAgentDefinition(home, id);
+      definitionsRev += 1;
+      if (result.restoredBuiltin) {
+        const { definitions } = await loadAgentDefinitions(options.syntaurHome);
+        const builtin = definitions.find((d) => d.id === id);
+        if (!builtin) throw new ChatSendError(`No agent definition ${JSON.stringify(id)}`, 404);
+        await applyDefinitionToSessions(id, builtin, { restoredBuiltin: true });
+      } else {
+        const touched = new Map<string, ResolvedAssignment>();
+        for (const session of [...sessions.values()]) {
+          if (session.agentId !== id) continue;
+          touched.set(session.assignment.id, session.assignment);
+          await detachSession(session);
+          sessions.delete(session.key);
+        }
+        const { definitions } = await loadAgentDefinitions(options.syntaurHome);
+        for (const assignment of touched.values()) {
+          const { participants: current } = await readParticipantsDetailed(
+            assignment.assignmentDir,
+            definitions,
+          );
+          const next = {
+            ...current,
+            agents: current.agents.filter((agentId) => agentId !== id),
+            defaultAgent:
+              current.defaultAgent === id
+                ? current.agents.find((agentId) => agentId !== id) ?? null
+                : current.defaultAgent,
+          };
+          const participants = await writeParticipants(assignment.assignmentDir, next, definitions);
+          await recordAssignment(
+            assignment,
+            'system',
+            {
+              level: 'info',
+              text: `@${id} is no longer in this chat — its agent definition was deleted`,
+            },
+            { agentId: SYSTEM_AGENT_ID },
+          );
+          options.broadcast({
+            type: 'chat-participants',
+            projectSlug: assignment.projectSlug,
+            assignmentSlug: assignment.assignmentSlug,
+            timestamp: iso(),
+            payload: {
+              assignmentId: assignment.id,
+              participants,
+              agents: definitions.map((d) => toAgentSummary(d, commandResolver)),
+            },
+          });
+        }
+      }
+      await broadcastAgents();
+      return result;
+    });
+    agentWrites = run.catch(() => undefined);
+    return run;
   }
 
   const LOAD_REPLAY_SKIP = new Set([
@@ -2689,10 +3031,26 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
 
     testAgent,
 
+    saveAgent,
+
+    deleteAgent,
+
+    agentSummaries,
+
     async getParticipants(assignment) {
       const { definitions } = await loadAgentDefinitions(options.syntaurHome);
+      const { participants: raw, dropped } = await readParticipantsDetailed(
+        assignment.assignmentDir,
+        definitions,
+      );
+      const participants = await repairDroppedParticipants(
+        assignment,
+        dropped,
+        raw,
+        definitions,
+      );
       return {
-        participants: await readParticipants(assignment.assignmentDir, definitions),
+        participants,
         agents: definitions.map((d) => toAgentSummary(d, commandResolver)),
       };
     },

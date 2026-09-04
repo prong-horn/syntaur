@@ -442,6 +442,8 @@ export interface ChatSessionSummary {
   commands: import('./commands.js').ChatCommand[];
   /** Where {@link commands} came from — live session or per-harness cache. */
   commandsSource: import('./commands.js').ChatCommandsSource | null;
+  /** True when the on-disk definition changed but a running turn still uses the old pins. */
+  staleDefinition?: boolean;
 }
 
 /**
@@ -701,7 +703,11 @@ export interface ChatParticipantsFrame {
   agents: ChatAgentSummary[];
 }
 
-export type ChatWsFrame = ChatItemFrame | ChatSessionFrame | ChatParticipantsFrame;
+export interface ChatAgentsFrame {
+  agents: ChatAgentSummary[];
+}
+
+export type ChatWsFrame = ChatItemFrame | ChatSessionFrame | ChatParticipantsFrame | ChatAgentsFrame;
 
 /** Re-exported so callers need not import the SDK for prompt building. */
 export type { ContentBlock };

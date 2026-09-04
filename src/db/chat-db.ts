@@ -125,6 +125,10 @@ export function clearChatSessionPid(sessionKey: string): void {
   getSessionDb().prepare('UPDATE chat_sessions SET pid = NULL WHERE session_key = ?').run(sessionKey);
 }
 
+export function deleteChatSession(sessionKey: string): void {
+  getSessionDb().prepare('DELETE FROM chat_sessions WHERE session_key = ?').run(sessionKey);
+}
+
 export function getChatSession(assignmentId: string, agentId: string): ChatSessionRow | null {
   const row = getSessionDb()
     .prepare('SELECT * FROM chat_sessions WHERE assignment_id = ? AND agent_id = ? LIMIT 1')

@@ -47,6 +47,26 @@ export function participantsPath(assignmentDir: string): string {
   return resolve(assignmentDir, 'chat', 'participants.json');
 }
 
+export async function readParticipantsDetailed(
+  assignmentDir: string,
+  definitions: readonly AgentDefinition[],
+): Promise<{ participants: Participants; dropped: string[] }> {
+  const stored = await readStored(assignmentDir);
+  if (!stored) return { participants: derive(definitions), dropped: [] };
+
+  const known = new Set(definitions.map((d) => d.id));
+  const dropped = unique(stored.agents.filter((id) => !known.has(id)));
+  const agents = unique(stored.agents.filter((id) => known.has(id)));
+  return {
+    participants: {
+      agents,
+      defaultAgent: pickDefault(stored.defaultAgent, agents, definitions),
+      ...(inBudgetRange(stored.hopBudget) ? { hopBudget: stored.hopBudget } : {}),
+    },
+    dropped,
+  };
+}
+
 /**
  * The assignment's participants, always filtered to definitions that exist. A
  * missing, unreadable or corrupt file derives the default rather than failing:
@@ -56,16 +76,8 @@ export async function readParticipants(
   assignmentDir: string,
   definitions: readonly AgentDefinition[],
 ): Promise<Participants> {
-  const stored = await readStored(assignmentDir);
-  if (!stored) return derive(definitions);
-
-  const known = new Set(definitions.map((d) => d.id));
-  const agents = unique(stored.agents.filter((id) => known.has(id)));
-  return {
-    agents,
-    defaultAgent: pickDefault(stored.defaultAgent, agents, definitions),
-    ...(inBudgetRange(stored.hopBudget) ? { hopBudget: stored.hopBudget } : {}),
-  };
+  const { participants } = await readParticipantsDetailed(assignmentDir, definitions);
+  return participants;
 }
 
 /**
