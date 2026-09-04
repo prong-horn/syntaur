@@ -202,6 +202,14 @@ describe('chat agents API', () => {
     expect(res.status).toBe(409);
   });
 
+  it('rejects path traversal ids on get and test', async () => {
+    const get = await fetch(url('/chat/agents/..%2Fx'));
+    expect(get.status).toBe(400);
+
+    const test = await fetch(url('/chat/agents/..%2Fx/test'), { method: 'POST' });
+    expect(test.status).toBe(400);
+  });
+
   it('rejects path traversal ids on create and delete', async () => {
     const sentinel = join(sandbox, 'sentinel.txt');
     await writeFile(sentinel, 'keep');

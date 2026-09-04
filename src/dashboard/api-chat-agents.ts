@@ -86,6 +86,7 @@ export function createChatAgentsRouter({ broker, syntaurHome }: ChatAgentsRouter
   router.get('/chat/agents/:id', async (req, res) => {
     try {
       const id = String(req.params.id);
+      assertWritableAgentId(id);
       const { definitions } = await broker.listAgents();
       const definition = definitions.find((d) => d.id === id);
       if (!definition) {
@@ -155,6 +156,7 @@ export function createChatAgentsRouter({ broker, syntaurHome }: ChatAgentsRouter
   router.post('/chat/agents/:id/test', async (req, res) => {
     try {
       const id = String(req.params.id);
+      assertWritableAgentId(id);
       res.json(await broker.testAgent(id));
     } catch (err) {
       fail(res, err);

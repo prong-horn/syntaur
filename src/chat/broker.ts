@@ -76,7 +76,17 @@ import {
 } from '../db/chat-db.js';
 import { adapterVersion as readAdapterVersion, spawnAcpClient, type AcpClient } from './acp-client.js';
 import { commandsEqual, detectCommand, parseAvailableCommands, type ChatCommand, type ChatCommandsSource } from './commands.js';
-import { deleteAgentDefinition, loadAgentDefinitions, resolveAgent, toAgentSummary, writeAgentDefinition, AgentDefinitionError, AgentWriteError } from './agents.js';
+import {
+  assertWritableAgentId,
+  deleteAgentDefinition,
+  loadAgentDefinitions,
+  resolveAgent,
+  toAgentSummary,
+  writeAgentDefinition,
+  AgentDefinitionError,
+  AgentWriteError,
+  type LoadAgentDefinitionsResult,
+} from './agents.js';
 import { readParticipants, readParticipantsDetailed, writeParticipants } from './participants.js';
 import { DEFAULT_HOP_BUDGET, parseMentions, routeAgentReply, routeHuman } from './router.js';
 import { HARNESSES, HARNESS_IDS, probeAuth, resolveCommand, type CommandResolution } from './harnesses.js';
@@ -191,6 +201,8 @@ export interface CreateChatBrokerOptions {
   timeouts?: Partial<BrokerTimeouts>;
   /** Routing knobs; `participants.json` overrides `hopBudget` per assignment. */
   routing?: { hopBudget?: number };
+  /** Injected by tests; defaults to `loadAgentDefinitions`. */
+  loadDefinitions?: (root: string) => Promise<LoadAgentDefinitionsResult>;
 }
 
 /** A send that cannot proceed — the router turns this into an HTTP 409. */
@@ -429,9 +441,12 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
   const TEST_PROMPT =
     'This is a connection test from Syntaur. Reply with the single word OK and nothing else. Do not use tools.';
   const throwawayTimeoutMs = options.throwawayTimeoutMs ?? 60_000;
+  const loadDefinitions = options.loadDefinitions ?? loadAgentDefinitions;
+  const syntaurHome = () => options.syntaurHome ?? syntaurRoot();
+  const loadDefs = (): Promise<LoadAgentDefinitionsResult> => loadDefinitions(syntaurHome());
 
   async function agentSummaries(): Promise<ChatAgentSummary[]> {
-    const { definitions } = await loadAgentDefinitions(options.syntaurHome);
+    const { definitions } = await loadDefs();
     return definitions.map((d) => toAgentSummary(d, commandResolver));
   }
 
@@ -469,7 +484,7 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
 
   /** Standing context is per-session; roster edits must refresh every agent in the room. */
   async function invalidateStandingForParticipant(agentId: string): Promise<void> {
-    const { definitions } = await loadAgentDefinitions(options.syntaurHome);
+    const { definitions } = await loadDefs();
     const assignmentsToInvalidate = new Set<string>();
     for (const session of sessions.values()) {
       const { participants } = await readParticipantsDetailed(
@@ -653,7 +668,7 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
     }
 
     if (opts.restoredBuiltin) {
-      const { definitions } = await loadAgentDefinitions(options.syntaurHome);
+      const { definitions } = await loadDefs();
       for (const assignment of touchedAssignments.values()) {
         const participants = await readParticipants(assignment.assignmentDir, definitions);
         options.broadcast({
@@ -760,7 +775,7 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
 
   /** Definitions and the participant set, read together on every routing pass. */
   async function routingContext(assignment: ResolvedAssignment) {
-    const { definitions } = await loadAgentDefinitions(options.syntaurHome);
+    const { definitions } = await loadDefs();
     const { participants: raw, dropped } = await readParticipantsDetailed(
       assignment.assignmentDir,
       definitions,
@@ -925,7 +940,7 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
     assignment: ResolvedAssignment,
     agentId?: string | null,
   ): Promise<Session> {
-    const { definitions, errors } = await loadAgentDefinitions(options.syntaurHome);
+    const { definitions, errors } = await loadDefs();
     const definition = resolveAgent(definitions, agentId ?? null);
     if (!definition) {
       throw new ChatSendError(
@@ -965,7 +980,16 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
     const builtAtRev = definitionsRev;
     const harness = HARNESSES[definition.harness as Harness];
     const log = await sharedLog(assignment.assignmentDir);
-    const row = getChatSession(assignment.id, definition.id);
+    let row = getChatSession(assignment.id, definition.id);
+    let harnessRotated = false;
+    if (row && row.harness !== harness.id) {
+      deleteChatSession(key);
+      harnessRotated = true;
+      row = null;
+    }
+    const profile = resolveSessionProfile(definition, harness);
+    const expectedProfileJson = serializeProfile(profile);
+    const definitionStaleFromRow = Boolean(row && row.profile_json !== expectedProfileJson);
     const commandState = sessionCommandsFromRow(harness, row);
     const session: Session = {
       key,
@@ -973,7 +997,7 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
       agentId: definition.id,
       definition,
       harness,
-      profile: resolveSessionProfile(definition, harness),
+      profile,
       log,
       normalizer: new ChatNormalizer({
         assignmentId: assignment.id,
@@ -1017,10 +1041,22 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
       commands: commandState.commands,
       commandsSource: commandState.commandsSource,
       driving: Promise.resolve(),
-      definitionStale: false,
+      definitionStale: definitionStaleFromRow,
       stalePromptChanged: false,
       builtAtRev,
     };
+
+    if (harnessRotated) {
+      await record(
+        session,
+        'system',
+        {
+          level: 'info',
+          text: `@${definition.id}'s harness changed to ${harness.id} — starting a new session`,
+        },
+        null,
+      );
+    }
 
     // The normalizer must pick up where the persisted log left off, so a restart
     // does not restart the per-scope ordinals and collide item ids. Every agent
@@ -1047,7 +1083,7 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
     }
 
     if (definitionsRev !== builtAtRev) {
-      const { definitions } = await loadAgentDefinitions(options.syntaurHome);
+      const { definitions } = await loadDefs();
       const fresh = definitions.find((d) => d.id === definition.id);
       if (!fresh) {
         await shutdownSession(session);
@@ -1501,7 +1537,7 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
   }
 
   async function ensureAdapter(session: Session): Promise<void> {
-    const { definitions } = await loadAgentDefinitions(options.syntaurHome);
+    const { definitions } = await loadDefs();
     const fresh = definitions.find((d) => d.id === session.agentId);
     if (!fresh) {
       throw new ChatSendError(`No agent definition ${JSON.stringify(session.agentId)}`, 404);
@@ -1953,10 +1989,11 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
   }
 
   async function testAgent(id: string): Promise<AgentTestResult> {
+    assertWritableAgentId(id);
     const existing = testing.get(id);
     if (existing) return existing;
     const run = (async () => {
-      const { definitions } = await loadAgentDefinitions(options.syntaurHome);
+      const { definitions } = await loadDefs();
       const def = definitions.find((d) => d.id === id);
       if (!def) throw new ChatSendError(`No agent definition ${JSON.stringify(id)}`, 404);
       const result = await openThrowaway({
@@ -1976,9 +2013,10 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
   }
 
   async function saveAgent(input: AgentDefinitionInput): Promise<AgentDefinition> {
+    assertWritableAgentId(input.id);
     const home = options.syntaurHome ?? syntaurRoot();
     const run = agentWrites.then(async () => {
-      const { definitions: before } = await loadAgentDefinitions(home);
+      const { definitions: before } = await loadDefinitions(home);
       const old = before.find((d) => d.id === input.id);
       let definition: AgentDefinition;
       try {
@@ -2002,6 +2040,7 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
   }
 
   async function deleteAgent(id: string): Promise<{ restoredBuiltin: boolean }> {
+    assertWritableAgentId(id);
     const home = options.syntaurHome ?? syntaurRoot();
     pendingAgentDeletes.add(id);
     const run = agentWrites.then(async () => {
@@ -2010,7 +2049,7 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
       const result = await deleteAgentDefinition(home, id);
       definitionsRev += 1;
       if (result.restoredBuiltin) {
-        const { definitions } = await loadAgentDefinitions(options.syntaurHome);
+        const { definitions } = await loadDefs();
         const builtin = definitions.find((d) => d.id === id);
         if (!builtin) throw new ChatSendError(`No agent definition ${JSON.stringify(id)}`, 404);
         await applyDefinitionToSessions(id, builtin, { restoredBuiltin: true });
@@ -2024,7 +2063,7 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
           sessions.delete(session.key);
         }
         deleteChatSessionsForAgent(id);
-        const { definitions } = await loadAgentDefinitions(options.syntaurHome);
+        const { definitions } = await loadDefs();
         for (const assignment of touched.values()) {
           const { participants: current } = await readParticipantsDetailed(
             assignment.assignmentDir,
@@ -3118,7 +3157,7 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
       }
     },
 
-    listAgents: () => loadAgentDefinitions(options.syntaurHome),
+    listAgents: () => loadDefs(),
 
     harnesses: () => harnessSummaries(),
 
@@ -3133,7 +3172,7 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
     agentSummaries,
 
     async getParticipants(assignment) {
-      const { definitions } = await loadAgentDefinitions(options.syntaurHome);
+      const { definitions } = await loadDefs();
       const { participants: raw, dropped } = await readParticipantsDetailed(
         assignment.assignmentDir,
         definitions,
@@ -3151,7 +3190,7 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
     },
 
     async setParticipants(assignment, next) {
-      const { definitions } = await loadAgentDefinitions(options.syntaurHome);
+      const { definitions } = await loadDefs();
       // Materialise every session the CURRENT set knows about before the write,
       // so an agent about to be detached is reachable even if nothing has
       // touched it since the dashboard started.
