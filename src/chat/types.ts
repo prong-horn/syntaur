@@ -163,6 +163,7 @@ export interface PermissionResponsePayload {
   optionId?: string;
   cancelled?: boolean;
   timedOut?: boolean;
+  by?: 'human' | 'auto';
 }
 
 /** `acp.ext` payload — a Cursor extension request or notification. */
@@ -341,6 +342,7 @@ export interface PermissionRequestItem extends ChatItemBase {
   answer?: string;
   cancelled?: boolean;
   timedOut?: boolean;
+  auto?: boolean;
 }
 
 export interface QuestionItem extends ChatItemBase {

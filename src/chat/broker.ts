@@ -229,6 +229,7 @@ export interface ChatBroker {
     assignment: ResolvedAssignment,
     requestId: string,
     optionId: string,
+    opts?: { allowAllSession?: boolean },
   ): Promise<boolean>;
   answerQuestion(
     assignment: ResolvedAssignment,
@@ -367,6 +368,8 @@ interface Session {
   stalePromptChanged: boolean;
   /** `definitionsRev` at construction start — detects mid-build saves. */
   builtAtRev: number;
+  /** Auto-answer later permission requests for this session (not persisted). */
+  autoApprove: boolean;
 }
 
 /** Probe value for "is this model in the price list at all?". */
@@ -1094,6 +1097,7 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
       definitionStale: definitionStaleFromRow,
       stalePromptChanged: false,
       builtAtRev,
+      autoApprove: false,
     };
 
     // The normalizer must pick up where the persisted log left off, so a restart
@@ -1213,6 +1217,7 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
   async function shutdownSession(session: Session): Promise<void> {
     if (session.flushTimer) clearTimeout(session.flushTimer);
     if (session.idleTimer) clearTimeout(session.idleTimer);
+    session.autoApprove = false;
     if (session.client) {
       const client = session.client;
       session.client = null;
@@ -1633,6 +1638,7 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
     session.profile = resolveSessionProfile(fresh, session.harness);
     session.definitionStale = false;
     session.stalePromptChanged = false;
+    session.autoApprove = false;
   }
 
   async function ensureAdapter(session: Session): Promise<void> {
@@ -2257,12 +2263,19 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
     await record(session, 'acp.update', notification.update);
   }
 
-  function onPermissionRequest(
+  async function onPermissionRequest(
     session: Session,
     request: acp.RequestPermissionRequest,
   ): Promise<acp.RequestPermissionResponse> {
     const requestId = `${session.key}:perm:${session.permissionSeq++}`;
     const title = request.toolCall?.title ?? request.toolCall?.toolCallId ?? 'a tool call';
+    const auto = session.autoApprove || session.definition.permissions === 'auto';
+    if (auto) {
+      const optionId = allowOption(request.options ?? []);
+      await record(session, 'acp.permission_request', { requestId, request });
+      await record(session, 'acp.permission_response', { requestId, optionId, by: 'auto' });
+      return { outcome: { outcome: 'selected', optionId } };
+    }
     return new Promise<acp.RequestPermissionResponse>((resolvePermission) => {
       const timer = setTimeout(() => {
         void timeoutPermission(session, requestId, title);
@@ -2367,6 +2380,7 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
     const client = session.client;
     if (client === null) return; // an orderly close() already accounted for it
     session.client = null;
+    session.autoApprove = false;
     clearChatSessionPid(session.key);
     // The adapter's own last words, bounded by the client's stderr ring.
     const stderr = client.stderr().trim().split('\n').slice(-3).join(' ').slice(0, 300);
@@ -3113,6 +3127,7 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
     if (session.inFlight || !session.client) return;
     const client = session.client;
     session.client = null;
+    session.autoApprove = false;
     await client.close();
     clearChatSessionPid(session.key);
     await record(session, 'session.idle', {}, null);
@@ -3263,7 +3278,7 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
       return results.some(Boolean);
     },
 
-    async answerPermission(assignment, requestId, optionId) {
+    async answerPermission(assignment, requestId, optionId, opts) {
       const session = (await ensureAssignmentSessions(assignment)).find((s) =>
         s.pendingPermissions.has(requestId),
       );
@@ -3272,7 +3287,26 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
       session.pendingPermissions.delete(requestId);
       clearTimeout(pending.timer);
       pending.resolve({ outcome: { outcome: 'selected', optionId } });
-      await record(session, 'acp.permission_response', { requestId, optionId });
+      await record(session, 'acp.permission_response', { requestId, optionId, by: 'human' });
+      if (opts?.allowAllSession) {
+        session.autoApprove = true;
+        await record(session, 'system', {
+          level: 'info',
+          text: `Auto-approving @${session.agentId}'s permission requests for the rest of this session`,
+        });
+        for (const [otherId, other] of [...session.pendingPermissions.entries()]) {
+          if (otherId === requestId) continue;
+          session.pendingPermissions.delete(otherId);
+          clearTimeout(other.timer);
+          const autoOptionId = allowOption(other.options);
+          other.resolve({ outcome: { outcome: 'selected', optionId: autoOptionId } });
+          await record(session, 'acp.permission_response', {
+            requestId: otherId,
+            optionId: autoOptionId,
+            by: 'auto',
+          });
+        }
+      }
       flush(session);
       return true;
     },
@@ -3495,6 +3529,16 @@ function rejectOption(options: acp.PermissionOption[]): string {
     options.find((o) => o.kind === 'reject_always')?.optionId ??
     options[0]?.optionId ??
     'reject'
+  );
+}
+
+/** The option to answer with when auto-approving (Decision 3). */
+function allowOption(options: acp.PermissionOption[]): string {
+  return (
+    options.find((o) => o.kind === 'allow_once')?.optionId ??
+    options.find((o) => o.kind === 'allow_always')?.optionId ??
+    options[0]?.optionId ??
+    'allow'
   );
 }
 

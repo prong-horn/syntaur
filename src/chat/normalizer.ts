@@ -733,6 +733,7 @@ export class ChatNormalizer {
     if (payload.optionId) item.answer = payload.optionId;
     if (payload.cancelled) item.cancelled = true;
     if (payload.timedOut) item.timedOut = true;
+    if (payload.by === 'auto') item.auto = true;
     item.sealed = true;
     item.seqLast = event.seq;
     patches.push({ op: 'upsert', item });

@@ -25,6 +25,7 @@ import {
   type ChatBroker,
   type ClientFactory,
 } from '../chat/broker.js';
+import { agentsDir } from '../chat/agents.js';
 import { readEvents } from '../chat/store.js';
 import type { ChatEvent, ChatItem } from '../chat/types.js';
 import type { ResolvedAssignment } from '../utils/assignment-resolver.js';
@@ -435,6 +436,277 @@ describe('permissions (Decision 9)', () => {
     // Unresolved is what makes the Inbox pick it up (src/inbox/index.ts).
     expect(comments).toContain('**Resolved:** false');
     expect(comments).toContain('Run `rm -rf out`');
+  });
+});
+
+describe('permissions auto-approve', () => {
+  const permissionTurn: FakeTurn = {
+    steps: [
+      {
+        kind: 'permission',
+        request: {
+          toolCall: { toolCallId: 't1', title: 'Run `rm -rf out`', kind: 'execute' },
+          options: [
+            { optionId: 'allow', name: 'Allow', kind: 'allow_once' },
+            { optionId: 'reject', name: 'Deny', kind: 'reject_once' },
+          ],
+        },
+      },
+      { kind: 'update', update: textChunk('done', 'm1') },
+    ],
+  };
+
+  async function writeAgentFile(id: string, extra = ''): Promise<void> {
+    const dir = agentsDir(sandbox);
+    await mkdir(dir, { recursive: true });
+    await writeFile(
+      join(dir, `${id}.md`),
+      [
+        '---',
+        `id: ${id}`,
+        `name: ${id}`,
+        `color: ${id === 'cursor' ? 'sky' : 'violet'}`,
+        `harness: ${id}`,
+        extra,
+        'respondsTo: mentions',
+        `default: ${id === 'claude'}`,
+        '---',
+        '',
+      ].join('\n'),
+      'utf-8',
+    );
+  }
+
+  it('auto-answers when the definition has permissions: auto', async () => {
+    await writeAgentFile('claude', 'permissions: auto\n');
+    makeBroker({ turns: [permissionTurn] });
+    await broker.send({ assignment: assignment(), text: 'go' });
+    await idle();
+
+    expect(fake.permissionAnswers[0]).toEqual({ outcome: { outcome: 'selected', optionId: 'allow' } });
+    const perm = itemsOfType('permission.request')[0] as { answer?: string; auto?: boolean; sealed?: boolean };
+    expect(perm.answer).toBe('allow');
+    expect(perm.auto).toBe(true);
+    expect(perm.sealed).toBe(true);
+    expect(existsSync(join(assignmentDir, 'comments.md'))).toBe(false);
+  });
+
+  it('prefers allow_once on the cursor option shape', async () => {
+    await writeAgentFile('claude', 'permissions: auto\n');
+    makeBroker({
+      turns: [
+        {
+          steps: [
+            {
+              kind: 'permission',
+              request: {
+                toolCall: { toolCallId: 't1', title: 'Run uname', kind: 'execute' },
+                options: [
+                  { optionId: 'allow-once', name: 'Allow once', kind: 'allow_once' },
+                  { optionId: 'allow-always', name: 'Allow always', kind: 'allow_always' },
+                  { optionId: 'reject-once', name: 'Reject', kind: 'reject_once' },
+                ],
+              },
+            },
+            { kind: 'update', update: textChunk('done', 'm1') },
+          ],
+        },
+      ],
+    });
+    await broker.send({ assignment: assignment(), text: 'go' });
+    await idle();
+    expect(fake.permissionAnswers[0]).toEqual({
+      outcome: { outcome: 'selected', optionId: 'allow-once' },
+    });
+  });
+
+  it('falls back to allow_always when allow_once is absent (codex shape)', async () => {
+    await writeAgentFile('claude', 'permissions: auto\n');
+    makeBroker({
+      turns: [
+        {
+          steps: [
+            {
+              kind: 'permission',
+              request: {
+                toolCall: { toolCallId: 't1', title: 'Run cmd', kind: 'execute' },
+                options: [
+                  { optionId: 'allow_once', name: 'Allow', kind: 'allow_once' },
+                  { optionId: 'reject_once', name: 'Reject', kind: 'reject_once' },
+                ],
+              },
+            },
+            { kind: 'update', update: textChunk('done', 'm1') },
+          ],
+        },
+      ],
+    });
+    await broker.send({ assignment: assignment(), text: 'go' });
+    await idle();
+    expect(fake.permissionAnswers[0]).toEqual({
+      outcome: { outcome: 'selected', optionId: 'allow_once' },
+    });
+  });
+
+  it('falls back to allow_always when only that allow option exists', async () => {
+    await writeAgentFile('claude', 'permissions: auto\n');
+    makeBroker({
+      turns: [
+        {
+          steps: [
+            {
+              kind: 'permission',
+              request: {
+                toolCall: { toolCallId: 't1', title: 'Run cmd', kind: 'execute' },
+                options: [
+                  { optionId: 'allow_always', name: 'Allow always', kind: 'allow_always' },
+                  { optionId: 'reject_once', name: 'Reject', kind: 'reject_once' },
+                ],
+              },
+            },
+            { kind: 'update', update: textChunk('done', 'm1') },
+          ],
+        },
+      ],
+    });
+    await broker.send({ assignment: assignment(), text: 'go' });
+    await idle();
+    expect(fake.permissionAnswers[0]).toEqual({
+      outcome: { outcome: 'selected', optionId: 'allow_always' },
+    });
+  });
+
+  it('allow-all-this-session auto-answers later requests and clears on adapter exit', async () => {
+    makeBroker({
+      turns: [
+        {
+          steps: [
+            {
+              kind: 'permission',
+              request: {
+                toolCall: { toolCallId: 't1', title: 'First', kind: 'execute' },
+                options: [
+                  { optionId: 'allow', name: 'Allow', kind: 'allow_once' },
+                  { optionId: 'reject', name: 'Deny', kind: 'reject_once' },
+                ],
+              },
+            },
+            {
+              kind: 'permission',
+              request: {
+                toolCall: { toolCallId: 't2', title: 'Second', kind: 'execute' },
+                options: [
+                  { optionId: 'allow', name: 'Allow', kind: 'allow_once' },
+                  { optionId: 'reject', name: 'Deny', kind: 'reject_once' },
+                ],
+              },
+            },
+            { kind: 'update', update: textChunk('done', 'm1') },
+          ],
+        },
+        permissionTurn,
+      ],
+    });
+    await broker.send({ assignment: assignment(), text: 'go' });
+    await waitUntil(() => itemsOfType('permission.request').length === 1, 'first permission');
+
+    const first = itemsOfType('permission.request')[0] as { requestId: string };
+    expect(
+      await broker.answerPermission(assignment(), first.requestId, 'allow', { allowAllSession: true }),
+    ).toBe(true);
+    await idle();
+
+    expect(fake.permissionAnswers[0]).toEqual({ outcome: { outcome: 'selected', optionId: 'allow' } });
+    expect(fake.permissionAnswers[1]).toEqual({ outcome: { outcome: 'selected', optionId: 'allow' } });
+    const perms = itemsOfType('permission.request') as Array<{ auto?: boolean; answer?: string }>;
+    expect(perms[1].auto).toBe(true);
+    expect(
+      itemsOfType('system').some((s) =>
+        (s as { text: string }).text.includes('Auto-approving @claude'),
+      ),
+    ).toBe(true);
+
+    await waitUntil(
+      () => items().some((i) => i.type === 'system' && /idle/i.test((i as { text: string }).text)),
+      'idle teardown',
+    );
+
+    await broker.send({ assignment: assignment(), text: 'again' });
+    await waitUntil(() => itemsOfType('permission.request').length === 3, 'third permission card');
+    const third = itemsOfType('permission.request')[2] as { auto?: boolean; answer?: string };
+    expect(third.auto).toBeUndefined();
+    expect(third.answer).toBeUndefined();
+    await idle(2);
+  });
+
+  it('cancel still ends the turn when permissions are auto', async () => {
+    await writeAgentFile('claude', 'permissions: auto\n');
+    makeBroker({
+      turns: [
+        {
+          steps: [
+            {
+              kind: 'permission',
+              request: {
+                toolCall: { toolCallId: 't1', title: 'Run cmd', kind: 'execute' },
+                options: [
+                  { optionId: 'allow', name: 'Allow', kind: 'allow_once' },
+                  { optionId: 'reject', name: 'Deny', kind: 'reject_once' },
+                ],
+              },
+            },
+            { kind: 'awaitCancel' },
+          ],
+        },
+      ],
+    });
+    await broker.send({ assignment: assignment(), text: 'go' });
+    await waitUntil(() => fake.prompts.length === 1, 'prompt');
+    await broker.cancel(assignment(), null);
+    await idle();
+    const status = itemsOfType('turn.status')[0] as { state: string; stopReason?: string };
+    expect(status.state).toBe('ended');
+    expect(status.stopReason).toBe('cancelled');
+  });
+
+  it('does not auto-answer cursor/ask_question', async () => {
+    await writeAgentFile('cursor', 'permissions: auto\n');
+    makeBroker({
+      turns: [
+        {
+          steps: [
+            {
+              kind: 'extRequest',
+              method: 'cursor/ask_question',
+              params: {
+                toolCallId: 'tool-q',
+                title: 'Pick one',
+                questions: [
+                  {
+                    id: 'q1',
+                    prompt: 'Which?',
+                    options: [
+                      { id: 'a', label: 'A' },
+                      { id: 'b', label: 'B' },
+                    ],
+                  },
+                ],
+              },
+            },
+            { kind: 'update', update: textChunk('thanks', 'm-q') },
+          ],
+        },
+      ],
+      agentOptions: { resumeSupported: false },
+    });
+    await broker.setParticipants(assignment(), { agents: ['cursor'], defaultAgent: 'cursor' });
+    const sendP = broker.send({ assignment: assignment(), agentId: 'cursor', text: 'ask me' });
+    await waitUntil(() => itemsOfType('question').length > 0, 'question card');
+    const question = itemsOfType('question')[0] as { requestId: string };
+    expect(await broker.answerQuestion(assignment(), question.requestId, { optionId: 'a' })).toBe(true);
+    await sendP;
+    await idle();
+    expect(itemsOfType('question')[0]).toMatchObject({ answer: 'A' });
   });
 });
 
