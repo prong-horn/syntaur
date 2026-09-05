@@ -406,6 +406,70 @@ describe('POST /assignments/:id/chat/permissions/:requestId', () => {
     });
     expect(gone.status).toBe(409);
   });
+
+  it('forwards allowAllSession to the broker', async () => {
+    await boot([
+      {
+        steps: [
+          {
+            kind: 'permission',
+            request: {
+              toolCall: { toolCallId: 't1', title: 'First' },
+              options: [
+                { optionId: 'allow', name: 'Allow', kind: 'allow_once' },
+                { optionId: 'reject', name: 'Deny', kind: 'reject_once' },
+              ],
+            },
+          },
+          {
+            kind: 'permission',
+            request: {
+              toolCall: { toolCallId: 't2', title: 'Second' },
+              options: [
+                { optionId: 'allow', name: 'Allow', kind: 'allow_once' },
+                { optionId: 'reject', name: 'Deny', kind: 'reject_once' },
+              ],
+            },
+          },
+        ],
+      },
+    ]);
+    await fetch(url(`/assignments/${ASSIGNMENT_ID}/chat/messages`), {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ text: 'run both' }),
+    });
+
+    let requestId = '';
+    await waitUntil(() => {
+      const items = broker.items({ id: ASSIGNMENT_ID } as never, { limit: 50 });
+      const perm = items.find((i) => i.type === 'permission.request') as { requestId: string } | undefined;
+      if (perm) requestId = perm.requestId;
+      return Boolean(perm);
+    }, 'the permission item');
+
+    const bad = await fetch(
+      url(`/assignments/${ASSIGNMENT_ID}/chat/permissions/${encodeURIComponent(requestId)}`),
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ optionId: 'allow', allowAllSession: 'yes' }),
+      },
+    );
+    expect(bad.status).toBe(400);
+
+    const ok = await fetch(
+      url(`/assignments/${ASSIGNMENT_ID}/chat/permissions/${encodeURIComponent(requestId)}`),
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ optionId: 'allow', allowAllSession: true }),
+      },
+    );
+    expect(ok.status).toBe(200);
+    await waitUntil(() => fake.permissionAnswers.length === 2, 'both permissions answered');
+    expect(fake.permissionAnswers[1]).toEqual({ outcome: { outcome: 'selected', optionId: 'allow' } });
+  });
 });
 
 describe('GET /assignments/:id/chat/session and POST reindex', () => {

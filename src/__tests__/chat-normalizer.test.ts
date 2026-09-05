@@ -245,6 +245,60 @@ describe('permissions', () => {
       for (const perm of perms) expect(perm.options.length).toBeGreaterThan(0);
     }
   });
+
+  it('marks auto-approved responses on the sealed item', () => {
+    const base = {
+      assignmentId: 'assignment-fixture',
+      agentId: 'claude',
+      sessionKey: 'assignment-fixture:claude',
+      turnId: 'turn-1',
+      ts: '2026-09-05T12:00:00.000Z',
+    };
+    const request = {
+      toolCall: { toolCallId: 't1', title: 'Run uname', kind: 'execute' as const },
+      options: [
+        { optionId: 'allow', name: 'Allow', kind: 'allow_once' as const },
+        { optionId: 'reject', name: 'Deny', kind: 'reject_once' as const },
+      ],
+    };
+    const autoItems = normalizeEvents([
+      {
+        ...base,
+        seq: 1,
+        kind: 'acp.permission_request',
+        payload: { requestId: 'r-auto', request },
+      },
+      {
+        ...base,
+        seq: 2,
+        kind: 'acp.permission_response',
+        payload: { requestId: 'r-auto', optionId: 'allow', by: 'auto' },
+      },
+    ]);
+    const auto = autoItems.find((i) => i.type === 'permission.request') as {
+      auto?: boolean;
+      answer?: string;
+    };
+    expect(auto?.auto).toBe(true);
+    expect(auto?.answer).toBe('allow');
+
+    const humanItems = normalizeEvents([
+      {
+        ...base,
+        seq: 3,
+        kind: 'acp.permission_request',
+        payload: { requestId: 'r-human', request },
+      },
+      {
+        ...base,
+        seq: 4,
+        kind: 'acp.permission_response',
+        payload: { requestId: 'r-human', optionId: 'allow', by: 'human' },
+      },
+    ]);
+    const human = humanItems.find((i) => i.type === 'permission.request') as { auto?: boolean };
+    expect(human?.auto).toBeUndefined();
+  });
 });
 
 describe('session/load replay scope', () => {

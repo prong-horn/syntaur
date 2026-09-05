@@ -173,12 +173,21 @@ export function createChatRouter(
     try {
       const assignment = await resolveOr404(req, res);
       if (!assignment) return;
-      const body = (req.body ?? {}) as { optionId?: string };
+      const body = (req.body ?? {}) as { optionId?: string; allowAllSession?: boolean };
       if (typeof body.optionId !== 'string' || body.optionId.length === 0) {
         res.status(400).json({ error: 'optionId is required' });
         return;
       }
-      const answered = await broker.answerPermission(assignment, String(req.params.requestId), body.optionId);
+      if (body.allowAllSession !== undefined && typeof body.allowAllSession !== 'boolean') {
+        res.status(400).json({ error: 'allowAllSession must be a boolean when present' });
+        return;
+      }
+      const answered = await broker.answerPermission(
+        assignment,
+        String(req.params.requestId),
+        body.optionId,
+        body.allowAllSession === undefined ? undefined : { allowAllSession: body.allowAllSession },
+      );
       if (!answered) {
         res.status(409).json({ error: 'That permission request is no longer pending' });
         return;

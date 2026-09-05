@@ -73,6 +73,8 @@
     "src/__tests__/session-db-migration-chat-v4.test.ts",
     "src/__tests__/chat-broker-agents.test.ts",
     "src/__tests__/chat-broker.test.ts",
+    "src/__tests__/chat-normalizer.test.ts",
+    "src/__tests__/dashboard-api-chat.test.ts",
     "src/__tests__/dashboard-api-chat-agents.test.ts",
   ]
 }

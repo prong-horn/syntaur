@@ -159,6 +159,38 @@ describe('chat agents API', () => {
     expect(body.error).not.toMatch(/\//);
   });
 
+  it('round-trips permissions: auto through PUT and GET', async () => {
+    await fetch(url('/chat/agents/planner'), {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ ...plannerInput, id: 'planner' }),
+    });
+    const put = await fetch(url('/chat/agents/planner'), {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ ...plannerInput, id: 'planner', permissions: 'auto' }),
+    });
+    expect(put.status).toBe(200);
+    const get = await fetch(url('/chat/agents/planner'));
+    expect((await get.json()).definition.permissions).toBe('auto');
+  });
+
+  it('rejects invalid permissions with the validator message', async () => {
+    await fetch(url('/chat/agents/planner'), {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ ...plannerInput, id: 'planner' }),
+    });
+    const res = await fetch(url('/chat/agents/planner'), {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ ...plannerInput, id: 'planner', permissions: 'sometimes' }),
+    });
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error).toMatch(/permissions.*must be one of ask, auto/);
+  });
+
   it('returns 409 when creating an existing file', async () => {
     await fetch(url('/chat/agents/planner'), {
       method: 'POST',

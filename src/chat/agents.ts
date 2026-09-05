@@ -301,6 +301,15 @@ export function serializeAgentDefinition(input: AgentDefinitionInput): string {
 export function validateAgentInput(root: string, input: AgentDefinitionInput): AgentDefinition {
   assertWritableAgentId(input.id);
   const file = resolve(agentsDir(root), `${input.id}.md`);
+  if (
+    input.permissions !== undefined &&
+    !AGENT_PERMISSIONS.includes(input.permissions as AgentPermissions)
+  ) {
+    throw new AgentDefinitionError(
+      file,
+      `\`permissions\` must be one of ${AGENT_PERMISSIONS.join(', ')} (got ${JSON.stringify(input.permissions)})`,
+    );
+  }
   return parseAgentDefinition(file, input.id, serializeAgentDefinition(input));
 }
 
