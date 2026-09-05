@@ -16,6 +16,10 @@ import type {
   RespondsTo,
 } from './chat-types';
 
+export type AgentPermissions = 'ask' | 'auto';
+
+const AGENT_PERMISSIONS: readonly AgentPermissions[] = ['ask', 'auto'];
+
 export const AGENT_COLORS: readonly AgentColor[] = [
   'violet',
   'emerald',
@@ -55,6 +59,7 @@ export interface AgentDraft {
   effortCustom: boolean;
   mode: string;
   modeCustom: boolean;
+  permissions: AgentPermissions;
   respondsTo: RespondsTo;
   default: boolean;
   description: string;
@@ -77,6 +82,7 @@ export function emptyDraft(harness: Harness = 'claude'): AgentDraft {
     effortCustom: false,
     mode: '',
     modeCustom: false,
+    permissions: 'ask',
     respondsTo: 'mentions',
     default: false,
     description: '',
@@ -103,6 +109,7 @@ export function draftFromDefinition(def: AgentDefinition): AgentDraft {
     effortCustom: false,
     mode,
     modeCustom: false,
+    permissions: def.permissions ?? 'ask',
     respondsTo: def.respondsTo,
     default: def.default,
     description: def.description ?? '',
@@ -156,6 +163,7 @@ export function inputFromDraft(draft: AgentDraft): AgentDefinitionInput {
     harness: draft.harness,
     model,
     mode,
+    ...(draft.permissions === 'auto' ? { permissions: 'auto' as const } : {}),
     effort,
     mcpServers,
     env,
@@ -203,6 +211,10 @@ export function validateDraft(draft: AgentDraft): Record<string, string> {
 
   if (!RESPONDS_TO.includes(draft.respondsTo)) {
     errors.respondsTo = 'Responds to must be mentions, all-human, or none';
+  }
+
+  if (!AGENT_PERMISSIONS.includes(draft.permissions)) {
+    errors.permissions = 'Permissions must be ask or auto';
   }
 
   const envLines = draft.envText

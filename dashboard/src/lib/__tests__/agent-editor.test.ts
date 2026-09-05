@@ -96,6 +96,7 @@ const fullDefinition: AgentDefinition = {
   model: 'claude-opus-4',
   mode: 'plan',
   effort: 'high',
+  permissions: 'ask',
   mcpServers: ['syntaur'],
   env: { FOO: 'bar' },
   respondsTo: 'mentions',
@@ -129,6 +130,13 @@ describe('draft ↔ input round trip', () => {
     });
   });
 
+  it('carries permissions: auto through inputFromDraft', () => {
+    const draft = draftFromDefinition({ ...fullDefinition, permissions: 'auto' });
+    expect(inputFromDraft(draft).permissions).toBe('auto');
+    const askDraft = draftFromDefinition(fullDefinition);
+    expect(inputFromDraft(askDraft).permissions).toBeUndefined();
+  });
+
   it('uses an empty systemPrompt when promptIsDefault', () => {
     const draft = draftFromDefinition({
       ...fullDefinition,
@@ -159,6 +167,16 @@ describe('validateDraft', () => {
       envText: 'NOTVALID',
     };
     expect(validateDraft(draft).envText).toMatch(/KEY=value/);
+  });
+
+  it('rejects invalid permissions', () => {
+    const draft: AgentDraft = {
+      ...emptyDraft(),
+      id: 'planner',
+      name: 'Planner',
+      permissions: 'sometimes' as never,
+    };
+    expect(validateDraft(draft).permissions).toMatch(/ask or auto/);
   });
 
   it('rejects avatars with whitespace or too many code points', () => {

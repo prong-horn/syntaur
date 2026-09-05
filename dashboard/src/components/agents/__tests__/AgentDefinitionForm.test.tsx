@@ -62,6 +62,7 @@ const definition: AgentDefinition = {
   model: 'secret-model',
   mode: 'plan',
   effort: 'high',
+  permissions: 'ask',
   respondsTo: 'mentions',
   default: false,
   systemPrompt: BASE_SYSTEM_PROMPT,
@@ -156,5 +157,47 @@ describe('AgentDefinitionForm', () => {
       </StaticRouter>,
     );
     expect(markup).not.toMatch(/id="agent-id"[\s\S]*disabled=""/);
+  });
+
+  it('shows the permissions select with ask by default and the auto warning only when needed', () => {
+    const askMarkup = renderToStaticMarkup(
+      <StaticRouter location="/agents/new">
+        <AgentDefinitionForm
+          draft={emptyDraft()}
+          errors={{}}
+          harnesses={[claudeHarness]}
+          mode="create"
+          refreshing={false}
+          onChange={() => undefined}
+          onRefresh={() => undefined}
+          onSave={() => undefined}
+          dirty={false}
+          saving={false}
+        />
+      </StaticRouter>,
+    );
+    expect(askMarkup).toContain('id="agent-permissions"');
+    expect(askMarkup).toContain('ask — the chat shows a card for every request');
+    expect(askMarkup).not.toContain('Keep it in a worktree');
+
+    const autoMarkup = renderToStaticMarkup(
+      <StaticRouter location="/agents/new">
+        <AgentDefinitionForm
+          draft={{ ...emptyDraft(), permissions: 'auto' }}
+          errors={{}}
+          harnesses={[claudeHarness]}
+          mode="create"
+          refreshing={false}
+          onChange={() => undefined}
+          onRefresh={() => undefined}
+          onSave={() => undefined}
+          dirty={false}
+          saving={false}
+        />
+      </StaticRouter>,
+    );
+    expect(autoMarkup).toContain('selected=""');
+    expect(autoMarkup).toContain('auto — approve every request without asking');
+    expect(autoMarkup).toContain('Keep it in a worktree');
   });
 });

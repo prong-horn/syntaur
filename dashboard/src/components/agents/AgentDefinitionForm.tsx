@@ -5,6 +5,7 @@ import {
   modeChoices,
   pickerChoices,
   type AgentDraft,
+  type AgentPermissions,
 } from '../../lib/agent-editor';
 import { agentColorClasses } from '../../lib/chat-format';
 import { cn } from '../../lib/utils';
@@ -314,6 +315,30 @@ export function AgentDefinitionForm({
             ))}
           </select>
         )}
+      </div>
+
+      <div>
+        <label htmlFor="agent-permissions" className="text-sm font-medium">
+          Permissions
+        </label>
+        <select
+          id="agent-permissions"
+          value={draft.permissions}
+          onChange={(event) =>
+            onChange({ ...draft, permissions: event.target.value as AgentPermissions })
+          }
+          className="mt-1 w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
+        >
+          <option value="ask">ask — the chat shows a card for every request</option>
+          <option value="auto">auto — approve every request without asking</option>
+        </select>
+        {draft.permissions === 'auto' ? (
+          <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">
+            Every command, edit and tool call this agent asks about is approved automatically, on
+            every harness and even from the home directory. Keep it in a worktree.
+          </p>
+        ) : null}
+        <FieldError message={errors.permissions} />
       </div>
 
       <fieldset>
