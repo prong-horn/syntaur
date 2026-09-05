@@ -246,6 +246,16 @@ describe('latestAdvertisedCommands', () => {
     expect(latestAdvertisedCommands(events, 'claude')).toBeNull();
   });
 
+  it('skips an empty newest update and returns the older same-harness list', () => {
+    const events = [
+      evt('session.created', { harness: 'claude', acpSessionId: 's1' }, 1),
+      evt('acp.update', cmdUpdate('plan'), 2),
+      evt('session.resumed', { harness: 'claude', acpSessionId: 's1' }, 3),
+      evt('acp.update', emptyCmdUpdate(), 4),
+    ];
+    expect(latestAdvertisedCommands(events, 'claude')?.map((c) => c.name)).toEqual(['plan']);
+  });
+
   it('returns null when only empty updates exist for the current harness', () => {
     const events = [
       evt('session.created', { harness: 'claude', acpSessionId: 's1' }, 1),
