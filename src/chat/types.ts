@@ -195,7 +195,7 @@ export interface PermissionRequestPayload {
   request: RequestPermissionRequest;
 }
 
-/** `session.created` / `session.resumed` / `session.rotated` payload. */
+/** `session.created` / `session.resumed` payload. */
 export interface SessionCreatedPayload {
   acpSessionId: string;
   harness: Harness;
@@ -206,6 +206,13 @@ export interface SessionCreatedPayload {
   configOptions?: unknown;
   /** Present on `session.resumed` when the adapter reattached via `session/load`. */
   via?: 'resume' | 'load';
+}
+
+/** `session.rotated` payload. */
+export interface SessionRotatedPayload {
+  acpSessionId: string;
+  text: string;
+  harness: Harness;
 }
 
 /** What `applyProfile` actually pinned on the adapter session. */
@@ -616,7 +623,7 @@ export interface HarnessOptionsRecord {
   options: HarnessOption[];
   modes: HarnessModes;
   /** Cached slash-command list from the last capture (live session or throwaway probe). */
-  commands?: ChatCommand[];
+  commands?: import('./commands.js').ChatCommand[];
   commandsCapturedAt?: string;
 }
 

@@ -3,6 +3,8 @@
  * detecting a leading `/command` in human text, and comparing command lists.
  */
 
+import type { ChatEvent, Harness } from './types.js';
+
 export type ChatCommandAction =
   | { kind: 'prompt' }
   | { kind: 'set-config'; configId: string; value: string };
@@ -106,6 +108,36 @@ export function detectCommand(text: string, attachedIds: readonly string[]): Det
   const args = afterName.trimStart();
   const line = args ? `/${name} ${args}` : `/${name}`;
   return { name, args, line, mentions };
+}
+
+const HARNESS_MARKERS = new Set(['session.created', 'session.resumed', 'session.rotated']);
+
+/**
+ * Newest `available_commands_update` in a session's events, only when the newest
+ * harness marker names the current harness.
+ */
+export function latestAdvertisedCommands(events: ChatEvent[], harness: Harness): ChatCommand[] | null {
+  let candidate: ChatCommand[] | null = null;
+
+  for (let i = events.length - 1; i >= 0; i--) {
+    const event = events[i];
+    if (event.kind === 'acp.update') {
+      const payload = event.payload as { sessionUpdate?: string };
+      if (payload.sessionUpdate === 'available_commands_update' && candidate === null) {
+        const parsed = parseAvailableCommands(payload);
+        candidate = parsed.length > 0 ? parsed : null;
+      }
+      continue;
+    }
+    if (HARNESS_MARKERS.has(event.kind)) {
+      if (candidate === null) return null;
+      const payload = event.payload as { harness?: unknown };
+      if (typeof payload.harness !== 'string') return null;
+      return payload.harness === harness ? candidate : null;
+    }
+  }
+
+  return candidate;
 }
 
 /** Deep equality for deduping command lists before persist/emit. */

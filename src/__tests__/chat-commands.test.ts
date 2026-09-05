@@ -2,9 +2,11 @@ import { describe, it, expect } from 'vitest';
 import {
   commandsEqual,
   detectCommand,
+  latestAdvertisedCommands,
   parseAvailableCommands,
   type ChatCommand,
 } from '../chat/commands.js';
+import type { ChatEvent, ChatEventKind } from '../chat/types.js';
 
 const claudeEntry = {
   name: 'context',
@@ -179,6 +181,66 @@ describe('detectCommand', () => {
       line: '/plugin:command arg',
       mentions: [],
     });
+  });
+});
+
+function evt(kind: ChatEventKind, payload: unknown, seq: number): ChatEvent {
+  return {
+    seq,
+    ts: '2026-09-03T12:00:00.000Z',
+    assignmentId: 'a1',
+    agentId: 'codex',
+    sessionKey: 'a1:codex',
+    turnId: null,
+    kind,
+    payload,
+  };
+}
+
+const cmdUpdate = (name: string) => ({
+  sessionUpdate: 'available_commands_update',
+  availableCommands: [{ name, description: 'desc', input: null }],
+});
+
+describe('latestAdvertisedCommands', () => {
+  it('returns the newest update when the marker harness matches', () => {
+    const events = [
+      evt('session.created', { harness: 'codex', acpSessionId: 's1' }, 1),
+      evt('acp.update', cmdUpdate('old'), 2),
+      evt('acp.update', cmdUpdate('new'), 3),
+    ];
+    const result = latestAdvertisedCommands(events, 'codex');
+    expect(result?.map((c) => c.name)).toEqual(['new']);
+  });
+
+  it('returns null when a newer marker names a different harness', () => {
+    const events = [
+      evt('session.created', { harness: 'claude', acpSessionId: 's1' }, 1),
+      evt('acp.update', cmdUpdate('plan'), 2),
+      evt('session.created', { harness: 'codex', acpSessionId: 's2' }, 3),
+    ];
+    expect(latestAdvertisedCommands(events, 'claude')).toBeNull();
+  });
+
+  it('returns null when the marker lacks a harness field', () => {
+    const events = [
+      evt('acp.update', cmdUpdate('plan'), 1),
+      evt('session.rotated', { acpSessionId: 's1', text: 'rotated' }, 2),
+    ];
+    expect(latestAdvertisedCommands(events, 'codex')).toBeNull();
+  });
+
+  it('returns null when a marker appears before any update', () => {
+    const events = [
+      evt('session.created', { harness: 'codex', acpSessionId: 's1' }, 1),
+      evt('acp.update', cmdUpdate('plan'), 2),
+    ];
+    expect(latestAdvertisedCommands(events.slice(0, 1), 'codex')).toBeNull();
+  });
+
+  it('returns the candidate when no harness marker exists', () => {
+    const events = [evt('acp.update', cmdUpdate('plan'), 1)];
+    expect(latestAdvertisedCommands(events, 'codex')?.[0]?.name).toBe('plan');
   });
 });
 

@@ -76,7 +76,7 @@ import {
   upsertHarnessOptions,
 } from '../db/chat-db.js';
 import { adapterVersion as readAdapterVersion, spawnAcpClient, type AcpClient } from './acp-client.js';
-import { commandsEqual, detectCommand, parseAvailableCommands, type ChatCommand, type ChatCommandsSource } from './commands.js';
+import { commandsEqual, detectCommand, latestAdvertisedCommands, parseAvailableCommands, type ChatCommand, type ChatCommandsSource } from './commands.js';
 import {
   assertWritableAgentId,
   deleteAgentDefinition,
@@ -1114,6 +1114,16 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
     const events = all.filter((event) => event.sessionKey === key);
     for (const event of events) session.normalizer.ingest(event);
 
+    if (!row?.commands_json) {
+      const fromLog = latestAdvertisedCommands(events, harness.id);
+      if (fromLog) {
+        session.commands = fromLog;
+        session.commandsSource = 'session';
+        setHarnessCommands(harness.id, fromLog);
+        persistSession(session);
+      }
+    }
+
     // Repair anything the previous process left mid-flight BEFORE the session is
     // reachable, so nothing can drive a half-repaired session (Decision 12).
     // Repair reads the whole log, not just this key: since Decision 3 a message
@@ -1732,6 +1742,7 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
           await record(session, 'session.rotated', {
             acpSessionId: previous,
             text: `Could not resume the previous agent session (${(err as Error).message}) — started a new one`,
+            harness: session.harness.id,
           }, null);
           invalidateStanding(session);
           session.acpSessionId = null;
@@ -1763,6 +1774,7 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
           await record(session, 'session.rotated', {
             acpSessionId: previous,
             text: `Could not load the previous agent session (${loadError?.message ?? 'unknown error'}) — started a new one`,
+            harness: session.harness.id,
           }, null);
           invalidateStanding(session);
           session.acpSessionId = null;
@@ -1771,6 +1783,7 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
         await record(session, 'session.rotated', {
           acpSessionId: previous,
           text: 'Previous agent session could not be reattached — started a new one',
+          harness: session.harness.id,
         }, null);
         invalidateStanding(session);
         session.acpSessionId = null;

@@ -1742,6 +1742,81 @@ describe('slash commands', () => {
     expect(summary?.commandsSource).toBe('harness-cache');
     expect(summary?.commands[0]?.name).toBe('status');
   });
+
+  it('backfills commands from the events log when commands_json is null', async () => {
+    makeBroker({
+      turns: [
+        { steps: [{ kind: 'update', update: textChunk('ok', 'm1') }] },
+        { steps: [{ kind: 'update', update: textChunk('again', 'm2') }] },
+      ],
+      agentOptions: { availableCommands: sampleCommands },
+    });
+
+    await broker.send({ assignment: assignment(), text: 'hello' });
+    await idle();
+
+    getSessionDb()
+      .prepare('UPDATE chat_sessions SET commands_json = NULL WHERE assignment_id = ? AND agent_id = ?')
+      .run(ASSIGNMENT_ID, 'claude');
+
+    await broker.stopAll();
+    makeBroker({
+      turns: [{ steps: [] }],
+      agentOptions: { availableCommands: sampleCommands },
+    });
+
+    const summary = await broker.getSession(assignment(), 'claude');
+    expect(summary?.commandsSource).toBe('session');
+    expect(summary?.commands).toHaveLength(2);
+    const row = getChatSession(ASSIGNMENT_ID, 'claude');
+    expect(row?.commands_json).toBeTruthy();
+  });
+
+  it('does not backfill when the newest harness marker names another harness', async () => {
+    makeBroker({ turns: [{ steps: [] }] });
+    const key = `${ASSIGNMENT_ID}:claude`;
+    const log = await openChatLog(assignmentDir);
+    await log.append({
+      assignmentId: ASSIGNMENT_ID,
+      agentId: 'claude',
+      sessionKey: key,
+      turnId: null,
+      kind: 'session.created',
+      payload: { harness: 'claude', acpSessionId: 's1', adapterVersion: null, cwd: worktree },
+    });
+    await log.append({
+      assignmentId: ASSIGNMENT_ID,
+      agentId: 'claude',
+      sessionKey: key,
+      turnId: null,
+      kind: 'acp.update',
+      payload: { sessionUpdate: 'available_commands_update', availableCommands: sampleCommands },
+    });
+    await log.append({
+      assignmentId: ASSIGNMENT_ID,
+      agentId: 'claude',
+      sessionKey: key,
+      turnId: null,
+      kind: 'session.created',
+      payload: { harness: 'codex', acpSessionId: 's2' },
+    });
+
+    upsertChatSession({
+      sessionKey: key,
+      assignmentId: ASSIGNMENT_ID,
+      projectSlug: 'syntaur-meta',
+      assignmentSlug: 'chat-demo',
+      agentId: 'claude',
+      harness: 'claude',
+      state: 'idle',
+      commandsJson: null,
+    });
+    getSessionDb().prepare('DELETE FROM chat_harness_options').run();
+
+    const summary = await broker.getSession(assignment(), 'claude');
+    expect(summary?.commandsSource).not.toBe('session');
+    expect(getChatSession(ASSIGNMENT_ID, 'claude')?.commands_json).toBeNull();
+  });
 });
 
 describe('command turns', () => {
