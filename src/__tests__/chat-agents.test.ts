@@ -241,6 +241,30 @@ describe('parseAgentDefinition validation', () => {
     ).toThrow(/`respondsTo` must be one of/);
   });
 
+  it('rejects an unknown permissions value', () => {
+    expect(
+      parse(['---', 'id: planner', 'harness: claude', 'permissions: sometimes', '---', 'x'].join('\n')),
+    ).toThrow(/`permissions` must be one of ask, auto/);
+  });
+
+  it('defaults permissions to ask', () => {
+    const def = parseAgentDefinition(
+      'planner.md',
+      'planner',
+      ['---', 'id: planner', 'harness: claude', '---', 'x'].join('\n'),
+    );
+    expect(def.permissions).toBe('ask');
+  });
+
+  it('parses permissions: auto', () => {
+    const def = parseAgentDefinition(
+      'planner.md',
+      'planner',
+      ['---', 'id: planner', 'harness: claude', 'permissions: auto', '---', 'x'].join('\n'),
+    );
+    expect(def.permissions).toBe('auto');
+  });
+
   it('rejects a non-string mcpServers list', () => {
     expect(
       parse(['---', 'id: planner', 'harness: claude', 'mcpServers: [1, 2]', '---', 'x'].join('\n')),
@@ -387,6 +411,10 @@ describe('description, avatar and the API summary (Task 1)', () => {
     expect(BUILTIN_AGENT_DEFINITIONS.map((d) => d.respondsTo)).toEqual(['mentions', 'mentions', 'mentions']);
   });
 
+  it('reports every builtin with permissions ask', () => {
+    expect(BUILTIN_AGENT_DEFINITIONS.map((d) => d.permissions)).toEqual(['ask', 'ask', 'ask']);
+  });
+
   it('reports every builtin with promptIsDefault', () => {
     for (const builtin of BUILTIN_AGENT_DEFINITIONS) {
       expect(builtin.promptIsDefault).toBe(true);
@@ -414,7 +442,7 @@ const fullInput = (): AgentDefinitionInput => ({
 
 describe('serialize and validate (Task 1)', () => {
   it('serialises frontmatter keys in Decision 1 order', () => {
-    const input = fullInput();
+    const input = { ...fullInput(), permissions: 'auto' as const };
     const serialized = serializeAgentDefinition(input);
     const fm = serialized.split('---')[1].trim();
     const keys: string[] = [];
@@ -430,6 +458,7 @@ describe('serialize and validate (Task 1)', () => {
       'harness',
       'model',
       'mode',
+      'permissions',
       'effort',
       'mcpServers',
       'env',
@@ -440,8 +469,16 @@ describe('serialize and validate (Task 1)', () => {
     ]);
   });
 
+  it('serialises permissions: auto after mode and omits ask', () => {
+    const input = { ...fullInput(), permissions: 'auto' as const };
+    const serialized = serializeAgentDefinition(input);
+    expect(serialized).toContain('mode: plan\npermissions: auto');
+    const askOnly = serializeAgentDefinition(fullInput());
+    expect(askOnly).not.toContain('permissions:');
+  });
+
   it('round-trips every field through serialize and parse', () => {
-    const input = fullInput();
+    const input = { ...fullInput(), permissions: 'auto' as const };
     const serialized = serializeAgentDefinition(input);
     const def = parseAgentDefinition('planner.md', 'planner', serialized);
     expect(def).toMatchObject({
@@ -451,6 +488,7 @@ describe('serialize and validate (Task 1)', () => {
       harness: input.harness,
       model: input.model,
       mode: input.mode,
+      permissions: input.permissions,
       effort: input.effort,
       mcpServers: input.mcpServers,
       env: input.env,

@@ -513,6 +513,10 @@ export interface SessionProfile {
 
 export type RespondsTo = 'mentions' | 'all-human' | 'none';
 
+export type AgentPermissions = 'ask' | 'auto';
+
+export const AGENT_PERMISSIONS: readonly AgentPermissions[] = ['ask', 'auto'];
+
 export interface AgentDefinition {
   id: string;
   name: string;
@@ -521,6 +525,12 @@ export interface AgentDefinition {
   model?: string;
   /** A role name (`edits` | `ask` | `plan`) or a raw adapter mode id. */
   mode?: string;
+  /**
+   * `auto`: Syntaur answers every permission request with the most permissive
+   * allow option, on every harness; cursor has no adapter-side bypass, so this
+   * is the only one.
+   */
+  permissions: AgentPermissions;
   effort?: string;
   mcpServers?: string[];
   env?: Record<string, string>;
@@ -546,6 +556,7 @@ export interface AgentDefinitionInput {
   harness: Harness;
   model?: string;
   mode?: string;
+  permissions?: AgentPermissions;
   effort?: string;
   mcpServers?: string[];
   env?: Record<string, string>;

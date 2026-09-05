@@ -23,11 +23,13 @@ import type {
   AgentColor,
   AgentDefinition,
   AgentDefinitionInput,
+  AgentPermissions,
   ChatAgentSummary,
   Harness,
   HarnessSpec,
   RespondsTo,
 } from './types.js';
+import { AGENT_PERMISSIONS } from './types.js';
 
 const RESPONDS_TO: readonly RespondsTo[] = ['mentions', 'all-human', 'none'];
 
@@ -72,6 +74,7 @@ export const BUILTIN_AGENT_DEFINITIONS: AgentDefinition[] = [
     color: 'violet',
     harness: 'claude',
     respondsTo: 'mentions',
+    permissions: 'ask',
     default: true,
     description: 'The general-purpose Claude Code agent.',
     systemPrompt: BASE_SYSTEM_PROMPT,
@@ -84,6 +87,7 @@ export const BUILTIN_AGENT_DEFINITIONS: AgentDefinition[] = [
     color: 'emerald',
     harness: 'codex',
     respondsTo: 'mentions',
+    permissions: 'ask',
     default: false,
     description: 'The general-purpose codex agent.',
     systemPrompt: BASE_SYSTEM_PROMPT,
@@ -96,6 +100,7 @@ export const BUILTIN_AGENT_DEFINITIONS: AgentDefinition[] = [
     color: 'sky',
     harness: 'cursor',
     respondsTo: 'mentions',
+    permissions: 'ask',
     default: false,
     description: 'The Cursor CLI agent.',
     systemPrompt: BASE_SYSTEM_PROMPT,
@@ -202,6 +207,18 @@ export function parseAgentDefinition(
     throw new AgentDefinitionError(file, '`mode` must be a string');
   }
 
+  const permissionsRaw =
+    fm.permissions === undefined || fm.permissions === null ? 'ask' : fm.permissions;
+  if (
+    typeof permissionsRaw !== 'string' ||
+    !AGENT_PERMISSIONS.includes(permissionsRaw as AgentPermissions)
+  ) {
+    throw new AgentDefinitionError(
+      file,
+      `\`permissions\` must be one of ${AGENT_PERMISSIONS.join(', ')} (got ${JSON.stringify(permissionsRaw)})`,
+    );
+  }
+
   const mcpServers = fm.mcpServers === undefined || fm.mcpServers === null ? undefined : fm.mcpServers;
   if (mcpServers !== undefined && !isStringArray(mcpServers)) {
     throw new AgentDefinitionError(file, '`mcpServers` must be a list of strings');
@@ -237,6 +254,7 @@ export function parseAgentDefinition(
     harness,
     model: str(fm.model),
     mode,
+    permissions: permissionsRaw as AgentPermissions,
     effort: str(fm.effort),
     mcpServers: mcpServers as string[] | undefined,
     env: env as Record<string, string> | undefined,
@@ -262,6 +280,7 @@ export function serializeAgentDefinition(input: AgentDefinitionInput): string {
   };
   if (input.model) fm.model = input.model;
   if (input.mode) fm.mode = input.mode;
+  if (input.permissions === 'auto') fm.permissions = 'auto';
   if (input.effort) fm.effort = input.effort;
   if (input.mcpServers && input.mcpServers.length > 0) fm.mcpServers = input.mcpServers;
   if (input.env && Object.keys(input.env).length > 0) fm.env = input.env;
@@ -485,6 +504,7 @@ function definitionToInput(def: AgentDefinition): AgentDefinitionInput {
     harness: def.harness,
     model: def.model,
     mode: def.mode,
+    permissions: def.permissions,
     effort: def.effort,
     mcpServers: def.mcpServers,
     env: def.env,
