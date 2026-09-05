@@ -60,6 +60,7 @@ color: violet            # violet | emerald | amber | sky | rose | slate
 harness: claude          # claude | codex | cursor
 model: claude-opus-5     # optional; passed through to the adapter
 mode: plan               # optional; see "Modes" below
+permissions: ask   # ask | auto — auto answers every permission request without a card
 effort: high             # optional (ignored on cursor — pin effort inside the model value)
 mcpServers: [syntaur]    # optional
 env: { FOO: bar }        # optional
@@ -122,15 +123,17 @@ id passed straight through:
 | `plan`   | `plan`              | `read-only`                                      | `plan`        |
 | `bypass` | `bypassPermissions` | `agent-full-access`                              | `agent`       |
 
-`bypass` is the most permissive role: the agent is never asked to approve
-anything. cursor has no such mode of its own — its `agent` is already its most
-permissive — so `bypass` and `edits` are the same thing there.
+`bypass` is the most permissive role on claude and codex. cursor has no bypass
+mode of its own — its `agent` is already its most permissive — so `bypass` and
+`edits` are the same thing there. The real bypass on cursor is `permissions:
+auto` on the agent definition (see below): Syntaur answers every permission
+request without a card.
 
-**`bypass` is honoured even at the home tier.** The read-only default described
-under "The agent is running from home" only applies when a definition pins no
-mode at all; an explicit `bypass` is taken at its word, which means an agent
-with no worktree auto-approves everything in your home directory. Pin it on
-agents you keep in a worktree.
+**`bypass` and `permissions: auto` are honoured even at the home tier.** The
+read-only default described under "The agent is running from home" only applies
+when a definition pins no mode at all; an explicit `bypass` or `permissions:
+auto` is taken at its word, which means an agent with no worktree auto-approves
+everything in your home directory. Pin it on agents you keep in a worktree.
 
 codex routes approvals by mode: in `agent` mode escalations go to codex's own
 Guardian reviewer and you never see them, and `agent-full-access` never asks. If
@@ -156,18 +159,18 @@ status row.
 | Hand-off row | "@planner → @implementer · hop 1 of 4", linking the message that caused it |
 | Work card | A run of tool calls, one line: "Worked 18s · read 1 · edited 1" |
 | Plan checklist | The agent's todo list; pinned above the composer while its turn runs |
-| Permission card | The agent wants to do something that needs approval — answer inline |
+| Permission card | The agent wants to do something that needs approval — answer inline, or click **Allow all this session** to stop asking for the rest of this chat |
 | Question card | Cursor asked a multiple-choice question — pick an option inline |
 | Thin status row | "Planner · 3m 02s · 41.2k tokens · $0.19 · end_turn", with an **Activity** disclosure holding that turn's thinking and full tool detail |
-| Thin grey row | Session lifecycle, mode/config changes, adapter notices |
+| Thin grey row | Session lifecycle, mode/config changes, adapter notices, or **Auto-approved: `<command>`** (the agent's `permissions: auto`, or **Allow all this session**) |
 
 A short sentence right before a tool call ("I'll read package.json first.")
 becomes the work card's header instead of its own bubble — that one rule is most
 of what makes the stream read like chat rather than a log.
 
-**Unanswered permissions time out after 5 minutes.** The request is denied, the
-turn moves on, and a question is filed in the assignment's comments so it shows
-up in your Inbox.
+**Unanswered permissions time out after 5 minutes.** Auto-approved requests never
+wait. The request is denied, the turn moves on, and a question is filed in the
+assignment's comments so it shows up in your Inbox.
 
 ## Where the data lives
 
@@ -229,6 +232,11 @@ adapter on PATH is current (`claude-agent-acp` / `codex-acp` / `cursor-agent`).
 **The model picker is empty** — the adapter is not installed, nothing has been
 cached yet, or the last refresh failed (check the auth detail on the harness row
 and use **Refresh**).
+
+**The agent keeps asking for permission** — cursor's "Allow always" adds one
+`Shell(<binary>)` or `Write(<path>)` rule to `~/.cursor/cli-config.json`, so each
+new binary or file asks again. Use **Allow all this session** for one chat, or
+set `permissions: auto` on the agent definition. `--yolo` does nothing under ACP.
 
 ## Several agents in one chat
 
