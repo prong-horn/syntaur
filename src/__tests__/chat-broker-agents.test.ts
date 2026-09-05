@@ -5,10 +5,10 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { closeSessionDb, initSessionDb } from '../dashboard/session-db.js';
 import { closeUsageDb, initUsageDb } from '../db/usage-db.js';
-import { getChatSession, getChatSessionByKey, getHarnessOptions, upsertChatSession } from '../db/chat-db.js';
+import { getChatSession, getChatSessionByKey, getHarnessOptions, setHarnessCommands, upsertChatSession, upsertHarnessOptions } from '../db/chat-db.js';
 import { connectAcpClient, type AcpClient } from '../chat/acp-client.js';
 import { createFakeAgent, textChunk, toolCall, type FakeAgent, type FakeTurn } from '../chat/fake-agent.js';
-import { createChatBroker, ChatSendError, type ChatBroker, type ClientFactory } from '../chat/broker.js';
+import { createChatBroker, ChatSendError, type ChatBroker, type ClientFactory, type BrokerTimeouts } from '../chat/broker.js';
 import { HARNESSES } from '../chat/harnesses.js';
 import { writeAgentDefinition, AgentWriteError, loadAgentDefinitions } from '../chat/agents.js';
 import { participantsPath, writeParticipants } from '../chat/participants.js';
@@ -28,6 +28,7 @@ const authOk = () => 'logged in';
 function makeBroker(
   agentOptions: Parameters<typeof createFakeAgent>[0] = {},
   resolver: () => { path: string | null; installHint: string | null } = alwaysInstalled,
+  timeoutOverrides: Partial<BrokerTimeouts> = {},
 ) {
   fake = createFakeAgent({
     configOptions: [
@@ -61,7 +62,7 @@ function makeBroker(
     clientFactory,
     commandResolver: resolver,
     authProber: authOk,
-    timeouts: { flushMs: 1 },
+    timeouts: { flushMs: 1, throwawayCommandsMs: 100, ...timeoutOverrides },
   });
 }
 
@@ -207,6 +208,73 @@ describe.sequential('throwaway harness refresh and agent test', () => {
     makeBroker();
     await broker.refreshHarness('claude');
     expect(existsSync(join(sandbox, 'projects'))).toBe(false);
+  });
+
+  const probeCommands = [
+    { name: 'context', description: 'Show context usage', input: { hint: '[--json]' } },
+    { name: 'plan', description: 'Turn plan mode on.', input: null },
+  ] as acp.AvailableCommand[];
+
+  const parsedProbeCommands = [
+    {
+      name: 'context',
+      description: 'Show context usage',
+      inputHint: '[--json]',
+      action: { kind: 'prompt' },
+    },
+    {
+      name: 'plan',
+      description: 'Turn plan mode on.',
+      inputHint: null,
+      action: { kind: 'prompt' },
+    },
+  ];
+
+  it('refresh captures advertised commands into the harness record', async () => {
+    makeBroker({ availableCommands: probeCommands });
+    await broker.refreshHarness('claude');
+    expect(getHarnessOptions('claude').record?.commands).toEqual(parsedProbeCommands);
+  });
+
+  it('serves harness-cache from the record for a row-less agent', async () => {
+    const assignId = 'probe-assign-1';
+    const assignDir = join(sandbox, 'assignments', 'probe');
+    await mkdir(assignDir, { recursive: true });
+    const resolved: ResolvedAssignment = {
+      assignmentDir: assignDir,
+      projectSlug: 'test',
+      assignmentSlug: 'probe',
+      id: assignId,
+      standalone: false,
+      workspaceGroup: null,
+    };
+    makeBroker({ availableCommands: probeCommands });
+    await broker.refreshHarness('claude');
+    const summary = await broker.getSession(resolved, 'claude');
+    expect(summary?.commandsSource).toBe('harness-cache');
+    expect(summary?.commands).toEqual(parsedProbeCommands);
+  });
+
+  it('refresh with no advertised commands returns within the bounded wait', async () => {
+    makeBroker({}, alwaysInstalled, { throwawayCommandsMs: 100 });
+    const started = Date.now();
+    await broker.refreshHarness('claude');
+    expect(Date.now() - started).toBeGreaterThanOrEqual(90);
+    expect(Date.now() - started).toBeLessThan(5000);
+    expect(getHarnessOptions('claude').record?.commands).toBeUndefined();
+  });
+
+  it('upsertHarnessOptions preserves commands captured by refresh', async () => {
+    makeBroker({ availableCommands: probeCommands });
+    await broker.refreshHarness('claude');
+    upsertHarnessOptions({
+      harness: 'claude',
+      adapterVersion: '1.0.0',
+      capturedAt: new Date().toISOString(),
+      options: [{ id: 'model', name: 'Model', category: null, currentValue: 'x', choices: [] }],
+      modes: null,
+    });
+    expect(getHarnessOptions('claude').record?.commands).toEqual(parsedProbeCommands);
   });
 });
 

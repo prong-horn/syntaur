@@ -71,6 +71,7 @@ import {
   listChatItemsSince,
   listChatSessions,
   setHarnessAuth,
+  setHarnessCommands,
   upsertChatSession,
   upsertHarnessOptions,
 } from '../db/chat-db.js';
@@ -150,6 +151,8 @@ export interface BrokerTimeouts {
   shutdownGraceMs: number;
   /** Cap on throwaway harness refresh and agent test prompts. */
   throwawayMs: number;
+  /** How long a Refresh waits for `available_commands_update` after `session/new`. */
+  throwawayCommandsMs: number;
 }
 
 export const DEFAULT_TIMEOUTS: BrokerTimeouts = {
@@ -160,6 +163,7 @@ export const DEFAULT_TIMEOUTS: BrokerTimeouts = {
   flushMs: 50,
   shutdownGraceMs: 2_000,
   throwawayMs: 60_000,
+  throwawayCommandsMs: 3_000,
 };
 
 export interface ClientFactoryInput {
@@ -1951,6 +1955,7 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
     let profileErrors: string[] = [];
     let client: AcpClient | null = null;
     let timeoutHandle: ReturnType<typeof setTimeout> | null = null;
+    let commands: ChatCommand[] | null = null;
 
     try {
       client = clientFactory({
@@ -1965,6 +1970,9 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
           const update = 'update' in raw && raw.update ? raw.update : (raw as acp.SessionUpdate);
           if (update.sessionUpdate === 'agent_message_chunk') {
             reply += blockText(update.content as ContentBlock);
+          }
+          if (update.sessionUpdate === 'available_commands_update') {
+            commands = parseAvailableCommands(update);
           }
         },
         onPermissionRequest: async (request) => ({
@@ -2020,7 +2028,13 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
         effort = applied.applied.effort ?? effort;
       }
 
-      if (!input.prompt) return;
+      if (!input.prompt) {
+        await waitFor(() => commands !== null, timeouts.throwawayCommandsMs);
+        if (commands) setHarnessCommands(input.harness.id, commands);
+        return;
+      }
+
+      if (commands) setHarnessCommands(input.harness.id, commands);
 
       const blocks: ContentBlock[] = [];
       if (input.harness.systemPromptTransport === 'prompt' && systemPrompt.trim()) {
@@ -2254,6 +2268,7 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
     }
     if (update.sessionUpdate === 'available_commands_update') {
       const parsed = parseAvailableCommands(update);
+      setHarnessCommands(session.harness.id, parsed);
       if (!commandsEqual(session.commands, parsed)) {
         session.commands = parsed;
         session.commandsSource = 'session';

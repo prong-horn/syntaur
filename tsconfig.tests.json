@@ -76,5 +76,6 @@
     "src/__tests__/chat-normalizer.test.ts",
     "src/__tests__/dashboard-api-chat.test.ts",
     "src/__tests__/dashboard-api-chat-agents.test.ts",
+    "src/__tests__/chat-store.test.ts",
   ]
 }

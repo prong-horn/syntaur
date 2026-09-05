@@ -10,11 +10,15 @@ import {
   deleteChatItems,
   getChatSession,
   getChatSessionByKey,
+  getHarnessOptions,
+  latestHarnessCommands,
   listChatItemRows,
   listChatItems,
   listChatSessions,
+  setHarnessCommands,
   upsertChatItem,
   upsertChatSession,
+  upsertHarnessOptions,
 } from '../db/chat-db.js';
 import { CHAT_SCHEMA_VERSION } from '../db/chat-schema.js';
 import { ChatNormalizer } from '../chat/normalizer.js';
@@ -619,5 +623,49 @@ describe('chat schema v1 → v2 (Task 3)', () => {
     ).toBe('4');
     closeSessionDb();
     await rm(dir, { recursive: true, force: true });
+  });
+});
+
+describe('harness command record', () => {
+  const sampleCommands = [
+    {
+      name: 'context',
+      description: 'Show context usage',
+      inputHint: '[--json]',
+      action: { kind: 'prompt' as const },
+    },
+  ];
+
+  it('setHarnessCommands creates a record without touching auth_state', () => {
+    setHarnessCommands('claude', sampleCommands);
+    const row = getSessionDbForTest()
+      .prepare('SELECT auth_state, record_json FROM chat_harness_options WHERE harness = ?')
+      .get('claude') as { auth_state: string; record_json: string };
+    expect(row.auth_state).toBe('unknown');
+    const record = JSON.parse(row.record_json);
+    expect(record.commands).toEqual(sampleCommands);
+    expect(record.commandsCapturedAt).toBeTruthy();
+    expect(record.options).toEqual([]);
+    expect(record.modes).toBeNull();
+  });
+
+  it('setHarnessCommands merges into an existing record', () => {
+    upsertHarnessOptions({
+      harness: 'codex',
+      adapterVersion: '0.1.0',
+      capturedAt: '2026-09-01T00:00:00.000Z',
+      options: [{ id: 'model', name: 'Model', category: null, currentValue: 'x', choices: [] }],
+      modes: null,
+    });
+    setHarnessCommands('codex', sampleCommands);
+    const { record, auth } = getHarnessOptions('codex');
+    expect(record?.commands).toEqual(sampleCommands);
+    expect(record?.options).toHaveLength(1);
+    expect(auth.state).toBe('ok');
+  });
+
+  it('latestHarnessCommands falls back to the harness record', () => {
+    setHarnessCommands('cursor', sampleCommands);
+    expect(latestHarnessCommands('cursor')).toEqual(sampleCommands);
   });
 });

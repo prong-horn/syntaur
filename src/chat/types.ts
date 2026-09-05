@@ -615,6 +615,9 @@ export interface HarnessOptionsRecord {
   capturedAt: string;
   options: HarnessOption[];
   modes: HarnessModes;
+  /** Cached slash-command list from the last capture (live session or throwaway probe). */
+  commands?: ChatCommand[];
+  commandsCapturedAt?: string;
 }
 
 export interface HarnessAuthState {

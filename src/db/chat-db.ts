@@ -105,7 +105,7 @@ export function upsertChatSession(input: UpsertChatSessionInput): void {
     });
 }
 
-/** Newest persisted command list for a harness — the per-harness cache (Decision 1). */
+/** Newest persisted command list for a harness — session rows first, then the harness record. */
 export function latestHarnessCommands(harness: string): ChatCommand[] | null {
   const row = getSessionDb()
     .prepare(
@@ -115,11 +115,56 @@ export function latestHarnessCommands(harness: string): ChatCommand[] | null {
         LIMIT 1`,
     )
     .get(harness) as { commands_json: string } | undefined;
-  if (!row?.commands_json) return null;
-  try {
-    return JSON.parse(row.commands_json) as ChatCommand[];
-  } catch {
-    return null;
+  if (row?.commands_json) {
+    try {
+      return JSON.parse(row.commands_json) as ChatCommand[];
+    } catch {
+      // fall through to harness record
+    }
+  }
+  const { record } = getHarnessOptions(harness as Harness);
+  const commands = record?.commands;
+  if (commands && commands.length > 0) return commands;
+  return null;
+}
+
+/**
+ * Merge a command list into the per-harness record without touching auth state.
+ * Inserts a minimal row when none exists yet.
+ */
+export function setHarnessCommands(harness: Harness, commands: ChatCommand[]): void {
+  const now = new Date().toISOString();
+  const { record: existing } = getHarnessOptions(harness);
+  const record: HarnessOptionsRecord = {
+    harness,
+    adapterVersion: existing?.adapterVersion ?? null,
+    capturedAt: existing?.capturedAt ?? now,
+    options: existing?.options ?? [],
+    modes: existing?.modes ?? null,
+    commands,
+    commandsCapturedAt: now,
+  };
+
+  const row = getSessionDb()
+    .prepare('SELECT harness FROM chat_harness_options WHERE harness = ?')
+    .get(harness) as { harness: string } | undefined;
+
+  if (!row) {
+    getSessionDb()
+      .prepare(
+        `INSERT INTO chat_harness_options (harness, adapter_version, captured_at, record_json)
+         VALUES (@harness, @adapterVersion, @capturedAt, @recordJson)`,
+      )
+      .run({
+        harness,
+        adapterVersion: record.adapterVersion,
+        capturedAt: record.capturedAt,
+        recordJson: JSON.stringify(record),
+      });
+  } else {
+    getSessionDb()
+      .prepare('UPDATE chat_harness_options SET record_json = ? WHERE harness = ?')
+      .run(JSON.stringify(record), harness);
   }
 }
 
@@ -330,6 +375,12 @@ export function listTurnsForMessage(assignmentId: string, messageId: string): Ch
 
 export function upsertHarnessOptions(record: HarnessOptionsRecord): void {
   const now = new Date().toISOString();
+  const existing = getHarnessOptions(record.harness).record;
+  const merged: HarnessOptionsRecord = {
+    ...record,
+    commands: record.commands ?? existing?.commands,
+    commandsCapturedAt: record.commandsCapturedAt ?? existing?.commandsCapturedAt,
+  };
   getSessionDb()
     .prepare(
       `INSERT INTO chat_harness_options (
@@ -346,10 +397,10 @@ export function upsertHarnessOptions(record: HarnessOptionsRecord): void {
          auth_at         = excluded.auth_at`,
     )
     .run({
-      harness: record.harness,
-      adapterVersion: record.adapterVersion,
-      capturedAt: record.capturedAt,
-      recordJson: JSON.stringify(record),
+      harness: merged.harness,
+      adapterVersion: merged.adapterVersion,
+      capturedAt: merged.capturedAt,
+      recordJson: JSON.stringify(merged),
       authAt: now,
     });
 }
