@@ -484,6 +484,7 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
       avatar: def.avatar ?? null,
       systemPrompt: def.systemPrompt,
       promptIsDefault: def.promptIsDefault ?? false,
+      permissions: def.permissions,
     });
   }
 

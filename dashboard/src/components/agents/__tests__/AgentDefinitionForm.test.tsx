@@ -179,6 +179,10 @@ describe('AgentDefinitionForm', () => {
     expect(askMarkup).toContain('id="agent-permissions"');
     expect(askMarkup).toContain('ask — the chat shows a card for every request');
     expect(askMarkup).not.toContain('Keep it in a worktree');
+    const askPermissionsSelect = askMarkup.match(/<select id="agent-permissions"[\s\S]*?<\/select>/)?.[0];
+    expect(askPermissionsSelect).toBeTruthy();
+    expect(askPermissionsSelect).toContain('<option value="ask" selected');
+    expect(askPermissionsSelect).not.toMatch(/<option value="auto"[^>]*selected/);
 
     const autoMarkup = renderToStaticMarkup(
       <StaticRouter location="/agents/new">
@@ -196,7 +200,10 @@ describe('AgentDefinitionForm', () => {
         />
       </StaticRouter>,
     );
-    expect(autoMarkup).toContain('selected=""');
+    const autoPermissionsSelect = autoMarkup.match(/<select id="agent-permissions"[\s\S]*?<\/select>/)?.[0];
+    expect(autoPermissionsSelect).toBeTruthy();
+    expect(autoPermissionsSelect).toContain('<option value="auto" selected');
+    expect(autoPermissionsSelect).not.toMatch(/<option value="ask"[^>]*selected/);
     expect(autoMarkup).toContain('auto — approve every request without asking');
     expect(autoMarkup).toContain('Keep it in a worktree');
   });

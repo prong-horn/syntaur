@@ -520,7 +520,7 @@ describe('permissions auto-approve', () => {
     });
   });
 
-  it('falls back to allow_always when allow_once is absent (codex shape)', async () => {
+  it('picks allow_once on the codex shape (no allow_always)', async () => {
     await writeAgentFile('claude', 'permissions: auto\n');
     makeBroker({
       turns: [
@@ -533,6 +533,35 @@ describe('permissions auto-approve', () => {
                 options: [
                   { optionId: 'allow_once', name: 'Allow', kind: 'allow_once' },
                   { optionId: 'reject_once', name: 'Reject', kind: 'reject_once' },
+                ],
+              },
+            },
+            { kind: 'update', update: textChunk('done', 'm1') },
+          ],
+        },
+      ],
+    });
+    await broker.send({ assignment: assignment(), text: 'go' });
+    await idle();
+    expect(fake.permissionAnswers[0]).toEqual({
+      outcome: { outcome: 'selected', optionId: 'allow_once' },
+    });
+  });
+
+  it('prefers allow_once even when it is not the first option', async () => {
+    await writeAgentFile('claude', 'permissions: auto\n');
+    makeBroker({
+      turns: [
+        {
+          steps: [
+            {
+              kind: 'permission',
+              request: {
+                toolCall: { toolCallId: 't1', title: 'Run cmd', kind: 'execute' },
+                options: [
+                  { optionId: 'reject', name: 'Reject', kind: 'reject_once' },
+                  { optionId: 'allow_always', name: 'Allow always', kind: 'allow_always' },
+                  { optionId: 'allow_once', name: 'Allow once', kind: 'allow_once' },
                 ],
               },
             },
@@ -843,9 +872,13 @@ describe('adapter exit and resume (spike Decisions 7 and 8)', () => {
     });
 
     await secondBroker.send({ assignment: assignment(), text: 'two' });
+    const secondItems = () => secondBroker.items(assignment(), { limit: 500 });
     await waitUntil(() => failing.prompts.length === 1, 'the second prompt');
     await waitUntil(
-      () => items().some((i) => i.type === 'system' && /Could not resume/.test((i as { text: string }).text)),
+      () =>
+        secondItems().some(
+          (i) => i.type === 'system' && /Could not resume/.test((i as { text: string }).text),
+        ),
       'the rotation system row',
     );
     expect(failing.calls).toContain('session/new');

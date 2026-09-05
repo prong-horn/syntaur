@@ -1733,6 +1733,50 @@ const plannerSlashCommands = [
     expect(definitions.some((d) => d.id === 'planner')).toBe(false);
   });
 
+  it('ensureAdapter picks up a hand-edited permissions change and auto-answers', async () => {
+    await writeAgentDefinition(sandbox, plannerInput());
+    await writeParticipantsFile({ agents: ['planner'], defaultAgent: 'planner' });
+    makeAssignmentBroker(
+      {
+        planner: [
+          { steps: [{ kind: 'update', update: textChunk('OK', 'm1') }] },
+          {
+            steps: [
+              {
+                kind: 'permission',
+                request: {
+                  toolCall: { toolCallId: 't1', title: 'Run cmd', kind: 'execute' },
+                  options: [
+                    { optionId: 'allow-once', name: 'Allow once', kind: 'allow_once' },
+                    { optionId: 'reject-once', name: 'Reject', kind: 'reject_once' },
+                  ],
+                },
+              },
+              { kind: 'update', update: textChunk('done', 'm2') },
+            ],
+          },
+        ],
+      },
+      { sessionIds: { planner: ['acp-planner'] } },
+    );
+
+    await broker.send({ assignment: assignment(), text: '@planner hello' });
+    await idleTurns(1);
+
+    const agentPath = join(sandbox, 'agents', 'planner.md');
+    const content = await readFile(agentPath, 'utf-8');
+    await writeFile(agentPath, content.replace(/^mode:/m, 'permissions: auto\nmode:'));
+
+    await broker.send({ assignment: assignment(), text: '@planner run' });
+    await idleTurns(2);
+
+    const fake = fakes.get('planner')!;
+    expect(fake.prompts.length).toBe(2);
+    expect(fake.permissionAnswers[0]).toEqual({
+      outcome: { outcome: 'selected', optionId: 'allow-once' },
+    });
+  });
+
   it('ensureAdapter respawns when a hand-edited harness change is detected', async () => {
     await writeAgentDefinition(sandbox, plannerInput({ harness: 'claude' }));
     await writeParticipantsFile({ agents: ['planner'], defaultAgent: 'planner' });
