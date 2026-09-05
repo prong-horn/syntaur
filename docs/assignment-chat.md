@@ -91,7 +91,8 @@ Model and effort pickers show the values each adapter last advertised in
 `configOptions` on `session/new`, cached per harness in `syntaur.db`
 (`chat_harness_options`). Use **Refresh** on the harness row (or the editor's
 refresh button) to open a throwaway session in a temp directory and fetch the
-latest list when nothing is cached or auth failed.
+latest model and effort choices **and the slash-command list** when nothing is
+cached or auth failed.
 
 **Test** opens the same throwaway path with the saved definition, sends a fixed
 prompt (`"Reply with the single word OK…"`), and shows the reply or the
@@ -225,9 +226,13 @@ output of `claude auth status` / `codex login status` / `cursor-agent status`.
 All three work off a subscription login; no API key is required.
 
 **The slash-command picker is empty** — the harness has not sent
-`available_commands_update` yet for that agent, and no other session of the same
-harness has a cached list. Send any message to open a session, or check that the
-adapter on PATH is current (`claude-agent-acp` / `codex-acp` / `cursor-agent`).
+`available_commands_update` yet for that agent, nothing is cached for the harness,
+and the session row has no saved list. Open **Agents** and press **Refresh** on
+that harness (the throwaway session captures the command list), or send any
+message to open a session (a session whose list was never saved gets it back from
+its own events log on the next open). A fully typed `/command` still sends on
+Enter even when the picker is empty; check that the adapter on PATH is current
+(`claude-agent-acp` / `codex-acp` / `cursor-agent`).
 
 **The model picker is empty** — the adapter is not installed, nothing has been
 cached yet, or the last refresh failed (check the auth detail on the harness row
@@ -362,8 +367,11 @@ Each harness advertises its skills and slash commands on `session/new` through
 ACP's `available_commands_update`. The broker captures that list per session,
 persists it, and serves it on the `chat-session` frame and
 `GET /api/assignments/:id/chat/session`. Before an agent's first session opens,
-the composer shows the newest list its harness has advertised elsewhere, marked
-**cached**.
+the composer shows the newest list its harness has advertised elsewhere — from
+another session's row or from the per-harness record filled by **Refresh** on the
+Agents page (the throwaway session captures the commands) — marked **cached**. A
+session whose list was never saved gets it back from its own events log on the
+next open.
 
 | Harness | Typical count (2026-09-03) | Notes |
 |---------|---------------------------|-------|
@@ -373,8 +381,10 @@ the composer shows the newest list its harness has advertised elsewhere, marked
 
 Type `/` at the start of the message, or right after a leading `@mention`, to
 open a picker scoped to the **addressed agent** — the first attached mention, else
-the default. Selecting a command inserts `/name `; sending is unchanged and an
-unlisted `/command` is allowed.
+the default. Selecting a command inserts `/name `; when the typed name exactly
+matches a listed command and the caret is at its end, Enter sends instead of
+re-inserting the name (Tab still completes). An unlisted `/command` is allowed and
+still sends as-is.
 
 A command turn is delivered as a **raw** `/name args` line — no `<chat-event>`
 wrapper and no `<chat-history>` delta — so the harness recognises it the same way
