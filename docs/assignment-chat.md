@@ -159,7 +159,7 @@ status row.
 | Hand-off row | "@planner → @implementer · hop 1 of 4", linking the message that caused it |
 | Work card | A run of tool calls, one line: "Worked 18s · read 1 · edited 1" |
 | Plan checklist | The agent's todo list; pinned above the composer while its turn runs |
-| Permission card | The agent wants to do something that needs approval — answer inline, or click **Allow all this session** to stop asking for the rest of this chat |
+| Permission card | The agent wants to do something that needs approval — answer inline, or click **Allow all this session** to stop the cards until that agent's session closes (after ten minutes idle, when the adapter exits, or when its harness changes); `permissions: auto` on the agent definition is the durable setting |
 | Question card | Cursor asked a multiple-choice question — pick an option inline |
 | Thin status row | "Planner · 3m 02s · 41.2k tokens · $0.19 · end_turn", with an **Activity** disclosure holding that turn's thinking and full tool detail |
 | Thin grey row | Session lifecycle, mode/config changes, adapter notices, or **Auto-approved: `<command>`** (the agent's `permissions: auto`, or **Allow all this session**) |
@@ -168,9 +168,9 @@ A short sentence right before a tool call ("I'll read package.json first.")
 becomes the work card's header instead of its own bubble — that one rule is most
 of what makes the stream read like chat rather than a log.
 
-**Unanswered permissions time out after 5 minutes.** Auto-approved requests never
-wait. The request is denied, the turn moves on, and a question is filed in the
-assignment's comments so it shows up in your Inbox.
+**Unanswered permissions time out after 5 minutes.** The request is denied, the
+turn moves on, and a question is filed in the assignment's comments so it shows
+up in your Inbox. Auto-approved requests never wait.
 
 ## Where the data lives
 
@@ -235,8 +235,10 @@ and use **Refresh**).
 
 **The agent keeps asking for permission** — cursor's "Allow always" adds one
 `Shell(<binary>)` or `Write(<path>)` rule to `~/.cursor/cli-config.json`, so each
-new binary or file asks again. Use **Allow all this session** for one chat, or
-set `permissions: auto` on the agent definition. `--yolo` does nothing under ACP.
+new binary or file asks again. Use **Allow all this session** to stop the cards
+until that agent's session closes (after ten minutes idle, when the adapter exits,
+or when its harness changes), or set `permissions: auto` on the agent definition
+for a durable bypass. `--yolo` does nothing under ACP.
 
 ## Several agents in one chat
 
