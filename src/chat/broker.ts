@@ -132,6 +132,7 @@ import type {
   ItemPatch,
   Participants,
   SessionProfile,
+  SessionRotatedPayload,
 } from './types.js';
 
 // --- knobs -----------------------------------------------------------------
@@ -1743,7 +1744,7 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
             acpSessionId: previous,
             text: `Could not resume the previous agent session (${(err as Error).message}) — started a new one`,
             harness: session.harness.id,
-          }, null);
+          } satisfies SessionRotatedPayload, null);
           invalidateStanding(session);
           session.acpSessionId = null;
         }
@@ -1775,7 +1776,7 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
             acpSessionId: previous,
             text: `Could not load the previous agent session (${loadError?.message ?? 'unknown error'}) — started a new one`,
             harness: session.harness.id,
-          }, null);
+          } satisfies SessionRotatedPayload, null);
           invalidateStanding(session);
           session.acpSessionId = null;
         }
@@ -1784,7 +1785,7 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
           acpSessionId: previous,
           text: 'Previous agent session could not be reattached — started a new one',
           harness: session.harness.id,
-        }, null);
+        } satisfies SessionRotatedPayload, null);
         invalidateStanding(session);
         session.acpSessionId = null;
       }
@@ -1985,7 +1986,8 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
             reply += blockText(update.content as ContentBlock);
           }
           if (update.sessionUpdate === 'available_commands_update') {
-            commands = parseAvailableCommands(update);
+            const parsed = parseAvailableCommands(update);
+            if (parsed.length > 0) commands = parsed;
           }
         },
         onPermissionRequest: async (request) => ({
@@ -2043,11 +2045,8 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
 
       if (!input.prompt) {
         await waitFor(() => commands !== null, timeouts.throwawayCommandsMs);
-        if (commands) setHarnessCommands(input.harness.id, commands);
         return;
       }
-
-      if (commands) setHarnessCommands(input.harness.id, commands);
 
       const blocks: ContentBlock[] = [];
       if (input.harness.systemPromptTransport === 'prompt' && systemPrompt.trim()) {
@@ -2097,6 +2096,7 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
       };
     } finally {
       if (timeoutHandle) clearTimeout(timeoutHandle);
+      if (commands) setHarnessCommands(input.harness.id, commands);
       if (client) await client.close().catch(() => {});
       await rm(probeDir, { recursive: true, force: true }).catch(() => {});
     }
@@ -2281,10 +2281,10 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
     }
     if (update.sessionUpdate === 'available_commands_update') {
       const parsed = parseAvailableCommands(update);
-      setHarnessCommands(session.harness.id, parsed);
-      if (!commandsEqual(session.commands, parsed)) {
+      if (!commandsEqual(session.commands, parsed) && parsed.length > 0) {
         session.commands = parsed;
         session.commandsSource = 'session';
+        setHarnessCommands(session.harness.id, parsed);
         persistSession(session);
         emitSession(session);
       }

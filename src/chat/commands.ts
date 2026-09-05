@@ -113,8 +113,11 @@ export function detectCommand(text: string, attachedIds: readonly string[]): Det
 const HARNESS_MARKERS = new Set(['session.created', 'session.resumed', 'session.rotated']);
 
 /**
- * Newest `available_commands_update` in a session's events, only when the newest
- * harness marker names the current harness.
+ * Newest non-empty `available_commands_update` in a session's events. Empty
+ * advertisements are skipped. A harness marker met before any candidate stops
+ * the walk with null only when it lacks a string `harness` or names a different
+ * harness; a same-harness marker (resume/reconnect) is skipped. Once a candidate
+ * is held, the nearest preceding marker decides (equal → candidate, else null).
  */
 export function latestAdvertisedCommands(events: ChatEvent[], harness: Harness): ChatCommand[] | null {
   let candidate: ChatCommand[] | null = null;
@@ -123,17 +126,23 @@ export function latestAdvertisedCommands(events: ChatEvent[], harness: Harness):
     const event = events[i];
     if (event.kind === 'acp.update') {
       const payload = event.payload as { sessionUpdate?: string };
-      if (payload.sessionUpdate === 'available_commands_update' && candidate === null) {
+      if (payload.sessionUpdate === 'available_commands_update') {
         const parsed = parseAvailableCommands(payload);
-        candidate = parsed.length > 0 ? parsed : null;
+        if (parsed.length > 0 && candidate === null) {
+          candidate = parsed;
+        }
       }
       continue;
     }
     if (HARNESS_MARKERS.has(event.kind)) {
-      if (candidate === null) return null;
       const payload = event.payload as { harness?: unknown };
-      if (typeof payload.harness !== 'string') return null;
-      return payload.harness === harness ? candidate : null;
+      const markerHarness = typeof payload.harness === 'string' ? payload.harness : null;
+      if (candidate === null) {
+        if (markerHarness === null || markerHarness !== harness) return null;
+        continue;
+      }
+      if (markerHarness !== harness) return null;
+      return candidate;
     }
   }
 

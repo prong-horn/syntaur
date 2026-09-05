@@ -202,6 +202,11 @@ const cmdUpdate = (name: string) => ({
   availableCommands: [{ name, description: 'desc', input: null }],
 });
 
+const emptyCmdUpdate = () => ({
+  sessionUpdate: 'available_commands_update',
+  availableCommands: [],
+});
+
 describe('latestAdvertisedCommands', () => {
   it('returns the newest update when the marker harness matches', () => {
     const events = [
@@ -213,11 +218,39 @@ describe('latestAdvertisedCommands', () => {
     expect(result?.map((c) => c.name)).toEqual(['new']);
   });
 
+  it('returns the list across a same-harness resume', () => {
+    const events = [
+      evt('session.created', { harness: 'claude', acpSessionId: 's1' }, 1),
+      evt('acp.update', cmdUpdate('plan'), 2),
+      evt('session.resumed', { harness: 'claude', acpSessionId: 's1' }, 3),
+    ];
+    expect(latestAdvertisedCommands(events, 'claude')?.map((c) => c.name)).toEqual(['plan']);
+  });
+
   it('returns null when a newer marker names a different harness', () => {
     const events = [
       evt('session.created', { harness: 'claude', acpSessionId: 's1' }, 1),
       evt('acp.update', cmdUpdate('plan'), 2),
       evt('session.created', { harness: 'codex', acpSessionId: 's2' }, 3),
+    ];
+    expect(latestAdvertisedCommands(events, 'claude')).toBeNull();
+  });
+
+  it('returns null when the current harness marker follows an older harness list', () => {
+    const events = [
+      evt('session.created', { harness: 'codex', acpSessionId: 's1' }, 1),
+      evt('acp.update', cmdUpdate('codex-cmd'), 2),
+      evt('session.created', { harness: 'claude', acpSessionId: 's2' }, 3),
+      evt('acp.update', emptyCmdUpdate(), 4),
+    ];
+    expect(latestAdvertisedCommands(events, 'claude')).toBeNull();
+  });
+
+  it('returns null when only empty updates exist for the current harness', () => {
+    const events = [
+      evt('session.created', { harness: 'claude', acpSessionId: 's1' }, 1),
+      evt('acp.update', emptyCmdUpdate(), 2),
+      evt('session.resumed', { harness: 'claude', acpSessionId: 's1' }, 3),
     ];
     expect(latestAdvertisedCommands(events, 'claude')).toBeNull();
   });

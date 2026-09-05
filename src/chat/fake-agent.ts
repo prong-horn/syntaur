@@ -114,7 +114,7 @@ export function createFakeAgent(options: FakeAgentOptions = {}): FakeAgent {
     client: { notify: (method: string, params: unknown) => Promise<void> },
     sessionId: string,
   ): Promise<void> => {
-    if (!options.availableCommands?.length) return;
+    if (options.availableCommands === undefined) return;
     await client.notify(acp.methods.client.session.update, {
       sessionId,
       update: {

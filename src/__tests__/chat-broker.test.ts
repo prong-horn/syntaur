@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import * as acp from '@agentclientprotocol/sdk';
 import { closeSessionDb, getSessionDb, initSessionDb } from '../dashboard/session-db.js';
 import { closeUsageDb, initUsageDb } from '../db/usage-db.js';
-import { getChatSession, upsertChatItem, upsertChatSession } from '../db/chat-db.js';
+import { getChatSession, getHarnessOptions, upsertChatItem, upsertChatSession, setHarnessCommands } from '../db/chat-db.js';
 import { openEngagement } from '../db/engagement-db.js';
 import { openChatLog } from '../chat/store.js';
 import { connectAcpClient, type AcpClient } from '../chat/acp-client.js';
@@ -1816,6 +1816,48 @@ describe('slash commands', () => {
     const summary = await broker.getSession(assignment(), 'claude');
     expect(summary?.commandsSource).not.toBe('session');
     expect(getChatSession(ASSIGNMENT_ID, 'claude')?.commands_json).toBeNull();
+  });
+
+  it('ignores a later empty advertisement and keeps the harness record list', async () => {
+    const emptyUpdate = {
+      sessionUpdate: 'available_commands_update',
+      availableCommands: [],
+    } as acp.SessionUpdate;
+
+    makeBroker({
+      turns: [
+        { steps: [{ kind: 'update', update: textChunk('ok', 'm1') }] },
+        {
+          steps: [
+            { kind: 'update', update: emptyUpdate },
+            { kind: 'update', update: textChunk('again', 'm2') },
+          ],
+        },
+      ],
+      agentOptions: { availableCommands: sampleCommands },
+    });
+
+    await broker.send({ assignment: assignment(), text: 'hello' });
+    await idle();
+    await broker.send({ assignment: assignment(), text: 'second' });
+    await idle(2);
+
+    expect(getHarnessOptions('claude').record?.commands).toEqual([
+      {
+        name: 'context',
+        description: 'Show context usage',
+        inputHint: '[--json]',
+        action: { kind: 'prompt' },
+      },
+      {
+        name: 'plan',
+        description: 'Turn plan mode on.',
+        inputHint: null,
+        action: { kind: 'prompt' },
+      },
+    ]);
+    const row = getChatSession(ASSIGNMENT_ID, 'claude');
+    expect(JSON.parse(row!.commands_json!)).toHaveLength(2);
   });
 });
 

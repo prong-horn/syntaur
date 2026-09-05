@@ -13,6 +13,7 @@ import { HARNESSES } from '../chat/harnesses.js';
 import { writeAgentDefinition, AgentWriteError, loadAgentDefinitions } from '../chat/agents.js';
 import { participantsPath, writeParticipants } from '../chat/participants.js';
 import type { ChatItem, Harness, Participants } from '../chat/types.js';
+import type { ChatCommand } from '../chat/commands.js';
 import type { ResolvedAssignment } from '../utils/assignment-resolver.js';
 import type * as acp from '@agentclientprotocol/sdk';
 
@@ -215,7 +216,7 @@ describe.sequential('throwaway harness refresh and agent test', () => {
     { name: 'plan', description: 'Turn plan mode on.', input: null },
   ] as acp.AvailableCommand[];
 
-  const parsedProbeCommands = [
+  const parsedProbeCommands: ChatCommand[] = [
     {
       name: 'context',
       description: 'Show context usage',
@@ -274,6 +275,47 @@ describe.sequential('throwaway harness refresh and agent test', () => {
       options: [{ id: 'model', name: 'Model', category: null, currentValue: 'x', choices: [] }],
       modes: null,
     });
+    expect(getHarnessOptions('claude').record?.commands).toEqual(parsedProbeCommands);
+  });
+
+  it('refresh with only an empty advertisement leaves an existing record intact', async () => {
+    setHarnessCommands('claude', parsedProbeCommands);
+    makeBroker({ availableCommands: [] }, alwaysInstalled, { throwawayCommandsMs: 100 });
+    const started = Date.now();
+    await broker.refreshHarness('claude');
+    expect(Date.now() - started).toBeGreaterThanOrEqual(90);
+    expect(getHarnessOptions('claude').record?.commands).toEqual(parsedProbeCommands);
+  });
+
+  it('test captures commands advertised during the prompt', async () => {
+    makeBroker({
+      turns: [
+        {
+          steps: [
+            {
+              kind: 'update',
+              update: {
+                sessionUpdate: 'available_commands_update',
+                availableCommands: probeCommands,
+              } as acp.SessionUpdate,
+            },
+            { kind: 'update', update: textChunk('OK') },
+          ],
+          stopReason: 'end_turn',
+        },
+      ],
+    });
+    await writeAgentDefinition(sandbox, {
+      id: 'planner',
+      name: 'Planner',
+      color: 'amber',
+      harness: 'claude',
+      respondsTo: 'mentions',
+      default: false,
+      systemPrompt: '',
+    });
+    const result = await broker.testAgent('planner');
+    expect(result.ok).toBe(true);
     expect(getHarnessOptions('claude').record?.commands).toEqual(parsedProbeCommands);
   });
 });
