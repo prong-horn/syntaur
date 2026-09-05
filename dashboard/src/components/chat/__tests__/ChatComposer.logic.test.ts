@@ -3,6 +3,8 @@ import {
   addressedAgentId,
   applyCommand,
   detectActiveCommand,
+  emptyCommandsCopy,
+  isExactCommand,
   rankCommands,
 } from '../../../lib/command-autocomplete';
 import type { ChatCommand, ChatCommandsSource } from '../../../lib/chat-types';
@@ -48,5 +50,36 @@ describe('ChatComposer command picker logic', () => {
   it('has an empty state when the addressed agent advertises nothing', () => {
     const state = commandsByAgent().get('planner');
     expect(state?.commands).toEqual([]);
+  });
+});
+
+describe('isExactCommand', () => {
+  it('is true for /plan with plan listed and caret at the end', () => {
+    const active = detectActiveCommand('/plan', 5, agents)!;
+    expect(isExactCommand(active, 5, commands)).toBe(true);
+  });
+
+  it('is false mid-token', () => {
+    const active = detectActiveCommand('/pla', 4, agents)!;
+    expect(isExactCommand(active, 4, commands)).toBe(false);
+  });
+
+  it('is false when only plan-assignment is listed as a partial match', () => {
+    const active = detectActiveCommand('/plan', 5, agents)!;
+    const onlyLong = commands.filter((c) => c.name === 'plan-assignment');
+    expect(isExactCommand(active, 5, onlyLong)).toBe(false);
+  });
+
+  it('is false with the caret before the token end', () => {
+    const active = detectActiveCommand('/plan', 5, agents)!;
+    expect(isExactCommand(active, 3, commands)).toBe(false);
+  });
+});
+
+describe('emptyCommandsCopy', () => {
+  it('includes the addressed id and the send-as-is note', () => {
+    expect(emptyCommandsCopy('codex')).toBe(
+      'No commands advertised by @codex yet — a /command you type is still sent as-is',
+    );
   });
 });

@@ -5,6 +5,8 @@ import {
   addressedAgentId,
   applyCommand,
   detectActiveCommand,
+  emptyCommandsCopy,
+  isExactCommand,
   rankCommands,
 } from '../../lib/command-autocomplete';
 import { agentColorClasses, rankAgentTokens } from '../../lib/chat-format';
@@ -111,10 +113,16 @@ export function ChatComposer({
         return;
       }
       if (event.key === 'Enter' || event.key === 'Tab') {
-        event.preventDefault();
-        if (popupKind === 'mention') applyMention(suggestions[activeIndex]);
-        else applyCommandSuggestion(suggestions[activeIndex]);
-        return;
+        const exactCommand =
+          event.key === 'Enter' &&
+          popupKind === 'command' &&
+          isExactCommand(activeCommand, caret, commandState?.commands ?? []);
+        if (!exactCommand) {
+          event.preventDefault();
+          if (popupKind === 'mention') applyMention(suggestions[activeIndex]);
+          else applyCommandSuggestion(suggestions[activeIndex]);
+          return;
+        }
       }
       if (event.key === 'Escape') {
         event.preventDefault();
@@ -229,7 +237,7 @@ export function ChatComposer({
         )}
         {showCommandEmpty && addressedId && (
           <div className="absolute bottom-full left-0 right-0 z-30 mb-1 rounded-md border border-border/70 bg-background px-2.5 py-2 text-xs text-muted-foreground shadow-lg">
-            No commands advertised by @{addressedId} yet
+            {emptyCommandsCopy(addressedId)}
           </div>
         )}
       </div>

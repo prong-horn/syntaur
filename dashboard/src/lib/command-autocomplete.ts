@@ -97,3 +97,17 @@ export function applyCommand(
     caret: range.start + inserted.length,
   };
 }
+
+/** True when the caret is at the end of a token that exactly matches a listed command. */
+export function isExactCommand(
+  active: ActiveCommand | null,
+  caret: number,
+  commands: readonly ChatCommand[],
+): boolean {
+  if (!active || caret !== active.end) return false;
+  return commands.some((command) => command.name === active.partial);
+}
+
+export function emptyCommandsCopy(addressedId: string): string {
+  return `No commands advertised by @${addressedId} yet — a /command you type is still sent as-is`;
+}
