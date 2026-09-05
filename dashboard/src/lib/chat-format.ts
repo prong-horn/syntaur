@@ -119,6 +119,16 @@ export function orderPermissionOptions<T extends { kind: string }>(options: T[])
   return [...options].sort((a, b) => rank(a.kind) - rank(b.kind));
 }
 
+/** The allow option Syntaur picks when auto-answering (Decision 3). */
+export function preferredAllowOption<T extends { kind: string; optionId: string }>(options: T[]): T {
+  return (
+    options.find((o) => o.kind === 'allow_once') ??
+    options.find((o) => o.kind === 'allow_always') ??
+    options[0] ??
+    ({ kind: 'allow_once', optionId: 'allow' } as T)
+  );
+}
+
 /** Primary / secondary / destructive, from the option kind. */
 export function permissionButtonTone(kind: string): 'primary' | 'secondary' | 'destructive' {
   if (kind === 'allow_once') return 'primary';

@@ -150,6 +150,7 @@ export interface PermissionRequestItem extends ChatItemBase {
   answer?: string;
   cancelled?: boolean;
   timedOut?: boolean;
+  auto?: boolean;
 }
 
 export interface QuestionItem extends ChatItemBase {
@@ -287,6 +288,8 @@ export interface Participants {
 
 export type RespondsTo = 'mentions' | 'all-human' | 'none';
 
+export type AgentPermissions = 'ask' | 'auto';
+
 export type Harness = 'claude' | 'codex' | 'cursor';
 
 export type AgentColor = 'violet' | 'emerald' | 'amber' | 'sky' | 'rose' | 'slate';
@@ -321,6 +324,7 @@ export interface AgentDefinition {
   harness: Harness;
   model?: string;
   mode?: string;
+  permissions: AgentPermissions;
   effort?: string;
   mcpServers?: string[];
   env?: Record<string, string>;
@@ -342,6 +346,7 @@ export interface AgentDefinitionInput {
   harness: Harness;
   model?: string;
   mode?: string;
+  permissions?: AgentPermissions;
   effort?: string;
   mcpServers?: string[];
   env?: Record<string, string>;

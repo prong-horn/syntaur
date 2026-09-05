@@ -7,6 +7,7 @@ import {
   formatTokens,
   orderPermissionOptions,
   permissionButtonTone,
+  preferredAllowOption,
   pinnedPlan,
   summarizeTurn,
   summarizeWork,
@@ -156,6 +157,19 @@ describe('permission options', () => {
     expect(permissionButtonTone('allow_always')).toBe('secondary');
     expect(permissionButtonTone('reject_once')).toBe('destructive');
     expect(permissionButtonTone('reject_always')).toBe('destructive');
+  });
+
+  it('prefers allow_once, then allow_always, then the first option', () => {
+    expect(preferredAllowOption(options).optionId).toBe('allow');
+    expect(
+      preferredAllowOption([
+        { optionId: 'allow_always', name: 'Always', kind: 'allow_always' },
+        { optionId: 'reject', name: 'Deny', kind: 'reject_once' },
+      ]).optionId,
+    ).toBe('allow_always');
+    expect(
+      preferredAllowOption([{ optionId: 'reject', name: 'Deny', kind: 'reject_once' }]).optionId,
+    ).toBe('reject');
   });
 });
 

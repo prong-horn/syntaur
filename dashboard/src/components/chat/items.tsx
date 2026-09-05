@@ -27,6 +27,7 @@ import {
   formatLocations,
   orderPermissionOptions,
   permissionButtonTone,
+  preferredAllowOption,
   summarizeTurn,
   summarizeWork,
   workInProgress,
@@ -58,7 +59,11 @@ export interface ItemViewContext {
   /** The turn's thoughts and tool rows, behind the Activity disclosure. */
   activityOf: (turnId: string | null) => TurnActivity | undefined;
   onWithdraw: (messageId: string) => void;
-  onAnswerPermission: (requestId: string, optionId: string) => void;
+  onAnswerPermission: (
+    requestId: string,
+    optionId: string,
+    opts?: { allowAllSession?: boolean },
+  ) => void;
   onAnswerQuestion: (requestId: string, answer: { optionId?: string; text?: string }) => void;
 }
 
@@ -331,14 +336,24 @@ export function PermissionCard({
   onAnswer,
 }: {
   item: PermissionRequestItem;
-  onAnswer: (requestId: string, optionId: string) => void;
+  onAnswer: (
+    requestId: string,
+    optionId: string,
+    opts?: { allowAllSession?: boolean },
+  ) => void;
 }) {
+  const title = item.toolCall.title ?? 'a tool';
+  if (item.auto) {
+    return (
+      <div className="py-0.5 text-[11px] text-muted-foreground">Auto-approved: {title}</div>
+    );
+  }
   const answered = item.answer !== undefined || item.cancelled || item.timedOut;
   const options = orderPermissionOptions(item.options);
   return (
     <div className="rounded-lg border border-amber-500/40 bg-amber-500/5 px-3 py-2">
       <div className="text-sm text-foreground">
-        The agent wants to run <span className="font-mono text-xs">{item.toolCall.title ?? 'a tool'}</span>
+        The agent wants to run <span className="font-mono text-xs">{title}</span>
       </div>
       {answered ? (
         <div className="mt-1.5 text-xs text-muted-foreground">
@@ -369,6 +384,17 @@ export function PermissionCard({
               </button>
             );
           })}
+          <button
+            type="button"
+            onClick={() =>
+              onAnswer(item.requestId, preferredAllowOption(item.options).optionId, {
+                allowAllSession: true,
+              })
+            }
+            className="rounded-md border border-border bg-background px-2.5 py-1 text-xs font-medium hover:bg-muted"
+          >
+            Allow all this session
+          </button>
         </div>
       )}
     </div>

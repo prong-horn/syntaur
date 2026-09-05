@@ -58,7 +58,7 @@ export interface UseAssignmentChatResult {
   /** With an id, cancel that agent; without one, every in-flight agent. */
   cancel: (agentId?: string | null) => Promise<void>;
   setParticipants: (next: Participants) => Promise<void>;
-  answerPermission: (requestId: string, optionId: string) => Promise<void>;
+  answerPermission: (requestId: string, optionId: string, opts?: { allowAllSession?: boolean }) => Promise<void>;
   answerQuestion: (requestId: string, answer: { optionId?: string; text?: string }) => Promise<void>;
   loadOlder: () => Promise<void>;
   refresh: () => void;
@@ -248,10 +248,10 @@ export function useAssignmentChat(assignmentId: string | null): UseAssignmentCha
   );
 
   const answerPermission = useCallback(
-    async (requestId: string, optionId: string) => {
+    async (requestId: string, optionId: string, opts?: { allowAllSession?: boolean }) => {
       if (!assignmentId) return;
       try {
-        await answerChatPermission(assignmentId, requestId, optionId);
+        await answerChatPermission(assignmentId, requestId, optionId, opts);
       } catch (err) {
         setError(err instanceof Error ? err.message : String(err));
       }

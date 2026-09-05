@@ -240,7 +240,8 @@ export function ChatTab({ assignmentId }: ChatTabProps) {
                 authorOf,
                 activityOf,
                 onWithdraw: (messageId) => void withdraw(messageId),
-                onAnswerPermission: (requestId, optionId) => void answerPermission(requestId, optionId),
+                onAnswerPermission: (requestId, optionId, opts) =>
+                  void answerPermission(requestId, optionId, opts),
                 onAnswerQuestion: (requestId, answer) => void answerQuestion(requestId, answer),
               }}
             />

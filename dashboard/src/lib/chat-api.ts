@@ -180,10 +180,17 @@ export function answerChatPermission(
   assignmentId: string,
   requestId: string,
   optionId: string,
+  opts?: { allowAllSession?: boolean },
 ): Promise<{ answered: boolean }> {
   return request<{ answered: boolean }>(
     `/api/assignments/${encodeURIComponent(assignmentId)}/chat/permissions/${encodeURIComponent(requestId)}`,
-    { method: 'POST', body: JSON.stringify({ optionId }) },
+    {
+      method: 'POST',
+      body: JSON.stringify({
+        optionId,
+        ...(opts?.allowAllSession === undefined ? {} : { allowAllSession: opts.allowAllSession }),
+      }),
+    },
   );
 }
 
