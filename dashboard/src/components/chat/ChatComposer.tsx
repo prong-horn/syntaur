@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react';
-import { Loader2, Send } from 'lucide-react';
+import { Loader2, Paperclip, Send, X } from 'lucide-react';
 import { applySuggestion, detectActiveToken } from '../../lib/mention-autocomplete';
 import {
   addressedAgentId,
@@ -10,7 +10,14 @@ import {
   rankCommands,
 } from '../../lib/command-autocomplete';
 import { agentColorClasses, rankAgentTokens } from '../../lib/chat-format';
+import {
+  acceptImageFile,
+  extractImagesFromDataTransfer,
+  refusalMessage,
+  type PendingImage,
+} from '../../lib/chat-attachments';
 import { cn } from '../../lib/utils';
+import { useToast } from '../Toast';
 import type { ChatAgentSummary, ChatCommand, ChatCommandsSource } from '../../lib/chat-types';
 
 /**
@@ -22,7 +29,13 @@ export interface ChatComposerProps {
   defaultAgentId: string | null;
   commandsByAgent: Map<string, { commands: ChatCommand[]; source: ChatCommandsSource | null }>;
   disabled?: boolean;
-  onSend: (text: string) => Promise<void>;
+  onSend: (text: string, images: PendingImage[]) => Promise<void>;
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 export function ChatComposer({
@@ -37,7 +50,10 @@ export function ChatComposer({
   const [selected, setSelected] = useState(0);
   const [dismissed, setDismissed] = useState(false);
   const [sending, setSending] = useState(false);
+  const [pending, setPending] = useState<PendingImage[]>([]);
   const ref = useRef<HTMLTextAreaElement>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
+  const { showToast } = useToast();
 
   const attachedIds = agents.map((a) => a.id);
   const activeMention = detectActiveToken(draft, caret);
@@ -52,7 +68,38 @@ export function ChatComposer({
   const showPopup = !dismissed && popupKind !== null && suggestions.length > 0;
   const showCommandEmpty = !dismissed && activeCommand && commandSuggestions.length === 0;
   const activeIndex = Math.min(selected, Math.max(0, suggestions.length - 1));
-  const canSend = draft.trim().length > 0 && !sending && !disabled;
+  const canSend = (draft.trim().length > 0 || pending.length > 0) && !sending && !disabled;
+
+  function addFiles(files: File[]): void {
+    let next = [...pending];
+    for (const file of files) {
+      const check = acceptImageFile(file, next);
+      if (!check.ok) {
+        showToast(refusalMessage(check.reason));
+        continue;
+      }
+      next = [
+        ...next,
+        {
+          key: `${file.name}:${file.size}:${Date.now()}`,
+          file,
+          name: file.name,
+          mimeType: file.type,
+          bytes: file.size,
+          previewUrl: URL.createObjectURL(file),
+        },
+      ];
+    }
+    setPending(next);
+  }
+
+  function removePending(key: string): void {
+    setPending((current) => {
+      const removed = current.find((p) => p.key === key);
+      if (removed) URL.revokeObjectURL(removed.previewUrl);
+      return current.filter((p) => p.key !== key);
+    });
+  }
 
   function applyMention(id: string | undefined): void {
     if (!activeMention || !id) return;
@@ -89,10 +136,13 @@ export function ChatComposer({
   async function submit(): Promise<void> {
     if (!canSend) return;
     setSending(true);
+    const images = pending;
     try {
-      await onSend(draft);
+      await onSend(draft, images);
       setDraft('');
       setCaret(0);
+      for (const image of images) URL.revokeObjectURL(image.previewUrl);
+      setPending([]);
     } catch {
       // The hook surfaces the error; keep the draft so nothing is lost.
     } finally {
@@ -147,7 +197,56 @@ export function ChatComposer({
 
   return (
     <div className="flex items-end gap-2">
+      <input
+        ref={fileRef}
+        type="file"
+        accept="image/*"
+        multiple
+        className="hidden"
+        onChange={(event) => {
+          const files = Array.from(event.target.files ?? []);
+          if (files.length) addFiles(files);
+          event.target.value = '';
+        }}
+      />
+      <button
+        type="button"
+        disabled={disabled || sending}
+        onClick={() => fileRef.current?.click()}
+        className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-md border border-border text-muted-foreground hover:bg-accent disabled:opacity-50"
+        aria-label="Attach image"
+      >
+        <Paperclip className="h-4 w-4" />
+      </button>
       <div className="relative flex-1">
+        {pending.length > 0 && (
+          <div className="mb-2 flex flex-wrap gap-2">
+            {pending.map((image) => (
+              <div
+                key={image.key}
+                className="relative flex max-w-[10rem] items-center gap-2 rounded-md border border-border/70 bg-muted/30 p-1.5"
+              >
+                <img
+                  src={image.previewUrl}
+                  alt=""
+                  className="h-12 w-12 shrink-0 rounded object-cover"
+                />
+                <div className="min-w-0 flex-1 text-[11px]">
+                  <div className="truncate font-medium">{image.name}</div>
+                  <div className="text-muted-foreground">{formatBytes(image.bytes)}</div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => removePending(image.key)}
+                  className="rounded p-0.5 text-muted-foreground hover:bg-background hover:text-foreground"
+                  aria-label={`Remove ${image.name}`}
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
         <textarea
           ref={ref}
           value={draft}
@@ -155,6 +254,23 @@ export function ChatComposer({
           placeholder={placeholder}
           aria-label="Chat message"
           disabled={disabled}
+          onPaste={(event) => {
+            const files = extractImagesFromDataTransfer(event.clipboardData);
+            if (files.length === 0) return;
+            event.preventDefault();
+            addFiles(files);
+          }}
+          onDrop={(event) => {
+            const files = extractImagesFromDataTransfer(event.dataTransfer);
+            if (files.length === 0) return;
+            event.preventDefault();
+            addFiles(files);
+          }}
+          onDragOver={(event) => {
+            if ([...event.dataTransfer.types].some((t) => t === 'Files' || t.startsWith('image/'))) {
+              event.preventDefault();
+            }
+          }}
           onChange={(event) => {
             setDraft(event.target.value);
             setCaret(event.target.selectionStart ?? event.target.value.length);

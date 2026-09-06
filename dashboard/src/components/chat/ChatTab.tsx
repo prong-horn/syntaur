@@ -261,7 +261,7 @@ export function ChatTab({ assignmentId }: ChatTabProps) {
           defaultAgentId={participants?.defaultAgent ?? null}
           commandsByAgent={commandsByAgent}
           disabled={attached.length === 0}
-          onSend={(text) => send(text)}
+          onSend={(text, images) => send(text, null, images)}
         />
       </div>
 

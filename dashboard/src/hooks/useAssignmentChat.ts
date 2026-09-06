@@ -15,12 +15,14 @@ import {
   putChatParticipants,
   sendChatMessage,
   sortItems,
+  uploadChatAttachment,
   withdrawChatMessage,
   workingByAgent,
   type ChatState,
   type ItemAuthor,
   type WorkingState,
 } from '../lib/chat-api';
+import { downscaleImage, type PendingImage } from '../lib/chat-attachments';
 import type {
   ChatAgentSummary,
   ChatItem,
@@ -53,7 +55,7 @@ export interface UseAssignmentChatResult {
   /** Who is working right now, and for how long, per agent. */
   working: Map<string, WorkingState>;
   authorOf: (item: { agentId: string }) => ItemAuthor;
-  send: (text: string, agentId?: string | null) => Promise<void>;
+  send: (text: string, agentId?: string | null, images?: PendingImage[]) => Promise<void>;
   withdraw: (messageId: string) => Promise<void>;
   /** With an id, cancel that agent; without one, every in-flight agent. */
   cancel: (agentId?: string | null) => Promise<void>;
@@ -195,11 +197,28 @@ export function useAssignmentChat(assignmentId: string | null): UseAssignmentCha
   }, [anyWorking]);
 
   const send = useCallback(
-    async (text: string, agentId?: string | null) => {
+    async (text: string, agentId?: string | null, images?: PendingImage[]) => {
       if (!assignmentId) return;
       setError(null);
       try {
-        await sendChatMessage(assignmentId, text, agentId);
+        const attachmentIds: string[] = [];
+        const attachmentMeta: Record<string, { width?: number; height?: number }> = {};
+        if (images?.length) {
+          for (const image of images) {
+            const { blob, width, height } = await downscaleImage(image.file);
+            const uploaded = await uploadChatAttachment(
+              assignmentId,
+              blob,
+              image.name,
+              image.mimeType,
+            );
+            attachmentIds.push(uploaded.id);
+            attachmentMeta[uploaded.id] = { width, height };
+          }
+        }
+        await sendChatMessage(assignmentId, text, agentId, {
+          ...(attachmentIds.length ? { attachmentIds, attachmentMeta } : {}),
+        });
       } catch (err) {
         setError(err instanceof Error ? err.message : String(err));
         throw err;

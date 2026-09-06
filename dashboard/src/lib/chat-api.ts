@@ -155,11 +155,58 @@ export function sendChatMessage(
   assignmentId: string,
   text: string,
   agentId?: string | null,
+  opts?: {
+    attachmentIds?: string[];
+    attachmentMeta?: Record<string, { width?: number; height?: number }>;
+  },
 ): Promise<{ messageId: string }> {
   return request<{ messageId: string }>(
     `/api/assignments/${encodeURIComponent(assignmentId)}/chat/messages`,
-    { method: 'POST', body: JSON.stringify({ text, ...(agentId ? { agentId } : {}) }) },
+    {
+      method: 'POST',
+      body: JSON.stringify({
+        text,
+        ...(agentId ? { agentId } : {}),
+        ...(opts?.attachmentIds?.length ? { attachmentIds: opts.attachmentIds } : {}),
+        ...(opts?.attachmentMeta ? { attachmentMeta: opts.attachmentMeta } : {}),
+      }),
+    },
   );
+}
+
+export interface UploadedChatAttachment {
+  id: string;
+  mimeType: string;
+  bytes: number;
+  name: string;
+}
+
+export async function uploadChatAttachment(
+  assignmentId: string,
+  blob: Blob,
+  name: string,
+  mimeType: string,
+): Promise<UploadedChatAttachment> {
+  const res = await fetch(`/api/assignments/${encodeURIComponent(assignmentId)}/chat/attachments`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/octet-stream',
+      'x-attachment-filename': encodeURIComponent(name),
+      'x-attachment-mime': mimeType,
+    },
+    body: blob,
+  });
+  if (!res.ok) {
+    let message = `${res.status} ${res.statusText}`;
+    try {
+      const body = (await res.json()) as { error?: string };
+      if (body.error) message = body.error;
+    } catch {
+      // keep status line
+    }
+    throw new Error(message);
+  }
+  return (await res.json()) as UploadedChatAttachment;
 }
 
 export function withdrawChatMessage(assignmentId: string, messageId: string): Promise<{ withdrawn: boolean }> {

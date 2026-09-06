@@ -19,6 +19,7 @@ import {
   Wrench,
 } from 'lucide-react';
 import { MarkdownRenderer } from '../MarkdownRenderer';
+import { chatAttachmentUrl } from '../../lib/chat-attachments';
 import { cn } from '../../lib/utils';
 import {
   activitySummary,
@@ -124,7 +125,28 @@ export function UserMessageBubble({
           queued && 'border-dashed opacity-80',
         )}
       >
-        <div className="whitespace-pre-wrap break-words">{item.text}</div>
+        {item.text.trim().length > 0 && (
+          <div className="whitespace-pre-wrap break-words">{item.text}</div>
+        )}
+        {item.attachments && item.attachments.length > 0 && (
+          <div className={cn('flex flex-wrap gap-2', item.text.trim().length > 0 && 'mt-2')}>
+            {item.attachments.map((att) => (
+              <a
+                key={att.id}
+                href={chatAttachmentUrl(item.assignmentId, att.id)}
+                target="_blank"
+                rel="noreferrer"
+                className="block"
+              >
+                <img
+                  src={chatAttachmentUrl(item.assignmentId, att.id)}
+                  alt={att.name}
+                  className="max-h-40 rounded object-contain"
+                />
+              </a>
+            ))}
+          </div>
+        )}
         {/* Who it went to, but only when it went to more than one agent —
             a single-target message already says so with its @mention. */}
         {targets.length > 1 && !withdrawn && (

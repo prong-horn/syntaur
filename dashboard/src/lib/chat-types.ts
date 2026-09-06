@@ -42,6 +42,15 @@ export interface ChatItemBase {
  */
 export type UserMessageState = 'queued' | 'partial' | 'sent' | 'withdrawn' | 'replayed';
 
+export interface ChatAttachment {
+  id: string;
+  mimeType: string;
+  bytes: number;
+  name: string;
+  width?: number;
+  height?: number;
+}
+
 export interface UserMessageItem extends ChatItemBase {
   type: 'user.message';
   messageId: string;
@@ -52,6 +61,7 @@ export interface UserMessageItem extends ChatItemBase {
   deliveredTo?: string[];
   mentions?: string[];
   unknown?: string[];
+  attachments?: ChatAttachment[];
 }
 
 /** One agent handing the conversation to another (§5.3's `handoff` row). */
