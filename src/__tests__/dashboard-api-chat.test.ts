@@ -1,13 +1,14 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import express from 'express';
 import { createServer, type Server } from 'node:http';
-import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, rm, writeFile, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import type { AddressInfo } from 'node:net';
 import { WebSocketServer, WebSocket } from 'ws';
 import { closeSessionDb, initSessionDb } from '../dashboard/session-db.js';
 import { createChatRouter } from '../dashboard/api-chat.js';
+import { MAX_CHAT_ATTACHMENT_BYTES } from '../chat/attachments.js';
 import { createChatBroker, type ChatBroker } from '../chat/broker.js';
 import { connectAcpClient, type AcpClient } from '../chat/acp-client.js';
 import { createFakeAgent, textChunk, type FakeAgent, type FakeTurn } from '../chat/fake-agent.js';
@@ -33,6 +34,29 @@ let clients: AcpClient[];
 let wss: WebSocketServer | null;
 
 const ASSIGNMENT_ID = 'a1b2c3d4-0000-4000-8000-000000000001';
+
+/** Minimal 1×1 PNG (68 bytes). */
+const PNG_1X1 = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+  'base64',
+);
+
+async function uploadChatAttachment(
+  filename: string,
+  bytes: Buffer,
+  mime?: string,
+): Promise<Response> {
+  const headers: Record<string, string> = {
+    'content-type': 'application/octet-stream',
+    'x-attachment-filename': encodeURIComponent(filename),
+  };
+  if (mime !== undefined) headers['x-attachment-mime'] = mime;
+  return fetch(url(`/assignments/${ASSIGNMENT_ID}/chat/attachments`), {
+    method: 'POST',
+    headers,
+    body: new Uint8Array(bytes),
+  });
+}
 
 async function boot(turns: FakeTurn[] = [{ steps: [{ kind: 'update', update: textChunk('ok', 'm1') }] }]) {
   fake = createFakeAgent({ turns, sessionIds: ['acp-1'] });
@@ -577,6 +601,66 @@ describe('/ws chat frames', () => {
     expect((sessionFrames[0].payload as { agentId: string }).agentId).toBe('claude');
 
     ws.close();
+  });
+});
+
+describe('chat attachment routes (Task 1)', () => {
+  it('uploads a PNG, serves it inline, and stores under chat/attachments', async () => {
+    await boot();
+    const up = await uploadChatAttachment('dot.png', PNG_1X1, 'image/png');
+    expect(up.status).toBe(201);
+    const att = (await up.json()) as { id: string; mimeType: string; bytes: number; name: string };
+    expect(att.mimeType).toBe('image/png');
+    expect(att.bytes).toBe(PNG_1X1.length);
+    expect(att.name).toBe('dot.png');
+    expect(att.id).toMatch(/^[0-9a-f-]{36}$/);
+
+    const stored = await readdir(join(assignmentDir, 'chat', 'attachments'));
+    expect(stored).toHaveLength(1);
+    expect(stored[0]).toBe(`${att.id}__dot.png.png`);
+
+    const fileRes = await fetch(url(`/assignments/${ASSIGNMENT_ID}/chat/attachments/${att.id}`));
+    expect(fileRes.status).toBe(200);
+    expect(fileRes.headers.get('content-type')).toBe('image/png');
+    expect(fileRes.headers.get('x-content-type-options')).toBe('nosniff');
+    expect(fileRes.headers.get('content-disposition')).toMatch(/^inline/);
+    expect(Buffer.from(await fileRes.arrayBuffer()).equals(PNG_1X1)).toBe(true);
+  });
+
+  it('rejects unsupported mime, missing mime header, and oversize uploads', async () => {
+    await boot();
+    const svg = await uploadChatAttachment('x.svg', Buffer.from('<svg/>'), 'image/svg+xml');
+    expect(svg.status).toBe(400);
+
+    const noMime = await uploadChatAttachment('a.png', PNG_1X1);
+    expect(noMime.status).toBe(400);
+
+    const huge = await uploadChatAttachment(
+      'big.png',
+      Buffer.alloc(MAX_CHAT_ATTACHMENT_BYTES + 1, 1),
+      'image/png',
+    );
+    expect(huge.status).toBe(413);
+  });
+
+  it('uses the mime header for the stored extension and keeps the display name', async () => {
+    await boot();
+    const up = await uploadChatAttachment('photo.jpg', PNG_1X1, 'image/png');
+    expect(up.status).toBe(201);
+    const att = (await up.json()) as { id: string; name: string };
+    expect(att.name).toBe('photo.jpg');
+    const stored = await readdir(join(assignmentDir, 'chat', 'attachments'));
+    expect(stored[0]).toBe(`${att.id}__photo.jpg.png`);
+  });
+
+  it('404s malformed and unknown attachment ids', async () => {
+    await boot();
+    const bad = await fetch(url(`/assignments/${ASSIGNMENT_ID}/chat/attachments/not-a-uuid`));
+    expect(bad.status).toBe(404);
+    const missing = await fetch(
+      url(`/assignments/${ASSIGNMENT_ID}/chat/attachments/00000000-0000-4000-8000-000000000099`),
+    );
+    expect(missing.status).toBe(404);
   });
 });
 

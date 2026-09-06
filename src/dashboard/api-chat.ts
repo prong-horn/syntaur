@@ -13,10 +13,16 @@
  * Localhost-only, per the existing dashboard convention.
  */
 
-import { Router, type Request, type Response } from 'express';
+import { Router, raw, type Request, type Response } from 'express';
 import { resolveAssignmentById } from '../utils/assignment-resolver.js';
 import { ChatSendError, type ChatBroker } from '../chat/broker.js';
 import { ParticipantsError } from '../chat/participants.js';
+import {
+  ChatAttachmentError,
+  MAX_CHAT_ATTACHMENT_BYTES,
+  writeChatAttachment,
+  resolveChatAttachment,
+} from '../chat/attachments.js';
 import { messageTurnState } from '../chat/message-state.js';
 import type { Participants } from '../chat/types.js';
 
@@ -47,14 +53,31 @@ export function createChatRouter(
     return assignment;
   }
 
-  /** `ChatSendError` and `ParticipantsError` carry a status; anything else is a 500. */
+  /** Domain errors carry a status; anything else is a 500. */
   function fail(res: Response, err: unknown): void {
-    if (err instanceof ChatSendError || err instanceof ParticipantsError) {
+    if (
+      err instanceof ChatSendError ||
+      err instanceof ParticipantsError ||
+      err instanceof ChatAttachmentError
+    ) {
       res.status(err.status).json({ error: err.message });
       return;
     }
     const message = err instanceof Error ? err.message : String(err);
     res.status(500).json({ error: message });
+  }
+
+  function headerValue(req: Request, name: string): string | undefined {
+    const v = req.headers[name];
+    return Array.isArray(v) ? v[0] : v;
+  }
+
+  function contentDisposition(filename: string): string {
+    const asciiFallback = Array.from(filename, (ch) => {
+      const code = ch.charCodeAt(0);
+      return code >= 0x20 && code <= 0x7e && ch !== '"' && ch !== '\\' ? ch : '_';
+    }).join('');
+    return `inline; filename="${asciiFallback}"; filename*=UTF-8''${encodeURIComponent(filename)}`;
   }
 
   // --- history -------------------------------------------------------------
@@ -85,6 +108,79 @@ export function createChatRouter(
       if (!assignment) return;
       const agentId = typeof req.query.agent === 'string' ? req.query.agent : null;
       res.json({ session: await broker.getSession(assignment, agentId) });
+    } catch (err) {
+      fail(res, err);
+    }
+  });
+
+  // --- attachments ---------------------------------------------------------
+
+  router.post(
+    '/assignments/:id/chat/attachments',
+    (req, res, next) => {
+      raw({ type: () => true, limit: MAX_CHAT_ATTACHMENT_BYTES })(req, res, (err) => {
+        if (err) {
+          if ((err as { type?: string }).type === 'entity.too.large') {
+            res.status(413).json({ error: `Attachment exceeds ${MAX_CHAT_ATTACHMENT_BYTES} bytes` });
+            return;
+          }
+          next(err);
+          return;
+        }
+        void (async () => {
+          try {
+            const assignment = await resolveOr404(req, res);
+            if (!assignment) return;
+            const rawName = headerValue(req, 'x-attachment-filename');
+            let filename = 'file';
+            if (rawName) {
+              try {
+                filename = decodeURIComponent(rawName);
+              } catch {
+                res.status(400).json({ error: 'Invalid x-attachment-filename header' });
+                return;
+              }
+            }
+            const mime = headerValue(req, 'x-attachment-mime');
+            if (!mime) {
+              res.status(400).json({ error: 'x-attachment-mime is required' });
+              return;
+            }
+            const body = req.body;
+            if (!Buffer.isBuffer(body) || body.length === 0) {
+              res.status(400).json({ error: 'Empty upload body' });
+              return;
+            }
+            const result = await writeChatAttachment(assignment.assignmentDir, {
+              name: filename,
+              mime,
+              bytes: body,
+            });
+            res.status(201).json(result);
+          } catch (uploadErr) {
+            fail(res, uploadErr);
+          }
+        })();
+      });
+    },
+  );
+
+  router.get('/assignments/:id/chat/attachments/:attachmentId', async (req, res) => {
+    try {
+      const assignment = await resolveOr404(req, res);
+      if (!assignment) return;
+      const attachmentId = String(req.params.attachmentId);
+      const resolved = await resolveChatAttachment(assignment.assignmentDir, attachmentId);
+      if (!resolved) {
+        res.status(404).json({ error: `Attachment "${attachmentId}" not found` });
+        return;
+      }
+      res.setHeader('X-Content-Type-Options', 'nosniff');
+      res.setHeader('Content-Type', resolved.mimeType);
+      res.setHeader('Content-Disposition', contentDisposition(resolved.name));
+      res.sendFile(resolved.path, (err) => {
+        if (err && !res.headersSent) res.status(500).end();
+      });
     } catch (err) {
       fail(res, err);
     }
