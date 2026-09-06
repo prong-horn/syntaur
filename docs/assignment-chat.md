@@ -232,17 +232,18 @@ All three work off a subscription login; no API key is required.
 must be 10 MB or smaller, and a message may carry at most four images. A
 `/command` cannot carry attachments — send the image in a plain message first.
 
-**Live image check (2026-09-06, scratch home)** — on a solid-red 64×64 PNG with
-"Answer with one word.", **cursor** replied `Red.` (turn `5ac44e48-7fb7-40c0-8881-82b20bdfa643`).
-Cursor's own image viewer failed on that run; the model inspected the PNG bytes
-directly and still answered correctly. **claude** failed before model inference:
-`claude-agent-acp@0.70.0` bundles `@anthropic-ai/claude-agent-sdk` 0.3.232 (it
-identifies as "Claude Code 2.1.232") and refuses the default model — fix with
-`npm i -g @agentclientprotocol/claude-agent-acp@latest` (0.75.1 on npm today).
-**codex** failed on model version: `codex-acp@1.7.0` bundles an older codex that
-rejects the `gpt-6-astra` default model — fix with
-`npm i -g @agentclientprotocol/codex-acp@latest` (1.10.0). These are environment
-version issues, not image-block delivery failures.
+**Live image check (2026-09-06, scratch home)** — with `claude-agent-acp@0.75.1`,
+`codex-acp@1.10.0` and `cursor-agent 2026.09.02`, a valid solid-red 64×64 PNG sent with
+"What colour is this image? Answer with one word." got `Red.` from all three in one
+turn each, with no tool calls (claude turn `de334638`, codex `16319b33`, cursor
+`ad5c699b`). Two earlier failures were not delivery failures: the first test PNG was
+malformed (an RGBA header over RGB-sized rows), so cursor's image viewer and the
+Anthropic API both rejected it and the models fell back to reading the bytes; and
+`claude-agent-acp@0.70.0` (bundled Claude Agent SDK 0.3.232) and `codex-acp@1.7.0`
+refused the current default models before inference. If a chat turn fails with
+"Claude Code 2.1.x does not support this model" or "requires a newer version of
+Codex", upgrade the adapter, not the CLI:
+`npm i -g @agentclientprotocol/claude-agent-acp@latest @agentclientprotocol/codex-acp@latest`.
 
 **The slash-command picker is empty** — the harness has not sent
 `available_commands_update` yet for that agent, nothing is cached for the harness,
