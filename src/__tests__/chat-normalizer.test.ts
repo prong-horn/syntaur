@@ -465,6 +465,18 @@ describe('assignment scope (Task 5)', () => {
     unknown: [],
   });
 
+  it('records attachments on a routed user message', () => {
+    const ctx = scope();
+    feed(ctx, 'user.message', {
+      ...userMessage(['planner']),
+      attachments: [{ id: 'att-1', mimeType: 'image/png', bytes: 68, name: 'dot.png' }],
+    });
+    const item = [...ctx.items.values()].find((i) => i.type === 'user.message') as ChatItem & {
+      attachments?: Array<{ id: string; name: string }>;
+    };
+    expect(item.attachments).toEqual([{ id: 'att-1', mimeType: 'image/png', bytes: 68, name: 'dot.png' }]);
+  });
+
   it('records a fan-out user message with its routing and nobody delivered yet', () => {
     const ctx = scope();
     feed(ctx, 'user.message', userMessage(['planner', 'implementer']));

@@ -84,6 +84,16 @@ export interface ChatEvent {
 export const HUMAN_AGENT_ID = 'human';
 export const SYSTEM_AGENT_ID = 'system';
 
+/** Metadata for an image attached to a chat message (bytes are file size, not content). */
+export interface ChatAttachment {
+  id: string;
+  mimeType: string;
+  bytes: number;
+  name: string;
+  width?: number;
+  height?: number;
+}
+
 /**
  * `user.message` payload — `messageId` is minted at queue time and is what
  * DELETE targets. Recorded in the ASSIGNMENT scope (Decision 3), so one event
@@ -103,6 +113,7 @@ export interface UserMessagePayload {
   targets?: string[];
   /** `@token`s that named no attached agent — one `route.notice` each. */
   unknown?: string[];
+  attachments?: ChatAttachment[];
 }
 
 /** `user.message.delivered` payload — one per target, right after its `turn.start`. */
@@ -275,6 +286,7 @@ export interface UserMessageItem extends ChatItemBase {
   mentions?: string[];
   /** `@token`s that named no attached agent. */
   unknown?: string[];
+  attachments?: ChatAttachment[];
 }
 
 /** One agent handing the conversation to another (§5.3's `handoff` row). */

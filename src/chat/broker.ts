@@ -105,6 +105,7 @@ import {
   type TurnPromptTrigger,
 } from './prompt-framing.js';
 import { openChatLog, type ChatLog } from './store.js';
+import { readChatAttachmentBase64 } from './attachments.js';
 import { HUMAN_AGENT_ID, SYSTEM_AGENT_ID } from './types.js';
 import type {
   AgentDefinition,
@@ -112,6 +113,7 @@ import type {
   AgentMessageItem,
   AgentTestResult,
   ChatAgentSummary,
+  ChatAttachment,
   ChatEvent,
   ChatHarnessSummary,
   ChatEventKind,
@@ -225,7 +227,12 @@ export class ChatSendError extends Error {
 }
 
 export interface ChatBroker {
-  send(input: { assignment: ResolvedAssignment; agentId?: string | null; text: string }): Promise<{
+  send(input: {
+    assignment: ResolvedAssignment;
+    agentId?: string | null;
+    text: string;
+    attachments?: ChatAttachment[];
+  }): Promise<{
     messageId: string;
   }>;
   withdraw(assignment: ResolvedAssignment, messageId: string): Promise<boolean>;
@@ -338,7 +345,7 @@ interface Session {
   standingGen: number;
   /** Persisted sha256 of the last standing block this adapter session was shown. */
   standingFingerprint: string | null;
-  queue: Array<{ text: string; trigger: TurnTrigger }>;
+  queue: Array<{ text: string; trigger: TurnTrigger; attachments?: ChatAttachment[] }>;
   /** Highest chat-level `seq` this session has been shown (Decision 4). */
   lastDeliveredSeq: number;
   /**
@@ -1382,7 +1389,7 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
      * and no new `handoff` is written: a chain survives a crash exactly as far
      * as its already-recorded handoffs and nothing beyond them is invented.
      */
-    const pending = new Map<string, { text: string; trigger: TurnTrigger }>();
+    const pending = new Map<string, { text: string; trigger: TurnTrigger; attachments?: ChatAttachment[] }>();
     for (const event of allEvents) {
       if (event.sessionKey === scopeKey) {
         if (event.kind === 'user.message') {
@@ -1393,6 +1400,7 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
             pending.set(triggerKey({ kind: 'human', messageId: payload.messageId }), {
               text: payload.text,
               trigger: { kind: 'human', messageId: payload.messageId },
+              ...(payload.attachments ? { attachments: payload.attachments } : {}),
             });
           }
         } else if (event.kind === 'handoff') {
@@ -1416,6 +1424,7 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
           pending.set(key, {
             text: payload.text,
             trigger: { kind: 'human', messageId: payload.messageId },
+            ...(payload.attachments ? { attachments: payload.attachments } : {}),
           });
         }
       }
@@ -2488,15 +2497,17 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
   function promptTrigger(
     session: Session,
     entry: { text: string; trigger: TurnTrigger },
+    images: Array<{ data: string; mimeType: string }> = [],
   ): TurnPromptTrigger {
     if (entry.trigger.kind === 'human') {
-      return { author: 'human', text: entry.text, ts: new Date(now()) };
+      return { author: 'human', text: entry.text, ts: new Date(now()), ...(images.length ? { images } : {}) };
     }
     return {
       author: { agentId: entry.trigger.fromAgentId },
       text: entry.text,
       ts: new Date(now()),
       hop: { n: entry.trigger.hop, budget: session.hopBudget },
+      ...(images.length ? { images } : {}),
     };
   }
 
@@ -2714,6 +2725,26 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
       ? session.commands.find((c) => c.name === humanCommand.name) ?? null
       : null;
 
+    const images: Array<{ data: string; mimeType: string }> = [];
+    if (next.attachments?.length) {
+      for (const att of next.attachments) {
+        const file = await readChatAttachmentBase64(session.assignment.assignmentDir, att.id);
+        if (!file) {
+          await record(
+            session,
+            'system',
+            {
+              level: 'warn',
+              text: `Attachment ${att.name} is missing on disk; sent the text without it`,
+            },
+            turnId,
+          );
+          continue;
+        }
+        images.push({ data: file.data, mimeType: file.mimeType });
+      }
+    }
+
     let blocks: ContentBlock[] | null = null;
     let configResponse: acp.SetSessionConfigOptionResponse | null = null;
     let pendingStanding: { fingerprint: string; gen: number } | undefined;
@@ -2746,9 +2777,9 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
           standing = built.blocks;
           pendingStanding = { fingerprint: built.fingerprint, gen: built.gen };
         }
-        blocks = buildTurnPrompt(promptTrigger(session, next), { standing, history: history! });
+        blocks = buildTurnPrompt(promptTrigger(session, next, images), { standing, history: history! });
       } catch (err) {
-        blocks = buildTurnPrompt(promptTrigger(session, next), { history: history! });
+        blocks = buildTurnPrompt(promptTrigger(session, next, images), { history: history! });
         await record(session, 'system', {
           level: 'warn',
           text: `Could not build the standing context: ${(err as Error).message}`,
@@ -2987,7 +3018,10 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
    * turn: a message is delivered to a target once and a handoff is answered
    * once, whether it arrived from the router or from crash recovery.
    */
-  function enqueue(session: Session, entry: { text: string; trigger: TurnTrigger }): boolean {
+  function enqueue(
+    session: Session,
+    entry: { text: string; trigger: TurnTrigger; attachments?: ChatAttachment[] },
+  ): boolean {
     const key = triggerKey(entry.trigger);
     if (session.queue.some((queued) => triggerKey(queued.trigger) === key)) return false;
     if (session.inFlight && triggerKey(session.inFlight.trigger) === key) return false;
@@ -3169,10 +3203,13 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
   // --- public surface ------------------------------------------------------
 
   return {
-    async send({ assignment, agentId, text }) {
-      if (!text.trim()) throw new ChatSendError('Message is empty', 400);
+    async send({ assignment, agentId, text, attachments }) {
+      if (!text.trim() && !attachments?.length) throw new ChatSendError('Message is empty', 400);
       const { definitions, participants } = await routingContext(assignment);
       if (definitions.length === 0) throw new ChatSendError('No agent definitions are available', 404);
+      if (attachments?.length && detectCommand(text, participants.agents)) {
+        throw new ChatSendError('A /command cannot carry attachments', 400);
+      }
 
       // The composer's explicit pick counts as a mention (Decision 2), ahead of
       // anything the text names, so "send to @implementer" from the picker and
@@ -3234,6 +3271,7 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
           mentions,
           targets: deliveredTargets,
           unknown,
+          ...(attachments?.length ? { attachments } : {}),
         },
         { agentId: HUMAN_AGENT_ID },
       );
@@ -3258,7 +3296,11 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
       }
 
       for (const session of activeSessions) {
-        enqueue(session, { text, trigger: { kind: 'human', messageId } });
+        enqueue(session, {
+          text,
+          trigger: { kind: 'human', messageId },
+          ...(attachments?.length ? { attachments } : {}),
+        });
         void drive(session);
       }
       return { messageId };

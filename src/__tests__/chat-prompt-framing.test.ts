@@ -26,6 +26,7 @@ function def(id: string, overrides: Partial<AgentDefinition> = {}): AgentDefinit
     name: id[0].toUpperCase() + id.slice(1),
     color: 'slate',
     harness: 'claude',
+    permissions: 'ask',
     respondsTo: 'mentions',
     default: false,
     systemPrompt: BASE_SYSTEM_PROMPT,
@@ -324,5 +325,54 @@ describe('buildTurnPrompt with history', () => {
       { history: { entries: [], omitted: 0, highestSeq: null } },
     );
     expect(blocks).toHaveLength(1);
+  });
+});
+
+describe('buildTurnPrompt with images', () => {
+  const png = Buffer.from(
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+    'base64',
+  ).toString('base64');
+  const jpeg = 'YQ==';
+
+  it('appends image blocks after the chat-event text block', () => {
+    const blocks = buildTurnPrompt({
+      author: 'human',
+      text: 'two shots',
+      images: [{ data: png, mimeType: 'image/png' }, { data: jpeg, mimeType: 'image/jpeg' }],
+    });
+    expect(blocks).toHaveLength(3);
+    expect((blocks[0] as { text: string }).text).toContain('two shots');
+    expect(blocks[1]).toEqual({ type: 'image', data: png, mimeType: 'image/png' });
+    expect(blocks[2]).toEqual({ type: 'image', data: jpeg, mimeType: 'image/jpeg' });
+  });
+
+  it('uses (image attached) when the text is empty but images are present', () => {
+    const blocks = buildTurnPrompt({
+      author: 'human',
+      text: '',
+      images: [{ data: png, mimeType: 'image/png' }],
+    });
+    expect((blocks[0] as { text: string }).text).toContain('(image attached)');
+    expect(blocks[1]).toEqual({ type: 'image', data: png, mimeType: 'image/png' });
+  });
+});
+
+describe('selectChatHistory image placeholders', () => {
+  it('appends [image attached: name] lines for attachments on a user message', () => {
+    const msg = item({
+      type: 'user.message',
+      agentId: 'human',
+      messageId: 'm-img',
+      text: 'look',
+      state: 'partial',
+      targets: ['implementer'],
+      deliveredTo: ['planner'],
+      mentions: ['implementer'],
+      unknown: [],
+      attachments: [{ id: 'a1', mimeType: 'image/png', bytes: 68, name: 'shot.png' }],
+    } as never);
+    const picked = selectChatHistory({ items: [msg], agentId: 'implementer', sinceSeq: 0 });
+    expect(picked.entries[0].text).toBe('look\n[image attached: shot.png]');
   });
 });

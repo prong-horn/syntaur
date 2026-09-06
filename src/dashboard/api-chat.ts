@@ -20,6 +20,7 @@ import { ParticipantsError } from '../chat/participants.js';
 import {
   ChatAttachmentError,
   MAX_CHAT_ATTACHMENT_BYTES,
+  MAX_CHAT_ATTACHMENTS,
   writeChatAttachment,
   resolveChatAttachment,
 } from '../chat/attachments.js';
@@ -192,19 +193,48 @@ export function createChatRouter(
     try {
       const assignment = await resolveOr404(req, res);
       if (!assignment) return;
-      const body = (req.body ?? {}) as { agentId?: string; text?: string };
-      if (typeof body.text !== 'string' || body.text.trim().length === 0) {
+      const body = (req.body ?? {}) as {
+        agentId?: string;
+        text?: string;
+        attachmentIds?: string[];
+        attachmentMeta?: Record<string, { width?: number; height?: number }>;
+      };
+      const text = typeof body.text === 'string' ? body.text : '';
+      const attachmentIds = Array.isArray(body.attachmentIds) ? body.attachmentIds : [];
+      if (attachmentIds.length > MAX_CHAT_ATTACHMENTS) {
+        res.status(400).json({ error: `At most ${MAX_CHAT_ATTACHMENTS} attachments per message` });
+        return;
+      }
+      if (!text.trim() && attachmentIds.length === 0) {
         res.status(400).json({ error: 'text is required' });
         return;
       }
-      if (body.text.length > MAX_MESSAGE_CHARS) {
+      if (text.length > MAX_MESSAGE_CHARS) {
         res.status(413).json({ error: `Message is longer than ${MAX_MESSAGE_CHARS} characters` });
         return;
+      }
+      const attachments = [];
+      for (const id of attachmentIds) {
+        const resolved = await resolveChatAttachment(assignment.assignmentDir, id);
+        if (!resolved) {
+          res.status(400).json({ error: `Unknown attachment ${JSON.stringify(id)}` });
+          return;
+        }
+        const meta = body.attachmentMeta?.[id];
+        attachments.push({
+          id,
+          mimeType: resolved.mimeType,
+          bytes: resolved.bytes,
+          name: resolved.name,
+          ...(meta?.width !== undefined ? { width: meta.width } : {}),
+          ...(meta?.height !== undefined ? { height: meta.height } : {}),
+        });
       }
       const { messageId } = await broker.send({
         assignment,
         agentId: body.agentId ?? null,
-        text: body.text,
+        text,
+        ...(attachments.length ? { attachments } : {}),
       });
       res.status(202).json({ messageId });
     } catch (err) {

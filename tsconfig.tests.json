@@ -78,5 +78,6 @@
     "src/__tests__/dashboard-api-chat-agents.test.ts",
     "src/__tests__/chat-store.test.ts",
     "src/__tests__/chat-commands.test.ts",
+    "src/__tests__/chat-prompt-framing.test.ts",
   ]
 }

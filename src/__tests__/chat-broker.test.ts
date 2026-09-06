@@ -9,6 +9,7 @@ import { closeUsageDb, initUsageDb } from '../db/usage-db.js';
 import { getChatSession, getHarnessOptions, upsertChatItem, upsertChatSession, setHarnessCommands } from '../db/chat-db.js';
 import { openEngagement } from '../db/engagement-db.js';
 import { openChatLog } from '../chat/store.js';
+import { writeChatAttachment } from '../chat/attachments.js';
 import { connectAcpClient, type AcpClient } from '../chat/acp-client.js';
 import {
   createFakeAgent,
@@ -1656,6 +1657,118 @@ describe('codex pricing (Task 6)', () => {
       ).length;
     await waitUntil(() => noticeCount() === 1, 'the unpriced-model notice');
     expect(noticeCount()).toBe(1);
+  });
+});
+
+describe('chat image attachments', () => {
+  const PNG_1X1 = Buffer.from(
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+    'base64',
+  );
+
+  it('rejects a /command with attachments', async () => {
+    makeBroker();
+    const att = await writeChatAttachment(assignmentDir, {
+      name: 'dot.png',
+      mime: 'image/png',
+      bytes: PNG_1X1,
+    });
+    await expect(
+      broker.send({ assignment: assignment(), text: '/goal ship', attachments: [att] }),
+    ).rejects.toThrow('A /command cannot carry attachments');
+  });
+
+  it('delivers an image block after the chat-event text', async () => {
+    makeBroker();
+    const att = await writeChatAttachment(assignmentDir, {
+      name: 'dot.png',
+      mime: 'image/png',
+      bytes: PNG_1X1,
+    });
+    await broker.send({ assignment: assignment(), text: 'look', attachments: [att] });
+    await waitUntil(() => fake.prompts.length === 1, 'the prompt');
+    const blocks = fake.prompts[0].prompt;
+    const last = blocks[blocks.length - 1] as { type: string; data?: string; mimeType?: string };
+    expect(last.type).toBe('image');
+    expect(last.mimeType).toBe('image/png');
+    expect(last.data).toBe(PNG_1X1.toString('base64'));
+  });
+
+  it('warns and omits a missing attachment file', async () => {
+    makeBroker();
+    const att = await writeChatAttachment(assignmentDir, {
+      name: 'gone.png',
+      mime: 'image/png',
+      bytes: PNG_1X1,
+    });
+    const { unlink } = await import('node:fs/promises');
+    const { readdir } = await import('node:fs/promises');
+    const { join } = await import('node:path');
+    const dir = join(assignmentDir, 'chat', 'attachments');
+    const stored = (await readdir(dir)).find((n) => n.startsWith(`${att.id}__`))!;
+    await unlink(join(dir, stored));
+    await broker.send({ assignment: assignment(), text: 'look', attachments: [att] });
+    await waitUntil(() => fake.prompts.length === 1, 'the prompt');
+    expect(itemsOfType('system').some((s) => (s as { text: string }).text.includes('missing on disk'))).toBe(
+      true,
+    );
+    expect(fake.prompts[0].prompt.some((b) => b.type === 'image')).toBe(false);
+  });
+
+  it('re-queues attachments after a crash repair', async () => {
+    const att = await writeChatAttachment(assignmentDir, {
+      name: 'dot.png',
+      mime: 'image/png',
+      bytes: PNG_1X1,
+    });
+    const log = await openChatLog(assignmentDir);
+    const sessionKey = `${ASSIGNMENT_ID}:claude`;
+    await log.append({
+      assignmentId: ASSIGNMENT_ID,
+      agentId: 'claude',
+      sessionKey,
+      turnId: null,
+      kind: 'session.created',
+      payload: { acpSessionId: 'acp-session-1', harness: 'claude', adapterVersion: 'x@1', cwd: worktree },
+    });
+    await log.append({
+      assignmentId: ASSIGNMENT_ID,
+      agentId: 'claude',
+      sessionKey,
+      turnId: null,
+      kind: 'user.message',
+      payload: {
+        messageId: 'm-queued-att',
+        text: 'after restart',
+        state: 'queued',
+        attachments: [att],
+      },
+    });
+    upsertChatSession({
+      sessionKey,
+      assignmentId: ASSIGNMENT_ID,
+      projectSlug: 'syntaur-meta',
+      assignmentSlug: 'chat-demo',
+      agentId: 'claude',
+      harness: 'claude',
+      acpSessionId: 'acp-session-1',
+      adapterVersion: 'x@1',
+      cwd: worktree,
+      state: 'idle',
+      usageSnapshotJson: JSON.stringify({
+        models: {},
+        total: { input: 0, output: 0, cacheCreation: 0, cacheRead: 0, total: 0, cost: 0 },
+      }),
+    });
+    makeBroker({ agentOptions: { sessionIds: ['acp-session-1'] } });
+    await broker.getSession(assignment(), 'claude');
+    await waitUntil(() => fake.prompts.length === 1, 'the recovered prompt');
+    const last = fake.prompts[0].prompt[fake.prompts[0].prompt.length - 1] as {
+      type: string;
+      data?: string;
+    };
+    expect(last.type).toBe('image');
+    expect(last.data).toBe(PNG_1X1.toString('base64'));
   });
 });
 

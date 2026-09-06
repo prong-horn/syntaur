@@ -234,6 +234,38 @@ describe('POST /assignments/:id/chat/messages', () => {
     }
   });
 
+  it('accepts empty text with one attachment id', async () => {
+    await boot();
+    const up = await uploadChatAttachment('solo.png', PNG_1X1, 'image/png');
+    const att = (await up.json()) as { id: string };
+    const res = await fetch(url(`/assignments/${ASSIGNMENT_ID}/chat/messages`), {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ text: '', attachmentIds: [att.id] }),
+    });
+    expect(res.status).toBe(202);
+  });
+
+  it('rejects unknown and excess attachment ids', async () => {
+    await boot();
+    const unknown = await fetch(url(`/assignments/${ASSIGNMENT_ID}/chat/messages`), {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ text: 'hi', attachmentIds: ['00000000-0000-4000-8000-000000000099'] }),
+    });
+    expect(unknown.status).toBe(400);
+
+    const up = await uploadChatAttachment('a.png', PNG_1X1, 'image/png');
+    const att = (await up.json()) as { id: string };
+    const ids = Array.from({ length: 5 }, (_, i) => (i === 0 ? att.id : `00000000-0000-4000-8000-00000000000${i}`));
+    const tooMany = await fetch(url(`/assignments/${ASSIGNMENT_ID}/chat/messages`), {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ text: 'hi', attachmentIds: ids }),
+    });
+    expect(tooMany.status).toBe(400);
+  });
+
   it('falls back to homedir when the workspace has no valid cwd', async () => {
     await boot();
     await writeFile(

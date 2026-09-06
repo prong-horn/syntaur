@@ -599,6 +599,7 @@ export class ChatNormalizer {
             deliveredTo: [],
             mentions: [...(payload.mentions ?? [])],
             unknown: [...(payload.unknown ?? [])],
+            ...(payload.attachments ? { attachments: [...payload.attachments] } : {}),
           }
         : {}),
       sealed: true,
