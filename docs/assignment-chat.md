@@ -232,6 +232,13 @@ All three work off a subscription login; no API key is required.
 must be 10 MB or smaller, and a message may carry at most four images. A
 `/command` cannot carry attachments — send the image in a plain message first.
 
+**Live image check (2026-09-06, scratch home)** — on a solid-red 64×64 PNG with
+"Answer with one word.", **cursor** replied `Red.` (turn `5ac44e48-7fb7-40c0-8881-82b20bdfa643`).
+**claude** failed before model inference: Claude Code 2.1.232 does not support the
+default model (requires 2.1.251+; run `claude update`). **codex** failed on model
+version: `gpt-6-astra` requires a newer Codex app/CLI. These are environment
+version issues, not image-block delivery failures.
+
 **The slash-command picker is empty** — the harness has not sent
 `available_commands_update` yet for that agent, nothing is cached for the harness,
 and the session row has no saved list. Open **Agents** and press **Refresh** on
