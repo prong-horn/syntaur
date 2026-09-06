@@ -18,7 +18,7 @@ daemon — was deleted in v0.80.
 
 ## How a turn works
 
-1. You send a message. It is persisted immediately and shown as **queued**.
+1. You send a message. It may include up to four images pasted, dropped or picked in the composer; they are uploaded first, then referenced from the message. The addressed agents receive them as image blocks right after your text; other agents see `[image attached: name]` in their history. The message is persisted immediately and shown as **queued**.
 2. On the first message the server spawns the adapter (`claude-agent-acp`,
    `codex-acp`, or `cursor-agent acp`) with `cwd` set to the assignment's worktree,
    runs `initialize` and `session/new`, and sends the **standing context** — the agent definition's
@@ -156,7 +156,7 @@ status row.
 
 | Row | What it is |
 |---|---|
-| Message bubble | Your message (right) or an agent's markdown reply (left), each with its author's avatar and colour |
+| Message bubble | Your message (right) or an agent's markdown reply (left), each with its author's avatar and colour. User messages with images show thumbnails that open the full file in a new tab. |
 | Hand-off row | "@planner → @implementer · hop 1 of 4", linking the message that caused it |
 | Work card | A run of tool calls, one line: "Worked 18s · read 1 · edited 1" |
 | Plan checklist | The agent's todo list; pinned above the composer while its turn runs |
@@ -181,6 +181,9 @@ up in your Inbox. Auto-approved requests never wait.
   scope key rather than under any agent's, because they belong to the room.
 - `<assignment>/chat/participants.json` — who is attached, which one is the
   default, and the hop budget.
+- `<assignment>/chat/attachments/<uuid>__<name>.<ext>` — image files uploaded
+  from the composer, referenced from `user.message` events by id (bytes are never
+  embedded in `events.jsonl`).
 - `chat_harness_options` in `~/.syntaur/syntaur.db` — per-harness cached
   `configOptions` and auth state from the last successful adapter open (or a
   harness refresh).
@@ -224,6 +227,10 @@ project repository → home.
 **The adapter fails to start** — the chat shows the adapter's own error plus the
 output of `claude auth status` / `codex login status` / `cursor-agent status`.
 All three work off a subscription login; no API key is required.
+
+**The image was refused** — only PNG, JPEG, GIF and WebP are accepted, each file
+must be 10 MB or smaller, and a message may carry at most four images. A
+`/command` cannot carry attachments — send the image in a plain message first.
 
 **The slash-command picker is empty** — the harness has not sent
 `available_commands_update` yet for that agent, nothing is cached for the harness,
