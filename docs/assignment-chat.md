@@ -234,9 +234,14 @@ must be 10 MB or smaller, and a message may carry at most four images. A
 
 **Live image check (2026-09-06, scratch home)** — on a solid-red 64×64 PNG with
 "Answer with one word.", **cursor** replied `Red.` (turn `5ac44e48-7fb7-40c0-8881-82b20bdfa643`).
-**claude** failed before model inference: Claude Code 2.1.232 does not support the
-default model (requires 2.1.251+; run `claude update`). **codex** failed on model
-version: `gpt-6-astra` requires a newer Codex app/CLI. These are environment
+Cursor's own image viewer failed on that run; the model inspected the PNG bytes
+directly and still answered correctly. **claude** failed before model inference:
+`claude-agent-acp@0.70.0` bundles `@anthropic-ai/claude-agent-sdk` 0.3.232 (it
+identifies as "Claude Code 2.1.232") and refuses the default model — fix with
+`npm i -g @agentclientprotocol/claude-agent-acp@latest` (0.75.1 on npm today).
+**codex** failed on model version: `codex-acp@1.7.0` bundles an older codex that
+rejects the `gpt-6-astra` default model — fix with
+`npm i -g @agentclientprotocol/codex-acp@latest` (1.10.0). These are environment
 version issues, not image-block delivery failures.
 
 **The slash-command picker is empty** — the harness has not sent
