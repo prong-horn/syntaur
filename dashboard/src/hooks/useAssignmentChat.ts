@@ -22,7 +22,7 @@ import {
   type ItemAuthor,
   type WorkingState,
 } from '../lib/chat-api';
-import { downscaleImage, type PendingImage } from '../lib/chat-attachments';
+import { downscaleImage, attachmentUploadName, type PendingImage } from '../lib/chat-attachments';
 import type {
   ChatAgentSummary,
   ChatItem,
@@ -205,12 +205,12 @@ export function useAssignmentChat(assignmentId: string | null): UseAssignmentCha
         const attachmentMeta: Record<string, { width?: number; height?: number }> = {};
         if (images?.length) {
           for (const image of images) {
-            const { blob, width, height } = await downscaleImage(image.file);
+            const { blob, width, height, mimeType } = await downscaleImage(image.file);
             const uploaded = await uploadChatAttachment(
               assignmentId,
               blob,
-              image.name,
-              image.mimeType,
+              attachmentUploadName(image.name, mimeType),
+              mimeType,
             );
             attachmentIds.push(uploaded.id);
             attachmentMeta[uploaded.id] = { width, height };

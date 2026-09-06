@@ -2496,18 +2496,23 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
    */
   function promptTrigger(
     session: Session,
-    entry: { text: string; trigger: TurnTrigger },
+    entry: { text: string; trigger: TurnTrigger; attachments?: ChatAttachment[] },
     images: Array<{ data: string; mimeType: string }> = [],
   ): TurnPromptTrigger {
+    const hadAttachments = (entry.attachments?.length ?? 0) > 0;
+    const extras = {
+      ...(hadAttachments ? { hadAttachments: true } : {}),
+      ...(images.length ? { images } : {}),
+    };
     if (entry.trigger.kind === 'human') {
-      return { author: 'human', text: entry.text, ts: new Date(now()), ...(images.length ? { images } : {}) };
+      return { author: 'human', text: entry.text, ts: new Date(now()), ...extras };
     }
     return {
       author: { agentId: entry.trigger.fromAgentId },
       text: entry.text,
       ts: new Date(now()),
       hop: { n: entry.trigger.hop, budget: session.hopBudget },
-      ...(images.length ? { images } : {}),
+      ...extras,
     };
   }
 

@@ -3,6 +3,7 @@ import {
   MAX_CHAT_ATTACHMENT_BYTES,
   MAX_CHAT_ATTACHMENTS,
   acceptImageFile,
+  attachmentUploadName,
   extractImagesFromDataTransfer,
   refusalMessage,
   type PendingImage,
@@ -77,5 +78,13 @@ describe('extractImagesFromDataTransfer', () => {
       ],
     } as unknown as DataTransfer;
     expect(extractImagesFromDataTransfer(dt).map((f) => f.name)).toEqual(['a.png']);
+  });
+});
+
+describe('attachmentUploadName', () => {
+  it('matches the encoded mime extension', () => {
+    expect(attachmentUploadName('photo.jpg', 'image/png')).toBe('photo.png');
+    expect(attachmentUploadName('shot.webp', 'image/jpeg')).toBe('shot.jpeg');
+    expect(attachmentUploadName('anim.gif', 'image/gif')).toBe('anim.gif');
   });
 });

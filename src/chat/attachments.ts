@@ -4,7 +4,7 @@
  * `x-attachment-mime` header decides the on-disk extension.
  */
 
-import { mkdir, readdir, readFile, rename, stat, writeFile } from 'node:fs/promises';
+import { mkdir, readdir, readFile, rename, lstat, writeFile } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import { basename, extname, resolve } from 'node:path';
 import { sanitizeAttachmentName } from '../todos/attachments.js';
@@ -99,11 +99,11 @@ export async function resolveChatAttachment(
     return null;
   }
   const prefix = `${id}__`;
-  const stored = names.find((n) => n.startsWith(prefix));
+  const stored = names.find((n) => n.startsWith(prefix) && !n.endsWith('.tmp'));
   if (!stored) return null;
   const path = resolve(dir, stored);
   try {
-    const st = await stat(path);
+    const st = await lstat(path);
     if (!st.isFile()) return null;
     const ext = extname(stored).slice(1).toLowerCase();
     const mimeType = EXT_MIME[ext] ?? 'application/octet-stream';

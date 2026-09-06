@@ -61,12 +61,12 @@ export function extractImagesFromDataTransfer(dt: DataTransfer): File[] {
 export async function downscaleImage(
   file: File,
   maxEdge = 2048,
-): Promise<{ blob: Blob; width: number; height: number }> {
+): Promise<{ blob: Blob; width: number; height: number; mimeType: string }> {
   if (file.type === 'image/gif') {
     const bmp = await createImageBitmap(file);
     const size = { width: bmp.width, height: bmp.height };
     bmp.close();
-    return { blob: file, ...size };
+    return { blob: file, mimeType: file.type, ...size };
   }
   const bmp = await createImageBitmap(file);
   let { width, height } = bmp;
@@ -90,9 +90,25 @@ export async function downscaleImage(
   const blob = await new Promise<Blob>((resolve, reject) => {
     canvas.toBlob((b) => (b ? resolve(b) : reject(new Error('Could not encode image'))), mimeType);
   });
-  return { blob, width, height };
+  const encodedMime = blob.type || mimeType;
+  return { blob, width, height, mimeType: encodedMime };
 }
 
 export function chatAttachmentUrl(assignmentId: string, attachmentId: string): string {
   return `/api/assignments/${encodeURIComponent(assignmentId)}/chat/attachments/${encodeURIComponent(attachmentId)}`;
+}
+
+const MIME_EXT: Record<string, string> = {
+  'image/png': 'png',
+  'image/jpeg': 'jpeg',
+  'image/gif': 'gif',
+  'image/webp': 'webp',
+};
+
+/** Pick an upload filename whose extension matches the encoded mime. */
+export function attachmentUploadName(displayName: string, mimeType: string): string {
+  const ext = MIME_EXT[mimeType] ?? 'png';
+  const dot = displayName.lastIndexOf('.');
+  const base = dot > 0 ? displayName.slice(0, dot) : displayName;
+  return `${base}.${ext}`;
 }

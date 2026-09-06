@@ -168,6 +168,8 @@ export interface TurnPromptTrigger {
   hop?: { n: number; budget: number };
   /** Resolved image blocks appended after the trigger text (delivery only). */
   images?: Array<{ data: string; mimeType: string }>;
+  /** True when the queue entry carried attachments, even if every file was missing on disk. */
+  hadAttachments?: boolean;
 }
 
 export interface TurnPromptOptions {
@@ -325,7 +327,7 @@ export function buildTurnPrompt(
   const eventText =
     trigger.text.trim().length > 0
       ? trigger.text
-      : trigger.images?.length
+      : trigger.hadAttachments || trigger.images?.length
         ? '(image attached)'
         : trigger.text;
 

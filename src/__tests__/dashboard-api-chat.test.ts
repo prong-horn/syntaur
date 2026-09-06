@@ -246,6 +246,28 @@ describe('POST /assignments/:id/chat/messages', () => {
     expect(res.status).toBe(202);
   });
 
+  it('drops non-finite attachmentMeta dimensions', async () => {
+    await boot();
+    const up = await uploadChatAttachment('dim.png', PNG_1X1, 'image/png');
+    const att = (await up.json()) as { id: string };
+    const res = await fetch(url(`/assignments/${ASSIGNMENT_ID}/chat/messages`), {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        text: 'dims',
+        attachmentIds: [att.id],
+        attachmentMeta: { [att.id]: { width: '100', height: 64 } },
+      }),
+    });
+    expect(res.status).toBe(202);
+    const items = broker.items({ id: ASSIGNMENT_ID } as never, { limit: 50 });
+    const msg = items.find(
+      (i) => i.type === 'user.message' && Array.isArray((i as { attachments?: unknown[] }).attachments),
+    ) as { attachments?: Array<{ width?: number; height?: number }> } | undefined;
+    expect(msg?.attachments?.[0]?.width).toBeUndefined();
+    expect(msg?.attachments?.[0]?.height).toBe(64);
+  });
+
   it('rejects unknown and excess attachment ids', async () => {
     await boot();
     const unknown = await fetch(url(`/assignments/${ASSIGNMENT_ID}/chat/messages`), {

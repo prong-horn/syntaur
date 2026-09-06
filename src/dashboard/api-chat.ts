@@ -29,6 +29,11 @@ import type { Participants } from '../chat/types.js';
 
 const MAX_MESSAGE_CHARS = 100_000;
 
+function positiveDimension(value: unknown): number | undefined {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) return undefined;
+  return value;
+}
+
 export interface ChatRouterDeps {
   broker: ChatBroker;
 }
@@ -221,13 +226,15 @@ export function createChatRouter(
           return;
         }
         const meta = body.attachmentMeta?.[id];
+        const width = positiveDimension(meta?.width);
+        const height = positiveDimension(meta?.height);
         attachments.push({
           id,
           mimeType: resolved.mimeType,
           bytes: resolved.bytes,
           name: resolved.name,
-          ...(meta?.width !== undefined ? { width: meta.width } : {}),
-          ...(meta?.height !== undefined ? { height: meta.height } : {}),
+          ...(width !== undefined ? { width } : {}),
+          ...(height !== undefined ? { height } : {}),
         });
       }
       const { messageId } = await broker.send({

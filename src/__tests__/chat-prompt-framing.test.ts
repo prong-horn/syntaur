@@ -356,6 +356,16 @@ describe('buildTurnPrompt with images', () => {
     expect((blocks[0] as { text: string }).text).toContain('(image attached)');
     expect(blocks[1]).toEqual({ type: 'image', data: png, mimeType: 'image/png' });
   });
+
+  it('uses (image attached) when hadAttachments is true but images are empty', () => {
+    const blocks = buildTurnPrompt({
+      author: 'human',
+      text: '',
+      hadAttachments: true,
+    });
+    expect((blocks[0] as { text: string }).text).toContain('(image attached)');
+    expect(blocks).toHaveLength(1);
+  });
 });
 
 describe('selectChatHistory image placeholders', () => {

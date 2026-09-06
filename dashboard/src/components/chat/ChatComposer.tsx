@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Loader2, Paperclip, Send, X } from 'lucide-react';
 import { applySuggestion, detectActiveToken } from '../../lib/mention-autocomplete';
 import {
@@ -51,9 +51,17 @@ export function ChatComposer({
   const [dismissed, setDismissed] = useState(false);
   const [sending, setSending] = useState(false);
   const [pending, setPending] = useState<PendingImage[]>([]);
+  const pendingRef = useRef(pending);
+  pendingRef.current = pending;
   const ref = useRef<HTMLTextAreaElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const { showToast } = useToast();
+
+  useEffect(() => {
+    return () => {
+      for (const image of pendingRef.current) URL.revokeObjectURL(image.previewUrl);
+    };
+  }, []);
 
   const attachedIds = agents.map((a) => a.id);
   const activeMention = detectActiveToken(draft, caret);
