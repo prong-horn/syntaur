@@ -72,6 +72,9 @@ import {
   type CommentType,
 } from '../templates/index.js';
 import { parseComments } from './parser.js';
+import { appendLogEntry, setTopLevelField } from '../lifecycle/log-append.js';
+
+export { setTopLevelField } from '../lifecycle/log-append.js';
 
 /**
  * Dashboard audit emit (best-effort): all dashboard mutations are attributed to
@@ -210,54 +213,6 @@ function validateRequired(
   return { valid: true };
 }
 
-function formatYamlValue(value: boolean | number | string | null): string {
-  if (value === null) {
-    return 'null';
-  }
-  if (typeof value === 'boolean' || typeof value === 'number') {
-    return String(value);
-  }
-  if (/^\d{4}-\d{2}-\d{2}T/.test(value)) {
-    return `"${value}"`;
-  }
-  if (value === '' || /[:#{}[\],&*?|>!%@`]/.test(value) || /^\s|\s$/.test(value)) {
-    return `"${value.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
-  }
-  return value;
-}
-
-// Exported for regression testing (AC5). Pure string transform.
-export function setTopLevelField(
-  content: string,
-  key: string,
-  value: boolean | number | string | null,
-): string {
-  const formatted = formatYamlValue(value);
-
-  // Operate ONLY within the frontmatter block. The field regex uses the `m`
-  // flag, so testing it against the whole document would match (and rewrite) a
-  // body line that happens to start with `key:` — and, when the field is absent
-  // from frontmatter, would never insert it. Scope to the frontmatter substring
-  // so both cases are safe.
-  const closingIdx = content.indexOf('\n---', 4);
-  if (closingIdx === -1) {
-    return content;
-  }
-  const frontmatter = content.slice(0, closingIdx);
-  const rest = content.slice(closingIdx);
-  const fieldRegex = new RegExp(`^(${escapeRegExp(key)}:)\\s*.*$`, 'm');
-
-  if (fieldRegex.test(frontmatter)) {
-    return `${frontmatter.replace(fieldRegex, `$1 ${formatted}`)}${rest}`;
-  }
-
-  return `${frontmatter}\n${key}: ${formatted}${rest}`;
-}
-
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-
 /**
  * Apply (or clear) the orthogonal archive fields on a project.md / assignment.md
  * frontmatter string. On archive: stamps `archivedAt` + optional `archivedReason`.
@@ -270,28 +225,6 @@ function applyArchiveFields(content: string, archived: boolean, reason: string |
   next = setTopLevelField(next, 'archivedReason', archived ? reason : null);
   next = setTopLevelField(next, 'updated', nowTimestamp());
   return next;
-}
-
-function appendLogEntry(
-  existingContent: string,
-  countField: 'handoffCount' | 'decisionCount',
-  nextCount: number,
-  heading: string,
-  body: string,
-  emptyPlaceholder: string,
-): string {
-  const timestamp = nowTimestamp();
-  let next = setTopLevelField(existingContent, 'updated', timestamp);
-  next = setTopLevelField(next, countField, nextCount);
-
-  const entryBody = body.trim();
-  const entry = `## ${heading}\n\n**Recorded:** ${timestamp}\n\n${entryBody}\n`;
-
-  if (next.includes(emptyPlaceholder)) {
-    return next.replace(emptyPlaceholder, entry.trimEnd());
-  }
-
-  return `${next.trimEnd()}\n\n${entry}`;
 }
 
 function requireContent(req: Request, res: Response): string | null {

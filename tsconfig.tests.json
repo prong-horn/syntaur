@@ -80,5 +80,6 @@
     "src/__tests__/chat-commands.test.ts",
     "src/__tests__/chat-prompt-framing.test.ts",
     "src/__tests__/chat-attachments.test.ts",
+    "src/__tests__/record-append.test.ts",
   ]
 }

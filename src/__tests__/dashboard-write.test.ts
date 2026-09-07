@@ -331,6 +331,39 @@ Keep this paragraph.`, 'utf-8');
     );
     expect(fileContent).toContain('Initial handoff');
     expect(fileContent).toContain('Second handoff entry');
+    expect(fileContent).toContain('**Recorded:**');
+    expect(fileContent).toContain('## Handoff 2');
+  });
+
+  it('appends decision-record entries with heading, Recorded timestamp and bumped count', async () => {
+    await createAssignmentFixture();
+    const router = createWriteRouter(testDir);
+
+    const response = await invokeRoute(
+      router,
+      'post',
+      '/api/projects/:slug/assignments/:aslug/decision-record/entries',
+      { slug: 'test-project', aslug: 'test-assignment' },
+      {
+        title: 'Use caching',
+        body: 'We will cache harness options in syntaur.db.',
+      },
+    );
+
+    expect(response.statusCode).toBe(201);
+    expect((response.payload as any).assignment.decisionRecord.decisionCount).toBe(2);
+    expect((response.payload as any).content).toContain('## Use caching');
+    expect((response.payload as any).content).toContain('**Recorded:**');
+    expect((response.payload as any).content).toContain('Keep the current layout');
+
+    const fileContent = await readFile(
+      resolve(testDir, 'test-project', 'assignments', 'test-assignment', 'decision-record.md'),
+      'utf-8',
+    );
+    expect(fileContent).toContain('## Use caching');
+    expect(fileContent).toContain('**Recorded:**');
+    expect(fileContent).toContain('Keep the current layout');
+    expect(fileContent).toMatch(/decisionCount: 2/);
   });
 
   it('allows blocking without a reason and uses lifecycle transitions for status changes', async () => {

@@ -1,11 +1,9 @@
 import { Command } from 'commander';
-import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
-import { fileExists, writeFileForce } from '../utils/fs.js';
+import { fileExists } from '../utils/fs.js';
 import { assignmentsDir } from '../utils/paths.js';
 import { readConfig } from '../utils/config.js';
-import { nowTimestamp } from '../utils/timestamp.js';
-import { formatProgressEntry, renderProgress } from '../templates/index.js';
+import { appendProgressLog } from '../lifecycle/progress-append.js';
 import { resolveSessionEngagement } from '../utils/engagement-binding.js';
 import { resolveAssignmentTarget } from '../utils/assignment-target.js';
 import { assertMayMutate } from '../utils/session-id.js';
@@ -42,54 +40,6 @@ async function resolveAssignmentDir(opts: {
   return { dir: target.assignmentDir, slug: target.assignmentSlug };
 }
 
-/**
- * Insert a new entry immediately after the `# Progress` H1 (reverse-chronological),
- * replacing the `No progress yet.` placeholder if present. Frontmatter `entryCount`
- * is incremented and `updated` bumped; `assignment` and `generated` are preserved
- * verbatim (we edit the raw frontmatter rather than round-tripping through a parser
- * that would drop `generated`).
- */
-export function appendProgressEntry(content: string, entry: string, now: string): string {
-  const fmMatch = content.match(/^(---\n)([\s\S]*?)(\n---\n?)([\s\S]*)$/);
-  if (!fmMatch) {
-    throw new Error('progress.md has no YAML frontmatter.');
-  }
-  const [, open, fmBody, close, body] = fmMatch;
-
-  // Bump entryCount (default 0 → 1) and updated; preserve everything else.
-  let newFm = fmBody;
-  const countMatch = newFm.match(/^entryCount:\s*(\d+)\s*$/m);
-  const nextCount = countMatch ? parseInt(countMatch[1], 10) + 1 : 1;
-  if (countMatch) {
-    newFm = newFm.replace(/^entryCount:\s*\d+\s*$/m, `entryCount: ${nextCount}`);
-  } else {
-    newFm = `${newFm}\nentryCount: ${nextCount}`;
-  }
-  if (/^updated:\s*.*$/m.test(newFm)) {
-    newFm = newFm.replace(/^updated:\s*.*$/m, `updated: "${now}"`);
-  } else {
-    newFm = `${newFm}\nupdated: "${now}"`;
-  }
-
-  const entryBlock = formatProgressEntry(entry, now);
-
-  // Body handling: drop the placeholder, then insert the new entry right after the
-  // `# Progress` H1 so newest is first.
-  let newBody = body.replace(/\n?No progress yet\.\s*\n?/, '\n');
-  const h1 = newBody.match(/^#\sProgress\s*$/m);
-  if (h1) {
-    const idx = newBody.indexOf(h1[0]) + h1[0].length;
-    const before = newBody.slice(0, idx).replace(/\s*$/, '');
-    const after = newBody.slice(idx).replace(/^\s*/, '');
-    newBody = `${before}\n\n${entryBlock}${after.length > 0 ? `\n${after}` : ''}`;
-  } else {
-    newBody = `# Progress\n\n${entryBlock}${newBody.trim().length > 0 ? `\n${newBody.trim()}\n` : ''}`;
-  }
-  if (!newBody.endsWith('\n')) newBody += '\n';
-
-  return `${open}${newFm}${close.startsWith('\n') ? close : `\n${close}`}${newBody}`;
-}
-
 export async function runProgressLog(
   text: string,
   options: { assignment?: string; project?: string },
@@ -106,15 +56,11 @@ export async function runProgressLog(
   if (!(await fileExists(resolve(dir, 'assignment.md')))) {
     throw new Error(`No assignment found at ${dir} (missing assignment.md).`);
   }
-  const path = resolve(dir, 'progress.md');
-  const now = nowTimestamp();
-
-  const content = (await fileExists(path))
-    ? await readFile(path, 'utf-8')
-    : renderProgress({ assignment: slug, timestamp: now });
-
-  const next = appendProgressEntry(content, text, now);
-  await writeFileForce(path, next);
+  const { path } = await appendProgressLog({
+    assignmentDir: dir,
+    assignmentRef: slug,
+    text,
+  });
   return path;
 }
 
