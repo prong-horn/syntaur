@@ -47,7 +47,15 @@ import { extractFrontmatter, getNestedField } from '../dashboard/parser.js';
 import { resolveChatCwd, type CwdTier } from './chat-cwd.js';
 import { syntaurRoot } from '../utils/paths.js';
 import { appendComment } from '../lifecycle/comment-append.js';
+import { resolveQuestionComments } from '../lifecycle/comment-resolve.js';
 import { appendProgressLog } from '../lifecycle/progress-append.js';
+import { type ParsedComment } from '../dashboard/parser.js';
+import {
+  detectOpenQuestion,
+  formatChatQuestionMarker,
+  parseChatQuestionMarker,
+  questionBodyForCard,
+} from './questions.js';
 import { buildTurnProgressEntry, fileChatRecord } from './records.js';
 import { appendSession, updateSessionStatus } from '../dashboard/agent-sessions.js';
 import {
@@ -64,6 +72,7 @@ import {
   clearChatSessionPid,
   deleteChatSession,
   deleteChatSessionsForAgent,
+  findChatItemByRequestId,
   getChatItem,
   getChatSession,
   getHarnessOptions,
@@ -122,8 +131,12 @@ import type {
   HandoffPayload,
   PermissionRequestPayload,
   PermissionResponsePayload,
+  QuestionAnsweredPayload,
+  AcpExtPayload,
   TurnStartPayload,
   TurnTrigger,
+  ChatQuestionKind,
+  ChatQuestionRef,
   HandoffItem,
   UserMessageItem,
   UserMessagePayload,
@@ -146,6 +159,8 @@ import type {
 export interface BrokerTimeouts {
   /** How long a pending permission waits before it is rejected and filed (Decision 9). */
   permissionMs: number;
+  /** How long a parked card waits before an Inbox question is filed (Decision 3). */
+  inboxGraceMs: number;
   /** No `session/update` for this long during a turn → cancel. claude thinks silently for 25 s. */
   turnIdleMs: number;
   /** Hard cap on one turn. */
@@ -163,6 +178,7 @@ export interface BrokerTimeouts {
 }
 
 export const DEFAULT_TIMEOUTS: BrokerTimeouts = {
+  inboxGraceMs: 30_000,
   permissionMs: 5 * 60_000,
   turnIdleMs: 10 * 60_000,
   turnMaxMs: 60 * 60_000,
@@ -315,6 +331,8 @@ interface PendingPermission {
   timer: ReturnType<typeof setTimeout>;
   title: string;
   options: acp.PermissionOption[];
+  graceTimer: ReturnType<typeof setTimeout> | null;
+  inboxCommentId: string | null;
 }
 
 interface PendingQuestion {
@@ -327,6 +345,8 @@ interface PendingQuestion {
     options?: Array<{ id: string; label: string }>;
     allowMultiple?: boolean;
   }>;
+  graceTimer: ReturnType<typeof setTimeout> | null;
+  inboxCommentId: string | null;
 }
 
 interface Session {
@@ -521,6 +541,121 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
         // Never let a progress-write failure propagate into finishTurn.
       }
     }
+  }
+
+  function byCommentId(id: string): (c: ParsedComment) => boolean {
+    return (c) => c.id === id;
+  }
+
+  function byAgentAndKind(agentId: string, kinds: ChatQuestionKind[]): (c: ParsedComment) => boolean {
+    const kindSet = new Set(kinds);
+    return (c) => {
+      if (c.author !== agentId || c.type !== 'question' || c.resolved === true) return false;
+      const { ref } = parseChatQuestionMarker(c.body);
+      return ref !== null && kindSet.has(ref.kind);
+    };
+  }
+
+  function byKindAndItemIds(kind: ChatQuestionKind, itemIds: string[]): (c: ParsedComment) => boolean {
+    const idSet = new Set(itemIds);
+    return (c) => {
+      if (c.type !== 'question' || c.resolved === true) return false;
+      const { ref } = parseChatQuestionMarker(c.body);
+      return ref !== null && ref.kind === kind && idSet.has(ref.itemId);
+    };
+  }
+
+  async function fileChatQuestion(
+    session: Session,
+    ref: ChatQuestionRef,
+    text: string,
+  ): Promise<string | null> {
+    try {
+      return await withRecordLock(session.assignment.assignmentDir, () =>
+        appendComment({
+          assignmentDir: session.assignment.assignmentDir,
+          assignmentRef: session.assignment.assignmentSlug,
+          author: session.agentId,
+          type: 'question',
+          body: `${text}\n\n${formatChatQuestionMarker(ref)}`,
+        }),
+      );
+    } catch (err) {
+      try {
+        await record(
+          session,
+          'system',
+          { level: 'warn', text: `Could not file the Inbox question: ${(err as Error).message}` },
+        );
+      } catch {
+        /* swallow */
+      }
+      return null;
+    }
+  }
+
+  async function resolveChatQuestions(
+    target: Session | ResolvedAssignment,
+    predicate: (c: ParsedComment) => boolean,
+  ): Promise<void> {
+    const assignmentDir = 'assignment' in target ? target.assignment.assignmentDir : target.assignmentDir;
+    const session = 'assignment' in target ? target : null;
+    try {
+      await withRecordLock(assignmentDir, () => resolveQuestionComments(assignmentDir, predicate));
+    } catch (err) {
+      if (session) {
+        try {
+          await record(session, 'system', {
+            level: 'warn',
+            text: `Could not resolve the Inbox question: ${(err as Error).message}`,
+          });
+        } catch {
+          /* swallow */
+        }
+      }
+    }
+  }
+
+  async function settlePendingCard(
+    session: Session,
+    pending: PendingPermission | PendingQuestion,
+  ): Promise<void> {
+    if (pending.graceTimer) {
+      clearTimeout(pending.graceTimer);
+      pending.graceTimer = null;
+    }
+    if (pending.inboxCommentId) {
+      const commentId = pending.inboxCommentId;
+      pending.inboxCommentId = null;
+      await resolveChatQuestions(session, byCommentId(commentId));
+    }
+  }
+
+  function armCardGraceTimer(
+    session: Session,
+    requestId: string,
+    kind: 'permission' | 'ask',
+    titleOrPrompt: string,
+    pending: PendingPermission | PendingQuestion,
+  ): void {
+    const graceTimer = setTimeout(() => {
+      void (async () => {
+        const stillPending =
+          session.pendingPermissions.get(requestId) === pending ||
+          session.pendingQuestions.get(requestId) === pending;
+        if (!stillPending) return;
+        const item = findChatItemByRequestId(session.assignment.id, requestId);
+        const ref: ChatQuestionRef = { kind, itemId: item?.itemId ?? requestId };
+        const commentId = await fileChatQuestion(
+          session,
+          ref,
+          questionBodyForCard(kind, titleOrPrompt),
+        );
+        if (commentId) pending.inboxCommentId = commentId;
+      })();
+    }, timeouts.inboxGraceMs);
+    graceTimer.unref?.();
+    pending.graceTimer = graceTimer;
   }
 
   async function agentSummaries(): Promise<ChatAgentSummary[]> {
@@ -1403,6 +1538,7 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
      */
     const everSent = new Set<string>();
     const openPermissions = new Map<string, string>(); // requestId -> title
+    const openAsks = new Map<string, string>(); // requestId -> prompt
     /**
      * Highest `perm:<n>` suffix this session has ever minted. `permissionSeq`
      * restarts at 0 on load, so without this a new request would reuse an id
@@ -1410,6 +1546,7 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
      * finding 3).
      */
     let maxPermissionSeq = -1;
+    let maxQuestionSeq = -1;
 
     for (const event of events) {
       switch (event.kind) {
@@ -1436,6 +1573,26 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
         case 'acp.permission_response': {
           const payload = event.payload as PermissionResponsePayload;
           openPermissions.delete(payload.requestId);
+          break;
+        }
+        case 'acp.ext': {
+          const payload = event.payload as AcpExtPayload;
+          if (payload.method === 'cursor/ask_question' && payload.requestId) {
+            const params = payload.params as {
+              questions?: Array<{ prompt?: string }>;
+              title?: string;
+            };
+            const prompt =
+              params.questions?.[0]?.prompt ?? params.title ?? 'A question';
+            openAsks.set(payload.requestId, prompt);
+            const suffix = Number(payload.requestId.split(':question:')[1]);
+            if (Number.isInteger(suffix)) maxQuestionSeq = Math.max(maxQuestionSeq, suffix);
+          }
+          break;
+        }
+        case 'question.answered': {
+          const payload = event.payload as QuestionAnsweredPayload;
+          openAsks.delete(payload.requestId);
           break;
         }
       }
@@ -1509,12 +1666,38 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
     // Continue the id sequence rather than restarting it, whether or not there
     // is anything else to repair.
     session.permissionSeq = maxPermissionSeq + 1;
+    session.questionSeq = maxQuestionSeq + 1;
 
-    if (openTurns.size === 0 && pending.size === 0 && openPermissions.size === 0) {
+    if (openTurns.size === 0 && pending.size === 0 && openPermissions.size === 0 && openAsks.size === 0) {
       // Still close a dangling engagement even with a clean log — an engagement
       // can outlive its turn if the process died between the two writes.
       closeDanglingEngagement(session);
       return;
+    }
+
+    const cardItemIds: Array<{ kind: ChatQuestionKind; ids: string[] }> = [];
+    for (const [requestId] of openPermissions) {
+      const item = findChatItemByRequestId(session.assignment.id, requestId);
+      cardItemIds.push({ kind: 'permission', ids: [item?.itemId ?? requestId, requestId] });
+    }
+    for (const [requestId] of openAsks) {
+      const item = findChatItemByRequestId(session.assignment.id, requestId);
+      cardItemIds.push({ kind: 'ask', ids: [item?.itemId ?? requestId, requestId] });
+    }
+    if (cardItemIds.length > 0) {
+      try {
+        await withRecordLock(session.assignment.assignmentDir, () =>
+          resolveQuestionComments(session.assignment.assignmentDir, (c) => {
+            const { ref } = parseChatQuestionMarker(c.body);
+            if (!ref || (ref.kind !== 'permission' && ref.kind !== 'ask')) return false;
+            return cardItemIds.some(
+              (entry) => entry.kind === ref.kind && entry.ids.includes(ref.itemId),
+            );
+          }),
+        );
+      } catch {
+        /* best-effort */
+      }
     }
 
     for (const [requestId, title] of openPermissions) {
@@ -1523,6 +1706,16 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
         session,
         'system',
         { level: 'warn', text: `The request to run ${title} expired when the dashboard restarted` },
+        null,
+      );
+    }
+
+    for (const [requestId, prompt] of openAsks) {
+      await record(session, 'question.answered', { requestId, by: 'timeout' }, null);
+      await record(
+        session,
+        'system',
+        { level: 'warn', text: `The question "${prompt}" expired when the dashboard restarted` },
         null,
       );
     }
@@ -2376,13 +2569,18 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
         void timeoutPermission(session, requestId, title);
       }, timeouts.permissionMs);
       timer.unref?.();
-      session.pendingPermissions.set(requestId, {
+      const pending: PendingPermission = {
         resolve: resolvePermission,
         timer,
         title,
         options: request.options ?? [],
+        graceTimer: null,
+        inboxCommentId: null,
+      };
+      session.pendingPermissions.set(requestId, pending);
+      void record(session, 'acp.permission_request', { requestId, request }).then(() => {
+        armCardGraceTimer(session, requestId, 'permission', title, pending);
       });
-      void record(session, 'acp.permission_request', { requestId, request });
     });
   }
 
@@ -2408,17 +2606,23 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
           allowMultiple?: boolean;
         }>;
       };
-      void record(session, 'acp.ext', { method, params, requestId });
+      const prompt = body.questions?.[0]?.prompt ?? body.title ?? 'A question';
       return new Promise<unknown>((resolveQuestion) => {
         const timer = setTimeout(() => {
           void timeoutQuestion(session, requestId);
         }, timeouts.permissionMs);
         timer.unref?.();
-        session.pendingQuestions.set(requestId, {
+        const pending: PendingQuestion = {
           resolve: resolveQuestion,
           timer,
           toolCallId: body.toolCallId ?? requestId,
           questions: body.questions ?? [],
+          graceTimer: null,
+          inboxCommentId: null,
+        };
+        session.pendingQuestions.set(requestId, pending);
+        void record(session, 'acp.ext', { method, params, requestId }).then(() => {
+          armCardGraceTimer(session, requestId, 'ask', prompt, pending);
         });
       });
     }
@@ -2434,6 +2638,7 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
   async function timeoutQuestion(session: Session, requestId: string): Promise<void> {
     const pending = session.pendingQuestions.get(requestId);
     if (!pending) return;
+    await settlePendingCard(session, pending);
     session.pendingQuestions.delete(requestId);
     clearTimeout(pending.timer);
     pending.resolve({ outcome: { outcome: 'cancelled' } });
@@ -2443,6 +2648,7 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
   async function timeoutPermission(session: Session, requestId: string, title: string): Promise<void> {
     const pending = session.pendingPermissions.get(requestId);
     if (!pending) return;
+    await settlePendingCard(session, pending);
     session.pendingPermissions.delete(requestId);
     clearTimeout(pending.timer);
     pending.resolve({ outcome: { outcome: 'selected', optionId: rejectOption(pending.options) } });
@@ -2514,12 +2720,14 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
     // A cancel while a permission is pending answers it `cancelled` — the ACP
     // outcome the adapters expect (spike row 07 part B).
     for (const [requestId, pending] of session.pendingPermissions) {
+      await settlePendingCard(session, pending);
       clearTimeout(pending.timer);
       pending.resolve({ outcome: { outcome: 'cancelled' } });
       session.pendingPermissions.delete(requestId);
       await record(session, 'acp.permission_response', { requestId, cancelled: true }, turn.turnId);
     }
     for (const [requestId, pending] of session.pendingQuestions) {
+      await settlePendingCard(session, pending);
       clearTimeout(pending.timer);
       pending.resolve({ outcome: { outcome: 'cancelled' } });
       session.pendingQuestions.delete(requestId);
@@ -2966,15 +3174,46 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
 
     // A cancelled or failed turn never hops: there is no sealed reply to hand
     // on, and inventing one would restart a chain the human just stopped.
+    let hopped = false;
     if (!failure && stopReason !== 'cancelled') {
       try {
-        await routeReply(session, turn);
+        const routeResult = await routeReply(session, turn);
+        hopped = routeResult.hopped;
       } catch (err) {
         await record(session, 'system', {
           level: 'warn',
           text: `Could not route this reply to another agent: ${(err as Error).message}`,
         }, null);
         flush(session);
+      }
+    }
+
+    if (!failure && stopReason === 'end_turn' && turn.trigger.kind === 'human' && !hopped) {
+      try {
+        const turnItems = listChatItemsByTurn(session.assignment.id, turn.turnId);
+        const replies = turnItems.filter(
+          (item): item is AgentMessageItem => item.type === 'agent.message' && item.sealed,
+        );
+        const text = replies.map((reply) => reply.text).join('\n\n');
+        const question = detectOpenQuestion(text);
+        if (question && replies.length > 0) {
+          const lastReply = replies[replies.length - 1];
+          await fileChatQuestion(
+            session,
+            { kind: 'reply', itemId: lastReply.itemId, turnId: turn.turnId },
+            question,
+          );
+        }
+      } catch (err) {
+        try {
+          await record(session, 'system', {
+            level: 'warn',
+            text: `Could not file the Inbox question: ${(err as Error).message}`,
+          });
+          flush(session);
+        } catch {
+          /* swallow */
+        }
       }
     }
 
@@ -2990,7 +3229,7 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
    * tracking them live is deliberate — the index is exactly what the normalizer
    * produced, folds and retractions included.
    */
-  async function routeReply(session: Session, turn: InFlightTurn): Promise<void> {
+  async function routeReply(session: Session, turn: InFlightTurn): Promise<{ hopped: boolean }> {
     const { definitions, participants } = await routingContext(session.assignment);
     session.hopBudget = participants.hopBudget ?? DEFAULT_HOP_BUDGET;
 
@@ -3078,6 +3317,8 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
         { agentId: SYSTEM_AGENT_ID },
       );
     }
+
+    return { hopped: activeHops.length > 0 };
   }
 
   /**
@@ -3393,6 +3634,16 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
           { agentId: SYSTEM_AGENT_ID },
         );
       }
+      if (deliveredTargets.length > 0) {
+        void resolveChatQuestions(assignment, (c) => {
+          const { ref } = parseChatQuestionMarker(c.body);
+          return (
+            ref !== null &&
+            ref.kind === 'reply' &&
+            deliveredTargets.includes(c.author)
+          );
+        });
+      }
       if (targets.length === 0) {
         await recordAssignment(
           assignment,
@@ -3465,6 +3716,7 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
       );
       const pending = session?.pendingPermissions.get(requestId);
       if (!session || !pending) return false;
+      await settlePendingCard(session, pending);
       session.pendingPermissions.delete(requestId);
       clearTimeout(pending.timer);
       pending.resolve({ outcome: { outcome: 'selected', optionId } });
@@ -3477,6 +3729,7 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
         });
         for (const [otherId, other] of [...session.pendingPermissions.entries()]) {
           if (otherId === requestId) continue;
+          await settlePendingCard(session, other);
           session.pendingPermissions.delete(otherId);
           clearTimeout(other.timer);
           const autoOptionId = allowOption(other.options);
@@ -3500,6 +3753,7 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
       if (!session || !pending) return false;
       session.pendingQuestions.delete(requestId);
       clearTimeout(pending.timer);
+      await settlePendingCard(session, pending);
       const question = pending.questions[0];
       if (answer.optionId) {
         pending.resolve({
@@ -3649,12 +3903,14 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
         }
 
         for (const [requestId, pending] of session.pendingPermissions) {
+          await settlePendingCard(session, pending);
           clearTimeout(pending.timer);
           pending.resolve({ outcome: { outcome: 'cancelled' } });
           session.pendingPermissions.delete(requestId);
           await record(session, 'acp.permission_response', { requestId, cancelled: true });
         }
         for (const [requestId, pending] of session.pendingQuestions) {
+          await settlePendingCard(session, pending);
           clearTimeout(pending.timer);
           pending.resolve({ outcome: { outcome: 'cancelled' } });
           session.pendingQuestions.delete(requestId);

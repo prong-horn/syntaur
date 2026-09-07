@@ -316,6 +316,23 @@ export function listChatItemsByTurn(assignmentId: string, turnId: string): ChatI
   return rows.map((r) => JSON.parse(r.json) as ChatItem);
 }
 
+/** Look up a permission or question card by its ACP request id. */
+export function findChatItemByRequestId(assignmentId: string, requestId: string): ChatItem | null {
+  const row = getSessionDb()
+    .prepare(
+      `SELECT json FROM chat_items
+        WHERE assignment_id = ?
+          AND json_extract(json, '$.requestId') = ?
+        ORDER BY seq_first DESC
+        LIMIT 1`,
+    )
+    .get(assignmentId, requestId) as { json: string } | undefined;
+  if (!row) return null;
+  const item = JSON.parse(row.json) as ChatItem;
+  if (item.type !== 'permission.request' && item.type !== 'question') return null;
+  return item;
+}
+
 export function countChatItems(assignmentId: string): number {
   const row = getSessionDb()
     .prepare('SELECT COUNT(*) AS n FROM chat_items WHERE assignment_id = ?')

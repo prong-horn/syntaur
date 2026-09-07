@@ -25,6 +25,7 @@ import {
   createChatBroker,
   ChatSendError,
   type ChatBroker,
+  type BrokerTimeouts,
   type ClientFactory,
 } from '../chat/broker.js';
 import { agentsDir } from '../chat/agents.js';
@@ -33,6 +34,7 @@ import type { ChatEvent, ChatItem } from '../chat/types.js';
 import type { ResolvedAssignment } from '../utils/assignment-resolver.js';
 import { renderProgress } from '../templates/index.js';
 import { parseProgress } from '../dashboard/parser.js';
+import { parseComments } from '../dashboard/parser.js';
 
 /**
  * Task 6 — the broker, driven against the in-process fake ACP agent
@@ -101,7 +103,13 @@ function lastSessionFrame(): { state: string; queued: Array<{ messageId: string 
   return null;
 }
 
-function makeBroker(options: { turns?: FakeTurn[]; agentOptions?: Parameters<typeof createFakeAgent>[0] } = {}) {
+function makeBroker(
+  options: {
+    turns?: FakeTurn[];
+    agentOptions?: Parameters<typeof createFakeAgent>[0];
+    timeouts?: Partial<BrokerTimeouts>;
+  } = {},
+) {
   fake = createFakeAgent({ turns: options.turns ?? [{ steps: [] }], ...(options.agentOptions ?? {}) });
   const clientFactory: ClientFactory = (input) => {
     const client = connectAcpClient(fake.app, {
@@ -120,7 +128,14 @@ function makeBroker(options: { turns?: FakeTurn[]; agentOptions?: Parameters<typ
     syntaurHome: sandbox,
     broadcast: (message) => frames.push({ type: message.type, payload: message.payload }),
     clientFactory,
-    timeouts: { flushMs: 1, permissionMs: 200, sessionIdleMs: 120, shutdownGraceMs: 200 },
+    timeouts: {
+      flushMs: 1,
+      permissionMs: 200,
+      sessionIdleMs: 120,
+      shutdownGraceMs: 200,
+      inboxGraceMs: 60_000,
+      ...(options.timeouts ?? {}),
+    },
   });
   return broker;
 }
@@ -2377,3 +2392,236 @@ describe('turn progress entries', () => {
     },
   );
 });
+
+describe('inbox questions (needs-me)', () => {
+  const commentsPath = () => join(assignmentDir, 'comments.md');
+
+  async function parseAssignmentComments() {
+    return parseComments(await readFile(commentsPath(), 'utf-8'));
+  }
+
+  async function writeAgentFile(id: string, extra = ''): Promise<void> {
+    const dir = agentsDir(sandbox);
+    await mkdir(dir, { recursive: true });
+    await writeFile(
+      join(dir, `${id}.md`),
+      [
+        '---',
+        `id: ${id}`,
+        `name: ${id}`,
+        `color: ${id === 'cursor' ? 'sky' : 'violet'}`,
+        `harness: ${id}`,
+        extra,
+        'respondsTo: mentions',
+        `default: ${id === 'claude'}`,
+        '---',
+        '',
+      ].join('\n'),
+      'utf-8',
+    );
+  }
+
+  const permissionTurn: FakeTurn = {
+    steps: [
+      {
+        kind: 'permission',
+        request: {
+          toolCall: { toolCallId: 't1', title: 'Run `ls`', kind: 'execute' },
+          options: [
+            { optionId: 'allow', name: 'Allow', kind: 'allow_once' },
+            { optionId: 'reject', name: 'Deny', kind: 'reject_once' },
+          ],
+        },
+      },
+      { kind: 'update', update: textChunk('done', 'm1') },
+    ],
+  };
+
+  it('files a reply question after a human turn ending in a decision request', async () => {
+    makeBroker({
+      turns: [{ steps: [{ kind: 'update', update: textChunk('Which name should I use: alpha or beta?', 'm1') }] }],
+    });
+    await broker.send({ assignment: assignment(), text: 'pick a name' });
+    await idle();
+    await waitUntil(() => existsSync(commentsPath()), 'comments.md');
+    const parsed = await parseAssignmentComments();
+    expect(parsed.entries).toHaveLength(1);
+    expect(parsed.entries[0]).toMatchObject({ author: 'claude', type: 'question', resolved: false });
+    expect(parsed.entries[0].body).toContain('Which name should I use: alpha or beta?');
+    expect(parsed.entries[0].body).toContain('kind="reply"');
+    const reply = itemsOfType('agent.message')[0] as { itemId: string };
+    const status = itemsOfType('turn.status')[0] as { turnId: string };
+    expect(parsed.entries[0].body).toContain(`item="${reply.itemId}"`);
+    expect(parsed.entries[0].body).toContain(`turn="${status.turnId}"`);
+  });
+
+  it('does not file a reply question for a non-question ending', async () => {
+    makeBroker({ turns: [{ steps: [{ kind: 'update', update: textChunk('Done.', 'm1') }] }] });
+    await broker.send({ assignment: assignment(), text: 'go' });
+    await idle();
+    expect(existsSync(commentsPath())).toBe(false);
+  });
+
+  it('does not file when the reply hops to another agent', async () => {
+    await writeAgentFile('claude');
+    await writeAgentFile('codex');
+    const codexFake = createFakeAgent({
+      turns: [{ steps: [{ kind: 'update', update: textChunk('ok', 'm2') }] }],
+      sessionIds: ['acp-codex-1'],
+    });
+    fake = createFakeAgent({
+      turns: [{ steps: [{ kind: 'update', update: textChunk('@codex which name should we use: alpha or beta?', 'm1') }] }],
+      sessionIds: ['acp-claude-1'],
+    });
+    broker = createChatBroker({
+      projectsDir: join(sandbox, 'projects'),
+      assignmentsDir: join(sandbox, 'assignments'),
+      syntaurHome: sandbox,
+      broadcast: (message) => frames.push({ type: message.type, payload: message.payload }),
+      clientFactory: (input) => {
+        const app = input.agentId === 'codex' ? codexFake.app : fake.app;
+        const client = connectAcpClient(app, {
+          onUpdate: input.onUpdate,
+          onPermissionRequest: input.onPermissionRequest,
+          onExtRequest: input.onExtRequest,
+          onExtNotification: input.onExtNotification,
+        });
+        clients.push(client);
+        return client;
+      },
+      timeouts: { flushMs: 1, permissionMs: 200, sessionIdleMs: 120, shutdownGraceMs: 200, inboxGraceMs: 60_000 },
+    });
+    await broker.setParticipants(assignment(), { agents: ['claude', 'codex'], defaultAgent: 'claude' });
+    await broker.send({ assignment: assignment(), text: 'pick' });
+    await idle(2);
+    expect(existsSync(commentsPath())).toBe(false);
+  });
+
+  it('resolves a reply question when the human sends to that agent', async () => {
+    makeBroker({
+      turns: [
+        { steps: [{ kind: 'update', update: textChunk('Which name should I use: alpha or beta?', 'm1') }] },
+        { steps: [{ kind: 'update', update: textChunk('alpha it is', 'm2') }] },
+      ],
+    });
+    await broker.send({ assignment: assignment(), text: 'pick' });
+    await idle();
+    await waitUntil(() => existsSync(commentsPath()), 'comments.md');
+    const before = await parseAssignmentComments();
+    expect(before.entries[0].resolved).toBe(false);
+    await broker.send({ assignment: assignment(), text: 'use alpha' });
+    await idle(2);
+    const after = await parseAssignmentComments();
+    expect(after.entries[0].resolved).toBe(true);
+  });
+
+  it('files a permission grace comment and resolves it on answer', async () => {
+    makeBroker({ turns: [permissionTurn], timeouts: { inboxGraceMs: 1, permissionMs: 60_000 } });
+    await broker.send({ assignment: assignment(), text: 'go' });
+    await waitUntil(() => itemsOfType('permission.request').length === 1, 'permission card');
+    await waitUntil(() => existsSync(commentsPath()), 'grace comment');
+    const perm = itemsOfType('permission.request')[0] as { requestId: string; itemId: string };
+    const parsed = await parseAssignmentComments();
+    expect(parsed.entries[0].body).toContain('kind="permission"');
+    expect(parsed.entries[0].body).toContain(`item="${perm.itemId}"`);
+    expect(await broker.answerPermission(assignment(), perm.requestId, 'allow')).toBe(true);
+    await idle();
+    const after = await parseAssignmentComments();
+    expect(after.entries[0].resolved).toBe(true);
+  });
+
+  it('does not file a grace comment when permission is answered before the grace', async () => {
+    makeBroker({ turns: [permissionTurn], timeouts: { inboxGraceMs: 60_000, permissionMs: 60_000 } });
+    await broker.send({ assignment: assignment(), text: 'go' });
+    await waitUntil(() => itemsOfType('permission.request').length === 1, 'permission card');
+    const perm = itemsOfType('permission.request')[0] as { requestId: string };
+    expect(await broker.answerPermission(assignment(), perm.requestId, 'allow')).toBe(true);
+    await idle();
+    expect(existsSync(commentsPath())).toBe(false);
+  });
+
+  it('resolves the grace comment before filing the timeout denial question', async () => {
+    makeBroker({ turns: [permissionTurn], timeouts: { inboxGraceMs: 5, permissionMs: 80 } });
+    await broker.send({ assignment: assignment(), text: 'go' });
+    await waitUntil(() => existsSync(commentsPath()), 'grace comment');
+    await waitUntil(async () => {
+      const parsed = await parseAssignmentComments();
+      const open = parsed.entries.filter((e) => e.type === 'question' && e.resolved !== true);
+      return open.length === 1 && open[0].body.includes('nobody answered within');
+    }, 'denial question');
+  });
+
+  it('files and resolves an ask_question grace comment', async () => {
+    await writeAgentFile('cursor');
+    makeBroker({
+      turns: [
+        {
+          steps: [
+            {
+              kind: 'extRequest',
+              method: 'cursor/ask_question',
+              params: {
+                toolCallId: 'tool-q',
+                title: 'Pick one',
+                questions: [{ id: 'q1', prompt: 'Which colour?', options: [{ id: 'a', label: 'A' }] }],
+              },
+            },
+            { kind: 'update', update: textChunk('thanks', 'm-q') },
+          ],
+        },
+      ],
+      agentOptions: { resumeSupported: false },
+      timeouts: { inboxGraceMs: 1, permissionMs: 60_000 },
+    });
+    await broker.setParticipants(assignment(), { agents: ['cursor'], defaultAgent: 'cursor' });
+    const sendP = broker.send({ assignment: assignment(), agentId: 'cursor', text: 'ask' });
+    await waitUntil(() => itemsOfType('question').length > 0, 'question card');
+    await waitUntil(() => existsSync(commentsPath()), 'grace comment');
+    const card = itemsOfType('question')[0] as { requestId: string; itemId: string };
+    const parsed = await parseAssignmentComments();
+    expect(parsed.entries[0].body).toContain('kind="ask"');
+    expect(parsed.entries[0].body).toContain('Which colour?');
+    expect(await broker.answerQuestion(assignment(), card.requestId, { optionId: 'a' })).toBe(true);
+    await sendP;
+    await idle();
+    expect((await parseAssignmentComments()).entries[0].resolved).toBe(true);
+  });
+
+  it.skipIf(process.platform === 'win32')(
+    'warns and still ends the turn when comments.md cannot be written',
+    async () => {
+      makeBroker({
+        turns: [
+          { steps: [{ kind: 'update', update: textChunk('warmup', 'm0') }] },
+          { steps: [{ kind: 'update', update: textChunk('Which name should I use: alpha or beta?', 'm1') }] },
+        ],
+      });
+      await broker.send({ assignment: assignment(), text: 'warm up' });
+      await idle();
+      const { chmod } = await import('node:fs/promises');
+      await writeFile(
+        commentsPath(),
+        '---\nassignment: chat-demo\nentryCount: 0\nupdated: "x"\n---\n\n# Comments\n\nNo comments yet.\n',
+      );
+      try {
+        await chmod(commentsPath(), 0o000);
+        await broker.send({ assignment: assignment(), text: 'pick' });
+        await idle(2);
+        await waitUntil(
+          () => systemTexts().some((t) => t.includes('Could not file the Inbox question')),
+          'warn row',
+          10_000,
+        );
+        const status = itemsOfType('turn.status').at(-1) as { stopReason?: string };
+        expect(status.stopReason).toBe('end_turn');
+      } finally {
+        await chmod(commentsPath(), 0o644);
+      }
+    },
+  );
+});
+
+function systemTexts(): string[] {
+  return (itemsOfType('system') as Array<{ text: string }>).map((i) => i.text);
+}
+
