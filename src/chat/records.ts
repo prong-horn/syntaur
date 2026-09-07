@@ -1,4 +1,4 @@
-import { relative } from 'node:path';
+import { isAbsolute, relative } from 'node:path';
 import { appendComment } from '../lifecycle/comment-append.js';
 import { appendDecisionEntry } from '../lifecycle/log-append.js';
 import { appendProgressLog } from '../lifecycle/progress-append.js';
@@ -45,7 +45,7 @@ export function clipExcerpt(text: string, max: number): string {
 function relativePath(cwd: string | null, path: string): string {
   if (!cwd) return path;
   const rel = relative(cwd, path);
-  if (!rel || rel.startsWith('..') || rel === path) return path;
+  if (!rel || rel.startsWith('..') || isAbsolute(rel) || rel === path) return path;
   return rel;
 }
 
@@ -123,7 +123,7 @@ export function buildTurnProgressEntry(input: {
 
   lines.push(`Chat turn \`${input.turnId}\`.`);
 
-  return lines.join('\n');
+  return lines.join('\n\n');
 }
 
 export function provenanceLine(source: { agentId: string; ts: string }): string {

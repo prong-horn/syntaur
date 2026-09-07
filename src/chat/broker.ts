@@ -509,13 +509,17 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
         }),
       );
     } catch (err) {
-      await record(
-        session,
-        'system',
-        { level: 'warn', text: `Could not write the progress entry: ${(err as Error).message}` },
-        turn.turnId,
-      );
-      flush(session);
+      try {
+        await record(
+          session,
+          'system',
+          { level: 'warn', text: `Could not write the progress entry: ${(err as Error).message}` },
+          turn.turnId,
+        );
+        flush(session);
+      } catch {
+        // Never let a progress-write failure propagate into finishTurn.
+      }
     }
   }
 

@@ -80,7 +80,7 @@ describe('clipExcerpt', () => {
 describe('buildTurnProgressEntry', () => {
   const turnId = 'abc123';
 
-  it('builds a full entry for a work turn with edit, execute and read rows', () => {
+  it('builds a full entry for a work turn with edit, execute and read rows', async () => {
     const items: ChatItem[] = [
       workItem(
         [
@@ -103,10 +103,25 @@ describe('buildTurnProgressEntry', () => {
       turnId,
     });
 
-    expect(entry).toContain('**@claude** worked 3m 02s in chat — edited 1 file(s), ran 1 command(s), read 3.');
-    expect(entry).toContain('Edited: `src/a.ts`');
-    expect(entry).toContain('> Here is what I did.');
-    expect(entry).toContain(`Chat turn \`${turnId}\`.`);
+    const expected = [
+      '**@claude** worked 3m 02s in chat — edited 1 file(s), ran 1 command(s), read 3.',
+      'Edited: `src/a.ts`',
+      '> Here is what I did.',
+      `Chat turn \`${turnId}\`.`,
+    ].join('\n\n');
+    expect(entry).toBe(expected);
+
+    await fileChatRecord({
+      assignmentDir: testDir,
+      assignmentRef: 'demo',
+      record: { kind: 'progress', body: entry! },
+      source: { agentId: 'claude', ts: '2026-09-07T12:00:00Z' },
+    });
+    const progressMd = await readFile(join(testDir, 'progress.md'), 'utf-8');
+    const parsed = parseProgress(progressMd);
+    expect(parsed.entryCount).toBe(1);
+    expect(parsed.entries).toHaveLength(1);
+    expect(parsed.entries[0]?.body).toContain(entry!);
   });
 
   it('returns null for a read-only turn', () => {
@@ -136,8 +151,12 @@ describe('buildTurnProgressEntry', () => {
       cwd: '/w',
       turnId,
     });
-    expect(entry).not.toContain('Edited:');
-    expect(entry).toContain('ran 1 command(s)');
+    const expected = [
+      '**@claude** worked 5s in chat — edited 0 file(s), ran 1 command(s), read 0.',
+      '> Done.',
+      `Chat turn \`${turnId}\`.`,
+    ].join('\n\n');
+    expect(entry).toBe(expected);
   });
 
   it('lists eight edited paths then +N more', () => {

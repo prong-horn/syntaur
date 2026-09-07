@@ -395,16 +395,18 @@ export function createChatRouter(
         return;
       }
 
+      let decisionTitle: string | undefined;
       if (body.kind === 'decision') {
-        if (!body.title || typeof body.title !== 'string' || !body.title.trim()) {
+        decisionTitle = typeof body.title === 'string' ? body.title.trim() : '';
+        if (!decisionTitle) {
           res.status(400).json({ error: 'title is required for a decision' });
           return;
         }
-        if (/[\r\n]/.test(body.title)) {
+        if (/[\r\n]/.test(decisionTitle)) {
           res.status(400).json({ error: 'title must be a single line' });
           return;
         }
-        if (body.title.length > 200) {
+        if (decisionTitle.length > 200) {
           res.status(400).json({ error: 'title must be at most 200 characters' });
           return;
         }
@@ -420,7 +422,7 @@ export function createChatRouter(
       const record = await broker.fileRecord(assignment, String(req.params.itemId), {
         kind: body.kind as 'decision' | 'progress' | 'comment',
         body: body.body,
-        ...(body.title ? { title: body.title } : {}),
+        ...(decisionTitle ? { title: decisionTitle } : {}),
         ...(body.commentType
           ? { commentType: body.commentType as 'note' | 'feedback' | 'question' }
           : {}),
