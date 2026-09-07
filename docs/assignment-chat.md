@@ -48,6 +48,11 @@ and a permission or question prompt that was waiting is marked expired (it canno
 be answered — the request died with the adapter). The next message reattaches
 (resume, load, or new — see above).
 
+5. When the turn edited files or ran commands, Syntaur appends one entry to
+   `progress.md` (who worked, how long, edit/run/read counts, up to eight edited
+   paths, the opening of the agent's reply, and the turn id). Talk-only turns
+   leave `progress.md` unchanged — file those from the message's ⋯ menu instead.
+
 ## Agent definitions — `~/.syntaur/agents/<id>.md`
 
 Frontmatter configures the agent; the body is its system prompt.
@@ -156,14 +161,14 @@ status row.
 
 | Row | What it is |
 |---|---|
-| Message bubble | Your message (right) or an agent's markdown reply (left), each with its author's avatar and colour. User messages with images show thumbnails that open the full file in a new tab. |
+| Message bubble | Your message (right) or an agent's markdown reply (left), each with its author's avatar and colour. Hover a sent message or a sealed reply for the ⋯ menu — **File as decision / progress entry / comment** opens a prefilled dialog you can edit before filing. User messages with images show thumbnails that open the full file in a new tab. |
 | Hand-off row | "@planner → @implementer · hop 1 of 4", linking the message that caused it |
 | Work card | A run of tool calls, one line: "Worked 18s · read 1 · edited 1" |
 | Plan checklist | The agent's todo list; pinned above the composer while its turn runs |
 | Permission card | The agent wants to do something that needs approval — answer inline, or click **Allow all this session** to stop the cards until that agent's session closes (after ten minutes idle, when the adapter exits, or when its harness changes); `permissions: auto` on the agent definition is the durable setting |
 | Question card | Cursor asked a multiple-choice question — pick an option inline |
 | Thin status row | "Planner · 3m 02s · 41.2k tokens · $0.19 · end_turn", with an **Activity** disclosure holding that turn's thinking and full tool detail |
-| Thin grey row | Session lifecycle, mode/config changes, adapter notices, or **Auto-approved: `<command>`** (the agent's `permissions: auto`, or **Allow all this session**) |
+| Thin grey row | Session lifecycle, mode/config changes, adapter notices, **Filed …** (a message filed as a decision, progress entry or comment), **Auto-approved: `<command>`** (the agent's `permissions: auto`, or **Allow all this session**) |
 
 A short sentence right before a tool call ("I'll read package.json first.")
 becomes the work card's header instead of its own bubble — that one rule is most
@@ -184,6 +189,9 @@ up in your Inbox. Auto-approved requests never wait.
 - `<assignment>/chat/attachments/<uuid>__<name>.<ext>` — image files uploaded
   from the composer, referenced from `user.message` events by id (bytes are never
   embedded in `events.jsonl`).
+- `<assignment>/progress.md` — chat-written entries end with `Chat turn \`<id>\``.
+  Filed decisions and progress entries end with `_Filed from chat (…)._`. Standalone
+  assignments file to `~/.syntaur/assignments/<uuid>/` rather than under a project.
 - `chat_harness_options` in `~/.syntaur/syntaur.db` — per-harness cached
   `configOptions` and auth state from the last successful adapter open (or a
   harness refresh).
@@ -244,6 +252,17 @@ refused the current default models before inference. If a chat turn fails with
 "Claude Code 2.1.x does not support this model" or "requires a newer version of
 Codex", upgrade the adapter, not the CLI:
 `npm i -g @agentclientprotocol/claude-agent-acp@latest @agentclientprotocol/codex-acp@latest`.
+
+**No progress entry appeared for a turn** — Syntaur writes one only when the turn
+ended `end_turn` and edited at least one file or ran at least one command; read-only
+and talk-only turns leave `progress.md` unchanged. Cancelled and failed turns append
+nothing either. To keep a conclusion, use the message's ⋯ menu (**File as decision /
+progress entry / comment**).
+
+**Could not write the progress entry** — the chat shows a warn row with this text
+when `progress.md` could not be written (permissions, a hand-made file without YAML
+frontmatter, etc.). The turn itself still completed; only the automatic progress entry
+was skipped.
 
 **The slash-command picker is empty** — the harness has not sent
 `available_commands_update` yet for that agent, nothing is cached for the harness,
