@@ -13,8 +13,21 @@ import { cn } from '../../lib/utils';
 import { EmptyState } from '../EmptyState';
 import { AgentPickerPanel } from './AgentPickerPanel';
 import { ChatComposer } from './ChatComposer';
+import { FileRecordDialog } from './FileRecordDialog';
 import { ChatItemView, PlanCard } from './items';
-import type { AgentPlanItem, ChatAgentSummary, ChatCommand, ChatCommandsSource, ChatSessionState } from '../../lib/chat-types';
+import type {
+  AgentMessageItem,
+  AgentPlanItem,
+  ChatAgentSummary,
+  ChatCommand,
+  ChatCommandsSource,
+  ChatRecordKind,
+  ChatSessionState,
+  UserMessageItem,
+} from '../../lib/chat-types';
+import { fileChatRecord, HUMAN_AGENT_ID } from '../../lib/chat-api';
+import { recordFiledCopy } from '../../lib/chat-records';
+import { useToast, Toaster } from '../Toast';
 
 /**
  * The Chat tab: one chip per attached agent, a scrolling item list, a pinned
@@ -75,6 +88,11 @@ export function ChatTab({ assignmentId }: ChatTabProps) {
   } = useAssignmentChat(assignmentId);
 
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [filing, setFiling] = useState<{ item: UserMessageItem | AgentMessageItem; kind: ChatRecordKind } | null>(
+    null,
+  );
+  const [filingBusy, setFilingBusy] = useState(false);
+  const { toast, showToast, dismissToast } = useToast();
   const listRef = useRef<HTMLDivElement | null>(null);
   const pinnedAtBottom = useRef(true);
 
@@ -243,6 +261,7 @@ export function ChatTab({ assignmentId }: ChatTabProps) {
                 onAnswerPermission: (requestId, optionId, opts) =>
                   void answerPermission(requestId, optionId, opts),
                 onAnswerQuestion: (requestId, answer) => void answerQuestion(requestId, answer),
+                onFile: (item, kind) => setFiling({ item, kind }),
               }}
             />
           ))
@@ -272,6 +291,35 @@ export function ChatTab({ assignmentId }: ChatTabProps) {
         participants={participants}
         onSave={setParticipants}
       />
+
+      <FileRecordDialog
+        open={filing !== null}
+        kind={filing?.kind ?? 'comment'}
+        item={filing?.item ?? null}
+        sourceLabel={
+          filing?.item.agentId === HUMAN_AGENT_ID
+            ? 'your message'
+            : `@${filing?.item.agentId ?? 'agent'}'s reply`
+        }
+        submitting={filingBusy}
+        onOpenChange={(open) => {
+          if (!open) setFiling(null);
+        }}
+        onSubmit={async (input) => {
+          if (!filing) return;
+          setFilingBusy(true);
+          try {
+            const { record } = await fileChatRecord(assignmentId, filing.item.itemId, input);
+            showToast(recordFiledCopy(record), 'success');
+            setFiling(null);
+          } catch (err) {
+            showToast(err instanceof Error ? err.message : String(err), 'error');
+          } finally {
+            setFilingBusy(false);
+          }
+        }}
+      />
+      <Toaster toast={toast} onDismiss={dismissToast} />
     </div>
   );
 }

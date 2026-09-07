@@ -24,6 +24,21 @@ export type ChatItemType =
   | 'turn.status'
   | 'system';
 
+export type ChatRecordKind = 'decision' | 'progress' | 'comment';
+
+export interface FileChatRecordInput {
+  kind: ChatRecordKind;
+  body: string;
+  title?: string;
+  commentType?: 'note' | 'feedback' | 'question';
+}
+
+export interface FiledChatRecord {
+  kind: ChatRecordKind;
+  ref: string;
+  label: string;
+}
+
 export interface ChatItemBase {
   itemId: string;
   assignmentId: string;

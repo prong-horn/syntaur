@@ -58,3 +58,39 @@ describe('UserMessageBubble attachments', () => {
     expect(html).not.toContain('whitespace-pre-wrap');
   });
 });
+
+describe('UserMessageBubble file menu', () => {
+  it('renders the overflow trigger for a sent message with onFile', () => {
+    const html = renderToStaticMarkup(
+      <UserMessageBubble
+        item={message({ state: 'sent', text: 'hello' })}
+        author={author}
+        onWithdraw={() => {}}
+        onFile={() => {}}
+      />,
+    );
+    expect(html).toContain('aria-label="More actions"');
+  });
+
+  it('hides the menu for withdrawn and replayed messages', () => {
+    const withdrawn = renderToStaticMarkup(
+      <UserMessageBubble
+        item={message({ state: 'withdrawn' })}
+        author={author}
+        onWithdraw={() => {}}
+        onFile={() => {}}
+      />,
+    );
+    expect(withdrawn).not.toContain('aria-label="More actions"');
+
+    const replayed = renderToStaticMarkup(
+      <UserMessageBubble
+        item={message({ state: 'replayed' })}
+        author={author}
+        onWithdraw={() => {}}
+        onFile={() => {}}
+      />,
+    );
+    expect(replayed).not.toContain('aria-label="More actions"');
+  });
+});

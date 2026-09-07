@@ -42,6 +42,7 @@ import type {
   AgentThoughtItem,
   AgentWorkItem,
   ChatItem,
+  ChatRecordKind,
   HandoffItem,
   PermissionRequestItem,
   QuestionItem,
@@ -51,6 +52,8 @@ import type {
   TurnStatusItem,
   UserMessageItem,
 } from '../../lib/chat-types';
+import { OverflowMenu } from '../OverflowMenu';
+import { RECORD_MENU } from '../../lib/chat-records';
 
 /** One row per §5.3 item type. All presentational; state lives in the hook. */
 
@@ -66,6 +69,7 @@ export interface ItemViewContext {
     opts?: { allowAllSession?: boolean },
   ) => void;
   onAnswerQuestion: (requestId: string, answer: { optionId?: string; text?: string }) => void;
+  onFile: (item: UserMessageItem | AgentMessageItem, kind: ChatRecordKind) => void;
 }
 
 /** An author's colour chip: the avatar, then the name. */
@@ -99,14 +103,37 @@ const TOOL_ICONS: Record<ToolKind, typeof FileText> = {
   other: Wrench,
 };
 
+function MessageRecordMenu({
+  item,
+  onFile,
+}: {
+  item: UserMessageItem | AgentMessageItem;
+  onFile: (item: UserMessageItem | AgentMessageItem, kind: ChatRecordKind) => void;
+}) {
+  return (
+    <div className="absolute right-1 top-1 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
+      <OverflowMenu
+        align="end"
+        items={RECORD_MENU.map((entry) => ({
+          key: entry.kind,
+          label: entry.label,
+          onSelect: () => onFile(item, entry.kind),
+        }))}
+      />
+    </div>
+  );
+}
+
 export function UserMessageBubble({
   item,
   author,
   onWithdraw,
+  onFile,
 }: {
   item: UserMessageItem;
   author: ItemAuthor;
   onWithdraw: (messageId: string) => void;
+  onFile?: (item: UserMessageItem | AgentMessageItem, kind: ChatRecordKind) => void;
 }) {
   const queued = item.state === 'queued';
   const withdrawn = item.state === 'withdrawn';
@@ -118,13 +145,17 @@ export function UserMessageBubble({
       <AuthorBadge author={author} />
       <div
         className={cn(
-          'max-w-[85%] rounded-lg rounded-br-sm border px-3 py-2 text-sm',
+          'group relative max-w-[85%] rounded-lg rounded-br-sm border px-3 py-2 text-sm',
           withdrawn
             ? 'border-dashed border-border/60 bg-muted/20 text-muted-foreground line-through'
             : 'border-primary/30 bg-primary/10 text-foreground',
           queued && 'border-dashed opacity-80',
         )}
       >
+        {onFile &&
+          !withdrawn &&
+          item.state !== 'replayed' &&
+          item.text.trim().length > 0 && <MessageRecordMenu item={item} onFile={onFile} />}
         {item.text.trim().length > 0 && (
           <div className="whitespace-pre-wrap break-words">{item.text}</div>
         )}
@@ -208,11 +239,22 @@ export function HandoffRow({ item }: { item: HandoffItem }) {
   );
 }
 
-export function AgentMessage({ item, author }: { item: AgentMessageItem; author: ItemAuthor }) {
+export function AgentMessage({
+  item,
+  author,
+  onFile,
+}: {
+  item: AgentMessageItem;
+  author: ItemAuthor;
+  onFile?: (item: UserMessageItem | AgentMessageItem, kind: ChatRecordKind) => void;
+}) {
   return (
     <div className="space-y-1" id={item.itemId}>
       <AuthorBadge author={author} />
-      <div className="rounded-lg rounded-tl-sm border border-border/60 bg-background px-3 py-2">
+      <div className="group relative rounded-lg rounded-tl-sm border border-border/60 bg-background px-3 py-2">
+        {onFile && item.sealed && item.text.trim().length > 0 && (
+          <MessageRecordMenu item={item} onFile={onFile} />
+        )}
         <MarkdownRenderer content={item.text} emptyState="…" className="text-sm" />
         {!item.sealed && (
           // A blinking caret is the only "still streaming" signal there is —
@@ -555,12 +597,17 @@ export function ChatItemView({ item, context }: { item: ChatItem; context: ItemV
   switch (item.type) {
     case 'user.message':
       return (
-        <UserMessageBubble item={item} author={context.authorOf(item)} onWithdraw={context.onWithdraw} />
+        <UserMessageBubble
+          item={item}
+          author={context.authorOf(item)}
+          onWithdraw={context.onWithdraw}
+          onFile={context.onFile}
+        />
       );
     case 'handoff':
       return <HandoffRow item={item} />;
     case 'agent.message':
-      return <AgentMessage item={item} author={context.authorOf(item)} />;
+      return <AgentMessage item={item} author={context.authorOf(item)} onFile={context.onFile} />;
     case 'agent.thought':
       // Thoughts live behind the turn's Activity disclosure, not in the chat
       // column — `isChatColumnItem` filters them out before this switch.

@@ -21,6 +21,8 @@ import type {
   ChatParticipantsFrame,
   ChatSessionFrame,
   ChatSessionSummary,
+  FileChatRecordInput,
+  FiledChatRecord,
   ItemPatch,
   Participants,
 } from './chat-types';
@@ -249,6 +251,17 @@ export function answerChatQuestion(
   return request<{ answered: boolean }>(
     `/api/assignments/${encodeURIComponent(assignmentId)}/chat/questions/${encodeURIComponent(requestId)}`,
     { method: 'POST', body: JSON.stringify(answer) },
+  );
+}
+
+export function fileChatRecord(
+  assignmentId: string,
+  itemId: string,
+  input: FileChatRecordInput,
+): Promise<{ record: FiledChatRecord }> {
+  return request<{ record: FiledChatRecord }>(
+    `/api/assignments/${encodeURIComponent(assignmentId)}/chat/items/${encodeURIComponent(itemId)}/file`,
+    { method: 'POST', body: JSON.stringify(input) },
   );
 }
 
