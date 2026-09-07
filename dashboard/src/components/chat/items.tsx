@@ -141,7 +141,7 @@ export function UserMessageBubble({
   const delivered = item.deliveredTo ?? [];
   const pending = targets.filter((id) => !delivered.includes(id));
   return (
-    <div className="flex flex-col items-end gap-1">
+    <div id={item.itemId} className="flex flex-col items-end gap-1">
       <AuthorBadge author={author} />
       <div
         className={cn(
@@ -415,7 +415,7 @@ export function PermissionCard({
   const answered = item.answer !== undefined || item.cancelled || item.timedOut;
   const options = orderPermissionOptions(item.options);
   return (
-    <div className="rounded-lg border border-amber-500/40 bg-amber-500/5 px-3 py-2">
+    <div id={item.itemId} className="rounded-lg border border-amber-500/40 bg-amber-500/5 px-3 py-2">
       <div className="text-sm text-foreground">
         The agent wants to run <span className="font-mono text-xs">{title}</span>
       </div>
@@ -476,7 +476,7 @@ export function QuestionCard({
   const answered = item.answer !== null || item.cancelled || item.timedOut;
   const options = item.options ?? [];
   return (
-    <div className="rounded-lg border border-sky-500/40 bg-sky-500/5 px-3 py-2">
+    <div id={item.itemId} className="rounded-lg border border-sky-500/40 bg-sky-500/5 px-3 py-2">
       <div className="text-sm text-foreground">{item.text}</div>
       {answered ? (
         <div className="mt-1.5 text-xs text-muted-foreground">

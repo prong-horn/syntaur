@@ -18,6 +18,8 @@ import { useToast, Toaster } from '../components/Toast';
 import { useInbox } from '../hooks/useInbox';
 import {
   assignmentHref,
+  chatItemHref,
+  chatRowLabel,
   commentsEndpoint,
   formatAge,
   groupInboxItems,
@@ -160,11 +162,12 @@ async function runMutation(
 }
 
 function InboxItemRow({ item, onMutated, onError, onSuccess }: RowProps) {
+  const titleHref = item.chat ? chatItemHref(item) : assignmentHref(item);
   return (
     <li className="flex flex-col gap-2 rounded-lg border border-border/70 bg-background/40 p-3">
       <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
         <Link
-          to={assignmentHref(item)}
+          to={titleHref}
           className="text-sm font-semibold text-foreground hover:underline"
         >
           {item.title}
@@ -178,7 +181,14 @@ function InboxItemRow({ item, onMutated, onError, onSuccess }: RowProps) {
       </div>
 
       {item.summary ? (
-        <p className="text-sm text-muted-foreground">{item.summary}</p>
+        <p className="text-sm text-muted-foreground">
+          {item.chat ? (
+            <span className="mr-2 inline-flex rounded bg-muted/60 px-1.5 py-0.5 text-xs font-medium text-foreground">
+              {chatRowLabel(item.chat)}
+            </span>
+          ) : null}
+          {item.summary}
+        </p>
       ) : null}
 
       <InboxItemActions
@@ -344,10 +354,17 @@ function QuestionActions({ item, onMutated, onError, onSuccess }: RowProps) {
   return (
     <div className="space-y-2">
       <div className="flex flex-wrap items-center gap-2">
-        <Link to={assignmentHref(item, 'comments')} className={ACTION_BTN}>
-          <ArrowRight className="h-3.5 w-3.5" />
-          Open to answer
-        </Link>
+        {item.chat ? (
+          <Link to={chatItemHref(item)} className={ACTION_BTN}>
+            <ArrowRight className="h-3.5 w-3.5" />
+            Open chat
+          </Link>
+        ) : (
+          <Link to={assignmentHref(item, 'comments')} className={ACTION_BTN}>
+            <ArrowRight className="h-3.5 w-3.5" />
+            Open to answer
+          </Link>
+        )}
         <button
           type="button"
           className={ACTION_BTN}
@@ -359,24 +376,26 @@ function QuestionActions({ item, onMutated, onError, onSuccess }: RowProps) {
           Resolve
         </button>
       </div>
-      <div className="flex flex-wrap items-center gap-2">
-        <input
-          type="text"
-          value={reply}
-          onChange={(e) => setReply(e.target.value)}
-          placeholder="Reply inline…"
-          className="min-w-[12rem] flex-1 rounded border border-border bg-background px-2 py-1 text-sm"
-        />
-        <button
-          type="button"
-          className={ACTION_BTN}
-          disabled={busy || !reply.trim()}
-          onClick={postReply}
-        >
-          <HelpCircle className="h-3.5 w-3.5" />
-          {busy ? 'Posting…' : 'Reply'}
-        </button>
-      </div>
+      {!item.chat ? (
+        <div className="flex flex-wrap items-center gap-2">
+          <input
+            type="text"
+            value={reply}
+            onChange={(e) => setReply(e.target.value)}
+            placeholder="Reply inline…"
+            className="min-w-[12rem] flex-1 rounded border border-border bg-background px-2 py-1 text-sm"
+          />
+          <button
+            type="button"
+            className={ACTION_BTN}
+            disabled={busy || !reply.trim()}
+            onClick={postReply}
+          >
+            <HelpCircle className="h-3.5 w-3.5" />
+            {busy ? 'Posting…' : 'Reply'}
+          </button>
+        </div>
+      ) : null}
     </div>
   );
 }

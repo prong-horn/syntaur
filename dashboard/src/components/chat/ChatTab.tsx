@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useLocation } from 'react-router-dom';
 import { Loader2, Square, Users } from 'lucide-react';
 import { useAssignmentChat } from '../../hooks/useAssignmentChat';
 import {
@@ -93,6 +94,7 @@ export function ChatTab({ assignmentId }: ChatTabProps) {
   );
   const [filingBusy, setFilingBusy] = useState(false);
   const { toast, showToast, dismissToast } = useToast();
+  const location = useLocation();
   const listRef = useRef<HTMLDivElement | null>(null);
   const pinnedAtBottom = useRef(true);
 
@@ -130,6 +132,17 @@ export function ChatTab({ assignmentId }: ChatTabProps) {
     if (!error) return;
     pinnedAtBottom.current = true;
   }, [error]);
+
+  useEffect(() => {
+    const hash = location.hash.replace(/^#/, '');
+    if (!hash || column.length === 0) return;
+    const root = listRef.current;
+    if (!root) return;
+    const target = root.querySelector(`#${CSS.escape(hash)}`);
+    if (!target) return;
+    pinnedAtBottom.current = false;
+    target.scrollIntoView({ block: 'center' });
+  }, [column, location.hash]);
 
   if (loading) {
     return (

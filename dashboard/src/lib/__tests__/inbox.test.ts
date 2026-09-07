@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
   assignmentHref,
+  chatItemHref,
+  chatRowLabel,
   commentsEndpoint,
   formatAge,
   groupInboxItems,
@@ -144,5 +146,32 @@ describe('assignmentHref', () => {
     const item = makeItem({ category: 'plan-approval', project: null, assignmentId: 'uuid-pa' });
     expect(assignmentHref(item)).toBe('/assignments/uuid-pa');
     expect(assignmentHref(item, 'plan')).toBe('/assignments/uuid-pa?tab=plan');
+  });
+});
+
+describe('chatItemHref', () => {
+  it('builds project and standalone chat item links', () => {
+    const item = makeItem({
+      category: 'question',
+      chat: { kind: 'reply', itemId: 'item-1', agentId: 'claude' },
+    });
+    expect(chatItemHref(item)).toBe('/projects/proj/assignments/my-task?tab=chat#item-1');
+    const standalone = makeItem({
+      category: 'question',
+      project: null,
+      assignmentId: 'uuid-q',
+      chat: { kind: 'ask', itemId: 'q-2', agentId: 'cursor' },
+    });
+    expect(chatItemHref(standalone)).toBe('/assignments/uuid-q?tab=chat#q-2');
+  });
+});
+
+describe('chatRowLabel', () => {
+  it('labels the three chat kinds', () => {
+    expect(chatRowLabel({ kind: 'reply', itemId: 'a', agentId: 'claude' })).toBe('@claude asked');
+    expect(chatRowLabel({ kind: 'permission', itemId: 'a', agentId: 'claude' })).toBe(
+      '@claude is waiting for permission',
+    );
+    expect(chatRowLabel({ kind: 'ask', itemId: 'a', agentId: 'cursor' })).toBe('@cursor is asking');
   });
 });

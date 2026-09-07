@@ -167,6 +167,18 @@ status row.
 | Plan checklist | The agent's todo list; pinned above the composer while its turn runs |
 | Permission card | The agent wants to do something that needs approval — answer inline, or click **Allow all this session** to stop the cards until that agent's session closes (after ten minutes idle, when the adapter exits, or when its harness changes); `permissions: auto` on the agent definition is the durable setting |
 | Question card | Cursor asked a multiple-choice question — pick an option inline |
+
+A permission or Cursor question card left unanswered for about 30 seconds files a `question` in the assignment's comments and a row in your **Needs me** inbox; the row clears when you answer the card (or it times out or is cancelled). The five-minute permission timeout still applies and files its own denial question if nobody answered in time.
+
+### When an agent is waiting on you
+
+Three moments surface in **Needs me**:
+
+1. **Reply questions.** After a human-triggered turn ends normally, if the agent's last paragraph ends with `?` or asks for a decision (for example "Say if you want a commit or a review"), Syntaur files a `question` comment with a hidden marker linking to the reply in the Chat tab. Hand-off replies and replies that `@mention` another attached agent do not file. Sending any message to that agent resolves the row.
+2. **Permission cards.** A card still pending after ~30 seconds files `Waiting for your permission to run **…**` with a marker on the permission item. Answering the card (including **Allow all this session** or `permissions: auto`) resolves it; a five-minute timeout resolves the grace row first, then files the existing denial question.
+3. **Cursor questions.** A parked `ask_question` card uses the same grace; the row shows the prompt and links to the card.
+
+The Comments tab shows the question text only (the marker is hidden). Inbox rows for chat items say `@agent asked`, `@agent is waiting for permission`, or `@agent is asking`, link straight to the item in the Chat tab, and offer **Open chat** instead of an inline reply box. You can still **Resolve** by hand on the Inbox or Comments tab.
 | Thin status row | "Planner · 3m 02s · 41.2k tokens · $0.19 · end_turn", with an **Activity** disclosure holding that turn's thinking and full tool detail |
 | Thin grey row | Session lifecycle, mode/config changes, adapter notices, **Filed …** (a message filed as a decision, progress entry or comment), **Auto-approved: `<command>`** (the agent's `permissions: auto`, or **Allow all this session**) |
 

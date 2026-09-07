@@ -11,6 +11,15 @@
 /** The four v1 "needs me" categories (mirrors `InboxCategory` server-side). */
 export type InboxCategory = 'review' | 'blocked' | 'question' | 'plan-approval';
 
+export type InboxChatKind = 'reply' | 'permission' | 'ask';
+
+export interface InboxChatRef {
+  kind: InboxChatKind;
+  itemId: string;
+  turnId?: string;
+  agentId: string;
+}
+
 /** All categories in canonical render order (stable, server-aligned). */
 export const INBOX_CATEGORY_ORDER: readonly InboxCategory[] = [
   'review',
@@ -53,6 +62,8 @@ export interface InboxItem {
   reopenCommand?: string | null;
   /** Question-only: the unresolved comment's id (reply `replyTo` + resolve). */
   commentId?: string;
+  /** Question-only: chat-sourced row linking to a chat item. */
+  chat?: InboxChatRef;
 }
 
 export interface InboxResult {
@@ -201,11 +212,29 @@ export function resolveCommentEndpoint(
  */
 export function assignmentHref(
   item: RouteIdentity,
-  tab?: 'plan' | 'comments',
+  tab?: 'plan' | 'comments' | 'chat',
 ): string {
   const query = tab ? `?tab=${tab}` : '';
   if (item.project === null) {
     return `/assignments/${encodeURIComponent(item.assignmentId)}${query}`;
   }
   return `/projects/${encodeURIComponent(item.project)}/assignments/${encodeURIComponent(item.assignmentSlug)}${query}`;
+}
+
+/** SPA href to a chat item anchor for a chat-sourced inbox row. */
+export function chatItemHref(item: InboxItem): string {
+  if (!item.chat) return assignmentHref(item, 'chat');
+  return `${assignmentHref(item, 'chat')}#${encodeURIComponent(item.chat.itemId)}`;
+}
+
+export function chatRowLabel(chat: InboxChatRef): string {
+  const agent = `@${chat.agentId}`;
+  switch (chat.kind) {
+    case 'reply':
+      return `${agent} asked`;
+    case 'permission':
+      return `${agent} is waiting for permission`;
+    case 'ask':
+      return `${agent} is asking`;
+  }
 }
