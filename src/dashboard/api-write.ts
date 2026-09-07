@@ -73,6 +73,7 @@ import {
 } from '../templates/index.js';
 import { parseComments } from './parser.js';
 import { appendLogEntry, setTopLevelField } from '../lifecycle/log-append.js';
+import { setCommentResolved } from '../lifecycle/comment-resolve.js';
 
 export { setTopLevelField } from '../lifecycle/log-append.js';
 
@@ -1584,69 +1585,15 @@ export function createWriteRouter(
       const projectSlug = getParam(req.params.slug);
       const assignmentSlug = getParam(req.params.aslug);
       const commentId = getParam(req.params.commentId);
-      const commentsPath = resolve(
+      const assignmentDir = resolve(
         projectsDir,
         projectSlug,
         'assignments',
         assignmentSlug,
-        'comments.md',
       );
-      if (!(await fileExists(commentsPath))) {
-        res.status(404).json({ error: 'Comments file not found' });
-        return;
-      }
-      const { resolved } = req.body || {};
-      if (typeof resolved !== 'boolean') {
-        res.status(400).json({ error: 'resolved (boolean) is required' });
-        return;
-      }
-
-      const content = await readFile(commentsPath, 'utf-8');
-      const parsed = parseComments(content);
-      const target = parsed.entries.find((e) => e.id === commentId);
-      if (!target) {
-        res.status(404).json({ error: `Comment ${commentId} not found` });
-        return;
-      }
-      if (target.type !== 'question') {
-        res.status(400).json({ error: 'Only questions can be resolved' });
-        return;
-      }
-
-      // Toggle the `**Resolved:**` line in the entry's block.
-      const entryBlockRegex = new RegExp(
-        `(^## ${commentId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}[\\s\\S]*?)(\\*\\*Resolved:\\*\\*\\s*(?:true|false))`,
-        'm',
-      );
-      const next = content.replace(
-        entryBlockRegex,
-        (_m, preamble) => `${preamble}**Resolved:** ${resolved ? 'true' : 'false'}`,
-      );
-      if (next === content) {
-        res.status(500).json({ error: 'Failed to update resolved flag' });
-        return;
-      }
-
-      const withUpdated = setTopLevelField(next, 'updated', nowTimestamp());
-      await writeFileForce(commentsPath, withUpdated);
-
-      // Audit event (best-effort): only on the actual unresolved→resolved
-      // transition (FIX 6) — an idempotent PATCH on an already-resolved comment
-      // must not emit a duplicate.
-      if (target.resolved !== true && resolved === true) {
-        try {
-          const assignmentMdPath = resolve(projectsDir, projectSlug, 'assignments', assignmentSlug, 'assignment.md');
-          if (await fileExists(assignmentMdPath)) {
-            const fm = parseAssignmentFull(await readFile(assignmentMdPath, 'utf-8'));
-            emitDashboardEvent(fm.id, projectSlug, 'comment-resolved', { commentId });
-          }
-        } catch {
-          /* best-effort */
-        }
-      }
-
-      const assignment = await getAssignmentDetail(projectsDir, projectSlug, assignmentSlug);
-      res.json({ assignment });
+      await toggleCommentResolvedAt(assignmentDir, commentId, req, res, async () => {
+        return getAssignmentDetail(projectsDir, projectSlug, assignmentSlug);
+      });
     } catch (error) {
       console.error('Error toggling comment resolved flag:', error);
       res.status(500).json({ error: `Failed to toggle resolved: ${(error as Error).message}` });
@@ -3663,32 +3610,27 @@ async function toggleCommentResolvedAt(
     res.status(400).json({ error: 'resolved (boolean) is required' });
     return;
   }
-  const content = await readFile(commentsPath, 'utf-8');
-  const parsed = parseComments(content);
-  const target = parsed.entries.find((e) => e.id === commentId);
-  if (!target) {
-    res.status(404).json({ error: `Comment ${commentId} not found` });
-    return;
-  }
-  if (target.type !== 'question') {
+
+  const { changed, previous } = await setCommentResolved(assignmentDir, commentId, desired);
+  if (previous === null) {
+    const content = await readFile(commentsPath, 'utf-8');
+    const parsed = parseComments(content);
+    const target = parsed.entries.find((e) => e.id === commentId);
+    if (!target) {
+      res.status(404).json({ error: `Comment ${commentId} not found` });
+      return;
+    }
     res.status(400).json({ error: 'Only questions can be resolved' });
     return;
   }
-  const entryBlockRegex = new RegExp(
-    `(^## ${commentId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}[\\s\\S]*?)(\\*\\*Resolved:\\*\\*\\s*(?:true|false))`,
-    'm',
-  );
-  const next = content.replace(entryBlockRegex, (_m, preamble) => `${preamble}**Resolved:** ${desired ? 'true' : 'false'}`);
-  if (next === content) {
+  if (!changed && previous !== desired) {
     res.status(500).json({ error: 'Failed to update resolved flag' });
     return;
   }
-  const withUpdated = setTopLevelField(next, 'updated', nowTimestamp());
-  await writeFileForce(commentsPath, withUpdated);
 
   // Audit event (best-effort): only on the actual unresolved→resolved
   // transition (FIX 6) — an idempotent PATCH must not emit a duplicate.
-  if (target.resolved !== true && desired === true) {
+  if (changed && previous === false && desired === true) {
     try {
       const assignmentMdPath = resolve(assignmentDir, 'assignment.md');
       if (await fileExists(assignmentMdPath)) {

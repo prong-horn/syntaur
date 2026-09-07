@@ -82,5 +82,6 @@
     "src/__tests__/chat-attachments.test.ts",
     "src/__tests__/record-append.test.ts",
     "src/__tests__/chat-records.test.ts",
+    "src/__tests__/comment-resolve.test.ts",
   ]
 }
