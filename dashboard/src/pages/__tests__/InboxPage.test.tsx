@@ -16,19 +16,6 @@ const base: InboxItem = {
   action: { verb: 'Answer', command: 'syntaur comment task "<answer>" --reply-to c1 --project demo' },
 };
 
-function renderWithItems(items: InboxItem[]): string {
-  vi.doMock('../../hooks/useInbox', () => ({
-    useInbox: () => ({ items, total: items.length, loading: false, error: null, refetch: () => {} }),
-  }));
-  return import('../InboxPage').then(({ InboxPage }) =>
-    renderToStaticMarkup(
-      <MemoryRouter>
-        <InboxPage />
-      </MemoryRouter>,
-    ),
-  ) as unknown as string;
-}
-
 describe('InboxPage chat rows', () => {
   it('renders a chat row with badge, chat link and no reply textarea', async () => {
     vi.resetModules();
