@@ -77,6 +77,7 @@ export function createInboxRouter(
         types,
         limit,
         statusConfig,
+        dashboardUrl: `${req.protocol}://${req.get('host')}`,
       });
 
       res.json(result);

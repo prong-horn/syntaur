@@ -9,6 +9,18 @@
  * are the single source of truth other tasks import.
  */
 
+import type { ChatQuestionKind } from '../chat/types.js';
+
+/**
+ * Parsed chat marker on a question comment.
+ */
+export interface InboxChatRef {
+  kind: ChatQuestionKind;
+  itemId: string;
+  turnId?: string;
+  agentId: string;
+}
+
 /**
  * The four v1 "needs me" categories. A closed union — predicates and ordering
  * live in the pure aggregation module so they unit-test without a server.
@@ -73,6 +85,8 @@ export interface InboxItem {
   reopenCommand?: string | null;
   /** Question-only: the unresolved comment's id (for reply `replyTo` + resolve). */
   commentId?: string;
+  /** Question-only: chat-sourced row linking to a chat item. */
+  chat?: InboxChatRef;
 }
 
 /**

@@ -485,3 +485,79 @@ describe('computeInbox — board parity', () => {
     expect(r.counts.question).toBe(2);
   });
 });
+
+describe('computeInbox — chat questions', () => {
+  it('parses a reply marker into chat, summary and Open chat URL', async () => {
+    await seed({
+      id: 'a-chat',
+      slug: 'chat-q',
+      status: 'in_progress',
+      project: 'demo',
+      comments: [
+        {
+          id: 'cq1',
+          timestamp: '2026-06-15T00:00:00Z',
+          author: 'claude',
+          type: 'question',
+          body: 'Which name?\n\n<!-- syntaur-chat kind="reply" item="item-9" turn="turn-1" -->',
+          resolved: false,
+        },
+      ],
+    });
+    const r = await run({ dashboardUrl: 'http://localhost:4888' });
+    const q = r.items.find((i) => i.category === 'question')!;
+    expect(q.chat).toEqual({ kind: 'reply', itemId: 'item-9', turnId: 'turn-1', agentId: 'claude' });
+    expect(q.summary).toBe('Which name?');
+    expect(q.action).toEqual({
+      verb: 'Open chat',
+      command: 'http://localhost:4888/projects/demo/assignments/chat-q?tab=chat#item-9',
+    });
+  });
+
+  it('leaves plain questions on the Answer command', async () => {
+    await seed({
+      id: 'a-plain',
+      slug: 'plain-q',
+      status: 'in_progress',
+      project: 'demo',
+      comments: [
+        {
+          id: 'pq1',
+          timestamp: '2026-06-15T00:00:00Z',
+          author: 'human',
+          type: 'question',
+          body: 'Still blocked?',
+          resolved: false,
+        },
+      ],
+    });
+    const r = await run();
+    const q = r.items.find((i) => i.category === 'question')!;
+    expect(q.chat).toBeUndefined();
+    expect(q.action.verb).toBe('Answer');
+  });
+
+  it('builds standalone chat URLs from assignment id', async () => {
+    await seed({
+      id: 'uuid-standalone',
+      slug: 'uuid-standalone',
+      status: 'in_progress',
+      project: null,
+      comments: [
+        {
+          id: 'sq1',
+          timestamp: '2026-06-15T00:00:00Z',
+          author: 'claude',
+          type: 'question',
+          body: 'Ready?\n\n<!-- syntaur-chat kind="permission" item="perm-1" -->',
+          resolved: false,
+        },
+      ],
+    });
+    const r = await run({ dashboardUrl: 'http://test.local:4800' });
+    const q = r.items.find((i) => i.category === 'question')!;
+    expect(q.action.command).toBe(
+      'http://test.local:4800/assignments/uuid-standalone?tab=chat#perm-1',
+    );
+  });
+});

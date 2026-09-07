@@ -1,6 +1,8 @@
 import { Command } from 'commander';
+import { readFile } from 'node:fs/promises';
+import { resolve } from 'node:path';
 import { readConfig, DEFAULT_DERIVE_CONFIG } from '../utils/config.js';
-import { assignmentsDir as getAssignmentsDir } from '../utils/paths.js';
+import { assignmentsDir as getAssignmentsDir, syntaurRoot } from '../utils/paths.js';
 import { getStatusConfig } from '../dashboard/api.js';
 import {
   computeInbox,
@@ -59,6 +61,8 @@ export async function runInbox(options: InboxOptions): Promise<InboxResult> {
   const blockedParkedStatuses = new Set([headline.blocked, headline.parked].filter(Boolean));
   const statusConfig: InboxStatusConfig = { ...resolved, blockedParkedStatuses };
 
+  const dashboardUrl = await resolveDashboardUrl();
+
   return computeInbox({
     projectsDir,
     assignmentsDir,
@@ -66,7 +70,17 @@ export async function runInbox(options: InboxOptions): Promise<InboxResult> {
     types,
     limit,
     statusConfig,
+    dashboardUrl,
   });
+}
+
+async function resolveDashboardUrl(): Promise<string> {
+  try {
+    const port = (await readFile(resolve(syntaurRoot(), 'dashboard-port'), 'utf-8')).trim();
+    return `http://localhost:${port || '4800'}`;
+  } catch {
+    return 'http://localhost:4800';
+  }
 }
 
 function parseLimit(raw: string | undefined): number | undefined {

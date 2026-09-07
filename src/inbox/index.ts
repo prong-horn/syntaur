@@ -26,12 +26,14 @@ import {
 } from '../dashboard/parser.js';
 import { latestPlanFile, isPlanApproved } from '../lifecycle/facts.js';
 import { getTargetStatus } from '../lifecycle/state-machine.js';
-import type { InboxAction, InboxCategory, InboxItem, InboxResult } from './types.js';
+import type { InboxAction, InboxCategory, InboxChatRef, InboxItem, InboxResult } from './types.js';
 import { INBOX_CATEGORIES } from './types.js';
+import { parseChatQuestionMarker } from '../chat/questions.js';
 
 export type {
   InboxAction,
   InboxCategory,
+  InboxChatRef,
   InboxItem,
   InboxResult,
 } from './types.js';
@@ -78,6 +80,8 @@ export interface ComputeInboxOptions {
   statusConfig: InboxStatusConfig;
   /** Injectable clock for `ageMs` (defaults to `Date.now()`). */
   now?: number;
+  /** Dashboard origin without trailing slash (for chat row links). */
+  dashboardUrl?: string;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -336,7 +340,13 @@ function targetAndProject(item: {
 export function buildAction(
   category: InboxCategory,
   item: { project: string | null; assignmentSlug: string; assignmentId: string },
-  ctx: { acceptCommand?: string | null; reopenCommand?: string | null; commentId?: string },
+  ctx: {
+    acceptCommand?: string | null;
+    reopenCommand?: string | null;
+    commentId?: string;
+    chat?: InboxChatRef;
+    dashboardUrl?: string;
+  },
 ): InboxAction {
   const { target, projectFlag } = targetAndProject(item);
   switch (category) {
@@ -365,6 +375,13 @@ export function buildAction(
         command: `syntaur unblock ${target}${projectFlag}`,
       };
     case 'question':
+      if (ctx.chat && ctx.dashboardUrl) {
+        const path = chatItemPath({ ...item, chat: ctx.chat });
+        return {
+          verb: 'Open chat',
+          command: `${ctx.dashboardUrl}${path}`,
+        };
+      }
       return {
         verb: 'Answer',
         command: `syntaur comment ${target} "<answer>" --reply-to ${ctx.commentId ?? ''}${projectFlag}`,
@@ -391,13 +408,29 @@ export function orderByUrgency(items: InboxItem[]): InboxItem[] {
 // ─────────────────────────────────────────────────────────────────────────────
 
 function summarizeQuestion(c: ParsedComment): string {
-  const body = c.body.replace(/\s+/g, ' ').trim();
+  const { ref, text } = parseChatQuestionMarker(c.body);
+  const body = (ref ? text : c.body).replace(/\s+/g, ' ').trim();
   const clipped = body.length > 140 ? `${body.slice(0, 137)}...` : body;
   return clipped.length > 0 ? clipped : '(empty question)';
 }
 
+/** Dashboard path to a chat item anchor for an inbox row. */
+export function chatItemPath(item: {
+  project: string | null;
+  assignmentSlug: string;
+  assignmentId: string;
+  chat: InboxChatRef;
+}): string {
+  const assignmentPath =
+    item.project === null
+      ? `/assignments/${item.assignmentId}`
+      : `/projects/${item.project}/assignments/${item.assignmentSlug}`;
+  return `${assignmentPath}?tab=chat#${item.chat.itemId}`;
+}
+
 export async function computeInbox(opts: ComputeInboxOptions): Promise<InboxResult> {
   const now = opts.now ?? Date.now();
+  const dashboardUrl = opts.dashboardUrl ?? 'http://localhost:4800';
   const typeFilter = opts.types && opts.types.length > 0 ? new Set(opts.types) : null;
   const reviewVerbs = deriveReviewVerbs(opts.statusConfig);
 
@@ -488,6 +521,8 @@ export async function computeInbox(opts: ComputeInboxOptions): Promise<InboxResu
           const content = await readFile(commentsPath, 'utf-8');
           const parsedComments = parseComments(content);
           for (const c of unresolvedQuestions(parsedComments.entries)) {
+            const { ref } = parseChatQuestionMarker(c.body);
+            const chat = ref ? { ...ref, agentId: c.author } : undefined;
             const since = resolveSince('question', parsed, now, c);
             matched.push({
               ...baseItem,
@@ -497,8 +532,11 @@ export async function computeInbox(opts: ComputeInboxOptions): Promise<InboxResu
               ageMs: computeAgeMs(since, now),
               summary: summarizeQuestion(c),
               commentId: c.id,
+              chat,
               action: buildAction('question', baseItem, {
                 commentId: c.id,
+                chat,
+                dashboardUrl,
               }),
             });
           }
