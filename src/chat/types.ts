@@ -149,6 +149,16 @@ export type TurnTrigger =
   | { kind: 'human'; messageId: string }
   | { kind: 'handoff'; handoffId: string; fromAgentId: string; hop: number };
 
+/** Kind of chat-sourced Inbox question (hidden marker in comment body). */
+export type ChatQuestionKind = 'reply' | 'permission' | 'ask';
+
+/** Parsed marker payload linking a question comment to a chat item. */
+export interface ChatQuestionRef {
+  kind: ChatQuestionKind;
+  itemId: string;
+  turnId?: string;
+}
+
 /** `turn.start` payload. Phase-2 lines carry a flat `messageId` instead. */
 export interface TurnStartPayload {
   trigger: TurnTrigger;
