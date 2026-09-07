@@ -16,6 +16,7 @@ import {
   planUpdate,
   textChunk,
   toolCall,
+  toolCallUpdate,
   usageUpdate,
   type FakeAgent,
   type FakeTurn,
@@ -30,6 +31,8 @@ import { agentsDir } from '../chat/agents.js';
 import { readEvents } from '../chat/store.js';
 import type { ChatEvent, ChatItem } from '../chat/types.js';
 import type { ResolvedAssignment } from '../utils/assignment-resolver.js';
+import { renderProgress } from '../templates/index.js';
+import { parseProgress } from '../dashboard/parser.js';
 
 /**
  * Task 6 — the broker, driven against the in-process fake ACP agent
@@ -149,7 +152,11 @@ beforeEach(async () => {
   await mkdir(assignmentDir, { recursive: true });
   await mkdir(worktree, { recursive: true });
   await writeAssignment();
-  await writeFile(join(assignmentDir, 'progress.md'), '# Progress\n\nnothing yet\n', 'utf-8');
+  await writeFile(
+    join(assignmentDir, 'progress.md'),
+    renderProgress({ assignment: 'chat-demo', timestamp: '2026-09-06T12:00:00Z' }),
+    'utf-8',
+  );
   clients = [];
   spawns = [];
   frames = [];
@@ -2197,4 +2204,157 @@ describe('cursor harness reattach and extensions', () => {
     );
     expect(notices).toHaveLength(1);
   });
+});
+
+describe('turn progress entries', () => {
+  const progressPath = () => join(assignmentDir, 'progress.md');
+  const progressCount = async () => parseProgress(await readFile(progressPath(), 'utf-8')).entryCount;
+
+  it('appends one entry when a turn edits a file', async () => {
+    makeBroker({
+      turns: [
+        {
+          steps: [
+            {
+              kind: 'update',
+              update: toolCall('t1', {
+                kind: 'edit',
+                title: 'Edit a.ts',
+                locations: [{ path: join(worktree, 'src/a.ts') }],
+                status: 'completed',
+              }),
+            },
+            { kind: 'update', update: textChunk('Done.') },
+          ],
+        },
+      ],
+    });
+
+    await broker.send({ assignment: assignment(), text: 'edit something' });
+    await idle();
+
+    const content = await readFile(progressPath(), 'utf-8');
+    const parsed = parseProgress(content);
+    expect(parsed.entryCount).toBe(1);
+    expect(content).toContain('**@claude**');
+    expect(content).toContain('src/a.ts');
+    expect(content).toContain('> Done.');
+  });
+
+  it('leaves entryCount unchanged for a talk-only turn', async () => {
+    makeBroker({
+      turns: [{ steps: [{ kind: 'update', update: textChunk('Just chatting.') }] }],
+    });
+    const before = await progressCount();
+    await broker.send({ assignment: assignment(), text: 'hello' });
+    await idle();
+    expect(await progressCount()).toBe(before);
+  });
+
+  it('leaves entryCount unchanged when a turn is cancelled', async () => {
+    makeBroker({ turns: [{ steps: [{ kind: 'awaitCancel' }] }] });
+    const before = await progressCount();
+    await broker.send({ assignment: assignment(), text: 'go' });
+    await waitUntil(() => fake.prompts.length === 1, 'the prompt');
+    await broker.cancel(assignment());
+    await idle();
+    expect(await progressCount()).toBe(before);
+  });
+
+  it('writes separate entries when two agents finish work turns back-to-back', async () => {
+    const agents: FakeAgent[] = [];
+    broker = createChatBroker({
+      projectsDir: join(sandbox, 'projects'),
+      assignmentsDir: join(sandbox, 'assignments'),
+      syntaurHome: sandbox,
+      broadcast: (message) => frames.push({ type: message.type, payload: message.payload }),
+      clientFactory: (input) => {
+        const own = createFakeAgent({
+          turns: [
+            {
+              steps: [
+                {
+                  kind: 'update',
+                  update: toolCall('t1', {
+                    kind: 'edit',
+                    title: 'Edit',
+                    locations: [{ path: join(worktree, 'a.ts') }],
+                    status: 'completed',
+                  }),
+                },
+                { kind: 'update', update: textChunk('ok') },
+              ],
+            },
+          ],
+          sessionIds: [`acp-${agents.length + 1}`],
+        });
+        agents.push(own);
+        const client = connectAcpClient(own.app, {
+          onUpdate: input.onUpdate,
+          onPermissionRequest: input.onPermissionRequest,
+        });
+        clients.push(client);
+        return client;
+      },
+      timeouts: { flushMs: 1, sessionIdleMs: 60_000 },
+    });
+
+    await broker.send({ assignment: assignment(), text: 'claude work', agentId: 'claude' });
+    await broker.send({ assignment: assignment(), text: 'codex work', agentId: 'codex' });
+    await idle(2);
+
+    const content = await readFile(progressPath(), 'utf-8');
+    const parsed = parseProgress(content);
+    expect(parsed.entryCount).toBe(2);
+    expect(content).toContain('**@claude**');
+    expect(content).toContain('**@codex**');
+    const headings = content.match(/^## /gm) ?? [];
+    expect(headings.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it.skipIf(process.platform === 'win32')(
+    'records a warn row when progress.md is unwritable',
+    async () => {
+      makeBroker({
+        turns: [
+          { steps: [{ kind: 'update', update: textChunk('warmup') }] },
+          {
+            steps: [
+              {
+                kind: 'update',
+                update: toolCall('t1', {
+                  kind: 'edit',
+                  title: 'Edit',
+                  locations: [{ path: join(worktree, 'x.ts') }],
+                  status: 'completed',
+                }),
+              },
+              { kind: 'update', update: textChunk('Done.') },
+            ],
+          },
+        ],
+      });
+
+      await broker.send({ assignment: assignment(), text: 'warm up' });
+      await idle();
+
+      const { chmod } = await import('node:fs/promises');
+      try {
+        await chmod(progressPath(), 0o444);
+        await chmod(assignmentDir, 0o555);
+        await broker.send({ assignment: assignment(), text: 'edit' });
+        await idle(2);
+
+        const warns = itemsOfType('system').filter((s) =>
+          (s as { text: string }).text.includes('Could not write the progress entry'),
+        );
+        expect(warns.length).toBeGreaterThanOrEqual(1);
+        const status = itemsOfType('turn.status').at(-1) as { stopReason?: string } | undefined;
+        expect(status?.stopReason).toBe('end_turn');
+      } finally {
+        await chmod(assignmentDir, 0o755);
+        await chmod(progressPath(), 0o644);
+      }
+    },
+  );
 });

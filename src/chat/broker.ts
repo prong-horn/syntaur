@@ -47,6 +47,8 @@ import { extractFrontmatter, getNestedField } from '../dashboard/parser.js';
 import { resolveChatCwd, type CwdTier } from './chat-cwd.js';
 import { syntaurRoot } from '../utils/paths.js';
 import { appendComment } from '../lifecycle/comment-append.js';
+import { appendProgressLog } from '../lifecycle/progress-append.js';
+import { buildTurnProgressEntry } from './records.js';
 import { appendSession, updateSessionStatus } from '../dashboard/agent-sessions.js';
 import {
   closeEngagementById,
@@ -451,6 +453,8 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
   const logs = new Map<string, Promise<ChatLog>>();
   /** One assignment scope per assignment directory (Decision 3). */
   const assignmentScopes = new Map<string, Promise<AssignmentScope>>();
+  /** Serialize record writes per assignment directory (Decision 3). */
+  const recordChains = new Map<string, Promise<void>>();
   const clientFactory: ClientFactory = options.clientFactory ?? defaultClientFactory;
   let stopping = false;
   const refreshing = new Map<Harness, Promise<ChatHarnessSummary>>();
@@ -465,6 +469,48 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
   const loadDefinitions = options.loadDefinitions ?? loadAgentDefinitions;
   const syntaurHome = () => options.syntaurHome ?? syntaurRoot();
   const loadDefs = (): Promise<LoadAgentDefinitionsResult> => loadDefinitions(syntaurHome());
+
+  function withRecordLock<T>(assignmentDir: string, fn: () => Promise<T>): Promise<T> {
+    const prev = recordChains.get(assignmentDir) ?? Promise.resolve();
+    const next = prev
+      .catch(() => {})
+      .then(fn);
+    recordChains.set(assignmentDir, next.then(() => {}, () => {}));
+    return next;
+  }
+
+  async function writeTurnProgress(
+    session: Session,
+    turn: InFlightTurn,
+    durationMs: number,
+  ): Promise<void> {
+    try {
+      const items = listChatItemsByTurn(session.assignment.id, turn.turnId);
+      const text = buildTurnProgressEntry({
+        agentId: session.agentId,
+        durationMs,
+        items,
+        cwd: session.cwd,
+        turnId: turn.turnId,
+      });
+      if (!text) return;
+      await withRecordLock(session.assignment.assignmentDir, () =>
+        appendProgressLog({
+          assignmentDir: session.assignment.assignmentDir,
+          assignmentRef: session.assignment.assignmentSlug,
+          text,
+        }),
+      );
+    } catch (err) {
+      await record(
+        session,
+        'system',
+        { level: 'warn', text: `Could not write the progress entry: ${(err as Error).message}` },
+        turn.turnId,
+      );
+      flush(session);
+    }
+  }
 
   async function agentSummaries(): Promise<ChatAgentSummary[]> {
     const { definitions } = await loadDefs();
@@ -2866,13 +2912,14 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
     addUsage(session, usage, cost, turn.reportedCumulativeCost);
 
     const stopReason = failure ? 'error' : (response?.stopReason ?? 'end_turn');
+    const durationMs = Math.max(0, now() - turn.startedMs);
     await record(
       session,
       'turn.end',
       {
         stopReason,
         endedAt: iso(),
-        durationMs: Math.max(0, now() - turn.startedMs),
+        durationMs,
         usage,
         cost,
         ...(failure ? { error: failure.message } : {}),
@@ -2901,6 +2948,10 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
     await recordUsageEvent(session);
     persistSession(session);
     flush(session);
+
+    if (!failure && stopReason === 'end_turn') {
+      await writeTurnProgress(session, turn, durationMs);
+    }
 
     // A cancelled or failed turn never hops: there is no sealed reply to hand
     // on, and inventing one would restart a chain the human just stopped.
