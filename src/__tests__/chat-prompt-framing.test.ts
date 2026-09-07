@@ -119,6 +119,15 @@ describe('buildContextSection', () => {
   it('still works with no identity at all (phase-2 callers)', () => {
     expect(buildContextSection(context)).toContain('Project: syntaur-meta');
   });
+
+  it('tells agents Syntaur writes progress and the owner files decisions from chat', () => {
+    const section = buildContextSection({ ...context, agent: def('planner'), roster: [def('planner')] });
+    expect(section).toContain(
+      'Syntaur records each turn that edits files or runs commands in progress.md; do not log progress yourself.',
+    );
+    expect(section).toContain('The assignment owner files decisions and comments from the chat.');
+    expect(section).not.toContain('syntaur` CLI');
+  });
 });
 
 describe('selectChatHistory', () => {
