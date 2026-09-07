@@ -46,6 +46,8 @@ describe('FileRecordForm', () => {
     );
     expect(html).toContain('name="file-comment-type"');
     expect(html).toContain('value="note"');
+    expect(html).toContain('checked=""');
+    expect(html.match(/name="file-comment-type"/g)?.length).toBe(3);
     expect(html).not.toContain('Title');
   });
 });

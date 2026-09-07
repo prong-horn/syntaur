@@ -61,10 +61,14 @@ const assignment = (): ResolvedAssignment => ({
 });
 
 /** Poll rather than sleep, so the tests stay fast and deterministic. */
-async function waitUntil(predicate: () => boolean, what: string, timeoutMs = 5000): Promise<void> {
+async function waitUntil(
+  predicate: () => boolean | Promise<boolean>,
+  what: string,
+  timeoutMs = 5000,
+): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
-    if (predicate()) return;
+    if (await predicate()) return;
     await new Promise((r) => setTimeout(r, 5));
   }
   throw new Error(`timed out waiting for ${what}`);
@@ -2232,6 +2236,7 @@ describe('turn progress entries', () => {
 
     await broker.send({ assignment: assignment(), text: 'edit something' });
     await idle();
+    await waitUntil(async () => (await progressCount()) === 1, 'the progress entry');
 
     const content = await readFile(progressPath(), 'utf-8');
     const parsed = parseProgress(content);
@@ -2302,6 +2307,13 @@ describe('turn progress entries', () => {
     await broker.send({ assignment: assignment(), text: 'claude work', agentId: 'claude' });
     await broker.send({ assignment: assignment(), text: 'codex work', agentId: 'codex' });
     await idle(2);
+    await waitUntil(async () => {
+      const text = await readFile(progressPath(), 'utf-8');
+      const parsed = parseProgress(text);
+      return (
+        parsed.entryCount === 2 && text.includes('**@claude**') && text.includes('**@codex**')
+      );
+    }, 'two progress entries with both agents');
 
     const content = await readFile(progressPath(), 'utf-8');
     const parsed = parseProgress(content);
@@ -2344,6 +2356,13 @@ describe('turn progress entries', () => {
         await chmod(assignmentDir, 0o555);
         await broker.send({ assignment: assignment(), text: 'edit' });
         await idle(2);
+        await waitUntil(
+          () =>
+            itemsOfType('system').some((s) =>
+              (s as { text: string }).text.includes('Could not write the progress entry'),
+            ),
+          'the progress write warn row',
+        );
 
         const warns = itemsOfType('system').filter((s) =>
           (s as { text: string }).text.includes('Could not write the progress entry'),

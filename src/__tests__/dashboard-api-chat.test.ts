@@ -867,7 +867,7 @@ describe('POST /assignments/:id/chat/items/:itemId/file', () => {
     expect(commentsMd).toContain('**Type:** note');
   });
 
-  it('uses (you, …) provenance for the humans own message filed as a comment', async () => {
+  it('uses (you, …) provenance for the humans own message filed as progress', async () => {
     await boot();
     const send = await fetch(url(`/assignments/${ASSIGNMENT_ID}/chat/messages`), {
       method: 'POST',
@@ -886,10 +886,92 @@ describe('POST /assignments/:id/chat/items/:itemId/file', () => {
     const userItem = broker
       .items({ id: ASSIGNMENT_ID } as never, { limit: 50 })
       .find((i) => i.type === 'user.message' && (i as { messageId: string }).messageId === messageId)!;
-    const res = await fileItem(userItem.itemId, { kind: 'comment', body: 'mine' });
+    const res = await fileItem(userItem.itemId, { kind: 'progress', body: 'mine' });
     expect(res.status).toBe(201);
-    const commentsMd = await readFile(join(assignmentDir, 'comments.md'), 'utf-8');
-    expect(commentsMd).not.toContain('@claude');
+    const progressMd = await readFile(join(assignmentDir, 'progress.md'), 'utf-8');
+    expect(progressMd).toContain('_Filed from chat (you,');
+  });
+
+  it('rejects an oversized body with 413', async () => {
+    const itemId = await replyItemId();
+    const res = await fileItem(itemId, { kind: 'progress', body: 'x'.repeat(100_001) });
+    expect(res.status).toBe(413);
+  });
+
+  it('rejects filing a withdrawn user message with 400', async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    await boot([{ steps: [{ kind: 'gate', gate }] }, { steps: [] }]);
+
+    await fetch(url(`/assignments/${ASSIGNMENT_ID}/chat/messages`), {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ text: 'busy turn' }),
+    });
+    await waitUntil(() => fake.prompts.length === 1, 'the first prompt');
+
+    const queued = (await (
+      await fetch(url(`/assignments/${ASSIGNMENT_ID}/chat/messages`), {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ text: 'withdraw me' }),
+      })
+    ).json()) as { messageId: string };
+
+    const del = await fetch(url(`/assignments/${ASSIGNMENT_ID}/chat/messages/${queued.messageId}`), {
+      method: 'DELETE',
+    });
+    expect(del.status).toBe(200);
+
+    await waitUntil(
+      () =>
+        broker
+          .items({ id: ASSIGNMENT_ID } as never, { limit: 50 })
+          .some(
+            (i) =>
+              i.type === 'user.message' &&
+              (i as { messageId: string; state: string }).messageId === queued.messageId &&
+              (i as { state: string }).state === 'withdrawn',
+          ),
+      'the withdrawn user message item',
+    );
+    const withdrawnItem = broker
+      .items({ id: ASSIGNMENT_ID } as never, { limit: 50 })
+      .find(
+        (i) =>
+          i.type === 'user.message' &&
+          (i as { messageId: string }).messageId === queued.messageId,
+      )!;
+
+    const res = await fileItem(withdrawnItem.itemId, { kind: 'progress', body: 'too late' });
+    expect(res.status).toBe(400);
+    release();
+  });
+
+  it('rejects an invalid commentType with 400', async () => {
+    const itemId = await replyItemId();
+    const res = await fileItem(itemId, { kind: 'comment', body: 'note', commentType: 'rant' });
+    expect(res.status).toBe(400);
+  });
+
+  it('rejects a title longer than 200 characters with 400', async () => {
+    const itemId = await replyItemId();
+    const res = await fileItem(itemId, {
+      kind: 'decision',
+      title: 'x'.repeat(201),
+      body: 'body',
+    });
+    expect(res.status).toBe(400);
+  });
+
+  it('accepts a padded title that trims to 10 characters', async () => {
+    const itemId = await replyItemId();
+    const res = await fileItem(itemId, {
+      kind: 'decision',
+      title: `${'a'.repeat(10)}${' '.repeat(191)}`,
+      body: 'body',
+    });
+    expect(res.status).toBe(201);
   });
 
   it('rejects missing title, multiline title, empty body, bad kind and unknown items', async () => {
