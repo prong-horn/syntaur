@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import express from 'express';
 import { createServer, type Server } from 'node:http';
-import { mkdtemp, mkdir, rm, writeFile, readdir } from 'node:fs/promises';
+import { mkdtemp, mkdir, rm, writeFile, readdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import type { AddressInfo } from 'node:net';
@@ -13,6 +13,7 @@ import { createChatBroker, type ChatBroker } from '../chat/broker.js';
 import { connectAcpClient, type AcpClient } from '../chat/acp-client.js';
 import { createFakeAgent, textChunk, type FakeAgent, type FakeTurn } from '../chat/fake-agent.js';
 import type { WsMessage } from '../dashboard/types.js';
+import { parseDecisionRecord } from '../dashboard/parser.js';
 
 /**
  * Task 7 — the chat router (pattern of `dashboard-api-inbox.test.ts`: a real
@@ -795,5 +796,166 @@ describe('participants routes (Task 1, Decision 1)', () => {
     await boot();
     const res = await fetch(url('/assignments/00000000-0000-4000-8000-000000000999/chat/participants'));
     expect(res.status).toBe(404);
+  });
+});
+
+describe('POST /assignments/:id/chat/items/:itemId/file', () => {
+  async function replyItemId(): Promise<string> {
+    await boot();
+    await fetch(url(`/assignments/${ASSIGNMENT_ID}/chat/messages`), {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ text: 'hello' }),
+    });
+    await waitUntil(() => fake.prompts.length === 1, 'the prompt');
+    await waitUntil(
+      () =>
+        broker
+          .items({ id: ASSIGNMENT_ID } as never, { limit: 50 })
+          .some((i) => i.type === 'agent.message' && i.sealed),
+      'the sealed reply',
+    );
+    const reply = broker
+      .items({ id: ASSIGNMENT_ID } as never, { limit: 50 })
+      .find((i) => i.type === 'agent.message' && i.sealed)!;
+    return reply.itemId;
+  }
+
+  async function fileItem(itemId: string, body: Record<string, unknown>) {
+    return fetch(url(`/assignments/${ASSIGNMENT_ID}/chat/items/${encodeURIComponent(itemId)}/file`), {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+  }
+
+  it('files a sealed reply as a decision with a system row', async () => {
+    const itemId = await replyItemId();
+    const res = await fileItem(itemId, { kind: 'decision', title: 'Use X', body: 'ok reply text' });
+    expect(res.status).toBe(201);
+    const { record } = (await res.json()) as { record: { ref: string; label: string } };
+    expect(record.ref).toBe('Decision 1');
+    expect(record.label).toBe('Decision 1: Use X');
+
+    const decisionMd = await readFile(join(assignmentDir, 'decision-record.md'), 'utf-8');
+    expect(decisionMd).toContain('## Use X');
+    expect(decisionMd).toContain('**Recorded:**');
+    expect(decisionMd).toContain('_Filed from chat (@claude,');
+    expect(parseDecisionRecord(decisionMd).decisionCount).toBe(1);
+
+    const items = (await (await fetch(url(`/assignments/${ASSIGNMENT_ID}/chat/items`))).json()) as {
+      items: Array<{ type: string; text?: string }>;
+    };
+    const filed = items.items.find((i) => i.type === 'system' && i.text?.startsWith('Filed '));
+    expect(filed?.text).toContain('Decision 1: Use X');
+  });
+
+  it('files a progress entry and bumps entryCount', async () => {
+    const itemId = await replyItemId();
+    const res = await fileItem(itemId, { kind: 'progress', body: 'Filed manually.' });
+    expect(res.status).toBe(201);
+    const progressMd = await readFile(join(assignmentDir, 'progress.md'), 'utf-8');
+    expect(progressMd).toMatch(/entryCount: 1/);
+  });
+
+  it('files a comment with author human and default type note', async () => {
+    const itemId = await replyItemId();
+    const res = await fileItem(itemId, { kind: 'comment', body: 'A note.' });
+    expect(res.status).toBe(201);
+    const commentsMd = await readFile(join(assignmentDir, 'comments.md'), 'utf-8');
+    expect(commentsMd).toContain('**Author:** human');
+    expect(commentsMd).toContain('**Type:** note');
+  });
+
+  it('uses (you, …) provenance for the humans own message filed as a comment', async () => {
+    await boot();
+    const send = await fetch(url(`/assignments/${ASSIGNMENT_ID}/chat/messages`), {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ text: 'my thought' }),
+    });
+    const { messageId } = (await send.json()) as { messageId: string };
+    await waitUntil(() => fake.prompts.length === 1, 'the prompt');
+    await waitUntil(
+      () =>
+        broker
+          .items({ id: ASSIGNMENT_ID } as never, { limit: 50 })
+          .some((i) => i.type === 'user.message' && (i as { messageId: string }).messageId === messageId),
+      'the user message item',
+    );
+    const userItem = broker
+      .items({ id: ASSIGNMENT_ID } as never, { limit: 50 })
+      .find((i) => i.type === 'user.message' && (i as { messageId: string }).messageId === messageId)!;
+    const res = await fileItem(userItem.itemId, { kind: 'comment', body: 'mine' });
+    expect(res.status).toBe(201);
+    const commentsMd = await readFile(join(assignmentDir, 'comments.md'), 'utf-8');
+    expect(commentsMd).not.toContain('@claude');
+  });
+
+  it('rejects missing title, multiline title, empty body, bad kind and unknown items', async () => {
+    const itemId = await replyItemId();
+    expect((await fileItem(itemId, { kind: 'decision', body: 'x' })).status).toBe(400);
+    expect((await fileItem(itemId, { kind: 'decision', title: 'a\nb', body: 'x' })).status).toBe(400);
+    expect((await fileItem(itemId, { kind: 'progress', body: '   ' })).status).toBe(400);
+    expect((await fileItem(itemId, { kind: 'nope', body: 'x' })).status).toBe(400);
+    expect((await fileItem('missing-item', { kind: 'progress', body: 'x' })).status).toBe(404);
+
+    const status = broker
+      .items({ id: ASSIGNMENT_ID } as never, { limit: 50 })
+      .find((i) => i.type === 'turn.status')!;
+    expect((await fileItem(status.itemId, { kind: 'progress', body: 'x' })).status).toBe(400);
+  });
+
+  it('files a decision on a standalone assignment', async () => {
+    const standaloneId = '00000000-0000-4000-8000-0000000000ab';
+    const standaloneDir = join(assignmentsDir, standaloneId);
+    await mkdir(standaloneDir, { recursive: true });
+    await writeFile(
+      join(standaloneDir, 'assignment.md'),
+      [
+        '---',
+        `id: ${standaloneId}`,
+        'slug: standalone-demo',
+        'title: Standalone',
+        'project: null',
+        'workspace:',
+        `  repository: ${worktree}`,
+        `  worktreePath: ${worktree}`,
+        '---',
+        '# Standalone',
+      ].join('\n'),
+      'utf-8',
+    );
+
+    await boot([{ steps: [{ kind: 'update', update: textChunk('standalone ok', 'm1') }] }]);
+
+    await fetch(url(`/assignments/${standaloneId}/chat/messages`), {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ text: 'standalone first' }),
+    });
+    await waitUntil(() => fake.prompts.length === 1, 'standalone prompt');
+    await waitUntil(
+      () =>
+        broker
+          .items({ id: standaloneId } as never, { limit: 50 })
+          .some((i) => i.type === 'agent.message' && i.sealed),
+      'standalone reply',
+    );
+    const standaloneReply = broker
+      .items({ id: standaloneId } as never, { limit: 50 })
+      .find((i) => i.type === 'agent.message' && i.sealed)!;
+
+    const res = await fetch(
+      url(`/assignments/${standaloneId}/chat/items/${encodeURIComponent(standaloneReply.itemId)}/file`),
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ kind: 'decision', title: 'Standalone', body: 'yes' }),
+      },
+    );
+    expect(res.status).toBe(201);
+    const decisionMd = await readFile(join(standaloneDir, 'decision-record.md'), 'utf-8');
+    expect(decisionMd).toContain('## Standalone');
   });
 });

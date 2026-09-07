@@ -25,6 +25,7 @@ import {
   resolveChatAttachment,
 } from '../chat/attachments.js';
 import { messageTurnState } from '../chat/message-state.js';
+import { CHAT_RECORD_KINDS } from '../chat/types.js';
 import type { Participants } from '../chat/types.js';
 
 const MAX_MESSAGE_CHARS = 100_000;
@@ -363,6 +364,68 @@ export function createChatRouter(
       const assignment = await resolveOr404(req, res);
       if (!assignment) return;
       res.json(await broker.reindex(assignment));
+    } catch (err) {
+      fail(res, err);
+    }
+  });
+
+  router.post('/assignments/:id/chat/items/:itemId/file', async (req, res) => {
+    try {
+      const assignment = await resolveOr404(req, res);
+      if (!assignment) return;
+
+      const body = (req.body ?? {}) as {
+        kind?: string;
+        body?: string;
+        title?: string;
+        commentType?: string;
+      };
+
+      if (!body.kind || !(CHAT_RECORD_KINDS as readonly string[]).includes(body.kind)) {
+        res.status(400).json({ error: 'kind must be decision, progress or comment' });
+        return;
+      }
+
+      if (!body.body || typeof body.body !== 'string' || !body.body.trim()) {
+        res.status(400).json({ error: 'body is required' });
+        return;
+      }
+      if (body.body.length > MAX_MESSAGE_CHARS) {
+        res.status(413).json({ error: 'body exceeds the message size limit' });
+        return;
+      }
+
+      if (body.kind === 'decision') {
+        if (!body.title || typeof body.title !== 'string' || !body.title.trim()) {
+          res.status(400).json({ error: 'title is required for a decision' });
+          return;
+        }
+        if (/[\r\n]/.test(body.title)) {
+          res.status(400).json({ error: 'title must be a single line' });
+          return;
+        }
+        if (body.title.length > 200) {
+          res.status(400).json({ error: 'title must be at most 200 characters' });
+          return;
+        }
+      }
+
+      if (body.commentType !== undefined) {
+        if (!['note', 'feedback', 'question'].includes(body.commentType)) {
+          res.status(400).json({ error: 'commentType must be note, feedback or question' });
+          return;
+        }
+      }
+
+      const record = await broker.fileRecord(assignment, String(req.params.itemId), {
+        kind: body.kind as 'decision' | 'progress' | 'comment',
+        body: body.body,
+        ...(body.title ? { title: body.title } : {}),
+        ...(body.commentType
+          ? { commentType: body.commentType as 'note' | 'feedback' | 'question' }
+          : {}),
+      });
+      res.status(201).json({ record });
     } catch (err) {
       fail(res, err);
     }

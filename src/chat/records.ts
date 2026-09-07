@@ -1,5 +1,9 @@
 import { relative } from 'node:path';
-import type { ChatItem } from './types.js';
+import { appendComment } from '../lifecycle/comment-append.js';
+import { appendDecisionEntry } from '../lifecycle/log-append.js';
+import { appendProgressLog } from '../lifecycle/progress-append.js';
+import type { ChatItem, FileChatRecordInput, FiledChatRecord } from './types.js';
+import { HUMAN_AGENT_ID } from './types.js';
 
 const EDIT_KINDS = new Set(['edit', 'delete', 'move']);
 
@@ -120,4 +124,77 @@ export function buildTurnProgressEntry(input: {
   lines.push(`Chat turn \`${input.turnId}\`.`);
 
   return lines.join('\n');
+}
+
+export function provenanceLine(source: { agentId: string; ts: string }): string {
+  if (source.agentId === HUMAN_AGENT_ID) {
+    return `_Filed from chat (you, ${source.ts})._`;
+  }
+  return `_Filed from chat (@${source.agentId}, ${source.ts})._`;
+}
+
+/** Escape markdown heading lines so record parsers do not treat them as new sections. */
+export function escapeHeadings(text: string): string {
+  return text.replace(/^( {0,3})(#{1,6})(?=\s|$)/gm, (_match, indent: string, hashes: string) => {
+    return `${indent}\\${hashes}`;
+  });
+}
+
+function commentLabel(type: 'note' | 'feedback' | 'question'): string {
+  return `a ${type} comment`;
+}
+
+export async function fileChatRecord(input: {
+  assignmentDir: string;
+  assignmentRef: string;
+  record: FileChatRecordInput;
+  source: { agentId: string; ts: string };
+}): Promise<FiledChatRecord> {
+  const { record, source } = input;
+  const trimmed = record.body.trim();
+
+  if (record.kind === 'decision') {
+    const title = record.title?.trim() ?? '';
+    if (!title) throw new Error('Decision title is required');
+    const body = `${escapeHeadings(trimmed)}\n\n${provenanceLine(source)}`;
+    const { number } = await appendDecisionEntry({
+      assignmentDir: input.assignmentDir,
+      assignmentRef: input.assignmentRef,
+      title,
+      body,
+    });
+    return {
+      kind: 'decision',
+      ref: `Decision ${number}`,
+      label: `Decision ${number}: ${title}`,
+    };
+  }
+
+  if (record.kind === 'progress') {
+    const body = `${escapeHeadings(trimmed)}\n\n${provenanceLine(source)}`;
+    const { timestamp } = await appendProgressLog({
+      assignmentDir: input.assignmentDir,
+      assignmentRef: input.assignmentRef,
+      text: body,
+    });
+    return {
+      kind: 'progress',
+      ref: timestamp,
+      label: 'a progress entry',
+    };
+  }
+
+  const commentType = record.commentType ?? 'note';
+  const id = await appendComment({
+    assignmentDir: input.assignmentDir,
+    assignmentRef: input.assignmentRef,
+    author: HUMAN_AGENT_ID,
+    type: commentType,
+    body: trimmed,
+  });
+  return {
+    kind: 'comment',
+    ref: id,
+    label: commentLabel(commentType),
+  };
 }

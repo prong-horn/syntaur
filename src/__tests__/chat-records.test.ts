@@ -1,10 +1,30 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { mkdtemp, rm, readFile } from 'node:fs/promises';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
 import {
   buildTurnProgressEntry,
   clipExcerpt,
+  escapeHeadings,
+  fileChatRecord,
   formatDurationMs,
+  provenanceLine,
 } from '../chat/records.js';
+import { parseProgress } from '../dashboard/parser.js';
+import { parseComments } from '../dashboard/parser.js';
+import { parseDecisionRecord } from '../dashboard/parser.js';
+import { HUMAN_AGENT_ID } from '../chat/types.js';
 import type { AgentMessageItem, AgentWorkItem, ChatItem } from '../chat/types.js';
+
+let testDir: string;
+
+beforeEach(async () => {
+  testDir = await mkdtemp(join(tmpdir(), 'chat-records-test-'));
+});
+
+afterEach(async () => {
+  await rm(testDir, { recursive: true, force: true });
+});
 
 function baseItem(overrides: Partial<ChatItem> & { type: ChatItem['type'] }): ChatItem {
   return {
@@ -208,5 +228,81 @@ describe('buildTurnProgressEntry', () => {
       turnId,
     });
     expect(entry).toContain('> (no reply text)');
+  });
+});
+
+describe('provenanceLine', () => {
+  it('names the agent or the human filer', () => {
+    expect(provenanceLine({ agentId: 'claude', ts: '2026-09-07T13:25:06Z' })).toBe(
+      '_Filed from chat (@claude, 2026-09-07T13:25:06Z)._',
+    );
+    expect(provenanceLine({ agentId: HUMAN_AGENT_ID, ts: '2026-09-07T13:25:06Z' })).toBe(
+      '_Filed from chat (you, 2026-09-07T13:25:06Z)._',
+    );
+  });
+});
+
+describe('escapeHeadings', () => {
+  it('escapes markdown headings but leaves hashtags and fenced code alone', () => {
+    expect(escapeHeadings('## Sub\n# Top')).toBe('\\## Sub\n\\# Top');
+    expect(escapeHeadings('#hashtag')).toBe('#hashtag');
+    expect(escapeHeadings('```\n## not escaped in fence\n```')).toBe('```\n\\## not escaped in fence\n```');
+  });
+});
+
+describe('fileChatRecord', () => {
+  const source = { agentId: 'claude', ts: '2026-09-07T13:25:06Z' };
+
+  it('files decision, progress and comment records with provenance', async () => {
+    const decision = await fileChatRecord({
+      assignmentDir: testDir,
+      assignmentRef: 'demo',
+      record: { kind: 'decision', title: 'Use X', body: 'Because it is simpler.' },
+      source,
+    });
+    expect(decision).toEqual({ kind: 'decision', ref: 'Decision 1', label: 'Decision 1: Use X' });
+    const decisionMd = await readFile(join(testDir, 'decision-record.md'), 'utf-8');
+    expect(decisionMd).toContain('## Use X');
+    expect(decisionMd).toContain('**Recorded:**');
+    expect(decisionMd.trimEnd().endsWith(provenanceLine(source))).toBe(true);
+
+    const progress = await fileChatRecord({
+      assignmentDir: testDir,
+      assignmentRef: 'demo',
+      record: { kind: 'progress', body: 'Shipped the feature.' },
+      source,
+    });
+    expect(progress.kind).toBe('progress');
+    const progressMd = await readFile(join(testDir, 'progress.md'), 'utf-8');
+    expect(parseProgress(progressMd).entryCount).toBe(1);
+    expect(progressMd).toContain(provenanceLine(source));
+
+    const comment = await fileChatRecord({
+      assignmentDir: testDir,
+      assignmentRef: 'demo',
+      record: { kind: 'comment', body: 'Looks good.', commentType: 'question' },
+      source: { agentId: HUMAN_AGENT_ID, ts: '2026-09-07T13:30:00Z' },
+    });
+    expect(comment.kind).toBe('comment');
+    const commentsMd = await readFile(join(testDir, 'comments.md'), 'utf-8');
+    const parsed = parseComments(commentsMd);
+    expect(parsed.entries[0]?.author).toBe('human');
+    expect(parsed.entries[0]?.type).toBe('question');
+    expect(parsed.entries[0]?.resolved).toBe(false);
+    expect(commentsMd).not.toContain('Filed from chat');
+  });
+
+  it('escapes progress headings so parseProgress sees one entry', async () => {
+    await fileChatRecord({
+      assignmentDir: testDir,
+      assignmentRef: 'demo',
+      record: { kind: 'progress', body: '## Sub\nStill one entry.' },
+      source,
+    });
+    const progressMd = await readFile(join(testDir, 'progress.md'), 'utf-8');
+    const parsed = parseProgress(progressMd);
+    expect(parsed.entryCount).toBe(1);
+    expect(parsed.entries).toHaveLength(1);
+    expect(progressMd).toContain('\\## Sub');
   });
 });

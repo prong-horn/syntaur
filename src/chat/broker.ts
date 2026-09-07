@@ -48,7 +48,7 @@ import { resolveChatCwd, type CwdTier } from './chat-cwd.js';
 import { syntaurRoot } from '../utils/paths.js';
 import { appendComment } from '../lifecycle/comment-append.js';
 import { appendProgressLog } from '../lifecycle/progress-append.js';
-import { buildTurnProgressEntry } from './records.js';
+import { buildTurnProgressEntry, fileChatRecord } from './records.js';
 import { appendSession, updateSessionStatus } from '../dashboard/agent-sessions.js';
 import {
   closeEngagementById,
@@ -131,6 +131,8 @@ import type {
   ChatSessionState,
   ChatSessionSummary,
   ContentBlock,
+  FileChatRecordInput,
+  FiledChatRecord,
   Harness,
   HarnessSpec,
   ItemPatch,
@@ -271,6 +273,11 @@ export interface ChatBroker {
     next: Participants,
   ): Promise<{ participants: Participants; agents: ChatAgentSummary[] }>;
   items(assignment: ResolvedAssignment, opts: { beforeSeq?: number; limit?: number }): ChatItem[];
+  fileRecord(
+    assignment: ResolvedAssignment,
+    itemId: string,
+    record: FileChatRecordInput,
+  ): Promise<FiledChatRecord>;
   reindex(assignment: ResolvedAssignment): Promise<{ events: number; items: number }>;
   stopAll(): Promise<void>;
 }
@@ -3258,6 +3265,49 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
 
   // --- public surface ------------------------------------------------------
 
+  async function fileRecord(
+    assignment: ResolvedAssignment,
+    itemId: string,
+    record: FileChatRecordInput,
+  ): Promise<FiledChatRecord> {
+    const item = getChatItem(itemId);
+    if (!item || item.assignmentId !== assignment.id) {
+      throw new ChatSendError('No such message', 404);
+    }
+
+    const fileable =
+      (item.type === 'user.message' &&
+        (item as UserMessageItem).state !== 'withdrawn' &&
+        (item as UserMessageItem).state !== 'replayed') ||
+      (item.type === 'agent.message' && item.sealed);
+
+    if (!fileable) {
+      throw new ChatSendError('Only a sent message or a sealed reply can be filed', 400);
+    }
+
+    const filed = await withRecordLock(assignment.assignmentDir, () =>
+      fileChatRecord({
+        assignmentDir: assignment.assignmentDir,
+        assignmentRef: assignment.assignmentSlug,
+        record,
+        source: { agentId: item.agentId, ts: item.ts },
+      }),
+    );
+
+    const source =
+      item.agentId === HUMAN_AGENT_ID ? 'your message' : `@${item.agentId}'s reply`;
+    const text = `Filed ${source} as ${filed.label}`;
+    try {
+      await recordAssignment(assignment, 'system', { level: 'info', text }, {
+        agentId: SYSTEM_AGENT_ID,
+      });
+    } catch (err) {
+      console.error('syntaur chat: filed record but could not write system row:', err);
+    }
+
+    return filed;
+  }
+
   return {
     async send({ assignment, agentId, text, attachments }) {
       if (!text.trim() && !attachments?.length) throw new ChatSendError('Message is empty', 400);
@@ -3540,6 +3590,8 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
     },
 
     items: (assignment, opts) => listChatItems(assignment.id, opts),
+
+    fileRecord,
 
     async reindex(assignment) {
       // Imported here rather than at the top: the store imports the normalizer,

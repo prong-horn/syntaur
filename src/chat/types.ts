@@ -84,6 +84,22 @@ export interface ChatEvent {
 export const HUMAN_AGENT_ID = 'human';
 export const SYSTEM_AGENT_ID = 'system';
 
+export type ChatRecordKind = 'decision' | 'progress' | 'comment';
+export const CHAT_RECORD_KINDS: readonly ChatRecordKind[] = ['decision', 'progress', 'comment'];
+
+export interface FileChatRecordInput {
+  kind: ChatRecordKind;
+  body: string;
+  title?: string;
+  commentType?: 'note' | 'feedback' | 'question';
+}
+
+export interface FiledChatRecord {
+  kind: ChatRecordKind;
+  ref: string;
+  label: string;
+}
+
 /** Metadata for an image attached to a chat message (bytes are file size, not content). */
 export interface ChatAttachment {
   id: string;
