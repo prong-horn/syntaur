@@ -121,6 +121,32 @@ describe('InboxRow', () => {
     expect(html).toContain('Beta');
   });
 
+  it('settled ask row has no action buttons', () => {
+    const html = renderToStaticMarkup(
+      <MemoryRouter>
+        <InboxRow
+          item={makeItem({
+            category: 'question',
+            chat: { kind: 'ask', itemId: 'a1', agentId: 'cursor' },
+            card: {
+              requestId: 'req-ask',
+              kind: 'ask',
+              settled: true,
+              options: [{ id: 'alpha', label: 'Alpha' }, { id: 'beta', label: 'Beta' }],
+            },
+          })}
+          agents={[]}
+          onMutated={noop}
+          onError={noop}
+          onSuccess={noop}
+        />
+      </MemoryRouter>,
+    );
+    expect(html).toContain('Answered — clearing');
+    expect(html).not.toContain('Alpha');
+    expect(html).not.toContain('Beta');
+  });
+
   it('review row has Accept and Reopen', () => {
     const html = renderToStaticMarkup(
       <MemoryRouter>

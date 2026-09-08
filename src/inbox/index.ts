@@ -390,14 +390,18 @@ export function orderByUrgency(items: InboxItem[]): InboxItem[] {
 // Aggregation entry point.
 // ─────────────────────────────────────────────────────────────────────────────
 
-function questionText(c: ParsedComment): string {
+function rawQuestionText(c: ParsedComment): string {
   const { ref, text } = parseChatQuestionMarker(c.body);
-  const body = (ref ? text : c.body).replace(/\s+/g, ' ').trim();
+  const body = (ref ? text : c.body).trim();
   return body.length > 0 ? body : '(empty question)';
 }
 
+function collapsedQuestionText(c: ParsedComment): string {
+  return rawQuestionText(c).replace(/\s+/g, ' ');
+}
+
 function summarizeQuestion(c: ParsedComment): string {
-  const body = questionText(c);
+  const body = collapsedQuestionText(c);
   const clipped = body.length > 140 ? `${body.slice(0, 137)}...` : body;
   return clipped;
 }
@@ -503,7 +507,7 @@ export async function computeInbox(opts: ComputeInboxOptions): Promise<InboxResu
               since,
               ageMs: computeAgeMs(since, now),
               summary: summarizeQuestion(c),
-              body: questionText(c),
+              body: rawQuestionText(c),
               commentId: c.id,
               chat,
               action: buildAction('question', baseItem, {

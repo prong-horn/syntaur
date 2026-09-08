@@ -620,4 +620,30 @@ describe('computeInbox — chat questions', () => {
     expect(q.summary).toBe(`${'A'.repeat(137)}...`);
     expect(q.summary.length).toBeLessThanOrEqual(140);
   });
+
+  it('question body preserves paragraph breaks; summary collapses whitespace', async () => {
+    const paragraphBody = 'First paragraph.\n\nSecond paragraph.';
+    await seed({
+      id: 'a-para',
+      slug: 'para-q',
+      status: 'in_progress',
+      project: 'demo',
+      comments: [
+        {
+          id: 'pq1',
+          timestamp: '2026-06-15T00:00:00Z',
+          author: 'claude',
+          type: 'question',
+          body: `${paragraphBody}\n\n<!-- syntaur-chat kind="reply" item="item-para" turn="turn-1" -->`,
+          resolved: false,
+        },
+      ],
+    });
+    const r = await run();
+    const q = r.items.find((i) => i.category === 'question')!;
+    expect(q.body).toBe(paragraphBody);
+    expect(q.body).toContain('\n\n');
+    expect(q.summary).toBe('First paragraph. Second paragraph.');
+    expect(q.summary).not.toContain('\n');
+  });
 });

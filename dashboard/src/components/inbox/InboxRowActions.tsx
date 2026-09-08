@@ -13,11 +13,11 @@ import {
   preferredAllowOption,
 } from '../../lib/chat-format';
 import {
-  approvePlan,
   assignmentHref,
   chatItemHref,
   chatReplyText,
   commentsEndpoint,
+  planApproveEndpoint,
   resolveCommentEndpoint,
   rowKind,
   transitionEndpoint,
@@ -60,6 +60,22 @@ export async function runMutation(
   }
 }
 
+export async function runMutationTask(
+  task: () => Promise<unknown>,
+  props: Pick<InboxRowActionProps, 'onMutated' | 'onError' | 'onSuccess'>,
+  successMessage: string,
+): Promise<boolean> {
+  try {
+    await task();
+    props.onSuccess(successMessage);
+    props.onMutated();
+    return true;
+  } catch (err) {
+    props.onError(err instanceof Error ? err.message : String(err));
+    return false;
+  }
+}
+
 export function InboxRowActions({ item, onMutated, onError, onSuccess }: InboxRowActionProps & { item: InboxItem }) {
   switch (rowKind(item)) {
     case 'reply':
@@ -88,17 +104,16 @@ function ReplyActions({ item, onMutated, onError, onSuccess }: InboxRowActionPro
   async function send() {
     if (!text.trim()) return;
     setBusy(true);
-    try {
-      await sendChatMessage(item.assignmentId, chatReplyText(agentId, text));
-      onSuccess(`Sent to @${agentId} — the row clears when it answers`);
+    const ok = await runMutationTask(
+      () => sendChatMessage(item.assignmentId, chatReplyText(agentId, text)),
+      { onMutated, onError, onSuccess },
+      `Sent to @${agentId} — the row clears when it answers`,
+    );
+    if (ok) {
       setSent(true);
-      onMutated();
       setText('');
-    } catch (err) {
-      onError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setBusy(false);
     }
+    setBusy(false);
   }
 
   return (
@@ -133,17 +148,15 @@ function PermissionActions({ item, onMutated, onError, onSuccess }: InboxRowActi
   async function answer(optionId: string, allowAllSession = false) {
     if (!card) return;
     setBusy(true);
-    try {
-      await answerChatPermission(item.assignmentId, card.requestId, optionId, {
-        allowAllSession: allowAllSession || undefined,
-      });
-      onSuccess('Permission answered');
-      onMutated();
-    } catch (err) {
-      onError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setBusy(false);
-    }
+    await runMutationTask(
+      () =>
+        answerChatPermission(item.assignmentId, card.requestId, optionId, {
+          allowAllSession: allowAllSession || undefined,
+        }),
+      { onMutated, onError, onSuccess },
+      'Permission answered',
+    );
+    setBusy(false);
   }
 
   if (!card || card.settled) {
@@ -203,30 +216,24 @@ function AskActions({ item, onMutated, onError, onSuccess }: InboxRowActionProps
   async function choose(optionId: string) {
     if (!card) return;
     setBusy(true);
-    try {
-      await answerChatQuestion(item.assignmentId, card.requestId, { optionId });
-      onSuccess('Answer sent');
-      onMutated();
-    } catch (err) {
-      onError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setBusy(false);
-    }
+    await runMutationTask(
+      () => answerChatQuestion(item.assignmentId, card.requestId, { optionId }),
+      { onMutated, onError, onSuccess },
+      'Answer sent',
+    );
+    setBusy(false);
   }
 
   async function sendText() {
     if (!card || !text.trim()) return;
     setBusy(true);
-    try {
-      await answerChatQuestion(item.assignmentId, card.requestId, { text: text.trim() });
-      onSuccess('Answer sent');
-      onMutated();
-      setText('');
-    } catch (err) {
-      onError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setBusy(false);
-    }
+    const ok = await runMutationTask(
+      () => answerChatQuestion(item.assignmentId, card.requestId, { text: text.trim() }),
+      { onMutated, onError, onSuccess },
+      'Answer sent',
+    );
+    if (ok) setText('');
+    setBusy(false);
   }
 
   if (!card) {
@@ -234,6 +241,15 @@ function AskActions({ item, onMutated, onError, onSuccess }: InboxRowActionProps
       <div className="text-sm text-muted-foreground">
         Card no longer available —{' '}
         <Link to={chatItemHref(item)} className="hover:text-foreground">Open chat</Link>
+      </div>
+    );
+  }
+
+  if (card.settled) {
+    return (
+      <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+        <span>Answered — clearing</span>
+        <Link to={chatItemHref(item)} className="text-xs hover:text-foreground">Open chat</Link>
       </div>
     );
   }
@@ -378,15 +394,13 @@ function PlanActions({ item, onMutated, onError, onSuccess }: InboxRowActionProp
 
   async function approve() {
     setBusy(true);
-    try {
-      await approvePlan(item);
-      onSuccess(`Plan approved — ${item.title}`);
-      onMutated();
-    } catch (err) {
-      onError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setBusy(false);
-    }
+    await runMutation(
+      planApproveEndpoint(item),
+      undefined,
+      { onMutated, onError, onSuccess },
+      `Plan approved — ${item.title}`,
+    );
+    setBusy(false);
   }
 
   return (
