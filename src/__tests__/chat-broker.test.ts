@@ -70,7 +70,11 @@ async function waitUntil(
 ): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
-    if (await predicate()) return;
+    try {
+      if (await predicate()) return;
+    } catch {
+      /* predicate not ready yet */
+    }
     await new Promise((r) => setTimeout(r, 5));
   }
   throw new Error(`timed out waiting for ${what}`);
@@ -2400,6 +2404,11 @@ describe('inbox questions (needs-me)', () => {
     return parseComments(await readFile(commentsPath(), 'utf-8'));
   }
 
+  async function readComments() {
+    if (!existsSync(commentsPath())) return { entries: [] };
+    return parseAssignmentComments();
+  }
+
   async function writeAgentFile(id: string, extra = ''): Promise<void> {
     const dir = agentsDir(sandbox);
     await mkdir(dir, { recursive: true });
@@ -2603,7 +2612,7 @@ describe('inbox questions (needs-me)', () => {
     await broker.send({ assignment: assignment(), text: 'go' });
     await waitUntil(() => existsSync(commentsPath()), 'grace comment');
     await waitUntil(async () => {
-      const parsed = await parseAssignmentComments();
+      const parsed = await readComments();
       const open = parsed.entries.filter((e) => e.type === 'question' && e.resolved !== true);
       return open.length === 1 && open[0].body.includes('nobody answered within');
     }, 'denial question');
@@ -2675,10 +2684,7 @@ describe('inbox questions (needs-me)', () => {
     });
     await broker.send({ assignment: assignment(), text: 'go' });
     await waitUntil(() => itemsOfType('permission.request').length === 2, 'two permission cards');
-    await waitUntil(async () => {
-      if (!existsSync(commentsPath())) return false;
-      return (await parseAssignmentComments()).entries.length === 2;
-    }, 'two grace comments');
+    await waitUntil(async () => (await readComments()).entries.length === 2, 'two grace comments');
     const perms = itemsOfType('permission.request') as Array<{ requestId: string }>;
     expect(
       await broker.answerPermission(assignment(), perms[0].requestId, 'allow', { allowAllSession: true }),
@@ -2698,9 +2704,8 @@ describe('inbox questions (needs-me)', () => {
     await sendP;
     await idle();
     await waitUntil(async () => {
-      if (!existsSync(commentsPath())) return true;
-      const parsed = await parseAssignmentComments();
-      return parsed.entries.every((e) => e.resolved !== false);
+      const parsed = await readComments();
+      return parsed.entries.length === 0 || parsed.entries.every((e) => e.resolved !== false);
     }, 'orphan grace resolved');
   });
 
@@ -2711,7 +2716,7 @@ describe('inbox questions (needs-me)', () => {
     expect((await parseAssignmentComments()).entries[0].resolved).toBe(false);
     makeBroker({ turns: [{ steps: [] }] });
     await broker.getSession(assignment(), 'claude');
-    await waitUntil(async () => (await parseAssignmentComments()).entries[0]?.resolved === true, 'resolved grace');
+    await waitUntil(async () => (await readComments()).entries[0]?.resolved === true, 'resolved grace');
     await waitUntil(
       () => systemTexts().some((t) => t.includes('expired when the dashboard restarted')),
       'repair warn row',
@@ -2749,7 +2754,7 @@ describe('inbox questions (needs-me)', () => {
     makeBroker({ turns: [{ steps: [] }], agentOptions: { resumeSupported: false } });
     await broker.setParticipants(assignment(), { agents: ['cursor'], defaultAgent: 'cursor' });
     await broker.getSession(assignment(), 'cursor');
-    await waitUntil(async () => (await parseAssignmentComments()).entries[0]?.resolved === true, 'resolved grace');
+    await waitUntil(async () => (await readComments()).entries[0]?.resolved === true, 'resolved grace');
     await waitUntil(
       () => systemTexts().some((t) => t.includes('expired when the dashboard restarted')),
       'repair warn row',
